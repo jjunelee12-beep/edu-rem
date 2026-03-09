@@ -46,7 +46,7 @@ function PrivateRouter() {
         <Route path="/semesters" component={SemesterList} />
         <Route path="/approvals" component={Approvals} />
         <Route path="/settlement" component={Settlement} />
-	 <Route path="/system" component={System} />	
+        <Route path="/system" component={System} />
         <Route component={NotFound} />
       </Switch>
     </DashboardLayout>
@@ -54,6 +54,7 @@ function PrivateRouter() {
 }
 
 function AppContent() {
+  const API_BASE = import.meta.env.VITE_API_BASE_URL;
   const [location] = useLocation();
   const isPublicFormPage = location.startsWith("/form/");
 
@@ -61,7 +62,6 @@ function AppContent() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // 공개 랜딩페이지는 로그인 체크 없이 열기
     if (isPublicFormPage) {
       setLoading(false);
       return;
@@ -69,7 +69,7 @@ function AppContent() {
 
     (async () => {
       try {
-        const res = await fetch("/api/auth/me", {
+        const res = await fetch(`${API_BASE}/api/auth/me`, {
           credentials: "include",
         });
 
@@ -86,7 +86,7 @@ function AppContent() {
         setLoading(false);
       }
     })();
-  }, [isPublicFormPage]);
+  }, [isPublicFormPage, API_BASE]);
 
   if (isPublicFormPage) {
     return <PublicRouter />;
