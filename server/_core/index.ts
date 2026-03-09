@@ -16,9 +16,9 @@ async function startServer() {
   const allowedOrigins = [
     "http://localhost:3000",
     "http://localhost:5173",
+    "https://edu-rem.vercel.app",
     "https://edu-crm-five.vercel.app",
     "https://edu-6h3ot14kk-jjunelee12-4678s-projects.vercel.app",
-    "https://edu-crm-api-production.up.railway.app",
     process.env.FRONTEND_URL,
   ].filter(Boolean) as string[];
 
@@ -30,7 +30,7 @@ async function startServer() {
         return callback(null, true);
       }
 
-      return callback(null, false);
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
