@@ -1,0 +1,72 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+type UseAuthOptions = {
+  redirectOnUnauthenticated?: boolean;
+  redirectPath?: string;
+};
+
+export function useAuth(options?: UseAuthOptions) {
+  const { redirectOnUnauthenticated = false, redirectPath = "/login" } =
+    options ?? {};
+
+  const [user, setUser] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<any | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/auth/me", { credentials: "include" });
+      if (!res.ok) {
+        setUser(null);
+        return;
+      }
+      const data = await res.json();
+      setUser(data);
+      localStorage.setItem("manus-runtime-user-info", JSON.stringify(data));
+    } catch (e) {
+      setError(e);
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    } finally {
+      setUser(null);
+      localStorage.setItem("manus-runtime-user-info", "null");
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const state = useMemo(() => {
+    return {
+      user,
+      loading,
+      error,
+      isAuthenticated: Boolean(user),
+    };
+  }, [user, loading, error]);
+
+  useEffect(() => {
+    if (!redirectOnUnauthenticated) return;
+    if (loading) return;
+    if (state.user) return;
+    if (typeof window === "undefined") return;
+    if (window.location.pathname === redirectPath) return;
+    window.location.href = redirectPath;
+  }, [redirectOnUnauthenticated, redirectPath, loading, state.user]);
+
+  return {
+    ...state,
+    refresh,
+    logout,
+  };
+}

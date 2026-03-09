@@ -1,0 +1,1 @@
+ALTER TABLE `students` MODIFY COLUMN `studentStatus` enum('등록','종료') NOT NULL DEFAULT '등록';
