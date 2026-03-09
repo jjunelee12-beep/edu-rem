@@ -14,18 +14,18 @@ export function makeSessionCookie(userId: number, secret: string) {
 
   return cookie.serialize(SESSION_COOKIE, value, {
     httpOnly: true,
-    sameSite: "lax",
-    secure: false, // 배포 HTTPS면 true로
+    sameSite: "none",
+    secure: true,
     path: "/",
-    maxAge: 60 * 60 * 24 * 7, // 7일
+    maxAge: 60 * 60 * 24 * 7,
   });
 }
 
 export function clearSessionCookie() {
   return cookie.serialize(SESSION_COOKIE, "", {
     httpOnly: true,
-    sameSite: "lax",
-    secure: false,
+    sameSite: "none",
+    secure: true,
     path: "/",
     maxAge: 0,
   });
