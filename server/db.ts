@@ -11,13 +11,8 @@ import {
 } from "../drizzle/schema";
 
 import { ENV } from "./_core/env";
-import { createRequire } from "node:module";
 
 let _db: ReturnType<typeof drizzle> | null = null;
-
-const require2 = createRequire(import.meta.url);
-console.log("[PATH] db cwd:", process.cwd());
-console.log("[PATH] db schema resolved:", require2.resolve("../drizzle/schema"));
 
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
