@@ -18,28 +18,27 @@ async function startServer() {
     "http://localhost:5173",
     "https://edu-crm-five.vercel.app",
     "https://edu-6h3ot14kk-jjunelee12-4678s-projects.vercel.app",
+    "https://edu-crm-api-production.up.railway.app",
     process.env.FRONTEND_URL,
   ].filter(Boolean) as string[];
 
-  app.use(
-    cors({
-      origin(origin, callback) {
-        // 서버-서버 요청이나 same-origin 없는 경우 허용
-        if (!origin) return callback(null, true);
+  const corsOptions: cors.CorsOptions = {
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
 
-        if (allowedOrigins.includes(origin)) {
-          return callback(null, true);
-        }
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
 
-        return callback(new Error(`CORS blocked for origin: ${origin}`));
-      },
-      credentials: true,
-      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization"],
-    })
-  );
+      return callback(null, false);
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  };
 
-  app.options("*", cors());
+  app.use(cors(corsOptions));
+  app.options(/.*/, cors(corsOptions));
 
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
