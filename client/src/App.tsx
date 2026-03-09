@@ -55,6 +55,7 @@ function PrivateRouter() {
 
 function AppContent() {
   const API_BASE = import.meta.env.VITE_API_BASE_URL;
+console.log("APP API_BASE =", API_BASE);
   const [location] = useLocation();
   const isPublicFormPage = location.startsWith("/form/");
 

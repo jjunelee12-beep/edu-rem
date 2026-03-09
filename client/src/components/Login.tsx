@@ -2,7 +2,7 @@ import { useState } from "react";
 
 export default function Login() {
   const API_BASE = import.meta.env.VITE_API_BASE_URL;
-
+	console.log("LOGIN API_BASE =", API_BASE);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
