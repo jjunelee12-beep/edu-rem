@@ -6,6 +6,8 @@ type UseAuthOptions = {
 };
 
 export function useAuth(options?: UseAuthOptions) {
+  const API_BASE = import.meta.env.VITE_API_BASE_URL;
+
   const { redirectOnUnauthenticated = false, redirectPath = "/login" } =
     options ?? {};
 
@@ -17,7 +19,9 @@ export function useAuth(options?: UseAuthOptions) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/auth/me", { credentials: "include" });
+      const res = await fetch(`${API_BASE}/api/auth/me`, {
+        credentials: "include",
+      });
       if (!res.ok) {
         setUser(null);
         return;
@@ -31,16 +35,19 @@ export function useAuth(options?: UseAuthOptions) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [API_BASE]);
 
   const logout = useCallback(async () => {
     try {
-      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+      await fetch(`${API_BASE}/api/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
     } finally {
       setUser(null);
       localStorage.setItem("manus-runtime-user-info", "null");
     }
-  }, []);
+  }, [API_BASE]);
 
   useEffect(() => {
     refresh();
