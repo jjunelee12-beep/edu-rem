@@ -39,7 +39,6 @@ export default function Login() {
         return;
       }
 
-      // 로그인 성공
       window.location.href = "/";
     } catch (e) {
       console.error(e);
@@ -73,9 +72,7 @@ export default function Login() {
         style={{ width: "100%", padding: 10, marginBottom: 12 }}
         disabled={pending}
         onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            onLogin();
-          }
+          if (e.key === "Enter") onLogin();
         }}
       />
 
@@ -87,11 +84,7 @@ export default function Login() {
         {pending ? "로그인 중..." : "로그인"}
       </button>
 
-      {error && (
-        <div style={{ marginTop: 12, color: "red" }}>
-          {error}
-        </div>
-      )}
+      {error && <div style={{ marginTop: 12, color: "red" }}>{error}</div>}
     </div>
   );
 }
