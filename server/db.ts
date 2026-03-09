@@ -793,6 +793,6 @@ export async function checkAndAutoComplete(studentId: number) {
   const completedCount = allSems.filter((s) => s.isCompleted).length;
 
   if (completedCount >= student.totalSemesters) {
-    await updateStudent(studentId, { status: "종료" } as any);
+    await updateStudent(studentId, { studentStatus: "종료" } as any);
   }
 }
