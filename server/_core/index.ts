@@ -24,21 +24,40 @@ async function startServer() {
 
   const corsOptions: cors.CorsOptions = {
     origin(origin, callback) {
-      if (!origin) return callback(null, true);
+      // 서버-서버 호출이나 일부 툴 요청 허용
+      if (!origin) {
+        return callback(null, true);
+      }
 
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
+      console.error("[CORS BLOCKED]", origin);
       return callback(new Error(`CORS blocked for origin: ${origin}`));
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "Accept",
+      "Origin",
+    ],
+    exposedHeaders: ["Set-Cookie"],
+    optionsSuccessStatus: 204,
   };
 
+  app.set("trust proxy", 1);
+
   app.use(cors(corsOptions));
-  app.options(/.*/, cors(corsOptions));
+  app.options("*", cors(corsOptions));
+
+  app.use((req, res, next) => {
+    console.log(`[REQ] ${req.method} ${req.originalUrl} origin=${req.headers.origin ?? "-"}`);
+    next();
+  });
 
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -66,6 +85,8 @@ async function startServer() {
   server.listen(port, "0.0.0.0", () => {
     console.log(`Server running on port ${port}`);
     console.log("CORS allowed origins:", allowedOrigins);
+    console.log("FRONTEND_URL =", process.env.FRONTEND_URL);
+    console.log("NODE_ENV =", process.env.NODE_ENV);
   });
 }
 
