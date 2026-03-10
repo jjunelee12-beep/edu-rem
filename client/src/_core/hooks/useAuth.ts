@@ -53,7 +53,7 @@ export function useAuth(options?: UseAuthOptions) {
     } finally {
       setUser(null);
       localStorage.removeItem("manus-runtime-user-info");
-      window.location.href = "/login";
+      window.location.href = "/";
     }
   }, [API_BASE]);
 
