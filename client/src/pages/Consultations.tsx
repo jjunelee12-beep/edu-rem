@@ -536,7 +536,6 @@ function InlineRow({
         <StatusCell
           value={item.status || "상담중"}
           onChange={(v) => onStatusChange(item.id, v)}
-          disabled={isStaff}
         />
       </td>
 
@@ -565,11 +564,9 @@ function InlineRow({
 function StatusCell({
   value,
   onChange,
-  disabled = false,
 }: {
   value: string;
   onChange: (v: string) => void;
-  disabled?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const statuses = ["상담중", "상담완료", "등록", "보류", "미등록"];
@@ -584,7 +581,7 @@ function StatusCell({
     }
   };
 
-  if (editing && !disabled) {
+  if (editing) {
     return (
       <div className="relative">
         <select
@@ -607,10 +604,8 @@ function StatusCell({
 
   return (
     <div
-      className={`px-1 py-1 ${disabled ? "cursor-not-allowed opacity-70" : "cursor-pointer"}`}
-      onClick={() => {
-        if (!disabled) setEditing(true);
-      }}
+      className={`px-1 py-1 ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+      onClick={() => setEditing(true)}}
       title={disabled ? "직원은 상태를 수정할 수 없습니다." : undefined}
     >
       <Badge className={`${statusColor(value)} text-[11px] font-normal`}>{value}</Badge>
@@ -679,9 +674,9 @@ function EditableCell({
 
   return (
     <div
-      className={`px-2 py-1.5 text-sm rounded min-h-[32px] flex items-center ${
-        disabled ? "cursor-not-allowed opacity-70" : "cursor-text hover:bg-muted/30"
-      } ${className ?? ""}`}
+  className={`px-2 py-1.5 text-sm rounded min-h-[32px] flex items-center ${
+    disabled ? "cursor-not-allowed" : "cursor-text hover:bg-muted/30"
+  } ${className ?? ""}`}
       onClick={() => {
         if (!disabled) setEditing(true);
       }}
