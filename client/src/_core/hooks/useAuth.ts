@@ -6,7 +6,7 @@ type UseAuthOptions = {
 };
 
 export function useAuth(options?: UseAuthOptions) {
-  const API_BASE = import.meta.env.VITE_API_BASE_URL;
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
   const { redirectOnUnauthenticated = false, redirectPath = "/login" } =
     options ?? {};

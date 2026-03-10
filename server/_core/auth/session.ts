@@ -14,7 +14,7 @@ export function makeSessionCookie(userId: number, secret: string) {
 
   return cookie.serialize(SESSION_COOKIE, value, {
     httpOnly: true,
-    sameSite: "none",
+    sameSite: "lax",
     secure: true,
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
@@ -24,7 +24,7 @@ export function makeSessionCookie(userId: number, secret: string) {
 export function clearSessionCookie() {
   return cookie.serialize(SESSION_COOKIE, "", {
     httpOnly: true,
-    sameSite: "none",
+    sameSite: "lax",
     secure: true,
     path: "/",
     maxAge: 0,
