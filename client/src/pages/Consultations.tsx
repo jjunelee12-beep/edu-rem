@@ -88,7 +88,6 @@ export default function Consultations() {
 
   const handlePhoneInput = (value: string) => (value ?? "").replace(/\D/g, "").slice(0, 11);
 
-  const isAdmin = user?.role === "admin" || user?.role === "host";
   const isHost = user?.role === "host";
   const isStaff = user?.role === "staff";
 
@@ -114,7 +113,7 @@ export default function Consultations() {
 
     if (cols.length < 2) return false;
 
-    const get = (idx: number) => cols[idx] ?? "";
+    const get = (idx: number) => (cols[idx] ?? "");
 
     const next = {
       consultDate: toISODate((get(0) ?? "").toString().trim()),
@@ -411,7 +410,6 @@ export default function Consultations() {
                   key={item.id}
                   item={item}
                   rowNum={idx + 1}
-                  isAdmin={!!isAdmin}
                   isHost={!!isHost}
                   isStaff={!!isStaff}
                   getUserName={getUserName}
@@ -443,7 +441,6 @@ export default function Consultations() {
 function InlineRow({
   item,
   rowNum,
-  isAdmin,
   isHost,
   isStaff,
   getUserName,
@@ -454,7 +451,6 @@ function InlineRow({
 }: {
   item: any;
   rowNum: number;
-  isAdmin: boolean;
   isHost: boolean;
   isStaff: boolean;
   getUserName: (id: number) => string;
@@ -548,7 +544,7 @@ function InlineRow({
           className={`transition-opacity p-1 rounded ${
             canDelete
               ? "opacity-0 group-hover:opacity-100 hover:bg-red-50"
-              : "opacity-40 cursor-not-allowed"
+              : "cursor-not-allowed"
           }`}
           onClick={() => canDelete && onDelete(item.id)}
           disabled={!canDelete}
@@ -573,11 +569,16 @@ function StatusCell({
 
   const statusColor = (s: string) => {
     switch (s) {
-      case "등록": return "bg-emerald-100 text-emerald-700";
-      case "상담완료": return "bg-blue-100 text-blue-700";
-      case "보류": return "bg-amber-100 text-amber-700";
-      case "미등록": return "bg-gray-200 text-gray-600";
-      default: return "bg-indigo-100 text-indigo-700";
+      case "등록":
+        return "bg-emerald-100 text-emerald-700";
+      case "상담완료":
+        return "bg-blue-100 text-blue-700";
+      case "보류":
+        return "bg-amber-100 text-amber-700";
+      case "미등록":
+        return "bg-gray-200 text-gray-600";
+      default:
+        return "bg-indigo-100 text-indigo-700";
     }
   };
 
@@ -595,7 +596,9 @@ function StatusCell({
           autoFocus
         >
           {statuses.map((s) => (
-            <option key={s} value={s}>{s}</option>
+            <option key={s} value={s}>
+              {s}
+            </option>
           ))}
         </select>
       </div>
@@ -604,9 +607,8 @@ function StatusCell({
 
   return (
     <div
-      className={`px-1 py-1 ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
-      onClick={() => setEditing(true)}}
-      title={disabled ? "직원은 상태를 수정할 수 없습니다." : undefined}
+      className="px-1 py-1 cursor-pointer"
+      onClick={() => setEditing(true)}
     >
       <Badge className={`${statusColor(value)} text-[11px] font-normal`}>{value}</Badge>
     </div>
@@ -634,7 +636,9 @@ function EditableCell({
   const [localVal, setLocalVal] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { setLocalVal(value); }, [value]);
+  useEffect(() => {
+    setLocalVal(value);
+  }, [value]);
 
   useEffect(() => {
     if (editing && inputRef.current) {
@@ -662,7 +666,7 @@ function EditableCell({
       <input
         ref={inputRef}
         type={type}
-        className={`w-full px-2 py-1.5 text-sm border rounded bg-white focus:outline-none focus:ring-1 focus:ring-primary ${className ?? ""}`}
+        className={`w-full px-2 py-1.5 text-sm border rounded bg-white text-black focus:outline-none focus:ring-1 focus:ring-primary ${className ?? ""}`}
         value={localVal}
         onChange={(e) => setLocalVal(transform ? transform(e.target.value) : e.target.value)}
         onBlur={handleBlur}
@@ -674,9 +678,9 @@ function EditableCell({
 
   return (
     <div
-  className={`px-2 py-1.5 text-sm rounded min-h-[32px] flex items-center ${
-    disabled ? "cursor-not-allowed" : "cursor-text hover:bg-muted/30"
-  } ${className ?? ""}`}
+      className={`px-2 py-1.5 text-sm text-black rounded min-h-[32px] flex items-center ${
+        disabled ? "cursor-not-allowed" : "cursor-text hover:bg-muted/30"
+      } ${className ?? ""}`}
       onClick={() => {
         if (!disabled) setEditing(true);
       }}
@@ -723,7 +727,10 @@ function InlineNotesCell({ value, onCommit }: { value: string; onCommit: (v: str
       ref={ref}
       className="w-full text-sm border rounded bg-white focus:outline-none focus:ring-1 focus:ring-primary px-2 py-1.5 resize-none"
       value={local}
-      onChange={(e) => { setLocal(e.target.value); autoResize(e.target); }}
+      onChange={(e) => {
+        setLocal(e.target.value);
+        autoResize(e.target);
+      }}
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === "Escape") {

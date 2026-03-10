@@ -10,7 +10,7 @@ export default function PublicLeadFormPage() {
   const [phone, setPhone] = useState("");
   const [finalEducation, setFinalEducation] = useState("");
   const [desiredCourse, setDesiredCourse] = useState("");
-  const [channel, setChannel] = useState("랜딩페이지");
+  const [channel, setChannel] = useState("");
   const [notes, setNotes] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [done, setDone] = useState(false);
