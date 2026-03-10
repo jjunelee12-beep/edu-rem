@@ -557,12 +557,13 @@ plan: router({
         studentId: z.number(),
         desiredCourse: z.string().optional(),
         finalEducation: z.string().optional(),
-        totalRequiredSubjects: z.number().optional(),
+        totalTheorySubjects: z.number().optional(),
         hasPractice: z.boolean().optional(),
         practiceHours: z.number().optional(),
-        practiceMonth: z.string().optional(),
+        practiceDate: z.string().optional(),
+        practiceArranged: z.boolean().optional(),
         practiceStatus: z.string().optional(),
-        notes: z.string().optional(),
+        specialNotes: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -769,7 +770,7 @@ refund: router({
       return { success: true };
     }),
 
-  delete: protectedProcedure
+  delete: hostProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await db.deleteRefund(input.id);
@@ -817,14 +818,14 @@ planSemester: router({
       }
 
       const id = await db.createPlanSemester({
-        studentId: input.studentId,
-        semesterNo: input.semesterNo,
-        subjectName: input.subjectName.trim(),
-        category: input.category,
-        requirementType: input.requirementType ?? null,
-        credits: 3,
-        sortOrder: input.sortOrder ?? 0,
-      } as any);
+  studentId: input.studentId,
+  semesterNo: input.semesterNo,
+  subjectName: input.subjectName.trim(),
+  planCategory: input.category,
+  planRequirementType: input.requirementType ?? null,
+  credits: 3,
+  sortOrder: input.sortOrder ?? 0,
+} as any);
 
       return { id, success: true };
     }),
@@ -844,8 +845,8 @@ planSemester: router({
       const data: any = {};
 
       if (input.subjectName !== undefined) data.subjectName = input.subjectName.trim();
-      if (input.category !== undefined) data.category = input.category;
-      if (input.requirementType !== undefined) data.requirementType = input.requirementType;
+      if (input.category !== undefined) data.planCategory = input.category;
+if (input.requirementType !== undefined) data.planRequirementType = input.requirementType;
       if (input.semesterNo !== undefined) data.semesterNo = input.semesterNo;
       if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder;
 
@@ -901,14 +902,14 @@ transferSubject: router({
       }
 
       const id = await db.createTransferSubject({
-        studentId: input.studentId,
-        schoolName: input.schoolName?.trim() || null,
-        subjectName: input.subjectName.trim(),
-        category: input.category,
-        requirementType: input.requirementType ?? null,
-        credits: input.credits,
-        sortOrder: input.sortOrder ?? 0,
-      } as any);
+  studentId: input.studentId,
+  schoolName: input.schoolName?.trim() || null,
+  subjectName: input.subjectName.trim(),
+  transferCategory: input.category,
+  transferRequirementType: input.requirementType ?? null,
+  credits: input.credits,
+  sortOrder: input.sortOrder ?? 0,
+} as any);
 
       return { id, success: true };
     }),
@@ -930,8 +931,8 @@ transferSubject: router({
 
       if (input.schoolName !== undefined) data.schoolName = input.schoolName.trim();
       if (input.subjectName !== undefined) data.subjectName = input.subjectName.trim();
-      if (input.category !== undefined) data.category = input.category;
-      if (input.requirementType !== undefined) data.requirementType = input.requirementType;
+     if (input.category !== undefined) data.transferCategory = input.category;
+if (input.requirementType !== undefined) data.transferRequirementType = input.requirementType;
       if (input.credits !== undefined) data.credits = input.credits;
       if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder;
 
@@ -967,5 +968,7 @@ settlement: router({
     }),
 }),
 });
+console.log("[ROUTER OK] planSemester loaded");
+console.log("[ROUTER OK] transferSubject loaded");
 
 export type AppRouter = typeof appRouter;
