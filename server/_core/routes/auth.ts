@@ -60,7 +60,7 @@ authRouter.post("/login", async (req, res) => {
 
     const secret = process.env.SESSION_SECRET || "dev-secret";
 
-    res.setHeader("Set-Cookie", makeSessionCookie(user.id, secret));
+    res.append("Set-Cookie", makeSessionCookie(user.id, secret));
 
     return res.json({
       id: user.id,
@@ -78,7 +78,7 @@ authRouter.post("/login", async (req, res) => {
 
 authRouter.post("/logout", async (_req, res) => {
   try {
-    res.setHeader("Set-Cookie", clearSessionCookie());
+    res.append("Set-Cookie", clearSessionCookie());
     return res.json({ ok: true });
   } catch (error) {
     console.error("[auth/logout] error:", error);
