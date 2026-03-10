@@ -6,7 +6,6 @@ type UseAuthOptions = {
 };
 
 export function useAuth(options?: UseAuthOptions) {
-
   const { redirectOnUnauthenticated = false, redirectPath = "/" } =
     options ?? {};
 
@@ -39,12 +38,11 @@ export function useAuth(options?: UseAuthOptions) {
     } finally {
       setLoading(false);
     }
-  }, [
-]);
+  }, []);
 
   const logout = useCallback(async () => {
     try {
-      const res = await fetch(`/api/auth/me`
+      await fetch(`/api/auth/logout`, {
         method: "POST",
         credentials: "include",
       });
@@ -55,7 +53,7 @@ export function useAuth(options?: UseAuthOptions) {
       localStorage.removeItem("manus-runtime-user-info");
       window.location.replace("/");
     }
-  }, [something]);
+  }, []);
 
   useEffect(() => {
     refresh();

@@ -37,9 +37,9 @@ export default function Login() {
         return;
       }
 
-      window.location.href = "/";
+      window.location.replace("/");
     } catch (_e) {
-      setError("로그인 중 오류가 발생했습니다. (네트워크)");
+      setError("로그인 중 오류가 발생했습니다.");
       setPending(false);
     }
   };
