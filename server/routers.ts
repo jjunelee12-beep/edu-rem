@@ -524,6 +524,48 @@ student: router({
       return { success: true };
     }),
 }),
+
+plan: router({
+  get: protectedProcedure
+    .input(z.object({ studentId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const student = await db.getStudent(input.studentId);
+      if (!student) return null;
+
+      if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+        return null;
+      }
+
+      return db.getPlan(input.studentId);
+    }),
+
+  upsert: protectedProcedure
+    .input(
+      z.object({
+        studentId: z.number(),
+        desiredCourse: z.string().optional(),
+        finalEducation: z.string().optional(),
+        totalRequiredSubjects: z.number().optional(),
+        hasPractice: z.boolean().optional(),
+        practiceHours: z.number().optional(),
+        practiceMonth: z.string().optional(),
+        practiceStatus: z.string().optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const student = await db.getStudent(input.studentId);
+      if (!student) throw new Error("학생을 찾을 수 없습니다");
+
+      if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+        throw new Error("권한이 없습니다");
+      }
+
+      const id = await db.upsertPlan(input as any);
+      return { id, success: true };
+    }),
+}),
+
 semester: router({
   list: protectedProcedure
     .input(z.object({ studentId: z.number() }))
@@ -653,6 +695,76 @@ semester: router({
       return { success: true };
     }),
 }),
+refund: router({
+  listByStudent: protectedProcedure
+    .input(z.object({ studentId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const student = await db.getStudent(input.studentId);
+      if (!student) return [];
+
+      if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+        return [];
+      }
+
+      return db.listRefundsByStudent(input.studentId);
+    }),
+
+  create: protectedProcedure
+    .input(
+      z.object({
+        studentId: z.number(),
+        refundAmount: z.string(),
+        refundDate: z.string(),
+        reason: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const student = await db.getStudent(input.studentId);
+      if (!student) throw new Error("학생을 찾을 수 없습니다");
+
+      if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+        throw new Error("권한이 없습니다");
+      }
+
+      const id = await db.createRefund({
+        studentId: input.studentId,
+        assigneeId: student.assigneeId,
+        refundAmount: input.refundAmount as any,
+        refundDate: new Date(input.refundDate),
+        reason: input.reason ?? "",
+      } as any);
+
+      return { id, success: true };
+    }),
+
+  update: protectedProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        refundAmount: z.string().optional(),
+        refundDate: z.string().optional(),
+        reason: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const data: any = {};
+
+      if (input.refundAmount !== undefined) data.refundAmount = input.refundAmount;
+      if (input.refundDate !== undefined) data.refundDate = new Date(input.refundDate);
+      if (input.reason !== undefined) data.reason = input.reason;
+
+      await db.updateRefund(input.id, data);
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteRefund(input.id);
+      return { success: true };
+    }),
+}),
+
 settlement: router({
   report: adminProcedure
     .input(
