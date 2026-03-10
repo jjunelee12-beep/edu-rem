@@ -38,16 +38,18 @@ export function useAuth(options?: UseAuthOptions) {
   }, [API_BASE]);
 
   const logout = useCallback(async () => {
-    try {
-      await fetch(`${API_BASE}/api/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
-    } finally {
-      setUser(null);
-      localStorage.setItem("manus-runtime-user-info", "null");
-    }
-  }, [API_BASE]);
+  try {
+    await fetch(`${API_BASE}/api/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    });
+  } catch (e) {
+    console.error("logout error", e);
+  }
+
+  setUser(null);
+  localStorage.removeItem("manus-runtime-user-info");
+}, [API_BASE]);
 
   useEffect(() => {
     refresh();

@@ -60,6 +60,13 @@ const DEFAULT_WIDTH = 260;
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 400;
 
+type AuthUser = {
+  id: number;
+  username: string;
+  role: "host" | "admin" | "staff";
+  name?: string;
+};
+
 export default function DashboardLayout({
   children,
 }: {
@@ -70,7 +77,7 @@ export default function DashboardLayout({
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
   });
 
-  const { loading, user } = useAuth();
+  const { loading, user, logout } = useAuth();
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
@@ -87,7 +94,11 @@ export default function DashboardLayout({
         } as CSSProperties
       }
     >
-      <DashboardLayoutContent setSidebarWidth={setSidebarWidth}>
+      <DashboardLayoutContent
+        user={user}
+        logout={logout}
+        setSidebarWidth={setSidebarWidth}
+      >
         {children}
       </DashboardLayoutContent>
     </SidebarProvider>
@@ -96,14 +107,17 @@ export default function DashboardLayout({
 
 type DashboardLayoutContentProps = {
   children: React.ReactNode;
+  user: AuthUser;
+  logout: () => Promise<void>;
   setSidebarWidth: (width: number) => void;
 };
 
 function DashboardLayoutContent({
   children,
+  user,
+  logout,
   setSidebarWidth,
 }: DashboardLayoutContentProps) {
-  const { user, logout } = useAuth();
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -233,9 +247,7 @@ function DashboardLayoutContent({
 
           <SidebarContent className="gap-0">
             {renderMenuSection(staffMenuItems)}
-
             {isAdminOrHost && renderMenuSection(adminMenuItems, "관리자")}
-
             {isHost && renderMenuSection(hostMenuItems, "호스트")}
           </SidebarContent>
 
@@ -274,7 +286,9 @@ function DashboardLayoutContent({
 
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem
-                  onClick={logout}
+                  onClick={() => {
+                    void logout();
+                  }}
                   className="cursor-pointer text-destructive focus:text-destructive"
                 >
                   <LogOut className="mr-2 h-4 w-4" />
