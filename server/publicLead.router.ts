@@ -29,6 +29,8 @@ export const publicLeadRouter = router({
         clientName: z.string().min(1),
         phone: z.string().min(10),
         finalEducation: z.string().min(1),
+	channel: z.string().optional(),
+	notes: z.string().optional(),
         desiredCourse: z.string().min(1),
       })
     )
@@ -41,12 +43,12 @@ export const publicLeadRouter = router({
 
       const id = await db.createConsultation({
         consultDate: new Date(),
-        channel: "랜딩페이지",
+        channel: input.channel?.trim() || "랜딩페이지",
         clientName: input.clientName.trim(),
         phone: input.phone.replace(/\D/g, "").slice(0, 11),
         finalEducation: input.finalEducation,
         desiredCourse: input.desiredCourse,
-        notes: "",
+        notes: input.notes?.trim() || "",
         status: "상담중",
         assigneeId: form.assigneeId,
       } as any);

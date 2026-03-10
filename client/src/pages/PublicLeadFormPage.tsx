@@ -10,6 +10,8 @@ export default function PublicLeadFormPage() {
   const [phone, setPhone] = useState("");
   const [finalEducation, setFinalEducation] = useState("");
   const [desiredCourse, setDesiredCourse] = useState("");
+  const [channel, setChannel] = useState("랜딩페이지");
+  const [notes, setNotes] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -51,6 +53,11 @@ export default function PublicLeadFormPage() {
       return;
     }
 
+    if (!channel.trim()) {
+      alert("문의경로를 입력해주세요.");
+      return;
+    }
+
     if (!agreed) {
       alert("개인정보 수집 및 이용에 동의해주세요.");
       return;
@@ -62,6 +69,8 @@ export default function PublicLeadFormPage() {
       phone: normalizedPhone,
       finalEducation,
       desiredCourse,
+      channel: channel.trim(),
+      notes: notes.trim(),
     });
   };
 
@@ -82,7 +91,7 @@ export default function PublicLeadFormPage() {
     return (
       <PageShell>
         <h2>상담 신청이 접수되었습니다.</h2>
-        <p>빠르게 연락드리겠습니다.</p>
+        <p>순차적으로 상담드리고 있어 빠르게 연락드리겠습니다.</p>
       </PageShell>
     );
   }
@@ -135,11 +144,26 @@ export default function PublicLeadFormPage() {
           <option value="보육교사">보육교사</option>
           <option value="평생교육사">평생교육사</option>
           <option value="건강가정사">건강가정사</option>
-	<option value="한국어교원">한국어교원</option>
-	<option value="청소년지도사">청소년지도사</option>
-	<option value="산업기사/기사">산업기사/기사</option>	
+          <option value="한국어교원">한국어교원</option>
+          <option value="청소년지도사">청소년지도사</option>
+          <option value="산업기사/기사">산업기사/기사</option>
+	<option value="전문학사/학사">전문학사/학사</option>
           <option value="기타">기타</option>
         </select>
+
+        <input
+          value={channel}
+          onChange={(e) => setChannel(e.target.value)}
+          placeholder="문의경로 (예: 블로그, 인스타, 지인추천)"
+          style={inputStyle}
+        />
+
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="진행하시면서 걱정되시는 부분 적어주세요!"
+          style={textareaStyle}
+        />
 
         <label style={{ fontSize: 14, color: "#444" }}>
           <input
@@ -199,6 +223,18 @@ const inputStyle: React.CSSProperties = {
   borderRadius: 10,
   fontSize: 14,
   boxSizing: "border-box",
+};
+
+const textareaStyle: React.CSSProperties = {
+  width: "100%",
+  minHeight: 120,
+  padding: "12px 14px",
+  border: "1px solid #ddd",
+  borderRadius: 10,
+  fontSize: 14,
+  boxSizing: "border-box",
+  resize: "vertical",
+  fontFamily: "inherit",
 };
 
 const buttonStyle: React.CSSProperties = {

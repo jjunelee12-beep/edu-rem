@@ -311,61 +311,73 @@ export const appRouter = router({
       }),
 
     update: protectedProcedure
-      .input(
-        z.object({
-          id: z.number(),
-          consultDate: z.string().optional(),
-          channel: z.string().optional(),
-          clientName: z.string().optional(),
-          phone: z.string().optional(),
-          finalEducation: z.string().optional(),
-          desiredCourse: z.string().optional(),
-          notes: z.string().optional(),
-          status: z.string().optional(),
-        })
-      )
-      .mutation(async ({ ctx, input }) => {
-        const item = await db.getConsultation(input.id);
+  .input(
+    z.object({
+      id: z.number(),
+      consultDate: z.string().optional(),
+      channel: z.string().optional(),
+      clientName: z.string().optional(),
+      phone: z.string().optional(),
+      finalEducation: z.string().optional(),
+      desiredCourse: z.string().optional(),
+      notes: z.string().optional(),
+      status: z.string().optional(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const item = await db.getConsultation(input.id);
 
-        if (!item) {
-          throw new Error("상담 기록을 찾을 수 없습니다");
-        }
+    if (!item) {
+      throw new Error("상담 기록을 찾을 수 없습니다");
+    }
 
-        const myId = Number(ctx.user.id) || 1;
+    const myId = Number(ctx.user.id) || 1;
 
-        if (!isAdminOrHost(ctx.user) && item.assigneeId !== myId) {
-          throw new Error("권한이 없습니다");
-        }
+    if (!isAdminOrHost(ctx.user) && item.assigneeId !== myId) {
+      throw new Error("권한이 없습니다");
+    }
 
-        const { id, ...rest } = input;
-        const data: any = { ...rest };
+    const { id, ...rest } = input;
+    const data: any = { ...rest };
 
-        if (rest.consultDate) {
-          data.consultDate = new Date(rest.consultDate);
-        }
+    // staff는 notes만 수정 가능
+    if (ctx.user.role === "staff") {
+      const allowedForStaff: any = {};
 
-        if (rest.status === "등록") {
-          const existing = await db.getConsultation(id);
+      if (rest.notes !== undefined) {
+        allowedForStaff.notes = rest.notes;
+      }
 
-          if (existing && existing.status !== "등록") {
-            await db.createStudent({
-              clientName: existing.clientName,
-              phone: existing.phone,
-              course: existing.desiredCourse || "",
-              assigneeId: existing.assigneeId,
-              consultationId: id,
-            });
+      await db.updateConsultation(id, allowedForStaff);
+      return { success: true };
+    }
 
-            data.status = "등록";
-          }
-        }
+    if (rest.consultDate) {
+      data.consultDate = new Date(rest.consultDate);
+    }
 
-        await db.updateConsultation(id, data);
+    if (rest.status === "등록") {
+      const existing = await db.getConsultation(id);
 
-        return { success: true };
-      }),
+      if (existing && existing.status !== "등록") {
+        await db.createStudent({
+          clientName: existing.clientName,
+          phone: existing.phone,
+          course: existing.desiredCourse || "",
+          assigneeId: existing.assigneeId,
+          consultationId: id,
+        });
 
-    delete: protectedProcedure
+        data.status = "등록";
+      }
+    }
+
+    await db.updateConsultation(id, data);
+
+    return { success: true };
+  }),
+
+    delete: hostProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
         const item = await db.getConsultation(input.id);

@@ -81,7 +81,6 @@ export default function Consultations() {
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
 
-  // CSV 임포트
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [csvText, setCsvText] = useState("");
   const [csvHasHeader, setCsvHasHeader] = useState(true);
@@ -89,10 +88,10 @@ export default function Consultations() {
 
   const handlePhoneInput = (value: string) => (value ?? "").replace(/\D/g, "").slice(0, 11);
 
-  // ✅ 관리자/호스트
   const isAdmin = user?.role === "admin" || user?.role === "host";
+  const isHost = user?.role === "host";
+  const isStaff = user?.role === "staff";
 
-  // ✅ 담당자 표시용(없으면 -)
   const getUserName = (id: number) => {
     const found = (usersList ?? []).find((u: any) => Number(u.id) === Number(id));
     return (found?.name ?? "").trim() || "-";
@@ -109,15 +108,13 @@ export default function Consultations() {
     status: "상담중",
   });
 
-  // ✅ 상담일 칸 클릭 후 Ctrl+V → 7칸 채우기
-  // 상담일 | 문의경로 | 이름 | 연락처 | 최종학력 | 희망과정 | 상담내역
   const fillInputsFromPaste = (text: string) => {
     const firstLine = text.replace(/\r/g, "").split("\n")[0] ?? "";
     const cols = firstLine.split("\t");
 
     if (cols.length < 2) return false;
 
-    const get = (idx: number) => (cols[idx] ?? ""); // 공란 그대로 유지 (trim도 하지 말자: 공란 유지 목적)
+    const get = (idx: number) => cols[idx] ?? "";
 
     const next = {
       consultDate: toISODate((get(0) ?? "").toString().trim()),
@@ -142,7 +139,6 @@ export default function Consultations() {
     return true;
   };
 
-  // ✅ “상담일 input”에서만 붙여넣기 동작 (요구사항 그대로)
   const handleConsultDatePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     const text = e.clipboardData.getData("text");
     if (!text || !text.includes("\t")) return;
@@ -159,11 +155,10 @@ export default function Consultations() {
       return;
     }
 
-    // 서버에서 assigneeId는 ctx.user로 저장됨(consultation.router.ts에서)
     createMut.mutate({
-  ...newRow,
-  finalEducation: newRow.finalEducation ?? "", // ✅ 키/값 강제
-});
+      ...newRow,
+      finalEducation: newRow.finalEducation ?? "",
+    });
 
     setNewRow({
       consultDate: new Date().toISOString().slice(0, 10),
@@ -192,7 +187,6 @@ export default function Consultations() {
     );
   });
 
-  // CSV 파일 읽기
   const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -215,19 +209,19 @@ export default function Consultations() {
     setCsvText("");
     setShowCsvImport(false);
   };
-const handleCellBlur = (id: number, field: string, value: any) => {
-  if (!id || typeof id !== "number") return;     // ✅ id 방어
-  if (value === undefined) return;              // ✅ undefined 방어
-  updateMut.mutate({ id, [field]: value } as any);
-};
-  
+
+  const handleCellBlur = (id: number, field: string, value: any) => {
+    if (!id || typeof id !== "number") return;
+    if (value === undefined) return;
+    updateMut.mutate({ id, [field]: value } as any);
+  };
 
   const handleStatusChange = (id: number, newStatus: string) => {
     if (newStatus === "등록") {
       if (!confirm("상태를 '등록'으로 변경하면 학생관리 탭에 자동으로 이관됩니다. 계속하시겠습니까?")) return;
     }
-  if (!id) return;
-  if (!newStatus) return;
+    if (!id) return;
+    if (!newStatus) return;
     updateMut.mutate({ id, status: newStatus } as any);
   };
 
@@ -252,7 +246,6 @@ const handleCellBlur = (id: number, field: string, value: any) => {
         </div>
       </div>
 
-      {/* CSV 임포트 다이얼로그 */}
       <Dialog open={showCsvImport} onOpenChange={setShowCsvImport}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -419,10 +412,13 @@ const handleCellBlur = (id: number, field: string, value: any) => {
                   item={item}
                   rowNum={idx + 1}
                   isAdmin={!!isAdmin}
-                  getUserName={getUserName}    
+                  isHost={!!isHost}
+                  isStaff={!!isStaff}
+                  getUserName={getUserName}
                   onBlur={handleCellBlur}
                   onStatusChange={handleStatusChange}
                   onDelete={(id) => {
+                    if (!isHost) return;
                     if (confirm("정말 삭제하시겠습니까?")) deleteMut.mutate({ id } as any);
                   }}
                   handlePhoneInput={handlePhoneInput}
@@ -448,6 +444,8 @@ function InlineRow({
   item,
   rowNum,
   isAdmin,
+  isHost,
+  isStaff,
   getUserName,
   onBlur,
   onStatusChange,
@@ -457,6 +455,8 @@ function InlineRow({
   item: any;
   rowNum: number;
   isAdmin: boolean;
+  isHost: boolean;
+  isStaff: boolean;
   getUserName: (id: number) => string;
   onBlur: (id: number, field: string, value: string) => void;
   onStatusChange: (id: number, status: string) => void;
@@ -470,33 +470,62 @@ function InlineRow({
     : "";
 
   const isRegistered = item.status === "등록";
+  const canDelete = isHost;
 
   return (
     <tr className={`border-b hover:bg-muted/20 group align-top ${isRegistered ? "bg-emerald-50/30" : ""}`}>
       <td className="px-2 py-2 text-center text-xs text-muted-foreground font-mono">{rowNum}</td>
 
       <td className="px-1 py-2">
-        <EditableCell value={dateStr} onBlur={(v) => onBlur(item.id, "consultDate", v)} type="date" />
+        <EditableCell
+          value={dateStr}
+          onBlur={(v) => onBlur(item.id, "consultDate", v)}
+          type="date"
+          disabled={isStaff}
+        />
       </td>
 
       <td className="px-1 py-2">
-        <EditableCell value={item.channel || ""} onBlur={(v) => onBlur(item.id, "channel", v)} className="whitespace-nowrap" />
+        <EditableCell
+          value={item.channel || ""}
+          onBlur={(v) => onBlur(item.id, "channel", v)}
+          className="whitespace-nowrap"
+          disabled={isStaff}
+        />
       </td>
 
       <td className="px-1 py-2">
-        <EditableCell value={item.clientName || ""} onBlur={(v) => onBlur(item.id, "clientName", v)} />
+        <EditableCell
+          value={item.clientName || ""}
+          onBlur={(v) => onBlur(item.id, "clientName", v)}
+          disabled={isStaff}
+        />
       </td>
 
       <td className="px-1 py-2">
-        <EditableCell value={item.phone || ""} onBlur={(v) => onBlur(item.id, "phone", v)} transform={handlePhoneInput} maxLength={11} />
+        <EditableCell
+          value={item.phone || ""}
+          onBlur={(v) => onBlur(item.id, "phone", v)}
+          transform={handlePhoneInput}
+          maxLength={11}
+          disabled={isStaff}
+        />
       </td>
 
       <td className="px-1 py-2">
-        <EditableCell value={item.finalEducation || ""} onBlur={(v) => onBlur(item.id, "finalEducation", v)} />
+        <EditableCell
+          value={item.finalEducation || ""}
+          onBlur={(v) => onBlur(item.id, "finalEducation", v)}
+          disabled={isStaff}
+        />
       </td>
 
       <td className="px-1 py-2">
-        <EditableCell value={item.desiredCourse || ""} onBlur={(v) => onBlur(item.id, "desiredCourse", v)} />
+        <EditableCell
+          value={item.desiredCourse || ""}
+          onBlur={(v) => onBlur(item.id, "desiredCourse", v)}
+          disabled={isStaff}
+        />
       </td>
 
       <td className="px-1 py-2">
@@ -504,7 +533,11 @@ function InlineRow({
       </td>
 
       <td className="px-1 py-2">
-        <StatusCell value={item.status || "상담중"} onChange={(v) => onStatusChange(item.id, v)} />
+        <StatusCell
+          value={item.status || "상담중"}
+          onChange={(v) => onStatusChange(item.id, v)}
+          disabled={isStaff}
+        />
       </td>
 
       <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
@@ -512,15 +545,32 @@ function InlineRow({
       </td>
 
       <td className="px-1 py-2">
-        <button className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-50 rounded" onClick={() => onDelete(item.id)}>
-          <Trash2 className="h-3.5 w-3.5 text-red-400" />
+        <button
+          className={`transition-opacity p-1 rounded ${
+            canDelete
+              ? "opacity-0 group-hover:opacity-100 hover:bg-red-50"
+              : "opacity-40 cursor-not-allowed"
+          }`}
+          onClick={() => canDelete && onDelete(item.id)}
+          disabled={!canDelete}
+          title={canDelete ? "삭제" : "호스트만 삭제할 수 있습니다."}
+        >
+          <Trash2 className={`h-3.5 w-3.5 ${canDelete ? "text-red-400" : "text-gray-300"}`} />
         </button>
       </td>
     </tr>
   );
 }
 
-function StatusCell({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function StatusCell({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
   const [editing, setEditing] = useState(false);
   const statuses = ["상담중", "상담완료", "등록", "보류", "미등록"];
 
@@ -534,24 +584,35 @@ function StatusCell({ value, onChange }: { value: string; onChange: (v: string) 
     }
   };
 
-  if (editing) {
+  if (editing && !disabled) {
     return (
       <div className="relative">
         <select
           className="w-full px-2 py-1 text-sm border rounded bg-white focus:outline-none focus:ring-1 focus:ring-primary"
           value={value}
-          onChange={(e) => { onChange(e.target.value); setEditing(false); }}
+          onChange={(e) => {
+            onChange(e.target.value);
+            setEditing(false);
+          }}
           onBlur={() => setEditing(false)}
           autoFocus
         >
-          {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+          {statuses.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
         </select>
       </div>
     );
   }
 
   return (
-    <div className="px-1 py-1 cursor-pointer" onClick={() => setEditing(true)}>
+    <div
+      className={`px-1 py-1 ${disabled ? "cursor-not-allowed opacity-70" : "cursor-pointer"}`}
+      onClick={() => {
+        if (!disabled) setEditing(true);
+      }}
+      title={disabled ? "직원은 상태를 수정할 수 없습니다." : undefined}
+    >
       <Badge className={`${statusColor(value)} text-[11px] font-normal`}>{value}</Badge>
     </div>
   );
@@ -564,6 +625,7 @@ function EditableCell({
   transform,
   maxLength,
   className,
+  disabled = false,
 }: {
   value: string;
   onBlur: (v: string) => void;
@@ -571,6 +633,7 @@ function EditableCell({
   transform?: (v: string) => string;
   maxLength?: number;
   className?: string;
+  disabled?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [localVal, setLocalVal] = useState(value);
@@ -586,17 +649,20 @@ function EditableCell({
   }, [editing, type]);
 
   const handleBlur = () => {
-  setEditing(false);
-  const next = (localVal ?? "");
-  if (next !== (value ?? "")) onBlur(next);
-};
+    setEditing(false);
+    const next = localVal ?? "";
+    if (next !== (value ?? "")) onBlur(next);
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-    if (e.key === "Escape") { setLocalVal(value); setEditing(false); }
+    if (e.key === "Escape") {
+      setLocalVal(value);
+      setEditing(false);
+    }
   };
 
-  if (editing) {
+  if (editing && !disabled) {
     return (
       <input
         ref={inputRef}
@@ -613,9 +679,13 @@ function EditableCell({
 
   return (
     <div
-      className={`px-2 py-1.5 text-sm cursor-text rounded hover:bg-muted/30 min-h-[32px] flex items-center ${className ?? ""}`}
-      onClick={() => setEditing(true)}
-      title={value || ""}
+      className={`px-2 py-1.5 text-sm rounded min-h-[32px] flex items-center ${
+        disabled ? "cursor-not-allowed opacity-70" : "cursor-text hover:bg-muted/30"
+      } ${className ?? ""}`}
+      onClick={() => {
+        if (!disabled) setEditing(true);
+      }}
+      title={disabled ? "직원은 이 항목을 수정할 수 없습니다." : value || ""}
     >
       {value || <span className="text-muted-foreground/40">-</span>}
     </div>
