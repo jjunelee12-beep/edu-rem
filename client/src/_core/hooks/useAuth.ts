@@ -8,7 +8,7 @@ type UseAuthOptions = {
 export function useAuth(options?: UseAuthOptions) {
   const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
-  const { redirectOnUnauthenticated = false, redirectPath = "/login" } =
+  const { redirectOnUnauthenticated = false, redirectPath = "/" } =
     options ?? {};
 
   const [user, setUser] = useState<any | null>(null);
@@ -53,7 +53,7 @@ export function useAuth(options?: UseAuthOptions) {
     } finally {
       setUser(null);
       localStorage.removeItem("manus-runtime-user-info");
-      window.location.href = "/";
+      window.location.replace("/");
     }
   }, [API_BASE]);
 
@@ -76,7 +76,7 @@ export function useAuth(options?: UseAuthOptions) {
     if (state.user) return;
     if (typeof window === "undefined") return;
     if (window.location.pathname === redirectPath) return;
-    window.location.href = redirectPath;
+    window.location.replace(redirectPath);
   }, [redirectOnUnauthenticated, redirectPath, loading, state.user]);
 
   return {

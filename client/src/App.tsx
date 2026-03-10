@@ -2,7 +2,6 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch, useLocation } from "wouter";
-import { useEffect, useState } from "react";
 
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -16,15 +15,7 @@ import Approvals from "./pages/Approvals";
 import Settlement from "./pages/Settlement";
 import SemesterList from "./pages/SemesterList";
 import System from "./pages/System";
-import Login from "./components/Login";
 import PublicLeadFormPage from "@/pages/PublicLeadFormPage";
-
-type Me = {
-  id: number;
-  username: string;
-  role: "host" | "admin" | "staff";
-  name?: string;
-};
 
 function PublicRouter() {
   return (
@@ -54,47 +45,11 @@ function PrivateRouter() {
 }
 
 function AppContent() {
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
   const [location] = useLocation();
   const isPublicFormPage = location.startsWith("/form/");
 
-  const [me, setMe] = useState<Me | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (isPublicFormPage) {
-      setLoading(false);
-      return;
-    }
-
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/auth/me`, {
-          credentials: "include",
-        });
-
-        if (res.ok) {
-          const data = (await res.json()) as Me;
-          setMe(data);
-        } else {
-          setMe(null);
-        }
-      } catch (_err) {
-        setMe(null);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [isPublicFormPage, API_BASE]);
-
   if (isPublicFormPage) {
     return <PublicRouter />;
-  }
-
-  if (loading) return null;
-
-  if (!me) {
-    return <Login />;
   }
 
   return <PrivateRouter />;
