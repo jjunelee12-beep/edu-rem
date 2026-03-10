@@ -135,6 +135,65 @@ export const plans = mysqlTable("plans", {
 export type Plan = typeof plans.$inferSelect;
 export type InsertPlan = typeof plans.$inferInsert;
 
+// ─── Plan Semesters (우리 플랜 학기별 과목표) ─────────────────────────
+export const planSemesters = mysqlTable("plan_semesters", {
+  id: int("id").autoincrement().primaryKey(),
+
+  studentId: int("studentId").notNull(),
+  semesterNo: int("semesterNo").notNull(),
+
+  subjectName: varchar("subjectName", { length: 255 }).notNull(),
+
+  planCategory: mysqlEnum("planCategory", ["전공", "교양", "일반"]).notNull(),
+
+  planRequirementType: mysqlEnum("planRequirementType", [
+    "전공필수",
+    "전공선택",
+    "교양",
+    "일반",
+  ]),
+
+  credits: int("credits").notNull().default(3),
+
+  sortOrder: int("sortOrder").notNull().default(0),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PlanSemester = typeof planSemesters.$inferSelect;
+export type InsertPlanSemester = typeof planSemesters.$inferInsert;
+
+// ─── Transfer Subjects (전적대 과목표) ────────────────────────────────
+export const transferSubjects = mysqlTable("transfer_subjects", {
+  id: int("id").autoincrement().primaryKey(),
+
+  studentId: int("studentId").notNull(),
+
+  schoolName: varchar("schoolName", { length: 255 }),
+
+  subjectName: varchar("subjectName", { length: 255 }).notNull(),
+
+  transferCategory: mysqlEnum("transferCategory", ["전공", "교양", "일반"]).notNull(),
+
+  transferRequirementType: mysqlEnum("transferRequirementType", [
+    "전공필수",
+    "전공선택",
+    "교양",
+    "일반",
+  ]),
+
+  credits: int("credits").notNull(),
+
+  sortOrder: int("sortOrder").notNull().default(0),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type TransferSubject = typeof transferSubjects.$inferSelect;
+export type InsertTransferSubject = typeof transferSubjects.$inferInsert;
+
 // ─── Refunds (환불 기록) ──────────────────────────────────────────────
 export const refunds = mysqlTable("refunds", {
   id: int("id").autoincrement().primaryKey(),

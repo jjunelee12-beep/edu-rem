@@ -776,6 +776,176 @@ refund: router({
       return { success: true };
     }),
 }),
+planSemester: router({
+  list: protectedProcedure
+    .input(z.object({ studentId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const student = await db.getStudent(input.studentId);
+      if (!student) return [];
+
+      if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+        return [];
+      }
+
+      return db.listPlanSemesters(input.studentId);
+    }),
+
+  create: protectedProcedure
+    .input(
+      z.object({
+        studentId: z.number(),
+        semesterNo: z.number(),
+        subjectName: z.string().min(1),
+        category: z.enum(["전공", "교양", "일반"]),
+        requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]).optional(),
+        sortOrder: z.number().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const student = await db.getStudent(input.studentId);
+      if (!student) throw new Error("학생을 찾을 수 없습니다");
+
+      if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+        throw new Error("권한이 없습니다");
+      }
+
+      const existing = await db.listPlanSemesters(input.studentId);
+      const semesterCount = existing.filter((x: any) => Number(x.semesterNo) === Number(input.semesterNo)).length;
+
+      if (semesterCount >= 8) {
+        throw new Error("우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다");
+      }
+
+      const id = await db.createPlanSemester({
+        studentId: input.studentId,
+        semesterNo: input.semesterNo,
+        subjectName: input.subjectName.trim(),
+        category: input.category,
+        requirementType: input.requirementType ?? null,
+        credits: 3,
+        sortOrder: input.sortOrder ?? 0,
+      } as any);
+
+      return { id, success: true };
+    }),
+
+  update: protectedProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        subjectName: z.string().optional(),
+        category: z.enum(["전공", "교양", "일반"]).optional(),
+        requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]).optional(),
+        semesterNo: z.number().optional(),
+        sortOrder: z.number().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const data: any = {};
+
+      if (input.subjectName !== undefined) data.subjectName = input.subjectName.trim();
+      if (input.category !== undefined) data.category = input.category;
+      if (input.requirementType !== undefined) data.requirementType = input.requirementType;
+      if (input.semesterNo !== undefined) data.semesterNo = input.semesterNo;
+      if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder;
+
+      await db.updatePlanSemester(input.id, data);
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deletePlanSemester(input.id);
+      return { success: true };
+    }),
+}),
+
+transferSubject: router({
+  list: protectedProcedure
+    .input(z.object({ studentId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const student = await db.getStudent(input.studentId);
+      if (!student) return [];
+
+      if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+        return [];
+      }
+
+      return db.listTransferSubjects(input.studentId);
+    }),
+
+  create: protectedProcedure
+    .input(
+      z.object({
+        studentId: z.number(),
+        schoolName: z.string().optional(),
+        subjectName: z.string().min(1),
+        category: z.enum(["전공", "교양", "일반"]),
+        requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]).optional(),
+        credits: z.number().min(0).max(30),
+        sortOrder: z.number().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const student = await db.getStudent(input.studentId);
+      if (!student) throw new Error("학생을 찾을 수 없습니다");
+
+      if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+        throw new Error("권한이 없습니다");
+      }
+
+      const existing = await db.listTransferSubjects(input.studentId);
+      if ((existing?.length ?? 0) >= 100) {
+        throw new Error("전적대 과목은 최대 100개까지 등록할 수 있습니다");
+      }
+
+      const id = await db.createTransferSubject({
+        studentId: input.studentId,
+        schoolName: input.schoolName?.trim() || null,
+        subjectName: input.subjectName.trim(),
+        category: input.category,
+        requirementType: input.requirementType ?? null,
+        credits: input.credits,
+        sortOrder: input.sortOrder ?? 0,
+      } as any);
+
+      return { id, success: true };
+    }),
+
+  update: protectedProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        schoolName: z.string().optional(),
+        subjectName: z.string().optional(),
+        category: z.enum(["전공", "교양", "일반"]).optional(),
+        requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]).optional(),
+        credits: z.number().min(0).max(30).optional(),
+        sortOrder: z.number().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const data: any = {};
+
+      if (input.schoolName !== undefined) data.schoolName = input.schoolName.trim();
+      if (input.subjectName !== undefined) data.subjectName = input.subjectName.trim();
+      if (input.category !== undefined) data.category = input.category;
+      if (input.requirementType !== undefined) data.requirementType = input.requirementType;
+      if (input.credits !== undefined) data.credits = input.credits;
+      if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder;
+
+      await db.updateTransferSubject(input.id, data);
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deleteTransferSubject(input.id);
+      return { success: true };
+    }),
+}),
 
 settlement: router({
   report: adminProcedure

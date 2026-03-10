@@ -8,6 +8,8 @@ import {
   plans, InsertPlan,
   refunds, InsertRefund,
   leadForms, InsertLeadForm,
+ planSemesters, InsertPlanSemester,
+  transferSubjects, InsertTransferSubject,
 } from "../drizzle/schema";
 
 import { ENV } from "./_core/env";
@@ -780,7 +782,73 @@ export async function getSettlementReport(year: number, month: number, filterAss
     return { ...r, netSales, commission, tax, finalPayout };
   });
 }
+// ─── Plan Semesters (학생 플랜 과목표) ───────────────────────────────
+export async function listPlanSemesters(studentId: number) {
+  const db = await getDb();
+  if (!db) return [];
 
+  return db
+    .select()
+    .from(planSemesters)
+    .where(eq(planSemesters.studentId, studentId))
+    .orderBy(planSemesters.semesterNo, planSemesters.sortOrder, planSemesters.id);
+}
+
+export async function createPlanSemester(data: InsertPlanSemester) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(planSemesters).values(data);
+  return result?.[0]?.insertId ?? result?.insertId ?? null;
+}
+
+export async function updatePlanSemester(id: number, data: Partial<InsertPlanSemester>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.update(planSemesters).set(data as any).where(eq(planSemesters.id, id));
+}
+
+export async function deletePlanSemester(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.delete(planSemesters).where(eq(planSemesters.id, id));
+}
+
+// ─── Transfer Subjects (전적대 과목표) ───────────────────────────────
+export async function listTransferSubjects(studentId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(transferSubjects)
+    .where(eq(transferSubjects.studentId, studentId))
+    .orderBy(transferSubjects.sortOrder, transferSubjects.id);
+}
+
+export async function createTransferSubject(data: InsertTransferSubject) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(transferSubjects).values(data);
+  return result?.[0]?.insertId ?? result?.insertId ?? null;
+}
+
+export async function updateTransferSubject(id: number, data: Partial<InsertTransferSubject>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.update(transferSubjects).set(data as any).where(eq(transferSubjects.id, id));
+}
+
+export async function deleteTransferSubject(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.delete(transferSubjects).where(eq(transferSubjects.id, id));
+}
 // ─── 학기 완료 시 자동 종료 체크 ──────────────────────────────────────
 export async function checkAndAutoComplete(studentId: number) {
   const db = await getDb();

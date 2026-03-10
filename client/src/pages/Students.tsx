@@ -30,12 +30,17 @@ export default function Students() {
   const utils = trpc.useUtils();
   const { data: students, isLoading } = trpc.student.list.useQuery();
   const { data: allUsers } = trpc.users.list.useQuery();
+
   const updateMut = trpc.student.update.useMutation({
     onSuccess: () => utils.student.list.invalidate(),
     onError: (e) => toast.error(e.message),
   });
+
   const deleteMut = trpc.student.delete.useMutation({
-    onSuccess: () => { utils.student.list.invalidate(); toast.success("삭제 완료"); },
+    onSuccess: () => {
+      utils.student.list.invalidate();
+      toast.success("삭제 완료");
+    },
     onError: (e) => toast.error(e.message),
   });
 
@@ -46,8 +51,13 @@ export default function Students() {
   const [filterAssignee, setFilterAssignee] = useState<string>("all");
   const [filterPractice, setFilterPractice] = useState(false);
 
-  const isAdmin = user?.role === "admin";
-  const userMap = useMemo(() => new Map(allUsers?.map((u: any) => [u.id, u.name || "이름없음"]) ?? []), [allUsers]);
+  const isAdmin = user?.role === "admin" || user?.role === "host";
+  const isHost = user?.role === "host";
+
+  const userMap = useMemo(
+    () => new Map(allUsers?.map((u: any) => [u.id, u.name || "이름없음"]) ?? []),
+    [allUsers]
+  );
 
   const handlePhoneInput = (v: string) => v.replace(/\D/g, "").slice(0, 11);
 
@@ -58,6 +68,7 @@ export default function Students() {
       if (filterAssignee !== "all" && String(s.assigneeId) !== filterAssignee) return false;
       if (filterPractice && !(s.hasPractice && s.practiceStatus !== "섭외완료")) return false;
       if (!searchTerm) return true;
+
       const term = searchTerm.toLowerCase();
       return (
         s.clientName?.toLowerCase().includes(term) ||
@@ -70,11 +81,13 @@ export default function Students() {
 
   const handleCellBlur = (id: number, field: string, value: string) => {
     const payload: any = { id };
+
     if (field === "subjectCount" || field === "totalSemesters") {
       payload[field] = value ? parseInt(value) : undefined;
     } else {
       payload[field] = value;
     }
+
     updateMut.mutate(payload);
   };
 
@@ -95,49 +108,78 @@ export default function Students() {
       <div className="flex items-center gap-4 flex-wrap">
         <div className="relative max-w-sm flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="이름, 연락처, 과정, 교육원 검색..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 h-9" />
+          <Input
+            placeholder="이름, 연락처, 과정, 교육원 검색..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 h-9"
+          />
         </div>
+
         <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
           <Checkbox checked={showCompleted} onCheckedChange={(v) => setShowCompleted(!!v)} />
           종료 학생 포함
         </label>
       </div>
 
-      {/* 상세 필터 */}
       {showFilters && (
         <div className="border rounded-lg p-4 bg-muted/20 flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <label className="text-xs font-medium text-muted-foreground">승인상태:</label>
-            <select className="text-sm border rounded px-2 py-1 bg-white" value={filterApproval} onChange={(e) => setFilterApproval(e.target.value)}>
+            <select
+              className="text-sm border rounded px-2 py-1 bg-white"
+              value={filterApproval}
+              onChange={(e) => setFilterApproval(e.target.value)}
+            >
               <option value="all">전체</option>
               <option value="대기">대기</option>
               <option value="승인">승인</option>
               <option value="불승인">불승인</option>
             </select>
           </div>
+
           {isAdmin && (
             <div className="flex items-center gap-2">
               <label className="text-xs font-medium text-muted-foreground">담당자:</label>
-              <select className="text-sm border rounded px-2 py-1 bg-white" value={filterAssignee} onChange={(e) => setFilterAssignee(e.target.value)}>
+              <select
+                className="text-sm border rounded px-2 py-1 bg-white"
+                value={filterAssignee}
+                onChange={(e) => setFilterAssignee(e.target.value)}
+              >
                 <option value="all">전체</option>
                 {allUsers?.map((u: any) => (
-                  <option key={u.id} value={String(u.id)}>{u.name || "이름없음"}</option>
+                  <option key={u.id} value={String(u.id)}>
+                    {u.name || "이름없음"}
+                  </option>
                 ))}
               </select>
             </div>
           )}
+
           <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
             <Checkbox checked={filterPractice} onCheckedChange={(v) => setFilterPractice(!!v)} />
             실습 미섭외만
           </label>
-          <Button variant="ghost" size="sm" className="text-xs" onClick={() => { setFilterApproval("all"); setFilterAssignee("all"); setFilterPractice(false); }}>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs"
+            onClick={() => {
+              setFilterApproval("all");
+              setFilterAssignee("all");
+              setFilterPractice(false);
+            }}
+          >
             필터 초기화
           </Button>
         </div>
       )}
 
       {isLoading ? (
-        <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        <div className="flex justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
       ) : (
         <div className="border rounded-lg overflow-x-auto bg-white">
           <table className="w-full text-sm">
@@ -153,21 +195,38 @@ export default function Students() {
                 <th className="text-right px-3 py-2.5 font-medium text-muted-foreground w-[110px]">수납금액</th>
                 <th className="text-center px-3 py-2.5 font-medium text-muted-foreground w-[60px]">상태</th>
                 <th className="text-center px-3 py-2.5 font-medium text-muted-foreground w-[60px]">승인</th>
-                {isAdmin && <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[60px]">담당자</th>}
+                {isAdmin && (
+                  <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[60px]">담당자</th>
+                )}
                 <th className="w-[70px]"></th>
               </tr>
             </thead>
+
             <tbody>
               {filtered.map((s: any, idx: number) => (
-                <StudentInlineRow key={s.id} item={s} rowNum={idx + 1} isAdmin={!!isAdmin} userMap={userMap}
-                  onBlur={handleCellBlur} onDetail={(id) => setLocation(`/students/${id}`)}
-                  onDelete={(id) => { if (confirm("정말 삭제하시겠습니까?")) deleteMut.mutate({ id }); }}
-                  handlePhoneInput={handlePhoneInput} />
+                <StudentInlineRow
+                  key={s.id}
+                  item={s}
+                  rowNum={idx + 1}
+                  isAdmin={!!isAdmin}
+                  isHost={!!isHost}
+                  userMap={userMap}
+                  onBlur={handleCellBlur}
+                  onDetail={(id) => setLocation(`/students/${id}`)}
+                  onDelete={(id) => {
+                    if (!isHost) return;
+                    if (confirm("정말 삭제하시겠습니까?")) deleteMut.mutate({ id });
+                  }}
+                  handlePhoneInput={handlePhoneInput}
+                />
               ))}
+
               {!filtered.length && (
-                <tr><td colSpan={isAdmin ? 12 : 11} className="text-center py-8 text-muted-foreground text-sm">
-                  {showCompleted ? "학생 기록이 없습니다." : "등록 중인 학생이 없습니다. (종료 학생 포함 체크박스를 확인하세요)"}
-                </td></tr>
+                <tr>
+                  <td colSpan={isAdmin ? 12 : 11} className="text-center py-8 text-muted-foreground text-sm">
+                    {showCompleted ? "학생 기록이 없습니다." : "등록 중인 학생이 없습니다. (종료 학생 포함 체크박스를 확인하세요)"}
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
@@ -179,50 +238,122 @@ export default function Students() {
   );
 }
 
-function StudentInlineRow({ item, rowNum, isAdmin, userMap, onBlur, onDetail, onDelete, handlePhoneInput }: {
-  item: any; rowNum: number; isAdmin: boolean; userMap: Map<number, string>;
+function StudentInlineRow({
+  item,
+  rowNum,
+  isAdmin,
+  isHost,
+  userMap,
+  onBlur,
+  onDetail,
+  onDelete,
+  handlePhoneInput,
+}: {
+  item: any;
+  rowNum: number;
+  isAdmin: boolean;
+  isHost: boolean;
+  userMap: Map<number, string>;
   onBlur: (id: number, field: string, value: string) => void;
-  onDetail: (id: number) => void; onDelete: (id: number) => void;
+  onDetail: (id: number) => void;
+  onDelete: (id: number) => void;
   handlePhoneInput: (v: string) => string;
 }) {
   const isCompleted = item.status === "종료";
   const totalRequired = Number(item.totalRequired || 0);
   const paidAmount = Number(item.paidAmount || 0);
+  const canDelete = isHost;
 
   const approvalColor = (s: string) => {
     switch (s) {
-      case "승인": return "bg-emerald-100 text-emerald-700";
-      case "불승인": return "bg-red-100 text-red-700";
-      default: return "bg-amber-100 text-amber-700";
+      case "승인":
+        return "bg-emerald-100 text-emerald-700";
+      case "불승인":
+        return "bg-red-100 text-red-700";
+      default:
+        return "bg-amber-100 text-amber-700";
     }
   };
 
   return (
-    <tr className={`border-b hover:bg-muted/20 group ${isCompleted ? "bg-gray-50 opacity-70" : ""}`}>
+    <tr className={`border-b hover:bg-muted/20 group ${isCompleted ? "bg-gray-50" : ""}`}>
       <td className="px-2 py-1.5 text-center text-xs text-muted-foreground font-mono">{rowNum}</td>
-      <td className="px-1 py-0.5"><EditableCell value={item.clientName || ""} onBlur={(v) => onBlur(item.id, "clientName", v)} /></td>
-      <td className="px-1 py-0.5"><EditableCell value={item.phone || ""} onBlur={(v) => onBlur(item.id, "phone", v)} transform={handlePhoneInput} maxLength={11} /></td>
-      <td className="px-1 py-0.5"><EditableCell value={item.course || ""} onBlur={(v) => onBlur(item.id, "course", v)} /></td>
-      <td className="px-1 py-0.5"><EditableCell value={item.institution || ""} onBlur={(v) => onBlur(item.id, "institution", v)} /></td>
-      <td className="px-3 py-1.5 text-sm">{formatDate(item.startDate)}</td>
-      <td className="px-3 py-1.5 text-sm text-right font-medium">{formatCurrency(totalRequired)}</td>
+
+      <td className="px-1 py-0.5">
+        <EditableCell
+          value={item.clientName || ""}
+          onBlur={(v) => onBlur(item.id, "clientName", v)}
+          disabled
+        />
+      </td>
+
+      <td className="px-1 py-0.5">
+        <EditableCell
+          value={item.phone || ""}
+          onBlur={(v) => onBlur(item.id, "phone", v)}
+          transform={handlePhoneInput}
+          maxLength={11}
+          disabled
+        />
+      </td>
+
+      <td className="px-1 py-0.5">
+        <EditableCell
+          value={item.course || ""}
+          onBlur={(v) => onBlur(item.id, "course", v)}
+          disabled
+        />
+      </td>
+
+      <td className="px-1 py-0.5">
+        <EditableCell
+          value={item.institution || ""}
+          onBlur={(v) => onBlur(item.id, "institution", v)}
+        />
+      </td>
+
+      <td className="px-3 py-1.5 text-sm text-black">{formatDate(item.startDate)}</td>
+      <td className="px-3 py-1.5 text-sm text-right font-medium text-black">{formatCurrency(totalRequired)}</td>
       <td className="px-3 py-1.5 text-sm text-right font-medium text-emerald-600">{formatCurrency(paidAmount)}</td>
+
       <td className="px-2 py-1.5 text-center">
         <Badge className={item.status === "종료" ? "bg-gray-200 text-gray-600 text-[10px]" : "bg-emerald-100 text-emerald-700 text-[10px]"}>
           {item.status || "등록"}
         </Badge>
       </td>
+
       <td className="px-2 py-1.5 text-center">
-        <Badge className={`${approvalColor(item.approvalStatus)} text-[10px]`}>{item.approvalStatus || "대기"}</Badge>
+        <Badge className={`${approvalColor(item.approvalStatus)} text-[10px]`}>
+          {item.approvalStatus || "대기"}
+        </Badge>
       </td>
-      {isAdmin && <td className="px-3 py-1.5 text-xs text-muted-foreground">{userMap.get(item.assigneeId) || "-"}</td>}
+
+      {isAdmin && (
+        <td className="px-3 py-1.5 text-xs text-muted-foreground">
+          {userMap.get(item.assigneeId) || "-"}
+        </td>
+      )}
+
       <td className="px-1 py-0.5">
         <div className="flex items-center gap-0.5">
-          <button className="p-1 hover:bg-muted rounded transition-colors" onClick={() => onDetail(item.id)}>
+          <button
+            className="p-1 hover:bg-muted rounded transition-colors"
+            onClick={() => onDetail(item.id)}
+          >
             <Eye className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
-          <button className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-50 rounded" onClick={() => onDelete(item.id)}>
-            <Trash2 className="h-3.5 w-3.5 text-red-400" />
+
+          <button
+            className={`p-1 rounded transition-opacity ${
+              canDelete
+                ? "opacity-0 group-hover:opacity-100 hover:bg-red-50"
+                : "cursor-not-allowed"
+            }`}
+            onClick={() => canDelete && onDelete(item.id)}
+            disabled={!canDelete}
+            title={canDelete ? "삭제" : "호스트만 삭제할 수 있습니다."}
+          >
+            <Trash2 className={`h-3.5 w-3.5 ${canDelete ? "text-red-400" : "text-gray-300"}`} />
           </button>
         </div>
       </td>
@@ -230,34 +361,76 @@ function StudentInlineRow({ item, rowNum, isAdmin, userMap, onBlur, onDetail, on
   );
 }
 
-function EditableCell({ value, onBlur, type = "text", transform, maxLength }: {
-  value: string; onBlur: (v: string) => void; type?: string; transform?: (v: string) => string; maxLength?: number;
+function EditableCell({
+  value,
+  onBlur,
+  type = "text",
+  transform,
+  maxLength,
+  disabled = false,
+}: {
+  value: string;
+  onBlur: (v: string) => void;
+  type?: string;
+  transform?: (v: string) => string;
+  maxLength?: number;
+  disabled?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [localVal, setLocalVal] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { setLocalVal(value); }, [value]);
-  useEffect(() => { if (editing && inputRef.current) { inputRef.current.focus(); if (type !== "date") inputRef.current.select(); } }, [editing, type]);
+  useEffect(() => {
+    setLocalVal(value);
+  }, [value]);
 
-  const handleBlur = () => { setEditing(false); if (localVal !== value) onBlur(localVal); };
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-    if (e.key === "Escape") { setLocalVal(value); setEditing(false); }
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      if (type !== "date") inputRef.current.select();
+    }
+  }, [editing, type]);
+
+  const handleBlur = () => {
+    setEditing(false);
+    if (localVal !== value) onBlur(localVal);
   };
 
-  if (editing) {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+    if (e.key === "Escape") {
+      setLocalVal(value);
+      setEditing(false);
+    }
+  };
+
+  if (editing && !disabled) {
     return (
-      <input ref={inputRef} type={type} className="w-full px-2 py-1.5 text-sm border rounded bg-white focus:outline-none focus:ring-1 focus:ring-primary"
-        value={localVal} onChange={(e) => setLocalVal(transform ? transform(e.target.value) : e.target.value)}
-        onBlur={handleBlur} onKeyDown={handleKeyDown} maxLength={maxLength}
-        onClick={(e) => e.stopPropagation()} />
+      <input
+        ref={inputRef}
+        type={type}
+        className="w-full px-2 py-1.5 text-sm border rounded bg-white text-black focus:outline-none focus:ring-1 focus:ring-primary"
+        value={localVal}
+        onChange={(e) => setLocalVal(transform ? transform(e.target.value) : e.target.value)}
+        onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
+        maxLength={maxLength}
+        onClick={(e) => e.stopPropagation()}
+      />
     );
   }
 
   return (
-    <div className="px-2 py-1.5 text-sm cursor-text rounded hover:bg-muted/30 min-h-[32px] flex items-center"
-      onClick={(e) => { e.stopPropagation(); setEditing(true); }}>
+    <div
+      className={`px-2 py-1.5 text-sm text-black rounded min-h-[32px] flex items-center ${
+        disabled ? "cursor-not-allowed" : "cursor-text hover:bg-muted/30"
+      }`}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!disabled) setEditing(true);
+      }}
+      title={disabled ? "이 항목은 수정할 수 없습니다." : value || ""}
+    >
       {value || <span className="text-muted-foreground/40">-</span>}
     </div>
   );
