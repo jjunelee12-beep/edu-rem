@@ -13,23 +13,32 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
 
-  const allowedOrigins = [
+  const exactAllowedOrigins = [
     "http://localhost:3000",
     "http://localhost:5173",
     "https://edu-rem.vercel.app",
     "https://edu-crm-five.vercel.app",
-    "https://edu-6h3ot14kk-jjunelee12-4678s-projects.vercel.app",
     process.env.FRONTEND_URL,
   ].filter(Boolean) as string[];
 
+  const isAllowedOrigin = (origin: string) => {
+    if (exactAllowedOrigins.includes(origin)) return true;
+
+    // Vercel preview deployments 허용
+    if (
+      /^https:\/\/edu-[a-z0-9-]+-jjunelee12-4678s-projects\.vercel\.app$/i.test(origin)
+    ) {
+      return true;
+    }
+
+    return false;
+  };
+
   const corsOptions: cors.CorsOptions = {
     origin(origin, callback) {
-      // 서버-서버 호출이나 일부 툴 요청 허용
-      if (!origin) {
-        return callback(null, true);
-      }
+      if (!origin) return callback(null, true);
 
-      if (allowedOrigins.includes(origin)) {
+      if (isAllowedOrigin(origin)) {
         return callback(null, true);
       }
 
@@ -45,7 +54,6 @@ async function startServer() {
       "Accept",
       "Origin",
     ],
-    exposedHeaders: ["Set-Cookie"],
     optionsSuccessStatus: 204,
   };
 
@@ -53,11 +61,6 @@ async function startServer() {
 
   app.use(cors(corsOptions));
   app.options("*", cors(corsOptions));
-
-  app.use((req, res, next) => {
-    console.log(`[REQ] ${req.method} ${req.originalUrl} origin=${req.headers.origin ?? "-"}`);
-    next();
-  });
 
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -84,9 +87,7 @@ async function startServer() {
 
   server.listen(port, "0.0.0.0", () => {
     console.log(`Server running on port ${port}`);
-    console.log("CORS allowed origins:", allowedOrigins);
-    console.log("FRONTEND_URL =", process.env.FRONTEND_URL);
-    console.log("NODE_ENV =", process.env.NODE_ENV);
+    console.log("Exact CORS allowed origins:", exactAllowedOrigins);
   });
 }
 

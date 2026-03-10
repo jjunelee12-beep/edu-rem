@@ -55,8 +55,6 @@ function PrivateRouter() {
 
 function AppContent() {
   const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
-  console.log("APP API_BASE =", API_BASE);
-
   const [location] = useLocation();
   const isPublicFormPage = location.startsWith("/form/");
 
@@ -81,8 +79,7 @@ function AppContent() {
         } else {
           setMe(null);
         }
-      } catch (err) {
-        console.error("[auth/me] error:", err);
+      } catch (_err) {
         setMe(null);
       } finally {
         setLoading(false);
@@ -90,38 +87,17 @@ function AppContent() {
     })();
   }, [isPublicFormPage, API_BASE]);
 
-  const debugBar = (
-    <div style={{ position: "fixed", top: 0, left: 0, background: "yellow", zIndex: 9999, padding: 4 }}>
-      APP API_BASE: {String(API_BASE)}
-    </div>
-  );
-
   if (isPublicFormPage) {
-    return (
-      <>
-        {debugBar}
-        <PublicRouter />
-      </>
-    );
+    return <PublicRouter />;
   }
 
-  if (loading) return debugBar;
+  if (loading) return null;
 
   if (!me) {
-    return (
-      <>
-        {debugBar}
-        <Login />
-      </>
-    );
+    return <Login />;
   }
 
-  return (
-    <>
-      {debugBar}
-      <PrivateRouter />
-    </>
-  );
+  return <PrivateRouter />;
 }
 
 export default function App() {

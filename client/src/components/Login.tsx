@@ -2,7 +2,6 @@ import { useState } from "react";
 
 export default function Login() {
   const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
-	console.log("LOGIN API_BASE =", API_BASE);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -40,8 +39,7 @@ export default function Login() {
       }
 
       window.location.href = "/";
-    } catch (e) {
-      console.error(e);
+    } catch (_e) {
       setError("로그인 중 오류가 발생했습니다. (네트워크)");
       setPending(false);
     }

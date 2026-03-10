@@ -18,38 +18,44 @@ export function useAuth(options?: UseAuthOptions) {
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
+
     try {
       const res = await fetch(`${API_BASE}/api/auth/me`, {
         credentials: "include",
       });
+
       if (!res.ok) {
         setUser(null);
+        localStorage.removeItem("manus-runtime-user-info");
         return;
       }
+
       const data = await res.json();
       setUser(data);
       localStorage.setItem("manus-runtime-user-info", JSON.stringify(data));
     } catch (e) {
       setError(e);
       setUser(null);
+      localStorage.removeItem("manus-runtime-user-info");
     } finally {
       setLoading(false);
     }
   }, [API_BASE]);
 
   const logout = useCallback(async () => {
-  try {
-    await fetch(`${API_BASE}/api/auth/logout`, {
-      method: "POST",
-      credentials: "include",
-    });
-  } catch (e) {
-    console.error("logout error", e);
-  }
-
-  setUser(null);
-  localStorage.removeItem("manus-runtime-user-info");
-}, [API_BASE]);
+    try {
+      await fetch(`${API_BASE}/api/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (e) {
+      console.error("logout error", e);
+    } finally {
+      setUser(null);
+      localStorage.removeItem("manus-runtime-user-info");
+      window.location.href = "/login";
+    }
+  }, [API_BASE]);
 
   useEffect(() => {
     refresh();
