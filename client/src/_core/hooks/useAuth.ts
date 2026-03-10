@@ -6,7 +6,6 @@ type UseAuthOptions = {
 };
 
 export function useAuth(options?: UseAuthOptions) {
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
   const { redirectOnUnauthenticated = false, redirectPath = "/" } =
     options ?? {};
@@ -40,7 +39,8 @@ export function useAuth(options?: UseAuthOptions) {
     } finally {
       setLoading(false);
     }
-  }, [API_BASE]);
+  }, [
+]);
 
   const logout = useCallback(async () => {
     try {
@@ -55,7 +55,7 @@ export function useAuth(options?: UseAuthOptions) {
       localStorage.removeItem("manus-runtime-user-info");
       window.location.replace("/");
     }
-  }, [API_BASE]);
+  }, [something]);
 
   useEffect(() => {
     refresh();
