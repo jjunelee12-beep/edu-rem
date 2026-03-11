@@ -83,7 +83,7 @@ const isStaff = user?.role === "staff";
 
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
-
+const [assigneeSearch, setAssigneeSearch] = useState("");
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [csvText, setCsvText] = useState("");
   const [csvHasHeader, setCsvHasHeader] = useState(true);
@@ -172,19 +172,26 @@ const isStaff = user?.role === "staff";
     setShowAdd(false);
   };
 
-  const filtered = (list || []).filter((item: any) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return (
-      item.clientName?.toLowerCase?.().includes(q) ||
-      item.phone?.includes(q) ||
-      item.finalEducation?.toLowerCase?.().includes(q) ||
-      item.desiredCourse?.toLowerCase?.().includes(q) ||
-      item.channel?.toLowerCase?.().includes(q) ||
-      item.notes?.toLowerCase?.().includes(q) ||
-      item.status?.toLowerCase?.().includes(q)
-    );
-  });
+ const filtered = (list || []).filter((item: any) => {
+  const matchesSearch = !search
+    ? true
+    : (
+        item.clientName?.toLowerCase?.().includes(search.toLowerCase()) ||
+        item.phone?.includes(search) ||
+        item.finalEducation?.toLowerCase?.().includes(search.toLowerCase()) ||
+        item.desiredCourse?.toLowerCase?.().includes(search.toLowerCase()) ||
+        item.channel?.toLowerCase?.().includes(search.toLowerCase()) ||
+        item.notes?.toLowerCase?.().includes(search.toLowerCase()) ||
+        item.status?.toLowerCase?.().includes(search.toLowerCase())
+      );
+
+  const assigneeName = getUserName(Number(item.assigneeId));
+  const matchesAssignee = !assigneeSearch
+    ? true
+    : assigneeName.toLowerCase().includes(assigneeSearch.toLowerCase());
+
+  return matchesSearch && matchesAssignee;
+});
 
   const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -424,20 +431,24 @@ const reassignConsultationMut = trpc.consultation.reassign.useMutation({
 
               {filtered.map((item: any, idx: number) => (
                 <InlineRow
-                  key={item.id}
-                  item={item}
-                  rowNum={idx + 1}
-                  isHost={!!isHost}
-                  isStaff={!!isStaff}
-                  getUserName={getUserName}
-                  onBlur={handleCellBlur}
-                  onStatusChange={handleStatusChange}
-                  onDelete={(id) => {
-                    if (!isHost) return;
-                    if (confirm("정말 삭제하시겠습니까?")) deleteMut.mutate({ id } as any);
-                  }}
-                  handlePhoneInput={handlePhoneInput}
-                />
+  key={item.id}
+  item={item}
+  rowNum={idx + 1}
+  isHost={!!isHost}
+  isStaff={!!isStaff}
+  usersList={usersList || []}
+  getUserName={getUserName}
+  onBlur={handleCellBlur}
+  onStatusChange={handleStatusChange}
+  onDelete={(id) => {
+    if (!isHost) return;
+    if (confirm("정말 삭제하시겠습니까?")) deleteMut.mutate({ id } as any);
+  }}
+  onReassign={(id, assigneeId) =>
+    reassignConsultationMut.mutate({ id, assigneeId })
+  }
+  handlePhoneInput={handlePhoneInput}
+/>
               ))}
 
               {!filtered.length && !showAdd && (
@@ -460,20 +471,24 @@ function InlineRow({
   rowNum,
   isHost,
   isStaff,
+  usersList,
   getUserName,
   onBlur,
   onStatusChange,
   onDelete,
+  onReassign,
   handlePhoneInput,
 }: {
   item: any;
   rowNum: number;
   isHost: boolean;
   isStaff: boolean;
+  usersList: any[];
   getUserName: (id: number) => string;
   onBlur: (id: number, field: string, value: string) => void;
   onStatusChange: (id: number, status: string) => void;
   onDelete: (id: number) => void;
+  onReassign: (id: number, assigneeId: number) => void;
   handlePhoneInput: (v: string) => string;
 }) {
   const dateStr = item.consultDate
@@ -553,8 +568,22 @@ function InlineRow({
       </td>
 
       <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
-        {getUserName(Number(item.assigneeId))}
-      </td>
+  {isHost ? (
+    <select
+      className="text-xs border rounded px-2 py-1 bg-white"
+      value={String(item.assigneeId)}
+      onChange={(e) => onReassign(item.id, Number(e.target.value))}
+    >
+      {usersList.map((u: any) => (
+        <option key={u.id} value={u.id}>
+          {u.name || "이름없음"}
+        </option>
+      ))}
+    </select>
+  ) : (
+    getUserName(Number(item.assigneeId))
+  )}
+</td>
 
       <td className="px-1 py-2">
         <button
@@ -760,30 +789,6 @@ function InlineNotesCell({ value, onCommit }: { value: string; onCommit: (v: str
     />
   );
 }
-
-<td className="px-3 py-2 text-sm">
-  {isHost ? (
-    <select
-      className="text-xs border rounded px-2 py-1 bg-white"
-      value={String(item.assigneeId)}
-      onChange={(e) =>
-        reassignConsultationMut.mutate({
-          id: item.id,
-          assigneeId: Number(e.target.value),
-        })
-      }
-    >
-      {allUsers?.map((u: any) => (
-        <option key={u.id} value={u.id}>
-          {u.name || "이름없음"}
-        </option>
-      ))}
-    </select>
-  ) : (
-    userMap.get(item.assigneeId) || "-"
-  )}
-</td>
-
 function AutoGrowTextarea({
   value,
   onChange,
