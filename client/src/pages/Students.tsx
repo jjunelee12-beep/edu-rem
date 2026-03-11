@@ -46,6 +46,7 @@ export default function Students() {
   });
 
   const [searchTerm, setSearchTerm] = useState("");
+  const [assigneeSearch, setAssigneeSearch] = useState("");
   const [showCompleted, setShowCompleted] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [filterApproval, setFilterApproval] = useState<string>("all");
@@ -68,17 +69,32 @@ export default function Students() {
       if (filterApproval !== "all" && s.approvalStatus !== filterApproval) return false;
       if (filterAssignee !== "all" && String(s.assigneeId) !== filterAssignee) return false;
       if (filterPractice && !(s.hasPractice && s.practiceStatus !== "섭외완료")) return false;
-      if (!searchTerm) return true;
 
-      const term = searchTerm.toLowerCase();
-      return (
+      const term = searchTerm.trim().toLowerCase();
+      const assigneeTerm = assigneeSearch.trim().toLowerCase();
+      const assigneeName = (userMap.get(s.assigneeId) || "").toLowerCase();
+
+      const matchesSearch =
+        !term ||
         s.clientName?.toLowerCase().includes(term) ||
         s.phone?.includes(term) ||
         s.course?.toLowerCase().includes(term) ||
-        s.institution?.toLowerCase().includes(term)
-      );
+        s.institution?.toLowerCase().includes(term);
+
+      const matchesAssignee = !assigneeTerm || assigneeName.includes(assigneeTerm);
+
+      return matchesSearch && matchesAssignee;
     });
-  }, [students, showCompleted, filterApproval, filterAssignee, filterPractice, searchTerm]);
+  }, [
+    students,
+    showCompleted,
+    filterApproval,
+    filterAssignee,
+    filterPractice,
+    searchTerm,
+    assigneeSearch,
+    userMap,
+  ]);
 
   const handleCellBlur = (id: number, field: string, value: string) => {
     const payload: any = { id };
@@ -101,13 +117,19 @@ export default function Students() {
             상담 DB에서 상태를 "등록"으로 변경하면 자동으로 이관됩니다. 셀 클릭으로 바로 편집 가능합니다.
           </p>
         </div>
-        <Button variant="outline" size="sm" className="gap-1" onClick={() => setShowFilters(!showFilters)}>
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1"
+          onClick={() => setShowFilters(!showFilters)}
+        >
           <Filter className="h-4 w-4" /> 필터
         </Button>
       </div>
 
       <div className="flex items-center gap-4 flex-wrap">
-        <div className="relative max-w-sm flex-1 min-w-[200px]">
+        <div className="relative max-w-sm flex-1 min-w-[220px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="이름, 연락처, 과정, 교육원 검색..."
@@ -115,16 +137,22 @@ export default function Students() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-9 h-9"
           />
-	<Input
-  placeholder="담당자 검색"
-  value={assigneeSearch}
-  onChange={(e) => setAssigneeSearch(e.target.value)}
-  className="w-[180px]"
-/>
         </div>
 
+        {isAdmin && (
+          <Input
+            placeholder="담당자 검색"
+            value={assigneeSearch}
+            onChange={(e) => setAssigneeSearch(e.target.value)}
+            className="w-[180px] h-9"
+          />
+        )}
+
         <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-          <Checkbox checked={showCompleted} onCheckedChange={(v) => setShowCompleted(!!v)} />
+          <Checkbox
+            checked={showCompleted}
+            onCheckedChange={(v) => setShowCompleted(!!v)}
+          />
           종료 학생 포함
         </label>
       </div>
@@ -164,7 +192,10 @@ export default function Students() {
           )}
 
           <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-            <Checkbox checked={filterPractice} onCheckedChange={(v) => setFilterPractice(!!v)} />
+            <Checkbox
+              checked={filterPractice}
+              onCheckedChange={(v) => setFilterPractice(!!v)}
+            />
             실습 미섭외만
           </label>
 
@@ -176,6 +207,7 @@ export default function Students() {
               setFilterApproval("all");
               setFilterAssignee("all");
               setFilterPractice(false);
+              setAssigneeSearch("");
             }}
           >
             필터 초기화
@@ -192,18 +224,40 @@ export default function Students() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-muted/50 border-b">
-                <th className="text-center px-2 py-2.5 font-medium text-muted-foreground w-[50px]">No.</th>
-                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[80px]">이름</th>
-                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[110px]">연락처</th>
-                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[120px]">등록과정</th>
-                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[90px]">교육원</th>
-                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[100px]">개강날짜</th>
-                <th className="text-right px-3 py-2.5 font-medium text-muted-foreground w-[110px]">총 결제예정</th>
-                <th className="text-right px-3 py-2.5 font-medium text-muted-foreground w-[110px]">수납금액</th>
-                <th className="text-center px-3 py-2.5 font-medium text-muted-foreground w-[60px]">상태</th>
-                <th className="text-center px-3 py-2.5 font-medium text-muted-foreground w-[60px]">승인</th>
+                <th className="text-center px-2 py-2.5 font-medium text-muted-foreground w-[50px]">
+                  No.
+                </th>
+                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[80px]">
+                  이름
+                </th>
+                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[110px]">
+                  연락처
+                </th>
+                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[120px]">
+                  등록과정
+                </th>
+                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[90px]">
+                  교육원
+                </th>
+                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[100px]">
+                  개강날짜
+                </th>
+                <th className="text-right px-3 py-2.5 font-medium text-muted-foreground w-[110px]">
+                  총 결제예정
+                </th>
+                <th className="text-right px-3 py-2.5 font-medium text-muted-foreground w-[110px]">
+                  수납금액
+                </th>
+                <th className="text-center px-3 py-2.5 font-medium text-muted-foreground w-[60px]">
+                  상태
+                </th>
+                <th className="text-center px-3 py-2.5 font-medium text-muted-foreground w-[60px]">
+                  승인
+                </th>
                 {isAdmin && (
-                  <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[60px]">담당자</th>
+                  <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[90px]">
+                    담당자
+                  </th>
                 )}
                 <th className="w-[70px]"></th>
               </tr>
@@ -230,8 +284,13 @@ export default function Students() {
 
               {!filtered.length && (
                 <tr>
-                  <td colSpan={isAdmin ? 12 : 11} className="text-center py-8 text-muted-foreground text-sm">
-                    {showCompleted ? "학생 기록이 없습니다." : "등록 중인 학생이 없습니다. (종료 학생 포함 체크박스를 확인하세요)"}
+                  <td
+                    colSpan={isAdmin ? 12 : 11}
+                    className="text-center py-8 text-muted-foreground text-sm"
+                  >
+                    {showCompleted
+                      ? "학생 기록이 없습니다."
+                      : "등록 중인 학생이 없습니다. (종료 학생 포함 체크박스를 확인하세요)"}
                   </td>
                 </tr>
               )}
@@ -284,7 +343,9 @@ function StudentInlineRow({
 
   return (
     <tr className={`border-b hover:bg-muted/20 group ${isCompleted ? "bg-gray-50" : ""}`}>
-      <td className="px-2 py-1.5 text-center text-xs text-muted-foreground font-mono">{rowNum}</td>
+      <td className="px-2 py-1.5 text-center text-xs text-muted-foreground font-mono">
+        {rowNum}
+      </td>
 
       <td className="px-1 py-0.5">
         <EditableCell
@@ -296,12 +357,12 @@ function StudentInlineRow({
 
       <td className="px-1 py-0.5">
         <EditableCell
-  value={formatPhone(item.phone)}
-  onBlur={(v) => onBlur(item.id, "phone", v.replace(/\D/g, ""))}
-  transform={handlePhoneInput}
-  maxLength={11}
-  disabled
-/>
+          value={formatPhone(item.phone)}
+          onBlur={(v) => onBlur(item.id, "phone", v.replace(/\D/g, ""))}
+          transform={handlePhoneInput}
+          maxLength={11}
+          disabled
+        />
       </td>
 
       <td className="px-1 py-0.5">
@@ -314,18 +375,28 @@ function StudentInlineRow({
 
       <td className="px-1 py-0.5">
         <EditableCell
-  value={item.institution || ""}
-  onBlur={(v) => onBlur(item.id, "institution", v)}
-  disabled
-/>
+          value={item.institution || ""}
+          onBlur={(v) => onBlur(item.id, "institution", v)}
+          disabled
+        />
       </td>
 
       <td className="px-3 py-1.5 text-sm text-black">{formatDate(item.startDate)}</td>
-      <td className="px-3 py-1.5 text-sm text-right font-medium text-black">{formatCurrency(totalRequired)}</td>
-      <td className="px-3 py-1.5 text-sm text-right font-medium text-emerald-600">{formatCurrency(paidAmount)}</td>
+      <td className="px-3 py-1.5 text-sm text-right font-medium text-black">
+        {formatCurrency(totalRequired)}
+      </td>
+      <td className="px-3 py-1.5 text-sm text-right font-medium text-emerald-600">
+        {formatCurrency(paidAmount)}
+      </td>
 
       <td className="px-2 py-1.5 text-center">
-        <Badge className={item.status === "종료" ? "bg-gray-200 text-gray-600 text-[10px]" : "bg-emerald-100 text-emerald-700 text-[10px]"}>
+        <Badge
+          className={
+            item.status === "종료"
+              ? "bg-gray-200 text-gray-600 text-[10px]"
+              : "bg-emerald-100 text-emerald-700 text-[10px]"
+          }
+        >
           {item.status || "등록"}
         </Badge>
       </td>
@@ -361,7 +432,9 @@ function StudentInlineRow({
             disabled={!canDelete}
             title={canDelete ? "삭제" : "호스트만 삭제할 수 있습니다."}
           >
-            <Trash2 className={`h-3.5 w-3.5 ${canDelete ? "text-red-400" : "text-gray-300"}`} />
+            <Trash2
+              className={`h-3.5 w-3.5 ${canDelete ? "text-red-400" : "text-gray-300"}`}
+            />
           </button>
         </div>
       </td>
@@ -419,7 +492,9 @@ function EditableCell({
         type={type}
         className="w-full px-2 py-1.5 text-sm border rounded bg-white text-black focus:outline-none focus:ring-1 focus:ring-primary"
         value={localVal}
-        onChange={(e) => setLocalVal(transform ? transform(e.target.value) : e.target.value)}
+        onChange={(e) =>
+          setLocalVal(transform ? transform(e.target.value) : e.target.value)
+        }
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         maxLength={maxLength}
