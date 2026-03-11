@@ -309,6 +309,7 @@ function StudentInlineRow({
         <EditableCell
           value={item.institution || ""}
           onBlur={(v) => onBlur(item.id, "institution", v)}
+	disabled
         />
       </td>
 
