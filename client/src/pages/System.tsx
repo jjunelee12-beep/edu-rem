@@ -34,6 +34,9 @@ export default function System() {
   const [tab, setTab] = useState<TabKey>("users");
 
   const isHost = user?.role === "host";
+	
+ const utils = trpc.useUtils();
+  const { data: users, isLoading } = trpc.users.list.useQuery();
 
   if (!isHost) {
     return (
