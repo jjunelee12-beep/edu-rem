@@ -307,10 +307,10 @@ function StudentInlineRow({
 
       <td className="px-1 py-0.5">
         <EditableCell
-          value={item.institution || ""}
-          onBlur={(v) => onBlur(item.id, "institution", v)}
-	disabled
-        />
+  value={item.institution || ""}
+  onBlur={(v) => onBlur(item.id, "institution", v)}
+  disabled
+/>
       </td>
 
       <td className="px-3 py-1.5 text-sm text-black">{formatDate(item.startDate)}</td>
