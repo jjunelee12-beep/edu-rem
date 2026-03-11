@@ -43,6 +43,7 @@ function autoResize(el: HTMLTextAreaElement) {
 export default function Consultations() {
   const { user } = useAuth();
 const isHost = user?.role === "host";
+const isStaff = user?.role === "staff";
   const utils = trpc.useUtils();
 
   const { data: list, isLoading } = trpc.consultation.list.useQuery();
@@ -89,9 +90,6 @@ const isHost = user?.role === "host";
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handlePhoneInput = (value: string) => (value ?? "").replace(/\D/g, "").slice(0, 11);
-
-  const isHost = user?.role === "host";
-  const isStaff = user?.role === "staff";
 
   const getUserName = (id: number) => {
     const found = (usersList ?? []).find((u: any) => Number(u.id) === Number(id));
