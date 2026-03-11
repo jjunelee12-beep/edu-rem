@@ -145,7 +145,20 @@ function UserManagementSection() {
       toast.error(e.message);
     },
   });
+   const bulkReassignMutation = trpc.consultation.bulkReassign.useMutation({
+  onSuccess: () => {
+    toast.success("담당자 일괄 변경 완료");
+    utils.consultation.list.invalidate();
+    utils.student.list.invalidate();
+    utils.semester.listAll.invalidate();
+  },
+  onError: (e) => {
+    toast.error(e.message);
+  },
+});
 
+const [fromAssigneeId, setFromAssigneeId] = useState("");
+const [toAssigneeId, setToAssigneeId] = useState("");
   const [userTab, setUserTab] = useState<UserTabKey>("create");
   const [roleFilter, setRoleFilter] = useState<"all" | UserRole>("all");
   const [searchTerm, setSearchTerm] = useState("");
@@ -345,6 +358,38 @@ function UserManagementSection() {
     });
   };
 
+const handleBulkReassign = () => {
+  if (!fromAssigneeId) {
+    toast.error("기존 담당자를 선택해주세요.");
+    return;
+  }
+
+  if (!toAssigneeId) {
+    toast.error("변경할 담당자를 선택해주세요.");
+    return;
+  }
+
+  if (fromAssigneeId === toAssigneeId) {
+    toast.error("같은 담당자로는 변경할 수 없습니다.");
+    return;
+  }
+
+  const fromUser = users?.find((u: any) => String(u.id) === fromAssigneeId);
+  const toUser = users?.find((u: any) => String(u.id) === toAssigneeId);
+
+  const ok = window.confirm(
+    `${fromUser?.name || "-"} 담당의 상담 DB / 학생 담당자를 ${toUser?.name || "-"}(으)로 일괄 변경하시겠습니까?`
+  );
+  if (!ok) return;
+
+  bulkReassignMutation.mutate({
+    fromAssigneeId: Number(fromAssigneeId),
+    toAssigneeId: Number(toAssigneeId),
+  });
+};
+
+
+
   const handleResetPassword = (u: any) => {
     const newPassword = (passwordDrafts[u.id] || "").trim();
 
@@ -479,6 +524,61 @@ function UserManagementSection() {
           </CardContent>
         </Card>
       )}
+	      <Card>
+        <CardHeader>
+          <CardTitle>담당자 일괄 변경</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            상담 DB에서 담당자를 일괄 변경하면 연결된 학생 담당자도 함께 변경됩니다.
+            잠수 퇴사자 DB 이관용으로 사용하세요.
+          </p>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <p className="text-sm font-medium">기존 담당자</p>
+              <Select value={fromAssigneeId} onValueChange={setFromAssigneeId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="기존 담당자 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  {users?.map((u: any) => (
+                    <SelectItem key={u.id} value={String(u.id)}>
+                      {u.name || u.username || `#${u.id}`} ({u.role})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium">변경할 담당자</p>
+              <Select value={toAssigneeId} onValueChange={setToAssigneeId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="변경할 담당자 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  {users?.map((u: any) => (
+                    <SelectItem key={u.id} value={String(u.id)}>
+                      {u.name || u.username || `#${u.id}`} ({u.role})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div>
+            <Button
+              variant="destructive"
+              onClick={handleBulkReassign}
+              disabled={bulkReassignMutation.isPending}
+            >
+              {bulkReassignMutation.isPending ? "변경 중..." : "담당자 일괄 변경"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {userTab === "list" && (
         <Card>

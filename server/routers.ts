@@ -444,6 +444,40 @@ export const appRouter = router({
         return { success: true };
       }),
 
+	
+	reassign: hostProcedure
+  .input(
+    z.object({
+      id: z.number(),
+      assigneeId: z.number(),
+    })
+  )
+  .mutation(async ({ input }) => {
+    await db.reassignConsultationAndLinkedStudent(
+      input.id,
+      input.assigneeId
+    );
+
+    return { success: true };
+  }),
+
+
+	bulkReassign: hostProcedure
+  .input(
+    z.object({
+      fromAssigneeId: z.number(),
+      toAssigneeId: z.number(),
+    })
+  )
+  .mutation(async ({ input }) => {
+    await db.bulkReassignConsultationsAndLinkedStudents(
+      input.fromAssigneeId,
+      input.toAssigneeId
+    );
+
+    return { success: true };
+  }),
+
     delete: hostProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {

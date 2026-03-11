@@ -98,6 +98,14 @@ export default function SemesterList() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="학생명, 연락처, 과정, 교육원 검색..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 h-9" />
         </div>
+	<div className="flex items-center gap-2">
+  <Input
+    placeholder="담당자 검색"
+    value={assigneeSearch}
+    onChange={(e) => setAssigneeSearch(e.target.value)}
+    className="w-[180px]"
+  />
+</div>
       </div>
 
       {/* 요약 카드 */}
@@ -141,6 +149,7 @@ export default function SemesterList() {
                 <th className="text-center px-3 py-2.5 font-medium text-muted-foreground w-[70px]">실습</th>
                 <th className="text-center px-3 py-2.5 font-medium text-muted-foreground w-[70px]">상태</th>
                 <th className="text-center px-3 py-2.5 font-medium text-muted-foreground w-[70px]">승인</th>
+	<th className="px-3 py-2 text-left font-medium text-muted-foreground">담당자</th>
               </tr>
             </thead>
             <tbody>
@@ -156,6 +165,28 @@ export default function SemesterList() {
                   <td className="px-3 py-2 text-right font-medium text-sm">{formatCurrency(sem.plannedAmount)}</td>
                   <td className="px-2 py-2 text-center text-sm">{sem.plannedSubjectCount || "-"}</td>
                   <td className="px-3 py-2 text-center">
+		<td className="px-3 py-2 text-sm">
+  {isHost ? (
+    <select
+      className="text-xs border rounded px-2 py-1 bg-white"
+      value={String(item.assigneeId)}
+      onChange={(e) =>
+        reassignStudentMut.mutate({
+          id: item.studentId,
+          assigneeId: Number(e.target.value),
+        })
+      }
+    >
+      {allUsers?.map((u: any) => (
+        <option key={u.id} value={u.id}>
+          {u.name || "이름없음"}
+        </option>
+      ))}
+    </select>
+  ) : (
+    item.assigneeName || "-"
+  )}
+</td>
                     {sem.hasPractice ? (
                       <Badge className={
                         sem.practiceStatus === "섭외완료" ? "bg-emerald-100 text-emerald-700 text-[10px]" :

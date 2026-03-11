@@ -216,6 +216,15 @@ export default function Consultations() {
     updateMut.mutate({ id, [field]: value } as any);
   };
 
+const reassignConsultationMut = trpc.consultation.reassign.useMutation({
+  onSuccess: () => {
+    toast.success("담당자 변경 완료");
+    utils.consultation.list.invalidate();
+    utils.student.list.invalidate();
+    utils.semester.listAll.invalidate();
+  },
+  onError: (e) => toast.error(e.message),
+});
   const handleStatusChange = (id: number, newStatus: string) => {
     if (newStatus === "등록") {
       if (!confirm("상태를 '등록'으로 변경하면 학생관리 탭에 자동으로 이관됩니다. 계속하시겠습니까?")) return;
@@ -287,6 +296,14 @@ export default function Consultations() {
           className="pl-9 h-9"
         />
       </div>
+	<div className="flex items-center gap-2">
+  <Input
+    placeholder="담당자 검색"
+    value={assigneeSearch}
+    onChange={(e) => setAssigneeSearch(e.target.value)}
+    className="w-[180px]"
+  />
+</div>
 
       {isLoading ? (
         <div className="flex justify-center py-12">
@@ -744,6 +761,29 @@ function InlineNotesCell({ value, onCommit }: { value: string; onCommit: (v: str
     />
   );
 }
+
+<td className="px-3 py-2 text-sm">
+  {isHost ? (
+    <select
+      className="text-xs border rounded px-2 py-1 bg-white"
+      value={String(item.assigneeId)}
+      onChange={(e) =>
+        reassignConsultationMut.mutate({
+          id: item.id,
+          assigneeId: Number(e.target.value),
+        })
+      }
+    >
+      {allUsers?.map((u: any) => (
+        <option key={u.id} value={u.id}>
+          {u.name || "이름없음"}
+        </option>
+      ))}
+    </select>
+  ) : (
+    userMap.get(item.assigneeId) || "-"
+  )}
+</td>
 
 function AutoGrowTextarea({
   value,

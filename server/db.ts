@@ -554,17 +554,19 @@ export async function listAllSemesters(
       : sql``;
 
   const [rows] = await db.execute(sql`
-    SELECT sem.*,
-      s.clientName, s.phone, s.course, s.assigneeId, s.status,
-      s.approvalStatus,
-      (SELECT p.hasPractice FROM plans p WHERE p.studentId = s.id LIMIT 1) as hasPractice,
-      (SELECT p.practiceHours FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceHours,
-      (SELECT p.practiceStatus FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceStatus
-    FROM semesters sem
-    INNER JOIN students s ON sem.studentId = s.id
-    ${whereClause}
-    ORDER BY sem.plannedMonth ASC, s.clientName ASC
-  `);
+  SELECT sem.*,
+    s.clientName, s.phone, s.course, s.assigneeId, s.status as studentStatus,
+    s.approvalStatus,
+    u.name as assigneeName,
+    (SELECT p.hasPractice FROM plans p WHERE p.studentId = s.id LIMIT 1) as hasPractice,
+    (SELECT p.practiceHours FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceHours,
+    (SELECT p.practiceStatus FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceStatus
+  FROM semesters sem
+  INNER JOIN students s ON sem.studentId = s.id
+  LEFT JOIN users u ON u.id = s.assigneeId
+  ${whereClause}
+  ORDER BY sem.plannedMonth ASC, s.clientName ASC
+`);
 
   return (rows as unknown) as any[];
 }
@@ -1125,6 +1127,42 @@ export async function createEducationInstitution(data: {
 
   return Number(getInsertId(result));
 }
+export async function reassignConsultationAndLinkedStudent(
+  consultationId: number,
+  assigneeId: number
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(consultations)
+    .set({ assigneeId } as any)
+    .where(eq(consultations.id, consultationId));
+
+  await db
+    .update(students)
+    .set({ assigneeId } as any)
+    .where(eq(students.consultationId, consultationId));
+}
+
+export async function bulkReassignConsultationsAndLinkedStudents(
+  fromAssigneeId: number,
+  toAssigneeId: number
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(consultations)
+    .set({ assigneeId: toAssigneeId } as any)
+    .where(eq(consultations.assigneeId, fromAssigneeId));
+
+  await db
+    .update(students)
+    .set({ assigneeId: toAssigneeId } as any)
+    .where(eq(students.assigneeId, fromAssigneeId));
+}
+
 
 export async function updateEducationInstitution(
   id: number,

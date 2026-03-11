@@ -115,6 +115,12 @@ export default function Students() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-9 h-9"
           />
+	<Input
+  placeholder="담당자 검색"
+  value={assigneeSearch}
+  onChange={(e) => setAssigneeSearch(e.target.value)}
+  className="w-[180px]"
+/>
         </div>
 
         <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
