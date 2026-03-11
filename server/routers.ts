@@ -340,12 +340,33 @@ export const appRouter = router({
     const { id, ...rest } = input;
     const data: any = { ...rest };
 
-    // staff는 notes만 수정 가능
+    // staff는 notes + status 수정 가능
     if (ctx.user.role === "staff") {
       const allowedForStaff: any = {};
 
       if (rest.notes !== undefined) {
         allowedForStaff.notes = rest.notes;
+      }
+
+      if (rest.status !== undefined) {
+        allowedForStaff.status = rest.status;
+      }
+
+      // staff가 등록 처리할 때 학생 자동 생성
+      if (rest.status === "등록") {
+        const existing = await db.getConsultation(id);
+
+        if (existing && existing.status !== "등록") {
+          await db.createStudent({
+            clientName: existing.clientName,
+            phone: existing.phone,
+            course: existing.desiredCourse || "",
+            assigneeId: existing.assigneeId,
+            consultationId: id,
+          });
+
+          allowedForStaff.status = "등록";
+        }
       }
 
       await db.updateConsultation(id, allowedForStaff);
