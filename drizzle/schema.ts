@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, date, boolean, datetime } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, date, boolean, datetime, serial } from "drizzle-orm/mysql-core";
 
 export const leadForms = mysqlTable("lead_forms", {
   id: int("id").autoincrement().primaryKey(),
@@ -77,6 +77,7 @@ export const students = mysqlTable("students", {
   subjectCount: int("subjectCount"),
   paymentDate: date("paymentDate"),
   institution: varchar("institution", { length: 200 }),
+institutionId: int("institutionId"),
   totalSemesters: int("totalSemesters"),
   assigneeId: int("assigneeId").notNull(),
   consultationId: int("consultationId"),
@@ -98,12 +99,14 @@ export const semesters = mysqlTable("semesters", {
   // 예정 정보
   plannedMonth: varchar("plannedMonth", { length: 20 }),
   plannedInstitution: varchar("plannedInstitution", { length: 200 }),
+plannedInstitutionId: int("plannedInstitutionId"),
   plannedSubjectCount: int("plannedSubjectCount"),
   plannedAmount: decimal("plannedAmount", { precision: 12, scale: 0 }),
   isLocked: boolean("isLocked").default(false).notNull(),
   // 실제 결제 정보
   actualStartDate: date("actualStartDate"),
   actualInstitution: varchar("actualInstitution", { length: 200 }),
+actualInstitutionId: int("actualInstitutionId"),
   actualSubjectCount: int("actualSubjectCount"),
   actualAmount: decimal("actualAmount", { precision: 12, scale: 0 }),
   actualPaymentDate: date("actualPaymentDate"),
@@ -208,3 +211,13 @@ export const refunds = mysqlTable("refunds", {
 
 export type Refund = typeof refunds.$inferSelect;
 export type InsertRefund = typeof refunds.$inferInsert;
+
+// ─── educationInstitutions (교육원) ──────────────────────────────────────────────
+export const educationInstitutions = mysqlTable("education_institutions", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  isActive: boolean("isActive").notNull().default(true),
+  sortOrder: int("sortOrder").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull().onUpdateNow(),
+});

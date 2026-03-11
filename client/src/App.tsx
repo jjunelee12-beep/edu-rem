@@ -16,6 +16,7 @@ import Settlement from "./pages/Settlement";
 import SemesterList from "./pages/SemesterList";
 import System from "./pages/System";
 import PublicLeadFormPage from "@/pages/PublicLeadFormPage";
+import EducationInstitutions from "@/pages/EducationInstitutions";
 
 function PublicRouter() {
   return (
@@ -38,6 +39,7 @@ function PrivateRouter() {
         <Route path="/approvals" component={Approvals} />
         <Route path="/settlement" component={Settlement} />
         <Route path="/system" component={System} />
+	<Route path="/education-institutions" component={EducationInstitutions} />
         <Route component={NotFound} />
       </Switch>
     </DashboardLayout>

@@ -118,6 +118,7 @@ export default function StudentDetail() {
   const { data: semesters } = trpc.semester.list.useQuery({ studentId });
   const { data: plan } = trpc.plan.get.useQuery({ studentId });
   const { data: allUsers } = trpc.users.list.useQuery();
+const { data: institutionList } = trpc.educationInstitution.list.useQuery();
   const { data: paymentSummary } = trpc.student.paymentSummary.useQuery({ studentId });
   const { data: refundList } = trpc.refund.listByStudent.useQuery({ studentId });
 
@@ -297,10 +298,17 @@ export default function StudentDetail() {
   });
 
   const userMap = new Map(allUsers?.map((u: any) => [u.id, u.name || "이름없음"]) ?? []);
-
+const institutionMap = new Map(
+  institutionList?.map((inst: any) => [inst.id, inst.name]) ?? []
+);
   const handleStudentFieldBlur = (field: string, value: string) => {
     const payload: any = { id: studentId };
-
+  const handleStudentInstitutionChange = (value: string) => {
+  updateStudentMut.mutate({
+    id: studentId,
+    institutionId: value ? Number(value) : undefined,
+  } as any);
+};
     if (field === "subjectCount" || field === "totalSemesters") {
       payload[field] = value ? parseInt(value) : undefined;
     } else if (field === "startDate" || field === "paymentDate") {
@@ -679,12 +687,23 @@ export default function StudentDetail() {
 />
             </div>
             <div>
-              <p className="text-xs text-muted-foreground mb-0.5">교육원</p>
-              <EditableCell
-  value={registrationSummary.institution || ""}
-  onBlur={(v) => handleStudentFieldBlur("institution", v)}
-/>
-            </div>
+  <p className="text-xs text-muted-foreground mb-0.5">교육원</p>
+  <Select
+    value={student.institutionId ? String(student.institutionId) : ""}
+    onValueChange={handleStudentInstitutionChange}
+  >
+    <SelectTrigger className="h-8 text-sm">
+      <SelectValue placeholder="교육원 선택" />
+    </SelectTrigger>
+    <SelectContent>
+      {(institutionList || []).map((inst: any) => (
+        <SelectItem key={inst.id} value={String(inst.id)}>
+          {inst.name}
+        </SelectItem>
+      ))}
+    </SelectContent>
+  </Select>
+</div>
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">총 학기 수</p>
               <EditableCell value={student.totalSemesters?.toString() || ""} onBlur={(v) => handleStudentFieldBlur("totalSemesters", v)} />
@@ -772,7 +791,26 @@ export default function StudentDetail() {
                         />
                       </td>
                       <td className="px-1 py-0.5">
-                        <EditableCell value={sem.plannedInstitution || ""} onBlur={(v) => handleSemFieldBlur(sem.id, "plannedInstitution", v)} disabled={sem.isLocked} />
+                        <Select
+  value={sem.plannedInstitutionId ? String(sem.plannedInstitutionId) : ""}
+  onValueChange={(v) =>
+    updateSemMut.mutate({
+      id: sem.id,
+      plannedInstitutionId: Number(v),
+    } as any)
+  }
+>
+  <SelectTrigger className="h-8 text-sm">
+    <SelectValue placeholder="교육원 선택" />
+  </SelectTrigger>
+  <SelectContent>
+    {(institutionList || []).map((inst: any) => (
+      <SelectItem key={inst.id} value={String(inst.id)}>
+        {inst.name}
+      </SelectItem>
+    ))}
+  </SelectContent>
+</Select>
                       </td>
                       <td className="px-1 py-0.5">
                         <EditableCell
@@ -797,7 +835,26 @@ export default function StudentDetail() {
                         />
                       </td>
                       <td className="px-1 py-0.5">
-                        <EditableCell value={sem.actualInstitution || ""} onBlur={(v) => handleSemFieldBlur(sem.id, "actualInstitution", v)} className="text-primary" />
+                        <Select
+  value={sem.actualInstitutionId ? String(sem.actualInstitutionId) : ""}
+  onValueChange={(v) =>
+    updateSemMut.mutate({
+      id: sem.id,
+      actualInstitutionId: Number(v),
+    } as any)
+  }
+>
+  <SelectTrigger className="h-8 text-sm text-primary">
+    <SelectValue placeholder="교육원 선택" />
+  </SelectTrigger>
+  <SelectContent>
+    {(institutionList || []).map((inst: any) => (
+      <SelectItem key={inst.id} value={String(inst.id)}>
+        {inst.name}
+      </SelectItem>
+    ))}
+  </SelectContent>
+</Select>
                       </td>
                       <td className="px-1 py-0.5">
                         <EditableCell value={sem.actualSubjectCount?.toString() || ""} onBlur={(v) => handleSemFieldBlur(sem.id, "actualSubjectCount", v)} className="text-primary" />

@@ -10,6 +10,7 @@ import {
   leadForms, InsertLeadForm,
  planSemesters, InsertPlanSemester,
   transferSubjects, InsertTransferSubject,
+educationInstitutions,
 } from "../drizzle/schema";
 
 import { ENV } from "./_core/env";
@@ -980,4 +981,48 @@ export async function checkAndAutoComplete(studentId: number) {
   if (completedCount >= student.totalSemesters) {
     await updateStudent(studentId, { studentStatus: "종료" } as any);
   }
+}
+// ─── 교육원 조회 ──────────────────────────────────────
+export async function listEducationInstitutions() {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(educationInstitutions)
+    .where(eq(educationInstitutions.isActive, true))
+    .orderBy(educationInstitutions.sortOrder, educationInstitutions.id);
+}
+export async function createEducationInstitution(data: {
+  name: string;
+  isActive?: boolean;
+  sortOrder?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB 연결 실패");
+
+  const result = await db.insert(educationInstitutions).values({
+    name: data.name,
+    isActive: data.isActive ?? true,
+    sortOrder: data.sortOrder ?? 0,
+  });
+
+  return Number((result as any).insertId);
+}
+
+export async function updateEducationInstitution(
+  id: number,
+  data: {
+    name?: string;
+    isActive?: boolean;
+    sortOrder?: number;
+  }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB 연결 실패");
+
+  await db
+    .update(educationInstitutions)
+    .set(data)
+    .where(eq(educationInstitutions.id, id));
 }

@@ -164,7 +164,45 @@ export const appRouter = router({
         return { success: true };
       }),
   }),
+educationInstitution: router({
+  list: protectedProcedure.query(async () => {
+    return db.listEducationInstitutions();
+  }),
 
+  create: hostProcedure
+    .input(
+      z.object({
+        name: z.string().min(1),
+        sortOrder: z.number().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const id = await db.createEducationInstitution({
+        name: input.name.trim(),
+        isActive: true,
+        sortOrder: input.sortOrder ?? 0,
+      });
+
+      return { id, success: true };
+    }),
+
+  update: hostProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        isActive: z.boolean().optional(),
+        sortOrder: z.number().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { id, ...rest } = input;
+
+      await db.updateEducationInstitution(id, rest);
+
+      return { success: true };
+    }),
+}),
   dashboard: router({
   stats: protectedProcedure.query(async ({ ctx }) => {
     return db.getDashboardStats(Number(ctx.user.id));
@@ -493,6 +531,7 @@ student: router({
         subjectCount: z.number().optional(),
         paymentDate: z.string().optional(),
         institution: z.string().optional(),
+	institutionId: z.number().optional(),
         totalSemesters: z.number().optional(),
       })
     )
@@ -676,6 +715,8 @@ semester: router({
         plannedInstitution: z.string().optional(),
         plannedSubjectCount: z.number().optional(),
         plannedAmount: z.string().optional(),
+	plannedInstitutionId: z.number().optional(),
+	actualInstitutionId: z.number().optional(),
         actualStartDate: z.string().optional(),
         actualInstitution: z.string().optional(),
         actualSubjectCount: z.number().optional(),

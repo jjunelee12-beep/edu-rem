@@ -53,6 +53,7 @@ const adminMenuItems = [
 
 const hostMenuItems = [
   { icon: Settings, label: "시스템 관리", path: "/system" },
+ { icon: GraduationCap, label: "교육원 관리", path: "/education-institutions" },	
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
