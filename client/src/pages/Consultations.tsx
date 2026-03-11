@@ -42,6 +42,7 @@ function autoResize(el: HTMLTextAreaElement) {
 
 export default function Consultations() {
   const { user } = useAuth();
+const isHost = user?.role === "host";
   const utils = trpc.useUtils();
 
   const { data: list, isLoading } = trpc.consultation.list.useQuery();
