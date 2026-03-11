@@ -33,12 +33,7 @@ export default function System() {
   const { user } = useAuth();
   const [tab, setTab] = useState<TabKey>("users");
 
-  const isHost = user?.role === "host";
-	
- const utils = trpc.useUtils();
-  const { data: users, isLoading } = trpc.users.list.useQuery();
-
-  if (!isHost) {
+  if (user?.role !== "host") {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
         <ShieldAlert className="h-12 w-12 text-muted-foreground" />
