@@ -111,9 +111,7 @@ function UserManagementSection() {
       toast.success("직원 계정이 생성되었습니다.");
       utils.users.list.invalidate();
     },
-    onError: (e) => {
-      toast.error(e.message);
-    },
+    onError: (e) => toast.error(e.message),
   });
 
   const updateMutation = trpc.users.update.useMutation({
@@ -121,9 +119,7 @@ function UserManagementSection() {
       toast.success("직원 정보가 수정되었습니다.");
       utils.users.list.invalidate();
     },
-    onError: (e) => {
-      toast.error(e.message);
-    },
+    onError: (e) => toast.error(e.message),
   });
 
   const updateRoleMutation = trpc.users.updateRole.useMutation({
@@ -131,9 +127,7 @@ function UserManagementSection() {
       toast.success("권한이 변경되었습니다.");
       utils.users.list.invalidate();
     },
-    onError: (e) => {
-      toast.error(e.message);
-    },
+    onError: (e) => toast.error(e.message),
   });
 
   const updateActiveMutation = trpc.users.updateActive.useMutation({
@@ -141,27 +135,26 @@ function UserManagementSection() {
       toast.success("활성 상태가 변경되었습니다.");
       utils.users.list.invalidate();
     },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const bulkReassignMutation = trpc.consultation.bulkReassign.useMutation({
+    onSuccess: () => {
+      toast.success("담당자 일괄 변경 완료");
+      utils.consultation.list.invalidate();
+      utils.student.list.invalidate();
+      utils.semester.listAll.invalidate();
+    },
     onError: (e) => {
       toast.error(e.message);
     },
   });
-   const bulkReassignMutation = trpc.consultation.bulkReassign.useMutation({
-  onSuccess: () => {
-    toast.success("담당자 일괄 변경 완료");
-    utils.consultation.list.invalidate();
-    utils.student.list.invalidate();
-    utils.semester.listAll.invalidate();
-  },
-  onError: (e) => {
-    toast.error(e.message);
-  },
-});
 
-const [fromAssigneeId, setFromAssigneeId] = useState("");
-const [toAssigneeId, setToAssigneeId] = useState("");
   const [userTab, setUserTab] = useState<UserTabKey>("create");
   const [roleFilter, setRoleFilter] = useState<"all" | UserRole>("all");
+
   const [searchTerm, setSearchTerm] = useState("");
+  const [roleSearchTerm, setRoleSearchTerm] = useState("");
   const [passwordSearch, setPasswordSearch] = useState("");
 
   const [openId, setOpenId] = useState("");
@@ -191,20 +184,23 @@ const [toAssigneeId, setToAssigneeId] = useState("");
     Record<number, boolean>
   >({});
 
+  const [fromAssigneeId, setFromAssigneeId] = useState("");
+  const [toAssigneeId, setToAssigneeId] = useState("");
+
   const handlePhoneInput = (value: string) =>
     value.replace(/\D/g, "").slice(0, 11);
 
+  const roleFilteredUsers = useMemo(() => {
+    const list = users ?? [];
+    if (roleFilter === "all") return list;
+    return list.filter((u: any) => u.role === roleFilter);
+  }, [users, roleFilter]);
+
   const filteredUsers = useMemo(() => {
-    let list = users ?? [];
-
-    if (roleFilter !== "all") {
-      list = list.filter((u: any) => u.role === roleFilter);
-    }
-
-    if (!searchTerm.trim()) return list;
+    if (!searchTerm.trim()) return roleFilteredUsers;
 
     const term = searchTerm.trim().toLowerCase();
-    return list.filter((u: any) => {
+    return roleFilteredUsers.filter((u: any) => {
       const displayNo = String(u.displayNo ?? u.id ?? "");
       const username = String(u.username ?? "").toLowerCase();
       const name = String(u.name ?? "").toLowerCase();
@@ -218,23 +214,41 @@ const [toAssigneeId, setToAssigneeId] = useState("");
         phone.includes(term.replace(/\D/g, ""))
       );
     });
-  }, [users, roleFilter, searchTerm]);
+  }, [roleFilteredUsers, searchTerm]);
+
+  const roleTabUsers = useMemo(() => {
+    if (!roleSearchTerm.trim()) return roleFilteredUsers;
+
+    const term = roleSearchTerm.trim().toLowerCase();
+    return roleFilteredUsers.filter((u: any) => {
+      const displayNo = String(u.displayNo ?? u.id ?? "");
+      const username = String(u.username ?? "").toLowerCase();
+      const name = String(u.name ?? "").toLowerCase();
+      const phone = String(u.phone ?? "");
+      return (
+        displayNo.includes(term) ||
+        username.includes(term) ||
+        name.includes(term) ||
+        phone.includes(term.replace(/\D/g, ""))
+      );
+    });
+  }, [roleFilteredUsers, roleSearchTerm]);
 
   const passwordFilteredUsers = useMemo(() => {
     const list = users ?? [];
-    const keyword = passwordSearch.trim().toLowerCase();
-    if (!keyword) return list;
+    if (!passwordSearch.trim()) return list;
 
+    const term = passwordSearch.trim().toLowerCase();
     return list.filter((u: any) => {
       const displayNo = String(u.displayNo ?? u.id ?? "");
       const username = String(u.username ?? "").toLowerCase();
       const name = String(u.name ?? "").toLowerCase();
       const phone = String(u.phone ?? "");
       return (
-        displayNo.includes(keyword) ||
-        username.includes(keyword) ||
-        name.includes(keyword) ||
-        phone.includes(keyword.replace(/\D/g, ""))
+        displayNo.includes(term) ||
+        username.includes(term) ||
+        name.includes(term) ||
+        phone.includes(term.replace(/\D/g, ""))
       );
     });
   }, [users, passwordSearch]);
@@ -323,13 +337,9 @@ const [toAssigneeId, setToAssigneeId] = useState("");
 
   const handleChangeRole = (userId: number, currentRole: UserRole) => {
     const nextRole = roleDrafts[userId];
-    if (!nextRole) {
-      toast.error("변경할 권한을 선택해주세요.");
-      return;
-    }
+    if (!nextRole) return toast.error("변경할 권한을 선택해주세요.");
     if (nextRole === currentRole) {
-      toast.error("현재 권한과 동일합니다.");
-      return;
+      return toast.error("현재 권한과 동일합니다.");
     }
 
     const ok = window.confirm(
@@ -345,11 +355,11 @@ const [toAssigneeId, setToAssigneeId] = useState("");
 
   const handleToggleActive = (u: any) => {
     const nextActive = !u.isActive;
-    const message = nextActive
-      ? `${u.name ?? "-"} 계정을 다시 활성화하시겠습니까?`
-      : `${u.name ?? "-"} 계정을 비활성화하시겠습니까?\n비활성화 시 로그인할 수 없습니다.`;
-
-    const ok = window.confirm(message);
+    const ok = window.confirm(
+      nextActive
+        ? `${u.name ?? "-"} 계정을 다시 활성화하시겠습니까?`
+        : `${u.name ?? "-"} 계정을 비활성화하시겠습니까?\n비활성화 시 로그인할 수 없습니다.`
+    );
     if (!ok) return;
 
     updateActiveMutation.mutate({
@@ -358,49 +368,35 @@ const [toAssigneeId, setToAssigneeId] = useState("");
     });
   };
 
-const handleBulkReassign = () => {
-  if (!fromAssigneeId) {
-    toast.error("기존 담당자를 선택해주세요.");
-    return;
-  }
+  const handleBulkReassign = () => {
+    if (!fromAssigneeId) return toast.error("기존 담당자를 선택해주세요.");
+    if (!toAssigneeId) return toast.error("변경할 담당자를 선택해주세요.");
+    if (fromAssigneeId === toAssigneeId) {
+      return toast.error("같은 담당자로는 변경할 수 없습니다.");
+    }
 
-  if (!toAssigneeId) {
-    toast.error("변경할 담당자를 선택해주세요.");
-    return;
-  }
+    const fromUser = users?.find((u: any) => String(u.id) === fromAssigneeId);
+    const toUser = users?.find((u: any) => String(u.id) === toAssigneeId);
 
-  if (fromAssigneeId === toAssigneeId) {
-    toast.error("같은 담당자로는 변경할 수 없습니다.");
-    return;
-  }
+    const ok = window.confirm(
+      `${fromUser?.name || "-"} 담당의 상담 DB / 학생 담당자를 ${
+        toUser?.name || "-"
+      }(으)로 일괄 변경하시겠습니까?`
+    );
+    if (!ok) return;
 
-  const fromUser = users?.find((u: any) => String(u.id) === fromAssigneeId);
-  const toUser = users?.find((u: any) => String(u.id) === toAssigneeId);
-
-  const ok = window.confirm(
-    `${fromUser?.name || "-"} 담당의 상담 DB / 학생 담당자를 ${toUser?.name || "-"}(으)로 일괄 변경하시겠습니까?`
-  );
-  if (!ok) return;
-
-  bulkReassignMutation.mutate({
-    fromAssigneeId: Number(fromAssigneeId),
-    toAssigneeId: Number(toAssigneeId),
-  });
-};
-
-
+    bulkReassignMutation.mutate({
+      fromAssigneeId: Number(fromAssigneeId),
+      toAssigneeId: Number(toAssigneeId),
+    });
+  };
 
   const handleResetPassword = (u: any) => {
     const newPassword = (passwordDrafts[u.id] || "").trim();
 
-    if (!newPassword) {
-      toast.error("새 비밀번호를 입력해주세요.");
-      return;
-    }
-
+    if (!newPassword) return toast.error("새 비밀번호를 입력해주세요.");
     if (newPassword.length < 4) {
-      toast.error("비밀번호는 4자 이상이어야 합니다.");
-      return;
+      return toast.error("비밀번호는 4자 이상이어야 합니다.");
     }
 
     const ok = window.confirm(
@@ -454,131 +450,142 @@ const handleBulkReassign = () => {
       </div>
 
       {userTab === "create" && (
-        <Card>
-          <CardHeader>
-            <CardTitle>직원 계정 생성</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <Input
-                placeholder="openId (고유 식별값)"
-                value={openId}
-                onChange={(e) => setOpenId(e.target.value)}
-              />
-              <Input
-                placeholder="아이디(username)"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-              <Input
-                placeholder="이름"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-              <Input
-                placeholder="이메일"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-              <Input
-                placeholder="전화번호"
-                value={phone}
-                onChange={(e) => setPhone(handlePhoneInput(e.target.value))}
-              />
-              <Input
-                type="password"
-                placeholder="비밀번호"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              <Select
-                value={createRole}
-                onValueChange={(v: UserRole) => setCreateRole(v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="권한 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="staff">직원</SelectItem>
-                  <SelectItem value="admin">관리자</SelectItem>
-                  <SelectItem value="host">호스트</SelectItem>
-                </SelectContent>
-              </Select>
-              <Input
-                placeholder="은행명"
-                value={bankName}
-                onChange={(e) => setBankName(e.target.value)}
-              />
-              <Input
-                placeholder="계좌번호"
-                value={bankAccount}
-                onChange={(e) => setBankAccount(e.target.value)}
-              />
-            </div>
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>직원 계정 생성</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <Input
+                  placeholder="openId (고유 식별값)"
+                  value={openId}
+                  onChange={(e) => setOpenId(e.target.value)}
+                />
+                <Input
+                  placeholder="아이디(username)"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                />
+                <Input
+                  placeholder="이름"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+                <Input
+                  placeholder="이메일"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+                <Input
+                  placeholder="전화번호"
+                  value={phone}
+                  onChange={(e) => setPhone(handlePhoneInput(e.target.value))}
+                />
+                <Input
+                  type="password"
+                  placeholder="비밀번호"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <Select
+                  value={createRole}
+                  onValueChange={(v: UserRole) => setCreateRole(v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="권한 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="staff">직원</SelectItem>
+                    <SelectItem value="admin">관리자</SelectItem>
+                    <SelectItem value="host">호스트</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  placeholder="은행명"
+                  value={bankName}
+                  onChange={(e) => setBankName(e.target.value)}
+                />
+                <Input
+                  placeholder="계좌번호"
+                  value={bankAccount}
+                  onChange={(e) => setBankAccount(e.target.value)}
+                />
+              </div>
 
-            <div>
-              <Button onClick={handleCreate} disabled={createMutation.isPending}>
-                {createMutation.isPending ? "생성 중..." : "직원 계정 생성"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+              <div>
+                <Button
+                  onClick={handleCreate}
+                  disabled={createMutation.isPending}
+                >
+                  {createMutation.isPending ? "생성 중..." : "직원 계정 생성"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>담당자 일괄 변경</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                상담 DB에서 담당자를 일괄 변경하면 연결된 학생 담당자도 함께
+                변경됩니다. 잠수 퇴사자 DB 이관용으로 사용하세요.
+              </p>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">기존 담당자</p>
+                  <Select
+                    value={fromAssigneeId}
+                    onValueChange={setFromAssigneeId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="기존 담당자 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {users?.map((u: any) => (
+                        <SelectItem key={u.id} value={String(u.id)}>
+                          {u.name || u.username || `#${u.id}`} ({u.role})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">변경할 담당자</p>
+                  <Select value={toAssigneeId} onValueChange={setToAssigneeId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="변경할 담당자 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {users?.map((u: any) => (
+                        <SelectItem key={u.id} value={String(u.id)}>
+                          {u.name || u.username || `#${u.id}`} ({u.role})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div>
+                <Button
+                  variant="destructive"
+                  onClick={handleBulkReassign}
+                  disabled={bulkReassignMutation.isPending}
+                >
+                  {bulkReassignMutation.isPending
+                    ? "변경 중..."
+                    : "담당자 일괄 변경"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </>
       )}
-	      <Card>
-        <CardHeader>
-          <CardTitle>담당자 일괄 변경</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            상담 DB에서 담당자를 일괄 변경하면 연결된 학생 담당자도 함께 변경됩니다.
-            잠수 퇴사자 DB 이관용으로 사용하세요.
-          </p>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <p className="text-sm font-medium">기존 담당자</p>
-              <Select value={fromAssigneeId} onValueChange={setFromAssigneeId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="기존 담당자 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  {users?.map((u: any) => (
-                    <SelectItem key={u.id} value={String(u.id)}>
-                      {u.name || u.username || `#${u.id}`} ({u.role})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-sm font-medium">변경할 담당자</p>
-              <Select value={toAssigneeId} onValueChange={setToAssigneeId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="변경할 담당자 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  {users?.map((u: any) => (
-                    <SelectItem key={u.id} value={String(u.id)}>
-                      {u.name || u.username || `#${u.id}`} ({u.role})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div>
-            <Button
-              variant="destructive"
-              onClick={handleBulkReassign}
-              disabled={bulkReassignMutation.isPending}
-            >
-              {bulkReassignMutation.isPending ? "변경 중..." : "담당자 일괄 변경"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
 
       {userTab === "list" && (
         <Card>
@@ -851,8 +858,8 @@ const handleBulkReassign = () => {
 
             <Input
               placeholder="표시번호, 이름, 아이디, 전화번호 검색"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              value={roleSearchTerm}
+              onChange={(e) => setRoleSearchTerm(e.target.value)}
               className="max-w-sm"
             />
           </CardHeader>
@@ -860,7 +867,7 @@ const handleBulkReassign = () => {
           <CardContent>
             {isLoading ? (
               <div className="text-sm text-muted-foreground">불러오는 중...</div>
-            ) : filteredUsers.length === 0 ? (
+            ) : roleTabUsers.length === 0 ? (
               <div className="text-sm text-muted-foreground">
                 표시할 계정이 없습니다.
               </div>
@@ -879,7 +886,7 @@ const handleBulkReassign = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredUsers.map((u: any) => (
+                    {roleTabUsers.map((u: any) => (
                       <tr key={u.id} className="border-b last:border-0">
                         <td className="px-4 py-3">{u.displayNo ?? u.id}</td>
                         <td className="px-4 py-3">{u.name || "-"}</td>
