@@ -734,7 +734,6 @@ const institutionMap = new Map(
               </div>
             </div>
           )}
-          )}
         </CardContent>
       </Card>
 
