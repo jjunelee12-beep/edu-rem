@@ -1016,6 +1016,7 @@ const totalSemesterCount = useMemo(() => {
                   <Label className="text-xs">희망과정</Label>
                   <Input value={planForm.desiredCourse} onChange={(e) => setPlanForm({ ...planForm, desiredCourse: e.target.value })} />
                 </div>
+</div>
                 <div className="space-y-1">
                   <Label className="text-xs">최종학력</Label>
                   <Input value={planForm.finalEducation} onChange={(e) => setPlanForm({ ...planForm, finalEducation: e.target.value })} />

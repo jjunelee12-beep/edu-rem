@@ -501,12 +501,12 @@ function InlineRow({
 
       <td className="px-1 py-2">
         <EditableCell
-          formatPhone(item.phone)
-          onBlur={(v) => onBlur(item.id, "phone", v)}
-          transform={handlePhoneInput}
-          maxLength={11}
-          disabled={isStaff}
-        />
+  value={formatPhone(item.phone)}
+  onBlur={(v) => onBlur(item.id, "phone", v.replace(/\D/g, ""))}
+  transform={handlePhoneInput}
+  maxLength={11}
+  disabled
+/>
       </td>
 
       <td className="px-1 py-2">
