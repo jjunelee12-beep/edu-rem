@@ -298,9 +298,10 @@ const { data: institutionList } = trpc.educationInstitution.list.useQuery();
   });
 
   const userMap = new Map(allUsers?.map((u: any) => [u.id, u.name || "이름없음"]) ?? []);
-const institutionMap = new Map(
+/* const institutionMap = new Map(
   institutionList?.map((inst: any) => [inst.id, inst.name]) ?? []
-);
+); */
+
  const handleStudentInstitutionChange = (value: string) => {
   updateStudentMut.mutate({
     id: studentId,
@@ -461,36 +462,45 @@ const institutionMap = new Map(
     };
   }, [planTotals, transferTotals]);
   const registrationSummary = useMemo(() => {
-    const toNumber = (v: any) =>
-      Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
+  const toNumber = (v: any) =>
+    Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
 
-    const actualSemesters = (semesters || [])
-      .filter(
-        (s: any) =>
-          s.actualStartDate ||
-          s.actualInstitution ||
-          s.actualSubjectCount ||
-          s.actualAmount ||
-          s.actualPaymentDate
-      )
-      .sort((a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder));
+  const actualSemesters = (semesters || [])
+    .filter(
+      (s: any) =>
+        s.actualStartDate ||
+        s.actualInstitution ||
+        s.actualInstitutionId ||
+        s.actualSubjectCount ||
+        s.actualAmount ||
+        s.actualPaymentDate
+    )
+    .sort((a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder));
 
-    const firstActual = actualSemesters[0];
+  const firstActual = actualSemesters[0];
 
-    return {
-      status: firstActual ? "등록" : (student?.status || ""),
-      startDate: firstActual?.actualStartDate || student?.startDate || "",
-      paymentAmount: firstActual?.actualAmount
-        ? toNumber(firstActual.actualAmount)
-        : toNumber(student?.paymentAmount),
-      subjectCount:
-        firstActual?.actualSubjectCount ??
-        student?.subjectCount ??
-        "",
-      paymentDate: firstActual?.actualPaymentDate || student?.paymentDate || "",
-      institution: firstActual?.actualInstitution || student?.institution || "",
-    };
-  }, [semesters, student]);
+  return {
+    status: firstActual ? "등록" : (student?.status || ""),
+    startDate: firstActual?.actualStartDate || student?.startDate || "",
+    paymentAmount: firstActual?.actualAmount
+      ? toNumber(firstActual.actualAmount)
+      : toNumber(student?.paymentAmount),
+    subjectCount:
+      firstActual?.actualSubjectCount ??
+      student?.subjectCount ??
+      "",
+    paymentDate: firstActual?.actualPaymentDate || student?.paymentDate || "",
+    institution: firstActual?.actualInstitution || student?.institution || "",
+  };
+}, [semesters, student]);
+
+const registrationInstitutionId = useMemo(() => {
+  const firstActual = (semesters || [])
+    .filter((s: any) => s.actualInstitutionId || s.actualInstitution)
+    .sort((a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder))[0];
+
+  return firstActual?.actualInstitutionId || student?.institutionId || "";
+}, [semesters, student]);
 
   const handleAddPlanSemesterGroup = () => {
     createPlanSemesterMut.mutate({
@@ -677,7 +687,10 @@ const institutionMap = new Map(
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">과목 수</p>
-              <EditableCell value={student.subjectCount?.toString() || ""} onBlur={(v) => handleStudentFieldBlur("subjectCount", v)} />
+              <EditableCell
+  value={registrationSummary.subjectCount?.toString() || ""}
+  onBlur={(v) => handleStudentFieldBlur("subjectCount", v)}
+/>
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">결제 일자</p>
@@ -690,9 +703,9 @@ const institutionMap = new Map(
             <div>
   <p className="text-xs text-muted-foreground mb-0.5">교육원</p>
   <Select
-    value={student.institutionId ? String(student.institutionId) : ""}
-    onValueChange={handleStudentInstitutionChange}
-  >
+  value={registrationInstitutionId ? String(registrationInstitutionId) : ""}
+  onValueChange={handleStudentInstitutionChange}
+>
     <SelectTrigger className="h-8 text-sm">
       <SelectValue placeholder="교육원 선택" />
     </SelectTrigger>
