@@ -12,7 +12,7 @@ import {
   Pencil,
   UserX,
   UserCheck,
-  Search,
+  KeyRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,32 +23,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { formatPhone } from "@/lib/format";
 
 type TabKey = "settlement" | "users" | "forms";
-type UserTabKey = "create" | "list" | "role";
+type UserTabKey = "create" | "list" | "role" | "password";
 type UserRole = "staff" | "admin" | "host";
-
-function formatPhone(value?: string | null) {
-  const digits = String(value ?? "").replace(/\D/g, "");
-
-  if (digits.length === 11) {
-    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
-  }
-
-  if (digits.length === 10) {
-    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
-  }
-
-  return value || "-";
-}
-
-function normalizePhone(value: string) {
-  return value.replace(/\D/g, "").slice(0, 11);
-}
-
-function getUserDisplayNo(u: any) {
-  return u?.displayNo ?? u?.id ?? "-";
-}
 
 export default function System() {
   const { user } = useAuth();
@@ -169,8 +148,8 @@ function UserManagementSection() {
 
   const [userTab, setUserTab] = useState<UserTabKey>("create");
   const [roleFilter, setRoleFilter] = useState<"all" | UserRole>("all");
-  const [listSearch, setListSearch] = useState("");
-  const [roleSearch, setRoleSearch] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [passwordSearch, setPasswordSearch] = useState("");
 
   const [openId, setOpenId] = useState("");
   const [username, setUsername] = useState("");
@@ -192,48 +171,60 @@ function UserManagementSection() {
   const [editBankAccount, setEditBankAccount] = useState("");
 
   const [roleDrafts, setRoleDrafts] = useState<Record<number, UserRole>>({});
+  const [passwordDrafts, setPasswordDrafts] = useState<Record<number, string>>(
+    {}
+  );
+  const [showPasswordMap, setShowPasswordMap] = useState<
+    Record<number, boolean>
+  >({});
 
-  const roleFilteredUsers = useMemo(() => {
-    const list = users ?? [];
-    if (roleFilter === "all") return list;
-    return list.filter((u: any) => u.role === roleFilter);
-  }, [users, roleFilter]);
+  const handlePhoneInput = (value: string) =>
+    value.replace(/\D/g, "").slice(0, 11);
 
   const filteredUsers = useMemo(() => {
-    const q = listSearch.trim().toLowerCase();
+    let list = users ?? [];
 
-    return roleFilteredUsers.filter((u: any) => {
-      if (!q) return true;
+    if (roleFilter !== "all") {
+      list = list.filter((u: any) => u.role === roleFilter);
+    }
 
+    if (!searchTerm.trim()) return list;
+
+    const term = searchTerm.trim().toLowerCase();
+    return list.filter((u: any) => {
+      const displayNo = String(u.displayNo ?? u.id ?? "");
+      const username = String(u.username ?? "").toLowerCase();
+      const name = String(u.name ?? "").toLowerCase();
+      const email = String(u.email ?? "").toLowerCase();
+      const phone = String(u.phone ?? "");
       return (
-        String(getUserDisplayNo(u)).includes(q) ||
-        String(u.id ?? "").includes(q) ||
-        String(u.username ?? "").toLowerCase().includes(q) ||
-        String(u.name ?? "").toLowerCase().includes(q) ||
-        String(u.phone ?? "").includes(q.replace(/\D/g, "")) ||
-        String(u.email ?? "").toLowerCase().includes(q) ||
-        String(u.bankName ?? "").toLowerCase().includes(q) ||
-        String(u.bankAccount ?? "").toLowerCase().includes(q)
+        displayNo.includes(term) ||
+        username.includes(term) ||
+        name.includes(term) ||
+        email.includes(term) ||
+        phone.includes(term.replace(/\D/g, ""))
       );
     });
-  }, [roleFilteredUsers, listSearch]);
+  }, [users, roleFilter, searchTerm]);
 
-  const filteredRoleUsers = useMemo(() => {
-    const q = roleSearch.trim().toLowerCase();
+  const passwordFilteredUsers = useMemo(() => {
+    const list = users ?? [];
+    const keyword = passwordSearch.trim().toLowerCase();
+    if (!keyword) return list;
 
-    return roleFilteredUsers.filter((u: any) => {
-      if (!q) return true;
-
+    return list.filter((u: any) => {
+      const displayNo = String(u.displayNo ?? u.id ?? "");
+      const username = String(u.username ?? "").toLowerCase();
+      const name = String(u.name ?? "").toLowerCase();
+      const phone = String(u.phone ?? "");
       return (
-        String(getUserDisplayNo(u)).includes(q) ||
-        String(u.id ?? "").includes(q) ||
-        String(u.username ?? "").toLowerCase().includes(q) ||
-        String(u.name ?? "").toLowerCase().includes(q) ||
-        String(u.phone ?? "").includes(q.replace(/\D/g, "")) ||
-        String(u.email ?? "").toLowerCase().includes(q)
+        displayNo.includes(keyword) ||
+        username.includes(keyword) ||
+        name.includes(keyword) ||
+        phone.includes(keyword.replace(/\D/g, ""))
       );
     });
-  }, [roleFilteredUsers, roleSearch]);
+  }, [users, passwordSearch]);
 
   const resetCreateForm = () => {
     setOpenId("");
@@ -264,7 +255,7 @@ function UserManagementSection() {
         role: createRole,
         bankName: bankName.trim() || undefined,
         bankAccount: bankAccount.trim() || undefined,
-      } as any,
+      },
       {
         onSuccess: () => {
           resetCreateForm();
@@ -308,7 +299,7 @@ function UserManagementSection() {
         password: editPassword.trim() || undefined,
         bankName: editBankName.trim() || undefined,
         bankAccount: editBankAccount.trim() || undefined,
-      } as any,
+      },
       {
         onSuccess: () => {
           cancelEdit();
@@ -354,6 +345,38 @@ function UserManagementSection() {
     });
   };
 
+  const handleResetPassword = (u: any) => {
+    const newPassword = (passwordDrafts[u.id] || "").trim();
+
+    if (!newPassword) {
+      toast.error("새 비밀번호를 입력해주세요.");
+      return;
+    }
+
+    if (newPassword.length < 4) {
+      toast.error("비밀번호는 4자 이상이어야 합니다.");
+      return;
+    }
+
+    const ok = window.confirm(
+      `${u.name || u.username || "사용자"} 계정의 비밀번호를 재설정하시겠습니까?`
+    );
+    if (!ok) return;
+
+    updateMutation.mutate(
+      {
+        id: u.id,
+        password: newPassword,
+      },
+      {
+        onSuccess: () => {
+          toast.success("비밀번호가 재설정되었습니다.");
+          setPasswordDrafts((prev) => ({ ...prev, [u.id]: "" }));
+        },
+      }
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-2">
@@ -374,6 +397,14 @@ function UserManagementSection() {
           onClick={() => setUserTab("role")}
         >
           권한 변경
+        </Button>
+        <Button
+          variant={userTab === "password" ? "default" : "outline"}
+          onClick={() => setUserTab("password")}
+          className="gap-2"
+        >
+          <KeyRound className="h-4 w-4" />
+          비밀번호 재설정
         </Button>
       </div>
 
@@ -407,7 +438,7 @@ function UserManagementSection() {
               <Input
                 placeholder="전화번호"
                 value={phone}
-                onChange={(e) => setPhone(normalizePhone(e.target.value))}
+                onChange={(e) => setPhone(handlePhoneInput(e.target.value))}
               />
               <Input
                 type="password"
@@ -485,15 +516,12 @@ function UserManagementSection() {
               </Button>
             </div>
 
-            <div className="relative max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="번호, 아이디, 이름, 전화번호, 이메일 검색"
-                value={listSearch}
-                onChange={(e) => setListSearch(e.target.value)}
-              />
-            </div>
+            <Input
+              placeholder="표시번호, 이름, 아이디, 이메일, 전화번호 검색"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="max-w-sm"
+            />
           </CardHeader>
 
           <CardContent>
@@ -526,7 +554,7 @@ function UserManagementSection() {
 
                       return (
                         <tr key={u.id} className="border-b last:border-0">
-                          <td className="px-4 py-3">{getUserDisplayNo(u)}</td>
+                          <td className="px-4 py-3">{u.displayNo ?? u.id}</td>
 
                           <td className="px-4 py-3">
                             {isEditing ? (
@@ -566,11 +594,11 @@ function UserManagementSection() {
                               <Input
                                 value={editPhone}
                                 onChange={(e) =>
-                                  setEditPhone(normalizePhone(e.target.value))
+                                  setEditPhone(handlePhoneInput(e.target.value))
                                 }
                               />
                             ) : (
-                              formatPhone(u.phone)
+                              formatPhone(u.phone || "")
                             )}
                           </td>
 
@@ -589,7 +617,9 @@ function UserManagementSection() {
                             {isEditing ? (
                               <Input
                                 value={editBankAccount}
-                                onChange={(e) => setEditBankAccount(e.target.value)}
+                                onChange={(e) =>
+                                  setEditBankAccount(e.target.value)
+                                }
                               />
                             ) : (
                               u.bankAccount || "-"
@@ -619,7 +649,9 @@ function UserManagementSection() {
                                     placeholder="새 비밀번호(선택)"
                                     type="password"
                                     value={editPassword}
-                                    onChange={(e) => setEditPassword(e.target.value)}
+                                    onChange={(e) =>
+                                      setEditPassword(e.target.value)
+                                    }
                                   />
                                   <Button
                                     size="sm"
@@ -717,21 +749,18 @@ function UserManagementSection() {
               </Button>
             </div>
 
-            <div className="relative max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="번호, 아이디, 이름, 전화번호 검색"
-                value={roleSearch}
-                onChange={(e) => setRoleSearch(e.target.value)}
-              />
-            </div>
+            <Input
+              placeholder="표시번호, 이름, 아이디, 전화번호 검색"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="max-w-sm"
+            />
           </CardHeader>
 
           <CardContent>
             {isLoading ? (
               <div className="text-sm text-muted-foreground">불러오는 중...</div>
-            ) : filteredRoleUsers.length === 0 ? (
+            ) : filteredUsers.length === 0 ? (
               <div className="text-sm text-muted-foreground">
                 표시할 계정이 없습니다.
               </div>
@@ -750,12 +779,14 @@ function UserManagementSection() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredRoleUsers.map((u: any) => (
+                    {filteredUsers.map((u: any) => (
                       <tr key={u.id} className="border-b last:border-0">
-                        <td className="px-4 py-3">{getUserDisplayNo(u)}</td>
+                        <td className="px-4 py-3">{u.displayNo ?? u.id}</td>
                         <td className="px-4 py-3">{u.name || "-"}</td>
                         <td className="px-4 py-3">{u.username || "-"}</td>
-                        <td className="px-4 py-3">{formatPhone(u.phone)}</td>
+                        <td className="px-4 py-3">
+                          {formatPhone(u.phone || "") || "-"}
+                        </td>
                         <td className="px-4 py-3">{u.role || "-"}</td>
                         <td className="px-4 py-3">
                           <Select
@@ -785,6 +816,104 @@ function UserManagementSection() {
                         </td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {userTab === "password" && (
+        <Card>
+          <CardHeader className="space-y-4">
+            <CardTitle>비밀번호 재설정</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              기존 비밀번호는 확인할 수 없고, 새 비밀번호로 재설정만 가능합니다.
+            </p>
+
+            <Input
+              placeholder="표시번호, 이름, 아이디, 전화번호 검색"
+              value={passwordSearch}
+              onChange={(e) => setPasswordSearch(e.target.value)}
+              className="max-w-sm"
+            />
+          </CardHeader>
+
+          <CardContent>
+            {isLoading ? (
+              <div className="text-sm text-muted-foreground">불러오는 중...</div>
+            ) : passwordFilteredUsers.length === 0 ? (
+              <div className="text-sm text-muted-foreground">
+                검색 결과가 없습니다.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="px-4 py-3 text-left">번호</th>
+                      <th className="px-4 py-3 text-left">이름</th>
+                      <th className="px-4 py-3 text-left">아이디</th>
+                      <th className="px-4 py-3 text-left">전화번호</th>
+                      <th className="px-4 py-3 text-left">권한</th>
+                      <th className="px-4 py-3 text-left">새 비밀번호</th>
+                      <th className="px-4 py-3 text-right">처리</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {passwordFilteredUsers.map((u: any) => {
+                      const visible = !!showPasswordMap[u.id];
+
+                      return (
+                        <tr key={u.id} className="border-b last:border-0">
+                          <td className="px-4 py-3">{u.displayNo ?? u.id}</td>
+                          <td className="px-4 py-3">{u.name || "-"}</td>
+                          <td className="px-4 py-3">{u.username || "-"}</td>
+                          <td className="px-4 py-3">
+                            {formatPhone(u.phone || "") || "-"}
+                          </td>
+                          <td className="px-4 py-3">{u.role || "-"}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type={visible ? "text" : "password"}
+                                placeholder="새 비밀번호 입력"
+                                value={passwordDrafts[u.id] || ""}
+                                onChange={(e) =>
+                                  setPasswordDrafts((prev) => ({
+                                    ...prev,
+                                    [u.id]: e.target.value,
+                                  }))
+                                }
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  setShowPasswordMap((prev) => ({
+                                    ...prev,
+                                    [u.id]: !prev[u.id],
+                                  }))
+                                }
+                              >
+                                {visible ? "숨김" : "보기"}
+                              </Button>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <Button
+                              size="sm"
+                              onClick={() => handleResetPassword(u)}
+                              disabled={updateMutation.isPending}
+                            >
+                              변경
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
