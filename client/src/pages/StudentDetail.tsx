@@ -309,7 +309,7 @@ export default function StudentDetail() {
   const handleStudentFieldBlur = (field: string, value: string) => {
     const payload: any = { id: studentId };
 
-    if (field === "subjectCount" || field === "totalSemesters") {
+   if (field === "subjectCount") {
       payload[field] = value ? parseInt(value) : undefined;
     } else if (field === "startDate" || field === "paymentDate") {
       payload[field] = value || undefined;
@@ -672,128 +672,174 @@ const totalSemesterCount = useMemo(() => {
       </div>
 
       <Card className="border-0 shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">
-            매출 보고 / 등록 정보 - {selectedSemesterOrder}학기
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-2 mb-4 flex-wrap">
-            {sortedSemesters.map((sem: any) => (
-              <Button
-                key={sem.id}
-                type="button"
-                size="sm"
-                variant={
-                  Number(selectedSemesterOrder) === Number(sem.semesterOrder)
-                    ? "default"
-                    : "outline"
-                }
-                onClick={() => setSelectedSemesterOrder(Number(sem.semesterOrder))}
-              >
-                {sem.semesterOrder}학기
-              </Button>
-            ))}
-          </div>
+  <CardHeader className="pb-3">
+    <CardTitle className="text-base">
+      매출 보고 / 등록 정보 - {selectedSemesterOrder}학기
+    </CardTitle>
+  </CardHeader>
+  <CardContent>
+    <div className="flex gap-2 mb-4 flex-wrap">
+      {sortedSemesters.map((sem: any) => (
+        <Button
+          key={sem.id}
+          type="button"
+          size="sm"
+          variant={
+            Number(selectedSemesterOrder) === Number(sem.semesterOrder)
+              ? "default"
+              : "outline"
+          }
+          onClick={() => setSelectedSemesterOrder(Number(sem.semesterOrder))}
+        >
+          {sem.semesterOrder}학기
+        </Button>
+      ))}
+    </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3">
-            <div>
-              <p className="text-xs text-muted-foreground mb-0.5">이름</p>
-              <EditableCell value={student.clientName} onBlur={(v) => handleStudentFieldBlur("clientName", v)} disabled />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-0.5">연락처</p>
-              <EditableCell
-                value={formatPhone(student.phone)}
-                onBlur={(v) => handleStudentFieldBlur("phone", v.replace(/\D/g, ""))}
-                disabled
-              />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-0.5">등록 과정</p>
-              <EditableCell value={student.course} onBlur={(v) => handleStudentFieldBlur("course", v)} disabled />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-0.5">상태</p>
-              <Select
-                value={registrationSummary.status || student.status}
-                onValueChange={(v) => updateStudentMut.mutate({ id: studentId, status: v as any })}
-              >
-                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="등록">등록</SelectItem>
-                  <SelectItem value="종료">종료</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3">
+      <div>
+        <p className="text-xs text-muted-foreground mb-0.5">이름</p>
+        <EditableCell
+          value={student.clientName}
+          onBlur={(v) => handleStudentFieldBlur("clientName", v)}
+          disabled
+        />
+      </div>
 
-            <div>
-              <p className="text-xs text-muted-foreground mb-0.5">개강 날짜</p>
-              <EditableCell
-                value={registrationSummary.startDate ? formatDate(registrationSummary.startDate) : ""}
-                onBlur={(v) => handleStudentFieldBlur("startDate", v)}
-                type="date"
-              />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-0.5">
-                {selectedSemesterOrder}학기 결제 금액
-              </p>
-              <EditableCell
-                value={registrationSummary.paymentAmount ? Number(registrationSummary.paymentAmount).toLocaleString() + "원" : ""}
-                onBlur={(v) => handleStudentFieldBlur("paymentAmount", v.replace(/[^0-9]/g, ""))}
-              />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-0.5">과목 수</p>
-              <EditableCell
-                value={registrationSummary.subjectCount?.toString() || ""}
-                onBlur={(v) => handleStudentFieldBlur("subjectCount", v)}
-              />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-0.5">결제 일자</p>
-              <EditableCell
-                value={registrationSummary.paymentDate ? formatDate(registrationSummary.paymentDate) : ""}
-                onBlur={(v) => handleStudentFieldBlur("paymentDate", v)}
-                type="date"
-              />
-            </div>
-            <div>
-  <p className="text-xs text-muted-foreground mb-0.5">교육원</p>
-  <div className="h-8 px-3 rounded-md border bg-muted/30 text-sm flex items-center text-black">
-    {registrationInstitutionId
-      ? institutionList?.find((inst: any) => Number(inst.id) === Number(registrationInstitutionId))?.name || "-"
-      : "-"}
-  </div>
-</div>
+      <div>
+        <p className="text-xs text-muted-foreground mb-0.5">연락처</p>
+        <EditableCell
+          value={formatPhone(student.phone)}
+          onBlur={(v) => handleStudentFieldBlur("phone", v.replace(/\D/g, ""))}
+          disabled
+        />
+      </div>
 
-          {paymentSummary && (
-            <div className="mt-4 pt-4 border-t grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-blue-50 rounded-lg p-3">
-                <p className="text-xs text-muted-foreground">총 결제예정 금액</p>
-                <p className="text-lg font-bold text-blue-700">{Number(paymentSummary.totalRequired || 0).toLocaleString()}원</p>
-              </div>
-              <div className="bg-emerald-50 rounded-lg p-3">
-                <p className="text-xs text-muted-foreground">수납 완료 금액</p>
-                <p className="text-lg font-bold text-emerald-700">{Number(paymentSummary.totalPaid || 0).toLocaleString()}원</p>
-              </div>
-              <div className="bg-red-50 rounded-lg p-3">
-                <p className="text-xs text-muted-foreground">환불 금액</p>
-                <p className="text-lg font-bold text-red-600">
-                  {Number(paymentSummary.totalRefund || 0) > 0 ? `-${Number(paymentSummary.totalRefund).toLocaleString()}원` : "0원"}
-                </p>
-              </div>
-              <div className="bg-amber-50 rounded-lg p-3">
-                <p className="text-xs text-muted-foreground">잔여 금액</p>
-                <p className="text-lg font-bold text-amber-700">
-                  {Number((paymentSummary.totalRequired || 0) - (paymentSummary.totalPaid || 0)).toLocaleString()}원
-                </p>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <div>
+        <p className="text-xs text-muted-foreground mb-0.5">등록 과정</p>
+        <EditableCell
+          value={student.course}
+          onBlur={(v) => handleStudentFieldBlur("course", v)}
+          disabled
+        />
+      </div>
+
+      <div>
+        <p className="text-xs text-muted-foreground mb-0.5">상태</p>
+        <Select
+          value={registrationSummary.status || student.status}
+          onValueChange={(v) =>
+            updateStudentMut.mutate({ id: studentId, status: v as any })
+          }
+        >
+          <SelectTrigger className="h-8 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="등록">등록</SelectItem>
+            <SelectItem value="종료">종료</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div>
+        <p className="text-xs text-muted-foreground mb-0.5">개강 날짜</p>
+        <EditableCell
+          value={registrationSummary.startDate ? formatDate(registrationSummary.startDate) : ""}
+          onBlur={(v) => handleStudentFieldBlur("startDate", v)}
+          type="date"
+        />
+      </div>
+
+      <div>
+        <p className="text-xs text-muted-foreground mb-0.5">
+          {selectedSemesterOrder}학기 결제 금액
+        </p>
+        <EditableCell
+          value={
+            registrationSummary.paymentAmount
+              ? Number(registrationSummary.paymentAmount).toLocaleString() + "원"
+              : ""
+          }
+          onBlur={(v) =>
+            handleStudentFieldBlur("paymentAmount", v.replace(/[^0-9]/g, ""))
+          }
+        />
+      </div>
+
+      <div>
+        <p className="text-xs text-muted-foreground mb-0.5">과목 수</p>
+        <EditableCell
+          value={registrationSummary.subjectCount?.toString() || ""}
+          onBlur={(v) => handleStudentFieldBlur("subjectCount", v)}
+        />
+      </div>
+
+      <div>
+        <p className="text-xs text-muted-foreground mb-0.5">결제 일자</p>
+        <EditableCell
+          value={registrationSummary.paymentDate ? formatDate(registrationSummary.paymentDate) : ""}
+          onBlur={(v) => handleStudentFieldBlur("paymentDate", v)}
+          type="date"
+        />
+      </div>
+
+      <div>
+        <p className="text-xs text-muted-foreground mb-0.5">교육원</p>
+        <div className="h-8 px-3 rounded-md border bg-muted/30 text-sm flex items-center text-black">
+          {registrationInstitutionId
+            ? institutionList?.find(
+                (inst: any) => Number(inst.id) === Number(registrationInstitutionId)
+              )?.name || "-"
+            : "-"}
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs text-muted-foreground mb-0.5">총 학기 수</p>
+        <EditableCell
+          value={sortedSemesters.length ? String(sortedSemesters.length) : "0"}
+          onBlur={() => {}}
+          disabled
+        />
+      </div>
+    </div>
+
+    {paymentSummary && (
+      <div className="mt-4 pt-4 border-t grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-blue-50 rounded-lg p-3">
+          <p className="text-xs text-muted-foreground">총 결제예정 금액</p>
+          <p className="text-lg font-bold text-blue-700">
+            {Number(paymentSummary.totalRequired || 0).toLocaleString()}원
+          </p>
+        </div>
+        <div className="bg-emerald-50 rounded-lg p-3">
+          <p className="text-xs text-muted-foreground">수납 완료 금액</p>
+          <p className="text-lg font-bold text-emerald-700">
+            {Number(paymentSummary.totalPaid || 0).toLocaleString()}원
+          </p>
+        </div>
+        <div className="bg-red-50 rounded-lg p-3">
+          <p className="text-xs text-muted-foreground">환불 금액</p>
+          <p className="text-lg font-bold text-red-600">
+            {Number(paymentSummary.totalRefund || 0) > 0
+              ? `-${Number(paymentSummary.totalRefund).toLocaleString()}원`
+              : "0원"}
+          </p>
+        </div>
+        <div className="bg-amber-50 rounded-lg p-3">
+          <p className="text-xs text-muted-foreground">잔여 금액</p>
+          <p className="text-lg font-bold text-amber-700">
+            {Number(
+              (paymentSummary.totalRequired || 0) - (paymentSummary.totalPaid || 0)
+            ).toLocaleString()}
+            원
+          </p>
+        </div>
+      </div>
+    )}
+  </CardContent>
+</Card>
 
       <Card className="border-0 shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between pb-3">
@@ -965,112 +1011,142 @@ const totalSemesterCount = useMemo(() => {
       </Card>
 
       <Card className="border-0 shadow-sm">
-        <CardHeader className="flex flex-row items-center justify-between pb-3">
-          <CardTitle className="text-base">플랜 요약</CardTitle>
-          {!editingPlan ? (
-            <Button variant="outline" size="sm" onClick={startEditPlan} className="gap-1">
-              {plan ? "수정" : "작성"}
-            </Button>
-          ) : (
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setEditingPlan(false)}>취소</Button>
-              <Button size="sm" onClick={savePlan} disabled={upsertPlanMut.isPending} className="gap-1">
-                <Save className="h-3.5 w-3.5" /> 저장
-              </Button>
+  <CardHeader className="flex flex-row items-center justify-between pb-3">
+    <CardTitle className="text-base">플랜 요약</CardTitle>
+    {!editingPlan ? (
+      <Button variant="outline" size="sm" onClick={startEditPlan} className="gap-1">
+        {plan ? "수정" : "작성"}
+      </Button>
+    ) : (
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" onClick={() => setEditingPlan(false)}>
+          취소
+        </Button>
+        <Button size="sm" onClick={savePlan} disabled={upsertPlanMut.isPending} className="gap-1">
+          <Save className="h-3.5 w-3.5" /> 저장
+        </Button>
+      </div>
+    )}
+  </CardHeader>
+
+  <CardContent>
+    {!editingPlan ? (
+      plan ? (
+        <div className="space-y-3">
+          <div className="bg-muted/50 rounded-lg p-4 text-sm">
+            <p>
+              <span className="font-medium">희망과정:</span> {plan.desiredCourse || "-"} ·{" "}
+              <span className="font-medium">최종학력:</span> {plan.finalEducation || "-"} ·{" "}
+              <span className="font-medium">이론 과목:</span> {plan.totalTheorySubjects ?? "-"}과목 ·{" "}
+              <span className="font-medium">실습:</span> {plan.hasPractice ? "있음" : "없음"} ·{" "}
+              <span className="font-medium">특이사항:</span> {plan.specialNotes || "없음"}
+            </p>
+          </div>
+
+          {plan.hasPractice && (
+            <div className="bg-blue-50 rounded-lg p-4 text-sm">
+              <p className="font-medium text-blue-700 mb-1">실습 정보</p>
+              <p>
+                <span className="font-medium">실습 시간:</span> {plan.practiceHours ? plan.practiceHours + "시간" : "-"} ·{" "}
+                <span className="font-medium">실습 예정일:</span> {plan.practiceDate || "-"} ·{" "}
+                <span className="font-medium">섭외 상태:</span>{" "}
+                {(plan as any).practiceStatus || (plan.practiceArranged ? "섭외완료" : "미섭외")}
+              </p>
             </div>
           )}
-        </CardHeader>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground py-4 text-center">
+          아직 플랜이 작성되지 않았습니다.
+        </p>
+      )
+    ) : (
+      <div className="grid gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="space-y-1">
+            <Label className="text-xs">희망과정</Label>
+            <Input
+              value={planForm.desiredCourse}
+              onChange={(e) => setPlanForm({ ...planForm, desiredCourse: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">최종학력</Label>
+            <Input
+              value={planForm.finalEducation}
+              onChange={(e) => setPlanForm({ ...planForm, finalEducation: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">총 이론 과목 수</Label>
+            <Input
+              type="number"
+              value={planForm.totalTheorySubjects}
+              onChange={(e) => setPlanForm({ ...planForm, totalTheorySubjects: e.target.value })}
+            />
+          </div>
+        </div>
 
-        <CardContent>
-          {!editingPlan ? (
-            plan ? (
-              <div className="space-y-3">
-                <div className="bg-muted/50 rounded-lg p-4 text-sm">
-                  <p>
-                    <span className="font-medium">희망과정:</span> {plan.desiredCourse || "-"} ·{" "}
-                    <span className="font-medium">최종학력:</span> {plan.finalEducation || "-"} ·{" "}
-                    <span className="font-medium">이론 과목:</span> {plan.totalTheorySubjects ?? "-"}과목 ·{" "}
-                    <span className="font-medium">실습:</span> {plan.hasPractice ? "있음" : "없음"} ·{" "}
-                    <span className="font-medium">특이사항:</span> {plan.specialNotes || "없음"}
-                  </p>
-                </div>
+        <div className="flex items-center gap-2">
+          <Checkbox
+            checked={planForm.hasPractice}
+            onCheckedChange={(checked) => setPlanForm({ ...planForm, hasPractice: !!checked })}
+          />
+          <Label className="text-sm">실습 필요</Label>
+        </div>
 
-                {plan.hasPractice && (
-                  <div className="bg-blue-50 rounded-lg p-4 text-sm">
-                    <p className="font-medium text-blue-700 mb-1">실습 정보</p>
-                    <p>
-                      <span className="font-medium">실습 시간:</span> {plan.practiceHours ? plan.practiceHours + "시간" : "-"} ·{" "}
-                      <span className="font-medium">실습 예정일:</span> {plan.practiceDate || "-"} ·{" "}
-                      <span className="font-medium">섭외 상태:</span> {(plan as any).practiceStatus || (plan.practiceArranged ? "섭외완료" : "미섭외")}
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground py-4 text-center">아직 플랜이 작성되지 않았습니다.</p>
-            )
-          ) : (
-            <div className="grid gap-4">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div className="space-y-1">
-                  <Label className="text-xs">희망과정</Label>
-                  <Input value={planForm.desiredCourse} onChange={(e) => setPlanForm({ ...planForm, desiredCourse: e.target.value })} />
-                </div>
-</div>
-                <div className="space-y-1">
-                  <Label className="text-xs">최종학력</Label>
-                  <Input value={planForm.finalEducation} onChange={(e) => setPlanForm({ ...planForm, finalEducation: e.target.value })} />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">총 이론 과목 수</Label>
-                  <Input type="number" value={planForm.totalTheorySubjects} onChange={(e) => setPlanForm({ ...planForm, totalTheorySubjects: e.target.value })} />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Checkbox checked={planForm.hasPractice} onCheckedChange={(checked) => setPlanForm({ ...planForm, hasPractice: !!checked })} />
-                <Label className="text-sm">실습 필요</Label>
-              </div>
-
-              {planForm.hasPractice && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pl-6 border-l-2 border-blue-200">
-                  <div className="space-y-1">
-                    <Label className="text-xs">실습 시간</Label>
-                    <Input type="number" value={planForm.practiceHours} onChange={(e) => setPlanForm({ ...planForm, practiceHours: e.target.value })} placeholder="시간" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">실습 예정일</Label>
-                    <Input value={planForm.practiceDate} onChange={(e) => setPlanForm({ ...planForm, practiceDate: e.target.value })} placeholder="예: 2026-06" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">섭외 상태</Label>
-                    <select
-                      className="w-full h-9 px-3 text-sm border rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-primary"
-                      value={planForm.practiceStatus}
-                      onChange={(e) =>
-                        setPlanForm({
-                          ...planForm,
-                          practiceStatus: e.target.value,
-                          practiceArranged: e.target.value === "섭외완료",
-                        })
-                      }
-                    >
-                      <option value="미섭외">미섭외</option>
-                      <option value="섭외중">섭외중</option>
-                      <option value="섭외완료">섭외완료</option>
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-1">
-                <Label className="text-xs">특이사항</Label>
-                <Textarea value={planForm.specialNotes} onChange={(e) => setPlanForm({ ...planForm, specialNotes: e.target.value })} rows={2} />
-              </div>
+        {planForm.hasPractice && (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pl-6 border-l-2 border-blue-200">
+            <div className="space-y-1">
+              <Label className="text-xs">실습 시간</Label>
+              <Input
+                type="number"
+                value={planForm.practiceHours}
+                onChange={(e) => setPlanForm({ ...planForm, practiceHours: e.target.value })}
+                placeholder="시간"
+              />
             </div>
-          )}
-        </CardContent>
-      </Card>
+            <div className="space-y-1">
+              <Label className="text-xs">실습 예정일</Label>
+              <Input
+                value={planForm.practiceDate}
+                onChange={(e) => setPlanForm({ ...planForm, practiceDate: e.target.value })}
+                placeholder="예: 2026-06"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">섭외 상태</Label>
+              <select
+                className="w-full h-9 px-3 text-sm border rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                value={planForm.practiceStatus}
+                onChange={(e) =>
+                  setPlanForm({
+                    ...planForm,
+                    practiceStatus: e.target.value,
+                    practiceArranged: e.target.value === "섭외완료",
+                  })
+                }
+              >
+                <option value="미섭외">미섭외</option>
+                <option value="섭외중">섭외중</option>
+                <option value="섭외완료">섭외완료</option>
+              </select>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-1">
+          <Label className="text-xs">특이사항</Label>
+          <Textarea
+            value={planForm.specialNotes}
+            onChange={(e) => setPlanForm({ ...planForm, specialNotes: e.target.value })}
+            rows={2}
+          />
+        </div>
+      </div>
+    )}
+  </CardContent>
+</Card>
 
       <Card className="border-0 shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between pb-3">
