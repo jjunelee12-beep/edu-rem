@@ -715,8 +715,8 @@ semester: router({
         plannedInstitution: z.string().optional(),
         plannedSubjectCount: z.number().optional(),
         plannedAmount: z.string().optional(),
-	plannedInstitutionId: z.number().optional(),
-	actualInstitutionId: z.number().optional(),
+        plannedInstitutionId: z.number().optional(),
+        actualInstitutionId: z.number().optional(),
         actualStartDate: z.string().optional(),
         actualInstitution: z.string().optional(),
         actualSubjectCount: z.number().optional(),
@@ -755,39 +755,65 @@ semester: router({
 
       await db.updateSemester(id, data);
 
-// ✅ 학생 기본 등록정보를 1학기 실제값 기준으로 자동 동기화
-const allSems = await db.listSemesters(sem.studentId);
+      // ✅ 학생 기본 등록정보를 1학기 실제값 기준으로 자동 동기화
+      const allSems = await db.listSemesters(sem.studentId);
 
-const firstActual = allSems
-  .filter((s: any) => s.actualStartDate || s.actualInstitutionId || s.actualAmount || s.actualPaymentDate)
-  .sort((a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder))[0];
+      const firstActual = allSems
+        .filter((s: any) => s.actualStartDate || s.actualInstitutionId || s.actualAmount || s.actualPaymentDate)
+        .sort((a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder))[0];
 
-if (firstActual) {
-  let institutionName: string | undefined = undefined;
+      if (firstActual) {
+        let institutionName: string | undefined = undefined;
 
-  if (firstActual.actualInstitutionId) {
-    const institutions = await db.listEducationInstitutions();
-    const found = institutions.find((x: any) => Number(x.id) === Number(firstActual.actualInstitutionId));
-    institutionName = found?.name;
-  }
+        if (firstActual.actualInstitutionId) {
+          const institutions = await db.listEducationInstitutions();
+          const found = institutions.find((x: any) => Number(x.id) === Number(firstActual.actualInstitutionId));
+          institutionName = found?.name;
+        }
 
-  await db.updateStudent(sem.studentId, {
-    startDate: firstActual.actualStartDate || undefined,
-    institutionId: firstActual.actualInstitutionId || undefined,
-    institution: institutionName || undefined,
-    subjectCount: firstActual.actualSubjectCount || undefined,
-    paymentAmount: firstActual.actualAmount || undefined,
-    paymentDate: firstActual.actualPaymentDate || undefined,
-    status: "등록",
-  });
-}
+        await db.updateStudent(sem.studentId, {
+          startDate: firstActual.actualStartDate || undefined,
+          institutionId: firstActual.actualInstitutionId || undefined,
+          institution: institutionName || undefined,
+          subjectCount: firstActual.actualSubjectCount || undefined,
+          paymentAmount: firstActual.actualAmount || undefined,
+          paymentDate: firstActual.actualPaymentDate || undefined,
+          status: "등록",
+        });
+      }
 
-if (input.isCompleted) {
-  await db.checkAndAutoComplete(sem.studentId);
-}
+      if (input.isCompleted) {
+        await db.checkAndAutoComplete(sem.studentId);
+      }
 
-return { success: true };
+      return { success: true };
+    }),
 
+  copyPlannedToActual: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const sem = await db.getSemester(input.id);
+      if (!sem) throw new Error("학기를 찾을 수 없습니다");
+
+      await db.updateSemester(input.id, {
+        actualInstitution: sem.plannedInstitution,
+        actualSubjectCount: sem.plannedSubjectCount,
+        actualAmount: sem.plannedAmount,
+      });
+
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const sem = await db.getSemester(input.id);
+      if (sem?.isLocked) throw new Error("승인된 학기는 삭제할 수 없습니다");
+
+      await db.deleteSemester(input.id);
+      return { success: true };
+    }),
+}),
   copyPlannedToActual: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
