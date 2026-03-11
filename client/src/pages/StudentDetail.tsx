@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation, useParams } from "wouter";
+import { formatPhone } from "@/lib/format";
 
 // ─── Editable Cell (인라인 편집) ────────────────────────────────────
 function EditableCell({
@@ -118,13 +119,14 @@ export default function StudentDetail() {
   const { data: semesters } = trpc.semester.list.useQuery({ studentId });
   const { data: plan } = trpc.plan.get.useQuery({ studentId });
   const { data: allUsers } = trpc.users.list.useQuery();
-const { data: institutionList } = trpc.educationInstitution.list.useQuery();
+  const { data: institutionList } = trpc.educationInstitution.list.useQuery();
   const { data: paymentSummary } = trpc.student.paymentSummary.useQuery({ studentId });
   const { data: refundList } = trpc.refund.listByStudent.useQuery({ studentId });
 
-  // ✅ 새 플랜 데이터
   const { data: planSemesterList } = trpc.planSemester.list.useQuery({ studentId });
   const { data: transferSubjectList } = trpc.transferSubject.list.useQuery({ studentId });
+
+  const [selectedSemesterOrder, setSelectedSemesterOrder] = useState(1);
 
   const updateStudentMut = trpc.student.update.useMutation({
     onSuccess: () => utils.student.get.invalidate({ id: studentId }),
@@ -132,9 +134,10 @@ const { data: institutionList } = trpc.educationInstitution.list.useQuery();
   });
 
   const createSemMut = trpc.semester.create.useMutation({
-    onSuccess: () => {
-      utils.semester.list.invalidate({ studentId });
-      utils.student.paymentSummary.invalidate({ studentId });
+    onSuccess: async (_data, variables) => {
+      await utils.semester.list.invalidate({ studentId });
+      await utils.student.paymentSummary.invalidate({ studentId });
+      setSelectedSemesterOrder(Number(variables.semesterOrder));
       toast.success("학기 추가 완료");
       setSemDialogOpen(false);
     },
@@ -145,6 +148,7 @@ const { data: institutionList } = trpc.educationInstitution.list.useQuery();
     onSuccess: () => {
       utils.semester.list.invalidate({ studentId });
       utils.student.paymentSummary.invalidate({ studentId });
+      utils.student.get.invalidate({ id: studentId });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -153,6 +157,7 @@ const { data: institutionList } = trpc.educationInstitution.list.useQuery();
     onSuccess: () => {
       utils.semester.list.invalidate({ studentId });
       utils.student.paymentSummary.invalidate({ studentId });
+      utils.student.get.invalidate({ id: studentId });
       toast.success("학기 삭제 완료");
     },
     onError: (e) => toast.error(e.message),
@@ -161,6 +166,7 @@ const { data: institutionList } = trpc.educationInstitution.list.useQuery();
   const copyPlannedMut = trpc.semester.copyPlannedToActual.useMutation({
     onSuccess: () => {
       utils.semester.list.invalidate({ studentId });
+      utils.student.get.invalidate({ id: studentId });
       toast.success("예정 정보를 실제 결제 정보로 복사했습니다");
     },
     onError: (e) => toast.error(e.message),
@@ -175,9 +181,6 @@ const { data: institutionList } = trpc.educationInstitution.list.useQuery();
     onError: (e) => toast.error(e.message),
   });
 
- 
-
-  // ✅ 새 플랜 mutation
   const createPlanSemesterMut = trpc.planSemester.create.useMutation({
     onSuccess: () => {
       utils.planSemester.list.invalidate({ studentId });
@@ -224,7 +227,6 @@ const { data: institutionList } = trpc.educationInstitution.list.useQuery();
     onError: (e) => toast.error(e.message),
   });
 
-  // Plan edit state
   const [editingPlan, setEditingPlan] = useState(false);
   const [planForm, setPlanForm] = useState({
     desiredCourse: "",
@@ -238,17 +240,15 @@ const { data: institutionList } = trpc.educationInstitution.list.useQuery();
     specialNotes: "",
   });
 
-  // Semester dialog state
   const [semDialogOpen, setSemDialogOpen] = useState(false);
   const [semForm, setSemForm] = useState({
-    semesterOrder: "",
-    plannedMonth: "",
-    plannedInstitution: "",
-    plannedSubjectCount: "",
-    plannedAmount: "",
-  });
+  semesterOrder: "",
+  plannedMonth: "",
+  plannedInstitutionId: "",
+  plannedSubjectCount: "",
+  plannedAmount: "",
+});
 
-  // Refund dialog state
   const [refundDialogOpen, setRefundDialogOpen] = useState(false);
   const [refundForm, setRefundForm] = useState({
     refundAmount: "",
@@ -298,19 +298,17 @@ const { data: institutionList } = trpc.educationInstitution.list.useQuery();
   });
 
   const userMap = new Map(allUsers?.map((u: any) => [u.id, u.name || "이름없음"]) ?? []);
-/* const institutionMap = new Map(
-  institutionList?.map((inst: any) => [inst.id, inst.name]) ?? []
-); */
 
- const handleStudentInstitutionChange = (value: string) => {
-  updateStudentMut.mutate({
-    id: studentId,
-    institutionId: value ? Number(value) : undefined,
-  } as any);
-};
+  const handleStudentInstitutionChange = (value: string) => {
+    updateStudentMut.mutate({
+      id: studentId,
+      institutionId: value ? Number(value) : undefined,
+    } as any);
+  };
+
   const handleStudentFieldBlur = (field: string, value: string) => {
     const payload: any = { id: studentId };
- 
+
     if (field === "subjectCount" || field === "totalSemesters") {
       payload[field] = value ? parseInt(value) : undefined;
     } else if (field === "startDate" || field === "paymentDate") {
@@ -359,35 +357,11 @@ const { data: institutionList } = trpc.educationInstitution.list.useQuery();
       practiceHours: planForm.practiceHours ? parseInt(planForm.practiceHours) : undefined,
       practiceDate: planForm.practiceDate || undefined,
       practiceArranged: planForm.practiceArranged,
-      practiceStatus: planForm.practiceStatus as any || undefined,
+      practiceStatus: (planForm.practiceStatus as any) || undefined,
       specialNotes: planForm.specialNotes || undefined,
     });
   };
 
-  const openAddSemester = () => {
-    const nextOrder = (semesters?.length ?? 0) + 2;
-    setSemForm({
-      semesterOrder: String(nextOrder),
-      plannedMonth: "",
-      plannedInstitution: "",
-      plannedSubjectCount: "",
-      plannedAmount: "",
-    });
-    setSemDialogOpen(true);
-  };
-
-  const handleAddSemester = () => {
-    createSemMut.mutate({
-      studentId,
-      semesterOrder: parseInt(semForm.semesterOrder),
-      plannedMonth: semForm.plannedMonth || undefined,
-      plannedInstitution: semForm.plannedInstitution || undefined,
-      plannedSubjectCount: semForm.plannedSubjectCount ? parseInt(semForm.plannedSubjectCount) : undefined,
-      plannedAmount: semForm.plannedAmount || undefined,
-    });
-  };
-
-  // ✅ 학생 플랜 계산
   const groupedPlanSemesters = useMemo(() => {
     const map = new Map<number, any[]>();
     (planSemesterList || []).forEach((row: any) => {
@@ -403,6 +377,71 @@ const { data: institutionList } = trpc.educationInstitution.list.useQuery();
         rows: rows.sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)),
       }));
   }, [planSemesterList]);
+
+  const sortedSemesters = useMemo(() => {
+    return [...(semesters || [])].sort(
+      (a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder)
+    );
+  }, [semesters]);
+const totalSemesterCount = useMemo(() => {
+  return sortedSemesters.length;
+}, [sortedSemesters]);
+  const selectedSemester = useMemo(() => {
+    return sortedSemesters.find(
+      (s: any) => Number(s.semesterOrder) === Number(selectedSemesterOrder)
+    );
+  }, [sortedSemesters, selectedSemesterOrder]);
+
+  useEffect(() => {
+    if (!sortedSemesters.length) {
+      setSelectedSemesterOrder(1);
+      return;
+    }
+
+    const exists = sortedSemesters.some(
+      (s: any) => Number(s.semesterOrder) === Number(selectedSemesterOrder)
+    );
+
+    if (!exists) {
+      setSelectedSemesterOrder(Number(sortedSemesters[0].semesterOrder));
+    }
+  }, [sortedSemesters, selectedSemesterOrder]);
+
+  const openAddSemester = () => {
+    const nextOrder =
+      sortedSemesters.length > 0
+        ? Math.max(...sortedSemesters.map((s: any) => Number(s.semesterOrder))) + 1
+        : 1;
+
+    setSemForm({
+  semesterOrder: String(nextOrder),
+  plannedMonth: "",
+  plannedInstitutionId: "",
+  plannedSubjectCount: "",
+  plannedAmount: "",
+});
+    setSemDialogOpen(true);
+  };
+
+ const handleAddSemester = () => {
+  const selectedInstitution = institutionList?.find(
+    (inst: any) => Number(inst.id) === Number(semForm.plannedInstitutionId)
+  );
+
+  createSemMut.mutate({
+    studentId,
+    semesterOrder: parseInt(semForm.semesterOrder),
+    plannedMonth: semForm.plannedMonth || undefined,
+    plannedInstitutionId: semForm.plannedInstitutionId
+      ? Number(semForm.plannedInstitutionId)
+      : undefined,
+    plannedInstitution: selectedInstitution?.name || undefined,
+    plannedSubjectCount: semForm.plannedSubjectCount
+      ? parseInt(semForm.plannedSubjectCount)
+      : undefined,
+    plannedAmount: semForm.plannedAmount || undefined,
+  } as any);
+};
 
   const nextPlanSemesterNo = useMemo(() => {
     if (!groupedPlanSemesters.length) return 1;
@@ -461,46 +500,50 @@ const { data: institutionList } = trpc.educationInstitution.list.useQuery();
       total: major + liberal + general,
     };
   }, [planTotals, transferTotals]);
+
   const registrationSummary = useMemo(() => {
-  const toNumber = (v: any) =>
-    Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
+    const toNumber = (v: any) =>
+      Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
 
-  const actualSemesters = (semesters || [])
-    .filter(
-      (s: any) =>
-        s.actualStartDate ||
-        s.actualInstitution ||
-        s.actualInstitutionId ||
-        s.actualSubjectCount ||
-        s.actualAmount ||
-        s.actualPaymentDate
-    )
-    .sort((a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder));
+    const sem = selectedSemester;
 
-  const firstActual = actualSemesters[0];
+    return {
+      status: sem ? "등록" : (student?.status || ""),
+      startDate:
+        sem?.actualStartDate ||
+        (selectedSemesterOrder === 1 ? student?.startDate : "") ||
+        "",
+      paymentAmount: sem?.actualAmount
+        ? toNumber(sem.actualAmount)
+        : selectedSemesterOrder === 1
+          ? toNumber(student?.paymentAmount)
+          : 0,
+      subjectCount:
+        sem?.actualSubjectCount ??
+        (selectedSemesterOrder === 1 ? student?.subjectCount : "") ??
+        "",
+      paymentDate:
+        sem?.actualPaymentDate ||
+        (selectedSemesterOrder === 1 ? student?.paymentDate : "") ||
+        "",
+      institution:
+        sem?.actualInstitution ||
+        (selectedSemesterOrder === 1 ? student?.institution : "") ||
+        "",
+    };
+  }, [selectedSemester, selectedSemesterOrder, student]);
 
-  return {
-    status: firstActual ? "등록" : (student?.status || ""),
-    startDate: firstActual?.actualStartDate || student?.startDate || "",
-    paymentAmount: firstActual?.actualAmount
-      ? toNumber(firstActual.actualAmount)
-      : toNumber(student?.paymentAmount),
-    subjectCount:
-      firstActual?.actualSubjectCount ??
-      student?.subjectCount ??
-      "",
-    paymentDate: firstActual?.actualPaymentDate || student?.paymentDate || "",
-    institution: firstActual?.actualInstitution || student?.institution || "",
-  };
-}, [semesters, student]);
+  const registrationInstitutionId = useMemo(() => {
+    if (selectedSemester?.actualInstitutionId) {
+      return selectedSemester.actualInstitutionId;
+    }
 
-const registrationInstitutionId = useMemo(() => {
-  const firstActual = (semesters || [])
-    .filter((s: any) => s.actualInstitutionId || s.actualInstitution)
-    .sort((a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder))[0];
+    if (selectedSemesterOrder === 1) {
+      return student?.institutionId || "";
+    }
 
-  return firstActual?.actualInstitutionId || student?.institutionId || "";
-}, [semesters, student]);
+    return "";
+  }, [selectedSemester, selectedSemesterOrder, student]);
 
   const handleAddPlanSemesterGroup = () => {
     createPlanSemesterMut.mutate({
@@ -572,12 +615,12 @@ const registrationInstitutionId = useMemo(() => {
   };
 
   const requirementBadgeClass = (type?: string | null) => {
-  if (type === "전공필수") return "bg-red-50 text-red-600 border border-red-200";
-  if (type === "전공선택") return "bg-white text-black border border-gray-300";
-  if (type === "교양") return "bg-blue-50 text-blue-600 border border-blue-200";
-  if (type === "일반") return "bg-gray-50 text-gray-600 border border-gray-200";
-  return "bg-gray-50 text-gray-600 border border-gray-200";
-};
+    if (type === "전공필수") return "bg-red-50 text-red-600 border border-red-200";
+    if (type === "전공선택") return "bg-white text-black border border-gray-300";
+    if (type === "교양") return "bg-blue-50 text-blue-600 border border-blue-200";
+    if (type === "일반") return "bg-gray-50 text-gray-600 border border-gray-200";
+    return "bg-gray-50 text-gray-600 border border-gray-200";
+  };
 
   if (studentLoading) {
     return (
@@ -609,20 +652,8 @@ const registrationInstitutionId = useMemo(() => {
     }
   };
 
-  const approvalColor = (s: string) => {
-    switch (s) {
-      case "승인":
-        return "bg-emerald-100 text-emerald-700";
-      case "불승인":
-        return "bg-red-100 text-red-700";
-      default:
-        return "bg-amber-100 text-amber-700";
-    }
-  };
-
   return (
     <div className="space-y-6">
-      {/* 헤더 */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => setLocation("/students")}>
           <ArrowLeft className="h-4 w-4" />
@@ -640,12 +671,31 @@ const registrationInstitutionId = useMemo(() => {
         </div>
       </div>
 
-      {/* 매출 보고 / 등록 정보 */}
       <Card className="border-0 shadow-sm">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">매출 보고 / 등록 정보</CardTitle>
+          <CardTitle className="text-base">
+            매출 보고 / 등록 정보 - {selectedSemesterOrder}학기
+          </CardTitle>
         </CardHeader>
         <CardContent>
+          <div className="flex gap-2 mb-4 flex-wrap">
+            {sortedSemesters.map((sem: any) => (
+              <Button
+                key={sem.id}
+                type="button"
+                size="sm"
+                variant={
+                  Number(selectedSemesterOrder) === Number(sem.semesterOrder)
+                    ? "default"
+                    : "outline"
+                }
+                onClick={() => setSelectedSemesterOrder(Number(sem.semesterOrder))}
+              >
+                {sem.semesterOrder}학기
+              </Button>
+            ))}
+          </div>
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3">
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">이름</p>
@@ -653,7 +703,11 @@ const registrationInstitutionId = useMemo(() => {
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">연락처</p>
-              <EditableCell value={student.phone} onBlur={(v) => handleStudentFieldBlur("phone", v)} disabled />
+              <EditableCell
+                value={formatPhone(student.phone)}
+                onBlur={(v) => handleStudentFieldBlur("phone", v.replace(/\D/g, ""))}
+                disabled
+              />
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">등록 과정</p>
@@ -661,7 +715,10 @@ const registrationInstitutionId = useMemo(() => {
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">상태</p>
-             <Select value={registrationSummary.status || student.status} onValueChange={(v) => updateStudentMut.mutate({ id: studentId, status: v as any })}>
+              <Select
+                value={registrationSummary.status || student.status}
+                onValueChange={(v) => updateStudentMut.mutate({ id: studentId, status: v as any })}
+              >
                 <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="등록">등록</SelectItem>
@@ -673,56 +730,43 @@ const registrationInstitutionId = useMemo(() => {
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">개강 날짜</p>
               <EditableCell
-  value={registrationSummary.startDate ? formatDate(registrationSummary.startDate) : ""}
-  onBlur={(v) => handleStudentFieldBlur("startDate", v)}
-  type="date"
-/>
+                value={registrationSummary.startDate ? formatDate(registrationSummary.startDate) : ""}
+                onBlur={(v) => handleStudentFieldBlur("startDate", v)}
+                type="date"
+              />
             </div>
             <div>
-              <p className="text-xs text-muted-foreground mb-0.5">1학기 결제 금액</p>
+              <p className="text-xs text-muted-foreground mb-0.5">
+                {selectedSemesterOrder}학기 결제 금액
+              </p>
               <EditableCell
-  value={registrationSummary.paymentAmount ? Number(registrationSummary.paymentAmount).toLocaleString() + "원" : ""}
-  onBlur={(v) => handleStudentFieldBlur("paymentAmount", v.replace(/[^0-9]/g, ""))}
-/>
+                value={registrationSummary.paymentAmount ? Number(registrationSummary.paymentAmount).toLocaleString() + "원" : ""}
+                onBlur={(v) => handleStudentFieldBlur("paymentAmount", v.replace(/[^0-9]/g, ""))}
+              />
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">과목 수</p>
               <EditableCell
-  value={registrationSummary.subjectCount?.toString() || ""}
-  onBlur={(v) => handleStudentFieldBlur("subjectCount", v)}
-/>
+                value={registrationSummary.subjectCount?.toString() || ""}
+                onBlur={(v) => handleStudentFieldBlur("subjectCount", v)}
+              />
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">결제 일자</p>
               <EditableCell
-  value={registrationSummary.paymentDate ? formatDate(registrationSummary.paymentDate) : ""}
-  onBlur={(v) => handleStudentFieldBlur("paymentDate", v)}
-  type="date"
-/>
+                value={registrationSummary.paymentDate ? formatDate(registrationSummary.paymentDate) : ""}
+                onBlur={(v) => handleStudentFieldBlur("paymentDate", v)}
+                type="date"
+              />
             </div>
             <div>
   <p className="text-xs text-muted-foreground mb-0.5">교육원</p>
-  <Select
-  value={registrationInstitutionId ? String(registrationInstitutionId) : ""}
-  onValueChange={handleStudentInstitutionChange}
->
-    <SelectTrigger className="h-8 text-sm">
-      <SelectValue placeholder="교육원 선택" />
-    </SelectTrigger>
-    <SelectContent>
-      {(institutionList || []).map((inst: any) => (
-        <SelectItem key={inst.id} value={String(inst.id)}>
-          {inst.name}
-        </SelectItem>
-      ))}
-    </SelectContent>
-  </Select>
+  <div className="h-8 px-3 rounded-md border bg-muted/30 text-sm flex items-center text-black">
+    {registrationInstitutionId
+      ? institutionList?.find((inst: any) => Number(inst.id) === Number(registrationInstitutionId))?.name || "-"
+      : "-"}
+  </div>
 </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-0.5">총 학기 수</p>
-              <EditableCell value={student.totalSemesters?.toString() || ""} onBlur={(v) => handleStudentFieldBlur("totalSemesters", v)} />
-            </div>
-          </div>
 
           {paymentSummary && (
             <div className="mt-4 pt-4 border-t grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -751,7 +795,6 @@ const registrationInstitutionId = useMemo(() => {
         </CardContent>
       </Card>
 
-      {/* 학기별 예정표 / 결제표 */}
       <Card className="border-0 shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <CardTitle className="text-base">학기별 예정표 / 결제표</CardTitle>
@@ -805,32 +848,32 @@ const registrationInstitutionId = useMemo(() => {
                       </td>
                       <td className="px-1 py-0.5">
                         <Select
-  value={sem.plannedInstitutionId ? String(sem.plannedInstitutionId) : ""}
-  onValueChange={(v) =>
-    updateSemMut.mutate({
-      id: sem.id,
-      plannedInstitutionId: Number(v),
-    } as any)
-  }
->
-  <SelectTrigger className="h-8 text-sm">
-    <SelectValue placeholder="교육원 선택" />
-  </SelectTrigger>
-  <SelectContent>
-    {(institutionList || []).map((inst: any) => (
-      <SelectItem key={inst.id} value={String(inst.id)}>
-        {inst.name}
-      </SelectItem>
-    ))}
-  </SelectContent>
-</Select>
+                          value={sem.plannedInstitutionId ? String(sem.plannedInstitutionId) : ""}
+                          onValueChange={(v) =>
+                            updateSemMut.mutate({
+                              id: sem.id,
+                              plannedInstitutionId: Number(v),
+                            } as any)
+                          }
+                        >
+                          <SelectTrigger className="h-8 text-sm">
+                            <SelectValue placeholder="교육원 선택" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(institutionList || []).map((inst: any) => (
+                              <SelectItem key={inst.id} value={String(inst.id)}>
+                                {inst.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </td>
                       <td className="px-1 py-0.5">
-     <EditableCell
-  value={sem.plannedSubjectCount?.toString() || ""}
-  onBlur={(v) => handleSemFieldBlur(sem.id, "plannedSubjectCount", v)}
-  disabled={sem.isLocked}
-/>
+                        <EditableCell
+                          value={sem.plannedSubjectCount?.toString() || ""}
+                          onBlur={(v) => handleSemFieldBlur(sem.id, "plannedSubjectCount", v)}
+                          disabled={sem.isLocked}
+                        />
                       </td>
                       <td className="px-1 py-0.5">
                         <EditableCell
@@ -850,25 +893,25 @@ const registrationInstitutionId = useMemo(() => {
                       </td>
                       <td className="px-1 py-0.5">
                         <Select
-  value={sem.actualInstitutionId ? String(sem.actualInstitutionId) : ""}
-  onValueChange={(v) =>
-    updateSemMut.mutate({
-      id: sem.id,
-      actualInstitutionId: Number(v),
-    } as any)
-  }
->
-  <SelectTrigger className="h-8 text-sm text-primary">
-    <SelectValue placeholder="교육원 선택" />
-  </SelectTrigger>
-  <SelectContent>
-    {(institutionList || []).map((inst: any) => (
-      <SelectItem key={inst.id} value={String(inst.id)}>
-        {inst.name}
-      </SelectItem>
-    ))}
-  </SelectContent>
-</Select>
+                          value={sem.actualInstitutionId ? String(sem.actualInstitutionId) : ""}
+                          onValueChange={(v) =>
+                            updateSemMut.mutate({
+                              id: sem.id,
+                              actualInstitutionId: Number(v),
+                            } as any)
+                          }
+                        >
+                          <SelectTrigger className="h-8 text-sm text-primary">
+                            <SelectValue placeholder="교육원 선택" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(institutionList || []).map((inst: any) => (
+                              <SelectItem key={inst.id} value={String(inst.id)}>
+                                {inst.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </td>
                       <td className="px-1 py-0.5">
                         <EditableCell value={sem.actualSubjectCount?.toString() || ""} onBlur={(v) => handleSemFieldBlur(sem.id, "actualSubjectCount", v)} className="text-primary" />
@@ -921,7 +964,6 @@ const registrationInstitutionId = useMemo(() => {
         </CardContent>
       </Card>
 
-      {/* 플랜 요약 */}
       <Card className="border-0 shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <CardTitle className="text-base">플랜 요약</CardTitle>
@@ -1029,7 +1071,6 @@ const registrationInstitutionId = useMemo(() => {
         </CardContent>
       </Card>
 
-      {/* ✅ 학생 플랜 */}
       <Card className="border-0 shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <CardTitle className="text-base">학생 플랜</CardTitle>
@@ -1044,7 +1085,6 @@ const registrationInstitutionId = useMemo(() => {
         </CardHeader>
 
         <CardContent className="space-y-6">
-          {/* 우리 플랜 */}
           <div className="space-y-4">
             <div>
               <h3 className="font-semibold text-sm">우리 플랜 (학점은행제 / 과목당 3학점 고정)</h3>
@@ -1085,59 +1125,57 @@ const registrationInstitutionId = useMemo(() => {
                         {group.rows.map((row: any) => (
                           <tr key={row.id} className="border-b last:border-0">
                             <td className="px-2 py-1">
-  <EditableCell
-    value={row.subjectName || ""}
-    onBlur={(v) => handlePlanSemesterBlur(row.id, "subjectName", v)}
-    className={row.planRequirementType === "전공필수" ? "text-red-600 font-medium" : ""}
-  />
-</td>
+                              <EditableCell
+                                value={row.subjectName || ""}
+                                onBlur={(v) => handlePlanSemesterBlur(row.id, "subjectName", v)}
+                                className={row.planRequirementType === "전공필수" ? "text-red-600 font-medium" : ""}
+                              />
+                            </td>
                             <td className="px-2 py-1">
-  <select
-    className="w-full h-8 px-2 text-sm border rounded bg-white"
-    value={row.planCategory || "전공"}
-    onChange={(e) => {
-      const nextCategory = e.target.value;
+                              <select
+                                className="w-full h-8 px-2 text-sm border rounded bg-white"
+                                value={row.planCategory || "전공"}
+                                onChange={(e) => {
+                                  const nextCategory = e.target.value;
 
-      handlePlanSemesterBlur(row.id, "category", nextCategory);
+                                  handlePlanSemesterBlur(row.id, "category", nextCategory);
 
-      if (nextCategory === "교양") {
-        handlePlanSemesterBlur(row.id, "requirementType", "교양");
-      } else if (nextCategory === "일반") {
-        handlePlanSemesterBlur(row.id, "requirementType", "일반");
-      } else if (nextCategory === "전공") {
-        handlePlanSemesterBlur(
-          row.id,
-          "requirementType",
-          row.planRequirementType === "전공필수" ? "전공필수" : "전공선택"
-        );
-      }
-    }}
-  >
-    <option value="전공">전공</option>
-    <option value="교양">교양</option>
-    <option value="일반">일반</option>
-  </select>
-</td>
+                                  if (nextCategory === "교양") {
+                                    handlePlanSemesterBlur(row.id, "requirementType", "교양");
+                                  } else if (nextCategory === "일반") {
+                                    handlePlanSemesterBlur(row.id, "requirementType", "일반");
+                                  } else if (nextCategory === "전공") {
+                                    handlePlanSemesterBlur(
+                                      row.id,
+                                      "requirementType",
+                                      row.planRequirementType === "전공필수" ? "전공필수" : "전공선택"
+                                    );
+                                  }
+                                }}
+                              >
+                                <option value="전공">전공</option>
+                                <option value="교양">교양</option>
+                                <option value="일반">일반</option>
+                              </select>
+                            </td>
                             <td className="px-2 py-1">
-  {row.planCategory === "전공" ? (
-    <select
-      className={`w-full h-8 px-2 text-sm rounded ${requirementBadgeClass(row.planRequirementType)}`}
-      value={row.planRequirementType || "전공선택"}
-      onChange={(e) => handlePlanSemesterBlur(row.id, "requirementType", e.target.value)}
-    >
-      <option value="전공필수">전공필수</option>
-      <option value="전공선택">전공선택</option>
-    </select>
-  ) : (
-    <div
-      className={`w-full h-8 px-2 text-sm rounded border flex items-center ${
-        requirementBadgeClass(row.planCategory)
-      }`}
-    >
-      {row.planCategory}
-    </div>
-  )}
-</td>
+                              {row.planCategory === "전공" ? (
+                                <select
+                                  className={`w-full h-8 px-2 text-sm rounded ${requirementBadgeClass(row.planRequirementType)}`}
+                                  value={row.planRequirementType || "전공선택"}
+                                  onChange={(e) => handlePlanSemesterBlur(row.id, "requirementType", e.target.value)}
+                                >
+                                  <option value="전공필수">전공필수</option>
+                                  <option value="전공선택">전공선택</option>
+                                </select>
+                              ) : (
+                                <div
+                                  className={`w-full h-8 px-2 text-sm rounded border flex items-center ${requirementBadgeClass(row.planCategory)}`}
+                                >
+                                  {row.planCategory}
+                                </div>
+                              )}
+                            </td>
                             <td className="px-3 py-2 text-center font-medium text-black">3</td>
                             <td className="px-2 py-1 text-right">
                               <Button
@@ -1163,7 +1201,6 @@ const registrationInstitutionId = useMemo(() => {
             )}
           </div>
 
-          {/* 전적대 */}
           <div className="space-y-4">
             <div>
               <h3 className="font-semibold text-sm">전적대 / 이전 이수과목</h3>
@@ -1257,7 +1294,6 @@ const registrationInstitutionId = useMemo(() => {
             </div>
           </div>
 
-          {/* 합산 요약 */}
           <div className="grid md:grid-cols-3 gap-4">
             <div className="rounded-lg border bg-blue-50 p-4">
               <div className="font-semibold text-sm text-blue-700 mb-2">우리 플랜</div>
@@ -1292,7 +1328,6 @@ const registrationInstitutionId = useMemo(() => {
         </CardContent>
       </Card>
 
-      {/* 학기 추가 다이얼로그 */}
       <Dialog open={semDialogOpen} onOpenChange={setSemDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>학기 추가</DialogTitle></DialogHeader>
@@ -1309,15 +1344,33 @@ const registrationInstitutionId = useMemo(() => {
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label className="text-xs">교육원</Label>
-                <Input value={semForm.plannedInstitution} onChange={(e) => setSemForm({ ...semForm, plannedInstitution: e.target.value })} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">과목 수</Label>
-                <Input type="number" value={semForm.plannedSubjectCount} onChange={(e) => setSemForm({ ...semForm, plannedSubjectCount: e.target.value })} />
-              </div>
-            </div>
+  <div className="space-y-1">
+    <Label className="text-xs">교육원</Label>
+    <Select
+      value={semForm.plannedInstitutionId}
+      onValueChange={(v) => setSemForm({ ...semForm, plannedInstitutionId: v })}
+    >
+      <SelectTrigger className="h-9 text-sm">
+        <SelectValue placeholder="교육원 선택" />
+      </SelectTrigger>
+      <SelectContent>
+        {(institutionList || []).map((inst: any) => (
+          <SelectItem key={inst.id} value={String(inst.id)}>
+            {inst.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  </div>
+  <div className="space-y-1">
+    <Label className="text-xs">과목 수</Label>
+    <Input
+      type="number"
+      value={semForm.plannedSubjectCount}
+      onChange={(e) => setSemForm({ ...semForm, plannedSubjectCount: e.target.value })}
+    />
+  </div>
+</div>
 
             <div className="space-y-1">
               <Label className="text-xs">예정 금액</Label>
@@ -1331,7 +1384,6 @@ const registrationInstitutionId = useMemo(() => {
         </DialogContent>
       </Dialog>
 
-      {/* 환불 내역 - 관리자 */}
       {isAdmin && refundList && refundList.length > 0 && (
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-3">
@@ -1455,7 +1507,6 @@ const registrationInstitutionId = useMemo(() => {
         </Card>
       )}
 
-      {/* 환불 내역 - 직원 */}
       {!isAdmin && refundList && refundList.length > 0 && (
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-3">
@@ -1490,7 +1541,6 @@ const registrationInstitutionId = useMemo(() => {
         </Card>
       )}
 
-      {/* 환불 등록 다이얼로그 */}
       <Dialog open={refundDialogOpen} onOpenChange={setRefundDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>환불 등록</DialogTitle></DialogHeader>

@@ -7,6 +7,7 @@ import { Loader2, Plus, Trash2, Search, Upload, FileText } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { formatPhone } from "@/lib/format";
 
 function toISODate(v: string) {
   const s = (v ?? "").trim();
@@ -500,7 +501,7 @@ function InlineRow({
 
       <td className="px-1 py-2">
         <EditableCell
-          value={item.phone || ""}
+          formatPhone(item.phone)
           onBlur={(v) => onBlur(item.id, "phone", v)}
           transform={handlePhoneInput}
           maxLength={11}

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Eye, Search, Loader2, Trash2, Filter } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
+import { formatPhone } from "@/lib/format";
 
 function formatCurrency(amount: number) {
   if (!amount || amount === 0) return "-";
@@ -289,12 +290,12 @@ function StudentInlineRow({
 
       <td className="px-1 py-0.5">
         <EditableCell
-          value={item.phone || ""}
-          onBlur={(v) => onBlur(item.id, "phone", v)}
-          transform={handlePhoneInput}
-          maxLength={11}
-          disabled
-        />
+  value={formatPhone(item.phone)}
+  onBlur={(v) => onBlur(item.id, "phone", v.replace(/\D/g, ""))}
+  transform={handlePhoneInput}
+  maxLength={11}
+  disabled
+/>
       </td>
 
       <td className="px-1 py-0.5">
