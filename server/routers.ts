@@ -44,6 +44,7 @@ export const appRouter = router({
           password: z.string().min(4),
           name: z.string().min(1),
           email: z.string().optional(),
+          phone: z.string().optional(),
           role: z.enum(["staff", "admin", "host"]).default("staff"),
           bankName: z.string().optional(),
           bankAccount: z.string().optional(),
@@ -58,6 +59,7 @@ export const appRouter = router({
           passwordHash,
           name: input.name.trim(),
           email: input.email?.trim() || null,
+          phone: input.phone?.trim() || null,
           role: input.role,
           bankName: input.bankName?.trim() || null,
           bankAccount: input.bankAccount?.trim() || null,
@@ -76,6 +78,7 @@ export const appRouter = router({
           password: z.string().optional(),
           name: z.string().optional(),
           email: z.string().optional(),
+          phone: z.string().optional(),
           bankName: z.string().optional(),
           bankAccount: z.string().optional(),
         })
@@ -93,6 +96,7 @@ export const appRouter = router({
           username: rest.username?.trim(),
           name: rest.name?.trim(),
           email: rest.email?.trim(),
+          phone: rest.phone?.trim(),
           bankName: rest.bankName?.trim(),
           bankAccount: rest.bankAccount?.trim(),
           passwordHash,
@@ -742,7 +746,9 @@ export const appRouter = router({
             ...plannedFields
           } = input;
 
-          const hasPlannedChanges = Object.values(plannedFields).some((v) => v !== undefined);
+          const hasPlannedChanges = Object.values(plannedFields).some(
+            (v) => v !== undefined
+          );
           if (hasPlannedChanges) {
             throw new Error("승인된 예정표는 수정할 수 없습니다");
           }
@@ -759,7 +765,13 @@ export const appRouter = router({
         const allSems = await db.listSemesters(sem.studentId);
 
         const firstActual = allSems
-          .filter((s: any) => s.actualStartDate || s.actualInstitutionId || s.actualAmount || s.actualPaymentDate)
+          .filter(
+            (s: any) =>
+              s.actualStartDate ||
+              s.actualInstitutionId ||
+              s.actualAmount ||
+              s.actualPaymentDate
+          )
           .sort((a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder))[0];
 
         if (firstActual) {

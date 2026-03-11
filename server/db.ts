@@ -1,16 +1,25 @@
 import { eq, and, sql, desc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
-  InsertUser, users,
-  consultations, InsertConsultation,
-  students, InsertStudent,
-  semesters, InsertSemester,
-  plans, InsertPlan,
-  refunds, InsertRefund,
-  leadForms, InsertLeadForm,
- planSemesters, InsertPlanSemester,
-  transferSubjects, InsertTransferSubject,
-educationInstitutions,
+  InsertUser,
+  users,
+  consultations,
+  InsertConsultation,
+  students,
+  InsertStudent,
+  semesters,
+  InsertSemester,
+  plans,
+  InsertPlan,
+  refunds,
+  InsertRefund,
+  leadForms,
+  InsertLeadForm,
+  planSemesters,
+  InsertPlanSemester,
+  transferSubjects,
+  InsertTransferSubject,
+  educationInstitutions,
 } from "../drizzle/schema";
 
 import { ENV } from "./_core/env";
@@ -27,6 +36,22 @@ export async function getDb() {
     console.log("[DB] CONNECTED:", (r as any)[0]);
   }
   return _db;
+}
+
+function getInsertId(result: any) {
+  return result?.insertId ?? result?.[0]?.insertId ?? null;
+}
+
+async function getNextUserDisplayNo() {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const [rows] = await db.execute(
+    sql`SELECT COALESCE(MAX(displayNo), 0) as maxNo FROM users`
+  );
+
+  const maxNo = Number((rows as any)?.[0]?.maxNo || 0);
+  return maxNo + 1;
 }
 
 export async function getStudentRegistrationSummary(studentId: number) {
@@ -54,10 +79,17 @@ export async function getStudentRegistrationSummary(studentId: number) {
     };
   }
 
-  const semesters = await listSemesters(studentId);
+  const semesterRows = await listSemesters(studentId);
 
-  const actualSemesters = semesters
-    .filter((s: any) => s.actualStartDate || s.actualInstitution || s.actualSubjectCount || s.actualAmount || s.actualPaymentDate)
+  const actualSemesters = semesterRows
+    .filter(
+      (s: any) =>
+        s.actualStartDate ||
+        s.actualInstitution ||
+        s.actualSubjectCount ||
+        s.actualAmount ||
+        s.actualPaymentDate
+    )
     .sort((a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder));
 
   const firstActual = actualSemesters[0];
@@ -66,9 +98,11 @@ export async function getStudentRegistrationSummary(studentId: number) {
     Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
 
   return {
-    status: firstActual ? "등록" : (student.status || ""),
+    status: firstActual ? "등록" : student.status || "",
     startDate: firstActual?.actualStartDate || student.startDate || null,
-    paymentAmount: firstActual?.actualAmount ? toNumber(firstActual.actualAmount) : toNumber(student.paymentAmount),
+    paymentAmount: firstActual?.actualAmount
+      ? toNumber(firstActual.actualAmount)
+      : toNumber(student.paymentAmount),
     subjectCount: firstActual?.actualSubjectCount ?? student.subjectCount ?? 0,
     paymentDate: firstActual?.actualPaymentDate || student.paymentDate || null,
     institution: firstActual?.actualInstitution || student.institution || "",
@@ -77,7 +111,6 @@ export async function getStudentRegistrationSummary(studentId: number) {
 
 // ─── Helper: Asia/Seoul 기준 이번달 범위 ────────────────────────────
 function getKSTMonthRange() {
-  // KST = UTC+9
   const now = new Date();
   const kstOffset = 9 * 60 * 60 * 1000;
   const kstNow = new Date(now.getTime() + kstOffset);
@@ -87,11 +120,13 @@ function getKSTMonthRange() {
   const nextMonth = month === 12 ? 1 : month + 1;
   const nextYear = month === 12 ? year + 1 : year;
   const monthEnd = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
-  const today = `${year}-${String(month).padStart(2, "0")}-${String(kstNow.getUTCDate()).padStart(2, "0")}`;
+  const today = `${year}-${String(month).padStart(2, "0")}-${String(
+    kstNow.getUTCDate()
+  ).padStart(2, "0")}`;
   return { year, month, monthStart, monthEnd, today };
 }
 
-// ─── Users ───────────────────────────────────────────────────────────
+// ─── Lead Forms ──────────────────────────────────────────────────────
 export async function getLeadFormByToken(token: string) {
   const db = await getDb();
   if (!db) return undefined;
@@ -109,10 +144,7 @@ export async function listLeadForms() {
   const db = await getDb();
   if (!db) return [];
 
-  return db
-    .select()
-    .from(leadForms)
-    .orderBy(desc(leadForms.createdAt));
+  return db.select().from(leadForms).orderBy(desc(leadForms.createdAt));
 }
 
 export async function createLeadForm(data: InsertLeadForm) {
@@ -120,16 +152,20 @@ export async function createLeadForm(data: InsertLeadForm) {
   if (!db) throw new Error("DB not available");
 
   const result: any = await db.insert(leadForms).values(data);
-  return result?.[0]?.insertId ?? result?.insertId ?? null;
+  return getInsertId(result);
 }
 
 export async function updateLeadFormActive(id: number, isActive: boolean) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.update(leadForms).set({ isActive } as any).where(eq(leadForms.id, id));
+  await db
+    .update(leadForms)
+    .set({ isActive } as any)
+    .where(eq(leadForms.id, id));
 }
 
+// ─── Users ───────────────────────────────────────────────────────────
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) throw new Error("User openId is required for upsert");
 
@@ -140,17 +176,24 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   }
 
   try {
-    const values: InsertUser = { openId: user.openId };
+    const existing = await getUserByOpenId(user.openId);
+    const nextDisplayNo = existing?.displayNo ?? (await getNextUserDisplayNo());
+
+    const values: InsertUser = {
+      openId: user.openId,
+      displayNo: nextDisplayNo,
+    };
+
     const updateSet: Record<string, unknown> = {};
 
-    const textFields = ["name", "email", "loginMethod"] as const;
+    const textFields = ["name", "email", "phone", "loginMethod"] as const;
     type TextField = (typeof textFields)[number];
 
     const assignNullable = (field: TextField) => {
       const value = user[field];
       if (value === undefined) return;
       const normalized = value ?? null;
-      values[field] = normalized;
+      (values as any)[field] = normalized;
       updateSet[field] = normalized;
     };
 
@@ -183,7 +226,12 @@ export async function getUserByOpenId(openId: string) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  const result = await db
+    .select()
+    .from(users)
+    .where(eq(users.openId, openId))
+    .limit(1);
+
   return result.length > 0 ? result[0] : undefined;
 }
 
@@ -191,28 +239,40 @@ export async function getAllUsers() {
   const db = await getDb();
   if (!db) return [];
 
-  return db.select({ id: users.id, name: users.name, role: users.role }).from(users);
+  return db
+    .select({
+      id: users.id,
+      displayNo: users.displayNo,
+      name: users.name,
+      role: users.role,
+    })
+    .from(users);
 }
 
 export async function getAllUsersDetailed() {
   const db = await getDb();
   if (!db) return [];
 
-  return db.select({
-    id: users.id,
-    openId: users.openId,
-    username: users.username,
-    name: users.name,
-    email: users.email,
-    role: users.role,
-    bankName: users.bankName,
-    bankAccount: users.bankAccount,
-    isActive: users.isActive,
-    loginMethod: users.loginMethod,
-    createdAt: users.createdAt,
-    updatedAt: users.updatedAt,
-    lastSignedIn: users.lastSignedIn,
-  }).from(users);
+  return db
+    .select({
+      id: users.id,
+      displayNo: users.displayNo,
+      openId: users.openId,
+      username: users.username,
+      name: users.name,
+      email: users.email,
+      phone: users.phone,
+      role: users.role,
+      bankName: users.bankName,
+      bankAccount: users.bankAccount,
+      isActive: users.isActive,
+      loginMethod: users.loginMethod,
+      createdAt: users.createdAt,
+      updatedAt: users.updatedAt,
+      lastSignedIn: users.lastSignedIn,
+    })
+    .from(users)
+    .orderBy(users.displayNo, users.id);
 }
 
 export async function createUserAccount(data: {
@@ -221,6 +281,7 @@ export async function createUserAccount(data: {
   passwordHash?: string | null;
   name: string;
   email?: string | null;
+  phone?: string | null;
   role: "staff" | "admin" | "host";
   bankName?: string | null;
   bankAccount?: string | null;
@@ -230,18 +291,24 @@ export async function createUserAccount(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.insert(users).values({
+  const displayNo = await getNextUserDisplayNo();
+
+  const result = await db.insert(users).values({
+    displayNo,
     openId: data.openId,
     username: data.username,
     passwordHash: data.passwordHash ?? null,
     name: data.name,
     email: data.email ?? null,
+    phone: data.phone ?? null,
     role: data.role,
     bankName: data.bankName ?? null,
     bankAccount: data.bankAccount ?? null,
     loginMethod: data.loginMethod ?? "manual",
     isActive: data.isActive ?? true,
   } as any);
+
+  return getInsertId(result);
 }
 
 export async function updateUserAccount(
@@ -251,6 +318,7 @@ export async function updateUserAccount(
     passwordHash?: string | null;
     name?: string | null;
     email?: string | null;
+    phone?: string | null;
     bankName?: string | null;
     bankAccount?: string | null;
   }
@@ -284,12 +352,7 @@ export async function getUserById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db
-    .select()
-    .from(users)
-    .where(eq(users.id, id))
-    .limit(1);
-
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
   return result[0];
 }
 
@@ -313,7 +376,12 @@ export async function getConsultation(id: number) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.select().from(consultations).where(eq(consultations.id, id)).limit(1);
+  const result = await db
+    .select()
+    .from(consultations)
+    .where(eq(consultations.id, id))
+    .limit(1);
+
   return result[0];
 }
 
@@ -322,14 +390,9 @@ export async function createConsultation(data: InsertConsultation) {
   if (!db) throw new Error("DB not available");
 
   const result: any = await db.insert(consultations).values(data);
-
-  const insertId =
-    result?.insertId ??
-    result?.[0]?.insertId ??
-    null;
+  const insertId = getInsertId(result);
 
   console.log("[DB] createConsultation insertId:", insertId);
-
   return insertId;
 }
 
@@ -339,17 +402,22 @@ export async function bulkCreateConsultations(dataList: InsertConsultation[]) {
   if (dataList.length === 0) return [];
 
   console.log("[DB] bulkCreateConsultations count:", dataList.length);
-  console.log("[DB] bulkCreateConsultations first keys:", Object.keys((dataList[0] ?? {}) as any));
+  console.log(
+    "[DB] bulkCreateConsultations first keys:",
+    Object.keys((dataList[0] ?? {}) as any)
+  );
   console.log("[DB] bulkCreateConsultations first row:", dataList[0]);
 
   const result = await db.insert(consultations).values(dataList);
 
   console.log("[DB] bulkCreateConsultations result:", result);
-
   return result;
 }
 
-export async function updateConsultation(id: number, data: Partial<InsertConsultation>) {
+export async function updateConsultation(
+  id: number,
+  data: Partial<InsertConsultation>
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
@@ -384,7 +452,7 @@ export async function listStudents(assigneeId?: number) {
   const [rows] = await db.execute(sql`
     SELECT s.*,
       (COALESCE(s.paymentAmount, 0) + COALESCE((SELECT SUM(sem.plannedAmount) FROM semesters sem WHERE sem.studentId = s.id), 0)) as totalRequired,
-      (CASE WHEN s.approvalStatus = '승인' THEN COALESCE(s.paymentAmount, 0) ELSE 0 END
+      (CASE WHEN s.paymentDate IS NOT NULL THEN COALESCE(s.paymentAmount, 0) ELSE 0 END
        + COALESCE((SELECT SUM(sem2.actualAmount) FROM semesters sem2 WHERE sem2.studentId = s.id AND sem2.isCompleted = true), 0)) as paidAmount,
       (SELECT p.practiceStatus FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceStatus,
       (SELECT p.hasPractice FROM plans p WHERE p.studentId = s.id LIMIT 1) as hasPractice
@@ -409,7 +477,7 @@ export async function createStudent(data: InsertStudent) {
   if (!db) throw new Error("DB not available");
 
   const result = await db.insert(students).values(data);
-  return (result as any)[0].insertId;
+  return getInsertId(result);
 }
 
 export async function updateStudent(id: number, data: Partial<InsertStudent>) {
@@ -431,7 +499,9 @@ export async function listSemesters(studentId: number) {
   const db = await getDb();
   if (!db) return [];
 
-  return db.select().from(semesters)
+  return db
+    .select()
+    .from(semesters)
     .where(eq(semesters.studentId, studentId))
     .orderBy(semesters.semesterOrder);
 }
@@ -449,7 +519,7 @@ export async function createSemester(data: InsertSemester) {
   if (!db) throw new Error("DB not available");
 
   const result = await db.insert(semesters).values(data);
-  return (result as any)[0].insertId;
+  return getInsertId(result);
 }
 
 export async function updateSemester(id: number, data: Partial<InsertSemester>) {
@@ -466,8 +536,11 @@ export async function deleteSemester(id: number) {
   await db.delete(semesters).where(eq(semesters.id, id));
 }
 
-// ─── 학기별 전체 리스트 (별도 탭용) ─────────────────────────────────
-export async function listAllSemesters(assigneeId?: number, plannedMonthFilter?: string) {
+// ─── 학기별 전체 리스트 ──────────────────────────────────────────────
+export async function listAllSemesters(
+  assigneeId?: number,
+  plannedMonthFilter?: string
+) {
   const db = await getDb();
   if (!db) return [];
 
@@ -475,13 +548,14 @@ export async function listAllSemesters(assigneeId?: number, plannedMonthFilter?:
   if (assigneeId) conditions.push(sql`s.assigneeId = ${assigneeId}`);
   if (plannedMonthFilter) conditions.push(sql`sem.plannedMonth = ${plannedMonthFilter}`);
 
-  const whereClause = conditions.length > 0
-    ? sql`WHERE ${sql.join(conditions, sql` AND `)}`
-    : sql``;
+  const whereClause =
+    conditions.length > 0
+      ? sql`WHERE ${sql.join(conditions, sql` AND `)}`
+      : sql``;
 
   const [rows] = await db.execute(sql`
     SELECT sem.*,
-      s.clientName, s.phone, s.course, s.assigneeId, s.studentStatus,
+      s.clientName, s.phone, s.course, s.assigneeId, s.status,
       s.approvalStatus,
       (SELECT p.hasPractice FROM plans p WHERE p.studentId = s.id LIMIT 1) as hasPractice,
       (SELECT p.practiceHours FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceHours,
@@ -515,7 +589,7 @@ export async function upsertPlan(data: InsertPlan) {
     return existing.id;
   } else {
     const result = await db.insert(plans).values(data);
-    return (result as any)[0].insertId;
+    return getInsertId(result);
   }
 }
 
@@ -525,7 +599,11 @@ export async function listRefunds(assigneeId?: number) {
   if (!db) return [];
 
   if (assigneeId) {
-    return db.select().from(refunds).where(eq(refunds.assigneeId, assigneeId)).orderBy(desc(refunds.createdAt));
+    return db
+      .select()
+      .from(refunds)
+      .where(eq(refunds.assigneeId, assigneeId))
+      .orderBy(desc(refunds.createdAt));
   }
 
   return db.select().from(refunds).orderBy(desc(refunds.createdAt));
@@ -535,7 +613,11 @@ export async function listRefundsByStudent(studentId: number) {
   const db = await getDb();
   if (!db) return [];
 
-  return db.select().from(refunds).where(eq(refunds.studentId, studentId)).orderBy(desc(refunds.createdAt));
+  return db
+    .select()
+    .from(refunds)
+    .where(eq(refunds.studentId, studentId))
+    .orderBy(desc(refunds.createdAt));
 }
 
 export async function createRefund(data: InsertRefund) {
@@ -543,7 +625,7 @@ export async function createRefund(data: InsertRefund) {
   if (!db) throw new Error("DB not available");
 
   const result = await db.insert(refunds).values(data);
-  return (result as any)[0].insertId;
+  return getInsertId(result);
 }
 
 export async function updateRefund(id: number, data: Partial<InsertRefund>) {
@@ -560,7 +642,7 @@ export async function deleteRefund(id: number) {
   await db.delete(refunds).where(eq(refunds.id, id));
 }
 
-// ─── Dashboard Stats (v4: KST 기준, 결제완료 기준) ──────────────────
+// ─── Dashboard Stats ────────────────────────────────────────────────
 export async function getDashboardStats(assigneeId?: number) {
   const now = new Date();
 
@@ -570,13 +652,12 @@ export async function getDashboardStats(assigneeId?: number) {
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-  const students = await listStudents(assigneeId);
+  const studentRows = await listStudents(assigneeId);
 
   const toNumber = (v: any) =>
     Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
 
-  // 학생 첫 결제
-  const todayFirstSales = students
+  const todayFirstSales = studentRows
     .filter(
       (s: any) =>
         s.paymentDate &&
@@ -585,7 +666,7 @@ export async function getDashboardStats(assigneeId?: number) {
     )
     .reduce((sum: number, s: any) => sum + toNumber(s.paymentAmount), 0);
 
-  const monthFirstSales = students
+  const monthFirstSales = studentRows
     .filter(
       (s: any) =>
         s.paymentDate &&
@@ -594,7 +675,7 @@ export async function getDashboardStats(assigneeId?: number) {
     )
     .reduce((sum: number, s: any) => sum + toNumber(s.paymentAmount), 0);
 
-  const monthRegistered = students.filter(
+  const monthRegistered = studentRows.filter(
     (s: any) =>
       s.paymentDate &&
       new Date(s.paymentDate) >= startOfMonth &&
@@ -608,7 +689,6 @@ export async function getDashboardStats(assigneeId?: number) {
     return d >= startOfMonth && d < endOfMonth;
   }).length;
 
-  // 학기 실제 수납
   const dbConn = await getDb();
   let todaySemesterSales = 0;
   let monthSemesterSales = 0;
@@ -642,7 +722,7 @@ export async function getDashboardStats(assigneeId?: number) {
     }
   }
 
-  const totalFirstSales = students.reduce(
+  const totalFirstSales = studentRows.reduce(
     (sum: number, s: any) => sum + toNumber(s.paymentAmount),
     0
   );
@@ -660,9 +740,9 @@ export async function getDashboardStats(assigneeId?: number) {
   };
 }
 
-// ─── 이번달 승인/불승인 내역 (v4: approvedAt/rejectedAt 기준) ────────
+// ─── 이번달 매출 엔트리 ──────────────────────────────────────────────
 export async function getMonthSalesEntries(assigneeId?: number) {
-  const students = await listStudents(assigneeId);
+  const studentRows = await listStudents(assigneeId);
 
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -671,7 +751,7 @@ export async function getMonthSalesEntries(assigneeId?: number) {
   const toNumber = (v: any) =>
     Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
 
-  const registered = students
+  const registered = studentRows
     .filter(
       (s: any) =>
         s.paymentDate &&
@@ -691,7 +771,7 @@ export async function getMonthSalesEntries(assigneeId?: number) {
     }));
 
   const dbConn = await getDb();
-  let semesters: any[] = [];
+  let semesterEntries: any[] = [];
 
   if (dbConn) {
     const result = await dbConn.execute(sql`
@@ -712,7 +792,7 @@ export async function getMonthSalesEntries(assigneeId?: number) {
 
     const rows = (result as any)[0] || [];
 
-    semesters = rows
+    semesterEntries = rows
       .filter((r: any) => {
         if (assigneeId && Number(r.assigneeId) !== Number(assigneeId)) return false;
         const d = new Date(r.actualPaymentDate);
@@ -731,11 +811,15 @@ export async function getMonthSalesEntries(assigneeId?: number) {
       }));
   }
 
-  const entries = [...registered, ...semesters].sort(
-    (a: any, b: any) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime()
+  const entries = [...registered, ...semesterEntries].sort(
+    (a: any, b: any) =>
+      new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime()
   );
 
-  const totalAmount = entries.reduce((sum: number, x: any) => sum + toNumber(x.amount), 0);
+  const totalAmount = entries.reduce(
+    (sum: number, x: any) => sum + toNumber(x.amount),
+    0
+  );
 
   return {
     entries,
@@ -743,16 +827,27 @@ export async function getMonthSalesEntries(assigneeId?: number) {
     totalAmount,
   };
 }
-// ─── 학생별 총 결제해야할 금액 / 수납 금액 ──────────────────────────────
+
+// ─── 학생별 결제 요약 ────────────────────────────────────────────────
 export async function getStudentPaymentSummary(studentId: number) {
   const db = await getDb();
   if (!db) {
-    return { totalRequired: 0, totalPaid: 0, totalRefund: 0, remainingAmount: 0 };
+    return {
+      totalRequired: 0,
+      totalPaid: 0,
+      totalRefund: 0,
+      remainingAmount: 0,
+    };
   }
 
   const student = await getStudent(studentId);
   if (!student) {
-    return { totalRequired: 0, totalPaid: 0, totalRefund: 0, remainingAmount: 0 };
+    return {
+      totalRequired: 0,
+      totalPaid: 0,
+      totalRefund: 0,
+      remainingAmount: 0,
+    };
   }
 
   const toNumber = (v: any) =>
@@ -776,10 +871,7 @@ export async function getStudentPaymentSummary(studentId: number) {
   const totalRefund = toNumber((refundResult as any)[0]?.total);
 
   const totalRequired = firstAmount + semesterPlanned;
-
-  // 승인 제거: paymentDate 있으면 첫 결제 완료로 봄
   const firstPaid = student.paymentDate && firstAmount > 0 ? firstAmount : 0;
-
   const totalPaid = firstPaid + semesterPaid;
   const remainingAmount = totalRequired - totalPaid - totalRefund;
 
@@ -790,8 +882,13 @@ export async function getStudentPaymentSummary(studentId: number) {
     remainingAmount,
   };
 }
-// ─── Settlement (정산 리포트) ─────────────────────────────────────────
-export async function getSettlementReport(year: number, month: number, filterAssigneeId?: number) {
+
+// ─── Settlement ──────────────────────────────────────────────────────
+export async function getSettlementReport(
+  year: number,
+  month: number,
+  filterAssigneeId?: number
+) {
   const db = await getDb();
   if (!db) return [];
 
@@ -807,13 +904,15 @@ export async function getSettlementReport(year: number, month: number, filterAss
     })
     .from(semesters)
     .innerJoin(students, eq(semesters.studentId, students.id))
-    .where(and(
-      eq(semesters.isCompleted, true),
-      eq(students.approvalStatus, "승인"),
-      sql`${semesters.actualPaymentDate} >= ${startDate}`,
-      sql`${semesters.actualPaymentDate} < ${endDate}`,
-      ...(filterAssigneeId ? [eq(students.assigneeId, filterAssigneeId)] : [])
-    ))
+    .where(
+      and(
+        eq(semesters.isCompleted, true),
+        eq(students.approvalStatus, "승인"),
+        sql`${semesters.actualPaymentDate} >= ${startDate}`,
+        sql`${semesters.actualPaymentDate} < ${endDate}`,
+        ...(filterAssigneeId ? [eq(students.assigneeId, filterAssigneeId)] : [])
+      )
+    )
     .groupBy(students.assigneeId);
 
   const firstSalesData = await db
@@ -822,12 +921,14 @@ export async function getSettlementReport(year: number, month: number, filterAss
       totalSales: sql<string>`COALESCE(SUM(${students.paymentAmount}), 0)`,
     })
     .from(students)
-    .where(and(
-      eq(students.approvalStatus, "승인"),
-      sql`${students.paymentDate} >= ${startDate}`,
-      sql`${students.paymentDate} < ${endDate}`,
-      ...(filterAssigneeId ? [eq(students.assigneeId, filterAssigneeId)] : [])
-    ))
+    .where(
+      and(
+        eq(students.approvalStatus, "승인"),
+        sql`${students.paymentDate} >= ${startDate}`,
+        sql`${students.paymentDate} < ${endDate}`,
+        ...(filterAssigneeId ? [eq(students.assigneeId, filterAssigneeId)] : [])
+      )
+    )
     .groupBy(students.assigneeId);
 
   const refundData = await db
@@ -836,22 +937,27 @@ export async function getSettlementReport(year: number, month: number, filterAss
       totalRefunds: sql<string>`COALESCE(SUM(${refunds.refundAmount}), 0)`,
     })
     .from(refunds)
-    .where(and(
-      sql`${refunds.refundDate} >= ${startDate}`,
-      sql`${refunds.refundDate} < ${endDate}`,
-      ...(filterAssigneeId ? [eq(refunds.assigneeId, filterAssigneeId)] : [])
-    ))
+    .where(
+      and(
+        sql`${refunds.refundDate} >= ${startDate}`,
+        sql`${refunds.refundDate} < ${endDate}`,
+        ...(filterAssigneeId ? [eq(refunds.assigneeId, filterAssigneeId)] : [])
+      )
+    )
     .groupBy(refunds.assigneeId);
 
-  const allUsers = await db.select({ id: users.id, name: users.name }).from(users);
-  const userMap = new Map(allUsers.map((u) => [u.id, u.name || "이름없음"]));
+  const allUserRows = await db.select({ id: users.id, name: users.name }).from(users);
+  const userMap = new Map(allUserRows.map((u) => [u.id, u.name || "이름없음"]));
 
-  const reportMap = new Map<number, {
-    assigneeId: number;
-    assigneeName: string;
-    totalSales: number;
-    totalRefunds: number;
-  }>();
+  const reportMap = new Map<
+    number,
+    {
+      assigneeId: number;
+      assigneeName: string;
+      totalSales: number;
+      totalRefunds: number;
+    }
+  >();
 
   for (const row of salesData) {
     const aid = row.assigneeId;
@@ -900,7 +1006,8 @@ export async function getSettlementReport(year: number, month: number, filterAss
     return { ...r, netSales, commission, tax, finalPayout };
   });
 }
-// ─── Plan Semesters (학생 플랜 과목표) ───────────────────────────────
+
+// ─── Plan Semesters ──────────────────────────────────────────────────
 export async function listPlanSemesters(studentId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -917,10 +1024,13 @@ export async function createPlanSemester(data: InsertPlanSemester) {
   if (!db) throw new Error("DB not available");
 
   const result: any = await db.insert(planSemesters).values(data);
-  return result?.[0]?.insertId ?? result?.insertId ?? null;
+  return getInsertId(result);
 }
 
-export async function updatePlanSemester(id: number, data: Partial<InsertPlanSemester>) {
+export async function updatePlanSemester(
+  id: number,
+  data: Partial<InsertPlanSemester>
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
@@ -934,7 +1044,7 @@ export async function deletePlanSemester(id: number) {
   await db.delete(planSemesters).where(eq(planSemesters.id, id));
 }
 
-// ─── Transfer Subjects (전적대 과목표) ───────────────────────────────
+// ─── Transfer Subjects ───────────────────────────────────────────────
 export async function listTransferSubjects(studentId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -951,10 +1061,13 @@ export async function createTransferSubject(data: InsertTransferSubject) {
   if (!db) throw new Error("DB not available");
 
   const result: any = await db.insert(transferSubjects).values(data);
-  return result?.[0]?.insertId ?? result?.insertId ?? null;
+  return getInsertId(result);
 }
 
-export async function updateTransferSubject(id: number, data: Partial<InsertTransferSubject>) {
+export async function updateTransferSubject(
+  id: number,
+  data: Partial<InsertTransferSubject>
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
@@ -967,7 +1080,8 @@ export async function deleteTransferSubject(id: number) {
 
   await db.delete(transferSubjects).where(eq(transferSubjects.id, id));
 }
-// ─── 학기 완료 시 자동 종료 체크 ──────────────────────────────────────
+
+// ─── 학기 완료 시 자동 종료 체크 ─────────────────────────────────────
 export async function checkAndAutoComplete(studentId: number) {
   const db = await getDb();
   if (!db) return;
@@ -979,10 +1093,11 @@ export async function checkAndAutoComplete(studentId: number) {
   const completedCount = allSems.filter((s) => s.isCompleted).length;
 
   if (completedCount >= student.totalSemesters) {
-    await updateStudent(studentId, { studentStatus: "종료" } as any);
+    await updateStudent(studentId, { status: "종료" } as any);
   }
 }
-// ─── 교육원 조회 ──────────────────────────────────────
+
+// ─── 교육원 ──────────────────────────────────────────────────────────
 export async function listEducationInstitutions() {
   const db = await getDb();
   if (!db) return [];
@@ -993,6 +1108,7 @@ export async function listEducationInstitutions() {
     .where(eq(educationInstitutions.isActive, true))
     .orderBy(educationInstitutions.sortOrder, educationInstitutions.id);
 }
+
 export async function createEducationInstitution(data: {
   name: string;
   isActive?: boolean;
@@ -1007,7 +1123,7 @@ export async function createEducationInstitution(data: {
     sortOrder: data.sortOrder ?? 0,
   });
 
-  return Number((result as any).insertId);
+  return Number(getInsertId(result));
 }
 
 export async function updateEducationInstitution(

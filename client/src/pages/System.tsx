@@ -12,6 +12,7 @@ import {
   Pencil,
   UserX,
   UserCheck,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +27,28 @@ import {
 type TabKey = "settlement" | "users" | "forms";
 type UserTabKey = "create" | "list" | "role";
 type UserRole = "staff" | "admin" | "host";
+
+function formatPhone(value?: string | null) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+
+  if (digits.length === 11) {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+  }
+
+  if (digits.length === 10) {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+
+  return value || "-";
+}
+
+function normalizePhone(value: string) {
+  return value.replace(/\D/g, "").slice(0, 11);
+}
+
+function getUserDisplayNo(u: any) {
+  return u?.displayNo ?? u?.id ?? "-";
+}
 
 export default function System() {
   const { user } = useAuth();
@@ -146,11 +169,14 @@ function UserManagementSection() {
 
   const [userTab, setUserTab] = useState<UserTabKey>("create");
   const [roleFilter, setRoleFilter] = useState<"all" | UserRole>("all");
+  const [listSearch, setListSearch] = useState("");
+  const [roleSearch, setRoleSearch] = useState("");
 
   const [openId, setOpenId] = useState("");
   const [username, setUsername] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [bankName, setBankName] = useState("");
   const [bankAccount, setBankAccount] = useState("");
@@ -160,23 +186,61 @@ function UserManagementSection() {
   const [editUsername, setEditUsername] = useState("");
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
+  const [editPhone, setEditPhone] = useState("");
   const [editPassword, setEditPassword] = useState("");
   const [editBankName, setEditBankName] = useState("");
   const [editBankAccount, setEditBankAccount] = useState("");
 
   const [roleDrafts, setRoleDrafts] = useState<Record<number, UserRole>>({});
 
-  const filteredUsers = useMemo(() => {
+  const roleFilteredUsers = useMemo(() => {
     const list = users ?? [];
     if (roleFilter === "all") return list;
     return list.filter((u: any) => u.role === roleFilter);
   }, [users, roleFilter]);
+
+  const filteredUsers = useMemo(() => {
+    const q = listSearch.trim().toLowerCase();
+
+    return roleFilteredUsers.filter((u: any) => {
+      if (!q) return true;
+
+      return (
+        String(getUserDisplayNo(u)).includes(q) ||
+        String(u.id ?? "").includes(q) ||
+        String(u.username ?? "").toLowerCase().includes(q) ||
+        String(u.name ?? "").toLowerCase().includes(q) ||
+        String(u.phone ?? "").includes(q.replace(/\D/g, "")) ||
+        String(u.email ?? "").toLowerCase().includes(q) ||
+        String(u.bankName ?? "").toLowerCase().includes(q) ||
+        String(u.bankAccount ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [roleFilteredUsers, listSearch]);
+
+  const filteredRoleUsers = useMemo(() => {
+    const q = roleSearch.trim().toLowerCase();
+
+    return roleFilteredUsers.filter((u: any) => {
+      if (!q) return true;
+
+      return (
+        String(getUserDisplayNo(u)).includes(q) ||
+        String(u.id ?? "").includes(q) ||
+        String(u.username ?? "").toLowerCase().includes(q) ||
+        String(u.name ?? "").toLowerCase().includes(q) ||
+        String(u.phone ?? "").includes(q.replace(/\D/g, "")) ||
+        String(u.email ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [roleFilteredUsers, roleSearch]);
 
   const resetCreateForm = () => {
     setOpenId("");
     setUsername("");
     setName("");
     setEmail("");
+    setPhone("");
     setPassword("");
     setBankName("");
     setBankAccount("");
@@ -196,10 +260,11 @@ function UserManagementSection() {
         password: password.trim(),
         name: name.trim(),
         email: email.trim() || undefined,
+        phone: phone.trim() || undefined,
         role: createRole,
         bankName: bankName.trim() || undefined,
         bankAccount: bankAccount.trim() || undefined,
-      },
+      } as any,
       {
         onSuccess: () => {
           resetCreateForm();
@@ -213,6 +278,7 @@ function UserManagementSection() {
     setEditUsername(u.username ?? "");
     setEditName(u.name ?? "");
     setEditEmail(u.email ?? "");
+    setEditPhone(u.phone ?? "");
     setEditPassword("");
     setEditBankName(u.bankName ?? "");
     setEditBankAccount(u.bankAccount ?? "");
@@ -223,6 +289,7 @@ function UserManagementSection() {
     setEditUsername("");
     setEditName("");
     setEditEmail("");
+    setEditPhone("");
     setEditPassword("");
     setEditBankName("");
     setEditBankAccount("");
@@ -237,10 +304,11 @@ function UserManagementSection() {
         username: editUsername.trim() || undefined,
         name: editName.trim() || undefined,
         email: editEmail.trim() || undefined,
+        phone: editPhone.trim() || undefined,
         password: editPassword.trim() || undefined,
         bankName: editBankName.trim() || undefined,
         bankAccount: editBankAccount.trim() || undefined,
-      },
+      } as any,
       {
         onSuccess: () => {
           cancelEdit();
@@ -337,6 +405,11 @@ function UserManagementSection() {
                 onChange={(e) => setEmail(e.target.value)}
               />
               <Input
+                placeholder="전화번호"
+                value={phone}
+                onChange={(e) => setPhone(normalizePhone(e.target.value))}
+              />
+              <Input
                 type="password"
                 placeholder="비밀번호"
                 value={password}
@@ -368,10 +441,7 @@ function UserManagementSection() {
             </div>
 
             <div>
-              <Button
-                onClick={handleCreate}
-                disabled={createMutation.isPending}
-              >
+              <Button onClick={handleCreate} disabled={createMutation.isPending}>
                 {createMutation.isPending ? "생성 중..." : "직원 계정 생성"}
               </Button>
             </div>
@@ -414,6 +484,16 @@ function UserManagementSection() {
                 staff
               </Button>
             </div>
+
+            <div className="relative max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="번호, 아이디, 이름, 전화번호, 이메일 검색"
+                value={listSearch}
+                onChange={(e) => setListSearch(e.target.value)}
+              />
+            </div>
           </CardHeader>
 
           <CardContent>
@@ -428,10 +508,11 @@ function UserManagementSection() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-muted/50">
-                      <th className="px-4 py-3 text-left">ID</th>
+                      <th className="px-4 py-3 text-left">번호</th>
                       <th className="px-4 py-3 text-left">아이디</th>
                       <th className="px-4 py-3 text-left">이름</th>
                       <th className="px-4 py-3 text-left">이메일</th>
+                      <th className="px-4 py-3 text-left">전화번호</th>
                       <th className="px-4 py-3 text-left">은행명</th>
                       <th className="px-4 py-3 text-left">계좌번호</th>
                       <th className="px-4 py-3 text-left">권한</th>
@@ -445,7 +526,7 @@ function UserManagementSection() {
 
                       return (
                         <tr key={u.id} className="border-b last:border-0">
-                          <td className="px-4 py-3">{u.id}</td>
+                          <td className="px-4 py-3">{getUserDisplayNo(u)}</td>
 
                           <td className="px-4 py-3">
                             {isEditing ? (
@@ -483,6 +564,19 @@ function UserManagementSection() {
                           <td className="px-4 py-3">
                             {isEditing ? (
                               <Input
+                                value={editPhone}
+                                onChange={(e) =>
+                                  setEditPhone(normalizePhone(e.target.value))
+                                }
+                              />
+                            ) : (
+                              formatPhone(u.phone)
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3">
+                            {isEditing ? (
+                              <Input
                                 value={editBankName}
                                 onChange={(e) => setEditBankName(e.target.value)}
                               />
@@ -495,9 +589,7 @@ function UserManagementSection() {
                             {isEditing ? (
                               <Input
                                 value={editBankAccount}
-                                onChange={(e) =>
-                                  setEditBankAccount(e.target.value)
-                                }
+                                onChange={(e) => setEditBankAccount(e.target.value)}
                               />
                             ) : (
                               u.bankAccount || "-"
@@ -527,9 +619,7 @@ function UserManagementSection() {
                                     placeholder="새 비밀번호(선택)"
                                     type="password"
                                     value={editPassword}
-                                    onChange={(e) =>
-                                      setEditPassword(e.target.value)
-                                    }
+                                    onChange={(e) => setEditPassword(e.target.value)}
                                   />
                                   <Button
                                     size="sm"
@@ -626,12 +716,22 @@ function UserManagementSection() {
                 staff
               </Button>
             </div>
+
+            <div className="relative max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="번호, 아이디, 이름, 전화번호 검색"
+                value={roleSearch}
+                onChange={(e) => setRoleSearch(e.target.value)}
+              />
+            </div>
           </CardHeader>
 
           <CardContent>
             {isLoading ? (
               <div className="text-sm text-muted-foreground">불러오는 중...</div>
-            ) : filteredUsers.length === 0 ? (
+            ) : filteredRoleUsers.length === 0 ? (
               <div className="text-sm text-muted-foreground">
                 표시할 계정이 없습니다.
               </div>
@@ -640,18 +740,22 @@ function UserManagementSection() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-muted/50">
+                      <th className="px-4 py-3 text-left">번호</th>
                       <th className="px-4 py-3 text-left">이름</th>
                       <th className="px-4 py-3 text-left">아이디</th>
+                      <th className="px-4 py-3 text-left">전화번호</th>
                       <th className="px-4 py-3 text-left">현재 권한</th>
                       <th className="px-4 py-3 text-left">변경 권한</th>
                       <th className="px-4 py-3 text-right">처리</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredUsers.map((u: any) => (
+                    {filteredRoleUsers.map((u: any) => (
                       <tr key={u.id} className="border-b last:border-0">
+                        <td className="px-4 py-3">{getUserDisplayNo(u)}</td>
                         <td className="px-4 py-3">{u.name || "-"}</td>
                         <td className="px-4 py-3">{u.username || "-"}</td>
+                        <td className="px-4 py-3">{formatPhone(u.phone)}</td>
                         <td className="px-4 py-3">{u.role || "-"}</td>
                         <td className="px-4 py-3">
                           <Select
