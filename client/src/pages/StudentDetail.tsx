@@ -301,14 +301,15 @@ const { data: institutionList } = trpc.educationInstitution.list.useQuery();
 const institutionMap = new Map(
   institutionList?.map((inst: any) => [inst.id, inst.name]) ?? []
 );
-  const handleStudentFieldBlur = (field: string, value: string) => {
-    const payload: any = { id: studentId };
-  const handleStudentInstitutionChange = (value: string) => {
+ const handleStudentInstitutionChange = (value: string) => {
   updateStudentMut.mutate({
     id: studentId,
     institutionId: value ? Number(value) : undefined,
   } as any);
 };
+  const handleStudentFieldBlur = (field: string, value: string) => {
+    const payload: any = { id: studentId };
+ 
     if (field === "subjectCount" || field === "totalSemesters") {
       payload[field] = value ? parseInt(value) : undefined;
     } else if (field === "startDate" || field === "paymentDate") {
@@ -812,9 +813,10 @@ const institutionMap = new Map(
 </Select>
                       </td>
                       <td className="px-1 py-0.5">
-                        <EditableCell
-  value={registrationSummary.subjectCount?.toString() || ""}
-  onBlur={(v) => handleStudentFieldBlur("subjectCount", v)}
+     <EditableCell
+  value={sem.plannedSubjectCount?.toString() || ""}
+  onBlur={(v) => handleSemFieldBlur(sem.id, "plannedSubjectCount", v)}
+  disabled={sem.isLocked}
 />
                       </td>
                       <td className="px-1 py-0.5">
