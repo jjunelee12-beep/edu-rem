@@ -166,16 +166,22 @@ export const appRouter = router({
   }),
 
   dashboard: router({
-    stats: protectedProcedure.query(async ({ ctx }) => {
-      const assigneeId = isAdminOrHost(ctx.user) ? undefined : ctx.user.id;
-      return db.getDashboardStats(assigneeId);
-    }),
-
-    monthApprovals: protectedProcedure.query(async ({ ctx }) => {
-      const assigneeId = isAdminOrHost(ctx.user) ? undefined : ctx.user.id;
-      return db.getMonthApprovals(assigneeId);
-    }),
+  stats: protectedProcedure.query(async ({ ctx }) => {
+    return db.getDashboardStats(Number(ctx.user.id));
   }),
+
+  totalStats: hostProcedure.query(async () => {
+    return db.getDashboardStats(undefined);
+  }),
+
+  monthSalesEntries: protectedProcedure.query(async ({ ctx }) => {
+    return db.getMonthSalesEntries(Number(ctx.user.id));
+  }),
+
+  totalMonthSalesEntries: hostProcedure.query(async () => {
+    return db.getMonthSalesEntries(undefined);
+  }),
+}),
 
   consultation: router({
     list: protectedProcedure.query(async ({ ctx }) => {
@@ -525,37 +531,37 @@ student: router({
     }),
 
   approve: adminProcedure
-    .input(
-      z.object({
-        id: z.number(),
-        approvalStatus: z.enum(["승인", "불승인"]),
-      })
-    )
-    .mutation(async ({ input }) => {
-      const now = new Date();
-      const updateData: any = { approvalStatus: input.approvalStatus };
+  .input(
+    z.object({
+      id: z.number(),
+      approvalStatus: z.enum(["승인", "불승인"]),
+    })
+  )
+  .mutation(async ({ input }) => {
+    const now = new Date();
+    const updateData: any = { approvalStatus: input.approvalStatus };
 
-      if (input.approvalStatus === "승인") {
-        updateData.approvedAt = now;
-        updateData.rejectedAt = null;
-      } else {
-        updateData.rejectedAt = now;
-        updateData.approvedAt = null;
-      }
+    if (input.approvalStatus === "승인") {
+      updateData.approvedAt = now;
+      updateData.rejectedAt = null;
+    } else {
+      updateData.rejectedAt = now;
+      updateData.approvedAt = null;
+    }
 
-      await db.updateStudent(input.id, updateData);
+    await db.updateStudent(input.id, updateData);
 
-      if (input.approvalStatus === "승인") {
-        const sems = await db.listSemesters(input.id);
-        for (const sem of sems) {
-          if (!sem.isLocked) {
-            await db.updateSemester(sem.id, { isLocked: true });
-          }
+    if (input.approvalStatus === "승인") {
+      const sems = await db.listSemesters(input.id);
+      for (const sem of sems) {
+        if (!sem.isLocked) {
+          await db.updateSemester(sem.id, { isLocked: true });
         }
       }
+    }
 
-      return { success: true };
-    }),
+    return { success: true };
+  }),
 }),
 
 plan: router({
@@ -719,14 +725,30 @@ semester: router({
       return { success: true };
     }),
 
-  delete: protectedProcedure
+    delete: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
-      const sem = await db.getSemester(input.id);
-      if (sem?.isLocked) throw new Error("승인된 학기는 삭제할 수 없습니다");
+    .mutation(async ({ ctx, input }) => {
+      const item = await db.getStudent(input.id);
+      if (!item) throw new Error("학생 기록을 찾을 수 없습니다");
 
-      await db.deleteSemester(input.id);
+      const myId = Number(ctx.user.id) || 1;
+      if (!isAdminOrHost(ctx.user) && item.assigneeId !== myId) {
+        throw new Error("권한이 없습니다");
+      }
+
+      await db.deleteStudent(input.id);
       return { success: true };
+    }),
+
+  approve: adminProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        approvalStatus: z.enum(["승인", "불승인"]),
+      })
+    )
+    .mutation(async () => {
+      throw new Error("결제 승인 기능은 더 이상 사용하지 않습니다");
     }),
 }),
 refund: router({

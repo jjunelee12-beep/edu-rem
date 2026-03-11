@@ -515,163 +515,234 @@ export async function deleteRefund(id: number) {
 
 // ─── Dashboard Stats (v4: KST 기준, 결제완료 기준) ──────────────────
 export async function getDashboardStats(assigneeId?: number) {
-  const db = await getDb();
-  if (!db) {
-    return {
-      monthConsultations: 0,
-      monthNewRegistrations: 0,
-      monthNewRegistrationAmount: 0,
-      todaySales: 0,
-      monthSales: 0,
-    };
+  const now = new Date();
+
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+  const students = await listStudents(assigneeId);
+
+  const toNumber = (v: any) =>
+    Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
+
+  // 학생 첫 결제
+  const todayFirstSales = students
+    .filter(
+      (s: any) =>
+        s.paymentDate &&
+        new Date(s.paymentDate) >= startOfToday &&
+        new Date(s.paymentDate) < endOfToday
+    )
+    .reduce((sum: number, s: any) => sum + toNumber(s.paymentAmount), 0);
+
+  const monthFirstSales = students
+    .filter(
+      (s: any) =>
+        s.paymentDate &&
+        new Date(s.paymentDate) >= startOfMonth &&
+        new Date(s.paymentDate) < endOfMonth
+    )
+    .reduce((sum: number, s: any) => sum + toNumber(s.paymentAmount), 0);
+
+  const monthRegistered = students.filter(
+    (s: any) =>
+      s.paymentDate &&
+      new Date(s.paymentDate) >= startOfMonth &&
+      new Date(s.paymentDate) < endOfMonth &&
+      toNumber(s.paymentAmount) > 0
+  ).length;
+
+  const monthConsultations = await listConsultations(assigneeId);
+  const monthConsultationCount = monthConsultations.filter((c: any) => {
+    const d = new Date(c.consultDate);
+    return d >= startOfMonth && d < endOfMonth;
+  }).length;
+
+  // 학기 실제 수납
+  const dbConn = await getDb();
+  let todaySemesterSales = 0;
+  let monthSemesterSales = 0;
+  let totalSales = 0;
+
+  if (dbConn) {
+    const semesterRows = await dbConn.execute(sql`
+      SELECT s.assigneeId, sem.actualAmount, sem.actualPaymentDate
+      FROM semesters sem
+      INNER JOIN students s ON s.id = sem.studentId
+      WHERE sem.isCompleted = true
+    `);
+
+    const rows = (semesterRows as any)[0] || [];
+
+    for (const row of rows) {
+      if (assigneeId && Number(row.assigneeId) !== Number(assigneeId)) continue;
+
+      const amount = toNumber(row.actualAmount);
+      const payDate = row.actualPaymentDate ? new Date(row.actualPaymentDate) : null;
+
+      totalSales += amount;
+
+      if (payDate && payDate >= startOfToday && payDate < endOfToday) {
+        todaySemesterSales += amount;
+      }
+
+      if (payDate && payDate >= startOfMonth && payDate < endOfMonth) {
+        monthSemesterSales += amount;
+      }
+    }
   }
 
-  const { monthStart, monthEnd, today } = getKSTMonthRange();
-
-  const assigneeFilter = assigneeId ? sql`AND assigneeId = ${assigneeId}` : sql``;
-  const studentAssigneeFilter = assigneeId ? sql`AND assigneeId = ${assigneeId}` : sql``;
-
-  const [monthConsResult] = await db.execute(
-    sql`SELECT COUNT(*) as cnt FROM consultations WHERE consultDate >= ${monthStart} AND consultDate < ${monthEnd} ${assigneeFilter}`
+  const totalFirstSales = students.reduce(
+    (sum: number, s: any) => sum + toNumber(s.paymentAmount),
+    0
   );
-  const monthConsultations = Number((monthConsResult as any)[0]?.cnt || 0);
-
-  const [newRegResult] = await db.execute(
-    sql`SELECT COUNT(*) as cnt, COALESCE(SUM(paymentAmount), 0) as total FROM students WHERE paymentDate >= ${monthStart} AND paymentDate < ${monthEnd} AND approvalStatus != '불승인' ${studentAssigneeFilter}`
-  );
-  const monthNewRegistrations = Number((newRegResult as any)[0]?.cnt || 0);
-  const monthNewRegistrationAmount = Number((newRegResult as any)[0]?.total || 0);
-
-  const [todayFirstResult] = await db.execute(
-    sql`SELECT COALESCE(SUM(paymentAmount), 0) as total FROM students WHERE paymentDate = ${today} AND approvalStatus = '승인' ${studentAssigneeFilter}`
-  );
-
-  const semAssigneeFilter = assigneeId
-    ? sql`AND s.studentId IN (SELECT id FROM students WHERE assigneeId = ${assigneeId})`
-    : sql``;
-
-  const [todaySemResult] = await db.execute(
-    sql`SELECT COALESCE(SUM(s.actualAmount), 0) as total FROM semesters s
-    INNER JOIN students st ON s.studentId = st.id AND st.approvalStatus = '승인'
-    WHERE s.actualPaymentDate = ${today} AND s.isCompleted = true ${semAssigneeFilter}`
-  );
-
-  const todaySales =
-    Number((todayFirstResult as any)[0]?.total || 0) +
-    Number((todaySemResult as any)[0]?.total || 0);
-
-  const [monthFirstResult] = await db.execute(
-    sql`SELECT COALESCE(SUM(paymentAmount), 0) as total FROM students WHERE paymentDate >= ${monthStart} AND paymentDate < ${monthEnd} AND approvalStatus = '승인' ${studentAssigneeFilter}`
-  );
-
-  const [monthSemResult] = await db.execute(
-    sql`SELECT COALESCE(SUM(s.actualAmount), 0) as total FROM semesters s
-    INNER JOIN students st ON s.studentId = st.id AND st.approvalStatus = '승인'
-    WHERE s.actualPaymentDate >= ${monthStart} AND s.actualPaymentDate < ${monthEnd} AND s.isCompleted = true ${semAssigneeFilter}`
-  );
-
-  const monthSales =
-    Number((monthFirstResult as any)[0]?.total || 0) +
-    Number((monthSemResult as any)[0]?.total || 0);
 
   return {
-    monthConsultations,
-    monthNewRegistrations,
-    monthNewRegistrationAmount,
-    todaySales,
-    monthSales,
+    monthConsultationCount,
+    monthRegistered,
+    todaySales: todayFirstSales + todaySemesterSales,
+    monthSales: monthFirstSales + monthSemesterSales,
+    totalSales: totalFirstSales + totalSales,
+    todayFirstSales,
+    monthFirstSales,
+    todaySemesterSales,
+    monthSemesterSales,
   };
 }
 
 // ─── 이번달 승인/불승인 내역 (v4: approvedAt/rejectedAt 기준) ────────
-export async function getMonthApprovals(assigneeId?: number) {
-  const db = await getDb();
-  if (!db) return { approved: [], rejected: [], approvedTotal: 0, rejectedTotal: 0 };
+export async function getMonthSalesEntries(assigneeId?: number) {
+  const students = await listStudents(assigneeId);
 
-  const { monthStart, monthEnd } = getKSTMonthRange();
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-  const approvedConditions = [
-    sql`(${students.approvedAt} >= ${monthStart} AND ${students.approvedAt} < ${monthEnd})`,
-    eq(students.approvalStatus, "승인"),
-  ];
-  if (assigneeId) approvedConditions.push(eq(students.assigneeId, assigneeId));
+  const toNumber = (v: any) =>
+    Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
 
-  const approved = await db.select({
-    id: students.id,
-    clientName: students.clientName,
-    phone: students.phone,
-    course: students.course,
-    paymentAmount: students.paymentAmount,
-    assigneeId: students.assigneeId,
-    approvedAt: students.approvedAt,
-  }).from(students).where(and(...approvedConditions)).orderBy(desc(students.approvedAt));
+  const registered = students
+    .filter(
+      (s: any) =>
+        s.paymentDate &&
+        new Date(s.paymentDate) >= startOfMonth &&
+        new Date(s.paymentDate) < endOfMonth &&
+        toNumber(s.paymentAmount) > 0
+    )
+    .map((s: any) => ({
+      id: s.id,
+      type: "first",
+      clientName: s.clientName,
+      phone: s.phone,
+      course: s.course,
+      amount: toNumber(s.paymentAmount),
+      paymentDate: s.paymentDate,
+      assigneeId: s.assigneeId,
+    }));
 
-  let approvedTotal = 0;
-  for (const s of approved) {
-    approvedTotal += Number(s.paymentAmount || 0);
+  const dbConn = await getDb();
+  let semesters: any[] = [];
 
-    const [semResult] = await db.execute(
-      sql`SELECT COALESCE(SUM(actualAmount), 0) as total FROM semesters WHERE studentId = ${s.id} AND isCompleted = true`
-    );
-    approvedTotal += Number((semResult as any)[0]?.total || 0);
+  if (dbConn) {
+    const result = await dbConn.execute(sql`
+      SELECT 
+        sem.id,
+        sem.studentId,
+        sem.actualAmount,
+        sem.actualPaymentDate,
+        s.clientName,
+        s.phone,
+        s.course,
+        s.assigneeId
+      FROM semesters sem
+      INNER JOIN students s ON s.id = sem.studentId
+      WHERE sem.isCompleted = true
+        AND sem.actualPaymentDate IS NOT NULL
+    `);
+
+    const rows = (result as any)[0] || [];
+
+    semesters = rows
+      .filter((r: any) => {
+        if (assigneeId && Number(r.assigneeId) !== Number(assigneeId)) return false;
+        const d = new Date(r.actualPaymentDate);
+        return d >= startOfMonth && d < endOfMonth;
+      })
+      .map((r: any) => ({
+        id: r.id,
+        studentId: r.studentId,
+        type: "semester",
+        clientName: r.clientName,
+        phone: r.phone,
+        course: r.course,
+        amount: toNumber(r.actualAmount),
+        paymentDate: r.actualPaymentDate,
+        assigneeId: r.assigneeId,
+      }));
   }
 
-  const rejectedConditions = [
-    sql`(${students.rejectedAt} >= ${monthStart} AND ${students.rejectedAt} < ${monthEnd})`,
-    eq(students.approvalStatus, "불승인"),
-  ];
-  if (assigneeId) rejectedConditions.push(eq(students.assigneeId, assigneeId));
+  const entries = [...registered, ...semesters].sort(
+    (a: any, b: any) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime()
+  );
 
-  const rejected = await db.select({
-    id: students.id,
-    clientName: students.clientName,
-    phone: students.phone,
-    course: students.course,
-    paymentAmount: students.paymentAmount,
-    assigneeId: students.assigneeId,
-    rejectedAt: students.rejectedAt,
-  }).from(students).where(and(...rejectedConditions)).orderBy(desc(students.rejectedAt));
+  const totalAmount = entries.reduce((sum: number, x: any) => sum + toNumber(x.amount), 0);
 
-  let rejectedTotal = 0;
-  for (const s of rejected) {
-    rejectedTotal += Number(s.paymentAmount || 0);
-  }
-
-  return { approved, rejected, approvedTotal, rejectedTotal };
+  return {
+    entries,
+    totalCount: entries.length,
+    totalAmount,
+  };
 }
-
 // ─── 학생별 총 결제해야할 금액 / 수납 금액 ──────────────────────────────
 export async function getStudentPaymentSummary(studentId: number) {
   const db = await getDb();
-  if (!db) return { totalRequired: 0, totalPaid: 0, totalRefund: 0 };
+  if (!db) {
+    return { totalRequired: 0, totalPaid: 0, totalRefund: 0, remainingAmount: 0 };
+  }
 
   const student = await getStudent(studentId);
-  if (!student) return { totalRequired: 0, totalPaid: 0, totalRefund: 0 };
+  if (!student) {
+    return { totalRequired: 0, totalPaid: 0, totalRefund: 0, remainingAmount: 0 };
+  }
 
-  const firstAmount = Number(student.paymentAmount || 0);
+  const toNumber = (v: any) =>
+    Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
+
+  const firstAmount = toNumber(student.paymentAmount);
 
   const [plannedResult] = await db.execute(
     sql`SELECT COALESCE(SUM(plannedAmount), 0) as total FROM semesters WHERE studentId = ${studentId}`
   );
-  const semesterPlanned = Number((plannedResult as any)[0]?.total || 0);
+  const semesterPlanned = toNumber((plannedResult as any)[0]?.total);
 
   const [paidResult] = await db.execute(
     sql`SELECT COALESCE(SUM(actualAmount), 0) as total FROM semesters WHERE studentId = ${studentId} AND isCompleted = true`
   );
-  const semesterPaid = Number((paidResult as any)[0]?.total || 0);
+  const semesterPaid = toNumber((paidResult as any)[0]?.total);
 
   const [refundResult] = await db.execute(
     sql`SELECT COALESCE(SUM(refundAmount), 0) as total FROM refunds WHERE studentId = ${studentId}`
   );
-  const totalRefund = Number((refundResult as any)[0]?.total || 0);
+  const totalRefund = toNumber((refundResult as any)[0]?.total);
 
   const totalRequired = firstAmount + semesterPlanned;
-  const firstPaid = student.approvalStatus === "승인" ? firstAmount : 0;
+
+  // 승인 제거: paymentDate 있으면 첫 결제 완료로 봄
+  const firstPaid = student.paymentDate && firstAmount > 0 ? firstAmount : 0;
+
   const totalPaid = firstPaid + semesterPaid;
+  const remainingAmount = totalRequired - totalPaid - totalRefund;
 
-  return { totalRequired, totalPaid, totalRefund };
+  return {
+    totalRequired,
+    totalPaid,
+    totalRefund,
+    remainingAmount,
+  };
 }
-
 // ─── Settlement (정산 리포트) ─────────────────────────────────────────
 export async function getSettlementReport(year: number, month: number, filterAssigneeId?: number) {
   const db = await getDb();
