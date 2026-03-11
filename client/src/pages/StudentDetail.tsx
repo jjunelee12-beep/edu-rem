@@ -174,14 +174,7 @@ export default function StudentDetail() {
     onError: (e) => toast.error(e.message),
   });
 
-  const approveMut = trpc.student.approve.useMutation({
-    onSuccess: () => {
-      utils.student.get.invalidate({ id: studentId });
-      utils.semester.list.invalidate({ studentId });
-      toast.success("승인 상태 변경 완료");
-    },
-    onError: (e) => toast.error(e.message),
-  });
+ 
 
   // ✅ 새 플랜 mutation
   const createPlanSemesterMut = trpc.planSemester.create.useMutation({
@@ -458,6 +451,37 @@ export default function StudentDetail() {
       total: major + liberal + general,
     };
   }, [planTotals, transferTotals]);
+  const registrationSummary = useMemo(() => {
+    const toNumber = (v: any) =>
+      Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
+
+    const actualSemesters = (semesters || [])
+      .filter(
+        (s: any) =>
+          s.actualStartDate ||
+          s.actualInstitution ||
+          s.actualSubjectCount ||
+          s.actualAmount ||
+          s.actualPaymentDate
+      )
+      .sort((a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder));
+
+    const firstActual = actualSemesters[0];
+
+    return {
+      status: firstActual ? "등록" : (student?.status || ""),
+      startDate: firstActual?.actualStartDate || student?.startDate || "",
+      paymentAmount: firstActual?.actualAmount
+        ? toNumber(firstActual.actualAmount)
+        : toNumber(student?.paymentAmount),
+      subjectCount:
+        firstActual?.actualSubjectCount ??
+        student?.subjectCount ??
+        "",
+      paymentDate: firstActual?.actualPaymentDate || student?.paymentDate || "",
+      institution: firstActual?.actualInstitution || student?.institution || "",
+    };
+  }, [semesters, student]);
 
   const handleAddPlanSemesterGroup = () => {
     createPlanSemesterMut.mutate({
@@ -529,11 +553,12 @@ export default function StudentDetail() {
   };
 
   const requirementBadgeClass = (type?: string | null) => {
-    if (type === "전공필수") return "bg-red-50 text-red-600 border border-red-200";
-    if (type === "전공선택") return "bg-white text-black border border-gray-300";
-    if (type === "교양") return "bg-blue-50 text-blue-600 border border-blue-200";
-    return "bg-gray-50 text-gray-600 border border-gray-200";
-  };
+  if (type === "전공필수") return "bg-red-50 text-red-600 border border-red-200";
+  if (type === "전공선택") return "bg-white text-black border border-gray-300";
+  if (type === "교양") return "bg-blue-50 text-blue-600 border border-blue-200";
+  if (type === "일반") return "bg-gray-50 text-gray-600 border border-gray-200";
+  return "bg-gray-50 text-gray-600 border border-gray-200";
+};
 
   if (studentLoading) {
     return (
@@ -593,7 +618,6 @@ export default function StudentDetail() {
 
         <div className="flex items-center gap-2">
           <Badge className={statusColor(student.status)}>{student.status}</Badge>
-          <Badge className={approvalColor(student.approvalStatus)}>{student.approvalStatus}</Badge>
         </div>
       </div>
 
@@ -618,7 +642,7 @@ export default function StudentDetail() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">상태</p>
-              <Select value={student.status} onValueChange={(v) => updateStudentMut.mutate({ id: studentId, status: v as any })}>
+             <Select value={registrationSummary.status || student.status} onValueChange={(v) => updateStudentMut.mutate({ id: studentId, status: v as any })}>
                 <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="등록">등록</SelectItem>
@@ -630,17 +654,17 @@ export default function StudentDetail() {
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">개강 날짜</p>
               <EditableCell
-                value={student.startDate ? new Date(student.startDate).toISOString().slice(0, 10) : ""}
-                onBlur={(v) => handleStudentFieldBlur("startDate", v)}
-                type="date"
-              />
+  value={registrationSummary.startDate ? formatDate(registrationSummary.startDate) : ""}
+  onBlur={(v) => handleStudentFieldBlur("startDate", v)}
+  type="date"
+/>
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">1학기 결제 금액</p>
               <EditableCell
-                value={student.paymentAmount ? Number(student.paymentAmount).toLocaleString() + "원" : ""}
-                onBlur={(v) => handleStudentFieldBlur("paymentAmount", v.replace(/[^0-9]/g, ""))}
-              />
+  value={registrationSummary.paymentAmount ? Number(registrationSummary.paymentAmount).toLocaleString() + "원" : ""}
+  onBlur={(v) => handleStudentFieldBlur("paymentAmount", v.replace(/[^0-9]/g, ""))}
+/>
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">과목 수</p>
@@ -649,14 +673,17 @@ export default function StudentDetail() {
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">결제 일자</p>
               <EditableCell
-                value={student.paymentDate ? new Date(student.paymentDate).toISOString().slice(0, 10) : ""}
-                onBlur={(v) => handleStudentFieldBlur("paymentDate", v)}
-                type="date"
-              />
+  value={registrationSummary.paymentDate ? formatDate(registrationSummary.paymentDate) : ""}
+  onBlur={(v) => handleStudentFieldBlur("paymentDate", v)}
+  type="date"
+/>
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">교육원</p>
-              <EditableCell value={student.institution || ""} onBlur={(v) => handleStudentFieldBlur("institution", v)} />
+              <EditableCell
+  value={registrationSummary.institution || ""}
+  onBlur={(v) => handleStudentFieldBlur("institution", v)}
+/>
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">총 학기 수</p>
@@ -688,27 +715,6 @@ export default function StudentDetail() {
               </div>
             </div>
           )}
-
-          {isAdmin && (
-            <div className="mt-4 pt-4 border-t flex items-center gap-3">
-              <span className="text-sm font-medium">승인 관리:</span>
-              <Button
-                size="sm"
-                variant={student.approvalStatus === "승인" ? "default" : "outline"}
-                className="gap-1"
-                onClick={() => approveMut.mutate({ id: studentId, approvalStatus: "승인" })}
-              >
-                <Check className="h-3.5 w-3.5" /> 승인
-              </Button>
-              <Button
-                size="sm"
-                variant={student.approvalStatus === "불승인" ? "destructive" : "outline"}
-                className="gap-1"
-                onClick={() => approveMut.mutate({ id: studentId, approvalStatus: "불승인" })}
-              >
-                <X className="h-3.5 w-3.5" /> 불승인
-              </Button>
-            </div>
           )}
         </CardContent>
       </Card>
@@ -769,7 +775,10 @@ export default function StudentDetail() {
                         <EditableCell value={sem.plannedInstitution || ""} onBlur={(v) => handleSemFieldBlur(sem.id, "plannedInstitution", v)} disabled={sem.isLocked} />
                       </td>
                       <td className="px-1 py-0.5">
-                        <EditableCell value={sem.plannedSubjectCount?.toString() || ""} onBlur={(v) => handleSemFieldBlur(sem.id, "plannedSubjectCount", v)} disabled={sem.isLocked} />
+                        <EditableCell
+  value={registrationSummary.subjectCount?.toString() || ""}
+  onBlur={(v) => handleStudentFieldBlur("subjectCount", v)}
+/>
                       </td>
                       <td className="px-1 py-0.5">
                         <EditableCell
@@ -1005,34 +1014,59 @@ export default function StudentDetail() {
                         {group.rows.map((row: any) => (
                           <tr key={row.id} className="border-b last:border-0">
                             <td className="px-2 py-1">
-                              <EditableCell
-                                value={row.subjectName || ""}
-                                onBlur={(v) => handlePlanSemesterBlur(row.id, "subjectName", v)}
-                              />
-                            </td>
+  <EditableCell
+    value={row.subjectName || ""}
+    onBlur={(v) => handlePlanSemesterBlur(row.id, "subjectName", v)}
+    className={row.planRequirementType === "전공필수" ? "text-red-600 font-medium" : ""}
+  />
+</td>
                             <td className="px-2 py-1">
-                              <select
-                                className="w-full h-8 px-2 text-sm border rounded bg-white"
-                                value={row.planCategory || "전공"}
-                                onChange={(e) => handlePlanSemesterBlur(row.id, "category", e.target.value)}
-                              >
-                                <option value="전공">전공</option>
-                                <option value="교양">교양</option>
-                                <option value="일반">일반</option>
-                              </select>
-                            </td>
+  <select
+    className="w-full h-8 px-2 text-sm border rounded bg-white"
+    value={row.planCategory || "전공"}
+    onChange={(e) => {
+      const nextCategory = e.target.value;
+
+      handlePlanSemesterBlur(row.id, "category", nextCategory);
+
+      if (nextCategory === "교양") {
+        handlePlanSemesterBlur(row.id, "requirementType", "교양");
+      } else if (nextCategory === "일반") {
+        handlePlanSemesterBlur(row.id, "requirementType", "일반");
+      } else if (nextCategory === "전공") {
+        handlePlanSemesterBlur(
+          row.id,
+          "requirementType",
+          row.planRequirementType === "전공필수" ? "전공필수" : "전공선택"
+        );
+      }
+    }}
+  >
+    <option value="전공">전공</option>
+    <option value="교양">교양</option>
+    <option value="일반">일반</option>
+  </select>
+</td>
                             <td className="px-2 py-1">
-                              <select
-                                className={`w-full h-8 px-2 text-sm rounded ${requirementBadgeClass(row.planRequirementType)}`}
-                                value={row.planRequirementType || "전공선택"}
-                                onChange={(e) => handlePlanSemesterBlur(row.id, "requirementType", e.target.value)}
-                              >
-                                <option value="전공필수">전공필수</option>
-                                <option value="전공선택">전공선택</option>
-                                <option value="교양">교양</option>
-                                <option value="일반">일반</option>
-                              </select>
-                            </td>
+  {row.planCategory === "전공" ? (
+    <select
+      className={`w-full h-8 px-2 text-sm rounded ${requirementBadgeClass(row.planRequirementType)}`}
+      value={row.planRequirementType || "전공선택"}
+      onChange={(e) => handlePlanSemesterBlur(row.id, "requirementType", e.target.value)}
+    >
+      <option value="전공필수">전공필수</option>
+      <option value="전공선택">전공선택</option>
+    </select>
+  ) : (
+    <div
+      className={`w-full h-8 px-2 text-sm rounded border flex items-center ${
+        requirementBadgeClass(row.planCategory)
+      }`}
+    >
+      {row.planCategory}
+    </div>
+  )}
+</td>
                             <td className="px-3 py-2 text-center font-medium text-black">3</td>
                             <td className="px-2 py-1 text-right">
                               <Button

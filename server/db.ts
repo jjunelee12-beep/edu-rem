@@ -28,6 +28,52 @@ export async function getDb() {
   return _db;
 }
 
+export async function getStudentRegistrationSummary(studentId: number) {
+  const db = await getDb();
+  if (!db) {
+    return {
+      status: "",
+      startDate: null,
+      paymentAmount: 0,
+      subjectCount: 0,
+      paymentDate: null,
+      institution: "",
+    };
+  }
+
+  const student = await getStudent(studentId);
+  if (!student) {
+    return {
+      status: "",
+      startDate: null,
+      paymentAmount: 0,
+      subjectCount: 0,
+      paymentDate: null,
+      institution: "",
+    };
+  }
+
+  const semesters = await listSemesters(studentId);
+
+  const actualSemesters = semesters
+    .filter((s: any) => s.actualStartDate || s.actualInstitution || s.actualSubjectCount || s.actualAmount || s.actualPaymentDate)
+    .sort((a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder));
+
+  const firstActual = actualSemesters[0];
+
+  const toNumber = (v: any) =>
+    Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
+
+  return {
+    status: firstActual ? "등록" : (student.status || ""),
+    startDate: firstActual?.actualStartDate || student.startDate || null,
+    paymentAmount: firstActual?.actualAmount ? toNumber(firstActual.actualAmount) : toNumber(student.paymentAmount),
+    subjectCount: firstActual?.actualSubjectCount ?? student.subjectCount ?? 0,
+    paymentDate: firstActual?.actualPaymentDate || student.paymentDate || null,
+    institution: firstActual?.actualInstitution || student.institution || "",
+  };
+}
+
 // ─── Helper: Asia/Seoul 기준 이번달 범위 ────────────────────────────
 function getKSTMonthRange() {
   // KST = UTC+9
