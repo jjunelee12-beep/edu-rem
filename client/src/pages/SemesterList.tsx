@@ -59,30 +59,30 @@ const [filterUnassignedPractice, setFilterUnassignedPractice] = useState(false);
   const monthOptions = useMemo(() => getMonthOptions(), []);
 
   const filtered = useMemo(() => {
-    if (!semesters) return [];
+  const rows = semesters ? [...semesters] : [];
 
-    const term = searchTerm.trim().toLowerCase();
-    const assigneeTerm = assigneeSearch.trim().toLowerCase();
+  const term = searchTerm.trim().toLowerCase();
+  const assigneeTerm = assigneeSearch.trim().toLowerCase();
 
-    return semesters.filter((s: any) => {
+  return rows.filter((s: any) => {
+    if (filterUnassignedPractice && s.practiceStatus !== "미섭외") return false;
 
-	if (filterUnassignedPractice && s.practiceStatus !== "미섭외") return false;
+    const assigneeName = (userMap.get(s.assigneeId) || "").toLowerCase();
 
-      const assigneeName = (userMap.get(s.assigneeId) || "").toLowerCase();
+    const matchesSearch =
+      !term ||
+      s.clientName?.toLowerCase().includes(term) ||
+      s.phone?.includes(term) ||
+      s.course?.toLowerCase().includes(term) ||
+      s.plannedInstitution?.toLowerCase().includes(term) ||
+      s.actualInstitution?.toLowerCase().includes(term);
 
-      const matchesSearch =
-        !term ||
-        s.clientName?.toLowerCase().includes(term) ||
-        s.phone?.includes(term) ||
-        s.course?.toLowerCase().includes(term) ||
-        s.plannedInstitution?.toLowerCase().includes(term) ||
-        s.actualInstitution?.toLowerCase().includes(term);
+    const matchesAssignee =
+      !assigneeTerm || assigneeName.includes(assigneeTerm);
 
-      const matchesAssignee = !assigneeTerm || assigneeName.includes(assigneeTerm);
-
-      return matchesSearch && matchesAssignee;
-    });
-  }, [semesters, searchTerm, assigneeSearch, userMap]);
+    return matchesSearch && matchesAssignee;
+  });
+}, [semesters, searchTerm, assigneeSearch, filterUnassignedPractice, userMap]);
 
   const statusBadge = (sem: any) => {
     if (sem.isCompleted) {
@@ -261,23 +261,25 @@ const [filterUnassignedPractice, setFilterUnassignedPractice] = useState(false);
                   </td>
                   <td className="px-2 py-2 text-center text-sm">{sem.plannedSubjectCount || "-"}</td>
 
-                  <td className="px-3 py-2 text-center">
-                    {sem.hasPractice ? (
-                      <Badge
-                        className={
-                          sem.practiceStatus === "섭외완료"
-                            ? "bg-emerald-100 text-emerald-700 text-[10px]"
-                            : sem.practiceStatus === "섭외중"
-                              ? "bg-blue-100 text-blue-700 text-[10px]"
-                              : "bg-red-100 text-red-700 text-[10px]"
-                        }
-                      >
-                        {sem.practiceStatus || "미섭외"}
-                      </Badge>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">-</span>
-                    )}
-                  </td>
+                 <td className="px-3 py-2 text-center">
+  {sem.hasPractice ? (
+    sem.practiceStatus === "섭외완료" ? (
+      <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">
+        섭외완료
+      </Badge>
+    ) : sem.practiceStatus === "섭외중" ? (
+      <Badge className="bg-blue-100 text-blue-700 text-[10px]">
+        섭외중
+      </Badge>
+    ) : (
+      <Badge className="bg-red-100 text-red-700 text-[10px]">
+        미섭외
+      </Badge>
+    )
+  ) : (
+    <span className="text-xs text-muted-foreground">-</span>
+  )}
+</td>
 
                   <td className="px-3 py-2 text-center">{statusBadge(sem)}</td>
 
