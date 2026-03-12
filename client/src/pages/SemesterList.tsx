@@ -45,7 +45,7 @@ export default function SemesterList() {
   const [plannedMonth, setPlannedMonth] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
   const [assigneeSearch, setAssigneeSearch] = useState("");
-
+const [filterUnassignedPractice, setFilterUnassignedPractice] = useState(false);
   const { data: allUsers } = trpc.users.list.useQuery();
   const { data: semesters, isLoading } = trpc.semester.listAll.useQuery({
     plannedMonth: plannedMonth || undefined,
@@ -65,6 +65,9 @@ export default function SemesterList() {
     const assigneeTerm = assigneeSearch.trim().toLowerCase();
 
     return semesters.filter((s: any) => {
+
+	if (filterUnassignedPractice && s.practiceStatus !== "미섭외") return false;
+
       const assigneeName = (userMap.get(s.assigneeId) || "").toLowerCase();
 
       const matchesSearch =
@@ -145,7 +148,14 @@ export default function SemesterList() {
           />
         )}
       </div>
-
+<label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+  <input
+    type="checkbox"
+    checked={filterUnassignedPractice}
+    onChange={(e) => setFilterUnassignedPractice(e.target.checked)}
+  />
+  미실습 섭외만
+</label>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="border-0 shadow-sm">
           <CardContent className="pt-4 pb-3 px-4">
