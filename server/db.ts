@@ -1180,4 +1180,3 @@ export async function updateEducationInstitution(
     .set(data)
     .where(eq(educationInstitutions.id, id));
 }
-}
