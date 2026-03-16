@@ -20,7 +20,7 @@ export function makeSessionCookie(userId: number, secret: string) {
 
   return cookie.serialize(SESSION_COOKIE, value, {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: "none",
     secure: true,
     path: "/",
     maxAge: SESSION_MAX_AGE_SECONDS,
