@@ -5,7 +5,39 @@
       "destination": "https://edu-crm-api-production.up.railway.app/api/:path*"
     },
     {
-      "source": "/(.*)",
+      "source": "/form/:path*",
+      "destination": "/"
+    },
+    {
+      "source": "/consultations",
+      "destination": "/"
+    },
+    {
+      "source": "/students",
+      "destination": "/"
+    },
+    {
+      "source": "/students/:path*",
+      "destination": "/"
+    },
+    {
+      "source": "/semesters",
+      "destination": "/"
+    },
+    {
+      "source": "/approvals",
+      "destination": "/"
+    },
+    {
+      "source": "/settlement",
+      "destination": "/"
+    },
+    {
+      "source": "/system",
+      "destination": "/"
+    },
+    {
+      "source": "/education-institutions",
       "destination": "/"
     }
   ]
