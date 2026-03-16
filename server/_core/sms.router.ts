@@ -16,18 +16,21 @@ export const smsRouter = router({
    * 담당자 목록
    */
   assignees: hostProcedure.query(async () => {
-    const users = await getAllUsersDetailed();
+  const users = await getAllUsersDetailed();
 
-    const items = users.map((u: any) => ({
+  const items = users
+    .map((u: any) => ({
       id: Number(u.id),
-      name: String(u.name || u.username || ""),
-      phone: String(u.phone || u.mobile || u.tel || ""),
-    }));
+      name: String(u.name || u.username || `담당자-${u.id}`),
+      phone: String(u.phone || ""),
+      isActive: u.isActive,
+    }))
+    .filter((u: any) => u.name.trim() !== "");
 
-    return {
-      items,
-    };
-  }),
+  return {
+    items,
+  };
+}),
 
   /**
    * 발송 대상 미리보기
@@ -71,14 +74,16 @@ export const smsRouter = router({
             }
 
             if (keyword) {
-              const matched =
-                includesKeyword(c.name, keyword) ||
-                includesKeyword(normalizePhone(c.phone), keyword) ||
-                includesKeyword(c.phone, keyword) ||
-                includesKeyword(c.course, keyword);
+  const matched =
+    includesKeyword(c.clientName, keyword) ||
+    includesKeyword(normalizePhone(c.phone), keyword) ||
+    includesKeyword(c.phone, keyword) ||
+    includesKeyword(c.course, keyword) ||
+    includesKeyword(c.desiredCourse, keyword) ||
+    includesKeyword(c.hopeCourse, keyword);
 
-              if (!matched) return false;
-            }
+  if (!matched) return false;
+}
 
             return true;
           })
@@ -86,15 +91,15 @@ export const smsRouter = router({
             const phone = normalizePhone(c.phone);
             if (phone.length < 10) return;
 
-            items.push({
-              id: `consultation-${c.id}`,
-              name: String(c.name || ""),
-              phone,
-              course: String(c.course || ""),
-              targetType: "consultation",
-              category: "미등록",
-              assigneeId: c.assigneeId ? Number(c.assigneeId) : null,
-            });
+         items.push({
+  id: `consultation-${c.id}`,
+  name: String(c.clientName || ""),
+  phone,
+  course: String(c.course || ""),
+  targetType: "consultation",
+  category: "미등록",
+  assigneeId: c.assigneeId ? Number(c.assigneeId) : null,
+});
           });
       }
 
@@ -107,15 +112,17 @@ export const smsRouter = router({
               return false;
             }
 
-            if (keyword) {
-              const matched =
-                includesKeyword(s.name, keyword) ||
-                includesKeyword(normalizePhone(s.phone), keyword) ||
-                includesKeyword(s.phone, keyword) ||
-                includesKeyword(s.course, keyword);
+           if (keyword) {
+  const matched =
+    includesKeyword(s.clientName, keyword) ||
+    includesKeyword(normalizePhone(s.phone), keyword) ||
+    includesKeyword(s.phone, keyword) ||
+    includesKeyword(s.course, keyword) ||
+    includesKeyword(s.desiredCourse, keyword) ||
+    includesKeyword(s.hopeCourse, keyword);
 
-              if (!matched) return false;
-            }
+  if (!matched) return false;
+}
 
             return true;
           })
@@ -123,15 +130,15 @@ export const smsRouter = router({
             const phone = normalizePhone(s.phone);
             if (phone.length < 10) return;
 
-            items.push({
-              id: `student-${s.id}`,
-              name: String(s.name || ""),
-              phone,
-              course: String(s.course || ""),
-              targetType: "student",
-              category: "등록",
-              assigneeId: s.assigneeId ? Number(s.assigneeId) : null,
-            });
+     items.push({
+  id: `student-${s.id}`,
+  name: String(s.clientName || ""),
+  phone,
+  course: String(s.course || ""),
+  targetType: "student",
+  category: "등록",
+  assigneeId: s.assigneeId ? Number(s.assigneeId) : null,
+});
           });
       }
 

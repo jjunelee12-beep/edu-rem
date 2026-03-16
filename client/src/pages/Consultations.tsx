@@ -6,7 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Plus, Trash2, Search, Upload, FileText } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { formatPhone } from "@/lib/format";
 
 function toISODate(v: string) {
@@ -42,8 +48,8 @@ function autoResize(el: HTMLTextAreaElement) {
 
 export default function Consultations() {
   const { user } = useAuth();
-const isHost = user?.role === "host";
-const isStaff = user?.role === "staff";
+  const isHost = user?.role === "host";
+  const isStaff = user?.role === "staff";
   const utils = trpc.useUtils();
 
   const { data: list, isLoading } = trpc.consultation.list.useQuery();
@@ -53,6 +59,17 @@ const isStaff = user?.role === "staff";
     onSuccess: () => {
       utils.consultation.list.invalidate();
       toast.success("상담 등록 완료");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const bulkCreateMut = trpc.consultation.bulkCreate.useMutation({
+    onSuccess: (data: any) => {
+      utils.consultation.list.invalidate();
+      toast.success(`${data?.count ?? 0}건 일괄 등록 완료`);
+      setBulkPasteText("");
+      setBulkPreviewRows([]);
+      setShowBulkPaste(false);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -83,13 +100,19 @@ const isStaff = user?.role === "staff";
 
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
-const [assigneeSearch, setAssigneeSearch] = useState("");
+  const [assigneeSearch, setAssigneeSearch] = useState("");
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [csvText, setCsvText] = useState("");
   const [csvHasHeader, setCsvHasHeader] = useState(true);
+
+  const [showBulkPaste, setShowBulkPaste] = useState(false);
+  const [bulkPasteText, setBulkPasteText] = useState("");
+  const [bulkPreviewRows, setBulkPreviewRows] = useState<any[]>([]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handlePhoneInput = (value: string) => (value ?? "").replace(/\D/g, "").slice(0, 11);
+  const handlePhoneInput = (value: string) =>
+    (value ?? "").replace(/\D/g, "").slice(0, 11);
 
   const getUserName = (id: number) => {
     const found = (usersList ?? []).find((u: any) => Number(u.id) === Number(id));
@@ -113,16 +136,16 @@ const [assigneeSearch, setAssigneeSearch] = useState("");
 
     if (cols.length < 2) return false;
 
-    const get = (idx: number) => (cols[idx] ?? "");
+    const get = (idx: number) => cols[idx] ?? "";
 
     const next = {
-      consultDate: toISODate((get(0) ?? "").toString().trim()),
-      channel: (get(1) ?? "").toString(),
-      clientName: (get(2) ?? "").toString(),
-      phone: handlePhoneInput((get(3) ?? "").toString()),
-      finalEducation: (get(4) ?? "").toString(),
-      desiredCourse: (get(5) ?? "").toString(),
-      notes: (get(6) ?? "").toString(),
+      consultDate: toISODate(String(get(0)).trim()),
+      channel: String(get(1)),
+      clientName: String(get(2)),
+      phone: handlePhoneInput(String(get(3))),
+      finalEducation: String(get(4)),
+      desiredCourse: String(get(5)),
+      notes: String(get(6)),
       status: newRow.status || "상담중",
     };
 
@@ -136,6 +159,96 @@ const [assigneeSearch, setAssigneeSearch] = useState("");
 
     setNewRow((prev) => ({ ...prev, ...next }));
     return true;
+  };
+
+  const parseBulkPasteText = (text: string) => {
+    const lines = String(text || "")
+      .replace(/\r/g, "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    return lines
+      .map((line) => {
+        const cols = line.split("\t");
+        return {
+          channel: String(cols[0] ?? "").trim(),
+          clientName: String(cols[1] ?? "").trim(),
+          phone: handlePhoneInput(String(cols[2] ?? "").trim()),
+          finalEducation: String(cols[3] ?? "").trim(),
+          desiredCourse: String(cols[4] ?? "").trim(),
+          notes: String(cols[5] ?? "").trim(),
+        };
+      })
+      .filter(
+        (row) =>
+          row.channel ||
+          row.clientName ||
+          row.phone ||
+          row.finalEducation ||
+          row.desiredCourse ||
+          row.notes
+      );
+  };
+
+  const handleBulkPreview = () => {
+    if (!bulkPasteText.trim()) {
+      toast.error("붙여넣은 내용이 없습니다");
+      return;
+    }
+
+    const rows = parseBulkPasteText(bulkPasteText);
+
+    if (!rows.length) {
+      toast.error(
+        "붙여넣기 형식을 확인하세요. 문의경로~상담내역 6열 탭 구분이어야 합니다."
+      );
+      return;
+    }
+
+    const first = rows[0];
+    const looksLikeHeader =
+      first &&
+      (first.channel.includes("문의경로") ||
+        first.clientName.includes("이름") ||
+        first.phone.includes("연락처") ||
+        first.finalEducation.includes("최종학력") ||
+        first.desiredCourse.includes("희망과정") ||
+        first.notes.includes("상담내역"));
+
+    const finalRows = looksLikeHeader ? rows.slice(1) : rows;
+
+    setBulkPreviewRows(finalRows);
+    toast.success(`${finalRows.length}건 미리보기 생성`);
+  };
+
+  const handleBulkSave = () => {
+    if (!bulkPreviewRows.length) {
+      toast.error("먼저 미리보기를 실행하세요");
+      return;
+    }
+
+    const validRows = bulkPreviewRows.filter(
+      (row) => row.clientName && row.phone
+    );
+
+    if (!validRows.length) {
+      toast.error("이름과 연락처가 있는 행이 없습니다");
+      return;
+    }
+
+    bulkCreateMut.mutate({
+      rows: validRows.map((row) => ({
+        consultDate: new Date().toISOString().slice(0, 10),
+        channel: row.channel,
+        clientName: row.clientName,
+        phone: row.phone,
+        finalEducation: row.finalEducation,
+        desiredCourse: row.desiredCourse,
+        notes: row.notes,
+        status: "상담중",
+      })),
+    } as any);
   };
 
   const handleConsultDatePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
@@ -172,26 +285,24 @@ const [assigneeSearch, setAssigneeSearch] = useState("");
     setShowAdd(false);
   };
 
- const filtered = (list || []).filter((item: any) => {
-  const matchesSearch = !search
-    ? true
-    : (
-        item.clientName?.toLowerCase?.().includes(search.toLowerCase()) ||
+  const filtered = (list || []).filter((item: any) => {
+    const matchesSearch = !search
+      ? true
+      : item.clientName?.toLowerCase?.().includes(search.toLowerCase()) ||
         item.phone?.includes(search) ||
         item.finalEducation?.toLowerCase?.().includes(search.toLowerCase()) ||
         item.desiredCourse?.toLowerCase?.().includes(search.toLowerCase()) ||
         item.channel?.toLowerCase?.().includes(search.toLowerCase()) ||
         item.notes?.toLowerCase?.().includes(search.toLowerCase()) ||
-        item.status?.toLowerCase?.().includes(search.toLowerCase())
-      );
+        item.status?.toLowerCase?.().includes(search.toLowerCase());
 
-  const assigneeName = getUserName(Number(item.assigneeId));
-  const matchesAssignee = !assigneeSearch
-    ? true
-    : assigneeName.toLowerCase().includes(assigneeSearch.toLowerCase());
+    const assigneeName = getUserName(Number(item.assigneeId));
+    const matchesAssignee = !assigneeSearch
+      ? true
+      : assigneeName.toLowerCase().includes(assigneeSearch.toLowerCase());
 
-  return matchesSearch && matchesAssignee;
-});
+    return matchesSearch && matchesAssignee;
+  });
 
   const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -222,18 +333,24 @@ const [assigneeSearch, setAssigneeSearch] = useState("");
     updateMut.mutate({ id, [field]: value } as any);
   };
 
-const reassignConsultationMut = trpc.consultation.reassign.useMutation({
-  onSuccess: () => {
-    toast.success("담당자 변경 완료");
-    utils.consultation.list.invalidate();
-    utils.student.list.invalidate();
-    utils.semester.listAll.invalidate();
-  },
-  onError: (e) => toast.error(e.message),
-});
+  const reassignConsultationMut = trpc.consultation.reassign.useMutation({
+    onSuccess: () => {
+      toast.success("담당자 변경 완료");
+      utils.consultation.list.invalidate();
+      utils.student.list.invalidate();
+      utils.semester.listAll.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const handleStatusChange = (id: number, newStatus: string) => {
     if (newStatus === "등록") {
-      if (!confirm("상태를 '등록'으로 변경하면 학생관리 탭에 자동으로 이관됩니다. 계속하시겠습니까?")) return;
+      if (
+        !confirm(
+          "상태를 '등록'으로 변경하면 학생관리 탭에 자동으로 이관됩니다. 계속하시겠습니까?"
+        )
+      )
+        return;
     }
     if (!id) return;
     if (!newStatus) return;
@@ -251,10 +368,32 @@ const reassignConsultationMut = trpc.consultation.reassign.useMutation({
         </div>
 
         <div className="flex gap-2 flex-wrap">
-          <input ref={fileInputRef} type="file" accept=".csv,.tsv,.txt" className="hidden" onChange={handleCsvFile} />
-          <Button variant="outline" size="sm" className="gap-1" onClick={() => fileInputRef.current?.click()}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.tsv,.txt"
+            className="hidden"
+            onChange={handleCsvFile}
+          />
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            onClick={() => fileInputRef.current?.click()}
+          >
             <Upload className="h-4 w-4" /> CSV 임포트
           </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            onClick={() => setShowBulkPaste(true)}
+          >
+            <FileText className="h-4 w-4" /> 일괄등록
+          </Button>
+
           <Button onClick={() => setShowAdd(true)} size="sm" className="gap-1">
             <Plus className="h-4 w-4" /> 새 상담
           </Button>
@@ -273,7 +412,12 @@ const reassignConsultationMut = trpc.consultation.reassign.useMutation({
               열 순서: 상담일,문의경로,이름,연락처,최종학력,희망과정,상담내역,상태(옵션)
             </p>
             <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={csvHasHeader} onChange={(e) => setCsvHasHeader(e.target.checked)} className="rounded" />
+              <input
+                type="checkbox"
+                checked={csvHasHeader}
+                onChange={(e) => setCsvHasHeader(e.target.checked)}
+                className="rounded"
+              />
               첫 행은 헤더 (건너뛰기)
             </label>
             <textarea
@@ -284,10 +428,109 @@ const reassignConsultationMut = trpc.consultation.reassign.useMutation({
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCsvImport(false)}>취소</Button>
+            <Button variant="outline" onClick={() => setShowCsvImport(false)}>
+              취소
+            </Button>
             <Button onClick={handleCsvImport} disabled={importCsvMut.isPending}>
-              {importCsvMut.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              {importCsvMut.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : null}
               임포트
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showBulkPaste} onOpenChange={setShowBulkPaste}>
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" /> 상담DB 일괄등록
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              엑셀에서 아래 순서대로 복사해서 붙여넣으세요.
+              <br />
+              <b>문의경로 → 이름 → 연락처 → 최종학력 → 희망과정 → 상담내역</b>
+            </p>
+
+            <textarea
+              className="w-full h-40 px-3 py-2 text-sm border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary font-mono"
+              value={bulkPasteText}
+              onChange={(e) => setBulkPasteText(e.target.value)}
+              placeholder={`유튜브\t김철수\t01053687965\t고등학교졸업\t사회복지사\t개발자 못하겠다`}
+            />
+
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={handleBulkPreview}>
+                미리보기
+              </Button>
+              <Button
+                onClick={handleBulkSave}
+                disabled={bulkCreateMut.isPending || bulkPreviewRows.length === 0}
+              >
+                {bulkCreateMut.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                ) : null}
+                저장
+              </Button>
+            </div>
+
+            <div className="border rounded-lg overflow-auto max-h-[320px] bg-white">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-muted/50 border-b">
+                    <th className="text-left px-3 py-2">문의경로</th>
+                    <th className="text-left px-3 py-2">이름</th>
+                    <th className="text-left px-3 py-2">연락처</th>
+                    <th className="text-left px-3 py-2">최종학력</th>
+                    <th className="text-left px-3 py-2">희망과정</th>
+                    <th className="text-left px-3 py-2">상담내역</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bulkPreviewRows.length ? (
+                    bulkPreviewRows.map((row, idx) => (
+                      <tr key={idx} className="border-b align-top">
+                        <td className="px-3 py-2">{row.channel || "-"}</td>
+                        <td className="px-3 py-2">{row.clientName || "-"}</td>
+                        <td className="px-3 py-2">
+                          {formatPhone(row.phone) || "-"}
+                        </td>
+                        <td className="px-3 py-2">{row.finalEducation || "-"}</td>
+                        <td className="px-3 py-2">{row.desiredCourse || "-"}</td>
+                        <td className="px-3 py-2 whitespace-pre-wrap">
+                          {row.notes || "-"}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="text-center py-8 text-muted-foreground"
+                      >
+                        미리보기 데이터가 없습니다.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowBulkPaste(false);
+                setBulkPasteText("");
+                setBulkPreviewRows([]);
+              }}
+            >
+              닫기
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -302,14 +545,15 @@ const reassignConsultationMut = trpc.consultation.reassign.useMutation({
           className="pl-9 h-9"
         />
       </div>
-	<div className="flex items-center gap-2">
-  <Input
-    placeholder="담당자 검색"
-    value={assigneeSearch}
-    onChange={(e) => setAssigneeSearch(e.target.value)}
-    className="w-[180px]"
-  />
-</div>
+
+      <div className="flex items-center gap-2">
+        <Input
+          placeholder="담당자 검색"
+          value={assigneeSearch}
+          onChange={(e) => setAssigneeSearch(e.target.value)}
+          className="w-[180px]"
+        />
+      </div>
 
       {isLoading ? (
         <div className="flex justify-center py-12">
@@ -320,16 +564,36 @@ const reassignConsultationMut = trpc.consultation.reassign.useMutation({
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-muted/50 border-b">
-                <th className="text-center px-2 py-2.5 font-medium text-muted-foreground w-[50px]">No.</th>
-                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[120px]">상담일</th>
-                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[140px]">문의경로</th>
-                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[100px]">이름</th>
-                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[130px]">연락처</th>
-                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[110px]">최종학력</th>
-                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[160px]">희망과정</th>
-                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground min-w-[280px]">상담내역</th>
-                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[90px]">상태</th>
-                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[90px]">담당자</th>
+                <th className="text-center px-2 py-2.5 font-medium text-muted-foreground w-[50px]">
+                  No.
+                </th>
+                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[120px]">
+                  상담일
+                </th>
+                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[140px]">
+                  문의경로
+                </th>
+                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[100px]">
+                  이름
+                </th>
+                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[130px]">
+                  연락처
+                </th>
+                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[110px]">
+                  최종학력
+                </th>
+                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[160px]">
+                  희망과정
+                </th>
+                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground min-w-[280px]">
+                  상담내역
+                </th>
+                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[90px]">
+                  상태
+                </th>
+                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[90px]">
+                  담당자
+                </th>
                 <th className="w-[40px]"></th>
               </tr>
             </thead>
@@ -337,7 +601,9 @@ const reassignConsultationMut = trpc.consultation.reassign.useMutation({
             <tbody>
               {showAdd && (
                 <tr className="border-b bg-blue-50/30 align-top">
-                  <td className="px-2 py-2 text-center text-xs text-muted-foreground">-</td>
+                  <td className="px-2 py-2 text-center text-xs text-muted-foreground">
+                    -
+                  </td>
 
                   <td className="px-1 py-2">
                     <input
@@ -345,7 +611,9 @@ const reassignConsultationMut = trpc.consultation.reassign.useMutation({
                       className="w-full px-2 py-1.5 text-sm border rounded bg-white focus:outline-none focus:ring-1 focus:ring-primary"
                       value={newRow.consultDate}
                       onPaste={handleConsultDatePaste}
-                      onChange={(e) => setNewRow({ ...newRow, consultDate: e.target.value })}
+                      onChange={(e) =>
+                        setNewRow({ ...newRow, consultDate: e.target.value })
+                      }
                     />
                   </td>
 
@@ -354,7 +622,9 @@ const reassignConsultationMut = trpc.consultation.reassign.useMutation({
                       className="w-full px-2 py-1.5 text-sm border rounded bg-white focus:outline-none focus:ring-1 focus:ring-primary whitespace-nowrap"
                       placeholder="경로 입력"
                       value={newRow.channel}
-                      onChange={(e) => setNewRow({ ...newRow, channel: e.target.value })}
+                      onChange={(e) =>
+                        setNewRow({ ...newRow, channel: e.target.value })
+                      }
                     />
                   </td>
 
@@ -363,7 +633,9 @@ const reassignConsultationMut = trpc.consultation.reassign.useMutation({
                       className="w-full px-2 py-1.5 text-sm border rounded bg-white focus:outline-none focus:ring-1 focus:ring-primary"
                       placeholder="이름"
                       value={newRow.clientName}
-                      onChange={(e) => setNewRow({ ...newRow, clientName: e.target.value })}
+                      onChange={(e) =>
+                        setNewRow({ ...newRow, clientName: e.target.value })
+                      }
                     />
                   </td>
 
@@ -372,7 +644,12 @@ const reassignConsultationMut = trpc.consultation.reassign.useMutation({
                       className="w-full px-2 py-1.5 text-sm border rounded bg-white focus:outline-none focus:ring-1 focus:ring-primary"
                       placeholder="01012345678"
                       value={newRow.phone}
-                      onChange={(e) => setNewRow({ ...newRow, phone: handlePhoneInput(e.target.value) })}
+                      onChange={(e) =>
+                        setNewRow({
+                          ...newRow,
+                          phone: handlePhoneInput(e.target.value),
+                        })
+                      }
                       maxLength={11}
                     />
                   </td>
@@ -382,7 +659,12 @@ const reassignConsultationMut = trpc.consultation.reassign.useMutation({
                       className="w-full px-2 py-1.5 text-sm border rounded bg-white focus:outline-none focus:ring-1 focus:ring-primary"
                       placeholder="최종학력"
                       value={newRow.finalEducation}
-                      onChange={(e) => setNewRow({ ...newRow, finalEducation: e.target.value })}
+                      onChange={(e) =>
+                        setNewRow({
+                          ...newRow,
+                          finalEducation: e.target.value,
+                        })
+                      }
                     />
                   </td>
 
@@ -391,7 +673,12 @@ const reassignConsultationMut = trpc.consultation.reassign.useMutation({
                       className="w-full px-2 py-1.5 text-sm border rounded bg-white focus:outline-none focus:ring-1 focus:ring-primary"
                       placeholder="희망과정"
                       value={newRow.desiredCourse}
-                      onChange={(e) => setNewRow({ ...newRow, desiredCourse: e.target.value })}
+                      onChange={(e) =>
+                        setNewRow({
+                          ...newRow,
+                          desiredCourse: e.target.value,
+                        })
+                      }
                     />
                   </td>
 
@@ -408,7 +695,9 @@ const reassignConsultationMut = trpc.consultation.reassign.useMutation({
                     <input
                       className="w-full px-2 py-1.5 text-sm border rounded bg-white focus:outline-none focus:ring-1 focus:ring-primary"
                       value={newRow.status}
-                      onChange={(e) => setNewRow({ ...newRow, status: e.target.value })}
+                      onChange={(e) =>
+                        setNewRow({ ...newRow, status: e.target.value })
+                      }
                     />
                   </td>
 
@@ -418,10 +707,20 @@ const reassignConsultationMut = trpc.consultation.reassign.useMutation({
 
                   <td className="px-1 py-2">
                     <div className="flex gap-1">
-                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={handleAdd}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-xs"
+                        onClick={handleAdd}
+                      >
                         저장
                       </Button>
-                      <Button size="sm" variant="ghost" className="h-7 px-1 text-xs text-muted-foreground" onClick={() => setShowAdd(false)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-1 text-xs text-muted-foreground"
+                        onClick={() => setShowAdd(false)}
+                      >
                         취소
                       </Button>
                     </div>
@@ -431,29 +730,33 @@ const reassignConsultationMut = trpc.consultation.reassign.useMutation({
 
               {filtered.map((item: any, idx: number) => (
                 <InlineRow
-  key={item.id}
-  item={item}
-  rowNum={idx + 1}
-  isHost={!!isHost}
-  isStaff={!!isStaff}
-  usersList={usersList || []}
-  getUserName={getUserName}
-  onBlur={handleCellBlur}
-  onStatusChange={handleStatusChange}
-  onDelete={(id) => {
-    if (!isHost) return;
-    if (confirm("정말 삭제하시겠습니까?")) deleteMut.mutate({ id } as any);
-  }}
-  onReassign={(id, assigneeId) =>
-    reassignConsultationMut.mutate({ id, assigneeId })
-  }
-  handlePhoneInput={handlePhoneInput}
-/>
+                  key={item.id}
+                  item={item}
+                  rowNum={idx + 1}
+                  isHost={!!isHost}
+                  isStaff={!!isStaff}
+                  usersList={usersList || []}
+                  getUserName={getUserName}
+                  onBlur={handleCellBlur}
+                  onStatusChange={handleStatusChange}
+                  onDelete={(id) => {
+                    if (!isHost) return;
+                    if (confirm("정말 삭제하시겠습니까?"))
+                      deleteMut.mutate({ id } as any);
+                  }}
+                  onReassign={(id, assigneeId) =>
+                    reassignConsultationMut.mutate({ id, assigneeId })
+                  }
+                  handlePhoneInput={handlePhoneInput}
+                />
               ))}
 
               {!filtered.length && !showAdd && (
                 <tr>
-                  <td colSpan={11} className="text-center py-8 text-muted-foreground text-sm">
+                  <td
+                    colSpan={11}
+                    className="text-center py-8 text-muted-foreground text-sm"
+                  >
                     상담 기록이 없습니다.
                   </td>
                 </tr>
@@ -501,8 +804,14 @@ function InlineRow({
   const canDelete = isHost;
 
   return (
-    <tr className={`border-b hover:bg-muted/20 group align-top ${isRegistered ? "bg-emerald-50/30" : ""}`}>
-      <td className="px-2 py-2 text-center text-xs text-muted-foreground font-mono">{rowNum}</td>
+    <tr
+      className={`border-b hover:bg-muted/20 group align-top ${
+        isRegistered ? "bg-emerald-50/30" : ""
+      }`}
+    >
+      <td className="px-2 py-2 text-center text-xs text-muted-foreground font-mono">
+        {rowNum}
+      </td>
 
       <td className="px-1 py-2">
         <EditableCell
@@ -532,12 +841,12 @@ function InlineRow({
 
       <td className="px-1 py-2">
         <EditableCell
-  value={formatPhone(item.phone)}
-  onBlur={(v) => onBlur(item.id, "phone", v.replace(/\D/g, ""))}
-  transform={handlePhoneInput}
-  maxLength={11}
-  disabled
-/>
+          value={formatPhone(item.phone)}
+          onBlur={(v) => onBlur(item.id, "phone", v.replace(/\D/g, ""))}
+          transform={handlePhoneInput}
+          maxLength={11}
+          disabled
+        />
       </td>
 
       <td className="px-1 py-2">
@@ -557,7 +866,10 @@ function InlineRow({
       </td>
 
       <td className="px-1 py-2">
-        <InlineNotesCell value={item.notes || ""} onCommit={(v) => onBlur(item.id, "notes", v)} />
+        <InlineNotesCell
+          value={item.notes || ""}
+          onCommit={(v) => onBlur(item.id, "notes", v)}
+        />
       </td>
 
       <td className="px-1 py-2">
@@ -568,22 +880,22 @@ function InlineRow({
       </td>
 
       <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
-  {isHost ? (
-    <select
-      className="text-xs border rounded px-2 py-1 bg-white"
-      value={String(item.assigneeId)}
-      onChange={(e) => onReassign(item.id, Number(e.target.value))}
-    >
-      {usersList.map((u: any) => (
-        <option key={u.id} value={u.id}>
-          {u.name || "이름없음"}
-        </option>
-      ))}
-    </select>
-  ) : (
-    getUserName(Number(item.assigneeId))
-  )}
-</td>
+        {isHost ? (
+          <select
+            className="text-xs border rounded px-2 py-1 bg-white"
+            value={String(item.assigneeId)}
+            onChange={(e) => onReassign(item.id, Number(e.target.value))}
+          >
+            {usersList.map((u: any) => (
+              <option key={u.id} value={u.id}>
+                {u.name || "이름없음"}
+              </option>
+            ))}
+          </select>
+        ) : (
+          getUserName(Number(item.assigneeId))
+        )}
+      </td>
 
       <td className="px-1 py-2">
         <button
@@ -596,7 +908,11 @@ function InlineRow({
           disabled={!canDelete}
           title={canDelete ? "삭제" : "호스트만 삭제할 수 있습니다."}
         >
-          <Trash2 className={`h-3.5 w-3.5 ${canDelete ? "text-red-400" : "text-gray-300"}`} />
+          <Trash2
+            className={`h-3.5 w-3.5 ${
+              canDelete ? "text-red-400" : "text-gray-300"
+            }`}
+          />
         </button>
       </td>
     </tr>
@@ -652,11 +968,10 @@ function StatusCell({
   }
 
   return (
-    <div
-      className="px-1 py-1 cursor-pointer"
-      onClick={() => setEditing(true)}
-    >
-      <Badge className={`${statusColor(value)} text-[11px] font-normal`}>{value}</Badge>
+    <div className="px-1 py-1 cursor-pointer" onClick={() => setEditing(true)}>
+      <Badge className={`${statusColor(value)} text-[11px] font-normal`}>
+        {value}
+      </Badge>
     </div>
   );
 }
@@ -712,9 +1027,13 @@ function EditableCell({
       <input
         ref={inputRef}
         type={type}
-        className={`w-full px-2 py-1.5 text-sm border rounded bg-white text-black focus:outline-none focus:ring-1 focus:ring-primary ${className ?? ""}`}
+        className={`w-full px-2 py-1.5 text-sm border rounded bg-white text-black focus:outline-none focus:ring-1 focus:ring-primary ${
+          className ?? ""
+        }`}
         value={localVal}
-        onChange={(e) => setLocalVal(transform ? transform(e.target.value) : e.target.value)}
+        onChange={(e) =>
+          setLocalVal(transform ? transform(e.target.value) : e.target.value)
+        }
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         maxLength={maxLength}
@@ -737,7 +1056,13 @@ function EditableCell({
   );
 }
 
-function InlineNotesCell({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+function InlineNotesCell({
+  value,
+  onCommit,
+}: {
+  value: string;
+  onCommit: (v: string) => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [local, setLocal] = useState(value);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -789,6 +1114,7 @@ function InlineNotesCell({ value, onCommit }: { value: string; onCommit: (v: str
     />
   );
 }
+
 function AutoGrowTextarea({
   value,
   onChange,

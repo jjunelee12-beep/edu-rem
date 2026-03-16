@@ -32,23 +32,22 @@ export default function SmsSender() {
 
   const assigneesQuery = trpc.sms.assignees.useQuery();
 
-  const preview = trpc.sms.preview.useQuery(
-    {
-      includeConsultations,
-      includeStudents,
-      assigneeId,
-      keyword,
-    },
-    {
-      keepPreviousData: true,
-    }
-  );
+  const preview = trpc.sms.preview.useQuery({
+  includeConsultations,
+  includeStudents,
+  assigneeId,
+  keyword,
+});
 
   const sendMutation = trpc.sms.send.useMutation();
   const testSendMutation = trpc.sms.testSend.useMutation();
 
   const assignees: AssigneeItem[] = assigneesQuery.data?.items ?? [];
+console.log("assigneesQuery.data", assigneesQuery.data);
+console.log("assignees", assignees);
   const items: PreviewItem[] = preview.data?.items ?? [];
+console.log("preview.data", preview.data);
+console.log("preview.items", items);
 
   const filteredAssignees = useMemo(() => {
     const q = assigneeKeyword.trim().toLowerCase();
@@ -190,8 +189,11 @@ export default function SmsSender() {
               value={assigneeKeyword}
               onChange={(e) => setAssigneeKeyword(e.target.value)}
             />
+	<div className="text-xs text-gray-500">
+  검색 결과: {filteredAssignees.length}명
+</div>
 
-            <div className="border rounded max-h-48 overflow-auto">
+            <div className="border rounded max-h-60 overflow-auto bg-white">
               <button
                 type="button"
                 onClick={() => setAssigneeId(undefined)}
@@ -209,18 +211,19 @@ export default function SmsSender() {
                   담당자가 없습니다.
                 </div>
               ) : (
-                filteredAssignees.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setAssigneeId(item.id)}
-                    className={`w-full text-left px-3 py-2 border-b last:border-b-0 hover:bg-gray-50 ${
-                      assigneeId === item.id ? "bg-blue-50 font-medium" : ""
-                    }`}
-                  >
-                    {item.name || "-"} / {item.phone || "-"}
-                  </button>
-                ))
+               filteredAssignees.map((item) => (
+  <button
+    key={item.id}
+    type="button"
+    onClick={() => setAssigneeId(item.id)}
+    className={`w-full text-left px-3 py-2 border-b last:border-b-0 hover:bg-gray-50 ${
+      assigneeId === item.id ? "bg-blue-50 font-medium text-blue-700" : ""
+    }`}
+  >
+    <div className="font-medium">{item.name || "-"}</div>
+    <div className="text-xs text-gray-500">{item.phone || "-"}</div>
+  </button>
+))
               )}
             </div>
 
