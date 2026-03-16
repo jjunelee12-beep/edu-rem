@@ -13,20 +13,17 @@ function sign(value: string, secret: string) {
 function getCookieHeader(req: any): string | undefined {
   if (!req) return undefined;
 
-  // Express / Node IncomingMessage
   if (typeof req.headers?.cookie === "string") {
     return req.headers.cookie;
   }
 
-  // Fetch API Request / Headers
   if (typeof req.headers?.get === "function") {
     return req.headers.get("cookie") ?? undefined;
   }
 
-  // 혹시 headers 자체가 plain object인 경우
   if (req.headers && typeof req.headers === "object") {
-    const lower = req.headers.cookie ?? req.headers.Cookie;
-    if (typeof lower === "string") return lower;
+    const raw = req.headers.cookie ?? req.headers.Cookie;
+    if (typeof raw === "string") return raw;
   }
 
   return undefined;
@@ -44,6 +41,7 @@ export function makeSessionCookie(userId: number, secret: string) {
     secure: true,
     path: "/",
     maxAge: SESSION_MAX_AGE_SECONDS,
+    partitioned: true,
   });
 }
 
@@ -54,13 +52,13 @@ export function clearSessionCookie() {
     secure: true,
     path: "/",
     maxAge: 0,
+    partitioned: true,
   });
 }
 
 export function readUserIdFromCookie(req: any, secret: string): number | null {
   try {
     const header = getCookieHeader(req);
-
     if (!header) {
       console.log("[session] no cookie header");
       return null;
@@ -68,7 +66,6 @@ export function readUserIdFromCookie(req: any, secret: string): number | null {
 
     const parsed = cookie.parse(header);
     const value = parsed[SESSION_COOKIE];
-
     if (!value) {
       console.log("[session] no session cookie");
       return null;
