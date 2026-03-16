@@ -1054,6 +1054,52 @@ export async function deletePlanSemester(id: number) {
 
   await db.delete(planSemesters).where(eq(planSemesters.id, id));
 }
+export async function syncPlanSemestersByCount(
+  studentId: number,
+  semesterNo: number,
+  targetCount: number
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const rows = await db
+    .select()
+    .from(planSemesters)
+    .where(
+      and(
+        eq(planSemesters.studentId, studentId),
+        eq(planSemesters.semesterNo, semesterNo)
+      )
+    )
+    .orderBy(planSemesters.sortOrder, planSemesters.id);
+
+  const currentCount = rows.length;
+
+  // 부족하면 자동 생성
+  if (currentCount < targetCount) {
+    for (let i = currentCount; i < targetCount; i++) {
+      await db.insert(planSemesters).values({
+        studentId,
+        semesterNo,
+        subjectName: `새 과목${i + 1}`,
+        planCategory: "전공",
+        planRequirementType: "전공선택",
+        credits: 3,
+        sortOrder: i,
+      } as any);
+    }
+  }
+
+  // 많으면 뒤에서부터 삭제
+  if (currentCount > targetCount) {
+    const toDelete = rows.slice(targetCount);
+    for (const row of toDelete) {
+      await db.delete(planSemesters).where(eq(planSemesters.id, row.id));
+    }
+  }
+
+  return true;
+}
 
 // ─── Transfer Subjects ───────────────────────────────────────────────
 export async function listTransferSubjects(studentId: number) {

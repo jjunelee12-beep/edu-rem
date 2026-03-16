@@ -742,28 +742,37 @@ export const appRouter = router({
         return db.listAllSemesters(assigneeId, input.plannedMonth);
       }),
 
-    create: protectedProcedure
-      .input(
-        z.object({
-          studentId: z.number(),
-          semesterOrder: z.number(),
-          plannedMonth: z.string().optional(),
-          plannedInstitution: z.string().optional(),
-          plannedSubjectCount: z.number().optional(),
-          plannedAmount: z.string().optional(),
-        })
-      )
-      .mutation(async ({ ctx, input }) => {
-        const student = await db.getStudent(input.studentId);
-        if (!student) throw new Error("학생을 찾을 수 없습니다");
+  create: protectedProcedure
+  .input(
+    z.object({
+      studentId: z.number(),
+      semesterOrder: z.number(),
+      plannedMonth: z.string().optional(),
+      plannedInstitution: z.string().optional(),
+      plannedSubjectCount: z.number().optional(),
+      plannedAmount: z.string().optional(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const student = await db.getStudent(input.studentId);
+    if (!student) throw new Error("학생을 찾을 수 없습니다");
 
-        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-          throw new Error("권한이 없습니다");
-        }
+    if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+      throw new Error("권한이 없습니다");
+    }
 
-        const id = await db.createSemester(input as any);
-        return { id };
-      }),
+    const id = await db.createSemester(input as any);
+
+    if (input.plannedSubjectCount !== undefined && input.plannedSubjectCount > 0) {
+      await db.syncPlanSemestersByCount(
+        input.studentId,
+        input.semesterOrder,
+        input.plannedSubjectCount
+      );
+    }
+
+    return { id, success: true };
+  }),
 
     update: protectedProcedure
       .input(
@@ -814,6 +823,14 @@ export const appRouter = router({
         if (rest.actualPaymentDate) data.actualPaymentDate = new Date(rest.actualPaymentDate);
 
         await db.updateSemester(id, data);
+
+if (input.plannedSubjectCount !== undefined) {
+  await db.syncPlanSemestersByCount(
+    sem.studentId,
+    sem.semesterOrder,
+    input.plannedSubjectCount
+  );
+}
 
         const allSems = await db.listSemesters(sem.studentId);
 
