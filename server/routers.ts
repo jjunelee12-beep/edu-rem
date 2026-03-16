@@ -576,6 +576,8 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
+	console.log("[student.update] input =", input);
+
         const item = await db.getStudent(input.id);
         if (!item) throw new Error("학생 기록을 찾을 수 없습니다");
 
@@ -589,6 +591,8 @@ export const appRouter = router({
 
         if (rest.startDate) data.startDate = new Date(rest.startDate);
         if (rest.paymentDate) data.paymentDate = new Date(rest.paymentDate);
+
+	console.log("[student.update] data =", data);
 
         await db.updateStudent(id, data);
         return { success: true };

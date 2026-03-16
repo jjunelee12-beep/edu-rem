@@ -501,37 +501,37 @@ const totalSemesterCount = useMemo(() => {
     };
   }, [planTotals, transferTotals]);
 
-  const registrationSummary = useMemo(() => {
-    const toNumber = (v: any) =>
-      Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
+const registrationSummary = useMemo(() => {
+  const toNumber = (v: any) =>
+    Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
 
-    const sem = selectedSemester;
+  const sem = selectedSemester;
 
-    return {
-      status: sem ? "등록" : (student?.status || ""),
-      startDate:
-        sem?.actualStartDate ||
-        (selectedSemesterOrder === 1 ? student?.startDate : "") ||
-        "",
-      paymentAmount: sem?.actualAmount
-        ? toNumber(sem.actualAmount)
-        : selectedSemesterOrder === 1
-          ? toNumber(student?.paymentAmount)
-          : 0,
-      subjectCount:
-        sem?.actualSubjectCount ??
-        (selectedSemesterOrder === 1 ? student?.subjectCount : "") ??
-        "",
-      paymentDate:
-        sem?.actualPaymentDate ||
-        (selectedSemesterOrder === 1 ? student?.paymentDate : "") ||
-        "",
-      institution:
-        sem?.actualInstitution ||
-        (selectedSemesterOrder === 1 ? student?.institution : "") ||
-        "",
-    };
-  }, [selectedSemester, selectedSemesterOrder, student]);
+  return {
+    status: student?.status || "",
+    startDate:
+      sem?.actualStartDate ||
+      (selectedSemesterOrder === 1 ? student?.startDate : "") ||
+      "",
+    paymentAmount: sem?.actualAmount
+      ? toNumber(sem.actualAmount)
+      : selectedSemesterOrder === 1
+        ? toNumber(student?.paymentAmount)
+        : 0,
+    subjectCount:
+      sem?.actualSubjectCount ??
+      (selectedSemesterOrder === 1 ? student?.subjectCount : "") ??
+      "",
+    paymentDate:
+      sem?.actualPaymentDate ||
+      (selectedSemesterOrder === 1 ? student?.paymentDate : "") ||
+      "",
+    institution:
+      sem?.actualInstitution ||
+      (selectedSemesterOrder === 1 ? student?.institution : "") ||
+      "",
+  };
+}, [selectedSemester, selectedSemesterOrder, student]);  
 
   const registrationInstitutionId = useMemo(() => {
     if (selectedSemester?.actualInstitutionId) {
@@ -727,10 +727,11 @@ const totalSemesterCount = useMemo(() => {
       <div>
         <p className="text-xs text-muted-foreground mb-0.5">상태</p>
         <Select
-          value={registrationSummary.status || student.status}
-          onValueChange={(v) =>
-            updateStudentMut.mutate({ id: studentId, status: v as any })
-          }
+  value={student.status || "등록"}
+  onValueChange={(v) =>
+    updateStudentMut.mutate({ id: studentId, status: v as "등록" | "종료" })
+  }
+>
         >
           <SelectTrigger className="h-8 text-sm">
             <SelectValue />
