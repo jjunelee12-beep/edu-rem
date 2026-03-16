@@ -208,6 +208,9 @@ export const appRouter = router({
   }),
 
   dashboard: router({
+	monthApprovals: protectedProcedure.query(async () => {
+    return [];
+  }),
     stats: protectedProcedure.query(async ({ ctx }) => {
       return db.getDashboardStats(Number(ctx.user.id));
     }),
