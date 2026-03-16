@@ -25,6 +25,7 @@ import {
   Lock,
   Loader2,
   Pencil,
+  Paperclip,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation, useParams } from "wouter";
@@ -184,21 +185,6 @@ export default function StudentDetail() {
     onSuccess: async (_data, variables) => {
       await utils.semester.list.invalidate({ studentId });
       await utils.student.paymentSummary.invalidate({ studentId });
-
-      const targetCount = Number(variables.plannedSubjectCount || 0);
-      if (targetCount > 0) {
-        for (let i = 0; i < targetCount; i++) {
-          await createPlanSemesterMut.mutateAsync({
-            studentId,
-            semesterNo: Number(variables.semesterOrder),
-            subjectName: `새 과목${i + 1}`,
-            category: "전공",
-            requirementType: "전공선택",
-            sortOrder: i,
-          } as any);
-        }
-      }
-
       await utils.planSemester.list.invalidate({ studentId });
 
       setSelectedSemesterOrder(Number(variables.semesterOrder));
@@ -381,36 +367,6 @@ export default function StudentDetail() {
     el.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const syncPlanSemesterCount = async (semesterNo: number, targetCount: number) => {
-    const currentRows = (planSemesterList || [])
-      .filter((x: any) => Number(x.semesterNo) === Number(semesterNo))
-      .sort((a: any, b: any) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
-
-    const currentCount = currentRows.length;
-
-    if (targetCount > currentCount) {
-      for (let i = currentCount; i < targetCount; i++) {
-        await createPlanSemesterMut.mutateAsync({
-          studentId,
-          semesterNo,
-          subjectName: `새 과목${i + 1}`,
-          category: "전공",
-          requirementType: "전공선택",
-          sortOrder: i,
-        } as any);
-      }
-    }
-
-    if (targetCount < currentCount) {
-      const deleteTargets = currentRows.slice(targetCount);
-      for (const row of deleteTargets) {
-        await deletePlanSemesterMut.mutateAsync({ id: row.id });
-      }
-    }
-
-    await utils.planSemester.list.invalidate({ studentId });
-  };
-
   const handleStudentFieldBlur = (field: string, value: string) => {
     const payload: any = { id: studentId };
 
@@ -434,24 +390,12 @@ export default function StudentDetail() {
       payload[field] = value || undefined;
     }
 
-    if (field === "plannedSubjectCount") {
-      const sem = sortedSemesters.find((x: any) => Number(x.id) === Number(semId));
-      const targetCount = value ? parseInt(value) : 0;
-
-      updateSemMut.mutate(payload, {
-        onSuccess: async () => {
-          if (sem) {
-            await syncPlanSemesterCount(Number(sem.semesterOrder), targetCount);
-          }
-          await utils.semester.list.invalidate({ studentId });
-          await utils.planSemester.list.invalidate({ studentId });
-          toast.success("과목 수 기준으로 우리 플랜이 자동 반영되었습니다.");
-        },
-      });
-      return;
-    }
-
-    updateSemMut.mutate(payload);
+    updateSemMut.mutate(payload, {
+      onSuccess: async () => {
+        await utils.semester.list.invalidate({ studentId });
+        await utils.planSemester.list.invalidate({ studentId });
+      },
+    });
   };
 
   const startEditPlan = () => {
@@ -692,6 +636,8 @@ export default function StudentDetail() {
       requirementType: "전공선택",
       credits: 3,
       sortOrder: transferSubjectList?.length ?? 0,
+      attachmentName: "",
+      attachmentUrl: "",
     } as any);
   };
 
@@ -705,6 +651,37 @@ export default function StudentDetail() {
     }
 
     updateTransferSubjectMut.mutate(payload);
+  };
+
+  const handleTransferAttachment = (row: any) => {
+    const url = window.prompt("첨부파일 URL을 입력하세요", row.attachmentUrl || "");
+    if (!url) return;
+
+    const name = window.prompt("첨부파일명을 입력하세요", row.attachmentName || "증빙자료") || "증빙자료";
+
+    updateTransferSubjectMut.mutate({
+      id: row.id,
+      attachmentName: name,
+      attachmentUrl: url,
+    } as any, {
+      onSuccess: async () => {
+        await utils.transferSubject.list.invalidate({ studentId });
+        toast.success("첨부파일이 저장되었습니다.");
+      },
+    });
+  };
+
+  const clearTransferAttachment = (row: any) => {
+    updateTransferSubjectMut.mutate({
+      id: row.id,
+      attachmentName: "",
+      attachmentUrl: "",
+    } as any, {
+      onSuccess: async () => {
+        await utils.transferSubject.list.invalidate({ studentId });
+        toast.success("첨부파일이 해제되었습니다.");
+      },
+    });
   };
 
   const requirementBadgeClass = (type?: string | null) => {
@@ -1437,13 +1414,14 @@ export default function StudentDetail() {
                       <th className="px-3 py-2 text-left font-medium text-muted-foreground w-[110px]">구분</th>
                       <th className="px-3 py-2 text-left font-medium text-muted-foreground w-[130px]">타입</th>
                       <th className="px-3 py-2 text-center font-medium text-muted-foreground w-[80px]">학점</th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground w-[70px]">관리</th>
+                      <th className="px-3 py-2 text-center font-medium text-muted-foreground w-[130px]">첨부파일</th>
+                      <th className="px-3 py-2 text-right font-medium text-muted-foreground w-[150px]">관리</th>
                     </tr>
                   </thead>
                   <tbody>
                     {!transferSubjectList || transferSubjectList.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                        <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                           등록된 전적대 과목이 없습니다.
                         </td>
                       </tr>
@@ -1491,19 +1469,73 @@ export default function StudentDetail() {
                               onBlur={(v) => handleTransferBlur(row.id, "credits", v)}
                             />
                           </td>
+
+                          <td className="px-2 py-1 text-center">
+                            {row.attachmentUrl ? (
+                              <a
+                                href={row.attachmentUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-sm text-blue-600 underline"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Paperclip className="h-3.5 w-3.5" />
+                                {row.attachmentName || "파일보기"}
+                              </a>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleTransferAttachment(row);
+                                }}
+                              >
+                                첨부
+                              </Button>
+                            )}
+                          </td>
+
                           <td className="px-2 py-1 text-right">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-destructive hover:text-destructive"
-                              onClick={() => {
-                                if (confirm("전적대 과목을 삭제하시겠습니까?")) {
-                                  deleteTransferSubjectMut.mutate({ id: row.id });
-                                }
-                              }}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleTransferAttachment(row);
+                                }}
+                              >
+                                {row.attachmentUrl ? "변경" : "등록"}
+                              </Button>
+
+                              {row.attachmentUrl && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-muted-foreground"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    clearTransferAttachment(row);
+                                  }}
+                                >
+                                  해제
+                                </Button>
+                              )}
+
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-destructive hover:text-destructive"
+                                onClick={() => {
+                                  if (confirm("전적대 과목을 삭제하시겠습니까?")) {
+                                    deleteTransferSubjectMut.mutate({ id: row.id });
+                                  }
+                                }}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       ))

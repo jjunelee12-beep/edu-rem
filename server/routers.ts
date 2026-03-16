@@ -749,6 +749,7 @@ export const appRouter = router({
       semesterOrder: z.number(),
       plannedMonth: z.string().optional(),
       plannedInstitution: z.string().optional(),
+	 plannedInstitutionId: z.number().optional(),	
       plannedSubjectCount: z.number().optional(),
       plannedAmount: z.string().optional(),
     })
@@ -1080,6 +1081,8 @@ if (input.plannedSubjectCount !== undefined) {
           requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]).optional(),
           credits: z.number().min(0).max(30),
           sortOrder: z.number().optional(),
+	attachmentName: z.string().optional(),
+      attachmentUrl: z.string().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -1103,6 +1106,8 @@ if (input.plannedSubjectCount !== undefined) {
           transferRequirementType: input.requirementType ?? null,
           credits: input.credits,
           sortOrder: input.sortOrder ?? 0,
+	attachmentName: input.attachmentName?.trim() || null,
+attachmentUrl: input.attachmentUrl?.trim() || null,
         } as any);
 
         return { id, success: true };
@@ -1118,6 +1123,8 @@ if (input.plannedSubjectCount !== undefined) {
           requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]).optional(),
           credits: z.number().min(0).max(30).optional(),
           sortOrder: z.number().optional(),
+attachmentName: z.string().optional(),
+attachmentUrl: z.string().optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -1129,6 +1136,8 @@ if (input.plannedSubjectCount !== undefined) {
         if (input.requirementType !== undefined) data.transferRequirementType = input.requirementType;
         if (input.credits !== undefined) data.credits = input.credits;
         if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder;
+	if (input.attachmentName !== undefined) data.attachmentName = input.attachmentName.trim();
+if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl.trim();
 
         await db.updateTransferSubject(input.id, data);
         return { success: true };

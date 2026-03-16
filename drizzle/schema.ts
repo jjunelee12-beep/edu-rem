@@ -222,8 +222,12 @@ export const transferSubjects = mysqlTable("transfer_subjects", {
   credits: int("credits").notNull(),
   sortOrder: int("sortOrder").notNull().default(0),
 
+attachmentName: varchar("attachmentName", { length: 255 }),
+attachmentUrl: varchar("attachmentUrl", { length: 1000 }),
+
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+
 });
 
 export type TransferSubject = typeof transferSubjects.$inferSelect;

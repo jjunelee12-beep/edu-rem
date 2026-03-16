@@ -37,12 +37,17 @@ function getMonthOptions() {
 
   return options;
 }
-
+function getCurrentMonthKey() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`; // 예: 2026-03
+}
 export default function SemesterList() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
 
-  const [plannedMonth, setPlannedMonth] = useState<string>("");
+const [plannedMonth, setPlannedMonth] = useState(getCurrentMonthKey());
   const [searchTerm, setSearchTerm] = useState("");
   const [assigneeSearch, setAssigneeSearch] = useState("");
 const [filterUnassignedPractice, setFilterUnassignedPractice] = useState(false);
