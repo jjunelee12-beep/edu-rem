@@ -87,7 +87,7 @@ export const students = mysqlTable("students", {
   phone: varchar("phone", { length: 30 }).notNull(),
   course: varchar("course", { length: 200 }).notNull(),
 
-    status: mysqlEnum("studentStatus", ["등록", "종료", "등록 종료"])
+    status: mysqlEnum("status", ["등록", "종료", "등록 종료"])
     .default("등록")
     .notNull(),
 
@@ -123,7 +123,7 @@ export const semesters = mysqlTable("semesters", {
   studentId: int("studentId").notNull(),
   semesterOrder: int("semesterOrder").notNull(),
 
-  status: mysqlEnum("semesterStatus", ["등록", "종료", "등록 종료"])
+  status: mysqlEnum("status", ["등록", "종료", "등록 종료"])
     .default("등록")
     .notNull(),
 
