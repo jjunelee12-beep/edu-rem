@@ -565,7 +565,7 @@ export const appRouter = router({
           clientName: z.string().optional(),
           phone: z.string().optional(),
           course: z.string().optional(),
-          status: z.enum(["등록", "종료"]).optional(),
+          status: z.enum(["등록", "종료", "등록 종료"]).optional(),
           startDate: z.string().optional(),
           paymentAmount: z.string().optional(),
           subjectCount: z.number().optional(),
@@ -762,7 +762,10 @@ export const appRouter = router({
       throw new Error("권한이 없습니다");
     }
 
-    const id = await db.createSemester(input as any);
+    const id = await db.createSemester({
+  ...input,
+  status: "등록",
+} as any);
 
     if (input.plannedSubjectCount !== undefined && input.plannedSubjectCount > 0) {
       await db.syncPlanSemestersByCount(
@@ -791,12 +794,33 @@ export const appRouter = router({
           actualAmount: z.string().optional(),
           actualPaymentDate: z.string().optional(),
           isCompleted: z.boolean().optional(),
+	status: z.enum(["등록", "종료", "등록 종료"]).optional(),
         })
       )
-      .mutation(async ({ input }) => {
+            .mutation(async ({ input }) => {
         const sem = await db.getSemester(input.id);
         if (!sem) throw new Error("학기를 찾을 수 없습니다");
 
+        const allSemsForStatusCheck = await db.listSemesters(sem.studentId);
+        const sortedSemsForStatusCheck = [...allSemsForStatusCheck].sort(
+          (a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder)
+        );
+        const lastSem = sortedSemsForStatusCheck[sortedSemsForStatusCheck.length - 1];
+
+        if (input.status === "등록 종료") {
+          if (!lastSem || Number(lastSem.id) !== Number(sem.id)) {
+            throw new Error("마지막 학기에서만 등록 종료할 수 있습니다");
+          }
+        }
+
+        if (
+          input.status !== undefined &&
+          input.status !== "등록" &&
+          input.status !== "종료" &&
+          input.status !== "등록 종료"
+        ) {
+          throw new Error("올바르지 않은 상태값입니다");
+        }
         if (sem.isLocked) {
           const {
             id,
@@ -806,6 +830,7 @@ export const appRouter = router({
             actualAmount,
             actualPaymentDate,
             isCompleted,
+	status,
             ...plannedFields
           } = input;
 
@@ -832,6 +857,21 @@ if (input.plannedSubjectCount !== undefined) {
     input.plannedSubjectCount
   );
 }
+        if (input.status !== undefined) {
+          const refreshedSems = await db.listSemesters(sem.studentId);
+          const sortedRefreshedSems = [...refreshedSems].sort(
+            (a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder)
+          );
+          const refreshedLastSem =
+            sortedRefreshedSems[sortedRefreshedSems.length - 1];
+
+          const studentStatus =
+            refreshedLastSem?.status === "등록 종료" ? "등록 종료" : "등록";
+
+          await db.updateStudent(sem.studentId, {
+            status: studentStatus,
+          });
+        }
 
         const allSems = await db.listSemesters(sem.studentId);
 
@@ -855,6 +895,15 @@ if (input.plannedSubjectCount !== undefined) {
             );
             institutionName = found?.name;
           }
+          const refreshedSems = await db.listSemesters(sem.studentId);
+          const sortedRefreshedSems = [...refreshedSems].sort(
+            (a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder)
+          );
+          const refreshedLastSem =
+            sortedRefreshedSems[sortedRefreshedSems.length - 1];
+
+          const studentStatus =
+            refreshedLastSem?.status === "등록 종료" ? "등록 종료" : "등록";
 
           await db.updateStudent(sem.studentId, {
             startDate: firstActual.actualStartDate || undefined,
@@ -863,7 +912,7 @@ if (input.plannedSubjectCount !== undefined) {
             subjectCount: firstActual.actualSubjectCount || undefined,
             paymentAmount: firstActual.actualAmount || undefined,
             paymentDate: firstActual.actualPaymentDate || undefined,
-            status: "등록",
+            status: studentStatus,
           });
         }
 

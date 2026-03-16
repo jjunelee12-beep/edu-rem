@@ -97,8 +97,16 @@ export async function getStudentRegistrationSummary(studentId: number) {
   const toNumber = (v: any) =>
     Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
 
+    const sortedSemesters = [...semesterRows].sort(
+    (a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder)
+  );
+  const lastSemester = sortedSemesters[sortedSemesters.length - 1];
+
   return {
-    status: firstActual ? "등록" : student.status || "",
+    status:
+      lastSemester?.status === "등록 종료"
+        ? "등록 종료"
+        : student.status || "등록",
     startDate: firstActual?.actualStartDate || student.startDate || null,
     paymentAmount: firstActual?.actualAmount
       ? toNumber(firstActual.actualAmount)
@@ -518,7 +526,11 @@ export async function createSemester(data: InsertSemester) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const result = await db.insert(semesters).values(data);
+  const result = await db.insert(semesters).values({
+    ...data,
+    status: (data as any).status ?? "등록",
+  } as any);
+
   return getInsertId(result);
 }
 
@@ -1144,16 +1156,20 @@ export async function checkAndAutoComplete(studentId: number) {
   if (!db) return;
 
   const student = await getStudent(studentId);
-  if (!student || !student.totalSemesters || student.totalSemesters <= 0) return;
+  if (!student) return;
 
   const allSems = await listSemesters(studentId);
-  const completedCount = allSems.filter((s) => s.isCompleted).length;
+  if (!allSems.length) return;
 
-  if (completedCount >= student.totalSemesters) {
-    await updateStudent(studentId, { status: "종료" } as any);
-  }
+  const sorted = [...allSems].sort(
+    (a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder)
+  );
+  const lastSem = sorted[sorted.length - 1];
+
+  await updateStudent(studentId, {
+    status: lastSem?.status === "등록 종료" ? "등록 종료" : "등록",
+  } as any);
 }
-
 // ─── 교육원 ──────────────────────────────────────────────────────────
 export async function listEducationInstitutions() {
   const db = await getDb();

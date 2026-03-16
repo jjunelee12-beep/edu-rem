@@ -87,7 +87,7 @@ export const students = mysqlTable("students", {
   phone: varchar("phone", { length: 30 }).notNull(),
   course: varchar("course", { length: 200 }).notNull(),
 
-  status: mysqlEnum("studentStatus", ["등록", "종료"])
+    status: mysqlEnum("studentStatus", ["등록", "종료", "등록 종료"])
     .default("등록")
     .notNull(),
 
@@ -122,6 +122,10 @@ export const semesters = mysqlTable("semesters", {
   id: int("id").autoincrement().primaryKey(),
   studentId: int("studentId").notNull(),
   semesterOrder: int("semesterOrder").notNull(),
+
+  status: mysqlEnum("semesterStatus", ["등록", "종료", "등록 종료"])
+    .default("등록")
+    .notNull(),
 
   // 예정 정보
   plannedMonth: varchar("plannedMonth", { length: 20 }),

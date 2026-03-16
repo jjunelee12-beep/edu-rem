@@ -24,6 +24,9 @@ function formatDate(d: any) {
   const day = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
+function isClosedStatus(status: string | null | undefined) {
+  return status === "종료" || status === "등록 종료";
+}
 
 export default function Students() {
   const { user } = useAuth();
@@ -65,7 +68,7 @@ export default function Students() {
 
   const filtered = useMemo(() => {
     return (students || []).filter((s: any) => {
-      if (!showCompleted && s.status === "종료") return false;
+      if (!showCompleted && isClosedStatus(s.status)) return false;
       if (filterApproval !== "all" && s.approvalStatus !== filterApproval) return false;
       if (filterAssignee !== "all" && String(s.assigneeId) !== filterAssignee) return false;
       if (filterPractice && !(s.hasPractice && s.practiceStatus !== "섭외완료")) return false;
@@ -290,7 +293,7 @@ export default function Students() {
                   >
                     {showCompleted
                       ? "학생 기록이 없습니다."
-                      : "등록 중인 학생이 없습니다. (종료 학생 포함 체크박스를 확인하세요)"}
+                      : "등록 중인 학생이 없습니다. (종료 학생 포함 체크 시 종료 학생도 표시됩니다.)"}
                   </td>
                 </tr>
               )}
@@ -325,7 +328,7 @@ function StudentInlineRow({
   onDelete: (id: number) => void;
   handlePhoneInput: (v: string) => string;
 }) {
-  const isCompleted = item.status === "종료";
+  const isCompleted = isClosedStatus(item.status);
   const totalRequired = Number(item.totalRequired || 0);
   const paidAmount = Number(item.paidAmount || 0);
   const canDelete = isHost;
@@ -392,7 +395,7 @@ function StudentInlineRow({
       <td className="px-2 py-1.5 text-center">
         <Badge
           className={
-            item.status === "종료"
+            isClosedStatus(item.status)
               ? "bg-gray-200 text-gray-600 text-[10px]"
               : "bg-emerald-100 text-emerald-700 text-[10px]"
           }

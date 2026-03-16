@@ -106,6 +106,9 @@ function formatDate(d: any) {
   const day = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
+function isClosedStatus(status: string | null | undefined) {
+  return status === "종료" || status === "등록 종료";
+}
 
 export default function StudentDetail() {
   const params = useParams<{ id: string }>();
@@ -346,6 +349,22 @@ export default function StudentDetail() {
     );
   }, [sortedSemesters, selectedSemesterOrder]);
 
+    const lastSemester = useMemo(() => {
+    if (!sortedSemesters.length) return null;
+    return sortedSemesters[sortedSemesters.length - 1];
+  }, [sortedSemesters]);
+
+  const isSelectedLastSemester = useMemo(() => {
+    if (!selectedSemester || !lastSemester) return false;
+    return Number(selectedSemester.id) === Number(lastSemester.id);
+  }, [selectedSemester, lastSemester]);
+
+  const selectedSemesterStatus = useMemo(() => {
+    if (!selectedSemester) return "등록";
+    return selectedSemester.status || "등록";
+  }, [selectedSemester]);
+
+
   useEffect(() => {
     if (!sortedSemesters.length) {
       setSelectedSemesterOrder(1);
@@ -396,6 +415,38 @@ export default function StudentDetail() {
         await utils.planSemester.list.invalidate({ studentId });
       },
     });
+  };
+
+  const handleSelectedSemesterStatusChange = (nextStatus: "등록" | "등록 종료") => {
+    if (!selectedSemester) {
+      toast.error("선택된 학기가 없습니다.");
+      return;
+    }
+
+    if (!isSelectedLastSemester) {
+      toast.error("마지막 학기에서만 등록 종료할 수 있습니다.");
+      return;
+    }
+
+    updateSemMut.mutate(
+      {
+        id: selectedSemester.id,
+        status: nextStatus,
+      } as any,
+      {
+        onSuccess: async () => {
+          await utils.semester.list.invalidate({ studentId });
+          await utils.student.get.invalidate({ id: studentId });
+          await utils.student.list.invalidate();
+
+          updateStudentMut.mutate({
+            id: studentId,
+            status: nextStatus,
+          } as any);
+        },
+        onError: (e) => toast.error(e.message),
+      }
+    );
   };
 
   const startEditPlan = () => {
@@ -711,11 +762,12 @@ export default function StudentDetail() {
     );
   }
 
-  const statusColor = (s: string) => {
+    const statusColor = (s: string) => {
     switch (s) {
       case "등록":
         return "bg-emerald-100 text-emerald-700";
       case "종료":
+      case "등록 종료":
         return "bg-gray-200 text-gray-600";
       default:
         return "bg-gray-100 text-gray-700";
@@ -737,7 +789,9 @@ export default function StudentDetail() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Badge className={statusColor(student.status)}>{student.status}</Badge>
+          <Badge className={statusColor(isSelectedLastSemester ? selectedSemesterStatus : "등록")}>
+  {isSelectedLastSemester ? selectedSemesterStatus : "등록"}
+</Badge>
         </div>
       </div>
 
@@ -795,22 +849,35 @@ export default function StudentDetail() {
             </div>
 
             <div>
-              <p className="text-xs text-muted-foreground mb-0.5">상태</p>
-              <Select
-                value={student.status || "등록"}
-                onValueChange={(v) =>
-                  updateStudentMut.mutate({ id: studentId, status: v as "등록" | "종료" })
-                }
-              >
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="등록">등록</SelectItem>
-                  <SelectItem value="종료">종료</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+  <p className="text-xs text-muted-foreground mb-0.5">상태</p>
+
+  {isSelectedLastSemester ? (
+    <Select
+      value={selectedSemesterStatus || "등록"}
+      onValueChange={(v) =>
+        handleSelectedSemesterStatusChange(v as "등록" | "등록 종료")
+      }
+    >
+      <SelectTrigger className="h-8 text-sm">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="등록">등록</SelectItem>
+        <SelectItem value="등록 종료">등록 종료</SelectItem>
+      </SelectContent>
+    </Select>
+  ) : (
+    <div className="h-8 px-3 rounded-md border bg-muted/30 text-sm flex items-center text-black">
+      등록
+    </div>
+  )}
+
+  {!isSelectedLastSemester && (
+    <p className="text-[11px] text-muted-foreground mt-1">
+      마지막 학기에서만 등록 종료할 수 있습니다.
+    </p>
+  )}
+</div>
 
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">개강 날짜</p>
