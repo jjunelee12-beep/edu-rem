@@ -9,6 +9,7 @@ import {
 } from "../db";
 
 import { readUserIdFromCookie } from "./auth/session";
+import { SESSION_COOKIE } from "./auth/session";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -18,7 +19,7 @@ export type TrpcContext = {
 
 function hasManualSessionCookie(req: CreateExpressContextOptions["req"]) {
   const cookie = req.headers.cookie ?? "";
-  return cookie.includes("app_session_id=");
+  return cookie.includes(`${SESSION_COOKIE}=`);
 }
 
 function looksLikeSdkAuthRequest(req: CreateExpressContextOptions["req"]) {
@@ -27,9 +28,11 @@ function looksLikeSdkAuthRequest(req: CreateExpressContextOptions["req"]) {
 
   const cookie = req.headers.cookie ?? "";
 
-  // Manus/sdk 쪽 세션 쿠키 이름을 정확히 모르면
-  // app_session_id만 제외하고, 다른 인증성 쿠키가 있을 때만 시도
-  if (cookie && !cookie.includes("app_session_id=")) return true;
+  // 수동 로그인 쿠키가 있으면 SDK 인증 시도 안 함
+  if (cookie.includes(`${SESSION_COOKIE}=`)) return false;
+
+  // 다른 인증성 쿠키가 있을 때만 SDK 시도
+  if (cookie) return true;
 
   return false;
 }
@@ -40,7 +43,6 @@ export async function createContext(
   let user: User | null = null;
 
   try {
-    // 1) 수동 로그인 세션 먼저 확인
     const secret = process.env.SESSION_SECRET || "dev-secret";
     const manualUserId = readUserIdFromCookie(opts.req, secret);
 
@@ -62,7 +64,6 @@ export async function createContext(
       };
     }
 
-    // 2) 수동 세션 쿠키도 없고, SDK 인증처럼 보이지 않으면 그냥 비로그인 처리
     if (!looksLikeSdkAuthRequest(opts.req)) {
       return {
         req: opts.req,
@@ -71,7 +72,6 @@ export async function createContext(
       };
     }
 
-    // 3) SDK 인증 시도
     const authUser: any = await sdk.authenticateRequest(opts.req);
 
     const openId =
@@ -99,7 +99,6 @@ export async function createContext(
       user = null;
     }
   } catch (error: any) {
-    // SDK 403 / invalid session cookie 는 흔한 상황이라 조용히 무시
     const statusCode = error?.statusCode ?? error?.status;
     const message = String(error?.message ?? "");
 
