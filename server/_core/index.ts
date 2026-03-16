@@ -8,14 +8,6 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { authRouter } from "./routes/auth";
-import cors from "cors";
-
-app.use(
-  cors({
-    origin: "https://edu-crm-five.vercel.app",
-    credentials: true,
-  })
-);
 
 async function startServer() {
   const app = express();
@@ -24,7 +16,6 @@ async function startServer() {
   const exactAllowedOrigins = [
     "http://localhost:3000",
     "http://localhost:5173",
-    "https://edu-rem.vercel.app",
     "https://edu-crm-five.vercel.app",
     process.env.FRONTEND_URL,
   ].filter(Boolean) as string[];
