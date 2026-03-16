@@ -1,3 +1,4 @@
+
 import { trpc } from "@/lib/trpc";
 import { UNAUTHED_ERR_MSG } from "@shared/const";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -39,7 +40,7 @@ queryClient.getMutationCache().subscribe((event) => {
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
-      url: `/api/trpc`,
+      url: `https://your-railway-domain.up.railway.app/api/trpc`,
       transformer: superjson,
       fetch(input, init) {
         return globalThis.fetch(input, {
