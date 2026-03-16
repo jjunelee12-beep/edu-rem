@@ -731,7 +731,6 @@ const registrationSummary = useMemo(() => {
   onValueChange={(v) =>
     updateStudentMut.mutate({ id: studentId, status: v as "등록" | "종료" })
   }
->
         >
           <SelectTrigger className="h-8 text-sm">
             <SelectValue />
