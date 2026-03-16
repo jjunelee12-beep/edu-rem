@@ -653,18 +653,29 @@ export const appRouter = router({
       }),
   }),
 
-  plan: router({
+ plan: router({
   get: protectedProcedure
     .input(z.object({ studentId: z.number() }))
     .query(async ({ ctx, input }) => {
       const student = await db.getStudent(input.studentId);
-      if (!student) return null;
+      console.log("[plan.get] student =", student);
+
+      if (!student) {
+        console.log("[plan.get] no student");
+        return null;
+      }
 
       if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+        console.log("[plan.get] no permission", {
+          userId: ctx.user.id,
+          assigneeId: student.assigneeId,
+        });
         return null;
       }
 
       const plan = await db.getPlan(input.studentId);
+      console.log("[plan.get] plan =", plan);
+
       return plan ?? null;
     }),
 

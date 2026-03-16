@@ -574,6 +574,8 @@ export async function listAllSemesters(
 // ─── Plans ───────────────────────────────────────────────────────────
 export async function getPlan(studentId: number) {
   const db = await getDb();
+  console.log("[db.getPlan] db exists =", !!db);
+
   if (!db) return null;
 
   const result = await db
@@ -581,6 +583,8 @@ export async function getPlan(studentId: number) {
     .from(plans)
     .where(eq(plans.studentId, studentId))
     .limit(1);
+
+  console.log("[db.getPlan] result =", result);
 
   return result[0] ?? null;
 }
