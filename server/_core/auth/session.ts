@@ -3,8 +3,7 @@ import crypto from "crypto";
 
 export const SESSION_COOKIE = "educrm_session";
 
-// 절대 만료 시간
-// 12시간 추천
+// 절대 만료 시간: 12시간
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 12;
 const SESSION_MAX_AGE_MS = SESSION_MAX_AGE_SECONDS * 1000;
 
@@ -30,18 +29,17 @@ export function makeSessionCookie(userId: number, secret: string) {
 export function clearSessionCookie() {
   return cookie.serialize(SESSION_COOKIE, "", {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: "none",
     secure: true,
     path: "/",
     maxAge: 0,
   });
 }
 
-export function readUserIdFromCookie(req: any, secret: string): number | null {
-  const header = req.headers?.cookie;
-  if (!header) return null;
-
-  export function readUserIdFromCookie(req: any, secret: string): number | null {
+export function readUserIdFromCookie(
+  req: any,
+  secret: string
+): number | null {
   const header = req.headers?.cookie;
   if (!header) {
     console.log("[session] no cookie header");
@@ -83,8 +81,6 @@ export function readUserIdFromCookie(req: any, secret: string): number | null {
     console.log("[session] invalid userId or issuedAt");
     return null;
   }
-
-  const SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 12;
 
   if (Date.now() - issuedAt > SESSION_MAX_AGE_MS) {
     console.log("[session] expired");
