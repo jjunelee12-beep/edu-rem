@@ -654,18 +654,19 @@ export const appRouter = router({
   }),
 
   plan: router({
-    get: protectedProcedure
-      .input(z.object({ studentId: z.number() }))
-      .query(async ({ ctx, input }) => {
-        const student = await db.getStudent(input.studentId);
-        if (!student) return null;
+  get: protectedProcedure
+    .input(z.object({ studentId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const student = await db.getStudent(input.studentId);
+      if (!student) return null;
 
-        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-          return null;
-        }
+      if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+        return null;
+      }
 
-        return db.getPlan(input.studentId);
-      }),
+      const plan = await db.getPlan(input.studentId);
+      return plan ?? null;
+    }),
 
     upsert: protectedProcedure
       .input(

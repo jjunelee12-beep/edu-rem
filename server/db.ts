@@ -574,10 +574,15 @@ export async function listAllSemesters(
 // ─── Plans ───────────────────────────────────────────────────────────
 export async function getPlan(studentId: number) {
   const db = await getDb();
-  if (!db) return undefined;
+  if (!db) return null;
 
-  const result = await db.select().from(plans).where(eq(plans.studentId, studentId)).limit(1);
-  return result[0];
+  const result = await db
+    .select()
+    .from(plans)
+    .where(eq(plans.studentId, studentId))
+    .limit(1);
+
+  return result[0] ?? null;
 }
 
 export async function upsertPlan(data: InsertPlan) {
