@@ -10,6 +10,7 @@ import DashboardLayout from "./components/DashboardLayout";
 import Home from "./pages/Home";
 import Consultations from "./pages/Consultations";
 import Students from "./pages/Students";
+import SmsSender from "@/pages/sms/SmsSender";
 import StudentDetail from "./pages/StudentDetail";
 import Approvals from "./pages/Approvals";
 import Settlement from "./pages/Settlement";
@@ -36,6 +37,7 @@ function PrivateRouter() {
         <Route path="/students" component={Students} />
         <Route path="/students/:id" component={StudentDetail} />
         <Route path="/semesters" component={SemesterList} />
+	  <Route path="/sms" component={SmsSender} />
         <Route path="/approvals" component={Approvals} />
         <Route path="/settlement" component={Settlement} />
         <Route path="/system" component={System} />

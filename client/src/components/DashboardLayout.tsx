@@ -54,6 +54,7 @@ const adminMenuItems = [
 const hostMenuItems = [
   { icon: Settings, label: "시스템 관리", path: "/system" },
  { icon: GraduationCap, label: "교육원 관리", path: "/education-institutions" },	
+{ icon: PhoneCall, label: "문자 발송", path: "/sms" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

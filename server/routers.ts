@@ -12,6 +12,7 @@ import { z } from "zod";
 import * as db from "./db";
 import { publicLeadRouter } from "./publicLead.router";
 import bcrypt from "bcryptjs";
+import { smsRouter } from "./_core/sms.router";
 
 function isAdminOrHost(user: any) {
   return user?.role === "admin" || user?.role === "host";
@@ -20,6 +21,7 @@ function isAdminOrHost(user: any) {
 export const appRouter = router({
   system: systemRouter,
   leadForm: publicLeadRouter,
+sms: smsRouter,
 
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
