@@ -41,28 +41,56 @@ export function readUserIdFromCookie(req: any, secret: string): number | null {
   const header = req.headers?.cookie;
   if (!header) return null;
 
+  export function readUserIdFromCookie(req: any, secret: string): number | null {
+  const header = req.headers?.cookie;
+  if (!header) {
+    console.log("[session] no cookie header");
+    return null;
+  }
+
   const parsed = cookie.parse(header);
   const value = parsed[SESSION_COOKIE];
-  if (!value) return null;
+  if (!value) {
+    console.log("[session] no session cookie");
+    return null;
+  }
 
   const parts = value.split(".");
-  if (parts.length !== 3) return null;
+  if (parts.length !== 3) {
+    console.log("[session] invalid parts length", parts);
+    return null;
+  }
 
   const [userIdStr, tsStr, sig] = parts;
   const payload = `${userIdStr}.${tsStr}`;
   const expected = sign(payload, secret);
 
-  if (expected !== sig) return null;
+  console.log("[session] userIdStr =", userIdStr);
+  console.log("[session] tsStr =", tsStr);
+  console.log("[session] sig =", sig);
+  console.log("[session] expected =", expected);
+  console.log("[session] secret exists =", !!secret);
+
+  if (expected !== sig) {
+    console.log("[session] signature mismatch");
+    return null;
+  }
 
   const userId = Number(userIdStr);
   const issuedAt = Number(tsStr);
 
-  if (!Number.isFinite(userId) || !Number.isFinite(issuedAt)) return null;
-
-  // 절대 만료 검사
-  if (Date.now() - issuedAt > SESSION_MAX_AGE_MS) {
+  if (!Number.isFinite(userId) || !Number.isFinite(issuedAt)) {
+    console.log("[session] invalid userId or issuedAt");
     return null;
   }
 
+  const SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 12;
+
+  if (Date.now() - issuedAt > SESSION_MAX_AGE_MS) {
+    console.log("[session] expired");
+    return null;
+  }
+
+  console.log("[session] valid userId =", userId);
   return userId;
 }

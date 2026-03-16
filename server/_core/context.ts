@@ -44,7 +44,11 @@ export async function createContext(
 
   try {
     const secret = process.env.SESSION_SECRET || "dev-secret";
-    const manualUserId = readUserIdFromCookie(opts.req, secret);
+console.log("[createContext] SESSION_SECRET exists =", !!process.env.SESSION_SECRET);
+
+const manualUserId = readUserIdFromCookie(opts.req, secret);
+console.log("[createContext] manualUserId =", manualUserId);
+
 
     if (manualUserId) {
       const dbUser = await getUserById(manualUserId);
