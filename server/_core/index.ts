@@ -8,6 +8,14 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { authRouter } from "./routes/auth";
+import cors from "cors";
+
+app.use(
+  cors({
+    origin: "https://edu-crm-five.vercel.app",
+    credentials: true,
+  })
+);
 
 async function startServer() {
   const app = express();
