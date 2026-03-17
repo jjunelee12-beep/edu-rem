@@ -51,6 +51,7 @@ const [plannedMonth, setPlannedMonth] = useState(getCurrentMonthKey());
   const [searchTerm, setSearchTerm] = useState("");
   const [assigneeSearch, setAssigneeSearch] = useState("");
 const [filterUnassignedPractice, setFilterUnassignedPractice] = useState(false);
+const [filterPaymentPlanned, setFilterPaymentPlanned] = useState(false);
   const { data: allUsers } = trpc.users.list.useQuery();
   const { data: semesters, isLoading } = trpc.semester.listAll.useQuery({
     plannedMonth: plannedMonth || undefined,
@@ -70,24 +71,26 @@ const [filterUnassignedPractice, setFilterUnassignedPractice] = useState(false);
   const assigneeTerm = assigneeSearch.trim().toLowerCase();
 
   return rows.filter((s: any) => {
-    if (filterUnassignedPractice && s.practiceStatus !== "미섭외") return false;
+  if (filterUnassignedPractice && s.practiceStatus !== "미섭외") return false;
 
-    const assigneeName = (userMap.get(s.assigneeId) || "").toLowerCase();
+  if (filterPaymentPlanned && (s.isCompleted || s.actualPaymentDate)) return false;
 
-    const matchesSearch =
-      !term ||
-      s.clientName?.toLowerCase().includes(term) ||
-      s.phone?.includes(term) ||
-      s.course?.toLowerCase().includes(term) ||
-      s.plannedInstitution?.toLowerCase().includes(term) ||
-      s.actualInstitution?.toLowerCase().includes(term);
+  const assigneeName = (userMap.get(s.assigneeId) || "").toLowerCase();
 
-    const matchesAssignee =
-      !assigneeTerm || assigneeName.includes(assigneeTerm);
+  const matchesSearch =
+    !term ||
+    s.clientName?.toLowerCase().includes(term) ||
+    s.phone?.includes(term) ||
+    s.course?.toLowerCase().includes(term) ||
+    s.plannedInstitution?.toLowerCase().includes(term) ||
+    s.actualInstitution?.toLowerCase().includes(term);
 
-    return matchesSearch && matchesAssignee;
-  });
-}, [semesters, searchTerm, assigneeSearch, filterUnassignedPractice, userMap]);
+  const matchesAssignee =
+    !assigneeTerm || assigneeName.includes(assigneeTerm);
+
+  return matchesSearch && matchesAssignee;
+});
+}, [semesters, searchTerm, assigneeSearch, filterUnassignedPractice, filterPaymentPlanned, userMap]);
 
   const statusBadge = (sem: any) => {
     if (sem.isCompleted) {
@@ -153,14 +156,25 @@ const [filterUnassignedPractice, setFilterUnassignedPractice] = useState(false);
           />
         )}
       </div>
-<label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-  <input
-    type="checkbox"
-    checked={filterUnassignedPractice}
-    onChange={(e) => setFilterUnassignedPractice(e.target.checked)}
-  />
-  미실습 섭외만
-</label>
+<div className="flex items-center gap-4 flex-wrap">
+  <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+    <input
+      type="checkbox"
+      checked={filterUnassignedPractice}
+      onChange={(e) => setFilterUnassignedPractice(e.target.checked)}
+    />
+    미실습 섭외만
+  </label>
+
+  <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+    <input
+      type="checkbox"
+      checked={filterPaymentPlanned}
+      onChange={(e) => setFilterPaymentPlanned(e.target.checked)}
+    />
+    결제 예정만
+  </label>
+</div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card className="border-0 shadow-sm">
           <CardContent className="pt-4 pb-3 px-4">
@@ -311,8 +325,8 @@ const [filterUnassignedPractice, setFilterUnassignedPractice] = useState(false);
                     className="text-center py-8 text-muted-foreground text-sm"
                   >
                     {plannedMonth
-                      ? `${plannedMonth} 예정 학기가 없습니다.`
-                      : "학기 데이터가 없습니다."}
+  ? `${plannedMonth} 조건에 맞는 예정 학기가 없습니다.`
+  : "조건에 맞는 학기 데이터가 없습니다."}
                   </td>
                 </tr>
               )}

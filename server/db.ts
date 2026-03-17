@@ -1335,7 +1335,7 @@ export async function createCourseSubjectTemplate(data: InsertCourseSubjectTempl
   return getInsertId(result);
 }
 
-export async function bulkCreatePlanSemestersFromSelectedTemplates(params: {
+export async function bulkCreatePlanSemestersFromTemplate(params: {
   studentId: number;
   semesterNo: number;
   subjectIds: number[];
@@ -1381,7 +1381,6 @@ export async function bulkCreatePlanSemestersFromSelectedTemplates(params: {
     throw new Error("우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다");
   }
 
-  // 1. 기존 학기 과목 전체 삭제
   await db
     .delete(planSemesters)
     .where(
@@ -1391,7 +1390,6 @@ export async function bulkCreatePlanSemestersFromSelectedTemplates(params: {
       )
     );
 
-  // 2. 선택한 템플릿 과목으로 덮어쓰기
   const rows = templates.map((t: any, idx: number) => ({
     studentId: params.studentId,
     semesterNo: params.semesterNo,

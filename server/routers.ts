@@ -1360,29 +1360,29 @@ export const appRouter = router({
       }),
 
     applyToPlanSemester: protectedProcedure
-      .input(
-        z.object({
-          studentId: z.number(),
-          semesterNo: z.number(),
-          subjectIds: z.array(z.number()).min(1),
-        })
-      )
-      .mutation(async ({ ctx, input }) => {
-        const student = await db.getStudent(input.studentId);
-        if (!student) throw new Error("학생을 찾을 수 없습니다");
+  .input(
+    z.object({
+      studentId: z.number(),
+      semesterNo: z.number(),
+      subjectIds: z.array(z.number()).min(1),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const student = await db.getStudent(input.studentId);
+    if (!student) throw new Error("학생을 찾을 수 없습니다");
 
-        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-          throw new Error("권한이 없습니다");
-        }
+    if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+      throw new Error("권한이 없습니다");
+    }
 
-        const result = await db.bulkCreatePlanSemestersFromSelectedTemplates({
-          studentId: input.studentId,
-          semesterNo: input.semesterNo,
-          subjectIds: input.subjectIds,
-        });
+    const result = await db.bulkCreatePlanSemestersFromTemplate({
+      studentId: input.studentId,
+      semesterNo: input.semesterNo,
+      subjectIds: input.subjectIds,
+    } as any);
 
-        return { success: true, count: result.count };
-      }),
+    return { success: true, count: result.count };
+  }),
   }),
 
   settlement: router({
