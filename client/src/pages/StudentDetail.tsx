@@ -31,7 +31,6 @@ import { toast } from "sonner";
 import { useLocation, useParams } from "wouter";
 import { formatPhone } from "@/lib/format";
 
-// ─── Editable Cell (인라인 편집) ────────────────────────────────────
 function EditableCell({
   value,
   onBlur,
@@ -106,8 +105,19 @@ function formatDate(d: any) {
   const day = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
+
 function isClosedStatus(status: string | null | undefined) {
   return status === "종료" || status === "등록 종료";
+}
+
+function toNumber(v: any) {
+  return Number(String(v ?? "0").replace(/,/g, "").replace(/[^0-9.-]/g, "").trim()) || 0;
+}
+
+function normalizePlannedMonthToDate(plannedMonth?: string | null) {
+  const raw = String(plannedMonth || "").trim().replace(/[^0-9]/g, "");
+  if (raw.length !== 6) return "";
+  return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-01`;
 }
 
 export default function StudentDetail() {
@@ -119,18 +129,23 @@ export default function StudentDetail() {
 
   const isAdmin = user?.role === "admin" || user?.role === "host";
   const planSectionRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const planFieldRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
+  const transferFieldRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
 
   const { data: student, isLoading: studentLoading } = trpc.student.get.useQuery({ id: studentId });
   const { data: semesters } = trpc.semester.list.useQuery({ studentId });
   const { data: plan } = trpc.plan.get.useQuery({ studentId });
   const { data: allUsers } = trpc.users.list.useQuery();
   const { data: institutionList } = trpc.educationInstitution.list.useQuery();
-  const { data: paymentSummary } = trpc.student.paymentSummary.useQuery({ studentId });
   const { data: refundList } = trpc.refund.listByStudent.useQuery({ studentId });
   const { data: planSemesterList } = trpc.planSemester.list.useQuery({ studentId });
   const { data: transferSubjectList } = trpc.transferSubject.list.useQuery({ studentId });
+const { data: transferAttachmentList } = trpc.transferAttachment.list.useQuery({ studentId });
+const { data: courseTemplateList } = trpc.courseTemplate.list.useQuery({});
 
   const [selectedSemesterOrder, setSelectedSemesterOrder] = useState(1);
+  const [transferAddCount, setTransferAddCount] = useState("1");
+const [selectedCourseKeys, setSelectedCourseKeys] = useState<string[]>([]);
 
   const updateStudentMut = trpc.student.update.useMutation({
     onSuccess: async () => {
@@ -164,7 +179,6 @@ export default function StudentDetail() {
   const createTransferSubjectMut = trpc.transferSubject.create.useMutation({
     onSuccess: async () => {
       await utils.transferSubject.list.invalidate({ studentId });
-      toast.success("전적대 과목 추가 완료");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -183,23 +197,44 @@ export default function StudentDetail() {
     },
     onError: (e) => toast.error(e.message),
   });
+const bulkCreateTransferSubjectMut = trpc.transferSubject.bulkCreate.useMutation({
+  onSuccess: async (res) => {
+    await utils.transferSubject.list.invalidate({ studentId });
+    toast.success(`전적대 과목 ${res.count}개 추가 완료`);
+  },
+  onError: (e) => toast.error(e.message),
+});
+
+const createTransferAttachmentMut = trpc.transferAttachment.create.useMutation({
+  onSuccess: async () => {
+    await utils.transferAttachment.list.invalidate({ studentId });
+    toast.success("전적대 공통 첨부파일 등록 완료");
+  },
+  onError: (e) => toast.error(e.message),
+});
+
+const deleteTransferAttachmentMut = trpc.transferAttachment.delete.useMutation({
+  onSuccess: async () => {
+    await utils.transferAttachment.list.invalidate({ studentId });
+    toast.success("전적대 공통 첨부파일 삭제 완료");
+  },
+  onError: (e) => toast.error(e.message),
+});
+
+const applyCourseTemplateMut = trpc.courseTemplate.applyToPlanSemester.useMutation({
+  onSuccess: async (res) => {
+    await utils.planSemester.list.invalidate({ studentId });
+    toast.success(`과목 템플릿 ${res.count}개 등록 완료`);
+  },
+  onError: (e) => toast.error(e.message),
+});
 
   const createSemMut = trpc.semester.create.useMutation({
-    onSuccess: async (_data, variables) => {
+    onSuccess: async () => {
       await utils.semester.list.invalidate({ studentId });
-      await utils.student.paymentSummary.invalidate({ studentId });
       await utils.planSemester.list.invalidate({ studentId });
-
-      setSelectedSemesterOrder(Number(variables.semesterOrder));
       toast.success("학기 및 우리 플랜 자동 생성 완료");
       setSemDialogOpen(false);
-
-      setTimeout(() => {
-        const el = planSectionRefs.current[Number(variables.semesterOrder)];
-        if (el) {
-          el.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
-      }, 300);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -207,7 +242,6 @@ export default function StudentDetail() {
   const updateSemMut = trpc.semester.update.useMutation({
     onSuccess: async () => {
       await utils.semester.list.invalidate({ studentId });
-      await utils.student.paymentSummary.invalidate({ studentId });
       await utils.student.get.invalidate({ id: studentId });
       await utils.planSemester.list.invalidate({ studentId });
     },
@@ -217,19 +251,9 @@ export default function StudentDetail() {
   const deleteSemMut = trpc.semester.delete.useMutation({
     onSuccess: async () => {
       await utils.semester.list.invalidate({ studentId });
-      await utils.student.paymentSummary.invalidate({ studentId });
       await utils.student.get.invalidate({ id: studentId });
       await utils.planSemester.list.invalidate({ studentId });
       toast.success("학기 삭제 완료");
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const copyPlannedMut = trpc.semester.copyPlannedToActual.useMutation({
-    onSuccess: async () => {
-      await utils.semester.list.invalidate({ studentId });
-      await utils.student.get.invalidate({ id: studentId });
-      toast.success("예정 정보를 실제 결제 정보로 복사했습니다");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -281,7 +305,6 @@ export default function StudentDetail() {
 
   const createRefundMut = trpc.refund.create.useMutation({
     onSuccess: async () => {
-      await utils.student.paymentSummary.invalidate({ studentId });
       await utils.refund.listByStudent.invalidate({ studentId });
       toast.success("환불 등록 완료");
       setRefundDialogOpen(false);
@@ -296,7 +319,6 @@ export default function StudentDetail() {
 
   const updateRefundMut = trpc.refund.update.useMutation({
     onSuccess: async () => {
-      await utils.student.paymentSummary.invalidate({ studentId });
       await utils.refund.listByStudent.invalidate({ studentId });
       toast.success("환불 수정 완료");
       setEditingRefundId(null);
@@ -306,7 +328,6 @@ export default function StudentDetail() {
 
   const deleteRefundMut = trpc.refund.delete.useMutation({
     onSuccess: async () => {
-      await utils.student.paymentSummary.invalidate({ studentId });
       await utils.refund.listByStudent.invalidate({ studentId });
       toast.success("환불 삭제 완료");
     },
@@ -349,7 +370,7 @@ export default function StudentDetail() {
     );
   }, [sortedSemesters, selectedSemesterOrder]);
 
-    const lastSemester = useMemo(() => {
+  const lastSemester = useMemo(() => {
     if (!sortedSemesters.length) return null;
     return sortedSemesters[sortedSemesters.length - 1];
   }, [sortedSemesters]);
@@ -363,7 +384,6 @@ export default function StudentDetail() {
     if (!selectedSemester) return "등록";
     return selectedSemester.status || "등록";
   }, [selectedSemester]);
-
 
   useEffect(() => {
     if (!sortedSemesters.length) {
@@ -384,20 +404,6 @@ export default function StudentDetail() {
     const el = planSectionRefs.current[semesterNo];
     if (!el) return;
     el.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  const handleStudentFieldBlur = (field: string, value: string) => {
-    const payload: any = { id: studentId };
-
-    if (field === "subjectCount") {
-      payload[field] = value ? parseInt(value) : undefined;
-    } else if (field === "startDate" || field === "paymentDate") {
-      payload[field] = value || undefined;
-    } else {
-      payload[field] = value;
-    }
-
-    updateStudentMut.mutate(payload);
   };
 
   const handleSemFieldBlur = async (semId: number, field: string, value: string) => {
@@ -573,68 +579,54 @@ export default function StudentDetail() {
     };
   }, [planTotals, transferTotals]);
 
-  const registrationSummary = useMemo(() => {
-    const toNumber = (v: any) =>
-      Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
+  // 1번: 결제 요약을 semesters/refunds 기준으로 프론트에서 재계산
+  const paymentSummaryCard = useMemo(() => {
+    const totalRequired = (sortedSemesters || []).reduce(
+      (sum: number, sem: any) => sum + toNumber(sem.plannedAmount),
+      0
+    );
 
+    const totalPaid = (sortedSemesters || []).reduce((sum: number, sem: any) => {
+      if (!sem.isCompleted) return sum;
+      return sum + toNumber(sem.actualAmount);
+    }, 0);
+
+    const totalRefund = (refundList || []).reduce(
+      (sum: number, row: any) => sum + toNumber(row.refundAmount),
+      0
+    );
+
+    const remaining = totalRequired - totalPaid - totalRefund;
+
+    return {
+      totalRequired,
+      totalPaid,
+      totalRefund,
+      remaining,
+    };
+  }, [sortedSemesters, refundList]);
+
+  // 2번: 상단 매출보고는 학기표 기준으로만 표시, 수정 불가
+  const registrationSummary = useMemo(() => {
     const sem = selectedSemester;
 
     return {
       status: student?.status || "",
-      startDate:
-        sem?.actualStartDate ||
-        (selectedSemesterOrder === 1 ? student?.startDate : "") ||
-        "",
-      paymentAmount: sem?.actualAmount
-        ? toNumber(sem.actualAmount)
-        : selectedSemesterOrder === 1
-          ? toNumber(student?.paymentAmount)
-          : 0,
-      subjectCount:
-        sem?.actualSubjectCount ??
-        (selectedSemesterOrder === 1 ? student?.subjectCount : "") ??
-        "",
-      paymentDate:
-        sem?.actualPaymentDate ||
-        (selectedSemesterOrder === 1 ? student?.paymentDate : "") ||
-        "",
+      startDate: sem?.actualStartDate || "",
+      paymentAmount: toNumber(sem?.actualAmount),
+      subjectCount: sem?.actualSubjectCount ?? "",
+      paymentDate: sem?.actualPaymentDate || "",
       institution:
         sem?.actualInstitution ||
-        (selectedSemesterOrder === 1 ? student?.institution : "") ||
-        "",
+        (sem?.actualInstitutionId
+          ? institutionList?.find((inst: any) => Number(inst.id) === Number(sem.actualInstitutionId))?.name || ""
+          : ""),
     };
-  }, [selectedSemester, selectedSemesterOrder, student]);
+  }, [selectedSemester, student, institutionList]);
 
   const registrationInstitutionId = useMemo(() => {
-    if (selectedSemester?.actualInstitutionId) {
-      return selectedSemester.actualInstitutionId;
-    }
-
-    if (selectedSemesterOrder === 1) {
-      return student?.institutionId || "";
-    }
-
-    return "";
-  }, [selectedSemester, selectedSemesterOrder, student]);
-
-  const handleAddPlanSemesterGroup = () => {
-    createPlanSemesterMut.mutate(
-      {
-        studentId,
-        semesterNo: nextPlanSemesterNo,
-        subjectName: "새 과목",
-        category: "전공",
-        requirementType: "전공선택",
-        sortOrder: 0,
-      } as any,
-      {
-        onSuccess: async () => {
-          await utils.planSemester.list.invalidate({ studentId });
-          toast.success("우리 플랜 학기 추가 완료");
-        },
-      }
-    );
-  };
+    return selectedSemester?.actualInstitutionId || "";
+  }, [selectedSemester]);
 
   const handleAddPlanSubject = (semesterNo: number) => {
     const current = (planSemesterList || []).filter((x: any) => Number(x.semesterNo) === Number(semesterNo));
@@ -673,24 +665,21 @@ export default function StudentDetail() {
     updatePlanSemesterMut.mutate(payload);
   };
 
-  const handleAddTransferSubject = () => {
-    if ((transferSubjectList?.length ?? 0) >= 100) {
-      toast.error("전적대 과목은 최대 100개까지 등록할 수 있습니다.");
-      return;
-    }
+  const handleAddTransferSubjects = async () => {
+  const count = Math.max(1, Math.min(100, Number(transferAddCount) || 1));
+  const currentLen = transferSubjectList?.length ?? 0;
 
-    createTransferSubjectMut.mutate({
-      studentId,
-      schoolName: "전적대",
-      subjectName: "새 과목",
-      category: "전공",
-      requirementType: "전공선택",
-      credits: 3,
-      sortOrder: transferSubjectList?.length ?? 0,
-      attachmentName: "",
-      attachmentUrl: "",
-    } as any);
-  };
+  if (currentLen + count > 100) {
+    toast.error("전적대 과목은 최대 100개까지 등록할 수 있습니다.");
+    return;
+  }
+
+  bulkCreateTransferSubjectMut.mutate({
+    studentId,
+    count,
+    schoolName: "전적대",
+  });
+};
 
   const handleTransferBlur = (id: number, field: string, value: any) => {
     const payload: any = { id };
@@ -743,6 +732,77 @@ export default function StudentDetail() {
     return "bg-gray-50 text-gray-600 border border-gray-200";
   };
 
+  // 3번: 예정 -> 실제 복사
+  const handleCopyPlannedToActual = (sem: any) => {
+    const actualStartDate = normalizePlannedMonthToDate(sem.plannedMonth);
+
+    updateSemMut.mutate(
+      {
+        id: sem.id,
+        actualStartDate: actualStartDate || undefined,
+        actualInstitutionId: sem.plannedInstitutionId || undefined,
+        actualSubjectCount: sem.plannedSubjectCount ?? undefined,
+        actualAmount: sem.plannedAmount || undefined,
+      } as any,
+      {
+        onSuccess: async () => {
+          await utils.semester.list.invalidate({ studentId });
+          await utils.student.get.invalidate({ id: studentId });
+          toast.success("예정 정보를 실제 결제 정보로 복사했습니다.");
+        },
+      }
+    );
+  };
+
+  const focusPlanField = (key: string) => {
+    const el = planFieldRefs.current[key];
+    if (!el) return;
+    window.requestAnimationFrame(() => el.focus());
+  };
+
+  const focusTransferField = (key: string) => {
+    const el = transferFieldRefs.current[key];
+    if (!el) return;
+    window.requestAnimationFrame(() => el.focus());
+  };
+
+  // 5번: 과목명에서 Tab / Enter 시 다음 행 과목명으로 이동
+  const handlePlanNameKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    semesterNo: number,
+    rowIndex: number,
+    groupRows: any[]
+  ) => {
+    if (e.key !== "Tab" && e.key !== "Enter") return;
+    e.preventDefault();
+
+    const nextIndex = rowIndex + 1;
+    if (nextIndex < groupRows.length) {
+      focusPlanField(`plan-name-${semesterNo}-${nextIndex}`);
+      return;
+    }
+
+    toast.message("마지막 과목입니다.");
+  };
+
+  // 6번: 구분/타입 select 에서 Tab 누르면 값이 순환 변경
+  const cycleSelectValue = (
+    e: React.KeyboardEvent<HTMLSelectElement>,
+    values: string[],
+    currentValue: string,
+    onChange: (next: string) => void
+  ) => {
+    if (e.key !== "Tab") return;
+    e.preventDefault();
+
+    const idx = values.indexOf(currentValue);
+    const nextIdx = e.shiftKey
+      ? (idx - 1 + values.length) % values.length
+      : (idx + 1) % values.length;
+
+    onChange(values[nextIdx]);
+  };
+
   if (studentLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -762,7 +822,7 @@ export default function StudentDetail() {
     );
   }
 
-    const statusColor = (s: string) => {
+  const statusColor = (s: string) => {
     switch (s) {
       case "등록":
         return "bg-emerald-100 text-emerald-700";
@@ -790,8 +850,8 @@ export default function StudentDetail() {
 
         <div className="flex items-center gap-2">
           <Badge className={statusColor(isSelectedLastSemester ? selectedSemesterStatus : "등록")}>
-  {isSelectedLastSemester ? selectedSemesterStatus : "등록"}
-</Badge>
+            {isSelectedLastSemester ? selectedSemesterStatus : "등록"}
+          </Badge>
         </div>
       </div>
 
@@ -823,68 +883,57 @@ export default function StudentDetail() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3">
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">이름</p>
-              <EditableCell
-                value={student.clientName}
-                onBlur={(v) => handleStudentFieldBlur("clientName", v)}
-                disabled
-              />
+              <EditableCell value={student.clientName} onBlur={() => {}} disabled />
             </div>
 
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">연락처</p>
-              <EditableCell
-                value={formatPhone(student.phone)}
-                onBlur={(v) => handleStudentFieldBlur("phone", v.replace(/\D/g, ""))}
-                disabled
-              />
+              <EditableCell value={formatPhone(student.phone)} onBlur={() => {}} disabled />
             </div>
 
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">등록 과정</p>
-              <EditableCell
-                value={student.course}
-                onBlur={(v) => handleStudentFieldBlur("course", v)}
-                disabled
-              />
+              <EditableCell value={student.course} onBlur={() => {}} disabled />
             </div>
 
             <div>
-  <p className="text-xs text-muted-foreground mb-0.5">상태</p>
+              <p className="text-xs text-muted-foreground mb-0.5">상태</p>
 
-  {isSelectedLastSemester ? (
-    <Select
-      value={selectedSemesterStatus || "등록"}
-      onValueChange={(v) =>
-        handleSelectedSemesterStatusChange(v as "등록" | "등록 종료")
-      }
-    >
-      <SelectTrigger className="h-8 text-sm">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="등록">등록</SelectItem>
-        <SelectItem value="등록 종료">등록 종료</SelectItem>
-      </SelectContent>
-    </Select>
-  ) : (
-    <div className="h-8 px-3 rounded-md border bg-muted/30 text-sm flex items-center text-black">
-      등록
-    </div>
-  )}
+              {isSelectedLastSemester ? (
+                <Select
+                  value={selectedSemesterStatus || "등록"}
+                  onValueChange={(v) =>
+                    handleSelectedSemesterStatusChange(v as "등록" | "등록 종료")
+                  }
+                >
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="등록">등록</SelectItem>
+                    <SelectItem value="등록 종료">등록 종료</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="h-8 px-3 rounded-md border bg-muted/30 text-sm flex items-center text-black">
+                  등록
+                </div>
+              )}
 
-  {!isSelectedLastSemester && (
-    <p className="text-[11px] text-muted-foreground mt-1">
-      마지막 학기에서만 등록 종료할 수 있습니다.
-    </p>
-  )}
-</div>
+              {!isSelectedLastSemester && (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  마지막 학기에서만 등록 종료할 수 있습니다.
+                </p>
+              )}
+            </div>
 
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">개강 날짜</p>
               <EditableCell
                 value={registrationSummary.startDate ? formatDate(registrationSummary.startDate) : ""}
-                onBlur={(v) => handleStudentFieldBlur("startDate", v)}
+                onBlur={() => {}}
                 type="date"
+                disabled
               />
             </div>
 
@@ -898,9 +947,8 @@ export default function StudentDetail() {
                     ? Number(registrationSummary.paymentAmount).toLocaleString() + "원"
                     : ""
                 }
-                onBlur={(v) =>
-                  handleStudentFieldBlur("paymentAmount", v.replace(/[^0-9]/g, ""))
-                }
+                onBlur={() => {}}
+                disabled
               />
             </div>
 
@@ -908,7 +956,8 @@ export default function StudentDetail() {
               <p className="text-xs text-muted-foreground mb-0.5">과목 수</p>
               <EditableCell
                 value={registrationSummary.subjectCount?.toString() || ""}
-                onBlur={(v) => handleStudentFieldBlur("subjectCount", v)}
+                onBlur={() => {}}
+                disabled
               />
             </div>
 
@@ -916,8 +965,9 @@ export default function StudentDetail() {
               <p className="text-xs text-muted-foreground mb-0.5">결제 일자</p>
               <EditableCell
                 value={registrationSummary.paymentDate ? formatDate(registrationSummary.paymentDate) : ""}
-                onBlur={(v) => handleStudentFieldBlur("paymentDate", v)}
+                onBlur={() => {}}
                 type="date"
+                disabled
               />
             </div>
 
@@ -942,39 +992,34 @@ export default function StudentDetail() {
             </div>
           </div>
 
-          {paymentSummary && (
-            <div className="mt-4 pt-4 border-t grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-blue-50 rounded-lg p-3">
-                <p className="text-xs text-muted-foreground">총 결제예정 금액</p>
-                <p className="text-lg font-bold text-blue-700">
-                  {Number(paymentSummary.totalRequired || 0).toLocaleString()}원
-                </p>
-              </div>
-              <div className="bg-emerald-50 rounded-lg p-3">
-                <p className="text-xs text-muted-foreground">수납 완료 금액</p>
-                <p className="text-lg font-bold text-emerald-700">
-                  {Number(paymentSummary.totalPaid || 0).toLocaleString()}원
-                </p>
-              </div>
-              <div className="bg-red-50 rounded-lg p-3">
-                <p className="text-xs text-muted-foreground">환불 금액</p>
-                <p className="text-lg font-bold text-red-600">
-                  {Number(paymentSummary.totalRefund || 0) > 0
-                    ? `-${Number(paymentSummary.totalRefund).toLocaleString()}원`
-                    : "0원"}
-                </p>
-              </div>
-              <div className="bg-amber-50 rounded-lg p-3">
-                <p className="text-xs text-muted-foreground">잔여 금액</p>
-                <p className="text-lg font-bold text-amber-700">
-                  {Number(
-                    (paymentSummary.totalRequired || 0) - (paymentSummary.totalPaid || 0)
-                  ).toLocaleString()}
-                  원
-                </p>
-              </div>
+          <div className="mt-4 pt-4 border-t grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-blue-50 rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">총 결제예정 금액</p>
+              <p className="text-lg font-bold text-blue-700">
+                {paymentSummaryCard.totalRequired.toLocaleString()}원
+              </p>
             </div>
-          )}
+            <div className="bg-emerald-50 rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">수납 완료 금액</p>
+              <p className="text-lg font-bold text-emerald-700">
+                {paymentSummaryCard.totalPaid.toLocaleString()}원
+              </p>
+            </div>
+            <div className="bg-red-50 rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">환불 금액</p>
+              <p className="text-lg font-bold text-red-600">
+                {paymentSummaryCard.totalRefund > 0
+                  ? `-${paymentSummaryCard.totalRefund.toLocaleString()}원`
+                  : "0원"}
+              </p>
+            </div>
+            <div className="bg-amber-50 rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">잔여 금액</p>
+              <p className="text-lg font-bold text-amber-700">
+                {paymentSummaryCard.remaining.toLocaleString()}원
+              </p>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -1029,6 +1074,7 @@ export default function StudentDetail() {
                         {sem.semesterOrder}학기
                         {sem.isLocked && <Lock className="inline h-3 w-3 ml-1 text-amber-500" />}
                       </td>
+
                       <td className="px-1 py-0.5">
                         <EditableCell
                           value={sem.plannedMonth ? (sem.plannedMonth.length === 6 ? sem.plannedMonth.slice(0, 4) + "-" + sem.plannedMonth.slice(4) : sem.plannedMonth) : ""}
@@ -1036,6 +1082,7 @@ export default function StudentDetail() {
                           disabled={sem.isLocked}
                         />
                       </td>
+
                       <td className="px-1 py-0.5">
                         <Select
                           value={sem.plannedInstitutionId ? String(sem.plannedInstitutionId) : ""}
@@ -1058,6 +1105,7 @@ export default function StudentDetail() {
                           </SelectContent>
                         </Select>
                       </td>
+
                       <td className="px-1 py-0.5">
                         <EditableCell
                           value={sem.plannedSubjectCount?.toString() || ""}
@@ -1065,6 +1113,7 @@ export default function StudentDetail() {
                           disabled={sem.isLocked}
                         />
                       </td>
+
                       <td className="px-1 py-0.5">
                         <EditableCell
                           value={sem.plannedAmount ? Number(sem.plannedAmount).toLocaleString() : ""}
@@ -1081,6 +1130,7 @@ export default function StudentDetail() {
                           className="text-primary"
                         />
                       </td>
+
                       <td className="px-1 py-0.5">
                         <Select
                           value={sem.actualInstitutionId ? String(sem.actualInstitutionId) : ""}
@@ -1103,6 +1153,7 @@ export default function StudentDetail() {
                           </SelectContent>
                         </Select>
                       </td>
+
                       <td className="px-1 py-0.5">
                         <EditableCell
                           value={sem.actualSubjectCount?.toString() || ""}
@@ -1110,6 +1161,7 @@ export default function StudentDetail() {
                           className="text-primary"
                         />
                       </td>
+
                       <td className="px-1 py-0.5">
                         <EditableCell
                           value={sem.actualAmount ? Number(sem.actualAmount).toLocaleString() : ""}
@@ -1117,6 +1169,7 @@ export default function StudentDetail() {
                           className="text-primary font-medium"
                         />
                       </td>
+
                       <td className="px-1 py-0.5">
                         <EditableCell
                           value={sem.actualPaymentDate ? (typeof sem.actualPaymentDate === "string" ? sem.actualPaymentDate.slice(0, 10) : new Date(sem.actualPaymentDate).toISOString().slice(0, 10)) : ""}
@@ -1129,7 +1182,13 @@ export default function StudentDetail() {
                       <td className="px-3 py-1.5 text-center">
                         <Checkbox
                           checked={sem.isCompleted}
-                          onCheckedChange={(checked) => updateSemMut.mutate({ id: sem.id, isCompleted: !!checked })}
+                          onCheckedChange={(checked) => {
+                            if (!!checked && toNumber(sem.actualAmount) <= 0) {
+                              toast.error("완료 처리하려면 실제 금액을 먼저 입력해주세요.");
+                              return;
+                            }
+                            updateSemMut.mutate({ id: sem.id, isCompleted: !!checked } as any);
+                          }}
                         />
                       </td>
 
@@ -1150,7 +1209,7 @@ export default function StudentDetail() {
                             size="icon"
                             className="h-7 w-7"
                             title="예정표 가져오기"
-                            onClick={() => copyPlannedMut.mutate({ id: sem.id })}
+                            onClick={() => handleCopyPlannedToActual(sem)}
                           >
                             <Copy className="h-3 w-3 text-blue-500" />
                           </Button>
@@ -1316,21 +1375,91 @@ export default function StudentDetail() {
         </CardContent>
       </Card>
 
-      <Card className="border-0 shadow-sm">
-        <CardHeader className="flex flex-row items-center justify-between pb-3">
-          <CardTitle className="text-base">학생 플랜</CardTitle>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={handleAddTransferSubject} className="gap-1">
-              <Plus className="h-3.5 w-3.5" /> 전적대 추가
-            </Button>
-          </div>
-        </CardHeader>
+     <Card className="border-0 shadow-sm">
+  <CardHeader className="flex flex-row items-center justify-between pb-3">
+    <CardTitle className="text-base">학생 플랜</CardTitle>
+    <div className="flex items-center gap-2">
+      <Input
+        className="h-8 w-20"
+        value={transferAddCount}
+        onChange={(e) => setTransferAddCount(e.target.value.replace(/[^0-9]/g, ""))}
+        placeholder="개수"
+      />
+      <Button variant="outline" size="sm" onClick={handleAddTransferSubjects} className="gap-1">
+        <Plus className="h-3.5 w-3.5" /> 전적대 과목 추가
+      </Button>
+    </div>
+  </CardHeader>
 
-        <CardContent className="space-y-6">
+  <CardContent className="space-y-6">
+    <div className="rounded-lg border p-4 bg-muted/20 space-y-3">
+      <div>
+        <div className="font-medium text-sm">과정별 과목 템플릿 일괄 등록</div>
+        <div className="text-xs text-muted-foreground">
+          선택한 과정의 템플릿 과목을 현재 선택 학기에 추가합니다.
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-4">
+        {["사회복지사", "보육교사", "청소년지도사", "한국어교원", "아동학사", "건강가정사"].map((key) => (
+          <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
+            <Checkbox
+              checked={selectedCourseKeys.includes(key)}
+              onCheckedChange={(checked) => {
+                setSelectedCourseKeys((prev) =>
+                  checked ? [...prev, key] : prev.filter((x) => x !== key)
+                );
+              }}
+            />
+            <span>{key}</span>
+          </label>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          onClick={() => {
+            if (!selectedCourseKeys.length) {
+              toast.error("과정을 하나 이상 선택해주세요.");
+              return;
+            }
+
+            applyCourseTemplateMut.mutate({
+              studentId,
+              semesterNo: selectedSemesterOrder,
+              courseKeys: selectedCourseKeys,
+            });
+          }}
+          disabled={applyCourseTemplateMut.isPending}
+        >
+          체크한 과정 과목 불러오기
+        </Button>
+      </div>
+
+      {!!selectedCourseKeys.length && (
+        <div className="text-xs text-muted-foreground">
+          선택됨: {selectedCourseKeys.join(", ")}
+        </div>
+      )}
+
+      {!!courseTemplateList?.length && (
+        <div className="text-xs text-muted-foreground">
+          등록된 템플릿 수: {courseTemplateList.length}개
+        </div>
+      )}
+    </div>
+
+ 
           <div className="space-y-4">
             <div>
               <h3 className="font-semibold text-sm">우리 플랜 (학점은행제 / 과목당 3학점 고정)</h3>
-              <p className="text-xs text-muted-foreground mt-1">학기별 예정표에서 학기를 추가하면 과목 수 기준으로 자동 생성됩니다.</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                학기별 예정표에서 학기를 추가하면 과목 수 기준으로 자동 생성됩니다.
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                과목명 입력칸에서 Enter / Tab 누르면 다음 과목명으로 이동합니다.
+              </p>
             </div>
 
             {groupedPlanSemesters.length === 0 ? (
@@ -1377,17 +1506,25 @@ export default function StudentDetail() {
                           </tr>
                         </thead>
                         <tbody>
-                          {group.rows.map((row: any) => (
+                          {group.rows.map((row: any, rowIndex: number) => (
                             <tr key={row.id} className="border-b last:border-0">
                               <td className="px-2 py-1">
-                                <EditableCell
-                                  value={row.subjectName || ""}
-                                  onBlur={(v) => handlePlanSemesterBlur(row.id, "subjectName", v)}
-                                  className={row.planRequirementType === "전공필수" ? "text-red-600 font-medium" : ""}
+                                <Input
+                                  ref={(el) => {
+                                    planFieldRefs.current[`plan-name-${group.semesterNo}-${rowIndex}`] = el;
+                                  }}
+                                  defaultValue={row.subjectName || ""}
+                                  className={`h-8 ${row.planRequirementType === "전공필수" ? "text-red-600 font-medium" : ""}`}
+                                  onBlur={(e) => handlePlanSemesterBlur(row.id, "subjectName", e.target.value)}
+                                  onKeyDown={(e) => handlePlanNameKeyDown(e, group.semesterNo, rowIndex, group.rows)}
                                 />
                               </td>
+
                               <td className="px-2 py-1">
                                 <select
+                                  ref={(el) => {
+                                    planFieldRefs.current[`plan-category-${group.semesterNo}-${rowIndex}`] = el;
+                                  }}
                                   className="w-full h-8 px-2 text-sm border rounded bg-white"
                                   value={row.planCategory || "전공"}
                                   onChange={(e) => {
@@ -1407,18 +1544,52 @@ export default function StudentDetail() {
                                       );
                                     }
                                   }}
+                                  onKeyDown={(e) =>
+                                    cycleSelectValue(
+                                      e,
+                                      ["전공", "교양", "일반"],
+                                      row.planCategory || "전공",
+                                      (next) => {
+                                        handlePlanSemesterBlur(row.id, "category", next);
+
+                                        if (next === "교양") {
+                                          handlePlanSemesterBlur(row.id, "requirementType", "교양");
+                                        } else if (next === "일반") {
+                                          handlePlanSemesterBlur(row.id, "requirementType", "일반");
+                                        } else {
+                                          handlePlanSemesterBlur(
+                                            row.id,
+                                            "requirementType",
+                                            row.planRequirementType === "전공필수" ? "전공필수" : "전공선택"
+                                          );
+                                        }
+                                      }
+                                    )
+                                  }
                                 >
                                   <option value="전공">전공</option>
                                   <option value="교양">교양</option>
                                   <option value="일반">일반</option>
                                 </select>
                               </td>
+
                               <td className="px-2 py-1">
                                 {row.planCategory === "전공" ? (
                                   <select
+                                    ref={(el) => {
+                                      planFieldRefs.current[`plan-type-${group.semesterNo}-${rowIndex}`] = el;
+                                    }}
                                     className={`w-full h-8 px-2 text-sm rounded ${requirementBadgeClass(row.planRequirementType)}`}
                                     value={row.planRequirementType || "전공선택"}
                                     onChange={(e) => handlePlanSemesterBlur(row.id, "requirementType", e.target.value)}
+                                    onKeyDown={(e) =>
+                                      cycleSelectValue(
+                                        e,
+                                        ["전공필수", "전공선택"],
+                                        row.planRequirementType || "전공선택",
+                                        (next) => handlePlanSemesterBlur(row.id, "requirementType", next)
+                                      )
+                                    }
                                   >
                                     <option value="전공필수">전공필수</option>
                                     <option value="전공선택">전공선택</option>
@@ -1431,7 +1602,9 @@ export default function StudentDetail() {
                                   </div>
                                 )}
                               </td>
+
                               <td className="px-3 py-2 text-center font-medium text-black">3</td>
+
                               <td className="px-2 py-1 text-right">
                                 <Button
                                   variant="ghost"
@@ -1466,152 +1639,309 @@ export default function StudentDetail() {
           </div>
 
           <div className="space-y-4">
-            <div>
-              <h3 className="font-semibold text-sm">전적대 / 이전 이수과목</h3>
-              <p className="text-xs text-muted-foreground mt-1">최대 100과목까지 등록 가능하며 학점은 직접 입력합니다.</p>
-            </div>
+  <div className="flex items-start justify-between gap-3">
+    <div>
+      <h3 className="font-semibold text-sm">전적대 / 이전 이수과목</h3>
+      <p className="text-xs text-muted-foreground mt-1">
+        최대 100과목까지 등록 가능하며 학점은 직접 입력합니다.
+      </p>
+    </div>
 
-            <div className="border rounded-lg overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/40">
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground">학교명</th>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground">과목명</th>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground w-[110px]">구분</th>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground w-[130px]">타입</th>
-                      <th className="px-3 py-2 text-center font-medium text-muted-foreground w-[80px]">학점</th>
-                      <th className="px-3 py-2 text-center font-medium text-muted-foreground w-[130px]">첨부파일</th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground w-[150px]">관리</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {!transferSubjectList || transferSubjectList.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
-                          등록된 전적대 과목이 없습니다.
-                        </td>
-                      </tr>
-                    ) : (
-                      transferSubjectList.map((row: any) => (
-                        <tr key={row.id} className="border-b last:border-0">
-                          <td className="px-2 py-1">
-                            <EditableCell
-                              value={row.schoolName || ""}
-                              onBlur={(v) => handleTransferBlur(row.id, "schoolName", v)}
-                            />
-                          </td>
-                          <td className="px-2 py-1">
-                            <EditableCell
-                              value={row.subjectName || ""}
-                              onBlur={(v) => handleTransferBlur(row.id, "subjectName", v)}
-                            />
-                          </td>
-                          <td className="px-2 py-1">
-                            <select
-                              className="w-full h-8 px-2 text-sm border rounded bg-white"
-                              value={row.transferCategory || "전공"}
-                              onChange={(e) => handleTransferBlur(row.id, "category", e.target.value)}
-                            >
-                              <option value="전공">전공</option>
-                              <option value="교양">교양</option>
-                              <option value="일반">일반</option>
-                            </select>
-                          </td>
-                          <td className="px-2 py-1">
-                            <select
-                              className={`w-full h-8 px-2 text-sm rounded ${requirementBadgeClass(row.transferRequirementType)}`}
-                              value={row.transferRequirementType || "전공선택"}
-                              onChange={(e) => handleTransferBlur(row.id, "requirementType", e.target.value)}
-                            >
-                              <option value="전공필수">전공필수</option>
-                              <option value="전공선택">전공선택</option>
-                              <option value="교양">교양</option>
-                              <option value="일반">일반</option>
-                            </select>
-                          </td>
-                          <td className="px-2 py-1">
-                            <EditableCell
-                              value={row.credits?.toString() || ""}
-                              onBlur={(v) => handleTransferBlur(row.id, "credits", v)}
-                            />
-                          </td>
+    <div className="text-right">
+      <div className="text-xs text-muted-foreground mb-1">전적대 추가 개수</div>
+      <div className="flex items-center gap-2">
+        <Input
+          className="h-8 w-20"
+          value={transferAddCount}
+          onChange={(e) => setTransferAddCount(e.target.value.replace(/[^0-9]/g, ""))}
+        />
+        <Button size="sm" variant="outline" onClick={handleAddTransferSubjects}>
+          일괄 추가
+        </Button>
+      </div>
+    </div>
+  </div>
 
-                          <td className="px-2 py-1 text-center">
-                            {row.attachmentUrl ? (
-                              <a
-                                href={row.attachmentUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1 text-sm text-blue-600 underline"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <Paperclip className="h-3.5 w-3.5" />
-                                {row.attachmentName || "파일보기"}
-                              </a>
-                            ) : (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleTransferAttachment(row);
-                                }}
-                              >
-                                첨부
-                              </Button>
-                            )}
-                          </td>
+  <div className="rounded-lg border p-4 bg-muted/20">
+    <div className="flex items-center justify-between mb-3">
+      <div>
+        <div className="font-medium text-sm">전적대 공통 첨부파일</div>
+        <div className="text-xs text-muted-foreground">최대 4개까지 등록 가능</div>
+      </div>
 
-                          <td className="px-2 py-1 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleTransferAttachment(row);
-                                }}
-                              >
-                                {row.attachmentUrl ? "변경" : "등록"}
-                              </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          const url = window.prompt("첨부파일 URL을 입력하세요");
+          if (!url) return;
 
-                              {row.attachmentUrl && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-muted-foreground"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    clearTransferAttachment(row);
-                                  }}
-                                >
-                                  해제
-                                </Button>
-                              )}
+          const name =
+            window.prompt("첨부파일명을 입력하세요", "전적대 증빙자료") || "전적대 증빙자료";
 
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-destructive hover:text-destructive"
-                                onClick={() => {
-                                  if (confirm("전적대 과목을 삭제하시겠습니까?")) {
-                                    deleteTransferSubjectMut.mutate({ id: row.id });
-                                  }
-                                }}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+          createTransferAttachmentMut.mutate({
+            studentId,
+            fileName: name,
+            fileUrl: url,
+          });
+        }}
+      >
+        첨부 추가
+      </Button>
+    </div>
+
+    {!transferAttachmentList || transferAttachmentList.length === 0 ? (
+      <div className="text-xs text-muted-foreground">등록된 첨부파일이 없습니다.</div>
+    ) : (
+      <div className="flex flex-wrap gap-2">
+        {transferAttachmentList.map((file: any) => (
+          <div
+            key={file.id}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border bg-white text-sm"
+          >
+            <a
+              href={file.fileUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-600 underline"
+            >
+              {file.fileName}
+            </a>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-destructive"
+              onClick={() => {
+                if (confirm("첨부파일을 삭제하시겠습니까?")) {
+                  deleteTransferAttachmentMut.mutate({ id: file.id });
+                }
+              }}
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
           </div>
+        ))}
+      </div>
+    )}
+  </div>
+
+  <div className="border rounded-lg overflow-hidden">
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b bg-muted/40">
+            <th className="px-3 py-2 text-left font-medium text-muted-foreground">학교명</th>
+            <th className="px-3 py-2 text-left font-medium text-muted-foreground">과목명</th>
+            <th className="px-3 py-2 text-left font-medium text-muted-foreground w-[110px]">구분</th>
+            <th className="px-3 py-2 text-left font-medium text-muted-foreground w-[130px]">타입</th>
+            <th className="px-3 py-2 text-center font-medium text-muted-foreground w-[80px]">학점</th>
+            <th className="px-3 py-2 text-center font-medium text-muted-foreground w-[130px]">첨부파일</th>
+            <th className="px-3 py-2 text-right font-medium text-muted-foreground w-[150px]">관리</th>
+          </tr>
+        </thead>
+        <tbody>
+          {!transferSubjectList || transferSubjectList.length === 0 ? (
+            <tr>
+              <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
+                등록된 전적대 과목이 없습니다.
+              </td>
+            </tr>
+          ) : (
+            transferSubjectList.map((row: any, rowIndex: number) => (
+              <tr key={row.id} className="border-b last:border-0">
+                <td className="px-2 py-1">
+                  <Input
+                    ref={(el) => {
+                      transferFieldRefs.current[`transfer-school-${rowIndex}`] = el;
+                    }}
+                    defaultValue={row.schoolName || ""}
+                    className="h-8"
+                    onBlur={(e) => handleTransferBlur(row.id, "schoolName", e.target.value)}
+                  />
+                </td>
+
+                <td className="px-2 py-1">
+                  <Input
+                    ref={(el) => {
+                      transferFieldRefs.current[`transfer-subject-${rowIndex}`] = el;
+                    }}
+                    defaultValue={row.subjectName || ""}
+                    className="h-8"
+                    onBlur={(e) => handleTransferBlur(row.id, "subjectName", e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === "Tab") {
+                        e.preventDefault();
+                        focusTransferField(`transfer-subject-${rowIndex + 1}`);
+                      }
+                    }}
+                  />
+                </td>
+
+                <td className="px-2 py-1">
+                  <select
+                    className="w-full h-8 px-2 text-sm border rounded bg-white"
+                    value={row.transferCategory || "전공"}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      handleTransferBlur(row.id, "category", next);
+
+                      if (next === "교양") {
+                        handleTransferBlur(row.id, "requirementType", "교양");
+                      } else if (next === "일반") {
+                        handleTransferBlur(row.id, "requirementType", "일반");
+                      } else {
+                        handleTransferBlur(
+                          row.id,
+                          "requirementType",
+                          row.transferRequirementType === "전공필수" ? "전공필수" : "전공선택"
+                        );
+                      }
+                    }}
+                    onKeyDown={(e) =>
+                      cycleSelectValue(
+                        e,
+                        ["전공", "교양", "일반"],
+                        row.transferCategory || "전공",
+                        (next) => {
+                          handleTransferBlur(row.id, "category", next);
+
+                          if (next === "교양") {
+                            handleTransferBlur(row.id, "requirementType", "교양");
+                          } else if (next === "일반") {
+                            handleTransferBlur(row.id, "requirementType", "일반");
+                          } else {
+                            handleTransferBlur(
+                              row.id,
+                              "requirementType",
+                              row.transferRequirementType === "전공필수" ? "전공필수" : "전공선택"
+                            );
+                          }
+                        }
+                      )
+                    }
+                  >
+                    <option value="전공">전공</option>
+                    <option value="교양">교양</option>
+                    <option value="일반">일반</option>
+                  </select>
+                </td>
+
+                <td className="px-2 py-1">
+                  <select
+                    className={`w-full h-8 px-2 text-sm rounded ${requirementBadgeClass(row.transferRequirementType)}`}
+                    value={row.transferRequirementType || "전공선택"}
+                    onChange={(e) => handleTransferBlur(row.id, "requirementType", e.target.value)}
+                    onKeyDown={(e) => {
+                      const list =
+                        row.transferCategory === "전공"
+                          ? ["전공필수", "전공선택"]
+                          : row.transferCategory === "교양"
+                            ? ["교양"]
+                            : ["일반"];
+
+                      cycleSelectValue(
+                        e,
+                        list,
+                        row.transferRequirementType || list[0],
+                        (next) => handleTransferBlur(row.id, "requirementType", next)
+                      );
+                    }}
+                  >
+                    {row.transferCategory === "전공" && (
+                      <>
+                        <option value="전공필수">전공필수</option>
+                        <option value="전공선택">전공선택</option>
+                      </>
+                    )}
+                    {row.transferCategory === "교양" && <option value="교양">교양</option>}
+                    {row.transferCategory === "일반" && <option value="일반">일반</option>}
+                  </select>
+                </td>
+
+                <td className="px-2 py-1">
+                  <Input
+                    defaultValue={row.credits?.toString() || ""}
+                    className="h-8 text-center"
+                    onBlur={(e) => handleTransferBlur(row.id, "credits", e.target.value)}
+                  />
+                </td>
+
+                <td className="px-2 py-1 text-center">
+                  {row.attachmentUrl ? (
+                    <a
+                      href={row.attachmentUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-sm text-blue-600 underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Paperclip className="h-3.5 w-3.5" />
+                      {row.attachmentName || "파일보기"}
+                    </a>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleTransferAttachment(row);
+                      }}
+                    >
+                      첨부
+                    </Button>
+                  )}
+                </td>
+
+                <td className="px-2 py-1 text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleTransferAttachment(row);
+                      }}
+                    >
+                      {row.attachmentUrl ? "변경" : "등록"}
+                    </Button>
+
+                    {row.attachmentUrl && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          clearTransferAttachment(row);
+                        }}
+                      >
+                        해제
+                      </Button>
+                    )}
+
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-destructive hover:text-destructive"
+                      onClick={() => {
+                        if (confirm("전적대 과목을 삭제하시겠습니까?")) {
+                          deleteTransferSubjectMut.mutate({ id: row.id });
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
 
           <div className="grid md:grid-cols-3 gap-4">
             <div className="rounded-lg border bg-blue-50 p-4">

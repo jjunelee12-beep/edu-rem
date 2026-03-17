@@ -21,7 +21,7 @@ function isAdminOrHost(user: any) {
 export const appRouter = router({
   system: systemRouter,
   leadForm: publicLeadRouter,
-sms: smsRouter,
+  sms: smsRouter,
 
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
@@ -210,9 +210,10 @@ sms: smsRouter,
   }),
 
   dashboard: router({
-	monthApprovals: protectedProcedure.query(async () => {
-    return [];
-  }),
+    monthApprovals: protectedProcedure.query(async () => {
+      return [];
+    }),
+
     stats: protectedProcedure.query(async ({ ctx }) => {
       return db.getDashboardStats(Number(ctx.user.id));
     }),
@@ -449,39 +450,37 @@ sms: smsRouter,
         return { success: true };
       }),
 
-	
-	reassign: hostProcedure
-  .input(
-    z.object({
-      id: z.number(),
-      assigneeId: z.number(),
-    })
-  )
-  .mutation(async ({ input }) => {
-    await db.reassignConsultationAndLinkedStudent(
-      input.id,
-      input.assigneeId
-    );
+    reassign: hostProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          assigneeId: z.number(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        await db.reassignConsultationAndLinkedStudent(
+          input.id,
+          input.assigneeId
+        );
 
-    return { success: true };
-  }),
+        return { success: true };
+      }),
 
+    bulkReassign: hostProcedure
+      .input(
+        z.object({
+          fromAssigneeId: z.number(),
+          toAssigneeId: z.number(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        await db.bulkReassignConsultationsAndLinkedStudents(
+          input.fromAssigneeId,
+          input.toAssigneeId
+        );
 
-	bulkReassign: hostProcedure
-  .input(
-    z.object({
-      fromAssigneeId: z.number(),
-      toAssigneeId: z.number(),
-    })
-  )
-  .mutation(async ({ input }) => {
-    await db.bulkReassignConsultationsAndLinkedStudents(
-      input.fromAssigneeId,
-      input.toAssigneeId
-    );
-
-    return { success: true };
-  }),
+        return { success: true };
+      }),
 
     delete: hostProcedure
       .input(z.object({ id: z.number() }))
@@ -578,7 +577,7 @@ sms: smsRouter,
         })
       )
       .mutation(async ({ ctx, input }) => {
-	console.log("[student.update] input =", input);
+        console.log("[student.update] input =", input);
 
         const item = await db.getStudent(input.id);
         if (!item) throw new Error("학생 기록을 찾을 수 없습니다");
@@ -594,7 +593,7 @@ sms: smsRouter,
         if (rest.startDate) data.startDate = new Date(rest.startDate);
         if (rest.paymentDate) data.paymentDate = new Date(rest.paymentDate);
 
-	console.log("[student.update] data =", data);
+        console.log("[student.update] data =", data);
 
         await db.updateStudent(id, data);
         return { success: true };
@@ -662,31 +661,31 @@ sms: smsRouter,
       }),
   }),
 
- plan: router({
-  get: protectedProcedure
-    .input(z.object({ studentId: z.number() }))
-    .query(async ({ ctx, input }) => {
-      const student = await db.getStudent(input.studentId);
-      console.log("[plan.get] student =", student);
+  plan: router({
+    get: protectedProcedure
+      .input(z.object({ studentId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        console.log("[plan.get] student =", student);
 
-      if (!student) {
-        console.log("[plan.get] no student");
-        return null;
-      }
+        if (!student) {
+          console.log("[plan.get] no student");
+          return null;
+        }
 
-      if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-        console.log("[plan.get] no permission", {
-          userId: ctx.user.id,
-          assigneeId: student.assigneeId,
-        });
-        return null;
-      }
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          console.log("[plan.get] no permission", {
+            userId: ctx.user.id,
+            assigneeId: student.assigneeId,
+          });
+          return null;
+        }
 
-      const plan = await db.getPlan(input.studentId);
-      console.log("[plan.get] plan =", plan);
+        const plan = await db.getPlan(input.studentId);
+        console.log("[plan.get] plan =", plan);
 
-      return plan ?? null;
-    }),
+        return plan ?? null;
+      }),
 
     upsert: protectedProcedure
       .input(
@@ -744,41 +743,41 @@ sms: smsRouter,
         return db.listAllSemesters(assigneeId, input.plannedMonth);
       }),
 
-  create: protectedProcedure
-  .input(
-    z.object({
-      studentId: z.number(),
-      semesterOrder: z.number(),
-      plannedMonth: z.string().optional(),
-      plannedInstitution: z.string().optional(),
-	 plannedInstitutionId: z.number().optional(),	
-      plannedSubjectCount: z.number().optional(),
-      plannedAmount: z.string().optional(),
-    })
-  )
-  .mutation(async ({ ctx, input }) => {
-    const student = await db.getStudent(input.studentId);
-    if (!student) throw new Error("학생을 찾을 수 없습니다");
+    create: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+          semesterOrder: z.number(),
+          plannedMonth: z.string().optional(),
+          plannedInstitution: z.string().optional(),
+          plannedInstitutionId: z.number().optional(),
+          plannedSubjectCount: z.number().optional(),
+          plannedAmount: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) throw new Error("학생을 찾을 수 없습니다");
 
-    if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-      throw new Error("권한이 없습니다");
-    }
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          throw new Error("권한이 없습니다");
+        }
 
-    const id = await db.createSemester({
-  ...input,
-  status: "등록",
-} as any);
+        const id = await db.createSemester({
+          ...input,
+          status: "등록",
+        } as any);
 
-    if (input.plannedSubjectCount !== undefined && input.plannedSubjectCount > 0) {
-      await db.syncPlanSemestersByCount(
-        input.studentId,
-        input.semesterOrder,
-        input.plannedSubjectCount
-      );
-    }
+        if (input.plannedSubjectCount !== undefined && input.plannedSubjectCount > 0) {
+          await db.syncPlanSemestersByCount(
+            input.studentId,
+            input.semesterOrder,
+            input.plannedSubjectCount
+          );
+        }
 
-    return { id, success: true };
-  }),
+        return { id, success: true };
+      }),
 
     update: protectedProcedure
       .input(
@@ -796,10 +795,10 @@ sms: smsRouter,
           actualAmount: z.string().optional(),
           actualPaymentDate: z.string().optional(),
           isCompleted: z.boolean().optional(),
-	status: z.enum(["등록", "종료", "등록 종료"]).optional(),
+          status: z.enum(["등록", "종료", "등록 종료"]).optional(),
         })
       )
-            .mutation(async ({ input }) => {
+      .mutation(async ({ input }) => {
         const sem = await db.getSemester(input.id);
         if (!sem) throw new Error("학기를 찾을 수 없습니다");
 
@@ -823,6 +822,7 @@ sms: smsRouter,
         ) {
           throw new Error("올바르지 않은 상태값입니다");
         }
+
         if (sem.isLocked) {
           const {
             id,
@@ -832,7 +832,7 @@ sms: smsRouter,
             actualAmount,
             actualPaymentDate,
             isCompleted,
-	status,
+            status,
             ...plannedFields
           } = input;
 
@@ -852,13 +852,14 @@ sms: smsRouter,
 
         await db.updateSemester(id, data);
 
-if (input.plannedSubjectCount !== undefined) {
-  await db.syncPlanSemestersByCount(
-    sem.studentId,
-    sem.semesterOrder,
-    input.plannedSubjectCount
-  );
-}
+        if (input.plannedSubjectCount !== undefined) {
+          await db.syncPlanSemestersByCount(
+            sem.studentId,
+            sem.semesterOrder,
+            input.plannedSubjectCount
+          );
+        }
+
         if (input.status !== undefined) {
           const refreshedSems = await db.listSemesters(sem.studentId);
           const sortedRefreshedSems = [...refreshedSems].sort(
@@ -897,6 +898,7 @@ if (input.plannedSubjectCount !== undefined) {
             );
             institutionName = found?.name;
           }
+
           const refreshedSems = await db.listSemesters(sem.studentId);
           const sortedRefreshedSems = [...refreshedSems].sort(
             (a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder)
@@ -931,7 +933,13 @@ if (input.plannedSubjectCount !== undefined) {
         const sem = await db.getSemester(input.id);
         if (!sem) throw new Error("학기를 찾을 수 없습니다");
 
+        const raw = String(sem.plannedMonth || "").replace(/[^0-9]/g, "");
+        const actualStartDate =
+          raw.length === 6 ? new Date(`${raw.slice(0, 4)}-${raw.slice(4, 6)}-01`) : undefined;
+
         await db.updateSemester(input.id, {
+          actualStartDate,
+          actualInstitutionId: sem.plannedInstitutionId,
           actualInstitution: sem.plannedInstitution,
           actualSubjectCount: sem.plannedSubjectCount,
           actualAmount: sem.plannedAmount,
@@ -1132,8 +1140,8 @@ if (input.plannedSubjectCount !== undefined) {
           requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]).optional(),
           credits: z.number().min(0).max(30),
           sortOrder: z.number().optional(),
-	attachmentName: z.string().optional(),
-      attachmentUrl: z.string().optional(),
+          attachmentName: z.string().optional(),
+          attachmentUrl: z.string().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -1157,11 +1165,51 @@ if (input.plannedSubjectCount !== undefined) {
           transferRequirementType: input.requirementType ?? null,
           credits: input.credits,
           sortOrder: input.sortOrder ?? 0,
-	attachmentName: input.attachmentName?.trim() || null,
-attachmentUrl: input.attachmentUrl?.trim() || null,
+          attachmentName: input.attachmentName?.trim() || null,
+          attachmentUrl: input.attachmentUrl?.trim() || null,
         } as any);
 
         return { id, success: true };
+      }),
+
+    bulkCreate: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+          count: z.number().min(1).max(100),
+          schoolName: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) throw new Error("학생을 찾을 수 없습니다");
+
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          throw new Error("권한이 없습니다");
+        }
+
+        const existing = await db.listTransferSubjects(input.studentId);
+        const existingCount = existing?.length ?? 0;
+
+        if (existingCount + input.count > 100) {
+          throw new Error("전적대 과목은 최대 100개까지 등록할 수 있습니다");
+        }
+
+        const rows = Array.from({ length: input.count }).map((_, i) => ({
+          studentId: input.studentId,
+          schoolName: input.schoolName?.trim() || "전적대",
+          subjectName: `새 과목${existingCount + i + 1}`,
+          transferCategory: "전공" as const,
+          transferRequirementType: "전공선택" as const,
+          credits: 3,
+          sortOrder: existingCount + i,
+          attachmentName: null,
+          attachmentUrl: null,
+        }));
+
+        await db.bulkCreateTransferSubjects(rows as any);
+
+        return { success: true, count: input.count };
       }),
 
     update: protectedProcedure
@@ -1174,8 +1222,8 @@ attachmentUrl: input.attachmentUrl?.trim() || null,
           requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]).optional(),
           credits: z.number().min(0).max(30).optional(),
           sortOrder: z.number().optional(),
-attachmentName: z.string().optional(),
-attachmentUrl: z.string().optional(),
+          attachmentName: z.string().optional(),
+          attachmentUrl: z.string().optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -1187,8 +1235,8 @@ attachmentUrl: z.string().optional(),
         if (input.requirementType !== undefined) data.transferRequirementType = input.requirementType;
         if (input.credits !== undefined) data.credits = input.credits;
         if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder;
-	if (input.attachmentName !== undefined) data.attachmentName = input.attachmentName.trim();
-if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl.trim();
+        if (input.attachmentName !== undefined) data.attachmentName = input.attachmentName.trim();
+        if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl.trim();
 
         await db.updateTransferSubject(input.id, data);
         return { success: true };
@@ -1199,6 +1247,139 @@ if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl.
       .mutation(async ({ input }) => {
         await db.deleteTransferSubject(input.id);
         return { success: true };
+      }),
+  }),
+
+  transferAttachment: router({
+    list: protectedProcedure
+      .input(z.object({ studentId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) return [];
+
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          return [];
+        }
+
+        return db.listTransferAttachments(input.studentId);
+      }),
+
+    create: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+          fileName: z.string().min(1),
+          fileUrl: z.string().min(1),
+          sortOrder: z.number().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) throw new Error("학생을 찾을 수 없습니다");
+
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          throw new Error("권한이 없습니다");
+        }
+
+        const existing = await db.listTransferAttachments(input.studentId);
+        if ((existing?.length ?? 0) >= 4) {
+          throw new Error("첨부파일은 최대 4개까지 등록할 수 있습니다");
+        }
+
+        const id = await db.createTransferAttachment({
+          studentId: input.studentId,
+          fileName: input.fileName.trim(),
+          fileUrl: input.fileUrl.trim(),
+          sortOrder: input.sortOrder ?? (existing?.length ?? 0),
+        } as any);
+
+        return { id, success: true };
+      }),
+
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          fileName: z.string().optional(),
+          fileUrl: z.string().optional(),
+          sortOrder: z.number().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const data: any = {};
+        if (input.fileName !== undefined) data.fileName = input.fileName.trim();
+        if (input.fileUrl !== undefined) data.fileUrl = input.fileUrl.trim();
+        if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder;
+
+        await db.updateTransferAttachment(input.id, data);
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteTransferAttachment(input.id);
+        return { success: true };
+      }),
+  }),
+
+  courseTemplate: router({
+    list: protectedProcedure
+      .input(
+        z.object({
+          courseKey: z.string().optional(),
+        })
+      )
+      .query(async ({ input }) => {
+        return db.listCourseSubjectTemplates(input.courseKey);
+      }),
+
+    create: hostProcedure
+      .input(
+        z.object({
+          courseKey: z.string().min(1),
+          subjectName: z.string().min(1),
+          category: z.enum(["전공", "교양", "일반"]),
+          requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]).optional(),
+          sortOrder: z.number().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const id = await db.createCourseSubjectTemplate({
+          courseKey: input.courseKey.trim(),
+          subjectName: input.subjectName.trim(),
+          category: input.category,
+          requirementType: input.requirementType ?? null,
+          sortOrder: input.sortOrder ?? 0,
+          isActive: true,
+        } as any);
+
+        return { id, success: true };
+      }),
+
+    applyToPlanSemester: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+          semesterNo: z.number(),
+          courseKeys: z.array(z.string()).min(1),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) throw new Error("학생을 찾을 수 없습니다");
+
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          throw new Error("권한이 없습니다");
+        }
+
+        const result = await db.bulkCreatePlanSemestersFromTemplate({
+          studentId: input.studentId,
+          semesterNo: input.semesterNo,
+          courseKeys: input.courseKeys,
+        });
+
+        return { success: true, count: result.count };
       }),
   }),
 
@@ -1225,5 +1406,7 @@ if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl.
 
 console.log("[ROUTER OK] planSemester loaded");
 console.log("[ROUTER OK] transferSubject loaded");
+console.log("[ROUTER OK] transferAttachment loaded");
+console.log("[ROUTER OK] courseTemplate loaded");
 
 export type AppRouter = typeof appRouter;

@@ -20,6 +20,10 @@ import {
   transferSubjects,
   InsertTransferSubject,
   educationInstitutions,
+transferAttachments,
+InsertTransferAttachment,
+courseSubjectTemplates,
+InsertCourseSubjectTemplate,
 } from "../drizzle/schema";
 
 import { ENV } from "./_core/env";
@@ -459,9 +463,14 @@ export async function listStudents(assigneeId?: number) {
 
   const [rows] = await db.execute(sql`
     SELECT s.*,
-      (COALESCE(s.paymentAmount, 0) + COALESCE((SELECT SUM(sem.plannedAmount) FROM semesters sem WHERE sem.studentId = s.id), 0)) as totalRequired,
-      (CASE WHEN s.paymentDate IS NOT NULL THEN COALESCE(s.paymentAmount, 0) ELSE 0 END
-       + COALESCE((SELECT SUM(sem2.actualAmount) FROM semesters sem2 WHERE sem2.studentId = s.id AND sem2.isCompleted = true), 0)) as paidAmount,
+      COALESCE(
+        (SELECT SUM(sem.plannedAmount) FROM semesters sem WHERE sem.studentId = s.id),
+        0
+      ) as totalRequired,
+      COALESCE(
+        (SELECT SUM(sem2.actualAmount) FROM semesters sem2 WHERE sem2.studentId = s.id AND sem2.isCompleted = true),
+        0
+      ) as paidAmount,
       (SELECT p.practiceStatus FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceStatus,
       (SELECT p.hasPractice FROM plans p WHERE p.studentId = s.id LIMIT 1) as hasPractice
     FROM students s
@@ -876,26 +885,21 @@ export async function getStudentPaymentSummary(studentId: number) {
   const toNumber = (v: any) =>
     Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
 
-  const firstAmount = toNumber(student.paymentAmount);
-
   const [plannedResult] = await db.execute(
     sql`SELECT COALESCE(SUM(plannedAmount), 0) as total FROM semesters WHERE studentId = ${studentId}`
   );
-  const semesterPlanned = toNumber((plannedResult as any)[0]?.total);
+  const totalRequired = toNumber((plannedResult as any)[0]?.total);
 
   const [paidResult] = await db.execute(
     sql`SELECT COALESCE(SUM(actualAmount), 0) as total FROM semesters WHERE studentId = ${studentId} AND isCompleted = true`
   );
-  const semesterPaid = toNumber((paidResult as any)[0]?.total);
+  const totalPaid = toNumber((paidResult as any)[0]?.total);
 
   const [refundResult] = await db.execute(
     sql`SELECT COALESCE(SUM(refundAmount), 0) as total FROM refunds WHERE studentId = ${studentId}`
   );
   const totalRefund = toNumber((refundResult as any)[0]?.total);
 
-  const totalRequired = firstAmount + semesterPlanned;
-  const firstPaid = student.paymentDate && firstAmount > 0 ? firstAmount : 0;
-  const totalPaid = firstPaid + semesterPaid;
   const remainingAmount = totalRequired - totalPaid - totalRefund;
 
   return {
@@ -905,7 +909,6 @@ export async function getStudentPaymentSummary(studentId: number) {
     remainingAmount,
   };
 }
-
 // ─── Settlement ──────────────────────────────────────────────────────
 export async function getSettlementReport(
   year: number,
@@ -1149,6 +1152,14 @@ export async function deleteTransferSubject(id: number) {
 
   await db.delete(transferSubjects).where(eq(transferSubjects.id, id));
 }
+export async function bulkCreateTransferSubjects(dataList: InsertTransferSubject[]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  if (!dataList.length) return [];
+
+  const result = await db.insert(transferSubjects).values(dataList as any);
+  return result;
+}
 
 // ─── 학기 완료 시 자동 종료 체크 ─────────────────────────────────────
 export async function checkAndAutoComplete(studentId: number) {
@@ -1250,4 +1261,151 @@ export async function updateEducationInstitution(
     .update(educationInstitutions)
     .set(data)
     .where(eq(educationInstitutions.id, id));
+}
+
+export async function listTransferAttachments(studentId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(transferAttachments)
+    .where(eq(transferAttachments.studentId, studentId))
+    .orderBy(transferAttachments.sortOrder, transferAttachments.id);
+}
+
+export async function createTransferAttachment(data: InsertTransferAttachment) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(transferAttachments).values(data);
+  return getInsertId(result);
+}
+
+export async function updateTransferAttachment(
+  id: number,
+  data: Partial<InsertTransferAttachment>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.update(transferAttachments).set(data as any).where(eq(transferAttachments.id, id));
+}
+
+export async function deleteTransferAttachment(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.delete(transferAttachments).where(eq(transferAttachments.id, id));
+}
+
+export async function listCourseSubjectTemplates(courseKey?: string) {
+  const db = await getDb();
+  if (!db) return [];
+
+  if (courseKey) {
+    return db
+      .select()
+      .from(courseSubjectTemplates)
+      .where(
+        and(
+          eq(courseSubjectTemplates.courseKey, courseKey),
+          eq(courseSubjectTemplates.isActive, true)
+        )
+      )
+      .orderBy(courseSubjectTemplates.sortOrder, courseSubjectTemplates.id);
+  }
+
+  return db
+    .select()
+    .from(courseSubjectTemplates)
+    .where(eq(courseSubjectTemplates.isActive, true))
+    .orderBy(
+      courseSubjectTemplates.courseKey,
+      courseSubjectTemplates.sortOrder,
+      courseSubjectTemplates.id
+    );
+}
+
+export async function createCourseSubjectTemplate(data: InsertCourseSubjectTemplate) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(courseSubjectTemplates).values(data);
+  return getInsertId(result);
+}
+
+export async function bulkCreatePlanSemestersFromTemplate(params: {
+  studentId: number;
+  semesterNo: number;
+  courseKeys: string[];
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  if (!params.courseKeys?.length) {
+    return { count: 0 };
+  }
+
+  const templates = await db
+    .select()
+    .from(courseSubjectTemplates)
+    .where(
+      and(
+        sql`${courseSubjectTemplates.courseKey} IN (${sql.join(
+          params.courseKeys.map((k) => sql`${k}`),
+          sql`, `
+        )})`,
+        eq(courseSubjectTemplates.isActive, true)
+      )
+    )
+    .orderBy(
+      courseSubjectTemplates.courseKey,
+      courseSubjectTemplates.sortOrder,
+      courseSubjectTemplates.id
+    );
+
+  if (!templates.length) return { count: 0 };
+
+  const existing = await db
+    .select()
+    .from(planSemesters)
+    .where(
+      and(
+        eq(planSemesters.studentId, params.studentId),
+        eq(planSemesters.semesterNo, params.semesterNo)
+      )
+    )
+    .orderBy(planSemesters.sortOrder, planSemesters.id);
+
+  const maxPerSemester = 8;
+  if (existing.length >= maxPerSemester) {
+    throw new Error("우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다");
+  }
+
+  const existingNames = new Set(existing.map((x: any) => x.subjectName));
+  const filteredTemplates = templates.filter((t: any) => !existingNames.has(t.subjectName));
+
+  const remaining = maxPerSemester - existing.length;
+  const limitedTemplates = filteredTemplates.slice(0, remaining);
+
+  if (!limitedTemplates.length) {
+    return { count: 0 };
+  }
+
+  const sortStart = existing.length;
+
+  const rows = limitedTemplates.map((t: any, idx: number) => ({
+    studentId: params.studentId,
+    semesterNo: params.semesterNo,
+    subjectName: t.subjectName,
+    planCategory: t.category,
+    planRequirementType: t.requirementType ?? null,
+    credits: 3,
+    sortOrder: sortStart + idx,
+  }));
+
+  await db.insert(planSemesters).values(rows as any);
+
+  return { count: rows.length };
 }

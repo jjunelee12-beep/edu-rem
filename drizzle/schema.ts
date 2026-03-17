@@ -10,6 +10,10 @@ import {
   boolean,
   datetime,
   serial,
+transferAttachments,
+InsertTransferAttachment,
+courseSubjectTemplates,
+InsertCourseSubjectTemplate,
 } from "drizzle-orm/mysql-core";
 
 // ─── Lead Forms ──────────────────────────────────────────────────────
@@ -264,3 +268,38 @@ export const educationInstitutions = mysqlTable("education_institutions", {
 
 export type EducationInstitution = typeof educationInstitutions.$inferSelect;
 export type InsertEducationInstitution = typeof educationInstitutions.$inferInsert;
+
+// ─── Transfer Attachments (전적대 공통 첨부파일) ───────────────────
+export const transferAttachments = mysqlTable("transfer_attachments", {
+  id: int("id").autoincrement().primaryKey(),
+  studentId: int("studentId").notNull(),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  fileUrl: varchar("fileUrl", { length: 1000 }).notNull(),
+  sortOrder: int("sortOrder").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type TransferAttachment = typeof transferAttachments.$inferSelect;
+export type InsertTransferAttachment = typeof transferAttachments.$inferInsert;
+
+// ─── Course Subject Templates (과정별 과목 템플릿) ──────────────────
+export const courseSubjectTemplates = mysqlTable("course_subject_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  courseKey: varchar("courseKey", { length: 100 }).notNull(), // 사회복지사, 보육교사 등
+  subjectName: varchar("subjectName", { length: 255 }).notNull(),
+  category: mysqlEnum("category", ["전공", "교양", "일반"]).notNull(),
+  requirementType: mysqlEnum("requirementType", [
+    "전공필수",
+    "전공선택",
+    "교양",
+    "일반",
+  ]),
+  sortOrder: int("sortOrder").notNull().default(0),
+  isActive: boolean("isActive").notNull().default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CourseSubjectTemplate = typeof courseSubjectTemplates.$inferSelect;
+export type InsertCourseSubjectTemplate = typeof courseSubjectTemplates.$inferInsert;
