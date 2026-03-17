@@ -9,10 +9,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import {
   ArrowLeft,
@@ -106,10 +114,6 @@ function formatDate(d: any) {
   return `${y}-${m}-${day}`;
 }
 
-function isClosedStatus(status: string | null | undefined) {
-  return status === "종료" || status === "등록 종료";
-}
-
 function toNumber(v: any) {
   return Number(String(v ?? "0").replace(/,/g, "").replace(/[^0-9.-]/g, "").trim()) || 0;
 }
@@ -140,12 +144,14 @@ export default function StudentDetail() {
   const { data: refundList } = trpc.refund.listByStudent.useQuery({ studentId });
   const { data: planSemesterList } = trpc.planSemester.list.useQuery({ studentId });
   const { data: transferSubjectList } = trpc.transferSubject.list.useQuery({ studentId });
-const { data: transferAttachmentList } = trpc.transferAttachment.list.useQuery({ studentId });
-const { data: courseTemplateList } = trpc.courseTemplate.list.useQuery({});
+  const { data: transferAttachmentList } = trpc.transferAttachment.list.useQuery({ studentId });
+  const { data: courseTemplateList } = trpc.courseTemplate.list.useQuery({});
 
   const [selectedSemesterOrder, setSelectedSemesterOrder] = useState(1);
   const [transferAddCount, setTransferAddCount] = useState("1");
-const [selectedCourseKeys, setSelectedCourseKeys] = useState<string[]>([]);
+  const [selectedCourseKeys, setSelectedCourseKeys] = useState<string[]>([]);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [templateDialogSemesterNo, setTemplateDialogSemesterNo] = useState<number | null>(null);
 
   const updateStudentMut = trpc.student.update.useMutation({
     onSuccess: async () => {
@@ -176,13 +182,6 @@ const [selectedCourseKeys, setSelectedCourseKeys] = useState<string[]>([]);
     onError: (e) => toast.error(e.message),
   });
 
-  const createTransferSubjectMut = trpc.transferSubject.create.useMutation({
-    onSuccess: async () => {
-      await utils.transferSubject.list.invalidate({ studentId });
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
   const updateTransferSubjectMut = trpc.transferSubject.update.useMutation({
     onSuccess: async () => {
       await utils.transferSubject.list.invalidate({ studentId });
@@ -197,37 +196,38 @@ const [selectedCourseKeys, setSelectedCourseKeys] = useState<string[]>([]);
     },
     onError: (e) => toast.error(e.message),
   });
-const bulkCreateTransferSubjectMut = trpc.transferSubject.bulkCreate.useMutation({
-  onSuccess: async (res) => {
-    await utils.transferSubject.list.invalidate({ studentId });
-    toast.success(`전적대 과목 ${res.count}개 추가 완료`);
-  },
-  onError: (e) => toast.error(e.message),
-});
 
-const createTransferAttachmentMut = trpc.transferAttachment.create.useMutation({
-  onSuccess: async () => {
-    await utils.transferAttachment.list.invalidate({ studentId });
-    toast.success("전적대 공통 첨부파일 등록 완료");
-  },
-  onError: (e) => toast.error(e.message),
-});
+  const bulkCreateTransferSubjectMut = trpc.transferSubject.bulkCreate.useMutation({
+    onSuccess: async (res) => {
+      await utils.transferSubject.list.invalidate({ studentId });
+      toast.success(`전적대 과목 ${res.count}개 추가 완료`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
-const deleteTransferAttachmentMut = trpc.transferAttachment.delete.useMutation({
-  onSuccess: async () => {
-    await utils.transferAttachment.list.invalidate({ studentId });
-    toast.success("전적대 공통 첨부파일 삭제 완료");
-  },
-  onError: (e) => toast.error(e.message),
-});
+  const createTransferAttachmentMut = trpc.transferAttachment.create.useMutation({
+    onSuccess: async () => {
+      await utils.transferAttachment.list.invalidate({ studentId });
+      toast.success("전적대 공통 첨부파일 등록 완료");
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
-const applyCourseTemplateMut = trpc.courseTemplate.applyToPlanSemester.useMutation({
-  onSuccess: async (res) => {
-    await utils.planSemester.list.invalidate({ studentId });
-    toast.success(`과목 템플릿 ${res.count}개 등록 완료`);
-  },
-  onError: (e) => toast.error(e.message),
-});
+  const deleteTransferAttachmentMut = trpc.transferAttachment.delete.useMutation({
+    onSuccess: async () => {
+      await utils.transferAttachment.list.invalidate({ studentId });
+      toast.success("전적대 공통 첨부파일 삭제 완료");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const applyCourseTemplateMut = trpc.courseTemplate.applyToPlanSemester.useMutation({
+    onSuccess: async (res) => {
+      await utils.planSemester.list.invalidate({ studentId });
+      toast.success(`과목 템플릿 ${res.count}개 등록 완료`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const createSemMut = trpc.semester.create.useMutation({
     onSuccess: async () => {
@@ -521,11 +521,6 @@ const applyCourseTemplateMut = trpc.courseTemplate.applyToPlanSemester.useMutati
     } as any);
   };
 
-  const nextPlanSemesterNo = useMemo(() => {
-    if (!groupedPlanSemesters.length) return 1;
-    return Math.max(...groupedPlanSemesters.map((g) => g.semesterNo)) + 1;
-  }, [groupedPlanSemesters]);
-
   const planTotals = useMemo(() => {
     let major = 0;
     let liberal = 0;
@@ -579,7 +574,6 @@ const applyCourseTemplateMut = trpc.courseTemplate.applyToPlanSemester.useMutati
     };
   }, [planTotals, transferTotals]);
 
-  // 1번: 결제 요약을 semesters/refunds 기준으로 프론트에서 재계산
   const paymentSummaryCard = useMemo(() => {
     const totalRequired = (sortedSemesters || []).reduce(
       (sum: number, sem: any) => sum + toNumber(sem.plannedAmount),
@@ -606,7 +600,6 @@ const applyCourseTemplateMut = trpc.courseTemplate.applyToPlanSemester.useMutati
     };
   }, [sortedSemesters, refundList]);
 
-  // 2번: 상단 매출보고는 학기표 기준으로만 표시, 수정 불가
   const registrationSummary = useMemo(() => {
     const sem = selectedSemester;
 
@@ -666,20 +659,20 @@ const applyCourseTemplateMut = trpc.courseTemplate.applyToPlanSemester.useMutati
   };
 
   const handleAddTransferSubjects = async () => {
-  const count = Math.max(1, Math.min(100, Number(transferAddCount) || 1));
-  const currentLen = transferSubjectList?.length ?? 0;
+    const count = Math.max(1, Math.min(100, Number(transferAddCount) || 1));
+    const currentLen = transferSubjectList?.length ?? 0;
 
-  if (currentLen + count > 100) {
-    toast.error("전적대 과목은 최대 100개까지 등록할 수 있습니다.");
-    return;
-  }
+    if (currentLen + count > 100) {
+      toast.error("전적대 과목은 최대 100개까지 등록할 수 있습니다.");
+      return;
+    }
 
-  bulkCreateTransferSubjectMut.mutate({
-    studentId,
-    count,
-    schoolName: "전적대",
-  });
-};
+    bulkCreateTransferSubjectMut.mutate({
+      studentId,
+      count,
+      schoolName: "전적대",
+    });
+  };
 
   const handleTransferBlur = (id: number, field: string, value: any) => {
     const payload: any = { id };
@@ -699,29 +692,35 @@ const applyCourseTemplateMut = trpc.courseTemplate.applyToPlanSemester.useMutati
 
     const name = window.prompt("첨부파일명을 입력하세요", row.attachmentName || "증빙자료") || "증빙자료";
 
-    updateTransferSubjectMut.mutate({
-      id: row.id,
-      attachmentName: name,
-      attachmentUrl: url,
-    } as any, {
-      onSuccess: async () => {
-        await utils.transferSubject.list.invalidate({ studentId });
-        toast.success("첨부파일이 저장되었습니다.");
-      },
-    });
+    updateTransferSubjectMut.mutate(
+      {
+        id: row.id,
+        attachmentName: name,
+        attachmentUrl: url,
+      } as any,
+      {
+        onSuccess: async () => {
+          await utils.transferSubject.list.invalidate({ studentId });
+          toast.success("첨부파일이 저장되었습니다.");
+        },
+      }
+    );
   };
 
   const clearTransferAttachment = (row: any) => {
-    updateTransferSubjectMut.mutate({
-      id: row.id,
-      attachmentName: "",
-      attachmentUrl: "",
-    } as any, {
-      onSuccess: async () => {
-        await utils.transferSubject.list.invalidate({ studentId });
-        toast.success("첨부파일이 해제되었습니다.");
-      },
-    });
+    updateTransferSubjectMut.mutate(
+      {
+        id: row.id,
+        attachmentName: "",
+        attachmentUrl: "",
+      } as any,
+      {
+        onSuccess: async () => {
+          await utils.transferSubject.list.invalidate({ studentId });
+          toast.success("첨부파일이 해제되었습니다.");
+        },
+      }
+    );
   };
 
   const requirementBadgeClass = (type?: string | null) => {
@@ -732,7 +731,6 @@ const applyCourseTemplateMut = trpc.courseTemplate.applyToPlanSemester.useMutati
     return "bg-gray-50 text-gray-600 border border-gray-200";
   };
 
-  // 3번: 예정 -> 실제 복사
   const handleCopyPlannedToActual = (sem: any) => {
     const actualStartDate = normalizePlannedMonthToDate(sem.plannedMonth);
 
@@ -766,7 +764,6 @@ const applyCourseTemplateMut = trpc.courseTemplate.applyToPlanSemester.useMutati
     window.requestAnimationFrame(() => el.focus());
   };
 
-  // 5번: 과목명에서 Tab / Enter 시 다음 행 과목명으로 이동
   const handlePlanNameKeyDown = (
     e: React.KeyboardEvent<HTMLInputElement>,
     semesterNo: number,
@@ -785,7 +782,6 @@ const applyCourseTemplateMut = trpc.courseTemplate.applyToPlanSemester.useMutati
     toast.message("마지막 과목입니다.");
   };
 
-  // 6번: 구분/타입 select 에서 Tab 누르면 값이 순환 변경
   const cycleSelectValue = (
     e: React.KeyboardEvent<HTMLSelectElement>,
     values: string[],
@@ -1375,82 +1371,12 @@ const applyCourseTemplateMut = trpc.courseTemplate.applyToPlanSemester.useMutati
         </CardContent>
       </Card>
 
-     <Card className="border-0 shadow-sm">
-  <CardHeader className="flex flex-row items-center justify-between pb-3">
-    <CardTitle className="text-base">학생 플랜</CardTitle>
-    <div className="flex items-center gap-2">
-      <Input
-        className="h-8 w-20"
-        value={transferAddCount}
-        onChange={(e) => setTransferAddCount(e.target.value.replace(/[^0-9]/g, ""))}
-        placeholder="개수"
-      />
-      <Button variant="outline" size="sm" onClick={handleAddTransferSubjects} className="gap-1">
-        <Plus className="h-3.5 w-3.5" /> 전적대 과목 추가
-      </Button>
-    </div>
-  </CardHeader>
+      <Card className="border-0 shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">학생 플랜</CardTitle>
+        </CardHeader>
 
-  <CardContent className="space-y-6">
-    <div className="rounded-lg border p-4 bg-muted/20 space-y-3">
-      <div>
-        <div className="font-medium text-sm">과정별 과목 템플릿 일괄 등록</div>
-        <div className="text-xs text-muted-foreground">
-          선택한 과정의 템플릿 과목을 현재 선택 학기에 추가합니다.
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-4">
-        {["사회복지사", "보육교사", "청소년지도사", "한국어교원", "아동학사", "건강가정사"].map((key) => (
-          <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
-            <Checkbox
-              checked={selectedCourseKeys.includes(key)}
-              onCheckedChange={(checked) => {
-                setSelectedCourseKeys((prev) =>
-                  checked ? [...prev, key] : prev.filter((x) => x !== key)
-                );
-              }}
-            />
-            <span>{key}</span>
-          </label>
-        ))}
-      </div>
-
-      <div className="flex items-center gap-2">
-        <Button
-          size="sm"
-          onClick={() => {
-            if (!selectedCourseKeys.length) {
-              toast.error("과정을 하나 이상 선택해주세요.");
-              return;
-            }
-
-            applyCourseTemplateMut.mutate({
-              studentId,
-              semesterNo: selectedSemesterOrder,
-              courseKeys: selectedCourseKeys,
-            });
-          }}
-          disabled={applyCourseTemplateMut.isPending}
-        >
-          체크한 과정 과목 불러오기
-        </Button>
-      </div>
-
-      {!!selectedCourseKeys.length && (
-        <div className="text-xs text-muted-foreground">
-          선택됨: {selectedCourseKeys.join(", ")}
-        </div>
-      )}
-
-      {!!courseTemplateList?.length && (
-        <div className="text-xs text-muted-foreground">
-          등록된 템플릿 수: {courseTemplateList.length}개
-        </div>
-      )}
-    </div>
-
- 
+        <CardContent className="space-y-6">
           <div className="space-y-4">
             <div>
               <h3 className="font-semibold text-sm">우리 플랜 (학점은행제 / 과목당 3학점 고정)</h3>
@@ -1469,8 +1395,24 @@ const applyCourseTemplateMut = trpc.courseTemplate.applyToPlanSemester.useMutati
             ) : (
               groupedPlanSemesters.map((group) => {
                 const semMeta = semesterMetaMap.get(group.semesterNo);
-                const institutionName =
-                  semMeta?.actualInstitution || semMeta?.plannedInstitution || "";
+
+                const semTitleDate =
+                  semMeta?.actualStartDate ? formatDate(semMeta.actualStartDate) : "";
+
+                const semTitleInstitution =
+                  semMeta?.actualInstitution ||
+                  (semMeta?.actualInstitutionId
+                    ? institutionList?.find(
+                        (inst: any) => Number(inst.id) === Number(semMeta.actualInstitutionId)
+                      )?.name || ""
+                    : "") ||
+                  semMeta?.plannedInstitution ||
+                  (semMeta?.plannedInstitutionId
+                    ? institutionList?.find(
+                        (inst: any) => Number(inst.id) === Number(semMeta.plannedInstitutionId)
+                      )?.name || ""
+                    : "") ||
+                  "";
 
                 return (
                   <div
@@ -1482,16 +1424,33 @@ const applyCourseTemplateMut = trpc.courseTemplate.applyToPlanSemester.useMutati
                   >
                     <div className="flex items-center justify-between px-4 py-3 bg-muted/40 border-b">
                       <div className="font-medium">
-                        {group.semesterNo}학기{institutionName ? ` (${institutionName})` : ""}
+                        {group.semesterNo}학기
+                        {semTitleDate ? ` (${semTitleDate})` : ""}
+                        {semTitleInstitution ? ` (${semTitleInstitution})` : ""}
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleAddPlanSubject(group.semesterNo)}
-                        disabled={group.rows.length >= 8}
-                      >
-                        과목 추가
-                      </Button>
+
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setTemplateDialogSemesterNo(group.semesterNo);
+                            setSelectedCourseKeys([]);
+                            setTemplateDialogOpen(true);
+                          }}
+                        >
+                          일괄 등록
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleAddPlanSubject(group.semesterNo)}
+                          disabled={group.rows.length >= 8}
+                        >
+                          과목 추가
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="overflow-x-auto">
@@ -1529,14 +1488,13 @@ const applyCourseTemplateMut = trpc.courseTemplate.applyToPlanSemester.useMutati
                                   value={row.planCategory || "전공"}
                                   onChange={(e) => {
                                     const nextCategory = e.target.value;
-
                                     handlePlanSemesterBlur(row.id, "category", nextCategory);
 
                                     if (nextCategory === "교양") {
                                       handlePlanSemesterBlur(row.id, "requirementType", "교양");
                                     } else if (nextCategory === "일반") {
                                       handlePlanSemesterBlur(row.id, "requirementType", "일반");
-                                    } else if (nextCategory === "전공") {
+                                    } else {
                                       handlePlanSemesterBlur(
                                         row.id,
                                         "requirementType",
@@ -1639,309 +1597,295 @@ const applyCourseTemplateMut = trpc.courseTemplate.applyToPlanSemester.useMutati
           </div>
 
           <div className="space-y-4">
-  <div className="flex items-start justify-between gap-3">
-    <div>
-      <h3 className="font-semibold text-sm">전적대 / 이전 이수과목</h3>
-      <p className="text-xs text-muted-foreground mt-1">
-        최대 100과목까지 등록 가능하며 학점은 직접 입력합니다.
-      </p>
-    </div>
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <h3 className="font-semibold text-sm">전적대 / 이전 이수과목</h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  최대 100과목까지 등록 가능하며 학점은 직접 입력합니다.
+                </p>
+              </div>
 
-    <div className="text-right">
-      <div className="text-xs text-muted-foreground mb-1">전적대 추가 개수</div>
-      <div className="flex items-center gap-2">
-        <Input
-          className="h-8 w-20"
-          value={transferAddCount}
-          onChange={(e) => setTransferAddCount(e.target.value.replace(/[^0-9]/g, ""))}
-        />
-        <Button size="sm" variant="outline" onClick={handleAddTransferSubjects}>
-          일괄 추가
-        </Button>
-      </div>
-    </div>
-  </div>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const url = window.prompt("첨부파일 URL을 입력하세요");
+                    if (!url) return;
 
-  <div className="rounded-lg border p-4 bg-muted/20">
-    <div className="flex items-center justify-between mb-3">
-      <div>
-        <div className="font-medium text-sm">전적대 공통 첨부파일</div>
-        <div className="text-xs text-muted-foreground">최대 4개까지 등록 가능</div>
-      </div>
+                    const name =
+                      window.prompt("첨부파일명을 입력하세요", "전적대 증빙자료") || "전적대 증빙자료";
 
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => {
-          const url = window.prompt("첨부파일 URL을 입력하세요");
-          if (!url) return;
+                    createTransferAttachmentMut.mutate({
+                      studentId,
+                      fileName: name,
+                      fileUrl: url,
+                    });
+                  }}
+                >
+                  첨부 추가
+                </Button>
 
-          const name =
-            window.prompt("첨부파일명을 입력하세요", "전적대 증빙자료") || "전적대 증빙자료";
+                <Input
+                  className="h-8 w-20"
+                  value={transferAddCount}
+                  onChange={(e) => setTransferAddCount(e.target.value.replace(/[^0-9]/g, ""))}
+                />
+                <Button size="sm" variant="outline" onClick={handleAddTransferSubjects}>
+                  일괄 추가
+                </Button>
+              </div>
+            </div>
 
-          createTransferAttachmentMut.mutate({
-            studentId,
-            fileName: name,
-            fileUrl: url,
-          });
-        }}
-      >
-        첨부 추가
-      </Button>
-    </div>
-
-    {!transferAttachmentList || transferAttachmentList.length === 0 ? (
-      <div className="text-xs text-muted-foreground">등록된 첨부파일이 없습니다.</div>
-    ) : (
-      <div className="flex flex-wrap gap-2">
-        {transferAttachmentList.map((file: any) => (
-          <div
-            key={file.id}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border bg-white text-sm"
-          >
-            <a
-              href={file.fileUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-blue-600 underline"
-            >
-              {file.fileName}
-            </a>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-destructive"
-              onClick={() => {
-                if (confirm("첨부파일을 삭제하시겠습니까?")) {
-                  deleteTransferAttachmentMut.mutate({ id: file.id });
-                }
-              }}
-            >
-              <Trash2 className="h-3 w-3" />
-            </Button>
-          </div>
-        ))}
-      </div>
-    )}
-  </div>
-
-  <div className="border rounded-lg overflow-hidden">
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b bg-muted/40">
-            <th className="px-3 py-2 text-left font-medium text-muted-foreground">학교명</th>
-            <th className="px-3 py-2 text-left font-medium text-muted-foreground">과목명</th>
-            <th className="px-3 py-2 text-left font-medium text-muted-foreground w-[110px]">구분</th>
-            <th className="px-3 py-2 text-left font-medium text-muted-foreground w-[130px]">타입</th>
-            <th className="px-3 py-2 text-center font-medium text-muted-foreground w-[80px]">학점</th>
-            <th className="px-3 py-2 text-center font-medium text-muted-foreground w-[130px]">첨부파일</th>
-            <th className="px-3 py-2 text-right font-medium text-muted-foreground w-[150px]">관리</th>
-          </tr>
-        </thead>
-        <tbody>
-          {!transferSubjectList || transferSubjectList.length === 0 ? (
-            <tr>
-              <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
-                등록된 전적대 과목이 없습니다.
-              </td>
-            </tr>
-          ) : (
-            transferSubjectList.map((row: any, rowIndex: number) => (
-              <tr key={row.id} className="border-b last:border-0">
-                <td className="px-2 py-1">
-                  <Input
-                    ref={(el) => {
-                      transferFieldRefs.current[`transfer-school-${rowIndex}`] = el;
-                    }}
-                    defaultValue={row.schoolName || ""}
-                    className="h-8"
-                    onBlur={(e) => handleTransferBlur(row.id, "schoolName", e.target.value)}
-                  />
-                </td>
-
-                <td className="px-2 py-1">
-                  <Input
-                    ref={(el) => {
-                      transferFieldRefs.current[`transfer-subject-${rowIndex}`] = el;
-                    }}
-                    defaultValue={row.subjectName || ""}
-                    className="h-8"
-                    onBlur={(e) => handleTransferBlur(row.id, "subjectName", e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === "Tab") {
-                        e.preventDefault();
-                        focusTransferField(`transfer-subject-${rowIndex + 1}`);
-                      }
-                    }}
-                  />
-                </td>
-
-                <td className="px-2 py-1">
-                  <select
-                    className="w-full h-8 px-2 text-sm border rounded bg-white"
-                    value={row.transferCategory || "전공"}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      handleTransferBlur(row.id, "category", next);
-
-                      if (next === "교양") {
-                        handleTransferBlur(row.id, "requirementType", "교양");
-                      } else if (next === "일반") {
-                        handleTransferBlur(row.id, "requirementType", "일반");
-                      } else {
-                        handleTransferBlur(
-                          row.id,
-                          "requirementType",
-                          row.transferRequirementType === "전공필수" ? "전공필수" : "전공선택"
-                        );
-                      }
-                    }}
-                    onKeyDown={(e) =>
-                      cycleSelectValue(
-                        e,
-                        ["전공", "교양", "일반"],
-                        row.transferCategory || "전공",
-                        (next) => {
-                          handleTransferBlur(row.id, "category", next);
-
-                          if (next === "교양") {
-                            handleTransferBlur(row.id, "requirementType", "교양");
-                          } else if (next === "일반") {
-                            handleTransferBlur(row.id, "requirementType", "일반");
-                          } else {
-                            handleTransferBlur(
-                              row.id,
-                              "requirementType",
-                              row.transferRequirementType === "전공필수" ? "전공필수" : "전공선택"
-                            );
-                          }
-                        }
-                      )
-                    }
+            {!!transferAttachmentList?.length && (
+              <div className="flex flex-wrap gap-2">
+                {transferAttachmentList.map((file: any) => (
+                  <div
+                    key={file.id}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border bg-white text-sm"
                   >
-                    <option value="전공">전공</option>
-                    <option value="교양">교양</option>
-                    <option value="일반">일반</option>
-                  </select>
-                </td>
-
-                <td className="px-2 py-1">
-                  <select
-                    className={`w-full h-8 px-2 text-sm rounded ${requirementBadgeClass(row.transferRequirementType)}`}
-                    value={row.transferRequirementType || "전공선택"}
-                    onChange={(e) => handleTransferBlur(row.id, "requirementType", e.target.value)}
-                    onKeyDown={(e) => {
-                      const list =
-                        row.transferCategory === "전공"
-                          ? ["전공필수", "전공선택"]
-                          : row.transferCategory === "교양"
-                            ? ["교양"]
-                            : ["일반"];
-
-                      cycleSelectValue(
-                        e,
-                        list,
-                        row.transferRequirementType || list[0],
-                        (next) => handleTransferBlur(row.id, "requirementType", next)
-                      );
-                    }}
-                  >
-                    {row.transferCategory === "전공" && (
-                      <>
-                        <option value="전공필수">전공필수</option>
-                        <option value="전공선택">전공선택</option>
-                      </>
-                    )}
-                    {row.transferCategory === "교양" && <option value="교양">교양</option>}
-                    {row.transferCategory === "일반" && <option value="일반">일반</option>}
-                  </select>
-                </td>
-
-                <td className="px-2 py-1">
-                  <Input
-                    defaultValue={row.credits?.toString() || ""}
-                    className="h-8 text-center"
-                    onBlur={(e) => handleTransferBlur(row.id, "credits", e.target.value)}
-                  />
-                </td>
-
-                <td className="px-2 py-1 text-center">
-                  {row.attachmentUrl ? (
                     <a
-                      href={row.attachmentUrl}
+                      href={file.fileUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-sm text-blue-600 underline"
-                      onClick={(e) => e.stopPropagation()}
+                      className="text-blue-600 underline"
                     >
-                      <Paperclip className="h-3.5 w-3.5" />
-                      {row.attachmentName || "파일보기"}
+                      {file.fileName}
                     </a>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleTransferAttachment(row);
-                      }}
-                    >
-                      첨부
-                    </Button>
-                  )}
-                </td>
-
-                <td className="px-2 py-1 text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleTransferAttachment(row);
-                      }}
-                    >
-                      {row.attachmentUrl ? "변경" : "등록"}
-                    </Button>
-
-                    {row.attachmentUrl && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-muted-foreground"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          clearTransferAttachment(row);
-                        }}
-                      >
-                        해제
-                      </Button>
-                    )}
 
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 text-destructive hover:text-destructive"
+                      className="h-6 w-6 text-destructive"
                       onClick={() => {
-                        if (confirm("전적대 과목을 삭제하시겠습니까?")) {
-                          deleteTransferSubjectMut.mutate({ id: row.id });
+                        if (confirm("첨부파일을 삭제하시겠습니까?")) {
+                          deleteTransferAttachmentMut.mutate({ id: file.id });
                         }
                       }}
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Trash2 className="h-3 w-3" />
                     </Button>
                   </div>
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
+                ))}
+              </div>
+            )}
+
+            <div className="border rounded-lg overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/40">
+                      <th className="px-3 py-2 text-left font-medium text-muted-foreground">학교명</th>
+                      <th className="px-3 py-2 text-left font-medium text-muted-foreground">과목명</th>
+                      <th className="px-3 py-2 text-left font-medium text-muted-foreground w-[110px]">구분</th>
+                      <th className="px-3 py-2 text-left font-medium text-muted-foreground w-[130px]">타입</th>
+                      <th className="px-3 py-2 text-center font-medium text-muted-foreground w-[80px]">학점</th>
+                      <th className="px-3 py-2 text-center font-medium text-muted-foreground w-[130px]">첨부파일</th>
+                      <th className="px-3 py-2 text-right font-medium text-muted-foreground w-[150px]">관리</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {!transferSubjectList || transferSubjectList.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
+                          등록된 전적대 과목이 없습니다.
+                        </td>
+                      </tr>
+                    ) : (
+                      transferSubjectList.map((row: any, rowIndex: number) => (
+                        <tr key={row.id} className="border-b last:border-0">
+                          <td className="px-2 py-1">
+                            <Input
+                              ref={(el) => {
+                                transferFieldRefs.current[`transfer-school-${rowIndex}`] = el;
+                              }}
+                              defaultValue={row.schoolName || ""}
+                              className="h-8"
+                              onBlur={(e) => handleTransferBlur(row.id, "schoolName", e.target.value)}
+                            />
+                          </td>
+
+                          <td className="px-2 py-1">
+                            <Input
+                              ref={(el) => {
+                                transferFieldRefs.current[`transfer-subject-${rowIndex}`] = el;
+                              }}
+                              defaultValue={row.subjectName || ""}
+                              className="h-8"
+                              onBlur={(e) => handleTransferBlur(row.id, "subjectName", e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === "Tab") {
+                                  e.preventDefault();
+                                  focusTransferField(`transfer-subject-${rowIndex + 1}`);
+                                }
+                              }}
+                            />
+                          </td>
+
+                          <td className="px-2 py-1">
+                            <select
+                              className="w-full h-8 px-2 text-sm border rounded bg-white"
+                              value={row.transferCategory || "전공"}
+                              onChange={(e) => {
+                                const next = e.target.value;
+                                handleTransferBlur(row.id, "category", next);
+
+                                if (next === "교양") {
+                                  handleTransferBlur(row.id, "requirementType", "교양");
+                                } else if (next === "일반") {
+                                  handleTransferBlur(row.id, "requirementType", "일반");
+                                } else {
+                                  handleTransferBlur(
+                                    row.id,
+                                    "requirementType",
+                                    row.transferRequirementType === "전공필수" ? "전공필수" : "전공선택"
+                                  );
+                                }
+                              }}
+                              onKeyDown={(e) =>
+                                cycleSelectValue(
+                                  e,
+                                  ["전공", "교양", "일반"],
+                                  row.transferCategory || "전공",
+                                  (next) => {
+                                    handleTransferBlur(row.id, "category", next);
+
+                                    if (next === "교양") {
+                                      handleTransferBlur(row.id, "requirementType", "교양");
+                                    } else if (next === "일반") {
+                                      handleTransferBlur(row.id, "requirementType", "일반");
+                                    } else {
+                                      handleTransferBlur(
+                                        row.id,
+                                        "requirementType",
+                                        row.transferRequirementType === "전공필수" ? "전공필수" : "전공선택"
+                                      );
+                                    }
+                                  }
+                                )
+                              }
+                            >
+                              <option value="전공">전공</option>
+                              <option value="교양">교양</option>
+                              <option value="일반">일반</option>
+                            </select>
+                          </td>
+
+                          <td className="px-2 py-1">
+                            <select
+                              className={`w-full h-8 px-2 text-sm rounded ${requirementBadgeClass(row.transferRequirementType)}`}
+                              value={row.transferRequirementType || "전공선택"}
+                              onChange={(e) => handleTransferBlur(row.id, "requirementType", e.target.value)}
+                              onKeyDown={(e) => {
+                                const list =
+                                  row.transferCategory === "전공"
+                                    ? ["전공필수", "전공선택"]
+                                    : row.transferCategory === "교양"
+                                    ? ["교양"]
+                                    : ["일반"];
+
+                                cycleSelectValue(
+                                  e,
+                                  list,
+                                  row.transferRequirementType || list[0],
+                                  (next) => handleTransferBlur(row.id, "requirementType", next)
+                                );
+                              }}
+                            >
+                              {row.transferCategory === "전공" && (
+                                <>
+                                  <option value="전공필수">전공필수</option>
+                                  <option value="전공선택">전공선택</option>
+                                </>
+                              )}
+                              {row.transferCategory === "교양" && <option value="교양">교양</option>}
+                              {row.transferCategory === "일반" && <option value="일반">일반</option>}
+                            </select>
+                          </td>
+
+                          <td className="px-2 py-1">
+                            <Input
+                              defaultValue={row.credits?.toString() || ""}
+                              className="h-8 text-center"
+                              onBlur={(e) => handleTransferBlur(row.id, "credits", e.target.value)}
+                            />
+                          </td>
+
+                          <td className="px-2 py-1 text-center">
+                            {row.attachmentUrl ? (
+                              <a
+                                href={row.attachmentUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-sm text-blue-600 underline"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Paperclip className="h-3.5 w-3.5" />
+                                {row.attachmentName || "파일보기"}
+                              </a>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleTransferAttachment(row);
+                                }}
+                              >
+                                첨부
+                              </Button>
+                            )}
+                          </td>
+
+                          <td className="px-2 py-1 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleTransferAttachment(row);
+                                }}
+                              >
+                                {row.attachmentUrl ? "변경" : "등록"}
+                              </Button>
+
+                              {row.attachmentUrl && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-muted-foreground"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    clearTransferAttachment(row);
+                                  }}
+                                >
+                                  해제
+                                </Button>
+                              )}
+
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-destructive hover:text-destructive"
+                                onClick={() => {
+                                  if (confirm("전적대 과목을 삭제하시겠습니까?")) {
+                                    deleteTransferSubjectMut.mutate({ id: row.id });
+                                  }
+                                }}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
 
           <div className="grid md:grid-cols-3 gap-4">
             <div className="rounded-lg border bg-blue-50 p-4">
@@ -1976,6 +1920,86 @@ const applyCourseTemplateMut = trpc.courseTemplate.applyToPlanSemester.useMutati
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {templateDialogSemesterNo ? `${templateDialogSemesterNo}학기 일괄 등록` : "일괄 등록"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="text-sm text-muted-foreground">
+              선택한 과정의 템플릿 과목을 해당 학기에 추가합니다.
+            </div>
+
+            <div className="flex flex-wrap gap-4">
+              {["사회복지사", "보육교사", "청소년지도사", "한국어교원", "아동학사", "건강가정사"].map((key) => (
+                <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <Checkbox
+                    checked={selectedCourseKeys.includes(key)}
+                    onCheckedChange={(checked) => {
+                      setSelectedCourseKeys((prev) =>
+                        checked ? [...prev, key] : prev.filter((x) => x !== key)
+                      );
+                    }}
+                  />
+                  <span>{key}</span>
+                </label>
+              ))}
+            </div>
+
+            {!!selectedCourseKeys.length && (
+              <div className="text-xs text-muted-foreground">
+                선택됨: {selectedCourseKeys.join(", ")}
+              </div>
+            )}
+
+            {!!courseTemplateList?.length && (
+              <div className="text-xs text-muted-foreground">
+                등록된 템플릿 수: {courseTemplateList.length}개
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTemplateDialogOpen(false)}>
+              취소
+            </Button>
+            <Button
+              onClick={() => {
+                if (!templateDialogSemesterNo) {
+                  toast.error("학기 정보가 없습니다.");
+                  return;
+                }
+
+                if (!selectedCourseKeys.length) {
+                  toast.error("과정을 하나 이상 선택해주세요.");
+                  return;
+                }
+
+                applyCourseTemplateMut.mutate(
+                  {
+                    studentId,
+                    semesterNo: templateDialogSemesterNo,
+                    courseKeys: selectedCourseKeys,
+                  },
+                  {
+                    onSuccess: () => {
+                      setTemplateDialogOpen(false);
+                      setSelectedCourseKeys([]);
+                    },
+                  }
+                );
+              }}
+              disabled={applyCourseTemplateMut.isPending}
+            >
+              등록
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={semDialogOpen} onOpenChange={setSemDialogOpen}>
         <DialogContent className="max-w-md">
