@@ -299,6 +299,8 @@ export default function StudentDetail() {
     plannedSubjectCount: "",
     plannedAmount: "",
   });
+  
+const [refundDialogOpen, setRefundDialogOpen] = useState(false);
 
     const [refundForm, setRefundForm] = useState({
     refundAmount: "",
