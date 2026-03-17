@@ -331,6 +331,8 @@ function StudentInlineRow({
   const isCompleted = isClosedStatus(item.status);
   const totalRequired = Number(item.totalRequired || 0);
   const paidAmount = Number(item.paidAmount || 0);
+  const approvedRefundAmount = Number(item.approvedRefundAmount || 0);
+  const netPaidAmount = Number(item.netPaidAmount || paidAmount - approvedRefundAmount || 0);
   const canDelete = isHost;
 
   const approvalColor = (s: string) => {
@@ -388,8 +390,15 @@ function StudentInlineRow({
       <td className="px-3 py-1.5 text-sm text-right font-medium text-black">
         {formatCurrency(totalRequired)}
       </td>
-      <td className="px-3 py-1.5 text-sm text-right font-medium text-emerald-600">
-        {formatCurrency(paidAmount)}
+      <td
+        className="px-3 py-1.5 text-sm text-right font-medium text-emerald-600"
+        title={
+          approvedRefundAmount > 0
+            ? `수납 ${formatCurrency(paidAmount)} / 환불 ${formatCurrency(approvedRefundAmount)} / 실수납 ${formatCurrency(netPaidAmount)}`
+            : undefined
+        }
+      >
+        {formatCurrency(netPaidAmount)}
       </td>
 
       <td className="px-2 py-1.5 text-center">

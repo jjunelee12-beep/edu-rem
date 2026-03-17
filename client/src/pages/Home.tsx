@@ -1,29 +1,75 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, PhoneCall, UserPlus, Banknote, TrendingUp, CheckCircle, XCircle } from "lucide-react";
+import { Loader2, PhoneCall, UserPlus, Banknote, TrendingUp, CheckCircle, XCircle, Clock3, RotateCcw, BarChart3 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 
 function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("ko-KR").format(amount) + "원";
+  return new Intl.NumberFormat("ko-KR").format(amount || 0) + "원";
+}
+
+function StatCard({
+  title,
+  value,
+  subValue,
+  icon,
+  tone = "default",
+}: {
+  title: string;
+  value: string | number;
+  subValue?: string;
+  icon: React.ReactNode;
+  tone?: "default" | "indigo" | "emerald" | "amber" | "rose" | "violet" | "red" | "blue" | "gray";
+}) {
+  const toneClassMap: Record<string, string> = {
+    default: "from-slate-50 to-white",
+    indigo: "from-indigo-50 to-white",
+    emerald: "from-emerald-50 to-white",
+    amber: "from-amber-50 to-white",
+    rose: "from-rose-50 to-white",
+    violet: "from-violet-50 to-white",
+    red: "from-red-50 to-white",
+    blue: "from-blue-50 to-white",
+    gray: "from-gray-50 to-white",
+  };
+
+  return (
+    <Card className={`border-0 shadow-sm bg-gradient-to-br ${toneClassMap[tone] || toneClassMap.default}`}>
+      <CardContent className="pt-5 pb-4 px-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-muted-foreground">{title}</p>
+            <p className="text-2xl font-bold mt-1 break-words">{value}</p>
+            {subValue ? <p className="text-xs text-muted-foreground mt-1">{subValue}</p> : null}
+          </div>
+          <div className="h-10 w-10 rounded-lg bg-white/70 border flex items-center justify-center shrink-0">
+            {icon}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function Home() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
-  const { data: stats, isLoading: statsLoading } = trpc.dashboard.stats.useQuery();
-  const { data: approvals, isLoading: approvalsLoading } = trpc.dashboard.monthApprovals.useQuery();
-  const { data: usersList } = trpc.users.list.useQuery();
 
-  const isAdmin = user?.role === "admin";
+  const { data: stats, isLoading: statsLoading } = trpc.dashboard.stats.useQuery();
+  const { data: totalStats, isLoading: totalStatsLoading } = trpc.dashboard.totalStats.useQuery(
+    undefined,
+    {
+      enabled: user?.role === "admin" || user?.role === "host",
+    }
+  );
+
+  const isAdminOrHost = user?.role === "admin" || user?.role === "host";
   const now = new Date();
   const monthLabel = `${now.getFullYear()}년 ${now.getMonth() + 1}월`;
 
-  const getUserName = (assigneeId: number) => {
-    const u = usersList?.find((x: any) => x.id === assigneeId);
-    return u?.name || "-";
-  };
+  const currentStats = stats || {};
+  const overallStats = totalStats || {};
 
   return (
     <div className="space-y-6">
@@ -34,179 +80,213 @@ export default function Home() {
         </p>
       </div>
 
-      {/* 통계 카드 5개 */}
       {statsLoading ? (
         <div className="flex justify-center py-12">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          <Card className="border-0 shadow-sm bg-gradient-to-br from-indigo-50 to-white">
-            <CardContent className="pt-5 pb-4 px-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">이번 달 상담</p>
-                  <p className="text-2xl font-bold mt-1">{stats?.monthConsultations ?? 0}<span className="text-sm font-normal text-muted-foreground ml-1">건</span></p>
-                </div>
-                <div className="h-10 w-10 rounded-lg bg-indigo-100 flex items-center justify-center">
-                  <PhoneCall className="h-5 w-5 text-indigo-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        <>
+          {/* 이번달 핵심 통계 */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-primary" />
+              <h2 className="text-base font-semibold">이번 달 핵심 지표</h2>
+            </div>
 
-          <Card className="border-0 shadow-sm bg-gradient-to-br from-emerald-50 to-white">
-            <CardContent className="pt-5 pb-4 px-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">신규 등록 (결제완료)</p>
-                  <p className="text-2xl font-bold mt-1">{stats?.monthNewRegistrations ?? 0}<span className="text-sm font-normal text-muted-foreground ml-1">건</span></p>
-                  <p className="text-xs text-emerald-600 font-medium mt-0.5">{formatCurrency(stats?.monthNewRegistrationAmount ?? 0)}</p>
-                </div>
-                <div className="h-10 w-10 rounded-lg bg-emerald-100 flex items-center justify-center">
-                  <UserPlus className="h-5 w-5 text-emerald-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8 gap-4">
+              <StatCard
+                title="이번 달 상담"
+                value={`${currentStats.monthConsultationCount ?? 0}건`}
+                icon={<PhoneCall className="h-5 w-5 text-indigo-600" />}
+                tone="indigo"
+              />
 
-          <Card className="border-0 shadow-sm bg-gradient-to-br from-amber-50 to-white">
-            <CardContent className="pt-5 pb-4 px-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">오늘 매출</p>
-                  <p className="text-xl font-bold mt-1">{formatCurrency(stats?.todaySales ?? 0)}</p>
-                </div>
-                <div className="h-10 w-10 rounded-lg bg-amber-100 flex items-center justify-center">
-                  <Banknote className="h-5 w-5 text-amber-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              <StatCard
+                title="신규 등록"
+                value={`${currentStats.monthRegistered ?? 0}건`}
+                subValue="관리자 승인 기준"
+                icon={<UserPlus className="h-5 w-5 text-emerald-600" />}
+                tone="emerald"
+              />
 
-          <Card className="border-0 shadow-sm bg-gradient-to-br from-rose-50 to-white">
-            <CardContent className="pt-5 pb-4 px-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">이번 달 매출</p>
-                  <p className="text-xl font-bold mt-1">{formatCurrency(stats?.monthSales ?? 0)}</p>
-                </div>
-                <div className="h-10 w-10 rounded-lg bg-rose-100 flex items-center justify-center">
-                  <TrendingUp className="h-5 w-5 text-rose-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              <StatCard
+                title="오늘 매출"
+                value={formatCurrency(Number(currentStats.todaySales ?? 0))}
+                subValue="환불 차감 전/후 기준 확인 필요"
+                icon={<Banknote className="h-5 w-5 text-amber-600" />}
+                tone="amber"
+              />
 
-          <Card className="border-0 shadow-sm bg-gradient-to-br from-violet-50 to-white">
-            <CardContent className="pt-5 pb-4 px-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">이번 달 승인</p>
-                  <p className="text-2xl font-bold mt-1">{approvals?.approved?.length ?? 0}<span className="text-sm font-normal text-muted-foreground ml-1">건</span></p>
-                  <p className="text-xs text-violet-600 font-medium mt-0.5">{formatCurrency(approvals?.approvedTotal ?? 0)}</p>
+              <StatCard
+                title="이번 달 매출"
+                value={formatCurrency(Number(currentStats.monthSales ?? 0))}
+                subValue="승인 환불 차감 반영"
+                icon={<TrendingUp className="h-5 w-5 text-rose-600" />}
+                tone="rose"
+              />
+
+              <StatCard
+                title="이번 달 환불"
+                value={formatCurrency(Number(currentStats.monthRefund ?? 0))}
+                subValue="승인된 환불 기준"
+                icon={<RotateCcw className="h-5 w-5 text-red-600" />}
+                tone="red"
+              />
+
+              <StatCard
+                title="이번 달 승인"
+                value={`${currentStats.monthApprovedCount ?? 0}건`}
+                icon={<CheckCircle className="h-5 w-5 text-violet-600" />}
+                tone="violet"
+              />
+
+              <StatCard
+                title="이번 달 불승인"
+                value={`${currentStats.monthRejectedCount ?? 0}건`}
+                icon={<XCircle className="h-5 w-5 text-red-600" />}
+                tone="red"
+              />
+
+              <StatCard
+                title="이번 달 대기"
+                value={`${currentStats.monthPendingCount ?? 0}건`}
+                icon={<Clock3 className="h-5 w-5 text-slate-600" />}
+                tone="gray"
+              />
+            </div>
+          </div>
+
+          {/* 이번달 승인/불승인/대기 요약 */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <Card className="border-0 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-emerald-500" />
+                  이번 달 승인 요약
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="text-3xl font-bold text-emerald-600">
+                  {currentStats.monthApprovedCount ?? 0}건
                 </div>
-                <div className="h-10 w-10 rounded-lg bg-violet-100 flex items-center justify-center">
-                  <CheckCircle className="h-5 w-5 text-violet-600" />
+                <p className="text-sm text-muted-foreground">
+                  학생 승인 완료 건수입니다.
+                </p>
+                <Button variant="outline" size="sm" onClick={() => setLocation("/approvals")}>
+                  승인 관리로 이동
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card className="border-0 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                  <XCircle className="h-4 w-4 text-red-500" />
+                  이번 달 불승인 요약
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="text-3xl font-bold text-red-600">
+                  {currentStats.monthRejectedCount ?? 0}건
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                <p className="text-sm text-muted-foreground">
+                  학생 불승인 처리 건수입니다.
+                </p>
+                <Button variant="outline" size="sm" onClick={() => setLocation("/approvals")}>
+                  승인 관리로 이동
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card className="border-0 shadow-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                  <Clock3 className="h-4 w-4 text-amber-500" />
+                  이번 달 대기 요약
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="text-3xl font-bold text-amber-600">
+                  {currentStats.monthPendingCount ?? 0}건
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  아직 승인/불승인 처리되지 않은 건수입니다.
+                </p>
+                <Button variant="outline" size="sm" onClick={() => setLocation("/approvals")}>
+                  승인 관리로 이동
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </>
       )}
 
-      {/* 이번달 승인/불승인 내역 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <CheckCircle className="h-4 w-4 text-emerald-500" />
-                이번 달 승인 내역
-              </CardTitle>
-              <div className="text-sm font-semibold text-emerald-600">
-                {approvals?.approved?.length ?? 0}건 / {formatCurrency(approvals?.approvedTotal ?? 0)}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {approvalsLoading ? (
-              <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-            ) : !approvals?.approved?.length ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">이번 달 승인 내역이 없습니다.</p>
-            ) : (
-              <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                {approvals.approved.map((item: any) => (
-                  <div key={item.id}
-                    className="flex items-center justify-between p-3 rounded-lg bg-emerald-50/50 hover:bg-emerald-50 cursor-pointer transition-colors"
-                    onClick={() => setLocation(`/students/${item.id}`)}>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium">{item.clientName}</p>
-                        <span className="text-xs text-muted-foreground">{item.phone}</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">{item.course}</p>
-                    </div>
-                    <div className="text-right shrink-0 ml-3">
-                      <p className="text-sm font-semibold text-emerald-700">
-                        {item.paymentAmount ? formatCurrency(Number(item.paymentAmount)) : "-"}
-                      </p>
-                      {isAdmin && (
-                        <p className="text-[10px] text-muted-foreground mt-0.5">담당: {getUserName(item.assigneeId)}</p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      {/* 토탈 통계 */}
+      {isAdminOrHost && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-primary" />
+            <h2 className="text-base font-semibold">누적 통계</h2>
+          </div>
 
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <XCircle className="h-4 w-4 text-red-500" />
-                이번 달 불승인 내역
-              </CardTitle>
-              <div className="text-sm font-semibold text-red-600">
-                {approvals?.rejected?.length ?? 0}건 / {formatCurrency(approvals?.rejectedTotal ?? 0)}
-              </div>
+          {totalStatsLoading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          </CardHeader>
-          <CardContent>
-            {approvalsLoading ? (
-              <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-            ) : !approvals?.rejected?.length ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">이번 달 불승인 내역이 없습니다.</p>
-            ) : (
-              <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                {approvals.rejected.map((item: any) => (
-                  <div key={item.id}
-                    className="flex items-center justify-between p-3 rounded-lg bg-red-50/50 hover:bg-red-50 cursor-pointer transition-colors"
-                    onClick={() => setLocation(`/students/${item.id}`)}>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium">{item.clientName}</p>
-                        <span className="text-xs text-muted-foreground">{item.phone}</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">{item.course}</p>
-                    </div>
-                    <div className="text-right shrink-0 ml-3">
-                      <p className="text-sm font-semibold text-red-600">
-                        {item.paymentAmount ? formatCurrency(Number(item.paymentAmount)) : "-"}
-                      </p>
-                      {isAdmin && (
-                        <p className="text-[10px] text-muted-foreground mt-0.5">담당: {getUserName(item.assigneeId)}</p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7 gap-4">
+              <StatCard
+                title="토탈 상담"
+                value={`${overallStats.totalConsultationCount ?? 0}건`}
+                icon={<PhoneCall className="h-5 w-5 text-indigo-600" />}
+                tone="indigo"
+              />
+
+              <StatCard
+                title="토탈 등록"
+                value={`${overallStats.totalRegisteredCount ?? 0}건`}
+                icon={<UserPlus className="h-5 w-5 text-emerald-600" />}
+                tone="emerald"
+              />
+
+              <StatCard
+                title="토탈 매출"
+                value={formatCurrency(Number(overallStats.totalSales ?? 0))}
+                icon={<TrendingUp className="h-5 w-5 text-rose-600" />}
+                tone="rose"
+              />
+
+              <StatCard
+                title="토탈 환불"
+                value={formatCurrency(Number(overallStats.totalRefund ?? 0))}
+                icon={<RotateCcw className="h-5 w-5 text-red-600" />}
+                tone="red"
+              />
+
+              <StatCard
+                title="토탈 승인"
+                value={`${overallStats.totalApprovedCount ?? 0}건`}
+                icon={<CheckCircle className="h-5 w-5 text-violet-600" />}
+                tone="violet"
+              />
+
+              <StatCard
+                title="토탈 불승인"
+                value={`${overallStats.totalRejectedCount ?? 0}건`}
+                icon={<XCircle className="h-5 w-5 text-red-600" />}
+                tone="red"
+              />
+
+              <StatCard
+                title="토탈 대기"
+                value={`${overallStats.totalPendingCount ?? 0}건`}
+                icon={<Clock3 className="h-5 w-5 text-slate-600" />}
+                tone="gray"
+              />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

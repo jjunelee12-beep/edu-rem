@@ -20,10 +20,10 @@ import {
   transferSubjects,
   InsertTransferSubject,
   educationInstitutions,
-transferAttachments,
-InsertTransferAttachment,
-courseSubjectTemplates,
-InsertCourseSubjectTemplate,
+  transferAttachments,
+  InsertTransferAttachment,
+  courseSubjectTemplates,
+  InsertCourseSubjectTemplate,
 } from "../drizzle/schema";
 
 import { ENV } from "./_core/env";
@@ -44,6 +44,10 @@ export async function getDb() {
 
 function getInsertId(result: any) {
   return result?.insertId ?? result?.[0]?.insertId ?? null;
+}
+
+function toNumber(v: any) {
+  return Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
 }
 
 async function getNextUserDisplayNo() {
@@ -97,14 +101,22 @@ export async function getStudentRegistrationSummary(studentId: number) {
     .sort((a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder));
 
   const firstActual = actualSemesters[0];
-
-  const toNumber = (v: any) =>
-    Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
-
-    const sortedSemesters = [...semesterRows].sort(
+  const sortedSemesters = [...semesterRows].sort(
     (a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder)
   );
   const lastSemester = sortedSemesters[sortedSemesters.length - 1];
+
+  const [refundResult] = await db.execute(
+    sql`SELECT COALESCE(SUM(refundAmount), 0) as total
+        FROM refunds
+        WHERE studentId = ${studentId}
+          AND approvalStatus = '승인'`
+  );
+  const approvedRefund = toNumber((refundResult as any)[0]?.total);
+
+  const rawPaymentAmount = firstActual?.actualAmount
+    ? toNumber(firstActual.actualAmount)
+    : toNumber(student.paymentAmount);
 
   return {
     status:
@@ -112,9 +124,7 @@ export async function getStudentRegistrationSummary(studentId: number) {
         ? "등록 종료"
         : student.status || "등록",
     startDate: firstActual?.actualStartDate || student.startDate || null,
-    paymentAmount: firstActual?.actualAmount
-      ? toNumber(firstActual.actualAmount)
-      : toNumber(student.paymentAmount),
+    paymentAmount: Math.max(rawPaymentAmount - approvedRefund, 0),
     subjectCount: firstActual?.actualSubjectCount ?? student.subjectCount ?? 0,
     paymentDate: firstActual?.actualPaymentDate || student.paymentDate || null,
     institution: firstActual?.actualInstitution || student.institution || "",
@@ -467,10 +477,41 @@ export async function listStudents(assigneeId?: number) {
         (SELECT SUM(sem.plannedAmount) FROM semesters sem WHERE sem.studentId = s.id),
         0
       ) as totalRequired,
+
       COALESCE(
-        (SELECT SUM(sem2.actualAmount) FROM semesters sem2 WHERE sem2.studentId = s.id AND sem2.isCompleted = true),
+        (SELECT SUM(sem2.actualAmount)
+         FROM semesters sem2
+         WHERE sem2.studentId = s.id
+           AND sem2.isCompleted = true),
         0
       ) as paidAmount,
+
+      COALESCE(
+        (SELECT SUM(r.refundAmount)
+         FROM refunds r
+         WHERE r.studentId = s.id
+           AND r.approvalStatus = '승인'),
+        0
+      ) as approvedRefundAmount,
+
+      (
+        COALESCE(
+          (SELECT SUM(sem2.actualAmount)
+           FROM semesters sem2
+           WHERE sem2.studentId = s.id
+             AND sem2.isCompleted = true),
+          0
+        )
+        -
+        COALESCE(
+          (SELECT SUM(r.refundAmount)
+           FROM refunds r
+           WHERE r.studentId = s.id
+             AND r.approvalStatus = '승인'),
+          0
+        )
+      ) as netPaidAmount,
+
       (SELECT p.practiceStatus FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceStatus,
       (SELECT p.hasPractice FROM plans p WHERE p.studentId = s.id LIMIT 1) as hasPractice
     FROM students s
@@ -575,19 +616,32 @@ export async function listAllSemesters(
       : sql``;
 
   const [rows] = await db.execute(sql`
-  SELECT sem.*,
-    s.clientName, s.phone, s.course, s.assigneeId, s.status as studentStatus,
-    s.approvalStatus,
-    u.name as assigneeName,
-    (SELECT p.hasPractice FROM plans p WHERE p.studentId = s.id LIMIT 1) as hasPractice,
-    (SELECT p.practiceHours FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceHours,
-    (SELECT p.practiceStatus FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceStatus
-  FROM semesters sem
-  INNER JOIN students s ON sem.studentId = s.id
-  LEFT JOIN users u ON u.id = s.assigneeId
-  ${whereClause}
-  ORDER BY sem.plannedMonth ASC, s.clientName ASC
-`);
+    SELECT sem.*,
+      s.clientName,
+      s.phone,
+      s.course,
+      s.assigneeId,
+      s.status as studentStatus,
+      s.approvalStatus,
+      u.name as assigneeName,
+
+      COALESCE(
+        (SELECT SUM(r.refundAmount)
+         FROM refunds r
+         WHERE r.studentId = s.id
+           AND r.approvalStatus = '승인'),
+        0
+      ) as approvedRefundAmount,
+
+      (SELECT p.hasPractice FROM plans p WHERE p.studentId = s.id LIMIT 1) as hasPractice,
+      (SELECT p.practiceHours FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceHours,
+      (SELECT p.practiceStatus FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceStatus
+    FROM semesters sem
+    INNER JOIN students s ON sem.studentId = s.id
+    LEFT JOIN users u ON u.id = s.assigneeId
+    ${whereClause}
+    ORDER BY sem.plannedMonth ASC, s.clientName ASC
+  `);
 
   return (rows as unknown) as any[];
 }
@@ -652,6 +706,44 @@ export async function listRefundsByStudent(studentId: number) {
     .orderBy(desc(refunds.createdAt));
 }
 
+export async function listApprovedRefundsByStudent(studentId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(refunds)
+    .where(
+      and(
+        eq(refunds.studentId, studentId),
+        eq(refunds.approvalStatus, "승인")
+      )
+    )
+    .orderBy(desc(refunds.createdAt));
+}
+
+export async function listPendingRefunds() {
+  const db = await getDb();
+  if (!db) return [];
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      r.*,
+      s.clientName,
+      s.phone,
+      s.course,
+      s.assigneeId,
+      u.name as assigneeName
+    FROM refunds r
+    INNER JOIN students s ON s.id = r.studentId
+    LEFT JOIN users u ON u.id = s.assigneeId
+    WHERE r.approvalStatus = '대기'
+    ORDER BY r.createdAt DESC
+  `);
+
+  return (rows as unknown) as any[];
+}
+
 export async function createRefund(data: InsertRefund) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -667,6 +759,36 @@ export async function updateRefund(id: number, data: Partial<InsertRefund>) {
   await db.update(refunds).set(data).where(eq(refunds.id, id));
 }
 
+export async function approveRefund(id: number, approvedBy: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(refunds)
+    .set({
+      approvalStatus: "승인",
+      approvedAt: new Date(),
+      rejectedAt: null,
+      approvedBy,
+    } as any)
+    .where(eq(refunds.id, id));
+}
+
+export async function rejectRefund(id: number, approvedBy: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(refunds)
+    .set({
+      approvalStatus: "불승인",
+      approvedAt: null,
+      rejectedAt: new Date(),
+      approvedBy,
+    } as any)
+    .where(eq(refunds.id, id));
+}
+
 export async function deleteRefund(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -676,174 +798,291 @@ export async function deleteRefund(id: number) {
 
 // ─── Dashboard Stats ────────────────────────────────────────────────
 export async function getDashboardStats(assigneeId?: number) {
-  const now = new Date();
-
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-
-  const studentRows = await listStudents(assigneeId);
-
-  const toNumber = (v: any) =>
-    Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
-
-  const todayFirstSales = studentRows
-    .filter(
-      (s: any) =>
-        s.paymentDate &&
-        new Date(s.paymentDate) >= startOfToday &&
-        new Date(s.paymentDate) < endOfToday
-    )
-    .reduce((sum: number, s: any) => sum + toNumber(s.paymentAmount), 0);
-
-  const monthFirstSales = studentRows
-    .filter(
-      (s: any) =>
-        s.paymentDate &&
-        new Date(s.paymentDate) >= startOfMonth &&
-        new Date(s.paymentDate) < endOfMonth
-    )
-    .reduce((sum: number, s: any) => sum + toNumber(s.paymentAmount), 0);
-
-  const monthRegistered = studentRows.filter(
-    (s: any) =>
-      s.paymentDate &&
-      new Date(s.paymentDate) >= startOfMonth &&
-      new Date(s.paymentDate) < endOfMonth &&
-      toNumber(s.paymentAmount) > 0
-  ).length;
-
-  const monthConsultations = await listConsultations(assigneeId);
-  const monthConsultationCount = monthConsultations.filter((c: any) => {
-    const d = new Date(c.consultDate);
-    return d >= startOfMonth && d < endOfMonth;
-  }).length;
-
-  const dbConn = await getDb();
-  let todaySemesterSales = 0;
-  let monthSemesterSales = 0;
-  let totalSales = 0;
-
-  if (dbConn) {
-    const semesterRows = await dbConn.execute(sql`
-      SELECT s.assigneeId, sem.actualAmount, sem.actualPaymentDate
-      FROM semesters sem
-      INNER JOIN students s ON s.id = sem.studentId
-      WHERE sem.isCompleted = true
-    `);
-
-    const rows = (semesterRows as any)[0] || [];
-
-    for (const row of rows) {
-      if (assigneeId && Number(row.assigneeId) !== Number(assigneeId)) continue;
-
-      const amount = toNumber(row.actualAmount);
-      const payDate = row.actualPaymentDate ? new Date(row.actualPaymentDate) : null;
-
-      totalSales += amount;
-
-      if (payDate && payDate >= startOfToday && payDate < endOfToday) {
-        todaySemesterSales += amount;
-      }
-
-      if (payDate && payDate >= startOfMonth && payDate < endOfMonth) {
-        monthSemesterSales += amount;
-      }
-    }
+  const db = await getDb();
+  if (!db) {
+    return {
+      monthConsultationCount: 0,
+      monthRegistered: 0,
+      todaySales: 0,
+      monthSales: 0,
+      totalSales: 0,
+      todayFirstSales: 0,
+      monthFirstSales: 0,
+      todaySemesterSales: 0,
+      monthSemesterSales: 0,
+      monthRefund: 0,
+      totalRefund: 0,
+      monthApprovedCount: 0,
+      monthRejectedCount: 0,
+      monthPendingCount: 0,
+      totalConsultationCount: 0,
+      totalRegisteredCount: 0,
+      totalApprovedCount: 0,
+      totalRejectedCount: 0,
+      totalPendingCount: 0,
+    };
   }
 
-  const totalFirstSales = studentRows.reduce(
-    (sum: number, s: any) => sum + toNumber(s.paymentAmount),
-    0
-  );
+  const { monthStart, monthEnd, today } = getKSTMonthRange();
+  const todayStart = `${today} 00:00:00`;
+  const tomorrow = new Date(`${today}T00:00:00`);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(
+    tomorrow.getDate()
+  ).padStart(2, "0")} 00:00:00`;
+
+  const assigneeStudentCond = assigneeId
+    ? sql`AND s.assigneeId = ${assigneeId}`
+    : sql``;
+
+  const assigneeConsultCond = assigneeId
+    ? sql`AND c.assigneeId = ${assigneeId}`
+    : sql``;
+
+  const assigneeRefundCond = assigneeId
+    ? sql`AND r.assigneeId = ${assigneeId}`
+    : sql``;
+
+  const [consultRows] = await db.execute(sql`
+    SELECT
+      COALESCE(SUM(CASE WHEN c.consultDate >= ${monthStart} AND c.consultDate < ${monthEnd} THEN 1 ELSE 0 END), 0) as monthConsultationCount,
+      COUNT(*) as totalConsultationCount
+    FROM consultations c
+    WHERE 1=1
+    ${assigneeConsultCond}
+  `);
+
+  const [studentRows] = await db.execute(sql`
+    SELECT
+      COALESCE(SUM(
+        CASE
+          WHEN s.approvalStatus = '승인'
+           AND s.paymentDate >= ${monthStart}
+           AND s.paymentDate < ${monthEnd}
+          THEN 1 ELSE 0
+        END
+      ), 0) as monthRegistered,
+
+      COALESCE(SUM(CASE WHEN s.approvalStatus = '승인' THEN 1 ELSE 0 END), 0) as totalRegisteredCount,
+
+      COALESCE(SUM(
+        CASE
+          WHEN s.approvalStatus = '승인'
+           AND s.approvedAt >= ${monthStart}
+           AND s.approvedAt < ${monthEnd}
+          THEN 1 ELSE 0
+        END
+      ), 0) as monthApprovedCount,
+
+      COALESCE(SUM(
+        CASE
+          WHEN s.approvalStatus = '불승인'
+           AND s.rejectedAt >= ${monthStart}
+           AND s.rejectedAt < ${monthEnd}
+          THEN 1 ELSE 0
+        END
+      ), 0) as monthRejectedCount,
+
+      COALESCE(SUM(CASE WHEN s.approvalStatus = '대기' THEN 1 ELSE 0 END), 0) as monthPendingCount,
+
+      COALESCE(SUM(CASE WHEN s.approvalStatus = '승인' THEN 1 ELSE 0 END), 0) as totalApprovedCount,
+      COALESCE(SUM(CASE WHEN s.approvalStatus = '불승인' THEN 1 ELSE 0 END), 0) as totalRejectedCount,
+      COALESCE(SUM(CASE WHEN s.approvalStatus = '대기' THEN 1 ELSE 0 END), 0) as totalPendingCount
+    FROM students s
+    WHERE 1=1
+    ${assigneeStudentCond}
+  `);
+
+  const [salesRows] = await db.execute(sql`
+    SELECT
+      COALESCE(SUM(
+        CASE
+          WHEN sem.isCompleted = true
+           AND sem.actualPaymentDate >= ${monthStart}
+           AND sem.actualPaymentDate < ${monthEnd}
+          THEN sem.actualAmount ELSE 0
+        END
+      ), 0) as monthSemesterSales,
+
+      COALESCE(SUM(
+        CASE
+          WHEN sem.isCompleted = true
+           AND sem.actualPaymentDate >= ${todayStart}
+           AND sem.actualPaymentDate < ${tomorrowStr}
+          THEN sem.actualAmount ELSE 0
+        END
+      ), 0) as todaySemesterSales,
+
+      COALESCE(SUM(
+        CASE
+          WHEN sem.isCompleted = true
+          THEN sem.actualAmount ELSE 0
+        END
+      ), 0) as totalSemesterSales
+    FROM semesters sem
+    INNER JOIN students s ON s.id = sem.studentId
+    WHERE 1=1
+    ${assigneeStudentCond}
+  `);
+
+  const [refundRows] = await db.execute(sql`
+    SELECT
+      COALESCE(SUM(
+        CASE
+          WHEN r.approvalStatus = '승인'
+           AND r.refundDate >= ${monthStart}
+           AND r.refundDate < ${monthEnd}
+          THEN r.refundAmount ELSE 0
+        END
+      ), 0) as monthRefund,
+
+      COALESCE(SUM(
+        CASE
+          WHEN r.approvalStatus = '승인'
+          THEN r.refundAmount ELSE 0
+        END
+      ), 0) as totalRefund
+    FROM refunds r
+    WHERE 1=1
+    ${assigneeRefundCond}
+  `);
+
+  const consult = (consultRows as any)[0] || {};
+  const student = (studentRows as any)[0] || {};
+  const sales = (salesRows as any)[0] || {};
+  const refund = (refundRows as any)[0] || {};
+
+  const monthConsultationCount = toNumber(consult.monthConsultationCount);
+  const totalConsultationCount = toNumber(consult.totalConsultationCount);
+
+  const monthRegistered = toNumber(student.monthRegistered);
+  const totalRegisteredCount = toNumber(student.totalRegisteredCount);
+  const monthApprovedCount = toNumber(student.monthApprovedCount);
+  const monthRejectedCount = toNumber(student.monthRejectedCount);
+  const monthPendingCount = toNumber(student.monthPendingCount);
+  const totalApprovedCount = toNumber(student.totalApprovedCount);
+  const totalRejectedCount = toNumber(student.totalRejectedCount);
+  const totalPendingCount = toNumber(student.totalPendingCount);
+
+  const todaySemesterSales = toNumber(sales.todaySemesterSales);
+  const monthSemesterSales = toNumber(sales.monthSemesterSales);
+  const totalSemesterSales = toNumber(sales.totalSemesterSales);
+
+  const monthRefund = toNumber(refund.monthRefund);
+  const totalRefund = toNumber(refund.totalRefund);
+
+  const todaySales = todaySemesterSales;
+  const monthSales = monthSemesterSales - monthRefund;
+  const totalSales = totalSemesterSales - totalRefund;
 
   return {
     monthConsultationCount,
     monthRegistered,
-    todaySales: todayFirstSales + todaySemesterSales,
-    monthSales: monthFirstSales + monthSemesterSales,
-    totalSales: totalFirstSales + totalSales,
-    todayFirstSales,
-    monthFirstSales,
+    todaySales,
+    monthSales,
+    totalSales,
+
+    // 기존 UI 호환용
+    todayFirstSales: 0,
+    monthFirstSales: 0,
     todaySemesterSales,
     monthSemesterSales,
+
+    monthRefund,
+    totalRefund,
+    monthApprovedCount,
+    monthRejectedCount,
+    monthPendingCount,
+    totalConsultationCount,
+    totalRegisteredCount,
+    totalApprovedCount,
+    totalRejectedCount,
+    totalPendingCount,
   };
 }
 
 // ─── 이번달 매출 엔트리 ──────────────────────────────────────────────
 export async function getMonthSalesEntries(assigneeId?: number) {
-  const studentRows = await listStudents(assigneeId);
-
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-
-  const toNumber = (v: any) =>
-    Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
-
-  const registered = studentRows
-    .filter(
-      (s: any) =>
-        s.paymentDate &&
-        new Date(s.paymentDate) >= startOfMonth &&
-        new Date(s.paymentDate) < endOfMonth &&
-        toNumber(s.paymentAmount) > 0
-    )
-    .map((s: any) => ({
-      id: s.id,
-      type: "first",
-      clientName: s.clientName,
-      phone: s.phone,
-      course: s.course,
-      amount: toNumber(s.paymentAmount),
-      paymentDate: s.paymentDate,
-      assigneeId: s.assigneeId,
-    }));
-
-  const dbConn = await getDb();
-  let semesterEntries: any[] = [];
-
-  if (dbConn) {
-    const result = await dbConn.execute(sql`
-      SELECT 
-        sem.id,
-        sem.studentId,
-        sem.actualAmount,
-        sem.actualPaymentDate,
-        s.clientName,
-        s.phone,
-        s.course,
-        s.assigneeId
-      FROM semesters sem
-      INNER JOIN students s ON s.id = sem.studentId
-      WHERE sem.isCompleted = true
-        AND sem.actualPaymentDate IS NOT NULL
-    `);
-
-    const rows = (result as any)[0] || [];
-
-    semesterEntries = rows
-      .filter((r: any) => {
-        if (assigneeId && Number(r.assigneeId) !== Number(assigneeId)) return false;
-        const d = new Date(r.actualPaymentDate);
-        return d >= startOfMonth && d < endOfMonth;
-      })
-      .map((r: any) => ({
-        id: r.id,
-        studentId: r.studentId,
-        type: "semester",
-        clientName: r.clientName,
-        phone: r.phone,
-        course: r.course,
-        amount: toNumber(r.actualAmount),
-        paymentDate: r.actualPaymentDate,
-        assigneeId: r.assigneeId,
-      }));
+  const db = await getDb();
+  if (!db) {
+    return {
+      entries: [],
+      totalCount: 0,
+      totalAmount: 0,
+    };
   }
 
-  const entries = [...registered, ...semesterEntries].sort(
+  const { monthStart, monthEnd } = getKSTMonthRange();
+  const assigneeCond = assigneeId ? sql`AND s.assigneeId = ${assigneeId}` : sql``;
+  const refundAssigneeCond = assigneeId ? sql`AND r.assigneeId = ${assigneeId}` : sql``;
+
+  const [salesResult] = await db.execute(sql`
+    SELECT
+      sem.id,
+      sem.studentId,
+      sem.actualAmount,
+      sem.actualPaymentDate,
+      s.clientName,
+      s.phone,
+      s.course,
+      s.assigneeId
+    FROM semesters sem
+    INNER JOIN students s ON s.id = sem.studentId
+    WHERE sem.isCompleted = true
+      AND sem.actualPaymentDate IS NOT NULL
+      AND sem.actualPaymentDate >= ${monthStart}
+      AND sem.actualPaymentDate < ${monthEnd}
+      ${assigneeCond}
+  `);
+
+  const [refundResult] = await db.execute(sql`
+    SELECT
+      r.id,
+      r.studentId,
+      r.refundAmount,
+      r.refundDate,
+      r.reason,
+      r.assigneeId,
+      s.clientName,
+      s.phone,
+      s.course
+    FROM refunds r
+    INNER JOIN students s ON s.id = r.studentId
+    WHERE r.approvalStatus = '승인'
+      AND r.refundDate >= ${monthStart}
+      AND r.refundDate < ${monthEnd}
+      ${refundAssigneeCond}
+  `);
+
+  const salesRows = (salesResult as any)[0] || [];
+  const refundRows = (refundResult as any)[0] || [];
+
+  const salesEntries = salesRows.map((r: any) => ({
+    id: r.id,
+    studentId: r.studentId,
+    type: "semester",
+    clientName: r.clientName,
+    phone: r.phone,
+    course: r.course,
+    amount: toNumber(r.actualAmount),
+    paymentDate: r.actualPaymentDate,
+    assigneeId: r.assigneeId,
+  }));
+
+  const refundEntries = refundRows.map((r: any) => ({
+    id: r.id,
+    studentId: r.studentId,
+    type: "refund",
+    clientName: r.clientName,
+    phone: r.phone,
+    course: r.course,
+    amount: -toNumber(r.refundAmount),
+    paymentDate: r.refundDate,
+    assigneeId: r.assigneeId,
+    reason: r.reason || "",
+  }));
+
+  const entries = [...salesEntries, ...refundEntries].sort(
     (a: any, b: any) =>
       new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime()
   );
@@ -868,6 +1107,7 @@ export async function getStudentPaymentSummary(studentId: number) {
       totalRequired: 0,
       totalPaid: 0,
       totalRefund: 0,
+      netPaid: 0,
       remainingAmount: 0,
     };
   }
@@ -878,12 +1118,10 @@ export async function getStudentPaymentSummary(studentId: number) {
       totalRequired: 0,
       totalPaid: 0,
       totalRefund: 0,
+      netPaid: 0,
       remainingAmount: 0,
     };
   }
-
-  const toNumber = (v: any) =>
-    Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
 
   const [plannedResult] = await db.execute(
     sql`SELECT COALESCE(SUM(plannedAmount), 0) as total FROM semesters WHERE studentId = ${studentId}`
@@ -891,24 +1129,33 @@ export async function getStudentPaymentSummary(studentId: number) {
   const totalRequired = toNumber((plannedResult as any)[0]?.total);
 
   const [paidResult] = await db.execute(
-    sql`SELECT COALESCE(SUM(actualAmount), 0) as total FROM semesters WHERE studentId = ${studentId} AND isCompleted = true`
+    sql`SELECT COALESCE(SUM(actualAmount), 0) as total
+        FROM semesters
+        WHERE studentId = ${studentId}
+          AND isCompleted = true`
   );
   const totalPaid = toNumber((paidResult as any)[0]?.total);
 
   const [refundResult] = await db.execute(
-    sql`SELECT COALESCE(SUM(refundAmount), 0) as total FROM refunds WHERE studentId = ${studentId}`
+    sql`SELECT COALESCE(SUM(refundAmount), 0) as total
+        FROM refunds
+        WHERE studentId = ${studentId}
+          AND approvalStatus = '승인'`
   );
   const totalRefund = toNumber((refundResult as any)[0]?.total);
 
-  const remainingAmount = totalRequired - totalPaid - totalRefund;
+  const netPaid = totalPaid - totalRefund;
+  const remainingAmount = Math.max(totalRequired - netPaid, 0);
 
   return {
     totalRequired,
     totalPaid,
     totalRefund,
+    netPaid,
     remainingAmount,
   };
 }
+
 // ─── Settlement ──────────────────────────────────────────────────────
 export async function getSettlementReport(
   year: number,
@@ -941,22 +1188,6 @@ export async function getSettlementReport(
     )
     .groupBy(students.assigneeId);
 
-  const firstSalesData = await db
-    .select({
-      assigneeId: students.assigneeId,
-      totalSales: sql<string>`COALESCE(SUM(${students.paymentAmount}), 0)`,
-    })
-    .from(students)
-    .where(
-      and(
-        eq(students.approvalStatus, "승인"),
-        sql`${students.paymentDate} >= ${startDate}`,
-        sql`${students.paymentDate} < ${endDate}`,
-        ...(filterAssigneeId ? [eq(students.assigneeId, filterAssigneeId)] : [])
-      )
-    )
-    .groupBy(students.assigneeId);
-
   const refundData = await db
     .select({
       assigneeId: refunds.assigneeId,
@@ -965,6 +1196,7 @@ export async function getSettlementReport(
     .from(refunds)
     .where(
       and(
+        eq(refunds.approvalStatus, "승인"),
         sql`${refunds.refundDate} >= ${startDate}`,
         sql`${refunds.refundDate} < ${endDate}`,
         ...(filterAssigneeId ? [eq(refunds.assigneeId, filterAssigneeId)] : [])
@@ -986,19 +1218,6 @@ export async function getSettlementReport(
   >();
 
   for (const row of salesData) {
-    const aid = row.assigneeId;
-    if (!reportMap.has(aid)) {
-      reportMap.set(aid, {
-        assigneeId: aid,
-        assigneeName: userMap.get(aid) || "이름없음",
-        totalSales: 0,
-        totalRefunds: 0,
-      });
-    }
-    reportMap.get(aid)!.totalSales += Number(row.totalSales);
-  }
-
-  for (const row of firstSalesData) {
     const aid = row.assigneeId;
     if (!reportMap.has(aid)) {
       reportMap.set(aid, {
@@ -1069,6 +1288,7 @@ export async function deletePlanSemester(id: number) {
 
   await db.delete(planSemesters).where(eq(planSemesters.id, id));
 }
+
 export async function syncPlanSemestersByCount(
   studentId: number,
   semesterNo: number,
@@ -1090,7 +1310,6 @@ export async function syncPlanSemestersByCount(
 
   const currentCount = rows.length;
 
-  // 부족하면 자동 생성
   if (currentCount < targetCount) {
     for (let i = currentCount; i < targetCount; i++) {
       await db.insert(planSemesters).values({
@@ -1105,7 +1324,6 @@ export async function syncPlanSemestersByCount(
     }
   }
 
-  // 많으면 뒤에서부터 삭제
   if (currentCount > targetCount) {
     const toDelete = rows.slice(targetCount);
     for (const row of toDelete) {
@@ -1152,6 +1370,7 @@ export async function deleteTransferSubject(id: number) {
 
   await db.delete(transferSubjects).where(eq(transferSubjects.id, id));
 }
+
 export async function bulkCreateTransferSubjects(dataList: InsertTransferSubject[]) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -1181,6 +1400,7 @@ export async function checkAndAutoComplete(studentId: number) {
     status: lastSem?.status === "등록 종료" ? "등록 종료" : "등록",
   } as any);
 }
+
 // ─── 교육원 ──────────────────────────────────────────────────────────
 export async function listEducationInstitutions() {
   const db = await getDb();
@@ -1209,6 +1429,7 @@ export async function createEducationInstitution(data: {
 
   return Number(getInsertId(result));
 }
+
 export async function reassignConsultationAndLinkedStudent(
   consultationId: number,
   assigneeId: number
@@ -1245,7 +1466,6 @@ export async function bulkReassignConsultationsAndLinkedStudents(
     .where(eq(students.assigneeId, fromAssigneeId));
 }
 
-
 export async function updateEducationInstitution(
   id: number,
   data: {
@@ -1263,6 +1483,7 @@ export async function updateEducationInstitution(
     .where(eq(educationInstitutions.id, id));
 }
 
+// ─── Transfer Attachments ────────────────────────────────────────────
 export async function listTransferAttachments(studentId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -1299,6 +1520,7 @@ export async function deleteTransferAttachment(id: number) {
   await db.delete(transferAttachments).where(eq(transferAttachments.id, id));
 }
 
+// ─── Course Templates ────────────────────────────────────────────────
 export async function listCourseSubjectTemplates(courseKey?: string) {
   const db = await getDb();
   if (!db) return [];

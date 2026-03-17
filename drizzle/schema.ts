@@ -10,10 +10,6 @@ import {
   boolean,
   datetime,
   serial,
-transferAttachments,
-InsertTransferAttachment,
-courseSubjectTemplates,
-InsertCourseSubjectTemplate,
 } from "drizzle-orm/mysql-core";
 
 // ─── Lead Forms ──────────────────────────────────────────────────────
@@ -32,7 +28,6 @@ export type SelectLeadForm = typeof leadForms.$inferSelect;
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
 
-  // 화면 표시용 번호
   displayNo: int("displayNo").notNull().default(1),
 
   openId: varchar("openId", { length: 64 }).notNull(),
@@ -91,7 +86,7 @@ export const students = mysqlTable("students", {
   phone: varchar("phone", { length: 30 }).notNull(),
   course: varchar("course", { length: 200 }).notNull(),
 
-    status: mysqlEnum("status", ["등록", "종료", "등록 종료"])
+  status: mysqlEnum("status", ["등록", "종료", "등록 종료"])
     .default("등록")
     .notNull(),
 
@@ -111,8 +106,8 @@ export const students = mysqlTable("students", {
     .default("대기")
     .notNull(),
 
-  approvedAt: datetime("approvedAt").default(null),
-  rejectedAt: datetime("rejectedAt").default(null),
+  approvedAt: datetime("approvedAt"),
+  rejectedAt: datetime("rejectedAt"),
 
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -131,7 +126,6 @@ export const semesters = mysqlTable("semesters", {
     .default("등록")
     .notNull(),
 
-  // 예정 정보
   plannedMonth: varchar("plannedMonth", { length: 20 }),
   plannedInstitution: varchar("plannedInstitution", { length: 200 }),
   plannedInstitutionId: int("plannedInstitutionId"),
@@ -139,7 +133,6 @@ export const semesters = mysqlTable("semesters", {
   plannedAmount: decimal("plannedAmount", { precision: 12, scale: 0 }),
   isLocked: boolean("isLocked").default(false).notNull(),
 
-  // 실제 결제 정보
   actualStartDate: date("actualStartDate"),
   actualInstitution: varchar("actualInstitution", { length: 200 }),
   actualInstitutionId: int("actualInstitutionId"),
@@ -230,12 +223,11 @@ export const transferSubjects = mysqlTable("transfer_subjects", {
   credits: int("credits").notNull(),
   sortOrder: int("sortOrder").notNull().default(0),
 
-attachmentName: varchar("attachmentName", { length: 255 }),
-attachmentUrl: varchar("attachmentUrl", { length: 1000 }),
+  attachmentName: varchar("attachmentName", { length: 255 }),
+  attachmentUrl: varchar("attachmentUrl", { length: 1000 }),
 
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-
 });
 
 export type TransferSubject = typeof transferSubjects.$inferSelect;
@@ -244,13 +236,36 @@ export type InsertTransferSubject = typeof transferSubjects.$inferInsert;
 // ─── Refunds (환불 기록) ─────────────────────────────────────────────
 export const refunds = mysqlTable("refunds", {
   id: int("id").autoincrement().primaryKey(),
+
   studentId: int("studentId").notNull(),
   semesterId: int("semesterId"),
+
   refundAmount: decimal("refundAmount", { precision: 12, scale: 0 }).notNull(),
   refundDate: date("refundDate").notNull(),
   reason: text("reason"),
+
+  refundType: mysqlEnum("refundType", [
+    "부분환불",
+    "전액환불",
+    "환불후재등록",
+    "교육원이동",
+  ]).default("부분환불"),
+
+  approvalStatus: mysqlEnum("approvalStatus", ["대기", "승인", "불승인"])
+    .notNull()
+    .default("대기"),
+
+  approvedAt: datetime("approvedAt"),
+  rejectedAt: datetime("rejectedAt"),
+  approvedBy: int("approvedBy"),
+
+  attachmentName: varchar("attachmentName", { length: 255 }),
+  attachmentUrl: varchar("attachmentUrl", { length: 1000 }),
+
   assigneeId: int("assigneeId").notNull(),
+
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 export type Refund = typeof refunds.$inferSelect;
@@ -286,7 +301,7 @@ export type InsertTransferAttachment = typeof transferAttachments.$inferInsert;
 // ─── Course Subject Templates (과정별 과목 템플릿) ──────────────────
 export const courseSubjectTemplates = mysqlTable("course_subject_templates", {
   id: int("id").autoincrement().primaryKey(),
-  courseKey: varchar("courseKey", { length: 100 }).notNull(), // 사회복지사, 보육교사 등
+  courseKey: varchar("courseKey", { length: 100 }).notNull(),
   subjectName: varchar("subjectName", { length: 255 }).notNull(),
   category: mysqlEnum("category", ["전공", "교양", "일반"]).notNull(),
   requirementType: mysqlEnum("requirementType", [

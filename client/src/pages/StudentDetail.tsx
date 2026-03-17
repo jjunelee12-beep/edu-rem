@@ -300,11 +300,13 @@ export default function StudentDetail() {
     plannedAmount: "",
   });
 
-  const [refundDialogOpen, setRefundDialogOpen] = useState(false);
-  const [refundForm, setRefundForm] = useState({
+    const [refundForm, setRefundForm] = useState({
     refundAmount: "",
     refundDate: new Date().toISOString().slice(0, 10),
     reason: "",
+    refundType: "부분환불",
+    attachmentName: "",
+    attachmentUrl: "",
   });
 
   const [editingRefundId, setEditingRefundId] = useState<number | null>(null);
@@ -312,17 +314,23 @@ export default function StudentDetail() {
     refundAmount: "",
     refundDate: "",
     reason: "",
+    refundType: "부분환불",
+    attachmentName: "",
+    attachmentUrl: "",
   });
 
-  const createRefundMut = trpc.refund.create.useMutation({
+   const createRefundMut = trpc.refund.create.useMutation({
     onSuccess: async () => {
       await utils.refund.listByStudent.invalidate({ studentId });
-      toast.success("환불 등록 완료");
+      toast.success("환불 요청 등록 완료");
       setRefundDialogOpen(false);
       setRefundForm({
         refundAmount: "",
         refundDate: new Date().toISOString().slice(0, 10),
         reason: "",
+        refundType: "부분환불",
+        attachmentName: "",
+        attachmentUrl: "",
       });
     },
     onError: (e) => toast.error(e.message),
@@ -608,7 +616,7 @@ export default function StudentDetail() {
     };
   }, [planTotals, transferTotals]);
 
-  const paymentSummaryCard = useMemo(() => {
+   const paymentSummaryCard = useMemo(() => {
     const totalRequired = (sortedSemesters || []).reduce(
       (sum: number, sem: any) => sum + toNumber(sem.plannedAmount),
       0
@@ -619,17 +627,19 @@ export default function StudentDetail() {
       return sum + toNumber(sem.actualAmount);
     }, 0);
 
-    const totalRefund = (refundList || []).reduce(
-      (sum: number, row: any) => sum + toNumber(row.refundAmount),
-      0
-    );
+    const totalApprovedRefund = (refundList || []).reduce((sum: number, row: any) => {
+      if (row.approvalStatus !== "승인") return sum;
+      return sum + toNumber(row.refundAmount);
+    }, 0);
 
-    const remaining = totalRequired - totalPaid - totalRefund;
+    const netPaid = totalPaid - totalApprovedRefund;
+    const remaining = Math.max(totalRequired - netPaid, 0);
 
     return {
       totalRequired,
       totalPaid,
-      totalRefund,
+      totalApprovedRefund,
+      netPaid,
       remaining,
     };
   }, [sortedSemesters, refundList]);
@@ -1104,11 +1114,11 @@ const templateSelectableCount = 8;
                 {paymentSummaryCard.totalPaid.toLocaleString()}원
               </p>
             </div>
-            <div className="bg-red-50 rounded-lg p-3">
-              <p className="text-xs text-muted-foreground">환불 금액</p>
+                       <div className="bg-red-50 rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">승인 환불 금액</p>
               <p className="text-lg font-bold text-red-600">
-                {paymentSummaryCard.totalRefund > 0
-                  ? `-${paymentSummaryCard.totalRefund.toLocaleString()}원`
+                {paymentSummaryCard.totalApprovedRefund > 0
+                  ? `-${paymentSummaryCard.totalApprovedRefund.toLocaleString()}원`
                   : "0원"}
               </p>
             </div>
@@ -2237,10 +2247,10 @@ const templateSelectableCount = 8;
         </DialogContent>
       </Dialog>
 
-      {isAdmin && refundList && refundList.length > 0 && (
+          {isAdmin && refundList && refundList.length > 0 && (
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base text-red-600">환불 내역</CardTitle>
+            <CardTitle className="text-base text-red-600">환불 요청 / 내역</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -2248,8 +2258,11 @@ const templateSelectableCount = 8;
                 <thead>
                   <tr className="border-b bg-red-50/50">
                     <th className="px-4 py-2 text-left font-medium text-muted-foreground">환불일</th>
+                    <th className="px-4 py-2 text-left font-medium text-muted-foreground">유형</th>
                     <th className="px-4 py-2 text-right font-medium text-muted-foreground">환불 금액</th>
                     <th className="px-4 py-2 text-left font-medium text-muted-foreground">사유</th>
+                    <th className="px-4 py-2 text-center font-medium text-muted-foreground">첨부</th>
+                    <th className="px-4 py-2 text-center font-medium text-muted-foreground">상태</th>
                     <th className="px-4 py-2 text-right font-medium text-muted-foreground w-[100px]">관리</th>
                   </tr>
                 </thead>
@@ -2263,23 +2276,85 @@ const templateSelectableCount = 8;
                               type="date"
                               className="h-8 text-sm"
                               value={editRefundForm.refundDate}
-                              onChange={(e) => setEditRefundForm({ ...editRefundForm, refundDate: e.target.value })}
+                              onChange={(e) =>
+                                setEditRefundForm({ ...editRefundForm, refundDate: e.target.value })
+                              }
                             />
+                          </td>
+                          <td className="px-3 py-1.5">
+                            <select
+                              className="w-full h-8 px-2 text-sm border rounded bg-white"
+                              value={editRefundForm.refundType}
+                              onChange={(e) =>
+                                setEditRefundForm({ ...editRefundForm, refundType: e.target.value })
+                              }
+                            >
+                              <option value="부분환불">부분환불</option>
+                              <option value="전액환불">전액환불</option>
+                              <option value="환불후재등록">환불후재등록</option>
+                              <option value="교육원이동">교육원이동</option>
+                            </select>
                           </td>
                           <td className="px-3 py-1.5">
                             <Input
                               className="h-8 text-sm text-right"
                               value={editRefundForm.refundAmount}
-                              onChange={(e) => setEditRefundForm({ ...editRefundForm, refundAmount: e.target.value.replace(/[^0-9]/g, "") })}
+                              onChange={(e) =>
+                                setEditRefundForm({
+                                  ...editRefundForm,
+                                  refundAmount: e.target.value.replace(/[^0-9]/g, ""),
+                                })
+                              }
                             />
                           </td>
                           <td className="px-3 py-1.5">
                             <Input
                               className="h-8 text-sm"
                               value={editRefundForm.reason}
-                              onChange={(e) => setEditRefundForm({ ...editRefundForm, reason: e.target.value })}
+                              onChange={(e) =>
+                                setEditRefundForm({ ...editRefundForm, reason: e.target.value })
+                              }
                               placeholder="사유"
                             />
+                          </td>
+                          <td className="px-3 py-1.5">
+                            <div className="space-y-1">
+                              <Input
+                                className="h-8 text-sm"
+                                value={editRefundForm.attachmentName}
+                                onChange={(e) =>
+                                  setEditRefundForm({
+                                    ...editRefundForm,
+                                    attachmentName: e.target.value,
+                                  })
+                                }
+                                placeholder="첨부파일명"
+                              />
+                              <Input
+                                className="h-8 text-sm"
+                                value={editRefundForm.attachmentUrl}
+                                onChange={(e) =>
+                                  setEditRefundForm({
+                                    ...editRefundForm,
+                                    attachmentUrl: e.target.value,
+                                  })
+                                }
+                                placeholder="첨부파일 URL"
+                              />
+                            </div>
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            <Badge
+                              className={
+                                r.approvalStatus === "승인"
+                                  ? "bg-emerald-100 text-emerald-700 text-[10px]"
+                                  : r.approvalStatus === "불승인"
+                                  ? "bg-red-100 text-red-700 text-[10px]"
+                                  : "bg-amber-100 text-amber-700 text-[10px]"
+                              }
+                            >
+                              {r.approvalStatus || "대기"}
+                            </Badge>
                           </td>
                           <td className="px-2 py-1.5 text-right">
                             <div className="flex items-center justify-end gap-1">
@@ -2297,13 +2372,21 @@ const templateSelectableCount = 8;
                                     refundAmount: editRefundForm.refundAmount,
                                     refundDate: editRefundForm.refundDate,
                                     reason: editRefundForm.reason || undefined,
-                                  });
+                                    refundType: editRefundForm.refundType || undefined,
+                                    attachmentName: editRefundForm.attachmentName || undefined,
+                                    attachmentUrl: editRefundForm.attachmentUrl || undefined,
+                                  } as any);
                                 }}
                                 disabled={updateRefundMut.isPending}
                               >
                                 <Check className="h-3.5 w-3.5" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingRefundId(null)}>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => setEditingRefundId(null)}
+                              >
                                 <X className="h-3.5 w-3.5" />
                               </Button>
                             </div>
@@ -2312,12 +2395,45 @@ const templateSelectableCount = 8;
                       ) : (
                         <>
                           <td className="px-4 py-2 text-sm">
-                            {r.refundDate ? (typeof r.refundDate === "string" ? r.refundDate.slice(0, 10) : new Date(r.refundDate).toISOString().slice(0, 10)) : "-"}
+                            {r.refundDate
+                              ? typeof r.refundDate === "string"
+                                ? r.refundDate.slice(0, 10)
+                                : new Date(r.refundDate).toISOString().slice(0, 10)
+                              : "-"}
                           </td>
+                          <td className="px-4 py-2 text-sm">{r.refundType || "-"}</td>
                           <td className="px-4 py-2 text-right text-red-600 font-medium">
                             -{Number(r.refundAmount).toLocaleString()}원
                           </td>
                           <td className="px-4 py-2 text-sm text-muted-foreground">{r.reason || "-"}</td>
+                          <td className="px-4 py-2 text-center">
+                            {r.attachmentUrl ? (
+                              <a
+                                href={r.attachmentUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-blue-600 underline"
+                              >
+                                <Paperclip className="h-3.5 w-3.5" />
+                                {r.attachmentName || "첨부파일"}
+                              </a>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            <Badge
+                              className={
+                                r.approvalStatus === "승인"
+                                  ? "bg-emerald-100 text-emerald-700 text-[10px]"
+                                  : r.approvalStatus === "불승인"
+                                  ? "bg-red-100 text-red-700 text-[10px]"
+                                  : "bg-amber-100 text-amber-700 text-[10px]"
+                              }
+                            >
+                              {r.approvalStatus || "대기"}
+                            </Badge>
+                          </td>
                           <td className="px-2 py-2 text-right">
                             <div className="flex items-center justify-end gap-0.5">
                               <Button
@@ -2329,8 +2445,15 @@ const templateSelectableCount = 8;
                                   setEditingRefundId(r.id);
                                   setEditRefundForm({
                                     refundAmount: r.refundAmount?.toString() || "",
-                                    refundDate: r.refundDate ? (typeof r.refundDate === "string" ? r.refundDate.slice(0, 10) : new Date(r.refundDate).toISOString().slice(0, 10)) : "",
+                                    refundDate: r.refundDate
+                                      ? typeof r.refundDate === "string"
+                                        ? r.refundDate.slice(0, 10)
+                                        : new Date(r.refundDate).toISOString().slice(0, 10)
+                                      : "",
                                     reason: r.reason || "",
+                                    refundType: r.refundType || "부분환불",
+                                    attachmentName: r.attachmentName || "",
+                                    attachmentUrl: r.attachmentUrl || "",
                                   });
                                 }}
                               >
@@ -2342,7 +2465,9 @@ const templateSelectableCount = 8;
                                 className="h-7 w-7 text-destructive hover:text-destructive"
                                 title="삭제"
                                 onClick={() => {
-                                  if (confirm("환불 내역을 삭제하시겠습니까?")) deleteRefundMut.mutate({ id: r.id });
+                                  if (confirm("환불 요청을 삭제하시겠습니까?")) {
+                                    deleteRefundMut.mutate({ id: r.id });
+                                  }
                                 }}
                               >
                                 <Trash2 className="h-3 w-3" />
@@ -2360,10 +2485,10 @@ const templateSelectableCount = 8;
         </Card>
       )}
 
-      {!isAdmin && refundList && refundList.length > 0 && (
+            {!isAdmin && refundList && refundList.length > 0 && (
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base text-red-600">환불 내역</CardTitle>
+            <CardTitle className="text-base text-red-600">환불 요청 / 내역</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -2371,20 +2496,56 @@ const templateSelectableCount = 8;
                 <thead>
                   <tr className="border-b bg-red-50/50">
                     <th className="px-4 py-2 text-left font-medium text-muted-foreground">환불일</th>
+                    <th className="px-4 py-2 text-left font-medium text-muted-foreground">유형</th>
                     <th className="px-4 py-2 text-right font-medium text-muted-foreground">환불 금액</th>
                     <th className="px-4 py-2 text-left font-medium text-muted-foreground">사유</th>
+                    <th className="px-4 py-2 text-center font-medium text-muted-foreground">첨부</th>
+                    <th className="px-4 py-2 text-center font-medium text-muted-foreground">상태</th>
                   </tr>
                 </thead>
                 <tbody>
                   {refundList.map((r: any) => (
                     <tr key={r.id} className="border-b last:border-0">
                       <td className="px-4 py-2 text-sm">
-                        {r.refundDate ? (typeof r.refundDate === "string" ? r.refundDate.slice(0, 10) : new Date(r.refundDate).toISOString().slice(0, 10)) : "-"}
+                        {r.refundDate
+                          ? typeof r.refundDate === "string"
+                            ? r.refundDate.slice(0, 10)
+                            : new Date(r.refundDate).toISOString().slice(0, 10)
+                          : "-"}
                       </td>
+                      <td className="px-4 py-2 text-sm">{r.refundType || "-"}</td>
                       <td className="px-4 py-2 text-right text-red-600 font-medium">
                         -{Number(r.refundAmount).toLocaleString()}원
                       </td>
                       <td className="px-4 py-2 text-sm text-muted-foreground">{r.reason || "-"}</td>
+                      <td className="px-4 py-2 text-center">
+                        {r.attachmentUrl ? (
+                          <a
+                            href={r.attachmentUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-blue-600 underline"
+                          >
+                            <Paperclip className="h-3.5 w-3.5" />
+                            {r.attachmentName || "첨부파일"}
+                          </a>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-center">
+                        <Badge
+                          className={
+                            r.approvalStatus === "승인"
+                              ? "bg-emerald-100 text-emerald-700 text-[10px]"
+                              : r.approvalStatus === "불승인"
+                              ? "bg-red-100 text-red-700 text-[10px]"
+                              : "bg-amber-100 text-amber-700 text-[10px]"
+                          }
+                        >
+                          {r.approvalStatus || "대기"}
+                        </Badge>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -2394,38 +2555,97 @@ const templateSelectableCount = 8;
         </Card>
       )}
 
-      <Dialog open={refundDialogOpen} onOpenChange={setRefundDialogOpen}>
+           <Dialog open={refundDialogOpen} onOpenChange={setRefundDialogOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>환불 등록</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>환불 요청 등록</DialogTitle>
+          </DialogHeader>
+
           <div className="grid gap-4 py-2">
+            <div className="space-y-1">
+              <Label className="text-xs">환불 유형</Label>
+              <select
+                className="w-full h-9 px-3 text-sm border rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+                value={refundForm.refundType}
+                onChange={(e) =>
+                  setRefundForm({ ...refundForm, refundType: e.target.value })
+                }
+              >
+                <option value="부분환불">부분환불</option>
+                <option value="전액환불">전액환불</option>
+                <option value="환불후재등록">환불후재등록</option>
+                <option value="교육원이동">교육원이동</option>
+              </select>
+            </div>
+
             <div className="space-y-1">
               <Label className="text-xs">환불 금액</Label>
               <Input
                 value={refundForm.refundAmount}
-                onChange={(e) => setRefundForm({ ...refundForm, refundAmount: e.target.value })}
+                onChange={(e) =>
+                  setRefundForm({
+                    ...refundForm,
+                    refundAmount: e.target.value.replace(/[^0-9]/g, ""),
+                  })
+                }
                 placeholder="예: 300000"
               />
             </div>
+
             <div className="space-y-1">
               <Label className="text-xs">환불 일자</Label>
               <Input
                 type="date"
                 value={refundForm.refundDate}
-                onChange={(e) => setRefundForm({ ...refundForm, refundDate: e.target.value })}
+                onChange={(e) =>
+                  setRefundForm({ ...refundForm, refundDate: e.target.value })
+                }
               />
             </div>
+
             <div className="space-y-1">
               <Label className="text-xs">사유</Label>
               <Textarea
                 value={refundForm.reason}
-                onChange={(e) => setRefundForm({ ...refundForm, reason: e.target.value })}
+                onChange={(e) =>
+                  setRefundForm({ ...refundForm, reason: e.target.value })
+                }
                 rows={2}
                 placeholder="환불 사유"
               />
             </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">첨부파일명</Label>
+              <Input
+                value={refundForm.attachmentName}
+                onChange={(e) =>
+                  setRefundForm({ ...refundForm, attachmentName: e.target.value })
+                }
+                placeholder="예: 환불신청서"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">첨부파일 URL</Label>
+              <Input
+                value={refundForm.attachmentUrl}
+                onChange={(e) =>
+                  setRefundForm({ ...refundForm, attachmentUrl: e.target.value })
+                }
+                placeholder="첨부파일 URL"
+              />
+            </div>
+
+            <div className="rounded-lg border bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              등록 시 바로 차감되지 않고, 관리자 승인 후 환불 금액이 반영됩니다.
+            </div>
           </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRefundDialogOpen(false)}>취소</Button>
+            <Button variant="outline" onClick={() => setRefundDialogOpen(false)}>
+              취소
+            </Button>
             <Button
               variant="destructive"
               onClick={() => {
@@ -2433,16 +2653,20 @@ const templateSelectableCount = 8;
                   toast.error("환불 금액을 입력하세요");
                   return;
                 }
+
                 createRefundMut.mutate({
                   studentId,
                   refundAmount: refundForm.refundAmount,
                   refundDate: refundForm.refundDate,
                   reason: refundForm.reason || undefined,
-                });
+                  refundType: refundForm.refundType || undefined,
+                  attachmentName: refundForm.attachmentName || undefined,
+                  attachmentUrl: refundForm.attachmentUrl || undefined,
+                } as any);
               }}
               disabled={createRefundMut.isPending}
             >
-              환불 등록
+              환불 요청 등록
             </Button>
           </DialogFooter>
         </DialogContent>

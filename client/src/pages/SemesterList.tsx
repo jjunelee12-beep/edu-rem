@@ -15,16 +15,6 @@ function formatCurrency(amount: number | string | null | undefined) {
   return new Intl.NumberFormat("ko-KR").format(n) + "원";
 }
 
-function formatDate(d: any) {
-  if (!d) return "-";
-  const date = typeof d === "string" ? new Date(d) : d;
-  if (isNaN(date.getTime())) return "-";
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
-    date.getDate()
-  ).padStart(2, "0")}`;
-}
-
-// 예정개강월 옵션 생성 (현재 -6개월 ~ +12개월)
 function getMonthOptions() {
   const options: string[] = [];
   const now = new Date();
@@ -37,60 +27,71 @@ function getMonthOptions() {
 
   return options;
 }
+
 function getCurrentMonthKey() {
   const now = new Date();
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`; // 예: 2026-03
+  return `${y}-${m}`;
 }
+
 export default function SemesterList() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
 
-const [plannedMonth, setPlannedMonth] = useState(getCurrentMonthKey());
+  const [plannedMonth, setPlannedMonth] = useState(getCurrentMonthKey());
   const [searchTerm, setSearchTerm] = useState("");
   const [assigneeSearch, setAssigneeSearch] = useState("");
-const [filterUnassignedPractice, setFilterUnassignedPractice] = useState(false);
-const [filterPaymentPlanned, setFilterPaymentPlanned] = useState(false);
+  const [filterUnassignedPractice, setFilterUnassignedPractice] = useState(false);
+  const [filterPaymentPlanned, setFilterPaymentPlanned] = useState(false);
+
   const { data: allUsers } = trpc.users.list.useQuery();
   const { data: semesters, isLoading } = trpc.semester.listAll.useQuery({
     plannedMonth: plannedMonth || undefined,
   });
 
   const isAdmin = user?.role === "admin" || user?.role === "host";
+
   const userMap = useMemo(
     () => new Map(allUsers?.map((u: any) => [u.id, u.name || "이름없음"]) ?? []),
     [allUsers]
   );
+
   const monthOptions = useMemo(() => getMonthOptions(), []);
 
   const filtered = useMemo(() => {
-  const rows = semesters ? [...semesters] : [];
+    const rows = semesters ? [...semesters] : [];
+    const term = searchTerm.trim().toLowerCase();
+    const assigneeTerm = assigneeSearch.trim().toLowerCase();
 
-  const term = searchTerm.trim().toLowerCase();
-  const assigneeTerm = assigneeSearch.trim().toLowerCase();
+    return rows.filter((s: any) => {
+      if (filterUnassignedPractice && s.practiceStatus !== "미섭외") return false;
 
-  return rows.filter((s: any) => {
-  if (filterUnassignedPractice && s.practiceStatus !== "미섭외") return false;
+      // 결제 예정만 = 아직 결제중/결제완료가 아닌 건
+      if (filterPaymentPlanned && (s.isCompleted || s.actualPaymentDate)) return false;
 
-  if (filterPaymentPlanned && (s.isCompleted || s.actualPaymentDate)) return false;
+      const assigneeName = (userMap.get(s.assigneeId) || "").toLowerCase();
 
-  const assigneeName = (userMap.get(s.assigneeId) || "").toLowerCase();
+      const matchesSearch =
+        !term ||
+        s.clientName?.toLowerCase().includes(term) ||
+        s.phone?.includes(term) ||
+        s.course?.toLowerCase().includes(term) ||
+        s.plannedInstitution?.toLowerCase().includes(term) ||
+        s.actualInstitution?.toLowerCase().includes(term);
 
-  const matchesSearch =
-    !term ||
-    s.clientName?.toLowerCase().includes(term) ||
-    s.phone?.includes(term) ||
-    s.course?.toLowerCase().includes(term) ||
-    s.plannedInstitution?.toLowerCase().includes(term) ||
-    s.actualInstitution?.toLowerCase().includes(term);
+      const matchesAssignee = !assigneeTerm || assigneeName.includes(assigneeTerm);
 
-  const matchesAssignee =
-    !assigneeTerm || assigneeName.includes(assigneeTerm);
-
-  return matchesSearch && matchesAssignee;
-});
-}, [semesters, searchTerm, assigneeSearch, filterUnassignedPractice, filterPaymentPlanned, userMap]);
+      return matchesSearch && matchesAssignee;
+    });
+  }, [
+    semesters,
+    searchTerm,
+    assigneeSearch,
+    filterUnassignedPractice,
+    filterPaymentPlanned,
+    userMap,
+  ]);
 
   const statusBadge = (sem: any) => {
     if (sem.isCompleted) {
@@ -102,21 +103,43 @@ const [filterPaymentPlanned, setFilterPaymentPlanned] = useState(false);
     return <Badge className="bg-amber-100 text-amber-700 text-[10px]">예정</Badge>;
   };
 
-  const totalPlanned = filtered.reduce(
-    (sum: number, s: any) => sum + Number(s.plannedAmount || 0),
-    0
-  );
-  const totalActual = filtered.reduce(
-    (sum: number, s: any) => sum + (s.isCompleted ? Number(s.actualAmount || 0) : 0),
-    0
-  );
+  const totalPlanned = useMemo(() => {
+    return filtered.reduce((sum: number, s: any) => sum + Number(s.plannedAmount || 0), 0);
+  }, [filtered]);
+
+  const totalCompleted = useMemo(() => {
+    return filtered.reduce(
+      (sum: number, s: any) => sum + (s.isCompleted ? Number(s.actualAmount || 0) : 0),
+      0
+    );
+  }, [filtered]);
+
+  // approvedRefundAmount는 학생 기준으로 반복될 수 있으니 studentId 기준 1번만 합산
+  const totalApprovedRefund = useMemo(() => {
+    const refundMap = new Map<number, number>();
+
+    filtered.forEach((s: any) => {
+      const studentId = Number(s.studentId);
+      const refundAmount = Number(s.approvedRefundAmount || 0);
+
+      if (!refundMap.has(studentId)) {
+        refundMap.set(studentId, refundAmount);
+      }
+    });
+
+    return Array.from(refundMap.values()).reduce((sum, v) => sum + v, 0);
+  }, [filtered]);
+
+  const totalNetPaid = useMemo(() => {
+    return Math.max(totalCompleted - totalApprovedRefund, 0);
+  }, [totalCompleted, totalApprovedRefund]);
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">학기별 예정표</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          전체 학기 예정/결제 리스트입니다. 예정개강월로 필터하여 2~3달 전부터 결제 안내 대상자를 확인하세요.
+          전체 학기 예정/결제 리스트입니다. 예정개강월로 필터하여 결제 안내 대상자와 실습 미섭외 대상을 확인하세요.
         </p>
       </div>
 
@@ -156,26 +179,28 @@ const [filterPaymentPlanned, setFilterPaymentPlanned] = useState(false);
           />
         )}
       </div>
-<div className="flex items-center gap-4 flex-wrap">
-  <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-    <input
-      type="checkbox"
-      checked={filterUnassignedPractice}
-      onChange={(e) => setFilterUnassignedPractice(e.target.checked)}
-    />
-    미실습 섭외만
-  </label>
 
-  <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-    <input
-      type="checkbox"
-      checked={filterPaymentPlanned}
-      onChange={(e) => setFilterPaymentPlanned(e.target.checked)}
-    />
-    결제 예정만
-  </label>
-</div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="flex items-center gap-4 flex-wrap">
+        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={filterUnassignedPractice}
+            onChange={(e) => setFilterUnassignedPractice(e.target.checked)}
+          />
+          미실습 섭외만
+        </label>
+
+        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={filterPaymentPlanned}
+            onChange={(e) => setFilterPaymentPlanned(e.target.checked)}
+          />
+          결제 예정만
+        </label>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <Card className="border-0 shadow-sm">
           <CardContent className="pt-4 pb-3 px-4">
             <p className="text-xs text-muted-foreground">총 건수</p>
@@ -195,8 +220,19 @@ const [filterPaymentPlanned, setFilterPaymentPlanned] = useState(false);
 
         <Card className="border-0 shadow-sm">
           <CardContent className="pt-4 pb-3 px-4">
-            <p className="text-xs text-muted-foreground">결제완료 합계</p>
-            <p className="text-xl font-bold text-emerald-600">{formatCurrency(totalActual)}</p>
+            <p className="text-xs text-muted-foreground">승인 환불 합계</p>
+            <p className="text-xl font-bold text-red-600">
+              {totalApprovedRefund > 0 ? `-${formatCurrency(totalApprovedRefund)}` : "-"}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-sm">
+          <CardContent className="pt-4 pb-3 px-4">
+            <p className="text-xs text-muted-foreground">실수납 합계</p>
+            <p className="text-xl font-bold text-emerald-600">
+              {formatCurrency(totalNetPaid)}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -230,7 +266,7 @@ const [filterPaymentPlanned, setFilterPaymentPlanned] = useState(false);
                     담당자
                   </th>
                 )}
-                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[90px]">
+                <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[100px]">
                   교육원(예정)
                 </th>
                 <th className="text-right px-3 py-2.5 font-medium text-muted-foreground w-[100px]">
@@ -278,27 +314,29 @@ const [filterPaymentPlanned, setFilterPaymentPlanned] = useState(false);
                   <td className="px-3 py-2 text-right font-medium text-sm">
                     {formatCurrency(sem.plannedAmount)}
                   </td>
-                  <td className="px-2 py-2 text-center text-sm">{sem.plannedSubjectCount || "-"}</td>
+                  <td className="px-2 py-2 text-center text-sm">
+                    {sem.plannedSubjectCount || "-"}
+                  </td>
 
-                 <td className="px-3 py-2 text-center">
-  {sem.hasPractice ? (
-    sem.practiceStatus === "섭외완료" ? (
-      <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">
-        섭외완료
-      </Badge>
-    ) : sem.practiceStatus === "섭외중" ? (
-      <Badge className="bg-blue-100 text-blue-700 text-[10px]">
-        섭외중
-      </Badge>
-    ) : (
-      <Badge className="bg-red-100 text-red-700 text-[10px]">
-        미섭외
-      </Badge>
-    )
-  ) : (
-    <span className="text-xs text-muted-foreground">-</span>
-  )}
-</td>
+                  <td className="px-3 py-2 text-center">
+                    {sem.hasPractice ? (
+                      sem.practiceStatus === "섭외완료" ? (
+                        <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">
+                          섭외완료
+                        </Badge>
+                      ) : sem.practiceStatus === "섭외중" ? (
+                        <Badge className="bg-blue-100 text-blue-700 text-[10px]">
+                          섭외중
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-red-100 text-red-700 text-[10px]">
+                          미섭외
+                        </Badge>
+                      )
+                    ) : (
+                      <span className="text-xs text-muted-foreground">-</span>
+                    )}
+                  </td>
 
                   <td className="px-3 py-2 text-center">{statusBadge(sem)}</td>
 
@@ -325,8 +363,8 @@ const [filterPaymentPlanned, setFilterPaymentPlanned] = useState(false);
                     className="text-center py-8 text-muted-foreground text-sm"
                   >
                     {plannedMonth
-  ? `${plannedMonth} 조건에 맞는 예정 학기가 없습니다.`
-  : "조건에 맞는 학기 데이터가 없습니다."}
+                      ? `${plannedMonth} 조건에 맞는 예정 학기가 없습니다.`
+                      : "조건에 맞는 학기 데이터가 없습니다."}
                   </td>
                 </tr>
               )}
