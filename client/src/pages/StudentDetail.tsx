@@ -124,6 +124,14 @@ function normalizePlannedMonthToDate(plannedMonth?: string | null) {
   return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-01`;
 }
 
+function formatPlannedMonth(plannedMonth?: string | null) {
+  const raw = String(plannedMonth || "").trim().replace(/[^0-9]/g, "");
+  if (raw.length !== 6) return "";
+  return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-01`;
+}
+
+type TemplateTabType = "전공필수" | "전공선택" | "교양" | "일반";
+
 export default function StudentDetail() {
   const params = useParams<{ id: string }>();
   const studentId = parseInt(params.id || "0");
@@ -149,9 +157,12 @@ export default function StudentDetail() {
 
   const [selectedSemesterOrder, setSelectedSemesterOrder] = useState(1);
   const [transferAddCount, setTransferAddCount] = useState("1");
-  const [selectedCourseKeys, setSelectedCourseKeys] = useState<string[]>([]);
+
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [templateDialogSemesterNo, setTemplateDialogSemesterNo] = useState<number | null>(null);
+  const [templateCourseKey, setTemplateCourseKey] = useState<string>("사회복지사");
+  const [templateTab, setTemplateTab] = useState<TemplateTabType>("전공필수");
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState<number[]>([]);
 
   const updateStudentMut = trpc.student.update.useMutation({
     onSuccess: async () => {
@@ -343,9 +354,7 @@ export default function StudentDetail() {
   }, [semesters]);
 
   const semesterMetaMap = useMemo(() => {
-    return new Map(
-      sortedSemesters.map((sem: any) => [Number(sem.semesterOrder), sem])
-    );
+    return new Map(sortedSemesters.map((sem: any) => [Number(sem.semesterOrder), sem]));
   }, [sortedSemesters]);
 
   const groupedPlanSemesters = useMemo(() => {
@@ -404,6 +413,31 @@ export default function StudentDetail() {
     const el = planSectionRefs.current[semesterNo];
     if (!el) return;
     el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const getInstitutionName = (institutionId: any) => {
+    if (!institutionId) return "";
+    return (
+      institutionList?.find((inst: any) => Number(inst.id) === Number(institutionId))?.name || ""
+    );
+  };
+
+  const getSemesterTitle = (semMeta: any, semesterNo: number) => {
+    const dateText =
+      semMeta?.actualStartDate
+        ? formatDate(semMeta.actualStartDate)
+        : semMeta?.plannedMonth
+        ? formatPlannedMonth(semMeta.plannedMonth)
+        : "";
+
+    const instText =
+      semMeta?.actualInstitution ||
+      getInstitutionName(semMeta?.actualInstitutionId) ||
+      semMeta?.plannedInstitution ||
+      getInstitutionName(semMeta?.plannedInstitutionId) ||
+      "";
+
+    return `${semesterNo}학기${dateText ? ` (${dateText})` : ""}${instText ? ` (${instText})` : ""}`;
   };
 
   const handleSemFieldBlur = async (semId: number, field: string, value: string) => {
@@ -611,9 +645,7 @@ export default function StudentDetail() {
       paymentDate: sem?.actualPaymentDate || "",
       institution:
         sem?.actualInstitution ||
-        (sem?.actualInstitutionId
-          ? institutionList?.find((inst: any) => Number(inst.id) === Number(sem.actualInstitutionId))?.name || ""
-          : ""),
+        (sem?.actualInstitutionId ? getInstitutionName(sem.actualInstitutionId) : ""),
     };
   }, [selectedSemester, student, institutionList]);
 
@@ -622,7 +654,9 @@ export default function StudentDetail() {
   }, [selectedSemester]);
 
   const handleAddPlanSubject = (semesterNo: number) => {
-    const current = (planSemesterList || []).filter((x: any) => Number(x.semesterNo) === Number(semesterNo));
+    const current = (planSemesterList || []).filter(
+      (x: any) => Number(x.semesterNo) === Number(semesterNo)
+    );
     if (current.length >= 8) {
       toast.error("우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다.");
       return;
@@ -797,6 +831,75 @@ export default function StudentDetail() {
       : (idx + 1) % values.length;
 
     onChange(values[nextIdx]);
+  };
+
+  const courseKeyOptions = useMemo(() => {
+    const dbKeys = Array.from(
+      new Set(
+        (courseTemplateList || [])
+          .map((x: any) => String(x.courseKey || "").trim())
+          .filter(Boolean)
+      )
+    );
+
+    if (dbKeys.length > 0) return dbKeys;
+
+    return ["사회복지사", "보육교사", "청소년지도사", "한국어교원", "아동학사", "건강가정사"];
+  }, [courseTemplateList]);
+
+  useEffect(() => {
+    if (!courseKeyOptions.length) return;
+    if (!courseKeyOptions.includes(templateCourseKey)) {
+      setTemplateCourseKey(courseKeyOptions[0]);
+    }
+  }, [courseKeyOptions, templateCourseKey]);
+
+  const currentSemesterPlanCount = useMemo(() => {
+    if (!templateDialogSemesterNo) return 0;
+    return (planSemesterList || []).filter(
+      (row: any) => Number(row.semesterNo) === Number(templateDialogSemesterNo)
+    ).length;
+  }, [planSemesterList, templateDialogSemesterNo]);
+
+  const templateSelectableCount = Math.max(0, 8 - currentSemesterPlanCount);
+
+  const filteredTemplateList = useMemo(() => {
+    return (courseTemplateList || [])
+      .filter((row: any) => String(row.courseKey || "").trim() === String(templateCourseKey || "").trim())
+      .filter((row: any) => String(row.requirementType || "").trim() === String(templateTab || "").trim())
+      .sort((a: any, b: any) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+  }, [courseTemplateList, templateCourseKey, templateTab]);
+
+  const selectedTemplateRows = useMemo(() => {
+    const idSet = new Set(selectedTemplateIds.map((x) => Number(x)));
+    return (courseTemplateList || []).filter((row: any) => idSet.has(Number(row.id)));
+  }, [courseTemplateList, selectedTemplateIds]);
+
+  const toggleTemplateSubject = (id: number) => {
+    const numericId = Number(id);
+    const already = selectedTemplateIds.includes(numericId);
+
+    if (already) {
+      setSelectedTemplateIds((prev) => prev.filter((x) => x !== numericId));
+      return;
+    }
+
+    if (selectedTemplateIds.length >= templateSelectableCount) {
+      toast.error(`이 학기는 최대 8과목까지 등록 가능합니다. 현재 추가 가능 과목 수: ${templateSelectableCount}개`);
+      return;
+    }
+
+    setSelectedTemplateIds((prev) => [...prev, numericId]);
+  };
+
+  const openTemplateDialog = (semesterNo: number) => {
+    setTemplateDialogSemesterNo(semesterNo);
+    setTemplateDialogOpen(true);
+    setSelectedTemplateIds([]);
+    setTemplateTab("전공필수");
+    if (courseKeyOptions.length > 0) {
+      setTemplateCourseKey(courseKeyOptions[0]);
+    }
   };
 
   if (studentLoading) {
@@ -1396,24 +1499,6 @@ export default function StudentDetail() {
               groupedPlanSemesters.map((group) => {
                 const semMeta = semesterMetaMap.get(group.semesterNo);
 
-                const semTitleDate =
-                  semMeta?.actualStartDate ? formatDate(semMeta.actualStartDate) : "";
-
-                const semTitleInstitution =
-                  semMeta?.actualInstitution ||
-                  (semMeta?.actualInstitutionId
-                    ? institutionList?.find(
-                        (inst: any) => Number(inst.id) === Number(semMeta.actualInstitutionId)
-                      )?.name || ""
-                    : "") ||
-                  semMeta?.plannedInstitution ||
-                  (semMeta?.plannedInstitutionId
-                    ? institutionList?.find(
-                        (inst: any) => Number(inst.id) === Number(semMeta.plannedInstitutionId)
-                      )?.name || ""
-                    : "") ||
-                  "";
-
                 return (
                   <div
                     key={group.semesterNo}
@@ -1423,25 +1508,9 @@ export default function StudentDetail() {
                     className="border rounded-lg overflow-hidden"
                   >
                     <div className="flex items-center justify-between px-4 py-3 bg-muted/40 border-b">
-                      <div className="font-medium">
-                        {group.semesterNo}학기
-                        {semTitleDate ? ` (${semTitleDate})` : ""}
-                        {semTitleInstitution ? ` (${semTitleInstitution})` : ""}
-                      </div>
+                      <div className="font-medium">{getSemesterTitle(semMeta, group.semesterNo)}</div>
 
                       <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setTemplateDialogSemesterNo(group.semesterNo);
-                            setSelectedCourseKeys([]);
-                            setTemplateDialogOpen(true);
-                          }}
-                        >
-                          일괄 등록
-                        </Button>
-
                         <Button
                           size="sm"
                           variant="outline"
@@ -1449,6 +1518,15 @@ export default function StudentDetail() {
                           disabled={group.rows.length >= 8}
                         >
                           과목 추가
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openTemplateDialog(group.semesterNo)}
+                          disabled={group.rows.length >= 8}
+                        >
+                          일괄 등록
                         </Button>
                       </div>
                     </div>
@@ -1606,6 +1684,14 @@ export default function StudentDetail() {
               </div>
 
               <div className="flex items-center gap-2 flex-wrap justify-end">
+                <Input
+                  className="h-8 w-20"
+                  value={transferAddCount}
+                  onChange={(e) => setTransferAddCount(e.target.value.replace(/[^0-9]/g, ""))}
+                />
+                <Button size="sm" variant="outline" onClick={handleAddTransferSubjects}>
+                  일괄 추가
+                </Button>
                 <Button
                   size="sm"
                   variant="outline"
@@ -1624,15 +1710,6 @@ export default function StudentDetail() {
                   }}
                 >
                   첨부 추가
-                </Button>
-
-                <Input
-                  className="h-8 w-20"
-                  value={transferAddCount}
-                  onChange={(e) => setTransferAddCount(e.target.value.replace(/[^0-9]/g, ""))}
-                />
-                <Button size="sm" variant="outline" onClick={handleAddTransferSubjects}>
-                  일괄 추가
                 </Button>
               </div>
             </div>
@@ -1922,7 +1999,7 @@ export default function StudentDetail() {
       </Card>
 
       <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>
               {templateDialogSemesterNo ? `${templateDialogSemesterNo}학기 일괄 등록` : "일괄 등록"}
@@ -1930,41 +2007,125 @@ export default function StudentDetail() {
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            <div className="text-sm text-muted-foreground">
-              선택한 과정의 템플릿 과목을 해당 학기에 추가합니다.
-            </div>
+            <div className="grid md:grid-cols-[180px_1fr] gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm">과정 선택</Label>
+                <Select
+                  value={templateCourseKey}
+                  onValueChange={(v) => {
+                    setTemplateCourseKey(v);
+                    setSelectedTemplateIds([]);
+                    setTemplateTab("전공필수");
+                  }}
+                >
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue placeholder="과정 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {courseKeyOptions.map((key) => (
+                      <SelectItem key={key} value={key}>
+                        {key}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-            <div className="flex flex-wrap gap-4">
-              {["사회복지사", "보육교사", "청소년지도사", "한국어교원", "아동학사", "건강가정사"].map((key) => (
-                <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
-                  <Checkbox
-                    checked={selectedCourseKeys.includes(key)}
-                    onCheckedChange={(checked) => {
-                      setSelectedCourseKeys((prev) =>
-                        checked ? [...prev, key] : prev.filter((x) => x !== key)
-                      );
-                    }}
-                  />
-                  <span>{key}</span>
-                </label>
-              ))}
-            </div>
-
-            {!!selectedCourseKeys.length && (
-              <div className="text-xs text-muted-foreground">
-                선택됨: {selectedCourseKeys.join(", ")}
+                <div className="rounded-lg border bg-muted/30 p-3 text-xs space-y-1">
+                  <div>현재 학기 등록 과목: <span className="font-medium">{currentSemesterPlanCount}</span>개</div>
+                  <div>추가 가능 과목: <span className="font-medium">{templateSelectableCount}</span>개</div>
+                  <div>선택 과목: <span className="font-medium">{selectedTemplateIds.length}</span>개</div>
+                </div>
               </div>
-            )}
 
-            {!!courseTemplateList?.length && (
-              <div className="text-xs text-muted-foreground">
-                등록된 템플릿 수: {courseTemplateList.length}개
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  {(["전공필수", "전공선택", "교양", "일반"] as TemplateTabType[]).map((tab) => (
+                    <Button
+                      key={tab}
+                      type="button"
+                      size="sm"
+                      variant={templateTab === tab ? "default" : "outline"}
+                      onClick={() => setTemplateTab(tab)}
+                    >
+                      {tab}
+                    </Button>
+                  ))}
+                </div>
+
+                <div className="border rounded-lg overflow-hidden">
+                  <div className="max-h-[360px] overflow-y-auto">
+                    {!courseTemplateList || courseTemplateList.length === 0 ? (
+                      <div className="p-6 text-sm text-center text-muted-foreground">
+                        등록된 템플릿 데이터가 없습니다.
+                      </div>
+                    ) : filteredTemplateList.length === 0 ? (
+                      <div className="p-6 text-sm text-center text-muted-foreground">
+                        선택한 과정 / 구분의 템플릿 과목이 없습니다.
+                      </div>
+                    ) : (
+                      <div className="divide-y">
+                        {filteredTemplateList.map((row: any) => {
+                          const checked = selectedTemplateIds.includes(Number(row.id));
+                          const disabled =
+                            !checked && selectedTemplateIds.length >= templateSelectableCount;
+
+                          return (
+                            <label
+                              key={row.id}
+                              className={`flex items-center gap-3 px-4 py-3 text-sm cursor-pointer ${
+                                disabled ? "opacity-50" : ""
+                              }`}
+                            >
+                              <Checkbox
+                                checked={checked}
+                                disabled={disabled}
+                                onCheckedChange={() => toggleTemplateSubject(Number(row.id))}
+                              />
+                              <span className="flex-1">{row.subjectName}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {!!selectedTemplateRows.length && (
+                  <div className="rounded-lg border bg-blue-50 p-3">
+                    <div className="text-sm font-medium text-blue-700 mb-2">
+                      선택된 과목 ({selectedTemplateRows.length}/{templateSelectableCount})
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedTemplateRows.map((row: any) => (
+                        <div
+                          key={row.id}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white border text-xs"
+                        >
+                          <span>{row.subjectName}</span>
+                          <button
+                            type="button"
+                            className="text-muted-foreground hover:text-destructive"
+                            onClick={() => toggleTemplateSubject(Number(row.id))}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setTemplateDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setTemplateDialogOpen(false);
+                setSelectedTemplateIds([]);
+              }}
+            >
               취소
             </Button>
             <Button
@@ -1974,8 +2135,8 @@ export default function StudentDetail() {
                   return;
                 }
 
-                if (!selectedCourseKeys.length) {
-                  toast.error("과정을 하나 이상 선택해주세요.");
+                if (!selectedTemplateIds.length) {
+                  toast.error("등록할 과목을 선택해주세요.");
                   return;
                 }
 
@@ -1983,17 +2144,17 @@ export default function StudentDetail() {
                   {
                     studentId,
                     semesterNo: templateDialogSemesterNo,
-                    courseKeys: selectedCourseKeys,
-                  },
+                    subjectIds: selectedTemplateIds,
+                  } as any,
                   {
                     onSuccess: () => {
                       setTemplateDialogOpen(false);
-                      setSelectedCourseKeys([]);
+                      setSelectedTemplateIds([]);
                     },
                   }
                 );
               }}
-              disabled={applyCourseTemplateMut.isPending}
+              disabled={applyCourseTemplateMut.isPending || selectedTemplateIds.length === 0}
             >
               등록
             </Button>

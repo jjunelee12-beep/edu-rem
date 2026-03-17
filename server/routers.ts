@@ -1323,15 +1323,17 @@ export const appRouter = router({
       }),
   }),
 
-  courseTemplate: router({
+    courseTemplate: router({
     list: protectedProcedure
       .input(
-        z.object({
-          courseKey: z.string().optional(),
-        })
+        z
+          .object({
+            courseKey: z.string().optional(),
+          })
+          .optional()
       )
       .query(async ({ input }) => {
-        return db.listCourseSubjectTemplates(input.courseKey);
+        return db.listCourseSubjectTemplates(input?.courseKey);
       }),
 
     create: hostProcedure
@@ -1362,7 +1364,7 @@ export const appRouter = router({
         z.object({
           studentId: z.number(),
           semesterNo: z.number(),
-          courseKeys: z.array(z.string()).min(1),
+          subjectIds: z.array(z.number()).min(1),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -1373,10 +1375,10 @@ export const appRouter = router({
           throw new Error("권한이 없습니다");
         }
 
-        const result = await db.bulkCreatePlanSemestersFromTemplate({
+        const result = await db.bulkCreatePlanSemestersFromSelectedTemplates({
           studentId: input.studentId,
           semesterNo: input.semesterNo,
-          courseKeys: input.courseKeys,
+          subjectIds: input.subjectIds,
         });
 
         return { success: true, count: result.count };

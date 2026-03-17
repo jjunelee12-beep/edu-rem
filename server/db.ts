@@ -1335,37 +1335,21 @@ export async function createCourseSubjectTemplate(data: InsertCourseSubjectTempl
   return getInsertId(result);
 }
 
-export async function bulkCreatePlanSemestersFromTemplate(params: {
+export async function bulkCreatePlanSemestersFromSelectedTemplates(params: {
   studentId: number;
   semesterNo: number;
-  courseKeys: string[];
+  subjectIds: number[];
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  if (!params.courseKeys?.length) {
+  const subjectIds = Array.from(
+    new Set((params.subjectIds || []).map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0))
+  );
+
+  if (!subjectIds.length) {
     return { count: 0 };
   }
-
-  const templates = await db
-    .select()
-    .from(courseSubjectTemplates)
-    .where(
-      and(
-        sql`${courseSubjectTemplates.courseKey} IN (${sql.join(
-          params.courseKeys.map((k) => sql`${k}`),
-          sql`, `
-        )})`,
-        eq(courseSubjectTemplates.isActive, true)
-      )
-    )
-    .orderBy(
-      courseSubjectTemplates.courseKey,
-      courseSubjectTemplates.sortOrder,
-      courseSubjectTemplates.id
-    );
-
-  if (!templates.length) return { count: 0 };
 
   const existing = await db
     .select()
@@ -1379,23 +1363,53 @@ export async function bulkCreatePlanSemestersFromTemplate(params: {
     .orderBy(planSemesters.sortOrder, planSemesters.id);
 
   const maxPerSemester = 8;
+
   if (existing.length >= maxPerSemester) {
     throw new Error("우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다");
   }
 
-  const existingNames = new Set(existing.map((x: any) => x.subjectName));
-  const filteredTemplates = templates.filter((t: any) => !existingNames.has(t.subjectName));
+  const templates = await db
+    .select()
+    .from(courseSubjectTemplates)
+    .where(
+      and(
+        sql`${courseSubjectTemplates.id} IN (${sql.join(
+          subjectIds.map((id) => sql`${id}`),
+          sql`, `
+        )})`,
+        eq(courseSubjectTemplates.isActive, true)
+      )
+    )
+    .orderBy(courseSubjectTemplates.sortOrder, courseSubjectTemplates.id);
 
-  const remaining = maxPerSemester - existing.length;
-  const limitedTemplates = filteredTemplates.slice(0, remaining);
-
-  if (!limitedTemplates.length) {
+  if (!templates.length) {
     return { count: 0 };
   }
 
-  const sortStart = existing.length;
+  const existingNames = new Set(
+    existing.map((x: any) => String(x.subjectName || "").trim())
+  );
 
-  const rows = limitedTemplates.map((t: any, idx: number) => ({
+  const filteredTemplates = templates.filter(
+    (t: any) => !existingNames.has(String(t.subjectName || "").trim())
+  );
+
+  const remaining = maxPerSemester - existing.length;
+
+  if (filteredTemplates.length > remaining) {
+    throw new Error(`현재 학기에는 최대 ${remaining}과목만 추가할 수 있습니다`);
+  }
+
+  if (!filteredTemplates.length) {
+    return { count: 0 };
+  }
+
+  const sortStart =
+    existing.length > 0
+      ? Math.max(...existing.map((x: any) => Number(x.sortOrder ?? 0))) + 1
+      : 0;
+
+  const rows = filteredTemplates.map((t: any, idx: number) => ({
     studentId: params.studentId,
     semesterNo: params.semesterNo,
     subjectName: t.subjectName,
