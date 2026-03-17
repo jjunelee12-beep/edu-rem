@@ -1,7 +1,18 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, PhoneCall, UserPlus, Banknote, TrendingUp, CheckCircle, XCircle, Clock3, RotateCcw, BarChart3 } from "lucide-react";
+import {
+  Loader2,
+  PhoneCall,
+  UserPlus,
+  Banknote,
+  TrendingUp,
+  CheckCircle,
+  XCircle,
+  Clock3,
+  RotateCcw,
+  BarChart3,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 
@@ -86,14 +97,13 @@ export default function Home() {
         </div>
       ) : (
         <>
-          {/* 이번달 핵심 통계 */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-primary" />
               <h2 className="text-base font-semibold">이번 달 핵심 지표</h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
               <StatCard
                 title="이번 달 상담"
                 value={`${currentStats.monthConsultationCount ?? 0}건`}
@@ -156,7 +166,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* 이번달 승인/불승인/대기 요약 */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <Card className="border-0 shadow-sm">
               <CardHeader className="pb-3">
@@ -221,12 +230,11 @@ export default function Home() {
         </>
       )}
 
-      {/* 토탈 통계 */}
       {isAdminOrHost && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4 text-primary" />
-            <h2 className="text-base font-semibold">누적 통계</h2>
+            <h2 className="text-base font-semibold">종합 통계</h2>
           </div>
 
           {totalStatsLoading ? (
@@ -234,51 +242,51 @@ export default function Home() {
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
               <StatCard
-                title="토탈 상담"
+                title="종합 상담"
                 value={`${overallStats.totalConsultationCount ?? 0}건`}
                 icon={<PhoneCall className="h-5 w-5 text-indigo-600" />}
                 tone="indigo"
               />
 
               <StatCard
-                title="토탈 등록"
+                title="종합 등록"
                 value={`${overallStats.totalRegisteredCount ?? 0}건`}
                 icon={<UserPlus className="h-5 w-5 text-emerald-600" />}
                 tone="emerald"
               />
 
               <StatCard
-                title="토탈 매출"
+                title="종합 매출"
                 value={formatCurrency(Number(overallStats.totalSales ?? 0))}
                 icon={<TrendingUp className="h-5 w-5 text-rose-600" />}
                 tone="rose"
               />
 
               <StatCard
-                title="토탈 환불"
+                title="종합 환불"
                 value={formatCurrency(Number(overallStats.totalRefund ?? 0))}
                 icon={<RotateCcw className="h-5 w-5 text-red-600" />}
                 tone="red"
               />
 
               <StatCard
-                title="토탈 승인"
+                title="종합 승인"
                 value={`${overallStats.totalApprovedCount ?? 0}건`}
                 icon={<CheckCircle className="h-5 w-5 text-violet-600" />}
                 tone="violet"
               />
 
               <StatCard
-                title="토탈 불승인"
+                title="종합 불승인"
                 value={`${overallStats.totalRejectedCount ?? 0}건`}
                 icon={<XCircle className="h-5 w-5 text-red-600" />}
                 tone="red"
               />
 
               <StatCard
-                title="토탈 대기"
+                title="종합 대기"
                 value={`${overallStats.totalPendingCount ?? 0}건`}
                 icon={<Clock3 className="h-5 w-5 text-slate-600" />}
                 tone="gray"
