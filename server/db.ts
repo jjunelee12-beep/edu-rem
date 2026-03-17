@@ -1344,27 +1344,18 @@ export async function bulkCreatePlanSemestersFromSelectedTemplates(params: {
   if (!db) throw new Error("DB not available");
 
   const subjectIds = Array.from(
-    new Set((params.subjectIds || []).map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0))
+    new Set(
+      (params.subjectIds || [])
+        .map((x) => Number(x))
+        .filter((x) => Number.isFinite(x) && x > 0)
+    )
   );
 
   if (!subjectIds.length) {
     return { count: 0 };
   }
 
-  const existing = await db
-    .select()
-    .from(planSemesters)
-    .where(
-      and(
-        eq(planSemesters.studentId, params.studentId),
-        eq(planSemesters.semesterNo, params.semesterNo)
-      )
-    )
-    .orderBy(planSemesters.sortOrder, planSemesters.id);
-
-  const maxPerSemester = 8;
-
-  if (existing.length >= maxPerSemester) {
+  if (subjectIds.length > 8) {
     throw new Error("우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다");
   }
 
@@ -1386,37 +1377,29 @@ export async function bulkCreatePlanSemestersFromSelectedTemplates(params: {
     return { count: 0 };
   }
 
-  const existingNames = new Set(
-    existing.map((x: any) => String(x.subjectName || "").trim())
-  );
-
-  const filteredTemplates = templates.filter(
-    (t: any) => !existingNames.has(String(t.subjectName || "").trim())
-  );
-
-  const remaining = maxPerSemester - existing.length;
-
-  if (filteredTemplates.length > remaining) {
-    throw new Error(`현재 학기에는 최대 ${remaining}과목만 추가할 수 있습니다`);
+  if (templates.length > 8) {
+    throw new Error("우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다");
   }
 
-  if (!filteredTemplates.length) {
-    return { count: 0 };
-  }
+  // 1. 기존 학기 과목 전체 삭제
+  await db
+    .delete(planSemesters)
+    .where(
+      and(
+        eq(planSemesters.studentId, params.studentId),
+        eq(planSemesters.semesterNo, params.semesterNo)
+      )
+    );
 
-  const sortStart =
-    existing.length > 0
-      ? Math.max(...existing.map((x: any) => Number(x.sortOrder ?? 0))) + 1
-      : 0;
-
-  const rows = filteredTemplates.map((t: any, idx: number) => ({
+  // 2. 선택한 템플릿 과목으로 덮어쓰기
+  const rows = templates.map((t: any, idx: number) => ({
     studentId: params.studentId,
     semesterNo: params.semesterNo,
     subjectName: t.subjectName,
     planCategory: t.category,
     planRequirementType: t.requirementType ?? null,
     credits: 3,
-    sortOrder: sortStart + idx,
+    sortOrder: idx,
   }));
 
   await db.insert(planSemesters).values(rows as any);

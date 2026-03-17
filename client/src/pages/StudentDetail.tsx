@@ -855,13 +855,13 @@ export default function StudentDetail() {
   }, [courseKeyOptions, templateCourseKey]);
 
   const currentSemesterPlanCount = useMemo(() => {
-    if (!templateDialogSemesterNo) return 0;
-    return (planSemesterList || []).filter(
-      (row: any) => Number(row.semesterNo) === Number(templateDialogSemesterNo)
-    ).length;
-  }, [planSemesterList, templateDialogSemesterNo]);
+  if (!templateDialogSemesterNo) return 0;
+  return (planSemesterList || []).filter(
+    (row: any) => Number(row.semesterNo) === Number(templateDialogSemesterNo)
+  ).length;
+}, [planSemesterList, templateDialogSemesterNo]);
 
-  const templateSelectableCount = Math.max(0, 8 - currentSemesterPlanCount);
+const templateSelectableCount = 8;
 
   const filteredTemplateList = useMemo(() => {
     return (courseTemplateList || [])
@@ -884,10 +884,10 @@ export default function StudentDetail() {
       return;
     }
 
-    if (selectedTemplateIds.length >= templateSelectableCount) {
-      toast.error(`이 학기는 최대 8과목까지 등록 가능합니다. 현재 추가 가능 과목 수: ${templateSelectableCount}개`);
-      return;
-    }
+   if (selectedTemplateIds.length >= 8) {
+  toast.error("일괄 등록은 최대 8과목까지 선택할 수 있습니다.");
+  return;
+}
 
     setSelectedTemplateIds((prev) => [...prev, numericId]);
   };
@@ -1524,7 +1524,6 @@ export default function StudentDetail() {
                           size="sm"
                           variant="outline"
                           onClick={() => openTemplateDialog(group.semesterNo)}
-                          disabled={group.rows.length >= 8}
                         >
                           일괄 등록
                         </Button>
@@ -2031,9 +2030,12 @@ export default function StudentDetail() {
                 </Select>
 
                 <div className="rounded-lg border bg-muted/30 p-3 text-xs space-y-1">
-                  <div>현재 학기 등록 과목: <span className="font-medium">{currentSemesterPlanCount}</span>개</div>
-                  <div>추가 가능 과목: <span className="font-medium">{templateSelectableCount}</span>개</div>
-                  <div>선택 과목: <span className="font-medium">{selectedTemplateIds.length}</span>개</div>
+                  <div>현재 학기 기존 과목: <span className="font-medium">{currentSemesterPlanCount}</span>개</div>
+<div>선택 가능 과목: <span className="font-medium">최대 8개</span></div>
+<div>선택 과목: <span className="font-medium">{selectedTemplateIds.length}</span>개</div>
+<div className="text-[11px] text-muted-foreground">
+  등록 시 현재 학기 과목은 선택한 템플릿 과목으로 덮어써집니다.
+</div>
                 </div>
               </div>
 
@@ -2129,35 +2131,40 @@ export default function StudentDetail() {
               취소
             </Button>
             <Button
-              onClick={() => {
-                if (!templateDialogSemesterNo) {
-                  toast.error("학기 정보가 없습니다.");
-                  return;
-                }
+  onClick={() => {
+    if (!templateDialogSemesterNo) {
+      toast.error("학기 정보가 없습니다.");
+      return;
+    }
 
-                if (!selectedTemplateIds.length) {
-                  toast.error("등록할 과목을 선택해주세요.");
-                  return;
-                }
+    if (!selectedTemplateIds.length) {
+      toast.error("등록할 과목을 선택해주세요.");
+      return;
+    }
 
-                applyCourseTemplateMut.mutate(
-                  {
-                    studentId,
-                    semesterNo: templateDialogSemesterNo,
-                    subjectIds: selectedTemplateIds,
-                  } as any,
-                  {
-                    onSuccess: () => {
-                      setTemplateDialogOpen(false);
-                      setSelectedTemplateIds([]);
-                    },
-                  }
-                );
-              }}
-              disabled={applyCourseTemplateMut.isPending || selectedTemplateIds.length === 0}
-            >
-              등록
-            </Button>
+    const ok = window.confirm(
+      "현재 학기의 기존 과목을 모두 지우고 선택한 템플릿 과목으로 덮어쓰시겠습니까?"
+    );
+    if (!ok) return;
+
+    applyCourseTemplateMut.mutate(
+      {
+        studentId,
+        semesterNo: templateDialogSemesterNo,
+        subjectIds: selectedTemplateIds,
+      } as any,
+      {
+        onSuccess: () => {
+          setTemplateDialogOpen(false);
+          setSelectedTemplateIds([]);
+        },
+      }
+    );
+  }}
+  disabled={applyCourseTemplateMut.isPending || selectedTemplateIds.length === 0}
+>
+  등록
+</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
