@@ -39,6 +39,14 @@
     {
       "source": "/education-institutions",
       "destination": "/"
+    },
+    {
+      "source": "/sms",
+      "destination": "/"
+    },
+    {
+      "source": "/sms/:path*",
+      "destination": "/"
     }
   ]
 }

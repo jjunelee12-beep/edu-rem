@@ -74,13 +74,14 @@ export const smsRouter = router({
             }
 
             if (keyword) {
-  const matched =
-    includesKeyword(c.clientName, keyword) ||
-    includesKeyword(normalizePhone(c.phone), keyword) ||
-    includesKeyword(c.phone, keyword) ||
-    includesKeyword(c.course, keyword) ||
-    includesKeyword(c.desiredCourse, keyword) ||
-    includesKeyword(c.hopeCourse, keyword);
+const matched =
+  includesKeyword(c.clientName, keyword) ||
+  includesKeyword(normalizePhone(c.phone), keyword) ||
+  includesKeyword(c.phone, keyword) ||
+  includesKeyword(c.desiredCourse, keyword) ||
+  includesKeyword(c.notes, keyword) ||
+  includesKeyword(c.channel, keyword) ||
+  includesKeyword(c.finalEducation, keyword);
 
   if (!matched) return false;
 }
@@ -95,7 +96,7 @@ export const smsRouter = router({
   id: `consultation-${c.id}`,
   name: String(c.clientName || ""),
   phone,
-  course: String(c.course || ""),
+  course: String(c.desiredCourse || ""),
   targetType: "consultation",
   category: "미등록",
   assigneeId: c.assigneeId ? Number(c.assigneeId) : null,

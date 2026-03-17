@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { formatPhone } from "@/lib/format";
 
 type PreviewItem = {
   id: string;
@@ -221,7 +222,9 @@ console.log("preview.items", items);
     }`}
   >
     <div className="font-medium">{item.name || "-"}</div>
-    <div className="text-xs text-gray-500">{item.phone || "-"}</div>
+    <div className="text-xs text-gray-500">
+  {item.phone ? formatPhone(item.phone) : "-"}
+</div>
   </button>
 ))
               )}
@@ -229,9 +232,9 @@ console.log("preview.items", items);
 
             <div className="text-xs text-gray-500">
               선택 담당자:{" "}
-              {selectedAssignee
-                ? `${selectedAssignee.name} / ${selectedAssignee.phone || "-"}`
-                : "전체"}
+            {selectedAssignee
+  ? `${selectedAssignee.name} / ${selectedAssignee.phone ? formatPhone(selectedAssignee.phone) : "-"}`
+  : "전체"}
             </div>
           </div>
 
@@ -349,7 +352,7 @@ console.log("preview.items", items);
                           />
                         </td>
                         <td className="border-b px-3 py-2">{item.name || "-"}</td>
-                        <td className="border-b px-3 py-2">{item.phone || "-"}</td>
+                        <td className="border-b px-3 py-2">{item.phone ? formatPhone(item.phone) : "-"}</td>
                         <td className="border-b px-3 py-2">{item.course || "-"}</td>
                         <td className="border-b px-3 py-2">{item.category}</td>
                       </tr>
