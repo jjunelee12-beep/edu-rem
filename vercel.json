@@ -48,8 +48,6 @@
       "source": "/sms/:path*",
       "destination": "/"
     },
-
-    // ✅ 추가된 페이지들
     {
       "source": "/private-certificate-center",
       "destination": "/"
