@@ -12,6 +12,12 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { authRouter } from "./routes/auth";
 
+
+console.log("R2_ACCOUNT_ID:", !!process.env.R2_ACCOUNT_ID);
+console.log("R2_ACCESS_KEY_ID:", !!process.env.R2_ACCESS_KEY_ID);
+console.log("R2_SECRET_ACCESS_KEY:", !!process.env.R2_SECRET_ACCESS_KEY);
+console.log("R2_BUCKET_NAME:", !!process.env.R2_BUCKET_NAME);
+console.log("R2_PUBLIC_BASE_URL:", !!process.env.R2_PUBLIC_BASE_URL);
 async function startServer() {
   const app = express();
   const server = createServer(app);
