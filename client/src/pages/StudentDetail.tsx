@@ -154,6 +154,8 @@ export default function StudentDetail() {
   const { data: transferSubjectList } = trpc.transferSubject.list.useQuery({ studentId });
   const { data: transferAttachmentList } = trpc.transferAttachment.list.useQuery({ studentId });
   const { data: courseTemplateList } = trpc.courseTemplate.list.useQuery({});
+const { data: privateCertificateRequestList } =
+  trpc.privateCertificate.listByStudent.useQuery({ studentId });
 
   const [selectedSemesterOrder, setSelectedSemesterOrder] = useState(1);
   const [uploadingRefund, setUploadingRefund] = useState(false);
@@ -163,8 +165,6 @@ export default function StudentDetail() {
 
   const [privateCertDialogOpen, setPrivateCertDialogOpen] = useState(false);
   const [selectedPrivateCertNames, setSelectedPrivateCertNames] = useState<string[]>([]);
-
-  const PRIVATE_CERT_PREFIX = "[민간자격증요청]";
 
   const PRIVATE_CERT_OPTIONS = [
     "심리상담사 1급",
@@ -206,21 +206,49 @@ const res = await fetch(`${apiBase}/api/upload`, {
     };
   }
 
-  const requestedPrivateCertList = useMemo(() => {
-    const notes = String(plan?.specialNotes || "");
-    return notes
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith(PRIVATE_CERT_PREFIX))
-      .flatMap((line) =>
-        line
-          .replace(PRIVATE_CERT_PREFIX, "")
-          .trim()
-          .split(",")
-          .map((v) => v.trim())
-          .filter(Boolean)
-      );
-  }, [plan?.specialNotes]);
+ const requestedPrivateCertList = privateCertificateRequestList || [];
+
+const createPrivateCertificateRequestMut =
+  trpc.privateCertificate.create.useMutation({
+    onSuccess: async () => {
+      await utils.privateCertificate.listByStudent.invalidate({ studentId });
+      setPrivateCertDialogOpen(false);
+      setSelectedPrivateCertNames([]);
+      toast.success("민간자격증 요청 완료");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+const deletePrivateCertificateRequestMut =
+  trpc.privateCertificate.delete.useMutation({
+    onSuccess: async () => {
+      await utils.privateCertificate.listByStudent.invalidate({ studentId })
+      toast.success("민간자격증 요청 삭제 완료");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+const submitPrivateCertRequest = async () => {
+  if (!selectedPrivateCertNames.length) {
+    toast.error("요청할 민간자격증을 선택해주세요.");
+    return;
+  }
+
+  try {
+    for (const name of selectedPrivateCertNames) {
+      await createPrivateCertificateRequestMut.mutateAsync({
+        studentId,
+        certificateName: name,
+      } as any);
+    }
+
+    await utils.privateCertificate.listByStudent.invalidate({ studentId });
+    setPrivateCertDialogOpen(false);
+    setSelectedPrivateCertNames([]);
+    toast.success("민간자격증 요청 완료");
+  } catch (e: any) {
+    toast.error(e.message || "민간자격증 요청 중 오류가 발생했습니다.");
+  }
+};
 
   const togglePrivateCert = (name: string) => {
     setSelectedPrivateCertNames((prev) =>
@@ -228,43 +256,7 @@ const res = await fetch(`${apiBase}/api/upload`, {
     );
   };
 
-  const submitPrivateCertRequest = () => {
-    if (!selectedPrivateCertNames.length) {
-      toast.error("요청할 민간자격증을 선택해주세요.");
-      return;
-    }
 
-    const existingNotes = String(plan?.specialNotes || "").trim();
-    const requestLine = `${PRIVATE_CERT_PREFIX} ${selectedPrivateCertNames.join(", ")}`;
-
-    const nextNotes = existingNotes
-      ? `${existingNotes}\n${requestLine}`
-      : requestLine;
-
-    upsertPlanMut.mutate(
-      {
-        studentId,
-        desiredCourse: plan?.desiredCourse || undefined,
-        finalEducation: plan?.finalEducation || undefined,
-        totalTheorySubjects: plan?.totalTheorySubjects ?? undefined,
-        hasPractice: plan?.hasPractice ?? false,
-        practiceHours: plan?.practiceHours ?? undefined,
-        practiceDate: plan?.practiceDate || undefined,
-        practiceArranged: plan?.practiceArranged ?? false,
-        practiceStatus: (plan as any)?.practiceStatus || undefined,
-        specialNotes: nextNotes,
-      } as any,
-      {
-        onSuccess: async () => {
-          await utils.plan.get.invalidate({ studentId });
-          setPrivateCertDialogOpen(false);
-          setSelectedPrivateCertNames([]);
-          toast.success("민간자격증 요청 완료");
-        },
-        onError: (e) => toast.error(e.message),
-      }
-    );
-  };
   const [transferAddCount, setTransferAddCount] = useState("1");
 
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
@@ -389,16 +381,16 @@ const res = await fetch(`${apiBase}/api/upload`, {
 
   const [editingPlan, setEditingPlan] = useState(false);
   const [planForm, setPlanForm] = useState({
-    desiredCourse: "",
-    finalEducation: "",
-    totalTheorySubjects: "",
-    hasPractice: false,
-    practiceHours: "",
-    practiceDate: "",
-    practiceArranged: false,
-    practiceStatus: "미섭외",
-    specialNotes: "",
-  });
+  desiredCourse: "",
+  finalEducation: "",
+  totalTheorySubjects: "",
+  hasPractice: false,
+  practiceHours: "",
+  practiceDate: "",
+  practiceArranged: false,
+  practiceStatus: "미섭외",
+  specialNotes: "",
+});
 
   const [semDialogOpen, setSemDialogOpen] = useState(false);
   const [semForm, setSemForm] = useState({
@@ -1508,24 +1500,44 @@ const templateSelectableCount = 8;
     </p>
   </div>
 
-  {requestedPrivateCertList.length > 0 && (
-    <div className="bg-violet-50 rounded-lg p-4 text-sm border border-violet-100">
-      <p className="font-medium text-violet-700 mb-2">민간자격증 요청확인</p>
-      <div className="flex flex-wrap gap-2">
-        {requestedPrivateCertList.map((name, idx) => (
-          <Badge
-            key={`${name}-${idx}`}
-            className="bg-white text-violet-700 border border-violet-200"
-          >
-            {name}
+{requestedPrivateCertList.length > 0 && (
+  <div className="bg-violet-50 rounded-lg p-4 text-sm border border-violet-100">
+    <p className="font-medium text-violet-700 mb-2">민간자격증 요청확인</p>
+
+    <div className="flex flex-wrap gap-2">
+      {requestedPrivateCertList.map((item: any) => (
+        <div
+          key={item.id}
+          className="inline-flex items-center gap-2 px-2 py-1 rounded-md bg-white border border-violet-200 text-xs"
+        >
+          <span className="text-violet-700">{item.certificateName}</span>
+
+          <Badge className="bg-violet-100 text-violet-700 border border-violet-200">
+            {item.requestStatus}
           </Badge>
-        ))}
-      </div>
-      <p className="text-xs text-violet-700/80 mt-2">
-        위 민간자격증이 요청된 상태입니다.
-      </p>
+
+          {isAdmin && (
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-destructive"
+              onClick={() => {
+                if (confirm("민간자격증 요청을 삭제하시겠습니까?")) {
+                  deletePrivateCertificateRequestMut.mutate({ id: item.id });
+                }
+              }}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      ))}
     </div>
-  )}
+
+    <p className="text-xs text-violet-700/80 mt-2">
+      요청된 민간자격증 내역입니다.
+    </p>
+  </div>
+)} 
 
   {plan.hasPractice && (
     <div className="bg-blue-50 rounded-lg p-4 text-sm">
@@ -2890,11 +2902,14 @@ const templateSelectableCount = 8;
             </Button>
 
             <Button
-              onClick={submitPrivateCertRequest}
-              disabled={upsertPlanMut.isPending || selectedPrivateCertNames.length === 0}
-            >
-              요청
-            </Button>
+  onClick={submitPrivateCertRequest}
+  disabled={
+    createPrivateCertificateRequestMut.isPending ||
+    selectedPrivateCertNames.length === 0
+  }
+>
+  요청
+</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

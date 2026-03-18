@@ -24,6 +24,12 @@ import {
   InsertTransferAttachment,
   courseSubjectTemplates,
   InsertCourseSubjectTemplate,
+  privateCertificateRequests,
+  InsertPrivateCertificateRequest,
+  practiceSupportRequests,
+  InsertPracticeSupportRequest,
+  jobSupportRequests,
+  InsertJobSupportRequest,
 } from "../drizzle/schema";
 
 import { ENV } from "./_core/env";
@@ -1625,4 +1631,191 @@ export async function bulkCreatePlanSemestersFromTemplate(params: {
   await db.insert(planSemesters).values(rows as any);
 
   return { count: rows.length };
+}
+
+
+// ─── Private Certificate Requests (민간자격증 요청) ─────────────────
+export async function listPrivateCertificateRequests(assigneeId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  if (assigneeId) {
+    return db
+      .select()
+      .from(privateCertificateRequests)
+      .where(eq(privateCertificateRequests.assigneeId, assigneeId))
+      .orderBy(desc(privateCertificateRequests.createdAt));
+  }
+
+  return db
+    .select()
+    .from(privateCertificateRequests)
+    .orderBy(desc(privateCertificateRequests.createdAt));
+}
+
+export async function listPrivateCertificateRequestsByStudent(studentId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(privateCertificateRequests)
+    .where(eq(privateCertificateRequests.studentId, studentId))
+    .orderBy(desc(privateCertificateRequests.createdAt));
+}
+
+export async function createPrivateCertificateRequest(data: InsertPrivateCertificateRequest) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(privateCertificateRequests).values({
+  ...data,
+  feeAmount: data.feeAmount ?? "0",
+  paymentStatus: data.paymentStatus ?? "결제대기",
+});
+  return getInsertId(result);
+}
+
+export async function updatePrivateCertificateRequest(
+  id: number,
+  data: Partial<InsertPrivateCertificateRequest>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(privateCertificateRequests)
+    .set(data as any)
+    .where(eq(privateCertificateRequests.id, id));
+}
+
+export async function deletePrivateCertificateRequest(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.delete(privateCertificateRequests).where(eq(privateCertificateRequests.id, id));
+}
+
+// ─── Practice Support Requests (실습배정지원센터) ───────────────────
+export async function listPracticeSupportRequests(assigneeId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  if (assigneeId) {
+    return db
+      .select()
+      .from(practiceSupportRequests)
+      .where(eq(practiceSupportRequests.assigneeId, assigneeId))
+      .orderBy(desc(practiceSupportRequests.createdAt));
+  }
+
+  return db
+    .select()
+    .from(practiceSupportRequests)
+    .orderBy(desc(practiceSupportRequests.createdAt));
+}
+
+export async function listPracticeSupportRequestsByStudent(studentId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(practiceSupportRequests)
+    .where(eq(practiceSupportRequests.studentId, studentId))
+    .orderBy(desc(practiceSupportRequests.createdAt));
+}
+
+export async function createPracticeSupportRequest(data: InsertPracticeSupportRequest) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(practiceSupportRequests).values({
+  ...data,
+  feeAmount: data.feeAmount ?? "0",
+  paymentStatus: data.paymentStatus ?? "결제대기",
+});
+  return getInsertId(result);
+}
+
+export async function updatePracticeSupportRequest(
+  id: number,
+  data: Partial<InsertPracticeSupportRequest>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(practiceSupportRequests)
+    .set(data as any)
+    .where(eq(practiceSupportRequests.id, id));
+}
+
+export async function deletePracticeSupportRequest(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.delete(practiceSupportRequests).where(eq(practiceSupportRequests.id, id));
+}
+
+// ─── Job Support Requests (취업지원센터) ────────────────────────────
+export async function listJobSupportRequests(assigneeId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  if (assigneeId) {
+    return db
+      .select()
+      .from(jobSupportRequests)
+      .where(eq(jobSupportRequests.assigneeId, assigneeId))
+      .orderBy(desc(jobSupportRequests.createdAt));
+  }
+
+  return db
+    .select()
+    .from(jobSupportRequests)
+    .orderBy(desc(jobSupportRequests.createdAt));
+}
+
+export async function listJobSupportRequestsByStudent(studentId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(jobSupportRequests)
+    .where(eq(jobSupportRequests.studentId, studentId))
+    .orderBy(desc(jobSupportRequests.createdAt));
+}
+
+export async function createJobSupportRequest(data: InsertJobSupportRequest) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(jobSupportRequests).values({
+  ...data,
+  feeAmount: data.feeAmount ?? "0",
+  paymentStatus: data.paymentStatus ?? "결제대기",
+});
+  return getInsertId(result);
+}
+
+export async function updateJobSupportRequest(
+  id: number,
+  data: Partial<InsertJobSupportRequest>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(jobSupportRequests)
+    .set(data as any)
+    .where(eq(jobSupportRequests.id, id));
+}
+
+export async function deleteJobSupportRequest(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.delete(jobSupportRequests).where(eq(jobSupportRequests.id, id));
 }

@@ -1474,6 +1474,340 @@ export const appRouter = router({
   }),
   }),
 
+  privateCertificate: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      const assigneeId = isAdminOrHost(ctx.user) ? undefined : Number(ctx.user.id) || 1;
+      return db.listPrivateCertificateRequests(assigneeId);
+    }),
+
+    listByStudent: protectedProcedure
+      .input(z.object({ studentId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) return [];
+
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          return [];
+        }
+
+        return db.listPrivateCertificateRequestsByStudent(input.studentId);
+      }),
+
+    create: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+          certificateName: z.string().min(1),
+          inputAddress: z.string().optional(),
+          note: z.string().optional(),
+          feeAmount: z.string().optional(),
+          attachmentName: z.string().optional(),
+          attachmentUrl: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) throw new Error("학생을 찾을 수 없습니다");
+
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          throw new Error("권한이 없습니다");
+        }
+
+        const assignee = await db.getUserById(student.assigneeId);
+
+        const id = await db.createPrivateCertificateRequest({
+          studentId: input.studentId,
+          assigneeId: student.assigneeId,
+          clientName: student.clientName,
+          phone: student.phone,
+          assigneeName: assignee?.name || null,
+          certificateName: input.certificateName.trim(),
+          inputAddress: input.inputAddress?.trim() || null,
+          note: input.note || null,
+          requestStatus: "요청",
+          feeAmount: input.feeAmount || "0",
+          paymentStatus: "결제대기",
+          attachmentName: input.attachmentName || null,
+          attachmentUrl: input.attachmentUrl || null,
+        } as any);
+
+        return { id, success: true };
+      }),
+
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          certificateName: z.string().optional(),
+          inputAddress: z.string().optional(),
+          note: z.string().optional(),
+         requestStatus: z.enum(["요청", "처리중", "완료", "취소"]).optional(),
+          feeAmount: z.string().optional(),
+          paymentStatus: z.enum(["결제대기", "입금확인", "완료", "취소"]).optional(),
+          paidAt: z.string().optional(),
+          attachmentName: z.string().optional(),
+          attachmentUrl: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!isAdminOrHost(ctx.user)) {
+          throw new Error("관리자 또는 호스트만 수정할 수 있습니다");
+        }
+
+        const data: any = {};
+        if (input.certificateName !== undefined) data.certificateName = input.certificateName.trim();
+        if (input.inputAddress !== undefined) data.inputAddress = input.inputAddress.trim();
+        if (input.note !== undefined) data.note = input.note;
+        if (input.requestStatus !== undefined) data.requestStatus = input.requestStatus;
+        if (input.feeAmount !== undefined) data.feeAmount = input.feeAmount;
+        if (input.paymentStatus !== undefined) data.paymentStatus = input.paymentStatus;
+        if (input.paidAt !== undefined) data.paidAt = input.paidAt ? new Date(input.paidAt) : null;
+        if (input.attachmentName !== undefined) data.attachmentName = input.attachmentName;
+        if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl;
+
+        await db.updatePrivateCertificateRequest(input.id, data);
+        return { success: true };
+      }),
+
+    delete: hostProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deletePrivateCertificateRequest(input.id);
+        return { success: true };
+      }),
+  }),
+
+  practiceSupport: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      const assigneeId = isAdminOrHost(ctx.user) ? undefined : Number(ctx.user.id) || 1;
+      return db.listPracticeSupportRequests(assigneeId);
+    }),
+
+    listByStudent: protectedProcedure
+      .input(z.object({ studentId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) return [];
+
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          return [];
+        }
+
+        return db.listPracticeSupportRequestsByStudent(input.studentId);
+      }),
+
+    create: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+          inputAddress: z.string().optional(),
+          includeEducationCenter: z.boolean().optional(),
+          includePracticeInstitution: z.boolean().optional(),
+          note: z.string().optional(),
+          feeAmount: z.string().optional(),
+          attachmentName: z.string().optional(),
+          attachmentUrl: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) throw new Error("학생을 찾을 수 없습니다");
+
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          throw new Error("권한이 없습니다");
+        }
+
+        const assignee = await db.getUserById(student.assigneeId);
+
+        const id = await db.createPracticeSupportRequest({
+          studentId: input.studentId,
+          assigneeId: student.assigneeId,
+          clientName: student.clientName,
+          phone: student.phone,
+          assigneeName: assignee?.name || null,
+          course: student.course || "사회복지사",
+          inputAddress: input.inputAddress?.trim() || null,
+          includeEducationCenter: input.includeEducationCenter ?? true,
+          includePracticeInstitution: input.includePracticeInstitution ?? true,
+          coordinationStatus: "미섭외",
+          requestStatus: "요청",
+          feeAmount: input.feeAmount || "0",
+          paymentStatus: "결제대기",
+          note: input.note || null,
+          attachmentName: input.attachmentName || null,
+          attachmentUrl: input.attachmentUrl || null,
+        } as any);
+
+        return { id, success: true };
+      }),
+
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          inputAddress: z.string().optional(),
+          coordinationStatus: z.enum(["미섭외", "섭외중", "섭외완료", "보류"]).optional(),
+          requestStatus: z.enum(["요청", "처리중", "완료", "취소"]).optional(),
+          selectedEducationCenterName: z.string().optional(),
+          selectedEducationCenterAddress: z.string().optional(),
+          selectedEducationCenterDistanceKm: z.string().optional(),
+          selectedPracticeInstitutionName: z.string().optional(),
+          selectedPracticeInstitutionAddress: z.string().optional(),
+          selectedPracticeInstitutionDistanceKm: z.string().optional(),
+          feeAmount: z.string().optional(),
+          paymentStatus: z.enum(["결제대기", "입금확인", "완료", "취소"]).optional(),
+          paidAt: z.string().optional(),
+          note: z.string().optional(),
+          attachmentName: z.string().optional(),
+          attachmentUrl: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!isAdminOrHost(ctx.user)) {
+          throw new Error("관리자 또는 호스트만 수정할 수 있습니다");
+        }
+
+        const data: any = {};
+        if (input.inputAddress !== undefined) data.inputAddress = input.inputAddress.trim();
+        if (input.coordinationStatus !== undefined) data.coordinationStatus = input.coordinationStatus;
+        if (input.requestStatus !== undefined) data.requestStatus = input.requestStatus;
+        if (input.selectedEducationCenterName !== undefined) data.selectedEducationCenterName = input.selectedEducationCenterName.trim();
+        if (input.selectedEducationCenterAddress !== undefined) data.selectedEducationCenterAddress = input.selectedEducationCenterAddress.trim();
+        if (input.selectedEducationCenterDistanceKm !== undefined) data.selectedEducationCenterDistanceKm = input.selectedEducationCenterDistanceKm || null;
+        if (input.selectedPracticeInstitutionName !== undefined) data.selectedPracticeInstitutionName = input.selectedPracticeInstitutionName.trim();
+        if (input.selectedPracticeInstitutionAddress !== undefined) data.selectedPracticeInstitutionAddress = input.selectedPracticeInstitutionAddress.trim();
+        if (input.selectedPracticeInstitutionDistanceKm !== undefined) data.selectedPracticeInstitutionDistanceKm = input.selectedPracticeInstitutionDistanceKm || null;
+        if (input.feeAmount !== undefined) data.feeAmount = input.feeAmount;
+        if (input.paymentStatus !== undefined) data.paymentStatus = input.paymentStatus;
+        if (input.paidAt !== undefined) data.paidAt = input.paidAt ? new Date(input.paidAt) : null;
+        if (input.note !== undefined) data.note = input.note;
+        if (input.attachmentName !== undefined) data.attachmentName = input.attachmentName;
+        if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl;
+
+        await db.updatePracticeSupportRequest(input.id, data);
+        return { success: true };
+      }),
+
+    delete: hostProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deletePracticeSupportRequest(input.id);
+        return { success: true };
+      }),
+  }),
+
+  jobSupport: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      const assigneeId = isAdminOrHost(ctx.user) ? undefined : Number(ctx.user.id) || 1;
+      return db.listJobSupportRequests(assigneeId);
+    }),
+
+    listByStudent: protectedProcedure
+      .input(z.object({ studentId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) return [];
+
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          return [];
+        }
+
+        return db.listJobSupportRequestsByStudent(input.studentId);
+      }),
+
+    create: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+          inputAddress: z.string().optional(),
+          desiredArea: z.string().optional(),
+          note: z.string().optional(),
+          feeAmount: z.string().optional(),
+          attachmentName: z.string().optional(),
+          attachmentUrl: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) throw new Error("학생을 찾을 수 없습니다");
+
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          throw new Error("권한이 없습니다");
+        }
+
+        const assignee = await db.getUserById(student.assigneeId);
+
+        const id = await db.createJobSupportRequest({
+          studentId: input.studentId,
+          assigneeId: student.assigneeId,
+          clientName: student.clientName,
+          phone: student.phone,
+          assigneeName: assignee?.name || null,
+          inputAddress: input.inputAddress?.trim() || null,
+          desiredArea: input.desiredArea?.trim() || null,
+          includeWelfareCenter: true,
+          includeCareCenter: true,
+          includeEtcInstitution: false,
+          supportStatus: "요청",
+          feeAmount: input.feeAmount || "0",
+          paymentStatus: "결제대기",
+          note: input.note || null,
+          attachmentName: input.attachmentName || null,
+          attachmentUrl: input.attachmentUrl || null,
+        } as any);
+
+        return { id, success: true };
+      }),
+
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          inputAddress: z.string().optional(),
+          desiredArea: z.string().optional(),
+          supportStatus: z.enum(["요청", "진행중", "면접안내", "완료", "보류", "취소"]).optional(),
+          selectedInstitutionName: z.string().optional(),
+          selectedInstitutionAddress: z.string().optional(),
+          selectedInstitutionDistanceKm: z.string().optional(),
+          feeAmount: z.string().optional(),
+          paymentStatus: z.enum(["결제대기", "입금확인", "완료", "취소"]).optional(),
+          paidAt: z.string().optional(),
+          note: z.string().optional(),
+          attachmentName: z.string().optional(),
+          attachmentUrl: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!isAdminOrHost(ctx.user)) {
+          throw new Error("관리자 또는 호스트만 수정할 수 있습니다");
+        }
+
+        const data: any = {};
+        if (input.inputAddress !== undefined) data.inputAddress = input.inputAddress.trim();
+        if (input.desiredArea !== undefined) data.desiredArea = input.desiredArea.trim();
+        if (input.supportStatus !== undefined) data.supportStatus = input.supportStatus;
+        if (input.selectedInstitutionName !== undefined) data.selectedInstitutionName = input.selectedInstitutionName.trim();
+        if (input.selectedInstitutionAddress !== undefined) data.selectedInstitutionAddress = input.selectedInstitutionAddress.trim();
+        if (input.selectedInstitutionDistanceKm !== undefined) data.selectedInstitutionDistanceKm = input.selectedInstitutionDistanceKm || null;
+        if (input.feeAmount !== undefined) data.feeAmount = input.feeAmount;
+        if (input.paymentStatus !== undefined) data.paymentStatus = input.paymentStatus;
+        if (input.paidAt !== undefined) data.paidAt = input.paidAt ? new Date(input.paidAt) : null;
+        if (input.note !== undefined) data.note = input.note;
+        if (input.attachmentName !== undefined) data.attachmentName = input.attachmentName;
+        if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl;
+
+        await db.updateJobSupportRequest(input.id, data);
+        return { success: true };
+      }),
+
+    delete: hostProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteJobSupportRequest(input.id);
+        return { success: true };
+      }),
+  }),
+
   settlement: router({
     report: adminProcedure
       .input(
@@ -1499,5 +1833,7 @@ console.log("[ROUTER OK] planSemester loaded");
 console.log("[ROUTER OK] transferSubject loaded");
 console.log("[ROUTER OK] transferAttachment loaded");
 console.log("[ROUTER OK] courseTemplate loaded");
-
+console.log("[ROUTER OK] privateCertificate loaded");
+console.log("[ROUTER OK] practiceSupport loaded");
+console.log("[ROUTER OK] jobSupport loaded");
 export type AppRouter = typeof appRouter;

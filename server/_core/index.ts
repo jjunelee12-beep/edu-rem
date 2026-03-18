@@ -12,12 +12,27 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { authRouter } from "./routes/auth";
 
-
 console.log("R2_ACCOUNT_ID:", !!process.env.R2_ACCOUNT_ID);
 console.log("R2_ACCESS_KEY_ID:", !!process.env.R2_ACCESS_KEY_ID);
 console.log("R2_SECRET_ACCESS_KEY:", !!process.env.R2_SECRET_ACCESS_KEY);
 console.log("R2_BUCKET_NAME:", !!process.env.R2_BUCKET_NAME);
 console.log("R2_PUBLIC_BASE_URL:", !!process.env.R2_PUBLIC_BASE_URL);
+
+function decodeKoreanFilename(name: string) {
+  try {
+    return Buffer.from(name, "latin1").toString("utf8");
+  } catch {
+    return name;
+  }
+}
+
+function sanitizeFilename(name: string) {
+  return name
+    .normalize("NFC")
+    .replace(/\s+/g, "_")
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "");
+}
+
 async function startServer() {
   const app = express();
   const server = createServer(app);
@@ -34,7 +49,7 @@ async function startServer() {
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
-      fileSize: 20 * 1024 * 1024, // 20MB
+      fileSize: 20 * 1024 * 1024,
     },
     fileFilter: (_req, file, cb) => {
       const allowedExt = [
@@ -50,6 +65,7 @@ async function startServer() {
         ".xlsx",
         ".hwp",
       ];
+
       const ext = path.extname(file.originalname).toLowerCase();
 
       if (!allowedExt.includes(ext)) {
@@ -70,7 +86,6 @@ async function startServer() {
   const isAllowedOrigin = (origin: string) => {
     if (exactAllowedOrigins.includes(origin)) return true;
 
-    // Vercel preview deployments 허용
     if (
       /^https:\/\/edu-[a-z0-9-]+-jjunelee12-4678s-projects\.vercel\.app$/i.test(origin)
     ) {
@@ -123,26 +138,8 @@ async function startServer() {
         });
       }
 
-      const ext = path.extname(file.originalname);
-      const base = path
-        .basename(file.originalname, ext)
-        .replace(/\s+/g, "_")
-        .replace(/[^a-zA-Z0-9._-가-힣]/g, "");
-
-      const key = `${Date.now()}_${Math.random()
-        .toString(36)
-        .slice(2, 8)}_${base}${ext}`;
-
-      await s3.send(
-        new PutObjectCommand({
-          Bucket: process.env.R2_BUCKET_NAME!,
-          Key: key,
-          Body: file.buffer,
-          ContentType: file.mimetype,
-        })
-      );
-
       const publicBaseUrl = process.env.R2_PUBLIC_BASE_URL;
+      const bucketName = process.env.R2_BUCKET_NAME;
 
       if (!publicBaseUrl) {
         return res.status(500).json({
@@ -150,10 +147,35 @@ async function startServer() {
         });
       }
 
+      if (!bucketName) {
+        return res.status(500).json({
+          message: "R2_BUCKET_NAME 환경변수가 설정되지 않았습니다.",
+        });
+      }
+
+      const decodedOriginalName = decodeKoreanFilename(file.originalname);
+      const safeOriginalName = sanitizeFilename(decodedOriginalName);
+
+      const ext = path.extname(safeOriginalName);
+      const base = path.basename(safeOriginalName, ext);
+
+      const key = `${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2, 8)}_${base}${ext}`;
+
+      await s3.send(
+        new PutObjectCommand({
+          Bucket: bucketName,
+          Key: key,
+          Body: file.buffer,
+          ContentType: file.mimetype,
+        })
+      );
+
       return res.json({
         success: true,
-        fileName: file.originalname,
-        fileUrl: `${publicBaseUrl}/${key}`,
+        fileName: safeOriginalName,
+        fileUrl: `${publicBaseUrl}/${encodeURIComponent(key)}`,
       });
     } catch (error: any) {
       console.error("[UPLOAD ERROR]", error);

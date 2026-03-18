@@ -47,6 +47,20 @@
     {
       "source": "/sms/:path*",
       "destination": "/"
+    },
+
+    // ✅ 추가된 페이지들
+    {
+      "source": "/private-certificate-center",
+      "destination": "/"
+    },
+    {
+      "source": "/practice-support-center",
+      "destination": "/"
+    },
+    {
+      "source": "/job-support-center",
+      "destination": "/"
     }
   ]
 }

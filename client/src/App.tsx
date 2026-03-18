@@ -18,6 +18,9 @@ import SemesterList from "./pages/SemesterList";
 import System from "./pages/System";
 import PublicLeadFormPage from "@/pages/PublicLeadFormPage";
 import EducationInstitutions from "@/pages/EducationInstitutions";
+import PrivateCertificateCenterPage from "@/pages/private-certificate-center";
+import PracticeSupportCenterPage from "@/pages/practice-support-center";
+import JobSupportCenterPage from "@/pages/job-support-center";
 
 function PublicRouter() {
   return (
@@ -40,6 +43,9 @@ function PrivateRouter() {
 	  <Route path="/sms" component={SmsSender} />
         <Route path="/approvals" component={Approvals} />
         <Route path="/settlement" component={Settlement} />
+	<Route path="/private-certificate-center" component={PrivateCertificateCenterPage} />
+	<Route path="/practice-support-center" component={PracticeSupportCenterPage} />
+<Route path="/job-support-center" component={JobSupportCenterPage} />
         <Route path="/system" component={System} />
 	<Route path="/education-institutions" component={EducationInstitutions} />
         <Route component={NotFound} />

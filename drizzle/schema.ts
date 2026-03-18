@@ -318,3 +318,223 @@ export const courseSubjectTemplates = mysqlTable("course_subject_templates", {
 
 export type CourseSubjectTemplate = typeof courseSubjectTemplates.$inferSelect;
 export type InsertCourseSubjectTemplate = typeof courseSubjectTemplates.$inferInsert;
+
+// ─── Private Certificate Requests (민간자격증 요청) ─────────────────
+export const privateCertificateRequests = mysqlTable("private_certificate_requests", {
+  id: int("id").autoincrement().primaryKey(),
+
+  studentId: int("studentId").notNull(),
+  assigneeId: int("assigneeId").notNull(),
+
+  clientName: varchar("clientName", { length: 100 }).notNull(),
+  phone: varchar("phone", { length: 30 }).notNull(),
+  assigneeName: varchar("assigneeName", { length: 100 }),
+
+  certificateName: varchar("certificateName", { length: 255 }).notNull(),
+  inputAddress: varchar("inputAddress", { length: 255 }),
+  note: text("note"),
+
+  requestStatus: mysqlEnum("requestStatus", [
+    "요청",
+    "안내완료",
+    "입금대기",
+    "입금확인",
+    "진행중",
+    "완료",
+    "취소",
+  ])
+    .notNull()
+    .default("요청"),
+
+  feeAmount: decimal("feeAmount", { precision: 12, scale: 0 })
+    .notNull()
+    .default("0"),
+
+  paymentStatus: mysqlEnum("paymentStatus", [
+    "결제대기",
+    "입금확인",
+    "완료",
+    "취소",
+  ])
+    .notNull()
+    .default("결제대기"),
+
+  paidAt: datetime("paidAt"),
+
+  attachmentName: varchar("attachmentName", { length: 255 }),
+  attachmentUrl: varchar("attachmentUrl", { length: 1000 }),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PrivateCertificateRequest =
+  typeof privateCertificateRequests.$inferSelect;
+export type InsertPrivateCertificateRequest =
+  typeof privateCertificateRequests.$inferInsert;
+
+// ─── Practice Support Requests (실습배정지원센터) ────────────────────
+export const practiceSupportRequests = mysqlTable("practice_support_requests", {
+  id: int("id").autoincrement().primaryKey(),
+
+  studentId: int("studentId").notNull(),
+  assigneeId: int("assigneeId").notNull(),
+
+  clientName: varchar("clientName", { length: 100 }).notNull(),
+  phone: varchar("phone", { length: 30 }).notNull(),
+  assigneeName: varchar("assigneeName", { length: 100 }),
+
+  course: varchar("course", { length: 200 }).notNull(),
+  inputAddress: varchar("inputAddress", { length: 255 }),
+
+  includeEducationCenter: boolean("includeEducationCenter")
+    .notNull()
+    .default(true),
+
+  includePracticeInstitution: boolean("includePracticeInstitution")
+    .notNull()
+    .default(true),
+
+  coordinationStatus: mysqlEnum("coordinationStatus", [
+    "미섭외",
+    "섭외중",
+    "섭외완료",
+    "보류",
+  ])
+    .notNull()
+    .default("미섭외"),
+
+  requestStatus: mysqlEnum("requestStatus", [
+    "요청",
+    "진행중",
+    "완료",
+    "취소",
+  ])
+    .notNull()
+    .default("요청"),
+
+  selectedEducationCenterName: varchar("selectedEducationCenterName", {
+    length: 255,
+  }),
+  selectedEducationCenterAddress: varchar("selectedEducationCenterAddress", {
+    length: 255,
+  }),
+  selectedEducationCenterDistanceKm: decimal("selectedEducationCenterDistanceKm", {
+    precision: 8,
+    scale: 2,
+  }),
+
+  selectedPracticeInstitutionName: varchar("selectedPracticeInstitutionName", {
+    length: 255,
+  }),
+  selectedPracticeInstitutionAddress: varchar("selectedPracticeInstitutionAddress", {
+    length: 255,
+  }),
+  selectedPracticeInstitutionDistanceKm: decimal(
+    "selectedPracticeInstitutionDistanceKm",
+    {
+      precision: 8,
+      scale: 2,
+    }
+  ),
+
+  feeAmount: decimal("feeAmount", { precision: 12, scale: 0 })
+    .notNull()
+    .default("0"),
+
+  paymentStatus: mysqlEnum("paymentStatus", [
+    "결제대기",
+    "입금확인",
+    "완료",
+    "취소",
+  ])
+    .notNull()
+    .default("결제대기"),
+
+  paidAt: datetime("paidAt"),
+  note: text("note"),
+
+  attachmentName: varchar("attachmentName", { length: 255 }),
+  attachmentUrl: varchar("attachmentUrl", { length: 1000 }),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PracticeSupportRequest =
+  typeof practiceSupportRequests.$inferSelect;
+export type InsertPracticeSupportRequest =
+  typeof practiceSupportRequests.$inferInsert;
+
+// ─── Job Support Requests (취업지원센터) ────────────────────────────
+export const jobSupportRequests = mysqlTable("job_support_requests", {
+  id: int("id").autoincrement().primaryKey(),
+
+  studentId: int("studentId").notNull(),
+  assigneeId: int("assigneeId").notNull(),
+
+  clientName: varchar("clientName", { length: 100 }).notNull(),
+  phone: varchar("phone", { length: 30 }).notNull(),
+  assigneeName: varchar("assigneeName", { length: 100 }),
+
+  inputAddress: varchar("inputAddress", { length: 255 }),
+  desiredArea: varchar("desiredArea", { length: 255 }),
+
+  includeWelfareCenter: boolean("includeWelfareCenter")
+    .notNull()
+    .default(true),
+
+  includeCareCenter: boolean("includeCareCenter")
+    .notNull()
+    .default(true),
+
+  includeEtcInstitution: boolean("includeEtcInstitution")
+    .notNull()
+    .default(false),
+
+  supportStatus: mysqlEnum("supportStatus", [
+    "요청",
+    "진행중",
+    "면접안내",
+    "완료",
+    "보류",
+    "취소",
+  ])
+    .notNull()
+    .default("요청"),
+
+  selectedInstitutionName: varchar("selectedInstitutionName", { length: 255 }),
+  selectedInstitutionAddress: varchar("selectedInstitutionAddress", {
+    length: 255,
+  }),
+  selectedInstitutionDistanceKm: decimal("selectedInstitutionDistanceKm", {
+    precision: 8,
+    scale: 2,
+  }),
+
+  feeAmount: decimal("feeAmount", { precision: 12, scale: 0 })
+    .notNull()
+    .default("0"),
+
+  paymentStatus: mysqlEnum("paymentStatus", [
+    "결제대기",
+    "입금확인",
+    "완료",
+    "취소",
+  ])
+    .notNull()
+    .default("결제대기"),
+
+  paidAt: datetime("paidAt"),
+  note: text("note"),
+
+  attachmentName: varchar("attachmentName", { length: 255 }),
+  attachmentUrl: varchar("attachmentUrl", { length: 1000 }),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type JobSupportRequest = typeof jobSupportRequests.$inferSelect;
+export type InsertJobSupportRequest = typeof jobSupportRequests.$inferInsert;
+
