@@ -156,6 +156,115 @@ export default function StudentDetail() {
   const { data: courseTemplateList } = trpc.courseTemplate.list.useQuery({});
 
   const [selectedSemesterOrder, setSelectedSemesterOrder] = useState(1);
+  const [uploadingRefund, setUploadingRefund] = useState(false);
+  const [uploadingRefundEditId, setUploadingRefundEditId] = useState<number | null>(null);
+  const [uploadingTransferCommon, setUploadingTransferCommon] = useState(false);
+  const [uploadingTransferRowId, setUploadingTransferRowId] = useState<number | null>(null);
+
+  const [privateCertDialogOpen, setPrivateCertDialogOpen] = useState(false);
+  const [selectedPrivateCertNames, setSelectedPrivateCertNames] = useState<string[]>([]);
+
+  const PRIVATE_CERT_PREFIX = "[민간자격증요청]";
+
+  const PRIVATE_CERT_OPTIONS = [
+    "심리상담사 1급",
+    "미술심리상담사 1급",
+    "아동심리상담사 1급",
+    "노인심리상담사 1급",
+    "방과후지도사 1급",
+    "병원코디네이터 1급",
+    "바리스타 1급",
+    "정리수납전문가 1급",
+    "반려동물관리사 1급",
+    "캘리그라피지도사 1급",
+    "독서지도사 1급",
+    "커피지도사 1급",
+  ];
+
+  async function uploadFile(file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+
+  const apiBase = import.meta.env.VITE_API_BASE_URL || "";
+
+const res = await fetch(`${apiBase}/api/upload`, {
+  method: "POST",
+  body: formData,
+  credentials: "include",
+});
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(text || "파일 업로드에 실패했습니다.");
+    }
+
+    const data = await res.json();
+
+    return {
+      fileName: data.fileName || file.name,
+      fileUrl: data.fileUrl,
+    };
+  }
+
+  const requestedPrivateCertList = useMemo(() => {
+    const notes = String(plan?.specialNotes || "");
+    return notes
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith(PRIVATE_CERT_PREFIX))
+      .flatMap((line) =>
+        line
+          .replace(PRIVATE_CERT_PREFIX, "")
+          .trim()
+          .split(",")
+          .map((v) => v.trim())
+          .filter(Boolean)
+      );
+  }, [plan?.specialNotes]);
+
+  const togglePrivateCert = (name: string) => {
+    setSelectedPrivateCertNames((prev) =>
+      prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]
+    );
+  };
+
+  const submitPrivateCertRequest = () => {
+    if (!selectedPrivateCertNames.length) {
+      toast.error("요청할 민간자격증을 선택해주세요.");
+      return;
+    }
+
+    const existingNotes = String(plan?.specialNotes || "").trim();
+    const requestLine = `${PRIVATE_CERT_PREFIX} ${selectedPrivateCertNames.join(", ")}`;
+
+    const nextNotes = existingNotes
+      ? `${existingNotes}\n${requestLine}`
+      : requestLine;
+
+    upsertPlanMut.mutate(
+      {
+        studentId,
+        desiredCourse: plan?.desiredCourse || undefined,
+        finalEducation: plan?.finalEducation || undefined,
+        totalTheorySubjects: plan?.totalTheorySubjects ?? undefined,
+        hasPractice: plan?.hasPractice ?? false,
+        practiceHours: plan?.practiceHours ?? undefined,
+        practiceDate: plan?.practiceDate || undefined,
+        practiceArranged: plan?.practiceArranged ?? false,
+        practiceStatus: (plan as any)?.practiceStatus || undefined,
+        specialNotes: nextNotes,
+      } as any,
+      {
+        onSuccess: async () => {
+          await utils.plan.get.invalidate({ studentId });
+          setPrivateCertDialogOpen(false);
+          setSelectedPrivateCertNames([]);
+          toast.success("민간자격증 요청 완료");
+        },
+        onError: (e) => toast.error(e.message),
+      }
+    );
+  };
   const [transferAddCount, setTransferAddCount] = useState("1");
 
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
@@ -732,25 +841,30 @@ const [refundDialogOpen, setRefundDialogOpen] = useState(false);
     updateTransferSubjectMut.mutate(payload);
   };
 
-  const handleTransferAttachment = (row: any) => {
-    const url = window.prompt("첨부파일 URL을 입력하세요", row.attachmentUrl || "");
-    if (!url) return;
+    const handleTransferAttachment = async (row: any, file: File) => {
+    try {
+      setUploadingTransferRowId(row.id);
 
-    const name = window.prompt("첨부파일명을 입력하세요", row.attachmentName || "증빙자료") || "증빙자료";
+      const uploaded = await uploadFile(file);
 
-    updateTransferSubjectMut.mutate(
-      {
-        id: row.id,
-        attachmentName: name,
-        attachmentUrl: url,
-      } as any,
-      {
-        onSuccess: async () => {
-          await utils.transferSubject.list.invalidate({ studentId });
-          toast.success("첨부파일이 저장되었습니다.");
-        },
-      }
-    );
+      updateTransferSubjectMut.mutate(
+        {
+          id: row.id,
+          attachmentName: uploaded.fileName,
+          attachmentUrl: uploaded.fileUrl,
+        } as any,
+        {
+          onSuccess: async () => {
+            await utils.transferSubject.list.invalidate({ studentId });
+            toast.success("첨부파일이 저장되었습니다.");
+          },
+        }
+      );
+    } catch (e: any) {
+      toast.error(e.message || "첨부 업로드에 실패했습니다.");
+    } finally {
+      setUploadingTransferRowId(null);
+    }
   };
 
   const clearTransferAttachment = (row: any) => {
@@ -1138,18 +1252,31 @@ const templateSelectableCount = 8;
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <CardTitle className="text-base">학기별 예정표 / 결제표</CardTitle>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setRefundDialogOpen(true)}
-              className="gap-1 text-red-600 border-red-200 hover:bg-red-50"
-            >
-              환불 등록
-            </Button>
-            <Button variant="outline" size="sm" onClick={openAddSemester} className="gap-1">
-              <Plus className="h-3.5 w-3.5" /> 학기 추가
-            </Button>
-          </div>
+  <Button
+    variant="outline"
+    size="sm"
+    onClick={() => {
+      setSelectedPrivateCertNames([]);
+      setPrivateCertDialogOpen(true);
+    }}
+    className="gap-1 text-blue-600 border-blue-200 hover:bg-blue-50"
+  >
+    민간자격증 요청
+  </Button>
+
+  <Button
+    variant="outline"
+    size="sm"
+    onClick={() => setRefundDialogOpen(true)}
+    className="gap-1 text-red-600 border-red-200 hover:bg-red-50"
+  >
+    환불 등록
+  </Button>
+
+  <Button variant="outline" size="sm" onClick={openAddSemester} className="gap-1">
+    <Plus className="h-3.5 w-3.5" /> 학기 추가
+  </Button>
+</div>
         </CardHeader>
 
         <CardContent className="p-0">
@@ -1371,28 +1498,47 @@ const templateSelectableCount = 8;
           {!editingPlan ? (
             plan ? (
               <div className="space-y-3">
-                <div className="bg-muted/50 rounded-lg p-4 text-sm">
-                  <p>
-                    <span className="font-medium">희망과정:</span> {plan.desiredCourse || "-"} ·{" "}
-                    <span className="font-medium">최종학력:</span> {plan.finalEducation || "-"} ·{" "}
-                    <span className="font-medium">이론 과목:</span> {plan.totalTheorySubjects ?? "-"}과목 ·{" "}
-                    <span className="font-medium">실습:</span> {plan.hasPractice ? "있음" : "없음"} ·{" "}
-                    <span className="font-medium">특이사항:</span> {plan.specialNotes || "없음"}
-                  </p>
-                </div>
+  <div className="bg-muted/50 rounded-lg p-4 text-sm">
+    <p>
+      <span className="font-medium">희망과정:</span> {plan.desiredCourse || "-"} ·{" "}
+      <span className="font-medium">최종학력:</span> {plan.finalEducation || "-"} ·{" "}
+      <span className="font-medium">이론 과목:</span> {plan.totalTheorySubjects ?? "-"}과목 ·{" "}
+      <span className="font-medium">실습:</span> {plan.hasPractice ? "있음" : "없음"} ·{" "}
+      <span className="font-medium">특이사항:</span> {plan.specialNotes || "없음"}
+    </p>
+  </div>
 
-                {plan.hasPractice && (
-                  <div className="bg-blue-50 rounded-lg p-4 text-sm">
-                    <p className="font-medium text-blue-700 mb-1">실습 정보</p>
-                    <p>
-                      <span className="font-medium">실습 시간:</span> {plan.practiceHours ? plan.practiceHours + "시간" : "-"} ·{" "}
-                      <span className="font-medium">실습 예정일:</span> {plan.practiceDate || "-"} ·{" "}
-                      <span className="font-medium">섭외 상태:</span>{" "}
-                      {(plan as any).practiceStatus || (plan.practiceArranged ? "섭외완료" : "미섭외")}
-                    </p>
-                  </div>
-                )}
-              </div>
+  {requestedPrivateCertList.length > 0 && (
+    <div className="bg-violet-50 rounded-lg p-4 text-sm border border-violet-100">
+      <p className="font-medium text-violet-700 mb-2">민간자격증 요청확인</p>
+      <div className="flex flex-wrap gap-2">
+        {requestedPrivateCertList.map((name, idx) => (
+          <Badge
+            key={`${name}-${idx}`}
+            className="bg-white text-violet-700 border border-violet-200"
+          >
+            {name}
+          </Badge>
+        ))}
+      </div>
+      <p className="text-xs text-violet-700/80 mt-2">
+        위 민간자격증이 요청된 상태입니다.
+      </p>
+    </div>
+  )}
+
+  {plan.hasPractice && (
+    <div className="bg-blue-50 rounded-lg p-4 text-sm">
+      <p className="font-medium text-blue-700 mb-1">실습 정보</p>
+      <p>
+        <span className="font-medium">실습 시간:</span> {plan.practiceHours ? plan.practiceHours + "시간" : "-"} ·{" "}
+        <span className="font-medium">실습 예정일:</span> {plan.practiceDate || "-"} ·{" "}
+        <span className="font-medium">섭외 상태:</span>{" "}
+        {(plan as any).practiceStatus || (plan.practiceArranged ? "섭외완료" : "미섭외")}
+      </p>
+    </div>
+  )}
+</div>
             ) : (
               <p className="text-sm text-muted-foreground py-4 text-center">
                 아직 플랜이 작성되지 않았습니다.
@@ -1703,25 +1849,46 @@ const templateSelectableCount = 8;
                 <Button size="sm" variant="outline" onClick={handleAddTransferSubjects}>
                   일괄 추가
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    const url = window.prompt("첨부파일 URL을 입력하세요");
-                    if (!url) return;
+                <>
+  <input
+    id="transfer-common-file"
+    type="file"
+    className="hidden"
+    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.hwp"
+    onChange={async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
 
-                    const name =
-                      window.prompt("첨부파일명을 입력하세요", "전적대 증빙자료") || "전적대 증빙자료";
+      try {
+        setUploadingTransferCommon(true);
+        const uploaded = await uploadFile(file);
 
-                    createTransferAttachmentMut.mutate({
-                      studentId,
-                      fileName: name,
-                      fileUrl: url,
-                    });
-                  }}
-                >
-                  첨부 추가
-                </Button>
+        createTransferAttachmentMut.mutate({
+          studentId,
+          fileName: uploaded.fileName,
+          fileUrl: uploaded.fileUrl,
+        });
+      } catch (err: any) {
+        toast.error(err.message || "공통 첨부 업로드에 실패했습니다.");
+      } finally {
+        setUploadingTransferCommon(false);
+        e.currentTarget.value = "";
+      }
+    }}
+  />
+
+  <Button
+    size="sm"
+    variant="outline"
+    onClick={() => {
+      const el = document.getElementById("transfer-common-file") as HTMLInputElement | null;
+      el?.click();
+    }}
+    disabled={uploadingTransferCommon}
+  >
+    {uploadingTransferCommon ? "업로드중..." : "첨부 추가"}
+  </Button>
+</>
               </div>
             </div>
 
@@ -1900,43 +2067,83 @@ const templateSelectableCount = 8;
                           </td>
 
                           <td className="px-2 py-1 text-center">
-                            {row.attachmentUrl ? (
-                              <a
-                                href={row.attachmentUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1 text-sm text-blue-600 underline"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <Paperclip className="h-3.5 w-3.5" />
-                                {row.attachmentName || "파일보기"}
-                              </a>
-                            ) : (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleTransferAttachment(row);
-                                }}
-                              >
-                                첨부
-                              </Button>
-                            )}
-                          </td>
+  {row.attachmentUrl ? (
+    <a
+      href={row.attachmentUrl}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1 text-sm text-blue-600 underline"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <Paperclip className="h-3.5 w-3.5" />
+      {row.attachmentName || "파일보기"}
+    </a>
+  ) : (
+    <>
+      <input
+        id={`transfer-row-file-${row.id}`}
+        type="file"
+        className="hidden"
+        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.hwp"
+        onChange={async (e) => {
+          e.stopPropagation();
+          const file = e.target.files?.[0];
+          if (!file) return;
+          await handleTransferAttachment(row, file);
+          e.currentTarget.value = "";
+        }}
+      />
+
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={uploadingTransferRowId === row.id}
+        onClick={(e) => {
+          e.stopPropagation();
+          const el = document.getElementById(
+            `transfer-row-file-${row.id}`
+          ) as HTMLInputElement | null;
+          el?.click();
+        }}
+      >
+        {uploadingTransferRowId === row.id ? "업로드중..." : "첨부"}
+      </Button>
+    </>
+  )}
+</td>
 
                           <td className="px-2 py-1 text-right">
                             <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleTransferAttachment(row);
-                                }}
-                              >
-                                {row.attachmentUrl ? "변경" : "등록"}
-                              </Button>
+                              <>
+  <input
+    id={`transfer-row-file-change-${row.id}`}
+    type="file"
+    className="hidden"
+    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.hwp"
+    onChange={async (e) => {
+      e.stopPropagation();
+      const file = e.target.files?.[0];
+      if (!file) return;
+      await handleTransferAttachment(row, file);
+      e.currentTarget.value = "";
+    }}
+  />
+
+  <Button
+    variant="ghost"
+    size="sm"
+    disabled={uploadingTransferRowId === row.id}
+    onClick={(e) => {
+      e.stopPropagation();
+      const el = document.getElementById(
+        `transfer-row-file-change-${row.id}`
+      ) as HTMLInputElement | null;
+      el?.click();
+    }}
+  >
+    {uploadingTransferRowId === row.id ? "업로드중..." : row.attachmentUrl ? "변경" : "등록"}
+  </Button>
+</>
 
                               {row.attachmentUrl && (
                                 <Button
@@ -2320,31 +2527,69 @@ const templateSelectableCount = 8;
                             />
                           </td>
                           <td className="px-3 py-1.5">
-                            <div className="space-y-1">
-                              <Input
-                                className="h-8 text-sm"
-                                value={editRefundForm.attachmentName}
-                                onChange={(e) =>
-                                  setEditRefundForm({
-                                    ...editRefundForm,
-                                    attachmentName: e.target.value,
-                                  })
-                                }
-                                placeholder="첨부파일명"
-                              />
-                              <Input
-                                className="h-8 text-sm"
-                                value={editRefundForm.attachmentUrl}
-                                onChange={(e) =>
-                                  setEditRefundForm({
-                                    ...editRefundForm,
-                                    attachmentUrl: e.target.value,
-                                  })
-                                }
-                                placeholder="첨부파일 URL"
-                              />
-                            </div>
-                          </td>
+  <div className="space-y-2">
+    <input
+      id={`refund-edit-file-${r.id}`}
+      type="file"
+      className="hidden"
+      accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.hwp"
+      onChange={async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+          setUploadingRefundEditId(r.id);
+          const uploaded = await uploadFile(file);
+
+          setEditRefundForm((prev) => ({
+            ...prev,
+            attachmentName: uploaded.fileName,
+            attachmentUrl: uploaded.fileUrl,
+          }));
+
+          toast.success("첨부파일 업로드 완료");
+        } catch (err: any) {
+          toast.error(err.message || "첨부 업로드 실패");
+        } finally {
+          setUploadingRefundEditId(null);
+          e.currentTarget.value = "";
+        }
+      }}
+    />
+
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="w-full"
+      disabled={uploadingRefundEditId === r.id}
+      onClick={() => {
+        const el = document.getElementById(
+          `refund-edit-file-${r.id}`
+        ) as HTMLInputElement | null;
+        el?.click();
+      }}
+    >
+      {uploadingRefundEditId === r.id ? "업로드중..." : "파일 첨부"}
+    </Button>
+
+    {editRefundForm.attachmentUrl ? (
+      <a
+        href={editRefundForm.attachmentUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-1 text-xs text-blue-600 underline break-all"
+      >
+        <Paperclip className="h-3.5 w-3.5" />
+        {editRefundForm.attachmentName || "첨부파일"}
+      </a>
+    ) : (
+      <span className="text-xs text-muted-foreground">첨부파일 없음</span>
+    )}
+  </div>
+</td>
+	
+
                           <td className="px-4 py-2 text-center">
                             <Badge
                               className={
@@ -2556,6 +2801,103 @@ const templateSelectableCount = 8;
           </CardContent>
         </Card>
       )}
+	      <Dialog open={privateCertDialogOpen} onOpenChange={setPrivateCertDialogOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>민간자격증 요청</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="grid md:grid-cols-[180px_1fr] gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm">민간자격증</Label>
+
+                <div className="rounded-lg border bg-muted/30 p-3 text-xs space-y-1">
+                  <div>
+                    선택 가능 자격증: <span className="font-medium">제한 없음</span>
+                  </div>
+                  <div>
+                    선택 자격증: <span className="font-medium">{selectedPrivateCertNames.length}</span>개
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    원하는 민간자격증을 선택 후 요청 버튼을 누르면 플랜 요약에 요청 내역이 표시됩니다.
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="border rounded-lg overflow-hidden">
+                  <div className="max-h-[360px] overflow-y-auto">
+                    <div className="divide-y">
+                      {PRIVATE_CERT_OPTIONS.map((name) => {
+                        const checked = selectedPrivateCertNames.includes(name);
+
+                        return (
+                          <label
+                            key={name}
+                            className="flex items-center gap-3 px-4 py-3 text-sm cursor-pointer"
+                          >
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={() => togglePrivateCert(name)}
+                            />
+                            <span className="flex-1">{name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {!!selectedPrivateCertNames.length && (
+                  <div className="rounded-lg border bg-violet-50 p-3">
+                    <div className="text-sm font-medium text-violet-700 mb-2">
+                      선택된 민간자격증 ({selectedPrivateCertNames.length})
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {selectedPrivateCertNames.map((name) => (
+                        <div
+                          key={name}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white border text-xs"
+                        >
+                          <span>{name}</span>
+                          <button
+                            type="button"
+                            className="text-muted-foreground hover:text-destructive"
+                            onClick={() => togglePrivateCert(name)}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPrivateCertDialogOpen(false);
+                setSelectedPrivateCertNames([]);
+              }}
+            >
+              취소
+            </Button>
+
+            <Button
+              onClick={submitPrivateCertRequest}
+              disabled={upsertPlanMut.isPending || selectedPrivateCertNames.length === 0}
+            >
+              요청
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
            <Dialog open={refundDialogOpen} onOpenChange={setRefundDialogOpen}>
         <DialogContent className="max-w-md">
@@ -2617,27 +2959,66 @@ const templateSelectableCount = 8;
               />
             </div>
 
-            <div className="space-y-1">
-              <Label className="text-xs">첨부파일명</Label>
-              <Input
-                value={refundForm.attachmentName}
-                onChange={(e) =>
-                  setRefundForm({ ...refundForm, attachmentName: e.target.value })
-                }
-                placeholder="예: 환불신청서"
-              />
-            </div>
+            <div className="space-y-2">
+  <Label className="text-xs">첨부파일</Label>
 
-            <div className="space-y-1">
-              <Label className="text-xs">첨부파일 URL</Label>
-              <Input
-                value={refundForm.attachmentUrl}
-                onChange={(e) =>
-                  setRefundForm({ ...refundForm, attachmentUrl: e.target.value })
-                }
-                placeholder="첨부파일 URL"
-              />
-            </div>
+  <input
+    id="refund-create-file"
+    type="file"
+    className="hidden"
+    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.hwp"
+    onChange={async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      try {
+        setUploadingRefund(true);
+        const uploaded = await uploadFile(file);
+
+        setRefundForm((prev) => ({
+          ...prev,
+          attachmentName: uploaded.fileName,
+          attachmentUrl: uploaded.fileUrl,
+        }));
+
+        toast.success("첨부파일 업로드 완료");
+      } catch (err: any) {
+        toast.error(err.message || "첨부 업로드 실패");
+      } finally {
+        setUploadingRefund(false);
+        e.currentTarget.value = "";
+      }
+    }}
+  />
+
+  <div className="flex items-center gap-2 flex-wrap">
+    <Button
+      type="button"
+      variant="outline"
+      onClick={() => {
+        const el = document.getElementById("refund-create-file") as HTMLInputElement | null;
+        el?.click();
+      }}
+      disabled={uploadingRefund}
+    >
+      {uploadingRefund ? "업로드중..." : "파일 첨부"}
+    </Button>
+
+    {refundForm.attachmentUrl ? (
+      <a
+        href={refundForm.attachmentUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-1 text-sm text-blue-600 underline"
+      >
+        <Paperclip className="h-3.5 w-3.5" />
+        {refundForm.attachmentName || "첨부파일"}
+      </a>
+    ) : (
+      <span className="text-xs text-muted-foreground">첨부파일 없음</span>
+    )}
+  </div>
+</div>
 
             <div className="rounded-lg border bg-amber-50 px-3 py-2 text-xs text-amber-700">
               등록 시 바로 차감되지 않고, 관리자 승인 후 환불 금액이 반영됩니다.
