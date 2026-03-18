@@ -28,6 +28,8 @@ import {
   InsertPrivateCertificateRequest,
   practiceSupportRequests,
   InsertPracticeSupportRequest,
+  practiceInstitutions,
+  InsertPracticeInstitution,
   jobSupportRequests,
   InsertJobSupportRequest,
 } from "../drizzle/schema";
@@ -54,6 +56,35 @@ function getInsertId(result: any) {
 
 function toNumber(v: any) {
   return Number(String(v ?? "0").replace(/,/g, "").trim()) || 0;
+}
+
+function toNullableNumber(v: any) {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(String(v).replace(/,/g, "").trim());
+  return Number.isFinite(n) ? n : null;
+}
+
+function haversineDistanceKm(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+) {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const R = 6371;
+
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 }
 
 async function getNextUserDisplayNo() {
@@ -551,6 +582,40 @@ export async function updateStudent(id: number, data: Partial<InsertStudent>) {
   await db.update(students).set(data).where(eq(students.id, id));
 }
 
+export async function updateStudentAddressAndCoords(params: {
+  studentId: number;
+  address?: string | null;
+  detailAddress?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(students)
+    .set({
+      address: params.address ?? null,
+      detailAddress: params.detailAddress ?? null,
+      latitude:
+        params.latitude === null || params.latitude === undefined
+          ? null
+          : String(params.latitude),
+      longitude:
+        params.longitude === null || params.longitude === undefined
+          ? null
+          : String(params.longitude),
+      geocodedAt:
+        params.latitude !== null &&
+        params.latitude !== undefined &&
+        params.longitude !== null &&
+        params.longitude !== undefined
+          ? new Date()
+          : null,
+    } as any)
+    .where(eq(students.id, params.studentId));
+}
+
 export async function deleteStudent(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -585,6 +650,7 @@ export async function createSemester(data: InsertSemester) {
   const result = await db.insert(semesters).values({
     ...data,
     status: (data as any).status ?? "등록",
+    practiceStatus: (data as any).practiceStatus ?? "미섭외",
   } as any);
 
   return getInsertId(result);
@@ -641,7 +707,7 @@ export async function listAllSemesters(
 
       (SELECT p.hasPractice FROM plans p WHERE p.studentId = s.id LIMIT 1) as hasPractice,
       (SELECT p.practiceHours FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceHours,
-      (SELECT p.practiceStatus FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceStatus
+      sem.practiceStatus as practiceStatus
     FROM semesters sem
     INNER JOIN students s ON sem.studentId = s.id
     LEFT JOIN users u ON u.id = s.assigneeId
@@ -1633,7 +1699,6 @@ export async function bulkCreatePlanSemestersFromTemplate(params: {
   return { count: rows.length };
 }
 
-
 // ─── Private Certificate Requests (민간자격증 요청) ─────────────────
 export async function listPrivateCertificateRequests(assigneeId?: number) {
   const db = await getDb();
@@ -1669,10 +1734,11 @@ export async function createPrivateCertificateRequest(data: InsertPrivateCertifi
   if (!db) throw new Error("DB not available");
 
   const result: any = await db.insert(privateCertificateRequests).values({
-  ...data,
-  feeAmount: data.feeAmount ?? "0",
-  paymentStatus: data.paymentStatus ?? "결제대기",
-});
+    ...data,
+    feeAmount: data.feeAmount ?? "0",
+    paymentStatus: data.paymentStatus ?? "결제대기",
+  });
+
   return getInsertId(result);
 }
 
@@ -1726,15 +1792,30 @@ export async function listPracticeSupportRequestsByStudent(studentId: number) {
     .orderBy(desc(practiceSupportRequests.createdAt));
 }
 
+export async function getPracticeSupportRequest(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const rows = await db
+    .select()
+    .from(practiceSupportRequests)
+    .where(eq(practiceSupportRequests.id, id))
+    .limit(1);
+
+  return rows[0];
+}
+
 export async function createPracticeSupportRequest(data: InsertPracticeSupportRequest) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
   const result: any = await db.insert(practiceSupportRequests).values({
-  ...data,
-  feeAmount: data.feeAmount ?? "0",
-  paymentStatus: data.paymentStatus ?? "결제대기",
-});
+    ...data,
+    feeAmount: data.feeAmount ?? "0",
+    paymentStatus: data.paymentStatus ?? "미결제",
+    coordinationStatus: data.coordinationStatus ?? "미섭외",
+  });
+
   return getInsertId(result);
 }
 
@@ -1756,6 +1837,353 @@ export async function deletePracticeSupportRequest(id: number) {
   if (!db) throw new Error("DB not available");
 
   await db.delete(practiceSupportRequests).where(eq(practiceSupportRequests.id, id));
+}
+
+export async function upsertPracticeSupportRequestByStudent(params: {
+  studentId: number;
+  semesterId?: number | null;
+  assigneeId: number;
+  clientName: string;
+  phone: string;
+  course: string;
+  inputAddress?: string | null;
+  detailAddress?: string | null;
+  assigneeName?: string | null;
+  managerName?: string | null;
+  practiceHours?: number | null;
+  includeEducationCenter?: boolean;
+  includePracticeInstitution?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const existing = await db
+    .select()
+    .from(practiceSupportRequests)
+    .where(eq(practiceSupportRequests.studentId, params.studentId))
+    .limit(1);
+
+  const payload: any = {
+    studentId: params.studentId,
+    semesterId: params.semesterId ?? null,
+    assigneeId: params.assigneeId,
+    clientName: params.clientName,
+    phone: params.phone,
+    course: params.course,
+    inputAddress: params.inputAddress ?? null,
+    detailAddress: params.detailAddress ?? null,
+    assigneeName: params.assigneeName ?? null,
+    managerName: params.managerName ?? null,
+    practiceHours: params.practiceHours ?? null,
+    includeEducationCenter: params.includeEducationCenter ?? true,
+    includePracticeInstitution: params.includePracticeInstitution ?? true,
+    coordinationStatus: "미섭외",
+    paymentStatus: "미결제",
+    feeAmount: "0",
+  };
+
+  if (existing[0]) {
+    await db
+      .update(practiceSupportRequests)
+      .set(payload)
+      .where(eq(practiceSupportRequests.id, existing[0].id));
+
+    if (params.semesterId) {
+      await db
+        .update(semesters)
+        .set({
+          practiceStatus: "미섭외",
+          practiceSupportRequestId: existing[0].id,
+        } as any)
+        .where(eq(semesters.id, params.semesterId));
+    }
+
+    await db
+      .update(plans)
+      .set({
+        hasPractice: true,
+        practiceHours: params.practiceHours ?? null,
+        practiceStatus: "미섭외",
+      } as any)
+      .where(eq(plans.studentId, params.studentId));
+
+    return existing[0].id;
+  }
+
+  const result: any = await db.insert(practiceSupportRequests).values(payload);
+  const insertId = getInsertId(result);
+
+  if (params.semesterId && insertId) {
+    await db
+      .update(semesters)
+      .set({
+        practiceStatus: "미섭외",
+        practiceSupportRequestId: insertId,
+      } as any)
+      .where(eq(semesters.id, params.semesterId));
+  }
+
+  await db
+    .update(plans)
+    .set({
+      hasPractice: true,
+      practiceHours: params.practiceHours ?? null,
+      practiceStatus: "미섭외",
+    } as any)
+    .where(eq(plans.studentId, params.studentId));
+
+  return insertId;
+}
+
+export async function updatePracticeSupportStatusAndSyncSemester(params: {
+  practiceSupportRequestId: number;
+  coordinationStatus: "미섭외" | "섭외중" | "섭외완료";
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const row = await db
+    .select()
+    .from(practiceSupportRequests)
+    .where(eq(practiceSupportRequests.id, params.practiceSupportRequestId))
+    .limit(1);
+
+  const target = row[0];
+  if (!target) throw new Error("Practice support request not found");
+
+  await db
+    .update(practiceSupportRequests)
+    .set({
+      coordinationStatus: params.coordinationStatus,
+    } as any)
+    .where(eq(practiceSupportRequests.id, params.practiceSupportRequestId));
+
+  if (target.semesterId) {
+    await db
+      .update(semesters)
+      .set({
+        practiceStatus: params.coordinationStatus,
+        practiceSupportRequestId: target.id,
+      } as any)
+      .where(eq(semesters.id, target.semesterId));
+  }
+
+  await db
+    .update(plans)
+    .set({
+      practiceStatus: params.coordinationStatus,
+    } as any)
+    .where(eq(plans.studentId, target.studentId));
+
+  return true;
+}
+
+export async function selectPracticeInstitutionForRequest(params: {
+  practiceSupportRequestId: number;
+  institutionId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const requestRows = await db
+    .select()
+    .from(practiceSupportRequests)
+    .where(eq(practiceSupportRequests.id, params.practiceSupportRequestId))
+    .limit(1);
+
+  const institutionRows = await db
+    .select()
+    .from(practiceInstitutions)
+    .where(eq(practiceInstitutions.id, params.institutionId))
+    .limit(1);
+
+  const request = requestRows[0];
+  const institution = institutionRows[0];
+
+  if (!request) throw new Error("Practice support request not found");
+  if (!institution) throw new Error("Practice institution not found");
+
+  const updateData: any = {};
+
+  const student = await getStudent(request.studentId);
+  const studentLat = toNullableNumber((student as any)?.latitude);
+  const studentLng = toNullableNumber((student as any)?.longitude);
+  const institutionLat = toNullableNumber((institution as any)?.latitude);
+  const institutionLng = toNullableNumber((institution as any)?.longitude);
+
+  let distanceKm: number | null = null;
+  if (
+    studentLat !== null &&
+    studentLng !== null &&
+    institutionLat !== null &&
+    institutionLng !== null
+  ) {
+    distanceKm = Number(
+      haversineDistanceKm(studentLat, studentLng, institutionLat, institutionLng).toFixed(2)
+    );
+  }
+
+  if (institution.institutionType === "education") {
+    updateData.selectedEducationCenterId = institution.id;
+    updateData.selectedEducationCenterName = institution.name;
+    updateData.selectedEducationCenterAddress = institution.address;
+    updateData.selectedEducationCenterDistanceKm =
+      distanceKm === null ? null : String(distanceKm);
+  }
+
+  if (institution.institutionType === "institution") {
+    updateData.selectedPracticeInstitutionId = institution.id;
+    updateData.selectedPracticeInstitutionName = institution.name;
+    updateData.selectedPracticeInstitutionAddress = institution.address;
+    updateData.selectedPracticeInstitutionDistanceKm =
+      distanceKm === null ? null : String(distanceKm);
+  }
+
+  await db
+    .update(practiceSupportRequests)
+    .set(updateData)
+    .where(eq(practiceSupportRequests.id, params.practiceSupportRequestId));
+
+  return true;
+}
+
+// ─── Practice Institutions (실습기관/실습교육원 마스터) ──────────────
+export async function listPracticeInstitutions(
+  institutionType?: "education" | "institution"
+) {
+  const db = await getDb();
+  if (!db) return [];
+
+  if (institutionType) {
+    return db
+      .select()
+      .from(practiceInstitutions)
+      .where(
+        and(
+          eq(practiceInstitutions.institutionType, institutionType),
+          eq(practiceInstitutions.isActive, true)
+        )
+      )
+      .orderBy(desc(practiceInstitutions.createdAt));
+  }
+
+  return db
+    .select()
+    .from(practiceInstitutions)
+    .where(eq(practiceInstitutions.isActive, true))
+    .orderBy(desc(practiceInstitutions.createdAt));
+}
+
+export async function getPracticeInstitution(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const rows = await db
+    .select()
+    .from(practiceInstitutions)
+    .where(eq(practiceInstitutions.id, id))
+    .limit(1);
+
+  return rows[0];
+}
+
+export async function createPracticeInstitution(data: InsertPracticeInstitution) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(practiceInstitutions).values({
+    ...data,
+    price: data.price ?? "0",
+    isActive: data.isActive ?? true,
+  });
+
+  return getInsertId(result);
+}
+
+export async function updatePracticeInstitution(
+  id: number,
+  data: Partial<InsertPracticeInstitution>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(practiceInstitutions)
+    .set(data as any)
+    .where(eq(practiceInstitutions.id, id));
+}
+
+export async function deletePracticeInstitution(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .delete(practiceInstitutions)
+    .where(eq(practiceInstitutions.id, id));
+}
+
+export async function bulkCreatePracticeInstitutions(
+  dataList: InsertPracticeInstitution[]
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  if (!dataList.length) return [];
+
+  const rows = dataList.map((item) => ({
+    ...item,
+    price: item.price ?? "0",
+    isActive: item.isActive ?? true,
+  }));
+
+  return db.insert(practiceInstitutions).values(rows as any);
+}
+
+export async function listNearbyPracticeInstitutions(params: {
+  studentId: number;
+  institutionType: "education" | "institution";
+  limit?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const student = await getStudent(params.studentId);
+  if (!student) throw new Error("Student not found");
+
+  const studentLat = toNullableNumber((student as any).latitude);
+  const studentLng = toNullableNumber((student as any).longitude);
+
+  if (studentLat === null || studentLng === null) {
+    throw new Error("Student latitude/longitude not found");
+  }
+
+  const rows = await db
+    .select()
+    .from(practiceInstitutions)
+    .where(
+      and(
+        eq(practiceInstitutions.institutionType, params.institutionType),
+        eq(practiceInstitutions.isActive, true)
+      )
+    );
+
+  const mapped = rows
+    .map((row: any) => {
+      const lat = toNullableNumber(row.latitude);
+      const lng = toNullableNumber(row.longitude);
+
+      if (lat === null || lng === null) return null;
+
+      const distanceKm = haversineDistanceKm(studentLat, studentLng, lat, lng);
+
+      return {
+        ...row,
+        distanceKm: Number(distanceKm.toFixed(2)),
+      };
+    })
+    .filter(Boolean)
+    .sort((a: any, b: any) => a.distanceKm - b.distanceKm);
+
+  return mapped.slice(0, params.limit ?? 30);
 }
 
 // ─── Job Support Requests (취업지원센터) ────────────────────────────
@@ -1793,10 +2221,11 @@ export async function createJobSupportRequest(data: InsertJobSupportRequest) {
   if (!db) throw new Error("DB not available");
 
   const result: any = await db.insert(jobSupportRequests).values({
-  ...data,
-  feeAmount: data.feeAmount ?? "0",
-  paymentStatus: data.paymentStatus ?? "결제대기",
-});
+    ...data,
+    feeAmount: data.feeAmount ?? "0",
+    paymentStatus: data.paymentStatus ?? "결제대기",
+  });
+
   return getInsertId(result);
 }
 

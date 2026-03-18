@@ -108,6 +108,12 @@ export const students = mysqlTable("students", {
 
   approvedAt: datetime("approvedAt"),
   rejectedAt: datetime("rejectedAt"),
+  // 지도/거리 계산용 학생 주소
+  address: varchar("address", { length: 255 }),
+  detailAddress: varchar("detailAddress", { length: 255 }),
+  latitude: decimal("latitude", { precision: 10, scale: 7 }),
+  longitude: decimal("longitude", { precision: 10, scale: 7 }),
+  geocodedAt: datetime("geocodedAt"),
 
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -141,6 +147,13 @@ export const semesters = mysqlTable("semesters", {
   actualPaymentDate: date("actualPaymentDate"),
   isCompleted: boolean("isCompleted").default(false).notNull(),
 
+  // 실습 상태 연동용
+  practiceStatus: mysqlEnum("practiceStatus", ["미섭외", "섭외중", "섭외완료"])
+    .notNull()
+    .default("미섭외"),
+
+  practiceSupportRequestId: int("practiceSupportRequestId"),
+
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -162,6 +175,7 @@ export const plans = mysqlTable("plans", {
   practiceDate: varchar("practiceDate", { length: 50 }),
   practiceArranged: boolean("practiceArranged").default(false),
 
+  // 표시용으로 일단 유지
   practiceStatus: mysqlEnum("practiceStatus", ["미섭외", "섭외중", "섭외완료"])
     .default("미섭외"),
 
@@ -378,14 +392,20 @@ export const practiceSupportRequests = mysqlTable("practice_support_requests", {
   id: int("id").autoincrement().primaryKey(),
 
   studentId: int("studentId").notNull(),
+  semesterId: int("semesterId"),
   assigneeId: int("assigneeId").notNull(),
 
   clientName: varchar("clientName", { length: 100 }).notNull(),
   phone: varchar("phone", { length: 30 }).notNull(),
   assigneeName: varchar("assigneeName", { length: 100 }),
+  managerName: varchar("managerName", { length: 100 }),
 
   course: varchar("course", { length: 200 }).notNull(),
+
   inputAddress: varchar("inputAddress", { length: 255 }),
+  detailAddress: varchar("detailAddress", { length: 255 }),
+
+  practiceHours: int("practiceHours"),
 
   includeEducationCenter: boolean("includeEducationCenter")
     .notNull()
@@ -399,20 +419,11 @@ export const practiceSupportRequests = mysqlTable("practice_support_requests", {
     "미섭외",
     "섭외중",
     "섭외완료",
-    "보류",
   ])
     .notNull()
     .default("미섭외"),
 
-  requestStatus: mysqlEnum("requestStatus", [
-    "요청",
-    "진행중",
-    "완료",
-    "취소",
-  ])
-    .notNull()
-    .default("요청"),
-
+  selectedEducationCenterId: int("selectedEducationCenterId"),
   selectedEducationCenterName: varchar("selectedEducationCenterName", {
     length: 255,
   }),
@@ -424,6 +435,7 @@ export const practiceSupportRequests = mysqlTable("practice_support_requests", {
     scale: 2,
   }),
 
+  selectedPracticeInstitutionId: int("selectedPracticeInstitutionId"),
   selectedPracticeInstitutionName: varchar("selectedPracticeInstitutionName", {
     length: 255,
   }),
@@ -442,14 +454,9 @@ export const practiceSupportRequests = mysqlTable("practice_support_requests", {
     .notNull()
     .default("0"),
 
-  paymentStatus: mysqlEnum("paymentStatus", [
-    "결제대기",
-    "입금확인",
-    "완료",
-    "취소",
-  ])
+  paymentStatus: mysqlEnum("paymentStatus", ["미결제", "결제"])
     .notNull()
-    .default("결제대기"),
+    .default("미결제"),
 
   paidAt: datetime("paidAt"),
   note: text("note"),
@@ -465,6 +472,37 @@ export type PracticeSupportRequest =
   typeof practiceSupportRequests.$inferSelect;
 export type InsertPracticeSupportRequest =
   typeof practiceSupportRequests.$inferInsert;
+
+// ─── Practice Institutions (실습기관/실습교육원 마스터) ──────────────
+export const practiceInstitutions = mysqlTable("practice_institutions", {
+  id: int("id").autoincrement().primaryKey(),
+
+  institutionType: mysqlEnum("institutionType", ["education", "institution"])
+    .notNull(),
+
+  name: varchar("name", { length: 255 }).notNull(),
+  representativeName: varchar("representativeName", { length: 100 }),
+  phone: varchar("phone", { length: 30 }),
+
+  address: varchar("address", { length: 255 }).notNull(),
+  detailAddress: varchar("detailAddress", { length: 255 }),
+
+  price: decimal("price", { precision: 12, scale: 0 }).notNull().default("0"),
+
+  latitude: decimal("latitude", { precision: 10, scale: 7 }),
+  longitude: decimal("longitude", { precision: 10, scale: 7 }),
+
+  availableCourse: varchar("availableCourse", { length: 255 }),
+  memo: text("memo"),
+
+  isActive: boolean("isActive").notNull().default(true),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PracticeInstitution = typeof practiceInstitutions.$inferSelect;
+export type InsertPracticeInstitution = typeof practiceInstitutions.$inferInsert;
 
 // ─── Job Support Requests (취업지원센터) ────────────────────────────
 export const jobSupportRequests = mysqlTable("job_support_requests", {
@@ -537,4 +575,3 @@ export const jobSupportRequests = mysqlTable("job_support_requests", {
 
 export type JobSupportRequest = typeof jobSupportRequests.$inferSelect;
 export type InsertJobSupportRequest = typeof jobSupportRequests.$inferInsert;
-

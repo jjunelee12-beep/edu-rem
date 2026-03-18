@@ -210,45 +210,45 @@ export const appRouter = router({
   }),
 
   dashboard: router({
-   monthApprovals: protectedProcedure.query(async ({ ctx }) => {
-  const isAdminHost = isAdminOrHost(ctx.user);
-  const assigneeId = isAdminHost ? undefined : Number(ctx.user.id);
+    monthApprovals: protectedProcedure.query(async ({ ctx }) => {
+      const isAdminHost = isAdminOrHost(ctx.user);
+      const assigneeId = isAdminHost ? undefined : Number(ctx.user.id);
 
-  const stats = await db.getDashboardStats(assigneeId);
-  const monthEntries = await db.getMonthSalesEntries(assigneeId);
-  const students = await db.listStudents(assigneeId);
+      const stats = await db.getDashboardStats(assigneeId);
+      const monthEntries = await db.getMonthSalesEntries(assigneeId);
+      const students = await db.listStudents(assigneeId);
 
-  const approved = (students || []).filter((s: any) => s.approvalStatus === "승인");
-  const rejected = (students || []).filter((s: any) => s.approvalStatus === "불승인");
-  const pending = (students || []).filter((s: any) => s.approvalStatus === "대기");
+      const approved = (students || []).filter((s: any) => s.approvalStatus === "승인");
+      const rejected = (students || []).filter((s: any) => s.approvalStatus === "불승인");
+      const pending = (students || []).filter((s: any) => s.approvalStatus === "대기");
 
-  const approvedTotal = approved.reduce(
-    (sum: number, s: any) => sum + Number(s.netPaidAmount || s.paidAmount || 0),
-    0
-  );
+      const approvedTotal = approved.reduce(
+        (sum: number, s: any) => sum + Number(s.netPaidAmount || s.paidAmount || 0),
+        0
+      );
 
-  const rejectedTotal = rejected.reduce(
-    (sum: number, s: any) => sum + Number(s.netPaidAmount || s.paidAmount || 0),
-    0
-  );
+      const rejectedTotal = rejected.reduce(
+        (sum: number, s: any) => sum + Number(s.netPaidAmount || s.paidAmount || 0),
+        0
+      );
 
-  const pendingTotal = pending.reduce(
-    (sum: number, s: any) => sum + Number(s.netPaidAmount || s.paidAmount || 0),
-    0
-  );
+      const pendingTotal = pending.reduce(
+        (sum: number, s: any) => sum + Number(s.netPaidAmount || s.paidAmount || 0),
+        0
+      );
 
-  return {
-    approved,
-    rejected,
-    pending,
-    approvedTotal,
-    rejectedTotal,
-    pendingTotal,
-    monthRefund: stats?.monthRefund ?? 0,
-    totalRefund: stats?.totalRefund ?? 0,
-    entries: monthEntries?.entries ?? [],
-  };
-}),
+      return {
+        approved,
+        rejected,
+        pending,
+        approvedTotal,
+        rejectedTotal,
+        pendingTotal,
+        monthRefund: stats?.monthRefund ?? 0,
+        totalRefund: stats?.totalRefund ?? 0,
+        entries: monthEntries?.entries ?? [],
+      };
+    }),
 
     stats: protectedProcedure.query(async ({ ctx }) => {
       return db.getDashboardStats(Number(ctx.user.id));
@@ -580,6 +580,8 @@ export const appRouter = router({
           institution: z.string().optional(),
           totalSemesters: z.number().optional(),
           consultationId: z.number().optional(),
+          address: z.string().optional(),
+          detailAddress: z.string().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -610,6 +612,8 @@ export const appRouter = router({
           institution: z.string().optional(),
           institutionId: z.number().optional(),
           totalSemesters: z.number().optional(),
+          address: z.string().optional(),
+          detailAddress: z.string().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -632,6 +636,29 @@ export const appRouter = router({
         console.log("[student.update] data =", data);
 
         await db.updateStudent(id, data);
+        return { success: true };
+      }),
+
+    updateAddressAndCoords: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+          address: z.string().optional().nullable(),
+          detailAddress: z.string().optional().nullable(),
+          latitude: z.number().optional().nullable(),
+          longitude: z.number().optional().nullable(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const item = await db.getStudent(input.studentId);
+        if (!item) throw new Error("학생 기록을 찾을 수 없습니다");
+
+        const myId = Number(ctx.user.id) || 1;
+        if (!isAdminOrHost(ctx.user) && item.assigneeId !== myId) {
+          throw new Error("권한이 없습니다");
+        }
+
+        await db.updateStudentAddressAndCoords(input);
         return { success: true };
       }),
 
@@ -663,42 +690,42 @@ export const appRouter = router({
         return db.getStudentRegistrationSummary(input.studentId);
       }),
 
-   approve: protectedProcedure
-  .input(
-    z.object({
-      id: z.number(),
-      approvalStatus: z.enum(["승인", "불승인"]),
-    })
-  )
-  .mutation(async ({ ctx, input }) => {
-    if (!isAdminOrHost(ctx.user)) {
-      throw new Error("관리자 또는 호스트만 처리할 수 있습니다");
-    }
-
-    const now = new Date();
-    const updateData: any = { approvalStatus: input.approvalStatus };
-
-    if (input.approvalStatus === "승인") {
-      updateData.approvedAt = now;
-      updateData.rejectedAt = null;
-    } else {
-      updateData.rejectedAt = now;
-      updateData.approvedAt = null;
-    }
-
-    await db.updateStudent(input.id, updateData);
-
-    if (input.approvalStatus === "승인") {
-      const sems = await db.listSemesters(input.id);
-      for (const sem of sems) {
-        if (!sem.isLocked) {
-          await db.updateSemester(sem.id, { isLocked: true });
+    approve: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          approvalStatus: z.enum(["승인", "불승인"]),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!isAdminOrHost(ctx.user)) {
+          throw new Error("관리자 또는 호스트만 처리할 수 있습니다");
         }
-      }
-    }
 
-    return { success: true };
-  }),
+        const now = new Date();
+        const updateData: any = { approvalStatus: input.approvalStatus };
+
+        if (input.approvalStatus === "승인") {
+          updateData.approvedAt = now;
+          updateData.rejectedAt = null;
+        } else {
+          updateData.rejectedAt = now;
+          updateData.approvedAt = null;
+        }
+
+        await db.updateStudent(input.id, updateData);
+
+        if (input.approvalStatus === "승인") {
+          const sems = await db.listSemesters(input.id);
+          for (const sem of sems) {
+            if (!sem.isLocked) {
+              await db.updateSemester(sem.id, { isLocked: true });
+            }
+          }
+        }
+
+        return { success: true };
+      }),
   }),
 
   plan: router({
@@ -738,7 +765,7 @@ export const appRouter = router({
           practiceHours: z.number().optional(),
           practiceDate: z.string().optional(),
           practiceArranged: z.boolean().optional(),
-          practiceStatus: z.string().optional(),
+          practiceStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
           specialNotes: z.string().optional(),
         })
       )
@@ -793,6 +820,7 @@ export const appRouter = router({
           plannedInstitutionId: z.number().optional(),
           plannedSubjectCount: z.number().optional(),
           plannedAmount: z.string().optional(),
+          practiceStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -806,6 +834,7 @@ export const appRouter = router({
         const id = await db.createSemester({
           ...input,
           status: "등록",
+          practiceStatus: input.practiceStatus ?? "미섭외",
         } as any);
 
         if (input.plannedSubjectCount !== undefined && input.plannedSubjectCount > 0) {
@@ -836,6 +865,8 @@ export const appRouter = router({
           actualPaymentDate: z.string().optional(),
           isCompleted: z.boolean().optional(),
           status: z.enum(["등록", "종료", "등록 종료"]).optional(),
+          practiceStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
+          practiceSupportRequestId: z.number().optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -873,6 +904,8 @@ export const appRouter = router({
             actualPaymentDate,
             isCompleted,
             status,
+            practiceStatus,
+            practiceSupportRequestId,
             ...plannedFields
           } = input;
 
@@ -999,7 +1032,7 @@ export const appRouter = router({
       }),
   }),
 
-    refund: router({
+  refund: router({
     listByStudent: protectedProcedure
       .input(z.object({ studentId: z.number() }))
       .query(async ({ ctx, input }) => {
@@ -1013,13 +1046,13 @@ export const appRouter = router({
         return db.listRefundsByStudent(input.studentId);
       }),
 
-   listPending: protectedProcedure.query(async ({ ctx }) => {
-  if (!isAdminOrHost(ctx.user)) {
-    throw new Error("관리자 또는 호스트만 확인할 수 있습니다");
-  }
+    listPending: protectedProcedure.query(async ({ ctx }) => {
+      if (!isAdminOrHost(ctx.user)) {
+        throw new Error("관리자 또는 호스트만 확인할 수 있습니다");
+      }
 
-  return db.listPendingRefunds();
-}),
+      return db.listPendingRefunds();
+    }),
 
     create: protectedProcedure
       .input(
@@ -1060,27 +1093,27 @@ export const appRouter = router({
         return { id, success: true };
       }),
 
-  approve: protectedProcedure
-  .input(z.object({ id: z.number() }))
-  .mutation(async ({ ctx, input }) => {
-    if (!isAdminOrHost(ctx.user)) {
-      throw new Error("관리자 또는 호스트만 승인할 수 있습니다");
-    }
+    approve: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        if (!isAdminOrHost(ctx.user)) {
+          throw new Error("관리자 또는 호스트만 승인할 수 있습니다");
+        }
 
-    await db.approveRefund(input.id, Number(ctx.user.id));
-    return { success: true };
-  }),
+        await db.approveRefund(input.id, Number(ctx.user.id));
+        return { success: true };
+      }),
 
     reject: protectedProcedure
-  .input(z.object({ id: z.number() }))
-  .mutation(async ({ ctx, input }) => {
-    if (!isAdminOrHost(ctx.user)) {
-      throw new Error("관리자 또는 호스트만 불승인 처리할 수 있습니다");
-    }
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        if (!isAdminOrHost(ctx.user)) {
+          throw new Error("관리자 또는 호스트만 불승인 처리할 수 있습니다");
+        }
 
-    await db.rejectRefund(input.id, Number(ctx.user.id));
-    return { success: true };
-  }),
+        await db.rejectRefund(input.id, Number(ctx.user.id));
+        return { success: true };
+      }),
 
     update: protectedProcedure
       .input(
@@ -1412,7 +1445,7 @@ export const appRouter = router({
       }),
   }),
 
-    courseTemplate: router({
+  courseTemplate: router({
     list: protectedProcedure
       .input(
         z
@@ -1449,29 +1482,29 @@ export const appRouter = router({
       }),
 
     applyToPlanSemester: protectedProcedure
-  .input(
-    z.object({
-      studentId: z.number(),
-      semesterNo: z.number(),
-      subjectIds: z.array(z.number()).min(1),
-    })
-  )
-  .mutation(async ({ ctx, input }) => {
-    const student = await db.getStudent(input.studentId);
-    if (!student) throw new Error("학생을 찾을 수 없습니다");
+      .input(
+        z.object({
+          studentId: z.number(),
+          semesterNo: z.number(),
+          subjectIds: z.array(z.number()).min(1),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) throw new Error("학생을 찾을 수 없습니다");
 
-    if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-      throw new Error("권한이 없습니다");
-    }
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          throw new Error("권한이 없습니다");
+        }
 
-    const result = await db.bulkCreatePlanSemestersFromTemplate({
-      studentId: input.studentId,
-      semesterNo: input.semesterNo,
-      subjectIds: input.subjectIds,
-    } as any);
+        const result = await db.bulkCreatePlanSemestersFromTemplate({
+          studentId: input.studentId,
+          semesterNo: input.semesterNo,
+          subjectIds: input.subjectIds,
+        } as any);
 
-    return { success: true, count: result.count };
-  }),
+        return { success: true, count: result.count };
+      }),
   }),
 
   privateCertificate: router({
@@ -1541,7 +1574,9 @@ export const appRouter = router({
           certificateName: z.string().optional(),
           inputAddress: z.string().optional(),
           note: z.string().optional(),
-         requestStatus: z.enum(["요청", "처리중", "완료", "취소"]).optional(),
+          requestStatus: z
+            .enum(["요청", "안내완료", "입금대기", "입금확인", "진행중", "완료", "취소"])
+            .optional(),
           feeAmount: z.string().optional(),
           paymentStatus: z.enum(["결제대기", "입금확인", "완료", "취소"]).optional(),
           paidAt: z.string().optional(),
@@ -1583,6 +1618,22 @@ export const appRouter = router({
       return db.listPracticeSupportRequests(assigneeId);
     }),
 
+    get: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const item = await db.getPracticeSupportRequest(input.id);
+        if (!item) return null;
+
+        const student = await db.getStudent(item.studentId);
+        if (!student) return null;
+
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          return null;
+        }
+
+        return item;
+      }),
+
     listByStudent: protectedProcedure
       .input(z.object({ studentId: z.number() }))
       .query(async ({ ctx, input }) => {
@@ -1600,7 +1651,11 @@ export const appRouter = router({
       .input(
         z.object({
           studentId: z.number(),
+          semesterId: z.number().optional(),
           inputAddress: z.string().optional(),
+          detailAddress: z.string().optional(),
+          managerName: z.string().optional(),
+          practiceHours: z.number().optional(),
           includeEducationCenter: z.boolean().optional(),
           includePracticeInstitution: z.boolean().optional(),
           note: z.string().optional(),
@@ -1621,23 +1676,70 @@ export const appRouter = router({
 
         const id = await db.createPracticeSupportRequest({
           studentId: input.studentId,
+          semesterId: input.semesterId ?? null,
           assigneeId: student.assigneeId,
           clientName: student.clientName,
           phone: student.phone,
           assigneeName: assignee?.name || null,
+          managerName: input.managerName ?? assignee?.name ?? null,
           course: student.course || "사회복지사",
-          inputAddress: input.inputAddress?.trim() || null,
+          inputAddress: input.inputAddress?.trim() || student.address || null,
+          detailAddress: input.detailAddress?.trim() || student.detailAddress || null,
+          practiceHours: input.practiceHours ?? null,
           includeEducationCenter: input.includeEducationCenter ?? true,
           includePracticeInstitution: input.includePracticeInstitution ?? true,
           coordinationStatus: "미섭외",
-          requestStatus: "요청",
           feeAmount: input.feeAmount || "0",
-          paymentStatus: "결제대기",
+          paymentStatus: "미결제",
           note: input.note || null,
           attachmentName: input.attachmentName || null,
           attachmentUrl: input.attachmentUrl || null,
         } as any);
 
+        if (input.semesterId) {
+          await db.updateSemester(input.semesterId, {
+            practiceStatus: "미섭외",
+            practiceSupportRequestId: id,
+          } as any);
+        }
+
+        await db.upsertPlan({
+          studentId: input.studentId,
+          hasPractice: true,
+          practiceHours: input.practiceHours ?? undefined,
+          practiceStatus: "미섭외",
+        } as any);
+
+        return { id, success: true };
+      }),
+
+    upsertByStudent: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+          semesterId: z.number().optional().nullable(),
+          assigneeId: z.number(),
+          clientName: z.string(),
+          phone: z.string(),
+          course: z.string(),
+          inputAddress: z.string().optional().nullable(),
+          detailAddress: z.string().optional().nullable(),
+          assigneeName: z.string().optional().nullable(),
+          managerName: z.string().optional().nullable(),
+          practiceHours: z.number().optional().nullable(),
+          includeEducationCenter: z.boolean().optional(),
+          includePracticeInstitution: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) throw new Error("학생을 찾을 수 없습니다");
+
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          throw new Error("권한이 없습니다");
+        }
+
+        const id = await db.upsertPracticeSupportRequestByStudent(input);
         return { id, success: true };
       }),
 
@@ -1645,17 +1747,22 @@ export const appRouter = router({
       .input(
         z.object({
           id: z.number(),
+          semesterId: z.number().optional(),
           inputAddress: z.string().optional(),
-          coordinationStatus: z.enum(["미섭외", "섭외중", "섭외완료", "보류"]).optional(),
-          requestStatus: z.enum(["요청", "처리중", "완료", "취소"]).optional(),
+          detailAddress: z.string().optional(),
+          managerName: z.string().optional(),
+          practiceHours: z.number().optional(),
+          coordinationStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
+          selectedEducationCenterId: z.number().optional(),
           selectedEducationCenterName: z.string().optional(),
           selectedEducationCenterAddress: z.string().optional(),
           selectedEducationCenterDistanceKm: z.string().optional(),
+          selectedPracticeInstitutionId: z.number().optional(),
           selectedPracticeInstitutionName: z.string().optional(),
           selectedPracticeInstitutionAddress: z.string().optional(),
           selectedPracticeInstitutionDistanceKm: z.string().optional(),
           feeAmount: z.string().optional(),
-          paymentStatus: z.enum(["결제대기", "입금확인", "완료", "취소"]).optional(),
+          paymentStatus: z.enum(["미결제", "결제"]).optional(),
           paidAt: z.string().optional(),
           note: z.string().optional(),
           attachmentName: z.string().optional(),
@@ -1668,12 +1775,17 @@ export const appRouter = router({
         }
 
         const data: any = {};
+        if (input.semesterId !== undefined) data.semesterId = input.semesterId;
         if (input.inputAddress !== undefined) data.inputAddress = input.inputAddress.trim();
+        if (input.detailAddress !== undefined) data.detailAddress = input.detailAddress.trim();
+        if (input.managerName !== undefined) data.managerName = input.managerName.trim();
+        if (input.practiceHours !== undefined) data.practiceHours = input.practiceHours;
         if (input.coordinationStatus !== undefined) data.coordinationStatus = input.coordinationStatus;
-        if (input.requestStatus !== undefined) data.requestStatus = input.requestStatus;
+        if (input.selectedEducationCenterId !== undefined) data.selectedEducationCenterId = input.selectedEducationCenterId;
         if (input.selectedEducationCenterName !== undefined) data.selectedEducationCenterName = input.selectedEducationCenterName.trim();
         if (input.selectedEducationCenterAddress !== undefined) data.selectedEducationCenterAddress = input.selectedEducationCenterAddress.trim();
         if (input.selectedEducationCenterDistanceKm !== undefined) data.selectedEducationCenterDistanceKm = input.selectedEducationCenterDistanceKm || null;
+        if (input.selectedPracticeInstitutionId !== undefined) data.selectedPracticeInstitutionId = input.selectedPracticeInstitutionId;
         if (input.selectedPracticeInstitutionName !== undefined) data.selectedPracticeInstitutionName = input.selectedPracticeInstitutionName.trim();
         if (input.selectedPracticeInstitutionAddress !== undefined) data.selectedPracticeInstitutionAddress = input.selectedPracticeInstitutionAddress.trim();
         if (input.selectedPracticeInstitutionDistanceKm !== undefined) data.selectedPracticeInstitutionDistanceKm = input.selectedPracticeInstitutionDistanceKm || null;
@@ -1685,13 +1797,226 @@ export const appRouter = router({
         if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl;
 
         await db.updatePracticeSupportRequest(input.id, data);
+
+        if (input.coordinationStatus !== undefined) {
+          await db.updatePracticeSupportStatusAndSyncSemester({
+            practiceSupportRequestId: input.id,
+            coordinationStatus: input.coordinationStatus,
+          });
+        }
+
         return { success: true };
+      }),
+
+    updateStatus: protectedProcedure
+      .input(
+        z.object({
+          practiceSupportRequestId: z.number(),
+          coordinationStatus: z.enum(["미섭외", "섭외중", "섭외완료"]),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!isAdminOrHost(ctx.user)) {
+          throw new Error("관리자 또는 호스트만 수정할 수 있습니다");
+        }
+
+        await db.updatePracticeSupportStatusAndSyncSemester(input);
+        return { success: true };
+      }),
+
+    selectInstitution: protectedProcedure
+      .input(
+        z.object({
+          practiceSupportRequestId: z.number(),
+          institutionId: z.number(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!isAdminOrHost(ctx.user)) {
+          throw new Error("관리자 또는 호스트만 선택할 수 있습니다");
+        }
+
+        await db.selectPracticeInstitutionForRequest(input);
+        return { success: true };
+      }),
+
+    nearbyInstitutions: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+          institutionType: z.enum(["education", "institution"]),
+          limit: z.number().optional(),
+        })
+      )
+      .query(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) return [];
+
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          return [];
+        }
+
+        return db.listNearbyPracticeInstitutions(input);
       }),
 
     delete: hostProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.deletePracticeSupportRequest(input.id);
+        return { success: true };
+      }),
+  }),
+
+  practiceInstitution: router({
+    list: protectedProcedure
+      .input(
+        z.object({
+          institutionType: z.enum(["education", "institution"]).optional(),
+        }).optional()
+      )
+      .query(async ({ input }) => {
+        return db.listPracticeInstitutions(input?.institutionType);
+      }),
+
+    get: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return db.getPracticeInstitution(input.id);
+      }),
+
+    create: protectedProcedure
+      .input(
+        z.object({
+          institutionType: z.enum(["education", "institution"]),
+          name: z.string().min(1),
+          representativeName: z.string().optional(),
+          phone: z.string().optional(),
+          address: z.string().min(1),
+          detailAddress: z.string().optional(),
+          price: z.string().optional(),
+          latitude: z.string().optional(),
+          longitude: z.string().optional(),
+          availableCourse: z.string().optional(),
+          memo: z.string().optional(),
+          isActive: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!isAdminOrHost(ctx.user)) {
+          throw new Error("관리자 또는 호스트만 등록할 수 있습니다");
+        }
+
+        const id = await db.createPracticeInstitution({
+          institutionType: input.institutionType,
+          name: input.name.trim(),
+          representativeName: input.representativeName?.trim() || null,
+          phone: input.phone?.trim() || null,
+          address: input.address.trim(),
+          detailAddress: input.detailAddress?.trim() || null,
+          price: input.price || "0",
+          latitude: input.latitude || null,
+          longitude: input.longitude || null,
+          availableCourse: input.availableCourse?.trim() || null,
+          memo: input.memo || null,
+          isActive: input.isActive ?? true,
+        } as any);
+
+        return { id, success: true };
+      }),
+
+    bulkCreate: protectedProcedure
+      .input(
+        z.object({
+          rows: z.array(
+            z.object({
+              institutionType: z.enum(["education", "institution"]),
+              name: z.string().min(1),
+              representativeName: z.string().optional(),
+              phone: z.string().optional(),
+              address: z.string().min(1),
+              detailAddress: z.string().optional(),
+              price: z.string().optional(),
+              latitude: z.string().optional(),
+              longitude: z.string().optional(),
+              availableCourse: z.string().optional(),
+              memo: z.string().optional(),
+              isActive: z.boolean().optional(),
+            })
+          ),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!isAdminOrHost(ctx.user)) {
+          throw new Error("관리자 또는 호스트만 등록할 수 있습니다");
+        }
+
+        await db.bulkCreatePracticeInstitutions(
+          input.rows.map((row) => ({
+            institutionType: row.institutionType,
+            name: row.name.trim(),
+            representativeName: row.representativeName?.trim() || null,
+            phone: row.phone?.trim() || null,
+            address: row.address.trim(),
+            detailAddress: row.detailAddress?.trim() || null,
+            price: row.price || "0",
+            latitude: row.latitude || null,
+            longitude: row.longitude || null,
+            availableCourse: row.availableCourse?.trim() || null,
+            memo: row.memo || null,
+            isActive: row.isActive ?? true,
+          })) as any
+        );
+
+        return { success: true, count: input.rows.length };
+      }),
+
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          institutionType: z.enum(["education", "institution"]).optional(),
+          name: z.string().optional(),
+          representativeName: z.string().optional(),
+          phone: z.string().optional(),
+          address: z.string().optional(),
+          detailAddress: z.string().optional(),
+          price: z.string().optional(),
+          latitude: z.string().optional(),
+          longitude: z.string().optional(),
+          availableCourse: z.string().optional(),
+          memo: z.string().optional(),
+          isActive: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!isAdminOrHost(ctx.user)) {
+          throw new Error("관리자 또는 호스트만 수정할 수 있습니다");
+        }
+
+        const { id, ...rest } = input;
+        const data: any = {};
+
+        if (rest.institutionType !== undefined) data.institutionType = rest.institutionType;
+        if (rest.name !== undefined) data.name = rest.name.trim();
+        if (rest.representativeName !== undefined) data.representativeName = rest.representativeName.trim();
+        if (rest.phone !== undefined) data.phone = rest.phone.trim();
+        if (rest.address !== undefined) data.address = rest.address.trim();
+        if (rest.detailAddress !== undefined) data.detailAddress = rest.detailAddress.trim();
+        if (rest.price !== undefined) data.price = rest.price;
+        if (rest.latitude !== undefined) data.latitude = rest.latitude || null;
+        if (rest.longitude !== undefined) data.longitude = rest.longitude || null;
+        if (rest.availableCourse !== undefined) data.availableCourse = rest.availableCourse.trim();
+        if (rest.memo !== undefined) data.memo = rest.memo;
+        if (rest.isActive !== undefined) data.isActive = rest.isActive;
+
+        await db.updatePracticeInstitution(id, data);
+        return { success: true };
+      }),
+
+    delete: hostProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deletePracticeInstitution(input.id);
         return { success: true };
       }),
   }),
@@ -1835,5 +2160,7 @@ console.log("[ROUTER OK] transferAttachment loaded");
 console.log("[ROUTER OK] courseTemplate loaded");
 console.log("[ROUTER OK] privateCertificate loaded");
 console.log("[ROUTER OK] practiceSupport loaded");
+console.log("[ROUTER OK] practiceInstitution loaded");
 console.log("[ROUTER OK] jobSupport loaded");
+
 export type AppRouter = typeof appRouter;

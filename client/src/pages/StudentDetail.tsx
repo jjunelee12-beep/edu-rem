@@ -156,6 +156,8 @@ export default function StudentDetail() {
   const { data: courseTemplateList } = trpc.courseTemplate.list.useQuery({});
 const { data: privateCertificateRequestList } =
   trpc.privateCertificate.listByStudent.useQuery({ studentId });
+const { data: practiceSupportList } =
+  trpc.practiceSupport.listByStudent.useQuery({ studentId });
 
   const [selectedSemesterOrder, setSelectedSemesterOrder] = useState(1);
   const [uploadingRefund, setUploadingRefund] = useState(false);
@@ -207,6 +209,7 @@ const res = await fetch(`${apiBase}/api/upload`, {
   }
 
  const requestedPrivateCertList = privateCertificateRequestList || [];
+const latestPracticeSupport = practiceSupportList?.[0] ?? null;
 
 const createPrivateCertificateRequestMut =
   trpc.privateCertificate.create.useMutation({
@@ -376,6 +379,10 @@ const submitPrivateCertRequest = async () => {
       toast.success("플랜 저장 완료");
       setEditingPlan(false);
     },
+    onError: (e) => toast.error(e.message),
+  });
+const upsertPracticeSupportByStudentMut =
+  trpc.practiceSupport.upsertByStudent.useMutation({
     onError: (e) => toast.error(e.message),
   });
 
@@ -615,20 +622,55 @@ const [refundDialogOpen, setRefundDialogOpen] = useState(false);
     setEditingPlan(true);
   };
 
-  const savePlan = () => {
-    upsertPlanMut.mutate({
+  const savePlan = async () => {
+  try {
+    await upsertPlanMut.mutateAsync({
       studentId,
       desiredCourse: planForm.desiredCourse || undefined,
       finalEducation: planForm.finalEducation || undefined,
-      totalTheorySubjects: planForm.totalTheorySubjects ? parseInt(planForm.totalTheorySubjects) : undefined,
+      totalTheorySubjects: planForm.totalTheorySubjects
+        ? parseInt(planForm.totalTheorySubjects)
+        : undefined,
       hasPractice: planForm.hasPractice,
-      practiceHours: planForm.practiceHours ? parseInt(planForm.practiceHours) : undefined,
+      practiceHours: planForm.practiceHours
+        ? parseInt(planForm.practiceHours)
+        : undefined,
       practiceDate: planForm.practiceDate || undefined,
       practiceArranged: planForm.practiceArranged,
       practiceStatus: (planForm.practiceStatus as any) || undefined,
       specialNotes: planForm.specialNotes || undefined,
     });
-  };
+
+    if (planForm.hasPractice) {
+      const assigneeName =
+        allUsers?.find((u: any) => Number(u.id) === Number(student.assigneeId))?.name || "";
+
+      await upsertPracticeSupportByStudentMut.mutateAsync({
+        studentId,
+        semesterId: selectedSemester?.id ?? null,
+        assigneeId: student.assigneeId,
+        clientName: student.clientName,
+        phone: student.phone,
+        course: planForm.desiredCourse || student.course || "",
+        inputAddress: (student as any).address || "",
+        detailAddress: (student as any).detailAddress || "",
+        assigneeName,
+        managerName: assigneeName,
+        practiceHours: planForm.practiceHours ? parseInt(planForm.practiceHours) : null,
+        includeEducationCenter: true,
+        includePracticeInstitution: true,
+      } as any);
+
+      await utils.practiceSupport.listByStudent.invalidate({ studentId });
+      await utils.semester.list.invalidate({ studentId });
+    }
+
+    toast.success("플랜 저장 완료");
+    setEditingPlan(false);
+  } catch (e: any) {
+    toast.error(e.message || "플랜 저장 중 오류가 발생했습니다.");
+  }
+};
 
   const openAddSemester = () => {
     const nextOrder =
@@ -898,6 +940,7 @@ const [refundDialogOpen, setRefundDialogOpen] = useState(false);
         onSuccess: async () => {
           await utils.semester.list.invalidate({ studentId });
           await utils.student.get.invalidate({ id: studentId });
+	await utils.plan.get.invalidate({ studentId });
           toast.success("예정 정보를 실제 결제 정보로 복사했습니다.");
         },
       }
@@ -1107,7 +1150,31 @@ const templateSelectableCount = 8;
               <p className="text-xs text-muted-foreground mb-0.5">연락처</p>
               <EditableCell value={formatPhone(student.phone)} onBlur={() => {}} disabled />
             </div>
+	<div>
+  <p className="text-xs text-muted-foreground mb-0.5">기본주소</p>
+  <EditableCell
+    value={(student as any).address || ""}
+    onBlur={(v) =>
+      updateStudentMut.mutate({
+        id: studentId,
+        address: v || undefined,
+      } as any)
+    }
+  />
+</div>
 
+<div>
+  <p className="text-xs text-muted-foreground mb-0.5">상세주소</p>
+  <EditableCell
+    value={(student as any).detailAddress || ""}
+    onBlur={(v) =>
+      updateStudentMut.mutate({
+        id: studentId,
+        detailAddress: v || undefined,
+      } as any)
+    }
+  />
+</div>
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">등록 과정</p>
               <EditableCell value={student.course} onBlur={() => {}} disabled />
@@ -1540,16 +1607,29 @@ const templateSelectableCount = 8;
 )} 
 
   {plan.hasPractice && (
-    <div className="bg-blue-50 rounded-lg p-4 text-sm">
-      <p className="font-medium text-blue-700 mb-1">실습 정보</p>
-      <p>
-        <span className="font-medium">실습 시간:</span> {plan.practiceHours ? plan.practiceHours + "시간" : "-"} ·{" "}
-        <span className="font-medium">실습 예정일:</span> {plan.practiceDate || "-"} ·{" "}
-        <span className="font-medium">섭외 상태:</span>{" "}
-        {(plan as any).practiceStatus || (plan.practiceArranged ? "섭외완료" : "미섭외")}
-      </p>
-    </div>
-  )}
+  <div className="bg-blue-50 rounded-lg p-4 text-sm">
+    <p className="font-medium text-blue-700 mb-1">실습 정보</p>
+    <p>
+      <span className="font-medium">실습 시간:</span>{" "}
+      {latestPracticeSupport?.practiceHours
+        ? `${latestPracticeSupport.practiceHours}시간`
+        : plan.practiceHours
+        ? `${plan.practiceHours}시간`
+        : "-"}{" "}
+      ·{" "}
+      <span className="font-medium">실습 예정일:</span> {plan.practiceDate || "-"} ·{" "}
+      <span className="font-medium">섭외 상태:</span>{" "}
+      {latestPracticeSupport?.coordinationStatus || "미섭외"}
+    </p>
+
+    <p className="mt-1">
+      <span className="font-medium">상세주소:</span>{" "}
+      {latestPracticeSupport?.detailAddress || (student as any)?.detailAddress || "-"} ·{" "}
+      <span className="font-medium">담당자:</span>{" "}
+      {latestPracticeSupport?.managerName || latestPracticeSupport?.assigneeName || "-"}
+    </p>
+  </div>
+)}
 </div>
             ) : (
               <p className="text-sm text-muted-foreground py-4 text-center">
@@ -1590,10 +1670,18 @@ const templateSelectableCount = 8;
                 />
                 <Label className="text-sm">실습 필요</Label>
               </div>
+{planForm.hasPractice && (
+  <p className="text-xs text-muted-foreground pl-6">
+    저장 시 현재 선택된 학기의 실습 정보가 실습배정지원센터와 학기별 예정표에 연동됩니다.
+  </p>
+)}
 
               {planForm.hasPractice && (
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pl-6 border-l-2 border-blue-200">
-                  <div className="space-y-1">
+<p className="text-xs text-muted-foreground pl-6">
+  실습교육원/실습기관 선택은 실습배정지원센터에서 진행됩니다.
+</p>                  
+<div className="space-y-1">
                     <Label className="text-xs">실습 시간</Label>
                     <Input
                       type="number"

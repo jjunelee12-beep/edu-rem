@@ -24,11 +24,34 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MapPin, Phone, Search, User2, School } from "lucide-react";
+import {
+  MapPin,
+  Phone,
+  Search,
+  User2,
+  School,
+  Clock3,
+  Building2,
+} from "lucide-react";
 
-type PracticeCoordinationStatus = "미섭외" | "섭외중" | "섭외완료" | "보류";
-type PracticeRequestStatus = "요청" | "진행중" | "완료" | "취소";
-type PaymentStatus = "결제대기" | "입금확인" | "완료" | "취소";
+import KakaoMapBase from "@/components/KakaoMap";
+const KakaoMap: any = KakaoMapBase;
+
+type PracticeCoordinationStatus = "미섭외" | "섭외중" | "섭외완료";
+type PaymentStatus = "미결제" | "결제";
+
+type FinderItemType = "education" | "institution";
+
+type FinderItem = {
+  id: string | number;
+  type: FinderItemType;
+  name: string;
+  representativeName?: string;
+  phone?: string;
+  address?: string;
+  price?: string;
+  distanceKm?: string | number;
+};
 
 export default function PracticeSupportCenter() {
   const { user } = useAuth();
@@ -37,14 +60,22 @@ export default function PracticeSupportCenter() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("전체");
+
   const [selectedRow, setSelectedRow] = useState<any | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
   const [finderOpen, setFinderOpen] = useState(false);
   const [finderAddress, setFinderAddress] = useState("");
-  const [finderIncludeEducationCenter, setFinderIncludeEducationCenter] = useState(true);
+  const [finderIncludeEducationCenter, setFinderIncludeEducationCenter] =
+    useState(true);
   const [finderIncludePracticeInstitution, setFinderIncludePracticeInstitution] =
     useState(true);
+  const [finderTargetRow, setFinderTargetRow] = useState<any | null>(null);
+  const [finderSearchTrigger, setFinderSearchTrigger] = useState(0);
+  const [finderResults, setFinderResults] = useState<FinderItem[]>([]);
+  const [selectedFinderItem, setSelectedFinderItem] = useState<FinderItem | null>(
+    null
+  );
 
   const { data: practiceSupportList, isLoading } =
     trpc.practiceSupport.list.useQuery();
@@ -61,13 +92,16 @@ export default function PracticeSupportCenter() {
     const keyword = search.trim();
 
     return (practiceSupportList || []).filter((row: any) => {
+      const mergedAddress = `${row.inputAddress || ""} ${row.detailAddress || ""}`;
+
       const matchKeyword =
         !keyword ||
         String(row.clientName || "").includes(keyword) ||
         String(row.phone || "").includes(keyword) ||
+        String(row.managerName || "").includes(keyword) ||
         String(row.assigneeName || "").includes(keyword) ||
         String(row.course || "").includes(keyword) ||
-        String(row.inputAddress || "").includes(keyword) ||
+        mergedAddress.includes(keyword) ||
         String(row.selectedEducationCenterName || "").includes(keyword) ||
         String(row.selectedPracticeInstitutionName || "").includes(keyword);
 
@@ -85,21 +119,6 @@ export default function PracticeSupportCenter() {
         return "bg-emerald-100 text-emerald-700 border border-emerald-200";
       case "섭외중":
         return "bg-blue-100 text-blue-700 border border-blue-200";
-      case "보류":
-        return "bg-amber-100 text-amber-700 border border-amber-200";
-      default:
-        return "bg-gray-100 text-gray-700 border border-gray-200";
-    }
-  };
-
-  const getRequestBadgeClass = (status?: string) => {
-    switch (status) {
-      case "완료":
-        return "bg-emerald-100 text-emerald-700 border border-emerald-200";
-      case "진행중":
-        return "bg-violet-100 text-violet-700 border border-violet-200";
-      case "취소":
-        return "bg-red-100 text-red-700 border border-red-200";
       default:
         return "bg-gray-100 text-gray-700 border border-gray-200";
     }
@@ -107,12 +126,8 @@ export default function PracticeSupportCenter() {
 
   const getPaymentBadgeClass = (status?: string) => {
     switch (status) {
-      case "완료":
+      case "결제":
         return "bg-emerald-100 text-emerald-700 border border-emerald-200";
-      case "입금확인":
-        return "bg-blue-100 text-blue-700 border border-blue-200";
-      case "취소":
-        return "bg-red-100 text-red-700 border border-red-200";
       default:
         return "bg-gray-100 text-gray-700 border border-gray-200";
     }
@@ -122,9 +137,12 @@ export default function PracticeSupportCenter() {
     setSelectedRow({
       ...row,
       coordinationStatus: row.coordinationStatus || "미섭외",
-      requestStatus: row.requestStatus || "요청",
-      paymentStatus: row.paymentStatus || "결제대기",
+      paymentStatus: row.paymentStatus || "미결제",
       inputAddress: row.inputAddress || "",
+      detailAddress: row.detailAddress || "",
+      managerName: row.managerName || row.assigneeName || "",
+      practiceHours:
+        row.practiceHours?.toString?.() || row.practiceHours || "",
       selectedEducationCenterName: row.selectedEducationCenterName || "",
       selectedEducationCenterAddress: row.selectedEducationCenterAddress || "",
       selectedEducationCenterDistanceKm:
@@ -150,9 +168,13 @@ export default function PracticeSupportCenter() {
     updatePracticeSupportMut.mutate({
       id: selectedRow.id,
       inputAddress: selectedRow.inputAddress || undefined,
+      detailAddress: selectedRow.detailAddress || undefined,
+      managerName: selectedRow.managerName || undefined,
+      practiceHours: selectedRow.practiceHours
+        ? Number(selectedRow.practiceHours)
+        : undefined,
       coordinationStatus:
         selectedRow.coordinationStatus as PracticeCoordinationStatus,
-      requestStatus: selectedRow.requestStatus as PracticeRequestStatus,
       selectedEducationCenterName:
         selectedRow.selectedEducationCenterName || undefined,
       selectedEducationCenterAddress:
@@ -181,16 +203,6 @@ export default function PracticeSupportCenter() {
     } as any);
   };
 
-  const handleQuickRequestChange = (
-    id: number,
-    nextStatus: PracticeRequestStatus
-  ) => {
-    updatePracticeSupportMut.mutate({
-      id,
-      requestStatus: nextStatus,
-    } as any);
-  };
-
   const handleQuickPaymentChange = (id: number, nextStatus: PaymentStatus) => {
     updatePracticeSupportMut.mutate({
       id,
@@ -198,44 +210,136 @@ export default function PracticeSupportCenter() {
     } as any);
   };
 
+  const buildFinderBaseResults = (row?: any | null): FinderItem[] => {
+    const result: FinderItem[] = [];
+
+    if (finderIncludeEducationCenter && row?.selectedEducationCenterName) {
+      result.push({
+        id: `education-${row.id}`,
+        type: "education",
+        name: row.selectedEducationCenterName,
+        address: row.selectedEducationCenterAddress || "",
+        distanceKm: row.selectedEducationCenterDistanceKm || "",
+      });
+    }
+
+    if (finderIncludePracticeInstitution && row?.selectedPracticeInstitutionName) {
+      result.push({
+        id: `institution-${row.id}`,
+        type: "institution",
+        name: row.selectedPracticeInstitutionName,
+        address: row.selectedPracticeInstitutionAddress || "",
+        distanceKm: row.selectedPracticeInstitutionDistanceKm || "",
+      });
+    }
+
+    return result;
+  };
+
+  const openFinder = (row?: any | null) => {
+    setFinderTargetRow(row || null);
+    setFinderAddress(row?.inputAddress || "");
+    setFinderIncludeEducationCenter(true);
+    setFinderIncludePracticeInstitution(true);
+    setFinderResults(buildFinderBaseResults(row));
+    setSelectedFinderItem(null);
+    setFinderOpen(true);
+  };
+
   const handleFinderSearch = () => {
-    toast.message(
-      "실습찾기 기능은 지도 API + 기관 DB 연결 후 주소 기준 거리순 검색으로 붙이면 됩니다."
-    );
+    if (!finderAddress.trim()) {
+      toast.error("주소를 입력해주세요.");
+      return;
+    }
+
+    setFinderSearchTrigger((prev) => prev + 1);
+
+    // 현재는 실기관 DB 연결 전이므로 저장된 값 중심으로 먼저 보여줌
+    const base = buildFinderBaseResults(finderTargetRow);
+
+    setFinderResults(base);
+    setSelectedFinderItem(base[0] ?? null);
+
+    if (base.length === 0) {
+      toast.message(
+        "현재는 지도 레이아웃만 먼저 붙인 상태입니다. 기관 DB + 거리 계산 연결 후 리스트가 자동으로 채워집니다."
+      );
+    }
+  };
+
+  const applyFinderSelectionToDetail = () => {
+    if (!selectedFinderItem) {
+      toast.error("선택된 기관이 없습니다.");
+      return;
+    }
+
+    if (!selectedRow && finderTargetRow) {
+      openDetail(finderTargetRow);
+      return;
+    }
+
+    if (!selectedRow) {
+      toast.error("상세 수정할 행을 먼저 선택해주세요.");
+      return;
+    }
+
+    if (selectedFinderItem.type === "education") {
+      setSelectedRow((prev: any) => ({
+        ...prev,
+        selectedEducationCenterName: selectedFinderItem.name || "",
+        selectedEducationCenterAddress: selectedFinderItem.address || "",
+        selectedEducationCenterDistanceKm:
+          selectedFinderItem.distanceKm?.toString?.() ||
+          selectedFinderItem.distanceKm ||
+          "",
+      }));
+    } else {
+      setSelectedRow((prev: any) => ({
+        ...prev,
+        selectedPracticeInstitutionName: selectedFinderItem.name || "",
+        selectedPracticeInstitutionAddress: selectedFinderItem.address || "",
+        selectedPracticeInstitutionDistanceKm:
+          selectedFinderItem.distanceKm?.toString?.() ||
+          selectedFinderItem.distanceKm ||
+          "",
+      }));
+    }
+
+    setFinderOpen(false);
+    toast.success("선택한 기관 정보를 상세 수정창에 반영했습니다.");
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">실습배정지원센터</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            실습 요청 학생을 깔끔한 리스트형으로 보고, 상태와 배정 정보를 관리합니다.
+            실습 요청 학생을 리스트형으로 관리하고, 실습교육원 / 실습기관 배정과 결제 상태를 관리합니다.
           </p>
         </div>
 
         <div className="flex gap-2 flex-wrap">
           <Input
-            placeholder="이름 / 연락처 / 담당자 / 주소 검색"
+            placeholder="이름 / 연락처 / 과정 / 담당자 / 주소 검색"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-[260px]"
+            className="w-[280px]"
           />
 
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="상태 전체" />
+              <SelectValue placeholder="실습섭외 전체" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="전체">전체 상태</SelectItem>
               <SelectItem value="미섭외">미섭외</SelectItem>
               <SelectItem value="섭외중">섭외중</SelectItem>
               <SelectItem value="섭외완료">섭외완료</SelectItem>
-              <SelectItem value="보류">보류</SelectItem>
             </SelectContent>
           </Select>
 
-          <Button onClick={() => setFinderOpen(true)} className="gap-2">
+          <Button onClick={() => openFinder(null)} className="gap-2">
             <Search className="h-4 w-4" />
             실습찾기
           </Button>
@@ -249,177 +353,213 @@ export default function PracticeSupportCenter() {
           </CardTitle>
         </CardHeader>
 
-        <CardContent className="space-y-3">
+        <CardContent className="p-0">
           {isLoading ? (
-            <div className="text-sm text-muted-foreground py-10 text-center">
+            <div className="text-sm text-muted-foreground py-16 text-center">
               불러오는 중...
             </div>
           ) : filteredList.length === 0 ? (
-            <div className="text-sm text-muted-foreground py-10 text-center">
+            <div className="text-sm text-muted-foreground py-16 text-center">
               조회된 실습배정 요청이 없습니다.
             </div>
           ) : (
-            filteredList.map((row: any) => (
-              <div
-                key={row.id}
-                className="rounded-xl border bg-white p-4 hover:bg-muted/20 transition-colors"
-              >
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                  <div className="space-y-2 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-base">
-                        {row.clientName || "-"}
-                      </span>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[1500px]">
+                <thead>
+                  <tr className="border-b bg-muted/40">
+                    <th className="px-3 py-3 text-left font-medium text-muted-foreground w-[60px]">
+                      No
+                    </th>
+                    <th className="px-3 py-3 text-left font-medium text-muted-foreground">
+                      이름
+                    </th>
+                    <th className="px-3 py-3 text-left font-medium text-muted-foreground">
+                      전화번호
+                    </th>
+                    <th className="px-3 py-3 text-left font-medium text-muted-foreground">
+                      희망과정
+                    </th>
+                    <th className="px-3 py-3 text-left font-medium text-muted-foreground min-w-[220px]">
+                      상세주소
+                    </th>
+                    <th className="px-3 py-3 text-left font-medium text-muted-foreground">
+                      실습교육원명
+                    </th>
+                    <th className="px-3 py-3 text-left font-medium text-muted-foreground">
+                      실습기관명
+                    </th>
+                    <th className="px-3 py-3 text-left font-medium text-muted-foreground">
+                      실습시간
+                    </th>
+                    <th className="px-3 py-3 text-left font-medium text-muted-foreground w-[140px]">
+                      결제
+                    </th>
+                    <th className="px-3 py-3 text-left font-medium text-muted-foreground w-[140px]">
+                      실습섭외
+                    </th>
+                    <th className="px-3 py-3 text-left font-medium text-muted-foreground">
+                      담당자
+                    </th>
+                    <th className="px-3 py-3 text-right font-medium text-muted-foreground w-[220px]">
+                      관리
+                    </th>
+                  </tr>
+                </thead>
 
-                      <Badge className={getCoordinationBadgeClass(row.coordinationStatus)}>
-                        {row.coordinationStatus || "미섭외"}
-                      </Badge>
+                <tbody>
+                  {filteredList.map((row: any, idx: number) => (
+                    <tr key={row.id} className="border-b last:border-0 hover:bg-muted/20">
+                      <td className="px-3 py-3 text-sm text-muted-foreground">
+                        {idx + 1}
+                      </td>
 
-                      <Badge className={getRequestBadgeClass(row.requestStatus)}>
-                        {row.requestStatus || "요청"}
-                      </Badge>
+                      <td className="px-3 py-3">
+                        <div className="font-medium">{row.clientName || "-"}</div>
+                      </td>
 
-                      <Badge className={getPaymentBadgeClass(row.paymentStatus)}>
-                        {row.paymentStatus || "결제대기"}
-                      </Badge>
-                    </div>
+                      <td className="px-3 py-3">
+                        <div className="inline-flex items-center gap-1">
+                          <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+                          {formatPhone(row.phone || "") || "-"}
+                        </div>
+                      </td>
 
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                      <span className="inline-flex items-center gap-1">
-                        <Phone className="h-3.5 w-3.5" />
-                        {formatPhone(row.phone || "") || "-"}
-                      </span>
+                      <td className="px-3 py-3">{row.course || "-"}</td>
 
-                      <span className="inline-flex items-center gap-1">
-                        <User2 className="h-3.5 w-3.5" />
-                        담당자: {row.assigneeName || "-"}
-                      </span>
+                      <td className="px-3 py-3">
+                        <div className="text-sm">
+                          <div>{row.inputAddress || "-"}</div>
+                          <div className="text-muted-foreground">
+                            {row.detailAddress || ""}
+                          </div>
+                        </div>
+                      </td>
 
-                      <span className="inline-flex items-center gap-1">
-                        <MapPin className="h-3.5 w-3.5" />
-                        주소: {row.inputAddress || "-"}
-                      </span>
-                    </div>
+                      <td className="px-3 py-3">
+                        <div className="space-y-1">
+                          <div className="font-medium">
+                            {row.selectedEducationCenterName || "-"}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {row.selectedEducationCenterDistanceKm
+                              ? `${row.selectedEducationCenterDistanceKm}km`
+                              : ""}
+                          </div>
+                        </div>
+                      </td>
 
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-                      <span>
-                        과정: <span className="font-medium">{row.course || "-"}</span>
-                      </span>
-                      <span>
-                        실습교육원:{" "}
-                        <span className="font-medium">
-                          {row.selectedEducationCenterName || "-"}
-                        </span>
-                      </span>
-                      <span>
-                        실습기관:{" "}
-                        <span className="font-medium">
-                          {row.selectedPracticeInstitutionName || "-"}
-                        </span>
-                      </span>
-                    </div>
+                      <td className="px-3 py-3">
+                        <div className="space-y-1">
+                          <div className="font-medium">
+                            {row.selectedPracticeInstitutionName || "-"}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {row.selectedPracticeInstitutionDistanceKm
+                              ? `${row.selectedPracticeInstitutionDistanceKm}km`
+                              : ""}
+                          </div>
+                        </div>
+                      </td>
 
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-                      <span>
-                        교육원 거리:{" "}
-                        <span className="font-medium">
-                          {row.selectedEducationCenterDistanceKm
-                            ? `${row.selectedEducationCenterDistanceKm}km`
-                            : "-"}
-                        </span>
-                      </span>
-                      <span>
-                        기관 거리:{" "}
-                        <span className="font-medium">
-                          {row.selectedPracticeInstitutionDistanceKm
-                            ? `${row.selectedPracticeInstitutionDistanceKm}km`
-                            : "-"}
-                        </span>
-                      </span>
-                    </div>
+                      <td className="px-3 py-3">
+                        {row.practiceHours ? `${row.practiceHours}시간` : "-"}
+                      </td>
 
-                    {row.note && (
-                      <div className="text-sm text-muted-foreground rounded-lg bg-muted/40 px-3 py-2">
-                        {row.note}
-                      </div>
-                    )}
-                  </div>
+                      <td className="px-3 py-3">
+                        <Select
+                          value={row.paymentStatus || "미결제"}
+                          onValueChange={(v) =>
+                            handleQuickPaymentChange(row.id, v as PaymentStatus)
+                          }
+                        >
+                          <SelectTrigger className="h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="미결제">미결제</SelectItem>
+                            <SelectItem value="결제">결제</SelectItem>
+                          </SelectContent>
+                        </Select>
 
-                  <div className="flex flex-col gap-2 w-full xl:w-[280px]">
-                    <Select
-                      value={row.coordinationStatus || "미섭외"}
-                      onValueChange={(v) =>
-                        handleQuickCoordinationChange(
-                          row.id,
-                          v as PracticeCoordinationStatus
-                        )
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="섭외상태" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="미섭외">미섭외</SelectItem>
-                        <SelectItem value="섭외중">섭외중</SelectItem>
-                        <SelectItem value="섭외완료">섭외완료</SelectItem>
-                        <SelectItem value="보류">보류</SelectItem>
-                      </SelectContent>
-                    </Select>
+                        <div className="mt-1">
+                          <Badge className={getPaymentBadgeClass(row.paymentStatus)}>
+                            {row.paymentStatus || "미결제"}
+                          </Badge>
+                        </div>
+                      </td>
 
-                    <Select
-                      value={row.requestStatus || "요청"}
-                      onValueChange={(v) =>
-                        handleQuickRequestChange(row.id, v as PracticeRequestStatus)
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="진행상태" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="요청">요청</SelectItem>
-                        <SelectItem value="진행중">진행중</SelectItem>
-                        <SelectItem value="완료">완료</SelectItem>
-                        <SelectItem value="취소">취소</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      <td className="px-3 py-3">
+                        <Select
+                          value={row.coordinationStatus || "미섭외"}
+                          onValueChange={(v) =>
+                            handleQuickCoordinationChange(
+                              row.id,
+                              v as PracticeCoordinationStatus
+                            )
+                          }
+                        >
+                          <SelectTrigger className="h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="미섭외">미섭외</SelectItem>
+                            <SelectItem value="섭외중">섭외중</SelectItem>
+                            <SelectItem value="섭외완료">섭외완료</SelectItem>
+                          </SelectContent>
+                        </Select>
 
-                    {isAdmin && (
-                      <Select
-                        value={row.paymentStatus || "결제대기"}
-                        onValueChange={(v) =>
-                          handleQuickPaymentChange(row.id, v as PaymentStatus)
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="결제상태" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="결제대기">결제대기</SelectItem>
-                          <SelectItem value="입금확인">입금확인</SelectItem>
-                          <SelectItem value="완료">완료</SelectItem>
-                          <SelectItem value="취소">취소</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
+                        <div className="mt-1">
+                          <Badge
+                            className={getCoordinationBadgeClass(
+                              row.coordinationStatus
+                            )}
+                          >
+                            {row.coordinationStatus || "미섭외"}
+                          </Badge>
+                        </div>
+                      </td>
 
-                    <Button
-                      variant="outline"
-                      onClick={() => openDetail(row)}
-                      className="gap-2"
-                    >
-                      <School className="h-4 w-4" />
-                      상세 / 수정
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ))
+                      <td className="px-3 py-3">
+                        <div className="inline-flex items-center gap-1">
+                          <User2 className="h-3.5 w-3.5 text-muted-foreground" />
+                          {row.managerName || row.assigneeName || "-"}
+                        </div>
+                      </td>
+
+                      <td className="px-3 py-3">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1"
+                            onClick={() => openFinder(row)}
+                          >
+                            <Search className="h-3.5 w-3.5" />
+                            실습찾기
+                          </Button>
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1"
+                            onClick={() => openDetail(row)}
+                          >
+                            <School className="h-3.5 w-3.5" />
+                            상세수정
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </CardContent>
       </Card>
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>실습배정 상세 정보</DialogTitle>
           </DialogHeader>
@@ -438,17 +578,25 @@ export default function PracticeSupportCenter() {
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-xs">담당자명</Label>
-                  <Input value={selectedRow.assigneeName || ""} disabled />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">과정</Label>
+                  <Label className="text-xs">희망과정</Label>
                   <Input value={selectedRow.course || ""} disabled />
                 </div>
 
-                <div className="space-y-1 md:col-span-2">
-                  <Label className="text-xs">입력 주소</Label>
+                <div className="space-y-1">
+                  <Label className="text-xs">담당자명</Label>
+                  <Input
+                    value={selectedRow.managerName || ""}
+                    onChange={(e) =>
+                      setSelectedRow((prev: any) => ({
+                        ...prev,
+                        managerName: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs">기본주소</Label>
                   <Input
                     value={selectedRow.inputAddress || ""}
                     onChange={(e) =>
@@ -461,7 +609,34 @@ export default function PracticeSupportCenter() {
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-xs">섭외 상태</Label>
+                  <Label className="text-xs">상세주소</Label>
+                  <Input
+                    value={selectedRow.detailAddress || ""}
+                    onChange={(e) =>
+                      setSelectedRow((prev: any) => ({
+                        ...prev,
+                        detailAddress: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs">실습시간</Label>
+                  <Input
+                    value={selectedRow.practiceHours || ""}
+                    onChange={(e) =>
+                      setSelectedRow((prev: any) => ({
+                        ...prev,
+                        practiceHours: e.target.value.replace(/[^0-9]/g, ""),
+                      }))
+                    }
+                    placeholder="예: 160"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs">실습섭외</Label>
                   <Select
                     value={selectedRow.coordinationStatus || "미섭외"}
                     onValueChange={(v) =>
@@ -478,19 +653,18 @@ export default function PracticeSupportCenter() {
                       <SelectItem value="미섭외">미섭외</SelectItem>
                       <SelectItem value="섭외중">섭외중</SelectItem>
                       <SelectItem value="섭외완료">섭외완료</SelectItem>
-                      <SelectItem value="보류">보류</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-xs">진행 상태</Label>
+                  <Label className="text-xs">결제 상태</Label>
                   <Select
-                    value={selectedRow.requestStatus || "요청"}
+                    value={selectedRow.paymentStatus || "미결제"}
                     onValueChange={(v) =>
                       setSelectedRow((prev: any) => ({
                         ...prev,
-                        requestStatus: v,
+                        paymentStatus: v,
                       }))
                     }
                   >
@@ -498,12 +672,23 @@ export default function PracticeSupportCenter() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="요청">요청</SelectItem>
-                      <SelectItem value="진행중">진행중</SelectItem>
-                      <SelectItem value="완료">완료</SelectItem>
-                      <SelectItem value="취소">취소</SelectItem>
+                      <SelectItem value="미결제">미결제</SelectItem>
+                      <SelectItem value="결제">결제</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs">금액</Label>
+                  <Input
+                    value={selectedRow.feeAmount || ""}
+                    onChange={(e) =>
+                      setSelectedRow((prev: any) => ({
+                        ...prev,
+                        feeAmount: e.target.value.replace(/[^0-9]/g, ""),
+                      }))
+                    }
+                  />
                 </div>
 
                 <div className="space-y-1">
@@ -590,46 +775,19 @@ export default function PracticeSupportCenter() {
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <Label className="text-xs">금액</Label>
-                  <Input
-                    value={selectedRow.feeAmount || ""}
-                    onChange={(e) =>
-                      setSelectedRow((prev: any) => ({
-                        ...prev,
-                        feeAmount: e.target.value.replace(/[^0-9]/g, ""),
-                      }))
-                    }
-                  />
-                </div>
-
-                {isAdmin && (
-                  <div className="space-y-1 md:col-span-2">
-                    <Label className="text-xs">결제상태</Label>
-                    <Select
-                      value={selectedRow.paymentStatus || "결제대기"}
-                      onValueChange={(v) =>
-                        setSelectedRow((prev: any) => ({
-                          ...prev,
-                          paymentStatus: v,
-                        }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="결제대기">결제대기</SelectItem>
-                        <SelectItem value="입금확인">입금확인</SelectItem>
-                        <SelectItem value="완료">완료</SelectItem>
-                        <SelectItem value="취소">취소</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
                 <div className="space-y-1 md:col-span-2">
-                  <Label className="text-xs">메모</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">메모</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openFinder(selectedRow)}
+                    >
+                      기관찾기
+                    </Button>
+                  </div>
+
                   <Textarea
                     rows={4}
                     value={selectedRow.note || ""}
@@ -657,57 +815,186 @@ export default function PracticeSupportCenter() {
       </Dialog>
 
       <Dialog open={finderOpen} onOpenChange={setFinderOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="max-w-[95vw] w-[95vw] h-[88vh] p-0 overflow-hidden">
+          <DialogHeader className="px-6 pt-6 pb-3 border-b">
             <DialogTitle>실습찾기</DialogTitle>
           </DialogHeader>
 
-          <div className="grid gap-4 py-2">
-            <div className="space-y-1">
-              <Label className="text-xs">주소 입력</Label>
-              <Input
-                placeholder="예: 서울 도봉구 방학동 ..."
-                value={finderAddress}
-                onChange={(e) => setFinderAddress(e.target.value)}
-              />
+          <div className="flex h-[calc(88vh-72px)]">
+            {/* 왼쪽 패널 */}
+            <div className="w-[360px] min-w-[360px] border-r bg-white flex flex-col">
+              <div className="p-4 border-b space-y-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">주소 검색</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="예: 서울 도봉구 방학동 ..."
+                      value={finderAddress}
+                      onChange={(e) => setFinderAddress(e.target.value)}
+                    />
+                    <Button onClick={handleFinderSearch} className="shrink-0">
+                      검색
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 flex-wrap">
+                  <label className="inline-flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={finderIncludeEducationCenter}
+                      onChange={(e) =>
+                        setFinderIncludeEducationCenter(e.target.checked)
+                      }
+                    />
+                    실습교육원
+                  </label>
+
+                  <label className="inline-flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={finderIncludePracticeInstitution}
+                      onChange={(e) =>
+                        setFinderIncludePracticeInstitution(e.target.checked)
+                      }
+                    />
+                    실습기관
+                  </label>
+                </div>
+
+                {finderTargetRow && (
+                  <div className="rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                    <div>대상 학생: {finderTargetRow.clientName || "-"}</div>
+                    <div>
+                      주소: {finderTargetRow.inputAddress || "-"}{" "}
+                      {finderTargetRow.detailAddress || ""}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1 overflow-y-auto">
+                {finderResults.length === 0 ? (
+                  <div className="p-4 text-sm text-muted-foreground">
+                    <div className="font-medium mb-2">검색 결과</div>
+                    <div className="rounded-lg border bg-muted/30 p-4 leading-6">
+                      현재는 카카오맵 레이아웃과 연결 구조를 먼저 붙인 상태입니다.
+                      <br />
+                      다음 단계에서 기관 DB + 거리 계산을 붙이면
+                      <br />
+                      여기에 네이버지도처럼 가까운 실습교육원 / 실습기관 리스트가 표시됩니다.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="divide-y">
+                    {finderResults.map((item) => {
+                      const isSelected =
+                        String(selectedFinderItem?.id || "") === String(item.id);
+
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className={`w-full text-left p-4 hover:bg-muted/30 transition-colors ${
+                            isSelected ? "bg-blue-50" : ""
+                          }`}
+                          onClick={() => setSelectedFinderItem(item)}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <Badge
+                                  className={
+                                    item.type === "education"
+                                      ? "bg-violet-100 text-violet-700 border border-violet-200"
+                                      : "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                                  }
+                                >
+                                  {item.type === "education"
+                                    ? "실습교육원"
+                                    : "실습기관"}
+                                </Badge>
+
+                                <span className="font-medium truncate">
+                                  {item.name}
+                                </span>
+                              </div>
+
+                              <div className="mt-2 text-sm text-muted-foreground space-y-1">
+                                {item.representativeName && (
+                                  <div className="inline-flex items-center gap-1">
+                                    <Building2 className="h-3.5 w-3.5" />
+                                    대표자: {item.representativeName}
+                                  </div>
+                                )}
+
+                                {item.phone && (
+                                  <div className="inline-flex items-center gap-1">
+                                    <Phone className="h-3.5 w-3.5" />
+                                    {formatPhone(item.phone || "")}
+                                  </div>
+                                )}
+
+                                {item.address && (
+                                  <div className="inline-flex items-start gap-1">
+                                    <MapPin className="h-3.5 w-3.5 mt-0.5" />
+                                    <span>{item.address}</span>
+                                  </div>
+                                )}
+
+                                {item.price && (
+                                  <div>금액: {item.price}</div>
+                                )}
+
+                                {item.distanceKm && (
+                                  <div className="font-medium text-blue-600">
+                                    거리: {item.distanceKm}km
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 border-t flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setFinderOpen(false)}
+                >
+                  닫기
+                </Button>
+
+                <Button
+                  className="flex-1"
+                  onClick={applyFinderSelectionToDetail}
+                  disabled={!selectedFinderItem}
+                >
+                  선택 반영
+                </Button>
+              </div>
             </div>
 
-            <div className="flex gap-3 flex-wrap">
-              <label className="inline-flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={finderIncludeEducationCenter}
-                  onChange={(e) => setFinderIncludeEducationCenter(e.target.checked)}
+            {/* 오른쪽 지도 */}
+            <div className="flex-1 bg-muted/20">
+              <div className="w-full h-full">
+                <KakaoMap
+                  address={finderAddress}
+                  searchTrigger={finderSearchTrigger}
+                  includeEducationCenter={finderIncludeEducationCenter}
+                  includePracticeInstitution={finderIncludePracticeInstitution}
+                  results={finderResults}
+                  selectedResult={selectedFinderItem}
+                  onSelectResult={(item: FinderItem) => setSelectedFinderItem(item)}
                 />
-                실습교육원
-              </label>
-
-              <label className="inline-flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={finderIncludePracticeInstitution}
-                  onChange={(e) =>
-                    setFinderIncludePracticeInstitution(e.target.checked)
-                  }
-                />
-                실습기관
-              </label>
-            </div>
-
-            <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-              현재 이 기능은 UI 먼저 구성한 상태다.
-              <br />
-              다음 단계에서 지도 API + 기관 DB 연결하면
-              주소 기준 가까운 실습교육원 / 실습기관 리스트를 거리순으로 보여줄 수 있다.
+              </div>
             </div>
           </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setFinderOpen(false)}>
-              닫기
-            </Button>
-            <Button onClick={handleFinderSearch}>실습처 찾기</Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
