@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { formatPhone } from "@/lib/format";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,14 +25,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  MapPin,
   Phone,
   Search,
   User2,
   School,
-  Building2,
   CheckCircle2,
   Navigation,
+  MapPin,
 } from "lucide-react";
 
 import KakaoMapBase from "@/components/KakaoMap";
@@ -150,12 +148,6 @@ async function geocodeAddress(
   });
 }
 
-function getTypeBadgeClass(type: FinderItemType) {
-  return type === "education"
-    ? "bg-blue-100 text-blue-700 border border-blue-200"
-    : "bg-orange-100 text-orange-700 border border-orange-200";
-}
-
 function getTypeLabel(type: FinderItemType) {
   return type === "education" ? "실습교육원" : "실습기관";
 }
@@ -218,8 +210,6 @@ export default function PracticeSupportCenter() {
     const keyword = search.trim();
 
     return (practiceSupportList || []).filter((row: any) => {
-      const mergedAddress = `${row.inputAddress || ""} ${row.detailAddress || ""}`;
-
       const matchKeyword =
         !keyword ||
         String(row.clientName || "").includes(keyword) ||
@@ -227,7 +217,7 @@ export default function PracticeSupportCenter() {
         String(row.managerName || "").includes(keyword) ||
         String(row.assigneeName || "").includes(keyword) ||
         String(row.course || "").includes(keyword) ||
-        mergedAddress.includes(keyword) ||
+        String(row.inputAddress || "").includes(keyword) ||
         String(row.selectedEducationCenterName || "").includes(keyword) ||
         String(row.selectedPracticeInstitutionName || "").includes(keyword);
 
@@ -238,26 +228,6 @@ export default function PracticeSupportCenter() {
       return matchKeyword && matchStatus;
     });
   }, [practiceSupportList, search, statusFilter]);
-
-  const getCoordinationBadgeClass = (status?: string) => {
-    switch (status) {
-      case "섭외완료":
-        return "bg-emerald-100 text-emerald-700 border border-emerald-200";
-      case "섭외중":
-        return "bg-blue-100 text-blue-700 border border-blue-200";
-      default:
-        return "bg-gray-100 text-gray-700 border border-gray-200";
-    }
-  };
-
-  const getPaymentBadgeClass = (status?: string) => {
-    switch (status) {
-      case "결제":
-        return "bg-emerald-100 text-emerald-700 border border-emerald-200";
-      default:
-        return "bg-gray-100 text-gray-700 border border-gray-200";
-    }
-  };
 
   const openDetail = (row: any) => {
     setSelectedRow({
@@ -369,10 +339,9 @@ export default function PracticeSupportCenter() {
 
   const openFinder = (row?: any | null) => {
     const baseAddress = row?.inputAddress || row?.address || "";
-    const baseDetailAddress = row?.detailAddress || "";
 
     setFinderTargetRow(row || null);
-    setFinderAddress([baseAddress, baseDetailAddress].filter(Boolean).join(" ").trim());
+    setFinderAddress(baseAddress.trim());
     setFinderIncludeEducationCenter(true);
     setFinderIncludePracticeInstitution(true);
     setFinderResults(buildFinderBaseResults(row));
@@ -612,7 +581,7 @@ export default function PracticeSupportCenter() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1520px] text-sm">
+              <table className="w-full min-w-[1500px] text-sm">
                 <thead>
                   <tr className="border-b bg-muted/40">
                     <th className="w-[60px] px-3 py-3 text-left font-medium text-muted-foreground">
@@ -627,8 +596,8 @@ export default function PracticeSupportCenter() {
                     <th className="px-3 py-3 text-left font-medium text-muted-foreground">
                       희망과정
                     </th>
-                    <th className="min-w-[240px] px-3 py-3 text-left font-medium text-muted-foreground">
-                      상세주소
+                    <th className="min-w-[220px] px-3 py-3 text-left font-medium text-muted-foreground">
+                      주소
                     </th>
                     <th className="px-3 py-3 text-left font-medium text-muted-foreground">
                       실습교육원명
@@ -639,16 +608,16 @@ export default function PracticeSupportCenter() {
                     <th className="px-3 py-3 text-left font-medium text-muted-foreground">
                       실습시간
                     </th>
-                    <th className="w-[150px] px-3 py-3 text-left font-medium text-muted-foreground">
+                    <th className="w-[140px] px-3 py-3 text-left font-medium text-muted-foreground">
                       실습섭외
                     </th>
-                    <th className="w-[150px] px-3 py-3 text-left font-medium text-muted-foreground">
+                    <th className="w-[140px] px-3 py-3 text-left font-medium text-muted-foreground">
                       결제
                     </th>
                     <th className="px-3 py-3 text-left font-medium text-muted-foreground">
                       담당자
                     </th>
-                    <th className="w-[220px] px-3 py-3 text-right font-medium text-muted-foreground">
+                    <th className="w-[200px] px-3 py-3 text-right font-medium text-muted-foreground">
                       관리
                     </th>
                   </tr>
@@ -678,23 +647,13 @@ export default function PracticeSupportCenter() {
                       <td className="px-3 py-3">{row.course || "-"}</td>
 
                       <td className="px-3 py-3">
-                        <div className="text-sm">
-                          <div>{row.inputAddress || "-"}</div>
-                          <div className="text-muted-foreground">
-                            {row.detailAddress || ""}
-                          </div>
-                        </div>
+                        <div className="text-sm">{row.inputAddress || "-"}</div>
                       </td>
 
                       <td className="px-3 py-3">
                         <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <Badge className="bg-blue-100 text-blue-700 border border-blue-200">
-                              교육원
-                            </Badge>
-                            <span className="font-medium">
-                              {row.selectedEducationCenterName || "-"}
-                            </span>
+                          <div className="font-medium">
+                            {row.selectedEducationCenterName || "-"}
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {row.selectedEducationCenterDistanceKm
@@ -706,13 +665,8 @@ export default function PracticeSupportCenter() {
 
                       <td className="px-3 py-3">
                         <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <Badge className="bg-orange-100 text-orange-700 border border-orange-200">
-                              기관
-                            </Badge>
-                            <span className="font-medium">
-                              {row.selectedPracticeInstitutionName || "-"}
-                            </span>
+                          <div className="font-medium">
+                            {row.selectedPracticeInstitutionName || "-"}
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {row.selectedPracticeInstitutionDistanceKm
@@ -745,16 +699,6 @@ export default function PracticeSupportCenter() {
                             <SelectItem value="섭외완료">섭외완료</SelectItem>
                           </SelectContent>
                         </Select>
-
-                        <div className="mt-1">
-                          <Badge
-                            className={getCoordinationBadgeClass(
-                              row.coordinationStatus
-                            )}
-                          >
-                            {row.coordinationStatus || "미섭외"}
-                          </Badge>
-                        </div>
                       </td>
 
                       <td className="px-3 py-3">
@@ -772,12 +716,6 @@ export default function PracticeSupportCenter() {
                             <SelectItem value="결제">결제</SelectItem>
                           </SelectContent>
                         </Select>
-
-                        <div className="mt-1">
-                          <Badge className={getPaymentBadgeClass(row.paymentStatus)}>
-                            {row.paymentStatus || "미결제"}
-                          </Badge>
-                        </div>
                       </td>
 
                       <td className="px-3 py-3">
@@ -788,11 +726,11 @@ export default function PracticeSupportCenter() {
                       </td>
 
                       <td className="px-3 py-3">
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex flex-col items-end gap-2">
                           <Button
                             variant="outline"
                             size="sm"
-                            className="gap-1"
+                            className="gap-1 w-[96px]"
                             onClick={() => openFinder(row)}
                           >
                             <Search className="h-3.5 w-3.5" />
@@ -802,7 +740,7 @@ export default function PracticeSupportCenter() {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="gap-1"
+                            className="gap-1 w-[96px]"
                             onClick={() => openDetail(row)}
                           >
                             <School className="h-3.5 w-3.5" />
@@ -864,7 +802,7 @@ export default function PracticeSupportCenter() {
                   </div>
 
                   <div className="space-y-1">
-                    <Label className="text-xs">기본주소</Label>
+                    <Label className="text-xs">주소</Label>
                     <Input
                       value={selectedRow.inputAddress || ""}
                       onChange={(e) =>
@@ -921,14 +859,9 @@ export default function PracticeSupportCenter() {
                 </div>
 
                 <div className="space-y-3">
-                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Badge className="bg-blue-100 text-blue-700 border border-blue-200">
-                        실습교육원
-                      </Badge>
-                      <span className="font-medium">
-                        {selectedRow.selectedEducationCenterName || "-"}
-                      </span>
+                  <div className="rounded-lg border p-3 space-y-2">
+                    <div className="font-medium">
+                      {selectedRow.selectedEducationCenterName || "-"}
                     </div>
 
                     <div className="space-y-1">
@@ -972,14 +905,9 @@ export default function PracticeSupportCenter() {
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Badge className="bg-orange-100 text-orange-700 border border-orange-200">
-                        실습기관
-                      </Badge>
-                      <span className="font-medium">
-                        {selectedRow.selectedPracticeInstitutionName || "-"}
-                      </span>
+                  <div className="rounded-lg border p-3 space-y-2">
+                    <div className="font-medium">
+                      {selectedRow.selectedPracticeInstitutionName || "-"}
                     </div>
 
                     <div className="space-y-1">
@@ -1169,10 +1097,7 @@ export default function PracticeSupportCenter() {
                 {finderTargetRow && (
                   <div className="rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                     <div>대상: {finderTargetRow.clientName || "-"}</div>
-                    <div>
-                      주소: {finderTargetRow.inputAddress || "-"}{" "}
-                      {finderTargetRow.detailAddress || ""}
-                    </div>
+                    <div>주소: {finderTargetRow.inputAddress || "-"}</div>
                   </div>
                 )}
 
@@ -1231,9 +1156,15 @@ export default function PracticeSupportCenter() {
                         >
                           <div className="space-y-2">
                             <div className="flex items-center gap-2">
-                              <Badge className={getTypeBadgeClass(item.type)}>
+                              <span
+                                className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                                  item.type === "education"
+                                    ? "bg-blue-100 text-blue-700"
+                                    : "bg-orange-100 text-orange-700"
+                                }`}
+                              >
                                 {getTypeLabel(item.type)}
-                              </Badge>
+                              </span>
 
                               <span className="truncate font-medium">
                                 {item.name}
@@ -1279,9 +1210,15 @@ export default function PracticeSupportCenter() {
                   <div className="rounded-lg border bg-muted/20 p-3 text-xs">
                     <div className="mb-1 font-medium">선택된 기관</div>
                     <div className="flex items-center gap-2">
-                      <Badge className={getTypeBadgeClass(selectedFinderItem.type)}>
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                          selectedFinderItem.type === "education"
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-orange-100 text-orange-700"
+                        }`}
+                      >
                         {getTypeLabel(selectedFinderItem.type)}
-                      </Badge>
+                      </span>
                       <span>{selectedFinderItem.name}</span>
                     </div>
                     {selectedFinderItem.distanceKm && (

@@ -19,7 +19,6 @@ type KakaoMapProps = {
   results?: FinderItem[];
   selectedResult?: FinderItem | null;
   onSelectResult?: (item: FinderItem) => void;
-
   searchPoint?: {
     lat: number;
     lng: number;
@@ -78,12 +77,9 @@ function loadKakaoMapScript(): Promise<any> {
 
       existing.addEventListener(
         "error",
-        () => {
-          reject(new Error("카카오맵 스크립트 로드 실패"));
-        },
+        () => reject(new Error("카카오맵 스크립트 로드 실패")),
         { once: true }
       );
-
       return;
     }
 
@@ -104,45 +100,27 @@ function loadKakaoMapScript(): Promise<any> {
       window.kakao.maps.load(() => resolve(window.kakao));
     };
 
-    script.onerror = () => {
-      reject(new Error("카카오맵 스크립트 로드 실패"));
-    };
-
+    script.onerror = () => reject(new Error("카카오맵 스크립트 로드 실패"));
     document.head.appendChild(script);
   });
 }
 
-function getMarkerImageByType(
-  kakao: any,
-  type: "search" | "education" | "institution" | "selected"
-) {
-  let imageSrc = "";
-  const imageSize = new kakao.maps.Size(36, 36);
+function getTypeLabel(type: "education" | "institution") {
+  return type === "education" ? "실습교육원" : "실습기관";
+}
 
-  switch (type) {
-    case "search":
-      imageSrc =
-        "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png";
-      break;
-    case "education":
-      imageSrc =
-        "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_blue.png";
-      break;
-    case "institution":
-      imageSrc =
-        "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_orange.png";
-      break;
-    case "selected":
-      imageSrc =
-        "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png";
-      break;
-    default:
-      imageSrc =
-        "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_blue.png";
-      break;
-  }
-
-  return new kakao.maps.MarkerImage(imageSrc, imageSize);
+function getTypeClasses(type: "education" | "institution") {
+  return type === "education"
+    ? {
+        badgeBg: "#dbeafe",
+        badgeColor: "#1d4ed8",
+        borderColor: "#bfdbfe",
+      }
+    : {
+        badgeBg: "#ffedd5",
+        badgeColor: "#c2410c",
+        borderColor: "#fdba74",
+      };
 }
 
 export default function KakaoMap({
@@ -160,33 +138,37 @@ export default function KakaoMap({
   const geocoderRef = useRef<any>(null);
 
   const resultMarkersRef = useRef<any[]>([]);
-  const overlayRef = useRef<any[]>([]);
+  const resultOverlaysRef = useRef<any[]>([]);
+  const selectedOverlayRef = useRef<any>(null);
   const searchMarkerRef = useRef<any>(null);
-  const selectedMarkerRef = useRef<any>(null);
+  const searchOverlayRef = useRef<any>(null);
 
-  const [error, setError] = useState<string>("");
+  const [error, setError] = useState("");
 
   const normalizedAddress = useMemo(() => (address || "").trim(), [address]);
 
-  function clearResultMarkers() {
+  function clearResultLayers() {
     resultMarkersRef.current.forEach((m) => m.setMap(null));
+    resultOverlaysRef.current.forEach((o) => o.setMap(null));
     resultMarkersRef.current = [];
-
-    overlayRef.current.forEach((o) => o.setMap(null));
-    overlayRef.current = [];
+    resultOverlaysRef.current = [];
   }
 
-  function clearSearchMarker() {
+  function clearSearchLayer() {
     if (searchMarkerRef.current) {
       searchMarkerRef.current.setMap(null);
       searchMarkerRef.current = null;
     }
+    if (searchOverlayRef.current) {
+      searchOverlayRef.current.setMap(null);
+      searchOverlayRef.current = null;
+    }
   }
 
-  function clearSelectedMarker() {
-    if (selectedMarkerRef.current) {
-      selectedMarkerRef.current.setMap(null);
-      selectedMarkerRef.current = null;
+  function clearSelectedOverlay() {
+    if (selectedOverlayRef.current) {
+      selectedOverlayRef.current.setMap(null);
+      selectedOverlayRef.current = null;
     }
   }
 
@@ -196,7 +178,6 @@ export default function KakaoMap({
     async function init() {
       try {
         setError("");
-
         const kakao = await loadKakaoMapScript();
         if (cancelled || !mapRef.current) return;
 
@@ -220,9 +201,9 @@ export default function KakaoMap({
 
     return () => {
       cancelled = true;
-      clearResultMarkers();
-      clearSearchMarker();
-      clearSelectedMarker();
+      clearResultLayers();
+      clearSearchLayer();
+      clearSelectedOverlay();
     };
   }, []);
 
@@ -240,7 +221,6 @@ export default function KakaoMap({
       const y = Number(result[0].y);
       const x = Number(result[0].x);
       const pos = new window.kakao.maps.LatLng(y, x);
-
       map.setCenter(pos);
     });
   }, [normalizedAddress, searchTrigger]);
@@ -250,7 +230,7 @@ export default function KakaoMap({
     const kakao = window.kakao;
     if (!map || !kakao?.maps) return;
 
-    clearSearchMarker();
+    clearSearchLayer();
 
     if (!showSearchPointMarker || !searchPoint) return;
 
@@ -259,8 +239,7 @@ export default function KakaoMap({
     const marker = new kakao.maps.Marker({
       map,
       position: pos,
-      image: getMarkerImageByType(kakao, "search"),
-      zIndex: 10,
+      zIndex: 20,
     });
 
     const content = `
@@ -282,13 +261,13 @@ export default function KakaoMap({
     const overlay = new kakao.maps.CustomOverlay({
       position: pos,
       content,
-      yAnchor: 1.6,
-      zIndex: 11,
+      yAnchor: 1.7,
+      zIndex: 21,
     });
 
     overlay.setMap(map);
     searchMarkerRef.current = marker;
-    overlayRef.current.push(overlay);
+    searchOverlayRef.current = overlay;
   }, [searchPoint, searchPointLabel, showSearchPointMarker]);
 
   useEffect(() => {
@@ -296,7 +275,7 @@ export default function KakaoMap({
     const kakao = window.kakao;
     if (!map || !kakao?.maps) return;
 
-    clearResultMarkers();
+    clearResultLayers();
 
     const bounds = new kakao.maps.LatLngBounds();
     let hasMarker = false;
@@ -311,41 +290,49 @@ export default function KakaoMap({
       const lng = toNum(item.longitude);
       if (lat === null || lng === null) continue;
 
-      const type =
-        item.type || item.institutionType || "institution";
+      const type = (item.type || item.institutionType || "institution") as
+        | "education"
+        | "institution";
 
+      const colors = getTypeClasses(type);
       const pos = new kakao.maps.LatLng(lat, lng);
 
       const marker = new kakao.maps.Marker({
         map,
         position: pos,
-        image: getMarkerImageByType(
-          kakao,
-          type === "education" ? "education" : "institution"
-        ),
         zIndex: 5,
       });
 
-      const content = `
+      const overlayHtml = `
         <div style="
           padding:8px 10px;
           background:white;
-          border:1px solid #e5e7eb;
-          border-radius:10px;
+          border:1px solid ${colors.borderColor};
+          border-radius:12px;
           font-size:12px;
           color:#111827;
-          box-shadow:0 2px 8px rgba(0,0,0,0.08);
-          min-width:140px;
+          box-shadow:0 2px 8px rgba(0,0,0,0.10);
+          min-width:150px;
         ">
-          <div style="font-weight:700; margin-bottom:2px;">${item.name}</div>
-          <div style="color:#6b7280;">
-            ${type === "education" ? "실습교육원" : "실습기관"}
+          <div style="margin-bottom:6px;">
+            <span style="
+              display:inline-flex;
+              padding:2px 8px;
+              border-radius:999px;
+              font-size:11px;
+              font-weight:700;
+              background:${colors.badgeBg};
+              color:${colors.badgeColor};
+            ">
+              ${getTypeLabel(type)}
+            </span>
           </div>
+          <div style="font-weight:700; margin-bottom:2px;">${item.name}</div>
           ${
             item.distanceKm !== null &&
             item.distanceKm !== undefined &&
             item.distanceKm !== ""
-              ? `<div style="margin-top:4px; color:#2563eb; font-weight:600;">${item.distanceKm}km</div>`
+              ? `<div style="margin-top:4px; color:#2563eb; font-weight:700;">${item.distanceKm}km</div>`
               : ""
           }
         </div>
@@ -353,8 +340,8 @@ export default function KakaoMap({
 
       const overlay = new kakao.maps.CustomOverlay({
         position: pos,
-        content,
-        yAnchor: 1.6,
+        content: overlayHtml,
+        yAnchor: 1.7,
         zIndex: 6,
       });
 
@@ -373,13 +360,14 @@ export default function KakaoMap({
       });
 
       resultMarkersRef.current.push(marker);
-      overlayRef.current.push(overlay);
-      bounds.extend(pos);
-      hasMarker = true;
+      resultOverlaysRef.current.push(overlay);
 
       if (String(selectedResult?.id || "") === String(item.id)) {
         overlay.setMap(map);
       }
+
+      bounds.extend(pos);
+      hasMarker = true;
     }
 
     if (hasMarker) {
@@ -392,23 +380,64 @@ export default function KakaoMap({
     const kakao = window.kakao;
     if (!map || !selectedResult || !kakao?.maps) return;
 
-    clearSelectedMarker();
+    clearSelectedOverlay();
 
     const lat = toNum(selectedResult.latitude);
     const lng = toNum(selectedResult.longitude);
     if (lat === null || lng === null) return;
 
-    const pos = new kakao.maps.LatLng(lat, lng);
+    const type = (selectedResult.type ||
+      selectedResult.institutionType ||
+      "institution") as "education" | "institution";
+    const colors = getTypeClasses(type);
 
-    const selectedMarker = new kakao.maps.Marker({
-      map,
+    const pos = new kakao.maps.LatLng(lat, lng);
+    map.setCenter(pos);
+
+    const selectedHtml = `
+      <div style="
+        padding:10px 12px;
+        background:white;
+        border:2px solid ${colors.badgeColor};
+        border-radius:12px;
+        font-size:12px;
+        color:#111827;
+        box-shadow:0 4px 14px rgba(0,0,0,0.16);
+        min-width:170px;
+      ">
+        <div style="margin-bottom:6px;">
+          <span style="
+            display:inline-flex;
+            padding:2px 8px;
+            border-radius:999px;
+            font-size:11px;
+            font-weight:700;
+            background:${colors.badgeBg};
+            color:${colors.badgeColor};
+          ">
+            선택됨 · ${getTypeLabel(type)}
+          </span>
+        </div>
+        <div style="font-weight:700; margin-bottom:2px;">${selectedResult.name}</div>
+        ${
+          selectedResult.distanceKm !== null &&
+          selectedResult.distanceKm !== undefined &&
+          selectedResult.distanceKm !== ""
+            ? `<div style="margin-top:4px; color:#2563eb; font-weight:700;">${selectedResult.distanceKm}km</div>`
+            : ""
+        }
+      </div>
+    `;
+
+    const overlay = new kakao.maps.CustomOverlay({
       position: pos,
-      image: getMarkerImageByType(kakao, "selected"),
-      zIndex: 20,
+      content: selectedHtml,
+      yAnchor: 1.9,
+      zIndex: 30,
     });
 
-    selectedMarkerRef.current = selectedMarker;
-    map.setCenter(pos);
+    overlay.setMap(map);
+    selectedOverlayRef.current = overlay;
   }, [selectedResult]);
 
   if (error) {
