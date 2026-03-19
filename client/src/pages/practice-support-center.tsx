@@ -815,8 +815,11 @@ export default function PracticeSupportCenter() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={finderOpen} onOpenChange={setFinderOpen}>
-        <DialogContent className="max-w-[95vw] w-[95vw] h-[88vh] p-0 overflow-hidden">
+     <Dialog open={finderOpen} onOpenChange={setFinderOpen}>
+  <DialogContent
+    aria-describedby="practice-finder-desc"
+    className="max-w-[98vw] w-[98vw] h-[94vh] p-0 overflow-hidden"
+  >
           <DialogHeader className="px-6 pt-6 pb-3 border-b">
             <DialogTitle>실습찾기</DialogTitle>
 	 <DialogDescription id="practice-finder-desc">
@@ -824,9 +827,9 @@ export default function PracticeSupportCenter() {
     </DialogDescription>
           </DialogHeader>
 
-          <div className="flex h-[calc(88vh-72px)]">
+          <div className="flex h-[calc(94vh-76px)]">
             {/* 왼쪽 패널 */}
-            <div className="w-[360px] min-w-[360px] border-r bg-white flex flex-col">
+            <div className="w-[300px] min-w-[300px] border-r bg-white flex flex-col">
               <div className="p-4 border-b space-y-3">
                 <div className="space-y-1">
                   <Label className="text-xs">주소 검색</Label>
@@ -985,19 +988,19 @@ export default function PracticeSupportCenter() {
             </div>
 
             {/* 오른쪽 지도 */}
-            <div className="flex-1 bg-muted/20">
-              <div className="w-full h-full">
-                <KakaoMap
-                  address={finderAddress}
-                  searchTrigger={finderSearchTrigger}
-                  includeEducationCenter={finderIncludeEducationCenter}
-                  includePracticeInstitution={finderIncludePracticeInstitution}
-                  results={finderResults}
-                  selectedResult={selectedFinderItem}
-                  onSelectResult={(item: FinderItem) => setSelectedFinderItem(item)}
-                />
-              </div>
-            </div>
+            <div className="flex-1 bg-muted/20 min-w-0">
+  <div className="w-full h-full min-h-0">
+    <KakaoMap
+      address={finderAddress}
+      searchTrigger={finderSearchTrigger}
+      includeEducationCenter={finderIncludeEducationCenter}
+      includePracticeInstitution={finderIncludePracticeInstitution}
+      results={finderResults}
+      selectedResult={selectedFinderItem}
+      onSelectResult={(item: FinderItem) => setSelectedFinderItem(item)}
+    />
+  </div>
+</div>
           </div>
         </DialogContent>
       </Dialog>
