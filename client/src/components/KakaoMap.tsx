@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-
+console.log("ENV:", import.meta.env);
+console.log("KAKAO KEY:", import.meta.env.VITE_KAKAO_MAP_JS_KEY);
 type FinderItem = {
   id: number;
   name: string;
