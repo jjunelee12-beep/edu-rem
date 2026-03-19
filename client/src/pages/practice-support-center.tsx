@@ -32,6 +32,8 @@ import {
   User2,
   School,
   Building2,
+  CheckCircle2,
+  Navigation,
 } from "lucide-react";
 
 import KakaoMapBase from "@/components/KakaoMap";
@@ -39,7 +41,6 @@ const KakaoMap: any = KakaoMapBase;
 
 type PracticeCoordinationStatus = "미섭외" | "섭외중" | "섭외완료";
 type PaymentStatus = "미결제" | "결제";
-
 type FinderItemType = "education" | "institution";
 
 type FinderItem = {
@@ -108,7 +109,10 @@ async function waitForKakaoServices(timeout = 6000): Promise<any> {
     }, 100);
   });
 }
-async function geocodeAddress(keywordOrAddress: string): Promise<{ lat: number; lng: number }> {
+
+async function geocodeAddress(
+  keywordOrAddress: string
+): Promise<{ lat: number; lng: number }> {
   const kakao = await waitForKakaoServices();
 
   return new Promise((resolve, reject) => {
@@ -125,21 +129,36 @@ async function geocodeAddress(keywordOrAddress: string): Promise<{ lat: number; 
 
       const places = new kakao.maps.services.Places();
 
-      places.keywordSearch(keywordOrAddress, (placeResult: any[], placeStatus: string) => {
-        if (placeStatus !== kakao.maps.services.Status.OK || !placeResult?.length) {
-          reject(new Error("주소 또는 장소명을 찾지 못했습니다."));
-          return;
-        }
+      places.keywordSearch(
+        keywordOrAddress,
+        (placeResult: any[], placeStatus: string) => {
+          if (
+            placeStatus !== kakao.maps.services.Status.OK ||
+            !placeResult?.length
+          ) {
+            reject(new Error("주소 또는 장소명을 찾지 못했습니다."));
+            return;
+          }
 
-        resolve({
-          lat: Number(placeResult[0].y),
-          lng: Number(placeResult[0].x),
-        });
-      });
+          resolve({
+            lat: Number(placeResult[0].y),
+            lng: Number(placeResult[0].x),
+          });
+        }
+      );
     });
   });
 }
 
+function getTypeBadgeClass(type: FinderItemType) {
+  return type === "education"
+    ? "bg-blue-100 text-blue-700 border border-blue-200"
+    : "bg-orange-100 text-orange-700 border border-orange-200";
+}
+
+function getTypeLabel(type: FinderItemType) {
+  return type === "education" ? "실습교육원" : "실습기관";
+}
 
 export default function PracticeSupportCenter() {
   const { user } = useAuth();
@@ -165,20 +184,27 @@ export default function PracticeSupportCenter() {
   );
   const [isFinderSearching, setIsFinderSearching] = useState(false);
 
+  const [finderSearchPoint, setFinderSearchPoint] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [finderResolvedAddress, setFinderResolvedAddress] = useState("");
+
   const { data: practiceSupportList, isLoading } =
     trpc.practiceSupport.list.useQuery();
 
   const { data: educationCenterDb = [] } =
-  trpc.practiceEducationCenter.list.useQuery(undefined, {
-    staleTime: 1000 * 60 * 5,
-  });
-
-  const { data: practiceInstitutionDb = [] } = trpc.practiceInstitution.list.useQuery(
-    { institutionType: "institution" },
-    {
+    trpc.practiceEducationCenter.list.useQuery(undefined, {
       staleTime: 1000 * 60 * 5,
-    }
-  );
+    });
+
+  const { data: practiceInstitutionDb = [] } =
+    trpc.practiceInstitution.list.useQuery(
+      { institutionType: "institution" },
+      {
+        staleTime: 1000 * 60 * 5,
+      }
+    );
 
   const updatePracticeSupportMut = trpc.practiceSupport.update.useMutation({
     onSuccess: async () => {
@@ -342,12 +368,17 @@ export default function PracticeSupportCenter() {
   };
 
   const openFinder = (row?: any | null) => {
+    const baseAddress = row?.inputAddress || row?.address || "";
+    const baseDetailAddress = row?.detailAddress || "";
+
     setFinderTargetRow(row || null);
-    setFinderAddress(row?.inputAddress || "");
+    setFinderAddress([baseAddress, baseDetailAddress].filter(Boolean).join(" ").trim());
     setFinderIncludeEducationCenter(true);
     setFinderIncludePracticeInstitution(true);
     setFinderResults(buildFinderBaseResults(row));
     setSelectedFinderItem(null);
+    setFinderSearchPoint(null);
+    setFinderResolvedAddress("");
     setFinderOpen(true);
   };
 
@@ -357,36 +388,41 @@ export default function PracticeSupportCenter() {
       return;
     }
 
+    if (!finderIncludeEducationCenter && !finderIncludePracticeInstitution) {
+      toast.error("실습교육원 또는 실습기관 중 하나 이상 선택해주세요.");
+      return;
+    }
+
     try {
       setIsFinderSearching(true);
       setFinderSearchTrigger((prev) => prev + 1);
 
       const { lat, lng } = await geocodeAddress(finderAddress.trim());
+      setFinderSearchPoint({ lat, lng });
+      setFinderResolvedAddress(finderAddress.trim());
 
       const nextResults: FinderItem[] = [];
 
       if (finderIncludeEducationCenter) {
         for (const item of educationCenterDb as any[]) {
           const itemLat = toNum(item.latitude);
-const itemLng = toNum(item.longitude);
+          const itemLng = toNum(item.longitude);
+          if (itemLat === null || itemLng === null) continue;
 
-let distanceKm: string | undefined = undefined;
-if (itemLat !== null && itemLng !== null) {
-  distanceKm = haversineDistanceKm(lat, lng, itemLat, itemLng).toFixed(2);
-}
+          const distanceKm = haversineDistanceKm(lat, lng, itemLat, itemLng);
 
-nextResults.push({
-  id: item.id,
-  type: "education",
-  name: item.name,
-  representativeName: item.representativeName || "",
-  phone: item.phone || "",
-  address: [item.address, item.detailAddress].filter(Boolean).join(" "),
-  price: item.feeAmount ? String(item.feeAmount) : "",
-  distanceKm,
-  latitude: item.latitude,
-  longitude: item.longitude,
-});
+          nextResults.push({
+            id: item.id,
+            type: "education",
+            name: item.name,
+            representativeName: item.representativeName || "",
+            phone: item.phone || "",
+            address: [item.address, item.detailAddress].filter(Boolean).join(" "),
+            price: item.feeAmount ? String(item.feeAmount) : "",
+            distanceKm: distanceKm.toFixed(2),
+            latitude: item.latitude,
+            longitude: item.longitude,
+          });
         }
       }
 
@@ -425,7 +461,7 @@ nextResults.push({
       setSelectedFinderItem(topResults[0] ?? null);
 
       if (topResults.length === 0) {
-        toast.message("좌표가 등록된 기관이 없어 검색 결과가 없습니다.");
+        toast.message("검색 결과가 없습니다. 좌표가 등록된 기관 데이터를 확인해주세요.");
       } else {
         toast.success(`가까운 기관 ${topResults.length}건을 불러왔습니다.`);
       }
@@ -436,49 +472,88 @@ nextResults.push({
     }
   };
 
-  const applyFinderSelectionToDetail = () => {
+  const applyFinderSelectionToDetail = async () => {
     if (!selectedFinderItem) {
       toast.error("선택된 기관이 없습니다.");
       return;
     }
 
-    if (!selectedRow && finderTargetRow) {
-      openDetail(finderTargetRow);
+    const updatePayload =
+      selectedFinderItem.type === "education"
+        ? {
+            selectedEducationCenterId: Number(selectedFinderItem.id) || undefined,
+            selectedEducationCenterName: selectedFinderItem.name || "",
+            selectedEducationCenterAddress: selectedFinderItem.address || "",
+            selectedEducationCenterDistanceKm:
+              selectedFinderItem.distanceKm?.toString?.() ||
+              String(selectedFinderItem.distanceKm || ""),
+          }
+        : {
+            selectedPracticeInstitutionId:
+              Number(selectedFinderItem.id) || undefined,
+            selectedPracticeInstitutionName: selectedFinderItem.name || "",
+            selectedPracticeInstitutionAddress: selectedFinderItem.address || "",
+            selectedPracticeInstitutionDistanceKm:
+              selectedFinderItem.distanceKm?.toString?.() ||
+              String(selectedFinderItem.distanceKm || ""),
+          };
+
+    if (selectedRow?.id) {
+      setSelectedRow((prev: any) => ({
+        ...prev,
+        ...updatePayload,
+      }));
       setFinderOpen(false);
+      toast.success("선택한 기관 정보를 상세 수정창에 반영했습니다.");
       return;
     }
 
-    if (!selectedRow) {
-      toast.error("상세 수정할 행을 먼저 선택해주세요.");
+    if (finderTargetRow?.id) {
+      try {
+        await updatePracticeSupportMut.mutateAsync({
+          id: finderTargetRow.id,
+          ...updatePayload,
+        } as any);
+        setFinderOpen(false);
+        toast.success("선택한 기관 정보를 요청 리스트에 바로 반영했습니다.");
+      } catch (e: any) {
+        toast.error(e?.message || "기관 반영 중 오류가 발생했습니다.");
+      }
       return;
     }
 
-    if (selectedFinderItem.type === "education") {
-      setSelectedRow((prev: any) => ({
-        ...prev,
-        selectedEducationCenterId: selectedFinderItem.id,
-        selectedEducationCenterName: selectedFinderItem.name || "",
-        selectedEducationCenterAddress: selectedFinderItem.address || "",
-        selectedEducationCenterDistanceKm:
-          selectedFinderItem.distanceKm?.toString?.() ||
-          selectedFinderItem.distanceKm ||
-          "",
-      }));
-    } else {
-      setSelectedRow((prev: any) => ({
-        ...prev,
-        selectedPracticeInstitutionId: selectedFinderItem.id,
-        selectedPracticeInstitutionName: selectedFinderItem.name || "",
-        selectedPracticeInstitutionAddress: selectedFinderItem.address || "",
-        selectedPracticeInstitutionDistanceKm:
-          selectedFinderItem.distanceKm?.toString?.() ||
-          selectedFinderItem.distanceKm ||
-          "",
-      }));
-    }
+    toast.error("반영할 대상 요청이 없습니다.");
+  };
 
-    setFinderOpen(false);
-    toast.success("선택한 기관 정보를 상세 수정창에 반영했습니다.");
+  const FinderTypeToggle = ({
+    checked,
+    onChange,
+    label,
+    activeClassName,
+  }: {
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+    label: string;
+    activeClassName: string;
+  }) => {
+    return (
+      <button
+        type="button"
+        onClick={() => onChange(!checked)}
+        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition ${
+          checked
+            ? activeClassName
+            : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+        }`}
+      >
+        <span
+          className={`h-2.5 w-2.5 rounded-full ${
+            checked ? "bg-current opacity-100" : "bg-gray-300"
+          }`}
+        />
+        {label}
+      </button>
+    );
   };
 
   return (
@@ -486,8 +561,9 @@ nextResults.push({
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">실습배정지원센터</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            실습 요청 학생을 리스트형으로 관리하고, 실습교육원 / 실습기관 배정과 결제 상태를 관리합니다.
+          <p className="mt-1 text-sm text-muted-foreground">
+            실습 요청 학생을 리스트형으로 관리하고, 실습교육원 / 실습기관 배정과
+            실습섭외 · 결제 상태를 관리합니다.
           </p>
         </div>
 
@@ -527,19 +603,19 @@ nextResults.push({
 
         <CardContent className="p-0">
           {isLoading ? (
-            <div className="text-sm text-muted-foreground py-16 text-center">
+            <div className="py-16 text-center text-sm text-muted-foreground">
               불러오는 중...
             </div>
           ) : filteredList.length === 0 ? (
-            <div className="text-sm text-muted-foreground py-16 text-center">
+            <div className="py-16 text-center text-sm text-muted-foreground">
               조회된 실습배정 요청이 없습니다.
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[1500px]">
+              <table className="w-full min-w-[1520px] text-sm">
                 <thead>
                   <tr className="border-b bg-muted/40">
-                    <th className="px-3 py-3 text-left font-medium text-muted-foreground w-[60px]">
+                    <th className="w-[60px] px-3 py-3 text-left font-medium text-muted-foreground">
                       No
                     </th>
                     <th className="px-3 py-3 text-left font-medium text-muted-foreground">
@@ -551,7 +627,7 @@ nextResults.push({
                     <th className="px-3 py-3 text-left font-medium text-muted-foreground">
                       희망과정
                     </th>
-                    <th className="px-3 py-3 text-left font-medium text-muted-foreground min-w-[220px]">
+                    <th className="min-w-[240px] px-3 py-3 text-left font-medium text-muted-foreground">
                       상세주소
                     </th>
                     <th className="px-3 py-3 text-left font-medium text-muted-foreground">
@@ -563,16 +639,16 @@ nextResults.push({
                     <th className="px-3 py-3 text-left font-medium text-muted-foreground">
                       실습시간
                     </th>
-                    <th className="px-3 py-3 text-left font-medium text-muted-foreground w-[140px]">
-                      결제
-                    </th>
-                    <th className="px-3 py-3 text-left font-medium text-muted-foreground w-[140px]">
+                    <th className="w-[150px] px-3 py-3 text-left font-medium text-muted-foreground">
                       실습섭외
+                    </th>
+                    <th className="w-[150px] px-3 py-3 text-left font-medium text-muted-foreground">
+                      결제
                     </th>
                     <th className="px-3 py-3 text-left font-medium text-muted-foreground">
                       담당자
                     </th>
-                    <th className="px-3 py-3 text-right font-medium text-muted-foreground w-[220px]">
+                    <th className="w-[220px] px-3 py-3 text-right font-medium text-muted-foreground">
                       관리
                     </th>
                   </tr>
@@ -580,7 +656,10 @@ nextResults.push({
 
                 <tbody>
                   {filteredList.map((row: any, idx: number) => (
-                    <tr key={row.id} className="border-b last:border-0 hover:bg-muted/20">
+                    <tr
+                      key={row.id}
+                      className="border-b last:border-0 hover:bg-muted/20"
+                    >
                       <td className="px-3 py-3 text-sm text-muted-foreground">
                         {idx + 1}
                       </td>
@@ -609,8 +688,13 @@ nextResults.push({
 
                       <td className="px-3 py-3">
                         <div className="space-y-1">
-                          <div className="font-medium">
-                            {row.selectedEducationCenterName || "-"}
+                          <div className="flex items-center gap-2">
+                            <Badge className="bg-blue-100 text-blue-700 border border-blue-200">
+                              교육원
+                            </Badge>
+                            <span className="font-medium">
+                              {row.selectedEducationCenterName || "-"}
+                            </span>
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {row.selectedEducationCenterDistanceKm
@@ -622,8 +706,13 @@ nextResults.push({
 
                       <td className="px-3 py-3">
                         <div className="space-y-1">
-                          <div className="font-medium">
-                            {row.selectedPracticeInstitutionName || "-"}
+                          <div className="flex items-center gap-2">
+                            <Badge className="bg-orange-100 text-orange-700 border border-orange-200">
+                              기관
+                            </Badge>
+                            <span className="font-medium">
+                              {row.selectedPracticeInstitutionName || "-"}
+                            </span>
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {row.selectedPracticeInstitutionDistanceKm
@@ -635,29 +724,6 @@ nextResults.push({
 
                       <td className="px-3 py-3">
                         {row.practiceHours ? `${row.practiceHours}시간` : "-"}
-                      </td>
-
-                      <td className="px-3 py-3">
-                        <Select
-                          value={row.paymentStatus || "미결제"}
-                          onValueChange={(v) =>
-                            handleQuickPaymentChange(row.id, v as PaymentStatus)
-                          }
-                        >
-                          <SelectTrigger className="h-9">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="미결제">미결제</SelectItem>
-                            <SelectItem value="결제">결제</SelectItem>
-                          </SelectContent>
-                        </Select>
-
-                        <div className="mt-1">
-                          <Badge className={getPaymentBadgeClass(row.paymentStatus)}>
-                            {row.paymentStatus || "미결제"}
-                          </Badge>
-                        </div>
                       </td>
 
                       <td className="px-3 py-3">
@@ -687,6 +753,29 @@ nextResults.push({
                             )}
                           >
                             {row.coordinationStatus || "미섭외"}
+                          </Badge>
+                        </div>
+                      </td>
+
+                      <td className="px-3 py-3">
+                        <Select
+                          value={row.paymentStatus || "미결제"}
+                          onValueChange={(v) =>
+                            handleQuickPaymentChange(row.id, v as PaymentStatus)
+                          }
+                        >
+                          <SelectTrigger className="h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="미결제">미결제</SelectItem>
+                            <SelectItem value="결제">결제</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        <div className="mt-1">
+                          <Badge className={getPaymentBadgeClass(row.paymentStatus)}>
+                            {row.paymentStatus || "미결제"}
                           </Badge>
                         </div>
                       </td>
@@ -731,245 +820,284 @@ nextResults.push({
       </Card>
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>실습배정 상세 정보</DialogTitle>
+            <DialogDescription>
+              학생 주소, 실습교육원, 실습기관, 실습섭외 및 결제 상태를 위아래 구조로
+              관리합니다.
+            </DialogDescription>
           </DialogHeader>
 
           {selectedRow && (
-            <div className="grid gap-4 py-2">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label className="text-xs">이름</Label>
-                  <Input value={selectedRow.clientName || ""} disabled />
-                </div>
+            <div className="max-h-[75vh] overflow-y-auto space-y-5 py-2 pr-1">
+              <div className="rounded-xl border p-4 space-y-4">
+                <div className="font-semibold">학생 기본 정보</div>
 
-                <div className="space-y-1">
-                  <Label className="text-xs">연락처</Label>
-                  <Input value={formatPhone(selectedRow.phone || "")} disabled />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">희망과정</Label>
-                  <Input value={selectedRow.course || ""} disabled />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">담당자명</Label>
-                  <Input
-                    value={selectedRow.managerName || ""}
-                    onChange={(e) =>
-                      setSelectedRow((prev: any) => ({
-                        ...prev,
-                        managerName: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">기본주소</Label>
-                  <Input
-                    value={selectedRow.inputAddress || ""}
-                    onChange={(e) =>
-                      setSelectedRow((prev: any) => ({
-                        ...prev,
-                        inputAddress: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">상세주소</Label>
-                  <Input
-                    value={selectedRow.detailAddress || ""}
-                    onChange={(e) =>
-                      setSelectedRow((prev: any) => ({
-                        ...prev,
-                        detailAddress: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">실습시간</Label>
-                  <Input
-                    value={selectedRow.practiceHours || ""}
-                    onChange={(e) =>
-                      setSelectedRow((prev: any) => ({
-                        ...prev,
-                        practiceHours: e.target.value.replace(/[^0-9]/g, ""),
-                      }))
-                    }
-                    placeholder="예: 160"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">실습섭외</Label>
-                  <Select
-                    value={selectedRow.coordinationStatus || "미섭외"}
-                    onValueChange={(v) =>
-                      setSelectedRow((prev: any) => ({
-                        ...prev,
-                        coordinationStatus: v,
-                      }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="미섭외">미섭외</SelectItem>
-                      <SelectItem value="섭외중">섭외중</SelectItem>
-                      <SelectItem value="섭외완료">섭외완료</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">결제 상태</Label>
-                  <Select
-                    value={selectedRow.paymentStatus || "미결제"}
-                    onValueChange={(v) =>
-                      setSelectedRow((prev: any) => ({
-                        ...prev,
-                        paymentStatus: v,
-                      }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="미결제">미결제</SelectItem>
-                      <SelectItem value="결제">결제</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">금액</Label>
-                  <Input
-                    value={selectedRow.feeAmount || ""}
-                    onChange={(e) =>
-                      setSelectedRow((prev: any) => ({
-                        ...prev,
-                        feeAmount: e.target.value.replace(/[^0-9]/g, ""),
-                      }))
-                    }
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">실습교육원명</Label>
-                  <Input
-                    value={selectedRow.selectedEducationCenterName || ""}
-                    onChange={(e) =>
-                      setSelectedRow((prev: any) => ({
-                        ...prev,
-                        selectedEducationCenterName: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">실습교육원 주소</Label>
-                  <Input
-                    value={selectedRow.selectedEducationCenterAddress || ""}
-                    onChange={(e) =>
-                      setSelectedRow((prev: any) => ({
-                        ...prev,
-                        selectedEducationCenterAddress: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">실습교육원 거리(km)</Label>
-                  <Input
-                    value={selectedRow.selectedEducationCenterDistanceKm || ""}
-                    onChange={(e) =>
-                      setSelectedRow((prev: any) => ({
-                        ...prev,
-                        selectedEducationCenterDistanceKm: e.target.value.replace(
-                          /[^0-9.]/g,
-                          ""
-                        ),
-                      }))
-                    }
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">실습기관명</Label>
-                  <Input
-                    value={selectedRow.selectedPracticeInstitutionName || ""}
-                    onChange={(e) =>
-                      setSelectedRow((prev: any) => ({
-                        ...prev,
-                        selectedPracticeInstitutionName: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">실습기관 주소</Label>
-                  <Input
-                    value={selectedRow.selectedPracticeInstitutionAddress || ""}
-                    onChange={(e) =>
-                      setSelectedRow((prev: any) => ({
-                        ...prev,
-                        selectedPracticeInstitutionAddress: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs">실습기관 거리(km)</Label>
-                  <Input
-                    value={selectedRow.selectedPracticeInstitutionDistanceKm || ""}
-                    onChange={(e) =>
-                      setSelectedRow((prev: any) => ({
-                        ...prev,
-                        selectedPracticeInstitutionDistanceKm: e.target.value.replace(
-                          /[^0-9.]/g,
-                          ""
-                        ),
-                      }))
-                    }
-                  />
-                </div>
-
-                <div className="space-y-1 md:col-span-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs">메모</Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => openFinder(selectedRow)}
-                    >
-                      기관찾기
-                    </Button>
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">이름</Label>
+                    <Input value={selectedRow.clientName || ""} disabled />
                   </div>
 
-                  <Textarea
-                    rows={4}
-                    value={selectedRow.note || ""}
-                    onChange={(e) =>
-                      setSelectedRow((prev: any) => ({
-                        ...prev,
-                        note: e.target.value,
-                      }))
-                    }
-                  />
+                  <div className="space-y-1">
+                    <Label className="text-xs">연락처</Label>
+                    <Input value={formatPhone(selectedRow.phone || "")} disabled />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">희망과정</Label>
+                    <Input value={selectedRow.course || ""} disabled />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">담당자명</Label>
+                    <Input
+                      value={selectedRow.managerName || ""}
+                      onChange={(e) =>
+                        setSelectedRow((prev: any) => ({
+                          ...prev,
+                          managerName: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">기본주소</Label>
+                    <Input
+                      value={selectedRow.inputAddress || ""}
+                      onChange={(e) =>
+                        setSelectedRow((prev: any) => ({
+                          ...prev,
+                          inputAddress: e.target.value,
+                        }))
+                      }
+                      placeholder="예: 서울 도봉구 방학동 ..."
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">상세주소</Label>
+                    <Input
+                      value={selectedRow.detailAddress || ""}
+                      onChange={(e) =>
+                        setSelectedRow((prev: any) => ({
+                          ...prev,
+                          detailAddress: e.target.value,
+                        }))
+                      }
+                      placeholder="예: 401호"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">실습시간</Label>
+                    <Input
+                      value={selectedRow.practiceHours || ""}
+                      onChange={(e) =>
+                        setSelectedRow((prev: any) => ({
+                          ...prev,
+                          practiceHours: e.target.value.replace(/[^0-9]/g, ""),
+                        }))
+                      }
+                      placeholder="예: 160"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold">배정 정보</div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => openFinder(selectedRow)}
+                  >
+                    기관찾기
+                  </Button>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-blue-100 text-blue-700 border border-blue-200">
+                        실습교육원
+                      </Badge>
+                      <span className="font-medium">
+                        {selectedRow.selectedEducationCenterName || "-"}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">실습교육원명</Label>
+                      <Input
+                        value={selectedRow.selectedEducationCenterName || ""}
+                        onChange={(e) =>
+                          setSelectedRow((prev: any) => ({
+                            ...prev,
+                            selectedEducationCenterName: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">실습교육원 주소</Label>
+                      <Input
+                        value={selectedRow.selectedEducationCenterAddress || ""}
+                        onChange={(e) =>
+                          setSelectedRow((prev: any) => ({
+                            ...prev,
+                            selectedEducationCenterAddress: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">실습교육원 거리(km)</Label>
+                      <Input
+                        value={selectedRow.selectedEducationCenterDistanceKm || ""}
+                        onChange={(e) =>
+                          setSelectedRow((prev: any) => ({
+                            ...prev,
+                            selectedEducationCenterDistanceKm:
+                              e.target.value.replace(/[^0-9.]/g, ""),
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-orange-100 text-orange-700 border border-orange-200">
+                        실습기관
+                      </Badge>
+                      <span className="font-medium">
+                        {selectedRow.selectedPracticeInstitutionName || "-"}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">실습기관명</Label>
+                      <Input
+                        value={selectedRow.selectedPracticeInstitutionName || ""}
+                        onChange={(e) =>
+                          setSelectedRow((prev: any) => ({
+                            ...prev,
+                            selectedPracticeInstitutionName: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">실습기관 주소</Label>
+                      <Input
+                        value={selectedRow.selectedPracticeInstitutionAddress || ""}
+                        onChange={(e) =>
+                          setSelectedRow((prev: any) => ({
+                            ...prev,
+                            selectedPracticeInstitutionAddress: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">실습기관 거리(km)</Label>
+                      <Input
+                        value={selectedRow.selectedPracticeInstitutionDistanceKm || ""}
+                        onChange={(e) =>
+                          setSelectedRow((prev: any) => ({
+                            ...prev,
+                            selectedPracticeInstitutionDistanceKm:
+                              e.target.value.replace(/[^0-9.]/g, ""),
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border p-4 space-y-4">
+                <div className="font-semibold">실습 관리 정보</div>
+
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">실습섭외</Label>
+                    <Select
+                      value={selectedRow.coordinationStatus || "미섭외"}
+                      onValueChange={(v) =>
+                        setSelectedRow((prev: any) => ({
+                          ...prev,
+                          coordinationStatus: v,
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="미섭외">미섭외</SelectItem>
+                        <SelectItem value="섭외중">섭외중</SelectItem>
+                        <SelectItem value="섭외완료">섭외완료</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">결제 상태</Label>
+                    <Select
+                      value={selectedRow.paymentStatus || "미결제"}
+                      onValueChange={(v) =>
+                        setSelectedRow((prev: any) => ({
+                          ...prev,
+                          paymentStatus: v,
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="미결제">미결제</SelectItem>
+                        <SelectItem value="결제">결제</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">금액</Label>
+                    <Input
+                      value={selectedRow.feeAmount || ""}
+                      onChange={(e) =>
+                        setSelectedRow((prev: any) => ({
+                          ...prev,
+                          feeAmount: e.target.value.replace(/[^0-9]/g, ""),
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">메모</Label>
+                    <Textarea
+                      rows={5}
+                      value={selectedRow.note || ""}
+                      onChange={(e) =>
+                        setSelectedRow((prev: any) => ({
+                          ...prev,
+                          note: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -987,26 +1115,25 @@ nextResults.push({
       </Dialog>
 
       <Dialog open={finderOpen} onOpenChange={setFinderOpen}>
-  <DialogContent
-    aria-describedby="practice-finder-desc"
-    className="w-screen max-w-none sm:max-w-none h-screen p-0 overflow-hidden rounded-none border-0"
-  >
-    <DialogHeader className="px-6 pt-5 pb-4 border-b bg-white">
-      <DialogTitle className="text-lg font-semibold">실습찾기</DialogTitle>
-      <DialogDescription
-        id="practice-finder-desc"
-        className="text-sm text-muted-foreground"
-      >
-        학생 주소 기준으로 가까운 실습교육원 / 실습기관을 검색합니다.
-      </DialogDescription>
-    </DialogHeader>
+        <DialogContent
+          aria-describedby="practice-finder-desc"
+          className="h-screen w-screen max-w-none overflow-hidden rounded-none border-0 p-0 sm:max-w-none"
+        >
+          <DialogHeader className="border-b bg-white px-6 pt-5 pb-4">
+            <DialogTitle className="text-lg font-semibold">실습찾기</DialogTitle>
+            <DialogDescription
+              id="practice-finder-desc"
+              className="text-sm text-muted-foreground"
+            >
+              학생 주소 기준으로 가까운 실습교육원 / 실습기관을 검색합니다.
+            </DialogDescription>
+          </DialogHeader>
 
-    <div className="flex h-[calc(100vh-72px)]">
-            <div className="w-[320px] min-w-[320px] border-r bg-white flex flex-col">
-              <div className="p-4 border-b space-y-3">
+          <div className="flex h-[calc(100vh-72px)]">
+            <div className="flex w-[360px] min-w-[360px] flex-col border-r bg-white">
+              <div className="space-y-4 border-b p-4">
                 <div className="space-y-1">
                   <Label className="text-xs">주소 검색</Label>
-
                   <div className="flex gap-2">
                     <Input
                       placeholder="예: 서울 도봉구 방학동..."
@@ -1023,28 +1150,20 @@ nextResults.push({
                   </div>
                 </div>
 
-                <div className="flex gap-3 flex-wrap text-sm">
-                  <label className="inline-flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={finderIncludeEducationCenter}
-                      onChange={(e) =>
-                        setFinderIncludeEducationCenter(e.target.checked)
-                      }
-                    />
-                    실습교육원
-                  </label>
+                <div className="flex gap-2 flex-wrap">
+                  <FinderTypeToggle
+                    checked={finderIncludeEducationCenter}
+                    onChange={setFinderIncludeEducationCenter}
+                    label="실습교육원"
+                    activeClassName="bg-blue-50 text-blue-700 border-blue-200"
+                  />
 
-                  <label className="inline-flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={finderIncludePracticeInstitution}
-                      onChange={(e) =>
-                        setFinderIncludePracticeInstitution(e.target.checked)
-                      }
-                    />
-                    실습기관
-                  </label>
+                  <FinderTypeToggle
+                    checked={finderIncludePracticeInstitution}
+                    onChange={setFinderIncludePracticeInstitution}
+                    label="실습기관"
+                    activeClassName="bg-orange-50 text-orange-700 border-orange-200"
+                  />
                 </div>
 
                 {finderTargetRow && (
@@ -1056,16 +1175,39 @@ nextResults.push({
                     </div>
                   </div>
                 )}
+
+                {finderSearchPoint && (
+                  <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-3 text-xs">
+                    <div className="flex items-center gap-2 font-medium text-green-700">
+                      <CheckCircle2 className="h-4 w-4" />
+                      검색 기준 주소
+                    </div>
+                    <div className="mt-1 text-gray-700">
+                      {finderResolvedAddress || finderAddress}
+                    </div>
+                    <div className="mt-1 text-[11px] text-green-700">
+                      위 주소를 기준으로 가까운 실습교육원 / 실습기관을 거리순으로
+                      보여줍니다.
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-b px-4 py-3 text-sm">
+                <div className="font-medium">검색 결과</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  가까운 순으로 최대 100건까지 표시됩니다.
+                </div>
               </div>
 
               <div className="flex-1 overflow-y-auto">
                 {finderResults.length === 0 ? (
                   <div className="p-4 text-sm text-muted-foreground">
-                    <div className="font-medium mb-2">검색 결과</div>
                     <div className="rounded-lg border bg-muted/30 p-4 leading-6">
-                      아직 기관 DB 검색 기능이 연결되지 않은 상태입니다.
+                      검색된 결과가 없습니다.
                       <br />
-                      다음 단계에서 가까운 기관 리스트가 표시됩니다.
+                      주소를 입력한 뒤 검색하거나, 좌표가 등록된 기관 데이터를
+                      확인해주세요.
                     </div>
                   </div>
                 ) : (
@@ -1076,41 +1218,39 @@ nextResults.push({
 
                       return (
                         <button
-                          key={item.id}
+                          key={`${item.type}-${item.id}`}
                           type="button"
-                          className={`w-full text-left p-4 hover:bg-muted/30 transition ${
-                            isSelected ? "bg-blue-50" : ""
+                          className={`w-full p-4 text-left transition hover:bg-muted/30 ${
+                            isSelected
+                              ? item.type === "education"
+                                ? "bg-blue-50"
+                                : "bg-orange-50"
+                              : ""
                           }`}
                           onClick={() => setSelectedFinderItem(item)}
                         >
                           <div className="space-y-2">
                             <div className="flex items-center gap-2">
-                              <Badge
-                                className={
-                                  item.type === "education"
-                                    ? "bg-violet-100 text-violet-700"
-                                    : "bg-emerald-100 text-emerald-700"
-                                }
-                              >
-                                {item.type === "education"
-                                  ? "교육원"
-                                  : "실습기관"}
+                              <Badge className={getTypeBadgeClass(item.type)}>
+                                {getTypeLabel(item.type)}
                               </Badge>
 
-                              <span className="font-medium truncate">
+                              <span className="truncate font-medium">
                                 {item.name}
                               </span>
                             </div>
 
                             {item.address && (
-                              <div className="text-xs text-muted-foreground">
-                                {item.address}
+                              <div className="flex items-start gap-2 text-xs text-muted-foreground">
+                                <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                <span>{item.address}</span>
                               </div>
                             )}
 
                             {item.phone && (
-                              <div className="text-xs text-muted-foreground">
-                                {formatPhone(item.phone)}
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <Phone className="h-3.5 w-3.5 shrink-0" />
+                                <span>{formatPhone(item.phone)}</span>
                               </div>
                             )}
 
@@ -1121,8 +1261,9 @@ nextResults.push({
                             )}
 
                             {item.distanceKm && (
-                              <div className="text-sm font-medium text-blue-600">
-                                {item.distanceKm}km
+                              <div className="flex items-center gap-2 text-sm font-medium text-blue-600">
+                                <Navigation className="h-4 w-4" />
+                                <span>{item.distanceKm}km</span>
                               </div>
                             )}
                           </div>
@@ -1133,27 +1274,46 @@ nextResults.push({
                 )}
               </div>
 
-              <div className="p-4 border-t flex gap-2">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => setFinderOpen(false)}
-                >
-                  닫기
-                </Button>
+              <div className="border-t p-4 space-y-3">
+                {selectedFinderItem && (
+                  <div className="rounded-lg border bg-muted/20 p-3 text-xs">
+                    <div className="mb-1 font-medium">선택된 기관</div>
+                    <div className="flex items-center gap-2">
+                      <Badge className={getTypeBadgeClass(selectedFinderItem.type)}>
+                        {getTypeLabel(selectedFinderItem.type)}
+                      </Badge>
+                      <span>{selectedFinderItem.name}</span>
+                    </div>
+                    {selectedFinderItem.distanceKm && (
+                      <div className="mt-1 text-muted-foreground">
+                        거리: {selectedFinderItem.distanceKm}km
+                      </div>
+                    )}
+                  </div>
+                )}
 
-                <Button
-                  className="flex-1"
-                  onClick={applyFinderSelectionToDetail}
-                  disabled={!selectedFinderItem}
-                >
-                  선택 반영
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setFinderOpen(false)}
+                  >
+                    닫기
+                  </Button>
+
+                  <Button
+                    className="flex-1"
+                    onClick={applyFinderSelectionToDetail}
+                    disabled={!selectedFinderItem || updatePracticeSupportMut.isPending}
+                  >
+                    선택 반영
+                  </Button>
+                </div>
               </div>
             </div>
 
-            <div className="flex-1 min-w-0 bg-gray-100">
-              <div className="w-full h-full">
+            <div className="min-w-0 flex-1 bg-gray-100">
+              <div className="h-full w-full">
                 <KakaoMap
                   address={finderAddress}
                   searchTrigger={finderSearchTrigger}
@@ -1161,9 +1321,10 @@ nextResults.push({
                   includePracticeInstitution={finderIncludePracticeInstitution}
                   results={finderResults}
                   selectedResult={selectedFinderItem}
-                  onSelectResult={(item: FinderItem) =>
-                    setSelectedFinderItem(item)
-                  }
+                  searchPoint={finderSearchPoint}
+                  searchPointLabel={finderResolvedAddress || finderAddress}
+                  showSearchPointMarker={true}
+                  onSelectResult={(item: FinderItem) => setSelectedFinderItem(item)}
                 />
               </div>
             </div>

@@ -504,6 +504,39 @@ export const practiceInstitutions = mysqlTable("practice_institutions", {
 export type PracticeInstitution = typeof practiceInstitutions.$inferSelect;
 export type InsertPracticeInstitution = typeof practiceInstitutions.$inferInsert;
 
+export const practiceEducationCenters = mysqlTable("practice_education_centers", {
+  id: int("id").autoincrement().primaryKey(),
+
+  name: varchar("name", { length: 255 }).notNull(),
+  representativeName: varchar("representativeName", { length: 100 }),
+  phone: varchar("phone", { length: 30 }),
+
+  address: varchar("address", { length: 255 }),
+  detailAddress: varchar("detailAddress", { length: 255 }),
+
+  feeAmount: decimal("feeAmount", { precision: 12, scale: 0 })
+    .notNull()
+    .default("0"),
+
+  latitude: decimal("latitude", { precision: 10, scale: 7 }),
+  longitude: decimal("longitude", { precision: 10, scale: 7 }),
+  geocodedAt: datetime("geocodedAt"),
+
+  availableCourse: varchar("availableCourse", { length: 255 }),
+  memo: text("memo"),
+
+  isActive: boolean("isActive").notNull().default(true),
+  sortOrder: int("sortOrder").notNull().default(0),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PracticeEducationCenter =
+  typeof practiceEducationCenters.$inferSelect;
+export type InsertPracticeEducationCenter =
+  typeof practiceEducationCenters.$inferInsert;
+
 // ─── Job Support Requests (취업지원센터) ────────────────────────────
 export const jobSupportRequests = mysqlTable("job_support_requests", {
   id: int("id").autoincrement().primaryKey(),
