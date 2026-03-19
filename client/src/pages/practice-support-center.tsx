@@ -168,12 +168,10 @@ export default function PracticeSupportCenter() {
   const { data: practiceSupportList, isLoading } =
     trpc.practiceSupport.list.useQuery();
 
-  const { data: educationCenterDb = [] } = trpc.practiceInstitution.list.useQuery(
-    { institutionType: "education" },
-    {
-      staleTime: 1000 * 60 * 5,
-    }
-  );
+  const { data: educationCenterDb = [] } =
+  trpc.practiceEducationCenter.list.useQuery(undefined, {
+    staleTime: 1000 * 60 * 5,
+  });
 
   const { data: practiceInstitutionDb = [] } = trpc.practiceInstitution.list.useQuery(
     { institutionType: "institution" },
@@ -384,7 +382,7 @@ nextResults.push({
   representativeName: item.representativeName || "",
   phone: item.phone || "",
   address: [item.address, item.detailAddress].filter(Boolean).join(" "),
-  price: item.price ? String(item.price) : "",
+  price: item.feeAmount ? String(item.feeAmount) : "",
   distanceKm,
   latitude: item.latitude,
   longitude: item.longitude,

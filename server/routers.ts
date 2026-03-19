@@ -1866,7 +1866,86 @@ export const appRouter = router({
         return { success: true };
       }),
   }),
+practiceEducationCenter: router({
+  list: protectedProcedure.query(async () => {
+    return db.listPracticeEducationCenters();
+  }),
 
+  get: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getPracticeEducationCenter(input.id);
+    }),
+
+  create: protectedProcedure
+    .input(
+      z.object({
+        name: z.string().min(1),
+        phone: z.string().optional(),
+        address: z.string().optional(),
+        detailAddress: z.string().optional(),
+        feeAmount: z.string().optional(),
+        latitude: z.string().optional(),
+        longitude: z.string().optional(),
+        note: z.string().optional(),
+        isActive: z.boolean().optional(),
+        sortOrder: z.number().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "host") {
+        throw new Error("관리자 또는 호스트만 등록할 수 있습니다");
+      }
+
+      const id = await db.createPracticeEducationCenter({
+        name: input.name.trim(),
+        phone: input.phone?.trim() || null,
+        address: input.address?.trim() || null,
+        detailAddress: input.detailAddress?.trim() || null,
+        feeAmount: input.feeAmount || "0",
+        latitude: input.latitude || null,
+        longitude: input.longitude || null,
+        note: input.note || null,
+        isActive: input.isActive ?? true,
+        sortOrder: input.sortOrder ?? 0,
+      } as any);
+
+      return { id, success: true };
+    }),
+
+  update: protectedProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        phone: z.string().optional(),
+        address: z.string().optional(),
+        detailAddress: z.string().optional(),
+        feeAmount: z.string().optional(),
+        latitude: z.string().optional(),
+        longitude: z.string().optional(),
+        note: z.string().optional(),
+        isActive: z.boolean().optional(),
+        sortOrder: z.number().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "admin" && ctx.user.role !== "host") {
+        throw new Error("관리자 또는 호스트만 수정할 수 있습니다");
+      }
+
+      const { id, ...rest } = input;
+      await db.updatePracticeEducationCenter(id, rest as any);
+      return { success: true };
+    }),
+
+  delete: hostProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deletePracticeEducationCenter(input.id);
+      return { success: true };
+    }),
+}),
   practiceInstitution: router({
     list: protectedProcedure
       .input(

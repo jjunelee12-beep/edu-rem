@@ -32,6 +32,8 @@ import {
   InsertPracticeInstitution,
   jobSupportRequests,
   InsertJobSupportRequest,
+practiceEducationCenters,
+  InsertPracticeEducationCenter,
 } from "../drizzle/schema";
 
 import { ENV } from "./_core/env";
@@ -2136,6 +2138,68 @@ export async function bulkCreatePracticeInstitutions(
   }));
 
   return db.insert(practiceInstitutions).values(rows as any);
+}
+
+export async function listPracticeEducationCenters() {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(practiceEducationCenters)
+    .where(eq(practiceEducationCenters.isActive, true))
+    .orderBy(practiceEducationCenters.sortOrder, desc(practiceEducationCenters.createdAt));
+}
+
+export async function getPracticeEducationCenter(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const rows = await db
+    .select()
+    .from(practiceEducationCenters)
+    .where(eq(practiceEducationCenters.id, id))
+    .limit(1);
+
+  return rows[0];
+}
+
+export async function createPracticeEducationCenter(
+  data: InsertPracticeEducationCenter
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(practiceEducationCenters).values({
+    ...data,
+    feeAmount: (data as any).feeAmount ?? "0",
+    isActive: (data as any).isActive ?? true,
+    sortOrder: (data as any).sortOrder ?? 0,
+  });
+
+  return getInsertId(result);
+}
+
+export async function updatePracticeEducationCenter(
+  id: number,
+  data: Partial<InsertPracticeEducationCenter>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(practiceEducationCenters)
+    .set(data as any)
+    .where(eq(practiceEducationCenters.id, id));
+}
+
+export async function deletePracticeEducationCenter(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .delete(practiceEducationCenters)
+    .where(eq(practiceEducationCenters.id, id));
 }
 
 export async function listNearbyPracticeInstitutions(params: {
