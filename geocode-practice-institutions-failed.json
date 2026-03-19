@@ -1,0 +1,458 @@
+[
+  {
+    "id": 2317,
+    "name": "동방아동재활원",
+    "address": "경기 평택시 소사동 1길33",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:15.464Z"
+  },
+  {
+    "id": 2325,
+    "name": "동백지역아동센터",
+    "address": "경기 용인시 기흥구 동백동 백현주공9단지내 상가2층",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:15.468Z"
+  },
+  {
+    "id": 2466,
+    "name": "드림지역아동센터",
+    "address": "강원 강릉시 주문진읍 교항6리",
+    "detailAddress": "70번지 연주로334",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:15.681Z"
+  },
+  {
+    "id": 2511,
+    "name": "라온누리",
+    "address": "부산 사상구 엄궁동 럭키아파트 101동107호 외 8곳",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:15.854Z"
+  },
+  {
+    "id": 2532,
+    "name": "레인보우지역아동센터",
+    "address": "충남 금산군 금산읍 중도1리",
+    "detailAddress": "236-16",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:15.876Z"
+  },
+  {
+    "id": 2931,
+    "name": "밀알지역아동센터",
+    "address": "경기 화성시 우정읍 조암리 북로19번길 16",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:16.039Z"
+  },
+  {
+    "id": 3021,
+    "name": "방주요양원1",
+    "address": "경기 안산시 단원구 초지동 742-2 키즈타운2 503-505호 방주요양원1",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:16.053Z"
+  },
+  {
+    "id": 3440,
+    "name": "비젼스쿨지역아동센터",
+    "address": "충청남도 보령시 남포면 보령남로 40",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:16.238Z"
+  },
+  {
+    "id": 3053,
+    "name": "백합주간보호센터",
+    "address": "울산 중구 푸름길 15",
+    "detailAddress": "(학산동) 3층(학산동)",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:16.250Z"
+  },
+  {
+    "id": 3701,
+    "name": "사랑의집에덴",
+    "address": "충남 아산시둔포면신남2구589-5",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:16.429Z"
+  },
+  {
+    "id": 3617,
+    "name": "사랑공동체사랑의집",
+    "address": "경기 고양시 일산서구 덕이동 태영아파트",
+    "detailAddress": "(102-103호)",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:16.481Z"
+  },
+  {
+    "id": 3829,
+    "name": "사회복지법인혜성원",
+    "address": "경기 안성시 양성면 장서리 336번지",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:16.637Z"
+  },
+  {
+    "id": 3787,
+    "name": "사회복지법인삼육재단함덕지역아동센터",
+    "address": "제주 제주시 조천읍 함덕리 16 길 9",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:16.705Z"
+  },
+  {
+    "id": 3915,
+    "name": "살림지역아동센터",
+    "address": "경기 의왕시 오전동 선경무궁화아파트 상가동2층201호",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:16.824Z"
+  },
+  {
+    "id": 3866,
+    "name": "사회적협동조합일하는사람들가로수마을지역아동센터",
+    "address": "충북 청주시 흥덕구 가경동 가로수마을휴먼시아@ 108동 pit층",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:16.883Z"
+  },
+  {
+    "id": 4171,
+    "name": "서구연희노인문화센터",
+    "address": "인천 서구 심곡동 325-1 외 2필지",
+    "detailAddress": "(승학로263)",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:17.024Z"
+  },
+  {
+    "id": 3943,
+    "name": "삼성요양원",
+    "address": "경기도 안성시 금광면 배티로 410-23",
+    "detailAddress": "삼성요양원",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:17.086Z"
+  },
+  {
+    "id": 4244,
+    "name": "서신지역아동센터",
+    "address": "전라북도 전주시 완산구 전룡로 20-11",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:17.219Z"
+  },
+  {
+    "id": 4172,
+    "name": "서구장애인보호작업장",
+    "address": "대구 서구평리4동1354-1동서아파트상가2층6호",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:17.280Z"
+  },
+  {
+    "id": 4646,
+    "name": "세종삼육지역아동센터",
+    "address": "세종특별자치시 조치원읍 새내로 14길 32",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:17.413Z"
+  },
+  {
+    "id": 4450,
+    "name": "성광행복한지역아동센터",
+    "address": "서울 강서구 방화동 859 청구아파트 상가",
+    "detailAddress": "2층",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:17.483Z"
+  },
+  {
+    "id": 4854,
+    "name": "수원시장애인종합복지관",
+    "address": "경기 수원시 영통구 이의동 1088번지 수원시장애인종합복지관",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:17.593Z"
+  },
+  {
+    "id": 4725,
+    "name": "소화영아재활원",
+    "address": "부산 남구 무민사로 19",
+    "detailAddress": "(감만동)",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:17.690Z"
+  },
+  {
+    "id": 5213,
+    "name": "아름다운지역아동센터",
+    "address": "경북 구미시 임은동 11",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:17.774Z"
+  },
+  {
+    "id": 4877,
+    "name": "순창군장애인복지관",
+    "address": "전북 순창군 순창읍 교성로 141-8",
+    "detailAddress": "순창군장애인복지관",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:17.891Z"
+  },
+  {
+    "id": 5348,
+    "name": "안심종합사회복지관",
+    "address": "대구 동구 신기동 안심주공3단지아파트",
+    "detailAddress": "안심종합사회복지관",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:17.980Z"
+  },
+  {
+    "id": 5261,
+    "name": "아이뜰지역아동센터",
+    "address": "경기 남양주시 금곡동 164-6 3 층",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:18.076Z"
+  },
+  {
+    "id": 5595,
+    "name": "여래원",
+    "address": "대구 남구 이천동 28길 8-52",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:18.175Z"
+  },
+  {
+    "id": 5536,
+    "name": "에바다마을",
+    "address": "경기 평택시 진위면 하북리 4길 129-23",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:18.257Z"
+  },
+  {
+    "id": 5707,
+    "name": "열린그룹홈",
+    "address": "부산 강서구 신호산단3로 55",
+    "detailAddress": "(부산신호윌더하임아파트) 103동 304호 열린그룹홈",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:18.403Z"
+  },
+  {
+    "id": 5660,
+    "name": "연성지역아동센터",
+    "address": "경기 시흥시 하중동 참이슬아파트 206동 103호",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:18.435Z"
+  },
+  {
+    "id": 6059,
+    "name": "용강노인복지관",
+    "address": "서울 마포구 용강동 241-1 용강동복합청사",
+    "detailAddress": "3층",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:18.614Z"
+  },
+  {
+    "id": 6050,
+    "name": "요셉의집",
+    "address": "울산 남구 야음동 신정현대홈타운2단지아파트 201-209",
+    "detailAddress": "202동202호",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:18.637Z"
+  },
+  {
+    "id": 6536,
+    "name": "이레지역아동센터",
+    "address": "부산 기장군 정관면 달산리 정관센트럴파크 106동 103호",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:18.801Z"
+  },
+  {
+    "id": 6355,
+    "name": "유락종합사회복지관",
+    "address": "서울 중구 신당동 460",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:18.822Z"
+  },
+  {
+    "id": 6730,
+    "name": "자광원",
+    "address": "경기 성남시 수정구 가마절로 40",
+    "detailAddress": "(복정동) 자광원",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:19.006Z"
+  },
+  {
+    "id": 6543,
+    "name": "이룸직업재활센터",
+    "address": "부산 남구 유엔로25번길 58",
+    "detailAddress": "이룸직업재활센터",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:19.026Z"
+  },
+  {
+    "id": 7067,
+    "name": "좋은친구지역아동센터",
+    "address": "광주 남구 진월동 신흥타운아파트 상가 2층",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:19.201Z"
+  },
+  {
+    "id": 7020,
+    "name": "젬마의집",
+    "address": "충남 천안시 동남구 용곡동 용곡1차세광엔리치타워아파트107동502호",
+    "detailAddress": "(101~111동)",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:19.238Z"
+  },
+  {
+    "id": 7134,
+    "name": "중마지역아동센터",
+    "address": "전남 광양시 중동 오류로 53 3",
+    "detailAddress": "4층",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:19.399Z"
+  },
+  {
+    "id": 7104,
+    "name": "죽곡그린지역아동센터",
+    "address": "대구 달성군 다사읍 죽곡리 태성그린시티 103동 109호",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:19.421Z"
+  },
+  {
+    "id": 7163,
+    "name": "즐거운지역아동센터",
+    "address": "대구 동구 각산동 성지비둘기아파트 상가 2층",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:19.605Z"
+  },
+  {
+    "id": 7398,
+    "name": "창원노인일자리창출지원센터",
+    "address": "경남 창원시 성산구 중앙동 하이페르 1402호",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:19.802Z"
+  },
+  {
+    "id": 7897,
+    "name": "평택북부장애인주간보호센터",
+    "address": "경기 평택시 서정동 북부복지타운내 2층 북부장애인주간보호센터",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:19.987Z"
+  },
+  {
+    "id": 7717,
+    "name": "크레파스",
+    "address": "경남 밀양시 무안면 운정리 76-99",
+    "detailAddress": "(구 운정리 28-2)",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:20.005Z"
+  },
+  {
+    "id": 8002,
+    "name": "푸른아동발달센터",
+    "address": "경남 함안군 칠서면 무릉리70-1번지 푸른아동발달센터2F",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:20.166Z"
+  },
+  {
+    "id": 7962,
+    "name": "포항시시설관리공단노인복지회관",
+    "address": "경북 포항시 북구 두호동 259번지 포항시노인복지회관",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:20.183Z"
+  },
+  {
+    "id": 8063,
+    "name": "하나지역아동센터",
+    "address": "충남 천안시 서북구 두정동 우성아파트 상가 201호",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:20.477Z"
+  },
+  {
+    "id": 8182,
+    "name": "한국장애인부모회경남지회",
+    "address": "경남 창원시 의창구 두대동 창원종합운동장 151",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:20.723Z"
+  },
+  {
+    "id": 8159,
+    "name": "한가족요양원",
+    "address": "경기도 고양시 일산동구 숲속마을로 1 71 901호 (풍동",
+    "detailAddress": "샘터17빌딩) 410-330",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:20.837Z"
+  },
+  {
+    "id": 8288,
+    "name": "한솔지역아동센터",
+    "address": "부산 수영구 광안동 758-1",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:20.913Z"
+  },
+  {
+    "id": 8246,
+    "name": "한별지역아동센터",
+    "address": "광주 서구 치평동 해광한신아파트 상가 302호",
+    "detailAddress": "(3층)",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:21.038Z"
+  },
+  {
+    "id": 8813,
+    "name": "화곡노인복지센터",
+    "address": "서울 강서구 화곡동 366-1호",
+    "detailAddress": "3층",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:21.118Z"
+  },
+  {
+    "id": 8483,
+    "name": "해오름지역아동센터",
+    "address": "경기 안산시 상록구 이동 매화로3길",
+    "detailAddress": "201호",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:21.250Z"
+  },
+  {
+    "id": 9001,
+    "name": "희망나라",
+    "address": "경남 양산시 매곡동 4길8",
+    "detailAddress": "(350번지)",
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:21.326Z"
+  },
+  {
+    "id": 8876,
+    "name": "화정종합사회복지관",
+    "address": "부산광역시 북구 효열로 금곡주공 4단지 내 화정종합사회복지관",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:21.440Z"
+  },
+  {
+    "id": 9019,
+    "name": "희망아카데미장애인주간보호센터",
+    "address": "경기 안양시 동안구 호계동 대영골든타워 310호",
+    "detailAddress": null,
+    "reason": "NO_MATCH",
+    "at": "2026-03-19T08:28:21.624Z"
+  }
+]
