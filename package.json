@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
+  "packageManager": "npm@10.8.2",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "dev": "cross-env NODE_ENV=development tsx watch server/_core/index.ts",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
@@ -109,12 +113,4 @@
     "vite-plugin-manus-runtime": "^0.0.57",
     "vitest": "^2.1.4"
   }
-{
-  "packageManager": "npm@10.8.2"
-}
-{
-  "engines": {
-    "node": "20.x"
-  }
-}
 }
