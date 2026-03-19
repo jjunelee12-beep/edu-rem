@@ -26,12 +26,7 @@ declare global {
   }
 }
 
-const FALLBACK_KAKAO_JS_KEY = "541dd56098645e0bc150bc07fb6dc542";
-const KAKAO_JS_KEY =
-  import.meta.env.VITE_KAKAO_MAP_JS_KEY || FALLBACK_KAKAO_JS_KEY;
-
-console.log("ENV:", import.meta.env);
-console.log("KAKAO KEY:", KAKAO_JS_KEY);
+const KAKAO_JS_KEY = import.meta.env.VITE_KAKAO_MAP_JS_KEY;
 
 function toNum(v: any) {
   if (v === null || v === undefined || v === "") return null;
@@ -42,49 +37,45 @@ function toNum(v: any) {
 function loadKakaoMapScript(): Promise<any> {
   return new Promise((resolve, reject) => {
     if (!KAKAO_JS_KEY) {
-      reject(new Error("카카오맵 JS 키가 없습니다."));
+      reject(new Error("카카오맵 키가 설정되지 않았습니다."));
       return;
     }
 
     if (window.kakao?.maps) {
-      console.log("[KAKAO] already loaded");
       window.kakao.maps.load(() => resolve(window.kakao));
       return;
     }
-
-    const scriptSrc = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_JS_KEY}&autoload=false&libraries=services`;
-    console.log("[KAKAO] script src =", scriptSrc);
 
     const existing = document.querySelector(
       'script[data-kakao-map="true"]'
     ) as HTMLScriptElement | null;
 
     if (existing) {
-      console.log("[KAKAO] existing script found");
-
-      const onLoad = () => {
-        if (!window.kakao?.maps) {
-          reject(new Error("카카오맵 객체가 없습니다."));
-          return;
-        }
-        window.kakao.maps.load(() => {
-          console.log("[KAKAO] maps loaded from existing script");
-          resolve(window.kakao);
-        });
-      };
-
-      const onError = () => {
-        console.error("[KAKAO] existing script load failed");
-        reject(new Error("카카오맵 스크립트 로드 실패"));
-      };
-
       if ((existing as any).dataset.loaded === "true" && window.kakao?.maps) {
-        onLoad();
+        window.kakao.maps.load(() => resolve(window.kakao));
         return;
       }
 
-      existing.addEventListener("load", onLoad, { once: true });
-      existing.addEventListener("error", onError, { once: true });
+      existing.addEventListener(
+        "load",
+        () => {
+          if (!window.kakao?.maps) {
+            reject(new Error("카카오맵 객체가 없습니다."));
+            return;
+          }
+          window.kakao.maps.load(() => resolve(window.kakao));
+        },
+        { once: true }
+      );
+
+      existing.addEventListener(
+        "error",
+        () => {
+          reject(new Error("카카오맵 스크립트 로드 실패"));
+        },
+        { once: true }
+      );
+
       return;
     }
 
@@ -92,11 +83,10 @@ function loadKakaoMapScript(): Promise<any> {
     script.async = true;
     script.defer = true;
     script.dataset.kakaoMap = "true";
-    script.src = scriptSrc;
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_JS_KEY}&autoload=false&libraries=services`;
 
     script.onload = () => {
       (script as any).dataset.loaded = "true";
-      console.log("[KAKAO] script loaded");
 
       if (!window.kakao?.maps) {
         reject(new Error("카카오맵 객체가 로드되지 않았습니다."));
@@ -104,13 +94,11 @@ function loadKakaoMapScript(): Promise<any> {
       }
 
       window.kakao.maps.load(() => {
-        console.log("[KAKAO] maps.load complete");
         resolve(window.kakao);
       });
     };
 
-    script.onerror = (e) => {
-      console.error("[KAKAO SCRIPT ERROR]", e, scriptSrc);
+    script.onerror = () => {
       reject(new Error("카카오맵 스크립트 로드 실패"));
     };
 
@@ -152,8 +140,6 @@ export default function KakaoMap({
 
         mapObjRef.current = map;
         geocoderRef.current = new kakao.maps.services.Geocoder();
-
-        console.log("[KAKAO] map initialized");
       } catch (e: any) {
         console.error("[KAKAO ERROR]", e);
         if (!cancelled) {
@@ -179,7 +165,6 @@ export default function KakaoMap({
 
     geocoder.addressSearch(normalizedAddress, (result: any[], status: string) => {
       if (status !== window.kakao.maps.services.Status.OK || !result?.length) {
-        console.warn("[KAKAO] 주소 검색 실패:", normalizedAddress, status);
         return;
       }
 
@@ -188,7 +173,6 @@ export default function KakaoMap({
       const pos = new window.kakao.maps.LatLng(y, x);
 
       map.setCenter(pos);
-      console.log("[KAKAO] address centered:", normalizedAddress, y, x);
     });
   }, [normalizedAddress, searchTrigger]);
 
@@ -225,7 +209,6 @@ export default function KakaoMap({
 
     if (hasMarker) {
       map.setBounds(bounds);
-      console.log("[KAKAO] markers rendered:", markersRef.current.length);
     }
   }, [results, onSelectResult]);
 
@@ -240,8 +223,6 @@ export default function KakaoMap({
 
     const pos = new window.kakao.maps.LatLng(lat, lng);
     map.setCenter(pos);
-
-    console.log("[KAKAO] selected result centered:", selectedResult.name);
   }, [selectedResult]);
 
   if (error) {
