@@ -975,24 +975,21 @@ export default function PracticeSupportCenter() {
       </Dialog>
 
       <Dialog open={finderOpen} onOpenChange={setFinderOpen}>
-        <DialogContent
-          aria-describedby="practice-finder-desc"
-          className="max-w-[99vw] w-[99vw] h-[96vh] p-0 overflow-hidden"
-        >
-          <DialogHeader className="px-6 pt-5 pb-4 border-b bg-white">
-            <DialogTitle className="text-lg font-semibold">
-              실습찾기
-            </DialogTitle>
+  <DialogContent
+    aria-describedby="practice-finder-desc"
+    className="w-screen max-w-none sm:max-w-none h-screen p-0 overflow-hidden rounded-none border-0"
+  >
+    <DialogHeader className="px-6 pt-5 pb-4 border-b bg-white">
+      <DialogTitle className="text-lg font-semibold">실습찾기</DialogTitle>
+      <DialogDescription
+        id="practice-finder-desc"
+        className="text-sm text-muted-foreground"
+      >
+        학생 주소 기준으로 가까운 실습교육원 / 실습기관을 검색합니다.
+      </DialogDescription>
+    </DialogHeader>
 
-            <DialogDescription
-              id="practice-finder-desc"
-              className="text-sm text-muted-foreground"
-            >
-              학생 주소 기준으로 가까운 실습교육원 / 실습기관을 검색합니다.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex h-[calc(96vh-90px)]">
+    <div className="flex h-[calc(100vh-72px)]">
             <div className="w-[320px] min-w-[320px] border-r bg-white flex flex-col">
               <div className="p-4 border-b space-y-3">
                 <div className="space-y-1">
