@@ -14,7 +14,7 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
-DialogDescription,
+  DialogDescription,
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
@@ -31,7 +31,6 @@ import {
   Search,
   User2,
   School,
-  Clock3,
   Building2,
 } from "lucide-react";
 
@@ -52,11 +51,86 @@ type FinderItem = {
   address?: string;
   price?: string;
   distanceKm?: string | number;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
 };
+
+declare global {
+  interface Window {
+    kakao: any;
+  }
+}
+
+function toNum(v: any) {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function haversineDistanceKm(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+) {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const R = 6371;
+
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+async function waitForKakaoServices(timeout = 6000): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+
+    const timer = setInterval(() => {
+      if (window.kakao?.maps?.services) {
+        clearInterval(timer);
+        resolve(window.kakao);
+        return;
+      }
+
+      if (Date.now() - started > timeout) {
+        clearInterval(timer);
+        reject(new Error("카카오 지도 서비스가 아직 로드되지 않았습니다."));
+      }
+    }, 100);
+  });
+}
+
+async function geocodeAddress(address: string): Promise<{ lat: number; lng: number }> {
+  const kakao = await waitForKakaoServices();
+
+  return new Promise((resolve, reject) => {
+    const geocoder = new kakao.maps.services.Geocoder();
+
+    geocoder.addressSearch(address, (result: any[], status: string) => {
+      if (status !== kakao.maps.services.Status.OK || !result?.length) {
+        reject(new Error("주소 좌표 변환에 실패했습니다."));
+        return;
+      }
+
+      resolve({
+        lat: Number(result[0].y),
+        lng: Number(result[0].x),
+      });
+    });
+  });
+}
 
 export default function PracticeSupportCenter() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin" || user?.role === "host";
   const utils = trpc.useUtils();
 
   const [search, setSearch] = useState("");
@@ -77,9 +151,24 @@ export default function PracticeSupportCenter() {
   const [selectedFinderItem, setSelectedFinderItem] = useState<FinderItem | null>(
     null
   );
+  const [isFinderSearching, setIsFinderSearching] = useState(false);
 
   const { data: practiceSupportList, isLoading } =
     trpc.practiceSupport.list.useQuery();
+
+  const { data: educationCenterDb = [] } = trpc.practiceInstitution.list.useQuery(
+    { institutionType: "education" },
+    {
+      staleTime: 1000 * 60 * 5,
+    }
+  );
+
+  const { data: practiceInstitutionDb = [] } = trpc.practiceInstitution.list.useQuery(
+    { institutionType: "institution" },
+    {
+      staleTime: 1000 * 60 * 5,
+    }
+  );
 
   const updatePracticeSupportMut = trpc.practiceSupport.update.useMutation({
     onSuccess: async () => {
@@ -144,12 +233,14 @@ export default function PracticeSupportCenter() {
       managerName: row.managerName || row.assigneeName || "",
       practiceHours:
         row.practiceHours?.toString?.() || row.practiceHours || "",
+      selectedEducationCenterId: row.selectedEducationCenterId || undefined,
       selectedEducationCenterName: row.selectedEducationCenterName || "",
       selectedEducationCenterAddress: row.selectedEducationCenterAddress || "",
       selectedEducationCenterDistanceKm:
         row.selectedEducationCenterDistanceKm?.toString?.() ||
         row.selectedEducationCenterDistanceKm ||
         "",
+      selectedPracticeInstitutionId: row.selectedPracticeInstitutionId || undefined,
       selectedPracticeInstitutionName: row.selectedPracticeInstitutionName || "",
       selectedPracticeInstitutionAddress:
         row.selectedPracticeInstitutionAddress || "",
@@ -176,12 +267,15 @@ export default function PracticeSupportCenter() {
         : undefined,
       coordinationStatus:
         selectedRow.coordinationStatus as PracticeCoordinationStatus,
+      selectedEducationCenterId: selectedRow.selectedEducationCenterId || undefined,
       selectedEducationCenterName:
         selectedRow.selectedEducationCenterName || undefined,
       selectedEducationCenterAddress:
         selectedRow.selectedEducationCenterAddress || undefined,
       selectedEducationCenterDistanceKm:
         selectedRow.selectedEducationCenterDistanceKm || undefined,
+      selectedPracticeInstitutionId:
+        selectedRow.selectedPracticeInstitutionId || undefined,
       selectedPracticeInstitutionName:
         selectedRow.selectedPracticeInstitutionName || undefined,
       selectedPracticeInstitutionAddress:
@@ -216,7 +310,7 @@ export default function PracticeSupportCenter() {
 
     if (finderIncludeEducationCenter && row?.selectedEducationCenterName) {
       result.push({
-        id: `education-${row.id}`,
+        id: row.selectedEducationCenterId || `education-${row.id}`,
         type: "education",
         name: row.selectedEducationCenterName,
         address: row.selectedEducationCenterAddress || "",
@@ -226,7 +320,7 @@ export default function PracticeSupportCenter() {
 
     if (finderIncludePracticeInstitution && row?.selectedPracticeInstitutionName) {
       result.push({
-        id: `institution-${row.id}`,
+        id: row.selectedPracticeInstitutionId || `institution-${row.id}`,
         type: "institution",
         name: row.selectedPracticeInstitutionName,
         address: row.selectedPracticeInstitutionAddress || "",
@@ -247,24 +341,86 @@ export default function PracticeSupportCenter() {
     setFinderOpen(true);
   };
 
-  const handleFinderSearch = () => {
+  const handleFinderSearch = async () => {
     if (!finderAddress.trim()) {
       toast.error("주소를 입력해주세요.");
       return;
     }
 
-    setFinderSearchTrigger((prev) => prev + 1);
+    try {
+      setIsFinderSearching(true);
+      setFinderSearchTrigger((prev) => prev + 1);
 
-    // 현재는 실기관 DB 연결 전이므로 저장된 값 중심으로 먼저 보여줌
-    const base = buildFinderBaseResults(finderTargetRow);
+      const { lat, lng } = await geocodeAddress(finderAddress.trim());
 
-    setFinderResults(base);
-    setSelectedFinderItem(base[0] ?? null);
+      const nextResults: FinderItem[] = [];
 
-    if (base.length === 0) {
-      toast.message(
-        "현재는 지도 레이아웃만 먼저 붙인 상태입니다. 기관 DB + 거리 계산 연결 후 리스트가 자동으로 채워집니다."
-      );
+      if (finderIncludeEducationCenter) {
+        for (const item of educationCenterDb as any[]) {
+          const itemLat = toNum(item.latitude);
+          const itemLng = toNum(item.longitude);
+          if (itemLat === null || itemLng === null) continue;
+
+          const distanceKm = haversineDistanceKm(lat, lng, itemLat, itemLng);
+
+          nextResults.push({
+            id: item.id,
+            type: "education",
+            name: item.name,
+            representativeName: item.representativeName || "",
+            phone: item.phone || "",
+            address: [item.address, item.detailAddress].filter(Boolean).join(" "),
+            price: item.price ? String(item.price) : "",
+            distanceKm: distanceKm.toFixed(2),
+            latitude: item.latitude,
+            longitude: item.longitude,
+          });
+        }
+      }
+
+      if (finderIncludePracticeInstitution) {
+        for (const item of practiceInstitutionDb as any[]) {
+          const itemLat = toNum(item.latitude);
+          const itemLng = toNum(item.longitude);
+          if (itemLat === null || itemLng === null) continue;
+
+          const distanceKm = haversineDistanceKm(lat, lng, itemLat, itemLng);
+
+          nextResults.push({
+            id: item.id,
+            type: "institution",
+            name: item.name,
+            representativeName: item.representativeName || "",
+            phone: item.phone || "",
+            address: [item.address, item.detailAddress].filter(Boolean).join(" "),
+            price: item.price ? String(item.price) : "",
+            distanceKm: distanceKm.toFixed(2),
+            latitude: item.latitude,
+            longitude: item.longitude,
+          });
+        }
+      }
+
+      nextResults.sort((a, b) => {
+        const da = Number(a.distanceKm || 999999);
+        const db = Number(b.distanceKm || 999999);
+        return da - db;
+      });
+
+      const topResults = nextResults.slice(0, 100);
+
+      setFinderResults(topResults);
+      setSelectedFinderItem(topResults[0] ?? null);
+
+      if (topResults.length === 0) {
+        toast.message("좌표가 등록된 기관이 없어 검색 결과가 없습니다.");
+      } else {
+        toast.success(`가까운 기관 ${topResults.length}건을 불러왔습니다.`);
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "기관 검색 중 오류가 발생했습니다.");
+    } finally {
+      setIsFinderSearching(false);
     }
   };
 
@@ -276,6 +432,7 @@ export default function PracticeSupportCenter() {
 
     if (!selectedRow && finderTargetRow) {
       openDetail(finderTargetRow);
+      setFinderOpen(false);
       return;
     }
 
@@ -287,6 +444,7 @@ export default function PracticeSupportCenter() {
     if (selectedFinderItem.type === "education") {
       setSelectedRow((prev: any) => ({
         ...prev,
+        selectedEducationCenterId: selectedFinderItem.id,
         selectedEducationCenterName: selectedFinderItem.name || "",
         selectedEducationCenterAddress: selectedFinderItem.address || "",
         selectedEducationCenterDistanceKm:
@@ -297,6 +455,7 @@ export default function PracticeSupportCenter() {
     } else {
       setSelectedRow((prev: any) => ({
         ...prev,
+        selectedPracticeInstitutionId: selectedFinderItem.id,
         selectedPracticeInstitutionName: selectedFinderItem.name || "",
         selectedPracticeInstitutionAddress: selectedFinderItem.address || "",
         selectedPracticeInstitutionDistanceKm:
@@ -815,183 +974,193 @@ export default function PracticeSupportCenter() {
         </DialogContent>
       </Dialog>
 
-    <Dialog open={finderOpen} onOpenChange={setFinderOpen}>
-  <DialogContent
-    aria-describedby="practice-finder-desc"
-    className="max-w-[99vw] w-[99vw] h-[96vh] p-0 overflow-hidden"
-  >
-    {/* 헤더 */}
-    <DialogHeader className="px-6 pt-5 pb-4 border-b bg-white">
-      <DialogTitle className="text-lg font-semibold">
-        실습찾기
-      </DialogTitle>
+      <Dialog open={finderOpen} onOpenChange={setFinderOpen}>
+        <DialogContent
+          aria-describedby="practice-finder-desc"
+          className="max-w-[99vw] w-[99vw] h-[96vh] p-0 overflow-hidden"
+        >
+          <DialogHeader className="px-6 pt-5 pb-4 border-b bg-white">
+            <DialogTitle className="text-lg font-semibold">
+              실습찾기
+            </DialogTitle>
 
-      <DialogDescription id="practice-finder-desc" className="text-sm text-muted-foreground">
-        학생 주소 기준으로 가까운 실습교육원 / 실습기관을 검색합니다.
-      </DialogDescription>
-    </DialogHeader>
+            <DialogDescription
+              id="practice-finder-desc"
+              className="text-sm text-muted-foreground"
+            >
+              학생 주소 기준으로 가까운 실습교육원 / 실습기관을 검색합니다.
+            </DialogDescription>
+          </DialogHeader>
 
-    {/* 전체 영역 */}
-    <div className="flex h-[calc(96vh-90px)]">
-      
-      {/* ===================== 왼쪽 패널 ===================== */}
-      <div className="w-[320px] min-w-[320px] border-r bg-white flex flex-col">
+          <div className="flex h-[calc(96vh-90px)]">
+            <div className="w-[320px] min-w-[320px] border-r bg-white flex flex-col">
+              <div className="p-4 border-b space-y-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">주소 검색</Label>
 
-        {/* 검색 영역 */}
-        <div className="p-4 border-b space-y-3">
-          <div className="space-y-1">
-            <Label className="text-xs">주소 검색</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="예: 서울 도봉구 방학동..."
+                      value={finderAddress}
+                      onChange={(e) => setFinderAddress(e.target.value)}
+                    />
+                    <Button
+                      onClick={handleFinderSearch}
+                      className="shrink-0"
+                      disabled={isFinderSearching}
+                    >
+                      {isFinderSearching ? "검색중" : "검색"}
+                    </Button>
+                  </div>
+                </div>
 
-            <div className="flex gap-2">
-              <Input
-                placeholder="예: 서울 도봉구 방학동..."
-                value={finderAddress}
-                onChange={(e) => setFinderAddress(e.target.value)}
-              />
-              <Button onClick={handleFinderSearch} className="shrink-0">
-                검색
-              </Button>
-            </div>
-          </div>
+                <div className="flex gap-3 flex-wrap text-sm">
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={finderIncludeEducationCenter}
+                      onChange={(e) =>
+                        setFinderIncludeEducationCenter(e.target.checked)
+                      }
+                    />
+                    실습교육원
+                  </label>
 
-          <div className="flex gap-3 flex-wrap text-sm">
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={finderIncludeEducationCenter}
-                onChange={(e) =>
-                  setFinderIncludeEducationCenter(e.target.checked)
-                }
-              />
-              실습교육원
-            </label>
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={finderIncludePracticeInstitution}
+                      onChange={(e) =>
+                        setFinderIncludePracticeInstitution(e.target.checked)
+                      }
+                    />
+                    실습기관
+                  </label>
+                </div>
 
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={finderIncludePracticeInstitution}
-                onChange={(e) =>
-                  setFinderIncludePracticeInstitution(e.target.checked)
-                }
-              />
-              실습기관
-            </label>
-          </div>
-
-          {finderTargetRow && (
-            <div className="rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              <div>대상: {finderTargetRow.clientName || "-"}</div>
-              <div>
-                주소: {finderTargetRow.inputAddress || "-"}{" "}
-                {finderTargetRow.detailAddress || ""}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* 결과 리스트 */}
-        <div className="flex-1 overflow-y-auto">
-          {finderResults.length === 0 ? (
-            <div className="p-4 text-sm text-muted-foreground">
-              <div className="font-medium mb-2">검색 결과</div>
-              <div className="rounded-lg border bg-muted/30 p-4 leading-6">
-                아직 기관 DB 검색 기능이 연결되지 않은 상태입니다.
-                <br />
-                다음 단계에서 가까운 기관 리스트가 표시됩니다.
-              </div>
-            </div>
-          ) : (
-            <div className="divide-y">
-              {finderResults.map((item) => {
-                const isSelected =
-                  String(selectedFinderItem?.id || "") === String(item.id);
-
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`w-full text-left p-4 hover:bg-muted/30 transition ${
-                      isSelected ? "bg-blue-50" : ""
-                    }`}
-                    onClick={() => setSelectedFinderItem(item)}
-                  >
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          className={
-                            item.type === "education"
-                              ? "bg-violet-100 text-violet-700"
-                              : "bg-emerald-100 text-emerald-700"
-                          }
-                        >
-                          {item.type === "education"
-                            ? "교육원"
-                            : "실습기관"}
-                        </Badge>
-
-                        <span className="font-medium truncate">
-                          {item.name}
-                        </span>
-                      </div>
-
-                      {item.address && (
-                        <div className="text-xs text-muted-foreground">
-                          {item.address}
-                        </div>
-                      )}
-
-                      {item.distanceKm && (
-                        <div className="text-sm font-medium text-blue-600">
-                          {item.distanceKm}km
-                        </div>
-                      )}
+                {finderTargetRow && (
+                  <div className="rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                    <div>대상: {finderTargetRow.clientName || "-"}</div>
+                    <div>
+                      주소: {finderTargetRow.inputAddress || "-"}{" "}
+                      {finderTargetRow.detailAddress || ""}
                     </div>
-                  </button>
-                );
-              })}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1 overflow-y-auto">
+                {finderResults.length === 0 ? (
+                  <div className="p-4 text-sm text-muted-foreground">
+                    <div className="font-medium mb-2">검색 결과</div>
+                    <div className="rounded-lg border bg-muted/30 p-4 leading-6">
+                      아직 기관 DB 검색 기능이 연결되지 않은 상태입니다.
+                      <br />
+                      다음 단계에서 가까운 기관 리스트가 표시됩니다.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="divide-y">
+                    {finderResults.map((item) => {
+                      const isSelected =
+                        String(selectedFinderItem?.id || "") === String(item.id);
+
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className={`w-full text-left p-4 hover:bg-muted/30 transition ${
+                            isSelected ? "bg-blue-50" : ""
+                          }`}
+                          onClick={() => setSelectedFinderItem(item)}
+                        >
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                className={
+                                  item.type === "education"
+                                    ? "bg-violet-100 text-violet-700"
+                                    : "bg-emerald-100 text-emerald-700"
+                                }
+                              >
+                                {item.type === "education"
+                                  ? "교육원"
+                                  : "실습기관"}
+                              </Badge>
+
+                              <span className="font-medium truncate">
+                                {item.name}
+                              </span>
+                            </div>
+
+                            {item.address && (
+                              <div className="text-xs text-muted-foreground">
+                                {item.address}
+                              </div>
+                            )}
+
+                            {item.phone && (
+                              <div className="text-xs text-muted-foreground">
+                                {formatPhone(item.phone)}
+                              </div>
+                            )}
+
+                            {item.price && (
+                              <div className="text-xs text-muted-foreground">
+                                금액: {item.price}
+                              </div>
+                            )}
+
+                            {item.distanceKm && (
+                              <div className="text-sm font-medium text-blue-600">
+                                {item.distanceKm}km
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 border-t flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setFinderOpen(false)}
+                >
+                  닫기
+                </Button>
+
+                <Button
+                  className="flex-1"
+                  onClick={applyFinderSelectionToDetail}
+                  disabled={!selectedFinderItem}
+                >
+                  선택 반영
+                </Button>
+              </div>
             </div>
-          )}
-        </div>
 
-        {/* 하단 버튼 */}
-        <div className="p-4 border-t flex gap-2">
-          <Button
-            variant="outline"
-            className="flex-1"
-            onClick={() => setFinderOpen(false)}
-          >
-            닫기
-          </Button>
-
-          <Button
-            className="flex-1"
-            onClick={applyFinderSelectionToDetail}
-            disabled={!selectedFinderItem}
-          >
-            선택 반영
-          </Button>
-        </div>
-      </div>
-
-      {/* ===================== 오른쪽 지도 ===================== */}
-      <div className="flex-1 min-w-0 bg-gray-100">
-        <div className="w-full h-full">
-          <KakaoMap
-            address={finderAddress}
-            searchTrigger={finderSearchTrigger}
-            includeEducationCenter={finderIncludeEducationCenter}
-            includePracticeInstitution={finderIncludePracticeInstitution}
-            results={finderResults}
-            selectedResult={selectedFinderItem}
-            onSelectResult={(item: FinderItem) =>
-              setSelectedFinderItem(item)
-            }
-          />
-        </div>
-      </div>
-    </div>
-  </DialogContent>
-</Dialog>
+            <div className="flex-1 min-w-0 bg-gray-100">
+              <div className="w-full h-full">
+                <KakaoMap
+                  address={finderAddress}
+                  searchTrigger={finderSearchTrigger}
+                  includeEducationCenter={finderIncludeEducationCenter}
+                  includePracticeInstitution={finderIncludePracticeInstitution}
+                  results={finderResults}
+                  selectedResult={selectedFinderItem}
+                  onSelectResult={(item: FinderItem) =>
+                    setSelectedFinderItem(item)
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
