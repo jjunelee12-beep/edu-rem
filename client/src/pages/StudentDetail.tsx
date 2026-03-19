@@ -397,7 +397,7 @@ const upsertPracticeSupportByStudentMut =
   practiceArranged: false,
   practiceStatus: "미섭외",
   specialNotes: "",
-address: "",
+practiceAddress: "",
 });
 
   const [semDialogOpen, setSemDialogOpen] = useState(false);
@@ -609,32 +609,28 @@ const [refundDialogOpen, setRefundDialogOpen] = useState(false);
   };
 
   const startEditPlan = () => {
-    setPlanForm({
-      desiredCourse: plan?.desiredCourse || "",
-      finalEducation: plan?.finalEducation || "",
-      totalTheorySubjects: plan?.totalTheorySubjects?.toString() || "",
-      hasPractice: plan?.hasPractice || false,
-      practiceHours: plan?.practiceHours?.toString() || "",
-      practiceDate: plan?.practiceDate || "",
-      practiceArranged: plan?.practiceArranged || false,
-      practiceStatus: (plan as any)?.practiceStatus || "미섭외",
-      specialNotes: plan?.specialNotes || "",
-	 address: (student as any)?.address || "",
-    });
-    setEditingPlan(true);
-  };
+  setPlanForm({
+    desiredCourse: plan?.desiredCourse || "",
+    finalEducation: plan?.finalEducation || "",
+    totalTheorySubjects: plan?.totalTheorySubjects?.toString() || "",
+    hasPractice: plan?.hasPractice || false,
+    practiceHours: plan?.practiceHours?.toString() || "",
+    practiceDate: plan?.practiceDate || "",
+    practiceArranged: plan?.practiceArranged || false,
+    practiceStatus:
+      latestPracticeSupport?.coordinationStatus ||
+      (plan as any)?.practiceStatus ||
+      "미섭외",
+    specialNotes: plan?.specialNotes || "",
+    practiceAddress: latestPracticeSupport?.inputAddress || "",
+  });
+
+  setEditingPlan(true);
+};
 
  
 const savePlan = async () => {
   try {
-    await updateStudentMut.mutateAsync({
-      id: studentId,
-      address: planForm.address || undefined,
-    } as any);
-
-    await utils.student.get.invalidate({ id: studentId });
-    await utils.student.list.invalidate();
-
     await upsertPlanMut.mutateAsync({
       studentId,
       desiredCourse: planForm.desiredCourse || undefined,
@@ -663,12 +659,15 @@ const savePlan = async () => {
         clientName: student.clientName,
         phone: student.phone,
         course: planForm.desiredCourse || student.course || "",
-        inputAddress: planForm.address || "",
+        inputAddress: planForm.practiceAddress || "", // ✅ 핵심
         assigneeName,
         managerName: assigneeName,
-        practiceHours: planForm.practiceHours ? parseInt(planForm.practiceHours) : null,
+        practiceHours: planForm.practiceHours
+          ? parseInt(planForm.practiceHours)
+          : null,
         includeEducationCenter: true,
         includePracticeInstitution: true,
+        coordinationStatus: planForm.practiceStatus as any,
       } as any);
 
       await utils.practiceSupport.listByStudent.invalidate({ studentId });
@@ -1161,18 +1160,6 @@ const templateSelectableCount = 8;
               <p className="text-xs text-muted-foreground mb-0.5">연락처</p>
               <EditableCell value={formatPhone(student.phone)} onBlur={() => {}} disabled />
             </div>
-	<div>
-  <p className="text-xs text-muted-foreground mb-0.5">주소</p>
-  <EditableCell
-    value={(student as any).address || ""}
-    onBlur={(v) =>
-      updateStudentMut.mutate({
-        id: studentId,
-        address: v || undefined,
-      } as any)
-    }
-  />
-</div>
 
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">등록 과정</p>
@@ -1661,19 +1648,6 @@ const templateSelectableCount = 8;
                   />
                 </div>
               </div>
-<div className="grid grid-cols-1 gap-4">
-  <div className="space-y-1">
-    <Label className="text-xs">주소</Label>
-    <Input
-      value={planForm.address}
-      onChange={(e) =>
-        setPlanForm({ ...planForm, address: e.target.value })
-      }
-      placeholder="예: 서울 도봉구 방학동 ..."
-    />
-  </div>
-</div>
-
               <div className="flex items-center gap-2">
                 <Checkbox
                   checked={planForm.hasPractice}
@@ -1681,54 +1655,68 @@ const templateSelectableCount = 8;
                 />
                 <Label className="text-sm">실습 필요</Label>
               </div>
-{planForm.hasPractice && (
-  <p className="text-xs text-muted-foreground pl-6">
-    저장 시 현재 선택된 학기의 실습 정보가 실습배정지원센터와 학기별 예정표에 연동됩니다.
-  </p>
-)}
-
               {planForm.hasPractice && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pl-6 border-l-2 border-blue-200">
-<p className="text-xs text-muted-foreground pl-6">
-  실습교육원/실습기관 선택은 실습배정지원센터에서 진행됩니다.
-</p>                  
-<div className="space-y-1">
-                    <Label className="text-xs">실습 시간</Label>
-                    <Input
-                      type="number"
-                      value={planForm.practiceHours}
-                      onChange={(e) => setPlanForm({ ...planForm, practiceHours: e.target.value })}
-                      placeholder="시간"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">실습 예정일</Label>
-                    <Input
-                      value={planForm.practiceDate}
-                      onChange={(e) => setPlanForm({ ...planForm, practiceDate: e.target.value })}
-                      placeholder="예: 2026-06"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">섭외 상태</Label>
-                    <select
-                      className="w-full h-9 px-3 text-sm border rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-primary"
-                      value={planForm.practiceStatus}
-                      onChange={(e) =>
-                        setPlanForm({
-                          ...planForm,
-                          practiceStatus: e.target.value,
-                          practiceArranged: e.target.value === "섭외완료",
-                        })
-                      }
-                    >
-                      <option value="미섭외">미섭외</option>
-                      <option value="섭외중">섭외중</option>
-                      <option value="섭외완료">섭외완료</option>
-                    </select>
-                  </div>
-                </div>
-              )}
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-6 border-l-2 border-blue-200">
+    <div className="md:col-span-2">
+      <p className="text-xs text-muted-foreground">
+        실습교육원/실습기관 선택은 실습배정지원센터에서 진행됩니다.
+      </p>
+    </div>
+
+    <div className="space-y-1">
+      <Label className="text-xs">실습 시간</Label>
+      <Input
+        type="number"
+        value={planForm.practiceHours}
+        onChange={(e) =>
+          setPlanForm({ ...planForm, practiceHours: e.target.value })
+        }
+        placeholder="시간"
+      />
+    </div>
+
+    <div className="space-y-1">
+      <Label className="text-xs">실습 예정일</Label>
+      <Input
+        value={planForm.practiceDate}
+        onChange={(e) =>
+          setPlanForm({ ...planForm, practiceDate: e.target.value })
+        }
+        placeholder="예: 2026-06"
+      />
+    </div>
+
+    <div className="space-y-1 md:col-span-2">
+      <Label className="text-xs">주소</Label>
+      <Input
+        value={planForm.practiceAddress}
+        onChange={(e) =>
+          setPlanForm({ ...planForm, practiceAddress: e.target.value })
+        }
+        placeholder="실습 진행 지역 입력 (상세주소 X) ..."
+      />
+    </div>
+
+    <div className="space-y-1">
+      <Label className="text-xs">섭외 상태</Label>
+      <select
+        className="w-full h-9 px-3 text-sm border rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+        value={planForm.practiceStatus}
+        onChange={(e) =>
+          setPlanForm({
+            ...planForm,
+            practiceStatus: e.target.value,
+            practiceArranged: e.target.value === "섭외완료",
+          })
+        }
+      >
+        <option value="미섭외">미섭외</option>
+        <option value="섭외중">섭외중</option>
+        <option value="섭외완료">섭외완료</option>
+      </select>
+    </div>
+  </div>
+)}
 
               <div className="space-y-1">
                 <Label className="text-xs">특이사항</Label>
