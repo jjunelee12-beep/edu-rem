@@ -30,7 +30,7 @@ type KakaoAddressResponse = {
 const DATABASE_URL = process.env.DATABASE_URL || "";
 const KAKAO_REST_API_KEY = process.env.KAKAO_REST_API_KEY || "";
 
-const BATCH_SIZE = Number(process.env.GEOCODE_BATCH_SIZE || 50);
+const BATCH_SIZE = Number(process.env.GEOCODE_BATCH_SIZE || 500);
 const CONCURRENCY = Number(process.env.GEOCODE_CONCURRENCY || 2);
 const REQUEST_DELAY_MS = Number(process.env.GEOCODE_DELAY_MS || 150);
 const FAIL_LOG_PATH = path.resolve(
