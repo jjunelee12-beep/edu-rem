@@ -109,4 +109,12 @@
     "vite-plugin-manus-runtime": "^0.0.57",
     "vitest": "^2.1.4"
   }
+{
+  "packageManager": "npm@10.8.2"
+}
+{
+  "engines": {
+    "node": "20.x"
+  }
+}
 }

@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type FinderItem = {
-  id: number;
+  id: string | number;
   name: string;
   address?: string | null;
   latitude?: string | number | null;
   longitude?: string | number | null;
+  type?: "education" | "institution";
   institutionType?: "education" | "institution";
-  distanceKm?: number | null;
+  distanceKm?: number | string | null;
 };
 
 type KakaoMapProps = {
@@ -18,6 +19,13 @@ type KakaoMapProps = {
   results?: FinderItem[];
   selectedResult?: FinderItem | null;
   onSelectResult?: (item: FinderItem) => void;
+
+  searchPoint?: {
+    lat: number;
+    lng: number;
+  } | null;
+  searchPointLabel?: string;
+  showSearchPointMarker?: boolean;
 };
 
 declare global {
@@ -93,9 +101,7 @@ function loadKakaoMapScript(): Promise<any> {
         return;
       }
 
-      window.kakao.maps.load(() => {
-        resolve(window.kakao);
-      });
+      window.kakao.maps.load(() => resolve(window.kakao));
     };
 
     script.onerror = () => {
@@ -106,21 +112,83 @@ function loadKakaoMapScript(): Promise<any> {
   });
 }
 
+function getMarkerImageByType(
+  kakao: any,
+  type: "search" | "education" | "institution" | "selected"
+) {
+  let imageSrc = "";
+  const imageSize = new kakao.maps.Size(36, 36);
+
+  switch (type) {
+    case "search":
+      imageSrc =
+        "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png";
+      break;
+    case "education":
+      imageSrc =
+        "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_blue.png";
+      break;
+    case "institution":
+      imageSrc =
+        "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_orange.png";
+      break;
+    case "selected":
+      imageSrc =
+        "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png";
+      break;
+    default:
+      imageSrc =
+        "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_blue.png";
+      break;
+  }
+
+  return new kakao.maps.MarkerImage(imageSrc, imageSize);
+}
+
 export default function KakaoMap({
   address,
   searchTrigger,
   results = [],
   selectedResult,
   onSelectResult,
+  searchPoint = null,
+  searchPointLabel = "",
+  showSearchPointMarker = false,
 }: KakaoMapProps) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapObjRef = useRef<any>(null);
-  const markersRef = useRef<any[]>([]);
   const geocoderRef = useRef<any>(null);
+
+  const resultMarkersRef = useRef<any[]>([]);
+  const overlayRef = useRef<any[]>([]);
+  const searchMarkerRef = useRef<any>(null);
+  const selectedMarkerRef = useRef<any>(null);
 
   const [error, setError] = useState<string>("");
 
   const normalizedAddress = useMemo(() => (address || "").trim(), [address]);
+
+  function clearResultMarkers() {
+    resultMarkersRef.current.forEach((m) => m.setMap(null));
+    resultMarkersRef.current = [];
+
+    overlayRef.current.forEach((o) => o.setMap(null));
+    overlayRef.current = [];
+  }
+
+  function clearSearchMarker() {
+    if (searchMarkerRef.current) {
+      searchMarkerRef.current.setMap(null);
+      searchMarkerRef.current = null;
+    }
+  }
+
+  function clearSelectedMarker() {
+    if (selectedMarkerRef.current) {
+      selectedMarkerRef.current.setMap(null);
+      selectedMarkerRef.current = null;
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -152,8 +220,9 @@ export default function KakaoMap({
 
     return () => {
       cancelled = true;
-      markersRef.current.forEach((m) => m.setMap(null));
-      markersRef.current = [];
+      clearResultMarkers();
+      clearSearchMarker();
+      clearSelectedMarker();
     };
   }, []);
 
@@ -178,60 +247,177 @@ export default function KakaoMap({
 
   useEffect(() => {
     const map = mapObjRef.current;
-    if (!map || !window.kakao?.maps) return;
+    const kakao = window.kakao;
+    if (!map || !kakao?.maps) return;
 
-    markersRef.current.forEach((m) => m.setMap(null));
-    markersRef.current = [];
+    clearSearchMarker();
 
-    const bounds = new window.kakao.maps.LatLngBounds();
+    if (!showSearchPointMarker || !searchPoint) return;
+
+    const pos = new kakao.maps.LatLng(searchPoint.lat, searchPoint.lng);
+
+    const marker = new kakao.maps.Marker({
+      map,
+      position: pos,
+      image: getMarkerImageByType(kakao, "search"),
+      zIndex: 10,
+    });
+
+    const content = `
+      <div style="
+        padding:8px 10px;
+        background:#ecfdf5;
+        border:1px solid #86efac;
+        border-radius:10px;
+        font-size:12px;
+        color:#166534;
+        box-shadow:0 2px 8px rgba(0,0,0,0.08);
+        white-space:nowrap;
+      ">
+        <div style="font-weight:700; margin-bottom:2px;">검색 기준 주소</div>
+        <div>${searchPointLabel || "입력 주소"}</div>
+      </div>
+    `;
+
+    const overlay = new kakao.maps.CustomOverlay({
+      position: pos,
+      content,
+      yAnchor: 1.6,
+      zIndex: 11,
+    });
+
+    overlay.setMap(map);
+    searchMarkerRef.current = marker;
+    overlayRef.current.push(overlay);
+  }, [searchPoint, searchPointLabel, showSearchPointMarker]);
+
+  useEffect(() => {
+    const map = mapObjRef.current;
+    const kakao = window.kakao;
+    if (!map || !kakao?.maps) return;
+
+    clearResultMarkers();
+
+    const bounds = new kakao.maps.LatLngBounds();
     let hasMarker = false;
+
+    if (showSearchPointMarker && searchPoint) {
+      bounds.extend(new kakao.maps.LatLng(searchPoint.lat, searchPoint.lng));
+      hasMarker = true;
+    }
 
     for (const item of results) {
       const lat = toNum(item.latitude);
       const lng = toNum(item.longitude);
-
       if (lat === null || lng === null) continue;
 
-      const pos = new window.kakao.maps.LatLng(lat, lng);
-      const marker = new window.kakao.maps.Marker({
+      const type =
+        item.type || item.institutionType || "institution";
+
+      const pos = new kakao.maps.LatLng(lat, lng);
+
+      const marker = new kakao.maps.Marker({
         map,
         position: pos,
+        image: getMarkerImageByType(
+          kakao,
+          type === "education" ? "education" : "institution"
+        ),
+        zIndex: 5,
       });
 
-      window.kakao.maps.event.addListener(marker, "click", () => {
+      const content = `
+        <div style="
+          padding:8px 10px;
+          background:white;
+          border:1px solid #e5e7eb;
+          border-radius:10px;
+          font-size:12px;
+          color:#111827;
+          box-shadow:0 2px 8px rgba(0,0,0,0.08);
+          min-width:140px;
+        ">
+          <div style="font-weight:700; margin-bottom:2px;">${item.name}</div>
+          <div style="color:#6b7280;">
+            ${type === "education" ? "실습교육원" : "실습기관"}
+          </div>
+          ${
+            item.distanceKm !== null &&
+            item.distanceKm !== undefined &&
+            item.distanceKm !== ""
+              ? `<div style="margin-top:4px; color:#2563eb; font-weight:600;">${item.distanceKm}km</div>`
+              : ""
+          }
+        </div>
+      `;
+
+      const overlay = new kakao.maps.CustomOverlay({
+        position: pos,
+        content,
+        yAnchor: 1.6,
+        zIndex: 6,
+      });
+
+      kakao.maps.event.addListener(marker, "click", () => {
         onSelectResult?.(item);
       });
 
-      markersRef.current.push(marker);
+      kakao.maps.event.addListener(marker, "mouseover", () => {
+        overlay.setMap(map);
+      });
+
+      kakao.maps.event.addListener(marker, "mouseout", () => {
+        if (String(selectedResult?.id || "") !== String(item.id)) {
+          overlay.setMap(null);
+        }
+      });
+
+      resultMarkersRef.current.push(marker);
+      overlayRef.current.push(overlay);
       bounds.extend(pos);
       hasMarker = true;
+
+      if (String(selectedResult?.id || "") === String(item.id)) {
+        overlay.setMap(map);
+      }
     }
 
     if (hasMarker) {
       map.setBounds(bounds);
     }
-  }, [results, onSelectResult]);
+  }, [results, onSelectResult, selectedResult, searchPoint, showSearchPointMarker]);
 
   useEffect(() => {
     const map = mapObjRef.current;
-    if (!map || !selectedResult || !window.kakao?.maps) return;
+    const kakao = window.kakao;
+    if (!map || !selectedResult || !kakao?.maps) return;
+
+    clearSelectedMarker();
 
     const lat = toNum(selectedResult.latitude);
     const lng = toNum(selectedResult.longitude);
-
     if (lat === null || lng === null) return;
 
-    const pos = new window.kakao.maps.LatLng(lat, lng);
+    const pos = new kakao.maps.LatLng(lat, lng);
+
+    const selectedMarker = new kakao.maps.Marker({
+      map,
+      position: pos,
+      image: getMarkerImageByType(kakao, "selected"),
+      zIndex: 20,
+    });
+
+    selectedMarkerRef.current = selectedMarker;
     map.setCenter(pos);
   }, [selectedResult]);
 
   if (error) {
-  return (
-    <div className="flex h-full min-h-0 w-full items-center justify-center rounded-none border-0 px-4 text-sm text-red-500">
-      {error}
-    </div>
-  );
-}
+    return (
+      <div className="flex h-full min-h-0 w-full items-center justify-center rounded-none border-0 px-4 text-sm text-red-500">
+        {error}
+      </div>
+    );
+  }
 
-return <div ref={mapRef} className="h-full min-h-0 w-full rounded-none border-0" />;
+  return <div ref={mapRef} className="h-full min-h-0 w-full rounded-none border-0" />;
 }
