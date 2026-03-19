@@ -226,12 +226,12 @@ export default function KakaoMap({
   }, [selectedResult]);
 
   if (error) {
-    return (
-      <div className="flex h-[500px] items-center justify-center rounded-md border px-4 text-sm text-red-500">
-        {error}
-      </div>
-    );
-  }
+  return (
+    <div className="flex h-full min-h-0 w-full items-center justify-center rounded-none border-0 px-4 text-sm text-red-500">
+      {error}
+    </div>
+  );
+}
 
-  return <div ref={mapRef} className="h-[500px] w-full rounded-md border" />;
+return <div ref={mapRef} className="h-full min-h-0 w-full rounded-none border-0" />;
 }
