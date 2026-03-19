@@ -397,6 +397,7 @@ const upsertPracticeSupportByStudentMut =
   practiceArranged: false,
   practiceStatus: "미섭외",
   specialNotes: "",
+address: "",
 });
 
   const [semDialogOpen, setSemDialogOpen] = useState(false);
@@ -618,12 +619,22 @@ const [refundDialogOpen, setRefundDialogOpen] = useState(false);
       practiceArranged: plan?.practiceArranged || false,
       practiceStatus: (plan as any)?.practiceStatus || "미섭외",
       specialNotes: plan?.specialNotes || "",
+	 address: (student as any)?.address || "",
     });
     setEditingPlan(true);
   };
 
-  const savePlan = async () => {
+ 
+const savePlan = async () => {
   try {
+    await updateStudentMut.mutateAsync({
+      id: studentId,
+      address: planForm.address || undefined,
+    } as any);
+
+    await utils.student.get.invalidate({ id: studentId });
+    await utils.student.list.invalidate();
+
     await upsertPlanMut.mutateAsync({
       studentId,
       desiredCourse: planForm.desiredCourse || undefined,
@@ -652,8 +663,7 @@ const [refundDialogOpen, setRefundDialogOpen] = useState(false);
         clientName: student.clientName,
         phone: student.phone,
         course: planForm.desiredCourse || student.course || "",
-        inputAddress: (student as any).address || "",
-        detailAddress: (student as any).detailAddress || "",
+        inputAddress: planForm.address || "",
         assigneeName,
         managerName: assigneeName,
         practiceHours: planForm.practiceHours ? parseInt(planForm.practiceHours) : null,
@@ -662,6 +672,7 @@ const [refundDialogOpen, setRefundDialogOpen] = useState(false);
       } as any);
 
       await utils.practiceSupport.listByStudent.invalidate({ studentId });
+      await utils.practiceSupport.list.invalidate();
       await utils.semester.list.invalidate({ studentId });
     }
 
@@ -1151,7 +1162,7 @@ const templateSelectableCount = 8;
               <EditableCell value={formatPhone(student.phone)} onBlur={() => {}} disabled />
             </div>
 	<div>
-  <p className="text-xs text-muted-foreground mb-0.5">기본주소</p>
+  <p className="text-xs text-muted-foreground mb-0.5">주소</p>
   <EditableCell
     value={(student as any).address || ""}
     onBlur={(v) =>
@@ -1163,18 +1174,6 @@ const templateSelectableCount = 8;
   />
 </div>
 
-<div>
-  <p className="text-xs text-muted-foreground mb-0.5">상세주소</p>
-  <EditableCell
-    value={(student as any).detailAddress || ""}
-    onBlur={(v) =>
-      updateStudentMut.mutate({
-        id: studentId,
-        detailAddress: v || undefined,
-      } as any)
-    }
-  />
-</div>
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">등록 과정</p>
               <EditableCell value={student.course} onBlur={() => {}} disabled />
@@ -1623,7 +1622,7 @@ const templateSelectableCount = 8;
     </p>
 
     <p className="mt-1">
-      <span className="font-medium">상세주소:</span>{" "}
+      <span className="font-medium">주소:</span>{" "}
       {latestPracticeSupport?.detailAddress || (student as any)?.detailAddress || "-"} ·{" "}
       <span className="font-medium">담당자:</span>{" "}
       {latestPracticeSupport?.managerName || latestPracticeSupport?.assigneeName || "-"}
@@ -1662,6 +1661,18 @@ const templateSelectableCount = 8;
                   />
                 </div>
               </div>
+<div className="grid grid-cols-1 gap-4">
+  <div className="space-y-1">
+    <Label className="text-xs">주소</Label>
+    <Input
+      value={planForm.address}
+      onChange={(e) =>
+        setPlanForm({ ...planForm, address: e.target.value })
+      }
+      placeholder="예: 서울 도봉구 방학동 ..."
+    />
+  </div>
+</div>
 
               <div className="flex items-center gap-2">
                 <Checkbox
