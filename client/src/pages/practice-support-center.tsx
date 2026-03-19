@@ -14,6 +14,7 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
+DialogDescription,
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
@@ -818,6 +819,9 @@ export default function PracticeSupportCenter() {
         <DialogContent className="max-w-[95vw] w-[95vw] h-[88vh] p-0 overflow-hidden">
           <DialogHeader className="px-6 pt-6 pb-3 border-b">
             <DialogTitle>실습찾기</DialogTitle>
+	 <DialogDescription id="practice-finder-desc">
+      학생 주소 기준으로 가까운 실습교육원과 실습기관을 검색합니다.
+    </DialogDescription>
           </DialogHeader>
 
           <div className="flex h-[calc(88vh-72px)]">
