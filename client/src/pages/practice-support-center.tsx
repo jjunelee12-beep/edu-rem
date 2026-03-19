@@ -108,26 +108,38 @@ async function waitForKakaoServices(timeout = 6000): Promise<any> {
     }, 100);
   });
 }
-
-async function geocodeAddress(address: string): Promise<{ lat: number; lng: number }> {
+async function geocodeAddress(keywordOrAddress: string): Promise<{ lat: number; lng: number }> {
   const kakao = await waitForKakaoServices();
 
   return new Promise((resolve, reject) => {
     const geocoder = new kakao.maps.services.Geocoder();
 
-    geocoder.addressSearch(address, (result: any[], status: string) => {
-      if (status !== kakao.maps.services.Status.OK || !result?.length) {
-        reject(new Error("주소 좌표 변환에 실패했습니다."));
+    geocoder.addressSearch(keywordOrAddress, (result: any[], status: string) => {
+      if (status === kakao.maps.services.Status.OK && result?.length) {
+        resolve({
+          lat: Number(result[0].y),
+          lng: Number(result[0].x),
+        });
         return;
       }
 
-      resolve({
-        lat: Number(result[0].y),
-        lng: Number(result[0].x),
+      const places = new kakao.maps.services.Places();
+
+      places.keywordSearch(keywordOrAddress, (placeResult: any[], placeStatus: string) => {
+        if (placeStatus !== kakao.maps.services.Status.OK || !placeResult?.length) {
+          reject(new Error("주소 또는 장소명을 찾지 못했습니다."));
+          return;
+        }
+
+        resolve({
+          lat: Number(placeResult[0].y),
+          lng: Number(placeResult[0].x),
+        });
       });
     });
   });
 }
+
 
 export default function PracticeSupportCenter() {
   const { user } = useAuth();
@@ -358,23 +370,25 @@ export default function PracticeSupportCenter() {
       if (finderIncludeEducationCenter) {
         for (const item of educationCenterDb as any[]) {
           const itemLat = toNum(item.latitude);
-          const itemLng = toNum(item.longitude);
-          if (itemLat === null || itemLng === null) continue;
+const itemLng = toNum(item.longitude);
 
-          const distanceKm = haversineDistanceKm(lat, lng, itemLat, itemLng);
+let distanceKm: string | undefined = undefined;
+if (itemLat !== null && itemLng !== null) {
+  distanceKm = haversineDistanceKm(lat, lng, itemLat, itemLng).toFixed(2);
+}
 
-          nextResults.push({
-            id: item.id,
-            type: "education",
-            name: item.name,
-            representativeName: item.representativeName || "",
-            phone: item.phone || "",
-            address: [item.address, item.detailAddress].filter(Boolean).join(" "),
-            price: item.price ? String(item.price) : "",
-            distanceKm: distanceKm.toFixed(2),
-            latitude: item.latitude,
-            longitude: item.longitude,
-          });
+nextResults.push({
+  id: item.id,
+  type: "education",
+  name: item.name,
+  representativeName: item.representativeName || "",
+  phone: item.phone || "",
+  address: [item.address, item.detailAddress].filter(Boolean).join(" "),
+  price: item.price ? String(item.price) : "",
+  distanceKm,
+  latitude: item.latitude,
+  longitude: item.longitude,
+});
         }
       }
 
