@@ -50,9 +50,16 @@ export default function Consultations() {
   const { user } = useAuth();
   const isHost = user?.role === "host";
   const isStaff = user?.role === "staff";
+const isAdmin = user?.role === "admin";
+const isAdminOrHost = isHost || isAdmin;
+
+const [showAll, setShowAll] = useState(false);
+
   const utils = trpc.useUtils();
 
-  const { data: list, isLoading } = trpc.consultation.list.useQuery();
+  const { data: list, isLoading } = trpc.consultation.list.useQuery(
+  isAdminOrHost ? { showAll } : {}
+);
   const { data: usersList } = trpc.users.list.useQuery();
 
   const createMut = trpc.consultation.create.useMutation({
@@ -364,6 +371,7 @@ export default function Consultations() {
           <h1 className="text-2xl font-bold tracking-tight">상담 DB</h1>
           <p className="text-sm text-muted-foreground mt-1">
             상담일 클릭 후 Ctrl+V → 상담일~상담내역(7칸) 자동 채움 (공란 유지)
+	{isAdminOrHost ? " / 기본은 개인 DB, 체크 시 전체 DB 조회" : ""}
           </p>
         </div>
 
@@ -546,14 +554,25 @@ export default function Consultations() {
         />
       </div>
 
-      <div className="flex items-center gap-2">
-        <Input
-          placeholder="담당자 검색"
-          value={assigneeSearch}
-          onChange={(e) => setAssigneeSearch(e.target.value)}
-          className="w-[180px]"
-        />
-      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+  <Input
+    placeholder="담당자 검색"
+    value={assigneeSearch}
+    onChange={(e) => setAssigneeSearch(e.target.value)}
+    className="w-[180px]"
+  />
+
+  {isAdminOrHost && (
+    <label className="flex items-center gap-2 text-sm text-muted-foreground ml-1">
+      <input
+        type="checkbox"
+        checked={showAll}
+        onChange={(e) => setShowAll(e.target.checked)}
+      />
+      전체 DB 보기
+    </label>
+  )}
+</div>
 
       {isLoading ? (
         <div className="flex justify-center py-12">

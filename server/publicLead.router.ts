@@ -44,6 +44,10 @@ export const publicLeadRouter = router({
       const normalizedPhone = input.phone.replace(/\D/g, "").slice(0, 11);
       const safeAssigneeId = Number(form.assigneeId);
 
+      if (!Number.isFinite(safeAssigneeId) || safeAssigneeId <= 0) {
+        throw new Error("담당자 정보가 올바르지 않습니다.");
+      }
+
       const consultationId = await db.createConsultation({
         consultDate: new Date(),
         channel: input.channel?.trim() || "랜딩페이지",
@@ -61,13 +65,54 @@ export const publicLeadRouter = router({
         type: "lead",
         message: `[신규 상담] ${input.clientName.trim()} / ${normalizedPhone}`,
         relatedId: consultationId,
+        isRead: false,
       } as any);
+
+      const expoPushTokens = await db.listActiveExpoPushTokensByUserId(
+        safeAssigneeId
+      );
+
+      if (expoPushTokens.length > 0) {
+        try {
+          const messages = expoPushTokens.map((token) => ({
+            to: token,
+            sound: "default",
+            title: "신규 상담 접수",
+            body: `${input.clientName.trim()} / ${normalizedPhone}`,
+            data: {
+              type: "lead",
+              consultationId,
+              userId: safeAssigneeId,
+            },
+          }));
+
+          const pushResponse = await fetch("https://exp.host/--/api/v2/push/send", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(messages),
+          });
+
+          const pushResultText = await pushResponse.text();
+
+          console.log("[EXPO PUSH SEND STATUS]", pushResponse.status);
+          console.log("[EXPO PUSH SEND RESPONSE]", pushResultText);
+        } catch (pushError) {
+          console.error("[EXPO PUSH SEND ERROR]", pushError);
+        }
+      } else {
+        console.log("[EXPO PUSH] active token 없음", {
+          assigneeId: safeAssigneeId,
+        });
+      }
 
       console.log("[PUBLIC LEAD SUBMIT]", {
         consultationId,
         assigneeId: safeAssigneeId,
         clientName: input.clientName.trim(),
         phone: normalizedPhone,
+        tokenCount: expoPushTokens.length,
       });
 
       return {

@@ -1046,6 +1046,21 @@ const templateSelectableCount = 8;
     return (courseTemplateList || []).filter((row: any) => idSet.has(Number(row.id)));
   }, [courseTemplateList, selectedTemplateIds]);
 
+const existingPlanSubjectMap = useMemo(() => {
+  const map = new Map<string, number>();
+
+  (planSemesterList || []).forEach((row: any) => {
+    const key = String(row.subjectName || "").trim().replace(/\s+/g, " ");
+    if (!key) return;
+
+    if (!map.has(key)) {
+      map.set(key, Number(row.semesterNo));
+    }
+  });
+
+  return map;
+}, [planSemesterList]);
+
   const toggleTemplateSubject = (id: number) => {
     const numericId = Number(id);
     const already = selectedTemplateIds.includes(numericId);
@@ -2384,25 +2399,47 @@ const templateSelectableCount = 8;
                       </div>
                     ) : (
                       <div className="divide-y">
-                        {filteredTemplateList.map((row: any) => {
-                          const checked = selectedTemplateIds.includes(Number(row.id));
-                          const disabled =
-                            !checked && selectedTemplateIds.length >= templateSelectableCount;
+                       {filteredTemplateList.map((row: any) => {
+  const checked = selectedTemplateIds.includes(Number(row.id));
+
+  const existingSemesterNo = existingPlanSubjectMap.get(
+    String(row.subjectName || "").trim().replace(/\s+/g, " ")
+  );
+
+  const isDuplicatedInOtherSemester =
+    existingSemesterNo !== undefined &&
+    Number(existingSemesterNo) !== Number(templateDialogSemesterNo);
+
+  const disabled =
+    (!checked && selectedTemplateIds.length >= templateSelectableCount) ||
+    isDuplicatedInOtherSemester;
 
                           return (
-                            <label
-                              key={row.id}
-                              className={`flex items-center gap-3 px-4 py-3 text-sm cursor-pointer ${
-                                disabled ? "opacity-50" : ""
-                              }`}
-                            >
-                              <Checkbox
-                                checked={checked}
-                                disabled={disabled}
-                                onCheckedChange={() => toggleTemplateSubject(Number(row.id))}
-                              />
-                              <span className="flex-1">{row.subjectName}</span>
-                            </label>
+                           <label
+  key={row.id}
+  className={`flex items-center gap-3 px-4 py-3 text-sm ${
+    disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+  }`}
+>
+  <Checkbox
+    checked={checked}
+    disabled={disabled}
+    onCheckedChange={() => {
+      if (isDuplicatedInOtherSemester) {
+        toast.error(`이미 ${existingSemesterNo}학기에 등록된 과목입니다.`);
+        return;
+      }
+      toggleTemplateSubject(Number(row.id));
+    }}
+  />
+  <span className="flex-1">{row.subjectName}</span>
+
+  {isDuplicatedInOtherSemester && (
+    <span className="text-xs text-red-500">
+      이미 {existingSemesterNo}학기 등록
+    </span>
+  )}
+</label>
                           );
                         })}
                       </div>

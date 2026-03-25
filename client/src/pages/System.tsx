@@ -1068,8 +1068,8 @@ function LeadFormManagementSection() {
   });
 
   const userMap = new Map(
-    users?.map((u: any) => [u.id, u.name || u.username || `#${u.id}`]) ?? []
-  );
+  users?.map((u: any) => [Number(u.id), u]) ?? []
+);
 
   const handleCreate = () => {
     if (!assigneeId) {
@@ -1119,12 +1119,12 @@ function LeadFormManagementSection() {
                 <SelectValue placeholder="담당 직원 선택" />
               </SelectTrigger>
               <SelectContent>
-                {users?.map((u: any) => (
-                  <SelectItem key={u.id} value={String(u.id)}>
-                    {u.name || u.username || `#${u.id}`} ({u.role})
-                  </SelectItem>
-                ))}
-              </SelectContent>
+  {users?.map((u: any) => (
+    <SelectItem key={u.id} value={String(u.id)}>
+      {u.name || "-"} / {u.username || "-"} / {u.role} / {formatPhone(u.phone || "") || "-"}
+    </SelectItem>
+  ))}
+</SelectContent>
             </Select>
 
             <Button onClick={handleCreate} disabled={createMutation.isPending}>
@@ -1153,56 +1153,75 @@ function LeadFormManagementSection() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="px-4 py-3 text-left">ID</th>
-                    <th className="px-4 py-3 text-left">토큰</th>
-                    <th className="px-4 py-3 text-left">담당자</th>
-                    <th className="px-4 py-3 text-left">상태</th>
-                    <th className="px-4 py-3 text-left">생성일</th>
-                    <th className="px-4 py-3 text-right">관리</th>
-                  </tr>
-                </thead>
+  <tr className="border-b bg-muted/50">
+    <th className="px-4 py-3 text-left">ID</th>
+    <th className="px-4 py-3 text-left">토큰</th>
+    <th className="px-4 py-3 text-left">담당자</th>
+    <th className="px-4 py-3 text-left">아이디</th>
+    <th className="px-4 py-3 text-left">전화번호</th>
+    <th className="px-4 py-3 text-left">상태</th>
+    <th className="px-4 py-3 text-left">생성일</th>
+    <th className="px-4 py-3 text-right">관리</th>
+  </tr>
+</thead>
                 <tbody>
-                  {forms.map((f: any) => (
-                    <tr key={f.id} className="border-b last:border-0">
-                      <td className="px-4 py-3">{f.id}</td>
-                      <td className="px-4 py-3 font-mono text-xs">{f.token}</td>
-                      <td className="px-4 py-3">
-                        {userMap.get(f.assigneeId) || f.assigneeId}
-                      </td>
-                      <td className="px-4 py-3">
-                        {f.isActive ? (
-                          <span className="text-emerald-600 font-medium">활성</span>
-                        ) : (
-                          <span className="text-red-600 font-medium">비활성</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {f.createdAt
-                          ? new Date(f.createdAt).toLocaleString("ko-KR")
-                          : "-"}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => copyLink(f.token)}
-                          >
-                            링크 복사
-                          </Button>
+                  {forms.map((f: any) => {
+  const assignee = userMap.get(Number(f.assigneeId));
 
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => toggleActive(f)}
-                          >
-                            {f.isActive ? "비활성화" : "활성화"}
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+  return (
+    <tr key={f.id} className="border-b last:border-0">
+      <td className="px-4 py-3">{f.id}</td>
+
+      <td className="px-4 py-3 font-mono text-xs">{f.token}</td>
+
+      <td className="px-4 py-3">
+        {assignee?.name || "-"}
+      </td>
+
+      <td className="px-4 py-3">
+        {assignee?.username || "-"}
+      </td>
+
+      <td className="px-4 py-3">
+        {formatPhone(assignee?.phone || "") || "-"}
+      </td>
+
+      <td className="px-4 py-3">
+        {f.isActive ? (
+          <span className="text-emerald-600 font-medium">활성</span>
+        ) : (
+          <span className="text-red-600 font-medium">비활성</span>
+        )}
+      </td>
+
+      <td className="px-4 py-3">
+        {f.createdAt
+          ? new Date(f.createdAt).toLocaleString("ko-KR")
+          : "-"}
+      </td>
+
+      <td className="px-4 py-3 text-right">
+        <div className="flex justify-end gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => copyLink(f.token)}
+          >
+            링크 복사
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => toggleActive(f)}
+          >
+            {f.isActive ? "비활성화" : "활성화"}
+          </Button>
+        </div>
+      </td>
+    </tr>
+  );
+})}
                 </tbody>
               </table>
             </div>

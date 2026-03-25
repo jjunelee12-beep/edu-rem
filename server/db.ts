@@ -599,6 +599,14 @@ export async function listActiveDeviceTokensByUserId(userId: number) {
     .orderBy(desc(deviceTokens.id));
 }
 
+export async function listActiveExpoPushTokensByUserId(userId: number) {
+  const rows = await listActiveDeviceTokensByUserId(userId);
+
+  return (rows || [])
+    .map((row: any) => row.expoPushToken)
+    .filter((token: any) => typeof token === "string" && token.trim() !== "");
+}
+
 // ─── Students ────────────────────────────────────────────────────────
 export async function listStudents(assigneeId?: number) {
   const db = await getDb();
@@ -1423,6 +1431,41 @@ export async function getSettlementReport(
 }
 
 // ─── Plan Semesters ──────────────────────────────────────────────────
+function normalizeSubjectName(name: string) {
+  return String(name || "")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+export async function findDuplicatePlanSubject(params: {
+  studentId: number;
+  subjectName: string;
+  excludeId?: number;
+  excludeSemesterNo?: number;
+}) {
+  const rows = await listPlanSemesters(params.studentId);
+  const target = normalizeSubjectName(params.subjectName);
+
+  if (!target) return null;
+
+  return (
+    rows.find((row: any) => {
+      if (params.excludeId && Number(row.id) === Number(params.excludeId)) {
+        return false;
+      }
+
+      if (
+        params.excludeSemesterNo !== undefined &&
+        Number(row.semesterNo) === Number(params.excludeSemesterNo)
+      ) {
+        return false;
+      }
+
+      return normalizeSubjectName(row.subjectName) === target;
+    }) || null
+  );
+}
+
 export async function listPlanSemesters(studentId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -1438,6 +1481,17 @@ export async function createPlanSemester(data: InsertPlanSemester) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const duplicate = await findDuplicatePlanSubject({
+    studentId: Number(data.studentId),
+    subjectName: String(data.subjectName || ""),
+  });
+
+  if (duplicate) {
+    throw new Error(
+      `이미 ${duplicate.semesterNo}학기에 등록된 과목입니다: ${duplicate.subjectName}`
+    );
+  }
+
   const result: any = await db.insert(planSemesters).values(data);
   return getInsertId(result);
 }
@@ -1449,9 +1503,38 @@ export async function updatePlanSemester(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  if (data.subjectName !== undefined) {
+    const current = await db
+      .select()
+      .from(planSemesters)
+      .where(eq(planSemesters.id, id))
+      .limit(1);
+
+    const row = current[0];
+    if (!row) throw new Error("우리 플랜 과목을 찾을 수 없습니다");
+
+    const duplicate = await findDuplicatePlanSubject({
+      studentId: Number(row.studentId),
+      subjectName: String(data.subjectName || ""),
+      excludeId: id,
+    });
+
+    if (duplicate) {
+      throw new Error(
+        `이미 ${duplicate.semesterNo}학기에 등록된 과목입니다: ${duplicate.subjectName}`
+      );
+    }
+  }
+
   await db.update(planSemesters).set(data as any).where(eq(planSemesters.id, id));
 }
 
+export async function deletePlanSemester(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.delete(planSemesters).where(eq(planSemesters.id, id));
+}
 export async function deletePlanSemester(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -1771,6 +1854,39 @@ export async function bulkCreatePlanSemestersFromTemplate(params: {
 
   if (templates.length > 8) {
     throw new Error("우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다");
+  }
+
+  const templateNames = templates.map((t: any) => normalizeSubjectName(t.subjectName));
+
+  const duplicateInsideSelection = templateNames.find(
+    (name: string, idx: number) => templateNames.indexOf(name) !== idx
+  );
+
+  if (duplicateInsideSelection) {
+    throw new Error(`선택한 템플릿 안에 중복 과목이 있습니다: ${duplicateInsideSelection}`);
+  }
+
+  const existingRows = await listPlanSemesters(params.studentId);
+
+  const duplicateInOtherSemester = templates.find((t: any) =>
+    existingRows.some(
+      (row: any) =>
+        Number(row.semesterNo) !== Number(params.semesterNo) &&
+        normalizeSubjectName(row.subjectName) === normalizeSubjectName(t.subjectName)
+    )
+  );
+
+  if (duplicateInOtherSemester) {
+    const found = existingRows.find(
+      (row: any) =>
+        Number(row.semesterNo) !== Number(params.semesterNo) &&
+        normalizeSubjectName(row.subjectName) ===
+          normalizeSubjectName(duplicateInOtherSemester.subjectName)
+    );
+
+    throw new Error(
+      `이미 ${found?.semesterNo}학기에 등록된 과목입니다: ${duplicateInOtherSemester.subjectName}`
+    );
   }
 
   await db

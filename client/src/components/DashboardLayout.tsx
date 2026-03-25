@@ -137,6 +137,29 @@ function DashboardLayoutContent({
   setSidebarWidth,
 }: DashboardLayoutContentProps) {
   const [location, setLocation] = useLocation();
+  useEffect(() => {
+    const handlePushOpen = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const detail = customEvent.detail || {};
+
+      console.log("[WEB PUSH OPEN EVENT]", detail);
+
+      // 지금은 상담 상세 라우트가 앱에서 바로 열리도록 안 해도 되니까
+      // 우선 상담 DB 목록으로 이동
+      if (detail.type === "lead") {
+        setLocation("/consultations");
+        return;
+      }
+
+      setLocation("/consultations");
+    };
+
+    window.addEventListener("push-open", handlePushOpen as EventListener);
+
+    return () => {
+      window.removeEventListener("push-open", handlePushOpen as EventListener);
+    };
+  }, [setLocation]);
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);

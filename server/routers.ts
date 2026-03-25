@@ -312,10 +312,20 @@ notification: router({
   }),
 
   consultation: router({
-    list: protectedProcedure.query(async ({ ctx }) => {
-      const assigneeId = isAdminOrHost(ctx.user)
-        ? undefined
-        : Number(ctx.user.id) || 1;
+  list: protectedProcedure
+    .input(
+      z
+        .object({
+          showAll: z.boolean().optional(),
+        })
+        .optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const showAll = !!input?.showAll;
+      const myId = Number(ctx.user.id) || 1;
+
+      const assigneeId =
+        isAdminOrHost(ctx.user) && showAll ? undefined : myId;
 
       return db.listConsultations(assigneeId);
     }),
