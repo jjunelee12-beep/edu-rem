@@ -1535,12 +1535,6 @@ export async function deletePlanSemester(id: number) {
 
   await db.delete(planSemesters).where(eq(planSemesters.id, id));
 }
-export async function deletePlanSemester(id: number) {
-  const db = await getDb();
-  if (!db) throw new Error("DB not available");
-
-  await db.delete(planSemesters).where(eq(planSemesters.id, id));
-}
 
 export async function syncPlanSemestersByCount(
   studentId: number,
