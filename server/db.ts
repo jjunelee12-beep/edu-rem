@@ -34,6 +34,10 @@ import {
   InsertJobSupportRequest,
 practiceEducationCenters,
   InsertPracticeEducationCenter,
+  notifications,
+  InsertNotification,
+deviceTokens,
+  InsertDeviceToken,
 } from "../drizzle/schema";
 
 import { ENV } from "./_core/env";
@@ -501,6 +505,98 @@ export async function deleteConsultation(id: number) {
   if (!db) throw new Error("DB not available");
 
   await db.delete(consultations).where(eq(consultations.id, id));
+}
+// ─── Notifications ───────────────────────────────────────────────────
+export async function createNotification(data: InsertNotification) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(notifications).values({
+    type: "lead",
+    isRead: false,
+    ...data,
+  } as any);
+
+  return getInsertId(result);
+}
+
+export async function listNotifications(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(notifications)
+    .where(eq(notifications.userId, userId))
+    .orderBy(desc(notifications.createdAt), desc(notifications.id));
+}
+
+export async function markNotificationRead(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(notifications)
+    .set({ isRead: true } as any)
+    .where(and(eq(notifications.id, id), eq(notifications.userId, userId)));
+}
+
+// ─── Device Tokens ───────────────────────────────────────────────────
+export async function upsertDeviceToken(data: {
+  userId: number;
+  platform: string;
+  expoPushToken: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const existing = await db
+    .select()
+    .from(deviceTokens)
+    .where(
+      and(
+        eq(deviceTokens.userId, data.userId),
+        eq(deviceTokens.expoPushToken, data.expoPushToken)
+      )
+    )
+    .limit(1);
+
+  if (existing[0]) {
+    await db
+      .update(deviceTokens)
+      .set({
+        platform: data.platform,
+        isActive: true,
+      } as any)
+      .where(eq(deviceTokens.id, existing[0].id));
+
+    return existing[0].id;
+  }
+
+  const result: any = await db.insert(deviceTokens).values({
+    userId: data.userId,
+    platform: data.platform,
+    expoPushToken: data.expoPushToken,
+    isActive: true,
+  } as any);
+
+  return getInsertId(result);
+}
+
+export async function listActiveDeviceTokensByUserId(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(deviceTokens)
+    .where(
+      and(
+        eq(deviceTokens.userId, userId),
+        eq(deviceTokens.isActive, true)
+      )
+    )
+    .orderBy(desc(deviceTokens.id));
 }
 
 // ─── Students ────────────────────────────────────────────────────────

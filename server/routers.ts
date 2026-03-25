@@ -171,6 +171,48 @@ export const appRouter = router({
       }),
   }),
 
+notification: router({
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return db.listNotifications(Number(ctx.user.id));
+  }),
+
+  markRead: protectedProcedure
+    .input(
+      z.object({
+        id: z.number(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await db.markNotificationRead(input.id, Number(ctx.user.id));
+      return { success: true };
+    }),
+}),
+
+  mobile: router({
+  registerPushToken: publicProcedure
+    .input(
+      z.object({
+        userId: z.number(),
+        platform: z.string().min(1),
+        expoPushToken: z.string().min(1),
+        secret: z.string().min(1),
+      })
+    )
+    .mutation(async ({ input }) => {
+      if (input.secret !== process.env.MOBILE_TOKEN_SECRET) {
+        throw new Error("인증에 실패했습니다.");
+      }
+
+      const id = await db.upsertDeviceToken({
+        userId: input.userId,
+        platform: input.platform,
+        expoPushToken: input.expoPushToken,
+      });
+
+      return { success: true, id };
+    }),
+}),
+
   educationInstitution: router({
     list: protectedProcedure.query(async () => {
       return db.listEducationInstitutions();
@@ -208,6 +250,8 @@ export const appRouter = router({
         return { success: true };
       }),
   }),
+
+
 
   dashboard: router({
     monthApprovals: protectedProcedure.query(async ({ ctx }) => {

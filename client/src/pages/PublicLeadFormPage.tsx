@@ -28,10 +28,15 @@ export default function PublicLeadFormPage() {
     onSuccess: () => {
       setDone(true);
     },
+    onError: (err) => {
+      alert(err.message || "접수 중 오류가 발생했습니다.");
+    },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (submitMutation.isPending) return;
 
     if (!clientName.trim()) {
       alert("이름을 입력해주세요.");
@@ -147,7 +152,7 @@ export default function PublicLeadFormPage() {
           <option value="한국어교원">한국어교원</option>
           <option value="청소년지도사">청소년지도사</option>
           <option value="산업기사/기사">산업기사/기사</option>
-	<option value="전문학사/학사">전문학사/학사</option>
+          <option value="전문학사/학사">전문학사/학사</option>
           <option value="기타">기타</option>
         </select>
 
@@ -178,7 +183,11 @@ export default function PublicLeadFormPage() {
         <button
           type="submit"
           disabled={submitMutation.isPending}
-          style={buttonStyle}
+          style={{
+            ...buttonStyle,
+            opacity: submitMutation.isPending ? 0.7 : 1,
+            cursor: submitMutation.isPending ? "not-allowed" : "pointer",
+          }}
         >
           {submitMutation.isPending ? "접수 중..." : "상담 신청하기"}
         </button>
@@ -245,5 +254,4 @@ const buttonStyle: React.CSSProperties = {
   background: "#111827",
   color: "#fff",
   fontSize: 15,
-  cursor: "pointer",
 };

@@ -608,3 +608,30 @@ export const jobSupportRequests = mysqlTable("job_support_requests", {
 
 export type JobSupportRequest = typeof jobSupportRequests.$inferSelect;
 export type InsertJobSupportRequest = typeof jobSupportRequests.$inferInsert;
+
+// ─── Device Tokens (모바일 푸시 토큰) ───────────────────────────────
+export const deviceTokens = mysqlTable("device_tokens", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  platform: varchar("platform", { length: 20 }).notNull(),
+  expoPushToken: varchar("expoPushToken", { length: 255 }).notNull(),
+  isActive: boolean("isActive").notNull().default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DeviceToken = typeof deviceTokens.$inferSelect;
+export type InsertDeviceToken = typeof deviceTokens.$inferInsert;
+
+export const notifications = mysqlTable("notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  type: varchar("type", { length: 50 }).notNull().default("lead"),
+  message: text("message").notNull(),
+  relatedId: int("relatedId"),
+  isRead: boolean("isRead").notNull().default(false),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = typeof notifications.$inferInsert;

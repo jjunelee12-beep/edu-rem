@@ -29,8 +29,8 @@ export const publicLeadRouter = router({
         clientName: z.string().min(1),
         phone: z.string().min(10),
         finalEducation: z.string().min(1),
-	channel: z.string().optional(),
-	notes: z.string().optional(),
+        channel: z.string().optional(),
+        notes: z.string().optional(),
         desiredCourse: z.string().min(1),
       })
     )
@@ -41,21 +41,38 @@ export const publicLeadRouter = router({
         throw new Error("유효하지 않은 링크입니다.");
       }
 
-      const id = await db.createConsultation({
+      const normalizedPhone = input.phone.replace(/\D/g, "").slice(0, 11);
+      const safeAssigneeId = Number(form.assigneeId);
+
+      const consultationId = await db.createConsultation({
         consultDate: new Date(),
         channel: input.channel?.trim() || "랜딩페이지",
         clientName: input.clientName.trim(),
-        phone: input.phone.replace(/\D/g, "").slice(0, 11),
-        finalEducation: input.finalEducation,
-        desiredCourse: input.desiredCourse,
-        notes: input.notes?.trim() || "",
+        phone: normalizedPhone,
+        finalEducation: input.finalEducation.trim(),
+        desiredCourse: input.desiredCourse.trim(),
+        notes: input.notes?.trim() || "랜딩페이지 유입",
         status: "상담중",
-        assigneeId: form.assigneeId,
+        assigneeId: safeAssigneeId,
       } as any);
+
+      await db.createNotification({
+        userId: safeAssigneeId,
+        type: "lead",
+        message: `[신규 상담] ${input.clientName.trim()} / ${normalizedPhone}`,
+        relatedId: consultationId,
+      } as any);
+
+      console.log("[PUBLIC LEAD SUBMIT]", {
+        consultationId,
+        assigneeId: safeAssigneeId,
+        clientName: input.clientName.trim(),
+        phone: normalizedPhone,
+      });
 
       return {
         ok: true,
-        id,
+        id: consultationId,
       };
     }),
 });

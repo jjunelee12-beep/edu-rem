@@ -21,9 +21,10 @@ import {
 } from "@/components/ui/sidebar";
 
 import Login from "@/components/Login";
-
+import { trpc } from "@/lib/trpc";
 import { useIsMobile } from "@/hooks/useMobile";
 import {
+  Bell,
   LayoutDashboard,
   LogOut,
   PanelLeft,
@@ -35,10 +36,9 @@ import {
   CalendarDays,
   Settings,
   Award,
-  MapPin,
   Briefcase,
 } from "lucide-react";
-import { CSSProperties, useEffect, useRef, useState } from "react";
+import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 
@@ -73,6 +73,16 @@ type AuthUser = {
   username: string;
   role: "host" | "admin" | "staff";
   name?: string;
+};
+
+type NotificationItem = {
+  id: number;
+  userId: number;
+  type?: string | null;
+  message: string;
+  relatedId?: number | null;
+  isRead: boolean;
+  createdAt?: string | Date;
 };
 
 export default function DashboardLayout({
@@ -148,6 +158,22 @@ function DashboardLayoutContent({
     return location.startsWith(item.path);
   });
 
+  const notificationQuery = trpc.notification.list.useQuery(undefined, {
+    refetchInterval: 10000,
+  });
+
+  const markReadMutation = trpc.notification.markRead.useMutation({
+    onSuccess: () => {
+      void notificationQuery.refetch();
+    },
+  });
+
+  const notifications = (notificationQuery.data ?? []) as NotificationItem[];
+
+  const unreadCount = useMemo(() => {
+    return notifications.filter((item) => !item.isRead).length;
+  }, [notifications]);
+
   useEffect(() => {
     if (isCollapsed) setIsResizing(false);
   }, [isCollapsed]);
@@ -222,6 +248,23 @@ function DashboardLayoutContent({
         </SidebarMenu>
       </>
     );
+  };
+
+  const handleNotificationClick = async (item: NotificationItem) => {
+    if (!item.isRead) {
+      try {
+        await markReadMutation.mutateAsync({ id: item.id });
+      } catch (e) {
+        console.error("[notification.markRead] failed:", e);
+      }
+    }
+
+    if (item.relatedId) {
+      setLocation("/consultations");
+      return;
+    }
+
+    setLocation("/consultations");
   };
 
   return (
@@ -320,21 +363,103 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset>
-        {isMobile && (
-          <div className="flex border-b h-14 items-center justify-between bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
-            <div className="flex items-center gap-2">
-              <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
-              <div className="flex items-center gap-3">
+        <div className="sticky top-0 z-40 flex h-14 items-center justify-between border-b bg-background/95 px-3 md:px-6 backdrop-blur supports-[backdrop-filter]:backdrop-blur">
+          <div className="flex items-center gap-2">
+            {isMobile ? (
+              <>
+                <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
                 <span className="tracking-tight text-foreground font-medium">
                   {activeMenuItem?.label ?? "메뉴"}
                 </span>
-              </div>
-            </div>
+              </>
+            ) : (
+              <span className="tracking-tight text-foreground font-medium">
+                {activeMenuItem?.label ?? "대시보드"}
+              </span>
+            )}
           </div>
-        )}
+
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border bg-background hover:bg-accent transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label="알림"
+                >
+                  <Bell className="h-4 w-4" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -right-1 -top-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+
+              <DropdownMenuContent align="end" className="w-80 p-0">
+                <div className="px-3 py-2 border-b">
+                  <p className="text-sm font-semibold">알림</p>
+                  <p className="text-xs text-muted-foreground">
+                    최근 상담 알림을 확인할 수 있습니다.
+                  </p>
+                </div>
+
+                <div className="max-h-[360px] overflow-y-auto">
+                  {notificationQuery.isLoading ? (
+                    <div className="px-3 py-6 text-sm text-muted-foreground text-center">
+                      알림 불러오는 중...
+                    </div>
+                  ) : notifications.length === 0 ? (
+                    <div className="px-3 py-6 text-sm text-muted-foreground text-center">
+                      알림이 없습니다.
+                    </div>
+                  ) : (
+                    notifications.slice(0, 15).map((item) => (
+                      <DropdownMenuItem
+                        key={item.id}
+                        onClick={() => void handleNotificationClick(item)}
+                        className="flex flex-col items-start gap-1 px-3 py-3 cursor-pointer rounded-none border-b last:border-b-0"
+                      >
+                        <div className="flex w-full items-start justify-between gap-2">
+                          <span
+                            className={`text-sm ${
+                              item.isRead ? "font-normal text-muted-foreground" : "font-semibold"
+                            }`}
+                          >
+                            {item.message}
+                          </span>
+                          {!item.isRead && (
+                            <span className="mt-1 h-2 w-2 rounded-full bg-red-500 shrink-0" />
+                          )}
+                        </div>
+                        <span className="text-[11px] text-muted-foreground">
+                          {formatNotificationDate(item.createdAt)}
+                        </span>
+                      </DropdownMenuItem>
+                    ))
+                  )}
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
 
         <main className="flex-1 p-4 md:p-6">{children}</main>
       </SidebarInset>
     </>
   );
+}
+
+function formatNotificationDate(value?: string | Date) {
+  if (!value) return "";
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
 }
