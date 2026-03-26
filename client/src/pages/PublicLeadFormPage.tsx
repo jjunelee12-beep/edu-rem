@@ -124,116 +124,118 @@ export default function PublicLeadFormPage() {
   }
 
   return (
-    <PageShell>
-      <div className="lead-form-card">
+  <PageShell>
+    <div className="lead-form-card">
+
       <div className="lead-form-header">
-  <h1 className="lead-form-title">
-    <span className="lead-form-title-inner">
-      <img
-        src="/images/logo.png"
-        alt="위드원 교육 로고"
-        className="lead-form-logo"
-      />
-      목표를 향한 배움의 길,
-    </span>
-    <br />
-    위드원 교육이 함께할게요
-  </h1>
-
-  <p className="lead-form-subtitle">
-    상담은 <strong>100% 무료</strong>로 진행됩니다.
-  </p>
-</div>
-</div>
-
-        <form className="lead-form-body" onSubmit={handleSubmit}>
-          <input
-            className="lead-form-input"
-            value={clientName}
-            onChange={(e) => setClientName(e.target.value)}
-            placeholder="이름"
-            autoComplete="name"
-          />
-
-          <input
-            className="lead-form-input"
-            value={formattedPhone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="전화번호"
-            inputMode="numeric"
-            autoComplete="tel"
-          />
-
-          <div className="lead-form-select-wrap">
-            <select
-              className="lead-form-select"
-              value={finalEducation}
-              onChange={(e) => setFinalEducation(e.target.value)}
-            >
-              <option value="">최종학력 선택</option>
-              <option value="고등학교 졸업">고등학교 졸업</option>
-              <option value="전문학사">전문학사</option>
-              <option value="학사">학사</option>
-              <option value="석사 이상">석사 이상</option>
-              <option value="기타">기타</option>
-            </select>
-            <span className="lead-form-select-arrow">⌄</span>
-          </div>
-
-          <div className="lead-form-select-wrap">
-            <select
-              className="lead-form-select"
-              value={desiredCourse}
-              onChange={(e) => setDesiredCourse(e.target.value)}
-            >
-              <option value="">희망과정 선택</option>
-              <option value="사회복지사">사회복지사</option>
-              <option value="보육교사">보육교사</option>
-              <option value="평생교육사">평생교육사</option>
-              <option value="건강가정사">건강가정사</option>
-              <option value="한국어교원">한국어교원</option>
-              <option value="청소년지도사">청소년지도사</option>
-              <option value="산업기사/기사">산업기사/기사</option>
-              <option value="전문학사/학사">전문학사/학사</option>
-              <option value="기타">기타</option>
-            </select>
-            <span className="lead-form-select-arrow">⌄</span>
-          </div>
-
-          <input
-            className="lead-form-input"
-            value={channel}
-            onChange={(e) => setChannel(e.target.value)}
-            placeholder="문의경로 (예. 블로그, 인스타, 지인추천)"
-          />
-
-          <textarea
-            className="lead-form-textarea"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="진행하시면서 걱정되시는 부분 적어주세요!"
-          />
-
-          <label className="lead-form-agree">
-            <input
-              type="checkbox"
-              checked={agreed}
-              onChange={(e) => setAgreed(e.target.checked)}
+        <h1 className="lead-form-title">
+          <span className="lead-form-title-inner">
+            <img
+              src="/images/logo.png"
+              alt="위드원 교육 로고"
+              className="lead-form-logo"
             />
-            <span>개인정보 수집 및 이용에 동의합니다.</span>
-          </label>
+            목표를 향한 배움의 길,
+          </span>
+          <br />
+          위드원 교육이 함께할게요
+        </h1>
 
-          <button
-            type="submit"
-            className="lead-form-submit"
-            disabled={submitMutation.isPending}
-          >
-            {submitMutation.isPending ? "접수 중..." : "1:1 맞춤 상담 받기"}
-          </button>
-        </form>
+        <p className="lead-form-subtitle">
+          상담은 <strong>100% 무료</strong>로 진행됩니다.
+        </p>
       </div>
-    </PageShell>
-  );
+
+      {/* 🔥 여기 안으로 들어가야됨 */}
+      <form className="lead-form-body" onSubmit={handleSubmit}>
+        <input
+          className="lead-form-input"
+          value={clientName}
+          onChange={(e) => setClientName(e.target.value)}
+          placeholder="이름"
+          autoComplete="name"
+        />
+
+        <input
+          className="lead-form-input"
+          value={formattedPhone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="전화번호"
+          inputMode="numeric"
+          autoComplete="tel"
+        />
+
+        <div className="lead-form-select-wrap">
+          <select
+            className="lead-form-select"
+            value={finalEducation}
+            onChange={(e) => setFinalEducation(e.target.value)}
+          >
+            <option value="">최종학력 선택</option>
+            <option value="고등학교 졸업">고등학교 졸업</option>
+            <option value="전문학사">전문학사</option>
+            <option value="학사">학사</option>
+            <option value="석사 이상">석사 이상</option>
+            <option value="기타">기타</option>
+          </select>
+          <span className="lead-form-select-arrow">⌄</span>
+        </div>
+
+        <div className="lead-form-select-wrap">
+          <select
+            className="lead-form-select"
+            value={desiredCourse}
+            onChange={(e) => setDesiredCourse(e.target.value)}
+          >
+            <option value="">희망과정 선택</option>
+            <option value="사회복지사">사회복지사</option>
+            <option value="보육교사">보육교사</option>
+            <option value="평생교육사">평생교육사</option>
+            <option value="건강가정사">건강가정사</option>
+            <option value="한국어교원">한국어교원</option>
+            <option value="청소년지도사">청소년지도사</option>
+            <option value="산업기사/기사">산업기사/기사</option>
+            <option value="전문학사/학사">전문학사/학사</option>
+            <option value="기타">기타</option>
+          </select>
+          <span className="lead-form-select-arrow">⌄</span>
+        </div>
+
+        <input
+          className="lead-form-input"
+          value={channel}
+          onChange={(e) => setChannel(e.target.value)}
+          placeholder="문의경로 (예. 블로그, 인스타, 지인추천)"
+        />
+
+        <textarea
+          className="lead-form-textarea"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="진행하시면서 걱정되시는 부분 적어주세요!"
+        />
+
+        <label className="lead-form-agree">
+          <input
+            type="checkbox"
+            checked={agreed}
+            onChange={(e) => setAgreed(e.target.checked)}
+          />
+          <span>개인정보 수집 및 이용에 동의합니다.</span>
+        </label>
+
+        <button
+          type="submit"
+          className="lead-form-submit"
+          disabled={submitMutation.isPending}
+        >
+          {submitMutation.isPending ? "접수 중..." : "1:1 맞춤 상담 받기"}
+        </button>
+      </form>
+
+    </div>
+  </PageShell>
+);
 }
 
 function PageShell({ children }: { children: React.ReactNode }) {
