@@ -741,6 +741,7 @@ const handleSearchResultAction = async (
     </CardContent>
   </Card>
 )}
+         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight">AI 상담 페이지</h1>
