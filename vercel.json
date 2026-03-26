@@ -8,6 +8,10 @@
       "source": "/form/:path*",
       "destination": "/"
     },
+{
+  "source": "/ad-form/:path*",
+  "destination": "/"
+},
     {
       "source": "/consultations",
       "destination": "/"
