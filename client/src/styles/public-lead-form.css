@@ -19,45 +19,36 @@
 
 .lead-form-header {
   margin-bottom: 20px;
-}
-
-.lead-form-title-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 12px;
   text-align: left;
-}
-
-.lead-form-title-box {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-}
-
-.lead-form-logo {
-  width: 42px;
-  height: auto;
-  object-fit: contain;
-  flex: 0 0 auto;
-  margin-top: 6px;
 }
 
 .lead-form-title {
   margin: 0;
   color: #111111;
-  font-size: 31px;
-  line-height: 1.35;
+  font-size: 28px; /* 살짝 줄임 */
+  line-height: 1.4;
   font-weight: 800;
-  letter-spacing: -0.7px;
+  letter-spacing: -0.6px;
   word-break: keep-all;
-  text-align: left;
+}
+
+.lead-form-title-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lead-form-logo {
+  width: 28px;
+  height: auto;
+  object-fit: contain;
+  flex: 0 0 auto;
 }
 
 .lead-form-subtitle {
   margin: 10px 0 0;
   color: #666666;
-  font-size: 21px;
+  font-size: 19px;
   line-height: 1.4;
   font-weight: 500;
   text-align: left;

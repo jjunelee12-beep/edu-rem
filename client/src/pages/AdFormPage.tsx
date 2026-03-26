@@ -79,14 +79,24 @@ export default function AdFormPage() {
     <div className="ad-form-page">
       <div className="ad-form-hero">
         <div className="ad-form-hero-inner">
-          <h1 className="ad-form-title">
-            목표를 향한 배움의 길,
-            <br />
-            위드원 교육이 함께할게요
-          </h1>
-          <p className="ad-form-subtitle">
-            상담은 <strong>100% 무료</strong>로 진행됩니다.
-          </p>
+          <div className="ad-form-header">
+            <h1 className="ad-form-title">
+              <span className="ad-form-title-inner">
+                <img
+                  src="/images/logo.png"
+                  alt="위드원 교육 로고"
+                  className="ad-form-logo"
+                />
+                목표를 향한 배움의 길,
+              </span>
+              <br />
+              위드원 교육이 함께할게요
+            </h1>
+
+            <p className="ad-form-subtitle">
+              상담은 <strong>100% 무료</strong>로 진행됩니다.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -99,10 +109,7 @@ export default function AdFormPage() {
           </p>
         </section>
 
-        <section className="ad-form-section spacer">
-          <p>광고 상세 내용 / 이미지 / 안내 문구 들어갈 영역</p>
-          <p>여기는 네가 광고마다 따로 꾸밀 수 있게 비워두면 됨.</p>
-        </section>
+        <section className="ad-form-section spacer"></section>
       </div>
 
       <div className="ad-form-bottom-bar">

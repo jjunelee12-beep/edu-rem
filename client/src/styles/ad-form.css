@@ -12,22 +12,42 @@
 .ad-form-hero-inner {
   max-width: 520px;
   margin: 0 auto;
-  text-align: center;
+}
+
+.ad-form-header {
+  text-align: left;
+}
+
+.ad-form-logo {
+  width: 28px;
+  height: auto;
+  object-fit: contain;
+  flex: 0 0 auto;
 }
 
 .ad-form-title {
   margin: 0;
-  font-size: 32px;
-  line-height: 1.35;
+  font-size: 28px;
+  line-height: 1.38;
   font-weight: 800;
   color: #111;
   letter-spacing: -0.6px;
+  word-break: keep-all;
+  text-align: left;
+}
+
+.ad-form-title-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .ad-form-subtitle {
   margin-top: 12px;
   color: #666;
-  font-size: 18px;
+  font-size: 19px;
+  line-height: 1.4;
+  text-align: left;
 }
 
 .ad-form-subtitle strong {
@@ -219,4 +239,23 @@
   align-items: center;
   justify-content: center;
   color: #666;
+}
+
+@media (max-width: 640px) {
+  .ad-form-title {
+    font-size: 26px;
+    line-height: 1.34;
+  }
+
+  .ad-form-subtitle {
+    font-size: 18px;
+  }
+
+  .ad-form-logo {
+    width: 24px;
+  }
+
+  .ad-form-title-inner {
+    gap: 6px;
+  }
 }
