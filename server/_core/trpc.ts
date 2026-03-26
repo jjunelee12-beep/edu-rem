@@ -31,7 +31,11 @@ const DEV_USER = {
 } as any;
 
 function isAdminOrHost(user: any) {
-  return user?.role === "admin" || user?.role === "host";
+  return (
+    user?.role === "admin" ||
+    user?.role === "host" ||
+    user?.role === "superhost"
+  );
 }
 
 function isSuperhost(user: any) {
@@ -118,12 +122,15 @@ export const hostProcedure = t.procedure.use(
       });
     }
 
-    if (!ctx.user || ctx.user.role !== "host") {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "호스트 권한이 필요합니다.",
-      });
-    }
+   if (
+  !ctx.user ||
+  (ctx.user.role !== "host" && ctx.user.role !== "superhost")
+) {
+  throw new TRPCError({
+    code: "FORBIDDEN",
+    message: "호스트 권한이 필요합니다.",
+  });
+}
 
     return next({
       ctx: {
