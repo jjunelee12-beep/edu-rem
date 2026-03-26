@@ -703,7 +703,6 @@ const handleSearchResultAction = async (
     <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center">
       <div className="min-w-[120px] text-sm font-medium">
         {quickSearchType === "student" ? "학생 검색" : "상담 검색"}
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
       </div>
 
       <Input
