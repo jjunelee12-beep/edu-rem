@@ -404,7 +404,7 @@ export async function createUserAccount(data: {
   name: string;
   email?: string | null;
   phone?: string | null;
-  role: "staff" | "admin" | "host";
+  role: "staff" | "admin" | "host" | "superhost";
   bankName?: string | null;
   bankAccount?: string | null;
   loginMethod?: string | null;
@@ -455,12 +455,26 @@ export async function updateUserAccount(
 
 export async function updateUserRole(
   id: number,
-  role: "staff" | "admin" | "host"
+role: "staff" | "admin" | "host" | "superhost"
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
   await db.update(users).set({ role } as any).where(eq(users.id, id));
+
+	// superhost 중복 방지
+if (role === "superhost") {
+  const existing = await getAllUsersDetailed();
+  const count = existing.filter((u: any) => u.role === "superhost").length;
+
+  const current = existing.find((u: any) => u.id === id);
+
+  if (!current) throw new Error("유저 없음");
+
+  if (current.role !== "superhost" && count >= 1) {
+    throw new Error("슈퍼호스트는 1명만 가능합니다.");
+  }
+}
 }
 
 export async function updateUserActive(id: number, isActive: boolean) {

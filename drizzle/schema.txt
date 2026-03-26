@@ -37,9 +37,9 @@ export const users = mysqlTable("users", {
   phone: varchar("phone", { length: 20 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
 
-  role: mysqlEnum("role", ["host", "admin", "staff"])
-    .notNull()
-    .default("staff"),
+  role: mysqlEnum("role", ["host", "admin", "staff", "superhost"])
+  .notNull()
+  .default("staff"),
 
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

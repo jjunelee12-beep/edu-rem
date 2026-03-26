@@ -6,6 +6,7 @@ import {
   protectedProcedure,
   adminProcedure,
   hostProcedure,
+superHostProcedure,
   router,
 } from "./_core/trpc";
 import { z } from "zod";
@@ -16,6 +17,10 @@ import { smsRouter } from "./_core/sms.router";
 
 function isAdminOrHost(user: any) {
   return user?.role === "admin" || user?.role === "host";
+}
+
+function isSuperhost(user: any) {
+  return user?.role === "superhost";
 }
 
 export const appRouter = router({
@@ -291,7 +296,288 @@ notification: router({
       }),
   }),
 
+  ai: router({
+    /**
+     * AI 페이지 초기 진입용
+     * 현재 로그인 유저 기준으로 사용 가능 기능 요약
+     */
+    bootstrap: protectedProcedure.query(async ({ ctx }) => {
+      return {
+        success: true,
+        user: {
+          id: Number(ctx.user.id),
+          name: ctx.user.name,
+          role: ctx.user.role,
+        },
+        capabilities: {
+          canSearchStudents: true,
+          canSearchConsultations: true,
+          canReadNotifications: true,
+          canCreateTransferSubject: true,
+          canCreatePlanSemester: true,
+          canModifyServer: false,
+          canDeleteData: false,
+          canAlterSchema: false,
+        },
+      };
+    }),
 
+    /**
+     * 학생 / 상담 자연어 검색용 1차 버전
+     * 지금은 단순 텍스트 검색 데모 구조
+     * 나중에 LLM 붙이면 action parser 앞단으로 사용
+     */
+    search: protectedProcedure
+      .input(
+        z.object({
+          query: z.string().min(1),
+        })
+      )
+      .query(async ({ ctx, input }) => {
+        const q = input.query.trim();
+        const assigneeId = isAdminOrHost(ctx.user)
+          ? undefined
+          : Number(ctx.user.id) || 1;
+
+        const [students, consultations] = await Promise.all([
+          db.listStudents(assigneeId),
+          db.listConsultations(assigneeId),
+        ]);
+
+        const qLower = q.toLowerCase();
+
+        const matchedStudents = (students || []).filter((item: any) => {
+          return (
+            String(item.clientName || "").toLowerCase().includes(qLower) ||
+            String(item.phone || "").replace(/\D/g, "").includes(q.replace(/\D/g, "")) ||
+            String(item.course || "").toLowerCase().includes(qLower)
+          );
+        });
+
+        const matchedConsultations = (consultations || []).filter((item: any) => {
+          return (
+            String(item.clientName || "").toLowerCase().includes(qLower) ||
+            String(item.phone || "").replace(/\D/g, "").includes(q.replace(/\D/g, "")) ||
+            String(item.desiredCourse || "").toLowerCase().includes(qLower) ||
+            String(item.notes || "").toLowerCase().includes(qLower)
+          );
+        });
+
+        return {
+          success: true,
+          query: q,
+          students: matchedStudents.slice(0, 20),
+          consultations: matchedConsultations.slice(0, 20),
+        };
+      }),
+
+    /**
+     * AI 알림/누락 브리핑용
+     * 규칙 기반 검사 + AI 요약에 쓸 데이터 반환
+     */
+    alerts: protectedProcedure.query(async ({ ctx }) => {
+      const assigneeId = isAdminOrHost(ctx.user)
+        ? undefined
+        : Number(ctx.user.id) || 1;
+
+      const [students, consultations, semesters] = await Promise.all([
+        db.listStudents(assigneeId),
+        db.listConsultations(assigneeId),
+        db.listAllSemesters(assigneeId, undefined),
+      ]);
+
+      const paymentDateMissing = (students || []).filter(
+        (s: any) => s.status === "등록" && !s.paymentDate
+      );
+
+      const paymentAmountMissing = (students || []).filter(
+        (s: any) => s.status === "등록" && !s.paymentAmount
+      );
+
+      const consultationAssigneeMissing = (consultations || []).filter(
+        (c: any) => !c.assigneeId
+      );
+
+      const practiceUnassigned = (semesters || []).filter(
+        (s: any) => s.practiceStatus === "미섭외"
+      );
+
+      return {
+        success: true,
+        summary: {
+          paymentDateMissingCount: paymentDateMissing.length,
+          paymentAmountMissingCount: paymentAmountMissing.length,
+          consultationAssigneeMissingCount: consultationAssigneeMissing.length,
+          practiceUnassignedCount: practiceUnassigned.length,
+        },
+        items: {
+          paymentDateMissing: paymentDateMissing.slice(0, 20),
+          paymentAmountMissing: paymentAmountMissing.slice(0, 20),
+          consultationAssigneeMissing: consultationAssigneeMissing.slice(0, 20),
+          practiceUnassigned: practiceUnassigned.slice(0, 20),
+        },
+      };
+    }),
+
+    /**
+     * 전적대 과목 입력 전용
+     * AI는 서버 수정/삭제 못 하고 허용된 입력만 하게 하는 구조
+     */
+    createTransferSubject: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+          schoolName: z.string().optional(),
+          subjectName: z.string().min(1),
+          category: z.enum(["전공", "교양", "일반"]),
+          requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]).optional(),
+          credits: z.number().min(0).max(30).default(3),
+          sortOrder: z.number().optional(),
+          attachmentName: z.string().optional(),
+          attachmentUrl: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) throw new Error("학생을 찾을 수 없습니다");
+
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          throw new Error("권한이 없습니다");
+        }
+
+        const existing = await db.listTransferSubjects(input.studentId);
+        if ((existing?.length ?? 0) >= 100) {
+          throw new Error("전적대 과목은 최대 100개까지 등록할 수 있습니다");
+        }
+
+        const id = await db.createTransferSubject({
+          studentId: input.studentId,
+          schoolName: input.schoolName?.trim() || null,
+          subjectName: input.subjectName.trim(),
+          transferCategory: input.category,
+          transferRequirementType: input.requirementType ?? null,
+          credits: input.credits,
+          sortOrder: input.sortOrder ?? 0,
+          attachmentName: input.attachmentName?.trim() || null,
+          attachmentUrl: input.attachmentUrl?.trim() || null,
+        } as any);
+
+        return { success: true, id };
+      }),
+
+    /**
+     * 우리 플랜 과목 입력 전용
+     */
+    createPlanSemester: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+          semesterNo: z.number(),
+          subjectName: z.string().min(1),
+          category: z.enum(["전공", "교양", "일반"]),
+          requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]).optional(),
+          sortOrder: z.number().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) throw new Error("학생을 찾을 수 없습니다");
+
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          throw new Error("권한이 없습니다");
+        }
+
+        const existing = await db.listPlanSemesters(input.studentId);
+        const semesterCount = existing.filter(
+          (x: any) => Number(x.semesterNo) === Number(input.semesterNo)
+        ).length;
+
+        if (semesterCount >= 8) {
+          throw new Error("우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다");
+        }
+
+        const id = await db.createPlanSemester({
+          studentId: input.studentId,
+          semesterNo: input.semesterNo,
+          subjectName: input.subjectName.trim(),
+          planCategory: input.category,
+          planRequirementType: input.requirementType ?? null,
+          credits: 3,
+          sortOrder: input.sortOrder ?? 0,
+        } as any);
+
+        return { success: true, id };
+      }),
+
+    /**
+     * 1차 데모용 AI 채팅 응답
+     * 실제 LLM 붙이기 전까지는 서버 테스트용으로 사용
+     */
+    chat: protectedProcedure
+      .input(
+        z.object({
+          message: z.string().min(1),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const assigneeId = isAdminOrHost(ctx.user)
+          ? undefined
+          : Number(ctx.user.id) || 1;
+
+        const [students, consultations] = await Promise.all([
+          db.listStudents(assigneeId),
+          db.listConsultations(assigneeId),
+        ]);
+
+        const msg = input.message.trim();
+
+        if (msg.includes("찾아")) {
+          const keyword = msg.replace("찾아줘", "").replace("찾아", "").trim();
+          const matchedStudents = (students || []).filter((item: any) =>
+            String(item.clientName || "").includes(keyword)
+          );
+          const matchedConsultations = (consultations || []).filter((item: any) =>
+            String(item.clientName || "").includes(keyword)
+          );
+
+          return {
+            success: true,
+            mode: "search",
+            answer: `검색어 "${keyword}" 기준으로 학생 ${matchedStudents.length}건, 상담 ${matchedConsultations.length}건을 찾았습니다.`,
+            data: {
+              students: matchedStudents.slice(0, 10),
+              consultations: matchedConsultations.slice(0, 10),
+            },
+          };
+        }
+
+        if (msg.includes("누락") || msg.includes("결제")) {
+          const paymentDateMissing = (students || []).filter(
+            (s: any) => s.status === "등록" && !s.paymentDate
+          );
+          const paymentAmountMissing = (students || []).filter(
+            (s: any) => s.status === "등록" && !s.paymentAmount
+          );
+
+          return {
+            success: true,
+            mode: "alert",
+            answer: `결제일 누락 ${paymentDateMissing.length}건, 결제금액 누락 ${paymentAmountMissing.length}건입니다.`,
+            data: {
+              paymentDateMissing: paymentDateMissing.slice(0, 10),
+              paymentAmountMissing: paymentAmountMissing.slice(0, 10),
+            },
+          };
+        }
+
+        return {
+          success: true,
+          mode: "general",
+          answer:
+            "현재는 1차 AI 서버 연결 버전입니다. 학생/상담 검색, 누락/결제 점검, 전적대 과목 입력, 우리 플랜 입력 기능부터 연결할 수 있습니다.",
+        };
+      }),
+  }),
 
   dashboard: router({
     monthApprovals: protectedProcedure.query(async ({ ctx }) => {
@@ -2324,6 +2610,148 @@ practiceEducationCenter: router({
           canSeeAll ? input.assigneeId : Number(ctx.user.id)
         );
       }),
+  }),
+  superhost: router({
+    /**
+     * 슈퍼호스트 홈 대시보드
+     */
+    dashboard: superHostProcedure.query(async () => {
+      return {
+        success: true,
+        sections: [
+          { key: "tenants", label: "테넌트 관리", status: "준비중" },
+          { key: "layoutBuilder", label: "레이아웃 빌더", status: "준비중" },
+          { key: "aiPolicy", label: "AI 정책 관리", status: "준비중" },
+          { key: "security", label: "보안 분리", status: "진행중" },
+        ],
+      };
+    }),
+
+    /**
+     * superhost 전용 유저 생성
+     * host는 절대 superhost 유저를 만들 수 없게 분리
+     */
+    createUser: superHostProcedure
+      .input(
+        z.object({
+          openId: z.string().min(1),
+          username: z.string().min(1),
+          password: z.string().min(4),
+          name: z.string().min(1),
+          email: z.string().optional(),
+          phone: z.string().optional(),
+          role: z.enum(["staff", "admin", "host", "superhost"]).default("staff"),
+          bankName: z.string().optional(),
+          bankAccount: z.string().optional(),
+        })
+      )
+	
+	// superhost 계정이 이미 존재하는지 확인
+const existingSuperhost = await db.getAllUsersDetailed();
+const hasSuperhost = existingSuperhost.some(
+  (u: any) => u.role === "superhost"
+);
+
+if (hasSuperhost && input.role === "superhost") {
+  throw new Error("슈퍼호스트 계정은 1개만 생성 가능합니다.");
+}
+
+      .mutation(async ({ input }) => {
+        const passwordHash = await bcrypt.hash(input.password, 10);
+
+        await db.createUserAccount({
+          openId: input.openId.trim(),
+          username: input.username.trim(),
+          passwordHash,
+          name: input.name.trim(),
+          email: input.email?.trim() || null,
+          phone: input.phone?.trim() || null,
+          role: input.role,
+          bankName: input.bankName?.trim() || null,
+          bankAccount: input.bankAccount?.trim() || null,
+          loginMethod: "manual",
+          isActive: true,
+        });
+
+        return { success: true };
+      }),
+
+    /**
+     * superhost 전용 권한 변경
+     */
+    updateUserRole: superHostProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          role: z.enum(["staff", "admin", "host", "superhost"]),
+        })
+      )
+      .mutation(async ({ input }) => {
+        await db.updateUserRole(input.id, input.role);
+        return { success: true };
+
+	// 이미 존재하는 superhost 개수 확인
+const users = await db.getAllUsersDetailed();
+const superhostCount = users.filter((u: any) => u.role === "superhost").length;
+
+// superhost로 변경하려는 경우
+if (input.role === "superhost") {
+  // 현재 대상이 이미 superhost가 아닌데 추가 생성하려는 경우
+  const target = users.find((u: any) => u.id === input.id);
+
+  if (!target) throw new Error("유저 없음");
+
+  if (target.role !== "superhost" && superhostCount >= 1) {
+    throw new Error("슈퍼호스트는 1명만 가능합니다.");
+  }
+}
+      }),
+
+    /**
+     * 전체 사용자 목록
+     * 필요하면 나중에 tenantId 기준으로 분리
+     */
+    listUsers: superHostProcedure.query(async () => {
+      return db.getAllUsersDetailed();
+    }),
+
+    /**
+     * superhost용 AI 정책 더미
+     * 나중에 ai_policies 같은 테이블 생기면 연결
+     */
+    aiPolicy: router({
+      get: superHostProcedure.query(async () => {
+        return {
+          success: true,
+          policy: {
+            allowSearch: true,
+            allowCreateTransferSubject: true,
+            allowCreatePlanSemester: true,
+            allowDelete: false,
+            allowSchemaChange: false,
+            allowServerEdit: false,
+          },
+        };
+      }),
+
+      update: superHostProcedure
+        .input(
+          z.object({
+            allowSearch: z.boolean(),
+            allowCreateTransferSubject: z.boolean(),
+            allowCreatePlanSemester: z.boolean(),
+            allowDelete: z.boolean(),
+            allowSchemaChange: z.boolean(),
+            allowServerEdit: z.boolean(),
+          })
+        )
+        .mutation(async ({ input }) => {
+          return {
+            success: true,
+            policy: input,
+          };
+        }),
+    }),
   }),
 });
 

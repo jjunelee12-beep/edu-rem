@@ -253,16 +253,12 @@ export function AIChatBox({
 
   const renderMessageBubble = (message: Message) => {
     const isUser = message.role === "user";
-    const isError =
-      message.kind === "error" || message.kind === "warning";
+    const isError = message.kind === "error" || message.kind === "warning";
 
     return (
       <div
         key={message.id}
-        className={cn(
-          "flex gap-3",
-          isUser ? "justify-end" : "justify-start"
-        )}
+        className={cn("flex gap-3", isUser ? "justify-end" : "justify-start")}
       >
         {!isUser && (
           <div
@@ -295,9 +291,7 @@ export function AIChatBox({
             <div
               className={cn(
                 "mb-2 text-[11px]",
-                isUser
-                  ? "text-primary-foreground/70"
-                  : "text-muted-foreground"
+                isUser ? "text-primary-foreground/70" : "text-muted-foreground"
               )}
             >
               {message.createdAt}
@@ -592,11 +586,7 @@ export function AIChatBox({
           <Button
             type="submit"
             size="icon"
-            disabled={
-              disabled ||
-              isLoading ||
-              (!input.trim() && attachedFiles.length === 0)
-            }
+            disabled={disabled || isLoading || (!input.trim() && attachedFiles.length === 0)}
             className="h-[42px] w-[42px] shrink-0 rounded-xl"
             aria-label="전송"
           >
