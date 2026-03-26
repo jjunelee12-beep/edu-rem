@@ -581,6 +581,142 @@ notification: router({
             "현재는 1차 AI 서버 연결 버전입니다. 학생/상담 검색, 누락/결제 점검, 전적대 과목 입력, 우리 플랜 입력 기능부터 연결할 수 있습니다.",
         };
       }),
+
+logs: superHostProcedure.query(async () => {
+  return [];
+}),
+runAction: protectedProcedure
+  .input(
+    z.object({
+      action: z.enum(["create_transfer_subject", "create_plan_semester"]),
+      studentKeyword: z.string().min(1),
+      subjectName: z.string().min(1),
+      category: z.enum(["전공", "교양", "일반"]),
+      semesterNo: z.number().optional(),
+	selectedStudentId: z.number().optional(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const assigneeId = isAdminOrHost(ctx.user)
+      ? undefined
+      : Number(ctx.user.id) || 1;
+
+    const students = await db.listStudents(assigneeId);
+    const keyword = input.studentKeyword.trim();
+
+    const matchedStudents = (students || []).filter((item: any) => {
+	if (input.selectedStudentId) {
+  const selected = (students || []).find(
+    (item: any) => Number(item.id) === Number(input.selectedStudentId)
+  );
+
+  if (!selected) {
+    throw new Error("선택한 학생을 찾을 수 없습니다.");
+  }
+
+  matchedStudents.length = 0;
+  matchedStudents.push(selected);
+}
+      return (
+        String(item.clientName || "").includes(keyword) ||
+        String(item.phone || "").replace(/\D/g, "").includes(keyword.replace(/\D/g, ""))
+      );
+    });
+
+    if (matchedStudents.length === 0) {
+      throw new Error("해당 학생을 찾을 수 없습니다.");
+    }
+
+    if (matchedStudents.length > 1) {
+  return {
+    success: false,
+    needsSelection: true,
+    message: "동일하거나 유사한 학생이 여러 명입니다. 아래에서 선택해주세요.",
+    candidates: matchedStudents.slice(0, 10).map((student: any) => ({
+      id: student.id,
+      clientName: student.clientName,
+      phone: student.phone,
+      course: student.course,
+      status: student.status,
+      institution: student.institution,
+    })),
+  };
+}
+
+    const student = matchedStudents[0];
+
+    if (input.action === "create_transfer_subject") {
+	await db.createAiActionLog({
+  userId: ctx.user.id,
+  userName: ctx.user.name,
+  action: "create_transfer_subject",
+  targetStudentId: student.id,
+  targetStudentName: student.clientName,
+  payload: input,
+});
+      const id = await db.createTransferSubject({
+        studentId: student.id,
+        schoolName: null,
+        subjectName: input.subjectName.trim(),
+        transferCategory: input.category,
+        transferRequirementType: null,
+        credits: 3,
+        sortOrder: 0,
+        attachmentName: null,
+        attachmentUrl: null,
+      } as any);
+
+      return {
+        success: true,
+	needsSelection: false,
+        action: input.action,
+        student: {
+          id: student.id,
+          name: student.clientName,
+        },
+        createdId: id,
+        message: `${student.clientName} 학생의 전적대 과목 "${input.subjectName}" 입력이 완료되었습니다.`,
+      };
+    }
+
+    if (input.action === "create_plan_semester") {
+      if (!input.semesterNo) {
+        throw new Error("학기 정보가 필요합니다.");
+      }
+
+      const existing = await db.listPlanSemesters(student.id);
+      const semesterCount = (existing || []).filter(
+        (x: any) => Number(x.semesterNo) === Number(input.semesterNo)
+      ).length;
+
+      if (semesterCount >= 8) {
+        throw new Error("우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다.");
+      }
+
+      const id = await db.createPlanSemester({
+        studentId: student.id,
+        semesterNo: input.semesterNo,
+        subjectName: input.subjectName.trim(),
+        planCategory: input.category,
+        planRequirementType: null,
+        credits: 3,
+        sortOrder: 0,
+      } as any);
+
+      return {
+        success: true,
+        action: input.action,
+        student: {
+          id: student.id,
+          name: student.clientName,
+        },
+        createdId: id,
+        message: `${student.clientName} 학생의 ${input.semesterNo}학기 플랜 과목 "${input.subjectName}" 입력이 완료되었습니다.`,
+      };
+    }
+
+    throw new Error("지원하지 않는 액션입니다.");
+  }),
   }),
 
   dashboard: router({

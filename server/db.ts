@@ -38,6 +38,7 @@ practiceEducationCenters,
   InsertNotification,
 deviceTokens,
   InsertDeviceToken,
+aiActionLogs,
 } from "../drizzle/schema";
 
 import { ENV } from "./_core/env";
@@ -455,26 +456,25 @@ export async function updateUserAccount(
 
 export async function updateUserRole(
   id: number,
-role: "staff" | "admin" | "host" | "superhost"
+  role: "staff" | "admin" | "host" | "superhost"
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.update(users).set({ role } as any).where(eq(users.id, id));
+  // superhost 중복 방지
+  if (role === "superhost") {
+    const existing = await getAllUsersDetailed();
+    const current = existing.find((u: any) => u.id === id);
+    if (!current) throw new Error("유저 없음");
 
-	// superhost 중복 방지
-if (role === "superhost") {
-  const existing = await getAllUsersDetailed();
-  const count = existing.filter((u: any) => u.role === "superhost").length;
+    const count = existing.filter((u: any) => u.role === "superhost").length;
 
-  const current = existing.find((u: any) => u.id === id);
-
-  if (!current) throw new Error("유저 없음");
-
-  if (current.role !== "superhost" && count >= 1) {
-    throw new Error("슈퍼호스트는 1명만 가능합니다.");
+    if (current.role !== "superhost" && count >= 1) {
+      throw new Error("슈퍼호스트는 1명만 가능합니다.");
+    }
   }
-}
+
+  await db.update(users).set({ role } as any).where(eq(users.id, id));
 }
 
 export async function updateUserActive(id: number, isActive: boolean) {
@@ -2588,4 +2588,25 @@ export async function deleteJobSupportRequest(id: number) {
   if (!db) throw new Error("DB not available");
 
   await db.delete(jobSupportRequests).where(eq(jobSupportRequests.id, id));
+}
+
+export async function createAiActionLog(data: {
+  userId: number;
+  userName?: string;
+  action: string;
+  targetStudentId?: number;
+  targetStudentName?: string;
+  payload?: any;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  return await db.insert(aiActionLogs).values({
+    userId: data.userId,
+    userName: data.userName,
+    action: data.action,
+    targetStudentId: data.targetStudentId,
+    targetStudentName: data.targetStudentName,
+    payload: JSON.stringify(data.payload ?? {}),
+  });
 }

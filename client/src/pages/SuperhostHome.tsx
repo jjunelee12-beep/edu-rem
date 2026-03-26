@@ -13,10 +13,12 @@ import {
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { trpc } from "@/lib/trpc";
+
 
 export default function SuperhostHome() {
   const { user } = useAuth();
-
+const { data: logs } = trpc.ai.logs.useQuery();
   const stats = useMemo(
     () => [
       {
@@ -176,6 +178,14 @@ export default function SuperhostHome() {
           </CardContent>
         </Card>
       </div>
+{logs?.map((log) => (
+  <div key={log.id} className="border rounded p-2 text-sm">
+    <div>유저: {log.userName}</div>
+    <div>액션: {log.action}</div>
+    <div>학생: {log.targetStudentName}</div>
+    <div>시간: {log.createdAt}</div>
+  </div>
+))}
     </div>
   );
 }
