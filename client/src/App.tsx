@@ -23,6 +23,7 @@ import PrivateCertificateCenterPage from "@/pages/private-certificate-center";
 import PracticeSupportCenterPage from "@/pages/practice-support-center";
 import JobSupportCenterPage from "@/pages/job-support-center";
 import AIAssistant from "@/pages/AIAssistant";
+import SuperhostHome from "@/pages/SuperhostHome";
 
 function PublicRouter() {
   return (
@@ -52,11 +53,8 @@ function PrivateRouter() {
         <Route path="/system" component={System} />
 	<Route path="/ai" component={AIAssistant} />
 	<Route path="/education-institutions" component={EducationInstitutions} />
-        <Route component={NotFound} />
 	<Route path="/superhost" component={SuperhostHome} />
-<Route path="/superhost/tenants" component={SuperhostTenants} />
-<Route path="/superhost/layout-builder" component={SuperhostLayoutBuilder} />
-<Route path="/superhost/ai-policy" component={SuperhostAIPolicy} />
+	<Route component={NotFound} />
       </Switch>
     </DashboardLayout>
   );
