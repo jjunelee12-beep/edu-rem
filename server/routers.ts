@@ -132,44 +132,84 @@ export const appRouter = router({
       }),
   }),
 
-  leadFormAdmin: router({
-    list: hostProcedure.query(async () => {
-      return db.listLeadForms();
+  formAdmin: router({
+  list: hostProcedure
+    .input(z.object({
+      formType: z.enum(["landing", "ad"]),
+    }))
+    .query(async ({ input }) => {
+      return db.listLeadForms(input.formType);
     }),
 
-    create: hostProcedure
-      .input(
-        z.object({
-          assigneeId: z.number(),
-        })
-      )
-      .mutation(async ({ input }) => {
-        const token =
-          "lf_" +
-          Math.random().toString(36).slice(2, 10) +
-          Date.now().toString(36).slice(-4);
+  create: hostProcedure
+    .input(z.object({
+      assigneeId: z.number(),
+      formType: z.enum(["landing", "ad"]),
+    }))
+    .mutation(async ({ input }) => {
+      return db.createLeadForm(input.assigneeId, input.formType);
+    }),
 
-        const id = await db.createLeadForm({
-          token,
-          assigneeId: input.assigneeId,
-          isActive: true,
-        } as any);
+  updateActive: hostProcedure
+    .input(z.object({
+      id: z.number(),
+      isActive: z.boolean(),
+    }))
+    .mutation(async ({ input }) => {
+      return db.updateLeadFormActive(input.id, input.isActive);
+    }),
+}),
 
-        return { success: true, id, token };
-      }),
+publicForm: router({
+  getByToken: publicProcedure
+    .input(
+      z.object({
+        token: z.string(),
+        formType: z.enum(["landing", "ad"]),
+      })
+    )
+    .query(async ({ input }) => {
+      return db.getPublicFormByToken(input.token, input.formType);
+    }),
 
-    updateActive: hostProcedure
-      .input(
-        z.object({
-          id: z.number(),
-          isActive: z.boolean(),
-        })
-      )
-      .mutation(async ({ input }) => {
-        await db.updateLeadFormActive(input.id, input.isActive);
-        return { success: true };
-      }),
-  }),
+  submit: publicProcedure
+    .input(
+      z.object({
+        token: z.string(),
+        formType: z.enum(["landing", "ad"]),
+        clientName: z.string().min(1),
+        phone: z.string().min(10),
+        finalEducation: z.string().min(1),
+        desiredCourse: z.string().min(1),
+        channel: z.string().min(1),
+        notes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const form = await db.getPublicFormByToken(
+        input.token,
+        input.formType
+      );
+
+      if (!form?.ok) {
+        throw new Error("유효하지 않은 폼입니다.");
+      }
+
+      const id = await db.createConsultation({
+        consultDate: new Date(),
+        channel: input.channel,
+        clientName: input.clientName,
+        phone: input.phone,
+        finalEducation: input.finalEducation,
+        desiredCourse: input.desiredCourse,
+        notes: input.notes ?? "",
+        status: "상담중",
+        assigneeId: form.assigneeId,
+      } as any);
+
+      return { success: true, id };
+    }),
+}),
 
 notification: router({
   list: protectedProcedure.query(async ({ ctx }) => {

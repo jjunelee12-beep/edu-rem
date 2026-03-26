@@ -13,6 +13,7 @@ import {
   UserX,
   UserCheck,
   KeyRound,
+  Megaphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +26,7 @@ import {
 } from "@/components/ui/select";
 import { formatPhone } from "@/lib/format";
 
-type TabKey = "settlement" | "users" | "forms";
+type TabKey = "settlement" | "users" | "landingForms" | "adForms";
 type UserTabKey = "create" | "list" | "role" | "password";
 type UserRole = "staff" | "admin" | "host";
 
@@ -47,7 +48,7 @@ export default function System() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">시스템 관리</h1>
         <p className="text-muted-foreground mt-1">
-          정산 기준, 직원 계정, 랜딩폼 링크를 관리합니다.
+          정산 기준, 직원 계정, 랜딩폼 링크, 광고폼 링크를 관리합니다.
         </p>
       </div>
 
@@ -71,18 +72,28 @@ export default function System() {
         </Button>
 
         <Button
-          variant={tab === "forms" ? "default" : "outline"}
-          onClick={() => setTab("forms")}
+          variant={tab === "landingForms" ? "default" : "outline"}
+          onClick={() => setTab("landingForms")}
           className="gap-2"
         >
           <Link2 className="h-4 w-4" />
           랜딩폼 관리
         </Button>
+
+        <Button
+          variant={tab === "adForms" ? "default" : "outline"}
+          onClick={() => setTab("adForms")}
+          className="gap-2"
+        >
+          <Megaphone className="h-4 w-4" />
+          광고폼 관리
+        </Button>
       </div>
 
       {tab === "settlement" && <SettlementSystemSection />}
       {tab === "users" && <UserManagementSection />}
-      {tab === "forms" && <LeadFormManagementSection />}
+      {tab === "landingForms" && <LeadFormManagementSection />}
+      {tab === "adForms" && <AdFormManagementSection />}
     </div>
   );
 }
@@ -1031,19 +1042,35 @@ function UserManagementSection() {
 }
 
 function LeadFormManagementSection() {
+  return <BaseFormManagementSection title="랜딩폼" formType="landing" pathPrefix="/form" />;
+}
+
+function AdFormManagementSection() {
+  return <BaseFormManagementSection title="광고폼" formType="ad" pathPrefix="/ad-form" />;
+}
+
+function BaseFormManagementSection({
+  title,
+  formType,
+  pathPrefix,
+}: {
+  title: string;
+  formType: "landing" | "ad";
+  pathPrefix: "/form" | "/ad-form";
+}) {
   const utils = trpc.useUtils();
-  const { data: forms, isLoading } = trpc.leadFormAdmin.list.useQuery();
+  const { data: forms, isLoading } = trpc.formAdmin.list.useQuery({ formType });
   const { data: users } = trpc.users.list.useQuery();
 
   const [assigneeId, setAssigneeId] = useState("");
 
-  const createMutation = trpc.leadFormAdmin.create.useMutation({
+  const createMutation = trpc.formAdmin.create.useMutation({
     onSuccess: async (res) => {
-      toast.success("랜딩폼 링크가 생성되었습니다.");
-      utils.leadFormAdmin.list.invalidate();
+      toast.success(`${title} 링크가 생성되었습니다.`);
+      utils.formAdmin.list.invalidate({ formType });
 
       if (res?.token) {
-        const url = `${window.location.origin}/form/${res.token}`;
+        const url = `${window.location.origin}${pathPrefix}/${res.token}`;
         try {
           await navigator.clipboard.writeText(url);
           toast.success("링크가 자동으로 복사되었습니다.");
@@ -1057,19 +1084,17 @@ function LeadFormManagementSection() {
     },
   });
 
-  const updateActiveMutation = trpc.leadFormAdmin.updateActive.useMutation({
+  const updateActiveMutation = trpc.formAdmin.updateActive.useMutation({
     onSuccess: () => {
       toast.success("활성 상태가 변경되었습니다.");
-      utils.leadFormAdmin.list.invalidate();
+      utils.formAdmin.list.invalidate({ formType });
     },
     onError: (e) => {
       toast.error(e.message);
     },
   });
 
-  const userMap = new Map(
-  users?.map((u: any) => [Number(u.id), u]) ?? []
-);
+  const userMap = new Map(users?.map((u: any) => [Number(u.id), u]) ?? []);
 
   const handleCreate = () => {
     if (!assigneeId) {
@@ -1079,11 +1104,12 @@ function LeadFormManagementSection() {
 
     createMutation.mutate({
       assigneeId: Number(assigneeId),
+      formType,
     });
   };
 
   const copyLink = async (token: string) => {
-    const url = `${window.location.origin}/form/${token}`;
+    const url = `${window.location.origin}${pathPrefix}/${token}`;
     try {
       await navigator.clipboard.writeText(url);
       toast.success("링크가 복사되었습니다.");
@@ -1095,8 +1121,8 @@ function LeadFormManagementSection() {
   const toggleActive = (f: any) => {
     const ok = window.confirm(
       f.isActive
-        ? "이 랜딩폼을 비활성화하시겠습니까?"
-        : "이 랜딩폼을 다시 활성화하시겠습니까?"
+        ? `이 ${title}을 비활성화하시겠습니까?`
+        : `이 ${title}을 다시 활성화하시겠습니까?`
     );
     if (!ok) return;
 
@@ -1110,25 +1136,26 @@ function LeadFormManagementSection() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>랜딩폼 생성</CardTitle>
+          <CardTitle>{title} 생성</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-3 items-center">
             <Select value={assigneeId} onValueChange={setAssigneeId}>
-              <SelectTrigger className="w-[260px]">
+              <SelectTrigger className="w-[300px]">
                 <SelectValue placeholder="담당 직원 선택" />
               </SelectTrigger>
               <SelectContent>
-  {users?.map((u: any) => (
-    <SelectItem key={u.id} value={String(u.id)}>
-      {u.name || "-"} / {u.username || "-"} / {u.role} / {formatPhone(u.phone || "") || "-"}
-    </SelectItem>
-  ))}
-</SelectContent>
+                {users?.map((u: any) => (
+                  <SelectItem key={u.id} value={String(u.id)}>
+                    {u.name || "-"} / {u.username || "-"} / {u.role} /{" "}
+                    {formatPhone(u.phone || "") || "-"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
 
             <Button onClick={handleCreate} disabled={createMutation.isPending}>
-              {createMutation.isPending ? "생성 중..." : "랜딩폼 생성"}
+              {createMutation.isPending ? "생성 중..." : `${title} 생성`}
             </Button>
           </div>
 
@@ -1140,88 +1167,77 @@ function LeadFormManagementSection() {
 
       <Card>
         <CardHeader>
-          <CardTitle>랜딩폼 목록</CardTitle>
+          <CardTitle>{title} 목록</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="text-sm text-muted-foreground">불러오는 중...</div>
           ) : !forms || forms.length === 0 ? (
             <div className="text-sm text-muted-foreground">
-              생성된 랜딩폼이 없습니다.
+              생성된 {title}이 없습니다.
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-  <tr className="border-b bg-muted/50">
-    <th className="px-4 py-3 text-left">ID</th>
-    <th className="px-4 py-3 text-left">토큰</th>
-    <th className="px-4 py-3 text-left">담당자</th>
-    <th className="px-4 py-3 text-left">아이디</th>
-    <th className="px-4 py-3 text-left">전화번호</th>
-    <th className="px-4 py-3 text-left">상태</th>
-    <th className="px-4 py-3 text-left">생성일</th>
-    <th className="px-4 py-3 text-right">관리</th>
-  </tr>
-</thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="px-4 py-3 text-left">ID</th>
+                    <th className="px-4 py-3 text-left">토큰</th>
+                    <th className="px-4 py-3 text-left">담당자</th>
+                    <th className="px-4 py-3 text-left">아이디</th>
+                    <th className="px-4 py-3 text-left">전화번호</th>
+                    <th className="px-4 py-3 text-left">상태</th>
+                    <th className="px-4 py-3 text-left">생성일</th>
+                    <th className="px-4 py-3 text-right">관리</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {forms.map((f: any) => {
-  const assignee = userMap.get(Number(f.assigneeId));
+                    const assignee = userMap.get(Number(f.assigneeId));
 
-  return (
-    <tr key={f.id} className="border-b last:border-0">
-      <td className="px-4 py-3">{f.id}</td>
+                    return (
+                      <tr key={f.id} className="border-b last:border-0">
+                        <td className="px-4 py-3">{f.id}</td>
+                        <td className="px-4 py-3 font-mono text-xs">{f.token}</td>
+                        <td className="px-4 py-3">{assignee?.name || "-"}</td>
+                        <td className="px-4 py-3">{assignee?.username || "-"}</td>
+                        <td className="px-4 py-3">
+                          {formatPhone(assignee?.phone || "") || "-"}
+                        </td>
+                        <td className="px-4 py-3">
+                          {f.isActive ? (
+                            <span className="text-emerald-600 font-medium">활성</span>
+                          ) : (
+                            <span className="text-red-600 font-medium">비활성</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {f.createdAt
+                            ? new Date(f.createdAt).toLocaleString("ko-KR")
+                            : "-"}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => copyLink(f.token)}
+                            >
+                              링크 복사
+                            </Button>
 
-      <td className="px-4 py-3 font-mono text-xs">{f.token}</td>
-
-      <td className="px-4 py-3">
-        {assignee?.name || "-"}
-      </td>
-
-      <td className="px-4 py-3">
-        {assignee?.username || "-"}
-      </td>
-
-      <td className="px-4 py-3">
-        {formatPhone(assignee?.phone || "") || "-"}
-      </td>
-
-      <td className="px-4 py-3">
-        {f.isActive ? (
-          <span className="text-emerald-600 font-medium">활성</span>
-        ) : (
-          <span className="text-red-600 font-medium">비활성</span>
-        )}
-      </td>
-
-      <td className="px-4 py-3">
-        {f.createdAt
-          ? new Date(f.createdAt).toLocaleString("ko-KR")
-          : "-"}
-      </td>
-
-      <td className="px-4 py-3 text-right">
-        <div className="flex justify-end gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => copyLink(f.token)}
-          >
-            링크 복사
-          </Button>
-
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => toggleActive(f)}
-          >
-            {f.isActive ? "비활성화" : "활성화"}
-          </Button>
-        </div>
-      </td>
-    </tr>
-  );
-})}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => toggleActive(f)}
+                            >
+                              {f.isActive ? "비활성화" : "활성화"}
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

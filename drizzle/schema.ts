@@ -17,6 +17,7 @@ export const leadForms = mysqlTable("lead_forms", {
   id: int("id").autoincrement().primaryKey(),
   token: varchar("token", { length: 100 }).notNull(),
   assigneeId: int("assigneeId").notNull(),
+formType: mysqlEnum("formType", ["landing", "ad"]).notNull().default("landing"),
   isActive: boolean("isActive").notNull().default(true),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });

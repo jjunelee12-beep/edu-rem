@@ -17,6 +17,7 @@ import Settlement from "./pages/Settlement";
 import SemesterList from "./pages/SemesterList";
 import System from "./pages/System";
 import PublicLeadFormPage from "@/pages/PublicLeadFormPage";
+import AdFormPage from "@/pages/AdFormPage";
 import EducationInstitutions from "@/pages/EducationInstitutions";
 import PrivateCertificateCenterPage from "@/pages/private-certificate-center";
 import PracticeSupportCenterPage from "@/pages/practice-support-center";
@@ -26,6 +27,7 @@ function PublicRouter() {
   return (
     <Switch>
       <Route path="/form/:token" component={PublicLeadFormPage} />
+	<Route path="/ad-form/:token" component={AdFormPage} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -56,7 +58,8 @@ function PrivateRouter() {
 
 function AppContent() {
   const [location] = useLocation();
-  const isPublicFormPage = location.startsWith("/form/");
+  const isPublicFormPage =
+  location.startsWith("/form/") || location.startsWith("/ad-form/");
 
   if (isPublicFormPage) {
     return <PublicRouter />;

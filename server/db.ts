@@ -205,19 +205,76 @@ export async function getLeadFormByToken(token: string) {
   return result[0];
 }
 
-export async function listLeadForms() {
+export async function getPublicFormByToken(
+  token: string,
+  formType: "landing" | "ad"
+) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return { ok: false };
 
-  return db.select().from(leadForms).orderBy(desc(leadForms.createdAt));
+  const result = await db
+    .select()
+    .from(leadForms)
+    .where(
+      and(
+        eq(leadForms.token, token),
+        eq(leadForms.formType, formType),
+        eq(leadForms.isActive, true)
+      )
+    )
+    .limit(1);
+
+  const form = result[0];
+  if (!form) return { ok: false };
+
+  const userResult = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      phone: users.phone,
+    })
+    .from(users)
+    .where(eq(users.id, form.assigneeId))
+    .limit(1);
+
+  const assignee = userResult[0];
+
+  return {
+    ok: true,
+    form,
+    assigneeId: form.assigneeId,
+    assigneeName: assignee?.name ?? "",
+    phone: assignee?.phone ?? "",
+  };
 }
 
-export async function createLeadForm(data: InsertLeadForm) {
+export async function listLeadForms(formType: "landing" | "ad") {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  return db
+    .select()
+    .from(leadForms)
+    .where(eq(leadForms.formType, formType))
+    .orderBy(desc(leadForms.id));
+}
 
-  const result: any = await db.insert(leadForms).values(data);
-  return getInsertId(result);
+export async function createLeadForm(
+  assigneeId: number,
+  formType: "landing" | "ad"
+) {
+  const db = await getDb();
+  const token =
+    formType === "ad"
+      ? `ad_${Math.random().toString(36).slice(2, 12)}`
+      : `lf_${Math.random().toString(36).slice(2, 12)}`;
+
+  await db.insert(leadForms).values({
+    assigneeId,
+    token,
+    formType,
+    isActive: true,
+  });
+
+  return { token };
 }
 
 export async function updateLeadFormActive(id: number, isActive: boolean) {

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useRoute } from "wouter";
 import { trpc } from "@/lib/trpc";
+import "@/styles/public-lead-form.css";
 
 export default function PublicLeadFormPage() {
   const [match, params] = useRoute("/form/:token");
@@ -17,6 +18,14 @@ export default function PublicLeadFormPage() {
 
   const normalizedPhone = useMemo(() => {
     return phone.replace(/\D/g, "").slice(0, 11);
+  }, [phone]);
+
+  const formattedPhone = useMemo(() => {
+    const digits = phone.replace(/\D/g, "").slice(0, 11);
+
+    if (digits.length < 4) return digits;
+    if (digits.length < 8) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
   }, [phone]);
 
   const formQuery = trpc.leadForm.getByToken.useQuery(
@@ -80,14 +89,23 @@ export default function PublicLeadFormPage() {
   };
 
   if (formQuery.isLoading) {
-    return <PageShell>불러오는 중입니다...</PageShell>;
+    return (
+      <PageShell>
+        <div className="lead-form-state-box">
+          <h2 className="lead-form-state-title">불러오는 중입니다...</h2>
+          <p className="lead-form-state-text">잠시만 기다려주세요.</p>
+        </div>
+      </PageShell>
+    );
   }
 
   if (!token || !formQuery.data?.ok) {
     return (
       <PageShell>
-        <h2>유효하지 않은 링크입니다.</h2>
-        <p>관리자에게 문의해주세요.</p>
+        <div className="lead-form-state-box">
+          <h2 className="lead-form-state-title">유효하지 않은 링크입니다.</h2>
+          <p className="lead-form-state-text">관리자에게 문의해주세요.</p>
+        </div>
       </PageShell>
     );
   }
@@ -95,163 +113,127 @@ export default function PublicLeadFormPage() {
   if (done) {
     return (
       <PageShell>
-        <h2>상담 신청이 접수되었습니다.</h2>
-        <p>순차적으로 상담드리고 있어 빠르게 연락드리겠습니다.</p>
+        <div className="lead-form-state-box">
+          <h2 className="lead-form-state-title">상담 신청이 접수되었습니다.</h2>
+          <p className="lead-form-state-text">
+            순차적으로 확인 후 빠르게 연락드리겠습니다.
+          </p>
+        </div>
       </PageShell>
     );
   }
 
   return (
     <PageShell>
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>
-          상담 신청
-        </h1>
-        <p style={{ color: "#666", fontSize: 14 }}>
-          아래 정보를 입력해주시면 빠르게 안내드리겠습니다.
-        </p>
-      </div>
-
-      <form onSubmit={handleSubmit} style={{ display: "grid", gap: 12 }}>
-        <input
-          value={clientName}
-          onChange={(e) => setClientName(e.target.value)}
-          placeholder="이름"
-          style={inputStyle}
-        />
-
-        <input
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          placeholder="전화번호"
-          style={inputStyle}
-        />
-
-        <select
-          value={finalEducation}
-          onChange={(e) => setFinalEducation(e.target.value)}
-          style={inputStyle}
-        >
-          <option value="">최종학력 선택</option>
-          <option value="고등학교 졸업">고등학교 졸업</option>
-          <option value="전문학사">전문학사</option>
-          <option value="학사">학사</option>
-          <option value="기타">기타</option>
-        </select>
-
-        <select
-          value={desiredCourse}
-          onChange={(e) => setDesiredCourse(e.target.value)}
-          style={inputStyle}
-        >
-          <option value="">희망과정 선택</option>
-          <option value="사회복지사">사회복지사</option>
-          <option value="보육교사">보육교사</option>
-          <option value="평생교육사">평생교육사</option>
-          <option value="건강가정사">건강가정사</option>
-          <option value="한국어교원">한국어교원</option>
-          <option value="청소년지도사">청소년지도사</option>
-          <option value="산업기사/기사">산업기사/기사</option>
-          <option value="전문학사/학사">전문학사/학사</option>
-          <option value="기타">기타</option>
-        </select>
-
-        <input
-          value={channel}
-          onChange={(e) => setChannel(e.target.value)}
-          placeholder="문의경로 (예: 블로그, 인스타, 지인추천)"
-          style={inputStyle}
-        />
-
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="진행하시면서 걱정되시는 부분 적어주세요!"
-          style={textareaStyle}
-        />
-
-        <label style={{ fontSize: 14, color: "#444" }}>
-          <input
-            type="checkbox"
-            checked={agreed}
-            onChange={(e) => setAgreed(e.target.checked)}
-            style={{ marginRight: 8 }}
+      <div className="lead-form-card">
+        <div className="lead-form-header">
+          <img
+            src="/images/logo.png"
+            alt="위드원 교육 로고"
+            className="lead-form-logo"
           />
-          개인정보 수집 및 이용에 동의합니다.
-        </label>
 
-        <button
-          type="submit"
-          disabled={submitMutation.isPending}
-          style={{
-            ...buttonStyle,
-            opacity: submitMutation.isPending ? 0.7 : 1,
-            cursor: submitMutation.isPending ? "not-allowed" : "pointer",
-          }}
-        >
-          {submitMutation.isPending ? "접수 중..." : "상담 신청하기"}
-        </button>
-      </form>
+          <h1 className="lead-form-title">
+            목표를 향한 배움의 길,
+            <br />
+            위드원 교육이 함께할게요
+          </h1>
+
+          <p className="lead-form-subtitle">
+            상담은 <strong>100% 무료</strong>로 진행됩니다.
+          </p>
+        </div>
+
+        <form className="lead-form-body" onSubmit={handleSubmit}>
+          <input
+            className="lead-form-input"
+            value={clientName}
+            onChange={(e) => setClientName(e.target.value)}
+            placeholder="이름"
+            autoComplete="name"
+          />
+
+          <input
+            className="lead-form-input"
+            value={formattedPhone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="전화번호"
+            inputMode="numeric"
+            autoComplete="tel"
+          />
+
+          <div className="lead-form-select-wrap">
+            <select
+              className="lead-form-select"
+              value={finalEducation}
+              onChange={(e) => setFinalEducation(e.target.value)}
+            >
+              <option value="">최종학력 선택</option>
+              <option value="고등학교 졸업">고등학교 졸업</option>
+              <option value="전문학사">전문학사</option>
+              <option value="학사">학사</option>
+              <option value="석사 이상">석사 이상</option>
+              <option value="기타">기타</option>
+            </select>
+            <span className="lead-form-select-arrow">⌄</span>
+          </div>
+
+          <div className="lead-form-select-wrap">
+            <select
+              className="lead-form-select"
+              value={desiredCourse}
+              onChange={(e) => setDesiredCourse(e.target.value)}
+            >
+              <option value="">희망과정 선택</option>
+              <option value="사회복지사">사회복지사</option>
+              <option value="보육교사">보육교사</option>
+              <option value="평생교육사">평생교육사</option>
+              <option value="건강가정사">건강가정사</option>
+              <option value="한국어교원">한국어교원</option>
+              <option value="청소년지도사">청소년지도사</option>
+              <option value="산업기사/기사">산업기사/기사</option>
+              <option value="전문학사/학사">전문학사/학사</option>
+              <option value="기타">기타</option>
+            </select>
+            <span className="lead-form-select-arrow">⌄</span>
+          </div>
+
+          <input
+            className="lead-form-input"
+            value={channel}
+            onChange={(e) => setChannel(e.target.value)}
+            placeholder="문의경로 (예. 블로그, 인스타, 지인추천)"
+          />
+
+          <textarea
+            className="lead-form-textarea"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="진행하시면서 걱정되시는 부분 적어주세요!"
+          />
+
+          <label className="lead-form-agree">
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+            />
+            <span>개인정보 수집 및 이용에 동의합니다.</span>
+          </label>
+
+          <button
+            type="submit"
+            className="lead-form-submit"
+            disabled={submitMutation.isPending}
+          >
+            {submitMutation.isPending ? "접수 중..." : "1:1 맞춤 상담 받기"}
+          </button>
+        </form>
+      </div>
     </PageShell>
   );
 }
 
 function PageShell({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "#f6f7f9",
-        padding: 20,
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 460,
-          background: "#fff",
-          borderRadius: 16,
-          padding: 28,
-          boxShadow: "0 8px 30px rgba(0,0,0,0.08)",
-        }}
-      >
-        {children}
-      </div>
-    </div>
-  );
+  return <div className="lead-form-page">{children}</div>;
 }
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  height: 46,
-  padding: "0 14px",
-  border: "1px solid #ddd",
-  borderRadius: 10,
-  fontSize: 14,
-  boxSizing: "border-box",
-};
-
-const textareaStyle: React.CSSProperties = {
-  width: "100%",
-  minHeight: 120,
-  padding: "12px 14px",
-  border: "1px solid #ddd",
-  borderRadius: 10,
-  fontSize: 14,
-  boxSizing: "border-box",
-  resize: "vertical",
-  fontFamily: "inherit",
-};
-
-const buttonStyle: React.CSSProperties = {
-  width: "100%",
-  height: 48,
-  border: "none",
-  borderRadius: 10,
-  background: "#111827",
-  color: "#fff",
-  fontSize: 15,
-};
