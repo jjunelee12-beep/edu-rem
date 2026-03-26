@@ -5,63 +5,7 @@
       "destination": "https://edu-crm-api-production.up.railway.app/api/:path*"
     },
     {
-      "source": "/form/:path*",
-      "destination": "/"
-    },
-{
-  "source": "/ad-form/:path*",
-  "destination": "/"
-},
-    {
-      "source": "/consultations",
-      "destination": "/"
-    },
-    {
-      "source": "/students",
-      "destination": "/"
-    },
-    {
-      "source": "/students/:path*",
-      "destination": "/"
-    },
-    {
-      "source": "/semesters",
-      "destination": "/"
-    },
-    {
-      "source": "/approvals",
-      "destination": "/"
-    },
-    {
-      "source": "/settlement",
-      "destination": "/"
-    },
-    {
-      "source": "/system",
-      "destination": "/"
-    },
-    {
-      "source": "/education-institutions",
-      "destination": "/"
-    },
-    {
-      "source": "/sms",
-      "destination": "/"
-    },
-    {
-      "source": "/sms/:path*",
-      "destination": "/"
-    },
-    {
-      "source": "/private-certificate-center",
-      "destination": "/"
-    },
-    {
-      "source": "/practice-support-center",
-      "destination": "/"
-    },
-    {
-      "source": "/job-support-center",
+      "source": "/(.*)",
       "destination": "/"
     }
   ]
