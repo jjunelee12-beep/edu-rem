@@ -53,39 +53,7 @@ function buildSearchResultMessage(query: string, response: any): Message {
     },
   };
 }
-function buildSearchResultMessage(query: string, response: any): Message {
-  return {
-    id: `assistant-search-${Date.now()}`,
-    role: "assistant",
-    content:
-      response.students?.length || response.consultations?.length
-        ? `검색어 "${query}" 기준 결과입니다.`
-        : `검색어 "${query}" 기준 결과가 없습니다.`,
-    createdAt: nowTimeLabel(),
-    kind: "search_result",
-    searchResults: {
-      students:
-        response.students?.map((item: any) => ({
-          id: item.id,
-          type: "student" as const,
-          clientName: item.clientName,
-          phone: item.phone,
-          course: item.course,
-          status: item.status,
-          institution: item.institution,
-        })) ?? [],
-      consultations:
-        response.consultations?.map((item: any) => ({
-          id: item.id,
-          type: "consultation" as const,
-          clientName: item.clientName,
-          phone: item.phone,
-          desiredCourse: item.desiredCourse,
-          status: item.status,
-        })) ?? [],
-    },
-  };
-}
+
 
 function buildAlertsMessage(response: any, title: string): Message {
   const lines = [
@@ -141,14 +109,6 @@ for (const pattern of transferPatterns) {
   }
 }
 
-  if (transferMatch) {
-    return {
-      action: "create_transfer_subject",
-      studentKeyword: transferMatch[1].trim(),
-      subjectName: transferMatch[2].trim(),
-      category,
-    };
-  }
 
  const planPatterns = [
   /^(.+?)\s+(\d+)학기(?:에)?\s+(.+?)\s+(전공|교양|일반)(?:으로)?\s*(넣어줘|입력해줘|등록해줘|추가해줘|추가)?$/,
@@ -169,17 +129,6 @@ for (const pattern of planPatterns) {
     };
   }
 }
-
-  if (planMatch) {
-    return {
-      action: "create_plan_semester",
-      studentKeyword: planMatch[1].trim(),
-      semesterNo: Number(planMatch[2]),
-      subjectName: planMatch[3].trim(),
-      category,
-    };
-  }
-
   return null;
 }
 
@@ -234,6 +183,10 @@ const [transferCategory, setTransferCategory] = useState<"전공" | "교양" | "
 
 const [planSemesterNo, setPlanSemesterNo] = useState(1);
 const [planSubjectName, setPlanSubjectName] = useState("");
+const [planCategory, setPlanCategory] = useState<"전공" | "교양" | "일반">("전공");
+const [actionCandidates, setActionCandidates] = useState<
+  { id: number; clientName?: string; phone?: string; course?: string; status?: string; institution?: string }[]
+>([]);
 const [pendingAction, setPendingAction] = useState<
   | {
       action: "create_transfer_subject" | "create_plan_semester";
@@ -292,28 +245,182 @@ const [quickSearchKeyword, setQuickSearchKeyword] = useState("");
   ],
   []
 );
-
-  const handleSendMessage = async (content: string, files?: File[]) => {
-const handleQuickAction = async (action: QuickAction) => {
+const handleSendMessage = async (content: string, files?: File[]) => {
   setErrorMessage(null);
-if (action.key === "student_search") {
-  setQuickSearchType("student");
-  setQuickSearchKeyword("");
-  return;
-}
 
-if (action.key === "consultation_search") {
-  setQuickSearchType("consultation");
-  setQuickSearchKeyword("");
-  return;
-}
   const userMessage: Message = {
     id: `user-${Date.now()}`,
     role: "user",
-    content:
-  action.key === "student_search" || action.key === "consultation_search"
-    ? `${action.label}`
-    : action.prompt,
+    content: content || (files?.length ? "[파일만 첨부됨]" : ""),
+    createdAt: nowTimeLabel(),
+    attachments: files?.map((file) => ({
+      id: `${file.name}-${file.size}`,
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      url: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+    })),
+  };
+
+  setMessages((prev) => [...prev, userMessage]);
+  setIsLoading(true);
+
+  try {
+    const parsedAction = parseActionPrompt(content);
+
+    if (parsedAction) {
+      const previewResponse = await runActionMutation.mutateAsync(parsedAction);
+
+      if (previewResponse.needsSelection) {
+        setPendingAction(parsedAction);
+        setActionCandidates(previewResponse.candidates ?? []);
+
+        const assistantMessage: Message = {
+          id: `assistant-select-${Date.now()}`,
+          role: "assistant",
+          content: previewResponse.message || "대상 학생을 선택해주세요.",
+          createdAt: nowTimeLabel(),
+          kind: "search_result",
+          searchResults: {
+            students: (previewResponse.candidates ?? []).map((item: any) => ({
+              id: item.id,
+              type: "student" as const,
+              clientName: item.clientName,
+              phone: item.phone,
+              course: item.course,
+              status: item.status,
+              institution: item.institution,
+            })),
+          },
+        };
+
+        setMessages((prev) => [...prev, assistantMessage]);
+        return;
+      }
+
+      setPendingAction({
+        ...parsedAction,
+        selectedStudentId: previewResponse.student?.id,
+      });
+
+      const assistantMessage: Message = {
+        id: `assistant-confirm-${Date.now()}`,
+        role: "assistant",
+        content:
+          parsedAction.action === "create_transfer_subject"
+            ? [
+                "입력 전 확인이 필요합니다.",
+                "",
+                `학생: ${previewResponse.student?.name || parsedAction.studentKeyword}`,
+                `작업: 전적대 과목 입력`,
+                `과목명: ${parsedAction.subjectName}`,
+                `구분: ${parsedAction.category}`,
+                "",
+                "아래 확인 버튼을 누르면 입력합니다.",
+              ].join("\n")
+            : [
+                "입력 전 확인이 필요합니다.",
+                "",
+                `학생: ${previewResponse.student?.name || parsedAction.studentKeyword}`,
+                `작업: 우리 플랜 입력`,
+                `학기: ${parsedAction.semesterNo}학기`,
+                `과목명: ${parsedAction.subjectName}`,
+                `구분: ${parsedAction.category}`,
+                "",
+                "아래 확인 버튼을 누르면 입력합니다.",
+              ].join("\n"),
+        createdAt: nowTimeLabel(),
+        kind: "warning",
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+      return;
+    }
+
+    const response = await chatMutation.mutateAsync({
+      message: content,
+    });
+
+    const assistantMessage: Message = {
+      id: `assistant-${Date.now()}`,
+      role: "assistant",
+      content: response.answer || "응답이 없습니다.",
+      createdAt: nowTimeLabel(),
+      kind:
+        response.mode === "search"
+          ? "search_result"
+          : response.mode === "alert"
+          ? "warning"
+          : "text",
+      searchResults:
+        response.mode === "search"
+          ? {
+              students:
+                response.data?.students?.map((item: any) => ({
+                  id: item.id,
+                  type: "student" as const,
+                  clientName: item.clientName,
+                  phone: item.phone,
+                  course: item.course,
+                  status: item.status,
+                  institution: item.institution,
+                })) ?? [],
+              consultations:
+                response.data?.consultations?.map((item: any) => ({
+                  id: item.id,
+                  type: "consultation" as const,
+                  clientName: item.clientName,
+                  phone: item.phone,
+                  desiredCourse: item.desiredCourse,
+                  status: item.status,
+                })) ?? [],
+            }
+          : undefined,
+    };
+
+    setMessages((prev) => [...prev, assistantMessage]);
+  } catch (error) {
+    console.error("[AIAssistant] send failed:", error);
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : "AI 응답 처리 중 오류가 발생했습니다.";
+
+    const failMessage: Message = {
+      id: `assistant-error-${Date.now()}`,
+      role: "assistant",
+      content: message,
+      createdAt: nowTimeLabel(),
+      kind: "error",
+    };
+
+    setMessages((prev) => [...prev, failMessage]);
+    setErrorMessage(message);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+const handleQuickAction = async (action: QuickAction) => {
+  setErrorMessage(null);
+
+  if (action.key === "student_search") {
+    setQuickSearchType("student");
+    setQuickSearchKeyword("");
+    return;
+  }
+
+  if (action.key === "consultation_search") {
+    setQuickSearchType("consultation");
+    setQuickSearchKeyword("");
+    return;
+  }
+
+  const userMessage: Message = {
+    id: `user-${Date.now()}`,
+    role: "user",
+    content: action.prompt,
     createdAt: nowTimeLabel(),
   };
 
@@ -321,96 +428,6 @@ if (action.key === "consultation_search") {
   setIsLoading(true);
 
   try {
-const parsedAction = parseActionPrompt(content);
-
-if (parsedAction) {
-  const previewResponse = await runActionMutation.mutateAsync(parsedAction);
-
-  if (previewResponse.needsSelection) {
-    setPendingAction(parsedAction);
-    setActionCandidates(previewResponse.candidates ?? []);
-
-    const assistantMessage: Message = {
-      id: `assistant-select-${Date.now()}`,
-      role: "assistant",
-      content: previewResponse.message || "대상 학생을 선택해주세요.",
-      createdAt: nowTimeLabel(),
-      kind: "search_result",
-      searchResults: {
-        students: (previewResponse.candidates ?? []).map((item: any) => ({
-          id: item.id,
-          type: "student" as const,
-          clientName: item.clientName,
-          phone: item.phone,
-          course: item.course,
-          status: item.status,
-          institution: item.institution,
-        })),
-      },
-    };
-
-    setMessages((prev) => [...prev, assistantMessage]);
-    return;
-  }
-
-  setPendingAction({
-    ...parsedAction,
-    selectedStudentId: previewResponse.student?.id,
-  });
-
-  const assistantMessage: Message = {
-    id: `assistant-confirm-${Date.now()}`,
-    role: "assistant",
-    content:
-      parsedAction.action === "create_transfer_subject"
-        ? [
-            "입력 전 확인이 필요합니다.",
-            "",
-            `학생: ${previewResponse.student?.name || parsedAction.studentKeyword}`,
-            `작업: 전적대 과목 입력`,
-            `과목명: ${parsedAction.subjectName}`,
-            `구분: ${parsedAction.category}`,
-            "",
-            "아래 확인 버튼을 누르면 입력합니다.",
-          ].join("\n")
-        : [
-            "입력 전 확인이 필요합니다.",
-            "",
-            `학생: ${previewResponse.student?.name || parsedAction.studentKeyword}`,
-            `작업: 우리 플랜 입력`,
-            `학기: ${parsedAction.semesterNo}학기`,
-            `과목명: ${parsedAction.subjectName}`,
-            `구분: ${parsedAction.category}`,
-            "",
-            "아래 확인 버튼을 누르면 입력합니다.",
-          ].join("\n"),
-    createdAt: nowTimeLabel(),
-    kind: "warning",
-  };
-
-  setMessages((prev) => [...prev, assistantMessage]);
-  return;
-}
-
-  if (action.key === "student_search") {
-  setQuickSearchType("student");
-  setQuickSearchKeyword("");
-  setIsLoading(false);
-  return;
-}
-
-if (action.key === "consultation_search") {
-  setQuickSearchType("consultation");
-  setQuickSearchKeyword("");
-  setIsLoading(false);
-  return;
-}
-
-      const assistantMessage = buildSearchResultMessage(action.prompt, response);
-      setMessages((prev) => [...prev, assistantMessage]);
-      return;
-    }
-
     if (action.key === "alerts_missing" || action.key === "alerts_payment") {
       const response = await alertsQuery.refetch();
 
@@ -428,31 +445,69 @@ if (action.key === "consultation_search") {
     }
 
     if (action.key === "error_analysis") {
-      await handleSendMessage(action.prompt);
+      const response = await chatMutation.mutateAsync({
+        message: action.prompt,
+      });
+
+      const assistantMessage: Message = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: response.answer || "응답이 없습니다.",
+        createdAt: nowTimeLabel(),
+        kind:
+          response.mode === "search"
+            ? "search_result"
+            : response.mode === "alert"
+            ? "warning"
+            : "text",
+        searchResults:
+          response.mode === "search"
+            ? {
+                students:
+                  response.data?.students?.map((item: any) => ({
+                    id: item.id,
+                    type: "student" as const,
+                    clientName: item.clientName,
+                    phone: item.phone,
+                    course: item.course,
+                    status: item.status,
+                    institution: item.institution,
+                  })) ?? [],
+                consultations:
+                  response.data?.consultations?.map((item: any) => ({
+                    id: item.id,
+                    type: "consultation" as const,
+                    clientName: item.clientName,
+                    phone: item.phone,
+                    desiredCourse: item.desiredCourse,
+                    status: item.status,
+                  })) ?? [],
+              }
+            : undefined,
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
       return;
     }
   } catch (error) {
-  console.error("[AIAssistant] send failed:", error);
+    const message =
+      error instanceof Error ? error.message : "빠른 실행 중 오류가 발생했습니다.";
 
-  const message =
-    error instanceof Error
-      ? error.message
-      : "AI 응답 처리 중 오류가 발생했습니다.";
+    const failMessage: Message = {
+      id: `assistant-error-${Date.now()}`,
+      role: "assistant",
+      content: message,
+      createdAt: nowTimeLabel(),
+      kind: "error",
+    };
 
-  const failMessage: Message = {
-    id: `assistant-error-${Date.now()}`,
-    role: "assistant",
-    content: message,
-    createdAt: nowTimeLabel(),
-    kind: "error",
-  };
-
-  setMessages((prev) => [...prev, failMessage]);
-  setErrorMessage(message);
-} finally {
-  setIsLoading(false);
-}
+    setMessages((prev) => [...prev, failMessage]);
+    setErrorMessage(message);
+  } finally {
+    setIsLoading(false);
+  }
 };
+
 const handleConfirmPendingAction = async () => {
   if (!pendingAction) return;
 
@@ -472,6 +527,7 @@ const handleConfirmPendingAction = async () => {
 
     setMessages((prev) => [...prev, assistantMessage]);
     setPendingAction(null);
+    setActionCandidates([]);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "입력 실행 중 오류가 발생했습니다.";
@@ -490,6 +546,7 @@ const handleConfirmPendingAction = async () => {
     setIsLoading(false);
   }
 };
+
 const handleCancelPendingAction = () => {
   if (!pendingAction) return;
 
@@ -505,6 +562,7 @@ const handleCancelPendingAction = () => {
   ]);
 
   setPendingAction(null);
+  setActionCandidates([]);
 };
 
 const handleQuickSearchSubmit = async () => {
@@ -561,6 +619,7 @@ const handleSearchResultAction = async (
     | { type: "open_consultation"; id: number }
     | { type: "start_transfer_subject"; id: number; name?: string }
     | { type: "start_plan_semester"; id: number; name?: string }
+    | { type: "select_student_for_pending_action"; id: number; name?: string }
 ) => {
   if (action.type === "open_student") {
     window.location.href = `/students/${action.id}`;
@@ -586,148 +645,35 @@ const handleSearchResultAction = async (
     setPlanCategory("전공");
     return;
   }
-if (action.type === "select_student_for_pending_action") {
-  if (!pendingAction) return;
 
-  setPendingAction((prev) =>
-    prev
-      ? {
-          ...prev,
-          selectedStudentId: action.id,
-          studentKeyword: action.name || prev.studentKeyword,
-        }
-      : prev
-  );
+  if (action.type === "select_student_for_pending_action") {
+    if (!pendingAction) return;
 
-  setMessages((prev) => [
-    ...prev,
-    {
-      id: `assistant-select-confirm-${Date.now()}`,
-      role: "assistant",
-      content: `${action.name || `학생 #${action.id}`} 선택 완료. 아래 확인 버튼을 눌러 실행해주세요.`,
-      createdAt: nowTimeLabel(),
-      kind: "warning",
-    },
-  ]);
+    setPendingAction((prev) =>
+      prev
+        ? {
+            ...prev,
+            selectedStudentId: action.id,
+            studentKeyword: action.name || prev.studentKeyword,
+          }
+        : prev
+    );
 
-  setActionCandidates([]);
-  return;
-}
-
-};
-
-setErrorMessage(null);
-
-    const userMessage: Message = {
-      id: `user-${Date.now()}`,
-      role: "user",
-      content: content || (files?.length ? "[파일만 첨부됨]" : ""),
-      createdAt: nowTimeLabel(),
-      attachments: files?.map((file) => ({
-        id: `${file.name}-${file.size}`,
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        url: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
-      })),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setIsLoading(true);
-
-    try {
-      const response = await chatMutation.mutateAsync({
-  message: content,
-});
-
-
-
-const assistantMessage: Message = {
-  id: `assistant-${Date.now()}`,
-  role: "assistant",
-  content: response.answer || "응답이 없습니다.",
-  createdAt: nowTimeLabel(),
-  kind:
-    response.mode === "search"
-      ? "search_result"
-      : response.mode === "alert"
-      ? "warning"
-      : "text",
-  searchResults:
-    response.mode === "search"
-      ? {
-          students:
-            response.data?.students?.map((item: any) => ({
-              id: item.id,
-              type: "student" as const,
-              clientName: item.clientName,
-              phone: item.phone,
-              course: item.course,
-              status: item.status,
-              institution: item.institution,
-            })) ?? [],
-          consultations:
-            response.data?.consultations?.map((item: any) => ({
-              id: item.id,
-              type: "consultation" as const,
-              clientName: item.clientName,
-              phone: item.phone,
-              desiredCourse: item.desiredCourse,
-              status: item.status,
-            })) ?? [],
-        }
-      : undefined,
-};
-if (response.data) {
-  if (response.data.students?.length || response.data.consultations?.length) {
-    const summaryLines = [
-      response.data.students?.length
-        ? `학생 ${response.data.students.length}건`
-        : null,
-      response.data.consultations?.length
-        ? `상담 ${response.data.consultations.length}건`
-        : null,
-    ].filter(Boolean);
-  }
-
-  if (
-    response.data.paymentDateMissing?.length ||
-    response.data.paymentAmountMissing?.length
-  ) {
-    const alertLines = [
-      response.data.paymentDateMissing?.length
-        ? `결제일 누락 ${response.data.paymentDateMissing.length}건`
-        : null,
-      response.data.paymentAmountMissing?.length
-        ? `결제금액 누락 ${response.data.paymentAmountMissing.length}건`
-        : null,
-    ].filter(Boolean);
-  }
-}
-
-      setMessages((prev) => [...prev, assistantMessage]);
-       } catch (error) {
-      console.error("[AIAssistant] send failed:", error);
-
-      const message =
-        error instanceof Error
-          ? error.message
-          : "AI 응답 처리 중 오류가 발생했습니다.";
-
-      const failMessage: Message = {
-        id: `assistant-error-${Date.now()}`,
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `assistant-select-confirm-${Date.now()}`,
         role: "assistant",
-        content: message,
+        content: `${action.name || `학생 #${action.id}`} 선택 완료. 아래 확인 버튼을 눌러 실행해주세요.`,
         createdAt: nowTimeLabel(),
-        kind: "error",
-      };
+        kind: "warning",
+      },
+    ]);
 
-      setMessages((prev) => [...prev, failMessage]);
-      setErrorMessage(message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    setActionCandidates([]);
+    return;
+  }
+};
 
   const canUseAI =
     user?.role === "host" || user?.role === "admin" || user?.role === "superhost";
@@ -752,12 +698,12 @@ if (response.data) {
 
   return (
     <div className="space-y-6 p-6">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-	{quickSearchType && (
+{quickSearchType && (
   <Card className="rounded-2xl border-primary/20">
     <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center">
       <div className="min-w-[120px] text-sm font-medium">
         {quickSearchType === "student" ? "학생 검색" : "상담 검색"}
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
       </div>
 
       <Input
