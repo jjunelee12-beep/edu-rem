@@ -16,7 +16,11 @@ import bcrypt from "bcryptjs";
 import { smsRouter } from "./_core/sms.router";
 
 function isAdminOrHost(user: any) {
-  return user?.role === "admin" || user?.role === "host";
+  return (
+    user?.role === "admin" ||
+    user?.role === "host" ||
+    user?.role === "superhost"
+  );
 }
 
 function isSuperhost(user: any) {
@@ -1428,7 +1432,7 @@ notification: router({
 
     listPending: protectedProcedure.query(async ({ ctx }) => {
       if (!isAdminOrHost(ctx.user)) {
-        throw new Error("관리자 또는 호스트만 확인할 수 있습니다");
+throw new Error("관리자, 호스트 또는 슈퍼호스트만 확인할 수 있습니다");
       }
 
       return db.listPendingRefunds();

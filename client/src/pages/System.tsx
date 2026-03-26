@@ -28,17 +28,17 @@ import { formatPhone } from "@/lib/format";
 
 type TabKey = "settlement" | "users" | "landingForms" | "adForms";
 type UserTabKey = "create" | "list" | "role" | "password";
-type UserRole = "staff" | "admin" | "host";
+type UserRole = "staff" | "admin" | "host" | "superhost";
 
 export default function System() {
   const { user } = useAuth();
   const [tab, setTab] = useState<TabKey>("users");
 
-  if (user?.role !== "host") {
+if (user?.role !== "host" && user?.role !== "superhost") {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
         <ShieldAlert className="h-12 w-12 text-muted-foreground" />
-        <p className="text-muted-foreground">호스트만 접근할 수 있습니다.</p>
+        <p className="text-muted-foreground">호스트 또는 슈퍼호스트만 접근할 수 있습니다.</p>
       </div>
     );
   }

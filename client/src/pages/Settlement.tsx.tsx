@@ -28,7 +28,9 @@ export default function Settlement() {
   const [filterAssignee, setFilterAssignee] = useState<string>("all");
 
   const isAdminOrHost =
-    user?.role === "admin" || user?.role === "host";
+  user?.role === "admin" ||
+  user?.role === "host" ||
+  user?.role === "superhost";
 
   const { data: allUsers } = trpc.users.list.useQuery(undefined, {
     enabled: isAdminOrHost,
@@ -61,7 +63,7 @@ export default function Settlement() {
       <div className="flex flex-col items-center justify-center py-20 gap-4">
         <ShieldAlert className="h-12 w-12 text-muted-foreground" />
         <p className="text-muted-foreground">
-          관리자 또는 호스트만 접근할 수 있습니다.
+          관리자, 호스트 또는 슈퍼호스트만 접근할 수 있습니다.
         </p>
       </div>
     );

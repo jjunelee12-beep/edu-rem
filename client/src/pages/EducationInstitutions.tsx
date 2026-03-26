@@ -15,7 +15,8 @@ export default function EducationInstitutions() {
   const { user } = useAuth();
   const utils = trpc.useUtils();
 
-  const isHost = user?.role === "host";
+  const isHost =
+  user?.role === "host" || user?.role === "superhost";
 
   const { data: institutionList, isLoading } = trpc.educationInstitution.list.useQuery(undefined, {
     enabled: isHost,
@@ -119,7 +120,7 @@ export default function EducationInstitutions() {
         </Button>
         <Card className="border-0 shadow-sm">
           <CardContent className="py-16 text-center text-muted-foreground">
-            접근 권한이 없습니다.
+            호스트 또는 슈퍼호스트만 접근할 수 있습니다.
           </CardContent>
         </Card>
       </div>

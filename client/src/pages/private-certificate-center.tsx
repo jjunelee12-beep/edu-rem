@@ -59,7 +59,10 @@ export default function PrivateCertificateCenterPage() {
   const { user } = useAuth();
   const utils = trpc.useUtils();
 
-  const isAdmin = user?.role === "admin" || user?.role === "host";
+  const isAdmin =
+  user?.role === "admin" ||
+  user?.role === "host" ||
+  user?.role === "superhost";
 
   const { data, isLoading } = trpc.privateCertificate.list.useQuery(undefined, {
     enabled: !!isAdmin,
@@ -183,7 +186,7 @@ export default function PrivateCertificateCenterPage() {
           뒤로가기
         </Button>
         <div className="text-sm text-muted-foreground py-10 text-center">
-          관리자 또는 호스트만 접근할 수 있습니다.
+         관리자, 호스트 또는 슈퍼호스트만 접근할 수 있습니다.
         </div>
       </div>
     );

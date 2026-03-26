@@ -38,7 +38,10 @@ type PaymentStatus = "결제대기" | "입금확인" | "완료" | "취소";
 
 export default function JobSupportCenter() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin" || user?.role === "host";
+  const isAdmin =
+  user?.role === "admin" ||
+  user?.role === "host" ||
+  user?.role === "superhost";
   const utils = trpc.useUtils();
 
   const [search, setSearch] = useState("");
