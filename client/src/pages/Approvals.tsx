@@ -36,7 +36,10 @@ export default function Approvals() {
     data: pendingRefunds,
     isLoading: refundsLoading,
   } = trpc.refund.listPending.useQuery(undefined, {
-    enabled: user?.role === "admin" || user?.role === "host",
+    enabled:
+  user?.role === "admin" ||
+  user?.role === "host" ||
+  user?.role === "superhost",
   });
 
   const approveStudentMutation = trpc.student.approve.useMutation({
@@ -82,7 +85,10 @@ export default function Approvals() {
 
   const userMap = new Map(allUsers?.map((u: any) => [u.id, u.name || "이름없음"]) ?? []);
 
-  const isAdminOrHost = user?.role === "admin" || user?.role === "host";
+  const isAdminOrHost =
+  user?.role === "admin" ||
+  user?.role === "host" ||
+  user?.role === "superhost";
 
   if (!isAdminOrHost) {
     return (
