@@ -2645,19 +2645,15 @@ practiceEducationCenter: router({
           bankAccount: z.string().optional(),
         })
       )
-	
-	// superhost 계정이 이미 존재하는지 확인
-const existingSuperhost = await db.getAllUsersDetailed();
-const hasSuperhost = existingSuperhost.some(
-  (u: any) => u.role === "superhost"
-);
-
-if (hasSuperhost && input.role === "superhost") {
-  throw new Error("슈퍼호스트 계정은 1개만 생성 가능합니다.");
-}
-
       .mutation(async ({ input }) => {
-        const passwordHash = await bcrypt.hash(input.password, 10);
+    const existingUsers = await db.getAllUsersDetailed();
+    const hasSuperhost = existingUsers.some((u: any) => u.role === "superhost");
+
+    if (hasSuperhost && input.role === "superhost") {
+      throw new Error("슈퍼호스트 계정은 1개만 생성 가능합니다.");
+    }
+
+    const passwordHash = await bcrypt.hash(input.password, 10);
 
         await db.createUserAccount({
           openId: input.openId.trim(),
@@ -2687,9 +2683,6 @@ if (hasSuperhost && input.role === "superhost") {
         })
       )
       .mutation(async ({ input }) => {
-        await db.updateUserRole(input.id, input.role);
-        return { success: true };
-
 	// 이미 존재하는 superhost 개수 확인
 const users = await db.getAllUsersDetailed();
 const superhostCount = users.filter((u: any) => u.role === "superhost").length;
@@ -2705,6 +2698,8 @@ if (input.role === "superhost") {
     throw new Error("슈퍼호스트는 1명만 가능합니다.");
   }
 }
+        await db.updateUserRole(input.id, input.role);
+        return { success: true };
       }),
 
     /**
