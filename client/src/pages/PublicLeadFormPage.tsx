@@ -126,26 +126,23 @@ export default function PublicLeadFormPage() {
   return (
   <PageShell>
     <div className="lead-form-card">
+<div className="lead-form-header">
+  <h1 className="lead-form-title">
+    <span className="lead-form-title-line lead-form-title-line--first">
+      <img
+        src="/images/logo.png"
+        alt="위드원 교육 로고"
+        className="lead-form-logo"
+      />
+      <span>목표를 향한 배움의 길,</span>
+    </span>
+    <span className="lead-form-title-line">위드원 교육이 함께할게요</span>
+  </h1>
 
-      <div className="lead-form-header">
-        <h1 className="lead-form-title">
-          <span className="lead-form-title-inner">
-            <img
-              src="/images/logo.png"
-              alt="위드원 교육 로고"
-              className="lead-form-logo"
-            />
-            목표를 향한 배움의 길,
-          </span>
-          <br />
-          위드원 교육이 함께할게요
-        </h1>
-
-        <p className="lead-form-subtitle">
-          상담은 <strong>100% 무료</strong>로 진행됩니다.
-        </p>
-      </div>
-
+  <p className="lead-form-subtitle">
+    상담은 <strong>100% 무료</strong>로 진행됩니다.
+  </p>
+</div>
       {/* 🔥 여기 안으로 들어가야됨 */}
       <form className="lead-form-body" onSubmit={handleSubmit}>
         <input
