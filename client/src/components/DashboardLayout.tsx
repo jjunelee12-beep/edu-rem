@@ -205,10 +205,17 @@ function DashboardLayoutContent({
    * 즉 superhost는 host 메뉴를 굳이 공유하지 않게 해서
    * 시스템상 "총관리자 전용 공간" 느낌으로 분리
    */
-  const visibleStaffMenuItems = isSuperhost ? [] : staffMenuItems;
-  const visibleAdminMenuItems = isSuperhost ? [] : isAdmin || isHost ? adminMenuItems : [];
-  const visibleHostMenuItems = isSuperhost ? [] : isHost ? hostMenuItems : [];
-  const visibleSuperhostMenuItems = isSuperhost ? superhostMenuItems : [];
+  const visibleStaffMenuItems =
+  isStaff || isAdmin || isHost || isSuperhost ? staffMenuItems : [];
+
+const visibleAdminMenuItems =
+  isAdmin || isHost || isSuperhost ? adminMenuItems : [];
+
+const visibleHostMenuItems =
+  isHost || isSuperhost ? hostMenuItems : [];
+
+const visibleSuperhostMenuItems =
+  isSuperhost ? superhostMenuItems : [];
 
   const allMenuItems = [
     ...visibleStaffMenuItems,
@@ -369,7 +376,7 @@ function DashboardLayoutContent({
                     <GraduationCap className="h-5 w-5 shrink-0 text-primary" />
                   )}
                   <span className="truncate text-sm font-bold tracking-tight">
-                    {isSuperhost ? "슈퍼호스트 콘솔" : "위드원 교육 CRM"}
+                    {isSuperhost ? "위드원 교육 CRM · SUPERHOST" : "위드원 교육 CRM"}
                   </span>
                 </div>
               ) : null}
@@ -446,10 +453,29 @@ function DashboardLayoutContent({
               </>
             ) : (
               <span className="font-medium tracking-tight text-foreground">
-                {activeMenuItem?.label ?? (isSuperhost ? "슈퍼호스트 대시보드" : "대시보드")}
+                {activeMenuItem?.label ?? (isSuperhost ? "슈퍼호스트" : "메뉴")}
               </span>
             )}
           </div>
+	{isSuperhost && (
+  <>
+    {location.startsWith("/superhost") ? (
+      <button
+        onClick={() => setLocation("/")}
+        className="inline-flex h-9 items-center justify-center rounded-lg border bg-background px-3 text-sm transition-colors hover:bg-accent"
+      >
+        일반 CRM으로 돌아가기
+      </button>
+    ) : (
+      <button
+        onClick={() => setLocation("/superhost")}
+        className="inline-flex h-9 items-center justify-center rounded-lg border bg-background px-3 text-sm transition-colors hover:bg-accent"
+      >
+        슈퍼호스트 콘솔
+      </button>
+    )}
+  </>
+)}
 
           <div className="flex items-center gap-2">
             {!isSuperhost && (
