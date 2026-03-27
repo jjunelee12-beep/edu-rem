@@ -288,6 +288,55 @@ export function AIChatBox({
     }
   };
 
+const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+  if (!allowImageUpload || disabled || isLoading) return;
+
+  const items = Array.from(e.clipboardData?.items || []);
+  const imageItems = items.filter((item) => item.type.startsWith("image/"));
+
+  if (!imageItems.length) return;
+
+  e.preventDefault();
+  clearComposerError();
+
+  const remainingCount = Math.max(0, maxFiles - attachedFiles.length);
+  if (remainingCount <= 0) {
+    setLocalError(`첨부는 최대 ${maxFiles}개까지 가능합니다.`);
+    return;
+  }
+
+  const files = imageItems
+    .slice(0, remainingCount)
+    .map((item, index) => {
+      const file = item.getAsFile();
+      if (!file) return null;
+
+      if (file.size > maxFileSizeMb * 1024 * 1024) {
+        return null;
+      }
+
+      return {
+        id: makeLocalId(),
+        file: new File(
+          [file],
+          file.name || `pasted-image-${Date.now()}-${index}.png`,
+          { type: file.type || "image/png" }
+        ),
+        previewUrl: URL.createObjectURL(file),
+      };
+    })
+    .filter(Boolean) as LocalPreviewFile[];
+
+  if (!files.length) {
+    setLocalError(
+      `붙여넣은 이미지가 너무 크거나 사용할 수 없습니다. 파일당 최대 ${maxFileSizeMb}MB까지 가능합니다.`
+    );
+    return;
+  }
+
+  setAttachedFiles((prev) => [...prev, ...files]);
+};
+
   const handleKeyDown = async (
     e: React.KeyboardEvent<HTMLTextAreaElement>
   ) => {
@@ -817,19 +866,20 @@ export function AIChatBox({
 
           <div className="flex-1 rounded-2xl border bg-background px-3 py-2 shadow-sm">
             <Textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => {
-                clearComposerError();
-                setInput(e.target.value);
-              }}
-              onKeyDownCapture={handleKeyDown}
-              placeholder={placeholder}
-              disabled={disabled || isLoading}
-              rows={1}
-              className="min-h-[24px] max-h-40 resize-none border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0"
-              enterKeyHint="send"
-            />
+  ref={textareaRef}
+  value={input}
+  onChange={(e) => {
+    clearComposerError();
+    setInput(e.target.value);
+  }}
+  onPaste={handlePaste}
+  onKeyDownCapture={handleKeyDown}
+  placeholder={placeholder}
+  disabled={disabled || isLoading}
+  rows={1}
+  className="min-h-[24px] max-h-40 resize-none border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0"
+  enterKeyHint="send"
+/>
 
             <div className="mt-2 flex items-center justify-between">
               <div className="flex items-center gap-2 text-[11px] text-muted-foreground">

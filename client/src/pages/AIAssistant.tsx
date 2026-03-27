@@ -461,7 +461,105 @@ const [transcriptImage, setTranscriptImage] = useState<File | null>(null);
 
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
+	
+	
+	const imageFiles = (files || []).filter((file) => file.type.startsWith("image/"));
 
+if (imageFiles.length > 0 && transferBatchTarget) {
+  setErrorMessage(null);
+  setIsLoading(true);
+  setLoadingLabel("붙여넣은 이미지를 성적표로 분석하고 있어요...");
+
+  try {
+    const file = imageFiles[0];
+
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = () => {
+        try {
+          const result = reader.result as string;
+          const encoded = result.split(",")[1];
+          if (!encoded) {
+            reject(new Error("이미지 데이터를 읽지 못했습니다."));
+            return;
+          }
+          resolve(encoded);
+        } catch (err) {
+          reject(err);
+        }
+      };
+
+      reader.onerror = () => reject(new Error("파일 읽기에 실패했습니다."));
+      reader.readAsDataURL(file);
+    });
+
+    const res = await uploadTranscriptImageMutation.mutateAsync({
+      studentId: transferBatchTarget.id,
+      imageBase64: base64,
+    });
+
+    setTransferBatchDraft({
+      studentId: transferBatchTarget.id,
+      clientName: transferBatchTarget.name,
+      schoolName: "전적대",
+      rows: res.rows,
+    });
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `assistant-ocr-paste-${Date.now()}`,
+        role: "assistant",
+        content: [
+          `${transferBatchTarget.name || `학생 #${transferBatchTarget.id}`} 님 기준으로 붙여넣은 이미지를 분석했어요.`,
+          "",
+          `- 인식된 과목 수: ${res.rows.length}건`,
+          "전적대 일괄 입력 카드에서 확인 후 저장하면 됩니다.",
+        ].join("\n"),
+        createdAt: nowTimeLabel(),
+        kind: "action_result",
+      },
+    ]);
+
+    return;
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "이미지 분석 중 오류가 발생했습니다.";
+    setErrorMessage(message);
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `assistant-ocr-paste-error-${Date.now()}`,
+        role: "assistant",
+        content: "붙여넣은 이미지 분석 중 오류가 발생했어요.",
+        createdAt: nowTimeLabel(),
+        kind: "error",
+      },
+    ]);
+
+    return;
+  } finally {
+    setIsLoading(false);
+    resetLoadingLabel();
+  }
+}
+
+if (imageFiles.length > 0 && !transferBatchTarget) {
+  setMessages((prev) => [
+    ...prev,
+    {
+      id: `assistant-ocr-no-target-${Date.now()}`,
+      role: "assistant",
+      content:
+        "성적표 이미지를 분석하려면 먼저 학생을 선택하고 전적대 일괄 입력 대상으로 지정해주세요.",
+      createdAt: nowTimeLabel(),
+      kind: "info",
+    },
+  ]);
+  return;
+}
     try {
       const parsedAction =
   parseActionPromptWithStudentKeyword(content) ||
@@ -1769,7 +1867,7 @@ setTransferBatchText("");
 setTransferBatchDraft(null);
 setTranscriptImage(null);
         }}
-	placeholder="예: OOO 찾아줘 / 전적대에 사회복지학개론 전공으로 입력해줘 / 1학기에 사회복지조사론 전공으로 넣어줘 / 가까운 실습기관 추천해줘 / 전적대 과목 여러 개 초안 만들어줘"
+placeholder="예: 이재준 찾아줘 / 전적대에 사회복지학개론 전공으로 입력해줘 / 가까운 실습기관 추천해줘 / 성적표 캡처를 Ctrl+V로 붙여넣어 분석"
         emptyStateMessage="CRM AI 작업도우미를 시작해보세요."
         quickActions={quickActions}
         suggestedPrompts={suggestedPrompts}
