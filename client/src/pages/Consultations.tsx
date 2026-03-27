@@ -48,19 +48,27 @@ function autoResize(el: HTMLTextAreaElement) {
 
 export default function Consultations() {
   const { user } = useAuth();
-  const isHost = user?.role === "host";
-  const isStaff = user?.role === "staff";
-const isAdmin = user?.role === "admin";
-const isAdminOrHost = isHost || isAdmin;
 
-const [showAll, setShowAll] = useState(false);
+  const role = String(user?.role ?? "").toLowerCase();
+  const isSuperHost =
+    role === "superhost" || role === "super_host" || role === "super-host";
+  const isHost = role === "host";
+  const isStaff = role === "staff";
+  const isAdmin = role === "admin";
+  const canViewAllDb = isHost || isAdmin || isSuperHost;
+  const canManageAll = isHost || isSuperHost;
+
+  const [showAll, setShowAll] = useState(false);
 
   const utils = trpc.useUtils();
 
   const { data: list, isLoading } = trpc.consultation.list.useQuery(
-  isAdminOrHost ? { showAll } : {}
-);
-  const { data: usersList } = trpc.users.list.useQuery();
+    canViewAllDb ? { showAll } : {}
+  );
+
+  const { data: usersList } = trpc.users.list.useQuery(undefined, {
+    enabled: canManageAll,
+  });
 
   const createMut = trpc.consultation.create.useMutation({
     onSuccess: () => {
@@ -371,7 +379,7 @@ const [showAll, setShowAll] = useState(false);
           <h1 className="text-2xl font-bold tracking-tight">상담 DB</h1>
           <p className="text-sm text-muted-foreground mt-1">
             상담일 클릭 후 Ctrl+V → 상담일~상담내역(7칸) 자동 채움 (공란 유지)
-	{isAdminOrHost ? " / 기본은 개인 DB, 체크 시 전체 DB 조회" : ""}
+            {canViewAllDb ? " / 기본은 개인 DB, 체크 시 전체 DB 조회" : ""}
           </p>
         </div>
 
@@ -555,24 +563,24 @@ const [showAll, setShowAll] = useState(false);
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
-  <Input
-    placeholder="담당자 검색"
-    value={assigneeSearch}
-    onChange={(e) => setAssigneeSearch(e.target.value)}
-    className="w-[180px]"
-  />
+        <Input
+          placeholder="담당자 검색"
+          value={assigneeSearch}
+          onChange={(e) => setAssigneeSearch(e.target.value)}
+          className="w-[180px]"
+        />
 
-  {isAdminOrHost && (
-    <label className="flex items-center gap-2 text-sm text-muted-foreground ml-1">
-      <input
-        type="checkbox"
-        checked={showAll}
-        onChange={(e) => setShowAll(e.target.checked)}
-      />
-      전체 DB 보기
-    </label>
-  )}
-</div>
+        {canViewAllDb && (
+          <label className="flex items-center gap-2 text-sm text-muted-foreground ml-1">
+            <input
+              type="checkbox"
+              checked={showAll}
+              onChange={(e) => setShowAll(e.target.checked)}
+            />
+            전체 DB 보기
+          </label>
+        )}
+      </div>
 
       {isLoading ? (
         <div className="flex justify-center py-12">
@@ -752,16 +760,17 @@ const [showAll, setShowAll] = useState(false);
                   key={item.id}
                   item={item}
                   rowNum={idx + 1}
-                  isHost={!!isHost}
+                  canManageAll={canManageAll}
                   isStaff={!!isStaff}
                   usersList={usersList || []}
                   getUserName={getUserName}
                   onBlur={handleCellBlur}
                   onStatusChange={handleStatusChange}
                   onDelete={(id) => {
-                    if (!isHost) return;
-                    if (confirm("정말 삭제하시겠습니까?"))
+                    if (!canManageAll) return;
+                    if (confirm("정말 삭제하시겠습니까?")) {
                       deleteMut.mutate({ id } as any);
+                    }
                   }}
                   onReassign={(id, assigneeId) =>
                     reassignConsultationMut.mutate({ id, assigneeId })
@@ -791,7 +800,7 @@ const [showAll, setShowAll] = useState(false);
 function InlineRow({
   item,
   rowNum,
-  isHost,
+  canManageAll,
   isStaff,
   usersList,
   getUserName,
@@ -803,7 +812,7 @@ function InlineRow({
 }: {
   item: any;
   rowNum: number;
-  isHost: boolean;
+  canManageAll: boolean;
   isStaff: boolean;
   usersList: any[];
   getUserName: (id: number) => string;
@@ -820,7 +829,7 @@ function InlineRow({
     : "";
 
   const isRegistered = item.status === "등록";
-  const canDelete = isHost;
+  const canDelete = canManageAll;
 
   return (
     <tr
@@ -859,14 +868,14 @@ function InlineRow({
       </td>
 
       <td className="px-1 py-2">
-  <EditableCell
-    value={formatPhone(item.phone)}
-    onBlur={(v) => onBlur(item.id, "phone", v.replace(/\D/g, ""))}
-    transform={handlePhoneInput}
-    maxLength={11}
-    disabled={isStaff}
-  />
-</td>
+        <EditableCell
+          value={formatPhone(item.phone)}
+          onBlur={(v) => onBlur(item.id, "phone", v.replace(/\D/g, ""))}
+          transform={handlePhoneInput}
+          maxLength={11}
+          disabled={isStaff}
+        />
+      </td>
 
       <td className="px-1 py-2">
         <EditableCell
@@ -899,7 +908,7 @@ function InlineRow({
       </td>
 
       <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
-        {isHost ? (
+        {canManageAll ? (
           <select
             className="text-xs border rounded px-2 py-1 bg-white"
             value={String(item.assigneeId)}

@@ -10,6 +10,7 @@ import {
   boolean,
   datetime,
   serial,
+index,
 } from "drizzle-orm/mysql-core";
 
 // ─── Lead Forms ──────────────────────────────────────────────────────
@@ -641,29 +642,21 @@ export type InsertNotification = typeof notifications.$inferInsert;
 // AI ACTION LOGS (Audit)
 // ==============================
 
-export const aiActionLogs = mysqlTable("ai_action_logs", {
-  id: int("id").autoincrement().primaryKey(),
-
-  // 실행한 유저
-  userId: int("userId").notNull(),
-  userName: varchar("userName", { length: 100 }),
-
-  // 액션 종류 (전적대 / 플랜 등)
-  action: varchar("action", { length: 100 }).notNull(),
-
-  // 대상 학생
-  targetStudentId: int("targetStudentId"),
-  targetStudentName: varchar("targetStudentName", { length: 100 }),
-
-  // 실제 입력 데이터(JSON)
-  payload: text("payload"),
-
-  // 생성시간
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
-
-export const aiActionLogsIndexes = {
-  userIdIdx: index("idx_ai_logs_user_id").on(aiActionLogs.userId),
-  studentIdIdx: index("idx_ai_logs_student_id").on(aiActionLogs.targetStudentId),
-  createdAtIdx: index("idx_ai_logs_created_at").on(aiActionLogs.createdAt),
-};
+export const aiActionLogs = mysqlTable(
+  "ai_action_logs",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    userName: varchar("userName", { length: 100 }),
+    action: varchar("action", { length: 100 }).notNull(),
+    targetStudentId: int("targetStudentId"),
+    targetStudentName: varchar("targetStudentName", { length: 100 }),
+    payload: text("payload"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("idx_ai_logs_user_id").on(table.userId),
+    studentIdIdx: index("idx_ai_logs_student_id").on(table.targetStudentId),
+    createdAtIdx: index("idx_ai_logs_created_at").on(table.createdAt),
+  })
+);
