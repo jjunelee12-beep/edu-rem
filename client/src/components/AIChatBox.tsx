@@ -76,13 +76,13 @@ export type AIChatBoxProps = {
   suggestedPrompts?: string[];
   quickActions?: QuickAction[];
   onQuickAction?: (action: QuickAction) => void | Promise<void>;
-  onSearchResultAction?: (
+    onSearchResultAction?: (
     action:
       | { type: "open_student"; id: number }
       | { type: "open_consultation"; id: number }
       | { type: "start_transfer_subject"; id: number; name?: string }
       | { type: "start_plan_semester"; id: number; name?: string }
-	      | { type: "select_student_for_pending_action"; id: number; name?: string }
+      | { type: "select_student_for_pending_action"; id: number; name?: string }
   ) => void | Promise<void>;
   allowImageUpload?: boolean;
   disabled?: boolean;
@@ -430,56 +430,63 @@ const isActionResult = message.kind === "action_result";
                               교육원: {item.institution || "-"}
                             </p>
                           </div>
+
                           <div className="flex shrink-0 flex-col gap-2">
-  <button
-    type="button"
-    onClick={() => onSearchResultAction?.({ type: "open_student", id: item.id })}
-    className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
-  >
-    상세보기
-  </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onSearchResultAction?.({
+                                  type: "open_student",
+                                  id: item.id,
+                                })
+                              }
+                              className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
+                            >
+                              상세보기
+                            </button>
 
-  <button
-    type="button"
-    onClick={() =>
-      onSearchResultAction?.({
-        type: "start_transfer_subject",
-        id: item.id,
-        name: item.clientName,
-      })
-    }
-    className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
-  >
-    전적대 입력
-  </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onSearchResultAction?.({
+                                  type: "start_transfer_subject",
+                                  id: item.id,
+                                  name: item.clientName,
+                                })
+                              }
+                              className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
+                            >
+                              전적대 입력
+                            </button>
 
-  <button
-    type="button"
-    onClick={() =>
-      onSearchResultAction?.({
-        type: "start_plan_semester",
-        id: item.id,
-        name: item.clientName,
-      })
-    }
-    className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
-  >
-    플랜 입력
-  </button>
-<button
-  type="button"
-  onClick={() =>
-    onSearchResultAction?.({
-      type: "select_student_for_pending_action",
-      id: item.id,
-      name: item.clientName,
-    } as any)
-  }
-  className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
->
-  이 학생 선택
-</button>
-</div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onSearchResultAction?.({
+                                  type: "start_plan_semester",
+                                  id: item.id,
+                                  name: item.clientName,
+                                })
+                              }
+                              className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
+                            >
+                              플랜 입력
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onSearchResultAction?.({
+                                  type: "select_student_for_pending_action",
+                                  id: item.id,
+                                  name: item.clientName,
+                                })
+                              }
+                              className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
+                            >
+                              이 학생 선택
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -510,23 +517,29 @@ const isActionResult = message.kind === "action_result";
                             상태: {item.status || "-"}
                           </p>
                         </div>
-<div className="mt-3 flex justify-end">
-  <button
-    type="button"
-    onClick={() =>
-      onSearchResultAction?.({ type: "open_consultation", id: item.id })
-    }
-    className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
-  >
-    상담 상세로 이동
-  </button>
-</div>
+
+                        <div className="mt-3 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onSearchResultAction?.({
+                                type: "open_consultation",
+                                id: item.id,
+                              })
+                            }
+                            className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
+                          >
+                            상담 상세로 이동
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
             )}
+
+          {message.attachments && message.attachments.length > 0 && (
             <div className="mt-3 space-y-2">
               {message.attachments.map((attachment, index) => {
                 const image = !!attachment.url && isImageFile(attachment.type);
@@ -563,7 +576,7 @@ const isActionResult = message.kind === "action_result";
                 );
               })}
             </div>
-          )}
+          )}          
         </div>
 
         {isUser && (
@@ -594,7 +607,6 @@ const isActionResult = message.kind === "action_result";
                   variant="outline"
                   size="sm"
                   onClick={() => {
- onClick={() => {
   if (action.runImmediately && onQuickAction) {
     void onQuickAction(action);
     return;
