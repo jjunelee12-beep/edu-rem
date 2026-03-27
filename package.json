@@ -86,6 +86,7 @@
     "vaul": "^1.1.2",
     "wouter": "^3.3.5",
     "zod": "^4.1.12"
+	 "openai": "^4.0.0"
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.15",
