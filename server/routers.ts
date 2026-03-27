@@ -14,6 +14,8 @@ import * as db from "./db";
 import { publicLeadRouter } from "./publicLead.router";
 import bcrypt from "bcryptjs";
 import { smsRouter } from "./_core/sms.router";
+import Tesseract from "tesseract.js";
+import OpenAI from "openai";
 
 function isAdminOrHost(user: any) {
   return (
@@ -25,6 +27,33 @@ function isAdminOrHost(user: any) {
 
 function isSuperhost(user: any) {
   return user?.role === "superhost";
+}
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+function cleanTransferRows(rows: any[]) {
+  return (rows || [])
+    .filter((row) => row && row.subjectName)
+    .map((row, idx) => ({
+      subjectName: String(row.subjectName || "").trim(),
+      category:
+        row.category === "교양" || row.category === "일반"
+          ? row.category
+          : "전공",
+      requirementType:
+        row.requirementType === "전공필수" ||
+        row.requirementType === "전공선택" ||
+        row.requirementType === "교양" ||
+        row.requirementType === "일반"
+          ? row.requirementType
+          : row.category === "교양"
+          ? "교양"
+          : "전공선택",
+      credits: Number(row.credits) > 0 ? Number(row.credits) : 3,
+      sortOrder: idx,
+    }))
+    .filter((row) => row.subjectName.length >= 2);
 }
 
 export const appRouter = router({
@@ -514,12 +543,85 @@ uploadTranscriptImage: protectedProcedure
       credits: 3,
       sortOrder: idx,
     }));
+let refinedRows = rows;
+
+try {
+  const response = await openai.responses.create({
+    model: "gpt-5.4-mini",
+    input: [
+      {
+        role: "system",
+        content: [
+          {
+            type: "input_text",
+            text:
+              "너는 학점은행제 전적대 성적표 분석 전문가다. " +
+              "OCR 결과를 바탕으로 과목명을 정리하고, " +
+              "category는 전공/교양/일반 중 하나, " +
+              "requirementType은 전공필수/전공선택/교양/일반 중 하나로 맞춰라. " +
+              "불확실하면 보수적으로 전공/전공선택/3학점으로 둬라.",
+          },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: JSON.stringify({
+              rawText: text,
+              draftRows: rows,
+            }),
+          },
+        ],
+      },
+    ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: "transfer_subject_rows",
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            rows: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  subjectName: { type: "string" },
+                  category: {
+                    type: "string",
+                    enum: ["전공", "교양", "일반"],
+                  },
+                  requirementType: {
+                    type: ["string", "null"],
+                    enum: ["전공필수", "전공선택", "교양", "일반", null],
+                  },
+                  credits: { type: "number" },
+                },
+                required: ["subjectName", "category", "requirementType", "credits"],
+              },
+            },
+          },
+          required: ["rows"],
+        },
+      },
+    },
+  });
+
+  const parsed = JSON.parse(response.output_text || "{}");
+  refinedRows = cleanTransferRows(parsed.rows || []);
+} catch (err) {
+  console.error("[GPT ERROR]", err);
+}
 
     return {
-      success: true,
-      message: "성적표 이미지에서 과목 초안을 만들었어요.",
-      rows,
-    };
+  success: true,
+  message: "AI가 성적표를 분석해서 과목을 정리했어요.",
+  rows: refinedRows,
+};
   }),
 
     createPlanSemester: protectedProcedure
@@ -629,6 +731,7 @@ uploadTranscriptImage: protectedProcedure
           db.listStudents(assigneeId),
           db.listConsultations(assigneeId),
         ]);
+const userName = ctx.user.name || "사용자";
 
         const msg = input.message.trim();
         const msgLower = msg.toLowerCase();
@@ -692,12 +795,52 @@ uploadTranscriptImage: protectedProcedure
           };
         }
 
-        return {
-          success: true,
-          mode: "general",
-          answer:
-            "현재는 CRM AI 작업도우미 1차 버전입니다. 학생/상담 검색, 누락/결제 점검, 전적대 과목 입력, 우리 플랜 입력, 실습 추천 기능부터 순서대로 연결할 수 있습니다.",
-        };
+        try {
+  const response = await openai.responses.create({
+    model: "gpt-5.4-mini",
+    input: [
+      {
+        role: "system",
+        content: [
+          {
+            type: "input_text",
+            text:
+  `너는 학점은행제 CRM 내부 AI 작업도우미다. 현재 대화 상대 이름은 ${userName}이다. ` +
+  "말투는 너무 기계적이지 않게 자연스럽고 간결하게 답해라. " +
+  "모르는 것은 모른다고 하고, 현재 연결된 기능과 연결되지 않은 기능을 구분해서 안내해라. " +
+  "현재 CRM에서 가능한 기능은 학생/상담 검색, 누락/결제 점검, 전적대 과목 입력, 우리 플랜 입력, 실습 추천이다.",
+          },
+        ],
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: input.message,
+          },
+        ],
+      },
+    ],
+  });
+
+  return {
+    success: true,
+    mode: "general",
+    answer:
+      response.output_text?.trim() ||
+      "답변을 생성하지 못했습니다.",
+  };
+} catch (err) {
+  console.error("[ai.chat][openai error]", err);
+
+  return {
+    success: true,
+    mode: "general",
+    answer:
+      "지금은 AI 답변 연결 중 오류가 있어서 기본 안내만 드릴게요. 학생/상담 검색, 누락/결제 점검, 전적대 과목 입력, 우리 플랜 입력, 실습 추천 기능부터 사용할 수 있어요.",
+  };
+}
       }),
 
     saveLearning: protectedProcedure
