@@ -319,6 +319,7 @@ notification: router({
           canReadNotifications: true,
           canCreateTransferSubject: true,
           canCreatePlanSemester: true,
+          canRecommendPracticePlace: true,
           canModifyServer: false,
           canDeleteData: false,
           canAlterSchema: false,
@@ -328,8 +329,6 @@ notification: router({
 
     /**
      * 학생 / 상담 자연어 검색용 1차 버전
-     * 지금은 단순 텍스트 검색 데모 구조
-     * 나중에 LLM 붙이면 action parser 앞단으로 사용
      */
     search: protectedProcedure
       .input(
@@ -349,11 +348,12 @@ notification: router({
         ]);
 
         const qLower = q.toLowerCase();
+        const qDigits = q.replace(/\D/g, "");
 
         const matchedStudents = (students || []).filter((item: any) => {
           return (
             String(item.clientName || "").toLowerCase().includes(qLower) ||
-            String(item.phone || "").replace(/\D/g, "").includes(q.replace(/\D/g, "")) ||
+            String(item.phone || "").replace(/\D/g, "").includes(qDigits) ||
             String(item.course || "").toLowerCase().includes(qLower)
           );
         });
@@ -361,7 +361,7 @@ notification: router({
         const matchedConsultations = (consultations || []).filter((item: any) => {
           return (
             String(item.clientName || "").toLowerCase().includes(qLower) ||
-            String(item.phone || "").replace(/\D/g, "").includes(q.replace(/\D/g, "")) ||
+            String(item.phone || "").replace(/\D/g, "").includes(qDigits) ||
             String(item.desiredCourse || "").toLowerCase().includes(qLower) ||
             String(item.notes || "").toLowerCase().includes(qLower)
           );
@@ -377,7 +377,6 @@ notification: router({
 
     /**
      * AI 알림/누락 브리핑용
-     * 규칙 기반 검사 + AI 요약에 쓸 데이터 반환
      */
     alerts: protectedProcedure.query(async ({ ctx }) => {
       const assigneeId = isAdminOrHost(ctx.user)
@@ -423,10 +422,6 @@ notification: router({
       };
     }),
 
-    /**
-     * 전적대 과목 입력 전용
-     * AI는 서버 수정/삭제 못 하고 허용된 입력만 하게 하는 구조
-     */
     createTransferSubject: protectedProcedure
       .input(
         z.object({
@@ -466,12 +461,67 @@ notification: router({
           attachmentUrl: input.attachmentUrl?.trim() || null,
         } as any);
 
+        if (db.createAiActionLog) {
+          await db.createAiActionLog({
+            userId: Number(ctx.user.id),
+            userName: ctx.user.name,
+            action: "create_transfer_subject_manual",
+            targetStudentId: student.id,
+            targetStudentName: student.clientName,
+            payload: input,
+          });
+        }
+
         return { success: true, id };
       }),
 
-    /**
-     * 우리 플랜 과목 입력 전용
-     */
+uploadTranscriptImage: protectedProcedure
+  .input(
+    z.object({
+      studentId: z.number(),
+      imageBase64: z.string(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const student = await db.getStudent(input.studentId);
+    if (!student) throw new Error("학생 없음");
+
+    if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+      throw new Error("권한 없음");
+    }
+
+    const { data: { text } } = await Tesseract.recognize(
+      Buffer.from(input.imageBase64, "base64"),
+      "kor+eng"
+    );
+
+    const lines = text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    const subjects = lines
+      .map((line) => {
+        const match = line.match(/([가-힣A-Za-z\s]+)/);
+        return match ? match[1].trim() : null;
+      })
+      .filter(Boolean);
+
+    const rows = subjects.map((subjectName, idx) => ({
+      subjectName,
+      category: "전공" as const,
+      requirementType: "전공선택" as const,
+      credits: 3,
+      sortOrder: idx,
+    }));
+
+    return {
+      success: true,
+      message: "성적표 이미지에서 과목 초안을 만들었어요.",
+      rows,
+    };
+  }),
+
     createPlanSemester: protectedProcedure
       .input(
         z.object({
@@ -510,13 +560,60 @@ notification: router({
           sortOrder: input.sortOrder ?? 0,
         } as any);
 
+        if (db.createAiActionLog) {
+          await db.createAiActionLog({
+            userId: Number(ctx.user.id),
+            userName: ctx.user.name,
+            action: "create_plan_semester_manual",
+            targetStudentId: student.id,
+            targetStudentName: student.clientName,
+            payload: input,
+          });
+        }
+
         return { success: true, id };
       }),
 
-    /**
-     * 1차 데모용 AI 채팅 응답
-     * 실제 LLM 붙이기 전까지는 서버 테스트용으로 사용
-     */
+    recommendPracticePlace: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!db.getPracticeRecommendationsForStudent) {
+          throw new Error("db.ts에 getPracticeRecommendationsForStudent 함수를 먼저 추가해야 합니다.");
+        }
+
+        const student = await db.getStudent(input.studentId);
+        if (!student) throw new Error("학생을 찾을 수 없습니다");
+
+        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+          throw new Error("권한이 없습니다");
+        }
+
+        const result = await db.getPracticeRecommendationsForStudent(input.studentId);
+
+        if (db.createAiActionLog) {
+          await db.createAiActionLog({
+            userId: Number(ctx.user.id),
+            userName: ctx.user.name,
+            action: "recommend_practice_place",
+            targetStudentId: student.id,
+            targetStudentName: student.clientName,
+            payload: { studentId: input.studentId },
+          });
+        }
+
+        return {
+          success: true,
+          student: result.student,
+          educationCenters: result.educationCenters,
+          institutions: result.institutions,
+          message: `${student.clientName} 학생 주소 기준으로 가장 가까운 실습교육원/기관 추천 결과를 정리했습니다.`,
+        };
+      }),
+
     chat: protectedProcedure
       .input(
         z.object({
@@ -534,20 +631,33 @@ notification: router({
         ]);
 
         const msg = input.message.trim();
+        const msgLower = msg.toLowerCase();
 
         if (msg.includes("찾아")) {
           const keyword = msg.replace("찾아줘", "").replace("찾아", "").trim();
-          const matchedStudents = (students || []).filter((item: any) =>
-            String(item.clientName || "").includes(keyword)
-          );
-          const matchedConsultations = (consultations || []).filter((item: any) =>
-            String(item.clientName || "").includes(keyword)
-          );
+          const keywordLower = keyword.toLowerCase();
+          const keywordDigits = keyword.replace(/\D/g, "");
+
+          const matchedStudents = (students || []).filter((item: any) => {
+            return (
+              String(item.clientName || "").toLowerCase().includes(keywordLower) ||
+              String(item.phone || "").replace(/\D/g, "").includes(keywordDigits) ||
+              String(item.course || "").toLowerCase().includes(keywordLower)
+            );
+          });
+
+          const matchedConsultations = (consultations || []).filter((item: any) => {
+            return (
+              String(item.clientName || "").toLowerCase().includes(keywordLower) ||
+              String(item.phone || "").replace(/\D/g, "").includes(keywordDigits) ||
+              String(item.desiredCourse || "").toLowerCase().includes(keywordLower)
+            );
+          });
 
           return {
             success: true,
             mode: "search",
-            answer: `검색어 "${keyword}" 기준으로 학생 ${matchedStudents.length}건, 상담 ${matchedConsultations.length}건을 찾았습니다.`,
+            answer: `검색어 "${keyword}" 기준으로 학생 ${matchedStudents.length}건, 상담 ${matchedConsultations.length}건을 찾았어요.`,
             data: {
               students: matchedStudents.slice(0, 10),
               consultations: matchedConsultations.slice(0, 10),
@@ -566,7 +676,7 @@ notification: router({
           return {
             success: true,
             mode: "alert",
-            answer: `결제일 누락 ${paymentDateMissing.length}건, 결제금액 누락 ${paymentAmountMissing.length}건입니다.`,
+            answer: `확인해봤어요. 결제일 누락 ${paymentDateMissing.length}건, 결제금액 누락 ${paymentAmountMissing.length}건입니다.`,
             data: {
               paymentDateMissing: paymentDateMissing.slice(0, 10),
               paymentAmountMissing: paymentAmountMissing.slice(0, 10),
@@ -574,151 +684,369 @@ notification: router({
           };
         }
 
+        if (msgLower.includes("실습") && (msgLower.includes("가까운") || msgLower.includes("교육원") || msgLower.includes("기관"))) {
+          return {
+            success: true,
+            mode: "general",
+            answer: "실습 추천은 학생을 먼저 선택한 뒤 실행하는 방식으로 연결하는 것이 안전합니다. 프론트에서 recommend_practice_place 액션으로 연결해주세요.",
+          };
+        }
+
         return {
           success: true,
           mode: "general",
           answer:
-            "현재는 1차 AI 서버 연결 버전입니다. 학생/상담 검색, 누락/결제 점검, 전적대 과목 입력, 우리 플랜 입력 기능부터 연결할 수 있습니다.",
+            "현재는 CRM AI 작업도우미 1차 버전입니다. 학생/상담 검색, 누락/결제 점검, 전적대 과목 입력, 우리 플랜 입력, 실습 추천 기능부터 순서대로 연결할 수 있습니다.",
         };
       }),
 
-logs: superHostProcedure.query(async () => {
-  return [];
-}),
-runAction: protectedProcedure
-  .input(
-    z.object({
-      action: z.enum(["create_transfer_subject", "create_plan_semester"]),
-      studentKeyword: z.string().min(1),
-      subjectName: z.string().min(1),
-      category: z.enum(["전공", "교양", "일반"]),
-      semesterNo: z.number().optional(),
-	selectedStudentId: z.number().optional(),
-    })
-  )
-  .mutation(async ({ ctx, input }) => {
-    const assigneeId = isAdminOrHost(ctx.user)
-      ? undefined
-      : Number(ctx.user.id) || 1;
+    saveLearning: protectedProcedure
+      .input(
+        z.object({
+          learningType: z.string().min(1),
+          inputText: z.string().min(1),
+          normalizedKey: z.string().min(1),
+          targetStudentId: z.number().optional(),
+          targetStudentName: z.string().optional(),
+          payload: z.any(),
+          feedback: z.string().optional(),
+          isApproved: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!db.createAiLearningEntry) {
+          throw new Error("db.ts에 createAiLearningEntry 함수를 먼저 추가해야 합니다.");
+        }
 
-    const students = await db.listStudents(assigneeId);
-    const keyword = input.studentKeyword.trim();
+        await db.createAiLearningEntry({
+          userId: Number(ctx.user.id),
+          userName: ctx.user.name,
+          learningType: input.learningType,
+          inputText: input.inputText,
+          normalizedKey: input.normalizedKey,
+          targetStudentId: input.targetStudentId ?? null,
+          targetStudentName: input.targetStudentName ?? null,
+          payload: input.payload,
+          feedback: input.feedback ?? null,
+          isApproved: input.isApproved ?? true,
+        });
 
-    const matchedStudents = (students || []).filter((item: any) => {
-	if (input.selectedStudentId) {
-  const selected = (students || []).find(
-    (item: any) => Number(item.id) === Number(input.selectedStudentId)
-  );
+        return { success: true };
+      }),
 
-  if (!selected) {
-    throw new Error("선택한 학생을 찾을 수 없습니다.");
-  }
+    getLearningExamples: protectedProcedure
+      .input(
+        z.object({
+          learningType: z.string().min(1),
+          normalizedKey: z.string().optional(),
+          keyword: z.string().optional(),
+        })
+      )
+      .query(async ({ input }) => {
+        if (!db.findSimilarAiLearning) {
+          throw new Error("db.ts에 findSimilarAiLearning 함수를 먼저 추가해야 합니다.");
+        }
 
-  matchedStudents.length = 0;
-  matchedStudents.push(selected);
-}
-      return (
-        String(item.clientName || "").includes(keyword) ||
-        String(item.phone || "").replace(/\D/g, "").includes(keyword.replace(/\D/g, ""))
-      );
-    });
+        const examples = await db.findSimilarAiLearning({
+          learningType: input.learningType,
+          normalizedKey: input.normalizedKey,
+          keyword: input.keyword,
+        });
 
-    if (matchedStudents.length === 0) {
-      throw new Error("해당 학생을 찾을 수 없습니다.");
-    }
+        return {
+          success: true,
+          examples,
+        };
+      }),
 
-    if (matchedStudents.length > 1) {
-  return {
-    success: false,
-    needsSelection: true,
-    message: "동일하거나 유사한 학생이 여러 명입니다. 아래에서 선택해주세요.",
-    candidates: matchedStudents.slice(0, 10).map((student: any) => ({
-      id: student.id,
-      clientName: student.clientName,
-      phone: student.phone,
-      course: student.course,
-      status: student.status,
-      institution: student.institution,
-    })),
-  };
-}
+    logs: superHostProcedure.query(async () => {
+      return [];
+    }),
 
-    const student = matchedStudents[0];
+    runAction: protectedProcedure
+      .input(
+        z.object({
+          action: z.enum([
+            "create_transfer_subject",
+            "create_plan_semester",
+            "recommend_practice_place",
+          ]),
+          studentKeyword: z.string().min(1),
+          subjectName: z.string().min(1).optional(),
+          category: z.enum(["전공", "교양", "일반"]).optional(),
+          semesterNo: z.number().optional(),
+          selectedStudentId: z.number().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const assigneeId = isAdminOrHost(ctx.user)
+          ? undefined
+          : Number(ctx.user.id) || 1;
 
-    if (input.action === "create_transfer_subject") {
-	await db.createAiActionLog({
-  userId: ctx.user.id,
-  userName: ctx.user.name,
-  action: "create_transfer_subject",
-  targetStudentId: student.id,
-  targetStudentName: student.clientName,
-  payload: input,
-});
-      const id = await db.createTransferSubject({
-        studentId: student.id,
-        schoolName: null,
-        subjectName: input.subjectName.trim(),
-        transferCategory: input.category,
-        transferRequirementType: null,
-        credits: 3,
-        sortOrder: 0,
-        attachmentName: null,
-        attachmentUrl: null,
-      } as any);
+        const students = await db.listStudents(assigneeId);
+        const keyword = input.studentKeyword.trim();
+        const keywordLower = keyword.toLowerCase();
+        const keywordDigits = keyword.replace(/\D/g, "");
 
-      return {
-        success: true,
-	needsSelection: false,
-        action: input.action,
-        student: {
-          id: student.id,
-          name: student.clientName,
-        },
-        createdId: id,
-        message: `${student.clientName} 학생의 전적대 과목 "${input.subjectName}" 입력이 완료되었습니다.`,
-      };
-    }
+        let matchedStudents: any[] = [];
 
-    if (input.action === "create_plan_semester") {
-      if (!input.semesterNo) {
-        throw new Error("학기 정보가 필요합니다.");
-      }
+        if (input.selectedStudentId) {
+          const selected = (students || []).find(
+            (item: any) => Number(item.id) === Number(input.selectedStudentId)
+          );
 
-      const existing = await db.listPlanSemesters(student.id);
-      const semesterCount = (existing || []).filter(
-        (x: any) => Number(x.semesterNo) === Number(input.semesterNo)
-      ).length;
+          if (!selected) {
+            throw new Error("선택한 학생을 찾을 수 없습니다.");
+          }
 
-      if (semesterCount >= 8) {
-        throw new Error("우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다.");
-      }
+          matchedStudents = [selected];
+        }
 
-      const id = await db.createPlanSemester({
-        studentId: student.id,
-        semesterNo: input.semesterNo,
-        subjectName: input.subjectName.trim(),
-        planCategory: input.category,
-        planRequirementType: null,
-        credits: 3,
-        sortOrder: 0,
-      } as any);
+        if (!matchedStudents.length) {
+          matchedStudents = (students || []).filter((item: any) => {
+            return (
+              String(item.clientName || "").toLowerCase().includes(keywordLower) ||
+              String(item.phone || "").replace(/\D/g, "").includes(keywordDigits)
+            );
+          });
+        }
 
-      return {
-        success: true,
-        action: input.action,
-        student: {
-          id: student.id,
-          name: student.clientName,
-        },
-        createdId: id,
-        message: `${student.clientName} 학생의 ${input.semesterNo}학기 플랜 과목 "${input.subjectName}" 입력이 완료되었습니다.`,
-      };
-    }
+        if (matchedStudents.length === 0) {
+          throw new Error("해당 학생을 찾을 수 없습니다.");
+        }
 
-    throw new Error("지원하지 않는 액션입니다.");
+        if (matchedStudents.length > 1) {
+          return {
+            success: false,
+            needsSelection: true,
+            message: "동일하거나 유사한 학생이 여러 명입니다. 아래에서 선택해주세요.",
+            candidates: matchedStudents.slice(0, 10).map((student: any) => ({
+              id: student.id,
+              clientName: student.clientName,
+              phone: student.phone,
+              course: student.course,
+              status: student.status,
+              institution: student.institution,
+              finalEducation: student.finalEducation,
+            })),
+          };
+        }
+
+        const student = matchedStudents[0];
+
+        if (input.action === "create_transfer_subject") {
+          if (!input.subjectName?.trim()) {
+            return {
+              success: true,
+              needsSelection: false,
+              student: {
+                id: student.id,
+                name: student.clientName,
+                phone: student.phone,
+                course: student.course,
+                finalEducation: student.finalEducation,
+              },
+              message: "전적대 입력 대상으로 학생을 찾았어요. 과목명과 구분을 확인한 뒤 실행할 수 있습니다.",
+            };
+          }
+
+          if (!input.category) {
+            throw new Error("전적대 과목 구분이 필요합니다.");
+          }
+
+          const id = await db.createTransferSubject({
+            studentId: student.id,
+            schoolName: null,
+            subjectName: input.subjectName.trim(),
+            transferCategory: input.category,
+            transferRequirementType: null,
+            credits: 3,
+            sortOrder: 0,
+            attachmentName: null,
+            attachmentUrl: null,
+          } as any);
+
+          if (db.createAiActionLog) {
+            await db.createAiActionLog({
+              userId: Number(ctx.user.id),
+              userName: ctx.user.name,
+              action: "create_transfer_subject",
+              targetStudentId: student.id,
+              targetStudentName: student.clientName,
+              payload: input,
+            });
+          }
+
+          if (db.createAiLearningEntry) {
+            await db.createAiLearningEntry({
+              userId: Number(ctx.user.id),
+              userName: ctx.user.name,
+              learningType: "transfer_subject_input",
+              inputText: `${student.clientName} 전적대 ${input.subjectName} ${input.category}`,
+              normalizedKey: `transfer_subject|${input.category}`,
+              targetStudentId: student.id,
+              targetStudentName: student.clientName,
+              payload: input,
+              feedback: null,
+              isApproved: true,
+            });
+          }
+
+          return {
+            success: true,
+            needsSelection: false,
+            action: input.action,
+            student: {
+              id: student.id,
+              name: student.clientName,
+              phone: student.phone,
+              course: student.course,
+              finalEducation: student.finalEducation,
+            },
+            createdId: id,
+            message: `${student.clientName} 학생의 전적대 과목 "${input.subjectName}" 입력이 완료되었습니다.`,
+          };
+        }
+
+        if (input.action === "create_plan_semester") {
+          if (!input.subjectName?.trim()) {
+            return {
+              success: true,
+              needsSelection: false,
+              student: {
+                id: student.id,
+                name: student.clientName,
+                phone: student.phone,
+                course: student.course,
+                finalEducation: student.finalEducation,
+              },
+              message: "플랜 입력 대상으로 학생을 찾았어요. 학기, 과목명, 구분을 확인한 뒤 실행할 수 있습니다.",
+            };
+          }
+
+          if (!input.semesterNo) {
+            throw new Error("학기 정보가 필요합니다.");
+          }
+
+          if (!input.category) {
+            throw new Error("플랜 과목 구분이 필요합니다.");
+          }
+
+          const existing = await db.listPlanSemesters(student.id);
+          const semesterCount = (existing || []).filter(
+            (x: any) => Number(x.semesterNo) === Number(input.semesterNo)
+          ).length;
+
+          if (semesterCount >= 8) {
+            throw new Error("우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다.");
+          }
+
+          const id = await db.createPlanSemester({
+            studentId: student.id,
+            semesterNo: input.semesterNo,
+            subjectName: input.subjectName.trim(),
+            planCategory: input.category,
+            planRequirementType: null,
+            credits: 3,
+            sortOrder: 0,
+          } as any);
+
+          if (db.createAiActionLog) {
+            await db.createAiActionLog({
+              userId: Number(ctx.user.id),
+              userName: ctx.user.name,
+              action: "create_plan_semester",
+              targetStudentId: student.id,
+              targetStudentName: student.clientName,
+              payload: input,
+            });
+          }
+
+          if (db.createAiLearningEntry) {
+            await db.createAiLearningEntry({
+              userId: Number(ctx.user.id),
+              userName: ctx.user.name,
+              learningType: "plan_semester_input",
+              inputText: `${student.clientName} ${input.semesterNo}학기 ${input.subjectName} ${input.category}`,
+              normalizedKey: `plan_semester|${input.semesterNo}|${input.category}`,
+              targetStudentId: student.id,
+              targetStudentName: student.clientName,
+              payload: input,
+              feedback: null,
+              isApproved: true,
+            });
+          }
+
+          return {
+            success: true,
+            needsSelection: false,
+            action: input.action,
+            student: {
+              id: student.id,
+              name: student.clientName,
+              phone: student.phone,
+              course: student.course,
+              finalEducation: student.finalEducation,
+            },
+            createdId: id,
+            message: `${student.clientName} 학생의 ${input.semesterNo}학기 플랜 과목 "${input.subjectName}" 입력이 완료되었습니다.`,
+          };
+        }
+
+        if (input.action === "recommend_practice_place") {
+          if (!db.getPracticeRecommendationsForStudent) {
+            throw new Error("db.ts에 getPracticeRecommendationsForStudent 함수를 먼저 추가해야 합니다.");
+          }
+
+          const recommendations = await db.getPracticeRecommendationsForStudent(student.id);
+
+          if (db.createAiActionLog) {
+            await db.createAiActionLog({
+              userId: Number(ctx.user.id),
+              userName: ctx.user.name,
+              action: "recommend_practice_place",
+              targetStudentId: student.id,
+              targetStudentName: student.clientName,
+              payload: input,
+            });
+          }
+
+          const educationLines = (recommendations.educationCenters || [])
+            .slice(0, 3)
+            .map((item: any, idx: number) => `${idx + 1}. ${item.name} - ${item.distanceKm}km`);
+
+          const institutionLines = (recommendations.institutions || [])
+            .slice(0, 3)
+            .map((item: any, idx: number) => `${idx + 1}. ${item.name} - ${item.distanceKm}km`);
+
+          return {
+            success: true,
+            needsSelection: false,
+            action: input.action,
+            student: {
+              id: student.id,
+              name: student.clientName,
+              phone: student.phone,
+              course: student.course,
+              finalEducation: student.finalEducation,
+            },
+            recommendations,
+            message: [
+              `${student.clientName} 학생 주소 기준으로 가장 가까운 실습 추천 결과를 정리했어요.`,
+              "",
+              "교육원 추천:",
+              ...(educationLines.length ? educationLines : ["- 추천 가능한 교육원이 없습니다."]),
+              "",
+              "실습기관 추천:",
+              ...(institutionLines.length ? institutionLines : ["- 추천 가능한 기관이 없습니다."]),
+            ].join("
+"),
+          };
+        }
+
+        throw new Error("지원하지 않는 액션입니다.");
+      }),
   }),
-  }),
-
   dashboard: router({
     monthApprovals: protectedProcedure.query(async ({ ctx }) => {
       const isAdminHost = isAdminOrHost(ctx.user);

@@ -8,6 +8,7 @@ import {
   X,
   Image as ImageIcon,
   AlertCircle,
+  UserCheck,
 } from "lucide-react";
 import { Streamdown } from "streamdown";
 
@@ -71,6 +72,14 @@ export type QuickAction = {
   runImmediately?: boolean;
 };
 
+export type SelectedStudentContext = {
+  id: number;
+  clientName: string;
+  phone?: string | null;
+  course?: string | null;
+  finalEducation?: string | null;
+};
+
 export type AIChatBoxProps = {
   messages: Message[];
   onSendMessage: (content: string, files?: File[]) => void | Promise<void>;
@@ -95,6 +104,9 @@ export type AIChatBoxProps = {
   errorMessage?: string | null;
   maxFiles?: number;
   maxFileSizeMb?: number;
+  selectedStudent?: SelectedStudentContext | null;
+  onClearSelectedStudent?: () => void;
+  loadingLabel?: string;
 };
 
 type LocalPreviewFile = {
@@ -137,6 +149,9 @@ export function AIChatBox({
   errorMessage = null,
   maxFiles = 4,
   maxFileSizeMb = 10,
+  selectedStudent = null,
+  onClearSelectedStudent,
+  loadingLabel = "AI가 요청을 처리하고 있어요...",
 }: AIChatBoxProps) {
   const [input, setInput] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
@@ -249,12 +264,14 @@ export function AIChatBox({
     const trimmedInput = input.trim();
     const files = attachedFiles.map((item) => item.file);
 
-    if ((!trimmedInput && files.length === 0) || isLoading || disabled) return;
+    if (isLoading || disabled) return;
+    if (!trimmedInput && files.length === 0) return;
 
     clearComposerError();
 
     try {
       await onSendMessage(trimmedInput, files);
+
       setInput("");
 
       attachedFiles.forEach((item) => {
@@ -271,10 +288,15 @@ export function AIChatBox({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = async (
+    e: React.KeyboardEvent<HTMLTextAreaElement>
+  ) => {
+    if (e.nativeEvent.isComposing) return;
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      void handleSubmit();
+      e.stopPropagation();
+      await handleSubmit();
     }
   };
 
@@ -561,6 +583,40 @@ export function AIChatBox({
       )}
       style={{ height }}
     >
+      {selectedStudent && (
+        <div className="border-b bg-primary/5 px-4 py-3">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-start gap-2">
+              <div className="rounded-full bg-primary/10 p-2 text-primary">
+                <UserCheck className="size-4" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">
+                  현재 선택 학생: {selectedStudent.clientName}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  연락처: {selectedStudent.phone || "-"} / 과정:{" "}
+                  {selectedStudent.course || "-"} / 최종학력:{" "}
+                  {selectedStudent.finalEducation || "-"}
+                </p>
+              </div>
+            </div>
+
+            {onClearSelectedStudent && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onClearSelectedStudent}
+                disabled={disabled || isLoading}
+              >
+                선택 해제
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {(quickActions.length > 0 || suggestedPrompts.length > 0) && (
         <div className="border-b bg-muted/30 px-4 py-3">
           {quickActions.length > 0 && (
@@ -647,7 +703,12 @@ export function AIChatBox({
                     <Sparkles className="size-4" />
                   </div>
                   <div className="rounded-2xl border border-border bg-muted px-4 py-3 shadow-sm">
-                    <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">
+                        {loadingLabel}
+                      </span>
+                    </div>
                   </div>
                 </div>
               )}
@@ -762,11 +823,12 @@ export function AIChatBox({
                 clearComposerError();
                 setInput(e.target.value);
               }}
-              onKeyDown={handleKeyDown}
+              onKeyDownCapture={handleKeyDown}
               placeholder={placeholder}
               disabled={disabled || isLoading}
               rows={1}
               className="min-h-[24px] max-h-40 resize-none border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0"
+              enterKeyHint="send"
             />
 
             <div className="mt-2 flex items-center justify-between">

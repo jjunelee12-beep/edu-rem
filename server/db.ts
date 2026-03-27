@@ -106,6 +106,162 @@ async function getNextUserDisplayNo() {
   return maxNo + 1;
 }
 
+// ==============================
+// AI HELPERS
+// ==============================
+
+// AI 액션 로그 저장
+export async function createAiActionLog(params: {
+  userId: number;
+  userName: string;
+  action: string;
+  targetStudentId?: number | null;
+  targetStudentName?: string | null;
+  payload?: any;
+}) {
+  try {
+    const db = await getDb();
+    if (!db) return;
+
+    await db.insert(aiActionLogs).values({
+      userId: params.userId,
+      userName: params.userName,
+      action: params.action,
+      targetStudentId: params.targetStudentId ?? null,
+      targetStudentName: params.targetStudentName ?? null,
+      payload: params.payload ? JSON.stringify(params.payload) : null,
+    } as any);
+  } catch (e) {
+    console.error("[AI LOG ERROR]", e);
+  }
+}
+
+// 학생 좌표 조회
+export async function getStudentWithCoords(studentId: number) {
+  const student = await getStudent(studentId);
+  if (!student) return null;
+
+  return {
+    ...student,
+    latitude: student.latitude ? Number(student.latitude) : null,
+    longitude: student.longitude ? Number(student.longitude) : null,
+  };
+}
+
+// 실습기관 목록
+export async function listActivePracticeInstitutions() {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(practiceInstitutions)
+    .where(eq(practiceInstitutions.isActive, true));
+}
+
+// 실습교육원 목록
+export async function listActivePracticeEducationCenters() {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(practiceEducationCenters)
+    .where(eq(practiceEducationCenters.isActive, true));
+}
+
+// 실습 추천 핵심 함수
+export async function getPracticeRecommendationsForStudent(studentId: number) {
+  const student = await getStudentWithCoords(studentId);
+  if (!student || !student.latitude || !student.longitude) {
+    throw new Error("학생 주소 좌표 없음");
+  }
+
+  const institutions = await listActivePracticeInstitutions();
+  const centers = await listActivePracticeEducationCenters();
+
+  const calc = (list: any[]) =>
+    list
+      .map((item) => {
+        if (!item.latitude || !item.longitude) return null;
+
+        const dist = haversineDistanceKm(
+          Number(student.latitude),
+          Number(student.longitude),
+          Number(item.latitude),
+          Number(item.longitude)
+        );
+
+        return {
+          ...item,
+          distanceKm: Number(dist.toFixed(2)),
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .slice(0, 5);
+
+  return {
+    student,
+    institutions: calc(institutions),
+    educationCenters: calc(centers),
+  };
+}
+
+// ==============================
+// AI LEARNING
+// ==============================
+
+// 학습 데이터 저장
+export async function createAiLearningEntry(params: {
+  userId: number;
+  userName: string;
+  learningType: string;
+  inputText: string;
+  normalizedKey?: string;
+  payload?: any;
+  targetStudentId?: number | null;
+  targetStudentName?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) return;
+
+  await db.insert(sql`
+    INSERT INTO ai_learning_entries
+    (userId, userName, learningType, inputText, normalizedKey, payload, targetStudentId, targetStudentName)
+    VALUES (
+      ${params.userId},
+      ${params.userName},
+      ${params.learningType},
+      ${params.inputText},
+      ${params.normalizedKey ?? null},
+      ${params.payload ? JSON.stringify(params.payload) : null},
+      ${params.targetStudentId ?? null},
+      ${params.targetStudentName ?? null}
+    )
+  `);
+}
+
+// 유사 학습 조회
+export async function findSimilarAiLearning(params: {
+  learningType?: string;
+  normalizedKey?: string;
+  keyword?: string;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const [rows] = await db.execute(sql`
+    SELECT *
+    FROM ai_learning_entries
+    WHERE 
+      (${params.normalizedKey ?? null} IS NULL OR normalizedKey = ${params.normalizedKey ?? null})
+    ORDER BY createdAt DESC
+    LIMIT 5
+  `);
+
+  return rows as any[];
+}
 export async function getStudentRegistrationSummary(studentId: number) {
   const db = await getDb();
   if (!db) {
