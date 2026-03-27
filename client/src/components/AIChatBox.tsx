@@ -25,6 +25,7 @@ export type MessageAttachment = {
   type?: string;
   size?: number;
 };
+
 export type SearchResultItem = {
   id: number;
   type: "student" | "consultation";
@@ -59,7 +60,12 @@ export type Message = {
 };
 
 export type QuickAction = {
-  key: "student_search" | "consultation_search" | "alerts_missing" | "alerts_payment" | "error_analysis";
+  key:
+    | "student_search"
+    | "consultation_search"
+    | "alerts_missing"
+    | "alerts_payment"
+    | "error_analysis";
   label: string;
   prompt: string;
   runImmediately?: boolean;
@@ -76,7 +82,7 @@ export type AIChatBoxProps = {
   suggestedPrompts?: string[];
   quickActions?: QuickAction[];
   onQuickAction?: (action: QuickAction) => void | Promise<void>;
-    onSearchResultAction?: (
+  onSearchResultAction?: (
     action:
       | { type: "open_student"; id: number }
       | { type: "open_consultation"; id: number }
@@ -124,7 +130,7 @@ export function AIChatBox({
   emptyStateMessage = "AI와 대화를 시작해보세요.",
   suggestedPrompts = [],
   quickActions = [],
-onQuickAction,
+  onQuickAction,
   onSearchResultAction,
   allowImageUpload = true,
   disabled = false,
@@ -280,19 +286,207 @@ onQuickAction,
     });
   };
 
+  const renderSearchResults = (message: Message) => {
+    const hasStudentResults = (message.searchResults?.students?.length ?? 0) > 0;
+    const hasConsultationResults =
+      (message.searchResults?.consultations?.length ?? 0) > 0;
+
+    if (!hasStudentResults && !hasConsultationResults) return null;
+
+    return (
+      <div className="mt-3 space-y-3">
+        {hasStudentResults && (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground">
+              학생 검색 결과
+            </p>
+
+            {message.searchResults?.students?.map((item) => (
+              <div
+                key={`student-${item.id}`}
+                className="rounded-xl border bg-background px-3 py-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">
+                      {item.clientName || "-"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      연락처: {item.phone || "-"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      과정: {item.course || "-"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      상태: {item.status || "-"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      교육원: {item.institution || "-"}
+                    </p>
+                  </div>
+
+                  <div className="flex shrink-0 flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onSearchResultAction?.({
+                          type: "open_student",
+                          id: item.id,
+                        })
+                      }
+                      className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
+                    >
+                      상세보기
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onSearchResultAction?.({
+                          type: "start_transfer_subject",
+                          id: item.id,
+                          name: item.clientName,
+                        })
+                      }
+                      className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
+                    >
+                      전적대 입력
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onSearchResultAction?.({
+                          type: "start_plan_semester",
+                          id: item.id,
+                          name: item.clientName,
+                        })
+                      }
+                      className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
+                    >
+                      플랜 입력
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onSearchResultAction?.({
+                          type: "select_student_for_pending_action",
+                          id: item.id,
+                          name: item.clientName,
+                        })
+                      }
+                      className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
+                    >
+                      이 학생 선택
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {hasConsultationResults && (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground">
+              상담 검색 결과
+            </p>
+
+            {message.searchResults?.consultations?.map((item) => (
+              <div
+                key={`consultation-${item.id}`}
+                className="rounded-xl border bg-background px-3 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">
+                    {item.clientName || "-"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    연락처: {item.phone || "-"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    희망과정: {item.desiredCourse || "-"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    상태: {item.status || "-"}
+                  </p>
+                </div>
+
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onSearchResultAction?.({
+                        type: "open_consultation",
+                        id: item.id,
+                      })
+                    }
+                    className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
+                  >
+                    상담 상세로 이동
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderAttachments = (message: Message) => {
+    if (!message.attachments || message.attachments.length === 0) return null;
+
+    return (
+      <div className="mt-3 space-y-2">
+        {message.attachments.map((attachment, index) => {
+          const image = !!attachment.url && isImageFile(attachment.type);
+
+          if (image) {
+            return (
+              <div
+                key={`${message.id}-attachment-${index}`}
+                className="overflow-hidden rounded-xl border bg-background"
+              >
+                <img
+                  src={attachment.url}
+                  alt={attachment.name}
+                  className="max-h-72 w-full object-contain"
+                />
+                <div className="border-t px-3 py-2 text-xs text-muted-foreground">
+                  {attachment.name}
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div
+              key={`${message.id}-attachment-${index}`}
+              className="flex items-center gap-2 rounded-xl border bg-background px-3 py-2 text-xs text-muted-foreground"
+            >
+              <Paperclip className="size-3.5" />
+              <span className="truncate">{attachment.name}</span>
+              {attachment.size ? (
+                <span className="shrink-0">{formatBytes(attachment.size)}</span>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const renderMessageBubble = (message: Message) => {
     const isUser = message.role === "user";
-    const isError =
-      message.kind === "error" || message.kind === "warning";
-const isActionResult = message.kind === "action_result";
+    const isError = message.kind === "error" || message.kind === "warning";
+    const isActionResult = message.kind === "action_result";
 
     return (
       <div
         key={message.id}
-        className={cn(
-          "flex gap-3",
-          isUser ? "justify-end" : "justify-start"
-        )}
+        className={cn("flex gap-3", isUser ? "justify-end" : "justify-start")}
       >
         {!isUser && (
           <div
@@ -317,10 +511,10 @@ const isActionResult = message.kind === "action_result";
             isUser
               ? "border-primary bg-primary text-primary-foreground"
               : isError
-? "border-destructive/20 bg-destructive/5 text-foreground"
-: isActionResult
-? "border-emerald-200 bg-emerald-50 text-foreground"
-: "border-border bg-muted text-foreground"
+              ? "border-destructive/20 bg-destructive/5 text-foreground"
+              : isActionResult
+              ? "border-emerald-200 bg-emerald-50 text-foreground"
+              : "border-border bg-muted text-foreground"
           )}
         >
           {message.createdAt && (
@@ -343,240 +537,11 @@ const isActionResult = message.kind === "action_result";
           ) : (
             <div className="max-w-none text-sm leading-6 [&_code]:rounded [&_code]:bg-black/5 [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:border [&_pre]:bg-background [&_pre]:p-3 [&_ul]:pl-5 [&_ol]:pl-5">
               <Streamdown>{message.content}</Streamdown>
-	{message.kind === "search_result" && message.searchResults && (
-  <div className="mt-3 space-y-2">
-    {message.searchResults.students?.map((item) => (
-      <div key={item.id} className="rounded-lg border p-2 text-xs">
-        <div>이름: {item.clientName}</div>
-        <div>전화: {item.phone}</div>
-        <div>과정: {item.course}</div>
-
-        <div className="mt-2 flex gap-1">
-          <button
-            className="text-blue-500"
-            onClick={() =>
-              onSearchResultAction?.({
-                type: "open_student",
-                id: item.id,
-              })
-            }
-          >
-            상세보기
-          </button>
-
-          <button
-            className="text-green-500"
-            onClick={() =>
-              onSearchResultAction?.({
-                type: "start_transfer_subject",
-                id: item.id,
-                name: item.clientName,
-              })
-            }
-          >
-            전적대 입력
-          </button>
-
-          <button
-            className="text-purple-500"
-            onClick={() =>
-              onSearchResultAction?.({
-                type: "start_plan_semester",
-                id: item.id,
-                name: item.clientName,
-              })
-            }
-          >
-            플랜 입력
-          </button>
-        </div>
-      </div>
-    ))}
-  </div>
-)}
             </div>
           )}
 
-          {message.attachments && message.attachments.length > 0 && (
-	          {message.searchResults &&
-            ((message.searchResults.students?.length ?? 0) > 0 ||
-              (message.searchResults.consultations?.length ?? 0) > 0) && (
-              <div className="mt-3 space-y-3">
-                {(message.searchResults.students?.length ?? 0) > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground">
-                      학생 검색 결과
-                    </p>
-                    {message.searchResults.students?.map((item) => (
-                      <div
-                        key={`student-${item.id}`}
-                        className="rounded-xl border bg-background px-3 py-3"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold">
-                              {item.clientName || "-"}
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              연락처: {item.phone || "-"}
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              과정: {item.course || "-"}
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              상태: {item.status || "-"}
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              교육원: {item.institution || "-"}
-                            </p>
-                          </div>
-
-                          <div className="flex shrink-0 flex-col gap-2">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onSearchResultAction?.({
-                                  type: "open_student",
-                                  id: item.id,
-                                })
-                              }
-                              className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
-                            >
-                              상세보기
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onSearchResultAction?.({
-                                  type: "start_transfer_subject",
-                                  id: item.id,
-                                  name: item.clientName,
-                                })
-                              }
-                              className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
-                            >
-                              전적대 입력
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onSearchResultAction?.({
-                                  type: "start_plan_semester",
-                                  id: item.id,
-                                  name: item.clientName,
-                                })
-                              }
-                              className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
-                            >
-                              플랜 입력
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onSearchResultAction?.({
-                                  type: "select_student_for_pending_action",
-                                  id: item.id,
-                                  name: item.clientName,
-                                })
-                              }
-                              className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
-                            >
-                              이 학생 선택
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {(message.searchResults.consultations?.length ?? 0) > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground">
-                      상담 검색 결과
-                    </p>
-                    {message.searchResults.consultations?.map((item) => (
-                      <div
-                        key={`consultation-${item.id}`}
-                        className="rounded-xl border bg-background px-3 py-3"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold">
-                            {item.clientName || "-"}
-                          </p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            연락처: {item.phone || "-"}
-                          </p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            희망과정: {item.desiredCourse || "-"}
-                          </p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            상태: {item.status || "-"}
-                          </p>
-                        </div>
-
-                        <div className="mt-3 flex justify-end">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onSearchResultAction?.({
-                                type: "open_consultation",
-                                id: item.id,
-                              })
-                            }
-                            className="rounded-lg border px-2 py-1 text-xs transition hover:bg-accent"
-                          >
-                            상담 상세로 이동
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-          {message.attachments && message.attachments.length > 0 && (
-            <div className="mt-3 space-y-2">
-              {message.attachments.map((attachment, index) => {
-                const image = !!attachment.url && isImageFile(attachment.type);
-
-                if (image) {
-                  return (
-                    <div
-                      key={`${message.id}-attachment-${index}`}
-                      className="overflow-hidden rounded-xl border bg-background"
-                    >
-                      <img
-                        src={attachment.url}
-                        alt={attachment.name}
-                        className="max-h-72 w-full object-contain"
-                      />
-                      <div className="border-t px-3 py-2 text-xs text-muted-foreground">
-                        {attachment.name}
-                      </div>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div
-                    key={`${message.id}-attachment-${index}`}
-                    className="flex items-center gap-2 rounded-xl border bg-background px-3 py-2 text-xs text-muted-foreground"
-                  >
-                    <Paperclip className="size-3.5" />
-                    <span className="truncate">{attachment.name}</span>
-                    {attachment.size ? (
-                      <span className="shrink-0">{formatBytes(attachment.size)}</span>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          )}          
+          {renderSearchResults(message)}
+          {renderAttachments(message)}
         </div>
 
         {isUser && (
@@ -607,12 +572,12 @@ const isActionResult = message.kind === "action_result";
                   variant="outline"
                   size="sm"
                   onClick={() => {
-  if (action.runImmediately && onQuickAction) {
-    void onQuickAction(action);
-    return;
-  }
-  fillPrompt(action.prompt);
-}}
+                    if (action.runImmediately && onQuickAction) {
+                      void onQuickAction(action);
+                      return;
+                    }
+                    fillPrompt(action.prompt);
+                  }}
                   disabled={disabled || isLoading}
                   className="rounded-full"
                 >
@@ -733,7 +698,9 @@ const isActionResult = message.kind === "action_result";
                         <Paperclip className="size-4 text-muted-foreground" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-medium">{item.file.name}</p>
+                        <p className="truncate text-xs font-medium">
+                          {item.file.name}
+                        </p>
                         <p className="text-[11px] text-muted-foreground">
                           {formatBytes(item.file.size)}
                         </p>
