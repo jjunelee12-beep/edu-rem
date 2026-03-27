@@ -2746,7 +2746,7 @@ export async function deleteJobSupportRequest(id: number) {
   await db.delete(jobSupportRequests).where(eq(jobSupportRequests.id, id));
 }
 
-export async function createAiActionLog(data: {
+export async function createAiActionLogV2(data: {
   userId: number;
   userName?: string;
   action: string;

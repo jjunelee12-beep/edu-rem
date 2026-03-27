@@ -1039,7 +1039,7 @@ uploadTranscriptImage: protectedProcedure
               "",
               "실습기관 추천:",
               ...(institutionLines.length ? institutionLines : ["- 추천 가능한 기관이 없습니다."]),
-            ].join("
+            ].join("\n")
 "),
           };
         }
