@@ -343,7 +343,57 @@ const isActionResult = message.kind === "action_result";
           ) : (
             <div className="max-w-none text-sm leading-6 [&_code]:rounded [&_code]:bg-black/5 [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:border [&_pre]:bg-background [&_pre]:p-3 [&_ul]:pl-5 [&_ol]:pl-5">
               <Streamdown>{message.content}</Streamdown>
-	{message.kind === "search_result" && ...}
+	{message.kind === "search_result" && message.searchResults && (
+  <div className="mt-3 space-y-2">
+    {message.searchResults.students?.map((item) => (
+      <div key={item.id} className="rounded-lg border p-2 text-xs">
+        <div>이름: {item.clientName}</div>
+        <div>전화: {item.phone}</div>
+        <div>과정: {item.course}</div>
+
+        <div className="mt-2 flex gap-1">
+          <button
+            className="text-blue-500"
+            onClick={() =>
+              onSearchResultAction?.({
+                type: "open_student",
+                id: item.id,
+              })
+            }
+          >
+            상세보기
+          </button>
+
+          <button
+            className="text-green-500"
+            onClick={() =>
+              onSearchResultAction?.({
+                type: "start_transfer_subject",
+                id: item.id,
+                name: item.clientName,
+              })
+            }
+          >
+            전적대 입력
+          </button>
+
+          <button
+            className="text-purple-500"
+            onClick={() =>
+              onSearchResultAction?.({
+                type: "start_plan_semester",
+                id: item.id,
+                name: item.clientName,
+              })
+            }
+          >
+            플랜 입력
+          </button>
+        </div>
+      </div>
+    ))}
+  </div>
+)}
             </div>
           )}
 
