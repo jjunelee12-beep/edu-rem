@@ -4014,3 +4014,174 @@ export async function changeMyPassword(params: {
 
   return { success: true };
 }
+
+// ─── Notices (공지사항) ─────────────────────────────
+
+export async function listNotices() {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(sql`notices`)
+    .orderBy(desc(sql`id`));
+}
+
+export async function getNotice(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [rows] = await db.execute(sql`
+    SELECT * FROM notices WHERE id = ${id} LIMIT 1
+  `);
+
+  return (rows as any[])[0] ?? null;
+}
+
+export async function createNotice(data: {
+  title: string;
+  content: string;
+  authorId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.execute(sql`
+    INSERT INTO notices (title, content, authorId)
+    VALUES (${data.title}, ${data.content}, ${data.authorId})
+  `);
+
+  return getInsertId(result);
+}
+
+export async function updateNotice(
+  id: number,
+  data: { title?: string; content?: string }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.execute(sql`
+    UPDATE notices
+    SET
+      title = COALESCE(${data.title}, title),
+      content = COALESCE(${data.content}, content)
+    WHERE id = ${id}
+  `);
+}
+
+export async function deleteNotice(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.execute(sql`DELETE FROM notices WHERE id = ${id}`);
+}
+
+export async function bulkDeleteNotices(ids: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  if (!ids.length) return;
+
+  await db.execute(sql`
+    DELETE FROM notices WHERE id IN (${sql.join(ids.map(id => sql`${id}`), sql`, `)})
+  `);
+}
+
+export async function increaseNoticeView(id: number) {
+  const db = await getDb();
+  if (!db) return;
+
+  await db.execute(sql`
+    UPDATE notices SET views = views + 1 WHERE id = ${id}
+  `);
+}
+
+// ─── Schedules (일정/캘린더) ─────────────────────────────
+
+export async function listMonthSchedules(year: number, month: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const start = `${year}-${String(month).padStart(2, "0")}-01`;
+  const endMonth = month === 12 ? 1 : month + 1;
+  const endYear = month === 12 ? year + 1 : year;
+  const end = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
+
+  const [rows] = await db.execute(sql`
+    SELECT * FROM schedules
+    WHERE date >= ${start} AND date < ${end}
+    ORDER BY date ASC
+  `);
+
+  return rows as any[];
+}
+
+export async function listTodaySchedules(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [rows] = await db.execute(sql`
+    SELECT * FROM schedules
+    WHERE date = ${today}
+      AND (userId = ${userId} OR isGlobal = true)
+    ORDER BY hour ASC, minute ASC
+  `);
+
+  return rows as any[];
+}
+
+export async function createSchedule(data: {
+  title: string;
+  date: string;
+  hour: number;
+  minute: number;
+  ampm: "AM" | "PM";
+  userId: number;
+  isGlobal: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.execute(sql`
+    INSERT INTO schedules (title, date, hour, minute, ampm, userId, isGlobal)
+    VALUES (
+      ${data.title},
+      ${data.date},
+      ${data.hour},
+      ${data.minute},
+      ${data.ampm},
+      ${data.userId},
+      ${data.isGlobal}
+    )
+  `);
+
+  return getInsertId(result);
+}
+
+export async function updateSchedule(
+  id: number,
+  userId: number,
+  data: any
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.execute(sql`
+    UPDATE schedules
+    SET title = ${data.title}
+    WHERE id = ${id} AND userId = ${userId}
+  `);
+}
+
+export async function deleteSchedule(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.execute(sql`
+    DELETE FROM schedules
+    WHERE id = ${id} AND userId = ${userId}
+  `);
+}

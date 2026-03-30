@@ -758,6 +758,38 @@ createdAt: timestamp("createdAt").notNull().defaultNow(),
 export type InsertAttendanceAdjustmentLog =
   typeof attendanceAdjustmentLogs.$inferInsert;
 
+export const notices = mysqlTable("notices", {
+  id: int("id").autoincrement().primaryKey(),
+  title: varchar("title", { length: 255 }).notNull(),
+  content: text("content").notNull(),
+  authorId: int("authorId").notNull(),
+  authorName: varchar("authorName", { length: 100 }),
+  isPinned: boolean("isPinned").notNull().default(false),
+  isActive: boolean("isActive").notNull().default(true),
+  viewCount: int("viewCount").notNull().default(0),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
+});
+
+export const schedules = mysqlTable("schedules", {
+  id: int("id").autoincrement().primaryKey(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  scheduleDate: date("scheduleDate").notNull(),
+  meridiem: mysqlEnum("meridiem", ["AM", "PM"]).notNull(),
+  hour12: int("hour12").notNull(),
+  minute: int("minute").notNull(),
+  startAt: datetime("startAt").notNull(),
+  scope: mysqlEnum("scope", ["personal", "global"]).notNull().default("personal"),
+  ownerUserId: int("ownerUserId").notNull(),
+  ownerUserName: varchar("ownerUserName", { length: 100 }),
+  createdByRole: mysqlEnum("createdByRole", ["staff", "admin", "host", "superhost"]).notNull(),
+  isActive: boolean("isActive").notNull().default(true),
+  isNotified: boolean("isNotified").notNull().default(false),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
+});
+
 // ─── Device Tokens (모바일 푸시 토큰) ───────────────────────────────
 export const deviceTokens = mysqlTable("device_tokens", {
   id: int("id").autoincrement().primaryKey(),

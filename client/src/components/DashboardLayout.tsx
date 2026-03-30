@@ -1,5 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,6 +34,7 @@ import {
   Calculator,
   BadgeCheck,
   CalendarDays,
+  CalendarRange,
   Settings,
   Award,
   Briefcase,
@@ -43,6 +44,7 @@ import {
   Palette,
   BarChart3,
   MessageSquare,
+  Megaphone,
   User,
   X,
   ChevronRight,
@@ -65,6 +67,8 @@ const staffMenuItems: MenuItem[] = [
   { icon: PhoneCall, label: "상담 DB", path: "/consultations" },
   { icon: GraduationCap, label: "학생 관리", path: "/students" },
   { icon: CalendarDays, label: "학기별 예정표", path: "/semesters" },
+  { icon: Megaphone, label: "공지사항", path: "/notices" },
+  { icon: CalendarRange, label: "일정 / 캘린더", path: "/schedules" },
 ];
 
 const adminMenuItems: MenuItem[] = [
@@ -99,6 +103,7 @@ type AuthUser = {
   username: string;
   role: UserRole;
   name?: string;
+profileImageUrl?: string | null;
 };
 
 type NotificationItem = {
@@ -488,11 +493,11 @@ const visibleSuperhostMenuItems =
               <DropdownMenuTrigger asChild>
                 <button className="group-data-[collapsible=icon]:justify-center flex w-full items-center gap-3 rounded-lg px-1 py-1 text-left transition-colors hover:bg-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <Avatar className="h-9 w-9 shrink-0 border">
-                    <AvatarFallback className="bg-primary/10 text-xs font-medium text-primary">
-                      {user?.name?.charAt(0).toUpperCase() || "U"}
-                    </AvatarFallback>
-                  </Avatar>
-
+  <AvatarImage src={user?.avatarUrl || ""} alt={user?.name || "user"} />
+  <AvatarFallback className="bg-primary/10 text-xs font-medium text-primary">
+    {user?.name?.charAt(0).toUpperCase() || "U"}
+  </AvatarFallback>
+</Avatar>
                   <div className="group-data-[collapsible=icon]:hidden min-w-0 flex-1">
                     <p className="truncate text-sm font-medium leading-none">
                       {user?.name || "-"}

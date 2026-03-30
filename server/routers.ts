@@ -17,6 +17,8 @@ import { smsRouter } from "./_core/sms.router";
 import Tesseract from "tesseract.js";
 import OpenAI from "openai";
 import { attendanceRouter } from "./attendance.router";
+import { noticeRouter } from "./routes/notice.router";
+import { scheduleRouter } from "./routes/schedule.router";
 
 function isAdminOrHost(user: any) {
   return (
@@ -62,6 +64,8 @@ export const appRouter = router({
   leadForm: publicLeadRouter,
   sms: smsRouter,
 attendance: attendanceRouter,
+notice: noticeRouter,
+schedule: scheduleRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {

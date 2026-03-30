@@ -53,28 +53,6 @@ type AttendanceCardItem = {
   position?: string;
 };
 
-const notices: NoticeItem[] = [
-  {
-    id: 1,
-    title: "3월 마감 일정 확인",
-    summary: "승인/정산 전 누락 데이터 및 환불 처리 건을 점검해주세요.",
-    createdAt: "오늘",
-    isImportant: true,
-  },
-  {
-    id: 2,
-    title: "광고폼 신규 운영 시작",
-    summary: "광고 유입 건은 상담 DB 반영 여부를 꼭 확인해주세요.",
-    createdAt: "오늘",
-  },
-  {
-    id: 3,
-    title: "AI 상담 기능 업데이트",
-    summary: "전적대 OCR 인식과 과목 정리 기능이 개선되었습니다.",
-    createdAt: "어제",
-  },
-];
-
 const messengerRooms: MessengerItem[] = [
   {
     id: 1,
@@ -108,12 +86,6 @@ const messengerRooms: MessengerItem[] = [
     unreadCount: 0,
     members: "실습 3명",
   },
-];
-
-const todaySchedules: ScheduleItem[] = [
-  { id: 1, title: "오전 상담 체크", time: "10:30", tone: "blue" },
-  { id: 2, title: "승인 대기 검토", time: "13:00", tone: "green" },
-  { id: 3, title: "광고폼 유입 확인", time: "16:00", tone: "orange" },
 ];
 
 function SectionTitle({
@@ -154,6 +126,9 @@ export default function Home() {
   const { data: attendanceRows = [] } = trpc.attendance.list.useQuery();
   const { data: userRows = [] } = trpc.users.list.useQuery();
   const { data: todayAttendanceRow } = trpc.attendance.today.useQuery();
+const { data: myProfile } = trpc.users.me.useQuery();
+const { data: notices = [] } = trpc.notice.list.useQuery();
+const { data: todaySchedules = [] } = trpc.schedule.listToday.useQuery();
 
   const utils = trpc.useUtils();
 
@@ -198,7 +173,7 @@ export default function Home() {
     const now = new Date();
     return `${now.getFullYear()}년 ${now.getMonth() + 1}월 ${now.getDate()}일`;
   }, []);
-
+const profileImageSrc = (myProfile as any)?.profileImageUrl || "";
   const todayAttendance = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
 
@@ -450,11 +425,19 @@ export default function Home() {
                 <CardContent className="p-5">
                   <div className="flex flex-col items-center text-center">
                     <button
-                      onClick={() => setLocation("/my")}
-                      className="home-avatar-btn"
-                    >
-                      {user?.name?.[0] ?? "U"}
-                    </button>
+  onClick={() => setLocation("/my")}
+  className="home-avatar-btn overflow-hidden"
+>
+  {profileImageSrc ? (
+    <img
+      src={profileImageSrc}
+      alt="프로필"
+      className="h-full w-full object-cover"
+    />
+  ) : (
+    <span>{user?.name?.[0] ?? "U"}</span>
+  )}
+</button>
 
                     <h3 className="mt-3 text-lg font-semibold">{user?.name ?? "-"}</h3>
                     <p className="text-sm text-muted-foreground">
@@ -626,21 +609,27 @@ export default function Home() {
               <Card className="border-0 shadow-sm">
                 <CardContent className="p-5">
                   <SectionTitle
-                    icon={<Megaphone className="h-4 w-4 text-primary" />}
-                    title="공지사항"
-                    right={
-                      <Button variant="ghost" size="sm" className="h-8 px-2 text-xs">
-                        더보기
-                      </Button>
-                    }
-                  />
+  icon={<Megaphone className="h-4 w-4 text-primary" />}
+  title="공지사항"
+  right={
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-8 px-2 text-xs"
+      onClick={() => setLocation("/notices")}
+    >
+      더보기
+    </Button>
+  }
+/>
 
                   <div className="space-y-3">
-                    {notices.map((notice) => (
-                      <div
-                        key={notice.id}
-                        className="rounded-2xl border bg-white px-4 py-4 transition hover:bg-slate-50"
-                      >
+                    {(notices as any[]).slice(0, 5).map((notice: any) => (
+  <button
+    key={notice.id}
+    onClick={() => setLocation(`/notices/${notice.id}`)}
+    className="w-full rounded-2xl border bg-white px-4 py-4 text-left transition hover:bg-slate-50"
+  >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
@@ -652,15 +641,17 @@ export default function Home() {
                               ) : null}
                             </div>
                             <p className="mt-1 text-sm text-muted-foreground">
-                              {notice.summary}
-                            </p>
+  {String(notice.content ?? "").slice(0, 80)}
+</p>
                           </div>
                           <span className="shrink-0 text-xs text-muted-foreground">
-                            {notice.createdAt}
+                            {notice.createdAt
+  ? new Date(notice.createdAt).toLocaleDateString("ko-KR")
+  : "-"}
                           </span>
                         </div>
-                      </div>
-                    ))}
+                     </button>
+))}
                   </div>
                 </CardContent>
               </Card>
@@ -669,9 +660,19 @@ export default function Home() {
                 <Card className="border-0 shadow-sm">
                   <CardContent className="p-5">
                     <SectionTitle
-                      icon={<CalendarRange className="h-4 w-4 text-primary" />}
-                      title="일정 / 캘린더"
-                    />
+  icon={<CalendarRange className="h-4 w-4 text-primary" />}
+  title="일정 / 캘린더"
+  right={
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-8 px-2 text-xs"
+      onClick={() => setLocation("/schedules")}
+    >
+      전체 보기
+    </Button>
+  }
+/>
 
                     <div className="rounded-2xl border bg-white p-4">
                       <div className="mb-4 flex items-center justify-between">
@@ -719,7 +720,7 @@ export default function Home() {
                     />
 
                     <div className="space-y-3">
-                      {todaySchedules.map((item) => (
+                      {(todaySchedules as any[]).map((item: any) => (
                         <div
                           key={item.id}
                           className="rounded-2xl border bg-white px-4 py-3"
@@ -727,7 +728,9 @@ export default function Home() {
                           <div className="flex items-center justify-between gap-3">
                             <div>
                               <p className="text-sm font-semibold">{item.title}</p>
-                              <p className="mt-1 text-xs text-muted-foreground">예정 업무</p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+  {item.isGlobal ? "전체 일정" : "개인 일정"}
+</p>
                             </div>
                             <span
                               className={`rounded-full px-2 py-1 text-xs font-semibold ${
@@ -738,7 +741,7 @@ export default function Home() {
                                   : "bg-blue-50 text-blue-600"
                               }`}
                             >
-                              {item.time}
+                              {item.ampm === "AM" ? "오전" : "오후"} {item.hour}:{String(item.minute).padStart(2, "0")}
                             </span>
                           </div>
                         </div>
