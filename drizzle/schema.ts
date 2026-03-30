@@ -632,7 +632,7 @@ export const chatRoomMembers = mysqlTable("chat_room_members", {
   id: int("id").autoincrement().primaryKey(),
   roomId: int("roomId").notNull(),
   userId: int("userId").notNull(),
-  joinedAt: datetime("joinedAt").notNull().defaultNow(),
+joinedAt: timestamp("joinedAt").notNull().defaultNow(),
   leftAt: datetime("leftAt"),
   isActive: boolean("isActive").notNull().default(true),
   lastReadMessageId: int("lastReadMessageId"),
@@ -647,8 +647,8 @@ export const chatMessages = mysqlTable("chat_messages", {
   senderId: int("senderId").notNull(),
   messageType: mysqlEnum("messageType", ["text", "image", "file", "system"]).notNull().default("text"),
   content: text("content"),
-  createdAt: datetime("createdAt").notNull().defaultNow(),
-  updatedAt: datetime("updatedAt").notNull().defaultNow().onUpdateNow(),
+ createdAt: timestamp("createdAt").notNull().defaultNow(),
+updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
   isDeleted: boolean("isDeleted").notNull().default(false),
 });
 
@@ -662,7 +662,7 @@ export const chatAttachments = mysqlTable("chat_attachments", {
   fileUrl: text("fileUrl").notNull(),
   fileType: varchar("fileType", { length: 100 }),
   fileSize: int("fileSize"),
-  createdAt: datetime("createdAt").notNull().defaultNow(),
+createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 
 export type ChatAttachment = typeof chatAttachments.$inferSelect;
@@ -674,8 +674,8 @@ export const chatRoomSettings = mysqlTable("chat_room_settings", {
   userId: int("userId").notNull(),
   isMuted: boolean("isMuted").notNull().default(false),
   pinnedAt: datetime("pinnedAt"),
-  createdAt: datetime("createdAt").notNull().defaultNow(),
-  updatedAt: datetime("updatedAt").notNull().defaultNow().onUpdateNow(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
 });
 
 export type ChatRoomSetting = typeof chatRoomSettings.$inferSelect;
@@ -731,8 +731,8 @@ export const attendanceRecords = mysqlTable("attendance_records", {
     .notNull()
     .default("출근전"),
   note: varchar("note", { length: 255 }),
-  createdAt: datetime("createdAt").notNull().defaultNow(),
-  updatedAt: datetime("updatedAt").notNull().defaultNow().onUpdateNow(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
 isLate: int("isLate").notNull().default(0),
 isEarlyLeave: int("isEarlyLeave").notNull().default(0),
 lateMinutes: int("lateMinutes").notNull().default(0),
@@ -752,7 +752,7 @@ export const attendanceAdjustmentLogs = mysqlTable("attendance_adjustment_logs",
   afterClockInAt: datetime("afterClockInAt"),
   afterClockOutAt: datetime("afterClockOutAt"),
   reason: varchar("reason", { length: 255 }),
-  createdAt: datetime("createdAt").notNull().defaultNow(),
+createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 
 export type InsertAttendanceAdjustmentLog =
