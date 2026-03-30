@@ -14,6 +14,9 @@ import {
   UserCheck,
   KeyRound,
   Megaphone,
+  Building2,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,18 +30,49 @@ import {
 import { formatPhone } from "@/lib/format";
 
 type TabKey = "settlement" | "users" | "landingForms" | "adForms";
-type UserTabKey = "create" | "list" | "role" | "password";
+type UserTabKey = "create" | "list" | "role" | "password" | "organization";
 type UserRole = "staff" | "admin" | "host" | "superhost";
+
+const PROTECTED_SUPERHOST_NAME = "이재준";
+
+function isProtectedSuperhost(userLike: any) {
+  if (!userLike) return false;
+  return (
+    userLike.role === "superhost" ||
+    userLike.name === PROTECTED_SUPERHOST_NAME
+  );
+}
+
+function canManageProtectedSuperhost(_currentUser: any) {
+  return false;
+}
+
+function roleLabel(role?: UserRole | string) {
+  switch (role) {
+    case "staff":
+      return "직원";
+    case "admin":
+      return "관리자";
+    case "host":
+      return "호스트";
+    case "superhost":
+      return "슈퍼호스트";
+    default:
+      return role || "-";
+  }
+}
 
 export default function System() {
   const { user } = useAuth();
   const [tab, setTab] = useState<TabKey>("users");
 
-if (user?.role !== "host" && user?.role !== "superhost") {
+  if (user?.role !== "host" && user?.role !== "superhost") {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-4">
+      <div className="flex flex-col items-center justify-center gap-4 py-20">
         <ShieldAlert className="h-12 w-12 text-muted-foreground" />
-        <p className="text-muted-foreground">호스트 또는 슈퍼호스트만 접근할 수 있습니다.</p>
+        <p className="text-muted-foreground">
+          호스트 또는 슈퍼호스트만 접근할 수 있습니다.
+        </p>
       </div>
     );
   }
@@ -47,8 +81,9 @@ if (user?.role !== "host" && user?.role !== "superhost") {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">시스템 관리</h1>
-        <p className="text-muted-foreground mt-1">
-          정산 기준, 직원 계정, 랜딩폼 링크, 광고폼 링크를 관리합니다.
+        <p className="mt-1 text-muted-foreground">
+          정산 기준, 직원 계정, 조직 설정, 랜딩폼 링크, 광고폼 링크를
+          관리합니다.
         </p>
       </div>
 
@@ -105,13 +140,16 @@ function SettlementSystemSection() {
         <CardTitle>정산 시스템 관리</CardTitle>
       </CardHeader>
       <CardContent className="text-sm text-muted-foreground">
-        다음 단계에서 교육원별 학점당 단가 / 실습 수수료 / 정산 기준을 붙일 예정입니다.
+        다음 단계에서 교육원별 학점당 단가 / 실습 수수료 / 정산 기준을 붙일
+        예정입니다.
       </CardContent>
     </Card>
   );
 }
 
 function UserManagementSection() {
+  const { user } = useAuth();
+  const isSuperhostOnly = user?.role === "superhost";
   const utils = trpc.useUtils();
   const { data: users, isLoading } = trpc.users.list.useQuery();
 
@@ -142,6 +180,74 @@ function UserManagementSection() {
   const updateActiveMutation = trpc.users.updateActive.useMutation({
     onSuccess: () => {
       toast.success("활성 상태가 변경되었습니다.");
+      utils.users.list.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const createTeamMutation = trpc.org.teams.create.useMutation({
+    onSuccess: () => {
+      toast.success("팀이 추가되었습니다.");
+      utils.org.teams.list.invalidate();
+      setNewTeamName("");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const updateTeamMutation = trpc.org.teams.update.useMutation({
+    onSuccess: () => {
+      toast.success("팀 정보가 수정되었습니다.");
+      utils.org.teams.list.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deleteTeamMutation = trpc.org.teams.delete.useMutation({
+    onSuccess: () => {
+      toast.success("팀이 삭제되었습니다.");
+      utils.org.teams.list.invalidate();
+      utils.users.list.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const createPositionMutation = trpc.org.positions.create.useMutation({
+    onSuccess: () => {
+      toast.success("직급이 추가되었습니다.");
+      utils.org.positions.list.invalidate();
+      setNewPositionName("");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const updatePositionMutation = trpc.org.positions.update.useMutation({
+    onSuccess: () => {
+      toast.success("직급 정보가 수정되었습니다.");
+      utils.org.positions.list.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deletePositionMutation = trpc.org.positions.delete.useMutation({
+    onSuccess: () => {
+      toast.success("직급이 삭제되었습니다.");
+      utils.org.positions.list.invalidate();
+      utils.users.list.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const upsertUserMappingMutation = trpc.org.userMappings.upsert.useMutation({
+    onSuccess: () => {
+      toast.success("유저 조직 정보가 저장되었습니다.");
+      utils.users.list.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deleteUserMappingMutation = trpc.org.userMappings.delete.useMutation({
+    onSuccess: () => {
+      toast.success("유저 조직 정보가 제거되었습니다.");
       utils.users.list.invalidate();
     },
     onError: (e) => toast.error(e.message),
@@ -181,7 +287,6 @@ function UserManagementSection() {
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editPhone, setEditPhone] = useState("");
-  const [editPassword, setEditPassword] = useState("");
   const [editBankName, setEditBankName] = useState("");
   const [editBankAccount, setEditBankAccount] = useState("");
 
@@ -189,12 +294,15 @@ function UserManagementSection() {
   const [passwordDrafts, setPasswordDrafts] = useState<Record<number, string>>(
     {}
   );
-  const [showPasswordMap, setShowPasswordMap] = useState<
-    Record<number, boolean>
-  >({});
 
   const [fromAssigneeId, setFromAssigneeId] = useState("");
   const [toAssigneeId, setToAssigneeId] = useState("");
+
+  const { data: teams = [] } = trpc.org.teams.list.useQuery();
+  const { data: positions = [] } = trpc.org.positions.list.useQuery();
+
+  const [newTeamName, setNewTeamName] = useState("");
+  const [newPositionName, setNewPositionName] = useState("");
 
   const handlePhoneInput = (value: string) =>
     value.replace(/\D/g, "").slice(0, 11);
@@ -262,6 +370,27 @@ function UserManagementSection() {
     });
   }, [users, passwordSearch]);
 
+  const sortedTeams = useMemo(
+    () =>
+      [...teams].sort(
+        (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)
+      ),
+    [teams]
+  );
+
+  const sortedPositions = useMemo(
+    () =>
+      [...positions].sort(
+        (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)
+      ),
+    [positions]
+  );
+
+  const positionMap = useMemo(
+    () => new Map(positions.map((item: any) => [String(item.id), item])),
+    [positions]
+  );
+
   const resetCreateForm = () => {
     setOpenId("");
     setUsername("");
@@ -301,12 +430,16 @@ function UserManagementSection() {
   };
 
   const startEdit = (u: any) => {
+    if (isProtectedSuperhost(u)) {
+      toast.error("superhost 계정은 수정할 수 없습니다.");
+      return;
+    }
+
     setEditingUserId(u.id);
     setEditUsername(u.username ?? "");
     setEditName(u.name ?? "");
     setEditEmail(u.email ?? "");
     setEditPhone(u.phone ?? "");
-    setEditPassword("");
     setEditBankName(u.bankName ?? "");
     setEditBankAccount(u.bankAccount ?? "");
   };
@@ -317,13 +450,18 @@ function UserManagementSection() {
     setEditName("");
     setEditEmail("");
     setEditPhone("");
-    setEditPassword("");
     setEditBankName("");
     setEditBankAccount("");
   };
 
   const saveEdit = () => {
     if (!editingUserId) return;
+
+    const target = users?.find((item: any) => item.id === editingUserId);
+    if (isProtectedSuperhost(target)) {
+      toast.error("superhost 계정은 수정할 수 없습니다.");
+      return;
+    }
 
     updateMutation.mutate(
       {
@@ -332,7 +470,6 @@ function UserManagementSection() {
         name: editName.trim() || undefined,
         email: editEmail.trim() || undefined,
         phone: editPhone.trim() || undefined,
-        password: editPassword.trim() || undefined,
         bankName: editBankName.trim() || undefined,
         bankAccount: editBankAccount.trim() || undefined,
       },
@@ -344,25 +481,35 @@ function UserManagementSection() {
     );
   };
 
-  const handleChangeRole = (userId: number, currentRole: UserRole) => {
-    const nextRole = roleDrafts[userId];
+  const handleChangeRole = (targetUser: any) => {
+    if (isProtectedSuperhost(targetUser)) {
+      toast.error("superhost 계정은 권한 변경할 수 없습니다.");
+      return;
+    }
+
+    const nextRole = roleDrafts[targetUser.id];
     if (!nextRole) return toast.error("변경할 권한을 선택해주세요.");
-    if (nextRole === currentRole) {
+    if (nextRole === targetUser.role) {
       return toast.error("현재 권한과 동일합니다.");
     }
 
     const ok = window.confirm(
-      `권한을 ${currentRole} → ${nextRole} 로 변경하시겠습니까?`
+      `권한을 ${targetUser.role} → ${nextRole} 로 변경하시겠습니까?`
     );
     if (!ok) return;
 
     updateRoleMutation.mutate({
-      id: userId,
+      id: targetUser.id,
       role: nextRole,
     });
   };
 
   const handleToggleActive = (u: any) => {
+    if (isProtectedSuperhost(u)) {
+      toast.error("superhost 계정은 비활성화할 수 없습니다.");
+      return;
+    }
+
     const nextActive = !u.isActive;
     const ok = window.confirm(
       nextActive
@@ -401,6 +548,11 @@ function UserManagementSection() {
   };
 
   const handleResetPassword = (u: any) => {
+    if (isProtectedSuperhost(u)) {
+      toast.error("superhost 계정은 비밀번호 재설정할 수 없습니다.");
+      return;
+    }
+
     const newPassword = (passwordDrafts[u.id] || "").trim();
 
     if (!newPassword) return toast.error("새 비밀번호를 입력해주세요.");
@@ -425,6 +577,99 @@ function UserManagementSection() {
         },
       }
     );
+  };
+
+  const addTeam = () => {
+    const value = newTeamName.trim();
+    if (!value) return toast.error("팀명을 입력해주세요.");
+    if (teams.some((item: any) => String(item.name).trim() === value)) {
+      return toast.error("이미 같은 팀명이 있습니다.");
+    }
+
+    createTeamMutation.mutate({
+      name: value,
+      sortOrder: teams.length + 1,
+      isActive: true,
+    });
+  };
+
+  const addPosition = () => {
+    const value = newPositionName.trim();
+    if (!value) return toast.error("직급명을 입력해주세요.");
+    if (positions.some((item: any) => String(item.name).trim() === value)) {
+      return toast.error("이미 같은 직급명이 있습니다.");
+    }
+
+    createPositionMutation.mutate({
+      name: value,
+      sortOrder: positions.length + 1,
+      isActive: true,
+    });
+  };
+
+  const removeTeam = (id: string) => {
+    const target = teams.find((item: any) => String(item.id) === id);
+    if (!target) return;
+
+    const ok = window.confirm(`${target.name} 팀을 삭제하시겠습니까?`);
+    if (!ok) return;
+
+    deleteTeamMutation.mutate({ id: Number(id) });
+  };
+
+  const removePosition = (id: string | number) => {
+    const target = positions.find((item: any) => String(item.id) === id);
+    if (!target) return;
+
+    const ok = window.confirm(`${target.name} 직급을 삭제하시겠습니까?`);
+    if (!ok) return;
+
+    deletePositionMutation.mutate({ id: Number(id) });
+  };
+
+  const updateUserMapping = (
+    targetUser: any,
+    field: "teamId" | "positionId",
+    value: string | null
+  ) => {
+    if (isProtectedSuperhost(targetUser)) {
+      toast.error("superhost 계정의 조직 정보는 수정할 수 없습니다.");
+      return;
+    }
+
+    const currentTeamId = targetUser.teamId ? String(targetUser.teamId) : null;
+    const currentPositionId = targetUser.positionId
+      ? String(targetUser.positionId)
+      : null;
+
+    const nextTeamId = field === "teamId" ? value : currentTeamId;
+    const nextPositionId =
+      field === "positionId" ? value : currentPositionId;
+
+    if (!nextTeamId && !nextPositionId) {
+      deleteUserMappingMutation.mutate({
+        userId: Number(targetUser.id),
+      });
+      return;
+    }
+
+    upsertUserMappingMutation.mutate({
+      userId: Number(targetUser.id),
+      teamId: nextTeamId ? Number(nextTeamId) : null,
+      positionId: nextPositionId ? Number(nextPositionId) : null,
+      sortOrder: Number(targetUser.orgSortOrder ?? 0),
+    });
+  };
+
+  const getMapping = (userId: number) => {
+    const target = users?.find((item: any) => Number(item.id) === Number(userId));
+    if (!target) return null;
+
+    return {
+      userId: Number(target.id),
+      teamId: target.teamId ? String(target.teamId) : null,
+      positionId: target.positionId ? String(target.positionId) : null,
+    };
   };
 
   return (
@@ -455,6 +700,14 @@ function UserManagementSection() {
         >
           <KeyRound className="h-4 w-4" />
           비밀번호 재설정
+        </Button>
+        <Button
+          variant={userTab === "organization" ? "default" : "outline"}
+          onClick={() => setUserTab("organization")}
+          className="gap-2"
+        >
+          <Building2 className="h-4 w-4" />
+          조직 설정
         </Button>
       </div>
 
@@ -601,6 +854,11 @@ function UserManagementSection() {
           <CardHeader className="space-y-4">
             <CardTitle>직원 목록</CardTitle>
 
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              superhost 계정은 기본 보호 대상입니다. 권한 변경 / 비활성화 /
+              비밀번호 재설정이 불가합니다.
+            </div>
+
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
@@ -642,7 +900,9 @@ function UserManagementSection() {
 
           <CardContent>
             {isLoading ? (
-              <div className="text-sm text-muted-foreground">불러오는 중...</div>
+              <div className="text-sm text-muted-foreground">
+                불러오는 중...
+              </div>
             ) : filteredUsers.length === 0 ? (
               <div className="text-sm text-muted-foreground">
                 표시할 계정이 없습니다.
@@ -667,6 +927,9 @@ function UserManagementSection() {
                   <tbody>
                     {filteredUsers.map((u: any) => {
                       const isEditing = editingUserId === u.id;
+                      const isProtected = isProtectedSuperhost(u);
+                      const canEditProtected = canManageProtectedSuperhost(user);
+                      const locked = isProtected && !canEditProtected;
 
                       return (
                         <tr key={u.id} className="border-b last:border-0">
@@ -722,7 +985,9 @@ function UserManagementSection() {
                             {isEditing ? (
                               <Input
                                 value={editBankName}
-                                onChange={(e) => setEditBankName(e.target.value)}
+                                onChange={(e) =>
+                                  setEditBankName(e.target.value)
+                                }
                               />
                             ) : (
                               u.bankName || "-"
@@ -742,33 +1007,33 @@ function UserManagementSection() {
                             )}
                           </td>
 
-                          <td className="px-4 py-3">{u.role || "-"}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <span>{u.role || "-"}</span>
+                              {isProtected ? (
+                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                                  보호계정
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
 
                           <td className="px-4 py-3">
                             {u.isActive ? (
-                              <span className="text-emerald-600 font-medium">
+                              <span className="font-medium text-emerald-600">
                                 활성
                               </span>
                             ) : (
-                              <span className="text-red-600 font-medium">
+                              <span className="font-medium text-red-600">
                                 비활성
                               </span>
                             )}
                           </td>
 
                           <td className="px-4 py-3 text-right">
-                            <div className="flex justify-end gap-2 flex-wrap">
+                            <div className="flex flex-wrap justify-end gap-2">
                               {isEditing ? (
                                 <>
-                                  <Input
-                                    className="w-[140px]"
-                                    placeholder="새 비밀번호(선택)"
-                                    type="password"
-                                    value={editPassword}
-                                    onChange={(e) =>
-                                      setEditPassword(e.target.value)
-                                    }
-                                  />
                                   <Button
                                     size="sm"
                                     onClick={saveEdit}
@@ -784,6 +1049,10 @@ function UserManagementSection() {
                                     취소
                                   </Button>
                                 </>
+                              ) : locked ? (
+                                <span className="text-xs text-muted-foreground">
+                                  superhost 보호 계정
+                                </span>
                               ) : (
                                 <>
                                   <Button
@@ -834,6 +1103,10 @@ function UserManagementSection() {
           <CardHeader className="space-y-4">
             <CardTitle>권한 변경</CardTitle>
 
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              superhost 계정은 권한 변경이 불가능합니다.
+            </div>
+
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
@@ -875,7 +1148,9 @@ function UserManagementSection() {
 
           <CardContent>
             {isLoading ? (
-              <div className="text-sm text-muted-foreground">불러오는 중...</div>
+              <div className="text-sm text-muted-foreground">
+                불러오는 중...
+              </div>
             ) : roleTabUsers.length === 0 ? (
               <div className="text-sm text-muted-foreground">
                 표시할 계정이 없습니다.
@@ -895,43 +1170,58 @@ function UserManagementSection() {
                     </tr>
                   </thead>
                   <tbody>
-                    {roleTabUsers.map((u: any) => (
-                      <tr key={u.id} className="border-b last:border-0">
-                        <td className="px-4 py-3">{u.displayNo ?? u.id}</td>
-                        <td className="px-4 py-3">{u.name || "-"}</td>
-                        <td className="px-4 py-3">{u.username || "-"}</td>
-                        <td className="px-4 py-3">
-                          {formatPhone(u.phone || "") || "-"}
-                        </td>
-                        <td className="px-4 py-3">{u.role || "-"}</td>
-                        <td className="px-4 py-3">
-                          <Select
-                            value={roleDrafts[u.id] ?? u.role}
-                            onValueChange={(v: UserRole) =>
-                              setRoleDrafts((prev) => ({ ...prev, [u.id]: v }))
-                            }
-                          >
-                            <SelectTrigger className="w-[160px]">
-                              <SelectValue placeholder="권한 선택" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="staff">직원</SelectItem>
-                              <SelectItem value="admin">관리자</SelectItem>
-                              <SelectItem value="host">호스트</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <Button
-                            size="sm"
-                            onClick={() => handleChangeRole(u.id, u.role)}
-                            disabled={updateRoleMutation.isPending}
-                          >
-                            변경
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
+                    {roleTabUsers.map((u: any) => {
+                      const isProtected = isProtectedSuperhost(u);
+                      const canEditProtected = canManageProtectedSuperhost(user);
+                      const locked = isProtected && !canEditProtected;
+
+                      return (
+                        <tr key={u.id} className="border-b last:border-0">
+                          <td className="px-4 py-3">{u.displayNo ?? u.id}</td>
+                          <td className="px-4 py-3">{u.name || "-"}</td>
+                          <td className="px-4 py-3">{u.username || "-"}</td>
+                          <td className="px-4 py-3">
+                            {formatPhone(u.phone || "") || "-"}
+                          </td>
+                          <td className="px-4 py-3">{u.role || "-"}</td>
+                          <td className="px-4 py-3">
+                            {locked ? (
+                              <span className="text-xs text-muted-foreground">
+                                superhost 보호 계정
+                              </span>
+                            ) : (
+                              <Select
+                                value={roleDrafts[u.id] ?? u.role}
+                                onValueChange={(v: UserRole) =>
+                                  setRoleDrafts((prev) => ({
+                                    ...prev,
+                                    [u.id]: v,
+                                  }))
+                                }
+                              >
+                                <SelectTrigger className="w-[160px]">
+                                  <SelectValue placeholder="권한 선택" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="staff">직원</SelectItem>
+                                  <SelectItem value="admin">관리자</SelectItem>
+                                  <SelectItem value="host">호스트</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <Button
+                              size="sm"
+                              onClick={() => handleChangeRole(u)}
+                              disabled={locked || updateRoleMutation.isPending}
+                            >
+                              변경
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -945,8 +1235,13 @@ function UserManagementSection() {
           <CardHeader className="space-y-4">
             <CardTitle>비밀번호 재설정</CardTitle>
             <p className="text-sm text-muted-foreground">
-              기존 비밀번호는 확인할 수 없고, 새 비밀번호로 재설정만 가능합니다.
+              기존 비밀번호는 확인할 수 없고, 새 비밀번호 입력 후 재설정만
+              가능합니다.
             </p>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              비밀번호 보기 기능은 제거되었습니다. superhost 계정은 비밀번호
+              재설정이 불가합니다.
+            </div>
 
             <Input
               placeholder="표시번호, 이름, 아이디, 전화번호 검색"
@@ -958,7 +1253,9 @@ function UserManagementSection() {
 
           <CardContent>
             {isLoading ? (
-              <div className="text-sm text-muted-foreground">불러오는 중...</div>
+              <div className="text-sm text-muted-foreground">
+                불러오는 중...
+              </div>
             ) : passwordFilteredUsers.length === 0 ? (
               <div className="text-sm text-muted-foreground">
                 검색 결과가 없습니다.
@@ -979,7 +1276,9 @@ function UserManagementSection() {
                   </thead>
                   <tbody>
                     {passwordFilteredUsers.map((u: any) => {
-                      const visible = !!showPasswordMap[u.id];
+                      const isProtected = isProtectedSuperhost(u);
+                      const canEditProtected = canManageProtectedSuperhost(user);
+                      const locked = isProtected && !canEditProtected;
 
                       return (
                         <tr key={u.id} className="border-b last:border-0">
@@ -991,9 +1290,13 @@ function UserManagementSection() {
                           </td>
                           <td className="px-4 py-3">{u.role || "-"}</td>
                           <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
+                            {locked ? (
+                              <span className="text-xs text-muted-foreground">
+                                superhost 보호 계정
+                              </span>
+                            ) : (
                               <Input
-                                type={visible ? "text" : "password"}
+                                type="password"
                                 placeholder="새 비밀번호 입력"
                                 value={passwordDrafts[u.id] || ""}
                                 onChange={(e) =>
@@ -1003,26 +1306,13 @@ function UserManagementSection() {
                                   }))
                                 }
                               />
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                  setShowPasswordMap((prev) => ({
-                                    ...prev,
-                                    [u.id]: !prev[u.id],
-                                  }))
-                                }
-                              >
-                                {visible ? "숨김" : "보기"}
-                              </Button>
-                            </div>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-right">
                             <Button
                               size="sm"
                               onClick={() => handleResetPassword(u)}
-                              disabled={updateMutation.isPending}
+                              disabled={locked || updateMutation.isPending}
                             >
                               변경
                             </Button>
@@ -1037,16 +1327,377 @@ function UserManagementSection() {
           </CardContent>
         </Card>
       )}
+
+      {userTab === "organization" && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>조직 설정 안내</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm text-muted-foreground">
+              <p>조직 설정은 이제 서버 DB 기준으로 저장됩니다.</p>
+              <p>
+                팀 / 직급 / 유저별 조직 매핑은 즉시 반영되며, 메신저와
+                조직도에서 공통으로 사용됩니다.
+              </p>
+              <p>
+                조직 개편과 팀 구조 변경은 슈퍼호스트 페이지를 기준으로
+                관리하세요.
+              </p>
+
+              {!isSuperhostOnly ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  팀 / 직급 / 유저 매핑 수정은 슈퍼호스트만 가능합니다. 현재는
+                  조회만 가능합니다.
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-6 xl:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>팀 설정</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="예: 1팀, 2팀, 운영팀"
+                    value={newTeamName}
+                    onChange={(e) => setNewTeamName(e.target.value)}
+                    disabled={!isSuperhostOnly}
+                  />
+                  <Button
+                    type="button"
+                    onClick={addTeam}
+                    className="gap-2"
+                    disabled={!isSuperhostOnly}
+                  >
+                    <Plus className="h-4 w-4" />
+                    추가
+                  </Button>
+                </div>
+
+                <div className="space-y-3">
+                  {sortedTeams.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">
+                      등록된 팀이 없습니다.
+                    </div>
+                  ) : (
+                    sortedTeams.map((team, index) => (
+                      <div key={team.id} className="flex items-center gap-2">
+                        <div className="w-12 text-sm text-muted-foreground">
+                          {index + 1}
+                        </div>
+                        <Input
+                          defaultValue={team.name}
+                          disabled={!isSuperhostOnly}
+                          onBlur={(e) => {
+                            if (!isSuperhostOnly) return;
+                            const nextName = e.target.value.trim();
+                            if (!nextName || nextName === team.name) return;
+                            updateTeamMutation.mutate({
+                              id: Number(team.id),
+                              name: nextName,
+                              sortOrder: team.sortOrder,
+                              isActive: team.isActive,
+                            });
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() => removeTeam(team.id)}
+                          disabled={!isSuperhostOnly}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>직급 설정</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="예: 사원, 주임, 대리"
+                    value={newPositionName}
+                    onChange={(e) => setNewPositionName(e.target.value)}
+                    disabled={!isSuperhostOnly}
+                  />
+                  <Button
+                    type="button"
+                    onClick={addPosition}
+                    className="gap-2"
+                    disabled={!isSuperhostOnly}
+                  >
+                    <Plus className="h-4 w-4" />
+                    추가
+                  </Button>
+                </div>
+
+                <div className="space-y-3">
+                  {sortedPositions.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">
+                      등록된 직급이 없습니다.
+                    </div>
+                  ) : (
+                    sortedPositions.map((position, index) => (
+                      <div
+                        key={position.id}
+                        className="flex items-center gap-2"
+                      >
+                        <div className="w-12 text-sm text-muted-foreground">
+                          {index + 1}
+                        </div>
+                        <Input
+                          defaultValue={position.name}
+                          disabled={!isSuperhostOnly}
+                          onBlur={(e) => {
+                            if (!isSuperhostOnly) return;
+                            const nextName = e.target.value.trim();
+                            if (!nextName || nextName === position.name) return;
+                            updatePositionMutation.mutate({
+                              id: Number(position.id),
+                              name: nextName,
+                              sortOrder: position.sortOrder,
+                              isActive: position.isActive,
+                            });
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() => removePosition(position.id)}
+                          disabled={!isSuperhostOnly}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>유저별 팀 / 직급 매핑</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="text-sm text-muted-foreground">
+                  불러오는 중...
+                </div>
+              ) : !users || users.length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  표시할 직원이 없습니다.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="px-4 py-3 text-left">번호</th>
+                        <th className="px-4 py-3 text-left">이름</th>
+                        <th className="px-4 py-3 text-left">아이디</th>
+                        <th className="px-4 py-3 text-left">권한</th>
+                        <th className="px-4 py-3 text-left">팀</th>
+                        <th className="px-4 py-3 text-left">직급</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {users.map((u: any) => {
+                        const mapping = getMapping(u.id);
+                        const rowLocked =
+                          !isSuperhostOnly || isProtectedSuperhost(u);
+
+                        return (
+                          <tr key={u.id} className="border-b last:border-0">
+                            <td className="px-4 py-3">{u.displayNo ?? u.id}</td>
+                            <td className="px-4 py-3">{u.name || "-"}</td>
+                            <td className="px-4 py-3">{u.username || "-"}</td>
+                            <td className="px-4 py-3">{roleLabel(u.role)}</td>
+                            <td className="px-4 py-3">
+                              <Select
+                                value={mapping?.teamId ?? "none"}
+                                onValueChange={(value) => {
+                                  if (rowLocked) return;
+                                  updateUserMapping(
+                                    u,
+                                    "teamId",
+                                    value === "none" ? null : value
+                                  );
+                                }}
+                                disabled={rowLocked}
+                              >
+                                <SelectTrigger className="w-[180px]">
+                                  <SelectValue placeholder="팀 선택" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">미지정</SelectItem>
+                                  {sortedTeams.map((team) => (
+                                    <SelectItem
+                                      key={team.id}
+                                      value={String(team.id)}
+                                    >
+                                      {team.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </td>
+                            <td className="px-4 py-3">
+                              <Select
+                                value={mapping?.positionId ?? "none"}
+                                onValueChange={(value) => {
+                                  if (rowLocked) return;
+                                  updateUserMapping(
+                                    u,
+                                    "positionId",
+                                    value === "none" ? null : value
+                                  );
+                                }}
+                                disabled={rowLocked}
+                              >
+                                <SelectTrigger className="w-[180px]">
+                                  <SelectValue placeholder="직급 선택" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">미지정</SelectItem>
+                                  {sortedPositions.map((position) => (
+                                    <SelectItem
+                                      key={position.id}
+                                      value={String(position.id)}
+                                    >
+                                      {position.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="mt-4 flex justify-end text-sm text-muted-foreground">
+                팀 / 직급 / 유저 매핑은 변경 즉시 서버에 저장됩니다.
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>조직표 미리보기</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {sortedTeams.length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  팀이 없습니다.
+                </div>
+              ) : (
+                sortedTeams.map((team) => {
+                  const members = (users ?? [])
+                    .filter((u: any) => getMapping(u.id)?.teamId === team.id)
+                    .sort((a: any, b: any) => {
+                      const aSort =
+                        positionMap.get(getMapping(a.id)?.positionId ?? "")
+                          ?.sortOrder ?? 999;
+                      const bSort =
+                        positionMap.get(getMapping(b.id)?.positionId ?? "")
+                          ?.sortOrder ?? 999;
+                      return (
+                        aSort -
+                          bSort ||
+                        String(a.name ?? "").localeCompare(
+                          String(b.name ?? "")
+                        )
+                      );
+                    });
+
+                  return (
+                    <div key={team.id} className="rounded-xl border p-4">
+                      <div className="mb-3 flex items-center justify-between">
+                        <h3 className="font-semibold">{team.name}</h3>
+                        <span className="text-xs text-muted-foreground">
+                          {members.length}명
+                        </span>
+                      </div>
+
+                      {members.length === 0 ? (
+                        <div className="text-sm text-muted-foreground">
+                          배정된 인원이 없습니다.
+                        </div>
+                      ) : (
+                        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                          {members.map((member: any) => {
+                            const mapping = getMapping(member.id);
+                            const positionName = mapping?.positionId
+                              ? positionMap.get(mapping.positionId)?.name
+                              : null;
+
+                            return (
+                              <div
+                                key={member.id}
+                                className="rounded-lg border bg-muted/20 px-3 py-2 text-sm"
+                              >
+                                <div className="font-medium">
+                                  {member.name ||
+                                    member.username ||
+                                    `#${member.id}`}
+                                </div>
+                                <div className="text-muted-foreground">
+                                  {positionName || "직급 미지정"} /{" "}
+                                  {roleLabel(member.role)}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
 
 function LeadFormManagementSection() {
-  return <BaseFormManagementSection title="랜딩폼" formType="landing" pathPrefix="/form" />;
+  return (
+    <BaseFormManagementSection
+      title="랜딩폼"
+      formType="landing"
+      pathPrefix="/form"
+    />
+  );
 }
 
 function AdFormManagementSection() {
-  return <BaseFormManagementSection title="광고폼" formType="ad" pathPrefix="/ad-form" />;
+  return (
+    <BaseFormManagementSection
+      title="광고폼"
+      formType="ad"
+      pathPrefix="/ad-form"
+    />
+  );
 }
 
 function BaseFormManagementSection({
@@ -1059,7 +1710,9 @@ function BaseFormManagementSection({
   pathPrefix: "/form" | "/ad-form";
 }) {
   const utils = trpc.useUtils();
-  const { data: forms, isLoading } = trpc.formAdmin.list.useQuery({ formType });
+  const { data: forms, isLoading } = trpc.formAdmin.list.useQuery({
+    formType,
+  });
   const { data: users } = trpc.users.list.useQuery();
 
   const [assigneeId, setAssigneeId] = useState("");
@@ -1139,7 +1792,7 @@ function BaseFormManagementSection({
           <CardTitle>{title} 생성</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-3 items-center">
+          <div className="flex flex-wrap items-center gap-3">
             <Select value={assigneeId} onValueChange={setAssigneeId}>
               <SelectTrigger className="w-[300px]">
                 <SelectValue placeholder="담당 직원 선택" />
@@ -1171,7 +1824,9 @@ function BaseFormManagementSection({
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <div className="text-sm text-muted-foreground">불러오는 중...</div>
+            <div className="text-sm text-muted-foreground">
+              불러오는 중...
+            </div>
           ) : !forms || forms.length === 0 ? (
             <div className="text-sm text-muted-foreground">
               생성된 {title}이 없습니다.
@@ -1198,17 +1853,25 @@ function BaseFormManagementSection({
                     return (
                       <tr key={f.id} className="border-b last:border-0">
                         <td className="px-4 py-3">{f.id}</td>
-                        <td className="px-4 py-3 font-mono text-xs">{f.token}</td>
+                        <td className="px-4 py-3 font-mono text-xs">
+                          {f.token}
+                        </td>
                         <td className="px-4 py-3">{assignee?.name || "-"}</td>
-                        <td className="px-4 py-3">{assignee?.username || "-"}</td>
+                        <td className="px-4 py-3">
+                          {assignee?.username || "-"}
+                        </td>
                         <td className="px-4 py-3">
                           {formatPhone(assignee?.phone || "") || "-"}
                         </td>
                         <td className="px-4 py-3">
                           {f.isActive ? (
-                            <span className="text-emerald-600 font-medium">활성</span>
+                            <span className="font-medium text-emerald-600">
+                              활성
+                            </span>
                           ) : (
-                            <span className="text-red-600 font-medium">비활성</span>
+                            <span className="font-medium text-red-600">
+                              비활성
+                            </span>
                           )}
                         </td>
                         <td className="px-4 py-3">

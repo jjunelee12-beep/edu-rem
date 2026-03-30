@@ -41,10 +41,16 @@ import {
   Crown,
   Building2,
   Palette,
+  BarChart3,
+  MessageSquare,
+  User,
+  X,
+  ChevronRight,
 } from "lucide-react";
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
+import { Server as SocketIOServer } from "socket.io";
 
 type UserRole = "staff" | "admin" | "host" | "superhost";
 
@@ -55,7 +61,8 @@ type MenuItem = {
 };
 
 const staffMenuItems: MenuItem[] = [
-  { icon: LayoutDashboard, label: "대시보드", path: "/" },
+  { icon: LayoutDashboard, label: "홈", path: "/" },
+  { icon: BarChart3, label: "운영 대시보드", path: "/overview" },
   { icon: PhoneCall, label: "상담 DB", path: "/consultations" },
   { icon: GraduationCap, label: "학생 관리", path: "/students" },
   { icon: CalendarDays, label: "학기별 예정표", path: "/semesters" },
@@ -76,10 +83,6 @@ const hostMenuItems: MenuItem[] = [
   { icon: Sparkles, label: "AI 상담", path: "/ai" },
 ];
 
-/**
- * superhost 전용 메뉴
- * host/admin/staff 에게는 절대 노출되지 않음
- */
 const superhostMenuItems: MenuItem[] = [
   { icon: Crown, label: "슈퍼호스트 대시보드", path: "/superhost" },
   { icon: Building2, label: "테넌트 관리", path: "/superhost/tenants" },
@@ -107,6 +110,80 @@ type NotificationItem = {
   relatedId?: number | null;
   isRead: boolean;
   createdAt?: string | Date;
+};
+
+type RightDockTab = "channels" | "profile" | "settings";
+
+type MessengerRoom = {
+  id: number;
+  name: string;
+  lastMessage: string;
+  unreadCount: number;
+  updatedAt: string;
+  members?: string;
+};
+
+type ChatMessage = {
+  id: number;
+  sender: string;
+  content: string;
+  time: string;
+  mine?: boolean;
+};
+
+const messengerRooms: MessengerRoom[] = [
+  {
+    id: 1,
+    name: "운영팀",
+    lastMessage: "오늘 승인 건 먼저 확인 부탁드립니다.",
+    unreadCount: 2,
+    updatedAt: "방금 전",
+    members: "운영 4명",
+  },
+  {
+    id: 2,
+    name: "상담팀",
+    lastMessage: "신규 문의 3건 들어왔습니다.",
+    unreadCount: 0,
+    updatedAt: "12분 전",
+    members: "상담 6명",
+  },
+  {
+    id: 3,
+    name: "1:1 · 관리자",
+    lastMessage: "정산 리포트 확인 부탁드려요.",
+    unreadCount: 1,
+    updatedAt: "35분 전",
+    members: "1:1 대화",
+  },
+  {
+    id: 4,
+    name: "실습지원센터",
+    lastMessage: "기관 배정표 업데이트 해주세요.",
+    unreadCount: 0,
+    updatedAt: "1시간 전",
+    members: "실습 3명",
+  },
+];
+
+const mockMessagesByRoom: Record<number, ChatMessage[]> = {
+  1: [
+    { id: 1, sender: "김민지", content: "오늘 승인 건 먼저 확인 부탁드립니다.", time: "10:20" },
+    { id: 2, sender: "나", content: "네, 오전 안에 확인해둘게요.", time: "10:24", mine: true },
+    { id: 3, sender: "박지훈", content: "환불 건도 같이 보면 좋겠습니다.", time: "10:26" },
+  ],
+  2: [
+    { id: 1, sender: "최서연", content: "신규 문의 3건 들어왔습니다.", time: "09:40" },
+    { id: 2, sender: "나", content: "상담 DB 반영 상태 먼저 확인할게요.", time: "09:43", mine: true },
+  ],
+  3: [
+    { id: 1, sender: "관리자", content: "정산 리포트 확인 부탁드려요.", time: "11:02" },
+    { id: 2, sender: "나", content: "네 확인 후 바로 말씀드리겠습니다.", time: "11:05", mine: true },
+  ],
+  4: [
+    { id: 1, sender: "이서윤", content: "기관 배정표 업데이트 해주세요.", time: "13:10" },
+    { id: 2, sender: "나", content: "오후에 최신본으로 반영하겠습니다.", time: "13:14", mine: true },
+  ],
 };
 
 export default function DashboardLayout({
@@ -161,6 +238,10 @@ function DashboardLayoutContent({
   setSidebarWidth,
 }: DashboardLayoutContentProps) {
   const [location, setLocation] = useLocation();
+  const [rightDockTab, setRightDockTab] = useState<RightDockTab>("channels");
+  const [isChatSlideOpen, setIsChatSlideOpen] = useState(false);
+  const [selectedChannel, setSelectedChannel] = useState<MessengerRoom | null>(null);
+  const [chatInput, setChatInput] = useState("");
 
   useEffect(() => {
     const handlePushOpen = (event: Event) => {
@@ -195,27 +276,17 @@ function DashboardLayoutContent({
   const isHost = user?.role === "host";
   const isSuperhost = user?.role === "superhost";
 
-  /**
-   * 권한 원칙
-   * - staff: staff 메뉴만
-   * - admin: staff + admin
-   * - host: staff + admin + host
-   * - superhost: superhost 전용 메뉴만 (host 영역과 분리)
-   *
-   * 즉 superhost는 host 메뉴를 굳이 공유하지 않게 해서
-   * 시스템상 "총관리자 전용 공간" 느낌으로 분리
-   */
   const visibleStaffMenuItems =
-  isStaff || isAdmin || isHost || isSuperhost ? staffMenuItems : [];
+    isSuperhost ? [] : isStaff || isAdmin || isHost ? staffMenuItems : [];
 
-const visibleAdminMenuItems =
-  isAdmin || isHost || isSuperhost ? adminMenuItems : [];
+  const visibleAdminMenuItems =
+    isSuperhost ? [] : isAdmin || isHost ? adminMenuItems : [];
 
-const visibleHostMenuItems =
-  isHost || isSuperhost ? hostMenuItems : [];
+  const visibleHostMenuItems =
+    isSuperhost ? [] : isHost ? hostMenuItems : [];
 
-const visibleSuperhostMenuItems =
-  isSuperhost ? superhostMenuItems : [];
+  const visibleSuperhostMenuItems =
+    isSuperhost ? superhostMenuItems : [];
 
   const allMenuItems = [
     ...visibleStaffMenuItems,
@@ -251,6 +322,11 @@ const visibleSuperhostMenuItems =
   const unreadCount = useMemo(() => {
     return notifications.filter((item) => !item.isRead).length;
   }, [notifications]);
+
+  const currentMessages = useMemo(() => {
+    if (!selectedChannel) return [];
+    return mockMessagesByRoom[selectedChannel.id] ?? [];
+  }, [selectedChannel]);
 
   useEffect(() => {
     if (isCollapsed) setIsResizing(false);
@@ -349,6 +425,17 @@ const visibleSuperhostMenuItems =
     : isAdmin
     ? "관리자"
     : "직원";
+
+  const handleOpenChannel = (room: MessengerRoom) => {
+    setSelectedChannel(room);
+    setIsChatSlideOpen(true);
+    setRightDockTab("channels");
+  };
+
+  const handleSendMessage = () => {
+    if (!chatInput.trim()) return;
+    setChatInput("");
+  };
 
   return (
     <>
@@ -457,25 +544,26 @@ const visibleSuperhostMenuItems =
               </span>
             )}
           </div>
-	{isSuperhost && (
-  <>
-    {location.startsWith("/superhost") ? (
-      <button
-        onClick={() => setLocation("/")}
-        className="inline-flex h-9 items-center justify-center rounded-lg border bg-background px-3 text-sm transition-colors hover:bg-accent"
-      >
-        일반 CRM으로 돌아가기
-      </button>
-    ) : (
-      <button
-        onClick={() => setLocation("/superhost")}
-        className="inline-flex h-9 items-center justify-center rounded-lg border bg-background px-3 text-sm transition-colors hover:bg-accent"
-      >
-        슈퍼호스트 콘솔
-      </button>
-    )}
-  </>
-)}
+
+          {isSuperhost && (
+            <>
+              {location.startsWith("/superhost") ? (
+                <button
+                  onClick={() => setLocation("/")}
+                  className="inline-flex h-9 items-center justify-center rounded-lg border bg-background px-3 text-sm transition-colors hover:bg-accent"
+                >
+                  일반 CRM으로 돌아가기
+                </button>
+              ) : (
+                <button
+                  onClick={() => setLocation("/superhost")}
+                  className="inline-flex h-9 items-center justify-center rounded-lg border bg-background px-3 text-sm transition-colors hover:bg-accent"
+                >
+                  슈퍼호스트 콘솔
+                </button>
+              )}
+            </>
+          )}
 
           <div className="flex items-center gap-2">
             {!isSuperhost && (
@@ -542,11 +630,243 @@ const visibleSuperhostMenuItems =
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
+
+            <button
+              onClick={() => setRightDockTab("channels")}
+              className={`inline-flex h-9 items-center justify-center rounded-lg border px-3 text-sm transition-colors ${
+                rightDockTab === "channels" ? "bg-accent" : "bg-background hover:bg-accent"
+              }`}
+            >
+              <MessageSquare className="mr-2 h-4 w-4" />
+              채널
+            </button>
+
+            <button
+              onClick={() => setRightDockTab("profile")}
+              className={`inline-flex h-9 items-center justify-center rounded-lg border px-3 text-sm transition-colors ${
+                rightDockTab === "profile" ? "bg-accent" : "bg-background hover:bg-accent"
+              }`}
+            >
+              <User className="mr-2 h-4 w-4" />
+              기본정보
+            </button>
+
+            <button
+              onClick={() => setRightDockTab("settings")}
+              className={`inline-flex h-9 items-center justify-center rounded-lg border px-3 text-sm transition-colors ${
+                rightDockTab === "settings" ? "bg-accent" : "bg-background hover:bg-accent"
+              }`}
+            >
+              <Settings className="mr-2 h-4 w-4" />
+              설정
+            </button>
           </div>
         </div>
 
-        <main className="flex-1 p-4 md:p-6">{children}</main>
+        <div className="flex min-h-0 flex-1">
+          <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
+
+          {!isMobile && (
+            <aside className="hidden w-[320px] shrink-0 border-l bg-background xl:flex xl:flex-col">
+              <div className="flex h-14 items-center justify-between border-b px-4">
+                <div className="flex items-center gap-2">
+                  {rightDockTab === "channels" && <MessageSquare className="h-4 w-4" />}
+                  {rightDockTab === "profile" && <User className="h-4 w-4" />}
+                  {rightDockTab === "settings" && <Settings className="h-4 w-4" />}
+                  <span className="font-semibold">
+                    {rightDockTab === "channels"
+                      ? "채널 리스트"
+                      : rightDockTab === "profile"
+                      ? "기본정보"
+                      : "환경설정"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4">
+                {rightDockTab === "channels" && (
+                  <div className="space-y-3">
+                    {messengerRooms.map((room) => (
+                      <button
+                        key={room.id}
+                        onClick={() => handleOpenChannel(room)}
+                        className="flex w-full items-center justify-between rounded-xl border px-3 py-3 text-left transition hover:bg-accent/40"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="truncate font-medium">{room.name}</p>
+                            {room.unreadCount > 0 && (
+                              <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
+                                {room.unreadCount}
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-1 truncate text-sm text-muted-foreground">
+                            {room.lastMessage}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {room.members}
+                          </p>
+                        </div>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {room.updatedAt}
+                        </span>
+                      </button>
+                    ))}
+
+                    <button
+                      onClick={() => setLocation("/messenger")}
+                      className="flex w-full items-center justify-center rounded-xl border px-3 py-3 text-sm font-medium transition hover:bg-accent"
+                    >
+                      메신저 전체 보기
+                    </button>
+                  </div>
+                )}
+
+                {rightDockTab === "profile" && (
+                  <div className="space-y-3">
+                    <div className="rounded-xl border p-4">
+                      <p className="text-xs text-muted-foreground">이름</p>
+                      <p className="mt-1 font-semibold">{user?.name || "-"}</p>
+                    </div>
+
+                    <div className="rounded-xl border p-4">
+                      <p className="text-xs text-muted-foreground">권한</p>
+                      <p className="mt-1 font-semibold">{roleLabel}</p>
+                    </div>
+
+                    <div className="rounded-xl border p-4">
+                      <p className="text-xs text-muted-foreground">아이디</p>
+                      <p className="mt-1 font-semibold">
+                        {"username" in (user ?? {}) ? (user as any).username : "-"}
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => setLocation("/system")}
+                      className="flex w-full items-center justify-between rounded-xl border px-3 py-3 text-left transition hover:bg-accent/40"
+                    >
+                      <div>
+                        <p className="text-sm font-semibold">시스템 관리</p>
+                        <p className="text-xs text-muted-foreground">
+                          사용자 및 기본 설정 확인
+                        </p>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  </div>
+                )}
+
+                {rightDockTab === "settings" && (
+                  <div className="space-y-3">
+                    <button className="flex w-full items-center justify-between rounded-xl border px-3 py-3 text-left transition hover:bg-accent/40">
+                      <div>
+                        <p className="text-sm font-semibold">알림 설정</p>
+                        <p className="text-xs text-muted-foreground">
+                          상담/승인/환불 알림 관리
+                        </p>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    </button>
+
+                    <button className="flex w-full items-center justify-between rounded-xl border px-3 py-3 text-left transition hover:bg-accent/40">
+                      <div>
+                        <p className="text-sm font-semibold">홈 화면 설정</p>
+                        <p className="text-xs text-muted-foreground">
+                          대시보드 및 홈 구성 제어
+                        </p>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    </button>
+
+                    <button className="flex w-full items-center justify-between rounded-xl border px-3 py-3 text-left transition hover:bg-accent/40">
+                      <div>
+                        <p className="text-sm font-semibold">보안 설정</p>
+                        <p className="text-xs text-muted-foreground">
+                          접근 정책 및 계정 보안 관리
+                        </p>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </aside>
+          )}
+        </div>
       </SidebarInset>
+
+      {isChatSlideOpen && selectedChannel && !isMobile && (
+        <aside className="fixed right-0 top-14 z-50 h-[calc(100vh-56px)] w-[420px] border-l bg-background shadow-2xl">
+          <div className="flex h-14 items-center justify-between border-b px-4">
+            <div className="min-w-0">
+              <p className="truncate font-semibold">{selectedChannel.name}</p>
+              <p className="text-xs text-muted-foreground">
+                {selectedChannel.members || "채널 대화"}
+              </p>
+            </div>
+
+            <button
+              onClick={() => setIsChatSlideOpen(false)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg transition hover:bg-accent"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="flex h-[calc(100%-56px)] flex-col">
+            <div className="flex-1 space-y-3 overflow-y-auto p-4">
+              {currentMessages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`flex ${message.mine ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                      message.mine
+                        ? "bg-primary text-primary-foreground"
+                        : "border bg-white"
+                    }`}
+                  >
+                    {!message.mine && (
+                      <p className="mb-1 text-xs font-semibold text-muted-foreground">
+                        {message.sender}
+                      </p>
+                    )}
+                    <p className="text-sm leading-relaxed">{message.content}</p>
+                    <p
+                      className={`mt-2 text-[11px] ${
+                        message.mine
+                          ? "text-primary-foreground/80"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {message.time}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t p-4">
+              <div className="flex items-end gap-2">
+                <textarea
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder="메시지를 입력하세요"
+                  className="min-h-[44px] flex-1 resize-none rounded-xl border px-3 py-2 text-sm outline-none focus:border-primary"
+                />
+                <button
+                  onClick={handleSendMessage}
+                  className="inline-flex h-11 items-center justify-center rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+                >
+                  전송
+                </button>
+              </div>
+            </div>
+          </div>
+        </aside>
+      )}
     </>
   );
 }

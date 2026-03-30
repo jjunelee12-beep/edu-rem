@@ -52,6 +52,7 @@ export const users = mysqlTable("users", {
 
   bankName: varchar("bankName", { length: 100 }),
   bankAccount: varchar("bankAccount", { length: 100 }),
+profileImageUrl: varchar("profileImageUrl", { length: 500 }),
 });
 
 export type User = typeof users.$inferSelect;
@@ -610,6 +611,151 @@ export const jobSupportRequests = mysqlTable("job_support_requests", {
 
 export type JobSupportRequest = typeof jobSupportRequests.$inferSelect;
 export type InsertJobSupportRequest = typeof jobSupportRequests.$inferInsert;
+
+
+// ─── Chat Rooms ─────────────────────────────
+export const chatRooms = mysqlTable("chat_rooms", {
+  id: int("id").autoincrement().primaryKey(),
+  roomType: mysqlEnum("roomType", ["direct", "group"]).notNull().default("direct"),
+  title: varchar("title", { length: 255 }),
+  createdBy: int("createdBy").notNull(),
+  isActive: boolean("isActive").notNull().default(true),
+  createdAt: datetime("createdAt").notNull().defaultNow(),
+  updatedAt: datetime("updatedAt").notNull().defaultNow().onUpdateNow(),
+});
+
+export type ChatRoom = typeof chatRooms.$inferSelect;
+export type InsertChatRoom = typeof chatRooms.$inferInsert;
+
+export const chatRoomMembers = mysqlTable("chat_room_members", {
+  id: int("id").autoincrement().primaryKey(),
+  roomId: int("roomId").notNull(),
+  userId: int("userId").notNull(),
+  joinedAt: datetime("joinedAt").notNull().defaultNow(),
+  leftAt: datetime("leftAt"),
+  isActive: boolean("isActive").notNull().default(true),
+  lastReadMessageId: int("lastReadMessageId"),
+});
+
+export type ChatRoomMember = typeof chatRoomMembers.$inferSelect;
+export type InsertChatRoomMember = typeof chatRoomMembers.$inferInsert;
+
+export const chatMessages = mysqlTable("chat_messages", {
+  id: int("id").autoincrement().primaryKey(),
+  roomId: int("roomId").notNull(),
+  senderId: int("senderId").notNull(),
+  messageType: mysqlEnum("messageType", ["text", "image", "file", "system"]).notNull().default("text"),
+  content: text("content"),
+  createdAt: datetime("createdAt").notNull().defaultNow(),
+  updatedAt: datetime("updatedAt").notNull().defaultNow().onUpdateNow(),
+  isDeleted: boolean("isDeleted").notNull().default(false),
+});
+
+export type ChatMessage = typeof chatMessages.$inferSelect;
+export type InsertChatMessage = typeof chatMessages.$inferInsert;
+
+export const chatAttachments = mysqlTable("chat_attachments", {
+  id: int("id").autoincrement().primaryKey(),
+  messageId: int("messageId").notNull(),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  fileUrl: text("fileUrl").notNull(),
+  fileType: varchar("fileType", { length: 100 }),
+  fileSize: int("fileSize"),
+  createdAt: datetime("createdAt").notNull().defaultNow(),
+});
+
+export type ChatAttachment = typeof chatAttachments.$inferSelect;
+export type InsertChatAttachment = typeof chatAttachments.$inferInsert;
+
+export const chatRoomSettings = mysqlTable("chat_room_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  roomId: int("roomId").notNull(),
+  userId: int("userId").notNull(),
+  isMuted: boolean("isMuted").notNull().default(false),
+  pinnedAt: datetime("pinnedAt"),
+  createdAt: datetime("createdAt").notNull().defaultNow(),
+  updatedAt: datetime("updatedAt").notNull().defaultNow().onUpdateNow(),
+});
+
+export type ChatRoomSetting = typeof chatRoomSettings.$inferSelect;
+export type InsertChatRoomSetting = typeof chatRoomSettings.$inferInsert;
+
+// ─── 조직도 테이블 ─────────────────────────────
+export const teams = mysqlTable("teams", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  sortOrder: int("sortOrder").notNull().default(0),
+  isActive: boolean("isActive").notNull().default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Team = typeof teams.$inferSelect;
+export type InsertTeam = typeof teams.$inferInsert;
+
+export const positions = mysqlTable("positions", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  sortOrder: int("sortOrder").notNull().default(0),
+  isActive: boolean("isActive").notNull().default(true),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Position = typeof positions.$inferSelect;
+export type InsertPosition = typeof positions.$inferInsert;
+
+export const userOrgMappings = mysqlTable("user_org_mappings", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  teamId: int("teamId"),
+  positionId: int("positionId"),
+  sortOrder: int("sortOrder").notNull().default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type UserOrgMapping = typeof userOrgMappings.$inferSelect;
+export type InsertUserOrgMapping = typeof userOrgMappings.$inferInsert;
+
+
+export const attendanceRecords = mysqlTable("attendance_records", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  workDate: date("workDate").notNull(),
+  clockInAt: datetime("clockInAt"),
+  clockOutAt: datetime("clockOutAt"),
+  workMinutes: int("workMinutes").notNull().default(0),
+  status: mysqlEnum("status", ["출근전", "근무중", "퇴근완료"])
+    .notNull()
+    .default("출근전"),
+  note: varchar("note", { length: 255 }),
+  createdAt: datetime("createdAt").notNull().defaultNow(),
+  updatedAt: datetime("updatedAt").notNull().defaultNow().onUpdateNow(),
+isLate: int("isLate").notNull().default(0),
+isEarlyLeave: int("isEarlyLeave").notNull().default(0),
+lateMinutes: int("lateMinutes").notNull().default(0),
+earlyLeaveMinutes: int("earlyLeaveMinutes").notNull().default(0),
+});
+
+export type InsertAttendanceRecord = typeof attendanceRecords.$inferInsert;
+export type SelectAttendanceRecord = typeof attendanceRecords.$inferSelect;
+
+export const attendanceAdjustmentLogs = mysqlTable("attendance_adjustment_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  attendanceId: int("attendanceId").notNull(),
+  targetUserId: int("targetUserId").notNull(),
+  actorUserId: int("actorUserId").notNull(),
+  beforeClockInAt: datetime("beforeClockInAt"),
+  beforeClockOutAt: datetime("beforeClockOutAt"),
+  afterClockInAt: datetime("afterClockInAt"),
+  afterClockOutAt: datetime("afterClockOutAt"),
+  reason: varchar("reason", { length: 255 }),
+  createdAt: datetime("createdAt").notNull().defaultNow(),
+});
+
+export type InsertAttendanceAdjustmentLog =
+  typeof attendanceAdjustmentLogs.$inferInsert;
 
 // ─── Device Tokens (모바일 푸시 토큰) ───────────────────────────────
 export const deviceTokens = mysqlTable("device_tokens", {

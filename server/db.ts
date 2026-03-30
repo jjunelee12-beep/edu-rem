@@ -39,9 +39,27 @@ practiceEducationCenters,
 deviceTokens,
   InsertDeviceToken,
 aiActionLogs,
+ teams,
+  type InsertTeam,
+  positions,
+  type InsertPosition,
+  userOrgMappings,
+  type InsertUserOrgMapping,
+  chatRooms,
+  type InsertChatRoom,
+  chatRoomMembers,
+  type InsertChatRoomMember,
+    chatMessages,
+  type InsertChatMessage,
+  chatAttachments,
+  type InsertChatAttachment,
+  chatRoomSettings,
+attendanceRecords,
+  type InsertAttendanceRecord,
 } from "../drizzle/schema";
 
 import { ENV } from "./_core/env";
+import bcrypt from "bcryptjs";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -2765,4 +2783,1229 @@ export async function createAiActionLogV2(data: {
     targetStudentName: data.targetStudentName,
     payload: JSON.stringify(data.payload ?? {}),
   });
+}
+
+// =====================================================
+// ORG / SUPERHOST GUARD / MESSENGER
+// =====================================================
+
+function normalizeNullableString(v: any) {
+  if (v === undefined || v === null) return null;
+  const s = String(v).trim();
+  return s ? s : null;
+}
+
+export async function assertUserExists(userId: number) {
+  const user = await getUserById(userId);
+  if (!user) {
+    throw new Error("유저를 찾을 수 없습니다.");
+  }
+  return user;
+}
+
+export async function assertTargetUserNotProtectedByActor(params: {
+  actorRole: "staff" | "admin" | "host" | "superhost";
+  targetUserId: number;
+}) {
+  const target = await getUserById(params.targetUserId);
+  if (!target) {
+    throw new Error("대상 유저를 찾을 수 없습니다.");
+  }
+
+  if (target.role === "superhost" && params.actorRole !== "superhost") {
+    throw new Error("슈퍼호스트 계정은 수정할 수 없습니다.");
+  }
+
+  return target;
+}
+
+// -----------------------------------------------------
+// ORG: Teams
+// -----------------------------------------------------
+
+export async function listTeams() {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(teams)
+    .orderBy(teams.sortOrder, teams.id);
+}
+
+export async function getTeam(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.select().from(teams).where(eq(teams.id, id)).limit(1);
+  return result[0];
+}
+
+export async function createTeam(data: {
+  name: string;
+  sortOrder?: number | null;
+  isActive?: boolean | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(teams).values({
+    name: data.name.trim(),
+    sortOrder: data.sortOrder ?? 0,
+    isActive: data.isActive ?? true,
+  } as InsertTeam);
+
+  return getInsertId(result);
+}
+
+export async function updateTeam(
+  id: number,
+  data: {
+    name?: string | null;
+    sortOrder?: number | null;
+    isActive?: boolean | null;
+  }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const payload: Record<string, any> = {};
+  if (data.name !== undefined) payload.name = normalizeNullableString(data.name);
+  if (data.sortOrder !== undefined) payload.sortOrder = data.sortOrder ?? 0;
+  if (data.isActive !== undefined) payload.isActive = !!data.isActive;
+
+  if (Object.keys(payload).length === 0) return;
+
+  await db.update(teams).set(payload).where(eq(teams.id, id));
+}
+
+export async function deleteTeam(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.delete(teams).where(eq(teams.id, id));
+}
+
+// -----------------------------------------------------
+// ORG: Positions
+// -----------------------------------------------------
+
+export async function listPositions() {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(positions)
+    .orderBy(positions.sortOrder, positions.id);
+}
+
+export async function getPosition(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(positions)
+    .where(eq(positions.id, id))
+    .limit(1);
+
+  return result[0];
+}
+
+export async function createPosition(data: {
+  name: string;
+  sortOrder?: number | null;
+  isActive?: boolean | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(positions).values({
+    name: data.name.trim(),
+    sortOrder: data.sortOrder ?? 0,
+    isActive: data.isActive ?? true,
+  } as InsertPosition);
+
+  return getInsertId(result);
+}
+
+export async function updatePosition(
+  id: number,
+  data: {
+    name?: string | null;
+    sortOrder?: number | null;
+    isActive?: boolean | null;
+  }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const payload: Record<string, any> = {};
+  if (data.name !== undefined) payload.name = normalizeNullableString(data.name);
+  if (data.sortOrder !== undefined) payload.sortOrder = data.sortOrder ?? 0;
+  if (data.isActive !== undefined) payload.isActive = !!data.isActive;
+
+  if (Object.keys(payload).length === 0) return;
+
+  await db.update(positions).set(payload).where(eq(positions.id, id));
+}
+
+export async function deletePosition(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.delete(positions).where(eq(positions.id, id));
+}
+
+// -----------------------------------------------------
+// ORG: User Mapping
+// -----------------------------------------------------
+
+export async function getUserOrgMapping(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(userOrgMappings)
+    .where(eq(userOrgMappings.userId, userId))
+    .limit(1);
+
+  return result[0];
+}
+
+export async function upsertUserOrgMapping(data: {
+  userId: number;
+  teamId?: number | null;
+  positionId?: number | null;
+  sortOrder?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await assertUserExists(data.userId);
+
+  if (data.teamId) {
+    const team = await getTeam(data.teamId);
+    if (!team) throw new Error("팀을 찾을 수 없습니다.");
+  }
+
+  if (data.positionId) {
+    const position = await getPosition(data.positionId);
+    if (!position) throw new Error("직급을 찾을 수 없습니다.");
+  }
+
+  const existing = await getUserOrgMapping(data.userId);
+
+  const payload = {
+    userId: data.userId,
+    teamId: data.teamId ?? null,
+    positionId: data.positionId ?? null,
+    sortOrder: data.sortOrder ?? 0,
+  } as InsertUserOrgMapping;
+
+  if (existing) {
+    await db
+      .update(userOrgMappings)
+      .set({
+        teamId: payload.teamId,
+        positionId: payload.positionId,
+        sortOrder: payload.sortOrder,
+      } as any)
+      .where(eq(userOrgMappings.userId, data.userId));
+
+    return existing.id;
+  }
+
+  const result: any = await db.insert(userOrgMappings).values(payload);
+  return getInsertId(result);
+}
+
+export async function deleteUserOrgMapping(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.delete(userOrgMappings).where(eq(userOrgMappings.userId, userId));
+}
+
+export async function getUsersWithOrg() {
+  const db = await getDb();
+  if (!db) return [];
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      u.id,
+      u.displayNo,
+      u.openId,
+      u.username,
+      u.name,
+      u.email,
+      u.phone,
+      u.role,
+      u.bankName,
+      u.bankAccount,
+      u.isActive,
+      u.loginMethod,
+      u.createdAt,
+      u.updatedAt,
+      u.lastSignedIn,
+
+      m.id as mappingId,
+      m.teamId,
+      m.positionId,
+      COALESCE(m.sortOrder, 0) as orgSortOrder,
+
+      t.name as teamName,
+      t.sortOrder as teamSortOrder,
+      t.isActive as teamIsActive,
+
+      p.name as positionName,
+      p.sortOrder as positionSortOrder,
+      p.isActive as positionIsActive
+
+    FROM users u
+    LEFT JOIN user_org_mappings m ON m.userId = u.id
+    LEFT JOIN teams t ON t.id = m.teamId
+    LEFT JOIN positions p ON p.id = m.positionId
+    ORDER BY
+      COALESCE(t.sortOrder, 999999) ASC,
+      COALESCE(m.sortOrder, 999999) ASC,
+      u.displayNo ASC,
+      u.id ASC
+  `);
+
+  return (rows as any[]) ?? [];
+}
+
+// -----------------------------------------------------
+// USER wrappers with superhost protection
+// -----------------------------------------------------
+
+export async function updateUserAccountProtected(params: {
+  actorRole: "staff" | "admin" | "host" | "superhost";
+  targetUserId: number;
+  data: {
+    username?: string;
+    passwordHash?: string | null;
+    name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    bankName?: string | null;
+    bankAccount?: string | null;
+  };
+}) {
+  await assertTargetUserNotProtectedByActor({
+    actorRole: params.actorRole,
+    targetUserId: params.targetUserId,
+  });
+
+  return updateUserAccount(params.targetUserId, params.data);
+}
+
+export async function updateUserRoleProtected(params: {
+  actorRole: "staff" | "admin" | "host" | "superhost";
+  targetUserId: number;
+  role: "staff" | "admin" | "host" | "superhost";
+}) {
+  const target = await assertTargetUserNotProtectedByActor({
+    actorRole: params.actorRole,
+    targetUserId: params.targetUserId,
+  });
+
+  if (target.role === "superhost" && params.role !== "superhost") {
+    throw new Error("슈퍼호스트 권한은 변경할 수 없습니다.");
+  }
+
+  return updateUserRole(params.targetUserId, params.role);
+}
+
+export async function updateUserActiveProtected(params: {
+  actorRole: "staff" | "admin" | "host" | "superhost";
+  targetUserId: number;
+  isActive: boolean;
+}) {
+  await assertTargetUserNotProtectedByActor({
+    actorRole: params.actorRole,
+    targetUserId: params.targetUserId,
+  });
+
+  return updateUserActive(params.targetUserId, params.isActive);
+}
+
+export async function upsertUserOrgMappingProtected(params: {
+  actorRole: "staff" | "admin" | "host" | "superhost";
+  targetUserId: number;
+  teamId?: number | null;
+  positionId?: number | null;
+  sortOrder?: number | null;
+}) {
+  await assertTargetUserNotProtectedByActor({
+    actorRole: params.actorRole,
+    targetUserId: params.targetUserId,
+  });
+
+  return upsertUserOrgMapping({
+    userId: params.targetUserId,
+    teamId: params.teamId ?? null,
+    positionId: params.positionId ?? null,
+    sortOrder: params.sortOrder ?? 0,
+  });
+}
+
+// -----------------------------------------------------
+// Messenger helpers
+// -----------------------------------------------------
+
+export async function getDirectChatRoomBetweenUsers(userAId: number, userBId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [rows] = await db.execute(sql`
+    SELECT r.*
+    FROM chat_rooms r
+    INNER JOIN chat_room_members m1 ON m1.roomId = r.id
+    INNER JOIN chat_room_members m2 ON m2.roomId = r.id
+    WHERE r.roomType = 'direct'
+      AND r.isActive = true
+      AND m1.userId = ${userAId}
+      AND m1.isActive = true
+      AND m2.userId = ${userBId}
+      AND m2.isActive = true
+    LIMIT 1
+  `);
+
+  return ((rows as any[]) ?? [])[0] ?? null;
+}
+
+export async function createChatRoom(data: {
+  roomType: "direct" | "group";
+  title?: string | null;
+  createdBy: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(chatRooms).values({
+    roomType: data.roomType,
+    title: normalizeNullableString(data.title),
+    createdBy: data.createdBy,
+    isActive: true,
+  } as InsertChatRoom);
+
+  return getInsertId(result);
+}
+
+export async function addChatRoomMember(data: {
+  roomId: number;
+  userId: number;
+  lastReadMessageId?: number | null;
+  isActive?: boolean | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const existing = await db
+    .select()
+    .from(chatRoomMembers)
+    .where(
+      and(
+        eq(chatRoomMembers.roomId, data.roomId),
+        eq(chatRoomMembers.userId, data.userId)
+      )
+    )
+    .limit(1);
+
+  if (existing[0]) {
+    await db
+      .update(chatRoomMembers)
+      .set({
+        isActive: data.isActive ?? true,
+        lastReadMessageId: data.lastReadMessageId ?? existing[0].lastReadMessageId ?? null,
+        leftAt: null,
+      } as any)
+      .where(eq(chatRoomMembers.id, existing[0].id));
+
+    return existing[0].id;
+  }
+
+  const result: any = await db.insert(chatRoomMembers).values({
+    roomId: data.roomId,
+    userId: data.userId,
+    lastReadMessageId: data.lastReadMessageId ?? null,
+    isActive: data.isActive ?? true,
+    joinedAt: new Date(),
+    leftAt: null,
+  } as InsertChatRoomMember);
+
+  return getInsertId(result);
+}
+
+export async function getOrCreateDirectChatRoom(params: {
+  actorUserId: number;
+  otherUserId: number;
+}) {
+  if (params.actorUserId === params.otherUserId) {
+    throw new Error("자기 자신과의 채팅방은 만들 수 없습니다.");
+  }
+
+  await assertUserExists(params.actorUserId);
+  await assertUserExists(params.otherUserId);
+
+  const existing = await getDirectChatRoomBetweenUsers(
+    params.actorUserId,
+    params.otherUserId
+  );
+
+  if (existing?.id) {
+    return existing;
+  }
+
+  const roomId = await createChatRoom({
+    roomType: "direct",
+    title: null,
+    createdBy: params.actorUserId,
+  });
+
+  await addChatRoomMember({
+    roomId: Number(roomId),
+    userId: params.actorUserId,
+  });
+
+  await addChatRoomMember({
+    roomId: Number(roomId),
+    userId: params.otherUserId,
+  });
+
+  return await getChatRoomById(Number(roomId));
+}
+
+export async function getChatRoomById(roomId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db
+    .select()
+    .from(chatRooms)
+    .where(eq(chatRooms.id, roomId))
+    .limit(1);
+
+  return result[0] ?? null;
+}
+
+export async function ensureChatRoomMember(roomId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result = await db
+    .select()
+    .from(chatRoomMembers)
+    .where(
+      and(
+        eq(chatRoomMembers.roomId, roomId),
+        eq(chatRoomMembers.userId, userId),
+        eq(chatRoomMembers.isActive, true)
+      )
+    )
+    .limit(1);
+
+  if (!result[0]) {
+    throw new Error("해당 채팅방에 접근 권한이 없습니다.");
+  }
+
+  return result[0];
+}
+
+export async function createChatMessage(data: {
+  roomId: number;
+  senderId: number;
+  messageType?: "text" | "image" | "file" | "system";
+  content?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await ensureChatRoomMember(data.roomId, data.senderId);
+
+  const result: any = await db.insert(chatMessages).values({
+    roomId: data.roomId,
+    senderId: data.senderId,
+    messageType: data.messageType ?? "text",
+    content: normalizeNullableString(data.content),
+    isDeleted: false,
+  } as InsertChatMessage);
+
+  return getInsertId(result);
+}
+
+export async function createChatAttachment(data: {
+  messageId: number;
+  fileName: string;
+  fileUrl: string;
+  fileType?: string | null;
+  fileSize?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(chatAttachments).values({
+    messageId: data.messageId,
+    fileName: data.fileName.trim(),
+    fileUrl: data.fileUrl.trim(),
+    fileType: normalizeNullableString(data.fileType),
+    fileSize: data.fileSize ?? null,
+  } as InsertChatAttachment);
+
+  return getInsertId(result);
+}
+
+export async function listChatMessages(roomId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  await ensureChatRoomMember(roomId, userId);
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      m.id,
+      m.roomId,
+      m.senderId,
+      m.messageType,
+      m.content,
+      m.isDeleted,
+      m.createdAt,
+      m.updatedAt,
+
+      u.name as senderName,
+      u.username as senderUsername,
+
+      a.id as attachmentId,
+      a.fileName as fileName,
+      a.fileUrl as fileUrl,
+      a.fileType as fileType,
+      a.fileSize as fileSize
+
+    FROM chat_messages m
+    INNER JOIN users u ON u.id = m.senderId
+    LEFT JOIN chat_attachments a ON a.messageId = m.id
+    WHERE m.roomId = ${roomId}
+    ORDER BY m.id ASC
+  `);
+
+  return (rows as any[]) ?? [];
+}
+
+export async function markChatRoomRead(params: {
+  roomId: number;
+  userId: number;
+  lastReadMessageId: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await ensureChatRoomMember(params.roomId, params.userId);
+
+  await db
+    .update(chatRoomMembers)
+    .set({
+      lastReadMessageId: params.lastReadMessageId ?? null,
+    } as any)
+    .where(
+      and(
+        eq(chatRoomMembers.roomId, params.roomId),
+        eq(chatRoomMembers.userId, params.userId)
+      )
+    );
+}
+
+export async function listMyChatRooms(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      r.id,
+      r.roomType,
+      r.title,
+      r.createdBy,
+      r.isActive,
+      r.createdAt,
+      r.updatedAt,
+
+      me.lastReadMessageId,
+
+      COALESCE(rs.isMuted, 0) as isMuted,
+
+      lm.id as lastMessageId,
+      lm.content as lastMessageContent,
+      lm.messageType as lastMessageType,
+      lm.createdAt as lastMessageCreatedAt,
+      lm.senderId as lastMessageSenderId,
+
+      otherUser.id as otherUserId,
+      otherUser.name as otherUserName,
+      otherUser.username as otherUsername,
+
+      (
+        SELECT COUNT(*)
+        FROM chat_messages unread
+        WHERE unread.roomId = r.id
+          AND (
+            me.lastReadMessageId IS NULL
+            OR unread.id > me.lastReadMessageId
+          )
+          AND unread.senderId <> ${userId}
+      ) as unreadCount
+
+    FROM chat_room_members me
+    INNER JOIN chat_rooms r ON r.id = me.roomId
+
+    LEFT JOIN chat_room_settings rs
+      ON rs.roomId = r.id
+     AND rs.userId = ${userId}
+
+    LEFT JOIN chat_messages lm
+      ON lm.id = (
+        SELECT MAX(m2.id)
+        FROM chat_messages m2
+        WHERE m2.roomId = r.id
+      )
+
+    LEFT JOIN chat_room_members otherMember
+      ON otherMember.roomId = r.id
+     AND otherMember.userId <> ${userId}
+     AND otherMember.isActive = true
+
+    LEFT JOIN users otherUser
+      ON otherUser.id = otherMember.userId
+
+    WHERE me.userId = ${userId}
+      AND me.isActive = true
+      AND r.isActive = true
+
+    ORDER BY
+      COALESCE(lm.createdAt, r.createdAt) DESC,
+      r.id DESC
+  `);
+
+  return (rows as any[]) ?? [];
+}
+
+export async function listChatRoomMembers(roomId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  await ensureChatRoomMember(roomId, userId);
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      m.id,
+      m.roomId,
+      m.userId,
+      m.lastReadMessageId,
+      m.isActive,
+      m.joinedAt,
+      m.leftAt,
+
+      u.displayNo,
+      u.username,
+      u.name,
+      u.phone,
+      u.email,
+      u.role,
+      u.isActive as userIsActive,
+
+      map.teamId,
+      map.positionId,
+      t.name as teamName,
+      p.name as positionName
+
+    FROM chat_room_members m
+    INNER JOIN users u ON u.id = m.userId
+    LEFT JOIN user_org_mappings map ON map.userId = u.id
+    LEFT JOIN teams t ON t.id = map.teamId
+    LEFT JOIN positions p ON p.id = map.positionId
+
+    WHERE m.roomId = ${roomId}
+      AND m.isActive = true
+
+    ORDER BY u.id ASC
+  `);
+
+  return (rows as any[]) ?? [];
+}
+
+export async function getChatMessageById(messageId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      m.id,
+      m.roomId,
+      m.senderId,
+      m.messageType,
+      m.content,
+      m.isDeleted,
+      m.createdAt,
+      m.updatedAt,
+      u.name as senderName,
+      u.username as senderUsername,
+      a.id as attachmentId,
+      a.fileName,
+      a.fileUrl,
+      a.fileType,
+      a.fileSize
+    FROM chat_messages m
+    INNER JOIN users u ON u.id = m.senderId
+    LEFT JOIN chat_attachments a ON a.messageId = m.id
+    WHERE m.id = ${messageId}
+    LIMIT 1
+  `);
+
+  return ((rows as any[]) ?? [])[0] ?? null;
+}
+
+export async function setChatRoomMuted(params: {
+  roomId: number;
+  userId: number;
+  isMuted: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await ensureChatRoomMember(params.roomId, params.userId);
+
+  const existing = await db
+    .select()
+    .from(chatRoomSettings)
+    .where(
+      and(
+        eq(chatRoomSettings.roomId, params.roomId),
+        eq(chatRoomSettings.userId, params.userId)
+      )
+    )
+    .limit(1);
+
+  if (existing[0]) {
+    await db
+      .update(chatRoomSettings)
+      .set({
+        isMuted: params.isMuted,
+        updatedAt: new Date(),
+      } as any)
+      .where(eq(chatRoomSettings.id, existing[0].id));
+
+    return existing[0].id;
+  }
+
+  const result: any = await db.insert(chatRoomSettings).values({
+    roomId: params.roomId,
+    userId: params.userId,
+    isMuted: params.isMuted,
+    pinnedAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  } as any);
+
+  return getInsertId(result);
+}
+
+export async function leaveChatRoom(params: {
+  roomId: number;
+  userId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await ensureChatRoomMember(params.roomId, params.userId);
+
+  await db
+    .update(chatRoomMembers)
+    .set({
+      isActive: false,
+      leftAt: new Date(),
+    } as any)
+    .where(
+      and(
+        eq(chatRoomMembers.roomId, params.roomId),
+        eq(chatRoomMembers.userId, params.userId)
+      )
+    );
+
+  return true;
+}
+
+function getTodayDateStringKST() {
+  const now = new Date();
+  const kstOffset = 9 * 60 * 60 * 1000;
+  const kst = new Date(now.getTime() + kstOffset);
+  const y = kst.getUTCFullYear();
+  const m = String(kst.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(kst.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function calcWorkMinutes(start?: Date | string | null, end?: Date | string | null) {
+  if (!start || !end) return 0;
+  const s = new Date(start).getTime();
+  const e = new Date(end).getTime();
+  if (!s || !e || e <= s) return 0;
+  return Math.floor((e - s) / 1000 / 60);
+}
+
+export async function getTodayAttendanceRecord(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const today = getTodayDateStringKST();
+
+  const result = await db
+    .select()
+    .from(attendanceRecords)
+    .where(
+      and(
+        eq(attendanceRecords.userId, userId),
+        eq(attendanceRecords.workDate, today)
+      )
+    )
+    .limit(1);
+
+  return result[0] ?? null;
+}
+
+export async function clockInAttendance(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const today = getTodayDateStringKST();
+  const existing = await getTodayAttendanceRecord(userId);
+
+  if (existing?.clockInAt) {
+    throw new Error("이미 오늘 출근 처리되었습니다.");
+  }
+
+  if (existing?.id) {
+    await db
+      .update(attendanceRecords)
+      .set({
+        const now = new Date();
+const late = calcLateInfo(now);
+
+clockInAt: now,
+status: "근무중",
+isLate: late.isLate,
+lateMinutes: late.lateMinutes,
+      } as any)
+      .where(eq(attendanceRecords.id, existing.id));
+
+    return await getTodayAttendanceRecord(userId);
+  }
+
+  const result: any = await db.insert(attendanceRecords).values({
+    userId,
+    workDate: today,
+    clockInAt: new Date(),
+    clockOutAt: null,
+    workMinutes: 0,
+    status: "근무중",
+    note: null,
+  } as InsertAttendanceRecord);
+
+  const insertId = getInsertId(result);
+
+  const row = await db
+    .select()
+    .from(attendanceRecords)
+    .where(eq(attendanceRecords.id, Number(insertId)))
+    .limit(1);
+
+  return row[0] ?? null;
+}
+
+export async function clockOutAttendance(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const todayRow = await getTodayAttendanceRecord(userId);
+
+  if (!todayRow?.clockInAt) {
+    throw new Error("출근 기록이 없어 퇴근 처리할 수 없습니다.");
+  }
+
+  if (todayRow?.clockOutAt) {
+    throw new Error("이미 오늘 퇴근 처리되었습니다.");
+  }
+
+  const clockOutAt = new Date();
+  const workMinutes = calcWorkMinutes(todayRow.clockInAt, clockOutAt);
+const early = calcEarlyLeaveInfo(clockOutAt);
+
+  await db
+    .update(attendanceRecords)
+    ..set({
+  clockOutAt,
+  workMinutes,
+  status: "퇴근완료",
+  isEarlyLeave: early.isEarlyLeave,
+  earlyLeaveMinutes: early.earlyLeaveMinutes,
+} as any)
+    .where(eq(attendanceRecords.id, todayRow.id));
+
+  return await getTodayAttendanceRecord(userId);
+}
+
+export async function listMyAttendanceRecords(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      a.id,
+      a.userId,
+      a.workDate,
+      a.clockInAt,
+      a.clockOutAt,
+      a.workMinutes,
+      a.status,
+      a.note,
+      a.createdAt,
+      a.updatedAt,
+      u.name,
+      u.role
+    FROM attendance_records a
+    INNER JOIN users u ON u.id = a.userId
+    WHERE a.userId = ${userId}
+    ORDER BY a.workDate DESC, a.id DESC
+  `);
+
+  return (rows as any[]) ?? [];
+}
+
+export async function listAllAttendanceRecords() {
+  const db = await getDb();
+  if (!db) return [];
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      a.id,
+      a.userId,
+      a.workDate,
+      a.clockInAt,
+      a.clockOutAt,
+      a.workMinutes,
+      a.status,
+      a.note,
+      a.createdAt,
+      a.updatedAt,
+      u.name,
+      u.role
+    FROM attendance_records a
+    INNER JOIN users u ON u.id = a.userId
+    ORDER BY a.workDate DESC, a.id DESC
+  `);
+
+  return (rows as any[]) ?? [];
+}
+
+function calcLateInfo(clockInAt?: Date | string | null) {
+  if (!clockInAt) {
+    return { isLate: 0, lateMinutes: 0 };
+  }
+
+  const d = new Date(clockInAt);
+
+  const base = new Date(d);
+  base.setHours(9, 10, 0, 0); // 09:10 기준
+
+  if (d <= base) {
+    return { isLate: 0, lateMinutes: 0 };
+  }
+
+  const diff = Math.floor((d.getTime() - base.getTime()) / 60000);
+
+  return { isLate: 1, lateMinutes: diff };
+}
+
+function calcEarlyLeaveInfo(clockOutAt?: Date | string | null) {
+  if (!clockOutAt) {
+    return { isEarlyLeave: 0, earlyLeaveMinutes: 0 };
+  }
+
+  const d = new Date(clockOutAt);
+
+  const base = new Date(d);
+  base.setHours(18, 0, 0, 0); // 18:00 기준
+
+  if (d >= base) {
+    return { isEarlyLeave: 0, earlyLeaveMinutes: 0 };
+  }
+
+  const diff = Math.floor((base.getTime() - d.getTime()) / 60000);
+
+  return { isEarlyLeave: 1, earlyLeaveMinutes: diff };
+}
+
+export async function updateAttendanceRecordByManager(params: {
+  attendanceId: number;
+  actorUserId: number;
+  clockInAt?: string | null;
+  clockOutAt?: string | null;
+  reason?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const row = await db
+    .select()
+    .from(attendanceRecords)
+    .where(eq(attendanceRecords.id, params.attendanceId))
+    .limit(1);
+
+  const current = row[0];
+  if (!current) throw new Error("근태 기록을 찾을 수 없습니다.");
+
+  const nextClockInAt = params.clockInAt ? new Date(params.clockInAt) : null;
+  const nextClockOutAt = params.clockOutAt ? new Date(params.clockOutAt) : null;
+
+  const workMinutes = calcWorkMinutes(nextClockInAt, nextClockOutAt);
+  const late = calcLateInfo(nextClockInAt);
+  const early = calcEarlyLeaveInfo(nextClockOutAt);
+
+  let status: "출근전" | "근무중" | "퇴근완료" = "출근전";
+  if (nextClockInAt && !nextClockOutAt) status = "근무중";
+  if (nextClockInAt && nextClockOutAt) status = "퇴근완료";
+
+  await db
+    .update(attendanceRecords)
+    .set({
+      clockInAt: nextClockInAt,
+      clockOutAt: nextClockOutAt,
+      workMinutes,
+      status,
+      isLate: late.isLate,
+      lateMinutes: late.lateMinutes,
+      isEarlyLeave: early.isEarlyLeave,
+      earlyLeaveMinutes: early.earlyLeaveMinutes,
+      note: params.reason ?? current.note ?? null,
+    } as any)
+    .where(eq(attendanceRecords.id, params.attendanceId));
+
+  await db.insert(attendanceAdjustmentLogs).values({
+    attendanceId: current.id,
+    targetUserId: current.userId,
+    actorUserId: params.actorUserId,
+    beforeClockInAt: current.clockInAt ?? null,
+    beforeClockOutAt: current.clockOutAt ?? null,
+    afterClockInAt: nextClockInAt,
+    afterClockOutAt: nextClockOutAt,
+    reason: params.reason ?? null,
+  } as InsertAttendanceAdjustmentLog);
+
+  const updated = await db
+    .select()
+    .from(attendanceRecords)
+    .where(eq(attendanceRecords.id, params.attendanceId))
+    .limit(1);
+
+  return updated[0] ?? null;
+}
+
+export async function listAttendanceAdjustmentLogs(attendanceId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  if (attendanceId) {
+    const [rows] = await db.execute(sql`
+      SELECT
+        l.*,
+        targetUser.name as targetUserName,
+        actorUser.name as actorUserName
+      FROM attendance_adjustment_logs l
+      INNER JOIN users targetUser ON targetUser.id = l.targetUserId
+      INNER JOIN users actorUser ON actorUser.id = l.actorUserId
+      WHERE l.attendanceId = ${attendanceId}
+      ORDER BY l.createdAt DESC, l.id DESC
+    `);
+
+    return (rows as any[]) ?? [];
+  }
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      l.*,
+      targetUser.name as targetUserName,
+      actorUser.name as actorUserName
+    FROM attendance_adjustment_logs l
+    INNER JOIN users targetUser ON targetUser.id = l.targetUserId
+    INNER JOIN users actorUser ON actorUser.id = l.actorUserId
+    ORDER BY l.createdAt DESC, l.id DESC
+  `);
+
+  return (rows as any[]) ?? [];
+}
+
+export async function getMyProfile(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      u.id,
+      u.displayNo,
+      u.username,
+      u.name,
+      u.email,
+      u.phone,
+      u.role,
+      u.profileImageUrl,
+      map.teamId,
+      map.positionId,
+      t.name as teamName,
+      p.name as positionName
+    FROM users u
+    LEFT JOIN user_org_mappings map ON map.userId = u.id
+    LEFT JOIN teams t ON t.id = map.teamId
+    LEFT JOIN positions p ON p.id = map.positionId
+    WHERE u.id = ${userId}
+    LIMIT 1
+  `);
+
+  return ((rows as any[]) ?? [])[0] ?? null;
+}
+
+export async function updateMyProfilePhoto(params: {
+  userId: number;
+  profileImageUrl: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(users)
+    .set({
+      profileImageUrl: params.profileImageUrl,
+    } as any)
+    .where(eq(users.id, params.userId));
+
+  return await getMyProfile(params.userId);
+}
+
+export async function changeMyPassword(params: {
+  userId: number;
+  newPassword: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const passwordHash = await bcrypt.hash(params.newPassword, 10);
+
+  await db
+    .update(users)
+    .set({
+      passwordHash,
+    } as any)
+    .where(eq(users.id, params.userId));
+
+  return { success: true };
 }

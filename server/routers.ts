@@ -16,6 +16,7 @@ import bcrypt from "bcryptjs";
 import { smsRouter } from "./_core/sms.router";
 import Tesseract from "tesseract.js";
 import OpenAI from "openai";
+import { attendanceRouter } from "./attendance.router";
 
 function isAdminOrHost(user: any) {
   return (
@@ -60,7 +61,7 @@ export const appRouter = router({
   system: systemRouter,
   leadForm: publicLeadRouter,
   sms: smsRouter,
-
+attendance: attendanceRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
@@ -74,65 +75,105 @@ export const appRouter = router({
   }),
 
   users: router({
-    list: protectedProcedure.query(async () => db.getAllUsersDetailed()),
+  list: protectedProcedure.query(async () => {
+    return db.getUsersWithOrg();
+  }),
 
-    create: hostProcedure
-      .input(
-        z.object({
-          openId: z.string().min(1),
-          username: z.string().min(1),
-          password: z.string().min(4),
-          name: z.string().min(1),
-          email: z.string().optional(),
-          phone: z.string().optional(),
-          role: z.enum(["staff", "admin", "host"]).default("staff"),
-          bankName: z.string().optional(),
-          bankAccount: z.string().optional(),
-        })
-      )
-      .mutation(async ({ input }) => {
-        const passwordHash = await bcrypt.hash(input.password, 10);
+  me: protectedProcedure.query(async ({ ctx }) => {
+    return await db.getMyProfile(Number(ctx.user.id));
+  }),
 
-        await db.createUserAccount({
-          openId: input.openId.trim(),
-          username: input.username.trim(),
-          passwordHash,
-          name: input.name.trim(),
-          email: input.email?.trim() || null,
-          phone: input.phone?.trim() || null,
-          role: input.role,
-          bankName: input.bankName?.trim() || null,
-          bankAccount: input.bankAccount?.trim() || null,
-          loginMethod: "manual",
-          isActive: true,
-        });
+  updateMyPhoto: protectedProcedure
+    .input(
+      z.object({
+        profileImageUrl: z.string().min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      return await db.updateMyProfilePhoto({
+        userId: Number(ctx.user.id),
+        profileImageUrl: input.profileImageUrl,
+      });
+    }),
 
-        return { success: true };
-      }),
+  changeMyPassword: protectedProcedure
+    .input(
+      z.object({
+        newPassword: z.string().min(8),
+        newPasswordConfirm: z.string().min(8),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (input.newPassword !== input.newPasswordConfirm) {
+        throw new Error("새 비밀번호가 서로 일치하지 않습니다.");
+      }
 
-    update: hostProcedure
-      .input(
-        z.object({
-          id: z.number(),
-          username: z.string().optional(),
-          password: z.string().optional(),
-          name: z.string().optional(),
-          email: z.string().optional(),
-          phone: z.string().optional(),
-          bankName: z.string().optional(),
-          bankAccount: z.string().optional(),
-        })
-      )
-      .mutation(async ({ input }) => {
-        const { id, password, ...rest } = input;
+      return await db.changeMyPassword({
+        userId: Number(ctx.user.id),
+        newPassword: input.newPassword,
+      });
+    }),
 
-        let passwordHash: string | undefined = undefined;
+  create: hostProcedure
+    .input(
+      z.object({
+        openId: z.string().min(1),
+        username: z.string().min(1),
+        password: z.string().min(4),
+        name: z.string().min(1),
+        email: z.string().optional(),
+        phone: z.string().optional(),
+        role: z.enum(["staff", "admin", "host"]).default("staff"),
+        bankName: z.string().optional(),
+        bankAccount: z.string().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const passwordHash = await bcrypt.hash(input.password, 10);
 
-        if (password !== undefined && password.trim() !== "") {
-          passwordHash = await bcrypt.hash(password, 10);
-        }
+      await db.createUserAccount({
+        openId: input.openId.trim(),
+        username: input.username.trim(),
+        passwordHash,
+        name: input.name.trim(),
+        email: input.email?.trim() || null,
+        phone: input.phone?.trim() || null,
+        role: input.role,
+        bankName: input.bankName?.trim() || null,
+        bankAccount: input.bankAccount?.trim() || null,
+        loginMethod: "manual",
+        isActive: true,
+      });
 
-        await db.updateUserAccount(id, {
+      return { success: true };
+    }),
+
+  update: hostProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        username: z.string().optional(),
+        password: z.string().optional(),
+        name: z.string().optional(),
+        email: z.string().optional(),
+        phone: z.string().optional(),
+        bankName: z.string().optional(),
+        bankAccount: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, password, ...rest } = input;
+
+      let passwordHash: string | undefined = undefined;
+
+      if (password !== undefined && password.trim() !== "") {
+        passwordHash = await bcrypt.hash(password, 10);
+      }
+
+      await db.updateUserAccountProtected({
+        actorRole: ctx.user.role,
+        targetUserId: id,
+        data: {
           username: rest.username?.trim(),
           name: rest.name?.trim(),
           email: rest.email?.trim(),
@@ -140,35 +181,305 @@ export const appRouter = router({
           bankName: rest.bankName?.trim(),
           bankAccount: rest.bankAccount?.trim(),
           passwordHash,
+        },
+      });
+
+      return { success: true };
+    }),
+
+  updateRole: hostProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        role: z.enum(["staff", "admin", "host"]),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await db.updateUserRoleProtected({
+        actorRole: ctx.user.role,
+        targetUserId: input.id,
+        role: input.role,
+      });
+
+      return { success: true };
+    }),
+
+  updateActive: hostProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        isActive: z.boolean(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await db.updateUserActiveProtected({
+        actorRole: ctx.user.role,
+        targetUserId: input.id,
+        isActive: input.isActive,
+      });
+
+      return { success: true };
+    }),
+}),
+
+org: router({
+  teams: router({
+    list: protectedProcedure.query(async () => {
+      return db.listTeams();
+    }),
+
+    create: superHostProcedure
+      .input(
+        z.object({
+          name: z.string().min(1),
+          sortOrder: z.number().optional(),
+          isActive: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const id = await db.createTeam({
+          name: input.name,
+          sortOrder: input.sortOrder ?? 0,
+          isActive: input.isActive ?? true,
+        });
+
+        return { success: true, id };
+      }),
+
+    update: superHostProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          name: z.string().optional(),
+          sortOrder: z.number().optional(),
+          isActive: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        await db.updateTeam(input.id, {
+          name: input.name,
+          sortOrder: input.sortOrder,
+          isActive: input.isActive,
         });
 
         return { success: true };
       }),
 
-    updateRole: hostProcedure
+    delete: superHostProcedure
       .input(
         z.object({
           id: z.number(),
-          role: z.enum(["staff", "admin", "host"]),
         })
       )
       .mutation(async ({ input }) => {
-        await db.updateUserRole(input.id, input.role);
-        return { success: true };
-      }),
-
-    updateActive: hostProcedure
-      .input(
-        z.object({
-          id: z.number(),
-          isActive: z.boolean(),
-        })
-      )
-      .mutation(async ({ input }) => {
-        await db.updateUserActive(input.id, input.isActive);
+        await db.deleteTeam(input.id);
         return { success: true };
       }),
   }),
+
+  positions: router({
+    list: protectedProcedure.query(async () => {
+      return db.listPositions();
+    }),
+
+    create: superHostProcedure
+      .input(
+        z.object({
+          name: z.string().min(1),
+          sortOrder: z.number().optional(),
+          isActive: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const id = await db.createPosition({
+          name: input.name,
+          sortOrder: input.sortOrder ?? 0,
+          isActive: input.isActive ?? true,
+        });
+
+        return { success: true, id };
+      }),
+
+    update: superHostProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          name: z.string().optional(),
+          sortOrder: z.number().optional(),
+          isActive: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        await db.updatePosition(input.id, {
+          name: input.name,
+          sortOrder: input.sortOrder,
+          isActive: input.isActive,
+        });
+
+        return { success: true };
+      }),
+
+    delete: superHostProcedure
+      .input(
+        z.object({
+          id: z.number(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        await db.deletePosition(input.id);
+        return { success: true };
+      }),
+  }),
+
+  userMappings: router({
+    get: protectedProcedure
+      .input(
+        z.object({
+          userId: z.number(),
+        })
+      )
+      .query(async ({ input }) => {
+        return db.getUserOrgMapping(input.userId);
+      }),
+
+    upsert: superHostProcedure
+      .input(
+        z.object({
+          userId: z.number(),
+          teamId: z.number().nullable().optional(),
+          positionId: z.number().nullable().optional(),
+          sortOrder: z.number().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const id = await db.upsertUserOrgMappingProtected({
+          actorRole: ctx.user.role,
+          targetUserId: input.userId,
+          teamId: input.teamId ?? null,
+          positionId: input.positionId ?? null,
+          sortOrder: input.sortOrder ?? 0,
+        });
+
+        return { success: true, id };
+      }),
+
+    delete: superHostProcedure
+      .input(
+        z.object({
+          userId: z.number(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        await db.deleteUserOrgMapping(input.userId);
+        return { success: true };
+      }),
+  }),
+}),
+
+messenger: router({
+  myRooms: protectedProcedure.query(async ({ ctx }) => {
+    return db.listMyChatRooms(Number(ctx.user.id));
+  }),
+
+  directRoom: protectedProcedure
+    .input(
+      z.object({
+        userId: z.number(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const room = await db.getOrCreateDirectChatRoom({
+        actorUserId: Number(ctx.user.id),
+        otherUserId: input.userId,
+      });
+
+      return {
+        success: true,
+        room,
+      };
+    }),
+
+  messages: protectedProcedure
+    .input(
+      z.object({
+        roomId: z.number(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      return db.listChatMessages(input.roomId, Number(ctx.user.id));
+    }),
+
+  members: protectedProcedure
+    .input(
+      z.object({
+        roomId: z.number(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      return db.listChatRoomMembers(input.roomId, Number(ctx.user.id));
+    }),
+
+  sendMessage: protectedProcedure
+    .input(
+      z.object({
+        roomId: z.number(),
+        content: z.string().optional(),
+        messageType: z.enum(["text", "image", "file", "system"]).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const messageId = await db.createChatMessage({
+        roomId: input.roomId,
+        senderId: Number(ctx.user.id),
+        messageType: input.messageType ?? "text",
+        content: input.content ?? null,
+      });
+
+      return {
+        success: true,
+        id: messageId,
+      };
+    }),
+
+  markRead: protectedProcedure
+    .input(
+      z.object({
+        roomId: z.number(),
+        lastReadMessageId: z.number().nullable(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await db.markChatRoomRead({
+        roomId: input.roomId,
+        userId: Number(ctx.user.id),
+        lastReadMessageId: input.lastReadMessageId,
+      });
+
+      return { success: true };
+    }),
+
+  addAttachment: protectedProcedure
+    .input(
+      z.object({
+        messageId: z.number(),
+        fileName: z.string().min(1),
+        fileUrl: z.string().min(1),
+        fileType: z.string().optional(),
+        fileSize: z.number().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const id = await db.createChatAttachment({
+        messageId: input.messageId,
+        fileName: input.fileName,
+        fileUrl: input.fileUrl,
+        fileType: input.fileType ?? null,
+        fileSize: input.fileSize ?? null,
+      });
+
+      return { success: true, id };
+    }),
+}),
 
   formAdmin: router({
   list: hostProcedure
