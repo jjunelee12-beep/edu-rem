@@ -298,6 +298,17 @@ const todayAttendanceByUserId = useMemo(() => {
   return map;
 }, [todayAttendance]);
 
+ const myTodayAttendance = useMemo(() => {
+  if (!user?.id) return null;
+
+  return (
+    todayAttendanceRow ??
+    todayAttendanceByUserId.get(Number(user.id)) ??
+    null
+  );
+}, [todayAttendanceRow, todayAttendanceByUserId, user?.id]);
+
+
   const attendanceSummary = useMemo(() => {
   if (!isManager) {
     const checkedIn = myTodayAttendance?.clockInAt ? 1 : 0;
@@ -459,15 +470,7 @@ const attendanceListUI = useMemo<AttendanceCardItem[]>(() => {
   return attendanceListUI;
 }, [attendanceListUI]);
 
-  const myTodayAttendance = useMemo(() => {
-  if (!user?.id) return null;
 
-  return (
-    todayAttendanceRow ??
-    todayAttendanceByUserId.get(Number(user.id)) ??
-    null
-  );
-}, [todayAttendanceRow, todayAttendanceByUserId, user?.id]);
 
 const canClockIn = !myTodayAttendance?.clockInAt;
 const canClockOut =
