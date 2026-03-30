@@ -3685,17 +3685,17 @@ export async function clockInAttendance(userId: number) {
     throw new Error("이미 오늘 출근 처리되었습니다.");
   }
 
+  const now = new Date();
+  const late = calcLateInfo(now);
+
   if (existing?.id) {
     await db
       .update(attendanceRecords)
       .set({
-        const now = new Date();
-const late = calcLateInfo(now);
-
-clockInAt: now,
-status: "근무중",
-isLate: late.isLate,
-lateMinutes: late.lateMinutes,
+        clockInAt: now,
+        status: "근무중",
+        isLate: late.isLate,
+        lateMinutes: late.lateMinutes,
       } as any)
       .where(eq(attendanceRecords.id, existing.id));
 
@@ -3705,10 +3705,14 @@ lateMinutes: late.lateMinutes,
   const result: any = await db.insert(attendanceRecords).values({
     userId,
     workDate: today,
-    clockInAt: new Date(),
+    clockInAt: now,
     clockOutAt: null,
     workMinutes: 0,
     status: "근무중",
+    isLate: late.isLate,
+    lateMinutes: late.lateMinutes,
+    isEarlyLeave: 0,
+    earlyLeaveMinutes: 0,
     note: null,
   } as InsertAttendanceRecord);
 
@@ -3739,21 +3743,22 @@ export async function clockOutAttendance(userId: number) {
 
   const clockOutAt = new Date();
   const workMinutes = calcWorkMinutes(todayRow.clockInAt, clockOutAt);
-const early = calcEarlyLeaveInfo(clockOutAt);
+  const early = calcEarlyLeaveInfo(clockOutAt);
 
   await db
     .update(attendanceRecords)
-    ..set({
-  clockOutAt,
-  workMinutes,
-  status: "퇴근완료",
-  isEarlyLeave: early.isEarlyLeave,
-  earlyLeaveMinutes: early.earlyLeaveMinutes,
-} as any)
+    .set({
+      clockOutAt,
+      workMinutes,
+      status: "퇴근완료",
+      isEarlyLeave: early.isEarlyLeave,
+      earlyLeaveMinutes: early.earlyLeaveMinutes,
+    } as any)
     .where(eq(attendanceRecords.id, todayRow.id));
 
   return await getTodayAttendanceRecord(userId);
 }
+
 
 export async function listMyAttendanceRecords(userId: number) {
   const db = await getDb();
