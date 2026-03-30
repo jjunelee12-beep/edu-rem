@@ -148,6 +148,17 @@ function SectionTitle({
   );
 }
 
+function formatClock(dateStr?: string | null) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "";
+
+  return d.toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 
 export default function Home() {
   const { user } = useAuth();
