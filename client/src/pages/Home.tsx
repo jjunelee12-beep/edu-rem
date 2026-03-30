@@ -71,11 +71,17 @@ export default function Home() {
   const { data: totalStats, isLoading: totalStatsLoading } = trpc.dashboard.totalStats.useQuery(
     undefined,
     {
-      enabled: user?.role === "admin" || user?.role === "host",
+      enabled:
+  user?.role === "admin" ||
+  user?.role === "host" ||
+  user?.role === "superhost",
     }
   );
 
-  const isAdminOrHost = user?.role === "admin" || user?.role === "host";
+ const isAdminOrHost =
+  user?.role === "admin" ||
+  user?.role === "host" ||
+  user?.role === "superhost";
   const now = new Date();
   const monthLabel = `${now.getFullYear()}년 ${now.getMonth() + 1}월`;
 
