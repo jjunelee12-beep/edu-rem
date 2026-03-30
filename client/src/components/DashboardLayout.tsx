@@ -50,7 +50,6 @@ import {
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
-import { Server as SocketIOServer } from "socket.io";
 
 type UserRole = "staff" | "admin" | "host" | "superhost";
 
@@ -191,10 +190,21 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-    return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
-  });
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_WIDTH);
+
+useEffect(() => {
+  const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+  if (saved) {
+    const parsed = parseInt(saved, 10);
+    if (!Number.isNaN(parsed)) {
+      setSidebarWidth(parsed);
+    }
+  }
+}, []);
+
+useEffect(() => {
+  localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
+}, [sidebarWidth]);
 
   const { loading, user, logout } = useAuth();
 
