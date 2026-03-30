@@ -127,44 +127,6 @@ const todaySchedules: ScheduleItem[] = [
   { id: 3, title: "광고폼 유입 확인", time: "16:00", tone: "orange" },
 ];
 
-const quickApps = [
-  {
-    title: "상담 DB",
-    desc: "신규 문의와 상담 내역 관리",
-    icon: <PhoneCall className="h-5 w-5" />,
-    path: "/consultations",
-  },
-  {
-    title: "학생 관리",
-    desc: "등록 학생 현황 및 상세 관리",
-    icon: <GraduationCap className="h-5 w-5" />,
-    path: "/students",
-  },
-  {
-    title: "승인 관리",
-    desc: "승인/불승인/대기 처리",
-    icon: <ShieldCheck className="h-5 w-5" />,
-    path: "/approvals",
-  },
-  {
-    title: "AI 상담",
-    desc: "OCR·검색·전적대 입력",
-    icon: <Sparkles className="h-5 w-5" />,
-    path: "/ai",
-  },
-  {
-    title: "운영 대시보드",
-    desc: "매출·환불·상담 지표 확인",
-    icon: <BarChart3 className="h-5 w-5" />,
-    path: "/overview",
-  },
-  {
-    title: "시스템 관리",
-    desc: "기본 설정 및 사용자 관리",
-    icon: <Settings className="h-5 w-5" />,
-    path: "/system",
-  },
-];
 
 function SectionTitle({
   icon,
@@ -186,37 +148,6 @@ function SectionTitle({
   );
 }
 
-function AppShortcut({
-  icon,
-  label,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-xl border bg-white px-3 py-3 text-left transition hover:bg-slate-50"
-    >
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-        {icon}
-      </div>
-      <span className="text-sm font-medium">{label}</span>
-    </button>
-  );
-}
-
-function formatClock(dateStr?: string | null) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString("ko-KR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 export default function Home() {
   const { user } = useAuth();
@@ -266,7 +197,10 @@ const usersById = useMemo(() => {
 
 
   const isManager =
-    user?.role === "host" || user?.role === "superhost";
+  user?.role === "admin" ||
+  user?.role === "host" ||
+  user?.role === "superhost";
+
 
   const todayText = useMemo(() => {
     const now = new Date();
@@ -492,42 +426,6 @@ const canClockOut =
     <div className="space-y-5">
       <div className="overflow-hidden rounded-[28px] border bg-white shadow-sm">
         <div className="flex min-h-[calc(100vh-150px)]">
-          <aside className="hidden w-[72px] shrink-0 border-r bg-[#0ea5b7] text-white lg:flex lg:flex-col lg:items-center lg:py-4">
-            <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-xl bg-white/15">
-              <PanelLeftClose className="h-5 w-5" />
-            </div>
-
-            <div className="flex flex-1 flex-col items-center gap-3">
-              <button className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-[#0ea5b7] shadow-sm">
-                <HomeIcon className="h-5 w-5" />
-              </button>
-              <button className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/15">
-                <MessageSquare className="h-5 w-5" />
-              </button>
-              <button className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/15">
-                <Bell className="h-5 w-5" />
-              </button>
-              <button className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/15">
-                <CalendarDays className="h-5 w-5" />
-              </button>
-              <button className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/15">
-                <LayoutGrid className="h-5 w-5" />
-              </button>
-              <button className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/15">
-                <Building2 className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="mt-auto flex flex-col items-center gap-3">
-              <button className="flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/15">
-                <Settings className="h-5 w-5" />
-              </button>
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-sm font-semibold">
-                {user?.name?.[0] ?? "U"}
-              </div>
-            </div>
-          </aside>
-
           <div className="flex min-w-0 flex-1 flex-col bg-[#f7f9fc]">
             <div className="border-b bg-white px-4 py-3 md:px-6">
               <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -569,7 +467,7 @@ const canClockOut =
               </div>
             </div>
 
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 p-4 md:p-6 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+<div className="grid min-h-0 flex-1 grid-cols-1 gap-5 p-4 md:p-6 xl:grid-cols-[280px_minmax(0,1fr)]">
               <div className="space-y-5">
                 <Card className="border-0 shadow-sm">
                   <CardContent className="p-5">
@@ -601,67 +499,6 @@ const canClockOut =
                         <p className="text-xs text-muted-foreground">오늘 일정</p>
                         <p className="mt-1 text-lg font-bold">{todaySchedules.length}</p>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-0 shadow-sm">
-                  <CardContent className="p-4">
-                    <SectionTitle
-                      icon={<LayoutGrid className="h-4 w-4 text-primary" />}
-                      title="바로가기"
-                    />
-
-                    <div className="space-y-2">
-                      <AppShortcut
-                        icon={<PhoneCall className="h-5 w-5" />}
-                        label="상담 DB"
-                        onClick={() => setLocation("/consultations")}
-                      />
-                      <AppShortcut
-                        icon={<GraduationCap className="h-5 w-5" />}
-                        label="학생 관리"
-                        onClick={() => setLocation("/students")}
-                      />
-                      <AppShortcut
-                        icon={<ShieldCheck className="h-5 w-5" />}
-                        label="승인 관리"
-                        onClick={() => setLocation("/approvals")}
-                      />
-                      <AppShortcut
-                        icon={<Sparkles className="h-5 w-5" />}
-                        label="AI 상담"
-                        onClick={() => setLocation("/ai")}
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-0 shadow-sm">
-                  <CardContent className="p-4">
-                    <SectionTitle
-                      icon={<Briefcase className="h-4 w-4 text-primary" />}
-                      title="주요 앱"
-                    />
-                    <div className="space-y-3">
-                      {quickApps.slice(0, 4).map((app) => (
-                        <button
-                          key={app.title}
-                          onClick={() => setLocation(app.path)}
-                          className="flex w-full items-center justify-between rounded-xl border px-3 py-3 text-left transition hover:bg-slate-50"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                              {app.icon}
-                            </div>
-                            <div>
-                              <p className="text-sm font-semibold">{app.title}</p>
-                              <p className="text-xs text-muted-foreground">{app.desc}</p>
-                            </div>
-                          </div>
-                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                        </button>
-                      ))}
                     </div>
                   </CardContent>
                 </Card>

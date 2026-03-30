@@ -192,25 +192,21 @@ export default function DashboardLayout({
 }) {
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_WIDTH);
 
-useEffect(() => {
-  const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-  if (saved) {
-    const parsed = parseInt(saved, 10);
-    if (!Number.isNaN(parsed)) {
-      setSidebarWidth(parsed);
+  useEffect(() => {
+    const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (saved) {
+      const parsed = parseInt(saved, 10);
+      if (!Number.isNaN(parsed)) {
+        setSidebarWidth(parsed);
+      }
     }
-  }
-}, []);
-
-useEffect(() => {
-  localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
-}, [sidebarWidth]);
-
-  const { loading, user, logout } = useAuth();
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
   }, [sidebarWidth]);
+
+  const { loading, user, logout } = useAuth();
 
   if (loading) return <DashboardLayoutSkeleton />;
   if (!user) return <Login />;
@@ -287,16 +283,16 @@ function DashboardLayoutContent({
   const isSuperhost = user?.role === "superhost";
 
   const visibleStaffMenuItems =
-    isSuperhost ? [] : isStaff || isAdmin || isHost ? staffMenuItems : [];
+  isStaff || isAdmin || isHost || isSuperhost ? staffMenuItems : [];
 
-  const visibleAdminMenuItems =
-    isSuperhost ? [] : isAdmin || isHost ? adminMenuItems : [];
+const visibleAdminMenuItems =
+  isAdmin || isHost || isSuperhost ? adminMenuItems : [];
 
-  const visibleHostMenuItems =
-    isSuperhost ? [] : isHost ? hostMenuItems : [];
+const visibleHostMenuItems =
+  isHost || isSuperhost ? hostMenuItems : [];
 
-  const visibleSuperhostMenuItems =
-    isSuperhost ? superhostMenuItems : [];
+const visibleSuperhostMenuItems =
+  isSuperhost ? superhostMenuItems : [];
 
   const allMenuItems = [
     ...visibleStaffMenuItems,
