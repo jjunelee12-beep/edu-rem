@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   int,
   mysqlEnum,
@@ -620,8 +621,8 @@ export const chatRooms = mysqlTable("chat_rooms", {
   title: varchar("title", { length: 255 }),
   createdBy: int("createdBy").notNull(),
   isActive: boolean("isActive").notNull().default(true),
-  createdAt: datetime("createdAt").notNull().defaultNow(),
-  updatedAt: datetime("updatedAt").notNull().defaultNow().onUpdateNow(),
+createdAt: timestamp("createdAt").notNull().defaultNow(),
+updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
 });
 
 export type ChatRoom = typeof chatRooms.$inferSelect;
