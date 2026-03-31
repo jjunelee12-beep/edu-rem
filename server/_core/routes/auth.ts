@@ -63,11 +63,12 @@ authRouter.post("/login", async (req, res) => {
     res.append("Set-Cookie", makeSessionCookie(user.id, secret));
 
     return res.json({
-      id: user.id,
-      username: user.username,
-      role: user.role,
-      name: user.name,
-    });
+  id: user.id,
+  username: user.username,
+  role: user.role,
+  name: user.name,
+  profileImageUrl: user.profileImageUrl ?? null,
+});
   } catch (error) {
     console.error("[auth/login] error:", error);
     return res.status(500).json({
@@ -107,16 +108,17 @@ authRouter.get("/me", async (req, res) => {
     }
 
     const found = await db
-      .select({
-        id: users.id,
-        username: users.username,
-        name: users.name,
-        role: users.role,
-        isActive: users.isActive,
-      })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
+  .select({
+    id: users.id,
+    username: users.username,
+    name: users.name,
+    role: users.role,
+    isActive: users.isActive,
+    profileImageUrl: users.profileImageUrl,
+  })
+  .from(users)
+  .where(eq(users.id, userId))
+  .limit(1);
 
     const user = found[0];
 
@@ -129,11 +131,12 @@ authRouter.get("/me", async (req, res) => {
     }
 
     return res.json({
-      id: user.id,
-      username: user.username,
-      role: user.role,
-      name: user.name,
-    });
+  id: user.id,
+  username: user.username,
+  role: user.role,
+  name: user.name,
+  profileImageUrl: user.profileImageUrl ?? null,
+});
   } catch (error) {
     console.error("[auth/me] error:", error);
     return res.status(500).json({
