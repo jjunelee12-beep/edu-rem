@@ -56,6 +56,9 @@ aiActionLogs,
   chatRoomSettings,
 attendanceRecords,
   type InsertAttendanceRecord,
+attendanceAdjustmentLogs,
+type InsertAttendanceAdjustmentLog,
+attendancePolicies,
 notices, InsertNotice,
 schedules,
 InsertSchedule,
@@ -3823,12 +3826,13 @@ export async function clockInAttendance(userId: number) {
   if (existing?.id) {
     await db
       .update(attendanceRecords)
-      .set({
-        clockInAt: now,
-        status: "근무중",
-        isLate: late.isLate,
-        lateMinutes: late.lateMinutes,
-      } as any)
+     .set({
+  clockInAt: now,
+  status: late.isLate ? "지각" : "근무중",
+  isLate: late.isLate,
+  lateMinutes: late.lateMinutes,
+  isAbsent: 0,
+} as any)
       .where(eq(attendanceRecords.id, existing.id));
 
     return await getTodayAttendanceRecord(userId);
@@ -3840,9 +3844,12 @@ export async function clockInAttendance(userId: number) {
     clockInAt: now,
     clockOutAt: null,
     workMinutes: 0,
-    status: "근무중",
+status: late.isLate ? "지각" : "근무중",
     isLate: late.isLate,
     lateMinutes: late.lateMinutes,
+isAbsent: 0,
+isAutoClockOut: 0,
+leaveType: null,
     isEarlyLeave: 0,
     earlyLeaveMinutes: 0,
     note: null,
@@ -3878,14 +3885,19 @@ export async function clockOutAttendance(userId: number) {
   const early = calcEarlyLeaveInfo(clockOutAt);
 
   await db
-    .update(attendanceRecords)
-    .set({
-      clockOutAt,
-      workMinutes,
-      status: "퇴근완료",
-      isEarlyLeave: early.isEarlyLeave,
-      earlyLeaveMinutes: early.earlyLeaveMinutes,
-    } as any)
+  .update(attendanceRecords)
+  .set({
+    clockOutAt,
+    workMinutes,
+    status: early.isEarlyLeave
+      ? "조퇴"
+      : todayRow.isLate
+      ? "지각"
+      : "퇴근완료",
+    isEarlyLeave: early.isEarlyLeave,
+    earlyLeaveMinutes: early.earlyLeaveMinutes,
+    isAbsent: 0,
+  } as any)
     .where(eq(attendanceRecords.id, todayRow.id));
 
   return await getTodayAttendanceRecord(userId);
@@ -3909,9 +3921,25 @@ export async function listMyAttendanceRecords(userId: number) {
       a.createdAt,
       a.updatedAt,
       u.name,
-      u.role
+      u.role,
+u.username,
+u.phone,
+a.isLate,
+a.isEarlyLeave,
+a.lateMinutes,
+a.earlyLeaveMinutes,
+a.isAbsent,
+a.isAutoClockOut,
+a.leaveType,
+map.teamId,
+map.positionId,
+t.name as teamName,
+p.name as positionName
     FROM attendance_records a
     INNER JOIN users u ON u.id = a.userId
+LEFT JOIN user_org_mappings map ON map.userId = u.id
+LEFT JOIN teams t ON t.id = map.teamId
+LEFT JOIN positions p ON p.id = map.positionId
     WHERE a.userId = ${userId}
     ORDER BY a.workDate DESC, a.id DESC
   `);
@@ -3936,9 +3964,71 @@ export async function listAllAttendanceRecords() {
       a.createdAt,
       a.updatedAt,
       u.name,
-      u.role
+      u.role,
+u.username,
+u.phone,
+a.isLate,
+a.isEarlyLeave,
+a.lateMinutes,
+a.earlyLeaveMinutes,
+a.isAbsent,
+a.isAutoClockOut,
+a.leaveType,
+map.teamId,
+map.positionId,
+t.name as teamName,
+p.name as positionName
     FROM attendance_records a
     INNER JOIN users u ON u.id = a.userId
+LEFT JOIN user_org_mappings map ON map.userId = u.id
+LEFT JOIN teams t ON t.id = map.teamId
+LEFT JOIN positions p ON p.id = map.positionId
+    ORDER BY a.workDate DESC, a.id DESC
+  `);
+
+  return (rows as any[]) ?? [];
+}
+
+export async function listTeamAttendanceRecords(adminUserId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const myTeamId = await getMyTeamId(adminUserId);
+  if (!myTeamId) return [];
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      a.id,
+      a.userId,
+      a.workDate,
+      a.clockInAt,
+      a.clockOutAt,
+      a.workMinutes,
+      a.status,
+      a.note,
+      a.createdAt,
+      a.updatedAt,
+      a.isLate,
+      a.isEarlyLeave,
+      a.lateMinutes,
+      a.earlyLeaveMinutes,
+      a.isAbsent,
+      a.isAutoClockOut,
+      a.leaveType,
+      u.name,
+      u.role,
+      u.username,
+      u.phone,
+      map.teamId,
+      map.positionId,
+      t.name as teamName,
+      p.name as positionName
+    FROM attendance_records a
+    INNER JOIN users u ON u.id = a.userId
+    LEFT JOIN user_org_mappings map ON map.userId = u.id
+    LEFT JOIN teams t ON t.id = map.teamId
+    LEFT JOIN positions p ON p.id = map.positionId
+    WHERE map.teamId = ${myTeamId}
     ORDER BY a.workDate DESC, a.id DESC
   `);
 
@@ -3983,9 +4073,42 @@ function calcEarlyLeaveInfo(clockOutAt?: Date | string | null) {
   return { isEarlyLeave: 1, earlyLeaveMinutes: diff };
 }
 
+async function getMyTeamId(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const row = await db
+    .select()
+    .from(userOrgMappings)
+    .where(eq(userOrgMappings.userId, userId))
+    .limit(1);
+
+  return row[0]?.teamId ? Number(row[0].teamId) : null;
+}
+
+async function getDefaultAttendancePolicy() {
+  const db = await getDb();
+  if (!db) return null;
+
+  const rows = await db
+    .select()
+    .from(attendancePolicies)
+    .where(eq(attendancePolicies.scopeType, "global"))
+    .limit(1);
+
+  return rows[0] ?? null;
+}
+
+function getNowKSTDate() {
+  const now = new Date();
+  const kstOffset = 9 * 60 * 60 * 1000;
+  return new Date(now.getTime() + kstOffset);
+}
+
 export async function updateAttendanceRecordByManager(params: {
   attendanceId: number;
   actorUserId: number;
+actorRole: string;
   clockInAt?: string | null;
   clockOutAt?: string | null;
   reason?: string | null;
@@ -4000,7 +4123,30 @@ export async function updateAttendanceRecordByManager(params: {
     .limit(1);
 
   const current = row[0];
-  if (!current) throw new Error("근태 기록을 찾을 수 없습니다.");
+if (!current) {
+  throw new Error("근태 기록을 찾을 수 없습니다.");
+}
+
+if (params.actorRole === "admin") {
+  const myTeamId = await getMyTeamId(params.actorUserId);
+  if (!myTeamId) {
+    throw new Error("관리자 팀 정보를 찾을 수 없습니다.");
+  }
+
+  const [targetRows] = await db.execute(sql`
+    SELECT map.teamId
+    FROM users u
+    LEFT JOIN user_org_mappings map ON map.userId = u.id
+    WHERE u.id = ${current.userId}
+    LIMIT 1
+  `);
+
+  const targetTeamId = Number((targetRows as any[])?.[0]?.teamId || 0);
+
+  if (!targetTeamId || targetTeamId !== myTeamId) {
+    throw new Error("자기 팀 직원의 근태만 수정할 수 있습니다.");
+  }
+}
 
   const nextClockInAt = params.clockInAt ? new Date(params.clockInAt) : null;
   const nextClockOutAt = params.clockOutAt ? new Date(params.clockOutAt) : null;
@@ -4009,9 +4155,31 @@ export async function updateAttendanceRecordByManager(params: {
   const late = calcLateInfo(nextClockInAt);
   const early = calcEarlyLeaveInfo(nextClockOutAt);
 
-  let status: "출근전" | "근무중" | "퇴근완료" = "출근전";
-  if (nextClockInAt && !nextClockOutAt) status = "근무중";
-  if (nextClockInAt && nextClockOutAt) status = "퇴근완료";
+  let status:
+  | "출근전"
+  | "근무중"
+  | "퇴근완료"
+  | "지각"
+  | "조퇴"
+  | "병가"
+  | "연차"
+  | "출장"
+  | "반차"
+  | "결근" = "출근전";
+
+if (nextClockInAt && !nextClockOutAt) {
+  status = late.isLate ? "지각" : "근무중";
+}
+
+if (nextClockInAt && nextClockOutAt) {
+  if (early.isEarlyLeave) {
+    status = "조퇴";
+  } else if (late.isLate) {
+    status = "지각";
+  } else {
+    status = "퇴근완료";
+  }
+}
 
   await db
     .update(attendanceRecords)
@@ -4025,6 +4193,8 @@ export async function updateAttendanceRecordByManager(params: {
       isEarlyLeave: early.isEarlyLeave,
       earlyLeaveMinutes: early.earlyLeaveMinutes,
       note: params.reason ?? current.note ?? null,
+isAbsent: nextClockInAt || nextClockOutAt ? 0 : 1,
+isAutoClockOut: 0,
     } as any)
     .where(eq(attendanceRecords.id, params.attendanceId));
 
@@ -4037,6 +4207,10 @@ export async function updateAttendanceRecordByManager(params: {
     afterClockInAt: nextClockInAt,
     afterClockOutAt: nextClockOutAt,
     reason: params.reason ?? null,
+actionType: "manual_edit",
+beforeStatus: current.status ?? null,
+afterStatus: status,
+note: params.reason ?? null,
   } as InsertAttendanceAdjustmentLog);
 
   const updated = await db
@@ -4057,7 +4231,9 @@ export async function listAttendanceAdjustmentLogs(attendanceId?: number) {
       SELECT
         l.*,
         targetUser.name as targetUserName,
-        actorUser.name as actorUserName
+        actorUser.name as actorUserName,
+targetUser.username as targetUserUsername,
+targetUser.phone as targetUserPhone
       FROM attendance_adjustment_logs l
       INNER JOIN users targetUser ON targetUser.id = l.targetUserId
       INNER JOIN users actorUser ON actorUser.id = l.actorUserId
@@ -4069,13 +4245,69 @@ export async function listAttendanceAdjustmentLogs(attendanceId?: number) {
   }
 
   const [rows] = await db.execute(sql`
+  SELECT
+    l.*,
+    targetUser.name as targetUserName,
+    actorUser.name as actorUserName,
+    targetUser.username as targetUserUsername,
+    targetUser.phone as targetUserPhone
+  FROM attendance_adjustment_logs l
+  INNER JOIN users targetUser ON targetUser.id = l.targetUserId
+  INNER JOIN users actorUser ON actorUser.id = l.actorUserId
+  ORDER BY l.createdAt DESC, l.id DESC
+`);
+
+  return (rows as any[]) ?? [];
+}
+
+export async function listTeamAttendanceAdjustmentLogs(
+  adminUserId: number,
+  attendanceId?: number
+) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const myTeamId = await getMyTeamId(adminUserId);
+  if (!myTeamId) return [];
+
+  if (attendanceId) {
+    const [rows] = await db.execute(sql`
+      SELECT
+        l.*,
+        targetUser.name as targetUserName,
+        targetUser.username as targetUserUsername,
+        targetUser.phone as targetUserPhone,
+        actorUser.name as actorUserName,
+        map.teamId,
+        t.name as teamName
+      FROM attendance_adjustment_logs l
+      INNER JOIN users targetUser ON targetUser.id = l.targetUserId
+      INNER JOIN users actorUser ON actorUser.id = l.actorUserId
+      LEFT JOIN user_org_mappings map ON map.userId = targetUser.id
+      LEFT JOIN teams t ON t.id = map.teamId
+      WHERE l.attendanceId = ${attendanceId}
+        AND map.teamId = ${myTeamId}
+      ORDER BY l.createdAt DESC, l.id DESC
+    `);
+
+    return (rows as any[]) ?? [];
+  }
+
+  const [rows] = await db.execute(sql`
     SELECT
       l.*,
       targetUser.name as targetUserName,
-      actorUser.name as actorUserName
+      targetUser.username as targetUserUsername,
+      targetUser.phone as targetUserPhone,
+      actorUser.name as actorUserName,
+      map.teamId,
+      t.name as teamName
     FROM attendance_adjustment_logs l
     INNER JOIN users targetUser ON targetUser.id = l.targetUserId
     INNER JOIN users actorUser ON actorUser.id = l.actorUserId
+    LEFT JOIN user_org_mappings map ON map.userId = targetUser.id
+    LEFT JOIN teams t ON t.id = map.teamId
+    WHERE map.teamId = ${myTeamId}
     ORDER BY l.createdAt DESC, l.id DESC
   `);
 

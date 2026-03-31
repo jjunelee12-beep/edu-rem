@@ -6,8 +6,10 @@ import {
   clockOutAttendance,
   listMyAttendanceRecords,
   listAllAttendanceRecords,
+  listTeamAttendanceRecords,
   updateAttendanceRecordByManager,
   listAttendanceAdjustmentLogs,
+  listTeamAttendanceAdjustmentLogs,
 } from "./db";
 
 export const attendanceRouter = router({
@@ -29,14 +31,21 @@ export const attendanceRouter = router({
 
   list: protectedProcedure.query(async ({ ctx }) => {
     const role = String(ctx.user.role || "");
+    const userId = Number(ctx.user.id);
 
+    // 호스트/슈퍼호스트: 전체 조회
     if (role === "host" || role === "superhost") {
       return await listAllAttendanceRecords();
     }
 
-    return await listMyAttendanceRecords(Number(ctx.user.id));
-  }),
+    // 관리자: 자기 팀만 조회
+    if (role === "admin") {
+      return await listTeamAttendanceRecords(userId);
+    }
 
+    // 직원: 본인만 조회
+    return await listMyAttendanceRecords(userId);
+  }),
 
   updateByManager: protectedProcedure
     .input(
@@ -49,13 +58,17 @@ export const attendanceRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const role = String(ctx.user.role || "");
-      if (role !== "host" && role !== "superhost") {
+      const actorUserId = Number(ctx.user.id);
+
+      // 호스트/슈퍼호스트/관리자까지만 수정 가능
+      if (role !== "host" && role !== "superhost" && role !== "admin") {
         throw new Error("근태 수정 권한이 없습니다.");
       }
 
       return await updateAttendanceRecordByManager({
         attendanceId: input.attendanceId,
-        actorUserId: Number(ctx.user.id),
+        actorUserId,
+        actorRole: role,
         clockInAt: input.clockInAt ?? null,
         clockOutAt: input.clockOutAt ?? null,
         reason: input.reason ?? null,
@@ -70,10 +83,21 @@ export const attendanceRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const role = String(ctx.user.role || "");
-      if (role !== "host" && role !== "superhost") {
-        throw new Error("수정 로그 조회 권한이 없습니다.");
+      const userId = Number(ctx.user.id);
+
+      // 호스트/슈퍼호스트: 전체 수정 로그
+      if (role === "host" || role === "superhost") {
+        return await listAttendanceAdjustmentLogs(input.attendanceId);
       }
 
-      return await listAttendanceAdjustmentLogs(input.attendanceId);
+      // 관리자: 자기 팀 수정 로그만
+      if (role === "admin") {
+        return await listTeamAttendanceAdjustmentLogs(
+          userId,
+          input.attendanceId
+        );
+      }
+
+      throw new Error("수정 로그 조회 권한이 없습니다.");
     }),
 });

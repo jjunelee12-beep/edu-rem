@@ -727,17 +727,54 @@ export const attendanceRecords = mysqlTable("attendance_records", {
   clockInAt: datetime("clockInAt"),
   clockOutAt: datetime("clockOutAt"),
   workMinutes: int("workMinutes").notNull().default(0),
-  status: mysqlEnum("status", ["출근전", "근무중", "퇴근완료"])
+
+  status: mysqlEnum("status", [
+    "출근전",
+    "근무중",
+    "퇴근완료",
+    "지각",
+    "조퇴",
+    "병가",
+    "연차",
+    "출장",
+    "반차",
+    "결근",
+  ])
     .notNull()
     .default("출근전"),
+
   note: varchar("note", { length: 255 }),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
-updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
-isLate: int("isLate").notNull().default(0),
-isEarlyLeave: int("isEarlyLeave").notNull().default(0),
-lateMinutes: int("lateMinutes").notNull().default(0),
-earlyLeaveMinutes: int("earlyLeaveMinutes").notNull().default(0),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
+
+  isLate: int("isLate").notNull().default(0),
+  isEarlyLeave: int("isEarlyLeave").notNull().default(0),
+  lateMinutes: int("lateMinutes").notNull().default(0),
+  earlyLeaveMinutes: int("earlyLeaveMinutes").notNull().default(0),
+
+  leaveType: mysqlEnum("leaveType", [
+    "annual",
+    "sick",
+    "business_trip",
+    "half_day_am",
+    "half_day_pm",
+  ]),
+
+  isAbsent: int("isAbsent").notNull().default(0),
+  isAutoClockOut: int("isAutoClockOut").notNull().default(0),
+
+  attendanceScope: mysqlEnum("attendanceScope", ["normal", "night"])
+    .notNull()
+    .default("normal"),
+
+  scheduledStartAt: datetime("scheduledStartAt"),
+  scheduledEndAt: datetime("scheduledEndAt"),
+  autoClockOutAt: datetime("autoClockOutAt"),
+
+  teamIdSnapshot: int("teamIdSnapshot"),
+  positionIdSnapshot: int("positionIdSnapshot"),
 });
+
 
 export type InsertAttendanceRecord = typeof attendanceRecords.$inferInsert;
 export type SelectAttendanceRecord = typeof attendanceRecords.$inferSelect;
@@ -752,11 +789,64 @@ export const attendanceAdjustmentLogs = mysqlTable("attendance_adjustment_logs",
   afterClockInAt: datetime("afterClockInAt"),
   afterClockOutAt: datetime("afterClockOutAt"),
   reason: varchar("reason", { length: 255 }),
+actionType: mysqlEnum("actionType", [
+  "manual_edit",
+  "auto_clock_out",
+  "mark_absent",
+  "apply_sick_leave",
+  "apply_annual_leave",
+  "apply_business_trip",
+  "apply_half_day",
+  "night_shift_override",
+])
+  .notNull()
+  .default("manual_edit"),
+
+beforeStatus: varchar("beforeStatus", { length: 50 }),
+afterStatus: varchar("afterStatus", { length: 50 }),
+note: varchar("note", { length: 255 }),
 createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 
 export type InsertAttendanceAdjustmentLog =
   typeof attendanceAdjustmentLogs.$inferInsert;
+
+export const attendancePolicies = mysqlTable("attendance_policies", {
+  id: int("id").autoincrement().primaryKey(),
+
+  scopeType: mysqlEnum("scopeType", ["global", "team", "user"])
+    .notNull()
+    .default("global"),
+
+  scopeId: int("scopeId"),
+
+  workStartHour: int("workStartHour").notNull().default(9),
+  workStartMinute: int("workStartMinute").notNull().default(0),
+
+  workEndHour: int("workEndHour").notNull().default(18),
+  workEndMinute: int("workEndMinute").notNull().default(0),
+
+  lateGraceMinutes: int("lateGraceMinutes").notNull().default(0),
+
+  autoClockOutEnabled: int("autoClockOutEnabled").notNull().default(1),
+  autoClockOutHour: int("autoClockOutHour").notNull().default(18),
+  autoClockOutMinute: int("autoClockOutMinute").notNull().default(0),
+
+  absentMarkNextDayEnabled: int("absentMarkNextDayEnabled").notNull().default(1),
+
+  timezone: varchar("timezone", { length: 50 })
+    .notNull()
+    .default("Asia/Seoul"),
+
+  createdBy: int("createdBy").notNull(),
+  updatedBy: int("updatedBy"),
+
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
+});
+
+export type SelectAttendancePolicy = typeof attendancePolicies.$inferSelect;
+export type InsertAttendancePolicy = typeof attendancePolicies.$inferInsert;
 
 export const notices = mysqlTable("notices", {
   id: int("id").autoincrement().primaryKey(),

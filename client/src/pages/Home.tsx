@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -46,16 +46,30 @@ type ScheduleItem = {
   tone?: "default" | "blue" | "green" | "orange";
 };
 
+type AttendanceCardStatus =
+  | "출근"
+  | "퇴근"
+  | "미출근"
+  | "출근전"
+  | "근무중"
+  | "퇴근완료"
+  | "지각"
+  | "조퇴"
+  | "병가"
+  | "연차"
+  | "출장"
+  | "반차"
+  | "결근";
+
 type AttendanceCardItem = {
   id: number;
   userId: number;
   name: string;
-  status: "출근" | "퇴근" | "미출근";
+  status: AttendanceCardStatus;
   time?: string;
   team?: string;
   position?: string;
 };
-
 const messengerRooms: MessengerItem[] = [
   {
     id: 1,
@@ -115,9 +129,11 @@ function formatClock(dateStr?: string | null) {
   if (!dateStr) return "";
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return "";
+
   return d.toLocaleTimeString("ko-KR", {
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
   });
 }
 
@@ -147,6 +163,17 @@ const { urgentNotices, pinnedNotices, normalNotices } = useMemo(() => {
 const { data: notifications = [] } = trpc.notification.list.useQuery();
 const { data: todaySchedules = [] } = trpc.schedule.listToday.useQuery();
   const now = new Date();
+
+const [currentTime, setCurrentTime] = useState(new Date());
+
+useEffect(() => {
+  const timer = setInterval(() => {
+    setCurrentTime(new Date());
+  }, 1000);
+
+  return () => clearInterval(timer);
+}, []);
+
   const [calendarYear, setCalendarYear] = useState(now.getFullYear());
   const [calendarMonth, setCalendarMonth] = useState(now.getMonth() + 1);
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(
@@ -211,10 +238,10 @@ const { data: todaySchedules = [] } = trpc.schedule.listToday.useQuery();
     return map;
   }, [userRows]);
 
-  const isManager =
-    user?.role === "admin" ||
-    user?.role === "host" ||
-    user?.role === "superhost";
+ const isSuperAdmin =
+  user?.role === "host" || user?.role === "superhost";
+
+const isTeamManager = user?.role === "admin";
 
   const todayText = useMemo(() => {
     const now = new Date();
@@ -222,7 +249,17 @@ const { data: todaySchedules = [] } = trpc.schedule.listToday.useQuery();
   }, []);
 const profileImageSrc = (myProfile as any)?.profileImageUrl || "";
   const todayAttendance = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const today = `${kst.getUTCFullYear()}-${String(kst.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    kst.getUTCDate()
+  ).padStart(2, "0")}`;
+
+  return (attendanceRows as any[]).filter((r) => {
+    const workDate = String(r.workDate || "").slice(0, 10);
+    return workDate === today;
+  });
+}, [attendanceRows]);
 
     return (attendanceRows as any[]).filter((r) => {
       const workDate = String(r.workDate || "").slice(0, 10);
@@ -235,8 +272,22 @@ const unreadNotificationCount = useMemo(() => {
 }, [notifications]);
 
   const activeUsers = useMemo(() => {
+  if (isSuperAdmin) {
     return (userRows as any[]).filter((u: any) => !!u?.isActive);
-  }, [userRows]);
+  }
+
+  if (isTeamManager) {
+    const myTeam = (userRows as any[]).find(
+      (u: any) => Number(u.id) === Number(user?.id)
+    )?.teamId;
+
+    return (userRows as any[]).filter(
+      (u: any) => !!u?.isActive && u.teamId === myTeam
+    );
+  }
+
+  return [];
+}, [userRows, user?.id, isSuperAdmin, isTeamManager]);
 
   const todayAttendanceByUserId = useMemo(() => {
     const map = new Map<number, any>();
@@ -257,7 +308,7 @@ const unreadNotificationCount = useMemo(() => {
   }, [todayAttendanceRow, todayAttendanceByUserId, user?.id]);
 
   const attendanceSummary = useMemo(() => {
-    if (!isManager) {
+    if (!isSuperAdmin && !isTeamManager) {
       const checkedIn = myTodayAttendance?.clockInAt ? 1 : 0;
       const checkedOut = myTodayAttendance?.clockOutAt ? 1 : 0;
       const absent = myTodayAttendance?.clockInAt ? 0 : 1;
@@ -281,10 +332,10 @@ const unreadNotificationCount = useMemo(() => {
     }).length;
 
     return { checkedIn, checkedOut, absent };
-  }, [isManager, activeUsers, todayAttendanceByUserId, myTodayAttendance]);
+}, [isSuperAdmin, isTeamManager, activeUsers, todayAttendanceByUserId, myTodayAttendance]);
 
   const attendanceListUI = useMemo<AttendanceCardItem[]>(() => {
-    if (!isManager) {
+    if (!isSuperAdmin && !isTeamManager) {
       if (!user?.id) return [];
 
       const myUser = usersById.get(Number(user.id));
@@ -410,7 +461,7 @@ const unreadNotificationCount = useMemo(() => {
 
         return String(a.name || "").localeCompare(String(b.name || ""));
       });
-  }, [isManager, user?.id, user?.name, activeUsers, todayAttendanceByUserId, usersById]);
+}, [isSuperAdmin, isTeamManager, user?.id, user?.name, activeUsers, todayAttendanceByUserId, usersById]);
 
   const visibleAttendanceList = useMemo(() => {
     return attendanceListUI;
@@ -570,6 +621,17 @@ const unreadNotificationCount = useMemo(() => {
                     icon={<Clock3 className="h-4 w-4 text-primary" />}
                     title="오늘 출퇴근"
                   />
+	
+	<div className="mb-3 text-sm text-muted-foreground text-right">
+  {currentTime.toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  })}
+</div>
 
                   <div className="mb-3 grid grid-cols-3 gap-2">
                     <Button
@@ -595,7 +657,7 @@ const unreadNotificationCount = useMemo(() => {
                     </Button>
                   </div>
 
-                  {isManager ? (
+	{isSuperAdmin || isTeamManager ? (
                     <>
                       <div className="grid grid-cols-3 gap-3">
                         <div className="rounded-2xl bg-emerald-50 p-3 text-center">
