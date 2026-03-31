@@ -217,30 +217,23 @@ export default function NoticeEditorDialog({
         </DialogHeader>
 
         <div className="space-y-6 px-8 py-7">
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px_180px]">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-slate-700">제목</label>
+              <label className="block text-sm font-semibold text-slate-700">
+                제목
+              </label>
               <Input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="공지사항 제목을 입력하세요"
-                className="h-14 text-base"
+                className="h-14 w-full text-base"
               />
             </div>
 
-            <div className="flex items-end">
-              <label className="flex h-14 w-full items-center gap-3 rounded-xl border bg-white px-4 text-sm font-medium shadow-sm">
-                <Checkbox
-                  checked={isPinned}
-                  onCheckedChange={(checked) => setIsPinned(!!checked)}
-                />
-                <Pin className="h-4 w-4 text-amber-500" />
-                상단 고정
-              </label>
-            </div>
-
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-slate-700">중요도</label>
+              <label className="block text-sm font-semibold text-slate-700">
+                중요도
+              </label>
               <select
                 value={importance}
                 onChange={(e) =>
@@ -253,6 +246,17 @@ export default function NoticeEditorDialog({
                 <option value="urgent">긴급</option>
               </select>
             </div>
+          </div>
+
+          <div className="rounded-2xl border bg-white px-4 py-4 shadow-sm">
+            <label className="flex cursor-pointer items-center gap-3 text-sm font-medium text-slate-700">
+              <Checkbox
+                checked={isPinned}
+                onCheckedChange={(checked) => setIsPinned(!!checked)}
+              />
+              <Pin className="h-4 w-4 text-amber-500" />
+              상단 고정
+            </label>
           </div>
 
           <div className="space-y-2">
@@ -341,10 +345,17 @@ export default function NoticeEditorDialog({
         </div>
 
         <DialogFooter className="border-t bg-white px-8 py-5">
-          <Button variant="outline" onClick={onClose} disabled={isSubmitting || isUploadingAttachment}>
+          <Button
+            variant="outline"
+            onClick={onClose}
+            disabled={isSubmitting || isUploadingAttachment}
+          >
             취소
           </Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting || isUploadingAttachment}>
+          <Button
+            onClick={handleSubmit}
+            disabled={isSubmitting || isUploadingAttachment}
+          >
             {mode === "create" ? "공지 등록" : "수정 저장"}
           </Button>
         </DialogFooter>

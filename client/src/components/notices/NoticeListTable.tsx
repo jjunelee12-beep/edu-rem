@@ -23,6 +23,18 @@ type NoticeListTableProps = {
   onOpenDetail: (id: number) => void;
 };
 
+function formatDate(value?: string | Date | null) {
+  if (!value) return "-";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "-";
+
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+
+  return `${yyyy}.${mm}.${dd}`;
+}
+
 export default function NoticeListTable({
   rows,
   canManage,
@@ -37,7 +49,7 @@ export default function NoticeListTable({
 
   return (
     <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
-      <div className="grid grid-cols-[56px_minmax(0,1fr)] border-b bg-slate-50 px-5 py-4 text-sm font-semibold text-slate-700">
+      <div className="grid grid-cols-[56px_minmax(0,1fr)_140px_140px_90px] border-b bg-slate-50 px-5 py-4 text-sm font-semibold text-slate-700">
         <div className="flex items-center justify-center">
           {canManage && editMode ? (
             <Checkbox checked={allChecked} onCheckedChange={onToggleSelectAll} />
@@ -46,6 +58,9 @@ export default function NoticeListTable({
           )}
         </div>
         <div>제목</div>
+        <div className="text-center">작성자</div>
+        <div className="text-center">작성일</div>
+        <div className="text-center">조회수</div>
       </div>
 
       {rows.length === 0 ? (
@@ -59,7 +74,7 @@ export default function NoticeListTable({
           return (
             <div
               key={row.id}
-              className="grid grid-cols-[56px_minmax(0,1fr)] items-center border-b px-5 py-4 last:border-b-0 hover:bg-slate-50/70"
+              className="grid grid-cols-[56px_minmax(0,1fr)_140px_140px_90px] items-center border-b px-5 py-4 last:border-b-0 hover:bg-slate-50/70"
             >
               <div className="flex items-center justify-center text-sm text-muted-foreground">
                 {canManage && editMode ? (
@@ -74,7 +89,7 @@ export default function NoticeListTable({
 
               <button
                 onClick={() => onOpenDetail(Number(row.id))}
-                className="min-w-0 text-left"
+                className="min-w-0 pr-4 text-left"
               >
                 <div className="flex flex-wrap items-center gap-2">
                   {row.isPinned ? (
@@ -98,6 +113,18 @@ export default function NoticeListTable({
                   </span>
                 </div>
               </button>
+
+              <div className="truncate px-2 text-center text-sm text-slate-600">
+                {row.authorName || "관리자"}
+              </div>
+
+              <div className="px-2 text-center text-sm text-slate-600">
+                {formatDate(row.createdAt)}
+              </div>
+
+              <div className="px-2 text-center text-sm text-slate-600">
+                {Number(row.viewCount ?? 0)}
+              </div>
             </div>
           );
         })
