@@ -13,7 +13,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { authRouter } from "./routes/auth";
+import { authRouter } from "../routes/auth";
 import noticeUploadRouter from "../routes/notice-upload";
 import {
   createChatAttachment,
