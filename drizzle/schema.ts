@@ -765,6 +765,9 @@ export const notices = mysqlTable("notices", {
   authorId: int("authorId").notNull(),
   authorName: varchar("authorName", { length: 100 }),
   isPinned: boolean("isPinned").notNull().default(false),
+importance: mysqlEnum("importance", ["normal", "important", "urgent"])
+  .notNull()
+  .default("normal"),
   isActive: boolean("isActive").notNull().default(true),
   viewCount: int("viewCount").notNull().default(0),
   createdAt: timestamp("createdAt").notNull().defaultNow(),

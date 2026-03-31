@@ -8,6 +8,7 @@ import {
   deleteNotice,
   bulkDeleteNotices,
   increaseNoticeView,
+createNoticeNotifications,
 } from "../db";
 
 function assertHostOrSuperhost(user: any) {
@@ -72,6 +73,8 @@ export const noticeRouter = {
       z.object({
         title: z.string().trim().min(1, "제목을 입력해주세요.").max(255),
         content: z.string().trim().min(1, "내용을 입력해주세요."),
+        isPinned: z.boolean().optional().default(false),
+	importance: z.enum(["normal", "important", "urgent"]).optional().default("normal"),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -82,12 +85,21 @@ export const noticeRouter = {
   content: input.content,
   authorId: Number(ctx.user.id),
   authorName: String(ctx.user.name ?? ""),
+  isPinned: !!input.isPinned,
+  importance: input.importance,
 });
 
-      return {
-        ok: true,
-        id: Number(id),
-      };
+await createNoticeNotifications({
+  noticeId: Number(id),
+  actorUserId: Number(ctx.user.id),
+  title: input.title,
+  importance: input.importance,
+});
+
+return {
+  ok: true,
+  id: Number(id),
+};
     }),
 
   // 수정 (host / superhost)
@@ -97,6 +109,8 @@ export const noticeRouter = {
         id: z.coerce.number(),
         title: z.string().trim().min(1, "제목을 입력해주세요.").max(255),
         content: z.string().trim().min(1, "내용을 입력해주세요."),
+        isPinned: z.boolean().optional().default(false),
+	importance: z.enum(["normal", "important", "urgent"]).optional().default("normal"),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -110,6 +124,8 @@ export const noticeRouter = {
       await updateNotice(input.id, {
         title: input.title,
         content: input.content,
+        isPinned: !!input.isPinned,
+importance: input.importance,
       });
 
       return { ok: true };
@@ -145,7 +161,10 @@ export const noticeRouter = {
     .mutation(async ({ ctx, input }) => {
       assertHostOrSuperhost(ctx.user);
 
-      const ids = Array.from(new Set(input.ids.map((x) => Number(x)).filter(Boolean)));
+      const ids = Array.from(
+        new Set(input.ids.map((x) => Number(x)).filter(Boolean))
+      );
+
       if (!ids.length) {
         throw new Error("삭제할 공지사항이 없습니다.");
       }

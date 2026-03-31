@@ -128,3 +128,44 @@
     }
   }
 }
+.notice-content h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 1rem 0 0.75rem;
+}
+
+.notice-content h2 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin: 0.9rem 0 0.65rem;
+}
+
+.notice-content p {
+  margin: 0.65rem 0;
+  line-height: 1.9;
+}
+
+.notice-content ul,
+.notice-content ol {
+  margin: 0.75rem 0;
+  padding-left: 1.5rem;
+}
+
+.notice-content li {
+  margin: 0.3rem 0;
+}
+.notice-content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1rem auto;
+  border-radius: 0.75rem;
+}
+
+.notice-content blockquote {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border-left: 4px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+}

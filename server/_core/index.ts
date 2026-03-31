@@ -14,6 +14,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { authRouter } from "./routes/auth";
+import noticeUploadRouter from "../routes/notice-upload";
 import {
   createChatAttachment,
   createChatMessage,
@@ -26,6 +27,8 @@ import {
   getUserById,
   setChatRoomMuted,
   leaveChatRoom,
+createScheduleNotifications,
+createNotification,
 } from "../db";
 
 console.log("R2_ACCOUNT_ID:", !!process.env.R2_ACCOUNT_ID);
@@ -316,12 +319,27 @@ async function startServer() {
 
           const members = await listChatRoomMembers(roomId, userId);
 
-          for (const member of members) {
-            io.to(`user:${member.userId}`).emit("room:list:update", {
-              roomId,
-              lastMessage: emittedMessage,
-            });
-          }
+for (const member of members) {
+  const memberUserId = Number(member.userId);
+
+  io.to(`user:${memberUserId}`).emit("room:list:update", {
+    roomId,
+    lastMessage: emittedMessage,
+  });
+
+  if (memberUserId === userId) continue;
+
+  await createNotification({
+    userId: memberUserId,
+    type: "messenger",
+    message:
+      messageType === "text"
+        ? `[메신저] ${sender?.name ?? "사용자"}님의 새 메시지`
+        : `[메신저] ${sender?.name ?? "사용자"}님이 파일을 보냈습니다.`,
+    relatedId: roomId,
+    isRead: false,
+  } as any);
+}
         } catch (error: any) {
           console.error("[SOCKET message:send ERROR]", error);
           socket.emit("message:error", {
@@ -625,6 +643,7 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
   app.use("/api/auth", authRouter);
+app.use(noticeUploadRouter);
 
   app.post("/api/upload", upload.single("file"), async (req, res) => {
     try {
@@ -724,6 +743,19 @@ async function startServer() {
     console.log("Exact CORS allowed origins:", exactAllowedOrigins);
   });
 }
+
+// 🔔 일정 알림 자동 실행 (1분마다)
+setInterval(async () => {
+  try {
+    const result = await createScheduleNotifications();
+
+    if (result?.count > 0) {
+      console.log("[SCHEDULE NOTIFY]", result.count);
+    }
+  } catch (err) {
+    console.error("[SCHEDULE NOTIFY ERROR]", err);
+  }
+}, 60 * 1000);
 
 startServer().catch((error) => {
   console.error("[SERVER START ERROR]", error);

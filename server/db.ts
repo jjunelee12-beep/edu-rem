@@ -56,6 +56,9 @@ aiActionLogs,
   chatRoomSettings,
 attendanceRecords,
   type InsertAttendanceRecord,
+notices, InsertNotice,
+schedules,
+InsertSchedule,
 } from "../drizzle/schema";
 
 import { ENV } from "./_core/env";
@@ -776,6 +779,43 @@ export async function listNotifications(userId: number) {
     .orderBy(desc(notifications.createdAt), desc(notifications.id));
 }
 
+export async function createNoticeNotifications(params: {
+  noticeId: number;
+  actorUserId: number;
+  title: string;
+  importance?: "normal" | "important" | "urgent";
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const allUsers = await getAllUsersDetailed();
+
+  const targets = (allUsers || []).filter(
+    (u: any) => Number(u.id) !== Number(params.actorUserId) && !!u.isActive
+  );
+
+  const prefix =
+  params.importance === "urgent"
+    ? "[긴급 공지]"
+    : params.importance === "important"
+    ? "[중요 공지]"
+    : "[공지]";
+
+for (const user of targets) {
+  await createNotification({
+    userId: Number(user.id),
+    type: "notice",
+    message: `${prefix} ${params.title}`,
+    relatedId: Number(params.noticeId),
+    isRead: false,
+  } as any);
+}
+
+  return {
+    count: targets.length,
+  };
+}
+
 export async function markNotificationRead(id: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -784,6 +824,98 @@ export async function markNotificationRead(id: number, userId: number) {
     .update(notifications)
     .set({ isRead: true } as any)
     .where(and(eq(notifications.id, id), eq(notifications.userId, userId)));
+}
+
+export async function markAllNotificationsRead(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(notifications)
+    .set({ isRead: true } as any)
+    .where(eq(notifications.userId, userId));
+}
+
+export async function listPendingScheduleNotifications() {
+  const db = await getDb();
+  if (!db) return [];
+
+  const [rows] = await db.execute(sql`
+    SELECT *
+    FROM schedules
+    WHERE isActive = 1
+      AND isNotified = 0
+      AND startAt IS NOT NULL
+      AND startAt <= DATE_ADD(NOW(), INTERVAL 10 MINUTE)
+      AND startAt > NOW()
+    ORDER BY startAt ASC
+  `);
+
+  return (rows as any[]) ?? [];
+}
+
+export async function markScheduleNotified(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.execute(sql`
+    UPDATE schedules
+    SET isNotified = 1
+    WHERE id = ${id}
+  `);
+}
+
+export async function createScheduleNotifications() {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const schedules = await listPendingScheduleNotifications();
+  if (!schedules.length) {
+    return { count: 0 };
+  }
+
+  const allUsers = await getAllUsersDetailed();
+  let createdCount = 0;
+
+  for (const item of schedules) {
+    const title = String(item.title ?? "일정");
+    const message =
+      item.scope === "global"
+        ? `[전체 일정] ${title} 일정이 곧 시작됩니다.`
+        : `[일정 알림] ${title} 일정이 곧 시작됩니다.`;
+
+    if (item.scope === "global") {
+      const targets = (allUsers || []).filter((u: any) => !!u.isActive);
+
+      for (const user of targets) {
+        await createNotification({
+          userId: Number(user.id),
+          type: "schedule",
+          message,
+          relatedId: Number(item.id),
+          isRead: false,
+        } as any);
+
+        createdCount += 1;
+      }
+    } else {
+      if (item.ownerUserId) {
+        await createNotification({
+          userId: Number(item.ownerUserId),
+          type: "schedule",
+          message,
+          relatedId: Number(item.id),
+          isRead: false,
+        } as any);
+
+        createdCount += 1;
+      }
+    }
+
+    await markScheduleNotified(Number(item.id));
+  }
+
+  return { count: createdCount };
 }
 
 // ─── Device Tokens ───────────────────────────────────────────────────
@@ -4051,29 +4183,33 @@ export async function createNotice(data: {
   content: string;
   authorId: number;
   authorName?: string | null;
+  isPinned?: boolean;
+importance?: "normal" | "important" | "urgent";
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
   const result: any = await db.execute(sql`
-    INSERT INTO notices (
-      title,
-      content,
-      authorId,
-      authorName,
-      isPinned,
-      isActive,
-      viewCount
-    )
-    VALUES (
-      ${data.title},
-      ${data.content},
-      ${data.authorId},
-      ${data.authorName ?? null},
-      0,
-      1,
-      0
-    )
+   INSERT INTO notices (
+  title,
+  content,
+  authorId,
+  authorName,
+  isPinned,
+  importance,
+  isActive,
+  viewCount
+)
+VALUES (
+  ${data.title},
+  ${data.content},
+  ${data.authorId},
+  ${data.authorName ?? null},
+  ${data.isPinned ? 1 : 0},
+  ${data.importance ?? "normal"},
+  1,
+  0
+)
   `);
 
   return getInsertId(result);
@@ -4081,19 +4217,26 @@ export async function createNotice(data: {
 
 export async function updateNotice(
   id: number,
-  data: { title?: string; content?: string }
+  data: {
+    title?: string;
+    content?: string;
+    isPinned?: boolean;
+    importance?: "normal" | "important" | "urgent";
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.execute(sql`
-    UPDATE notices
-    SET
-      title = COALESCE(${data.title ?? null}, title),
-      content = COALESCE(${data.content ?? null}, content)
-    WHERE id = ${id}
-      AND isActive = 1
-  `);
+ await db.execute(sql`
+  UPDATE notices
+  SET
+    title = COALESCE(${data.title ?? null}, title),
+    content = COALESCE(${data.content ?? null}, content),
+    isPinned = COALESCE(${data.isPinned !== undefined ? (data.isPinned ? 1 : 0) : null}, isPinned),
+    importance = COALESCE(${data.importance ?? null}, importance)
+  WHERE id = ${id}
+    AND isActive = 1
+`);
 }
 
 export async function deleteNotice(id: number) {

@@ -162,32 +162,52 @@ export default function NoticeDetailPage() {
             </div>
           ) : (
             <div>
-              <div className="border-b px-6 py-5">
-                <h2 className="text-2xl font-bold leading-tight">
-                  {notice.title}
-                </h2>
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+  {notice.isPinned ? (
+    <div className="inline-flex items-center rounded bg-yellow-100 px-2 py-1 text-xs font-semibold text-yellow-800">
+      📌 고정 공지
+    </div>
+  ) : null}
 
-                <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                  <div className="inline-flex items-center gap-2">
-                    <CalendarDays className="h-4 w-4" />
-                    <span>작성일 {formatDateTime(notice.createdAt)}</span>
-                  </div>
+  {(notice as any).importance === "urgent" ? (
+    <div className="inline-flex items-center rounded bg-red-500 px-2 py-1 text-xs font-semibold text-white">
+      긴급
+    </div>
+  ) : null}
 
-                  <div className="inline-flex items-center gap-2">
-                    <Eye className="h-4 w-4" />
-                    <span>조회수 {Number(notice.views ?? 0)}</span>
-                  </div>
+  {(notice as any).importance === "important" ? (
+    <div className="inline-flex items-center rounded bg-orange-400 px-2 py-1 text-xs font-semibold text-white">
+      중요
+    </div>
+  ) : null}
+</div>
 
-                  <div>
-                    작성자 {notice.authorName || "-"}
-                  </div>
-                </div>
+  <h2 className="text-2xl font-bold leading-tight">
+    {notice.title}
+  </h2>
+               <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+  <div className="inline-flex items-center gap-2">
+    <span>👤</span>
+    <span>작성자 {notice.authorName || "관리자"}</span>
+  </div>
+
+  <div className="inline-flex items-center gap-2">
+    <CalendarDays className="h-4 w-4" />
+    <span>{formatDateTime(notice.createdAt)}</span>
+  </div>
+
+  <div className="inline-flex items-center gap-2">
+    <Eye className="h-4 w-4" />
+    <span>조회수 {Number(notice.viewCount ?? 0)}</span>
+  </div>
+</div>
               </div>
 
               <div className="px-6 py-6">
-                <div className="min-h-[320px] whitespace-pre-wrap break-words text-sm leading-7 text-slate-800">
-                  {notice.content}
-                </div>
+                <div
+  className="notice-content min-h-[420px] break-words text-base leading-8 text-slate-800"
+  dangerouslySetInnerHTML={{ __html: notice.content || "<p></p>" }}
+/>
               </div>
             </div>
           )}
@@ -199,18 +219,22 @@ export default function NoticeDetailPage() {
           open={editorOpen}
           mode="edit"
           initialValue={{
-            title: notice.title ?? "",
-            content: notice.content ?? "",
-          }}
+  title: notice.title ?? "",
+  content: notice.content ?? "",
+  isPinned: !!notice.isPinned,
+importance: (notice as any).importance ?? "normal",
+}}
           isSubmitting={updateMutation.isPending}
           onClose={() => setEditorOpen(false)}
           onSubmit={(payload) => {
-            updateMutation.mutate({
-              id: noticeId,
-              title: payload.title,
-              content: payload.content,
-            });
-          }}
+  updateMutation.mutate({
+    id: noticeId,
+    title: payload.title,
+    content: payload.content,
+    isPinned: !!payload.isPinned,
+importance: payload.importance ?? "normal",
+  });
+}}
         />
       ) : null}
     </div>

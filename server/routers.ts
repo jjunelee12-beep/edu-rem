@@ -579,6 +579,11 @@ notification: router({
       await db.markNotificationRead(input.id, Number(ctx.user.id));
       return { success: true };
     }),
+
+  markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
+    await db.markAllNotificationsRead(Number(ctx.user.id));
+    return { success: true };
+  }),
 }),
 
   mobile: router({

@@ -29,10 +29,11 @@ import MessengerPage from "@/pages/MessengerPage";
 import AttendancePage from "@/pages/AttendancePage";
 import MyPage from "@/pages/MyPage";
 
-// ✅ 추가
 import NoticesPage from "@/pages/NoticesPage";
 import NoticeDetailPage from "@/pages/NoticeDetailPage";
 import SchedulePage from "@/pages/SchedulePage";
+import Notifications from "@/pages/Notifications";
+
 
 function PublicRouter() {
   return (
@@ -72,6 +73,7 @@ function PrivateRouter() {
         <Route path="/notices" component={NoticesPage} />
         <Route path="/notices/:id" component={NoticeDetailPage} />
         <Route path="/schedules" component={SchedulePage} />
+	<Route path="/notifications" component={Notifications} />
 
         <Route component={NotFound} />
       </Switch>

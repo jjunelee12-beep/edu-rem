@@ -128,7 +128,9 @@ export default function Home() {
   const { data: todayAttendanceRow } = trpc.attendance.today.useQuery();
 const { data: myProfile } = trpc.users.me.useQuery();
 const { data: notices = [] } = trpc.notice.list.useQuery();
+const { data: notifications = [] } = trpc.notification.list.useQuery();
 const { data: todaySchedules = [] } = trpc.schedule.listToday.useQuery();
+
 
   const utils = trpc.useUtils();
 
@@ -182,6 +184,10 @@ const profileImageSrc = (myProfile as any)?.profileImageUrl || "";
       return workDate === today;
     });
   }, [attendanceRows]);
+
+const unreadNotificationCount = useMemo(() => {
+  return (notifications as any[]).filter((item) => !item.isRead).length;
+}, [notifications]);
 
   const activeUsers = useMemo(() => {
     return (userRows as any[]).filter((u: any) => !!u?.isActive);
@@ -404,9 +410,18 @@ const profileImageSrc = (myProfile as any)?.profileImageUrl || "";
                 운영 대시보드
               </Button>
 
-              <button className="home-icon-btn">
-                <Bell className="h-4 w-4" />
-              </button>
+              <button
+  className="home-icon-btn relative"
+  onClick={() => setLocation("/notifications")}
+>
+  <Bell className="h-4 w-4" />
+
+  {unreadNotificationCount > 0 ? (
+    <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-red-500 px-1.5 py-0.5 text-center text-[10px] font-semibold leading-none text-white">
+      {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+    </span>
+  ) : null}
+</button>
               <button className="home-icon-btn">
                 <Settings className="h-4 w-4" />
               </button>
@@ -634,11 +649,15 @@ const profileImageSrc = (myProfile as any)?.profileImageUrl || "";
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
                               <p className="truncate font-semibold">{notice.title}</p>
-                              {notice.isImportant ? (
-                                <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600">
-                                  중요
-                                </span>
-                              ) : null}
+                            {notice.importance === "urgent" ? (
+  <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600">
+    긴급
+  </span>
+) : notice.importance === "important" ? (
+  <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-600">
+    중요
+  </span>
+) : null}
                             </div>
                             <p className="mt-1 text-sm text-muted-foreground">
   {String(notice.content ?? "").slice(0, 80)}

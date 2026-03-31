@@ -53,6 +53,9 @@ export default function MessengerPage() {
   }>({
     open: false,
   });
+const roomIdFromQuery = Number(
+  new URLSearchParams(window.location.search).get("roomId") || 0
+);
 
   const { data: userList = [], isLoading: usersLoading } =
     trpc.users.list.useQuery();
@@ -138,16 +141,30 @@ export default function MessengerPage() {
   }, [roomRows]);
 
   useEffect(() => {
-    if (selectedRoomId) return;
-    if (!mappedRooms.length) return;
+  if (selectedRoomId || roomIdFromQuery) return;
+  if (!mappedRooms.length) return;
 
-    setSelectedRoomId(Number(mappedRooms[0].id));
-  }, [mappedRooms, selectedRoomId]);
+  setSelectedRoomId(Number(mappedRooms[0].id));
+}, [mappedRooms, selectedRoomId, roomIdFromQuery]);
 
-  const activeRoom = useMemo(
-    () => mappedRooms.find((room) => Number(room.id) === Number(selectedRoomId)) ?? null,
-    [mappedRooms, selectedRoomId]
+useEffect(() => {
+  if (!roomIdFromQuery) return;
+  if (!mappedRooms.length) return;
+
+  const targetRoom = mappedRooms.find(
+    (room) => Number(room.id) === Number(roomIdFromQuery)
   );
+
+  if (targetRoom) {
+    setSelectedRoomId(Number(targetRoom.id));
+    setLiveMessages(null);
+  }
+}, [roomIdFromQuery, mappedRooms]);
+
+const activeRoom = useMemo(
+  () => mappedRooms.find((room) => Number(room.id) === Number(selectedRoomId)) ?? null,
+  [mappedRooms, selectedRoomId]
+);
 
   const baseMessages = useMemo<MessengerMessage[]>(() => {
     return (messageRows as any[]).map((m: any) => ({

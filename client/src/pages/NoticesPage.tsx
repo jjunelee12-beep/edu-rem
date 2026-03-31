@@ -118,24 +118,35 @@ export default function NoticesPage() {
     setEditorOpen(true);
   };
 
-  const handleSubmitEditor = (payload: { title: string; content: string }) => {
-    if (editorMode === "create") {
-      createMutation.mutate(payload);
-      return;
-    }
-
-    if (!editingRow?.id) {
-      toast.error("수정할 공지사항 정보가 없습니다.");
-      return;
-    }
-
-    updateMutation.mutate({
-      id: Number(editingRow.id),
+const handleSubmitEditor = (payload: {
+  title: string;
+  content: string;
+  isPinned?: boolean;
+importance?: "normal" | "important" | "urgent";
+}) => {
+  if (editorMode === "create") {
+    createMutation.mutate({
       title: payload.title,
       content: payload.content,
+      isPinned: !!payload.isPinned,
+importance: payload.importance ?? "normal",
     });
-  };
+    return;
+  }
 
+  if (!editingRow?.id) {
+    toast.error("수정할 공지사항 정보가 없습니다.");
+    return;
+  }
+
+  updateMutation.mutate({
+    id: Number(editingRow.id),
+    title: payload.title,
+    content: payload.content,
+    isPinned: !!payload.isPinned,
+importance: payload.importance ?? "normal",
+  });
+};
   const handleSingleDelete = (id: number) => {
     if (!confirm("이 공지사항을 삭제하시겠습니까?")) return;
     deleteMutation.mutate({ id });
@@ -252,17 +263,21 @@ export default function NoticesPage() {
       <NoticeEditorDialog
         open={editorOpen}
         mode={editorMode}
-        initialValue={
-          editorMode === "edit"
-            ? {
-                title: editingRow?.title ?? "",
-                content: editingRow?.content ?? "",
-              }
-            : {
-                title: "",
-                content: "",
-              }
-        }
+      initialValue={
+  editorMode === "edit"
+    ? {
+        title: editingRow?.title ?? "",
+        content: editingRow?.content ?? "",
+        isPinned: !!editingRow?.isPinned,
+        importance: (editingRow as any)?.importance ?? "normal",
+      }
+    : {
+        title: "",
+        content: "",
+        isPinned: false,
+        importance: "normal",
+      }
+}
         isSubmitting={createMutation.isPending || updateMutation.isPending}
         onClose={() => {
           setEditorOpen(false);

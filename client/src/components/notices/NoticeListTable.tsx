@@ -9,7 +9,9 @@ export type NoticeListItem = {
   authorName?: string | null;
   createdAt?: string | Date | null;
   updatedAt?: string | Date | null;
-  views?: number | null;
+  viewCount?: number | null;
+  isPinned?: boolean | null;
+importance?: "normal" | "important" | "urgent" | null;
 };
 
 type NoticeListTableProps = {
@@ -45,7 +47,8 @@ export default function NoticeListTable({
   onOpenDetail,
   onEdit,
 }: NoticeListTableProps) {
-  const allChecked = rows.length > 0 && rows.every((row) => selectedIds.includes(Number(row.id)));
+  const allChecked =
+    rows.length > 0 && rows.every((row) => selectedIds.includes(Number(row.id)));
 
   return (
     <div className="overflow-hidden rounded-2xl border bg-white">
@@ -64,7 +67,7 @@ export default function NoticeListTable({
       </div>
 
       {rows.length === 0 ? (
-        <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+        <div className="px-4 py-14 text-center text-sm text-muted-foreground">
           등록된 공지사항이 없습니다.
         </div>
       ) : (
@@ -74,9 +77,9 @@ export default function NoticeListTable({
           return (
             <div
               key={row.id}
-              className="grid grid-cols-[56px_minmax(0,1fr)_120px_100px_110px] items-center border-b px-4 py-3 last:border-b-0"
+              className="grid grid-cols-[56px_minmax(0,1fr)_120px_100px_110px] items-start border-b px-4 py-4 last:border-b-0 hover:bg-slate-50/60"
             >
-              <div className="flex items-center justify-center text-sm text-muted-foreground">
+              <div className="flex items-center justify-center pt-1 text-sm text-muted-foreground">
                 {canManage && editMode ? (
                   <Checkbox
                     checked={checked}
@@ -87,19 +90,46 @@ export default function NoticeListTable({
                 )}
               </div>
 
-              <div className="min-w-0">
-                <button
-                  onClick={() => onOpenDetail(Number(row.id))}
-                  className="max-w-full truncate text-left text-sm font-semibold hover:underline"
-                >
-                  {row.title}
-                </button>
-                <p className="mt-1 truncate text-xs text-muted-foreground">
+              <div className="min-w-0 pr-3">
+                <div className="mb-1 flex flex-wrap items-center gap-2">
+  {row.isPinned ? (
+    <span className="rounded bg-yellow-100 px-2 py-0.5 text-[11px] font-semibold text-yellow-800">
+      📌 고정
+    </span>
+  ) : null}
+
+  {row.importance === "urgent" ? (
+    <span className="rounded bg-red-500 px-2 py-0.5 text-[11px] font-semibold text-white">
+      긴급
+    </span>
+  ) : null}
+
+  {row.importance === "important" ? (
+    <span className="rounded bg-orange-400 px-2 py-0.5 text-[11px] font-semibold text-white">
+      중요
+    </span>
+  ) : null}
+</div>
+
+<button
+  onClick={() => onOpenDetail(Number(row.id))}
+  className="max-w-full truncate text-left text-[15px] font-semibold text-slate-900 hover:underline"
+>
+  {row.title}
+</button>
+
+                <p className="mt-1 line-clamp-2 break-all text-sm leading-6 text-muted-foreground">
                   {String(row.content ?? "").replace(/\n/g, " ")}
                 </p>
 
+                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                  <span>작성자 {row.authorName || "관리자"}</span>
+                  <span>조회수 {Number(row.viewCount ?? 0)}</span>
+                  <span>{formatDate(row.createdAt)}</span>
+                </div>
+
                 {canManage && !editMode ? (
-                  <div className="mt-2">
+                  <div className="mt-3">
                     <Button size="sm" variant="outline" onClick={() => onEdit(row)}>
                       수정
                     </Button>
@@ -107,15 +137,15 @@ export default function NoticeListTable({
                 ) : null}
               </div>
 
-              <div className="text-center text-sm">
+              <div className="pt-1 text-center text-sm">
                 {row.authorName || "-"}
               </div>
 
-              <div className="text-center text-sm">
-                {Number(row.views ?? 0)}
+              <div className="pt-1 text-center text-sm">
+                {Number(row.viewCount ?? 0)}
               </div>
 
-              <div className="text-center text-sm text-muted-foreground">
+              <div className="pt-1 text-center text-sm text-muted-foreground">
                 {formatDate(row.createdAt)}
               </div>
             </div>
