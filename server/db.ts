@@ -3821,7 +3821,7 @@ export async function clockInAttendance(userId: number) {
   }
 
   const now = new Date();
-  const late = calcLateInfo(now);
+const late = await calcLateInfo(now);
 
   if (existing?.id) {
     await db
@@ -3882,7 +3882,7 @@ export async function clockOutAttendance(userId: number) {
 
   const clockOutAt = new Date();
   const workMinutes = calcWorkMinutes(todayRow.clockInAt, clockOutAt);
-  const early = calcEarlyLeaveInfo(clockOutAt);
+const early = await calcEarlyLeaveInfo(clockOutAt);
 
   await db
   .update(attendanceRecords)
@@ -3952,41 +3952,82 @@ export async function listAllAttendanceRecords() {
   if (!db) return [];
 
   const [rows] = await db.execute(sql`
-    SELECT
-      a.id,
-      a.userId,
-      a.workDate,
-      a.clockInAt,
-      a.clockOutAt,
-      a.workMinutes,
-      a.status,
-      a.note,
-      a.createdAt,
-      a.updatedAt,
-      u.name,
-      u.role,
-u.username,
-u.phone,
-a.isLate,
-a.isEarlyLeave,
-a.lateMinutes,
-a.earlyLeaveMinutes,
-a.isAbsent,
-a.isAutoClockOut,
-a.leaveType,
-map.teamId,
-map.positionId,
-t.name as teamName,
-p.name as positionName
-    FROM attendance_records a
-    INNER JOIN users u ON u.id = a.userId
-LEFT JOIN user_org_mappings map ON map.userId = u.id
-LEFT JOIN teams t ON t.id = map.teamId
-LEFT JOIN positions p ON p.id = map.positionId
-    ORDER BY a.workDate DESC, a.id DESC
-  `);
+  SELECT
+    a.id,
+    a.userId,
+    a.workDate,
+    a.clockInAt,
+    a.clockOutAt,
+    a.workMinutes,
+    a.status,
+    a.note,
+    a.createdAt,
+    a.updatedAt,
+    u.name,
+    u.role,
+    u.username,
+    u.phone,
+    a.isLate,
+    a.isEarlyLeave,
+    a.lateMinutes,
+    a.earlyLeaveMinutes,
+    a.isAbsent,
+    a.isAutoClockOut,
+    a.leaveType,
+    map.teamId,
+    map.positionId,
+    t.name as teamName,
+    p.name as positionName
+  FROM attendance_records a
+  INNER JOIN users u ON u.id = a.userId
+  LEFT JOIN user_org_mappings map ON map.userId = u.id
+  LEFT JOIN teams t ON t.id = map.teamId
+  LEFT JOIN positions p ON p.id = map.positionId
+  ORDER BY a.workDate DESC, a.id DESC
+`);
 
-  return (rows as any[]) ?? [];
+const normalizedRows = (rows as any[]) ?? [];
+
+for (const row of normalizedRows) {
+  await autoClockOutIfNeeded(row);
+}
+
+const [freshRows] = await db.execute(sql`
+  SELECT
+    a.id,
+    a.userId,
+    a.workDate,
+    a.clockInAt,
+    a.clockOutAt,
+    a.workMinutes,
+    a.status,
+    a.note,
+    a.createdAt,
+    a.updatedAt,
+    u.name,
+    u.role,
+    u.username,
+    u.phone,
+    a.isLate,
+    a.isEarlyLeave,
+    a.lateMinutes,
+    a.earlyLeaveMinutes,
+    a.isAbsent,
+    a.isAutoClockOut,
+    a.leaveType,
+    map.teamId,
+    map.positionId,
+    t.name as teamName,
+    p.name as positionName
+  FROM attendance_records a
+  INNER JOIN users u ON u.id = a.userId
+  LEFT JOIN user_org_mappings map ON map.userId = u.id
+  LEFT JOIN teams t ON t.id = map.teamId
+  LEFT JOIN positions p ON p.id = map.positionId
+  ORDER BY a.workDate DESC, a.id DESC
+`);
+
+return (freshRows as any[]) ?? [];
 }
 
 export async function listTeamAttendanceRecords(adminUserId: number) {
@@ -4035,15 +4076,20 @@ export async function listTeamAttendanceRecords(adminUserId: number) {
   return (rows as any[]) ?? [];
 }
 
-function calcLateInfo(clockInAt?: Date | string | null) {
+
+async function calcLateInfo(clockInAt?: Date | string | null) {
   if (!clockInAt) {
     return { isLate: 0, lateMinutes: 0 };
   }
 
   const d = new Date(clockInAt);
+  const policy = await getAttendancePolicy();
+
+  const startHour = Number(policy?.workStartHour ?? 9);
+  const startMinute = Number(policy?.workStartMinute ?? 0);
 
   const base = new Date(d);
-  base.setHours(9, 10, 0, 0); // 09:10 기준
+  base.setHours(startHour, startMinute, 0, 0);
 
   if (d <= base) {
     return { isLate: 0, lateMinutes: 0 };
@@ -4054,15 +4100,20 @@ function calcLateInfo(clockInAt?: Date | string | null) {
   return { isLate: 1, lateMinutes: diff };
 }
 
-function calcEarlyLeaveInfo(clockOutAt?: Date | string | null) {
+
+async function calcEarlyLeaveInfo(clockOutAt?: Date | string | null) {
   if (!clockOutAt) {
     return { isEarlyLeave: 0, earlyLeaveMinutes: 0 };
   }
 
   const d = new Date(clockOutAt);
+  const policy = await getAttendancePolicy();
+
+  const endHour = Number(policy?.workEndHour ?? 18);
+  const endMinute = Number(policy?.workEndMinute ?? 0);
 
   const base = new Date(d);
-  base.setHours(18, 0, 0, 0); // 18:00 기준
+  base.setHours(endHour, endMinute, 0, 0);
 
   if (d >= base) {
     return { isEarlyLeave: 0, earlyLeaveMinutes: 0 };
@@ -4110,6 +4161,82 @@ export async function getAttendancePolicy() {
     .limit(1);
 
   return rows[0] ?? null;
+}
+
+export async function autoClockOutIfNeeded(record: any) {
+  if (!record || !record.clockInAt || record.clockOutAt) return;
+
+  const db = await getDb();
+  if (!db) return;
+
+  const policy = await getAttendancePolicy();
+
+  const endHour = Number(policy?.workEndHour ?? 18);
+  const endMinute = Number(policy?.workEndMinute ?? 0);
+
+  // 자동퇴근 = 퇴근시간 + 10분
+  const autoBase = new Date(record.workDate);
+  autoBase.setHours(endHour, endMinute + 10, 0, 0);
+
+  const now = new Date();
+  if (now < autoBase) return;
+
+  const clockInAt = new Date(record.clockInAt);
+  const clockOutAt = autoBase;
+
+  const workMinutes = calcWorkMinutes(clockInAt, clockOutAt);
+  const early = await calcEarlyLeaveInfo(clockOutAt);
+  const late = await calcLateInfo(clockInAt);
+
+  let status:
+    | "출근전"
+    | "근무중"
+    | "퇴근완료"
+    | "지각"
+    | "조퇴"
+    | "병가"
+    | "연차"
+    | "출장"
+    | "반차"
+    | "결근" = "퇴근완료";
+
+  if (early.isEarlyLeave) {
+    status = "조퇴";
+  } else if (late.isLate) {
+    status = "지각";
+  } else {
+    status = "퇴근완료";
+  }
+
+  await db
+    .update(attendanceRecords)
+    .set({
+      clockOutAt,
+      workMinutes,
+      status,
+      isEarlyLeave: early.isEarlyLeave,
+      earlyLeaveMinutes: early.earlyLeaveMinutes,
+      isLate: late.isLate,
+      lateMinutes: late.lateMinutes,
+      isAutoClockOut: 1,
+      isAbsent: 0,
+    } as any)
+    .where(eq(attendanceRecords.id, Number(record.id)));
+
+  await db.insert(attendanceAdjustmentLogs).values({
+    attendanceId: Number(record.id),
+    targetUserId: Number(record.userId),
+    actorUserId: Number(record.userId),
+    beforeClockInAt: record.clockInAt ?? null,
+    beforeClockOutAt: record.clockOutAt ?? null,
+    afterClockInAt: clockInAt,
+    afterClockOutAt: clockOutAt,
+    reason: "자동퇴근 처리",
+    actionType: "auto_clock_out",
+    beforeStatus: record.status ?? null,
+    afterStatus: status,
+    note: "퇴근시간 + 10분 기준 자동퇴근",
+  } as any);
 }
 
 export async function saveAttendancePolicy(params: {
@@ -4251,8 +4378,8 @@ export async function updateAttendanceStatusByManager(params: {
 
     nextWorkMinutes = calcWorkMinutes(nextClockInAt, nextClockOutAt);
 
-    const late = calcLateInfo(nextClockInAt);
-    const early = calcEarlyLeaveInfo(nextClockOutAt);
+    const late = await calcLateInfo(nextClockInAt);
+const early = await calcEarlyLeaveInfo(nextClockOutAt);
 
     isLate = late.isLate ? 1 : 0;
     lateMinutes = late.lateMinutes;
@@ -4386,8 +4513,8 @@ if (params.actorRole === "admin") {
   const nextClockOutAt = params.clockOutAt ? new Date(params.clockOutAt) : null;
 
   const workMinutes = calcWorkMinutes(nextClockInAt, nextClockOutAt);
-  const late = calcLateInfo(nextClockInAt);
-  const early = calcEarlyLeaveInfo(nextClockOutAt);
+const late = await calcLateInfo(nextClockInAt);
+const early = await calcEarlyLeaveInfo(nextClockOutAt);
 
   let status:
   | "출근전"
