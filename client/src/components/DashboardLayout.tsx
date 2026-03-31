@@ -493,7 +493,7 @@ const visibleSuperhostMenuItems =
               <DropdownMenuTrigger asChild>
                 <button className="group-data-[collapsible=icon]:justify-center flex w-full items-center gap-3 rounded-lg px-1 py-1 text-left transition-colors hover:bg-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <Avatar className="h-9 w-9 shrink-0 border">
-  <AvatarImage src={user?.avatarUrl || ""} alt={user?.name || "user"} />
+  <AvatarImage src={user?.profileImageUrl || ""} alt={user?.name || "user"} />
   <AvatarFallback className="bg-primary/10 text-xs font-medium text-primary">
     {user?.name?.charAt(0).toUpperCase() || "U"}
   </AvatarFallback>
