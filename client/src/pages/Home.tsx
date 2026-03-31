@@ -457,6 +457,7 @@ const unreadNotificationCount = useMemo(() => {
 
 
   return (
+	<>
     <div className="home-page">
       <div className="home-shell">
         <div className="home-content">
@@ -924,6 +925,7 @@ const unreadNotificationCount = useMemo(() => {
             isGlobal: payload.isGlobal,
           });
         }}
-      />
+       />
+  </>
   );
 }
