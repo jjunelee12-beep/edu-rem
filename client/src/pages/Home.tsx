@@ -251,21 +251,15 @@ const profileImageSrc = (myProfile as any)?.profileImageUrl || "";
   const todayAttendance = useMemo(() => {
   const now = new Date();
   const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const today = `${kst.getUTCFullYear()}-${String(kst.getUTCMonth() + 1).padStart(2, "0")}-${String(
-    kst.getUTCDate()
-  ).padStart(2, "0")}`;
+  const today = `${kst.getUTCFullYear()}-${String(
+    kst.getUTCMonth() + 1
+  ).padStart(2, "0")}-${String(kst.getUTCDate()).padStart(2, "0")}`;
 
   return (attendanceRows as any[]).filter((r) => {
     const workDate = String(r.workDate || "").slice(0, 10);
     return workDate === today;
   });
 }, [attendanceRows]);
-
-    return (attendanceRows as any[]).filter((r) => {
-      const workDate = String(r.workDate || "").slice(0, 10);
-      return workDate === today;
-    });
-  }, [attendanceRows]);
 
 const unreadNotificationCount = useMemo(() => {
   return (notifications as any[]).filter((item) => !item.isRead).length;
