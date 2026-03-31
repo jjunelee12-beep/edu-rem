@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 export type ScheduleCalendarItem = {
   id: number;
@@ -8,6 +9,12 @@ export type ScheduleCalendarItem = {
   hour: number;
   minute: number;
   isGlobal?: boolean;
+};
+
+type HolidayItem = {
+  date: string;
+  name: string;
+  isHoliday: boolean;
 };
 
 type ScheduleCalendarProps = {
@@ -99,8 +106,23 @@ function getMonthMatrix(year: number, month: number) {
 
 function sortSchedules(items: ScheduleCalendarItem[]) {
   return [...items].sort((a, b) => {
-    const aHour24 = a.ampm === "AM" ? (a.hour === 12 ? 0 : a.hour) : a.hour === 12 ? 12 : a.hour + 12;
-    const bHour24 = b.ampm === "AM" ? (b.hour === 12 ? 0 : b.hour) : b.hour === 12 ? 12 : b.hour + 12;
+    const aHour24 =
+      a.ampm === "AM"
+        ? a.hour === 12
+          ? 0
+          : a.hour
+        : a.hour === 12
+        ? 12
+        : a.hour + 12;
+
+    const bHour24 =
+      b.ampm === "AM"
+        ? b.hour === 12
+          ? 0
+          : b.hour
+        : b.hour === 12
+        ? 12
+        : b.hour + 12;
 
     if (aHour24 !== bHour24) return aHour24 - bHour24;
     return Number(a.minute) - Number(b.minute);
@@ -123,6 +145,59 @@ export default function ScheduleCalendar({
   const today = getTodayString();
   const rows = getMonthMatrix(year, month);
 
+  const [holidays, setHolidays] = useState<HolidayItem[]>([]);
+  const [holidayLoading, setHolidayLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchHolidays() {
+      try {
+        setHolidayLoading(true);
+
+        const res = await fetch(
+  `${import.meta.env.VITE_API_BASE_URL || ""}/api/holidays/${year}/${month}`,
+  {
+    credentials: "include",
+  }
+);
+
+        if (!res.ok) {
+          throw new Error("공휴일 조회 실패");
+        }
+
+        const json = await res.json();
+
+        if (!cancelled) {
+          setHolidays(Array.isArray(json?.holidays) ? json.holidays : []);
+        }
+      } catch (error) {
+        console.error("[ScheduleCalendar holidays error]", error);
+        if (!cancelled) {
+          setHolidays([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setHolidayLoading(false);
+        }
+      }
+    }
+
+    fetchHolidays();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [year, month]);
+
+  const holidayMap = useMemo(() => {
+    const map = new Map<string, HolidayItem>();
+    holidays.forEach((item) => {
+      map.set(String(item.date), item);
+    });
+    return map;
+  }, [holidays]);
+
   const scheduleMap = new Map<string, ScheduleCalendarItem[]>();
   schedules.forEach((item) => {
     const key = String(item.date || "");
@@ -135,9 +210,14 @@ export default function ScheduleCalendar({
   return (
     <div className="rounded-2xl border bg-white p-4">
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-semibold">
-          {year}. {pad2(month)}
-        </h3>
+        <div>
+          <h3 className="text-lg font-semibold">
+            {year}. {pad2(month)}
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {holidayLoading ? "공휴일 불러오는 중..." : "토요일 파랑 / 일요일·공휴일 빨강"}
+          </p>
+        </div>
 
         <div className="flex items-center gap-2">
           <button
@@ -166,9 +246,17 @@ export default function ScheduleCalendar({
         </div>
       </div>
 
-      <div className="grid grid-cols-7 gap-2 text-center text-xs text-muted-foreground">
-        {weekLabels.map((label) => (
-          <div key={label} className="py-1 font-medium">
+      <div className="grid grid-cols-7 gap-2 text-center text-xs">
+        {weekLabels.map((label, idx) => (
+          <div
+            key={label}
+            className={[
+              "py-1 font-medium",
+              idx === 0 ? "text-red-500" : "",
+              idx === 6 ? "text-blue-500" : "",
+              idx !== 0 && idx !== 6 ? "text-muted-foreground" : "",
+            ].join(" ")}
+          >
             {label}
           </div>
         ))}
@@ -183,6 +271,13 @@ export default function ScheduleCalendar({
               const isToday = isSameDate(dateStr, today);
               const isSelected = isSameDate(dateStr, selectedDate);
 
+              const weekday = new Date(cell.year, cell.month - 1, cell.day).getDay();
+              const isSunday = weekday === 0;
+              const isSaturday = weekday === 6;
+
+              const holiday = holidayMap.get(dateStr);
+              const isHoliday = !!holiday;
+
               return (
                 <button
                   key={`${dateStr}-${colIdx}`}
@@ -195,19 +290,31 @@ export default function ScheduleCalendar({
                     isToday ? "shadow-sm" : "",
                   ].join(" ")}
                 >
-                  <div className="mb-2 flex items-center justify-between">
-                    <span
-                      className={[
-                        "inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-sm font-semibold",
-                        isSelected
-                          ? "bg-primary text-primary-foreground"
-                          : isToday
-                          ? "bg-blue-50 text-blue-600"
-                          : "",
-                      ].join(" ")}
-                    >
-                      {cell.day}
-                    </span>
+                  <div className="mb-2 flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 flex-col">
+                      <span
+                        className={[
+                          "inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-sm font-semibold",
+                          isSelected
+                            ? "bg-primary text-primary-foreground"
+                            : isToday
+                            ? "bg-blue-50 text-blue-600"
+                            : isHoliday || isSunday
+                            ? "text-red-500"
+                            : isSaturday
+                            ? "text-blue-500"
+                            : "",
+                        ].join(" ")}
+                      >
+                        {cell.day}
+                      </span>
+
+                      {isHoliday ? (
+                        <span className="mt-1 truncate text-[10px] font-medium text-red-500">
+                          {holiday?.name}
+                        </span>
+                      ) : null}
+                    </div>
 
                     {cellSchedules.length > 0 ? (
                       <span className="text-[11px] text-muted-foreground">

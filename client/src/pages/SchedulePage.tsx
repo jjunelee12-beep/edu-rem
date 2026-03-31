@@ -378,7 +378,6 @@ const canCreateGlobal =
   open={editorOpen}
   mode={editorMode}
   selectedDate={selectedDate}
-  canCreateGlobal={canCreateGlobal}
   initialValue={
     editorMode === "edit" && editingRow
       ? {

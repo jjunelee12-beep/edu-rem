@@ -50,19 +50,54 @@ export const scheduleRouter = {
       })
     )
     .query(async ({ ctx, input }) => {
-      assertLoggedIn(ctx.user);
+  assertLoggedIn(ctx.user);
 
-      const rows = await listMonthSchedules(input.year, input.month);
-      return rows;
-    }),
+  const rows = await listMonthSchedules(input.year, input.month);
+
+  return (rows as any[]).map((row: any) => ({
+    id: Number(row.id),
+    title: row.title ?? "",
+    description: row.description ?? "",
+    date: String(row.scheduleDate ?? row.date ?? ""),
+    ampm: (row.meridiem ?? row.ampm ?? "AM") as "AM" | "PM",
+    hour: Number(row.hour12 ?? row.hour ?? 9),
+    minute: Number(row.minute ?? 0),
+    isGlobal:
+      typeof row.isGlobal === "boolean"
+        ? row.isGlobal
+        : String(row.scope ?? "") === "global",
+    userId: Number(row.ownerUserId ?? row.userId ?? 0),
+    ownerUserName: row.ownerUserName ?? "",
+    scope: row.scope ?? "personal",
+    startAt: row.startAt ?? null,
+  }));
+}),
+
 
   // 오늘 일정 조회
-  listToday: protectedProcedure.query(async ({ ctx }) => {
-    assertLoggedIn(ctx.user);
+ listToday: protectedProcedure.query(async ({ ctx }) => {
+  assertLoggedIn(ctx.user);
 
-    const rows = await listTodaySchedules(Number(ctx.user.id), String(ctx.user.role));
-    return rows;
-  }),
+  const rows = await listTodaySchedules(Number(ctx.user.id), String(ctx.user.role));
+
+  return (rows as any[]).map((row: any) => ({
+    id: Number(row.id),
+    title: row.title ?? "",
+    description: row.description ?? "",
+    date: String(row.scheduleDate ?? row.date ?? ""),
+    ampm: (row.meridiem ?? row.ampm ?? "AM") as "AM" | "PM",
+    hour: Number(row.hour12 ?? row.hour ?? 9),
+    minute: Number(row.minute ?? 0),
+    isGlobal:
+      typeof row.isGlobal === "boolean"
+        ? row.isGlobal
+        : String(row.scope ?? "") === "global",
+    userId: Number(row.ownerUserId ?? row.userId ?? 0),
+    ownerUserName: row.ownerUserName ?? "",
+    scope: row.scope ?? "personal",
+    startAt: row.startAt ?? null,
+  }));
+}),
 
   // 생성
   create: protectedProcedure

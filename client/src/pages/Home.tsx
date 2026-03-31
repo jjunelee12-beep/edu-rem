@@ -2,8 +2,11 @@ import { useMemo, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import ScheduleCalendar from "@/components/schedule/ScheduleCalendar";
+import ScheduleEditorDialog from "@/components/schedule/ScheduleEditorDialog";
 import {
   Search,
   Bell,
@@ -130,6 +133,35 @@ const { data: myProfile } = trpc.users.me.useQuery();
 const { data: notices = [] } = trpc.notice.list.useQuery();
 const { data: notifications = [] } = trpc.notification.list.useQuery();
 const { data: todaySchedules = [] } = trpc.schedule.listToday.useQuery();
+  const now = new Date();
+  const [calendarYear, setCalendarYear] = useState(now.getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState(now.getMonth() + 1);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(
+    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+      now.getDate()
+    ).padStart(2, "0")}`
+  );
+  const [scheduleEditorOpen, setScheduleEditorOpen] = useState(false);
+
+  const { data: homeMonthSchedules = [] } = trpc.schedule.listMonth.useQuery({
+    year: calendarYear,
+    month: calendarMonth,
+  });
+
+  const createScheduleMutation = trpc.schedule.create.useMutation({
+    onSuccess: async () => {
+      toast.success("일정이 등록되었습니다.");
+      setScheduleEditorOpen(false);
+
+      await Promise.all([
+        utils.schedule.listMonth.invalidate({ year: calendarYear, month: calendarMonth }),
+        utils.schedule.listToday.invalidate(),
+      ]);
+    },
+    onError: (err) => {
+      toast.error(err.message || "일정 등록 중 오류가 발생했습니다.");
+    },
+  });
 
 
   const utils = trpc.useUtils();
@@ -384,6 +416,45 @@ const unreadNotificationCount = useMemo(() => {
         room.lastMessage.toLowerCase().includes(q)
     );
   }, [search]);
+  const homeCalendarItems = useMemo(() => {
+    return (homeMonthSchedules as any[]).map((row: any) => ({
+      id: Number(row.id),
+      title: row.title ?? "",
+      date: row.date ?? "",
+      ampm: row.ampm ?? "AM",
+      hour: Number(row.hour ?? 9),
+      minute: Number(row.minute ?? 0),
+      isGlobal: !!row.isGlobal,
+    }));
+  }, [homeMonthSchedules]);
+
+  const selectedCalendarDateSchedules = useMemo(() => {
+    return (homeMonthSchedules as any[])
+      .filter((row: any) => String(row.date) === String(selectedCalendarDate))
+      .sort((a: any, b: any) => {
+        const a24 =
+          a.ampm === "AM"
+            ? a.hour === 12
+              ? 0
+              : a.hour
+            : a.hour === 12
+            ? 12
+            : a.hour + 12;
+
+        const b24 =
+          b.ampm === "AM"
+            ? b.hour === 12
+              ? 0
+              : b.hour
+            : b.hour === 12
+            ? 12
+            : b.hour + 12;
+
+        if (a24 !== b24) return a24 - b24;
+        return Number(a.minute) - Number(b.minute);
+      });
+  }, [homeMonthSchedules, selectedCalendarDate]);
+
 
   return (
     <div className="home-page">
@@ -693,41 +764,51 @@ const unreadNotificationCount = useMemo(() => {
   }
 />
 
-                    <div className="rounded-2xl border bg-white p-4">
-                      <div className="mb-4 flex items-center justify-between">
-                        <h3 className="font-semibold">2026. 03</h3>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <button>{"<"}</button>
-                          <button>{">"}</button>
-                        </div>
-                      </div>
+                   <div className="rounded-2xl border bg-white p-4">
+  <ScheduleCalendar
+    year={calendarYear}
+    month={calendarMonth}
+    selectedDate={selectedCalendarDate}
+    schedules={homeCalendarItems}
+    onChangeMonth={(nextYear, nextMonth) => {
+      setCalendarYear(nextYear);
+      setCalendarMonth(nextMonth);
+      setSelectedCalendarDate(
+        `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`
+      );
+    }}
+    onSelectDate={(date) => {
+      setSelectedCalendarDate(date);
+      setScheduleEditorOpen(true);
+    }}
+  />
 
-                      <div className="grid grid-cols-7 gap-2 text-center text-xs text-muted-foreground">
-                        {["일", "월", "화", "수", "목", "금", "토"].map((d) => (
-                          <div key={d} className="py-1">
-                            {d}
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="mt-2 grid grid-cols-7 gap-2 text-center text-sm">
-                        {Array.from({ length: 35 }).map((_, idx) => {
-                          const day = idx + 1;
-                          return (
-                            <div
-                              key={idx}
-                              className={`flex h-10 items-center justify-center rounded-lg ${
-                                day === 17
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-slate-50"
-                              }`}
-                            >
-                              {day <= 31 ? day : ""}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+  <div className="mt-4 space-y-2">
+    {selectedCalendarDateSchedules.length === 0 ? (
+      <div className="rounded-xl border bg-slate-50 px-3 py-3 text-sm text-muted-foreground">
+        선택한 날짜에 등록된 일정이 없습니다.
+      </div>
+    ) : (
+      selectedCalendarDateSchedules.slice(0, 3).map((item: any) => (
+        <div
+          key={item.id}
+          className="rounded-xl border bg-white px-3 py-3"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-sm font-semibold">{item.title}</p>
+            <span className="text-xs text-muted-foreground">
+              {item.ampm === "AM" ? "오전" : "오후"}{" "}
+              {item.hour}:{String(item.minute).padStart(2, "0")}
+            </span>
+          </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {item.isGlobal ? "전체 일정" : "개인 일정"}
+          </p>
+        </div>
+      ))
+    )}
+  </div>
+</div>
                   </CardContent>
                 </Card>
 
@@ -817,5 +898,32 @@ const unreadNotificationCount = useMemo(() => {
         </div>
       </div>
     </div>
+      <ScheduleEditorDialog
+        open={scheduleEditorOpen}
+        mode="create"
+        selectedDate={selectedCalendarDate}
+        initialValue={{
+          title: "",
+          description: "",
+          date: selectedCalendarDate,
+          ampm: "AM",
+          hour: 9,
+          minute: 0,
+          isGlobal: false,
+        }}
+        isSubmitting={createScheduleMutation.isPending}
+        onClose={() => setScheduleEditorOpen(false)}
+        onSubmit={(payload) => {
+          createScheduleMutation.mutate({
+            title: payload.title,
+            description: payload.description,
+            date: payload.date,
+            ampm: payload.ampm,
+            hour: payload.hour,
+            minute: payload.minute,
+            isGlobal: payload.isGlobal,
+          });
+        }}
+      />
   );
 }
