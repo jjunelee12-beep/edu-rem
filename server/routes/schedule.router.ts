@@ -81,24 +81,24 @@ export const scheduleRouter = {
       assertLoggedIn(ctx.user);
 
       const globalAllowed = canCreateGlobalSchedule(ctx.user);
-      const scope = globalAllowed && input.isGlobal ? "global" : "personal";
+const scope = globalAllowed && input.isGlobal ? "global" : "personal";
 
-      const startAt = buildDateTimeString(
-        input.date,
-        input.ampm,
-        input.hour,
-        input.minute
-      );
+const startAt = buildDateTimeString(
+  input.date,
+  input.ampm,
+  input.hour,
+  input.minute
+);
 
-     const id = await createSchedule({
+const id = await createSchedule({
   title: input.title,
   description: input.description,
   scheduleDate: input.date,
   meridiem: input.ampm,
   hour12: input.hour,
   minute: input.minute,
-  startAt: buildDateTimeString(input.date, input.ampm, input.hour, input.minute),
-  scope: isGlobal ? "global" : "personal",
+  startAt,
+  scope,
   ownerUserId: Number(ctx.user.id),
   ownerUserName: String(ctx.user.name ?? ""),
   createdByRole: String(ctx.user.role) as "staff" | "admin" | "host" | "superhost",

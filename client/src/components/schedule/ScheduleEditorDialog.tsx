@@ -190,15 +190,15 @@ export default function ScheduleEditorDialog({
           </div>
 
           {canCreateGlobal ? (
-            <label className="flex items-center gap-2 rounded-lg border px-3 py-3 text-sm">
-              <input
-                type="checkbox"
-                checked={isGlobal}
-                onChange={(e) => setIsGlobal(e.target.checked)}
-              />
-              전체 일정으로 등록
-            </label>
-          ) : null}
+  <label className="flex items-center gap-2 rounded-lg border px-3 py-3">
+    <input
+      type="checkbox"
+      checked={isGlobal}
+      onChange={(e) => setIsGlobal(e.target.checked)}
+    />
+    <span>전체 일정으로 등록</span>
+  </label>
+) : null}
         </div>
 
         <DialogFooter>

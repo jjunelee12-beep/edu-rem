@@ -86,6 +86,9 @@ export default function SchedulePage() {
     !!user &&
     ["staff", "admin", "host", "superhost"].includes(String(user.role));
 
+const canCreateGlobal =
+  !!user && ["host", "superhost"].includes(String(user.role));
+
   const { data: monthRows = [], isLoading } = trpc.schedule.listMonth.useQuery(
     {
       year,
@@ -371,38 +374,39 @@ export default function SchedulePage() {
         </Card>
       </div>
 
-      <ScheduleEditorDialog
-        open={editorOpen}
-        mode={editorMode}
-        selectedDate={selectedDate}
-        initialValue={
-          editorMode === "edit" && editingRow
-            ? {
-                title: editingRow.title ?? "",
-                description: editingRow.description ?? "",
-                date: editingRow.date ?? selectedDate,
-                ampm: editingRow.ampm ?? "AM",
-                hour: Number(editingRow.hour ?? 9),
-                minute: Number(editingRow.minute ?? 0),
-                isGlobal: !!editingRow.isGlobal,
-              }
-            : {
-                title: "",
-                description: "",
-                date: selectedDate,
-                ampm: "AM",
-                hour: 9,
-                minute: 0,
-                isGlobal: false,
-              }
+    <ScheduleEditorDialog
+  open={editorOpen}
+  mode={editorMode}
+  selectedDate={selectedDate}
+  canCreateGlobal={canCreateGlobal}
+  initialValue={
+    editorMode === "edit" && editingRow
+      ? {
+          title: editingRow.title ?? "",
+          description: editingRow.description ?? "",
+          date: editingRow.date ?? selectedDate,
+          ampm: editingRow.ampm ?? "AM",
+          hour: Number(editingRow.hour ?? 9),
+          minute: Number(editingRow.minute ?? 0),
+          isGlobal: !!editingRow.isGlobal,
         }
-        isSubmitting={createMutation.isPending || updateMutation.isPending}
-        onClose={() => {
-          setEditorOpen(false);
-          setEditingRow(null);
-        }}
-        onSubmit={handleSubmitEditor}
-      />
+      : {
+          title: "",
+          description: "",
+          date: selectedDate,
+          ampm: "AM",
+          hour: 9,
+          minute: 0,
+          isGlobal: false,
+        }
+  }
+  isSubmitting={createMutation.isPending || updateMutation.isPending}
+  onClose={() => {
+    setEditorOpen(false);
+    setEditingRow(null);
+  }}
+  onSubmit={handleSubmitEditor}
+/>
     </div>
   );
 }
