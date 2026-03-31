@@ -27,6 +27,7 @@ import AIAssistant from "@/pages/AIAssistant";
 import SuperhostHome from "@/pages/SuperhostHome";
 import MessengerPage from "@/pages/MessengerPage";
 import AttendancePage from "@/pages/AttendancePage";
+import AttendanceViewPage from "@/pages/AttendanceViewPage";
 import MyPage from "@/pages/MyPage";
 
 import NoticesPage from "@/pages/NoticesPage";
@@ -67,6 +68,7 @@ function PrivateRouter() {
         <Route path="/superhost" component={SuperhostHome} />
         <Route path="/messenger" component={MessengerPage} />
         <Route path="/attendance" component={AttendancePage} />
+<Route path="/attendance/view" component={AttendanceViewPage} />
         <Route path="/my" component={MyPage} />
 
         {/* ✅ 추가 */}

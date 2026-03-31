@@ -10,6 +10,9 @@ import {
   updateAttendanceRecordByManager,
   listAttendanceAdjustmentLogs,
   listTeamAttendanceAdjustmentLogs,
+getAttendancePolicy,
+saveAttendancePolicy,
+updateAttendanceStatusByManager,
 } from "./db";
 
 export const attendanceRouter = router({
@@ -99,5 +102,75 @@ export const attendanceRouter = router({
       }
 
       throw new Error("수정 로그 조회 권한이 없습니다.");
+    }),
+
+	  getPolicy: protectedProcedure.query(async ({ ctx }) => {
+    const role = String(ctx.user.role || "");
+
+    if (role !== "superhost") {
+      throw new Error("근무시간 설정 조회 권한이 없습니다.");
+    }
+
+    return await getAttendancePolicy();
+  }),
+
+  savePolicy: protectedProcedure
+    .input(
+      z.object({
+        workStartHour: z.number().int().min(0).max(23),
+        workStartMinute: z.number().int().min(0).max(59),
+        workEndHour: z.number().int().min(0).max(23),
+        workEndMinute: z.number().int().min(0).max(59),
+        autoClockOutEnabled: z.boolean(),
+        autoClockOutHour: z.number().int().min(0).max(23),
+        autoClockOutMinute: z.number().int().min(0).max(59),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const role = String(ctx.user.role || "");
+      if (role !== "superhost") {
+        throw new Error("근무시간 설정 저장 권한이 없습니다.");
+      }
+
+      return await saveAttendancePolicy({
+        actorUserId: Number(ctx.user.id),
+        ...input,
+      });
+    }),
+
+  updateStatus: protectedProcedure
+    .input(
+      z.object({
+        attendanceId: z.number(),
+        status: z.enum([
+          "출근전",
+          "근무중",
+          "퇴근완료",
+          "지각",
+          "조퇴",
+          "병가",
+          "연차",
+          "출장",
+          "반차",
+          "결근",
+        ]),
+        reason: z.string().max(255).nullable().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const role = String(ctx.user.role || "");
+      const actorUserId = Number(ctx.user.id);
+
+      if (role !== "host" && role !== "superhost" && role !== "admin") {
+        throw new Error("상태 수정 권한이 없습니다.");
+      }
+
+      return await updateAttendanceStatusByManager({
+        attendanceId: input.attendanceId,
+        actorUserId,
+        actorRole: role,
+        status: input.status,
+        reason: input.reason ?? null,
+      });
     }),
 });

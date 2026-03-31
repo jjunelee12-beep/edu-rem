@@ -4099,6 +4099,240 @@ async function getDefaultAttendancePolicy() {
   return rows[0] ?? null;
 }
 
+export async function getAttendancePolicy() {
+  const db = await getDb();
+  if (!db) return null;
+
+  const rows = await db
+    .select()
+    .from(attendancePolicies)
+    .where(eq(attendancePolicies.scopeType, "global"))
+    .limit(1);
+
+  return rows[0] ?? null;
+}
+
+export async function saveAttendancePolicy(params: {
+  actorUserId: number;
+  workStartHour: number;
+  workStartMinute: number;
+  workEndHour: number;
+  workEndMinute: number;
+  autoClockOutEnabled: boolean;
+  autoClockOutHour: number;
+  autoClockOutMinute: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB 연결이 없습니다.");
+
+  const current = await getAttendancePolicy();
+
+  if (!current) {
+    await db.insert(attendancePolicies).values({
+      scopeType: "global",
+      scopeId: null,
+      workStartHour: params.workStartHour,
+      workStartMinute: params.workStartMinute,
+      workEndHour: params.workEndHour,
+      workEndMinute: params.workEndMinute,
+      lateGraceMinutes: 0,
+      autoClockOutEnabled: params.autoClockOutEnabled ? 1 : 0,
+      autoClockOutHour: params.autoClockOutHour,
+      autoClockOutMinute: params.autoClockOutMinute,
+      absentMarkNextDayEnabled: 1,
+      timezone: "Asia/Seoul",
+      createdBy: params.actorUserId,
+      updatedBy: params.actorUserId,
+    } as any);
+
+    return await getAttendancePolicy();
+  }
+
+  await db
+    .update(attendancePolicies)
+    .set({
+      workStartHour: params.workStartHour,
+      workStartMinute: params.workStartMinute,
+      workEndHour: params.workEndHour,
+      workEndMinute: params.workEndMinute,
+      autoClockOutEnabled: params.autoClockOutEnabled ? 1 : 0,
+      autoClockOutHour: params.autoClockOutHour,
+      autoClockOutMinute: params.autoClockOutMinute,
+      updatedBy: params.actorUserId,
+    } as any)
+    .where(eq(attendancePolicies.id, current.id));
+
+  return await getAttendancePolicy();
+}
+
+export async function updateAttendanceStatusByManager(params: {
+  attendanceId: number;
+  actorUserId: number;
+  actorRole: string;
+  status:
+    | "출근전"
+    | "근무중"
+    | "퇴근완료"
+    | "지각"
+    | "조퇴"
+    | "병가"
+    | "연차"
+    | "출장"
+    | "반차"
+    | "결근";
+  reason?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB 연결이 없습니다.");
+
+  const row = await db
+    .select()
+    .from(attendanceRecords)
+    .where(eq(attendanceRecords.id, params.attendanceId))
+    .limit(1);
+
+  const current = row[0];
+  if (!current) {
+    throw new Error("근태 기록을 찾을 수 없습니다.");
+  }
+
+  // admin은 자기 팀만 수정 가능
+  if (params.actorRole === "admin") {
+    const myTeamId = await getMyTeamId(params.actorUserId);
+    if (!myTeamId) {
+      throw new Error("관리자 팀 정보를 찾을 수 없습니다.");
+    }
+
+    const [targetRows] = await db.execute(sql`
+      SELECT map.teamId
+      FROM users u
+      LEFT JOIN user_org_mappings map ON map.userId = u.id
+      WHERE u.id = ${current.userId}
+      LIMIT 1
+    `);
+
+    const targetTeamId = Number((targetRows as any[])?.[0]?.teamId || 0);
+
+    if (!targetTeamId || targetTeamId !== myTeamId) {
+      throw new Error("자기 팀 직원의 근태만 수정할 수 있습니다.");
+    }
+  }
+
+  let nextClockInAt = current.clockInAt ? new Date(current.clockInAt) : null;
+  let nextClockOutAt = current.clockOutAt ? new Date(current.clockOutAt) : null;
+  let nextWorkMinutes = Number(current.workMinutes || 0);
+  let isLate = Number(current.isLate || 0);
+  let lateMinutes = Number(current.lateMinutes || 0);
+  let isEarlyLeave = Number(current.isEarlyLeave || 0);
+  let earlyLeaveMinutes = Number(current.earlyLeaveMinutes || 0);
+  let isAbsent = Number(current.isAbsent || 0);
+
+  // 퇴근완료로 바꿀 때 출퇴근 시간이 비어 있으면 정책 시간 자동 주입
+  if (params.status === "퇴근완료" && !nextClockInAt && !nextClockOutAt) {
+    const policy = await getAttendancePolicy();
+
+    const workDate = String(current.workDate).slice(0, 10);
+    const startHour = Number(policy?.workStartHour ?? 9);
+    const startMinute = Number(policy?.workStartMinute ?? 0);
+    const endHour = Number(policy?.workEndHour ?? 18);
+    const endMinute = Number(policy?.workEndMinute ?? 0);
+
+    nextClockInAt = new Date(
+      `${workDate}T${String(startHour).padStart(2, "0")}:${String(
+        startMinute
+      ).padStart(2, "0")}:00`
+    );
+    nextClockOutAt = new Date(
+      `${workDate}T${String(endHour).padStart(2, "0")}:${String(endMinute).padStart(
+        2,
+        "0"
+      )}:00`
+    );
+
+    nextWorkMinutes = calcWorkMinutes(nextClockInAt, nextClockOutAt);
+
+    const late = calcLateInfo(nextClockInAt);
+    const early = calcEarlyLeaveInfo(nextClockOutAt);
+
+    isLate = late.isLate ? 1 : 0;
+    lateMinutes = late.lateMinutes;
+    isEarlyLeave = early.isEarlyLeave ? 1 : 0;
+    earlyLeaveMinutes = early.earlyLeaveMinutes;
+    isAbsent = 0;
+  }
+
+  // 출근전 / 결근 같은 상태면 시간 비우기
+  if (params.status === "출근전" || params.status === "결근") {
+    nextClockInAt = null;
+    nextClockOutAt = null;
+    nextWorkMinutes = 0;
+    isLate = 0;
+    lateMinutes = 0;
+    isEarlyLeave = 0;
+    earlyLeaveMinutes = 0;
+    isAbsent = params.status === "결근" ? 1 : 0;
+  }
+
+  // 병가/연차/출장/반차는 시간 없이 상태만 반영
+  if (
+    params.status === "병가" ||
+    params.status === "연차" ||
+    params.status === "출장" ||
+    params.status === "반차"
+  ) {
+    nextClockInAt = null;
+    nextClockOutAt = null;
+    nextWorkMinutes = 0;
+    isLate = 0;
+    lateMinutes = 0;
+    isEarlyLeave = 0;
+    earlyLeaveMinutes = 0;
+    isAbsent = 0;
+  }
+
+  await db
+    .update(attendanceRecords)
+    .set({
+      clockInAt: nextClockInAt,
+      clockOutAt: nextClockOutAt,
+      workMinutes: nextWorkMinutes,
+      status: params.status,
+      isLate,
+      lateMinutes,
+      isEarlyLeave,
+      earlyLeaveMinutes,
+      isAbsent,
+      isAutoClockOut: 0,
+      note: params.reason ?? current.note ?? null,
+    } as any)
+    .where(eq(attendanceRecords.id, current.id));
+
+  await db.insert(attendanceAdjustmentLogs).values({
+    attendanceId: current.id,
+    targetUserId: current.userId,
+    actorUserId: params.actorUserId,
+    beforeClockInAt: current.clockInAt ?? null,
+    beforeClockOutAt: current.clockOutAt ?? null,
+    afterClockInAt: nextClockInAt,
+    afterClockOutAt: nextClockOutAt,
+    reason: params.reason ?? null,
+    actionType: "manual_edit",
+    beforeStatus: current.status ?? null,
+    afterStatus: params.status,
+    note: params.reason ?? null,
+  } as any);
+
+  const updated = await db
+    .select()
+    .from(attendanceRecords)
+    .where(eq(attendanceRecords.id, current.id))
+    .limit(1);
+
+  return updated[0] ?? null;
+}
+
+
+
 function getNowKSTDate() {
   const now = new Date();
   const kstOffset = 9 * 60 * 60 * 1000;

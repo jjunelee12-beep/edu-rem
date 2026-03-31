@@ -1,0 +1,806 @@
+import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "wouter";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
+function formatDate(dateStr?: string | null) {
+  if (!dateStr) return "-";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return String(dateStr);
+  return d.toLocaleDateString("ko-KR");
+}
+
+function formatDateTime(dateStr?: string | null) {
+  if (!dateStr) return "-";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function formatWorkMinutes(minutes?: number | null) {
+  const m = Number(minutes || 0);
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return `${h}시간 ${mm}분`;
+}
+
+function escapeCsv(value: unknown) {
+  const str = String(value ?? "");
+  if (str.includes('"') || str.includes(",") || str.includes("\n")) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+function getCurrentMonthValue() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getTodayValue() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+    now.getDate()
+  ).padStart(2, "0")}`;
+}
+
+function getMonthTitle(monthValue: string) {
+  const [year, month] = monthValue.split("-");
+  return `${year}년 ${Number(month)}월 근무기록표`;
+}
+
+type StatusType =
+  | "출근전"
+  | "근무중"
+  | "퇴근완료"
+  | "지각"
+  | "조퇴"
+  | "병가"
+  | "연차"
+  | "출장"
+  | "반차"
+  | "결근";
+
+const STATUS_OPTIONS: StatusType[] = [
+  "출근전",
+  "근무중",
+  "퇴근완료",
+  "지각",
+  "조퇴",
+  "병가",
+  "연차",
+  "출장",
+  "반차",
+  "결근",
+];
+
+export default function AttendanceViewPage() {
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
+
+  const canViewAll = user?.role === "host" || user?.role === "superhost";
+  const isSuperhost = user?.role === "superhost";
+
+  const [monthFilter, setMonthFilter] = useState(getCurrentMonthValue());
+  const [baseDate, setBaseDate] = useState(getTodayValue());
+  const [keyword, setKeyword] = useState("");
+  const [statusFilter, setStatusFilter] = useState("전체");
+
+  const [editingRow, setEditingRow] = useState<any | null>(null);
+  const [editClockIn, setEditClockIn] = useState("");
+  const [editClockOut, setEditClockOut] = useState("");
+  const [editReason, setEditReason] = useState("");
+
+  // 슈퍼호스트 전용 UI 상태
+  const [policyStartTime, setPolicyStartTime] = useState("09:00");
+  const [policyEndTime, setPolicyEndTime] = useState("18:00");
+  const [policyAutoClockOut, setPolicyAutoClockOut] = useState(true);
+const { data: attendancePolicy } = trpc.attendance.getPolicy.useQuery(undefined, {
+  enabled: isSuperhost,
+});
+
+useEffect(() => {
+  if (!attendancePolicy) return;
+
+  setPolicyStartTime(
+    `${String(attendancePolicy.workStartHour ?? 9).padStart(2, "0")}:${String(
+      attendancePolicy.workStartMinute ?? 0
+    ).padStart(2, "0")}`
+  );
+  setPolicyEndTime(
+    `${String(attendancePolicy.workEndHour ?? 18).padStart(2, "0")}:${String(
+      attendancePolicy.workEndMinute ?? 0
+    ).padStart(2, "0")}`
+  );
+  setPolicyAutoClockOut(!!attendancePolicy.autoClockOutEnabled);
+}, [attendancePolicy]);
+
+  const { data: records = [], isLoading: listLoading } =
+    trpc.attendance.list.useQuery();
+
+  const { data: adjustmentLogs = [], isLoading: logsLoading } =
+    trpc.attendance.adjustmentLogs.useQuery(
+      {},
+      {
+        enabled: !!canViewAll,
+      }
+    );
+
+  const updateByManagerMutation = trpc.attendance.updateByManager.useMutation({
+    onSuccess: async () => {
+      setEditingRow(null);
+      setEditClockIn("");
+      setEditClockOut("");
+      setEditReason("");
+
+      await Promise.all([
+        utils.attendance.list.invalidate(),
+        utils.attendance.today.invalidate(),
+        utils.attendance.adjustmentLogs.invalidate(),
+      ]);
+    },
+    onError: (err) => {
+      alert(err.message || "근태 수정 중 오류가 발생했습니다.");
+    },
+  });
+
+const savePolicyMutation = trpc.attendance.savePolicy.useMutation({
+  onSuccess: async () => {
+    alert("근무시간 설정이 저장되었습니다.");
+    await utils.attendance.getPolicy.invalidate();
+  },
+  onError: (err) => {
+    alert(err.message || "근무시간 설정 저장 중 오류가 발생했습니다.");
+  },
+});
+
+const updateStatusMutation = trpc.attendance.updateStatus.useMutation({
+  onSuccess: async () => {
+    await Promise.all([
+      utils.attendance.list.invalidate(),
+      utils.attendance.today.invalidate(),
+      utils.attendance.adjustmentLogs.invalidate(),
+    ]);
+  },
+  onError: (err) => {
+    alert(err.message || "상태 변경 중 오류가 발생했습니다.");
+  },
+});
+
+  const roleText = useMemo(() => {
+    if (user?.role === "superhost") return "슈퍼호스트";
+    if (user?.role === "host") return "호스트";
+    if (user?.role === "admin") return "관리자";
+    return "직원";
+  }, [user?.role]);
+
+  const openEditModal = (row: any) => {
+    setEditingRow(row);
+    setEditClockIn(
+      row?.clockInAt ? new Date(row.clockInAt).toISOString().slice(0, 16) : ""
+    );
+    setEditClockOut(
+      row?.clockOutAt ? new Date(row.clockOutAt).toISOString().slice(0, 16) : ""
+    );
+    setEditReason("");
+  };
+
+  const filteredRecords = useMemo(() => {
+    const monthPrefix = monthFilter;
+
+    return (records as any[]).filter((row: any) => {
+      const rowName = String(row.name || "").toLowerCase();
+      const rowUsername = String(row.username || "").toLowerCase();
+      const rowPhone = String(row.phone || "");
+      const rowStatus = String(row.status || "");
+      const rowDate = String(row.workDate || "").slice(0, 10);
+      const rowMonth = rowDate.slice(0, 7);
+
+      const matchKeyword = !keyword.trim()
+        ? true
+        : rowName.includes(keyword.trim().toLowerCase()) ||
+          rowUsername.includes(keyword.trim().toLowerCase()) ||
+          rowPhone.includes(keyword.trim());
+
+      const matchStatus =
+        statusFilter === "전체" ? true : rowStatus === statusFilter;
+
+      const matchMonth = !monthPrefix ? true : rowMonth === monthPrefix;
+
+      return matchKeyword && matchStatus && matchMonth;
+    });
+  }, [records, keyword, statusFilter, monthFilter]);
+
+  const summary = useMemo(() => {
+    const total = filteredRecords.length;
+    const working = filteredRecords.filter(
+      (r: any) => r.status === "근무중"
+    ).length;
+    const done = filteredRecords.filter(
+      (r: any) => r.status === "퇴근완료"
+    ).length;
+    const late = filteredRecords.filter(
+      (r: any) => r.status === "지각" || !!r.isLate
+    ).length;
+    const earlyLeave = filteredRecords.filter(
+      (r: any) => r.status === "조퇴" || !!r.isEarlyLeave
+    ).length;
+    const absent = filteredRecords.filter(
+      (r: any) => r.status === "결근"
+    ).length;
+
+    return {
+      total,
+      working,
+      done,
+      late,
+      earlyLeave,
+      absent,
+    };
+  }, [filteredRecords]);
+
+  const filteredLogs = useMemo(() => {
+    const monthPrefix = monthFilter;
+
+    return (adjustmentLogs as any[]).filter((row: any) => {
+      const rowName = String(row.targetUserName || "").toLowerCase();
+      const rowUsername = String(row.targetUserUsername || "").toLowerCase();
+      const rowPhone = String(row.targetUserPhone || "");
+      const createdDate = String(row.createdAt || "").slice(0, 10);
+      const createdMonth = createdDate.slice(0, 7);
+
+      const matchKeyword = !keyword.trim()
+        ? true
+        : rowName.includes(keyword.trim().toLowerCase()) ||
+          rowUsername.includes(keyword.trim().toLowerCase()) ||
+          rowPhone.includes(keyword.trim());
+
+      const matchMonth = !monthPrefix ? true : createdMonth === monthPrefix;
+
+      return matchKeyword && matchMonth;
+    });
+  }, [adjustmentLogs, keyword, monthFilter]);
+
+  const downloadCsv = () => {
+    if (!canViewAll) return;
+
+    const headers = [
+      "이름",
+      "아이디",
+      "전화번호",
+      "팀",
+      "직급",
+      "근무일",
+      "출근",
+      "퇴근",
+      "근무시간",
+      "상태",
+      "지각여부",
+      "지각분",
+      "조퇴여부",
+      "조퇴분",
+      "자동퇴근",
+      "휴가유형",
+      "비고",
+    ];
+
+    const rows = filteredRecords.map((row: any) => [
+      row.name || "",
+      row.username || "",
+      row.phone || "",
+      row.teamName || row.team || "",
+      row.positionName || row.position || "",
+      row.workDate ? formatDate(row.workDate) : "",
+      row.clockInAt ? formatDateTime(row.clockInAt) : "",
+      row.clockOutAt ? formatDateTime(row.clockOutAt) : "",
+      formatWorkMinutes(row.workMinutes),
+      row.status || "",
+      row.isLate ? "Y" : "N",
+      row.lateMinutes ?? 0,
+      row.isEarlyLeave ? "Y" : "N",
+      row.earlyLeaveMinutes ?? 0,
+      row.isAutoClockOut ? "Y" : "N",
+      row.leaveType || "",
+      row.note || "",
+    ]);
+
+    const csv = [
+      headers.map(escapeCsv).join(","),
+      ...rows.map((row) => row.map(escapeCsv).join(",")),
+    ].join("\n");
+
+    const bom = "\uFEFF";
+    const blob = new Blob([bom + csv], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+
+    const today = new Date();
+    const fileName = `attendance_view_${today.getFullYear()}-${String(
+      today.getMonth() + 1
+    ).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}.csv`;
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", fileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  if (!canViewAll) {
+    return (
+      <div className="space-y-5">
+        <Card>
+          <CardContent className="p-8 text-center">
+            <p className="text-base font-semibold">접근 권한이 없습니다.</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              열람 페이지는 호스트 / 슈퍼호스트만 접근할 수 있습니다.
+            </p>
+            <div className="mt-4">
+              <Button variant="outline" onClick={() => setLocation("/attendance")}>
+                근태 관리로 돌아가기
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <Card>
+        <CardContent className="p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h2 className="text-lg font-bold">{getMonthTitle(monthFilter)}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {user?.name} · {roleText}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => setLocation("/attendance")}>
+                근태 관리로 돌아가기
+              </Button>
+              <Button onClick={downloadCsv}>CSV 다운로드</Button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-5">
+            <div>
+              <label className="mb-1 block text-sm font-medium">기준 날짜</label>
+              <Input
+                type="date"
+                value={baseDate}
+                onChange={(e) => setBaseDate(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium">조회 월</label>
+              <Input
+                type="month"
+                value={monthFilter}
+                onChange={(e) => setMonthFilter(e.target.value)}
+              />
+            </div>
+
+            <div className="xl:col-span-2">
+              <label className="mb-1 block text-sm font-medium">
+                검색 (이름 / 아이디 / 전화번호)
+              </label>
+              <Input
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                placeholder="직원명, 아이디, 전화번호 검색"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium">상태</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="h-10 w-full rounded-md border bg-white px-3 text-sm"
+              >
+                <option value="전체">전체 상태</option>
+                {STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {isSuperhost ? (
+        <Card>
+          <CardContent className="p-5">
+            <div className="mb-4">
+              <h3 className="text-base font-bold">슈퍼호스트 근무시간 설정</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+  슈퍼호스트가 기본 출근/퇴근 시간과 자동 퇴근 사용 여부를 설정할 수 있습니다.
+</p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-sm font-medium">기본 출근 시간</label>
+                <Input
+                  type="time"
+                  value={policyStartTime}
+                  onChange={(e) => setPolicyStartTime(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">기본 퇴근 시간</label>
+                <Input
+                  type="time"
+                  value={policyEndTime}
+                  onChange={(e) => setPolicyEndTime(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">자동 퇴근 사용</label>
+                <select
+                  value={policyAutoClockOut ? "Y" : "N"}
+                  onChange={(e) => setPolicyAutoClockOut(e.target.value === "Y")}
+                  className="h-10 w-full rounded-md border bg-white px-3 text-sm"
+                >
+                  <option value="Y">사용</option>
+                  <option value="N">미사용</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <Button
+  onClick={() => {
+    const [startHour, startMinute] = policyStartTime.split(":").map(Number);
+    const [endHour, endMinute] = policyEndTime.split(":").map(Number);
+
+    savePolicyMutation.mutate({
+      workStartHour: startHour,
+      workStartMinute: startMinute,
+      workEndHour: endHour,
+      workEndMinute: endMinute,
+      autoClockOutEnabled: policyAutoClockOut,
+      autoClockOutHour: endHour,
+      autoClockOutMinute: endMinute,
+    });
+  }}
+  disabled={savePolicyMutation.isPending}
+>
+  설정 저장
+</Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card>
+        <CardContent className="p-5">
+          <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-6">
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-xs text-muted-foreground">조회 건수</p>
+              <p className="mt-1 text-lg font-bold">{summary.total}</p>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-xs text-muted-foreground">근무중</p>
+              <p className="mt-1 text-lg font-bold">{summary.working}</p>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-xs text-muted-foreground">퇴근완료</p>
+              <p className="mt-1 text-lg font-bold">{summary.done}</p>
+            </div>
+
+            <div className="rounded-2xl bg-red-50 p-4">
+              <p className="text-xs text-muted-foreground">지각</p>
+              <p className="mt-1 text-lg font-bold text-red-600">
+                {summary.late}
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-amber-50 p-4">
+              <p className="text-xs text-muted-foreground">조퇴</p>
+              <p className="mt-1 text-lg font-bold text-amber-600">
+                {summary.earlyLeave}
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-rose-50 p-4">
+              <p className="text-xs text-muted-foreground">결근</p>
+              <p className="mt-1 text-lg font-bold text-rose-600">
+                {summary.absent}
+              </p>
+            </div>
+          </div>
+
+          {listLoading ? (
+            <div className="text-sm text-muted-foreground">불러오는 중...</div>
+          ) : filteredRecords.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              조건에 맞는 기록이 없습니다.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1440px] border-collapse">
+                <thead>
+                  <tr className="border-b bg-slate-50 text-left text-sm">
+                    <th className="px-3 py-3">이름</th>
+                    <th className="px-3 py-3">아이디</th>
+                    <th className="px-3 py-3">전화번호</th>
+                    <th className="px-3 py-3">팀</th>
+                    <th className="px-3 py-3">직급</th>
+                    <th className="px-3 py-3">근무일</th>
+                    <th className="px-3 py-3">출근</th>
+                    <th className="px-3 py-3">퇴근</th>
+                    <th className="px-3 py-3">근무시간</th>
+                    <th className="px-3 py-3">상태</th>
+                    <th className="px-3 py-3">관리</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRecords.map((row: any) => (
+                    <tr key={row.id} className="border-b text-sm">
+                      <td className="px-3 py-3 font-medium">{row.name}</td>
+                      <td className="px-3 py-3">{row.username || "-"}</td>
+                      <td className="px-3 py-3">{row.phone || "-"}</td>
+                      <td className="px-3 py-3">{row.teamName || row.team || "-"}</td>
+                      <td className="px-3 py-3">
+                        {row.positionName || row.position || "-"}
+                      </td>
+                      <td className="px-3 py-3">{formatDate(row.workDate)}</td>
+                      <td className="px-3 py-3">{formatDateTime(row.clockInAt)}</td>
+                      <td className="px-3 py-3">{formatDateTime(row.clockOutAt)}</td>
+                      <td className="px-3 py-3">{formatWorkMinutes(row.workMinutes)}</td>
+                      <td className="px-3 py-3">
+                        <div className="flex flex-col gap-1">
+                          <select
+  value={row.status || "출근전"}
+  className="h-9 rounded-md border bg-white px-2 text-sm"
+  onChange={(e) => {
+    const nextStatus = e.target.value as StatusType;
+
+    updateStatusMutation.mutate({
+      attendanceId: Number(row.id),
+      status: nextStatus,
+      reason: `열람 페이지 상태변경: ${nextStatus}`,
+    });
+  }}
+>
+  {STATUS_OPTIONS.map((status) => (
+    <option key={status} value={status}>
+      {status}
+    </option>
+  ))}
+</select>
+
+                          <div>
+                            {row.isLate ? (
+                              <span className="text-xs text-red-500">
+                                지각 {row.lateMinutes}분
+                              </span>
+                            ) : null}
+                            {row.isLate && row.isEarlyLeave ? (
+                              <span className="mx-1 text-xs text-muted-foreground">/</span>
+                            ) : null}
+                            {row.isEarlyLeave ? (
+                              <span className="text-xs text-orange-500">
+                                조퇴 {row.earlyLeaveMinutes}분
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openEditModal(row)}
+                        >
+                          수정
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {editingRow ? (
+        <Card>
+          <CardContent className="p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold">근태 수정</h3>
+                <p className="text-sm text-muted-foreground">
+                  {editingRow.name} · {formatDate(editingRow.workDate)}
+                </p>
+              </div>
+
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setEditingRow(null);
+                  setEditClockIn("");
+                  setEditClockOut("");
+                  setEditReason("");
+                }}
+              >
+                닫기
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-sm font-medium">출근 시간</label>
+                <Input
+                  type="datetime-local"
+                  value={editClockIn}
+                  onChange={(e) => setEditClockIn(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">퇴근 시간</label>
+                <Input
+                  type="datetime-local"
+                  value={editClockOut}
+                  onChange={(e) => setEditClockOut(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">수정 사유</label>
+                <Input
+                  value={editReason}
+                  onChange={(e) => setEditReason(e.target.value)}
+                  placeholder="예: 외근으로 수동 보정"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <Button
+                onClick={() =>
+                  updateByManagerMutation.mutate({
+                    attendanceId: Number(editingRow.id),
+                    clockInAt: editClockIn || null,
+                    clockOutAt: editClockOut || null,
+                    reason: editReason || null,
+                  })
+                }
+                disabled={updateByManagerMutation.isPending}
+              >
+                저장
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditingRow(null);
+                  setEditClockIn("");
+                  setEditClockOut("");
+                  setEditReason("");
+                }}
+              >
+                취소
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card>
+        <CardContent className="p-5">
+          <div className="mb-4">
+            <h3 className="text-base font-bold">근태 수정 로그</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              열람 페이지에서도 수정 이력을 바로 확인할 수 있습니다.
+            </p>
+          </div>
+
+          {logsLoading ? (
+            <div className="text-sm text-muted-foreground">로그 불러오는 중...</div>
+          ) : filteredLogs.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              수정 로그가 없습니다.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1600px] border-collapse">
+                <thead>
+                  <tr className="border-b bg-slate-50 text-left text-sm">
+                    <th className="px-3 py-3">수정일시</th>
+                    <th className="px-3 py-3">대상자</th>
+                    <th className="px-3 py-3">대상자 아이디</th>
+                    <th className="px-3 py-3">대상자 전화번호</th>
+                    <th className="px-3 py-3">수정자</th>
+                    <th className="px-3 py-3">처리유형</th>
+                    <th className="px-3 py-3">수정 전 상태</th>
+                    <th className="px-3 py-3">수정 후 상태</th>
+                    <th className="px-3 py-3">수정 전 출근</th>
+                    <th className="px-3 py-3">수정 전 퇴근</th>
+                    <th className="px-3 py-3">수정 후 출근</th>
+                    <th className="px-3 py-3">수정 후 퇴근</th>
+                    <th className="px-3 py-3">사유</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredLogs.map((row: any) => (
+                    <tr key={row.id} className="border-b text-sm">
+                      <td className="px-3 py-3">
+                        {row.createdAt
+                          ? new Date(row.createdAt).toLocaleString("ko-KR")
+                          : "-"}
+                      </td>
+                      <td className="px-3 py-3 font-medium">
+                        {row.targetUserName || "-"}
+                      </td>
+                      <td className="px-3 py-3">
+                        {row.targetUserUsername || "-"}
+                      </td>
+                      <td className="px-3 py-3">
+                        {row.targetUserPhone || "-"}
+                      </td>
+                      <td className="px-3 py-3">
+                        {row.actorUserName || "-"}
+                      </td>
+                      <td className="px-3 py-3">{row.actionType || "-"}</td>
+                      <td className="px-3 py-3">{row.beforeStatus || "-"}</td>
+                      <td className="px-3 py-3">{row.afterStatus || "-"}</td>
+                      <td className="px-3 py-3">
+                        {row.beforeClockInAt
+                          ? new Date(row.beforeClockInAt).toLocaleString("ko-KR")
+                          : "-"}
+                      </td>
+                      <td className="px-3 py-3">
+                        {row.beforeClockOutAt
+                          ? new Date(row.beforeClockOutAt).toLocaleString("ko-KR")
+                          : "-"}
+                      </td>
+                      <td className="px-3 py-3">
+                        {row.afterClockInAt
+                          ? new Date(row.afterClockInAt).toLocaleString("ko-KR")
+                          : "-"}
+                      </td>
+                      <td className="px-3 py-3">
+                        {row.afterClockOutAt
+                          ? new Date(row.afterClockOutAt).toLocaleString("ko-KR")
+                          : "-"}
+                      </td>
+                      <td className="px-3 py-3">
+                        {row.note || row.reason || "-"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
