@@ -19,7 +19,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 20 * 1024 * 1024 },
 });
 
 router.post("/api/notices/upload-image", upload.single("image"), (req, res) => {
@@ -30,6 +30,21 @@ router.post("/api/notices/upload-image", upload.single("image"), (req, res) => {
   return res.json({
     ok: true,
     url: `/uploads/notices/${req.file.filename}`,
+  });
+});
+
+router.post("/api/upload", upload.single("file"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: "첨부파일이 없습니다." });
+  }
+
+  return res.json({
+    ok: true,
+    url: `/uploads/notices/${req.file.filename}`,
+    fileUrl: `/uploads/notices/${req.file.filename}`,
+    fileName: req.file.originalname,
+    storedName: req.file.filename,
+    size: req.file.size,
   });
 });
 

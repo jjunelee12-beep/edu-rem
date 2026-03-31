@@ -14,6 +14,7 @@ import {
   Undo2,
   Redo2,
   Image as ImageIcon,
+  Pilcrow,
 } from "lucide-react";
 import { useEffect, useRef } from "react";
 
@@ -24,24 +25,29 @@ type NoticeRichEditorProps = {
 
 async function uploadNoticeImage(file: File) {
   const formData = new FormData();
-  formData.append("image", file);
+formData.append("file", file);
 
-  const res = await fetch("/api/notices/upload-image", {
+const res = await fetch(
+  `${import.meta.env.VITE_API_BASE_URL || ""}/api/upload`,
+  {
     method: "POST",
     body: formData,
     credentials: "include",
-  });
+  }
+);
 
   if (!res.ok) {
     throw new Error("이미지 업로드에 실패했습니다.");
   }
 
   const json = await res.json();
-  if (!json?.url) {
-    throw new Error("업로드 URL을 받지 못했습니다.");
-  }
+  const fileUrl = json?.fileUrl || json?.url;
 
-  return json.url as string;
+if (!fileUrl) {
+  throw new Error("업로드 URL을 받지 못했습니다.");
+}
+
+return String(fileUrl);
 }
 
 export default function NoticeRichEditor({
@@ -52,7 +58,11 @@ export default function NoticeRichEditor({
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        heading: {
+          levels: [1, 2],
+        },
+      }),
       Image.configure({
         inline: false,
         allowBase64: false,
@@ -67,7 +77,7 @@ export default function NoticeRichEditor({
               .focus()
               .insertContentAt(pos, {
                 type: "image",
-                attrs: { src: url },
+                attrs: { src: url, alt: file.name },
               })
               .run();
           }
@@ -75,7 +85,7 @@ export default function NoticeRichEditor({
         onPaste: async (editor, files) => {
           for (const file of files) {
             const url = await uploadNoticeImage(file);
-            editor.chain().focus().setImage({ src: url }).run();
+            editor.chain().focus().setImage({ src: url, alt: file.name }).run();
           }
         },
       }),
@@ -85,7 +95,7 @@ export default function NoticeRichEditor({
     editorProps: {
       attributes: {
         class:
-          "min-h-[420px] w-full rounded-b-xl border-0 px-4 py-4 text-base leading-7 outline-none focus:outline-none",
+          "notice-editor-content min-h-[460px] w-full px-6 py-5 text-[15px] leading-8 outline-none focus:outline-none",
       },
     },
     onUpdate: ({ editor }) => {
@@ -104,19 +114,19 @@ export default function NoticeRichEditor({
   const handlePickImage = async (file?: File | null) => {
     if (!file || !editor) return;
     const url = await uploadNoticeImage(file);
-    editor.chain().focus().setImage({ src: url }).run();
+    editor.chain().focus().setImage({ src: url, alt: file.name }).run();
   };
 
   if (!editor) {
     return (
-      <div className="min-h-[420px] rounded-xl border bg-white px-4 py-4 text-sm text-muted-foreground">
+      <div className="min-h-[460px] rounded-2xl border bg-white px-6 py-5 text-sm text-muted-foreground">
         에디터 불러오는 중...
       </div>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border bg-white">
+    <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
       <input
         ref={inputRef}
         type="file"
@@ -125,7 +135,7 @@ export default function NoticeRichEditor({
         onChange={(e) => handlePickImage(e.target.files?.[0] ?? null)}
       />
 
-      <div className="flex flex-wrap items-center gap-2 border-b bg-slate-50 px-3 py-3">
+      <div className="flex flex-wrap items-center gap-2 border-b bg-slate-50 px-4 py-3">
         <Button
           type="button"
           size="sm"
@@ -192,10 +202,22 @@ export default function NoticeRichEditor({
         <Button
           type="button"
           size="sm"
+          variant={editor.isActive("paragraph") ? "default" : "outline"}
+          onClick={() => editor.chain().focus().setParagraph().run()}
+        >
+          <Pilcrow className="h-4 w-4" />
+        </Button>
+
+        <div className="mx-1 h-6 w-px bg-slate-200" />
+
+        <Button
+          type="button"
+          size="sm"
           variant="outline"
           onClick={() => inputRef.current?.click()}
         >
-          <ImageIcon className="h-4 w-4" />
+          <ImageIcon className="mr-1 h-4 w-4" />
+          이미지
         </Button>
 
         <div className="mx-1 h-6 w-px bg-slate-200" />

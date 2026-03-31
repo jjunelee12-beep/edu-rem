@@ -643,6 +643,8 @@ app.options("*", cors(corsOptions));
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
+app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
+
 app.use("/api/auth", authRouter);
 app.use("/api/holidays", holidayRouter);
 app.use(noticeUploadRouter);

@@ -131,6 +131,19 @@ export default function Home() {
   const { data: todayAttendanceRow } = trpc.attendance.today.useQuery();
 const { data: myProfile } = trpc.users.me.useQuery();
 const { data: notices = [] } = trpc.notice.list.useQuery();
+const { urgentNotices, pinnedNotices, normalNotices } = useMemo(() => {
+  const list = notices as any[];
+
+  return {
+    urgentNotices: list.filter((n) => n.importance === "urgent"),
+    pinnedNotices: list.filter(
+      (n) => n.isPinned && n.importance !== "urgent"
+    ),
+    normalNotices: list.filter(
+      (n) => !n.isPinned && n.importance !== "urgent"
+    ),
+  };
+}, [notices]);
 const { data: notifications = [] } = trpc.notification.list.useQuery();
 const { data: todaySchedules = [] } = trpc.schedule.listToday.useQuery();
   const now = new Date();
@@ -709,41 +722,64 @@ const unreadNotificationCount = useMemo(() => {
     </Button>
   }
 />
+<div className="space-y-4">
+  {urgentNotices.slice(0, 3).map((notice: any) => (
+    <button
+      key={notice.id}
+      onClick={() => setLocation(`/notices/${notice.id}`)}
+      className="w-full rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-left transition hover:bg-red-100"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="truncate font-semibold text-red-700">
+          🚨 {notice.title}
+        </p>
+        <span className="text-xs text-red-600">긴급</span>
+      </div>
+    </button>
+  ))}
 
-                  <div className="space-y-3">
-                    {(notices as any[]).slice(0, 5).map((notice: any) => (
-  <button
-    key={notice.id}
-    onClick={() => setLocation(`/notices/${notice.id}`)}
-    className="w-full rounded-2xl border bg-white px-4 py-4 text-left transition hover:bg-slate-50"
-  >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="truncate font-semibold">{notice.title}</p>
-                            {notice.importance === "urgent" ? (
-  <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600">
-    긴급
-  </span>
-) : notice.importance === "important" ? (
-  <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-600">
-    중요
-  </span>
-) : null}
-                            </div>
-                            <p className="mt-1 text-sm text-muted-foreground">
-  {String(notice.content ?? "").slice(0, 80)}
-</p>
-                          </div>
-                          <span className="shrink-0 text-xs text-muted-foreground">
-                            {notice.createdAt
-  ? new Date(notice.createdAt).toLocaleDateString("ko-KR")
-  : "-"}
-                          </span>
-                        </div>
-                     </button>
-))}
-                  </div>
+  {pinnedNotices.slice(0, 3).map((notice: any) => (
+    <button
+      key={notice.id}
+      onClick={() => setLocation(`/notices/${notice.id}`)}
+      className="w-full rounded-2xl border bg-amber-50 px-4 py-4 text-left transition hover:bg-amber-100"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="truncate font-semibold text-amber-800">
+          📌 {notice.title}
+        </p>
+        <span className="text-xs text-muted-foreground">
+          {notice.createdAt
+            ? new Date(notice.createdAt).toLocaleDateString("ko-KR")
+            : "-"}
+        </span>
+      </div>
+    </button>
+  ))}
+
+  {normalNotices.slice(0, 5).map((notice: any) => (
+    <button
+      key={notice.id}
+      onClick={() => setLocation(`/notices/${notice.id}`)}
+      className="w-full rounded-2xl border bg-white px-4 py-4 text-left transition hover:bg-slate-50"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-slate-800">
+            {notice.title}
+          </p>
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {notice.createdAt
+            ? new Date(notice.createdAt).toLocaleDateString("ko-KR")
+            : "-"}
+        </span>
+      </div>
+    </button>
+  ))}
+</div>
+
+
                 </CardContent>
               </Card>
 
