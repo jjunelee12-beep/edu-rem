@@ -78,10 +78,11 @@ export const noticeRouter = {
       assertHostOrSuperhost(ctx.user);
 
       const id = await createNotice({
-        title: input.title,
-        content: input.content,
-        authorId: Number(ctx.user.id),
-      });
+  title: input.title,
+  content: input.content,
+  authorId: Number(ctx.user.id),
+  authorName: String(ctx.user.name ?? ""),
+});
 
       return {
         ok: true,

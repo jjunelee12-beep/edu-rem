@@ -28,11 +28,16 @@ function to24Hour(ampm: "AM" | "PM", hour12: number) {
   return h === 12 ? 12 : h + 12;
 }
 
-function buildDateTimeString(date: string, ampm: "AM" | "PM", hour12: number, minute: number) {
-  const hour24 = to24Hour(ampm, hour12);
+function buildDateTimeString(
+  scheduleDate: string,
+  meridiem: "AM" | "PM",
+  hour12: number,
+  minute: number
+) {
+  const hour24 = to24Hour(meridiem, hour12);
   const hh = String(hour24).padStart(2, "0");
   const mm = String(minute).padStart(2, "0");
-  return `${date} ${hh}:${mm}:00`;
+  return `${scheduleDate} ${hh}:${mm}:00`;
 }
 
 export const scheduleRouter = {
@@ -48,21 +53,14 @@ export const scheduleRouter = {
       assertLoggedIn(ctx.user);
 
       const rows = await listMonthSchedules(input.year, input.month);
-      const userId = Number(ctx.user.id);
-      const role = String(ctx.user.role);
-
-      return (rows as any[]).filter((row) => {
-        if (row.isGlobal) return true;
-        if (Number(row.userId) === userId) return true;
-        return role === "host" || role === "superhost";
-      });
+      return rows;
     }),
 
   // 오늘 일정 조회
   listToday: protectedProcedure.query(async ({ ctx }) => {
     assertLoggedIn(ctx.user);
 
-    const rows = await listTodaySchedules(Number(ctx.user.id));
+    const rows = await listTodaySchedules(Number(ctx.user.id), String(ctx.user.role));
     return rows;
   }),
 
@@ -82,24 +80,34 @@ export const scheduleRouter = {
     .mutation(async ({ ctx, input }) => {
       assertLoggedIn(ctx.user);
 
-      const userId = Number(ctx.user.id);
       const globalAllowed = canCreateGlobalSchedule(ctx.user);
-      const isGlobal = globalAllowed ? !!input.isGlobal : false;
+      const scope = globalAllowed && input.isGlobal ? "global" : "personal";
 
-      const id = await createSchedule({
-        title: input.title,
-        date: input.date,
-        hour: input.hour,
-        minute: input.minute,
-        ampm: input.ampm,
-        userId,
-        isGlobal,
-      });
+      const startAt = buildDateTimeString(
+        input.date,
+        input.ampm,
+        input.hour,
+        input.minute
+      );
+
+     const id = await createSchedule({
+  title: input.title,
+  description: input.description,
+  scheduleDate: input.date,
+  meridiem: input.ampm,
+  hour12: input.hour,
+  minute: input.minute,
+  startAt: buildDateTimeString(input.date, input.ampm, input.hour, input.minute),
+  scope: isGlobal ? "global" : "personal",
+  ownerUserId: Number(ctx.user.id),
+  ownerUserName: String(ctx.user.name ?? ""),
+  createdByRole: String(ctx.user.role) as "staff" | "admin" | "host" | "superhost",
+});
 
       return {
         ok: true,
         id: Number(id),
-        startAt: buildDateTimeString(input.date, input.ampm, input.hour, input.minute),
+        startAt,
       };
     }),
 
@@ -119,15 +127,27 @@ export const scheduleRouter = {
     .mutation(async ({ ctx, input }) => {
       assertLoggedIn(ctx.user);
 
-      await updateSchedule(input.id, Number(ctx.user.id), {
-        title: input.title,
-        description: input.description,
-        date: input.date,
-        hour: input.hour,
-        minute: input.minute,
-        ampm: input.ampm,
-        startAt: buildDateTimeString(input.date, input.ampm, input.hour, input.minute),
-      });
+      const startAt = buildDateTimeString(
+        input.date,
+        input.ampm,
+        input.hour,
+        input.minute
+      );
+
+     await updateSchedule(
+  input.id,
+  Number(ctx.user.id),
+  String(ctx.user.role),
+  {
+    title: input.title,
+    description: input.description,
+    scheduleDate: input.date,
+    meridiem: input.ampm,
+    hour12: input.hour,
+    minute: input.minute,
+    startAt: buildDateTimeString(input.date, input.ampm, input.hour, input.minute),
+  }
+);
 
       return { ok: true };
     }),
@@ -142,7 +162,11 @@ export const scheduleRouter = {
     .mutation(async ({ ctx, input }) => {
       assertLoggedIn(ctx.user);
 
-      await deleteSchedule(input.id, Number(ctx.user.id));
+      await deleteSchedule(
+  input.id,
+  Number(ctx.user.id),
+  String(ctx.user.role)
+);
 
       return { ok: true };
     }),

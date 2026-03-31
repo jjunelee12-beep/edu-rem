@@ -4021,10 +4021,14 @@ export async function listNotices() {
   const db = await getDb();
   if (!db) return [];
 
-  return db
-    .select()
-    .from(sql`notices`)
-    .orderBy(desc(sql`id`));
+  const [rows] = await db.execute(sql`
+    SELECT *
+    FROM notices
+    WHERE isActive = 1
+    ORDER BY isPinned DESC, id DESC
+  `);
+
+  return (rows as any[]) ?? [];
 }
 
 export async function getNotice(id: number) {
@@ -4032,23 +4036,44 @@ export async function getNotice(id: number) {
   if (!db) return null;
 
   const [rows] = await db.execute(sql`
-    SELECT * FROM notices WHERE id = ${id} LIMIT 1
+    SELECT *
+    FROM notices
+    WHERE id = ${id}
+      AND isActive = 1
+    LIMIT 1
   `);
 
-  return (rows as any[])[0] ?? null;
+  return ((rows as any[]) ?? [])[0] ?? null;
 }
 
 export async function createNotice(data: {
   title: string;
   content: string;
   authorId: number;
+  authorName?: string | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
   const result: any = await db.execute(sql`
-    INSERT INTO notices (title, content, authorId)
-    VALUES (${data.title}, ${data.content}, ${data.authorId})
+    INSERT INTO notices (
+      title,
+      content,
+      authorId,
+      authorName,
+      isPinned,
+      isActive,
+      viewCount
+    )
+    VALUES (
+      ${data.title},
+      ${data.content},
+      ${data.authorId},
+      ${data.authorName ?? null},
+      0,
+      1,
+      0
+    )
   `);
 
   return getInsertId(result);
@@ -4064,9 +4089,10 @@ export async function updateNotice(
   await db.execute(sql`
     UPDATE notices
     SET
-      title = COALESCE(${data.title}, title),
-      content = COALESCE(${data.content}, content)
+      title = COALESCE(${data.title ?? null}, title),
+      content = COALESCE(${data.content ?? null}, content)
     WHERE id = ${id}
+      AND isActive = 1
   `);
 }
 
@@ -4074,17 +4100,27 @@ export async function deleteNotice(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.execute(sql`DELETE FROM notices WHERE id = ${id}`);
+  await db.execute(sql`
+    UPDATE notices
+    SET isActive = 0
+    WHERE id = ${id}
+  `);
 }
 
 export async function bulkDeleteNotices(ids: number[]) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  if (!ids.length) return;
+  const cleanIds = Array.from(
+    new Set((ids || []).map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0))
+  );
+
+  if (!cleanIds.length) return;
 
   await db.execute(sql`
-    DELETE FROM notices WHERE id IN (${sql.join(ids.map(id => sql`${id}`), sql`, `)})
+    UPDATE notices
+    SET isActive = 0
+    WHERE id IN (${sql.join(cleanIds.map((id) => sql`${id}`), sql`, `)})
   `);
 }
 
@@ -4093,7 +4129,10 @@ export async function increaseNoticeView(id: number) {
   if (!db) return;
 
   await db.execute(sql`
-    UPDATE notices SET views = views + 1 WHERE id = ${id}
+    UPDATE notices
+    SET viewCount = viewCount + 1
+    WHERE id = ${id}
+      AND isActive = 1
   `);
 }
 
@@ -4109,52 +4148,104 @@ export async function listMonthSchedules(year: number, month: number) {
   const end = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
 
   const [rows] = await db.execute(sql`
-    SELECT * FROM schedules
-    WHERE date >= ${start} AND date < ${end}
-    ORDER BY date ASC
+    SELECT *
+    FROM schedules
+    WHERE scheduleDate >= ${start}
+      AND scheduleDate < ${end}
+      AND isActive = 1
+    ORDER BY scheduleDate ASC, startAt ASC, id ASC
   `);
 
-  return rows as any[];
+  return (rows as any[]) ?? [];
 }
 
-export async function listTodaySchedules(userId: number) {
+export async function listTodaySchedules(
+  userId: number,
+  role?: "staff" | "admin" | "host" | "superhost" | string
+) {
   const db = await getDb();
   if (!db) return [];
 
-  const today = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const kstOffsetMs = 9 * 60 * 60 * 1000;
+  const kst = new Date(now.getTime() + kstOffsetMs);
+  const today = `${kst.getUTCFullYear()}-${String(kst.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    kst.getUTCDate()
+  ).padStart(2, "0")}`;
+
+  if (role === "host" || role === "superhost") {
+    const [rows] = await db.execute(sql`
+      SELECT *
+      FROM schedules
+      WHERE scheduleDate = ${today}
+        AND isActive = 1
+      ORDER BY startAt ASC, id ASC
+    `);
+
+    return (rows as any[]) ?? [];
+  }
 
   const [rows] = await db.execute(sql`
-    SELECT * FROM schedules
-    WHERE date = ${today}
-      AND (userId = ${userId} OR isGlobal = true)
-    ORDER BY hour ASC, minute ASC
+    SELECT *
+    FROM schedules
+    WHERE scheduleDate = ${today}
+      AND isActive = 1
+      AND (
+        ownerUserId = ${userId}
+        OR scope = 'global'
+      )
+    ORDER BY startAt ASC, id ASC
   `);
 
-  return rows as any[];
+  return (rows as any[]) ?? [];
 }
 
 export async function createSchedule(data: {
   title: string;
-  date: string;
-  hour: number;
+  description?: string | null;
+  scheduleDate: string;
+  meridiem: "AM" | "PM";
+  hour12: number;
   minute: number;
-  ampm: "AM" | "PM";
-  userId: number;
-  isGlobal: boolean;
+  startAt: string;
+  scope: "personal" | "global";
+  ownerUserId: number;
+  ownerUserName?: string | null;
+  createdByRole: "staff" | "admin" | "host" | "superhost";
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
   const result: any = await db.execute(sql`
-    INSERT INTO schedules (title, date, hour, minute, ampm, userId, isGlobal)
+    INSERT INTO schedules (
+      title,
+      description,
+      scheduleDate,
+      meridiem,
+      hour12,
+      minute,
+      startAt,
+      scope,
+      ownerUserId,
+      ownerUserName,
+      createdByRole,
+      isActive,
+      isNotified
+    )
     VALUES (
       ${data.title},
-      ${data.date},
-      ${data.hour},
+      ${data.description ?? null},
+      ${data.scheduleDate},
+      ${data.meridiem},
+      ${data.hour12},
       ${data.minute},
-      ${data.ampm},
-      ${data.userId},
-      ${data.isGlobal}
+      ${data.startAt},
+      ${data.scope},
+      ${data.ownerUserId},
+      ${data.ownerUserName ?? null},
+      ${data.createdByRole},
+      1,
+      0
     )
   `);
 
@@ -4164,24 +4255,89 @@ export async function createSchedule(data: {
 export async function updateSchedule(
   id: number,
   userId: number,
-  data: any
+  role: "staff" | "admin" | "host" | "superhost" | string,
+  data: {
+    title?: string;
+    description?: string | null;
+    scheduleDate?: string;
+    meridiem?: "AM" | "PM";
+    hour12?: number;
+    minute?: number;
+    startAt?: string;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const existingRows = await db.execute(sql`
+    SELECT *
+    FROM schedules
+    WHERE id = ${id}
+      AND isActive = 1
+    LIMIT 1
+  `);
+
+  const existing = (((existingRows as any)?.[0]) ?? [])[0] ?? ((existingRows as any)?.[0] ?? null);
+  const row = Array.isArray(existingRows?.[0]) ? (existingRows as any)[0][0] : existing;
+
+  if (!row) {
+    throw new Error("일정을 찾을 수 없습니다.");
+  }
+
+  const isOwner = Number(row.ownerUserId) === Number(userId);
+  const isPrivileged = role === "host" || role === "superhost";
+
+  if (!isOwner && !isPrivileged) {
+    throw new Error("수정 권한이 없습니다.");
+  }
+
   await db.execute(sql`
     UPDATE schedules
-    SET title = ${data.title}
-    WHERE id = ${id} AND userId = ${userId}
+    SET
+      title = COALESCE(${data.title ?? null}, title),
+      description = COALESCE(${data.description ?? null}, description),
+      scheduleDate = COALESCE(${data.scheduleDate ?? null}, scheduleDate),
+      meridiem = COALESCE(${data.meridiem ?? null}, meridiem),
+      hour12 = COALESCE(${data.hour12 ?? null}, hour12),
+      minute = COALESCE(${data.minute ?? null}, minute),
+      startAt = COALESCE(${data.startAt ?? null}, startAt)
+    WHERE id = ${id}
+      AND isActive = 1
   `);
 }
 
-export async function deleteSchedule(id: number, userId: number) {
+export async function deleteSchedule(
+  id: number,
+  userId: number,
+  role: "staff" | "admin" | "host" | "superhost" | string
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const [rows] = await db.execute(sql`
+    SELECT *
+    FROM schedules
+    WHERE id = ${id}
+      AND isActive = 1
+    LIMIT 1
+  `);
+
+  const row = ((rows as any[]) ?? [])[0] ?? null;
+
+  if (!row) {
+    throw new Error("일정을 찾을 수 없습니다.");
+  }
+
+  const isOwner = Number(row.ownerUserId) === Number(userId);
+  const isPrivileged = role === "host" || role === "superhost";
+
+  if (!isOwner && !isPrivileged) {
+    throw new Error("삭제 권한이 없습니다.");
+  }
+
   await db.execute(sql`
-    DELETE FROM schedules
-    WHERE id = ${id} AND userId = ${userId}
+    UPDATE schedules
+    SET isActive = 0
+    WHERE id = ${id}
   `);
 }
