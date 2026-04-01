@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import ScheduleCalendar from "@/components/schedule/ScheduleCalendar";
 import ScheduleEditorDialog from "@/components/schedule/ScheduleEditorDialog";
+import { formatTime } from "@/lib/datetime";
 import {
   Search,
   Bell,
@@ -123,18 +124,6 @@ function SectionTitle({
       {right}
     </div>
   );
-}
-
-function formatClock(dateStr?: string | null) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return "";
-
-  return d.toLocaleTimeString("ko-KR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
 }
 
 export default function Home() {
@@ -362,12 +351,12 @@ const unreadNotificationCount = useMemo(() => {
       let time = "";
 
       if (myRow.clockOutAt) {
-        status = "퇴근";
-        time = formatClock(myRow.clockOutAt);
-      } else if (myRow.clockInAt) {
-        status = "출근";
-        time = formatClock(myRow.clockInAt);
-      }
+  status = "퇴근";
+  time = formatTime(myRow.clockOutAt);
+} else if (myRow.clockInAt) {
+  status = "출근";
+  time = formatTime(myRow.clockInAt);
+}
 
       return [
         {
@@ -419,13 +408,13 @@ const unreadNotificationCount = useMemo(() => {
         let status: "출근" | "퇴근" | "미출근" = "미출근";
         let time = "";
 
-        if (row.clockOutAt) {
-          status = "퇴근";
-          time = formatClock(row.clockOutAt);
-        } else if (row.clockInAt) {
-          status = "출근";
-          time = formatClock(row.clockInAt);
-        }
+       if (row.clockOutAt) {
+  status = "퇴근";
+  time = formatTime(row.clockOutAt);
+} else if (row.clockInAt) {
+  status = "출근";
+  time = formatTime(row.clockInAt);
+}
 
         return {
           id: Number(row.id || u.id),
@@ -722,28 +711,28 @@ const unreadNotificationCount = useMemo(() => {
                                 .join(" · ")
                             : "-"}
                         </p>
-                        <p className="mt-2 text-[11px] text-muted-foreground">
-                          {myTodayAttendance?.clockInAt
-                            ? `출근 ${formatClock(myTodayAttendance.clockInAt)}`
-                            : "아직 출근하지 않았습니다."}
-                          {myTodayAttendance?.clockOutAt
-                            ? ` · 퇴근 ${formatClock(myTodayAttendance.clockOutAt)}`
-                            : ""}
-                        </p>
+                      <p className="mt-2 text-[11px] text-muted-foreground">
+  {myTodayAttendance?.clockInAt
+    ? `출근 ${formatTime(myTodayAttendance.clockInAt)}`
+    : "아직 출근하지 않았습니다."}
+  {myTodayAttendance?.clockOutAt
+    ? ` · 퇴근 ${formatTime(myTodayAttendance.clockOutAt)}`
+    : ""}
+</p>
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
                         <div className="rounded-2xl bg-slate-50 p-4">
                           <p className="text-xs text-muted-foreground">출근 시간</p>
                           <p className="mt-1 text-sm font-semibold">
-                            {formatClock(myTodayAttendance?.clockInAt) || "-"}
-                          </p>
+  {formatTime(myTodayAttendance?.clockInAt) || "-"}
+</p>
                         </div>
                         <div className="rounded-2xl bg-slate-50 p-4">
                           <p className="text-xs text-muted-foreground">퇴근 시간</p>
                           <p className="mt-1 text-sm font-semibold">
-                            {formatClock(myTodayAttendance?.clockOutAt) || "-"}
-                          </p>
+  {formatTime(myTodayAttendance?.clockOutAt) || "-"}
+</p>
                         </div>
                       </div>
 

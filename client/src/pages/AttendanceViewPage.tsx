@@ -5,24 +5,12 @@ import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
-function formatDate(dateStr?: string | null) {
-  if (!dateStr) return "-";
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return String(dateStr);
-  return d.toLocaleDateString("ko-KR");
-}
-
-function formatDateTime(dateStr?: string | null) {
-  if (!dateStr) return "-";
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleTimeString("ko-KR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
+import {
+  formatDate,
+  formatTime,
+  formatDateTime,
+  toDateTimeLocalValue,
+} from "@/lib/datetime";
 
 function formatWorkMinutes(minutes?: number | null) {
   const m = Number(minutes || 0);
@@ -99,29 +87,29 @@ export default function AttendanceViewPage() {
   const [editClockOut, setEditClockOut] = useState("");
   const [editReason, setEditReason] = useState("");
 
-  // 슈퍼호스트 전용 UI 상태
   const [policyStartTime, setPolicyStartTime] = useState("09:00");
   const [policyEndTime, setPolicyEndTime] = useState("18:00");
   const [policyAutoClockOut, setPolicyAutoClockOut] = useState(true);
-const { data: attendancePolicy } = trpc.attendance.getPolicy.useQuery(undefined, {
-  enabled: isSuperhost,
-});
 
-useEffect(() => {
-  if (!attendancePolicy) return;
+  const { data: attendancePolicy } = trpc.attendance.getPolicy.useQuery(undefined, {
+    enabled: isSuperhost,
+  });
 
-  setPolicyStartTime(
-    `${String(attendancePolicy.workStartHour ?? 9).padStart(2, "0")}:${String(
-      attendancePolicy.workStartMinute ?? 0
-    ).padStart(2, "0")}`
-  );
-  setPolicyEndTime(
-    `${String(attendancePolicy.workEndHour ?? 18).padStart(2, "0")}:${String(
-      attendancePolicy.workEndMinute ?? 0
-    ).padStart(2, "0")}`
-  );
-  setPolicyAutoClockOut(!!attendancePolicy.autoClockOutEnabled);
-}, [attendancePolicy]);
+  useEffect(() => {
+    if (!attendancePolicy) return;
+
+    setPolicyStartTime(
+      `${String(attendancePolicy.workStartHour ?? 9).padStart(2, "0")}:${String(
+        attendancePolicy.workStartMinute ?? 0
+      ).padStart(2, "0")}`
+    );
+    setPolicyEndTime(
+      `${String(attendancePolicy.workEndHour ?? 18).padStart(2, "0")}:${String(
+        attendancePolicy.workEndMinute ?? 0
+      ).padStart(2, "0")}`
+    );
+    setPolicyAutoClockOut(!!attendancePolicy.autoClockOutEnabled);
+  }, [attendancePolicy]);
 
   const { data: records = [], isLoading: listLoading } =
     trpc.attendance.list.useQuery();
@@ -152,28 +140,28 @@ useEffect(() => {
     },
   });
 
-const savePolicyMutation = trpc.attendance.savePolicy.useMutation({
-  onSuccess: async () => {
-    alert("근무시간 설정이 저장되었습니다.");
-    await utils.attendance.getPolicy.invalidate();
-  },
-  onError: (err) => {
-    alert(err.message || "근무시간 설정 저장 중 오류가 발생했습니다.");
-  },
-});
+  const savePolicyMutation = trpc.attendance.savePolicy.useMutation({
+    onSuccess: async () => {
+      alert("근무시간 설정이 저장되었습니다.");
+      await utils.attendance.getPolicy.invalidate();
+    },
+    onError: (err) => {
+      alert(err.message || "근무시간 설정 저장 중 오류가 발생했습니다.");
+    },
+  });
 
-const updateStatusMutation = trpc.attendance.updateStatus.useMutation({
-  onSuccess: async () => {
-    await Promise.all([
-      utils.attendance.list.invalidate(),
-      utils.attendance.today.invalidate(),
-      utils.attendance.adjustmentLogs.invalidate(),
-    ]);
-  },
-  onError: (err) => {
-    alert(err.message || "상태 변경 중 오류가 발생했습니다.");
-  },
-});
+  const updateStatusMutation = trpc.attendance.updateStatus.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.attendance.list.invalidate(),
+        utils.attendance.today.invalidate(),
+        utils.attendance.adjustmentLogs.invalidate(),
+      ]);
+    },
+    onError: (err) => {
+      alert(err.message || "상태 변경 중 오류가 발생했습니다.");
+    },
+  });
 
   const roleText = useMemo(() => {
     if (user?.role === "superhost") return "슈퍼호스트";
@@ -184,12 +172,8 @@ const updateStatusMutation = trpc.attendance.updateStatus.useMutation({
 
   const openEditModal = (row: any) => {
     setEditingRow(row);
-    setEditClockIn(
-      row?.clockInAt ? new Date(row.clockInAt).toISOString().slice(0, 16) : ""
-    );
-    setEditClockOut(
-      row?.clockOutAt ? new Date(row.clockOutAt).toISOString().slice(0, 16) : ""
-    );
+    setEditClockIn(toDateTimeLocalValue(row?.clockInAt));
+    setEditClockOut(toDateTimeLocalValue(row?.clockOutAt));
     setEditReason("");
   };
 
@@ -299,8 +283,8 @@ const updateStatusMutation = trpc.attendance.updateStatus.useMutation({
       row.teamName || row.team || "",
       row.positionName || row.position || "",
       row.workDate ? formatDate(row.workDate) : "",
-      row.clockInAt ? formatDateTime(row.clockInAt) : "",
-      row.clockOutAt ? formatDateTime(row.clockOutAt) : "",
+      row.clockInAt ? formatTime(row.clockInAt) : "",
+      row.clockOutAt ? formatTime(row.clockOutAt) : "",
       formatWorkMinutes(row.workMinutes),
       row.status || "",
       row.isLate ? "Y" : "N",
@@ -432,8 +416,8 @@ const updateStatusMutation = trpc.attendance.updateStatus.useMutation({
             <div className="mb-4">
               <h3 className="text-base font-bold">슈퍼호스트 근무시간 설정</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-  슈퍼호스트가 기본 출근/퇴근 시간과 자동 퇴근 사용 여부를 설정할 수 있습니다.
-</p>
+                슈퍼호스트가 기본 출근/퇴근 시간과 자동 퇴근 사용 여부를 설정할 수 있습니다.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -470,24 +454,24 @@ const updateStatusMutation = trpc.attendance.updateStatus.useMutation({
 
             <div className="mt-4 flex gap-2">
               <Button
-  onClick={() => {
-    const [startHour, startMinute] = policyStartTime.split(":").map(Number);
-    const [endHour, endMinute] = policyEndTime.split(":").map(Number);
+                onClick={() => {
+                  const [startHour, startMinute] = policyStartTime.split(":").map(Number);
+                  const [endHour, endMinute] = policyEndTime.split(":").map(Number);
 
-    savePolicyMutation.mutate({
-      workStartHour: startHour,
-      workStartMinute: startMinute,
-      workEndHour: endHour,
-      workEndMinute: endMinute,
-      autoClockOutEnabled: policyAutoClockOut,
-      autoClockOutHour: endHour,
-      autoClockOutMinute: endMinute,
-    });
-  }}
-  disabled={savePolicyMutation.isPending}
->
-  설정 저장
-</Button>
+                  savePolicyMutation.mutate({
+                    workStartHour: startHour,
+                    workStartMinute: startMinute,
+                    workEndHour: endHour,
+                    workEndMinute: endMinute,
+                    autoClockOutEnabled: policyAutoClockOut,
+                    autoClockOutHour: endHour,
+                    autoClockOutMinute: endMinute,
+                  });
+                }}
+                disabled={savePolicyMutation.isPending}
+              >
+                설정 저장
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -568,30 +552,30 @@ const updateStatusMutation = trpc.attendance.updateStatus.useMutation({
                         {row.positionName || row.position || "-"}
                       </td>
                       <td className="px-3 py-3">{formatDate(row.workDate)}</td>
-                      <td className="px-3 py-3">{formatDateTime(row.clockInAt)}</td>
-                      <td className="px-3 py-3">{formatDateTime(row.clockOutAt)}</td>
+                      <td className="px-3 py-3">{formatTime(row.clockInAt)}</td>
+                      <td className="px-3 py-3">{formatTime(row.clockOutAt)}</td>
                       <td className="px-3 py-3">{formatWorkMinutes(row.workMinutes)}</td>
                       <td className="px-3 py-3">
                         <div className="flex flex-col gap-1">
                           <select
-  value={row.status || "출근전"}
-  className="h-9 rounded-md border bg-white px-2 text-sm"
-  onChange={(e) => {
-    const nextStatus = e.target.value as StatusType;
+                            value={row.status || "출근전"}
+                            className="h-9 rounded-md border bg-white px-2 text-sm"
+                            onChange={(e) => {
+                              const nextStatus = e.target.value as StatusType;
 
-    updateStatusMutation.mutate({
-      attendanceId: Number(row.id),
-      status: nextStatus,
-      reason: `열람 페이지 상태변경: ${nextStatus}`,
-    });
-  }}
->
-  {STATUS_OPTIONS.map((status) => (
-    <option key={status} value={status}>
-      {status}
-    </option>
-  ))}
-</select>
+                              updateStatusMutation.mutate({
+                                attendanceId: Number(row.id),
+                                status: nextStatus,
+                                reason: `열람 페이지 상태변경: ${nextStatus}`,
+                              });
+                            }}
+                          >
+                            {STATUS_OPTIONS.map((status) => (
+                              <option key={status} value={status}>
+                                {status}
+                              </option>
+                            ))}
+                          </select>
 
                           <div>
                             {row.isLate ? (
@@ -751,9 +735,7 @@ const updateStatusMutation = trpc.attendance.updateStatus.useMutation({
                   {filteredLogs.map((row: any) => (
                     <tr key={row.id} className="border-b text-sm">
                       <td className="px-3 py-3">
-                        {row.createdAt
-                          ? new Date(row.createdAt).toLocaleString("ko-KR")
-                          : "-"}
+                        {row.createdAt ? formatDateTime(row.createdAt) : "-"}
                       </td>
                       <td className="px-3 py-3 font-medium">
                         {row.targetUserName || "-"}
@@ -772,22 +754,22 @@ const updateStatusMutation = trpc.attendance.updateStatus.useMutation({
                       <td className="px-3 py-3">{row.afterStatus || "-"}</td>
                       <td className="px-3 py-3">
                         {row.beforeClockInAt
-                          ? new Date(row.beforeClockInAt).toLocaleString("ko-KR")
+                          ? formatDateTime(row.beforeClockInAt)
                           : "-"}
                       </td>
                       <td className="px-3 py-3">
                         {row.beforeClockOutAt
-                          ? new Date(row.beforeClockOutAt).toLocaleString("ko-KR")
+                          ? formatDateTime(row.beforeClockOutAt)
                           : "-"}
                       </td>
                       <td className="px-3 py-3">
                         {row.afterClockInAt
-                          ? new Date(row.afterClockInAt).toLocaleString("ko-KR")
+                          ? formatDateTime(row.afterClockInAt)
                           : "-"}
                       </td>
                       <td className="px-3 py-3">
                         {row.afterClockOutAt
-                          ? new Date(row.afterClockOutAt).toLocaleString("ko-KR")
+                          ? formatDateTime(row.afterClockOutAt)
                           : "-"}
                       </td>
                       <td className="px-3 py-3">

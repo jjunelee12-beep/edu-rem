@@ -5,24 +5,12 @@ import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
-function formatDate(dateStr?: string | null) {
-  if (!dateStr) return "-";
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return String(dateStr);
-  return d.toLocaleDateString("ko-KR");
-}
-
-function formatDateTime(dateStr?: string | null) {
-  if (!dateStr) return "-";
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleTimeString("ko-KR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
+import {
+  formatDate,
+  formatTime,
+  formatDateTime,
+  toDateTimeLocalValue,
+} from "@/lib/datetime";
 
 function formatWorkMinutes(minutes?: number | null) {
   const m = Number(minutes || 0);
@@ -123,12 +111,8 @@ export default function AttendancePage() {
 
   const openEditModal = (row: any) => {
     setEditingRow(row);
-    setEditClockIn(
-      row?.clockInAt ? new Date(row.clockInAt).toISOString().slice(0, 16) : ""
-    );
-    setEditClockOut(
-      row?.clockOutAt ? new Date(row.clockOutAt).toISOString().slice(0, 16) : ""
-    );
+    setEditClockIn(toDateTimeLocalValue(row?.clockInAt));
+    setEditClockOut(toDateTimeLocalValue(row?.clockOutAt));
     setEditReason("");
   };
 
@@ -241,8 +225,8 @@ export default function AttendancePage() {
       row.teamName || row.team || "",
       row.positionName || row.position || "",
       row.workDate ? formatDate(row.workDate) : "",
-      row.clockInAt ? formatDateTime(row.clockInAt) : "",
-      row.clockOutAt ? formatDateTime(row.clockOutAt) : "",
+      row.clockInAt ? formatTime(row.clockInAt) : "",
+      row.clockOutAt ? formatTime(row.clockOutAt) : "",
       formatWorkMinutes(row.workMinutes),
       row.status || "",
       row.isLate ? "Y" : "N",
@@ -324,14 +308,14 @@ export default function AttendancePage() {
             <div className="rounded-2xl bg-slate-50 p-4">
               <p className="text-xs text-muted-foreground">출근 시간</p>
               <p className="mt-1 text-sm font-semibold">
-                {formatDateTime(todayRow?.clockInAt)}
+                {formatTime(todayRow?.clockInAt)}
               </p>
             </div>
 
             <div className="rounded-2xl bg-slate-50 p-4">
               <p className="text-xs text-muted-foreground">퇴근 시간</p>
               <p className="mt-1 text-sm font-semibold">
-                {formatDateTime(todayRow?.clockOutAt)}
+                {formatTime(todayRow?.clockOutAt)}
               </p>
             </div>
 
@@ -526,10 +510,10 @@ export default function AttendancePage() {
                       ) : null}
                       <td className="px-3 py-3">{formatDate(row.workDate)}</td>
                       <td className="px-3 py-3">
-                        {formatDateTime(row.clockInAt)}
+                        {formatTime(row.clockInAt)}
                       </td>
                       <td className="px-3 py-3">
-                        {formatDateTime(row.clockOutAt)}
+                        {formatTime(row.clockOutAt)}
                       </td>
                       <td className="px-3 py-3">
                         {formatWorkMinutes(row.workMinutes)}
@@ -699,9 +683,7 @@ export default function AttendancePage() {
                     {filteredLogs.map((row: any) => (
                       <tr key={row.id} className="border-b text-sm">
                         <td className="px-3 py-3">
-                          {row.createdAt
-                            ? new Date(row.createdAt).toLocaleString("ko-KR")
-                            : "-"}
+                          {formatDateTime(row.createdAt)}
                         </td>
                         <td className="px-3 py-3 font-medium">
                           {row.targetUserName || "-"}
@@ -726,30 +708,22 @@ export default function AttendancePage() {
                         </td>
                         <td className="px-3 py-3">
                           {row.beforeClockInAt
-                            ? new Date(row.beforeClockInAt).toLocaleString(
-                                "ko-KR"
-                              )
+                            ? formatDateTime(row.beforeClockInAt)
                             : "-"}
                         </td>
                         <td className="px-3 py-3">
                           {row.beforeClockOutAt
-                            ? new Date(row.beforeClockOutAt).toLocaleString(
-                                "ko-KR"
-                              )
+                            ? formatDateTime(row.beforeClockOutAt)
                             : "-"}
                         </td>
                         <td className="px-3 py-3">
                           {row.afterClockInAt
-                            ? new Date(row.afterClockInAt).toLocaleString(
-                                "ko-KR"
-                              )
+                            ? formatDateTime(row.afterClockInAt)
                             : "-"}
                         </td>
                         <td className="px-3 py-3">
                           {row.afterClockOutAt
-                            ? new Date(row.afterClockOutAt).toLocaleString(
-                                "ko-KR"
-                              )
+                            ? formatDateTime(row.afterClockOutAt)
                             : "-"}
                         </td>
                         <td className="px-3 py-3">
