@@ -19,6 +19,7 @@ import OpenAI from "openai";
 import { attendanceRouter } from "./attendance.router";
 import { noticeRouter } from "./routes/notice.router";
 import { scheduleRouter } from "./routes/schedule.router";
+import { approvalRouter } from "./routes/approval.router";
 
 function isAdminOrHost(user: any) {
   return (
@@ -66,6 +67,7 @@ export const appRouter = router({
 attendance: attendanceRouter,
 notice: noticeRouter,
 schedule: scheduleRouter,
+  approval: approvalRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {

@@ -1,4 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "wouter";
+
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -23,6 +26,8 @@ import {
 import Login from "@/components/Login";
 import { trpc } from "@/lib/trpc";
 import { useIsMobile } from "@/hooks/useMobile";
+import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
+
 import {
   Bell,
   LayoutDashboard,
@@ -48,10 +53,9 @@ import {
   User,
   X,
   ChevronRight,
+  ChevronDown,
+  FileCheck2,
 } from "lucide-react";
-import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation } from "wouter";
-import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 
 type UserRole = "staff" | "admin" | "host" | "superhost";
 
@@ -287,6 +291,44 @@ function DashboardLayoutContent({
   const isHost = user?.role === "host";
   const isSuperhost = user?.role === "superhost";
 
+const canViewApprovalInbox = isAdmin || isHost || isSuperhost;
+const canViewApprovalStats = isAdmin || isHost || isSuperhost;
+const canViewApprovalSettings = isSuperhost;
+
+const isEApprovalPath =
+  location === "/e-approval" || location.startsWith("/e-approval/");
+
+const [eApprovalMenuOpen, setEApprovalMenuOpen] = useState(isEApprovalPath);
+
+useEffect(() => {
+  if (isEApprovalPath) {
+    setEApprovalMenuOpen(true);
+  }
+}, [isEApprovalPath]);
+
+const eApprovalSubMenus = useMemo(() => {
+  const items = [
+    { label: "문서함", href: "/e-approval" },
+    { label: "근태", href: "/e-approval/attendance" },
+    { label: "출장", href: "/e-approval/business-trip" },
+    { label: "일반", href: "/e-approval/general" },
+  ];
+
+  if (canViewApprovalInbox) {
+    items.push({ label: "전자결재 승인", href: "/e-approval/inbox" });
+  }
+
+  if (canViewApprovalStats) {
+    items.push({ label: "통계", href: "/e-approval/stats" });
+  }
+
+  if (canViewApprovalSettings) {
+    items.push({ label: "전자결재 설정", href: "/e-approval/settings" });
+  }
+
+  return items;
+}, [canViewApprovalInbox, canViewApprovalStats, canViewApprovalSettings]);
+
   const visibleStaffMenuItems =
   isStaff || isAdmin || isHost || isSuperhost ? staffMenuItems : [];
 
@@ -306,10 +348,16 @@ const visibleSuperhostMenuItems =
     ...visibleSuperhostMenuItems,
   ];
 
-  const activeMenuItem = allMenuItems.find((item) => {
-    if (item.path === "/") return location === "/";
-    return location.startsWith(item.path);
-  });
+const activeEApprovalMenuItem = eApprovalSubMenus.find(
+  (item) => location === item.href
+);
+
+const activeMenuItem = activeEApprovalMenuItem
+  ? { label: activeEApprovalMenuItem.label, path: activeEApprovalMenuItem.href }
+  : allMenuItems.find((item) => {
+      if (item.path === "/") return location === "/";
+      return location.startsWith(item.path);
+    });
 
   const notificationEnabled = !isSuperhost;
 
@@ -482,11 +530,58 @@ const visibleSuperhostMenuItems =
           </SidebarHeader>
 
           <SidebarContent className="gap-0">
-            {renderMenuSection(visibleStaffMenuItems)}
-            {renderMenuSection(visibleAdminMenuItems, "관리자")}
-            {renderMenuSection(visibleHostMenuItems, "호스트")}
-            {renderMenuSection(visibleSuperhostMenuItems, "슈퍼호스트")}
-          </SidebarContent>
+  {renderMenuSection(visibleStaffMenuItems)}
+
+  <div className="px-2 py-1">
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          isActive={isEApprovalPath}
+          onClick={() => setEApprovalMenuOpen((prev) => !prev)}
+          tooltip="전자결재"
+          className="h-10 font-normal transition-all"
+        >
+          <FileCheck2 className={`h-4 w-4 ${isEApprovalPath ? "text-primary" : ""}`} />
+          <span>전자결재</span>
+          <div className="ml-auto">
+            {eApprovalMenuOpen ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </div>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    </SidebarMenu>
+
+    {eApprovalMenuOpen && (
+      <div className="ml-3 mt-1 border-l pl-3">
+        <SidebarMenu className="px-0 py-1">
+          {eApprovalSubMenus.map((item) => {
+            const isActive = location === item.href;
+
+            return (
+              <SidebarMenuItem key={item.href}>
+                <SidebarMenuButton
+                  isActive={isActive}
+                  onClick={() => setLocation(item.href)}
+                  tooltip={item.label}
+                  className="h-9 font-normal transition-all"
+                >
+                  <span>{item.label}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            );
+          })}
+        </SidebarMenu>
+      </div>
+    )}
+  </div>
+
+  {renderMenuSection(visibleAdminMenuItems, "관리자")}
+  {renderMenuSection(visibleHostMenuItems, "호스트")}
+  {renderMenuSection(visibleSuperhostMenuItems, "슈퍼호스트")}
+</SidebarContent>
 
           <SidebarFooter className="p-3">
             <DropdownMenu>

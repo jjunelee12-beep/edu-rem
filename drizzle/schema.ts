@@ -883,6 +883,218 @@ export const schedules = mysqlTable("schedules", {
   updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
 });
 
+// ─── Electronic Approvals (전자결재) ───────────────────────────────
+
+export const approvalDocuments = mysqlTable("approval_documents", {
+  id: int("id").autoincrement().primaryKey(),
+
+  documentNumber: varchar("documentNumber", { length: 50 }).notNull(),
+
+  formType: mysqlEnum("formType", ["attendance", "business_trip", "general"])
+    .notNull(),
+
+  subType: varchar("subType", { length: 50 }).notNull(),
+
+  title: varchar("title", { length: 255 }).notNull(),
+  reason: text("reason"),
+
+  applicantUserId: int("applicantUserId").notNull(),
+  applicantUserName: varchar("applicantUserName", { length: 100 }),
+  applicantTeamId: int("applicantTeamId"),
+  applicantTeamName: varchar("applicantTeamName", { length: 100 }),
+  applicantPositionId: int("applicantPositionId"),
+  applicantPositionName: varchar("applicantPositionName", { length: 100 }),
+
+  targetDate: date("targetDate"),
+  startDate: date("startDate"),
+  endDate: date("endDate"),
+
+// ─── 문서별 확장 필드 ─────────────────────
+
+// 근태 상세
+attendanceDetailType: varchar("attendanceDetailType", { length: 50 }),
+attendanceStartTime: varchar("attendanceStartTime", { length: 10 }),
+attendanceEndTime: varchar("attendanceEndTime", { length: 10 }),
+
+// 출장 상세
+destination: varchar("destination", { length: 255 }),
+visitPlace: varchar("visitPlace", { length: 255 }),
+companion: varchar("companion", { length: 255 }),
+
+// 공통 확장
+requestDepartment: varchar("requestDepartment", { length: 100 }),
+extraNote: text("extraNote"),
+
+  status: mysqlEnum("status", [
+    "draft",
+    "pending",
+    "approved",
+    "rejected",
+    "cancelled",
+  ])
+    .notNull()
+    .default("pending"),
+
+  currentStepOrder: int("currentStepOrder").notNull().default(1),
+
+  finalApprovedAt: datetime("finalApprovedAt"),
+  rejectedAt: datetime("rejectedAt"),
+  rejectedReason: text("rejectedReason"),
+
+  attendanceApplied: boolean("attendanceApplied").notNull().default(false),
+  attendanceAppliedAt: datetime("attendanceAppliedAt"),
+
+  attendanceTargetStatus: mysqlEnum("attendanceTargetStatus", [
+    "지각",
+    "조퇴",
+    "병가",
+    "연차",
+    "출장",
+    "반차",
+    "결근",
+  ]),
+
+  attachmentName: varchar("attachmentName", { length: 255 }),
+  attachmentUrl: varchar("attachmentUrl", { length: 1000 }),
+
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
+});
+
+export type ApprovalDocument = typeof approvalDocuments.$inferSelect;
+export type InsertApprovalDocument = typeof approvalDocuments.$inferInsert;
+
+export const approvalDocumentLines = mysqlTable("approval_document_lines", {
+  id: int("id").autoincrement().primaryKey(),
+
+  documentId: int("documentId").notNull(),
+  stepOrder: int("stepOrder").notNull(),
+
+  approverUserId: int("approverUserId").notNull(),
+  approverName: varchar("approverName", { length: 100 }),
+  approverRole: varchar("approverRole", { length: 50 }),
+
+  stepStatus: mysqlEnum("stepStatus", [
+    "pending",
+    "approved",
+    "rejected",
+    "skipped",
+  ])
+    .notNull()
+    .default("pending"),
+
+  actedAt: datetime("actedAt"),
+  comment: text("comment"),
+
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
+});
+
+export type ApprovalDocumentLine = typeof approvalDocumentLines.$inferSelect;
+export type InsertApprovalDocumentLine = typeof approvalDocumentLines.$inferInsert;
+
+export const approvalSettings = mysqlTable("approval_settings", {
+  id: int("id").autoincrement().primaryKey(),
+
+  formType: mysqlEnum("formType", ["attendance", "business_trip", "general"])
+    .notNull()
+    .unique(),
+
+  firstApproverUserId: int("firstApproverUserId"),
+  secondApproverUserId: int("secondApproverUserId"),
+  thirdApproverUserId: int("thirdApproverUserId"),
+
+  isActive: boolean("isActive").notNull().default(true),
+
+  createdBy: int("createdBy").notNull(),
+  updatedBy: int("updatedBy"),
+
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
+});
+
+export type ApprovalSetting = typeof approvalSettings.$inferSelect;
+export type InsertApprovalSetting = typeof approvalSettings.$inferInsert;
+
+export const approvalPrintSettings = mysqlTable("approval_print_settings", {
+  id: int("id").autoincrement().primaryKey(),
+
+  companyName: varchar("companyName", { length: 255 })
+    .notNull()
+    .default("(주)위드원 교육"),
+
+  documentTitle: varchar("documentTitle", { length: 255 })
+    .notNull()
+    .default("전자결재 문서"),
+
+  applicantSignLabel: varchar("applicantSignLabel", { length: 100 })
+    .notNull()
+    .default("신청자 서명"),
+
+  finalApproverSignLabel: varchar("finalApproverSignLabel", { length: 100 })
+    .notNull()
+    .default("최종 승인자 서명"),
+
+  createdBy: int("createdBy"),
+  updatedBy: int("updatedBy"),
+
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
+});
+
+export type ApprovalPrintSetting = typeof approvalPrintSettings.$inferSelect;
+export type InsertApprovalPrintSetting = typeof approvalPrintSettings.$inferInsert;
+
+export const approvalLogs = mysqlTable("approval_logs", {
+  id: int("id").autoincrement().primaryKey(),
+
+  documentId: int("documentId").notNull(),
+  actorUserId: int("actorUserId").notNull(),
+  actorUserName: varchar("actorUserName", { length: 100 }),
+
+  actionType: mysqlEnum("actionType", [
+    "create",
+    "approve",
+    "reject",
+    "cancel",
+    "apply_attendance",
+  ])
+    .notNull(),
+
+  note: text("note"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+});
+
+export type ApprovalLog = typeof approvalLogs.$inferSelect;
+export type InsertApprovalLog = typeof approvalLogs.$inferInsert;
+
+export const approvalFormFieldSettings = mysqlTable("approval_form_field_settings", {
+  id: int("id").autoincrement().primaryKey(),
+
+  formType: mysqlEnum("formType", ["attendance", "business_trip", "general"])
+    .notNull(),
+
+  fieldKey: varchar("fieldKey", { length: 100 }).notNull(),
+
+  label: varchar("label", { length: 100 }).notNull(),
+
+  isVisible: boolean("isVisible").notNull().default(true),
+  isRequired: boolean("isRequired").notNull().default(false),
+
+  sortOrder: int("sortOrder").notNull().default(0),
+
+  createdBy: int("createdBy"),
+  updatedBy: int("updatedBy"),
+
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
+});
+
+export type ApprovalFormFieldSetting =
+  typeof approvalFormFieldSettings.$inferSelect;
+export type InsertApprovalFormFieldSetting =
+  typeof approvalFormFieldSettings.$inferInsert;
+
 // ─── Device Tokens (모바일 푸시 토큰) ───────────────────────────────
 export const deviceTokens = mysqlTable("device_tokens", {
   id: int("id").autoincrement().primaryKey(),

@@ -62,6 +62,16 @@ attendancePolicies,
 notices, InsertNotice,
 schedules,
 InsertSchedule,
+approvalPrintSettings,
+type InsertApprovalPrintSetting,
+approvalDocuments,
+type InsertApprovalDocument,
+approvalDocumentLines,
+type InsertApprovalDocumentLine,
+approvalSettings,
+type InsertApprovalSetting,
+approvalLogs,
+type InsertApprovalLog,
 } from "../drizzle/schema";
 
 import { ENV } from "./_core/env";
@@ -839,6 +849,7 @@ export async function markAllNotificationsRead(userId: number) {
     .where(eq(notifications.userId, userId));
 }
 
+
 export async function listPendingScheduleNotifications() {
   const db = await getDb();
   if (!db) return [];
@@ -919,6 +930,116 @@ export async function createScheduleNotifications() {
   }
 
   return { count: createdCount };
+}
+
+// ─── Approval Print Settings ─────────────────────────────────────────
+
+export async function getApprovalPrintSettings() {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db
+    .select()
+    .from(approvalPrintSettings)
+    .limit(1);
+
+  // 없으면 기본값 반환
+  if (!result[0]) {
+    return {
+      companyName: "(주)위드원 교육",
+      documentTitle: "전자결재 문서",
+      applicantSignLabel: "신청자 서명",
+      finalApproverSignLabel: "최종 승인자 서명",
+    };
+  }
+
+  return result[0];
+}
+
+export async function saveApprovalPrintSettings(
+  data: InsertApprovalPrintSetting
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const existing = await db
+    .select()
+    .from(approvalPrintSettings)
+    .limit(1);
+
+  // 있으면 update
+  if (existing[0]) {
+    await db
+      .update(approvalPrintSettings)
+      .set({
+        companyName: data.companyName,
+        documentTitle: data.documentTitle,
+        applicantSignLabel: data.applicantSignLabel,
+        finalApproverSignLabel: data.finalApproverSignLabel,
+        updatedBy: data.updatedBy ?? null,
+      } as any)
+      .where(eq(approvalPrintSettings.id, existing[0].id));
+
+    return existing[0].id;
+  }
+
+  // 없으면 insert
+  const result: any = await db.insert(approvalPrintSettings).values({
+    companyName: data.companyName,
+    documentTitle: data.documentTitle,
+    applicantSignLabel: data.applicantSignLabel,
+    finalApproverSignLabel: data.finalApproverSignLabel,
+    createdBy: data.createdBy ?? null,
+  } as any);
+
+  return getInsertId(result);
+}
+
+// ─── Approval Form Field Settings ─────────────────────────
+
+export async function listApprovalFormFieldSettings(formType: string) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db
+    .select()
+    .from(sql`approval_form_field_settings`)
+    .where(sql`formType = ${formType}`)
+    .orderBy(sql`sortOrder ASC, id ASC`);
+}
+
+export async function saveApprovalFormFieldSettings(params: {
+  formType: string;
+  items: any[];
+  actorUserId?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  // 기존 삭제
+  await db.execute(sql`
+    DELETE FROM approval_form_field_settings
+    WHERE formType = ${params.formType}
+  `);
+
+  // 새로 insert
+  for (const item of params.items) {
+    await db.execute(sql`
+      INSERT INTO approval_form_field_settings
+      (formType, fieldKey, label, isVisible, isRequired, sortOrder, createdBy)
+      VALUES (
+        ${params.formType},
+        ${item.fieldKey},
+        ${item.label},
+        ${item.isVisible ? 1 : 0},
+        ${item.isRequired ? 1 : 0},
+        ${item.sortOrder || 0},
+        ${params.actorUserId ?? null}
+      )
+    `);
+  }
+
+  return true;
 }
 
 // ─── Device Tokens ───────────────────────────────────────────────────
@@ -5076,4 +5197,670 @@ export async function deleteSchedule(
     SET isActive = 0
     WHERE id = ${id}
   `);
+}
+
+
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+async function getNextApprovalDocumentNumber(formType: "attendance" | "business_trip" | "general") {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = pad2(now.getMonth() + 1);
+
+  const prefix =
+    formType === "attendance"
+      ? "ATT"
+      : formType === "business_trip"
+      ? "BIZ"
+      : "GEN";
+
+  const likePrefix = `${prefix}-${yyyy}${mm}-%`;
+
+  const [rows] = await db.execute(sql`
+    SELECT COUNT(*) as cnt
+    FROM approval_documents
+    WHERE documentNumber LIKE ${likePrefix}
+  `);
+
+  const count = Number((rows as any)?.[0]?.cnt ?? 0) + 1;
+  return `${prefix}-${yyyy}${mm}-${String(count).padStart(4, "0")}`;
+}
+
+
+export async function getApprovalSetting(
+  formType: "attendance" | "business_trip" | "general"
+) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const rows = await db
+    .select()
+    .from(approvalSettings)
+    .where(eq(approvalSettings.formType, formType))
+    .limit(1);
+
+  return rows[0] ?? null;
+}
+
+export async function saveApprovalSetting(params: {
+  formType: "attendance" | "business_trip" | "general";
+  firstApproverUserId?: number | null;
+  secondApproverUserId?: number | null;
+  thirdApproverUserId?: number | null;
+  actorUserId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const existing = await getApprovalSetting(params.formType);
+
+  const payload: InsertApprovalSetting = {
+    formType: params.formType,
+    firstApproverUserId: params.firstApproverUserId ?? null,
+    secondApproverUserId: params.secondApproverUserId ?? null,
+    thirdApproverUserId: params.thirdApproverUserId ?? null,
+    isActive: true,
+    createdBy: params.actorUserId,
+    updatedBy: params.actorUserId,
+  };
+
+  if (existing) {
+    await db
+      .update(approvalSettings)
+      .set({
+        firstApproverUserId: params.firstApproverUserId ?? null,
+        secondApproverUserId: params.secondApproverUserId ?? null,
+        thirdApproverUserId: params.thirdApproverUserId ?? null,
+        updatedBy: params.actorUserId,
+      } as any)
+      .where(eq(approvalSettings.id, existing.id));
+
+    return existing.id;
+  }
+
+  const result: any = await db.insert(approvalSettings).values(payload as any);
+  return getInsertId(result);
+}
+
+export async function createApprovalLog(data: InsertApprovalLog) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(approvalLogs).values(data as any);
+  return getInsertId(result);
+}
+
+export async function createApprovalDocument(params: {
+  formType: "attendance" | "business_trip" | "general";
+  subType: string;
+  title: string;
+  reason?: string | null;
+
+  applicantUserId: number;
+  applicantUserName?: string | null;
+  applicantTeamId?: number | null;
+  applicantTeamName?: string | null;
+  applicantPositionId?: number | null;
+  applicantPositionName?: string | null;
+
+  targetDate?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+
+  attachmentName?: string | null;
+  attachmentUrl?: string | null;
+
+attendanceDetailType?: string | null;
+attendanceStartTime?: string | null;
+attendanceEndTime?: string | null;
+
+destination?: string | null;
+visitPlace?: string | null;
+companion?: string | null;
+
+requestDepartment?: string | null;
+extraNote?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const documentNumber = await getNextApprovalDocumentNumber(params.formType);
+  const setting = await getApprovalSetting(params.formType);
+
+if (params.formType === "attendance" && !params.targetDate) {
+  throw new Error("근태 문서는 시행일자 필수");
+}
+
+const approverIds = [
+    setting?.firstApproverUserId,
+    setting?.secondApproverUserId,
+    setting?.thirdApproverUserId,
+  ].filter((x) => Number(x || 0) > 0);
+
+  if (!approverIds.length) {
+    throw new Error("전자결재 승인자가 설정되지 않았습니다.");
+  }
+
+  const attendanceTargetStatus =
+    params.formType === "attendance"
+      ? (params.subType as any)
+      : params.formType === "business_trip"
+      ? "출장"
+      : null;
+
+  const result: any = await db.insert(approvalDocuments).values({
+    documentNumber,
+    formType: params.formType,
+    subType: params.subType,
+    title: params.title,
+    reason: params.reason ?? null,
+
+    applicantUserId: params.applicantUserId,
+    applicantUserName: params.applicantUserName ?? null,
+    applicantTeamId: params.applicantTeamId ?? null,
+    applicantTeamName: params.applicantTeamName ?? null,
+    applicantPositionId: params.applicantPositionId ?? null,
+    applicantPositionName: params.applicantPositionName ?? null,
+
+    targetDate: params.targetDate ?? null,
+    startDate: params.startDate ?? null,
+    endDate: params.endDate ?? null,
+
+    status: "pending",
+    currentStepOrder: 1,
+
+    attendanceApplied: false,
+    attendanceTargetStatus: attendanceTargetStatus as any,
+
+    attachmentName: params.attachmentName ?? null,
+    attachmentUrl: params.attachmentUrl ?? null,
+
+attendanceDetailType: params.attendanceDetailType ?? null,
+attendanceStartTime: params.attendanceStartTime ?? null,
+attendanceEndTime: params.attendanceEndTime ?? null,
+
+destination: params.destination ?? null,
+visitPlace: params.visitPlace ?? null,
+companion: params.companion ?? null,
+
+requestDepartment: params.requestDepartment ?? null,
+extraNote: params.extraNote ?? null,
+  } as any);
+
+  const documentId = Number(getInsertId(result));
+
+  const lines: InsertApprovalDocumentLine[] = [];
+
+  const approverUsers = await getAllUsersDetailed();
+  let step = 1;
+
+  for (const approverUserId of approverIds) {
+    const found = approverUsers.find((u: any) => Number(u.id) === Number(approverUserId));
+    lines.push({
+      documentId,
+      stepOrder: step,
+      approverUserId: Number(approverUserId),
+      approverName: found?.name ?? null,
+      approverRole: found?.role ?? null,
+      stepStatus: "pending",
+    });
+    step += 1;
+  }
+
+  if (lines.length) {
+    await db.insert(approvalDocumentLines).values(lines as any);
+  }
+
+  await createApprovalLog({
+    documentId,
+    actorUserId: params.applicantUserId,
+    actorUserName: params.applicantUserName ?? null,
+    actionType: "create",
+    note: `${params.formType} 문서 생성`,
+  } as any);
+
+  return documentId;
+}
+
+export async function listMyApprovalDocuments(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const [rows] = await db.execute(sql`
+    SELECT *
+    FROM approval_documents
+    WHERE applicantUserId = ${userId}
+    ORDER BY createdAt DESC, id DESC
+  `);
+
+  return (rows as any[]) ?? [];
+}
+
+export async function getApprovalDocument(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [docRows] = await db.execute(sql`
+    SELECT *
+    FROM approval_documents
+    WHERE id = ${id}
+    LIMIT 1
+  `);
+
+  const doc = ((docRows as any[]) ?? [])[0] ?? null;
+  if (!doc) return null;
+
+  const [lineRows] = await db.execute(sql`
+    SELECT *
+    FROM approval_document_lines
+    WHERE documentId = ${id}
+    ORDER BY stepOrder ASC, id ASC
+  `);
+
+  const [logRows] = await db.execute(sql`
+    SELECT *
+    FROM approval_logs
+    WHERE documentId = ${id}
+    ORDER BY createdAt DESC, id DESC
+  `);
+
+  return {
+    document: doc,
+    lines: (lineRows as any[]) ?? [],
+    logs: (logRows as any[]) ?? [],
+  };
+}
+
+export async function listPendingApprovalDocumentsForApprover(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const [rows] = await db.execute(sql`
+    SELECT d.*, l.id as lineId, l.stepOrder, l.stepStatus
+    FROM approval_documents d
+    INNER JOIN approval_document_lines l
+      ON l.documentId = d.id
+    WHERE l.approverUserId = ${userId}
+      AND l.stepStatus = 'pending'
+      AND d.status = 'pending'
+      AND d.currentStepOrder = l.stepOrder
+    ORDER BY d.createdAt DESC, d.id DESC
+  `);
+
+  return (rows as any[]) ?? [];
+}
+
+export async function applyApprovedDocumentToAttendance(params: {
+  documentId: number;
+  actorUserId: number;
+  actorUserName?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const detail = await getApprovalDocument(params.documentId);
+  if (!detail?.document) throw new Error("전자결재 문서를 찾을 수 없습니다.");
+
+  const doc: any = detail.document;
+if (doc.status !== "approved") {
+  throw new Error("승인 완료된 문서만 근태에 반영할 수 있습니다.");
+}
+
+  if (doc.attendanceApplied) {
+    return true;
+  }
+
+  if (doc.formType !== "attendance" && doc.formType !== "business_trip") {
+    await db
+      .update(approvalDocuments)
+      .set({
+        attendanceApplied: true,
+        attendanceAppliedAt: new Date(),
+      } as any)
+      .where(eq(approvalDocuments.id, params.documentId));
+
+    return true;
+  }
+
+if (doc.formType === "business_trip" && doc.startDate && doc.endDate) {
+  const start = new Date(doc.startDate);
+  const end = new Date(doc.endDate);
+
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+      d.getDate()
+    ).padStart(2, "0")}`;
+
+    const [rows] = await db.execute(sql`
+      SELECT *
+      FROM attendance_records
+      WHERE userId = ${doc.applicantUserId}
+        AND workDate = ${dateStr}
+      LIMIT 1
+    `);
+
+    const attendanceRow = ((rows as any[]) ?? [])[0] ?? null;
+
+    if (!attendanceRow) {
+      const insertResult: any = await db.insert(attendanceRecords).values({
+        userId: Number(doc.applicantUserId),
+        workDate: dateStr,
+        status: "출장" as any,
+        note: `[전자결재 승인 반영] 출장 / ${doc.reason ?? ""}`,
+        isAbsent: 0,
+      } as any);
+
+      const attendanceId = Number(getInsertId(insertResult));
+
+      await db.insert(attendanceAdjustmentLogs).values({
+        attendanceId,
+        targetUserId: Number(doc.applicantUserId),
+        actorUserId: params.actorUserId,
+        beforeClockInAt: null,
+        beforeClockOutAt: null,
+        afterClockInAt: null,
+        afterClockOutAt: null,
+        reason: "출장",
+        actionType: "apply_business_trip",
+        beforeStatus: null,
+        afterStatus: "출장",
+        note: `[전자결재 승인 반영] ${doc.reason ?? ""}`,
+      } as any);
+    } else {
+      const beforeStatus = attendanceRow.status ?? null;
+
+      await db
+        .update(attendanceRecords)
+        .set({
+          status: "출장" as any,
+          note: `[전자결재 승인 반영] 출장 / ${doc.reason ?? ""}`,
+          isAbsent: 0,
+        } as any)
+        .where(eq(attendanceRecords.id, Number(attendanceRow.id)));
+
+      await db.insert(attendanceAdjustmentLogs).values({
+        attendanceId: Number(attendanceRow.id),
+        targetUserId: Number(doc.applicantUserId),
+        actorUserId: params.actorUserId,
+        beforeClockInAt: attendanceRow.clockInAt ?? null,
+        beforeClockOutAt: attendanceRow.clockOutAt ?? null,
+        afterClockInAt: attendanceRow.clockInAt ?? null,
+        afterClockOutAt: attendanceRow.clockOutAt ?? null,
+        reason: "출장",
+        actionType: "apply_business_trip",
+        beforeStatus,
+        afterStatus: "출장",
+        note: `[전자결재 승인 반영] ${doc.reason ?? ""}`,
+      } as any);
+    }
+  }
+
+  await db
+    .update(approvalDocuments)
+    .set({
+      attendanceApplied: true,
+      attendanceAppliedAt: new Date(),
+    } as any)
+    .where(eq(approvalDocuments.id, params.documentId));
+
+  await createApprovalLog({
+    documentId: params.documentId,
+    actorUserId: params.actorUserId,
+    actorUserName: params.actorUserName ?? null,
+    actionType: "apply_attendance",
+    note: "출장 기간 근태 기록부 자동 반영 완료",
+  } as any);
+
+  return true;
+}
+
+  const targetDate = doc.targetDate || doc.startDate || doc.endDate;
+  if (!targetDate) {
+    throw new Error("근태 반영 대상 날짜가 없습니다.");
+  }
+
+  const [rows] = await db.execute(sql`
+    SELECT *
+    FROM attendance_records
+    WHERE userId = ${doc.applicantUserId}
+      AND workDate = ${targetDate}
+    LIMIT 1
+  `);
+
+  let attendanceRow = ((rows as any[]) ?? [])[0] ?? null;
+
+  if (!attendanceRow) {
+    const insertResult: any = await db.insert(attendanceRecords).values({
+      userId: Number(doc.applicantUserId),
+      workDate: targetDate,
+      status: (doc.attendanceTargetStatus || (doc.formType === "business_trip" ? "출장" : "출근전")) as any,
+      note: `[전자결재 승인 반영] ${doc.subType}`,
+      isAbsent: doc.attendanceTargetStatus === "결근" ? 1 : 0,
+    } as any);
+
+    const attendanceId = Number(getInsertId(insertResult));
+
+    const [newRows] = await db.execute(sql`
+      SELECT *
+      FROM attendance_records
+      WHERE id = ${attendanceId}
+      LIMIT 1
+    `);
+
+    attendanceRow = ((newRows as any[]) ?? [])[0] ?? null;
+  } else {
+    await db
+      .update(attendanceRecords)
+      .set({
+        status: (doc.attendanceTargetStatus || (doc.formType === "business_trip" ? "출장" : attendanceRow.status)) as any,
+        note: `[전자결재 승인 반영] ${doc.subType} / ${doc.reason ?? ""}`,
+        isAbsent:
+          doc.attendanceTargetStatus === "결근"
+            ? 1
+            : doc.attendanceTargetStatus === "병가" ||
+              doc.attendanceTargetStatus === "연차" ||
+              doc.attendanceTargetStatus === "출장" ||
+              doc.attendanceTargetStatus === "반차"
+            ? 0
+            : attendanceRow.isAbsent,
+      } as any)
+      .where(eq(attendanceRecords.id, Number(attendanceRow.id)));
+  }
+
+  await db.insert(attendanceAdjustmentLogs).values({
+    attendanceId: Number(attendanceRow.id),
+    targetUserId: Number(doc.applicantUserId),
+    actorUserId: params.actorUserId,
+    beforeClockInAt: attendanceRow.clockInAt ?? null,
+    beforeClockOutAt: attendanceRow.clockOutAt ?? null,
+    afterClockInAt: attendanceRow.clockInAt ?? null,
+    afterClockOutAt: attendanceRow.clockOutAt ?? null,
+    reason: doc.subType,
+    actionType:
+      doc.formType === "business_trip"
+        ? "apply_business_trip"
+        : doc.subType === "병가"
+        ? "apply_sick_leave"
+        : doc.subType === "연차"
+        ? "apply_annual_leave"
+        : doc.subType === "반차"
+        ? "apply_half_day"
+        : "manual_edit",
+    beforeStatus: attendanceRow.status ?? null,
+    afterStatus: doc.attendanceTargetStatus ?? (doc.formType === "business_trip" ? "출장" : attendanceRow.status),
+    note: `[전자결재 승인 반영] ${doc.reason ?? ""}`,
+  } as any);
+
+  await db
+    .update(approvalDocuments)
+    .set({
+      attendanceApplied: true,
+      attendanceAppliedAt: new Date(),
+    } as any)
+    .where(eq(approvalDocuments.id, params.documentId));
+
+  await createApprovalLog({
+    documentId: params.documentId,
+    actorUserId: params.actorUserId,
+    actorUserName: params.actorUserName ?? null,
+    actionType: "apply_attendance",
+    note: "근태 기록부 자동 반영 완료",
+  } as any);
+
+  return true;
+}
+
+export async function approveApprovalDocument(params: {
+  documentId: number;
+  approverUserId: number;
+  approverUserName?: string | null;
+  comment?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const detail = await getApprovalDocument(params.documentId);
+  if (!detail?.document) throw new Error("문서를 찾을 수 없습니다.");
+
+  const doc: any = detail.document;
+
+if (doc.status !== "approved") {
+  throw new Error("승인 완료된 문서만 근태에 반영할 수 있습니다.");
+}
+
+  const currentLine = (detail.lines || []).find(
+    (line: any) =>
+      Number(line.approverUserId) === Number(params.approverUserId) &&
+      Number(line.stepOrder) === Number(doc.currentStepOrder) &&
+      line.stepStatus === "pending"
+  );
+
+  if (!currentLine) {
+    throw new Error("현재 승인 권한이 없습니다.");
+  }
+
+  await db
+    .update(approvalDocumentLines)
+    .set({
+      stepStatus: "approved",
+      actedAt: new Date(),
+      comment: params.comment ?? null,
+    } as any)
+    .where(eq(approvalDocumentLines.id, Number(currentLine.id)));
+
+  const nextLine = (detail.lines || []).find(
+    (line: any) => Number(line.stepOrder) === Number(doc.currentStepOrder) + 1
+  );
+
+  if (nextLine) {
+    await db
+      .update(approvalDocuments)
+      .set({
+        currentStepOrder: Number(doc.currentStepOrder) + 1,
+      } as any)
+      .where(eq(approvalDocuments.id, params.documentId));
+  } else {
+    await db
+      .update(approvalDocuments)
+      .set({
+        status: "approved",
+        finalApprovedAt: new Date(),
+      } as any)
+      .where(eq(approvalDocuments.id, params.documentId));
+
+    await applyApprovedDocumentToAttendance({
+      documentId: params.documentId,
+      actorUserId: params.approverUserId,
+      actorUserName: params.approverUserName ?? null,
+    });
+  }
+
+  await createApprovalLog({
+    documentId: params.documentId,
+    actorUserId: params.approverUserId,
+    actorUserName: params.approverUserName ?? null,
+    actionType: "approve",
+    note: params.comment ?? "승인 처리",
+  } as any);
+
+  return true;
+}
+
+export async function rejectApprovalDocument(params: {
+  documentId: number;
+  approverUserId: number;
+  approverUserName?: string | null;
+  comment?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const detail = await getApprovalDocument(params.documentId);
+  if (!detail?.document) throw new Error("문서를 찾을 수 없습니다.");
+
+  const doc: any = detail.document;
+  const currentLine = (detail.lines || []).find(
+    (line: any) =>
+      Number(line.approverUserId) === Number(params.approverUserId) &&
+      Number(line.stepOrder) === Number(doc.currentStepOrder) &&
+      line.stepStatus === "pending"
+  );
+
+  if (!currentLine) {
+    throw new Error("현재 반려 권한이 없습니다.");
+  }
+
+  await db
+    .update(approvalDocumentLines)
+    .set({
+      stepStatus: "rejected",
+      actedAt: new Date(),
+      comment: params.comment ?? null,
+    } as any)
+    .where(eq(approvalDocumentLines.id, Number(currentLine.id)));
+
+  await db
+    .update(approvalDocuments)
+    .set({
+      status: "rejected",
+      rejectedAt: new Date(),
+      rejectedReason: params.comment ?? null,
+    } as any)
+    .where(eq(approvalDocuments.id, params.documentId));
+
+  await createApprovalLog({
+    documentId: params.documentId,
+    actorUserId: params.approverUserId,
+    actorUserName: params.approverUserName ?? null,
+    actionType: "reject",
+    note: params.comment ?? "반려 처리",
+  } as any);
+
+  return true;
+}
+
+export async function createNotification(data: {
+  userId: number;
+  type: string;
+  message: string;
+  relatedId?: number | null;
+  isRead?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(notifications).values({
+    userId: data.userId,
+    type: data.type,
+    message: data.message,
+    relatedId: data.relatedId ?? null,
+    isRead: data.isRead ?? false,
+  } as any);
+
+  return getInsertId(result);
 }

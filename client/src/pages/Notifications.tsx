@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { FileText } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,8 @@ function getNotificationIcon(type?: string | null) {
       return <MessageSquare className="h-4 w-4 text-violet-600" />;
     case "attendance":
       return <Clock3 className="h-4 w-4 text-amber-600" />;
+case "approval":
+  return <FileText className="h-4 w-4 text-indigo-600" />;
     default:
       return <Bell className="h-4 w-4 text-slate-600" />;
   }
@@ -92,42 +95,51 @@ const markAllReadMutation = trpc.notification.markAllRead.useMutation({
   }, [notifications]);
 
   const handleOpenNotification = async (item: NotificationItem) => {
-    if (!item.isRead) {
-      try {
-        await markReadMutation.mutateAsync({ id: Number(item.id) });
-      } catch {
+  if (!item.isRead) {
+    try {
+      await markReadMutation.mutateAsync({ id: Number(item.id) });
+    } catch {
+      return;
+    }
+  }
+
+  switch (item.type) {
+    case "notice":
+      if (item.relatedId) {
+        setLocation(`/notices/${item.relatedId}`);
         return;
       }
-    }
+      break;
 
-    switch (item.type) {
-      case "notice":
-        if (item.relatedId) {
-          setLocation(`/notices/${item.relatedId}`);
-          return;
-        }
-        break;
+    case "schedule":
+      setLocation("/schedules");
+      return;
 
-      case "schedule":
-        setLocation("/schedules");
+    case "messenger":
+      if (item.relatedId) {
+        setLocation(`/messenger?roomId=${item.relatedId}`);
         return;
+      }
+      setLocation("/messenger");
+      return;
 
-      case "messenger":
-  if (item.relatedId) {
-    setLocation(`/messenger?roomId=${item.relatedId}`);
-    return;
+    case "attendance":
+      setLocation("/attendance");
+      return;
+
+    // ✅ 추가
+    case "approval":
+      if (item.relatedId) {
+        setLocation(`/e-approval/${item.relatedId}`);
+        return;
+      }
+      setLocation("/e-approval");
+      return;
+
+    default:
+      break;
   }
-  setLocation("/messenger");
-  return;
-
-      case "attendance":
-        setLocation("/attendance");
-        return;
-
-      default:
-        break;
-    }
-  };
+};
 
   return (
     <div className="space-y-5">
@@ -229,6 +241,11 @@ const markAllReadMutation = trpc.notification.markAllRead.useMutation({
                               근태
                             </span>
                           ) : null}
+		{item.type === "approval" ? (
+  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-600">
+    전자결재
+  </span>
+) : null}
                         </div>
 
                         <p

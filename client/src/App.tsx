@@ -34,6 +34,16 @@ import NoticesPage from "@/pages/NoticesPage";
 import NoticeDetailPage from "@/pages/NoticeDetailPage";
 import SchedulePage from "@/pages/SchedulePage";
 import Notifications from "@/pages/Notifications";
+import ApprovalsDashboardPage from "./pages/ApprovalsDashboardPage";
+import ApprovalAttendancePage from "./pages/ApprovalAttendancePage";
+import ApprovalBusinessTripPage from "./pages/ApprovalBusinessTripPage";
+import ApprovalGeneralPage from "./pages/ApprovalGeneralPage";
+import ApprovalInboxPage from "./pages/ApprovalInboxPage";
+import ApprovalSettingsPage from "./pages/ApprovalSettingsPage";
+import ApprovalDetailPage from "./pages/ApprovalDetailPage";
+import ApprovalPrintPage from "./pages/ApprovalPrintPage";
+import ApprovalStatsPage from "./pages/ApprovalStatsPage";
+import ApprovalPreviewPage from "./pages/ApprovalPreviewPage";
 
 
 function PublicRouter() {
@@ -76,6 +86,16 @@ function PrivateRouter() {
         <Route path="/notices/:id" component={NoticeDetailPage} />
         <Route path="/schedules" component={SchedulePage} />
 	<Route path="/notifications" component={Notifications} />
+<Route path="/e-approval" component={ApprovalsDashboardPage} />
+<Route path="/e-approval/attendance" component={ApprovalAttendancePage} />
+<Route path="/e-approval/business-trip" component={ApprovalBusinessTripPage} />
+<Route path="/e-approval/general" component={ApprovalGeneralPage} />
+<Route path="/e-approval/inbox" component={ApprovalInboxPage} />
+<Route path="/e-approval/settings" component={ApprovalSettingsPage} />
+<Route path="/e-approval/stats" component={ApprovalStatsPage} />
+<Route path="/e-approval/preview" component={ApprovalPreviewPage} />
+<Route path="/e-approval/:id" component={ApprovalDetailPage} />
+<Route path="/e-approval/:id/print" component={ApprovalPrintPage} />
 
         <Route component={NotFound} />
       </Switch>
