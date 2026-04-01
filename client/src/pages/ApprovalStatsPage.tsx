@@ -14,9 +14,29 @@ import {
   Clock3,
   CheckCircle2,
   XCircle,
+  PieChart as PieChartIcon,
 } from "lucide-react";
 
-type ApprovalDocStatus = "draft" | "pending" | "approved" | "rejected" | "cancelled";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
+
+type ApprovalDocStatus =
+  | "draft"
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "cancelled";
+
 type ApprovalFormType = "attendance" | "business_trip" | "general";
 
 type ApprovalDocumentRow = {
@@ -92,31 +112,19 @@ function formatDateTime(value?: string | null) {
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
 }
 
+const PIE_COLORS = ["#2563eb", "#16a34a", "#f59e0b", "#ef4444"];
+
 export default function ApprovalStatsPage() {
   const [, setLocation] = useLocation();
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
 
   const role = user?.role ?? "";
-const canView = role === "admin" || role === "host" || role === "superhost";
+  const canView =
+    role === "admin" || role === "host" || role === "superhost";
 
-const myDocumentsQuery = trpc.approval.myDocuments.useQuery(undefined, {
-  enabled: canView,
-});
-
-if (!canView) {
-  return (
-    <div className="p-4 md:p-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>접근 권한 없음</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          전자결재 통계 메뉴는 관리자 이상만 접근할 수 있습니다.
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
+  const myDocumentsQuery = trpc.approval.myDocuments.useQuery(undefined, {
+    enabled: !!user && canView,
+  });
 
   const docs = useMemo<ApprovalDocumentRow[]>(() => {
     return ((myDocumentsQuery.data ?? []) as ApprovalDocumentRow[]).slice();
@@ -124,19 +132,25 @@ if (!canView) {
 
   const stats = useMemo(() => {
     const total = docs.length;
-    const pending = docs.filter((doc) => doc.status === "pending" || doc.status === "draft").length;
+    const draft = docs.filter((doc) => doc.status === "draft").length;
+    const pending = docs.filter((doc) => doc.status === "pending").length;
     const approved = docs.filter((doc) => doc.status === "approved").length;
     const rejected = docs.filter((doc) => doc.status === "rejected").length;
+    const cancelled = docs.filter((doc) => doc.status === "cancelled").length;
 
     const attendance = docs.filter((doc) => doc.formType === "attendance").length;
-    const businessTrip = docs.filter((doc) => doc.formType === "business_trip").length;
+    const businessTrip = docs.filter(
+      (doc) => doc.formType === "business_trip"
+    ).length;
     const general = docs.filter((doc) => doc.formType === "general").length;
 
     return {
       total,
+      draft,
       pending,
       approved,
       rejected,
+      cancelled,
       attendance,
       businessTrip,
       general,
@@ -152,6 +166,68 @@ if (!canView) {
       })
       .slice(0, 10);
   }, [docs]);
+
+  const statusChartData = useMemo(() => {
+    return [
+      { name: "임시저장", value: stats.draft },
+      { name: "신청중", value: stats.pending },
+      { name: "승인완료", value: stats.approved },
+      { name: "반려", value: stats.rejected },
+    ];
+  }, [stats]);
+
+  const formTypeChartData = useMemo(() => {
+    return [
+      { name: "근태", value: stats.attendance },
+      { name: "출장", value: stats.businessTrip },
+      { name: "일반", value: stats.general },
+    ];
+  }, [stats]);
+
+  if (loading) {
+    return (
+      <div className="p-4 md:p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>로딩중...</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            사용자 정보를 불러오는 중입니다.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="p-4 md:p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>사용자 정보 없음</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            로그인 상태를 다시 확인해주세요.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!canView) {
+    return (
+      <div className="p-4 md:p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>접근 권한 없음</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            전자결재 통계 메뉴는 관리자 이상만 접근할 수 있습니다.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -171,12 +247,18 @@ if (!canView) {
             disabled={myDocumentsQuery.isFetching}
           >
             <RefreshCw
-              className={`mr-2 h-4 w-4 ${myDocumentsQuery.isFetching ? "animate-spin" : ""}`}
+              className={`mr-2 h-4 w-4 ${
+                myDocumentsQuery.isFetching ? "animate-spin" : ""
+              }`}
             />
             새로고침
           </Button>
 
-          <Button type="button" variant="outline" onClick={() => setLocation("/e-approval")}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setLocation("/e-approval")}
+          >
             문서함으로
           </Button>
         </div>
@@ -189,10 +271,15 @@ if (!canView) {
             전체 현황
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-3 text-sm md:grid-cols-4">
+        <CardContent className="grid gap-3 text-sm md:grid-cols-5">
           <div className="rounded-xl border bg-slate-50 p-4">
             <p className="text-xs text-muted-foreground">전체 문서</p>
             <p className="mt-2 text-2xl font-bold">{stats.total}</p>
+          </div>
+
+          <div className="rounded-xl border bg-slate-50 p-4">
+            <p className="text-xs text-muted-foreground">임시저장</p>
+            <p className="mt-2 text-2xl font-bold">{stats.draft}</p>
           </div>
 
           <div className="rounded-xl border bg-slate-50 p-4">
@@ -211,6 +298,82 @@ if (!canView) {
           </div>
         </CardContent>
       </Card>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <BarChart3 className="h-4 w-4" />
+              상태별 문서 수
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[280px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={statusChartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="value" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <PieChartIcon className="h-4 w-4" />
+              문서 유형 비율
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[280px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={formTypeChartData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={90}
+                    label
+                  >
+                    {formTypeChartData.map((entry, index) => (
+                      <Cell
+                        key={`${entry.name}-${index}`}
+                        fill={PIE_COLORS[index % PIE_COLORS.length]}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              {formTypeChartData.map((item, index) => (
+                <div
+                  key={item.name}
+                  className="flex items-center justify-between rounded-lg border p-3 text-sm"
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="inline-block h-3 w-3 rounded-full"
+                      style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }}
+                    />
+                    <span>{item.name}</span>
+                  </div>
+                  <span className="font-semibold">{item.value}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
@@ -237,7 +400,15 @@ if (!canView) {
           <CardHeader>
             <CardTitle className="text-base">상태 요약</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-3">
+          <CardContent className="grid gap-3 sm:grid-cols-4">
+            <div className="rounded-lg border p-4">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Clock3 className="h-4 w-4" />
+                임시저장
+              </div>
+              <p className="mt-3 text-2xl font-bold">{stats.draft}</p>
+            </div>
+
             <div className="rounded-lg border p-4">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <Clock3 className="h-4 w-4" />
