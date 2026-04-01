@@ -32,6 +32,9 @@ import {
   CheckCircle2,
   Navigation,
   MapPin,
+  Settings2,
+  CalendarDays,
+  AlertTriangle,
 } from "lucide-react";
 
 import KakaoMapBase from "@/components/KakaoMap";
@@ -52,6 +55,12 @@ type FinderItem = {
   distanceKm?: string | number;
   latitude?: string | number | null;
   longitude?: string | number | null;
+
+  isInactive?: boolean;
+  inactiveReason?: string;
+  inactiveStartDate?: string | null;
+  inactiveEndDate?: string | null;
+  hideOnMapWhenInactive?: boolean;
 };
 
 declare global {
@@ -152,6 +161,67 @@ function getTypeLabel(type: FinderItemType) {
   return type === "education" ? "실습교육원" : "실습기관";
 }
 
+function toDateOnly(value?: string | null) {
+  if (!value) return null;
+  const s = String(value).slice(0, 10);
+  const d = new Date(`${s}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function formatDateOnly(value?: string | null) {
+  const d = toDateOnly(value);
+  if (!d) return "-";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+}
+
+function isFinderItemInactiveNow(item: FinderItem) {
+  if (!item.isInactive) return false;
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const start = toDateOnly(item.inactiveStartDate);
+  const end = toDateOnly(item.inactiveEndDate);
+
+  if (!start && !end) return true;
+  if (start && !end) return today >= start;
+  if (!start && end) return today <= end;
+  return !!(start && end && today >= start && today <= end);
+}
+
+function hasFinderInactiveConfig(item: FinderItem) {
+  return !!(
+    item.isInactive ||
+    item.inactiveReason ||
+    item.inactiveStartDate ||
+    item.inactiveEndDate
+  );
+}
+
+function getFinderInactiveText(item: FinderItem) {
+  if (!hasFinderInactiveConfig(item)) return "";
+
+  const reason = item.inactiveReason?.trim() || "비활성화";
+  const start = formatDateOnly(item.inactiveStartDate);
+  const end = formatDateOnly(item.inactiveEndDate);
+
+  if (item.inactiveStartDate && item.inactiveEndDate) {
+    return `${reason} (${start} ~ ${end})`;
+  }
+
+  if (item.inactiveStartDate && !item.inactiveEndDate) {
+    return `${reason} (${start}부터 사용 불가)`;
+  }
+
+  if (!item.inactiveStartDate && item.inactiveEndDate) {
+    return `${reason} (${end}까지 사용 불가)`;
+  }
+
+  return reason;
+}
+
 export default function PracticeSupportCenter() {
   const { user } = useAuth();
   const utils = trpc.useUtils();
@@ -182,6 +252,16 @@ export default function PracticeSupportCenter() {
   } | null>(null);
   const [finderResolvedAddress, setFinderResolvedAddress] = useState("");
 
+  const [finderSettingsItem, setFinderSettingsItem] = useState<FinderItem | null>(
+    null
+  );
+  const [finderInactiveEnabled, setFinderInactiveEnabled] = useState(false);
+  const [finderInactiveStartDate, setFinderInactiveStartDate] = useState("");
+  const [finderInactiveEndDate, setFinderInactiveEndDate] = useState("");
+  const [finderInactiveReason, setFinderInactiveReason] = useState("");
+  const [finderHideOnMapWhenInactive, setFinderHideOnMapWhenInactive] =
+    useState(true);
+
   const { data: practiceSupportList, isLoading } =
     trpc.practiceSupport.list.useQuery();
 
@@ -205,6 +285,28 @@ export default function PracticeSupportCenter() {
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const updateEducationAvailabilityMut =
+    trpc.practiceEducationCenter.updateAvailability.useMutation({
+      onSuccess: async () => {
+        await Promise.all([
+          utils.practiceEducationCenter.list.invalidate(),
+        ]);
+        toast.success("실습교육원 비활성화 설정이 저장되었습니다.");
+      },
+      onError: (e) => toast.error(e.message || "실습교육원 설정 저장 실패"),
+    });
+
+  const updateInstitutionAvailabilityMut =
+    trpc.practiceInstitution.updateAvailability.useMutation({
+      onSuccess: async () => {
+        await Promise.all([
+          utils.practiceInstitution.list.invalidate(),
+        ]);
+        toast.success("실습기관 비활성화 설정이 저장되었습니다.");
+      },
+      onError: (e) => toast.error(e.message || "실습기관 설정 저장 실패"),
+    });
 
   const filteredList = useMemo(() => {
     const keyword = search.trim();
@@ -348,7 +450,84 @@ export default function PracticeSupportCenter() {
     setSelectedFinderItem(null);
     setFinderSearchPoint(null);
     setFinderResolvedAddress("");
+    setFinderSettingsItem(null);
     setFinderOpen(true);
+  };
+
+  const openFinderSettings = (item: FinderItem) => {
+    setFinderSettingsItem(item);
+    setFinderInactiveEnabled(!!item.isInactive);
+    setFinderInactiveStartDate(String(item.inactiveStartDate || "").slice(0, 10));
+    setFinderInactiveEndDate(String(item.inactiveEndDate || "").slice(0, 10));
+    setFinderInactiveReason(item.inactiveReason || "");
+    setFinderHideOnMapWhenInactive(item.hideOnMapWhenInactive ?? true);
+  };
+
+  const applyFinderItemLocalPatch = (
+    itemId: string | number,
+    itemType: FinderItemType,
+    patch: Partial<FinderItem>
+  ) => {
+    setFinderResults((prev) =>
+      prev.map((item) =>
+        String(item.id) === String(itemId) && item.type === itemType
+          ? { ...item, ...patch }
+          : item
+      )
+    );
+
+    setSelectedFinderItem((prev) => {
+      if (!prev) return prev;
+      if (String(prev.id) !== String(itemId) || prev.type !== itemType) return prev;
+      return { ...prev, ...patch };
+    });
+
+    setFinderSettingsItem((prev) => {
+      if (!prev) return prev;
+      if (String(prev.id) !== String(itemId) || prev.type !== itemType) return prev;
+      return { ...prev, ...patch };
+    });
+  };
+
+  const saveFinderSettings = async () => {
+    if (!finderSettingsItem) {
+      toast.error("설정할 기관이 없습니다.");
+      return;
+    }
+
+    const payload = {
+      id: Number(finderSettingsItem.id),
+      isInactive: finderInactiveEnabled,
+      inactiveReason: finderInactiveReason.trim() || null,
+      inactiveStartDate: finderInactiveStartDate || null,
+      inactiveEndDate: finderInactiveEndDate || null,
+      hideOnMapWhenInactive: finderHideOnMapWhenInactive,
+    };
+
+    if (!payload.id || Number.isNaN(payload.id)) {
+      toast.error("저장할 기관 ID가 올바르지 않습니다.");
+      return;
+    }
+
+    try {
+      if (finderSettingsItem.type === "education") {
+        await updateEducationAvailabilityMut.mutateAsync(payload as any);
+      } else {
+        await updateInstitutionAvailabilityMut.mutateAsync(payload as any);
+      }
+
+      applyFinderItemLocalPatch(finderSettingsItem.id, finderSettingsItem.type, {
+        isInactive: finderInactiveEnabled,
+        inactiveReason: finderInactiveReason.trim() || "",
+        inactiveStartDate: finderInactiveStartDate || null,
+        inactiveEndDate: finderInactiveEndDate || null,
+        hideOnMapWhenInactive: finderHideOnMapWhenInactive,
+      });
+
+      toast.success("비활성화 설정이 반영되었습니다.");
+    } catch (e: any) {
+      toast.error(e?.message || "비활성화 설정 저장 중 오류가 발생했습니다.");
+    }
   };
 
   const handleFinderSearch = async () => {
@@ -391,6 +570,11 @@ export default function PracticeSupportCenter() {
             distanceKm: distanceKm.toFixed(2),
             latitude: item.latitude,
             longitude: item.longitude,
+            isInactive: !!item.isInactive,
+            inactiveReason: item.inactiveReason || "",
+            inactiveStartDate: item.inactiveStartDate || null,
+            inactiveEndDate: item.inactiveEndDate || null,
+            hideOnMapWhenInactive: item.hideOnMapWhenInactive ?? true,
           });
         }
       }
@@ -414,6 +598,11 @@ export default function PracticeSupportCenter() {
             distanceKm: distanceKm.toFixed(2),
             latitude: item.latitude,
             longitude: item.longitude,
+            isInactive: !!item.isInactive,
+            inactiveReason: item.inactiveReason || "",
+            inactiveStartDate: item.inactiveStartDate || null,
+            inactiveEndDate: item.inactiveEndDate || null,
+            hideOnMapWhenInactive: item.hideOnMapWhenInactive ?? true,
           });
         }
       }
@@ -428,6 +617,7 @@ export default function PracticeSupportCenter() {
 
       setFinderResults(topResults);
       setSelectedFinderItem(topResults[0] ?? null);
+      setFinderSettingsItem(null);
 
       if (topResults.length === 0) {
         toast.message("검색 결과가 없습니다. 좌표가 등록된 기관 데이터를 확인해주세요.");
@@ -444,6 +634,14 @@ export default function PracticeSupportCenter() {
   const applyFinderSelectionToDetail = async () => {
     if (!selectedFinderItem) {
       toast.error("선택된 기관이 없습니다.");
+      return;
+    }
+
+    if (isFinderItemInactiveNow(selectedFinderItem)) {
+      toast.error(
+        getFinderInactiveText(selectedFinderItem) ||
+          "현재 비활성화된 기관은 반영할 수 없습니다."
+      );
       return;
     }
 
@@ -494,6 +692,17 @@ export default function PracticeSupportCenter() {
     toast.error("반영할 대상 요청이 없습니다.");
   };
 
+  const mapVisibleFinderResults = useMemo(() => {
+    return finderResults.filter((item) => {
+      const inactiveNow = isFinderItemInactiveNow(item);
+
+      if (!inactiveNow) return true;
+      if (item.hideOnMapWhenInactive === false) return true;
+
+      return false;
+    });
+  }, [finderResults]);
+
   const FinderTypeToggle = ({
     checked,
     onChange,
@@ -524,6 +733,10 @@ export default function PracticeSupportCenter() {
       </button>
     );
   };
+
+  const savingFinderSettings =
+    updateEducationAvailabilityMut.isPending ||
+    updateInstitutionAvailabilityMut.isPending;
 
   return (
     <div className="space-y-6">
@@ -1058,7 +1271,7 @@ export default function PracticeSupportCenter() {
           </DialogHeader>
 
           <div className="flex h-[calc(100vh-72px)]">
-            <div className="flex w-[360px] min-w-[360px] flex-col border-r bg-white">
+            <div className="flex w-[380px] min-w-[380px] flex-col border-r bg-white">
               <div className="space-y-4 border-b p-4">
                 <div className="space-y-1">
                   <Label className="text-xs">주소 검색</Label>
@@ -1121,7 +1334,8 @@ export default function PracticeSupportCenter() {
               <div className="border-b px-4 py-3 text-sm">
                 <div className="font-medium">검색 결과</div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  가까운 순으로 최대 100건까지 표시됩니다.
+                  왼쪽 리스트는 최대 100건까지 표시되고, 비활성 기관도 남아있지만
+                  지도에서는 비활성 기간 동안 숨길 수 있습니다.
                 </div>
               </div>
 
@@ -1140,21 +1354,37 @@ export default function PracticeSupportCenter() {
                     {finderResults.map((item) => {
                       const isSelected =
                         String(selectedFinderItem?.id || "") === String(item.id);
+                      const inactiveNow = isFinderItemInactiveNow(item);
+                      const hasConfig = hasFinderInactiveConfig(item);
 
                       return (
                         <button
                           key={`${item.type}-${item.id}`}
                           type="button"
-                          className={`w-full p-4 text-left transition hover:bg-muted/30 ${
+                          className={`relative w-full p-4 text-left transition hover:bg-muted/30 ${
                             isSelected
                               ? item.type === "education"
                                 ? "bg-blue-50"
                                 : "bg-orange-50"
+                              : hasConfig
+                              ? "bg-yellow-50/80"
                               : ""
                           }`}
                           onClick={() => setSelectedFinderItem(item)}
                         >
-                          <div className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openFinderSettings(item);
+                            }}
+                            className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-lg border bg-white text-gray-600 transition hover:bg-gray-50"
+                            title="비활성화 설정"
+                          >
+                            <Settings2 className="h-4 w-4" />
+                          </button>
+
+                          <div className="space-y-2 pr-10">
                             <div className="flex items-center gap-2">
                               <span
                                 className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -1170,6 +1400,19 @@ export default function PracticeSupportCenter() {
                                 {item.name}
                               </span>
                             </div>
+
+                            {hasConfig ? (
+                              <div className="space-y-1">
+                                <div className="inline-flex rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
+                                  {inactiveNow ? "현재 비활성화" : "비활성화 설정 있음"}
+                                </div>
+                                <div className="text-xs text-yellow-700">
+                                  {getFinderInactiveText(item)}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-xs text-emerald-600">사용 가능</div>
+                            )}
 
                             {item.address && (
                               <div className="flex items-start gap-2 text-xs text-muted-foreground">
@@ -1226,6 +1469,11 @@ export default function PracticeSupportCenter() {
                         거리: {selectedFinderItem.distanceKm}km
                       </div>
                     )}
+                    {hasFinderInactiveConfig(selectedFinderItem) && (
+                      <div className="mt-2 text-yellow-700">
+                        {getFinderInactiveText(selectedFinderItem)}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1241,7 +1489,13 @@ export default function PracticeSupportCenter() {
                   <Button
                     className="flex-1"
                     onClick={applyFinderSelectionToDetail}
-                    disabled={!selectedFinderItem || updatePracticeSupportMut.isPending}
+                    disabled={
+                      !selectedFinderItem ||
+                      updatePracticeSupportMut.isPending ||
+                      (selectedFinderItem
+                        ? isFinderItemInactiveNow(selectedFinderItem)
+                        : false)
+                    }
                   >
                     선택 반영
                   </Button>
@@ -1249,21 +1503,164 @@ export default function PracticeSupportCenter() {
               </div>
             </div>
 
-            <div className="min-w-0 flex-1 bg-gray-100">
+            <div className="relative min-w-0 flex-1 bg-gray-100">
               <div className="h-full w-full">
                 <KakaoMap
                   address={finderAddress}
                   searchTrigger={finderSearchTrigger}
                   includeEducationCenter={finderIncludeEducationCenter}
                   includePracticeInstitution={finderIncludePracticeInstitution}
-                  results={finderResults}
-                  selectedResult={selectedFinderItem}
+                  results={mapVisibleFinderResults}
+                  selectedResult={
+                    selectedFinderItem && !isFinderItemInactiveNow(selectedFinderItem)
+                      ? selectedFinderItem
+                      : null
+                  }
                   searchPoint={finderSearchPoint}
                   searchPointLabel={finderResolvedAddress || finderAddress}
                   showSearchPointMarker={true}
                   onSelectResult={(item: FinderItem) => setSelectedFinderItem(item)}
                 />
               </div>
+
+              {finderSettingsItem ? (
+                <div className="absolute bottom-5 right-5 z-10 w-[360px] rounded-2xl border bg-white/95 p-4 shadow-xl backdrop-blur">
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Settings2 className="h-4 w-4 text-yellow-700" />
+                        <p className="font-semibold">기관 비활성화 설정</p>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {getTypeLabel(finderSettingsItem.type)} · {finderSettingsItem.name}
+                      </p>
+                    </div>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setFinderSettingsItem(null)}
+                    >
+                      닫기
+                    </Button>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="rounded-xl bg-yellow-50 px-3 py-3 text-xs text-yellow-800">
+                      전화 확인 후 올해 안함 / 현재 사용 안함 / 특정 기간 사용 불가
+                      같은 정보를 저장하면, 왼쪽 리스트는 노란색으로 표시되고
+                      지도에서는 기간 중 자동 숨김 처리할 수 있습니다.
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">사용 상태</Label>
+                      <Select
+                        value={finderInactiveEnabled ? "inactive" : "active"}
+                        onValueChange={(v) => setFinderInactiveEnabled(v === "inactive")}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="active">사용 가능</SelectItem>
+                          <SelectItem value="inactive">비활성화</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs flex items-center gap-1">
+                          <CalendarDays className="h-3.5 w-3.5" />
+                          시작일
+                        </Label>
+                        <Input
+                          type="date"
+                          value={finderInactiveStartDate}
+                          onChange={(e) => setFinderInactiveStartDate(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-xs flex items-center gap-1">
+                          <CalendarDays className="h-3.5 w-3.5" />
+                          종료일
+                        </Label>
+                        <Input
+                          type="date"
+                          value={finderInactiveEndDate}
+                          onChange={(e) => setFinderInactiveEndDate(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs flex items-center gap-1">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        비활성화 사유
+                      </Label>
+                      <Textarea
+                        rows={4}
+                        value={finderInactiveReason}
+                        onChange={(e) => setFinderInactiveReason(e.target.value)}
+                        placeholder="예: 2026년 운영 안함 / 올해 실습 미운영 / 현재 전화 후 사용 중단 확인"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">비활성 기간 지도 표시</Label>
+                      <Select
+                        value={finderHideOnMapWhenInactive ? "hide" : "show"}
+                        onValueChange={(v) =>
+                          setFinderHideOnMapWhenInactive(v === "hide")
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="hide">지도에서 숨김</SelectItem>
+                          <SelectItem value="show">지도에도 표시</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="rounded-xl bg-muted/40 px-3 py-3 text-xs text-muted-foreground">
+                      <div>현재 미리보기</div>
+                      <div className="mt-1 text-yellow-700">
+                        {finderInactiveEnabled
+                          ? `${
+                              finderInactiveReason.trim() || "비활성화"
+                            } ${
+                              finderInactiveStartDate || finderInactiveEndDate
+                                ? `(${finderInactiveStartDate || "-"} ~ ${
+                                    finderInactiveEndDate || "미정"
+                                  })`
+                                : ""
+                            }`
+                          : "사용 가능"}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => setFinderSettingsItem(null)}
+                      >
+                        닫기
+                      </Button>
+                      <Button
+                        className="flex-1"
+                        onClick={saveFinderSettings}
+                        disabled={savingFinderSettings}
+                      >
+                        저장
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         </DialogContent>

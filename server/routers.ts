@@ -3251,6 +3251,37 @@ practiceEducationCenter: router({
       return { success: true };
     }),
 
+  updateAvailability: protectedProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        isInactive: z.boolean(),
+        inactiveReason: z.string().nullable().optional(),
+        inactiveStartDate: z.string().nullable().optional(),
+        inactiveEndDate: z.string().nullable().optional(),
+        hideOnMapWhenInactive: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (
+        ctx.user.role !== "admin" &&
+        ctx.user.role !== "host" &&
+        ctx.user.role !== "superhost"
+      ) {
+        throw new Error("관리자 또는 호스트만 수정할 수 있습니다");
+      }
+
+      await db.updatePracticeEducationCenterAvailability(input.id, {
+        isInactive: input.isInactive,
+        inactiveReason: input.inactiveReason ?? null,
+        inactiveStartDate: input.inactiveStartDate ?? null,
+        inactiveEndDate: input.inactiveEndDate ?? null,
+        hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
+      });
+
+      return { success: true };
+    }),
+
   delete: hostProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
@@ -3403,6 +3434,37 @@ practiceEducationCenter: router({
         await db.updatePracticeInstitution(id, data);
         return { success: true };
       }),
+
+  updateAvailability: protectedProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        isInactive: z.boolean(),
+        inactiveReason: z.string().nullable().optional(),
+        inactiveStartDate: z.string().nullable().optional(),
+        inactiveEndDate: z.string().nullable().optional(),
+        hideOnMapWhenInactive: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (
+        ctx.user.role !== "admin" &&
+        ctx.user.role !== "host" &&
+        ctx.user.role !== "superhost"
+      ) {
+        throw new Error("관리자 또는 호스트만 수정할 수 있습니다");
+      }
+
+      await db.updatePracticeInstitutionAvailability(input.id, {
+        isInactive: input.isInactive,
+        inactiveReason: input.inactiveReason ?? null,
+        inactiveStartDate: input.inactiveStartDate ?? null,
+        inactiveEndDate: input.inactiveEndDate ?? null,
+        hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
+      });
+
+      return { success: true };
+    }),
 
     delete: hostProcedure
       .input(z.object({ id: z.number() }))

@@ -500,7 +500,13 @@ export const practiceInstitutions = mysqlTable("practice_institutions", {
   memo: text("memo"),
 
   isActive: boolean("isActive").notNull().default(true),
-
+  isInactive: boolean("isInactive").notNull().default(false),
+  inactiveReason: varchar("inactiveReason", { length: 255 }),
+  inactiveStartDate: date("inactiveStartDate"),
+  inactiveEndDate: date("inactiveEndDate"),
+  hideOnMapWhenInactive: boolean("hideOnMapWhenInactive")
+    .notNull()
+    .default(true),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -528,6 +534,14 @@ export const practiceEducationCenters = mysqlTable("practice_education_centers",
 
   availableCourse: varchar("availableCourse", { length: 255 }),
   memo: text("memo"),
+
+isInactive: boolean("isInactive").notNull().default(false),
+  inactiveReason: varchar("inactiveReason", { length: 255 }),
+  inactiveStartDate: date("inactiveStartDate"),
+  inactiveEndDate: date("inactiveEndDate"),
+  hideOnMapWhenInactive: boolean("hideOnMapWhenInactive")
+    .notNull()
+    .default(true),
 
   isActive: boolean("isActive").notNull().default(true),
   sortOrder: int("sortOrder").notNull().default(0),

@@ -2900,6 +2900,52 @@ export async function updatePracticeEducationCenter(
     .where(eq(practiceEducationCenters.id, id));
 }
 
+type PracticeAvailabilityUpdateInput = {
+  isInactive: boolean;
+  inactiveReason?: string | null;
+  inactiveStartDate?: string | null;
+  inactiveEndDate?: string | null;
+  hideOnMapWhenInactive?: boolean | null;
+};
+
+export async function updatePracticeInstitutionAvailability(
+  id: number,
+  data: PracticeAvailabilityUpdateInput
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(practiceInstitutions)
+    .set({
+      isInactive: data.isInactive,
+      inactiveReason: data.inactiveReason ?? null,
+      inactiveStartDate: data.inactiveStartDate ?? null,
+      inactiveEndDate: data.inactiveEndDate ?? null,
+      hideOnMapWhenInactive: data.hideOnMapWhenInactive ?? true,
+    } as any)
+    .where(eq(practiceInstitutions.id, id));
+}
+
+export async function updatePracticeEducationCenterAvailability(
+  id: number,
+  data: PracticeAvailabilityUpdateInput
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(practiceEducationCenters)
+    .set({
+      isInactive: data.isInactive,
+      inactiveReason: data.inactiveReason ?? null,
+      inactiveStartDate: data.inactiveStartDate ?? null,
+      inactiveEndDate: data.inactiveEndDate ?? null,
+      hideOnMapWhenInactive: data.hideOnMapWhenInactive ?? true,
+    } as any)
+    .where(eq(practiceEducationCenters.id, id));
+}
+
 export async function deletePracticeEducationCenter(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");

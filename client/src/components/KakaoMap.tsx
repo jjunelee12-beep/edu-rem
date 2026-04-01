@@ -9,6 +9,12 @@ type FinderItem = {
   type?: "education" | "institution";
   institutionType?: "education" | "institution";
   distanceKm?: number | string | null;
+
+  isInactive?: boolean;
+  inactiveReason?: string;
+  inactiveStartDate?: string | null;
+  inactiveEndDate?: string | null;
+  hideOnMapWhenInactive?: boolean;
 };
 
 type KakaoMapProps = {
@@ -123,6 +129,44 @@ function getTypeClasses(type: "education" | "institution") {
       };
 }
 
+function toDateOnly(value?: string | null) {
+  if (!value) return null;
+  const s = String(value).slice(0, 10);
+  const d = new Date(`${s}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isFinderItemInactiveNow(item?: FinderItem | null) {
+  if (!item?.isInactive) return false;
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const start = toDateOnly(item.inactiveStartDate);
+  const end = toDateOnly(item.inactiveEndDate);
+
+  if (!start && !end) return true;
+  if (start && !end) return today >= start;
+  if (!start && end) return today <= end;
+  return !!(start && end && today >= start && today <= end);
+}
+
+function getInactiveText(item?: FinderItem | null) {
+  if (!item) return "";
+  if (!item.isInactive && !item.inactiveReason && !item.inactiveStartDate && !item.inactiveEndDate) {
+    return "";
+  }
+
+  const reason = item.inactiveReason?.trim() || "비활성화";
+  const start = item.inactiveStartDate ? String(item.inactiveStartDate).slice(0, 10) : "";
+  const end = item.inactiveEndDate ? String(item.inactiveEndDate).slice(0, 10) : "";
+
+  if (start && end) return `${reason} (${start} ~ ${end})`;
+  if (start && !end) return `${reason} (${start}부터 사용 불가)`;
+  if (!start && end) return `${reason} (${end}까지 사용 불가)`;
+  return reason;
+}
+
 export default function KakaoMap({
   address,
   searchTrigger,
@@ -146,6 +190,14 @@ export default function KakaoMap({
   const [error, setError] = useState("");
 
   const normalizedAddress = useMemo(() => (address || "").trim(), [address]);
+
+  const safeSelectedResult = useMemo(() => {
+    if (!selectedResult) return null;
+    if (isFinderItemInactiveNow(selectedResult) && selectedResult.hideOnMapWhenInactive !== false) {
+      return null;
+    }
+    return selectedResult;
+  }, [selectedResult]);
 
   function clearResultLayers() {
     resultMarkersRef.current.forEach((m) => m.setMap(null));
@@ -295,26 +347,29 @@ export default function KakaoMap({
         | "institution";
 
       const colors = getTypeClasses(type);
+      const inactiveNow = isFinderItemInactiveNow(item);
       const pos = new kakao.maps.LatLng(lat, lng);
 
       const marker = new kakao.maps.Marker({
         map,
         position: pos,
-        zIndex: 5,
+        zIndex: inactiveNow ? 3 : 5,
       });
+
+      const inactiveText = getInactiveText(item);
 
       const overlayHtml = `
         <div style="
           padding:8px 10px;
           background:white;
-          border:1px solid ${colors.borderColor};
+          border:1px solid ${inactiveNow ? "#facc15" : colors.borderColor};
           border-radius:12px;
           font-size:12px;
           color:#111827;
           box-shadow:0 2px 8px rgba(0,0,0,0.10);
           min-width:150px;
         ">
-          <div style="margin-bottom:6px;">
+          <div style="margin-bottom:6px; display:flex; gap:6px; flex-wrap:wrap;">
             <span style="
               display:inline-flex;
               padding:2px 8px;
@@ -326,8 +381,26 @@ export default function KakaoMap({
             ">
               ${getTypeLabel(type)}
             </span>
+            ${
+              inactiveNow
+                ? `<span style="
+                    display:inline-flex;
+                    padding:2px 8px;
+                    border-radius:999px;
+                    font-size:11px;
+                    font-weight:700;
+                    background:#fef3c7;
+                    color:#92400e;
+                  ">비활성화</span>`
+                : ""
+            }
           </div>
           <div style="font-weight:700; margin-bottom:2px;">${item.name}</div>
+          ${
+            inactiveText
+              ? `<div style="margin-top:4px; color:#a16207; line-height:1.4;">${inactiveText}</div>`
+              : ""
+          }
           ${
             item.distanceKm !== null &&
             item.distanceKm !== undefined &&
@@ -342,7 +415,7 @@ export default function KakaoMap({
         position: pos,
         content: overlayHtml,
         yAnchor: 1.7,
-        zIndex: 6,
+        zIndex: inactiveNow ? 4 : 6,
       });
 
       kakao.maps.event.addListener(marker, "click", () => {
@@ -354,7 +427,7 @@ export default function KakaoMap({
       });
 
       kakao.maps.event.addListener(marker, "mouseout", () => {
-        if (String(selectedResult?.id || "") !== String(item.id)) {
+        if (String(safeSelectedResult?.id || "") !== String(item.id)) {
           overlay.setMap(null);
         }
       });
@@ -362,7 +435,7 @@ export default function KakaoMap({
       resultMarkersRef.current.push(marker);
       resultOverlaysRef.current.push(overlay);
 
-      if (String(selectedResult?.id || "") === String(item.id)) {
+      if (String(safeSelectedResult?.id || "") === String(item.id)) {
         overlay.setMap(map);
       }
 
@@ -373,23 +446,25 @@ export default function KakaoMap({
     if (hasMarker) {
       map.setBounds(bounds);
     }
-  }, [results, onSelectResult, selectedResult, searchPoint, showSearchPointMarker]);
+  }, [results, onSelectResult, safeSelectedResult, searchPoint, showSearchPointMarker]);
 
   useEffect(() => {
     const map = mapObjRef.current;
     const kakao = window.kakao;
-    if (!map || !selectedResult || !kakao?.maps) return;
+    if (!map || !safeSelectedResult || !kakao?.maps) return;
 
     clearSelectedOverlay();
 
-    const lat = toNum(selectedResult.latitude);
-    const lng = toNum(selectedResult.longitude);
+    const lat = toNum(safeSelectedResult.latitude);
+    const lng = toNum(safeSelectedResult.longitude);
     if (lat === null || lng === null) return;
 
-    const type = (selectedResult.type ||
-      selectedResult.institutionType ||
+    const type = (safeSelectedResult.type ||
+      safeSelectedResult.institutionType ||
       "institution") as "education" | "institution";
     const colors = getTypeClasses(type);
+    const inactiveNow = isFinderItemInactiveNow(safeSelectedResult);
+    const inactiveText = getInactiveText(safeSelectedResult);
 
     const pos = new kakao.maps.LatLng(lat, lng);
     map.setCenter(pos);
@@ -398,14 +473,14 @@ export default function KakaoMap({
       <div style="
         padding:10px 12px;
         background:white;
-        border:2px solid ${colors.badgeColor};
+        border:2px solid ${inactiveNow ? "#eab308" : colors.badgeColor};
         border-radius:12px;
         font-size:12px;
         color:#111827;
         box-shadow:0 4px 14px rgba(0,0,0,0.16);
-        min-width:170px;
+        min-width:180px;
       ">
-        <div style="margin-bottom:6px;">
+        <div style="margin-bottom:6px; display:flex; gap:6px; flex-wrap:wrap;">
           <span style="
             display:inline-flex;
             padding:2px 8px;
@@ -417,13 +492,31 @@ export default function KakaoMap({
           ">
             선택됨 · ${getTypeLabel(type)}
           </span>
+          ${
+            inactiveNow
+              ? `<span style="
+                  display:inline-flex;
+                  padding:2px 8px;
+                  border-radius:999px;
+                  font-size:11px;
+                  font-weight:700;
+                  background:#fef3c7;
+                  color:#92400e;
+                ">비활성화</span>`
+              : ""
+          }
         </div>
-        <div style="font-weight:700; margin-bottom:2px;">${selectedResult.name}</div>
+        <div style="font-weight:700; margin-bottom:2px;">${safeSelectedResult.name}</div>
         ${
-          selectedResult.distanceKm !== null &&
-          selectedResult.distanceKm !== undefined &&
-          selectedResult.distanceKm !== ""
-            ? `<div style="margin-top:4px; color:#2563eb; font-weight:700;">${selectedResult.distanceKm}km</div>`
+          inactiveText
+            ? `<div style="margin-top:4px; color:#a16207; line-height:1.4;">${inactiveText}</div>`
+            : ""
+        }
+        ${
+          safeSelectedResult.distanceKm !== null &&
+          safeSelectedResult.distanceKm !== undefined &&
+          safeSelectedResult.distanceKm !== ""
+            ? `<div style="margin-top:4px; color:#2563eb; font-weight:700;">${safeSelectedResult.distanceKm}km</div>`
             : ""
         }
       </div>
@@ -438,7 +531,7 @@ export default function KakaoMap({
 
     overlay.setMap(map);
     selectedOverlayRef.current = overlay;
-  }, [selectedResult]);
+  }, [safeSelectedResult]);
 
   if (error) {
     return (
