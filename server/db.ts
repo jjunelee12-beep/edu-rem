@@ -5843,24 +5843,3 @@ export async function rejectApprovalDocument(params: {
 
   return true;
 }
-
-export async function createNotification(data: {
-  userId: number;
-  type: string;
-  message: string;
-  relatedId?: number | null;
-  isRead?: boolean;
-}) {
-  const db = await getDb();
-  if (!db) throw new Error("DB not available");
-
-  const result: any = await db.insert(notifications).values({
-    userId: data.userId,
-    type: data.type,
-    message: data.message,
-    relatedId: data.relatedId ?? null,
-    isRead: data.isRead ?? false,
-  } as any);
-
-  return getInsertId(result);
-}
