@@ -442,16 +442,18 @@ const activeMenuItem = activeEApprovalMenuItem
             return (
               <SidebarMenuItem key={item.path}>
                 <SidebarMenuButton
-                  isActive={isActive}
-                  onClick={() => setLocation(item.path)}
-                  tooltip={item.label}
-                  className="h-10 font-normal transition-all"
-                >
-                  <item.icon
-                    className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
-                  />
-                  <span>{item.label}</span>
-                </SidebarMenuButton>
+  isActive={isActive}
+  onClick={() => setLocation(item.path)}
+  tooltip={item.label}
+  className="h-10 min-w-0 font-normal transition-all"
+>
+  <item.icon
+    className={`h-4 w-4 shrink-0 ${isActive ? "text-primary" : ""}`}
+  />
+  <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left">
+    {item.label}
+  </span>
+</SidebarMenuButton>
               </SidebarMenuItem>
             );
           })}
@@ -533,50 +535,59 @@ const activeMenuItem = activeEApprovalMenuItem
   {renderMenuSection(visibleStaffMenuItems)}
 
   <div className="px-2 py-1">
-    <SidebarMenu>
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          isActive={isEApprovalPath}
-          onClick={() => setEApprovalMenuOpen((prev) => !prev)}
-          tooltip="전자결재"
-          className="h-10 font-normal transition-all"
-        >
-          <FileCheck2 className={`h-4 w-4 ${isEApprovalPath ? "text-primary" : ""}`} />
-          <span>전자결재</span>
-          <div className="ml-auto">
+  <SidebarMenu>
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        isActive={isEApprovalPath}
+        onClick={() => setEApprovalMenuOpen((prev) => !prev)}
+        tooltip="전자결재"
+        className="h-10 min-w-0 font-normal transition-all"
+      >
+        <FileCheck2
+          className={`h-4 w-4 shrink-0 ${isEApprovalPath ? "text-primary" : ""}`}
+        />
+        <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left">
+          전자결재
+        </span>
+
+        {!isCollapsed && (
+          <span className="ml-2 flex shrink-0 items-center">
             {eApprovalMenuOpen ? (
               <ChevronDown className="h-4 w-4" />
             ) : (
               <ChevronRight className="h-4 w-4" />
             )}
-          </div>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-    </SidebarMenu>
+          </span>
+        )}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  </SidebarMenu>
 
-    {eApprovalMenuOpen && (
-      <div className="ml-3 mt-1 border-l pl-3">
-        <SidebarMenu className="px-0 py-1">
-          {eApprovalSubMenus.map((item) => {
-            const isActive = location === item.href;
+  {!isCollapsed && eApprovalMenuOpen && (
+    <div className="ml-4 mt-1 border-l border-slate-200 pl-2">
+      <SidebarMenu className="px-0 py-1">
+        {eApprovalSubMenus.map((item) => {
+          const isActive = location === item.href;
 
-            return (
-              <SidebarMenuItem key={item.href}>
-                <SidebarMenuButton
-                  isActive={isActive}
-                  onClick={() => setLocation(item.href)}
-                  tooltip={item.label}
-                  className="h-9 font-normal transition-all"
-                >
-                  <span>{item.label}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            );
-          })}
-        </SidebarMenu>
-      </div>
-    )}
-  </div>
+          return (
+            <SidebarMenuItem key={item.href}>
+              <SidebarMenuButton
+                isActive={isActive}
+                onClick={() => setLocation(item.href)}
+                tooltip={item.label}
+                className="h-9 min-w-0 justify-start font-normal transition-all"
+              >
+                <span className="block min-w-0 flex-1 truncate whitespace-nowrap text-left text-sm">
+                  {item.label}
+                </span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          );
+        })}
+      </SidebarMenu>
+    </div>
+  )}
+</div>
 
   {renderMenuSection(visibleAdminMenuItems, "관리자")}
   {renderMenuSection(visibleHostMenuItems, "호스트")}
