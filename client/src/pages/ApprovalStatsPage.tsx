@@ -97,24 +97,26 @@ export default function ApprovalStatsPage() {
   const { user } = useAuth();
 
   const role = user?.role ?? "";
-  const canView = role === "admin" || role === "host" || role === "superhost";
+const canView = role === "admin" || role === "host" || role === "superhost";
 
-  if (!canView) {
-    return (
-      <div className="p-4 md:p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>접근 권한 없음</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            전자결재 통계 메뉴는 관리자 이상만 접근할 수 있습니다.
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+const myDocumentsQuery = trpc.approval.myDocuments.useQuery(undefined, {
+  enabled: canView,
+});
 
-  const myDocumentsQuery = trpc.approval.myDocuments.useQuery();
+if (!canView) {
+  return (
+    <div className="p-4 md:p-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>접근 권한 없음</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          전자결재 통계 메뉴는 관리자 이상만 접근할 수 있습니다.
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
   const docs = useMemo<ApprovalDocumentRow[]>(() => {
     return ((myDocumentsQuery.data ?? []) as ApprovalDocumentRow[]).slice();

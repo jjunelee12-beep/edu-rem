@@ -94,8 +94,9 @@ function PrivateRouter() {
 <Route path="/e-approval/settings" component={ApprovalSettingsPage} />
 <Route path="/e-approval/stats" component={ApprovalStatsPage} />
 <Route path="/e-approval/preview" component={ApprovalPreviewPage} />
-<Route path="/e-approval/:id" component={ApprovalDetailPage} />
 <Route path="/e-approval/:id/print" component={ApprovalPrintPage} />
+<Route path="/e-approval/:id" component={ApprovalDetailPage} />
+
 
         <Route component={NotFound} />
       </Switch>
