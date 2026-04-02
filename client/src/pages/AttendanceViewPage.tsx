@@ -114,6 +114,12 @@ export default function AttendanceViewPage() {
   const { data: records = [], isLoading: listLoading } =
     trpc.attendance.list.useQuery();
 
+const { data: myProfile } = trpc.users.me.useQuery();
+
+  const displayTeamName = (myProfile as any)?.teamName || "미분류";
+  const displayPositionName = (myProfile as any)?.positionName || "미분류";
+
+
   const { data: adjustmentLogs = [], isLoading: logsLoading } =
     trpc.attendance.adjustmentLogs.useQuery(
       {},
@@ -162,14 +168,6 @@ export default function AttendanceViewPage() {
       alert(err.message || "상태 변경 중 오류가 발생했습니다.");
     },
   });
-
-  const roleText = useMemo(() => {
-    if (user?.role === "superhost") return "슈퍼호스트";
-    if (user?.role === "host") return "호스트";
-    if (user?.role === "admin") return "관리자";
-    return "직원";
-  }, [user?.role]);
-
   const openEditModal = (row: any) => {
     setEditingRow(row);
     setEditClockIn(toDateTimeLocalValue(row?.clockInAt));
@@ -348,9 +346,12 @@ export default function AttendanceViewPage() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <h2 className="text-lg font-bold">{getMonthTitle(monthFilter)}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {user?.name} · {roleText}
-              </p>
+           <div className="mt-1 text-sm text-muted-foreground leading-tight">
+  <p>{user?.name}</p>
+  <p>
+    {displayTeamName} · {displayPositionName}
+  </p>
+</div>s
             </div>
 
             <div className="flex flex-wrap gap-2">

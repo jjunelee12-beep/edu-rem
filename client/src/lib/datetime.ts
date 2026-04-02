@@ -1,28 +1,44 @@
 // client/src/lib/datetime.ts
 
+function hasExplicitTimezone(value: string) {
+  return /([zZ]|[+-]\d{2}:\d{2})$/.test(value);
+}
+
 /**
- * DB에서 오는 시간 문자열을 "로컬(KST) 기준"으로 안전하게 파싱
+ * DB 문자열을 안전하게 Date로 변환
+ *
+ * 전제:
+ * - "2026-04-02 07:35:20" 같이 timezone 없는 DATETIME 문자열은
+ *   서버/DB UTC 값으로 들어온다고 보고 "Z"를 붙여 UTC로 해석한다.
+ * - 이미 Z / +09:00 같은 timezone 정보가 있으면 그대로 사용한다.
+ * - 날짜만 있는 "2026-04-02" 형식도 처리한다.
  */
-export function parseKSTDate(dateStr?: string | null): Date | null {
+export function parseKSTDate(dateStr?: string | Date | null): Date | null {
   if (!dateStr) return null;
+  if (dateStr instanceof Date) {
+    return Number.isNaN(dateStr.getTime()) ? null : dateStr;
+  }
 
-  // 이미 Date 객체면 그대로
-  if (dateStr instanceof Date) return dateStr;
+  const raw = String(dateStr).trim();
+  if (!raw) return null;
 
-  // "2026-04-02 03:04:23" → "2026-04-02T03:04:23"
-  const normalized = String(dateStr).replace(" ", "T");
+  // "2026-04-02 03:04:23" -> "2026-04-02T03:04:23"
+  const normalized = raw.replace(" ", "T");
 
-  const d = new Date(normalized);
+  let iso = normalized;
 
+  // timezone 정보가 없으면 UTC 기준으로 간주
+  if (!hasExplicitTimezone(iso)) {
+    iso += "Z";
+  }
+
+  const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
 
   return d;
 }
 
-/**
- * 시간 표시 (출근/퇴근용)
- */
-export function formatTime(dateStr?: string | null) {
+export function formatTime(dateStr?: string | Date | null) {
   const d = parseKSTDate(dateStr);
   if (!d) return "-";
 
@@ -30,41 +46,49 @@ export function formatTime(dateStr?: string | null) {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Seoul",
+  });
+}
+
+export function formatDate(dateStr?: string | Date | null) {
+  const d = parseKSTDate(dateStr);
+  if (!d) return "-";
+
+  return d.toLocaleDateString("ko-KR", {
+    timeZone: "Asia/Seoul",
+  });
+}
+
+export function formatDateTime(dateStr?: string | Date | null) {
+  const d = parseKSTDate(dateStr);
+  if (!d) return "-";
+
+  return d.toLocaleString("ko-KR", {
+    hour12: true,
+    timeZone: "Asia/Seoul",
   });
 }
 
 /**
- * 날짜 표시
+ * datetime-local input용
+ * UTC 기준 문자열 -> KST 로컬 입력값으로 변환
  */
-export function formatDate(dateStr?: string | null) {
-  const d = parseKSTDate(dateStr);
-  if (!d) return "-";
-
-  return d.toLocaleDateString("ko-KR");
-}
-
-/**
- * 날짜 + 시간
- */
-export function formatDateTime(dateStr?: string | null) {
-  const d = parseKSTDate(dateStr);
-  if (!d) return "-";
-
-  return d.toLocaleString("ko-KR");
-}
-
-/**
- * input datetime-local 용 변환 (⚠️ UTC 문제 해결 핵심)
- */
-export function toDateTimeLocalValue(dateStr?: string | null) {
+export function toDateTimeLocalValue(dateStr?: string | Date | null) {
   const d = parseKSTDate(dateStr);
   if (!d) return "";
 
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const hour = String(d.getHours()).padStart(2, "0");
-  const minute = String(d.getMinutes()).padStart(2, "0");
+  const parts = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
 
-  return `${year}-${month}-${day}T${hour}:${minute}`;
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+
+  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
 }

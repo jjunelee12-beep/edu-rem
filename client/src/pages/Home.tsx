@@ -11,7 +11,6 @@ import { formatTime } from "@/lib/datetime";
 import {
   Search,
   Bell,
-  Settings,
   User,
   Clock3,
   MessageSquare,
@@ -533,9 +532,6 @@ export default function Home() {
                     </span>
                   ) : null}
                 </button>
-                <button className="home-icon-btn">
-                  <Settings className="h-4 w-4" />
-                </button>
                 <button onClick={() => setLocation("/my")} className="home-icon-btn">
                   <User className="h-4 w-4" />
                 </button>
@@ -556,15 +552,12 @@ export default function Home() {
                       </button>
 
                       <h3 className="mt-3 text-lg font-semibold">{user?.name ?? "-"}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {user?.role === "superhost"
-                          ? "슈퍼호스트"
-                          : user?.role === "host"
-                          ? "호스트"
-                          : user?.role === "admin"
-                          ? "관리자"
-                          : "직원"}
-                      </p>
+                      <div className="text-sm text-muted-foreground leading-tight">
+  <p className="truncate">{(myProfile as any)?.teamName || "미분류"}</p>
+  <p className="truncate">
+    {(myProfile as any)?.positionName || "미분류"}
+  </p>
+</div>
                     </div>
 
                     <div className="mt-5 grid grid-cols-2 gap-3">
@@ -663,9 +656,10 @@ export default function Home() {
                                   )}
                                   <div>
                                     <p className="text-sm font-medium">{item.name}</p>
-                                    <p className="text-[11px] text-muted-foreground">
-                                      {[item.team, item.position].filter(Boolean).join(" · ")}
-                                    </p>
+                                    <div className="text-[11px] text-muted-foreground leading-tight">
+  <p className="truncate">{item.team || "미분류"}</p>
+  <p className="truncate">{item.position || "미분류"}</p>
+</div>
                                   </div>
                                 </div>
                                 <span className="text-xs text-muted-foreground">
@@ -681,13 +675,10 @@ export default function Home() {
                         <div className="rounded-2xl bg-slate-50 p-4">
                           <p className="text-xs text-muted-foreground">오늘 상태</p>
                           <p className="mt-1 text-lg font-bold">{myTodayAttendance?.status || "출근전"}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {attendanceListUI[0]
-                              ? [attendanceListUI[0].team, attendanceListUI[0].position]
-                                  .filter(Boolean)
-                                  .join(" · ")
-                              : "-"}
-                          </p>
+                          <div className="mt-1 text-xs text-muted-foreground leading-tight">
+  <p className="truncate">{attendanceListUI[0]?.team || "미분류"}</p>
+  <p className="truncate">{attendanceListUI[0]?.position || "미분류"}</p>
+</div>
                           <p className="mt-2 text-[11px] text-muted-foreground">
                             {myTodayAttendance?.clockInAt
                               ? `출근 ${formatTime(myTodayAttendance.clockInAt)}`

@@ -102,7 +102,7 @@ const superhostMenuItems: MenuItem[] = [
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 260;
-const MIN_WIDTH = 200;
+const MIN_WIDTH = 220;
 const MAX_WIDTH = 400;
 
 type AuthUser = {
@@ -110,7 +110,7 @@ type AuthUser = {
   username: string;
   role: UserRole;
   name?: string;
-profileImageUrl?: string | null;
+  profileImageUrl?: string | null;
 };
 
 type NotificationItem = {
@@ -206,11 +206,11 @@ export default function DashboardLayout({
 
   useEffect(() => {
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-    if (saved) {
-      const parsed = parseInt(saved, 10);
-      if (!Number.isNaN(parsed)) {
-        setSidebarWidth(parsed);
-      }
+    if (!saved) return;
+
+    const parsed = parseInt(saved, 10);
+    if (!Number.isNaN(parsed)) {
+      setSidebarWidth(parsed);
     }
   }, []);
 
@@ -261,12 +261,50 @@ function DashboardLayoutContent({
   const [selectedChannel, setSelectedChannel] = useState<MessengerRoom | null>(null);
   const [chatInput, setChatInput] = useState("");
 
+  const { data: myProfile, refetch: refetchMyProfile } = trpc.users.me.useQuery();
+
+  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+
+  const normalizeProfileImageUrl = (raw?: string | null) => {
+    if (!raw) return "";
+
+    if (
+      raw.startsWith("http://") ||
+      raw.startsWith("https://") ||
+      raw.startsWith("data:")
+    ) {
+      return raw;
+    }
+
+    if (raw.startsWith("//")) {
+      return `https:${raw}`;
+    }
+
+    if (!API_BASE_URL) {
+      return raw;
+    }
+
+    return raw.startsWith("/")
+      ? `${API_BASE_URL}${raw}`
+      : `${API_BASE_URL}/${raw}`;
+  };
+
+  useEffect(() => {
+    const handleProfileImageUpdated = () => {
+      void refetchMyProfile();
+    };
+
+    window.addEventListener("profile-image-updated", handleProfileImageUpdated);
+
+    return () => {
+      window.removeEventListener("profile-image-updated", handleProfileImageUpdated);
+    };
+  }, [refetchMyProfile]);
+
   useEffect(() => {
     const handlePushOpen = (event: Event) => {
       const customEvent = event as CustomEvent;
       const detail = customEvent.detail || {};
-
-      console.log("[WEB PUSH OPEN EVENT]", detail);
 
       if (detail.type === "lead") {
         setLocation("/consultations");
@@ -294,55 +332,55 @@ function DashboardLayoutContent({
   const isHost = user?.role === "host";
   const isSuperhost = user?.role === "superhost";
 
-const canViewApprovalInbox = isAdmin || isHost || isSuperhost;
-const canViewApprovalStats = isAdmin || isHost || isSuperhost;
-const canViewApprovalSettings = isSuperhost;
+  const canViewApprovalInbox = isAdmin || isHost || isSuperhost;
+  const canViewApprovalStats = isAdmin || isHost || isSuperhost;
+  const canViewApprovalSettings = isSuperhost;
 
-const isEApprovalPath =
-  location === "/e-approval" || location.startsWith("/e-approval/");
+  const isEApprovalPath =
+    location === "/e-approval" || location.startsWith("/e-approval/");
 
-const [eApprovalMenuOpen, setEApprovalMenuOpen] = useState(isEApprovalPath);
+  const [eApprovalMenuOpen, setEApprovalMenuOpen] = useState(isEApprovalPath);
 
-useEffect(() => {
-  if (isEApprovalPath) {
-    setEApprovalMenuOpen(true);
-  }
-}, [isEApprovalPath]);
+  useEffect(() => {
+    if (isEApprovalPath) {
+      setEApprovalMenuOpen(true);
+    }
+  }, [isEApprovalPath]);
 
-const eApprovalSubMenus = useMemo(() => {
-  const items = [
-    { label: "문서함", href: "/e-approval" },
-    { label: "근태", href: "/e-approval/attendance" },
-    { label: "출장", href: "/e-approval/business-trip" },
-    { label: "일반", href: "/e-approval/general" },
-  ];
+  const eApprovalSubMenus = useMemo(() => {
+    const items = [
+      { label: "문서함", href: "/e-approval" },
+      { label: "근태", href: "/e-approval/attendance" },
+      { label: "출장", href: "/e-approval/business-trip" },
+      { label: "일반", href: "/e-approval/general" },
+    ];
 
-  if (canViewApprovalInbox) {
-    items.push({ label: "전자결재 승인", href: "/e-approval/inbox" });
-  }
+    if (canViewApprovalInbox) {
+      items.push({ label: "전자결재 승인", href: "/e-approval/inbox" });
+    }
 
-  if (canViewApprovalStats) {
-    items.push({ label: "통계", href: "/e-approval/stats" });
-  }
+    if (canViewApprovalStats) {
+      items.push({ label: "통계", href: "/e-approval/stats" });
+    }
 
-  if (canViewApprovalSettings) {
-    items.push({ label: "전자결재 설정", href: "/e-approval/settings" });
-  }
+    if (canViewApprovalSettings) {
+      items.push({ label: "전자결재 설정", href: "/e-approval/settings" });
+    }
 
-  return items;
-}, [canViewApprovalInbox, canViewApprovalStats, canViewApprovalSettings]);
+    return items;
+  }, [canViewApprovalInbox, canViewApprovalStats, canViewApprovalSettings]);
 
   const visibleStaffMenuItems =
-  isStaff || isAdmin || isHost || isSuperhost ? staffMenuItems : [];
+    isStaff || isAdmin || isHost || isSuperhost ? staffMenuItems : [];
 
-const visibleAdminMenuItems =
-  isAdmin || isHost || isSuperhost ? adminMenuItems : [];
+  const visibleAdminMenuItems =
+    isAdmin || isHost || isSuperhost ? adminMenuItems : [];
 
-const visibleHostMenuItems =
-  isHost || isSuperhost ? hostMenuItems : [];
+  const visibleHostMenuItems =
+    isHost || isSuperhost ? hostMenuItems : [];
 
-const visibleSuperhostMenuItems =
-  isSuperhost ? superhostMenuItems : [];
+  const visibleSuperhostMenuItems =
+    isSuperhost ? superhostMenuItems : [];
 
   const allMenuItems = [
     ...visibleStaffMenuItems,
@@ -351,16 +389,16 @@ const visibleSuperhostMenuItems =
     ...visibleSuperhostMenuItems,
   ];
 
-const activeEApprovalMenuItem = eApprovalSubMenus.find(
-  (item) => location === item.href
-);
+  const activeEApprovalMenuItem = eApprovalSubMenus.find(
+    (item) => location === item.href
+  );
 
-const activeMenuItem = activeEApprovalMenuItem
-  ? { label: activeEApprovalMenuItem.label, path: activeEApprovalMenuItem.href }
-  : allMenuItems.find((item) => {
-      if (item.path === "/") return location === "/";
-      return location.startsWith(item.path);
-    });
+  const activeMenuItem = activeEApprovalMenuItem
+    ? { label: activeEApprovalMenuItem.label, path: activeEApprovalMenuItem.href }
+    : allMenuItems.find((item) => {
+        if (item.path === "/") return location === "/";
+        return location.startsWith(item.path);
+      });
 
   const notificationEnabled = !isSuperhost;
 
@@ -397,9 +435,10 @@ const activeMenuItem = activeEApprovalMenuItem
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing) return;
-      const sidebarLeft =
-        sidebarRef.current?.getBoundingClientRect().left ?? 0;
+
+      const sidebarLeft = sidebarRef.current?.getBoundingClientRect().left ?? 0;
       const newWidth = e.clientX - sidebarLeft;
+
       if (newWidth >= MIN_WIDTH && newWidth <= MAX_WIDTH) {
         setSidebarWidth(newWidth);
       }
@@ -428,8 +467,8 @@ const activeMenuItem = activeEApprovalMenuItem
     return (
       <>
         {title && !isCollapsed && (
-          <div className="mt-2 px-4 py-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="mt-2 px-3 py-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
               {title}
             </p>
           </div>
@@ -438,25 +477,23 @@ const activeMenuItem = activeEApprovalMenuItem
         <SidebarMenu className="px-2 py-1">
           {items.map((item) => {
             const isActive =
-              item.path === "/"
-                ? location === "/"
-                : location.startsWith(item.path);
+              item.path === "/" ? location === "/" : location.startsWith(item.path);
 
             return (
               <SidebarMenuItem key={item.path}>
                 <SidebarMenuButton
-  isActive={isActive}
-  onClick={() => setLocation(item.path)}
-  tooltip={item.label}
-  className="h-10 min-w-0 font-normal transition-all"
->
-  <item.icon
-    className={`h-4 w-4 shrink-0 ${isActive ? "text-primary" : ""}`}
-  />
-  <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left">
-    {item.label}
-  </span>
-</SidebarMenuButton>
+                  isActive={isActive}
+                  onClick={() => setLocation(item.path)}
+                  tooltip={item.label}
+                  className="min-w-0 font-normal"
+                >
+                  <item.icon
+                    className={`h-4 w-4 shrink-0 ${isActive ? "text-primary" : "text-slate-500"}`}
+                  />
+                  <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left">
+                    {item.label}
+                  </span>
+                </SidebarMenuButton>
               </SidebarMenuItem>
             );
           })}
@@ -490,6 +527,14 @@ const activeMenuItem = activeEApprovalMenuItem
     ? "관리자"
     : "직원";
 
+  const displayProfileImageUrl = normalizeProfileImageUrl(
+    (myProfile as any)?.profileImageUrl || user?.profileImageUrl || ""
+  );
+
+  const displayProfileName = (myProfile as any)?.name || user?.name || "-";
+  const displayTeamName = (myProfile as any)?.teamName || "팀 미지정";
+  const displayPositionName = (myProfile as any)?.positionName || "직급 미지정";
+
   const handleOpenChannel = (room: MessengerRoom) => {
     setSelectedChannel(room);
     setIsChatSlideOpen(true);
@@ -510,13 +555,13 @@ const activeMenuItem = activeEApprovalMenuItem
           disableTransition={isResizing}
         >
           <SidebarHeader className="h-16 justify-center">
-            <div className="flex w-full items-center gap-3 px-2 transition-all">
+            <div className="flex w-full items-center gap-3 px-1">
               <button
                 onClick={toggleSidebar}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl text-slate-600 transition-colors hover:bg-white/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 aria-label="Toggle navigation"
               >
-                <PanelLeft className="h-4 w-4 text-muted-foreground" />
+                <PanelLeft className="h-4 w-4" />
               </button>
 
               {!isCollapsed ? (
@@ -526,7 +571,7 @@ const activeMenuItem = activeEApprovalMenuItem
                   ) : (
                     <GraduationCap className="h-5 w-5 shrink-0 text-primary" />
                   )}
-                  <span className="truncate text-sm font-bold tracking-tight">
+                  <span className="truncate text-sm font-bold tracking-tight text-slate-900">
                     {isSuperhost ? "위드원 교육 CRM · SUPERHOST" : "위드원 교육 CRM"}
                   </span>
                 </div>
@@ -535,82 +580,85 @@ const activeMenuItem = activeEApprovalMenuItem
           </SidebarHeader>
 
           <SidebarContent className="gap-0">
-  {renderMenuSection(visibleStaffMenuItems)}
+            {renderMenuSection(visibleStaffMenuItems)}
 
- <SidebarMenu className="px-2 py-1">
-  <SidebarMenuItem>
-    <SidebarMenuButton
-      isActive={isEApprovalPath}
-      onClick={() => setEApprovalMenuOpen((prev) => !prev)}
-      tooltip="전자결재"
-      className="h-10 min-w-0 justify-between font-normal transition-all"
-    >
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        <FileCheck2
-          className={`h-4 w-4 shrink-0 ${isEApprovalPath ? "text-primary" : ""}`}
-        />
-        <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left">
-          전자결재
-        </span>
-      </div>
+            <SidebarMenu className="px-2 py-1">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={isEApprovalPath}
+                  onClick={() => setEApprovalMenuOpen((prev) => !prev)}
+                  tooltip="전자결재"
+                  className="min-w-0 justify-between font-normal"
+                >
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <FileCheck2
+                      className={`h-4 w-4 shrink-0 ${
+                        isEApprovalPath ? "text-primary" : "text-slate-500"
+                      }`}
+                    />
+                    <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left">
+                      전자결재
+                    </span>
+                  </div>
 
-      {!isCollapsed &&
-        (eApprovalMenuOpen ? (
-          <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
-        ) : (
-          <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
-        ))}
-    </SidebarMenuButton>
+                  {!isCollapsed &&
+                    (eApprovalMenuOpen ? (
+                      <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                    ))}
+                </SidebarMenuButton>
 
-    {!isCollapsed && eApprovalMenuOpen && (
-      <SidebarMenuSub>
-        {eApprovalSubMenus.map((item) => {
-          const isActive = location === item.href;
+                {!isCollapsed && eApprovalMenuOpen && (
+                  <SidebarMenuSub>
+                    {eApprovalSubMenus.map((item) => {
+                      const isActive = location === item.href;
 
-          return (
-            <SidebarMenuSubItem key={item.href}>
-              <SidebarMenuSubButton
-                type="button"
-                isActive={isActive}
-                size="md"
-                onClick={() => setLocation(item.href)}
-              >
-                <span className="truncate">{item.label}</span>
-              </SidebarMenuSubButton>
-            </SidebarMenuSubItem>
-          );
-        })}
-      </SidebarMenuSub>
-    )}
-  </SidebarMenuItem>
-</SidebarMenu>
+                      return (
+                        <SidebarMenuSubItem key={item.href}>
+                          <SidebarMenuSubButton
+                            type="button"
+                            isActive={isActive}
+                            size="md"
+                            onClick={() => setLocation(item.href)}
+                          >
+                            <span className="truncate">{item.label}</span>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      );
+                    })}
+                  </SidebarMenuSub>
+                )}
+              </SidebarMenuItem>
+            </SidebarMenu>
 
-  {renderMenuSection(visibleAdminMenuItems, "관리자")}
-  {renderMenuSection(visibleHostMenuItems, "호스트")}
-  {renderMenuSection(visibleSuperhostMenuItems, "슈퍼호스트")}
-</SidebarContent>
+            {renderMenuSection(visibleAdminMenuItems, "관리자")}
+            {renderMenuSection(visibleHostMenuItems, "호스트")}
+            {renderMenuSection(visibleSuperhostMenuItems, "슈퍼호스트")}
+          </SidebarContent>
 
-          <SidebarFooter className="p-3">
+          <SidebarFooter className="pt-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="group-data-[collapsible=icon]:justify-center flex w-full items-center gap-3 rounded-lg px-1 py-1 text-left transition-colors hover:bg-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <button className="flex w-full items-center gap-3 rounded-2xl bg-white/70 px-3 py-2 text-left shadow-[inset_0_0_0_1px_rgba(148,163,184,0.12)] transition-colors hover:bg-white group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <Avatar className="h-9 w-9 shrink-0 border">
-  <AvatarImage src={user?.profileImageUrl || ""} alt={user?.name || "user"} />
+  <AvatarImage src={displayProfileImageUrl} alt={displayProfileName || "user"} />
   <AvatarFallback className="bg-primary/10 text-xs font-medium text-primary">
-    {user?.name?.charAt(0).toUpperCase() || "U"}
+    {displayProfileName?.charAt(0).toUpperCase() || "U"}
   </AvatarFallback>
 </Avatar>
-                  <div className="group-data-[collapsible=icon]:hidden min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium leading-none">
-                      {user?.name || "-"}
-                    </p>
-                    <p className="mt-1 truncate text-xs text-muted-foreground">
-                      <span className="inline-flex items-center gap-1">
-                        <BadgeCheck className="h-3 w-3" />
-                        {roleLabel}
-                      </span>
-                    </p>
-                  </div>
+
+                  <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+  <p className="truncate text-sm font-medium leading-none text-slate-900">
+    {displayProfileName}
+  </p>
+  <p className="mt-1 truncate text-xs text-slate-500">
+    <span className="inline-flex items-center gap-1">
+      <BadgeCheck className="h-3 w-3" />
+      {displayTeamName} · {displayPositionName}
+    </span>
+  </p>
+</div>
                 </button>
               </DropdownMenuTrigger>
 
@@ -642,17 +690,17 @@ const activeMenuItem = activeEApprovalMenuItem
       </div>
 
       <SidebarInset>
-        <div className="supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40 flex h-14 items-center justify-between border-b bg-background/95 px-3 backdrop-blur md:px-6">
+        <div className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-white/60 bg-[#f4f6fa]/95 px-4 backdrop-blur-xl md:px-6">
           <div className="flex items-center gap-2">
             {isMobile ? (
               <>
-                <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
-                <span className="font-medium tracking-tight text-foreground">
+                <SidebarTrigger className="h-9 w-9 rounded-2xl bg-white/80 shadow-sm" />
+                <span className="font-medium tracking-tight text-slate-900">
                   {activeMenuItem?.label ?? (isSuperhost ? "슈퍼호스트" : "메뉴")}
                 </span>
               </>
             ) : (
-              <span className="font-medium tracking-tight text-foreground">
+              <span className="font-medium tracking-tight text-slate-900">
                 {activeMenuItem?.label ?? (isSuperhost ? "슈퍼호스트" : "메뉴")}
               </span>
             )}
@@ -663,14 +711,14 @@ const activeMenuItem = activeEApprovalMenuItem
               {location.startsWith("/superhost") ? (
                 <button
                   onClick={() => setLocation("/")}
-                  className="inline-flex h-9 items-center justify-center rounded-lg border bg-background px-3 text-sm transition-colors hover:bg-accent"
+                  className="inline-flex h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white/80 px-4 text-sm text-slate-700 transition-colors hover:bg-white"
                 >
                   일반 CRM으로 돌아가기
                 </button>
               ) : (
                 <button
                   onClick={() => setLocation("/superhost")}
-                  className="inline-flex h-9 items-center justify-center rounded-lg border bg-background px-3 text-sm transition-colors hover:bg-accent"
+                  className="inline-flex h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white/80 px-4 text-sm text-slate-700 transition-colors hover:bg-white"
                 >
                   슈퍼호스트 콘솔
                 </button>
@@ -683,7 +731,7 @@ const activeMenuItem = activeEApprovalMenuItem
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
-                    className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border bg-background transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="relative inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white/80 text-slate-700 transition-colors hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     aria-label="알림"
                   >
                     <Bell className="h-4 w-4" />
@@ -695,8 +743,8 @@ const activeMenuItem = activeEApprovalMenuItem
                   </button>
                 </DropdownMenuTrigger>
 
-                <DropdownMenuContent align="end" className="w-80 p-0">
-                  <div className="border-b px-3 py-2">
+                <DropdownMenuContent align="end" className="w-80 rounded-2xl p-0">
+                  <div className="border-b px-3 py-3">
                     <p className="text-sm font-semibold">알림</p>
                     <p className="text-xs text-muted-foreground">
                       최근 상담 알림을 확인할 수 있습니다.
@@ -746,8 +794,10 @@ const activeMenuItem = activeEApprovalMenuItem
 
             <button
               onClick={() => setRightDockTab("channels")}
-              className={`inline-flex h-9 items-center justify-center rounded-lg border px-3 text-sm transition-colors ${
-                rightDockTab === "channels" ? "bg-accent" : "bg-background hover:bg-accent"
+              className={`inline-flex h-10 items-center justify-center rounded-2xl border px-3 text-sm transition-colors ${
+                rightDockTab === "channels"
+                  ? "border-slate-200 bg-white text-slate-900"
+                  : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white"
               }`}
             >
               <MessageSquare className="mr-2 h-4 w-4" />
@@ -756,8 +806,10 @@ const activeMenuItem = activeEApprovalMenuItem
 
             <button
               onClick={() => setRightDockTab("profile")}
-              className={`inline-flex h-9 items-center justify-center rounded-lg border px-3 text-sm transition-colors ${
-                rightDockTab === "profile" ? "bg-accent" : "bg-background hover:bg-accent"
+              className={`inline-flex h-10 items-center justify-center rounded-2xl border px-3 text-sm transition-colors ${
+                rightDockTab === "profile"
+                  ? "border-slate-200 bg-white text-slate-900"
+                  : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white"
               }`}
             >
               <User className="mr-2 h-4 w-4" />
@@ -766,8 +818,10 @@ const activeMenuItem = activeEApprovalMenuItem
 
             <button
               onClick={() => setRightDockTab("settings")}
-              className={`inline-flex h-9 items-center justify-center rounded-lg border px-3 text-sm transition-colors ${
-                rightDockTab === "settings" ? "bg-accent" : "bg-background hover:bg-accent"
+              className={`inline-flex h-10 items-center justify-center rounded-2xl border px-3 text-sm transition-colors ${
+                rightDockTab === "settings"
+                  ? "border-slate-200 bg-white text-slate-900"
+                  : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white"
               }`}
             >
               <Settings className="mr-2 h-4 w-4" />
@@ -780,9 +834,9 @@ const activeMenuItem = activeEApprovalMenuItem
           <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
 
           {!isMobile && (
-            <aside className="hidden w-[320px] shrink-0 border-l bg-background xl:flex xl:flex-col">
-              <div className="flex h-14 items-center justify-between border-b px-4">
-                <div className="flex items-center gap-2">
+            <aside className="hidden w-[320px] shrink-0 border-l border-white/60 bg-[#eef2f7] xl:flex xl:flex-col">
+              <div className="flex h-16 items-center justify-between border-b border-white/60 px-4">
+                <div className="flex items-center gap-2 text-slate-800">
                   {rightDockTab === "channels" && <MessageSquare className="h-4 w-4" />}
                   {rightDockTab === "profile" && <User className="h-4 w-4" />}
                   {rightDockTab === "settings" && <Settings className="h-4 w-4" />}
@@ -803,33 +857,29 @@ const activeMenuItem = activeEApprovalMenuItem
                       <button
                         key={room.id}
                         onClick={() => handleOpenChannel(room)}
-                        className="flex w-full items-center justify-between rounded-xl border px-3 py-3 text-left transition hover:bg-accent/40"
+                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white/80 px-3 py-3 text-left transition hover:bg-white"
                       >
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <p className="truncate font-medium">{room.name}</p>
+                            <p className="truncate font-medium text-slate-900">{room.name}</p>
                             {room.unreadCount > 0 && (
                               <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
                                 {room.unreadCount}
                               </span>
                             )}
                           </div>
-                          <p className="mt-1 truncate text-sm text-muted-foreground">
+                          <p className="mt-1 truncate text-sm text-slate-500">
                             {room.lastMessage}
                           </p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {room.members}
-                          </p>
+                          <p className="mt-1 text-xs text-slate-400">{room.members}</p>
                         </div>
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                          {room.updatedAt}
-                        </span>
+                        <span className="shrink-0 text-xs text-slate-400">{room.updatedAt}</span>
                       </button>
                     ))}
 
                     <button
                       onClick={() => setLocation("/messenger")}
-                      className="flex w-full items-center justify-center rounded-xl border px-3 py-3 text-sm font-medium transition hover:bg-accent"
+                      className="flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white/80 px-3 py-3 text-sm font-medium text-slate-700 transition hover:bg-white"
                     >
                       메신저 전체 보기
                     </button>
@@ -838,68 +888,65 @@ const activeMenuItem = activeEApprovalMenuItem
 
                 {rightDockTab === "profile" && (
                   <div className="space-y-3">
-                    <div className="rounded-xl border p-4">
-                      <p className="text-xs text-muted-foreground">이름</p>
-                      <p className="mt-1 font-semibold">{user?.name || "-"}</p>
+                    <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
+                      <p className="text-xs text-slate-500">이름</p>
+                      <p className="mt-1 font-semibold text-slate-900">{user?.name || "-"}</p>
                     </div>
 
-                    <div className="rounded-xl border p-4">
-                      <p className="text-xs text-muted-foreground">권한</p>
-                      <p className="mt-1 font-semibold">{roleLabel}</p>
-                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
+  <p className="text-xs text-slate-500">팀</p>
+  <p className="mt-1 font-semibold text-slate-900">{displayTeamName}</p>
+</div>
 
-                    <div className="rounded-xl border p-4">
-                      <p className="text-xs text-muted-foreground">아이디</p>
-                      <p className="mt-1 font-semibold">
+<div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
+  <p className="text-xs text-slate-500">직급</p>
+  <p className="mt-1 font-semibold text-slate-900">{displayPositionName}</p>
+</div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
+                      <p className="text-xs text-slate-500">아이디</p>
+                      <p className="mt-1 font-semibold text-slate-900">
                         {"username" in (user ?? {}) ? (user as any).username : "-"}
                       </p>
                     </div>
 
                     <button
                       onClick={() => setLocation("/system")}
-                      className="flex w-full items-center justify-between rounded-xl border px-3 py-3 text-left transition hover:bg-accent/40"
+                      className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white/80 px-3 py-3 text-left transition hover:bg-white"
                     >
                       <div>
-                        <p className="text-sm font-semibold">시스템 관리</p>
-                        <p className="text-xs text-muted-foreground">
-                          사용자 및 기본 설정 확인
-                        </p>
+                        <p className="text-sm font-semibold text-slate-900">시스템 관리</p>
+                        <p className="text-xs text-slate-500">사용자 및 기본 설정 확인</p>
                       </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      <ChevronRight className="h-4 w-4 text-slate-400" />
                     </button>
                   </div>
                 )}
 
                 {rightDockTab === "settings" && (
                   <div className="space-y-3">
-                    <button className="flex w-full items-center justify-between rounded-xl border px-3 py-3 text-left transition hover:bg-accent/40">
+                    <button className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white/80 px-3 py-3 text-left transition hover:bg-white">
                       <div>
-                        <p className="text-sm font-semibold">알림 설정</p>
-                        <p className="text-xs text-muted-foreground">
-                          상담/승인/환불 알림 관리
-                        </p>
+                        <p className="text-sm font-semibold text-slate-900">알림 설정</p>
+                        <p className="text-xs text-slate-500">상담/승인/환불 알림 관리</p>
                       </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      <ChevronRight className="h-4 w-4 text-slate-400" />
                     </button>
 
-                    <button className="flex w-full items-center justify-between rounded-xl border px-3 py-3 text-left transition hover:bg-accent/40">
+                    <button className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white/80 px-3 py-3 text-left transition hover:bg-white">
                       <div>
-                        <p className="text-sm font-semibold">홈 화면 설정</p>
-                        <p className="text-xs text-muted-foreground">
-                          대시보드 및 홈 구성 제어
-                        </p>
+                        <p className="text-sm font-semibold text-slate-900">홈 화면 설정</p>
+                        <p className="text-xs text-slate-500">대시보드 및 홈 구성 제어</p>
                       </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      <ChevronRight className="h-4 w-4 text-slate-400" />
                     </button>
 
-                    <button className="flex w-full items-center justify-between rounded-xl border px-3 py-3 text-left transition hover:bg-accent/40">
+                    <button className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white/80 px-3 py-3 text-left transition hover:bg-white">
                       <div>
-                        <p className="text-sm font-semibold">보안 설정</p>
-                        <p className="text-xs text-muted-foreground">
-                          접근 정책 및 계정 보안 관리
-                        </p>
+                        <p className="text-sm font-semibold text-slate-900">보안 설정</p>
+                        <p className="text-xs text-slate-500">접근 정책 및 계정 보안 관리</p>
                       </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      <ChevronRight className="h-4 w-4 text-slate-400" />
                     </button>
                   </div>
                 )}
@@ -910,24 +957,24 @@ const activeMenuItem = activeEApprovalMenuItem
       </SidebarInset>
 
       {isChatSlideOpen && selectedChannel && !isMobile && (
-        <aside className="fixed right-0 top-14 z-50 h-[calc(100vh-56px)] w-[420px] border-l bg-background shadow-2xl">
-          <div className="flex h-14 items-center justify-between border-b px-4">
+        <aside className="fixed right-0 top-16 z-50 h-[calc(100vh-64px)] w-[420px] border-l border-slate-200 bg-[#f5f7fb] shadow-2xl">
+          <div className="flex h-16 items-center justify-between border-b border-slate-200 px-4">
             <div className="min-w-0">
-              <p className="truncate font-semibold">{selectedChannel.name}</p>
-              <p className="text-xs text-muted-foreground">
+              <p className="truncate font-semibold text-slate-900">{selectedChannel.name}</p>
+              <p className="text-xs text-slate-500">
                 {selectedChannel.members || "채널 대화"}
               </p>
             </div>
 
             <button
               onClick={() => setIsChatSlideOpen(false)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg transition hover:bg-accent"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-2xl text-slate-600 transition hover:bg-white"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
 
-          <div className="flex h-[calc(100%-56px)] flex-col">
+          <div className="flex h-[calc(100%-64px)] flex-col">
             <div className="flex-1 space-y-3 overflow-y-auto p-4">
               {currentMessages.map((message) => (
                 <div
@@ -938,11 +985,11 @@ const activeMenuItem = activeEApprovalMenuItem
                     className={`max-w-[80%] rounded-2xl px-4 py-3 ${
                       message.mine
                         ? "bg-primary text-primary-foreground"
-                        : "border bg-white"
+                        : "border border-slate-200 bg-white"
                     }`}
                   >
                     {!message.mine && (
-                      <p className="mb-1 text-xs font-semibold text-muted-foreground">
+                      <p className="mb-1 text-xs font-semibold text-slate-500">
                         {message.sender}
                       </p>
                     )}
@@ -951,7 +998,7 @@ const activeMenuItem = activeEApprovalMenuItem
                       className={`mt-2 text-[11px] ${
                         message.mine
                           ? "text-primary-foreground/80"
-                          : "text-muted-foreground"
+                          : "text-slate-400"
                       }`}
                     >
                       {message.time}
@@ -961,17 +1008,17 @@ const activeMenuItem = activeEApprovalMenuItem
               ))}
             </div>
 
-            <div className="border-t p-4">
+            <div className="border-t border-slate-200 p-4">
               <div className="flex items-end gap-2">
                 <textarea
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   placeholder="메시지를 입력하세요"
-                  className="min-h-[44px] flex-1 resize-none rounded-xl border px-3 py-2 text-sm outline-none focus:border-primary"
+                  className="min-h-[44px] flex-1 resize-none rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary"
                 />
                 <button
                   onClick={handleSendMessage}
-                  className="inline-flex h-11 items-center justify-center rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+                  className="inline-flex h-11 items-center justify-center rounded-2xl bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90"
                 >
                   전송
                 </button>

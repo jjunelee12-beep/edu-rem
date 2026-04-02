@@ -18,13 +18,40 @@ export default function MyPage() {
 
   const { data: myProfile, isLoading } = trpc.users.me.useQuery();
 
+  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+
+  const normalizeProfileImageUrl = (raw?: string | null) => {
+    if (!raw) return "";
+
+    if (
+      raw.startsWith("http://") ||
+      raw.startsWith("https://") ||
+      raw.startsWith("data:")
+    ) {
+      return raw;
+    }
+
+    if (raw.startsWith("//")) {
+      return `https:${raw}`;
+    }
+
+    if (!API_BASE_URL) {
+      return raw;
+    }
+
+    return raw.startsWith("/")
+      ? `${API_BASE_URL}${raw}`
+      : `${API_BASE_URL}/${raw}`;
+  };
+
   const [previewImage, setPreviewImage] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
 
-  const updatePhotoMutation = trpc.users.updateMyPhoto.useMutation({
+    const updatePhotoMutation = trpc.users.updateMyPhoto.useMutation({
     onSuccess: async () => {
       await utils.users.me.invalidate();
+      window.dispatchEvent(new Event("profile-image-updated"));
       alert("프로필 사진이 저장되었습니다.");
       setPreviewImage("");
     },
@@ -62,9 +89,9 @@ export default function MyPage() {
     !!newPasswordConfirm &&
     !passwordError;
 
-  const profileImageSrc =
+    const profileImageSrc =
     previewImage ||
-    (myProfile as any)?.profileImageUrl ||
+    normalizeProfileImageUrl((myProfile as any)?.profileImageUrl) ||
     "";
 
   const handlePreviewPhoto = (file: File) => {
@@ -103,17 +130,17 @@ export default function MyPage() {
       return;
     }
 
-    const uploaded = await uploadRes.json();
-    const fileUrl = uploaded?.fileUrl;
+      const uploaded = await uploadRes.json();
+  const fileUrl = normalizeProfileImageUrl(uploaded?.fileUrl);
 
-    if (!fileUrl) {
-      alert("업로드된 사진 URL을 가져오지 못했습니다.");
-      return;
-    }
+  if (!fileUrl) {
+    alert("업로드된 사진 URL을 가져오지 못했습니다.");
+    return;
+  }
 
-    updatePhotoMutation.mutate({
-      profileImageUrl: fileUrl,
-    });
+  updatePhotoMutation.mutate({
+    profileImageUrl: fileUrl,
+  });
   };
 
   const handleSavePassword = () => {

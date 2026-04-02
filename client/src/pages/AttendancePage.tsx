@@ -60,6 +60,11 @@ export default function AttendancePage() {
       }
     );
 
+  const { data: myProfile } = trpc.users.me.useQuery();
+
+  const displayTeamName = (myProfile as any)?.teamName || "미분류";
+  const displayPositionName = (myProfile as any)?.positionName || "미분류";
+
   const clockInMutation = trpc.attendance.clockIn.useMutation({
     onSuccess: async () => {
       await Promise.all([
@@ -102,12 +107,7 @@ export default function AttendancePage() {
     },
   });
 
-  const roleText = useMemo(() => {
-    if (user?.role === "superhost") return "슈퍼호스트";
-    if (user?.role === "host") return "호스트";
-    if (user?.role === "admin") return "관리자";
-    return "직원";
-  }, [user?.role]);
+
 
   const openEditModal = (row: any) => {
     setEditingRow(row);
@@ -270,9 +270,12 @@ export default function AttendancePage() {
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-lg font-bold">근태 관리</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {user?.name} · {roleText}
-              </p>
+              <div className="mt-1 text-sm text-muted-foreground leading-tight">
+  <p>{user?.name}</p>
+  <p>
+    {displayTeamName} · {displayPositionName}
+  </p>
+</div>
             </div>
 
             <div className="flex gap-2">
