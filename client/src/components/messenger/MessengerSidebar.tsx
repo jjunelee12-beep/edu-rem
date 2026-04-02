@@ -65,8 +65,8 @@ export default function MessengerSidebar({
   }, [rooms]);
 
   return (
-    <aside className="flex h-full min-h-0 border-r border-slate-200 bg-white">
-      <div className="flex w-[72px] shrink-0 flex-col items-center justify-between border-r border-slate-200 bg-[#f8fafc] py-4">
+    <aside className="flex h-full min-h-0 border-r border-slate-300 bg-[#eef2f7]">
+      <div className="flex w-[72px] shrink-0 flex-col items-center justify-between border-r border-slate-300 bg-[#e3e8ee] py-4">
         <div className="flex flex-col items-center gap-3">
           <button
             type="button"
@@ -123,8 +123,8 @@ export default function MessengerSidebar({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="border-b border-slate-200 px-4 py-4">
+      <div className="flex min-h-0 flex-1 flex-col border-l border-slate-300 bg-[#f6f8fb]">
+        <div className="border-b border-slate-300 px-4 py-4">
           {tab === "org" && (
             <>
               <h2 className="text-lg font-semibold text-slate-950">조직도</h2>
@@ -164,12 +164,12 @@ export default function MessengerSidebar({
                   ? "이름 / 팀 / 직급 검색"
                   : "설정 검색"
               }
-              className="h-11 rounded-2xl border-slate-200 bg-slate-50 pl-9 text-slate-900 placeholder:text-slate-400"
+              className="h-11 rounded-2xl border-slate-300 bg-white pl-9 text-slate-900 placeholder:text-slate-400"
             />
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto bg-white">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[#f6f8fb]">
           {tab === "org" && (
             <MessengerOrgPanel
               users={filteredUsers}
@@ -196,7 +196,7 @@ export default function MessengerSidebar({
                         className={`flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left transition ${
                           isActive
                             ? "bg-[#fef3c7] ring-1 ring-amber-200"
-                            : "hover:bg-slate-50"
+                            : "bg-white hover:bg-slate-50"
                         }`}
                       >
                         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-700">
@@ -236,19 +236,19 @@ export default function MessengerSidebar({
             <div className="space-y-3 px-4 py-4">
               <button
                 type="button"
-                className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left transition hover:bg-slate-50"
+                className="flex w-full items-center justify-between rounded-2xl border border-slate-300 bg-white px-4 py-4 text-left transition hover:bg-slate-50"
               >
                 <div>
                   <p className="text-sm font-semibold text-slate-950">알림 설정</p>
                   <p className="mt-1 text-xs text-slate-500">
-                    메신저 알림과 표시 방식을 관리합니다.
+                    메시지 알림과 표시 방식을 관리합니다.
                   </p>
                 </div>
               </button>
 
               <button
                 type="button"
-                className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left transition hover:bg-slate-50"
+                className="flex w-full items-center justify-between rounded-2xl border border-slate-300 bg-white px-4 py-4 text-left transition hover:bg-slate-50"
               >
                 <div>
                   <p className="text-sm font-semibold text-slate-950">채팅 환경설정</p>
@@ -260,7 +260,7 @@ export default function MessengerSidebar({
 
               <button
                 type="button"
-                className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left transition hover:bg-slate-50"
+                className="flex w-full items-center justify-between rounded-2xl border border-slate-300 bg-white px-4 py-4 text-left transition hover:bg-slate-50"
               >
                 <div>
                   <p className="text-sm font-semibold text-slate-950">파일 / 이미지 관리</p>

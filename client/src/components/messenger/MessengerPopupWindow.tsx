@@ -49,6 +49,21 @@ function isVideoFile(url?: string, fileName?: string) {
   );
 }
 
+function formatDateDividerLabel(raw: string) {
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return `${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일`;
+}
+
+function getMessageDateKey(message: MessengerMessage) {
+  const date = new Date(String(message.createdAtRaw || message.createdAt || ""));
+  if (Number.isNaN(date.getTime())) return String(message.createdAt || "");
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export default function MessengerPopupWindow({
   room,
   targetUser,
@@ -66,7 +81,7 @@ export default function MessengerPopupWindow({
   onToggleRoomInfo,
   onTogglePin,
   pinned = false,
-  rightOffset = 396,
+  rightOffset = 560,
   zIndex = 10010,
 }: MessengerPopupWindowProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -88,10 +103,39 @@ export default function MessengerPopupWindow({
 
   const safeMessages = useMemo(() => messages || [], [messages]);
 
+  const timelineItems = useMemo(() => {
+    const items: Array<
+      | { kind: "date"; key: string; label: string }
+      | { kind: "message"; key: string; message: MessengerMessage }
+    > = [];
+
+    let prevDateKey = "";
+
+    safeMessages.forEach((message) => {
+      const dateKey = getMessageDateKey(message);
+      if (dateKey && dateKey !== prevDateKey) {
+        items.push({
+          kind: "date",
+          key: `date-${dateKey}`,
+          label: formatDateDividerLabel(dateKey),
+        });
+        prevDateKey = dateKey;
+      }
+
+      items.push({
+        kind: "message",
+        key: `msg-${message.id}`,
+        message,
+      });
+    });
+
+    return items;
+  }, [safeMessages]);
+
   useEffect(() => {
     if (!scrollRef.current) return;
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [safeMessages]);
+  }, [timelineItems]);
 
   const getReadCountForMyMessage = (messageId: number) => {
     if (!room) return 0;
@@ -101,9 +145,21 @@ export default function MessengerPopupWindow({
     return others.length > 0 ? 1 : 0;
   };
 
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = Array.from(e.clipboardData.items || []);
+    const imageItem = items.find((item) => item.type.startsWith("image/"));
+    if (!imageItem) return;
+
+    const file = imageItem.getAsFile();
+    if (!file) return;
+
+    e.preventDefault();
+    await onAttachFile(file);
+  };
+
   return (
     <div
-      className="fixed bottom-0 h-[680px] w-[380px] overflow-hidden rounded-t-[18px] border border-slate-300 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.28)]"
+      className="fixed bottom-0 h-[700px] w-[430px] overflow-hidden rounded-t-[18px] border border-slate-300 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.28)]"
       style={{ right: `${rightOffset}px`, zIndex }}
     >
       <div className="flex h-full flex-col">
@@ -204,21 +260,32 @@ export default function MessengerPopupWindow({
           ref={scrollRef}
           className="flex-1 space-y-4 overflow-y-auto bg-[#b2c7da] px-4 py-4"
         >
-          {safeMessages.length === 0 ? (
+          {timelineItems.length === 0 ? (
             <div className="flex h-full items-center justify-center">
               <div className="rounded-2xl bg-white/80 px-4 py-3 text-sm text-slate-500 shadow-sm">
                 메시지를 보내면 채팅방이 생성됩니다.
               </div>
             </div>
           ) : (
-            safeMessages.map((message) => {
+            timelineItems.map((item) => {
+              if (item.kind === "date") {
+                return (
+                  <div key={item.key} className="flex justify-center">
+                    <div className="rounded-full bg-slate-500/20 px-3 py-1 text-xs text-slate-700">
+                      {item.label}
+                    </div>
+                  </div>
+                );
+              }
+
+              const message = item.message;
               const sender = usersById[Number(message.senderId)];
               const isMine = Number(message.senderId) === Number(currentUserId);
               const readCount = isMine ? getReadCountForMyMessage(Number(message.id)) : 0;
 
               return (
                 <div
-                  key={message.id}
+                  key={item.key}
                   className={`flex ${isMine ? "justify-end" : "justify-start"}`}
                 >
                   <div
@@ -257,12 +324,24 @@ export default function MessengerPopupWindow({
                         {message.type === "text" && <span>{message.content}</span>}
 
                         {message.type === "image" && message.fileUrl && (
-                          <img
-                            src={message.fileUrl}
-                            alt={message.fileName || "image"}
-                            className="max-h-72 cursor-pointer rounded-xl object-cover"
-                            onClick={() => onOpenImage(message.fileUrl!, message.fileName)}
-                          />
+                          <>
+                            <img
+                              src={message.fileUrl}
+                              alt={message.fileName || "image"}
+                              className="max-h-72 cursor-pointer rounded-xl object-cover"
+                              onClick={() => onOpenImage(message.fileUrl!, message.fileName)}
+                            />
+                            <div className="mt-2 flex items-center gap-2">
+                              <a
+                                href={message.fileUrl}
+                                download
+                                className="inline-flex items-center gap-1 text-xs underline"
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                                다운로드
+                              </a>
+                            </div>
+                          </>
                         )}
 
                         {message.type === "file" && message.fileUrl && (
@@ -318,6 +397,7 @@ export default function MessengerPopupWindow({
               <input
                 type="file"
                 className="hidden"
+                accept="image/*,video/*,.pdf,.zip,.hwp,.doc,.docx,.xls,.xlsx,.txt"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
@@ -342,6 +422,7 @@ export default function MessengerPopupWindow({
               ref={textareaRef}
               value={input}
               onChange={(e) => onInputChange(e.target.value)}
+              onPaste={handlePaste}
               placeholder="메시지를 입력하세요"
               className="max-h-36 min-h-[44px] flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-primary"
               onKeyDown={(e) => {

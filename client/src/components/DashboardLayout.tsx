@@ -136,7 +136,6 @@ export default function DashboardLayout({
   useEffect(() => {
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
     if (!saved) return;
-
     const parsed = parseInt(saved, 10);
     if (!Number.isNaN(parsed)) {
       setSidebarWidth(parsed);
@@ -196,9 +195,7 @@ function DashboardLayoutContent({
     if (raw.startsWith("http://") || raw.startsWith("https://") || raw.startsWith("data:")) {
       return raw;
     }
-    if (raw.startsWith("//")) {
-      return `https:${raw}`;
-    }
+    if (raw.startsWith("//")) return `https:${raw}`;
     if (!API_BASE_URL) return raw;
     return raw.startsWith("/") ? `${API_BASE_URL}${raw}` : `${API_BASE_URL}/${raw}`;
   };
@@ -291,30 +288,19 @@ function DashboardLayoutContent({
       { label: "일반", href: "/e-approval/general" },
     ];
 
-    if (canViewApprovalInbox) {
-      items.push({ label: "전자결재 승인", href: "/e-approval/inbox" });
-    }
-
-    if (canViewApprovalStats) {
-      items.push({ label: "통계", href: "/e-approval/stats" });
-    }
-
-    if (canViewApprovalSettings) {
-      items.push({ label: "전자결재 설정", href: "/e-approval/settings" });
-    }
+    if (canViewApprovalInbox) items.push({ label: "전자결재 승인", href: "/e-approval/inbox" });
+    if (canViewApprovalStats) items.push({ label: "통계", href: "/e-approval/stats" });
+    if (canViewApprovalSettings) items.push({ label: "전자결재 설정", href: "/e-approval/settings" });
 
     return items;
   }, [canViewApprovalInbox, canViewApprovalStats, canViewApprovalSettings]);
 
   const visibleStaffMenuItems =
     isStaff || isAdmin || isHost || isSuperhost ? staffMenuItems : [];
-
   const visibleAdminMenuItems =
     isAdmin || isHost || isSuperhost ? adminMenuItems : [];
-
   const visibleHostMenuItems =
     isHost || isSuperhost ? hostMenuItems : [];
-
   const visibleSuperhostMenuItems =
     isSuperhost ? superhostMenuItems : [];
 
@@ -734,7 +720,7 @@ function DashboardLayoutContent({
         <div className="flex min-h-0 flex-1">
           <main
             className={`min-w-0 flex-1 p-4 md:p-6 transition-all duration-200 ${
-              isMessengerOpen && !isMobile ? "pr-[390px]" : ""
+              isMessengerOpen && !isMobile ? "pr-[560px]" : ""
             }`}
           >
             {children}
@@ -743,8 +729,8 @@ function DashboardLayoutContent({
       </SidebarInset>
 
       {isMessengerOpen && !isMobile && (
-        <div className="fixed right-0 top-16 z-[9999] h-[calc(100vh-64px)] w-[360px] border-l border-slate-200 bg-white shadow-[-12px_0_40px_rgba(15,23,42,0.12)]">
-          <div className="flex h-16 items-center justify-between border-b border-slate-200 bg-[#f8fafc] px-4">
+        <div className="fixed right-0 top-16 z-[9999] h-[calc(100vh-64px)] w-[520px] border-l border-slate-300 bg-[#eef2f7] shadow-[-12px_0_40px_rgba(15,23,42,0.12)]">
+          <div className="flex h-16 items-center justify-between border-b border-slate-300 bg-white px-4">
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#ffdd00] text-slate-900">
                 <MessageSquare className="h-5 w-5" />
@@ -764,7 +750,7 @@ function DashboardLayoutContent({
             </button>
           </div>
 
-          <div className="h-[calc(100%-64px)] overflow-hidden bg-white">
+          <div className="h-[calc(100%-64px)] overflow-hidden">
             <MessengerPage
               companyName={COMPANY_NAME}
               onRequestClose={() => setIsMessengerOpen(false)}

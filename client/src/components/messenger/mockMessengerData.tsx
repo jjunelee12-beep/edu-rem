@@ -25,6 +25,7 @@ export type MessengerMessage = {
   type: "text" | "image" | "file" | "system";
   content?: string;
   createdAt: string;
+  createdAtRaw?: string;
   fileName?: string;
   fileUrl?: string;
 };
