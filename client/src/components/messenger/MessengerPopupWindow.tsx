@@ -634,16 +634,18 @@ export default function MessengerPopupWindow({
                           )}
                         </div>
 
-                        {isMine ? (
-  readCount > 0 ? (
-    <span className="font-semibold text-amber-600">{readCount}</span>
-  ) : null
-) : null}
-                          <span>{message.createdAt}</span>
-                          {isMine ? (
-  readCount > 0 ? <span>{readCount}</span> : null
-) : null}
-                        </div>
+                       <div
+  className={`mt-1 flex items-center gap-2 px-1 text-[11px] text-slate-500 ${
+    isMine ? "justify-end" : "justify-start"
+  }`}
+>
+  <span>{message.createdAt}</span>
+  {isMine ? (
+    readCount > 0 ? (
+      <span className="font-semibold text-amber-600">{readCount}</span>
+    ) : null
+  ) : null}
+</div>
                       </div>
                     </div>
                   </div>
