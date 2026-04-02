@@ -1945,10 +1945,6 @@ function SettingsSection() {
     toast.error(e.message || "브랜딩 저장 중 오류가 발생했습니다.");
   },
 });
-    onError: (e) => {
-      toast.error(e.message || "브랜딩 저장 중 오류가 발생했습니다.");
-    },
-  });
 
   const [companyName, setCompanyName] = useState("");
   const [companyLogoUrl, setCompanyLogoUrl] = useState("");
