@@ -15,20 +15,14 @@ export default function MessengerOrgPanel({
 
     (users || []).forEach((user) => {
       const team = user.team || "미분류";
-
-      if (!map[team]) {
-        map[team] = [];
-      }
-
+      if (!map[team]) map[team] = [];
       map[team].push(user);
     });
 
     Object.keys(map).forEach((team) => {
       map[team] = [...map[team]].sort((a, b) => {
-        const positionCompare = String(a.position || "").localeCompare(
-          String(b.position || "")
-        );
-        if (positionCompare !== 0) return positionCompare;
+        const pos = String(a.position || "").localeCompare(String(b.position || ""));
+        if (pos !== 0) return pos;
         return String(a.name || "").localeCompare(String(b.name || ""));
       });
     });
@@ -42,10 +36,6 @@ export default function MessengerOrgPanel({
 
   return (
     <div className="px-3 py-3">
-      <div className="mb-3 rounded-2xl bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
-        조직원을 더블클릭하면 1:1 채팅을 시작합니다.
-      </div>
-
       {sortedTeams.length === 0 ? (
         <div className="px-2 py-6 text-sm text-slate-500">
           표시할 조직원이 없습니다.
@@ -70,7 +60,7 @@ export default function MessengerOrgPanel({
                         key={member.id}
                         type="button"
                         onDoubleClick={() => onOpenDirectChat(member)}
-                        className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition hover:bg-slate-50"
+                        className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition hover:bg-white"
                         title="더블클릭하여 1:1 채팅 시작"
                       >
                         <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-sm font-semibold text-slate-700">

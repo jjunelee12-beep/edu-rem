@@ -65,8 +65,8 @@ export default function MessengerSidebar({
   }, [rooms]);
 
   return (
-    <aside className="flex h-full min-h-0 border-r border-slate-300 bg-[#eef2f7]">
-      <div className="flex w-[72px] shrink-0 flex-col items-center justify-between border-r border-slate-300 bg-[#e3e8ee] py-4">
+    <aside className="flex h-full min-h-0 border-r border-slate-300 bg-[#e9edf2]">
+      <div className="flex w-[72px] shrink-0 flex-col items-center justify-between border-r border-slate-300 bg-[#dde3ea] py-4">
         <div className="flex flex-col items-center gap-3">
           <button
             type="button"
@@ -123,8 +123,8 @@ export default function MessengerSidebar({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col border-l border-slate-300 bg-[#f6f8fb]">
-        <div className="border-b border-slate-300 px-4 py-4">
+      <div className="flex min-h-0 flex-1 flex-col border-l border-slate-300 bg-[#f3f6f9]">
+        <div className="border-b border-slate-300 bg-[#f3f6f9] px-4 py-4">
           {tab === "org" && (
             <>
               <h2 className="text-lg font-semibold text-slate-950">조직도</h2>
@@ -169,7 +169,7 @@ export default function MessengerSidebar({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto bg-[#f6f8fb]">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[#f3f6f9]">
           {tab === "org" && (
             <MessengerOrgPanel
               users={filteredUsers}
@@ -193,10 +193,10 @@ export default function MessengerSidebar({
                         key={room.id}
                         type="button"
                         onClick={() => onSelectRoom(Number(room.id))}
-                        className={`flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left transition ${
+                        className={`flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition ${
                           isActive
-                            ? "bg-[#fef3c7] ring-1 ring-amber-200"
-                            : "bg-white hover:bg-slate-50"
+                            ? "border-amber-200 bg-[#fef3c7]"
+                            : "border-slate-200 bg-white hover:bg-slate-50"
                         }`}
                       >
                         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-700">

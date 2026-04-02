@@ -31,6 +31,7 @@ import { trpc } from "@/lib/trpc";
 import { useIsMobile } from "@/hooks/useMobile";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import MessengerPage from "@/pages/MessengerPage";
+import MessengerToastHost from "@/components/messenger/MessengerToastHost";
 
 import {
   Bell,
@@ -136,6 +137,7 @@ export default function DashboardLayout({
   useEffect(() => {
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
     if (!saved) return;
+
     const parsed = parseInt(saved, 10);
     if (!Number.isNaN(parsed)) {
       setSidebarWidth(parsed);
@@ -186,18 +188,28 @@ function DashboardLayoutContent({
   const [location, setLocation] = useLocation();
   const [isMessengerOpen, setIsMessengerOpen] = useState(false);
 
-  const { data: myProfile, refetch: refetchMyProfile } = trpc.users.me.useQuery();
+  const { data: myProfile, refetch: refetchMyProfile } =
+    trpc.users.me.useQuery();
 
-  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(
+    /\/$/,
+    ""
+  );
 
   const normalizeProfileImageUrl = (raw?: string | null) => {
     if (!raw) return "";
-    if (raw.startsWith("http://") || raw.startsWith("https://") || raw.startsWith("data:")) {
+    if (
+      raw.startsWith("http://") ||
+      raw.startsWith("https://") ||
+      raw.startsWith("data:")
+    ) {
       return raw;
     }
     if (raw.startsWith("//")) return `https:${raw}`;
     if (!API_BASE_URL) return raw;
-    return raw.startsWith("/") ? `${API_BASE_URL}${raw}` : `${API_BASE_URL}/${raw}`;
+    return raw.startsWith("/")
+      ? `${API_BASE_URL}${raw}`
+      : `${API_BASE_URL}/${raw}`;
   };
 
   useEffect(() => {
@@ -212,15 +224,29 @@ function DashboardLayoutContent({
   }, [isMessengerOpen]);
 
   useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("messenger:main-open-changed", {
+        detail: { isOpen: isMessengerOpen },
+      })
+    );
+  }, [isMessengerOpen]);
+
+  useEffect(() => {
     const handleOpenMessenger = () => setIsMessengerOpen(true);
     const handleCloseMessenger = () => setIsMessengerOpen(false);
 
     window.addEventListener("open-messenger", handleOpenMessenger);
-    window.addEventListener("messenger:request-close-main", handleCloseMessenger);
+    window.addEventListener(
+      "messenger:request-close-main",
+      handleCloseMessenger
+    );
 
     return () => {
       window.removeEventListener("open-messenger", handleOpenMessenger);
-      window.removeEventListener("messenger:request-close-main", handleCloseMessenger);
+      window.removeEventListener(
+        "messenger:request-close-main",
+        handleCloseMessenger
+      );
     };
   }, []);
 
@@ -230,8 +256,12 @@ function DashboardLayoutContent({
     };
 
     window.addEventListener("profile-image-updated", handleProfileImageUpdated);
+
     return () => {
-      window.removeEventListener("profile-image-updated", handleProfileImageUpdated);
+      window.removeEventListener(
+        "profile-image-updated",
+        handleProfileImageUpdated
+      );
     };
   }, [refetchMyProfile]);
 
@@ -249,6 +279,7 @@ function DashboardLayoutContent({
     };
 
     window.addEventListener("push-open", handlePushOpen as EventListener);
+
     return () => {
       window.removeEventListener("push-open", handlePushOpen as EventListener);
     };
@@ -288,9 +319,15 @@ function DashboardLayoutContent({
       { label: "일반", href: "/e-approval/general" },
     ];
 
-    if (canViewApprovalInbox) items.push({ label: "전자결재 승인", href: "/e-approval/inbox" });
-    if (canViewApprovalStats) items.push({ label: "통계", href: "/e-approval/stats" });
-    if (canViewApprovalSettings) items.push({ label: "전자결재 설정", href: "/e-approval/settings" });
+    if (canViewApprovalInbox) {
+      items.push({ label: "전자결재 승인", href: "/e-approval/inbox" });
+    }
+    if (canViewApprovalStats) {
+      items.push({ label: "통계", href: "/e-approval/stats" });
+    }
+    if (canViewApprovalSettings) {
+      items.push({ label: "전자결재 설정", href: "/e-approval/settings" });
+    }
 
     return items;
   }, [canViewApprovalInbox, canViewApprovalStats, canViewApprovalSettings]);
@@ -299,10 +336,8 @@ function DashboardLayoutContent({
     isStaff || isAdmin || isHost || isSuperhost ? staffMenuItems : [];
   const visibleAdminMenuItems =
     isAdmin || isHost || isSuperhost ? adminMenuItems : [];
-  const visibleHostMenuItems =
-    isHost || isSuperhost ? hostMenuItems : [];
-  const visibleSuperhostMenuItems =
-    isSuperhost ? superhostMenuItems : [];
+  const visibleHostMenuItems = isHost || isSuperhost ? hostMenuItems : [];
+  const visibleSuperhostMenuItems = isSuperhost ? superhostMenuItems : [];
 
   const allMenuItems = [
     ...visibleStaffMenuItems,
@@ -316,7 +351,10 @@ function DashboardLayoutContent({
   );
 
   const activeMenuItem = activeEApprovalMenuItem
-    ? { label: activeEApprovalMenuItem.label, path: activeEApprovalMenuItem.href }
+    ? {
+        label: activeEApprovalMenuItem.label,
+        path: activeEApprovalMenuItem.href,
+      }
     : allMenuItems.find((item) => {
         if (item.path === "/") return location === "/";
         return location.startsWith(item.path);
@@ -353,7 +391,8 @@ function DashboardLayoutContent({
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing) return;
 
-      const sidebarLeft = sidebarRef.current?.getBoundingClientRect().left ?? 0;
+      const sidebarLeft =
+        sidebarRef.current?.getBoundingClientRect().left ?? 0;
       const newWidth = e.clientX - sidebarLeft;
 
       if (newWidth >= MIN_WIDTH && newWidth <= MAX_WIDTH) {
@@ -444,7 +483,8 @@ function DashboardLayoutContent({
 
   const displayProfileName = (myProfile as any)?.name || user?.name || "-";
   const displayTeamName = (myProfile as any)?.teamName || "팀 미지정";
-  const displayPositionName = (myProfile as any)?.positionName || "직급 미지정";
+  const displayPositionName =
+    (myProfile as any)?.positionName || "직급 미지정";
 
   return (
     <>
@@ -472,7 +512,9 @@ function DashboardLayoutContent({
                     <GraduationCap className="h-5 w-5 shrink-0 text-primary" />
                   )}
                   <span className="truncate text-sm font-bold tracking-tight text-slate-950">
-                    {isSuperhost ? "위드원 교육 CRM · SUPERHOST" : "위드원 교육 CRM"}
+                    {isSuperhost
+                      ? "위드원 교육 CRM · SUPERHOST"
+                      : "위드원 교육 CRM"}
                   </span>
                 </div>
               ) : null}
@@ -523,7 +565,9 @@ function DashboardLayoutContent({
                             onClick={() => setLocation(item.href)}
                             className="font-medium text-slate-900"
                           >
-                            <span className="truncate text-slate-900">{item.label}</span>
+                            <span className="truncate text-slate-900">
+                              {item.label}
+                            </span>
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       );
@@ -543,7 +587,10 @@ function DashboardLayoutContent({
               <DropdownMenuTrigger asChild>
                 <button className="flex w-full items-start gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition-colors hover:bg-white group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <Avatar className="h-9 w-9 shrink-0 border border-slate-200">
-                    <AvatarImage src={displayProfileImageUrl} alt={displayProfileName || "user"} />
+                    <AvatarImage
+                      src={displayProfileImageUrl}
+                      alt={displayProfileName || "user"}
+                    />
                     <AvatarFallback className="bg-primary/10 text-xs font-medium text-primary">
                       {displayProfileName?.charAt(0).toUpperCase() || "U"}
                     </AvatarFallback>
@@ -736,8 +783,12 @@ function DashboardLayoutContent({
                 <MessageSquare className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-950">{COMPANY_NAME}</p>
-                <p className="truncate text-xs text-slate-500">{COMPANY_SUBTITLE}</p>
+                <p className="truncate text-sm font-semibold text-slate-950">
+                  {COMPANY_NAME}
+                </p>
+                <p className="truncate text-xs text-slate-500">
+                  {COMPANY_SUBTITLE}
+                </p>
               </div>
             </div>
 
@@ -758,6 +809,8 @@ function DashboardLayoutContent({
           </div>
         </div>
       )}
+
+      <MessengerToastHost />
     </>
   );
 }

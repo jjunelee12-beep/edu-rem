@@ -49,6 +49,14 @@ type OpenPopup =
       minimized?: boolean;
     };
 
+type PendingAttachment = {
+  id: string;
+  file: File;
+  previewUrl?: string;
+  isImage?: boolean;
+  isVideo?: boolean;
+};
+
 type MessengerPageProps = {
   companyName?: string;
   onRequestClose?: () => void;
@@ -65,7 +73,10 @@ function PopupRoomData({
   onToggleRoomInfo,
   onOpenImage,
   input,
+  pendingAttachments,
   onInputChange,
+  onAddPendingAttachment,
+  onRemovePendingAttachment,
   onDraftConverted,
 }: {
   popup: OpenPopup;
@@ -78,7 +89,10 @@ function PopupRoomData({
   onToggleRoomInfo: () => void;
   onOpenImage: (url: string, name?: string) => void;
   input: string;
+  pendingAttachments: PendingAttachment[];
   onInputChange: (value: string) => void;
+  onAddPendingAttachment: (file: File) => void;
+  onRemovePendingAttachment: (id: string) => void;
   onDraftConverted: (newPopup: OpenPopup) => void;
 }) {
   const { user } = useAuth();
@@ -111,7 +125,8 @@ function PopupRoomData({
           id: roomId,
           name:
             memberRows.length === 2
-              ? memberRows.find((m: any) => Number(m.userId) !== Number(user?.id))?.name || "1:1 대화"
+              ? memberRows.find((m: any) => Number(m.userId) !== Number(user?.id))
+                  ?.name || "1:1 대화"
               : "채팅방",
           type: "direct" as const,
           participantIds: [],
@@ -122,7 +137,9 @@ function PopupRoomData({
       : null;
 
   const targetUser =
-    popup.type === "draft" ? usersById[Number(popup.targetUserId)] || null : null;
+    popup.type === "draft"
+      ? usersById[Number(popup.targetUserId)] || null
+      : null;
 
   const participants = useMemo<MessengerUser[]>(() => {
     if (popup.type === "draft") return targetUser ? [targetUser] : [];
@@ -156,45 +173,7 @@ function PopupRoomData({
     })) as any;
   }, [popup.type, messageRows]);
 
-  const handleSend = async () => {
-    const text = input.trim();
-    if (!text) return;
-
-    if (popup.type === "room") {
-      await sendMessageMutation.mutateAsync({
-        roomId: Number(roomId),
-        content: text,
-        messageType: "text",
-      });
-      onInputChange("");
-      await refetchMessages();
-      await refetchMembers();
-      return;
-    }
-
-    const created = await createDirectRoomMutation.mutateAsync({
-      userId: Number(popup.targetUserId),
-    });
-
-    const createdRoomId = Number(created?.room?.id || created?.roomId || 0);
-    if (!createdRoomId) return;
-
-    await sendMessageMutation.mutateAsync({
-      roomId: createdRoomId,
-      content: text,
-      messageType: "text",
-    });
-
-    onInputChange("");
-    onDraftConverted({
-      key: `room-${createdRoomId}`,
-      type: "room",
-      roomId: createdRoomId,
-      minimized: false,
-    });
-  };
-
-  const handleAttachFile = async (file: File) => {
+  const uploadFile = async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
 
@@ -208,26 +187,57 @@ function PopupRoomData({
     );
 
     if (!uploadRes.ok) {
-      alert("파일 업로드에 실패했습니다.");
-      return;
+      throw new Error("파일 업로드에 실패했습니다.");
     }
 
-    const uploaded = await uploadRes.json();
-    const fileUrl = uploaded?.fileUrl;
-    const fileName = uploaded?.fileName || file.name;
+    return uploadRes.json();
+  };
 
-    if (!fileUrl) {
-      alert("파일 URL을 가져오지 못했습니다.");
-      return;
+  const handleSend = async () => {
+    const text = input.trim();
+    const hasText = !!text;
+    const hasAttachments = pendingAttachments.length > 0;
+
+    if (!hasText && !hasAttachments) return;
+
+    let targetRoomId = roomId;
+
+    if (popup.type === "draft") {
+      const created = await createDirectRoomMutation.mutateAsync({
+        userId: Number(popup.targetUserId),
+      });
+
+      targetRoomId = Number(created?.room?.id || created?.roomId || 0);
+      if (!targetRoomId) return;
+
+      onDraftConverted({
+        key: `room-${targetRoomId}`,
+        type: "room",
+        roomId: targetRoomId,
+        minimized: false,
+      });
     }
 
-    const isImage = file.type.startsWith("image/");
-    const messageType = isImage ? "image" : "file";
-    const content = isImage ? "[이미지]" : `[파일] ${fileName}`;
+    if (hasText) {
+      await sendMessageMutation.mutateAsync({
+        roomId: Number(targetRoomId),
+        content: text,
+        messageType: "text",
+      });
+    }
 
-    if (popup.type === "room") {
+    for (const item of pendingAttachments) {
+      const uploaded = await uploadFile(item.file);
+      const fileUrl = uploaded?.fileUrl;
+      const fileName = uploaded?.fileName || item.file.name;
+      if (!fileUrl) continue;
+
+      const isImage = item.file.type.startsWith("image/");
+      const messageType = isImage ? "image" : "file";
+      const content = isImage ? "[이미지]" : `[파일] ${fileName}`;
+
       const sendRes = await sendMessageMutation.mutateAsync({
-        roomId: Number(roomId),
+        roomId: Number(targetRoomId),
         content,
         messageType,
       });
@@ -237,45 +247,17 @@ function PopupRoomData({
           messageId: Number(sendRes.id),
           fileName,
           fileUrl,
-          fileType: file.type || undefined,
-          fileSize: file.size,
+          fileType: item.file.type || undefined,
+          fileSize: item.file.size,
         });
       }
-
-      await refetchMessages();
-      await refetchMembers();
-      return;
     }
 
-    const created = await createDirectRoomMutation.mutateAsync({
-      userId: Number(popup.targetUserId),
-    });
+    onInputChange("");
+    pendingAttachments.forEach((item) => onRemovePendingAttachment(item.id));
 
-    const createdRoomId = Number(created?.room?.id || created?.roomId || 0);
-    if (!createdRoomId) return;
-
-    const sendRes = await sendMessageMutation.mutateAsync({
-      roomId: createdRoomId,
-      content,
-      messageType,
-    });
-
-    if (sendRes?.id) {
-      await addAttachmentMutation.mutateAsync({
-        messageId: Number(sendRes.id),
-        fileName,
-        fileUrl,
-        fileType: file.type || undefined,
-        fileSize: file.size,
-      });
-    }
-
-    onDraftConverted({
-      key: `room-${createdRoomId}`,
-      type: "room",
-      roomId: createdRoomId,
-      minimized: false,
-    });
+    await refetchMessages();
+    await refetchMembers();
   };
 
   return (
@@ -288,9 +270,11 @@ function PopupRoomData({
       usersById={usersById}
       currentUserId={currentUserId}
       input={input}
+      pendingAttachments={pendingAttachments}
       onInputChange={onInputChange}
       onSend={handleSend}
-      onAttachFile={handleAttachFile}
+      onAttachFile={onAddPendingAttachment}
+      onRemovePendingAttachment={onRemovePendingAttachment}
       onOpenImage={onOpenImage}
       onClose={onClose}
       onMinimize={onMinimize}
@@ -308,7 +292,7 @@ export default function MessengerPage({
 }: MessengerPageProps) {
   const { user } = useAuth();
 
-  const [onlineUserIds, setOnlineUserIds] = useState<Set<number>>(new Set());
+  const [onlineUserIds] = useState<Set<number>>(new Set());
   const [roomInfoOpenFor, setRoomInfoOpenFor] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<{
     open: boolean;
@@ -320,10 +304,14 @@ export default function MessengerPage({
 
   const [openPopups, setOpenPopups] = useState<OpenPopup[]>([]);
   const [popupInputs, setPopupInputs] = useState<Record<string, string>>({});
+  const [popupPendingAttachments, setPopupPendingAttachments] = useState<
+    Record<string, PendingAttachment[]>
+  >({});
   const [pinnedRoomIds, setPinnedRoomIds] = useState<number[]>([]);
 
   const { data: userList = [] } = trpc.users.list.useQuery();
-  const { data: roomRows = [], refetch: refetchRooms } = trpc.messenger.myRooms.useQuery();
+  const { data: roomRows = [], refetch: refetchRooms } =
+    trpc.messenger.myRooms.useQuery();
 
   useEffect(() => {
     const saved = localStorage.getItem("messenger-pinned-room-ids");
@@ -337,7 +325,10 @@ export default function MessengerPage({
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("messenger-pinned-room-ids", JSON.stringify(pinnedRoomIds));
+    localStorage.setItem(
+      "messenger-pinned-room-ids",
+      JSON.stringify(pinnedRoomIds)
+    );
   }, [pinnedRoomIds]);
 
   useEffect(() => {
@@ -345,6 +336,7 @@ export default function MessengerPage({
       if (e.key !== "Escape") return;
 
       const visiblePopups = openPopups.filter((popup) => !popup.minimized);
+
       if (roomInfoOpenFor) {
         setRoomInfoOpenFor(null);
         return;
@@ -352,7 +344,9 @@ export default function MessengerPage({
 
       if (visiblePopups.length > 0) {
         const lastPopup = visiblePopups[visiblePopups.length - 1];
-        setOpenPopups((prev) => prev.filter((popup) => popup.key !== lastPopup.key));
+        setOpenPopups((prev) =>
+          prev.filter((popup) => popup.key !== lastPopup.key)
+        );
         return;
       }
 
@@ -366,6 +360,63 @@ export default function MessengerPage({
     };
   }, [openPopups, roomInfoOpenFor, onRequestClose]);
 
+  useEffect(() => {
+    const openedRoomIds = openPopups
+      .filter((popup) => !popup.minimized && popup.type === "room")
+      .map((popup) => Number(popup.roomId))
+      .filter(Boolean);
+
+    window.dispatchEvent(
+      new CustomEvent("messenger:opened-rooms-changed", {
+        detail: { roomIds: openedRoomIds },
+      })
+    );
+  }, [openPopups]);
+
+  useEffect(() => {
+    const handleOpenRoom = (event: Event) => {
+      const custom = event as CustomEvent;
+      const roomId = Number(custom.detail?.roomId || 0);
+      if (!roomId) return;
+
+      setOpenPopups((prev) => {
+        const exists = prev.some(
+          (popup) => popup.type === "room" && Number(popup.roomId) === roomId
+        );
+
+        if (exists) {
+          return prev.map((popup) =>
+            popup.type === "room" && Number(popup.roomId) === roomId
+              ? { ...popup, minimized: false }
+              : popup
+          );
+        }
+
+        return [
+          ...prev,
+          {
+            key: `room-${roomId}`,
+            type: "room",
+            roomId,
+            minimized: false,
+          },
+        ];
+      });
+    };
+
+    window.addEventListener(
+      "messenger:open-room",
+      handleOpenRoom as EventListener
+    );
+
+    return () => {
+      window.removeEventListener(
+        "messenger:open-room",
+        handleOpenRoom as EventListener
+      );
+    };
+  }, []);
+
   const orgUsers = useMemo(
     () => normalizeUsers(userList as any[], onlineUserIds),
     [userList, onlineUserIds]
@@ -373,10 +424,14 @@ export default function MessengerPage({
 
   const usersById = useMemo(() => {
     const fallbackUsersById = getUsersById();
-    const fromDb = orgUsers.reduce<Record<number, MessengerUser>>((acc, item) => {
-      acc[Number(item.id)] = item;
-      return acc;
-    }, {});
+    const fromDb = orgUsers.reduce<Record<number, MessengerUser>>(
+      (acc, item) => {
+        acc[Number(item.id)] = item;
+        return acc;
+      },
+      {}
+    );
+
     return {
       ...fallbackUsersById,
       ...fromDb,
@@ -433,7 +488,10 @@ export default function MessengerPage({
 
   const handleSelectRoom = async (roomId: number) => {
     setOpenPopups((prev) => {
-      const exists = prev.some((popup) => popup.type === "room" && popup.roomId === roomId);
+      const exists = prev.some(
+        (popup) => popup.type === "room" && popup.roomId === roomId
+      );
+
       if (exists) {
         return prev.map((popup) =>
           popup.type === "room" && popup.roomId === roomId
@@ -441,6 +499,7 @@ export default function MessengerPage({
             : popup
         );
       }
+
       return [
         ...prev,
         {
@@ -458,15 +517,20 @@ export default function MessengerPage({
   const handleOpenDirectChat = (targetUser: MessengerUser) => {
     setOpenPopups((prev) => {
       const exists = prev.some(
-        (popup) => popup.type === "draft" && popup.targetUserId === Number(targetUser.id)
+        (popup) =>
+          popup.type === "draft" &&
+          popup.targetUserId === Number(targetUser.id)
       );
+
       if (exists) {
         return prev.map((popup) =>
-          popup.type === "draft" && popup.targetUserId === Number(targetUser.id)
+          popup.type === "draft" &&
+          popup.targetUserId === Number(targetUser.id)
             ? { ...popup, minimized: false }
             : popup
         );
       }
+
       return [
         ...prev,
         {
@@ -482,19 +546,29 @@ export default function MessengerPage({
   const closePopup = (popupKey: string) => {
     setOpenPopups((prev) => prev.filter((popup) => popup.key !== popupKey));
     setRoomInfoOpenFor((prev) => (prev === popupKey ? null : prev));
+
+    setPopupPendingAttachments((prev) => {
+      const next = { ...prev };
+      delete next[popupKey];
+      return next;
+    });
   };
 
   const toggleMinimizePopup = (popupKey: string) => {
     setOpenPopups((prev) =>
       prev.map((popup) =>
-        popup.key === popupKey ? { ...popup, minimized: !popup.minimized } : popup
+        popup.key === popupKey
+          ? { ...popup, minimized: !popup.minimized }
+          : popup
       )
     );
   };
 
   const togglePinRoom = (roomId: number) => {
     setPinnedRoomIds((prev) =>
-      prev.includes(roomId) ? prev.filter((id) => id !== roomId) : [roomId, ...prev]
+      prev.includes(roomId)
+        ? prev.filter((id) => id !== roomId)
+        : [roomId, ...prev]
     );
   };
 
@@ -502,6 +576,33 @@ export default function MessengerPage({
     setPopupInputs((prev) => ({
       ...prev,
       [popupKey]: value,
+    }));
+  };
+
+  const handleAddPendingAttachment = (popupKey: string, file: File) => {
+    const isImage = file.type.startsWith("image/");
+    const isVideo = file.type.startsWith("video/");
+    const previewUrl =
+      isImage || isVideo ? URL.createObjectURL(file) : undefined;
+
+    const item: PendingAttachment = {
+      id: `${Date.now()}-${Math.random()}`,
+      file,
+      previewUrl,
+      isImage,
+      isVideo,
+    };
+
+    setPopupPendingAttachments((prev) => ({
+      ...prev,
+      [popupKey]: [...(prev[popupKey] || []), item],
+    }));
+  };
+
+  const handleRemovePendingAttachment = (popupKey: string, id: string) => {
+    setPopupPendingAttachments((prev) => ({
+      ...prev,
+      [popupKey]: (prev[popupKey] || []).filter((item) => item.id !== id),
     }));
   };
 
@@ -525,12 +626,21 @@ export default function MessengerPage({
     return openPopups.filter((popup) => !popup.minimized);
   }, [openPopups]);
 
+  const activeInfoPopup =
+    popupItems.find((popup) => popup.key === roomInfoOpenFor) || null;
+
+  const activeInfoTargetUser =
+    activeInfoPopup?.type === "draft"
+      ? usersById[Number(activeInfoPopup.targetUserId)] || null
+      : null;
+
   return (
     <>
       <div className="relative h-full overflow-hidden bg-[#eef2f7]">
         <div className="flex h-full flex-col">
-          <div className="border-b border-slate-300 bg-white px-4 py-3">
+          <div className="border-b border-slate-300 bg-[#eceff3] px-4 py-3">
             <p className="text-sm font-semibold text-slate-950">{companyName}</p>
+            <p className="text-xs text-slate-500">사내 메신저</p>
           </div>
 
           <div className="h-[calc(100%-53px)]">
@@ -540,13 +650,19 @@ export default function MessengerPage({
               users={[...orgUsers]
                 .filter((u) => Number(u.id) !== Number(user?.id))
                 .sort((a, b) => {
-                  const teamCompare = String(a.team || "").localeCompare(String(b.team || ""));
+                  const teamCompare = String(a.team || "").localeCompare(
+                    String(b.team || "")
+                  );
                   if (teamCompare !== 0) return teamCompare;
 
-                  const posCompare = String(a.position || "").localeCompare(String(b.position || ""));
+                  const posCompare = String(a.position || "").localeCompare(
+                    String(b.position || "")
+                  );
                   if (posCompare !== 0) return posCompare;
 
-                  return String(a.name || "").localeCompare(String(b.name || ""));
+                  return String(a.name || "").localeCompare(
+                    String(b.name || "")
+                  );
                 })}
               onSelectRoom={handleSelectRoom}
               onOpenDirectChat={handleOpenDirectChat}
@@ -554,11 +670,13 @@ export default function MessengerPage({
           </div>
         </div>
 
-        {popupItems.map((popup, index) => {
+        {popupItems.map((popup) => {
           const roomId = popup.type === "room" ? popup.roomId : 0;
+
           const room =
             popup.type === "room"
-              ? mappedRooms.find((item) => Number(item.id) === Number(roomId)) || null
+              ? mappedRooms.find((item) => Number(item.id) === Number(roomId)) ||
+                null
               : null;
 
           return (
@@ -574,46 +692,50 @@ export default function MessengerPage({
               onClose={() => closePopup(popup.key)}
               onMinimize={() => toggleMinimizePopup(popup.key)}
               onToggleRoomInfo={() =>
-                setRoomInfoOpenFor((prev) => (prev === popup.key ? null : popup.key))
+                setRoomInfoOpenFor((prev) =>
+                  prev === popup.key ? null : popup.key
+                )
               }
               onOpenImage={handleOpenImage}
               input={popupInputs[popup.key] || ""}
+              pendingAttachments={popupPendingAttachments[popup.key] || []}
               onInputChange={(value) => handleInputChange(popup.key, value)}
+              onAddPendingAttachment={(file) =>
+                handleAddPendingAttachment(popup.key, file)
+              }
+              onRemovePendingAttachment={(id) =>
+                handleRemovePendingAttachment(popup.key, id)
+              }
               onDraftConverted={(newPopup) => {
                 setOpenPopups((prev) =>
-                  prev.map((item) => (item.key === popup.key ? newPopup : item))
+                  prev.map((item) =>
+                    item.key === popup.key ? newPopup : item
+                  )
                 );
+
+                setPopupPendingAttachments((prev) => {
+                  const next = { ...prev };
+                  next[newPopup.key] = prev[popup.key] || [];
+                  delete next[popup.key];
+                  return next;
+                });
+
                 refetchRooms();
               }}
             />
           );
         })}
 
-        {popupItems.map((popup) => {
-          if (roomInfoOpenFor !== popup.key) return null;
-
-          const targetUser =
-            popup.type === "draft" ? usersById[Number(popup.targetUserId)] : null;
-          const participants = targetUser ? [targetUser] : [];
-          const room =
-            popup.type === "room"
-              ? mappedRooms.find((item) => Number(item.id) === Number(popup.roomId)) || null
-              : null;
-
-          return (
-            <MessengerRoomInfo
-              key={`info-${popup.key}`}
-              open
-              activeRoom={room}
-              participants={participants}
-              messages={[]}
-              onClose={() => setRoomInfoOpenFor(null)}
-              onToggleNotifications={() => {}}
-              onLeaveRoom={() => {}}
-              onAddParticipant={() => {}}
-            />
-          );
-        })}
+        <MessengerRoomInfo
+          open={!!roomInfoOpenFor}
+          activeRoom={null}
+          participants={activeInfoTargetUser ? [activeInfoTargetUser] : []}
+          messages={[]}
+          onClose={() => setRoomInfoOpenFor(null)}
+          onToggleNotifications={() => {}}
+          onLeaveRoom={() => {}}
+          onAddParticipant={() => {}}
+        />
       </div>
 
       <ImagePreviewModal
