@@ -537,30 +537,29 @@ const activeMenuItem = activeEApprovalMenuItem
           <SidebarContent className="gap-0">
   {renderMenuSection(visibleStaffMenuItems)}
 
-  <SidebarMenu className="px-2 py-1">
+ <SidebarMenu className="px-2 py-1">
   <SidebarMenuItem>
     <SidebarMenuButton
       isActive={isEApprovalPath}
       onClick={() => setEApprovalMenuOpen((prev) => !prev)}
       tooltip="전자결재"
-      className="h-10 min-w-0 font-normal transition-all"
+      className="h-10 min-w-0 justify-between font-normal transition-all"
     >
-      <FileCheck2
-        className={`h-4 w-4 shrink-0 ${isEApprovalPath ? "text-primary" : ""}`}
-      />
-      <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left">
-        전자결재
-      </span>
-
-      {!isCollapsed && (
-        <span className="ml-2 flex shrink-0 items-center">
-          {eApprovalMenuOpen ? (
-            <ChevronDown className="h-4 w-4" />
-          ) : (
-            <ChevronRight className="h-4 w-4" />
-          )}
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <FileCheck2
+          className={`h-4 w-4 shrink-0 ${isEApprovalPath ? "text-primary" : ""}`}
+        />
+        <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left">
+          전자결재
         </span>
-      )}
+      </div>
+
+      {!isCollapsed &&
+        (eApprovalMenuOpen ? (
+          <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+        ) : (
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+        ))}
     </SidebarMenuButton>
 
     {!isCollapsed && eApprovalMenuOpen && (
@@ -571,17 +570,12 @@ const activeMenuItem = activeEApprovalMenuItem
           return (
             <SidebarMenuSubItem key={item.href}>
               <SidebarMenuSubButton
-                asChild
+                type="button"
                 isActive={isActive}
                 size="md"
+                onClick={() => setLocation(item.href)}
               >
-                <button
-                  type="button"
-                  onClick={() => setLocation(item.href)}
-                  className="w-full text-left"
-                >
-                  <span>{item.label}</span>
-                </button>
+                <span className="truncate">{item.label}</span>
               </SidebarMenuSubButton>
             </SidebarMenuSubItem>
           );

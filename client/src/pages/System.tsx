@@ -33,14 +33,9 @@ type TabKey = "settlement" | "users" | "landingForms" | "adForms";
 type UserTabKey = "create" | "list" | "role" | "password" | "organization";
 type UserRole = "staff" | "admin" | "host" | "superhost";
 
-const PROTECTED_SUPERHOST_NAME = "이재준";
-
 function isProtectedSuperhost(userLike: any) {
   if (!userLike) return false;
-  return (
-    userLike.role === "superhost" ||
-    userLike.name === PROTECTED_SUPERHOST_NAME
-  );
+  return userLike.role === "superhost";
 }
 
 function canManageProtectedSuperhost(_currentUser: any) {
