@@ -7,7 +7,7 @@ function Card({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card"
       className={cn(
-        "bg-white text-card-foreground flex flex-col gap-6 rounded-2xl border border-slate-300/90 py-6 shadow-[0_1px_2px_rgba(15,23,42,0.04)]",
+        "bg-white text-card-foreground flex flex-col gap-6 rounded-[22px] border border-white/70 py-6 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_10px_28px_rgba(15,23,42,0.04)] backdrop-blur-sm",
         className
       )}
       {...props}
@@ -20,7 +20,7 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card-header"
       className={cn(
-        "@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:border-slate-200 [.border-b]:pb-6",
+        "@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:border-white/50 [.border-b]:pb-6",
         className
       )}
       {...props}
@@ -32,7 +32,10 @@ function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-title"
-      className={cn("leading-none font-semibold text-slate-900", className)}
+      className={cn(
+        "leading-none font-semibold tracking-[-0.01em] text-slate-900",
+        className
+      )}
       {...props}
     />
   );
@@ -42,7 +45,7 @@ function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-description"
-      className={cn("text-sm text-slate-500", className)}
+      className={cn("text-sm leading-6 text-slate-500", className)}
       {...props}
     />
   );
@@ -76,7 +79,7 @@ function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card-footer"
       className={cn(
-        "flex items-center px-6 [.border-t]:border-slate-200 [.border-t]:pt-6",
+        "flex items-center px-6 [.border-t]:border-white/50 [.border-t]:pt-6",
         className
       )}
       {...props}

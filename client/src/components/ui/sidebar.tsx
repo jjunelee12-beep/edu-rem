@@ -251,7 +251,7 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-className="bg-white border-r border-slate-300 flex h-full w-full flex-col shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+className="bg-[#f4f5f8] border-r border-white/50 flex h-full w-full flex-col shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
         >
           {children}
         </div>
@@ -487,9 +487,9 @@ const sidebarMenuButtonVariants = cva(
     variants: {
       variant: {
         default:
-          "hover:bg-slate-50 hover:border-slate-200 hover:shadow-sm",
+          "hover:bg-white hover:border-slate-200 hover:shadow-sm",
         outline:
-          "bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300",
+          "bg-white border border-slate-200 hover:bg-white hover:border-slate-300",
       },
       size: {
         default: "h-9 text-sm",

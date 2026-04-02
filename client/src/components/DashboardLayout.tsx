@@ -18,6 +18,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarProvider,
   SidebarTrigger,
   useSidebar,
@@ -534,60 +537,59 @@ const activeMenuItem = activeEApprovalMenuItem
           <SidebarContent className="gap-0">
   {renderMenuSection(visibleStaffMenuItems)}
 
-  <div className="px-2 py-1">
-  <SidebarMenu>
-    <SidebarMenuItem>
-      <SidebarMenuButton
-        isActive={isEApprovalPath}
-        onClick={() => setEApprovalMenuOpen((prev) => !prev)}
-        tooltip="전자결재"
-        className="h-10 min-w-0 font-normal transition-all"
-      >
-        <FileCheck2
-          className={`h-4 w-4 shrink-0 ${isEApprovalPath ? "text-primary" : ""}`}
-        />
-        <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left">
-          전자결재
+  <SidebarMenu className="px-2 py-1">
+  <SidebarMenuItem>
+    <SidebarMenuButton
+      isActive={isEApprovalPath}
+      onClick={() => setEApprovalMenuOpen((prev) => !prev)}
+      tooltip="전자결재"
+      className="h-10 min-w-0 font-normal transition-all"
+    >
+      <FileCheck2
+        className={`h-4 w-4 shrink-0 ${isEApprovalPath ? "text-primary" : ""}`}
+      />
+      <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left">
+        전자결재
+      </span>
+
+      {!isCollapsed && (
+        <span className="ml-2 flex shrink-0 items-center">
+          {eApprovalMenuOpen ? (
+            <ChevronDown className="h-4 w-4" />
+          ) : (
+            <ChevronRight className="h-4 w-4" />
+          )}
         </span>
+      )}
+    </SidebarMenuButton>
 
-        {!isCollapsed && (
-          <span className="ml-2 flex shrink-0 items-center">
-            {eApprovalMenuOpen ? (
-              <ChevronDown className="h-4 w-4" />
-            ) : (
-              <ChevronRight className="h-4 w-4" />
-            )}
-          </span>
-        )}
-      </SidebarMenuButton>
-    </SidebarMenuItem>
-  </SidebarMenu>
-
-  {!isCollapsed && eApprovalMenuOpen && (
-    <div className="ml-4 mt-1 border-l border-slate-200 pl-2">
-      <SidebarMenu className="px-0 py-1">
+    {!isCollapsed && eApprovalMenuOpen && (
+      <SidebarMenuSub>
         {eApprovalSubMenus.map((item) => {
           const isActive = location === item.href;
 
           return (
-            <SidebarMenuItem key={item.href}>
-              <SidebarMenuButton
+            <SidebarMenuSubItem key={item.href}>
+              <SidebarMenuSubButton
+                asChild
                 isActive={isActive}
-                onClick={() => setLocation(item.href)}
-                tooltip={item.label}
-                className="h-9 min-w-0 justify-start font-normal transition-all"
+                size="md"
               >
-                <span className="block min-w-0 flex-1 truncate whitespace-nowrap text-left text-sm">
-                  {item.label}
-                </span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+                <button
+                  type="button"
+                  onClick={() => setLocation(item.href)}
+                  className="w-full text-left"
+                >
+                  <span>{item.label}</span>
+                </button>
+              </SidebarMenuSubButton>
+            </SidebarMenuSubItem>
           );
         })}
-      </SidebarMenu>
-    </div>
-  )}
-</div>
+      </SidebarMenuSub>
+    )}
+  </SidebarMenuItem>
+</SidebarMenu>
 
   {renderMenuSection(visibleAdminMenuItems, "관리자")}
   {renderMenuSection(visibleHostMenuItems, "호스트")}
