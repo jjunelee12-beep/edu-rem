@@ -267,26 +267,16 @@ function DashboardLayoutContent({
 
   const normalizeProfileImageUrl = (raw?: string | null) => {
     if (!raw) return "";
-
-    if (
-      raw.startsWith("http://") ||
-      raw.startsWith("https://") ||
-      raw.startsWith("data:")
-    ) {
+    if (raw.startsWith("http://") || raw.startsWith("https://") || raw.startsWith("data:")) {
       return raw;
     }
-
     if (raw.startsWith("//")) {
       return `https:${raw}`;
     }
-
     if (!API_BASE_URL) {
       return raw;
     }
-
-    return raw.startsWith("/")
-      ? `${API_BASE_URL}${raw}`
-      : `${API_BASE_URL}/${raw}`;
+    return raw.startsWith("/") ? `${API_BASE_URL}${raw}` : `${API_BASE_URL}/${raw}`;
   };
 
   useEffect(() => {
@@ -295,7 +285,6 @@ function DashboardLayoutContent({
     };
 
     window.addEventListener("profile-image-updated", handleProfileImageUpdated);
-
     return () => {
       window.removeEventListener("profile-image-updated", handleProfileImageUpdated);
     };
@@ -315,7 +304,6 @@ function DashboardLayoutContent({
     };
 
     window.addEventListener("push-open", handlePushOpen as EventListener);
-
     return () => {
       window.removeEventListener("push-open", handlePushOpen as EventListener);
     };
@@ -467,8 +455,8 @@ function DashboardLayoutContent({
     return (
       <>
         {title && !isCollapsed && (
-          <div className="mt-2 px-3 py-1">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+          <div className="mt-2 px-3 pb-1 pt-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
               {title}
             </p>
           </div>
@@ -485,12 +473,14 @@ function DashboardLayoutContent({
                   isActive={isActive}
                   onClick={() => setLocation(item.path)}
                   tooltip={item.label}
-                  className="min-w-0 font-normal"
+                  className="min-w-0 font-medium text-slate-900"
                 >
                   <item.icon
-                    className={`h-4 w-4 shrink-0 ${isActive ? "text-primary" : "text-slate-500"}`}
+                    className={`h-4 w-4 shrink-0 ${
+                      isActive ? "text-primary" : "text-slate-700"
+                    }`}
                   />
-                  <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left">
+                  <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left text-slate-900">
                     {item.label}
                   </span>
                 </SidebarMenuButton>
@@ -518,14 +508,6 @@ function DashboardLayoutContent({
 
     setLocation("/consultations");
   };
-
-  const roleLabel = isSuperhost
-    ? "슈퍼호스트"
-    : isHost
-    ? "호스트"
-    : isAdmin
-    ? "관리자"
-    : "직원";
 
   const displayProfileImageUrl = normalizeProfileImageUrl(
     (myProfile as any)?.profileImageUrl || user?.profileImageUrl || ""
@@ -558,7 +540,7 @@ function DashboardLayoutContent({
             <div className="flex w-full items-center gap-3 px-1">
               <button
                 onClick={toggleSidebar}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl text-slate-600 transition-colors hover:bg-white/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl text-slate-700 transition-colors hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 aria-label="Toggle navigation"
               >
                 <PanelLeft className="h-4 w-4" />
@@ -571,7 +553,7 @@ function DashboardLayoutContent({
                   ) : (
                     <GraduationCap className="h-5 w-5 shrink-0 text-primary" />
                   )}
-                  <span className="truncate text-sm font-bold tracking-tight text-slate-900">
+                  <span className="truncate text-sm font-bold tracking-tight text-slate-950">
                     {isSuperhost ? "위드원 교육 CRM · SUPERHOST" : "위드원 교육 CRM"}
                   </span>
                 </div>
@@ -588,29 +570,29 @@ function DashboardLayoutContent({
                   isActive={isEApprovalPath}
                   onClick={() => setEApprovalMenuOpen((prev) => !prev)}
                   tooltip="전자결재"
-                  className="min-w-0 justify-between font-normal"
+                  className="min-w-0 justify-between font-medium text-slate-900"
                 >
                   <div className="flex min-w-0 flex-1 items-center gap-2">
                     <FileCheck2
                       className={`h-4 w-4 shrink-0 ${
-                        isEApprovalPath ? "text-primary" : "text-slate-500"
+                        isEApprovalPath ? "text-primary" : "text-slate-700"
                       }`}
                     />
-                    <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left">
+                    <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left text-slate-900">
                       전자결재
                     </span>
                   </div>
 
                   {!isCollapsed &&
                     (eApprovalMenuOpen ? (
-                      <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+                      <ChevronDown className="h-4 w-4 shrink-0 text-slate-600" />
                     ) : (
-                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-600" />
                     ))}
                 </SidebarMenuButton>
 
                 {!isCollapsed && eApprovalMenuOpen && (
-                  <SidebarMenuSub>
+                  <SidebarMenuSub className="mt-2">
                     {eApprovalSubMenus.map((item) => {
                       const isActive = location === item.href;
 
@@ -621,8 +603,9 @@ function DashboardLayoutContent({
                             isActive={isActive}
                             size="md"
                             onClick={() => setLocation(item.href)}
+                            className="font-medium text-slate-900"
                           >
-                            <span className="truncate">{item.label}</span>
+                            <span className="truncate text-slate-900">{item.label}</span>
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       );
@@ -640,25 +623,23 @@ function DashboardLayoutContent({
           <SidebarFooter className="pt-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex w-full items-center gap-3 rounded-2xl bg-white/70 px-3 py-2 text-left shadow-[inset_0_0_0_1px_rgba(148,163,184,0.12)] transition-colors hover:bg-white group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  <Avatar className="h-9 w-9 shrink-0 border">
-  <AvatarImage src={displayProfileImageUrl} alt={displayProfileName || "user"} />
-  <AvatarFallback className="bg-primary/10 text-xs font-medium text-primary">
-    {displayProfileName?.charAt(0).toUpperCase() || "U"}
-  </AvatarFallback>
-</Avatar>
+                <button className="flex w-full items-start gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition-colors hover:bg-white group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <Avatar className="h-9 w-9 shrink-0 border border-slate-200">
+                    <AvatarImage src={displayProfileImageUrl} alt={displayProfileName || "user"} />
+                    <AvatarFallback className="bg-primary/10 text-xs font-medium text-primary">
+                      {displayProfileName?.charAt(0).toUpperCase() || "U"}
+                    </AvatarFallback>
+                  </Avatar>
 
                   <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
-  <p className="truncate text-sm font-medium leading-none text-slate-900">
-    {displayProfileName}
-  </p>
-  <p className="mt-1 truncate text-xs text-slate-500">
-    <span className="inline-flex items-center gap-1">
-      <BadgeCheck className="h-3 w-3" />
-      {displayTeamName} · {displayPositionName}
-    </span>
-  </p>
-</div>
+                    <p className="truncate text-sm font-semibold leading-none text-slate-950">
+                      {displayProfileName}
+                    </p>
+                    <div className="mt-1 text-xs leading-tight text-slate-600">
+                      <p className="truncate">{displayTeamName}</p>
+                      <p className="truncate">{displayPositionName}</p>
+                    </div>
+                  </div>
                 </button>
               </DropdownMenuTrigger>
 
@@ -690,17 +671,17 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset>
-        <div className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-white/60 bg-[#f4f6fa]/95 px-4 backdrop-blur-xl md:px-6">
+        <div className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-slate-200 bg-[#f4f6fa] px-4 md:px-6">
           <div className="flex items-center gap-2">
             {isMobile ? (
               <>
-                <SidebarTrigger className="h-9 w-9 rounded-2xl bg-white/80 shadow-sm" />
-                <span className="font-medium tracking-tight text-slate-900">
+                <SidebarTrigger className="h-9 w-9 rounded-2xl bg-white shadow-sm" />
+                <span className="font-semibold tracking-tight text-slate-950">
                   {activeMenuItem?.label ?? (isSuperhost ? "슈퍼호스트" : "메뉴")}
                 </span>
               </>
             ) : (
-              <span className="font-medium tracking-tight text-slate-900">
+              <span className="font-semibold tracking-tight text-slate-950">
                 {activeMenuItem?.label ?? (isSuperhost ? "슈퍼호스트" : "메뉴")}
               </span>
             )}
@@ -711,14 +692,14 @@ function DashboardLayoutContent({
               {location.startsWith("/superhost") ? (
                 <button
                   onClick={() => setLocation("/")}
-                  className="inline-flex h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white/80 px-4 text-sm text-slate-700 transition-colors hover:bg-white"
+                  className="inline-flex h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-900 transition-colors hover:bg-slate-50"
                 >
                   일반 CRM으로 돌아가기
                 </button>
               ) : (
                 <button
                   onClick={() => setLocation("/superhost")}
-                  className="inline-flex h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white/80 px-4 text-sm text-slate-700 transition-colors hover:bg-white"
+                  className="inline-flex h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-900 transition-colors hover:bg-slate-50"
                 >
                   슈퍼호스트 콘솔
                 </button>
@@ -731,7 +712,7 @@ function DashboardLayoutContent({
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
-                    className="relative inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white/80 text-slate-700 transition-colors hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="relative inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-900 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     aria-label="알림"
                   >
                     <Bell className="h-4 w-4" />
@@ -794,10 +775,10 @@ function DashboardLayoutContent({
 
             <button
               onClick={() => setRightDockTab("channels")}
-              className={`inline-flex h-10 items-center justify-center rounded-2xl border px-3 text-sm transition-colors ${
+              className={`inline-flex h-10 items-center justify-center rounded-2xl border px-3 text-sm font-medium transition-colors ${
                 rightDockTab === "channels"
-                  ? "border-slate-200 bg-white text-slate-900"
-                  : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white"
+                  ? "border-slate-200 bg-white text-slate-950"
+                  : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
               }`}
             >
               <MessageSquare className="mr-2 h-4 w-4" />
@@ -806,10 +787,10 @@ function DashboardLayoutContent({
 
             <button
               onClick={() => setRightDockTab("profile")}
-              className={`inline-flex h-10 items-center justify-center rounded-2xl border px-3 text-sm transition-colors ${
+              className={`inline-flex h-10 items-center justify-center rounded-2xl border px-3 text-sm font-medium transition-colors ${
                 rightDockTab === "profile"
-                  ? "border-slate-200 bg-white text-slate-900"
-                  : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white"
+                  ? "border-slate-200 bg-white text-slate-950"
+                  : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
               }`}
             >
               <User className="mr-2 h-4 w-4" />
@@ -818,10 +799,10 @@ function DashboardLayoutContent({
 
             <button
               onClick={() => setRightDockTab("settings")}
-              className={`inline-flex h-10 items-center justify-center rounded-2xl border px-3 text-sm transition-colors ${
+              className={`inline-flex h-10 items-center justify-center rounded-2xl border px-3 text-sm font-medium transition-colors ${
                 rightDockTab === "settings"
-                  ? "border-slate-200 bg-white text-slate-900"
-                  : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white"
+                  ? "border-slate-200 bg-white text-slate-950"
+                  : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
               }`}
             >
               <Settings className="mr-2 h-4 w-4" />
@@ -834,9 +815,9 @@ function DashboardLayoutContent({
           <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
 
           {!isMobile && (
-            <aside className="hidden w-[320px] shrink-0 border-l border-white/60 bg-[#eef2f7] xl:flex xl:flex-col">
-              <div className="flex h-16 items-center justify-between border-b border-white/60 px-4">
-                <div className="flex items-center gap-2 text-slate-800">
+            <aside className="hidden w-[320px] shrink-0 border-l border-slate-200 bg-[#eef2f7] xl:flex xl:flex-col">
+              <div className="flex h-16 items-center justify-between border-b border-slate-200 px-4">
+                <div className="flex items-center gap-2 text-slate-950">
                   {rightDockTab === "channels" && <MessageSquare className="h-4 w-4" />}
                   {rightDockTab === "profile" && <User className="h-4 w-4" />}
                   {rightDockTab === "settings" && <Settings className="h-4 w-4" />}
@@ -857,29 +838,29 @@ function DashboardLayoutContent({
                       <button
                         key={room.id}
                         onClick={() => handleOpenChannel(room)}
-                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white/80 px-3 py-3 text-left transition hover:bg-white"
+                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:bg-slate-50"
                       >
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <p className="truncate font-medium text-slate-900">{room.name}</p>
+                            <p className="truncate font-medium text-slate-950">{room.name}</p>
                             {room.unreadCount > 0 && (
                               <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
                                 {room.unreadCount}
                               </span>
                             )}
                           </div>
-                          <p className="mt-1 truncate text-sm text-slate-500">
+                          <p className="mt-1 truncate text-sm text-slate-600">
                             {room.lastMessage}
                           </p>
-                          <p className="mt-1 text-xs text-slate-400">{room.members}</p>
+                          <p className="mt-1 text-xs text-slate-500">{room.members}</p>
                         </div>
-                        <span className="shrink-0 text-xs text-slate-400">{room.updatedAt}</span>
+                        <span className="shrink-0 text-xs text-slate-500">{room.updatedAt}</span>
                       </button>
                     ))}
 
                     <button
                       onClick={() => setLocation("/messenger")}
-                      className="flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white/80 px-3 py-3 text-sm font-medium text-slate-700 transition hover:bg-white"
+                      className="flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
                     >
                       메신저 전체 보기
                     </button>
@@ -888,65 +869,65 @@ function DashboardLayoutContent({
 
                 {rightDockTab === "profile" && (
                   <div className="space-y-3">
-                    <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs text-slate-500">이름</p>
-                      <p className="mt-1 font-semibold text-slate-900">{user?.name || "-"}</p>
+                      <p className="mt-1 font-semibold text-slate-950">{user?.name || "-"}</p>
                     </div>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
-  <p className="text-xs text-slate-500">팀</p>
-  <p className="mt-1 font-semibold text-slate-900">{displayTeamName}</p>
-</div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs text-slate-500">팀</p>
+                      <p className="mt-1 font-semibold text-slate-950">{displayTeamName}</p>
+                    </div>
 
-<div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
-  <p className="text-xs text-slate-500">직급</p>
-  <p className="mt-1 font-semibold text-slate-900">{displayPositionName}</p>
-</div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs text-slate-500">직급</p>
+                      <p className="mt-1 font-semibold text-slate-950">{displayPositionName}</p>
+                    </div>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-xs text-slate-500">아이디</p>
-                      <p className="mt-1 font-semibold text-slate-900">
+                      <p className="mt-1 font-semibold text-slate-950">
                         {"username" in (user ?? {}) ? (user as any).username : "-"}
                       </p>
                     </div>
 
                     <button
                       onClick={() => setLocation("/system")}
-                      className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white/80 px-3 py-3 text-left transition hover:bg-white"
+                      className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:bg-slate-50"
                     >
                       <div>
-                        <p className="text-sm font-semibold text-slate-900">시스템 관리</p>
+                        <p className="text-sm font-semibold text-slate-950">시스템 관리</p>
                         <p className="text-xs text-slate-500">사용자 및 기본 설정 확인</p>
                       </div>
-                      <ChevronRight className="h-4 w-4 text-slate-400" />
+                      <ChevronRight className="h-4 w-4 text-slate-500" />
                     </button>
                   </div>
                 )}
 
                 {rightDockTab === "settings" && (
                   <div className="space-y-3">
-                    <button className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white/80 px-3 py-3 text-left transition hover:bg-white">
+                    <button className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:bg-slate-50">
                       <div>
-                        <p className="text-sm font-semibold text-slate-900">알림 설정</p>
+                        <p className="text-sm font-semibold text-slate-950">알림 설정</p>
                         <p className="text-xs text-slate-500">상담/승인/환불 알림 관리</p>
                       </div>
-                      <ChevronRight className="h-4 w-4 text-slate-400" />
+                      <ChevronRight className="h-4 w-4 text-slate-500" />
                     </button>
 
-                    <button className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white/80 px-3 py-3 text-left transition hover:bg-white">
+                    <button className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:bg-slate-50">
                       <div>
-                        <p className="text-sm font-semibold text-slate-900">홈 화면 설정</p>
+                        <p className="text-sm font-semibold text-slate-950">홈 화면 설정</p>
                         <p className="text-xs text-slate-500">대시보드 및 홈 구성 제어</p>
                       </div>
-                      <ChevronRight className="h-4 w-4 text-slate-400" />
+                      <ChevronRight className="h-4 w-4 text-slate-500" />
                     </button>
 
-                    <button className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white/80 px-3 py-3 text-left transition hover:bg-white">
+                    <button className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:bg-slate-50">
                       <div>
-                        <p className="text-sm font-semibold text-slate-900">보안 설정</p>
+                        <p className="text-sm font-semibold text-slate-950">보안 설정</p>
                         <p className="text-xs text-slate-500">접근 정책 및 계정 보안 관리</p>
                       </div>
-                      <ChevronRight className="h-4 w-4 text-slate-400" />
+                      <ChevronRight className="h-4 w-4 text-slate-500" />
                     </button>
                   </div>
                 )}
@@ -960,7 +941,7 @@ function DashboardLayoutContent({
         <aside className="fixed right-0 top-16 z-50 h-[calc(100vh-64px)] w-[420px] border-l border-slate-200 bg-[#f5f7fb] shadow-2xl">
           <div className="flex h-16 items-center justify-between border-b border-slate-200 px-4">
             <div className="min-w-0">
-              <p className="truncate font-semibold text-slate-900">{selectedChannel.name}</p>
+              <p className="truncate font-semibold text-slate-950">{selectedChannel.name}</p>
               <p className="text-xs text-slate-500">
                 {selectedChannel.members || "채널 대화"}
               </p>
@@ -968,7 +949,7 @@ function DashboardLayoutContent({
 
             <button
               onClick={() => setIsChatSlideOpen(false)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-2xl text-slate-600 transition hover:bg-white"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-2xl text-slate-700 transition hover:bg-white"
             >
               <X className="h-4 w-4" />
             </button>
@@ -1014,7 +995,7 @@ function DashboardLayoutContent({
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   placeholder="메시지를 입력하세요"
-                  className="min-h-[44px] flex-1 resize-none rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary"
+                  className="min-h-[44px] flex-1 resize-none rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 outline-none focus:border-primary"
                 />
                 <button
                   onClick={handleSendMessage}

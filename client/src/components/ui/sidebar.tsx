@@ -133,7 +133,7 @@ function SidebarProvider({
             } as React.CSSProperties
           }
           className={cn(
-            "group/sidebar-wrapper flex min-h-svh w-full bg-[#f3f5f9]",
+            "group/sidebar-wrapper flex min-h-svh w-full bg-[#eef2f7]",
             className
           )}
           {...props}
@@ -166,7 +166,7 @@ function Sidebar({
       <div
         data-slot="sidebar"
         className={cn(
-          "flex h-full w-(--sidebar-width) flex-col bg-[#eef1f6] text-slate-800",
+          "flex h-full w-(--sidebar-width) flex-col bg-[#eef2f7] text-slate-800",
           className
         )}
         {...props}
@@ -184,7 +184,7 @@ function Sidebar({
           data-slot="sidebar"
           data-mobile="true"
           side={side}
-          className="w-(--sidebar-width) border-r-0 bg-[#eef1f6] p-0 text-slate-800 [&>button]:hidden"
+          className="w-(--sidebar-width) border-r-0 bg-[#eef2f7] p-0 text-slate-800 [&>button]:hidden"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -246,7 +246,7 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="flex h-full w-full flex-col overflow-hidden rounded-none border-r border-white/50 bg-[#eef1f6] shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+          className="flex h-full w-full flex-col overflow-hidden bg-[#eef2f7]"
         >
           {children}
         </div>
@@ -313,7 +313,7 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
     <main
       data-slot="sidebar-inset"
       className={cn(
-        "relative flex w-full flex-1 flex-col bg-[#f4f6fa]",
+        "relative flex w-full flex-1 flex-col bg-[#f3f5f9]",
         "md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-2xl md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2",
         className
       )}
@@ -330,7 +330,7 @@ function SidebarInput({
     <Input
       data-slot="sidebar-input"
       data-sidebar="input"
-      className={cn("h-8 w-full border-0 bg-white shadow-none", className)}
+      className={cn("h-8 w-full bg-[#f8fafc] shadow-none", className)}
       {...props}
     />
   );
@@ -366,7 +366,7 @@ function SidebarSeparator({
     <Separator
       data-slot="sidebar-separator"
       data-sidebar="separator"
-      className={cn("mx-2 w-auto bg-slate-200/70", className)}
+      className={cn("mx-2 w-auto bg-slate-200", className)}
       {...props}
     />
   );
@@ -431,7 +431,7 @@ function SidebarGroupAction({
       data-slot="sidebar-group-action"
       data-sidebar="group-action"
       className={cn(
-        "absolute right-3 top-3.5 flex aspect-square w-5 items-center justify-center rounded-md p-0 text-slate-500 outline-hidden transition-transform hover:bg-white/80 hover:text-slate-900 focus-visible:ring-2",
+        "absolute right-3 top-3.5 flex aspect-square w-5 items-center justify-center rounded-md p-0 text-slate-500 outline-hidden transition-transform hover:bg-white hover:text-slate-900 focus-visible:ring-2",
         "after:absolute after:-inset-2 md:after:hidden",
         "group-data-[collapsible=icon]:hidden",
         className
@@ -483,9 +483,9 @@ const sidebarMenuButtonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-white/70 text-slate-700 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.12)] hover:bg-white hover:text-slate-900 hover:shadow-[0_6px_18px_rgba(15,23,42,0.06)]",
+          "border border-slate-100 bg-white text-slate-700 shadow-sm hover:bg-white hover:text-slate-900",
         outline:
-          "bg-white text-slate-700 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.18)] hover:bg-white hover:text-slate-900",
+          "border border-slate-200 bg-white text-slate-700 hover:bg-white hover:text-slate-900",
       },
       size: {
         default: "h-11 text-sm",
@@ -524,8 +524,7 @@ function SidebarMenuButton({
       data-active={isActive}
       className={cn(
         sidebarMenuButtonVariants({ variant, size }),
-        isActive &&
-          "bg-white text-slate-900 shadow-[0_8px_24px_rgba(15,23,42,0.06)]",
+        isActive && "border border-slate-200 bg-white text-slate-900 shadow-sm",
         className
       )}
       {...props}
@@ -642,7 +641,7 @@ function SidebarMenuSub({ className, ...props }: React.ComponentProps<"ul">) {
       data-slot="sidebar-menu-sub"
       data-sidebar="menu-sub"
       className={cn(
-        "mt-1 ml-2 flex min-w-0 flex-col gap-1 rounded-2xl bg-white/70 p-2 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.12)]",
+        "mt-1 ml-2 flex min-w-0 flex-col gap-1 rounded-2xl border border-slate-100 bg-[#f6f8fb] p-2",
         "group-data-[collapsible=icon]:hidden",
         className
       )}
@@ -687,7 +686,7 @@ function SidebarMenuSubButton({
       className={cn(
         "flex h-9 w-full min-w-0 items-center gap-2 rounded-xl border border-transparent bg-transparent px-3 text-left text-slate-600 outline-hidden transition-all duration-150",
         "hover:bg-white hover:text-slate-900",
-        "data-[active=true]:border-slate-200 data-[active=true]:bg-white data-[active=true]:text-slate-900 data-[active=true]:shadow-sm",
+        "data-[active=true]:border data-[active=true]:border-slate-200 data-[active=true]:bg-white data-[active=true]:text-slate-900 data-[active=true]:shadow-sm",
         size === "sm" && "h-8 text-xs",
         size === "md" && "text-sm",
         "group-data-[collapsible=icon]:hidden",
