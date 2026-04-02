@@ -4,8 +4,8 @@ import { trpc } from "@/lib/trpc";
 import { getSocket } from "@/lib/socket";
 
 import MessengerSidebar from "@/components/messenger/MessengerSidebar";
-import MessengerChatWindow from "@/components/messenger/MessengerChatWindow";
 import MessengerRoomInfo from "@/components/messenger/MessengerRoomInfo";
+import MessengerPopupWindow from "@/components/messenger/MessengerPopupWindow";
 import ImagePreviewModal from "@/components/messenger/ImagePreviewModal";
 
 import {
@@ -36,19 +36,38 @@ function normalizeUsers(
   }));
 }
 
-export default function MessengerPage() {
+type OpenPopup =
+  | {
+      key: string;
+      type: "room";
+      roomId: number;
+      minimized?: boolean;
+    }
+  | {
+      key: string;
+      type: "draft";
+      targetUserId: number;
+      minimized?: boolean;
+    };
+
+type MessengerPageProps = {
+  companyName?: string;
+  onRequestClose?: () => void;
+};
+
+export default function MessengerPage({
+  companyName = "위드원 교육",
+  onRequestClose,
+}: MessengerPageProps) {
   const { user } = useAuth();
 
   const socketRef = useRef<any>(null);
   const joinedRoomRef = useRef<number | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
 
-  const [selectedRoomId, setSelectedRoomId] = useState<number | null>(null);
-  const [input, setInput] = useState("");
-  const [liveMessages, setLiveMessages] = useState<MessengerMessage[] | null>(null);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<number>>(new Set());
   const [typingUserIdsByRoom, setTypingUserIdsByRoom] = useState<Record<number, number[]>>({});
-  const [roomInfoOpen, setRoomInfoOpen] = useState(false);
+  const [roomInfoOpenFor, setRoomInfoOpenFor] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<{
     open: boolean;
     url?: string;
@@ -57,71 +76,73 @@ export default function MessengerPage() {
     open: false,
   });
 
-  const roomIdFromQuery = Number(
-    new URLSearchParams(window.location.search).get("roomId") || 0
-  );
+  const [openPopups, setOpenPopups] = useState<OpenPopup[]>([]);
+  const [popupInputs, setPopupInputs] = useState<Record<string, string>>({});
+  const [pinnedRoomIds, setPinnedRoomIds] = useState<number[]>([]);
 
-  const { data: userList = [], isLoading: usersLoading } =
-    trpc.users.list.useQuery();
-
+  const { data: userList = [] } = trpc.users.list.useQuery();
   const {
     data: roomRows = [],
-    isLoading: roomsLoading,
     refetch: refetchRooms,
   } = trpc.messenger.myRooms.useQuery();
 
-  const {
-    data: messageRows = [],
-    isLoading: messagesLoading,
-    refetch: refetchMessages,
-  } = trpc.messenger.messages.useQuery(
-    { roomId: Number(selectedRoomId) },
-    { enabled: !!selectedRoomId }
-  );
+  const { data: allMessagesRows = [], refetch: refetchAllMessages } =
+    trpc.messenger.allMessages?.useQuery?.() ?? ({ data: [], refetch: async () => {} } as any);
 
   const {
-    data: memberRows = [],
-    isLoading: membersLoading,
-    refetch: refetchMembers,
-  } = trpc.messenger.members.useQuery(
-    { roomId: Number(selectedRoomId) },
-    { enabled: !!selectedRoomId }
-  );
+    data: memberRowsByRoom = [],
+    refetch: refetchAllMembers,
+  } = trpc.messenger.allMembers?.useQuery?.() ?? ({ data: [], refetch: async () => {} } as any);
+
+  const addAttachmentMutation = trpc.messenger.addAttachment.useMutation();
+  const sendMessageMutation = trpc.messenger.sendMessage.useMutation();
+  const createDirectRoomMutation = trpc.messenger.directRoom.useMutation();
+  const markReadMutation = trpc.messenger.markRead.useMutation();
+
+  useEffect(() => {
+    const saved = localStorage.getItem("messenger-pinned-room-ids");
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        setPinnedRoomIds(parsed.map((v) => Number(v)).filter(Boolean));
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("messenger-pinned-room-ids", JSON.stringify(pinnedRoomIds));
+  }, [pinnedRoomIds]);
 
   const orgUsers = useMemo(
     () => normalizeUsers(userList as any[], onlineUserIds),
     [userList, onlineUserIds]
   );
 
-  const fallbackUsersById = useMemo(() => getUsersById(), []);
-
   const usersById = useMemo(() => {
+    const fallbackUsersById = getUsersById();
     const fromDb = orgUsers.reduce<Record<number, MessengerUser>>((acc, item) => {
       acc[Number(item.id)] = item;
       return acc;
     }, {});
-
     return {
       ...fallbackUsersById,
       ...fromDb,
     };
-  }, [orgUsers, fallbackUsersById]);
+  }, [orgUsers]);
 
   const mappedRooms = useMemo<MessengerRoom[]>(() => {
-    return (roomRows as any[]).map((room: any) => {
+    const mapped = (roomRows as any[]).map((room: any) => {
       const roomType = room.roomType === "group" ? "group" : "direct";
 
       let roomName = room.title || "";
-
       if (!roomName) {
         if (roomType === "direct") {
-          const otherName =
+          roomName =
             room.otherUserName ||
             room.partnerName ||
             room.otherParticipantName ||
             "1:1 대화";
-
-          roomName = otherName;
         } else {
           roomName = "그룹 대화";
         }
@@ -140,121 +161,173 @@ export default function MessengerPage() {
           ? new Date(room.updatedAt).toLocaleString("ko-KR")
           : "",
         notificationsEnabled: !room.isMuted,
-      };
+        sortAt: room.lastMessageCreatedAt
+          ? new Date(room.lastMessageCreatedAt).getTime()
+          : room.updatedAt
+          ? new Date(room.updatedAt).getTime()
+          : 0,
+      } as MessengerRoom & { sortAt: number };
     });
-  }, [roomRows]);
 
-  useEffect(() => {
-    if (selectedRoomId || roomIdFromQuery) return;
-    if (!mappedRooms.length) return;
+    return mapped
+      .sort((a: any, b: any) => {
+        const aPinned = pinnedRoomIds.includes(Number(a.id)) ? 1 : 0;
+        const bPinned = pinnedRoomIds.includes(Number(b.id)) ? 1 : 0;
+        if (aPinned !== bPinned) return bPinned - aPinned;
+        return Number(b.sortAt || 0) - Number(a.sortAt || 0);
+      })
+      .map((room) => room as MessengerRoom);
+  }, [roomRows, pinnedRoomIds]);
 
-    setSelectedRoomId(Number(mappedRooms[0].id));
-  }, [mappedRooms, selectedRoomId, roomIdFromQuery]);
+  const messagesByRoomId = useMemo<Record<number, MessengerMessage[]>>(() => {
+    const grouped: Record<number, MessengerMessage[]> = {};
 
-  useEffect(() => {
-    if (!roomIdFromQuery) return;
-    if (!mappedRooms.length) return;
-
-    const targetRoom = mappedRooms.find(
-      (room) => Number(room.id) === Number(roomIdFromQuery)
-    );
-
-    if (targetRoom) {
-      setSelectedRoomId(Number(targetRoom.id));
-      setLiveMessages(null);
-    }
-  }, [roomIdFromQuery, mappedRooms]);
-
-  useEffect(() => {
-    setRoomInfoOpen(false);
-  }, [selectedRoomId]);
-
-  const activeRoom = useMemo(
-    () =>
-      mappedRooms.find((room) => Number(room.id) === Number(selectedRoomId)) ?? null,
-    [mappedRooms, selectedRoomId]
-  );
-
-  const baseMessages = useMemo<MessengerMessage[]>(() => {
-    return (messageRows as any[]).map((m: any) => ({
-      id: Number(m.id),
-      roomId: Number(m.roomId),
-      senderId: Number(m.senderId),
-      type: m.messageType || "text",
-      content: m.content || "",
-      createdAt: m.createdAt
-        ? new Date(m.createdAt).toLocaleTimeString("ko-KR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })
-        : "",
-      fileName: m.fileName || m.attachmentName || "",
-      fileUrl: m.fileUrl || m.attachmentUrl || "",
-    }));
-  }, [messageRows]);
-
-  useEffect(() => {
-    setLiveMessages(baseMessages);
-  }, [baseMessages, selectedRoomId]);
-
-  const currentMessages = liveMessages ?? baseMessages;
-
-  const participants = useMemo<MessengerUser[]>(() => {
-    return (memberRows as any[]).map((member: any) => ({
-      id: Number(member.userId),
-      name: member.name || member.username || "이름없음",
-      position: member.positionName || roleToPosition(member.role),
-      team: member.teamName || "미분류",
-      avatar: member.avatarUrl || member.profileImageUrl || "",
-      status: onlineUserIds.has(Number(member.userId)) ? "online" : "offline",
-    }));
-  }, [memberRows, onlineUserIds]);
-
-  const lastReadByUserId = useMemo<Record<number, number>>(() => {
-    const map: Record<number, number> = {};
-    (memberRows as any[]).forEach((member: any) => {
-      map[Number(member.userId)] = Number(member.lastReadMessageId || 0);
+    (allMessagesRows as any[]).forEach((m: any) => {
+      const roomId = Number(m.roomId);
+      if (!grouped[roomId]) grouped[roomId] = [];
+      grouped[roomId].push({
+        id: Number(m.id),
+        roomId,
+        senderId: Number(m.senderId),
+        type: m.messageType || "text",
+        content: m.content || "",
+        createdAt: m.createdAt
+          ? new Date(m.createdAt).toLocaleTimeString("ko-KR", {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : "",
+        fileName: m.fileName || m.attachmentName || "",
+        fileUrl: m.fileUrl || m.attachmentUrl || "",
+      });
     });
-    return map;
-  }, [memberRows]);
 
-  const createDirectRoomMutation = trpc.messenger.directRoom.useMutation({
-    onSuccess: async (res) => {
-      if (res?.room?.id) {
-        setSelectedRoomId(Number(res.room.id));
-        setLiveMessages(null);
-        await Promise.all([
-          refetchRooms(),
-          refetchMessages(),
-          refetchMembers(),
-        ]);
+    Object.keys(grouped).forEach((roomId) => {
+      grouped[Number(roomId)] = grouped[Number(roomId)].sort(
+        (a, b) => Number(a.id) - Number(b.id)
+      );
+    });
+
+    return grouped;
+  }, [allMessagesRows]);
+
+  const membersByRoomId = useMemo<Record<number, MessengerUser[]>>(() => {
+    const grouped: Record<number, MessengerUser[]> = {};
+
+    (memberRowsByRoom as any[]).forEach((member: any) => {
+      const roomId = Number(member.roomId);
+      if (!grouped[roomId]) grouped[roomId] = [];
+      grouped[roomId].push({
+        id: Number(member.userId),
+        name: member.name || member.username || "이름없음",
+        position: member.positionName || roleToPosition(member.role),
+        team: member.teamName || "미분류",
+        avatar: member.avatarUrl || member.profileImageUrl || "",
+        status: onlineUserIds.has(Number(member.userId)) ? "online" : "offline",
+      });
+    });
+
+    return grouped;
+  }, [memberRowsByRoom, onlineUserIds]);
+
+  const openRoomPopup = (roomId: number) => {
+    setOpenPopups((prev) => {
+      const exists = prev.some((popup) => popup.type === "room" && popup.roomId === roomId);
+      if (exists) {
+        return prev.map((popup) =>
+          popup.type === "room" && popup.roomId === roomId
+            ? { ...popup, minimized: false }
+            : popup
+        );
       }
-    },
-  });
+      return [
+        ...prev,
+        {
+          key: `room-${roomId}`,
+          type: "room",
+          roomId,
+          minimized: false,
+        },
+      ];
+    });
+  };
 
-  const sendMessageMutation = trpc.messenger.sendMessage.useMutation({
-    onSuccess: async () => {
-      setInput("");
-      await Promise.all([
-        refetchMessages(),
-        refetchRooms(),
-        refetchMembers(),
-      ]);
-    },
-  });
+  const openDraftPopup = (targetUserId: number) => {
+    setOpenPopups((prev) => {
+      const matchedRoom = mappedRooms.find((room) =>
+        room.type === "direct" &&
+        room.name === (usersById[targetUserId]?.name || "")
+      );
 
-  const addAttachmentMutation = trpc.messenger.addAttachment.useMutation();
-  const markReadMutation = trpc.messenger.markRead.useMutation();
+      if (matchedRoom) {
+        const exists = prev.some(
+          (popup) => popup.type === "room" && popup.roomId === Number(matchedRoom.id)
+        );
+        if (exists) {
+          return prev.map((popup) =>
+            popup.type === "room" && popup.roomId === Number(matchedRoom.id)
+              ? { ...popup, minimized: false }
+              : popup
+          );
+        }
+        return [
+          ...prev,
+          {
+            key: `room-${matchedRoom.id}`,
+            type: "room",
+            roomId: Number(matchedRoom.id),
+            minimized: false,
+          },
+        ];
+      }
+
+      const exists = prev.some(
+        (popup) => popup.type === "draft" && popup.targetUserId === targetUserId
+      );
+      if (exists) {
+        return prev.map((popup) =>
+          popup.type === "draft" && popup.targetUserId === targetUserId
+            ? { ...popup, minimized: false }
+            : popup
+        );
+      }
+
+      return [
+        ...prev,
+        {
+          key: `draft-${targetUserId}`,
+          type: "draft",
+          targetUserId,
+          minimized: false,
+        },
+      ];
+    });
+  };
+
+  const closePopup = (popupKey: string) => {
+    setOpenPopups((prev) => prev.filter((popup) => popup.key !== popupKey));
+    setRoomInfoOpenFor((prev) => (prev === popupKey ? null : prev));
+  };
+
+  const toggleMinimizePopup = (popupKey: string) => {
+    setOpenPopups((prev) =>
+      prev.map((popup) =>
+        popup.key === popupKey ? { ...popup, minimized: !popup.minimized } : popup
+      )
+    );
+  };
+
+  const togglePinRoom = (roomId: number) => {
+    setPinnedRoomIds((prev) =>
+      prev.includes(roomId) ? prev.filter((id) => id !== roomId) : [roomId, ...prev]
+    );
+  };
 
   useEffect(() => {
     if (!user?.id) return;
 
     const socket = getSocket();
     socketRef.current = socket;
-
-    const handleConnect = () => {
-      console.log("[socket connected]", socket.id);
-    };
 
     const handleOnlineUsers = (payload: { userIds: number[] }) => {
       const ids = (payload?.userIds ?? []).map((id) => Number(id));
@@ -279,249 +352,176 @@ export default function MessengerPage() {
       });
     };
 
-    const handleNewMessage = (message: any) => {
-      if (!message) return;
-
-      const normalized: MessengerMessage = {
-        id: Number(message.id),
-        roomId: Number(message.roomId),
-        senderId: Number(message.senderId),
-        type: message.messageType || "text",
-        content: message.content || "",
-        createdAt: message.createdAt
-          ? new Date(message.createdAt).toLocaleTimeString("ko-KR", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : "",
-        fileName: message.fileName || "",
-        fileUrl: message.fileUrl || "",
-      };
-
-      if (Number(normalized.roomId) !== Number(selectedRoomId)) {
-        void refetchRooms();
-        return;
-      }
-
-      setLiveMessages((prev) => {
-        const safePrev = prev ?? [];
-        const exists = safePrev.some((item) => Number(item.id) === Number(normalized.id));
-        if (exists) return safePrev;
-        return [...safePrev, normalized];
-      });
-
-      setTypingUserIdsByRoom((prev) => ({
-        ...prev,
-        [Number(normalized.roomId)]: [],
-      }));
-
-      void refetchRooms();
+    const handleNewMessage = async () => {
+      await Promise.all([refetchRooms(), refetchAllMessages(), refetchAllMembers()]);
     };
 
-    const handleRoomListUpdate = async () => {
-      await refetchRooms();
-    };
-
-    const handleReadUpdate = async (payload: any) => {
-      if (Number(payload?.roomId) === Number(selectedRoomId)) {
-        await refetchMembers();
-      }
-      await refetchRooms();
-    };
-
-    const handleTypingStart = (payload: any) => {
-      const roomId = Number(payload?.roomId);
-      const typingUserId = Number(payload?.userId);
-
-      if (!roomId || !typingUserId) return;
-      if (typingUserId === Number(user?.id)) return;
-
-      setTypingUserIdsByRoom((prev) => {
-        const current = prev[roomId] ?? [];
-        if (current.includes(typingUserId)) return prev;
-
-        return {
-          ...prev,
-          [roomId]: [...current, typingUserId],
-        };
-      });
-    };
-
-    const handleTypingStop = (payload: any) => {
-      const roomId = Number(payload?.roomId);
-      const typingUserId = Number(payload?.userId);
-
-      if (!roomId || !typingUserId) return;
-
-      setTypingUserIdsByRoom((prev) => {
-        const current = prev[roomId] ?? [];
-        return {
-          ...prev,
-          [roomId]: current.filter((id) => Number(id) !== typingUserId),
-        };
-      });
-    };
-
-    socket.on("connect", handleConnect);
     socket.on("online:users", handleOnlineUsers);
     socket.on("user:online", handleUserOnline);
     socket.on("user:offline", handleUserOffline);
     socket.on("message:new", handleNewMessage);
-    socket.on("room:list:update", handleRoomListUpdate);
-    socket.on("read:update", handleReadUpdate);
-    socket.on("typing:start", handleTypingStart);
-    socket.on("typing:stop", handleTypingStop);
+    socket.on("room:list:update", handleNewMessage);
+    socket.on("read:update", handleNewMessage);
 
     return () => {
-      socket.off("connect", handleConnect);
       socket.off("online:users", handleOnlineUsers);
       socket.off("user:online", handleUserOnline);
       socket.off("user:offline", handleUserOffline);
       socket.off("message:new", handleNewMessage);
-      socket.off("room:list:update", handleRoomListUpdate);
-      socket.off("read:update", handleReadUpdate);
-      socket.off("typing:start", handleTypingStart);
-      socket.off("typing:stop", handleTypingStop);
+      socket.off("room:list:update", handleNewMessage);
+      socket.off("read:update", handleNewMessage);
     };
-  }, [user?.id, selectedRoomId, refetchRooms, refetchMembers]);
+  }, [user?.id, refetchRooms, refetchAllMessages, refetchAllMembers]);
 
   useEffect(() => {
-    const socket = socketRef.current;
-    if (!socket) return;
-    if (!selectedRoomId) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
 
-    if (joinedRoomRef.current && joinedRoomRef.current !== selectedRoomId) {
-      socket.emit("room:leave", { roomId: joinedRoomRef.current });
-    }
+      const visiblePopups = openPopups.filter((popup) => !popup.minimized);
+      if (roomInfoOpenFor) {
+        setRoomInfoOpenFor(null);
+        return;
+      }
 
-    socket.emit("room:join", { roomId: Number(selectedRoomId) });
-    joinedRoomRef.current = Number(selectedRoomId);
-  }, [selectedRoomId]);
+      if (visiblePopups.length > 0) {
+        closePopup(visiblePopups[visiblePopups.length - 1].key);
+        return;
+      }
 
-  useEffect(() => {
-    if (!selectedRoomId) return;
-    if (!currentMessages.length) return;
+      onRequestClose?.();
+      window.dispatchEvent(new Event("messenger:request-close-main"));
+    };
 
-    const lastMessageId = Number(currentMessages[currentMessages.length - 1]?.id || 0);
-    if (!lastMessageId) return;
-
-    markReadMutation.mutate({
-      roomId: Number(selectedRoomId),
-      lastReadMessageId: lastMessageId,
-    });
-
-    const socket = socketRef.current;
-    if (socket) {
-      socket.emit("read:update", {
-        roomId: Number(selectedRoomId),
-        lastReadMessageId: lastMessageId,
-      });
-    }
-  }, [selectedRoomId, currentMessages]);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openPopups, roomInfoOpenFor, onRequestClose]);
 
   const handleSelectRoom = async (roomId: number) => {
-    setSelectedRoomId(roomId);
-    setLiveMessages(null);
+    openRoomPopup(roomId);
 
-    const row = (roomRows as any[]).find(
-      (room: any) => Number(room.id) === Number(roomId)
-    );
+    const roomMessages = messagesByRoomId[roomId] || [];
+    const lastMessageId = Number(roomMessages[roomMessages.length - 1]?.id || 0);
 
-    await markReadMutation.mutateAsync({
-      roomId: Number(roomId),
-      lastReadMessageId: row?.lastMessageId ? Number(row.lastMessageId) : null,
-    });
-
-    await Promise.all([refetchRooms(), refetchMessages(), refetchMembers()]);
+    if (lastMessageId) {
+      try {
+        await markReadMutation.mutateAsync({
+          roomId,
+          lastReadMessageId: lastMessageId,
+        });
+        await refetchRooms();
+      } catch {}
+    }
   };
 
   const handleOpenDirectChat = (targetUser: MessengerUser) => {
-    const socket = socketRef.current;
-
-    if (!socket) {
-      createDirectRoomMutation.mutate({
-        userId: Number(targetUser.id),
-      });
-      return;
-    }
-
-    socket.emit(
-      "direct:create",
-      { targetUserId: Number(targetUser.id) },
-      async (res: any) => {
-        if (res?.success && res?.roomId) {
-          setSelectedRoomId(Number(res.roomId));
-          setLiveMessages(null);
-          await Promise.all([refetchRooms(), refetchMessages(), refetchMembers()]);
-          return;
-        }
-
-        createDirectRoomMutation.mutate({
-          userId: Number(targetUser.id),
-        });
-      }
-    );
+    openDraftPopup(Number(targetUser.id));
   };
 
-  const handleSend = async () => {
-    if (!activeRoom) return;
+  const handleInputChange = (popupKey: string, value: string) => {
+    setPopupInputs((prev) => ({
+      ...prev,
+      [popupKey]: value,
+    }));
+  };
 
-    const text = input.trim();
-    if (!text) return;
+  const handleOpenImage = (url: string, name?: string) => {
+    setPreviewImage({
+      open: true,
+      url,
+      name,
+    });
+  };
 
+  const handleCloseImage = () => {
+    setPreviewImage({
+      open: false,
+      url: undefined,
+      name: undefined,
+    });
+  };
+
+  const sendMessageToRoom = async (
+    roomId: number,
+    content: string,
+    messageType: "text" | "image" | "file" = "text",
+    attachment?: {
+      fileUrl?: string;
+      fileName?: string;
+      fileType?: string;
+      fileSize?: number;
+    }
+  ) => {
     const socket = socketRef.current;
 
     if (socket) {
       socket.emit("message:send", {
-        roomId: Number(activeRoom.id),
-        content: text,
-        messageType: "text",
+        roomId,
+        content,
+        messageType,
+        ...attachment,
       });
-      socket.emit("typing:stop", {
-        roomId: Number(activeRoom.id),
-      });
-      setInput("");
       return;
     }
 
-    sendMessageMutation.mutate({
-      roomId: Number(activeRoom.id),
-      content: text,
-      messageType: "text",
+    const sendRes = await sendMessageMutation.mutateAsync({
+      roomId,
+      content,
+      messageType,
     });
-  };
 
-  const handleInputChange = (value: string) => {
-    setInput(value);
-
-    const socket = socketRef.current;
-    if (!socket || !activeRoom) return;
-
-    if (value.trim()) {
-      socket.emit("typing:start", {
-        roomId: Number(activeRoom.id),
-      });
-
-      if (typingTimeoutRef.current) {
-        window.clearTimeout(typingTimeoutRef.current);
-      }
-
-      typingTimeoutRef.current = window.setTimeout(() => {
-        socket.emit("typing:stop", {
-          roomId: Number(activeRoom.id),
-        });
-      }, 1200);
-    } else {
-      socket.emit("typing:stop", {
-        roomId: Number(activeRoom.id),
+    if (attachment?.fileUrl && sendRes?.id) {
+      await addAttachmentMutation.mutateAsync({
+        messageId: Number(sendRes.id),
+        fileName: attachment.fileName || "",
+        fileUrl: attachment.fileUrl,
+        fileType: attachment.fileType,
+        fileSize: attachment.fileSize,
       });
     }
   };
 
-  const handleAttachFile = async (file: File) => {
-    if (!activeRoom) return;
+  const handleSendFromPopup = async (popup: OpenPopup) => {
+    const raw = popupInputs[popup.key] || "";
+    const text = raw.trim();
+    if (!text) return;
 
-    const isImage = file.type.startsWith("image/");
+    if (popup.type === "room") {
+      await sendMessageToRoom(popup.roomId, text, "text");
+      setPopupInputs((prev) => ({ ...prev, [popup.key]: "" }));
+      await Promise.all([refetchRooms(), refetchAllMessages(), refetchAllMembers()]);
+      return;
+    }
+
+    const targetUserId = popup.targetUserId;
+    const createRes = await createDirectRoomMutation.mutateAsync({
+      userId: Number(targetUserId),
+    });
+
+    const createdRoomId = Number(createRes?.room?.id || createRes?.roomId || 0);
+    if (!createdRoomId) return;
+
+    await sendMessageToRoom(createdRoomId, text, "text");
+    setPopupInputs((prev) => ({ ...prev, [popup.key]: "" }));
+
+    setOpenPopups((prev) =>
+      prev.map((item) =>
+        item.key === popup.key
+          ? {
+              key: `room-${createdRoomId}`,
+              type: "room",
+              roomId: createdRoomId,
+              minimized: false,
+            }
+          : item
+      )
+    );
+
+    await Promise.all([refetchRooms(), refetchAllMessages(), refetchAllMembers()]);
+  };
+
+  const handleAttachFileFromPopup = async (popup: OpenPopup, file: File) => {
     const formData = new FormData();
     formData.append("file", file);
 
@@ -548,186 +548,190 @@ export default function MessengerPage() {
       return;
     }
 
-    const socket = socketRef.current;
+    const isImage = file.type.startsWith("image/");
+    const messageType = isImage ? "image" : "file";
+    const content = isImage ? "[이미지]" : `[파일] ${fileName}`;
 
-    if (socket) {
-      socket.emit("message:send", {
-        roomId: Number(activeRoom.id),
-        content: isImage ? "[이미지]" : `[파일] ${fileName}`,
-        messageType: isImage ? "image" : "file",
+    if (popup.type === "room") {
+      await sendMessageToRoom(popup.roomId, content, messageType, {
         fileUrl,
         fileName,
         fileType: file.type || undefined,
         fileSize: file.size,
       });
+      await Promise.all([refetchRooms(), refetchAllMessages(), refetchAllMembers()]);
       return;
     }
 
-    const sendRes = await sendMessageMutation.mutateAsync({
-      roomId: Number(activeRoom.id),
-      content: isImage ? "[이미지]" : `[파일] ${fileName}`,
-      messageType: isImage ? "image" : "file",
+    const createRes = await createDirectRoomMutation.mutateAsync({
+      userId: Number(popup.targetUserId),
     });
 
-    if (!sendRes?.id) return;
+    const createdRoomId = Number(createRes?.room?.id || createRes?.roomId || 0);
+    if (!createdRoomId) return;
 
-    await addAttachmentMutation.mutateAsync({
-      messageId: Number(sendRes.id),
-      fileName,
+    await sendMessageToRoom(createdRoomId, content, messageType, {
       fileUrl,
+      fileName,
       fileType: file.type || undefined,
       fileSize: file.size,
     });
 
-    await Promise.all([refetchMessages(), refetchRooms()]);
-  };
-
-  const handleOpenImage = (url: string, name?: string) => {
-    if (!url) return;
-    setPreviewImage({
-      open: true,
-      url,
-      name,
-    });
-  };
-
-  const handleCloseImage = () => {
-    setPreviewImage({
-      open: false,
-      url: undefined,
-      name: undefined,
-    });
-  };
-
-  const handleToggleNotifications = async () => {
-    if (!activeRoom) return;
-
-    const nextMuted = !!activeRoom.notificationsEnabled;
-
-    const socket = socketRef.current;
-    if (!socket) {
-      alert("소켓이 연결되지 않았습니다.");
-      return;
-    }
-
-    socket.emit(
-      "room:mute",
-      {
-        roomId: Number(activeRoom.id),
-        isMuted: nextMuted,
-      },
-      async (res: any) => {
-        if (!res?.success) {
-          alert(res?.message || "알림 설정 변경에 실패했습니다.");
-          return;
-        }
-
-        await refetchRooms();
-      }
+    setOpenPopups((prev) =>
+      prev.map((item) =>
+        item.key === popup.key
+          ? {
+              key: `room-${createdRoomId}`,
+              type: "room",
+              roomId: createdRoomId,
+              minimized: false,
+            }
+          : item
+      )
     );
+
+    await Promise.all([refetchRooms(), refetchAllMessages(), refetchAllMembers()]);
   };
 
-  const handleLeaveRoom = async () => {
-    if (!activeRoom) return;
-
-    const ok = window.confirm("정말 이 채팅방에서 나가시겠습니까?");
-    if (!ok) return;
-
-    const socket = socketRef.current;
-    if (!socket) {
-      alert("소켓이 연결되지 않았습니다.");
-      return;
-    }
-
-    socket.emit(
-      "room:leave:confirm",
-      {
-        roomId: Number(activeRoom.id),
-      },
-      async (res: any) => {
-        if (!res?.success) {
-          alert(res?.message || "방 나가기에 실패했습니다.");
-          return;
-        }
-
-        setSelectedRoomId(null);
-        setLiveMessages(null);
-        setRoomInfoOpen(false);
-        await refetchRooms();
-      }
-    );
-  };
-
-  const handleAddParticipant = () => {
-    alert("대화 상대 추가 기능은 그룹방 멤버 추가 API 연결 후 활성화하면 됩니다.");
-  };
-
-  const typingUsers = useMemo(() => {
-    if (!selectedRoomId) return [];
-    const ids = typingUserIdsByRoom[Number(selectedRoomId)] ?? [];
-    return ids.map((id) => usersById[Number(id)]).filter(Boolean);
-  }, [selectedRoomId, typingUserIdsByRoom, usersById]);
-
-  const isPageLoading = usersLoading || roomsLoading;
-  const isRoomLoading = messagesLoading || membersLoading;
+  const popupItems = useMemo(() => {
+    return openPopups.filter((popup) => !popup.minimized);
+  }, [openPopups]);
 
   return (
     <>
       <div className="relative h-full overflow-hidden bg-white">
-        <div className="grid h-full grid-cols-[340px_minmax(0,1fr)]">
-          <MessengerSidebar
-            rooms={mappedRooms}
-            activeRoomId={selectedRoomId}
-            users={[...orgUsers]
-              .filter((u) => Number(u.id) !== Number(user?.id))
-              .sort((a, b) => {
-                const teamCompare = String(a.team || "").localeCompare(String(b.team || ""));
-                if (teamCompare !== 0) return teamCompare;
+        <div className="flex h-full flex-col">
+          <div className="border-b border-slate-200 px-4 py-3">
+            <p className="text-sm font-semibold text-slate-950">{companyName}</p>
+            <p className="mt-1 text-xs text-slate-500">
+              조직도에서 더블클릭하면 새 대화를 열 수 있습니다.
+            </p>
+          </div>
 
-                const posCompare = String(a.position || "").localeCompare(String(b.position || ""));
-                if (posCompare !== 0) return posCompare;
+          <div className="grid h-[calc(100%-61px)] grid-cols-[320px_minmax(0,1fr)]">
+            <MessengerSidebar
+              rooms={mappedRooms}
+              activeRoomId={null}
+              users={[...orgUsers]
+                .filter((u) => Number(u.id) !== Number(user?.id))
+                .sort((a, b) => {
+                  const teamCompare = String(a.team || "").localeCompare(String(b.team || ""));
+                  if (teamCompare !== 0) return teamCompare;
 
-                return String(a.name || "").localeCompare(String(b.name || ""));
-              })}
-            onSelectRoom={handleSelectRoom}
-            onOpenDirectChat={handleOpenDirectChat}
-          />
+                  const posCompare = String(a.position || "").localeCompare(String(b.position || ""));
+                  if (posCompare !== 0) return posCompare;
 
-          <div className="flex min-w-0 flex-col bg-[#b2c7da]">
-            {isPageLoading || (selectedRoomId && isRoomLoading && !liveMessages) ? (
-              <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                메신저 불러오는 중...
+                  return String(a.name || "").localeCompare(String(b.name || ""));
+                })}
+              onSelectRoom={handleSelectRoom}
+              onOpenDirectChat={handleOpenDirectChat}
+            />
+
+            <div className="flex h-full items-center justify-center bg-[#f7f8fa] px-6 text-center">
+              <div>
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-[#ffeb59] text-slate-900 shadow-sm">
+                  <MessageSquareIcon />
+                </div>
+                <p className="mt-4 text-base font-semibold text-slate-900">
+                  채팅방을 선택하세요
+                </p>
+                <p className="mt-2 text-sm text-slate-500">
+                  조직도에서 조직원을 선택하거나 채팅 목록에서 대화를 열 수 있습니다.
+                </p>
               </div>
-            ) : (
-              <MessengerChatWindow
-                activeRoom={activeRoom}
-                messages={currentMessages}
-                usersById={usersById}
-                currentUserId={user?.id ? Number(user.id) : null}
-                input={input}
-                onInputChange={handleInputChange}
-                onSend={handleSend}
-                onOpenImage={handleOpenImage}
-                onAttachFile={handleAttachFile}
-                participants={participants}
-                lastReadByUserId={lastReadByUserId}
-                typingUsers={typingUsers}
-                onOpenRoomInfo={() => setRoomInfoOpen(true)}
-              />
-            )}
+            </div>
           </div>
         </div>
 
-        <MessengerRoomInfo
-          open={roomInfoOpen}
-          activeRoom={activeRoom}
-          participants={participants}
-          messages={currentMessages}
-          onClose={() => setRoomInfoOpen(false)}
-          onToggleNotifications={handleToggleNotifications}
-          onLeaveRoom={handleLeaveRoom}
-          onAddParticipant={handleAddParticipant}
-        />
+        {popupItems.map((popup, index) => {
+          const room =
+            popup.type === "room"
+              ? mappedRooms.find((item) => Number(item.id) === Number(popup.roomId)) || null
+              : null;
+
+          const targetUser =
+            popup.type === "draft"
+              ? usersById[Number(popup.targetUserId)] || null
+              : room?.type === "direct"
+              ? orgUsers.find((u) => u.name === room.name) || null
+              : null;
+
+          const participants =
+            popup.type === "room"
+              ? membersByRoomId[Number(popup.roomId)] || []
+              : targetUser
+              ? [targetUser]
+              : [];
+
+          const messages =
+            popup.type === "room"
+              ? messagesByRoomId[Number(popup.roomId)] || []
+              : [];
+
+          return (
+            <MessengerPopupWindow
+              key={popup.key}
+              popupKey={popup.key}
+              room={room}
+              targetUser={targetUser}
+              participants={participants}
+              messages={messages}
+              usersById={usersById}
+              currentUserId={user?.id ? Number(user.id) : null}
+              input={popupInputs[popup.key] || ""}
+              onInputChange={(value) => handleInputChange(popup.key, value)}
+              onSend={() => handleSendFromPopup(popup)}
+              onAttachFile={(file) => handleAttachFileFromPopup(popup, file)}
+              onOpenImage={handleOpenImage}
+              onClose={() => closePopup(popup.key)}
+              onMinimize={() => toggleMinimizePopup(popup.key)}
+              onToggleRoomInfo={() =>
+                setRoomInfoOpenFor((prev) => (prev === popup.key ? null : popup.key))
+              }
+              onTogglePin={() => {
+                if (room?.id) togglePinRoom(Number(room.id));
+              }}
+              pinned={room?.id ? pinnedRoomIds.includes(Number(room.id)) : false}
+              rightOffset={384 + index * 392}
+              zIndex={10010 + index}
+            />
+          );
+        })}
+
+        {popupItems.map((popup) => {
+          if (roomInfoOpenFor !== popup.key) return null;
+
+          const room =
+            popup.type === "room"
+              ? mappedRooms.find((item) => Number(item.id) === Number(popup.roomId)) || null
+              : null;
+
+          const participants =
+            popup.type === "room"
+              ? membersByRoomId[Number(popup.roomId)] || []
+              : popup.type === "draft"
+              ? [usersById[Number(popup.targetUserId)]].filter(Boolean)
+              : [];
+
+          const messages =
+            popup.type === "room"
+              ? messagesByRoomId[Number(popup.roomId)] || []
+              : [];
+
+          return (
+            <MessengerRoomInfo
+              key={`info-${popup.key}`}
+              open
+              activeRoom={room}
+              participants={participants}
+              messages={messages}
+              onClose={() => setRoomInfoOpenFor(null)}
+              onToggleNotifications={() => {}}
+              onLeaveRoom={() => {}}
+              onAddParticipant={() => {}}
+            />
+          );
+        })}
       </div>
 
       <ImagePreviewModal
@@ -737,5 +741,21 @@ export default function MessengerPage() {
         onClose={handleCloseImage}
       />
     </>
+  );
+}
+
+function MessageSquareIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-6 w-6"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
   );
 }

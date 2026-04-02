@@ -68,6 +68,9 @@ type MenuItem = {
   path: string;
 };
 
+const COMPANY_NAME = "위드원 교육";
+const COMPANY_SUBTITLE = "사내 메신저";
+
 const staffMenuItems: MenuItem[] = [
   { icon: LayoutDashboard, label: "홈", path: "/" },
   { icon: BarChart3, label: "운영 대시보드", path: "/overview" },
@@ -196,9 +199,7 @@ function DashboardLayoutContent({
     if (raw.startsWith("//")) {
       return `https:${raw}`;
     }
-    if (!API_BASE_URL) {
-      return raw;
-    }
+    if (!API_BASE_URL) return raw;
     return raw.startsWith("/") ? `${API_BASE_URL}${raw}` : `${API_BASE_URL}/${raw}`;
   };
 
@@ -214,13 +215,15 @@ function DashboardLayoutContent({
   }, [isMessengerOpen]);
 
   useEffect(() => {
-    const handleOpenMessenger = () => {
-      setIsMessengerOpen(true);
-    };
+    const handleOpenMessenger = () => setIsMessengerOpen(true);
+    const handleCloseMessenger = () => setIsMessengerOpen(false);
 
     window.addEventListener("open-messenger", handleOpenMessenger);
+    window.addEventListener("messenger:request-close-main", handleCloseMessenger);
+
     return () => {
       window.removeEventListener("open-messenger", handleOpenMessenger);
+      window.removeEventListener("messenger:request-close-main", handleCloseMessenger);
     };
   }, []);
 
@@ -729,22 +732,26 @@ function DashboardLayoutContent({
         </div>
 
         <div className="flex min-h-0 flex-1">
-          <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
+          <main
+            className={`min-w-0 flex-1 p-4 md:p-6 transition-all duration-200 ${
+              isMessengerOpen && !isMobile ? "pr-[390px]" : ""
+            }`}
+          >
+            {children}
+          </main>
         </div>
       </SidebarInset>
 
       {isMessengerOpen && !isMobile && (
-        <div className="fixed bottom-6 right-6 z-[9999] h-[640px] w-[980px] overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.24)]">
+        <div className="fixed right-0 top-16 z-[9999] h-[calc(100vh-64px)] w-[360px] border-l border-slate-200 bg-white shadow-[-12px_0_40px_rgba(15,23,42,0.12)]">
           <div className="flex h-16 items-center justify-between border-b border-slate-200 bg-[#f8fafc] px-4">
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#ffdd00] text-slate-900">
                 <MessageSquare className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-950">사내 메신저</p>
-                <p className="truncate text-xs text-slate-500">
-                  페이지 이동 없이 계속 사용할 수 있습니다.
-                </p>
+                <p className="truncate text-sm font-semibold text-slate-950">{COMPANY_NAME}</p>
+                <p className="truncate text-xs text-slate-500">{COMPANY_SUBTITLE}</p>
               </div>
             </div>
 
@@ -758,7 +765,10 @@ function DashboardLayoutContent({
           </div>
 
           <div className="h-[calc(100%-64px)] overflow-hidden bg-white">
-            <MessengerPage />
+            <MessengerPage
+              companyName={COMPANY_NAME}
+              onRequestClose={() => setIsMessengerOpen(false)}
+            />
           </div>
         </div>
       )}

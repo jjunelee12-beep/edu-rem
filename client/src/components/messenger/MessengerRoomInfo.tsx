@@ -38,18 +38,18 @@ export default function MessengerRoomInfo({
     return messages.filter((m) => m.type === "file" && m.fileUrl);
   }, [messages]);
 
-  if (!open || !activeRoom) return null;
+  if (!open) return null;
 
   return (
-    <div className="absolute inset-0 z-40 flex justify-end bg-black/20">
+    <div className="fixed inset-0 z-[10030] flex justify-end bg-black/20">
       <div className="flex h-full w-[340px] flex-col border-l border-slate-200 bg-[#fcfcfd] shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4">
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold text-slate-900">
-              {activeRoom.name}
+              {activeRoom?.name || "채팅방 정보"}
             </div>
             <div className="mt-1 text-xs text-slate-500">
-              {activeRoom.type === "direct" ? "1:1 채팅" : "그룹 채팅"}
+              {activeRoom?.type === "direct" ? "1:1 채팅" : "그룹 채팅"}
             </div>
           </div>
 
