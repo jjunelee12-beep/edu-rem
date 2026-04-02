@@ -13,38 +13,14 @@ import {
   Bell,
   User,
   Clock3,
-  MessageSquare,
   Megaphone,
   CheckCircle2,
   UserCheck,
   UserX,
   CalendarRange,
+  MessageSquare,
 } from "lucide-react";
 import "./Home.css";
-
-type NoticeItem = {
-  id: number;
-  title: string;
-  summary: string;
-  createdAt: string;
-  isImportant?: boolean;
-};
-
-type MessengerItem = {
-  id: number;
-  roomName: string;
-  lastMessage: string;
-  updatedAt: string;
-  unreadCount: number;
-  members?: string;
-};
-
-type ScheduleItem = {
-  id: number;
-  title: string;
-  time: string;
-  tone?: "default" | "blue" | "green" | "orange";
-};
 
 type AttendanceCardStatus =
   | "출근"
@@ -70,41 +46,6 @@ type AttendanceCardItem = {
   team?: string;
   position?: string;
 };
-
-const messengerRooms: MessengerItem[] = [
-  {
-    id: 1,
-    roomName: "운영팀",
-    lastMessage: "오늘 승인 건 먼저 확인 부탁드립니다.",
-    updatedAt: "방금 전",
-    unreadCount: 2,
-    members: "운영 4명",
-  },
-  {
-    id: 2,
-    roomName: "상담팀",
-    lastMessage: "신규 문의 3건 들어왔습니다.",
-    updatedAt: "12분 전",
-    unreadCount: 0,
-    members: "상담 6명",
-  },
-  {
-    id: 3,
-    roomName: "1:1 · 관리자",
-    lastMessage: "정산 리포트 확인 부탁드려요.",
-    updatedAt: "35분 전",
-    unreadCount: 1,
-    members: "1:1 대화",
-  },
-  {
-    id: 4,
-    roomName: "실습지원센터",
-    lastMessage: "기관 배정표 업데이트 해주세요.",
-    updatedAt: "1시간 전",
-    unreadCount: 0,
-    members: "실습 3명",
-  },
-];
 
 function SectionTitle({
   icon,
@@ -445,16 +386,6 @@ export default function Home() {
   const canClockIn = !myTodayAttendance?.clockInAt;
   const canClockOut = !!myTodayAttendance?.clockInAt && !myTodayAttendance?.clockOutAt;
 
-  const filteredMessenger = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return messengerRooms;
-    return messengerRooms.filter(
-      (room) =>
-        room.roomName.toLowerCase().includes(q) ||
-        room.lastMessage.toLowerCase().includes(q)
-    );
-  }, [search]);
-
   const homeCalendarItems = useMemo(() => {
     return (homeMonthSchedules as any[]).map((row: any) => ({
       id: Number(row.id),
@@ -494,6 +425,10 @@ export default function Home() {
       });
   }, [homeMonthSchedules, selectedCalendarDate]);
 
+  const openMessenger = () => {
+    window.dispatchEvent(new Event("open-messenger"));
+  };
+
   return (
     <>
       <div className="home-page">
@@ -511,7 +446,7 @@ export default function Home() {
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="메신저 / 공지 검색"
+                    placeholder="공지 검색"
                     className="home-search-input"
                   />
                 </div>
@@ -532,6 +467,11 @@ export default function Home() {
                     </span>
                   ) : null}
                 </button>
+
+                <button onClick={openMessenger} className="home-icon-btn">
+                  <MessageSquare className="h-4 w-4" />
+                </button>
+
                 <button onClick={() => setLocation("/my")} className="home-icon-btn">
                   <User className="h-4 w-4" />
                 </button>
@@ -543,9 +483,16 @@ export default function Home() {
                 <Card>
                   <CardContent className="p-5">
                     <div className="flex flex-col items-center text-center">
-                      <button onClick={() => setLocation("/my")} className="home-avatar-btn overflow-hidden">
+                      <button
+                        onClick={() => setLocation("/my")}
+                        className="home-avatar-btn overflow-hidden"
+                      >
                         {profileImageSrc ? (
-                          <img src={profileImageSrc} alt="프로필" className="h-full w-full object-cover" />
+                          <img
+                            src={profileImageSrc}
+                            alt="프로필"
+                            className="h-full w-full object-cover"
+                          />
                         ) : (
                           <span>{user?.name?.[0] ?? "U"}</span>
                         )}
@@ -553,11 +500,11 @@ export default function Home() {
 
                       <h3 className="mt-3 text-lg font-semibold">{user?.name ?? "-"}</h3>
                       <div className="text-sm text-muted-foreground leading-tight">
-  <p className="truncate">{(myProfile as any)?.teamName || "미분류"}</p>
-  <p className="truncate">
-    {(myProfile as any)?.positionName || "미분류"}
-  </p>
-</div>
+                        <p className="truncate">{(myProfile as any)?.teamName || "미분류"}</p>
+                        <p className="truncate">
+                          {(myProfile as any)?.positionName || "미분류"}
+                        </p>
+                      </div>
                     </div>
 
                     <div className="mt-5 grid grid-cols-2 gap-3">
@@ -657,9 +604,9 @@ export default function Home() {
                                   <div>
                                     <p className="text-sm font-medium">{item.name}</p>
                                     <div className="text-[11px] text-muted-foreground leading-tight">
-  <p className="truncate">{item.team || "미분류"}</p>
-  <p className="truncate">{item.position || "미분류"}</p>
-</div>
+                                      <p className="truncate">{item.team || "미분류"}</p>
+                                      <p className="truncate">{item.position || "미분류"}</p>
+                                    </div>
                                   </div>
                                 </div>
                                 <span className="text-xs text-muted-foreground">
@@ -674,11 +621,13 @@ export default function Home() {
                       <div className="space-y-3">
                         <div className="rounded-2xl bg-slate-50 p-4">
                           <p className="text-xs text-muted-foreground">오늘 상태</p>
-                          <p className="mt-1 text-lg font-bold">{myTodayAttendance?.status || "출근전"}</p>
+                          <p className="mt-1 text-lg font-bold">
+                            {myTodayAttendance?.status || "출근전"}
+                          </p>
                           <div className="mt-1 text-xs text-muted-foreground leading-tight">
-  <p className="truncate">{attendanceListUI[0]?.team || "미분류"}</p>
-  <p className="truncate">{attendanceListUI[0]?.position || "미분류"}</p>
-</div>
+                            <p className="truncate">{attendanceListUI[0]?.team || "미분류"}</p>
+                            <p className="truncate">{attendanceListUI[0]?.position || "미분류"}</p>
+                          </div>
                           <p className="mt-2 text-[11px] text-muted-foreground">
                             {myTodayAttendance?.clockInAt
                               ? `출근 ${formatTime(myTodayAttendance.clockInAt)}`
@@ -768,24 +717,31 @@ export default function Home() {
                         </button>
                       ))}
 
-                      {normalNotices.slice(0, 5).map((notice: any) => (
-                        <button
-                          key={notice.id}
-                          onClick={() => setLocation(`/notices/${notice.id}`)}
-                          className="w-full rounded-2xl bg-[#f5f6fa] px-4 py-4 text-left transition hover:bg-[#eef1f6]"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="truncate font-semibold text-slate-800">{notice.title}</p>
+                      {normalNotices
+                        .filter((notice: any) => {
+                          const q = search.trim().toLowerCase();
+                          if (!q) return true;
+                          return String(notice.title || "").toLowerCase().includes(q);
+                        })
+                        .slice(0, 5)
+                        .map((notice: any) => (
+                          <button
+                            key={notice.id}
+                            onClick={() => setLocation(`/notices/${notice.id}`)}
+                            className="w-full rounded-2xl bg-[#f5f6fa] px-4 py-4 text-left transition hover:bg-[#eef1f6]"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate font-semibold text-slate-800">{notice.title}</p>
+                              </div>
+                              <span className="text-xs text-muted-foreground">
+                                {notice.createdAt
+                                  ? new Date(notice.createdAt).toLocaleDateString("ko-KR")
+                                  : "-"}
+                              </span>
                             </div>
-                            <span className="text-xs text-muted-foreground">
-                              {notice.createdAt
-                                ? new Date(notice.createdAt).toLocaleDateString("ko-KR")
-                                : "-"}
-                            </span>
-                          </div>
-                        </button>
-                      ))}
+                          </button>
+                        ))}
                     </div>
                   </CardContent>
                 </Card>
@@ -894,37 +850,34 @@ export default function Home() {
                   <CardContent className="p-5">
                     <SectionTitle
                       icon={<MessageSquare className="h-4 w-4 text-primary" />}
-                      title="최근 메신저"
+                      title="메신저"
                       right={
-                        <Button variant="ghost" size="sm" className="h-8 px-2 text-xs">
-                          전체 보기
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2 text-xs"
+                          onClick={openMessenger}
+                        >
+                          열기
                         </Button>
                       }
                     />
 
-                    <div className="space-y-3">
-                      {filteredMessenger.map((room) => (
-                        <button
-                          key={room.id}
-                          className="flex w-full items-center justify-between rounded-2xl bg-[#f5f6fa] px-4 py-4 text-left transition hover:bg-[#eef1f6]"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="truncate font-semibold">{room.roomName}</p>
-                              {room.unreadCount > 0 ? (
-                                <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
-                                  {room.unreadCount}
-                                </span>
-                              ) : null}
-                            </div>
-                            <p className="mt-1 truncate text-sm text-muted-foreground">
-                              {room.lastMessage}
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">{room.members}</p>
-                          </div>
-                          <span className="shrink-0 text-xs text-muted-foreground">{room.updatedAt}</span>
-                        </button>
-                      ))}
+                    <div className="rounded-[24px] bg-[#f5f6fa] px-5 py-6">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="text-base font-semibold text-slate-900">
+                            사내 메신저를 바로 열 수 있습니다
+                          </p>
+                          <p className="mt-2 text-sm text-slate-500">
+                            페이지 이동 없이 홈 화면 위에서 계속 사용할 수 있습니다.
+                          </p>
+                        </div>
+
+                        <Button onClick={openMessenger} className="shrink-0">
+                          메신저 열기
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -933,6 +886,15 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={openMessenger}
+        className="fixed bottom-6 right-6 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_14px_30px_rgba(15,23,42,0.24)] transition hover:scale-[1.03]"
+        aria-label="메신저 열기"
+      >
+        <MessageSquare className="h-6 w-6" />
+      </button>
 
       <ScheduleEditorDialog
         open={scheduleEditorOpen}

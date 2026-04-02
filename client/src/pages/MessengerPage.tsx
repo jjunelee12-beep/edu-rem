@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { getSocket } from "@/lib/socket";
+
 import MessengerSidebar from "@/components/messenger/MessengerSidebar";
 import MessengerChatWindow from "@/components/messenger/MessengerChatWindow";
 import MessengerRoomInfo from "@/components/messenger/MessengerRoomInfo";
 import ImagePreviewModal from "@/components/messenger/ImagePreviewModal";
+
 import {
   MessengerMessage,
   MessengerRoom,
@@ -29,7 +31,7 @@ function normalizeUsers(
     name: user.name || user.username || "이름없음",
     position: user.positionName || user.position || roleToPosition(user.role),
     team: user.teamName || user.team || "미분류",
-    avatar: user.avatarUrl || user.avatar || "",
+    avatar: user.avatarUrl || user.profileImageUrl || user.avatar || "",
     status: onlineUserIds.has(Number(user.id)) ? "online" : "offline",
   }));
 }
@@ -46,6 +48,7 @@ export default function MessengerPage() {
   const [liveMessages, setLiveMessages] = useState<MessengerMessage[] | null>(null);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<number>>(new Set());
   const [typingUserIdsByRoom, setTypingUserIdsByRoom] = useState<Record<number, number[]>>({});
+  const [roomInfoOpen, setRoomInfoOpen] = useState(false);
   const [previewImage, setPreviewImage] = useState<{
     open: boolean;
     url?: string;
@@ -53,9 +56,10 @@ export default function MessengerPage() {
   }>({
     open: false,
   });
-const roomIdFromQuery = Number(
-  new URLSearchParams(window.location.search).get("roomId") || 0
-);
+
+  const roomIdFromQuery = Number(
+    new URLSearchParams(window.location.search).get("roomId") || 0
+  );
 
   const { data: userList = [], isLoading: usersLoading } =
     trpc.users.list.useQuery();
@@ -141,30 +145,35 @@ const roomIdFromQuery = Number(
   }, [roomRows]);
 
   useEffect(() => {
-  if (selectedRoomId || roomIdFromQuery) return;
-  if (!mappedRooms.length) return;
+    if (selectedRoomId || roomIdFromQuery) return;
+    if (!mappedRooms.length) return;
 
-  setSelectedRoomId(Number(mappedRooms[0].id));
-}, [mappedRooms, selectedRoomId, roomIdFromQuery]);
+    setSelectedRoomId(Number(mappedRooms[0].id));
+  }, [mappedRooms, selectedRoomId, roomIdFromQuery]);
 
-useEffect(() => {
-  if (!roomIdFromQuery) return;
-  if (!mappedRooms.length) return;
+  useEffect(() => {
+    if (!roomIdFromQuery) return;
+    if (!mappedRooms.length) return;
 
-  const targetRoom = mappedRooms.find(
-    (room) => Number(room.id) === Number(roomIdFromQuery)
+    const targetRoom = mappedRooms.find(
+      (room) => Number(room.id) === Number(roomIdFromQuery)
+    );
+
+    if (targetRoom) {
+      setSelectedRoomId(Number(targetRoom.id));
+      setLiveMessages(null);
+    }
+  }, [roomIdFromQuery, mappedRooms]);
+
+  useEffect(() => {
+    setRoomInfoOpen(false);
+  }, [selectedRoomId]);
+
+  const activeRoom = useMemo(
+    () =>
+      mappedRooms.find((room) => Number(room.id) === Number(selectedRoomId)) ?? null,
+    [mappedRooms, selectedRoomId]
   );
-
-  if (targetRoom) {
-    setSelectedRoomId(Number(targetRoom.id));
-    setLiveMessages(null);
-  }
-}, [roomIdFromQuery, mappedRooms]);
-
-const activeRoom = useMemo(
-  () => mappedRooms.find((room) => Number(room.id) === Number(selectedRoomId)) ?? null,
-  [mappedRooms, selectedRoomId]
-);
 
   const baseMessages = useMemo<MessengerMessage[]>(() => {
     return (messageRows as any[]).map((m: any) => ({
@@ -196,7 +205,7 @@ const activeRoom = useMemo(
       name: member.name || member.username || "이름없음",
       position: member.positionName || roleToPosition(member.role),
       team: member.teamName || "미분류",
-      avatar: member.avatarUrl || "",
+      avatar: member.avatarUrl || member.profileImageUrl || "",
       status: onlineUserIds.has(Number(member.userId)) ? "online" : "offline",
     }));
   }, [memberRows, onlineUserIds]);
@@ -213,6 +222,7 @@ const activeRoom = useMemo(
     onSuccess: async (res) => {
       if (res?.room?.id) {
         setSelectedRoomId(Number(res.room.id));
+        setLiveMessages(null);
         await Promise.all([
           refetchRooms(),
           refetchMessages(),
@@ -289,7 +299,7 @@ const activeRoom = useMemo(
       };
 
       if (Number(normalized.roomId) !== Number(selectedRoomId)) {
-        refetchRooms();
+        void refetchRooms();
         return;
       }
 
@@ -305,7 +315,7 @@ const activeRoom = useMemo(
         [Number(normalized.roomId)]: [],
       }));
 
-      refetchRooms();
+      void refetchRooms();
     };
 
     const handleRoomListUpdate = async () => {
@@ -386,8 +396,6 @@ const activeRoom = useMemo(
 
     socket.emit("room:join", { roomId: Number(selectedRoomId) });
     joinedRoomRef.current = Number(selectedRoomId);
-
-    return () => {};
   }, [selectedRoomId]);
 
   useEffect(() => {
@@ -644,6 +652,7 @@ const activeRoom = useMemo(
 
         setSelectedRoomId(null);
         setLiveMessages(null);
+        setRoomInfoOpen(false);
         await refetchRooms();
       }
     );
@@ -656,9 +665,7 @@ const activeRoom = useMemo(
   const typingUsers = useMemo(() => {
     if (!selectedRoomId) return [];
     const ids = typingUserIdsByRoom[Number(selectedRoomId)] ?? [];
-    return ids
-      .map((id) => usersById[Number(id)])
-      .filter(Boolean);
+    return ids.map((id) => usersById[Number(id)]).filter(Boolean);
   }, [selectedRoomId, typingUserIdsByRoom, usersById]);
 
   const isPageLoading = usersLoading || roomsLoading;
@@ -666,8 +673,8 @@ const activeRoom = useMemo(
 
   return (
     <>
-      <div className="h-[calc(100vh-120px)] overflow-hidden rounded-[28px] border bg-white shadow-sm">
-        <div className="grid h-full grid-cols-1 xl:grid-cols-[340px_minmax(0,1fr)_320px]">
+      <div className="relative h-full overflow-hidden bg-white">
+        <div className="grid h-full grid-cols-[340px_minmax(0,1fr)]">
           <MessengerSidebar
             rooms={mappedRooms}
             activeRoomId={selectedRoomId}
@@ -686,9 +693,9 @@ const activeRoom = useMemo(
             onOpenDirectChat={handleOpenDirectChat}
           />
 
-          <div className="flex min-w-0 flex-col">
+          <div className="flex min-w-0 flex-col bg-[#b2c7da]">
             {isPageLoading || (selectedRoomId && isRoomLoading && !liveMessages) ? (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              <div className="flex h-full items-center justify-center text-sm text-slate-500">
                 메신저 불러오는 중...
               </div>
             ) : (
@@ -705,19 +712,22 @@ const activeRoom = useMemo(
                 participants={participants}
                 lastReadByUserId={lastReadByUserId}
                 typingUsers={typingUsers}
+                onOpenRoomInfo={() => setRoomInfoOpen(true)}
               />
             )}
           </div>
-
-          <MessengerRoomInfo
-            activeRoom={activeRoom}
-            participants={participants}
-            messages={currentMessages}
-            onToggleNotifications={handleToggleNotifications}
-            onLeaveRoom={handleLeaveRoom}
-            onAddParticipant={handleAddParticipant}
-          />
         </div>
+
+        <MessengerRoomInfo
+          open={roomInfoOpen}
+          activeRoom={activeRoom}
+          participants={participants}
+          messages={currentMessages}
+          onClose={() => setRoomInfoOpen(false)}
+          onToggleNotifications={handleToggleNotifications}
+          onLeaveRoom={handleLeaveRoom}
+          onAddParticipant={handleAddParticipant}
+        />
       </div>
 
       <ImagePreviewModal

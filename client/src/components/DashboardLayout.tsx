@@ -30,6 +30,7 @@ import Login from "@/components/Login";
 import { trpc } from "@/lib/trpc";
 import { useIsMobile } from "@/hooks/useMobile";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
+import MessengerPage from "@/pages/MessengerPage";
 
 import {
   Bell,
@@ -40,7 +41,6 @@ import {
   GraduationCap,
   ShieldCheck,
   Calculator,
-  BadgeCheck,
   CalendarDays,
   CalendarRange,
   Settings,
@@ -123,80 +123,6 @@ type NotificationItem = {
   createdAt?: string | Date;
 };
 
-type RightDockTab = "channels" | "profile" | "settings";
-
-type MessengerRoom = {
-  id: number;
-  name: string;
-  lastMessage: string;
-  unreadCount: number;
-  updatedAt: string;
-  members?: string;
-};
-
-type ChatMessage = {
-  id: number;
-  sender: string;
-  content: string;
-  time: string;
-  mine?: boolean;
-};
-
-const messengerRooms: MessengerRoom[] = [
-  {
-    id: 1,
-    name: "운영팀",
-    lastMessage: "오늘 승인 건 먼저 확인 부탁드립니다.",
-    unreadCount: 2,
-    updatedAt: "방금 전",
-    members: "운영 4명",
-  },
-  {
-    id: 2,
-    name: "상담팀",
-    lastMessage: "신규 문의 3건 들어왔습니다.",
-    unreadCount: 0,
-    updatedAt: "12분 전",
-    members: "상담 6명",
-  },
-  {
-    id: 3,
-    name: "1:1 · 관리자",
-    lastMessage: "정산 리포트 확인 부탁드려요.",
-    unreadCount: 1,
-    updatedAt: "35분 전",
-    members: "1:1 대화",
-  },
-  {
-    id: 4,
-    name: "실습지원센터",
-    lastMessage: "기관 배정표 업데이트 해주세요.",
-    unreadCount: 0,
-    updatedAt: "1시간 전",
-    members: "실습 3명",
-  },
-];
-
-const mockMessagesByRoom: Record<number, ChatMessage[]> = {
-  1: [
-    { id: 1, sender: "김민지", content: "오늘 승인 건 먼저 확인 부탁드립니다.", time: "10:20" },
-    { id: 2, sender: "나", content: "네, 오전 안에 확인해둘게요.", time: "10:24", mine: true },
-    { id: 3, sender: "박지훈", content: "환불 건도 같이 보면 좋겠습니다.", time: "10:26" },
-  ],
-  2: [
-    { id: 1, sender: "최서연", content: "신규 문의 3건 들어왔습니다.", time: "09:40" },
-    { id: 2, sender: "나", content: "상담 DB 반영 상태 먼저 확인할게요.", time: "09:43", mine: true },
-  ],
-  3: [
-    { id: 1, sender: "관리자", content: "정산 리포트 확인 부탁드려요.", time: "11:02" },
-    { id: 2, sender: "나", content: "네 확인 후 바로 말씀드리겠습니다.", time: "11:05", mine: true },
-  ],
-  4: [
-    { id: 1, sender: "이서윤", content: "기관 배정표 업데이트 해주세요.", time: "13:10" },
-    { id: 2, sender: "나", content: "오후에 최신본으로 반영하겠습니다.", time: "13:14", mine: true },
-  ],
-};
-
 export default function DashboardLayout({
   children,
 }: {
@@ -256,10 +182,7 @@ function DashboardLayoutContent({
   setSidebarWidth,
 }: DashboardLayoutContentProps) {
   const [location, setLocation] = useLocation();
-  const [rightDockTab, setRightDockTab] = useState<RightDockTab>("channels");
-  const [isChatSlideOpen, setIsChatSlideOpen] = useState(false);
-  const [selectedChannel, setSelectedChannel] = useState<MessengerRoom | null>(null);
-  const [chatInput, setChatInput] = useState("");
+  const [isMessengerOpen, setIsMessengerOpen] = useState(false);
 
   const { data: myProfile, refetch: refetchMyProfile } = trpc.users.me.useQuery();
 
@@ -278,6 +201,28 @@ function DashboardLayoutContent({
     }
     return raw.startsWith("/") ? `${API_BASE_URL}${raw}` : `${API_BASE_URL}/${raw}`;
   };
+
+  useEffect(() => {
+    const saved = localStorage.getItem("messenger-open");
+    if (saved === "true") {
+      setIsMessengerOpen(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("messenger-open", String(isMessengerOpen));
+  }, [isMessengerOpen]);
+
+  useEffect(() => {
+    const handleOpenMessenger = () => {
+      setIsMessengerOpen(true);
+    };
+
+    window.addEventListener("open-messenger", handleOpenMessenger);
+    return () => {
+      window.removeEventListener("open-messenger", handleOpenMessenger);
+    };
+  }, []);
 
   useEffect(() => {
     const handleProfileImageUpdated = () => {
@@ -411,11 +356,6 @@ function DashboardLayoutContent({
     return notifications.filter((item) => !item.isRead).length;
   }, [notifications]);
 
-  const currentMessages = useMemo(() => {
-    if (!selectedChannel) return [];
-    return mockMessagesByRoom[selectedChannel.id] ?? [];
-  }, [selectedChannel]);
-
   useEffect(() => {
     if (isCollapsed) setIsResizing(false);
   }, [isCollapsed]);
@@ -516,17 +456,6 @@ function DashboardLayoutContent({
   const displayProfileName = (myProfile as any)?.name || user?.name || "-";
   const displayTeamName = (myProfile as any)?.teamName || "팀 미지정";
   const displayPositionName = (myProfile as any)?.positionName || "직급 미지정";
-
-  const handleOpenChannel = (room: MessengerRoom) => {
-    setSelectedChannel(room);
-    setIsChatSlideOpen(true);
-    setRightDockTab("channels");
-  };
-
-  const handleSendMessage = () => {
-    if (!chatInput.trim()) return;
-    setChatInput("");
-  };
 
   return (
     <>
@@ -774,239 +703,64 @@ function DashboardLayoutContent({
             )}
 
             <button
-              onClick={() => setRightDockTab("channels")}
-              className={`inline-flex h-10 items-center justify-center rounded-2xl border px-3 text-sm font-medium transition-colors ${
-                rightDockTab === "channels"
-                  ? "border-slate-200 bg-white text-slate-950"
-                  : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
-              }`}
+              onClick={() => setIsMessengerOpen(true)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-900 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="메신저"
             >
-              <MessageSquare className="mr-2 h-4 w-4" />
-              채널
+              <MessageSquare className="h-4 w-4" />
             </button>
 
             <button
-              onClick={() => setRightDockTab("profile")}
-              className={`inline-flex h-10 items-center justify-center rounded-2xl border px-3 text-sm font-medium transition-colors ${
-                rightDockTab === "profile"
-                  ? "border-slate-200 bg-white text-slate-950"
-                  : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
-              }`}
+              onClick={() => setLocation("/my")}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-900 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="내 정보"
             >
-              <User className="mr-2 h-4 w-4" />
-              기본정보
+              <User className="h-4 w-4" />
             </button>
 
             <button
-              onClick={() => setRightDockTab("settings")}
-              className={`inline-flex h-10 items-center justify-center rounded-2xl border px-3 text-sm font-medium transition-colors ${
-                rightDockTab === "settings"
-                  ? "border-slate-200 bg-white text-slate-950"
-                  : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"
-              }`}
+              onClick={() => setLocation("/system")}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-900 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="설정"
             >
-              <Settings className="mr-2 h-4 w-4" />
-              설정
+              <Settings className="h-4 w-4" />
             </button>
           </div>
         </div>
 
         <div className="flex min-h-0 flex-1">
           <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
-
-          {!isMobile && (
-            <aside className="hidden w-[320px] shrink-0 border-l border-slate-200 bg-[#eef2f7] xl:flex xl:flex-col">
-              <div className="flex h-16 items-center justify-between border-b border-slate-200 px-4">
-                <div className="flex items-center gap-2 text-slate-950">
-                  {rightDockTab === "channels" && <MessageSquare className="h-4 w-4" />}
-                  {rightDockTab === "profile" && <User className="h-4 w-4" />}
-                  {rightDockTab === "settings" && <Settings className="h-4 w-4" />}
-                  <span className="font-semibold">
-                    {rightDockTab === "channels"
-                      ? "채널 리스트"
-                      : rightDockTab === "profile"
-                      ? "기본정보"
-                      : "환경설정"}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-4">
-                {rightDockTab === "channels" && (
-                  <div className="space-y-3">
-                    {messengerRooms.map((room) => (
-                      <button
-                        key={room.id}
-                        onClick={() => handleOpenChannel(room)}
-                        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:bg-slate-50"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="truncate font-medium text-slate-950">{room.name}</p>
-                            {room.unreadCount > 0 && (
-                              <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
-                                {room.unreadCount}
-                              </span>
-                            )}
-                          </div>
-                          <p className="mt-1 truncate text-sm text-slate-600">
-                            {room.lastMessage}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500">{room.members}</p>
-                        </div>
-                        <span className="shrink-0 text-xs text-slate-500">{room.updatedAt}</span>
-                      </button>
-                    ))}
-
-                    <button
-                      onClick={() => setLocation("/messenger")}
-                      className="flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
-                    >
-                      메신저 전체 보기
-                    </button>
-                  </div>
-                )}
-
-                {rightDockTab === "profile" && (
-                  <div className="space-y-3">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs text-slate-500">이름</p>
-                      <p className="mt-1 font-semibold text-slate-950">{user?.name || "-"}</p>
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs text-slate-500">팀</p>
-                      <p className="mt-1 font-semibold text-slate-950">{displayTeamName}</p>
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs text-slate-500">직급</p>
-                      <p className="mt-1 font-semibold text-slate-950">{displayPositionName}</p>
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs text-slate-500">아이디</p>
-                      <p className="mt-1 font-semibold text-slate-950">
-                        {"username" in (user ?? {}) ? (user as any).username : "-"}
-                      </p>
-                    </div>
-
-                    <button
-                      onClick={() => setLocation("/system")}
-                      className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:bg-slate-50"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-slate-950">시스템 관리</p>
-                        <p className="text-xs text-slate-500">사용자 및 기본 설정 확인</p>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-slate-500" />
-                    </button>
-                  </div>
-                )}
-
-                {rightDockTab === "settings" && (
-                  <div className="space-y-3">
-                    <button className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:bg-slate-50">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-950">알림 설정</p>
-                        <p className="text-xs text-slate-500">상담/승인/환불 알림 관리</p>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-slate-500" />
-                    </button>
-
-                    <button className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:bg-slate-50">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-950">홈 화면 설정</p>
-                        <p className="text-xs text-slate-500">대시보드 및 홈 구성 제어</p>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-slate-500" />
-                    </button>
-
-                    <button className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:bg-slate-50">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-950">보안 설정</p>
-                        <p className="text-xs text-slate-500">접근 정책 및 계정 보안 관리</p>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-slate-500" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </aside>
-          )}
         </div>
       </SidebarInset>
 
-      {isChatSlideOpen && selectedChannel && !isMobile && (
-        <aside className="fixed right-0 top-16 z-50 h-[calc(100vh-64px)] w-[420px] border-l border-slate-200 bg-[#f5f7fb] shadow-2xl">
-          <div className="flex h-16 items-center justify-between border-b border-slate-200 px-4">
-            <div className="min-w-0">
-              <p className="truncate font-semibold text-slate-950">{selectedChannel.name}</p>
-              <p className="text-xs text-slate-500">
-                {selectedChannel.members || "채널 대화"}
-              </p>
+      {isMessengerOpen && !isMobile && (
+        <div className="fixed bottom-6 right-6 z-[9999] h-[640px] w-[980px] overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.24)]">
+          <div className="flex h-16 items-center justify-between border-b border-slate-200 bg-[#f8fafc] px-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#ffdd00] text-slate-900">
+                <MessageSquare className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-950">사내 메신저</p>
+                <p className="truncate text-xs text-slate-500">
+                  페이지 이동 없이 계속 사용할 수 있습니다.
+                </p>
+              </div>
             </div>
 
             <button
-              onClick={() => setIsChatSlideOpen(false)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-2xl text-slate-700 transition hover:bg-white"
+              onClick={() => setIsMessengerOpen(false)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-slate-700 transition hover:bg-slate-200/70"
+              aria-label="메신저 닫기"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
 
-          <div className="flex h-[calc(100%-64px)] flex-col">
-            <div className="flex-1 space-y-3 overflow-y-auto p-4">
-              {currentMessages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${message.mine ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                      message.mine
-                        ? "bg-primary text-primary-foreground"
-                        : "border border-slate-200 bg-white"
-                    }`}
-                  >
-                    {!message.mine && (
-                      <p className="mb-1 text-xs font-semibold text-slate-500">
-                        {message.sender}
-                      </p>
-                    )}
-                    <p className="text-sm leading-relaxed">{message.content}</p>
-                    <p
-                      className={`mt-2 text-[11px] ${
-                        message.mine
-                          ? "text-primary-foreground/80"
-                          : "text-slate-400"
-                      }`}
-                    >
-                      {message.time}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="border-t border-slate-200 p-4">
-              <div className="flex items-end gap-2">
-                <textarea
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="메시지를 입력하세요"
-                  className="min-h-[44px] flex-1 resize-none rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 outline-none focus:border-primary"
-                />
-                <button
-                  onClick={handleSendMessage}
-                  className="inline-flex h-11 items-center justify-center rounded-2xl bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90"
-                >
-                  전송
-                </button>
-              </div>
-            </div>
+          <div className="h-[calc(100%-64px)] overflow-hidden bg-white">
+            <MessengerPage />
           </div>
-        </aside>
+        </div>
       )}
     </>
   );
