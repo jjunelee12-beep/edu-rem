@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from "react";
 import { Bell, UserPlus, LogOut, X, Volume2, Moon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
 
 import type {
   MessengerRoom,
@@ -170,10 +171,10 @@ export default function MessengerRoomInfo({
             <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-[28px] bg-slate-100 text-2xl font-semibold text-slate-700">
               {mainUser?.avatar ? (
                 <img
-                  src={mainUser.avatar}
-                  alt={mainUser.name}
-                  className="h-full w-full object-cover"
-                />
+  src={normalizeAssetUrl(mainUser.avatar)}
+  alt={mainUser.name}
+  className="h-full w-full object-cover"
+/>
               ) : (
                 <span>{mainUser?.name?.slice(0, 1) || activeRoom?.name?.slice(0, 1) || "?"}</span>
               )}
@@ -305,10 +306,10 @@ export default function MessengerRoomInfo({
                     className="overflow-hidden rounded-2xl border border-slate-300 bg-white"
                   >
                     <img
-                      src={img.fileUrl}
-                      alt={img.fileName || "image"}
-                      className="h-24 w-full object-cover"
-                    />
+  src={normalizeAssetUrl(img.fileUrl)}
+  alt={img.fileName || "image"}
+  className="h-24 w-full object-cover"
+/>
                   </div>
                 ))}
               </div>
@@ -327,7 +328,7 @@ export default function MessengerRoomInfo({
                 {fileMessages.slice(-10).map((file) => (
                   <a
                     key={file.id}
-                    href={file.fileUrl}
+                    href={normalizeAssetUrl(file.fileUrl)}
                     target="_blank"
                     rel="noreferrer"
                     className="block rounded-2xl border border-slate-300 bg-white px-4 py-4 text-sm text-slate-700 transition hover:bg-slate-50"
@@ -349,24 +350,6 @@ export default function MessengerRoomInfo({
         >
           <Bell className="h-4 w-4" />
           알림 설정
-        </Button>
-
-        <Button
-          variant="outline"
-          className="w-full justify-start gap-2 rounded-2xl"
-          onClick={onAddParticipant}
-        >
-          <UserPlus className="h-4 w-4" />
-          대화상대 추가
-        </Button>
-
-        <Button
-          variant="destructive"
-          className="w-full justify-start gap-2 rounded-2xl"
-          onClick={onLeaveRoom}
-        >
-          <LogOut className="h-4 w-4" />
-          방 나가기
         </Button>
       </div>
     </div>

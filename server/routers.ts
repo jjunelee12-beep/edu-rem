@@ -442,9 +442,13 @@ messenger: router({
       });
 
       return {
-        success: true,
-        id: messageId,
-      };
+  success: true,
+  id: Number(messageId),
+  roomId: Number(input.roomId),
+  senderId: Number(ctx.user.id),
+  content: input.content ?? null,
+  messageType: input.messageType ?? "text",
+};
     }),
 
   markRead: protectedProcedure
@@ -586,6 +590,32 @@ notification: router({
     await db.markAllNotificationsRead(Number(ctx.user.id));
     return { success: true };
   }),
+}),
+
+branding: router({
+  get: protectedProcedure.query(async () => {
+    return db.getBrandingSettings();
+  }),
+
+  save: hostProcedure
+    .input(
+      z.object({
+        companyName: z.string().min(1),
+        companyLogoUrl: z.string().optional().nullable(),
+        messengerSubtitle: z.string().min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const id = await db.saveBrandingSettings({
+        companyName: input.companyName.trim(),
+        companyLogoUrl: input.companyLogoUrl?.trim() || null,
+        messengerSubtitle: input.messengerSubtitle.trim(),
+        createdBy: Number(ctx.user.id),
+        updatedBy: Number(ctx.user.id),
+      } as any);
+
+      return { success: true, id };
+    }),
 }),
 
   mobile: router({

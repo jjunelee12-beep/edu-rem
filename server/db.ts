@@ -71,6 +71,8 @@ type InsertApprovalDocumentLine,
 approvalSettings,
 type InsertApprovalSetting,
 approvalLogs,
+brandingSettings,
+type InsertBrandingSetting,
 type InsertApprovalLog,
 } from "../drizzle/schema";
 
@@ -586,6 +588,63 @@ export async function getAllUsersDetailed() {
     })
     .from(users)
     .orderBy(users.displayNo, users.id);
+}
+
+// ─── Branding Settings ──────────────────────────────────────────────
+export async function getBrandingSettings() {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db
+    .select()
+    .from(brandingSettings)
+    .limit(1);
+
+  if (!result[0]) {
+    return {
+      companyName: "위드원 교육",
+      companyLogoUrl: null,
+      messengerSubtitle: "사내 메신저",
+    };
+  }
+
+  return result[0];
+}
+
+export async function saveBrandingSettings(
+  data: InsertBrandingSetting
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const existing = await db
+    .select()
+    .from(brandingSettings)
+    .limit(1);
+
+  if (existing[0]) {
+    await db
+      .update(brandingSettings)
+      .set({
+        companyName: data.companyName,
+        companyLogoUrl: data.companyLogoUrl ?? null,
+        messengerSubtitle: data.messengerSubtitle,
+        updatedBy: data.updatedBy ?? null,
+      } as any)
+      .where(eq(brandingSettings.id, existing[0].id));
+
+    return existing[0].id;
+  }
+
+  const result: any = await db.insert(brandingSettings).values({
+    companyName: data.companyName,
+    companyLogoUrl: data.companyLogoUrl ?? null,
+    messengerSubtitle: data.messengerSubtitle,
+    createdBy: data.createdBy ?? null,
+    updatedBy: data.updatedBy ?? null,
+  } as any);
+
+  return getInsertId(result);
 }
 
 export async function createUserAccount(data: {
@@ -3630,14 +3689,23 @@ export async function createChatMessage(data: {
   await ensureChatRoomMember(data.roomId, data.senderId);
 
   const result: any = await db.insert(chatMessages).values({
-    roomId: data.roomId,
-    senderId: data.senderId,
-    messageType: data.messageType ?? "text",
-    content: normalizeNullableString(data.content),
-    isDeleted: false,
-  } as InsertChatMessage);
+  roomId: data.roomId,
+  senderId: data.senderId,
+  messageType: data.messageType ?? "text",
+  content: normalizeNullableString(data.content),
+  isDeleted: false,
+} as InsertChatMessage);
 
-  return getInsertId(result);
+const messageId = getInsertId(result);
+
+await db
+  .update(chatRooms)
+  .set({
+    updatedAt: new Date(),
+  } as any)
+  .where(eq(chatRooms.id, data.roomId));
+
+return messageId;
 }
 
 export async function createChatAttachment(data: {
@@ -3707,17 +3775,29 @@ export async function markChatRoomRead(params: {
 
   await ensureChatRoomMember(params.roomId, params.userId);
 
-  await db
-    .update(chatRoomMembers)
-    .set({
-      lastReadMessageId: params.lastReadMessageId ?? null,
-    } as any)
-    .where(
-      and(
-        eq(chatRoomMembers.roomId, params.roomId),
-        eq(chatRoomMembers.userId, params.userId)
-      )
-    );
+let resolvedLastReadMessageId = params.lastReadMessageId ?? null;
+
+if (resolvedLastReadMessageId === null) {
+  const [rows] = await db.execute(sql`
+    SELECT MAX(id) as lastMessageId
+    FROM chat_messages
+    WHERE roomId = ${params.roomId}
+  `);
+
+  resolvedLastReadMessageId = Number((rows as any[])?.[0]?.lastMessageId || 0) || null;
+}
+
+await db
+  .update(chatRoomMembers)
+  .set({
+    lastReadMessageId: resolvedLastReadMessageId,
+  } as any)
+  .where(
+    and(
+      eq(chatRoomMembers.roomId, params.roomId),
+      eq(chatRoomMembers.userId, params.userId)
+    )
+  );
 }
 
 export async function listMyChatRooms(userId: number) {

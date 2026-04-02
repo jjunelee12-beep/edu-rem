@@ -2,6 +2,56 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getSocket } from "@/lib/socket";
 import { trpc } from "@/lib/trpc";
 
+const ROOM_MUTE_KEY = "messenger-muted-room-ids";
+const SOUND_ENABLED_KEY = "messenger-sound-enabled";
+const DND_KEY = "messenger-dnd-range";
+
+function readMutedRooms(): number[] {
+  try {
+    const raw = localStorage.getItem(ROOM_MUTE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((v) => Number(v)).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function readSoundEnabled() {
+  const raw = localStorage.getItem(SOUND_ENABLED_KEY);
+  if (raw === null) return true;
+  return raw === "true";
+}
+
+function readDnd() {
+  try {
+    const raw = localStorage.getItem(DND_KEY);
+    if (!raw) {
+      return { enabled: false, start: "22:00", end: "08:00" };
+    }
+    const parsed = JSON.parse(raw);
+    return {
+      enabled: !!parsed?.enabled,
+      start: parsed?.start || "22:00",
+      end: parsed?.end || "08:00",
+    };
+  } catch {
+    return { enabled: false, start: "22:00", end: "08:00" };
+  }
+}
+
+function isNowInDndRange(start: string, end: string) {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  const current = `${hh}:${mm}`;
+
+  if (start === end) return true;
+  if (start < end) return current >= start && current <= end;
+  return current >= start || current <= end;
+}
+
 type ToastItem = {
   id: string;
   roomId: number;
@@ -22,26 +72,45 @@ function roleToPosition(role?: string) {
 }
 
 function normalizeMessageContent(payload: any) {
-  const messageType = payload?.messageType || "text";
+  const type = payload?.messageType || "text";
 
-  if (messageType === "image") {
-    return "사진을 보냈습니다.";
+  if (type === "image") return "사진을 보냈습니다.";
+  if (type === "file") {
+    return payload?.fileName || "파일을 보냈습니다.";
   }
 
-  if (messageType === "file") {
-    return payload?.fileName ? `${payload.fileName}` : "파일을 보냈습니다.";
-  }
+  return payload?.content || "(내용 없음)";
+}
 
-  return payload?.content || "";
+function playMessageSound(audioRef: React.MutableRefObject<HTMLAudioElement | null>) {
+  const audio = audioRef.current;
+  if (!audio) return;
+
+  try {
+    audio.currentTime = 0;
+    void audio.play();
+  } catch {
+    // 브라우저 정책으로 재생이 막힐 수 있으니 무시
+  }
 }
 
 export default function MessengerToastHost() {
   const socketRef = useRef<any>(null);
   const notificationMapRef = useRef<Map<number, Notification>>(new Map());
+	const audioRef = useRef<HTMLAudioElement | null>(null);
+
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [openRoomIds, setOpenRoomIds] = useState<number[]>([]);
   const [isMessengerMainOpen, setIsMessengerMainOpen] = useState(false);
+
+  const [mutedRoomIds, setMutedRoomIds] = useState<number[]>([]);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [dnd, setDnd] = useState({
+    enabled: false,
+    start: "22:00",
+    end: "08:00",
+  });
 
   const { data: userList = [] } = trpc.users.list.useQuery(undefined, {
     staleTime: 30_000,
@@ -56,85 +125,81 @@ export default function MessengerToastHost() {
   }, [userList]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
     if (!("Notification" in window)) return;
     if (Notification.permission !== "default") return;
 
-    const timer = window.setTimeout(() => {
+    setTimeout(() => {
       Notification.requestPermission().catch(() => {});
-    }, 1200);
+    }, 1000);
+  }, []);
 
-    return () => window.clearTimeout(timer);
+useEffect(() => {
+  audioRef.current = new Audio("/sounds/message.mp3");
+  audioRef.current.preload = "auto";
+
+  return () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+  };
+}, []);
+
+  useEffect(() => {
+    const sync = () => {
+      setMutedRoomIds(readMutedRooms());
+      setSoundEnabled(readSoundEnabled());
+      setDnd(readDnd());
+    };
+
+    sync();
+    window.addEventListener("messenger:settings-changed", sync);
+
+    return () =>
+      window.removeEventListener("messenger:settings-changed", sync);
   }, []);
 
   useEffect(() => {
-    const handleOpenedRoomsChanged = (event: Event) => {
-      const custom = event as CustomEvent;
-      const ids = Array.isArray(custom.detail?.roomIds)
-        ? custom.detail.roomIds.map((v: any) => Number(v)).filter(Boolean)
-        : [];
-      setOpenRoomIds(ids);
+    const handleOpened = (e: any) => {
+      setOpenRoomIds(e.detail?.roomIds || []);
     };
 
-    const handleMessengerOpenChanged = (event: Event) => {
-      const custom = event as CustomEvent;
-      setIsMessengerMainOpen(!!custom.detail?.isOpen);
+    const handleMain = (e: any) => {
+      setIsMessengerMainOpen(!!e.detail?.isOpen);
     };
 
-    window.addEventListener(
-      "messenger:opened-rooms-changed",
-      handleOpenedRoomsChanged as EventListener
-    );
-    window.addEventListener(
-      "messenger:main-open-changed",
-      handleMessengerOpenChanged as EventListener
-    );
+    window.addEventListener("messenger:opened-rooms-changed", handleOpened);
+    window.addEventListener("messenger:main-open-changed", handleMain);
 
     return () => {
-      window.removeEventListener(
-        "messenger:opened-rooms-changed",
-        handleOpenedRoomsChanged as EventListener
-      );
-      window.removeEventListener(
-        "messenger:main-open-changed",
-        handleMessengerOpenChanged as EventListener
-      );
+      window.removeEventListener("messenger:opened-rooms-changed", handleOpened);
+      window.removeEventListener("messenger:main-open-changed", handleMain);
     };
   }, []);
-
-  useEffect(() => {
-    const roomIdsSet = new Set(openRoomIds);
-
-    setToasts((prev) => prev.filter((item) => !roomIdsSet.has(Number(item.roomId))));
-
-    openRoomIds.forEach((roomId) => {
-      const existing = notificationMapRef.current.get(Number(roomId));
-      if (existing) {
-        existing.close();
-        notificationMapRef.current.delete(Number(roomId));
-      }
-    });
-  }, [openRoomIds]);
 
   useEffect(() => {
     const socket = getSocket();
-    socketRef.current = socket;
 
     const handleNewMessage = (payload: any) => {
       const roomId = Number(payload?.roomId || 0);
       const senderId = Number(payload?.senderId || 0);
       if (!roomId || !senderId) return;
 
+      // 🔥 핵심 순서
+      if (mutedRoomIds.includes(roomId)) return;
+
+      if (dnd.enabled && isNowInDndRange(dnd.start, dnd.end)) return;
+
+      if (openRoomIds.includes(roomId)) return;
+	if (isMessengerMainOpen) return;
+
       const sender = usersById.get(senderId);
       const content = normalizeMessageContent(payload);
 
-      const alreadyOpen = openRoomIds.includes(roomId);
-      if (alreadyOpen) return;
-
-      const nextBase = {
+      const base = {
         roomId,
         senderId,
-        senderName: sender?.name || sender?.username || "이름없음",
+        senderName: sender?.name || "이름없음",
         senderPosition:
           sender?.positionName ||
           sender?.position ||
@@ -149,65 +214,58 @@ export default function MessengerToastHost() {
       };
 
       setToasts((prev) => {
-        const existing = prev.find((item) => Number(item.roomId) === roomId);
+        const existing = prev.find((t) => t.roomId === roomId);
 
         if (existing) {
-          return prev.map((item) =>
-            Number(item.roomId) === roomId
-              ? {
-                  ...item,
-                  content,
-                  createdAt: Date.now(),
-                  unreadCount: Number(item.unreadCount || 1) + 1,
-                }
-              : item
+          return prev.map((t) =>
+            t.roomId === roomId
+              ? { ...t, content, unreadCount: t.unreadCount + 1 }
+              : t
           );
         }
 
         return [
           ...prev,
           {
-            id: `${Date.now()}-${Math.random()}`,
-            ...nextBase,
+            id: `${Date.now()}`,
+            ...base,
             unreadCount: 1,
           },
         ];
       });
 
-      if (typeof window !== "undefined" && "Notification" in window) {
-        if (Notification.permission === "granted") {
-          const oldNoti = notificationMapRef.current.get(roomId);
-          if (oldNoti) {
-            oldNoti.close();
-            notificationMapRef.current.delete(roomId);
-          }
+const isWindowFocused = document.hasFocus();
 
-          const systemNotification = new Notification(nextBase.senderName, {
-            body: content,
-            icon: nextBase.senderAvatar || undefined,
-            tag: `messenger-room-${roomId}`,
-            silent: false,
-          });
+if (soundEnabled && !isWindowFocused) {
+  playMessageSound(audioRef);
+}
 
-          systemNotification.onclick = () => {
-            window.focus();
-            window.dispatchEvent(new Event("open-messenger"));
-            window.dispatchEvent(
-              new CustomEvent("messenger:open-room", {
-                detail: { roomId },
-              })
-            );
-            systemNotification.close();
-            notificationMapRef.current.delete(roomId);
-          };
+      if (Notification.permission === "granted") {
+        const old = notificationMapRef.current.get(roomId);
+        if (old) old.close();
 
-          notificationMapRef.current.set(roomId, systemNotification);
+        const noti = new Notification(base.senderName, {
+          body: content,
+          icon: base.senderAvatar || undefined,
+          silent: !soundEnabled,
+        });
 
-          window.setTimeout(() => {
-            systemNotification.close();
-            notificationMapRef.current.delete(roomId);
-          }, 5000);
-        }
+        noti.onclick = () => {
+          window.focus();
+          window.dispatchEvent(new Event("open-messenger"));
+          window.dispatchEvent(
+            new CustomEvent("messenger:open-room", {
+              detail: { roomId },
+            })
+          );
+        };
+
+        notificationMapRef.current.set(roomId, noti);
+
+        setTimeout(() => {
+          noti.close();
+          notificationMapRef.current.delete(roomId);
+        }, 5000);
       }
     };
 
@@ -215,118 +273,22 @@ export default function MessengerToastHost() {
 
     return () => {
       socket.off("message:new", handleNewMessage);
-
-      notificationMapRef.current.forEach((noti) => {
-        noti.close();
-      });
-      notificationMapRef.current.clear();
     };
-  }, [usersById, openRoomIds, isMessengerMainOpen]);
+  }, [usersById, openRoomIds, mutedRoomIds, soundEnabled, dnd]);
 
-  useEffect(() => {
-    if (toasts.length === 0) return;
-
-    const timers = toasts.map((toast) =>
-      window.setTimeout(() => {
-        setToasts((prev) => prev.filter((item) => item.id !== toast.id));
-      }, 5000)
-    );
-
-    return () => {
-      timers.forEach((timer) => window.clearTimeout(timer));
-    };
-  }, [toasts]);
-
-  const handleClickToast = (toast: ToastItem) => {
-    window.dispatchEvent(new Event("open-messenger"));
-    window.dispatchEvent(
-      new CustomEvent("messenger:open-room", {
-        detail: {
-          roomId: toast.roomId,
-        },
-      })
-    );
-
-    const existing = notificationMapRef.current.get(Number(toast.roomId));
-    if (existing) {
-      existing.close();
-      notificationMapRef.current.delete(Number(toast.roomId));
-    }
-
-    setToasts((prev) => prev.filter((item) => item.id !== toast.id));
-  };
-
-  const handleCloseToast = (toast: ToastItem) => {
-    const existing = notificationMapRef.current.get(Number(toast.roomId));
-    if (existing) {
-      existing.close();
-      notificationMapRef.current.delete(Number(toast.roomId));
-    }
-
-    setToasts((prev) => prev.filter((item) => item.id !== toast.id));
-  };
-
-  if (toasts.length === 0) return null;
+  if (!toasts.length) return null;
 
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-[10050] flex w-[320px] flex-col gap-3">
-      {toasts.map((toast) => (
-        <button
-          key={toast.id}
-          type="button"
-          onClick={() => handleClickToast(toast)}
-          className="pointer-events-auto w-full rounded-2xl border border-slate-300 bg-white p-4 text-left shadow-[0_14px_30px_rgba(15,23,42,0.18)] transition hover:bg-slate-50"
+    <div className="fixed bottom-4 right-4 z-[10050] flex w-[320px] flex-col gap-3">
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          className="rounded-2xl border bg-white p-4 shadow-lg"
         >
-          <div className="flex items-start gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-sm font-semibold text-slate-700">
-              {toast.senderAvatar ? (
-                <img
-                  src={toast.senderAvatar}
-                  alt={toast.senderName}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <span>{toast.senderName?.slice(0, 1)}</span>
-              )}
-            </div>
-
-            <div className="min-w-0 flex-1">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-slate-900">
-                    {toast.senderName}
-                  </p>
-                  <p className="truncate text-xs text-slate-500">
-                    {toast.senderPosition}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {toast.unreadCount > 1 ? (
-                    <span className="inline-flex min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                      {toast.unreadCount}
-                    </span>
-                  ) : null}
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCloseToast(toast);
-                    }}
-                    className="text-xs text-slate-400 hover:text-slate-600"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-
-              <p className="mt-2 line-clamp-2 text-sm text-slate-700">
-                {toast.content}
-              </p>
-            </div>
-          </div>
-        </button>
+          <div className="text-sm font-semibold">{t.senderName}</div>
+          <div className="text-xs text-gray-500">{t.senderPosition}</div>
+          <div className="mt-2 text-sm">{t.content}</div>
+        </div>
       ))}
     </div>
   );

@@ -4,7 +4,6 @@ import {
   Minimize2,
   Paperclip,
   Search,
-  Settings,
   X,
   Pin,
   PinOff,
@@ -45,7 +44,6 @@ type MessengerPopupWindowProps = {
   onClose: () => void;
   onMinimize?: () => void;
   onRestore?: () => void;
-  onToggleRoomInfo?: () => void;
   onTogglePin?: () => void;
   pinned?: boolean;
   minimized?: boolean;
@@ -132,7 +130,6 @@ export default function MessengerPopupWindow({
   onClose,
   onMinimize,
   onRestore,
-  onToggleRoomInfo,
   onTogglePin,
   pinned = false,
   minimized = false,
@@ -168,7 +165,9 @@ export default function MessengerPopupWindow({
     "";
 
   const roomTypeText = room
-    ? `${titlePosition ? `${titlePosition} · ` : ""}${room.type === "direct" ? "1:1 대화" : `참여자 ${participants.length}명`}`
+    ? `${titlePosition ? `${titlePosition} · ` : ""}${
+        room.type === "direct" ? "1:1 대화" : `참여자 ${participants.length}명`
+      }`
     : `${titlePosition ? `${titlePosition} · ` : ""}1:1 대화`;
 
   const roomBackground = useMemo(() => readRoomBackground(room?.id), [room?.id]);
@@ -274,12 +273,24 @@ export default function MessengerPopupWindow({
   }, [dragging]);
 
   const getReadCountForMyMessage = (messageId: number) => {
-    if (!room) return 0;
-    const others = participants.filter(
-      (p) => Number(p.id) !== Number(currentUserId)
-    );
-    return others.length > 0 ? 1 : 0;
-  };
+  if (!room) return 0;
+
+  const others = participants.filter(
+    (p: any) => Number(p.id) !== Number(currentUserId)
+  );
+
+  if (others.length === 0) return 0;
+
+  const unreadUsers = others.filter((p: any) => {
+    const lastReadMessageId = p.lastReadMessageId
+      ? Number(p.lastReadMessageId)
+      : 0;
+
+    return lastReadMessageId < Number(messageId);
+  });
+
+  return unreadUsers.length;
+};
 
   const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = Array.from(e.clipboardData.items || []);
@@ -308,7 +319,7 @@ export default function MessengerPopupWindow({
       <button
         type="button"
         onClick={onRestore}
-        className="fixed bottom-4 rounded-2xl border border-slate-300 bg-white px-4 py-3 text-left shadow-[0_10px_24px_rgba(15,23,42,0.18)] transition hover:bg-slate-50"
+        className="fixed bottom-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-[0_10px_24px_rgba(15,23,42,0.12)] transition hover:bg-slate-50"
         style={{
           right: `${position.right}px`,
           zIndex,
@@ -343,7 +354,7 @@ export default function MessengerPopupWindow({
 
   return (
     <div
-      className="fixed h-[700px] w-[430px] overflow-hidden rounded-[18px] border border-slate-300 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.28)]"
+      className="fixed h-[700px] w-[430px] overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.16)]"
       style={{
         right: `${position.right}px`,
         top: `${position.top}px`,
@@ -357,7 +368,7 @@ export default function MessengerPopupWindow({
         onDragOver={handleDragOver}
       >
         <div
-          className="cursor-move border-b border-slate-300 bg-[#bfd4e6]"
+          className="cursor-move border-b border-slate-200 bg-[#d9dde3]"
           onMouseDown={(e) => {
             if ((e.target as HTMLElement).closest("button")) return;
             setDragging(true);
@@ -389,7 +400,7 @@ export default function MessengerPopupWindow({
               <button
                 type="button"
                 onClick={() => setSearchOpen((prev) => !prev)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-700 transition hover:bg-white/70"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-700 transition hover:bg-slate-50"
                 title="채팅 검색"
               >
                 <Search className="h-4 w-4" />
@@ -397,17 +408,12 @@ export default function MessengerPopupWindow({
 
               <button
                 type="button"
-                onClick={onToggleRoomInfo}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-700 transition hover:bg-white/70"
-                title="설정"
-              >
-                <Settings className="h-4 w-4" />
-              </button>
-
-              <button
-                type="button"
                 onClick={onTogglePin}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-700 transition hover:bg-white/70"
+                className={`inline-flex h-9 w-9 items-center justify-center rounded-xl transition ${
+                  pinned
+                    ? "bg-[#ffdd00] text-slate-900"
+                    : "bg-white text-slate-700 hover:bg-slate-50"
+                }`}
                 title={pinned ? "고정 해제" : "상단 고정"}
               >
                 {pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
@@ -416,7 +422,7 @@ export default function MessengerPopupWindow({
               <button
                 type="button"
                 onClick={onMinimize}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-700 transition hover:bg-white/70"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-700 transition hover:bg-slate-50"
               >
                 <Minimize2 className="h-4 w-4" />
               </button>
@@ -424,7 +430,7 @@ export default function MessengerPopupWindow({
               <button
                 type="button"
                 onClick={onClose}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-slate-700 transition hover:bg-white/70"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-700 transition hover:bg-slate-50"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -432,7 +438,7 @@ export default function MessengerPopupWindow({
           </div>
 
           {searchOpen && (
-            <div className="border-t border-slate-300 bg-white px-4 py-2">
+            <div className="border-t border-slate-200 bg-[#f5f5f7] px-4 py-2">
               <div className="flex items-center gap-2 rounded-full border border-slate-300 bg-white px-3">
                 <Search className="h-4 w-4 text-slate-500" />
                 <input
@@ -441,7 +447,7 @@ export default function MessengerPopupWindow({
                     setSearchText(e.target.value);
                     setCurrentSearchIndex(0);
                   }}
-                  placeholder="통합검색"
+                  placeholder="채팅 검색"
                   className="h-10 flex-1 bg-transparent text-sm outline-none"
                 />
                 {searchMatchedMessageIds.length > 0 ? (
@@ -492,7 +498,7 @@ export default function MessengerPopupWindow({
           ref={scrollRef}
           className="flex-1 space-y-4 overflow-y-auto px-4 py-4"
           style={{
-            backgroundColor: roomBackground ? undefined : "#b2c7da",
+            backgroundColor: roomBackground ? undefined : "#b7c7d8",
             backgroundImage: roomBackground ? `url(${roomBackground})` : undefined,
             backgroundSize: "cover",
             backgroundPosition: "center",
@@ -500,8 +506,8 @@ export default function MessengerPopupWindow({
         >
           {timelineItems.length === 0 && pendingAttachments.length === 0 ? (
             <div className="flex h-full items-center justify-center">
-              <div className="rounded-2xl bg-white/80 px-4 py-3 text-sm text-slate-500 shadow-sm">
-                메시지를 보내면 채팅방이 생성됩니다.
+              <div className="rounded-2xl bg-white/85 px-4 py-3 text-sm text-slate-500 shadow-sm">
+                메시지를 보내면 채팅이 시작됩니다.
               </div>
             </div>
           ) : (
@@ -510,7 +516,7 @@ export default function MessengerPopupWindow({
                 if (item.kind === "date") {
                   return (
                     <div key={item.key} className="flex justify-center">
-                      <div className="rounded-full bg-slate-500/20 px-3 py-1 text-xs text-slate-700">
+                      <div className="rounded-full bg-slate-500/15 px-3 py-1 text-xs text-slate-700">
                         {item.label}
                       </div>
                     </div>
@@ -562,7 +568,7 @@ export default function MessengerPopupWindow({
                         <div
                           className={`overflow-hidden rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm transition ${
                             isMine
-                              ? "rounded-br-md bg-[#ffeb59] text-slate-900"
+                              ? "rounded-br-md bg-[#ffdd00] text-slate-900"
                               : "rounded-bl-md bg-white text-slate-900"
                           } ${
                             isCurrentMatched
@@ -628,13 +634,15 @@ export default function MessengerPopupWindow({
                           )}
                         </div>
 
-                        <div
-                          className={`mt-1 flex items-center gap-2 px-1 text-[11px] text-slate-500 ${
-                            isMine ? "justify-end" : "justify-start"
-                          }`}
-                        >
+                        {isMine ? (
+  readCount > 0 ? (
+    <span className="font-semibold text-amber-600">{readCount}</span>
+  ) : null
+) : null}
                           <span>{message.createdAt}</span>
-                          {isMine ? <span>{readCount > 0 ? `읽음 ${readCount}` : "전송됨"}</span> : null}
+                          {isMine ? (
+  readCount > 0 ? <span>{readCount}</span> : null
+) : null}
                         </div>
                       </div>
                     </div>
@@ -644,7 +652,7 @@ export default function MessengerPopupWindow({
 
               {pendingAttachments.length > 0 && (
                 <div className="flex justify-end">
-                  <div className="max-w-[80%] rounded-2xl rounded-br-md bg-[#fff8a6] px-4 py-3 text-sm shadow-sm">
+                  <div className="max-w-[80%] rounded-2xl rounded-br-md bg-[#fff3a6] px-4 py-3 text-sm shadow-sm">
                     <div className="mb-2 text-xs font-semibold text-slate-700">
                       전송 대기 중
                     </div>
@@ -652,7 +660,7 @@ export default function MessengerPopupWindow({
                       {pendingAttachments.map((item) => (
                         <div
                           key={item.id}
-                          className="rounded-xl border border-amber-200 bg-white/80 p-2"
+                          className="rounded-xl border border-amber-200 bg-white/85 p-2"
                         >
                           {item.isImage && item.previewUrl ? (
                             <img
@@ -692,7 +700,7 @@ export default function MessengerPopupWindow({
           )}
         </div>
 
-        <div className="border-t border-slate-300 bg-[#f8fafc] px-3 py-3">
+        <div className="border-t border-slate-200 bg-[#f5f5f7] px-3 py-3">
           <div className="flex items-end gap-2">
             <label className="inline-flex shrink-0">
               <input

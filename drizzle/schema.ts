@@ -60,6 +60,30 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type SelectUser = typeof users.$inferSelect;
 
+// ─── Branding Settings (회사 브랜딩 설정) ───────────────────────────
+export const brandingSettings = mysqlTable("branding_settings", {
+  id: int("id").autoincrement().primaryKey(),
+
+  companyName: varchar("companyName", { length: 150 })
+    .notNull()
+    .default("위드원 교육"),
+
+  companyLogoUrl: varchar("companyLogoUrl", { length: 1000 }),
+
+  messengerSubtitle: varchar("messengerSubtitle", { length: 150 })
+    .notNull()
+    .default("사내 메신저"),
+
+  createdBy: int("createdBy"),
+  updatedBy: int("updatedBy"),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type BrandingSetting = typeof brandingSettings.$inferSelect;
+export type InsertBrandingSetting = typeof brandingSettings.$inferInsert;
+
 // ─── Consultations (상담 DB) ─────────────────────────────────────────
 export const consultations = mysqlTable("consultations", {
   id: int("id").autoincrement().primaryKey(),

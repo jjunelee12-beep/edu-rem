@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -29,7 +29,14 @@ import {
 } from "@/components/ui/select";
 import { formatPhone } from "@/lib/format";
 
-type TabKey = "settlement" | "users" | "landingForms" | "adForms";
+type TabKey =
+  | "settlement"
+  | "users"
+  | "landingForms"
+  | "adForms"
+  | "settings";
+
+
 type UserTabKey = "create" | "list" | "role" | "password" | "organization";
 type UserRole = "staff" | "admin" | "host" | "superhost";
 
@@ -118,12 +125,21 @@ export default function System() {
           <Megaphone className="h-4 w-4" />
           광고폼 관리
         </Button>
+	<Button
+  variant={tab === "settings" ? "default" : "outline"}
+  onClick={() => setTab("settings")}
+  className="gap-2"
+>
+  <Building2 className="h-4 w-4" />
+  설정
+</Button>
       </div>
 
       {tab === "settlement" && <SettlementSystemSection />}
       {tab === "users" && <UserManagementSection />}
       {tab === "landingForms" && <LeadFormManagementSection />}
       {tab === "adForms" && <AdFormManagementSection />}
+	{tab === "settings" && <SettingsSection />}
     </div>
   );
 }
@@ -1899,6 +1915,225 @@ function BaseFormManagementSection({
                 </tbody>
               </table>
             </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+function SettingsSection() {
+  const utils = trpc.useUtils();
+
+  const { data, isLoading } = trpc.branding.get.useQuery();
+
+  const saveMutation = trpc.branding.save.useMutation({
+  onSuccess: async () => {
+    toast.success("브랜딩 설정이 저장되었습니다.");
+    await utils.branding.get.invalidate();
+
+    window.dispatchEvent(
+      new CustomEvent("branding:updated", {
+        detail: {
+          companyName,
+          companyLogoUrl,
+          messengerSubtitle,
+        },
+      })
+    );
+  },
+  onError: (e) => {
+    toast.error(e.message || "브랜딩 저장 중 오류가 발생했습니다.");
+  },
+});
+    onError: (e) => {
+      toast.error(e.message || "브랜딩 저장 중 오류가 발생했습니다.");
+    },
+  });
+
+  const [companyName, setCompanyName] = useState("");
+  const [companyLogoUrl, setCompanyLogoUrl] = useState("");
+  const [messengerSubtitle, setMessengerSubtitle] = useState("");
+const fileInputRef = useRef<HTMLInputElement | null>(null);
+const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+
+  useEffect(() => {
+    if (!data) return;
+    setCompanyName(data.companyName || "");
+    setCompanyLogoUrl(data.companyLogoUrl || "");
+    setMessengerSubtitle(data.messengerSubtitle || "사내 메신저");
+  }, [data]);
+
+const handleUploadLogo = async (e: ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  try {
+    setIsUploadingLogo(true);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const uploadRes = await fetch(
+      `${import.meta.env.VITE_API_BASE_URL || ""}/api/upload`,
+      {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      }
+    );
+
+    if (!uploadRes.ok) {
+      throw new Error("로고 업로드에 실패했습니다.");
+    }
+
+    const uploaded = await uploadRes.json();
+    const uploadedUrl = uploaded?.fileUrl || uploaded?.url || "";
+
+    if (!uploadedUrl) {
+      throw new Error("업로드 URL을 찾을 수 없습니다.");
+    }
+
+    setCompanyLogoUrl(uploadedUrl);
+
+saveMutation.mutate({
+  companyName: companyName.trim() || "위드원 교육",
+  companyLogoUrl: uploadedUrl,
+  messengerSubtitle: messengerSubtitle.trim() || "사내 메신저",
+});
+
+toast.success("로고 업로드 완료");
+  } catch (err: any) {
+    toast.error(err?.message || "로고 업로드 중 오류가 발생했습니다.");
+  } finally {
+    setIsUploadingLogo(false);
+    if (e.target) e.target.value = "";
+  }
+};
+
+  const handleSave = () => {
+    if (!companyName.trim()) {
+      toast.error("회사명을 입력해주세요.");
+      return;
+    }
+
+    if (!messengerSubtitle.trim()) {
+      toast.error("메신저 부제목을 입력해주세요.");
+      return;
+    }
+
+    saveMutation.mutate({
+      companyName: companyName.trim(),
+      companyLogoUrl: companyLogoUrl.trim() || null,
+      messengerSubtitle: messengerSubtitle.trim(),
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>브랜딩 관리</CardTitle>
+        </CardHeader>
+
+        <CardContent className="space-y-5">
+          {isLoading ? (
+            <div className="text-sm text-muted-foreground">
+              브랜딩 정보를 불러오는 중...
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">회사명</p>
+                  <Input
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    placeholder="예: 위드원 교육"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">메신저 부제목</p>
+                  <Input
+                    value={messengerSubtitle}
+                    onChange={(e) => setMessengerSubtitle(e.target.value)}
+                    placeholder="예: 사내 메신저"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+  <p className="text-sm font-medium">회사 로고</p>
+
+  <div className="flex flex-wrap items-center gap-2">
+    <Input
+      value={companyLogoUrl}
+      onChange={(e) => setCompanyLogoUrl(e.target.value)}
+      placeholder="예: /uploads/company-logo.png 또는 https://..."
+      className="max-w-[420px]"
+    />
+
+    <input
+      ref={fileInputRef}
+      type="file"
+      accept="image/*"
+      className="hidden"
+      onChange={handleUploadLogo}
+    />
+
+    <Button
+      type="button"
+      variant="outline"
+      onClick={() => fileInputRef.current?.click()}
+      disabled={isUploadingLogo}
+    >
+      {isUploadingLogo ? "업로드 중..." : "로고 업로드"}
+    </Button>
+  </div>
+
+  <p className="text-xs text-muted-foreground">
+    이미지 업로드 또는 URL 직접 입력 둘 다 가능합니다.
+  </p>
+</div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="mb-3 text-sm font-semibold text-slate-900">
+                  미리보기
+                </p>
+
+                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                  <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-yellow-300 text-slate-900">
+                    {companyLogoUrl ? (
+                      <img
+                        src={companyLogoUrl}
+                        alt={companyName || "company-logo"}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <Building2 className="h-5 w-5" />
+                    )}
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">
+                      {companyName || "회사명"}
+                    </p>
+                    <p className="truncate text-xs text-slate-500">
+                      {messengerSubtitle || "사내 메신저"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <Button
+                  onClick={handleSave}
+                  disabled={saveMutation.isPending}
+                >
+                  {saveMutation.isPending ? "저장 중..." : "브랜딩 저장"}
+                </Button>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { getSocket } from "@/lib/socket";
+import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
 
 import MessengerSidebar from "@/components/messenger/MessengerSidebar";
-import MessengerRoomInfo from "@/components/messenger/MessengerRoomInfo";
 import MessengerPopupWindow from "@/components/messenger/MessengerPopupWindow";
 import ImagePreviewModal from "@/components/messenger/ImagePreviewModal";
 
@@ -30,7 +31,9 @@ function normalizeUsers(
     name: user.name || user.username || "이름없음",
     position: user.positionName || user.position || roleToPosition(user.role),
     team: user.teamName || user.team || "미분류",
-    avatar: user.avatarUrl || user.profileImageUrl || user.avatar || "",
+    avatar: normalizeAssetUrl(
+  user.avatarUrl || user.profileImageUrl || user.avatar || ""
+),
     status: onlineUserIds.has(Number(user.id)) ? "online" : "offline",
   }));
 }
@@ -70,7 +73,6 @@ function PopupRoomData({
   onTogglePin,
   onClose,
   onMinimize,
-  onToggleRoomInfo,
   onOpenImage,
   input,
   pendingAttachments,
@@ -78,6 +80,7 @@ function PopupRoomData({
   onAddPendingAttachment,
   onRemovePendingAttachment,
   onDraftConverted,
+  onMarkRoomViewed,
 }: {
   popup: OpenPopup;
   usersById: Record<number, MessengerUser>;
@@ -86,7 +89,6 @@ function PopupRoomData({
   onTogglePin: () => void;
   onClose: () => void;
   onMinimize: () => void;
-  onToggleRoomInfo: () => void;
   onOpenImage: (url: string, name?: string) => void;
   input: string;
   pendingAttachments: PendingAttachment[];
@@ -94,6 +96,7 @@ function PopupRoomData({
   onAddPendingAttachment: (file: File) => void;
   onRemovePendingAttachment: (id: string) => void;
   onDraftConverted: (newPopup: OpenPopup) => void;
+  onMarkRoomViewed: (roomId: number) => void;
 }) {
   const { user } = useAuth();
 
@@ -104,7 +107,10 @@ function PopupRoomData({
     refetch: refetchMessages,
   } = trpc.messenger.messages.useQuery(
     { roomId: Number(roomId) },
-    { enabled: popup.type === "room" && !!roomId }
+    {
+  enabled: popup.type === "room" && !!roomId,
+  refetchOnWindowFocus: true,
+}
   );
 
   const {
@@ -112,10 +118,35 @@ function PopupRoomData({
     refetch: refetchMembers,
   } = trpc.messenger.members.useQuery(
     { roomId: Number(roomId) },
-    { enabled: popup.type === "room" && !!roomId }
+    {
+  enabled: popup.type === "room" && !!roomId,
+  refetchOnWindowFocus: true,
+}
   );
 
   const sendMessageMutation = trpc.messenger.sendMessage.useMutation();
+const markReadMutation = trpc.messenger.markRead.useMutation();
+
+useEffect(() => {
+  if (popup.type !== "room" || !roomId || popup.minimized) return;
+
+  const socket = getSocket();
+
+  const handleNewMessage = async (payload: any) => {
+    const incomingRoomId = Number(payload?.roomId || 0);
+    if (incomingRoomId !== Number(roomId)) return;
+
+    await refetchMessages();
+    await refetchMembers();
+  };
+
+  socket.on("message:new", handleNewMessage);
+
+  return () => {
+    socket.off("message:new", handleNewMessage);
+  };
+}, [popup.type, roomId, popup.minimized, refetchMessages, refetchMembers]);
+
   const addAttachmentMutation = trpc.messenger.addAttachment.useMutation();
   const createDirectRoomMutation = trpc.messenger.directRoom.useMutation();
 
@@ -141,17 +172,23 @@ function PopupRoomData({
       ? usersById[Number(popup.targetUserId)] || null
       : null;
 
-  const participants = useMemo<MessengerUser[]>(() => {
-    if (popup.type === "draft") return targetUser ? [targetUser] : [];
-    return (memberRows as any[]).map((member: any) => ({
-      id: Number(member.userId),
-      name: member.name || member.username || "이름없음",
-      position: member.positionName || roleToPosition(member.role),
-      team: member.teamName || "미분류",
-      avatar: member.avatarUrl || member.profileImageUrl || "",
-      status: "offline",
-    }));
-  }, [popup.type, memberRows, targetUser]);
+  const participants = useMemo<any[]>(() => {
+  if (popup.type === "draft") return targetUser ? [targetUser] : [];
+
+  return (memberRows as any[]).map((member: any) => ({
+    id: Number(member.userId),
+    name: member.name || member.username || "이름없음",
+    position: member.positionName || roleToPosition(member.role),
+    team: member.teamName || "미분류",
+    avatar: normalizeAssetUrl(
+      member.avatarUrl || member.profileImageUrl || ""
+    ),
+    status: "offline",
+    lastReadMessageId: member.lastReadMessageId
+      ? Number(member.lastReadMessageId)
+      : null,
+  }));
+}, [popup.type, memberRows, targetUser]);
 
   const messages = useMemo<MessengerMessage[]>(() => {
     if (popup.type === "draft") return [];
@@ -169,9 +206,27 @@ function PopupRoomData({
           })
         : "",
       fileName: m.fileName || m.attachmentName || "",
-      fileUrl: m.fileUrl || m.attachmentUrl || "",
-    })) as any;
+      fileUrl: normalizeAssetUrl(m.fileUrl || m.attachmentUrl || ""),
+    })) as MessengerMessage[];
   }, [popup.type, messageRows]);
+
+useEffect(() => {
+  if (popup.type !== "room" || !roomId) return;
+  if (!messages.length) return;
+
+  const lastMessageId = messages[messages.length - 1]?.id;
+  if (!lastMessageId) return;
+
+
+  onMarkRoomViewed(Number(roomId));
+
+
+  markReadMutation.mutate({
+    roomId: Number(roomId),
+    lastReadMessageId: Number(lastMessageId),
+  });
+}, [popup.type, roomId, messages.length]);  
+
 
   const uploadFile = async (file: File) => {
     const formData = new FormData();
@@ -256,6 +311,10 @@ function PopupRoomData({
     onInputChange("");
     pendingAttachments.forEach((item) => onRemovePendingAttachment(item.id));
 
+    if (targetRoomId) {
+      onMarkRoomViewed(Number(targetRoomId));
+    }
+
     await refetchMessages();
     await refetchMembers();
   };
@@ -278,9 +337,9 @@ function PopupRoomData({
       onOpenImage={onOpenImage}
       onClose={onClose}
       onMinimize={onMinimize}
-      onToggleRoomInfo={onToggleRoomInfo}
       onTogglePin={onTogglePin}
       pinned={pinned}
+      minimized={!!popup.minimized}
       rightOffset={560}
     />
   );
@@ -293,7 +352,6 @@ export default function MessengerPage({
   const { user } = useAuth();
 
   const [onlineUserIds] = useState<Set<number>>(new Set());
-  const [roomInfoOpenFor, setRoomInfoOpenFor] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<{
     open: boolean;
     url?: string;
@@ -308,10 +366,13 @@ export default function MessengerPage({
     Record<string, PendingAttachment[]>
   >({});
   const [pinnedRoomIds, setPinnedRoomIds] = useState<number[]>([]);
+  const [locallyViewedRoomIds, setLocallyViewedRoomIds] = useState<number[]>([]);
 
   const { data: userList = [] } = trpc.users.list.useQuery();
   const { data: roomRows = [], refetch: refetchRooms } =
-    trpc.messenger.myRooms.useQuery();
+  trpc.messenger.myRooms.useQuery(undefined, {
+    refetchOnWindowFocus: true,
+  });
 
   useEffect(() => {
     const saved = localStorage.getItem("messenger-pinned-room-ids");
@@ -337,11 +398,6 @@ export default function MessengerPage({
 
       const visiblePopups = openPopups.filter((popup) => !popup.minimized);
 
-      if (roomInfoOpenFor) {
-        setRoomInfoOpenFor(null);
-        return;
-      }
-
       if (visiblePopups.length > 0) {
         const lastPopup = visiblePopups[visiblePopups.length - 1];
         setOpenPopups((prev) =>
@@ -358,7 +414,7 @@ export default function MessengerPage({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [openPopups, roomInfoOpenFor, onRequestClose]);
+  }, [openPopups, onRequestClose]);
 
   useEffect(() => {
     const openedRoomIds = openPopups
@@ -378,6 +434,10 @@ export default function MessengerPage({
       const custom = event as CustomEvent;
       const roomId = Number(custom.detail?.roomId || 0);
       if (!roomId) return;
+
+      setLocallyViewedRoomIds((prev) =>
+        prev.includes(roomId) ? prev : [...prev, roomId]
+      );
 
       setOpenPopups((prev) => {
         const exists = prev.some(
@@ -417,6 +477,31 @@ export default function MessengerPage({
     };
   }, []);
 
+  useEffect(() => {
+    const handleFocus = () => {
+      void refetchRooms();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [refetchRooms]);
+
+useEffect(() => {
+  const socket = getSocket();
+
+  const handleNewMessage = async () => {
+    await refetchRooms();
+  };
+
+  socket.on("message:new", handleNewMessage);
+
+  return () => {
+    socket.off("message:new", handleNewMessage);
+  };
+}, [refetchRooms]);
+
   const orgUsers = useMemo(
     () => normalizeUsers(userList as any[], onlineUserIds),
     [userList, onlineUserIds]
@@ -438,6 +523,13 @@ export default function MessengerPage({
     };
   }, [orgUsers]);
 
+  const visibleOpenRoomIds = useMemo(() => {
+    return openPopups
+      .filter((popup) => popup.type === "room" && !popup.minimized)
+      .map((popup) => Number(popup.roomId))
+      .filter(Boolean);
+  }, [openPopups]);
+
   const mappedRooms = useMemo<MessengerRoom[]>(() => {
     const mapped = (roomRows as any[]).map((room: any) => {
       const roomType = room.roomType === "group" ? "group" : "direct";
@@ -455,12 +547,17 @@ export default function MessengerPage({
         }
       }
 
+      const roomId = Number(room.id);
+      const isViewed =
+        locallyViewedRoomIds.includes(roomId) ||
+        visibleOpenRoomIds.includes(roomId);
+
       return {
-        id: Number(room.id),
+        id: roomId,
         name: roomName,
         type: roomType,
         participantIds: [],
-        unreadCount: Number(room.unreadCount || 0),
+        unreadCount: isViewed ? 0 : Number(room.unreadCount || 0),
         lastMessage: room.lastMessageContent || "",
         updatedAt: room.lastMessageCreatedAt
           ? new Date(room.lastMessageCreatedAt).toLocaleString("ko-KR")
@@ -484,9 +581,17 @@ export default function MessengerPage({
         return Number(b.sortAt || 0) - Number(a.sortAt || 0);
       })
       .map((room) => room as MessengerRoom);
-  }, [roomRows, pinnedRoomIds]);
+  }, [roomRows, pinnedRoomIds, locallyViewedRoomIds, visibleOpenRoomIds]);
+
+  const handleMarkRoomViewed = (roomId: number) => {
+    setLocallyViewedRoomIds((prev) =>
+      prev.includes(roomId) ? prev : [...prev, roomId]
+    );
+  };
 
   const handleSelectRoom = async (roomId: number) => {
+    handleMarkRoomViewed(roomId);
+
     setOpenPopups((prev) => {
       const exists = prev.some(
         (popup) => popup.type === "room" && popup.roomId === roomId
@@ -545,7 +650,6 @@ export default function MessengerPage({
 
   const closePopup = (popupKey: string) => {
     setOpenPopups((prev) => prev.filter((popup) => popup.key !== popupKey));
-    setRoomInfoOpenFor((prev) => (prev === popupKey ? null : prev));
 
     setPopupPendingAttachments((prev) => {
       const next = { ...prev };
@@ -626,51 +730,42 @@ export default function MessengerPage({
     return openPopups.filter((popup) => !popup.minimized);
   }, [openPopups]);
 
-  const activeInfoPopup =
-    popupItems.find((popup) => popup.key === roomInfoOpenFor) || null;
-
-  const activeInfoTargetUser =
-    activeInfoPopup?.type === "draft"
-      ? usersById[Number(activeInfoPopup.targetUserId)] || null
-      : null;
-
   return (
     <>
-      <div className="relative h-full overflow-hidden bg-[#eef2f7]">
-        <div className="flex h-full flex-col">
-          <div className="border-b border-slate-300 bg-[#eceff3] px-4 py-3">
-            <p className="text-sm font-semibold text-slate-950">{companyName}</p>
-            <p className="text-xs text-slate-500">사내 메신저</p>
-          </div>
+      <div className="relative h-full overflow-hidden bg-[#f5f5f7]">
+        <div className="h-full">
+          <MessengerSidebar
+            rooms={mappedRooms}
+            activeRoomId={
+              popupItems.find((popup) => popup.type === "room")?.type === "room"
+                ? Number(
+                    (popupItems.find((popup) => popup.type === "room") as {
+                      roomId: number;
+                    }).roomId
+                  )
+                : null
+            }
+            users={[...orgUsers]
+              .filter((u) => Number(u.id) !== Number(user?.id))
+              .sort((a, b) => {
+                const teamCompare = String(a.team || "").localeCompare(
+                  String(b.team || "")
+                );
+                if (teamCompare !== 0) return teamCompare;
 
-          <div className="h-[calc(100%-53px)]">
-            <MessengerSidebar
-              rooms={mappedRooms}
-              activeRoomId={null}
-              users={[...orgUsers]
-                .filter((u) => Number(u.id) !== Number(user?.id))
-                .sort((a, b) => {
-                  const teamCompare = String(a.team || "").localeCompare(
-                    String(b.team || "")
-                  );
-                  if (teamCompare !== 0) return teamCompare;
+                const posCompare = String(a.position || "").localeCompare(
+                  String(b.position || "")
+                );
+                if (posCompare !== 0) return posCompare;
 
-                  const posCompare = String(a.position || "").localeCompare(
-                    String(b.position || "")
-                  );
-                  if (posCompare !== 0) return posCompare;
-
-                  return String(a.name || "").localeCompare(
-                    String(b.name || "")
-                  );
-                })}
-              onSelectRoom={handleSelectRoom}
-              onOpenDirectChat={handleOpenDirectChat}
-            />
-          </div>
+                return String(a.name || "").localeCompare(String(b.name || ""));
+              })}
+            onSelectRoom={handleSelectRoom}
+            onOpenDirectChat={handleOpenDirectChat}
+          />
         </div>
 
-        {popupItems.map((popup) => {
+        {openPopups.map((popup, index) => {
           const roomId = popup.type === "room" ? popup.roomId : 0;
 
           const room =
@@ -679,23 +774,22 @@ export default function MessengerPage({
                 null
               : null;
 
+          const pinned = room?.id
+            ? pinnedRoomIds.includes(Number(room.id))
+            : false;
+
           return (
             <PopupRoomData
               key={popup.key}
               popup={popup}
               usersById={usersById}
               currentUserId={user?.id ? Number(user.id) : null}
-              pinned={room?.id ? pinnedRoomIds.includes(Number(room.id)) : false}
+              pinned={pinned}
               onTogglePin={() => {
                 if (room?.id) togglePinRoom(Number(room.id));
               }}
               onClose={() => closePopup(popup.key)}
               onMinimize={() => toggleMinimizePopup(popup.key)}
-              onToggleRoomInfo={() =>
-                setRoomInfoOpenFor((prev) =>
-                  prev === popup.key ? null : popup.key
-                )
-              }
               onOpenImage={handleOpenImage}
               input={popupInputs[popup.key] || ""}
               pendingAttachments={popupPendingAttachments[popup.key] || []}
@@ -708,9 +802,7 @@ export default function MessengerPage({
               }
               onDraftConverted={(newPopup) => {
                 setOpenPopups((prev) =>
-                  prev.map((item) =>
-                    item.key === popup.key ? newPopup : item
-                  )
+                  prev.map((item) => (item.key === popup.key ? newPopup : item))
                 );
 
                 setPopupPendingAttachments((prev) => {
@@ -720,22 +812,16 @@ export default function MessengerPage({
                   return next;
                 });
 
-                refetchRooms();
+                if (newPopup.type === "room") {
+                  handleMarkRoomViewed(Number(newPopup.roomId));
+                }
+
+                void refetchRooms();
               }}
+              onMarkRoomViewed={handleMarkRoomViewed}
             />
           );
         })}
-
-        <MessengerRoomInfo
-          open={!!roomInfoOpenFor}
-          activeRoom={null}
-          participants={activeInfoTargetUser ? [activeInfoTargetUser] : []}
-          messages={[]}
-          onClose={() => setRoomInfoOpenFor(null)}
-          onToggleNotifications={() => {}}
-          onLeaveRoom={() => {}}
-          onAddParticipant={() => {}}
-        />
       </div>
 
       <ImagePreviewModal

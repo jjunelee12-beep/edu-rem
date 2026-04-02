@@ -28,6 +28,7 @@ import {
 
 import Login from "@/components/Login";
 import { trpc } from "@/lib/trpc";
+import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
 import { useIsMobile } from "@/hooks/useMobile";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import MessengerPage from "@/pages/MessengerPage";
@@ -68,9 +69,6 @@ type MenuItem = {
   label: string;
   path: string;
 };
-
-const COMPANY_NAME = "위드원 교육";
-const COMPANY_SUBTITLE = "사내 메신저";
 
 const staffMenuItems: MenuItem[] = [
   { icon: LayoutDashboard, label: "홈", path: "/" },
@@ -190,6 +188,8 @@ function DashboardLayoutContent({
 
   const { data: myProfile, refetch: refetchMyProfile } =
     trpc.users.me.useQuery();
+const { data: branding } = trpc.branding.get.useQuery();
+const utils = trpc.useUtils();
 
   const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(
     /\/$/,
@@ -211,6 +211,10 @@ function DashboardLayoutContent({
       ? `${API_BASE_URL}${raw}`
       : `${API_BASE_URL}/${raw}`;
   };
+
+const companyName = branding?.companyName || "위드원 교육";
+const companySubtitle = branding?.messengerSubtitle || "사내 메신저";
+const companyLogoUrl = normalizeAssetUrl(branding?.companyLogoUrl || "");
 
   useEffect(() => {
     const saved = localStorage.getItem("messenger-open");
@@ -264,6 +268,18 @@ function DashboardLayoutContent({
       );
     };
   }, [refetchMyProfile]);
+
+useEffect(() => {
+  const handleBrandingUpdated = () => {
+    void utils.branding.get.invalidate();
+  };
+
+  window.addEventListener("branding:updated", handleBrandingUpdated);
+
+  return () => {
+    window.removeEventListener("branding:updated", handleBrandingUpdated);
+  };
+}, [utils]);
 
   useEffect(() => {
     const handlePushOpen = (event: Event) => {
@@ -506,16 +522,24 @@ function DashboardLayoutContent({
 
               {!isCollapsed ? (
                 <div className="flex min-w-0 items-center gap-2">
-                  {isSuperhost ? (
-                    <Crown className="h-5 w-5 shrink-0 text-primary" />
-                  ) : (
-                    <GraduationCap className="h-5 w-5 shrink-0 text-primary" />
-                  )}
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white">
+  {companyLogoUrl ? (
+    <img
+      src={companyLogoUrl}
+      alt={companyName}
+      className="h-full w-full object-cover"
+    />
+  ) : isSuperhost ? (
+    <Crown className="h-4 w-4 text-primary" />
+  ) : (
+    <GraduationCap className="h-4 w-4 text-primary" />
+  )}
+</div>
                   <span className="truncate text-sm font-bold tracking-tight text-slate-950">
-                    {isSuperhost
-                      ? "위드원 교육 CRM · SUPERHOST"
-                      : "위드원 교육 CRM"}
-                  </span>
+  {isSuperhost
+    ? `${companyName} CRM · SUPERHOST`
+    : `${companyName} CRM`}
+</span>
                 </div>
               ) : null}
             </div>
@@ -636,7 +660,7 @@ function DashboardLayoutContent({
       </div>
 
       <SidebarInset>
-        <div className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-slate-200 bg-[#f4f6fa] px-4 md:px-6">
+        <div className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-slate-200 bg-[#f5f5f7]/90 px-4 backdrop-blur-md md:px-6">
           <div className="flex items-center gap-2">
             {isMobile ? (
               <>
@@ -776,25 +800,33 @@ function DashboardLayoutContent({
       </SidebarInset>
 
       {isMessengerOpen && !isMobile && (
-        <div className="fixed right-0 top-16 z-[9999] h-[calc(100vh-64px)] w-[520px] border-l border-slate-300 bg-[#eef2f7] shadow-[-12px_0_40px_rgba(15,23,42,0.12)]">
-          <div className="flex h-16 items-center justify-between border-b border-slate-300 bg-white px-4">
+        <div className="fixed right-0 top-16 z-[9999] h-[calc(100vh-64px)] w-[520px] border-l border-slate-200 bg-[#f5f5f7] shadow-[-12px_0_40px_rgba(15,23,42,0.10)]">
+          <div className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#ffdd00] text-slate-900">
-                <MessageSquare className="h-5 w-5" />
-              </div>
+              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl bg-[#ffdd00] text-slate-900">
+  {companyLogoUrl ? (
+    <img
+      src={companyLogoUrl}
+      alt={companyName}
+      className="h-full w-full object-cover"
+    />
+  ) : (
+    <MessageSquare className="h-5 w-5" />
+  )}
+</div>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-slate-950">
-                  {COMPANY_NAME}
-                </p>
-                <p className="truncate text-xs text-slate-500">
-                  {COMPANY_SUBTITLE}
-                </p>
+  {companyName}
+</p>
+<p className="truncate text-xs text-slate-500">
+  {companySubtitle}
+</p>
               </div>
             </div>
 
             <button
               onClick={() => setIsMessengerOpen(false)}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-slate-700 transition hover:bg-slate-200/70"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-slate-700 transition hover:bg-slate-100"
               aria-label="메신저 닫기"
             >
               <X className="h-4 w-4" />
@@ -803,9 +835,9 @@ function DashboardLayoutContent({
 
           <div className="h-[calc(100%-64px)] overflow-hidden">
             <MessengerPage
-              companyName={COMPANY_NAME}
-              onRequestClose={() => setIsMessengerOpen(false)}
-            />
+  companyName={companyName}
+  onRequestClose={() => setIsMessengerOpen(false)}
+/>
           </div>
         </div>
       )}

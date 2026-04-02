@@ -133,7 +133,7 @@ function SidebarProvider({
             } as React.CSSProperties
           }
           className={cn(
-            "group/sidebar-wrapper flex min-h-svh w-full bg-[#eef2f7]",
+            "group/sidebar-wrapper flex min-h-svh w-full bg-[#f5f5f7]",
             className
           )}
           {...props}
@@ -166,7 +166,7 @@ function Sidebar({
       <div
         data-slot="sidebar"
         className={cn(
-          "flex h-full w-(--sidebar-width) flex-col bg-[#eef2f7] text-slate-800",
+          "flex h-full w-(--sidebar-width) flex-col bg-[#f5f5f7] text-slate-800",
           className
         )}
         {...props}
@@ -184,7 +184,7 @@ function Sidebar({
           data-slot="sidebar"
           data-mobile="true"
           side={side}
-          className="w-(--sidebar-width) border-r-0 bg-[#eef2f7] p-0 text-slate-800 [&>button]:hidden"
+          className="w-(--sidebar-width) border-r-0 bg-[#f5f5f7] p-0 text-slate-800 [&>button]:hidden"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -246,7 +246,7 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="flex h-full w-full flex-col overflow-hidden bg-[#eef2f7]"
+          className="flex h-full w-full flex-col overflow-hidden bg-[#f5f5f7]"
         >
           {children}
         </div>
@@ -313,7 +313,7 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
     <main
       data-slot="sidebar-inset"
       className={cn(
-        "relative flex w-full flex-1 flex-col bg-[#f3f5f9]",
+        "relative flex w-full flex-1 flex-col bg-[#f5f5f7]",
         "md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-2xl md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2",
         className
       )}
@@ -641,7 +641,7 @@ function SidebarMenuSub({ className, ...props }: React.ComponentProps<"ul">) {
       data-slot="sidebar-menu-sub"
       data-sidebar="menu-sub"
       className={cn(
-        "mt-1 ml-2 flex min-w-0 flex-col gap-1 rounded-2xl border border-slate-100 bg-[#f6f8fb] p-2",
+        "mt-1 ml-2 flex min-w-0 flex-col gap-1 rounded-2xl border border-slate-100 bg-[#f8f8fa] p-2",
         "group-data-[collapsible=icon]:hidden",
         className
       )}

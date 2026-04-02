@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
 import type { MessengerUser } from "@/components/messenger/mockMessengerData";
 
 type MessengerOrgPanelProps = {
@@ -66,10 +67,10 @@ export default function MessengerOrgPanel({
                         <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-sm font-semibold text-slate-700">
                           {member.avatar ? (
                             <img
-                              src={member.avatar}
-                              alt={member.name}
-                              className="h-full w-full object-cover"
-                            />
+  src={normalizeAssetUrl(member.avatar)}
+  alt={member.name}
+  className="h-full w-full object-cover"
+/>
                           ) : (
                             <span>{member.name?.slice(0, 1) || "?"}</span>
                           )}
