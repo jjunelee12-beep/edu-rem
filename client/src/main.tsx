@@ -1,4 +1,3 @@
-
 import { trpc } from "@/lib/trpc";
 import { UNAUTHED_ERR_MSG } from "@shared/const";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -10,6 +9,10 @@ import { getLoginUrl } from "./const";
 import "./index.css";
 
 const queryClient = new QueryClient();
+
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/$/, "") ||
+  window.location.origin.replace(/\/$/, "");
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
@@ -40,7 +43,7 @@ queryClient.getMutationCache().subscribe((event) => {
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
-      url: `/api/trpc`,
+      url: `${API_BASE}/api/trpc`,
       transformer: superjson,
       fetch(input, init) {
         return globalThis.fetch(input, {

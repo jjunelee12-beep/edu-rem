@@ -3,8 +3,15 @@ import { Building2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
 
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/$/, "") ||
+  window.location.origin.replace(/\/$/, "");
+
 export default function Login() {
-  const { data: branding } = trpc.branding.get.useQuery();
+  const { data: branding } = trpc.branding.getPublic.useQuery(undefined, {
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
 
   const companyName = branding?.companyName || "위드원 교육";
   const companySubtitle = branding?.messengerSubtitle || "사내 메신저";
@@ -28,7 +35,7 @@ export default function Login() {
     setPending(true);
 
     try {
-      const res = await fetch(`/api/auth/login`, {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -63,6 +70,9 @@ export default function Login() {
                 src={companyLogoUrl}
                 alt={companyName}
                 className="h-full w-full object-cover"
+                onError={() => {
+                  console.log("[login logo] load failed:", companyLogoUrl);
+                }}
               />
             ) : (
               <Building2 className="h-10 w-10 text-slate-900" />

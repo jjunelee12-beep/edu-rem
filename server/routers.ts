@@ -593,6 +593,10 @@ notification: router({
 }),
 
 branding: router({
+  getPublic: publicProcedure.query(async () => {
+    return db.getBrandingSettings();
+  }),
+
   get: protectedProcedure.query(async () => {
     return db.getBrandingSettings();
   }),
