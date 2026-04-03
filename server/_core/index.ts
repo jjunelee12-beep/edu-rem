@@ -174,38 +174,51 @@ async function startServer() {
   };
 
   io.use((socket, next) => {
-    try {
-      const cookieHeader = socket.handshake.headers.cookie;
-      const secret = process.env.SESSION_SECRET;
+  try {
+    const cookieHeader = socket.handshake.headers.cookie;
+    const origin = socket.handshake.headers.origin;
+    const secret = process.env.SESSION_SECRET;
 
-      if (!cookieHeader) {
-        return next(new Error("UNAUTHORIZED"));
-      }
+    console.log("[SOCKET AUTH]", {
+      origin,
+      hasCookieHeader: !!cookieHeader,
+      cookieHeader,
+    });
 
-      if (!secret) {
-        return next(new Error("SESSION_SECRET is missing"));
-      }
-
-      const parsed = cookie.parse(cookieHeader);
-      const rawSession = parsed[SESSION_COOKIE];
-
-      if (!rawSession) {
-        return next(new Error("UNAUTHORIZED"));
-      }
-
-      const userId = readUserIdFromSessionCookieValue(rawSession, secret);
-
-      if (!userId) {
-        return next(new Error("UNAUTHORIZED"));
-      }
-
-      socket.data.userId = userId;
-      return next();
-    } catch (error) {
-      console.error("[SOCKET AUTH ERROR]", error);
+    if (!cookieHeader) {
       return next(new Error("UNAUTHORIZED"));
     }
-  });
+
+    if (!secret) {
+      return next(new Error("SESSION_SECRET is missing"));
+    }
+
+    const parsed = cookie.parse(cookieHeader);
+    const rawSession = parsed[SESSION_COOKIE];
+
+    console.log("[SOCKET AUTH PARSED]", {
+      hasSessionCookie: !!rawSession,
+    });
+
+    if (!rawSession) {
+      return next(new Error("UNAUTHORIZED"));
+    }
+
+    const userId = readUserIdFromSessionCookieValue(rawSession, secret);
+
+    console.log("[SOCKET AUTH USER]", { userId });
+
+    if (!userId) {
+      return next(new Error("UNAUTHORIZED"));
+    }
+
+    socket.data.userId = userId;
+    return next();
+  } catch (error) {
+    console.error("[SOCKET AUTH ERROR]", error);
+    return next(new Error("UNAUTHORIZED"));
+  }
+});
 
   io.on("connection", (socket) => {
     const userId = Number(socket.data.userId);

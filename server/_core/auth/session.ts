@@ -41,7 +41,6 @@ export function makeSessionCookie(userId: number, secret: string) {
     secure: true,
     path: "/",
     maxAge: SESSION_MAX_AGE_SECONDS,
-    partitioned: true,
   });
 }
 
@@ -52,7 +51,6 @@ export function clearSessionCookie() {
     secure: true,
     path: "/",
     maxAge: 0,
-    partitioned: true,
   });
 }
 
@@ -80,12 +78,6 @@ export function readUserIdFromCookie(req: any, secret: string): number | null {
     const [userIdStr, tsStr, sig] = parts;
     const payload = `${userIdStr}.${tsStr}`;
     const expected = sign(payload, secret);
-
-    console.log("[session] userIdStr =", userIdStr);
-    console.log("[session] tsStr =", tsStr);
-    console.log("[session] sig =", sig);
-    console.log("[session] expected =", expected);
-    console.log("[session] secret exists =", !!secret);
 
     if (expected !== sig) {
       console.log("[session] signature mismatch");
