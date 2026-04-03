@@ -8,10 +8,12 @@ import {
   Pin,
   PinOff,
   Send,
-  MessageSquare,
+  BellOff,
+  LogOut,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
 import type {
   MessengerMessage,
   MessengerRoom,
@@ -29,6 +31,7 @@ type PendingAttachment = {
 type MessengerPopupWindowProps = {
   popupKey: string;
   room: MessengerRoom | null;
+  onOpenRoomInfo?: () => void;
   targetUser?: MessengerUser | null;
   participants: MessengerUser[];
   messages: MessengerMessage[];
@@ -45,11 +48,15 @@ type MessengerPopupWindowProps = {
   onMinimize?: () => void;
   onRestore?: () => void;
   onTogglePin?: () => void;
+  onToggleMute?: () => void | Promise<void>;
+  onLeaveRoom?: () => void | Promise<void>;
   pinned?: boolean;
   minimized?: boolean;
   rightOffset?: number;
   topOffset?: number;
   zIndex?: number;
+  typingUserIds?: number[];
+  roomMuted?: boolean;
 };
 
 const ROOM_BG_KEY = "messenger-room-backgrounds";
@@ -75,6 +82,13 @@ function getMessageDateKey(message: MessengerMessage) {
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
+}
+
+function getMessageTimestamp(message: MessengerMessage) {
+  const source = String(message.createdAtRaw || message.createdAt || "");
+  const date = new Date(source);
+  if (Number.isNaN(date.getTime())) return 0;
+  return date.getTime();
 }
 
 function escapeRegExp(value: string) {
@@ -112,9 +126,47 @@ function readRoomBackground(roomId?: number | null) {
   }
 }
 
+function getSafeAvatarUrl(raw?: string) {
+  return normalizeAssetUrl(raw || "");
+}
+
+function AvatarCircle({
+  name,
+  avatar,
+  className = "",
+}: {
+  name?: string;
+  avatar?: string;
+  className?: string;
+}) {
+  const safeAvatar = getSafeAvatarUrl(avatar);
+
+  return (
+    <div
+      className={`flex items-center justify-center overflow-hidden rounded-full bg-white text-sm font-semibold text-slate-700 ${className}`}
+    >
+      {safeAvatar ? (
+        <img
+          src={safeAvatar}
+          alt={name || "user"}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <span>{name?.slice(0, 1) || "?"}</span>
+      )}
+    </div>
+  );
+}
+
+function getMessagePreviewTypeLabel(message: MessengerMessage) {
+  if (message.type === "image") return "사진";
+  if (message.type === "file") return "파일";
+  return "";
+}
+
 export default function MessengerPopupWindow({
-  popupKey,
   room,
+  onOpenRoomInfo,
   targetUser,
   participants,
   messages,
@@ -131,15 +183,18 @@ export default function MessengerPopupWindow({
   onMinimize,
   onRestore,
   onTogglePin,
+  onToggleMute,
+  onLeaveRoom,
   pinned = false,
   minimized = false,
   rightOffset = 560,
   topOffset = 92,
   zIndex = 10010,
+  typingUserIds = [],
+  roomMuted = false,
 }: MessengerPopupWindowProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const dragRef = useRef<HTMLDivElement | null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const [searchOpen, setSearchOpen] = useState(false);
@@ -150,17 +205,29 @@ export default function MessengerPopupWindow({
     top: topOffset,
   });
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
+  const [, setForceRender] = useState(0);
+const [activeSearchMessageId, setActiveSearchMessageId] = useState<number | null>(
+  null
+);
+const [isNearBottom, setIsNearBottom] = useState(true);
+const [hasInitializedScroll, setHasInitializedScroll] = useState(false);
 
-  const title = room?.name || targetUser?.name || "새 대화";
+  const otherParticipant =
+    participants.find((p) => Number(p.id) !== Number(currentUserId)) ||
+    participants[0] ||
+    targetUser ||
+    null;
+
+  const title =
+    room?.name || targetUser?.name || otherParticipant?.name || "새 대화";
   const titleAvatar =
     targetUser?.avatar ||
+    otherParticipant?.avatar ||
     participants[0]?.avatar ||
-    usersById[Number(participants[0]?.id)]?.avatar ||
     "";
-
   const titlePosition =
     targetUser?.position ||
-    participants.find((p) => Number(p.id) !== Number(currentUserId))?.position ||
+    otherParticipant?.position ||
     participants[0]?.position ||
     "";
 
@@ -172,12 +239,44 @@ export default function MessengerPopupWindow({
 
   const roomBackground = useMemo(() => readRoomBackground(room?.id), [room?.id]);
 
+  const typingNames = useMemo(() => {
+    return typingUserIds
+      .map((id) => usersById[Number(id)]?.name)
+      .filter(Boolean) as string[];
+  }, [typingUserIds, usersById]);
+
+  const typingLabel = useMemo(() => {
+    if (typingNames.length === 0) return "";
+    if (typingNames.length === 1) return `${typingNames[0]}님이 입력 중...`;
+    return `${typingNames[0]} 외 ${typingNames.length - 1}명이 입력 중...`;
+  }, [typingNames]);
+
   useEffect(() => {
     setPosition({
       right: rightOffset,
       top: topOffset,
     });
   }, [rightOffset, topOffset]);
+
+useEffect(() => {
+  setHasInitializedScroll(false);
+  setIsNearBottom(true);
+}, [room?.id]);
+
+  useEffect(() => {
+    const handleBackgroundChange = () => {
+      setForceRender((prev) => prev + 1);
+    };
+
+    window.addEventListener("messenger:bg-changed", handleBackgroundChange);
+
+    return () => {
+      window.removeEventListener(
+        "messenger:bg-changed",
+        handleBackgroundChange
+      );
+    };
+  }, []);
 
   const safeMessages = useMemo(() => messages || [], [messages]);
 
@@ -192,15 +291,46 @@ export default function MessengerPopupWindow({
       .map((message) => Number(message.id));
   }, [safeMessages, searchText]);
 
+  const getReadCountForMyMessage = (messageId: number) => {
+    if (!room) return 0;
+
+    const others = participants.filter(
+      (p: any) => Number(p.id) !== Number(currentUserId)
+    );
+
+    if (others.length === 0) return 0;
+
+    const unreadUsers = others.filter((p: any) => {
+      const lastReadMessageId = p.lastReadMessageId
+        ? Number(p.lastReadMessageId)
+        : 0;
+
+      return lastReadMessageId < Number(messageId);
+    });
+
+    return unreadUsers.length;
+  };
+
   const timelineItems = useMemo(() => {
     const items: Array<
       | { kind: "date"; key: string; label: string }
-      | { kind: "message"; key: string; message: MessengerMessage }
+      | {
+          kind: "message";
+          key: string;
+          message: MessengerMessage;
+          isMine: boolean;
+          showAvatar: boolean;
+          showName: boolean;
+          compact: boolean;
+          showMeta: boolean;
+          showReadMeta: boolean;
+          readCount: number;
+        }
     > = [];
 
     let prevDateKey = "";
 
-    safeMessages.forEach((message) => {
+    safeMessages.forEach((message, index) => {
       const dateKey = getMessageDateKey(message);
       if (dateKey && dateKey !== prevDateKey) {
         items.push({
@@ -211,40 +341,124 @@ export default function MessengerPopupWindow({
         prevDateKey = dateKey;
       }
 
+      const prev = safeMessages[index - 1];
+      const next = safeMessages[index + 1];
+
+      const isMine = Number(message.senderId) === Number(currentUserId);
+      const prevSameSender =
+        prev && Number(prev.senderId) === Number(message.senderId);
+      const nextSameSender =
+        next && Number(next.senderId) === Number(message.senderId);
+
+      const prevGap =
+        prev && getMessageTimestamp(message) - getMessageTimestamp(prev);
+      const nextGap =
+        next && getMessageTimestamp(next) - getMessageTimestamp(message);
+
+      const closeToPrev = typeof prevGap === "number" && prevGap < 5 * 60 * 1000;
+      const closeToNext = typeof nextGap === "number" && nextGap < 5 * 60 * 1000;
+
+      const sameFlowWithPrev =
+        prev &&
+        getMessageDateKey(prev) === getMessageDateKey(message) &&
+        prevSameSender &&
+        closeToPrev;
+
+      const sameFlowWithNext =
+        next &&
+        getMessageDateKey(next) === getMessageDateKey(message) &&
+        nextSameSender &&
+        closeToNext;
+
+      const readCount = isMine ? getReadCountForMyMessage(Number(message.id)) : 0;
+      const showMeta = !sameFlowWithNext;
+      const showReadMeta = isMine && showMeta && readCount > 0;
+
       items.push({
         kind: "message",
         key: `msg-${message.id}`,
         message,
+        isMine,
+        showAvatar: !isMine && !sameFlowWithPrev,
+        showName: !isMine && !sameFlowWithPrev,
+        compact: !!sameFlowWithPrev,
+        showMeta,
+        showReadMeta,
+        readCount,
       });
     });
 
     return items;
-  }, [safeMessages]);
+  }, [safeMessages, currentUserId, participants, room]);
+
+  
+useEffect(() => {
+  const el = scrollRef.current;
+  if (!el) return;
+
+  if (!hasInitializedScroll) {
+    el.scrollTop = el.scrollHeight;
+    setHasInitializedScroll(true);
+    return;
+  }
+
+  const lastTimelineItem = timelineItems[timelineItems.length - 1];
+  const isMyLatestMessage =
+    lastTimelineItem &&
+    lastTimelineItem.kind === "message" &&
+    Number(lastTimelineItem.message.senderId) === Number(currentUserId);
+
+  if (isNearBottom || isMyLatestMessage) {
+    el.scrollTop = el.scrollHeight;
+  }
+}, [
+  timelineItems,
+  pendingAttachments,
+  typingLabel,
+  isNearBottom,
+  hasInitializedScroll,
+  currentUserId,
+]);
 
   useEffect(() => {
-    if (!scrollRef.current) return;
-    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [timelineItems, pendingAttachments]);
+  if (!searchMatchedMessageIds.length) {
+    setCurrentSearchIndex(0);
+    setActiveSearchMessageId(null);
+    return;
+  }
 
-  useEffect(() => {
-    if (!searchMatchedMessageIds.length) {
-      setCurrentSearchIndex(0);
-      return;
-    }
+  const safeIndex = Math.min(
+    currentSearchIndex,
+    searchMatchedMessageIds.length - 1
+  );
 
-    const targetId =
-      searchMatchedMessageIds[
-        Math.min(currentSearchIndex, searchMatchedMessageIds.length - 1)
-      ];
+  const targetId = searchMatchedMessageIds[safeIndex];
+  setActiveSearchMessageId(Number(targetId));
 
-    const element = messageRefs.current[String(targetId)];
-    if (element) {
-      element.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    }
-  }, [searchMatchedMessageIds, currentSearchIndex]);
+  const element = messageRefs.current[String(targetId)];
+  if (element) {
+    element.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }
+}, [searchMatchedMessageIds, currentSearchIndex]);
+
+useEffect(() => {
+  const el = scrollRef.current;
+  if (!el) return;
+
+  const handleScroll = () => {
+    setIsNearBottom(checkIsNearBottom());
+  };
+
+  el.addEventListener("scroll", handleScroll);
+  handleScroll();
+
+  return () => {
+    el.removeEventListener("scroll", handleScroll);
+  };
+}, [room?.id]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -272,26 +486,6 @@ export default function MessengerPopupWindow({
     };
   }, [dragging]);
 
-  const getReadCountForMyMessage = (messageId: number) => {
-  if (!room) return 0;
-
-  const others = participants.filter(
-    (p: any) => Number(p.id) !== Number(currentUserId)
-  );
-
-  if (others.length === 0) return 0;
-
-  const unreadUsers = others.filter((p: any) => {
-    const lastReadMessageId = p.lastReadMessageId
-      ? Number(p.lastReadMessageId)
-      : 0;
-
-    return lastReadMessageId < Number(messageId);
-  });
-
-  return unreadUsers.length;
-};
-
   const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = Array.from(e.clipboardData.items || []);
     const imageItem = items.find((item) => item.type.startsWith("image/"));
@@ -313,6 +507,15 @@ export default function MessengerPopupWindow({
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
   };
+const checkIsNearBottom = () => {
+  const el = scrollRef.current;
+  if (!el) return true;
+
+  const distanceFromBottom =
+    el.scrollHeight - el.scrollTop - el.clientHeight;
+
+  return distanceFromBottom < 120;
+};
 
   if (minimized) {
     return (
@@ -327,17 +530,11 @@ export default function MessengerPopupWindow({
         }}
       >
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-sm font-semibold text-slate-700">
-            {titleAvatar ? (
-              <img
-                src={titleAvatar}
-                alt={title}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <MessageSquare className="h-4 w-4" />
-            )}
-          </div>
+          <AvatarCircle
+            name={title}
+            avatar={titleAvatar}
+            className="h-10 w-10 shrink-0"
+          />
 
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold text-slate-900">
@@ -362,7 +559,6 @@ export default function MessengerPopupWindow({
       }}
     >
       <div
-        ref={dragRef}
         className="flex h-full flex-col"
         onDrop={handleDrop}
         onDragOver={handleDragOver}
@@ -376,22 +572,31 @@ export default function MessengerPopupWindow({
         >
           <div className="flex h-16 items-center justify-between px-4">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-white text-sm font-semibold text-slate-700">
-                {titleAvatar ? (
-                  <img
-                    src={titleAvatar}
-                    alt={title}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <span>{title?.slice(0, 1)}</span>
-                )}
-              </div>
+              <AvatarCircle
+                name={title}
+                avatar={titleAvatar}
+                className="h-10 w-10 shrink-0"
+              />
 
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-950">
-                  {title}
-                </p>
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="truncate text-sm font-semibold text-slate-950">
+                    {title}
+                  </p>
+
+                  {pinned ? (
+                    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600">
+                      <Pin className="h-3 w-3" />
+                    </span>
+                  ) : null}
+
+                  {roomMuted ? (
+                    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+                      <BellOff className="h-3 w-3" />
+                    </span>
+                  ) : null}
+                </div>
+
                 <p className="truncate text-xs text-slate-600">{roomTypeText}</p>
               </div>
             </div>
@@ -399,25 +604,81 @@ export default function MessengerPopupWindow({
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => setSearchOpen((prev) => !prev)}
+                onClick={() => {
+                  if (!room?.id) return;
+                  onOpenRoomInfo?.();
+                }}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-700 transition hover:bg-slate-50"
+                title="채팅방 설정"
+              >
+                <span className="text-sm">⚙️</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+  setSearchOpen((prev) => {
+    const next = !prev;
+
+    if (!next) {
+      setSearchText("");
+      setCurrentSearchIndex(0);
+      setActiveSearchMessageId(null);
+    }
+
+    return next;
+  });
+}}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-700 transition hover:bg-slate-50"
                 title="채팅 검색"
               >
                 <Search className="h-4 w-4" />
               </button>
 
-              <button
-                type="button"
-                onClick={onTogglePin}
-                className={`inline-flex h-9 w-9 items-center justify-center rounded-xl transition ${
-                  pinned
-                    ? "bg-[#ffdd00] text-slate-900"
-                    : "bg-white text-slate-700 hover:bg-slate-50"
-                }`}
-                title={pinned ? "고정 해제" : "상단 고정"}
-              >
-                {pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
-              </button>
+              {onTogglePin ? (
+                <button
+                  type="button"
+                  onClick={onTogglePin}
+                  className={`inline-flex h-9 w-9 items-center justify-center rounded-xl transition ${
+                    pinned
+                      ? "bg-[#ffdd00] text-slate-900"
+                      : "bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                  title={pinned ? "고정 해제" : "상단 고정"}
+                >
+                  {pinned ? (
+                    <PinOff className="h-4 w-4" />
+                  ) : (
+                    <Pin className="h-4 w-4" />
+                  )}
+                </button>
+              ) : null}
+
+              {onToggleMute ? (
+                <button
+                  type="button"
+                  onClick={onToggleMute}
+                  className={`inline-flex h-9 w-9 items-center justify-center rounded-xl transition ${
+                    roomMuted
+                      ? "bg-slate-100 text-slate-700"
+                      : "bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                  title={roomMuted ? "알림 켜기" : "알림 끄기"}
+                >
+                  <BellOff className="h-4 w-4" />
+                </button>
+              ) : null}
+
+              {onLeaveRoom ? (
+                <button
+                  type="button"
+                  onClick={onLeaveRoom}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-700 transition hover:bg-red-50 hover:text-red-600"
+                  title="방 나가기"
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
+              ) : null}
 
               <button
                 type="button"
@@ -482,9 +743,11 @@ export default function MessengerPopupWindow({
                 <button
                   type="button"
                   onClick={() => {
-                    setSearchText("");
-                    setSearchOpen(false);
-                  }}
+  setSearchText("");
+  setSearchOpen(false);
+  setCurrentSearchIndex(0);
+  setActiveSearchMessageId(null);
+}}
                   className="text-slate-500"
                 >
                   <X className="h-4 w-4" />
@@ -496,12 +759,23 @@ export default function MessengerPopupWindow({
 
         <div
           ref={scrollRef}
-          className="flex-1 space-y-4 overflow-y-auto px-4 py-4"
+          className="flex-1 overflow-y-auto px-4 py-4"
           style={{
-            backgroundColor: roomBackground ? undefined : "#b7c7d8",
-            backgroundImage: roomBackground ? `url(${roomBackground})` : undefined,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
+            backgroundColor: !roomBackground ? "#b7c7d8" : undefined,
+            backgroundImage: !roomBackground
+              ? undefined
+              : roomBackground.startsWith("linear-gradient")
+              ? roomBackground
+              : `url(${roomBackground})`,
+            backgroundSize: roomBackground.startsWith("linear-gradient")
+              ? undefined
+              : "cover",
+            backgroundPosition: roomBackground.startsWith("linear-gradient")
+              ? undefined
+              : "center",
+            backgroundRepeat: roomBackground.startsWith("linear-gradient")
+              ? undefined
+              : "no-repeat",
           }}
         >
           {timelineItems.length === 0 && pendingAttachments.length === 0 ? (
@@ -511,25 +785,60 @@ export default function MessengerPopupWindow({
               </div>
             </div>
           ) : (
-            <>
+            <div className="space-y-3">
               {timelineItems.map((item) => {
                 if (item.kind === "date") {
                   return (
-                    <div key={item.key} className="flex justify-center">
+                    <div key={item.key} className="flex justify-center py-1">
                       <div className="rounded-full bg-slate-500/15 px-3 py-1 text-xs text-slate-700">
                         {item.label}
                       </div>
                     </div>
                   );
                 }
+		
+		if (item.message.type === "system") {
+  return (
+    <div key={item.key} className="flex justify-center py-1">
+      <div className="rounded-full bg-slate-500/15 px-3 py-1 text-xs text-slate-700">
+        {item.message.content}
+      </div>
+    </div>
+  );
+}
 
-                const message = item.message;
+                const {
+                  message,
+                  isMine,
+                  showAvatar,
+                  showName,
+                  compact,
+                  showMeta,
+                  showReadMeta,
+                  readCount,
+                } = item;
+
                 const sender = usersById[Number(message.senderId)];
-                const isMine = Number(message.senderId) === Number(currentUserId);
-                const readCount = isMine ? getReadCountForMyMessage(Number(message.id)) : 0;
-                const isMatched = searchMatchedMessageIds.includes(Number(message.id));
-                const isCurrentMatched =
-                  searchMatchedMessageIds[currentSearchIndex] === Number(message.id);
+                
+
+	const isMatched = searchMatchedMessageIds.includes(Number(message.id));
+const isCurrentMatched =
+  Number(activeSearchMessageId) === Number(message.id);
+
+                const senderName =
+                  sender?.name ||
+                  targetUser?.name ||
+                  otherParticipant?.name ||
+                  "알수없음";
+                const senderAvatar =
+                  sender?.avatar ||
+                  targetUser?.avatar ||
+                  otherParticipant?.avatar ||
+                  "";
+
+                const bubbleClass = isMine
+                  ? "rounded-2xl rounded-br-md bg-[#ffdd00] text-slate-900"
+                  : "rounded-2xl rounded-bl-md bg-white text-slate-900";
 
                 return (
                   <div
@@ -537,49 +846,52 @@ export default function MessengerPopupWindow({
                     ref={(el) => {
                       messageRefs.current[String(message.id)] = el;
                     }}
-                    className={`flex ${isMine ? "justify-end" : "justify-start"}`}
+                    className={`flex ${isMine ? "justify-end" : "justify-start"} ${
+                      compact ? "mt-[-4px]" : ""
+                    }`}
                   >
                     <div
-                      className={`flex max-w-[80%] items-end gap-2 ${
+                      className={`flex max-w-[82%] items-end gap-2 ${
                         isMine ? "flex-row-reverse" : "flex-row"
                       }`}
                     >
                       {!isMine ? (
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white text-sm font-semibold text-slate-700 shadow-sm">
-                          {sender?.avatar ? (
-                            <img
-                              src={sender.avatar}
-                              alt={sender?.name || "user"}
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <span>{sender?.name?.slice(0, 1) || "?"}</span>
-                          )}
-                        </div>
+                        showAvatar ? (
+                          <AvatarCircle
+                            name={senderName}
+                            avatar={senderAvatar}
+                            className="h-9 w-9 shrink-0 self-start shadow-sm"
+                          />
+                        ) : (
+                          <div className="h-9 w-9 shrink-0" />
+                        )
                       ) : null}
 
                       <div className="min-w-0">
-                        {!isMine && (
+                        {!isMine && showName && (
                           <div className="mb-1 px-1 text-xs font-medium text-slate-700">
-                            {sender?.name || targetUser?.name || "알수없음"}
+                            {senderName}
                           </div>
                         )}
 
                         <div
-                          className={`overflow-hidden rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm transition ${
-                            isMine
-                              ? "rounded-br-md bg-[#ffdd00] text-slate-900"
-                              : "rounded-bl-md bg-white text-slate-900"
-                          } ${
-                            isCurrentMatched
-                              ? "ring-2 ring-blue-500"
-                              : isMatched
-                              ? "ring-1 ring-yellow-300"
-                              : ""
-                          }`}
-                        >
+  className={`overflow-hidden px-4 py-3 text-sm leading-relaxed shadow-sm transition ${
+    bubbleClass
+  } ${
+    Number(activeSearchMessageId) === Number(message.id)
+      ? "ring-2 ring-blue-500 shadow-[0_0_0_4px_rgba(59,130,246,0.15)]"
+      : isMatched
+      ? "ring-1 ring-yellow-300"
+      : ""
+  }`}
+>
                           {message.type === "text" && (
-                            <span>{highlightText(String(message.content || ""), searchText)}</span>
+                            <span>
+                              {highlightText(
+                                String(message.content || ""),
+                                searchText
+                              )}
+                            </span>
                           )}
 
                           {message.type === "image" && message.fileUrl && (
@@ -588,9 +900,14 @@ export default function MessengerPopupWindow({
                                 src={message.fileUrl}
                                 alt={message.fileName || "image"}
                                 className="max-h-72 cursor-pointer rounded-xl object-cover"
-                                onClick={() => onOpenImage(message.fileUrl!, message.fileName)}
+                                onClick={() =>
+                                  onOpenImage(message.fileUrl!, message.fileName)
+                                }
                               />
                               <div className="mt-2 flex items-center gap-2">
+                                <span className="text-[11px] font-medium opacity-75">
+                                  {getMessagePreviewTypeLabel(message)}
+                                </span>
                                 <a
                                   href={message.fileUrl}
                                   download
@@ -613,7 +930,10 @@ export default function MessengerPopupWindow({
                                 />
                               ) : null}
 
-                              <div className="mt-2 flex items-center gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-medium opacity-75">
+                                  {getMessagePreviewTypeLabel(message)}
+                                </span>
                                 <a
                                   href={message.fileUrl}
                                   target="_blank"
@@ -634,23 +954,33 @@ export default function MessengerPopupWindow({
                           )}
                         </div>
 
-                       <div
-  className={`mt-1 flex items-center gap-2 px-1 text-[11px] text-slate-500 ${
-    isMine ? "justify-end" : "justify-start"
-  }`}
->
-  <span>{message.createdAt}</span>
-  {isMine ? (
-    readCount > 0 ? (
-      <span className="font-semibold text-amber-600">{readCount}</span>
-    ) : null
-  ) : null}
-</div>
+                        {showMeta && (
+  <div
+    className={`mt-1 flex items-center gap-1 px-1 text-[11px] text-slate-500 ${
+      isMine ? "justify-end" : "justify-start"
+    }`}
+  >
+    {showReadMeta ? (
+      <span className="min-w-[10px] text-right font-semibold leading-none text-amber-600">
+        {readCount}
+      </span>
+    ) : null}
+    <span>{message.createdAt}</span>
+  </div>
+)}
                       </div>
                     </div>
                   </div>
                 );
               })}
+
+              {typingLabel ? (
+                <div className="flex justify-start">
+                  <div className="rounded-full bg-white/90 px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm">
+                    {typingLabel}
+                  </div>
+                </div>
+              ) : null}
 
               {pendingAttachments.length > 0 && (
                 <div className="flex justify-end">
@@ -677,7 +1007,9 @@ export default function MessengerPopupWindow({
                               src={item.previewUrl}
                             />
                           ) : (
-                            <div className="text-xs text-slate-700">{item.file.name}</div>
+                            <div className="text-xs text-slate-700">
+                              {item.file.name}
+                            </div>
                           )}
 
                           <div className="mt-2 flex items-center justify-between gap-2">
@@ -698,7 +1030,7 @@ export default function MessengerPopupWindow({
                   </div>
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
 

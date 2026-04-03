@@ -188,8 +188,8 @@ function DashboardLayoutContent({
 
   const { data: myProfile, refetch: refetchMyProfile } =
     trpc.users.me.useQuery();
-const { data: branding } = trpc.branding.get.useQuery();
-const utils = trpc.useUtils();
+  const { data: branding } = trpc.branding.get.useQuery();
+  const utils = trpc.useUtils();
 
   const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(
     /\/$/,
@@ -212,9 +212,9 @@ const utils = trpc.useUtils();
       : `${API_BASE_URL}/${raw}`;
   };
 
-const companyName = branding?.companyName || "위드원 교육";
-const companySubtitle = branding?.messengerSubtitle || "사내 메신저";
-const companyLogoUrl = normalizeAssetUrl(branding?.companyLogoUrl || "");
+  const companyName = branding?.companyName || "위드원 교육";
+  const companySubtitle = branding?.messengerSubtitle || "사내 메신저";
+  const companyLogoUrl = normalizeAssetUrl(branding?.companyLogoUrl || "");
 
   useEffect(() => {
     const saved = localStorage.getItem("messenger-open");
@@ -269,17 +269,17 @@ const companyLogoUrl = normalizeAssetUrl(branding?.companyLogoUrl || "");
     };
   }, [refetchMyProfile]);
 
-useEffect(() => {
-  const handleBrandingUpdated = () => {
-    void utils.branding.get.invalidate();
-  };
+  useEffect(() => {
+    const handleBrandingUpdated = () => {
+      void utils.branding.get.invalidate();
+    };
 
-  window.addEventListener("branding:updated", handleBrandingUpdated);
+    window.addEventListener("branding:updated", handleBrandingUpdated);
 
-  return () => {
-    window.removeEventListener("branding:updated", handleBrandingUpdated);
-  };
-}, [utils]);
+    return () => {
+      window.removeEventListener("branding:updated", handleBrandingUpdated);
+    };
+  }, [utils]);
 
   useEffect(() => {
     const handlePushOpen = (event: Event) => {
@@ -440,7 +440,7 @@ useEffect(() => {
       <>
         {title && !isCollapsed && (
           <div className="mt-2 px-3 pb-1 pt-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600">
               {title}
             </p>
           </div>
@@ -457,14 +457,14 @@ useEffect(() => {
                   isActive={isActive}
                   onClick={() => setLocation(item.path)}
                   tooltip={item.label}
-                  className="min-w-0 font-medium text-slate-900"
+                  className="min-w-0 font-medium text-black"
                 >
                   <item.icon
                     className={`h-4 w-4 shrink-0 ${
                       isActive ? "text-primary" : "text-slate-700"
                     }`}
                   />
-                  <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left text-slate-900">
+                  <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left text-black">
                     {item.label}
                   </span>
                 </SidebarMenuButton>
@@ -522,24 +522,25 @@ useEffect(() => {
 
               {!isCollapsed ? (
                 <div className="flex min-w-0 items-center gap-2">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white">
-  {companyLogoUrl ? (
-    <img
-      src={companyLogoUrl}
-      alt={companyName}
-      className="h-full w-full object-cover"
-    />
-  ) : isSuperhost ? (
-    <Crown className="h-4 w-4 text-primary" />
-  ) : (
-    <GraduationCap className="h-4 w-4 text-primary" />
-  )}
-</div>
-                  <span className="truncate text-sm font-bold tracking-tight text-slate-950">
-  {isSuperhost
-    ? `${companyName} CRM · SUPERHOST`
-    : `${companyName} CRM`}
-</span>
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.05)]">
+                    {companyLogoUrl ? (
+                      <img
+                        src={companyLogoUrl}
+                        alt={companyName}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : isSuperhost ? (
+                      <Crown className="h-4 w-4 text-primary" />
+                    ) : (
+                      <GraduationCap className="h-4 w-4 text-primary" />
+                    )}
+                  </div>
+
+                  <span className="truncate text-sm font-bold tracking-tight text-black">
+                    {isSuperhost
+                      ? `${companyName} CRM · SUPERHOST`
+                      : `${companyName} CRM`}
+                  </span>
                 </div>
               ) : null}
             </div>
@@ -554,7 +555,7 @@ useEffect(() => {
                   isActive={isEApprovalPath}
                   onClick={() => setEApprovalMenuOpen((prev) => !prev)}
                   tooltip="전자결재"
-                  className="min-w-0 justify-between font-medium text-slate-900"
+                  className="min-w-0 justify-between font-medium text-black"
                 >
                   <div className="flex min-w-0 flex-1 items-center gap-2">
                     <FileCheck2
@@ -562,7 +563,7 @@ useEffect(() => {
                         isEApprovalPath ? "text-primary" : "text-slate-700"
                       }`}
                     />
-                    <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left text-slate-900">
+                    <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left text-black">
                       전자결재
                     </span>
                   </div>
@@ -587,9 +588,9 @@ useEffect(() => {
                             isActive={isActive}
                             size="md"
                             onClick={() => setLocation(item.href)}
-                            className="font-medium text-slate-900"
+                            className="font-medium text-black"
                           >
-                            <span className="truncate text-slate-900">
+                            <span className="truncate text-black">
                               {item.label}
                             </span>
                           </SidebarMenuSubButton>
@@ -609,7 +610,7 @@ useEffect(() => {
           <SidebarFooter className="pt-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex w-full items-start gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition-colors hover:bg-white group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <button className="flex w-full items-start gap-3 rounded-2xl bg-white px-3 py-3 text-left transition-colors hover:bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <Avatar className="h-9 w-9 shrink-0 border border-slate-200">
                     <AvatarImage
                       src={displayProfileImageUrl}
@@ -621,7 +622,7 @@ useEffect(() => {
                   </Avatar>
 
                   <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
-                    <p className="truncate text-sm font-semibold leading-none text-slate-950">
+                    <p className="truncate text-sm font-semibold leading-none text-black">
                       {displayProfileName}
                     </p>
                     <div className="mt-1 text-xs leading-tight text-slate-600">
@@ -632,7 +633,7 @@ useEffect(() => {
                 </button>
               </DropdownMenuTrigger>
 
-              <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuContent align="end" className="w-48 rounded-2xl">
                 <DropdownMenuItem
                   onClick={() => {
                     void logout();
@@ -660,17 +661,17 @@ useEffect(() => {
       </div>
 
       <SidebarInset>
-        <div className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-slate-200 bg-[#f5f5f7]/90 px-4 backdrop-blur-md md:px-6">
+        <div className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-black/5 bg-[#f7f8fb]/90 px-4 backdrop-blur-md md:px-6">
           <div className="flex items-center gap-2">
             {isMobile ? (
               <>
-                <SidebarTrigger className="h-9 w-9 rounded-2xl bg-white shadow-sm" />
-                <span className="font-semibold tracking-tight text-slate-950">
+                <SidebarTrigger className="h-9 w-9 rounded-2xl bg-white text-slate-900 shadow-[0_4px_14px_rgba(15,23,42,0.06)]" />
+                <span className="font-semibold tracking-tight text-black">
                   {activeMenuItem?.label ?? (isSuperhost ? "슈퍼호스트" : "메뉴")}
                 </span>
               </>
             ) : (
-              <span className="font-semibold tracking-tight text-slate-950">
+              <span className="font-semibold tracking-tight text-black">
                 {activeMenuItem?.label ?? (isSuperhost ? "슈퍼호스트" : "메뉴")}
               </span>
             )}
@@ -681,14 +682,14 @@ useEffect(() => {
               {location.startsWith("/superhost") ? (
                 <button
                   onClick={() => setLocation("/")}
-                  className="inline-flex h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-900 transition-colors hover:bg-slate-50"
+                  className="inline-flex h-10 items-center justify-center rounded-2xl bg-white px-4 text-sm font-medium text-black transition shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] hover:bg-white hover:shadow-[inset_0_0_0_1px_rgba(15,23,42,0.07),0_8px_18px_rgba(15,23,42,0.05)]"
                 >
                   일반 CRM으로 돌아가기
                 </button>
               ) : (
                 <button
                   onClick={() => setLocation("/superhost")}
-                  className="inline-flex h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-900 transition-colors hover:bg-slate-50"
+                  className="inline-flex h-10 items-center justify-center rounded-2xl bg-white px-4 text-sm font-medium text-black transition shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] hover:bg-white hover:shadow-[inset_0_0_0_1px_rgba(15,23,42,0.07),0_8px_18px_rgba(15,23,42,0.05)]"
                 >
                   슈퍼호스트 콘솔
                 </button>
@@ -701,7 +702,7 @@ useEffect(() => {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
-                    className="relative inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-900 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="relative inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-900 transition hover:bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     aria-label="알림"
                   >
                     <Bell className="h-4 w-4" />
@@ -714,20 +715,20 @@ useEffect(() => {
                 </DropdownMenuTrigger>
 
                 <DropdownMenuContent align="end" className="w-80 rounded-2xl p-0">
-                  <div className="border-b px-3 py-3">
-                    <p className="text-sm font-semibold">알림</p>
-                    <p className="text-xs text-muted-foreground">
+                  <div className="border-b border-black/5 px-3 py-3">
+                    <p className="text-sm font-semibold text-black">알림</p>
+                    <p className="text-xs text-slate-500">
                       최근 상담 알림을 확인할 수 있습니다.
                     </p>
                   </div>
 
                   <div className="max-h-[360px] overflow-y-auto">
                     {notificationQuery.isLoading ? (
-                      <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                      <div className="px-3 py-6 text-center text-sm text-slate-500">
                         알림 불러오는 중...
                       </div>
                     ) : notifications.length === 0 ? (
-                      <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                      <div className="px-3 py-6 text-center text-sm text-slate-500">
                         알림이 없습니다.
                       </div>
                     ) : (
@@ -735,14 +736,14 @@ useEffect(() => {
                         <DropdownMenuItem
                           key={item.id}
                           onClick={() => void handleNotificationClick(item)}
-                          className="flex cursor-pointer flex-col items-start gap-1 rounded-none border-b px-3 py-3 last:border-b-0"
+                          className="flex cursor-pointer flex-col items-start gap-1 rounded-none border-b border-black/5 px-3 py-3 last:border-b-0"
                         >
                           <div className="flex w-full items-start justify-between gap-2">
                             <span
                               className={`text-sm ${
                                 item.isRead
-                                  ? "font-normal text-muted-foreground"
-                                  : "font-semibold"
+                                  ? "font-normal text-slate-500"
+                                  : "font-semibold text-black"
                               }`}
                             >
                               {item.message}
@@ -751,7 +752,7 @@ useEffect(() => {
                               <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-red-500" />
                             )}
                           </div>
-                          <span className="text-[11px] text-muted-foreground">
+                          <span className="text-[11px] text-slate-500">
                             {formatNotificationDate(item.createdAt)}
                           </span>
                         </DropdownMenuItem>
@@ -764,7 +765,7 @@ useEffect(() => {
 
             <button
               onClick={() => setIsMessengerOpen(true)}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-900 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-900 transition hover:bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label="메신저"
             >
               <MessageSquare className="h-4 w-4" />
@@ -772,7 +773,7 @@ useEffect(() => {
 
             <button
               onClick={() => setLocation("/my")}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-900 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-900 transition hover:bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label="내 정보"
             >
               <User className="h-4 w-4" />
@@ -780,7 +781,7 @@ useEffect(() => {
 
             <button
               onClick={() => setLocation("/system")}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-900 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-900 transition hover:bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label="설정"
             >
               <Settings className="h-4 w-4" />
@@ -800,27 +801,28 @@ useEffect(() => {
       </SidebarInset>
 
       {isMessengerOpen && !isMobile && (
-        <div className="fixed right-0 top-16 z-[9999] h-[calc(100vh-64px)] w-[520px] border-l border-slate-200 bg-[#f5f5f7] shadow-[-12px_0_40px_rgba(15,23,42,0.10)]">
-          <div className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4">
+        <div className="fixed right-0 top-16 z-[9999] h-[calc(100vh-64px)] w-[520px] border-l border-black/5 bg-[#f5f6f9] shadow-[-12px_0_40px_rgba(15,23,42,0.10)]">
+          <div className="flex h-16 items-center justify-between border-b border-black/5 bg-white px-4">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl bg-[#ffdd00] text-slate-900">
+              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06),0_6px_16px_rgba(15,23,42,0.06)]">
   {companyLogoUrl ? (
     <img
       src={companyLogoUrl}
       alt={companyName}
-      className="h-full w-full object-cover"
+      className="h-[82%] w-[82%] object-contain"
     />
   ) : (
-    <MessageSquare className="h-5 w-5" />
+    <MessageSquare className="h-5 w-5 text-slate-900" />
   )}
 </div>
+
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-950">
-  {companyName}
-</p>
-<p className="truncate text-xs text-slate-500">
-  {companySubtitle}
-</p>
+                <p className="truncate text-sm font-semibold text-black">
+                  {companyName}
+                </p>
+                <p className="truncate text-xs text-slate-500">
+                  {companySubtitle}
+                </p>
               </div>
             </div>
 
@@ -835,9 +837,9 @@ useEffect(() => {
 
           <div className="h-[calc(100%-64px)] overflow-hidden">
             <MessengerPage
-  companyName={companyName}
-  onRequestClose={() => setIsMessengerOpen(false)}
-/>
+              companyName={companyName}
+              onRequestClose={() => setIsMessengerOpen(false)}
+            />
           </div>
         </div>
       )}

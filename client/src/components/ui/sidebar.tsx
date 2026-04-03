@@ -133,7 +133,7 @@ function SidebarProvider({
             } as React.CSSProperties
           }
           className={cn(
-            "group/sidebar-wrapper flex min-h-svh w-full bg-[#f5f5f7]",
+            "group/sidebar-wrapper flex min-h-svh w-full bg-[#f4f5f8] text-slate-900",
             className
           )}
           {...props}
@@ -166,7 +166,7 @@ function Sidebar({
       <div
         data-slot="sidebar"
         className={cn(
-          "flex h-full w-(--sidebar-width) flex-col bg-[#f5f5f7] text-slate-800",
+          "flex h-full w-(--sidebar-width) flex-col bg-[#f4f5f8] text-slate-900",
           className
         )}
         {...props}
@@ -184,7 +184,7 @@ function Sidebar({
           data-slot="sidebar"
           data-mobile="true"
           side={side}
-          className="w-(--sidebar-width) border-r-0 bg-[#f5f5f7] p-0 text-slate-800 [&>button]:hidden"
+          className="w-(--sidebar-width) border-r-0 bg-[#f4f5f8] p-0 text-slate-900 [&>button]:hidden"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -209,7 +209,7 @@ function Sidebar({
       data-collapsible={state === "collapsed" ? collapsible : ""}
       data-variant={variant}
       data-side={side}
-      className="group peer hidden text-slate-800 md:block"
+      className="group peer hidden text-slate-900 md:block"
     >
       <div
         data-slot="sidebar-gap"
@@ -246,7 +246,7 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="flex h-full w-full flex-col overflow-hidden bg-[#f5f5f7]"
+          className="flex h-full w-full flex-col overflow-hidden bg-[#f4f5f8] text-slate-900"
         >
           {children}
         </div>
@@ -313,7 +313,7 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
     <main
       data-slot="sidebar-inset"
       className={cn(
-        "relative flex w-full flex-1 flex-col bg-[#f5f5f7]",
+        "relative flex w-full flex-1 flex-col bg-[#f7f8fb]",
         "md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-2xl md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2",
         className
       )}
@@ -330,7 +330,10 @@ function SidebarInput({
     <Input
       data-slot="sidebar-input"
       data-sidebar="input"
-      className={cn("h-8 w-full bg-[#f8fafc] shadow-none", className)}
+      className={cn(
+        "h-8 w-full rounded-xl border-0 bg-white text-slate-900 shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)]",
+        className
+      )}
       {...props}
     />
   );
@@ -366,7 +369,7 @@ function SidebarSeparator({
     <Separator
       data-slot="sidebar-separator"
       data-sidebar="separator"
-      className={cn("mx-2 w-auto bg-slate-200", className)}
+      className={cn("mx-2 w-auto bg-black/5", className)}
       {...props}
     />
   );
@@ -410,7 +413,7 @@ function SidebarGroupLabel({
       data-slot="sidebar-group-label"
       data-sidebar="group-label"
       className={cn(
-        "flex h-7 shrink-0 items-center px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400 outline-hidden transition-[margin,opacity] duration-200 ease-linear",
+        "flex h-7 shrink-0 items-center px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 outline-hidden transition-[margin,opacity] duration-200 ease-linear",
         "group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0",
         className
       )}
@@ -483,9 +486,9 @@ const sidebarMenuButtonVariants = cva(
     variants: {
       variant: {
         default:
-          "border border-slate-100 bg-white text-slate-700 shadow-sm hover:bg-white hover:text-slate-900",
+          "bg-white text-slate-800 shadow-[inset_0_0_0_1px_rgba(15,23,42,0.05)] hover:bg-white hover:text-slate-950 hover:shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06),0_6px_16px_rgba(15,23,42,0.04)]",
         outline:
-          "border border-slate-200 bg-white text-slate-700 hover:bg-white hover:text-slate-900",
+          "bg-white text-slate-800 shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] hover:bg-white hover:text-slate-950 hover:shadow-[inset_0_0_0_1px_rgba(15,23,42,0.07),0_6px_16px_rgba(15,23,42,0.04)]",
       },
       size: {
         default: "h-11 text-sm",
@@ -524,7 +527,8 @@ function SidebarMenuButton({
       data-active={isActive}
       className={cn(
         sidebarMenuButtonVariants({ variant, size }),
-        isActive && "border border-slate-200 bg-white text-slate-900 shadow-sm",
+        isActive &&
+          "bg-white text-slate-950 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.14),0_8px_18px_rgba(15,23,42,0.05)]",
         className
       )}
       {...props}
@@ -641,7 +645,7 @@ function SidebarMenuSub({ className, ...props }: React.ComponentProps<"ul">) {
       data-slot="sidebar-menu-sub"
       data-sidebar="menu-sub"
       className={cn(
-        "mt-1 ml-2 flex min-w-0 flex-col gap-1 rounded-2xl border border-slate-100 bg-[#f8f8fa] p-2",
+        "mt-1 ml-2 flex min-w-0 flex-col gap-1 rounded-2xl bg-[#f8f9fb] p-2 shadow-[inset_0_0_0_1px_rgba(15,23,42,0.04)]",
         "group-data-[collapsible=icon]:hidden",
         className
       )}
@@ -684,9 +688,9 @@ function SidebarMenuSubButton({
       data-size={size}
       data-active={isActive}
       className={cn(
-        "flex h-9 w-full min-w-0 items-center gap-2 rounded-xl border border-transparent bg-transparent px-3 text-left text-slate-600 outline-hidden transition-all duration-150",
-        "hover:bg-white hover:text-slate-900",
-        "data-[active=true]:border data-[active=true]:border-slate-200 data-[active=true]:bg-white data-[active=true]:text-slate-900 data-[active=true]:shadow-sm",
+        "flex h-9 w-full min-w-0 items-center gap-2 rounded-xl border border-transparent bg-transparent px-3 text-left text-slate-700 outline-hidden transition-all duration-150",
+        "hover:bg-white hover:text-slate-950",
+        "data-[active=true]:bg-white data-[active=true]:text-slate-950 data-[active=true]:shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)]",
         size === "sm" && "h-8 text-xs",
         size === "md" && "text-sm",
         "group-data-[collapsible=icon]:hidden",

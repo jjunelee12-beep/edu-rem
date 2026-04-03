@@ -514,10 +514,22 @@ export default function Home() {
                 </div>
 
                 <div className="mt-5 grid grid-cols-2 gap-3">
-                  <div className="rounded-2xl bg-slate-50 p-4 text-center">
-                    <p className="text-xs text-slate-500">오늘 메일</p>
-                    <p className="mt-1 text-lg font-bold text-slate-900">0</p>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={openMessenger}
+                    className="rounded-2xl bg-slate-50 p-4 text-center transition hover:bg-slate-100"
+                  >
+                    <div className="flex items-center justify-center">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)]">
+                        <MessageSquare className="h-5 w-5 text-slate-900" />
+                      </div>
+                    </div>
+                    <p className="mt-3 text-xs text-slate-500">메신저</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">
+                      열기
+                    </p>
+                  </button>
+
                   <div className="rounded-2xl bg-slate-50 p-4 text-center">
                     <p className="text-xs text-slate-500">오늘 일정</p>
                     <p className="mt-1 text-lg font-bold text-slate-900">

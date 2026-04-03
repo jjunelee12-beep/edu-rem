@@ -8,6 +8,7 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -40,7 +41,23 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  --font-sans: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+
+  --font-sans:
+    "Pretendard Variable",
+    "Pretendard",
+    -apple-system,
+    BlinkMacSystemFont,
+    system-ui,
+    Roboto,
+    "Helvetica Neue",
+    "Segoe UI",
+    "Apple SD Gothic Neo",
+    "Noto Sans KR",
+    "Malgun Gothic",
+    "Apple Color Emoji",
+    "Segoe UI Emoji",
+    "Segoe UI Symbol",
+    sans-serif;
 }
 
 :root {
@@ -57,7 +74,6 @@
 
   --radius: 0.9rem;
 
-  /* 애플 느낌: 거의 흰색 배경 + 카드 흰색 */
   --background: oklch(0.975 0.003 260);
   --foreground: oklch(0.18 0.02 260);
 
@@ -79,7 +95,6 @@
   --destructive: oklch(0.55 0.22 25);
   --destructive-foreground: oklch(0.98 0 0);
 
-  /* border는 거의 안 보이게 약하게 */
   --border: oklch(0.93 0.006 260);
   --input: oklch(0.93 0.006 260);
   --ring: oklch(0.45 0.18 260);
@@ -101,6 +116,11 @@
   body,
   #root {
     min-height: 100%;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   body {
@@ -168,31 +188,30 @@
   }
 }
 
-/* ===== 전체 톤: 선보다 배경/그림자로 구분 ===== */
+/* ===== 전체 레이아웃 톤 ===== */
 
-/* 메인 영역 */
 [data-slot="sidebar-inset"] {
   background: #f7f8fb !important;
 }
 
-/* 카드 전체 */
+/* 카드 공통 */
 [data-slot="card"] {
   background: #ffffff !important;
-  border: 1px solid rgba(255, 255, 255, 0.65) !important;
-  border-radius: 1.25rem !important;
+  border: 1px solid rgba(255, 255, 255, 0.7) !important;
+  border-radius: 1.75rem !important;
   box-shadow:
     0 1px 2px rgba(15, 23, 42, 0.03),
     0 10px 28px rgba(15, 23, 42, 0.04) !important;
 }
 
-/* 카드 안의 작은 박스들 */
+/* 카드 내부 작은 박스 */
 [data-slot="card"] .rounded-xl,
 [data-slot="card"] .rounded-lg,
 [data-slot="card"] .rounded-md {
   border-color: transparent !important;
 }
 
-/* 카드 안 bg-slate-50 계열은 흰색보다 살짝 진한 톤 */
+/* 카드 안 연회색 박스 */
 [data-slot="card"] .bg-slate-50,
 [data-slot="card"] .bg-muted,
 [data-slot="card"] .bg-accent {
@@ -200,7 +219,7 @@
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.03);
 }
 
-/* border가 들어간 내부 타일은 선 대신 아주 약한 그림자 */
+/* 내부 border 박스는 선 대신 그림자 */
 [data-slot="card"] .border,
 [data-slot="card"] .rounded-xl.border,
 [data-slot="card"] .rounded-lg.border,
@@ -209,7 +228,8 @@
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.05);
 }
 
-/* 좌측 사이드바 */
+/* ===== 사이드바 ===== */
+
 [data-slot="sidebar-container"] {
   background: #f4f5f8 !important;
   border-right: 1px solid rgba(15, 23, 42, 0.04) !important;
@@ -221,12 +241,11 @@
   border-right: none !important;
 }
 
-/* 메뉴 버튼: 카드형 */
 [data-slot="sidebar-menu-button"] {
   min-height: 40px;
   border: 1px solid transparent !important;
-  border-radius: 0.85rem !important;
-  background: rgba(255, 255, 255, 0.72);
+  border-radius: 0.95rem !important;
+  background: rgba(255, 255, 255, 0.8) !important;
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.05);
   transition:
     background-color 0.18s ease,
@@ -248,26 +267,32 @@
     0 8px 18px rgba(15, 23, 42, 0.05);
 }
 
-/* 메뉴 텍스트 */
 [data-slot="sidebar-menu-button"] > span {
   white-space: nowrap !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
+  color: #111827 !important;
 }
 
-/* 서브메뉴 세로선은 거의 안 보이게 */
+[data-slot="sidebar-menu-button"] svg {
+  color: inherit;
+}
+
+/* 서브메뉴 */
 .border-l {
   border-left-color: rgba(15, 23, 42, 0.05) !important;
 }
 
-/* 상단 헤더 */
+/* ===== 상단 헤더 ===== */
+
 .sticky.top-0 {
   border-bottom: 1px solid rgba(15, 23, 42, 0.04) !important;
-  background: rgba(247, 248, 251, 0.82) !important;
+  background: rgba(247, 248, 251, 0.84) !important;
   backdrop-filter: blur(14px);
 }
 
-/* 오른쪽 패널 */
+/* ===== 오른쪽 고정 패널 / 메신저 ===== */
+
 aside.border-l {
   border-left: 1px solid rgba(15, 23, 42, 0.04) !important;
   background: #f4f5f8 !important;
@@ -280,7 +305,8 @@ aside .rounded-lg.border {
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.05);
 }
 
-/* 캘린더 칸 */
+/* ===== 캘린더 ===== */
+
 .grid .border,
 [class*="calendar"] .border,
 [class*="Calendar"] .border {
@@ -289,7 +315,8 @@ aside .rounded-lg.border {
   background: rgba(255, 255, 255, 0.74);
 }
 
-/* 버튼 outline 계열 */
+/* ===== outline 버튼류 ===== */
+
 button.border,
 a.border,
 div.border {
@@ -297,12 +324,23 @@ div.border {
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
 }
 
-/* 회색 글자 */
+/* ===== 텍스트 ===== */
+
 .text-muted-foreground {
   color: #6b7280 !important;
 }
 
-/* 공지 본문 */
+/* 제목/중요 텍스트 조금 더 진하게 */
+.text-slate-950 {
+  color: #0f172a !important;
+}
+
+.text-slate-900 {
+  color: #111827 !important;
+}
+
+/* ===== 공지 본문 ===== */
+
 .notice-content h1 {
   font-size: 2rem;
   font-weight: 800;
@@ -369,7 +407,8 @@ div.border {
   word-break: break-all;
 }
 
-/* 공지 작성 에디터 */
+/* ===== 공지 작성 에디터 ===== */
+
 .notice-editor-content p {
   margin: 0.8rem 0;
   line-height: 2;
@@ -425,7 +464,8 @@ div.border {
   word-break: break-all;
 }
 
-/* 첨부파일 */
+/* ===== 첨부파일 ===== */
+
 .notice-attachments-block {
   margin-top: 2rem;
   padding-top: 0.5rem;
@@ -466,7 +506,8 @@ div.border {
   background: #f1f3f7;
 }
 
-/* 스크롤 */
+/* ===== 스크롤 ===== */
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

@@ -7,6 +7,7 @@ import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
 import MessengerSidebar from "@/components/messenger/MessengerSidebar";
 import MessengerPopupWindow from "@/components/messenger/MessengerPopupWindow";
 import ImagePreviewModal from "@/components/messenger/ImagePreviewModal";
+import MessengerRoomInfo from "@/components/messenger/MessengerRoomInfo";
 
 import {
   MessengerMessage,
@@ -32,8 +33,8 @@ function normalizeUsers(
     position: user.positionName || user.position || roleToPosition(user.role),
     team: user.teamName || user.team || "미분류",
     avatar: normalizeAssetUrl(
-  user.avatarUrl || user.profileImageUrl || user.avatar || ""
-),
+      user.avatarUrl || user.profileImageUrl || user.avatar || ""
+    ),
     status: onlineUserIds.has(Number(user.id)) ? "online" : "offline",
   }));
 }
@@ -65,6 +66,161 @@ type MessengerPageProps = {
   onRequestClose?: () => void;
 };
 
+type TypingStateMap = Record<number, number[]>;
+
+function emitDirectCreate(targetUserId: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const socket = getSocket();
+
+    socket.emit(
+      "direct:create",
+      { targetUserId: Number(targetUserId) },
+      (res: any) => {
+        if (!res?.success) {
+          reject(new Error(res?.message || "1:1 채팅방 생성 실패"));
+          return;
+        }
+
+        const roomId = Number(res.roomId || 0);
+        if (!roomId) {
+          reject(new Error("생성된 채팅방 ID가 없습니다."));
+          return;
+        }
+
+        resolve(roomId);
+      }
+    );
+  });
+}
+
+function emitMessageSend(payload: {
+  roomId: number;
+  messageType?: "text" | "image" | "file" | "system";
+  content?: string;
+  fileUrl?: string | null;
+  fileName?: string | null;
+  fileType?: string | null;
+  fileSize?: number | null;
+}): Promise<{ roomId: number; messageId: number }> {
+  return new Promise((resolve, reject) => {
+    const socket = getSocket();
+
+    socket.emit("message:send", payload, (res: any) => {
+      if (!res?.success) {
+        reject(new Error(res?.message || "메시지 전송 실패"));
+        return;
+      }
+
+      resolve({
+        roomId: Number(res.roomId),
+        messageId: Number(res.messageId),
+      });
+    });
+  });
+}
+
+function emitReadUpdate(
+  roomId: number,
+  lastReadMessageId: number
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const socket = getSocket();
+
+    socket.emit(
+      "read:update",
+      {
+        roomId: Number(roomId),
+        lastReadMessageId: Number(lastReadMessageId),
+      },
+      (res: any) => {
+        if (!res?.success) {
+          reject(new Error(res?.message || "읽음 처리 실패"));
+          return;
+        }
+        resolve();
+      }
+    );
+  });
+}
+
+function emitRoomMute(roomId: number, isMuted: boolean): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const socket = getSocket();
+
+    socket.emit(
+      "room:mute",
+      {
+        roomId: Number(roomId),
+        isMuted: !!isMuted,
+      },
+      (res: any) => {
+        if (!res?.success) {
+          reject(new Error(res?.message || "알림 설정 변경 실패"));
+          return;
+        }
+        resolve();
+      }
+    );
+  });
+}
+
+function emitRoomLeave(roomId: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const socket = getSocket();
+
+    socket.emit(
+      "room:leave:confirm",
+      {
+        roomId: Number(roomId),
+      },
+      (res: any) => {
+        if (!res?.success) {
+          reject(new Error(res?.message || "방 나가기 실패"));
+          return;
+        }
+        resolve();
+      }
+    );
+  });
+}
+
+function emitRoomMembersAdd(
+  roomId: number,
+  userIds: number[]
+): Promise<{ addedUserIds: number[] }> {
+  return new Promise((resolve, reject) => {
+    const socket = getSocket();
+
+    socket.emit(
+      "room:members:add",
+      {
+        roomId: Number(roomId),
+        userIds: userIds.map(Number),
+      },
+      (res: any) => {
+        if (!res?.success) {
+          reject(new Error(res?.message || "참여자 추가 실패"));
+          return;
+        }
+
+        resolve({
+          addedUserIds: (res?.addedUserIds || []).map((v: any) => Number(v)),
+        });
+      }
+    );
+  });
+}
+
+function emitTypingStart(roomId: number) {
+  const socket = getSocket();
+  socket.emit("typing:start", { roomId: Number(roomId) });
+}
+
+function emitTypingStop(roomId: number) {
+  const socket = getSocket();
+  socket.emit("typing:stop", { roomId: Number(roomId) });
+}
+
 function PopupRoomData({
   popup,
   usersById,
@@ -81,6 +237,12 @@ function PopupRoomData({
   onRemovePendingAttachment,
   onDraftConverted,
   onMarkRoomViewed,
+  onRefreshRooms,
+  typingUserIds,
+  roomMuted,
+  onToggleMuteRoom,
+  onLeaveRoom,
+  onOpenRoomInfo,
 }: {
   popup: OpenPopup;
   usersById: Record<number, MessengerUser>;
@@ -97,6 +259,16 @@ function PopupRoomData({
   onRemovePendingAttachment: (id: string) => void;
   onDraftConverted: (newPopup: OpenPopup) => void;
   onMarkRoomViewed: (roomId: number) => void;
+  onRefreshRooms: () => Promise<void>;
+  typingUserIds: number[];
+  roomMuted: boolean;
+  onToggleMuteRoom: (roomId: number, isMuted: boolean) => Promise<void>;
+  onLeaveRoom: (roomId: number) => Promise<void>;
+  onOpenRoomInfo: (payload: {
+    room: MessengerRoom | null;
+    participants: MessengerUser[];
+    messages: MessengerMessage[];
+  }) => void;
 }) {
   const { user } = useAuth();
 
@@ -108,9 +280,9 @@ function PopupRoomData({
   } = trpc.messenger.messages.useQuery(
     { roomId: Number(roomId) },
     {
-  enabled: popup.type === "room" && !!roomId,
-  refetchOnWindowFocus: true,
-}
+      enabled: popup.type === "room" && !!roomId,
+      refetchOnWindowFocus: true,
+    }
   );
 
   const {
@@ -119,36 +291,50 @@ function PopupRoomData({
   } = trpc.messenger.members.useQuery(
     { roomId: Number(roomId) },
     {
-  enabled: popup.type === "room" && !!roomId,
-  refetchOnWindowFocus: true,
-}
+      enabled: popup.type === "room" && !!roomId,
+      refetchOnWindowFocus: true,
+    }
   );
 
-  const sendMessageMutation = trpc.messenger.sendMessage.useMutation();
-const markReadMutation = trpc.messenger.markRead.useMutation();
+  useEffect(() => {
+    if (popup.type !== "room" || !roomId || popup.minimized) return;
 
-useEffect(() => {
-  if (popup.type !== "room" || !roomId || popup.minimized) return;
+    const socket = getSocket();
 
-  const socket = getSocket();
+    const handleNewMessage = async (payload: any) => {
+      const incomingRoomId = Number(payload?.roomId || 0);
+      if (incomingRoomId !== Number(roomId)) return;
 
-  const handleNewMessage = async (payload: any) => {
-    const incomingRoomId = Number(payload?.roomId || 0);
-    if (incomingRoomId !== Number(roomId)) return;
+      await refetchMessages();
+      await refetchMembers();
+      await onRefreshRooms();
+    };
 
-    await refetchMessages();
-    await refetchMembers();
-  };
+    const handleReadUpdate = async (payload: any) => {
+      const incomingRoomId = Number(payload?.roomId || 0);
+      if (incomingRoomId !== Number(roomId)) return;
 
-  socket.on("message:new", handleNewMessage);
+      await refetchMembers();
+      await onRefreshRooms();
+    };
 
-  return () => {
-    socket.off("message:new", handleNewMessage);
-  };
-}, [popup.type, roomId, popup.minimized, refetchMessages, refetchMembers]);
+    socket.emit("room:join", { roomId: Number(roomId) });
+    socket.on("message:new", handleNewMessage);
+    socket.on("read:update", handleReadUpdate);
 
-  const addAttachmentMutation = trpc.messenger.addAttachment.useMutation();
-  const createDirectRoomMutation = trpc.messenger.directRoom.useMutation();
+    return () => {
+      socket.emit("room:leave", { roomId: Number(roomId) });
+      socket.off("message:new", handleNewMessage);
+      socket.off("read:update", handleReadUpdate);
+    };
+  }, [
+    popup.type,
+    roomId,
+    popup.minimized,
+    refetchMessages,
+    refetchMembers,
+    onRefreshRooms,
+  ]);
 
   const room =
     popup.type === "room"
@@ -159,7 +345,10 @@ useEffect(() => {
               ? memberRows.find((m: any) => Number(m.userId) !== Number(user?.id))
                   ?.name || "1:1 대화"
               : "채팅방",
-          type: "direct" as const,
+          type:
+            memberRows.length > 2
+              ? ("group" as const)
+              : ("direct" as const),
           participantIds: [],
           unreadCount: 0,
           lastMessage: "",
@@ -172,23 +361,23 @@ useEffect(() => {
       ? usersById[Number(popup.targetUserId)] || null
       : null;
 
-  const participants = useMemo<any[]>(() => {
-  if (popup.type === "draft") return targetUser ? [targetUser] : [];
+  const participants = useMemo<MessengerUser[]>(() => {
+    if (popup.type === "draft") return targetUser ? [targetUser] : [];
 
-  return (memberRows as any[]).map((member: any) => ({
-    id: Number(member.userId),
-    name: member.name || member.username || "이름없음",
-    position: member.positionName || roleToPosition(member.role),
-    team: member.teamName || "미분류",
-    avatar: normalizeAssetUrl(
-      member.avatarUrl || member.profileImageUrl || ""
-    ),
-    status: "offline",
-    lastReadMessageId: member.lastReadMessageId
-      ? Number(member.lastReadMessageId)
-      : null,
-  }));
-}, [popup.type, memberRows, targetUser]);
+    return (memberRows as any[]).map((member: any) => ({
+      id: Number(member.userId),
+      name: member.name || member.username || "이름없음",
+      position: member.positionName || roleToPosition(member.role),
+      team: member.teamName || "미분류",
+      avatar: normalizeAssetUrl(
+        member.avatarUrl || member.profileImageUrl || member.avatar || ""
+      ),
+      status: "offline",
+      lastReadMessageId: member.lastReadMessageId
+        ? Number(member.lastReadMessageId)
+        : null,
+    })) as MessengerUser[];
+  }, [popup.type, memberRows, targetUser]);
 
   const messages = useMemo<MessengerMessage[]>(() => {
     if (popup.type === "draft") return [];
@@ -210,23 +399,19 @@ useEffect(() => {
     })) as MessengerMessage[];
   }, [popup.type, messageRows]);
 
-useEffect(() => {
-  if (popup.type !== "room" || !roomId) return;
-  if (!messages.length) return;
+  useEffect(() => {
+    if (popup.type !== "room" || !roomId) return;
+    if (!messages.length) return;
 
-  const lastMessageId = messages[messages.length - 1]?.id;
-  if (!lastMessageId) return;
+    const lastMessageId = messages[messages.length - 1]?.id;
+    if (!lastMessageId) return;
 
+    onMarkRoomViewed(Number(roomId));
 
-  onMarkRoomViewed(Number(roomId));
-
-
-  markReadMutation.mutate({
-    roomId: Number(roomId),
-    lastReadMessageId: Number(lastMessageId),
-  });
-}, [popup.type, roomId, messages.length]);  
-
+    void emitReadUpdate(Number(roomId), Number(lastMessageId)).catch((err) => {
+      console.error("[read:update] failed:", err);
+    });
+  }, [popup.type, roomId, messages, onMarkRoomViewed]);
 
   const uploadFile = async (file: File) => {
     const formData = new FormData();
@@ -258,12 +443,7 @@ useEffect(() => {
     let targetRoomId = roomId;
 
     if (popup.type === "draft") {
-      const created = await createDirectRoomMutation.mutateAsync({
-        userId: Number(popup.targetUserId),
-      });
-
-      targetRoomId = Number(created?.room?.id || created?.roomId || 0);
-      if (!targetRoomId) return;
+      targetRoomId = await emitDirectCreate(Number(popup.targetUserId));
 
       onDraftConverted({
         key: `room-${targetRoomId}`,
@@ -273,11 +453,15 @@ useEffect(() => {
       });
     }
 
+    if (!targetRoomId) return;
+
+    emitTypingStop(Number(targetRoomId));
+
     if (hasText) {
-      await sendMessageMutation.mutateAsync({
+      await emitMessageSend({
         roomId: Number(targetRoomId),
-        content: text,
         messageType: "text",
+        content: text,
       });
     }
 
@@ -291,38 +475,50 @@ useEffect(() => {
       const messageType = isImage ? "image" : "file";
       const content = isImage ? "[이미지]" : `[파일] ${fileName}`;
 
-      const sendRes = await sendMessageMutation.mutateAsync({
+      await emitMessageSend({
         roomId: Number(targetRoomId),
-        content,
         messageType,
+        content,
+        fileUrl,
+        fileName,
+        fileType: item.file.type || undefined,
+        fileSize: item.file.size,
       });
-
-      if (sendRes?.id) {
-        await addAttachmentMutation.mutateAsync({
-          messageId: Number(sendRes.id),
-          fileName,
-          fileUrl,
-          fileType: item.file.type || undefined,
-          fileSize: item.file.size,
-        });
-      }
     }
 
     onInputChange("");
     pendingAttachments.forEach((item) => onRemovePendingAttachment(item.id));
 
-    if (targetRoomId) {
-      onMarkRoomViewed(Number(targetRoomId));
-    }
+    onMarkRoomViewed(Number(targetRoomId));
 
     await refetchMessages();
     await refetchMembers();
+    await onRefreshRooms();
+  };
+
+  const handleTypingChange = (value: string) => {
+    onInputChange(value);
+
+    if (popup.type === "room" && roomId) {
+      if (value.trim()) {
+        emitTypingStart(Number(roomId));
+      } else {
+        emitTypingStop(Number(roomId));
+      }
+    }
   };
 
   return (
     <MessengerPopupWindow
       popupKey={popup.key}
       room={room}
+      onOpenRoomInfo={() =>
+        onOpenRoomInfo({
+          room,
+          participants,
+          messages,
+        })
+      }
       targetUser={targetUser}
       participants={participants}
       messages={messages}
@@ -330,7 +526,7 @@ useEffect(() => {
       currentUserId={currentUserId}
       input={input}
       pendingAttachments={pendingAttachments}
-      onInputChange={onInputChange}
+      onInputChange={handleTypingChange}
       onSend={handleSend}
       onAttachFile={onAddPendingAttachment}
       onRemovePendingAttachment={onRemovePendingAttachment}
@@ -341,17 +537,34 @@ useEffect(() => {
       pinned={pinned}
       minimized={!!popup.minimized}
       rightOffset={560}
+      typingUserIds={typingUserIds}
+      roomMuted={roomMuted}
+      onToggleMute={
+        popup.type === "room"
+          ? async () => {
+              await onToggleMuteRoom(Number(roomId), !roomMuted);
+            }
+          : undefined
+      }
+      onLeaveRoom={
+        popup.type === "room"
+          ? async () => {
+              await onLeaveRoom(Number(roomId));
+              onClose();
+            }
+          : undefined
+      }
     />
   );
 }
 
 export default function MessengerPage({
-  companyName = "위드원 교육",
   onRequestClose,
 }: MessengerPageProps) {
   const { user } = useAuth();
 
-  const [onlineUserIds] = useState<Set<number>>(new Set());
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<number>>(new Set());
+  const [typingByRoom, setTypingByRoom] = useState<TypingStateMap>({});
   const [previewImage, setPreviewImage] = useState<{
     open: boolean;
     url?: string;
@@ -368,11 +581,27 @@ export default function MessengerPage({
   const [pinnedRoomIds, setPinnedRoomIds] = useState<number[]>([]);
   const [locallyViewedRoomIds, setLocallyViewedRoomIds] = useState<number[]>([]);
 
+  const [roomInfoOpen, setRoomInfoOpen] = useState(false);
+  const [roomInfoRoomId, setRoomInfoRoomId] = useState<number | null>(null);
+  const [roomInfoParticipants, setRoomInfoParticipants] = useState<
+    MessengerUser[]
+  >([]);
+  const [roomInfoMessages, setRoomInfoMessages] = useState<MessengerMessage[]>(
+    []
+  );
+
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [inviteSearch, setInviteSearch] = useState("");
+  const [selectedInviteUserIds, setSelectedInviteUserIds] = useState<number[]>(
+    []
+  );
+  const [inviteSubmitting, setInviteSubmitting] = useState(false);
+
   const { data: userList = [] } = trpc.users.list.useQuery();
   const { data: roomRows = [], refetch: refetchRooms } =
-  trpc.messenger.myRooms.useQuery(undefined, {
-    refetchOnWindowFocus: true,
-  });
+    trpc.messenger.myRooms.useQuery(undefined, {
+      refetchOnWindowFocus: true,
+    });
 
   useEffect(() => {
     const saved = localStorage.getItem("messenger-pinned-room-ids");
@@ -393,8 +622,111 @@ export default function MessengerPage({
   }, [pinnedRoomIds]);
 
   useEffect(() => {
+    const socket = getSocket();
+
+    const handleOnlineUsers = (data: any) => {
+      setOnlineUserIds(new Set((data?.userIds || []).map((v: any) => Number(v))));
+    };
+
+    const handleUserOnline = ({ userId }: any) => {
+      setOnlineUserIds((prev) => new Set([...prev, Number(userId)]));
+    };
+
+    const handleUserOffline = ({ userId }: any) => {
+      setOnlineUserIds((prev) => {
+        const next = new Set(prev);
+        next.delete(Number(userId));
+        return next;
+      });
+    };
+
+    const handleRoomListUpdate = async () => {
+      await refetchRooms();
+    };
+
+    const handleNewMessage = async () => {
+      await refetchRooms();
+    };
+
+    const handleTypingStart = ({
+      roomId,
+      userId,
+    }: {
+      roomId: number;
+      userId: number;
+    }) => {
+      const targetRoomId = Number(roomId);
+      const targetUserId = Number(userId);
+
+      if (!targetRoomId || !targetUserId) return;
+      if (targetUserId === Number(user?.id)) return;
+
+      setTypingByRoom((prev) => {
+        const current = prev[targetRoomId] || [];
+        if (current.includes(targetUserId)) return prev;
+
+        return {
+          ...prev,
+          [targetRoomId]: [...current, targetUserId],
+        };
+      });
+    };
+
+    const handleTypingStop = ({
+      roomId,
+      userId,
+    }: {
+      roomId: number;
+      userId: number;
+    }) => {
+      const targetRoomId = Number(roomId);
+      const targetUserId = Number(userId);
+
+      if (!targetRoomId || !targetUserId) return;
+
+      setTypingByRoom((prev) => {
+        const current = prev[targetRoomId] || [];
+        const nextUsers = current.filter((id) => id !== targetUserId);
+
+        return {
+          ...prev,
+          [targetRoomId]: nextUsers,
+        };
+      });
+    };
+
+    socket.on("online:users", handleOnlineUsers);
+    socket.on("user:online", handleUserOnline);
+    socket.on("user:offline", handleUserOffline);
+    socket.on("room:list:update", handleRoomListUpdate);
+    socket.on("message:new", handleNewMessage);
+    socket.on("typing:start", handleTypingStart);
+    socket.on("typing:stop", handleTypingStop);
+
+    return () => {
+      socket.off("online:users", handleOnlineUsers);
+      socket.off("user:online", handleUserOnline);
+      socket.off("user:offline", handleUserOffline);
+      socket.off("room:list:update", handleRoomListUpdate);
+      socket.off("message:new", handleNewMessage);
+      socket.off("typing:start", handleTypingStart);
+      socket.off("typing:stop", handleTypingStop);
+    };
+  }, [refetchRooms, user?.id]);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+
+      if (inviteDialogOpen) {
+        setInviteDialogOpen(false);
+        return;
+      }
+
+      if (roomInfoOpen) {
+        setRoomInfoOpen(false);
+        return;
+      }
 
       const visiblePopups = openPopups.filter((popup) => !popup.minimized);
 
@@ -414,7 +746,7 @@ export default function MessengerPage({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [openPopups, onRequestClose]);
+  }, [openPopups, onRequestClose, roomInfoOpen, inviteDialogOpen]);
 
   useEffect(() => {
     const openedRoomIds = openPopups
@@ -488,24 +820,29 @@ export default function MessengerPage({
     };
   }, [refetchRooms]);
 
-useEffect(() => {
-  const socket = getSocket();
-
-  const handleNewMessage = async () => {
-    await refetchRooms();
-  };
-
-  socket.on("message:new", handleNewMessage);
-
-  return () => {
-    socket.off("message:new", handleNewMessage);
-  };
-}, [refetchRooms]);
-
   const orgUsers = useMemo(
     () => normalizeUsers(userList as any[], onlineUserIds),
     [userList, onlineUserIds]
   );
+
+  const currentUserProfile = useMemo<MessengerUser | null>(() => {
+    const meFromList = orgUsers.find(
+      (item) => Number(item.id) === Number(user?.id)
+    );
+
+    if (meFromList) return meFromList;
+
+    if (!user?.id) return null;
+
+    return {
+      id: Number(user.id),
+      name: user.name || user.username || "이름없음",
+      position: roleToPosition(user.role),
+      team: "미분류",
+      avatar: normalizeAssetUrl((user as any).profileImageUrl || ""),
+      status: "online",
+    };
+  }, [orgUsers, user]);
 
   const usersById = useMemo(() => {
     const fallbackUsersById = getUsersById();
@@ -560,9 +897,9 @@ useEffect(() => {
         unreadCount: isViewed ? 0 : Number(room.unreadCount || 0),
         lastMessage: room.lastMessageContent || "",
         updatedAt: room.lastMessageCreatedAt
-          ? new Date(room.lastMessageCreatedAt).toLocaleString("ko-KR")
+          ? new Date(room.lastMessageCreatedAt).toISOString()
           : room.updatedAt
-          ? new Date(room.updatedAt).toLocaleString("ko-KR")
+          ? new Date(room.updatedAt).toISOString()
           : "",
         notificationsEnabled: !room.isMuted,
         sortAt: room.lastMessageCreatedAt
@@ -582,6 +919,31 @@ useEffect(() => {
       })
       .map((room) => room as MessengerRoom);
   }, [roomRows, pinnedRoomIds, locallyViewedRoomIds, visibleOpenRoomIds]);
+
+  const activeRoomForInfo = useMemo(() => {
+    return (
+      mappedRooms.find((room) => Number(room.id) === Number(roomInfoRoomId)) ||
+      null
+    );
+  }, [mappedRooms, roomInfoRoomId]);
+
+  const inviteSelectableUsers = useMemo(() => {
+    const currentIds = new Set(roomInfoParticipants.map((p) => Number(p.id)));
+
+    return orgUsers
+      .filter((u) => Number(u.id) !== Number(user?.id))
+      .filter((u) => !currentIds.has(Number(u.id)))
+      .filter((u) => {
+        const q = inviteSearch.trim().toLowerCase();
+        if (!q) return true;
+
+        return (
+          String(u.name || "").toLowerCase().includes(q) ||
+          String(u.team || "").toLowerCase().includes(q) ||
+          String(u.position || "").toLowerCase().includes(q)
+        );
+      });
+  }, [orgUsers, roomInfoParticipants, inviteSearch, user?.id]);
 
   const handleMarkRoomViewed = (roomId: number) => {
     setLocallyViewedRoomIds((prev) =>
@@ -646,6 +1008,72 @@ useEffect(() => {
         },
       ];
     });
+  };
+
+  const handleToggleRoomMute = async (roomId: number, isMuted: boolean) => {
+    await emitRoomMute(Number(roomId), isMuted);
+    await refetchRooms();
+  };
+
+  const handleLeaveRoom = async (roomId: number) => {
+    await emitRoomLeave(Number(roomId));
+
+    setOpenPopups((prev) =>
+      prev.filter(
+        (popup) =>
+          !(popup.type === "room" && Number(popup.roomId) === Number(roomId))
+      )
+    );
+
+    setLocallyViewedRoomIds((prev) =>
+      prev.filter((id) => Number(id) !== Number(roomId))
+    );
+
+    if (Number(roomInfoRoomId) === Number(roomId)) {
+      setRoomInfoOpen(false);
+      setRoomInfoRoomId(null);
+      setRoomInfoParticipants([]);
+      setRoomInfoMessages([]);
+      setInviteDialogOpen(false);
+      setSelectedInviteUserIds([]);
+      setInviteSearch("");
+    }
+
+    await refetchRooms();
+  };
+
+  const handleInviteSubmit = async () => {
+    if (!activeRoomForInfo?.id) return;
+    if (selectedInviteUserIds.length === 0) return;
+
+    try {
+      setInviteSubmitting(true);
+
+      await emitRoomMembersAdd(
+        Number(activeRoomForInfo.id),
+        selectedInviteUserIds
+      );
+
+      await refetchRooms();
+
+      setRoomInfoParticipants((prev) => {
+        const existingIds = new Set(prev.map((p) => Number(p.id)));
+        const appended = orgUsers.filter(
+          (u) =>
+            selectedInviteUserIds.includes(Number(u.id)) &&
+            !existingIds.has(Number(u.id))
+        );
+        return [...prev, ...appended];
+      });
+
+      setSelectedInviteUserIds([]);
+      setInviteSearch("");
+      setInviteDialogOpen(false);
+    } catch (error: any) {
+      alert(error?.message || "참여자 추가에 실패했습니다.");
+    } finally {
+      setInviteSubmitting(false);
+    }
   };
 
   const closePopup = (popupKey: string) => {
@@ -737,89 +1165,93 @@ useEffect(() => {
           <MessengerSidebar
             rooms={mappedRooms}
             activeRoomId={
-              popupItems.find((popup) => popup.type === "room")?.type === "room"
-                ? Number(
-                    (popupItems.find((popup) => popup.type === "room") as {
-                      roomId: number;
-                    }).roomId
-                  )
-                : null
+              popupItems
+                .filter((popup) => popup.type === "room")
+                .map((popup) => Number(popup.roomId))[0] ?? null
             }
-            users={[...orgUsers]
-              .filter((u) => Number(u.id) !== Number(user?.id))
-              .sort((a, b) => {
-                const teamCompare = String(a.team || "").localeCompare(
-                  String(b.team || "")
-                );
-                if (teamCompare !== 0) return teamCompare;
-
-                const posCompare = String(a.position || "").localeCompare(
-                  String(b.position || "")
-                );
-                if (posCompare !== 0) return posCompare;
-
-                return String(a.name || "").localeCompare(String(b.name || ""));
-              })}
+            users={orgUsers}
+            currentUser={currentUserProfile}
+            typingRoomIds={Object.keys(typingByRoom)
+              .map((key) => Number(key))
+              .filter((roomId) => (typingByRoom[roomId] || []).length > 0)}
+            pinnedRoomIds={pinnedRoomIds}
             onSelectRoom={handleSelectRoom}
             onOpenDirectChat={handleOpenDirectChat}
+            onTogglePinRoom={(roomId) => togglePinRoom(Number(roomId))}
+            onToggleMuteRoom={handleToggleRoomMute}
+            onLeaveRoom={handleLeaveRoom}
           />
         </div>
 
-        {openPopups.map((popup, index) => {
-          const roomId = popup.type === "room" ? popup.roomId : 0;
+        {popupItems.map((popup, index) => {
+          const rightOffset = 24 + index * 388;
+          const input = popupInputs[popup.key] || "";
+          const pendingAttachments = popupPendingAttachments[popup.key] || [];
+          const typingUserIds =
+            popup.type === "room" ? typingByRoom[Number(popup.roomId)] || [] : [];
 
-          const room =
+          const roomSummary =
             popup.type === "room"
-              ? mappedRooms.find((item) => Number(item.id) === Number(roomId)) ||
-                null
+              ? mappedRooms.find((item) => Number(item.id) === Number(popup.roomId))
               : null;
 
-          const pinned = room?.id
-            ? pinnedRoomIds.includes(Number(room.id))
-            : false;
+          const roomMuted =
+            roomSummary?.notificationsEnabled === false ? true : false;
 
           return (
-            <PopupRoomData
+            <div
               key={popup.key}
-              popup={popup}
-              usersById={usersById}
-              currentUserId={user?.id ? Number(user.id) : null}
-              pinned={pinned}
-              onTogglePin={() => {
-                if (room?.id) togglePinRoom(Number(room.id));
-              }}
-              onClose={() => closePopup(popup.key)}
-              onMinimize={() => toggleMinimizePopup(popup.key)}
-              onOpenImage={handleOpenImage}
-              input={popupInputs[popup.key] || ""}
-              pendingAttachments={popupPendingAttachments[popup.key] || []}
-              onInputChange={(value) => handleInputChange(popup.key, value)}
-              onAddPendingAttachment={(file) =>
-                handleAddPendingAttachment(popup.key, file)
-              }
-              onRemovePendingAttachment={(id) =>
-                handleRemovePendingAttachment(popup.key, id)
-              }
-              onDraftConverted={(newPopup) => {
-                setOpenPopups((prev) =>
-                  prev.map((item) => (item.key === popup.key ? newPopup : item))
-                );
-
-                setPopupPendingAttachments((prev) => {
-                  const next = { ...prev };
-                  next[newPopup.key] = prev[popup.key] || [];
-                  delete next[popup.key];
-                  return next;
-                });
-
-                if (newPopup.type === "room") {
-                  handleMarkRoomViewed(Number(newPopup.roomId));
-                }
-
-                void refetchRooms();
-              }}
-              onMarkRoomViewed={handleMarkRoomViewed}
-            />
+              className="pointer-events-none absolute bottom-0"
+              style={{ right: rightOffset }}
+            >
+              <div className="pointer-events-auto">
+                <PopupRoomData
+                  popup={popup}
+                  usersById={usersById}
+                  currentUserId={user?.id ? Number(user.id) : null}
+                  pinned={
+                    popup.type === "room" &&
+                    pinnedRoomIds.includes(Number(popup.roomId))
+                  }
+                  onTogglePin={() => {
+                    if (popup.type === "room") {
+                      togglePinRoom(Number(popup.roomId));
+                    }
+                  }}
+                  onClose={() => closePopup(popup.key)}
+                  onMinimize={() => toggleMinimizePopup(popup.key)}
+                  onOpenImage={handleOpenImage}
+                  input={input}
+                  pendingAttachments={pendingAttachments}
+                  onInputChange={(value) => handleInputChange(popup.key, value)}
+                  onAddPendingAttachment={(file) =>
+                    handleAddPendingAttachment(popup.key, file)
+                  }
+                  onRemovePendingAttachment={(id) =>
+                    handleRemovePendingAttachment(popup.key, id)
+                  }
+                  onDraftConverted={(newPopup) => {
+                    setOpenPopups((prev) =>
+                      prev
+                        .filter((item) => item.key !== popup.key)
+                        .concat([newPopup])
+                    );
+                  }}
+                  onMarkRoomViewed={handleMarkRoomViewed}
+                  onRefreshRooms={refetchRooms}
+                  typingUserIds={typingUserIds}
+                  roomMuted={roomMuted}
+                  onToggleMuteRoom={handleToggleRoomMute}
+                  onLeaveRoom={handleLeaveRoom}
+                  onOpenRoomInfo={({ room, participants, messages }) => {
+                    setRoomInfoRoomId(room?.id ? Number(room.id) : null);
+                    setRoomInfoParticipants(participants);
+                    setRoomInfoMessages(messages);
+                    setRoomInfoOpen(true);
+                  }}
+                />
+              </div>
+            </div>
           );
         })}
       </div>
@@ -830,6 +1262,222 @@ useEffect(() => {
         imageName={previewImage.name}
         onClose={handleCloseImage}
       />
+
+      <MessengerRoomInfo
+        open={roomInfoOpen}
+        activeRoom={activeRoomForInfo}
+        participants={roomInfoParticipants}
+        messages={roomInfoMessages}
+        roomMuted={
+          activeRoomForInfo?.id
+            ? mappedRooms.find(
+                (room) => Number(room.id) === Number(activeRoomForInfo.id)
+              )?.notificationsEnabled === false
+            : false
+        }
+        onClose={() => setRoomInfoOpen(false)}
+        onToggleNotifications={async () => {
+          if (!activeRoomForInfo?.id) return;
+
+          const currentMuted =
+            mappedRooms.find(
+              (room) => Number(room.id) === Number(activeRoomForInfo.id)
+            )?.notificationsEnabled === false;
+
+          await handleToggleRoomMute(
+            Number(activeRoomForInfo.id),
+            !currentMuted
+          );
+        }}
+        onLeaveRoom={() => {
+          if (roomInfoRoomId) {
+            void handleLeaveRoom(Number(roomInfoRoomId));
+          }
+          setRoomInfoOpen(false);
+        }}
+        onAddParticipant={() => {
+          if (activeRoomForInfo?.type !== "group") return;
+          setSelectedInviteUserIds([]);
+          setInviteSearch("");
+          setInviteDialogOpen(true);
+        }}
+	onUpdateTitle={(title) => {
+  if (!activeRoomForInfo?.id) return;
+
+  const socket = getSocket();
+
+  socket.emit(
+    "room:title:update",
+    {
+      roomId: Number(activeRoomForInfo.id),
+      title,
+    },
+    async (res: any) => {
+      if (!res?.success) {
+        alert(res?.message || "채팅방 이름 변경 실패");
+        return;
+      }
+
+      await refetchRooms();
+
+      setRoomInfoMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          roomId: Number(activeRoomForInfo.id),
+          senderId: 0,
+          type: "system",
+          content: `채팅방 이름이 "${title}"(으)로 변경되었습니다.`,
+          createdAtRaw: new Date().toISOString(),
+          createdAt: new Date().toLocaleTimeString("ko-KR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          fileName: "",
+          fileUrl: "",
+        },
+      ]);
+    }
+  );
+}}
+      />
+
+      {inviteDialogOpen && (
+        <div className="fixed inset-0 z-[10040] flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-[520px] rounded-[24px] border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.2)]">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <div className="text-base font-semibold text-slate-900">
+                  참여자 추가
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  그룹 채팅방에 초대할 직원을 선택하세요.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setInviteDialogOpen(false);
+                  setSelectedInviteUserIds([]);
+                  setInviteSearch("");
+                }}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-2xl text-slate-700 transition hover:bg-slate-100"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="px-5 py-4">
+              <input
+                value={inviteSearch}
+                onChange={(e) => setInviteSearch(e.target.value)}
+                placeholder="이름 / 팀 / 직급 검색"
+                className="h-11 w-full rounded-2xl border border-slate-300 px-4 text-sm outline-none focus:border-slate-500"
+              />
+
+              <div className="mt-4 max-h-[360px] space-y-2 overflow-y-auto">
+                {inviteSelectableUsers.length === 0 ? (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                    초대 가능한 사용자가 없습니다.
+                  </div>
+                ) : (
+                  inviteSelectableUsers.map((member) => {
+                    const checked = selectedInviteUserIds.includes(
+                      Number(member.id)
+                    );
+
+                    return (
+                      <label
+                        key={member.id}
+                        className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 transition hover:bg-slate-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            const nextChecked = e.target.checked;
+                            setSelectedInviteUserIds((prev) =>
+                              nextChecked
+                                ? [...prev, Number(member.id)]
+                                : prev.filter(
+                                    (id) => Number(id) !== Number(member.id)
+                                  )
+                            );
+                          }}
+                        />
+
+                        <div className="h-11 w-11 overflow-hidden rounded-full bg-slate-100">
+                          {member.avatar ? (
+                            <img
+                              src={member.avatar}
+                              alt={member.name}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : null}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium text-slate-900">
+                            {member.name}
+                          </div>
+                          <div className="truncate text-xs text-slate-500">
+                            {member.team || "미분류"}
+                            {member.position ? ` · ${member.position}` : ""}
+                          </div>
+                        </div>
+
+                        <div
+                          className={`text-xs font-medium ${
+                            member.status === "online"
+                              ? "text-emerald-600"
+                              : "text-slate-400"
+                          }`}
+                        >
+                          {member.status === "online" ? "온라인" : "오프라인"}
+                        </div>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-slate-200 px-5 py-4">
+              <div className="text-sm text-slate-500">
+                선택됨 {selectedInviteUserIds.length}명
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInviteDialogOpen(false);
+                    setSelectedInviteUserIds([]);
+                    setInviteSearch("");
+                  }}
+                  className="inline-flex h-11 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm text-slate-700 transition hover:bg-slate-50"
+                >
+                  취소
+                </button>
+
+                <button
+                  type="button"
+                  disabled={
+                    inviteSubmitting || selectedInviteUserIds.length === 0
+                  }
+                  onClick={() => {
+                    void handleInviteSubmit();
+                  }}
+                  className="inline-flex h-11 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {inviteSubmitting ? "추가 중..." : "참여자 추가"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

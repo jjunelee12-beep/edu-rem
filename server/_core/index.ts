@@ -28,8 +28,9 @@ import {
   getUserById,
   setChatRoomMuted,
   leaveChatRoom,
-createScheduleNotifications,
-createNotification,
+  createScheduleNotifications,
+  createNotification,
+updateChatRoomTitle,
 } from "../db";
 
 console.log("R2_ACCOUNT_ID:", !!process.env.R2_ACCOUNT_ID);
@@ -44,7 +45,10 @@ function sign(value: string, secret: string) {
   return crypto.createHmac("sha256", secret).update(value).digest("hex");
 }
 
-function readUserIdFromSessionCookieValue(rawValue: string, secret: string): number | null {
+function readUserIdFromSessionCookieValue(
+  rawValue: string,
+  secret: string
+): number | null {
   try {
     const parts = rawValue.split(".");
     if (parts.length !== 3) return null;
@@ -93,7 +97,9 @@ async function startServer() {
     if (exactAllowedOrigins.includes(origin)) return true;
 
     if (
-      /^https:\/\/edu-[a-z0-9-]+-jjunelee12-4678s-projects\.vercel\.app$/i.test(origin)
+      /^https:\/\/edu-[a-z0-9-]+-jjunelee12-4678s-projects\.vercel\.app$/i.test(
+        origin
+      )
     ) {
       return true;
     }
@@ -201,7 +207,7 @@ async function startServer() {
     }
   });
 
-   io.on("connection", (socket) => {
+  io.on("connection", (socket) => {
     const userId = Number(socket.data.userId);
 
     console.log("[SOCKET CONNECT]", { socketId: socket.id, userId });
@@ -244,27 +250,40 @@ async function startServer() {
 
     socket.on(
       "message:send",
-      async (payload: {
-        roomId: number;
-        messageType?: "text" | "image" | "file" | "system";
-        content?: string;
-        fileUrl?: string | null;
-        fileName?: string | null;
-        fileType?: string | null;
-        fileSize?: number | null;
-      }) => {
+      async (
+        payload: {
+          roomId: number;
+          messageType?: "text" | "image" | "file" | "system";
+          content?: string;
+          fileUrl?: string | null;
+          fileName?: string | null;
+          fileType?: string | null;
+          fileSize?: number | null;
+        },
+        callback?: (data: any) => void
+      ) => {
         try {
           const roomId = Number(payload?.roomId);
           const messageType = payload?.messageType ?? "text";
           const content = (payload?.content ?? "").trim();
 
           if (!roomId) {
-            socket.emit("message:error", { message: "roomId가 필요합니다." });
+            const response = {
+              success: false,
+              message: "roomId가 필요합니다.",
+            };
+            if (callback) callback(response);
+            socket.emit("message:error", response);
             return;
           }
 
           if (messageType === "text" && !content) {
-            socket.emit("message:error", { message: "메시지 내용을 입력해주세요." });
+            const response = {
+              success: false,
+              message: "메시지 내용을 입력해주세요.",
+            };
+            if (callback) callback(response);
+            socket.emit("message:error", response);
             return;
           }
 
@@ -276,7 +295,12 @@ async function startServer() {
           });
 
           if (!messageId) {
-            socket.emit("message:error", { message: "메시지 저장에 실패했습니다." });
+            const response = {
+              success: false,
+              message: "메시지 저장에 실패했습니다.",
+            };
+            if (callback) callback(response);
+            socket.emit("message:error", response);
             return;
           }
 
@@ -320,44 +344,68 @@ async function startServer() {
 
           const members = await listChatRoomMembers(roomId, userId);
 
-for (const member of members) {
-  const memberUserId = Number(member.userId);
+          for (const member of members) {
+            const memberUserId = Number(member.userId);
 
-  io.to(`user:${memberUserId}`).emit("room:list:update", {
-    roomId,
-    lastMessage: emittedMessage,
-  });
+            io.to(`user:${memberUserId}`).emit("room:list:update", {
+              roomId,
+              lastMessage: emittedMessage,
+            });
 
-  if (memberUserId === userId) continue;
+            if (memberUserId === userId) continue;
 
-  await createNotification({
-    userId: memberUserId,
-    type: "messenger",
-    message:
-      messageType === "text"
-        ? `[메신저] ${sender?.name ?? "사용자"}님의 새 메시지`
-        : `[메신저] ${sender?.name ?? "사용자"}님이 파일을 보냈습니다.`,
-    relatedId: roomId,
-    isRead: false,
-  } as any);
-}
+            await createNotification({
+              userId: memberUserId,
+              type: "messenger",
+              message:
+                messageType === "text"
+                  ? `[메신저] ${sender?.name ?? "사용자"}님의 새 메시지`
+                  : `[메신저] ${sender?.name ?? "사용자"}님이 파일을 보냈습니다.`,
+              relatedId: roomId,
+              isRead: false,
+            } as any);
+          }
+
+          if (callback) {
+            callback({
+              success: true,
+              roomId,
+              messageId: Number(messageId),
+              attachmentId,
+            });
+          }
         } catch (error: any) {
           console.error("[SOCKET message:send ERROR]", error);
-          socket.emit("message:error", {
+
+          const response = {
+            success: false,
             message: error?.message || "메시지 전송 중 오류가 발생했습니다.",
-          });
+          };
+
+          if (callback) callback(response);
+          socket.emit("message:error", response);
         }
       }
     );
 
     socket.on(
       "read:update",
-      async (payload: { roomId: number; lastReadMessageId: number }) => {
+      async (
+        payload: { roomId: number; lastReadMessageId: number },
+        callback?: (data: any) => void
+      ) => {
         try {
           const roomId = Number(payload?.roomId);
           const lastReadMessageId = Number(payload?.lastReadMessageId);
 
-          if (!roomId || !lastReadMessageId) return;
+          if (!roomId || !lastReadMessageId) {
+            const response = {
+              success: false,
+              message: "roomId와 lastReadMessageId가 필요합니다.",
+            };
+            if (callback) callback(response);
+            return;
+          }
 
           await markChatRoomRead({
             roomId,
@@ -371,12 +419,27 @@ for (const member of members) {
             lastReadMessageId,
           });
 
-          socket.emit("room:list:update", {
+          io.to(`user:${userId}`).emit("room:list:update", {
             roomId,
             unreadCount: 0,
           });
-        } catch (error) {
+
+          if (callback) {
+            callback({
+              success: true,
+              roomId,
+              lastReadMessageId,
+            });
+          }
+        } catch (error: any) {
           console.error("[SOCKET read:update ERROR]", error);
+
+          if (callback) {
+            callback({
+              success: false,
+              message: error?.message || "읽음 처리 중 오류가 발생했습니다.",
+            });
+          }
         }
       }
     );
@@ -426,7 +489,10 @@ for (const member of members) {
           const isMuted = !!payload?.isMuted;
 
           if (!roomId) {
-            const response = { success: false, message: "roomId가 필요합니다." };
+            const response = {
+              success: false,
+              message: "roomId가 필요합니다.",
+            };
             if (callback) callback(response);
             return;
           }
@@ -475,25 +541,71 @@ for (const member of members) {
           const roomId = Number(payload?.roomId);
 
           if (!roomId) {
-            const response = { success: false, message: "roomId가 필요합니다." };
+            const response = {
+              success: false,
+              message: "roomId가 필요합니다.",
+            };
             if (callback) callback(response);
             return;
           }
 
-          await leaveChatRoom({
-            roomId,
-            userId,
-          });
+          const actor = await getUserById(userId);
+const actorName = actor?.name || actor?.username || "사용자";
 
-          socket.leave(`room:${roomId}`);
-          socket.emit("room:list:update", { roomId });
+const systemText = `${actorName}님이 채팅방을 나갔습니다.`;
 
-          if (callback) {
-            callback({
-              success: true,
-              roomId,
-            });
-          }
+const systemMessageId = await createChatMessage({
+  roomId,
+  senderId: userId,
+  messageType: "system",
+  content: systemText,
+});
+
+const emittedSystemMessage = {
+  id: Number(systemMessageId),
+  roomId,
+  senderId: userId,
+  senderName: "system",
+  senderUsername: "system",
+  messageType: "system",
+  content: systemText,
+  isDeleted: false,
+  createdAt: new Date().toISOString(),
+  updatedAt: null,
+  attachmentId: null,
+  fileUrl: null,
+  fileName: null,
+  fileType: null,
+  fileSize: null,
+};
+
+io.to(`room:${roomId}`).emit("message:new", emittedSystemMessage);
+
+const membersBeforeLeave = await listChatRoomMembers(roomId, userId);
+
+await leaveChatRoom({
+  roomId,
+  userId,
+});
+
+socket.leave(`room:${roomId}`);
+socket.emit("room:list:update", { roomId });
+
+for (const member of membersBeforeLeave) {
+  const memberUserId = Number(member.userId);
+
+  io.to(`user:${memberUserId}`).emit("room:list:update", {
+    roomId,
+    lastMessage: emittedSystemMessage,
+  });
+}
+
+if (callback) {
+  callback({
+    success: true,
+    roomId,
+  });
+}
         } catch (error: any) {
           console.error("[SOCKET room:leave:confirm ERROR]", error);
           if (callback) {
@@ -508,17 +620,26 @@ for (const member of members) {
 
     socket.on(
       "direct:create",
-      async (payload: { targetUserId: number }, callback?: (data: any) => void) => {
+      async (
+        payload: { targetUserId: number },
+        callback?: (data: any) => void
+      ) => {
         try {
           const targetUserId = Number(payload?.targetUserId);
 
           if (!targetUserId || targetUserId === userId) {
-            const response = { success: false, message: "잘못된 사용자입니다." };
+            const response = {
+              success: false,
+              message: "잘못된 사용자입니다.",
+            };
             if (callback) callback(response);
             return;
           }
 
-          const existingRoom = await getDirectChatRoomBetweenUsers(userId, targetUserId);
+          const existingRoom = await getDirectChatRoomBetweenUsers(
+            userId,
+            targetUserId
+          );
 
           if (existingRoom?.id) {
             const response = {
@@ -583,6 +704,126 @@ for (const member of members) {
       }
     );
 
+socket.on(
+  "room:members:add",
+  async (
+    payload: { roomId: number; userIds: number[] },
+    callback?: (data: any) => void
+  ) => {
+    try {
+      const roomId = Number(payload?.roomId);
+      const userIds = (payload?.userIds || []).map(Number);
+
+      if (!roomId || userIds.length === 0) {
+        return callback?.({
+          success: false,
+          message: "roomId / userIds 필요",
+        });
+      }
+
+      // 현재 방 멤버 확인
+      const members = await listChatRoomMembers(roomId, userId);
+      const existingIds = members.map((m) => Number(m.userId));
+
+      const newUserIds = userIds.filter(
+        (id) => !existingIds.includes(id)
+      );
+
+      for (const uid of newUserIds) {
+        await addChatRoomMember({
+          roomId,
+          userId: uid,
+        });
+
+        // 방 join
+        io.to(`user:${uid}`).emit("room:list:update", { roomId });
+      }
+
+      io.to(`room:${roomId}`).emit("room:list:update", { roomId });
+
+      callback?.({
+        success: true,
+        addedUserIds: newUserIds,
+      });
+    } catch (err: any) {
+      console.error("[room:members:add ERROR]", err);
+      callback?.({
+        success: false,
+        message: err?.message || "멤버 추가 실패",
+      });
+    }
+  }
+);
+
+socket.on(
+  "room:title:update",
+  async (
+    payload: { roomId: number; title: string },
+    callback?: (data: any) => void
+  ) => {
+    try {
+      const roomId = Number(payload?.roomId);
+      const title = (payload?.title || "").trim();
+
+      if (!roomId || !title) {
+        return callback?.({
+          success: false,
+          message: "roomId / title 필요",
+        });
+      }
+
+      // DB 업데이트 (직접 쿼리 or 함수 필요)
+      await updateChatRoomTitle({
+        roomId,
+        title,
+      });
+
+      const systemText = `채팅방 이름이 "${title}"(으)로 변경되었습니다.`;
+
+      const messageId = await createChatMessage({
+        roomId,
+        senderId: userId,
+        messageType: "system",
+        content: systemText,
+      });
+
+      const emittedMessage = {
+        id: Number(messageId),
+        roomId,
+        senderId: userId,
+        senderName: "system",
+        senderUsername: "system",
+        messageType: "system",
+        content: systemText,
+        createdAt: new Date().toISOString(),
+      };
+
+      io.to(`room:${roomId}`).emit("message:new", emittedMessage);
+
+      const members = await listChatRoomMembers(roomId, userId);
+
+      for (const m of members) {
+        io.to(`user:${m.userId}`).emit("room:list:update", {
+          roomId,
+          lastMessage: emittedMessage,
+        });
+      }
+
+      callback?.({
+        success: true,
+        roomId,
+        title,
+      });
+    } catch (err: any) {
+      console.error("[room:title:update ERROR]", err);
+      callback?.({
+        success: false,
+        message: err?.message || "이름 변경 실패",
+      });
+    }
+  }
+);
+
     socket.on("disconnect", (reason) => {
       decreaseOnlineUser(userId);
 
@@ -638,16 +879,16 @@ for (const member of members) {
   app.set("trust proxy", 1);
 
   app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
+  app.options("*", cors(corsOptions));
 
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  app.use(express.json({ limit: "50mb" }));
+  app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
+  app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 
-app.use("/api/auth", authRouter);
-app.use("/api/holidays", holidayRouter);
-app.use(noticeUploadRouter);
+  app.use("/api/auth", authRouter);
+  app.use("/api/holidays", holidayRouter);
+  app.use(noticeUploadRouter);
 
   app.post("/api/upload", upload.single("file"), async (req, res) => {
     try {
@@ -709,7 +950,12 @@ app.use(noticeUploadRouter);
   registerOAuthRoutes(app);
 
   app.use(
-    (err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    (
+      err: any,
+      _req: express.Request,
+      res: express.Response,
+      next: express.NextFunction
+    ) => {
       if (err instanceof multer.MulterError) {
         return res.status(400).json({
           message: err.message || "업로드 오류가 발생했습니다.",
