@@ -33,7 +33,7 @@ router.post("/api/notices/upload-image", upload.single("image"), (req, res) => {
   });
 });
 
-router.post("/api/upload", upload.single("file"), (req, res) => {
+router.post("/api/notices/upload-file", upload.single("file"), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: "첨부파일이 없습니다." });
   }

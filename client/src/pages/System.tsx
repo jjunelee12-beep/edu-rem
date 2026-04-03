@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatPhone } from "@/lib/format";
+import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
 
 type TabKey =
   | "settlement"
@@ -1929,7 +1930,12 @@ function SettingsSection() {
   const saveMutation = trpc.branding.save.useMutation({
   onSuccess: async () => {
     toast.success("브랜딩 설정이 저장되었습니다.");
-    await utils.branding.get.invalidate();
+    
+
+await Promise.all([
+  utils.branding.get.invalidate(),
+  utils.branding.getPublic.invalidate(),
+]);
 
     window.dispatchEvent(
       new CustomEvent("branding:updated", {
@@ -1951,6 +1957,7 @@ function SettingsSection() {
   const [messengerSubtitle, setMessengerSubtitle] = useState("");
 const fileInputRef = useRef<HTMLInputElement | null>(null);
 const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+const previewLogoUrl = normalizeAssetUrl(companyLogoUrl || "");
 
   useEffect(() => {
     if (!data) return;
@@ -2099,15 +2106,18 @@ toast.success("로고 업로드 완료");
 
                 <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
                   <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-yellow-300 text-slate-900">
-                    {companyLogoUrl ? (
-                      <img
-                        src={companyLogoUrl}
-                        alt={companyName || "company-logo"}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <Building2 className="h-5 w-5" />
-                    )}
+                   {previewLogoUrl ? (
+  <img
+    src={previewLogoUrl}
+    alt={companyName || "company-logo"}
+    className="h-full w-full object-cover"
+    onError={() => {
+      console.log("[system logo preview] load failed:", previewLogoUrl);
+    }}
+  />
+) : (
+  <Building2 className="h-5 w-5" />
+)}
                   </div>
 
                   <div className="min-w-0">
