@@ -758,18 +758,45 @@ useEffect(() => {
     };
   }, [openPopups, onRequestClose, roomInfoOpen, inviteDialogOpen]);
 
-  useEffect(() => {
+  
+useEffect(() => {
+  const emitOpenedRoomsChanged = () => {
     const openedRoomIds = openPopups
-      .filter((popup) => !popup.minimized && popup.type === "room")
+      .filter((popup) => {
+        return (
+          popup.type === "room" &&
+          !popup.minimized &&
+          document.visibilityState === "visible"
+        );
+      })
       .map((popup) => Number(popup.roomId))
       .filter(Boolean);
+
+    console.log("[MessengerPage] emit opened rooms", {
+      openPopups,
+      visibilityState: document.visibilityState,
+      openedRoomIds,
+    });
 
     window.dispatchEvent(
       new CustomEvent("messenger:opened-rooms-changed", {
         detail: { roomIds: openedRoomIds },
       })
     );
-  }, [openPopups]);
+  };
+
+  emitOpenedRoomsChanged();
+
+  const handleVisibilityChange = () => {
+    emitOpenedRoomsChanged();
+  };
+
+  window.addEventListener("visibilitychange", handleVisibilityChange);
+
+  return () => {
+    window.removeEventListener("visibilitychange", handleVisibilityChange);
+  };
+}, [openPopups]);
 
   useEffect(() => {
     const handleOpenRoom = (event: Event) => {
@@ -829,6 +856,19 @@ useEffect(() => {
       window.removeEventListener("focus", handleFocus);
     };
   }, [refetchRooms]);
+
+useEffect(() => {
+  const handleCloseMain = () => {
+    setOpenPopups([]);
+    setLocallyViewedRoomIds([]);
+  };
+
+  window.addEventListener("messenger:request-close-main", handleCloseMain);
+
+  return () => {
+    window.removeEventListener("messenger:request-close-main", handleCloseMain);
+  };
+}, []);
 
   const orgUsers = useMemo(
     () => normalizeUsers(userList as any[], onlineUserIds),
@@ -1109,24 +1149,42 @@ useEffect(() => {
   };
 
   const closePopup = (popupKey: string) => {
-    setOpenPopups((prev) => prev.filter((popup) => popup.key !== popupKey));
+  setOpenPopups((prev) => {
+    const target = prev.find((popup) => popup.key === popupKey);
 
-    setPopupPendingAttachments((prev) => {
-      const next = { ...prev };
-      delete next[popupKey];
-      return next;
-    });
-  };
+    if (target?.type === "room") {
+      setLocallyViewedRoomIds((ids) =>
+        ids.filter((id) => Number(id) !== Number(target.roomId))
+      );
+    }
 
-  const toggleMinimizePopup = (popupKey: string) => {
-    setOpenPopups((prev) =>
-      prev.map((popup) =>
-        popup.key === popupKey
-          ? { ...popup, minimized: !popup.minimized }
-          : popup
-      )
-    );
-  };
+    return prev.filter((popup) => popup.key !== popupKey);
+  });
+
+  setPopupPendingAttachments((prev) => {
+    const next = { ...prev };
+    delete next[popupKey];
+    return next;
+  });
+};
+
+ const toggleMinimizePopup = (popupKey: string) => {
+  setOpenPopups((prev) =>
+    prev.map((popup) => {
+      if (popup.key !== popupKey) return popup;
+
+      const nextMinimized = !popup.minimized;
+
+      if (popup.type === "room" && nextMinimized) {
+        setLocallyViewedRoomIds((ids) =>
+          ids.filter((id) => Number(id) !== Number(popup.roomId))
+        );
+      }
+
+      return { ...popup, minimized: nextMinimized };
+    })
+  );
+};
 
   const togglePinRoom = (roomId: number) => {
     setPinnedRoomIds((prev) =>
