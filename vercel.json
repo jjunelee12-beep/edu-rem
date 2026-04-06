@@ -3,6 +3,10 @@
     {
       "source": "/api/:path*",
       "destination": "https://edu-crm-api-production.up.railway.app/api/:path*"
+    },
+    {
+      "source": "/socket.io/:path*",
+      "destination": "https://edu-crm-api-production.up.railway.app/socket.io/:path*"
     }
   ]
 }

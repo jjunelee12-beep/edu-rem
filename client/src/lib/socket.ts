@@ -3,11 +3,7 @@ import { io, Socket } from "socket.io-client";
 let socket: Socket | null = null;
 
 function getSocketBaseUrl() {
-  const envBase = import.meta.env.VITE_API_BASE_URL?.trim();
-  if (envBase) {
-    return envBase.replace(/\/$/, "");
-  }
-
+  // 항상 같은 출처 사용 (Vercel → rewrite → Railway)
   return window.location.origin.replace(/\/$/, "");
 }
 
@@ -19,11 +15,12 @@ export function getSocket() {
     return socket;
   }
 
-  const apiBase = getSocketBaseUrl();
+  const base = getSocketBaseUrl();
 
-  socket = io(apiBase, {
+  socket = io(base, {
+    path: "/socket.io", // 중요
     withCredentials: true,
-    transports: ["websocket", "polling"],
+    transports: ["websocket"], // polling 제거 (안정성 ↑)
     autoConnect: true,
     reconnection: true,
     reconnectionAttempts: Infinity,
