@@ -82,23 +82,25 @@ function normalizeMessageContent(payload: any) {
   return payload?.content || "(내용 없음)";
 }
 
-function playMessageSound(audioRef: React.MutableRefObject<HTMLAudioElement | null>) {
+function playMessageSound(
+  audioRef: React.MutableRefObject<HTMLAudioElement | null>
+) {
   const audio = audioRef.current;
   if (!audio) return;
 
   try {
+    audio.pause();
     audio.currentTime = 0;
-    void audio.play();
+    void audio.play().catch(() => {});
   } catch {
-    // 브라우저 정책으로 재생이 막힐 수 있으니 무시
+    //
   }
 }
 
 export default function MessengerToastHost() {
   const socketRef = useRef<any>(null);
   const notificationMapRef = useRef<Map<number, Notification>>(new Map());
-	const audioRef = useRef<HTMLAudioElement | null>(null);
-
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [openRoomIds, setOpenRoomIds] = useState<number[]>([]);
@@ -133,17 +135,17 @@ export default function MessengerToastHost() {
     }, 1000);
   }, []);
 
-useEffect(() => {
-  audioRef.current = new Audio("/sounds/message.mp3");
-  audioRef.current.preload = "auto";
+  useEffect(() => {
+    audioRef.current = new Audio("/sounds/message.mp3");
+    audioRef.current.preload = "auto";
 
-  return () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
-  };
-}, []);
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const sync = () => {
@@ -178,20 +180,17 @@ useEffect(() => {
   }, []);
 
   useEffect(() => {
-    const socket = getSocket();
+    let liveSocket: any = null;
 
     const handleNewMessage = (payload: any) => {
       const roomId = Number(payload?.roomId || 0);
       const senderId = Number(payload?.senderId || 0);
       if (!roomId || !senderId) return;
 
-      // 🔥 핵심 순서
       if (mutedRoomIds.includes(roomId)) return;
-
       if (dnd.enabled && isNowInDndRange(dnd.start, dnd.end)) return;
-
       if (openRoomIds.includes(roomId)) return;
-	if (isMessengerMainOpen) return;
+      if (isMessengerMainOpen) return;
 
       const sender = usersById.get(senderId);
       const content = normalizeMessageContent(payload);
@@ -234,11 +233,11 @@ useEffect(() => {
         ];
       });
 
-const isWindowFocused = document.hasFocus();
+      const isWindowFocused = document.hasFocus();
 
-if (soundEnabled && !isWindowFocused) {
-  playMessageSound(audioRef);
-}
+      if (soundEnabled && !isWindowFocused) {
+        playMessageSound(audioRef);
+      }
 
       if (Notification.permission === "granted") {
         const old = notificationMapRef.current.get(roomId);
@@ -269,26 +268,94 @@ if (soundEnabled && !isWindowFocused) {
       }
     };
 
-    socket.on("message:new", handleNewMessage);
+    (async () => {
+      const socket = await getSocket();
+      liveSocket = socket;
+      socketRef.current = socket;
+      socket.on("message:new", handleNewMessage);
+    })();
 
     return () => {
-      socket.off("message:new", handleNewMessage);
+      if (!liveSocket) return;
+      liveSocket.off("message:new", handleNewMessage);
     };
-  }, [usersById, openRoomIds, mutedRoomIds, soundEnabled, dnd]);
+  }, [
+    usersById,
+    openRoomIds,
+    mutedRoomIds,
+    soundEnabled,
+    dnd,
+    isMessengerMainOpen,
+  ]);
+
+  useEffect(() => {
+    if (!toasts.length) return;
+
+    const timer = window.setTimeout(() => {
+      setToasts((prev) => prev.slice(1));
+    }, 5000);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [toasts]);
 
   if (!toasts.length) return null;
 
   return (
     <div className="fixed bottom-4 right-4 z-[10050] flex w-[320px] flex-col gap-3">
       {toasts.map((t) => (
-        <div
+        <button
           key={t.id}
-          className="rounded-2xl border bg-white p-4 shadow-lg"
+          type="button"
+          onClick={() => {
+            window.dispatchEvent(new Event("open-messenger"));
+            window.dispatchEvent(
+              new CustomEvent("messenger:open-room", {
+                detail: { roomId: t.roomId },
+              })
+            );
+
+            setToasts((prev) => prev.filter((item) => item.id !== t.id));
+          }}
+          className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-[0_16px_40px_rgba(15,23,42,0.18)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_44px_rgba(15,23,42,0.22)]"
         >
-          <div className="text-sm font-semibold">{t.senderName}</div>
-          <div className="text-xs text-gray-500">{t.senderPosition}</div>
-          <div className="mt-2 text-sm">{t.content}</div>
-        </div>
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-sm font-semibold text-slate-700">
+              {t.senderAvatar ? (
+                <img
+                  src={t.senderAvatar}
+                  alt={t.senderName}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span>{t.senderName?.slice(0, 1) || "?"}</span>
+              )}
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <div className="truncate text-sm font-semibold text-slate-900">
+                  {t.senderName}
+                </div>
+
+                {t.unreadCount > 1 ? (
+                  <span className="inline-flex min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                    {t.unreadCount}
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="mt-0.5 truncate text-xs text-slate-500">
+                {t.senderPosition}
+              </div>
+
+              <div className="mt-2 line-clamp-2 text-sm text-slate-700">
+                {t.content}
+              </div>
+            </div>
+          </div>
+        </button>
       ))}
     </div>
   );
