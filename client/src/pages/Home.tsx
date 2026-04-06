@@ -16,6 +16,7 @@ import {
   UserCheck,
   UserX,
   CalendarRange,
+ MessageSquare,
 } from "lucide-react";
 
 type AttendanceCardStatus =
