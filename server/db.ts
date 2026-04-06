@@ -827,13 +827,20 @@ export async function deleteConsultation(id: number) {
   await db.delete(consultations).where(eq(consultations.id, id));
 }
 // ─── Notifications ───────────────────────────────────────────────────
-export async function createNotification(data: InsertNotification) {
+export async function createNotification(data: InsertNotification & {
+  title?: string | null;
+  level?: "normal" | "important" | "urgent" | "success" | "danger" | null;
+  imageUrl?: string | null;
+}) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
   const result: any = await db.insert(notifications).values({
     type: "lead",
     isRead: false,
+    title: data.title ?? null,
+    level: data.level ?? "normal",
+    imageUrl: data.imageUrl ?? null,
     ...data,
   } as any);
 
@@ -877,6 +884,18 @@ for (const user of targets) {
   await createNotification({
     userId: Number(user.id),
     type: "notice",
+    title:
+      params.importance === "urgent"
+        ? "긴급 공지"
+        : params.importance === "important"
+        ? "중요 공지"
+        : "공지 알림",
+    level:
+      params.importance === "urgent"
+        ? "urgent"
+        : params.importance === "important"
+        ? "important"
+        : "normal",
     message: `${prefix} ${params.title}`,
     relatedId: Number(params.noticeId),
     isRead: false,
@@ -962,24 +981,28 @@ export async function createScheduleNotifications() {
 
       for (const user of targets) {
         await createNotification({
-          userId: Number(user.id),
-          type: "schedule",
-          message,
-          relatedId: Number(item.id),
-          isRead: false,
-        } as any);
+  userId: Number(user.id),
+  type: "schedule",
+  title: item.scope === "global" ? "전체 일정 알림" : "일정 알림",
+  level: item.scope === "global" ? "important" : "normal",
+  message,
+  relatedId: Number(item.id),
+  isRead: false,
+} as any);
 
         createdCount += 1;
       }
     } else {
       if (item.ownerUserId) {
         await createNotification({
-          userId: Number(item.ownerUserId),
-          type: "schedule",
-          message,
-          relatedId: Number(item.id),
-          isRead: false,
-        } as any);
+  userId: Number(item.ownerUserId),
+  type: "schedule",
+  title: "일정 알림",
+  level: "normal",
+  message,
+  relatedId: Number(item.id),
+  isRead: false,
+} as any);
 
         createdCount += 1;
       }

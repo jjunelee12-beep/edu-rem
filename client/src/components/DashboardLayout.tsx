@@ -29,10 +29,15 @@ import {
 import Login from "@/components/Login";
 import { trpc } from "@/lib/trpc";
 import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
+import { pushAppToast } from "@/lib/appNotifications";
 import { useIsMobile } from "@/hooks/useMobile";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import MessengerPage from "@/pages/MessengerPage";
-import MessengerToastHost from "@/components/messenger/MessengerToastHost";
+
+import {
+  readAppNotificationSettings,
+  isNowInDndRange,
+} from "@/lib/notificationSettings";
 
 import {
   Bell,
@@ -84,7 +89,11 @@ const adminMenuItems: MenuItem[] = [
   { icon: ShieldCheck, label: "승인 관리", path: "/approvals" },
   { icon: Calculator, label: "정산 리포트", path: "/settlement" },
   { icon: Award, label: "민간자격증", path: "/private-certificate-center" },
-  { icon: GraduationCap, label: "실습배정지원센터", path: "/practice-support-center" },
+  {
+    icon: GraduationCap,
+    label: "실습배정지원센터",
+    path: "/practice-support-center",
+  },
   { icon: Briefcase, label: "취업지원센터", path: "/job-support-center" },
 ];
 
@@ -119,7 +128,10 @@ type NotificationItem = {
   id: number;
   userId: number;
   type?: string | null;
+  title?: string | null;
+  level?: string | null;
   message: string;
+  imageUrl?: string | null;
   relatedId?: number | null;
   isRead: boolean;
   createdAt?: string | Date;
@@ -185,6 +197,12 @@ function DashboardLayoutContent({
 }: DashboardLayoutContentProps) {
   const [location, setLocation] = useLocation();
   const [isMessengerOpen, setIsMessengerOpen] = useState(false);
+  const [openedRoomIds, setOpenedRoomIds] = useState<number[]>([]);
+  const shownToastIdsRef = useRef<Set<number>>(new Set());
+  const didInitToastRef = useRef(false);
+  const [appNotificationSettings, setAppNotificationSettings] = useState(() =>
+    readAppNotificationSettings()
+  );
 
   const { data: myProfile, refetch: refetchMyProfile } =
     trpc.users.me.useQuery();
@@ -234,6 +252,47 @@ function DashboardLayoutContent({
       })
     );
   }, [isMessengerOpen]);
+
+  useEffect(() => {
+    const handleOpenedRoomsChanged = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const roomIds = Array.isArray(customEvent.detail?.roomIds)
+        ? customEvent.detail.roomIds
+            .map((id: unknown) => Number(id))
+            .filter((id: number) => Number.isFinite(id) && id > 0)
+        : [];
+
+      setOpenedRoomIds(roomIds);
+    };
+
+    window.addEventListener(
+      "messenger:opened-rooms-changed",
+      handleOpenedRoomsChanged as EventListener
+    );
+
+    return () => {
+      window.removeEventListener(
+        "messenger:opened-rooms-changed",
+        handleOpenedRoomsChanged as EventListener
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    const syncSettings = () => {
+      setAppNotificationSettings(readAppNotificationSettings());
+    };
+
+    syncSettings();
+    window.addEventListener("app:notification-settings-changed", syncSettings);
+
+    return () => {
+      window.removeEventListener(
+        "app:notification-settings-changed",
+        syncSettings
+      );
+    };
+  }, []);
 
   useEffect(() => {
     const handleOpenMessenger = () => setIsMessengerOpen(true);
@@ -395,9 +454,150 @@ function DashboardLayoutContent({
     ? ((notificationQuery.data ?? []) as NotificationItem[])
     : [];
 
+  const buildToastAction = (item: NotificationItem) => {
+    if (item.type === "messenger" && item.relatedId) {
+      return {
+        kind: "messenger-room" as const,
+        payload: { roomId: Number(item.relatedId) },
+      };
+    }
+
+    if (item.type === "notice" && item.relatedId) {
+      return {
+        kind: "notice-detail" as const,
+        payload: { noticeId: Number(item.relatedId) },
+      };
+    }
+
+    if (item.type === "schedule" && item.relatedId) {
+      return {
+        kind: "schedule-detail" as const,
+        payload: { scheduleId: Number(item.relatedId) },
+      };
+    }
+
+    if (item.type === "lead") {
+      return {
+        kind: "route" as const,
+        payload: { path: "/consultations" },
+      };
+    }
+
+    if (item.type === "approval" && item.relatedId) {
+      return {
+        kind: "approval-detail" as const,
+        payload: { approvalId: Number(item.relatedId) },
+      };
+    }
+
+    return {
+      kind: "route" as const,
+      payload: { path: "/notifications" },
+    };
+  };
+
   const unreadCount = useMemo(() => {
     return notifications.filter((item) => !item.isRead).length;
   }, [notifications]);
+
+  const notificationSummary = useMemo(() => {
+    const summary = {
+      total: notifications.length,
+      unread: notifications.filter((item) => !item.isRead).length,
+      messenger: notifications.filter((item) => item.type === "messenger")
+        .length,
+      approval: notifications.filter((item) => item.type === "approval")
+        .length,
+      notice: notifications.filter((item) => item.type === "notice").length,
+      schedule: notifications.filter((item) => item.type === "schedule")
+        .length,
+    };
+
+    return summary;
+  }, [notifications]);
+
+  useEffect(() => {
+    if (!notificationEnabled) return;
+    if (!notifications.length) return;
+
+    const settings = appNotificationSettings;
+    if (!settings.enabled) return;
+    if (
+      settings.dndEnabled &&
+      isNowInDndRange(settings.dndStart, settings.dndEnd)
+    ) {
+      return;
+    }
+
+    const sorted = [...notifications].sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bTime - aTime;
+    });
+
+    if (!didInitToastRef.current) {
+      sorted.forEach((item) => {
+        shownToastIdsRef.current.add(item.id);
+      });
+      didInitToastRef.current = true;
+      return;
+    }
+
+    for (const item of sorted) {
+      if (item.isRead) continue;
+      if (shownToastIdsRef.current.has(item.id)) continue;
+
+      if (item.type === "messenger") {
+        shownToastIdsRef.current.add(item.id);
+        continue;
+      }
+
+      if (item.type === "approval" && !settings.approval) {
+        shownToastIdsRef.current.add(item.id);
+        continue;
+      }
+
+      if (item.type === "notice" && !settings.notice) {
+        shownToastIdsRef.current.add(item.id);
+        continue;
+      }
+
+      if (item.type === "schedule" && !settings.schedule) {
+        shownToastIdsRef.current.add(item.id);
+        continue;
+      }
+
+      shownToastIdsRef.current.add(item.id);
+
+      const category =
+        item.type === "notice"
+          ? "notice"
+          : item.type === "schedule"
+          ? "schedule"
+          : item.type === "approval"
+          ? "approval"
+          : "system";
+
+      const level = (item.level as any) || "normal";
+	const title = getNotificationTitle(item);
+
+      pushAppToast({
+        category,
+        level,
+        title,
+        body: item.message,
+        imageUrl: item.imageUrl
+          ? normalizeAssetUrl(item.imageUrl)
+          : undefined,
+        durationMs: 5000,
+        action: buildToastAction(item),
+      });
+    }
+  }, [
+    notificationEnabled,
+    notifications,
+    appNotificationSettings,
+  ]);
 
   useEffect(() => {
     if (isCollapsed) setIsResizing(false);
@@ -477,42 +677,69 @@ function DashboardLayoutContent({
   };
 
   const handleNotificationClick = async (item: NotificationItem) => {
-  if (!item.isRead) {
-    try {
-      await markReadMutation.mutateAsync({ id: item.id });
-    } catch (e) {
-      console.error("[notification.markRead] failed:", e);
+    if (!item.isRead) {
+      try {
+        await markReadMutation.mutateAsync({ id: item.id });
+      } catch (e) {
+        console.error("[notification.markRead] failed:", e);
+      }
     }
-  }
 
-  if (item.type === "messenger" && item.relatedId) {
-    setIsMessengerOpen(true);
+    if (item.type === "messenger" && item.relatedId) {
+      setIsMessengerOpen(true);
 
-    window.dispatchEvent(
-      new CustomEvent("messenger:open-room", {
-        detail: { roomId: Number(item.relatedId) },
-      })
-    );
-    return;
-  }
+      window.dispatchEvent(new Event("open-messenger"));
+      window.dispatchEvent(
+        new CustomEvent("messenger:open-room", {
+          detail: { roomId: Number(item.relatedId) },
+        })
+      );
+      return;
+    }
 
-  if (item.type === "notice" && item.relatedId) {
-    setLocation(`/notices/${item.relatedId}`);
-    return;
-  }
+    if (item.type === "approval" && item.relatedId) {
+      setLocation(`/e-approval/${item.relatedId}`);
+      return;
+    }
 
-  if (item.type === "schedule" && item.relatedId) {
-    setLocation("/schedules");
-    return;
-  }
+    if (item.type === "notice" && item.relatedId) {
+      setLocation(`/notices/${item.relatedId}`);
+      return;
+    }
 
-  if (item.type === "lead") {
-    setLocation("/consultations");
-    return;
-  }
+    if (item.type === "schedule" && item.relatedId) {
+      setLocation(`/schedules`);
+      return;
+    }
 
-  setLocation("/consultations");
-};
+    if (item.type === "lead") {
+      setLocation("/consultations");
+      return;
+    }
+
+    if (item.type === "messenger") {
+      setIsMessengerOpen(true);
+      window.dispatchEvent(new Event("open-messenger"));
+      return;
+    }
+
+    if (item.type === "notice") {
+      setLocation("/notices");
+      return;
+    }
+
+    if (item.type === "schedule") {
+      setLocation("/schedules");
+      return;
+    }
+
+    if (item.type === "approval") {
+      setLocation("/e-approval");
+      return;
+    }
+
+    setLocation("/notifications");
+  };
 
   const displayProfileImageUrl = normalizeProfileImageUrl(
     (myProfile as any)?.profileImageUrl || user?.profileImageUrl || ""
@@ -719,69 +946,135 @@ function DashboardLayoutContent({
           )}
 
           <div className="flex items-center gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    className="relative inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-900 transition hover:bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    aria-label="알림"
-                  >
-                    <Bell className="h-4 w-4" />
-                    {unreadCount > 0 && (
-                      <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
-                        {unreadCount > 99 ? "99+" : unreadCount}
-                      </span>
-                    )}
-                  </button>
-                </DropdownMenuTrigger>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="relative inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-900 transition hover:bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label="알림"
+                >
+                  <Bell className="h-4 w-4" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  )}
+                </button>
+              </DropdownMenuTrigger>
 
-                <DropdownMenuContent align="end" className="w-80 rounded-2xl p-0">
-                  <div className="border-b border-black/5 px-3 py-3">
-                    <p className="text-sm font-semibold text-black">알림</p>
-                    <p className="text-xs text-slate-500">
-                      최근 상담 알림을 확인할 수 있습니다.
-                    </p>
+              <DropdownMenuContent align="end" className="w-80 rounded-2xl p-0">
+                <div className="border-b border-black/5 px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-black">
+                        알림 센터
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        메신저, 전자결재, 공지, 일정 등 최근 알림을 확인할 수 있습니다.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setLocation("/notifications")}
+                      className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-700 transition hover:bg-slate-50"
+                    >
+                      전체보기
+                    </button>
                   </div>
 
-                  <div className="max-h-[360px] overflow-y-auto">
-                    {notificationQuery.isLoading ? (
-                      <div className="px-3 py-6 text-center text-sm text-slate-500">
-                        알림 불러오는 중...
-                      </div>
-                    ) : notifications.length === 0 ? (
-                      <div className="px-3 py-6 text-center text-sm text-slate-500">
-                        알림이 없습니다.
-                      </div>
-                    ) : (
-                      notifications.slice(0, 15).map((item) => (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700">
+                      전체 {notificationSummary.total}
+                    </span>
+
+                    <span className="inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-medium text-red-700">
+                      안읽음 {notificationSummary.unread}
+                    </span>
+
+                    <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-700">
+                      메신저 {notificationSummary.messenger}
+                    </span>
+
+                    <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-blue-700">
+                      전자결재 {notificationSummary.approval}
+                    </span>
+
+                    <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700">
+                      공지 {notificationSummary.notice}
+                    </span>
+
+                    <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-medium text-violet-700">
+                      일정 {notificationSummary.schedule}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="max-h-[360px] overflow-y-auto">
+                  {notificationQuery.isLoading ? (
+                    <div className="px-3 py-6 text-center text-sm text-slate-500">
+                      알림 센터를 불러오는 중...
+                    </div>
+                  ) : notifications.length === 0 ? (
+                    <div className="px-3 py-6 text-center text-sm text-slate-500">
+                      최근 표시할 알림이 없습니다.
+                    </div>
+                  ) : (
+                    notifications.slice(0, 15).map((item) => {
+                      const badge = getNotificationBadge(item);
+                      const title = getNotificationTitle(item);
+
+                      return (
                         <DropdownMenuItem
                           key={item.id}
                           onClick={() => void handleNotificationClick(item)}
-                          className="flex cursor-pointer flex-col items-start gap-1 rounded-none border-b border-black/5 px-3 py-3 last:border-b-0"
+                          className="flex cursor-pointer flex-col items-start gap-2 rounded-none border-b border-black/5 px-3 py-3 last:border-b-0"
                         >
                           <div className="flex w-full items-start justify-between gap-2">
-                            <span
-                              className={`text-sm ${
-                                item.isRead
-                                  ? "font-normal text-slate-500"
-                                  : "font-semibold text-black"
-                              }`}
-                            >
-                              {item.message}
-                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="mb-1 flex items-center gap-2">
+                                <span
+                                  className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${badge.className}`}
+                                >
+                                  {badge.label}
+                                </span>
+
+                                <span
+                                  className={`truncate text-xs ${
+                                    item.isRead
+                                      ? "font-medium text-slate-500"
+                                      : "font-semibold text-slate-900"
+                                  }`}
+                                >
+                                  {title}
+                                </span>
+                              </div>
+
+                              <p
+                                className={`line-clamp-2 text-sm leading-5 ${
+                                  item.isRead
+                                    ? "font-normal text-slate-500"
+                                    : "font-medium text-slate-900"
+                                }`}
+                              >
+                                {item.message}
+                              </p>
+                            </div>
+
                             {!item.isRead && (
                               <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-red-500" />
                             )}
                           </div>
+
                           <span className="text-[11px] text-slate-500">
                             {formatNotificationDate(item.createdAt)}
                           </span>
                         </DropdownMenuItem>
-                      ))
-                    )}
-                  </div>
-                </DropdownMenuContent>
-              </DropdownMenu>
- 
+                      );
+                    })
+                  )}
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <button
               onClick={() => setIsMessengerOpen(true)}
@@ -800,14 +1093,14 @@ function DashboardLayoutContent({
             </button>
 
             {(isHost || isSuperhost || isAdmin) && (
-  <button
-    onClick={() => setLocation("/system")}
-    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-900 transition hover:bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    aria-label="설정"
-  >
-    <Settings className="h-4 w-4" />
-  </button>
-)}
+              <button
+                onClick={() => setLocation("/system")}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-900 transition hover:bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label="설정"
+              >
+                <Settings className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -827,16 +1120,16 @@ function DashboardLayoutContent({
           <div className="flex h-16 items-center justify-between border-b border-black/5 bg-white px-4">
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06),0_6px_16px_rgba(15,23,42,0.06)]">
-  {companyLogoUrl ? (
-    <img
-      src={companyLogoUrl}
-      alt={companyName}
-      className="h-[82%] w-[82%] object-contain"
-    />
-  ) : (
-    <MessageSquare className="h-5 w-5 text-slate-900" />
-  )}
-</div>
+                {companyLogoUrl ? (
+                  <img
+                    src={companyLogoUrl}
+                    alt={companyName}
+                    className="h-[82%] w-[82%] object-contain"
+                  />
+                ) : (
+                  <MessageSquare className="h-5 w-5 text-slate-900" />
+                )}
+              </div>
 
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-black">
@@ -865,10 +1158,141 @@ function DashboardLayoutContent({
           </div>
         </div>
       )}
-
-      <MessengerToastHost />
     </>
   );
+}
+
+function getNotificationBadge(item: NotificationItem) {
+  const level = String(item.level || "normal");
+
+  if (item.type === "approval") {
+    if (level === "success") {
+      return {
+        label: "승인완료",
+        className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      };
+    }
+
+    if (level === "danger") {
+      return {
+        label: "반려",
+        className: "border-rose-200 bg-rose-50 text-rose-700",
+      };
+    }
+
+    if (level === "important" || level === "urgent") {
+      return {
+        label: "결재요청",
+        className: "border-blue-200 bg-blue-50 text-blue-700",
+      };
+    }
+
+    return {
+      label: "전자결재",
+      className: "border-slate-200 bg-slate-50 text-slate-700",
+    };
+  }
+
+  if (item.type === "notice") {
+    if (level === "urgent") {
+      return {
+        label: "긴급공지",
+        className: "border-red-200 bg-red-50 text-red-700",
+      };
+    }
+
+    if (level === "important") {
+      return {
+        label: "중요공지",
+        className: "border-amber-200 bg-amber-50 text-amber-700",
+      };
+    }
+
+    return {
+      label: "공지",
+      className: "border-amber-200 bg-amber-50 text-amber-700",
+    };
+  }
+
+  if (item.type === "schedule") {
+    if (level === "important" || level === "urgent") {
+      return {
+        label: "중요일정",
+        className: "border-violet-200 bg-violet-50 text-violet-700",
+      };
+    }
+
+    return {
+      label: "일정",
+      className: "border-violet-200 bg-violet-50 text-violet-700",
+    };
+  }
+
+  if (item.type === "messenger") {
+    return {
+      label: "메신저",
+      className: "border-sky-200 bg-sky-50 text-sky-700",
+    };
+  }
+
+  if (item.type === "lead") {
+    return {
+      label: "상담DB",
+      className: "border-teal-200 bg-teal-50 text-teal-700",
+    };
+  }
+
+  return {
+    label: "알림",
+    className: "border-slate-200 bg-slate-50 text-slate-700",
+  };
+}
+
+function getNotificationTitle(item: NotificationItem) {
+  const title = item.title?.trim();
+  if (title) return title;
+
+  const message = String(item.message || "");
+  const level = String(item.level || "normal");
+
+  if (item.type === "approval") {
+    if (level === "success") return "전자결재 승인완료";
+    if (level === "danger") return "전자결재 반려";
+    if (level === "important" || level === "urgent") return "전자결재 요청";
+
+    if (message.includes("승인완료") || message.includes("최종 승인")) {
+      return "전자결재 승인완료";
+    }
+    if (message.includes("반려")) {
+      return "전자결재 반려";
+    }
+    if (
+      message.includes("요청") ||
+      message.includes("결재 요청") ||
+      message.includes("결재 단계") ||
+      message.includes("결재 차례")
+    ) {
+      return "전자결재 요청";
+    }
+
+    return "전자결재 알림";
+  }
+
+  if (item.type === "notice") {
+    if (level === "urgent") return "긴급 공지";
+    if (level === "important") return "중요 공지";
+    return "공지 알림";
+  }
+
+  if (item.type === "schedule") {
+    if (level === "important" || level === "urgent") return "중요 일정";
+    return "일정 알림";
+  }
+
+  if (item.type === "messenger") return "메신저 알림";
+  if (item.type === "lead") return "상담 DB 알림";
+
+  return "새 알림";
 }
 
 function formatNotificationDate(value?: string | Date) {

@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import {
   Bell,
+  BellOff,
   X,
   Volume2,
   Moon,
@@ -13,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import ImagePreviewModal from "@/components/messenger/ImagePreviewModal";
 import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
+import { isRoomMuted, setRoomMuted } from "@/lib/messengerRoomMute";
 
 import type {
   MessengerRoom,
@@ -71,6 +73,9 @@ type Props = {
   onLeaveRoom: () => void;
 onAddParticipant: () => void;
 onUpdateTitle: (title: string) => void;
+notificationEnabled?: boolean;
+  chatBackground?: string;
+  onChangeBackground?: (value: string) => void;
 };
 
 export default function MessengerRoomInfo({
@@ -84,6 +89,9 @@ export default function MessengerRoomInfo({
   onLeaveRoom,
 onAddParticipant,
 onUpdateTitle,
+  notificationEnabled = true,
+  chatBackground = "",
+  onChangeBackground,
 }: Props) {
   const imageMessages = useMemo(
     () => messages.filter((m) => m.type === "image" && m.fileUrl),
@@ -100,6 +108,9 @@ onUpdateTitle,
 
   const mainUser = participants[0];
 
+const currentRoomId = Number(activeRoom?.id || 0);
+const [localMuted, setLocalMuted] = useState(false);
+
   const [currentBg, setCurrentBg] = useState("");
 
   const [previewImage, setPreviewImage] = useState<{
@@ -111,11 +122,38 @@ onUpdateTitle,
 const [editingTitle, setEditingTitle] = useState(false);
 const [editTitle, setEditTitle] = useState("");
 
+
+useEffect(() => {
+  setLocalMuted(isRoomMuted(currentRoomId));
+}, [currentRoomId]);
+
+useEffect(() => {
+  const syncMuteState = () => {
+    setLocalMuted(isRoomMuted(currentRoomId));
+  };
+
+  window.addEventListener("messenger:settings-changed", syncMuteState);
+
+  return () => {
+    window.removeEventListener("messenger:settings-changed", syncMuteState);
+  };
+}, [currentRoomId]);
+
+
   useEffect(() => {
     if (!activeRoom?.id) return;
     const all = readRoomBackgrounds();
     setCurrentBg(all[String(activeRoom.id)] || "");
   }, [open, activeRoom?.id]);
+
+const handleToggleRoomMute = () => {
+  if (!currentRoomId) return;
+
+  const nextMuted = !localMuted;
+  setRoomMuted(currentRoomId, nextMuted);
+  setLocalMuted(nextMuted);
+  onToggleNotifications?.();
+};
 
   const handleUploadBackground = async (
     e: React.ChangeEvent<HTMLInputElement>
@@ -201,10 +239,39 @@ const [editTitle, setEditTitle] = useState("");
 </div>
         </div>
 
-        {/* 알림 */}
-        <button onClick={onToggleNotifications} className="w-full border p-3 rounded-xl">
-          {roomMuted ? "🔕 알림 꺼짐" : "🔔 알림 켜짐"}
-        </button>
+       {/* 알림 */}
+<div className="rounded-2xl border border-slate-200 bg-white p-4">
+  <div className="flex items-center justify-between gap-3">
+    <div>
+      <p className="text-sm font-semibold text-slate-900">이 방 알림</p>
+      <p className="mt-1 text-xs text-slate-500">
+        이 채팅방의 새 메시지 토스트 알림을 끄거나 다시 켤 수 있습니다.
+      </p>
+    </div>
+
+    <button
+      type="button"
+      onClick={handleToggleRoomMute}
+      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+        localMuted
+          ? "bg-slate-200 text-slate-700"
+          : "bg-primary text-white"
+      }`}
+    >
+      {localMuted ? (
+        <>
+          <BellOff className="h-3.5 w-3.5" />
+          OFF
+        </>
+      ) : (
+        <>
+          <Bell className="h-3.5 w-3.5" />
+          ON
+        </>
+      )}
+    </button>
+  </div>
+</div>
 
         {/* 배경 */}
         <div>

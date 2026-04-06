@@ -29,6 +29,11 @@ import {
 } from "@/components/ui/select";
 import { formatPhone } from "@/lib/format";
 import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
+import {
+  readAppNotificationSettings,
+  updateAppNotificationSettings,
+  type AppNotificationSettings,
+} from "@/lib/notificationSettings";
 
 type TabKey =
   | "settlement"
@@ -1958,6 +1963,16 @@ await Promise.all([
 const fileInputRef = useRef<HTMLInputElement | null>(null);
 const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 const previewLogoUrl = normalizeAssetUrl(companyLogoUrl || "");
+const [notificationSettings, setNotificationSettings] =
+  useState<AppNotificationSettings>(() => readAppNotificationSettings());
+
+const updateNotificationSetting = (
+  key: keyof AppNotificationSettings,
+  value: any
+) => {
+  const next = updateAppNotificationSettings({ [key]: value });
+  setNotificationSettings(next);
+};
 
   useEffect(() => {
     if (!data) return;
@@ -1965,6 +1980,25 @@ const previewLogoUrl = normalizeAssetUrl(companyLogoUrl || "");
     setCompanyLogoUrl(data.companyLogoUrl || "");
     setMessengerSubtitle(data.messengerSubtitle || "사내 메신저");
   }, [data]);
+
+useEffect(() => {
+  const syncNotificationSettings = () => {
+    setNotificationSettings(readAppNotificationSettings());
+  };
+
+  syncNotificationSettings();
+  window.addEventListener(
+    "app:notification-settings-changed",
+    syncNotificationSettings
+  );
+
+  return () => {
+    window.removeEventListener(
+      "app:notification-settings-changed",
+      syncNotificationSettings
+    );
+  };
+}, []);
 
 const handleUploadLogo = async (e: ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0];
@@ -2141,6 +2175,171 @@ toast.success("로고 업로드 완료");
               </div>
             </>
           )}
+        </CardContent>
+      </Card>
+            <Card>
+        <CardHeader>
+          <CardTitle>알림 설정</CardTitle>
+        </CardHeader>
+
+        <CardContent className="space-y-6">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+            <p className="text-sm font-medium text-slate-900">
+              메신저, 전자결재, 공지, 일정 알림과 방해금지 시간을 설정합니다.
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              설정값은 현재 브라우저에 저장되며, 우하단 토스트 알림과 종벨 알림
+              표시 조건에 함께 반영됩니다.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-sm font-semibold text-slate-900">
+              알림 항목 ON / OFF
+            </p>
+
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {[
+                {
+                  key: "enabled",
+                  label: "전체 알림",
+                  desc: "모든 앱 알림의 전체 허용 여부",
+                  value: notificationSettings.enabled,
+                },
+                {
+                  key: "messenger",
+                  label: "메신저 알림",
+                  desc: "새 메시지 토스트 알림 표시",
+                  value: notificationSettings.messenger,
+                },
+                {
+                  key: "approval",
+                  label: "전자결재 알림",
+                  desc: "결재 요청 / 승인 / 반려 알림 표시",
+                  value: notificationSettings.approval,
+                },
+                {
+                  key: "notice",
+                  label: "공지 알림",
+                  desc: "일반 / 중요 / 긴급 공지 알림 표시",
+                  value: notificationSettings.notice,
+                },
+                {
+                  key: "schedule",
+                  label: "일정 알림",
+                  desc: "개인 / 전체 일정 알림 표시",
+                  value: notificationSettings.schedule,
+                },
+                {
+                  key: "sound",
+                  label: "알림 소리",
+                  desc: "지원되는 알림 소리 사용 여부",
+                  value: notificationSettings.sound,
+                },
+              ].map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() =>
+                    updateNotificationSetting(
+                      item.key as keyof AppNotificationSettings,
+                      !item.value
+                    )
+                  }
+                  className={`rounded-2xl border px-4 py-4 text-left transition ${
+                    item.value
+                      ? "border-primary/20 bg-primary/5"
+                      : "border-slate-200 bg-white hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900">
+                        {item.label}
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        {item.desc}
+                      </p>
+                    </div>
+
+                    <span
+                      className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                        item.value
+                          ? "bg-primary text-white"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {item.value ? "ON" : "OFF"}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">
+                  방해금지 모드
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  설정된 시간에는 우하단 토스트 알림을 띄우지 않습니다.
+                  메신저 실시간 알림 차단 조건에도 함께 사용됩니다.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  updateNotificationSetting(
+                    "dndEnabled",
+                    !notificationSettings.dndEnabled
+                  )
+                }
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  notificationSettings.dndEnabled
+                    ? "bg-primary text-white"
+                    : "bg-slate-200 text-slate-700"
+                }`}
+              >
+                {notificationSettings.dndEnabled ? "ON" : "OFF"}
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-slate-600">시작 시간</p>
+                <Input
+                  type="time"
+                  value={notificationSettings.dndStart}
+                  onChange={(e) =>
+                    updateNotificationSetting("dndStart", e.target.value)
+                  }
+                  disabled={!notificationSettings.dndEnabled}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-slate-600">종료 시간</p>
+                <Input
+                  type="time"
+                  value={notificationSettings.dndEnd}
+                  onChange={(e) =>
+                    updateNotificationSetting("dndEnd", e.target.value)
+                  }
+                  disabled={!notificationSettings.dndEnabled}
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+              <p className="text-xs leading-5 text-slate-600">
+                예: 시작 22:00, 종료 07:00 으로 설정하면 밤 10시부터 다음 날 오전
+                7시까지 토스트 알림이 표시되지 않습니다.
+              </p>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>

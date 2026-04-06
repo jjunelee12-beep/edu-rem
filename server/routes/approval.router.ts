@@ -11,8 +11,8 @@ import {
   saveApprovalSetting,
   getUserById,
   createNotification,
-getApprovalPrintSettings,
-saveApprovalPrintSettings,
+  getApprovalPrintSettings,
+  saveApprovalPrintSettings,
 } from "../db";
 
 const formTypeSchema = z.enum(["attendance", "business_trip", "general"]);
@@ -38,77 +38,81 @@ export const approvalRouter = router({
     }),
 
   create: protectedProcedure
-   .input(
-  z.object({
-    formType: formTypeSchema,
-    subType: z.string().min(1),
-    title: z.string().min(1),
-    reason: z.string().optional().nullable(),
+    .input(
+      z.object({
+        formType: formTypeSchema,
+        subType: z.string().min(1),
+        title: z.string().min(1),
+        reason: z.string().optional().nullable(),
 
-    targetDate: z.string().optional().nullable(),
-    startDate: z.string().optional().nullable(),
-    endDate: z.string().optional().nullable(),
+        targetDate: z.string().optional().nullable(),
+        startDate: z.string().optional().nullable(),
+        endDate: z.string().optional().nullable(),
 
-    // 🔥 추가
-    attendanceDetailType: z.string().optional().nullable(),
-    attendanceStartTime: z.string().optional().nullable(),
-    attendanceEndTime: z.string().optional().nullable(),
+        attendanceDetailType: z.string().optional().nullable(),
+        attendanceStartTime: z.string().optional().nullable(),
+        attendanceEndTime: z.string().optional().nullable(),
 
-    destination: z.string().optional().nullable(),
-    visitPlace: z.string().optional().nullable(),
-    companion: z.string().optional().nullable(),
+        destination: z.string().optional().nullable(),
+        visitPlace: z.string().optional().nullable(),
+        companion: z.string().optional().nullable(),
 
-    requestDepartment: z.string().optional().nullable(),
-    extraNote: z.string().optional().nullable(),
+        requestDepartment: z.string().optional().nullable(),
+        extraNote: z.string().optional().nullable(),
 
-    attachmentName: z.string().optional().nullable(),
-    attachmentUrl: z.string().optional().nullable(),
-  })
-)
+        attachmentName: z.string().optional().nullable(),
+        attachmentUrl: z.string().optional().nullable(),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       const me = await getUserById(ctx.user.id);
 
-     const documentId = await createApprovalDocument({
-  formType: input.formType,
-  subType: input.subType,
-  title: input.title,
-  reason: input.reason ?? null,
+      const documentId = await createApprovalDocument({
+        formType: input.formType,
+        subType: input.subType,
+        title: input.title,
+        reason: input.reason ?? null,
 
-  applicantUserId: ctx.user.id,
-  applicantUserName: me?.name ?? null,
+        applicantUserId: ctx.user.id,
+        applicantUserName: me?.name ?? null,
 
-  targetDate: input.targetDate ?? null,
-  startDate: input.startDate ?? null,
-  endDate: input.endDate ?? null,
+        targetDate: input.targetDate ?? null,
+        startDate: input.startDate ?? null,
+        endDate: input.endDate ?? null,
 
-  // 🔥 추가
-  attendanceDetailType: input.attendanceDetailType ?? null,
-  attendanceStartTime: input.attendanceStartTime ?? null,
-  attendanceEndTime: input.attendanceEndTime ?? null,
+        attendanceDetailType: input.attendanceDetailType ?? null,
+        attendanceStartTime: input.attendanceStartTime ?? null,
+        attendanceEndTime: input.attendanceEndTime ?? null,
 
-  destination: input.destination ?? null,
-  visitPlace: input.visitPlace ?? null,
-  companion: input.companion ?? null,
+        destination: input.destination ?? null,
+        visitPlace: input.visitPlace ?? null,
+        companion: input.companion ?? null,
 
-  requestDepartment: input.requestDepartment ?? null,
-  extraNote: input.extraNote ?? null,
+        requestDepartment: input.requestDepartment ?? null,
+        extraNote: input.extraNote ?? null,
 
-  attachmentName: input.attachmentName ?? null,
-  attachmentUrl: input.attachmentUrl ?? null,
-});
+        attachmentName: input.attachmentName ?? null,
+        attachmentUrl: input.attachmentUrl ?? null,
+      });
 
-      // 신청 시 1차 승인자 알림
       const detail = await getApprovalDocument(Number(documentId));
-      const firstLine = detail?.lines?.find((line: any) => Number(line.stepOrder) === 1);
+      const firstLine = detail?.lines?.find(
+        (line: any) => Number(line.stepOrder) === 1
+      );
 
-     if (firstLine?.approverUserId && Number(firstLine.approverUserId) !== Number(ctx.user.id)) {
+      if (
+        firstLine?.approverUserId &&
+        Number(firstLine.approverUserId) !== Number(ctx.user.id)
+      ) {
         await createNotification({
-          userId: Number(firstLine.approverUserId),
-          type: "approval",
-          message: `[전자결재] ${me?.name}님의 "${input.title}" 결재 요청이 도착했습니다.`,
-          relatedId: Number(documentId),
-          isRead: false,
-        } as any);
+  userId: Number(firstLine.approverUserId),
+  type: "approval",
+  title: "전자결재 요청",
+  level: "important",
+  message: `[전자결재 요청] ${me?.name ?? "사용자"}님의 "${input.title}" 문서 결재 요청이 도착했습니다.`,
+  relatedId: Number(documentId),
+  isRead: false,
+} as any);
       }
 
       return documentId;
@@ -142,29 +146,36 @@ export const approvalRouter = router({
             String(line.stepStatus) === "pending"
         );
 
-        if (nextLine?.approverUserId && Number(nextLine.approverUserId) !== Number(ctx.user.id)) {
+        if (
+          nextLine?.approverUserId &&
+          Number(nextLine.approverUserId) !== Number(ctx.user.id)
+        ) {
           await createNotification({
-            userId: Number(nextLine.approverUserId),
-            type: "approval",
-            message: `[전자결재] "${updatedDoc.title}" 문서 결재 차례입니다.`,
-            relatedId: Number(input.documentId),
-            isRead: false,
-          } as any);
+  userId: Number(nextLine.approverUserId),
+  type: "approval",
+  title: "전자결재 요청",
+  level: "important",
+  message: `[전자결재 요청] "${updatedDoc.title}" 문서가 다음 결재 단계로 넘어왔습니다. 확인 후 승인해 주세요.`,
+  relatedId: Number(input.documentId),
+  isRead: false,
+} as any);
         }
       }
 
       if (
-  updatedDoc?.status === "approved" &&
-  updatedDoc?.applicantUserId &&
-  Number(updatedDoc.applicantUserId) !== Number(ctx.user.id)
-) {
+        updatedDoc?.status === "approved" &&
+        updatedDoc?.applicantUserId &&
+        Number(updatedDoc.applicantUserId) !== Number(ctx.user.id)
+      ) {
         await createNotification({
-          userId: Number(updatedDoc.applicantUserId),
-          type: "approval",
-          message: `[전자결재] "${updatedDoc.title}" 문서가 최종 승인되었습니다.`,
-          relatedId: Number(input.documentId),
-          isRead: false,
-        } as any);
+  userId: Number(updatedDoc.applicantUserId),
+  type: "approval",
+  title: "전자결재 승인완료",
+  level: "success",
+  message: `[전자결재 승인완료] "${updatedDoc.title}" 문서가 최종 승인되었습니다.`,
+  relatedId: Number(input.documentId),
+  isRead: false,
+} as any);
       }
 
       return true;
@@ -191,16 +202,18 @@ export const approvalRouter = router({
       const updatedDoc = updatedDetail?.document;
 
       if (
-  updatedDoc?.applicantUserId &&
-  Number(updatedDoc.applicantUserId) !== Number(ctx.user.id)
-) {
-        await createNotification({
-          userId: Number(updatedDoc.applicantUserId),
-          type: "approval",
-          message: `[전자결재] "${updatedDoc.title}" 문서가 반려되었습니다.`,
-          relatedId: Number(input.documentId),
-          isRead: false,
-        } as any);
+        updatedDoc?.applicantUserId &&
+        Number(updatedDoc.applicantUserId) !== Number(ctx.user.id)
+      ) {
+       await createNotification({
+  userId: Number(updatedDoc.applicantUserId),
+  type: "approval",
+  title: "전자결재 반려",
+  level: "danger",
+  message: `[전자결재 반려] "${updatedDoc.title}" 문서가 반려되었습니다. 사유를 확인해 주세요.`,
+  relatedId: Number(input.documentId),
+  isRead: false,
+} as any);
       }
 
       return true;
@@ -237,32 +250,31 @@ export const approvalRouter = router({
         actorUserId: ctx.user.id,
       });
     }),
-// ─── Print Settings ─────────────────────────────────────
 
-getPrintSettings: protectedProcedure.query(async () => {
-  return getApprovalPrintSettings();
-}),
-
-savePrintSettings: protectedProcedure
-  .input(
-    z.object({
-      companyName: z.string().min(1),
-      documentTitle: z.string().min(1),
-      applicantSignLabel: z.string().min(1),
-      finalApproverSignLabel: z.string().min(1),
-    })
-  )
-  .mutation(async ({ ctx, input }) => {
-    if (ctx.user.role !== "superhost") {
-      throw new Error("출력 설정 저장 권한이 없습니다.");
-    }
-
-    return saveApprovalPrintSettings({
-      companyName: input.companyName,
-      documentTitle: input.documentTitle,
-      applicantSignLabel: input.applicantSignLabel,
-      finalApproverSignLabel: input.finalApproverSignLabel,
-      updatedBy: ctx.user.id,
-    });
+  getPrintSettings: protectedProcedure.query(async () => {
+    return getApprovalPrintSettings();
   }),
+
+  savePrintSettings: protectedProcedure
+    .input(
+      z.object({
+        companyName: z.string().min(1),
+        documentTitle: z.string().min(1),
+        applicantSignLabel: z.string().min(1),
+        finalApproverSignLabel: z.string().min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "superhost") {
+        throw new Error("출력 설정 저장 권한이 없습니다.");
+      }
+
+      return saveApprovalPrintSettings({
+        companyName: input.companyName,
+        documentTitle: input.documentTitle,
+        applicantSignLabel: input.applicantSignLabel,
+        finalApproverSignLabel: input.finalApproverSignLabel,
+        updatedBy: ctx.user.id,
+      });
+    }),
 });

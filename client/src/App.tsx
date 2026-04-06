@@ -34,6 +34,7 @@ import NoticesPage from "@/pages/NoticesPage";
 import NoticeDetailPage from "@/pages/NoticeDetailPage";
 import SchedulePage from "@/pages/SchedulePage";
 import Notifications from "@/pages/Notifications";
+
 import ApprovalsDashboardPage from "./pages/ApprovalsDashboardPage";
 import ApprovalAttendancePage from "./pages/ApprovalAttendancePage";
 import ApprovalBusinessTripPage from "./pages/ApprovalBusinessTripPage";
@@ -45,6 +46,9 @@ import ApprovalPrintPage from "./pages/ApprovalPrintPage";
 import ApprovalStatsPage from "./pages/ApprovalStatsPage";
 import ApprovalPreviewPage from "./pages/ApprovalPreviewPage";
 
+// ✅ 추가
+import AppToastHost from "@/components/notifications/AppToastHost";
+import MessengerRealtimeBridge from "@/components/notifications/MessengerRealtimeBridge";
 
 function PublicRouter() {
   return (
@@ -77,25 +81,24 @@ function PrivateRouter() {
         <Route path="/education-institutions" component={EducationInstitutions} />
         <Route path="/superhost" component={SuperhostHome} />
         <Route path="/attendance" component={AttendancePage} />
-<Route path="/attendance/view" component={AttendanceViewPage} />
+        <Route path="/attendance/view" component={AttendanceViewPage} />
         <Route path="/my" component={MyPage} />
 
-        {/* ✅ 추가 */}
         <Route path="/notices" component={NoticesPage} />
         <Route path="/notices/:id" component={NoticeDetailPage} />
         <Route path="/schedules" component={SchedulePage} />
-	<Route path="/notifications" component={Notifications} />
-<Route path="/e-approval" component={ApprovalsDashboardPage} />
-<Route path="/e-approval/attendance" component={ApprovalAttendancePage} />
-<Route path="/e-approval/business-trip" component={ApprovalBusinessTripPage} />
-<Route path="/e-approval/general" component={ApprovalGeneralPage} />
-<Route path="/e-approval/inbox" component={ApprovalInboxPage} />
-<Route path="/e-approval/settings" component={ApprovalSettingsPage} />
-<Route path="/e-approval/stats" component={ApprovalStatsPage} />
-<Route path="/e-approval/preview" component={ApprovalPreviewPage} />
-<Route path="/e-approval/:id/print" component={ApprovalPrintPage} />
-<Route path="/e-approval/:id" component={ApprovalDetailPage} />
+        <Route path="/notifications" component={Notifications} />
 
+        <Route path="/e-approval" component={ApprovalsDashboardPage} />
+        <Route path="/e-approval/attendance" component={ApprovalAttendancePage} />
+        <Route path="/e-approval/business-trip" component={ApprovalBusinessTripPage} />
+        <Route path="/e-approval/general" component={ApprovalGeneralPage} />
+        <Route path="/e-approval/inbox" component={ApprovalInboxPage} />
+        <Route path="/e-approval/settings" component={ApprovalSettingsPage} />
+        <Route path="/e-approval/stats" component={ApprovalStatsPage} />
+        <Route path="/e-approval/preview" component={ApprovalPreviewPage} />
+        <Route path="/e-approval/:id/print" component={ApprovalPrintPage} />
+        <Route path="/e-approval/:id" component={ApprovalDetailPage} />
 
         <Route component={NotFound} />
       </Switch>
@@ -122,6 +125,8 @@ export default function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
+          <AppToastHost />
+	<MessengerRealtimeBridge />
           <AppContent />
         </TooltipProvider>
       </ThemeProvider>
