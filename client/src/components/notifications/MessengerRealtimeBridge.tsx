@@ -72,6 +72,12 @@ export default function MessengerRealtimeBridge() {
     readAppNotificationSettings()
   );
 
+  const { data: me } = trpc.users.me.useQuery(undefined, {
+    staleTime: 30_000,
+  });
+
+  const myUserId = Number((me as any)?.id || 0);
+
   const { data: userList = [] } = trpc.users.list.useQuery(undefined, {
     staleTime: 30_000,
   });
@@ -208,6 +214,7 @@ export default function MessengerRealtimeBridge() {
         roomId,
         senderId,
         messageId,
+        myUserId,
       });
 
       if (!roomId || !senderId) {
@@ -217,6 +224,14 @@ export default function MessengerRealtimeBridge() {
             roomId,
             senderId,
           }
+        );
+        return;
+      }
+
+      if (myUserId && senderId === myUserId) {
+        console.log(
+          "[MessengerRealtimeBridge] blocked: self message",
+          { senderId, myUserId }
         );
         return;
       }
@@ -266,6 +281,14 @@ export default function MessengerRealtimeBridge() {
         console.log("[MessengerRealtimeBridge] blocked: room muted", {
           roomId,
           mutedRoomIds,
+        });
+        return;
+      }
+
+      if (openRoomIds.includes(roomId)) {
+        console.log("[MessengerRealtimeBridge] blocked: room already open", {
+          roomId,
+          openRoomIds,
         });
         return;
       }
@@ -421,6 +444,7 @@ export default function MessengerRealtimeBridge() {
     };
   }, [
     usersById,
+    myUserId,
     openRoomIds,
     mutedRoomIds,
     soundEnabled,
