@@ -340,9 +340,17 @@ export default function MessengerSidebar({
                           onClick={() => onSelectRoom(roomId)}
                           className="flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left"
                         >
-                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-700">
-                            {String(room.name || "R").slice(0, 1)}
-                          </div>
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-sm font-semibold text-slate-700">
+  {(room as any).avatar ? (
+    <img
+      src={String((room as any).avatar)}
+      alt={room.name || "채팅방"}
+      className="h-full w-full object-cover"
+    />
+  ) : (
+    <span>{String(room.name || "R").slice(0, 1)}</span>
+  )}
+</div>
 
                           <div className="min-w-0 flex-1 pr-16">
                             <div className="flex items-start justify-between gap-2">

@@ -916,6 +916,9 @@ useEffect(() => {
           ? new Date(room.updatedAt).toISOString()
           : "",
         notificationsEnabled: !room.isMuted,
+	avatar: normalizeAssetUrl(
+  room.otherUserProfileImageUrl || ""
+),
         sortAt: room.lastMessageCreatedAt
           ? new Date(room.lastMessageCreatedAt).getTime()
           : room.updatedAt

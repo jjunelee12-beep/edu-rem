@@ -3847,6 +3847,7 @@ export async function listMyChatRooms(userId: number) {
       otherUser.id as otherUserId,
       otherUser.name as otherUserName,
       otherUser.username as otherUsername,
+	otherUser.profileImageUrl as otherUserProfileImageUrl,
 
       (
         SELECT COUNT(*)
@@ -3915,6 +3916,7 @@ export async function listChatRoomMembers(roomId: number, userId: number) {
       u.phone,
       u.email,
       u.role,
+u.profileImageUrl,
       u.isActive as userIsActive,
 
       map.teamId,
