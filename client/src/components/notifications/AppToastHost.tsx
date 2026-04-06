@@ -328,16 +328,44 @@ function DefaultToastCard({ toast, onClose, onOpen }: ToastCardProps) {
 
 export default function AppToastHost() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [isMessengerMainOpen, setIsMessengerMainOpen] = useState(false);
   const timersRef = useRef<Record<string, number>>({});
   const removeTimersRef = useRef<Record<string, number>>({});
 
   const safeToasts = useMemo(() => toasts.slice(0, MAX_TOASTS), [toasts]);
 
   useEffect(() => {
+    const handleMessengerMainChanged = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const isOpen = !!customEvent.detail?.isOpen;
+      setIsMessengerMainOpen(isOpen);
+      console.log("[AppToastHost] messenger main open changed", isOpen);
+    };
+
+    window.addEventListener(
+      "messenger:main-open-changed",
+      handleMessengerMainChanged as EventListener
+    );
+
+    return () => {
+      window.removeEventListener(
+        "messenger:main-open-changed",
+        handleMessengerMainChanged as EventListener
+      );
+    };
+  }, []);
+
+  useEffect(() => {
     const onToast = (event: Event) => {
       const customEvent = event as CustomEvent<AppNotification>;
       const notification = customEvent.detail;
-      if (!notification?.id) return;
+
+      console.log("[AppToastHost] APP_TOAST_EVENT received", notification);
+
+      if (!notification?.id) {
+        console.log("[AppToastHost] ignored: notification.id missing");
+        return;
+      }
 
       setToasts((prev) => {
         const next: ToastItem[] = [
@@ -345,6 +373,7 @@ export default function AppToastHost() {
           ...prev.filter((item) => item.id !== notification.id),
         ];
 
+        console.log("[AppToastHost] setToasts next", next);
         return next.slice(0, MAX_TOASTS);
       });
 
@@ -362,8 +391,10 @@ export default function AppToastHost() {
     const onToastRemove = (event: Event) => {
       const customEvent = event as CustomEvent<string>;
       const notificationId = customEvent.detail;
-      if (!notificationId) return;
 
+      console.log("[AppToastHost] APP_TOAST_REMOVE_EVENT received", notificationId);
+
+      if (!notificationId) return;
       startRemove(notificationId);
     };
 
@@ -390,8 +421,18 @@ export default function AppToastHost() {
     };
   }, []);
 
+  useEffect(() => {
+    console.log("[AppToastHost] rendered toasts", {
+      count: toasts.length,
+      safeCount: safeToasts.length,
+      toasts,
+    });
+  }, [toasts, safeToasts]);
+
   function startRemove(notificationId: string) {
     if (!notificationId) return;
+
+    console.log("[AppToastHost] startRemove", notificationId);
 
     if (timersRef.current[notificationId]) {
       window.clearTimeout(timersRef.current[notificationId]);
@@ -415,12 +456,23 @@ export default function AppToastHost() {
   }
 
   function onClickToast(notification: AppNotification) {
+    console.log("[AppToastHost] toast clicked", notification);
     startRemove(notification.id);
     handleNotificationAction(notification);
   }
 
+  const containerClassName = cn(
+    "pointer-events-none fixed bottom-4 z-[10050] flex w-[360px] max-w-[calc(100vw-24px)] flex-col gap-3 transition-all duration-200 sm:bottom-5",
+    isMessengerMainOpen ? "right-[540px]" : "right-4 sm:right-5"
+  );
+
+  console.log("[AppToastHost] containerClassName", {
+    isMessengerMainOpen,
+    containerClassName,
+  });
+
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-[9999] flex w-[360px] max-w-[calc(100vw-24px)] flex-col gap-3 sm:bottom-5 sm:right-5">
+    <div className={containerClassName}>
       {safeToasts.map((toast) => {
         const isMessenger = toast.category === "messenger";
 
