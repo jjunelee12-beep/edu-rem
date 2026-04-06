@@ -22,9 +22,9 @@ export function useAuth(options?: UseAuthOptions) {
     setError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/api/auth/me`, {
-        credentials: "include",
-      });
+      const res = await fetch(`/api/auth/me`, {
+  credentials: "include",
+});
 
       if (!res.ok) {
         setUser(null);
@@ -46,10 +46,10 @@ export function useAuth(options?: UseAuthOptions) {
 
   const logout = useCallback(async () => {
     try {
-      await fetch(`${API_BASE}/api/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
+      await fetch(`/api/auth/logout`, {
+  method: "POST",
+  credentials: "include",
+});
     } catch (e) {
       console.error("logout error", e);
     } finally {

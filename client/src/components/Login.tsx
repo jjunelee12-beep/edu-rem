@@ -35,15 +35,15 @@ export default function Login() {
     setPending(true);
 
     try {
-      const res = await fetch(`${API_BASE}/api/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          username: username.trim(),
-          password,
-        }),
-      });
+      const res = await fetch(`/api/auth/login`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  credentials: "include",
+  body: JSON.stringify({
+    username: username.trim(),
+    password,
+  }),
+});
 
       const data = await res.json().catch(() => null);
 
