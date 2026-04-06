@@ -360,7 +360,7 @@ const resizingRef = useRef(false);
     return unreadUsers.length;
   };
 
-  const timelineItems = useMemo(() => {
+    const timelineItems = useMemo(() => {
     const items: Array<
       | { kind: "date"; key: string; label: string }
       | {
@@ -440,18 +440,13 @@ const resizingRef = useRef(false);
     return items;
   }, [safeMessages, currentUserId, participants, room]);
 
-
-const firstUnreadMessageId = useMemo(() => {
-  return getFirstUnreadMessageId(
-    safeMessages,
-    currentUserId,
-    participantsconst firstUnreadMessageId = useMemo(() => {
-  return getFirstUnreadMessageId(
-    safeMessages,
-    currentUserId,
-    participants
-  );
-}, [safeMessages, currentUserId, participants]);
+  const firstUnreadMessageId = useMemo(() => {
+    return getFirstUnreadMessageId(
+      safeMessages,
+      currentUserId,
+      participants
+    );
+  }, [safeMessages, currentUserId, participants]);
 
   useEffect(() => {
     const el = scrollRef.current;
