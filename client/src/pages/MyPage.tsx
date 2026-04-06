@@ -51,6 +51,9 @@ export default function MyPage() {
     const updatePhotoMutation = trpc.users.updateMyPhoto.useMutation({
     onSuccess: async () => {
       await utils.users.me.invalidate();
+	 await utils.users.list.invalidate();
+
+
       window.dispatchEvent(new Event("profile-image-updated"));
       alert("프로필 사진이 저장되었습니다.");
       setPreviewImage("");
