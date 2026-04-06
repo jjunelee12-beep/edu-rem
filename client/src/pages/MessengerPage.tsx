@@ -820,24 +820,43 @@ useEffect(() => {
     [userList, onlineUserIds]
   );
 
-  const currentUserProfile = useMemo<MessengerUser | null>(() => {
-    const meFromList = orgUsers.find(
-      (item) => Number(item.id) === Number(user?.id)
-    );
+ const currentUserProfile = useMemo<MessengerUser | null>(() => {
+  const meFromList = orgUsers.find(
+    (item) => Number(item.id) === Number(user?.id)
+  );
 
-    if (meFromList) return meFromList;
-
-    if (!user?.id) return null;
-
+  if (meFromList) {
     return {
-      id: Number(user.id),
-      name: user.name || user.username || "이름없음",
-      position: roleToPosition(user.role),
-      team: "미분류",
-      avatar: normalizeAssetUrl((user as any).profileImageUrl || ""),
+      ...meFromList,
+      avatar: normalizeAssetUrl(
+        meFromList.avatar ||
+          (user as any)?.profileImageUrl ||
+          (user as any)?.avatarUrl ||
+          ""
+      ),
       status: "online",
     };
-  }, [orgUsers, user]);
+  }
+
+  if (!user?.id) return null;
+
+  return {
+    id: Number(user.id),
+    name: user.name || user.username || "이름없음",
+    position:
+      (user as any)?.positionName ||
+      (user as any)?.position ||
+      roleToPosition(user.role),
+    team: (user as any)?.teamName || (user as any)?.team || "미분류",
+    avatar: normalizeAssetUrl(
+      (user as any)?.profileImageUrl ||
+        (user as any)?.avatarUrl ||
+        (user as any)?.avatar ||
+        ""
+    ),
+    status: "online",
+  };
+}, [orgUsers, user]);
 
   const usersById = useMemo(() => {
     const fallbackUsersById = getUsersById();

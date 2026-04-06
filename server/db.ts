@@ -3404,6 +3404,7 @@ export async function getUsersWithOrg() {
       u.email,
       u.phone,
       u.role,
+u.profileImageUrl as avatarUrl,
       u.bankName,
       u.bankAccount,
       u.isActive,
