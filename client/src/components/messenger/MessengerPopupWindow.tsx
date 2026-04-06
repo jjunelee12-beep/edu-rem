@@ -206,11 +206,11 @@ export default function MessengerPopupWindow({
   });
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
   const [, setForceRender] = useState(0);
-const [activeSearchMessageId, setActiveSearchMessageId] = useState<number | null>(
-  null
-);
-const [isNearBottom, setIsNearBottom] = useState(true);
-const [hasInitializedScroll, setHasInitializedScroll] = useState(false);
+  const [activeSearchMessageId, setActiveSearchMessageId] = useState<number | null>(
+    null
+  );
+  const [isNearBottom, setIsNearBottom] = useState(true);
+  const [hasInitializedScroll, setHasInitializedScroll] = useState(false);
 
   const otherParticipant =
     participants.find((p) => Number(p.id) !== Number(currentUserId)) ||
@@ -258,10 +258,10 @@ const [hasInitializedScroll, setHasInitializedScroll] = useState(false);
     });
   }, [rightOffset, topOffset]);
 
-useEffect(() => {
-  setHasInitializedScroll(false);
-  setIsNearBottom(true);
-}, [room?.id]);
+  useEffect(() => {
+    setHasInitializedScroll(false);
+    setIsNearBottom(true);
+  }, [room?.id]);
 
   useEffect(() => {
     const handleBackgroundChange = () => {
@@ -391,74 +391,73 @@ useEffect(() => {
     return items;
   }, [safeMessages, currentUserId, participants, room]);
 
-  
-useEffect(() => {
-  const el = scrollRef.current;
-  if (!el) return;
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
 
-  if (!hasInitializedScroll) {
-    el.scrollTop = el.scrollHeight;
-    setHasInitializedScroll(true);
-    return;
-  }
+    if (!hasInitializedScroll) {
+      el.scrollTop = el.scrollHeight;
+      setHasInitializedScroll(true);
+      return;
+    }
 
-  const lastTimelineItem = timelineItems[timelineItems.length - 1];
-  const isMyLatestMessage =
-    lastTimelineItem &&
-    lastTimelineItem.kind === "message" &&
-    Number(lastTimelineItem.message.senderId) === Number(currentUserId);
+    const lastTimelineItem = timelineItems[timelineItems.length - 1];
+    const isMyLatestMessage =
+      lastTimelineItem &&
+      lastTimelineItem.kind === "message" &&
+      Number(lastTimelineItem.message.senderId) === Number(currentUserId);
 
-  if (isNearBottom || isMyLatestMessage) {
-    el.scrollTop = el.scrollHeight;
-  }
-}, [
-  timelineItems,
-  pendingAttachments,
-  typingLabel,
-  isNearBottom,
-  hasInitializedScroll,
-  currentUserId,
-]);
+    if (isNearBottom || isMyLatestMessage) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [
+    timelineItems,
+    pendingAttachments,
+    typingLabel,
+    isNearBottom,
+    hasInitializedScroll,
+    currentUserId,
+  ]);
 
   useEffect(() => {
-  if (!searchMatchedMessageIds.length) {
-    setCurrentSearchIndex(0);
-    setActiveSearchMessageId(null);
-    return;
-  }
+    if (!searchMatchedMessageIds.length) {
+      setCurrentSearchIndex(0);
+      setActiveSearchMessageId(null);
+      return;
+    }
 
-  const safeIndex = Math.min(
-    currentSearchIndex,
-    searchMatchedMessageIds.length - 1
-  );
+    const safeIndex = Math.min(
+      currentSearchIndex,
+      searchMatchedMessageIds.length - 1
+    );
 
-  const targetId = searchMatchedMessageIds[safeIndex];
-  setActiveSearchMessageId(Number(targetId));
+    const targetId = searchMatchedMessageIds[safeIndex];
+    setActiveSearchMessageId(Number(targetId));
 
-  const element = messageRefs.current[String(targetId)];
-  if (element) {
-    element.scrollIntoView({
-      behavior: "smooth",
-      block: "center",
-    });
-  }
-}, [searchMatchedMessageIds, currentSearchIndex]);
+    const element = messageRefs.current[String(targetId)];
+    if (element) {
+      element.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+  }, [searchMatchedMessageIds, currentSearchIndex]);
 
-useEffect(() => {
-  const el = scrollRef.current;
-  if (!el) return;
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
 
-  const handleScroll = () => {
-    setIsNearBottom(checkIsNearBottom());
-  };
+    const handleScroll = () => {
+      setIsNearBottom(checkIsNearBottom());
+    };
 
-  el.addEventListener("scroll", handleScroll);
-  handleScroll();
+    el.addEventListener("scroll", handleScroll);
+    handleScroll();
 
-  return () => {
-    el.removeEventListener("scroll", handleScroll);
-  };
-}, [room?.id]);
+    return () => {
+      el.removeEventListener("scroll", handleScroll);
+    };
+  }, [room?.id]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -507,15 +506,16 @@ useEffect(() => {
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
   };
-const checkIsNearBottom = () => {
-  const el = scrollRef.current;
-  if (!el) return true;
 
-  const distanceFromBottom =
-    el.scrollHeight - el.scrollTop - el.clientHeight;
+  const checkIsNearBottom = () => {
+    const el = scrollRef.current;
+    if (!el) return true;
 
-  return distanceFromBottom < 120;
-};
+    const distanceFromBottom =
+      el.scrollHeight - el.scrollTop - el.clientHeight;
+
+    return distanceFromBottom < 120;
+  };
 
   if (minimized) {
     return (
@@ -617,18 +617,18 @@ const checkIsNearBottom = () => {
               <button
                 type="button"
                 onClick={() => {
-  setSearchOpen((prev) => {
-    const next = !prev;
+                  setSearchOpen((prev) => {
+                    const next = !prev;
 
-    if (!next) {
-      setSearchText("");
-      setCurrentSearchIndex(0);
-      setActiveSearchMessageId(null);
-    }
+                    if (!next) {
+                      setSearchText("");
+                      setCurrentSearchIndex(0);
+                      setActiveSearchMessageId(null);
+                    }
 
-    return next;
-  });
-}}
+                    return next;
+                  });
+                }}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-700 transition hover:bg-slate-50"
                 title="채팅 검색"
               >
@@ -743,11 +743,11 @@ const checkIsNearBottom = () => {
                 <button
                   type="button"
                   onClick={() => {
-  setSearchText("");
-  setSearchOpen(false);
-  setCurrentSearchIndex(0);
-  setActiveSearchMessageId(null);
-}}
+                    setSearchText("");
+                    setSearchOpen(false);
+                    setCurrentSearchIndex(0);
+                    setActiveSearchMessageId(null);
+                  }}
                   className="text-slate-500"
                 >
                   <X className="h-4 w-4" />
@@ -796,16 +796,16 @@ const checkIsNearBottom = () => {
                     </div>
                   );
                 }
-		
-		if (item.message.type === "system") {
-  return (
-    <div key={item.key} className="flex justify-center py-1">
-      <div className="rounded-full bg-slate-500/15 px-3 py-1 text-xs text-slate-700">
-        {item.message.content}
-      </div>
-    </div>
-  );
-}
+
+                if (item.message.type === "system") {
+                  return (
+                    <div key={item.key} className="flex justify-center py-1">
+                      <div className="rounded-full bg-slate-500/15 px-3 py-1 text-xs text-slate-700">
+                        {item.message.content}
+                      </div>
+                    </div>
+                  );
+                }
 
                 const {
                   message,
@@ -819,11 +819,10 @@ const checkIsNearBottom = () => {
                 } = item;
 
                 const sender = usersById[Number(message.senderId)];
-                
 
-	const isMatched = searchMatchedMessageIds.includes(Number(message.id));
-const isCurrentMatched =
-  Number(activeSearchMessageId) === Number(message.id);
+                const isMatched = searchMatchedMessageIds.includes(Number(message.id));
+                const isCurrentMatched =
+                  Number(activeSearchMessageId) === Number(message.id);
 
                 const senderName =
                   sender?.name ||
@@ -875,16 +874,16 @@ const isCurrentMatched =
                         )}
 
                         <div
-  className={`overflow-hidden px-4 py-3 text-sm leading-relaxed shadow-sm transition ${
-    bubbleClass
-  } ${
-    Number(activeSearchMessageId) === Number(message.id)
-      ? "ring-2 ring-blue-500 shadow-[0_0_0_4px_rgba(59,130,246,0.15)]"
-      : isMatched
-      ? "ring-1 ring-yellow-300"
-      : ""
-  }`}
->
+                          className={`overflow-hidden px-4 py-3 text-sm leading-relaxed shadow-sm transition ${
+                            bubbleClass
+                          } ${
+                            isCurrentMatched
+                              ? "ring-2 ring-blue-500 shadow-[0_0_0_4px_rgba(59,130,246,0.15)]"
+                              : isMatched
+                              ? "ring-1 ring-yellow-300"
+                              : ""
+                          }`}
+                        >
                           {message.type === "text" && (
                             <span>
                               {highlightText(
@@ -955,19 +954,19 @@ const isCurrentMatched =
                         </div>
 
                         {showMeta && (
-  <div
-    className={`mt-1 flex items-center gap-1 px-1 text-[11px] text-slate-500 ${
-      isMine ? "justify-end" : "justify-start"
-    }`}
-  >
-    {showReadMeta ? (
-      <span className="min-w-[10px] text-right font-semibold leading-none text-amber-600">
-        {readCount}
-      </span>
-    ) : null}
-    <span>{message.createdAt}</span>
-  </div>
-)}
+                          <div
+                            className={`mt-1 flex items-center gap-1 px-1 text-[11px] text-slate-500 ${
+                              isMine ? "justify-end" : "justify-start"
+                            }`}
+                          >
+                            {showReadMeta ? (
+                              <span className="min-w-[10px] text-right font-semibold leading-none text-amber-600">
+                                {readCount}
+                              </span>
+                            ) : null}
+                            <span>{message.createdAt}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

@@ -68,10 +68,10 @@ type MessengerPageProps = {
 
 type TypingStateMap = Record<number, number[]>;
 
-function emitDirectCreate(targetUserId: number): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const socket = getSocket();
+async function emitDirectCreate(targetUserId: number): Promise<number> {
+  const socket = await getSocket();
 
+  return new Promise((resolve, reject) => {
     socket.emit(
       "direct:create",
       { targetUserId: Number(targetUserId) },
@@ -93,18 +93,10 @@ function emitDirectCreate(targetUserId: number): Promise<number> {
   });
 }
 
-function emitMessageSend(payload: {
-  roomId: number;
-  messageType?: "text" | "image" | "file" | "system";
-  content?: string;
-  fileUrl?: string | null;
-  fileName?: string | null;
-  fileType?: string | null;
-  fileSize?: number | null;
-}): Promise<{ roomId: number; messageId: number }> {
-  return new Promise((resolve, reject) => {
-    const socket = getSocket();
+async function emitMessageSend(payload: any) {
+  const socket = await getSocket();
 
+  return new Promise((resolve, reject) => {
     socket.emit("message:send", payload, (res: any) => {
       if (!res?.success) {
         reject(new Error(res?.message || "메시지 전송 실패"));
@@ -119,19 +111,13 @@ function emitMessageSend(payload: {
   });
 }
 
-function emitReadUpdate(
-  roomId: number,
-  lastReadMessageId: number
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const socket = getSocket();
+async function emitReadUpdate(roomId: number, lastReadMessageId: number) {
+  const socket = await getSocket();
 
+  return new Promise<void>((resolve, reject) => {
     socket.emit(
       "read:update",
-      {
-        roomId: Number(roomId),
-        lastReadMessageId: Number(lastReadMessageId),
-      },
+      { roomId, lastReadMessageId },
       (res: any) => {
         if (!res?.success) {
           reject(new Error(res?.message || "읽음 처리 실패"));
@@ -143,31 +129,25 @@ function emitReadUpdate(
   });
 }
 
-function emitRoomMute(roomId: number, isMuted: boolean): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const socket = getSocket();
+async function emitRoomMute(roomId: number, isMuted: boolean): Promise<void> {
+  const socket = await getSocket();
 
+  return new Promise((resolve, reject) => {
     socket.emit(
       "room:mute",
-      {
-        roomId: Number(roomId),
-        isMuted: !!isMuted,
-      },
+      { roomId, isMuted },
       (res: any) => {
-        if (!res?.success) {
-          reject(new Error(res?.message || "알림 설정 변경 실패"));
-          return;
-        }
+        if (!res?.success) return reject(new Error(res?.message));
         resolve();
       }
     );
   });
 }
 
-function emitRoomLeave(roomId: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const socket = getSocket();
+async function emitRoomLeave(roomId: number): Promise<void> {
+  const socket = await getSocket();
 
+  return new Promise((resolve, reject) => {
     socket.emit(
       "room:leave:confirm",
       {
@@ -184,13 +164,13 @@ function emitRoomLeave(roomId: number): Promise<void> {
   });
 }
 
-function emitRoomMembersAdd(
+async function emitRoomMembersAdd(
   roomId: number,
   userIds: number[]
 ): Promise<{ addedUserIds: number[] }> {
-  return new Promise((resolve, reject) => {
-    const socket = getSocket();
+  const socket = await getSocket();
 
+  return new Promise((resolve, reject) => {
     socket.emit(
       "room:members:add",
       {
@@ -211,14 +191,14 @@ function emitRoomMembersAdd(
   });
 }
 
-function emitTypingStart(roomId: number) {
-  const socket = getSocket();
-  socket.emit("typing:start", { roomId: Number(roomId) });
+async function emitTypingStart(roomId: number) {
+  const socket = await getSocket();
+  socket.emit("typing:start", { roomId });
 }
 
-function emitTypingStop(roomId: number) {
-  const socket = getSocket();
-  socket.emit("typing:stop", { roomId: Number(roomId) });
+async function emitTypingStop(roomId: number) {
+  const socket = await getSocket();
+  socket.emit("typing:stop", { roomId });
 }
 
 function PopupRoomData({
@@ -297,44 +277,51 @@ function PopupRoomData({
   );
 
   useEffect(() => {
-    if (popup.type !== "room" || !roomId || popup.minimized) return;
+  if (popup.type !== "room" || !roomId || popup.minimized) return;
 
-    const socket = getSocket();
+  let socketRef: any;
 
-    const handleNewMessage = async (payload: any) => {
-      const incomingRoomId = Number(payload?.roomId || 0);
-      if (incomingRoomId !== Number(roomId)) return;
+  const handleNewMessage = async (payload: any) => {
+    const incomingRoomId = Number(payload?.roomId || 0);
+    if (incomingRoomId !== Number(roomId)) return;
 
-      await refetchMessages();
-      await refetchMembers();
-      await onRefreshRooms();
-    };
+    await refetchMessages();
+    await refetchMembers();
+    await onRefreshRooms();
+  };
 
-    const handleReadUpdate = async (payload: any) => {
-      const incomingRoomId = Number(payload?.roomId || 0);
-      if (incomingRoomId !== Number(roomId)) return;
+  const handleReadUpdate = async (payload: any) => {
+    const incomingRoomId = Number(payload?.roomId || 0);
+    if (incomingRoomId !== Number(roomId)) return;
 
-      await refetchMembers();
-      await onRefreshRooms();
-    };
+    await refetchMembers();
+    await onRefreshRooms();
+  };
+
+  (async () => {
+    const socket = await getSocket();
+    socketRef = socket;
 
     socket.emit("room:join", { roomId: Number(roomId) });
     socket.on("message:new", handleNewMessage);
     socket.on("read:update", handleReadUpdate);
+  })();
 
-    return () => {
-      socket.emit("room:leave", { roomId: Number(roomId) });
-      socket.off("message:new", handleNewMessage);
-      socket.off("read:update", handleReadUpdate);
-    };
-  }, [
-    popup.type,
-    roomId,
-    popup.minimized,
-    refetchMessages,
-    refetchMembers,
-    onRefreshRooms,
-  ]);
+  return () => {
+    if (!socketRef) return;
+
+    socketRef.emit("room:leave", { roomId: Number(roomId) });
+    socketRef.off("message:new", handleNewMessage);
+    socketRef.off("read:update", handleReadUpdate);
+  };
+}, [
+  popup.type,
+  roomId,
+  popup.minimized,
+  refetchMessages,
+  refetchMembers,
+  onRefreshRooms,
+]);
 
   const room =
     popup.type === "room"
@@ -455,7 +442,7 @@ function PopupRoomData({
 
     if (!targetRoomId) return;
 
-    emitTypingStop(Number(targetRoomId));
+    await emitTypingStop(Number(targetRoomId));
 
     if (hasText) {
       await emitMessageSend({
@@ -501,9 +488,9 @@ function PopupRoomData({
 
     if (popup.type === "room" && roomId) {
       if (value.trim()) {
-        emitTypingStart(Number(roomId));
+        void emitTypingStart(Number(roomId));
       } else {
-        emitTypingStop(Number(roomId));
+        void emitTypingStop(Number(roomId));
       }
     }
   };
@@ -621,79 +608,84 @@ export default function MessengerPage({
     );
   }, [pinnedRoomIds]);
 
-  useEffect(() => {
-    const socket = getSocket();
+ 
+useEffect(() => {
+  let socketRef: any;
 
-    const handleOnlineUsers = (data: any) => {
-      setOnlineUserIds(new Set((data?.userIds || []).map((v: any) => Number(v))));
-    };
+  const handleOnlineUsers = (data: any) => {
+    setOnlineUserIds(new Set((data?.userIds || []).map((v: any) => Number(v))));
+  };
 
-    const handleUserOnline = ({ userId }: any) => {
-      setOnlineUserIds((prev) => new Set([...prev, Number(userId)]));
-    };
+  const handleUserOnline = ({ userId }: any) => {
+    setOnlineUserIds((prev) => new Set([...prev, Number(userId)]));
+  };
 
-    const handleUserOffline = ({ userId }: any) => {
-      setOnlineUserIds((prev) => {
-        const next = new Set(prev);
-        next.delete(Number(userId));
-        return next;
-      });
-    };
+  const handleUserOffline = ({ userId }: any) => {
+    setOnlineUserIds((prev) => {
+      const next = new Set(prev);
+      next.delete(Number(userId));
+      return next;
+    });
+  };
 
-    const handleRoomListUpdate = async () => {
-      await refetchRooms();
-    };
+  const handleRoomListUpdate = async () => {
+    await refetchRooms();
+  };
 
-    const handleNewMessage = async () => {
-      await refetchRooms();
-    };
+  const handleNewMessage = async () => {
+    await refetchRooms();
+  };
 
-    const handleTypingStart = ({
-      roomId,
-      userId,
-    }: {
-      roomId: number;
-      userId: number;
-    }) => {
-      const targetRoomId = Number(roomId);
-      const targetUserId = Number(userId);
+  const handleTypingStart = ({
+    roomId,
+    userId,
+  }: {
+    roomId: number;
+    userId: number;
+  }) => {
+    const targetRoomId = Number(roomId);
+    const targetUserId = Number(userId);
 
-      if (!targetRoomId || !targetUserId) return;
-      if (targetUserId === Number(user?.id)) return;
+    if (!targetRoomId || !targetUserId) return;
+    if (targetUserId === Number(user?.id)) return;
 
-      setTypingByRoom((prev) => {
-        const current = prev[targetRoomId] || [];
-        if (current.includes(targetUserId)) return prev;
+    setTypingByRoom((prev) => {
+      const current = prev[targetRoomId] || [];
+      if (current.includes(targetUserId)) return prev;
 
-        return {
-          ...prev,
-          [targetRoomId]: [...current, targetUserId],
-        };
-      });
-    };
+      return {
+        ...prev,
+        [targetRoomId]: [...current, targetUserId],
+      };
+    });
+  };
 
-    const handleTypingStop = ({
-      roomId,
-      userId,
-    }: {
-      roomId: number;
-      userId: number;
-    }) => {
-      const targetRoomId = Number(roomId);
-      const targetUserId = Number(userId);
+  const handleTypingStop = ({
+    roomId,
+    userId,
+  }: {
+    roomId: number;
+    userId: number;
+  }) => {
+    const targetRoomId = Number(roomId);
+    const targetUserId = Number(userId);
 
-      if (!targetRoomId || !targetUserId) return;
+    if (!targetRoomId || !targetUserId) return;
 
-      setTypingByRoom((prev) => {
-        const current = prev[targetRoomId] || [];
-        const nextUsers = current.filter((id) => id !== targetUserId);
+    setTypingByRoom((prev) => {
+      const current = prev[targetRoomId] || [];
+      const nextUsers = current.filter((id) => id !== targetUserId);
 
-        return {
-          ...prev,
-          [targetRoomId]: nextUsers,
-        };
-      });
-    };
+      return {
+        ...prev,
+        [targetRoomId]: nextUsers,
+      };
+    });
+  };
+
+  (async () => {
+    const socket = await getSocket();
+    socketRef = socket;
 
     socket.on("online:users", handleOnlineUsers);
     socket.on("user:online", handleUserOnline);
@@ -702,17 +694,20 @@ export default function MessengerPage({
     socket.on("message:new", handleNewMessage);
     socket.on("typing:start", handleTypingStart);
     socket.on("typing:stop", handleTypingStop);
+  })();
 
-    return () => {
-      socket.off("online:users", handleOnlineUsers);
-      socket.off("user:online", handleUserOnline);
-      socket.off("user:offline", handleUserOffline);
-      socket.off("room:list:update", handleRoomListUpdate);
-      socket.off("message:new", handleNewMessage);
-      socket.off("typing:start", handleTypingStart);
-      socket.off("typing:stop", handleTypingStop);
-    };
-  }, [refetchRooms, user?.id]);
+  return () => {
+    if (!socketRef) return;
+
+    socketRef.off("online:users", handleOnlineUsers);
+    socketRef.off("user:online", handleUserOnline);
+    socketRef.off("user:offline", handleUserOffline);
+    socketRef.off("room:list:update", handleRoomListUpdate);
+    socketRef.off("message:new", handleNewMessage);
+    socketRef.off("typing:start", handleTypingStart);
+    socketRef.off("typing:stop", handleTypingStop);
+  };
+}, [refetchRooms, user?.id]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1304,41 +1299,43 @@ export default function MessengerPage({
 	onUpdateTitle={(title) => {
   if (!activeRoomForInfo?.id) return;
 
-  const socket = getSocket();
+  (async () => {
+    const socket = await getSocket();
 
-  socket.emit(
-    "room:title:update",
-    {
-      roomId: Number(activeRoomForInfo.id),
-      title,
-    },
-    async (res: any) => {
-      if (!res?.success) {
-        alert(res?.message || "채팅방 이름 변경 실패");
-        return;
+    socket.emit(
+      "room:title:update",
+      {
+        roomId: Number(activeRoomForInfo.id),
+        title,
+      },
+      async (res: any) => {
+        if (!res?.success) {
+          alert(res?.message || "채팅방 이름 변경 실패");
+          return;
+        }
+
+        await refetchRooms();
+
+        setRoomInfoMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now(),
+            roomId: Number(activeRoomForInfo.id),
+            senderId: 0,
+            type: "system",
+            content: `채팅방 이름이 "${title}"(으)로 변경되었습니다.`,
+            createdAtRaw: new Date().toISOString(),
+            createdAt: new Date().toLocaleTimeString("ko-KR", {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            fileName: "",
+            fileUrl: "",
+          },
+        ]);
       }
-
-      await refetchRooms();
-
-      setRoomInfoMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now(),
-          roomId: Number(activeRoomForInfo.id),
-          senderId: 0,
-          type: "system",
-          content: `채팅방 이름이 "${title}"(으)로 변경되었습니다.`,
-          createdAtRaw: new Date().toISOString(),
-          createdAt: new Date().toLocaleTimeString("ko-KR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-          fileName: "",
-          fileUrl: "",
-        },
-      ]);
-    }
-  );
+    );
+  })();
 }}
       />
 

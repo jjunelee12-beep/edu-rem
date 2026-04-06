@@ -45,6 +45,35 @@ function sign(value: string, secret: string) {
   return crypto.createHmac("sha256", secret).update(value).digest("hex");
 }
 
+function readUserIdFromSocketToken(
+  rawValue: string,
+  secret: string
+): number | null {
+  try {
+    const parts = String(rawValue || "").split(".");
+    if (parts.length !== 3) return null;
+
+    const [userIdStr, timestampStr, sig] = parts;
+    const payload = `${userIdStr}.${timestampStr}`;
+    const expected = sign(payload, secret);
+
+    if (sig !== expected) return null;
+
+    const userId = Number(userIdStr);
+    const issuedAt = Number(timestampStr);
+
+    if (!Number.isFinite(userId) || userId <= 0) return null;
+    if (!Number.isFinite(issuedAt)) return null;
+
+    // 12시간 유효
+    if (Date.now() - issuedAt > 1000 * 60 * 60 * 12) return null;
+
+    return userId;
+  } catch {
+    return null;
+  }
+}
+
 function readUserIdFromSessionCookieValue(
   rawValue: string,
   secret: string
@@ -175,22 +204,38 @@ async function startServer() {
 
   io.use((socket, next) => {
   try {
-    const cookieHeader = socket.handshake.headers.cookie;
     const origin = socket.handshake.headers.origin;
     const secret = process.env.SESSION_SECRET;
+    const socketToken = socket.handshake.auth?.socketToken;
 
     console.log("[SOCKET AUTH]", {
       origin,
-      hasCookieHeader: !!cookieHeader,
-      cookieHeader,
+      hasSocketToken: !!socketToken,
+      hasCookieHeader: !!socket.handshake.headers.cookie,
     });
-
-    if (!cookieHeader) {
-      return next(new Error("UNAUTHORIZED"));
-    }
 
     if (!secret) {
       return next(new Error("SESSION_SECRET is missing"));
+    }
+
+    // 1) 소켓 토큰 인증 우선
+    if (socketToken) {
+      const userId = readUserIdFromSocketToken(String(socketToken), secret);
+
+      console.log("[SOCKET AUTH TOKEN]", { userId });
+
+      if (!userId) {
+        return next(new Error("UNAUTHORIZED"));
+      }
+
+      socket.data.userId = userId;
+      return next();
+    }
+
+    // 2) fallback: 기존 쿠키 인증
+    const cookieHeader = socket.handshake.headers.cookie;
+    if (!cookieHeader) {
+      return next(new Error("UNAUTHORIZED"));
     }
 
     const parsed = cookie.parse(cookieHeader);
@@ -219,6 +264,8 @@ async function startServer() {
     return next(new Error("UNAUTHORIZED"));
   }
 });
+
+
 
   io.on("connection", (socket) => {
     const userId = Number(socket.data.userId);

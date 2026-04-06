@@ -1,6 +1,7 @@
 import { io, Socket } from "socket.io-client";
 
 let socket: Socket | null = null;
+let socketTokenPromise: Promise<string | null> | null = null;
 
 function getSocketBaseUrl() {
   const envBase = import.meta.env.VITE_API_BASE_URL?.trim();
@@ -11,7 +12,25 @@ function getSocketBaseUrl() {
   return window.location.origin.replace(/\/$/, "");
 }
 
-export function getSocket() {
+async function getSocketToken() {
+  if (!socketTokenPromise) {
+    socketTokenPromise = fetch(`/api/auth/socket-token`, {
+      credentials: "include",
+    })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        const data = await res.json().catch(() => null);
+        return data?.socketToken || null;
+      })
+      .catch(() => null);
+  }
+
+  const token = await socketTokenPromise;
+  socketTokenPromise = null;
+  return token;
+}
+
+export async function getSocket() {
   if (socket) {
     if (!socket.connected && !socket.active) {
       socket.connect();
@@ -20,6 +39,7 @@ export function getSocket() {
   }
 
   const apiBase = getSocketBaseUrl();
+  const socketToken = await getSocketToken();
 
   socket = io(apiBase, {
     withCredentials: true,
@@ -30,6 +50,9 @@ export function getSocket() {
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
     timeout: 10000,
+    auth: {
+      socketToken,
+    },
   });
 
   socket.on("connect", () => {
@@ -40,8 +63,20 @@ export function getSocket() {
     console.log("[socket] disconnected:", reason);
   });
 
-  socket.on("connect_error", (error) => {
+  socket.on("connect_error", async (error) => {
     console.error("[socket] connect_error:", error?.message || error);
+
+    // 토큰 만료/누락이면 1회 재발급 시도
+    if (
+      String(error?.message || "").includes("UNAUTHORIZED") &&
+      socket
+    ) {
+      const newToken = await getSocketToken();
+      if (newToken) {
+        socket.auth = { socketToken: newToken };
+        socket.connect();
+      }
+    }
   });
 
   socket.on("reconnect_attempt", (attempt) => {
