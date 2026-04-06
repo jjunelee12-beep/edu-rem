@@ -10,15 +10,12 @@ import ScheduleEditorDialog from "@/components/schedule/ScheduleEditorDialog";
 import { formatTime } from "@/lib/datetime";
 import {
   Search,
-  Bell,
-  User,
   Clock3,
   Megaphone,
   CheckCircle2,
   UserCheck,
   UserX,
   CalendarRange,
-  MessageSquare,
 } from "lucide-react";
 
 type AttendanceCardStatus =
@@ -186,9 +183,6 @@ export default function Home() {
     });
   }, [attendanceRows]);
 
-  const unreadNotificationCount = useMemo(() => {
-    return (notifications as any[]).filter((item) => !item.isRead).length;
-  }, [notifications]);
 
   const activeUsers = useMemo(() => {
     if (isSuperAdmin) {
@@ -453,32 +447,6 @@ export default function Home() {
             <Button variant="outline" onClick={() => setLocation("/overview")}>
               운영 대시보드
             </Button>
-
-            <button
-              className="relative inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-sm transition hover:bg-slate-50"
-              onClick={() => setLocation("/notifications")}
-            >
-              <Bell className="h-4 w-4" />
-              {unreadNotificationCount > 0 ? (
-                <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-red-500 px-1.5 py-0.5 text-center text-[10px] font-semibold leading-none text-white">
-                  {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
-                </span>
-              ) : null}
-            </button>
-
-            <button
-              onClick={openMessenger}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-sm transition hover:bg-slate-50"
-            >
-              <MessageSquare className="h-4 w-4" />
-            </button>
-
-            <button
-              onClick={() => setLocation("/my")}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-sm transition hover:bg-slate-50"
-            >
-              <User className="h-4 w-4" />
-            </button>
           </div>
         </div>
 

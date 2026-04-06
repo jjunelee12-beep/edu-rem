@@ -376,7 +376,7 @@ function DashboardLayoutContent({
         return location.startsWith(item.path);
       });
 
-  const notificationEnabled = !isSuperhost;
+  const notificationEnabled = true;
 
   const notificationQuery = trpc.notification.list.useQuery(undefined, {
     refetchInterval: notificationEnabled ? 10000 : false,
@@ -477,21 +477,42 @@ function DashboardLayoutContent({
   };
 
   const handleNotificationClick = async (item: NotificationItem) => {
-    if (!item.isRead) {
-      try {
-        await markReadMutation.mutateAsync({ id: item.id });
-      } catch (e) {
-        console.error("[notification.markRead] failed:", e);
-      }
+  if (!item.isRead) {
+    try {
+      await markReadMutation.mutateAsync({ id: item.id });
+    } catch (e) {
+      console.error("[notification.markRead] failed:", e);
     }
+  }
 
-    if (item.relatedId) {
-      setLocation("/consultations");
-      return;
-    }
+  if (item.type === "messenger" && item.relatedId) {
+    setIsMessengerOpen(true);
 
+    window.dispatchEvent(
+      new CustomEvent("messenger:open-room", {
+        detail: { roomId: Number(item.relatedId) },
+      })
+    );
+    return;
+  }
+
+  if (item.type === "notice" && item.relatedId) {
+    setLocation(`/notices/${item.relatedId}`);
+    return;
+  }
+
+  if (item.type === "schedule" && item.relatedId) {
+    setLocation("/schedules");
+    return;
+  }
+
+  if (item.type === "lead") {
     setLocation("/consultations");
-  };
+    return;
+  }
+
+  setLocation("/consultations");
+};
 
   const displayProfileImageUrl = normalizeProfileImageUrl(
     (myProfile as any)?.profileImageUrl || user?.profileImageUrl || ""
@@ -698,7 +719,6 @@ function DashboardLayoutContent({
           )}
 
           <div className="flex items-center gap-2">
-            {!isSuperhost && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
@@ -761,7 +781,7 @@ function DashboardLayoutContent({
                   </div>
                 </DropdownMenuContent>
               </DropdownMenu>
-            )}
+ 
 
             <button
               onClick={() => setIsMessengerOpen(true)}
@@ -779,13 +799,15 @@ function DashboardLayoutContent({
               <User className="h-4 w-4" />
             </button>
 
-            <button
-              onClick={() => setLocation("/system")}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-900 transition hover:bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label="설정"
-            >
-              <Settings className="h-4 w-4" />
-            </button>
+            {(isHost || isSuperhost || isAdmin) && (
+  <button
+    onClick={() => setLocation("/system")}
+    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-900 transition hover:bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    aria-label="설정"
+  >
+    <Settings className="h-4 w-4" />
+  </button>
+)}
           </div>
         </div>
 

@@ -28,6 +28,8 @@ type MessengerSidebarProps = {
   currentUser?: MessengerUser | null;
   typingRoomIds?: number[];
   pinnedRoomIds?: number[];
+notificationEnabled?: boolean;
+onToggleNotification?: () => void;
   onSelectRoom: (roomId: number) => void | Promise<void>;
   onOpenDirectChat: (user: MessengerUser) => void;
   onTogglePinRoom: (roomId: number) => void;
@@ -92,6 +94,8 @@ export default function MessengerSidebar({
   currentUser,
   typingRoomIds = [],
   pinnedRoomIds = [],
+notificationEnabled = true,
+onToggleNotification,
   onSelectRoom,
   onOpenDirectChat,
   onTogglePinRoom,
@@ -365,11 +369,19 @@ export default function MessengerSidebar({
                                   </span>
                                 ) : null}
 
-                                {isMuted ? (
-                                  <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500">
-                                    <BellOff className="h-3 w-3" />
-                                  </span>
-                                ) : null}
+                                <span
+  className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${
+    isMuted
+      ? "bg-slate-100 text-slate-500"
+      : "bg-emerald-50 text-emerald-600"
+  }`}
+>
+  {isMuted ? (
+    <BellOff className="h-3 w-3" />
+  ) : (
+    <Bell className="h-3 w-3" />
+  )}
+</span>
                               </div>
 
                               <span className="shrink-0 pt-0.5 text-[11px] text-slate-500">
@@ -456,57 +468,43 @@ export default function MessengerSidebar({
             ))}
 
           {tab === "notificationSettings" && (
-            <div className="space-y-3 px-4 py-4">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded-2xl bg-white px-4 py-4 text-left transition shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] hover:bg-white hover:shadow-[inset_0_0_0_1px_rgba(15,23,42,0.07),0_8px_18px_rgba(15,23,42,0.05)]"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-black">
-                    브라우저 알림
-                  </p>
-                  <p className="mt-1 text-xs text-slate-600">
-                    새 메시지 도착 시 브라우저 알림을 표시합니다.
-                  </p>
-                </div>
-                <ChevronRight className="h-4 w-4 text-slate-400" />
-              </button>
+  <div className="px-4 py-4">
+    <div className="rounded-2xl border border-black/8 bg-white p-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold text-black">알림 기능</p>
+          <p className="text-xs text-slate-500">
+            메신저 알림 ON/OFF
+          </p>
+        </div>
 
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded-2xl bg-white px-4 py-4 text-left transition shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] hover:bg-white hover:shadow-[inset_0_0_0_1px_rgba(15,23,42,0.07),0_8px_18px_rgba(15,23,42,0.05)]"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-black">
-                    안읽은 메시지 표시
-                  </p>
-                  <p className="mt-1 text-xs text-slate-600">
-                    채팅 목록과 뱃지에 안읽은 개수를 표시합니다.
-                  </p>
-                </div>
-                <ChevronRight className="h-4 w-4 text-slate-400" />
-              </button>
-            </div>
-          )}
+        <button
+          onClick={onToggleNotification}
+          className={`relative w-12 h-7 rounded-full ${
+            notificationEnabled ? "bg-green-500" : "bg-gray-300"
+          }`}
+        >
+          <span
+            className={`absolute top-1 w-5 h-5 bg-white rounded-full transition ${
+              notificationEnabled ? "left-6" : "left-1"
+            }`}
+          />
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 
-          {tab === "chatSettings" && (
-            <div className="space-y-3 px-4 py-4">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded-2xl bg-white px-4 py-4 text-left transition shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] hover:bg-white hover:shadow-[inset_0_0_0_1px_rgba(15,23,42,0.07),0_8px_18px_rgba(15,23,42,0.05)]"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-black">
-                    Enter 전송
-                  </p>
-                  <p className="mt-1 text-xs text-slate-600">
-                    Enter로 전송하고 Shift + Enter로 줄바꿈합니다.
-                  </p>
-                </div>
-                <ChevronRight className="h-4 w-4 text-slate-400" />
-              </button>
-            </div>
-          )}
+         {tab === "chatSettings" && (
+  <div className="px-4 py-4">
+    <div className="rounded-2xl border bg-white p-4">
+      <p className="text-sm font-semibold">채팅 배경</p>
+      <p className="text-xs text-slate-500 mt-1">
+        채팅 배경 설정
+      </p>
+    </div>
+  </div>
+)}
         </div>
       </div>
     </aside>

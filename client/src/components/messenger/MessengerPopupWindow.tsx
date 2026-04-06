@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Download,
   Minimize2,
+  Maximize2,
   Paperclip,
   Search,
   X,
   Pin,
   PinOff,
   Send,
+  Bell,
   BellOff,
   LogOut,
 } from "lucide-react";
@@ -57,6 +59,9 @@ type MessengerPopupWindowProps = {
   zIndex?: number;
   typingUserIds?: number[];
   roomMuted?: boolean;
+  chatBackground?: string;
+  onChangeBackground?: (value: string) => void;
+  notificationEnabled?: boolean;
 };
 
 const ROOM_BG_KEY = "messenger-room-backgrounds";
@@ -164,6 +169,30 @@ function getMessagePreviewTypeLabel(message: MessengerMessage) {
   return "";
 }
 
+function getFirstUnreadMessageId(
+  messages: MessengerMessage[],
+  currentUserId: number | null,
+  participants: MessengerUser[]
+) {
+  if (!messages.length || !currentUserId) return null;
+
+  const me = participants.find(
+    (p) => Number(p.id) === Number(currentUserId)
+  );
+
+  const myLastReadMessageId = me?.lastReadMessageId
+    ? Number(me.lastReadMessageId)
+    : 0;
+
+  const firstUnread = messages.find(
+    (message) =>
+      Number(message.senderId) !== Number(currentUserId) &&
+      Number(message.id) > myLastReadMessageId
+  );
+
+  return firstUnread ? Number(firstUnread.id) : null;
+}
+
 export default function MessengerPopupWindow({
   room,
   onOpenRoomInfo,
@@ -192,6 +221,9 @@ export default function MessengerPopupWindow({
   zIndex = 10010,
   typingUserIds = [],
   roomMuted = false,
+  chatBackground,
+  onChangeBackground,
+  notificationEnabled,
 }: MessengerPopupWindowProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -211,6 +243,23 @@ export default function MessengerPopupWindow({
   );
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [hasInitializedScroll, setHasInitializedScroll] = useState(false);
+
+const [isFullscreen, setIsFullscreen] = useState(false);
+const [size, setSize] = useState(() => {
+  try {
+    const saved = localStorage.getItem("messenger-popup-size");
+    if (!saved) return { width: 430, height: 700 };
+    const parsed = JSON.parse(saved);
+    return {
+      width: Number(parsed?.width) || 430,
+      height: Number(parsed?.height) || 700,
+    };
+  } catch {
+    return { width: 430, height: 700 };
+  }
+});
+
+const resizingRef = useRef(false);
 
   const otherParticipant =
     participants.find((p) => Number(p.id) !== Number(currentUserId)) ||
@@ -391,6 +440,19 @@ export default function MessengerPopupWindow({
     return items;
   }, [safeMessages, currentUserId, participants, room]);
 
+
+const firstUnreadMessageId = useMemo(() => {
+  return getFirstUnreadMessageId(
+    safeMessages,
+    currentUserId,
+    participantsconst firstUnreadMessageId = useMemo(() => {
+  return getFirstUnreadMessageId(
+    safeMessages,
+    currentUserId,
+    participants
+  );
+}, [safeMessages, currentUserId, participants]);
+
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -485,6 +547,35 @@ export default function MessengerPopupWindow({
     };
   }, [dragging]);
 
+useEffect(() => {
+  const handleResizeMove = (e: MouseEvent) => {
+    if (!resizingRef.current || isFullscreen) return;
+
+    const nextWidth = Math.max(360, window.innerWidth - e.clientX);
+    const nextHeight = Math.max(420, e.clientY - position.top);
+
+    const nextSize = {
+      width: nextWidth,
+      height: nextHeight,
+    };
+
+    setSize(nextSize);
+    localStorage.setItem("messenger-popup-size", JSON.stringify(nextSize));
+  };
+
+  const handleResizeUp = () => {
+    resizingRef.current = false;
+  };
+
+  window.addEventListener("mousemove", handleResizeMove);
+  window.addEventListener("mouseup", handleResizeUp);
+
+  return () => {
+    window.removeEventListener("mousemove", handleResizeMove);
+    window.removeEventListener("mouseup", handleResizeUp);
+  };
+}, [position.top, isFullscreen]);
+
   const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = Array.from(e.clipboardData.items || []);
     const imageItem = items.find((item) => item.type.startsWith("image/"));
@@ -551,13 +642,16 @@ export default function MessengerPopupWindow({
 
   return (
     <div
-      className="fixed h-[700px] w-[430px] overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.16)]"
-      style={{
-        right: `${position.right}px`,
-        top: `${position.top}px`,
-        zIndex,
-      }}
-    >
+  className="fixed overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.16)]"
+  style={{
+    right: isFullscreen ? 0 : `${position.right}px`,
+    top: isFullscreen ? 0 : `${position.top}px`,
+    width: isFullscreen ? "100vw" : `${size.width}px`,
+    height: isFullscreen ? "calc(100vh - 64px)" : `${size.height}px`,
+    zIndex,
+    borderRadius: isFullscreen ? 0 : 22,
+  }}
+>
       <div
         className="flex h-full flex-col"
         onDrop={handleDrop}
@@ -566,9 +660,10 @@ export default function MessengerPopupWindow({
         <div
           className="cursor-move border-b border-slate-200 bg-[#d9dde3]"
           onMouseDown={(e) => {
-            if ((e.target as HTMLElement).closest("button")) return;
-            setDragging(true);
-          }}
+  if ((e.target as HTMLElement).closest("button")) return;
+  if (isFullscreen) return;
+  setDragging(true);
+}}
         >
           <div className="flex h-16 items-center justify-between px-4">
             <div className="flex min-w-0 items-center gap-3">
@@ -590,11 +685,19 @@ export default function MessengerPopupWindow({
                     </span>
                   ) : null}
 
-                  {roomMuted ? (
-                    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500">
-                      <BellOff className="h-3 w-3" />
-                    </span>
-                  ) : null}
+                  <span
+  className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${
+    roomMuted
+      ? "bg-slate-100 text-slate-500"
+      : "bg-emerald-50 text-emerald-600"
+  }`}
+>
+  {roomMuted ? (
+    <BellOff className="h-3 w-3" />
+  ) : (
+    <Bell className="h-3 w-3" />
+  )}
+</span>
                 </div>
 
                 <p className="truncate text-xs text-slate-600">{roomTypeText}</p>
@@ -665,7 +768,11 @@ export default function MessengerPopupWindow({
                   }`}
                   title={roomMuted ? "알림 켜기" : "알림 끄기"}
                 >
-                  <BellOff className="h-4 w-4" />
+                  {roomMuted ? (
+  <BellOff className="h-4 w-4" />
+) : (
+  <Bell className="h-4 w-4" />
+)}
                 </button>
               ) : null}
 
@@ -680,13 +787,28 @@ export default function MessengerPopupWindow({
                 </button>
               ) : null}
 
-              <button
-                type="button"
-                onClick={onMinimize}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-700 transition hover:bg-slate-50"
-              >
-                <Minimize2 className="h-4 w-4" />
-              </button>
+<button
+  type="button"
+  onClick={() => setIsFullscreen((prev) => !prev)}
+  className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-700 transition hover:bg-slate-50"
+  title={isFullscreen ? "전체화면 해제" : "전체화면"}
+>
+  {isFullscreen ? (
+    <Minimize2 className="h-4 w-4" />
+  ) : (
+    <Maximize2 className="h-4 w-4" />
+  )}
+</button>
+
+              {!isFullscreen && (
+  <button
+    type="button"
+    onClick={onMinimize}
+    className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-700 transition hover:bg-slate-50"
+  >
+    <Minimize2 className="h-4 w-4" />
+  </button>
+)}
 
               <button
                 type="button"
@@ -840,15 +962,23 @@ export default function MessengerPopupWindow({
                   : "rounded-2xl rounded-bl-md bg-white text-slate-900";
 
                 return (
-                  <div
-                    key={item.key}
-                    ref={(el) => {
-                      messageRefs.current[String(message.id)] = el;
-                    }}
-                    className={`flex ${isMine ? "justify-end" : "justify-start"} ${
-                      compact ? "mt-[-4px]" : ""
-                    }`}
-                  >
+  <div key={item.key}>
+    {Number(firstUnreadMessageId) === Number(message.id) && (
+      <div className="flex justify-center py-2">
+        <div className="rounded-full bg-red-50 px-3 py-1 text-[11px] font-semibold text-red-500 shadow-sm">
+          여기부터 읽지 않은 메시지
+        </div>
+      </div>
+    )}
+
+    <div
+      ref={(el) => {
+        messageRefs.current[String(message.id)] = el;
+      }}
+      className={`flex ${isMine ? "justify-end" : "justify-start"} ${
+        compact ? "mt-[-4px]" : ""
+      }`}
+    >
                     <div
                       className={`flex max-w-[82%] items-end gap-2 ${
                         isMine ? "flex-row-reverse" : "flex-row"
@@ -970,6 +1100,7 @@ export default function MessengerPopupWindow({
                       </div>
                     </div>
                   </div>
+	</div>
                 );
               })}
 
@@ -1084,6 +1215,18 @@ export default function MessengerPopupWindow({
             </Button>
           </div>
         </div>
+               {!isFullscreen && (
+          <div
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              resizingRef.current = true;
+            }}
+            className="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize"
+            title="크기 조절"
+          >
+            <div className="absolute bottom-1 right-1 h-2.5 w-2.5 rounded-sm border-b-2 border-r-2 border-slate-400" />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -220,6 +220,9 @@ function PopupRoomData({
   onRefreshRooms,
   typingUserIds,
   roomMuted,
+chatBackground,
+onChangeBackground,
+notificationEnabled,
   onToggleMuteRoom,
   onLeaveRoom,
   onOpenRoomInfo,
@@ -242,6 +245,9 @@ function PopupRoomData({
   onRefreshRooms: () => Promise<void>;
   typingUserIds: number[];
   roomMuted: boolean;
+chatBackground: string;
+onChangeBackground: (value: string) => void;
+notificationEnabled: boolean;
   onToggleMuteRoom: (roomId: number, isMuted: boolean) => Promise<void>;
   onLeaveRoom: (roomId: number) => Promise<void>;
   onOpenRoomInfo: (payload: {
@@ -520,12 +526,16 @@ function PopupRoomData({
       onOpenImage={onOpenImage}
       onClose={onClose}
       onMinimize={onMinimize}
+onRestore={onMinimize}
       onTogglePin={onTogglePin}
       pinned={pinned}
       minimized={!!popup.minimized}
       rightOffset={560}
       typingUserIds={typingUserIds}
       roomMuted={roomMuted}
+chatBackground={chatBackground}
+onChangeBackground={onChangeBackground}
+notificationEnabled={notificationEnabled}
       onToggleMute={
         popup.type === "room"
           ? async () => {
@@ -534,13 +544,16 @@ function PopupRoomData({
           : undefined
       }
       onLeaveRoom={
-        popup.type === "room"
-          ? async () => {
-              await onLeaveRoom(Number(roomId));
-              onClose();
-            }
-          : undefined
+  popup.type === "room"
+    ? async () => {
+        const ok = confirm("정말 채팅방을 나가시겠습니까?");
+        if (!ok) return;
+
+        await onLeaveRoom(Number(roomId));
+        onClose();
       }
+    : undefined
+}
     />
   );
 }
@@ -583,6 +596,8 @@ export default function MessengerPage({
     []
   );
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
+const [notificationEnabled, setNotificationEnabled] = useState(true);
+const [chatBackground, setChatBackground] = useState("");
 
   const { data: userList = [] } = trpc.users.list.useQuery();
   const { data: roomRows = [], refetch: refetchRooms } =
@@ -1192,6 +1207,10 @@ useEffect(() => {
               .map((key) => Number(key))
               .filter((roomId) => (typingByRoom[roomId] || []).length > 0)}
             pinnedRoomIds={pinnedRoomIds}
+	notificationEnabled={notificationEnabled}
+onToggleNotification={() =>
+  setNotificationEnabled((prev) => !prev)
+}
             onSelectRoom={handleSelectRoom}
             onOpenDirectChat={handleOpenDirectChat}
             onTogglePinRoom={(roomId) => togglePinRoom(Number(roomId))}
@@ -1258,6 +1277,9 @@ useEffect(() => {
                   onRefreshRooms={refetchRooms}
                   typingUserIds={typingUserIds}
                   roomMuted={roomMuted}
+	chatBackground={chatBackground}
+onChangeBackground={setChatBackground}
+notificationEnabled={notificationEnabled}
                   onToggleMuteRoom={handleToggleRoomMute}
                   onLeaveRoom={handleLeaveRoom}
                   onOpenRoomInfo={({ room, participants, messages }) => {
@@ -1292,6 +1314,9 @@ useEffect(() => {
               )?.notificationsEnabled === false
             : false
         }
+notificationEnabled={notificationEnabled}
+chatBackground={chatBackground}
+onChangeBackground={setChatBackground}
         onClose={() => setRoomInfoOpen(false)}
         onToggleNotifications={async () => {
           if (!activeRoomForInfo?.id) return;
@@ -1307,11 +1332,14 @@ useEffect(() => {
           );
         }}
         onLeaveRoom={() => {
-          if (roomInfoRoomId) {
-            void handleLeaveRoom(Number(roomInfoRoomId));
-          }
-          setRoomInfoOpen(false);
-        }}
+  if (!roomInfoRoomId) return;
+
+  const ok = confirm("정말 채팅방을 나가시겠습니까?");
+  if (!ok) return;
+
+  void handleLeaveRoom(Number(roomInfoRoomId));
+  setRoomInfoOpen(false);
+}}
         onAddParticipant={() => {
           if (activeRoomForInfo?.type !== "group") return;
           setSelectedInviteUserIds([]);
