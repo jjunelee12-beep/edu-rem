@@ -10,21 +10,6 @@ import "./index.css";
 
 const queryClient = new QueryClient();
 
-const trpcClient = trpc.createClient({
-  links: [
-    httpBatchLink({
-      url: `/api/trpc`,
-      transformer: superjson,
-      fetch(input, init) {
-        return globalThis.fetch(input, {
-          ...(init ?? {}),
-          credentials: "include",
-        });
-      },
-    }),
-  ],
-});
-
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
   if (typeof window === "undefined") return;
@@ -54,7 +39,7 @@ queryClient.getMutationCache().subscribe((event) => {
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
-      url: `${API_BASE}/api/trpc`,
+      url: `/api/trpc`,
       transformer: superjson,
       fetch(input, init) {
         return globalThis.fetch(input, {

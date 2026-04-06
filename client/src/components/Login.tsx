@@ -3,10 +3,6 @@ import { Building2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
 
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/$/, "") ||
-  window.location.origin.replace(/\/$/, "");
-
 export default function Login() {
   const { data: branding } = trpc.branding.getPublic.useQuery(undefined, {
     retry: false,
@@ -36,14 +32,14 @@ export default function Login() {
 
     try {
       const res = await fetch(`/api/auth/login`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  credentials: "include",
-  body: JSON.stringify({
-    username: username.trim(),
-    password,
-  }),
-});
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          username: username.trim(),
+          password,
+        }),
+      });
 
       const data = await res.json().catch(() => null);
 
@@ -61,15 +57,15 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#f5f5f7] px-4">
-      <div className="w-full max-w-[420px] rounded-[32px] border border-slate-200 bg-white p-8 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
+    <div className="flex min-h-screen items-center justify-center bg-[#f3f4f6] px-4">
+      <div className="w-full max-w-[440px] rounded-[36px] border border-slate-200/80 bg-white px-8 py-9 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="mb-4 flex h-24 w-24 items-center justify-center overflow-hidden rounded-[28px] bg-[#ffdd00] shadow-sm">
+          <div className="mb-5 flex h-24 w-24 items-center justify-center overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
             {companyLogoUrl ? (
               <img
                 src={companyLogoUrl}
                 alt={companyName}
-                className="h-full w-full object-cover"
+                className="h-full w-full object-contain p-2"
                 onError={() => {
                   console.log("[login logo] load failed:", companyLogoUrl);
                 }}
@@ -79,11 +75,11 @@ export default function Login() {
             )}
           </div>
 
-          <h1 className="text-2xl font-bold tracking-tight text-slate-950">
+          <h1 className="text-[32px] font-bold tracking-tight text-slate-950">
             {companyName}
           </h1>
 
-          <p className="mt-2 text-sm text-slate-500">
+          <p className="mt-2 text-sm font-medium text-slate-500">
             {companySubtitle}
           </p>
 
@@ -97,7 +93,7 @@ export default function Login() {
             placeholder="아이디"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="h-12 w-full rounded-2xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+            className="h-13 w-full rounded-2xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
             autoFocus
             disabled={pending}
           />
@@ -107,7 +103,7 @@ export default function Login() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="h-12 w-full rounded-2xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+            className="h-13 w-full rounded-2xl border border-slate-300 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-200/70"
             disabled={pending}
             onKeyDown={(e) => {
               if (e.key === "Enter") onLogin();
@@ -116,7 +112,7 @@ export default function Login() {
 
           <button
             onClick={onLogin}
-            className="h-12 w-full rounded-2xl bg-slate-900 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-2 h-13 w-full rounded-2xl bg-slate-950 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
             disabled={pending}
           >
             {pending ? "로그인 중..." : "로그인"}

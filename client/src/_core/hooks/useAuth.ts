@@ -5,10 +5,6 @@ type UseAuthOptions = {
   redirectPath?: string;
 };
 
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/$/, "") ||
-  window.location.origin.replace(/\/$/, "");
-
 export function useAuth(options?: UseAuthOptions) {
   const { redirectOnUnauthenticated = false, redirectPath = "/" } =
     options ?? {};
@@ -23,8 +19,8 @@ export function useAuth(options?: UseAuthOptions) {
 
     try {
       const res = await fetch(`/api/auth/me`, {
-  credentials: "include",
-});
+        credentials: "include",
+      });
 
       if (!res.ok) {
         setUser(null);
@@ -47,9 +43,9 @@ export function useAuth(options?: UseAuthOptions) {
   const logout = useCallback(async () => {
     try {
       await fetch(`/api/auth/logout`, {
-  method: "POST",
-  credentials: "include",
-});
+        method: "POST",
+        credentials: "include",
+      });
     } catch (e) {
       console.error("logout error", e);
     } finally {
