@@ -6,8 +6,7 @@ function Card({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card"
       className={cn(
-        // ✅ 핵심: 흰 카드 + 아주 약한 테두리 + 부드러운 그림자
-        "flex flex-col gap-6 rounded-[28px] border border-slate-100 bg-white text-slate-900 shadow-[0_10px_30px_rgba(15,23,42,0.05)]",
+        "flex flex-col gap-6 rounded-[28px] border border-slate-200 bg-white text-slate-900 shadow-[0_6px_20px_rgba(15,23,42,0.06)]",
         className
       )}
       {...props}
