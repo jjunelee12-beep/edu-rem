@@ -377,13 +377,17 @@ async function startServer() {
           }
 
           const sender = await getUserById(userId);
+	const senderAny = sender as any;
 
           const emittedMessage = {
             id: Number(messageId),
             roomId,
             senderId: userId,
-            senderName: sender?.name ?? "",
-            senderUsername: sender?.username ?? "",
+           senderName: senderAny?.name ?? "",
+senderUsername: senderAny?.username ?? "",
+senderProfileImageUrl: senderAny?.profileImageUrl ?? null,
+senderAvatarUrl: senderAny?.avatarUrl ?? null,
+senderPositionName: senderAny?.positionName ?? null,
             messageType,
             content: content || "",
             isDeleted: false,

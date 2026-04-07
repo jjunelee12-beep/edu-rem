@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { getSocket } from "@/lib/socket";
 import { trpc } from "@/lib/trpc";
 import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
@@ -59,6 +60,8 @@ function playMessageSound(
 }
 
 export default function MessengerRealtimeBridge() {
+  const { user } = useAuth();
+
   const socketRef = useRef<any>(null);
   const shownMessageKeysRef = useRef<Set<string>>(new Set());
   const notificationMapRef = useRef<Map<number, Notification>>(new Map());
@@ -76,7 +79,7 @@ export default function MessengerRealtimeBridge() {
     staleTime: 30_000,
   });
 
-  const myUserId = Number((me as any)?.id || 0);
+  const myUserId = Number((user as any)?.id || (me as any)?.id || 0);
 
   const { data: userList = [] } = trpc.users.list.useQuery(undefined, {
     staleTime: 30_000,
@@ -228,7 +231,7 @@ export default function MessengerRealtimeBridge() {
         return;
       }
 
-      if (myUserId && senderId === myUserId) {
+      if (myUserId > 0 && senderId === myUserId) {
         console.log("[MessengerRealtimeBridge] blocked: self message", {
           senderId,
           myUserId,
@@ -283,17 +286,11 @@ export default function MessengerRealtimeBridge() {
         return;
       }
 
-      const isRoomOpen = openRoomIds.includes(roomId);
-      const isActuallyViewingRoom =
-        isRoomOpen &&
-        isMessengerMainOpen &&
-        document.visibilityState === "visible";
-
-      if (isActuallyViewingRoom) {
-        console.log("[MessengerRealtimeBridge] blocked: actually viewing room", {
+      // 같은 방이 열려 있으면 무조건 차단
+      if (openRoomIds.includes(roomId)) {
+        console.log("[MessengerRealtimeBridge] blocked: room already open", {
           roomId,
           openRoomIds,
-          isMessengerMainOpen,
         });
         return;
       }
@@ -309,21 +306,28 @@ export default function MessengerRealtimeBridge() {
         return;
       }
 
-      // 모든 차단 조건을 통과한 뒤에만 중복키 저장
       shownMessageKeysRef.current.add(messageKey);
 
       const sender = usersById.get(senderId);
 
-      const senderName = sender?.name || "이름없음";
+      const senderName =
+        sender?.name || payload?.senderName || payload?.senderUsername || "이름없음";
+
       const senderPosition =
         sender?.positionName ||
         sender?.position ||
+        payload?.senderPositionName ||
         roleToPosition(sender?.role);
 
       const content = normalizeMessageContent(payload);
 
       const senderAvatar = normalizeAssetUrl(
-        sender?.avatarUrl || sender?.profileImageUrl || sender?.avatar || ""
+        sender?.avatarUrl ||
+          sender?.profileImageUrl ||
+          sender?.avatar ||
+          payload?.senderProfileImageUrl ||
+          payload?.senderAvatarUrl ||
+          ""
       );
 
       console.log("[MessengerRealtimeBridge] toast data prepared", {

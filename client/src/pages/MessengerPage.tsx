@@ -550,7 +550,6 @@ notificationEnabled={notificationEnabled}
         if (!ok) return;
 
         await onLeaveRoom(Number(roomId));
-        onClose();
       }
     : undefined
 }
@@ -741,12 +740,10 @@ useEffect(() => {
       const visiblePopups = openPopups.filter((popup) => !popup.minimized);
 
       if (visiblePopups.length > 0) {
-        const lastPopup = visiblePopups[visiblePopups.length - 1];
-        setOpenPopups((prev) =>
-          prev.filter((popup) => popup.key !== lastPopup.key)
-        );
-        return;
-      }
+  const lastPopup = visiblePopups[visiblePopups.length - 1];
+  closePopup(lastPopup.key);
+  return;
+}
 
       onRequestClose?.();
       window.dispatchEvent(new Event("messenger:request-close-main"));
@@ -1166,8 +1163,6 @@ console.trace("[MessengerPage] handleSelectRoom trace", { roomId });
       setLocallyViewedRoomIds((ids) =>
         ids.filter((id) => Number(id) !== Number(target.roomId))
       );
-
-      setActiveRoomId(null);
     }
 
     return prev.filter((popup) => popup.key !== popupKey);
