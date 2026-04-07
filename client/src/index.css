@@ -125,8 +125,9 @@
 
   body {
   @apply bg-background text-foreground;
-  background: #000000 !important;
+  background: #eef2f6 !important;
 }
+
 
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
@@ -191,7 +192,7 @@
 /* ===== 전체 레이아웃 톤 ===== */
 
 [data-slot="sidebar-inset"] {
-  background: #000000 !important;
+  background: #eef2f6 !important;
 }
 
 /* 카드 공통 */
@@ -199,7 +200,7 @@
   background: #ffffff !important;
   border: 1px solid rgba(15, 23, 42, 0.06) !important;
   box-shadow:
-    0 8px 24px rgba(15, 23, 42, 0.06),
+    0 10px 28px rgba(15, 23, 42, 0.06),
     0 2px 6px rgba(15, 23, 42, 0.03) !important;
 }
 
@@ -214,7 +215,7 @@
 [data-slot="card"] .bg-slate-50,
 [data-slot="card"] .bg-muted,
 [data-slot="card"] .bg-accent {
-  background: #f4f5f8 !important;
+  background: #f3f5f8 !important;
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.03);
 }
 
@@ -230,13 +231,13 @@
 /* ===== 사이드바 ===== */
 
 [data-slot="sidebar-container"] {
-  background: #f4f5f8 !important;
-  border-right: 1px solid rgba(15, 23, 42, 0.04) !important;
+  background: #e7ecf2 !important;
+  border-right: 1px solid rgba(15, 23, 42, 0.05) !important;
   box-shadow: none !important;
 }
 
 [data-slot="sidebar-inner"] {
-  background: #f4f5f8 !important;
+  background: #e7ecf2 !important;
   border-right: none !important;
 }
 
