@@ -1,4 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import {
+  Check,
+  Search,
+  UserPlus,
+  Users,
+  X,
+} from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { getSocket } from "@/lib/socket";
@@ -758,29 +765,28 @@ useEffect(() => {
   
 useEffect(() => {
   const emitOpenedRoomsChanged = () => {
-    const openedRoomIds = openPopups
-      .filter((popup) => {
-        return (
-          popup.type === "room" &&
-          !popup.minimized &&
-          document.visibilityState === "visible"
-        );
-      })
-      .map((popup) => Number(popup.roomId))
-      .filter(Boolean);
+  const openedRoomIds = openPopups
+    .filter((popup) => popup.type === "room" && !popup.minimized)
+    .map((popup) => Number(popup.roomId))
+    .filter(Boolean);
 
-    console.log("[MessengerPage] emit opened rooms", {
-      openPopups,
-      visibilityState: document.visibilityState,
-      openedRoomIds,
-    });
+  console.log("[MessengerPage] emit opened rooms", {
+    openPopups,
+    visibilityState: document.visibilityState,
+    openedRoomIds,
+  });
 
-    window.dispatchEvent(
-      new CustomEvent("messenger:opened-rooms-changed", {
-        detail: { roomIds: openedRoomIds },
-      })
-    );
-  };
+  localStorage.setItem(
+    "messenger-opened-room-ids",
+    JSON.stringify(openedRoomIds)
+  );
+
+  window.dispatchEvent(
+    new CustomEvent("messenger:opened-rooms-changed", {
+      detail: { roomIds: openedRoomIds },
+    })
+  );
+};
 
   emitOpenedRoomsChanged();
 
@@ -861,9 +867,10 @@ useEffect(() => {
 
 useEffect(() => {
   const handleCloseMain = () => {
-    setOpenPopups([]);
-    setLocallyViewedRoomIds([]);
-  };
+  setOpenPopups([]);
+  setLocallyViewedRoomIds([]);
+  localStorage.setItem("messenger-opened-room-ids", JSON.stringify([]));
+};
 
   window.addEventListener("messenger:request-close-main", handleCloseMain);
 
@@ -1454,44 +1461,129 @@ onChangeBackground={setChatBackground}
 }}
       />
 
-      {inviteDialogOpen && (
-        <div className="fixed inset-0 z-[10040] flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-[520px] rounded-[24px] border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.2)]">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-              <div>
-                <div className="text-base font-semibold text-slate-900">
-                  참여자 추가
+            {inviteDialogOpen && (
+	
+          <div className="w-full max-w-[640px] overflow-hidden rounded-[30px] border border-white/70 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.22)]">
+            <div className="border-b border-slate-100 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-6 py-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm">
+                      <UserPlus className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="text-lg font-semibold tracking-[-0.02em] text-slate-900">
+                        참여자 추가
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        그룹 채팅방에 초대할 직원을 선택하세요.
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-1 text-xs text-slate-500">
-                  그룹 채팅방에 초대할 직원을 선택하세요.
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInviteDialogOpen(false);
+                    setSelectedInviteUserIds([]);
+                    setInviteSearch("");
+                  }}
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="mt-5">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={inviteSearch}
+                    onChange={(e) => setInviteSearch(e.target.value)}
+                    placeholder="이름 / 팀 / 직급 검색"
+                    className="h-12 w-full rounded-2xl border border-slate-200 bg-white pl-11 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
+                  />
+                </div>
+
+                {selectedInviteUserIds.length > 0 && (
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
+                    <div className="mb-2 flex items-center gap-2 text-xs font-medium text-slate-500">
+                      <Users className="h-3.5 w-3.5" />
+                      선택된 참여자 {selectedInviteUserIds.length}명
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {orgUsers
+                        .filter((member) =>
+                          selectedInviteUserIds.includes(Number(member.id))
+                        )
+                        .map((member) => (
+                          <div
+                            key={member.id}
+                            className="inline-flex max-w-full items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm"
+                          >
+                            <div className="h-7 w-7 overflow-hidden rounded-full bg-slate-100">
+                              {member.avatar ? (
+                                <img
+                                  src={member.avatar}
+                                  alt={member.name}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-[11px] font-semibold text-slate-500">
+                                  {String(member.name || "?").slice(0, 1)}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="max-w-[120px] truncate text-xs font-medium text-slate-700">
+                              {member.name}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSelectedInviteUserIds((prev) =>
+                                  prev.filter(
+                                    (id) => Number(id) !== Number(member.id)
+                                  )
+                                )
+                              }
+                              className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="px-6 py-5">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="text-sm font-medium text-slate-700">
+                  초대 가능 인원
+                </div>
+                <div className="text-xs text-slate-400">
+                  총 {inviteSelectableUsers.length}명
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setInviteDialogOpen(false);
-                  setSelectedInviteUserIds([]);
-                  setInviteSearch("");
-                }}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-2xl text-slate-700 transition hover:bg-slate-100"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="px-5 py-4">
-              <input
-                value={inviteSearch}
-                onChange={(e) => setInviteSearch(e.target.value)}
-                placeholder="이름 / 팀 / 직급 검색"
-                className="h-11 w-full rounded-2xl border border-slate-300 px-4 text-sm outline-none focus:border-slate-500"
-              />
-
-              <div className="mt-4 max-h-[360px] space-y-2 overflow-y-auto">
+              <div className="max-h-[380px] space-y-2 overflow-y-auto pr-1">
                 {inviteSelectableUsers.length === 0 ? (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-                    초대 가능한 사용자가 없습니다.
+                  <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-400 shadow-sm">
+                      <Users className="h-5 w-5" />
+                    </div>
+                    <div className="mt-3 text-sm font-medium text-slate-600">
+                      초대 가능한 사용자가 없습니다
+                    </div>
+                    <div className="mt-1 text-xs text-slate-400">
+                      이미 참여 중이거나 검색 결과가 없습니다.
+                    </div>
                   </div>
                 ) : (
                   inviteSelectableUsers.map((member) => {
@@ -1500,67 +1592,97 @@ onChangeBackground={setChatBackground}
                     );
 
                     return (
-                      <label
+                      <button
                         key={member.id}
-                        className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 transition hover:bg-slate-50"
+                        type="button"
+                        onClick={() => {
+                          setSelectedInviteUserIds((prev) =>
+                            checked
+                              ? prev.filter(
+                                  (id) => Number(id) !== Number(member.id)
+                                )
+                              : [...prev, Number(member.id)]
+                          );
+                        }}
+                        className={`group flex w-full items-center gap-3 rounded-[24px] border px-4 py-3 text-left transition ${
+                          checked
+                            ? "border-slate-900 bg-slate-900/[0.03] shadow-[0_8px_24px_rgba(15,23,42,0.06)]"
+                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                        }`}
                       >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            const nextChecked = e.target.checked;
-                            setSelectedInviteUserIds((prev) =>
-                              nextChecked
-                                ? [...prev, Number(member.id)]
-                                : prev.filter(
-                                    (id) => Number(id) !== Number(member.id)
-                                  )
-                            );
-                          }}
-                        />
-
-                        <div className="h-11 w-11 overflow-hidden rounded-full bg-slate-100">
+                        <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full bg-slate-100">
                           {member.avatar ? (
                             <img
                               src={member.avatar}
                               alt={member.name}
                               className="h-full w-full object-cover"
                             />
-                          ) : null}
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-sm font-semibold text-slate-500">
+                              {String(member.name || "?").slice(0, 1)}
+                            </div>
+                          )}
+
+                          <span
+                            className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white ${
+                              member.status === "online"
+                                ? "bg-emerald-500"
+                                : "bg-slate-300"
+                            }`}
+                          />
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium text-slate-900">
-                            {member.name}
+                          <div className="flex items-center gap-2">
+                            <div className="truncate text-sm font-semibold text-slate-900">
+                              {member.name}
+                            </div>
+                            {member.status === "online" && (
+                              <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">
+                                ONLINE
+                              </span>
+                            )}
                           </div>
-                          <div className="truncate text-xs text-slate-500">
+
+                          <div className="mt-1 truncate text-xs text-slate-500">
                             {member.team || "미분류"}
                             {member.position ? ` · ${member.position}` : ""}
                           </div>
                         </div>
 
                         <div
-                          className={`text-xs font-medium ${
-                            member.status === "online"
-                              ? "text-emerald-600"
-                              : "text-slate-400"
+                          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition ${
+                            checked
+                              ? "border-slate-900 bg-slate-900 text-white"
+                              : "border-slate-300 bg-white text-transparent group-hover:border-slate-400"
                           }`}
                         >
-                          {member.status === "online" ? "온라인" : "오프라인"}
+                          <Check className="h-3.5 w-3.5" />
                         </div>
-                      </label>
+                      </button>
                     );
                   })
                 )}
               </div>
             </div>
 
-            <div className="flex items-center justify-between border-t border-slate-200 px-5 py-4">
+            <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/70 px-6 py-4">
               <div className="text-sm text-slate-500">
-                선택됨 {selectedInviteUserIds.length}명
+                선택됨 <span className="font-semibold text-slate-900">{selectedInviteUserIds.length}</span>명
               </div>
 
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedInviteUserIds([]);
+                    setInviteSearch("");
+                  }}
+                  className="inline-flex h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+                >
+                  초기화
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -1568,7 +1690,7 @@ onChangeBackground={setChatBackground}
                     setSelectedInviteUserIds([]);
                     setInviteSearch("");
                   }}
-                  className="inline-flex h-11 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm text-slate-700 transition hover:bg-slate-50"
+                  className="inline-flex h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
                 >
                   취소
                 </button>
@@ -1581,9 +1703,15 @@ onChangeBackground={setChatBackground}
                   onClick={() => {
                     void handleInviteSubmit();
                   }}
-                  className="inline-flex h-11 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-11 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {inviteSubmitting ? "추가 중..." : "참여자 추가"}
+                  {inviteSubmitting
+                    ? "추가 중..."
+                    : `참여자 추가${
+                        selectedInviteUserIds.length > 0
+                          ? ` (${selectedInviteUserIds.length})`
+                          : ""
+                      }`}
                 </button>
               </div>
             </div>

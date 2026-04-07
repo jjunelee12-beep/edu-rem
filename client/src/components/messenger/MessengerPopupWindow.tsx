@@ -243,23 +243,22 @@ export default function MessengerPopupWindow({
   );
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [hasInitializedScroll, setHasInitializedScroll] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [size, setSize] = useState(() => {
+    try {
+      const saved = localStorage.getItem("messenger-popup-size");
+      if (!saved) return { width: 430, height: 700 };
+      const parsed = JSON.parse(saved);
+      return {
+        width: Number(parsed?.width) || 430,
+        height: Number(parsed?.height) || 700,
+      };
+    } catch {
+      return { width: 430, height: 700 };
+    }
+  });
 
-const [isFullscreen, setIsFullscreen] = useState(false);
-const [size, setSize] = useState(() => {
-  try {
-    const saved = localStorage.getItem("messenger-popup-size");
-    if (!saved) return { width: 430, height: 700 };
-    const parsed = JSON.parse(saved);
-    return {
-      width: Number(parsed?.width) || 430,
-      height: Number(parsed?.height) || 700,
-    };
-  } catch {
-    return { width: 430, height: 700 };
-  }
-});
-
-const resizingRef = useRef(false);
+  const resizingRef = useRef(false);
 
   const otherParticipant =
     participants.find((p) => Number(p.id) !== Number(currentUserId)) ||
@@ -286,7 +285,12 @@ const resizingRef = useRef(false);
       }`
     : `${titlePosition ? `${titlePosition} · ` : ""}1:1 대화`;
 
-  const roomBackground = useMemo(() => readRoomBackground(room?.id), [room?.id]);
+  const savedRoomBackground = useMemo(() => readRoomBackground(room?.id), [room?.id]);
+
+  const effectiveRoomBackground = useMemo(() => {
+    if (typeof chatBackground === "string") return chatBackground;
+    return savedRoomBackground;
+  }, [chatBackground, savedRoomBackground]);
 
   const typingNames = useMemo(() => {
     return typingUserIds
@@ -360,7 +364,7 @@ const resizingRef = useRef(false);
     return unreadUsers.length;
   };
 
-    const timelineItems = useMemo(() => {
+  const timelineItems = useMemo(() => {
     const items: Array<
       | { kind: "date"; key: string; label: string }
       | {
@@ -542,34 +546,34 @@ const resizingRef = useRef(false);
     };
   }, [dragging]);
 
-useEffect(() => {
-  const handleResizeMove = (e: MouseEvent) => {
-    if (!resizingRef.current || isFullscreen) return;
+  useEffect(() => {
+    const handleResizeMove = (e: MouseEvent) => {
+      if (!resizingRef.current || isFullscreen) return;
 
-    const nextWidth = Math.max(360, window.innerWidth - e.clientX);
-    const nextHeight = Math.max(420, e.clientY - position.top);
+      const nextWidth = Math.max(360, window.innerWidth - e.clientX);
+      const nextHeight = Math.max(420, e.clientY - position.top);
 
-    const nextSize = {
-      width: nextWidth,
-      height: nextHeight,
+      const nextSize = {
+        width: nextWidth,
+        height: nextHeight,
+      };
+
+      setSize(nextSize);
+      localStorage.setItem("messenger-popup-size", JSON.stringify(nextSize));
     };
 
-    setSize(nextSize);
-    localStorage.setItem("messenger-popup-size", JSON.stringify(nextSize));
-  };
+    const handleResizeUp = () => {
+      resizingRef.current = false;
+    };
 
-  const handleResizeUp = () => {
-    resizingRef.current = false;
-  };
+    window.addEventListener("mousemove", handleResizeMove);
+    window.addEventListener("mouseup", handleResizeUp);
 
-  window.addEventListener("mousemove", handleResizeMove);
-  window.addEventListener("mouseup", handleResizeUp);
-
-  return () => {
-    window.removeEventListener("mousemove", handleResizeMove);
-    window.removeEventListener("mouseup", handleResizeUp);
-  };
-}, [position.top, isFullscreen]);
+    return () => {
+      window.removeEventListener("mousemove", handleResizeMove);
+      window.removeEventListener("mouseup", handleResizeUp);
+    };
+  }, [position.top, isFullscreen]);
 
   const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = Array.from(e.clipboardData.items || []);
@@ -637,16 +641,16 @@ useEffect(() => {
 
   return (
     <div
-  className="fixed overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.16)]"
-  style={{
-    right: isFullscreen ? 0 : `${position.right}px`,
-    top: isFullscreen ? 0 : `${position.top}px`,
-    width: isFullscreen ? "100vw" : `${size.width}px`,
-    height: isFullscreen ? "calc(100vh - 64px)" : `${size.height}px`,
-    zIndex,
-    borderRadius: isFullscreen ? 0 : 22,
-  }}
->
+      className="fixed overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.16)]"
+      style={{
+        right: isFullscreen ? 0 : `${position.right}px`,
+        top: isFullscreen ? 0 : `${position.top}px`,
+        width: isFullscreen ? "100vw" : `${size.width}px`,
+        height: isFullscreen ? "calc(100vh - 64px)" : `${size.height}px`,
+        zIndex,
+        borderRadius: isFullscreen ? 0 : 22,
+      }}
+    >
       <div
         className="flex h-full flex-col"
         onDrop={handleDrop}
@@ -655,10 +659,10 @@ useEffect(() => {
         <div
           className="cursor-move border-b border-slate-200 bg-[#d9dde3]"
           onMouseDown={(e) => {
-  if ((e.target as HTMLElement).closest("button")) return;
-  if (isFullscreen) return;
-  setDragging(true);
-}}
+            if ((e.target as HTMLElement).closest("button")) return;
+            if (isFullscreen) return;
+            setDragging(true);
+          }}
         >
           <div className="flex h-16 items-center justify-between px-4">
             <div className="flex min-w-0 items-center gap-3">
@@ -681,18 +685,18 @@ useEffect(() => {
                   ) : null}
 
                   <span
-  className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${
-    roomMuted
-      ? "bg-slate-100 text-slate-500"
-      : "bg-emerald-50 text-emerald-600"
-  }`}
->
-  {roomMuted ? (
-    <BellOff className="h-3 w-3" />
-  ) : (
-    <Bell className="h-3 w-3" />
-  )}
-</span>
+                    className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${
+                      roomMuted
+                        ? "bg-slate-100 text-slate-500"
+                        : "bg-emerald-50 text-emerald-600"
+                    }`}
+                  >
+                    {roomMuted ? (
+                      <BellOff className="h-3 w-3" />
+                    ) : (
+                      <Bell className="h-3 w-3" />
+                    )}
+                  </span>
                 </div>
 
                 <p className="truncate text-xs text-slate-600">{roomTypeText}</p>
@@ -764,10 +768,10 @@ useEffect(() => {
                   title={roomMuted ? "알림 켜기" : "알림 끄기"}
                 >
                   {roomMuted ? (
-  <BellOff className="h-4 w-4" />
-) : (
-  <Bell className="h-4 w-4" />
-)}
+                    <BellOff className="h-4 w-4" />
+                  ) : (
+                    <Bell className="h-4 w-4" />
+                  )}
                 </button>
               ) : null}
 
@@ -782,28 +786,28 @@ useEffect(() => {
                 </button>
               ) : null}
 
-<button
-  type="button"
-  onClick={() => setIsFullscreen((prev) => !prev)}
-  className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-700 transition hover:bg-slate-50"
-  title={isFullscreen ? "전체화면 해제" : "전체화면"}
->
-  {isFullscreen ? (
-    <Minimize2 className="h-4 w-4" />
-  ) : (
-    <Maximize2 className="h-4 w-4" />
-  )}
-</button>
+              <button
+                type="button"
+                onClick={() => setIsFullscreen((prev) => !prev)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-700 transition hover:bg-slate-50"
+                title={isFullscreen ? "전체화면 해제" : "전체화면"}
+              >
+                {isFullscreen ? (
+                  <Minimize2 className="h-4 w-4" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" />
+                )}
+              </button>
 
               {!isFullscreen && (
-  <button
-    type="button"
-    onClick={onMinimize}
-    className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-700 transition hover:bg-slate-50"
-  >
-    <Minimize2 className="h-4 w-4" />
-  </button>
-)}
+                <button
+                  type="button"
+                  onClick={onMinimize}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-700 transition hover:bg-slate-50"
+                >
+                  <Minimize2 className="h-4 w-4" />
+                </button>
+              )}
 
               <button
                 type="button"
@@ -878,21 +882,30 @@ useEffect(() => {
           ref={scrollRef}
           className="flex-1 overflow-y-auto px-4 py-4"
           style={{
-            backgroundColor: !roomBackground ? "#b7c7d8" : undefined,
-            backgroundImage: !roomBackground
+            backgroundColor: !effectiveRoomBackground ? "#b7c7d8" : undefined,
+            backgroundImage: !effectiveRoomBackground
               ? undefined
-              : roomBackground.startsWith("linear-gradient")
-              ? roomBackground
-              : `url(${roomBackground})`,
-            backgroundSize: roomBackground.startsWith("linear-gradient")
-              ? undefined
-              : "cover",
-            backgroundPosition: roomBackground.startsWith("linear-gradient")
-              ? undefined
-              : "center",
-            backgroundRepeat: roomBackground.startsWith("linear-gradient")
-              ? undefined
-              : "no-repeat",
+              : effectiveRoomBackground.startsWith("linear-gradient") ||
+                effectiveRoomBackground.startsWith("url(")
+              ? effectiveRoomBackground
+              : effectiveRoomBackground.startsWith("data:")
+              ? `url(${effectiveRoomBackground})`
+              : undefined,
+            backgroundSize:
+              effectiveRoomBackground &&
+              !effectiveRoomBackground.startsWith("linear-gradient")
+                ? "cover"
+                : undefined,
+            backgroundPosition:
+              effectiveRoomBackground &&
+              !effectiveRoomBackground.startsWith("linear-gradient")
+                ? "center"
+                : undefined,
+            backgroundRepeat:
+              effectiveRoomBackground &&
+              !effectiveRoomBackground.startsWith("linear-gradient")
+                ? "no-repeat"
+                : undefined,
           }}
         >
           {timelineItems.length === 0 && pendingAttachments.length === 0 ? (
@@ -914,7 +927,7 @@ useEffect(() => {
                   );
                 }
 
-                if (item.message.type === "system") {
+                if (item.kind === "message" && item.message.type === "system") {
                   return (
                     <div key={item.key} className="flex justify-center py-1">
                       <div className="rounded-full bg-slate-500/15 px-3 py-1 text-xs text-slate-700">
@@ -923,6 +936,8 @@ useEffect(() => {
                     </div>
                   );
                 }
+
+                if (item.kind !== "message") return null;
 
                 const {
                   message,
@@ -936,7 +951,6 @@ useEffect(() => {
                 } = item;
 
                 const sender = usersById[Number(message.senderId)];
-
                 const isMatched = searchMatchedMessageIds.includes(Number(message.id));
                 const isCurrentMatched =
                   Number(activeSearchMessageId) === Number(message.id);
@@ -957,145 +971,145 @@ useEffect(() => {
                   : "rounded-2xl rounded-bl-md bg-white text-slate-900";
 
                 return (
-  <div key={item.key}>
-    {Number(firstUnreadMessageId) === Number(message.id) && (
-      <div className="flex justify-center py-2">
-        <div className="rounded-full bg-red-50 px-3 py-1 text-[11px] font-semibold text-red-500 shadow-sm">
-          여기부터 읽지 않은 메시지
-        </div>
-      </div>
-    )}
+                  <div key={item.key}>
+                    {Number(firstUnreadMessageId) === Number(message.id) && (
+                      <div className="flex justify-center py-2">
+                        <div className="rounded-full bg-red-50 px-3 py-1 text-[11px] font-semibold text-red-500 shadow-sm">
+                          여기부터 읽지 않은 메시지
+                        </div>
+                      </div>
+                    )}
 
-    <div
-      ref={(el) => {
-        messageRefs.current[String(message.id)] = el;
-      }}
-      className={`flex ${isMine ? "justify-end" : "justify-start"} ${
-        compact ? "mt-[-4px]" : ""
-      }`}
-    >
                     <div
-                      className={`flex max-w-[82%] items-end gap-2 ${
-                        isMine ? "flex-row-reverse" : "flex-row"
+                      ref={(el) => {
+                        messageRefs.current[String(message.id)] = el;
+                      }}
+                      className={`flex ${isMine ? "justify-end" : "justify-start"} ${
+                        compact ? "mt-[-4px]" : ""
                       }`}
                     >
-                      {!isMine ? (
-                        showAvatar ? (
-                          <AvatarCircle
-                            name={senderName}
-                            avatar={senderAvatar}
-                            className="h-9 w-9 shrink-0 self-start shadow-sm"
-                          />
-                        ) : (
-                          <div className="h-9 w-9 shrink-0" />
-                        )
-                      ) : null}
+                      <div
+                        className={`flex max-w-[82%] items-end gap-2 ${
+                          isMine ? "flex-row-reverse" : "flex-row"
+                        }`}
+                      >
+                        {!isMine ? (
+                          showAvatar ? (
+                            <AvatarCircle
+                              name={senderName}
+                              avatar={senderAvatar}
+                              className="h-9 w-9 shrink-0 self-start shadow-sm"
+                            />
+                          ) : (
+                            <div className="h-9 w-9 shrink-0" />
+                          )
+                        ) : null}
 
-                      <div className="min-w-0">
-                        {!isMine && showName && (
-                          <div className="mb-1 px-1 text-xs font-medium text-slate-700">
-                            {senderName}
-                          </div>
-                        )}
-
-                        <div
-                          className={`overflow-hidden px-4 py-3 text-sm leading-relaxed shadow-sm transition ${
-                            bubbleClass
-                          } ${
-                            isCurrentMatched
-                              ? "ring-2 ring-blue-500 shadow-[0_0_0_4px_rgba(59,130,246,0.15)]"
-                              : isMatched
-                              ? "ring-1 ring-yellow-300"
-                              : ""
-                          }`}
-                        >
-                          {message.type === "text" && (
-                            <span>
-                              {highlightText(
-                                String(message.content || ""),
-                                searchText
-                              )}
-                            </span>
+                        <div className="min-w-0">
+                          {!isMine && showName && (
+                            <div className="mb-1 px-1 text-xs font-medium text-slate-700">
+                              {senderName}
+                            </div>
                           )}
 
-                          {message.type === "image" && message.fileUrl && (
-                            <>
-                              <img
-                                src={message.fileUrl}
-                                alt={message.fileName || "image"}
-                                className="max-h-72 cursor-pointer rounded-xl object-cover"
-                                onClick={() =>
-                                  onOpenImage(message.fileUrl!, message.fileName)
-                                }
-                              />
-                              <div className="mt-2 flex items-center gap-2">
-                                <span className="text-[11px] font-medium opacity-75">
-                                  {getMessagePreviewTypeLabel(message)}
-                                </span>
-                                <a
-                                  href={message.fileUrl}
-                                  download
-                                  className="inline-flex items-center gap-1 text-xs underline"
-                                >
-                                  <Download className="h-3.5 w-3.5" />
-                                  다운로드
-                                </a>
-                              </div>
-                            </>
-                          )}
-
-                          {message.type === "file" && message.fileUrl && (
-                            <>
-                              {isVideoFile(message.fileUrl, message.fileName) ? (
-                                <video
-                                  controls
-                                  className="max-h-72 rounded-xl"
-                                  src={message.fileUrl}
-                                />
-                              ) : null}
-
-                              <div className="flex items-center gap-2">
-                                <span className="text-[11px] font-medium opacity-75">
-                                  {getMessagePreviewTypeLabel(message)}
-                                </span>
-                                <a
-                                  href={message.fileUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="font-medium underline"
-                                >
-                                  {message.fileName || "파일 다운로드"}
-                                </a>
-                                <a
-                                  href={message.fileUrl}
-                                  download
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700"
-                                >
-                                  <Download className="h-4 w-4" />
-                                </a>
-                              </div>
-                            </>
-                          )}
-                        </div>
-
-                        {showMeta && (
                           <div
-                            className={`mt-1 flex items-center gap-1 px-1 text-[11px] text-slate-500 ${
-                              isMine ? "justify-end" : "justify-start"
+                            className={`overflow-hidden px-4 py-3 text-sm leading-relaxed shadow-sm transition ${
+                              bubbleClass
+                            } ${
+                              isCurrentMatched
+                                ? "ring-2 ring-blue-500 shadow-[0_0_0_4px_rgba(59,130,246,0.15)]"
+                                : isMatched
+                                ? "ring-1 ring-yellow-300"
+                                : ""
                             }`}
                           >
-                            {showReadMeta ? (
-                              <span className="min-w-[10px] text-right font-semibold leading-none text-amber-600">
-                                {readCount}
+                            {message.type === "text" && (
+                              <span>
+                                {highlightText(
+                                  String(message.content || ""),
+                                  searchText
+                                )}
                               </span>
-                            ) : null}
-                            <span>{message.createdAt}</span>
+                            )}
+
+                            {message.type === "image" && message.fileUrl && (
+                              <>
+                                <img
+                                  src={message.fileUrl}
+                                  alt={message.fileName || "image"}
+                                  className="max-h-72 cursor-pointer rounded-xl object-cover"
+                                  onClick={() =>
+                                    onOpenImage(message.fileUrl!, message.fileName)
+                                  }
+                                />
+                                <div className="mt-2 flex items-center gap-2">
+                                  <span className="text-[11px] font-medium opacity-75">
+                                    {getMessagePreviewTypeLabel(message)}
+                                  </span>
+                                  <a
+                                    href={message.fileUrl}
+                                    download
+                                    className="inline-flex items-center gap-1 text-xs underline"
+                                  >
+                                    <Download className="h-3.5 w-3.5" />
+                                    다운로드
+                                  </a>
+                                </div>
+                              </>
+                            )}
+
+                            {message.type === "file" && message.fileUrl && (
+                              <>
+                                {isVideoFile(message.fileUrl, message.fileName) ? (
+                                  <video
+                                    controls
+                                    className="max-h-72 rounded-xl"
+                                    src={message.fileUrl}
+                                  />
+                                ) : null}
+
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[11px] font-medium opacity-75">
+                                    {getMessagePreviewTypeLabel(message)}
+                                  </span>
+                                  <a
+                                    href={message.fileUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="font-medium underline"
+                                  >
+                                    {message.fileName || "파일 다운로드"}
+                                  </a>
+                                  <a
+                                    href={message.fileUrl}
+                                    download
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700"
+                                  >
+                                    <Download className="h-4 w-4" />
+                                  </a>
+                                </div>
+                              </>
+                            )}
                           </div>
-                        )}
+
+                          {showMeta && (
+                            <div
+                              className={`mt-1 flex items-center gap-1 px-1 text-[11px] text-slate-500 ${
+                                isMine ? "justify-end" : "justify-start"
+                              }`}
+                            >
+                              {showReadMeta ? (
+                                <span className="min-w-[10px] text-right font-semibold leading-none text-amber-600">
+                                  {readCount}
+                                </span>
+                              ) : null}
+                              <span>{message.createdAt}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-	</div>
                 );
               })}
 
@@ -1210,7 +1224,8 @@ useEffect(() => {
             </Button>
           </div>
         </div>
-               {!isFullscreen && (
+
+        {!isFullscreen && (
           <div
             onMouseDown={(e) => {
               e.stopPropagation();

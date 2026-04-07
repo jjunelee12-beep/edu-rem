@@ -30,6 +30,18 @@ function readSoundEnabled() {
   return raw === "true";
 }
 
+function readOpenedRoomIdsFromStorage(): number[] {
+  try {
+    const raw = localStorage.getItem("messenger-opened-room-ids");
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((v) => Number(v)).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 function roleToPosition(role?: string) {
   if (role === "superhost") return "슈퍼호스트";
   if (role === "host") return "호스트";
@@ -42,6 +54,7 @@ function normalizeMessageContent(payload: any) {
 
   if (type === "image") return "사진을 보냈습니다.";
   if (type === "file") return payload?.fileName || "파일을 보냈습니다.";
+  if (type === "system") return payload?.content || "시스템 메시지";
 
   return payload?.content || "(내용 없음)";
 }
@@ -67,7 +80,9 @@ export default function MessengerRealtimeBridge() {
   const notificationMapRef = useRef<Map<number, Notification>>(new Map());
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const [openRoomIds, setOpenRoomIds] = useState<number[]>([]);
+  const [openRoomIds, setOpenRoomIds] = useState<number[]>(() =>
+    readOpenedRoomIdsFromStorage()
+  );
   const [isMessengerMainOpen, setIsMessengerMainOpen] = useState(false);
   const [mutedRoomIds, setMutedRoomIds] = useState<number[]>([]);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -121,6 +136,7 @@ export default function MessengerRealtimeBridge() {
   useEffect(() => {
     audioRef.current = new Audio("/sounds/message.mp3");
     audioRef.current.preload = "auto";
+
     console.log(
       "[MessengerRealtimeBridge] Audio initialized: /sounds/message.mp3"
     );
@@ -137,15 +153,18 @@ export default function MessengerRealtimeBridge() {
       const nextMuted = readMutedRooms();
       const nextSound = readSoundEnabled();
       const nextAppSettings = readAppNotificationSettings();
+      const nextOpenedRoomIds = readOpenedRoomIdsFromStorage();
 
       setMutedRoomIds(nextMuted);
       setSoundEnabled(nextSound);
       setAppSettings(nextAppSettings);
+      setOpenRoomIds(nextOpenedRoomIds);
 
       console.log("[MessengerRealtimeBridge] sync settings", {
         mutedRoomIds: nextMuted,
         soundEnabled: nextSound,
         appSettings: nextAppSettings,
+        openRoomIds: nextOpenedRoomIds,
       });
     };
 
@@ -153,10 +172,12 @@ export default function MessengerRealtimeBridge() {
 
     window.addEventListener("messenger:settings-changed", sync);
     window.addEventListener("app:notification-settings-changed", sync);
+    window.addEventListener("storage", sync);
 
     return () => {
       window.removeEventListener("messenger:settings-changed", sync);
       window.removeEventListener("app:notification-settings-changed", sync);
+      window.removeEventListener("storage", sync);
     };
   }, []);
 
@@ -168,6 +189,7 @@ export default function MessengerRealtimeBridge() {
         : [];
 
       setOpenRoomIds(roomIds);
+
       console.log("[MessengerRealtimeBridge] opened rooms changed", roomIds);
     };
 
@@ -175,6 +197,7 @@ export default function MessengerRealtimeBridge() {
       const custom = event as CustomEvent;
       const isOpen = !!custom.detail?.isOpen;
       setIsMessengerMainOpen(isOpen);
+
       console.log(
         "[MessengerRealtimeBridge] main messenger open changed",
         isOpen
@@ -205,12 +228,30 @@ export default function MessengerRealtimeBridge() {
   }, []);
 
   useEffect(() => {
+    const timer = setInterval(() => {
+      if (shownMessageKeysRef.current.size > 300) {
+        const recent = Array.from(shownMessageKeysRef.current).slice(-150);
+        shownMessageKeysRef.current = new Set(recent);
+
+        console.log(
+          "[MessengerRealtimeBridge] duplicate key cache trimmed",
+          recent.length
+        );
+      }
+    }, 60_000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     let liveSocket: any = null;
 
     const handleNewMessage = (payload: any) => {
       const roomId = Number(payload?.roomId || 0);
       const senderId = Number(payload?.senderId || 0);
       const messageId = Number(payload?.id || payload?.messageId || 0);
+      const createdAtKey = payload?.createdAt || payload?.created_at || "";
+      const messageType = String(payload?.messageType || "text");
 
       console.log("[MessengerRealtimeBridge] message:new received", {
         payload,
@@ -239,9 +280,9 @@ export default function MessengerRealtimeBridge() {
         return;
       }
 
-      const messageKey = `${
-        roomId
-      }:${messageId || payload?.createdAt || `no-createdAt-${Date.now()}`}`;
+      const messageKey = `${roomId}:${
+        messageId || createdAtKey || `${senderId}:${messageType}:${payload?.content || ""}`
+      }`;
 
       if (shownMessageKeysRef.current.has(messageKey)) {
         console.log(
@@ -251,16 +292,24 @@ export default function MessengerRealtimeBridge() {
         return;
       }
 
+      const latestOpenedRoomIds =
+        openRoomIds.length > 0 ? openRoomIds : readOpenedRoomIdsFromStorage();
+
+      const roomIsOpen = latestOpenedRoomIds.includes(roomId);
+
       console.log("[MessengerRealtimeBridge] check conditions", {
         roomId,
         senderId,
         messageKey,
         mutedRoomIds,
         openRoomIds,
+        latestOpenedRoomIds,
+        roomIsOpen,
         isMessengerMainOpen,
         soundEnabled,
         appSettings,
         visibilityState: document.visibilityState,
+        hasFocus: document.hasFocus(),
         localMessengerOpen: localStorage.getItem("messenger-open"),
       });
 
@@ -286,11 +335,10 @@ export default function MessengerRealtimeBridge() {
         return;
       }
 
-      // 같은 방이 열려 있으면 무조건 차단
-      if (openRoomIds.includes(roomId)) {
+      if (roomIsOpen) {
         console.log("[MessengerRealtimeBridge] blocked: room already open", {
           roomId,
-          openRoomIds,
+          latestOpenedRoomIds,
         });
         return;
       }
@@ -311,7 +359,10 @@ export default function MessengerRealtimeBridge() {
       const sender = usersById.get(senderId);
 
       const senderName =
-        sender?.name || payload?.senderName || payload?.senderUsername || "이름없음";
+        sender?.name ||
+        payload?.senderName ||
+        payload?.senderUsername ||
+        "이름없음";
 
       const senderPosition =
         sender?.positionName ||
@@ -379,7 +430,7 @@ export default function MessengerRealtimeBridge() {
         }
 
         const noti = new Notification(senderName, {
-          body: content,
+          body: senderPosition ? `${content}` : content,
           icon: senderAvatar || undefined,
           silent: !(soundEnabled && appSettings.sound),
         });
@@ -387,6 +438,7 @@ export default function MessengerRealtimeBridge() {
         console.log("[MessengerRealtimeBridge] browser notification created", {
           roomId,
           senderName,
+          senderPosition,
           content,
         });
 
@@ -414,6 +466,7 @@ export default function MessengerRealtimeBridge() {
         setTimeout(() => {
           noti.close();
           notificationMapRef.current.delete(roomId);
+
           console.log(
             "[MessengerRealtimeBridge] browser notification auto closed",
             {
@@ -438,7 +491,9 @@ export default function MessengerRealtimeBridge() {
 
         console.log("[MessengerRealtimeBridge] socket connected", socket);
 
+        socket.off("message:new", handleNewMessage);
         socket.on("message:new", handleNewMessage);
+
         console.log(
           "[MessengerRealtimeBridge] socket listener attached: message:new"
         );
@@ -450,6 +505,7 @@ export default function MessengerRealtimeBridge() {
     return () => {
       if (!liveSocket) return;
       liveSocket.off("message:new", handleNewMessage);
+
       console.log(
         "[MessengerRealtimeBridge] socket listener removed: message:new"
       );

@@ -408,11 +408,13 @@ io.to(`room:${roomId}`).emit("typing:stop", {
   userId,
 });
 
-// 실제 새 메시지 이벤트는 참여자 개인 room으로 전송
 for (const member of members) {
   const memberUserId = Number(member.userId);
 
-  io.to(`user:${memberUserId}`).emit("message:new", emittedMessage);
+  // sender 본인에게는 message:new를 보내지 않음
+  if (memberUserId !== userId) {
+    io.to(`user:${memberUserId}`).emit("message:new", emittedMessage);
+  }
 
   io.to(`user:${memberUserId}`).emit("room:list:update", {
     roomId,
@@ -432,7 +434,6 @@ for (const member of members) {
     isRead: false,
   } as any);
 }
-
           if (callback) {
             callback({
               success: true,
