@@ -1418,7 +1418,7 @@ const existingPlanSubjectMap = useMemo(() => {
                       <td className="px-1 py-0.5">
                         <EditableCell
                           value={sem.plannedMonth ? (sem.plannedMonth.length === 6 ? sem.plannedMonth.slice(0, 4) + "-" + sem.plannedMonth.slice(4) : sem.plannedMonth) : ""}
-                          onBlur={(v) => handleSemFieldBlur(sem.id, "plannedMonth", v.replace(/-/g, "").slice(0, 6))}
+                          onBlur={(v) => handleSemFieldBlur(sem.id, "plannedMonth", v)}
                           disabled={sem.isLocked}
                         />
                       </td>
