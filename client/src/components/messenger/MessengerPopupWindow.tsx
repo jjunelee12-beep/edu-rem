@@ -67,6 +67,16 @@ type MessengerPopupWindowProps = {
 };
 
 const ROOM_BG_KEY = "messenger-room-backgrounds";
+const GLOBAL_MESSENGER_BG_KEY = "messenger-global-background";
+
+function readGlobalMessengerBackground() {
+  try {
+    return localStorage.getItem(GLOBAL_MESSENGER_BG_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
 
 function isVideoFile(url?: string, fileName?: string) {
   const target = `${url || ""} ${fileName || ""}`.toLowerCase();
@@ -234,6 +244,8 @@ export default function MessengerPopupWindow({
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
+const [liveRoomBackground, setLiveRoomBackground] = useState("");
+const [liveGlobalBackground, setLiveGlobalBackground] = useState("");
   const [dragging, setDragging] = useState(false);
   const [position, setPosition] = useState({
     right: rightOffset,
@@ -289,13 +301,29 @@ export default function MessengerPopupWindow({
     : `${titlePosition ? `${titlePosition} · ` : ""}1:1 대화`;
 
   const savedRoomBackground = useMemo(() => readRoomBackground(room?.id), [room?.id]);
+const savedGlobalBackground = useMemo(
+  () => readGlobalMessengerBackground(),
+  []
+);
 
-  const effectiveRoomBackground = useMemo(() => {
-    if (typeof chatBackground === "string" && chatBackground.length > 0) {
-      return chatBackground;
-    }
-    return savedRoomBackground;
-  }, [chatBackground, savedRoomBackground]);
+   const effectiveRoomBackground = useMemo(() => {
+  if (liveRoomBackground) return liveRoomBackground;
+
+  if (typeof chatBackground === "string" && chatBackground.length > 0) {
+    return chatBackground;
+  }
+
+  if (savedRoomBackground) return savedRoomBackground;
+
+  if (liveGlobalBackground) return liveGlobalBackground;
+
+  return "";
+}, [
+  liveRoomBackground,
+  chatBackground,
+  savedRoomBackground,
+  liveGlobalBackground,
+]);
 
   const bodyBackgroundStyle = useMemo((): React.CSSProperties => {
     const bg = effectiveRoomBackground || "";
@@ -353,24 +381,36 @@ export default function MessengerPopupWindow({
   }, [rightOffset, topOffset]);
 
   useEffect(() => {
+    setLiveRoomBackground(readRoomBackground(room?.id));
+  }, [room?.id]);
+useEffect(() => {
+  setLiveGlobalBackground(readGlobalMessengerBackground());
+}, []);
+
+  useEffect(() => {
     setHasInitializedScroll(false);
     setIsNearBottom(true);
   }, [room?.id]);
 
-  useEffect(() => {
-    const handleBackgroundChange = () => {
-      setForceRender((prev) => prev + 1);
-    };
+   useEffect(() => {
+  const handleBackgroundChange = () => {
+    const nextRoom = readRoomBackground(room?.id);
+    const nextGlobal = readGlobalMessengerBackground();
 
-    window.addEventListener("messenger:bg-changed", handleBackgroundChange);
+    setLiveRoomBackground(nextRoom);
+    setLiveGlobalBackground(nextGlobal);
+    setForceRender((prev) => prev + 1);
+  };
 
-    return () => {
-      window.removeEventListener(
-        "messenger:bg-changed",
-        handleBackgroundChange
-      );
-    };
-  }, []);
+  window.addEventListener("messenger:bg-changed", handleBackgroundChange);
+
+  return () => {
+    window.removeEventListener(
+      "messenger:bg-changed",
+      handleBackgroundChange
+    );
+  };
+}, [room?.id]);
 
   const safeMessages = useMemo(() => messages || [], [messages]);
 

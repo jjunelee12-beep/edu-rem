@@ -104,6 +104,7 @@ export default function MessengerRoomInfo({
 
   const [localMuted, setLocalMuted] = useState(false);
   const [currentBg, setCurrentBg] = useState("");
+  const [draftBg, setDraftBg] = useState("");
   const [previewImage, setPreviewImage] = useState<{
     open: boolean;
     url?: string;
@@ -134,6 +135,7 @@ export default function MessengerRoomInfo({
     const all = readRoomBackgrounds();
     const saved = all[String(activeRoom.id)] || "";
     setCurrentBg(saved);
+    setDraftBg(saved);
     onChangeBackground?.(saved);
   }, [open, activeRoom?.id, onChangeBackground]);
 
@@ -152,10 +154,8 @@ export default function MessengerRoomInfo({
     const file = e.target.files?.[0];
     if (!file || !activeRoom?.id) return;
 
-    const dataUrl = await fileToDataUrl(file);
-    saveRoomBackground(Number(activeRoom.id), dataUrl);
-    setCurrentBg(dataUrl);
-    onChangeBackground?.(dataUrl);
+        const dataUrl = await fileToDataUrl(file);
+    setDraftBg(dataUrl);
   };
 
   if (!open) return null;
@@ -357,17 +357,15 @@ export default function MessengerRoomInfo({
 
           <div className="grid grid-cols-4 gap-2">
             {BG_PRESETS.map((bg) => {
-              const selected = currentBg === bg.value;
+                            const selected = draftBg === bg.value;
 
               return (
                 <button
                   key={bg.id}
                   type="button"
-                  onClick={() => {
+                                    onClick={() => {
                     const value = bg.value;
-                    saveRoomBackground(Number(activeRoom?.id), value);
-                    setCurrentBg(value);
-                    onChangeBackground?.(value);
+                    setDraftBg(value);
                   }}
                   className={`relative h-16 rounded-2xl border transition ${
                     selected
@@ -389,10 +387,8 @@ export default function MessengerRoomInfo({
 
           <button
             type="button"
-            onClick={() => {
-              saveRoomBackground(Number(activeRoom?.id), "");
-              setCurrentBg("");
-              onChangeBackground?.("");
+                        onClick={() => {
+              setDraftBg("");
             }}
             className="mt-3 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-50"
           >
@@ -409,6 +405,18 @@ export default function MessengerRoomInfo({
               onChange={handleUploadBackground}
             />
           </label>
+          <button
+            type="button"
+            onClick={() => {
+              if (!activeRoom?.id) return;
+              saveRoomBackground(Number(activeRoom.id), draftBg || "");
+              setCurrentBg(draftBg || "");
+              onChangeBackground?.(draftBg || "");
+            }}
+            className="mt-3 w-full rounded-2xl bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+          >
+            적용
+          </button>
 
           <div className="mt-4">
             <div className="mb-2 text-xs font-medium text-slate-500">
@@ -418,13 +426,13 @@ export default function MessengerRoomInfo({
             <div
               className="h-28 w-full overflow-hidden rounded-2xl border border-slate-200"
               style={{
-                backgroundColor:
-                  currentBg && !currentBg.startsWith("data:")
-                    ? currentBg
+                                backgroundColor:
+                  draftBg && !draftBg.startsWith("data:")
+                    ? draftBg
                     : "#b7c7d8",
                 backgroundImage:
-                  currentBg && currentBg.startsWith("data:")
-                    ? `url(${currentBg})`
+                  draftBg && draftBg.startsWith("data:")
+                    ? `url(${draftBg})`
                     : undefined,
                 backgroundSize: "cover",
                 backgroundPosition: "center",

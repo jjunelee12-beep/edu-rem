@@ -1,12 +1,12 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Building2,
   MessageSquare,
   Search,
   Settings,
   Bell,
-  ChevronRight,
   Image as ImageIcon,
+  ImagePlus,
   Paperclip,
   PencilLine,
   Pin,
@@ -87,6 +87,40 @@ function getLastMessageIcon(value?: string) {
   return null;
 }
 
+const GLOBAL_MESSENGER_BG_KEY = "messenger-global-background";
+
+const GLOBAL_BG_PRESETS = [
+  { id: "default", label: "기본", value: "" },
+  { id: "blue", label: "블루", value: "#b7c7d8" },
+  { id: "green", label: "그린", value: "#c7e0d6" },
+  { id: "gray", label: "그레이", value: "#e5e7eb" },
+];
+
+function readGlobalMessengerBackground() {
+  try {
+    return localStorage.getItem(GLOBAL_MESSENGER_BG_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function saveGlobalMessengerBackground(value: string) {
+  try {
+    localStorage.setItem(GLOBAL_MESSENGER_BG_KEY, value);
+    window.dispatchEvent(new Event("messenger:bg-changed"));
+  } catch {}
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () =>
+      typeof reader.result === "string" ? resolve(reader.result) : reject();
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function MessengerSidebar({
   rooms,
   activeRoomId,
@@ -105,6 +139,9 @@ onToggleNotification,
   const [tab, setTab] = useState<SidebarTab>("org");
   const [search, setSearch] = useState("");
   const [hoveredRoomId, setHoveredRoomId] = useState<number | null>(null);
+    const [draftGlobalChatBg, setDraftGlobalChatBg] = useState(() =>
+    readGlobalMessengerBackground()
+  );
 
   const filteredRooms = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -144,6 +181,11 @@ onToggleNotification,
   }, [pinnedRoomIds]);
 
   const showSearch = tab === "org" || tab === "rooms";
+
+  useEffect(() => {
+    const saved = readGlobalMessengerBackground();
+    setDraftGlobalChatBg(saved);
+  }, [tab]);
 
   return (
     <aside className="flex h-full min-h-0 border-r border-black/5 bg-[#f4f5f8]">
@@ -495,16 +537,110 @@ onToggleNotification,
   </div>
 )}
 
-         {tab === "chatSettings" && (
-  <div className="px-4 py-4">
-    <div className="rounded-2xl border bg-white p-4">
-      <p className="text-sm font-semibold">채팅 배경</p>
-      <p className="text-xs text-slate-500 mt-1">
-        채팅 배경 설정
-      </p>
-    </div>
-  </div>
-)}
+                   {tab === "chatSettings" && (
+            <div className="px-4 py-4">
+              <div className="rounded-2xl border border-black/8 bg-white p-4">
+                <p className="text-sm font-semibold text-black">채팅 배경</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  채팅방 개별 배경이 없을 때 기본으로 사용할 공통 배경입니다.
+                </p>
+
+                <div className="mt-4 grid grid-cols-4 gap-2">
+                  {GLOBAL_BG_PRESETS.map((bg) => {
+                    const selected = draftGlobalChatBg === bg.value;
+
+                    return (
+                      <button
+                        key={bg.id}
+                        type="button"
+                        onClick={() => {
+                          setDraftGlobalChatBg(bg.value);
+                        }}
+                        className={`relative h-16 rounded-2xl border transition ${
+                          selected
+                            ? "scale-[1.02] border-slate-900 ring-2 ring-slate-200"
+                            : "border-slate-200 hover:border-slate-300"
+                        }`}
+                        style={{ background: bg.value || "#d1d5db" }}
+                        title={bg.label}
+                      >
+                        {selected && (
+                          <span className="absolute inset-x-0 bottom-1 text-[10px] font-medium text-slate-700">
+                            선택됨
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraftGlobalChatBg("");
+                  }}
+                  className="mt-3 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-50"
+                >
+                  배경 초기화
+                </button>
+
+                <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700 transition hover:bg-slate-100">
+                  <ImagePlus className="h-4 w-4" />
+                  <span>사용자 지정 배경 업로드</span>
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept="image/*"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+
+                      const dataUrl = await fileToDataUrl(file);
+                      setDraftGlobalChatBg(dataUrl);
+                    }}
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    saveGlobalMessengerBackground(draftGlobalChatBg || "");
+                  }}
+                  className="mt-3 w-full rounded-2xl bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+                >
+                  적용
+                </button>
+
+                <div className="mt-4">
+                  <div className="mb-2 text-xs font-medium text-slate-500">
+                    현재 배경 미리보기
+                  </div>
+
+                  <div
+                    className="h-28 w-full overflow-hidden rounded-2xl border border-slate-200"
+                    style={{
+                      backgroundColor:
+                        draftGlobalChatBg && !draftGlobalChatBg.startsWith("data:")
+                          ? draftGlobalChatBg
+                          : "#b7c7d8",
+                      backgroundImage:
+                        draftGlobalChatBg && draftGlobalChatBg.startsWith("data:")
+                          ? `url(${draftGlobalChatBg})`
+                          : undefined,
+                      backgroundSize: "cover",
+                      backgroundPosition: "center",
+                    }}
+                  >
+                    <div className="flex h-full items-end bg-gradient-to-t from-black/10 to-transparent p-3">
+                      <div className="rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-slate-700">
+                        채팅 배경 미리보기
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </aside>
