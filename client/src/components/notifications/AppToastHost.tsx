@@ -29,6 +29,8 @@ type ToastItem = AppNotification & {
 
 const MAX_TOASTS = 4;
 const EXIT_ANIMATION_MS = 220;
+const DESKTOP_MESSENGER_PANEL_WIDTH = 520;
+const DESKTOP_TOAST_GAP = 20;
 
 function getCategoryIcon(category: AppNotificationCategory) {
   switch (category) {
@@ -172,14 +174,16 @@ function MessengerToastCard({ toast, onClose, onOpen }: ToastCardProps) {
   return (
     <div
       className={cn(
-        "pointer-events-auto relative overflow-hidden rounded-[24px] border border-white/70 bg-white/95 shadow-[0_10px_34px_rgba(15,23,42,0.14)] backdrop-blur-md transition-all duration-200",
-        toast.visible ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0"
+        "pointer-events-auto relative overflow-hidden rounded-[24px] border border-white/70 bg-white/95 shadow-[0_16px_40px_rgba(15,23,42,0.16)] backdrop-blur-md transition-all duration-200",
+        toast.visible
+          ? "translate-y-0 scale-100 opacity-100"
+          : "translate-y-3 scale-[0.98] opacity-0"
       )}
     >
       <button
         type="button"
         onClick={() => onOpen(toast)}
-        className="flex w-full items-start gap-3 p-4 pr-12 text-left transition hover:bg-slate-50 active:scale-[0.98]"
+        className="flex w-full items-start gap-3 p-4 pr-12 text-left transition hover:bg-slate-50 active:scale-[0.99]"
       >
         <div className="relative mt-0.5 shrink-0">
           {imageUrl ? (
@@ -245,16 +249,18 @@ function DefaultToastCard({ toast, onClose, onOpen }: ToastCardProps) {
   return (
     <div
       className={cn(
-        "pointer-events-auto relative overflow-hidden rounded-[24px] border border-white/70 bg-white/95 shadow-[0_10px_34px_rgba(15,23,42,0.14)] backdrop-blur-md transition-all duration-200",
+        "pointer-events-auto relative overflow-hidden rounded-[24px] border border-white/70 bg-white/95 shadow-[0_16px_40px_rgba(15,23,42,0.16)] backdrop-blur-md transition-all duration-200",
         "border-l-[5px]",
         getLevelAccentClass(toast.level),
-        toast.visible ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0"
+        toast.visible
+          ? "translate-y-0 scale-100 opacity-100"
+          : "translate-y-3 scale-[0.98] opacity-0"
       )}
     >
       <button
         type="button"
         onClick={() => onOpen(toast)}
-        className="flex w-full items-start gap-3 p-4 pr-12 text-left transition hover:bg-slate-50 active:scale-[0.98]"
+        className="flex w-full items-start gap-3 p-4 pr-12 text-left transition hover:bg-slate-50 active:scale-[0.99]"
       >
         <div className="relative mt-0.5 shrink-0">
           {imageUrl ? (
@@ -329,6 +335,10 @@ function DefaultToastCard({ toast, onClose, onOpen }: ToastCardProps) {
 export default function AppToastHost() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [isMessengerMainOpen, setIsMessengerMainOpen] = useState(false);
+  const [windowWidth, setWindowWidth] = useState<number>(
+    typeof window !== "undefined" ? window.innerWidth : 1440
+  );
+
   const timersRef = useRef<Record<string, number>>({});
   const removeTimersRef = useRef<Record<string, number>>({});
 
@@ -339,7 +349,6 @@ export default function AppToastHost() {
       const customEvent = event as CustomEvent;
       const isOpen = !!customEvent.detail?.isOpen;
       setIsMessengerMainOpen(isOpen);
-      console.log("[AppToastHost] messenger main open changed", isOpen);
     };
 
     window.addEventListener(
@@ -356,16 +365,23 @@ export default function AppToastHost() {
   }, []);
 
   useEffect(() => {
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth);
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
+  useEffect(() => {
     const onToast = (event: Event) => {
       const customEvent = event as CustomEvent<AppNotification>;
       const notification = customEvent.detail;
-
-      console.log("[AppToastHost] APP_TOAST_EVENT received", notification);
-
-      if (!notification?.id) {
-        console.log("[AppToastHost] ignored: notification.id missing");
-        return;
-      }
+      if (!notification?.id) return;
 
       setToasts((prev) => {
         const next: ToastItem[] = [
@@ -373,7 +389,6 @@ export default function AppToastHost() {
           ...prev.filter((item) => item.id !== notification.id),
         ];
 
-        console.log("[AppToastHost] setToasts next", next);
         return next.slice(0, MAX_TOASTS);
       });
 
@@ -391,10 +406,8 @@ export default function AppToastHost() {
     const onToastRemove = (event: Event) => {
       const customEvent = event as CustomEvent<string>;
       const notificationId = customEvent.detail;
-
-      console.log("[AppToastHost] APP_TOAST_REMOVE_EVENT received", notificationId);
-
       if (!notificationId) return;
+
       startRemove(notificationId);
     };
 
@@ -421,18 +434,8 @@ export default function AppToastHost() {
     };
   }, []);
 
-  useEffect(() => {
-    console.log("[AppToastHost] rendered toasts", {
-      count: toasts.length,
-      safeCount: safeToasts.length,
-      toasts,
-    });
-  }, [toasts, safeToasts]);
-
   function startRemove(notificationId: string) {
     if (!notificationId) return;
-
-    console.log("[AppToastHost] startRemove", notificationId);
 
     if (timersRef.current[notificationId]) {
       window.clearTimeout(timersRef.current[notificationId]);
@@ -456,23 +459,29 @@ export default function AppToastHost() {
   }
 
   function onClickToast(notification: AppNotification) {
-    console.log("[AppToastHost] toast clicked", notification);
     startRemove(notification.id);
     handleNotificationAction(notification);
   }
 
-  const containerClassName = cn(
-    "pointer-events-none fixed bottom-4 z-[10050] flex w-[360px] max-w-[calc(100vw-24px)] flex-col gap-3 transition-all duration-200 sm:bottom-5",
-    isMessengerMainOpen ? "right-[540px]" : "right-4 sm:right-5"
-  );
-
-  console.log("[AppToastHost] containerClassName", {
-    isMessengerMainOpen,
-    containerClassName,
-  });
+  const isMobileWidth = windowWidth < 768;
+  const desktopRight = isMessengerMainOpen
+    ? DESKTOP_MESSENGER_PANEL_WIDTH + DESKTOP_TOAST_GAP
+    : 20;
 
   return (
-    <div className={containerClassName}>
+    <div
+      className={cn(
+        "pointer-events-none fixed bottom-4 z-[10050] flex flex-col gap-3 transition-all duration-200",
+        isMobileWidth ? "left-3 right-3" : "w-[360px]"
+      )}
+      style={
+        isMobileWidth
+          ? undefined
+          : {
+              right: `${desktopRight}px`,
+            }
+      }
+    >
       {safeToasts.map((toast) => {
         const isMessenger = toast.category === "messenger";
 

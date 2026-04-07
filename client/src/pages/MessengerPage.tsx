@@ -1030,6 +1030,7 @@ useEffect(() => {
 
   const handleSelectRoom = async (roomId: number) => {
   console.log("[MessengerPage] handleSelectRoom called", { roomId });
+console.trace("[MessengerPage] handleSelectRoom trace", { roomId });
 
   handleMarkRoomViewed(roomId);
 
@@ -1165,6 +1166,8 @@ useEffect(() => {
       setLocallyViewedRoomIds((ids) =>
         ids.filter((id) => Number(id) !== Number(target.roomId))
       );
+
+      setActiveRoomId(null);
     }
 
     return prev.filter((popup) => popup.key !== popupKey);
