@@ -125,7 +125,7 @@
 
   body {
   @apply bg-background text-foreground;
-  background: #e9edf3;
+  background: #000000 !important;
 }
 
   button:not(:disabled),
@@ -191,7 +191,7 @@
 /* ===== 전체 레이아웃 톤 ===== */
 
 [data-slot="sidebar-inset"] {
-  background: #e9edf3 !important;
+  background: #000000 !important;
 }
 
 /* 카드 공통 */
