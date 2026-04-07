@@ -536,15 +536,15 @@ function PopupRoomData({
         })
       }
       onOpenAddParticipants={
-        room?.type === "group" && onOpenInviteDialog
-          ? () =>
-              onOpenInviteDialog({
-                room,
-                participants,
-                messages,
-              })
-          : undefined
-      }
+  onOpenInviteDialog
+    ? () =>
+        onOpenInviteDialog({
+          room,
+          participants,
+          messages,
+        })
+    : undefined
+}
       targetUser={targetUser}
       participants={participants}
       messages={messages}
@@ -1176,6 +1176,7 @@ export default function MessengerPage({
       setSelectedInviteUserIds([]);
       setInviteSearch("");
       setInviteDialogOpen(false);
+setRoomInfoOpen(true);
     } catch (error: any) {
       alert(error?.message || "참여자 추가에 실패했습니다.");
     } finally {
@@ -1390,8 +1391,6 @@ export default function MessengerPage({
                     setRoomInfoOpen(true);
                   }}
                   onOpenInviteDialog={({ room, participants, messages }) => {
-                    if (room?.type !== "group") return;
-
                     setRoomInfoRoomId(room?.id ? Number(room.id) : null);
                     setRoomInfoParticipants(participants);
                     setRoomInfoMessages(messages);
@@ -1460,11 +1459,11 @@ export default function MessengerPage({
           setRoomInfoOpen(false);
         }}
         onAddParticipant={() => {
-          if (activeRoomForInfo?.type !== "group") return;
-          setSelectedInviteUserIds([]);
-          setInviteSearch("");
-          setInviteDialogOpen(true);
-        }}
+  if (!activeRoomForInfo?.id) return;
+  setSelectedInviteUserIds([]);
+  setInviteSearch("");
+  setInviteDialogOpen(true);
+}}
         onUpdateTitle={(title) => {
           if (!activeRoomForInfo?.id) return;
 
@@ -1523,8 +1522,10 @@ export default function MessengerPage({
                         참여자 추가
                       </div>
                       <div className="mt-1 text-sm text-slate-500">
-                        그룹 채팅방에 초대할 직원을 선택하세요.
-                      </div>
+  {activeRoomForInfo?.type === "group"
+    ? "그룹 채팅방에 초대할 직원을 선택하세요."
+    : "직원을 추가하면 현재 1:1 대화방이 그룹채팅으로 전환됩니다."}
+</div>
                     </div>
                   </div>
                 </div>

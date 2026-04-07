@@ -785,17 +785,16 @@ useEffect(() => {
             </div>
 
             <div className="flex items-center gap-1">
-              {room?.type === "group" && onOpenAddParticipants ? (
-                <button
-                  type="button"
-                  onClick={onOpenAddParticipants}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-700 transition hover:bg-slate-50"
-                  title="참여자 추가"
-                >
-                  <UserPlus className="h-4 w-4" />
-                </button>
-              ) : null}
-
+             {onOpenAddParticipants ? (
+  <button
+    type="button"
+    onClick={onOpenAddParticipants}
+    className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-700 transition hover:bg-slate-50"
+    title={room?.type === "group" ? "참여자 추가" : "그룹으로 전환"}
+  >
+    <UserPlus className="h-4 w-4" />
+  </button>
+) : null}
               <button
                 type="button"
                 onClick={() => {

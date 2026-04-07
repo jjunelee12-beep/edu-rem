@@ -31,6 +31,7 @@ import {
   createScheduleNotifications,
   createNotification,
 updateChatRoomTitle,
+updateChatRoomType,
 } from "../db";
 
 console.log("R2_ACCOUNT_ID:", !!process.env.R2_ACCOUNT_ID);
@@ -793,19 +794,141 @@ socket.on(
       const members = await listChatRoomMembers(roomId, userId);
       const existingIds = members.map((m) => Number(m.userId));
 
-      const newUserIds = userIds.filter(
-        (id) => !existingIds.includes(id)
-      );
+const actorIsMember = members.some(
+  (m) => Number(m.userId) === Number(userId)
+);
+
+if (!actorIsMember) {
+  return callback?.({
+    success: false,
+    message: "해당 채팅방의 참여자만 초대할 수 있습니다.",
+  });
+}
+
+const filteredUserIds = userIds.filter(
+  (id) => Number(id) !== Number(userId)
+);
+
+if (filteredUserIds.length === 0) {
+  return callback?.({
+    success: false,
+    message: "추가할 참여자를 선택해주세요.",
+  });
+}
+
+      const newUserIds = filteredUserIds.filter(
+  (id) => !existingIds.includes(id)
+);
+
+if (newUserIds.length === 0) {
+  return callback?.({
+    success: false,
+    message: "이미 참여 중인 사용자입니다.",
+  });
+}
+
+const room = await getChatRoomById(roomId);
+
+if (room?.roomType === "direct" && newUserIds.length > 0) {
+  await updateChatRoomType({
+    roomId,
+    roomType: "group",
+  });
+
+  if (!room.title || !String(room.title).trim()) {
+    await updateChatRoomTitle({
+      roomId,
+      title: "새 그룹채팅",
+    });
+  }
+
+  const convertSystemText = "그룹채팅으로 전환되었습니다.";
+
+  const convertMessageId = await createChatMessage({
+    roomId,
+    senderId: userId,
+    messageType: "system",
+    content: convertSystemText,
+  });
+
+  const convertSystemMessage = {
+    id: Number(convertMessageId),
+    roomId,
+    senderId: userId,
+    senderName: "system",
+    senderUsername: "system",
+    messageType: "system",
+    content: convertSystemText,
+    isDeleted: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: null,
+    attachmentId: null,
+    fileUrl: null,
+    fileName: null,
+    fileType: null,
+    fileSize: null,
+  };
+
+  for (const member of members) {
+    const memberUserId = Number(member.userId);
+
+    io.to(`user:${memberUserId}`).emit("message:new", convertSystemMessage);
+    io.to(`user:${memberUserId}`).emit("room:list:update", {
+      roomId,
+      lastMessage: convertSystemMessage,
+    });
+  }
+}
 
       for (const uid of newUserIds) {
-        await addChatRoomMember({
-          roomId,
-          userId: uid,
-        });
+  await addChatRoomMember({
+    roomId,
+    userId: uid,
+  });
 
-        // 방 join
-        io.to(`user:${uid}`).emit("room:list:update", { roomId });
-      }
+  const addedUser = await getUserById(uid);
+  const addedUserName = addedUser?.name || addedUser?.username || "사용자";
+  const joinSystemText = `${addedUserName}님이 참여했습니다.`;
+
+  const joinMessageId = await createChatMessage({
+    roomId,
+    senderId: userId,
+    messageType: "system",
+    content: joinSystemText,
+  });
+
+  const joinSystemMessage = {
+    id: Number(joinMessageId),
+    roomId,
+    senderId: userId,
+    senderName: "system",
+    senderUsername: "system",
+    messageType: "system",
+    content: joinSystemText,
+    isDeleted: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: null,
+    attachmentId: null,
+    fileUrl: null,
+    fileName: null,
+    fileType: null,
+    fileSize: null,
+  };
+
+  const latestMembers = await listChatRoomMembers(roomId, userId);
+
+  for (const member of latestMembers) {
+    const memberUserId = Number(member.userId);
+
+    io.to(`user:${memberUserId}`).emit("message:new", joinSystemMessage);
+    io.to(`user:${memberUserId}`).emit("room:list:update", {
+      roomId,
+      lastMessage: joinSystemMessage,
+    });
+  }
+
+  io.to(`user:${uid}`).emit("room:list:update", { roomId });
+}
 
       io.to(`room:${roomId}`).emit("room:list:update", { roomId });
 

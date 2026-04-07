@@ -98,6 +98,9 @@ export default function MessengerRoomInfo({
   const sortedImageMessages = [...imageMessages].reverse();
   const sortedFileMessages = [...fileMessages].reverse();
 
+  const roomType = activeRoom?.type ?? "direct";
+  const isGroupRoom = roomType === "group";
+
   const mainUser =
     activeRoom?.type === "direct" ? participants[0] : participants[0];
   const currentRoomId = Number(activeRoom?.id || 0);
@@ -154,7 +157,7 @@ export default function MessengerRoomInfo({
     const file = e.target.files?.[0];
     if (!file || !activeRoom?.id) return;
 
-        const dataUrl = await fileToDataUrl(file);
+    const dataUrl = await fileToDataUrl(file);
     setDraftBg(dataUrl);
   };
 
@@ -191,7 +194,7 @@ export default function MessengerRoomInfo({
             </div>
 
             <div className="mt-3 font-bold text-slate-900">
-              {activeRoom?.type === "group" ? (
+              {isGroupRoom ? (
                 editingTitle ? (
                   <div className="flex items-center justify-center gap-2">
                     <input
@@ -240,13 +243,13 @@ export default function MessengerRoomInfo({
               )}
             </div>
 
-            {activeRoom?.type === "group" ? (
+            {isGroupRoom ? (
               <p className="mt-2 text-xs text-slate-500">
                 그룹 채팅방 설정과 참여자 관리를 할 수 있습니다.
               </p>
             ) : (
               <p className="mt-2 text-xs text-slate-500">
-                1:1 대화 설정과 배경을 관리할 수 있습니다.
+                1:1 대화 설정과 배경을 관리할 수 있으며, 참여자를 추가하면 그룹채팅으로 전환됩니다.
               </p>
             )}
           </div>
@@ -278,74 +281,74 @@ export default function MessengerRoomInfo({
           </div>
         </div>
 
-        {activeRoom?.type === "group" && (
-          <div className="rounded-[28px] border border-white/70 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.06)]">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Users className="h-4 w-4 text-slate-700" />
-                  <p className="text-sm font-semibold text-slate-900">
-                    참여자 관리
-                  </p>
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  여러 명을 선택해 그룹 채팅에 추가할 수 있습니다.
+        <div className="rounded-[28px] border border-white/70 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.06)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-slate-700" />
+                <p className="text-sm font-semibold text-slate-900">
+                  {isGroupRoom ? "참여자 관리" : "대화 상대"}
                 </p>
               </div>
-
-              <button
-                type="button"
-                onClick={onAddParticipant}
-                className="inline-flex h-10 items-center gap-2 rounded-2xl bg-slate-900 px-3 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800"
-              >
-                + 추가
-              </button>
+              <p className="mt-1 text-xs text-slate-500">
+                {isGroupRoom
+                  ? "여러 명을 선택해 그룹 채팅에 추가할 수 있습니다."
+                  : "참여자를 추가하면 현재 1:1 대화방이 그룹채팅으로 전환됩니다."}
+              </p>
             </div>
 
-            {participants.length === 0 ? (
-              <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-xs text-slate-500">
-                표시할 참여자가 없습니다.
-              </div>
-            ) : (
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                {participants.map((member) => (
-                  <div
-                    key={member.id}
-                    className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2"
-                  >
-                    <div className="relative h-10 w-10 shrink-0">
-                      <div className="h-full w-full overflow-hidden rounded-full bg-slate-200">
-                        {member.avatar ? (
-                          <img
-                            src={normalizeAssetUrl(member.avatar)}
-                            alt={member.name}
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-sm font-semibold text-slate-500">
-                            {String(member.name || "?").slice(0, 1)}
-                          </div>
-                        )}
-                      </div>
+            <button
+              type="button"
+              onClick={onAddParticipant}
+              className="inline-flex h-10 items-center gap-2 rounded-2xl bg-slate-900 px-3 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800"
+            >
+              {isGroupRoom ? "+ 추가" : "+ 사람 추가"}
+            </button>
+          </div>
 
-                      <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
+          {participants.length === 0 ? (
+            <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-xs text-slate-500">
+              표시할 참여자가 없습니다.
+            </div>
+          ) : (
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              {participants.map((member) => (
+                <div
+                  key={member.id}
+                  className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2"
+                >
+                  <div className="relative h-10 w-10 shrink-0">
+                    <div className="h-full w-full overflow-hidden rounded-full bg-slate-200">
+                      {member.avatar ? (
+                        <img
+                          src={normalizeAssetUrl(member.avatar)}
+                          alt={member.name}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-sm font-semibold text-slate-500">
+                          {String(member.name || "?").slice(0, 1)}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium text-slate-900">
-                        {member.name}
-                      </div>
-                      <div className="truncate text-xs text-slate-500">
-                        {member.team || "미분류"}
-                        {member.position ? ` · ${member.position}` : ""}
-                      </div>
+                    <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-slate-900">
+                      {member.name}
+                    </div>
+                    <div className="truncate text-xs text-slate-500">
+                      {member.team || "미분류"}
+                      {member.position ? ` · ${member.position}` : ""}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="rounded-[28px] border border-white/70 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.06)]">
           <div className="mb-3">
@@ -357,13 +360,13 @@ export default function MessengerRoomInfo({
 
           <div className="grid grid-cols-4 gap-2">
             {BG_PRESETS.map((bg) => {
-                            const selected = draftBg === bg.value;
+              const selected = draftBg === bg.value;
 
               return (
                 <button
                   key={bg.id}
                   type="button"
-                                    onClick={() => {
+                  onClick={() => {
                     const value = bg.value;
                     setDraftBg(value);
                   }}
@@ -387,7 +390,7 @@ export default function MessengerRoomInfo({
 
           <button
             type="button"
-                        onClick={() => {
+            onClick={() => {
               setDraftBg("");
             }}
             className="mt-3 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-50"
@@ -405,6 +408,7 @@ export default function MessengerRoomInfo({
               onChange={handleUploadBackground}
             />
           </label>
+
           <button
             type="button"
             onClick={() => {
@@ -426,7 +430,7 @@ export default function MessengerRoomInfo({
             <div
               className="h-28 w-full overflow-hidden rounded-2xl border border-slate-200"
               style={{
-                                backgroundColor:
+                backgroundColor:
                   draftBg && !draftBg.startsWith("data:")
                     ? draftBg
                     : "#b7c7d8",

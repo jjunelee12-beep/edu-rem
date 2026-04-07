@@ -3751,6 +3751,25 @@ export async function updateChatRoomTitle({
     .where(eq(chatRooms.id, roomId));
 }
 
+export async function updateChatRoomType({
+  roomId,
+  roomType,
+}: {
+  roomId: number;
+  roomType: "direct" | "group";
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(chatRooms)
+    .set({
+      roomType,
+      updatedAt: new Date(),
+    } as any)
+    .where(eq(chatRooms.id, roomId));
+}
+
 export async function createChatAttachment(data: {
   messageId: number;
   fileName: string;
