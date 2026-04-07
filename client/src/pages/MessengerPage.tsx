@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  Check,
-  Search,
-  UserPlus,
-  Users,
-  X,
-} from "lucide-react";
+import { Check, Search, UserPlus, Users, X } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { getSocket } from "@/lib/socket";
@@ -227,9 +221,9 @@ function PopupRoomData({
   onRefreshRooms,
   typingUserIds,
   roomMuted,
-chatBackground,
-onChangeBackground,
-notificationEnabled,
+  chatBackground,
+  onChangeBackground,
+  notificationEnabled,
   onToggleMuteRoom,
   onLeaveRoom,
   onOpenRoomInfo,
@@ -252,9 +246,9 @@ notificationEnabled,
   onRefreshRooms: () => Promise<void>;
   typingUserIds: number[];
   roomMuted: boolean;
-chatBackground: string;
-onChangeBackground: (value: string) => void;
-notificationEnabled: boolean;
+  chatBackground: string;
+  onChangeBackground: (value: string) => void;
+  notificationEnabled: boolean;
   onToggleMuteRoom: (roomId: number, isMuted: boolean) => Promise<void>;
   onLeaveRoom: (roomId: number) => Promise<void>;
   onOpenRoomInfo: (payload: {
@@ -290,51 +284,51 @@ notificationEnabled: boolean;
   );
 
   useEffect(() => {
-  if (popup.type !== "room" || !roomId || popup.minimized) return;
+    if (popup.type !== "room" || !roomId || popup.minimized) return;
 
-  let socketRef: any;
+    let socketRef: any;
 
-  const handleNewMessage = async (payload: any) => {
-    const incomingRoomId = Number(payload?.roomId || 0);
-    if (incomingRoomId !== Number(roomId)) return;
+    const handleNewMessage = async (payload: any) => {
+      const incomingRoomId = Number(payload?.roomId || 0);
+      if (incomingRoomId !== Number(roomId)) return;
 
-    await refetchMessages();
-    await refetchMembers();
-    await onRefreshRooms();
-  };
+      await refetchMessages();
+      await refetchMembers();
+      await onRefreshRooms();
+    };
 
-  const handleReadUpdate = async (payload: any) => {
-    const incomingRoomId = Number(payload?.roomId || 0);
-    if (incomingRoomId !== Number(roomId)) return;
+    const handleReadUpdate = async (payload: any) => {
+      const incomingRoomId = Number(payload?.roomId || 0);
+      if (incomingRoomId !== Number(roomId)) return;
 
-    await refetchMembers();
-    await onRefreshRooms();
-  };
+      await refetchMembers();
+      await onRefreshRooms();
+    };
 
-  (async () => {
-    const socket = await getSocket();
-    socketRef = socket;
+    (async () => {
+      const socket = await getSocket();
+      socketRef = socket;
 
-    socket.emit("room:join", { roomId: Number(roomId) });
-    socket.on("message:new", handleNewMessage);
-    socket.on("read:update", handleReadUpdate);
-  })();
+      socket.emit("room:join", { roomId: Number(roomId) });
+      socket.on("message:new", handleNewMessage);
+      socket.on("read:update", handleReadUpdate);
+    })();
 
-  return () => {
-    if (!socketRef) return;
+    return () => {
+      if (!socketRef) return;
 
-    socketRef.emit("room:leave", { roomId: Number(roomId) });
-    socketRef.off("message:new", handleNewMessage);
-    socketRef.off("read:update", handleReadUpdate);
-  };
-}, [
-  popup.type,
-  roomId,
-  popup.minimized,
-  refetchMessages,
-  refetchMembers,
-  onRefreshRooms,
-]);
+      socketRef.emit("room:leave", { roomId: Number(roomId) });
+      socketRef.off("message:new", handleNewMessage);
+      socketRef.off("read:update", handleReadUpdate);
+    };
+  }, [
+    popup.type,
+    roomId,
+    popup.minimized,
+    refetchMessages,
+    refetchMembers,
+    onRefreshRooms,
+  ]);
 
   const room =
     popup.type === "room"
@@ -533,16 +527,16 @@ notificationEnabled: boolean;
       onOpenImage={onOpenImage}
       onClose={onClose}
       onMinimize={onMinimize}
-onRestore={onMinimize}
+      onRestore={onMinimize}
       onTogglePin={onTogglePin}
       pinned={pinned}
       minimized={!!popup.minimized}
       rightOffset={560}
       typingUserIds={typingUserIds}
       roomMuted={roomMuted}
-chatBackground={chatBackground}
-onChangeBackground={onChangeBackground}
-notificationEnabled={notificationEnabled}
+      chatBackground={chatBackground}
+      onChangeBackground={onChangeBackground}
+      notificationEnabled={notificationEnabled}
       onToggleMute={
         popup.type === "room"
           ? async () => {
@@ -551,15 +545,15 @@ notificationEnabled={notificationEnabled}
           : undefined
       }
       onLeaveRoom={
-  popup.type === "room"
-    ? async () => {
-        const ok = confirm("정말 채팅방을 나가시겠습니까?");
-        if (!ok) return;
+        popup.type === "room"
+          ? async () => {
+              const ok = confirm("정말 채팅방을 나가시겠습니까?");
+              if (!ok) return;
 
-        await onLeaveRoom(Number(roomId));
+              await onLeaveRoom(Number(roomId));
+            }
+          : undefined
       }
-    : undefined
-}
     />
   );
 }
@@ -602,8 +596,8 @@ export default function MessengerPage({
     []
   );
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
-const [notificationEnabled, setNotificationEnabled] = useState(true);
-const [chatBackground, setChatBackground] = useState("");
+  const [notificationEnabled, setNotificationEnabled] = useState(true);
+  const [chatBackground, setChatBackground] = useState("");
 
   const { data: userList = [] } = trpc.users.list.useQuery();
   const { data: roomRows = [], refetch: refetchRooms } =
@@ -629,106 +623,105 @@ const [chatBackground, setChatBackground] = useState("");
     );
   }, [pinnedRoomIds]);
 
- 
-useEffect(() => {
-  let socketRef: any;
+  useEffect(() => {
+    let socketRef: any;
 
-  const handleOnlineUsers = (data: any) => {
-    setOnlineUserIds(new Set((data?.userIds || []).map((v: any) => Number(v))));
-  };
+    const handleOnlineUsers = (data: any) => {
+      setOnlineUserIds(new Set((data?.userIds || []).map((v: any) => Number(v))));
+    };
 
-  const handleUserOnline = ({ userId }: any) => {
-    setOnlineUserIds((prev) => new Set([...prev, Number(userId)]));
-  };
+    const handleUserOnline = ({ userId }: any) => {
+      setOnlineUserIds((prev) => new Set([...prev, Number(userId)]));
+    };
 
-  const handleUserOffline = ({ userId }: any) => {
-    setOnlineUserIds((prev) => {
-      const next = new Set(prev);
-      next.delete(Number(userId));
-      return next;
-    });
-  };
+    const handleUserOffline = ({ userId }: any) => {
+      setOnlineUserIds((prev) => {
+        const next = new Set(prev);
+        next.delete(Number(userId));
+        return next;
+      });
+    };
 
-  const handleRoomListUpdate = async () => {
-    await refetchRooms();
-  };
+    const handleRoomListUpdate = async () => {
+      await refetchRooms();
+    };
 
-  const handleNewMessage = async () => {
-    await refetchRooms();
-  };
+    const handleNewMessage = async () => {
+      await refetchRooms();
+    };
 
-  const handleTypingStart = ({
-    roomId,
-    userId,
-  }: {
-    roomId: number;
-    userId: number;
-  }) => {
-    const targetRoomId = Number(roomId);
-    const targetUserId = Number(userId);
+    const handleTypingStart = ({
+      roomId,
+      userId,
+    }: {
+      roomId: number;
+      userId: number;
+    }) => {
+      const targetRoomId = Number(roomId);
+      const targetUserId = Number(userId);
 
-    if (!targetRoomId || !targetUserId) return;
-    if (targetUserId === Number(user?.id)) return;
+      if (!targetRoomId || !targetUserId) return;
+      if (targetUserId === Number(user?.id)) return;
 
-    setTypingByRoom((prev) => {
-      const current = prev[targetRoomId] || [];
-      if (current.includes(targetUserId)) return prev;
+      setTypingByRoom((prev) => {
+        const current = prev[targetRoomId] || [];
+        if (current.includes(targetUserId)) return prev;
 
-      return {
-        ...prev,
-        [targetRoomId]: [...current, targetUserId],
-      };
-    });
-  };
+        return {
+          ...prev,
+          [targetRoomId]: [...current, targetUserId],
+        };
+      });
+    };
 
-  const handleTypingStop = ({
-    roomId,
-    userId,
-  }: {
-    roomId: number;
-    userId: number;
-  }) => {
-    const targetRoomId = Number(roomId);
-    const targetUserId = Number(userId);
+    const handleTypingStop = ({
+      roomId,
+      userId,
+    }: {
+      roomId: number;
+      userId: number;
+    }) => {
+      const targetRoomId = Number(roomId);
+      const targetUserId = Number(userId);
 
-    if (!targetRoomId || !targetUserId) return;
+      if (!targetRoomId || !targetUserId) return;
 
-    setTypingByRoom((prev) => {
-      const current = prev[targetRoomId] || [];
-      const nextUsers = current.filter((id) => id !== targetUserId);
+      setTypingByRoom((prev) => {
+        const current = prev[targetRoomId] || [];
+        const nextUsers = current.filter((id) => id !== targetUserId);
 
-      return {
-        ...prev,
-        [targetRoomId]: nextUsers,
-      };
-    });
-  };
+        return {
+          ...prev,
+          [targetRoomId]: nextUsers,
+        };
+      });
+    };
 
-  (async () => {
-    const socket = await getSocket();
-    socketRef = socket;
+    (async () => {
+      const socket = await getSocket();
+      socketRef = socket;
 
-    socket.on("online:users", handleOnlineUsers);
-    socket.on("user:online", handleUserOnline);
-    socket.on("user:offline", handleUserOffline);
-    socket.on("room:list:update", handleRoomListUpdate);
-    socket.on("message:new", handleNewMessage);
-    socket.on("typing:start", handleTypingStart);
-    socket.on("typing:stop", handleTypingStop);
-  })();
+      socket.on("online:users", handleOnlineUsers);
+      socket.on("user:online", handleUserOnline);
+      socket.on("user:offline", handleUserOffline);
+      socket.on("room:list:update", handleRoomListUpdate);
+      socket.on("message:new", handleNewMessage);
+      socket.on("typing:start", handleTypingStart);
+      socket.on("typing:stop", handleTypingStop);
+    })();
 
-  return () => {
-    if (!socketRef) return;
+    return () => {
+      if (!socketRef) return;
 
-    socketRef.off("online:users", handleOnlineUsers);
-    socketRef.off("user:online", handleUserOnline);
-    socketRef.off("user:offline", handleUserOffline);
-    socketRef.off("room:list:update", handleRoomListUpdate);
-    socketRef.off("message:new", handleNewMessage);
-    socketRef.off("typing:start", handleTypingStart);
-    socketRef.off("typing:stop", handleTypingStop);
-  };
-}, [refetchRooms, user?.id]);
+      socketRef.off("online:users", handleOnlineUsers);
+      socketRef.off("user:online", handleUserOnline);
+      socketRef.off("user:offline", handleUserOffline);
+      socketRef.off("room:list:update", handleRoomListUpdate);
+      socketRef.off("message:new", handleNewMessage);
+      socketRef.off("typing:start", handleTypingStart);
+      socketRef.off("typing:stop", handleTypingStop);
+    };
+  }, [refetchRooms, user?.id]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -747,10 +740,10 @@ useEffect(() => {
       const visiblePopups = openPopups.filter((popup) => !popup.minimized);
 
       if (visiblePopups.length > 0) {
-  const lastPopup = visiblePopups[visiblePopups.length - 1];
-  closePopup(lastPopup.key);
-  return;
-}
+        const lastPopup = visiblePopups[visiblePopups.length - 1];
+        closePopup(lastPopup.key);
+        return;
+      }
 
       onRequestClose?.();
       window.dispatchEvent(new Event("messenger:request-close-main"));
@@ -762,84 +755,83 @@ useEffect(() => {
     };
   }, [openPopups, onRequestClose, roomInfoOpen, inviteDialogOpen]);
 
-  
-useEffect(() => {
-  const emitOpenedRoomsChanged = () => {
-  const openedRoomIds = openPopups
-    .filter((popup) => popup.type === "room" && !popup.minimized)
-    .map((popup) => Number(popup.roomId))
-    .filter(Boolean);
+  useEffect(() => {
+    const emitOpenedRoomsChanged = () => {
+      const openedRoomIds = openPopups
+        .filter((popup) => popup.type === "room" && !popup.minimized)
+        .map((popup) => Number(popup.roomId))
+        .filter(Boolean);
 
-  console.log("[MessengerPage] emit opened rooms", {
-    openPopups,
-    visibilityState: document.visibilityState,
-    openedRoomIds,
-  });
+      console.log("[MessengerPage] emit opened rooms", {
+        openPopups,
+        visibilityState: document.visibilityState,
+        openedRoomIds,
+      });
 
-  localStorage.setItem(
-    "messenger-opened-room-ids",
-    JSON.stringify(openedRoomIds)
-  );
+      localStorage.setItem(
+        "messenger-opened-room-ids",
+        JSON.stringify(openedRoomIds)
+      );
 
-  window.dispatchEvent(
-    new CustomEvent("messenger:opened-rooms-changed", {
-      detail: { roomIds: openedRoomIds },
-    })
-  );
-};
+      window.dispatchEvent(
+        new CustomEvent("messenger:opened-rooms-changed", {
+          detail: { roomIds: openedRoomIds },
+        })
+      );
+    };
 
-  emitOpenedRoomsChanged();
-
-  const handleVisibilityChange = () => {
     emitOpenedRoomsChanged();
-  };
 
-  window.addEventListener("visibilitychange", handleVisibilityChange);
+    const handleVisibilityChange = () => {
+      emitOpenedRoomsChanged();
+    };
 
-  return () => {
-    window.removeEventListener("visibilitychange", handleVisibilityChange);
-  };
-}, [openPopups]);
+    window.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [openPopups]);
 
   useEffect(() => {
     const handleOpenRoom = (event: Event) => {
-  const custom = event as CustomEvent;
-  const roomId = Number(custom.detail?.roomId || 0);
-  if (!roomId) return;
+      const custom = event as CustomEvent;
+      const roomId = Number(custom.detail?.roomId || 0);
+      if (!roomId) return;
 
-  console.log("[MessengerPage] handleOpenRoom event fired", {
-    roomId,
-    detail: custom.detail,
-  });
-
-  setLocallyViewedRoomIds((prev) =>
-    prev.includes(roomId) ? prev : [...prev, roomId]
-  );
-
-  setOpenPopups((prev) => {
-    const exists = prev.some(
-      (popup) => popup.type === "room" && Number(popup.roomId) === roomId
-    );
-
-    if (exists) {
-      return prev.map((popup) =>
-        popup.type === "room" && Number(popup.roomId) === roomId
-          ? { ...popup, minimized: false }
-          : popup
-      );
-    }
-
-    return [
-      ...prev,
-      {
-        key: `room-${roomId}`,
-        type: "room",
+      console.log("[MessengerPage] handleOpenRoom event fired", {
         roomId,
-        minimized: false,
-      },
-    ];
-  });
-};
+        detail: custom.detail,
+      });
+
+      setLocallyViewedRoomIds((prev) =>
+        prev.includes(roomId) ? prev : [...prev, roomId]
+      );
+
+      setOpenPopups((prev) => {
+        const exists = prev.some(
+          (popup) => popup.type === "room" && Number(popup.roomId) === roomId
+        );
+
+        if (exists) {
+          return prev.map((popup) =>
+            popup.type === "room" && Number(popup.roomId) === roomId
+              ? { ...popup, minimized: false }
+              : popup
+          );
+        }
+
+        return [
+          ...prev,
+          {
+            key: `room-${roomId}`,
+            type: "room",
+            roomId,
+            minimized: false,
+          },
+        ];
+      });
+    };
 
     window.addEventListener(
       "messenger:open-room",
@@ -865,62 +857,62 @@ useEffect(() => {
     };
   }, [refetchRooms]);
 
-useEffect(() => {
-  const handleCloseMain = () => {
-  setOpenPopups([]);
-  setLocallyViewedRoomIds([]);
-  localStorage.setItem("messenger-opened-room-ids", JSON.stringify([]));
-};
+  useEffect(() => {
+    const handleCloseMain = () => {
+      setOpenPopups([]);
+      setLocallyViewedRoomIds([]);
+      localStorage.setItem("messenger-opened-room-ids", JSON.stringify([]));
+    };
 
-  window.addEventListener("messenger:request-close-main", handleCloseMain);
+    window.addEventListener("messenger:request-close-main", handleCloseMain);
 
-  return () => {
-    window.removeEventListener("messenger:request-close-main", handleCloseMain);
-  };
-}, []);
+    return () => {
+      window.removeEventListener("messenger:request-close-main", handleCloseMain);
+    };
+  }, []);
 
   const orgUsers = useMemo(
     () => normalizeUsers(userList as any[], onlineUserIds),
     [userList, onlineUserIds]
   );
 
- const currentUserProfile = useMemo<MessengerUser | null>(() => {
-  const meFromList = orgUsers.find(
-    (item) => Number(item.id) === Number(user?.id)
-  );
+  const currentUserProfile = useMemo<MessengerUser | null>(() => {
+    const meFromList = orgUsers.find(
+      (item) => Number(item.id) === Number(user?.id)
+    );
 
-  if (meFromList) {
+    if (meFromList) {
+      return {
+        ...meFromList,
+        avatar: normalizeAssetUrl(
+          meFromList.avatar ||
+            (user as any)?.profileImageUrl ||
+            (user as any)?.avatarUrl ||
+            ""
+        ),
+        status: "online",
+      };
+    }
+
+    if (!user?.id) return null;
+
     return {
-      ...meFromList,
+      id: Number(user.id),
+      name: user.name || user.username || "이름없음",
+      position:
+        (user as any)?.positionName ||
+        (user as any)?.position ||
+        roleToPosition(user.role),
+      team: (user as any)?.teamName || (user as any)?.team || "미분류",
       avatar: normalizeAssetUrl(
-        meFromList.avatar ||
-          (user as any)?.profileImageUrl ||
+        (user as any)?.profileImageUrl ||
           (user as any)?.avatarUrl ||
+          (user as any)?.avatar ||
           ""
       ),
       status: "online",
     };
-  }
-
-  if (!user?.id) return null;
-
-  return {
-    id: Number(user.id),
-    name: user.name || user.username || "이름없음",
-    position:
-      (user as any)?.positionName ||
-      (user as any)?.position ||
-      roleToPosition(user.role),
-    team: (user as any)?.teamName || (user as any)?.team || "미분류",
-    avatar: normalizeAssetUrl(
-      (user as any)?.profileImageUrl ||
-        (user as any)?.avatarUrl ||
-        (user as any)?.avatar ||
-        ""
-    ),
-    status: "online",
-  };
-}, [orgUsers, user]);
+  }, [orgUsers, user]);
 
   const usersById = useMemo(() => {
     const fallbackUsersById = getUsersById();
@@ -977,17 +969,15 @@ useEffect(() => {
         updatedAt: room.lastMessageCreatedAt
           ? new Date(room.lastMessageCreatedAt).toISOString()
           : room.updatedAt
-          ? new Date(room.updatedAt).toISOString()
-          : "",
+            ? new Date(room.updatedAt).toISOString()
+            : "",
         notificationsEnabled: !room.isMuted,
-	avatar: normalizeAssetUrl(
-  room.otherUserProfileImageUrl || ""
-),
+        avatar: normalizeAssetUrl(room.otherUserProfileImageUrl || ""),
         sortAt: room.lastMessageCreatedAt
           ? new Date(room.lastMessageCreatedAt).getTime()
           : room.updatedAt
-          ? new Date(room.updatedAt).getTime()
-          : 0,
+            ? new Date(room.updatedAt).getTime()
+            : 0,
       } as MessengerRoom & { sortAt: number };
     });
 
@@ -1033,37 +1023,37 @@ useEffect(() => {
   };
 
   const handleSelectRoom = async (roomId: number) => {
-  console.log("[MessengerPage] handleSelectRoom called", { roomId });
-console.trace("[MessengerPage] handleSelectRoom trace", { roomId });
+    console.log("[MessengerPage] handleSelectRoom called", { roomId });
+    console.trace("[MessengerPage] handleSelectRoom trace", { roomId });
 
-  handleMarkRoomViewed(roomId);
+    handleMarkRoomViewed(roomId);
 
-  setOpenPopups((prev) => {
-    const exists = prev.some(
-      (popup) => popup.type === "room" && popup.roomId === roomId
-    );
-
-    if (exists) {
-      return prev.map((popup) =>
-        popup.type === "room" && popup.roomId === roomId
-          ? { ...popup, minimized: false }
-          : popup
+    setOpenPopups((prev) => {
+      const exists = prev.some(
+        (popup) => popup.type === "room" && popup.roomId === roomId
       );
-    }
 
-    return [
-      ...prev,
-      {
-        key: `room-${roomId}`,
-        type: "room",
-        roomId,
-        minimized: false,
-      },
-    ];
-  });
+      if (exists) {
+        return prev.map((popup) =>
+          popup.type === "room" && popup.roomId === roomId
+            ? { ...popup, minimized: false }
+            : popup
+        );
+      }
 
-  await refetchRooms();
-};
+      return [
+        ...prev,
+        {
+          key: `room-${roomId}`,
+          type: "room",
+          roomId,
+          minimized: false,
+        },
+      ];
+    });
+
+    await refetchRooms();
+  };
 
   const handleOpenDirectChat = (targetUser: MessengerUser) => {
     setOpenPopups((prev) => {
@@ -1161,44 +1151,44 @@ console.trace("[MessengerPage] handleSelectRoom trace", { roomId });
   };
 
   const closePopup = (popupKey: string) => {
-  console.log("[MessengerPage] closePopup called", { popupKey });
+    console.log("[MessengerPage] closePopup called", { popupKey });
 
-  setOpenPopups((prev) => {
-    const target = prev.find((popup) => popup.key === popupKey);
+    setOpenPopups((prev) => {
+      const target = prev.find((popup) => popup.key === popupKey);
 
-    if (target?.type === "room") {
-      setLocallyViewedRoomIds((ids) =>
-        ids.filter((id) => Number(id) !== Number(target.roomId))
-      );
-    }
-
-    return prev.filter((popup) => popup.key !== popupKey);
-  });
-
-  setPopupPendingAttachments((prev) => {
-    const next = { ...prev };
-    delete next[popupKey];
-    return next;
-  });
-};
-
- const toggleMinimizePopup = (popupKey: string) => {
-  setOpenPopups((prev) =>
-    prev.map((popup) => {
-      if (popup.key !== popupKey) return popup;
-
-      const nextMinimized = !popup.minimized;
-
-      if (popup.type === "room" && nextMinimized) {
+      if (target?.type === "room") {
         setLocallyViewedRoomIds((ids) =>
-          ids.filter((id) => Number(id) !== Number(popup.roomId))
+          ids.filter((id) => Number(id) !== Number(target.roomId))
         );
       }
 
-      return { ...popup, minimized: nextMinimized };
-    })
-  );
-};
+      return prev.filter((popup) => popup.key !== popupKey);
+    });
+
+    setPopupPendingAttachments((prev) => {
+      const next = { ...prev };
+      delete next[popupKey];
+      return next;
+    });
+  };
+
+  const toggleMinimizePopup = (popupKey: string) => {
+    setOpenPopups((prev) =>
+      prev.map((popup) => {
+        if (popup.key !== popupKey) return popup;
+
+        const nextMinimized = !popup.minimized;
+
+        if (popup.type === "room" && nextMinimized) {
+          setLocallyViewedRoomIds((ids) =>
+            ids.filter((id) => Number(id) !== Number(popup.roomId))
+          );
+        }
+
+        return { ...popup, minimized: nextMinimized };
+      })
+    );
+  };
 
   const togglePinRoom = (roomId: number) => {
     setPinnedRoomIds((prev) =>
@@ -1279,10 +1269,10 @@ console.trace("[MessengerPage] handleSelectRoom trace", { roomId });
               .map((key) => Number(key))
               .filter((roomId) => (typingByRoom[roomId] || []).length > 0)}
             pinnedRoomIds={pinnedRoomIds}
-	notificationEnabled={notificationEnabled}
-onToggleNotification={() =>
-  setNotificationEnabled((prev) => !prev)
-}
+            notificationEnabled={notificationEnabled}
+            onToggleNotification={() =>
+              setNotificationEnabled((prev) => !prev)
+            }
             onSelectRoom={handleSelectRoom}
             onOpenDirectChat={handleOpenDirectChat}
             onTogglePinRoom={(roomId) => togglePinRoom(Number(roomId))}
@@ -1349,9 +1339,9 @@ onToggleNotification={() =>
                   onRefreshRooms={refetchRooms}
                   typingUserIds={typingUserIds}
                   roomMuted={roomMuted}
-	chatBackground={chatBackground}
-onChangeBackground={setChatBackground}
-notificationEnabled={notificationEnabled}
+                  chatBackground={chatBackground}
+                  onChangeBackground={setChatBackground}
+                  notificationEnabled={notificationEnabled}
                   onToggleMuteRoom={handleToggleRoomMute}
                   onLeaveRoom={handleLeaveRoom}
                   onOpenRoomInfo={({ room, participants, messages }) => {
@@ -1386,9 +1376,9 @@ notificationEnabled={notificationEnabled}
               )?.notificationsEnabled === false
             : false
         }
-notificationEnabled={notificationEnabled}
-chatBackground={chatBackground}
-onChangeBackground={setChatBackground}
+        notificationEnabled={notificationEnabled}
+        chatBackground={chatBackground}
+        onChangeBackground={setChatBackground}
         onClose={() => setRoomInfoOpen(false)}
         onToggleNotifications={async () => {
           if (!activeRoomForInfo?.id) return;
@@ -1404,65 +1394,65 @@ onChangeBackground={setChatBackground}
           );
         }}
         onLeaveRoom={() => {
-  if (!roomInfoRoomId) return;
+          if (!roomInfoRoomId) return;
 
-  const ok = confirm("정말 채팅방을 나가시겠습니까?");
-  if (!ok) return;
+          const ok = confirm("정말 채팅방을 나가시겠습니까?");
+          if (!ok) return;
 
-  void handleLeaveRoom(Number(roomInfoRoomId));
-  setRoomInfoOpen(false);
-}}
+          void handleLeaveRoom(Number(roomInfoRoomId));
+          setRoomInfoOpen(false);
+        }}
         onAddParticipant={() => {
           if (activeRoomForInfo?.type !== "group") return;
           setSelectedInviteUserIds([]);
           setInviteSearch("");
           setInviteDialogOpen(true);
         }}
-	onUpdateTitle={(title) => {
-  if (!activeRoomForInfo?.id) return;
+        onUpdateTitle={(title) => {
+          if (!activeRoomForInfo?.id) return;
 
-  (async () => {
-    const socket = await getSocket();
+          (async () => {
+            const socket = await getSocket();
 
-    socket.emit(
-      "room:title:update",
-      {
-        roomId: Number(activeRoomForInfo.id),
-        title,
-      },
-      async (res: any) => {
-        if (!res?.success) {
-          alert(res?.message || "채팅방 이름 변경 실패");
-          return;
-        }
+            socket.emit(
+              "room:title:update",
+              {
+                roomId: Number(activeRoomForInfo.id),
+                title,
+              },
+              async (res: any) => {
+                if (!res?.success) {
+                  alert(res?.message || "채팅방 이름 변경 실패");
+                  return;
+                }
 
-        await refetchRooms();
+                await refetchRooms();
 
-        setRoomInfoMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now(),
-            roomId: Number(activeRoomForInfo.id),
-            senderId: 0,
-            type: "system",
-            content: `채팅방 이름이 "${title}"(으)로 변경되었습니다.`,
-            createdAtRaw: new Date().toISOString(),
-            createdAt: new Date().toLocaleTimeString("ko-KR", {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-            fileName: "",
-            fileUrl: "",
-          },
-        ]);
-      }
-    );
-  })();
-}}
+                setRoomInfoMessages((prev) => [
+                  ...prev,
+                  {
+                    id: Date.now(),
+                    roomId: Number(activeRoomForInfo.id),
+                    senderId: 0,
+                    type: "system",
+                    content: `채팅방 이름이 "${title}"(으)로 변경되었습니다.`,
+                    createdAtRaw: new Date().toISOString(),
+                    createdAt: new Date().toLocaleTimeString("ko-KR", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    }),
+                    fileName: "",
+                    fileUrl: "",
+                  },
+                ]);
+              }
+            );
+          })();
+        }}
       />
 
-            {inviteDialogOpen && (
-	
+      {inviteDialogOpen && (
+        <div className="fixed inset-0 z-[10040] flex items-center justify-center bg-black/45 px-4 backdrop-blur-[6px]">
           <div className="w-full max-w-[640px] overflow-hidden rounded-[30px] border border-white/70 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.22)]">
             <div className="border-b border-slate-100 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-6 py-5">
               <div className="flex items-start justify-between gap-4">
@@ -1668,7 +1658,11 @@ onChangeBackground={setChatBackground}
 
             <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/70 px-6 py-4">
               <div className="text-sm text-slate-500">
-                선택됨 <span className="font-semibold text-slate-900">{selectedInviteUserIds.length}</span>명
+                선택됨{" "}
+                <span className="font-semibold text-slate-900">
+                  {selectedInviteUserIds.length}
+                </span>
+                명
               </div>
 
               <div className="flex items-center gap-2">
