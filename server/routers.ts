@@ -1776,7 +1776,7 @@ const userName = ctx.user.name || "사용자";
         const { id, ...rest } = input;
         const data: any = { ...rest };
 
-       if (ctx.user.role === "staff") {
+      if (ctx.user.role === "staff") {
   const allowedForStaff: any = {};
 
   if (rest.notes !== undefined) {
@@ -1810,10 +1810,6 @@ const userName = ctx.user.name || "사용자";
   await db.updateConsultation(id, allowedForStaff);
   return { success: true };
 }
-
-          await db.updateConsultation(id, allowedForStaff);
-          return { success: true };
-        }
 
         if (rest.consultDate) {
           data.consultDate = new Date(rest.consultDate);
