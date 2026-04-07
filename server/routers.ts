@@ -1776,32 +1776,40 @@ const userName = ctx.user.name || "사용자";
         const { id, ...rest } = input;
         const data: any = { ...rest };
 
-        if (ctx.user.role === "staff") {
-          const allowedForStaff: any = {};
+       if (ctx.user.role === "staff") {
+  const allowedForStaff: any = {};
 
-          if (rest.notes !== undefined) {
-            allowedForStaff.notes = rest.notes;
-          }
+  if (rest.notes !== undefined) {
+    allowedForStaff.notes = rest.notes;
+  }
 
-          if (rest.status !== undefined) {
-            allowedForStaff.status = rest.status;
-          }
+  if (rest.status !== undefined) {
+    allowedForStaff.status = rest.status;
+  }
 
-          if (rest.status === "등록") {
-            const existing = await db.getConsultation(id);
+  if (rest.status === "등록예정") {
+    const existing = await db.getConsultation(id);
 
-            if (existing && existing.status !== "등록") {
-              await db.createStudent({
-                clientName: existing.clientName,
-                phone: existing.phone,
-                course: existing.desiredCourse || "",
-                assigneeId: existing.assigneeId,
-                consultationId: id,
-              });
+    if (
+      existing &&
+      existing.status !== "등록예정" &&
+      existing.status !== "등록"
+    ) {
+      await db.createStudent({
+        clientName: existing.clientName,
+        phone: existing.phone,
+        course: existing.desiredCourse || "",
+        assigneeId: existing.assigneeId,
+        consultationId: id,
+      });
 
-              allowedForStaff.status = "등록";
-            }
-          }
+      allowedForStaff.status = "등록예정";
+    }
+  }
+
+  await db.updateConsultation(id, allowedForStaff);
+  return { success: true };
+}
 
           await db.updateConsultation(id, allowedForStaff);
           return { success: true };
@@ -1811,10 +1819,10 @@ const userName = ctx.user.name || "사용자";
           data.consultDate = new Date(rest.consultDate);
         }
 
-        if (rest.status === "등록") {
+        if (rest.status === "등록예정") {
           const existing = await db.getConsultation(id);
 
-          if (existing && existing.status !== "등록") {
+          if (existing && existing.status !== "등록예정" && existing.status !== "등록") {
             await db.createStudent({
               clientName: existing.clientName,
               phone: existing.phone,
@@ -1823,7 +1831,7 @@ const userName = ctx.user.name || "사용자";
               consultationId: id,
             });
 
-            data.status = "등록";
+            data.status = "등록예정";
           }
         }
 
@@ -2054,12 +2062,23 @@ const userName = ctx.user.name || "사용자";
         if (input.approvalStatus === "승인") {
           updateData.approvedAt = now;
           updateData.rejectedAt = null;
+	updateData.status = "등록";
         } else {
           updateData.rejectedAt = now;
           updateData.approvedAt = null;
         }
 
         await db.updateStudent(input.id, updateData);
+
+	if (input.approvalStatus === "승인") {
+  const approvedStudent = await db.getStudent(input.id);
+
+  if (approvedStudent?.consultationId) {
+    await db.updateConsultation(approvedStudent.consultationId, {
+      status: "등록",
+    });
+  }
+}
 
         if (input.approvalStatus === "승인") {
           const sems = await db.listSemesters(input.id);

@@ -117,8 +117,8 @@ export default function Students() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">학생 관리</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            상담 DB에서 상태를 "등록"으로 변경하면 자동으로 이관됩니다. 셀 클릭으로 바로 편집 가능합니다.
-          </p>
+  상담 DB에서 상태를 "등록예정"으로 변경하면 자동으로 이관됩니다. 상세 입력 후 승인관리에서 승인되어야 최종 등록 처리됩니다.
+</p>
         </div>
 
         <Button
@@ -335,6 +335,13 @@ function StudentInlineRow({
   const netPaidAmount = Number(item.netPaidAmount || paidAmount - approvedRefundAmount || 0);
   const canDelete = isHost;
 
+const displayStatus =
+  item.approvalStatus === "승인"
+    ? item.status || "등록"
+    : item.status === "등록"
+    ? "등록예정"
+    : item.status || "등록예정";
+
   const approvalColor = (s: string) => {
     switch (s) {
       case "승인":
@@ -391,27 +398,31 @@ function StudentInlineRow({
         {formatCurrency(totalRequired)}
       </td>
       <td
-        className="px-3 py-1.5 text-sm text-right font-medium text-emerald-600"
-        title={
-          approvedRefundAmount > 0
-            ? `수납 ${formatCurrency(paidAmount)} / 환불 ${formatCurrency(approvedRefundAmount)} / 실수납 ${formatCurrency(netPaidAmount)}`
-            : undefined
-        }
-      >
-        {formatCurrency(netPaidAmount)}
-      </td>
+  className={`px-3 py-1.5 text-sm text-right font-medium ${
+    item.approvalStatus === "승인" ? "text-emerald-600" : "text-amber-600"
+  }`}
+  title={
+    approvedRefundAmount > 0
+      ? `수납 ${formatCurrency(paidAmount)} / 환불 ${formatCurrency(approvedRefundAmount)} / 실수납 ${formatCurrency(netPaidAmount)}`
+      : undefined
+  }
+>
+  {formatCurrency(netPaidAmount)}
+</td>
 
       <td className="px-2 py-1.5 text-center">
-        <Badge
-          className={
-            isClosedStatus(item.status)
-              ? "bg-gray-200 text-gray-600 text-[10px]"
-              : "bg-emerald-100 text-emerald-700 text-[10px]"
-          }
-        >
-          {item.status || "등록"}
-        </Badge>
-      </td>
+  <Badge
+    className={
+      displayStatus === "등록 종료" || displayStatus === "종료"
+        ? "bg-gray-200 text-gray-600 text-[10px]"
+        : displayStatus === "등록예정"
+        ? "bg-amber-100 text-amber-700 text-[10px]"
+        : "bg-emerald-100 text-emerald-700 text-[10px]"
+    }
+  >
+    {displayStatus}
+  </Badge>
+</td>
 
       <td className="px-2 py-1.5 text-center">
         <Badge className={`${approvalColor(item.approvalStatus)} text-[10px]`}>

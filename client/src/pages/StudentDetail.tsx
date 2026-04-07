@@ -513,6 +513,17 @@ const [refundDialogOpen, setRefundDialogOpen] = useState(false);
     return selectedSemester.status || "등록";
   }, [selectedSemester]);
 
+const isApprovedStudent = student?.approvalStatus === "승인";
+
+const displayStudentStatus = useMemo(() => {
+  if (!isApprovedStudent) return "등록예정";
+
+  if (!selectedSemester) return "등록";
+  return selectedSemester.status || "등록";
+}, [isApprovedStudent, selectedSemester]);
+
+const canFinalizeRegistrationStatus = isApprovedStudent && isSelectedLastSemester;
+
   useEffect(() => {
     if (!sortedSemesters.length) {
       setSelectedSemesterOrder(1);
@@ -586,6 +597,10 @@ const [refundDialogOpen, setRefundDialogOpen] = useState(false);
       toast.error("마지막 학기에서만 등록 종료할 수 있습니다.");
       return;
     }
+  if (!isApprovedStudent) {
+    toast.error("승인 완료 후에만 등록 상태를 변경할 수 있습니다.");
+    return;
+  }
 
     updateSemMut.mutate(
       {
@@ -1108,16 +1123,18 @@ const existingPlanSubjectMap = useMemo(() => {
   }
 
   const statusColor = (s: string) => {
-    switch (s) {
-      case "등록":
-        return "bg-emerald-100 text-emerald-700";
-      case "종료":
-      case "등록 종료":
-        return "bg-gray-200 text-gray-600";
-      default:
-        return "bg-gray-100 text-gray-700";
-    }
-  };
+  switch (s) {
+    case "등록":
+      return "bg-emerald-100 text-emerald-700";
+    case "등록예정":
+      return "bg-amber-100 text-amber-700";
+    case "종료":
+    case "등록 종료":
+      return "bg-gray-200 text-gray-600";
+    default:
+      return "bg-gray-100 text-gray-700";
+  }
+};
 
   return (
     <div className="space-y-6">
@@ -1134,17 +1151,31 @@ const existingPlanSubjectMap = useMemo(() => {
         </div>
 
         <div className="flex items-center gap-2">
-          <Badge className={statusColor(isSelectedLastSemester ? selectedSemesterStatus : "등록")}>
-            {isSelectedLastSemester ? selectedSemesterStatus : "등록"}
-          </Badge>
-        </div>
+  <Badge className={statusColor(displayStudentStatus)}>
+    {displayStudentStatus}
+  </Badge>
+
+  <Badge
+    className={
+      student?.approvalStatus === "승인"
+        ? "bg-emerald-100 text-emerald-700"
+        : student?.approvalStatus === "불승인"
+        ? "bg-red-100 text-red-700"
+        : "bg-amber-100 text-amber-700"
+    }
+  >
+    승인 {student?.approvalStatus || "대기"}
+  </Badge>
+</div>
       </div>
 
       <Card className="border-0 shadow-sm">
         <CardHeader className="pb-3">
           <CardTitle className="text-base">
-            매출 보고 / 등록 정보 - {selectedSemesterOrder}학기
-          </CardTitle>
+  {student?.approvalStatus === "승인"
+    ? `매출 보고 / 등록 정보 - ${selectedSemesterOrder}학기`
+    : `예정 결제 / 승인대기 정보 - ${selectedSemesterOrder}학기`}
+</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex gap-2 mb-4 flex-wrap">
@@ -1184,32 +1215,34 @@ const existingPlanSubjectMap = useMemo(() => {
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">상태</p>
 
-              {isSelectedLastSemester ? (
-                <Select
-                  value={selectedSemesterStatus || "등록"}
-                  onValueChange={(v) =>
-                    handleSelectedSemesterStatusChange(v as "등록" | "등록 종료")
-                  }
-                >
-                  <SelectTrigger className="h-8 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="등록">등록</SelectItem>
-                    <SelectItem value="등록 종료">등록 종료</SelectItem>
-                  </SelectContent>
-                </Select>
-              ) : (
-                <div className="h-8 px-3 rounded-md border bg-muted/30 text-sm flex items-center text-black">
-                  등록
-                </div>
-              )}
+              {canFinalizeRegistrationStatus ? (
+  <Select
+    value={selectedSemesterStatus || "등록"}
+    onValueChange={(v) =>
+      handleSelectedSemesterStatusChange(v as "등록" | "등록 종료")
+    }
+  >
+    <SelectTrigger className="h-8 text-sm">
+      <SelectValue />
+    </SelectTrigger>
+    <SelectContent>
+      <SelectItem value="등록">등록</SelectItem>
+      <SelectItem value="등록 종료">등록 종료</SelectItem>
+    </SelectContent>
+  </Select>
+) : (
+  <div className="h-8 px-3 rounded-md border bg-muted/30 text-sm flex items-center text-black">
+    {displayStudentStatus}
+  </div>
+)}
 
-              {!isSelectedLastSemester && (
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  마지막 학기에서만 등록 종료할 수 있습니다.
-                </p>
-              )}
+              {!canFinalizeRegistrationStatus && (
+  <p className="text-[11px] text-muted-foreground mt-1">
+    {!isApprovedStudent
+      ? "승인 완료 후 마지막 학기에서만 등록 종료할 수 있습니다."
+      : "마지막 학기에서만 등록 종료할 수 있습니다."}
+  </p>
+)}
             </div>
 
             <div>
@@ -1277,19 +1310,28 @@ const existingPlanSubjectMap = useMemo(() => {
             </div>
           </div>
 
-          <div className="mt-4 pt-4 border-t grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+  학기표의 입력완료 체크는 입력 상태 표시용입니다. 최종 등록 확정과 매출 반영은 승인관리에서 승인된 뒤 처리됩니다.
+</div>
+<div className="mt-4 pt-4 border-t grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-blue-50 rounded-lg p-3">
               <p className="text-xs text-muted-foreground">총 결제예정 금액</p>
               <p className="text-lg font-bold text-blue-700">
                 {paymentSummaryCard.totalRequired.toLocaleString()}원
               </p>
             </div>
-            <div className="bg-emerald-50 rounded-lg p-3">
-              <p className="text-xs text-muted-foreground">수납 완료 금액</p>
-              <p className="text-lg font-bold text-emerald-700">
-                {paymentSummaryCard.totalPaid.toLocaleString()}원
-              </p>
-            </div>
+            <div className={`${isApprovedStudent ? "bg-emerald-50" : "bg-amber-50"} rounded-lg p-3`}>
+  <p className="text-xs text-muted-foreground">
+    {isApprovedStudent ? "수납 완료 금액" : "입력된 결제 금액"}
+  </p>
+  <p
+    className={`text-lg font-bold ${
+      isApprovedStudent ? "text-emerald-700" : "text-amber-700"
+    }`}
+  >
+    {paymentSummaryCard.totalPaid.toLocaleString()}원
+  </p>
+</div>
                        <div className="bg-red-50 rounded-lg p-3">
               <p className="text-xs text-muted-foreground">승인 환불 금액</p>
               <p className="text-lg font-bold text-red-600">
@@ -1354,7 +1396,7 @@ const existingPlanSubjectMap = useMemo(() => {
                   <th className="px-3 py-2 text-left font-medium text-primary">실제 과목수</th>
                   <th className="px-3 py-2 text-left font-medium text-primary">실제 금액</th>
                   <th className="px-3 py-2 text-left font-medium text-primary">결제일</th>
-                  <th className="px-3 py-2 text-center font-medium text-muted-foreground w-[50px]">완료</th>
+                  <th className="px-3 py-2 text-center font-medium text-muted-foreground w-[70px]">입력완료</th>
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground w-[130px]">관리</th>
                 </tr>
               </thead>
@@ -1478,17 +1520,28 @@ const existingPlanSubjectMap = useMemo(() => {
                       </td>
 
                       <td className="px-3 py-1.5 text-center">
-                        <Checkbox
-                          checked={sem.isCompleted}
-                          onCheckedChange={(checked) => {
-                            if (!!checked && toNumber(sem.actualAmount) <= 0) {
-                              toast.error("완료 처리하려면 실제 금액을 먼저 입력해주세요.");
-                              return;
-                            }
-                            updateSemMut.mutate({ id: sem.id, isCompleted: !!checked } as any);
-                          }}
-                        />
-                      </td>
+  <div title="입력완료는 학기 정보 입력 여부만 표시합니다. 등록 확정 및 매출 반영은 승인관리 승인 후 처리됩니다.">
+    <Checkbox
+      checked={sem.isCompleted}
+      onCheckedChange={(checked) => {
+        if (!!checked && toNumber(sem.actualAmount) <= 0) {
+          toast.error("입력완료 처리하려면 실제 금액을 먼저 입력해주세요.");
+          return;
+        }
+
+        updateSemMut.mutate({ id: sem.id, isCompleted: !!checked } as any, {
+          onSuccess: () => {
+            toast.success(
+              checked
+                ? "학기 입력완료로 표시되었습니다. 등록 확정은 승인관리 승인 후 반영됩니다."
+                : "학기 입력완료가 해제되었습니다."
+            );
+          },
+        });
+      }}
+    />
+  </div>
+</td>
 
                       <td className="px-2 py-1.5 text-right">
                         <div className="flex items-center justify-end gap-0.5">

@@ -320,6 +320,11 @@ export default function Notifications() {
       }
     }
 
+if (item.type === "payment" && item.relatedId) {
+  setLocation(`/students/${item.relatedId}`);
+  return;
+}
+
     switch (item.type) {
       case "notice":
         if (item.relatedId) {

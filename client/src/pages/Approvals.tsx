@@ -50,7 +50,7 @@ export default function Approvals() {
         utils.dashboard.totalStats.invalidate(),
         utils.semester.listAll.invalidate(),
       ]);
-      toast.success("학생 승인 상태가 변경되었습니다.");
+      toast.success("학생 승인 상태가 변경되었습니다. 승인 시 최종 등록 처리 및 반영 데이터가 갱신됩니다.");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -116,8 +116,8 @@ export default function Approvals() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">승인 관리</h1>
         <p className="text-muted-foreground mt-1">
-          학생 승인/불승인 및 환불 승인 요청을 관리합니다.
-        </p>
+  상담DB에서 등록예정으로 이관된 학생을 최종 승인/불승인 처리합니다. 학생 승인이 완료되어야 등록 확정, 매출 반영, 학기별 예정표 반영이 진행됩니다.
+</p>
       </div>
 
       {/* 학생 승인 대기 */}
@@ -143,14 +143,15 @@ export default function Approvals() {
                   <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">결제금액</th>
                   <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">교육원</th>
                   <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">담당자</th>
+	<th className="px-4 py-2.5 text-center font-medium text-muted-foreground">현재상태</th>
                   <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">처리</th>
                 </tr>
               </thead>
               <tbody>
                 {pendingStudents.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
-                      승인 대기 학생이 없습니다.
+                    <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                      등록예정 상태의 승인 대기 학생이 없습니다.
                     </td>
                   </tr>
                 ) : (
@@ -170,6 +171,11 @@ export default function Approvals() {
                         {formatCurrency(s.paymentAmount)}
                       </td>
                       <td className="px-4 py-3">{s.institution || "-"}</td>
+<td className="px-4 py-3 text-center">
+  <Badge className="bg-amber-100 text-amber-700 text-[10px]">
+    {s.status || "등록예정"}
+  </Badge>
+</td>
                       <td className="px-4 py-3 text-muted-foreground">
                         {userMap.get(s.assigneeId) || "-"}
                       </td>
@@ -179,9 +185,14 @@ export default function Approvals() {
                             size="sm"
                             variant="outline"
                             className="gap-1 text-emerald-600 border-emerald-200 hover:bg-emerald-50 h-8"
-                            onClick={() =>
-                              approveStudentMutation.mutate({ id: s.id, approvalStatus: "승인" })
-                            }
+                            onClick={() => {
+  const ok = confirm(
+    "이 학생을 승인하면 최종 등록 처리되고, 매출 반영 및 학기별 예정표 반영이 진행됩니다. 계속하시겠습니까?"
+  );
+  if (!ok) return;
+
+  approveStudentMutation.mutate({ id: s.id, approvalStatus: "승인" });
+}}
                             disabled={approveStudentMutation.isPending}
                           >
                             <Check className="h-3.5 w-3.5" /> 승인
@@ -190,9 +201,14 @@ export default function Approvals() {
                             size="sm"
                             variant="outline"
                             className="gap-1 text-red-600 border-red-200 hover:bg-red-50 h-8"
-                            onClick={() =>
-                              approveStudentMutation.mutate({ id: s.id, approvalStatus: "불승인" })
-                            }
+                            onClick={() => {
+  const ok = confirm(
+    "이 학생을 불승인 처리하면 최종 등록되지 않습니다. 계속하시겠습니까?"
+  );
+  if (!ok) return;
+
+  approveStudentMutation.mutate({ id: s.id, approvalStatus: "불승인" });
+}}
                             disabled={approveStudentMutation.isPending}
                           >
                             <X className="h-3.5 w-3.5" /> 불승인
@@ -222,6 +238,9 @@ export default function Approvals() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
+<div className="px-4 py-3 text-xs text-amber-700 bg-amber-50 border-b border-amber-100">
+  여기서 승인된 학생만 최종 등록으로 확정됩니다. 상세페이지의 입력완료/결제입력은 사전 입력 데이터이며, 최종 확정 기준은 승인관리 승인입니다.
+</div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -313,7 +332,7 @@ export default function Approvals() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
-            학생 승인 완료
+  학생 승인 완료 / 최종 등록
             <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
               {approvedStudents.length}건
             </Badge>
@@ -381,8 +400,8 @@ export default function Approvals() {
                         </td>
                         <td className="px-4 py-3 text-center">
                           <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">
-                            {s.status || "등록"}
-                          </Badge>
+  {s.status || "등록"}
+</Badge>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <Button
@@ -411,13 +430,16 @@ export default function Approvals() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              학생 불승인
+  학생 불승인 / 등록 보류
               <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
                 {rejectedStudents.length}건
               </Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
+<div className="px-4 py-3 text-xs text-emerald-700 bg-emerald-50 border-b border-emerald-100">
+  이 영역의 학생은 승인관리 승인이 완료되어 최종 등록 처리된 상태입니다. 매출 및 예정표 반영 대상입니다.
+</div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -454,9 +476,14 @@ export default function Approvals() {
                           size="sm"
                           variant="ghost"
                           className="text-emerald-600 text-xs h-7"
-                          onClick={() =>
-                            approveStudentMutation.mutate({ id: s.id, approvalStatus: "승인" })
-                          }
+                          onClick={() => {
+  const ok = confirm(
+    "이 학생을 다시 승인하면 최종 등록 처리됩니다. 계속하시겠습니까?"
+  );
+  if (!ok) return;
+
+  approveStudentMutation.mutate({ id: s.id, approvalStatus: "승인" });
+}}
                         >
                           승인으로 변경
                         </Button>

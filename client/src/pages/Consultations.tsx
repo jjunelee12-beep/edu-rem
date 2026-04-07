@@ -57,6 +57,7 @@ export default function Consultations() {
   const isAdmin = role === "admin";
   const canViewAllDb = isHost || isAdmin || isSuperHost;
   const canManageAll = isHost || isSuperHost;
+const canOverrideRegisteredStatus = isHost || isSuperHost;
 
   const [showAll, setShowAll] = useState(false);
 
@@ -358,19 +359,27 @@ export default function Consultations() {
     onError: (e) => toast.error(e.message),
   });
 
-  const handleStatusChange = (id: number, newStatus: string) => {
-    if (newStatus === "등록") {
-      if (
-        !confirm(
-          "상태를 '등록'으로 변경하면 학생관리 탭에 자동으로 이관됩니다. 계속하시겠습니까?"
-        )
+ const handleStatusChange = (id: number, newStatus: string) => {
+  if (newStatus === "등록") {
+    toast.error("등록 상태는 승인관리 승인 후 자동으로 변경됩니다.");
+    return;
+  }
+
+  if (newStatus === "등록예정") {
+    if (
+      !confirm(
+        "상태를 '등록예정'으로 변경하면 학생관리 탭으로 이관되고, 승인관리 승인 후 최종 등록 처리됩니다. 계속하시겠습니까?"
       )
-        return;
-    }
-    if (!id) return;
-    if (!newStatus) return;
-    updateMut.mutate({ id, status: newStatus } as any);
-  };
+    )
+      return;
+  }
+
+  if (!id) return;
+  if (!newStatus) return;
+
+  updateMut.mutate({ id, status: newStatus } as any);
+};
+
 
   return (
     <div className="space-y-4">
@@ -378,9 +387,10 @@ export default function Consultations() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">상담 DB</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            상담일 클릭 후 Ctrl+V → 상담일~상담내역(7칸) 자동 채움 (공란 유지)
-            {canViewAllDb ? " / 기본은 개인 DB, 체크 시 전체 DB 조회" : ""}
-          </p>
+  상담일 클릭 후 Ctrl+V → 상담일~상담내역(7칸) 자동 채움 (공란 유지)
+  {" / 상태를 '등록예정'으로 변경하면 학생관리로 이관되고, 승인관리 승인 후 최종 '등록' 처리됩니다."}
+  {canViewAllDb ? " / 기본은 개인 DB, 체크 시 전체 DB 조회" : ""}
+</p>
         </div>
 
         <div className="flex gap-2 flex-wrap">
@@ -762,6 +772,7 @@ export default function Consultations() {
                   rowNum={idx + 1}
                   canManageAll={canManageAll}
                   isStaff={!!isStaff}
+  canOverrideRegisteredStatus={canOverrideRegisteredStatus}
                   usersList={usersList || []}
                   getUserName={getUserName}
                   onBlur={handleCellBlur}
@@ -802,6 +813,7 @@ function InlineRow({
   rowNum,
   canManageAll,
   isStaff,
+  canOverrideRegisteredStatus,
   usersList,
   getUserName,
   onBlur,
@@ -814,6 +826,7 @@ function InlineRow({
   rowNum: number;
   canManageAll: boolean;
   isStaff: boolean;
+  canOverrideRegisteredStatus: boolean;
   usersList: any[];
   getUserName: (id: number) => string;
   onBlur: (id: number, field: string, value: string) => void;
@@ -829,14 +842,19 @@ function InlineRow({
     : "";
 
   const isRegistered = item.status === "등록";
-  const canDelete = canManageAll;
+const isPendingRegister = item.status === "등록예정";
+const canDelete = canManageAll;
 
   return (
     <tr
-      className={`border-b hover:bg-muted/20 group align-top ${
-        isRegistered ? "bg-emerald-50/30" : ""
-      }`}
-    >
+  className={`border-b hover:bg-muted/20 group align-top ${
+    isRegistered
+      ? "bg-emerald-50/30"
+      : isPendingRegister
+      ? "bg-amber-50/40"
+      : ""
+  }`}
+>
       <td className="px-2 py-2 text-center text-xs text-muted-foreground font-mono">
         {rowNum}
       </td>
@@ -902,9 +920,10 @@ function InlineRow({
 
       <td className="px-1 py-2">
         <StatusCell
-          value={item.status || "상담중"}
-          onChange={(v) => onStatusChange(item.id, v)}
-        />
+  value={item.status || "상담중"}
+  onChange={(v) => onStatusChange(item.id, v)}
+  locked={item.status === "등록" && !canOverrideRegisteredStatus}
+/>
       </td>
 
       <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
@@ -950,27 +969,31 @@ function InlineRow({
 function StatusCell({
   value,
   onChange,
+  locked = false,
 }: {
   value: string;
   onChange: (v: string) => void;
+  locked?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
-  const statuses = ["상담중", "상담완료", "등록", "보류", "미등록"];
+  const statuses = ["상담중", "상담완료", "등록예정", "보류", "미등록"];
 
   const statusColor = (s: string) => {
-    switch (s) {
-      case "등록":
-        return "bg-emerald-100 text-emerald-700";
-      case "상담완료":
-        return "bg-blue-100 text-blue-700";
-      case "보류":
-        return "bg-amber-100 text-amber-700";
-      case "미등록":
-        return "bg-gray-200 text-gray-600";
-      default:
-        return "bg-indigo-100 text-indigo-700";
-    }
-  };
+  switch (s) {
+    case "등록":
+      return "bg-emerald-100 text-emerald-700";
+    case "등록예정":
+      return "bg-amber-100 text-amber-700";
+    case "상담완료":
+      return "bg-blue-100 text-blue-700";
+    case "보류":
+      return "bg-orange-100 text-orange-700";
+    case "미등록":
+      return "bg-gray-200 text-gray-600";
+    default:
+      return "bg-indigo-100 text-indigo-700";
+  }
+};
 
   if (editing) {
     return (
@@ -996,12 +1019,18 @@ function StatusCell({
   }
 
   return (
-    <div className="px-1 py-1 cursor-pointer" onClick={() => setEditing(true)}>
-      <Badge className={`${statusColor(value)} text-[11px] font-normal`}>
-        {value}
-      </Badge>
-    </div>
-  );
+  <div
+    className={`px-1 py-1 ${locked ? "cursor-not-allowed" : "cursor-pointer"}`}
+    onClick={() => {
+      if (!locked) setEditing(true);
+    }}
+    title={locked ? "승인 완료 상태는 여기서 변경할 수 없습니다." : ""}
+  >
+    <Badge className={`${statusColor(value)} text-[11px] font-normal`}>
+      {value}
+    </Badge>
+  </div>
+);
 }
 
 function EditableCell({

@@ -32,6 +32,7 @@ import {
   createNotification,
 updateChatRoomTitle,
 updateChatRoomType,
+ getStudent,
 } from "../db";
 
 console.log("R2_ACCOUNT_ID:", !!process.env.R2_ACCOUNT_ID);
@@ -1012,6 +1013,106 @@ for (const m of members) {
         success: false,
         message: err?.message || "이름 변경 실패",
       });
+    }
+  }
+);
+
+// ================================
+// 💰 결제 알림 (미결제 자동 알림)
+// ================================
+socket.on(
+  "payment:reminder",
+  async (
+    payload: {
+      studentIds: number[];
+      plannedMonth?: string | null;
+      semesterOrder?: number | null;
+    },
+    callback?: (data: any) => void
+  ) => {
+    try {
+      const studentIds = (payload?.studentIds || []).map(Number);
+
+      if (!studentIds.length) {
+        return callback?.({
+          success: false,
+          message: "studentIds 필요",
+        });
+      }
+
+      console.log("[PAYMENT REMINDER REQUEST]", {
+        count: studentIds.length,
+        plannedMonth: payload?.plannedMonth,
+        semesterOrder: payload?.semesterOrder,
+      });
+
+      // TODO: 실제 SMS / 카카오 알림 붙이는 위치
+      for (const sid of studentIds) {
+        console.log(`💸 결제 알림 발송 대상 studentId: ${sid}`);
+      }
+
+      // 🔔 알림 DB에도 기록 남기기 (선택)
+      // 학생 → 담당자 매핑 필요
+const notifiedAssigneeIds = new Set<number>();
+
+const assigneeCountMap = new Map<number, number>();
+
+for (const sid of studentIds) {
+  const student = await getStudent(sid);
+  if (!student?.assigneeId) continue;
+
+  const assigneeId = Number(student.assigneeId);
+  assigneeCountMap.set(assigneeId, (assigneeCountMap.get(assigneeId) || 0) + 1);
+}
+
+for (const sid of studentIds) {
+  const student = await getStudent(sid);
+
+  if (!student?.assigneeId) continue;
+
+  const assigneeId = Number(student.assigneeId);
+
+  // 중복 알림 방지 (담당자 1번만)
+  if (notifiedAssigneeIds.has(assigneeId)) continue;
+
+  notifiedAssigneeIds.add(assigneeId);
+
+  const count = assigneeCountMap.get(assigneeId) || 0;
+  const plannedMonthText = payload?.plannedMonth || "-";
+  const semesterOrderText = payload?.semesterOrder
+    ? `${payload.semesterOrder}학기`
+    : "전체 학기";
+
+  await createNotification({
+    userId: assigneeId,
+    type: "payment",
+    title: "미결제 알림",
+    level: "important",
+    message: `[미결제 알림] ${plannedMonthText} / ${semesterOrderText} 기준 담당 학생 ${count}명 결제 미완료`,
+    relatedId: sid,
+    isRead: false,
+  } as any);
+
+  console.log(`🔔 담당자 ${assigneeId} 알림 발송 (미결제 ${count}건)`);
+}
+
+callback?.({
+  success: true,
+  count: notifiedAssigneeIds.size,
+});
+
+socket.emit("payment:reminder:done", {
+  count: notifiedAssigneeIds.size,
+});
+    } catch (err: any) {
+      console.error("[payment:reminder ERROR]", err);
+
+      callback?.({
+        success: false,
+        message: err?.message || "결제 알림 실패",
+      });
+
+      socket.emit("payment:reminder:error");
     }
   }
 );

@@ -93,6 +93,19 @@ export async function getDb() {
   return _db;
 }
 
+export async function getStudentById(studentId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(students)
+    .where(eq(students.id, studentId))
+    .limit(1);
+
+  return result[0];
+}
+
 function getInsertId(result: any) {
   return result?.insertId ?? result?.[0]?.insertId ?? null;
 }
@@ -1370,6 +1383,7 @@ export async function listAllSemesters(
   const conditions: any[] = [];
   if (assigneeId) conditions.push(sql`s.assigneeId = ${assigneeId}`);
   if (plannedMonthFilter) conditions.push(sql`sem.plannedMonth = ${plannedMonthFilter}`);
+conditions.push(sql`s.approvalStatus = '승인'`);
 
   const whereClause =
     conditions.length > 0
@@ -1683,6 +1697,7 @@ export async function getDashboardStats(assigneeId?: number) {
     FROM semesters sem
     INNER JOIN students s ON s.id = sem.studentId
     WHERE 1=1
+	AND s.approvalStatus = '승인'
     ${assigneeStudentCond}
   `);
 
@@ -1790,6 +1805,7 @@ export async function getMonthSalesEntries(assigneeId?: number) {
     FROM semesters sem
     INNER JOIN students s ON s.id = sem.studentId
     WHERE sem.isCompleted = true
+	AND s.approvalStatus = '승인'
       AND sem.actualPaymentDate IS NOT NULL
       AND sem.actualPaymentDate >= ${monthStart}
       AND sem.actualPaymentDate < ${monthEnd}
