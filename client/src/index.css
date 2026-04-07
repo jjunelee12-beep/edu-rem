@@ -196,12 +196,12 @@
 
 /* 카드 공통 */
 [data-slot="card"] {
-  background: #ffffff !important;
-  border: 1px solid rgba(15, 23, 42, 0.1) !important;
+  background: #f7f9fc !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
   border-radius: 1.75rem !important;
   box-shadow:
-    0 14px 34px rgba(15, 23, 42, 0.1),
-    0 3px 10px rgba(15, 23, 42, 0.05) !important;
+    0 10px 24px rgba(15, 23, 42, 0.06),
+    0 2px 6px rgba(15, 23, 42, 0.03) !important;
 }
 
 /* 카드 내부 작은 박스 */
@@ -215,8 +215,8 @@
 [data-slot="card"] .bg-slate-50,
 [data-slot="card"] .bg-muted,
 [data-slot="card"] .bg-accent {
-  background: #e6edf4 !important;
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+  background: #eef3f8 !important;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.05);
 }
 
 /* 내부 border 박스는 선 대신 그림자 */
@@ -225,7 +225,7 @@
 [data-slot="card"] .rounded-lg.border,
 [data-slot="card"] .rounded-md.border {
   border-color: transparent !important;
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.05);
 }
 
 /* ===== 사이드바 ===== */
@@ -245,8 +245,8 @@
   min-height: 40px;
   border: 1px solid transparent !important;
   border-radius: 0.95rem !important;
-  background: rgba(255, 255, 255, 0.88) !important;
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.07);
+  background: rgba(248, 250, 252, 0.92) !important;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
   transition:
     background-color 0.18s ease,
     box-shadow 0.18s ease,
@@ -256,15 +256,15 @@
 [data-slot="sidebar-menu-button"]:hover {
   background: #ffffff !important;
   box-shadow:
-    inset 0 0 0 1px rgba(15, 23, 42, 0.08),
-    0 8px 18px rgba(15, 23, 42, 0.07);
+    inset 0 0 0 1px rgba(15, 23, 42, 0.07),
+    0 6px 14px rgba(15, 23, 42, 0.05);
 }
 
 [data-slot="sidebar-menu-button"][data-active="true"] {
-  background: #ffffff !important;
+  background: #fdfefe !important;
   box-shadow:
-    inset 0 0 0 1px rgba(59, 130, 246, 0.16),
-    0 10px 20px rgba(15, 23, 42, 0.08);
+    inset 0 0 0 1px rgba(59, 130, 246, 0.14),
+    0 8px 16px rgba(15, 23, 42, 0.06);
 }
 
 [data-slot="sidebar-menu-button"] > span {
@@ -286,8 +286,8 @@
 /* ===== 상단 헤더 ===== */
 
 .sticky.top-0 {
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08) !important;
-  background: rgba(219, 227, 236, 0.92) !important;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06) !important;
+  background: rgba(219, 227, 236, 0.84) !important;
   backdrop-filter: blur(14px);
 }
 
