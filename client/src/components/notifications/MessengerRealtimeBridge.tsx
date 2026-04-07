@@ -229,10 +229,10 @@ export default function MessengerRealtimeBridge() {
       }
 
       if (myUserId && senderId === myUserId) {
-        console.log(
-          "[MessengerRealtimeBridge] blocked: self message",
-          { senderId, myUserId }
-        );
+        console.log("[MessengerRealtimeBridge] blocked: self message", {
+          senderId,
+          myUserId,
+        });
         return;
       }
 
@@ -248,8 +248,6 @@ export default function MessengerRealtimeBridge() {
         return;
       }
 
-      shownMessageKeysRef.current.add(messageKey);
-
       console.log("[MessengerRealtimeBridge] check conditions", {
         roomId,
         senderId,
@@ -259,7 +257,7 @@ export default function MessengerRealtimeBridge() {
         isMessengerMainOpen,
         soundEnabled,
         appSettings,
-        documentHasFocus: document.hasFocus(),
+        visibilityState: document.visibilityState,
         localMessengerOpen: localStorage.getItem("messenger-open"),
       });
 
@@ -285,10 +283,17 @@ export default function MessengerRealtimeBridge() {
         return;
       }
 
-      if (openRoomIds.includes(roomId)) {
-        console.log("[MessengerRealtimeBridge] blocked: room already open", {
+      const isRoomOpen = openRoomIds.includes(roomId);
+      const isActuallyViewingRoom =
+        isRoomOpen &&
+        isMessengerMainOpen &&
+        document.visibilityState === "visible";
+
+      if (isActuallyViewingRoom) {
+        console.log("[MessengerRealtimeBridge] blocked: actually viewing room", {
           roomId,
           openRoomIds,
+          isMessengerMainOpen,
         });
         return;
       }
@@ -303,6 +308,9 @@ export default function MessengerRealtimeBridge() {
         });
         return;
       }
+
+      // 모든 차단 조건을 통과한 뒤에만 중복키 저장
+      shownMessageKeysRef.current.add(messageKey);
 
       const sender = usersById.get(senderId);
 
