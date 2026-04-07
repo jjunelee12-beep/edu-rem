@@ -396,35 +396,38 @@ async function startServer() {
             fileSize: payload?.fileSize ?? null,
           };
 
-          io.to(`room:${roomId}`).emit("message:new", emittedMessage);
-          io.to(`room:${roomId}`).emit("typing:stop", {
-            roomId,
-            userId,
-          });
-
           const members = await listChatRoomMembers(roomId, userId);
 
-          for (const member of members) {
-            const memberUserId = Number(member.userId);
+// 방 안에서 보고 있는 사용자용 보조 이벤트
+io.to(`room:${roomId}`).emit("typing:stop", {
+  roomId,
+  userId,
+});
 
-            io.to(`user:${memberUserId}`).emit("room:list:update", {
-              roomId,
-              lastMessage: emittedMessage,
-            });
+// 실제 새 메시지 이벤트는 참여자 개인 room으로 전송
+for (const member of members) {
+  const memberUserId = Number(member.userId);
 
-            if (memberUserId === userId) continue;
+  io.to(`user:${memberUserId}`).emit("message:new", emittedMessage);
 
-            await createNotification({
-              userId: memberUserId,
-              type: "messenger",
-              message:
-                messageType === "text"
-                  ? `[메신저] ${sender?.name ?? "사용자"}님의 새 메시지`
-                  : `[메신저] ${sender?.name ?? "사용자"}님이 파일을 보냈습니다.`,
-              relatedId: roomId,
-              isRead: false,
-            } as any);
-          }
+  io.to(`user:${memberUserId}`).emit("room:list:update", {
+    roomId,
+    lastMessage: emittedMessage,
+  });
+
+  if (memberUserId === userId) continue;
+
+  await createNotification({
+    userId: memberUserId,
+    type: "messenger",
+    message:
+      messageType === "text"
+        ? `[메신저] ${sender?.name ?? "사용자"}님의 새 메시지`
+        : `[메신저] ${sender?.name ?? "사용자"}님이 파일을 보냈습니다.`,
+    relatedId: roomId,
+    isRead: false,
+  } as any);
+}
 
           if (callback) {
             callback({
@@ -639,9 +642,18 @@ const emittedSystemMessage = {
   fileSize: null,
 };
 
-io.to(`room:${roomId}`).emit("message:new", emittedSystemMessage);
-
 const membersBeforeLeave = await listChatRoomMembers(roomId, userId);
+
+// 참여자 개인 room에도 시스템 메시지 전송
+for (const member of membersBeforeLeave) {
+  const memberUserId = Number(member.userId);
+
+  io.to(`user:${memberUserId}`).emit("message:new", emittedSystemMessage);
+  io.to(`user:${memberUserId}`).emit("room:list:update", {
+    roomId,
+    lastMessage: emittedSystemMessage,
+  });
+}
 
 await leaveChatRoom({
   roomId,
@@ -650,15 +662,6 @@ await leaveChatRoom({
 
 socket.leave(`room:${roomId}`);
 socket.emit("room:list:update", { roomId });
-
-for (const member of membersBeforeLeave) {
-  const memberUserId = Number(member.userId);
-
-  io.to(`user:${memberUserId}`).emit("room:list:update", {
-    roomId,
-    lastMessage: emittedSystemMessage,
-  });
-}
 
 if (callback) {
   callback({
@@ -858,16 +861,17 @@ socket.on(
         createdAt: new Date().toISOString(),
       };
 
-      io.to(`room:${roomId}`).emit("message:new", emittedMessage);
-
       const members = await listChatRoomMembers(roomId, userId);
 
-      for (const m of members) {
-        io.to(`user:${m.userId}`).emit("room:list:update", {
-          roomId,
-          lastMessage: emittedMessage,
-        });
-      }
+for (const m of members) {
+  const memberUserId = Number(m.userId);
+
+  io.to(`user:${memberUserId}`).emit("message:new", emittedMessage);
+  io.to(`user:${memberUserId}`).emit("room:list:update", {
+    roomId,
+    lastMessage: emittedMessage,
+  });
+}
 
       callback?.({
         success: true,
