@@ -1,14 +1,11 @@
 import { useMemo, useState, useEffect } from "react";
 import {
-  Bell,
-  BellOff,
   X,
   ImagePlus,
   LogOut,
   Image as ImageIcon,
   Paperclip,
   Users,
-  Check,
 } from "lucide-react";
 
 import ImagePreviewModal from "@/components/messenger/ImagePreviewModal";
@@ -101,7 +98,8 @@ export default function MessengerRoomInfo({
   const sortedImageMessages = [...imageMessages].reverse();
   const sortedFileMessages = [...fileMessages].reverse();
 
-  const mainUser = participants[0];
+  const mainUser =
+    activeRoom?.type === "direct" ? participants[0] : participants[0];
   const currentRoomId = Number(activeRoom?.id || 0);
 
   const [localMuted, setLocalMuted] = useState(false);

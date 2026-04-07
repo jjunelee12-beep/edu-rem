@@ -12,6 +12,7 @@ import {
   Bell,
   BellOff,
   LogOut,
+  UserPlus,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ type MessengerPopupWindowProps = {
   popupKey: string;
   room: MessengerRoom | null;
   onOpenRoomInfo?: () => void;
+  onOpenAddParticipants?: () => void;
   targetUser?: MessengerUser | null;
   participants: MessengerUser[];
   messages: MessengerMessage[];
@@ -196,6 +198,7 @@ function getFirstUnreadMessageId(
 export default function MessengerPopupWindow({
   room,
   onOpenRoomInfo,
+  onOpenAddParticipants,
   targetUser,
   participants,
   messages,
@@ -288,9 +291,47 @@ export default function MessengerPopupWindow({
   const savedRoomBackground = useMemo(() => readRoomBackground(room?.id), [room?.id]);
 
   const effectiveRoomBackground = useMemo(() => {
-    if (typeof chatBackground === "string") return chatBackground;
+    if (typeof chatBackground === "string" && chatBackground.length > 0) {
+      return chatBackground;
+    }
     return savedRoomBackground;
   }, [chatBackground, savedRoomBackground]);
+
+  const bodyBackgroundStyle = useMemo((): React.CSSProperties => {
+    const bg = effectiveRoomBackground || "";
+
+    if (!bg) {
+      return {
+        backgroundColor: "#b7c7d8",
+      };
+    }
+
+    const isImage =
+      bg.startsWith("data:") ||
+      bg.startsWith("http://") ||
+      bg.startsWith("https://") ||
+      bg.startsWith("url(");
+
+    if (isImage) {
+      return {
+        backgroundColor: "#b7c7d8",
+        backgroundImage: bg.startsWith("url(") ? bg : `url(${bg})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+      };
+    }
+
+    if (bg.startsWith("linear-gradient")) {
+      return {
+        backgroundImage: bg,
+      };
+    }
+
+    return {
+      backgroundColor: bg,
+    };
+  }, [effectiveRoomBackground]);
 
   const typingNames = useMemo(() => {
     return typingUserIds
@@ -704,6 +745,17 @@ export default function MessengerPopupWindow({
             </div>
 
             <div className="flex items-center gap-1">
+              {room?.type === "group" && onOpenAddParticipants ? (
+                <button
+                  type="button"
+                  onClick={onOpenAddParticipants}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-700 transition hover:bg-slate-50"
+                  title="참여자 추가"
+                >
+                  <UserPlus className="h-4 w-4" />
+                </button>
+              ) : null}
+
               <button
                 type="button"
                 onClick={() => {
@@ -881,32 +933,7 @@ export default function MessengerPopupWindow({
         <div
           ref={scrollRef}
           className="flex-1 overflow-y-auto px-4 py-4"
-          style={{
-            backgroundColor: !effectiveRoomBackground ? "#b7c7d8" : undefined,
-            backgroundImage: !effectiveRoomBackground
-              ? undefined
-              : effectiveRoomBackground.startsWith("linear-gradient") ||
-                effectiveRoomBackground.startsWith("url(")
-              ? effectiveRoomBackground
-              : effectiveRoomBackground.startsWith("data:")
-              ? `url(${effectiveRoomBackground})`
-              : undefined,
-            backgroundSize:
-              effectiveRoomBackground &&
-              !effectiveRoomBackground.startsWith("linear-gradient")
-                ? "cover"
-                : undefined,
-            backgroundPosition:
-              effectiveRoomBackground &&
-              !effectiveRoomBackground.startsWith("linear-gradient")
-                ? "center"
-                : undefined,
-            backgroundRepeat:
-              effectiveRoomBackground &&
-              !effectiveRoomBackground.startsWith("linear-gradient")
-                ? "no-repeat"
-                : undefined,
-          }}
+          style={bodyBackgroundStyle}
         >
           {timelineItems.length === 0 && pendingAttachments.length === 0 ? (
             <div className="flex h-full items-center justify-center">

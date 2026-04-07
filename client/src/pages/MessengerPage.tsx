@@ -40,6 +40,22 @@ function normalizeUsers(
   }));
 }
 
+const ROOM_BG_KEY = "messenger-room-backgrounds";
+
+function readRoomBackground(roomId?: number | null) {
+  if (!roomId) return "";
+
+  try {
+    const raw = localStorage.getItem(ROOM_BG_KEY);
+    if (!raw) return "";
+
+    const parsed = JSON.parse(raw);
+    return parsed?.[String(roomId)] || "";
+  } catch {
+    return "";
+  }
+}
+
 type OpenPopup =
   | {
       key: string;
@@ -227,6 +243,7 @@ function PopupRoomData({
   onToggleMuteRoom,
   onLeaveRoom,
   onOpenRoomInfo,
+  onOpenInviteDialog,
 }: {
   popup: OpenPopup;
   usersById: Record<number, MessengerUser>;
@@ -246,12 +263,17 @@ function PopupRoomData({
   onRefreshRooms: () => Promise<void>;
   typingUserIds: number[];
   roomMuted: boolean;
-  chatBackground: string;
-  onChangeBackground: (value: string) => void;
+    chatBackground?: string;
+  onChangeBackground?: (value: string) => void;
   notificationEnabled: boolean;
   onToggleMuteRoom: (roomId: number, isMuted: boolean) => Promise<void>;
   onLeaveRoom: (roomId: number) => Promise<void>;
   onOpenRoomInfo: (payload: {
+    room: MessengerRoom | null;
+    participants: MessengerUser[];
+    messages: MessengerMessage[];
+  }) => void;
+ onOpenInviteDialog?: (payload: {
     room: MessengerRoom | null;
     participants: MessengerUser[];
     messages: MessengerMessage[];
@@ -513,6 +535,16 @@ function PopupRoomData({
           messages,
         })
       }
+      onOpenAddParticipants={
+        room?.type === "group" && onOpenInviteDialog
+          ? () =>
+              onOpenInviteDialog({
+                room,
+                participants,
+                messages,
+              })
+          : undefined
+      }
       targetUser={targetUser}
       participants={participants}
       messages={messages}
@@ -534,7 +566,9 @@ function PopupRoomData({
       rightOffset={560}
       typingUserIds={typingUserIds}
       roomMuted={roomMuted}
-      chatBackground={chatBackground}
+            chatBackground={
+        popup.type === "room" ? readRoomBackground(Number(roomId)) : ""
+      }
       onChangeBackground={onChangeBackground}
       notificationEnabled={notificationEnabled}
       onToggleMute={
@@ -597,7 +631,6 @@ export default function MessengerPage({
   );
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [notificationEnabled, setNotificationEnabled] = useState(true);
-  const [chatBackground, setChatBackground] = useState("");
 
   const { data: userList = [] } = trpc.users.list.useQuery();
   const { data: roomRows = [], refetch: refetchRooms } =
@@ -1339,8 +1372,14 @@ export default function MessengerPage({
                   onRefreshRooms={refetchRooms}
                   typingUserIds={typingUserIds}
                   roomMuted={roomMuted}
-                  chatBackground={chatBackground}
-                  onChangeBackground={setChatBackground}
+                                    chatBackground={
+                    popup.type === "room"
+                      ? readRoomBackground(Number(popup.roomId))
+                      : ""
+                  }
+                  onChangeBackground={() => {
+                    // 방별 배경은 localStorage 기준으로 PopupWindow/RoomInfo에서 처리
+                  }}
                   notificationEnabled={notificationEnabled}
                   onToggleMuteRoom={handleToggleRoomMute}
                   onLeaveRoom={handleLeaveRoom}
@@ -1349,6 +1388,18 @@ export default function MessengerPage({
                     setRoomInfoParticipants(participants);
                     setRoomInfoMessages(messages);
                     setRoomInfoOpen(true);
+                  }}
+                  onOpenInviteDialog={({ room, participants, messages }) => {
+                    if (room?.type !== "group") return;
+
+                    setRoomInfoRoomId(room?.id ? Number(room.id) : null);
+                    setRoomInfoParticipants(participants);
+                    setRoomInfoMessages(messages);
+                    setRoomInfoOpen(true);
+
+                    setSelectedInviteUserIds([]);
+                    setInviteSearch("");
+                    setInviteDialogOpen(true);
                   }}
                 />
               </div>
@@ -1377,8 +1428,14 @@ export default function MessengerPage({
             : false
         }
         notificationEnabled={notificationEnabled}
-        chatBackground={chatBackground}
-        onChangeBackground={setChatBackground}
+                chatBackground={
+          activeRoomForInfo?.id
+            ? readRoomBackground(Number(activeRoomForInfo.id))
+            : ""
+        }
+        onChangeBackground={() => {
+          // 방별 배경은 localStorage 기준으로 처리
+        }}
         onClose={() => setRoomInfoOpen(false)}
         onToggleNotifications={async () => {
           if (!activeRoomForInfo?.id) return;
