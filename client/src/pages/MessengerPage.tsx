@@ -800,38 +800,43 @@ useEffect(() => {
 
   useEffect(() => {
     const handleOpenRoom = (event: Event) => {
-      const custom = event as CustomEvent;
-      const roomId = Number(custom.detail?.roomId || 0);
-      if (!roomId) return;
+  const custom = event as CustomEvent;
+  const roomId = Number(custom.detail?.roomId || 0);
+  if (!roomId) return;
 
-      setLocallyViewedRoomIds((prev) =>
-        prev.includes(roomId) ? prev : [...prev, roomId]
+  console.log("[MessengerPage] handleOpenRoom event fired", {
+    roomId,
+    detail: custom.detail,
+  });
+
+  setLocallyViewedRoomIds((prev) =>
+    prev.includes(roomId) ? prev : [...prev, roomId]
+  );
+
+  setOpenPopups((prev) => {
+    const exists = prev.some(
+      (popup) => popup.type === "room" && Number(popup.roomId) === roomId
+    );
+
+    if (exists) {
+      return prev.map((popup) =>
+        popup.type === "room" && Number(popup.roomId) === roomId
+          ? { ...popup, minimized: false }
+          : popup
       );
+    }
 
-      setOpenPopups((prev) => {
-        const exists = prev.some(
-          (popup) => popup.type === "room" && Number(popup.roomId) === roomId
-        );
-
-        if (exists) {
-          return prev.map((popup) =>
-            popup.type === "room" && Number(popup.roomId) === roomId
-              ? { ...popup, minimized: false }
-              : popup
-          );
-        }
-
-        return [
-          ...prev,
-          {
-            key: `room-${roomId}`,
-            type: "room",
-            roomId,
-            minimized: false,
-          },
-        ];
-      });
-    };
+    return [
+      ...prev,
+      {
+        key: `room-${roomId}`,
+        type: "room",
+        roomId,
+        minimized: false,
+      },
+    ];
+  });
+};
 
     window.addEventListener(
       "messenger:open-room",
@@ -1024,34 +1029,36 @@ useEffect(() => {
   };
 
   const handleSelectRoom = async (roomId: number) => {
-    handleMarkRoomViewed(roomId);
+  console.log("[MessengerPage] handleSelectRoom called", { roomId });
 
-    setOpenPopups((prev) => {
-      const exists = prev.some(
-        (popup) => popup.type === "room" && popup.roomId === roomId
+  handleMarkRoomViewed(roomId);
+
+  setOpenPopups((prev) => {
+    const exists = prev.some(
+      (popup) => popup.type === "room" && popup.roomId === roomId
+    );
+
+    if (exists) {
+      return prev.map((popup) =>
+        popup.type === "room" && popup.roomId === roomId
+          ? { ...popup, minimized: false }
+          : popup
       );
+    }
 
-      if (exists) {
-        return prev.map((popup) =>
-          popup.type === "room" && popup.roomId === roomId
-            ? { ...popup, minimized: false }
-            : popup
-        );
-      }
+    return [
+      ...prev,
+      {
+        key: `room-${roomId}`,
+        type: "room",
+        roomId,
+        minimized: false,
+      },
+    ];
+  });
 
-      return [
-        ...prev,
-        {
-          key: `room-${roomId}`,
-          type: "room",
-          roomId,
-          minimized: false,
-        },
-      ];
-    });
-
-    await refetchRooms();
-  };
+  await refetchRooms();
+};
 
   const handleOpenDirectChat = (targetUser: MessengerUser) => {
     setOpenPopups((prev) => {
@@ -1149,6 +1156,8 @@ useEffect(() => {
   };
 
   const closePopup = (popupKey: string) => {
+  console.log("[MessengerPage] closePopup called", { popupKey });
+
   setOpenPopups((prev) => {
     const target = prev.find((popup) => popup.key === popupKey);
 
