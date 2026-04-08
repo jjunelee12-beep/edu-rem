@@ -432,25 +432,19 @@ useEffect(() => {
 
     if (!container || !target) return;
 
-    const containerRect = container.getBoundingClientRect();
-    const targetRect = target.getBoundingClientRect();
+    const targetTop = target.offsetTop;
+const targetHeight = target.offsetHeight;
+const containerHeight = container.clientHeight;
 
-    const currentScrollTop = container.scrollTop;
-    const targetTop = targetRect.top - containerRect.top + currentScrollTop;
+// 아래쪽까지 보이도록 계산
+const nextTop =
+  targetTop - 16 - Math.max(0, containerHeight - targetHeight - 40);
 
-    const paddingTop = 12;
-    const paddingBottom = 24;
-
-    const nextScrollTop =
-      targetTop -
-      paddingTop +
-      Math.max(0, targetRect.height - container.clientHeight + paddingBottom);
-
-    container.scrollTo({
-      top: Math.max(0, nextScrollTop),
-      behavior: "smooth",
-    });
-  }, 120);
+container.scrollTo({
+  top: nextTop,
+  behavior: "smooth",
+});
+  }, 180);
 
   return () => window.clearTimeout(timer);
 }, [eApprovalMenuOpen, isCollapsed]);
