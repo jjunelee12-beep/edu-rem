@@ -386,6 +386,10 @@ useEffect(() => {
  const sidebarRef = useRef<HTMLDivElement>(null);
 const sidebarContentRef = useRef<HTMLDivElement | null>(null);
 const eApprovalMenuRef = useRef<HTMLLIElement | null>(null);
+
+const eApprovalSubMenuRef = useRef<HTMLUListElement | null>(null);
+const [sidebarViewportTick, setSidebarViewportTick] = useState(0);
+
  const isMobile = useIsMobile();
 
 const [isNarrowViewport, setIsNarrowViewport] = useState(false);
@@ -393,6 +397,7 @@ const [isNarrowViewport, setIsNarrowViewport] = useState(false);
 useEffect(() => {
   const syncViewport = () => {
     setIsNarrowViewport(window.innerWidth <= 1400);
+    setSidebarViewportTick((prev) => prev + 1);
   };
 
   syncViewport();
@@ -428,26 +433,42 @@ useEffect(() => {
 
   const timer = window.setTimeout(() => {
     const container = sidebarContentRef.current;
-    const target = eApprovalMenuRef.current;
+    const menuItem = eApprovalMenuRef.current;
+    const subMenu = eApprovalSubMenuRef.current;
 
-    if (!container || !target) return;
+    if (!container || !menuItem) return;
 
-    const targetTop = target.offsetTop;
-const targetHeight = target.offsetHeight;
-const containerHeight = container.clientHeight;
+    const paddingTop = 12;
+    const paddingBottom = 28;
 
-// 아래쪽까지 보이도록 계산
-const nextTop =
-  targetTop - 16 - Math.max(0, containerHeight - targetHeight - 40);
+    const menuTop = menuItem.offsetTop;
+    const menuBottom = menuTop + menuItem.offsetHeight;
 
-container.scrollTo({
-  top: nextTop,
-  behavior: "smooth",
-});
+    const subMenuBottom = subMenu
+      ? subMenu.offsetTop + subMenu.offsetHeight
+      : menuBottom;
+
+    const visibleTop = container.scrollTop;
+    const visibleBottom = container.scrollTop + container.clientHeight;
+
+    let nextTop = container.scrollTop;
+
+    if (menuTop - paddingTop < visibleTop) {
+      nextTop = Math.max(0, menuTop - paddingTop);
+    }
+
+    if (subMenuBottom + paddingBottom > visibleBottom) {
+      nextTop = subMenuBottom - container.clientHeight + paddingBottom;
+    }
+
+    container.scrollTo({
+      top: Math.max(0, nextTop),
+      behavior: "smooth",
+    });
   }, 180);
 
   return () => window.clearTimeout(timer);
-}, [eApprovalMenuOpen, isCollapsed]);
+}, [eApprovalMenuOpen, isCollapsed, sidebarViewportTick]);
 
  const eApprovalSubMenus = useMemo(() => {
  const items = [
@@ -890,8 +911,11 @@ container.scrollTo({
  ))}
  </SidebarMenuButton>
 
- {!isCollapsed && eApprovalMenuOpen && (
- <SidebarMenuSub className="mt-1 mb-5 space-y-1">
+{!isCollapsed && eApprovalMenuOpen && (
+  <SidebarMenuSub
+    ref={eApprovalSubMenuRef}
+    className="mt-1 mb-5 space-y-1"
+  >
  {eApprovalSubMenus.map((item) => {
  const isActive = location === item.href;
 
