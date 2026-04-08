@@ -498,6 +498,16 @@ useEffect(() => {
  const visibleHostMenuItems = isHost || isSuperhost ? hostMenuItems : [];
  const visibleSuperhostMenuItems = isSuperhost ? superhostMenuItems : [];
 
+const primaryMenuItems = [
+  { icon: LayoutDashboard, label: "홈", path: "/" },
+  { icon: BarChart3, label: "운영 대시보드", path: "/overview" },
+  { icon: PhoneCall, label: "상담 DB", path: "/consultations" },
+  { icon: GraduationCap, label: "학생 관리", path: "/students" },
+  { icon: CalendarDays, label: "학기별 예정표", path: "/semesters" },
+  { icon: Megaphone, label: "공지사항", path: "/notices" },
+  { icon: CalendarRange, label: "일정 / 캘린더", path: "/schedules" },
+];
+
  const allMenuItems = [
  ...visibleStaffMenuItems,
  ...visibleAdminMenuItems,
@@ -730,6 +740,89 @@ useEffect(() => {
 </div>
  )}
 
+const renderPrimaryMenuSection = () => {
+  return (
+    <SidebarMenu className="px-2 py-1">
+      {primaryMenuItems.map((item) => {
+        const isActive =
+          item.path === "/" ? location === "/" : location.startsWith(item.path);
+
+        return (
+          <SidebarMenuItem key={item.path}>
+            <SidebarMenuButton
+              isActive={isActive}
+              onClick={() => setLocation(item.path)}
+              tooltip={item.label}
+              className="min-w-0 font-medium text-black"
+            >
+              <item.icon
+                className={`h-4 w-4 shrink-0 ${
+                  isActive ? "text-primary" : "text-slate-700"
+                }`}
+              />
+              <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left text-black">
+                {item.label}
+              </span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        );
+      })}
+
+      <SidebarMenuItem ref={eApprovalMenuRef}>
+        <SidebarMenuButton
+          isActive={isEApprovalPath}
+          onClick={() => setEApprovalMenuOpen((prev) => !prev)}
+          tooltip="전자결재"
+          className="min-w-0 justify-between font-medium text-black"
+        >
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <FileCheck2
+              className={`h-4 w-4 shrink-0 ${
+                isEApprovalPath ? "text-primary" : "text-slate-700"
+              }`}
+            />
+            <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left text-black">
+              전자결재
+            </span>
+          </div>
+
+          {!isCollapsed &&
+            (eApprovalMenuOpen ? (
+              <ChevronDown className="h-4 w-4 shrink-0 text-slate-600" />
+            ) : (
+              <ChevronRight className="h-4 w-4 shrink-0 text-slate-600" />
+            ))}
+        </SidebarMenuButton>
+
+        {!isCollapsed && eApprovalMenuOpen && (
+          <SidebarMenuSub
+            ref={eApprovalSubMenuRef}
+            className="mt-1 mb-5 space-y-1"
+          >
+            {eApprovalSubMenus.map((item) => {
+              const isActive = location === item.href;
+
+              return (
+                <SidebarMenuSubItem key={item.href}>
+                  <SidebarMenuSubButton
+                    type="button"
+                    isActive={isActive}
+                    size="md"
+                    onClick={() => setLocation(item.href)}
+                    className="font-medium text-black"
+                  >
+                    <span className="truncate text-black">{item.label}</span>
+                  </SidebarMenuSubButton>
+                </SidebarMenuSubItem>
+              );
+            })}
+          </SidebarMenuSub>
+        )}
+      </SidebarMenuItem>
+    </SidebarMenu>
+  );
+};
+
  <SidebarMenu className="px-2 py-1">
  {items.map((item) => {
  const isActive =
@@ -882,63 +975,8 @@ useEffect(() => {
   ref={sidebarContentRef}
   className="min-h-0 flex-1 gap-1 overflow-y-auto overflow-x-hidden pb-3"
 >
- {renderMenuSection(visibleStaffMenuItems)}
 
- <SidebarMenu className={`px-2 py-1 ${!isCollapsed && eApprovalMenuOpen ? "pb-5" : ""}`}>
- <SidebarMenuItem ref={eApprovalMenuRef}>
-  <SidebarMenuButton
- isActive={isEApprovalPath}
- onClick={() => setEApprovalMenuOpen((prev) => !prev)}
- tooltip="전자결재"
- className="min-w-0 justify-between font-medium text-black"
- >
- <div className="flex min-w-0 flex-1 items-center gap-2">
- <FileCheck2
- className={`h-4 w-4 shrink-0 ${
- isEApprovalPath ? "text-primary" : "text-slate-700"
- }`}
- />
- <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left text-black">
- 전자결재
- </span>
- </div>
-
- {!isCollapsed &&
- (eApprovalMenuOpen ? (
- <ChevronDown className="h-4 w-4 shrink-0 text-slate-600" />
- ) : (
- <ChevronRight className="h-4 w-4 shrink-0 text-slate-600" />
- ))}
- </SidebarMenuButton>
-
-{!isCollapsed && eApprovalMenuOpen && (
-  <SidebarMenuSub
-    ref={eApprovalSubMenuRef}
-    className="mt-1 mb-5 space-y-1"
-  >
- {eApprovalSubMenus.map((item) => {
- const isActive = location === item.href;
-
- return (
- <SidebarMenuSubItem key={item.href}>
- <SidebarMenuSubButton
- type="button"
- isActive={isActive}
- size="md"
- onClick={() => setLocation(item.href)}
- className="font-medium text-black"
- >
- <span className="truncate text-black">
- {item.label}
- </span>
- </SidebarMenuSubButton>
- </SidebarMenuSubItem>
- );
- })}
- </SidebarMenuSub>
- )}
- </SidebarMenuItem>
- </SidebarMenu>
+ {renderPrimaryMenuSection()}
 
  {renderMenuSection(visibleAdminMenuItems, "관리자")}
  {renderMenuSection(visibleHostMenuItems, "호스트")}
