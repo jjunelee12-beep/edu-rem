@@ -32,6 +32,9 @@ import MyPage from "@/pages/MyPage";
 
 import NoticesPage from "@/pages/NoticesPage";
 import NoticeDetailPage from "@/pages/NoticeDetailPage";
+import NoticeWritePage from "@/pages/NoticeWritePage";
+import NoticeEditPage from "@/pages/NoticeEditPage";
+import NoticePreviewPage from "@/pages/NoticePreviewPage";
 import SchedulePage from "@/pages/SchedulePage";
 import Notifications from "@/pages/Notifications";
 
@@ -85,7 +88,10 @@ function PrivateRouter() {
         <Route path="/my" component={MyPage} />
 
         <Route path="/notices" component={NoticesPage} />
-        <Route path="/notices/:id" component={NoticeDetailPage} />
+<Route path="/notices/write" component={NoticeWritePage} />
+<Route path="/notices/preview" component={NoticePreviewPage} />
+<Route path="/notices/:id/edit" component={NoticeEditPage} />
+<Route path="/notices/:id" component={NoticeDetailPage} />
         <Route path="/schedules" component={SchedulePage} />
         <Route path="/notifications" component={Notifications} />
 

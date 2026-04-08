@@ -18,8 +18,6 @@ import {
   ChevronDown,
 } from "lucide-react";
 
-import NoticeEditorDialog from "@/components/notices/NoticeEditorDialog";
-
 function formatDateTime(value?: string | Date | null) {
   if (!value) return "-";
   const d = value instanceof Date ? value : new Date(value);
@@ -67,7 +65,6 @@ export default function NoticeDetailPage() {
   const canManage = user?.role === "host" || user?.role === "superhost";
 
   const utils = trpc.useUtils();
-  const [editorOpen, setEditorOpen] = useState(false);
 
   const { data: notice, isLoading } = trpc.notice.get.useQuery(
     {
@@ -193,7 +190,7 @@ export default function NoticeDetailPage() {
                     <Button
                       variant="outline"
                       className="h-11 rounded-xl"
-                      onClick={() => setEditorOpen(true)}
+                      onClick={() => setLocation(`/notices/${noticeId}/edit`)}
                       disabled={!notice}
                     >
                       <PencilLine className="mr-2 h-4 w-4" />
@@ -358,30 +355,6 @@ export default function NoticeDetailPage() {
           </div>
         </CardContent>
       </Card>
-
-      {notice ? (
-        <NoticeEditorDialog
-          open={editorOpen}
-          mode="edit"
-          initialValue={{
-            title: notice.title ?? "",
-            content: notice.content ?? "",
-            isPinned: !!notice.isPinned,
-            importance: (notice as any).importance ?? "normal",
-          }}
-          isSubmitting={updateMutation.isPending}
-          onClose={() => setEditorOpen(false)}
-          onSubmit={(payload) => {
-            updateMutation.mutate({
-              id: noticeId,
-              title: payload.title,
-              content: payload.content,
-              isPinned: !!payload.isPinned,
-              importance: payload.importance ?? "normal",
-            });
-          }}
-        />
-      ) : null}
     </div>
   );
 }

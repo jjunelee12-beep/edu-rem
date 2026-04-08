@@ -393,17 +393,42 @@ div.border {
   border-radius: 0.75rem;
 }
 
-.notice-content hr {
-  margin: 1.5rem 0;
-  border: 0;
-  border-top: 1px solid rgba(120, 130, 115, 0.08);
-}
-
 .notice-content a {
   color: #2563eb;
   text-decoration: underline;
   text-underline-offset: 2px;
   word-break: break-all;
+}
+
+.notice-content table,
+.notice-editor-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  table-layout: fixed;
+}
+
+.notice-content th,
+.notice-content td,
+.notice-editor-content th,
+.notice-editor-content td {
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  padding: 0.75rem;
+  vertical-align: top;
+  text-align: left;
+}
+
+.notice-content th,
+.notice-editor-content th {
+  background: #f8fafc;
+  font-weight: 700;
+}
+
+.notice-content hr,
+.notice-editor-content hr {
+  margin: 1.25rem 0;
+  border: 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.1);
 }
 
 /* ===== 공지 작성 에디터 ===== */

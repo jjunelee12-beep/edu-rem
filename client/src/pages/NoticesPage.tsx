@@ -8,8 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Search, PencilLine, Trash2, Plus, FileText } from "lucide-react";
-
-import NoticeEditorDialog from "@/components/notices/NoticeEditorDialog";
 import NoticeListTable, {
   type NoticeListItem,
 } from "@/components/notices/NoticeListTable";
@@ -247,7 +245,7 @@ const [filter, setFilter] = useState<
                         선택 삭제
                       </Button>
                     ) : (
-                      <Button className="h-11 rounded-xl" onClick={handleOpenCreate}>
+                      <Button className="h-11 rounded-xl" onClick={() => setLocation("/notices/write")}>
                         <Plus className="mr-2 h-4 w-4" />
                         글쓰기
                       </Button>
@@ -278,32 +276,6 @@ const [filter, setFilter] = useState<
           </div>
         </CardContent>
       </Card>
-
-      <NoticeEditorDialog
-        open={editorOpen}
-        mode={editorMode}
-        initialValue={
-          editorMode === "edit"
-            ? {
-                title: editingRow?.title ?? "",
-                content: editingRow?.content ?? "",
-                isPinned: !!editingRow?.isPinned,
-                importance: editingRow?.importance ?? "normal",
-              }
-            : {
-                title: "",
-                content: "",
-                isPinned: false,
-                importance: "normal",
-              }
-        }
-        isSubmitting={createMutation.isPending || updateMutation.isPending}
-        onClose={() => {
-          setEditorOpen(false);
-          setEditingRow(null);
-        }}
-        onSubmit={handleSubmitEditor}
-      />
     </div>
   );
 }
