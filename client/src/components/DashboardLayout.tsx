@@ -445,7 +445,7 @@ useEffect(() => {
     const menuBottom = menuTop + menuItem.offsetHeight;
 
     const subMenuBottom = subMenu
-      ? subMenu.offsetTop + subMenu.offsetHeight
+      ? menuTop + subMenu.offsetTop + subMenu.offsetHeight
       : menuBottom;
 
     const visibleTop = container.scrollTop;
