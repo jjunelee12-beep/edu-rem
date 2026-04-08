@@ -422,6 +422,42 @@ useEffect(() => {
 
  const [eApprovalMenuOpen, setEApprovalMenuOpen] = useState(isEApprovalPath);
 
+const alignEApprovalIntoView = () => {
+  const container = sidebarContentRef.current;
+  const menuItem = eApprovalMenuRef.current;
+  const subMenu = eApprovalSubMenuRef.current;
+
+  if (!container || !menuItem) return;
+
+  const paddingTop = 12;
+  const paddingBottom = 28;
+
+  const menuTop = menuItem.offsetTop;
+  const menuBottom = menuTop + menuItem.offsetHeight;
+
+  const subMenuBottom = subMenu
+    ? menuTop + subMenu.offsetTop + subMenu.offsetHeight
+    : menuBottom;
+
+  const visibleTop = container.scrollTop;
+  const visibleBottom = container.scrollTop + container.clientHeight;
+
+  let nextTop = container.scrollTop;
+
+  if (menuTop - paddingTop < visibleTop) {
+    nextTop = Math.max(0, menuTop - paddingTop);
+  }
+
+  if (subMenuBottom + paddingBottom > visibleBottom) {
+    nextTop = subMenuBottom - container.clientHeight + paddingBottom;
+  }
+
+  container.scrollTo({
+    top: Math.max(0, nextTop),
+    behavior: "smooth",
+  });
+};
+
  useEffect(() => {
  if (isEApprovalPath) {
  setEApprovalMenuOpen(true);
@@ -432,42 +468,23 @@ useEffect(() => {
   if (!eApprovalMenuOpen || isCollapsed) return;
 
   const timer = window.setTimeout(() => {
-    const container = sidebarContentRef.current;
-    const menuItem = eApprovalMenuRef.current;
-    const subMenu = eApprovalSubMenuRef.current;
-
-    if (!container || !menuItem) return;
-
-    const paddingTop = 12;
-    const paddingBottom = 28;
-
-    const menuTop = menuItem.offsetTop;
-    const menuBottom = menuTop + menuItem.offsetHeight;
-
-    const subMenuBottom = subMenu
-      ? menuTop + subMenu.offsetTop + subMenu.offsetHeight
-      : menuBottom;
-
-    const visibleTop = container.scrollTop;
-    const visibleBottom = container.scrollTop + container.clientHeight;
-
-    let nextTop = container.scrollTop;
-
-    if (menuTop - paddingTop < visibleTop) {
-      nextTop = Math.max(0, menuTop - paddingTop);
-    }
-
-    if (subMenuBottom + paddingBottom > visibleBottom) {
-      nextTop = subMenuBottom - container.clientHeight + paddingBottom;
-    }
-
-    container.scrollTo({
-      top: Math.max(0, nextTop),
-      behavior: "smooth",
-    });
+    alignEApprovalIntoView();
   }, 180);
 
-  return () => window.clearTimeout(timer);
+  const container = sidebarContentRef.current;
+  const subMenu = eApprovalSubMenuRef.current;
+
+  const observer = new ResizeObserver(() => {
+    alignEApprovalIntoView();
+  });
+
+  if (container) observer.observe(container);
+  if (subMenu) observer.observe(subMenu);
+
+  return () => {
+    window.clearTimeout(timer);
+    observer.disconnect();
+  };
 }, [eApprovalMenuOpen, isCollapsed, sidebarViewportTick]);
 
  const eApprovalSubMenus = useMemo(() => {
@@ -932,7 +949,7 @@ const renderPrimaryMenuSection = () => {
  <div className="relative" ref={sidebarRef}>
  <Sidebar
   collapsible="icon"
-  className="h-screen overflow-hidden border-r-0"
+  className="h-screen border-r-0"
   disableTransition={isResizing}
 >
  <SidebarHeader className="h-16 justify-center">
@@ -973,7 +990,7 @@ const renderPrimaryMenuSection = () => {
 
  <SidebarContent
   ref={sidebarContentRef}
-  className="min-h-0 flex-1 gap-1 overflow-y-auto overflow-x-hidden pb-3"
+  className="flex-1 gap-1 overflow-y-auto overflow-x-hidden pb-3"
 >
 
  {renderPrimaryMenuSection()}
