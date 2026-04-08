@@ -265,14 +265,15 @@ if (noteField.isRequired && !form.extraNote.trim()) {
         {startField.isRequired && " *"}
       </Label>
       <Input
-        value={form.attendanceStartTime}
-        onChange={(e) =>
-          setForm((prev) => ({
-            ...prev,
-            attendanceStartTime: e.target.value,
-          }))
-        }
-      />
+  type="time"
+  value={form.attendanceStartTime}
+  onChange={(e) =>
+    setForm((prev) => ({
+      ...prev,
+      attendanceStartTime: e.target.value,
+    }))
+  }
+/>
     </div>
   )}
 
@@ -283,14 +284,15 @@ if (noteField.isRequired && !form.extraNote.trim()) {
         {endField.isRequired && " *"}
       </Label>
       <Input
-        value={form.attendanceEndTime}
-        onChange={(e) =>
-          setForm((prev) => ({
-            ...prev,
-            attendanceEndTime: e.target.value,
-          }))
-        }
-      />
+  type="time"
+  value={form.attendanceEndTime}
+  onChange={(e) =>
+    setForm((prev) => ({
+      ...prev,
+      attendanceEndTime: e.target.value,
+    }))
+  }
+/>
     </div>
   )}
 </div>

@@ -120,6 +120,28 @@ function toNullableNumber(v: any) {
   return Number.isFinite(n) ? n : null;
 }
 
+function parseApprovalTimeToDate(dateStr: string, timeStr?: string | null) {
+  if (!dateStr || !timeStr) return null;
+
+  const raw = String(timeStr).trim();
+  const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+
+  const hh = Number(match[1]);
+  const mm = Number(match[2]);
+
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+
+  return new Date(`${dateStr}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00`);
+}
+
+function calcMinutesBetween(start: Date | null, end: Date | null) {
+  if (!start || !end) return 0;
+  const diff = end.getTime() - start.getTime();
+  if (!Number.isFinite(diff) || diff <= 0) return 0;
+  return Math.floor(diff / 60000);
+}
+
 function haversineDistanceKm(
   lat1: number,
   lng1: number,
@@ -5542,6 +5564,14 @@ if (params.formType === "attendance" && !params.targetDate) {
   throw new Error("근태 문서는 시행일자 필수");
 }
 
+if (
+  params.formType === "business_trip" &&
+  !params.targetDate &&
+  !(params.startDate && params.endDate)
+) {
+  throw new Error("출장 문서는 시행일자 또는 시작일/종료일이 필요합니다.");
+}
+
 const approverIds = [
     setting?.firstApproverUserId,
     setting?.secondApproverUserId,
@@ -5713,9 +5743,22 @@ export async function applyApprovedDocumentToAttendance(params: {
   if (!detail?.document) throw new Error("전자결재 문서를 찾을 수 없습니다.");
 
   const doc: any = detail.document;
-if (doc.status !== "approved") {
-  throw new Error("승인 완료된 문서만 근태에 반영할 수 있습니다.");
-}
+
+const targetDate = String(doc.targetDate || "").slice(0, 10);
+
+const approvedClockInAt = parseApprovalTimeToDate(
+  targetDate,
+  doc.attendanceStartTime
+);
+
+const approvedClockOutAt = parseApprovalTimeToDate(
+  targetDate,
+  doc.attendanceEndTime
+);
+
+const lateInfo = await calcLateInfo(approvedClockInAt);
+const earlyInfo = await calcEarlyLeaveInfo(approvedClockOutAt);
+
 
   if (doc.attendanceApplied) {
     return true;
@@ -5757,6 +5800,7 @@ if (doc.formType === "business_trip" && doc.startDate && doc.endDate) {
         userId: Number(doc.applicantUserId),
         workDate: dateStr,
         status: "출장" as any,
+leaveType: "출장",
         note: `[전자결재 승인 반영] 출장 / ${doc.reason ?? ""}`,
         isAbsent: 0,
       } as any);
@@ -5784,6 +5828,7 @@ if (doc.formType === "business_trip" && doc.startDate && doc.endDate) {
         .update(attendanceRecords)
         .set({
           status: "출장" as any,
+leaveType: "출장",
           note: `[전자결재 승인 반영] 출장 / ${doc.reason ?? ""}`,
           isAbsent: 0,
         } as any)
@@ -5793,8 +5838,8 @@ if (doc.formType === "business_trip" && doc.startDate && doc.endDate) {
         attendanceId: Number(attendanceRow.id),
         targetUserId: Number(doc.applicantUserId),
         actorUserId: params.actorUserId,
-        beforeClockInAt: attendanceRow.clockInAt ?? null,
-        beforeClockOutAt: attendanceRow.clockOutAt ?? null,
+        beforeClockInAt,
+        beforeClockOutAt,
         afterClockInAt: attendanceRow.clockInAt ?? null,
         afterClockOutAt: attendanceRow.clockOutAt ?? null,
         reason: "출장",
@@ -5840,14 +5885,60 @@ if (doc.formType === "business_trip" && doc.startDate && doc.endDate) {
 
   let attendanceRow = ((rows as any[]) ?? [])[0] ?? null;
 
+const beforeClockInAt = attendanceRow?.clockInAt ?? null;
+const beforeClockOutAt = attendanceRow?.clockOutAt ?? null;
+const beforeStatus = attendanceRow?.status ?? null;
+
   if (!attendanceRow) {
-    const insertResult: any = await db.insert(attendanceRecords).values({
-      userId: Number(doc.applicantUserId),
-      workDate: targetDate,
-      status: (doc.attendanceTargetStatus || (doc.formType === "business_trip" ? "출장" : "출근전")) as any,
-      note: `[전자결재 승인 반영] ${doc.subType}`,
-      isAbsent: doc.attendanceTargetStatus === "결근" ? 1 : 0,
-    } as any);
+  const insertResult: any = await db.insert(attendanceRecords).values({
+    userId: Number(doc.applicantUserId),
+    workDate: targetDate,
+    status: (doc.attendanceTargetStatus || (doc.formType === "business_trip" ? "출장" : "출근전")) as any,
+    leaveType:
+      doc.formType === "attendance"
+        ? (doc.subType ?? doc.attendanceTargetStatus ?? null)
+        : doc.formType === "business_trip"
+        ? "출장"
+        : null,
+
+    clockInAt:
+      doc.subType === "지각" || doc.subType === "반차"
+        ? approvedClockInAt
+        : null,
+
+    clockOutAt:
+      doc.subType === "조퇴" || doc.subType === "반차"
+        ? approvedClockOutAt
+        : null,
+
+    workMinutes: calcMinutesBetween(
+      doc.subType === "지각" || doc.subType === "반차" ? approvedClockInAt : null,
+      doc.subType === "조퇴" || doc.subType === "반차" ? approvedClockOutAt : null
+    ),
+
+isLate:
+  doc.subType === "지각" || doc.subType === "반차"
+    ? lateInfo.isLate
+    : 0,
+
+lateMinutes:
+  doc.subType === "지각" || doc.subType === "반차"
+    ? lateInfo.lateMinutes
+    : 0,
+
+isEarlyLeave:
+  doc.subType === "조퇴" || doc.subType === "반차"
+    ? earlyInfo.isEarlyLeave
+    : 0,
+
+earlyLeaveMinutes:
+  doc.subType === "조퇴" || doc.subType === "반차"
+    ? earlyInfo.earlyLeaveMinutes
+    : 0,
+
+    note: `[전자결재 승인 반영] ${doc.subType}`,
+    isAbsent: doc.attendanceTargetStatus === "결근" ? 1 : 0,
+  } as any);
 
     const attendanceId = Number(getInsertId(insertResult));
 
@@ -5861,21 +5952,67 @@ if (doc.formType === "business_trip" && doc.startDate && doc.endDate) {
     attendanceRow = ((newRows as any[]) ?? [])[0] ?? null;
   } else {
     await db
-      .update(attendanceRecords)
-      .set({
-        status: (doc.attendanceTargetStatus || (doc.formType === "business_trip" ? "출장" : attendanceRow.status)) as any,
-        note: `[전자결재 승인 반영] ${doc.subType} / ${doc.reason ?? ""}`,
-        isAbsent:
-          doc.attendanceTargetStatus === "결근"
-            ? 1
-            : doc.attendanceTargetStatus === "병가" ||
-              doc.attendanceTargetStatus === "연차" ||
-              doc.attendanceTargetStatus === "출장" ||
-              doc.attendanceTargetStatus === "반차"
-            ? 0
-            : attendanceRow.isAbsent,
-      } as any)
-      .where(eq(attendanceRecords.id, Number(attendanceRow.id)));
+  .update(attendanceRecords)
+  .set({
+    status: (doc.attendanceTargetStatus || (doc.formType === "business_trip" ? "출장" : attendanceRow.status)) as any,
+    leaveType:
+      doc.formType === "attendance"
+        ? (doc.subType ?? doc.attendanceTargetStatus ?? null)
+        : doc.formType === "business_trip"
+        ? "출장"
+        : null,
+
+    clockInAt:
+      doc.subType === "지각" || doc.subType === "반차"
+        ? (approvedClockInAt ?? attendanceRow.clockInAt ?? null)
+        : attendanceRow.clockInAt ?? null,
+
+    clockOutAt:
+      doc.subType === "조퇴" || doc.subType === "반차"
+        ? (approvedClockOutAt ?? attendanceRow.clockOutAt ?? null)
+        : attendanceRow.clockOutAt ?? null,
+
+    workMinutes: calcMinutesBetween(
+      doc.subType === "지각" || doc.subType === "반차"
+        ? (approvedClockInAt ?? attendanceRow.clockInAt ?? null)
+        : attendanceRow.clockInAt ?? null,
+      doc.subType === "조퇴" || doc.subType === "반차"
+        ? (approvedClockOutAt ?? attendanceRow.clockOutAt ?? null)
+        : attendanceRow.clockOutAt ?? null
+    ),
+
+isLate:
+  doc.subType === "지각" || doc.subType === "반차"
+    ? lateInfo.isLate
+    : attendanceRow.isLate ?? 0,
+
+lateMinutes:
+  doc.subType === "지각" || doc.subType === "반차"
+    ? lateInfo.lateMinutes
+    : attendanceRow.lateMinutes ?? 0,
+
+isEarlyLeave:
+  doc.subType === "조퇴" || doc.subType === "반차"
+    ? earlyInfo.isEarlyLeave
+    : attendanceRow.isEarlyLeave ?? 0,
+
+earlyLeaveMinutes:
+  doc.subType === "조퇴" || doc.subType === "반차"
+    ? earlyInfo.earlyLeaveMinutes
+    : attendanceRow.earlyLeaveMinutes ?? 0,
+
+    note: `[전자결재 승인 반영] ${doc.subType} / ${doc.reason ?? ""}`,
+    isAbsent:
+      doc.attendanceTargetStatus === "결근"
+        ? 1
+        : doc.attendanceTargetStatus === "병가" ||
+          doc.attendanceTargetStatus === "연차" ||
+          doc.attendanceTargetStatus === "출장" ||
+          doc.attendanceTargetStatus === "반차"
+        ? 0
+        : attendanceRow.isAbsent,
+  } as any)
+  .where(eq(attendanceRecords.id, Number(attendanceRow.id)));
   }
 
   await db.insert(attendanceAdjustmentLogs).values({
@@ -5884,8 +6021,15 @@ if (doc.formType === "business_trip" && doc.startDate && doc.endDate) {
     actorUserId: params.actorUserId,
     beforeClockInAt: attendanceRow.clockInAt ?? null,
     beforeClockOutAt: attendanceRow.clockOutAt ?? null,
-    afterClockInAt: attendanceRow.clockInAt ?? null,
-    afterClockOutAt: attendanceRow.clockOutAt ?? null,
+    afterClockInAt:
+  doc.subType === "지각" || doc.subType === "반차"
+    ? (approvedClockInAt ?? attendanceRow.clockInAt ?? null)
+    : attendanceRow.clockInAt ?? null,
+
+afterClockOutAt:
+  doc.subType === "조퇴" || doc.subType === "반차"
+    ? (approvedClockOutAt ?? attendanceRow.clockOutAt ?? null)
+    : attendanceRow.clockOutAt ?? null,
     reason: doc.subType,
     actionType:
       doc.formType === "business_trip"
@@ -5897,7 +6041,7 @@ if (doc.formType === "business_trip" && doc.startDate && doc.endDate) {
         : doc.subType === "반차"
         ? "apply_half_day"
         : "manual_edit",
-    beforeStatus: attendanceRow.status ?? null,
+    beforeStatus,
     afterStatus: doc.attendanceTargetStatus ?? (doc.formType === "business_trip" ? "출장" : attendanceRow.status),
     note: `[전자결재 승인 반영] ${doc.reason ?? ""}`,
   } as any);
@@ -5934,10 +6078,6 @@ export async function approveApprovalDocument(params: {
   if (!detail?.document) throw new Error("문서를 찾을 수 없습니다.");
 
   const doc: any = detail.document;
-
-if (doc.status !== "approved") {
-  throw new Error("승인 완료된 문서만 근태에 반영할 수 있습니다.");
-}
 
   const currentLine = (detail.lines || []).find(
     (line: any) =>

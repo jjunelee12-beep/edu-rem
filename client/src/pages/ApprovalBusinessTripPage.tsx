@@ -38,13 +38,16 @@ const fieldSettingsQuery = trpc.approval.getFieldSettings.useQuery({
   title: "",
   reason: "",
 
-  // 🔥 추가
+  attendanceStartTime: "",
+  attendanceEndTime: "",
+
   destination: "",
   visitPlace: "",
   companion: "",
   requestDepartment: "",
   extraNote: "",
 });
+
 const fieldSettings = (fieldSettingsQuery.data ?? []) as ApprovalFieldSetting[];
 
 const destinationField = getFieldSetting(fieldSettings, "destination", "목적지");
@@ -152,6 +155,8 @@ if (noteField.isRequired && !form.extraNote.trim()) {
   reason: form.reason?.trim() || null,
 
   targetDate: form.targetDate,
+attendanceStartTime: form.attendanceStartTime || null,
+attendanceEndTime: form.attendanceEndTime || null,
 
   // 🔥 추가
   destination: form.destination || null,
@@ -238,6 +243,36 @@ if (noteField.isRequired && !form.extraNote.trim()) {
         ))}
       </SelectContent>
     </Select>
+  </div>
+</div>
+
+<div className="grid gap-4 md:grid-cols-2">
+  <div className="space-y-2">
+    <Label>시작 시간</Label>
+    <Input
+      type="time"
+      value={form.attendanceStartTime}
+      onChange={(e) =>
+        setForm((prev) => ({
+          ...prev,
+          attendanceStartTime: e.target.value,
+        }))
+      }
+    />
+  </div>
+
+  <div className="space-y-2">
+    <Label>종료 시간</Label>
+    <Input
+      type="time"
+      value={form.attendanceEndTime}
+      onChange={(e) =>
+        setForm((prev) => ({
+          ...prev,
+          attendanceEndTime: e.target.value,
+        }))
+      }
+    />
   </div>
 </div>
 
@@ -423,6 +458,8 @@ if (noteField.isRequired && !form.extraNote.trim()) {
         title: form.title,
         reason: form.reason,
         targetDate: form.targetDate,
+attendanceStartTime: form.attendanceStartTime,
+attendanceEndTime: form.attendanceEndTime,
         applicantName: user?.name ?? "",
         teamName: (user as any)?.teamName ?? "",
         positionName: (user as any)?.positionName ?? "",
