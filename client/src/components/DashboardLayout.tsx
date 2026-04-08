@@ -754,10 +754,10 @@ function DashboardLayoutContent({
  <>
  <div className="relative" ref={sidebarRef}>
  <Sidebar
- collapsible="icon"
- className="border-r-0"
- disableTransition={isResizing}
- >
+  collapsible="icon"
+  className="h-screen overflow-hidden border-r-0"
+  disableTransition={isResizing}
+>
  <SidebarHeader className="h-16 justify-center">
  <div className="flex w-full items-center gap-3 px-1">
  <button
@@ -794,7 +794,7 @@ function DashboardLayoutContent({
  </div>
  </SidebarHeader>
 
- <SidebarContent className="gap-0">
+ <SidebarContent className="min-h-0 flex-1 gap-0 overflow-y-auto overflow-x-hidden pb-3">
  {renderMenuSection(visibleStaffMenuItems)}
 
  <SidebarMenu className="px-2 py-1">
@@ -825,7 +825,7 @@ function DashboardLayoutContent({
  </SidebarMenuButton>
 
  {!isCollapsed && eApprovalMenuOpen && (
- <SidebarMenuSub className="mt-2">
+ <SidebarMenuSub className="mt-1 space-y-1">
  {eApprovalSubMenus.map((item) => {
  const isActive = location === item.href;
 
@@ -855,7 +855,7 @@ function DashboardLayoutContent({
  {renderMenuSection(visibleSuperhostMenuItems, "슈퍼호스트")}
  </SidebarContent>
 
- <SidebarFooter className="pt-2">
+ <SidebarFooter className="shrink-0 pt-2">
  <DropdownMenu>
  <DropdownMenuTrigger asChild>
  <button className="flex w-full items-start gap-3 rounded-2xl bg-white px-3 py-3 text-left transition-colors hover:bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">

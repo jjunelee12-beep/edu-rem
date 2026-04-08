@@ -246,7 +246,7 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="flex h-full w-full flex-col overflow-hidden bg-transparent text-slate-900"
+          className="flex h-full w-full flex-col bg-transparent text-slate-900"
         >
           {children}
         </div>
