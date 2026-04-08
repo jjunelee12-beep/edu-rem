@@ -740,6 +740,36 @@ const primaryMenuItems = [
 </div>
  )}
 
+ <SidebarMenu className="px-2 py-1">
+ {items.map((item) => {
+ const isActive =
+ item.path === "/" ? location === "/" : location.startsWith(item.path);
+
+ return (
+ <SidebarMenuItem key={item.path}>
+ <SidebarMenuButton
+ isActive={isActive}
+ onClick={() => setLocation(item.path)}
+ tooltip={item.label}
+ className="min-w-0 font-medium text-black"
+ >
+ <item.icon
+ className={`h-4 w-4 shrink-0 ${
+ isActive ? "text-primary" : "text-slate-700"
+ }`}
+ />
+ <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left text-black">
+ {item.label}
+ </span>
+ </SidebarMenuButton>
+ </SidebarMenuItem>
+ );
+ })}
+ </SidebarMenu>
+ </>
+ );
+ };
+
 const renderPrimaryMenuSection = () => {
   return (
     <SidebarMenu className="px-2 py-1">
@@ -822,36 +852,6 @@ const renderPrimaryMenuSection = () => {
     </SidebarMenu>
   );
 };
-
- <SidebarMenu className="px-2 py-1">
- {items.map((item) => {
- const isActive =
- item.path === "/" ? location === "/" : location.startsWith(item.path);
-
- return (
- <SidebarMenuItem key={item.path}>
- <SidebarMenuButton
- isActive={isActive}
- onClick={() => setLocation(item.path)}
- tooltip={item.label}
- className="min-w-0 font-medium text-black"
- >
- <item.icon
- className={`h-4 w-4 shrink-0 ${
- isActive ? "text-primary" : "text-slate-700"
- }`}
- />
- <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left text-black">
- {item.label}
- </span>
- </SidebarMenuButton>
- </SidebarMenuItem>
- );
- })}
- </SidebarMenu>
- </>
- );
- };
 
  const handleNotificationClick = async (item: NotificationItem) => {
  if (!item.isRead) {
