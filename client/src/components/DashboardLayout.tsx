@@ -949,7 +949,7 @@ const renderPrimaryMenuSection = () => {
  <div className="relative" ref={sidebarRef}>
  <Sidebar
   collapsible="icon"
-  className="h-screen border-r-0"
+  className="border-r-0"
   disableTransition={isResizing}
 >
  <SidebarHeader className="h-16 justify-center">
