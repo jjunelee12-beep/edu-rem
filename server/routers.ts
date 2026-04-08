@@ -2124,6 +2124,7 @@ approve: protectedProcedure
 
         return db.getStudentRegistrationSummary(input.studentId);
       }),
+}),
 
   plan: router({
     get: protectedProcedure
