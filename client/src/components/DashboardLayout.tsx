@@ -384,7 +384,24 @@ useEffect(() => {
  const isCollapsed = state === "collapsed";
  const [isResizing, setIsResizing] = useState(false);
  const sidebarRef = useRef<HTMLDivElement>(null);
+const sidebarContentRef = useRef<HTMLDivElement | null>(null);
+const eApprovalMenuRef = useRef<HTMLLIElement | null>(null);
  const isMobile = useIsMobile();
+
+const [isNarrowViewport, setIsNarrowViewport] = useState(false);
+
+useEffect(() => {
+  const syncViewport = () => {
+    setIsNarrowViewport(window.innerWidth <= 1400);
+  };
+
+  syncViewport();
+  window.addEventListener("resize", syncViewport);
+
+  return () => {
+    window.removeEventListener("resize", syncViewport);
+  };
+}, []);
 
  const isStaff = user?.role === "staff";
  const isAdmin = user?.role === "admin";
@@ -405,6 +422,38 @@ useEffect(() => {
  setEApprovalMenuOpen(true);
  }
  }, [isEApprovalPath]);
+
+useEffect(() => {
+  if (!eApprovalMenuOpen || isCollapsed) return;
+
+  const timer = window.setTimeout(() => {
+    const container = sidebarContentRef.current;
+    const target = eApprovalMenuRef.current;
+
+    if (!container || !target) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+
+    const currentScrollTop = container.scrollTop;
+    const targetTop = targetRect.top - containerRect.top + currentScrollTop;
+
+    const paddingTop = 12;
+    const paddingBottom = 24;
+
+    const nextScrollTop =
+      targetTop -
+      paddingTop +
+      Math.max(0, targetRect.height - container.clientHeight + paddingBottom);
+
+    container.scrollTo({
+      top: Math.max(0, nextScrollTop),
+      behavior: "smooth",
+    });
+  }, 120);
+
+  return () => window.clearTimeout(timer);
+}, [eApprovalMenuOpen, isCollapsed]);
 
  const eApprovalSubMenus = useMemo(() => {
  const items = [
@@ -814,12 +863,15 @@ useEffect(() => {
  </div>
  </SidebarHeader>
 
- <SidebarContent className="min-h-0 flex-1 gap-1 pb-3">
+ <SidebarContent
+  ref={sidebarContentRef}
+  className="min-h-0 flex-1 gap-1 overflow-y-auto overflow-x-hidden pb-3"
+>
  {renderMenuSection(visibleStaffMenuItems)}
 
  <SidebarMenu className={`px-2 py-1 ${!isCollapsed && eApprovalMenuOpen ? "pb-5" : ""}`}>
- <SidebarMenuItem>
- <SidebarMenuButton
+ <SidebarMenuItem ref={eApprovalMenuRef}>
+  <SidebarMenuButton
  isActive={isEApprovalPath}
  onClick={() => setEApprovalMenuOpen((prev) => !prev)}
  tooltip="전자결재"
@@ -918,7 +970,7 @@ useEffect(() => {
 
  <div
   className={`absolute right-0 top-0 h-full w-1 cursor-col-resize transition-colors hover:bg-primary/20 ${
-    isCollapsed || window.innerWidth <= 1400 ? "hidden" : ""
+    isCollapsed || isNarrowViewport ? "hidden" : ""
   }`}
  onMouseDown={() => {
  if (isCollapsed) return;

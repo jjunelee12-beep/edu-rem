@@ -381,7 +381,7 @@ function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
       data-slot="sidebar-content"
       data-sidebar="content"
       className={cn(
-  "flex min-h-0 flex-1 flex-col gap-1 overflow-visible px-1 pb-2",
+        "flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden px-1 pb-2",
         "group-data-[collapsible=icon]:overflow-hidden",
         className
       )}
@@ -469,16 +469,22 @@ function SidebarMenu({ className, ...props }: React.ComponentProps<"ul">) {
   );
 }
 
-function SidebarMenuItem({ className, ...props }: React.ComponentProps<"li">) {
+const SidebarMenuItem = React.forwardRef<
+  HTMLLIElement,
+  React.ComponentProps<"li">
+>(({ className, ...props }, ref) => {
   return (
     <li
+      ref={ref}
       data-slot="sidebar-menu-item"
       data-sidebar="menu-item"
       className={cn("group/menu-item relative", className)}
       {...props}
     />
   );
-}
+});
+
+SidebarMenuItem.displayName = "SidebarMenuItem";
 
 const sidebarMenuButtonVariants = cva(
   "peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-2xl border border-transparent px-3 text-left text-sm outline-hidden transition-all duration-150",
