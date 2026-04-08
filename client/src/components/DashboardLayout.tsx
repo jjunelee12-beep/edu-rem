@@ -112,9 +112,9 @@ const superhostMenuItems: MenuItem[] = [
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
-const DEFAULT_WIDTH = 260;
-const MIN_WIDTH = 220;
-const MAX_WIDTH = 400;
+const DEFAULT_WIDTH = 240;
+const MIN_WIDTH = 200;
+const MAX_WIDTH = 360;
 
 type AuthUser = {
  id: number;
@@ -360,7 +360,27 @@ function DashboardLayoutContent({
  };
  }, [setLocation]);
 
- const { state, toggleSidebar } = useSidebar();
+ const { state, toggleSidebar, setOpen } = useSidebar();
+
+useEffect(() => {
+  const handleAutoCollapse = () => {
+    const viewportWidth = window.innerWidth;
+
+    if (viewportWidth <= 1400) {
+      setOpen(false);
+    } else {
+      setOpen(true);
+    }
+  };
+
+  handleAutoCollapse();
+  window.addEventListener("resize", handleAutoCollapse);
+
+  return () => {
+    window.removeEventListener("resize", handleAutoCollapse);
+  };
+}, [setOpen]);
+
  const isCollapsed = state === "collapsed";
  const [isResizing, setIsResizing] = useState(false);
  const sidebarRef = useRef<HTMLDivElement>(null);
@@ -897,9 +917,9 @@ function DashboardLayoutContent({
  </Sidebar>
 
  <div
- className={`absolute right-0 top-0 h-full w-1 cursor-col-resize transition-colors hover:bg-primary/20 ${
- isCollapsed ? "hidden" : ""
- }`}
+  className={`absolute right-0 top-0 h-full w-1 cursor-col-resize transition-colors hover:bg-primary/20 ${
+    isCollapsed || window.innerWidth <= 1400 ? "hidden" : ""
+  }`}
  onMouseDown={() => {
  if (isCollapsed) return;
  setIsResizing(true);
@@ -1104,12 +1124,12 @@ function DashboardLayoutContent({
  </div>
  </div>
 
- <div className="flex min-h-0 flex-1">
- <main
- className={`min-w-0 flex-1 p-4 md:p-6 transition-all duration-200 ${
- isMessengerOpen && !isMobile ? "pr-[560px]" : ""
- }`}
- >
+ <div className="flex min-h-0 flex-1 overflow-x-auto">
+  <main
+    className={`min-w-[980px] flex-1 p-4 md:p-6 transition-all duration-200 ${
+      isMessengerOpen && !isMobile ? "pr-[560px]" : ""
+    }`}
+  >
  {children}
  </main>
  </div>
