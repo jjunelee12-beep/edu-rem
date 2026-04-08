@@ -639,11 +639,11 @@ function DashboardLayoutContent({
  return (
  <>
  {title && !isCollapsed && (
- <div className="mt-2 px-3 pb-1 pt-3">
- <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600">
- {title}
- </p>
- </div>
+ <div className="relative z-[1] mt-3 px-3 pb-2 pt-3">
+  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600">
+    {title}
+  </p>
+</div>
  )}
 
  <SidebarMenu className="px-2 py-1">
@@ -797,7 +797,7 @@ function DashboardLayoutContent({
  <SidebarContent className="min-h-0 flex-1 gap-0 overflow-y-auto overflow-x-hidden pb-3">
  {renderMenuSection(visibleStaffMenuItems)}
 
- <SidebarMenu className="px-2 py-1">
+ <SidebarMenu className={`px-2 py-1 ${!isCollapsed && eApprovalMenuOpen ? "pb-3" : ""}`}>
  <SidebarMenuItem>
  <SidebarMenuButton
  isActive={isEApprovalPath}
@@ -825,7 +825,7 @@ function DashboardLayoutContent({
  </SidebarMenuButton>
 
  {!isCollapsed && eApprovalMenuOpen && (
- <SidebarMenuSub className="mt-1 space-y-1">
+ <SidebarMenuSub className="mt-1 mb-2 space-y-1">
  {eApprovalSubMenus.map((item) => {
  const isActive = location === item.href;
 

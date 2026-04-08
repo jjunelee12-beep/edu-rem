@@ -229,7 +229,7 @@ function Sidebar({
       <div
         data-slot="sidebar-container"
         className={cn(
-          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) md:flex",
+  "fixed inset-y-0 z-10 hidden h-screen w-(--sidebar-width) md:flex overflow-hidden",
           disableTransition
             ? "transition-none"
             : "transition-[left,right,width] duration-200 ease-linear",
@@ -491,10 +491,10 @@ const sidebarMenuButtonVariants = cva(
           "bg-white text-slate-800 shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] hover:bg-white hover:text-slate-950 hover:shadow-[inset_0_0_0_1px_rgba(15,23,42,0.07),0_6px_16px_rgba(15,23,42,0.04)]",
       },
       size: {
-        default: "h-11 text-sm",
-        sm: "h-9 text-xs",
-        lg: "h-12 text-sm",
-      },
+  default: "min-h-11 py-2 text-sm",
+  sm: "min-h-9 py-1.5 text-xs",
+  lg: "min-h-12 py-2.5 text-sm",
+},
     },
     defaultVariants: {
       variant: "default",
@@ -688,11 +688,11 @@ function SidebarMenuSubButton({
       data-size={size}
       data-active={isActive}
       className={cn(
-        "flex h-9 w-full min-w-0 items-center gap-2 rounded-xl border border-transparent bg-transparent px-3 text-left text-slate-700 outline-hidden transition-all duration-150",
+  "flex min-h-9 w-full min-w-0 items-center gap-2 rounded-xl border border-transparent bg-transparent px-3 py-2 text-left text-slate-700 outline-hidden transition-all duration-150",
         "hover:bg-white hover:text-slate-950",
         "data-[active=true]:bg-white data-[active=true]:text-slate-950 data-[active=true]:shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)]",
-        size === "sm" && "h-8 text-xs",
-        size === "md" && "text-sm",
+        size === "sm" && "min-h-8 py-1.5 text-xs",
+size === "md" && "text-sm",,
         "group-data-[collapsible=icon]:hidden",
         className
       )}
