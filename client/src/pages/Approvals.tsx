@@ -3,7 +3,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Check, X, ShieldAlert, Eye, Loader2, Paperclip, RotateCcw } from "lucide-react";
+import { Check, X, ShieldAlert, Loader2, Paperclip, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
@@ -43,45 +43,45 @@ export default function Approvals() {
   });
 
   const approveStudentMutation = trpc.student.approve.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        utils.student.list.invalidate(),
-        utils.dashboard.stats.invalidate(),
-        utils.dashboard.totalStats.invalidate(),
-        utils.semester.listAll.invalidate(),
-      ]);
-      toast.success("학생 승인 상태가 변경되었습니다. 승인 시 최종 등록 처리 및 반영 데이터가 갱신됩니다.");
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  onSuccess: async () => {
+    await Promise.all([
+      utils.student.list.invalidate(),
+      utils.dashboard.stats.invalidate(),
+      utils.dashboard.totalStats.invalidate(),
+      utils.semester.listAll.invalidate(),
+    ]);
+    toast.success("학생 승인 상태가 변경되었습니다. 승인 시 최종 등록 처리 및 반영 데이터가 갱신됩니다.");
+  },
+  onError: (e) => toast.error(e.message),
+});
 
   const approveRefundMutation = trpc.refund.approve.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        utils.refund.listPending.invalidate(),
-        utils.student.list.invalidate(),
-        utils.dashboard.stats.invalidate(),
-        utils.dashboard.totalStats.invalidate(),
-        utils.semester.listAll.invalidate(),
-      ]);
-      toast.success("환불 승인 처리되었습니다.");
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  onSuccess: async () => {
+    await Promise.all([
+      utils.refund.listPending.invalidate(),
+      utils.student.list.invalidate(),
+      utils.dashboard.stats.invalidate(),
+      utils.dashboard.totalStats.invalidate(),
+      utils.semester.listAll.invalidate(),
+    ]);
+    toast.success("환불 승인 처리되었습니다.");
+  },
+  onError: (e) => toast.error(e.message),
+});
 
   const rejectRefundMutation = trpc.refund.reject.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        utils.refund.listPending.invalidate(),
-        utils.student.list.invalidate(),
-        utils.dashboard.stats.invalidate(),
-        utils.dashboard.totalStats.invalidate(),
-        utils.semester.listAll.invalidate(),
-      ]);
-      toast.success("환불 불승인 처리되었습니다.");
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  onSuccess: async () => {
+    await Promise.all([
+      utils.refund.listPending.invalidate(),
+      utils.student.list.invalidate(),
+      utils.dashboard.stats.invalidate(),
+      utils.dashboard.totalStats.invalidate(),
+      utils.semester.listAll.invalidate(),
+    ]);
+    toast.success("환불 불승인 처리되었습니다.");
+  },
+  onError: (e) => toast.error(e.message),
+});
 
   const userMap = new Map(allUsers?.map((u: any) => [u.id, u.name || "이름없음"]) ?? []);
 
@@ -171,14 +171,14 @@ export default function Approvals() {
                         {formatCurrency(s.paymentAmount)}
                       </td>
                       <td className="px-4 py-3">{s.institution || "-"}</td>
+<td className="px-4 py-3 text-muted-foreground">
+  {userMap.get(s.assigneeId) || "-"}
+</td>
 <td className="px-4 py-3 text-center">
   <Badge className="bg-amber-100 text-amber-700 text-[10px]">
     {s.status || "등록예정"}
   </Badge>
 </td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {userMap.get(s.assigneeId) || "-"}
-                      </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <Button
@@ -191,7 +191,10 @@ export default function Approvals() {
   );
   if (!ok) return;
 
-  approveStudentMutation.mutate({ id: s.id, approvalStatus: "승인" });
+  approveStudentMutation.mutate({
+  id: Number(s.id),
+  approvalStatus: "승인",
+});
 }}
                             disabled={approveStudentMutation.isPending}
                           >
@@ -207,7 +210,10 @@ export default function Approvals() {
   );
   if (!ok) return;
 
-  approveStudentMutation.mutate({ id: s.id, approvalStatus: "불승인" });
+  approveStudentMutation.mutate({
+  id: Number(s.id),
+  approvalStatus: "불승인",
+});
 }}
                             disabled={approveStudentMutation.isPending}
                           >
@@ -303,7 +309,9 @@ export default function Approvals() {
                             size="sm"
                             variant="outline"
                             className="gap-1 text-emerald-600 border-emerald-200 hover:bg-emerald-50 h-8"
-                            onClick={() => approveRefundMutation.mutate({ id: r.id })}
+                            onClick={() => 
+approveRefundMutation.mutate({ id: Number(r.id) })
+}
                             disabled={approveRefundMutation.isPending}
                           >
                             <Check className="h-3.5 w-3.5" /> 승인
@@ -312,7 +320,9 @@ export default function Approvals() {
                             size="sm"
                             variant="outline"
                             className="gap-1 text-red-600 border-red-200 hover:bg-red-50 h-8"
-                            onClick={() => rejectRefundMutation.mutate({ id: r.id })}
+                            onClick={() => 
+rejectRefundMutation.mutate({ id: Number(r.id) })
+}
                             disabled={rejectRefundMutation.isPending}
                           >
                             <X className="h-3.5 w-3.5" /> 불승인
@@ -409,8 +419,11 @@ export default function Approvals() {
                             variant="ghost"
                             className="text-red-600 text-xs h-7"
                             onClick={() =>
-                              approveStudentMutation.mutate({ id: s.id, approvalStatus: "불승인" })
-                            }
+  approveStudentMutation.mutate({
+  id: Number(s.id),
+  approvalStatus: "불승인",
+})
+}
                           >
                             불승인으로 변경
                           </Button>
@@ -482,7 +495,10 @@ export default function Approvals() {
   );
   if (!ok) return;
 
-  approveStudentMutation.mutate({ id: s.id, approvalStatus: "승인" });
+  approveStudentMutation.mutate({
+  id: Number(s.id),
+  approvalStatus: "승인",
+});
 }}
                         >
                           승인으로 변경

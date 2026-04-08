@@ -52,6 +52,7 @@ import ApprovalPreviewPage from "./pages/ApprovalPreviewPage";
 // ✅ 추가
 import AppToastHost from "@/components/notifications/AppToastHost";
 import MessengerRealtimeBridge from "@/components/notifications/MessengerRealtimeBridge";
+import AppRealtimeBridge from "@/components/notifications/AppRealtimeBridge";
 
 function PublicRouter() {
   return (
@@ -133,6 +134,7 @@ export default function App() {
           <Toaster />
           <AppToastHost />
 	<MessengerRealtimeBridge />
+<AppRealtimeBridge />
           <AppContent />
         </TooltipProvider>
       </ThemeProvider>

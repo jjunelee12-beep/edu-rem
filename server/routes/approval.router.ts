@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
+import { emitLiveNotification } from "../_core/live-notifications";
 import {
   createApprovalDocument,
   listMyApprovalDocuments,
@@ -101,19 +102,30 @@ export const approvalRouter = router({
       );
 
       if (
-        firstLine?.approverUserId &&
-        Number(firstLine.approverUserId) !== Number(ctx.user.id)
-      ) {
-        await createNotification({
-  userId: Number(firstLine.approverUserId),
-  type: "approval",
-  title: "전자결재 요청",
-  level: "important",
-  message: `[전자결재 요청] ${me?.name ?? "사용자"}님의 "${input.title}" 문서 결재 요청이 도착했습니다.`,
-  relatedId: Number(documentId),
-  isRead: false,
-} as any);
-      }
+  firstLine?.approverUserId &&
+  Number(firstLine.approverUserId) !== Number(ctx.user.id)
+) {
+  const notificationId = await createNotification({
+    userId: Number(firstLine.approverUserId),
+    type: "approval",
+    title: "전자결재 요청",
+    level: "important",
+    message: `[전자결재 요청] ${me?.name ?? "사용자"}님의 "${input.title}" 문서 결재 요청이 도착했습니다.`,
+    relatedId: Number(documentId),
+    isRead: false,
+  } as any);
+
+  emitLiveNotification({
+    id: Number(notificationId),
+    userId: Number(firstLine.approverUserId),
+    type: "approval",
+    title: "전자결재 요청",
+    level: "important",
+    message: `[전자결재 요청] ${me?.name ?? "사용자"}님의 "${input.title}" 문서 결재 요청이 도착했습니다.`,
+    relatedId: Number(documentId),
+    isRead: false,
+  });
+}
 
       return documentId;
     }),
@@ -146,37 +158,60 @@ export const approvalRouter = router({
             String(line.stepStatus) === "pending"
         );
 
-        if (
-          nextLine?.approverUserId &&
-          Number(nextLine.approverUserId) !== Number(ctx.user.id)
-        ) {
-          await createNotification({
-  userId: Number(nextLine.approverUserId),
-  type: "approval",
-  title: "전자결재 요청",
-  level: "important",
-  message: `[전자결재 요청] "${updatedDoc.title}" 문서가 다음 결재 단계로 넘어왔습니다. 확인 후 승인해 주세요.`,
-  relatedId: Number(input.documentId),
-  isRead: false,
-} as any);
-        }
+if (
+  nextLine?.approverUserId &&
+  Number(nextLine.approverUserId) !== Number(ctx.user.id)
+) {
+  const notificationId = await createNotification({
+    userId: Number(nextLine.approverUserId),
+    type: "approval",
+    title: "전자결재 요청",
+    level: "important",
+    message: `[전자결재 요청] "${updatedDoc.title}" 문서가 다음 결재 단계로 넘어왔습니다. 확인 후 승인해 주세요.`,
+    relatedId: Number(input.documentId),
+    isRead: false,
+  } as any);
+
+  emitLiveNotification({
+    id: Number(notificationId),
+    userId: Number(nextLine.approverUserId),
+    type: "approval",
+    title: "전자결재 요청",
+    level: "important",
+    message: `[전자결재 요청] "${updatedDoc.title}" 문서가 다음 결재 단계로 넘어왔습니다. 확인 후 승인해 주세요.`,
+    relatedId: Number(input.documentId),
+    isRead: false,
+  });
+}       
+
       }
 
       if (
-        updatedDoc?.status === "approved" &&
-        updatedDoc?.applicantUserId &&
-        Number(updatedDoc.applicantUserId) !== Number(ctx.user.id)
-      ) {
-        await createNotification({
-  userId: Number(updatedDoc.applicantUserId),
-  type: "approval",
-  title: "전자결재 승인완료",
-  level: "success",
-  message: `[전자결재 승인완료] "${updatedDoc.title}" 문서가 최종 승인되었습니다.`,
-  relatedId: Number(input.documentId),
-  isRead: false,
-} as any);
-      }
+  updatedDoc?.status === "approved" &&
+  updatedDoc?.applicantUserId &&
+  Number(updatedDoc.applicantUserId) !== Number(ctx.user.id)
+) {
+  const notificationId = await createNotification({
+    userId: Number(updatedDoc.applicantUserId),
+    type: "approval",
+    title: "전자결재 승인완료",
+    level: "success",
+    message: `[전자결재 승인완료] "${updatedDoc.title}" 문서가 최종 승인되었습니다.`,
+    relatedId: Number(input.documentId),
+    isRead: false,
+  } as any);
+
+  emitLiveNotification({
+    id: Number(notificationId),
+    userId: Number(updatedDoc.applicantUserId),
+    type: "approval",
+    title: "전자결재 승인완료",
+    level: "success",
+    message: `[전자결재 승인완료] "${updatedDoc.title}" 문서가 최종 승인되었습니다.`,
+    relatedId: Number(input.documentId),
+    isRead: false,
+  });
+}
 
       return true;
     }),
@@ -202,19 +237,30 @@ export const approvalRouter = router({
       const updatedDoc = updatedDetail?.document;
 
       if (
-        updatedDoc?.applicantUserId &&
-        Number(updatedDoc.applicantUserId) !== Number(ctx.user.id)
-      ) {
-       await createNotification({
-  userId: Number(updatedDoc.applicantUserId),
-  type: "approval",
-  title: "전자결재 반려",
-  level: "danger",
-  message: `[전자결재 반려] "${updatedDoc.title}" 문서가 반려되었습니다. 사유를 확인해 주세요.`,
-  relatedId: Number(input.documentId),
-  isRead: false,
-} as any);
-      }
+  updatedDoc?.applicantUserId &&
+  Number(updatedDoc.applicantUserId) !== Number(ctx.user.id)
+) {
+  const notificationId = await createNotification({
+    userId: Number(updatedDoc.applicantUserId),
+    type: "approval",
+    title: "전자결재 반려",
+    level: "danger",
+    message: `[전자결재 반려] "${updatedDoc.title}" 문서가 반려되었습니다. 사유를 확인해 주세요.`,
+    relatedId: Number(input.documentId),
+    isRead: false,
+  } as any);
+
+  emitLiveNotification({
+    id: Number(notificationId),
+    userId: Number(updatedDoc.applicantUserId),
+    type: "approval",
+    title: "전자결재 반려",
+    level: "danger",
+    message: `[전자결재 반려] "${updatedDoc.title}" 문서가 반려되었습니다. 사유를 확인해 주세요.`,
+    relatedId: Number(input.documentId),
+    isRead: false,
+  });
+}
 
       return true;
     }),

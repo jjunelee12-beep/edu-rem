@@ -11,6 +11,7 @@ superHostProcedure,
 } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
+import { emitLiveNotification } from "./_core/live-notifications";
 import { publicLeadRouter } from "./publicLead.router";
 import bcrypt from "bcryptjs";
 import { smsRouter } from "./_core/sms.router";
@@ -2027,6 +2028,90 @@ const userName = ctx.user.name || "사용자";
         return { success: true };
       }),
 
+approve: protectedProcedure
+  .input(
+    z.object({
+      id: z.number(),
+      approvalStatus: z.enum(["승인", "불승인"]),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    if (!isAdminOrHost(ctx.user)) {
+      throw new Error("관리자 또는 호스트만 처리할 수 있습니다");
+    }
+
+    const now = new Date();
+    const updateData: any = { approvalStatus: input.approvalStatus };
+
+    if (input.approvalStatus === "승인") {
+      updateData.approvedAt = now;
+      updateData.rejectedAt = null;
+      updateData.status = "등록";
+    } else {
+      updateData.rejectedAt = now;
+      updateData.approvedAt = null;
+    }
+
+    await db.updateStudent(input.id, updateData);
+
+    if (input.approvalStatus === "승인") {
+      const approvedStudent = await db.getStudent(input.id);
+
+      if (approvedStudent?.consultationId) {
+        await db.updateConsultation(approvedStudent.consultationId, {
+          status: "등록",
+        });
+      }
+    }
+
+    if (input.approvalStatus === "승인") {
+      const sems = await db.listSemesters(input.id);
+      for (const sem of sems) {
+        if (!sem.isLocked) {
+          await db.updateSemester(sem.id, { isLocked: true });
+        }
+      }
+    }
+
+    const updatedStudent = await db.getStudent(input.id);
+
+    if (updatedStudent?.assigneeId) {
+      const notificationTitle =
+        input.approvalStatus === "승인" ? "학생 승인 완료" : "학생 불승인";
+
+      const notificationLevel =
+        input.approvalStatus === "승인" ? "success" : "danger";
+
+      const notificationMessage =
+        input.approvalStatus === "승인"
+          ? `[학생 승인] ${updatedStudent.clientName || "학생"} 학생 승인이 완료되었습니다.`
+          : `[학생 불승인] ${updatedStudent.clientName || "학생"} 학생이 불승인 처리되었습니다.`;
+
+      const notificationId = await db.createNotification({
+        userId: Number(updatedStudent.assigneeId),
+        type: "approval",
+        title: notificationTitle,
+        level: notificationLevel,
+        message: notificationMessage,
+        relatedId: Number(input.id),
+        isRead: false,
+      } as any);
+
+      emitLiveNotification({
+        id: Number(notificationId),
+        userId: Number(updatedStudent.assigneeId),
+        type: "approval",
+        title: notificationTitle,
+        level: notificationLevel,
+        message: notificationMessage,
+        relatedId: Number(input.id),
+        isRead: false,
+      });
+    }
+
+    return { success: true };
+  }),
+
     registrationSummary: protectedProcedure
       .input(z.object({ studentId: z.number() }))
       .query(async ({ ctx, input }) => {
@@ -2039,55 +2124,6 @@ const userName = ctx.user.name || "사용자";
 
         return db.getStudentRegistrationSummary(input.studentId);
       }),
-
-    approve: protectedProcedure
-      .input(
-        z.object({
-          id: z.number(),
-          approvalStatus: z.enum(["승인", "불승인"]),
-        })
-      )
-      .mutation(async ({ ctx, input }) => {
-        if (!isAdminOrHost(ctx.user)) {
-          throw new Error("관리자 또는 호스트만 처리할 수 있습니다");
-        }
-
-        const now = new Date();
-        const updateData: any = { approvalStatus: input.approvalStatus };
-
-        if (input.approvalStatus === "승인") {
-          updateData.approvedAt = now;
-          updateData.rejectedAt = null;
-	updateData.status = "등록";
-        } else {
-          updateData.rejectedAt = now;
-          updateData.approvedAt = null;
-        }
-
-        await db.updateStudent(input.id, updateData);
-
-	if (input.approvalStatus === "승인") {
-  const approvedStudent = await db.getStudent(input.id);
-
-  if (approvedStudent?.consultationId) {
-    await db.updateConsultation(approvedStudent.consultationId, {
-      status: "등록",
-    });
-  }
-}
-
-        if (input.approvalStatus === "승인") {
-          const sems = await db.listSemesters(input.id);
-          for (const sem of sems) {
-            if (!sem.isLocked) {
-              await db.updateSemester(sem.id, { isLocked: true });
-            }
-          }
-        }
-
-        return { success: true };
-      }),
-  }),
 
   plan: router({
     get: protectedProcedure
@@ -2454,16 +2490,46 @@ throw new Error("관리자, 호스트 또는 슈퍼호스트만 확인할 수 �
         return { id, success: true };
       }),
 
-    approve: protectedProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ ctx, input }) => {
-        if (!isAdminOrHost(ctx.user)) {
-          throw new Error("관리자 또는 호스트만 승인할 수 있습니다");
-        }
+   approve: protectedProcedure
 
-        await db.approveRefund(input.id, Number(ctx.user.id));
-        return { success: true };
-      }),
+  .input(z.object({ id: z.number() }))
+  .mutation(async ({ ctx, input }) => {
+    if (!isAdminOrHost(ctx.user)) {
+      throw new Error("관리자 또는 호스트만 승인할 수 있습니다");
+    }
+
+    const targetRefund = await db.getRefundById(input.id);
+
+    await db.approveRefund(input.id, Number(ctx.user.id));
+
+    if (targetRefund?.assigneeId) {
+      const studentName =
+        targetRefund.clientName || `학생 #${targetRefund.studentId}`;
+
+      const notificationId = await db.createNotification({
+        userId: Number(targetRefund.assigneeId),
+        type: "approval",
+        title: "환불 승인 완료",
+        level: "success",
+        message: `[환불 승인] ${studentName} 환불이 승인되었습니다.`,
+        relatedId: Number(input.id),
+        isRead: false,
+      } as any);
+
+      emitLiveNotification({
+        id: Number(notificationId),
+        userId: Number(targetRefund.assigneeId),
+        type: "approval",
+        title: "환불 승인 완료",
+        level: "success",
+        message: `[환불 승인] ${studentName} 환불이 승인되었습니다.`,
+        relatedId: Number(input.id),
+        isRead: false,
+      });
+    }
+
+    return { success: true };
+  }),
 
     reject: protectedProcedure
       .input(z.object({ id: z.number() }))
@@ -2472,8 +2538,37 @@ throw new Error("관리자, 호스트 또는 슈퍼호스트만 확인할 수 �
           throw new Error("관리자 또는 호스트만 불승인 처리할 수 있습니다");
         }
 
-        await db.rejectRefund(input.id, Number(ctx.user.id));
-        return { success: true };
+        const targetRefund = await db.getRefundById(input.id);
+
+await db.rejectRefund(input.id, Number(ctx.user.id));
+
+if (targetRefund?.assigneeId) {
+  const studentName =
+    targetRefund.clientName || `학생 #${targetRefund.studentId}`;
+
+  const notificationId = await db.createNotification({
+    userId: Number(targetRefund.assigneeId),
+    type: "approval",
+    title: "환불 반려",
+    level: "danger",
+    message: `[환불 반려] ${studentName} 환불이 반려되었습니다.`,
+    relatedId: Number(input.id),
+    isRead: false,
+  } as any);
+
+  emitLiveNotification({
+    id: Number(notificationId),
+    userId: Number(targetRefund.assigneeId),
+    type: "approval",
+    title: "환불 반려",
+    level: "danger",
+    message: `[환불 반려] ${studentName} 환불이 반려되었습니다.`,
+    relatedId: Number(input.id),
+    isRead: false,
+  });
+}
+
+return { success: true };
       }),
 
     update: protectedProcedure

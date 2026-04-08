@@ -78,6 +78,7 @@ type InsertApprovalLog,
 
 import { ENV } from "./_core/env";
 import bcrypt from "bcryptjs";
+import { emitLiveNotification } from "./_core/live-notifications";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -175,6 +176,19 @@ async function getNextUserDisplayNo() {
 
   const maxNo = Number((rows as any)?.[0]?.maxNo || 0);
   return maxNo + 1;
+}
+
+export async function getRefundById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(refunds)
+    .where(eq(refunds.id, id))
+    .limit(1);
+
+  return result[0];
 }
 
 // ==============================
@@ -1007,15 +1021,15 @@ export async function createScheduleNotifications() {
   for (const item of schedules) {
     const title = String(item.title ?? "일정");
     const message =
-      item.scope === "global"
-        ? `[전체 일정] ${title} 일정이 곧 시작됩니다.`
-        : `[일정 알림] ${title} 일정이 곧 시작됩니다.`;
+  item.scope === "global"
+    ? `[전체 일정] ${title} 할 시간입니다.`
+    : `[일정 알림] ${title} 할 시간입니다.`;
 
     if (item.scope === "global") {
       const targets = (allUsers || []).filter((u: any) => !!u.isActive);
 
       for (const user of targets) {
-        await createNotification({
+        const notificationId = await createNotification({
   userId: Number(user.id),
   type: "schedule",
   title: item.scope === "global" ? "전체 일정 알림" : "일정 알림",
@@ -1025,11 +1039,22 @@ export async function createScheduleNotifications() {
   isRead: false,
 } as any);
 
-        createdCount += 1;
+emitLiveNotification({
+  id: Number(notificationId),
+  userId: Number(user.id),
+  type: "schedule",
+  title: item.scope === "global" ? "전체 일정 알림" : "일정 알림",
+  level: item.scope === "global" ? "important" : "normal",
+  message,
+  relatedId: Number(item.id),
+  isRead: false,
+});
+
+createdCount += 1;
       }
     } else {
       if (item.ownerUserId) {
-        await createNotification({
+        const notificationId = await createNotification({
   userId: Number(item.ownerUserId),
   type: "schedule",
   title: "일정 알림",
@@ -1039,7 +1064,18 @@ export async function createScheduleNotifications() {
   isRead: false,
 } as any);
 
-        createdCount += 1;
+emitLiveNotification({
+  id: Number(notificationId),
+  userId: Number(item.ownerUserId),
+  type: "schedule",
+  title: "일정 알림",
+  level: "normal",
+  message,
+  relatedId: Number(item.id),
+  isRead: false,
+});
+
+createdCount += 1;
       }
     }
 

@@ -34,6 +34,44 @@ updateChatRoomTitle,
 updateChatRoomType,
  getStudent,
 } from "../db";
+import { setLiveNotificationIO } from "./live-notifications";
+
+
+type LiveAppNotificationPayload = {
+  id: number;
+  userId: number;
+  type?: string | null;
+  title?: string | null;
+  level?: "normal" | "important" | "urgent" | "success" | "danger" | null;
+  message: string;
+  imageUrl?: string | null;
+  relatedId?: number | null;
+  isRead?: boolean;
+  createdAt?: string | Date | null;
+};
+
+function emitLiveNotification(
+  io: SocketIOServer,
+  payload: LiveAppNotificationPayload
+) {
+  const userId = Number(payload.userId);
+  if (!userId) return;
+
+  io.to(`user:${userId}`).emit("notification:new", {
+    id: Number(payload.id),
+    userId,
+    type: payload.type ?? "system",
+    title: payload.title ?? null,
+    level: payload.level ?? "normal",
+    message: payload.message,
+    imageUrl: payload.imageUrl ?? null,
+    relatedId: payload.relatedId ?? null,
+    isRead: payload.isRead ?? false,
+    createdAt: payload.createdAt
+      ? new Date(payload.createdAt).toISOString()
+      : new Date().toISOString(),
+  });
+}
 
 console.log("R2_ACCOUNT_ID:", !!process.env.R2_ACCOUNT_ID);
 console.log("R2_ACCESS_KEY_ID:", !!process.env.R2_ACCESS_KEY_ID);
@@ -179,6 +217,8 @@ async function startServer() {
       methods: ["GET", "POST"],
     },
   });
+
+setLiveNotificationIO(io);
 
   const onlineUserSocketCounts = new Map<number, number>();
 
@@ -1083,18 +1123,28 @@ for (const sid of studentIds) {
     ? `${payload.semesterOrder}학기`
     : "전체 학기";
 
-  await createNotification({
-    userId: assigneeId,
-    type: "payment",
-    title: "미결제 알림",
-    level: "important",
-    message: `[미결제 알림] ${plannedMonthText} / ${semesterOrderText} 기준 담당 학생 ${count}명 결제 미완료`,
-    relatedId: sid,
-    isRead: false,
-  } as any);
+  const notificationId = await createNotification({
+  userId: assigneeId,
+  type: "payment",
+  title: "미결제 알림",
+  level: "important",
+  message: `[미결제 알림] ${plannedMonthText} / ${semesterOrderText} 기준 담당 학생 ${count}명 결제 미완료`,
+  relatedId: sid,
+  isRead: false,
+} as any);
 
-  console.log(`🔔 담당자 ${assigneeId} 알림 발송 (미결제 ${count}건)`);
-}
+emitLiveNotification(io, {
+  id: Number(notificationId),
+  userId: assigneeId,
+  type: "payment",
+  title: "미결제 알림",
+  level: "important",
+  message: `[미결제 알림] ${plannedMonthText} / ${semesterOrderText} 기준 담당 학생 ${count}명 결제 미완료`,
+  relatedId: sid,
+  isRead: false,
+});
+
+console.log(`🔔 담당자 ${assigneeId} 알림 발송 (미결제 ${count}건)`);
 
 callback?.({
   success: true,
