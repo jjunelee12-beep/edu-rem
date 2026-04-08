@@ -692,7 +692,7 @@ function SidebarMenuSubButton({
         "hover:bg-white hover:text-slate-950",
         "data-[active=true]:bg-white data-[active=true]:text-slate-950 data-[active=true]:shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)]",
         size === "sm" && "min-h-8 py-1.5 text-xs",
-size === "md" && "text-sm",,
+size === "md" && "text-sm",
         "group-data-[collapsible=icon]:hidden",
         className
       )}
