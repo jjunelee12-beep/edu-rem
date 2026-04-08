@@ -229,7 +229,7 @@ function Sidebar({
       <div
         data-slot="sidebar-container"
         className={cn(
-  "sticky top-0 z-10 hidden h-screen w-(--sidebar-width) md:flex overflow-visible self-start",
+  "relative hidden h-full w-(--sidebar-width) md:flex overflow-visible self-start",
           disableTransition
             ? "transition-none"
             : "transition-[left,right,width] duration-200 ease-linear",
