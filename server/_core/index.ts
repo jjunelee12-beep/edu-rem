@@ -1062,14 +1062,7 @@ for (const m of members) {
 // ================================
 socket.on(
   "payment:reminder",
-  async (
-    payload: {
-      studentIds: number[];
-      plannedMonth?: string | null;
-      semesterOrder?: number | null;
-    },
-    callback?: (data: any) => void
-  ) => {
+  async (payload, callback) => {
     try {
       const studentIds = (payload?.studentIds || []).map(Number);
 
@@ -1080,80 +1073,63 @@ socket.on(
         });
       }
 
-      console.log("[PAYMENT REMINDER REQUEST]", {
-        count: studentIds.length,
-        plannedMonth: payload?.plannedMonth,
-        semesterOrder: payload?.semesterOrder,
-      });
+      const notifiedAssigneeIds = new Set<number>();
+      const assigneeCountMap = new Map<number, number>();
 
-      // TODO: 실제 SMS / 카카오 알림 붙이는 위치
       for (const sid of studentIds) {
-        console.log(`💸 결제 알림 발송 대상 studentId: ${sid}`);
+        const student = await getStudent(sid);
+        if (!student?.assigneeId) continue;
+
+        const assigneeId = Number(student.assigneeId);
+        assigneeCountMap.set(
+          assigneeId,
+          (assigneeCountMap.get(assigneeId) || 0) + 1
+        );
       }
 
-      // 🔔 알림 DB에도 기록 남기기 (선택)
-      // 학생 → 담당자 매핑 필요
-const notifiedAssigneeIds = new Set<number>();
+      for (const sid of studentIds) {
+        const student = await getStudent(sid);
+        if (!student?.assigneeId) continue;
 
-const assigneeCountMap = new Map<number, number>();
+        const assigneeId = Number(student.assigneeId);
 
-for (const sid of studentIds) {
-  const student = await getStudent(sid);
-  if (!student?.assigneeId) continue;
+        if (notifiedAssigneeIds.has(assigneeId)) continue;
+        notifiedAssigneeIds.add(assigneeId);
 
-  const assigneeId = Number(student.assigneeId);
-  assigneeCountMap.set(assigneeId, (assigneeCountMap.get(assigneeId) || 0) + 1);
-}
+        const count = assigneeCountMap.get(assigneeId) || 0;
 
-for (const sid of studentIds) {
-  const student = await getStudent(sid);
+        const notificationId = await createNotification({
+          userId: assigneeId,
+          type: "payment",
+          title: "미결제 알림",
+          level: "important",
+          message: `[미결제 알림] 담당 학생 ${count}명 결제 미완료`,
+          relatedId: sid,
+          isRead: false,
+        } as any);
 
-  if (!student?.assigneeId) continue;
+        emitLiveNotification(io, {
+          id: Number(notificationId),
+          userId: assigneeId,
+          type: "payment",
+          title: "미결제 알림",
+          level: "important",
+          message: `[미결제 알림] 담당 학생 ${count}명 결제 미완료`,
+          relatedId: sid,
+          isRead: false,
+        });
+      }
 
-  const assigneeId = Number(student.assigneeId);
+      // ✅ 여기로 이동 (for 밖으로)
+      callback?.({
+        success: true,
+        count: notifiedAssigneeIds.size,
+      });
 
-  // 중복 알림 방지 (담당자 1번만)
-  if (notifiedAssigneeIds.has(assigneeId)) continue;
+      socket.emit("payment:reminder:done", {
+        count: notifiedAssigneeIds.size,
+      });
 
-  notifiedAssigneeIds.add(assigneeId);
-
-  const count = assigneeCountMap.get(assigneeId) || 0;
-  const plannedMonthText = payload?.plannedMonth || "-";
-  const semesterOrderText = payload?.semesterOrder
-    ? `${payload.semesterOrder}학기`
-    : "전체 학기";
-
-  const notificationId = await createNotification({
-  userId: assigneeId,
-  type: "payment",
-  title: "미결제 알림",
-  level: "important",
-  message: `[미결제 알림] ${plannedMonthText} / ${semesterOrderText} 기준 담당 학생 ${count}명 결제 미완료`,
-  relatedId: sid,
-  isRead: false,
-} as any);
-
-emitLiveNotification(io, {
-  id: Number(notificationId),
-  userId: assigneeId,
-  type: "payment",
-  title: "미결제 알림",
-  level: "important",
-  message: `[미결제 알림] ${plannedMonthText} / ${semesterOrderText} 기준 담당 학생 ${count}명 결제 미완료`,
-  relatedId: sid,
-  isRead: false,
-});
-
-console.log(`🔔 담당자 ${assigneeId} 알림 발송 (미결제 ${count}건)`);
-
-callback?.({
-  success: true,
-  count: notifiedAssigneeIds.size,
-});
-
-socket.emit("payment:reminder:done", {
-  count: notifiedAssigneeIds.size,
-});
     } catch (err: any) {
       console.error("[payment:reminder ERROR]", err);
 
