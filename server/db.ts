@@ -5870,7 +5870,7 @@ leaveType: "출장",
   return true;
 }
 
-  const targetDate = doc.targetDate || doc.startDate || doc.endDate;
+ const applyDate = doc.targetDate || doc.startDate || doc.endDate;
   if (!targetDate) {
     throw new Error("근태 반영 대상 날짜가 없습니다.");
   }
@@ -5892,7 +5892,7 @@ const beforeStatus = attendanceRow?.status ?? null;
   if (!attendanceRow) {
   const insertResult: any = await db.insert(attendanceRecords).values({
     userId: Number(doc.applicantUserId),
-    workDate: targetDate,
+    workDate: applyDate,
     status: (doc.attendanceTargetStatus || (doc.formType === "business_trip" ? "출장" : "출근전")) as any,
     leaveType:
       doc.formType === "attendance"
