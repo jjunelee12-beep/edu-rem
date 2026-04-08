@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -56,6 +56,26 @@ const noteField = getFieldSetting(fieldSettings, "extraNote", "추가 메모");
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [uploadedFileUrl, setUploadedFileUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+
+const startTimeRef = useRef<HTMLInputElement | null>(null);
+const endTimeRef = useRef<HTMLInputElement | null>(null);
+
+const openTimePicker = (ref: React.RefObject<HTMLInputElement | null>) => {
+  const el = ref.current;
+  if (!el) return;
+
+  const anyEl = el as HTMLInputElement & {
+    showPicker?: () => void;
+  };
+
+  if (typeof anyEl.showPicker === "function") {
+    anyEl.showPicker();
+    return;
+  }
+
+  el.focus();
+  el.click();
+};
 
   async function uploadSingleFile(file: File) {
     const formData = new FormData();
@@ -259,42 +279,52 @@ if (noteField.isRequired && !form.extraNote.trim()) {
   )}
 
   {startField.isVisible && (
-    <div className="space-y-2">
-      <Label>
-        {startField.label}
-        {startField.isRequired && " *"}
-      </Label>
-      <Input
-  type="time"
-  value={form.attendanceStartTime}
-  onChange={(e) =>
-    setForm((prev) => ({
-      ...prev,
-      attendanceStartTime: e.target.value,
-    }))
-  }
-/>
-    </div>
-  )}
+  <div
+    className="space-y-2"
+    onClick={() => openTimePicker(startTimeRef)}
+  >
+    <Label>
+      {startField.label}
+      {startField.isRequired && " *"}
+    </Label>
+    <Input
+      ref={startTimeRef}
+      type="time"
+      value={form.attendanceStartTime}
+      onChange={(e) =>
+        setForm((prev) => ({
+          ...prev,
+          attendanceStartTime: e.target.value,
+        }))
+      }
+      className="cursor-pointer"
+    />
+  </div>
+)}
 
   {endField.isVisible && (
-    <div className="space-y-2">
-      <Label>
-        {endField.label}
-        {endField.isRequired && " *"}
-      </Label>
-      <Input
-  type="time"
-  value={form.attendanceEndTime}
-  onChange={(e) =>
-    setForm((prev) => ({
-      ...prev,
-      attendanceEndTime: e.target.value,
-    }))
-  }
-/>
-    </div>
-  )}
+  <div
+    className="space-y-2"
+    onClick={() => openTimePicker(endTimeRef)}
+  >
+    <Label>
+      {endField.label}
+      {endField.isRequired && " *"}
+    </Label>
+    <Input
+      ref={endTimeRef}
+      type="time"
+      value={form.attendanceEndTime}
+      onChange={(e) =>
+        setForm((prev) => ({
+          ...prev,
+          attendanceEndTime: e.target.value,
+        }))
+      }
+      className="cursor-pointer"
+    />
+  </div>
+)}
 </div>
 
 {deptField.isVisible && (
