@@ -229,7 +229,7 @@ function Sidebar({
       <div
         data-slot="sidebar-container"
         className={cn(
-  "fixed inset-y-0 z-10 hidden h-screen w-(--sidebar-width) md:flex overflow-hidden",
+  "sticky top-0 z-10 hidden h-screen w-(--sidebar-width) md:flex overflow-visible self-start",
           disableTransition
             ? "transition-none"
             : "transition-[left,right,width] duration-200 ease-linear",
@@ -381,7 +381,7 @@ function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
       data-slot="sidebar-content"
       data-sidebar="content"
       className={cn(
-        "flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden px-1 pb-2",
+  "flex min-h-0 flex-1 flex-col gap-1 overflow-visible px-1 pb-2",
         "group-data-[collapsible=icon]:overflow-hidden",
         className
       )}

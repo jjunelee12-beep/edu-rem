@@ -814,7 +814,7 @@ useEffect(() => {
  </div>
  </SidebarHeader>
 
- <SidebarContent className="min-h-0 flex-1 gap-1 overflow-y-auto overflow-x-hidden pb-3">
+ <SidebarContent className="min-h-0 flex-1 gap-1 pb-3">
  {renderMenuSection(visibleStaffMenuItems)}
 
  <SidebarMenu className={`px-2 py-1 ${!isCollapsed && eApprovalMenuOpen ? "pb-5" : ""}`}>
