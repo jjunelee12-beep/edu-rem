@@ -3572,20 +3572,21 @@ bulkDeactivate: protectedProcedure
         z.object({
           rows: z.array(
             z.object({
-              institutionType: z.enum(["education", "institution"]),
-categoryId: z.number().optional(),
-              name: z.string().min(1),
-              representativeName: z.string().optional(),
-              phone: z.string().optional(),
-              address: z.string().min(1),
-              detailAddress: z.string().optional(),
-              price: z.string().optional(),
-              latitude: z.string().optional(),
-              longitude: z.string().optional(),
-              availableCourse: z.string().optional(),
-              memo: z.string().optional(),
-              isActive: z.boolean().optional(),
-            })
+  institutionType: z.enum(["education", "institution"]),
+  categoryId: z.number().optional(),
+  name: z.string().min(1),
+  representativeName: z.string().optional(),
+  phone: z.string().optional(),
+  address: z.string().min(1),
+  detailAddress: z.string().optional(),
+  price: z.string().optional(),
+  latitude: z.string().optional(),
+  longitude: z.string().optional(),
+  availableCourse: z.string().optional(),
+  memo: z.string().optional(),
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().optional(),
+})
           ),
         })
       )
@@ -3595,21 +3596,23 @@ categoryId: z.number().optional(),
         }
 
         await db.bulkCreatePracticeInstitutions(
-          input.rows.map((row) => ({
-            institutionType: row.institutionType,
-            name: row.name.trim(),
-            representativeName: row.representativeName?.trim() || null,
-            phone: row.phone?.trim() || null,
-            address: row.address.trim(),
-            detailAddress: row.detailAddress?.trim() || null,
-            price: row.price || "0",
-            latitude: row.latitude || null,
-            longitude: row.longitude || null,
-            availableCourse: row.availableCourse?.trim() || null,
-            memo: row.memo || null,
-            isActive: row.isActive ?? true,
-          })) as any
-        );
+  input.rows.map((row, idx) => ({
+    institutionType: row.institutionType,
+    categoryId: row.categoryId ?? null,
+    name: row.name.trim(),
+    representativeName: row.representativeName?.trim() || null,
+    phone: row.phone?.trim() || null,
+    address: row.address.trim(),
+    detailAddress: row.detailAddress?.trim() || null,
+    price: row.price || "0",
+    latitude: row.latitude || null,
+    longitude: row.longitude || null,
+    availableCourse: row.availableCourse?.trim() || null,
+    memo: row.memo || null,
+    isActive: row.isActive ?? true,
+    sortOrder: (row as any).sortOrder ?? idx,
+  })) as any
+);
 
         return { success: true, count: input.rows.length };
       }),

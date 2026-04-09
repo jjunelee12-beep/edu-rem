@@ -240,6 +240,10 @@ export default function PracticeSupportCenter() {
     useState(true);
 const [finderEducationCategoryId, setFinderEducationCategoryId] = useState<number | null>(null);
 const [finderInstitutionCategoryId, setFinderInstitutionCategoryId] = useState<number | null>(null);
+const [finderRecommendedEducationCategoryId, setFinderRecommendedEducationCategoryId] =
+  useState<number | null>(null);
+const [finderRecommendedInstitutionCategoryId, setFinderRecommendedInstitutionCategoryId] =
+  useState<number | null>(null);
   const [finderTargetRow, setFinderTargetRow] = useState<any | null>(null);
   const [finderSearchTrigger, setFinderSearchTrigger] = useState(0);
   const [finderResults, setFinderResults] = useState<FinderItem[]>([]);
@@ -539,15 +543,69 @@ const createCategoryMut = trpc.practiceListCategory.create.useMutation({
     return result;
   };
 
+const findCategoryIdByCourseKeyword = (
+  categories: any[],
+  courseText: string,
+  keywords: string[]
+) => {
+  const lowerCourse = String(courseText || "").toLowerCase();
+
+  const matchedKeyword = keywords.find((kw) =>
+    lowerCourse.includes(String(kw).toLowerCase())
+  );
+
+  if (!matchedKeyword) return null;
+
+  const matchedCategory = categories.find((cat: any) =>
+    String(cat.name || "").toLowerCase().includes(String(matchedKeyword).toLowerCase())
+  );
+
+  return matchedCategory ? Number(matchedCategory.id) : null;
+};
+
+const applyRecommendedFinderCategory = (row?: any | null) => {
+  const courseText = String(row?.course || row?.desiredCourse || "").trim();
+  if (!courseText) return;
+
+  const institutionCategoryId =
+    findCategoryIdByCourseKeyword(institutionCategories, courseText, [
+      "사회복지사",
+      "보육교사",
+      "한국어교원",
+    ]);
+
+  const educationCategoryId =
+    findCategoryIdByCourseKeyword(educationCategories, courseText, [
+      "사회복지사",
+      "보육교사",
+      "한국어교원",
+    ]);
+
+  if (institutionCategoryId) {
+  setFinderInstitutionCategoryId(institutionCategoryId);
+  setFinderRecommendedInstitutionCategoryId(institutionCategoryId);
+}
+
+if (educationCategoryId) {
+  setFinderEducationCategoryId(educationCategoryId);
+  setFinderRecommendedEducationCategoryId(educationCategoryId);
+}
+};
+
   const openFinder = (row?: any | null) => {
     const baseAddress = row?.inputAddress || row?.address || "";
 
     setFinderTargetRow(row || null);
     setFinderAddress(baseAddress.trim());
-    setFinderIncludeEducationCenter(true);
+   setFinderIncludeEducationCenter(true);
 setFinderIncludePracticeInstitution(true);
 setFinderEducationCategoryId(null);
 setFinderInstitutionCategoryId(null);
+setFinderRecommendedEducationCategoryId(null);
+setFinderRecommendedInstitutionCategoryId(null);
+
+applyRecommendedFinderCategory(row);
+
 setFinderResults(buildFinderBaseResults(row));
     setSelectedFinderItem(null);
     setFinderSearchPoint(null);
@@ -603,6 +661,11 @@ const handleUploadCsv = () => {
     toast.error("CSV 내용을 입력해주세요.");
     return;
   }
+
+if (!selectedCategoryId) {
+  toast.error("먼저 등록할 리스트를 선택해주세요.");
+  return;
+}
 
   const rows = parseCsvLines(csvText);
   if (rows.length <= 1) {
@@ -1506,141 +1569,234 @@ const handleDeleteMasterItem = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
 <Dialog open={masterOpen} onOpenChange={setMasterOpen}>
-  <DialogContent className="max-w-6xl">
-    <DialogHeader>
-      <DialogTitle>
-        {masterListType === "education" ? "실습교육원 관리" : "실습기관 관리"}
-      </DialogTitle>
-      <DialogDescription>
-        CSV 등록, 현재 목록 확인, 개별 삭제를 할 수 있습니다.
-      </DialogDescription>
-    </DialogHeader>
+  <DialogContent className="h-[88vh] w-[96vw] max-w-[1500px] overflow-hidden p-0">
+    <div className="flex h-full flex-col">
+      <div className="border-b px-6 py-4">
+        <DialogHeader className="space-y-2 text-left">
+          <DialogTitle className="text-xl font-semibold">
+            {masterListType === "education" ? "실습교육원 관리" : "실습기관 관리"}
+          </DialogTitle>
+          <DialogDescription>
+            CSV 등록, 현재 목록 확인, 개별 삭제를 할 수 있습니다.
+          </DialogDescription>
+        </DialogHeader>
 
-<div className="flex flex-wrap gap-2">
-  {(masterListType === "education" ? educationCategories : institutionCategories).map((cat: any) => (
-    <Button
-      key={cat.id}
-      type="button"
-      variant={selectedCategoryId === cat.id ? "default" : "outline"}
-      size="sm"
-      onClick={() => setSelectedCategoryId(cat.id)}
-    >
-      {cat.name}
-    </Button>
-  ))}
-</div>
-
-    <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-      <div className="space-y-3">
-        <Label>CSV 입력</Label>
-        <Textarea
-          value={csvText}
-          onChange={(e) => setCsvText(e.target.value)}
-          rows={16}
-          placeholder={
-            masterListType === "education"
-              ? "name,phone,address,detailAddress,feeAmount,latitude,longitude,representativeName,availableCourse,memo,isActive,sortOrder"
-              : "name,representativeName,phone,address,detailAddress,price,latitude,longitude,availableCourse,memo,isActive,sortOrder"
-          }
-        />
-        <Button type="button" onClick={handleUploadCsv} className="w-full">
-          CSV 등록
-        </Button>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(masterListType === "education" ? educationCategories : institutionCategories).map((cat: any) => (
+            <Button
+              key={cat.id}
+              type="button"
+              variant={selectedCategoryId === cat.id ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedCategoryId(cat.id)}
+            >
+              {cat.name}
+            </Button>
+          ))}
+        </div>
       </div>
 
-      <div className="space-y-3">
-        <div className="rounded-xl border">
-          <div className="max-h-[520px] overflow-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-white">
-                <tr className="border-b">
-                  <th className="px-3 py-2 text-left">이름</th>
-                  <th className="px-3 py-2 text-left">주소</th>
-                  <th className="px-3 py-2 text-left">전화</th>
-                  <th className="px-3 py-2 text-left">상태</th>
-                  <th className="px-3 py-2 text-right">관리</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(masterListType === "education"
-  ? (educationCenterDb as any[])
-      .filter((item) => {
-        if (!selectedCategoryId) return true;
-        return Number(item.categoryId || 0) === selectedCategoryId;
-      })
-      .map((item) => ({
-        ...item,
-        type: "education" as const,
-      }))
-  : (practiceInstitutionDb as any[])
-      .filter((item) => {
-        if (!selectedCategoryId) return true;
-        return Number(item.categoryId || 0) === selectedCategoryId;
-      })
-      .map((item) => ({
-        ...item,
-        type: "institution" as const,
-      }))
-).map((item: any) => (
-                  <tr key={`${item.type}-${item.id}`} className="border-b">
-                    <td className="px-3 py-2">{item.name}</td>
-                    <td className="px-3 py-2">
-                      {[item.address, item.detailAddress].filter(Boolean).join(" ")}
-                    </td>
-                    <td className="px-3 py-2">{item.phone || "-"}</td>
-                    <td className="px-3 py-2">
-                      {item.isInactive ? "비활성" : item.isActive === false ? "미사용" : "사용"}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            openFinderSettings({
-                              id: item.id,
-                              type: item.type,
-                              name: item.name,
-                              address: item.address,
-                              isInactive: item.isInactive,
-                              inactiveReason: item.inactiveReason,
-                              inactiveStartDate: item.inactiveStartDate,
-                              inactiveEndDate: item.inactiveEndDate,
-                              hideOnMapWhenInactive: item.hideOnMapWhenInactive,
-                            } as any)
-                          }
-                        >
-                          비활성설정
-                        </Button>
+      <div className="grid min-h-0 flex-1 grid-cols-[420px_minmax(0,1fr)]">
+        <div className="border-r bg-slate-50/60 p-6">
+          <div className="space-y-4">
+            <div>
+              <div className="text-sm font-semibold">
+                {masterListType === "education" ? "실습교육원 CSV 등록" : "실습기관 CSV 등록"}
+              </div>
+              <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                아래 예시 형식대로 한 줄에 한 기관씩 입력한 뒤 등록하세요.
+                <br />
+                쉼표(,) 기준으로 구분됩니다.
+              </div>
+            </div>
 
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="sm"
-                          onClick={() =>
-                            setDeleteTarget({
-                              id: item.id,
-                              type: item.type,
-                              name: item.name,
-                            } as any)
-                          }
-                        >
-                          삭제
-                        </Button>
-                      </div>
-                    </td>
+            <div className="rounded-xl border bg-white p-4">
+              <div className="mb-2 text-xs font-semibold text-slate-700">CSV 예시</div>
+
+              {masterListType === "education" ? (
+                <div className="space-y-2 text-xs leading-6 text-slate-600">
+                  <div>이름, 전화번호, 주소, 상세주소, 금액, 위도, 경도, 담당자명, 가능과정, 메모, 사용여부, 정렬순서</div>
+                  <div className="rounded-lg bg-slate-50 p-3 text-[11px] leading-5 text-slate-500">
+                    예시)
+                    <br />
+                    위드원평생교육원,02-123-4567,서울 도봉구 방학동 123-4,3층,300000,37.123456,127.123456,홍길동,사회복지사2급,주말 가능,true,1
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2 text-xs leading-6 text-slate-600">
+                  <div>이름, 담당자명, 전화번호, 주소, 상세주소, 금액, 위도, 경도, 가능과정, 메모, 사용여부, 정렬순서</div>
+                  <div className="rounded-lg bg-slate-50 p-3 text-[11px] leading-5 text-slate-500">
+                    예시)
+                    <br />
+                    보육사랑실습기관,김담당,02-123-4567,서울 도봉구 방학동 123-4,2층,200000,37.123456,127.123456,보육교사,야간 문의 필요,true,1
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>CSV 입력</Label>
+              <Textarea
+                value={csvText}
+                onChange={(e) => setCsvText(e.target.value)}
+                className="min-h-[260px] resize-none bg-white"
+                placeholder={
+                  masterListType === "education"
+                    ? "예시 형식에 맞춰 실습교육원 데이터를 붙여넣으세요."
+                    : "예시 형식에 맞춰 실습기관 데이터를 붙여넣으세요."
+                }
+              />
+            </div>
+
+            <Button type="button" onClick={handleUploadCsv} className="h-11 w-full">
+              CSV 등록
+            </Button>
+          </div>
+        </div>
+
+        <div className="min-w-0 p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <div className="text-sm font-semibold">
+                {masterListType === "education" ? "실습교육원 목록" : "실습기관 목록"}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                선택한 리스트의 등록 기관을 확인하고 비활성설정/삭제를 할 수 있습니다.
+              </div>
+            </div>
+
+            <div className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+  {selectedCategoryId
+    ? `${
+        (masterListType === "education" ? educationCategories : institutionCategories).find(
+          (cat: any) => Number(cat.id) === Number(selectedCategoryId)
+        )?.name || "선택된 리스트"
+      } 표시 중`
+    : "리스트를 선택하면 해당 목록만 표시됩니다."}
+</div>
+          </div>
+
+          <div className="h-[calc(100%-52px)] overflow-hidden rounded-2xl border bg-white">
+            <div className="h-full overflow-auto">
+              <table className="w-full min-w-[900px] text-sm">
+                <thead className="sticky top-0 z-10 bg-slate-50">
+                  <tr className="border-b">
+                    <th className="px-4 py-3 text-left font-medium">이름</th>
+<th className="px-4 py-3 text-left font-medium">리스트</th>
+<th className="px-4 py-3 text-left font-medium">주소</th>
+<th className="px-4 py-3 text-left font-medium">전화번호</th>
+<th className="px-4 py-3 text-left font-medium">가능과정</th>
+<th className="px-4 py-3 text-left font-medium">상태</th>
+<th className="px-4 py-3 text-right font-medium">관리</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+
+                <tbody>
+                  {(masterListType === "education"
+                    ? (educationCenterDb as any[])
+                        .filter((item) => {
+                          if (!selectedCategoryId) return true;
+                          return Number(item.categoryId || 0) === selectedCategoryId;
+                        })
+                        .map((item) => ({
+                          ...item,
+                          type: "education" as const,
+                        }))
+                    : (practiceInstitutionDb as any[])
+                        .filter((item) => {
+                          if (!selectedCategoryId) return true;
+                          return Number(item.categoryId || 0) === selectedCategoryId;
+                        })
+                        .map((item) => ({
+                          ...item,
+                          type: "institution" as const,
+                        }))
+                  ).map((item: any) => (
+                    <tr key={`${item.type}-${item.id}`} className="border-b align-top">
+                      <td className="px-4 py-3 font-medium">{item.name}</td>
+<td className="px-4 py-3 text-slate-600">
+  {(masterListType === "education" ? educationCategories : institutionCategories).find(
+    (cat: any) => Number(cat.id) === Number(item.categoryId)
+  )?.name || "-"}
+</td>
+<td className="px-4 py-3 text-slate-600">
+  {[item.address, item.detailAddress].filter(Boolean).join(" ") || "-"}
+</td>
+                      <td className="px-4 py-3">{item.phone || "-"}</td>
+                      <td className="px-4 py-3">{item.availableCourse || "-"}</td>
+                      <td className="px-4 py-3">
+                        {item.isInactive ? "비활성" : item.isActive === false ? "미사용" : "사용"}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              openFinderSettings({
+                                id: item.id,
+                                type: item.type,
+                                name: item.name,
+                                address: item.address,
+                                isInactive: item.isInactive,
+                                inactiveReason: item.inactiveReason,
+                                inactiveStartDate: item.inactiveStartDate,
+                                inactiveEndDate: item.inactiveEndDate,
+                                hideOnMapWhenInactive: item.hideOnMapWhenInactive,
+                              } as any)
+                            }
+                          >
+                            비활성설정
+                          </Button>
+
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            onClick={() =>
+                              setDeleteTarget({
+                                id: item.id,
+                                type: item.type,
+                                name: item.name,
+                              } as any)
+                            }
+                          >
+                            삭제
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {(masterListType === "education"
+                    ? (educationCenterDb as any[]).filter((item) => {
+                        if (!selectedCategoryId) return true;
+                        return Number(item.categoryId || 0) === selectedCategoryId;
+                      }).length
+                    : (practiceInstitutionDb as any[]).filter((item) => {
+                        if (!selectedCategoryId) return true;
+                        return Number(item.categoryId || 0) === selectedCategoryId;
+                      }).length
+                  ) === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-14 text-center text-sm text-muted-foreground">
+                        표시할 데이터가 없습니다.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
     </div>
   </DialogContent>
 </Dialog>
+
 <Dialog open={deactivateOpen} onOpenChange={setDeactivateOpen}>
   <DialogContent className="max-w-lg">
     <DialogHeader>
@@ -1908,15 +2064,27 @@ const handleDeleteMasterItem = () => {
 
                 <div className="flex gap-2 flex-wrap">
                   <FinderTypeToggle
-                    checked={finderIncludeEducationCenter}
-                    onChange={setFinderIncludeEducationCenter}
+  checked={finderIncludeEducationCenter}
+  onChange={(checked) => {
+    setFinderIncludeEducationCenter(checked);
+    if (!checked) {
+      setFinderEducationCategoryId(null);
+      setFinderRecommendedEducationCategoryId(null);
+    }
+  }}
                     label="실습교육원"
                     activeClassName="bg-blue-50 text-blue-700 border-blue-200"
                   />
 
                   <FinderTypeToggle
-                    checked={finderIncludePracticeInstitution}
-                    onChange={setFinderIncludePracticeInstitution}
+  checked={finderIncludePracticeInstitution}
+  onChange={(checked) => {
+    setFinderIncludePracticeInstitution(checked);
+    if (!checked) {
+      setFinderInstitutionCategoryId(null);
+      setFinderRecommendedInstitutionCategoryId(null);
+    }
+  }}
                     label="실습기관"
                     activeClassName="bg-orange-50 text-orange-700 border-orange-200"
                   />
@@ -1926,29 +2094,57 @@ const handleDeleteMasterItem = () => {
   {finderIncludeEducationCenter && (
     <div className="space-y-2">
       <div className="text-xs font-medium text-muted-foreground">
-        실습교육원 리스트 선택
+        실습교육원 리스트 선택 (전체 선택 시 모든 교육원 리스트가 함께 검색됩니다)
       </div>
       <div className="flex flex-wrap gap-2">
+{educationCategories.length === 0 && (
+  <div className="rounded-lg border border-dashed border-blue-200 bg-blue-50 px-3 py-3 text-xs text-blue-700">
+    등록된 실습교육원 리스트가 없습니다. 상단의 <b>리스트 추가</b>에서 먼저 생성해주세요.
+  </div>
+)}
         <Button
-          type="button"
-          variant={finderEducationCategoryId === null ? "default" : "outline"}
-          size="sm"
-          onClick={() => setFinderEducationCategoryId(null)}
-        >
-          전체
-        </Button>
+  type="button"
+  variant={finderEducationCategoryId === null ? "default" : "outline"}
+  size="sm"
+  className={
+    finderEducationCategoryId === null
+      ? "bg-blue-600 hover:bg-blue-700 text-white border-blue-600"
+      : "border-blue-200 text-blue-700 hover:bg-blue-50"
+  }
+  onClick={() => {
+    setFinderEducationCategoryId(null);
+    setFinderRecommendedEducationCategoryId(null);
+  }}
+>
+  전체
+</Button>
 
-        {educationCategories.map((cat: any) => (
-          <Button
-            key={`finder-edu-${cat.id}`}
-            type="button"
-            variant={finderEducationCategoryId === cat.id ? "default" : "outline"}
-            size="sm"
-            onClick={() => setFinderEducationCategoryId(cat.id)}
-          >
-            {cat.name}
-          </Button>
-        ))}
+        {educationCategories.map((cat: any) => {
+  const isSelected = finderEducationCategoryId === cat.id;
+  const isRecommended = finderRecommendedEducationCategoryId === cat.id;
+
+  return (
+    <Button
+      key={`finder-edu-${cat.id}`}
+      type="button"
+      variant={isSelected ? "default" : "outline"}
+      size="sm"
+      className={
+        isSelected
+          ? "bg-blue-600 hover:bg-blue-700 text-white border-blue-600"
+          : "border-blue-200 text-blue-700 hover:bg-blue-50"
+      }
+      onClick={() => setFinderEducationCategoryId(cat.id)}
+    >
+      <span>{cat.name}</span>
+      {isRecommended && (
+        <span className="ml-2 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+          추천
+        </span>
+      )}
+    </Button>
+  );
+})}
       </div>
     </div>
   )}
@@ -1956,29 +2152,57 @@ const handleDeleteMasterItem = () => {
   {finderIncludePracticeInstitution && (
     <div className="space-y-2">
       <div className="text-xs font-medium text-muted-foreground">
-        실습기관 리스트 선택
+        실습기관 리스트 선택 (전체 선택 시 모든 기관 리스트가 함께 검색됩니다)
       </div>
       <div className="flex flex-wrap gap-2">
+{institutionCategories.length === 0 && (
+  <div className="rounded-lg border border-dashed border-orange-200 bg-orange-50 px-3 py-3 text-xs text-orange-700">
+    등록된 실습기관 리스트가 없습니다. 상단의 <b>리스트 추가</b>에서 먼저 생성해주세요.
+  </div>
+)}
         <Button
-          type="button"
-          variant={finderInstitutionCategoryId === null ? "default" : "outline"}
-          size="sm"
-          onClick={() => setFinderInstitutionCategoryId(null)}
-        >
-          전체
-        </Button>
+  type="button"
+  variant={finderInstitutionCategoryId === null ? "default" : "outline"}
+  size="sm"
+  className={
+    finderInstitutionCategoryId === null
+      ? "bg-orange-500 hover:bg-orange-600 text-white border-orange-500"
+      : "border-orange-200 text-orange-700 hover:bg-orange-50"
+  }
+  onClick={() => {
+    setFinderInstitutionCategoryId(null);
+    setFinderRecommendedInstitutionCategoryId(null);
+  }}
+>
+  전체
+</Button>
 
-        {institutionCategories.map((cat: any) => (
-          <Button
-            key={`finder-inst-${cat.id}`}
-            type="button"
-            variant={finderInstitutionCategoryId === cat.id ? "default" : "outline"}
-            size="sm"
-            onClick={() => setFinderInstitutionCategoryId(cat.id)}
-          >
-            {cat.name}
-          </Button>
-        ))}
+        {institutionCategories.map((cat: any) => {
+  const isSelected = finderInstitutionCategoryId === cat.id;
+  const isRecommended = finderRecommendedInstitutionCategoryId === cat.id;
+
+  return (
+    <Button
+      key={`finder-inst-${cat.id}`}
+      type="button"
+      variant={isSelected ? "default" : "outline"}
+      size="sm"
+      className={
+        isSelected
+          ? "bg-orange-500 hover:bg-orange-600 text-white border-orange-500"
+          : "border-orange-200 text-orange-700 hover:bg-orange-50"
+      }
+      onClick={() => setFinderInstitutionCategoryId(cat.id)}
+    >
+      <span>{cat.name}</span>
+      {isRecommended && (
+        <span className="ml-2 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-orange-700">
+          추천
+        </span>
+      )}
+    </Button>
+  );
+})}
       </div>
     </div>
   )}
@@ -1990,6 +2214,12 @@ const handleDeleteMasterItem = () => {
                     <div>주소: {finderTargetRow.inputAddress || "-"}</div>
                   </div>
                 )}
+{finderTargetRow?.course ? (
+  <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+    학생 희망과정을 기준으로 추천 리스트를 자동 선택했습니다.
+    <div className="mt-1 font-medium text-blue-800">과정: {finderTargetRow.course}</div>
+  </div>
+) : null}
 
                 {finderSearchPoint && (
                   <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-3 text-xs">
