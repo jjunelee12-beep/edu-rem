@@ -1654,6 +1654,8 @@ const userName = ctx.user.name || "사용자";
     bulkCreate: protectedProcedure
       .input(
         z.object({
+mode: z.enum(["append", "replace"]).default("append"),
+categoryId: z.number().nullable().optional(),
           rows: z.array(
             z.object({
               consultDate: z.string(),
@@ -3405,19 +3407,27 @@ memo: z.string().optional(),
     }
 
     return db.bulkCreatePracticeEducationCenters(
-      input.rows.map((row, idx) => ({
-        name: row.name,
-        phone: row.phone || null,
-        address: row.address || null,
-        detailAddress: row.detailAddress || null,
-        feeAmount: row.feeAmount || "0",
-        latitude: row.latitude || null,
-        longitude: row.longitude || null,
-        note: row.note || null,
-        isActive: row.isActive ?? true,
-        sortOrder: row.sortOrder ?? idx,
-      }))
-    );
+  input.rows.map((row, idx) => ({
+    categoryId: row.categoryId ?? input.categoryId ?? null,
+    representativeName: row.representativeName?.trim() || null,
+    availableCourse: row.availableCourse?.trim() || null,
+    memo: row.memo?.trim() || null,
+    name: row.name.trim(),
+    phone: row.phone?.trim() || null,
+    address: row.address?.trim() || null,
+    detailAddress: row.detailAddress?.trim() || null,
+    feeAmount: row.feeAmount || "0",
+    latitude: row.latitude || null,
+    longitude: row.longitude || null,
+    note: row.note?.trim() || null,
+    isActive: row.isActive ?? true,
+    sortOrder: row.sortOrder ?? idx,
+  })),
+  {
+    mode: input.mode,
+    categoryId: input.categoryId ?? null,
+  }
+);
   }),
 
   update: protectedProcedure
@@ -3499,6 +3509,19 @@ bulkDeactivate: protectedProcedure
     });
   }),
 
+fixCoords: protectedProcedure
+  .input(
+    z.object({
+      limit: z.number().optional(),
+    })
+  )
+  .mutation(async ({ input }) => {
+    return db.fixMissingCoordinates({
+      type: "education",
+      limit: input.limit,
+    });
+  }),
+
   delete: hostProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
@@ -3570,6 +3593,8 @@ bulkDeactivate: protectedProcedure
     bulkCreate: protectedProcedure
       .input(
         z.object({
+mode: z.enum(["append", "replace"]).default("append"),
+categoryId: z.number().nullable().optional(),
           rows: z.array(
             z.object({
   institutionType: z.enum(["education", "institution"]),
@@ -3611,7 +3636,11 @@ bulkDeactivate: protectedProcedure
     memo: row.memo || null,
     isActive: row.isActive ?? true,
     sortOrder: (row as any).sortOrder ?? idx,
-  })) as any
+  })) as any,
+ {
+    mode: input.mode,
+    categoryId: input.categoryId ?? null,
+  }
 );
 
         return { success: true, count: input.rows.length };
@@ -3714,6 +3743,19 @@ bulkDeactivate: protectedProcedure
 
       return { success: true };
     }),
+
+fixCoords: protectedProcedure
+  .input(
+    z.object({
+      limit: z.number().optional(),
+    })
+  )
+  .mutation(async ({ input }) => {
+    return db.fixMissingCoordinates({
+      type: "institution",
+      limit: input.limit,
+    });
+  }),
 
     delete: hostProcedure
       .input(z.object({ id: z.number() }))

@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import Papa from "papaparse";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
@@ -30,7 +31,6 @@ import {
   User2,
   School,
   CheckCircle2,
-  Navigation,
   MapPin,
   Settings2,
   CalendarDays,
@@ -45,6 +45,7 @@ type PaymentStatus = "미결제" | "결제";
 type FinderItemType = "education" | "institution";
 
 type FinderItem = {
+categoryId?: number;
   id: string | number;
   type: FinderItemType;
   name: string;
@@ -222,6 +223,16 @@ function getFinderInactiveText(item: FinderItem) {
   return reason;
 }
 
+function normalizeNumberText(value: string) {
+  return String(value || "")
+    .replace(/,/g, "")
+    .trim();
+}
+
+function normalizeBooleanText(value: string) {
+  return String(value || "").trim().toLowerCase() === "true";
+}
+
 export default function PracticeSupportCenter() {
   const { user } = useAuth();
   const utils = trpc.useUtils();
@@ -274,10 +285,17 @@ const isHostManager =
 const [masterOpen, setMasterOpen] = useState(false);
 const [masterListType, setMasterListType] = useState<"education" | "institution">("education");
 const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+const [filterCategory, setFilterCategory] = useState<{
+  type: "education" | "institution";
+  id: number;
+} | null>(null);
+
 const [newCategoryName, setNewCategoryName] = useState("");
 const [categoryManageOpen, setCategoryManageOpen] = useState(false);
 
 const [csvText, setCsvText] = useState("");
+const [isCsvDragOver, setIsCsvDragOver] = useState(false);
+const [csvMode, setCsvMode] = useState<"append" | "replace">("append");
 const [deactivateOpen, setDeactivateOpen] = useState(false);
 const [bulkInactiveReason, setBulkInactiveReason] = useState("일괄 비활성화");
 const [bulkInactiveStartDate, setBulkInactiveStartDate] = useState("");
@@ -285,6 +303,15 @@ const [bulkInactiveEndDate, setBulkInactiveEndDate] = useState("");
 const [bulkHideOnMapWhenInactive, setBulkHideOnMapWhenInactive] = useState(true);
 
 const [deleteTarget, setDeleteTarget] = useState<FinderItem | null>(null);
+const [csvPreviewRows, setCsvPreviewRows] = useState<string[][]>([]);
+const [csvUploadSummary, setCsvUploadSummary] = useState<{
+  mode: "append" | "replace";
+  total: number;
+  created: number;
+  updated: number;
+  failed: number;
+  failedRows: Array<{ rowIndex: number; name?: string; address?: string; reason: string }>;
+} | null>(null);
 
   const { data: practiceSupportList, isLoading } =
     trpc.practiceSupport.list.useQuery();
@@ -343,10 +370,13 @@ const { data: institutionCategories = [] } =
 
 const bulkCreateEducationCentersMut =
   trpc.practiceEducationCenter.bulkCreate.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       await utils.practiceEducationCenter.list.invalidate();
       toast.success("실습교육원 CSV 등록이 완료되었습니다.");
       setCsvText("");
+setCsvPreviewRows([]);
+setIsCsvDragOver(false);
+setCsvUploadSummary(result as any);
     },
     onError: (e) => toast.error(e.message || "실습교육원 CSV 등록 실패"),
   });
@@ -363,10 +393,13 @@ const bulkDeactivateEducationCentersMut =
 
 const bulkCreateInstitutionsMut =
   trpc.practiceInstitution.bulkCreate.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       await utils.practiceInstitution.list.invalidate();
       toast.success("실습기관 CSV 등록이 완료되었습니다.");
       setCsvText("");
+setCsvPreviewRows([]);
+setIsCsvDragOver(false);
+setCsvUploadSummary(result as any);
     },
     onError: (e) => toast.error(e.message || "실습기관 CSV 등록 실패"),
   });
@@ -389,6 +422,26 @@ const deleteEducationCenterMut =
       setDeleteTarget(null);
     },
     onError: (e) => toast.error(e.message || "실습교육원 삭제 실패"),
+  });
+
+const fixEducationCoordsMut =
+  trpc.practiceEducationCenter.fixCoords.useMutation({
+    onSuccess: (res) => {
+      toast.success(
+        `좌표 보정 완료 (${res.success}/${res.total})`
+      );
+      utils.practiceEducationCenter.list.invalidate();
+    },
+  });
+
+const fixInstitutionCoordsMut =
+  trpc.practiceInstitution.fixCoords.useMutation({
+    onSuccess: (res) => {
+      toast.success(
+        `좌표 보정 완료 (${res.success}/${res.total})`
+      );
+      utils.practiceInstitution.list.invalidate();
+    },
   });
 
 const deleteInstitutionMut =
@@ -603,6 +656,7 @@ setFinderEducationCategoryId(null);
 setFinderInstitutionCategoryId(null);
 setFinderRecommendedEducationCategoryId(null);
 setFinderRecommendedInstitutionCategoryId(null);
+setFilterCategory(null);
 
 applyRecommendedFinderCategory(row);
 
@@ -649,18 +703,179 @@ setFinderResults(buildFinderBaseResults(row));
     });
   };
 const parseCsvLines = (text: string) => {
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => line.split(",").map((col) => col.trim()));
+  const parsed = Papa.parse<string[]>(text.replace(/^\uFEFF/, ""), {
+    skipEmptyLines: true,
+  });
+
+  if (parsed.errors?.length) {
+    console.warn("[CSV PARSE ERROR]", parsed.errors);
+  }
+
+  return (parsed.data || []).map((row) =>
+    (row || []).map((col) => String(col ?? "").trim())
+  );
 };
 
-const handleUploadCsv = () => {
+const getSampleCsvText = () => {
+  if (masterListType === "education") {
+    return [
+      "이름,전화번호,주소,상세주소,금액,위도,경도,담당자명,가능과정,메모,사용여부,정렬순서",
+      "위드원평생교육원,02-123-4567,서울 도봉구 방학동 123-4,3층,300000,37.123456,127.123456,홍길동,사회복지사2급,주말 가능,true,1",
+    ].join("\n");
+  }
+
+  return [
+    "이름,담당자명,전화번호,주소,상세주소,금액,위도,경도,가능과정,메모,사용여부,정렬순서",
+    "보육사랑실습기관,김담당,02-123-4567,서울 도봉구 방학동 123-4,2층,200000,37.123456,127.123456,보육교사,야간 문의 필요,true,1",
+  ].join("\n");
+};
+
+const downloadSampleCsv = () => {
+  const csv = getSampleCsvText();
+  const blob = new Blob(["\ufeff" + csv], {
+    type: "text/csv;charset=utf-8;",
+  });
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download =
+    masterListType === "education"
+      ? "practice-education-sample.csv"
+      : "practice-institution-sample.csv";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
+const fillSampleCsvToEditor = () => {
+  const sample = getSampleCsvText();
+  setCsvText(sample);
+
+  try {
+    const parsed = parseCsvLines(sample);
+    setCsvPreviewRows(parsed);
+    setCsvUploadSummary(null);
+    toast.success("샘플 CSV를 입력창에 넣었습니다.");
+  } catch {
+    setCsvPreviewRows([]);
+    toast.error("샘플 CSV 파싱 중 오류가 발생했습니다.");
+  }
+};
+
+const readCsvFile = async (file: File) => {
+  const text = (await file.text()).replace(/^\uFEFF/, "");
+  setCsvText(text);
+
+  try {
+    const parsed = parseCsvLines(text);
+    setCsvPreviewRows(parsed);
+  } catch {
+    setCsvPreviewRows([]);
+  }
+};
+
+const handleCsvFileChange = async (
+  e: React.ChangeEvent<HTMLInputElement>
+) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  await readCsvFile(file);
+  e.target.value = "";
+};
+
+const handleCsvDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+  e.preventDefault();
+  setIsCsvDragOver(false);
+
+  const file = e.dataTransfer.files?.[0];
+  if (!file) return;
+
+  const lowerName = file.name.toLowerCase();
+  if (!lowerName.endsWith(".csv") && file.type !== "text/csv") {
+    toast.error("CSV 파일만 업로드할 수 있습니다.");
+    return;
+  }
+
+  await readCsvFile(file);
+};
+
+const handleCsvDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+  e.preventDefault();
+  setIsCsvDragOver(true);
+};
+
+const handleCsvDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+  e.preventDefault();
+  setIsCsvDragOver(false);
+};
+
+const copyFailedRows = async () => {
+  if (!failedRowsText.trim()) {
+    toast.error("복사할 실패 행이 없습니다.");
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(failedRowsText);
+    toast.success("실패 행 CSV를 복사했습니다.");
+  } catch {
+    toast.error("클립보드 복사에 실패했습니다.");
+  }
+};
+
+const downloadFailedRowsCsv = () => {
+  if (!failedRowsText.trim()) {
+    toast.error("다운로드할 실패 행이 없습니다.");
+    return;
+  }
+
+  const blob = new Blob(["\ufeff" + failedRowsText], {
+    type: "text/csv;charset=utf-8;",
+  });
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download =
+    masterListType === "education"
+      ? "practice-education-failed-rows.csv"
+      : "practice-institution-failed-rows.csv";
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
+const applyFailedRowsToEditor = () => {
+  if (!failedRowsText.trim()) {
+    toast.error("적용할 실패 행이 없습니다.");
+    return;
+  }
+
+  setCsvText(failedRowsText);
+
+  try {
+    const parsed = parseCsvLines(failedRowsText);
+    setCsvPreviewRows(parsed);
+    setCsvUploadSummary(null);
+    toast.success("실패 행을 입력창에 다시 불러왔습니다.");
+  } catch {
+    setCsvPreviewRows([]);
+    toast.error("실패 행 재적용 중 파싱 오류가 발생했습니다.");
+  }
+};
+
+const handleUploadCsv = async () => {
   if (!csvText.trim()) {
     toast.error("CSV 내용을 입력해주세요.");
     return;
   }
+
+setCsvUploadSummary(null);
 
 if (!selectedCategoryId) {
   toast.error("먼저 등록할 리스트를 선택해주세요.");
@@ -673,51 +888,127 @@ if (!selectedCategoryId) {
     return;
   }
 
-  const body = rows.slice(1);
+const header = rows[0]?.map((v) => String(v || "").trim());
 
-  if (masterListType === "education") {
-    const parsed = body
-  .filter((cols) => cols[0])
-  .map((cols, idx) => ({
-    categoryId: selectedCategoryId || undefined,
-    name: cols[0] || "",
-    phone: cols[1] || "",
-    address: cols[2] || "",
-    detailAddress: cols[3] || "",
-    feeAmount: cols[4] || "0",
-    latitude: cols[5] || "",
-    longitude: cols[6] || "",
-    representativeName: cols[7] || "",
-    availableCourse: cols[8] || "",
-    memo: cols[9] || "",
-    isActive: cols[10] ? cols[10] === "true" : true,
-    sortOrder: cols[11] ? Number(cols[11]) : idx,
-  }));
+if (masterListType === "education") {
+  const expected = ["이름", "전화번호", "주소"];
+  const ok = expected.every((key, idx) => header?.[idx] === key);
 
-    bulkCreateEducationCentersMut.mutate({ rows: parsed });
+  if (!ok) {
+    toast.error("실습교육원 CSV 헤더 형식이 올바르지 않습니다.");
     return;
   }
+} else {
+  const expected = ["이름", "담당자명", "전화번호"];
+  const ok = expected.every((key, idx) => header?.[idx] === key);
 
-  const parsed = body
-  .filter((cols) => cols[0])
-  .map((cols, idx) => ({
+  if (!ok) {
+    toast.error("실습기관 CSV 헤더 형식이 올바르지 않습니다.");
+    return;
+  }
+}
+
+  const body = rows.slice(1);
+if (csvPreviewWarnings.length > 0) {
+  toast.error("업로드 전 확인 필요 항목이 있습니다.");
+  return;
+}
+
+ if (masterListType === "education") {
+  const educationRows = body.filter((cols) => cols[0]);
+
+  const parsed: any[] = [];
+
+  for (let i = 0; i < educationRows.length; i++) {
+    const cols = educationRows[i];
+
+    const address = cols[2] || "";
+    const detailAddress = cols[3] || "";
+
+    let latitude = normalizeNumberText(cols[5] || "");
+let longitude = normalizeNumberText(cols[6] || "");
+
+    if ((!latitude || !longitude) && address) {
+      try {
+        const geo = await geocodeAddress(address);
+        latitude = String(geo.lat);
+        longitude = String(geo.lng);
+      } catch (error) {
+        console.warn("[CSV][education] 좌표 변환 실패:", address, error);
+      }
+    }
+
+    parsed.push({
+      categoryId: selectedCategoryId || undefined,
+      name: cols[0] || "",
+      phone: cols[1] || "",
+      address,
+      detailAddress,
+      feeAmount: normalizeNumberText(cols[4] || "0"),
+      latitude,
+      longitude,
+      representativeName: cols[7] || "",
+      availableCourse: cols[8] || "",
+      memo: cols[9] || "",
+      isActive: cols[10] ? normalizeBooleanText(cols[10]) : true,
+sortOrder: cols[11] ? Number(normalizeNumberText(cols[11])) : i,
+    });
+  }
+
+ bulkCreateEducationCentersMut.mutate({
+  rows: parsed,
+  mode: csvMode,
+  categoryId: selectedCategoryId,
+});
+return;
+}
+
+const institutionRows = body.filter((cols) => cols[0]);
+
+const parsed: any[] = [];
+
+for (let i = 0; i < institutionRows.length; i++) {
+  const cols = institutionRows[i];
+
+  const address = cols[3] || "";
+  const detailAddress = cols[4] || "";
+
+  let latitude = normalizeNumberText(cols[6] || "");
+let longitude = normalizeNumberText(cols[7] || "");
+
+  if ((!latitude || !longitude) && address) {
+    try {
+      const geo = await geocodeAddress(address);
+      latitude = String(geo.lat);
+      longitude = String(geo.lng);
+    } catch (error) {
+      console.warn("[CSV][institution] 좌표 변환 실패:", address, error);
+    }
+  }
+
+  parsed.push({
     institutionType: "institution" as const,
     categoryId: selectedCategoryId || undefined,
     name: cols[0] || "",
     representativeName: cols[1] || "",
     phone: cols[2] || "",
-    address: cols[3] || "",
-    detailAddress: cols[4] || "",
-    price: cols[5] || "0",
-    latitude: cols[6] || "",
-    longitude: cols[7] || "",
+    address,
+    detailAddress,
+    price: normalizeNumberText(cols[5] || "0"),
+    latitude,
+    longitude,
     availableCourse: cols[8] || "",
     memo: cols[9] || "",
-    isActive: cols[10] ? cols[10] === "true" : true,
-    sortOrder: cols[11] ? Number(cols[11]) : idx,
-  }));
+    isActive: cols[10] ? normalizeBooleanText(cols[10]) : true,
+sortOrder: cols[11] ? Number(normalizeNumberText(cols[11])) : i,
+  });
+}
 
-  bulkCreateInstitutionsMut.mutate({ rows: parsed });
+bulkCreateInstitutionsMut.mutate({
+  rows: parsed,
+  mode: csvMode,
+  categoryId: selectedCategoryId,
+});
 };
 
 const handleBulkDeactivate = () => {
@@ -785,8 +1076,6 @@ const handleDeleteMasterItem = () => {
         inactiveEndDate: finderInactiveEndDate || null,
         hideOnMapWhenInactive: finderHideOnMapWhenInactive,
       });
-
-      toast.success("비활성화 설정이 반영되었습니다.");
     } catch (e: any) {
       toast.error(e?.message || "비활성화 설정 저장 중 오류가 발생했습니다.");
     }
@@ -820,30 +1109,40 @@ const handleDeleteMasterItem = () => {
   });
 
   for (const item of educationItems) {
-          const itemLat = toNum(item.latitude);
-          const itemLng = toNum(item.longitude);
-          if (itemLat === null || itemLng === null) continue;
+if (
+  filterCategory &&
+  (
+    filterCategory.type !== "education" ||
+    Number(item.categoryId || 0) !== Number(filterCategory.id)
+  )
+) continue;
+  const itemLat = toNum(item.latitude);
+  const itemLng = toNum(item.longitude);
+  const hasCoords = itemLat !== null && itemLng !== null;
 
-          const distanceKm = haversineDistanceKm(lat, lng, itemLat, itemLng);
+  const distanceKm = hasCoords
+    ? haversineDistanceKm(lat, lng, itemLat as number, itemLng as number)
+    : null;
 
-          nextResults.push({
-            id: item.id,
-            type: "education",
-            name: item.name,
-            representativeName: item.representativeName || "",
-            phone: item.phone || "",
-            address: [item.address, item.detailAddress].filter(Boolean).join(" "),
-            price: item.feeAmount ? String(item.feeAmount) : "",
-            distanceKm: distanceKm.toFixed(2),
-            latitude: item.latitude,
-            longitude: item.longitude,
-            isInactive: !!item.isInactive,
-            inactiveReason: item.inactiveReason || "",
-            inactiveStartDate: item.inactiveStartDate || null,
-            inactiveEndDate: item.inactiveEndDate || null,
-            hideOnMapWhenInactive: item.hideOnMapWhenInactive ?? true,
-          });
-        }
+ nextResults.push({
+  id: item.id,
+  categoryId: item.categoryId,
+    type: "education",
+    name: item.name,
+    representativeName: item.representativeName || "",
+    phone: item.phone || "",
+    address: [item.address, item.detailAddress].filter(Boolean).join(" "),
+    price: item.feeAmount ? String(item.feeAmount) : "",
+    distanceKm: hasCoords ? distanceKm!.toFixed(2) : "좌표없음",
+    latitude: item.latitude,
+    longitude: item.longitude,
+    isInactive: !!item.isInactive,
+    inactiveReason: item.inactiveReason || "",
+    inactiveStartDate: item.inactiveStartDate || null,
+    inactiveEndDate: item.inactiveEndDate || null,
+    hideOnMapWhenInactive: item.hideOnMapWhenInactive ?? true,
+  });
+}
       }
 
       if (finderIncludePracticeInstitution) {
@@ -853,37 +1152,47 @@ const handleDeleteMasterItem = () => {
   });
 
   for (const item of institutionItems) {
-          const itemLat = toNum(item.latitude);
-          const itemLng = toNum(item.longitude);
-          if (itemLat === null || itemLng === null) continue;
+if (
+  filterCategory &&
+  (
+    filterCategory.type !== "institution" ||
+    Number(item.categoryId || 0) !== Number(filterCategory.id)
+  )
+) continue;
+  const itemLat = toNum(item.latitude);
+  const itemLng = toNum(item.longitude);
+  const hasCoords = itemLat !== null && itemLng !== null;
 
-          const distanceKm = haversineDistanceKm(lat, lng, itemLat, itemLng);
+  const distanceKm = hasCoords
+    ? haversineDistanceKm(lat, lng, itemLat as number, itemLng as number)
+    : null;
 
-          nextResults.push({
-            id: item.id,
-            type: "institution",
-            name: item.name,
-            representativeName: item.representativeName || "",
-            phone: item.phone || "",
-            address: [item.address, item.detailAddress].filter(Boolean).join(" "),
-            price: item.price ? String(item.price) : "",
-            distanceKm: distanceKm.toFixed(2),
-            latitude: item.latitude,
-            longitude: item.longitude,
-            isInactive: !!item.isInactive,
-            inactiveReason: item.inactiveReason || "",
-            inactiveStartDate: item.inactiveStartDate || null,
-            inactiveEndDate: item.inactiveEndDate || null,
-            hideOnMapWhenInactive: item.hideOnMapWhenInactive ?? true,
-          });
-        }
+  nextResults.push({
+  id: item.id,
+  categoryId: item.categoryId,
+  type: "institution",
+    name: item.name,
+    representativeName: item.representativeName || "",
+    phone: item.phone || "",
+    address: [item.address, item.detailAddress].filter(Boolean).join(" "),
+    price: item.price ? String(item.price) : "",
+    distanceKm: hasCoords ? distanceKm!.toFixed(2) : "좌표없음",
+    latitude: item.latitude,
+    longitude: item.longitude,
+    isInactive: !!item.isInactive,
+    inactiveReason: item.inactiveReason || "",
+    inactiveStartDate: item.inactiveStartDate || null,
+    inactiveEndDate: item.inactiveEndDate || null,
+    hideOnMapWhenInactive: item.hideOnMapWhenInactive ?? true,
+  });
+}
       }
 
       nextResults.sort((a, b) => {
-        const da = Number(a.distanceKm || 999999);
-        const db = Number(b.distanceKm || 999999);
-        return da - db;
-      });
+  const da = Number.isFinite(Number(a.distanceKm)) ? Number(a.distanceKm) : 999999;
+  const db = Number.isFinite(Number(b.distanceKm)) ? Number(b.distanceKm) : 999999;
+  return da - db;
+});
 
       const topResults = nextResults.slice(0, 100);
 
@@ -965,15 +1274,29 @@ const handleDeleteMasterItem = () => {
   };
 
   const mapVisibleFinderResults = useMemo(() => {
-    return finderResults.filter((item) => {
-      const inactiveNow = isFinderItemInactiveNow(item);
-
-      if (!inactiveNow) return true;
-      if (item.hideOnMapWhenInactive === false) return true;
-
+  return finderResults.filter((item) => {
+    if (
+      filterCategory &&
+      (
+        item.type !== filterCategory.type ||
+        Number(item.categoryId || 0) !== Number(filterCategory.id)
+      )
+    ) {
       return false;
-    });
-  }, [finderResults]);
+    }
+
+    const lat = toNum(item.latitude);
+    const lng = toNum(item.longitude);
+    if (lat === null || lng === null) return false;
+
+    const inactiveNow = isFinderItemInactiveNow(item);
+
+    if (!inactiveNow) return true;
+    if (item.hideOnMapWhenInactive === false) return true;
+
+    return false;
+  });
+}, [finderResults, filterCategory]);
 
   const FinderTypeToggle = ({
     checked,
@@ -1009,6 +1332,126 @@ const handleDeleteMasterItem = () => {
   const savingFinderSettings =
     updateEducationAvailabilityMut.isPending ||
     updateInstitutionAvailabilityMut.isPending;
+
+const masterItems = useMemo(() => {
+  const base =
+    masterListType === "education"
+      ? (educationCenterDb as any[]).map((item) => ({
+          ...item,
+          type: "education" as const,
+        }))
+      : (practiceInstitutionDb as any[]).map((item) => ({
+          ...item,
+          type: "institution" as const,
+        }));
+
+  return base.filter((item) => {
+    if (!selectedCategoryId) return true;
+    return Number(item.categoryId || 0) === Number(selectedCategoryId);
+  });
+}, [
+  masterListType,
+  educationCenterDb,
+  practiceInstitutionDb,
+  selectedCategoryId,
+]);
+
+const failedRowsText = useMemo(() => {
+  if (!csvUploadSummary?.failedRows?.length) return "";
+
+  const header = "rowIndex,name,address,reason";
+  const body = csvUploadSummary.failedRows.map((row) =>
+    [
+      row.rowIndex,
+      `"${String(row.name || "").replace(/"/g, '""')}"`,
+      `"${String(row.address || "").replace(/"/g, '""')}"`,
+      `"${String(row.reason || "").replace(/"/g, '""')}"`,
+    ].join(",")
+  );
+
+  return [header, ...body].join("\n");
+}, [csvUploadSummary]);
+
+const csvPreviewSummary = useMemo(() => {
+  if (!csvPreviewRows.length) {
+    return {
+      total: 0,
+      valid: 0,
+      emptyNameRows: 0,
+    };
+  }
+
+  const body = csvPreviewRows.slice(1);
+
+  const valid = body.filter((row) => String(row?.[0] || "").trim()).length;
+  const emptyNameRows = body.filter((row) => !String(row?.[0] || "").trim()).length;
+
+  return {
+    total: body.length,
+    valid,
+    emptyNameRows,
+  };
+}, [csvPreviewRows]);
+
+const csvPreviewWarnings = useMemo(() => {
+  if (csvPreviewRows.length <= 1) {
+    return [];
+  }
+
+  const body = csvPreviewRows.slice(1);
+  const warnings: string[] = [];
+
+  const missingAddressCount =
+    masterListType === "education"
+      ? body.filter((row) => String(row?.[2] || "").trim() === "").length
+      : body.filter((row) => String(row?.[3] || "").trim() === "").length;
+
+  const invalidSortOrderCount = body.filter((row) => {
+    const idx = 11;
+    const v = String(row?.[idx] || "").trim();
+    return v !== "" && Number.isNaN(Number(v));
+  }).length;
+
+  const invalidLatLngCount =
+    masterListType === "education"
+      ? body.filter((row) => {
+          const lat = String(row?.[5] || "").trim();
+          const lng = String(row?.[6] || "").trim();
+          return (
+            (lat !== "" && Number.isNaN(Number(normalizeNumberText(lat)))) ||
+            (lng !== "" && Number.isNaN(Number(normalizeNumberText(lng))))
+          );
+        }).length
+      : body.filter((row) => {
+          const lat = String(row?.[6] || "").trim();
+          const lng = String(row?.[7] || "").trim();
+          return (
+            (lat !== "" && Number.isNaN(Number(normalizeNumberText(lat)))) ||
+            (lng !== "" && Number.isNaN(Number(normalizeNumberText(lng))))
+          );
+        }).length;
+
+  if (missingAddressCount > 0) {
+    warnings.push(`주소 누락 행 ${missingAddressCount}건`);
+  }
+
+  if (invalidSortOrderCount > 0) {
+    warnings.push(`정렬순서 숫자 아님 ${invalidSortOrderCount}건`);
+  }
+
+  if (invalidLatLngCount > 0) {
+    warnings.push(`위도/경도 숫자 형식 오류 ${invalidLatLngCount}건`);
+  }
+
+  return warnings;
+}, [csvPreviewRows, masterListType]);
+
+useEffect(() => {
+  setCsvText("");
+  setCsvPreviewRows([]);
+  setCsvUploadSummary(null);
+  setIsCsvDragOver(false);
+}, [masterListType]);
 
   return (
     <div className="space-y-6">
@@ -1571,7 +2014,7 @@ const handleDeleteMasterItem = () => {
       </Dialog>
 
 <Dialog open={masterOpen} onOpenChange={setMasterOpen}>
-  <DialogContent className="h-[88vh] w-[96vw] max-w-[1500px] overflow-hidden p-0">
+  <DialogContent className="h-[88vh] w-[98vw] !max-w-[1700px] overflow-hidden p-0">
     <div className="flex h-full flex-col">
       <div className="border-b px-6 py-4">
         <DialogHeader className="space-y-2 text-left">
@@ -1583,22 +2026,41 @@ const handleDeleteMasterItem = () => {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          {(masterListType === "education" ? educationCategories : institutionCategories).map((cat: any) => (
-            <Button
-              key={cat.id}
-              type="button"
-              variant={selectedCategoryId === cat.id ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSelectedCategoryId(cat.id)}
-            >
-              {cat.name}
-            </Button>
-          ))}
-        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl border bg-slate-50/80 p-3">
+  <Button
+    type="button"
+    variant={selectedCategoryId === null ? "default" : "outline"}
+    size="sm"
+    onClick={() => setSelectedCategoryId(null)}
+    className="rounded-full"
+  >
+    전체
+  </Button>
+
+  {(masterListType === "education" ? educationCategories : institutionCategories).map((cat: any) => {
+  const isSelected = Number(selectedCategoryId) === Number(cat.id);
+
+    return (
+      <Button
+        key={`${masterListType}-${cat.id}`}
+        type="button"
+        variant={isSelected ? "default" : "outline"}
+        size="sm"
+        className={`rounded-full ${
+          isSelected
+            ? "shadow-sm"
+            : "border-slate-200 bg-white hover:bg-slate-50"
+        }`}
+        onClick={() => setSelectedCategoryId(cat.id)}
+      >
+        {cat.name}
+      </Button>
+    );
+  })}
+</div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[420px_minmax(0,1fr)]">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(560px,640px)_minmax(720px,1fr)]">
         <div className="border-r bg-slate-50/60 p-6">
           <div className="space-y-4">
             <div>
@@ -1635,28 +2097,311 @@ const handleDeleteMasterItem = () => {
                 </div>
               )}
             </div>
+<div className="space-y-2">
+  <Label>등록 방식</Label>
+  <div className="flex gap-2">
+    <Button
+      type="button"
+      variant={csvMode === "append" ? "default" : "outline"}
+      size="sm"
+      onClick={() => setCsvMode("append")}
+    >
+      기존 유지 + 추가/수정
+    </Button>
 
-            <div className="space-y-2">
-              <Label>CSV 입력</Label>
-              <Textarea
-                value={csvText}
-                onChange={(e) => setCsvText(e.target.value)}
-                className="min-h-[260px] resize-none bg-white"
-                placeholder={
-                  masterListType === "education"
-                    ? "예시 형식에 맞춰 실습교육원 데이터를 붙여넣으세요."
-                    : "예시 형식에 맞춰 실습기관 데이터를 붙여넣으세요."
-                }
-              />
+    <Button
+      type="button"
+      variant={csvMode === "replace" ? "destructive" : "outline"}
+      size="sm"
+      onClick={() => setCsvMode("replace")}
+    >
+      선택 리스트 전체 초기화 후 등록
+    </Button>
+  </div>
+
+  <div className="text-xs text-muted-foreground">
+    {csvMode === "append"
+      ? "같은 이름 + 주소 + 리스트 데이터는 수정하고, 없으면 새로 추가합니다."
+      : "현재 선택한 리스트의 기존 데이터를 모두 지운 뒤 CSV로 다시 등록합니다."}
+  </div>
+</div>
+
+       <div className="space-y-3">
+  <div className="flex items-center justify-between">
+    <Label>CSV 입력</Label>
+    <div className="flex flex-wrap gap-2">
+<Button
+  type="button"
+  variant="outline"
+  size="sm"
+  onClick={fillSampleCsvToEditor}
+>
+  예시 채우기
+</Button>
+<Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={downloadSampleCsv}
+      >
+        샘플 CSV 다운로드
+      </Button>
+
+      <label>
+        <input
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={handleCsvFileChange}
+        />
+        <span className="inline-flex h-9 cursor-pointer items-center justify-center rounded-md border border-input bg-background px-3 text-sm shadow-xs transition hover:bg-accent hover:text-accent-foreground">
+          파일 업로드
+        </span>
+      </label>
+    </div>
+  </div>
+
+{csvPreviewRows.length > 0 && (
+  <div className="rounded-xl border bg-white p-4 text-sm">
+{csvPreviewWarnings.length > 0 && (
+  <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4 text-sm">
+    <div className="font-semibold text-yellow-800">업로드 전 확인 필요</div>
+    <div className="mt-2 space-y-1 text-xs text-yellow-700">
+      {csvPreviewWarnings.map((warning, idx) => (
+        <div key={idx}>- {warning}</div>
+      ))}
+    </div>
+  </div>
+)}
+    <div className="font-semibold">업로드 전 미리보기</div>
+
+    <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+      <div className="rounded-lg bg-slate-50 px-3 py-2">
+        <div className="text-muted-foreground">전체 행</div>
+        <div className="mt-1 font-medium">{csvPreviewSummary.total}건</div>
+      </div>
+
+      <div className="rounded-lg bg-emerald-50 px-3 py-2">
+        <div className="text-emerald-700">이름 있는 행</div>
+        <div className="mt-1 font-semibold text-emerald-800">
+          {csvPreviewSummary.valid}건
+        </div>
+      </div>
+
+      <div className="rounded-lg bg-yellow-50 px-3 py-2">
+        <div className="text-yellow-700">이름 누락 행</div>
+        <div className="mt-1 font-semibold text-yellow-800">
+          {csvPreviewSummary.emptyNameRows}건
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
+{csvPreviewRows.length > 1 && (
+  <div className="rounded-xl border bg-white">
+    <div className="border-b px-4 py-3 text-sm font-semibold">
+      미리보기 테이블
+    </div>
+
+    <div className="max-h-[260px] overflow-auto">
+      <table className="w-full min-w-[900px] text-xs">
+        <tbody>
+          {csvPreviewRows.slice(0, 6).map((row, rowIdx) => (
+            <tr
+              key={rowIdx}
+              className={rowIdx === 0 ? "bg-slate-50 font-semibold" : "border-t"}
+            >
+              {row.slice(0, 6).map((cell, cellIdx) => (
+                <td key={cellIdx} className="px-3 py-2 align-top">
+                  {cell || "-"}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <div className="border-t px-4 py-2 text-[11px] text-muted-foreground">
+      상위 6행, 앞쪽 6열만 미리 표시합니다.
+    </div>
+  </div>
+)}    
+
+  <div
+    onDrop={handleCsvDrop}
+    onDragOver={handleCsvDragOver}
+    onDragLeave={handleCsvDragLeave}
+    className={`rounded-2xl border-2 border-dashed p-3 transition ${
+      isCsvDragOver
+        ? "border-blue-400 bg-blue-50"
+        : "border-slate-200 bg-white"
+    }`}
+  >
+    <div className="mb-2 text-xs text-muted-foreground">
+      CSV 파일을 여기로 드래그해서 넣거나, 직접 붙여넣거나, 파일 업로드 버튼을 사용하세요.
+    </div>
+
+    <Textarea
+  value={csvText}
+  onChange={(e) => {
+    const next = e.target.value;
+    setCsvText(next);
+
+    try {
+      const parsed = parseCsvLines(next);
+      setCsvPreviewRows(parsed);
+    } catch {
+      setCsvPreviewRows([]);
+    }
+  }}
+      className="min-h-[260px] resize-none border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
+      placeholder={
+        masterListType === "education"
+          ? "예시 형식에 맞춰 실습교육원 데이터를 붙여넣으세요."
+          : "예시 형식에 맞춰 실습기관 데이터를 붙여넣으세요."
+      }
+    />
+  </div>
+</div>
+
+<div className="flex flex-wrap gap-2">
+  <Button
+    type="button"
+    className="min-w-[140px]"
+    onClick={handleUploadCsv}
+    disabled={
+      bulkCreateEducationCentersMut.isPending ||
+      bulkCreateInstitutionsMut.isPending
+    }
+  >
+    {bulkCreateEducationCentersMut.isPending ||
+    bulkCreateInstitutionsMut.isPending
+      ? "등록중..."
+      : "CSV 등록"}
+  </Button>
+
+  <Button
+    type="button"
+    variant="secondary"
+    className="min-w-[140px]"
+    onClick={() => {
+      if (masterListType === "education") {
+        fixEducationCoordsMut.mutate({ limit: 100 });
+      } else {
+        fixInstitutionCoordsMut.mutate({ limit: 100 });
+      }
+    }}
+  >
+    좌표 자동 보정
+  </Button>
+</div>     
+
+            
+{csvUploadSummary && (
+  <div className="rounded-xl border bg-white p-4 text-sm">
+    <div>
+  <div className="font-semibold">업로드 결과</div>
+  <div className="mt-1 text-xs text-muted-foreground">
+    {csvUploadSummary.failed > 0
+      ? "실패 행이 있어 확인 후 다시 등록이 필요합니다."
+      : "모든 행이 정상 처리되었습니다."}
+  </div>
+</div>
+
+    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+      <div className="rounded-lg bg-slate-50 px-3 py-2">
+        <div className="text-muted-foreground">등록 방식</div>
+        <div className="mt-1 font-medium">
+          {csvUploadSummary.mode === "replace" ? "전체 초기화 후 등록" : "기존 유지 + 추가/수정"}
+        </div>
+      </div>
+
+      <div className="rounded-lg bg-slate-50 px-3 py-2">
+        <div className="text-muted-foreground">전체 행</div>
+        <div className="mt-1 font-medium">{csvUploadSummary.total}건</div>
+      </div>
+
+      <div className="rounded-lg bg-emerald-50 px-3 py-2">
+        <div className="text-emerald-700">신규 추가</div>
+        <div className="mt-1 font-semibold text-emerald-800">
+          {csvUploadSummary.created}건
+        </div>
+      </div>
+
+      <div className="rounded-lg bg-blue-50 px-3 py-2">
+        <div className="text-blue-700">기존 수정</div>
+        <div className="mt-1 font-semibold text-blue-800">
+          {csvUploadSummary.updated}건
+        </div>
+      </div>
+
+      <div className="rounded-lg bg-red-50 px-3 py-2 col-span-2">
+        <div className="text-red-700">실패</div>
+        <div className="mt-1 font-semibold text-red-800">
+          {csvUploadSummary.failed}건
+        </div>
+      </div>
+    </div>
+
+   {csvUploadSummary.failedRows?.length > 0 && (
+  <div className="mt-4 space-y-2">
+    <div className="flex items-center justify-between gap-2">
+      <div className="text-xs font-semibold text-red-700">실패 행</div>
+
+      <div className="flex flex-wrap gap-2">
+  <Button
+    type="button"
+    variant="outline"
+    size="sm"
+    onClick={applyFailedRowsToEditor}
+  >
+    실패 행 다시 편집
+  </Button>
+
+  <Button
+    type="button"
+    variant="outline"
+    size="sm"
+    onClick={copyFailedRows}
+  >
+    실패 행 복사
+  </Button>
+
+  <Button
+    type="button"
+    variant="outline"
+    size="sm"
+    onClick={downloadFailedRowsCsv}
+  >
+    실패 CSV 다운로드
+  </Button>
+</div>
+    </div>
+
+    <div className="max-h-40 overflow-auto rounded-lg border">
+          {csvUploadSummary.failedRows.map((item, idx) => (
+            <div
+              key={`${item.rowIndex}-${idx}`}
+              className="border-b last:border-b-0 px-3 py-2 text-xs"
+            >
+              <div className="font-medium">
+                {item.rowIndex}행 · {item.name || "-"}
+              </div>
+              <div className="text-muted-foreground">{item.address || "-"}</div>
+              <div className="mt-1 text-red-600">{item.reason}</div>
             </div>
-
-            <Button type="button" onClick={handleUploadCsv} className="h-11 w-full">
-              CSV 등록
-            </Button>
+          ))}
+        </div>
+      </div>
+    )}
+  </div>
+)}
           </div>
         </div>
 
-        <div className="min-w-0 p-6">
+        <div className="flex min-w-[720px] flex-col p-6">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <div className="text-sm font-semibold">
@@ -1667,20 +2412,25 @@ const handleDeleteMasterItem = () => {
               </div>
             </div>
 
-            <div className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
-  {selectedCategoryId
-    ? `${
-        (masterListType === "education" ? educationCategories : institutionCategories).find(
-          (cat: any) => Number(cat.id) === Number(selectedCategoryId)
-        )?.name || "선택된 리스트"
-      } 표시 중`
-    : "리스트를 선택하면 해당 목록만 표시됩니다."}
+<div className="flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+  <span>
+    {selectedCategoryId
+      ? `${
+          (masterListType === "education" ? educationCategories : institutionCategories).find(
+            (cat: any) => Number(cat.id) === Number(selectedCategoryId)
+          )?.name || "선택된 리스트"
+        } 표시 중`
+      : "전체 리스트 표시 중"}
+  </span>
+  <span className="text-slate-400">•</span>
+  <span>{masterItems.length}건</span>
 </div>
+            
           </div>
 
-          <div className="h-[calc(100%-52px)] overflow-hidden rounded-2xl border bg-white">
+          <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border bg-white">
             <div className="h-full overflow-auto">
-              <table className="w-full min-w-[900px] text-sm">
+              <table className="w-full min-w-[1200px] text-sm">
                 <thead className="sticky top-0 z-10 bg-slate-50">
                   <tr className="border-b">
                     <th className="px-4 py-3 text-left font-medium">이름</th>
@@ -1694,27 +2444,12 @@ const handleDeleteMasterItem = () => {
                 </thead>
 
                 <tbody>
-                  {(masterListType === "education"
-                    ? (educationCenterDb as any[])
-                        .filter((item) => {
-                          if (!selectedCategoryId) return true;
-                          return Number(item.categoryId || 0) === selectedCategoryId;
-                        })
-                        .map((item) => ({
-                          ...item,
-                          type: "education" as const,
-                        }))
-                    : (practiceInstitutionDb as any[])
-                        .filter((item) => {
-                          if (!selectedCategoryId) return true;
-                          return Number(item.categoryId || 0) === selectedCategoryId;
-                        })
-                        .map((item) => ({
-                          ...item,
-                          type: "institution" as const,
-                        }))
-                  ).map((item: any) => (
-                    <tr key={`${item.type}-${item.id}`} className="border-b align-top">
+                  {masterItems.map((item: any) => (
+
+                    <tr
+  key={`${item.type}-${item.id}`}
+  className="border-b align-top transition hover:bg-slate-50/70"
+>
                       <td className="px-4 py-3 font-medium">{item.name}</td>
 <td className="px-4 py-3 text-slate-600">
   {(masterListType === "education" ? educationCategories : institutionCategories).find(
@@ -1727,8 +2462,20 @@ const handleDeleteMasterItem = () => {
                       <td className="px-4 py-3">{item.phone || "-"}</td>
                       <td className="px-4 py-3">{item.availableCourse || "-"}</td>
                       <td className="px-4 py-3">
-                        {item.isInactive ? "비활성" : item.isActive === false ? "미사용" : "사용"}
-                      </td>
+  {item.isInactive ? (
+    <span className="inline-flex rounded-full bg-yellow-100 px-2.5 py-1 text-xs font-semibold text-yellow-800">
+      비활성
+    </span>
+  ) : item.isActive === false ? (
+    <span className="inline-flex rounded-full bg-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700">
+      미사용
+    </span>
+  ) : (
+    <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+      사용
+    </span>
+  )}
+</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           <Button
@@ -1771,16 +2518,7 @@ const handleDeleteMasterItem = () => {
                     </tr>
                   ))}
 
-                  {(masterListType === "education"
-                    ? (educationCenterDb as any[]).filter((item) => {
-                        if (!selectedCategoryId) return true;
-                        return Number(item.categoryId || 0) === selectedCategoryId;
-                      }).length
-                    : (practiceInstitutionDb as any[]).filter((item) => {
-                        if (!selectedCategoryId) return true;
-                        return Number(item.categoryId || 0) === selectedCategoryId;
-                      }).length
-                  ) === 0 && (
+                  {masterItems.length === 0 && (
                     <tr>
                       <td colSpan={7} className="px-4 py-14 text-center text-sm text-muted-foreground">
                         표시할 데이터가 없습니다.
@@ -2041,8 +2779,60 @@ const handleDeleteMasterItem = () => {
             </DialogDescription>
           </DialogHeader>
 
+<div className="mb-3 flex flex-wrap gap-2">
+  <Button
+    size="sm"
+    variant={filterCategory === null ? "default" : "outline"}
+    onClick={() => setFilterCategory(null)}
+  >
+    전체
+  </Button>
+
+  {educationCategories.map((cat: any) => (
+    <Button
+      key={`education-${cat.id}`}
+      size="sm"
+      variant={
+        filterCategory?.type === "education" &&
+Number(filterCategory?.id) === Number(cat.id)
+          ? "default"
+          : "outline"
+      }
+      onClick={() =>
+        setFilterCategory({
+          type: "education",
+          id: Number(cat.id),
+        })
+      }
+    >
+      교육원 · {cat.name}
+    </Button>
+  ))}
+
+  {institutionCategories.map((cat: any) => (
+    <Button
+      key={`institution-${cat.id}`}
+      size="sm"
+      variant={
+        filterCategory?.type === "institution" &&
+Number(filterCategory?.id) === Number(cat.id)
+          ? "default"
+          : "outline"
+      }
+      onClick={() =>
+        setFilterCategory({
+          type: "institution",
+          id: Number(cat.id),
+        })
+      }
+    >
+      기관 · {cat.name}
+    </Button>
+  ))}
+</div>
+
           <div className="flex h-[calc(100vh-72px)]">
-            <div className="flex w-[380px] min-w-[380px] flex-col border-r bg-white">
+  <div className="flex w-[460px] min-w-[460px] flex-col border-r bg-white">
               <div className="space-y-4 border-b p-4">
                 <div className="space-y-1">
                   <Label className="text-xs">주소 검색</Label>
@@ -2120,8 +2910,8 @@ const handleDeleteMasterItem = () => {
 </Button>
 
         {educationCategories.map((cat: any) => {
-  const isSelected = finderEducationCategoryId === cat.id;
-  const isRecommended = finderRecommendedEducationCategoryId === cat.id;
+  const isSelected = Number(finderEducationCategoryId) === Number(cat.id);
+const isRecommended = Number(finderRecommendedEducationCategoryId) === Number(cat.id);
 
   return (
     <Button
@@ -2178,8 +2968,8 @@ const handleDeleteMasterItem = () => {
 </Button>
 
         {institutionCategories.map((cat: any) => {
-  const isSelected = finderInstitutionCategoryId === cat.id;
-  const isRecommended = finderRecommendedInstitutionCategoryId === cat.id;
+  const isSelected = Number(finderInstitutionCategoryId) === Number(cat.id);
+const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(cat.id);
 
   return (
     <Button
@@ -2264,20 +3054,22 @@ const handleDeleteMasterItem = () => {
                       const hasConfig = hasFinderInactiveConfig(item);
 
                       return (
-                        <button
-                          key={`${item.type}-${item.id}`}
-                          type="button"
-                          className={`relative w-full p-4 text-left transition hover:bg-muted/30 ${
-                            isSelected
-                              ? item.type === "education"
-                                ? "bg-blue-50"
-                                : "bg-orange-50"
-                              : hasConfig
-                              ? "bg-yellow-50/80"
-                              : ""
-                          }`}
-                          onClick={() => setSelectedFinderItem(item)}
-                        >
+  <div
+  key={`${item.type}-${item.id}`}
+  className={`relative border-l-4 border-transparent ${
+    isSelected
+      ? item.type === "education"
+        ? "border-l-blue-500 bg-blue-50"
+        : "border-l-orange-500 bg-orange-50"
+      : hasConfig
+      ? "bg-yellow-50/80"
+      : ""
+  }`}
+>
+  <div
+    className="w-full cursor-pointer p-4 pr-10 text-left transition hover:bg-slate-50"
+    onClick={() => setSelectedFinderItem(item)}
+  >
                           <button
                             type="button"
                             onClick={(e) => {
@@ -2340,14 +3132,22 @@ const handleDeleteMasterItem = () => {
                               </div>
                             )}
 
-                            {item.distanceKm && (
-                              <div className="flex items-center gap-2 text-sm font-medium text-blue-600">
-                                <Navigation className="h-4 w-4" />
-                                <span>{item.distanceKm}km</span>
-                              </div>
-                            )}
+                         <div className="flex items-center gap-2">
+  {item.distanceKm && item.distanceKm !== "좌표없음" && (
+    <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+      거리 {item.distanceKm}km
+    </span>
+  )}
+
+  {item.distanceKm === "좌표없음" && (
+    <span className="inline-flex rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600">
+      좌표 없음
+    </span>
+  )}
+</div>
                           </div>
-                        </button>
+                        </div>
+		</div>
                       );
                     })}
                   </div>
@@ -2370,11 +3170,20 @@ const handleDeleteMasterItem = () => {
                       </span>
                       <span>{selectedFinderItem.name}</span>
                     </div>
-                    {selectedFinderItem.distanceKm && (
-                      <div className="mt-1 text-muted-foreground">
-                        거리: {selectedFinderItem.distanceKm}km
-                      </div>
-                    )}
+                   <div className="mt-2">
+  {selectedFinderItem.distanceKm &&
+    selectedFinderItem.distanceKm !== "좌표없음" && (
+      <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+        거리 {selectedFinderItem.distanceKm}km
+      </span>
+    )}
+
+  {selectedFinderItem.distanceKm === "좌표없음" && (
+    <span className="inline-flex rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-600">
+      좌표 없음
+    </span>
+  )}
+</div>
                     {hasFinderInactiveConfig(selectedFinderItem) && (
                       <div className="mt-2 text-yellow-700">
                         {getFinderInactiveText(selectedFinderItem)}
