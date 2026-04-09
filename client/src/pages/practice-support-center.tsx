@@ -326,17 +326,20 @@ const [csvUploadSummary, setCsvUploadSummary] = useState<{
 });
 
 const {
-  data: practiceInstitutionDb = [],
+  data: practiceInstitutionDbRaw = [],
   refetch: refetchPracticeInstitutions,
-} = trpc.practiceInstitution.list.useQuery(
-  {
-    institutionType: "institution",
-  },
-  {
-    staleTime: 0,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
-  }
+} = trpc.practiceInstitution.list.useQuery(undefined, {
+  staleTime: 0,
+  refetchOnMount: "always",
+  refetchOnWindowFocus: true,
+});
+
+const practiceInstitutionDb = useMemo(
+  () =>
+    (practiceInstitutionDbRaw as any[]).filter(
+      (item) => String(item.institutionType ?? "institution") === "institution"
+    ),
+  [practiceInstitutionDbRaw]
 );
 
 const {
@@ -421,11 +424,12 @@ const bulkCreateInstitutionsMut =
   trpc.practiceInstitution.bulkCreate.useMutation({
     onSuccess: async (result) => {
       await utils.practiceInstitution.list.invalidate();
+      await refetchPracticeInstitutions();
       toast.success("실습기관 CSV 등록이 완료되었습니다.");
       setCsvText("");
-setCsvPreviewRows([]);
-setIsCsvDragOver(false);
-setCsvUploadSummary(result as any);
+      setCsvPreviewRows([]);
+      setIsCsvDragOver(false);
+      setCsvUploadSummary(result as any);
     },
     onError: (e) => toast.error(e.message || "실습기관 CSV 등록 실패"),
   });
@@ -450,13 +454,14 @@ const deleteEducationCenterMut =
     onError: (e) => toast.error(e.message || "실습교육원 삭제 실패"),
   });
 
-const fixEducationCoordsMut =
-  trpc.practiceEducationCenter.fixCoords.useMutation({
-    onSuccess: (res) => {
+const fixInstitutionCoordsMut =
+  trpc.practiceInstitution.fixCoords.useMutation({
+    onSuccess: async (res) => {
       toast.success(
         `좌표 보정 완료 (${res.success}/${res.total})`
       );
-      utils.practiceEducationCenter.list.invalidate();
+      await utils.practiceInstitution.list.invalidate();
+      await refetchPracticeInstitutions();
     },
   });
 
