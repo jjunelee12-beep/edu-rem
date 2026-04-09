@@ -1132,7 +1132,12 @@ if (
     representativeName: item.representativeName || "",
     phone: item.phone || "",
     address: [item.address, item.detailAddress].filter(Boolean).join(" "),
-    price: item.feeAmount ? String(item.feeAmount) : "",
+    price:
+  item.feeAmount !== undefined && item.feeAmount !== null && item.feeAmount !== ""
+    ? String(item.feeAmount)
+    : item.price !== undefined && item.price !== null && item.price !== ""
+    ? String(item.price)
+    : "",
     distanceKm: hasCoords ? distanceKm!.toFixed(2) : "좌표없음",
     latitude: item.latitude,
     longitude: item.longitude,
@@ -1175,7 +1180,12 @@ if (
     representativeName: item.representativeName || "",
     phone: item.phone || "",
     address: [item.address, item.detailAddress].filter(Boolean).join(" "),
-    price: item.price ? String(item.price) : "",
+    price:
+  item.price !== undefined && item.price !== null && item.price !== ""
+    ? String(item.price)
+    : item.feeAmount !== undefined && item.feeAmount !== null && item.feeAmount !== ""
+    ? String(item.feeAmount)
+    : "",
     distanceKm: hasCoords ? distanceKm!.toFixed(2) : "좌표없음",
     latitude: item.latitude,
     longitude: item.longitude,
@@ -2765,11 +2775,11 @@ useEffect(() => {
 </Dialog>
 
       <Dialog open={finderOpen} onOpenChange={setFinderOpen}>
-        <DialogContent
-          aria-describedby="practice-finder-desc"
-          className="h-screen w-screen max-w-none overflow-hidden rounded-none border-0 p-0 sm:max-w-none"
-        >
-          <DialogHeader className="border-b bg-white px-6 pt-5 pb-4">
+  <DialogContent
+    aria-describedby="practice-finder-desc"
+    className="!fixed inset-0 h-[100dvh] w-[100dvw] !max-w-none translate-x-0 translate-y-0 overflow-hidden rounded-none border-0 p-0 gap-0"
+  >
+    <DialogHeader className="shrink-0 border-b bg-white px-6 pt-5 pb-4">
             <DialogTitle className="text-lg font-semibold">실습찾기</DialogTitle>
             <DialogDescription
               id="practice-finder-desc"
@@ -2779,60 +2789,8 @@ useEffect(() => {
             </DialogDescription>
           </DialogHeader>
 
-<div className="mb-3 flex flex-wrap gap-2">
-  <Button
-    size="sm"
-    variant={filterCategory === null ? "default" : "outline"}
-    onClick={() => setFilterCategory(null)}
-  >
-    전체
-  </Button>
-
-  {educationCategories.map((cat: any) => (
-    <Button
-      key={`education-${cat.id}`}
-      size="sm"
-      variant={
-        filterCategory?.type === "education" &&
-Number(filterCategory?.id) === Number(cat.id)
-          ? "default"
-          : "outline"
-      }
-      onClick={() =>
-        setFilterCategory({
-          type: "education",
-          id: Number(cat.id),
-        })
-      }
-    >
-      교육원 · {cat.name}
-    </Button>
-  ))}
-
-  {institutionCategories.map((cat: any) => (
-    <Button
-      key={`institution-${cat.id}`}
-      size="sm"
-      variant={
-        filterCategory?.type === "institution" &&
-Number(filterCategory?.id) === Number(cat.id)
-          ? "default"
-          : "outline"
-      }
-      onClick={() =>
-        setFilterCategory({
-          type: "institution",
-          id: Number(cat.id),
-        })
-      }
-    >
-      기관 · {cat.name}
-    </Button>
-  ))}
-</div>
-
-          <div className="flex h-[calc(100vh-72px)]">
-  <div className="flex w-[460px] min-w-[460px] flex-col border-r bg-white">
+<div className="flex min-h-0 flex-1 overflow-hidden">
+  <div className="flex h-full w-[460px] min-w-[460px] flex-col border-r bg-white">
               <div className="space-y-4 border-b p-4">
                 <div className="space-y-1">
                   <Label className="text-xs">주소 검색</Label>
@@ -3035,7 +2993,7 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto">
+              <div className="min-h-0 flex-1 overflow-y-auto">
                 {finderResults.length === 0 ? (
                   <div className="p-4 text-sm text-muted-foreground">
                     <div className="rounded-lg border bg-muted/30 p-4 leading-6">

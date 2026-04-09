@@ -3164,21 +3164,21 @@ const failedRows: Array<{ rowIndex: number; name?: string; address?: string; rea
 
   try {
     const value = {
-      categoryId: row.categoryId ?? null,
-      representativeName: row.representativeName?.trim() || null,
-      availableCourse: row.availableCourse?.trim() || null,
-      memo: row.memo || null,
-      name: row.name.trim(),
-      phone: row.phone?.trim() || null,
-      address: row.address?.trim() || null,
-      detailAddress: row.detailAddress?.trim() || null,
-      feeAmount: row.feeAmount || "0",
-      latitude: row.latitude || null,
-      longitude: row.longitude || null,
-      note: row.note || null,
-      isActive: row.isActive ?? true,
-      sortOrder: row.sortOrder ?? idx,
-    };
+  institutionType: row.institutionType ?? "institution",
+  categoryId: row.categoryId ?? null,
+  name: row.name.trim(),
+  representativeName: row.representativeName?.trim() || null,
+  phone: row.phone?.trim() || null,
+  address: row.address?.trim() || null,
+  detailAddress: row.detailAddress?.trim() || null,
+  price: row.price || "0",
+  latitude: row.latitude || null,
+  longitude: row.longitude || null,
+  availableCourse: row.availableCourse?.trim() || null,
+  memo: row.memo || null,
+  isActive: row.isActive ?? true,
+  sortOrder: row.sortOrder ?? idx,
+};
 
     if (!value.name) {
       failedRows.push({
@@ -3191,16 +3191,17 @@ const failedRows: Array<{ rowIndex: number; name?: string; address?: string; rea
     }
 
     const existing = await db
-      .select()
-      .from(practiceInstitutions)
-      .where(
-        and(
-          eq(practiceInstitutions.categoryId, value.categoryId),
-          eq(practiceInstitutions.name, value.name),
-          eq(practiceInstitutions.address, value.address)
-        )
-      )
-      .limit(1);
+  .select()
+  .from(practiceInstitutions)
+  .where(
+    and(
+      eq(practiceInstitutions.institutionType, value.institutionType),
+      eq(practiceInstitutions.categoryId, value.categoryId),
+      eq(practiceInstitutions.name, value.name),
+      eq(practiceInstitutions.address, value.address)
+    )
+  )
+  .limit(1);
 
     if (existing[0]) {
       await db

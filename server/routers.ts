@@ -3620,7 +3620,7 @@ categoryId: z.number().nullable().optional(),
           throw new Error("관리자 또는 호스트만 등록할 수 있습니다");
         }
 
-        await db.bulkCreatePracticeInstitutions(
+       const result = await db.bulkCreatePracticeInstitutions(
   input.rows.map((row, idx) => ({
     institutionType: row.institutionType,
     categoryId: row.categoryId ?? null,
@@ -3637,13 +3637,13 @@ categoryId: z.number().nullable().optional(),
     isActive: row.isActive ?? true,
     sortOrder: (row as any).sortOrder ?? idx,
   })) as any,
- {
+  {
     mode: input.mode,
     categoryId: input.categoryId ?? null,
   }
 );
 
-        return { success: true, count: input.rows.length };
+return result;
       }),
 
 bulkDeactivate: protectedProcedure
