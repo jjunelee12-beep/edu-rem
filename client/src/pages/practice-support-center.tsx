@@ -316,26 +316,52 @@ const [csvUploadSummary, setCsvUploadSummary] = useState<{
   const { data: practiceSupportList, isLoading } =
     trpc.practiceSupport.list.useQuery();
 
-  const { data: educationCenterDb = [] } =
-  trpc.practiceEducationCenter.list.useQuery(undefined, {
-    staleTime: 1000 * 60 * 5,
-  });
+  const {
+  data: educationCenterDb = [],
+  refetch: refetchEducationCenters,
+} = trpc.practiceEducationCenter.list.useQuery(undefined, {
+  staleTime: 0,
+  refetchOnMount: "always",
+  refetchOnWindowFocus: true,
+});
 
-const { data: practiceInstitutionDb = [] } =
-  trpc.practiceInstitution.list.useQuery(
-    {
-      institutionType: "institution",
-    },
-    {
-      staleTime: 1000 * 60 * 5,
-    }
-  );
+const {
+  data: practiceInstitutionDb = [],
+  refetch: refetchPracticeInstitutions,
+} = trpc.practiceInstitution.list.useQuery(
+  {
+    institutionType: "institution",
+  },
+  {
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  }
+);
 
-const { data: educationCategories = [] } =
-  trpc.practiceListCategory.list.useQuery({ listType: "education" });
+const {
+  data: educationCategories = [],
+  refetch: refetchEducationCategories,
+} = trpc.practiceListCategory.list.useQuery(
+  { listType: "education" },
+  {
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  }
+);
 
-const { data: institutionCategories = [] } =
-  trpc.practiceListCategory.list.useQuery({ listType: "institution" });
+const {
+  data: institutionCategories = [],
+  refetch: refetchInstitutionCategories,
+} = trpc.practiceListCategory.list.useQuery(
+  { listType: "institution" },
+  {
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  }
+);
 
 
   const updatePracticeSupportMut = trpc.practiceSupport.update.useMutation({
@@ -646,6 +672,11 @@ if (educationCategoryId) {
 };
 
   const openFinder = (row?: any | null) => {
+refetchPracticeInstitutions();
+refetchEducationCenters();
+refetchInstitutionCategories();
+refetchEducationCategories();
+
     const baseAddress = row?.inputAddress || row?.address || "";
 
     setFinderTargetRow(row || null);
@@ -1344,6 +1375,11 @@ if (
     updateInstitutionAvailabilityMut.isPending;
 
 const masterItems = useMemo(() => {
+  console.log("[masterListType]", masterListType);
+  console.log("[selectedCategoryId]", selectedCategoryId);
+  console.log("[practiceInstitutionDb.length]", practiceInstitutionDb.length);
+  console.log("[educationCenterDb.length]", educationCenterDb.length);
+  console.log("[institutionCategories]", institutionCategories);
   const base =
     masterListType === "education"
       ? (educationCenterDb as any[]).map((item) => ({
@@ -1462,6 +1498,22 @@ useEffect(() => {
   setCsvUploadSummary(null);
   setIsCsvDragOver(false);
 }, [masterListType]);
+
+useEffect(() => {
+  if (!masterOpen && !finderOpen) return;
+
+  refetchPracticeInstitutions();
+  refetchEducationCenters();
+  refetchInstitutionCategories();
+  refetchEducationCategories();
+}, [
+  masterOpen,
+  finderOpen,
+  refetchPracticeInstitutions,
+  refetchEducationCenters,
+  refetchInstitutionCategories,
+  refetchEducationCategories,
+]);
 
   return (
     <div className="space-y-6">
@@ -2777,9 +2829,9 @@ useEffect(() => {
       <Dialog open={finderOpen} onOpenChange={setFinderOpen}>
   <DialogContent
     aria-describedby="practice-finder-desc"
-    className="!fixed inset-0 h-[100dvh] w-[100dvw] !max-w-none translate-x-0 translate-y-0 overflow-hidden rounded-none border-0 p-0 gap-0"
+    className="h-screen w-screen max-w-none overflow-hidden rounded-none border-0 p-0 gap-0 sm:max-w-none"
   >
-    <DialogHeader className="shrink-0 border-b bg-white px-6 pt-5 pb-4">
+    <DialogHeader className="border-b bg-white px-6 pt-5 pb-4">
             <DialogTitle className="text-lg font-semibold">실습찾기</DialogTitle>
             <DialogDescription
               id="practice-finder-desc"
@@ -2789,8 +2841,8 @@ useEffect(() => {
             </DialogDescription>
           </DialogHeader>
 
-<div className="flex min-h-0 flex-1 overflow-hidden">
-  <div className="flex h-full w-[460px] min-w-[460px] flex-col border-r bg-white">
+<div className="flex h-[calc(100vh-72px)]">
+  <div className="flex w-[460px] min-w-[460px] flex-col border-r bg-white">
               <div className="space-y-4 border-b p-4">
                 <div className="space-y-1">
                   <Label className="text-xs">주소 검색</Label>
@@ -3176,7 +3228,7 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
               </div>
             </div>
 
-            <div className="relative min-w-0 flex-1 bg-gray-100">
+            <div className="relative flex-1 overflow-hidden bg-slate-100">
               <div className="h-full w-full">
                 <KakaoMap
                   address={finderAddress}
