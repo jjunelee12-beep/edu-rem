@@ -3324,8 +3324,14 @@ return { success: true };
       }),
   }),
 practiceEducationCenter: router({
-  list: protectedProcedure.query(async () => {
-    return db.listPracticeEducationCenters();
+  list: protectedProcedure
+  .input(
+    z.object({
+      categoryId: z.number().optional(),
+    }).optional()
+  )
+  .query(async ({ input }) => {
+    return db.listPracticeEducationCenters(input?.categoryId);
   }),
 
   get: protectedProcedure
@@ -3369,6 +3375,50 @@ practiceEducationCenter: router({
 
       return { id, success: true };
     }),
+
+bulkCreate: protectedProcedure
+  .input(
+    z.object({
+      rows: z.array(
+        z.object({
+categoryId: z.number().optional(),
+representativeName: z.string().optional(),
+availableCourse: z.string().optional(),
+memo: z.string().optional(),
+          name: z.string().min(1),
+          phone: z.string().optional(),
+          address: z.string().optional(),
+          detailAddress: z.string().optional(),
+          feeAmount: z.string().optional(),
+          latitude: z.string().optional(),
+          longitude: z.string().optional(),
+          note: z.string().optional(),
+          isActive: z.boolean().optional(),
+          sortOrder: z.number().optional(),
+        })
+      ),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    if (ctx.user.role !== "host" && ctx.user.role !== "superhost") {
+      throw new Error("호스트만 등록할 수 있습니다");
+    }
+
+    return db.bulkCreatePracticeEducationCenters(
+      input.rows.map((row, idx) => ({
+        name: row.name,
+        phone: row.phone || null,
+        address: row.address || null,
+        detailAddress: row.detailAddress || null,
+        feeAmount: row.feeAmount || "0",
+        latitude: row.latitude || null,
+        longitude: row.longitude || null,
+        note: row.note || null,
+        isActive: row.isActive ?? true,
+        sortOrder: row.sortOrder ?? idx,
+      }))
+    );
+  }),
 
   update: protectedProcedure
     .input(
@@ -3427,6 +3477,28 @@ practiceEducationCenter: router({
       return { success: true };
     }),
 
+bulkDeactivate: protectedProcedure
+  .input(
+    z.object({
+      inactiveReason: z.string().nullable().optional(),
+      inactiveStartDate: z.string().nullable().optional(),
+      inactiveEndDate: z.string().nullable().optional(),
+      hideOnMapWhenInactive: z.boolean().optional(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    if (ctx.user.role !== "host" && ctx.user.role !== "superhost") {
+      throw new Error("호스트만 일괄 비활성화할 수 있습니다");
+    }
+
+    return db.bulkDeactivatePracticeEducationCenters({
+      inactiveReason: input.inactiveReason ?? "일괄 비활성화",
+      inactiveStartDate: input.inactiveStartDate ?? null,
+      inactiveEndDate: input.inactiveEndDate ?? null,
+      hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
+    });
+  }),
+
   delete: hostProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
@@ -3436,14 +3508,18 @@ practiceEducationCenter: router({
 }),
   practiceInstitution: router({
     list: protectedProcedure
-      .input(
-        z.object({
-          institutionType: z.enum(["education", "institution"]).optional(),
-        }).optional()
-      )
-      .query(async ({ input }) => {
-        return db.listPracticeInstitutions(input?.institutionType);
-      }),
+  .input(
+    z.object({
+      institutionType: z.enum(["education", "institution"]).optional(),
+      categoryId: z.number().optional(),
+    }).optional()
+  )
+  .query(async ({ input }) => {
+    return db.listPracticeInstitutions({
+      institutionType: input?.institutionType,
+      categoryId: input?.categoryId,
+    });
+  }),
 
     get: protectedProcedure
       .input(z.object({ id: z.number() }))
@@ -3497,6 +3573,7 @@ practiceEducationCenter: router({
           rows: z.array(
             z.object({
               institutionType: z.enum(["education", "institution"]),
+categoryId: z.number().optional(),
               name: z.string().min(1),
               representativeName: z.string().optional(),
               phone: z.string().optional(),
@@ -3536,6 +3613,30 @@ practiceEducationCenter: router({
 
         return { success: true, count: input.rows.length };
       }),
+
+bulkDeactivate: protectedProcedure
+  .input(
+    z.object({
+      institutionType: z.enum(["education", "institution"]).optional(),
+      inactiveReason: z.string().nullable().optional(),
+      inactiveStartDate: z.string().nullable().optional(),
+      inactiveEndDate: z.string().nullable().optional(),
+      hideOnMapWhenInactive: z.boolean().optional(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    if (ctx.user.role !== "host" && ctx.user.role !== "superhost") {
+      throw new Error("호스트만 일괄 비활성화할 수 있습니다");
+    }
+
+    return db.bulkDeactivatePracticeInstitutions({
+      institutionType: input.institutionType,
+      inactiveReason: input.inactiveReason ?? "일괄 비활성화",
+      inactiveStartDate: input.inactiveStartDate ?? null,
+      inactiveEndDate: input.inactiveEndDate ?? null,
+      hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
+    });
+  }),
 
     update: protectedProcedure
       .input(
@@ -3618,6 +3719,62 @@ practiceEducationCenter: router({
         return { success: true };
       }),
   }),
+
+practiceListCategory: router({
+  list: protectedProcedure
+    .input(
+      z.object({
+        listType: z.enum(["education", "institution"]).optional(),
+      }).optional()
+    )
+    .query(async ({ input }) => {
+      return db.listPracticeListCategories(input?.listType);
+    }),
+
+  create: hostProcedure
+    .input(
+      z.object({
+        name: z.string().min(1),
+        listType: z.enum(["education", "institution"]),
+        description: z.string().optional(),
+        sortOrder: z.number().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const id = await db.createPracticeListCategory({
+        name: input.name.trim(),
+        listType: input.listType,
+        description: input.description?.trim() || null,
+        sortOrder: input.sortOrder ?? 0,
+        isActive: true,
+      } as any);
+
+      return { success: true, id };
+    }),
+
+  update: hostProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        description: z.string().optional(),
+        sortOrder: z.number().optional(),
+        isActive: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { id, ...rest } = input;
+      await db.updatePracticeListCategory(id, rest as any);
+      return { success: true };
+    }),
+
+  delete: hostProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.deletePracticeListCategory(input.id);
+      return { success: true };
+    }),
+}),
 
   jobSupport: router({
     list: protectedProcedure.query(async ({ ctx }) => {

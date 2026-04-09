@@ -238,6 +238,8 @@ export default function PracticeSupportCenter() {
     useState(true);
   const [finderIncludePracticeInstitution, setFinderIncludePracticeInstitution] =
     useState(true);
+const [finderEducationCategoryId, setFinderEducationCategoryId] = useState<number | null>(null);
+const [finderInstitutionCategoryId, setFinderInstitutionCategoryId] = useState<number | null>(null);
   const [finderTargetRow, setFinderTargetRow] = useState<any | null>(null);
   const [finderSearchTrigger, setFinderSearchTrigger] = useState(0);
   const [finderResults, setFinderResults] = useState<FinderItem[]>([]);
@@ -262,21 +264,48 @@ export default function PracticeSupportCenter() {
   const [finderHideOnMapWhenInactive, setFinderHideOnMapWhenInactive] =
     useState(true);
 
+const isHostManager =
+  user?.role === "host" || user?.role === "superhost";
+
+const [masterOpen, setMasterOpen] = useState(false);
+const [masterListType, setMasterListType] = useState<"education" | "institution">("education");
+const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+const [newCategoryName, setNewCategoryName] = useState("");
+const [categoryManageOpen, setCategoryManageOpen] = useState(false);
+
+const [csvText, setCsvText] = useState("");
+const [deactivateOpen, setDeactivateOpen] = useState(false);
+const [bulkInactiveReason, setBulkInactiveReason] = useState("일괄 비활성화");
+const [bulkInactiveStartDate, setBulkInactiveStartDate] = useState("");
+const [bulkInactiveEndDate, setBulkInactiveEndDate] = useState("");
+const [bulkHideOnMapWhenInactive, setBulkHideOnMapWhenInactive] = useState(true);
+
+const [deleteTarget, setDeleteTarget] = useState<FinderItem | null>(null);
+
   const { data: practiceSupportList, isLoading } =
     trpc.practiceSupport.list.useQuery();
 
   const { data: educationCenterDb = [] } =
-    trpc.practiceEducationCenter.list.useQuery(undefined, {
-      staleTime: 1000 * 60 * 5,
-    });
+  trpc.practiceEducationCenter.list.useQuery(undefined, {
+    staleTime: 1000 * 60 * 5,
+  });
 
-  const { data: practiceInstitutionDb = [] } =
-    trpc.practiceInstitution.list.useQuery(
-      { institutionType: "institution" },
-      {
-        staleTime: 1000 * 60 * 5,
-      }
-    );
+const { data: practiceInstitutionDb = [] } =
+  trpc.practiceInstitution.list.useQuery(
+    {
+      institutionType: "institution",
+    },
+    {
+      staleTime: 1000 * 60 * 5,
+    }
+  );
+
+const { data: educationCategories = [] } =
+  trpc.practiceListCategory.list.useQuery({ listType: "education" });
+
+const { data: institutionCategories = [] } =
+  trpc.practiceListCategory.list.useQuery({ listType: "institution" });
+
 
   const updatePracticeSupportMut = trpc.practiceSupport.update.useMutation({
     onSuccess: async () => {
@@ -307,6 +336,77 @@ export default function PracticeSupportCenter() {
       },
       onError: (e) => toast.error(e.message || "실습기관 설정 저장 실패"),
     });
+
+const bulkCreateEducationCentersMut =
+  trpc.practiceEducationCenter.bulkCreate.useMutation({
+    onSuccess: async () => {
+      await utils.practiceEducationCenter.list.invalidate();
+      toast.success("실습교육원 CSV 등록이 완료되었습니다.");
+      setCsvText("");
+    },
+    onError: (e) => toast.error(e.message || "실습교육원 CSV 등록 실패"),
+  });
+
+const bulkDeactivateEducationCentersMut =
+  trpc.practiceEducationCenter.bulkDeactivate.useMutation({
+    onSuccess: async () => {
+      await utils.practiceEducationCenter.list.invalidate();
+      toast.success("실습교육원 전체 비활성화가 완료되었습니다.");
+      setDeactivateOpen(false);
+    },
+    onError: (e) => toast.error(e.message || "실습교육원 전체 비활성화 실패"),
+  });
+
+const bulkCreateInstitutionsMut =
+  trpc.practiceInstitution.bulkCreate.useMutation({
+    onSuccess: async () => {
+      await utils.practiceInstitution.list.invalidate();
+      toast.success("실습기관 CSV 등록이 완료되었습니다.");
+      setCsvText("");
+    },
+    onError: (e) => toast.error(e.message || "실습기관 CSV 등록 실패"),
+  });
+
+const bulkDeactivateInstitutionsMut =
+  trpc.practiceInstitution.bulkDeactivate.useMutation({
+    onSuccess: async () => {
+      await utils.practiceInstitution.list.invalidate();
+      toast.success("실습기관 전체 비활성화가 완료되었습니다.");
+      setDeactivateOpen(false);
+    },
+    onError: (e) => toast.error(e.message || "실습기관 전체 비활성화 실패"),
+  });
+
+const deleteEducationCenterMut =
+  trpc.practiceEducationCenter.delete.useMutation({
+    onSuccess: async () => {
+      await utils.practiceEducationCenter.list.invalidate();
+      toast.success("실습교육원이 삭제되었습니다.");
+      setDeleteTarget(null);
+    },
+    onError: (e) => toast.error(e.message || "실습교육원 삭제 실패"),
+  });
+
+const deleteInstitutionMut =
+  trpc.practiceInstitution.delete.useMutation({
+    onSuccess: async () => {
+      await utils.practiceInstitution.list.invalidate();
+      toast.success("실습기관이 삭제되었습니다.");
+      setDeleteTarget(null);
+    },
+    onError: (e) => toast.error(e.message || "실습기관 삭제 실패"),
+  });
+
+const createCategoryMut = trpc.practiceListCategory.create.useMutation({
+  onSuccess: async () => {
+    await Promise.all([
+      utils.practiceListCategory.list.invalidate(),
+    ]);
+    toast.success("리스트가 추가되었습니다.");
+    setNewCategoryName("");
+  },
+  onError: (e) => toast.error(e.message || "리스트 추가 실패"),
+});
 
   const filteredList = useMemo(() => {
     const keyword = search.trim();
@@ -445,8 +545,10 @@ export default function PracticeSupportCenter() {
     setFinderTargetRow(row || null);
     setFinderAddress(baseAddress.trim());
     setFinderIncludeEducationCenter(true);
-    setFinderIncludePracticeInstitution(true);
-    setFinderResults(buildFinderBaseResults(row));
+setFinderIncludePracticeInstitution(true);
+setFinderEducationCategoryId(null);
+setFinderInstitutionCategoryId(null);
+setFinderResults(buildFinderBaseResults(row));
     setSelectedFinderItem(null);
     setFinderSearchPoint(null);
     setFinderResolvedAddress("");
@@ -488,6 +590,103 @@ export default function PracticeSupportCenter() {
       return { ...prev, ...patch };
     });
   };
+const parseCsvLines = (text: string) => {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.split(",").map((col) => col.trim()));
+};
+
+const handleUploadCsv = () => {
+  if (!csvText.trim()) {
+    toast.error("CSV 내용을 입력해주세요.");
+    return;
+  }
+
+  const rows = parseCsvLines(csvText);
+  if (rows.length <= 1) {
+    toast.error("헤더 포함 2줄 이상 필요합니다.");
+    return;
+  }
+
+  const body = rows.slice(1);
+
+  if (masterListType === "education") {
+    const parsed = body
+  .filter((cols) => cols[0])
+  .map((cols, idx) => ({
+    categoryId: selectedCategoryId || undefined,
+    name: cols[0] || "",
+    phone: cols[1] || "",
+    address: cols[2] || "",
+    detailAddress: cols[3] || "",
+    feeAmount: cols[4] || "0",
+    latitude: cols[5] || "",
+    longitude: cols[6] || "",
+    representativeName: cols[7] || "",
+    availableCourse: cols[8] || "",
+    memo: cols[9] || "",
+    isActive: cols[10] ? cols[10] === "true" : true,
+    sortOrder: cols[11] ? Number(cols[11]) : idx,
+  }));
+
+    bulkCreateEducationCentersMut.mutate({ rows: parsed });
+    return;
+  }
+
+  const parsed = body
+  .filter((cols) => cols[0])
+  .map((cols, idx) => ({
+    institutionType: "institution" as const,
+    categoryId: selectedCategoryId || undefined,
+    name: cols[0] || "",
+    representativeName: cols[1] || "",
+    phone: cols[2] || "",
+    address: cols[3] || "",
+    detailAddress: cols[4] || "",
+    price: cols[5] || "0",
+    latitude: cols[6] || "",
+    longitude: cols[7] || "",
+    availableCourse: cols[8] || "",
+    memo: cols[9] || "",
+    isActive: cols[10] ? cols[10] === "true" : true,
+    sortOrder: cols[11] ? Number(cols[11]) : idx,
+  }));
+
+  bulkCreateInstitutionsMut.mutate({ rows: parsed });
+};
+
+const handleBulkDeactivate = () => {
+  if (masterListType === "education") {
+    bulkDeactivateEducationCentersMut.mutate({
+      inactiveReason: bulkInactiveReason || "일괄 비활성화",
+      inactiveStartDate: bulkInactiveStartDate || null,
+      inactiveEndDate: bulkInactiveEndDate || null,
+      hideOnMapWhenInactive: bulkHideOnMapWhenInactive,
+    });
+    return;
+  }
+
+  bulkDeactivateInstitutionsMut.mutate({
+    institutionType: "institution",
+    inactiveReason: bulkInactiveReason || "일괄 비활성화",
+    inactiveStartDate: bulkInactiveStartDate || null,
+    inactiveEndDate: bulkInactiveEndDate || null,
+    hideOnMapWhenInactive: bulkHideOnMapWhenInactive,
+  });
+};
+
+const handleDeleteMasterItem = () => {
+  if (!deleteTarget) return;
+
+  if (deleteTarget.type === "education") {
+    deleteEducationCenterMut.mutate({ id: Number(deleteTarget.id) });
+    return;
+  }
+
+  deleteInstitutionMut.mutate({ id: Number(deleteTarget.id) });
+};
 
   const saveFinderSettings = async () => {
     if (!finderSettingsItem) {
@@ -552,7 +751,12 @@ export default function PracticeSupportCenter() {
       const nextResults: FinderItem[] = [];
 
       if (finderIncludeEducationCenter) {
-        for (const item of educationCenterDb as any[]) {
+  const educationItems = (educationCenterDb as any[]).filter((item) => {
+    if (!finderEducationCategoryId) return true;
+    return Number(item.categoryId || 0) === finderEducationCategoryId;
+  });
+
+  for (const item of educationItems) {
           const itemLat = toNum(item.latitude);
           const itemLng = toNum(item.longitude);
           if (itemLat === null || itemLng === null) continue;
@@ -580,7 +784,12 @@ export default function PracticeSupportCenter() {
       }
 
       if (finderIncludePracticeInstitution) {
-        for (const item of practiceInstitutionDb as any[]) {
+  const institutionItems = (practiceInstitutionDb as any[]).filter((item) => {
+    if (!finderInstitutionCategoryId) return true;
+    return Number(item.categoryId || 0) === finderInstitutionCategoryId;
+  });
+
+  for (const item of institutionItems) {
           const itemLat = toNum(item.latitude);
           const itemLng = toNum(item.longitude);
           if (itemLat === null || itemLng === null) continue;
@@ -748,6 +957,49 @@ export default function PracticeSupportCenter() {
             실습섭외 · 결제 상태를 관리합니다.
           </p>
         </div>
+{isHostManager && (
+  <div className="mt-3 flex flex-wrap items-center gap-2">
+    <Button
+      type="button"
+      variant="outline"
+      onClick={() => {
+        setMasterListType("education");
+        setSelectedCategoryId(null);
+        setMasterOpen(true);
+      }}
+    >
+      교육원 리스트 관리
+    </Button>
+
+    <Button
+      type="button"
+      variant="outline"
+      onClick={() => {
+        setMasterListType("institution");
+        setSelectedCategoryId(null);
+        setMasterOpen(true);
+      }}
+    >
+      기관 리스트 관리
+    </Button>
+
+    <Button
+      type="button"
+      variant="outline"
+      onClick={() => setCategoryManageOpen(true)}
+    >
+      리스트 추가
+    </Button>
+
+    <Button
+      type="button"
+      variant="destructive"
+      onClick={() => setDeactivateOpen(true)}
+    >
+      일괄 비활성화
+    </Button>
+  </div>
+)}
 
         <div className="flex gap-2 flex-wrap">
           <Input
@@ -1254,6 +1506,369 @@ export default function PracticeSupportCenter() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+<Dialog open={masterOpen} onOpenChange={setMasterOpen}>
+  <DialogContent className="max-w-6xl">
+    <DialogHeader>
+      <DialogTitle>
+        {masterListType === "education" ? "실습교육원 관리" : "실습기관 관리"}
+      </DialogTitle>
+      <DialogDescription>
+        CSV 등록, 현재 목록 확인, 개별 삭제를 할 수 있습니다.
+      </DialogDescription>
+    </DialogHeader>
+
+<div className="flex flex-wrap gap-2">
+  {(masterListType === "education" ? educationCategories : institutionCategories).map((cat: any) => (
+    <Button
+      key={cat.id}
+      type="button"
+      variant={selectedCategoryId === cat.id ? "default" : "outline"}
+      size="sm"
+      onClick={() => setSelectedCategoryId(cat.id)}
+    >
+      {cat.name}
+    </Button>
+  ))}
+</div>
+
+    <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+      <div className="space-y-3">
+        <Label>CSV 입력</Label>
+        <Textarea
+          value={csvText}
+          onChange={(e) => setCsvText(e.target.value)}
+          rows={16}
+          placeholder={
+            masterListType === "education"
+              ? "name,phone,address,detailAddress,feeAmount,latitude,longitude,representativeName,availableCourse,memo,isActive,sortOrder"
+              : "name,representativeName,phone,address,detailAddress,price,latitude,longitude,availableCourse,memo,isActive,sortOrder"
+          }
+        />
+        <Button type="button" onClick={handleUploadCsv} className="w-full">
+          CSV 등록
+        </Button>
+      </div>
+
+      <div className="space-y-3">
+        <div className="rounded-xl border">
+          <div className="max-h-[520px] overflow-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white">
+                <tr className="border-b">
+                  <th className="px-3 py-2 text-left">이름</th>
+                  <th className="px-3 py-2 text-left">주소</th>
+                  <th className="px-3 py-2 text-left">전화</th>
+                  <th className="px-3 py-2 text-left">상태</th>
+                  <th className="px-3 py-2 text-right">관리</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(masterListType === "education"
+  ? (educationCenterDb as any[])
+      .filter((item) => {
+        if (!selectedCategoryId) return true;
+        return Number(item.categoryId || 0) === selectedCategoryId;
+      })
+      .map((item) => ({
+        ...item,
+        type: "education" as const,
+      }))
+  : (practiceInstitutionDb as any[])
+      .filter((item) => {
+        if (!selectedCategoryId) return true;
+        return Number(item.categoryId || 0) === selectedCategoryId;
+      })
+      .map((item) => ({
+        ...item,
+        type: "institution" as const,
+      }))
+).map((item: any) => (
+                  <tr key={`${item.type}-${item.id}`} className="border-b">
+                    <td className="px-3 py-2">{item.name}</td>
+                    <td className="px-3 py-2">
+                      {[item.address, item.detailAddress].filter(Boolean).join(" ")}
+                    </td>
+                    <td className="px-3 py-2">{item.phone || "-"}</td>
+                    <td className="px-3 py-2">
+                      {item.isInactive ? "비활성" : item.isActive === false ? "미사용" : "사용"}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            openFinderSettings({
+                              id: item.id,
+                              type: item.type,
+                              name: item.name,
+                              address: item.address,
+                              isInactive: item.isInactive,
+                              inactiveReason: item.inactiveReason,
+                              inactiveStartDate: item.inactiveStartDate,
+                              inactiveEndDate: item.inactiveEndDate,
+                              hideOnMapWhenInactive: item.hideOnMapWhenInactive,
+                            } as any)
+                          }
+                        >
+                          비활성설정
+                        </Button>
+
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          onClick={() =>
+                            setDeleteTarget({
+                              id: item.id,
+                              type: item.type,
+                              name: item.name,
+                            } as any)
+                          }
+                        >
+                          삭제
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </DialogContent>
+</Dialog>
+<Dialog open={deactivateOpen} onOpenChange={setDeactivateOpen}>
+  <DialogContent className="max-w-lg">
+    <DialogHeader>
+      <DialogTitle>일괄 비활성화</DialogTitle>
+      <DialogDescription>
+        선택한 마스터 전체를 한 번에 비활성화합니다. 지도 숨김도 같이 적용할 수 있습니다.
+      </DialogDescription>
+    </DialogHeader>
+
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label>대상</Label>
+        <Select
+          value={masterListType}
+          onValueChange={(v) => setMasterListType(v as "education" | "institution")}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="education">실습교육원</SelectItem>
+            <SelectItem value="institution">실습기관</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label>사유</Label>
+        <Input
+          value={bulkInactiveReason}
+          onChange={(e) => setBulkInactiveReason(e.target.value)}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label>시작일</Label>
+          <Input
+            type="date"
+            value={bulkInactiveStartDate}
+            onChange={(e) => setBulkInactiveStartDate(e.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>종료일</Label>
+          <Input
+            type="date"
+            value={bulkInactiveEndDate}
+            onChange={(e) => setBulkInactiveEndDate(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+        <div>
+          <div className="text-sm font-medium">비활성 시 지도에서 숨기기</div>
+        </div>
+        <Button
+          type="button"
+          variant={bulkHideOnMapWhenInactive ? "default" : "outline"}
+          size="sm"
+          onClick={() =>
+            setBulkHideOnMapWhenInactive((prev) => !prev)
+          }
+        >
+          {bulkHideOnMapWhenInactive ? "ON" : "OFF"}
+        </Button>
+      </div>
+    </div>
+
+    <DialogFooter>
+      <Button type="button" variant="outline" onClick={() => setDeactivateOpen(false)}>
+        취소
+      </Button>
+      <Button type="button" variant="destructive" onClick={handleBulkDeactivate}>
+        확인 후 일괄 비활성화
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+<Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+  <DialogContent className="max-w-md">
+    <DialogHeader>
+      <DialogTitle>기관 삭제</DialogTitle>
+      <DialogDescription>
+        {deleteTarget?.name} 항목을 삭제합니다. 정말 진행하시겠습니까?
+      </DialogDescription>
+    </DialogHeader>
+
+    <DialogFooter>
+      <Button type="button" variant="outline" onClick={() => setDeleteTarget(null)}>
+        취소
+      </Button>
+      <Button type="button" variant="destructive" onClick={handleDeleteMasterItem}>
+        삭제 확인
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
+<Dialog open={categoryManageOpen} onOpenChange={setCategoryManageOpen}>
+  <DialogContent className="max-w-2xl">
+    <DialogHeader>
+      <DialogTitle>리스트 관리</DialogTitle>
+      <DialogDescription>
+        실습배정지원센터에서 사용할 리스트를 직접 추가합니다.
+      </DialogDescription>
+    </DialogHeader>
+
+    <div className="space-y-5">
+      <div className="rounded-xl border p-4 space-y-4">
+        <div className="font-medium">새 리스트 추가</div>
+
+        <div className="space-y-2">
+          <Label>리스트 구분</Label>
+          <Select
+            value={masterListType}
+            onValueChange={(v) => setMasterListType(v as "education" | "institution")}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="education">실습교육원 리스트</SelectItem>
+              <SelectItem value="institution">실습기관 리스트</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label>리스트 이름</Label>
+          <Input
+            value={newCategoryName}
+            onChange={(e) => setNewCategoryName(e.target.value)}
+            placeholder="예: 사회복지사 실습기관 / 보육교사 실습기관"
+          />
+        </div>
+
+        <Button
+          type="button"
+          onClick={() => {
+            if (!newCategoryName.trim()) {
+              toast.error("리스트 이름을 입력해주세요.");
+              return;
+            }
+
+            createCategoryMut.mutate({
+              name: newCategoryName.trim(),
+              listType: masterListType,
+            });
+          }}
+        >
+          리스트 추가
+        </Button>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-xl border p-4">
+          <div className="mb-3 font-medium">실습교육원 리스트</div>
+          <div className="space-y-2">
+            {educationCategories.length === 0 ? (
+              <div className="text-sm text-muted-foreground">등록된 리스트가 없습니다.</div>
+            ) : (
+              educationCategories.map((cat: any) => (
+                <div
+                  key={cat.id}
+                  className="flex items-center justify-between rounded-lg border px-3 py-2"
+                >
+                  <span className="text-sm">{cat.name}</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setMasterListType("education");
+                      setSelectedCategoryId(cat.id);
+                      setMasterOpen(true);
+                      setCategoryManageOpen(false);
+                    }}
+                  >
+                    열기
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-xl border p-4">
+          <div className="mb-3 font-medium">실습기관 리스트</div>
+          <div className="space-y-2">
+            {institutionCategories.length === 0 ? (
+              <div className="text-sm text-muted-foreground">등록된 리스트가 없습니다.</div>
+            ) : (
+              institutionCategories.map((cat: any) => (
+                <div
+                  key={cat.id}
+                  className="flex items-center justify-between rounded-lg border px-3 py-2"
+                >
+                  <span className="text-sm">{cat.name}</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setMasterListType("institution");
+                      setSelectedCategoryId(cat.id);
+                      setMasterOpen(true);
+                      setCategoryManageOpen(false);
+                    }}
+                  >
+                    열기
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <DialogFooter>
+      <Button type="button" variant="outline" onClick={() => setCategoryManageOpen(false)}>
+        닫기
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
 
       <Dialog open={finderOpen} onOpenChange={setFinderOpen}>
         <DialogContent
@@ -1307,6 +1922,68 @@ export default function PracticeSupportCenter() {
                   />
                 </div>
 
+<div className="space-y-3">
+  {finderIncludeEducationCenter && (
+    <div className="space-y-2">
+      <div className="text-xs font-medium text-muted-foreground">
+        실습교육원 리스트 선택
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant={finderEducationCategoryId === null ? "default" : "outline"}
+          size="sm"
+          onClick={() => setFinderEducationCategoryId(null)}
+        >
+          전체
+        </Button>
+
+        {educationCategories.map((cat: any) => (
+          <Button
+            key={`finder-edu-${cat.id}`}
+            type="button"
+            variant={finderEducationCategoryId === cat.id ? "default" : "outline"}
+            size="sm"
+            onClick={() => setFinderEducationCategoryId(cat.id)}
+          >
+            {cat.name}
+          </Button>
+        ))}
+      </div>
+    </div>
+  )}
+
+  {finderIncludePracticeInstitution && (
+    <div className="space-y-2">
+      <div className="text-xs font-medium text-muted-foreground">
+        실습기관 리스트 선택
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant={finderInstitutionCategoryId === null ? "default" : "outline"}
+          size="sm"
+          onClick={() => setFinderInstitutionCategoryId(null)}
+        >
+          전체
+        </Button>
+
+        {institutionCategories.map((cat: any) => (
+          <Button
+            key={`finder-inst-${cat.id}`}
+            type="button"
+            variant={finderInstitutionCategoryId === cat.id ? "default" : "outline"}
+            size="sm"
+            onClick={() => setFinderInstitutionCategoryId(cat.id)}
+          >
+            {cat.name}
+          </Button>
+        ))}
+      </div>
+    </div>
+  )}
+</div>
+
                 {finderTargetRow && (
                   <div className="rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                     <div>대상: {finderTargetRow.clientName || "-"}</div>
@@ -1324,9 +2001,8 @@ export default function PracticeSupportCenter() {
                       {finderResolvedAddress || finderAddress}
                     </div>
                     <div className="mt-1 text-[11px] text-green-700">
-                      위 주소를 기준으로 가까운 실습교육원 / 실습기관을 거리순으로
-                      보여줍니다.
-                    </div>
+  위 주소를 기준으로 선택한 리스트의 실습교육원 / 실습기관을 거리순으로 보여줍니다.
+</div>
                   </div>
                 )}
               </div>

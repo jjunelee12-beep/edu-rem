@@ -502,11 +502,37 @@ export type InsertPracticeSupportRequest =
   typeof practiceSupportRequests.$inferInsert;
 
 // ─── Practice Institutions (실습기관/실습교육원 마스터) ──────────────
+export const practiceListCategories = mysqlTable("practice_list_categories", {
+  id: int("id").autoincrement().primaryKey(),
+
+  name: varchar("name", { length: 100 }).notNull(),
+
+  listType: mysqlEnum("listType", ["education", "institution"])
+    .notNull()
+    .default("institution"),
+
+  description: varchar("description", { length: 255 }),
+
+  sortOrder: int("sortOrder").notNull().default(0),
+  isActive: boolean("isActive").notNull().default(true),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PracticeListCategory =
+  typeof practiceListCategories.$inferSelect;
+export type InsertPracticeListCategory =
+  typeof practiceListCategories.$inferInsert;
+
+
 export const practiceInstitutions = mysqlTable("practice_institutions", {
   id: int("id").autoincrement().primaryKey(),
 
   institutionType: mysqlEnum("institutionType", ["education", "institution"])
     .notNull(),
+
+categoryId: int("categoryId"),
 
   name: varchar("name", { length: 255 }).notNull(),
   representativeName: varchar("representativeName", { length: 100 }),
@@ -540,6 +566,8 @@ export type InsertPracticeInstitution = typeof practiceInstitutions.$inferInsert
 
 export const practiceEducationCenters = mysqlTable("practice_education_centers", {
   id: int("id").autoincrement().primaryKey(),
+
+categoryId: int("categoryId"),
 
   name: varchar("name", { length: 255 }).notNull(),
   representativeName: varchar("representativeName", { length: 100 }),

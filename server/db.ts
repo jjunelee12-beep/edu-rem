@@ -28,6 +28,8 @@ import {
   InsertPrivateCertificateRequest,
   practiceSupportRequests,
   InsertPracticeSupportRequest,
+practiceListCategories,
+InsertPracticeListCategory,
   practiceInstitutions,
   InsertPracticeInstitution,
   jobSupportRequests,
@@ -2913,30 +2915,87 @@ export async function selectPracticeInstitutionForRequest(params: {
 }
 
 // ─── Practice Institutions (실습기관/실습교육원 마스터) ──────────────
-export async function listPracticeInstitutions(
-  institutionType?: "education" | "institution"
-) {
+export async function listPracticeListCategories(listType?: "education" | "institution") {
   const db = await getDb();
   if (!db) return [];
 
-  if (institutionType) {
+  if (listType) {
     return db
       .select()
-      .from(practiceInstitutions)
+      .from(practiceListCategories)
       .where(
         and(
-          eq(practiceInstitutions.institutionType, institutionType),
-          eq(practiceInstitutions.isActive, true)
+          eq(practiceListCategories.listType, listType),
+          eq(practiceListCategories.isActive, true)
         )
       )
-      .orderBy(desc(practiceInstitutions.createdAt));
+      .orderBy(practiceListCategories.sortOrder, desc(practiceListCategories.createdAt));
+  }
+
+  return db
+    .select()
+    .from(practiceListCategories)
+    .where(eq(practiceListCategories.isActive, true))
+    .orderBy(practiceListCategories.sortOrder, desc(practiceListCategories.createdAt));
+}
+
+export async function createPracticeListCategory(data: InsertPracticeListCategory) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(practiceListCategories).values({
+    ...data,
+    sortOrder: (data as any).sortOrder ?? 0,
+    isActive: (data as any).isActive ?? true,
+  });
+
+  return getInsertId(result);
+}
+
+export async function updatePracticeListCategory(
+  id: number,
+  data: Partial<InsertPracticeListCategory>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(practiceListCategories)
+    .set(data as any)
+    .where(eq(practiceListCategories.id, id));
+}
+
+export async function deletePracticeListCategory(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .delete(practiceListCategories)
+    .where(eq(practiceListCategories.id, id));
+}
+
+export async function listPracticeInstitutions(params?: {
+  institutionType?: "education" | "institution";
+  categoryId?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions = [eq(practiceInstitutions.isActive, true)];
+
+  if (params?.institutionType) {
+    conditions.push(eq(practiceInstitutions.institutionType, params.institutionType));
+  }
+
+  if (params?.categoryId) {
+    conditions.push(eq(practiceInstitutions.categoryId, params.categoryId));
   }
 
   return db
     .select()
     .from(practiceInstitutions)
-    .where(eq(practiceInstitutions.isActive, true))
-    .orderBy(desc(practiceInstitutions.createdAt));
+    .where(and(...conditions))
+    .orderBy(practiceInstitutions.sortOrder, desc(practiceInstitutions.createdAt));
 }
 
 export async function getPracticeInstitution(id: number) {
@@ -3002,10 +3061,59 @@ export async function bulkCreatePracticeInstitutions(
 
   return db.insert(practiceInstitutions).values(rows as any);
 }
+export async function bulkDeactivatePracticeInstitutions(params: {
+  institutionType?: "education" | "institution";
+  inactiveReason?: string | null;
+  inactiveStartDate?: string | null;
+  inactiveEndDate?: string | null;
+  hideOnMapWhenInactive?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
 
-export async function listPracticeEducationCenters() {
+  if (params.institutionType) {
+    await db
+      .update(practiceInstitutions)
+      .set({
+        isInactive: true,
+        inactiveReason: params.inactiveReason ?? "일괄 비활성화",
+        inactiveStartDate: params.inactiveStartDate ?? null,
+        inactiveEndDate: params.inactiveEndDate ?? null,
+        hideOnMapWhenInactive: params.hideOnMapWhenInactive ?? true,
+      } as any)
+      .where(eq(practiceInstitutions.institutionType, params.institutionType));
+  } else {
+    await db
+      .update(practiceInstitutions)
+      .set({
+        isInactive: true,
+        inactiveReason: params.inactiveReason ?? "일괄 비활성화",
+        inactiveStartDate: params.inactiveStartDate ?? null,
+        inactiveEndDate: params.inactiveEndDate ?? null,
+        hideOnMapWhenInactive: params.hideOnMapWhenInactive ?? true,
+      } as any);
+  }
+
+  return { success: true };
+}
+
+
+export async function listPracticeEducationCenters(categoryId?: number) {
   const db = await getDb();
   if (!db) return [];
+
+  if (categoryId) {
+    return db
+      .select()
+      .from(practiceEducationCenters)
+      .where(
+        and(
+          eq(practiceEducationCenters.isActive, true),
+          eq(practiceEducationCenters.categoryId, categoryId)
+        )
+      )
+      .orderBy(practiceEducationCenters.sortOrder, desc(practiceEducationCenters.createdAt));
+  }
 
   return db
     .select()
@@ -3041,6 +3149,71 @@ export async function createPracticeEducationCenter(
   });
 
   return getInsertId(result);
+}
+
+export async function bulkCreatePracticeEducationCenters(
+  rows: Array<{
+categoryId?: number | null;
+representativeName?: string | null;
+availableCourse?: string | null;
+memo?: string | null;
+    name: string;
+    phone?: string | null;
+    address?: string | null;
+    detailAddress?: string | null;
+    feeAmount?: string | null;
+    latitude?: string | null;
+    longitude?: string | null;
+    note?: string | null;
+    isActive?: boolean;
+    sortOrder?: number;
+  }>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  if (!rows.length) return { success: true, count: 0 };
+
+  const values = rows.map((row, idx) => ({
+categoryId: row.categoryId ?? null,
+representativeName: row.representativeName?.trim() || null,
+availableCourse: row.availableCourse?.trim() || null,
+memo: row.memo || null,
+    name: row.name.trim(),
+    phone: row.phone?.trim() || null,
+    address: row.address?.trim() || null,
+    detailAddress: row.detailAddress?.trim() || null,
+    feeAmount: row.feeAmount || "0",
+    latitude: row.latitude || null,
+    longitude: row.longitude || null,
+    note: row.note || null,
+    isActive: row.isActive ?? true,
+    sortOrder: row.sortOrder ?? idx,
+  }));
+
+  await db.insert(practiceEducationCenters).values(values as any);
+  return { success: true, count: values.length };
+}
+
+export async function bulkDeactivatePracticeEducationCenters(params?: {
+  inactiveReason?: string | null;
+  inactiveStartDate?: string | null;
+  inactiveEndDate?: string | null;
+  hideOnMapWhenInactive?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(practiceEducationCenters)
+    .set({
+      isInactive: true,
+      inactiveReason: params?.inactiveReason ?? "일괄 비활성화",
+      inactiveStartDate: params?.inactiveStartDate ?? null,
+      inactiveEndDate: params?.inactiveEndDate ?? null,
+      hideOnMapWhenInactive: params?.hideOnMapWhenInactive ?? true,
+    } as any);
+
+  return { success: true };
 }
 
 export async function updatePracticeEducationCenter(
