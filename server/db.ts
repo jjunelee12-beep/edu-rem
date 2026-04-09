@@ -3076,7 +3076,9 @@ export async function listPracticeInstitutions(params?: {
   const conditions = [eq(practiceInstitutions.isActive, true)];
 
   if (params?.institutionType) {
-    conditions.push(eq(practiceInstitutions.institutionType, params.institutionType));
+    conditions.push(
+      eq(practiceInstitutions.institutionType, params.institutionType)
+    );
   }
 
   if (params?.categoryId) {
@@ -3087,7 +3089,10 @@ export async function listPracticeInstitutions(params?: {
     .select()
     .from(practiceInstitutions)
     .where(and(...conditions))
-    .orderBy(practiceInstitutions.sortOrder, desc(practiceInstitutions.createdAt));
+    .orderBy(
+      practiceInstitutions.sortOrder,
+      desc(practiceInstitutions.createdAt)
+    );
 }
 
 export async function getPracticeInstitution(id: number) {
