@@ -532,7 +532,7 @@ export const practiceInstitutions = mysqlTable("practice_institutions", {
   institutionType: mysqlEnum("institutionType", ["education", "institution"])
     .notNull(),
 
-categoryId: int("categoryId"),
+  categoryId: int("categoryId"),
 
   name: varchar("name", { length: 255 }).notNull(),
   representativeName: varchar("representativeName", { length: 100 }),
@@ -550,6 +550,8 @@ categoryId: int("categoryId"),
   memo: text("memo"),
 
   isActive: boolean("isActive").notNull().default(true),
+  sortOrder: int("sortOrder").notNull().default(0),
+
   isInactive: boolean("isInactive").notNull().default(false),
   inactiveReason: varchar("inactiveReason", { length: 255 }),
   inactiveStartDate: date("inactiveStartDate"),
@@ -557,6 +559,7 @@ categoryId: int("categoryId"),
   hideOnMapWhenInactive: boolean("hideOnMapWhenInactive")
     .notNull()
     .default(true),
+
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
