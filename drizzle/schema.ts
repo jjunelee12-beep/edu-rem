@@ -1294,26 +1294,3 @@ export const aiActionLogs = mysqlTable(
   })
 );
 
-// ─── Private Certificate Masters (민간자격증 마스터) ────────────────
-export const privateCertificateMasters = mysqlTable(
-  "private_certificate_masters",
-  {
-    id: int("id").autoincrement().primaryKey(),
-
-    name: varchar("name", { length: 255 }).notNull(),
-
-    sortOrder: int("sortOrder").notNull().default(0),
-    isActive: boolean("isActive").notNull().default(true),
-
-    createdBy: int("createdBy"),
-    updatedBy: int("updatedBy"),
-
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
-    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  }
-);
-
-export type PrivateCertificateMaster =
-  typeof privateCertificateMasters.$inferSelect;
-export type InsertPrivateCertificateMaster =
-  typeof privateCertificateMasters.$inferInsert;
