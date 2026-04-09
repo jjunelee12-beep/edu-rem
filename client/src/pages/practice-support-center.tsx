@@ -1382,11 +1382,6 @@ if (
     updateInstitutionAvailabilityMut.isPending;
 
 const masterItems = useMemo(() => {
-  console.log("[masterListType]", masterListType);
-  console.log("[selectedCategoryId]", selectedCategoryId);
-  console.log("[practiceInstitutionDb.length]", practiceInstitutionDb.length);
-  console.log("[educationCenterDb.length]", educationCenterDb.length);
-  console.log("[institutionCategories]", institutionCategories);
   const base =
     masterListType === "education"
       ? (educationCenterDb as any[]).map((item) => ({

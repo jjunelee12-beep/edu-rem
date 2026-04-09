@@ -153,11 +153,23 @@ export default function StudentDetail() {
   const { data: planSemesterList } = trpc.planSemester.list.useQuery({ studentId });
   const { data: transferSubjectList } = trpc.transferSubject.list.useQuery({ studentId });
   const { data: transferAttachmentList } = trpc.transferAttachment.list.useQuery({ studentId });
-  const { data: courseTemplateList } = trpc.courseTemplate.list.useQuery({});
+  
+const { data: privateCertificateMasterList } =
+  trpc.privateCertificateMaster.list.useQuery({
+    activeOnly: true,
+  });
+
+const { data: subjectCatalogList } =
+  trpc.subjectCatalog.list.useQuery({
+    activeOnly: true,
+  });
+
 const { data: privateCertificateRequestList } =
   trpc.privateCertificate.listByStudent.useQuery({ studentId });
+
 const { data: practiceSupportList } =
   trpc.practiceSupport.listByStudent.useQuery({ studentId });
+
 
   const [selectedSemesterOrder, setSelectedSemesterOrder] = useState(1);
   const [uploadingRefund, setUploadingRefund] = useState(false);
@@ -167,21 +179,6 @@ const { data: practiceSupportList } =
 
   const [privateCertDialogOpen, setPrivateCertDialogOpen] = useState(false);
   const [selectedPrivateCertNames, setSelectedPrivateCertNames] = useState<string[]>([]);
-
-  const PRIVATE_CERT_OPTIONS = [
-    "심리상담사 1급",
-    "미술심리상담사 1급",
-    "아동심리상담사 1급",
-    "노인심리상담사 1급",
-    "방과후지도사 1급",
-    "병원코디네이터 1급",
-    "바리스타 1급",
-    "정리수납전문가 1급",
-    "반려동물관리사 1급",
-    "캘리그라피지도사 1급",
-    "독서지도사 1급",
-    "커피지도사 1급",
-  ];
 
   async function uploadFile(file: File) {
     const formData = new FormData();
@@ -210,6 +207,7 @@ const res = await fetch(`${apiBase}/api/upload`, {
 
  const requestedPrivateCertList = privateCertificateRequestList || [];
 const latestPracticeSupport = practiceSupportList?.[0] ?? null;
+const privateCertificateOptions = privateCertificateMasterList || [];
 
 const createPrivateCertificateRequestMut =
   trpc.privateCertificate.create.useMutation({
@@ -263,10 +261,21 @@ const submitPrivateCertRequest = async () => {
   const [transferAddCount, setTransferAddCount] = useState("1");
 
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
-  const [templateDialogSemesterNo, setTemplateDialogSemesterNo] = useState<number | null>(null);
-  const [templateCourseKey, setTemplateCourseKey] = useState<string>("사회복지사");
-  const [templateTab, setTemplateTab] = useState<TemplateTabType>("전공필수");
-  const [selectedTemplateIds, setSelectedTemplateIds] = useState<number[]>([]);
+const [templateDialogSemesterNo, setTemplateDialogSemesterNo] = useState<number | null>(null);
+const [selectedCatalogId, setSelectedCatalogId] = useState<number | null>(null);
+const [templateTab, setTemplateTab] = useState<TemplateTabType>("전공필수");
+const [selectedTemplateIds, setSelectedTemplateIds] = useState<number[]>([]);
+
+const { data: subjectCatalogItemList } =
+  trpc.subjectCatalog.itemList.useQuery(
+    {
+      catalogId: Number(selectedCatalogId || 0),
+      activeOnly: true,
+    },
+    {
+      enabled: !!selectedCatalogId,
+    }
+  );
 
   const updateStudentMut = trpc.student.update.useMutation({
     onSuccess: async () => {
@@ -296,6 +305,63 @@ const submitPrivateCertRequest = async () => {
     },
     onError: (e) => toast.error(e.message),
   });
+
+const applySubjectCatalogItemsToSemester = async () => {
+  if (!templateDialogSemesterNo) {
+    toast.error("학기 정보가 없습니다.");
+    return;
+  }
+
+  if (!selectedTemplateIds.length) {
+    toast.error("등록할 과목을 선택해주세요.");
+    return;
+  }
+
+  const selectedRows = (subjectCatalogItemList || []).filter((row: any) =>
+    selectedTemplateIds.includes(Number(row.id))
+  );
+
+  if (!selectedRows.length) {
+    toast.error("선택된 과목 정보를 찾을 수 없습니다.");
+    return;
+  }
+
+  const ok = window.confirm(
+    "현재 학기의 기존 과목을 모두 지우고 선택한 과목으로 덮어쓰시겠습니까?"
+  );
+  if (!ok) return;
+
+  try {
+    const currentRows = (planSemesterList || []).filter(
+      (row: any) => Number(row.semesterNo) === Number(templateDialogSemesterNo)
+    );
+
+    for (const row of currentRows) {
+      await deletePlanSemesterMut.mutateAsync({ id: Number(row.id) });
+    }
+
+    for (let i = 0; i < selectedRows.length; i++) {
+      const row = selectedRows[i];
+
+      await createPlanSemesterMut.mutateAsync({
+        studentId,
+        semesterNo: templateDialogSemesterNo,
+        subjectName: row.subjectName,
+         planCategory: row.category,
+  planRequirementType: row.requirementType,
+        sortOrder: i,
+      } as any);
+    }
+
+    await utils.planSemester.list.invalidate({ studentId });
+
+    toast.success(`과목 ${selectedRows.length}개 등록 완료`);
+    setTemplateDialogOpen(false);
+    setSelectedTemplateIds([]);
+  } catch (e: any) {
+    toast.error(e.message || "일괄 등록 중 오류가 발생했습니다.");
+  }
+};
 
   const updateTransferSubjectMut = trpc.transferSubject.update.useMutation({
     onSuccess: async () => {
@@ -336,13 +402,6 @@ const submitPrivateCertRequest = async () => {
     onError: (e) => toast.error(e.message),
   });
 
-  const applyCourseTemplateMut = trpc.courseTemplate.applyToPlanSemester.useMutation({
-    onSuccess: async (res) => {
-      await utils.planSemester.list.invalidate({ studentId });
-      toast.success(`과목 템플릿 ${res.count}개 등록 완료`);
-    },
-    onError: (e) => toast.error(e.message),
-  });
 
   const createSemMut = trpc.semester.create.useMutation({
     onSuccess: async () => {
@@ -1019,27 +1078,22 @@ const savePlan = async () => {
     onChange(values[nextIdx]);
   };
 
-  const courseKeyOptions = useMemo(() => {
-    const dbKeys = Array.from(
-      new Set(
-        (courseTemplateList || [])
-          .map((x: any) => String(x.courseKey || "").trim())
-          .filter(Boolean)
-      )
-    );
+ useEffect(() => {
+  if (!subjectCatalogList?.length) {
+    setSelectedCatalogId(null);
+    return;
+  }
 
-    if (dbKeys.length > 0) return dbKeys;
+  const exists = subjectCatalogList.some(
+    (item: any) => Number(item.id) === Number(selectedCatalogId)
+  );
 
-    return ["사회복지사", "보육교사", "청소년지도사", "한국어교원", "아동학사", "건강가정사"];
-  }, [courseTemplateList]);
+  if (!exists) {
+    setSelectedCatalogId(Number(subjectCatalogList[0].id));
+  }
+}, [subjectCatalogList, selectedCatalogId]);
 
-  useEffect(() => {
-    if (!courseKeyOptions.length) return;
-    if (!courseKeyOptions.includes(templateCourseKey)) {
-      setTemplateCourseKey(courseKeyOptions[0]);
-    }
-  }, [courseKeyOptions, templateCourseKey]);
-
+  
   const currentSemesterPlanCount = useMemo(() => {
   if (!templateDialogSemesterNo) return 0;
   return (planSemesterList || []).filter(
@@ -1050,16 +1104,20 @@ const savePlan = async () => {
 const templateSelectableCount = 8;
 
   const filteredTemplateList = useMemo(() => {
-    return (courseTemplateList || [])
-      .filter((row: any) => String(row.courseKey || "").trim() === String(templateCourseKey || "").trim())
-      .filter((row: any) => String(row.requirementType || "").trim() === String(templateTab || "").trim())
-      .sort((a: any, b: any) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
-  }, [courseTemplateList, templateCourseKey, templateTab]);
+  return (subjectCatalogItemList || [])
+    .filter(
+      (row: any) =>
+        String(row.requirementType || "").trim() === String(templateTab || "").trim()
+    )
+    .sort((a: any, b: any) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+}, [subjectCatalogItemList, templateTab]);
 
-  const selectedTemplateRows = useMemo(() => {
-    const idSet = new Set(selectedTemplateIds.map((x) => Number(x)));
-    return (courseTemplateList || []).filter((row: any) => idSet.has(Number(row.id)));
-  }, [courseTemplateList, selectedTemplateIds]);
+const selectedTemplateRows = useMemo(() => {
+  const idSet = new Set(selectedTemplateIds.map((x) => Number(x)));
+  return (subjectCatalogItemList || []).filter((row: any) =>
+    idSet.has(Number(row.id))
+  );
+}, [subjectCatalogItemList, selectedTemplateIds]);  
 
 const existingPlanSubjectMap = useMemo(() => {
   const map = new Map<string, number>();
@@ -1094,14 +1152,17 @@ const existingPlanSubjectMap = useMemo(() => {
   };
 
   const openTemplateDialog = (semesterNo: number) => {
-    setTemplateDialogSemesterNo(semesterNo);
-    setTemplateDialogOpen(true);
-    setSelectedTemplateIds([]);
-    setTemplateTab("전공필수");
-    if (courseKeyOptions.length > 0) {
-      setTemplateCourseKey(courseKeyOptions[0]);
-    }
-  };
+  setTemplateDialogSemesterNo(semesterNo);
+  setTemplateDialogOpen(true);
+  setSelectedTemplateIds([]);
+  setTemplateTab("전공필수");
+
+  if (subjectCatalogList?.length) {
+    setSelectedCatalogId(Number(subjectCatalogList[0].id));
+  } else {
+    toast.error("등록된 학점은행제 과정이 없습니다.");
+  }
+};
 
   if (studentLoading) {
     return (
@@ -2395,32 +2456,32 @@ const existingPlanSubjectMap = useMemo(() => {
             <div className="grid md:grid-cols-[180px_1fr] gap-4">
               <div className="space-y-2">
                 <Label className="text-sm">과정 선택</Label>
-                <Select
-                  value={templateCourseKey}
-                  onValueChange={(v) => {
-                    setTemplateCourseKey(v);
-                    setSelectedTemplateIds([]);
-                    setTemplateTab("전공필수");
-                  }}
-                >
-                  <SelectTrigger className="h-9 text-sm">
-                    <SelectValue placeholder="과정 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {courseKeyOptions.map((key) => (
-                      <SelectItem key={key} value={key}>
-                        {key}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+<Select
+  value={selectedCatalogId ? String(selectedCatalogId) : ""}
+  onValueChange={(v) => {
+    setSelectedCatalogId(Number(v));
+    setSelectedTemplateIds([]);
+    setTemplateTab("전공필수");
+  }}
+>
+  <SelectTrigger className="h-9 text-sm">
+    <SelectValue placeholder="과정 선택" />
+  </SelectTrigger>
+  <SelectContent>
+    {(subjectCatalogList || []).map((item: any) => (
+      <SelectItem key={item.id} value={String(item.id)}>
+        {item.name}
+      </SelectItem>
+    ))}
+  </SelectContent>
+</Select>
 
                 <div className="rounded-lg border bg-muted/30 p-3 text-xs space-y-1">
                   <div>현재 학기 기존 과목: <span className="font-medium">{currentSemesterPlanCount}</span>개</div>
 <div>선택 가능 과목: <span className="font-medium">최대 8개</span></div>
 <div>선택 과목: <span className="font-medium">{selectedTemplateIds.length}</span>개</div>
 <div className="text-[11px] text-muted-foreground">
-  등록 시 현재 학기 과목은 선택한 템플릿 과목으로 덮어써집니다.
+  등록 시 현재 학기 과목은 선택한 마스터 과목으로 덮어써집니다.
 </div>
                 </div>
               </div>
@@ -2442,13 +2503,13 @@ const existingPlanSubjectMap = useMemo(() => {
 
                 <div className="border rounded-lg overflow-hidden">
                   <div className="max-h-[360px] overflow-y-auto">
-                    {!courseTemplateList || courseTemplateList.length === 0 ? (
+                   {!subjectCatalogItemList || !subjectCatalogList?.length ? (
+  <div className="p-6 text-sm text-center text-muted-foreground">
+    등록된 과정/과목 마스터가 없습니다.
+  </div>
+) : filteredTemplateList.length === 0 ? (
                       <div className="p-6 text-sm text-center text-muted-foreground">
-                        등록된 템플릿 데이터가 없습니다.
-                      </div>
-                    ) : filteredTemplateList.length === 0 ? (
-                      <div className="p-6 text-sm text-center text-muted-foreground">
-                        선택한 과정 / 구분의 템플릿 과목이 없습니다.
+                        선택한 과정 / 구분의 과목이 없습니다.
                       </div>
                     ) : (
                       <div className="divide-y">
@@ -2539,37 +2600,12 @@ const existingPlanSubjectMap = useMemo(() => {
               취소
             </Button>
             <Button
-  onClick={() => {
-    if (!templateDialogSemesterNo) {
-      toast.error("학기 정보가 없습니다.");
-      return;
-    }
-
-    if (!selectedTemplateIds.length) {
-      toast.error("등록할 과목을 선택해주세요.");
-      return;
-    }
-
-    const ok = window.confirm(
-      "현재 학기의 기존 과목을 모두 지우고 선택한 템플릿 과목으로 덮어쓰시겠습니까?"
-    );
-    if (!ok) return;
-
-    applyCourseTemplateMut.mutate(
-      {
-        studentId,
-        semesterNo: templateDialogSemesterNo,
-        subjectIds: selectedTemplateIds,
-      } as any,
-      {
-        onSuccess: () => {
-          setTemplateDialogOpen(false);
-          setSelectedTemplateIds([]);
-        },
-      }
-    );
-  }}
-  disabled={applyCourseTemplateMut.isPending || selectedTemplateIds.length === 0}
+  onClick={applySubjectCatalogItemsToSemester}
+  disabled={
+    createPlanSemesterMut.isPending ||
+    deletePlanSemesterMut.isPending ||
+    selectedTemplateIds.length === 0
+  }
 >
   등록
 </Button>
@@ -3018,22 +3054,29 @@ const existingPlanSubjectMap = useMemo(() => {
                 <div className="border rounded-lg overflow-hidden">
                   <div className="max-h-[360px] overflow-y-auto">
                     <div className="divide-y">
-                      {PRIVATE_CERT_OPTIONS.map((name) => {
-                        const checked = selectedPrivateCertNames.includes(name);
+                      {!privateCertificateOptions.length ? (
+  <div className="p-6 text-sm text-center text-muted-foreground">
+    등록된 민간자격증 마스터가 없습니다.
+  </div>
+) : (
+  privateCertificateOptions.map((item: any) => {
+    const name = String(item.name || "");
+    const checked = selectedPrivateCertNames.includes(name);
 
-                        return (
-                          <label
-                            key={name}
-                            className="flex items-center gap-3 px-4 py-3 text-sm cursor-pointer"
-                          >
-                            <Checkbox
-                              checked={checked}
-                              onCheckedChange={() => togglePrivateCert(name)}
-                            />
-                            <span className="flex-1">{name}</span>
-                          </label>
-                        );
-                      })}
+    return (
+      <label
+        key={item.id}
+        className="flex items-center gap-3 px-4 py-3 text-sm cursor-pointer"
+      >
+        <Checkbox
+          checked={checked}
+          onCheckedChange={() => togglePrivateCert(name)}
+        />
+        <span className="flex-1">{name}</span>
+      </label>
+    );
+  })
+)}
                     </div>
                   </div>
                 </div>

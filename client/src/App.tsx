@@ -48,6 +48,8 @@ import ApprovalDetailPage from "./pages/ApprovalDetailPage";
 import ApprovalPrintPage from "./pages/ApprovalPrintPage";
 import ApprovalStatsPage from "./pages/ApprovalStatsPage";
 import ApprovalPreviewPage from "./pages/ApprovalPreviewPage";
+import PrivateCertificateMasterPage from "./pages/PrivateCertificateMasterPage";
+import SubjectCatalogMasterPage from "./pages/SubjectCatalogMasterPage";
 
 // ✅ 추가
 import AppToastHost from "@/components/notifications/AppToastHost";
@@ -106,6 +108,9 @@ function PrivateRouter() {
         <Route path="/e-approval/preview" component={ApprovalPreviewPage} />
         <Route path="/e-approval/:id/print" component={ApprovalPrintPage} />
         <Route path="/e-approval/:id" component={ApprovalDetailPage} />
+
+<Route path="/private-certificate-master" component={PrivateCertificateMasterPage} />
+<Route path="/subject-catalog-master" component={SubjectCatalogMasterPage} />
 
         <Route component={NotFound} />
       </Switch>

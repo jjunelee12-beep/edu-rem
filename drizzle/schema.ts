@@ -361,6 +361,83 @@ export const courseSubjectTemplates = mysqlTable("course_subject_templates", {
 export type CourseSubjectTemplate = typeof courseSubjectTemplates.$inferSelect;
 export type InsertCourseSubjectTemplate = typeof courseSubjectTemplates.$inferInsert;
 
+// ─── Private Certificate Masters (민간자격증 마스터) ────────────────
+export const privateCertificateMasters = mysqlTable(
+  "private_certificate_masters",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    name: varchar("name", { length: 255 }).notNull(),
+
+    sortOrder: int("sortOrder").notNull().default(0),
+    isActive: boolean("isActive").notNull().default(true),
+
+    createdBy: int("createdBy"),
+    updatedBy: int("updatedBy"),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  }
+);
+
+export type PrivateCertificateMaster =
+  typeof privateCertificateMasters.$inferSelect;
+export type InsertPrivateCertificateMaster =
+  typeof privateCertificateMasters.$inferInsert;
+
+// ─── Subject Catalogs (학점은행제 과정 마스터) ───────────────────────
+export const subjectCatalogs = mysqlTable("subject_catalogs", {
+  id: int("id").autoincrement().primaryKey(),
+
+  name: varchar("name", { length: 255 }).notNull(),
+
+  sortOrder: int("sortOrder").notNull().default(0),
+  isActive: boolean("isActive").notNull().default(true),
+
+  createdBy: int("createdBy"),
+  updatedBy: int("updatedBy"),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SubjectCatalog = typeof subjectCatalogs.$inferSelect;
+export type InsertSubjectCatalog = typeof subjectCatalogs.$inferInsert;
+
+// ─── Subject Catalog Items (학점은행제 과목 마스터) ──────────────────
+export const subjectCatalogItems = mysqlTable("subject_catalog_items", {
+  id: int("id").autoincrement().primaryKey(),
+
+  catalogId: int("catalogId").notNull(),
+
+  subjectName: varchar("subjectName", { length: 255 }).notNull(),
+
+  category: mysqlEnum("category", ["전공", "교양", "일반"])
+    .notNull()
+    .default("전공"),
+
+  requirementType: mysqlEnum("requirementType", [
+    "전공필수",
+    "전공선택",
+    "교양",
+    "일반",
+  ]).notNull(),
+
+  credits: int("credits").notNull().default(3),
+
+  sortOrder: int("sortOrder").notNull().default(0),
+  isActive: boolean("isActive").notNull().default(true),
+
+  createdBy: int("createdBy"),
+  updatedBy: int("updatedBy"),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SubjectCatalogItem = typeof subjectCatalogItems.$inferSelect;
+export type InsertSubjectCatalogItem = typeof subjectCatalogItems.$inferInsert;
+
 // ─── Private Certificate Requests (민간자격증 요청) ─────────────────
 export const privateCertificateRequests = mysqlTable("private_certificate_requests", {
   id: int("id").autoincrement().primaryKey(),
@@ -1216,3 +1293,27 @@ export const aiActionLogs = mysqlTable(
     createdAtIdx: index("idx_ai_logs_created_at").on(table.createdAt),
   })
 );
+
+// ─── Private Certificate Masters (민간자격증 마스터) ────────────────
+export const privateCertificateMasters = mysqlTable(
+  "private_certificate_masters",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    name: varchar("name", { length: 255 }).notNull(),
+
+    sortOrder: int("sortOrder").notNull().default(0),
+    isActive: boolean("isActive").notNull().default(true),
+
+    createdBy: int("createdBy"),
+    updatedBy: int("updatedBy"),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  }
+);
+
+export type PrivateCertificateMaster =
+  typeof privateCertificateMasters.$inferSelect;
+export type InsertPrivateCertificateMaster =
+  typeof privateCertificateMasters.$inferInsert;

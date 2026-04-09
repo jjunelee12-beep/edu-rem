@@ -1,4 +1,4 @@
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, sql, desc, asc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -24,6 +24,12 @@ import {
   InsertTransferAttachment,
   courseSubjectTemplates,
   InsertCourseSubjectTemplate,
+  privateCertificateMasters,
+  InsertPrivateCertificateMaster,
+  subjectCatalogs,
+  InsertSubjectCatalog,
+  subjectCatalogItems,
+  InsertSubjectCatalogItem,
   privateCertificateRequests,
   InsertPrivateCertificateRequest,
   practiceSupportRequests,
@@ -2656,6 +2662,250 @@ export async function bulkCreatePlanSemestersFromTemplate(params: {
   await db.insert(planSemesters).values(rows as any);
 
   return { count: rows.length };
+}
+
+// ─── Master: Private Certificates / Subject Catalogs ────────────────
+function resolveCategoryFromRequirementType(
+  requirementType: "전공필수" | "전공선택" | "교양" | "일반"
+): "전공" | "교양" | "일반" {
+  if (requirementType === "교양") return "교양";
+  if (requirementType === "일반") return "일반";
+  return "전공";
+}
+
+// 민간자격증 마스터
+export async function listPrivateCertificateMasters(options?: {
+  activeOnly?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  if (options?.activeOnly) {
+    return db
+      .select()
+      .from(privateCertificateMasters)
+      .where(eq(privateCertificateMasters.isActive, true))
+      .orderBy(
+        asc(privateCertificateMasters.sortOrder),
+        asc(privateCertificateMasters.id)
+      );
+  }
+
+  return db
+    .select()
+    .from(privateCertificateMasters)
+    .orderBy(
+      asc(privateCertificateMasters.sortOrder),
+      asc(privateCertificateMasters.id)
+    );
+}
+
+export async function createPrivateCertificateMaster(
+  data: InsertPrivateCertificateMaster
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const name = String(data.name || "").trim();
+  if (!name) {
+    throw new Error("자격증명을 입력해주세요.");
+  }
+
+  const existing = await db
+    .select()
+    .from(privateCertificateMasters)
+    .where(eq(privateCertificateMasters.name, name))
+    .limit(1);
+
+  if (existing[0]) {
+    throw new Error("이미 등록된 민간자격증입니다.");
+  }
+
+  const [maxRows] = await db.execute(sql`
+    SELECT COALESCE(MAX(sortOrder), 0) as maxSortOrder
+    FROM private_certificate_masters
+  `);
+
+  const nextSortOrder = Number((maxRows as any)?.[0]?.maxSortOrder || 0) + 1;
+
+  const result: any = await db.insert(privateCertificateMasters).values({
+    name,
+    sortOrder: (data as any).sortOrder ?? nextSortOrder,
+    isActive: (data as any).isActive ?? true,
+    createdBy: (data as any).createdBy ?? null,
+    updatedBy: (data as any).updatedBy ?? null,
+  });
+
+  return getInsertId(result);
+}
+
+export async function deletePrivateCertificateMaster(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .delete(privateCertificateMasters)
+    .where(eq(privateCertificateMasters.id, id));
+}
+
+// 과정 마스터
+export async function listSubjectCatalogs(options?: {
+  activeOnly?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  if (options?.activeOnly) {
+    return db
+      .select()
+      .from(subjectCatalogs)
+      .where(eq(subjectCatalogs.isActive, true))
+      .orderBy(asc(subjectCatalogs.sortOrder), asc(subjectCatalogs.id));
+  }
+
+  return db
+    .select()
+    .from(subjectCatalogs)
+    .orderBy(asc(subjectCatalogs.sortOrder), asc(subjectCatalogs.id));
+}
+
+export async function createSubjectCatalog(data: InsertSubjectCatalog) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const name = String(data.name || "").trim();
+  if (!name) {
+    throw new Error("과정명을 입력해주세요.");
+  }
+
+  const existing = await db
+    .select()
+    .from(subjectCatalogs)
+    .where(eq(subjectCatalogs.name, name))
+    .limit(1);
+
+  if (existing[0]) {
+    throw new Error("이미 등록된 과정입니다.");
+  }
+
+  const [maxRows] = await db.execute(sql`
+    SELECT COALESCE(MAX(sortOrder), 0) as maxSortOrder
+    FROM subject_catalogs
+  `);
+
+  const nextSortOrder = Number((maxRows as any)?.[0]?.maxSortOrder || 0) + 1;
+
+  const result: any = await db.insert(subjectCatalogs).values({
+    name,
+    sortOrder: (data as any).sortOrder ?? nextSortOrder,
+    isActive: (data as any).isActive ?? true,
+    createdBy: (data as any).createdBy ?? null,
+    updatedBy: (data as any).updatedBy ?? null,
+  });
+
+  return getInsertId(result);
+}
+
+export async function deleteSubjectCatalog(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .delete(subjectCatalogItems)
+    .where(eq(subjectCatalogItems.catalogId, id));
+
+  await db.delete(subjectCatalogs).where(eq(subjectCatalogs.id, id));
+}
+
+// 과목 마스터
+export async function listSubjectCatalogItems(params: {
+  catalogId: number;
+  activeOnly?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions = [eq(subjectCatalogItems.catalogId, params.catalogId)];
+
+  if (params.activeOnly) {
+    conditions.push(eq(subjectCatalogItems.isActive, true));
+  }
+
+  return db
+    .select()
+    .from(subjectCatalogItems)
+    .where(and(...conditions))
+    .orderBy(
+      asc(subjectCatalogItems.requirementType),
+      asc(subjectCatalogItems.sortOrder),
+      asc(subjectCatalogItems.id)
+    );
+}
+
+export async function createSubjectCatalogItem(
+  data: InsertSubjectCatalogItem
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const subjectName = String(data.subjectName || "").trim();
+  if (!subjectName) {
+    throw new Error("과목명을 입력해주세요.");
+  }
+
+  const requirementType = data.requirementType;
+  if (!requirementType) {
+    throw new Error("과목 구분을 선택해주세요.");
+  }
+
+  const existing = await db
+    .select()
+    .from(subjectCatalogItems)
+    .where(
+      and(
+        eq(subjectCatalogItems.catalogId, Number(data.catalogId)),
+        eq(subjectCatalogItems.subjectName, subjectName),
+        eq(subjectCatalogItems.requirementType, requirementType)
+      )
+    )
+    .limit(1);
+
+  if (existing[0]) {
+    throw new Error("이미 등록된 과목입니다.");
+  }
+
+  const [maxRows] = await db.execute(sql`
+    SELECT COALESCE(MAX(sortOrder), 0) as maxSortOrder
+    FROM subject_catalog_items
+    WHERE catalogId = ${Number(data.catalogId)}
+  `);
+
+  const nextSortOrder = Number((maxRows as any)?.[0]?.maxSortOrder || 0) + 1;
+
+  const result: any = await db.insert(subjectCatalogItems).values({
+    catalogId: Number(data.catalogId),
+    subjectName,
+    requirementType,
+    category:
+      (data.category as any) ??
+      resolveCategoryFromRequirementType(requirementType),
+    credits: Number((data as any).credits ?? 3),
+    sortOrder: (data as any).sortOrder ?? nextSortOrder,
+    isActive: (data as any).isActive ?? true,
+    createdBy: (data as any).createdBy ?? null,
+    updatedBy: (data as any).updatedBy ?? null,
+  });
+
+  return getInsertId(result);
+}
+
+export async function deleteSubjectCatalogItem(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .delete(subjectCatalogItems)
+    .where(eq(subjectCatalogItems.id, id));
 }
 
 // ─── Private Certificate Requests (민간자격증 요청) ─────────────────
@@ -6642,4 +6892,89 @@ export async function rejectApprovalDocument(params: {
   } as any);
 
   return true;
+}
+
+// ===============================
+// 학점은행제 템플릿 → subjectCatalog 이관 (1회용)
+// ===============================
+export async function migrateCourseTemplatesToSubjectCatalogs(db: any) {
+  console.log("🚀 courseTemplate → subjectCatalog 이관 시작");
+
+  // 1. 기존 템플릿 가져오기
+  const templates = await db
+    .select()
+    .from(courseTemplate); // 기존 테이블명
+
+  if (!templates.length) {
+    console.log("⚠️ courseTemplate 데이터 없음");
+    return;
+  }
+
+  // 2. courseKey 기준 그룹핑
+  const map = new Map<string, any[]>();
+
+  for (const row of templates) {
+    const key = row.courseKey || "기타";
+
+    if (!map.has(key)) {
+      map.set(key, []);
+    }
+
+    map.get(key)!.push(row);
+  }
+
+  // 3. catalog 생성 + item 넣기
+  for (const [courseKey, items] of map.entries()) {
+    console.log(`📦 과정 생성: ${courseKey}`);
+
+    // catalog 존재 체크
+    let [catalog] = await db
+      .select()
+      .from(subjectCatalogs)
+      .where(eq(subjectCatalogs.name, courseKey))
+      .limit(1);
+
+    // 없으면 생성
+    if (!catalog) {
+      const [created] = await db
+        .insert(subjectCatalogs)
+        .values({
+          name: courseKey,
+        })
+        .returning();
+
+      catalog = created;
+    }
+
+    // 4. item 삽입
+    for (const item of items) {
+      // 중복 체크
+      const exists = await db
+        .select()
+        .from(subjectCatalogItems)
+        .where(
+          and(
+            eq(subjectCatalogItems.catalogId, catalog.id),
+            eq(subjectCatalogItems.subjectName, item.subjectName),
+            eq(
+              subjectCatalogItems.requirementType,
+              item.requirementType || "선택"
+            )
+          )
+        )
+        .limit(1);
+
+      if (exists.length > 0) continue;
+
+      await db.insert(subjectCatalogItems).values({
+        catalogId: catalog.id,
+        subjectName: item.subjectName,
+        requirementType: item.requirementType || "선택",
+        category: item.category || null,
+        sortOrder: item.sortOrder || 0,
+      });
+    }
+  }
+
+  console.log("✅ 이관 완료");
 }

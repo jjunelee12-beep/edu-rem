@@ -33,6 +33,7 @@ import { pushAppToast } from "@/lib/appNotifications";
 import { useIsMobile } from "@/hooks/useMobile";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import MessengerPage from "@/pages/MessengerPage";
+import { GraduationCap, Award } from "lucide-react";
 
 import {
  readAppNotificationSettings,
@@ -100,6 +101,16 @@ const adminMenuItems: MenuItem[] = [
 const hostMenuItems: MenuItem[] = [
  { icon: Settings, label: "시스템 관리", path: "/system" },
  { icon: GraduationCap, label: "교육원 관리", path: "/education-institutions" },
+{
+  icon: GraduationCap,
+  label: "학점은행제 관리",
+  path: "/subject-catalog",
+},
+ {
+    icon: Award,
+    label: "민간자격증 관리",
+    path: "/private-certificate-master",
+  },
  { icon: PhoneCall, label: "문자 발송", path: "/sms" },
  { icon: Sparkles, label: "AI 상담", path: "/ai" },
 ];

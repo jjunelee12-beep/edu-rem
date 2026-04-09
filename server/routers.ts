@@ -21,6 +21,8 @@ import { attendanceRouter } from "./attendance.router";
 import { noticeRouter } from "./routes/notice.router";
 import { scheduleRouter } from "./routes/schedule.router";
 import { approvalRouter } from "./routes/approval.router";
+import { privateCertificateMasterRouter } from "./routes/privateCertificateMaster";
+import { subjectCatalogRouter } from "./routes/subjectCatalog";
 
 function isAdminOrHost(user: any) {
   return (
@@ -69,6 +71,8 @@ attendance: attendanceRouter,
 notice: noticeRouter,
 schedule: scheduleRouter,
   approval: approvalRouter,
+privateCertificateMaster: privateCertificateMasterRouter,
+subjectCatalog: subjectCatalogRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
