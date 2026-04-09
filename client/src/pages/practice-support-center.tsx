@@ -438,6 +438,7 @@ const bulkDeactivateInstitutionsMut =
   trpc.practiceInstitution.bulkDeactivate.useMutation({
     onSuccess: async () => {
       await utils.practiceInstitution.list.invalidate();
+      await refetchPracticeInstitutions();
       toast.success("실습기관 전체 비활성화가 완료되었습니다.");
       setDeactivateOpen(false);
     },
@@ -454,6 +455,16 @@ const deleteEducationCenterMut =
     onError: (e) => toast.error(e.message || "실습교육원 삭제 실패"),
   });
 
+const fixEducationCoordsMut =
+  trpc.practiceEducationCenter.fixCoords.useMutation({
+    onSuccess: (res) => {
+      toast.success(
+        `좌표 보정 완료 (${res.success}/${res.total})`
+      );
+      utils.practiceEducationCenter.list.invalidate();
+    },
+  });
+
 const fixInstitutionCoordsMut =
   trpc.practiceInstitution.fixCoords.useMutation({
     onSuccess: async (res) => {
@@ -465,20 +476,11 @@ const fixInstitutionCoordsMut =
     },
   });
 
-const fixInstitutionCoordsMut =
-  trpc.practiceInstitution.fixCoords.useMutation({
-    onSuccess: (res) => {
-      toast.success(
-        `좌표 보정 완료 (${res.success}/${res.total})`
-      );
-      utils.practiceInstitution.list.invalidate();
-    },
-  });
-
 const deleteInstitutionMut =
   trpc.practiceInstitution.delete.useMutation({
     onSuccess: async () => {
       await utils.practiceInstitution.list.invalidate();
+      await refetchPracticeInstitutions();
       toast.success("실습기관이 삭제되었습니다.");
       setDeleteTarget(null);
     },
