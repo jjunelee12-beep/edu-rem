@@ -1225,7 +1225,7 @@ const existingPlanSubjectMap = useMemo(() => {
         : "bg-amber-100 text-amber-700"
     }
   >
-    승인 {student?.approvalStatus || "대기"}
+   {student?.approvalStatus || "대기"}
   </Badge>
 </div>
       </div>

@@ -104,7 +104,7 @@ const hostMenuItems: MenuItem[] = [
 {
   icon: GraduationCap,
   label: "학점은행제 관리",
-  path: "/subject-catalog",
+  path: "/subject-catalog-master",
 },
  {
     icon: Award,
