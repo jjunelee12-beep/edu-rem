@@ -74,11 +74,6 @@ export default function System() {
   const { user } = useAuth();
  const [tab, setTab] = useState<TabKey>("users");
 
-  useEffect(() => {
-    const nextTab = getTabFromLocation(location);
-    setTab(nextTab);
-  }, [location]);
-
   if (user?.role !== "host" && user?.role !== "superhost") {
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-20">
