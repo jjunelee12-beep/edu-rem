@@ -140,7 +140,7 @@ subjectCatalog: subjectCatalogRouter,
           throw new Error("권한이 없습니다.");
         }
 
-        const id = await db.createPrivateCertificateRequest({
+                const id = await db.createPrivateCertificateRequest({
           studentId: input.studentId,
           assigneeId: input.assigneeId,
           clientName: input.clientName.trim(),
@@ -152,12 +152,19 @@ subjectCatalog: subjectCatalogRouter,
           note: input.note ?? null,
           requestStatus: input.requestStatus ?? "요청",
           feeAmount: input.feeAmount ?? "0",
-freelancerInputAmount: input.freelancerInputAmount ?? "0",
+          freelancerInputAmount: input.freelancerInputAmount ?? "0",
           paymentStatus: input.paymentStatus ?? "결제대기",
           paidAt: input.paidAt ? new Date(input.paidAt) : null,
           attachmentName: input.attachmentName?.trim() || null,
           attachmentUrl: input.attachmentUrl?.trim() || null,
         } as any);
+
+        if ((input.paymentStatus ?? "결제대기") === "결제") {
+          await db.syncPrivateCertificateSettlementItemByRequestId(
+            Number(id),
+            Number(ctx.user.id)
+          );
+        }
 
         return { success: true, id };
       }),
@@ -183,7 +190,7 @@ freelancerInputAmount: z.string().optional(),
           attachmentUrl: z.string().optional().nullable(),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const data: any = {};
 
         if (input.assigneeId !== undefined) data.assigneeId = input.assigneeId;
@@ -204,6 +211,19 @@ if (input.freelancerInputAmount !== undefined) {
         if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl?.trim() || null;
 
         await db.updatePrivateCertificateRequest(input.id, data);
+        if (
+          input.paymentStatus !== undefined ||
+          input.paidAt !== undefined ||
+          input.feeAmount !== undefined ||
+          input.freelancerInputAmount !== undefined ||
+          input.privateCertificateMasterId !== undefined
+        ) {
+          await db.syncPrivateCertificateSettlementItemByRequestId(
+            Number(input.id),
+            Number(ctx.user.id)
+          );
+        }
+
         return { success: true };
       }),
 
@@ -325,7 +345,7 @@ if (input.freelancerInputAmount !== undefined) {
           throw new Error("권한이 없습니다.");
         }
 
-        const id = await db.createPracticeSupportRequest({
+               const id = await db.createPracticeSupportRequest({
           studentId: input.studentId,
           semesterId: input.semesterId ?? null,
           assigneeId: input.assigneeId,
@@ -347,6 +367,13 @@ if (input.freelancerInputAmount !== undefined) {
           attachmentName: input.attachmentName?.trim() || null,
           attachmentUrl: input.attachmentUrl?.trim() || null,
         } as any);
+
+        if ((input.paymentStatus ?? "미결제") === "결제") {
+          await db.syncPracticeSupportSettlementItemByRequestId(
+            Number(id),
+            Number(ctx.user.id)
+          );
+        }
 
         return { success: true, id };
       }),
@@ -376,7 +403,7 @@ if (input.freelancerInputAmount !== undefined) {
           attachmentUrl: z.string().optional().nullable(),
         })
       )
-      .mutation(async ({ input }) => {
+            .mutation(async ({ ctx, input }) => {
         const data: any = {};
 
         if (input.semesterId !== undefined) data.semesterId = input.semesterId ?? null;
@@ -401,6 +428,16 @@ if (input.freelancerInputAmount !== undefined) {
         if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl?.trim() || null;
 
         await db.updatePracticeSupportRequest(input.id, data);
+        if (
+          input.paymentStatus !== undefined ||
+          input.paidAt !== undefined ||
+          input.feeAmount !== undefined
+        ) {
+          await db.syncPracticeSupportSettlementItemByRequestId(
+            Number(input.id),
+            Number(ctx.user.id)
+          );
+        }
         return { success: true };
       }),
 
