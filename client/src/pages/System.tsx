@@ -70,6 +70,55 @@ function roleLabel(role?: UserRole | string) {
   }
 }
 
+function shallowEqualStringRecord(
+  a: Record<string, string>,
+  b: Record<string, string>
+) {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+
+  for (const key of aKeys) {
+    if (a[key] !== b[key]) return false;
+  }
+
+  return true;
+}
+
+function equalCertificateDrafts(
+  a: Record<
+    number,
+    {
+      defaultFeeAmount: string;
+      defaultFreelancerAmount: string;
+      isSettlementEnabled: boolean;
+    }
+  >,
+  b: Record<
+    number,
+    {
+      defaultFeeAmount: string;
+      defaultFreelancerAmount: string;
+      isSettlementEnabled: boolean;
+    }
+  >
+) {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+
+  for (const key of aKeys) {
+    const aa = a[Number(key)];
+    const bb = b[Number(key)];
+    if (!aa || !bb) return false;
+    if (aa.defaultFeeAmount !== bb.defaultFeeAmount) return false;
+    if (aa.defaultFreelancerAmount !== bb.defaultFreelancerAmount) return false;
+    if (aa.isSettlementEnabled !== bb.isSettlementEnabled) return false;
+  }
+
+  return true;
+}
+
 export default function System() {
   const { user } = useAuth();
  const [tab, setTab] = useState<TabKey>("users");
@@ -220,38 +269,38 @@ function SettlementSystemSection() {
   >({});
 
   useEffect(() => {
-    if (!institutionRates?.length) {
-      setRateDrafts({});
-      return;
-    }
+  const next: Record<string, string> = {};
 
-    const next: Record<string, string> = {};
+  if (institutionRates?.length) {
     institutionRates.forEach((row: any) => {
       next[String(row.positionId)] = String(row.freelancerUnitAmount ?? "0");
     });
-    setRateDrafts(next);
-  }, [institutionRates]);
+  }
+
+  setRateDrafts((prev) =>
+    shallowEqualStringRecord(prev, next) ? prev : next
+  );
+}, [institutionRates]);
 
  useEffect(() => {
-    if (!settlementSettings) return;
-    setPayoutDay(String((settlementSettings as any)?.payoutDay ?? 25));
-  }, [settlementSettings]);
+  if (!settlementSettings) return;
+
+  const nextPayoutDay = String((settlementSettings as any)?.payoutDay ?? 25);
+
+  setPayoutDay((prev) => (prev === nextPayoutDay ? prev : nextPayoutDay));
+}, [settlementSettings]);
 
   useEffect(() => {
-    if (!privateCertificateMasters?.length) {
-      setCertificateDrafts({});
-      return;
+  const next: Record<
+    number,
+    {
+      defaultFeeAmount: string;
+      defaultFreelancerAmount: string;
+      isSettlementEnabled: boolean;
     }
+  > = {};
 
-    const next: Record<
-      number,
-      {
-        defaultFeeAmount: string;
-        defaultFreelancerAmount: string;
-        isSettlementEnabled: boolean;
-      }
-    > = {};
-
+  if (privateCertificateMasters?.length) {
     privateCertificateMasters.forEach((item: any) => {
       next[Number(item.id)] = {
         defaultFeeAmount: String(item.defaultFeeAmount ?? "0"),
@@ -262,9 +311,12 @@ function SettlementSystemSection() {
             : Boolean(item.isSettlementEnabled),
       };
     });
+  }
 
-    setCertificateDrafts(next);
-  }, [privateCertificateMasters]);
+  setCertificateDrafts((prev) =>
+    equalCertificateDrafts(prev, next) ? prev : next
+  );
+}, [privateCertificateMasters]);
 
   const sortedInstitutions = useMemo(
     () =>
