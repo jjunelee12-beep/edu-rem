@@ -14,11 +14,23 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
+import { Button } from "@/components/ui/button";
 
 
 export default function SuperhostHome() {
   const { user } = useAuth();
 const { data: logs } = trpc.ai.logs.useQuery();
+const backfillMutation =
+  trpc.settlementSystem.backfillSettlementItems.useMutation({
+    onSuccess: (res) => {
+      console.log("백필 완료:", res);
+      alert("정산 원장 재생성 완료");
+    },
+    onError: (err) => {
+      console.error(err);
+      alert("백필 실패");
+    },
+  });
   const stats = useMemo(
     () => [
       {
@@ -70,25 +82,40 @@ const { data: logs } = trpc.ai.logs.useQuery();
   return (
     <div className="space-y-6 p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
-              <Crown className="h-6 w-6 text-primary" />
-              슈퍼호스트 대시보드
-            </h1>
-            <Badge variant="secondary" className="rounded-full">
-              SUPERHOST
-            </Badge>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            host/admin/staff 와 분리된 총관리자 전용 콘솔입니다.
-          </p>
-        </div>
+  <div>
+    <div className="flex items-center gap-2">
+      <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
+        <Crown className="h-6 w-6 text-primary" />
+        슈퍼호스트 대시보드
+      </h1>
+      <Badge variant="secondary" className="rounded-full">
+        SUPERHOST
+      </Badge>
+    </div>
+    <p className="mt-1 text-sm text-muted-foreground">
+      host/admin/staff 와 분리된 총관리자 전용 콘솔입니다.
+    </p>
+  </div>
 
-        <div className="text-xs text-muted-foreground">
-          접속 계정: {user?.name || user?.username || "-"}
-        </div>
-      </div>
+  <div className="flex items-center gap-2">
+    <Button
+      variant="destructive"
+      onClick={() => {
+        if (!confirm("정산 원장을 전체 재생성합니다. 진행하시겠습니까?")) return;
+        backfillMutation.mutate();
+      }}
+      disabled={backfillMutation.isPending}
+    >
+      {backfillMutation.isPending
+        ? "재생성 중..."
+        : "정산 원장 재생성"}
+    </Button>
+
+    <div className="text-xs text-muted-foreground">
+      접속 계정: {user?.name || user?.username || "-"}
+    </div>
+  </div>
+</div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {stats.map((item) => (
