@@ -4269,6 +4269,35 @@ export async function listPrivateCertificateRequestsByStudent(studentId: number)
     .orderBy(desc(privateCertificateRequests.createdAt));
 }
 
+export async function updatePrivateCertificateMaster(
+  id: number,
+  data: Partial<InsertPrivateCertificateMaster>
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(privateCertificateMasters)
+    .set({
+      ...(data.name !== undefined ? { name: data.name } : {}),
+      ...(data.sortOrder !== undefined ? { sortOrder: data.sortOrder } : {}),
+      ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+      ...(data.defaultFeeAmount !== undefined
+        ? { defaultFeeAmount: data.defaultFeeAmount }
+        : {}),
+      ...(data.defaultFreelancerAmount !== undefined
+        ? { defaultFreelancerAmount: data.defaultFreelancerAmount }
+        : {}),
+      ...(data.isSettlementEnabled !== undefined
+        ? { isSettlementEnabled: data.isSettlementEnabled }
+        : {}),
+      ...(data.updatedBy !== undefined ? { updatedBy: data.updatedBy } : {}),
+    } as any)
+    .where(eq(privateCertificateMasters.id, id));
+
+  return true;
+}
+
 export async function createPrivateCertificateRequest(data: InsertPrivateCertificateRequest) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");

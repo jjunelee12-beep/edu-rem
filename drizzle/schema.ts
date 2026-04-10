@@ -1499,6 +1499,32 @@ export const settlementItems = mysqlTable("settlement_items", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
 });
 
+export const settlementItemLogs = mysqlTable("settlement_item_logs", {
+  id: int("id").autoincrement().primaryKey(),
+
+  settlementItemId: int("settlementItemId").notNull(),
+
+  actionType: mysqlEnum("actionType", [
+    "create",
+    "recalculate",
+    "confirm",
+    "cancel",
+    "refund",
+    "manual_edit",
+  ])
+    .notNull()
+    .default("create"),
+
+  actorUserId: int("actorUserId"),
+  note: text("note"),
+  payload: text("payload"),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type SettlementItemLog = typeof settlementItemLogs.$inferSelect;
+export type InsertSettlementItemLog = typeof settlementItemLogs.$inferInsert;
+
 export const settlementSettings = mysqlTable("settlement_settings", {
   id: int("id").primaryKey().autoincrement(),
   payoutDay: int("payoutDay").notNull().default(25),
