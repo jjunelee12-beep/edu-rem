@@ -1199,6 +1199,10 @@ getSettings: protectedProcedure.query(async () => {
 
         return { success: true, id };
       }),
+    backfillSettlementItems: hostProcedure
+      .mutation(async ({ ctx }) => {
+        return await db.backfillSettlementItems(Number(ctx.user.id));
+      }),
   }),
 
   ai: router({

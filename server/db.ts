@@ -2213,6 +2213,119 @@ export async function syncPracticeSupportSettlementItemByRequestId(
   });
 }
 
+export async function backfillSettlementItems(actorUserId?: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  let subjectProcessed = 0;
+  let subjectSuccess = 0;
+  let subjectFailed = 0;
+
+  let privateProcessed = 0;
+  let privateSuccess = 0;
+  let privateFailed = 0;
+
+  let practiceProcessed = 0;
+  let practiceSuccess = 0;
+  let practiceFailed = 0;
+
+  const errors: string[] = [];
+
+  // 1) 일반과목(semester) 백필
+  const semesterRows = await db
+    .select({ id: semesters.id })
+    .from(semesters)
+    .orderBy(asc(semesters.id));
+
+  for (const row of semesterRows) {
+    subjectProcessed += 1;
+    try {
+      await syncSubjectSettlementItemBySemesterId(
+        Number(row.id),
+        actorUserId
+      );
+      subjectSuccess += 1;
+    } catch (err: any) {
+      subjectFailed += 1;
+      errors.push(
+        `[subject][semesterId=${row.id}] ${err?.message || String(err)}`
+      );
+    }
+  }
+
+  // 2) 민간자격증 백필
+  const privateRows = await db
+    .select({ id: privateCertificateRequests.id })
+    .from(privateCertificateRequests)
+    .orderBy(asc(privateCertificateRequests.id));
+
+  for (const row of privateRows) {
+    privateProcessed += 1;
+    try {
+      await syncPrivateCertificateSettlementItemByRequestId(
+        Number(row.id),
+        actorUserId
+      );
+      privateSuccess += 1;
+    } catch (err: any) {
+      privateFailed += 1;
+      errors.push(
+        `[private_certificate][requestId=${row.id}] ${err?.message || String(err)}`
+      );
+    }
+  }
+
+  // 3) 실습배정 백필
+  const practiceRows = await db
+    .select({ id: practiceSupportRequests.id })
+    .from(practiceSupportRequests)
+    .orderBy(asc(practiceSupportRequests.id));
+
+  for (const row of practiceRows) {
+    practiceProcessed += 1;
+    try {
+      await syncPracticeSupportSettlementItemByRequestId(
+        Number(row.id),
+        actorUserId
+      );
+      practiceSuccess += 1;
+    } catch (err: any) {
+      practiceFailed += 1;
+      errors.push(
+        `[practice_support][requestId=${row.id}] ${err?.message || String(err)}`
+      );
+    }
+  }
+
+  return {
+    success: true,
+    summary: {
+      subject: {
+        processed: subjectProcessed,
+        success: subjectSuccess,
+        failed: subjectFailed,
+      },
+      privateCertificate: {
+        processed: privateProcessed,
+        success: privateSuccess,
+        failed: privateFailed,
+      },
+      practiceSupport: {
+        processed: practiceProcessed,
+        success: practiceSuccess,
+        failed: practiceFailed,
+      },
+      totalProcessed:
+        subjectProcessed + privateProcessed + practiceProcessed,
+      totalSuccess:
+        subjectSuccess + privateSuccess + practiceSuccess,
+      totalFailed:
+        subjectFailed + privateFailed + practiceFailed,
+    },
+    errors,
+  };
+}
+
 export async function syncSubjectSettlementItemBySemesterId(
   semesterId: number,
   actorUserId?: number
