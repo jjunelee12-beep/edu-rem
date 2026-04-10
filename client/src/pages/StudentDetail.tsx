@@ -135,7 +135,7 @@ type TemplateTabType = "전공필수" | "전공선택" | "교양" | "일반";
 export default function StudentDetail() {
   const params = useParams<{ id: string }>();
   const studentId = parseInt(params.id || "0");
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { user } = useAuth();
   const utils = trpc.useUtils();
 
@@ -143,6 +143,16 @@ export default function StudentDetail() {
   const planSectionRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const planFieldRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
   const transferFieldRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | null>>({});
+
+const semesterSectionRef = useRef<HTMLDivElement | null>(null);
+const planSummarySectionRef = useRef<HTMLDivElement | null>(null);
+const privateCertificateSectionRef = useRef<HTMLDivElement | null>(null);
+const practiceSupportSectionRef = useRef<HTMLDivElement | null>(null);
+const refundSectionRef = useRef<HTMLDivElement | null>(null);
+const lastHandledTabRef = useRef<string>("");
+const [highlightSection, setHighlightSection] = useState<
+  "" | "semester" | "private-certificate" | "practice-support" | "refund"
+>("");
 
   const { data: student, isLoading: studentLoading } = trpc.student.get.useQuery({ id: studentId });
   const { data: semesters } = trpc.semester.list.useQuery({ studentId });
@@ -598,11 +608,81 @@ const canFinalizeRegistrationStatus = isApprovedStudent && isSelectedLastSemeste
     }
   }, [sortedSemesters, selectedSemesterOrder]);
 
+useEffect(() => {
+  if (studentLoading) return;
+
+  const tab = new URLSearchParams(window.location.search).get("tab") || "";
+  const tabKey = `${studentId}:${tab}:${location}`;
+
+  if (!tab || lastHandledTabRef.current === tabKey) return;
+
+  lastHandledTabRef.current = tabKey;
+
+  window.setTimeout(() => {
+    if (tab === "semester") {
+  scrollToSection(semesterSectionRef.current);
+  triggerSectionHighlight("semester");
+  return;
+}
+
+    if (tab === "private-certificate") {
+  scrollToSection(
+    privateCertificateSectionRef.current || planSummarySectionRef.current
+  );
+  triggerSectionHighlight("private-certificate");
+  return;
+}
+
+    if (tab === "practice-support") {
+  scrollToSection(
+    practiceSupportSectionRef.current || planSummarySectionRef.current
+  );
+  triggerSectionHighlight("practice-support");
+  return;
+}
+
+    if (tab === "refund") {
+  if (refundSectionRef.current) {
+    scrollToSection(refundSectionRef.current);
+    triggerSectionHighlight("refund");
+  } else {
+    setRefundDialogOpen(true);
+    scrollToSection(semesterSectionRef.current);
+    triggerSectionHighlight("semester");
+  }
+}
+  }, 120);
+}, [
+  location,
+  studentId,
+  studentLoading,
+  requestedPrivateCertList.length,
+  latestPracticeSupport?.id,
+  refundList?.length,
+]);
+
   const moveToPlanSemester = (semesterNo: number) => {
     const el = planSectionRefs.current[semesterNo];
     if (!el) return;
     el.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+
+const scrollToSection = (el: HTMLDivElement | null) => {
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+};
+
+const triggerSectionHighlight = (
+  key: "" | "semester" | "private-certificate" | "practice-support" | "refund"
+) => {
+  if (!key) return;
+
+  setHighlightSection(key);
+
+  window.setTimeout(() => {
+    setHighlightSection((prev) => (prev === key ? "" : prev));
+  }, 2200);
+};
 
   const getInstitutionName = (institutionId: any) => {
     if (!institutionId) return "";
@@ -1411,9 +1491,16 @@ const existingPlanSubjectMap = useMemo(() => {
         </CardContent>
       </Card>
 
-      <Card className="border-0 shadow-sm">
-        <CardHeader className="flex flex-row items-center justify-between pb-3">
-          <CardTitle className="text-base">학기별 예정표 / 결제표</CardTitle>
+      <div ref={semesterSectionRef}>
+  <Card
+    className={`border-0 shadow-sm transition-all duration-500 ${
+      highlightSection === "semester"
+        ? "ring-2 ring-blue-400 bg-blue-50/40"
+        : ""
+    }`}
+  >
+    <CardHeader className="flex flex-row items-center justify-between pb-3">
+      <CardTitle className="text-base">학기별 예정표 / 결제표</CardTitle>
           <div className="flex gap-2">
   <Button
     variant="outline"
@@ -1648,10 +1735,19 @@ const existingPlanSubjectMap = useMemo(() => {
           </div>
         </CardContent>
       </Card>
+</div>
 
-      <Card className="border-0 shadow-sm">
-        <CardHeader className="flex flex-row items-center justify-between pb-3">
-          <CardTitle className="text-base">플랜 요약</CardTitle>
+      <div ref={planSummarySectionRef}>
+  <Card
+    className={`border-0 shadow-sm transition-all duration-500 ${
+      highlightSection === "private-certificate" ||
+      highlightSection === "practice-support"
+        ? "ring-2 ring-violet-400 bg-violet-50/30"
+        : ""
+    }`}
+  >
+    <CardHeader className="flex flex-row items-center justify-between pb-3">
+      <CardTitle className="text-base">플랜 요약</CardTitle>
           {!editingPlan ? (
             <Button variant="outline" size="sm" onClick={startEditPlan} className="gap-1">
               {plan ? "수정" : "작성"}
@@ -1683,7 +1779,14 @@ const existingPlanSubjectMap = useMemo(() => {
   </div>
 
 {requestedPrivateCertList.length > 0 && (
-  <div className="bg-violet-50 rounded-lg p-4 text-sm border border-violet-100">
+  <div
+  ref={privateCertificateSectionRef}
+  className={`rounded-lg p-4 text-sm border transition-all duration-500 ${
+    highlightSection === "private-certificate"
+      ? "bg-violet-100 border-violet-400 ring-2 ring-violet-300"
+      : "bg-violet-50 border-violet-100"
+  }`}
+>
     <p className="font-medium text-violet-700 mb-2">민간자격증 요청확인</p>
 
     <div className="flex flex-wrap gap-2">
@@ -1721,8 +1824,15 @@ const existingPlanSubjectMap = useMemo(() => {
   </div>
 )} 
 
-  {plan.hasPractice && (
-  <div className="bg-blue-50 rounded-lg p-4 text-sm">
+ {plan.hasPractice && (
+  <div
+  ref={practiceSupportSectionRef}
+  className={`rounded-lg p-4 text-sm transition-all duration-500 ${
+    highlightSection === "practice-support"
+      ? "bg-blue-100 ring-2 ring-blue-300"
+      : "bg-blue-50"
+  }`}
+>
     <p className="font-medium text-blue-700 mb-1">실습 정보</p>
     <p>
       <span className="font-medium">실습 시간:</span>{" "}
@@ -1859,6 +1969,7 @@ const existingPlanSubjectMap = useMemo(() => {
           )}
         </CardContent>
       </Card>
+</div>
 
       <Card className="border-0 shadow-sm">
         <CardHeader className="pb-3">
@@ -2682,7 +2793,14 @@ const existingPlanSubjectMap = useMemo(() => {
       </Dialog>
 
           {isAdmin && refundList && refundList.length > 0 && (
-        <Card className="border-0 shadow-sm">
+  <div ref={refundSectionRef}>
+  <Card
+    className={`border-0 shadow-sm transition-all duration-500 ${
+      highlightSection === "refund"
+        ? "ring-2 ring-red-400 bg-red-50/30"
+        : ""
+    }`}
+  >
           <CardHeader className="pb-3">
             <CardTitle className="text-base text-red-600">환불 요청 / 내역</CardTitle>
           </CardHeader>
@@ -2955,10 +3073,18 @@ const existingPlanSubjectMap = useMemo(() => {
             </div>
           </CardContent>
         </Card>
+</div>
       )}
 
-            {!isAdmin && refundList && refundList.length > 0 && (
-        <Card className="border-0 shadow-sm">
+           {!isAdmin && refundList && refundList.length > 0 && (
+  <div ref={refundSectionRef}>
+  <Card
+    className={`border-0 shadow-sm transition-all duration-500 ${
+      highlightSection === "refund"
+        ? "ring-2 ring-red-400 bg-red-50/30"
+        : ""
+    }`}
+  >
           <CardHeader className="pb-3">
             <CardTitle className="text-base text-red-600">환불 요청 / 내역</CardTitle>
           </CardHeader>
@@ -3025,6 +3151,7 @@ const existingPlanSubjectMap = useMemo(() => {
             </div>
           </CardContent>
         </Card>
+</div>
       )}
 	      <Dialog open={privateCertDialogOpen} onOpenChange={setPrivateCertDialogOpen}>
         <DialogContent className="max-w-3xl">

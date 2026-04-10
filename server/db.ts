@@ -20,6 +20,8 @@ import {
   transferSubjects,
   InsertTransferSubject,
   educationInstitutions,
+  educationInstitutionPositionRates,
+  type InsertEducationInstitutionPositionRate,
   transferAttachments,
   InsertTransferAttachment,
   courseSubjectTemplates,
@@ -34,6 +36,11 @@ import {
   InsertPrivateCertificateRequest,
   practiceSupportRequests,
   InsertPracticeSupportRequest,
+settlementItems,
+settlementItemLogs,
+settlementGrades,
+settlementRules,
+settlementRuleGroups,
 practiceListCategories,
 InsertPracticeListCategory,
   practiceInstitutions,
@@ -491,17 +498,33 @@ export async function getStudentRegistrationSummary(studentId: number) {
   );
   const lastSemester = sortedSemesters[sortedSemesters.length - 1];
 
-  const [refundResult] = await db.execute(
-    sql`SELECT COALESCE(SUM(refundAmount), 0) as total
-        FROM refunds
-        WHERE studentId = ${studentId}
-          AND approvalStatus = '승인'`
-  );
-  const approvedRefund = toNumber((refundResult as any)[0]?.total);
+   const [settlementResult] = await db.execute(sql`
+    SELECT
+      COALESCE(
+        SUM(
+          CASE
+            WHEN settlementStatus = 'confirmed'
+            THEN grossAmount ELSE 0
+          END
+        ),
+        0
+      ) as totalPaid,
+      COALESCE(
+        SUM(
+          CASE
+            WHEN settlementStatus = 'refunded'
+            THEN grossAmount ELSE 0
+          END
+        ),
+        0
+      ) as totalRefund
+    FROM settlement_items
+    WHERE studentId = ${studentId}
+  `);
 
-  const rawPaymentAmount = firstActual?.actualAmount
-    ? toNumber(firstActual.actualAmount)
-    : toNumber(student.paymentAmount);
+  const totalPaid = toNumber((settlementResult as any)[0]?.totalPaid);
+  const totalRefund = toNumber((settlementResult as any)[0]?.totalRefund);
+  const rawPaymentAmount = totalPaid - totalRefund;
 
   return {
     status:
@@ -509,7 +532,7 @@ export async function getStudentRegistrationSummary(studentId: number) {
         ? "등록 종료"
         : student.status || "등록",
     startDate: firstActual?.actualStartDate || student.startDate || null,
-    paymentAmount: Math.max(rawPaymentAmount - approvedRefund, 0),
+        paymentAmount: Math.max(rawPaymentAmount, 0),
     subjectCount: firstActual?.actualSubjectCount ?? student.subjectCount ?? 0,
     paymentDate: firstActual?.actualPaymentDate || student.paymentDate || null,
     institution: firstActual?.actualInstitution || student.institution || "",
@@ -1527,6 +1550,12 @@ export async function deleteSemester(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  await cancelSettlementItemBySource({
+    revenueType: "subject",
+    sourceId: id,
+    note: "학기 삭제로 일반과목 정산 취소",
+  });
+
   await db.delete(semesters).where(eq(semesters.id, id));
 }
 
@@ -1705,6 +1734,32 @@ export async function approveRefund(id: number, approvedBy: number) {
       approvedBy,
     } as any)
     .where(eq(refunds.id, id));
+
+  const refundRow = await db
+    .select()
+    .from(refunds)
+    .where(eq(refunds.id, id))
+    .limit(1);
+
+  const refund = refundRow[0];
+  if (!refund) return;
+
+   if (refund.semesterId) {
+    await refundSettlementItemBySource({
+      revenueType: "subject",
+      sourceId: Number(refund.semesterId),
+      refundAmount: refund.refundAmount,
+      refundDate: refund.refundDate,
+      actorUserId: approvedBy,
+      note: "학점은행제 일반과목 환불 승인",
+      payload: {
+        refundId: Number(refund.id),
+        studentId: Number(refund.studentId),
+        semesterId: Number(refund.semesterId),
+        refundType: refund.refundType ?? null,
+      },
+    });
+  }
 }
 
 export async function rejectRefund(id: number, approvedBy: number) {
@@ -1727,6 +1782,551 @@ export async function deleteRefund(id: number) {
   if (!db) throw new Error("DB not available");
 
   await db.delete(refunds).where(eq(refunds.id, id));
+}
+
+export async function createSettlementItemLog(params: {
+  settlementItemId: number;
+  actionType: "create" | "recalculate" | "confirm" | "cancel" | "refund" | "manual_edit";
+  actorUserId?: number | null;
+  note?: string | null;
+  payload?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.insert(settlementItemLogs).values({
+    settlementItemId: params.settlementItemId,
+    actionType: params.actionType,
+    actorUserId: params.actorUserId ?? null,
+    note: params.note ?? null,
+    payload: params.payload ?? null,
+  } as any);
+}
+
+export async function upsertSettlementItem(params: {
+  revenueType: "subject" | "practice_support" | "private_certificate";
+  sourceId: number;
+  studentId: number;
+  assigneeId?: number | null;
+  freelancerUserId?: number | null;
+  freelancerPositionId?: number | null;
+  settlementGradeId?: number | null;
+  educationInstitutionId?: number | null;
+  privateCertificateMasterId?: number | null;
+  title: string;
+  quantity?: number;
+  subjectType?: "general" | "face_to_face" | "practice" | "certificate" | "practice_support" | null;
+  subjectCount?: number;
+  actualUnitPrice?: string | number;
+  normalUnitPrice?: string | number;
+  institutionUnitCost?: string | number;
+  institutionCost?: string | number;
+  freelancerUnitAmount?: string | number;
+  taxAmount?: string | number;
+  finalPayoutAmount?: string | number;
+  actualCredits?: number | null;
+  settlementCredits?: number | null;
+  grossAmount: string | number;
+  companyAmount: string | number;
+  freelancerAmount: string | number;
+  settlementStatus?: "pending" | "confirmed" | "cancelled" | "refunded";
+  occurredAt?: string | Date | null;
+  note?: string | null;
+  actorUserId?: number | null;
+  logNote?: string | null;
+  payload?: any;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+    const grossAmount = toNumber(params.grossAmount);
+  const companyAmount = toNumber(params.companyAmount);
+  const freelancerAmount = toNumber(params.freelancerAmount);
+  const companyProfit = companyAmount - freelancerAmount;
+
+  const actualUnitPrice = toNumber(params.actualUnitPrice ?? 0);
+  const normalUnitPrice = toNumber(params.normalUnitPrice ?? 0);
+  const institutionUnitCost = toNumber(params.institutionUnitCost ?? 0);
+  const institutionCost = toNumber(params.institutionCost ?? 0);
+  const freelancerUnitAmount = toNumber(params.freelancerUnitAmount ?? 0);
+  const taxAmount = toNumber(params.taxAmount ?? 0);
+  const finalPayoutAmount = toNumber(params.finalPayoutAmount ?? 0);
+
+  const exists = await db
+    .select()
+    .from(settlementItems)
+    .where(
+      and(
+        eq(settlementItems.revenueType, params.revenueType),
+        eq(settlementItems.sourceId, params.sourceId)
+      )
+    )
+    .limit(1);
+
+  if (exists[0]) {
+    const item = exists[0];
+
+    await db
+      .update(settlementItems)
+      .set({
+        studentId: params.studentId,
+        assigneeId: params.assigneeId ?? null,
+        freelancerUserId: params.freelancerUserId ?? null,
+        freelancerPositionId: params.freelancerPositionId ?? null,
+        settlementGradeId: params.settlementGradeId ?? null,
+        educationInstitutionId: params.educationInstitutionId ?? null,
+        privateCertificateMasterId: params.privateCertificateMasterId ?? null,
+        title: params.title,
+        quantity: params.quantity ?? 1,
+        actualCredits: params.actualCredits ?? null,
+        settlementCredits: params.settlementCredits ?? null,
+        subjectType: params.subjectType ?? null,
+        subjectCount: params.subjectCount ?? 0,
+        actualUnitPrice: String(actualUnitPrice),
+        normalUnitPrice: String(normalUnitPrice),
+        institutionUnitCost: String(institutionUnitCost),
+        institutionCost: String(institutionCost),
+        freelancerUnitAmount: String(freelancerUnitAmount),
+        taxAmount: String(taxAmount),
+        finalPayoutAmount: String(finalPayoutAmount),
+        grossAmount: String(grossAmount),
+        companyAmount: String(companyAmount),
+        freelancerAmount: String(freelancerAmount),
+        companyProfit: String(companyProfit),
+        settlementStatus: params.settlementStatus ?? "confirmed",
+        occurredAt: params.occurredAt ?? null,
+        note: params.note ?? null,
+      } as any)
+      .where(eq(settlementItems.id, item.id));
+
+    await createSettlementItemLog({
+      settlementItemId: Number(item.id),
+      actionType: "recalculate",
+      actorUserId: params.actorUserId ?? null,
+      note: params.logNote ?? "정산 항목 재계산",
+      payload: params.payload ? JSON.stringify(params.payload) : null,
+    });
+
+    return { id: Number(item.id), mode: "update" as const };
+  }
+
+  const result: any = await db.insert(settlementItems).values({
+    revenueType: params.revenueType,
+    sourceId: params.sourceId,
+    studentId: params.studentId,
+    assigneeId: params.assigneeId ?? null,
+    freelancerUserId: params.freelancerUserId ?? null,
+    freelancerPositionId: params.freelancerPositionId ?? null,
+    settlementGradeId: params.settlementGradeId ?? null,
+    educationInstitutionId: params.educationInstitutionId ?? null,
+    privateCertificateMasterId: params.privateCertificateMasterId ?? null,
+    title: params.title,
+    quantity: params.quantity ?? 1,
+    actualCredits: params.actualCredits ?? null,
+    settlementCredits: params.settlementCredits ?? null,
+    subjectType: params.subjectType ?? null,
+    subjectCount: params.subjectCount ?? 0,
+    actualUnitPrice: String(actualUnitPrice),
+    normalUnitPrice: String(normalUnitPrice),
+    institutionUnitCost: String(institutionUnitCost),
+    institutionCost: String(institutionCost),
+    freelancerUnitAmount: String(freelancerUnitAmount),
+    taxAmount: String(taxAmount),
+    finalPayoutAmount: String(finalPayoutAmount),
+    grossAmount: String(grossAmount),
+    companyAmount: String(companyAmount),
+    freelancerAmount: String(freelancerAmount),
+    companyProfit: String(companyProfit),
+    settlementStatus: params.settlementStatus ?? "confirmed",
+    occurredAt: params.occurredAt ?? null,
+    note: params.note ?? null,
+  } as any);
+
+  const insertedId = Number(getInsertId(result));
+
+  await createSettlementItemLog({
+    settlementItemId: insertedId,
+    actionType: "create",
+    actorUserId: params.actorUserId ?? null,
+    note: params.logNote ?? "정산 항목 생성",
+    payload: params.payload ? JSON.stringify(params.payload) : null,
+  });
+
+  return { id: insertedId, mode: "insert" as const };
+}
+
+export async function cancelSettlementItemBySource(params: {
+  revenueType: "subject" | "practice_support" | "private_certificate";
+  sourceId: number;
+  actorUserId?: number | null;
+  note?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const exists = await db
+    .select()
+    .from(settlementItems)
+    .where(
+      and(
+        eq(settlementItems.revenueType, params.revenueType),
+        eq(settlementItems.sourceId, params.sourceId)
+      )
+    )
+    .limit(1);
+
+  if (!exists[0]) {
+    return null;
+  }
+
+  const item = exists[0];
+
+  await db
+    .update(settlementItems)
+    .set({
+      settlementStatus: "cancelled",
+    } as any)
+    .where(eq(settlementItems.id, item.id));
+
+  await createSettlementItemLog({
+    settlementItemId: Number(item.id),
+    actionType: "cancel",
+    actorUserId: params.actorUserId ?? null,
+    note: params.note ?? "결제 취소 또는 요청 삭제로 정산 취소",
+  });
+
+  return Number(item.id);
+}
+
+export async function refundSettlementItemBySource(params: {
+  revenueType: "subject" | "practice_support" | "private_certificate";
+  sourceId: number;
+  refundAmount?: number | string | null;
+  refundDate?: string | Date | null;
+  actorUserId?: number | null;
+  note?: string | null;
+  payload?: any;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const exists = await db
+    .select()
+    .from(settlementItems)
+    .where(
+      and(
+        eq(settlementItems.revenueType, params.revenueType),
+        eq(settlementItems.sourceId, params.sourceId)
+      )
+    )
+    .limit(1);
+
+  if (!exists[0]) {
+    return null;
+  }
+
+  const item = exists[0];
+  const refundAmount = toNumber(params.refundAmount ?? item.grossAmount ?? 0);
+
+  await db
+    .update(settlementItems)
+    .set({
+      settlementStatus: "refunded",
+      note: params.note ?? "환불 처리됨",
+    } as any)
+    .where(eq(settlementItems.id, item.id));
+
+  await createSettlementItemLog({
+    settlementItemId: Number(item.id),
+    actionType: "refund",
+    actorUserId: params.actorUserId ?? null,
+    note: params.note ?? "환불 승인으로 정산 환불 처리",
+    payload: JSON.stringify({
+      refundAmount,
+      refundDate: params.refundDate ?? null,
+      revenueType: params.revenueType,
+      sourceId: params.sourceId,
+      ...(params.payload ?? {}),
+    }),
+  });
+
+  return Number(item.id);
+}
+
+export async function syncPrivateCertificateSettlementItemByRequestId(
+  requestId: number,
+  actorUserId?: number
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const rows = await db
+    .select({
+      request: privateCertificateRequests,
+      master: privateCertificateMasters,
+    })
+    .from(privateCertificateRequests)
+    .leftJoin(
+      privateCertificateMasters,
+      eq(privateCertificateRequests.privateCertificateMasterId, privateCertificateMasters.id)
+    )
+    .where(eq(privateCertificateRequests.id, requestId))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row?.request) {
+    throw new Error("민간자격증 요청 데이터를 찾을 수 없습니다.");
+  }
+
+  const request = row.request;
+  const master = row.master;
+
+  if (request.paymentStatus !== "결제") {
+    await cancelSettlementItemBySource({
+      revenueType: "private_certificate",
+      sourceId: Number(request.id),
+      actorUserId,
+      note: "민간자격증 결제 상태가 결제가 아니어서 정산 취소",
+    });
+    return null;
+  }
+
+    const requestFeeAmount = toNumber((request as any).feeAmount ?? 0);
+  const masterDefaultFeeAmount = toNumber((master as any)?.defaultFeeAmount ?? 0);
+  const masterDefaultFreelancerAmount = toNumber(
+    (master as any)?.defaultFreelancerAmount ?? 0
+  );
+  const isSettlementEnabled =
+    (master as any)?.isSettlementEnabled === undefined
+      ? true
+      : Boolean((master as any)?.isSettlementEnabled);
+
+  const feeAmount = requestFeeAmount > 0 ? requestFeeAmount : masterDefaultFeeAmount;
+  const freelancerAmount = isSettlementEnabled ? masterDefaultFreelancerAmount : 0;
+  const taxAmount = Math.floor(freelancerAmount * 0.033);
+  const finalPayoutAmount = freelancerAmount - taxAmount;
+  const companyAmount = feeAmount;
+
+  return await upsertSettlementItem({
+    revenueType: "private_certificate",
+    sourceId: Number(request.id),
+    studentId: Number(request.studentId),
+    assigneeId: Number((request as any).assigneeId ?? 0) || null,
+    privateCertificateMasterId: Number((request as any).privateCertificateMasterId ?? 0) || null,
+    title: `${master?.name || "민간자격증"} 결제`,
+    quantity: 1,
+        grossAmount: feeAmount,
+    companyAmount,
+    freelancerAmount,
+    taxAmount,
+    finalPayoutAmount,
+    settlementStatus: "confirmed",
+    occurredAt: (request as any).paidAt ?? (request as any).updatedAt ?? new Date(),
+        note: "민간자격증 마스터 정산기준으로 자동 생성",
+    actorUserId: actorUserId ?? null,
+    logNote: "민간자격증 결제 완료 반영",
+        payload: {
+      requestId: request.id,
+      paymentStatus: request.paymentStatus,
+      feeAmount,
+            masterDefaultFeeAmount,
+      masterDefaultFreelancerAmount,
+      isSettlementEnabled,
+      freelancerAmount,
+      taxAmount,
+      finalPayoutAmount,
+      privateCertificateMasterId: (request as any).privateCertificateMasterId ?? null,
+    },
+  });
+}
+
+export async function syncPracticeSupportSettlementItemByRequestId(
+  requestId: number,
+  actorUserId?: number
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const rows = await db
+    .select()
+    .from(practiceSupportRequests)
+    .where(eq(practiceSupportRequests.id, requestId))
+    .limit(1);
+
+  const request = rows[0];
+  if (!request) {
+    throw new Error("실습배정지원 요청 데이터를 찾을 수 없습니다.");
+  }
+
+  if (request.paymentStatus !== "결제") {
+    await cancelSettlementItemBySource({
+      revenueType: "practice_support",
+      sourceId: Number(request.id),
+      actorUserId,
+      note: "실습배정지원 결제 상태가 결제가 아니어서 정산 취소",
+    });
+    return null;
+  }
+
+  const feeAmount = toNumber((request as any).feeAmount ?? 0);
+
+  return await upsertSettlementItem({
+    revenueType: "practice_support",
+    sourceId: Number(request.id),
+    studentId: Number(request.studentId),
+    assigneeId: Number((request as any).assigneeId ?? 0) || null,
+    title: "실습배정지원 결제",
+    quantity: 1,
+    grossAmount: feeAmount,
+    companyAmount: feeAmount,
+    freelancerAmount: 0,
+    settlementStatus: "confirmed",
+    occurredAt: (request as any).paidAt ?? (request as any).updatedAt ?? new Date(),
+    note: "실습배정지원 결제 완료로 자동 생성",
+    actorUserId: actorUserId ?? null,
+    logNote: "실습배정지원 결제 완료 반영",
+    payload: {
+      requestId: request.id,
+      paymentStatus: request.paymentStatus,
+      feeAmount,
+    },
+  });
+}
+
+export async function syncSubjectSettlementItemBySemesterId(
+  semesterId: number,
+  actorUserId?: number
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const sem = await getSemester(semesterId);
+  if (!sem) {
+    throw new Error("학기 데이터를 찾을 수 없습니다.");
+  }
+
+  const student = await getStudent(Number(sem.studentId));
+  if (!student) {
+    throw new Error("학생 데이터를 찾을 수 없습니다.");
+  }
+
+  const grossAmount = toNumber((sem as any).actualAmount ?? 0);
+  const subjectCount = Number((sem as any).actualSubjectCount ?? 0);
+  const educationInstitutionId = Number((sem as any).actualInstitutionId ?? 0) || null;
+  const occurredAt = (sem as any).actualPaymentDate ?? (sem as any).actualStartDate ?? null;
+
+  // 실제 결제 완료 전이면 정산 원장 취소
+  if (!grossAmount || !subjectCount || !educationInstitutionId || !occurredAt) {
+    await cancelSettlementItemBySource({
+      revenueType: "subject",
+      sourceId: Number(sem.id),
+      actorUserId: actorUserId ?? null,
+      note: "학기 실제 결제정보 미완성으로 과목 정산 취소",
+    });
+    return null;
+  }
+
+  const institution = await getEducationInstitutionById(educationInstitutionId);
+  if (!institution) {
+    throw new Error("교육원 정보를 찾을 수 없습니다.");
+  }
+
+  const userOrg = await getUserOrgMapping(Number(student.assigneeId));
+  const positionId = Number(userOrg?.positionId ?? 0) || null;
+
+    let positionUnitAmount = 0;
+  if (positionId && educationInstitutionId) {
+    const institutionPositionRate = await getEducationInstitutionPositionRate(
+      educationInstitutionId,
+      positionId
+    );
+
+    if (institutionPositionRate) {
+      positionUnitAmount = toNumber(
+        (institutionPositionRate as any).freelancerUnitAmount ?? 0
+      );
+    } else {
+      const position = await getPosition(positionId);
+      positionUnitAmount = toNumber(
+        (position as any)?.settlementUnitAmount ?? 0
+      );
+    }
+  } else if (positionId) {
+    const position = await getPosition(positionId);
+    positionUnitAmount = toNumber(
+      (position as any)?.settlementUnitAmount ?? 0
+    );
+  }
+
+  const normalSubjectPrice = toNumber((institution as any).normalSubjectPrice ?? 75000);
+  const institutionUnitCost = toNumber((institution as any).unitCostAmount ?? 0);
+  const actualUnitPrice =
+    subjectCount > 0 ? Math.floor(grossAmount / subjectCount) : 0;
+
+  const actualCredits = subjectCount * 3;
+  const settlementCredits =
+    actualUnitPrice >= normalSubjectPrice ? subjectCount * 3 : subjectCount;
+
+  const institutionCost = actualCredits * institutionUnitCost;
+  const freelancerAmount = settlementCredits * positionUnitAmount;
+  const taxAmount = Math.floor(freelancerAmount * 0.033);
+  const finalPayoutAmount = freelancerAmount - taxAmount;
+  const companyAmount = grossAmount - institutionCost;
+  const title = `${student.clientName || "학생"} ${Number(sem.semesterOrder)}학기 일반과목`;
+
+  const result = await upsertSettlementItem({
+    revenueType: "subject",
+    sourceId: Number(sem.id),
+    studentId: Number(student.id),
+    assigneeId: Number(student.assigneeId),
+    freelancerUserId: Number(student.assigneeId),
+    freelancerPositionId: positionId,
+    educationInstitutionId,
+    title,
+    quantity: subjectCount,
+    subjectType: "general",
+    subjectCount,
+    actualUnitPrice,
+    normalUnitPrice: normalSubjectPrice,
+    institutionUnitCost,
+    institutionCost,
+    freelancerUnitAmount: positionUnitAmount,
+    taxAmount,
+    finalPayoutAmount,
+    actualCredits,
+    settlementCredits,
+    grossAmount,
+    companyAmount,
+    freelancerAmount,
+    occurredAt,
+    settlementStatus: "confirmed",
+    note: "학점은행제 일반과목 정산 자동 계산",
+    actorUserId: actorUserId ?? null,
+    logNote: "학점은행제 일반과목 정산 생성/재계산",
+    payload: {
+      semesterId: Number(sem.id),
+      semesterOrder: Number((sem as any).semesterOrder ?? 0),
+      studentId: Number(student.id),
+      studentName: student.clientName ?? null,
+      assigneeId: Number(student.assigneeId),
+      positionId,
+      educationInstitutionId,
+      grossAmount,
+      subjectCount,
+      actualUnitPrice,
+      normalSubjectPrice,
+      actualCredits,
+      settlementCredits,
+      institutionUnitCost,
+      institutionCost,
+      positionUnitAmount,
+      freelancerAmount,
+      taxAmount,
+      finalPayoutAmount,
+    },
+  });
+
+  return result;
 }
 
 // ─── Dashboard Stats ────────────────────────────────────────────────
@@ -1760,9 +2360,9 @@ export async function getDashboardStats(assigneeId?: number) {
   const todayStart = `${today} 00:00:00`;
   const tomorrow = new Date(`${today}T00:00:00`);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(
-    tomorrow.getDate()
-  ).padStart(2, "0")} 00:00:00`;
+  const tomorrowStr = `${tomorrow.getFullYear()}-${String(
+    tomorrow.getMonth() + 1
+  ).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")} 00:00:00`;
 
   const assigneeStudentCond = assigneeId
     ? sql`AND s.assigneeId = ${assigneeId}`
@@ -1772,13 +2372,22 @@ export async function getDashboardStats(assigneeId?: number) {
     ? sql`AND c.assigneeId = ${assigneeId}`
     : sql``;
 
-  const assigneeRefundCond = assigneeId
-    ? sql`AND r.assigneeId = ${assigneeId}`
+  const assigneeSettlementCond = assigneeId
+    ? sql`AND si.assigneeId = ${assigneeId}`
     : sql``;
 
   const [consultRows] = await db.execute(sql`
     SELECT
-      COALESCE(SUM(CASE WHEN c.consultDate >= ${monthStart} AND c.consultDate < ${monthEnd} THEN 1 ELSE 0 END), 0) as monthConsultationCount,
+      COALESCE(
+        SUM(
+          CASE
+            WHEN c.consultDate >= ${monthStart}
+             AND c.consultDate < ${monthEnd}
+            THEN 1 ELSE 0
+          END
+        ),
+        0
+      ) as monthConsultationCount,
       COUNT(*) as totalConsultationCount
     FROM consultations c
     WHERE 1=1
@@ -1787,151 +2396,223 @@ export async function getDashboardStats(assigneeId?: number) {
 
   const [studentRows] = await db.execute(sql`
     SELECT
-      COALESCE(SUM(
-        CASE
-          WHEN s.approvalStatus = '승인'
-           AND s.paymentDate >= ${monthStart}
-           AND s.paymentDate < ${monthEnd}
-          THEN 1 ELSE 0
-        END
-      ), 0) as monthRegistered,
+      COALESCE(
+        SUM(
+          CASE
+            WHEN s.approvalStatus = '승인'
+             AND s.paymentDate >= ${monthStart}
+             AND s.paymentDate < ${monthEnd}
+            THEN 1 ELSE 0
+          END
+        ),
+        0
+      ) as monthRegistered,
 
-      COALESCE(SUM(CASE WHEN s.approvalStatus = '승인' THEN 1 ELSE 0 END), 0) as totalRegisteredCount,
+      COALESCE(
+        SUM(CASE WHEN s.approvalStatus = '승인' THEN 1 ELSE 0 END),
+        0
+      ) as totalRegisteredCount,
 
-      COALESCE(SUM(
-        CASE
-          WHEN s.approvalStatus = '승인'
-           AND s.approvedAt >= ${monthStart}
-           AND s.approvedAt < ${monthEnd}
-          THEN 1 ELSE 0
-        END
-      ), 0) as monthApprovedCount,
+      COALESCE(
+        SUM(
+          CASE
+            WHEN s.approvalStatus = '승인'
+             AND s.approvedAt >= ${monthStart}
+             AND s.approvedAt < ${monthEnd}
+            THEN 1 ELSE 0
+          END
+        ),
+        0
+      ) as monthApprovedCount,
 
-      COALESCE(SUM(
-        CASE
-          WHEN s.approvalStatus = '불승인'
-           AND s.rejectedAt >= ${monthStart}
-           AND s.rejectedAt < ${monthEnd}
-          THEN 1 ELSE 0
-        END
-      ), 0) as monthRejectedCount,
+      COALESCE(
+        SUM(
+          CASE
+            WHEN s.approvalStatus = '불승인'
+             AND s.rejectedAt >= ${monthStart}
+             AND s.rejectedAt < ${monthEnd}
+            THEN 1 ELSE 0
+          END
+        ),
+        0
+      ) as monthRejectedCount,
 
-      COALESCE(SUM(CASE WHEN s.approvalStatus = '대기' THEN 1 ELSE 0 END), 0) as monthPendingCount,
+      COALESCE(
+        SUM(CASE WHEN s.approvalStatus = '대기' THEN 1 ELSE 0 END),
+        0
+      ) as monthPendingCount,
 
-      COALESCE(SUM(CASE WHEN s.approvalStatus = '승인' THEN 1 ELSE 0 END), 0) as totalApprovedCount,
-      COALESCE(SUM(CASE WHEN s.approvalStatus = '불승인' THEN 1 ELSE 0 END), 0) as totalRejectedCount,
-      COALESCE(SUM(CASE WHEN s.approvalStatus = '대기' THEN 1 ELSE 0 END), 0) as totalPendingCount
+      COALESCE(
+        SUM(CASE WHEN s.approvalStatus = '승인' THEN 1 ELSE 0 END),
+        0
+      ) as totalApprovedCount,
+
+      COALESCE(
+        SUM(CASE WHEN s.approvalStatus = '불승인' THEN 1 ELSE 0 END),
+        0
+      ) as totalRejectedCount,
+
+      COALESCE(
+        SUM(CASE WHEN s.approvalStatus = '대기' THEN 1 ELSE 0 END),
+        0
+      ) as totalPendingCount
     FROM students s
     WHERE 1=1
     ${assigneeStudentCond}
   `);
 
-  const [salesRows] = await db.execute(sql`
+  const [settlementRows] = await db.execute(sql`
     SELECT
-      COALESCE(SUM(
-        CASE
-          WHEN sem.isCompleted = true
-           AND sem.actualPaymentDate >= ${monthStart}
-           AND sem.actualPaymentDate < ${monthEnd}
-          THEN sem.actualAmount ELSE 0
-        END
-      ), 0) as monthSemesterSales,
+      COALESCE(
+        SUM(
+          CASE
+            WHEN si.settlementStatus = 'confirmed'
+             AND si.occurredAt >= ${today}
+             AND si.occurredAt < DATE(${tomorrowStr})
+            THEN COALESCE(si.grossAmount, 0)
+            ELSE 0
+          END
+        ),
+        0
+      ) as todaySales,
 
-      COALESCE(SUM(
-        CASE
-          WHEN sem.isCompleted = true
-           AND sem.actualPaymentDate >= ${todayStart}
-           AND sem.actualPaymentDate < ${tomorrowStr}
-          THEN sem.actualAmount ELSE 0
-        END
-      ), 0) as todaySemesterSales,
+      COALESCE(
+        SUM(
+          CASE
+            WHEN si.settlementStatus = 'confirmed'
+             AND si.occurredAt >= ${monthStart}
+             AND si.occurredAt < ${monthEnd}
+            THEN COALESCE(si.grossAmount, 0)
+            ELSE 0
+          END
+        ),
+        0
+      ) as monthSales,
 
-      COALESCE(SUM(
-        CASE
-          WHEN sem.isCompleted = true
-          THEN sem.actualAmount ELSE 0
-        END
-      ), 0) as totalSemesterSales
-    FROM semesters sem
-    INNER JOIN students s ON s.id = sem.studentId
+      COALESCE(
+        SUM(
+          CASE
+            WHEN si.settlementStatus = 'confirmed'
+            THEN COALESCE(si.grossAmount, 0)
+            ELSE 0
+          END
+        ),
+        0
+      ) as totalSales,
+
+      COALESCE(
+        SUM(
+          CASE
+            WHEN si.settlementStatus = 'refunded'
+             AND si.updatedAt >= ${monthStart}
+             AND si.updatedAt < ${monthEnd}
+            THEN COALESCE(si.grossAmount, 0)
+            ELSE 0
+          END
+        ),
+        0
+      ) as monthRefund,
+
+      COALESCE(
+        SUM(
+          CASE
+            WHEN si.settlementStatus = 'refunded'
+            THEN COALESCE(si.grossAmount, 0)
+            ELSE 0
+          END
+        ),
+        0
+      ) as totalRefund,
+
+      COALESCE(
+        SUM(
+          CASE
+            WHEN si.revenueType = 'subject'
+             AND si.settlementStatus = 'confirmed'
+             AND si.occurredAt >= ${today}
+             AND si.occurredAt < DATE(${tomorrowStr})
+            THEN COALESCE(si.grossAmount, 0)
+            ELSE 0
+          END
+        ),
+        0
+      ) as todaySemesterSales,
+
+      COALESCE(
+        SUM(
+          CASE
+            WHEN si.revenueType = 'subject'
+             AND si.settlementStatus = 'confirmed'
+             AND si.occurredAt >= ${monthStart}
+             AND si.occurredAt < ${monthEnd}
+            THEN COALESCE(si.grossAmount, 0)
+            ELSE 0
+          END
+        ),
+        0
+      ) as monthSemesterSales,
+
+      COALESCE(
+        SUM(
+          CASE
+            WHEN si.revenueType = 'private_certificate'
+             AND si.settlementStatus = 'confirmed'
+             AND si.occurredAt >= ${today}
+             AND si.occurredAt < DATE(${tomorrowStr})
+            THEN COALESCE(si.grossAmount, 0)
+            ELSE 0
+          END
+        ),
+        0
+      ) as todayFirstSales,
+
+      COALESCE(
+        SUM(
+          CASE
+            WHEN si.revenueType = 'private_certificate'
+             AND si.settlementStatus = 'confirmed'
+             AND si.occurredAt >= ${monthStart}
+             AND si.occurredAt < ${monthEnd}
+            THEN COALESCE(si.grossAmount, 0)
+            ELSE 0
+          END
+        ),
+        0
+      ) as monthFirstSales
+    FROM settlement_items si
     WHERE 1=1
-	AND s.approvalStatus = '승인'
-    ${assigneeStudentCond}
+    ${assigneeSettlementCond}
   `);
 
-  const [refundRows] = await db.execute(sql`
-    SELECT
-      COALESCE(SUM(
-        CASE
-          WHEN r.approvalStatus = '승인'
-           AND r.refundDate >= ${monthStart}
-           AND r.refundDate < ${monthEnd}
-          THEN r.refundAmount ELSE 0
-        END
-      ), 0) as monthRefund,
-
-      COALESCE(SUM(
-        CASE
-          WHEN r.approvalStatus = '승인'
-          THEN r.refundAmount ELSE 0
-        END
-      ), 0) as totalRefund
-    FROM refunds r
-    WHERE 1=1
-    ${assigneeRefundCond}
-  `);
-
-  const consult = (consultRows as any)[0] || {};
-  const student = (studentRows as any)[0] || {};
-  const sales = (salesRows as any)[0] || {};
-  const refund = (refundRows as any)[0] || {};
-
-  const monthConsultationCount = toNumber(consult.monthConsultationCount);
-  const totalConsultationCount = toNumber(consult.totalConsultationCount);
-
-  const monthRegistered = toNumber(student.monthRegistered);
-  const totalRegisteredCount = toNumber(student.totalRegisteredCount);
-  const monthApprovedCount = toNumber(student.monthApprovedCount);
-  const monthRejectedCount = toNumber(student.monthRejectedCount);
-  const monthPendingCount = toNumber(student.monthPendingCount);
-  const totalApprovedCount = toNumber(student.totalApprovedCount);
-  const totalRejectedCount = toNumber(student.totalRejectedCount);
-  const totalPendingCount = toNumber(student.totalPendingCount);
-
-  const todaySemesterSales = toNumber(sales.todaySemesterSales);
-  const monthSemesterSales = toNumber(sales.monthSemesterSales);
-  const totalSemesterSales = toNumber(sales.totalSemesterSales);
-
-  const monthRefund = toNumber(refund.monthRefund);
-  const totalRefund = toNumber(refund.totalRefund);
-
-  const todaySales = todaySemesterSales;
-  const monthSales = monthSemesterSales - monthRefund;
-  const totalSales = totalSemesterSales - totalRefund;
+  const consult = (consultRows as any)?.[0] ?? {};
+  const student = (studentRows as any)?.[0] ?? {};
+  const settlement = (settlementRows as any)?.[0] ?? {};
 
   return {
-    monthConsultationCount,
-    monthRegistered,
-    todaySales,
-    monthSales,
-    totalSales,
+    monthConsultationCount: toNumber(consult.monthConsultationCount),
+    monthRegistered: toNumber(student.monthRegistered),
 
-    // 기존 UI 호환용
-    todayFirstSales: 0,
-    monthFirstSales: 0,
-    todaySemesterSales,
-    monthSemesterSales,
+    todaySales: toNumber(settlement.todaySales),
+    monthSales: toNumber(settlement.monthSales),
+    totalSales: toNumber(settlement.totalSales),
 
-    monthRefund,
-    totalRefund,
-    monthApprovedCount,
-    monthRejectedCount,
-    monthPendingCount,
-    totalConsultationCount,
-    totalRegisteredCount,
-    totalApprovedCount,
-    totalRejectedCount,
-    totalPendingCount,
+    todayFirstSales: toNumber(settlement.todayFirstSales),
+    monthFirstSales: toNumber(settlement.monthFirstSales),
+    todaySemesterSales: toNumber(settlement.todaySemesterSales),
+    monthSemesterSales: toNumber(settlement.monthSemesterSales),
+
+    monthRefund: toNumber(settlement.monthRefund),
+    totalRefund: toNumber(settlement.totalRefund),
+
+    monthApprovedCount: toNumber(student.monthApprovedCount),
+    monthRejectedCount: toNumber(student.monthRejectedCount),
+    monthPendingCount: toNumber(student.monthPendingCount),
+
+    totalConsultationCount: toNumber(consult.totalConsultationCount),
+    totalRegisteredCount: toNumber(student.totalRegisteredCount),
+    totalApprovedCount: toNumber(student.totalApprovedCount),
+    totalRejectedCount: toNumber(student.totalRejectedCount),
+    totalPendingCount: toNumber(student.totalPendingCount),
   };
 }
 
@@ -1947,83 +2628,186 @@ export async function getMonthSalesEntries(assigneeId?: number) {
   }
 
   const { monthStart, monthEnd } = getKSTMonthRange();
-  const assigneeCond = assigneeId ? sql`AND s.assigneeId = ${assigneeId}` : sql``;
-  const refundAssigneeCond = assigneeId ? sql`AND r.assigneeId = ${assigneeId}` : sql``;
 
-  const [salesResult] = await db.execute(sql`
-    SELECT
-      sem.id,
-      sem.studentId,
-      sem.actualAmount,
-      sem.actualPaymentDate,
-      s.clientName,
-      s.phone,
-      s.course,
-      s.assigneeId
-    FROM semesters sem
-    INNER JOIN students s ON s.id = sem.studentId
-    WHERE sem.isCompleted = true
-	AND s.approvalStatus = '승인'
-      AND sem.actualPaymentDate IS NOT NULL
-      AND sem.actualPaymentDate >= ${monthStart}
-      AND sem.actualPaymentDate < ${monthEnd}
-      ${assigneeCond}
-  `);
+  const conditions = [
+    sql`${settlementItems.occurredAt} >= ${monthStart}`,
+    sql`${settlementItems.occurredAt} < ${monthEnd}`,
+    sql`${settlementItems.settlementStatus} IN ('confirmed', 'refunded')`,
+  ];
 
-  const [refundResult] = await db.execute(sql`
-    SELECT
-      r.id,
-      r.studentId,
-      r.refundAmount,
-      r.refundDate,
-      r.reason,
-      r.assigneeId,
-      s.clientName,
-      s.phone,
-      s.course
-    FROM refunds r
-    INNER JOIN students s ON s.id = r.studentId
-    WHERE r.approvalStatus = '승인'
-      AND r.refundDate >= ${monthStart}
-      AND r.refundDate < ${monthEnd}
-      ${refundAssigneeCond}
-  `);
+  if (assigneeId) {
+    conditions.push(eq(settlementItems.assigneeId, assigneeId));
+  }
 
-  const salesRows = (salesResult as any)[0] || [];
-  const refundRows = (refundResult as any)[0] || [];
+  const rows = await db
+    .select({
+      id: settlementItems.id,
+      revenueType: settlementItems.revenueType,
+      sourceId: settlementItems.sourceId,
+      studentId: settlementItems.studentId,
+      assigneeId: settlementItems.assigneeId,
+      title: settlementItems.title,
+      subjectType: settlementItems.subjectType,
+      subjectCount: settlementItems.subjectCount,
+      quantity: settlementItems.quantity,
+      grossAmount: settlementItems.grossAmount,
+      companyAmount: settlementItems.companyAmount,
+      freelancerAmount: settlementItems.freelancerAmount,
+      taxAmount: settlementItems.taxAmount,
+      finalPayoutAmount: settlementItems.finalPayoutAmount,
+      settlementStatus: settlementItems.settlementStatus,
+      occurredAt: settlementItems.occurredAt,
+      note: settlementItems.note,
+      clientName: students.clientName,
+      phone: students.phone,
+      course: students.course,
+    })
+    .from(settlementItems)
+    .leftJoin(students, eq(settlementItems.studentId, students.id))
+    .where(and(...conditions))
+    .orderBy(desc(settlementItems.occurredAt), desc(settlementItems.id));
 
-  const salesEntries = salesRows.map((r: any) => ({
-    id: r.id,
-    studentId: r.studentId,
-    type: "semester",
-    clientName: r.clientName,
-    phone: r.phone,
-    course: r.course,
-    amount: toNumber(r.actualAmount),
-    paymentDate: r.actualPaymentDate,
-    assigneeId: r.assigneeId,
-  }));
+  const entries = (rows || []).map((r: any) => {
+    const isRefunded = r.settlementStatus === "refunded";
+    const signedAmount = isRefunded
+      ? -toNumber(r.grossAmount)
+      : toNumber(r.grossAmount);
 
-  const refundEntries = refundRows.map((r: any) => ({
-    id: r.id,
-    studentId: r.studentId,
-    type: "refund",
-    clientName: r.clientName,
-    phone: r.phone,
-    course: r.course,
-    amount: -toNumber(r.refundAmount),
-    paymentDate: r.refundDate,
-    assigneeId: r.assigneeId,
-    reason: r.reason || "",
-  }));
-
-  const entries = [...salesEntries, ...refundEntries].sort(
-    (a: any, b: any) =>
-      new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime()
-  );
+    return {
+      id: Number(r.id),
+      settlementItemId: Number(r.id),
+      sourceId: Number(r.sourceId),
+      studentId: Number(r.studentId || 0),
+      assigneeId: Number(r.assigneeId || 0),
+      type: isRefunded ? "refund" : String(r.revenueType || "unknown"),
+      revenueType: r.revenueType,
+      settlementStatus: r.settlementStatus,
+      title: r.title || "",
+      clientName: r.clientName || "",
+      phone: r.phone || "",
+      course: r.course || "",
+      subjectType: r.subjectType || null,
+      subjectCount: Number(r.subjectCount || 0),
+      quantity: Number(r.quantity || 0),
+      amount: signedAmount,
+      grossAmount: toNumber(r.grossAmount),
+      companyAmount: toNumber(r.companyAmount),
+      freelancerAmount: toNumber(r.freelancerAmount),
+      taxAmount: toNumber(r.taxAmount),
+      finalPayoutAmount: toNumber(r.finalPayoutAmount),
+      paymentDate: r.occurredAt,
+      note: r.note || "",
+    };
+  });
 
   const totalAmount = entries.reduce(
     (sum: number, x: any) => sum + toNumber(x.amount),
+    0
+  );
+
+  return {
+    entries,
+    totalCount: entries.length,
+    totalAmount,
+  };
+}
+
+export async function getSettlementEntries(params: {
+  year: number;
+  month: number;
+  assigneeId?: number;
+}) {
+  const db = await getDb();
+  if (!db) {
+    return {
+      entries: [],
+      totalCount: 0,
+      totalAmount: 0,
+    };
+  }
+
+  const startDate = `${params.year}-${String(params.month).padStart(2, "0")}-01`;
+  const nextMonth = params.month === 12 ? 1 : params.month + 1;
+  const nextYear = params.month === 12 ? params.year + 1 : params.year;
+  const endDate = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+
+  const conditions = [
+    sql`${settlementItems.occurredAt} >= ${startDate}`,
+    sql`${settlementItems.occurredAt} < ${endDate}`,
+    sql`${settlementItems.settlementStatus} IN ('confirmed', 'refunded')`,
+  ];
+
+  if (params.assigneeId) {
+    conditions.push(eq(settlementItems.assigneeId, params.assigneeId));
+  }
+
+  const rows = await db
+    .select({
+      id: settlementItems.id,
+      revenueType: settlementItems.revenueType,
+      sourceId: settlementItems.sourceId,
+      studentId: settlementItems.studentId,
+      assigneeId: settlementItems.assigneeId,
+      title: settlementItems.title,
+      subjectType: settlementItems.subjectType,
+      subjectCount: settlementItems.subjectCount,
+      quantity: settlementItems.quantity,
+      grossAmount: settlementItems.grossAmount,
+      companyAmount: settlementItems.companyAmount,
+      freelancerAmount: settlementItems.freelancerAmount,
+      taxAmount: settlementItems.taxAmount,
+      finalPayoutAmount: settlementItems.finalPayoutAmount,
+      companyProfit: settlementItems.companyProfit,
+      settlementStatus: settlementItems.settlementStatus,
+      occurredAt: settlementItems.occurredAt,
+      note: settlementItems.note,
+      clientName: students.clientName,
+      phone: students.phone,
+      course: students.course,
+      assigneeName: users.name,
+    })
+    .from(settlementItems)
+    .leftJoin(students, eq(settlementItems.studentId, students.id))
+    .leftJoin(users, eq(settlementItems.assigneeId, users.id))
+    .where(and(...conditions))
+    .orderBy(desc(settlementItems.occurredAt), desc(settlementItems.id));
+
+  const entries = (rows || []).map((r: any) => {
+    const isRefunded = r.settlementStatus === "refunded";
+    const signedGrossAmount = isRefunded
+      ? -toNumber(r.grossAmount)
+      : toNumber(r.grossAmount);
+
+    return {
+      id: Number(r.id),
+      settlementItemId: Number(r.id),
+      revenueType: r.revenueType,
+      settlementStatus: r.settlementStatus,
+      sourceId: Number(r.sourceId || 0),
+      studentId: Number(r.studentId || 0),
+      assigneeId: Number(r.assigneeId || 0),
+      assigneeName: r.assigneeName || "",
+      clientName: r.clientName || "",
+      phone: r.phone || "",
+      course: r.course || "",
+      title: r.title || "",
+      subjectType: r.subjectType || null,
+      subjectCount: Number(r.subjectCount || 0),
+      quantity: Number(r.quantity || 0),
+      grossAmount: signedGrossAmount,
+      originalGrossAmount: toNumber(r.grossAmount),
+      companyAmount: toNumber(r.companyAmount),
+      freelancerAmount: toNumber(r.freelancerAmount),
+      taxAmount: toNumber(r.taxAmount),
+      finalPayoutAmount: toNumber(r.finalPayoutAmount),
+      companyProfit: toNumber(r.companyProfit),
+      occurredAt: r.occurredAt,
+      note: r.note || "",
+    };
+  });
+
+  const totalAmount = entries.reduce(
+    (sum: number, row: any) => sum + toNumber(row.grossAmount),
     0
   );
 
@@ -2059,25 +2843,39 @@ export async function getStudentPaymentSummary(studentId: number) {
   }
 
   const [plannedResult] = await db.execute(
-    sql`SELECT COALESCE(SUM(plannedAmount), 0) as total FROM semesters WHERE studentId = ${studentId}`
+    sql`SELECT COALESCE(SUM(plannedAmount), 0) as total
+        FROM semesters
+        WHERE studentId = ${studentId}`
   );
   const totalRequired = toNumber((plannedResult as any)[0]?.total);
 
-  const [paidResult] = await db.execute(
-    sql`SELECT COALESCE(SUM(actualAmount), 0) as total
-        FROM semesters
-        WHERE studentId = ${studentId}
-          AND isCompleted = true`
-  );
-  const totalPaid = toNumber((paidResult as any)[0]?.total);
+  const [settlementResult] = await db.execute(sql`
+    SELECT
+      COALESCE(
+        SUM(
+          CASE
+            WHEN settlementStatus = 'confirmed'
+            THEN grossAmount ELSE 0
+          END
+        ),
+        0
+      ) as totalPaid,
 
-  const [refundResult] = await db.execute(
-    sql`SELECT COALESCE(SUM(refundAmount), 0) as total
-        FROM refunds
-        WHERE studentId = ${studentId}
-          AND approvalStatus = '승인'`
-  );
-  const totalRefund = toNumber((refundResult as any)[0]?.total);
+      COALESCE(
+        SUM(
+          CASE
+            WHEN settlementStatus = 'refunded'
+            THEN grossAmount ELSE 0
+          END
+        ),
+        0
+      ) as totalRefund
+    FROM settlement_items
+    WHERE studentId = ${studentId}
+  `);
+
+  const totalPaid = toNumber((settlementResult as any)[0]?.totalPaid);
+  const totalRefund = toNumber((settlementResult as any)[0]?.totalRefund);
 
   const netPaid = totalPaid - totalRefund;
   const remainingAmount = Math.max(totalRequired - netPaid, 0);
@@ -2105,86 +2903,463 @@ export async function getSettlementReport(
   const nextYear = month === 12 ? year + 1 : year;
   const endDate = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
 
-  const salesData = await db
-    .select({
-      assigneeId: students.assigneeId,
-      totalSales: sql<string>`COALESCE(SUM(${semesters.actualAmount}), 0)`,
-    })
-    .from(semesters)
-    .innerJoin(students, eq(semesters.studentId, students.id))
-    .where(
-      and(
-        eq(semesters.isCompleted, true),
-        eq(students.approvalStatus, "승인"),
-        sql`${semesters.actualPaymentDate} >= ${startDate}`,
-        sql`${semesters.actualPaymentDate} < ${endDate}`,
-        ...(filterAssigneeId ? [eq(students.assigneeId, filterAssigneeId)] : [])
-      )
-    )
-    .groupBy(students.assigneeId);
+  const conditions = [
+    sql`${settlementItems.occurredAt} >= ${startDate}`,
+    sql`${settlementItems.occurredAt} < ${endDate}`,
+  ];
 
-  const refundData = await db
-    .select({
-      assigneeId: refunds.assigneeId,
-      totalRefunds: sql<string>`COALESCE(SUM(${refunds.refundAmount}), 0)`,
-    })
-    .from(refunds)
-    .where(
-      and(
-        eq(refunds.approvalStatus, "승인"),
-        sql`${refunds.refundDate} >= ${startDate}`,
-        sql`${refunds.refundDate} < ${endDate}`,
-        ...(filterAssigneeId ? [eq(refunds.assigneeId, filterAssigneeId)] : [])
-      )
-    )
-    .groupBy(refunds.assigneeId);
-
-  const allUserRows = await db.select({ id: users.id, name: users.name }).from(users);
-  const userMap = new Map(allUserRows.map((u) => [u.id, u.name || "이름없음"]));
-
-  const reportMap = new Map<
-    number,
-    {
-      assigneeId: number;
-      assigneeName: string;
-      totalSales: number;
-      totalRefunds: number;
-    }
-  >();
-
-  for (const row of salesData) {
-    const aid = row.assigneeId;
-    if (!reportMap.has(aid)) {
-      reportMap.set(aid, {
-        assigneeId: aid,
-        assigneeName: userMap.get(aid) || "이름없음",
-        totalSales: 0,
-        totalRefunds: 0,
-      });
-    }
-    reportMap.get(aid)!.totalSales += Number(row.totalSales);
+  if (filterAssigneeId) {
+    conditions.push(eq(settlementItems.assigneeId, filterAssigneeId));
   }
 
-  for (const row of refundData) {
-    const aid = row.assigneeId;
-    if (!reportMap.has(aid)) {
-      reportMap.set(aid, {
-        assigneeId: aid,
-        assigneeName: userMap.get(aid) || "이름없음",
-        totalSales: 0,
-        totalRefunds: 0,
-      });
-    }
-    reportMap.get(aid)!.totalRefunds += Number(row.totalRefunds);
-  }
+  const rows = await db
+    .select({
+      assigneeId: settlementItems.assigneeId,
 
-  return Array.from(reportMap.values()).map((r) => {
-    const netSales = r.totalSales - r.totalRefunds;
-    const commission = Math.floor(netSales * 0.5);
-    const tax = Math.floor(commission * 0.033);
-    const finalPayout = commission - tax;
-    return { ...r, netSales, commission, tax, finalPayout };
+      totalGrossSales: sql<string>`
+        COALESCE(SUM(
+          CASE
+            WHEN ${settlementItems.settlementStatus} = 'confirmed'
+            THEN ${settlementItems.grossAmount}
+            ELSE 0
+          END
+        ), 0)
+      `,
+
+      totalRefundGross: sql<string>`
+        COALESCE(SUM(
+          CASE
+            WHEN ${settlementItems.settlementStatus} = 'refunded'
+            THEN ${settlementItems.grossAmount}
+            ELSE 0
+          END
+        ), 0)
+      `,
+
+      totalCompanyAmount: sql<string>`
+        COALESCE(SUM(
+          CASE
+            WHEN ${settlementItems.settlementStatus} = 'confirmed'
+            THEN ${settlementItems.companyAmount}
+            ELSE 0
+          END
+        ), 0)
+      `,
+
+      totalRefundCompanyAmount: sql<string>`
+        COALESCE(SUM(
+          CASE
+            WHEN ${settlementItems.settlementStatus} = 'refunded'
+            THEN ${settlementItems.companyAmount}
+            ELSE 0
+          END
+        ), 0)
+      `,
+
+      totalInstitutionCost: sql<string>`
+        COALESCE(SUM(
+          CASE
+            WHEN ${settlementItems.settlementStatus} = 'confirmed'
+            THEN ${settlementItems.institutionCost}
+            ELSE 0
+          END
+        ), 0)
+      `,
+
+      totalRefundInstitutionCost: sql<string>`
+        COALESCE(SUM(
+          CASE
+            WHEN ${settlementItems.settlementStatus} = 'refunded'
+            THEN ${settlementItems.institutionCost}
+            ELSE 0
+          END
+        ), 0)
+      `,
+
+      totalFreelancerAmount: sql<string>`
+        COALESCE(SUM(
+          CASE
+            WHEN ${settlementItems.settlementStatus} = 'confirmed'
+            THEN ${settlementItems.freelancerAmount}
+            ELSE 0
+          END
+        ), 0)
+      `,
+
+      totalRefundFreelancerAmount: sql<string>`
+        COALESCE(SUM(
+          CASE
+            WHEN ${settlementItems.settlementStatus} = 'refunded'
+            THEN ${settlementItems.freelancerAmount}
+            ELSE 0
+          END
+        ), 0)
+      `,
+
+      totalTaxAmount: sql<string>`
+        COALESCE(SUM(
+          CASE
+            WHEN ${settlementItems.settlementStatus} = 'confirmed'
+            THEN ${settlementItems.taxAmount}
+            ELSE 0
+          END
+        ), 0)
+      `,
+
+      totalRefundTaxAmount: sql<string>`
+        COALESCE(SUM(
+          CASE
+            WHEN ${settlementItems.settlementStatus} = 'refunded'
+            THEN ${settlementItems.taxAmount}
+            ELSE 0
+          END
+        ), 0)
+      `,
+
+      totalFinalPayoutAmount: sql<string>`
+        COALESCE(SUM(
+          CASE
+            WHEN ${settlementItems.settlementStatus} = 'confirmed'
+            THEN ${settlementItems.finalPayoutAmount}
+            ELSE 0
+          END
+        ), 0)
+      `,
+
+      totalRefundFinalPayoutAmount: sql<string>`
+        COALESCE(SUM(
+          CASE
+            WHEN ${settlementItems.settlementStatus} = 'refunded'
+            THEN ${settlementItems.finalPayoutAmount}
+            ELSE 0
+          END
+        ), 0)
+      `,
+
+      totalCompanyProfit: sql<string>`
+        COALESCE(SUM(
+          CASE
+            WHEN ${settlementItems.settlementStatus} = 'confirmed'
+            THEN ${settlementItems.companyProfit}
+            ELSE 0
+          END
+        ), 0)
+      `,
+
+      totalRefundCompanyProfit: sql<string>`
+        COALESCE(SUM(
+          CASE
+            WHEN ${settlementItems.settlementStatus} = 'refunded'
+            THEN ${settlementItems.companyProfit}
+            ELSE 0
+          END
+        ), 0)
+      `,
+    })
+    .from(settlementItems)
+    .where(and(...conditions))
+    .groupBy(settlementItems.assigneeId);
+
+  const allUserRows = await db
+    .select({
+      id: users.id,
+      name: users.name,
+    })
+    .from(users);
+
+  const userMap = new Map(
+    allUserRows.map((u) => [Number(u.id), u.name || "이름없음"])
+  );
+
+  return rows.map((row: any) => {
+    const assigneeId = Number(row.assigneeId || 0);
+
+    const totalGrossSales = toNumber(row.totalGrossSales);
+    const totalRefundGross = toNumber(row.totalRefundGross);
+    const netSales = totalGrossSales - totalRefundGross;
+
+    const totalCompanyAmount = toNumber(row.totalCompanyAmount);
+    const totalRefundCompanyAmount = toNumber(row.totalRefundCompanyAmount);
+    const netCompanyAmount = totalCompanyAmount - totalRefundCompanyAmount;
+
+    const totalInstitutionCost = toNumber(row.totalInstitutionCost);
+    const totalRefundInstitutionCost = toNumber(row.totalRefundInstitutionCost);
+    const netInstitutionCost = totalInstitutionCost - totalRefundInstitutionCost;
+
+    const totalFreelancerAmount = toNumber(row.totalFreelancerAmount);
+    const totalRefundFreelancerAmount = toNumber(row.totalRefundFreelancerAmount);
+    const netFreelancerAmount =
+      totalFreelancerAmount - totalRefundFreelancerAmount;
+
+    const totalTaxAmount = toNumber(row.totalTaxAmount);
+    const totalRefundTaxAmount = toNumber(row.totalRefundTaxAmount);
+    const netTaxAmount = totalTaxAmount - totalRefundTaxAmount;
+
+    const totalFinalPayoutAmount = toNumber(row.totalFinalPayoutAmount);
+    const totalRefundFinalPayoutAmount = toNumber(row.totalRefundFinalPayoutAmount);
+    const netFinalPayoutAmount =
+      totalFinalPayoutAmount - totalRefundFinalPayoutAmount;
+
+    const totalCompanyProfit = toNumber(row.totalCompanyProfit);
+    const totalRefundCompanyProfit = toNumber(row.totalRefundCompanyProfit);
+    const netCompanyProfit =
+      totalCompanyProfit - totalRefundCompanyProfit;
+
+    return {
+      assigneeId,
+      assigneeName: userMap.get(assigneeId) || "이름없음",
+
+      totalGrossSales,
+      totalRefundGross,
+      netSales,
+
+      totalCompanyAmount,
+      totalRefundCompanyAmount,
+      netCompanyAmount,
+
+      totalInstitutionCost,
+      totalRefundInstitutionCost,
+      netInstitutionCost,
+
+      totalFreelancerAmount,
+      totalRefundFreelancerAmount,
+      netFreelancerAmount,
+
+      totalTaxAmount,
+      totalRefundTaxAmount,
+      netTaxAmount,
+
+      totalFinalPayoutAmount,
+      totalRefundFinalPayoutAmount,
+      netFinalPayoutAmount,
+
+      totalCompanyProfit,
+      totalRefundCompanyProfit,
+      netCompanyProfit,
+    };
   });
+}
+
+export async function getSettlementSettings() {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const [rows] = await db.execute(sql`
+    SELECT * FROM settlement_settings ORDER BY id DESC LIMIT 1
+  `);
+
+  return (rows as any[])[0] || { payoutDay: 25 };
+}
+
+export async function saveSettlementSettings(data: { payoutDay: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const [rows] = await db.execute(sql`
+    SELECT id FROM settlement_settings ORDER BY id DESC LIMIT 1
+  `);
+
+  const existing = (rows as any[])[0];
+
+  if (existing?.id) {
+    await db.execute(sql`
+      UPDATE settlement_settings
+      SET payoutDay = ${data.payoutDay}
+      WHERE id = ${existing.id}
+    `);
+
+    return Number(existing.id);
+  }
+
+  const [result]: any = await db.execute(sql`
+    INSERT INTO settlement_settings (payoutDay)
+    VALUES (${data.payoutDay})
+  `);
+
+  return Number(result?.insertId || 0);
+}
+
+export async function getSettlementPayslip(params: {
+  year: number;
+  month: number;
+  assigneeId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const start = new Date(params.year, params.month - 1, 1);
+  const end = new Date(params.year, params.month, 1);
+const settings = await getSettlementSettings();
+
+    const [profileRows] = await db.execute(sql`
+    SELECT
+      u.id,
+      u.name,
+      u.username,
+      u.role,
+      u.bankName,
+      u.bankAccount,
+      map.teamId,
+      map.positionId,
+      t.name AS teamName,
+      p.name AS positionName
+    FROM users u
+    LEFT JOIN user_org_mappings map
+      ON map.userId = u.id
+    LEFT JOIN teams t
+      ON t.id = map.teamId
+    LEFT JOIN positions p
+      ON p.id = map.positionId
+    WHERE u.id = ${params.assigneeId}
+    LIMIT 1
+  `);
+
+  const profile = (profileRows as any[])?.[0];
+  if (!profile) {
+    throw new Error("담당자 정보를 찾을 수 없습니다.");
+  }
+
+  const branding = await getBrandingSettings();
+
+  const payoutDay = Math.max(
+    1,
+    Math.min(31, Number((settings as any)?.payoutDay || 25))
+  );
+
+  const paymentDate = new Date(params.year, params.month - 1, payoutDay);
+
+  const companyName =
+    String((branding as any)?.companyName || "").trim() || "위드원 교육";
+
+  const [entryRows] = await db.execute(sql`
+    SELECT
+      s.id,
+      s.assigneeId,
+      s.studentId,
+      s.revenueType,
+      s.title,
+      s.grossAmount,
+      s.companyAmount,
+      s.companyProfit,
+      s.freelancerAmount,
+      s.taxAmount,
+      s.finalPayoutAmount,
+      s.settlementStatus,
+      s.occurredAt,
+      st.clientName
+    FROM settlement_items s
+    LEFT JOIN students st
+      ON st.id = s.studentId
+    WHERE s.assigneeId = ${params.assigneeId}
+      AND s.occurredAt >= ${start}
+      AND s.occurredAt < ${end}
+      AND s.settlementStatus IN ('confirmed', 'refunded')
+    ORDER BY s.occurredAt ASC, s.id ASC
+  `);
+
+  const entries = ((entryRows as any[]) ?? []).map((row: any) => ({
+    ...row,
+    grossAmount: toNumber(row.grossAmount),
+    companyAmount: toNumber(row.companyAmount),
+    companyProfit: toNumber(row.companyProfit),
+    freelancerAmount: toNumber(row.freelancerAmount),
+    taxAmount: toNumber(row.taxAmount),
+    finalPayoutAmount: toNumber(row.finalPayoutAmount),
+  }));
+
+  let educationSupportAmount = 0;
+  let subjectAllowanceAmount = 0;
+  let privateCertificateAllowanceAmount = 0;
+  let practiceSupportAllowanceAmount = 0;
+
+  let refundDeductionAmount = 0;
+  let taxDeductionAmount = 0;
+  let contractDeductionAmount = 0;
+
+  for (const row of entries) {
+    const sign = row.settlementStatus === "refunded" ? -1 : 1;
+
+    if (row.revenueType === "subject") {
+      subjectAllowanceAmount += row.freelancerAmount * sign;
+    }
+
+    if (row.revenueType === "private_certificate") {
+      privateCertificateAllowanceAmount += row.freelancerAmount * sign;
+    }
+
+    if (row.revenueType === "practice_support") {
+      practiceSupportAllowanceAmount += row.freelancerAmount * sign;
+    }
+
+    if (row.settlementStatus === "refunded") {
+      refundDeductionAmount += row.grossAmount;
+    }
+
+    taxDeductionAmount += row.taxAmount * sign;
+  }
+
+  const totalGrossAmount =
+    educationSupportAmount +
+    subjectAllowanceAmount +
+    privateCertificateAllowanceAmount +
+    practiceSupportAllowanceAmount;
+
+  const totalDeductionAmount =
+    refundDeductionAmount + taxDeductionAmount + contractDeductionAmount;
+
+  const totalReceivableAmount = totalGrossAmount - totalDeductionAmount;
+
+  const totalNetPayoutAmount = entries.reduce((sum: number, row: any) => {
+    const sign = row.settlementStatus === "refunded" ? -1 : 1;
+    return sum + row.finalPayoutAmount * sign;
+  }, 0);
+
+    return {
+    year: params.year,
+    month: params.month,
+    assigneeId: Number(profile.id),
+    assigneeName: profile.name || profile.username || "이름없음",
+    teamName: profile.teamName || "-",
+    positionName: profile.positionName || "-",
+
+    companyName,
+    paymentDate,
+    bankName: profile.bankName || "-",
+    bankAccount: profile.bankAccount || "-",
+
+    summary: {
+      totalGrossAmount,
+      totalDeductionAmount,
+      totalReceivableAmount,
+      totalNetPayoutAmount,
+    },
+
+    paymentItems: {
+      educationSupportAmount,
+      subjectAllowanceAmount,
+      privateCertificateAllowanceAmount,
+      practiceSupportAllowanceAmount,
+    },
+
+    deductionItems: {
+      refundDeductionAmount,
+      taxDeductionAmount,
+      contractDeductionAmount,
+    },
+
+    entries: entries.map((row: any) => ({
+      id: Number(row.id),
+      occurredAt: row.occurredAt,
+      revenueType: row.revenueType,
+      title: row.title || "",
+      clientName: row.clientName || "",
+      grossAmount: row.grossAmount,
+      freelancerAmount: row.freelancerAmount,
+      taxAmount: row.taxAmount,
+      finalPayoutAmount: row.finalPayoutAmount,
+      settlementStatus: row.settlementStatus,
+    })),
+  };
 }
 
 // ─── Plan Semesters ──────────────────────────────────────────────────
@@ -2421,6 +3596,9 @@ export async function createEducationInstitution(data: {
   name: string;
   isActive?: boolean;
   sortOrder?: number;
+  settlementType?: "credit" | "subject" | "fixed";
+  unitCostAmount?: string | number;
+  normalSubjectPrice?: string | number;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB 연결 실패");
@@ -2429,7 +3607,10 @@ export async function createEducationInstitution(data: {
     name: data.name,
     isActive: data.isActive ?? true,
     sortOrder: data.sortOrder ?? 0,
-  });
+    settlementType: data.settlementType ?? "credit",
+    unitCostAmount: String(data.unitCostAmount ?? "0"),
+    normalSubjectPrice: String(data.normalSubjectPrice ?? "75000"),
+  } as any);
 
   return Number(getInsertId(result));
 }
@@ -2450,6 +3631,141 @@ export async function reassignConsultationAndLinkedStudent(
     .update(students)
     .set({ assigneeId } as any)
     .where(eq(students.consultationId, consultationId));
+}
+
+export async function listEducationInstitutionPositionRates(
+  educationInstitutionId?: number
+) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const rows = await db
+    .select({
+      id: educationInstitutionPositionRates.id,
+      educationInstitutionId: educationInstitutionPositionRates.educationInstitutionId,
+      positionId: educationInstitutionPositionRates.positionId,
+      freelancerUnitAmount: educationInstitutionPositionRates.freelancerUnitAmount,
+      isActive: educationInstitutionPositionRates.isActive,
+      createdAt: educationInstitutionPositionRates.createdAt,
+      updatedAt: educationInstitutionPositionRates.updatedAt,
+      institutionName: educationInstitutions.name,
+      positionName: positions.name,
+      positionSortOrder: positions.sortOrder,
+    })
+    .from(educationInstitutionPositionRates)
+    .leftJoin(
+      educationInstitutions,
+      eq(educationInstitutionPositionRates.educationInstitutionId, educationInstitutions.id)
+    )
+    .leftJoin(
+      positions,
+      eq(educationInstitutionPositionRates.positionId, positions.id)
+    )
+    .where(
+      educationInstitutionId
+        ? and(
+            eq(
+              educationInstitutionPositionRates.educationInstitutionId,
+              educationInstitutionId
+            ),
+            eq(educationInstitutionPositionRates.isActive, true)
+          )
+        : eq(educationInstitutionPositionRates.isActive, true)
+    )
+    .orderBy(
+      asc(educationInstitutionPositionRates.educationInstitutionId),
+      asc(positions.sortOrder),
+      asc(educationInstitutionPositionRates.positionId)
+    );
+
+  return rows;
+}
+
+export async function getEducationInstitutionPositionRate(
+  educationInstitutionId: number,
+  positionId: number
+) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const rows = await db
+    .select()
+    .from(educationInstitutionPositionRates)
+    .where(
+      and(
+        eq(educationInstitutionPositionRates.educationInstitutionId, educationInstitutionId),
+        eq(educationInstitutionPositionRates.positionId, positionId),
+        eq(educationInstitutionPositionRates.isActive, true)
+      )
+    )
+    .limit(1);
+
+  return rows[0] ?? null;
+}
+
+export async function upsertEducationInstitutionPositionRate(data: {
+  educationInstitutionId: number;
+  positionId: number;
+  freelancerUnitAmount: string | number;
+  isActive?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB 연결 실패");
+
+  const exists = await db
+    .select()
+    .from(educationInstitutionPositionRates)
+    .where(
+      and(
+        eq(educationInstitutionPositionRates.educationInstitutionId, data.educationInstitutionId),
+        eq(educationInstitutionPositionRates.positionId, data.positionId)
+      )
+    )
+    .limit(1);
+
+  if (exists[0]) {
+    await db
+      .update(educationInstitutionPositionRates)
+      .set({
+        freelancerUnitAmount: String(data.freelancerUnitAmount ?? 0),
+        isActive: data.isActive ?? true,
+      } as any)
+      .where(eq(educationInstitutionPositionRates.id, exists[0].id));
+
+    return Number(exists[0].id);
+  }
+
+  const result: any = await db.insert(educationInstitutionPositionRates).values({
+    educationInstitutionId: data.educationInstitutionId,
+    positionId: data.positionId,
+    freelancerUnitAmount: String(data.freelancerUnitAmount ?? 0),
+    isActive: data.isActive ?? true,
+  } as any);
+
+  return Number(getInsertId(result));
+}
+
+export async function deleteEducationInstitutionPositionRate(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB 연결 실패");
+
+  await db
+    .update(educationInstitutionPositionRates)
+    .set({ isActive: false } as any)
+    .where(eq(educationInstitutionPositionRates.id, id));
+}
+
+export async function getEducationInstitutionById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const rows = await db
+    .select()
+    .from(educationInstitutions)
+    .where(eq(educationInstitutions.id, id))
+    .limit(1);
+
+  return rows[0];
 }
 
 export async function bulkReassignConsultationsAndLinkedStudents(
@@ -2476,14 +3792,29 @@ export async function updateEducationInstitution(
     name?: string;
     isActive?: boolean;
     sortOrder?: number;
+    settlementType?: "credit" | "subject" | "fixed";
+    unitCostAmount?: string | number;
+    normalSubjectPrice?: string | number;
   }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB 연결 실패");
 
+  const payload: Record<string, any> = {};
+
+  if (data.name !== undefined) payload.name = data.name;
+  if (data.isActive !== undefined) payload.isActive = data.isActive;
+  if (data.sortOrder !== undefined) payload.sortOrder = data.sortOrder;
+  if (data.settlementType !== undefined) payload.settlementType = data.settlementType;
+  if (data.unitCostAmount !== undefined) payload.unitCostAmount = String(data.unitCostAmount);
+  if (data.normalSubjectPrice !== undefined)
+    payload.normalSubjectPrice = String(data.normalSubjectPrice);
+
+  if (Object.keys(payload).length === 0) return;
+
   await db
     .update(educationInstitutions)
-    .set(data)
+    .set(payload as any)
     .where(eq(educationInstitutions.id, id));
 }
 
@@ -2942,13 +4273,20 @@ export async function createPrivateCertificateRequest(data: InsertPrivateCertifi
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const result: any = await db.insert(privateCertificateRequests).values({
-    ...data,
-    feeAmount: data.feeAmount ?? "0",
-    paymentStatus: data.paymentStatus ?? "결제대기",
-  });
+   const result: any = await db.insert(privateCertificateRequests).values({
+  ...data,
+  feeAmount: data.feeAmount ?? "0",
+  freelancerInputAmount: data.freelancerInputAmount ?? "0",
+  paymentStatus: data.paymentStatus ?? "결제대기",
+});
 
-  return getInsertId(result);
+  const insertId = getInsertId(result);
+
+  if (insertId) {
+    await syncPrivateCertificateSettlementItemByRequestId(Number(insertId));
+  }
+
+  return insertId;
 }
 
 export async function updatePrivateCertificateRequest(
@@ -2962,14 +4300,116 @@ export async function updatePrivateCertificateRequest(
     .update(privateCertificateRequests)
     .set(data as any)
     .where(eq(privateCertificateRequests.id, id));
+
+  await syncPrivateCertificateSettlementItemByRequestId(id);
 }
 
 export async function deletePrivateCertificateRequest(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  await cancelSettlementItemBySource({
+    revenueType: "private_certificate",
+    sourceId: id,
+    note: "민간자격증 요청 삭제로 정산 취소",
+  });
+
   await db.delete(privateCertificateRequests).where(eq(privateCertificateRequests.id, id));
 }
+
+export async function requestPrivateCertificateRefund(params: {
+  requestId: number;
+  refundAmount: string | number;
+  refundReason?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const rows = await db
+    .select()
+    .from(privateCertificateRequests)
+    .where(eq(privateCertificateRequests.id, params.requestId))
+    .limit(1);
+
+  const request = rows[0];
+  if (!request) {
+    throw new Error("민간자격증 요청 데이터를 찾을 수 없습니다.");
+  }
+
+  if (request.paymentStatus !== "결제") {
+    throw new Error("결제 완료된 건만 환불 요청할 수 있습니다.");
+  }
+
+  await db
+    .update(privateCertificateRequests)
+    .set({
+      refundStatus: "환불요청",
+      refundAmount: String(toNumber(params.refundAmount)),
+      refundReason: params.refundReason ?? null,
+      refundRequestedAt: new Date(),
+    } as any)
+    .where(eq(privateCertificateRequests.id, params.requestId));
+
+  return true;
+}
+
+export async function approvePrivateCertificateRefund(params: {
+  requestId: number;
+  approvedBy: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const rows = await db
+    .select({
+      request: privateCertificateRequests,
+      master: privateCertificateMasters,
+    })
+    .from(privateCertificateRequests)
+    .leftJoin(
+      privateCertificateMasters,
+      eq(privateCertificateRequests.privateCertificateMasterId, privateCertificateMasters.id)
+    )
+    .where(eq(privateCertificateRequests.id, params.requestId))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row?.request) {
+    throw new Error("민간자격증 요청 데이터를 찾을 수 없습니다.");
+  }
+
+  const request = row.request;
+  const refundAmount = toNumber((request as any).refundAmount ?? request.feeAmount ?? 0);
+
+  await db
+    .update(privateCertificateRequests)
+    .set({
+      refundStatus: "환불승인",
+      refundApprovedAt: new Date(),
+      refundApprovedBy: params.approvedBy,
+      paymentStatus: "환불",
+    } as any)
+    .where(eq(privateCertificateRequests.id, params.requestId));
+
+  await refundSettlementItemBySource({
+    revenueType: "private_certificate",
+    sourceId: Number(request.id),
+    refundAmount,
+    refundDate: new Date(),
+    actorUserId: params.approvedBy,
+    note: "민간자격증 환불 승인",
+    payload: {
+      requestId: request.id,
+      privateCertificateMasterId: (request as any).privateCertificateMasterId ?? null,
+      privateCertificateName: row.master?.name ?? null,
+      refundAmount,
+    },
+  });
+
+  return true;
+}
+
+
 
 // ─── Practice Support Requests (실습배정지원센터) ───────────────────
 export async function listPracticeSupportRequests(assigneeId?: number) {
@@ -3025,7 +4465,13 @@ export async function createPracticeSupportRequest(data: InsertPracticeSupportRe
     coordinationStatus: data.coordinationStatus ?? "미섭외",
   });
 
-  return getInsertId(result);
+  const insertId = getInsertId(result);
+
+  if (insertId) {
+    await syncPracticeSupportSettlementItemByRequestId(Number(insertId));
+  }
+
+  return insertId;
 }
 
 export async function updatePracticeSupportRequest(
@@ -3039,13 +4485,103 @@ export async function updatePracticeSupportRequest(
     .update(practiceSupportRequests)
     .set(data as any)
     .where(eq(practiceSupportRequests.id, id));
+
+  await syncPracticeSupportSettlementItemByRequestId(id);
 }
 
 export async function deletePracticeSupportRequest(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  await cancelSettlementItemBySource({
+    revenueType: "practice_support",
+    sourceId: id,
+    note: "실습배정지원 요청 삭제로 정산 취소",
+  });
+
   await db.delete(practiceSupportRequests).where(eq(practiceSupportRequests.id, id));
+}
+
+export async function requestPracticeSupportRefund(params: {
+  requestId: number;
+  refundAmount: string | number;
+  refundReason?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const rows = await db
+    .select()
+    .from(practiceSupportRequests)
+    .where(eq(practiceSupportRequests.id, params.requestId))
+    .limit(1);
+
+  const request = rows[0];
+  if (!request) {
+    throw new Error("실습배정지원 요청 데이터를 찾을 수 없습니다.");
+  }
+
+  if (request.paymentStatus !== "결제") {
+    throw new Error("결제 완료된 건만 환불 요청할 수 있습니다.");
+  }
+
+  await db
+    .update(practiceSupportRequests)
+    .set({
+      refundStatus: "환불요청",
+      refundAmount: String(toNumber(params.refundAmount)),
+      refundReason: params.refundReason ?? null,
+      refundRequestedAt: new Date(),
+    } as any)
+    .where(eq(practiceSupportRequests.id, params.requestId));
+
+  return true;
+}
+
+export async function approvePracticeSupportRefund(params: {
+  requestId: number;
+  approvedBy: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const rows = await db
+    .select()
+    .from(practiceSupportRequests)
+    .where(eq(practiceSupportRequests.id, params.requestId))
+    .limit(1);
+
+  const request = rows[0];
+  if (!request) {
+    throw new Error("실습배정지원 요청 데이터를 찾을 수 없습니다.");
+  }
+
+  const refundAmount = toNumber((request as any).refundAmount ?? request.feeAmount ?? 0);
+
+  await db
+    .update(practiceSupportRequests)
+    .set({
+      refundStatus: "환불승인",
+      refundApprovedAt: new Date(),
+      refundApprovedBy: params.approvedBy,
+      paymentStatus: "환불",
+    } as any)
+    .where(eq(practiceSupportRequests.id, params.requestId));
+
+  await refundSettlementItemBySource({
+    revenueType: "practice_support",
+    sourceId: Number(request.id),
+    refundAmount,
+    refundDate: new Date(),
+    actorUserId: params.approvedBy,
+    note: "실습배정지원 환불 승인",
+    payload: {
+      requestId: request.id,
+      refundAmount,
+    },
+  });
+
+  return true;
 }
 
 export async function upsertPracticeSupportRequestByStudent(params: {
@@ -4039,10 +5575,24 @@ export async function getPosition(id: number) {
   return result[0];
 }
 
+export async function getPositionById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const rows = await db
+    .select()
+    .from(positions)
+    .where(eq(positions.id, id))
+    .limit(1);
+
+  return rows[0];
+}
+
 export async function createPosition(data: {
   name: string;
   sortOrder?: number | null;
   isActive?: boolean | null;
+  settlementUnitAmount?: string | number | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -4051,7 +5601,8 @@ export async function createPosition(data: {
     name: data.name.trim(),
     sortOrder: data.sortOrder ?? 0,
     isActive: data.isActive ?? true,
-  } as InsertPosition);
+    settlementUnitAmount: String(data.settlementUnitAmount ?? "0"),
+  } as any);
 
   return getInsertId(result);
 }
@@ -4062,15 +5613,19 @@ export async function updatePosition(
     name?: string | null;
     sortOrder?: number | null;
     isActive?: boolean | null;
+    settlementUnitAmount?: string | number | null;
   }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
   const payload: Record<string, any> = {};
-  if (data.name !== undefined) payload.name = normalizeNullableString(data.name);
+  if (data.name !== undefined) payload.name = data.name?.trim() || null;
   if (data.sortOrder !== undefined) payload.sortOrder = data.sortOrder ?? 0;
   if (data.isActive !== undefined) payload.isActive = !!data.isActive;
+  if (data.settlementUnitAmount !== undefined) {
+    payload.settlementUnitAmount = String(data.settlementUnitAmount ?? "0");
+  }
 
   if (Object.keys(payload).length === 0) return;
 

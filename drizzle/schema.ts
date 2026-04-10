@@ -319,12 +319,56 @@ export const educationInstitutions = mysqlTable("education_institutions", {
   name: varchar("name", { length: 100 }).notNull(),
   isActive: boolean("isActive").notNull().default(true),
   sortOrder: int("sortOrder").notNull().default(0),
+  settlementType: mysqlEnum("settlementType", ["credit", "subject", "fixed"])
+    .notNull()
+    .default("credit"),
+
+  unitCostAmount: decimal("unitCostAmount", { precision: 12, scale: 0 })
+    .notNull()
+    .default("0"),
+
+  normalSubjectPrice: decimal("normalSubjectPrice", { precision: 12, scale: 0 })
+    .notNull()
+    .default("75000"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull().onUpdateNow(),
 });
 
 export type EducationInstitution = typeof educationInstitutions.$inferSelect;
 export type InsertEducationInstitution = typeof educationInstitutions.$inferInsert;
+
+export const educationInstitutionPositionRates = mysqlTable(
+  "education_institution_position_rates",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    educationInstitutionId: int("educationInstitutionId").notNull(),
+    positionId: int("positionId").notNull(),
+
+    freelancerUnitAmount: decimal("freelancerUnitAmount", {
+      precision: 12,
+      scale: 0,
+    })
+      .notNull()
+      .default("0"),
+
+    isActive: boolean("isActive").notNull().default(true),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    institutionPositionIdx: index("idx_inst_pos_rate_unique").on(
+      table.educationInstitutionId,
+      table.positionId
+    ),
+  })
+);
+
+export type EducationInstitutionPositionRate =
+  typeof educationInstitutionPositionRates.$inferSelect;
+export type InsertEducationInstitutionPositionRate =
+  typeof educationInstitutionPositionRates.$inferInsert;
 
 // ─── Transfer Attachments (전적대 공통 첨부파일) ───────────────────
 export const transferAttachments = mysqlTable("transfer_attachments", {
@@ -377,6 +421,24 @@ export const privateCertificateMasters = mysqlTable(
 
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+
+defaultFeeAmount: decimal("defaultFeeAmount", {
+  precision: 12,
+  scale: 0,
+})
+  .notNull()
+  .default("0"),
+
+defaultFreelancerAmount: decimal("defaultFreelancerAmount", {
+  precision: 12,
+  scale: 0,
+})
+  .notNull()
+  .default("0"),
+
+isSettlementEnabled: boolean("isSettlementEnabled")
+  .notNull()
+  .default(true),
   }
 );
 
@@ -449,6 +511,7 @@ export const privateCertificateRequests = mysqlTable("private_certificate_reques
   phone: varchar("phone", { length: 30 }).notNull(),
   assigneeName: varchar("assigneeName", { length: 100 }),
 
+  privateCertificateMasterId: int("privateCertificateMasterId"),
   certificateName: varchar("certificateName", { length: 255 }).notNull(),
   inputAddress: varchar("inputAddress", { length: 255 }),
   note: text("note"),
@@ -469,16 +532,41 @@ export const privateCertificateRequests = mysqlTable("private_certificate_reques
     .notNull()
     .default("0"),
 
+  freelancerInputAmount: decimal("freelancerInputAmount", {
+    precision: 12,
+    scale: 0,
+  })
+    .notNull()
+    .default("0"),
+
   paymentStatus: mysqlEnum("paymentStatus", [
     "결제대기",
-    "입금확인",
-    "완료",
+    "결제",
+    "환불",
     "취소",
   ])
     .notNull()
     .default("결제대기"),
 
   paidAt: datetime("paidAt"),
+
+  refundStatus: mysqlEnum("refundStatus", [
+    "없음",
+    "환불요청",
+    "환불승인",
+    "환불거절",
+  ])
+    .notNull()
+    .default("없음"),
+
+  refundAmount: decimal("refundAmount", { precision: 12, scale: 0 })
+    .notNull()
+    .default("0"),
+
+  refundReason: text("refundReason"),
+  refundRequestedAt: datetime("refundRequestedAt"),
+  refundApprovedAt: datetime("refundApprovedAt"),
+  refundApprovedBy: int("refundApprovedBy"),
 
   attachmentName: varchar("attachmentName", { length: 255 }),
   attachmentUrl: varchar("attachmentUrl", { length: 1000 }),
@@ -559,11 +647,30 @@ export const practiceSupportRequests = mysqlTable("practice_support_requests", {
     .notNull()
     .default("0"),
 
-  paymentStatus: mysqlEnum("paymentStatus", ["미결제", "결제"])
+  paymentStatus: mysqlEnum("paymentStatus", ["미결제", "결제", "환불"])
     .notNull()
     .default("미결제"),
 
   paidAt: datetime("paidAt"),
+
+  refundStatus: mysqlEnum("refundStatus", [
+    "없음",
+    "환불요청",
+    "환불승인",
+    "환불거절",
+  ])
+    .notNull()
+    .default("없음"),
+
+  refundAmount: decimal("refundAmount", { precision: 12, scale: 0 })
+    .notNull()
+    .default("0"),
+
+  refundReason: text("refundReason"),
+  refundRequestedAt: datetime("refundRequestedAt"),
+  refundApprovedAt: datetime("refundApprovedAt"),
+  refundApprovedBy: int("refundApprovedBy"),
+
   note: text("note"),
 
   attachmentName: varchar("attachmentName", { length: 255 }),
@@ -845,6 +952,12 @@ export const positions = mysqlTable("positions", {
   name: varchar("name", { length: 100 }).notNull(),
   sortOrder: int("sortOrder").notNull().default(0),
   isActive: boolean("isActive").notNull().default(true),
+  settlementUnitAmount: decimal("settlementUnitAmount", {
+    precision: 12,
+    scale: 0,
+  })
+    .notNull()
+    .default("0"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -1294,3 +1407,101 @@ export const aiActionLogs = mysqlTable(
   })
 );
 
+export const settlementGrades = mysqlTable("settlement_grades", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  code: varchar("code", { length: 50 }).notNull(),
+  sortOrder: int("sortOrder").default(0),
+  isActive: boolean("isActive").default(true),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
+});
+
+export const settlementItems = mysqlTable("settlement_items", {
+  id: int("id").autoincrement().primaryKey(),
+
+  revenueType: mysqlEnum("revenueType", [
+    "subject",
+    "practice_support",
+    "private_certificate",
+  ]),
+
+  sourceId: int("sourceId").notNull(),
+
+  studentId: int("studentId").notNull(),
+
+  title: varchar("title", { length: 255 }).notNull(),
+
+  grossAmount: decimal("grossAmount", { precision: 12, scale: 0 }).default("0"),
+  assigneeId: int("assigneeId"),
+  freelancerUserId: int("freelancerUserId"),
+  freelancerPositionId: int("freelancerPositionId"),
+  settlementGradeId: int("settlementGradeId"),
+
+  educationInstitutionId: int("educationInstitutionId"),
+  privateCertificateMasterId: int("privateCertificateMasterId"),
+
+  subjectType: mysqlEnum("subjectType", [
+    "general",
+    "face_to_face",
+    "practice",
+    "certificate",
+    "practice_support",
+  ]),
+
+  quantity: int("quantity").notNull().default(1),
+  subjectCount: int("subjectCount").notNull().default(0),
+
+  actualCredits: int("actualCredits"),
+  settlementCredits: int("settlementCredits"),
+
+  actualUnitPrice: decimal("actualUnitPrice", { precision: 12, scale: 0 })
+    .notNull()
+    .default("0"),
+
+  normalUnitPrice: decimal("normalUnitPrice", { precision: 12, scale: 0 })
+    .notNull()
+    .default("0"),
+
+  institutionUnitCost: decimal("institutionUnitCost", { precision: 12, scale: 0 })
+    .notNull()
+    .default("0"),
+
+  institutionCost: decimal("institutionCost", { precision: 12, scale: 0 })
+    .notNull()
+    .default("0"),
+
+  freelancerUnitAmount: decimal("freelancerUnitAmount", { precision: 12, scale: 0 })
+    .notNull()
+    .default("0"),
+
+  taxAmount: decimal("taxAmount", { precision: 12, scale: 0 })
+    .notNull()
+    .default("0"),
+
+  finalPayoutAmount: decimal("finalPayoutAmount", { precision: 12, scale: 0 })
+    .notNull()
+    .default("0"),
+
+  occurredAt: date("occurredAt"),
+  note: text("note"),
+  companyAmount: decimal("companyAmount", { precision: 12, scale: 0 }).default("0"),
+  freelancerAmount: decimal("freelancerAmount", { precision: 12, scale: 0 }).default("0"),
+
+  settlementStatus: mysqlEnum("settlementStatus", [
+    "pending",
+    "confirmed",
+    "cancelled",
+    "refunded",
+  ]).default("pending"),
+
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
+});
+
+export const settlementSettings = mysqlTable("settlement_settings", {
+  id: int("id").primaryKey().autoincrement(),
+  payoutDay: int("payoutDay").notNull().default(25),
+  createdAt: timestamp("createdAt").defaultNow(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
+});

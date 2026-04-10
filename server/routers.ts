@@ -11,6 +11,7 @@ superHostProcedure,
 } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
+import { buildSettlementPayslipExcel } from "./_core/settlement-payslip-excel";
 import { emitLiveNotification } from "./_core/live-notifications";
 import { publicLeadRouter } from "./publicLead.router";
 import bcrypt from "bcryptjs";
@@ -73,6 +74,381 @@ schedule: scheduleRouter,
   approval: approvalRouter,
 privateCertificateMaster: privateCertificateMasterRouter,
 subjectCatalog: subjectCatalogRouter,
+
+  privateCertificate: router({
+    list: protectedProcedure
+      .input(
+        z
+          .object({
+            assigneeId: z.number().optional(),
+          })
+          .optional()
+      )
+      .query(async ({ ctx, input }) => {
+        const assigneeId = isAdminOrHost(ctx.user)
+          ? input?.assigneeId
+          : Number(ctx.user.id);
+
+        return db.listPrivateCertificateRequests(assigneeId);
+      }),
+
+    listByStudent: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+        })
+      )
+      .query(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) return [];
+
+        if (!isAdminOrHost(ctx.user) && Number(student.assigneeId) !== Number(ctx.user.id)) {
+          throw new Error("권한이 없습니다.");
+        }
+
+        return db.listPrivateCertificateRequestsByStudent(input.studentId);
+      }),
+
+    create: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+          assigneeId: z.number(),
+          clientName: z.string().min(1),
+          phone: z.string().min(1),
+          assigneeName: z.string().optional().nullable(),
+          privateCertificateMasterId: z.number().optional().nullable(),
+          certificateName: z.string().min(1),
+          inputAddress: z.string().optional().nullable(),
+          note: z.string().optional().nullable(),
+          requestStatus: z
+            .enum(["요청", "안내완료", "입금대기", "입금확인", "진행중", "완료", "취소"])
+            .optional(),
+          feeAmount: z.string().optional(),
+	freelancerInputAmount: z.string().optional(),
+          paymentStatus: z.enum(["결제대기", "결제", "환불", "취소"]).optional(),
+          paidAt: z.string().optional().nullable(),
+          attachmentName: z.string().optional().nullable(),
+          attachmentUrl: z.string().optional().nullable(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) throw new Error("학생을 찾을 수 없습니다.");
+
+        if (!isAdminOrHost(ctx.user) && Number(student.assigneeId) !== Number(ctx.user.id)) {
+          throw new Error("권한이 없습니다.");
+        }
+
+        const id = await db.createPrivateCertificateRequest({
+          studentId: input.studentId,
+          assigneeId: input.assigneeId,
+          clientName: input.clientName.trim(),
+          phone: input.phone.trim(),
+          assigneeName: input.assigneeName?.trim() || null,
+          privateCertificateMasterId: input.privateCertificateMasterId ?? null,
+          certificateName: input.certificateName.trim(),
+          inputAddress: input.inputAddress?.trim() || null,
+          note: input.note ?? null,
+          requestStatus: input.requestStatus ?? "요청",
+          feeAmount: input.feeAmount ?? "0",
+freelancerInputAmount: input.freelancerInputAmount ?? "0",
+          paymentStatus: input.paymentStatus ?? "결제대기",
+          paidAt: input.paidAt ? new Date(input.paidAt) : null,
+          attachmentName: input.attachmentName?.trim() || null,
+          attachmentUrl: input.attachmentUrl?.trim() || null,
+        } as any);
+
+        return { success: true, id };
+      }),
+
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          assigneeId: z.number().optional(),
+          assigneeName: z.string().optional().nullable(),
+          privateCertificateMasterId: z.number().optional().nullable(),
+          certificateName: z.string().optional(),
+          inputAddress: z.string().optional().nullable(),
+          note: z.string().optional().nullable(),
+          requestStatus: z
+            .enum(["요청", "안내완료", "입금대기", "입금확인", "진행중", "완료", "취소"])
+            .optional(),
+          feeAmount: z.string().optional(),
+freelancerInputAmount: z.string().optional(),
+          paymentStatus: z.enum(["결제대기", "결제", "환불", "취소"]).optional(),
+          paidAt: z.string().optional().nullable(),
+          attachmentName: z.string().optional().nullable(),
+          attachmentUrl: z.string().optional().nullable(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const data: any = {};
+
+        if (input.assigneeId !== undefined) data.assigneeId = input.assigneeId;
+        if (input.assigneeName !== undefined) data.assigneeName = input.assigneeName?.trim() || null;
+        if (input.privateCertificateMasterId !== undefined)
+          data.privateCertificateMasterId = input.privateCertificateMasterId ?? null;
+        if (input.certificateName !== undefined) data.certificateName = input.certificateName.trim();
+        if (input.inputAddress !== undefined) data.inputAddress = input.inputAddress?.trim() || null;
+        if (input.note !== undefined) data.note = input.note ?? null;
+        if (input.requestStatus !== undefined) data.requestStatus = input.requestStatus;
+        if (input.feeAmount !== undefined) data.feeAmount = input.feeAmount;
+if (input.freelancerInputAmount !== undefined) {
+  data.freelancerInputAmount = input.freelancerInputAmount;
+}
+        if (input.paymentStatus !== undefined) data.paymentStatus = input.paymentStatus;
+        if (input.paidAt !== undefined) data.paidAt = input.paidAt ? new Date(input.paidAt) : null;
+        if (input.attachmentName !== undefined) data.attachmentName = input.attachmentName?.trim() || null;
+        if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl?.trim() || null;
+
+        await db.updatePrivateCertificateRequest(input.id, data);
+        return { success: true };
+      }),
+
+    delete: hostProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deletePrivateCertificateRequest(input.id);
+        return { success: true };
+      }),
+
+    requestRefund: protectedProcedure
+      .input(
+        z.object({
+          requestId: z.number(),
+          refundAmount: z.string(),
+          refundReason: z.string().optional().nullable(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await db.requestPrivateCertificateRefund({
+          requestId: input.requestId,
+          refundAmount: input.refundAmount,
+          refundReason: input.refundReason ?? null,
+        });
+
+        return { success: true };
+      }),
+
+    approveRefund: protectedProcedure
+      .input(
+        z.object({
+          requestId: z.number(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!isAdminOrHost(ctx.user)) {
+          throw new Error("관리자 또는 호스트만 환불 승인할 수 있습니다.");
+        }
+
+        await db.approvePrivateCertificateRefund({
+          requestId: input.requestId,
+          approvedBy: Number(ctx.user.id),
+        });
+
+        return { success: true };
+      }),
+  }),
+
+  practiceSupport: router({
+    list: protectedProcedure
+      .input(
+        z
+          .object({
+            assigneeId: z.number().optional(),
+          })
+          .optional()
+      )
+      .query(async ({ ctx, input }) => {
+        const assigneeId = isAdminOrHost(ctx.user)
+          ? input?.assigneeId
+          : Number(ctx.user.id);
+
+        return db.listPracticeSupportRequests(assigneeId);
+      }),
+
+    listByStudent: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+        })
+      )
+      .query(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) return [];
+
+        if (!isAdminOrHost(ctx.user) && Number(student.assigneeId) !== Number(ctx.user.id)) {
+          throw new Error("권한이 없습니다.");
+        }
+
+        return db.listPracticeSupportRequestsByStudent(input.studentId);
+      }),
+
+    get: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return db.getPracticeSupportRequest(input.id);
+      }),
+
+    create: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+          semesterId: z.number().optional().nullable(),
+          assigneeId: z.number(),
+          clientName: z.string().min(1),
+          phone: z.string().min(1),
+          assigneeName: z.string().optional().nullable(),
+          managerName: z.string().optional().nullable(),
+          course: z.string().min(1),
+          inputAddress: z.string().optional().nullable(),
+          detailAddress: z.string().optional().nullable(),
+          practiceHours: z.number().optional().nullable(),
+          includeEducationCenter: z.boolean().optional(),
+          includePracticeInstitution: z.boolean().optional(),
+          coordinationStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
+          feeAmount: z.string().optional(),
+          paymentStatus: z.enum(["미결제", "결제", "환불"]).optional(),
+          paidAt: z.string().optional().nullable(),
+          note: z.string().optional().nullable(),
+          attachmentName: z.string().optional().nullable(),
+          attachmentUrl: z.string().optional().nullable(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const student = await db.getStudent(input.studentId);
+        if (!student) throw new Error("학생을 찾을 수 없습니다.");
+
+        if (!isAdminOrHost(ctx.user) && Number(student.assigneeId) !== Number(ctx.user.id)) {
+          throw new Error("권한이 없습니다.");
+        }
+
+        const id = await db.createPracticeSupportRequest({
+          studentId: input.studentId,
+          semesterId: input.semesterId ?? null,
+          assigneeId: input.assigneeId,
+          clientName: input.clientName.trim(),
+          phone: input.phone.trim(),
+          assigneeName: input.assigneeName?.trim() || null,
+          managerName: input.managerName?.trim() || null,
+          course: input.course.trim(),
+          inputAddress: input.inputAddress?.trim() || null,
+          detailAddress: input.detailAddress?.trim() || null,
+          practiceHours: input.practiceHours ?? null,
+          includeEducationCenter: input.includeEducationCenter ?? true,
+          includePracticeInstitution: input.includePracticeInstitution ?? true,
+          coordinationStatus: input.coordinationStatus ?? "미섭외",
+          feeAmount: input.feeAmount ?? "0",
+          paymentStatus: input.paymentStatus ?? "미결제",
+          paidAt: input.paidAt ? new Date(input.paidAt) : null,
+          note: input.note ?? null,
+          attachmentName: input.attachmentName?.trim() || null,
+          attachmentUrl: input.attachmentUrl?.trim() || null,
+        } as any);
+
+        return { success: true, id };
+      }),
+
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          semesterId: z.number().optional().nullable(),
+          assigneeId: z.number().optional(),
+          clientName: z.string().optional(),
+          phone: z.string().optional(),
+          assigneeName: z.string().optional().nullable(),
+          managerName: z.string().optional().nullable(),
+          course: z.string().optional(),
+          inputAddress: z.string().optional().nullable(),
+          detailAddress: z.string().optional().nullable(),
+          practiceHours: z.number().optional().nullable(),
+          includeEducationCenter: z.boolean().optional(),
+          includePracticeInstitution: z.boolean().optional(),
+          coordinationStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
+          feeAmount: z.string().optional(),
+          paymentStatus: z.enum(["미결제", "결제", "환불"]).optional(),
+          paidAt: z.string().optional().nullable(),
+          note: z.string().optional().nullable(),
+          attachmentName: z.string().optional().nullable(),
+          attachmentUrl: z.string().optional().nullable(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const data: any = {};
+
+        if (input.semesterId !== undefined) data.semesterId = input.semesterId ?? null;
+        if (input.assigneeId !== undefined) data.assigneeId = input.assigneeId;
+        if (input.clientName !== undefined) data.clientName = input.clientName.trim();
+        if (input.phone !== undefined) data.phone = input.phone.trim();
+        if (input.assigneeName !== undefined) data.assigneeName = input.assigneeName?.trim() || null;
+        if (input.managerName !== undefined) data.managerName = input.managerName?.trim() || null;
+        if (input.course !== undefined) data.course = input.course.trim();
+        if (input.inputAddress !== undefined) data.inputAddress = input.inputAddress?.trim() || null;
+        if (input.detailAddress !== undefined) data.detailAddress = input.detailAddress?.trim() || null;
+        if (input.practiceHours !== undefined) data.practiceHours = input.practiceHours ?? null;
+        if (input.includeEducationCenter !== undefined) data.includeEducationCenter = input.includeEducationCenter;
+        if (input.includePracticeInstitution !== undefined)
+          data.includePracticeInstitution = input.includePracticeInstitution;
+        if (input.coordinationStatus !== undefined) data.coordinationStatus = input.coordinationStatus;
+        if (input.feeAmount !== undefined) data.feeAmount = input.feeAmount;
+        if (input.paymentStatus !== undefined) data.paymentStatus = input.paymentStatus;
+        if (input.paidAt !== undefined) data.paidAt = input.paidAt ? new Date(input.paidAt) : null;
+        if (input.note !== undefined) data.note = input.note ?? null;
+        if (input.attachmentName !== undefined) data.attachmentName = input.attachmentName?.trim() || null;
+        if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl?.trim() || null;
+
+        await db.updatePracticeSupportRequest(input.id, data);
+        return { success: true };
+      }),
+
+    delete: hostProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deletePracticeSupportRequest(input.id);
+        return { success: true };
+      }),
+
+    requestRefund: protectedProcedure
+      .input(
+        z.object({
+          requestId: z.number(),
+          refundAmount: z.string(),
+          refundReason: z.string().optional().nullable(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        await db.requestPracticeSupportRefund({
+          requestId: input.requestId,
+          refundAmount: input.refundAmount,
+          refundReason: input.refundReason ?? null,
+        });
+
+        return { success: true };
+      }),
+
+    approveRefund: protectedProcedure
+      .input(
+        z.object({
+          requestId: z.number(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!isAdminOrHost(ctx.user)) {
+          throw new Error("관리자 또는 호스트만 환불 승인할 수 있습니다.");
+        }
+
+        await db.approvePracticeSupportRefund({
+          requestId: input.requestId,
+          approvedBy: Number(ctx.user.id),
+        });
+
+        return { success: true };
+      }),
+  }),
+
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
@@ -299,17 +675,19 @@ org: router({
           name: z.string().min(1),
           sortOrder: z.number().optional(),
           isActive: z.boolean().optional(),
+settlementUnitAmount: z.string().optional(),
         })
       )
       .mutation(async ({ input }) => {
-        const id = await db.createPosition({
-          name: input.name,
-          sortOrder: input.sortOrder ?? 0,
-          isActive: input.isActive ?? true,
-        });
+  const id = await db.createPosition({
+    name: input.name,
+    sortOrder: input.sortOrder ?? 0,
+    isActive: input.isActive ?? true,
+    settlementUnitAmount: input.settlementUnitAmount ?? "0",
+  });
 
-        return { success: true, id };
-      }),
+  return { success: true, id };
+}),
 
     update: superHostProcedure
       .input(
@@ -318,17 +696,19 @@ org: router({
           name: z.string().optional(),
           sortOrder: z.number().optional(),
           isActive: z.boolean().optional(),
+settlementUnitAmount: z.string().optional(),
         })
       )
       .mutation(async ({ input }) => {
-        await db.updatePosition(input.id, {
-          name: input.name,
-          sortOrder: input.sortOrder,
-          isActive: input.isActive,
-        });
+  await db.updatePosition(input.id, {
+    name: input.name,
+    sortOrder: input.sortOrder,
+    isActive: input.isActive,
+    settlementUnitAmount: input.settlementUnitAmount,
+  });
 
-        return { success: true };
-      }),
+  return { success: true };
+}),
 
     delete: superHostProcedure
       .input(
@@ -662,17 +1042,23 @@ branding: router({
         z.object({
           name: z.string().min(1),
           sortOrder: z.number().optional(),
+settlementType: z.enum(["credit", "subject", "fixed"]).optional(),
+unitCostAmount: z.string().optional(),
+normalSubjectPrice: z.string().optional(),
         })
       )
       .mutation(async ({ input }) => {
-        const id = await db.createEducationInstitution({
-          name: input.name.trim(),
-          isActive: true,
-          sortOrder: input.sortOrder ?? 0,
-        });
+  const id = await db.createEducationInstitution({
+    name: input.name.trim(),
+    isActive: true,
+    sortOrder: input.sortOrder ?? 0,
+    settlementType: input.settlementType ?? "credit",
+    unitCostAmount: input.unitCostAmount ?? "0",
+    normalSubjectPrice: input.normalSubjectPrice ?? "75000",
+  });
 
-        return { id, success: true };
-      }),
+  return { id, success: true };
+}),
 
     update: hostProcedure
       .input(
@@ -681,12 +1067,100 @@ branding: router({
           name: z.string().optional(),
           isActive: z.boolean().optional(),
           sortOrder: z.number().optional(),
+settlementType: z.enum(["credit", "subject", "fixed"]).optional(),
+unitCostAmount: z.string().optional(),
+normalSubjectPrice: z.string().optional(),
         })
       )
       .mutation(async ({ input }) => {
         const { id, ...rest } = input;
         await db.updateEducationInstitution(id, rest);
         return { success: true };
+      }),
+  }),
+
+  settlementSystem: router({
+    listInstitutionPositionRates: protectedProcedure
+      .input(
+        z
+          .object({
+            educationInstitutionId: z.number().optional(),
+          })
+          .optional()
+      )
+      .query(async ({ input }) => {
+        return db.listEducationInstitutionPositionRates(
+          input?.educationInstitutionId
+        );
+      }),
+
+    getInstitutionPositionRate: protectedProcedure
+      .input(
+        z.object({
+          educationInstitutionId: z.number(),
+          positionId: z.number(),
+        })
+      )
+      .query(async ({ input }) => {
+        return db.getEducationInstitutionPositionRate(
+          input.educationInstitutionId,
+          input.positionId
+        );
+      }),
+
+    upsertInstitutionPositionRate: hostProcedure
+      .input(
+        z.object({
+          educationInstitutionId: z.number(),
+          positionId: z.number(),
+          freelancerUnitAmount: z.string(),
+          isActive: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const id = await db.upsertEducationInstitutionPositionRate({
+          educationInstitutionId: input.educationInstitutionId,
+          positionId: input.positionId,
+          freelancerUnitAmount: input.freelancerUnitAmount,
+          isActive: input.isActive ?? true,
+        });
+
+        return { success: true, id };
+      }),
+
+    deleteInstitutionPositionRate: hostProcedure
+      .input(
+        z.object({
+          id: z.number(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        await db.deleteEducationInstitutionPositionRate(input.id);
+        return { success: true };
+      }),
+
+    listPrivateCertificateMastersForSettlement: protectedProcedure.query(
+      async () => {
+        return db.listPrivateCertificateMasters(false);
+      }
+    ),
+
+getSettings: protectedProcedure.query(async () => {
+      return db.getSettlementSettings();
+    }),
+
+    saveSettings: hostProcedure
+      .input(
+        z.object({
+          payoutDay: z.number().min(1).max(31),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const id = await db.saveSettlementSettings({
+          payoutDay: input.payoutDay,
+        });
+
+        return { success: true, id };
       }),
   }),
 
@@ -2273,7 +2747,7 @@ approve: protectedProcedure
           practiceSupportRequestId: z.number().optional(),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const sem = await db.getSemester(input.id);
         if (!sem) throw new Error("학기를 찾을 수 없습니다");
 
@@ -2328,6 +2802,19 @@ approve: protectedProcedure
         if (rest.actualPaymentDate) data.actualPaymentDate = new Date(rest.actualPaymentDate);
 
         await db.updateSemester(id, data);
+        const shouldSyncSubjectSettlement =
+          input.actualInstitutionId !== undefined ||
+          input.actualSubjectCount !== undefined ||
+          input.actualAmount !== undefined ||
+          input.actualPaymentDate !== undefined ||
+          input.actualStartDate !== undefined;
+
+        if (shouldSyncSubjectSettlement) {
+          await db.syncSubjectSettlementItemBySemesterId(
+            id,
+            Number(ctx.user.id)
+          );
+        }
 
         if (input.plannedSubjectCount !== undefined) {
           await db.syncPlanSemestersByCount(
@@ -2406,7 +2893,7 @@ approve: protectedProcedure
 
     copyPlannedToActual: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
         const sem = await db.getSemester(input.id);
         if (!sem) throw new Error("학기를 찾을 수 없습니다");
 
@@ -2414,13 +2901,18 @@ approve: protectedProcedure
         const actualStartDate =
           raw.length === 6 ? new Date(`${raw.slice(0, 4)}-${raw.slice(4, 6)}-01`) : undefined;
 
-        await db.updateSemester(input.id, {
+                await db.updateSemester(input.id, {
           actualStartDate,
           actualInstitutionId: sem.plannedInstitutionId,
           actualInstitution: sem.plannedInstitution,
           actualSubjectCount: sem.plannedSubjectCount,
           actualAmount: sem.plannedAmount,
         });
+
+        await db.syncSubjectSettlementItemBySemesterId(
+          input.id,
+          Number(ctx.user.id)
+        );
 
         return { success: true };
       }),
@@ -3955,7 +4447,81 @@ practiceListCategory: router({
           canSeeAll ? input.assigneeId : Number(ctx.user.id)
         );
       }),
+
+    entries: adminProcedure
+      .input(
+        z.object({
+          year: z.number(),
+          month: z.number(),
+          assigneeId: z.number().optional(),
+        })
+      )
+      .query(async ({ input, ctx }) => {
+        const canSeeAll = isAdminOrHost(ctx.user);
+
+        return db.getSettlementEntries({
+          year: input.year,
+          month: input.month,
+          assigneeId: canSeeAll ? input.assigneeId : Number(ctx.user.id),
+        });
+      }),
+
+downloadPayslipExcel: protectedProcedure
+  .input(
+    z.object({
+      year: z.number(),
+      month: z.number(),
+      assigneeId: z.number(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const assigneeId = isAdminOrHost(ctx.user)
+      ? input.assigneeId
+      : Number(ctx.user.id);
+
+    // 1. 명세서 데이터 가져오기
+    const payslipData = await db.getSettlementPayslip({
+      year: input.year,
+      month: input.month,
+      assigneeId,
+    });
+
+    // 2. 엑셀 생성
+    const { fileName, buffer } =
+      await buildSettlementPayslipExcel(payslipData);
+
+    // 3. base64로 변환 (프론트 다운로드용)
+    const base64 = Buffer.from(buffer).toString("base64");
+
+    return {
+      success: true,
+      fileName,
+      base64,
+    };
   }),
+
+    payslip: adminProcedure
+      .input(
+        z.object({
+          year: z.number(),
+          month: z.number(),
+          assigneeId: z.number(),
+        })
+      )
+      .query(async ({ input, ctx }) => {
+        const canSeeAll = isAdminOrHost(ctx.user);
+        const targetAssigneeId = canSeeAll
+          ? input.assigneeId
+          : Number(ctx.user.id);
+
+        return db.getSettlementPayslip({
+          year: input.year,
+          month: input.month,
+          assigneeId: targetAssigneeId,
+        });
+      }),
+  }),
+
   superhost: router({
     /**
      * 슈퍼호스트 홈 대시보드

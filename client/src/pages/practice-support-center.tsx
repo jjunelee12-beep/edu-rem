@@ -553,6 +553,15 @@ const createCategoryMut = trpc.practiceListCategory.create.useMutation({
   };
 
   const saveDetail = () => {
+
+if (
+  selectedRow?.paymentStatus === "결제" &&
+  Number(selectedRow?.feeAmount || 0) <= 0
+) {
+  toast.error("결제 처리하려면 금액을 먼저 입력해주세요.");
+  return;
+}
+
     if (!selectedRow?.id) return;
 
     updatePracticeSupportMut.mutate({
@@ -596,12 +605,17 @@ const createCategoryMut = trpc.practiceListCategory.create.useMutation({
     } as any);
   };
 
-  const handleQuickPaymentChange = (id: number, nextStatus: PaymentStatus) => {
-    updatePracticeSupportMut.mutate({
-      id,
-      paymentStatus: nextStatus,
-    } as any);
-  };
+  const handleQuickPaymentChange = (row: any, nextStatus: PaymentStatus) => {
+  if (nextStatus === "결제" && Number(row.feeAmount || 0) <= 0) {
+    toast.error("먼저 금액을 입력한 뒤 결제 처리해주세요.");
+    return;
+  }
+
+  updatePracticeSupportMut.mutate({
+    id: row.id,
+    paymentStatus: nextStatus,
+  } as any);
+};
 
   const buildFinderBaseResults = (row?: any | null): FinderItem[] => {
     const result: FinderItem[] = [];
@@ -1646,6 +1660,9 @@ useEffect(() => {
                     <th className="w-[140px] px-3 py-3 text-left font-medium text-muted-foreground">
                       실습섭외
                     </th>
+<th className="px-3 py-3 text-right font-medium text-muted-foreground">
+  금액
+</th>
                     <th className="w-[140px] px-3 py-3 text-left font-medium text-muted-foreground">
                       결제
                     </th>
@@ -1697,7 +1714,6 @@ useEffect(() => {
                           </div>
                         </div>
                       </td>
-
                       <td className="px-3 py-3">
                         <div className="space-y-1">
                           <div className="font-medium">
@@ -1736,12 +1752,17 @@ useEffect(() => {
                         </Select>
                       </td>
 
+<td className="px-3 py-3 text-right font-medium">
+  {Number(row.feeAmount || 0).toLocaleString()}원
+</td>
+
+
                       <td className="px-3 py-3">
                         <Select
                           value={row.paymentStatus || "미결제"}
                           onValueChange={(v) =>
-                            handleQuickPaymentChange(row.id, v as PaymentStatus)
-                          }
+  handleQuickPaymentChange(row, v as PaymentStatus)
+}
                         >
                           <SelectTrigger className="h-9">
                             <SelectValue />
@@ -2016,6 +2037,9 @@ useEffect(() => {
 
                   <div className="space-y-1">
                     <Label className="text-xs">결제 상태</Label>
+<p className="text-xs text-muted-foreground">
+  금액 입력 후 결제 상태를 "결제"로 저장하면 정산 리포트에 회사 매출로 자동 반영됩니다.
+</p>
                     <Select
                       value={selectedRow.paymentStatus || "미결제"}
                       onValueChange={(v) =>

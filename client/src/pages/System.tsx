@@ -151,16 +151,447 @@ export default function System() {
 }
 
 function SettlementSystemSection() {
+  const utils = trpc.useUtils();
+
+  const { data: institutions = [], isLoading: institutionsLoading } =
+    trpc.educationInstitution.list.useQuery();
+
+  const { data: positions = [], isLoading: positionsLoading } =
+    trpc.org.positions.list.useQuery();
+
+  const { data: privateCertificateMasters = [], isLoading: certificateLoading } =
+    trpc.privateCertificateMaster.list.useQuery({
+      activeOnly: false,
+    });
+
+  const { data: settlementSettings, isLoading: settlementSettingsLoading } =
+    trpc.settlementSystem.getSettings.useQuery();
+
+  const saveSettlementSettingsMutation =
+    trpc.settlementSystem.saveSettings.useMutation({
+      onSuccess: async () => {
+        toast.success("정산 공통 설정이 저장되었습니다.");
+        await utils.settlementSystem.getSettings.invalidate();
+      },
+      onError: (e) => toast.error(e.message),
+    });
+
+  const [selectedInstitutionId, setSelectedInstitutionId] = useState<string>("");
+  const [payoutDay, setPayoutDay] = useState<string>("25");
+
+  const { data: institutionRates = [], isLoading: ratesLoading } =
+    trpc.settlementSystem.listInstitutionPositionRates.useQuery(
+      selectedInstitutionId
+        ? { educationInstitutionId: Number(selectedInstitutionId) }
+        : undefined,
+      {
+        enabled: !!selectedInstitutionId,
+      }
+    );
+
+  const upsertRateMutation =
+    trpc.settlementSystem.upsertInstitutionPositionRate.useMutation({
+      onSuccess: async () => {
+        toast.success("교육원별 직급 단가가 저장되었습니다.");
+        await utils.settlementSystem.listInstitutionPositionRates.invalidate();
+      },
+      onError: (e) => toast.error(e.message),
+    });
+
+  const updatePrivateCertificateMasterMutation =
+    trpc.privateCertificateMaster.update.useMutation({
+      onSuccess: async () => {
+        toast.success("민간자격증 정산 기준이 저장되었습니다.");
+        await utils.privateCertificateMaster.list.invalidate();
+      },
+      onError: (e) => toast.error(e.message),
+    });
+
+  const [rateDrafts, setRateDrafts] = useState<Record<string, string>>({});
+  const [certificateDrafts, setCertificateDrafts] = useState<
+    Record<
+      number,
+      {
+        defaultFeeAmount: string;
+        defaultFreelancerAmount: string;
+        isSettlementEnabled: boolean;
+      }
+    >
+  >({});
+
+  useEffect(() => {
+    if (!institutionRates?.length) {
+      setRateDrafts({});
+      return;
+    }
+
+    const next: Record<string, string> = {};
+    institutionRates.forEach((row: any) => {
+      next[String(row.positionId)] = String(row.freelancerUnitAmount ?? "0");
+    });
+    setRateDrafts(next);
+  }, [institutionRates]);
+
+ useEffect(() => {
+    if (!settlementSettings) return;
+    setPayoutDay(String((settlementSettings as any)?.payoutDay ?? 25));
+  }, [settlementSettings]);
+
+  useEffect(() => {
+    if (!privateCertificateMasters?.length) {
+      setCertificateDrafts({});
+      return;
+    }
+
+    const next: Record<
+      number,
+      {
+        defaultFeeAmount: string;
+        defaultFreelancerAmount: string;
+        isSettlementEnabled: boolean;
+      }
+    > = {};
+
+    privateCertificateMasters.forEach((item: any) => {
+      next[Number(item.id)] = {
+        defaultFeeAmount: String(item.defaultFeeAmount ?? "0"),
+        defaultFreelancerAmount: String(item.defaultFreelancerAmount ?? "0"),
+        isSettlementEnabled:
+          item.isSettlementEnabled === undefined
+            ? true
+            : Boolean(item.isSettlementEnabled),
+      };
+    });
+
+    setCertificateDrafts(next);
+  }, [privateCertificateMasters]);
+
+  const sortedInstitutions = useMemo(
+    () =>
+      [...institutions].sort(
+        (a: any, b: any) =>
+          Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0) ||
+          String(a.name ?? "").localeCompare(String(b.name ?? ""))
+      ),
+    [institutions]
+  );
+
+  const sortedPositions = useMemo(
+    () =>
+      [...positions].sort(
+        (a: any, b: any) =>
+          Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0) ||
+          String(a.name ?? "").localeCompare(String(b.name ?? ""))
+      ),
+    [positions]
+  );
+
+  const handleSaveInstitutionRate = (positionId: number) => {
+    if (!selectedInstitutionId) {
+      toast.error("교육원을 먼저 선택해주세요.");
+      return;
+    }
+
+    const freelancerUnitAmount = rateDrafts[String(positionId)] ?? "0";
+
+    upsertRateMutation.mutate({
+      educationInstitutionId: Number(selectedInstitutionId),
+      positionId: Number(positionId),
+      freelancerUnitAmount,
+      isActive: true,
+    });
+  };
+
+  const handleSavePrivateCertificateMaster = (masterId: number) => {
+    const draft = certificateDrafts[masterId];
+    if (!draft) {
+      toast.error("저장할 데이터가 없습니다.");
+      return;
+    }
+
+    updatePrivateCertificateMasterMutation.mutate({
+      id: Number(masterId),
+      defaultFeeAmount: draft.defaultFeeAmount || "0",
+      defaultFreelancerAmount: draft.defaultFreelancerAmount || "0",
+      isSettlementEnabled: draft.isSettlementEnabled,
+    });
+  };
+
+  const handleSaveSettlementSettings = () => {
+    const nextPayoutDay = Number(String(payoutDay || "").replace(/[^0-9]/g, ""));
+
+    if (!nextPayoutDay || nextPayoutDay < 1 || nextPayoutDay > 31) {
+      toast.error("지급일은 1일부터 31일 사이로 입력해주세요.");
+      return;
+    }
+
+    saveSettlementSettingsMutation.mutate({
+      payoutDay: nextPayoutDay,
+    });
+  };
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>정산 시스템 관리</CardTitle>
-      </CardHeader>
-      <CardContent className="text-sm text-muted-foreground">
-        다음 단계에서 교육원별 학점당 단가 / 실습 수수료 / 정산 기준을 붙일
-        예정입니다.
-      </CardContent>
-    </Card>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>정산 시스템 관리 안내</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p>여기서 교육원별 직급 단가와 민간자격증 기본 정산 기준을 관리합니다.</p>
+          <p>
+            일반과목 정산은 학생 상세의 실제 교육원 선택값을 기준으로,
+            교육원 × 직급 단가표를 읽어 자동 계산됩니다.
+          </p>
+          <p>
+            민간자격증 정산은 민간자격증 마스터의 기본 금액 / 기본 프리랜서
+            배분금액을 기준으로 자동 계산됩니다.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>정산 공통 설정</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {settlementSettingsLoading ? (
+            <div className="text-sm text-muted-foreground">불러오는 중...</div>
+          ) : (
+            <>
+              <div className="max-w-sm space-y-2">
+                <p className="text-sm font-medium">고정 지급일</p>
+                <Input
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={payoutDay}
+                  onChange={(e) =>
+                    setPayoutDay(e.target.value.replace(/[^0-9]/g, ""))
+                  }
+                  placeholder="예: 25"
+                />
+                <p className="text-xs text-muted-foreground">
+                  매월 명세서 지급일로 사용할 날짜입니다. 예: 25 입력 시 해당 월 25일로 자동 반영됩니다.
+                </p>
+              </div>
+
+              <div>
+                <Button
+                  onClick={handleSaveSettlementSettings}
+                  disabled={saveSettlementSettingsMutation.isPending}
+                >
+                  {saveSettlementSettingsMutation.isPending
+                    ? "저장 중..."
+                    : "정산 공통 설정 저장"}
+                </Button>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>교육원별 직급 학점 단가 설정</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="max-w-md space-y-2">
+            <p className="text-sm font-medium">교육원 선택</p>
+            <Select
+              value={selectedInstitutionId}
+              onValueChange={setSelectedInstitutionId}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="교육원을 선택하세요" />
+              </SelectTrigger>
+              <SelectContent>
+                {sortedInstitutions.map((institution: any) => (
+                  <SelectItem
+                    key={institution.id}
+                    value={String(institution.id)}
+                  >
+                    {institution.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {!selectedInstitutionId ? (
+            <div className="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
+              교육원을 먼저 선택하면 직급별 학점 단가를 입력할 수 있습니다.
+            </div>
+          ) : institutionsLoading || positionsLoading || ratesLoading ? (
+            <div className="text-sm text-muted-foreground">불러오는 중...</div>
+          ) : sortedPositions.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              등록된 직급이 없습니다. 먼저 조직 설정에서 직급을 추가해주세요.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="px-4 py-3 text-left">직급</th>
+                    <th className="px-4 py-3 text-left">학점당 프리랜서 단가</th>
+                    <th className="px-4 py-3 text-right">저장</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedPositions.map((position: any) => (
+                    <tr key={position.id} className="border-b last:border-0">
+                      <td className="px-4 py-3">{position.name}</td>
+                      <td className="px-4 py-3">
+                        <Input
+                          value={rateDrafts[String(position.id)] ?? "0"}
+                          onChange={(e) =>
+                            setRateDrafts((prev) => ({
+                              ...prev,
+                              [String(position.id)]: e.target.value.replace(
+                                /[^0-9]/g,
+                                ""
+                              ),
+                            }))
+                          }
+                          placeholder="예: 18000"
+                          className="max-w-[220px]"
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button
+                          size="sm"
+                          onClick={() =>
+                            handleSaveInstitutionRate(Number(position.id))
+                          }
+                          disabled={upsertRateMutation.isPending}
+                        >
+                          저장
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>민간자격증 기본 정산 설정</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {certificateLoading ? (
+            <div className="text-sm text-muted-foreground">불러오는 중...</div>
+          ) : !privateCertificateMasters.length ? (
+            <div className="text-sm text-muted-foreground">
+              등록된 민간자격증 마스터가 없습니다.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="px-4 py-3 text-left">민간자격증명</th>
+                    <th className="px-4 py-3 text-left">기본 결제금액</th>
+                    <th className="px-4 py-3 text-left">기본 프리랜서 배분금액</th>
+                    <th className="px-4 py-3 text-left">정산 사용</th>
+                    <th className="px-4 py-3 text-right">저장</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {privateCertificateMasters.map((item: any) => {
+                    const draft = certificateDrafts[Number(item.id)] ?? {
+                      defaultFeeAmount: "0",
+                      defaultFreelancerAmount: "0",
+                      isSettlementEnabled: true,
+                    };
+
+                    return (
+                      <tr key={item.id} className="border-b last:border-0">
+                        <td className="px-4 py-3">{item.name}</td>
+                        <td className="px-4 py-3">
+                          <Input
+                            value={draft.defaultFeeAmount}
+                            onChange={(e) =>
+                              setCertificateDrafts((prev) => ({
+                                ...prev,
+                                [Number(item.id)]: {
+                                  ...draft,
+                                  defaultFeeAmount: e.target.value.replace(
+                                    /[^0-9]/g,
+                                    ""
+                                  ),
+                                },
+                              }))
+                            }
+                            placeholder="예: 300000"
+                            className="max-w-[220px]"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <Input
+                            value={draft.defaultFreelancerAmount}
+                            onChange={(e) =>
+                              setCertificateDrafts((prev) => ({
+                                ...prev,
+                                [Number(item.id)]: {
+                                  ...draft,
+                                  defaultFreelancerAmount:
+                                    e.target.value.replace(/[^0-9]/g, ""),
+                                },
+                              }))
+                            }
+                            placeholder="예: 100000"
+                            className="max-w-[220px]"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <Select
+                            value={draft.isSettlementEnabled ? "true" : "false"}
+                            onValueChange={(value) =>
+                              setCertificateDrafts((prev) => ({
+                                ...prev,
+                                [Number(item.id)]: {
+                                  ...draft,
+                                  isSettlementEnabled: value === "true",
+                                },
+                              }))
+                            }
+                          >
+                            <SelectTrigger className="w-[140px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="true">사용</SelectItem>
+                              <SelectItem value="false">미사용</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <Button
+                            size="sm"
+                            onClick={() =>
+                              handleSavePrivateCertificateMaster(
+                                Number(item.id)
+                              )
+                            }
+                            disabled={updatePrivateCertificateMasterMutation.isPending}
+                          >
+                            저장
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 

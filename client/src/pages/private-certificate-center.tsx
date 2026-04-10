@@ -38,8 +38,8 @@ const REQUEST_STATUS_OPTIONS = [
 
 const PAYMENT_STATUS_OPTIONS = [
   "결제대기",
-  "입금확인",
-  "완료",
+  "결제",
+  "환불",
   "취소",
 ] as const;
 
@@ -131,8 +131,8 @@ export default function PrivateCertificateCenterPage() {
   }, [filteredRows]);
 
   const paidCount = useMemo(() => {
-    return filteredRows.filter((row: any) => row.paymentStatus === "입금확인").length;
-  }, [filteredRows]);
+  return filteredRows.filter((row: any) => row.paymentStatus === "결제").length;
+}, [filteredRows]);
 
   const openEdit = (row: any) => {
     setEditingRow(row);
@@ -166,17 +166,17 @@ export default function PrivateCertificateCenterPage() {
   };
 
   const paymentStatusBadge = (status: string) => {
-    switch (status) {
-      case "완료":
-        return "bg-emerald-100 text-emerald-700";
-      case "입금확인":
-        return "bg-blue-100 text-blue-700";
-      case "취소":
-        return "bg-red-100 text-red-700";
-      default:
-        return "bg-gray-100 text-gray-700";
-    }
-  };
+  switch (status) {
+    case "결제":
+      return "bg-emerald-100 text-emerald-700";
+    case "환불":
+      return "bg-amber-100 text-amber-700";
+    case "취소":
+      return "bg-red-100 text-red-700";
+    default:
+      return "bg-gray-100 text-gray-700";
+  }
+};
 
   if (!isAdmin) {
     return (
@@ -216,7 +216,7 @@ export default function PrivateCertificateCenterPage() {
 
         <Card className="border-0 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">입금확인 건수</p>
+            <p className="text-xs text-muted-foreground">결제완료 건수</p>
             <p className="text-2xl font-bold text-blue-700">{paidCount}</p>
           </CardContent>
         </Card>

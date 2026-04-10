@@ -77,12 +77,20 @@ export default function OverviewDashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">운영 대시보드</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {user?.name}님, 안녕하세요. {monthLabel} 현황입니다.
-        </p>
-      </div>
+      <div className="flex items-start justify-between gap-4">
+  <div>
+    <h1 className="text-2xl font-bold tracking-tight">운영 대시보드</h1>
+    <p className="mt-1 text-sm text-muted-foreground">
+      {user?.name}님, 안녕하세요. {monthLabel} 현황입니다.
+    </p>
+  </div>
+
+  {isAdminOrHost ? (
+    <Button variant="outline" size="sm" onClick={() => setLocation("/settlement")}>
+      정산 리포트 이동
+    </Button>
+  ) : null}
+</div>
 
       {statsLoading ? (
         <div className="flex justify-center py-12">
@@ -99,9 +107,26 @@ export default function OverviewDashboard() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <StatCard title="이번 달 상담" value={`${currentStats.monthConsultationCount ?? 0}건`} icon={<PhoneCall className="h-5 w-5 text-indigo-600" />} />
               <StatCard title="신규 등록" value={`${currentStats.monthRegistered ?? 0}건`} subValue="관리자 승인 기준" icon={<UserPlus className="h-5 w-5 text-emerald-600" />} />
-              <StatCard title="오늘 매출" value={formatCurrency(Number(currentStats.todaySales ?? 0))} subValue="환불 차감 전/후 기준 확인 필요" icon={<Banknote className="h-5 w-5 text-amber-600" />} />
-              <StatCard title="이번 달 매출" value={formatCurrency(Number(currentStats.monthSales ?? 0))} subValue="승인 환불 차감 반영" icon={<TrendingUp className="h-5 w-5 text-rose-600" />} />
-              <StatCard title="이번 달 환불" value={formatCurrency(Number(currentStats.monthRefund ?? 0))} subValue="승인된 환불 기준" icon={<RotateCcw className="h-5 w-5 text-red-600" />} />
+            <StatCard
+  title="오늘 매출"
+  value={formatCurrency(Number(currentStats.todaySales ?? 0))}
+  subValue="정산 원장 기준"
+  icon={<Banknote className="h-5 w-5 text-amber-600" />}
+/>
+
+<StatCard
+  title="이번 달 매출"
+  value={formatCurrency(Number(currentStats.monthSales ?? 0))}
+  subValue="정산 원장 · 승인 환불 반영"
+  icon={<TrendingUp className="h-5 w-5 text-rose-600" />}
+/>
+
+<StatCard
+  title="이번 달 환불"
+  value={formatCurrency(Number(currentStats.monthRefund ?? 0))}
+  subValue="정산 원장 환불 기준"
+  icon={<RotateCcw className="h-5 w-5 text-red-600" />}
+/>
               <StatCard title="이번 달 승인" value={`${currentStats.monthApprovedCount ?? 0}건`} icon={<CheckCircle className="h-5 w-5 text-violet-600" />} />
               <StatCard title="이번 달 불승인" value={`${currentStats.monthRejectedCount ?? 0}건`} icon={<XCircle className="h-5 w-5 text-red-600" />} />
               <StatCard title="이번 달 대기" value={`${currentStats.monthPendingCount ?? 0}건`} icon={<Clock3 className="h-5 w-5 text-slate-600" />} />
@@ -187,8 +212,19 @@ export default function OverviewDashboard() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <StatCard title="종합 상담" value={`${overallStats.totalConsultationCount ?? 0}건`} icon={<PhoneCall className="h-5 w-5 text-indigo-600" />} />
               <StatCard title="종합 등록" value={`${overallStats.totalRegisteredCount ?? 0}건`} icon={<UserPlus className="h-5 w-5 text-emerald-600" />} />
-              <StatCard title="종합 매출" value={formatCurrency(Number(overallStats.totalSales ?? 0))} icon={<TrendingUp className="h-5 w-5 text-rose-600" />} />
-              <StatCard title="종합 환불" value={formatCurrency(Number(overallStats.totalRefund ?? 0))} icon={<RotateCcw className="h-5 w-5 text-red-600" />} />
+              <StatCard
+  title="종합 매출"
+  value={formatCurrency(Number(overallStats.totalSales ?? 0))}
+  subValue="정산 원장 누적 기준"
+  icon={<TrendingUp className="h-5 w-5 text-rose-600" />}
+/>
+
+<StatCard
+  title="종합 환불"
+  value={formatCurrency(Number(overallStats.totalRefund ?? 0))}
+  subValue="정산 원장 누적 환불"
+  icon={<RotateCcw className="h-5 w-5 text-red-600" />}
+/>
               <StatCard title="종합 승인" value={`${overallStats.totalApprovedCount ?? 0}건`} icon={<CheckCircle className="h-5 w-5 text-violet-600" />} />
               <StatCard title="종합 불승인" value={`${overallStats.totalRejectedCount ?? 0}건`} icon={<XCircle className="h-5 w-5 text-red-600" />} />
               <StatCard title="종합 대기" value={`${overallStats.totalPendingCount ?? 0}건`} icon={<Clock3 className="h-5 w-5 text-slate-600" />} />
