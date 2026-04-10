@@ -1419,27 +1419,41 @@ export const settlementGrades = mysqlTable("settlement_grades", {
 
 export const settlementItems = mysqlTable("settlement_items", {
   id: int("id").autoincrement().primaryKey(),
-
   revenueType: mysqlEnum("revenueType", [
     "subject",
     "practice_support",
     "private_certificate",
-  ]),
-
+  ]).notNull(),
   sourceId: int("sourceId").notNull(),
-
   studentId: int("studentId").notNull(),
-
-  title: varchar("title", { length: 255 }).notNull(),
-
-  grossAmount: decimal("grossAmount", { precision: 12, scale: 0 }).default("0"),
   assigneeId: int("assigneeId"),
   freelancerUserId: int("freelancerUserId"),
   freelancerPositionId: int("freelancerPositionId"),
   settlementGradeId: int("settlementGradeId"),
-
   educationInstitutionId: int("educationInstitutionId"),
   privateCertificateMasterId: int("privateCertificateMasterId"),
+  title: varchar("title", { length: 255 }).notNull(),
+  quantity: int("quantity").notNull().default(1),
+  actualCredits: int("actualCredits"),
+  settlementCredits: int("settlementCredits"),
+  grossAmount: decimal("grossAmount", { precision: 12, scale: 0 }).default("0"),
+  companyAmount: decimal("companyAmount", { precision: 12, scale: 0 }).default("0"),
+  freelancerAmount: decimal("freelancerAmount", { precision: 12, scale: 0 }).default("0"),
+
+  companyProfit: decimal("companyProfit", { precision: 12, scale: 0 })
+    .notNull()
+    .default("0"),
+
+  settlementStatus: mysqlEnum("settlementStatus", [
+    "pending",
+    "confirmed",
+    "cancelled",
+    "refunded",
+  ]).default("pending"),
+  occurredAt: date("occurredAt"),
+  note: text("note"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 
   subjectType: mysqlEnum("subjectType", [
     "general",
@@ -1448,55 +1462,14 @@ export const settlementItems = mysqlTable("settlement_items", {
     "certificate",
     "practice_support",
   ]),
-
-  quantity: int("quantity").notNull().default(1),
   subjectCount: int("subjectCount").notNull().default(0),
-
-  actualCredits: int("actualCredits"),
-  settlementCredits: int("settlementCredits"),
-
-  actualUnitPrice: decimal("actualUnitPrice", { precision: 12, scale: 0 })
-    .notNull()
-    .default("0"),
-
-  normalUnitPrice: decimal("normalUnitPrice", { precision: 12, scale: 0 })
-    .notNull()
-    .default("0"),
-
-  institutionUnitCost: decimal("institutionUnitCost", { precision: 12, scale: 0 })
-    .notNull()
-    .default("0"),
-
-  institutionCost: decimal("institutionCost", { precision: 12, scale: 0 })
-    .notNull()
-    .default("0"),
-
-  freelancerUnitAmount: decimal("freelancerUnitAmount", { precision: 12, scale: 0 })
-    .notNull()
-    .default("0"),
-
-  taxAmount: decimal("taxAmount", { precision: 12, scale: 0 })
-    .notNull()
-    .default("0"),
-
-  finalPayoutAmount: decimal("finalPayoutAmount", { precision: 12, scale: 0 })
-    .notNull()
-    .default("0"),
-
-  occurredAt: date("occurredAt"),
-  note: text("note"),
-  companyAmount: decimal("companyAmount", { precision: 12, scale: 0 }).default("0"),
-  freelancerAmount: decimal("freelancerAmount", { precision: 12, scale: 0 }).default("0"),
-
-  settlementStatus: mysqlEnum("settlementStatus", [
-    "pending",
-    "confirmed",
-    "cancelled",
-    "refunded",
-  ]).default("pending"),
-
-  createdAt: timestamp("createdAt").defaultNow(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
+  actualUnitPrice: decimal("actualUnitPrice", { precision: 12, scale: 0 }).notNull().default("0"),
+  normalUnitPrice: decimal("normalUnitPrice", { precision: 12, scale: 0 }).notNull().default("0"),
+  institutionUnitCost: decimal("institutionUnitCost", { precision: 12, scale: 0 }).notNull().default("0"),
+  institutionCost: decimal("institutionCost", { precision: 12, scale: 0 }).notNull().default("0"),
+  freelancerUnitAmount: decimal("freelancerUnitAmount", { precision: 12, scale: 0 }).notNull().default("0"),
+  taxAmount: decimal("taxAmount", { precision: 12, scale: 0 }).notNull().default("0"),
+  finalPayoutAmount: decimal("finalPayoutAmount", { precision: 12, scale: 0 }).notNull().default("0"),
 });
 
 export const settlementItemLogs = mysqlTable("settlement_item_logs", {
