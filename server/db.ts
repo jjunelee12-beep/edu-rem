@@ -2091,21 +2091,38 @@ export async function syncPrivateCertificateSettlementItemByRequestId(
     return null;
   }
 
-    const requestFeeAmount = toNumber((request as any).feeAmount ?? 0);
-  const masterDefaultFeeAmount = toNumber((master as any)?.defaultFeeAmount ?? 0);
-  const masterDefaultFreelancerAmount = toNumber(
-    (master as any)?.defaultFreelancerAmount ?? 0
-  );
-  const isSettlementEnabled =
-    (master as any)?.isSettlementEnabled === undefined
-      ? true
-      : Boolean((master as any)?.isSettlementEnabled);
+   const requestFeeAmount = toNumber((request as any).feeAmount ?? 0);
+const requestFreelancerInputAmount = toNumber(
+  (request as any).freelancerInputAmount ?? 0
+);
 
-  const feeAmount = requestFeeAmount > 0 ? requestFeeAmount : masterDefaultFeeAmount;
-  const freelancerAmount = isSettlementEnabled ? masterDefaultFreelancerAmount : 0;
-  const taxAmount = Math.floor(freelancerAmount * 0.033);
-  const finalPayoutAmount = freelancerAmount - taxAmount;
-  const companyAmount = feeAmount;
+const masterDefaultFeeAmount = toNumber(
+  (master as any)?.defaultFeeAmount ?? 0
+);
+
+const masterDefaultFreelancerAmount = toNumber(
+  (master as any)?.defaultFreelancerAmount ?? 0
+);
+
+const isSettlementEnabled =
+  (master as any)?.isSettlementEnabled === undefined
+    ? true
+    : Boolean((master as any)?.isSettlementEnabled);
+
+// 요청값 우선, 없으면 마스터 기본값
+const feeAmount =
+  requestFeeAmount > 0 ? requestFeeAmount : masterDefaultFeeAmount;
+
+const resolvedFreelancerAmount =
+  requestFreelancerInputAmount > 0
+    ? requestFreelancerInputAmount
+    : masterDefaultFreelancerAmount;
+
+const freelancerAmount = isSettlementEnabled ? resolvedFreelancerAmount : 0;
+
+const taxAmount = Math.floor(freelancerAmount * 0.033);
+const finalPayoutAmount = freelancerAmount - taxAmount;
+const companyAmount = feeAmount;
 
   return await upsertSettlementItem({
     revenueType: "private_certificate",
@@ -2126,17 +2143,20 @@ export async function syncPrivateCertificateSettlementItemByRequestId(
     actorUserId: actorUserId ?? null,
     logNote: "민간자격증 결제 완료 반영",
         payload: {
-      requestId: request.id,
-      paymentStatus: request.paymentStatus,
-      feeAmount,
-            masterDefaultFeeAmount,
-      masterDefaultFreelancerAmount,
-      isSettlementEnabled,
-      freelancerAmount,
-      taxAmount,
-      finalPayoutAmount,
-      privateCertificateMasterId: (request as any).privateCertificateMasterId ?? null,
-    },
+  requestId: request.id,
+  paymentStatus: request.paymentStatus,
+  requestFeeAmount,
+  requestFreelancerInputAmount,
+  feeAmount,
+  masterDefaultFeeAmount,
+  masterDefaultFreelancerAmount,
+  resolvedFreelancerAmount,
+  isSettlementEnabled,
+  freelancerAmount,
+  taxAmount,
+  finalPayoutAmount,
+  privateCertificateMasterId: (request as any).privateCertificateMasterId ?? null,
+},
   });
 }
 

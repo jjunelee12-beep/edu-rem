@@ -1,4 +1,5 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -72,7 +73,36 @@ function roleLabel(role?: UserRole | string) {
 
 export default function System() {
   const { user } = useAuth();
-  const [tab, setTab] = useState<TabKey>("users");
+  const [location, setLocation] = useLocation();
+
+  const getTabFromLocation = (path: string): TabKey => {
+    try {
+      const query = path.split("?")[1] || "";
+      const params = new URLSearchParams(query);
+      const raw = params.get("tab");
+
+      if (
+        raw === "settlement" ||
+        raw === "users" ||
+        raw === "landingForms" ||
+        raw === "adForms" ||
+        raw === "settings"
+      ) {
+        return raw;
+      }
+
+      return "users";
+    } catch {
+      return "users";
+    }
+  };
+
+  const [tab, setTab] = useState<TabKey>(() => getTabFromLocation(location));
+
+  useEffect(() => {
+    const nextTab = getTabFromLocation(location);
+    setTab(nextTab);
+  }, [location]);
 
   if (user?.role !== "host" && user?.role !== "superhost") {
     return (
@@ -98,7 +128,10 @@ export default function System() {
       <div className="flex flex-wrap gap-2">
         <Button
           variant={tab === "settlement" ? "default" : "outline"}
-          onClick={() => setTab("settlement")}
+         onClick={() => {
+  setTab("settlement");
+  setLocation("/system?tab=settlement");
+}}
           className="gap-2"
         >
           <Calculator className="h-4 w-4" />
@@ -107,7 +140,10 @@ export default function System() {
 
         <Button
           variant={tab === "users" ? "default" : "outline"}
-          onClick={() => setTab("users")}
+          onClick={() => {
+  setTab("users");
+  setLocation("/system?tab=users");
+}}
           className="gap-2"
         >
           <Users className="h-4 w-4" />
@@ -116,7 +152,10 @@ export default function System() {
 
         <Button
           variant={tab === "landingForms" ? "default" : "outline"}
-          onClick={() => setTab("landingForms")}
+          onClick={() => {
+  setTab("landingForms");
+  setLocation("/system?tab=landingForms");
+}}
           className="gap-2"
         >
           <Link2 className="h-4 w-4" />
@@ -125,7 +164,10 @@ export default function System() {
 
         <Button
           variant={tab === "adForms" ? "default" : "outline"}
-          onClick={() => setTab("adForms")}
+          onClick={() => {
+  setTab("adForms");
+  setLocation("/system?tab=adForms");
+}}
           className="gap-2"
         >
           <Megaphone className="h-4 w-4" />
@@ -133,7 +175,10 @@ export default function System() {
         </Button>
 	<Button
   variant={tab === "settings" ? "default" : "outline"}
-  onClick={() => setTab("settings")}
+  onClick={() => {
+  setTab("settings");
+  setLocation("/system?tab=settings");
+}}
   className="gap-2"
 >
   <Building2 className="h-4 w-4" />
