@@ -3055,26 +3055,28 @@ export async function getSettlementReport(
           END
         ), 0)
       `,
+console.log("[getSettlementReport] companyProfit column =", (settlementItems as any).companyProfit);
+console.log("[getSettlementReport] settlementItems keys =", Object.keys(settlementItems as any));
+     
+ totalCompanyProfit: sql<string>`
+  COALESCE(SUM(
+    CASE
+      WHEN ${settlementItems.settlementStatus} = 'confirmed'
+      THEN ${sql.raw("`companyProfit`")}
+      ELSE 0
+    END
+  ), 0)
+`,
 
-      totalCompanyProfit: sql<string>`
-        COALESCE(SUM(
-          CASE
-            WHEN ${settlementItems.settlementStatus} = 'confirmed'
-            THEN ${settlementItems.companyProfit}
-            ELSE 0
-          END
-        ), 0)
-      `,
-
-      totalRefundCompanyProfit: sql<string>`
-        COALESCE(SUM(
-          CASE
-            WHEN ${settlementItems.settlementStatus} = 'refunded'
-            THEN ${settlementItems.companyProfit}
-            ELSE 0
-          END
-        ), 0)
-      `,
+totalRefundCompanyProfit: sql<string>`
+  COALESCE(SUM(
+    CASE
+      WHEN ${settlementItems.settlementStatus} = 'refunded'
+      THEN ${sql.raw("`companyProfit`")}
+      ELSE 0
+    END
+  ), 0)
+`,
     })
     .from(settlementItems)
     .where(and(...conditions))
