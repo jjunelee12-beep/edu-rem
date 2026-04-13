@@ -214,7 +214,7 @@ export default function Settlement() {
       "프리랜서 지급액",
       "세금",
       "최종 지급액",
-      "회사 이익",
+      "회사 순이익",
     ];
 
     const rows = report.map((r: any) => [
@@ -268,7 +268,7 @@ export default function Settlement() {
       "프리랜서 지급액",
       "세금",
       "최종 지급액",
-      "회사 이익",
+      "회사 순이익",
       "상태",
       "비고",
     ];
@@ -384,8 +384,8 @@ export default function Settlement() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">월별 정산 리포트</h1>
           <p className="text-muted-foreground mt-1">
-            담당자별 총매출 · 환불 · 프리랜서 지급액 · 세금 · 최종 지급액 · 회사 이익 집계
-          </p>
+  담당자별 총매출 · 환불 · 프리랜서 지급액 · 세금 · 최종 지급액 · 회사 순이익을 집계합니다.
+</p>
         </div>
 
         <Button
@@ -514,8 +514,8 @@ export default function Settlement() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              회사 이익
-            </CardTitle>
+  회사 순이익
+</CardTitle>
             <Banknote className="h-4 w-4 text-violet-500" />
           </CardHeader>
           <CardContent>
@@ -560,7 +560,7 @@ export default function Settlement() {
                     최종 지급액
                   </th>
                   <th className="px-4 py-3 text-right font-medium text-muted-foreground">
-                    회사 이익
+                    회사 순이익
                   </th>
 <th className="px-4 py-3 text-center font-medium text-muted-foreground">
   명세서
@@ -1019,7 +1019,7 @@ export default function Settlement() {
                     최종 지급액
                   </th>
                   <th className="px-4 py-3 text-right font-medium text-muted-foreground">
-                    회사 이익
+                    회사 순이익
                   </th>
                   <th className="px-4 py-3 text-center font-medium text-muted-foreground">
                     원본
@@ -1137,8 +1137,8 @@ export default function Settlement() {
       </Card>
 
       <p className="text-xs text-muted-foreground text-center">
-        * 정산 기준: 결제 완료 건 (승인된 건만 포함) · 수수료: 순매출의 50% · 세금: 수수료의 3.3% 공제 · 환불 발생 시 해당 월 정산에서 차감
-      </p>
+  * 정산 기준: 결제 완료 건 기준 · 일반과목은 총매출에서 교육원 정산 금액을 먼저 차감한 뒤 회사 매출을 계산하고, 그 회사 매출 안에서 프리랜서 지급액과 세금을 반영하여 회사 순이익을 계산합니다. 환불 발생 시 해당 월 정산에서 차감됩니다.
+</p>
     </div>
   );
 }

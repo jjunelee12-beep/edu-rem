@@ -85,39 +85,7 @@ function shallowEqualStringRecord(
   return true;
 }
 
-function equalCertificateDrafts(
-  a: Record<
-    number,
-    {
-      defaultFeeAmount: string;
-      defaultFreelancerAmount: string;
-      isSettlementEnabled: boolean;
-    }
-  >,
-  b: Record<
-    number,
-    {
-      defaultFeeAmount: string;
-      defaultFreelancerAmount: string;
-      isSettlementEnabled: boolean;
-    }
-  >
-) {
-  const aKeys = Object.keys(a);
-  const bKeys = Object.keys(b);
-  if (aKeys.length !== bKeys.length) return false;
 
-  for (const key of aKeys) {
-    const aa = a[Number(key)];
-    const bb = b[Number(key)];
-    if (!aa || !bb) return false;
-    if (aa.defaultFeeAmount !== bb.defaultFeeAmount) return false;
-    if (aa.defaultFreelancerAmount !== bb.defaultFreelancerAmount) return false;
-    if (aa.isSettlementEnabled !== bb.isSettlementEnabled) return false;
-  }
-
-  return true;
-}
 
 export default function System() {
   const { user } = useAuth();
@@ -228,6 +196,25 @@ function SettlementSystemSection() {
   const [selectedInstitutionId, setSelectedInstitutionId] = useState<string>("");
   const [payoutDay, setPayoutDay] = useState<string>("25");
 
+const [institutionDraft, setInstitutionDraft] = useState<{
+  settlementType: "credit" | "subject" | "fixed";
+  normalSubjectPrice: string;
+  unitCostAmount: string;
+}>({
+  settlementType: "credit",
+  normalSubjectPrice: "75000",
+  unitCostAmount: "0",
+});
+
+const [bulkCertificateFeeAmount, setBulkCertificateFeeAmount] =
+  useState<string>("");
+
+const [bulkCertificateFreelancerAmount, setBulkCertificateFreelancerAmount] =
+  useState<string>("");
+
+const [bulkCertificateEnabled, setBulkCertificateEnabled] =
+  useState<boolean>(true);
+
   const { data: institutionRates = [], isLoading: ratesLoading } =
     trpc.settlementSystem.listInstitutionPositionRates.useQuery(
       selectedInstitutionId
@@ -247,6 +234,15 @@ function SettlementSystemSection() {
       onError: (e) => toast.error(e.message),
     });
 
+const updateInstitutionMutation =
+  trpc.educationInstitution.update.useMutation({
+    onSuccess: async () => {
+      toast.success("교육원 기본 정산 설정이 저장되었습니다.");
+      await utils.educationInstitution.list.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const updatePrivateCertificateMasterMutation =
     trpc.privateCertificateMaster.update.useMutation({
       onSuccess: async () => {
@@ -257,16 +253,6 @@ function SettlementSystemSection() {
     });
 
   const [rateDrafts, setRateDrafts] = useState<Record<string, string>>({});
-  const [certificateDrafts, setCertificateDrafts] = useState<
-    Record<
-      number,
-      {
-        defaultFeeAmount: string;
-        defaultFreelancerAmount: string;
-        isSettlementEnabled: boolean;
-      }
-    >
-  >({});
 
   useEffect(() => {
   const next: Record<string, string> = {};
@@ -290,31 +276,42 @@ function SettlementSystemSection() {
   setPayoutDay((prev) => (prev === nextPayoutDay ? prev : nextPayoutDay));
 }, [settlementSettings]);
 
-  useEffect(() => {
-  const next: Record<
-    number,
-    {
-      defaultFeeAmount: string;
-      defaultFreelancerAmount: string;
-      isSettlementEnabled: boolean;
-    }
-  > = {};
-
-  if (privateCertificateMasters?.length) {
-    privateCertificateMasters.forEach((item: any) => {
-      next[Number(item.id)] = {
-        defaultFeeAmount: String(item.defaultFeeAmount ?? "0"),
-        defaultFreelancerAmount: String(item.defaultFreelancerAmount ?? "0"),
-        isSettlementEnabled:
-          item.isSettlementEnabled === undefined
-            ? true
-            : Boolean(item.isSettlementEnabled),
-      };
+useEffect(() => {
+  if (!selectedInstitutionId) {
+    setInstitutionDraft({
+      settlementType: "credit",
+      normalSubjectPrice: "75000",
+      unitCostAmount: "0",
     });
+    return;
   }
 
-  setCertificateDrafts((prev) =>
-    equalCertificateDrafts(prev, next) ? prev : next
+  const selected = institutions.find(
+    (item: any) => Number(item.id) === Number(selectedInstitutionId)
+  );
+
+  if (!selected) return;
+
+  setInstitutionDraft({
+    settlementType: (selected.settlementType as "credit" | "subject" | "fixed") || "credit",
+    normalSubjectPrice: String(selected.normalSubjectPrice ?? "75000"),
+    unitCostAmount: String(selected.unitCostAmount ?? "0"),
+  });
+}, [selectedInstitutionId, institutions]);
+
+useEffect(() => {
+  if (!privateCertificateMasters.length) return;
+
+  const first = privateCertificateMasters[0];
+
+  setBulkCertificateFeeAmount(String(first?.defaultFeeAmount ?? "0"));
+  setBulkCertificateFreelancerAmount(
+    String(first?.defaultFreelancerAmount ?? "0")
+  );
+  setBulkCertificateEnabled(
+    first?.isSettlementEnabled === undefined
+      ? true
+      : Boolean(first.isSettlementEnabled)
   );
 }, [privateCertificateMasters]);
 
@@ -354,21 +351,6 @@ function SettlementSystemSection() {
     });
   };
 
-  const handleSavePrivateCertificateMaster = (masterId: number) => {
-    const draft = certificateDrafts[masterId];
-    if (!draft) {
-      toast.error("저장할 데이터가 없습니다.");
-      return;
-    }
-
-    updatePrivateCertificateMasterMutation.mutate({
-      id: Number(masterId),
-      defaultFeeAmount: draft.defaultFeeAmount || "0",
-      defaultFreelancerAmount: draft.defaultFreelancerAmount || "0",
-      isSettlementEnabled: draft.isSettlementEnabled,
-    });
-  };
-
   const handleSaveSettlementSettings = () => {
     const nextPayoutDay = Number(String(payoutDay || "").replace(/[^0-9]/g, ""));
 
@@ -382,6 +364,58 @@ function SettlementSystemSection() {
     });
   };
 
+const handleSaveInstitutionBaseSettings = () => {
+  if (!selectedInstitutionId) {
+    toast.error("교육원을 먼저 선택해주세요.");
+    return;
+  }
+
+  updateInstitutionMutation.mutate({
+    id: Number(selectedInstitutionId),
+    settlementType: institutionDraft.settlementType,
+    normalSubjectPrice: institutionDraft.normalSubjectPrice || "75000",
+    unitCostAmount: institutionDraft.unitCostAmount || "0",
+  });
+};
+
+const handleApplyBulkCertificateSettings = async () => {
+  if (!privateCertificateMasters.length) {
+    toast.error("민간자격증 마스터가 없습니다.");
+    return;
+  }
+
+  const feeAmount = bulkCertificateFeeAmount.trim();
+  const freelancerAmount = bulkCertificateFreelancerAmount.trim();
+
+  if (!feeAmount) {
+    toast.error("기본 결제금액을 입력해주세요.");
+    return;
+  }
+
+  if (!freelancerAmount) {
+    toast.error("기본 프리랜서 배분금액을 입력해주세요.");
+    return;
+  }
+
+  try {
+    await Promise.all(
+      privateCertificateMasters.map((item: any) =>
+        updatePrivateCertificateMasterMutation.mutateAsync({
+          id: Number(item.id),
+          defaultFeeAmount: feeAmount,
+          defaultFreelancerAmount: freelancerAmount,
+          isSettlementEnabled: bulkCertificateEnabled,
+        })
+      )
+    );
+
+    toast.success("민간자격증 공통 정산 기준이 저장되었습니다.");
+    await utils.privateCertificateMaster.list.invalidate();
+  } catch (e: any) {
+    toast.error(e.message || "민간자격증 공통 저장 중 오류가 발생했습니다.");
+  }
+};
+
   return (
     <div className="space-y-6">
       <Card>
@@ -389,11 +423,16 @@ function SettlementSystemSection() {
           <CardTitle>정산 시스템 관리 안내</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
-          <p>여기서 교육원별 직급 단가와 민간자격증 기본 정산 기준을 관리합니다.</p>
           <p>
-            일반과목 정산은 학생 상세의 실제 교육원 선택값을 기준으로,
-            교육원 × 직급 단가표를 읽어 자동 계산됩니다.
-          </p>
+  여기서 교육원 기본 정산 기준, 교육원별 직급 프리랜서 단가, 민간자격증 기본 정산 기준을 관리합니다.
+</p>
+<p>
+  일반과목 정산은 총매출에서 교육원 몫을 먼저 차감하여 우리 회사 몫을 계산하고,
+  그 이후 우리 회사 몫 기준으로 프리랜서 배분이 계산됩니다.
+</p>
+<p>
+  교육원 기본 가격(과목당), 교육원 정산 금액, 직급별 프리랜서 단가를 함께 맞춰야 실제 정산 결과가 정확하게 계산됩니다.
+</p>
           <p>
             민간자격증 정산은 민간자격증 마스터의 기본 금액 / 기본 프리랜서
             배분금액을 기준으로 자동 계산됩니다.
@@ -442,9 +481,104 @@ function SettlementSystemSection() {
         </CardContent>
       </Card>
 
+<Card>
+  <CardHeader>
+    <CardTitle>교육원 기본 정산 설정</CardTitle>
+  </CardHeader>
+  <CardContent className="space-y-4">
+    <div className="max-w-md space-y-2">
+      <p className="text-sm font-medium">교육원 선택</p>
+      <Select
+        value={selectedInstitutionId}
+        onValueChange={setSelectedInstitutionId}
+      >
+        <SelectTrigger>
+          <SelectValue placeholder="교육원을 선택하세요" />
+        </SelectTrigger>
+        <SelectContent>
+          {sortedInstitutions.map((institution: any) => (
+            <SelectItem key={institution.id} value={String(institution.id)}>
+              {institution.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+
+    {!selectedInstitutionId ? (
+      <div className="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
+        교육원을 먼저 선택하면 과목 기본 가격과 교육원 원가를 설정할 수 있습니다.
+      </div>
+    ) : (
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="space-y-2">
+          <p className="text-sm font-medium">정산 방식</p>
+          <Select
+            value={institutionDraft.settlementType}
+            onValueChange={(value: "credit" | "subject" | "fixed") =>
+              setInstitutionDraft((prev) => ({
+                ...prev,
+                settlementType: value,
+              }))
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="credit">학점 기준</SelectItem>
+              <SelectItem value="subject">과목 기준</SelectItem>
+              <SelectItem value="fixed">고정 금액</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-sm font-medium">과목 기본 가격</p>
+          <Input
+            value={institutionDraft.normalSubjectPrice}
+            onChange={(e) =>
+              setInstitutionDraft((prev) => ({
+                ...prev,
+                normalSubjectPrice: e.target.value.replace(/[^0-9]/g, ""),
+              }))
+            }
+            placeholder="예: 75000"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-sm font-medium">교육원 정산 금액</p>
+          <Input
+            value={institutionDraft.unitCostAmount}
+            onChange={(e) =>
+              setInstitutionDraft((prev) => ({
+                ...prev,
+                unitCostAmount: e.target.value.replace(/[^0-9]/g, ""),
+              }))
+            }
+            placeholder="예: 24000"
+          />
+        </div>
+      </div>
+    )}
+
+    <div>
+      <Button
+        onClick={handleSaveInstitutionBaseSettings}
+        disabled={!selectedInstitutionId || updateInstitutionMutation.isPending}
+      >
+        {updateInstitutionMutation.isPending
+          ? "저장 중..."
+          : "교육원 기본 정산 저장"}
+      </Button>
+    </div>
+  </CardContent>
+</Card>
+
       <Card>
         <CardHeader>
-          <CardTitle>교육원별 직급 학점 단가 설정</CardTitle>
+          <CardTitle>교육원별 직급 프리랜서 단가 설정</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="max-w-md space-y-2">
@@ -471,7 +605,7 @@ function SettlementSystemSection() {
 
           {!selectedInstitutionId ? (
             <div className="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
-              교육원을 먼저 선택하면 직급별 학점 단가를 입력할 수 있습니다.
+              교육원을 먼저 선택하면 직급별 프리랜서 단가를 입력할 수 있습니다.
             </div>
           ) : institutionsLoading || positionsLoading || ratesLoading ? (
             <div className="text-sm text-muted-foreground">불러오는 중...</div>
@@ -485,7 +619,7 @@ function SettlementSystemSection() {
                 <thead>
                   <tr className="border-b bg-muted/50">
                     <th className="px-4 py-3 text-left">직급</th>
-                    <th className="px-4 py-3 text-left">학점당 프리랜서 단가</th>
+                    <th className="px-4 py-3 text-left">직급별 프리랜서 단가</th>
                     <th className="px-4 py-3 text-right">저장</th>
                   </tr>
                 </thead>
@@ -530,119 +664,83 @@ function SettlementSystemSection() {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>민간자격증 기본 정산 설정</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {certificateLoading ? (
-            <div className="text-sm text-muted-foreground">불러오는 중...</div>
-          ) : !privateCertificateMasters.length ? (
-            <div className="text-sm text-muted-foreground">
-              등록된 민간자격증 마스터가 없습니다.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="px-4 py-3 text-left">민간자격증명</th>
-                    <th className="px-4 py-3 text-left">기본 결제금액</th>
-                    <th className="px-4 py-3 text-left">기본 프리랜서 배분금액</th>
-                    <th className="px-4 py-3 text-left">정산 사용</th>
-                    <th className="px-4 py-3 text-right">저장</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {privateCertificateMasters.map((item: any) => {
-                    const draft = certificateDrafts[Number(item.id)] ?? {
-                      defaultFeeAmount: "0",
-                      defaultFreelancerAmount: "0",
-                      isSettlementEnabled: true,
-                    };
+  <CardHeader>
+    <CardTitle>민간자격증 기본 정산 설정</CardTitle>
+  </CardHeader>
+  <CardContent className="space-y-4">
+    {certificateLoading ? (
+      <div className="text-sm text-muted-foreground">불러오는 중...</div>
+    ) : !privateCertificateMasters.length ? (
+      <div className="text-sm text-muted-foreground">
+        등록된 민간자격증 마스터가 없습니다.
+      </div>
+    ) : (
+      <>
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="space-y-2">
+            <p className="text-sm font-medium">기본 결제금액</p>
+            <Input
+              value={bulkCertificateFeeAmount}
+              onChange={(e) =>
+                setBulkCertificateFeeAmount(
+                  e.target.value.replace(/[^0-9]/g, "")
+                )
+              }
+              placeholder="예: 100000"
+            />
+          </div>
 
-                    return (
-                      <tr key={item.id} className="border-b last:border-0">
-                        <td className="px-4 py-3">{item.name}</td>
-                        <td className="px-4 py-3">
-                          <Input
-                            value={draft.defaultFeeAmount}
-                            onChange={(e) =>
-                              setCertificateDrafts((prev) => ({
-                                ...prev,
-                                [Number(item.id)]: {
-                                  ...draft,
-                                  defaultFeeAmount: e.target.value.replace(
-                                    /[^0-9]/g,
-                                    ""
-                                  ),
-                                },
-                              }))
-                            }
-                            placeholder="예: 300000"
-                            className="max-w-[220px]"
-                          />
-                        </td>
-                        <td className="px-4 py-3">
-                          <Input
-                            value={draft.defaultFreelancerAmount}
-                            onChange={(e) =>
-                              setCertificateDrafts((prev) => ({
-                                ...prev,
-                                [Number(item.id)]: {
-                                  ...draft,
-                                  defaultFreelancerAmount:
-                                    e.target.value.replace(/[^0-9]/g, ""),
-                                },
-                              }))
-                            }
-                            placeholder="예: 100000"
-                            className="max-w-[220px]"
-                          />
-                        </td>
-                        <td className="px-4 py-3">
-                          <Select
-                            value={draft.isSettlementEnabled ? "true" : "false"}
-                            onValueChange={(value) =>
-                              setCertificateDrafts((prev) => ({
-                                ...prev,
-                                [Number(item.id)]: {
-                                  ...draft,
-                                  isSettlementEnabled: value === "true",
-                                },
-                              }))
-                            }
-                          >
-                            <SelectTrigger className="w-[140px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="true">사용</SelectItem>
-                              <SelectItem value="false">미사용</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <Button
-                            size="sm"
-                            onClick={() =>
-                              handleSavePrivateCertificateMaster(
-                                Number(item.id)
-                              )
-                            }
-                            disabled={updatePrivateCertificateMasterMutation.isPending}
-                          >
-                            저장
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          <div className="space-y-2">
+            <p className="text-sm font-medium">기본 프리랜서 배분금액</p>
+            <Input
+              value={bulkCertificateFreelancerAmount}
+              onChange={(e) =>
+                setBulkCertificateFreelancerAmount(
+                  e.target.value.replace(/[^0-9]/g, "")
+                )
+              }
+              placeholder="예: 20000"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium">정산 사용</p>
+            <Select
+              value={bulkCertificateEnabled ? "true" : "false"}
+              onValueChange={(value) =>
+                setBulkCertificateEnabled(value === "true")
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="true">사용</SelectItem>
+                <SelectItem value="false">미사용</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div>
+          <Button
+            onClick={handleApplyBulkCertificateSettings}
+            disabled={updatePrivateCertificateMasterMutation.isPending}
+          >
+            {updatePrivateCertificateMasterMutation.isPending
+              ? "저장 중..."
+              : "민간자격증 기본 정산 저장"}
+          </Button>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          민간자격증은 종류별 개별 금액이 아니라 공통 기본 금액으로 운영되며,
+          저장 시 전체 민간자격증 마스터에 동일하게 반영됩니다.
+        </p>
+      </>
+    )}
+  </CardContent>
+</Card>
     </div>
   );
 }

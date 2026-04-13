@@ -24,11 +24,19 @@ const backfillMutation =
   trpc.settlementSystem.backfillSettlementItems.useMutation({
     onSuccess: (res) => {
       console.log("백필 완료:", res);
-      alert("정산 원장 재생성 완료");
+
+      alert(
+        [
+          "정산 원장 재생성 완료",
+          `총 처리: ${res.summary.totalProcessed}건`,
+          `성공: ${res.summary.totalSuccess}건`,
+          `실패: ${res.summary.totalFailed}건`,
+        ].join("\n")
+      );
     },
     onError: (err) => {
       console.error(err);
-      alert("백필 실패");
+      alert(err?.message || "정산 원장 재생성 중 오류가 발생했습니다.");
     },
   });
   const stats = useMemo(
@@ -99,17 +107,23 @@ const backfillMutation =
 
   <div className="flex items-center gap-2">
     <Button
-      variant="destructive"
-      onClick={() => {
-        if (!confirm("정산 원장을 전체 재생성합니다. 진행하시겠습니까?")) return;
-        backfillMutation.mutate();
-      }}
-      disabled={backfillMutation.isPending}
-    >
-      {backfillMutation.isPending
-        ? "재생성 중..."
-        : "정산 원장 재생성"}
-    </Button>
+  variant="destructive"
+  onClick={() => {
+    if (
+      !confirm(
+        "기존 정산 데이터를 현재 계산식 기준으로 다시 계산합니다. 진행하시겠습니까?"
+      )
+    )
+      return;
+
+    backfillMutation.mutate();
+  }}
+  disabled={backfillMutation.isPending}
+>
+  {backfillMutation.isPending
+    ? "재생성 중..."
+    : "정산 원장 재생성"}
+</Button>
 
     <div className="text-xs text-muted-foreground">
       접속 계정: {user?.name || user?.username || "-"}

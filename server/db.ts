@@ -2118,11 +2118,18 @@ const resolvedFreelancerAmount =
     ? requestFreelancerInputAmount
     : masterDefaultFreelancerAmount;
 
-const freelancerAmount = isSettlementEnabled ? resolvedFreelancerAmount : 0;
+const resolvedFreelancerAmount =
+  requestFreelancerInputAmount > 0
+    ? requestFreelancerInputAmount
+    : masterDefaultFreelancerAmount;
+
+const freelancerAmount = isSettlementEnabled
+  ? Math.max(0, Math.min(feeAmount, resolvedFreelancerAmount))
+  : 0;
 
 const taxAmount = Math.floor(freelancerAmount * 0.033);
 const finalPayoutAmount = freelancerAmount - taxAmount;
-const companyAmount = feeAmount;
+const companyAmount = Math.max(0, feeAmount);
 
   return await upsertSettlementItem({
     revenueType: "private_certificate",
@@ -2139,7 +2146,7 @@ const companyAmount = feeAmount;
     finalPayoutAmount,
     settlementStatus: "confirmed",
     occurredAt: (request as any).paidAt ?? (request as any).updatedAt ?? new Date(),
-        note: "민간자격증 마스터 정산기준으로 자동 생성",
+        note: "민간자격증 요청값 및 마스터 기본값 기준으로 자동 생성",
     actorUserId: actorUserId ?? null,
     logNote: "민간자격증 결제 완료 반영",
         payload: {
@@ -2156,6 +2163,7 @@ const companyAmount = feeAmount;
   taxAmount,
   finalPayoutAmount,
   privateCertificateMasterId: (request as any).privateCertificateMasterId ?? null,
+companyProfitPreview: companyAmount - freelancerAmount,
 },
   });
 }
@@ -2392,20 +2400,39 @@ export async function syncSubjectSettlementItemBySemesterId(
   }
 
   const normalSubjectPrice = toNumber((institution as any).normalSubjectPrice ?? 75000);
-  const institutionUnitCost = toNumber((institution as any).unitCostAmount ?? 0);
-  const actualUnitPrice =
-    subjectCount > 0 ? Math.floor(grossAmount / subjectCount) : 0;
+const institutionUnitCost = toNumber((institution as any).unitCostAmount ?? 0);
 
-  const actualCredits = subjectCount * 3;
-  const settlementCredits =
-    actualUnitPrice >= normalSubjectPrice ? subjectCount * 3 : subjectCount;
+const actualUnitPrice =
+  subjectCount > 0 ? Math.floor(grossAmount / subjectCount) : 0;
 
-  const institutionCost = actualCredits * institutionUnitCost;
-  const freelancerAmount = settlementCredits * positionUnitAmount;
-  const taxAmount = Math.floor(freelancerAmount * 0.033);
-  const finalPayoutAmount = freelancerAmount - taxAmount;
-  const companyAmount = grossAmount - institutionCost;
-  const title = `${student.clientName || "학생"} ${Number(sem.semesterOrder)}학기 일반과목`;
+// 실제 학점 수
+const actualCredits = subjectCount * 3;
+
+// 정산 기준 학점 수
+const settlementCredits =
+  actualUnitPrice >= normalSubjectPrice ? subjectCount * 3 : subjectCount;
+
+// 교육원 몫
+const institutionCost = actualCredits * institutionUnitCost;
+
+// 교육원 차감 후 우리회사 몫
+const companyAmount = Math.max(0, grossAmount - institutionCost);
+
+// 프리랜서 기본 계산값
+// 현재는 정산기준 학점(settlementCredits) × 직급 단가(positionUnitAmount)로 계산
+const rawFreelancerAmount = settlementCredits * positionUnitAmount;
+
+// 안전장치:
+// 최종 프리랜서 금액은 우리회사 몫(companyAmount)을 초과하지 않도록 제한
+const freelancerAmount = Math.max(
+  0,
+  Math.min(companyAmount, rawFreelancerAmount)
+);
+
+const taxAmount = Math.floor(freelancerAmount * 0.033);
+const finalPayoutAmount = freelancerAmount - taxAmount;
+
+const title = `${student.clientName || "학생"} ${Number(sem.semesterOrder)}학기 일반과목`;
 
   const result = await upsertSettlementItem({
     revenueType: "subject",
@@ -2437,26 +2464,28 @@ export async function syncSubjectSettlementItemBySemesterId(
     actorUserId: actorUserId ?? null,
     logNote: "학점은행제 일반과목 정산 생성/재계산",
     payload: {
-      semesterId: Number(sem.id),
-      semesterOrder: Number((sem as any).semesterOrder ?? 0),
-      studentId: Number(student.id),
-      studentName: student.clientName ?? null,
-      assigneeId: Number(student.assigneeId),
-      positionId,
-      educationInstitutionId,
-      grossAmount,
-      subjectCount,
-      actualUnitPrice,
-      normalSubjectPrice,
-      actualCredits,
-      settlementCredits,
-      institutionUnitCost,
-      institutionCost,
-      positionUnitAmount,
-      freelancerAmount,
-      taxAmount,
-      finalPayoutAmount,
-    },
+  semesterId: Number(sem.id),
+  semesterOrder: Number((sem as any).semesterOrder ?? 0),
+  studentId: Number(student.id),
+  studentName: student.clientName ?? null,
+  assigneeId: Number(student.assigneeId),
+  positionId,
+  educationInstitutionId,
+  grossAmount,
+  subjectCount,
+  actualUnitPrice,
+  normalSubjectPrice,
+  actualCredits,
+  settlementCredits,
+  institutionUnitCost,
+  institutionCost,
+  companyAmount,
+  positionUnitAmount,
+  rawFreelancerAmount,
+  freelancerAmount,
+  taxAmount,
+  finalPayoutAmount,
+},
   });
 
   return result;
