@@ -26,14 +26,11 @@ const backfillMutation =
   console.log("백필 완료:", res);
 
   const errorText =
-    res.errors && res.errors.length > 0
+    Array.isArray(res.errors) && res.errors.length > 0
       ? "\n\n[실패 상세]\n" +
         res.errors
-          .slice(0, 10) // 너무 많으면 10개만
-          .map(
-            (e: any, idx: number) =>
-              `${idx + 1}. sourceId=${e.sourceId}, type=${e.revenueType}, error=${e.error}`
-          )
+          .slice(0, 10)
+          .map((e: string, idx: number) => `${idx + 1}. ${e}`)
           .join("\n")
       : "";
 

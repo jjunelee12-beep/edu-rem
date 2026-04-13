@@ -3079,8 +3079,6 @@ export async function getSettlementReport(
   if (filterAssigneeId) {
     conditions.push(eq(settlementItems.assigneeId, filterAssigneeId));
   }
-console.log("[getSettlementReport] companyProfit column =", (settlementItems as any).companyProfit);
-console.log("[getSettlementReport] settlementItems keys =", Object.keys(settlementItems as any));
      
   const rows = await db
     .select({
