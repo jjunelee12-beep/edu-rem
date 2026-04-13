@@ -23,17 +23,30 @@ const { data: logs } = trpc.ai.logs.useQuery();
 const backfillMutation =
   trpc.settlementSystem.backfillSettlementItems.useMutation({
     onSuccess: (res) => {
-      console.log("백필 완료:", res);
+  console.log("백필 완료:", res);
 
-      alert(
-        [
-          "정산 원장 재생성 완료",
-          `총 처리: ${res.summary.totalProcessed}건`,
-          `성공: ${res.summary.totalSuccess}건`,
-          `실패: ${res.summary.totalFailed}건`,
-        ].join("\n")
-      );
-    },
+  const errorText =
+    res.errors && res.errors.length > 0
+      ? "\n\n[실패 상세]\n" +
+        res.errors
+          .slice(0, 10) // 너무 많으면 10개만
+          .map(
+            (e: any, idx: number) =>
+              `${idx + 1}. sourceId=${e.sourceId}, type=${e.revenueType}, error=${e.error}`
+          )
+          .join("\n")
+      : "";
+
+  alert(
+    [
+      "정산 원장 재생성 완료",
+      `총 처리: ${res.summary.totalProcessed}건`,
+      `성공: ${res.summary.totalSuccess}건`,
+      `실패: ${res.summary.totalFailed}건`,
+      errorText,
+    ].join("\n")
+  );
+},
     onError: (err) => {
       console.error(err);
       alert(err?.message || "정산 원장 재생성 중 오류가 발생했습니다.");
