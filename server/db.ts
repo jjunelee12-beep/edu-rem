@@ -2341,10 +2341,24 @@ export async function syncSubjectSettlementItemBySemesterId(
     throw new Error("학기 데이터를 찾을 수 없습니다.");
   }
 
-  const student = await getStudent(Number(sem.studentId));
-  if (!student) {
-    throw new Error("학생 데이터를 찾을 수 없습니다.");
-  }
+const studentId = Number(sem.studentId);
+const student = await getStudent(studentId);
+
+if (!student) {
+  const dbStudent = await db
+    .select({
+      id: students.id,
+      clientName: students.clientName,
+      assigneeId: students.assigneeId,
+    })
+    .from(students)
+    .where(eq(students.id, studentId))
+    .limit(1);
+
+  throw new Error(
+    `[학생조회실패] semesterId=${sem.id}, studentId=${studentId}, directCount=${dbStudent.length}`
+  );
+}
 
   const grossAmount = toNumber((sem as any).actualAmount ?? 0);
   const subjectCount = Number((sem as any).actualSubjectCount ?? 0);
@@ -2353,14 +2367,14 @@ export async function syncSubjectSettlementItemBySemesterId(
 
   // 실제 결제 완료 전이면 정산 원장 취소
   if (!grossAmount || !subjectCount || !educationInstitutionId || !occurredAt) {
-    await cancelSettlementItemBySource({
-      revenueType: "subject",
-      sourceId: Number(sem.id),
-      actorUserId: actorUserId ?? null,
-      note: "학기 실제 결제정보 미완성으로 과목 정산 취소",
-    });
-    return null;
-  }
+  await cancelSettlementItemBySource({
+    revenueType: "subject",
+    sourceId: Number(sem.id),
+    actorUserId: actorUserId ?? null,
+    note: `학기 실제 결제정보 미완성으로 과목 정산 취소 (grossAmount=${grossAmount}, subjectCount=${subjectCount}, educationInstitutionId=${educationInstitutionId}, occurredAt=${occurredAt})`,
+  });
+  return null;
+}
 
   const institution = await getEducationInstitutionById(educationInstitutionId);
   if (!institution) {
