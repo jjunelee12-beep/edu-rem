@@ -2118,11 +2118,6 @@ const resolvedFreelancerAmount =
     ? requestFreelancerInputAmount
     : masterDefaultFreelancerAmount;
 
-const resolvedFreelancerAmount =
-  requestFreelancerInputAmount > 0
-    ? requestFreelancerInputAmount
-    : masterDefaultFreelancerAmount;
-
 const freelancerAmount = isSettlementEnabled
   ? Math.max(0, Math.min(feeAmount, resolvedFreelancerAmount))
   : 0;
@@ -2413,7 +2408,18 @@ const settlementCredits =
   actualUnitPrice >= normalSubjectPrice ? subjectCount * 3 : subjectCount;
 
 // 교육원 몫
-const institutionCost = actualCredits * institutionUnitCost;
+let institutionCost = 0;
+
+if ((institution as any).settlementType === "credit") {
+  // 학점 기준
+  institutionCost = institutionUnitCost * actualCredits;
+} else if ((institution as any).settlementType === "subject") {
+  // 과목 기준
+  institutionCost = institutionUnitCost * subjectCount;
+} else {
+  // fixed 또는 기타값이면 입력값 그대로 1회 반영
+  institutionCost = institutionUnitCost;
+}
 
 // 교육원 차감 후 우리회사 몫
 const companyAmount = Math.max(0, grossAmount - institutionCost);
