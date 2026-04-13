@@ -206,6 +206,25 @@ const [institutionDraft, setInstitutionDraft] = useState<{
   unitCostAmount: "0",
 });
 
+function shallowEqualInstitutionDraft(
+  a: {
+    settlementType: "credit" | "subject" | "fixed";
+    normalSubjectPrice: string;
+    unitCostAmount: string;
+  },
+  b: {
+    settlementType: "credit" | "subject" | "fixed";
+    normalSubjectPrice: string;
+    unitCostAmount: string;
+  }
+) {
+  return (
+    a.settlementType === b.settlementType &&
+    a.normalSubjectPrice === b.normalSubjectPrice &&
+    a.unitCostAmount === b.unitCostAmount
+  );
+}
+
 const [bulkCertificateFeeAmount, setBulkCertificateFeeAmount] =
   useState<string>("");
 
@@ -277,12 +296,16 @@ const updateInstitutionMutation =
 }, [settlementSettings]);
 
 useEffect(() => {
+  const fallbackDraft = {
+    settlementType: "credit" as const,
+    normalSubjectPrice: "75000",
+    unitCostAmount: "0",
+  };
+
   if (!selectedInstitutionId) {
-    setInstitutionDraft({
-      settlementType: "credit",
-      normalSubjectPrice: "75000",
-      unitCostAmount: "0",
-    });
+    setInstitutionDraft((prev) =>
+      shallowEqualInstitutionDraft(prev, fallbackDraft) ? prev : fallbackDraft
+    );
     return;
   }
 
@@ -292,11 +315,16 @@ useEffect(() => {
 
   if (!selected) return;
 
-  setInstitutionDraft({
-    settlementType: (selected.settlementType as "credit" | "subject" | "fixed") || "credit",
+  const nextDraft = {
+    settlementType:
+      (selected.settlementType as "credit" | "subject" | "fixed") || "credit",
     normalSubjectPrice: String(selected.normalSubjectPrice ?? "75000"),
     unitCostAmount: String(selected.unitCostAmount ?? "0"),
-  });
+  };
+
+  setInstitutionDraft((prev) =>
+    shallowEqualInstitutionDraft(prev, nextDraft) ? prev : nextDraft
+  );
 }, [selectedInstitutionId, institutions]);
 
 useEffect(() => {
@@ -304,14 +332,23 @@ useEffect(() => {
 
   const first = privateCertificateMasters[0];
 
-  setBulkCertificateFeeAmount(String(first?.defaultFeeAmount ?? "0"));
-  setBulkCertificateFreelancerAmount(
-    String(first?.defaultFreelancerAmount ?? "0")
-  );
-  setBulkCertificateEnabled(
+  const nextFeeAmount = String(first?.defaultFeeAmount ?? "0");
+  const nextFreelancerAmount = String(first?.defaultFreelancerAmount ?? "0");
+  const nextEnabled =
     first?.isSettlementEnabled === undefined
       ? true
-      : Boolean(first.isSettlementEnabled)
+      : Boolean(first.isSettlementEnabled);
+
+  setBulkCertificateFeeAmount((prev) =>
+    prev === nextFeeAmount ? prev : nextFeeAmount
+  );
+
+  setBulkCertificateFreelancerAmount((prev) =>
+    prev === nextFreelancerAmount ? prev : nextFreelancerAmount
+  );
+
+  setBulkCertificateEnabled((prev) =>
+    prev === nextEnabled ? prev : nextEnabled
   );
 }, [privateCertificateMasters]);
 
