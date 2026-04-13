@@ -1844,6 +1844,14 @@ export async function upsertSettlementItem(params: {
   const freelancerAmount = toNumber(params.freelancerAmount);
   const companyProfit = companyAmount - freelancerAmount;
 
+console.log("최종 결과", {
+  companyAmount,
+  freelancerAmount,
+  taxAmount,
+  finalPayoutAmount,
+  companyProfit,
+});
+
   const actualUnitPrice = toNumber(params.actualUnitPrice ?? 0);
   const normalUnitPrice = toNumber(params.normalUnitPrice ?? 0);
   const institutionUnitCost = toNumber(params.institutionUnitCost ?? 0);
@@ -2414,12 +2422,27 @@ const institutionUnitCost = toNumber((institution as any).unitCostAmount ?? 0);
 const actualUnitPrice =
   subjectCount > 0 ? Math.floor(grossAmount / subjectCount) : 0;
 
-// 실제 학점 수
 const actualCredits = subjectCount * 3;
 
-// 정산 기준 학점 수
-const settlementCredits =
-  actualUnitPrice >= normalSubjectPrice ? subjectCount * 3 : subjectCount;
+// ✅ 과목당 금액 기준 학점 계산
+let settlementCreditPerSubject = 0;
+
+if (actualUnitPrice >= normalSubjectPrice) {
+  // 75,000 이상
+  settlementCreditPerSubject = 3;
+} else if (actualUnitPrice >= 60000) {
+// 60,000 이상
+  settlementCreditPerSubject = 2;
+} else if (actualUnitPrice >= 45000) {
+// 45,000 이상
+  settlementCreditPerSubject = 1;
+} else {
+  // 45,000 미만
+  settlementCreditPerSubject = 0;
+}
+
+// 총 정산 학점
+const settlementCredits = subjectCount * settlementCreditPerSubject;
 
 // 교육원 몫
 let institutionCost = 0;
@@ -2438,18 +2461,40 @@ if ((institution as any).settlementType === "credit") {
 // 교육원 차감 후 우리회사 몫
 const companyAmount = Math.max(0, grossAmount - institutionCost);
 
+console.log("정산 디버그", {
+  semesterId: sem.id,
+  grossAmount,
+  subjectCount,
+  actualUnitPrice,
+  settlementCredits,
+  institutionUnitCost,
+  institutionCost,
+  companyAmount,
+});
+
 // 프리랜서 기본 계산값
 // 현재는 정산기준 학점(settlementCredits) × 직급 단가(positionUnitAmount)로 계산
+
 const rawFreelancerAmount = settlementCredits * positionUnitAmount;
 
-// 안전장치:
-// 최종 프리랜서 금액은 우리회사 몫(companyAmount)을 초과하지 않도록 제한
-const freelancerAmount = Math.max(
-  0,
-  Math.min(companyAmount, rawFreelancerAmount)
-);
+// ❗ 0학점이면 지급 0
+const freelancerAmount =
+  settlementCredits <= 0
+    ? 0
+    : Math.max(0, Math.min(companyAmount, rawFreelancerAmount));
 
-const taxAmount = Math.floor(freelancerAmount * 0.033);
+console.log("프리랜서 계산", {
+  settlementCredits,
+  positionUnitAmount,
+  rawFreelancerAmount,
+  freelancerAmount,
+});
+
+const taxAmount =
+  freelancerAmount > 0
+    ? Math.floor(freelancerAmount * 0.033)
+    : 0;
+
 const finalPayoutAmount = freelancerAmount - taxAmount;
 
 const title = `${student.clientName || "학생"} ${Number(sem.semesterOrder)}학기 일반과목`;
