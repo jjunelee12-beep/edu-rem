@@ -1844,14 +1844,6 @@ export async function upsertSettlementItem(params: {
   const freelancerAmount = toNumber(params.freelancerAmount);
   const companyProfit = companyAmount - freelancerAmount;
 
-console.log("최종 결과", {
-  companyAmount,
-  freelancerAmount,
-  taxAmount,
-  finalPayoutAmount,
-  companyProfit,
-});
-
   const actualUnitPrice = toNumber(params.actualUnitPrice ?? 0);
   const normalUnitPrice = toNumber(params.normalUnitPrice ?? 0);
   const institutionUnitCost = toNumber(params.institutionUnitCost ?? 0);
@@ -1859,6 +1851,14 @@ console.log("최종 결과", {
   const freelancerUnitAmount = toNumber(params.freelancerUnitAmount ?? 0);
   const taxAmount = toNumber(params.taxAmount ?? 0);
   const finalPayoutAmount = toNumber(params.finalPayoutAmount ?? 0);
+
+console.log("최종 결과", {
+  companyAmount,
+  freelancerAmount,
+  taxAmount,
+  finalPayoutAmount,
+  companyProfit,
+});
 
   const exists = await db
     .select()

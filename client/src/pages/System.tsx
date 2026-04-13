@@ -193,7 +193,7 @@ function SettlementSystemSection() {
       onError: (e) => toast.error(e.message),
     });
 
-  const [selectedInstitutionId, setSelectedInstitutionId] = useState<string>("");
+  const [selectedInstitutionId, setSelectedInstitutionId] = useState<string | undefined>(undefined);
   const [payoutDay, setPayoutDay] = useState<string>("25");
 
 const [institutionDraft, setInstitutionDraft] = useState<{
@@ -489,9 +489,9 @@ const handleApplyBulkCertificateSettings = async () => {
     <div className="max-w-md space-y-2">
       <p className="text-sm font-medium">교육원 선택</p>
       <Select
-        value={selectedInstitutionId}
-        onValueChange={setSelectedInstitutionId}
-      >
+  value={selectedInstitutionId ?? undefined}
+  onValueChange={setSelectedInstitutionId}
+>
         <SelectTrigger>
           <SelectValue placeholder="교육원을 선택하세요" />
         </SelectTrigger>
@@ -584,9 +584,9 @@ const handleApplyBulkCertificateSettings = async () => {
           <div className="max-w-md space-y-2">
             <p className="text-sm font-medium">교육원 선택</p>
             <Select
-              value={selectedInstitutionId}
-              onValueChange={setSelectedInstitutionId}
-            >
+  value={selectedInstitutionId ?? undefined}
+  onValueChange={setSelectedInstitutionId}
+>
               <SelectTrigger>
                 <SelectValue placeholder="교육원을 선택하세요" />
               </SelectTrigger>
