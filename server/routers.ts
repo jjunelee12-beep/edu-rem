@@ -57,6 +57,16 @@ function assertCanManageOwnFormOrHigher(currentUser: any, targetAssigneeId?: num
   }
 }
 
+function assertHostOrSuperhost(user: any) {
+  if (!user) {
+    throw new Error("로그인이 필요합니다.");
+  }
+
+  if (user.role !== "host" && user.role !== "superhost") {
+    throw new Error("호스트 또는 슈퍼호스트만 접근할 수 있습니다.");
+  }
+}
+
 
 function isSuperhost(user: any) {
   return user?.role === "superhost";
@@ -1221,7 +1231,7 @@ formBlueprintAdmin: router({
       })
     )
     .query(async ({ input, ctx }) => {
-      assertHostOrHigher(ctx.user);
+      assertHostOrSuperhost(ctx.user);
       return db.listFormBlueprints(input.formType);
     }),
 
@@ -1232,7 +1242,7 @@ formBlueprintAdmin: router({
       })
     )
     .query(async ({ input, ctx }) => {
-      assertHostOrHigher(ctx.user);
+      assertHostOrSuperhost(ctx.user);
 
       const row = await db.getFormBlueprintById(input.id);
       if (!row) {
@@ -1252,7 +1262,7 @@ formBlueprintAdmin: router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      assertHostOrHigher(ctx.user);
+      assertHostOrSuperhost(ctx.user);
 
       const created = await db.createFormBlueprint({
         formType: input.formType,
@@ -1280,7 +1290,7 @@ formBlueprintAdmin: router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      assertHostOrHigher(ctx.user);
+      assertHostOrSuperhost(ctx.user);
 
       const updated = await db.updateFormBlueprint({
         id: input.id,
@@ -1304,7 +1314,7 @@ formBlueprintAdmin: router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      assertHostOrHigher(ctx.user);
+      assertHostOrSuperhost(ctx.user);
 
       await db.deleteFormBlueprint(input.id);
 
@@ -1321,7 +1331,7 @@ formBlueprintAdmin: router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      assertHostOrHigher(ctx.user);
+      assertHostOrSuperhost(ctx.user);
 
       const created = await db.createLeadFormFromBlueprint({
         blueprintId: input.blueprintId,
