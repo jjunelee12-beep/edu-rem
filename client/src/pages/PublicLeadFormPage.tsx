@@ -303,13 +303,57 @@ const safeDisplayConfig: UiConfig = {
     : DEFAULT_LEAD_CONFIG.fields,
 };
 
+const normalizedFields = useMemo(() => {
+  const incoming = Array.isArray(safeDisplayConfig.fields)
+    ? safeDisplayConfig.fields
+    : [];
+
+  const incomingMap = new Map(
+    incoming.map((field) => [String(field.fieldKey), field])
+  );
+
+  const merged = DEFAULT_LEAD_CONFIG.fields.map((defaultField) => {
+    const saved = incomingMap.get(defaultField.fieldKey);
+
+    if (!saved) {
+      return { ...defaultField };
+    }
+
+    return {
+      ...defaultField,
+      ...saved,
+      fieldKey: defaultField.fieldKey,
+      hidden: false,
+      required:
+        defaultField.fieldKey === "notes"
+          ? Boolean(saved.required ?? defaultField.required)
+          : true,
+      options:
+        saved.type === "select"
+          ? Array.isArray(saved.options) && saved.options.length > 0
+            ? saved.options
+            : defaultField.options || []
+          : undefined,
+    };
+  });
+
+  const extraFields = incoming.filter(
+    (field) =>
+      !DEFAULT_LEAD_CONFIG.fields.some(
+        (defaultField) => defaultField.fieldKey === field.fieldKey
+      )
+  );
+
+  return [...merged, ...extraFields].sort((a, b) => a.order - b.order);
+}, [safeDisplayConfig.fields]);
+
 
   const sortedFields = useMemo(
   () =>
-    [...safeDisplayConfig.fields]
+    [...normalizedFields]
       .filter((field) => !field.hidden)
       .sort((a, b) => a.order - b.order),
-  [safeDisplayConfig.fields]
+  [normalizedFields]
 );
 
   const normalizedPhone = useMemo(() => {
@@ -346,7 +390,7 @@ useEffect(() => {
     const next = { ...prev };
     let changed = false;
 
-    for (const field of safeDisplayConfig.fields) {
+    for (const field of normalizedFields) {
       if (field.fieldKey in next) continue;
 
       next[field.fieldKey] = field.type === "checkbox" ? false : "";
@@ -355,12 +399,12 @@ useEffect(() => {
 
     return changed ? next : prev;
   });
-}, [safeDisplayConfig.fields]);
+}, [normalizedFields]);
 
 useEffect(() => {
   setValues((prev) => {
     const allowedKeys = new Set(
-  safeDisplayConfig.fields.map((field) => field.fieldKey)
+  normalizedFields.map((field) => field.fieldKey)
 );
     const next: Record<string, any> = {};
     let changed = false;
@@ -375,7 +419,7 @@ useEffect(() => {
 
     return changed ? next : prev;
   });
-}, [safeDisplayConfig.fields]);
+}, [normalizedFields]);
 
   const handleUploadUiImage = async (
   file: File,
@@ -488,6 +532,18 @@ useEffect(() => {
   const mapping = {
   ...fallbackMap,
   ...(safeDisplayConfig.mapping || {}),
+  clientName:
+    safeDisplayConfig.mapping?.clientName || "clientName",
+  phone:
+    safeDisplayConfig.mapping?.phone || "phone",
+  finalEducation:
+    safeDisplayConfig.mapping?.finalEducation || "finalEducation",
+  desiredCourse:
+    safeDisplayConfig.mapping?.desiredCourse || "desiredCourse",
+  channel:
+    safeDisplayConfig.mapping?.channel || "channel",
+  notes:
+    safeDisplayConfig.mapping?.notes || "notes",
 };
 
   const payload: Record<string, any> = {
