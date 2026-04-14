@@ -904,10 +904,11 @@ export async function applyNamedLeadFormTemplateToToken(input: {
   }
 
   await updateMyLeadFormUiConfig({
-    token: input.targetToken,
-    userId: input.actorUserId,
-    uiConfig: safeJsonParse(template.uiConfigJson),
-  });
+  token: input.targetToken,
+  formType: input.formType,
+  userId: input.actorUserId,
+  uiConfig: safeJsonParse(template.uiConfigJson),
+});
 
   const updated = await db
     .select()
@@ -1183,7 +1184,6 @@ export async function getPublicFormByToken(
     ? JSON.parse(form.uiConfigJson)
     : {}, 
 };
-  };
 }
 export async function updateLeadFormUiConfig(
   id: number,
