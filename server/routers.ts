@@ -33,6 +33,31 @@ function isAdminOrHost(user: any) {
   );
 }
 
+function canManageOwnFormOrHigher(currentUser: any, targetAssigneeId?: number | null) {
+  if (!currentUser) return false;
+
+  if (
+    currentUser.role === "admin" ||
+    currentUser.role === "host" ||
+    currentUser.role === "superhost"
+  ) {
+    return true;
+  }
+
+  return Number(currentUser.id) === Number(targetAssigneeId);
+}
+
+function assertCanManageOwnFormOrHigher(currentUser: any, targetAssigneeId?: number | null) {
+  if (!currentUser) {
+    throw new Error("로그인이 필요합니다.");
+  }
+
+  if (!canManageOwnFormOrHigher(currentUser, targetAssigneeId)) {
+    throw new Error("본인 페이지 또는 관리자만 수정할 수 있습니다.");
+  }
+}
+
+
 function isSuperhost(user: any) {
   return user?.role === "superhost";
 }
@@ -1009,14 +1034,11 @@ renameTemplate: protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
-    if (!isAdminOrHost(ctx.user)) {
-      throw new Error("권한이 없습니다.");
-    }
-
     const updated = await db.renameNamedLeadFormTemplate({
       formType: input.formType,
-      oldTemplateName: input.oldTemplateName,
-      newTemplateName: input.newTemplateName,
+      oldTemplateName: input.oldTemplateName.trim(),
+      newTemplateName: input.newTemplateName.trim(),
+      actorUserId: Number(ctx.user.id),
     });
 
     return {
@@ -1079,25 +1101,29 @@ listTemplates: protectedProcedure
       formType: z.enum(["landing", "ad"]),
     })
   )
-  .query(async ({ input, ctx }) => {
-    assertHostOrHigher(ctx.user);
-
+  .query(async ({ input }) => {
     const rows = await db.listLeadFormTemplates(input.formType);
 
     return rows.map((row) => {
-  const parsed = row.uiConfigJson ? JSON.parse(row.uiConfigJson) : {};
+      let parsed: any = {};
 
-  return {
-    id: row.id,
-    token: row.token,
-    templateName: row.templateName,
-    formType: row.formType,
-    description: parsed?.description || "",
-    tags: parsed?.tags || "",
-isPinned: Boolean(parsed?.isPinned),
-lastUsedAt: parsed?.lastUsedAt || "",
-  };
-});
+      try {
+        parsed = row.uiConfigJson ? JSON.parse(row.uiConfigJson) : {};
+      } catch {
+        parsed = {};
+      }
+
+      return {
+        id: row.id,
+        token: row.token,
+        templateName: row.templateName,
+        formType: row.formType,
+        description: parsed?.description || "",
+        tags: parsed?.tags || "",
+        isPinned: Boolean(parsed?.isPinned),
+        lastUsedAt: parsed?.lastUsedAt || "",
+      };
+    });
   }),
 
 saveAsTemplate: protectedProcedure
@@ -1109,11 +1135,9 @@ saveAsTemplate: protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
-    assertHostOrHigher(ctx.user);
-
     const saved = await db.saveNamedLeadFormTemplate({
       formType: input.formType,
-      templateName: input.templateName,
+      templateName: input.templateName.trim(),
       uiConfig: input.uiConfig,
       actorUserId: Number(ctx.user.id),
     });
@@ -1135,7 +1159,7 @@ applyTemplateToMyForm: protectedProcedure
   .mutation(async ({ input, ctx }) => {
     const updated = await db.applyNamedLeadFormTemplateToToken({
       formType: input.formType,
-      templateName: input.templateName,
+      templateName: input.templateName.trim(),
       targetToken: input.targetToken,
       actorUserId: Number(ctx.user.id),
     });
@@ -1154,9 +1178,11 @@ deleteTemplate: protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
-    assertHostOrHigher(ctx.user);
-
-    await db.deleteNamedLeadFormTemplate(input.formType, input.templateName);
+    await db.deleteNamedLeadFormTemplate(
+      input.formType,
+      input.templateName.trim(),
+      Number(ctx.user.id)
+    );
 
     return {
       ok: true,
@@ -1172,14 +1198,10 @@ duplicateTemplate: protectedProcedure
     })
   )
   .mutation(async ({ input, ctx }) => {
-    if (!isAdminOrHost(ctx.user)) {
-      throw new Error("권한이 없습니다.");
-    }
-
     const created = await db.duplicateNamedLeadFormTemplate({
       formType: input.formType,
-      sourceTemplateName: input.sourceTemplateName,
-      newTemplateName: input.newTemplateName,
+      sourceTemplateName: input.sourceTemplateName.trim(),
+      newTemplateName: input.newTemplateName.trim(),
       actorUserId: Number(ctx.user.id),
     });
 

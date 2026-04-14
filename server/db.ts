@@ -822,9 +822,10 @@ export async function saveNamedLeadFormTemplate(input: {
   actorUserId?: number | null;
 }) {
   const db = await getDb();
+  if (!db) throw new Error("DB not available");
 
   const token = getNamedLeadFormTemplateToken(input.formType, input.templateName);
-  const uiConfigJson = JSON.stringify(input.uiConfig || {});
+  const uiConfigJson = safeJsonStringify(input.uiConfig || {});
 
   const existing = await db
     .select()
@@ -834,26 +835,28 @@ export async function saveNamedLeadFormTemplate(input: {
 
   if (existing[0]) {
     await db
-  .update(leadForms)
-  .set({
-    uiConfigJson,
-  } as any)
-  .where(eq(leadForms.id, existing[0].id));
+      .update(leadForms)
+      .set({
+        uiConfigJson,
+        assigneeId: input.actorUserId ?? existing[0].assigneeId ?? 0,
+      } as any)
+      .where(eq(leadForms.id, existing[0].id));
 
     return {
       ...existing[0],
       token,
       uiConfigJson,
+      assigneeId: input.actorUserId ?? existing[0].assigneeId ?? 0,
     };
   }
 
- await db.insert(leadForms).values({
-  formType: input.formType,
-  token,
-  uiConfigJson,
-  assigneeId: input.actorUserId ?? 0,
-  isActive: false,
-} as any);
+  await db.insert(leadForms).values({
+    formType: input.formType,
+    token,
+    uiConfigJson,
+    assigneeId: input.actorUserId ?? 0,
+    isActive: false,
+  } as any);
 
   const created = await db
     .select()
@@ -903,7 +906,7 @@ export async function applyNamedLeadFormTemplateToToken(input: {
     throw new Error("폼 타입이 맞지 않습니다.");
   }
 
-  await updateMyLeadFormUiConfig({
+ await updateMyLeadFormUiConfig({
   token: input.targetToken,
   formType: input.formType,
   userId: input.actorUserId,
@@ -922,7 +925,8 @@ export async function applyNamedLeadFormTemplateToToken(input: {
 
 export async function deleteNamedLeadFormTemplate(
   formType: "landing" | "ad",
-  templateName: string
+  templateName: string,
+  actorUserId: number
 ) {
   const db = await getDb();
   const token = getNamedLeadFormTemplateToken(formType, templateName);
@@ -936,6 +940,9 @@ export async function deleteNamedLeadFormTemplate(
   if (!existing[0]) {
     throw new Error("삭제할 템플릿을 찾을 수 없습니다.");
   }
+if (Number(existing[0].assigneeId) !== Number(actorUserId)) {
+  throw new Error("본인 템플릿만 삭제할 수 있습니다.");
+}
 
   await db.delete(leadForms).where(eq(leadForms.id, existing[0].id));
 
@@ -949,6 +956,7 @@ export async function renameNamedLeadFormTemplate(input: {
   formType: "landing" | "ad";
   oldTemplateName: string;
   newTemplateName: string;
+  actorUserId: number;
 }) {
   const dbConn = await getDb();
 
@@ -985,6 +993,11 @@ export async function renameNamedLeadFormTemplate(input: {
   if (existingNew[0]) {
     throw new Error("같은 이름의 템플릿이 이미 존재합니다.");
   }
+if (
+  Number(existingOld[0].assigneeId) !== Number(input.actorUserId)
+) {
+  throw new Error("본인 템플릿만 이름 변경할 수 있습니다.");
+}
 
   await dbConn
   .update(leadForms)
@@ -1034,6 +1047,10 @@ export async function duplicateNamedLeadFormTemplate(input: {
   if (!source) {
     throw new Error("복제할 템플릿을 찾을 수 없습니다.");
   }
+
+if (Number(source.assigneeId) !== Number(input.actorUserId)) {
+  throw new Error("본인 템플릿만 복제할 수 있습니다.");
+}
 
   const existingNew = await dbConn
     .select()
@@ -1172,26 +1189,28 @@ export async function getPublicFormByToken(
     .where(eq(users.id, form.assigneeId))
     .limit(1);
 
-  const assignee = userResult[0];
+const assignee = userResult[0];
+const parsed = form.uiConfigJson ? safeJsonParse(form.uiConfigJson) || {} : {};
 
- return {
+const safeUiConfig = {
+  ...parsed,
+  mapping:
+    parsed && typeof parsed.mapping === "object" && parsed.mapping
+      ? parsed.mapping
+      : {},
+  fields: Array.isArray(parsed?.fields) ? parsed.fields : [],
+};
+
+return {
   ok: true,
   form,
   assigneeId: form.assigneeId,
   assigneeName: assignee?.name ?? "",
   phone: assignee?.phone ?? "",
-  uiConfig: (() => {
-  const parsed = form.uiConfigJson ? JSON.parse(form.uiConfigJson) : {};
-  return {
-    ...parsed,
-    mapping:
-      parsed && typeof parsed.mapping === "object" && parsed.mapping
-        ? parsed.mapping
-        : {},
-    fields: Array.isArray(parsed?.fields) ? parsed.fields : [],
-  };
-})(),
+  uiConfig: safeUiConfig,
 };
+
+
 }
 export async function updateLeadFormUiConfig(
   id: number,
@@ -1208,7 +1227,7 @@ export async function updateLeadFormUiConfig(
     .where(eq(leadForms.id, id));
 }
 
-export async function updateMyLeadFormUiConfig(params: {
+export async function updateMyLeadFormUiConfig(input: {
   token: string;
   formType: "landing" | "ad";
   userId: number;
@@ -1217,35 +1236,34 @@ export async function updateMyLeadFormUiConfig(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const result = await db
+  const rows = await db
     .select()
     .from(leadForms)
     .where(
       and(
-        eq(leadForms.token, params.token),
-        eq(leadForms.formType, params.formType)
+        eq(leadForms.token, input.token),
+        eq(leadForms.formType, input.formType)
       )
     )
     .limit(1);
 
-  const form = result[0];
-
-  if (!form) {
-    throw new Error("폼을 찾을 수 없습니다.");
+  const target = rows[0];
+  if (!target) {
+    throw new Error("수정할 폼을 찾을 수 없습니다.");
   }
 
-  if (Number(form.assigneeId) !== Number(params.userId)) {
-    throw new Error("본인에게 배정된 페이지만 수정할 수 있습니다.");
+  if (Number(target.assigneeId) !== Number(input.userId)) {
+    throw new Error("본인 페이지 외에는 수정할 수 없습니다.");
   }
 
   await db
     .update(leadForms)
     .set({
-      uiConfigJson: JSON.stringify(params.uiConfig),
+      uiConfigJson: safeJsonStringify(input.uiConfig),
     } as any)
-    .where(eq(leadForms.id, form.id));
+    .where(eq(leadForms.id, target.id));
 
-  return form.id;
+  return target.id;
 }
 
 export async function listLeadForms(formType: "landing" | "ad") {

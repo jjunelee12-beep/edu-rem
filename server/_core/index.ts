@@ -1316,53 +1316,52 @@ socket.on(
     }
   );
 
-  app.get("/go/alpha-care", (_req, res) => {
-    const targetUrl = "https://www.edualpha.co.kr";
-   const ogImageUrl = "https://edu-crm-five.vercel.app/images/logo.png";
+  app.get("/go/alpha", (_req, res) => {
+  const targetUrl = "https://www.edualpha.co.kr/";
+  const ogImageUrl = "https://withone.kr/images/alpha-og.jpg";
+  const ogTitle = "알파원격평생교육원";
+  const ogDescription = "알파원격평생교육원 학습자 전용 등록 페이지입니다.";
+  const ogPageUrl = "https://withone.kr/go/alpha";
 
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
 
-    res.send(`
-      <!DOCTYPE html>
-      <html lang="ko">
-        <head>
-          <meta charset="utf-8" />
-          <meta name="viewport" content="width=device-width, initial-scale=1" />
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="ko">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-          <title>알파원격평생교육원</title>
-          <meta
-            name="description"
-            content="위드원 맘 - 편한 케어반 신청하기!"
-          />
+        <title>${ogTitle}</title>
+        <meta name="description" content="${ogDescription}" />
+        <link rel="canonical" href="${ogPageUrl}" />
 
-          <meta property="og:type" content="website" />
-          <meta property="og:title" content="알파원격평생교육원" />
-          <meta
-            property="og:description"
-            content="위드원 맘 - 편한 케어반 신청하기!"
-          />
-          <meta property="og:image" content="${ogImageUrl}" />
-          <meta property="og:url" content="https://edu-crm-five.vercel.app/go/alpha-care" />
+        <meta property="og:locale" content="ko_KR" />
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content="${ogTitle}" />
+        <meta property="og:description" content="${ogDescription}" />
+        <meta property="og:image" content="${ogImageUrl}" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:url" content="${ogPageUrl}" />
+        <meta property="og:site_name" content="위드원 교육" />
 
-          <meta name="twitter:card" content="summary_large_image" />
-          <meta name="twitter:title" content="알파원격평생교육원" />
-          <meta
-            name="twitter:description"
-            content="위드원 맘 - 편한 케어반 신청하기!"
-          />
-          <meta name="twitter:image" content="${ogImageUrl}" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="${ogTitle}" />
+        <meta name="twitter:description" content="${ogDescription}" />
+        <meta name="twitter:image" content="${ogImageUrl}" />
 
-          <meta http-equiv="refresh" content="0;url=${targetUrl}" />
-        </head>
-        <body>
-          <script>
-            window.location.replace(${JSON.stringify(targetUrl)});
-          </script>
-          <p>이동 중입니다. <a href="${targetUrl}">여기를 클릭</a></p>
-        </body>
-      </html>
-    `);
-  });
+        <meta http-equiv="refresh" content="0;url=${targetUrl}" />
+      </head>
+      <body>
+        <script>
+          window.location.replace(${JSON.stringify(targetUrl)});
+        </script>
+        <p>이동 중입니다. <a href="${targetUrl}">여기를 클릭</a></p>
+      </body>
+    </html>
+  `);
+});
 
   app.use(
     "/api/trpc",

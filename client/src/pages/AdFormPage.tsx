@@ -474,7 +474,7 @@ const handleUploadUiImage = async (
 
       if (field.fieldKey === "agreed") {
         if (!value) {
-          alert(displayConfig.agreementText || "개인정보 수집 및 이용에 동의해주세요.");
+          alert(safeDisplayConfig.agreementText || "개인정보 수집 및 이용에 동의해주세요.");
           return false;
         }
         continue;

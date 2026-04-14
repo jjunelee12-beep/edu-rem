@@ -798,9 +798,9 @@ const handleSaveAsTemplate = () => {
         <div className="lead-form-header">
   <h1 className="lead-form-title">
     <span className="lead-form-title-line lead-form-title-line--first">
-      {displayConfig.logoUrl ? (
+      {safeDisplayConfig.logoUrl ? (
         <img
-          src={displayConfig.logoUrl}
+          src={safeDisplayConfig.logoUrl}
           alt="폼 로고"
           className="lead-form-logo"
           onError={(e) => {
@@ -808,7 +808,7 @@ const handleSaveAsTemplate = () => {
           }}
         />
       ) : null}
-      <span>{displayConfig.title.split(",")[0]?.trim() || displayConfig.title}</span>
+      <span>{safeDisplayConfig.title.split(",")[0]?.trim() || safeDisplayConfig.title}</span>
     </span>
 
     {safeDisplayConfig.title.includes(",") ? (
