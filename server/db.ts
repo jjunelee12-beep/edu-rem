@@ -1180,9 +1180,17 @@ export async function getPublicFormByToken(
   assigneeId: form.assigneeId,
   assigneeName: assignee?.name ?? "",
   phone: assignee?.phone ?? "",
-  uiConfig: form.uiConfigJson
-    ? JSON.parse(form.uiConfigJson)
-    : {}, 
+  uiConfig: (() => {
+  const parsed = form.uiConfigJson ? JSON.parse(form.uiConfigJson) : {};
+  return {
+    ...parsed,
+    mapping:
+      parsed && typeof parsed.mapping === "object" && parsed.mapping
+        ? parsed.mapping
+        : {},
+    fields: Array.isArray(parsed?.fields) ? parsed.fields : [],
+  };
+})(),
 };
 }
 export async function updateLeadFormUiConfig(

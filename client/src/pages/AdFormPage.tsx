@@ -289,13 +289,25 @@ const templatePreviewQuery = trpc.formAdmin.getNamedTemplate.useQuery(
 
 const displayConfig = editMode ? uiDraft : uiConfig;
 
+const safeDisplayConfig: UiConfig = {
+  ...DEFAULT_AD_CONFIG,
+  ...displayConfig,
+  mapping:
+    displayConfig && typeof displayConfig.mapping === "object" && displayConfig.mapping
+      ? displayConfig.mapping
+      : DEFAULT_AD_CONFIG.mapping,
+  fields: Array.isArray(displayConfig?.fields)
+    ? displayConfig.fields
+    : DEFAULT_AD_CONFIG.fields,
+};
+
   const sortedFields = useMemo(
-    () =>
-      [...displayConfig.fields]
-        .filter((field) => !field.hidden)
-        .sort((a, b) => a.order - b.order),
-    [displayConfig.fields]
-  );
+  () =>
+    [...safeDisplayConfig.fields]
+      .filter((field) => !field.hidden)
+      .sort((a, b) => a.order - b.order),
+  [safeDisplayConfig.fields]
+);
 
   const normalizedPhone = useMemo(() => {
     return String(values.phone ?? "")
@@ -316,8 +328,10 @@ const displayConfig = editMode ? uiDraft : uiConfig;
   const callPhone = formQuery.data?.phone || "";
   const callHref = `tel:${callPhone}`;
 
-const safeColor = /^#([0-9A-F]{3}){1,2}$/i.test(displayConfig.primaryColor || "")
-  ? displayConfig.primaryColor
+const safeColor = /^#([0-9A-F]{3}){1,2}$/i.test(
+  safeDisplayConfig.primaryColor || ""
+)
+  ? safeDisplayConfig.primaryColor
   : "#5fc065";
 
 
@@ -332,7 +346,7 @@ useEffect(() => {
     const next = { ...prev };
     let changed = false;
 
-    for (const field of displayConfig.fields) {
+    for (const field of safeDisplayConfig.fields) {
       if (field.fieldKey in next) continue;
 
       if (field.fieldKey === "channel") {
@@ -349,11 +363,13 @@ useEffect(() => {
 
     return changed ? next : prev;
   });
-}, [displayConfig.fields]);
+}, [safeDisplayConfig.fields]);
 
 useEffect(() => {
   setValues((prev) => {
-    const allowedKeys = new Set(displayConfig.fields.map((field) => field.fieldKey));
+    const allowedKeys = new Set(
+  safeDisplayConfig.fields.map((field) => field.fieldKey)
+);
     const next: Record<string, any> = {};
     let changed = false;
 
@@ -367,14 +383,14 @@ useEffect(() => {
 
     return changed ? next : prev;
   });
-}, [displayConfig.fields]);
+}, [safeDisplayConfig.fields]);
 
   useEffect(() => {
     setValues((prev) => {
       const next = { ...prev };
 
       if (!prev.channel || prev.channel === "광고폼") {
-        const channelField = uiConfig.fields.find(
+        const channelField = safeDisplayConfig.fields.find(
           (field) => field.fieldKey === "channel"
         );
 
@@ -386,7 +402,7 @@ useEffect(() => {
 
       return next;
     });
-  }, [uiConfig.fields]);
+}, [safeDisplayConfig.fields]);
 
 const handleUploadUiImage = async (
   file: File,
@@ -498,7 +514,7 @@ const handleUploadUiImage = async (
 
   const mapping = {
   ...fallbackMap,
-  ...(displayConfig.mapping || {}),
+  ...(safeDisplayConfig.mapping || {}),
 };
 
   const payload: Record<string, any> = {
@@ -707,7 +723,7 @@ const handleTogglePinTemplate = () => {
             checked={Boolean(value)}
             onChange={(e) => updateValue(field.fieldKey, e.target.checked)}
           />
-          <span>{displayConfig.agreementText || field.label}</span>
+          <span>{safeDisplayConfig.agreementText || field.label}</span>
         </label>
       );
     }
@@ -783,9 +799,9 @@ const handleTogglePinTemplate = () => {
           <div className="ad-form-header">
             <h1 className="ad-form-title">
               <span className="ad-form-title-inner">
-                {displayConfig.logoUrl ? (
+                {safeDisplayConfig.logoUrl ? (
   <img
-    src={displayConfig.logoUrl}
+    src={safeDisplayConfig.logoUrl}
     alt="폼 로고"
     className="ad-form-logo"
     onError={(e) => {
@@ -793,18 +809,18 @@ const handleTogglePinTemplate = () => {
     }}
   />
 ) : null}
-                {displayConfig.title.split(",")[0]?.trim() || displayConfig.title}
+                {safeDisplayConfig.title.split(",")[0]?.trim() || safeDisplayConfig.title}
               </span>
-              {displayConfig.title.includes(",") ? (
+              {safeDisplayConfig.title.includes(",") ? (
                 <>
                   <br />
-                  {displayConfig.title.split(",").slice(1).join(",").trim()}
+                  {safeDisplayConfig.title.split(",").slice(1).join(",").trim()}
                 </>
               ) : null}
             </h1>
 
             <p className="ad-form-subtitle">
-              {displayConfig.subtitle}
+              {safeDisplayConfig.subtitle}
             </p>
           </div>
 
@@ -825,10 +841,10 @@ const handleTogglePinTemplate = () => {
   </div>
 ) : null}
 
-          {displayConfig.heroImageUrl ? (
+          {safeDisplayConfig.heroImageUrl ? (
   <div style={{ marginTop: 16 }}>
     <img
-      src={displayConfig.heroImageUrl}
+      src={safeDisplayConfig.heroImageUrl}
       alt="상단 이미지"
       style={{
         width: "100%",
@@ -892,13 +908,13 @@ const handleTogglePinTemplate = () => {
 
       <div className="ad-form-content">
         <section className="ad-form-section">
-          <h2>{displayConfig.title}</h2>
-          <p>{displayConfig.subtitle}</p>
+          <h2>{safeDisplayConfig.title}</h2>
+          <p>{safeDisplayConfig.subtitle}</p>
         </section>
 
         <section className="ad-form-section spacer"></section>
       </div>
-	{displayConfig.layoutType === "bottomSheet" ? (
+	{safeDisplayConfig.layoutType === "bottomSheet" ? (
   <>
     <div className="ad-form-bottom-bar">
       <a
@@ -931,7 +947,7 @@ const handleTogglePinTemplate = () => {
 
     <div className={`ad-form-sheet ${openSheet ? "open" : ""}`}>
       <div className="ad-form-sheet-header">
-        <h3>{displayConfig.submitButtonText || "상담 신청"}</h3>
+        <h3>{safeDisplayConfig.submitButtonText || "상담 신청"}</h3>
         <button type="button" onClick={() => setOpenSheet(false)}>
           닫기
         </button>
@@ -955,7 +971,7 @@ const handleTogglePinTemplate = () => {
           >
             {submitMutation.isPending
               ? "접수 중..."
-              : displayConfig.submitButtonText || "1:1 맞춤 상담 받기"}
+              : safeDisplayConfig.submitButtonText || "1:1 맞춤 상담 받기"}
           </button>
         </form>
       )}
@@ -981,7 +997,7 @@ const handleTogglePinTemplate = () => {
         >
           {submitMutation.isPending
             ? "접수 중..."
-            : displayConfig.submitButtonText || "1:1 맞춤 상담 받기"}
+            : safeDisplayConfig.submitButtonText || "1:1 맞춤 상담 받기"}
         </button>
       </form>
     )}

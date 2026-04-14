@@ -291,15 +291,25 @@ const templatePreviewQuery = trpc.formAdmin.getNamedTemplate.useQuery(
 
 const displayConfig = editMode ? uiDraft : uiConfig;
 
-
+const safeDisplayConfig: UiConfig = {
+  ...DEFAULT_LEAD_CONFIG,
+  ...displayConfig,
+  mapping:
+    displayConfig && typeof displayConfig.mapping === "object" && displayConfig.mapping
+      ? displayConfig.mapping
+      : DEFAULT_LEAD_CONFIG.mapping,
+  fields: Array.isArray(displayConfig?.fields)
+    ? displayConfig.fields
+    : DEFAULT_LEAD_CONFIG.fields,
+};
 
 
   const sortedFields = useMemo(
   () =>
-    [...displayConfig.fields]
+    [...safeDisplayConfig.fields]
       .filter((field) => !field.hidden)
       .sort((a, b) => a.order - b.order),
-  [displayConfig.fields]
+  [safeDisplayConfig.fields]
 );
 
   const normalizedPhone = useMemo(() => {
@@ -318,8 +328,10 @@ const displayConfig = editMode ? uiDraft : uiConfig;
     return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
   }, [values.phone]);
 
-const safeColor = /^#([0-9A-F]{3}){1,2}$/i.test(displayConfig.primaryColor || "")
-  ? displayConfig.primaryColor
+const safeColor = /^#([0-9A-F]{3}){1,2}$/i.test(
+  safeDisplayConfig.primaryColor || ""
+)
+  ? safeDisplayConfig.primaryColor
   : "#5fc065";
 
 
@@ -334,7 +346,7 @@ useEffect(() => {
     const next = { ...prev };
     let changed = false;
 
-    for (const field of displayConfig.fields) {
+    for (const field of safeDisplayConfig.fields) {
       if (field.fieldKey in next) continue;
 
       next[field.fieldKey] = field.type === "checkbox" ? false : "";
@@ -343,11 +355,13 @@ useEffect(() => {
 
     return changed ? next : prev;
   });
-}, [displayConfig.fields]);
+}, [safeDisplayConfig.fields]);
 
 useEffect(() => {
   setValues((prev) => {
-    const allowedKeys = new Set(displayConfig.fields.map((field) => field.fieldKey));
+    const allowedKeys = new Set(
+  safeDisplayConfig.fields.map((field) => field.fieldKey)
+);
     const next: Record<string, any> = {};
     let changed = false;
 
@@ -361,7 +375,7 @@ useEffect(() => {
 
     return changed ? next : prev;
   });
-}, [displayConfig.fields]);
+}, [safeDisplayConfig.fields]);
 
   const handleUploadUiImage = async (
   file: File,
@@ -433,7 +447,7 @@ useEffect(() => {
 
       if (field.fieldKey === "agreed") {
         if (!value) {
-          alert(displayConfig.agreementText || "개인정보 수집 및 이용에 동의해주세요.");
+          alert(safeDisplayConfig.agreementText || "개인정보 수집 및 이용에 동의해주세요.");
           return false;
         }
         continue;
@@ -473,7 +487,7 @@ useEffect(() => {
 
   const mapping = {
   ...fallbackMap,
-  ...(displayConfig.mapping || {}),
+  ...(safeDisplayConfig.mapping || {}),
 };
 
   const payload: Record<string, any> = {
@@ -680,7 +694,7 @@ const handleSaveAsTemplate = () => {
             checked={Boolean(value)}
             onChange={(e) => updateValue(field.fieldKey, e.target.checked)}
           />
-          <span>{displayConfig.agreementText || field.label}</span>
+          <span>{safeDisplayConfig.agreementText || field.label}</span>
         </label>
       );
     }
@@ -797,14 +811,14 @@ const handleSaveAsTemplate = () => {
       <span>{displayConfig.title.split(",")[0]?.trim() || displayConfig.title}</span>
     </span>
 
-    {displayConfig.title.includes(",") ? (
+    {safeDisplayConfig.title.includes(",") ? (
       <span className="lead-form-title-line">
-        {displayConfig.title.split(",").slice(1).join(",").trim()}
+        {safeDisplayConfig.title.split(",").slice(1).join(",").trim()}
       </span>
     ) : null}
   </h1>
 
-  <p className="lead-form-subtitle">{displayConfig.subtitle}</p>
+  <p className="lead-form-subtitle">{safeDisplayConfig.subtitle}</p>
 </div>
 
 {canEdit ? (
@@ -824,10 +838,10 @@ const handleSaveAsTemplate = () => {
   </div>
 ) : null}
 
-        {displayConfig.heroImageUrl ? (
+        {safeDisplayConfig.heroImageUrl ? (
   <div style={{ marginBottom: 16 }}>
     <img
-      src={displayConfig.heroImageUrl}
+      src={safeDisplayConfig.heroImageUrl}
       alt="상단 이미지"
       style={{
         width: "100%",
@@ -885,7 +899,7 @@ const handleSaveAsTemplate = () => {
   </div>
 ) : null}
 
-        {displayConfig.layoutType === "card" ? (
+       {safeDisplayConfig.layoutType === "card" ? (
   <form className="lead-form-body" onSubmit={handleSubmit}>
     {sortedFields.map(renderField)}
 
@@ -897,7 +911,7 @@ const handleSaveAsTemplate = () => {
     >
       {submitMutation.isPending
         ? "접수 중..."
-        : displayConfig.submitButtonText || "1:1 맞춤 상담 받기"}
+        : safeDisplayConfig.submitButtonText || "1:1 맞춤 상담 받기"}
     </button>
   </form>
 ) : (
@@ -909,7 +923,7 @@ const handleSaveAsTemplate = () => {
         style={{ backgroundColor: safeColor, maxWidth: 420 }}
         onClick={() => setOpenSheet(true)}
       >
-        {displayConfig.submitButtonText || "1:1 맞춤 상담 받기"}
+        {safeDisplayConfig.submitButtonText || "1:1 맞춤 상담 받기"}
       </button>
     </div>
 
@@ -920,7 +934,7 @@ const handleSaveAsTemplate = () => {
 
     <div className={`ad-form-sheet ${openSheet ? "open" : ""}`}>
       <div className="ad-form-sheet-header">
-        <h3>{displayConfig.submitButtonText || "상담 신청"}</h3>
+        <h3>{safeDisplayConfig.submitButtonText || "상담 신청"}</h3>
         <button type="button" onClick={() => setOpenSheet(false)}>
           닫기
         </button>
@@ -937,7 +951,7 @@ const handleSaveAsTemplate = () => {
         >
           {submitMutation.isPending
             ? "접수 중..."
-            : displayConfig.submitButtonText || "1:1 맞춤 상담 받기"}
+            : safeDisplayConfig.submitButtonText || "1:1 맞춤 상담 받기"}
         </button>
       </form>
     </div>
