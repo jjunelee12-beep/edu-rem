@@ -1316,12 +1316,12 @@ socket.on(
     }
   );
 
-  app.get("/go/alpha", (_req, res) => {
+ app.get("/alpha", (_req, res) => {
   const targetUrl = "https://www.edualpha.co.kr/";
-  const ogImageUrl = "https://withone.kr/images/alpha-og.jpg";
-  const ogTitle = "알파원격평생교육원";
-  const ogDescription = "알파원격평생교육원 학습자 전용 등록 페이지입니다.";
-  const ogPageUrl = "https://withone.kr/go/alpha";
+const ogImageUrl = "https://go.withone.kr/images/alpha-og.jpg";
+const ogTitle = "알파원격평생교육원";
+const ogDescription = "알파원격평생교육원 학습자 전용 등록 페이지입니다.";
+const ogPageUrl = "https://go.withone.kr/alpha";
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
 
@@ -1333,30 +1333,32 @@ socket.on(
         <meta name="viewport" content="width=device-width, initial-scale=1" />
 
         <title>${ogTitle}</title>
-        <meta name="description" content="${ogDescription}" />
-        <link rel="canonical" href="${ogPageUrl}" />
+<meta name="description" content="${ogDescription}" />
+<link rel="canonical" href="${ogPageUrl}" />
 
-        <meta property="og:locale" content="ko_KR" />
-        <meta property="og:type" content="website" />
-        <meta property="og:title" content="${ogTitle}" />
-        <meta property="og:description" content="${ogDescription}" />
-        <meta property="og:image" content="${ogImageUrl}" />
-        <meta property="og:image:width" content="1200" />
-        <meta property="og:image:height" content="630" />
-        <meta property="og:url" content="${ogPageUrl}" />
-        <meta property="og:site_name" content="위드원 교육" />
+<meta property="og:locale" content="ko_KR" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="${ogTitle}" />
+<meta property="og:description" content="${ogDescription}" />
+<meta property="og:image" content="${ogImageUrl}" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:url" content="${ogPageUrl}" />
+<meta property="og:site_name" content="위드원 교육" />
 
-        <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="${ogTitle}" />
-        <meta name="twitter:description" content="${ogDescription}" />
-        <meta name="twitter:image" content="${ogImageUrl}" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="${ogTitle}" />
+<meta name="twitter:description" content="${ogDescription}" />
+<meta name="twitter:image" content="${ogImageUrl}" />
 
-        <meta http-equiv="refresh" content="0;url=${targetUrl}" />
+<meta http-equiv="refresh" content="1;url=${targetUrl}" />
       </head>
       <body>
         <script>
-          window.location.replace(${JSON.stringify(targetUrl)});
-        </script>
+  setTimeout(() => {
+    window.location.replace(${JSON.stringify(targetUrl)});
+  }, 1000);
+</script>
         <p>이동 중입니다. <a href="${targetUrl}">여기를 클릭</a></p>
       </body>
     </html>
