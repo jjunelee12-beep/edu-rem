@@ -52,11 +52,8 @@ export const formBlueprints = mysqlTable(
 
     createdBy: int("created_by").notNull(),
 
-    createdAt: datetime("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-    updatedAt: datetime("updated_at")
-      .notNull()
-      .default(sql`CURRENT_TIMESTAMP`)
-      .onUpdateNow(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
   },
   (table) => ({
     formTypeIdx: index("idx_form_blueprints_type").on(table.formType),
