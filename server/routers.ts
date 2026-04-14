@@ -972,7 +972,7 @@ messenger: router({
   }
 
   return db.createLeadForm(input.assigneeId, input.formType);
-})
+}),
 
   updateActive: hostProcedure
     .input(z.object({
