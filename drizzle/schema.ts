@@ -19,13 +19,57 @@ export const leadForms = mysqlTable("lead_forms", {
   id: int("id").autoincrement().primaryKey(),
   token: varchar("token", { length: 100 }).notNull(),
   assigneeId: int("assigneeId").notNull(),
-formType: mysqlEnum("formType", ["landing", "ad"]).notNull().default("landing"),
+  formType: mysqlEnum("formType", ["landing", "ad"])
+    .notNull()
+    .default("landing"),
   isActive: boolean("isActive").notNull().default(true),
+
+  uiConfigJson: text("ui_config_json"),
+  blueprintId: int("blueprint_id"),
+  sourceBlueprintName: varchar("source_blueprint_name", { length: 120 }),
+
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 export type InsertLeadForm = typeof leadForms.$inferInsert;
 export type SelectLeadForm = typeof leadForms.$inferSelect;
+
+// ─── Form Blueprints ─────────────────────────────────────────────────
+export const formBlueprints = mysqlTable(
+  "form_blueprints",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    formType: mysqlEnum("form_type", ["landing", "ad"]).notNull(),
+
+    name: varchar("name", { length: 120 }).notNull(),
+    description: text("description"),
+
+    uiConfigJson: text("ui_config_json").notNull(),
+
+    isActive: boolean("is_active").notNull().default(true),
+    isDefault: boolean("is_default").notNull().default(false),
+
+    createdBy: int("created_by").notNull(),
+
+    createdAt: datetime("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: datetime("updated_at")
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`)
+      .onUpdateNow(),
+  },
+  (table) => ({
+    formTypeIdx: index("idx_form_blueprints_type").on(table.formType),
+    creatorIdx: index("idx_form_blueprints_creator").on(table.createdBy),
+    typeNameIdx: index("idx_form_blueprints_type_name").on(
+      table.formType,
+      table.name
+    ),
+  })
+);
+
+export type InsertFormBlueprint = typeof formBlueprints.$inferInsert;
+export type SelectFormBlueprint = typeof formBlueprints.$inferSelect;
 
 // ─── Users ───────────────────────────────────────────────────────────
 export const users = mysqlTable("users", {

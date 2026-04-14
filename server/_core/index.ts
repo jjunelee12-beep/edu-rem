@@ -1291,6 +1291,87 @@ socket.on(
     }
   );
 
+  registerOAuthRoutes(app);
+
+  app.use(
+    (
+      err: any,
+      _req: express.Request,
+      res: express.Response,
+      next: express.NextFunction
+    ) => {
+      if (err instanceof multer.MulterError) {
+        return res.status(400).json({
+          message: err.message || "업로드 오류가 발생했습니다.",
+        });
+      }
+
+      if (err?.message?.includes("지원하지 않는 파일 형식")) {
+        return res.status(400).json({
+          message: err.message,
+        });
+      }
+
+      next(err);
+    }
+  );
+
+  app.get("/go/alpha-care", (_req, res) => {
+    const targetUrl = "https://www.edualpha.co.kr";
+   const ogImageUrl = "https://edu-crm-five.vercel.app/images/logo.png";
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+
+    res.send(`
+      <!DOCTYPE html>
+      <html lang="ko">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+          <title>알파원격평생교육원</title>
+          <meta
+            name="description"
+            content="위드원 맘 - 편한 케어반 신청하기!"
+          />
+
+          <meta property="og:type" content="website" />
+          <meta property="og:title" content="알파원격평생교육원" />
+          <meta
+            property="og:description"
+            content="위드원 맘 - 편한 케어반 신청하기!"
+          />
+          <meta property="og:image" content="${ogImageUrl}" />
+          <meta property="og:url" content="https://edu-crm-five.vercel.app/go/alpha-care" />
+
+          <meta name="twitter:card" content="summary_large_image" />
+          <meta name="twitter:title" content="알파원격평생교육원" />
+          <meta
+            name="twitter:description"
+            content="위드원 맘 - 편한 케어반 신청하기!"
+          />
+          <meta name="twitter:image" content="${ogImageUrl}" />
+
+          <meta http-equiv="refresh" content="0;url=${targetUrl}" />
+        </head>
+        <body>
+          <script>
+            window.location.replace(${JSON.stringify(targetUrl)});
+          </script>
+          <p>이동 중입니다. <a href="${targetUrl}">여기를 클릭</a></p>
+        </body>
+      </html>
+    `);
+  });
+
+  app.use(
+    "/api/trpc",
+    createExpressMiddleware({
+      router: appRouter,
+      createContext,
+    })
+  );
+
   app.use(
     "/api/trpc",
     createExpressMiddleware({

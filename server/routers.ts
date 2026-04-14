@@ -64,6 +64,41 @@ function cleanTransferRows(rows: any[]) {
     .filter((row) => row.subjectName.length >= 2);
 }
 
+const publicFormUiConfigSchema = z.object({
+  title: z.string(),
+  subtitle: z.string(),
+  logoUrl: z.string(),
+  heroImageUrl: z.string(),
+  primaryColor: z.string(),
+  submitButtonText: z.string(),
+  agreementText: z.string(),
+  layoutType: z.enum(["card", "bottomSheet"]),
+  fields: z.array(
+    z.object({
+      fieldKey: z.string().min(1),
+      label: z.string(),
+      placeholder: z.string().optional().default(""),
+      required: z.boolean(),
+      hidden: z.boolean(),
+      order: z.number(),
+      type: z.enum(["text", "phone", "select", "textarea", "checkbox"]),
+      options: z
+        .array(
+          z.object({
+            label: z.string(),
+            value: z.string(),
+          })
+        )
+        .optional(),
+    })
+  ),
+  mapping: z.record(z.string()).optional(),
+  description: z.string().optional(),
+  tags: z.string().optional(),
+isPinned: z.boolean().optional(),
+lastUsedAt: z.string().optional(),
+});
+
 export const appRouter = router({
   system: systemRouter,
   leadForm: publicLeadRouter,
@@ -923,13 +958,21 @@ messenger: router({
     }),
 
   create: hostProcedure
-    .input(z.object({
-      assigneeId: z.number(),
-      formType: z.enum(["landing", "ad"]),
-    }))
+  .input(z.object({
+    assigneeId: z.number(),
+    formType: z.enum(["landing", "ad"]),
+    blueprintId: z.number().optional(),
+  }))
     .mutation(async ({ input }) => {
-      return db.createLeadForm(input.assigneeId, input.formType);
-    }),
+  if (input.blueprintId) {
+    return db.createLeadFormFromBlueprint({
+      blueprintId: input.blueprintId,
+      assigneeId: input.assigneeId,
+    });
+  }
+
+  return db.createLeadForm(input.assigneeId, input.formType);
+})
 
   updateActive: hostProcedure
     .input(z.object({
@@ -938,6 +981,335 @@ messenger: router({
     }))
     .mutation(async ({ input }) => {
       return db.updateLeadFormActive(input.id, input.isActive);
+    }),
+
+  getTemplate: hostProcedure
+  .input(
+    z.object({
+      formType: z.enum(["landing", "ad"]),
+    })
+  )
+  .query(async ({ input }) => {
+    const template = await db.getLeadFormTemplate(input.formType);
+
+    return {
+      success: true,
+      uiConfig: template?.uiConfigJson
+        ? JSON.parse(template.uiConfigJson)
+        : {},
+    };
+  }),
+
+renameTemplate: protectedProcedure
+  .input(
+    z.object({
+      formType: z.enum(["landing", "ad"]),
+      oldTemplateName: z.string().min(1),
+      newTemplateName: z.string().min(1),
+    })
+  )
+  .mutation(async ({ input, ctx }) => {
+    if (!isAdminOrHost(ctx.user)) {
+      throw new Error("권한이 없습니다.");
+    }
+
+    const updated = await db.renameNamedLeadFormTemplate({
+      formType: input.formType,
+      oldTemplateName: input.oldTemplateName,
+      newTemplateName: input.newTemplateName,
+    });
+
+    return {
+      ok: true,
+      token: updated?.token,
+    };
+  }),
+
+  saveTemplate: hostProcedure
+    .input(
+      z.object({
+        formType: z.enum(["landing", "ad"]),
+        uiConfig: publicFormUiConfigSchema,
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const id = await db.saveLeadFormTemplate({
+        formType: input.formType,
+        actorUserId: Number(ctx.user.id),
+        uiConfig: input.uiConfig,
+      });
+
+      return { success: true, id };
+    }),
+
+  saveUiConfig: hostProcedure
+  .input(
+    z.object({
+      id: z.number(),
+      uiConfig: publicFormUiConfigSchema,
+    })
+  )
+  .mutation(async ({ input }) => {
+    await db.updateLeadFormUiConfig(input.id, input.uiConfig);
+    return { success: true };
+  }),
+
+  saveMyUiConfig: protectedProcedure
+    .input(
+      z.object({
+        token: z.string(),
+        formType: z.enum(["landing", "ad"]),
+        uiConfig: publicFormUiConfigSchema,
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const id = await db.updateMyLeadFormUiConfig({
+        token: input.token,
+        formType: input.formType,
+        userId: Number(ctx.user.id),
+        uiConfig: input.uiConfig,
+      });
+
+      return { success: true, id };
+    }),
+
+listTemplates: protectedProcedure
+  .input(
+    z.object({
+      formType: z.enum(["landing", "ad"]),
+    })
+  )
+  .query(async ({ input, ctx }) => {
+    assertHostOrHigher(ctx.user);
+
+    const rows = await db.listLeadFormTemplates(input.formType);
+
+    return rows.map((row) => {
+  const parsed = row.uiConfigJson ? JSON.parse(row.uiConfigJson) : {};
+
+  return {
+    id: row.id,
+    token: row.token,
+    templateName: row.templateName,
+    formType: row.formType,
+    description: parsed?.description || "",
+    tags: parsed?.tags || "",
+isPinned: Boolean(parsed?.isPinned),
+lastUsedAt: parsed?.lastUsedAt || "",
+  };
+});
+  }),
+
+saveAsTemplate: protectedProcedure
+  .input(
+    z.object({
+      formType: z.enum(["landing", "ad"]),
+      templateName: z.string().min(1),
+      uiConfig: publicFormUiConfigSchema,
+    })
+  )
+  .mutation(async ({ input, ctx }) => {
+    assertHostOrHigher(ctx.user);
+
+    const saved = await db.saveNamedLeadFormTemplate({
+      formType: input.formType,
+      templateName: input.templateName,
+      uiConfig: input.uiConfig,
+      actorUserId: Number(ctx.user.id),
+    });
+
+    return {
+      ok: true,
+      token: saved?.token,
+    };
+  }),
+
+applyTemplateToMyForm: protectedProcedure
+  .input(
+    z.object({
+      formType: z.enum(["landing", "ad"]),
+      templateName: z.string().min(1),
+      targetToken: z.string().min(1),
+    })
+  )
+  .mutation(async ({ input, ctx }) => {
+    const updated = await db.applyNamedLeadFormTemplateToToken({
+      formType: input.formType,
+      templateName: input.templateName,
+      targetToken: input.targetToken,
+      actorUserId: Number(ctx.user.id),
+    });
+
+    return {
+      ok: true,
+      token: updated?.token,
+    };
+  }),
+
+deleteTemplate: protectedProcedure
+  .input(
+    z.object({
+      formType: z.enum(["landing", "ad"]),
+      templateName: z.string().min(1),
+    })
+  )
+  .mutation(async ({ input, ctx }) => {
+    assertHostOrHigher(ctx.user);
+
+    await db.deleteNamedLeadFormTemplate(input.formType, input.templateName);
+
+    return {
+      ok: true,
+    };
+  }),
+
+duplicateTemplate: protectedProcedure
+  .input(
+    z.object({
+      formType: z.enum(["landing", "ad"]),
+      sourceTemplateName: z.string().min(1),
+      newTemplateName: z.string().min(1),
+    })
+  )
+  .mutation(async ({ input, ctx }) => {
+    if (!isAdminOrHost(ctx.user)) {
+      throw new Error("권한이 없습니다.");
+    }
+
+    const created = await db.duplicateNamedLeadFormTemplate({
+      formType: input.formType,
+      sourceTemplateName: input.sourceTemplateName,
+      newTemplateName: input.newTemplateName,
+      actorUserId: Number(ctx.user.id),
+    });
+
+    return {
+      ok: true,
+      token: created?.token,
+    };
+  }),
+
+}),
+
+formBlueprintAdmin: router({
+  list: hostProcedure
+    .input(
+      z.object({
+        formType: z.enum(["landing", "ad"]),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      assertHostOrHigher(ctx.user);
+      return db.listFormBlueprints(input.formType);
+    }),
+
+  getById: hostProcedure
+    .input(
+      z.object({
+        id: z.number(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      assertHostOrHigher(ctx.user);
+
+      const row = await db.getFormBlueprintById(input.id);
+      if (!row) {
+        throw new Error("뼈대를 찾을 수 없습니다.");
+      }
+
+      return row;
+    }),
+
+  create: hostProcedure
+    .input(
+      z.object({
+        formType: z.enum(["landing", "ad"]),
+        name: z.string().min(1),
+        description: z.string().nullable().optional(),
+        uiConfig: publicFormUiConfigSchema,
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      assertHostOrHigher(ctx.user);
+
+      const created = await db.createFormBlueprint({
+        formType: input.formType,
+        name: input.name,
+        description: input.description ?? null,
+        uiConfig: input.uiConfig,
+        createdBy: Number(ctx.user.id),
+      });
+
+      return {
+        ok: true,
+        blueprint: created,
+      };
+    }),
+
+  update: hostProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        name: z.string().optional(),
+        description: z.string().nullable().optional(),
+        uiConfig: publicFormUiConfigSchema.optional(),
+        isActive: z.boolean().optional(),
+        isDefault: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      assertHostOrHigher(ctx.user);
+
+      const updated = await db.updateFormBlueprint({
+        id: input.id,
+        name: input.name,
+        description: input.description,
+        uiConfig: input.uiConfig,
+        isActive: input.isActive,
+        isDefault: input.isDefault,
+      });
+
+      return {
+        ok: true,
+        blueprint: updated,
+      };
+    }),
+
+  delete: hostProcedure
+    .input(
+      z.object({
+        id: z.number(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      assertHostOrHigher(ctx.user);
+
+      await db.deleteFormBlueprint(input.id);
+
+      return {
+        ok: true,
+      };
+    }),
+
+  createFormFromBlueprint: hostProcedure
+    .input(
+      z.object({
+        blueprintId: z.number(),
+        assigneeId: z.number(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      assertHostOrHigher(ctx.user);
+
+      const created = await db.createLeadFormFromBlueprint({
+        blueprintId: input.blueprintId,
+        assigneeId: input.assigneeId,
+      });
+
+      return {
+        ok: true,
+        token: created.token,
+      };
     }),
 }),
 

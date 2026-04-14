@@ -125,7 +125,7 @@
 
   body {
     @apply bg-background text-foreground;
-    background: #edf1e8 !important;
+    background: #f5f6f8 !important;
   }
 
   button:not(:disabled),
@@ -143,18 +143,27 @@
   input,
   textarea,
   select {
-    background: #f7f9f4;
-    border-color: transparent;
-    box-shadow: inset 0 0 0 1px rgba(120, 130, 115, 0.08);
+    background: #f7f8fa;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.03),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    transition:
+      border-color 0.18s ease,
+      box-shadow 0.18s ease,
+      background-color 0.18s ease,
+      transform 0.18s ease;
   }
 
   input:focus,
   textarea:focus,
   select:focus {
     outline: none;
+    background: #ffffff;
+    border-color: rgba(15, 23, 42, 0.18);
     box-shadow:
-      inset 0 0 0 1px rgba(120, 130, 115, 0.12),
-      0 0 0 4px rgba(120, 130, 115, 0.05);
+      0 0 0 4px rgba(15, 23, 42, 0.05),
+      0 8px 22px rgba(15, 23, 42, 0.06);
   }
 }
 
@@ -170,6 +179,12 @@
   .flex {
     min-height: 0;
     min-width: 0;
+  }
+
+  .form-container {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 24px;
   }
 
   @media (min-width: 640px) {
@@ -191,17 +206,17 @@
 /* ===== 전체 레이아웃 톤 ===== */
 
 [data-slot="sidebar-inset"] {
-  background: #edf1e8 !important;
+  background: #f5f6f8 !important;
 }
 
 /* 카드 공통 */
 [data-slot="card"] {
-  background: #f7f9f4 !important;
-  border: 1px solid rgba(120, 130, 115, 0.12) !important;
+  background: #ffffff !important;
+  border: 1px solid rgba(15, 23, 42, 0.06) !important;
   border-radius: 1.75rem !important;
   box-shadow:
-    0 10px 24px rgba(120, 130, 115, 0.05),
-    0 2px 6px rgba(120, 130, 115, 0.03) !important;
+    0 18px 40px rgba(15, 23, 42, 0.05),
+    0 4px 12px rgba(15, 23, 42, 0.03) !important;
 }
 
 /* 카드 내부 작은 박스 */
@@ -211,12 +226,12 @@
   border-color: transparent !important;
 }
 
-/* 카드 안 연한 세이지 박스 */
+/* 카드 안 연한 박스 */
 [data-slot="card"] .bg-slate-50,
 [data-slot="card"] .bg-muted,
 [data-slot="card"] .bg-accent {
-  background: #eef2ea !important;
-  box-shadow: inset 0 0 0 1px rgba(120, 130, 115, 0.06);
+  background: #f7f8fa !important;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.05);
 }
 
 /* 내부 border 박스 */
@@ -225,28 +240,40 @@
 [data-slot="card"] .rounded-lg.border,
 [data-slot="card"] .rounded-md.border {
   border-color: transparent !important;
-  box-shadow: inset 0 0 0 1px rgba(120, 130, 115, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+}
+
+/* 폼 전용 카드 느낌 */
+.form-premium-card {
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-radius: 1.75rem;
+  box-shadow:
+    0 22px 50px rgba(15, 23, 42, 0.06),
+    0 6px 16px rgba(15, 23, 42, 0.04);
 }
 
 /* ===== 사이드바 ===== */
 
 [data-slot="sidebar-container"] {
-  background: #e2e8db !important;
-  border-right: 1px solid rgba(120, 130, 115, 0.1) !important;
+  background: #eef0f3 !important;
+  border-right: 1px solid rgba(15, 23, 42, 0.06) !important;
   box-shadow: none !important;
 }
 
 [data-slot="sidebar-inner"] {
-  background: #e2e8db !important;
+  background: #eef0f3 !important;
   border-right: none !important;
 }
 
 [data-slot="sidebar-menu-button"] {
   min-height: 40px;
   border: 1px solid transparent !important;
-  border-radius: 0.95rem !important;
-  background: rgba(247, 249, 244, 0.96) !important;
-  box-shadow: inset 0 0 0 1px rgba(120, 130, 115, 0.08);
+  border-radius: 1rem !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(15, 23, 42, 0.05),
+    0 1px 2px rgba(15, 23, 42, 0.02);
   transition:
     background-color 0.18s ease,
     box-shadow 0.18s ease,
@@ -254,17 +281,17 @@
 }
 
 [data-slot="sidebar-menu-button"]:hover {
-  background: #f4f7f1 !important;
+  background: #ffffff !important;
   box-shadow:
-    inset 0 0 0 1px rgba(120, 130, 115, 0.09),
-    0 8px 16px rgba(120, 130, 115, 0.05);
+    inset 0 0 0 1px rgba(15, 23, 42, 0.06),
+    0 10px 18px rgba(15, 23, 42, 0.05);
 }
 
 [data-slot="sidebar-menu-button"][data-active="true"] {
-  background: #edf2e8 !important;
+  background: #ffffff !important;
   box-shadow:
-    inset 0 0 0 1px rgba(120, 130, 115, 0.1),
-    0 10px 18px rgba(120, 130, 115, 0.06);
+    inset 0 0 0 1px rgba(15, 23, 42, 0.08),
+    0 12px 20px rgba(15, 23, 42, 0.06);
 }
 
 [data-slot="sidebar-menu-button"] > span {
@@ -280,29 +307,29 @@
 
 /* 서브메뉴 */
 .border-l {
-  border-left-color: rgba(120, 130, 115, 0.08) !important;
+  border-left-color: rgba(15, 23, 42, 0.07) !important;
 }
 
 /* ===== 상단 헤더 ===== */
 
 .sticky.top-0 {
-  border-bottom: 1px solid rgba(120, 130, 115, 0.07) !important;
-  background: rgba(237, 241, 232, 0.92) !important;
-  backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.05) !important;
+  background: rgba(245, 246, 248, 0.82) !important;
+  backdrop-filter: blur(16px);
 }
 
 /* ===== 오른쪽 고정 패널 / 메신저 ===== */
 
 aside.border-l {
-  border-left: 1px solid rgba(120, 130, 115, 0.08) !important;
-  background: #e2e8db !important;
+  border-left: 1px solid rgba(15, 23, 42, 0.06) !important;
+  background: #eef0f3 !important;
 }
 
 aside .rounded-xl.border,
 aside .rounded-lg.border {
   border-color: transparent !important;
-  background: rgba(247, 249, 244, 0.96) !important;
-  box-shadow: inset 0 0 0 1px rgba(120, 130, 115, 0.07);
+  background: rgba(255, 255, 255, 0.95) !important;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
 }
 
 /* ===== 캘린더 ===== */
@@ -311,8 +338,8 @@ aside .rounded-lg.border {
 [class*="calendar"] .border,
 [class*="Calendar"] .border {
   border-color: transparent !important;
-  box-shadow: inset 0 0 0 1px rgba(120, 130, 115, 0.07);
-  background: rgba(247, 249, 244, 0.96);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+  background: rgba(255, 255, 255, 0.96);
 }
 
 /* ===== outline 버튼류 ===== */
@@ -321,7 +348,105 @@ button.border,
 a.border,
 div.border {
   border-color: transparent !important;
-  box-shadow: inset 0 0 0 1px rgba(120, 130, 115, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.07);
+}
+
+/* ===== 프리미엄 입력 / 버튼 보조 클래스 ===== */
+
+.premium-input,
+.premium-select {
+  width: 100%;
+  height: 48px;
+  padding: 0 16px;
+  border-radius: 0.95rem;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #f7f8fa;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background-color 0.18s ease;
+}
+
+.premium-textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 14px 16px;
+  border-radius: 0.95rem;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #f7f8fa;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background-color 0.18s ease;
+}
+
+.premium-input:focus,
+.premium-select:focus,
+.premium-textarea:focus {
+  outline: none;
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.18);
+  box-shadow:
+    0 0 0 4px rgba(15, 23, 42, 0.05),
+    0 8px 22px rgba(15, 23, 42, 0.06);
+}
+
+.premium-submit-button {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 0.95rem;
+  color: #ffffff;
+  font-weight: 700;
+  box-shadow:
+    0 10px 22px rgba(15, 23, 42, 0.12),
+    0 2px 6px rgba(15, 23, 42, 0.08);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.premium-submit-button:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 14px 28px rgba(15, 23, 42, 0.14),
+    0 4px 10px rgba(15, 23, 42, 0.1);
+}
+
+.premium-submit-button:active {
+  transform: translateY(0);
+}
+
+/* ===== 모달 공통 ===== */
+
+.premium-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.38);
+  backdrop-filter: blur(8px);
+}
+
+.premium-modal-card {
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-radius: 1.5rem;
+  box-shadow:
+    0 28px 60px rgba(15, 23, 42, 0.16),
+    0 8px 20px rgba(15, 23, 42, 0.08);
+}
+
+/* ===== 비교 카드 ===== */
+
+.template-compare-current {
+  background: #f8fafc;
+  border-radius: 1rem;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.05);
+}
+
+.template-compare-next {
+  background: #f0fdf4;
+  border-radius: 1rem;
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.12);
 }
 
 /* ===== 텍스트 ===== */
@@ -381,14 +506,14 @@ div.border {
   margin: 1.4rem auto;
   border-radius: 1rem;
   object-fit: contain;
-  box-shadow: 0 8px 24px rgba(120, 130, 115, 0.08);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
 }
 
 .notice-content blockquote {
   margin: 1.2rem 0;
   padding: 1rem 1.2rem;
-  border-left: 4px solid #d7ddd1;
-  background: #f6f8f3;
+  border-left: 4px solid #dbe2ea;
+  background: #f8fafc;
   color: #334155;
   border-radius: 0.75rem;
 }
@@ -465,8 +590,8 @@ div.border {
 .notice-editor-content blockquote {
   margin: 1rem 0;
   padding: 0.9rem 1rem;
-  border-left: 4px solid #d7ddd1;
-  background: #f6f8f3;
+  border-left: 4px solid #dbe2ea;
+  background: #f8fafc;
   border-radius: 0.75rem;
   color: #334155;
 }
@@ -517,8 +642,8 @@ div.border {
   align-items: center;
   gap: 0.5rem;
   border: none;
-  background: #f6f8f3;
-  box-shadow: inset 0 0 0 1px rgba(120, 130, 115, 0.06);
+  background: #f8fafc;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
   border-radius: 0.9rem;
   padding: 0.75rem 1rem;
   color: #0f172a;
@@ -527,7 +652,7 @@ div.border {
 }
 
 .notice-attachments-block a:hover {
-  background: #f1f4ee;
+  background: #f1f5f9;
 }
 
 /* ===== 스크롤 ===== */
@@ -538,10 +663,57 @@ div.border {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(120, 130, 115, 0.14);
+  background: rgba(15, 23, 42, 0.14);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+.premium-ghost-button {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 0.9rem;
+  background: #ffffff;
+  color: #334155;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow:
+    0 4px 10px rgba(15, 23, 42, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    background-color 0.18s ease;
+}
+
+.premium-ghost-button:hover {
+  background: #f8fafc;
+  transform: translateY(-1px);
+  box-shadow:
+    0 8px 18px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.premium-ghost-button:active {
+  transform: translateY(0);
+}
+
+.premium-danger-button {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 0.9rem;
+  background: #fff1f2;
+  color: #be123c;
+  border: 1px solid rgba(244, 63, 94, 0.16);
+  box-shadow: 0 4px 10px rgba(244, 63, 94, 0.06);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    background-color 0.18s ease;
+}
+
+.premium-danger-button:hover {
+  background: #ffe4e6;
+  transform: translateY(-1px);
 }

@@ -1,4 +1,4 @@
-import { eq, and, sql, desc, asc } from "drizzle-orm";
+import { eq, and, sql, desc, like, asc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -15,6 +15,8 @@ import {
   InsertRefund,
   leadForms,
   InsertLeadForm,
+  formBlueprints,
+  InsertFormBlueprint,
   planSemesters,
   InsertPlanSemester,
   transferSubjects,
@@ -556,7 +558,574 @@ function getKSTMonthRange() {
   return { year, month, monthStart, monthEnd, today };
 }
 
+function safeJsonStringify(value: any) {
+  try {
+    return JSON.stringify(value ?? {});
+  } catch {
+    return "{}";
+  }
+}
+
+function parseUiConfigJson(value: any) {
+  if (!value) return {};
+  if (typeof value !== "string") return value;
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
+// ─── Form Blueprints ─────────────────────────────────────────────────
+
+export async function listFormBlueprints(formType: "landing" | "ad") {
+  const db = await getDb();
+  if (!db) return [];
+
+  const rows = await db
+    .select()
+    .from(formBlueprints)
+    .where(eq(formBlueprints.formType, formType))
+    .orderBy(desc(formBlueprints.isDefault), desc(formBlueprints.id));
+
+  return rows.map((row: any) => ({
+    ...row,
+    uiConfig: parseUiConfigJson(row.uiConfigJson),
+  }));
+}
+
+export async function getFormBlueprintById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const rows = await db
+    .select()
+    .from(formBlueprints)
+    .where(eq(formBlueprints.id, id))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) return null;
+
+  return {
+    ...row,
+    uiConfig: parseUiConfigJson(row.uiConfigJson),
+  };
+}
+
+export async function createFormBlueprint(input: {
+  formType: "landing" | "ad";
+  name: string;
+  description?: string | null;
+  uiConfig: any;
+  createdBy: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const exists = await db
+    .select()
+    .from(formBlueprints)
+    .where(
+      and(
+        eq(formBlueprints.formType, input.formType),
+        eq(formBlueprints.name, input.name.trim())
+      )
+    )
+    .limit(1);
+
+  if (exists[0]) {
+    throw new Error("같은 이름의 뼈대가 이미 존재합니다.");
+  }
+
+  const result: any = await db.insert(formBlueprints).values({
+    formType: input.formType,
+    name: input.name.trim(),
+    description: input.description?.trim() || null,
+    uiConfigJson: safeJsonStringify(input.uiConfig),
+    isActive: true,
+    isDefault: false,
+    createdBy: input.createdBy,
+  } as any);
+
+  const insertedId = Number(getInsertId(result));
+  return getFormBlueprintById(insertedId);
+}
+
+export async function updateFormBlueprint(input: {
+  id: number;
+  name?: string;
+  description?: string | null;
+  uiConfig?: any;
+  isActive?: boolean;
+  isDefault?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const target = await getFormBlueprintById(input.id);
+  if (!target) {
+    throw new Error("수정할 뼈대를 찾을 수 없습니다.");
+  }
+
+  if (input.name && input.name.trim() !== target.name) {
+    const exists = await db
+      .select()
+      .from(formBlueprints)
+      .where(
+        and(
+          eq(formBlueprints.formType, target.formType),
+          eq(formBlueprints.name, input.name.trim())
+        )
+      )
+      .limit(1);
+
+    if (exists[0] && Number(exists[0].id) !== Number(input.id)) {
+      throw new Error("같은 이름의 뼈대가 이미 존재합니다.");
+    }
+  }
+
+  await db
+    .update(formBlueprints)
+    .set({
+      name: input.name?.trim() || undefined,
+      description:
+        input.description === undefined
+          ? undefined
+          : input.description?.trim() || null,
+      uiConfigJson:
+        input.uiConfig === undefined
+          ? undefined
+          : safeJsonStringify(input.uiConfig),
+      isActive:
+        input.isActive === undefined ? undefined : Boolean(input.isActive),
+      isDefault:
+        input.isDefault === undefined ? undefined : Boolean(input.isDefault),
+    } as any)
+    .where(eq(formBlueprints.id, input.id));
+
+  return getFormBlueprintById(input.id);
+}
+
+export async function deleteFormBlueprint(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const target = await getFormBlueprintById(id);
+  if (!target) {
+    throw new Error("삭제할 뼈대를 찾을 수 없습니다.");
+  }
+
+  await db.delete(formBlueprints).where(eq(formBlueprints.id, id));
+
+  return {
+    ok: true,
+    id,
+  };
+}
+
+export async function createLeadFormFromBlueprint(input: {
+  blueprintId: number;
+  assigneeId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const blueprint = await getFormBlueprintById(input.blueprintId);
+  if (!blueprint) {
+    throw new Error("뼈대를 찾을 수 없습니다.");
+  }
+
+  const token =
+    blueprint.formType === "ad"
+      ? `ad_${Math.random().toString(36).slice(2, 12)}`
+      : `lf_${Math.random().toString(36).slice(2, 12)}`;
+
+  await db.insert(leadForms).values({
+    assigneeId: input.assigneeId,
+    token,
+    formType: blueprint.formType,
+    isActive: true,
+    uiConfigJson: safeJsonStringify(blueprint.uiConfig),
+    blueprintId: Number(blueprint.id),
+    sourceBlueprintName: blueprint.name,
+  } as any);
+
+  return { token };
+}
+
 // ─── Lead Forms ──────────────────────────────────────────────────────
+function getLeadFormTemplateToken(formType: "landing" | "ad") {
+  return formType === "ad" ? "__template_ad__" : "__template_landing__";
+}
+
+export async function getLeadFormTemplate(formType: "landing" | "ad") {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const token = getLeadFormTemplateToken(formType);
+
+  const result = await db
+    .select()
+    .from(leadForms)
+    .where(
+      and(
+        eq(leadForms.formType, formType),
+        eq(leadForms.token, token)
+      )
+    )
+    .limit(1);
+
+  return result[0];
+}
+
+export async function saveLeadFormTemplate(params: {
+  formType: "landing" | "ad";
+  actorUserId: number;
+  uiConfig: any;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const token = getLeadFormTemplateToken(params.formType);
+  const existing = await getLeadFormTemplate(params.formType);
+
+  if (existing) {
+    await db
+      .update(leadForms)
+      .set({
+        assigneeId: params.actorUserId,
+        isActive: false,
+        uiConfigJson: JSON.stringify(params.uiConfig),
+      } as any)
+      .where(eq(leadForms.id, existing.id));
+
+    return existing.id;
+  }
+
+  const result: any = await db.insert(leadForms).values({
+    assigneeId: params.actorUserId,
+    token,
+    formType: params.formType,
+    isActive: false,
+    uiConfigJson: JSON.stringify(params.uiConfig),
+  } as any);
+
+  return getInsertId(result);
+}
+
+export async function saveNamedLeadFormTemplate(input: {
+  formType: "landing" | "ad";
+  templateName: string;
+  uiConfig: any;
+  actorUserId?: number | null;
+}) {
+  const db = await getDb();
+
+  const token = getNamedLeadFormTemplateToken(input.formType, input.templateName);
+  const uiConfigJson = JSON.stringify(input.uiConfig || {});
+
+  const existing = await db
+    .select()
+    .from(leadForms)
+    .where(eq(leadForms.token, token))
+    .limit(1);
+
+  if (existing[0]) {
+    await db
+  .update(leadForms)
+  .set({
+    uiConfigJson,
+  } as any)
+  .where(eq(leadForms.id, existing[0].id));
+
+    return {
+      ...existing[0],
+      token,
+      uiConfigJson,
+    };
+  }
+
+ await db.insert(leadForms).values({
+  formType: input.formType,
+  token,
+  uiConfigJson,
+  assigneeId: input.actorUserId ?? 0,
+  isActive: false,
+} as any);
+
+  const created = await db
+    .select()
+    .from(leadForms)
+    .where(eq(leadForms.token, token))
+    .limit(1);
+
+  return created[0];
+}
+
+function safeJsonParse(value: any) {
+  if (!value) return null;
+  if (typeof value !== "string") return value;
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+export async function applyNamedLeadFormTemplateToToken(input: {
+  formType: "landing" | "ad";
+  templateName: string;
+  targetToken: string;
+  actorUserId: number;
+}) {
+  const db = await getDb();
+
+  const template = await getNamedLeadFormTemplate(input.formType, input.templateName);
+  if (!template) {
+    throw new Error("템플릿을 찾을 수 없습니다.");
+  }
+
+  const targetRows = await db
+    .select()
+    .from(leadForms)
+    .where(eq(leadForms.token, input.targetToken))
+    .limit(1);
+
+  const target = targetRows[0];
+  if (!target) {
+    throw new Error("대상 폼을 찾을 수 없습니다.");
+  }
+
+  if (target.formType !== input.formType) {
+    throw new Error("폼 타입이 맞지 않습니다.");
+  }
+
+  await updateMyLeadFormUiConfig({
+    token: input.targetToken,
+    userId: input.actorUserId,
+    uiConfig: safeJsonParse(template.uiConfigJson),
+  });
+
+  const updated = await db
+    .select()
+    .from(leadForms)
+    .where(eq(leadForms.token, input.targetToken))
+    .limit(1);
+
+  return updated[0];
+}
+
+
+export async function deleteNamedLeadFormTemplate(
+  formType: "landing" | "ad",
+  templateName: string
+) {
+  const db = await getDb();
+  const token = getNamedLeadFormTemplateToken(formType, templateName);
+
+  const existing = await db
+    .select()
+    .from(leadForms)
+    .where(eq(leadForms.token, token))
+    .limit(1);
+
+  if (!existing[0]) {
+    throw new Error("삭제할 템플릿을 찾을 수 없습니다.");
+  }
+
+  await db.delete(leadForms).where(eq(leadForms.id, existing[0].id));
+
+  return {
+    ok: true,
+    token,
+  };
+}
+
+export async function renameNamedLeadFormTemplate(input: {
+  formType: "landing" | "ad";
+  oldTemplateName: string;
+  newTemplateName: string;
+}) {
+  const dbConn = await getDb();
+
+  const oldToken = getNamedLeadFormTemplateToken(
+    input.formType,
+    input.oldTemplateName
+  );
+
+  const newToken = getNamedLeadFormTemplateToken(
+    input.formType,
+    input.newTemplateName
+  );
+
+  if (oldToken === newToken) {
+    throw new Error("이전 이름과 새 이름이 같습니다.");
+  }
+
+  const existingOld = await dbConn
+    .select()
+    .from(leadForms)
+    .where(eq(leadForms.token, oldToken))
+    .limit(1);
+
+  if (!existingOld[0]) {
+    throw new Error("변경할 템플릿을 찾을 수 없습니다.");
+  }
+
+  const existingNew = await dbConn
+    .select()
+    .from(leadForms)
+    .where(eq(leadForms.token, newToken))
+    .limit(1);
+
+  if (existingNew[0]) {
+    throw new Error("같은 이름의 템플릿이 이미 존재합니다.");
+  }
+
+  await dbConn
+  .update(leadForms)
+  .set({
+    token: newToken,
+  } as any)
+  .where(eq(leadForms.id, existingOld[0].id));
+
+  const updated = await dbConn
+    .select()
+    .from(leadForms)
+    .where(eq(leadForms.id, existingOld[0].id))
+    .limit(1);
+
+  return updated[0];
+}
+
+export async function duplicateNamedLeadFormTemplate(input: {
+  formType: "landing" | "ad";
+  sourceTemplateName: string;
+  newTemplateName: string;
+  actorUserId?: number | null;
+}) {
+  const dbConn = await getDb();
+
+  const sourceToken = getNamedLeadFormTemplateToken(
+    input.formType,
+    input.sourceTemplateName
+  );
+
+  const newToken = getNamedLeadFormTemplateToken(
+    input.formType,
+    input.newTemplateName
+  );
+
+  if (sourceToken === newToken) {
+    throw new Error("복제할 새 이름이 기존 이름과 같습니다.");
+  }
+
+  const sourceRows = await dbConn
+    .select()
+    .from(leadForms)
+    .where(eq(leadForms.token, sourceToken))
+    .limit(1);
+
+  const source = sourceRows[0];
+  if (!source) {
+    throw new Error("복제할 템플릿을 찾을 수 없습니다.");
+  }
+
+  const existingNew = await dbConn
+    .select()
+    .from(leadForms)
+    .where(eq(leadForms.token, newToken))
+    .limit(1);
+
+  if (existingNew[0]) {
+    throw new Error("같은 이름의 템플릿이 이미 존재합니다.");
+  }
+
+  await dbConn.insert(leadForms).values({
+  formType: input.formType,
+  token: newToken,
+  uiConfigJson: source.uiConfigJson,
+  assigneeId: input.actorUserId ?? source.assigneeId ?? 0,
+  isActive: false,
+} as any);
+
+  const created = await dbConn
+    .select()
+    .from(leadForms)
+    .where(eq(leadForms.token, newToken))
+    .limit(1);
+
+  return created[0];
+}
+
+export async function getNamedLeadFormTemplate(
+  formType: "landing" | "ad",
+  templateName: string
+) {
+  const db = await getDb();
+  const token = getNamedLeadFormTemplateToken(formType, templateName);
+
+  const rows = await db
+    .select()
+    .from(leadForms)
+    .where(eq(leadForms.token, token))
+    .limit(1);
+
+  return rows[0] || null;
+}
+
+function normalizeTemplateName(templateName: string) {
+  return String(templateName || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_가-힣-]/g, "");
+}
+
+export async function listLeadFormTemplates(formType: "landing" | "ad") {
+  const db = await getDb();
+
+  const prefix = `__template_${formType}_`;
+
+  const rows = await db
+    .select()
+    .from(leadForms)
+    .where(
+      and(
+        eq(leadForms.formType, formType),
+        like(leadForms.token, `${prefix}%`)
+      )
+    )
+    .orderBy(desc(leadForms.id));
+
+  return rows.map((row) => {
+    const token = String(row.token || "");
+    const name = token
+      .replace(`__template_${formType}_`, "")
+      .replace(/__$/, "");
+
+    return {
+      ...row,
+      templateName: name,
+    };
+  });
+}
+
+export function getNamedLeadFormTemplateToken(
+  formType: "landing" | "ad",
+  templateName: string
+) {
+  const safeName = normalizeTemplateName(templateName);
+  if (!safeName) {
+    throw new Error("템플릿 이름이 비어 있습니다.");
+  }
+
+  return `__template_${formType}_${safeName}__`;
+}
+
 export async function getLeadFormByToken(token: string) {
   const db = await getDb();
   if (!db) return undefined;
@@ -604,21 +1173,86 @@ export async function getPublicFormByToken(
 
   const assignee = userResult[0];
 
-  return {
-    ok: true,
-    form,
-    assigneeId: form.assigneeId,
-    assigneeName: assignee?.name ?? "",
-    phone: assignee?.phone ?? "",
+ return {
+  ok: true,
+  form,
+  assigneeId: form.assigneeId,
+  assigneeName: assignee?.name ?? "",
+  phone: assignee?.phone ?? "",
+  uiConfig: form.uiConfigJson
+    ? JSON.parse(form.uiConfigJson)
+    : {}, 
+};
   };
+}
+export async function updateLeadFormUiConfig(
+  id: number,
+  uiConfig: any
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(leadForms)
+    .set({
+      uiConfigJson: JSON.stringify(uiConfig),
+    } as any)
+    .where(eq(leadForms.id, id));
+}
+
+export async function updateMyLeadFormUiConfig(params: {
+  token: string;
+  formType: "landing" | "ad";
+  userId: number;
+  uiConfig: any;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result = await db
+    .select()
+    .from(leadForms)
+    .where(
+      and(
+        eq(leadForms.token, params.token),
+        eq(leadForms.formType, params.formType)
+      )
+    )
+    .limit(1);
+
+  const form = result[0];
+
+  if (!form) {
+    throw new Error("폼을 찾을 수 없습니다.");
+  }
+
+  if (Number(form.assigneeId) !== Number(params.userId)) {
+    throw new Error("본인에게 배정된 페이지만 수정할 수 있습니다.");
+  }
+
+  await db
+    .update(leadForms)
+    .set({
+      uiConfigJson: JSON.stringify(params.uiConfig),
+    } as any)
+    .where(eq(leadForms.id, form.id));
+
+  return form.id;
 }
 
 export async function listLeadForms(formType: "landing" | "ad") {
   const db = await getDb();
+  if (!db) return [];
+
   return db
     .select()
     .from(leadForms)
-    .where(eq(leadForms.formType, formType))
+    .where(
+      and(
+        eq(leadForms.formType, formType),
+        sql`${leadForms.token} NOT LIKE '__template%'`
+      )
+    )
     .orderBy(desc(leadForms.id));
 }
 
@@ -627,17 +1261,43 @@ export async function createLeadForm(
   formType: "landing" | "ad"
 ) {
   const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const template = await getLeadFormTemplate(formType);
+
   const token =
     formType === "ad"
       ? `ad_${Math.random().toString(36).slice(2, 12)}`
       : `lf_${Math.random().toString(36).slice(2, 12)}`;
+
+  const fallbackUiConfig = {
+    title: "",
+    subtitle: "",
+    logoUrl: "",
+    heroImageUrl: "",
+    primaryColor: "#2563eb",
+    submitButtonText: "신청하기",
+    agreementText: "개인정보 수집 및 이용에 동의합니다.",
+    layoutType: "card",
+    fields: [],
+    mapping: {},
+    description: "",
+    tags: "",
+  };
+
+  const uiConfigJson = template?.uiConfigJson
+    ? template.uiConfigJson
+    : JSON.stringify(fallbackUiConfig);
 
   await db.insert(leadForms).values({
     assigneeId,
     token,
     formType,
     isActive: true,
-  });
+    uiConfigJson,
+    blueprintId: null,
+    sourceBlueprintName: null,
+  } as any);
 
   return { token };
 }
