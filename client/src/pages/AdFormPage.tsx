@@ -987,6 +987,6 @@ const handleTogglePinTemplate = () => {
     )}
   </div>
 )}
-      
+     </div> 
   );
 }
