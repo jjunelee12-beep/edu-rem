@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Eye, Search, Loader2, Trash2, Filter } from "lucide-react";
+import { Eye, Search, Loader2, Filter } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { formatPhone } from "@/lib/format";
@@ -37,14 +37,6 @@ export default function Students() {
 
   const updateMut = trpc.student.update.useMutation({
     onSuccess: () => utils.student.list.invalidate(),
-    onError: (e) => toast.error(e.message),
-  });
-
-  const deleteMut = trpc.student.delete.useMutation({
-    onSuccess: () => {
-      utils.student.list.invalidate();
-      toast.success("삭제 완료");
-    },
     onError: (e) => toast.error(e.message),
   });
 
@@ -269,20 +261,15 @@ export default function Students() {
             <tbody>
               {filtered.map((s: any, idx: number) => (
                 <StudentInlineRow
-                  key={s.id}
-                  item={s}
-                  rowNum={idx + 1}
-                  isAdmin={!!isAdmin}
-                  isHost={!!isHost}
-                  userMap={userMap}
-                  onBlur={handleCellBlur}
-                  onDetail={(id) => setLocation(`/students/${id}`)}
-                  onDelete={(id) => {
-                    if (!isHost) return;
-                    if (confirm("정말 삭제하시겠습니까?")) deleteMut.mutate({ id });
-                  }}
-                  handlePhoneInput={handlePhoneInput}
-                />
+  key={s.id}
+  item={s}
+  rowNum={idx + 1}
+  isAdmin={!!isAdmin}
+  userMap={userMap}
+  onBlur={handleCellBlur}
+  onDetail={(id) => setLocation(`/students/${id}`)}
+  handlePhoneInput={handlePhoneInput}
+/>
               ))}
 
               {!filtered.length && (
@@ -311,21 +298,17 @@ function StudentInlineRow({
   item,
   rowNum,
   isAdmin,
-  isHost,
   userMap,
   onBlur,
   onDetail,
-  onDelete,
   handlePhoneInput,
 }: {
   item: any;
   rowNum: number;
   isAdmin: boolean;
-  isHost: boolean;
   userMap: Map<number, string>;
   onBlur: (id: number, field: string, value: string) => void;
   onDetail: (id: number) => void;
-  onDelete: (id: number) => void;
   handlePhoneInput: (v: string) => string;
 }) {
   const isCompleted = isClosedStatus(item.status);
@@ -333,7 +316,6 @@ function StudentInlineRow({
   const paidAmount = Number(item.paidAmount || 0);
   const approvedRefundAmount = Number(item.approvedRefundAmount || 0);
   const netPaidAmount = Number(item.netPaidAmount || paidAmount - approvedRefundAmount || 0);
-  const canDelete = isHost;
 
 const displayStatus =
   item.approvalStatus === "승인"
@@ -437,30 +419,17 @@ const displayStatus =
       )}
 
       <td className="px-1 py-0.5">
-        <div className="flex items-center gap-0.5">
-          <button
-            className="p-1 hover:bg-muted rounded transition-colors"
-            onClick={() => onDetail(item.id)}
-          >
-            <Eye className="h-3.5 w-3.5 text-muted-foreground" />
-          </button>
+  <div className="flex items-center gap-0.5">
+    <button
+      className="p-1 hover:bg-muted rounded transition-colors"
+      onClick={() => onDetail(item.id)}
+      title="상세보기"
+    >
+      <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+    </button>
+  </div>
+</td>
 
-          <button
-            className={`p-1 rounded transition-opacity ${
-              canDelete
-                ? "opacity-0 group-hover:opacity-100 hover:bg-red-50"
-                : "cursor-not-allowed"
-            }`}
-            onClick={() => canDelete && onDelete(item.id)}
-            disabled={!canDelete}
-            title={canDelete ? "삭제" : "호스트만 삭제할 수 있습니다."}
-          >
-            <Trash2
-              className={`h-3.5 w-3.5 ${canDelete ? "text-red-400" : "text-gray-300"}`}
-            />
-          </button>
-        </div>
-      </td>
     </tr>
   );
 }

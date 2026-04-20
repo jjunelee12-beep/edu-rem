@@ -1638,6 +1638,11 @@ getSettings: protectedProcedure.query(async () => {
       .mutation(async ({ ctx }) => {
         return await db.backfillSettlementItems(Number(ctx.user.id));
       }),
+
+cleanupOrphanSettlementItems: hostProcedure
+  .mutation(async () => {
+    return await db.cleanupOrphanSettlementItems();
+  }),
   }),
 
   ai: router({
@@ -2833,24 +2838,22 @@ categoryId: z.number().nullable().optional(),
       }),
 
     delete: hostProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ ctx, input }) => {
-        const item = await db.getConsultation(input.id);
+  .input(z.object({ id: z.number() }))
+  .mutation(async ({ ctx, input }) => {
+    const item = await db.getConsultation(input.id);
 
-        if (!item) {
-          throw new Error("상담 기록을 찾을 수 없습니다");
-        }
+    if (!item) {
+      throw new Error("상담 기록을 찾을 수 없습니다");
+    }
 
-        const myId = Number(ctx.user.id) || 1;
 
-        if (!isAdminOrHost(ctx.user) && item.assigneeId !== myId) {
-          throw new Error("권한이 없습니다");
-        }
+    assertHostOrSuperhost(ctx.user);
 
-        await db.deleteConsultation(input.id);
 
-        return { success: true };
-      }),
+    await db.deleteConsultation(input.id);
+
+    return { success: true };
+  }),
   }),
 
   student: router({
@@ -2977,19 +2980,10 @@ categoryId: z.number().nullable().optional(),
       }),
 
     delete: protectedProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ ctx, input }) => {
-        const item = await db.getStudent(input.id);
-        if (!item) throw new Error("학생 기록을 찾을 수 없습니다");
-
-        const myId = Number(ctx.user.id) || 1;
-        if (!isAdminOrHost(ctx.user) && item.assigneeId !== myId) {
-          throw new Error("권한이 없습니다");
-        }
-
-        await db.deleteStudent(input.id);
-        return { success: true };
-      }),
+  .input(z.object({ id: z.number() }))
+  .mutation(async () => {
+    throw new Error("학생 삭제는 상담 DB 페이지에서만 가능합니다.");
+  }),
 
 approve: protectedProcedure
   .input(

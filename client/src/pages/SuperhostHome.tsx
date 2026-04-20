@@ -49,6 +49,33 @@ const backfillMutation =
       alert(err?.message || "정산 원장 재생성 중 오류가 발생했습니다.");
     },
   });
+
+const cleanupOrphanMutation =
+  trpc.settlementSystem.cleanupOrphanSettlementItems.useMutation({
+    onSuccess: (res) => {
+      console.log("고아 정산 정리 완료:", res);
+
+      alert(
+        [
+          "고아 정산 데이터 정리 완료",
+          `검사 대상: ${res.summary.checkedSettlementItems}건`,
+          `삭제된 정산: ${res.summary.deletedSettlementItems}건`,
+          `삭제된 로그: ${res.summary.deletedSettlementLogs}건`,
+          `학생 원본 없음: ${res.summary.orphanStudentItems}건`,
+          `학기 원본 없음: ${res.summary.orphanSemesterItems}건`,
+          `실습 원본 없음: ${res.summary.orphanPracticeItems}건`,
+          `민간자격증 원본 없음: ${res.summary.orphanPrivateCertificateItems}건`,
+          `건너뜀: ${res.summary.skippedRows}건`,
+        ].join("\n")
+      );
+    },
+    onError: (err) => {
+      console.error(err);
+      alert(err?.message || "고아 정산 데이터 정리 중 오류가 발생했습니다.");
+    },
+  });
+
+
   const stats = useMemo(
     () => [
       {
@@ -116,29 +143,48 @@ const backfillMutation =
   </div>
 
   <div className="flex items-center gap-2">
-    <Button
-  variant="destructive"
-  onClick={() => {
-    if (
-      !confirm(
-        "기존 정산 데이터를 현재 계산식 기준으로 다시 계산합니다. 진행하시겠습니까?"
+  <Button
+    variant="destructive"
+    onClick={() => {
+      if (
+        !confirm(
+          "기존 정산 데이터를 현재 계산식 기준으로 다시 계산합니다. 진행하시겠습니까?"
+        )
       )
-    )
-      return;
+        return;
 
-    backfillMutation.mutate();
-  }}
-  disabled={backfillMutation.isPending}
->
-  {backfillMutation.isPending
-    ? "재생성 중..."
-    : "정산 원장 재생성"}
-</Button>
+      backfillMutation.mutate();
+    }}
+    disabled={backfillMutation.isPending || cleanupOrphanMutation.isPending}
+  >
+    {backfillMutation.isPending
+      ? "재생성 중..."
+      : "정산 원장 재생성"}
+  </Button>
 
-    <div className="text-xs text-muted-foreground">
-      접속 계정: {user?.name || user?.username || "-"}
-    </div>
+  <Button
+    variant="outline"
+    onClick={() => {
+      if (
+        !confirm(
+          "상담DB에 남아 있는 정상 데이터는 건드리지 않고, 학생/학기/실습/민간자격증 원본이 이미 없는 고아 정산 데이터만 정리합니다.\n\n진행하시겠습니까?"
+        )
+      )
+        return;
+
+      cleanupOrphanMutation.mutate();
+    }}
+    disabled={cleanupOrphanMutation.isPending || backfillMutation.isPending}
+  >
+    {cleanupOrphanMutation.isPending
+      ? "정리 중..."
+      : "고아 정산 데이터 정리"}
+  </Button>
+
+  <div className="text-xs text-muted-foreground">
+    접속 계정: {user?.name || user?.username || "-"}
   </div>
+</div>
 </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

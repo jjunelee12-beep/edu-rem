@@ -1682,6 +1682,15 @@ export async function deleteConsultation(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const linkedStudents = await db
+    .select({ id: students.id })
+    .from(students)
+    .where(eq(students.consultationId, id));
+
+  for (const row of linkedStudents) {
+    await deleteStudentCascadeById(Number(row.id));
+  }
+
   await db.delete(consultations).where(eq(consultations.id, id));
 }
 
@@ -2243,10 +2252,114 @@ export async function updateStudentAddressAndCoords(params: {
 }
 
 export async function deleteStudent(id: number) {
+  throw new Error("학생 삭제는 상담 DB에서만 가능합니다.");
+}
+
+export async function deleteStudentCascadeById(studentId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.delete(students).where(eq(students.id, id));
+  const student = await getStudent(studentId);
+  if (!student) return false;
+
+  // 1) semester id 먼저 수집
+  const studentSemesters = await db
+    .select({ id: semesters.id })
+    .from(semesters)
+    .where(eq(semesters.studentId, studentId));
+
+  const semesterIds = studentSemesters.map((x: any) => Number(x.id)).filter(Boolean);
+
+  // 2) settlement_items 로그 먼저 삭제
+  const studentSettlementRows = await db
+    .select({ id: settlementItems.id })
+    .from(settlementItems)
+    .where(eq(settlementItems.studentId, studentId));
+
+  const settlementIds = studentSettlementRows
+    .map((x: any) => Number(x.id))
+    .filter(Boolean);
+
+  for (const settlementItemId of settlementIds) {
+    await db
+      .delete(settlementItemLogs)
+      .where(eq(settlementItemLogs.settlementItemId, settlementItemId));
+  }
+
+  // 3) semester 기반 settlement 로그/정산도 삭제
+  for (const semesterId of semesterIds) {
+    const semesterSettlementRows = await db
+      .select({ id: settlementItems.id })
+      .from(settlementItems)
+      .where(
+        and(
+          eq(settlementItems.revenueType, "subject"),
+          eq(settlementItems.sourceId, semesterId)
+        )
+      );
+
+    const semesterSettlementIds = semesterSettlementRows
+      .map((x: any) => Number(x.id))
+      .filter(Boolean);
+
+    for (const settlementItemId of semesterSettlementIds) {
+      await db
+        .delete(settlementItemLogs)
+        .where(eq(settlementItemLogs.settlementItemId, settlementItemId));
+    }
+
+    await db
+      .delete(settlementItems)
+      .where(
+        and(
+          eq(settlementItems.revenueType, "subject"),
+          eq(settlementItems.sourceId, semesterId)
+        )
+      );
+  }
+
+  // 4) studentId 기준 settlement 삭제
+  await db.delete(settlementItems).where(eq(settlementItems.studentId, studentId));
+
+  // 5) 실습배정지원 정산/원본 삭제
+  const practiceRows = await db
+    .select({ id: practiceSupportRequests.id })
+    .from(practiceSupportRequests)
+    .where(eq(practiceSupportRequests.studentId, studentId));
+
+  for (const row of practiceRows) {
+    await deletePracticeSupportRequest(Number(row.id));
+  }
+
+  // 6) 민간자격증 정산/원본 삭제
+  const privateCertRows = await db
+    .select({ id: privateCertificateRequests.id })
+    .from(privateCertificateRequests)
+    .where(eq(privateCertificateRequests.studentId, studentId));
+
+  for (const row of privateCertRows) {
+    await deletePrivateCertificateRequest(Number(row.id));
+  }
+
+  // 7) 환불 삭제
+  await db.delete(refunds).where(eq(refunds.studentId, studentId));
+
+  // 8) 전적대 과목 삭제
+  await db.delete(transferSubjects).where(eq(transferSubjects.studentId, studentId));
+
+  // 9) 우리플랜 학기 삭제
+  await db.delete(planSemesters).where(eq(planSemesters.studentId, studentId));
+
+  // 10) 우리플랜 삭제
+  await db.delete(plans).where(eq(plans.studentId, studentId));
+
+  // 11) 학기 삭제
+  await db.delete(semesters).where(eq(semesters.studentId, studentId));
+
+  // 12) 마지막에 학생 삭제
+  await db.delete(students).where(eq(students.id, studentId));
+
+  return true;
 }
 
 // ─── Semesters ───────────────────────────────────────────────────────
@@ -3965,6 +4078,134 @@ export async function getStudentPaymentSummary(studentId: number) {
     totalRefund,
     netPaid,
     remainingAmount,
+  };
+}
+
+export async function cleanupOrphanSettlementItems() {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const summary = {
+    checkedSettlementItems: 0,
+    deletedSettlementItems: 0,
+    deletedSettlementLogs: 0,
+    orphanStudentItems: 0,
+    orphanSemesterItems: 0,
+    orphanPracticeItems: 0,
+    orphanPrivateCertificateItems: 0,
+    skippedRows: 0,
+  };
+
+  const orphanSettlementIds = new Set<number>();
+
+  // 1) studentId는 있는데 students 원본이 없는 정산
+  const studentRows = await db.execute(sql`
+    SELECT si.id
+    FROM settlement_items si
+    LEFT JOIN students s ON s.id = si.studentId
+    WHERE si.studentId IS NOT NULL
+      AND s.id IS NULL
+  `);
+
+  for (const row of (studentRows as any)[0] || []) {
+    orphanSettlementIds.add(Number(row.id));
+    summary.orphanStudentItems += 1;
+  }
+
+  // 2) 일반과목(subject)인데 semester 원본이 없는 정산
+  const semesterRows = await db.execute(sql`
+    SELECT si.id
+    FROM settlement_items si
+    LEFT JOIN semesters sem
+      ON sem.id = si.sourceId
+    WHERE si.revenueType = 'subject'
+      AND si.sourceId IS NOT NULL
+      AND sem.id IS NULL
+  `);
+
+  for (const row of (semesterRows as any)[0] || []) {
+    orphanSettlementIds.add(Number(row.id));
+    summary.orphanSemesterItems += 1;
+  }
+
+  // 3) 실습배정(practice_support)인데 원본 request가 없는 정산
+  const practiceRows = await db.execute(sql`
+    SELECT si.id
+    FROM settlement_items si
+    LEFT JOIN practice_support_requests psr
+      ON psr.id = si.sourceId
+    WHERE si.revenueType = 'practice_support'
+      AND si.sourceId IS NOT NULL
+      AND psr.id IS NULL
+  `);
+
+  for (const row of (practiceRows as any)[0] || []) {
+    orphanSettlementIds.add(Number(row.id));
+    summary.orphanPracticeItems += 1;
+  }
+
+  // 4) 민간자격증(private_certificate)인데 원본 request가 없는 정산
+  const privateCertificateRows = await db.execute(sql`
+    SELECT si.id
+    FROM settlement_items si
+    LEFT JOIN private_certificate_requests pcr
+      ON pcr.id = si.sourceId
+    WHERE si.revenueType = 'private_certificate'
+      AND si.sourceId IS NOT NULL
+      AND pcr.id IS NULL
+  `);
+
+  for (const row of (privateCertificateRows as any)[0] || []) {
+    orphanSettlementIds.add(Number(row.id));
+    summary.orphanPrivateCertificateItems += 1;
+  }
+
+  const finalIds = Array.from(orphanSettlementIds).filter(
+    (id) => Number.isFinite(id) && id > 0
+  );
+
+  summary.checkedSettlementItems = finalIds.length;
+
+  if (finalIds.length === 0) {
+    return {
+      success: true,
+      summary,
+      deletedIds: [],
+    };
+  }
+
+  for (const settlementItemId of finalIds) {
+    const logDeleteResult: any = await db
+      .delete(settlementItemLogs)
+      .where(eq(settlementItemLogs.settlementItemId, settlementItemId));
+
+    const deletedLogCount =
+      Number(logDeleteResult?.rowsAffected || 0) ||
+      Number(logDeleteResult?.[0]?.affectedRows || 0) ||
+      0;
+
+    summary.deletedSettlementLogs += deletedLogCount;
+
+    const settlementDeleteResult: any = await db
+      .delete(settlementItems)
+      .where(eq(settlementItems.id, settlementItemId));
+
+    const deletedSettlementCount =
+      Number(settlementDeleteResult?.rowsAffected || 0) ||
+      Number(settlementDeleteResult?.[0]?.affectedRows || 0) ||
+      0;
+
+    if (deletedSettlementCount > 0) {
+      summary.deletedSettlementItems += deletedSettlementCount;
+    } else {
+      summary.skippedRows += 1;
+    }
+  }
+
+  return {
+    success: true,
+    summary,
+    deletedIds: finalIds,
   };
 }
 

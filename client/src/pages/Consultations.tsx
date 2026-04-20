@@ -106,13 +106,14 @@ const canOverrideRegisteredStatus = isHost || isSuperHost;
     onError: (e) => toast.error(e.message),
   });
 
-  const deleteMut = trpc.consultation.delete.useMutation({
-    onSuccess: () => {
-      utils.consultation.list.invalidate();
-      toast.success("삭제 완료");
-    },
-    onError: (e) => toast.error(e.message),
-  });
+ const deleteMut = trpc.consultation.delete.useMutation({
+  onSuccess: () => {
+    utils.consultation.list.invalidate();
+    utils.student.list.invalidate();
+    toast.success("상담 및 연결된 학생/정산 데이터 삭제 완료");
+  },
+  onError: (e) => toast.error(e.message),
+});
 
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
@@ -785,11 +786,16 @@ const canOverrideRegisteredStatus = isHost || isSuperHost;
                   onBlur={handleCellBlur}
                   onStatusChange={handleStatusChange}
                   onDelete={(id) => {
-                    if (!canManageAll) return;
-                    if (confirm("정말 삭제하시겠습니까?")) {
-                      deleteMut.mutate({ id } as any);
-                    }
-                  }}
+  if (!canManageAll) return;
+
+  if (
+    confirm(
+      "이 상담을 삭제하면 연결된 학생 / 학기 / 실습 / 민간자격증 / 환불 / 정산 데이터까지 모두 함께 삭제됩니다.\n\n정말 삭제하시겠습니까?"
+    )
+  ) {
+    deleteMut.mutate({ id } as any);
+  }
+}}
                   onReassign={(id, assigneeId) =>
                     reassignConsultationMut.mutate({ id, assigneeId })
                   }
