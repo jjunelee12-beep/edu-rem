@@ -160,7 +160,7 @@ const canOverrideRegisteredStatus = isHost || isSuperHost;
       consultDate: toISODate(String(get(0)).trim()),
       channel: String(get(1)),
       clientName: String(get(2)),
-      phone: handlePhoneInput(String(get(3))),
+      phone: normalizePhoneInput(String(get(3))),
       finalEducation: String(get(4)),
       desiredCourse: String(get(5)),
       notes: String(get(6)),
@@ -192,7 +192,7 @@ const canOverrideRegisteredStatus = isHost || isSuperHost;
         return {
           channel: String(cols[0] ?? "").trim(),
           clientName: String(cols[1] ?? "").trim(),
-          phone: handlePhoneInput(String(cols[2] ?? "").trim()),
+          phone: normalizePhoneInput(String(cols[2] ?? "").trim()),
           finalEducation: String(cols[3] ?? "").trim(),
           desiredCourse: String(cols[4] ?? "").trim(),
           notes: String(cols[5] ?? "").trim(),
@@ -346,10 +346,14 @@ const canOverrideRegisteredStatus = isHost || isSuperHost;
   };
 
   const handleCellBlur = (id: number, field: string, value: any) => {
-    if (!id || typeof id !== "number") return;
-    if (value === undefined) return;
-    updateMut.mutate({ id, [field]: value } as any);
-  };
+  if (!id || typeof id !== "number") return;
+  if (value === undefined) return;
+
+  const normalizedValue =
+    field === "phone" ? normalizePhoneInput(String(value ?? "")) : value;
+
+  updateMut.mutate({ id, [field]: normalizedValue } as any);
+};
 
   const reassignConsultationMut = trpc.consultation.reassign.useMutation({
     onSuccess: () => {
@@ -789,7 +793,7 @@ const canOverrideRegisteredStatus = isHost || isSuperHost;
                   onReassign={(id, assigneeId) =>
                     reassignConsultationMut.mutate({ id, assigneeId })
                   }
-                  handlePhoneInput={handlePhoneInput}
+                  normalizePhoneInput={normalizePhoneInput}
                 />
               ))}
 
@@ -823,7 +827,7 @@ function InlineRow({
   onStatusChange,
   onDelete,
   onReassign,
-  handlePhoneInput,
+  normalizePhoneInput,
 }: {
   item: any;
   rowNum: number;
@@ -836,7 +840,7 @@ function InlineRow({
   onStatusChange: (id: number, status: string) => void;
   onDelete: (id: number) => void;
   onReassign: (id: number, assigneeId: number) => void;
-  handlePhoneInput: (v: string) => string;
+  normalizePhoneInput: (v: string) => string;
 }) {
   const dateStr = item.consultDate
     ? typeof item.consultDate === "string"
