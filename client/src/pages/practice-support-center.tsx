@@ -238,7 +238,8 @@ export default function PracticeSupportCenter() {
   const utils = trpc.useUtils();
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("전체");
+const [selectedPracticeMonth, setSelectedPracticeMonth] = useState<string>("전체");
+const [statusFilter, setStatusFilter] = useState<string>("전체");
 
   const [selectedRow, setSelectedRow] = useState<any | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -498,28 +499,94 @@ const createCategoryMut = trpc.practiceListCategory.create.useMutation({
   onError: (e) => toast.error(e.message || "리스트 추가 실패"),
 });
 
+const formatPracticeMonthLabel = (value: string) => {
+  if (!value || value === "전체") return value;
+
+  const raw = String(value).trim();
+  const match = raw.match(/^(\d{4})-(\d{2})$/);
+  if (!match) return raw;
+
+  return `${match[1]}년 ${Number(match[2])}월`;
+};
+
+const practiceMonthOptions = useMemo(() => {
+  const values = Array.from(
+    new Set(
+      (practiceSupportList || [])
+        .map((row: any) => String(row.practiceDate || "").trim())
+        .filter(Boolean)
+    )
+  ).sort();
+
+  return ["전체", ...values];
+}, [practiceSupportList]);
+
+useEffect(() => {
+  if (!practiceMonthOptions.length) return;
+  if (selectedPracticeMonth !== "전체") return;
+
+  const currentMonth = new Date().toISOString().slice(0, 7);
+
+  if (practiceMonthOptions.includes(currentMonth)) {
+    setSelectedPracticeMonth(currentMonth);
+    return;
+  }
+
+  const firstMonth = practiceMonthOptions.find((v) => v !== "전체");
+  if (firstMonth) {
+    setSelectedPracticeMonth(firstMonth);
+  }
+}, [practiceMonthOptions, selectedPracticeMonth]);
+
   const filteredList = useMemo(() => {
-    const keyword = search.trim();
+  const keyword = search.trim();
 
-    return (practiceSupportList || []).filter((row: any) => {
-      const matchKeyword =
-        !keyword ||
-        String(row.clientName || "").includes(keyword) ||
-        String(row.phone || "").includes(keyword) ||
-        String(row.managerName || "").includes(keyword) ||
-        String(row.assigneeName || "").includes(keyword) ||
-        String(row.course || "").includes(keyword) ||
-        String(row.inputAddress || "").includes(keyword) ||
-        String(row.selectedEducationCenterName || "").includes(keyword) ||
-        String(row.selectedPracticeInstitutionName || "").includes(keyword);
+  return (practiceSupportList || []).filter((row: any) => {
+    const matchKeyword =
+      !keyword ||
+      String(row.clientName || "").includes(keyword) ||
+      String(row.phone || "").includes(keyword) ||
+      String(row.managerName || "").includes(keyword) ||
+      String(row.assigneeName || "").includes(keyword);
 
-      const matchStatus =
-        statusFilter === "전체" ||
-        String(row.coordinationStatus || "미섭외") === statusFilter;
+    const matchMonth =
+      selectedPracticeMonth === "전체" ||
+      String(row.practiceDate || "").trim() === selectedPracticeMonth;
 
-      return matchKeyword && matchStatus;
-    });
-  }, [practiceSupportList, search, statusFilter]);
+    const matchStatus =
+      statusFilter === "전체" ||
+      String(row.coordinationStatus || "미섭외") === statusFilter;
+
+    return matchKeyword && matchMonth && matchStatus;
+  });
+}, [practiceSupportList, search, selectedPracticeMonth, statusFilter]);
+
+
+const stats = useMemo(() => {
+
+const handleStatCardClick = (
+  nextStatus: "전체" | "미섭외" | "섭외중" | "섭외완료"
+) => {
+  setStatusFilter(nextStatus);
+};
+  const total = filteredList.length;
+  const pending = filteredList.filter(
+    (row: any) => String(row.coordinationStatus || "미섭외") === "미섭외"
+  ).length;
+  const progressing = filteredList.filter(
+    (row: any) => String(row.coordinationStatus || "") === "섭외중"
+  ).length;
+  const completed = filteredList.filter(
+    (row: any) => String(row.coordinationStatus || "") === "섭외완료"
+  ).length;
+
+  return {
+    total,
+    pending,
+    progressing,
+    completed,
+  };
+}, [filteredList]);
 
   const openDetail = (row: any) => {
     setSelectedRow({
@@ -1588,6 +1655,23 @@ useEffect(() => {
 )}
 
         <div className="flex gap-2 flex-wrap">
+
+<Select
+  value={selectedPracticeMonth}
+  onValueChange={setSelectedPracticeMonth}
+>
+  <SelectTrigger className="w-[150px]">
+    <SelectValue placeholder="월별" />
+  </SelectTrigger>
+  <SelectContent>
+    {practiceMonthOptions.map((month) => (
+      <SelectItem key={month} value={month}>
+        {formatPracticeMonthLabel(month)}
+      </SelectItem>
+    ))}
+  </SelectContent>
+</Select>
+
           <Input
             placeholder="이름 / 연락처 / 과정 / 담당자 / 주소 검색"
             value={search}
@@ -1612,6 +1696,68 @@ useEffect(() => {
             실습찾기
           </Button>
         </div>
+<div className="flex items-center justify-between">
+  <div className="text-sm font-semibold">
+    {selectedPracticeMonth === "전체"
+      ? "전체 실습배정 현황"
+      : `${formatPracticeMonthLabel(selectedPracticeMonth)} 실습배정 현황`}
+  </div>
+</div>
+<div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+  <Card
+  className={`border-0 shadow-sm cursor-pointer transition hover:shadow-md ${
+    statusFilter === "전체" ? "ring-2 ring-slate-300" : ""
+  }`}
+  onClick={() => handleStatCardClick("전체")}
+>
+    <CardContent className="p-4">
+      <div className="text-xs text-muted-foreground">총 인원</div>
+      <div className="mt-2 text-2xl font-bold">{stats.total}</div>
+    </CardContent>
+  </Card>
+
+  <Card
+  className={`border-0 shadow-sm cursor-pointer transition hover:shadow-md ${
+    statusFilter === "미섭외" ? "ring-2 ring-amber-300" : ""
+  }`}
+  onClick={() => handleStatCardClick("미섭외")}
+>
+    <CardContent className="p-4">
+      <div className="text-xs text-muted-foreground">미섭외</div>
+      <div className="mt-2 text-2xl font-bold text-amber-600">
+        {stats.pending}
+      </div>
+    </CardContent>
+  </Card>
+
+  <Card
+  className={`border-0 shadow-sm cursor-pointer transition hover:shadow-md ${
+    statusFilter === "섭외중" ? "ring-2 ring-blue-300" : ""
+  }`}
+  onClick={() => handleStatCardClick("섭외중")}
+>
+    <CardContent className="p-4">
+      <div className="text-xs text-muted-foreground">섭외중</div>
+      <div className="mt-2 text-2xl font-bold text-blue-600">
+        {stats.progressing}
+      </div>
+    </CardContent>
+  </Card>
+
+  <Card
+  className={`border-0 shadow-sm cursor-pointer transition hover:shadow-md ${
+    statusFilter === "섭외완료" ? "ring-2 ring-emerald-300" : ""
+  }`}
+  onClick={() => handleStatCardClick("섭외완료")}
+>
+    <CardContent className="p-4">
+      <div className="text-xs text-muted-foreground">섭외완료</div>
+      <div className="mt-2 text-2xl font-bold text-emerald-600">
+        {stats.completed}
+      </div>
+    </CardContent>
+  </Card>
+</div>
       </div>
 
       <Card className="border-0 shadow-sm">
@@ -1683,9 +1829,11 @@ useEffect(() => {
                 <tbody>
                   {filteredList.map((row: any, idx: number) => (
                     <tr
-                      key={row.id}
-                      className="border-b last:border-0 hover:bg-muted/20"
-                    >
+  key={row.id}
+  className={`border-b last:border-0 hover:bg-muted/20 ${
+    row.coordinationStatus === "미섭외" ? "bg-amber-50/40" : ""
+  }`}
+>
                       <td className="px-3 py-3 text-sm text-muted-foreground">
                         {idx + 1}
                       </td>
@@ -1709,6 +1857,18 @@ useEffect(() => {
 
 <td className="px-3 py-3">
   <div className="text-sm">{row.practiceDate || "-"}</div>
+</td>
+<td className="px-3 py-3">
+  <div className="space-y-1">
+    <div className="font-medium">
+      {row.selectedEducationCenterName || "-"}
+    </div>
+    <div className="text-xs text-muted-foreground">
+      {row.selectedEducationCenterDistanceKm
+        ? `${row.selectedEducationCenterDistanceKm}km`
+        : ""}
+    </div>
+  </div>
 </td>
                       <td className="px-3 py-3">
                         <div className="space-y-1">
@@ -1882,8 +2042,6 @@ useEffect(() => {
                   </div>
 
                   <div className="space-y-1">
-                    <Label className="text-xs">실습시간</Label>
-<div className="space-y-1">
   <Label className="text-xs">실습예정일</Label>
   <Input
     value={selectedRow.practiceDate || ""}
@@ -1896,17 +2054,20 @@ useEffect(() => {
     placeholder="예: 2026-09"
   />
 </div>
-                    <Input
-                      value={selectedRow.practiceHours || ""}
-                      onChange={(e) =>
-                        setSelectedRow((prev: any) => ({
-                          ...prev,
-                          practiceHours: e.target.value.replace(/[^0-9]/g, ""),
-                        }))
-                      }
-                      placeholder="예: 160"
-                    />
-                  </div>
+
+<div className="space-y-1">
+  <Label className="text-xs">실습시간</Label>
+  <Input
+    value={selectedRow.practiceHours || ""}
+    onChange={(e) =>
+      setSelectedRow((prev: any) => ({
+        ...prev,
+        practiceHours: e.target.value.replace(/[^0-9]/g, ""),
+      }))
+    }
+    placeholder="예: 160"
+  />
+</div>
                 </div>
               </div>
 

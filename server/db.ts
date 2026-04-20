@@ -5545,6 +5545,7 @@ export async function listPracticeSupportRequests(assigneeId?: number) {
       sem.semesterOrder,
       sem.practiceStatus AS semesterPracticeStatus,
       sem.practiceSupportRequestId,
+      sem.updatedAt AS semesterUpdatedAt,
 
       psr.id,
       psr.assigneeId,
@@ -5582,7 +5583,6 @@ export async function listPracticeSupportRequests(assigneeId?: number) {
       p.practiceDate AS planPracticeDate,
       p.practiceHours AS planPracticeHours,
       p.desiredCourse AS planDesiredCourse,
-      p.hasPractice,
 
       u.name AS userName
     FROM semesters sem
@@ -5593,14 +5593,15 @@ export async function listPracticeSupportRequests(assigneeId?: number) {
       ON psr.id = sem.practiceSupportRequestId
       OR (psr.studentId = sem.studentId AND psr.semesterId = sem.id)
     ${whereClause}
-    ORDER BY sem.updatedAt DESC, sem.id DESC
+    ORDER BY sem.studentId ASC, sem.semesterOrder DESC, sem.updatedAt DESC
   `);
 
-  return (rows as any[]).map((row) => ({
+  const mapped = (rows as any[]).map((row) => ({
     id: row.id ?? `semester-${row.semesterId}`,
     semesterId: row.semesterId,
     studentId: row.studentId,
     semesterOrder: row.semesterOrder,
+    semesterUpdatedAt: row.semesterUpdatedAt,
 
     clientName: row.clientName || row.studentClientName || "",
     phone: row.phone || row.studentPhone || "",
@@ -5630,6 +5631,16 @@ export async function listPracticeSupportRequests(assigneeId?: number) {
     createdAt: row.createdAt || null,
     updatedAt: row.updatedAt || null,
   }));
+
+  // 학생당 1건만: 가장 최근 학기(semesterOrder 큰 것) 우선
+  const dedupedMap = new Map<number, any>();
+  for (const row of mapped) {
+    if (!dedupedMap.has(Number(row.studentId))) {
+      dedupedMap.set(Number(row.studentId), row);
+    }
+  }
+
+  return Array.from(dedupedMap.values());
 }
 
 export async function listPracticeSupportRequestsByStudent(studentId: number) {
@@ -5680,7 +5691,6 @@ export async function listPracticeSupportRequestsByStudent(studentId: number) {
       p.practiceDate AS planPracticeDate,
       p.practiceHours AS planPracticeHours,
       p.desiredCourse AS planDesiredCourse,
-      p.hasPractice,
 
       u.name AS userName
     FROM semesters sem
@@ -5692,7 +5702,7 @@ export async function listPracticeSupportRequestsByStudent(studentId: number) {
       OR (psr.studentId = sem.studentId AND psr.semesterId = sem.id)
     WHERE sem.studentId = ${studentId}
       AND sem.practiceStatus IN ('미섭외', '섭외중', '섭외완료')
-    ORDER BY sem.semesterOrder ASC, sem.id ASC
+    ORDER BY sem.semesterOrder DESC, sem.updatedAt DESC
   `);
 
   return (rows as any[]).map((row) => ({
