@@ -1708,7 +1708,12 @@ export async function syncStudentFromConsultation(consultationId: number) {
   }
 
   const linkedStudent = await getStudentByConsultationId(consultationId);
+
   if (!linkedStudent) {
+    console.log(
+      "[syncStudentFromConsultation] linked student not found:",
+      consultationId
+    );
     return null;
   }
 
@@ -1719,6 +1724,15 @@ export async function syncStudentFromConsultation(consultationId: number) {
     course: consultation.desiredCourse ?? "",
     assigneeId: consultation.assigneeId ?? linkedStudent.assigneeId,
   };
+
+  console.log(
+    "[syncStudentFromConsultation] consultationId:",
+    consultationId,
+    "studentId:",
+    linkedStudent.id,
+    "data:",
+    nextStudentData
+  );
 
   await db
     .update(students)
