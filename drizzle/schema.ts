@@ -1478,6 +1478,7 @@ export const settlementItems = mysqlTable("settlement_items", {
   settlementGradeId: int("settlementGradeId"),
   educationInstitutionId: int("educationInstitutionId"),
   privateCertificateMasterId: int("privateCertificateMasterId"),
+institutionName: varchar("institutionName", { length: 255 }),
   title: varchar("title", { length: 255 }).notNull(),
   quantity: int("quantity").notNull().default(1),
   actualCredits: int("actualCredits"),
