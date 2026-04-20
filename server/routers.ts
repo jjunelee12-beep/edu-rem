@@ -3143,15 +3143,17 @@ approve: protectedProcedure
     create: protectedProcedure
       .input(
         z.object({
-          studentId: z.number(),
-          semesterOrder: z.number(),
-          plannedMonth: z.string().optional(),
-          plannedInstitution: z.string().optional(),
-          plannedInstitutionId: z.number().optional(),
-          plannedSubjectCount: z.number().optional(),
-          plannedAmount: z.string().optional(),
-          practiceStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
-        })
+  studentId: z.number(),
+  semesterOrder: z.number(),
+  plannedMonth: z.string().optional(),
+  plannedInstitution: z.string().optional(),
+  plannedInstitutionId: z.number().optional(),
+  plannedSubjectCount: z.number().optional(),
+  plannedAmount: z.string().optional(),
+  practiceStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
+  primaryCourse: z.string().optional(),
+  registeredCourses: z.array(z.string()).optional(),
+})
       )
       .mutation(async ({ ctx, input }) => {
         const student = await db.getStudent(input.studentId);
@@ -3161,11 +3163,20 @@ approve: protectedProcedure
           throw new Error("권한이 없습니다");
         }
 
-        const id = await db.createSemester({
-          ...input,
-          status: "등록",
-          practiceStatus: input.practiceStatus ?? "미섭외",
-        } as any);
+       const id = await db.createSemester({
+  ...input,
+  status: "등록",
+  practiceStatus: input.practiceStatus ?? "미섭외",
+  primaryCourse: input.primaryCourse || undefined,
+  registeredCoursesJson:
+    input.registeredCourses !== undefined
+      ? JSON.stringify(
+          input.registeredCourses
+            .map((x) => String(x || "").trim())
+            .filter(Boolean)
+        )
+      : undefined,
+} as any);
 
         if (input.plannedSubjectCount !== undefined && input.plannedSubjectCount > 0) {
           await db.syncPlanSemestersByCount(
@@ -3197,6 +3208,8 @@ approve: protectedProcedure
           status: z.enum(["등록", "종료", "등록 종료"]).optional(),
           practiceStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
           practiceSupportRequestId: z.number().optional(),
+primaryCourse: z.string().optional(),
+registeredCourses: z.array(z.string()).optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -3223,30 +3236,6 @@ approve: protectedProcedure
         ) {
           throw new Error("올바르지 않은 상태값입니다");
         }
-
-        if (sem.isLocked) {
-          const {
-            id,
-            actualStartDate,
-            actualInstitution,
-            actualSubjectCount,
-            actualAmount,
-            actualPaymentDate,
-            isCompleted,
-            status,
-            practiceStatus,
-            practiceSupportRequestId,
-            ...plannedFields
-          } = input;
-
-          const hasPlannedChanges = Object.values(plannedFields).some(
-            (v) => v !== undefined
-          );
-          if (hasPlannedChanges) {
-            throw new Error("승인된 예정표는 수정할 수 없습니다");
-          }
-        }
-
         const { id, ...rest } = input;
         const data: any = { ...rest };
 
@@ -3260,6 +3249,23 @@ approve: protectedProcedure
           input.actualAmount !== undefined ||
           input.actualPaymentDate !== undefined ||
           input.actualStartDate !== undefined;
+
+if (input.primaryCourse !== undefined) {
+  data.primaryCourse = input.primaryCourse?.trim() || null;
+}
+
+if (input.registeredCourses !== undefined) {
+  data.registeredCoursesJson = JSON.stringify(
+    input.registeredCourses
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
+  );
+
+  if (input.primaryCourse === undefined) {
+    data.primaryCourse =
+      input.registeredCourses.find((x) => String(x || "").trim()) || null;
+  }
+}
 
         if (shouldSyncSubjectSettlement) {
           await db.syncSubjectSettlementItemBySemesterId(

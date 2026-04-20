@@ -216,6 +216,9 @@ export const semesters = mysqlTable("semesters", {
   actualPaymentDate: date("actualPaymentDate"),
   isCompleted: boolean("isCompleted").default(false).notNull(),
 
+  primaryCourse: varchar("primaryCourse", { length: 200 }),
+  registeredCoursesJson: text("registeredCoursesJson"),
+
   // 실습 상태 연동용
   practiceStatus: mysqlEnum("practiceStatus", ["미섭외", "섭외중", "섭외완료"])
     .notNull()

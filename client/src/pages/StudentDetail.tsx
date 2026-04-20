@@ -190,6 +190,11 @@ const { data: practiceSupportList } =
   const [privateCertDialogOpen, setPrivateCertDialogOpen] = useState(false);
   const [selectedPrivateCertNames, setSelectedPrivateCertNames] = useState<string[]>([]);
 
+const [courseDialogOpen, setCourseDialogOpen] = useState(false);
+const [courseDialogSemester, setCourseDialogSemester] = useState<any>(null);
+const [selectedRegisteredCourses, setSelectedRegisteredCourses] = useState<string[]>([]);
+const [primaryRegisteredCourse, setPrimaryRegisteredCourse] = useState("");
+
   async function uploadFile(file: File) {
     const formData = new FormData();
     formData.append("file", file);
@@ -691,23 +696,145 @@ const triggerSectionHighlight = (
     );
   };
 
+const courseOptions = useMemo(() => {
+  const fromStudent = String(student?.course || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  const fromPlan = String(plan?.desiredCourse || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  const fallback = [
+    "사회복지사2급",
+    "보육교사",
+    "평생교육사",
+    "건강가정사",
+    "한국어교원",
+    "청소년지도사",
+    "산업기사/기사",
+    "전문학사/학사",
+    "기타",
+  ];
+
+  return Array.from(new Set([...fromStudent, ...fromPlan, ...fallback]));
+}, [student?.course, plan?.desiredCourse]);
+
+const getRegisteredCourses = (sem: any): string[] => {
+  if (Array.isArray(sem?.registeredCourses)) {
+    return sem.registeredCourses
+      .map((x: any) => String(x || "").trim())
+      .filter(Boolean);
+  }
+
+  try {
+    const parsed = JSON.parse(String(sem?.registeredCoursesJson || "[]"));
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((x: any) => String(x || "").trim()).filter(Boolean);
+  } catch {
+    return sem?.primaryCourse ? [String(sem.primaryCourse).trim()] : [];
+  }
+};
+
+const openCourseDialog = (sem: any) => {
+  if (!sem) {
+    toast.error("학기 정보가 없습니다.");
+    return;
+  }
+
+  const currentCourses = getRegisteredCourses(sem);
+
+  setCourseDialogSemester(sem);
+  setSelectedRegisteredCourses(currentCourses);
+  setPrimaryRegisteredCourse(
+    String(sem?.primaryCourse || currentCourses[0] || "").trim()
+  );
+  setCourseDialogOpen(true);
+};
+
+const toggleRegisteredCourse = (course: string) => {
+  setSelectedRegisteredCourses((prev) => {
+    const exists = prev.includes(course);
+
+    if (exists) {
+      const next = prev.filter((x) => x !== course);
+
+      if (primaryRegisteredCourse === course) {
+        setPrimaryRegisteredCourse(next[0] || "");
+      }
+
+      return next;
+    }
+
+    const next = [...prev, course];
+
+    if (!primaryRegisteredCourse) {
+      setPrimaryRegisteredCourse(course);
+    }
+
+    return next;
+  });
+};
+
+const saveRegisteredCourses = async () => {
+  if (!courseDialogSemester) {
+    toast.error("학기 정보가 없습니다.");
+    return;
+  }
+
+  const cleaned = selectedRegisteredCourses
+    .map((x) => String(x || "").trim())
+    .filter(Boolean);
+
+  if (!cleaned.length) {
+    toast.error("최소 1개 과정은 선택해야 합니다.");
+    return;
+  }
+
+  const primary = cleaned.includes(primaryRegisteredCourse)
+    ? primaryRegisteredCourse
+    : cleaned[0];
+
+  updateSemMut.mutate(
+    {
+      id: Number(courseDialogSemester.id),
+      primaryCourse: primary,
+      registeredCourses: cleaned,
+    } as any,
+    {
+      onSuccess: async () => {
+        await utils.semester.list.invalidate({ studentId });
+        await utils.student.get.invalidate({ id: studentId });
+        toast.success("학기별 등록 과정이 저장되었습니다.");
+        setCourseDialogOpen(false);
+        setCourseDialogSemester(null);
+      },
+      onError: (e) => toast.error(e.message),
+    }
+  );
+};
+
   const getSemesterTitle = (semMeta: any, semesterNo: number) => {
-    const dateText =
-      semMeta?.actualStartDate
-        ? formatDate(semMeta.actualStartDate)
-        : semMeta?.plannedMonth
-        ? formatPlannedMonth(semMeta.plannedMonth)
-        : "";
+  const dateText =
+    semMeta?.actualStartDate
+      ? formatDate(semMeta.actualStartDate)
+      : semMeta?.plannedMonth
+      ? formatPlannedMonth(semMeta.plannedMonth)
+      : "";
 
-    const instText =
-      semMeta?.actualInstitution ||
-      getInstitutionName(semMeta?.actualInstitutionId) ||
-      semMeta?.plannedInstitution ||
-      getInstitutionName(semMeta?.plannedInstitutionId) ||
-      "";
+  const instText =
+    semMeta?.actualInstitution ||
+    getInstitutionName(semMeta?.actualInstitutionId) ||
+    semMeta?.plannedInstitution ||
+    getInstitutionName(semMeta?.plannedInstitutionId) ||
+    "";
 
-    return `${semesterNo}학기${dateText ? ` (${dateText})` : ""}${instText ? ` (${instText})` : ""}`;
-  };
+  const courseText = getRegisteredCourses(semMeta).join(", ");
+
+  return `${semesterNo}학기${dateText ? ` (${dateText})` : ""}${instText ? ` (${instText})` : ""}${courseText ? ` · ${courseText}` : ""}`;
+};
 
   const handleSemFieldBlur = async (semId: number, field: string, value: string) => {
     const payload: any = { id: semId };
@@ -1089,27 +1216,29 @@ const savePlan = async () => {
     return "bg-gray-50 text-gray-600 border border-gray-200";
   };
 
-  const handleCopyPlannedToActual = (sem: any) => {
-    const actualStartDate = normalizePlannedMonthToDate(sem.plannedMonth);
+ const handleCopyPlannedToActual = (sem: any) => {
+  const actualStartDate = normalizePlannedMonthToDate(sem.plannedMonth);
+  const today = new Date().toISOString().slice(0, 10);
 
-    updateSemMut.mutate(
-      {
-        id: sem.id,
-        actualStartDate: actualStartDate || undefined,
-        actualInstitutionId: sem.plannedInstitutionId || undefined,
-        actualSubjectCount: sem.plannedSubjectCount ?? undefined,
-        actualAmount: sem.plannedAmount || undefined,
-      } as any,
-      {
-        onSuccess: async () => {
-          await utils.semester.list.invalidate({ studentId });
-          await utils.student.get.invalidate({ id: studentId });
-	await utils.plan.get.invalidate({ studentId });
-          toast.success("예정 정보를 실제 결제 정보로 복사했습니다.");
-        },
-      }
-    );
-  };
+  updateSemMut.mutate(
+    {
+      id: sem.id,
+      actualStartDate: actualStartDate || undefined,
+      actualInstitutionId: sem.plannedInstitutionId || undefined,
+      actualSubjectCount: sem.plannedSubjectCount ?? undefined,
+      actualAmount: sem.plannedAmount || undefined,
+      actualPaymentDate: today,
+    } as any,
+    {
+      onSuccess: async () => {
+        await utils.semester.list.invalidate({ studentId });
+        await utils.student.get.invalidate({ id: studentId });
+        await utils.plan.get.invalidate({ studentId });
+        toast.success("예정 정보를 실제 결제 정보로 복사했습니다.");
+      },
+    }
+  );
+};
 
   const focusPlanField = (key: string) => {
     const el = planFieldRefs.current[key];
@@ -1287,8 +1416,11 @@ const existingPlanSubjectMap = useMemo(() => {
         <div className="flex-1">
           <h1 className="text-2xl font-bold tracking-tight">{student.clientName}</h1>
           <p className="text-muted-foreground mt-0.5 text-sm">
-            {student.course} · 담당: {userMap.get(student.assigneeId) || "-"}
-          </p>
+  {(selectedSemester
+    ? getRegisteredCourses(selectedSemester).join(", ") || student.course
+    : student.course)}{" "}
+  · 담당: {userMap.get(student.assigneeId) || "-"}
+</p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -1349,9 +1481,17 @@ const existingPlanSubjectMap = useMemo(() => {
             </div>
 
             <div>
-              <p className="text-xs text-muted-foreground mb-0.5">등록 과정</p>
-              <EditableCell value={student.course} onBlur={() => {}} disabled />
-            </div>
+  <p className="text-xs text-muted-foreground mb-0.5">등록 과정</p>
+  <EditableCell
+    value={
+      selectedSemester
+        ? getRegisteredCourses(selectedSemester).join(", ") || student.course
+        : student.course
+    }
+    onBlur={() => {}}
+    disabled
+  />
+</div>
 
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">상태</p>
@@ -1514,6 +1654,15 @@ const existingPlanSubjectMap = useMemo(() => {
     민간자격증 요청
   </Button>
 
+<Button
+  variant="outline"
+  size="sm"
+  onClick={() => openCourseDialog(selectedSemester || sortedSemesters[0])}
+  className="gap-1 text-violet-600 border-violet-200 hover:bg-violet-50"
+>
+  등록 과정 추가/수정
+</Button>
+
   <Button
     variant="outline"
     size="sm"
@@ -1560,14 +1709,12 @@ const existingPlanSubjectMap = useMemo(() => {
                     <tr key={sem.id} className={`border-b last:border-0 ${sem.isCompleted ? "bg-emerald-50/50" : ""}`}>
                       <td className="px-3 py-1.5 font-medium text-sm">
                         {sem.semesterOrder}학기
-                        {sem.isLocked && <Lock className="inline h-3 w-3 ml-1 text-amber-500" />}
                       </td>
 
                       <td className="px-1 py-0.5">
                         <EditableCell
                           value={sem.plannedMonth ? (sem.plannedMonth.length === 6 ? sem.plannedMonth.slice(0, 4) + "-" + sem.plannedMonth.slice(4) : sem.plannedMonth) : ""}
                           onBlur={(v) => handleSemFieldBlur(sem.id, "plannedMonth", v)}
-                          disabled={sem.isLocked}
                         />
                       </td>
 
@@ -1598,7 +1745,6 @@ const existingPlanSubjectMap = useMemo(() => {
                         <EditableCell
                           value={sem.plannedSubjectCount?.toString() || ""}
                           onBlur={(v) => handleSemFieldBlur(sem.id, "plannedSubjectCount", v)}
-                          disabled={sem.isLocked}
                         />
                       </td>
 
@@ -1606,7 +1752,6 @@ const existingPlanSubjectMap = useMemo(() => {
                         <EditableCell
                           value={sem.plannedAmount ? Number(sem.plannedAmount).toLocaleString() : ""}
                           onBlur={(v) => handleSemFieldBlur(sem.id, "plannedAmount", v.replace(/[^0-9]/g, ""))}
-                          disabled={sem.isLocked}
                         />
                       </td>
 
@@ -1712,6 +1857,16 @@ const existingPlanSubjectMap = useMemo(() => {
                           >
                             <Copy className="h-3 w-3 text-blue-500" />
                           </Button>
+
+<Button
+  variant="ghost"
+  size="icon"
+  className="h-7 w-7"
+  title="등록 과정 설정"
+  onClick={() => openCourseDialog(sem)}
+>
+  <Pencil className="h-3 w-3 text-violet-500" />
+</Button>
 
                           {!sem.isLocked && (
                             <Button
@@ -1849,9 +2004,15 @@ const existingPlanSubjectMap = useMemo(() => {
 
     <p className="mt-1">
       <span className="font-medium">주소:</span>{" "}
-      {latestPracticeSupport?.detailAddress || (student as any)?.detailAddress || "-"} ·{" "}
+      {latestPracticeSupport?.inputAddress ||
+  latestPracticeSupport?.detailAddress ||
+  (student as any)?.detailAddress ||
+  "-"}
       <span className="font-medium">담당자:</span>{" "}
-      {latestPracticeSupport?.managerName || latestPracticeSupport?.assigneeName || "-"}
+      {latestPracticeSupport?.managerName ||
+  latestPracticeSupport?.assigneeName ||
+  userMap.get(student.assigneeId) ||
+  "-"}
     </p>
   </div>
 )}
@@ -3416,6 +3577,74 @@ const existingPlanSubjectMap = useMemo(() => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+<Dialog open={courseDialogOpen} onOpenChange={setCourseDialogOpen}>
+  <DialogContent className="max-w-lg">
+    <DialogHeader>
+      <DialogTitle>
+        {courseDialogSemester?.semesterOrder || "-"}학기 등록 과정 설정
+      </DialogTitle>
+    </DialogHeader>
+
+    <div className="space-y-4">
+      <div className="text-sm text-muted-foreground">
+        학기별 등록 과정을 추가/삭제할 수 있고, 대표 과정을 변경할 수 있습니다.
+      </div>
+
+      <div className="space-y-2 max-h-[320px] overflow-auto">
+        {courseOptions.map((course) => {
+          const checked = selectedRegisteredCourses.includes(course);
+
+          return (
+            <label
+              key={course}
+              className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border bg-white"
+            >
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={checked}
+                  onCheckedChange={() => toggleRegisteredCourse(course)}
+                />
+                <span className="text-sm">{course}</span>
+              </div>
+
+              {checked && (
+                <button
+                  type="button"
+                  className={`text-xs px-2 py-1 rounded border ${
+                    primaryRegisteredCourse === course
+                      ? "bg-violet-100 text-violet-700 border-violet-200"
+                      : "bg-gray-50 text-gray-600 border-gray-200"
+                  }`}
+                  onClick={() => setPrimaryRegisteredCourse(course)}
+                >
+                  대표과정
+                </button>
+              )}
+            </label>
+          );
+        })}
+      </div>
+
+      <div className="text-xs text-muted-foreground">
+        대표과정은 상단 등록 과정 표시 기준으로 사용됩니다.
+      </div>
+    </div>
+
+    <DialogFooter>
+      <Button
+        variant="outline"
+        onClick={() => {
+          setCourseDialogOpen(false);
+          setCourseDialogSemester(null);
+        }}
+      >
+        취소
+      </Button>
+      <Button onClick={saveRegisteredCourses}>저장</Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
     </div>
   );
 }

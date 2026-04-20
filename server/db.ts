@@ -2254,39 +2254,148 @@ export async function listSemesters(studentId: number) {
   const db = await getDb();
   if (!db) return [];
 
-  return db
+  const rows = await db
     .select()
     .from(semesters)
     .where(eq(semesters.studentId, studentId))
     .orderBy(semesters.semesterOrder);
+
+  return rows.map((row: any) => ({
+    ...row,
+    registeredCourses: parseJsonArray(row.registeredCoursesJson),
+  }));
 }
 
 export async function getSemester(id: number) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.select().from(semesters).where(eq(semesters.id, id)).limit(1);
-  return result[0];
+  const result = await db
+    .select()
+    .from(semesters)
+    .where(eq(semesters.id, id))
+    .limit(1);
+
+  const row = result[0];
+  if (!row) return undefined;
+
+  return {
+    ...row,
+    registeredCourses: parseJsonArray((row as any).registeredCoursesJson),
+  };
 }
 
 export async function createSemester(data: InsertSemester) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const result = await db.insert(semesters).values({
+  let nextData: any = {
     ...data,
     status: (data as any).status ?? "등록",
     practiceStatus: (data as any).practiceStatus ?? "미섭외",
-  } as any);
+  };
 
+  if (!(data as any).primaryCourse || !(data as any).registeredCoursesJson) {
+    const student = await getStudent(Number((data as any).studentId));
+
+    const defaultCourse =
+      String((data as any).primaryCourse || student?.course || "").trim() || null;
+
+    nextData.primaryCourse = defaultCourse;
+    nextData.registeredCoursesJson = defaultCourse
+      ? JSON.stringify([defaultCourse])
+      : JSON.stringify([]);
+  }
+
+  const result = await db.insert(semesters).values(nextData);
   return getInsertId(result);
 }
 
-export async function updateSemester(id: number, data: Partial<InsertSemester>) {
+export async function updateSemester(id: number, data: Partial<InsertSemester> & {
+  registeredCourses?: string[];
+}) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.update(semesters).set(data).where(eq(semesters.id, id));
+  const nextData: any = { ...data };
+
+  if ((data as any).registeredCourses !== undefined) {
+    const cleaned = Array.isArray((data as any).registeredCourses)
+      ? (data as any).registeredCourses
+          .map((x: any) => String(x || "").trim())
+          .filter(Boolean)
+      : [];
+
+    nextData.registeredCoursesJson = JSON.stringify(cleaned);
+
+    if (!nextData.primaryCourse) {
+      nextData.primaryCourse = cleaned[0] || null;
+    }
+  }
+
+    await db.update(semesters).set(nextData).where(eq(semesters.id, id));
+
+  const updatedSemester = await getSemester(id);
+  if (!updatedSemester) return;
+
+  const nextPrimaryCourse =
+    String(nextData.primaryCourse || updatedSemester.primaryCourse || "").trim() || null;
+
+  if (!nextPrimaryCourse) return;
+
+  // 1) 학생 대표과정 동기화
+  await updateStudent(Number(updatedSemester.studentId), {
+    course: nextPrimaryCourse,
+  } as any);
+
+  // 2) 플랜 요약 희망과정 동기화
+  await upsertPlan({
+    studentId: Number(updatedSemester.studentId),
+    desiredCourse: nextPrimaryCourse,
+  } as any);
+
+  // 3) 상담DB 희망과정 동기화
+  const student = await getStudent(Number(updatedSemester.studentId));
+  if (student?.consultationId) {
+    await updateConsultation(Number(student.consultationId), {
+      desiredCourse: nextPrimaryCourse,
+    } as any);
+  }
+
+  // 4) 실습배정지원센터 과정 동기화
+  const practiceRows = await listPracticeSupportRequestsByStudent(
+    Number(updatedSemester.studentId)
+  );
+
+  for (const row of practiceRows || []) {
+    await updatePracticeSupportRequest(Number(row.id), {
+      course: nextPrimaryCourse,
+    } as any);
+  }
+}
+
+function safeJsonArrayString(value: any) {
+  if (!Array.isArray(value)) return null;
+  return JSON.stringify(
+    value
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
+  );
+}
+
+function parseJsonArray(value: any): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map((x) => String(x || "").trim()).filter(Boolean);
+  }
+
+  try {
+    const parsed = JSON.parse(String(value));
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((x) => String(x || "").trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 export async function deleteSemester(id: number) {
@@ -2321,11 +2430,11 @@ conditions.push(sql`s.approvalStatus = '승인'`);
       : sql``;
 
   const [rows] = await db.execute(sql`
-    SELECT sem.*,
-      s.clientName,
-      s.phone,
-      s.course,
-      s.assigneeId,
+   SELECT sem.*,
+  s.clientName,
+  s.phone,
+  COALESCE(sem.primaryCourse, s.course) as course,
+  s.assigneeId,
       s.status as studentStatus,
       s.approvalStatus,
       u.name as assigneeName,
