@@ -127,8 +127,10 @@ const canOverrideRegisteredStatus = isHost || isSuperHost;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handlePhoneInput = (value: string) =>
-    (value ?? "").replace(/\D/g, "").slice(0, 11);
+  const normalizePhoneInput = (value: string) => {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  return digits.slice(0, 11);
+};
 
   const getUserName = (id: number) => {
     const found = (usersList ?? []).find((u: any) => Number(u.id) === Number(id));
@@ -678,17 +680,18 @@ const canOverrideRegisteredStatus = isHost || isSuperHost;
 
                   <td className="px-1 py-2">
                     <input
-                      className="w-full px-2 py-1.5 text-sm border rounded bg-white focus:outline-none focus:ring-1 focus:ring-primary"
-                      placeholder="01012345678"
-                      value={newRow.phone}
-                      onChange={(e) =>
-                        setNewRow({
-                          ...newRow,
-                          phone: handlePhoneInput(e.target.value),
-                        })
-                      }
-                      maxLength={11}
-                    />
+  className="w-full px-2 py-1.5 text-sm border rounded bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+  placeholder="010-1234-5678"
+  inputMode="numeric"
+  value={formatPhone(newRow.phone)}
+  onChange={(e) =>
+    setNewRow({
+      ...newRow,
+      phone: normalizePhoneInput(e.target.value),
+    })
+  }
+  maxLength={20}
+/>
                   </td>
 
                   <td className="px-1 py-2">
@@ -887,12 +890,12 @@ const canDelete = canManageAll;
 
       <td className="px-1 py-2">
         <EditableCell
-          value={formatPhone(item.phone)}
-          onBlur={(v) => onBlur(item.id, "phone", v.replace(/\D/g, ""))}
-          transform={handlePhoneInput}
-          maxLength={11}
-          disabled={isStaff}
-        />
+  value={formatPhone(item.phone)}
+  onBlur={(v) => onBlur(item.id, "phone", normalizePhoneInput(v))}
+  transform={normalizePhoneInput}
+  maxLength={20}
+  disabled={isStaff}
+/>
       </td>
 
       <td className="px-1 py-2">

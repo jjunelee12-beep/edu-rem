@@ -2673,94 +2673,101 @@ categoryId: z.number().nullable().optional(),
       }),
 
     update: protectedProcedure
-      .input(
-        z.object({
-          id: z.number(),
-          consultDate: z.string().optional(),
-          channel: z.string().optional(),
-          clientName: z.string().optional(),
-          phone: z.string().optional(),
-          finalEducation: z.string().optional(),
-          desiredCourse: z.string().optional(),
-          notes: z.string().optional(),
-          status: z.string().optional(),
-        })
-      )
-      .mutation(async ({ ctx, input }) => {
-        const item = await db.getConsultation(input.id);
+  .input(
+    z.object({
+      id: z.number(),
+      consultDate: z.string().optional(),
+      channel: z.string().optional(),
+      clientName: z.string().optional(),
+      phone: z.string().optional(),
+      finalEducation: z.string().optional(),
+      desiredCourse: z.string().optional(),
+      notes: z.string().optional(),
+      status: z.string().optional(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const item = await db.getConsultation(input.id);
 
-        if (!item) {
-          throw new Error("상담 기록을 찾을 수 없습니다");
-        }
-
-        const myId = Number(ctx.user.id) || 1;
-
-        if (!isAdminOrHost(ctx.user) && item.assigneeId !== myId) {
-          throw new Error("권한이 없습니다");
-        }
-
-        const { id, ...rest } = input;
-        const data: any = { ...rest };
-
-      if (ctx.user.role === "staff") {
-  const allowedForStaff: any = {};
-
-  if (rest.notes !== undefined) {
-    allowedForStaff.notes = rest.notes;
-  }
-
-  if (rest.status !== undefined) {
-    allowedForStaff.status = rest.status;
-  }
-
-  if (rest.status === "등록예정") {
-    const existing = await db.getConsultation(id);
-
-    if (
-      existing &&
-      existing.status !== "등록예정" &&
-      existing.status !== "등록"
-    ) {
-      await db.createStudent({
-        clientName: existing.clientName,
-        phone: existing.phone,
-        course: existing.desiredCourse || "",
-        assigneeId: existing.assigneeId,
-        consultationId: id,
-      });
-
-      allowedForStaff.status = "등록예정";
+    if (!item) {
+      throw new Error("상담 기록을 찾을 수 없습니다");
     }
-  }
 
-  await db.updateConsultation(id, allowedForStaff);
-  return { success: true };
-}
+    const myId = Number(ctx.user.id) || 1;
 
-        if (rest.consultDate) {
-          data.consultDate = new Date(rest.consultDate);
-        }
+    if (!isAdminOrHost(ctx.user) && item.assigneeId !== myId) {
+      throw new Error("권한이 없습니다");
+    }
 
-        if (rest.status === "등록예정") {
-          const existing = await db.getConsultation(id);
+    const { id, ...rest } = input;
+    const data: any = { ...rest };
 
-          if (existing && existing.status !== "등록예정" && existing.status !== "등록") {
+    if (ctx.user.role === "staff") {
+      const allowedForStaff: any = {};
+
+      if (rest.notes !== undefined) {
+        allowedForStaff.notes = rest.notes;
+      }
+
+      if (rest.status !== undefined) {
+        allowedForStaff.status = rest.status;
+      }
+
+      await db.updateConsultation(id, allowedForStaff);
+
+      if (rest.status === "등록예정") {
+        const linkedStudent = await db.getStudentByConsultationId(id);
+
+        if (!linkedStudent) {
+          const latestConsultation = await db.getConsultation(id);
+
+          if (latestConsultation) {
             await db.createStudent({
-              clientName: existing.clientName,
-              phone: existing.phone,
-              course: existing.desiredCourse || "",
-              assigneeId: existing.assigneeId,
+              clientName: latestConsultation.clientName,
+              phone: latestConsultation.phone,
+              course: latestConsultation.desiredCourse || "",
+              finalEducation: latestConsultation.finalEducation || "",
+              assigneeId: latestConsultation.assigneeId,
               consultationId: id,
-            });
-
-            data.status = "등록예정";
+            } as any);
           }
         }
 
-        await db.updateConsultation(id, data);
+        await db.syncStudentFromConsultation(id);
+      }
 
-        return { success: true };
-      }),
+      return { success: true };
+    }
+
+    if (rest.consultDate) {
+      data.consultDate = new Date(rest.consultDate);
+    }
+
+    await db.updateConsultation(id, data);
+
+    if (rest.status === "등록예정") {
+      const linkedStudent = await db.getStudentByConsultationId(id);
+
+      if (!linkedStudent) {
+        const latestConsultation = await db.getConsultation(id);
+
+        if (latestConsultation) {
+          await db.createStudent({
+            clientName: latestConsultation.clientName,
+            phone: latestConsultation.phone,
+            course: latestConsultation.desiredCourse || "",
+            finalEducation: latestConsultation.finalEducation || "",
+            assigneeId: latestConsultation.assigneeId,
+            consultationId: id,
+          } as any);
+        }
+      }
+    }
+
+    await db.syncStudentFromConsultation(id);
+
+    return { success: true };
+  }),
 
     reassign: hostProcedure
       .input(

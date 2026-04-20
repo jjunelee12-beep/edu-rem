@@ -1684,6 +1684,49 @@ export async function deleteConsultation(id: number) {
 
   await db.delete(consultations).where(eq(consultations.id, id));
 }
+
+export async function getStudentByConsultationId(consultationId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(students)
+    .where(eq(students.consultationId, consultationId))
+    .limit(1);
+
+  return result[0];
+}
+
+export async function syncStudentFromConsultation(consultationId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const consultation = await getConsultation(consultationId);
+  if (!consultation) {
+    throw new Error("상담 기록을 찾을 수 없습니다.");
+  }
+
+  const linkedStudent = await getStudentByConsultationId(consultationId);
+  if (!linkedStudent) {
+    return null;
+  }
+
+  const nextStudentData: any = {
+    clientName: consultation.clientName ?? "",
+    phone: consultation.phone ?? "",
+    finalEducation: consultation.finalEducation ?? "",
+    course: consultation.desiredCourse ?? "",
+    assigneeId: consultation.assigneeId ?? linkedStudent.assigneeId,
+  };
+
+  await db
+    .update(students)
+    .set(nextStudentData)
+    .where(eq(students.id, linkedStudent.id));
+
+  return linkedStudent.id;
+}
 // ─── Notifications ───────────────────────────────────────────────────
 export async function createNotification(data: InsertNotification & {
   title?: string | null;
