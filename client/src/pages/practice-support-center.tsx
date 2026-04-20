@@ -1650,6 +1650,9 @@ useEffect(() => {
                     <th className="min-w-[220px] px-3 py-3 text-left font-medium text-muted-foreground">
                       주소
                     </th>
+<th className="px-3 py-3 text-left font-medium text-muted-foreground">
+  실습예정일
+</th>
                     <th className="px-3 py-3 text-left font-medium text-muted-foreground">
                       실습교육원명
                     </th>
@@ -1701,28 +1704,11 @@ useEffect(() => {
                       <td className="px-3 py-3">{row.course || "-"}</td>
 
                       <td className="px-3 py-3">
-  <div className="space-y-1">
-    <div className="text-sm">{row.inputAddress || "-"}</div>
-    <div className="text-xs text-muted-foreground">
-      실습예정일: {row.practiceDate || "-"}
-    </div>
-  </div>
+  <div className="text-sm">{row.inputAddress || "-"}</div>
 </td>
 
-                      <td className="px-3 py-3">
-  <div className="space-y-1">
-    <div className="font-medium">
-      {row.selectedEducationCenterName || "-"}
-    </div>
-    <div className="text-xs text-muted-foreground">
-      실습예정일: {row.practiceDate || "-"}
-    </div>
-    <div className="text-xs text-muted-foreground">
-      {row.selectedEducationCenterDistanceKm
-        ? `${row.selectedEducationCenterDistanceKm}km`
-        : ""}
-    </div>
-  </div>
+<td className="px-3 py-3">
+  <div className="text-sm">{row.practiceDate || "-"}</div>
 </td>
                       <td className="px-3 py-3">
                         <div className="space-y-1">
