@@ -5524,42 +5524,311 @@ export async function listPracticeSupportRequests(assigneeId?: number) {
   const db = await getDb();
   if (!db) return [];
 
+  const conditions: any[] = [
+    sql`sem.practiceStatus IN ('미섭외', '섭외중', '섭외완료')`,
+    sql`s.approvalStatus = '승인'`,
+  ];
+
   if (assigneeId) {
-    return db
-      .select()
-      .from(practiceSupportRequests)
-      .where(eq(practiceSupportRequests.assigneeId, assigneeId))
-      .orderBy(desc(practiceSupportRequests.createdAt));
+    conditions.push(sql`s.assigneeId = ${assigneeId}`);
   }
 
-  return db
-    .select()
-    .from(practiceSupportRequests)
-    .orderBy(desc(practiceSupportRequests.createdAt));
+  const whereClause =
+    conditions.length > 0
+      ? sql`WHERE ${sql.join(conditions, sql` AND `)}`
+      : sql``;
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      sem.id AS semesterId,
+      sem.studentId,
+      sem.semesterOrder,
+      sem.practiceStatus AS semesterPracticeStatus,
+      sem.practiceSupportRequestId,
+
+      psr.id,
+      psr.assigneeId,
+      psr.clientName,
+      psr.phone,
+      psr.course,
+      psr.inputAddress,
+      psr.detailAddress,
+      psr.assigneeName,
+      psr.managerName,
+      psr.practiceHours,
+      psr.practiceDate,
+      psr.includeEducationCenter,
+      psr.includePracticeInstitution,
+      psr.coordinationStatus,
+      psr.selectedEducationCenterId,
+      psr.selectedEducationCenterName,
+      psr.selectedEducationCenterAddress,
+      psr.selectedEducationCenterDistanceKm,
+      psr.selectedPracticeInstitutionId,
+      psr.selectedPracticeInstitutionName,
+      psr.selectedPracticeInstitutionAddress,
+      psr.selectedPracticeInstitutionDistanceKm,
+      psr.feeAmount,
+      psr.paymentStatus,
+      psr.note,
+      psr.createdAt,
+      psr.updatedAt,
+
+      s.clientName AS studentClientName,
+      s.phone AS studentPhone,
+      s.assigneeId AS studentAssigneeId,
+      COALESCE(sem.primaryCourse, s.course) AS semesterCourse,
+
+      p.practiceDate AS planPracticeDate,
+      p.practiceHours AS planPracticeHours,
+      p.desiredCourse AS planDesiredCourse,
+      p.hasPractice,
+
+      u.name AS userName
+    FROM semesters sem
+    INNER JOIN students s ON s.id = sem.studentId
+    LEFT JOIN plans p ON p.studentId = s.id
+    LEFT JOIN users u ON u.id = s.assigneeId
+    LEFT JOIN practice_support_requests psr
+      ON psr.id = sem.practiceSupportRequestId
+      OR (psr.studentId = sem.studentId AND psr.semesterId = sem.id)
+    ${whereClause}
+    ORDER BY sem.updatedAt DESC, sem.id DESC
+  `);
+
+  return (rows as any[]).map((row) => ({
+    id: row.id ?? `semester-${row.semesterId}`,
+    semesterId: row.semesterId,
+    studentId: row.studentId,
+    semesterOrder: row.semesterOrder,
+
+    clientName: row.clientName || row.studentClientName || "",
+    phone: row.phone || row.studentPhone || "",
+    course: row.course || row.semesterCourse || row.planDesiredCourse || "",
+    inputAddress: row.inputAddress || "",
+    detailAddress: row.detailAddress || "",
+    assigneeId: row.assigneeId || row.studentAssigneeId || null,
+    assigneeName: row.assigneeName || row.userName || "",
+    managerName: row.managerName || row.userName || "",
+    practiceHours: row.practiceHours ?? row.planPracticeHours ?? null,
+    practiceDate: row.practiceDate || row.planPracticeDate || null,
+    coordinationStatus: row.coordinationStatus || row.semesterPracticeStatus || "미섭외",
+
+    selectedEducationCenterId: row.selectedEducationCenterId || null,
+    selectedEducationCenterName: row.selectedEducationCenterName || "",
+    selectedEducationCenterAddress: row.selectedEducationCenterAddress || "",
+    selectedEducationCenterDistanceKm: row.selectedEducationCenterDistanceKm || "",
+
+    selectedPracticeInstitutionId: row.selectedPracticeInstitutionId || null,
+    selectedPracticeInstitutionName: row.selectedPracticeInstitutionName || "",
+    selectedPracticeInstitutionAddress: row.selectedPracticeInstitutionAddress || "",
+    selectedPracticeInstitutionDistanceKm: row.selectedPracticeInstitutionDistanceKm || "",
+
+    feeAmount: row.feeAmount || "0",
+    paymentStatus: row.paymentStatus || "미결제",
+    note: row.note || "",
+    createdAt: row.createdAt || null,
+    updatedAt: row.updatedAt || null,
+  }));
 }
 
 export async function listPracticeSupportRequestsByStudent(studentId: number) {
   const db = await getDb();
   if (!db) return [];
 
-  return db
-    .select()
-    .from(practiceSupportRequests)
-    .where(eq(practiceSupportRequests.studentId, studentId))
-    .orderBy(desc(practiceSupportRequests.createdAt));
+  const [rows] = await db.execute(sql`
+    SELECT
+      sem.id AS semesterId,
+      sem.studentId,
+      sem.semesterOrder,
+      sem.practiceStatus AS semesterPracticeStatus,
+      sem.practiceSupportRequestId,
+
+      psr.id,
+      psr.assigneeId,
+      psr.clientName,
+      psr.phone,
+      psr.course,
+      psr.inputAddress,
+      psr.detailAddress,
+      psr.assigneeName,
+      psr.managerName,
+      psr.practiceHours,
+      psr.practiceDate,
+      psr.includeEducationCenter,
+      psr.includePracticeInstitution,
+      psr.coordinationStatus,
+      psr.selectedEducationCenterId,
+      psr.selectedEducationCenterName,
+      psr.selectedEducationCenterAddress,
+      psr.selectedEducationCenterDistanceKm,
+      psr.selectedPracticeInstitutionId,
+      psr.selectedPracticeInstitutionName,
+      psr.selectedPracticeInstitutionAddress,
+      psr.selectedPracticeInstitutionDistanceKm,
+      psr.feeAmount,
+      psr.paymentStatus,
+      psr.note,
+      psr.createdAt,
+      psr.updatedAt,
+
+      s.clientName AS studentClientName,
+      s.phone AS studentPhone,
+      s.assigneeId AS studentAssigneeId,
+      COALESCE(sem.primaryCourse, s.course) AS semesterCourse,
+
+      p.practiceDate AS planPracticeDate,
+      p.practiceHours AS planPracticeHours,
+      p.desiredCourse AS planDesiredCourse,
+      p.hasPractice,
+
+      u.name AS userName
+    FROM semesters sem
+    INNER JOIN students s ON s.id = sem.studentId
+    LEFT JOIN plans p ON p.studentId = s.id
+    LEFT JOIN users u ON u.id = s.assigneeId
+    LEFT JOIN practice_support_requests psr
+      ON psr.id = sem.practiceSupportRequestId
+      OR (psr.studentId = sem.studentId AND psr.semesterId = sem.id)
+    WHERE sem.studentId = ${studentId}
+      AND sem.practiceStatus IN ('미섭외', '섭외중', '섭외완료')
+    ORDER BY sem.semesterOrder ASC, sem.id ASC
+  `);
+
+  return (rows as any[]).map((row) => ({
+    id: row.id ?? `semester-${row.semesterId}`,
+    semesterId: row.semesterId,
+    studentId: row.studentId,
+    semesterOrder: row.semesterOrder,
+
+    clientName: row.clientName || row.studentClientName || "",
+    phone: row.phone || row.studentPhone || "",
+    course: row.course || row.semesterCourse || row.planDesiredCourse || "",
+    inputAddress: row.inputAddress || "",
+    detailAddress: row.detailAddress || "",
+    assigneeId: row.assigneeId || row.studentAssigneeId || null,
+    assigneeName: row.assigneeName || row.userName || "",
+    managerName: row.managerName || row.userName || "",
+    practiceHours: row.practiceHours ?? row.planPracticeHours ?? null,
+    practiceDate: row.practiceDate || row.planPracticeDate || null,
+    coordinationStatus: row.coordinationStatus || row.semesterPracticeStatus || "미섭외",
+
+    selectedEducationCenterId: row.selectedEducationCenterId || null,
+    selectedEducationCenterName: row.selectedEducationCenterName || "",
+    selectedEducationCenterAddress: row.selectedEducationCenterAddress || "",
+    selectedEducationCenterDistanceKm: row.selectedEducationCenterDistanceKm || "",
+
+    selectedPracticeInstitutionId: row.selectedPracticeInstitutionId || null,
+    selectedPracticeInstitutionName: row.selectedPracticeInstitutionName || "",
+    selectedPracticeInstitutionAddress: row.selectedPracticeInstitutionAddress || "",
+    selectedPracticeInstitutionDistanceKm: row.selectedPracticeInstitutionDistanceKm || "",
+
+    feeAmount: row.feeAmount || "0",
+    paymentStatus: row.paymentStatus || "미결제",
+    note: row.note || "",
+    createdAt: row.createdAt || null,
+    updatedAt: row.updatedAt || null,
+  }));
 }
 
 export async function getPracticeSupportRequest(id: number) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const rows = await db
-    .select()
-    .from(practiceSupportRequests)
-    .where(eq(practiceSupportRequests.id, id))
-    .limit(1);
+  const [rows] = await db.execute(sql`
+    SELECT
+      sem.id AS semesterId,
+      sem.studentId,
+      sem.semesterOrder,
+      sem.practiceStatus AS semesterPracticeStatus,
+      sem.practiceSupportRequestId,
 
-  return rows[0];
+      psr.id,
+      psr.assigneeId,
+      psr.clientName,
+      psr.phone,
+      psr.course,
+      psr.inputAddress,
+      psr.detailAddress,
+      psr.assigneeName,
+      psr.managerName,
+      psr.practiceHours,
+      psr.practiceDate,
+      psr.includeEducationCenter,
+      psr.includePracticeInstitution,
+      psr.coordinationStatus,
+      psr.selectedEducationCenterId,
+      psr.selectedEducationCenterName,
+      psr.selectedEducationCenterAddress,
+      psr.selectedEducationCenterDistanceKm,
+      psr.selectedPracticeInstitutionId,
+      psr.selectedPracticeInstitutionName,
+      psr.selectedPracticeInstitutionAddress,
+      psr.selectedPracticeInstitutionDistanceKm,
+      psr.feeAmount,
+      psr.paymentStatus,
+      psr.note,
+      psr.createdAt,
+      psr.updatedAt,
+
+      s.clientName AS studentClientName,
+      s.phone AS studentPhone,
+      s.assigneeId AS studentAssigneeId,
+      COALESCE(sem.primaryCourse, s.course) AS semesterCourse,
+
+      p.practiceDate AS planPracticeDate,
+      p.practiceHours AS planPracticeHours,
+      p.desiredCourse AS planDesiredCourse,
+
+      u.name AS userName
+    FROM practice_support_requests psr
+    LEFT JOIN semesters sem
+      ON sem.practiceSupportRequestId = psr.id
+      OR (sem.studentId = psr.studentId AND sem.id = psr.semesterId)
+    LEFT JOIN students s ON s.id = psr.studentId
+    LEFT JOIN plans p ON p.studentId = psr.studentId
+    LEFT JOIN users u ON u.id = COALESCE(psr.assigneeId, s.assigneeId)
+    WHERE psr.id = ${id}
+    LIMIT 1
+  `);
+
+  const row = (rows as any[])[0];
+  if (!row) return undefined;
+
+  return {
+    id: row.id,
+    semesterId: row.semesterId,
+    studentId: row.studentId,
+    semesterOrder: row.semesterOrder,
+
+    clientName: row.clientName || row.studentClientName || "",
+    phone: row.phone || row.studentPhone || "",
+    course: row.course || row.semesterCourse || row.planDesiredCourse || "",
+    inputAddress: row.inputAddress || "",
+    detailAddress: row.detailAddress || "",
+    assigneeId: row.assigneeId || row.studentAssigneeId || null,
+    assigneeName: row.assigneeName || row.userName || "",
+    managerName: row.managerName || row.userName || "",
+    practiceHours: row.practiceHours ?? row.planPracticeHours ?? null,
+    practiceDate: row.practiceDate || row.planPracticeDate || null,
+    coordinationStatus: row.coordinationStatus || row.semesterPracticeStatus || "미섭외",
+
+    selectedEducationCenterId: row.selectedEducationCenterId || null,
+    selectedEducationCenterName: row.selectedEducationCenterName || "",
+    selectedEducationCenterAddress: row.selectedEducationCenterAddress || "",
+    selectedEducationCenterDistanceKm: row.selectedEducationCenterDistanceKm || "",
+
+    selectedPracticeInstitutionId: row.selectedPracticeInstitutionId || null,
+    selectedPracticeInstitutionName: row.selectedPracticeInstitutionName || "",
+    selectedPracticeInstitutionAddress: row.selectedPracticeInstitutionAddress || "",
+    selectedPracticeInstitutionDistanceKm: row.selectedPracticeInstitutionDistanceKm || "",
+
+    feeAmount: row.feeAmount || "0",
+    paymentStatus: row.paymentStatus || "미결제",
+    note: row.note || "",
+    createdAt: row.createdAt || null,
+    updatedAt: row.updatedAt || null,
+  };
 }
 
 export async function createPracticeSupportRequest(data: InsertPracticeSupportRequest) {
@@ -5712,10 +5981,17 @@ export async function upsertPracticeSupportRequestByStudent(params: {
   if (!db) throw new Error("DB not available");
 
   const existing = await db
-    .select()
-    .from(practiceSupportRequests)
-    .where(eq(practiceSupportRequests.studentId, params.studentId))
-    .limit(1);
+  .select()
+  .from(practiceSupportRequests)
+  .where(
+    params.semesterId
+      ? and(
+          eq(practiceSupportRequests.studentId, params.studentId),
+          eq(practiceSupportRequests.semesterId, params.semesterId)
+        )
+      : eq(practiceSupportRequests.studentId, params.studentId)
+  )
+  .limit(1);
 
   const payload: any = {
     studentId: params.studentId,
