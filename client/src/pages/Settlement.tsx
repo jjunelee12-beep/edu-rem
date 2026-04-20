@@ -1353,380 +1353,479 @@ const downloadInstitutionTrendCSV = () => {
   * 정산 기준: 결제 완료 건 기준 · 일반과목은 총매출에서 교육원 정산 금액을 먼저 차감한 뒤 회사 매출을 계산하고, 그 회사 매출 안에서 프리랜서 지급액과 세금을 반영하여 회사 순이익을 계산합니다. 환불 발생 시 해당 월 정산에서 차감됩니다.
 </p>
 <Dialog open={institutionDialogOpen} onOpenChange={setInstitutionDialogOpen}>
-  <DialogContent className="max-w-6xl">
-    <DialogHeader>
-      <DialogTitle>
-        {year}년 {month}월 교육원별 매출 현황
-      </DialogTitle>
-    </DialogHeader>
+  <DialogContent className="fixed inset-0 w-screen h-screen max-w-none max-h-none rounded-none p-0 border-0">
+    <div className="flex h-full flex-col bg-slate-50">
+      {/* 상단 헤더 */}
+      <div className="flex h-16 shrink-0 items-center justify-between border-b bg-white px-6">
+        <div>
+          <DialogTitle className="text-lg font-semibold">
+            {year}년 {month}월 교육원별 매출 현황
+          </DialogTitle>
+          <p className="text-sm text-muted-foreground">
+            교육원별 월간 매출 / 우리회사 몫 / 월별 동향 / 상세 리스트를 확인합니다.
+          </p>
+        </div>
 
-<div className="flex items-center justify-end gap-2">
-  <Button
-    variant="outline"
-    size="sm"
-    onClick={downloadInstitutionSummaryCSV}
-    disabled={!institutionSummary || institutionSummary.length === 0}
-  >
-    월간 요약 CSV
-  </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={downloadInstitutionSummaryCSV}
+            disabled={!institutionSummary || institutionSummary.length === 0}
+          >
+            월간 요약 CSV
+          </Button>
 
-  <Button
-    variant="outline"
-    size="sm"
-    onClick={downloadInstitutionTrendCSV}
-    disabled={!institutionMonthlyTrend || institutionMonthlyTrend.length === 0}
-  >
-    연간 동향 CSV
-  </Button>
-</div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={downloadInstitutionTrendCSV}
+            disabled={!institutionMonthlyTrend || institutionMonthlyTrend.length === 0}
+          >
+            연간 동향 CSV
+          </Button>
 
-    <div className="space-y-6">
-      <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b bg-muted/50">
-              <th className="px-4 py-3 text-left">교육원</th>
-              <th className="px-4 py-3 text-right">총매출</th>
-              <th className="px-4 py-3 text-right">우리회사 몫</th>
-              <th className="px-4 py-3 text-right">프리랜서 지급액</th>
-              <th className="px-4 py-3 text-right">세금</th>
-              <th className="px-4 py-3 text-right">최종 지급액</th>
-              <th className="px-4 py-3 text-right">회사 순이익</th>
-<th className="px-4 py-3 text-right">전월 대비</th>
-              <th className="px-4 py-3 text-right">건수</th>
-              <th className="px-4 py-3 text-center">리스트</th>
-            </tr>
-          </thead>
-          <tbody>
-            {institutionSummaryLoading ? (
-              <tr>
-                <td colSpan={10} className="px-4 py-10 text-center text-muted-foreground">
-                  불러오는 중...
-                </td>
-              </tr>
-            ) : institutionSummary.length === 0 ? (
-              <tr>
-                <td colSpan={10} className="px-4 py-10 text-center text-muted-foreground">
-                  해당 월 교육원별 데이터가 없습니다.
-                </td>
-              </tr>
-            ) : (
-              institutionSummary.map((row: any) => (
-                <tr key={row.institutionName} className="border-b last:border-0">
-                  <td className="px-4 py-3 font-medium">{row.institutionName}</td>
-                  <td className="px-4 py-3 text-right">
-                    {Number(row.totalGrossAmount || 0).toLocaleString()}원
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {Number(row.totalCompanyAmount || 0).toLocaleString()}원
-                  </td>
-                  <td className="px-4 py-3 text-right text-blue-600">
-                    {Number(row.totalFreelancerAmount || 0).toLocaleString()}원
-                  </td>
-                  <td className="px-4 py-3 text-right text-amber-600">
-                    -{Number(row.totalTaxAmount || 0).toLocaleString()}원
-                  </td>
-                  <td className="px-4 py-3 text-right text-emerald-600">
-                    {Number(row.totalFinalPayoutAmount || 0).toLocaleString()}원
-                  </td>
-                  <td className="px-4 py-3 text-right text-violet-600">
-                    {Number(row.totalCompanyProfit || 0).toLocaleString()}원
-                  </td>
-<td className="px-4 py-3 text-right">
-  <div className="flex flex-col items-end leading-tight">
-    <span
-      className={
-        institutionTrendMode === "gross"
-          ? Number(row.grossDiffAmount || 0) > 0
-            ? "text-emerald-600 font-medium"
-            : Number(row.grossDiffAmount || 0) < 0
-            ? "text-destructive font-medium"
-            : "text-muted-foreground"
-          : Number(row.companyDiffAmount || 0) > 0
-          ? "text-emerald-600 font-medium"
-          : Number(row.companyDiffAmount || 0) < 0
-          ? "text-destructive font-medium"
-          : "text-muted-foreground"
-      }
-    >
-      {institutionTrendMode === "gross"
-        ? `${Number(row.grossDiffAmount || 0) >= 0 ? "+" : ""}${Number(row.grossDiffAmount || 0).toLocaleString()}원`
-        : `${Number(row.companyDiffAmount || 0) >= 0 ? "+" : ""}${Number(row.companyDiffAmount || 0).toLocaleString()}원`}
-    </span>
-
-    <span className="text-xs text-muted-foreground">
-      {institutionTrendMode === "gross"
-        ? `${Number(row.grossDiffRate || 0).toFixed(1)}%`
-        : `${Number(row.companyDiffRate || 0).toFixed(1)}%`}
-    </span>
-  </div>
-</td>
-                  <td className="px-4 py-3 text-right">
-                    {Number(row.count || 0).toLocaleString()}건
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setSelectedInstitutionName(row.institutionName)}
-                    >
-                      리스트 보기
-                    </Button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setInstitutionDialogOpen(false)}
+          >
+            닫기
+          </Button>
+        </div>
       </div>
 
-<Card>
-  <CardHeader className="flex flex-row items-center justify-between">
-    <CardTitle className="text-base">
-      {year}년 교육원별 월별 동향
-    </CardTitle>
-<p className="text-sm text-muted-foreground">
-  현재 기준: {institutionTrendMode === "gross" ? "총매출" : "우리회사 몫"}
-</p>
+      {/* 본문 */}
+      <div className="flex-1 overflow-y-auto px-6 py-6">
+        <div className="space-y-6">
+          {/* 교육원별 월간 요약 */}
+          <Card className="rounded-2xl border-slate-200 shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-base">
+                {year}년 {month}월 교육원별 월간 요약
+              </CardTitle>
+            </CardHeader>
 
-    <div className="flex items-center gap-2">
-      <Button
-        type="button"
-        variant={institutionTrendMode === "gross" ? "default" : "outline"}
-        size="sm"
-        onClick={() => setInstitutionTrendMode("gross")}
-      >
-        총매출
-      </Button>
-      <Button
-        type="button"
-        variant={institutionTrendMode === "company" ? "default" : "outline"}
-        size="sm"
-        onClick={() => setInstitutionTrendMode("company")}
-      >
-        우리회사 몫
-      </Button>
-    </div>
-  </CardHeader>
-  <CardContent className="p-0">
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b bg-muted/50">
-            <th className="px-4 py-3 text-left">교육원</th>
-            <th className="px-4 py-3 text-right">1월</th>
-            <th className="px-4 py-3 text-right">2월</th>
-            <th className="px-4 py-3 text-right">3월</th>
-            <th className="px-4 py-3 text-right">4월</th>
-            <th className="px-4 py-3 text-right">5월</th>
-            <th className="px-4 py-3 text-right">6월</th>
-            <th className="px-4 py-3 text-right">7월</th>
-            <th className="px-4 py-3 text-right">8월</th>
-            <th className="px-4 py-3 text-right">9월</th>
-            <th className="px-4 py-3 text-right">10월</th>
-            <th className="px-4 py-3 text-right">11월</th>
-            <th className="px-4 py-3 text-right">12월</th>
-            <th className="px-4 py-3 text-right">
-  {institutionTrendMode === "gross" ? "연간 총매출" : "연간 우리회사 몫"}
-</th>
-          </tr>
-        </thead>
-        <tbody>
-          {institutionMonthlyTrendLoading ? (
-            <tr>
-              <td colSpan={14} className="px-4 py-10 text-center text-muted-foreground">
-                불러오는 중...
-              </td>
-            </tr>
-          ) : institutionMonthlyTrend.length === 0 ? (
-            <tr>
-              <td colSpan={14} className="px-4 py-10 text-center text-muted-foreground">
-                해당 연도 동향 데이터가 없습니다.
-              </td>
-            </tr>
-          ) : (
-            institutionMonthlyTrend.map((row: any) => (
-              <tr key={row.institutionName} className="border-b last:border-0">
-                <td className="px-4 py-3 font-medium">{row.institutionName}</td>
-                <td className="px-4 py-3 text-right">
-  {Number(
-    institutionTrendMode === "gross"
-      ? row.monthlyGross?.[1] || 0
-      : row.monthlyCompany?.[1] || 0
-  ).toLocaleString()}원
-</td>
-<td className="px-4 py-3 text-right">
-  {Number(
-    institutionTrendMode === "gross"
-      ? row.monthlyGross?.[2] || 0
-      : row.monthlyCompany?.[2] || 0
-  ).toLocaleString()}원
-</td>
-<td className="px-4 py-3 text-right">
-  {Number(
-    institutionTrendMode === "gross"
-      ? row.monthlyGross?.[3] || 0
-      : row.monthlyCompany?.[3] || 0
-  ).toLocaleString()}원
-</td>
-<td className="px-4 py-3 text-right">
-  {Number(
-    institutionTrendMode === "gross"
-      ? row.monthlyGross?.[4] || 0
-      : row.monthlyCompany?.[4] || 0
-  ).toLocaleString()}원
-</td>
-<td className="px-4 py-3 text-right">
-  {Number(
-    institutionTrendMode === "gross"
-      ? row.monthlyGross?.[5] || 0
-      : row.monthlyCompany?.[5] || 0
-  ).toLocaleString()}원
-</td>
-<td className="px-4 py-3 text-right">
-  {Number(
-    institutionTrendMode === "gross"
-      ? row.monthlyGross?.[6] || 0
-      : row.monthlyCompany?.[6] || 0
-  ).toLocaleString()}원
-</td>
-<td className="px-4 py-3 text-right">
-  {Number(
-    institutionTrendMode === "gross"
-      ? row.monthlyGross?.[7] || 0
-      : row.monthlyCompany?.[7] || 0
-  ).toLocaleString()}원
-</td>
-<td className="px-4 py-3 text-right">
-  {Number(
-    institutionTrendMode === "gross"
-      ? row.monthlyGross?.[8] || 0
-      : row.monthlyCompany?.[8] || 0
-  ).toLocaleString()}원
-</td>
-<td className="px-4 py-3 text-right">
-  {Number(
-    institutionTrendMode === "gross"
-      ? row.monthlyGross?.[9] || 0
-      : row.monthlyCompany?.[9] || 0
-  ).toLocaleString()}원
-</td>
-<td className="px-4 py-3 text-right">
-  {Number(
-    institutionTrendMode === "gross"
-      ? row.monthlyGross?.[10] || 0
-      : row.monthlyCompany?.[10] || 0
-  ).toLocaleString()}원
-</td>
-<td className="px-4 py-3 text-right">
-  {Number(
-    institutionTrendMode === "gross"
-      ? row.monthlyGross?.[11] || 0
-      : row.monthlyCompany?.[11] || 0
-  ).toLocaleString()}원
-</td>
-<td className="px-4 py-3 text-right">
-  {Number(
-    institutionTrendMode === "gross"
-      ? row.monthlyGross?.[12] || 0
-      : row.monthlyCompany?.[12] || 0
-  ).toLocaleString()}원
-</td>
-<td className="px-4 py-3 text-right font-semibold">
-  {Number(
-    institutionTrendMode === "gross"
-      ? row.yearTotalGross || 0
-      : row.yearTotalCompany || 0
-  ).toLocaleString()}원
-</td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
-  </CardContent>
-</Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto rounded-b-2xl">
+                <table className="w-full min-w-[1400px] text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="px-4 py-3 text-left">교육원</th>
+                      <th className="px-4 py-3 text-right">총매출</th>
+                      <th className="px-4 py-3 text-right">우리회사 몫</th>
+                      <th className="px-4 py-3 text-right">프리랜서 지급액</th>
+                      <th className="px-4 py-3 text-right">세금</th>
+                      <th className="px-4 py-3 text-right">최종 지급액</th>
+                      <th className="px-4 py-3 text-right">회사 순이익</th>
+                      <th className="px-4 py-3 text-right">전월 대비</th>
+                      <th className="px-4 py-3 text-right">건수</th>
+                      <th className="px-4 py-3 text-center">리스트</th>
+                    </tr>
+                  </thead>
 
-      {selectedInstitutionName ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              {selectedInstitutionName} 상세 내역
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="px-4 py-3 text-left">일자</th>
-                    <th className="px-4 py-3 text-left">유형</th>
-                    <th className="px-4 py-3 text-left">담당자</th>
-                    <th className="px-4 py-3 text-left">학생명</th>
-                    <th className="px-4 py-3 text-left">제목</th>
-                    <th className="px-4 py-3 text-right">총매출</th>
-                    <th className="px-4 py-3 text-right">우리회사 몫</th>
-                    <th className="px-4 py-3 text-right">프리랜서 지급액</th>
-                    <th className="px-4 py-3 text-right">세금</th>
-                    <th className="px-4 py-3 text-right">최종 지급액</th>
-                    <th className="px-4 py-3 text-right">회사 순이익</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {institutionEntriesLoading ? (
-                    <tr>
-                      <td colSpan={11} className="px-4 py-10 text-center text-muted-foreground">
-                        불러오는 중...
-                      </td>
-                    </tr>
-                  ) : !institutionEntriesData?.entries?.length ? (
-                    <tr>
-                      <td colSpan={11} className="px-4 py-10 text-center text-muted-foreground">
-                        상세 데이터가 없습니다.
-                      </td>
-                    </tr>
-                  ) : (
-                    institutionEntriesData.entries.map((row: any) => (
-                      <tr key={row.id} className="border-b last:border-0">
-                        <td className="px-4 py-3">
-                          {row.occurredAt
-                            ? new Date(row.occurredAt).toLocaleDateString("ko-KR")
-                            : "-"}
-                        </td>
-                        <td className="px-4 py-3">
-                          {getRevenueTypeLabel(row.revenueType, row.settlementStatus)}
-                        </td>
-                        <td className="px-4 py-3">{row.assigneeName || "-"}</td>
-                        <td className="px-4 py-3">{row.clientName || "-"}</td>
-                        <td className="px-4 py-3">{row.title || "-"}</td>
-                        <td className="px-4 py-3 text-right">
-                          {Number(row.grossAmount || 0).toLocaleString()}원
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          {Number(row.companyAmount || 0).toLocaleString()}원
-                        </td>
-                        <td className="px-4 py-3 text-right text-blue-600">
-                          {Number(row.freelancerAmount || 0).toLocaleString()}원
-                        </td>
-                        <td className="px-4 py-3 text-right text-amber-600">
-                          -{Number(row.taxAmount || 0).toLocaleString()}원
-                        </td>
-                        <td className="px-4 py-3 text-right text-emerald-600">
-                          {Number(row.finalPayoutAmount || 0).toLocaleString()}원
-                        </td>
-                        <td className="px-4 py-3 text-right text-violet-600">
-                          {Number(row.companyProfit || 0).toLocaleString()}원
+                  <tbody>
+                    {institutionSummaryLoading ? (
+                      <tr>
+                        <td
+                          colSpan={10}
+                          className="px-4 py-16 text-center text-muted-foreground"
+                        >
+                          불러오는 중...
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
+                    ) : institutionSummary.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={10}
+                          className="px-4 py-16 text-center text-muted-foreground"
+                        >
+                          해당 월 교육원별 데이터가 없습니다.
+                        </td>
+                      </tr>
+                    ) : (
+                      institutionSummary.map((row: any) => (
+                        <tr
+                          key={row.institutionName}
+                          className="border-b last:border-0 hover:bg-muted/20"
+                        >
+                          <td className="px-4 py-3 font-medium">
+                            {row.institutionName}
+                          </td>
+
+                          <td className="px-4 py-3 text-right">
+                            {Number(row.totalGrossAmount || 0).toLocaleString()}원
+                          </td>
+
+                          <td className="px-4 py-3 text-right">
+                            {Number(row.totalCompanyAmount || 0).toLocaleString()}원
+                          </td>
+
+                          <td className="px-4 py-3 text-right text-blue-600">
+                            {Number(row.totalFreelancerAmount || 0).toLocaleString()}원
+                          </td>
+
+                          <td className="px-4 py-3 text-right text-amber-600">
+                            -{Number(row.totalTaxAmount || 0).toLocaleString()}원
+                          </td>
+
+                          <td className="px-4 py-3 text-right text-emerald-600">
+                            {Number(row.totalFinalPayoutAmount || 0).toLocaleString()}원
+                          </td>
+
+                          <td className="px-4 py-3 text-right text-violet-600">
+                            {Number(row.totalCompanyProfit || 0).toLocaleString()}원
+                          </td>
+
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex flex-col items-end leading-tight">
+                              <span
+                                className={
+                                  institutionTrendMode === "gross"
+                                    ? Number(row.grossDiffAmount || 0) > 0
+                                      ? "font-medium text-emerald-600"
+                                      : Number(row.grossDiffAmount || 0) < 0
+                                      ? "font-medium text-destructive"
+                                      : "text-muted-foreground"
+                                    : Number(row.companyDiffAmount || 0) > 0
+                                    ? "font-medium text-emerald-600"
+                                    : Number(row.companyDiffAmount || 0) < 0
+                                    ? "font-medium text-destructive"
+                                    : "text-muted-foreground"
+                                }
+                              >
+                                {institutionTrendMode === "gross"
+                                  ? `${Number(row.grossDiffAmount || 0) >= 0 ? "+" : ""}${Number(
+                                      row.grossDiffAmount || 0
+                                    ).toLocaleString()}원`
+                                  : `${Number(row.companyDiffAmount || 0) >= 0 ? "+" : ""}${Number(
+                                      row.companyDiffAmount || 0
+                                    ).toLocaleString()}원`}
+                              </span>
+
+                              <span className="text-xs text-muted-foreground">
+                                {institutionTrendMode === "gross"
+                                  ? `${Number(row.grossDiffRate || 0).toFixed(1)}%`
+                                  : `${Number(row.companyDiffRate || 0).toFixed(1)}%`}
+                              </span>
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3 text-right">
+                            {Number(row.count || 0).toLocaleString()}건
+                          </td>
+
+                          <td className="px-4 py-3 text-center">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setSelectedInstitutionName(row.institutionName)
+                              }
+                            >
+                              리스트 보기
+                            </Button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 교육원별 월별 동향 */}
+          <Card className="rounded-2xl border-slate-200 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between gap-4">
+              <div>
+                <CardTitle className="text-base">
+                  {year}년 교육원별 월별 동향
+                </CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  현재 기준: {institutionTrendMode === "gross" ? "총매출" : "우리회사 몫"}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant={institutionTrendMode === "gross" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setInstitutionTrendMode("gross")}
+                >
+                  총매출
+                </Button>
+                <Button
+                  type="button"
+                  variant={institutionTrendMode === "company" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setInstitutionTrendMode("company")}
+                >
+                  우리회사 몫
+                </Button>
+              </div>
+            </CardHeader>
+
+            <CardContent className="p-0">
+              <div className="overflow-x-auto rounded-b-2xl">
+                <table className="w-full min-w-[1700px] text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="px-4 py-3 text-left">교육원</th>
+                      <th className="px-4 py-3 text-right">1월</th>
+                      <th className="px-4 py-3 text-right">2월</th>
+                      <th className="px-4 py-3 text-right">3월</th>
+                      <th className="px-4 py-3 text-right">4월</th>
+                      <th className="px-4 py-3 text-right">5월</th>
+                      <th className="px-4 py-3 text-right">6월</th>
+                      <th className="px-4 py-3 text-right">7월</th>
+                      <th className="px-4 py-3 text-right">8월</th>
+                      <th className="px-4 py-3 text-right">9월</th>
+                      <th className="px-4 py-3 text-right">10월</th>
+                      <th className="px-4 py-3 text-right">11월</th>
+                      <th className="px-4 py-3 text-right">12월</th>
+                      <th className="px-4 py-3 text-right">
+                        {institutionTrendMode === "gross"
+                          ? "연간 총매출"
+                          : "연간 우리회사 몫"}
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {institutionMonthlyTrendLoading ? (
+                      <tr>
+                        <td
+                          colSpan={14}
+                          className="px-4 py-16 text-center text-muted-foreground"
+                        >
+                          불러오는 중...
+                        </td>
+                      </tr>
+                    ) : institutionMonthlyTrend.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={14}
+                          className="px-4 py-16 text-center text-muted-foreground"
+                        >
+                          해당 연도 동향 데이터가 없습니다.
+                        </td>
+                      </tr>
+                    ) : (
+                      institutionMonthlyTrend.map((row: any) => (
+                        <tr
+                          key={row.institutionName}
+                          className="border-b last:border-0 hover:bg-muted/20"
+                        >
+                          <td className="px-4 py-3 font-medium">
+                            {row.institutionName}
+                          </td>
+
+                          <td className="px-4 py-3 text-right">
+                            {Number(
+                              institutionTrendMode === "gross"
+                                ? row.monthlyGross?.[1] || 0
+                                : row.monthlyCompany?.[1] || 0
+                            ).toLocaleString()}원
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {Number(
+                              institutionTrendMode === "gross"
+                                ? row.monthlyGross?.[2] || 0
+                                : row.monthlyCompany?.[2] || 0
+                            ).toLocaleString()}원
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {Number(
+                              institutionTrendMode === "gross"
+                                ? row.monthlyGross?.[3] || 0
+                                : row.monthlyCompany?.[3] || 0
+                            ).toLocaleString()}원
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {Number(
+                              institutionTrendMode === "gross"
+                                ? row.monthlyGross?.[4] || 0
+                                : row.monthlyCompany?.[4] || 0
+                            ).toLocaleString()}원
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {Number(
+                              institutionTrendMode === "gross"
+                                ? row.monthlyGross?.[5] || 0
+                                : row.monthlyCompany?.[5] || 0
+                            ).toLocaleString()}원
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {Number(
+                              institutionTrendMode === "gross"
+                                ? row.monthlyGross?.[6] || 0
+                                : row.monthlyCompany?.[6] || 0
+                            ).toLocaleString()}원
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {Number(
+                              institutionTrendMode === "gross"
+                                ? row.monthlyGross?.[7] || 0
+                                : row.monthlyCompany?.[7] || 0
+                            ).toLocaleString()}원
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {Number(
+                              institutionTrendMode === "gross"
+                                ? row.monthlyGross?.[8] || 0
+                                : row.monthlyCompany?.[8] || 0
+                            ).toLocaleString()}원
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {Number(
+                              institutionTrendMode === "gross"
+                                ? row.monthlyGross?.[9] || 0
+                                : row.monthlyCompany?.[9] || 0
+                            ).toLocaleString()}원
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {Number(
+                              institutionTrendMode === "gross"
+                                ? row.monthlyGross?.[10] || 0
+                                : row.monthlyCompany?.[10] || 0
+                            ).toLocaleString()}원
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {Number(
+                              institutionTrendMode === "gross"
+                                ? row.monthlyGross?.[11] || 0
+                                : row.monthlyCompany?.[11] || 0
+                            ).toLocaleString()}원
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {Number(
+                              institutionTrendMode === "gross"
+                                ? row.monthlyGross?.[12] || 0
+                                : row.monthlyCompany?.[12] || 0
+                            ).toLocaleString()}원
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold">
+                            {Number(
+                              institutionTrendMode === "gross"
+                                ? row.yearTotalGross || 0
+                                : row.yearTotalCompany || 0
+                            ).toLocaleString()}원
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 선택 교육원 상세 내역 */}
+          {selectedInstitutionName ? (
+            <Card className="rounded-2xl border-slate-200 shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="text-base">
+                  {selectedInstitutionName} 상세 내역
+                </CardTitle>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedInstitutionName("")}
+                >
+                  닫기
+                </Button>
+              </CardHeader>
+
+              <CardContent className="p-0">
+                <div className="overflow-x-auto rounded-b-2xl">
+                  <table className="w-full min-w-[1400px] text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="px-4 py-3 text-left">일자</th>
+                        <th className="px-4 py-3 text-left">유형</th>
+                        <th className="px-4 py-3 text-left">담당자</th>
+                        <th className="px-4 py-3 text-left">학생명</th>
+                        <th className="px-4 py-3 text-left">제목</th>
+                        <th className="px-4 py-3 text-right">총매출</th>
+                        <th className="px-4 py-3 text-right">우리회사 몫</th>
+                        <th className="px-4 py-3 text-right">프리랜서 지급액</th>
+                        <th className="px-4 py-3 text-right">세금</th>
+                        <th className="px-4 py-3 text-right">최종 지급액</th>
+                        <th className="px-4 py-3 text-right">회사 순이익</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {institutionEntriesLoading ? (
+                        <tr>
+                          <td
+                            colSpan={11}
+                            className="px-4 py-16 text-center text-muted-foreground"
+                          >
+                            불러오는 중...
+                          </td>
+                        </tr>
+                      ) : !institutionEntriesData?.entries?.length ? (
+                        <tr>
+                          <td
+                            colSpan={11}
+                            className="px-4 py-16 text-center text-muted-foreground"
+                          >
+                            상세 데이터가 없습니다.
+                          </td>
+                        </tr>
+                      ) : (
+                        institutionEntriesData.entries.map((row: any) => (
+                          <tr
+                            key={row.id}
+                            className="border-b last:border-0 hover:bg-muted/20"
+                          >
+                            <td className="px-4 py-3">
+                              {row.occurredAt
+                                ? new Date(row.occurredAt).toLocaleDateString("ko-KR")
+                                : "-"}
+                            </td>
+                            <td className="px-4 py-3">
+                              {getRevenueTypeLabel(
+                                row.revenueType,
+                                row.settlementStatus
+                              )}
+                            </td>
+                            <td className="px-4 py-3">{row.assigneeName || "-"}</td>
+                            <td className="px-4 py-3">{row.clientName || "-"}</td>
+                            <td className="px-4 py-3">{row.title || "-"}</td>
+                            <td className="px-4 py-3 text-right">
+                              {Number(row.grossAmount || 0).toLocaleString()}원
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              {Number(row.companyAmount || 0).toLocaleString()}원
+                            </td>
+                            <td className="px-4 py-3 text-right text-blue-600">
+                              {Number(row.freelancerAmount || 0).toLocaleString()}원
+                            </td>
+                            <td className="px-4 py-3 text-right text-amber-600">
+                              -{Number(row.taxAmount || 0).toLocaleString()}원
+                            </td>
+                            <td className="px-4 py-3 text-right text-emerald-600">
+                              {Number(row.finalPayoutAmount || 0).toLocaleString()}원
+                            </td>
+                            <td className="px-4 py-3 text-right text-violet-600">
+                              {Number(row.companyProfit || 0).toLocaleString()}원
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+        </div>
+      </div>
     </div>
   </DialogContent>
 </Dialog>
