@@ -4247,33 +4247,7 @@ export async function getSettlementInstitutionMonthlyTrend(params: {
     target.yearTotalGross += gross;
     target.yearTotalCompany += company;
   }
-for (const row of prevRows as any[]) {
-  const institutionName = String(row.institutionName || "미지정 교육원");
-  const sign = row.settlementStatus === "refunded" ? -1 : 1;
 
-  if (!map.has(institutionName)) {
-    map.set(institutionName, {
-      institutionName,
-      totalGrossAmount: 0,
-      totalCompanyAmount: 0,
-      totalFreelancerAmount: 0,
-      totalTaxAmount: 0,
-      totalFinalPayoutAmount: 0,
-      totalCompanyProfit: 0,
-      prevGrossAmount: 0,
-      prevCompanyAmount: 0,
-      grossDiffAmount: 0,
-      companyDiffAmount: 0,
-      grossDiffRate: 0,
-      companyDiffRate: 0,
-      count: 0,
-    });
-  }
-
-  const target = map.get(institutionName);
-  target.prevGrossAmount += toNumber(row.grossAmount) * sign;
-  target.prevCompanyAmount += toNumber(row.companyAmount) * sign;
-}
 
   return Array.from(map.values())
   .map((row: any) => {
@@ -4849,6 +4823,7 @@ const settings = await getSettlementSettings();
       s.studentId,
       s.revenueType,
       s.title,
+s.institutionName,
       s.grossAmount,
       s.companyAmount,
       s.companyProfit,
