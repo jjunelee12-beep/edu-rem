@@ -946,6 +946,7 @@ const savePlan = async () => {
         practiceHours: planForm.practiceHours
           ? parseInt(planForm.practiceHours)
           : null,
+        practiceDate: planForm.practiceDate || null,
         includeEducationCenter: true,
         includePracticeInstitution: true,
         coordinationStatus: planForm.practiceStatus as any,

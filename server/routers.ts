@@ -395,8 +395,9 @@ if (input.freelancerInputAmount !== undefined) {
           course: z.string().min(1),
           inputAddress: z.string().optional().nullable(),
           detailAddress: z.string().optional().nullable(),
-          practiceHours: z.number().optional().nullable(),
-          includeEducationCenter: z.boolean().optional(),
+         practiceHours: z.number().optional().nullable(),
+practiceDate: z.string().optional().nullable(),
+includeEducationCenter: z.boolean().optional(),
           includePracticeInstitution: z.boolean().optional(),
           coordinationStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
           feeAmount: z.string().optional(),
@@ -426,8 +427,9 @@ if (input.freelancerInputAmount !== undefined) {
           course: input.course.trim(),
           inputAddress: input.inputAddress?.trim() || null,
           detailAddress: input.detailAddress?.trim() || null,
-          practiceHours: input.practiceHours ?? null,
-          includeEducationCenter: input.includeEducationCenter ?? true,
+         practiceHours: input.practiceHours ?? null,
+practiceDate: input.practiceDate ?? null, 
+includeEducationCenter: input.includeEducationCenter ?? true,
           includePracticeInstitution: input.includePracticeInstitution ?? true,
           coordinationStatus: input.coordinationStatus ?? "미섭외",
           feeAmount: input.feeAmount ?? "0",
@@ -462,7 +464,8 @@ if (input.freelancerInputAmount !== undefined) {
           inputAddress: z.string().optional().nullable(),
           detailAddress: z.string().optional().nullable(),
           practiceHours: z.number().optional().nullable(),
-          includeEducationCenter: z.boolean().optional(),
+practiceDate: z.string().optional().nullable(),
+includeEducationCenter: z.boolean().optional(),
           includePracticeInstitution: z.boolean().optional(),
           coordinationStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
           feeAmount: z.string().optional(),
@@ -486,6 +489,8 @@ if (input.freelancerInputAmount !== undefined) {
         if (input.inputAddress !== undefined) data.inputAddress = input.inputAddress?.trim() || null;
         if (input.detailAddress !== undefined) data.detailAddress = input.detailAddress?.trim() || null;
         if (input.practiceHours !== undefined) data.practiceHours = input.practiceHours ?? null;
+if (input.practiceDate !== undefined)
+  data.practiceDate = input.practiceDate ?? null;
         if (input.includeEducationCenter !== undefined) data.includeEducationCenter = input.includeEducationCenter;
         if (input.includePracticeInstitution !== undefined)
           data.includePracticeInstitution = input.includePracticeInstitution;
@@ -554,6 +559,32 @@ if (input.freelancerInputAmount !== undefined) {
 
         return { success: true };
       }),
+
+upsertByStudent: protectedProcedure
+  .input(
+    z.object({
+      studentId: z.number(),
+      semesterId: z.number().optional().nullable(),
+      assigneeId: z.number(),
+      clientName: z.string().min(1),
+      phone: z.string().min(1),
+      course: z.string().min(1),
+      inputAddress: z.string().optional().nullable(),
+      detailAddress: z.string().optional().nullable(),
+      assigneeName: z.string().optional().nullable(),
+      managerName: z.string().optional().nullable(),
+      practiceHours: z.number().optional().nullable(),
+      practiceDate: z.string().optional().nullable(),
+      includeEducationCenter: z.boolean().optional(),
+      includePracticeInstitution: z.boolean().optional(),
+      coordinationStatus: z.enum(["미섭외","섭외중","섭외완료"]).optional(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    return db.upsertPracticeSupportRequestByStudent({
+      ...input,
+    });
+  }),
   }),
 
   auth: router({

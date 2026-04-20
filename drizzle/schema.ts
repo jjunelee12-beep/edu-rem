@@ -1,3 +1,4 @@
+
 import { sql } from "drizzle-orm";
 import {
   int,
@@ -643,6 +644,7 @@ export const practiceSupportRequests = mysqlTable("practice_support_requests", {
   detailAddress: varchar("detailAddress", { length: 255 }),
 
   practiceHours: int("practiceHours"),
+  practiceDate: varchar("practiceDate", { length: 50 }),
 
   includeEducationCenter: boolean("includeEducationCenter")
     .notNull()

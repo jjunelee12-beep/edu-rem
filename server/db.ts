@@ -5704,6 +5704,7 @@ export async function upsertPracticeSupportRequestByStudent(params: {
   assigneeName?: string | null;
   managerName?: string | null;
   practiceHours?: number | null;
+  practiceDate?: string | null;
   includeEducationCenter?: boolean;
   includePracticeInstitution?: boolean;
 }) {
@@ -5728,6 +5729,7 @@ export async function upsertPracticeSupportRequestByStudent(params: {
     assigneeName: params.assigneeName ?? null,
     managerName: params.managerName ?? null,
     practiceHours: params.practiceHours ?? null,
+    practiceDate: params.practiceDate ?? null,
     includeEducationCenter: params.includeEducationCenter ?? true,
     includePracticeInstitution: params.includePracticeInstitution ?? true,
     coordinationStatus: "미섭외",

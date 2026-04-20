@@ -531,6 +531,7 @@ const createCategoryMut = trpc.practiceListCategory.create.useMutation({
       managerName: row.managerName || row.assigneeName || "",
       practiceHours:
         row.practiceHours?.toString?.() || row.practiceHours || "",
+practiceDate: row.practiceDate || "",
       selectedEducationCenterId: row.selectedEducationCenterId || undefined,
       selectedEducationCenterName: row.selectedEducationCenterName || "",
       selectedEducationCenterAddress: row.selectedEducationCenterAddress || "",
@@ -572,6 +573,7 @@ if (
       practiceHours: selectedRow.practiceHours
         ? Number(selectedRow.practiceHours)
         : undefined,
+      practiceDate: selectedRow.practiceDate || undefined,
       coordinationStatus:
         selectedRow.coordinationStatus as PracticeCoordinationStatus,
       selectedEducationCenterId: selectedRow.selectedEducationCenterId || undefined,
@@ -1699,21 +1701,29 @@ useEffect(() => {
                       <td className="px-3 py-3">{row.course || "-"}</td>
 
                       <td className="px-3 py-3">
-                        <div className="text-sm">{row.inputAddress || "-"}</div>
-                      </td>
+  <div className="space-y-1">
+    <div className="text-sm">{row.inputAddress || "-"}</div>
+    <div className="text-xs text-muted-foreground">
+      실습예정일: {row.practiceDate || "-"}
+    </div>
+  </div>
+</td>
 
                       <td className="px-3 py-3">
-                        <div className="space-y-1">
-                          <div className="font-medium">
-                            {row.selectedEducationCenterName || "-"}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {row.selectedEducationCenterDistanceKm
-                              ? `${row.selectedEducationCenterDistanceKm}km`
-                              : ""}
-                          </div>
-                        </div>
-                      </td>
+  <div className="space-y-1">
+    <div className="font-medium">
+      {row.selectedEducationCenterName || "-"}
+    </div>
+    <div className="text-xs text-muted-foreground">
+      실습예정일: {row.practiceDate || "-"}
+    </div>
+    <div className="text-xs text-muted-foreground">
+      {row.selectedEducationCenterDistanceKm
+        ? `${row.selectedEducationCenterDistanceKm}km`
+        : ""}
+    </div>
+  </div>
+</td>
                       <td className="px-3 py-3">
                         <div className="space-y-1">
                           <div className="font-medium">
@@ -1887,6 +1897,19 @@ useEffect(() => {
 
                   <div className="space-y-1">
                     <Label className="text-xs">실습시간</Label>
+<div className="space-y-1">
+  <Label className="text-xs">실습예정일</Label>
+  <Input
+    value={selectedRow.practiceDate || ""}
+    onChange={(e) =>
+      setSelectedRow((prev: any) => ({
+        ...prev,
+        practiceDate: e.target.value,
+      }))
+    }
+    placeholder="예: 2026-09"
+  />
+</div>
                     <Input
                       value={selectedRow.practiceHours || ""}
                       onChange={(e) =>
