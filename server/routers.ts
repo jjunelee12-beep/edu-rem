@@ -4590,6 +4590,51 @@ practiceListCategory: router({
         });
       }),
 
+institutionSummary: hostProcedure
+  .input(
+    z.object({
+      year: z.number(),
+      month: z.number(),
+    })
+  )
+  .query(async ({ input, ctx }) => {
+    assertHostOrSuperhost(ctx.user);
+    return db.getSettlementInstitutionSummary({
+      year: input.year,
+      month: input.month,
+    });
+  }),
+
+institutionEntries: hostProcedure
+  .input(
+    z.object({
+      year: z.number(),
+      month: z.number(),
+      institutionName: z.string().min(1),
+    })
+  )
+  .query(async ({ input, ctx }) => {
+    assertHostOrSuperhost(ctx.user);
+    return db.getSettlementInstitutionEntries({
+      year: input.year,
+      month: input.month,
+      institutionName: input.institutionName,
+    });
+  }),
+
+institutionMonthlyTrend: hostProcedure
+  .input(
+    z.object({
+      year: z.number(),
+    })
+  )
+  .query(async ({ input, ctx }) => {
+    assertHostOrSuperhost(ctx.user);
+    return db.getSettlementInstitutionMonthlyTrend({
+      year: input.year,
+    });
+  }),
+
 downloadPayslipExcel: protectedProcedure
   .input(
     z.object({

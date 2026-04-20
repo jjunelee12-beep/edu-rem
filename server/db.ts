@@ -3875,6 +3875,7 @@ export async function getMonthSalesEntries(assigneeId?: number) {
       revenueType: r.revenueType,
       settlementStatus: r.settlementStatus,
       title: r.title || "",
+institutionName: settlementItems.institutionName,
       clientName: r.clientName || "",
       phone: r.phone || "",
       course: r.course || "",
@@ -3923,6 +3924,11 @@ export async function getSettlementEntries(params: {
   const nextYear = params.month === 12 ? params.year + 1 : params.year;
   const endDate = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
 
+const prevMonth = params.month === 1 ? 12 : params.month - 1;
+const prevYear = params.month === 1 ? params.year - 1 : params.year;
+const prevStartDate = `${prevYear}-${String(prevMonth).padStart(2, "0")}-01`;
+const prevEndDate = startDate;
+
   const conditions = [
     sql`${settlementItems.occurredAt} >= ${startDate}`,
     sql`${settlementItems.occurredAt} < ${endDate}`,
@@ -3941,6 +3947,7 @@ export async function getSettlementEntries(params: {
       studentId: settlementItems.studentId,
       assigneeId: settlementItems.assigneeId,
       title: settlementItems.title,
+institutionName: settlementItems.institutionName,
       subjectType: settlementItems.subjectType,
       subjectCount: settlementItems.subjectCount,
       quantity: settlementItems.quantity,
@@ -3964,6 +3971,23 @@ export async function getSettlementEntries(params: {
     .where(and(...conditions))
     .orderBy(desc(settlementItems.occurredAt), desc(settlementItems.id));
 
+const prevRows = await db
+  .select({
+    institutionName: settlementItems.institutionName,
+    grossAmount: settlementItems.grossAmount,
+    companyAmount: settlementItems.companyAmount,
+    settlementStatus: settlementItems.settlementStatus,
+  })
+  .from(settlementItems)
+  .where(
+    and(
+      sql`${settlementItems.occurredAt} >= ${prevStartDate}`,
+      sql`${settlementItems.occurredAt} < ${prevEndDate}`,
+      sql`${settlementItems.settlementStatus} IN ('confirmed', 'refunded')`
+    )
+  )
+  .orderBy(asc(settlementItems.institutionName), desc(settlementItems.occurredAt));
+
   const entries = (rows || []).map((r: any) => {
     const isRefunded = r.settlementStatus === "refunded";
     const signedGrossAmount = isRefunded
@@ -3983,6 +4007,7 @@ export async function getSettlementEntries(params: {
       phone: r.phone || "",
       course: r.course || "",
       title: r.title || "",
+institutionName: r.institutionName || "",
       subjectType: r.subjectType || null,
       subjectCount: Number(r.subjectCount || 0),
       quantity: Number(r.quantity || 0),
@@ -4008,6 +4033,269 @@ export async function getSettlementEntries(params: {
     totalCount: entries.length,
     totalAmount,
   };
+}
+
+export async function getSettlementInstitutionSummary(params: {
+  year: number;
+  month: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const startDate = `${params.year}-${String(params.month).padStart(2, "0")}-01`;
+  const nextMonth = params.month === 12 ? 1 : params.month + 1;
+  const nextYear = params.month === 12 ? params.year + 1 : params.year;
+  const endDate = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+
+  const rows = await db
+    .select({
+      institutionName: settlementItems.institutionName,
+      grossAmount: settlementItems.grossAmount,
+      companyAmount: settlementItems.companyAmount,
+      freelancerAmount: settlementItems.freelancerAmount,
+      taxAmount: settlementItems.taxAmount,
+      finalPayoutAmount: settlementItems.finalPayoutAmount,
+      companyProfit: settlementItems.companyProfit,
+      settlementStatus: settlementItems.settlementStatus,
+    })
+    .from(settlementItems)
+    .where(
+      and(
+        sql`${settlementItems.occurredAt} >= ${startDate}`,
+        sql`${settlementItems.occurredAt} < ${endDate}`,
+        sql`${settlementItems.settlementStatus} IN ('confirmed', 'refunded')`
+      )
+    )
+    .orderBy(asc(settlementItems.institutionName), desc(settlementItems.occurredAt));
+
+  const map = new Map<string, any>();
+
+  for (const row of rows as any[]) {
+    const institutionName = String(row.institutionName || "미지정 교육원");
+    const sign = row.settlementStatus === "refunded" ? -1 : 1;
+
+    if (!map.has(institutionName)) {
+  map.set(institutionName, {
+    institutionName,
+    totalGrossAmount: 0,
+    totalCompanyAmount: 0,
+    totalFreelancerAmount: 0,
+    totalTaxAmount: 0,
+    totalFinalPayoutAmount: 0,
+    totalCompanyProfit: 0,
+    prevGrossAmount: 0,
+    prevCompanyAmount: 0,
+    grossDiffAmount: 0,
+    companyDiffAmount: 0,
+    grossDiffRate: 0,
+    companyDiffRate: 0,
+    count: 0,
+  });
+}
+
+    const target = map.get(institutionName);
+    target.totalGrossAmount += toNumber(row.grossAmount) * sign;
+    target.totalCompanyAmount += toNumber(row.companyAmount) * sign;
+    target.totalFreelancerAmount += toNumber(row.freelancerAmount) * sign;
+    target.totalTaxAmount += toNumber(row.taxAmount) * sign;
+    target.totalFinalPayoutAmount += toNumber(row.finalPayoutAmount) * sign;
+    target.totalCompanyProfit += toNumber(row.companyProfit) * sign;
+    target.count += 1;
+  }
+
+  return Array.from(map.values()).sort(
+    (a, b) => b.totalGrossAmount - a.totalGrossAmount
+  );
+}
+
+export async function getSettlementInstitutionEntries(params: {
+  year: number;
+  month: number;
+  institutionName: string;
+}) {
+  const db = await getDb();
+  if (!db) {
+    return {
+      entries: [],
+      totalCount: 0,
+    };
+  }
+
+  const startDate = `${params.year}-${String(params.month).padStart(2, "0")}-01`;
+  const nextMonth = params.month === 12 ? 1 : params.month + 1;
+  const nextYear = params.month === 12 ? params.year + 1 : params.year;
+  const endDate = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+
+  const rows = await db
+    .select({
+      id: settlementItems.id,
+      occurredAt: settlementItems.occurredAt,
+      revenueType: settlementItems.revenueType,
+      settlementStatus: settlementItems.settlementStatus,
+      assigneeName: users.name,
+      clientName: students.clientName,
+      title: settlementItems.title,
+      institutionName: settlementItems.institutionName,
+      grossAmount: settlementItems.grossAmount,
+      companyAmount: settlementItems.companyAmount,
+      freelancerAmount: settlementItems.freelancerAmount,
+      taxAmount: settlementItems.taxAmount,
+      finalPayoutAmount: settlementItems.finalPayoutAmount,
+      companyProfit: settlementItems.companyProfit,
+      studentId: settlementItems.studentId,
+    })
+    .from(settlementItems)
+    .leftJoin(students, eq(settlementItems.studentId, students.id))
+    .leftJoin(users, eq(settlementItems.assigneeId, users.id))
+    .where(
+      and(
+        sql`${settlementItems.occurredAt} >= ${startDate}`,
+        sql`${settlementItems.occurredAt} < ${endDate}`,
+        eq(settlementItems.institutionName, params.institutionName),
+        sql`${settlementItems.settlementStatus} IN ('confirmed', 'refunded')`
+      )
+    )
+    .orderBy(desc(settlementItems.occurredAt), desc(settlementItems.id));
+
+  const entries = (rows as any[]).map((row) => ({
+    id: Number(row.id),
+    occurredAt: row.occurredAt,
+    revenueType: row.revenueType,
+    settlementStatus: row.settlementStatus,
+    assigneeName: row.assigneeName || "",
+    clientName: row.clientName || "",
+    title: row.title || "",
+    institutionName: row.institutionName || "",
+    grossAmount: toNumber(row.grossAmount),
+    companyAmount: toNumber(row.companyAmount),
+    freelancerAmount: toNumber(row.freelancerAmount),
+    taxAmount: toNumber(row.taxAmount),
+    finalPayoutAmount: toNumber(row.finalPayoutAmount),
+    companyProfit: toNumber(row.companyProfit),
+    studentId: Number(row.studentId || 0),
+  }));
+
+  return {
+    entries,
+    totalCount: entries.length,
+  };
+}
+
+export async function getSettlementInstitutionMonthlyTrend(params: {
+  year: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const startDate = `${params.year}-01-01`;
+  const endDate = `${params.year + 1}-01-01`;
+
+  const rows = await db
+    .select({
+      institutionName: settlementItems.institutionName,
+      occurredAt: settlementItems.occurredAt,
+      grossAmount: settlementItems.grossAmount,
+      companyAmount: settlementItems.companyAmount,
+      settlementStatus: settlementItems.settlementStatus,
+    })
+    .from(settlementItems)
+    .where(
+      and(
+        sql`${settlementItems.occurredAt} >= ${startDate}`,
+        sql`${settlementItems.occurredAt} < ${endDate}`,
+        sql`${settlementItems.settlementStatus} IN ('confirmed', 'refunded')`
+      )
+    )
+    .orderBy(asc(settlementItems.institutionName), asc(settlementItems.occurredAt));
+
+  const map = new Map<string, any>();
+
+  for (const row of rows as any[]) {
+    const institutionName = String(row.institutionName || "미지정 교육원");
+    const occurredAt = row.occurredAt ? new Date(row.occurredAt) : null;
+    const month = occurredAt ? occurredAt.getMonth() + 1 : 0;
+    const sign = row.settlementStatus === "refunded" ? -1 : 1;
+
+    if (!month || month < 1 || month > 12) continue;
+
+    if (!map.has(institutionName)) {
+      map.set(institutionName, {
+        institutionName,
+        monthlyGross: {
+          1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0,
+          7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0,
+        },
+        monthlyCompany: {
+          1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0,
+          7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0,
+        },
+        yearTotalGross: 0,
+        yearTotalCompany: 0,
+      });
+    }
+
+    const target = map.get(institutionName);
+
+    const gross = toNumber(row.grossAmount) * sign;
+    const company = toNumber(row.companyAmount) * sign;
+
+    target.monthlyGross[month] += gross;
+    target.monthlyCompany[month] += company;
+    target.yearTotalGross += gross;
+    target.yearTotalCompany += company;
+  }
+for (const row of prevRows as any[]) {
+  const institutionName = String(row.institutionName || "미지정 교육원");
+  const sign = row.settlementStatus === "refunded" ? -1 : 1;
+
+  if (!map.has(institutionName)) {
+    map.set(institutionName, {
+      institutionName,
+      totalGrossAmount: 0,
+      totalCompanyAmount: 0,
+      totalFreelancerAmount: 0,
+      totalTaxAmount: 0,
+      totalFinalPayoutAmount: 0,
+      totalCompanyProfit: 0,
+      prevGrossAmount: 0,
+      prevCompanyAmount: 0,
+      grossDiffAmount: 0,
+      companyDiffAmount: 0,
+      grossDiffRate: 0,
+      companyDiffRate: 0,
+      count: 0,
+    });
+  }
+
+  const target = map.get(institutionName);
+  target.prevGrossAmount += toNumber(row.grossAmount) * sign;
+  target.prevCompanyAmount += toNumber(row.companyAmount) * sign;
+}
+
+  return Array.from(map.values())
+  .map((row: any) => {
+    const grossDiffAmount = Number(row.totalGrossAmount || 0) - Number(row.prevGrossAmount || 0);
+    const companyDiffAmount = Number(row.totalCompanyAmount || 0) - Number(row.prevCompanyAmount || 0);
+
+    const grossDiffRate =
+      Number(row.prevGrossAmount || 0) === 0
+        ? 0
+        : (grossDiffAmount / Number(row.prevGrossAmount)) * 100;
+
+    const companyDiffRate =
+      Number(row.prevCompanyAmount || 0) === 0
+        ? 0
+        : (companyDiffAmount / Number(row.prevCompanyAmount)) * 100;
+
+    return {
+      ...row,
+      grossDiffAmount,
+      companyDiffAmount,
+      grossDiffRate,
+      companyDiffRate,
+    };
+  })
+  .sort((a, b) => b.totalGrossAmount - a.totalGrossAmount);
 }
 
 // ─── 학생별 결제 요약 ────────────────────────────────────────────────
@@ -4672,6 +4960,7 @@ const settings = await getSettlementSettings();
       occurredAt: row.occurredAt,
       revenueType: row.revenueType,
       title: row.title || "",
+institutionName: row.institutionName || "",
       clientName: row.clientName || "",
       grossAmount: row.grossAmount,
       freelancerAmount: row.freelancerAmount,

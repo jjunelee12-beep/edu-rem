@@ -223,16 +223,17 @@ export async function buildSettlementPayslipExcel(payslipData: any) {
   row++;
 
   const detailHeader = [
-    "일자",
-    "유형",
-    "학생명",
-    "제목",
-    "총매출",
-    "지급액",
-    "세금",
-    "실지급액",
-    "상태",
-  ];
+  "일자",
+  "유형",
+  "학생명",
+  "제목",
+  "교육원",
+  "총매출",
+  "지급액",
+  "세금",
+  "실지급액",
+  "상태",
+];
 
   detailHeader.forEach((label, idx) => {
     const cell = sheet.getRow(row).getCell(idx + 1);
@@ -244,7 +245,7 @@ export async function buildSettlementPayslipExcel(payslipData: any) {
   const entries = payslipData.entries || [];
 
   if (entries.length === 0) {
-    sheet.mergeCells(`A${row}:I${row}`);
+    sheet.mergeCells(`A${row}:J${row}`);
     sheet.getCell(`A${row}`).value = "상세 지급 내역이 없습니다.";
     sheet.getCell(`A${row}`).alignment = { horizontal: "center", vertical: "middle" };
     setThinBorder(sheet.getCell(`A${row}`));
@@ -256,6 +257,7 @@ export async function buildSettlementPayslipExcel(payslipData: any) {
         revenueTypeLabel(item.revenueType, item.settlementStatus),
         item.clientName || "-",
         item.title || "-",
+item.institutionName || "-",
         wonFormat(item.grossAmount),
         wonFormat(item.freelancerAmount),
         wonFormat(item.taxAmount),
@@ -267,9 +269,9 @@ export async function buildSettlementPayslipExcel(payslipData: any) {
         const cell = sheet.getRow(row).getCell(idx + 1);
         cell.value = value;
         styleValueCell(
-          cell,
-          idx >= 4 && idx <= 7 ? "right" : idx === 8 ? "center" : "left"
-        );
+  cell,
+  idx >= 5 && idx <= 8 ? "right" : idx === 9 ? "center" : "left"
+);
       });
 
       row++;
@@ -278,7 +280,7 @@ export async function buildSettlementPayslipExcel(payslipData: any) {
 
   row += 1;
 
-  sheet.mergeCells(`A${row}:I${row}`);
+  sheet.mergeCells(`A${row}:J${row}`);
   sheet.getCell(`A${row}`).value = "한 달 동안 수고하셨습니다.";
   sheet.getCell(`A${row}`).font = { italic: true, color: { argb: "FF6B7280" } };
   sheet.getCell(`A${row}`).alignment = { horizontal: "center", vertical: "middle" };
