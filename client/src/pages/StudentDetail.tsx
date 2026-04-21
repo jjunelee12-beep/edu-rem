@@ -460,6 +460,49 @@ const upsertPracticeSupportByStudentMut =
     onError: (e) => toast.error(e.message),
   });
 
+const savePracticeSupportOnly = async () => {
+  if (!student) {
+    toast.error("학생 정보를 찾을 수 없습니다.");
+    return;
+  }
+
+  if (!planForm.hasPractice) {
+    toast.message("실습 필요가 체크되지 않아 실습배정 요청을 저장하지 않습니다.");
+    return;
+  }
+
+  if (!planForm.desiredCourse?.trim()) {
+    toast.error("희망과정을 먼저 입력해주세요.");
+    return;
+  }
+
+  await upsertPracticeSupportByStudentMut.mutateAsync({
+    studentId,
+    semesterId: selectedSemester?.id ?? null,
+    assigneeId: Number(student.assigneeId),
+    clientName: String(student.clientName || "").trim(),
+    phone: String(student.phone || "").trim(),
+    course: String(planForm.desiredCourse || "").trim(),
+    inputAddress: String(planForm.practiceAddress || "").trim() || null,
+    detailAddress: null,
+    assigneeName: null,
+    managerName: null,
+    practiceHours: planForm.practiceHours
+      ? Number(planForm.practiceHours)
+      : null,
+    practiceDate: planForm.practiceDate || null,
+    includeEducationCenter: true,
+    includePracticeInstitution: true,
+    coordinationStatus:
+      planForm.practiceStatus === "섭외중" || planForm.practiceStatus === "섭외완료"
+        ? planForm.practiceStatus
+        : "미섭외",
+  });
+
+  await utils.practiceSupport.listByStudent.invalidate({ studentId });
+  toast.success("실습배정지원센터 정보 저장 완료");
+};
+
   const [editingPlan, setEditingPlan] = useState(false);
   const [planForm, setPlanForm] = useState({
   desiredCourse: "",
@@ -928,34 +971,6 @@ const savePlan = async () => {
       practiceStatus: (planForm.practiceStatus as any) || undefined,
       specialNotes: planForm.specialNotes || undefined,
     });
-
-    if (planForm.hasPractice) {
-      const assigneeName =
-        allUsers?.find((u: any) => Number(u.id) === Number(student.assigneeId))?.name || "";
-
-      await upsertPracticeSupportByStudentMut.mutateAsync({
-        studentId,
-        semesterId: selectedSemester?.id ?? null,
-        assigneeId: student.assigneeId,
-        clientName: student.clientName,
-        phone: student.phone,
-        course: planForm.desiredCourse || student.course || "",
-        inputAddress: planForm.practiceAddress || "", // ✅ 핵심
-        assigneeName,
-        managerName: assigneeName,
-        practiceHours: planForm.practiceHours
-          ? parseInt(planForm.practiceHours)
-          : null,
-        practiceDate: planForm.practiceDate || null,
-        includeEducationCenter: true,
-        includePracticeInstitution: true,
-        coordinationStatus: planForm.practiceStatus as any,
-      } as any);
-
-      await utils.practiceSupport.listByStudent.invalidate({ studentId });
-      await utils.practiceSupport.list.invalidate();
-      await utils.semester.list.invalidate({ studentId });
-    }
 
     toast.success("플랜 저장 완료");
     setEditingPlan(false);
@@ -1910,13 +1925,28 @@ const existingPlanSubjectMap = useMemo(() => {
             </Button>
           ) : (
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setEditingPlan(false)}>
-                취소
-              </Button>
-              <Button size="sm" onClick={savePlan} disabled={upsertPlanMut.isPending} className="gap-1">
-                <Save className="h-3.5 w-3.5" /> 저장
-              </Button>
-            </div>
+  <Button variant="outline" size="sm" onClick={() => setEditingPlan(false)}>
+    취소
+  </Button>
+
+  <Button
+    variant="outline"
+    size="sm"
+    onClick={savePracticeSupportOnly}
+    disabled={upsertPracticeSupportByStudentMut.isPending}
+  >
+    실습 저장
+  </Button>
+
+  <Button
+    size="sm"
+    onClick={savePlan}
+    disabled={upsertPlanMut.isPending}
+    className="gap-1"
+  >
+    <Save className="h-3.5 w-3.5" /> 저장
+  </Button>
+</div>
           )}
         </CardHeader>
 
