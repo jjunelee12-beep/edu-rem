@@ -221,7 +221,20 @@ const res = await fetch(`${apiBase}/api/upload`, {
   }
 
  const requestedPrivateCertList = privateCertificateRequestList || [];
-const latestPracticeSupport = practiceSupportList?.[0] ?? null;
+
+const selectedPracticeSupport = useMemo(() => {
+  if (!practiceSupportList?.length) return null;
+
+  if (selectedSemester?.id) {
+    const matched = practiceSupportList.find(
+      (row: any) => Number(row.semesterId) === Number(selectedSemester.id)
+    );
+    if (matched) return matched;
+  }
+
+  return practiceSupportList[0] ?? null;
+}, [practiceSupportList, selectedSemester?.id]);
+
 const privateCertificateOptions = privateCertificateMasterList || [];
 
 const createPrivateCertificateRequestMut =
@@ -500,7 +513,9 @@ const savePracticeSupportOnly = async () => {
   });
 
   await utils.practiceSupport.listByStudent.invalidate({ studentId });
-  toast.success("실습배정지원센터 정보 저장 완료");
+await utils.semester.list.invalidate({ studentId });
+await utils.plan.get.invalidate({ studentId });
+toast.success("실습배정지원센터 정보 저장 완료");
 };
 
   const [editingPlan, setEditingPlan] = useState(false);
@@ -704,7 +719,7 @@ useEffect(() => {
   studentId,
   studentLoading,
   requestedPrivateCertList.length,
-  latestPracticeSupport?.id,
+  selectedPracticeSupport?.id,
   refundList?.length,
 ]);
 
@@ -941,11 +956,11 @@ const saveRegisteredCourses = async () => {
     practiceDate: plan?.practiceDate || "",
     practiceArranged: plan?.practiceArranged || false,
     practiceStatus:
-      latestPracticeSupport?.coordinationStatus ||
-      (plan as any)?.practiceStatus ||
-      "미섭외",
-    specialNotes: plan?.specialNotes || "",
-    practiceAddress: latestPracticeSupport?.inputAddress || "",
+  selectedPracticeSupport?.coordinationStatus ||
+  (plan as any)?.practiceStatus ||
+  "미섭외",
+specialNotes: plan?.specialNotes || "",
+practiceAddress: selectedPracticeSupport?.inputAddress || "",
   });
 
   setEditingPlan(true);
@@ -2018,38 +2033,39 @@ const existingPlanSubjectMap = useMemo(() => {
 
  {plan.hasPractice && (
   <div
-  ref={practiceSupportSectionRef}
-  className={`rounded-lg p-4 text-sm transition-all duration-500 ${
-    highlightSection === "practice-support"
-      ? "bg-blue-100 ring-2 ring-blue-300"
-      : "bg-blue-50"
-  }`}
->
+    ref={practiceSupportSectionRef}
+    className={`rounded-lg p-4 text-sm transition-all duration-500 ${
+      highlightSection === "practice-support"
+        ? "bg-blue-100 ring-2 ring-blue-300"
+        : "bg-blue-50"
+    }`}
+  >
     <p className="font-medium text-blue-700 mb-1">실습 정보</p>
     <p>
       <span className="font-medium">실습 시간:</span>{" "}
-      {latestPracticeSupport?.practiceHours
-        ? `${latestPracticeSupport.practiceHours}시간`
+      {selectedPracticeSupport?.practiceHours
+        ? `${selectedPracticeSupport.practiceHours}시간`
         : plan.practiceHours
         ? `${plan.practiceHours}시간`
         : "-"}{" "}
       ·{" "}
-      <span className="font-medium">실습 예정일:</span> {plan.practiceDate || "-"} ·{" "}
+      <span className="font-medium">실습 예정일:</span>{" "}
+      {selectedPracticeSupport?.practiceDate || plan.practiceDate || "-"} ·{" "}
       <span className="font-medium">섭외 상태:</span>{" "}
-      {latestPracticeSupport?.coordinationStatus || "미섭외"}
+      {selectedPracticeSupport?.coordinationStatus || "미섭외"}
     </p>
 
     <p className="mt-1">
       <span className="font-medium">주소:</span>{" "}
-      {latestPracticeSupport?.inputAddress ||
-  latestPracticeSupport?.detailAddress ||
-  (student as any)?.detailAddress ||
-  "-"}
-      <span className="font-medium">담당자:</span>{" "}
-      {latestPracticeSupport?.managerName ||
-  latestPracticeSupport?.assigneeName ||
-  userMap.get(student.assigneeId) ||
-  "-"}
+      {selectedPracticeSupport?.inputAddress ||
+        selectedPracticeSupport?.detailAddress ||
+        (student as any)?.detailAddress ||
+        "-"}{" "}
+      · <span className="font-medium">담당자:</span>{" "}
+      {selectedPracticeSupport?.managerName ||
+        selectedPracticeSupport?.assigneeName ||
+        userMap.get(student.assigneeId) ||
+        "-"}
     </p>
   </div>
 )}

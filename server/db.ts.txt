@@ -2609,10 +2609,9 @@ export async function listAllSemesters(
   const db = await getDb();
   if (!db) return [];
 
-  const conditions: any[] = [];
-  if (assigneeId) conditions.push(sql`s.assigneeId = ${assigneeId}`);
-  if (plannedMonthFilter) conditions.push(sql`sem.plannedMonth = ${plannedMonthFilter}`);
-conditions.push(sql`s.approvalStatus = '승인'`);
+ const conditions: any[] = [];
+if (assigneeId) conditions.push(sql`s.assigneeId = ${assigneeId}`);
+if (plannedMonthFilter) conditions.push(sql`sem.plannedMonth = ${plannedMonthFilter}`);
 
   const whereClause =
     conditions.length > 0
@@ -6584,6 +6583,7 @@ export async function upsertPracticeSupportRequestByStudent(params: {
   practiceDate?: string | null;
   includeEducationCenter?: boolean;
   includePracticeInstitution?: boolean;
+  coordinationStatus?: "미섭외" | "섭외중" | "섭외완료";
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -6601,25 +6601,28 @@ export async function upsertPracticeSupportRequestByStudent(params: {
   )
   .limit(1);
 
-  const payload: any = {
-    studentId: params.studentId,
-    semesterId: params.semesterId ?? null,
-    assigneeId: params.assigneeId,
-    clientName: params.clientName,
-    phone: params.phone,
-    course: params.course,
-    inputAddress: params.inputAddress ?? null,
-    detailAddress: params.detailAddress ?? null,
-    assigneeName: params.assigneeName ?? null,
-    managerName: params.managerName ?? null,
-    practiceHours: params.practiceHours ?? null,
-    practiceDate: params.practiceDate ?? null,
-    includeEducationCenter: params.includeEducationCenter ?? true,
-    includePracticeInstitution: params.includePracticeInstitution ?? true,
-    coordinationStatus: "미섭외",
-    paymentStatus: "미결제",
-    feeAmount: "0",
-  };
+  const nextCoordinationStatus =
+  params.coordinationStatus ?? "미섭외";
+
+const payload: any = {
+  studentId: params.studentId,
+  semesterId: params.semesterId ?? null,
+  assigneeId: params.assigneeId,
+  clientName: params.clientName,
+  phone: params.phone,
+  course: params.course,
+  inputAddress: params.inputAddress ?? null,
+  detailAddress: params.detailAddress ?? null,
+  assigneeName: params.assigneeName ?? null,
+  managerName: params.managerName ?? null,
+  practiceHours: params.practiceHours ?? null,
+  practiceDate: params.practiceDate ?? null,
+  includeEducationCenter: params.includeEducationCenter ?? true,
+  includePracticeInstitution: params.includePracticeInstitution ?? true,
+  coordinationStatus: nextCoordinationStatus,
+  paymentStatus: "미결제",
+  feeAmount: "0",
+};
 
   if (existing[0]) {
     await db
@@ -6628,23 +6631,23 @@ export async function upsertPracticeSupportRequestByStudent(params: {
       .where(eq(practiceSupportRequests.id, existing[0].id));
 
     if (params.semesterId) {
-      await db
-        .update(semesters)
-        .set({
-          practiceStatus: "미섭외",
-          practiceSupportRequestId: existing[0].id,
-        } as any)
-        .where(eq(semesters.id, params.semesterId));
+     await db
+  .update(semesters)
+  .set({
+    practiceStatus: nextCoordinationStatus,
+    practiceSupportRequestId: existing[0].id,
+  } as any)
+  .where(eq(semesters.id, params.semesterId));
     }
 
     await db
-      .update(plans)
-      .set({
-        hasPractice: true,
-        practiceHours: params.practiceHours ?? null,
-        practiceStatus: "미섭외",
-      } as any)
-      .where(eq(plans.studentId, params.studentId));
+  .update(plans)
+  .set({
+    hasPractice: true,
+    practiceHours: params.practiceHours ?? null,
+    practiceStatus: nextCoordinationStatus,
+  } as any)
+  .where(eq(plans.studentId, params.studentId));
 
     return existing[0].id;
   }
@@ -6654,22 +6657,23 @@ export async function upsertPracticeSupportRequestByStudent(params: {
 
   if (params.semesterId && insertId) {
     await db
-      .update(semesters)
-      .set({
-        practiceStatus: "미섭외",
-        practiceSupportRequestId: insertId,
-      } as any)
-      .where(eq(semesters.id, params.semesterId));
+  .update(semesters)
+  .set({
+    practiceStatus: nextCoordinationStatus,
+    practiceSupportRequestId: insertId,
+  } as any)
+  .where(eq(semesters.id, params.semesterId));
   }
 
   await db
-    .update(plans)
-    .set({
-      hasPractice: true,
-      practiceHours: params.practiceHours ?? null,
-      practiceStatus: "미섭외",
-    } as any)
-    .where(eq(plans.studentId, params.studentId));
+   await db
+  .update(plans)
+  .set({
+    hasPractice: true,
+    practiceHours: params.practiceHours ?? null,
+    practiceStatus: nextCoordinationStatus,
+  } as any)
+  .where(eq(plans.studentId, params.studentId));
 
   return insertId;
 }
