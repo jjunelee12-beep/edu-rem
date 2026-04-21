@@ -221,20 +221,6 @@ const res = await fetch(`${apiBase}/api/upload`, {
   }
 
  const requestedPrivateCertList = privateCertificateRequestList || [];
-
-const selectedPracticeSupport = useMemo(() => {
-  if (!practiceSupportList?.length) return null;
-
-  if (selectedSemester?.id) {
-    const matched = practiceSupportList.find(
-      (row: any) => Number(row.semesterId) === Number(selectedSemester.id)
-    );
-    if (matched) return matched;
-  }
-
-  return practiceSupportList[0] ?? null;
-}, [practiceSupportList, selectedSemester?.id]);
-
 const privateCertificateOptions = privateCertificateMasterList || [];
 
 const createPrivateCertificateRequestMut =
@@ -473,51 +459,6 @@ const upsertPracticeSupportByStudentMut =
     onError: (e) => toast.error(e.message),
   });
 
-const savePracticeSupportOnly = async () => {
-  if (!student) {
-    toast.error("학생 정보를 찾을 수 없습니다.");
-    return;
-  }
-
-  if (!planForm.hasPractice) {
-    toast.message("실습 필요가 체크되지 않아 실습배정 요청을 저장하지 않습니다.");
-    return;
-  }
-
-  if (!planForm.desiredCourse?.trim()) {
-    toast.error("희망과정을 먼저 입력해주세요.");
-    return;
-  }
-
-  await upsertPracticeSupportByStudentMut.mutateAsync({
-    studentId,
-    semesterId: selectedSemester?.id ?? null,
-    assigneeId: Number(student.assigneeId),
-    clientName: String(student.clientName || "").trim(),
-    phone: String(student.phone || "").trim(),
-    course: String(planForm.desiredCourse || "").trim(),
-    inputAddress: String(planForm.practiceAddress || "").trim() || null,
-    detailAddress: null,
-    assigneeName: null,
-    managerName: null,
-    practiceHours: planForm.practiceHours
-      ? Number(planForm.practiceHours)
-      : null,
-    practiceDate: planForm.practiceDate || null,
-    includeEducationCenter: true,
-    includePracticeInstitution: true,
-    coordinationStatus:
-      planForm.practiceStatus === "섭외중" || planForm.practiceStatus === "섭외완료"
-        ? planForm.practiceStatus
-        : "미섭외",
-  });
-
-  await utils.practiceSupport.listByStudent.invalidate({ studentId });
-await utils.semester.list.invalidate({ studentId });
-await utils.plan.get.invalidate({ studentId });
-toast.success("실습배정지원센터 정보 저장 완료");
-};
-
   const [editingPlan, setEditingPlan] = useState(false);
   const [planForm, setPlanForm] = useState({
   desiredCourse: "",
@@ -629,6 +570,20 @@ const [refundDialogOpen, setRefundDialogOpen] = useState(false);
       (s: any) => Number(s.semesterOrder) === Number(selectedSemesterOrder)
     );
   }, [sortedSemesters, selectedSemesterOrder]);
+
+const selectedPracticeSupport = useMemo(() => {
+  if (!practiceSupportList?.length) return null;
+
+  if (selectedSemester?.id) {
+    const matched = practiceSupportList.find(
+      (row: any) => Number(row.semesterId) === Number(selectedSemester.id)
+    );
+    if (matched) return matched;
+  }
+
+  return practiceSupportList[0] ?? null;
+}, [practiceSupportList, selectedSemester?.id]);
+
 
   const lastSemester = useMemo(() => {
     if (!sortedSemesters.length) return null;
@@ -986,7 +941,47 @@ const savePlan = async () => {
       specialNotes: planForm.specialNotes || undefined,
     });
 
-    toast.success("플랜 저장 완료");
+    if (planForm.hasPractice) {
+      if (!student) {
+        throw new Error("학생 정보를 찾을 수 없습니다.");
+      }
+
+      if (!planForm.desiredCourse?.trim()) {
+        throw new Error("희망과정을 먼저 입력해주세요.");
+      }
+
+      await upsertPracticeSupportByStudentMut.mutateAsync({
+        studentId,
+        semesterId: selectedSemester?.id ?? null,
+        assigneeId: Number(student.assigneeId),
+        clientName: String(student.clientName || "").trim(),
+        phone: String(student.phone || "").trim(),
+        course: String(planForm.desiredCourse || "").trim(),
+        inputAddress: String(planForm.practiceAddress || "").trim() || null,
+        detailAddress: null,
+        assigneeName: null,
+        managerName: null,
+        practiceHours: planForm.practiceHours
+          ? Number(planForm.practiceHours)
+          : null,
+        practiceDate: planForm.practiceDate || null,
+        includeEducationCenter: true,
+        includePracticeInstitution: true,
+        coordinationStatus:
+          planForm.practiceStatus === "섭외중" || planForm.practiceStatus === "섭외완료"
+            ? planForm.practiceStatus
+            : "미섭외",
+      });
+    }
+
+    await Promise.all([
+      utils.plan.get.invalidate({ studentId }),
+      utils.practiceSupport.listByStudent.invalidate({ studentId }),
+      utils.semester.list.invalidate({ studentId }),
+      utils.student.get.invalidate({ id: studentId }),
+    ]);
+
+    toast.success("플랜 및 실습 정보 저장 완료");
     setEditingPlan(false);
   } catch (e: any) {
     toast.error(e.message || "플랜 저장 중 오류가 발생했습니다.");
@@ -1948,15 +1943,6 @@ const existingPlanSubjectMap = useMemo(() => {
             <div className="flex gap-2">
   <Button variant="outline" size="sm" onClick={() => setEditingPlan(false)}>
     취소
-  </Button>
-
-  <Button
-    variant="outline"
-    size="sm"
-    onClick={savePracticeSupportOnly}
-    disabled={upsertPracticeSupportByStudentMut.isPending}
-  >
-    실습 저장
   </Button>
 
   <Button
