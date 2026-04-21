@@ -638,7 +638,7 @@ const displayStudentStatus = useMemo(() => {
   return "등록";
 }, [isApprovedSemester, selectedSemester]);
 
-const canFinalizeRegistrationStatus = isApprovedStudent && isSelectedLastSemester;
+const canFinalizeRegistrationStatus = isApprovedSemester && isSelectedLastSemester;
 
   useEffect(() => {
     if (!sortedSemesters.length) {
@@ -905,10 +905,10 @@ const saveRegisteredCourses = async () => {
       toast.error("마지막 학기에서만 등록 종료할 수 있습니다.");
       return;
     }
-  if (!isApprovedStudent) {
-    toast.error("승인 완료 후에만 등록 상태를 변경할 수 있습니다.");
-    return;
-  }
+  if (!isApprovedSemester) {
+  toast.error("해당 학기 승인 완료 후에만 등록 상태를 변경할 수 있습니다.");
+  return;
+}
 
     updateSemMut.mutate(
       {
@@ -1444,25 +1444,25 @@ const existingPlanSubjectMap = useMemo(() => {
   </Badge>
 
   <Badge
-    className={
-      student?.approvalStatus === "승인"
-        ? "bg-emerald-100 text-emerald-700"
-        : student?.approvalStatus === "불승인"
-        ? "bg-red-100 text-red-700"
-        : "bg-amber-100 text-amber-700"
-    }
-  >
-   {student?.approvalStatus || "대기"}
-  </Badge>
+  className={
+    selectedSemester?.approvalStatus === "승인"
+      ? "bg-emerald-100 text-emerald-700"
+      : selectedSemester?.approvalStatus === "불승인"
+      ? "bg-red-100 text-red-700"
+      : "bg-amber-100 text-amber-700"
+  }
+>
+  {selectedSemester?.approvalStatus || "요청전"}
+</Badge>
 </div>
       </div>
 
       <Card className="border-0 shadow-sm">
         <CardHeader className="pb-3">
           <CardTitle className="text-base">
-  {student?.approvalStatus === "승인"
-    ? `매출 보고 / 등록 정보 - ${selectedSemesterOrder}학기`
-    : `예정 결제 / 승인대기 정보 - ${selectedSemesterOrder}학기`}
+  {selectedSemester?.approvalStatus === "승인"
+  ? `매출 보고 / 등록 정보 - ${selectedSemesterOrder}학기`
+  : `예정 결제 / 승인대기 정보 - ${selectedSemesterOrder}학기`}
 </CardTitle>
         </CardHeader>
         <CardContent>
@@ -1532,10 +1532,10 @@ const existingPlanSubjectMap = useMemo(() => {
   </div>
 )}
 
-              {!canFinalizeRegistrationStatus && (
+             {!canFinalizeRegistrationStatus && (
   <p className="text-[11px] text-muted-foreground mt-1">
-    {!isApprovedStudent
-      ? "승인 완료 후 마지막 학기에서만 등록 종료할 수 있습니다."
+    {!isApprovedSemester
+      ? "해당 학기 승인 완료 후 마지막 학기에서만 등록 종료할 수 있습니다."
       : "마지막 학기에서만 등록 종료할 수 있습니다."}
   </p>
 )}
@@ -1616,13 +1616,13 @@ const existingPlanSubjectMap = useMemo(() => {
                 {paymentSummaryCard.totalRequired.toLocaleString()}원
               </p>
             </div>
-            <div className={`${isApprovedStudent ? "bg-emerald-50" : "bg-amber-50"} rounded-lg p-3`}>
+            <div className={`${isApprovedSemester ? "bg-emerald-50" : "bg-amber-50"} rounded-lg p-3`}>
   <p className="text-xs text-muted-foreground">
-    {isApprovedStudent ? "수납 완료 금액" : "입력된 결제 금액"}
+    {isApprovedSemester ? "수납 완료 금액" : "입력된 결제 금액"}
   </p>
   <p
     className={`text-lg font-bold ${
-      isApprovedStudent ? "text-emerald-700" : "text-amber-700"
+      isApprovedSemester ? "text-emerald-700" : "text-amber-700"
     }`}
   >
     {paymentSummaryCard.totalPaid.toLocaleString()}원
