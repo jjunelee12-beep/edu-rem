@@ -3417,6 +3417,16 @@ if (!student) {
   const educationInstitutionId = Number((sem as any).actualInstitutionId ?? 0) || null;
   const occurredAt = (sem as any).actualPaymentDate ?? (sem as any).actualStartDate ?? null;
 
+if ((sem as any).approvalStatus !== "승인") {
+  await cancelSettlementItemBySource({
+    revenueType: "subject",
+    sourceId: Number(sem.id),
+    actorUserId: actorUserId ?? null,
+    note: `학기 승인상태가 승인 아님(${(sem as any).approvalStatus || "요청전"})이라 과목 정산 취소`,
+  });
+  return null;
+}
+
   // 실제 결제 완료 전이면 정산 원장 취소
   if (!grossAmount || !subjectCount || !educationInstitutionId || !occurredAt) {
   await cancelSettlementItemBySource({

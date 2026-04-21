@@ -630,14 +630,13 @@ const [refundDialogOpen, setRefundDialogOpen] = useState(false);
     return selectedSemester.status || "등록";
   }, [selectedSemester]);
 
-const isApprovedStudent = student?.approvalStatus === "승인";
+const isApprovedSemester = selectedSemester?.approvalStatus === "승인";
 
 const displayStudentStatus = useMemo(() => {
-  if (!isApprovedStudent) return "등록예정";
-
-  if (!selectedSemester) return "등록";
-  return selectedSemester.status || "등록";
-}, [isApprovedStudent, selectedSemester]);
+  if (!isApprovedSemester) return "등록예정";
+  if (selectedSemester?.status === "등록 종료") return "등록 종료";
+  return "등록";
+}, [isApprovedSemester, selectedSemester]);
 
 const canFinalizeRegistrationStatus = isApprovedStudent && isSelectedLastSemester;
 
@@ -1830,25 +1829,32 @@ const existingPlanSubjectMap = useMemo(() => {
 
                       <td className="px-3 py-1.5 text-center">
   <div title="입력완료는 학기 정보 입력 여부만 표시합니다. 등록 확정 및 매출 반영은 승인관리 승인 후 처리됩니다.">
-    <Checkbox
-      checked={sem.isCompleted}
-      onCheckedChange={(checked) => {
-        if (!!checked && toNumber(sem.actualAmount) <= 0) {
-          toast.error("입력완료 처리하려면 실제 금액을 먼저 입력해주세요.");
-          return;
-        }
+   <Checkbox
+  checked={sem.isCompleted}
+  onCheckedChange={(checked) => {
+    if (!!checked && toNumber(sem.actualAmount) <= 0) {
+      toast.error("입력완료 처리하려면 실제 금액을 먼저 입력해주세요.");
+      return;
+    }
 
-        updateSemMut.mutate({ id: sem.id, isCompleted: !!checked } as any, {
-          onSuccess: () => {
-            toast.success(
-              checked
-                ? "학기 입력완료로 표시되었습니다. 등록 확정은 승인관리 승인 후 반영됩니다."
-                : "학기 입력완료가 해제되었습니다."
-            );
-          },
-        });
-      }}
-    />
+    updateSemMut.mutate(
+      {
+        id: sem.id,
+        isCompleted: !!checked,
+        approvalStatus: checked ? "대기" : "요청전",
+      } as any,
+      {
+        onSuccess: () => {
+          toast.success(
+            checked
+              ? "학기 입력완료로 표시되었습니다. 승인관리에서 이 학기만 승인/불승인 처리할 수 있습니다."
+              : "학기 입력완료가 해제되었습니다."
+          );
+        },
+      }
+    );
+  }}
+/>
   </div>
 </td>
 

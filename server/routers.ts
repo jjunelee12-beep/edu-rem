@@ -3226,6 +3226,7 @@ approve: protectedProcedure
           actualAmount: z.string().optional(),
           actualPaymentDate: z.string().optional(),
           isCompleted: z.boolean().optional(),
+approvalStatus: z.enum(["요청전", "대기", "승인", "불승인"]).optional(),
           status: z.enum(["등록", "종료", "등록 종료"]).optional(),
           practiceStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
           practiceSupportRequestId: z.number().optional(),
@@ -3381,20 +3382,92 @@ if (input.registeredCourses !== undefined) {
           raw.length === 6 ? new Date(`${raw.slice(0, 4)}-${raw.slice(4, 6)}-01`) : undefined;
 
                 await db.updateSemester(input.id, {
-          actualStartDate,
-          actualInstitutionId: sem.plannedInstitutionId,
-          actualInstitution: sem.plannedInstitution,
-          actualSubjectCount: sem.plannedSubjectCount,
-          actualAmount: sem.plannedAmount,
-        });
+  actualStartDate,
+  actualInstitutionId: sem.plannedInstitutionId,
+  actualInstitution: sem.plannedInstitution,
+  actualSubjectCount: sem.plannedSubjectCount,
+  actualAmount: sem.plannedAmount,
+});
 
-        await db.syncSubjectSettlementItemBySemesterId(
-          input.id,
-          Number(ctx.user.id)
-        );
-
-        return { success: true };
+return { success: true };
       }),
+
+approve: protectedProcedure
+  .input(
+    z.object({
+      id: z.number(),
+      approvalStatus: z.enum(["승인", "불승인"]),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    if (!isAdminOrHost(ctx.user)) {
+      throw new Error("관리자 또는 호스트만 처리할 수 있습니다");
+    }
+
+    const sem = await db.getSemester(input.id);
+    if (!sem) throw new Error("학기를 찾을 수 없습니다");
+
+    const now = new Date();
+
+    await db.updateSemester(input.id, {
+      approvalStatus: input.approvalStatus,
+      approvedAt: input.approvalStatus === "승인" ? now : null,
+      rejectedAt: input.approvalStatus === "불승인" ? now : null,
+      isLocked: input.approvalStatus === "승인",
+    } as any);
+
+    if (input.approvalStatus === "승인") {
+      await db.syncSubjectSettlementItemBySemesterId(
+        Number(input.id),
+        Number(ctx.user.id)
+      );
+    } else {
+      await db.syncSubjectSettlementItemBySemesterId(
+        Number(input.id),
+        Number(ctx.user.id)
+      );
+    }
+
+    const student = await db.getStudent(Number(sem.studentId));
+    if (student?.consultationId && input.approvalStatus === "승인") {
+      await db.updateConsultation(student.consultationId, {
+        status: "등록",
+      });
+    }
+
+    if (student?.assigneeId) {
+      const notificationTitle =
+        input.approvalStatus === "승인" ? "학기 승인 완료" : "학기 불승인";
+
+      const notificationMessage =
+        input.approvalStatus === "승인"
+          ? `[학기 승인] ${student.clientName || "학생"} / ${sem.semesterOrder}학기 승인 완료`
+          : `[학기 불승인] ${student.clientName || "학생"} / ${sem.semesterOrder}학기 불승인 처리`;
+
+      const notificationId = await db.createNotification({
+        userId: Number(student.assigneeId),
+        type: "approval",
+        title: notificationTitle,
+        level: input.approvalStatus === "승인" ? "success" : "danger",
+        message: notificationMessage,
+        relatedId: Number(input.id),
+        isRead: false,
+      } as any);
+
+      emitLiveNotification({
+        id: Number(notificationId),
+        userId: Number(student.assigneeId),
+        type: "approval",
+        title: notificationTitle,
+        level: input.approvalStatus === "승인" ? "success" : "danger",
+        message: notificationMessage,
+        relatedId: Number(input.id),
+        isRead: false,
+      });
+    }
+
+    return { success: true };
+  }),
 
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))

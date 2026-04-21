@@ -202,6 +202,13 @@ export const semesters = mysqlTable("semesters", {
     .default("등록")
     .notNull(),
 
+approvalStatus: mysqlEnum("approvalStatus", ["요청전", "대기", "승인", "불승인"])
+  .default("요청전")
+  .notNull(),
+
+approvedAt: datetime("approvedAt"),
+rejectedAt: datetime("rejectedAt"),
+
   plannedMonth: varchar("plannedMonth", { length: 20 }),
   plannedInstitution: varchar("plannedInstitution", { length: 200 }),
   plannedInstitutionId: int("plannedInstitutionId"),

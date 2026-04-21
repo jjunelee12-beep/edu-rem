@@ -29,7 +29,8 @@ export default function Approvals() {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
 
-  const { data: students, isLoading: studentsLoading } = trpc.student.list.useQuery();
+const { data: semesters, isLoading: semestersLoading } =
+  trpc.semester.listAll.useQuery({});
   const { data: allUsers } = trpc.users.list.useQuery();
 
   const {
@@ -42,15 +43,17 @@ export default function Approvals() {
   user?.role === "superhost",
   });
 
-  const approveStudentMutation = trpc.student.approve.useMutation({
+  const approveSemesterMutation = trpc.semester.approve.useMutation({
   onSuccess: async () => {
     await Promise.all([
+      utils.semester.listAll.invalidate(),
       utils.student.list.invalidate(),
       utils.dashboard.stats.invalidate(),
       utils.dashboard.totalStats.invalidate(),
-      utils.semester.listAll.invalidate(),
+      utils.settlement.report.invalidate(),
+      utils.settlement.entries.invalidate(),
     ]);
-    toast.success("학생 승인 상태가 변경되었습니다. 승인 시 최종 등록 처리 및 반영 데이터가 갱신됩니다.");
+    toast.success("학기 승인 상태가 변경되었습니다.");
   },
   onError: (e) => toast.error(e.message),
 });
@@ -99,7 +102,7 @@ export default function Approvals() {
     );
   }
 
-  if (studentsLoading || refundsLoading) {
+  if (semestersLoading || refundsLoading) {
     return (
       <div className="flex justify-center py-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -107,14 +110,21 @@ export default function Approvals() {
     );
   }
 
-  const pendingStudents =
-  students?.filter(
-    (s: any) =>
-      s.approvalStatus === "대기" &&
-      Number(s.completedSemesterCount || 0) > 0
-  ) ?? [];
-  const approvedStudents = students?.filter((s: any) => s.approvalStatus === "승인") ?? [];
-  const rejectedStudents = students?.filter((s: any) => s.approvalStatus === "불승인") ?? [];
+  const semesterRows = (semesters || []).filter(
+  (sem: any) => !!sem.isCompleted && Number(sem.actualAmount || 0) > 0
+);
+
+const pendingSemesters = semesterRows.filter(
+  (sem: any) => (sem.approvalStatus || "요청전") === "대기"
+);
+
+const approvedSemesters = semesterRows.filter(
+  (sem: any) => sem.approvalStatus === "승인"
+);
+
+const rejectedSemesters = semesterRows.filter(
+  (sem: any) => sem.approvalStatus === "불승인"
+);
 
   return (
     <div className="space-y-6">
@@ -129,10 +139,10 @@ export default function Approvals() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
-            학생 승인 대기
-            {pendingStudents.length > 0 && (
+            학기 승인 대기
+            {pendingSemesters.length > 0 && (
               <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
-                {pendingStudents.length}건
+                {pendingSemesters.length}건
               </Badge>
             )}
           </CardTitle>
@@ -141,93 +151,86 @@ export default function Approvals() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">이름</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">연락처</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">과정</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">결제금액</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">교육원</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">담당자</th>
-	<th className="px-4 py-2.5 text-center font-medium text-muted-foreground">현재상태</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">처리</th>
-                </tr>
-              </thead>
+  <tr className="border-b bg-muted/50">
+    <th className="px-4 py-2.5 text-left">이름</th>
+    <th className="px-4 py-2.5 text-left">연락처</th>
+    <th className="px-4 py-2.5 text-left">과정</th>
+    <th className="px-4 py-2.5 text-left">학기</th>
+    <th className="px-4 py-2.5 text-left">개강일</th>
+    <th className="px-4 py-2.5 text-left">교육원</th>
+    <th className="px-4 py-2.5 text-right">결제금액</th>
+    <th className="px-4 py-2.5 text-left">담당자</th>
+    <th className="px-4 py-2.5 text-center">현재상태</th>
+    <th className="px-4 py-2.5 text-right">처리</th>
+  </tr>
+</thead>
               <tbody>
-                {pendingStudents.length === 0 ? (
+                {pendingSemesters.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
-                      등록예정 상태의 승인 대기 학생이 없습니다.
+                    <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">
+                      승인 대기 학기가 없습니다.
                     </td>
                   </tr>
                 ) : (
-                  pendingStudents.map((s: any) => (
-                    <tr key={s.id} className="border-b last:border-0 hover:bg-muted/20">
-                      <td className="px-4 py-3">
-                        <button
-                          className="font-medium text-primary hover:underline"
-                          onClick={() => setLocation(`/students/${s.id}`)}
-                        >
-                          {s.clientName}
-                        </button>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">{s.phone || "-"}</td>
-                      <td className="px-4 py-3">{s.course || "-"}</td>
-                      <td className="px-4 py-3 text-right font-medium">
-                        {formatCurrency(s.paymentAmount)}
-                      </td>
-                      <td className="px-4 py-3">{s.institution || "-"}</td>
-<td className="px-4 py-3 text-muted-foreground">
-  {userMap.get(s.assigneeId) || "-"}
-</td>
-<td className="px-4 py-3 text-center">
-  <Badge className="bg-amber-100 text-amber-700 text-[10px]">
-    {s.approvalStatus === "승인" ? (s.status || "등록") : "등록예정"}
-  </Badge>
-</td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="gap-1 text-emerald-600 border-emerald-200 hover:bg-emerald-50 h-8"
-                            onClick={() => {
-  const ok = confirm(
-    "이 학생을 승인하면 최종 등록 처리되고, 매출 반영 및 학기별 예정표 반영이 진행됩니다. 계속하시겠습니까?"
-  );
-  if (!ok) return;
+                  pendingSemesters.map((sem: any) => (
+  <tr key={sem.id} className="border-b last:border-0 hover:bg-muted/20">
+    <td className="px-4 py-3">
+      <button
+        className="font-medium text-primary hover:underline"
+        onClick={() => setLocation(`/students/${sem.studentId}`)}
+      >
+        {sem.clientName}
+      </button>
+    </td>
+    <td className="px-4 py-3 text-muted-foreground">{sem.phone || "-"}</td>
+    <td className="px-4 py-3">{sem.primaryCourse || sem.course || "-"}</td>
+    <td className="px-4 py-3">{sem.semesterOrder}학기</td>
+    <td className="px-4 py-3">{formatDate(sem.actualStartDate)}</td>
+    <td className="px-4 py-3">{sem.actualInstitution || sem.institutionName || "-"}</td>
+    <td className="px-4 py-3 text-right font-medium">
+      {formatCurrency(sem.actualAmount)}
+    </td>
+    <td className="px-4 py-3 text-muted-foreground">
+      {userMap.get(sem.assigneeId) || "-"}
+    </td>
+    <td className="px-4 py-3 text-center">
+      <Badge className="bg-amber-100 text-amber-700 text-[10px]">등록예정</Badge>
+    </td>
+    <td className="px-4 py-3 text-right">
+      <div className="flex items-center justify-end gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1 text-emerald-600 border-emerald-200 hover:bg-emerald-50 h-8"
+          onClick={() =>
+            approveSemesterMutation.mutate({
+              id: Number(sem.id),
+              approvalStatus: "승인",
+            })
+          }
+          disabled={approveSemesterMutation.isPending}
+        >
+          <Check className="h-3.5 w-3.5" /> 승인
+        </Button>
 
-  approveStudentMutation.mutate({
-  id: Number(s.id),
-  approvalStatus: "승인",
-});
-}}
-                            disabled={approveStudentMutation.isPending}
-                          >
-                            <Check className="h-3.5 w-3.5" /> 승인
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="gap-1 text-red-600 border-red-200 hover:bg-red-50 h-8"
-                            onClick={() => {
-  const ok = confirm(
-    "이 학생을 불승인 처리하면 최종 등록되지 않습니다. 계속하시겠습니까?"
-  );
-  if (!ok) return;
-
-  approveStudentMutation.mutate({
-  id: Number(s.id),
-  approvalStatus: "불승인",
-});
-}}
-                            disabled={approveStudentMutation.isPending}
-                          >
-                            <X className="h-3.5 w-3.5" /> 불승인
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1 text-red-600 border-red-200 hover:bg-red-50 h-8"
+          onClick={() =>
+            approveSemesterMutation.mutate({
+              id: Number(sem.id),
+              approvalStatus: "불승인",
+            })
+          }
+          disabled={approveSemesterMutation.isPending}
+        >
+          <X className="h-3.5 w-3.5" /> 불승인
+        </Button>
+      </div>
+    </td>
+  </tr>
+))
                 )}
               </tbody>
             </table>
@@ -343,180 +346,167 @@ rejectRefundMutation.mutate({ id: Number(r.id) })
         </CardContent>
       </Card>
 
-      {/* 승인 완료 학생 */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-  학생 승인 완료 / 최종 등록
-            <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
-              {approvedStudents.length}건
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">이름</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">연락처</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">과정</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">총 결제예정</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">실수납금액</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">담당자</th>
-                  <th className="px-4 py-2.5 text-center font-medium text-muted-foreground">상태</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">변경</th>
-                </tr>
-              </thead>
-              <tbody>
-                {approvedStudents.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
-                      승인된 학생이 없습니다.
-                    </td>
-                  </tr>
-                ) : (
-                  approvedStudents.map((s: any) => {
-                    const paidAmount = Number(s.paidAmount || 0);
-                    const approvedRefundAmount = Number(s.approvedRefundAmount || 0);
-                    const netPaidAmount = Number(
-                      s.netPaidAmount || paidAmount - approvedRefundAmount || 0
-                    );
+      {/* 승인 완료 학기 */}
+<Card>
+  <CardHeader className="pb-3">
+    <CardTitle className="text-base flex items-center gap-2">
+      학기 승인 완료
+      <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+        {approvedSemesters.length}건
+      </Badge>
+    </CardTitle>
+  </CardHeader>
+  <CardContent className="p-0">
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b bg-muted/50">
+            <th className="px-4 py-2.5 text-left">이름</th>
+            <th className="px-4 py-2.5 text-left">연락처</th>
+            <th className="px-4 py-2.5 text-left">과정</th>
+            <th className="px-4 py-2.5 text-left">학기</th>
+            <th className="px-4 py-2.5 text-left">개강일</th>
+            <th className="px-4 py-2.5 text-left">교육원</th>
+            <th className="px-4 py-2.5 text-right">결제금액</th>
+            <th className="px-4 py-2.5 text-left">담당자</th>
+            <th className="px-4 py-2.5 text-center">현재상태</th>
+            <th className="px-4 py-2.5 text-right">변경</th>
+          </tr>
+        </thead>
+        <tbody>
+          {approvedSemesters.length === 0 ? (
+            <tr>
+              <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">
+                승인 완료 학기가 없습니다.
+              </td>
+            </tr>
+          ) : (
+            approvedSemesters.map((sem: any) => (
+              <tr key={sem.id} className="border-b last:border-0 hover:bg-muted/20">
+                <td className="px-4 py-3">
+                  <button
+                    className="font-medium text-primary hover:underline"
+                    onClick={() => setLocation(`/students/${sem.studentId}`)}
+                  >
+                    {sem.clientName}
+                  </button>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">{sem.phone || "-"}</td>
+                <td className="px-4 py-3">{sem.primaryCourse || sem.course || "-"}</td>
+                <td className="px-4 py-3">{sem.semesterOrder}학기</td>
+                <td className="px-4 py-3">{formatDate(sem.actualStartDate)}</td>
+                <td className="px-4 py-3">{sem.actualInstitution || sem.institutionName || "-"}</td>
+                <td className="px-4 py-3 text-right font-medium">
+                  {formatCurrency(sem.actualAmount)}
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {userMap.get(sem.assigneeId) || "-"}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">등록</Badge>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-red-600 text-xs h-7"
+                    onClick={() =>
+                      approveSemesterMutation.mutate({
+                        id: Number(sem.id),
+                        approvalStatus: "불승인",
+                      })
+                    }
+                    disabled={approveSemesterMutation.isPending}
+                  >
+                    불승인으로 변경
+                  </Button>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  </CardContent>
+</Card>
 
-                    return (
-                      <tr key={s.id} className="border-b last:border-0 hover:bg-muted/20">
-                        <td className="px-4 py-3">
-                          <button
-                            className="font-medium text-primary hover:underline"
-                            onClick={() => setLocation(`/students/${s.id}`)}
-                          >
-                            {s.clientName}
-                          </button>
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">{s.phone || "-"}</td>
-                        <td className="px-4 py-3">{s.course || "-"}</td>
-                        <td className="px-4 py-3 text-right font-medium">
-                          {formatCurrency(s.totalRequired)}
-                        </td>
-                        <td
-                          className="px-4 py-3 text-right font-medium text-emerald-600"
-                          title={
-                            approvedRefundAmount > 0
-                              ? `수납 ${formatCurrency(paidAmount)} / 환불 ${formatCurrency(
-                                  approvedRefundAmount
-                                )} / 실수납 ${formatCurrency(netPaidAmount)}`
-                              : undefined
-                          }
-                        >
-                          {formatCurrency(netPaidAmount)}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">
-                          {userMap.get(s.assigneeId) || "-"}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">
-  {s.status || "등록"}
-</Badge>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-red-600 text-xs h-7"
-                            onClick={() =>
-  approveStudentMutation.mutate({
-  id: Number(s.id),
-  approvalStatus: "불승인",
-})
-}
-                          >
-                            불승인으로 변경
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 학생 불승인 */}
-      {rejectedStudents.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-  학생 불승인 / 등록 보류
-              <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-                {rejectedStudents.length}건
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-<div className="px-4 py-3 text-xs text-emerald-700 bg-emerald-50 border-b border-emerald-100">
-  이 영역의 학생은 승인관리 승인이 완료되어 최종 등록 처리된 상태입니다. 매출 및 예정표 반영 대상입니다.
-</div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">이름</th>
-                    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">연락처</th>
-                    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">과정</th>
-                    <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">결제금액</th>
-                    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">담당자</th>
-                    <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">변경</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rejectedStudents.map((s: any) => (
-                    <tr key={s.id} className="border-b last:border-0 hover:bg-muted/20">
-                      <td className="px-4 py-3">
-                        <button
-                          className="font-medium text-primary hover:underline"
-                          onClick={() => setLocation(`/students/${s.id}`)}
-                        >
-                          {s.clientName}
-                        </button>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">{s.phone || "-"}</td>
-                      <td className="px-4 py-3">{s.course || "-"}</td>
-                      <td className="px-4 py-3 text-right font-medium">
-                        {formatCurrency(s.paymentAmount)}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {userMap.get(s.assigneeId) || "-"}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-emerald-600 text-xs h-7"
-                          onClick={() => {
-  const ok = confirm(
-    "이 학생을 다시 승인하면 최종 등록 처리됩니다. 계속하시겠습니까?"
-  );
-  if (!ok) return;
-
-  approveStudentMutation.mutate({
-  id: Number(s.id),
-  approvalStatus: "승인",
-});
-}}
-                        >
-                          승인으로 변경
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* 학기 불승인 */}
+{rejectedSemesters.length > 0 && (
+  <Card>
+    <CardHeader className="pb-3">
+      <CardTitle className="text-base flex items-center gap-2">
+        학기 불승인
+        <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+          {rejectedSemesters.length}건
+        </Badge>
+      </CardTitle>
+    </CardHeader>
+    <CardContent className="p-0">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-muted/50">
+              <th className="px-4 py-2.5 text-left">이름</th>
+              <th className="px-4 py-2.5 text-left">연락처</th>
+              <th className="px-4 py-2.5 text-left">과정</th>
+              <th className="px-4 py-2.5 text-left">학기</th>
+              <th className="px-4 py-2.5 text-left">개강일</th>
+              <th className="px-4 py-2.5 text-left">교육원</th>
+              <th className="px-4 py-2.5 text-right">결제금액</th>
+              <th className="px-4 py-2.5 text-left">담당자</th>
+              <th className="px-4 py-2.5 text-center">현재상태</th>
+              <th className="px-4 py-2.5 text-right">변경</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rejectedSemesters.map((sem: any) => (
+              <tr key={sem.id} className="border-b last:border-0 hover:bg-muted/20">
+                <td className="px-4 py-3">
+                  <button
+                    className="font-medium text-primary hover:underline"
+                    onClick={() => setLocation(`/students/${sem.studentId}`)}
+                  >
+                    {sem.clientName}
+                  </button>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">{sem.phone || "-"}</td>
+                <td className="px-4 py-3">{sem.primaryCourse || sem.course || "-"}</td>
+                <td className="px-4 py-3">{sem.semesterOrder}학기</td>
+                <td className="px-4 py-3">{formatDate(sem.actualStartDate)}</td>
+                <td className="px-4 py-3">{sem.actualInstitution || sem.institutionName || "-"}</td>
+                <td className="px-4 py-3 text-right font-medium">
+                  {formatCurrency(sem.actualAmount)}
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {userMap.get(sem.assigneeId) || "-"}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <Badge className="bg-red-100 text-red-700 text-[10px]">불승인</Badge>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-emerald-600 text-xs h-7"
+                    onClick={() =>
+                      approveSemesterMutation.mutate({
+                        id: Number(sem.id),
+                        approvalStatus: "승인",
+                      })
+                    }
+                    disabled={approveSemesterMutation.isPending}
+                  >
+                    승인으로 변경
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </CardContent>
+  </Card>
+)}
     </div>
   );
 }
