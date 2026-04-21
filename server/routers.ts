@@ -503,16 +503,12 @@ if (input.practiceDate !== undefined)
         if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl?.trim() || null;
 
         await db.updatePracticeSupportRequest(input.id, data);
-        if (
-          input.paymentStatus !== undefined ||
-          input.paidAt !== undefined ||
-          input.feeAmount !== undefined
-        ) {
-          await db.syncPracticeSupportSettlementItemByRequestId(
-            Number(input.id),
-            Number(ctx.user.id)
-          );
-        }
+       if (input.paymentStatus === "결제") {
+  await db.syncPracticeSupportSettlementItemByRequestId(
+    Number(input.id),
+    Number(ctx.user.id)
+  );
+}
         return { success: true };
       }),
 

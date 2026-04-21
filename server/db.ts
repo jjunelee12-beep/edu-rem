@@ -3223,7 +3223,7 @@ export async function syncPracticeSupportSettlementItemByRequestId(
 
   const request = rows[0];
   if (!request) {
-    throw new Error("실습배정지원 요청 데이터를 찾을 수 없습니다.");
+    return null;
   }
 
   if (request.paymentStatus !== "결제") {
