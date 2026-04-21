@@ -2249,7 +2249,14 @@ export async function listStudents(assigneeId?: number) {
     ) as firstActualPaymentDate,
 
     (SELECT p.practiceStatus FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceStatus,
-    (SELECT p.hasPractice FROM plans p WHERE p.studentId = s.id LIMIT 1) as hasPractice
+    (SELECT p.hasPractice FROM plans p WHERE p.studentId = s.id LIMIT 1) as hasPractice,
+COALESCE(
+  (SELECT COUNT(*)
+   FROM semesters semc
+   WHERE semc.studentId = s.id
+     AND semc.isCompleted = true),
+  0
+) as completedSemesterCount
   FROM students s
   ${assigneeFilter}
   ORDER BY s.createdAt DESC

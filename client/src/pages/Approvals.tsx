@@ -107,7 +107,12 @@ export default function Approvals() {
     );
   }
 
-  const pendingStudents = students?.filter((s: any) => s.approvalStatus === "대기") ?? [];
+  const pendingStudents =
+  students?.filter(
+    (s: any) =>
+      s.approvalStatus === "대기" &&
+      Number(s.completedSemesterCount || 0) > 0
+  ) ?? [];
   const approvedStudents = students?.filter((s: any) => s.approvalStatus === "승인") ?? [];
   const rejectedStudents = students?.filter((s: any) => s.approvalStatus === "불승인") ?? [];
 
@@ -176,7 +181,7 @@ export default function Approvals() {
 </td>
 <td className="px-4 py-3 text-center">
   <Badge className="bg-amber-100 text-amber-700 text-[10px]">
-    {s.status || "등록예정"}
+    {s.approvalStatus === "승인" ? (s.status || "등록") : "등록예정"}
   </Badge>
 </td>
                       <td className="px-4 py-3 text-right">
