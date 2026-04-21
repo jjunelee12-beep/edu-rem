@@ -2144,54 +2144,124 @@ export async function listStudents(assigneeId?: number) {
   const assigneeFilter = assigneeId ? sql`WHERE s.assigneeId = ${assigneeId}` : sql``;
 
   const [rows] = await db.execute(sql`
-    SELECT s.*,
-      COALESCE(
-        (SELECT SUM(sem.plannedAmount) FROM semesters sem WHERE sem.studentId = s.id),
-        0
-      ) as totalRequired,
+  SELECT s.*,
+    COALESCE(
+      (SELECT SUM(sem.plannedAmount)
+       FROM semesters sem
+       WHERE sem.studentId = s.id),
+      0
+    ) as totalRequired,
 
+    COALESCE(
+      (SELECT SUM(sem2.actualAmount)
+       FROM semesters sem2
+       WHERE sem2.studentId = s.id
+         AND sem2.isCompleted = true),
+      0
+    ) as paidAmount,
+
+    COALESCE(
+      (SELECT SUM(r.refundAmount)
+       FROM refunds r
+       WHERE r.studentId = s.id
+         AND r.approvalStatus = '승인'),
+      0
+    ) as approvedRefundAmount,
+
+    (
       COALESCE(
         (SELECT SUM(sem2.actualAmount)
          FROM semesters sem2
          WHERE sem2.studentId = s.id
            AND sem2.isCompleted = true),
         0
-      ) as paidAmount,
-
+      )
+      -
       COALESCE(
         (SELECT SUM(r.refundAmount)
          FROM refunds r
          WHERE r.studentId = s.id
            AND r.approvalStatus = '승인'),
         0
-      ) as approvedRefundAmount,
+      )
+    ) as netPaidAmount,
 
-      (
-        COALESCE(
-          (SELECT SUM(sem2.actualAmount)
-           FROM semesters sem2
-           WHERE sem2.studentId = s.id
-             AND sem2.isCompleted = true),
-          0
+    (
+      SELECT sem3.actualStartDate
+      FROM semesters sem3
+      WHERE sem3.studentId = s.id
+        AND (
+          sem3.actualStartDate IS NOT NULL OR
+          sem3.actualInstitutionId IS NOT NULL OR
+          sem3.actualSubjectCount IS NOT NULL OR
+          sem3.actualAmount IS NOT NULL OR
+          sem3.actualPaymentDate IS NOT NULL
         )
-        -
-        COALESCE(
-          (SELECT SUM(r.refundAmount)
-           FROM refunds r
-           WHERE r.studentId = s.id
-             AND r.approvalStatus = '승인'),
-          0
+      ORDER BY sem3.semesterOrder ASC
+      LIMIT 1
+    ) as firstActualStartDate,
+
+    (
+      SELECT sem4.actualInstitutionId
+      FROM semesters sem4
+      WHERE sem4.studentId = s.id
+        AND (
+          sem4.actualStartDate IS NOT NULL OR
+          sem4.actualInstitutionId IS NOT NULL OR
+          sem4.actualSubjectCount IS NOT NULL OR
+          sem4.actualAmount IS NOT NULL OR
+          sem4.actualPaymentDate IS NOT NULL
         )
-      ) as netPaidAmount,
+      ORDER BY sem4.semesterOrder ASC
+      LIMIT 1
+    ) as firstActualInstitutionId,
 
-      (SELECT p.practiceStatus FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceStatus,
-      (SELECT p.hasPractice FROM plans p WHERE p.studentId = s.id LIMIT 1) as hasPractice
-    FROM students s
-    ${assigneeFilter}
-    ORDER BY s.createdAt DESC
-  `);
+    (
+      SELECT ei.name
+      FROM semesters sem5
+      LEFT JOIN education_institutions ei
+        ON ei.id = sem5.actualInstitutionId
+      WHERE sem5.studentId = s.id
+        AND (
+          sem5.actualStartDate IS NOT NULL OR
+          sem5.actualInstitutionId IS NOT NULL OR
+          sem5.actualSubjectCount IS NOT NULL OR
+          sem5.actualAmount IS NOT NULL OR
+          sem5.actualPaymentDate IS NOT NULL
+        )
+      ORDER BY sem5.semesterOrder ASC
+      LIMIT 1
+    ) as firstActualInstitutionName,
 
-  return (rows as unknown) as any[];
+    (
+      SELECT sem6.actualPaymentDate
+      FROM semesters sem6
+      WHERE sem6.studentId = s.id
+        AND (
+          sem6.actualStartDate IS NOT NULL OR
+          sem6.actualInstitutionId IS NOT NULL OR
+          sem6.actualSubjectCount IS NOT NULL OR
+          sem6.actualAmount IS NOT NULL OR
+          sem6.actualPaymentDate IS NOT NULL
+        )
+      ORDER BY sem6.semesterOrder ASC
+      LIMIT 1
+    ) as firstActualPaymentDate,
+
+    (SELECT p.practiceStatus FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceStatus,
+    (SELECT p.hasPractice FROM plans p WHERE p.studentId = s.id LIMIT 1) as hasPractice
+  FROM students s
+  ${assigneeFilter}
+  ORDER BY s.createdAt DESC
+`);
+
+return (rows as any[]).map((row: any) => ({
+  ...row,
+  startDate: row.firstActualStartDate || row.startDate || null,
+  institutionId: row.firstActualInstitutionId || row.institutionId || null,
+  institution: row.firstActualInstitutionName || row.institution || "",
+  paymentDate: row.firstActualPaymentDate || row.paymentDate || null,
+}));
 }
 
 export async function getStudent(id: number) {
@@ -6104,41 +6174,44 @@ export async function listPracticeSupportRequests(assigneeId?: number) {
     ORDER BY sem.studentId ASC, sem.semesterOrder DESC, sem.updatedAt DESC
   `);
 
-  const mapped = (rows as any[]).map((row) => ({
-    id: row.id ?? `semester-${row.semesterId}`,
-    semesterId: row.semesterId,
-    studentId: row.studentId,
-    semesterOrder: row.semesterOrder,
-    semesterUpdatedAt: row.semesterUpdatedAt,
+ const mapped = (rows as any[]).map((row) => ({
+  id: row.id ? Number(row.id) : null,
+  practiceSupportRequestId: row.id ? Number(row.id) : null,
+  hasPracticeSupportRequest: !!row.id,
 
-    clientName: row.clientName || row.studentClientName || "",
-    phone: row.phone || row.studentPhone || "",
-    course: row.course || row.semesterCourse || row.planDesiredCourse || "",
-    inputAddress: row.inputAddress || "",
-    detailAddress: row.detailAddress || "",
-    assigneeId: row.assigneeId || row.studentAssigneeId || null,
-    assigneeName: row.assigneeName || row.userName || "",
-    managerName: row.managerName || row.userName || "",
-    practiceHours: row.practiceHours ?? row.planPracticeHours ?? null,
-    practiceDate: row.practiceDate || row.planPracticeDate || null,
-    coordinationStatus: row.coordinationStatus || row.semesterPracticeStatus || "미섭외",
+  semesterId: row.semesterId,
+  studentId: row.studentId,
+  semesterOrder: row.semesterOrder,
+  semesterUpdatedAt: row.semesterUpdatedAt,
 
-    selectedEducationCenterId: row.selectedEducationCenterId || null,
-    selectedEducationCenterName: row.selectedEducationCenterName || "",
-    selectedEducationCenterAddress: row.selectedEducationCenterAddress || "",
-    selectedEducationCenterDistanceKm: row.selectedEducationCenterDistanceKm || "",
+  clientName: row.clientName || row.studentClientName || "",
+  phone: row.phone || row.studentPhone || "",
+  course: row.course || row.semesterCourse || row.planDesiredCourse || "",
+  inputAddress: row.inputAddress || "",
+  detailAddress: row.detailAddress || "",
+  assigneeId: row.assigneeId || row.studentAssigneeId || null,
+  assigneeName: row.assigneeName || row.userName || "",
+  managerName: row.managerName || row.userName || "",
+  practiceHours: row.practiceHours ?? row.planPracticeHours ?? null,
+  practiceDate: row.practiceDate || row.planPracticeDate || null,
+  coordinationStatus: row.coordinationStatus || row.semesterPracticeStatus || "미섭외",
 
-    selectedPracticeInstitutionId: row.selectedPracticeInstitutionId || null,
-    selectedPracticeInstitutionName: row.selectedPracticeInstitutionName || "",
-    selectedPracticeInstitutionAddress: row.selectedPracticeInstitutionAddress || "",
-    selectedPracticeInstitutionDistanceKm: row.selectedPracticeInstitutionDistanceKm || "",
+  selectedEducationCenterId: row.selectedEducationCenterId || null,
+  selectedEducationCenterName: row.selectedEducationCenterName || "",
+  selectedEducationCenterAddress: row.selectedEducationCenterAddress || "",
+  selectedEducationCenterDistanceKm: row.selectedEducationCenterDistanceKm || "",
 
-    feeAmount: row.feeAmount || "0",
-    paymentStatus: row.paymentStatus || "미결제",
-    note: row.note || "",
-    createdAt: row.createdAt || null,
-    updatedAt: row.updatedAt || null,
-  }));
+  selectedPracticeInstitutionId: row.selectedPracticeInstitutionId || null,
+  selectedPracticeInstitutionName: row.selectedPracticeInstitutionName || "",
+  selectedPracticeInstitutionAddress: row.selectedPracticeInstitutionAddress || "",
+  selectedPracticeInstitutionDistanceKm: row.selectedPracticeInstitutionDistanceKm || "",
+
+  feeAmount: row.feeAmount || "0",
+  paymentStatus: row.paymentStatus || "미결제",
+  note: row.note || "",
+  createdAt: row.createdAt || null,
+  updatedAt: row.updatedAt || null,
+}));
 
   // 학생당 1건만: 가장 최근 학기(semesterOrder 큰 것) 우선
   const dedupedMap = new Map<number, any>();
@@ -6214,7 +6287,7 @@ export async function listPracticeSupportRequestsByStudent(studentId: number) {
   `);
 
   return (rows as any[]).map((row) => ({
-    id: row.id ?? `semester-${row.semesterId}`,
+    id: row.id ? Number(row.id) : null,
     semesterId: row.semesterId,
     studentId: row.studentId,
     semesterOrder: row.semesterOrder,
