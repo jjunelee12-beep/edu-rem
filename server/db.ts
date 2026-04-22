@@ -3217,7 +3217,11 @@ console.log("🔥 [refundSettlementItemBySource] about to call upsertSettlementI
   assigneeId: toNullableNumber(baseItem.assigneeId),
   freelancerUserId: toNullableNumber(baseItem.freelancerUserId),
   freelancerPositionId: toNullableNumber(baseItem.freelancerPositionId),
-  settlementGradeId: toNullableNumber(baseItem.settlementGradeId),
+
+  settlementGradeId:
+    toNullableNumber(baseItem.settlementGradeId) ??
+    1,
+
   educationInstitutionId: toNullableNumber(baseItem.educationInstitutionId),
   privateCertificateMasterId: toNullableNumber(baseItem.privateCertificateMasterId),
   institutionName: String(baseItem.institutionName || "").trim() || null,
