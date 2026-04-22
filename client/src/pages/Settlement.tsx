@@ -220,8 +220,8 @@ const {
     if (detailTypeFilter === "all") return entries;
 
     if (detailTypeFilter === "refund") {
-      return entries.filter((row: any) => row.settlementStatus === "refunded");
-    }
+  return entries.filter((row: any) => row.revenueType === "refund");
+}
 
     return entries.filter((row: any) => row.revenueType === detailTypeFilter);
   }, [detailData, detailTypeFilter]);

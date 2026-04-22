@@ -501,32 +501,33 @@ export async function getStudentRegistrationSummary(studentId: number) {
   const lastSemester = sortedSemesters[sortedSemesters.length - 1];
 
    const [settlementResult] = await db.execute(sql`
-    SELECT
-      COALESCE(
-        SUM(
-          CASE
-            WHEN settlementStatus = 'confirmed'
-            THEN grossAmount ELSE 0
-          END
-        ),
-        0
-      ) as totalPaid,
-      COALESCE(
-        SUM(
-          CASE
-            WHEN settlementStatus = 'refunded'
-            THEN grossAmount ELSE 0
-          END
-        ),
-        0
-      ) as totalRefund
-    FROM settlement_items
-    WHERE studentId = ${studentId}
-  `);
+  SELECT
+    COALESCE(
+      SUM(
+        CASE
+          WHEN settlementStatus = 'confirmed'
+           AND revenueType != 'refund'
+          THEN grossAmount ELSE 0
+        END
+      ),
+      0
+    ) as totalPaid,
+    COALESCE(
+      SUM(
+        CASE
+          WHEN revenueType = 'refund'
+          THEN ABS(grossAmount) ELSE 0
+        END
+      ),
+      0
+    ) as totalRefund
+  FROM settlement_items
+  WHERE studentId = ${studentId}
+`);
 
-  const totalPaid = toNumber((settlementResult as any)[0]?.totalPaid);
-  const totalRefund = toNumber((settlementResult as any)[0]?.totalRefund);
-  const rawPaymentAmount = totalPaid - totalRefund;
+const totalPaid = toNumber((settlementResult as any)[0]?.totalPaid);
+const totalRefund = toNumber((settlementResult as any)[0]?.totalRefund);
+const rawPaymentAmount = totalPaid - totalRefund;
 
   return {
     status:
@@ -3123,41 +3124,111 @@ export async function refundSettlementItemBySource(params: {
     .where(
       and(
         eq(settlementItems.revenueType, params.revenueType),
-        eq(settlementItems.sourceId, params.sourceId)
+        eq(settlementItems.sourceId, params.sourceId),
+        or(
+          eq(settlementItems.settlementStatus, "confirmed"),
+          eq(settlementItems.settlementStatus, "pending")
+        )
       )
     )
+    .orderBy(desc(settlementItems.id))
     .limit(1);
 
   if (!exists[0]) {
     return null;
   }
 
-  const item = exists[0];
-  const refundAmount = toNumber(params.refundAmount ?? item.grossAmount ?? 0);
+  const baseItem = exists[0];
 
-  await db
-    .update(settlementItems)
-    .set({
-      settlementStatus: "refunded",
-      note: params.note ?? "환불 처리됨",
-    } as any)
-    .where(eq(settlementItems.id, item.id));
+  const baseGrossAmount = toNumber(baseItem.grossAmount);
+  const requestedRefundAmount = toNumber(params.refundAmount ?? 0);
+  const refundAmount = Math.max(
+    0,
+    Math.min(requestedRefundAmount || baseGrossAmount, baseGrossAmount)
+  );
+
+  if (refundAmount <= 0) {
+    return null;
+  }
+
+  const ratio =
+    baseGrossAmount > 0 ? Math.min(refundAmount / baseGrossAmount, 1) : 0;
+
+  const refundCompanyAmount = Math.round(toNumber(baseItem.companyAmount) * ratio);
+  const refundFreelancerAmount = Math.round(
+    toNumber(baseItem.freelancerAmount) * ratio
+  );
+  const refundTaxAmount = Math.round(toNumber(baseItem.taxAmount) * ratio);
+  const refundFinalPayoutAmount = Math.round(
+    toNumber(baseItem.finalPayoutAmount) * ratio
+  );
+  const refundCompanyProfit = Math.round(
+    toNumber(baseItem.companyProfit) * ratio
+  );
+
+  const refundOccurredAt =
+    params.refundDate instanceof Date
+      ? params.refundDate
+      : params.refundDate
+      ? new Date(params.refundDate)
+      : new Date();
+
+  const refundTitle =
+    params.revenueType === "subject"
+      ? `${baseItem.title || "일반과목"} 환불`
+      : params.revenueType === "practice_support"
+      ? `${baseItem.title || "실습배정"} 환불`
+      : `${baseItem.title || "민간자격증"} 환불`;
+
+  const insertResult: any = await db.insert(settlementItems).values({
+    revenueType: "refund" as any,
+    sourceId: Number(params.sourceId),
+    studentId: Number(baseItem.studentId),
+    assigneeId: baseItem.assigneeId ?? null,
+    freelancerUserId: baseItem.freelancerUserId ?? null,
+    freelancerPositionId: baseItem.freelancerPositionId ?? null,
+    settlementGradeId: baseItem.settlementGradeId ?? null,
+    educationInstitutionId: baseItem.educationInstitutionId ?? null,
+    privateCertificateMasterId: baseItem.privateCertificateMasterId ?? null,
+    institutionName: baseItem.institutionName ?? null,
+    title: refundTitle,
+    quantity: 1,
+    actualCredits: baseItem.actualCredits ?? null,
+    settlementCredits: baseItem.settlementCredits ?? null,
+    grossAmount: -refundAmount,
+    companyAmount: -refundCompanyAmount,
+    freelancerAmount: -refundFreelancerAmount,
+    taxAmount: -refundTaxAmount,
+    finalPayoutAmount: -refundFinalPayoutAmount,
+    companyProfit: -refundCompanyProfit,
+    settlementStatus: "confirmed",
+    occurredAt: refundOccurredAt,
+    note: params.note ?? "부분환불 반영",
+    subjectType: baseItem.subjectType ?? null,
+    subjectCount: 0,
+    actualUnitPrice: 0,
+    normalUnitPrice: 0,
+  } as any);
+
+  const refundSettlementItemId = Number(getInsertId(insertResult));
 
   await createSettlementItemLog({
-    settlementItemId: Number(item.id),
-    actionType: "refund",
+    settlementItemId: refundSettlementItemId,
+    actionType: "create",
     actorUserId: params.actorUserId ?? null,
-    note: params.note ?? "환불 승인으로 정산 환불 처리",
+    note: params.note ?? "환불 정산 항목 생성",
     payload: JSON.stringify({
       refundAmount,
+      refundRatio: ratio,
       refundDate: params.refundDate ?? null,
-      revenueType: params.revenueType,
+      originalSettlementItemId: Number(baseItem.id),
+      originalRevenueType: params.revenueType,
       sourceId: params.sourceId,
       ...(params.payload ?? {}),
     }),
   });
 
-  return Number(item.id);
+  return refundSettlementItemId;
 }
 
 export async function syncPrivateCertificateSettlementItemByRequestId(
@@ -4680,24 +4751,25 @@ export async function getSettlementReport(
       assigneeId: settlementItems.assigneeId,
 
       totalGrossSales: sql<string>`
-        COALESCE(SUM(
-          CASE
-            WHEN ${settlementItems.settlementStatus} = 'confirmed'
-            THEN ${settlementItems.grossAmount}
-            ELSE 0
-          END
-        ), 0)
-      `,
+  COALESCE(SUM(
+    CASE
+      WHEN ${settlementItems.settlementStatus} = 'confirmed'
+       AND ${settlementItems.revenueType} != 'refund'
+      THEN ${settlementItems.grossAmount}
+      ELSE 0
+    END
+  ), 0)
+`,
 
-      totalRefundGross: sql<string>`
-        COALESCE(SUM(
-          CASE
-            WHEN ${settlementItems.settlementStatus} = 'refunded'
-            THEN ${settlementItems.grossAmount}
-            ELSE 0
-          END
-        ), 0)
-      `,
+     totalRefundGross: sql<string>`
+  COALESCE(SUM(
+    CASE
+      WHEN ${settlementItems.revenueType} = 'refund'
+      THEN ABS(${settlementItems.grossAmount})
+      ELSE 0
+    END
+  ), 0)
+`,
 
       totalCompanyAmount: sql<string>`
         COALESCE(SUM(
@@ -4710,14 +4782,14 @@ export async function getSettlementReport(
       `,
 
       totalRefundCompanyAmount: sql<string>`
-        COALESCE(SUM(
-          CASE
-            WHEN ${settlementItems.settlementStatus} = 'refunded'
-            THEN ${settlementItems.companyAmount}
-            ELSE 0
-          END
-        ), 0)
-      `,
+  COALESCE(SUM(
+    CASE
+      WHEN ${settlementItems.revenueType} = 'refund'
+      THEN ABS(${settlementItems.companyAmount})
+      ELSE 0
+    END
+  ), 0)
+`,
 
       totalInstitutionCost: sql<string>`
         COALESCE(SUM(
@@ -4730,14 +4802,14 @@ export async function getSettlementReport(
       `,
 
       totalRefundInstitutionCost: sql<string>`
-        COALESCE(SUM(
-          CASE
-            WHEN ${settlementItems.settlementStatus} = 'refunded'
-            THEN ${settlementItems.institutionCost}
-            ELSE 0
-          END
-        ), 0)
-      `,
+  COALESCE(SUM(
+    CASE
+      WHEN ${settlementItems.revenueType} = 'refund'
+      THEN ABS(${settlementItems.institutionCost})
+      ELSE 0
+    END
+  ), 0)
+`,
 
       totalFreelancerAmount: sql<string>`
         COALESCE(SUM(
@@ -4750,14 +4822,14 @@ export async function getSettlementReport(
       `,
 
       totalRefundFreelancerAmount: sql<string>`
-        COALESCE(SUM(
-          CASE
-            WHEN ${settlementItems.settlementStatus} = 'refunded'
-            THEN ${settlementItems.freelancerAmount}
-            ELSE 0
-          END
-        ), 0)
-      `,
+  COALESCE(SUM(
+    CASE
+      WHEN ${settlementItems.revenueType} = 'refund'
+      THEN ABS(${settlementItems.freelancerAmount})
+      ELSE 0
+    END
+  ), 0)
+`,
 
       totalTaxAmount: sql<string>`
         COALESCE(SUM(
@@ -4770,14 +4842,14 @@ export async function getSettlementReport(
       `,
 
       totalRefundTaxAmount: sql<string>`
-        COALESCE(SUM(
-          CASE
-            WHEN ${settlementItems.settlementStatus} = 'refunded'
-            THEN ${settlementItems.taxAmount}
-            ELSE 0
-          END
-        ), 0)
-      `,
+  COALESCE(SUM(
+    CASE
+      WHEN ${settlementItems.revenueType} = 'refund'
+      THEN ABS(${settlementItems.taxAmount})
+      ELSE 0
+    END
+  ), 0)
+`,
 
       totalFinalPayoutAmount: sql<string>`
         COALESCE(SUM(
@@ -4789,15 +4861,15 @@ export async function getSettlementReport(
         ), 0)
       `,
 
-      totalRefundFinalPayoutAmount: sql<string>`
-        COALESCE(SUM(
-          CASE
-            WHEN ${settlementItems.settlementStatus} = 'refunded'
-            THEN ${settlementItems.finalPayoutAmount}
-            ELSE 0
-          END
-        ), 0)
-      `,
+     totalRefundFinalPayoutAmount: sql<string>`
+  COALESCE(SUM(
+    CASE
+      WHEN ${settlementItems.revenueType} = 'refund'
+      THEN ABS(${settlementItems.finalPayoutAmount})
+      ELSE 0
+    END
+  ), 0)
+`,
 
  totalCompanyProfit: sql<string>`
   COALESCE(SUM(
@@ -4812,8 +4884,8 @@ export async function getSettlementReport(
 totalRefundCompanyProfit: sql<string>`
   COALESCE(SUM(
     CASE
-      WHEN ${settlementItems.settlementStatus} = 'refunded'
-      THEN ${sql.raw("`companyProfit`")}
+      WHEN ${settlementItems.revenueType} = 'refund'
+      THEN ABS(${sql.raw("`companyProfit`")})
       ELSE 0
     END
   ), 0)
