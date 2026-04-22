@@ -2843,6 +2843,10 @@ export async function approveRefund(id: number, approvedBy: number) {
   if (!refund) return;
 
    if (refund.semesterId) {
+console.log("🔥 [approveRefund] before refundSettlementItemBySource", {
+  refundId: id,
+  refund,
+});
     await refundSettlementItemBySource({
       revenueType: "subject",
       sourceId: Number(refund.semesterId),
@@ -2902,6 +2906,7 @@ export async function createSettlementItemLog(params: {
 }
 
 export async function upsertSettlementItem(params: {
+console.log("🔥 [upsertSettlementItem] params =", params);
   revenueType: "subject" | "practice_support" | "private_certificate";
   sourceId: number;
   studentId: number;
@@ -3016,6 +3021,7 @@ institutionName: params.institutionName ?? null,
 
     return { id: Number(item.id), mode: "update" as const };
   }
+console.log("🔥 [upsertSettlementItem] before insert");
 
   const result: any = await db.insert(settlementItems).values({
     revenueType: params.revenueType,
@@ -3051,6 +3057,7 @@ institutionName: params.institutionName ?? null,
   } as any);
 
   const insertedId = Number(getInsertId(result));
+console.log("🔥 [upsertSettlementItem] insertedId =", insertedId);
 
   await createSettlementItemLog({
     settlementItemId: insertedId,
@@ -3107,7 +3114,7 @@ export async function cancelSettlementItemBySource(params: {
 }
 
 export async function refundSettlementItemBySource(params: {
-  revenueType: "subject" | "practice_support" | "private_certificate";
+  revenueType: "subject" | "practice_support" | "private_certificate" | "refund";
   sourceId: number;
   refundAmount?: number | string | null;
   refundDate?: string | Date | null;
@@ -3115,6 +3122,7 @@ export async function refundSettlementItemBySource(params: {
   note?: string | null;
   payload?: any;
 }) {
+console.log("🔥 [refundSettlementItemBySource] START", params);
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
@@ -3139,17 +3147,25 @@ export async function refundSettlementItemBySource(params: {
   }
 
   const baseItem = exists[0];
+console.log("🔥 [refundSettlementItemBySource] baseItem =", baseItem);
 
-  const baseGrossAmount = toNumber(baseItem.grossAmount);
+const baseGrossAmount = toNumber(baseItem.grossAmount);
   const requestedRefundAmount = toNumber(params.refundAmount ?? 0);
-  const refundAmount = Math.max(
-    0,
-    Math.min(requestedRefundAmount || baseGrossAmount, baseGrossAmount)
-  );
+ const refundAmount = Math.max(
+  0,
+  Math.min(requestedRefundAmount || baseGrossAmount, baseGrossAmount)
+);
 
-  if (refundAmount <= 0) {
-    return null;
-  }
+console.log("🔥 [refundSettlementItemBySource] amounts =", {
+  baseGrossAmount,
+  requestedRefundAmount,
+  refundAmount,
+});
+
+if (refundAmount <= 0) {
+  console.log("🔥 [refundSettlementItemBySource] refundAmount <= 0, return null");
+  return null;
+}
 
   const ratio =
     baseGrossAmount > 0 ? Math.min(refundAmount / baseGrossAmount, 1) : 0;
@@ -3167,11 +3183,13 @@ export async function refundSettlementItemBySource(params: {
   );
 
   const refundOccurredAt =
-    params.refundDate instanceof Date
-      ? params.refundDate
-      : params.refundDate
-      ? new Date(params.refundDate)
-      : new Date();
+  params.refundDate instanceof Date
+    ? params.refundDate
+    : params.refundDate
+    ? new Date(params.refundDate)
+    : new Date();
+
+console.log("🔥 [refundSettlementItemBySource] refundOccurredAt =", refundOccurredAt);
 
   const refundTitle =
     params.revenueType === "subject"
@@ -3179,6 +3197,16 @@ export async function refundSettlementItemBySource(params: {
       : params.revenueType === "practice_support"
       ? `${baseItem.title || "실습배정"} 환불`
       : `${baseItem.title || "민간자격증"} 환불`;
+
+
+console.log("🔥 [refundSettlementItemBySource] about to call upsertSettlementItem", {
+  revenueType: "refund",
+  sourceId: Number(params.sourceId),
+  studentId: Number(baseItem.studentId),
+  refundAmount,
+  refundOccurredAt,
+  title: refundTitle,
+});
 
  const refundSettlement = await upsertSettlementItem({
   revenueType: "refund" as any,
@@ -3225,6 +3253,8 @@ export async function refundSettlementItemBySource(params: {
     ...(params.payload ?? {}),
   },
 });
+
+console.log("🔥 [refundSettlementItemBySource] refundSettlement =", refundSettlement);
 
 const refundSettlementItemId = Number(refundSettlement.id);
 
