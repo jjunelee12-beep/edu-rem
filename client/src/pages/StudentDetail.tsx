@@ -610,10 +610,6 @@ const [refundDialogOpen, setRefundDialogOpen] = useState(false);
 });
 
    const createRefundMut = trpc.refund.create.useMutation({
-  onSuccess: async () => {
-    await utils.refund.listByStudent.invalidate({ studentId });
-    toast.success("환불 요청 등록 완료");
-  },
   onError: (e) => toast.error(e.message),
 });
 
@@ -3686,9 +3682,9 @@ semesterId: r.semesterId ? String(r.semesterId) : "",
 
            <Dialog
   open={refundDialogOpen}
-  onOpenChange={(open) => {
-    if (createRefundMut.isPending) return;
-    setRefundDialogOpen(open);
+  onOpenChange={(nextOpen) => {
+    if (createRefundMut.isPending || uploadingRefund) return;
+    setRefundDialogOpen(nextOpen);
   }}
 >
         <DialogContent className="max-w-md">
@@ -3861,7 +3857,7 @@ semesterId: r.semesterId ? String(r.semesterId) : "",
             <Button
   variant="outline"
   onClick={() => setRefundDialogOpen(false)}
-  disabled={createRefundMut.isPending}
+  disabled={createRefundMut.isPending || uploadingRefund}
 >
   취소
 </Button>
@@ -3879,32 +3875,40 @@ semesterId: r.semesterId ? String(r.semesterId) : "",
     }
 
     try {
-      await createRefundMut.mutateAsync({
-        studentId,
-        semesterId: Number(refundForm.semesterId),
-        refundAmount: refundForm.refundAmount,
-        refundDate: refundForm.refundDate,
-        reason: refundForm.reason || undefined,
-        refundType: refundForm.refundType || undefined,
-        attachmentName: refundForm.attachmentName || undefined,
-        attachmentUrl: refundForm.attachmentUrl || undefined,
-      } as any);
+  await createRefundMut.mutateAsync({
+    studentId,
+    semesterId: Number(refundForm.semesterId),
+    refundAmount: refundForm.refundAmount,
+    refundDate: refundForm.refundDate,
+    reason: refundForm.reason || undefined,
+    refundType: refundForm.refundType || undefined,
+    attachmentName: refundForm.attachmentName || undefined,
+    attachmentUrl: refundForm.attachmentUrl || undefined,
+  } as any);
 
-      requestAnimationFrame(() => {
-        setRefundDialogOpen(false);
-        setRefundForm({
-          semesterId: selectedSemester?.id ? String(selectedSemester.id) : "",
-          refundAmount: "",
-          refundDate: new Date().toISOString().slice(0, 10),
-          reason: "",
-          refundType: "부분환불",
-          attachmentName: "",
-          attachmentUrl: "",
-        });
-      });
-    } catch (e) {
-      // onError에서 toast 처리하므로 여기서는 비워둬도 됨
-    }
+  await Promise.all([
+    utils.refund.listByStudent.invalidate({ studentId }),
+    utils.student.get.invalidate({ id: studentId }),
+    utils.semester.list.invalidate({ studentId }),
+  ]);
+
+  toast.success("환불 요청 등록 완료");
+
+  window.setTimeout(() => {
+    setRefundDialogOpen(false);
+    setRefundForm({
+      semesterId: selectedSemester?.id ? String(selectedSemester.id) : "",
+      refundAmount: "",
+      refundDate: new Date().toISOString().slice(0, 10),
+      reason: "",
+      refundType: "부분환불",
+      attachmentName: "",
+      attachmentUrl: "",
+    });
+  }, 0);
+} catch (e) {
+  // onError에서 toast 처리
+}
   }}
   disabled={createRefundMut.isPending}
 >

@@ -3180,37 +3180,53 @@ export async function refundSettlementItemBySource(params: {
       ? `${baseItem.title || "실습배정"} 환불`
       : `${baseItem.title || "민간자격증"} 환불`;
 
-  const insertResult: any = await db.insert(settlementItems).values({
-    revenueType: "refund" as any,
-    sourceId: Number(params.sourceId),
-    studentId: Number(baseItem.studentId),
-    assigneeId: baseItem.assigneeId ?? null,
-    freelancerUserId: baseItem.freelancerUserId ?? null,
-    freelancerPositionId: baseItem.freelancerPositionId ?? null,
-    settlementGradeId: baseItem.settlementGradeId ?? null,
-    educationInstitutionId: baseItem.educationInstitutionId ?? null,
-    privateCertificateMasterId: baseItem.privateCertificateMasterId ?? null,
-    institutionName: baseItem.institutionName ?? null,
-    title: refundTitle,
-    quantity: 1,
-    actualCredits: baseItem.actualCredits ?? null,
-    settlementCredits: baseItem.settlementCredits ?? null,
-    grossAmount: -refundAmount,
-    companyAmount: -refundCompanyAmount,
-    freelancerAmount: -refundFreelancerAmount,
-    taxAmount: -refundTaxAmount,
-    finalPayoutAmount: -refundFinalPayoutAmount,
-    companyProfit: -refundCompanyProfit,
-    settlementStatus: "confirmed",
-    occurredAt: refundOccurredAt,
-    note: params.note ?? "부분환불 반영",
-    subjectType: baseItem.subjectType ?? null,
-    subjectCount: 0,
-    actualUnitPrice: 0,
-    normalUnitPrice: 0,
-  } as any);
+ const refundSettlement = await upsertSettlementItem({
+  revenueType: "refund" as any,
+  sourceId: Number(params.sourceId),
+  studentId: Number(baseItem.studentId),
+  assigneeId: toNullableNumber(baseItem.assigneeId),
+  freelancerUserId: toNullableNumber(baseItem.freelancerUserId),
+  freelancerPositionId: toNullableNumber(baseItem.freelancerPositionId),
+  settlementGradeId: toNullableNumber(baseItem.settlementGradeId),
+  educationInstitutionId: toNullableNumber(baseItem.educationInstitutionId),
+  privateCertificateMasterId: toNullableNumber(baseItem.privateCertificateMasterId),
 
-  const refundSettlementItemId = Number(getInsertId(insertResult));
+  title: refundTitle,
+  quantity: 1,
+  subjectType: (baseItem.subjectType as any) ?? null,
+  subjectCount: toNullableNumber(baseItem.subjectCount) ?? 0,
+
+  actualCredits: toNullableNumber(baseItem.actualCredits),
+  settlementCredits: toNullableNumber(baseItem.settlementCredits),
+
+  actualUnitPrice: toNumber(baseItem.actualUnitPrice),
+  normalUnitPrice: toNumber(baseItem.normalUnitPrice),
+  institutionUnitCost: toNumber(baseItem.institutionUnitCost),
+  institutionCost: refundCompanyAmount + refundFreelancerAmount,
+  freelancerUnitAmount: toNumber(baseItem.freelancerUnitAmount),
+
+  grossAmount: -refundAmount,
+  companyAmount: -refundCompanyAmount,
+  freelancerAmount: -refundFreelancerAmount,
+  taxAmount: -refundTaxAmount,
+  finalPayoutAmount: -refundFinalPayoutAmount,
+  settlementStatus: "confirmed",
+  occurredAt: refundOccurredAt,
+  note: params.note ?? `${refundTitle} 승인 처리`,
+  actorUserId: params.actorUserId ?? null,
+  logNote: `${refundTitle} 정산 생성`,
+  payload: {
+    refundAmount,
+    refundRatio: ratio,
+    refundDate: refundOccurredAt,
+    originalSettlementItemId: Number(baseItem.id),
+    originalRevenueType: params.revenueType,
+    sourceId: params.sourceId,
+    ...(params.payload ?? {}),
+  },
+});
+
+const refundSettlementItemId = Number(refundSettlement.id);
 
   await createSettlementItemLog({
   settlementItemId: refundSettlementItemId,
@@ -4237,9 +4253,14 @@ const prevRows = await db
     sourceId: Number(r.sourceId),
     studentId: Number(r.studentId || 0),
     assigneeId: Number(r.assigneeId || 0),
+
     type: isRefund ? "refund" : String(r.revenueType || "unknown"),
     revenueType: r.revenueType,
     settlementStatus: r.settlementStatus,
+
+    assigneeName: r.assigneeName || "",
+    occurredAt: r.occurredAt || null,
+
     title: r.title || "",
     institutionName: r.institutionName || "",
     clientName: r.clientName || "",
@@ -4249,7 +4270,6 @@ const prevRows = await db
     subjectCount: Number(r.subjectCount || 0),
     quantity: Number(r.quantity || 0),
 
-    // refund row는 이미 음수로 저장되어 있으니 다시 뒤집지 말 것
     amount: toNumber(r.grossAmount),
     grossAmount: toNumber(r.grossAmount),
     companyAmount: toNumber(r.companyAmount),
@@ -4258,7 +4278,7 @@ const prevRows = await db
     finalPayoutAmount: toNumber(r.finalPayoutAmount),
     companyProfit: toNumber(r.companyProfit),
 
-    paymentDate: r.occurredAt,
+    paymentDate: r.occurredAt || null,
     note: r.note || "",
   };
 });
