@@ -369,12 +369,14 @@ const {
 
 
   const updatePracticeSupportMut = trpc.practiceSupport.update.useMutation({
-    onSuccess: async () => {
-      await utils.practiceSupport.list.invalidate();
-      toast.success("실습배정지원센터 정보가 수정되었습니다.");
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  onSuccess: async () => {
+    await utils.practiceSupport.list.invalidate();
+    toast.success("실습배정지원센터 정보가 수정되었습니다.");
+    setDetailOpen(false);
+    setSelectedRow(null);
+  },
+  onError: (e) => toast.error(e.message),
+});
 
   const updateEducationAvailabilityMut =
     trpc.practiceEducationCenter.updateAvailability.useMutation({
@@ -624,9 +626,9 @@ practiceDate: row.practiceDate || "",
 
 if (
   selectedRow?.paymentStatus === "결제" &&
-  Number(selectedRow?.feeAmount || 0) <= 0
+  Number(selectedRow?.feeAmount || 0) < 0
 ) {
-  toast.error("결제 처리하려면 금액을 먼저 입력해주세요.");
+  toast.error("금액은 0원 이상이어야 합니다.");
   return;
 }
 
@@ -675,10 +677,10 @@ if (
   };
 
   const handleQuickPaymentChange = (row: any, nextStatus: PaymentStatus) => {
-  if (nextStatus === "결제" && Number(row.feeAmount || 0) <= 0) {
-    toast.error("먼저 금액을 입력한 뒤 결제 처리해주세요.");
-    return;
-  }
+  if (nextStatus === "결제" && Number(row.feeAmount || 0) < 0) {
+  toast.error("금액은 0원 이상이어야 합니다.");
+  return;
+}
 
   updatePracticeSupportMut.mutate({
     id: row.id,
@@ -823,6 +825,9 @@ setFinderResults(buildFinderBaseResults(row));
       return { ...prev, ...patch };
     });
   };
+
+const hasFinderApplyTarget = !!selectedRow?.id || !!finderTargetRow?.id;
+
 const parseCsvLines = (text: string) => {
   const parsed = Papa.parse<string[]>(text.replace(/^\uFEFF/, ""), {
     skipEmptyLines: true,
@@ -1201,6 +1206,8 @@ const handleDeleteMasterItem = () => {
       toast.error(e?.message || "비활성화 설정 저장 중 오류가 발생했습니다.");
     }
   };
+
+
 
   const handleFinderSearch = async () => {
     if (!finderAddress.trim()) {
@@ -1692,9 +1699,9 @@ useEffect(() => {
           </Select>
 
           <Button onClick={() => openFinder(null)} className="gap-2">
-            <Search className="h-4 w-4" />
-            실습찾기
-          </Button>
+  <Search className="h-4 w-4" />
+  실습검색
+</Button>
         </div>
 <div className="flex items-center justify-between">
   <div className="text-sm font-semibold">
@@ -1908,8 +1915,26 @@ useEffect(() => {
                         </Select>
                       </td>
 
-<td className="px-3 py-3 text-right font-medium">
-  {Number(row.feeAmount || 0).toLocaleString()}원
+<td className="px-3 py-3 text-right">
+  <Input
+    className="ml-auto h-9 w-[110px] text-right"
+    value={String(row.feeAmount ?? "0")}
+    onChange={(e) => {
+      const next = e.target.value.replace(/[^0-9]/g, "");
+
+      utils.practiceSupport.list.setData(undefined, (old: any) =>
+        (old || []).map((item: any) =>
+          item.id === row.id ? { ...item, feeAmount: next } : item
+        )
+      );
+    }}
+    onBlur={(e) => {
+      updatePracticeSupportMut.mutate({
+        id: row.id,
+        feeAmount: e.target.value || "0",
+      } as any);
+    }}
+  />
 </td>
 
 
@@ -2083,6 +2108,9 @@ useEffect(() => {
                     기관찾기
                   </Button>
                 </div>
+<p className="text-xs text-muted-foreground">
+  배정 정보는 기관찾기에서 선택 시 자동 반영됩니다. 직접 수정은 불가합니다.
+</p>
 
                 <div className="space-y-3">
                   <div className="rounded-lg border p-3 space-y-2">
@@ -2093,41 +2121,25 @@ useEffect(() => {
                     <div className="space-y-1">
                       <Label className="text-xs">실습교육원명</Label>
                       <Input
-                        value={selectedRow.selectedEducationCenterName || ""}
-                        onChange={(e) =>
-                          setSelectedRow((prev: any) => ({
-                            ...prev,
-                            selectedEducationCenterName: e.target.value,
-                          }))
-                        }
-                      />
+  value={selectedRow.selectedEducationCenterName || ""}
+  disabled
+/>
                     </div>
 
                     <div className="space-y-1">
                       <Label className="text-xs">실습교육원 주소</Label>
                       <Input
-                        value={selectedRow.selectedEducationCenterAddress || ""}
-                        onChange={(e) =>
-                          setSelectedRow((prev: any) => ({
-                            ...prev,
-                            selectedEducationCenterAddress: e.target.value,
-                          }))
-                        }
-                      />
+  value={selectedRow.selectedEducationCenterAddress || ""}
+  disabled
+/>
                     </div>
 
                     <div className="space-y-1">
                       <Label className="text-xs">실습교육원 거리(km)</Label>
                       <Input
-                        value={selectedRow.selectedEducationCenterDistanceKm || ""}
-                        onChange={(e) =>
-                          setSelectedRow((prev: any) => ({
-                            ...prev,
-                            selectedEducationCenterDistanceKm:
-                              e.target.value.replace(/[^0-9.]/g, ""),
-                          }))
-                        }
-                      />
+  value={selectedRow.selectedEducationCenterDistanceKm || ""}
+  disabled
+/>
                     </div>
                   </div>
 
@@ -2139,41 +2151,25 @@ useEffect(() => {
                     <div className="space-y-1">
                       <Label className="text-xs">실습기관명</Label>
                       <Input
-                        value={selectedRow.selectedPracticeInstitutionName || ""}
-                        onChange={(e) =>
-                          setSelectedRow((prev: any) => ({
-                            ...prev,
-                            selectedPracticeInstitutionName: e.target.value,
-                          }))
-                        }
-                      />
+  value={selectedRow.selectedPracticeInstitutionName || ""}
+  disabled
+/>
                     </div>
 
                     <div className="space-y-1">
                       <Label className="text-xs">실습기관 주소</Label>
                       <Input
-                        value={selectedRow.selectedPracticeInstitutionAddress || ""}
-                        onChange={(e) =>
-                          setSelectedRow((prev: any) => ({
-                            ...prev,
-                            selectedPracticeInstitutionAddress: e.target.value,
-                          }))
-                        }
-                      />
+  value={selectedRow.selectedPracticeInstitutionAddress || ""}
+  disabled
+/>
                     </div>
 
                     <div className="space-y-1">
                       <Label className="text-xs">실습기관 거리(km)</Label>
                       <Input
-                        value={selectedRow.selectedPracticeInstitutionDistanceKm || ""}
-                        onChange={(e) =>
-                          setSelectedRow((prev: any) => ({
-                            ...prev,
-                            selectedPracticeInstitutionDistanceKm:
-                              e.target.value.replace(/[^0-9.]/g, ""),
-                          }))
-                        }
-                      />
+  value={selectedRow.selectedPracticeInstitutionDistanceKm || ""}
+  disabled
+/>
                     </div>
                   </div>
                 </div>
@@ -2264,9 +2260,12 @@ useEffect(() => {
             <Button variant="outline" onClick={() => setDetailOpen(false)}>
               닫기
             </Button>
-            <Button onClick={saveDetail} disabled={updatePracticeSupportMut.isPending}>
-              저장
-            </Button>
+            <Button
+  onClick={saveDetail}
+  disabled={updatePracticeSupportMut.isPending}
+>
+  {updatePracticeSupportMut.isPending ? "저장 중..." : "저장"}
+</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3408,19 +3407,25 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
                   </Button>
 
                   <Button
-                    className="flex-1"
-                    onClick={applyFinderSelectionToDetail}
-                    disabled={
-                      !selectedFinderItem ||
-                      updatePracticeSupportMut.isPending ||
-                      (selectedFinderItem
-                        ? isFinderItemInactiveNow(selectedFinderItem)
-                        : false)
-                    }
-                  >
-                    선택 반영
-                  </Button>
+  className="flex-1"
+  onClick={applyFinderSelectionToDetail}
+  disabled={
+    !selectedFinderItem ||
+    !hasFinderApplyTarget ||
+    updatePracticeSupportMut.isPending ||
+    (selectedFinderItem
+      ? isFinderItemInactiveNow(selectedFinderItem)
+      : false)
+  }
+>
+  선택 반영
+</Button>
                 </div>
+{!hasFinderApplyTarget ? (
+  <p className="mt-2 text-xs text-muted-foreground">
+    상단 실습검색은 검색 전용입니다. 학생별 반영은 요청 리스트의 “실습찾기” 버튼을 이용해주세요.
+  </p>
+) : null}
               </div>
             </div>
 

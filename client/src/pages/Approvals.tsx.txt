@@ -59,30 +59,34 @@ const { data: semesters, isLoading: semestersLoading } =
 });
 
   const approveRefundMutation = trpc.refund.approve.useMutation({
-  onSuccess: async () => {
-    await Promise.all([
-      utils.refund.listPending.invalidate(),
-      utils.student.list.invalidate(),
-      utils.dashboard.stats.invalidate(),
-      utils.dashboard.totalStats.invalidate(),
-      utils.semester.listAll.invalidate(),
-    ]);
-    toast.success("환불 승인 처리되었습니다.");
-  },
+ onSuccess: async () => {
+  await Promise.all([
+    utils.refund.listPending.invalidate(),
+    utils.student.list.invalidate(),
+    utils.dashboard.stats.invalidate(),
+    utils.dashboard.totalStats.invalidate(),
+    utils.semester.listAll.invalidate(),
+    utils.settlement.report.invalidate(),
+    utils.settlement.entries.invalidate(),
+  ]);
+  toast.success("환불 승인 처리되었습니다.");
+},
   onError: (e) => toast.error(e.message),
 });
 
   const rejectRefundMutation = trpc.refund.reject.useMutation({
   onSuccess: async () => {
-    await Promise.all([
-      utils.refund.listPending.invalidate(),
-      utils.student.list.invalidate(),
-      utils.dashboard.stats.invalidate(),
-      utils.dashboard.totalStats.invalidate(),
-      utils.semester.listAll.invalidate(),
-    ]);
-    toast.success("환불 불승인 처리되었습니다.");
-  },
+  await Promise.all([
+    utils.refund.listPending.invalidate(),
+    utils.student.list.invalidate(),
+    utils.dashboard.stats.invalidate(),
+    utils.dashboard.totalStats.invalidate(),
+    utils.semester.listAll.invalidate(),
+    utils.settlement.report.invalidate(),
+    utils.settlement.entries.invalidate(),
+  ]);
+  toast.success("환불 불승인 처리되었습니다.");
+},
   onError: (e) => toast.error(e.message),
 });
 

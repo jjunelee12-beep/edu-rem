@@ -248,11 +248,53 @@ const submitPrivateCertRequest = async () => {
     return;
   }
 
+  if (!student) {
+    toast.error("학생 정보를 찾을 수 없습니다.");
+    return;
+  }
+
+  const assigneeId = Number(student.assigneeId || 0);
+  const clientName = String(student.clientName || "").trim();
+  const phone = String(student.phone || "").trim();
+
+  if (!assigneeId) {
+    toast.error("담당자 정보가 없어 민간자격증 요청을 생성할 수 없습니다.");
+    return;
+  }
+
+  if (!clientName) {
+    toast.error("학생 이름 정보가 없어 민간자격증 요청을 생성할 수 없습니다.");
+    return;
+  }
+
+  if (!phone) {
+    toast.error("학생 연락처 정보가 없어 민간자격증 요청을 생성할 수 없습니다.");
+    return;
+  }
+
   try {
     for (const name of selectedPrivateCertNames) {
+      const master = (privateCertificateOptions || []).find(
+        (row: any) => String(row.certificateName || row.name || "").trim() === String(name).trim()
+      );
+
       await createPrivateCertificateRequestMut.mutateAsync({
         studentId,
-        certificateName: name,
+        assigneeId,
+        clientName,
+        phone,
+        assigneeName: null,
+        privateCertificateMasterId: master?.id ? Number(master.id) : null,
+        certificateName: String(name).trim(),
+        inputAddress: null,
+        note: null,
+        requestStatus: "요청",
+        feeAmount: "0",
+        freelancerInputAmount: "0",
+        paymentStatus: "결제대기",
+        paidAt: null,
+        attachmentName: null,
+        attachmentUrl: null,
       } as any);
     }
 
@@ -340,6 +382,37 @@ const applySubjectCatalogItemsToSemester = async () => {
     return;
   }
 
+  const normalizedRows = selectedRows.map((row: any, index: number) => {
+    const rawCategory = String(row.category || "").trim();
+
+    const normalizedCategory =
+      rawCategory === "전공필수" || rawCategory === "전공선택"
+        ? "전공"
+        : rawCategory === "교양"
+        ? "교양"
+        : rawCategory === "일반"
+        ? "일반"
+        : "전공";
+
+    const normalizedRequirementType =
+      rawCategory === "전공필수" || rawCategory === "전공선택"
+        ? rawCategory
+        : normalizedCategory === "교양"
+        ? "교양"
+        : normalizedCategory === "일반"
+        ? "일반"
+        : String(row.requirementType || "전공선택").trim() === "전공필수"
+        ? "전공필수"
+        : "전공선택";
+
+    return {
+      ...row,
+      normalizedCategory,
+      normalizedRequirementType,
+      sortOrder: index,
+    };
+  });
+
   const ok = window.confirm(
     "현재 학기의 기존 과목을 모두 지우고 선택한 과목으로 덮어쓰시겠습니까?"
   );
@@ -350,26 +423,45 @@ const applySubjectCatalogItemsToSemester = async () => {
       (row: any) => Number(row.semesterNo) === Number(templateDialogSemesterNo)
     );
 
+    // 1) 먼저 입력값 검증
+    for (const row of normalizedRows) {
+      if (!row.subjectName) {
+        throw new Error("과목명 없는 항목이 포함되어 있습니다.");
+      }
+
+      if (!["전공", "교양", "일반"].includes(row.normalizedCategory)) {
+        throw new Error(`잘못된 과목 구분값: ${row.normalizedCategory}`);
+      }
+
+      if (
+        !["전공필수", "전공선택", "교양", "일반"].includes(
+          row.normalizedRequirementType
+        )
+      ) {
+        throw new Error(`잘못된 이수구분값: ${row.normalizedRequirementType}`);
+      }
+    }
+
+    // 2) 검증 통과 후 기존 과목 삭제
     for (const row of currentRows) {
       await deletePlanSemesterMut.mutateAsync({ id: Number(row.id) });
     }
 
-    for (let i = 0; i < selectedRows.length; i++) {
-      const row = selectedRows[i];
-
+    // 3) 새 과목 등록
+    for (const row of normalizedRows) {
       await createPlanSemesterMut.mutateAsync({
         studentId,
-        semesterNo: templateDialogSemesterNo,
-        subjectName: row.subjectName,
-         planCategory: row.category,
-  planRequirementType: row.requirementType,
-        sortOrder: i,
+        semesterNo: Number(templateDialogSemesterNo),
+        subjectName: String(row.subjectName).trim(),
+        category: row.normalizedCategory,
+        requirementType: row.normalizedRequirementType,
+        sortOrder: row.sortOrder,
       } as any);
     }
 
     await utils.planSemester.list.invalidate({ studentId });
 
-    toast.success(`과목 ${selectedRows.length}개 등록 완료`);
+    toast.success(`과목 ${normalizedRows.length}개 등록 완료`);
     setTemplateDialogOpen(false);
     setSelectedTemplateIds([]);
   } catch (e: any) {
@@ -915,7 +1007,10 @@ const saveRegisteredCourses = async () => {
   (plan as any)?.practiceStatus ||
   "미섭외",
 specialNotes: plan?.specialNotes || "",
-practiceAddress: selectedPracticeSupport?.inputAddress || "",
+practiceAddress:
+  selectedPracticeSupport?.inputAddress ||
+  (student as any)?.address ||
+  "",
   });
 
   setEditingPlan(true);
@@ -957,8 +1052,10 @@ const savePlan = async () => {
         clientName: String(student.clientName || "").trim(),
         phone: String(student.phone || "").trim(),
         course: String(planForm.desiredCourse || "").trim(),
-        inputAddress: String(planForm.practiceAddress || "").trim() || null,
-        detailAddress: null,
+        inputAddress:
+  String(planForm.practiceAddress || (student as any)?.address || "").trim() ||
+  null,
+        detailAddress: String((student as any)?.detailAddress || "").trim() || null,
         assigneeName: null,
         managerName: null,
         practiceHours: planForm.practiceHours
@@ -1635,7 +1732,7 @@ const existingPlanSubjectMap = useMemo(() => {
       isApprovedSemester ? "text-emerald-700" : "text-amber-700"
     }`}
   >
-    {paymentSummaryCard.totalPaid.toLocaleString()}원
+    {paymentSummaryCard.netPaid.toLocaleString()}원
   </p>
 </div>
                        <div className="bg-red-50 rounded-lg p-3">

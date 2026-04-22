@@ -3728,71 +3728,78 @@ export async function getDashboardStats(assigneeId?: number) {
   `);
 
   const [studentRows] = await db.execute(sql`
-    SELECT
-      COALESCE(
-        SUM(
-          CASE
-            WHEN s.approvalStatus = '승인'
-             AND s.paymentDate >= ${monthStart}
-             AND s.paymentDate < ${monthEnd}
-            THEN 1 ELSE 0
-          END
-        ),
-        0
-      ) as monthRegistered,
+  SELECT
+    COALESCE(
+      SUM(
+        CASE
+          WHEN sem.approvalStatus = '승인'
+           AND sem.approvedAt >= ${monthStart}
+           AND sem.approvedAt < ${monthEnd}
+          THEN 1 ELSE 0
+        END
+      ),
+      0
+    ) as monthRegistered,
 
-      COALESCE(
-        SUM(CASE WHEN s.approvalStatus = '승인' THEN 1 ELSE 0 END),
-        0
-      ) as totalRegisteredCount,
+    COALESCE(
+      SUM(
+        CASE
+          WHEN sem.approvalStatus = '승인'
+           AND sem.approvedAt >= ${monthStart}
+           AND sem.approvedAt < ${monthEnd}
+          THEN 1 ELSE 0
+        END
+      ),
+      0
+    ) as monthApprovedCount,
 
-      COALESCE(
-        SUM(
-          CASE
-            WHEN s.approvalStatus = '승인'
-             AND s.approvedAt >= ${monthStart}
-             AND s.approvedAt < ${monthEnd}
-            THEN 1 ELSE 0
-          END
-        ),
-        0
-      ) as monthApprovedCount,
+    COALESCE(
+      SUM(
+        CASE
+          WHEN sem.approvalStatus = '불승인'
+           AND sem.rejectedAt >= ${monthStart}
+           AND sem.rejectedAt < ${monthEnd}
+          THEN 1 ELSE 0
+        END
+      ),
+      0
+    ) as monthRejectedCount,
 
-      COALESCE(
-        SUM(
-          CASE
-            WHEN s.approvalStatus = '불승인'
-             AND s.rejectedAt >= ${monthStart}
-             AND s.rejectedAt < ${monthEnd}
-            THEN 1 ELSE 0
-          END
-        ),
-        0
-      ) as monthRejectedCount,
+    COALESCE(
+      SUM(
+        CASE
+          WHEN sem.approvalStatus = '대기'
+          THEN 1 ELSE 0
+        END
+      ),
+      0
+    ) as monthPendingCount,
 
-      COALESCE(
-        SUM(CASE WHEN s.approvalStatus = '대기' THEN 1 ELSE 0 END),
-        0
-      ) as monthPendingCount,
+    COALESCE(
+      SUM(CASE WHEN sem.approvalStatus = '승인' THEN 1 ELSE 0 END),
+      0
+    ) as totalRegisteredCount,
 
-      COALESCE(
-        SUM(CASE WHEN s.approvalStatus = '승인' THEN 1 ELSE 0 END),
-        0
-      ) as totalApprovedCount,
+    COALESCE(
+      SUM(CASE WHEN sem.approvalStatus = '승인' THEN 1 ELSE 0 END),
+      0
+    ) as totalApprovedCount,
 
-      COALESCE(
-        SUM(CASE WHEN s.approvalStatus = '불승인' THEN 1 ELSE 0 END),
-        0
-      ) as totalRejectedCount,
+    COALESCE(
+      SUM(CASE WHEN sem.approvalStatus = '불승인' THEN 1 ELSE 0 END),
+      0
+    ) as totalRejectedCount,
 
-      COALESCE(
-        SUM(CASE WHEN s.approvalStatus = '대기' THEN 1 ELSE 0 END),
-        0
-      ) as totalPendingCount
-    FROM students s
-    WHERE 1=1
-    ${assigneeStudentCond}
-  `);
+    COALESCE(
+      SUM(CASE WHEN sem.approvalStatus = '대기' THEN 1 ELSE 0 END),
+      0
+    ) as totalPendingCount
+  FROM semesters sem
+  INNER JOIN students s
+    ON s.id = sem.studentId
+  WHERE 1=1
+  ${assigneeStudentCond}
+`);
 
   const [settlementRows] = await db.execute(sql`
     SELECT
