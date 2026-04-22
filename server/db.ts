@@ -2509,6 +2509,22 @@ export async function updateSemester(id: number, data: Partial<InsertSemester> &
 
   const nextData: any = { ...data };
 
+if ((data as any).approvalStatus !== undefined) {
+  nextData.approvalStatus = (data as any).approvalStatus;
+}
+
+if ((data as any).approvedAt !== undefined) {
+  nextData.approvedAt = (data as any).approvedAt;
+}
+
+if ((data as any).rejectedAt !== undefined) {
+  nextData.rejectedAt = (data as any).rejectedAt;
+}
+
+if ((data as any).isLocked !== undefined) {
+  nextData.isLocked = (data as any).isLocked;
+}
+
   if ((data as any).registeredCourses !== undefined) {
     const cleaned = Array.isArray((data as any).registeredCourses)
       ? (data as any).registeredCourses
@@ -2619,56 +2635,59 @@ if (plannedMonthFilter) conditions.push(sql`sem.plannedMonth = ${plannedMonthFil
       : sql``;
 
     const [rows] = await db.execute(sql`
-    SELECT sem.*,
-      s.clientName,
-      s.phone,
-      COALESCE(sem.primaryCourse, s.course) as course,
-      s.assigneeId,
-      s.status as studentStatus,
-      s.approvalStatus,
-      u.name as assigneeName,
+  SELECT sem.*,
+    s.clientName,
+    s.phone,
+    COALESCE(sem.primaryCourse, s.course) as course,
+    s.assigneeId,
+    s.status as studentStatus,
+    sem.approvalStatus as approvalStatus,
+    sem.approvedAt as approvedAt,
+    sem.rejectedAt as rejectedAt,
+    s.approvalStatus as studentApprovalStatus,
+    u.name as assigneeName,
 
-      COALESCE(
-        actualEi.name,
-        sem.actualInstitution,
-        plannedEi.name,
-        sem.plannedInstitution,
-        '-'
-      ) as institutionDisplayName,
+    COALESCE(
+      actualEi.name,
+      sem.actualInstitution,
+      plannedEi.name,
+      sem.plannedInstitution,
+      '-'
+    ) as institutionDisplayName,
 
-      COALESCE(
-        actualEi.name,
-        sem.actualInstitution,
-        '-'
-      ) as actualInstitutionDisplayName,
+    COALESCE(
+      actualEi.name,
+      sem.actualInstitution,
+      '-'
+    ) as actualInstitutionDisplayName,
 
-      COALESCE(
-        plannedEi.name,
-        sem.plannedInstitution,
-        '-'
-      ) as plannedInstitutionDisplayName,
+    COALESCE(
+      plannedEi.name,
+      sem.plannedInstitution,
+      '-'
+    ) as plannedInstitutionDisplayName,
 
-      COALESCE(
-        (SELECT SUM(r.refundAmount)
-         FROM refunds r
-         WHERE r.studentId = s.id
-           AND r.approvalStatus = '승인'),
-        0
-      ) as approvedRefundAmount,
+    COALESCE(
+      (SELECT SUM(r.refundAmount)
+       FROM refunds r
+       WHERE r.studentId = s.id
+         AND r.approvalStatus = '승인'),
+      0
+    ) as approvedRefundAmount,
 
-      (SELECT p.hasPractice FROM plans p WHERE p.studentId = s.id LIMIT 1) as hasPractice,
-      (SELECT p.practiceHours FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceHours,
-      sem.practiceStatus as practiceStatus
-        FROM semesters sem
-    INNER JOIN students s ON sem.studentId = s.id
-    LEFT JOIN users u ON u.id = s.assigneeId
-    LEFT JOIN education_institutions actualEi
-      ON actualEi.id = sem.actualInstitutionId
-    LEFT JOIN education_institutions plannedEi
-      ON plannedEi.id = sem.plannedInstitutionId
-    ${whereClause}
-    ORDER BY sem.plannedMonth ASC, s.clientName ASC
-  `);
+    (SELECT p.hasPractice FROM plans p WHERE p.studentId = s.id LIMIT 1) as hasPractice,
+    (SELECT p.practiceHours FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceHours,
+    sem.practiceStatus as practiceStatus
+  FROM semesters sem
+  INNER JOIN students s ON sem.studentId = s.id
+  LEFT JOIN users u ON u.id = s.assigneeId
+  LEFT JOIN education_institutions actualEi
+    ON actualEi.id = sem.actualInstitutionId
+  LEFT JOIN education_institutions plannedEi
+    ON plannedEi.id = sem.plannedInstitutionId
+  ${whereClause}
+  ORDER BY sem.plannedMonth ASC, s.clientName ASC
+`);
 
     return ((rows as unknown) as any[]).map((row: any) => ({
     ...row,
