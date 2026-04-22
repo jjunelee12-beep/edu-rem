@@ -2105,7 +2105,7 @@ const existingPlanSubjectMap = useMemo(() => {
                       </td>
                     </tr>
 );
-                  ))
+                  })
                 )}
               </tbody>
             </table>
