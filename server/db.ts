@@ -2906,7 +2906,6 @@ export async function createSettlementItemLog(params: {
 }
 
 export async function upsertSettlementItem(params: {
-console.log("🔥 [upsertSettlementItem] params =", params);
   revenueType: "subject" | "practice_support" | "private_certificate";
   sourceId: number;
   studentId: number;
@@ -2939,6 +2938,8 @@ console.log("🔥 [upsertSettlementItem] params =", params);
   logNote?: string | null;
   payload?: any;
 }) {
+  console.log("🔥 [upsertSettlementItem] params =", params);
+
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
