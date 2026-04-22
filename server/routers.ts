@@ -464,6 +464,16 @@ includeEducationCenter: z.boolean().optional(),
           note: z.string().optional().nullable(),
           attachmentName: z.string().optional().nullable(),
           attachmentUrl: z.string().optional().nullable(),
+
+selectedEducationCenterId: z.number().optional().nullable(),
+selectedEducationCenterName: z.string().optional().nullable(),
+selectedEducationCenterAddress: z.string().optional().nullable(),
+selectedEducationCenterDistanceKm: z.string().optional().nullable(),
+
+selectedPracticeInstitutionId: z.number().optional().nullable(),
+selectedPracticeInstitutionName: z.string().optional().nullable(),
+selectedPracticeInstitutionAddress: z.string().optional().nullable(),
+selectedPracticeInstitutionDistanceKm: z.string().optional().nullable(),
         })
       )
             .mutation(async ({ ctx, input }) => {
@@ -491,6 +501,43 @@ if (input.practiceDate !== undefined)
         if (input.note !== undefined) data.note = input.note ?? null;
         if (input.attachmentName !== undefined) data.attachmentName = input.attachmentName?.trim() || null;
         if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl?.trim() || null;
+
+if (input.selectedEducationCenterId !== undefined) {
+  data.selectedEducationCenterId = input.selectedEducationCenterId ?? null;
+}
+if (input.selectedEducationCenterName !== undefined) {
+  data.selectedEducationCenterName =
+    input.selectedEducationCenterName?.trim() || null;
+}
+if (input.selectedEducationCenterAddress !== undefined) {
+  data.selectedEducationCenterAddress =
+    input.selectedEducationCenterAddress?.trim() || null;
+}
+if (input.selectedEducationCenterDistanceKm !== undefined) {
+  data.selectedEducationCenterDistanceKm =
+    input.selectedEducationCenterDistanceKm?.trim() || null;
+}
+
+if (input.selectedPracticeInstitutionId !== undefined) {
+  data.selectedPracticeInstitutionId =
+    input.selectedPracticeInstitutionId ?? null;
+}
+if (input.selectedPracticeInstitutionName !== undefined) {
+  data.selectedPracticeInstitutionName =
+    input.selectedPracticeInstitutionName?.trim() || null;
+}
+if (input.selectedPracticeInstitutionAddress !== undefined) {
+  data.selectedPracticeInstitutionAddress =
+    input.selectedPracticeInstitutionAddress?.trim() || null;
+}
+if (input.selectedPracticeInstitutionDistanceKm !== undefined) {
+  data.selectedPracticeInstitutionDistanceKm =
+    input.selectedPracticeInstitutionDistanceKm?.trim() || null;
+}
+
+if (Object.keys(data).length === 0) {
+  throw new Error("수정할 값이 없습니다.");
+}
 
         await db.updatePracticeSupportRequest(input.id, data);
        if (input.paymentStatus === "결제") {
