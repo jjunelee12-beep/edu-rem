@@ -3557,21 +3557,21 @@ if (targetRefund?.assigneeId) {
 return { success: true };
       }),
 
-    update: protectedProcedure
-      .input(
-        z.object({
-          id: z.number(),
-semesterId: input.semesterId ?? null,
-          refundAmount: z.string().optional(),
-          refundDate: z.string().optional(),
-          reason: z.string().optional(),
-          refundType: z
-            .enum(["부분환불", "전액환불", "환불후재등록", "교육원이동"])
-            .optional(),
-          attachmentName: z.string().optional(),
-          attachmentUrl: z.string().optional(),
-        })
-      )
+   update: protectedProcedure
+  .input(
+    z.object({
+      id: z.number(),
+      semesterId: z.number().optional().nullable(),
+      refundAmount: z.string().optional(),
+      refundDate: z.string().optional(),
+      reason: z.string().optional(),
+      refundType: z
+        .enum(["부분환불", "전액환불", "환불후재등록", "교육원이동"])
+        .optional(),
+      attachmentName: z.string().optional(),
+      attachmentUrl: z.string().optional(),
+    })
+  )
       .mutation(async ({ input }) => {
         const data: any = {};
 
