@@ -3213,20 +3213,20 @@ export async function refundSettlementItemBySource(params: {
   const refundSettlementItemId = Number(getInsertId(insertResult));
 
   await createSettlementItemLog({
-    settlementItemId: refundSettlementItemId,
-    actionType: "create",
-    actorUserId: params.actorUserId ?? null,
-    note: params.note ?? "환불 정산 항목 생성",
-    payload: JSON.stringify({
-      refundAmount,
-      refundRatio: ratio,
-      refundDate: params.refundDate ?? null,
-      originalSettlementItemId: Number(baseItem.id),
-      originalRevenueType: params.revenueType,
-      sourceId: params.sourceId,
-      ...(params.payload ?? {}),
-    }),
-  });
+  settlementItemId: refundSettlementItemId,
+  actionType: "refund",
+  actorUserId: params.actorUserId ?? null,
+  note: params.note ?? "환불 정산 항목 생성",
+  payload: JSON.stringify({
+    refundAmount,
+    refundRatio: ratio,
+    refundDate: params.refundDate ?? null,
+    originalSettlementItemId: Number(baseItem.id),
+    originalRevenueType: params.revenueType,
+    sourceId: params.sourceId,
+    ...(params.payload ?? {}),
+  }),
+});
 
   return refundSettlementItemId;
 }
@@ -4045,10 +4045,10 @@ export async function getMonthSalesEntries(assigneeId?: number) {
   const { monthStart, monthEnd } = getKSTMonthRange();
 
   const conditions = [
-    sql`${settlementItems.occurredAt} >= ${monthStart}`,
-    sql`${settlementItems.occurredAt} < ${monthEnd}`,
-    sql`${settlementItems.settlementStatus} IN ('confirmed', 'refunded')`,
-  ];
+  sql`${settlementItems.occurredAt} >= ${monthStart}`,
+  sql`${settlementItems.occurredAt} < ${monthEnd}`,
+  sql`${settlementItems.settlementStatus} = 'confirmed'`,
+];
 
   if (assigneeId) {
     conditions.push(eq(settlementItems.assigneeId, assigneeId));
@@ -4073,9 +4073,10 @@ export async function getMonthSalesEntries(assigneeId?: number) {
       settlementStatus: settlementItems.settlementStatus,
       occurredAt: settlementItems.occurredAt,
       note: settlementItems.note,
-      clientName: students.clientName,
-      phone: students.phone,
-      course: students.course,
+institutionName: settlementItems.institutionName,
+clientName: students.clientName,
+phone: students.phone,
+course: students.course,
     })
     .from(settlementItems)
     .leftJoin(students, eq(settlementItems.studentId, students.id))
@@ -4083,38 +4084,35 @@ export async function getMonthSalesEntries(assigneeId?: number) {
     .orderBy(desc(settlementItems.occurredAt), desc(settlementItems.id));
 
   const entries = (rows || []).map((r: any) => {
-    const isRefunded = r.settlementStatus === "refunded";
-    const signedAmount = isRefunded
-      ? -toNumber(r.grossAmount)
-      : toNumber(r.grossAmount);
+  const isRefund = r.revenueType === "refund";
 
-    return {
-      id: Number(r.id),
-      settlementItemId: Number(r.id),
-      sourceId: Number(r.sourceId),
-      studentId: Number(r.studentId || 0),
-      assigneeId: Number(r.assigneeId || 0),
-      type: isRefunded ? "refund" : String(r.revenueType || "unknown"),
-      revenueType: r.revenueType,
-      settlementStatus: r.settlementStatus,
-      title: r.title || "",
-institutionName: settlementItems.institutionName,
-      clientName: r.clientName || "",
-      phone: r.phone || "",
-      course: r.course || "",
-      subjectType: r.subjectType || null,
-      subjectCount: Number(r.subjectCount || 0),
-      quantity: Number(r.quantity || 0),
-      amount: signedAmount,
-      grossAmount: toNumber(r.grossAmount),
-      companyAmount: toNumber(r.companyAmount),
-      freelancerAmount: toNumber(r.freelancerAmount),
-      taxAmount: toNumber(r.taxAmount),
-      finalPayoutAmount: toNumber(r.finalPayoutAmount),
-      paymentDate: r.occurredAt,
-      note: r.note || "",
-    };
-  });
+  return {
+    id: Number(r.id),
+    settlementItemId: Number(r.id),
+    sourceId: Number(r.sourceId),
+    studentId: Number(r.studentId || 0),
+    assigneeId: Number(r.assigneeId || 0),
+    type: isRefund ? "refund" : String(r.revenueType || "unknown"),
+    revenueType: r.revenueType,
+    settlementStatus: r.settlementStatus,
+    title: r.title || "",
+    institutionName: r.institutionName || "",
+    clientName: r.clientName || "",
+    phone: r.phone || "",
+    course: r.course || "",
+    subjectType: r.subjectType || null,
+    subjectCount: Number(r.subjectCount || 0),
+    quantity: Number(r.quantity || 0),
+    amount: toNumber(r.grossAmount),
+    grossAmount: toNumber(r.grossAmount),
+    companyAmount: toNumber(r.companyAmount),
+    freelancerAmount: toNumber(r.freelancerAmount),
+    taxAmount: toNumber(r.taxAmount),
+    finalPayoutAmount: toNumber(r.finalPayoutAmount),
+    paymentDate: r.occurredAt,
+    note: r.note || "",
+  };
+});
 
   const totalAmount = entries.reduce(
     (sum: number, x: any) => sum + toNumber(x.amount),
@@ -4153,10 +4151,10 @@ const prevStartDate = `${prevYear}-${String(prevMonth).padStart(2, "0")}-01`;
 const prevEndDate = startDate;
 
   const conditions = [
-    sql`${settlementItems.occurredAt} >= ${startDate}`,
-    sql`${settlementItems.occurredAt} < ${endDate}`,
-    sql`${settlementItems.settlementStatus} IN ('confirmed', 'refunded')`,
-  ];
+  sql`${settlementItems.occurredAt} >= ${startDate}`,
+  sql`${settlementItems.occurredAt} < ${endDate}`,
+  sql`${settlementItems.settlementStatus} = 'confirmed'`,
+];
 
   if (params.assigneeId) {
     conditions.push(eq(settlementItems.assigneeId, params.assigneeId));
@@ -4215,6 +4213,7 @@ institutionName: settlementItems.institutionName,
 const prevRows = await db
   .select({
     institutionName: settlementItems.institutionName,
+    revenueType: settlementItems.revenueType,
     grossAmount: settlementItems.grossAmount,
     companyAmount: settlementItems.companyAmount,
     settlementStatus: settlementItems.settlementStatus,
@@ -4224,45 +4223,45 @@ const prevRows = await db
     and(
       sql`${settlementItems.occurredAt} >= ${prevStartDate}`,
       sql`${settlementItems.occurredAt} < ${prevEndDate}`,
-      sql`${settlementItems.settlementStatus} IN ('confirmed', 'refunded')`
+      sql`${settlementItems.settlementStatus} = 'confirmed'`
     )
   )
   .orderBy(asc(settlementItems.institutionName), desc(settlementItems.occurredAt));
 
   const entries = (rows || []).map((r: any) => {
-    const isRefunded = r.settlementStatus === "refunded";
-    const signedGrossAmount = isRefunded
-      ? -toNumber(r.grossAmount)
-      : toNumber(r.grossAmount);
+  const isRefund = r.revenueType === "refund";
 
-    return {
-      id: Number(r.id),
-      settlementItemId: Number(r.id),
-      revenueType: r.revenueType,
-      settlementStatus: r.settlementStatus,
-      sourceId: Number(r.sourceId || 0),
-      studentId: Number(r.studentId || 0),
-      assigneeId: Number(r.assigneeId || 0),
-      assigneeName: r.assigneeName || "",
-      clientName: r.clientName || "",
-      phone: r.phone || "",
-      course: r.course || "",
-      title: r.title || "",
-institutionName: r.institutionName || "",
-      subjectType: r.subjectType || null,
-      subjectCount: Number(r.subjectCount || 0),
-      quantity: Number(r.quantity || 0),
-      grossAmount: signedGrossAmount,
-      originalGrossAmount: toNumber(r.grossAmount),
-      companyAmount: toNumber(r.companyAmount),
-      freelancerAmount: toNumber(r.freelancerAmount),
-      taxAmount: toNumber(r.taxAmount),
-      finalPayoutAmount: toNumber(r.finalPayoutAmount),
-      companyProfit: toNumber(r.companyProfit),
-      occurredAt: r.occurredAt,
-      note: r.note || "",
-    };
-  });
+  return {
+    id: Number(r.id),
+    settlementItemId: Number(r.id),
+    sourceId: Number(r.sourceId),
+    studentId: Number(r.studentId || 0),
+    assigneeId: Number(r.assigneeId || 0),
+    type: isRefund ? "refund" : String(r.revenueType || "unknown"),
+    revenueType: r.revenueType,
+    settlementStatus: r.settlementStatus,
+    title: r.title || "",
+    institutionName: r.institutionName || "",
+    clientName: r.clientName || "",
+    phone: r.phone || "",
+    course: r.course || "",
+    subjectType: r.subjectType || null,
+    subjectCount: Number(r.subjectCount || 0),
+    quantity: Number(r.quantity || 0),
+
+    // refund row는 이미 음수로 저장되어 있으니 다시 뒤집지 말 것
+    amount: toNumber(r.grossAmount),
+    grossAmount: toNumber(r.grossAmount),
+    companyAmount: toNumber(r.companyAmount),
+    freelancerAmount: toNumber(r.freelancerAmount),
+    taxAmount: toNumber(r.taxAmount),
+    finalPayoutAmount: toNumber(r.finalPayoutAmount),
+    companyProfit: toNumber(r.companyProfit),
+
+    paymentDate: r.occurredAt,
+    note: r.note || "",
+  };
+});
 
   const totalAmount = entries.reduce(
     (sum: number, row: any) => sum + toNumber(row.grossAmount),
@@ -4289,60 +4288,60 @@ export async function getSettlementInstitutionSummary(params: {
   const endDate = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
 
   const rows = await db
-    .select({
-      institutionName: settlementItems.institutionName,
-      grossAmount: settlementItems.grossAmount,
-      companyAmount: settlementItems.companyAmount,
-      freelancerAmount: settlementItems.freelancerAmount,
-      taxAmount: settlementItems.taxAmount,
-      finalPayoutAmount: settlementItems.finalPayoutAmount,
-      companyProfit: settlementItems.companyProfit,
-      settlementStatus: settlementItems.settlementStatus,
-    })
-    .from(settlementItems)
-    .where(
-      and(
-        sql`${settlementItems.occurredAt} >= ${startDate}`,
-        sql`${settlementItems.occurredAt} < ${endDate}`,
-        sql`${settlementItems.settlementStatus} IN ('confirmed', 'refunded')`
-      )
+  .select({
+    institutionName: settlementItems.institutionName,
+    revenueType: settlementItems.revenueType,
+    grossAmount: settlementItems.grossAmount,
+    companyAmount: settlementItems.companyAmount,
+    freelancerAmount: settlementItems.freelancerAmount,
+    taxAmount: settlementItems.taxAmount,
+    finalPayoutAmount: settlementItems.finalPayoutAmount,
+    companyProfit: settlementItems.companyProfit,
+    settlementStatus: settlementItems.settlementStatus,
+  })
+  .from(settlementItems)
+  .where(
+    and(
+      sql`${settlementItems.occurredAt} >= ${startDate}`,
+      sql`${settlementItems.occurredAt} < ${endDate}`,
+      sql`${settlementItems.settlementStatus} = 'confirmed'`
     )
-    .orderBy(asc(settlementItems.institutionName), desc(settlementItems.occurredAt));
+  )
+  .orderBy(asc(settlementItems.institutionName), desc(settlementItems.occurredAt));
 
   const map = new Map<string, any>();
 
   for (const row of rows as any[]) {
-    const institutionName = String(row.institutionName || "미지정 교육원");
-    const sign = row.settlementStatus === "refunded" ? -1 : 1;
+  const institutionName = String(row.institutionName || "미지정 교육원");
 
-    if (!map.has(institutionName)) {
-  map.set(institutionName, {
-    institutionName,
-    totalGrossAmount: 0,
-    totalCompanyAmount: 0,
-    totalFreelancerAmount: 0,
-    totalTaxAmount: 0,
-    totalFinalPayoutAmount: 0,
-    totalCompanyProfit: 0,
-    prevGrossAmount: 0,
-    prevCompanyAmount: 0,
-    grossDiffAmount: 0,
-    companyDiffAmount: 0,
-    grossDiffRate: 0,
-    companyDiffRate: 0,
-    count: 0,
-  });
-}
-
-    const target = map.get(institutionName);
-    target.totalGrossAmount += toNumber(row.grossAmount) * sign;
-    target.totalCompanyAmount += toNumber(row.companyAmount) * sign;
-    target.totalFreelancerAmount += toNumber(row.freelancerAmount) * sign;
-    target.totalTaxAmount += toNumber(row.taxAmount) * sign;
-    target.totalFinalPayoutAmount += toNumber(row.finalPayoutAmount) * sign;
-    target.totalCompanyProfit += toNumber(row.companyProfit) * sign;
-    target.count += 1;
+  if (!map.has(institutionName)) {
+    map.set(institutionName, {
+      institutionName,
+      totalGrossAmount: 0,
+      totalCompanyAmount: 0,
+      totalFreelancerAmount: 0,
+      totalTaxAmount: 0,
+      totalFinalPayoutAmount: 0,
+      totalCompanyProfit: 0,
+      prevGrossAmount: 0,
+      prevCompanyAmount: 0,
+      grossDiffAmount: 0,
+      companyDiffAmount: 0,
+      grossDiffRate: 0,
+      companyDiffRate: 0,
+      count: 0,
+    });
   }
+
+  const target = map.get(institutionName);
+  target.totalGrossAmount += toNumber(row.grossAmount);
+  target.totalCompanyAmount += toNumber(row.companyAmount);
+  target.totalFreelancerAmount += toNumber(row.freelancerAmount);
+  target.totalTaxAmount += toNumber(row.taxAmount);
+  target.totalFinalPayoutAmount += toNumber(row.finalPayoutAmount);
+  target.totalCompanyProfit += toNumber(row.companyProfit);
+  target.count += 1;
+}
 
   return Array.from(map.values()).sort(
     (a, b) => b.totalGrossAmount - a.totalGrossAmount
@@ -4389,13 +4388,13 @@ export async function getSettlementInstitutionEntries(params: {
     .leftJoin(students, eq(settlementItems.studentId, students.id))
     .leftJoin(users, eq(settlementItems.assigneeId, users.id))
     .where(
-      and(
-        sql`${settlementItems.occurredAt} >= ${startDate}`,
-        sql`${settlementItems.occurredAt} < ${endDate}`,
-        eq(settlementItems.institutionName, params.institutionName),
-        sql`${settlementItems.settlementStatus} IN ('confirmed', 'refunded')`
-      )
-    )
+  and(
+    sql`${settlementItems.occurredAt} >= ${startDate}`,
+    sql`${settlementItems.occurredAt} < ${endDate}`,
+    eq(settlementItems.institutionName, params.institutionName),
+    sql`${settlementItems.settlementStatus} = 'confirmed'`
+  )
+)
     .orderBy(desc(settlementItems.occurredAt), desc(settlementItems.id));
 
   const entries = (rows as any[]).map((row) => ({
@@ -4432,59 +4431,59 @@ export async function getSettlementInstitutionMonthlyTrend(params: {
   const endDate = `${params.year + 1}-01-01`;
 
   const rows = await db
-    .select({
-      institutionName: settlementItems.institutionName,
-      occurredAt: settlementItems.occurredAt,
-      grossAmount: settlementItems.grossAmount,
-      companyAmount: settlementItems.companyAmount,
-      settlementStatus: settlementItems.settlementStatus,
-    })
-    .from(settlementItems)
-    .where(
-      and(
-        sql`${settlementItems.occurredAt} >= ${startDate}`,
-        sql`${settlementItems.occurredAt} < ${endDate}`,
-        sql`${settlementItems.settlementStatus} IN ('confirmed', 'refunded')`
-      )
+  .select({
+    institutionName: settlementItems.institutionName,
+    revenueType: settlementItems.revenueType,
+    occurredAt: settlementItems.occurredAt,
+    grossAmount: settlementItems.grossAmount,
+    companyAmount: settlementItems.companyAmount,
+    settlementStatus: settlementItems.settlementStatus,
+  })
+  .from(settlementItems)
+  .where(
+    and(
+      sql`${settlementItems.occurredAt} >= ${startDate}`,
+      sql`${settlementItems.occurredAt} < ${endDate}`,
+      sql`${settlementItems.settlementStatus} = 'confirmed'`
     )
-    .orderBy(asc(settlementItems.institutionName), asc(settlementItems.occurredAt));
+  )
+  .orderBy(asc(settlementItems.institutionName), asc(settlementItems.occurredAt));
 
   const map = new Map<string, any>();
 
-  for (const row of rows as any[]) {
-    const institutionName = String(row.institutionName || "미지정 교육원");
-    const occurredAt = row.occurredAt ? new Date(row.occurredAt) : null;
-    const month = occurredAt ? occurredAt.getMonth() + 1 : 0;
-    const sign = row.settlementStatus === "refunded" ? -1 : 1;
+ for (const row of rows as any[]) {
+  const institutionName = String(row.institutionName || "미지정 교육원");
+  const occurredAt = row.occurredAt ? new Date(row.occurredAt) : null;
+  const month = occurredAt ? occurredAt.getMonth() + 1 : 0;
 
-    if (!month || month < 1 || month > 12) continue;
+  if (!month || month < 1 || month > 12) continue;
 
-    if (!map.has(institutionName)) {
-      map.set(institutionName, {
-        institutionName,
-        monthlyGross: {
-          1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0,
-          7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0,
-        },
-        monthlyCompany: {
-          1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0,
-          7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0,
-        },
-        yearTotalGross: 0,
-        yearTotalCompany: 0,
-      });
-    }
-
-    const target = map.get(institutionName);
-
-    const gross = toNumber(row.grossAmount) * sign;
-    const company = toNumber(row.companyAmount) * sign;
-
-    target.monthlyGross[month] += gross;
-    target.monthlyCompany[month] += company;
-    target.yearTotalGross += gross;
-    target.yearTotalCompany += company;
+  if (!map.has(institutionName)) {
+    map.set(institutionName, {
+      institutionName,
+      monthlyGross: {
+        1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0,
+        7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0,
+      },
+      monthlyCompany: {
+        1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0,
+        7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0,
+      },
+      yearTotalGross: 0,
+      yearTotalCompany: 0,
+    });
   }
+
+  const target = map.get(institutionName);
+
+  const gross = toNumber(row.grossAmount);
+  const company = toNumber(row.companyAmount);
+
+  target.monthlyGross[month] += gross;
+  target.monthlyCompany[month] += company;
+  target.yearTotalGross += gross;
+  target.yearTotalCompany += company;
+}
 
 
   return Array.from(map.values())
@@ -4545,29 +4544,32 @@ export async function getStudentPaymentSummary(studentId: number) {
   const totalRequired = toNumber((plannedResult as any)[0]?.total);
 
   const [settlementResult] = await db.execute(sql`
-    SELECT
-      COALESCE(
-        SUM(
-          CASE
-            WHEN settlementStatus = 'confirmed'
-            THEN grossAmount ELSE 0
-          END
-        ),
-        0
-      ) as totalPaid,
+  SELECT
+    COALESCE(
+      SUM(
+        CASE
+          WHEN settlementStatus = 'confirmed'
+           AND revenueType != 'refund'
+          THEN grossAmount
+          ELSE 0
+        END
+      ),
+      0
+    ) as totalPaid,
 
-      COALESCE(
-        SUM(
-          CASE
-            WHEN settlementStatus = 'refunded'
-            THEN grossAmount ELSE 0
-          END
-        ),
-        0
-      ) as totalRefund
-    FROM settlement_items
-    WHERE studentId = ${studentId}
-  `);
+    COALESCE(
+      SUM(
+        CASE
+          WHEN revenueType = 'refund'
+          THEN ABS(grossAmount)
+          ELSE 0
+        END
+      ),
+      0
+    ) as totalRefund
+  FROM settlement_items
+  WHERE studentId = ${studentId}
+`);
 
   const totalPaid = toNumber((settlementResult as any)[0]?.totalPaid);
   const totalRefund = toNumber((settlementResult as any)[0]?.totalRefund);
@@ -5096,7 +5098,7 @@ s.institutionName,
     WHERE s.assigneeId = ${params.assigneeId}
       AND s.occurredAt >= ${start}
       AND s.occurredAt < ${end}
-      AND s.settlementStatus IN ('confirmed', 'refunded')
+      AND s.settlementStatus = 'confirmed'
     ORDER BY s.occurredAt ASC, s.id ASC
   `);
 
@@ -5120,26 +5122,24 @@ s.institutionName,
   let contractDeductionAmount = 0;
 
   for (const row of entries) {
-    const sign = row.settlementStatus === "refunded" ? -1 : 1;
-
-    if (row.revenueType === "subject") {
-      subjectAllowanceAmount += row.freelancerAmount * sign;
-    }
-
-    if (row.revenueType === "private_certificate") {
-      privateCertificateAllowanceAmount += row.freelancerAmount * sign;
-    }
-
-    if (row.revenueType === "practice_support") {
-      practiceSupportAllowanceAmount += row.freelancerAmount * sign;
-    }
-
-    if (row.settlementStatus === "refunded") {
-      refundDeductionAmount += row.grossAmount;
-    }
-
-    taxDeductionAmount += row.taxAmount * sign;
+  if (row.revenueType === "subject") {
+    subjectAllowanceAmount += row.freelancerAmount;
   }
+
+  if (row.revenueType === "private_certificate") {
+    privateCertificateAllowanceAmount += row.freelancerAmount;
+  }
+
+  if (row.revenueType === "practice_support") {
+    practiceSupportAllowanceAmount += row.freelancerAmount;
+  }
+
+  if (row.revenueType === "refund") {
+    refundDeductionAmount += Math.abs(row.grossAmount);
+  }
+
+  taxDeductionAmount += Math.abs(row.taxAmount);
+}
 
   const totalGrossAmount =
     educationSupportAmount +
@@ -5153,9 +5153,8 @@ s.institutionName,
   const totalReceivableAmount = totalGrossAmount - totalDeductionAmount;
 
   const totalNetPayoutAmount = entries.reduce((sum: number, row: any) => {
-    const sign = row.settlementStatus === "refunded" ? -1 : 1;
-    return sum + row.finalPayoutAmount * sign;
-  }, 0);
+  return sum + row.finalPayoutAmount;
+}, 0);
 
     return {
     year: params.year,
@@ -6359,7 +6358,6 @@ export async function listPracticeSupportRequests(assigneeId?: number) {
   if (!db) return [];
 
   const conditions: any[] = [
-    sql`sem.practiceStatus IN ('미섭외', '섭외중', '섭외완료')`,
     sql`s.approvalStatus = '승인'`,
   ];
 
@@ -6374,127 +6372,8 @@ export async function listPracticeSupportRequests(assigneeId?: number) {
 
   const [rows] = await db.execute(sql`
     SELECT
-      sem.id AS semesterId,
-      sem.studentId,
-      sem.semesterOrder,
-      sem.practiceStatus AS semesterPracticeStatus,
-      sem.practiceSupportRequestId,
-      sem.updatedAt AS semesterUpdatedAt,
-
       psr.id,
-      psr.assigneeId,
-      psr.clientName,
-      psr.phone,
-      psr.course,
-      psr.inputAddress,
-      psr.detailAddress,
-      psr.assigneeName,
-      psr.managerName,
-      psr.practiceHours,
-      psr.practiceDate,
-      psr.includeEducationCenter,
-      psr.includePracticeInstitution,
-      psr.coordinationStatus,
-      psr.selectedEducationCenterId,
-      psr.selectedEducationCenterName,
-      psr.selectedEducationCenterAddress,
-      psr.selectedEducationCenterDistanceKm,
-      psr.selectedPracticeInstitutionId,
-      psr.selectedPracticeInstitutionName,
-      psr.selectedPracticeInstitutionAddress,
-      psr.selectedPracticeInstitutionDistanceKm,
-      psr.feeAmount,
-      psr.paymentStatus,
-      psr.note,
-      psr.createdAt,
-      psr.updatedAt,
-
-      s.clientName AS studentClientName,
-s.phone AS studentPhone,
-s.assigneeId AS studentAssigneeId,
-s.address AS studentAddress,
-s.detailAddress AS studentDetailAddress,
-COALESCE(sem.primaryCourse, s.course) AS semesterCourse,
-
-      p.practiceDate AS planPracticeDate,
-      p.practiceHours AS planPracticeHours,
-      p.desiredCourse AS planDesiredCourse,
-
-      u.name AS userName
-    FROM semesters sem
-    INNER JOIN students s ON s.id = sem.studentId
-    LEFT JOIN plans p ON p.studentId = s.id
-    LEFT JOIN users u ON u.id = s.assigneeId
-    LEFT JOIN practice_support_requests psr
-      ON psr.id = sem.practiceSupportRequestId
-      OR (psr.studentId = sem.studentId AND psr.semesterId = sem.id)
-    ${whereClause}
-    ORDER BY sem.studentId ASC, sem.semesterOrder DESC, sem.updatedAt DESC
-  `);
-
- const mapped = (rows as any[]).map((row) => ({
-  id: row.id ? Number(row.id) : null,
-  practiceSupportRequestId: row.id ? Number(row.id) : null,
-  hasPracticeSupportRequest: !!row.id,
-
-  studentId: Number(row.studentId),
-  semesterId: Number(row.semesterId),
-  semesterOrder: Number(row.semesterOrder),
-  semesterUpdatedAt: row.semesterUpdatedAt,
-
-  clientName: row.clientName || row.studentClientName || "",
-  phone: row.phone || row.studentPhone || "",
-  course: row.course || row.semesterCourse || row.planDesiredCourse || "",
-  inputAddress: row.inputAddress || row.studentAddress || null,
-  detailAddress: row.detailAddress || row.studentDetailAddress || null,
-  assigneeId: row.assigneeId ?? row.studentAssigneeId ?? null,
-  assigneeName: row.assigneeName || row.userName || null,
-  managerName: row.managerName || row.userName || "",
-  practiceHours: row.practiceHours ?? row.planPracticeHours ?? null,
-  practiceDate: row.practiceDate || row.planPracticeDate || null,
-  coordinationStatus: row.coordinationStatus || row.semesterPracticeStatus || "미섭외",
-
-  selectedEducationCenterId: row.selectedEducationCenterId || null,
-  selectedEducationCenterName: row.selectedEducationCenterName || "",
-  selectedEducationCenterAddress: row.selectedEducationCenterAddress || "",
-  selectedEducationCenterDistanceKm: row.selectedEducationCenterDistanceKm || "",
-
-  selectedPracticeInstitutionId: row.selectedPracticeInstitutionId || null,
-  selectedPracticeInstitutionName: row.selectedPracticeInstitutionName || "",
-  selectedPracticeInstitutionAddress: row.selectedPracticeInstitutionAddress || "",
-  selectedPracticeInstitutionDistanceKm: row.selectedPracticeInstitutionDistanceKm || "",
-
-  feeAmount: row.feeAmount || "0",
-  paymentStatus: row.paymentStatus || "미결제",
-  note: row.note || "",
-  createdAt: row.createdAt || null,
-  updatedAt: row.updatedAt || null,
-}));
-
-  // 학생당 1건만: 가장 최근 학기(semesterOrder 큰 것) 우선
-  const dedupedMap = new Map<number, any>();
-  for (const row of mapped) {
-    if (!dedupedMap.has(Number(row.studentId))) {
-      dedupedMap.set(Number(row.studentId), row);
-    }
-  }
-
-  return Array.from(dedupedMap.values());
-}
-
-export async function listPracticeSupportRequestsByStudent(studentId: number) {
-  const db = await getDb();
-  if (!db) return [];
-
-  const [rows] = await db.execute(sql`
-    SELECT
-      sem.id AS semesterId,
-      sem.studentId,
-      sem.semesterOrder,
-      sem.practiceStatus AS semesterPracticeStatus,
-      sem.practiceSupportRequestId,
-
-      psr.id,
+      psr.studentId,
       psr.assigneeId,
       psr.clientName,
       psr.phone,
@@ -6525,42 +6404,47 @@ export async function listPracticeSupportRequestsByStudent(studentId: number) {
       s.clientName AS studentClientName,
       s.phone AS studentPhone,
       s.assigneeId AS studentAssigneeId,
-      COALESCE(sem.primaryCourse, s.course) AS semesterCourse,
+      s.address AS studentAddress,
+      s.detailAddress AS studentDetailAddress,
+      s.course AS studentCourse,
 
       p.practiceDate AS planPracticeDate,
       p.practiceHours AS planPracticeHours,
       p.desiredCourse AS planDesiredCourse,
 
       u.name AS userName
-    FROM semesters sem
-    INNER JOIN students s ON s.id = sem.studentId
-    LEFT JOIN plans p ON p.studentId = s.id
-    LEFT JOIN users u ON u.id = s.assigneeId
+    FROM students s
     LEFT JOIN practice_support_requests psr
-      ON psr.id = sem.practiceSupportRequestId
-      OR (psr.studentId = sem.studentId AND psr.semesterId = sem.id)
-    WHERE sem.studentId = ${studentId}
-      AND sem.practiceStatus IN ('미섭외', '섭외중', '섭외완료')
-    ORDER BY sem.semesterOrder DESC, sem.updatedAt DESC
+      ON psr.studentId = s.id
+    LEFT JOIN plans p
+      ON p.studentId = s.id
+    LEFT JOIN users u
+      ON u.id = s.assigneeId
+    ${whereClause}
+    ORDER BY s.id DESC
   `);
 
   return (rows as any[]).map((row) => ({
     id: row.id ? Number(row.id) : null,
-    semesterId: row.semesterId,
-    studentId: row.studentId,
-    semesterOrder: row.semesterOrder,
+    practiceSupportRequestId: row.id ? Number(row.id) : null,
+    hasPracticeSupportRequest: !!row.id,
+
+    studentId: Number(row.studentId),
+    semesterId: null,
+    semesterOrder: 1,
+    semesterUpdatedAt: row.updatedAt || null,
 
     clientName: row.clientName || row.studentClientName || "",
     phone: row.phone || row.studentPhone || "",
-    course: row.course || row.semesterCourse || row.planDesiredCourse || "",
-    inputAddress: row.inputAddress || "",
-    detailAddress: row.detailAddress || "",
-    assigneeId: row.assigneeId || row.studentAssigneeId || null,
-    assigneeName: row.assigneeName || row.userName || "",
+    course: row.course || row.studentCourse || row.planDesiredCourse || "",
+    inputAddress: row.inputAddress || row.studentAddress || null,
+    detailAddress: row.detailAddress || row.studentDetailAddress || null,
+    assigneeId: row.assigneeId ?? row.studentAssigneeId ?? null,
+    assigneeName: row.assigneeName || row.userName || null,
     managerName: row.managerName || row.userName || "",
     practiceHours: row.practiceHours ?? row.planPracticeHours ?? null,
     practiceDate: row.practiceDate || row.planPracticeDate || null,
-    coordinationStatus: row.coordinationStatus || row.semesterPracticeStatus || "미섭외",
+    coordinationStatus: row.coordinationStatus || "미섭외",
 
     selectedEducationCenterId: row.selectedEducationCenterId || null,
     selectedEducationCenterName: row.selectedEducationCenterName || "",
@@ -6580,19 +6464,115 @@ export async function listPracticeSupportRequestsByStudent(studentId: number) {
   }));
 }
 
+export async function listPracticeSupportRequestsByStudent(studentId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const [rows] = await db.execute(sql`
+  SELECT
+    psr.id,
+    psr.studentId,
+    psr.assigneeId,
+    psr.clientName,
+    psr.phone,
+    psr.course,
+    psr.inputAddress,
+    psr.detailAddress,
+    psr.assigneeName,
+    psr.managerName,
+    psr.practiceHours,
+    psr.practiceDate,
+    psr.includeEducationCenter,
+    psr.includePracticeInstitution,
+    psr.coordinationStatus,
+    psr.selectedEducationCenterId,
+    psr.selectedEducationCenterName,
+    psr.selectedEducationCenterAddress,
+    psr.selectedEducationCenterDistanceKm,
+    psr.selectedPracticeInstitutionId,
+    psr.selectedPracticeInstitutionName,
+    psr.selectedPracticeInstitutionAddress,
+    psr.selectedPracticeInstitutionDistanceKm,
+    psr.feeAmount,
+    psr.paymentStatus,
+    psr.note,
+    psr.createdAt,
+    psr.updatedAt,
+
+    s.clientName AS studentClientName,
+    s.phone AS studentPhone,
+    s.assigneeId AS studentAssigneeId,
+    s.address AS studentAddress,
+    s.detailAddress AS studentDetailAddress,
+    s.course AS studentCourse,
+
+    p.practiceDate AS planPracticeDate,
+    p.practiceHours AS planPracticeHours,
+    p.desiredCourse AS planDesiredCourse,
+
+    u.name AS userName
+  FROM students s
+  LEFT JOIN practice_support_requests psr
+    ON psr.studentId = s.id
+  LEFT JOIN plans p
+    ON p.studentId = s.id
+  LEFT JOIN users u
+    ON u.id = s.assigneeId
+  WHERE s.id = ${studentId}
+  LIMIT 1
+`);
+
+  const row = (rows as any[])[0];
+if (!row) return [];
+
+return [
+  {
+    id: row.id ? Number(row.id) : null,
+    practiceSupportRequestId: row.id ? Number(row.id) : null,
+    hasPracticeSupportRequest: !!row.id,
+
+    studentId: Number(row.studentId),
+    semesterId: null,
+    semesterOrder: 1,
+
+    clientName: row.clientName || row.studentClientName || "",
+    phone: row.phone || row.studentPhone || "",
+    course: row.course || row.studentCourse || row.planDesiredCourse || "",
+    inputAddress: row.inputAddress || row.studentAddress || "",
+    detailAddress: row.detailAddress || row.studentDetailAddress || "",
+    assigneeId: row.assigneeId ?? row.studentAssigneeId ?? null,
+    assigneeName: row.assigneeName || row.userName || null,
+    managerName: row.managerName || row.userName || "",
+    practiceHours: row.practiceHours ?? row.planPracticeHours ?? null,
+    practiceDate: row.practiceDate || row.planPracticeDate || null,
+    coordinationStatus: row.coordinationStatus || "미섭외",
+
+    selectedEducationCenterId: row.selectedEducationCenterId || null,
+    selectedEducationCenterName: row.selectedEducationCenterName || "",
+    selectedEducationCenterAddress: row.selectedEducationCenterAddress || "",
+    selectedEducationCenterDistanceKm: row.selectedEducationCenterDistanceKm || "",
+
+    selectedPracticeInstitutionId: row.selectedPracticeInstitutionId || null,
+    selectedPracticeInstitutionName: row.selectedPracticeInstitutionName || "",
+    selectedPracticeInstitutionAddress: row.selectedPracticeInstitutionAddress || "",
+    selectedPracticeInstitutionDistanceKm: row.selectedPracticeInstitutionDistanceKm || "",
+
+    feeAmount: row.feeAmount || "0",
+    paymentStatus: row.paymentStatus || "미결제",
+    note: row.note || "",
+    createdAt: row.createdAt || null,
+    updatedAt: row.updatedAt || null,
+  },
+];
+
 export async function getPracticeSupportRequest(id: number) {
   const db = await getDb();
   if (!db) return undefined;
 
   const [rows] = await db.execute(sql`
     SELECT
-      sem.id AS semesterId,
-      sem.studentId,
-      sem.semesterOrder,
-      sem.practiceStatus AS semesterPracticeStatus,
-      sem.practiceSupportRequestId,
-
       psr.id,
+      psr.studentId,
       psr.assigneeId,
       psr.clientName,
       psr.phone,
@@ -6623,7 +6603,9 @@ export async function getPracticeSupportRequest(id: number) {
       s.clientName AS studentClientName,
       s.phone AS studentPhone,
       s.assigneeId AS studentAssigneeId,
-      COALESCE(sem.primaryCourse, s.course) AS semesterCourse,
+      s.address AS studentAddress,
+      s.detailAddress AS studentDetailAddress,
+      s.course AS studentCourse,
 
       p.practiceDate AS planPracticeDate,
       p.practiceHours AS planPracticeHours,
@@ -6631,12 +6613,12 @@ export async function getPracticeSupportRequest(id: number) {
 
       u.name AS userName
     FROM practice_support_requests psr
-    LEFT JOIN semesters sem
-      ON sem.practiceSupportRequestId = psr.id
-      OR (sem.studentId = psr.studentId AND sem.id = psr.semesterId)
-    LEFT JOIN students s ON s.id = psr.studentId
-    LEFT JOIN plans p ON p.studentId = psr.studentId
-    LEFT JOIN users u ON u.id = COALESCE(psr.assigneeId, s.assigneeId)
+    INNER JOIN students s
+      ON s.id = psr.studentId
+    LEFT JOIN plans p
+      ON p.studentId = s.id
+    LEFT JOIN users u
+      ON u.id = COALESCE(psr.assigneeId, s.assigneeId)
     WHERE psr.id = ${id}
     LIMIT 1
   `);
@@ -6645,22 +6627,25 @@ export async function getPracticeSupportRequest(id: number) {
   if (!row) return undefined;
 
   return {
-    id: row.id,
-    semesterId: row.semesterId,
-    studentId: row.studentId,
-    semesterOrder: row.semesterOrder,
+    id: Number(row.id),
+    practiceSupportRequestId: Number(row.id),
+    hasPracticeSupportRequest: true,
+
+    studentId: Number(row.studentId),
+    semesterId: null,
+    semesterOrder: 1,
 
     clientName: row.clientName || row.studentClientName || "",
     phone: row.phone || row.studentPhone || "",
-    course: row.course || row.semesterCourse || row.planDesiredCourse || "",
-    inputAddress: row.inputAddress || "",
-    detailAddress: row.detailAddress || "",
+    course: row.course || row.studentCourse || row.planDesiredCourse || "",
+    inputAddress: row.inputAddress || row.studentAddress || "",
+    detailAddress: row.detailAddress || row.studentDetailAddress || "",
     assigneeId: row.assigneeId || row.studentAssigneeId || null,
     assigneeName: row.assigneeName || row.userName || "",
     managerName: row.managerName || row.userName || "",
     practiceHours: row.practiceHours ?? row.planPracticeHours ?? null,
     practiceDate: row.practiceDate || row.planPracticeDate || null,
-    coordinationStatus: row.coordinationStatus || row.semesterPracticeStatus || "미섭외",
+    coordinationStatus: row.coordinationStatus || "미섭외",
 
     selectedEducationCenterId: row.selectedEducationCenterId || null,
     selectedEducationCenterName: row.selectedEducationCenterName || "",
@@ -6833,14 +6818,7 @@ export async function upsertPracticeSupportRequestByStudent(params: {
   const existing = await db
   .select()
   .from(practiceSupportRequests)
-  .where(
-    params.semesterId
-      ? and(
-          eq(practiceSupportRequests.studentId, params.studentId),
-          eq(practiceSupportRequests.semesterId, params.semesterId)
-        )
-      : eq(practiceSupportRequests.studentId, params.studentId)
-  )
+  .where(eq(practiceSupportRequests.studentId, params.studentId))
   .limit(1);
 
   const nextCoordinationStatus =
@@ -6848,7 +6826,7 @@ export async function upsertPracticeSupportRequestByStudent(params: {
 
 const payload: any = {
   studentId: params.studentId,
-  semesterId: params.semesterId ?? null,
+  semesterId: null,
   assigneeId: params.assigneeId,
   clientName: params.clientName,
   phone: params.phone,
@@ -6861,7 +6839,7 @@ const payload: any = {
   practiceDate: params.practiceDate ?? null,
   includeEducationCenter: params.includeEducationCenter ?? true,
   includePracticeInstitution: params.includePracticeInstitution ?? true,
-  coordinationStatus: nextCoordinationStatus,
+  coordinationStatus: params.coordinationStatus ?? "미섭외",
   paymentStatus: "미결제",
   feeAmount: "0",
 };

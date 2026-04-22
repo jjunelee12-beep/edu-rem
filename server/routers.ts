@@ -3620,18 +3620,22 @@ return { success: true };
     })
   )
       .mutation(async ({ input }) => {
-        const data: any = {};
+  const data: any = {};
 
-        if (input.refundAmount !== undefined) data.refundAmount = input.refundAmount;
-        if (input.refundDate !== undefined) data.refundDate = new Date(input.refundDate);
-        if (input.reason !== undefined) data.reason = input.reason;
-        if (input.refundType !== undefined) data.refundType = input.refundType;
-        if (input.attachmentName !== undefined) data.attachmentName = input.attachmentName;
-        if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl;
+  if (input.semesterId !== undefined) data.semesterId = input.semesterId ?? null;
+  if (input.refundAmount !== undefined) data.refundAmount = input.refundAmount;
+  if (input.refundDate !== undefined)
+    data.refundDate = input.refundDate ? new Date(input.refundDate) : null;
+  if (input.reason !== undefined) data.reason = input.reason;
+  if (input.refundType !== undefined) data.refundType = input.refundType;
+  if (input.attachmentName !== undefined)
+    data.attachmentName = input.attachmentName?.trim() || null;
+  if (input.attachmentUrl !== undefined)
+    data.attachmentUrl = input.attachmentUrl?.trim() || null;
 
-        await db.updateRefund(input.id, data);
-        return { success: true };
-      }),
+  await db.updateRefund(input.id, data);
+  return { success: true };
+}),
 
     delete: hostProcedure
       .input(z.object({ id: z.number() }))

@@ -404,7 +404,7 @@ const patchPracticeRow = async (row: any, patch: Record<string, any>) => {
   }
 
   const studentId = Number(row?.studentId || 0);
-  const semesterId = row?.semesterId ? Number(row.semesterId) : null;
+  const semesterId = null;
   const assigneeId = Number(row?.assigneeId || row?.studentAssigneeId || 0);
 
   const clientName = String(row?.clientName || row?.studentClientName || "").trim();
@@ -419,7 +419,7 @@ const patchPracticeRow = async (row: any, patch: Record<string, any>) => {
 
   await upsertPracticeSupportByStudentMut.mutateAsync({
     studentId,
-    semesterId,
+    semesterId: null,
     assigneeId,
     clientName,
     phone,

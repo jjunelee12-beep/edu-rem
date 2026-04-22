@@ -190,6 +190,16 @@ const { data: practiceSupportList } =
   const [privateCertDialogOpen, setPrivateCertDialogOpen] = useState(false);
   const [selectedPrivateCertNames, setSelectedPrivateCertNames] = useState<string[]>([]);
 
+const [privateCertAddress, setPrivateCertAddress] = useState("");
+const [privateCertDetailAddress, setPrivateCertDetailAddress] = useState("");
+
+useEffect(() => {
+  if (!privateCertDialogOpen) return;
+
+  setPrivateCertAddress(String((student as any)?.address || "").trim());
+  setPrivateCertDetailAddress(String((student as any)?.detailAddress || "").trim());
+}, [privateCertDialogOpen, student]);
+
 const [courseDialogOpen, setCourseDialogOpen] = useState(false);
 const [courseDialogSemester, setCourseDialogSemester] = useState<any>(null);
 const [selectedRegisteredCourses, setSelectedRegisteredCourses] = useState<string[]>([]);
@@ -225,14 +235,10 @@ const privateCertificateOptions = privateCertificateMasterList || [];
 
 const createPrivateCertificateRequestMut =
   trpc.privateCertificate.create.useMutation({
-    onSuccess: async () => {
-      await utils.privateCertificate.listByStudent.invalidate({ studentId });
-      setPrivateCertDialogOpen(false);
-      setSelectedPrivateCertNames([]);
-      toast.success("민간자격증 요청 완료");
-    },
     onError: (e) => toast.error(e.message),
   });
+
+
 const deletePrivateCertificateRequestMut =
   trpc.privateCertificate.delete.useMutation({
     onSuccess: async () => {
@@ -285,8 +291,12 @@ const submitPrivateCertRequest = async () => {
   phone,
   assigneeName: String(student.assigneeName || "").trim() || null,
   privateCertificateMasterId: master?.id ? Number(master.id) : null,
-  certificateName: String(name).trim(),
-  inputAddress: String(student.address || "").trim() || null,
+  certificateName: name,
+  inputAddress:
+    [privateCertAddress, privateCertDetailAddress]
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
+      .join(" ") || null,
   note: null,
         requestStatus: "요청",
         feeAmount: "0",
@@ -299,9 +309,11 @@ const submitPrivateCertRequest = async () => {
     }
 
     await utils.privateCertificate.listByStudent.invalidate({ studentId });
-    setPrivateCertDialogOpen(false);
-    setSelectedPrivateCertNames([]);
-    toast.success("민간자격증 요청 완료");
+setPrivateCertDialogOpen(false);
+setSelectedPrivateCertNames([]);
+setPrivateCertAddress("");
+setPrivateCertDetailAddress("");
+toast.success("민간자격증 요청 완료");
   } catch (e: any) {
     toast.error(e.message || "민간자격증 요청 중 오류가 발생했습니다.");
   }
@@ -688,16 +700,8 @@ const pendingRefundAmountMap = useMemo(() => {
 
 const selectedPracticeSupport = useMemo(() => {
   if (!practiceSupportList?.length) return null;
-
-  if (selectedSemester?.id) {
-    const matched = practiceSupportList.find(
-      (row: any) => Number(row.semesterId) === Number(selectedSemester.id)
-    );
-    if (matched) return matched;
-  }
-
   return practiceSupportList[0] ?? null;
-}, [practiceSupportList, selectedSemester?.id]);
+}, [practiceSupportList]);
 
 
   const lastSemester = useMemo(() => {
@@ -1069,15 +1073,14 @@ const savePlan = async () => {
       }
 
       await upsertPracticeSupportByStudentMut.mutateAsync({
-        studentId,
-        semesterId: selectedSemester?.id ?? null,
-        assigneeId: Number(student.assigneeId),
-        clientName: String(student.clientName || "").trim(),
-        phone: String(student.phone || "").trim(),
-        course: String(planForm.desiredCourse || "").trim(),
-        inputAddress:
-  String(planForm.practiceAddress || (student as any)?.address || "").trim() ||
-  null,
+  studentId,
+  semesterId: null,
+  assigneeId: Number(student.assigneeId || 0),
+  clientName: String(student.clientName || "").trim(),
+  phone: String(student.phone || "").trim(),
+  course: String(planForm.desiredCourse || student.course || "").trim(),
+  inputAddress:
+    String(planForm.practiceAddress || (student as any)?.address || "").trim() || null,
         detailAddress: String((student as any)?.detailAddress || "").trim() || null,
         assigneeName: null,
         managerName: null,
@@ -3083,14 +3086,16 @@ const existingPlanSubjectMap = useMemo(() => {
 
           <DialogFooter>
             <Button
-              variant="outline"
-              onClick={() => {
-                setTemplateDialogOpen(false);
-                setSelectedTemplateIds([]);
-              }}
-            >
-              취소
-            </Button>
+  variant="outline"
+  onClick={() => {
+    setPrivateCertDialogOpen(false);
+    setSelectedPrivateCertNames([]);
+    setPrivateCertAddress("");
+    setPrivateCertDetailAddress("");
+  }}
+>
+  취소
+</Button>
             <Button
   onClick={applySubjectCatalogItemsToSemester}
   disabled={
@@ -3627,6 +3632,30 @@ semesterId: r.semesterId ? String(r.semesterId) : "",
                     </div>
                   </div>
                 )}
+<div className="rounded-lg border p-4 space-y-3">
+  <div className="grid gap-2">
+    <Label className="text-sm">주소</Label>
+    <Input
+      value={privateCertAddress}
+      onChange={(e) => setPrivateCertAddress(e.target.value)}
+      placeholder="예: 서울 도봉구 ..."
+    />
+  </div>
+
+  <div className="grid gap-2">
+    <Label className="text-sm">상세주소</Label>
+    <Input
+      value={privateCertDetailAddress}
+      onChange={(e) => setPrivateCertDetailAddress(e.target.value)}
+      placeholder="상세주소 입력"
+    />
+  </div>
+
+  <div className="text-[11px] text-muted-foreground">
+    입력한 주소가 이번 민간자격증 요청들에 함께 저장됩니다.
+  </div>
+</div>
+
               </div>
             </div>
           </div>
