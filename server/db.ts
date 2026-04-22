@@ -2906,7 +2906,7 @@ export async function createSettlementItemLog(params: {
 }
 
 export async function upsertSettlementItem(params: {
-  revenueType: "subject" | "practice_support" | "private_certificate";
+  revenueType: "subject" | "practice_support" | "private_certificate" | "refund";
   sourceId: number;
   studentId: number;
   assigneeId?: number | null;
@@ -2915,6 +2915,7 @@ export async function upsertSettlementItem(params: {
   settlementGradeId?: number | null;
   educationInstitutionId?: number | null;
   privateCertificateMasterId?: number | null;
+institutionName?: string | null;
   title: string;
   quantity?: number;
   subjectType?: "general" | "face_to_face" | "practice" | "certificate" | "practice_support" | null;
@@ -3219,6 +3220,7 @@ console.log("🔥 [refundSettlementItemBySource] about to call upsertSettlementI
   settlementGradeId: toNullableNumber(baseItem.settlementGradeId),
   educationInstitutionId: toNullableNumber(baseItem.educationInstitutionId),
   privateCertificateMasterId: toNullableNumber(baseItem.privateCertificateMasterId),
+  institutionName: String(baseItem.institutionName || "").trim() || null,
 
   title: refundTitle,
   quantity: 1,
