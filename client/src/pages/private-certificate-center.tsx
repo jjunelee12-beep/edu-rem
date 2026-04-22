@@ -4,16 +4,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -21,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Loader2, Pencil, Trash2, Search, Save } from "lucide-react";
+import { ArrowLeft, Loader2, Trash2, Search } from "lucide-react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { formatPhone } from "@/lib/format";
@@ -50,6 +41,10 @@ function formatDate(v: any) {
   return d.toISOString().slice(0, 10);
 }
 
+function getTodayDateString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function toNumber(v: any) {
   return Number(String(v ?? "0").replace(/,/g, "").replace(/[^0-9.-]/g, "").trim()) || 0;
 }
@@ -72,29 +67,14 @@ export default function PrivateCertificateCenterPage() {
   const [statusFilter, setStatusFilter] = useState<string>("전체");
   const [paymentFilter, setPaymentFilter] = useState<string>("전체");
 
-  const [editOpen, setEditOpen] = useState(false);
-  const [editingRow, setEditingRow] = useState<any | null>(null);
-  const [form, setForm] = useState({
-    certificateName: "",
-    inputAddress: "",
-    note: "",
-    requestStatus: "요청",
-    feeAmount: "",
-    paymentStatus: "결제대기",
-    paidAt: "",
-    attachmentName: "",
-    attachmentUrl: "",
-  });
 
   const updateMut = trpc.privateCertificate.update.useMutation({
-    onSuccess: async () => {
-      await utils.privateCertificate.list.invalidate();
-      toast.success("민간자격증 요청이 수정되었습니다.");
-      setEditOpen(false);
-      setEditingRow(null);
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  onSuccess: async () => {
+    await utils.privateCertificate.list.invalidate();
+    toast.success("민간자격증 요청이 수정되었습니다.");
+  },
+  onError: (e) => toast.error(e.message),
+});
 
   const deleteMut = trpc.privateCertificate.delete.useMutation({
     onSuccess: async () => {
@@ -103,6 +83,17 @@ export default function PrivateCertificateCenterPage() {
     },
     onError: (e) => toast.error(e.message),
   });
+
+const patchRow = async (id: number, patch: Record<string, any>) => {
+  await updateMut.mutateAsync({
+    id,
+    ...patch,
+  });
+};
+
+const normalizeAmountInput = (value: string) => {
+  return String(value || "").replace(/[^0-9]/g, "");
+};
 
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -134,50 +125,6 @@ export default function PrivateCertificateCenterPage() {
   return filteredRows.filter((row: any) => row.paymentStatus === "결제").length;
 }, [filteredRows]);
 
-  const openEdit = (row: any) => {
-    setEditingRow(row);
-    setForm({
-      certificateName: row.certificateName || "",
-      inputAddress: row.inputAddress || "",
-      note: row.note || "",
-      requestStatus: row.requestStatus || "요청",
-      feeAmount: row.feeAmount?.toString() || "",
-      paymentStatus: row.paymentStatus || "결제대기",
-      paidAt: row.paidAt ? formatDate(row.paidAt) : "",
-      attachmentName: row.attachmentName || "",
-      attachmentUrl: row.attachmentUrl || "",
-    });
-    setEditOpen(true);
-  };
-
-  const requestStatusBadge = (status: string) => {
-    switch (status) {
-      case "완료":
-        return "bg-emerald-100 text-emerald-700";
-      case "진행중":
-        return "bg-blue-100 text-blue-700";
-      case "입금확인":
-        return "bg-violet-100 text-violet-700";
-      case "취소":
-        return "bg-red-100 text-red-700";
-      default:
-        return "bg-amber-100 text-amber-700";
-    }
-  };
-
-  const paymentStatusBadge = (status: string) => {
-  switch (status) {
-    case "결제":
-      return "bg-emerald-100 text-emerald-700";
-    case "환불":
-      return "bg-amber-100 text-amber-700";
-    case "취소":
-      return "bg-red-100 text-red-700";
-    default:
-      return "bg-gray-100 text-gray-700";
-  }
-};
-
   if (!isAdmin) {
     return (
       <div className="space-y-4">
@@ -199,7 +146,7 @@ export default function PrivateCertificateCenterPage() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold tracking-tight">민간자격증 페이지</h1>
+          <h1 className="text-2xl font-bold tracking-tight">민간자격증 관리</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             민간자격증 요청, 입금 확인, 진행 상태를 관리합니다.
           </p>
@@ -297,236 +244,215 @@ export default function PrivateCertificateCenterPage() {
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/40">
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">학생명</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">연락처</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">담당자</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">자격증</th>
-                    <th className="px-4 py-3 text-left font-medium text-muted-foreground">주소</th>
-                    <th className="px-4 py-3 text-center font-medium text-muted-foreground">요청상태</th>
-                    <th className="px-4 py-3 text-center font-medium text-muted-foreground">결제상태</th>
-                    <th className="px-4 py-3 text-right font-medium text-muted-foreground">금액</th>
-                    <th className="px-4 py-3 text-center font-medium text-muted-foreground">요청일</th>
-                    <th className="px-4 py-3 text-right font-medium text-muted-foreground">관리</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={10} className="px-4 py-10 text-center text-muted-foreground">
-                        요청 데이터가 없습니다.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredRows.map((row: any) => (
-                      <tr key={row.id} className="border-b last:border-0">
-                        <td className="px-4 py-3 font-medium">{row.clientName}</td>
-                        <td className="px-4 py-3">{formatPhone(row.phone)}</td>
-                        <td className="px-4 py-3">{row.assigneeName || "-"}</td>
-                        <td className="px-4 py-3">{row.certificateName}</td>
-                        <td className="px-4 py-3 max-w-[220px] truncate">{row.inputAddress || "-"}</td>
-                        <td className="px-4 py-3 text-center">
-                          <Badge className={requestStatusBadge(row.requestStatus || "요청")}>
-                            {row.requestStatus || "요청"}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <Badge className={paymentStatusBadge(row.paymentStatus || "결제대기")}>
-                            {row.paymentStatus || "결제대기"}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3 text-right font-medium">
-                          {toNumber(row.feeAmount).toLocaleString()}원
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {formatDate(row.createdAt)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => openEdit(row)}
-                              title="수정"
-                            >
-                              <Pencil className="h-4 w-4 text-blue-500" />
-                            </Button>
+            <div className="overflow-x-auto rounded-xl border bg-white">
+  <table className="w-full min-w-[1500px] text-sm">
+    <thead className="bg-slate-50 border-b">
+      <tr className="text-left">
+        <th className="px-3 py-3 font-medium">학생명</th>
+        <th className="px-3 py-3 font-medium">연락처</th>
+        <th className="px-3 py-3 font-medium">담당자</th>
+        <th className="px-3 py-3 font-medium">자격증</th>
+        <th className="px-3 py-3 font-medium">주소</th>
+        <th className="px-3 py-3 font-medium">요청일</th>
+        <th className="px-3 py-3 font-medium">요청상태</th>
+        <th className="px-3 py-3 font-medium">결제상태</th>
+        <th className="px-3 py-3 font-medium">금액</th>
+        <th className="px-3 py-3 font-medium">입금확인일</th>
+        <th className="px-3 py-3 font-medium">메모</th>
+        <th className="px-3 py-3 font-medium text-center">관리</th>
+      </tr>
+    </thead>
 
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title="삭제"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => {
-                                if (!confirm("민간자격증 요청을 삭제하시겠습니까?")) return;
-                                deleteMut.mutate({ id: row.id });
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+    <tbody>
+      {!filteredRows.length ? (
+        <tr>
+          <td colSpan={12} className="px-3 py-10 text-center text-muted-foreground">
+            조회된 민간자격증 요청이 없습니다.
+          </td>
+        </tr>
+      ) : (
+        filteredRows.map((row: any) => (
+          <tr key={`${row.id}-${row.updatedAt || ""}`} className="border-b align-top">
+            <td className="px-3 py-3 font-medium">{row.clientName || "-"}</td>
+            <td className="px-3 py-3">{formatPhone(row.phone || "") || "-"}</td>
+            <td className="px-3 py-3">{row.assigneeName || "-"}</td>
+            <td className="px-3 py-3">{row.certificateName || "-"}</td>
+
+            <td className="px-3 py-3 min-w-[220px]">
+              <Input
+                defaultValue={row.inputAddress || ""}
+                onBlur={(e) => {
+                  const next = e.target.value.trim();
+                  if (next === String(row.inputAddress || "").trim()) return;
+                  patchRow(Number(row.id), { inputAddress: next || null });
+                }}
+              />
+            </td>
+
+            <td className="px-3 py-3 whitespace-nowrap">
+              {formatDate(row.createdAt)}
+            </td>
+
+            <td className="px-3 py-3 min-w-[140px]">
+              <Select
+  value={row.requestStatus || "요청"}
+  onValueChange={(value) => {
+    if (value === row.requestStatus) return;
+
+    if (value === "완료") {
+      patchRow(Number(row.id), {
+        requestStatus: value,
+        paymentStatus: row.paymentStatus === "결제" ? row.paymentStatus : "결제",
+        paidAt: row.paidAt ? formatDate(row.paidAt) : getTodayDateString(),
+      });
+      return;
+    }
+
+    patchRow(Number(row.id), { requestStatus: value });
+  }}
+>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {REQUEST_STATUS_OPTIONS.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </td>
+
+            <td className="px-3 py-3 min-w-[140px]">
+              <Select
+  value={row.paymentStatus || "결제대기"}
+  onValueChange={(value) => {
+    if (value === row.paymentStatus) return;
+
+    if (value === "결제") {
+      patchRow(Number(row.id), {
+        paymentStatus: value,
+        requestStatus:
+          row.requestStatus === "완료" ? "완료" : "입금확인",
+        paidAt: row.paidAt ? formatDate(row.paidAt) : getTodayDateString(),
+      });
+      return;
+    }
+
+    if (value === "결제대기") {
+      patchRow(Number(row.id), {
+        paymentStatus: value,
+        requestStatus:
+          row.requestStatus === "입금확인" ? "입금대기" : row.requestStatus,
+        paidAt: null,
+      });
+      return;
+    }
+
+    if (value === "환불") {
+      patchRow(Number(row.id), {
+        paymentStatus: value,
+        paidAt: row.paidAt ? formatDate(row.paidAt) : null,
+      });
+      return;
+    }
+
+    if (value === "취소") {
+      patchRow(Number(row.id), {
+        paymentStatus: value,
+        requestStatus: "취소",
+        paidAt: null,
+      });
+      return;
+    }
+
+    patchRow(Number(row.id), { paymentStatus: value });
+  }}
+>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_STATUS_OPTIONS.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </td>
+
+            <td className="px-3 py-3 min-w-[120px]">
+              <Input
+                defaultValue={row.feeAmount?.toString() || ""}
+                inputMode="numeric"
+                onBlur={(e) => {
+                  const next = normalizeAmountInput(e.target.value);
+                  const current = String(row.feeAmount || "").replace(/[^0-9]/g, "");
+                  if (next === current) return;
+                  patchRow(Number(row.id), { feeAmount: next || "0" });
+                }}
+              />
+            </td>
+
+            <td className="px-3 py-3 min-w-[150px]">
+              <Input
+  type="date"
+  defaultValue={row.paidAt ? formatDate(row.paidAt) : ""}
+  onChange={(e) => {
+    const next = e.target.value || null;
+    const current = row.paidAt ? formatDate(row.paidAt) : "";
+    if ((next || "") === current) return;
+
+    patchRow(Number(row.id), {
+      paidAt: next,
+      paymentStatus: next ? "결제" : row.paymentStatus,
+      requestStatus: next
+        ? row.requestStatus === "완료"
+          ? "완료"
+          : "입금확인"
+        : row.requestStatus,
+    });
+  }}
+/>
+            </td>
+
+            <td className="px-3 py-3 min-w-[240px]">
+              <Textarea
+                defaultValue={row.note || ""}
+                className="min-h-[72px]"
+                onBlur={(e) => {
+                  const next = e.target.value.trim();
+                  if (next === String(row.note || "").trim()) return;
+                  patchRow(Number(row.id), { note: next || null });
+                }}
+              />
+            </td>
+
+            <td className="px-3 py-3 text-center">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  const ok = window.confirm("이 민간자격증 요청을 삭제할까요?");
+                  if (!ok) return;
+                  deleteMut.mutate({ id: Number(row.id) });
+                }}
+              >
+                <Trash2 className="h-4 w-4 text-red-500" />
+              </Button>
+            </td>
+          </tr>
+        ))
+      )}
+    </tbody>
+  </table>
+</div>
           )}
         </CardContent>
       </Card>
-
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>민간자격증 요청 수정</DialogTitle>
-          </DialogHeader>
-
-          <div className="grid gap-4 py-2">
-            <div className="grid md:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label className="text-xs">자격증명</Label>
-                <Input
-                  value={form.certificateName}
-                  onChange={(e) => setForm({ ...form, certificateName: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs">주소</Label>
-                <Input
-                  value={form.inputAddress}
-                  onChange={(e) => setForm({ ...form, inputAddress: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-4">
-              <div className="space-y-1">
-                <Label className="text-xs">요청상태</Label>
-                <Select
-                  value={form.requestStatus}
-                  onValueChange={(v) => setForm({ ...form, requestStatus: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {REQUEST_STATUS_OPTIONS.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs">결제상태</Label>
-                <Select
-                  value={form.paymentStatus}
-                  onValueChange={(v) => setForm({ ...form, paymentStatus: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PAYMENT_STATUS_OPTIONS.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs">금액</Label>
-                <Input
-                  value={form.feeAmount}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      feeAmount: e.target.value.replace(/[^0-9]/g, ""),
-                    })
-                  }
-                  placeholder="예: 50000"
-                />
-              </div>
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-4">
-              <div className="space-y-1">
-                <Label className="text-xs">입금확인일</Label>
-                <Input
-                  type="date"
-                  value={form.paidAt}
-                  onChange={(e) => setForm({ ...form, paidAt: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs">첨부파일명</Label>
-                <Input
-                  value={form.attachmentName}
-                  onChange={(e) => setForm({ ...form, attachmentName: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs">첨부파일 URL</Label>
-                <Input
-                  value={form.attachmentUrl}
-                  onChange={(e) => setForm({ ...form, attachmentUrl: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs">메모</Label>
-              <Textarea
-                rows={4}
-                value={form.note}
-                onChange={(e) => setForm({ ...form, note: e.target.value })}
-                placeholder="진행 메모"
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditOpen(false)}>
-              취소
-            </Button>
-
-            <Button
-              onClick={() => {
-                if (!editingRow) return;
-
-                updateMut.mutate({
-                  id: editingRow.id,
-                  certificateName: form.certificateName || undefined,
-                  inputAddress: form.inputAddress || undefined,
-                  note: form.note || undefined,
-                  requestStatus: form.requestStatus as any,
-                  feeAmount: form.feeAmount || undefined,
-                  paymentStatus: form.paymentStatus as any,
-                  paidAt: form.paidAt || undefined,
-                  attachmentName: form.attachmentName || undefined,
-                  attachmentUrl: form.attachmentUrl || undefined,
-                });
-              }}
-              disabled={updateMut.isPending}
-              className="gap-1"
-            >
-              <Save className="h-4 w-4" />
-              저장
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

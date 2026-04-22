@@ -2783,17 +2783,21 @@ export async function listPendingRefunds() {
 
   const [rows] = await db.execute(sql`
     SELECT
-      r.*,
-      s.clientName,
-      s.phone,
-      s.course,
-      s.assigneeId,
-      u.name as assigneeName
-    FROM refunds r
-    INNER JOIN students s ON s.id = r.studentId
-    LEFT JOIN users u ON u.id = s.assigneeId
-    WHERE r.approvalStatus = '대기'
-    ORDER BY r.createdAt DESC
+  r.*,
+  s.clientName,
+  s.phone,
+  s.course,
+  s.assigneeId,
+  u.name as assigneeName,
+  sem.semesterOrder,
+  sem.actualStartDate,
+  sem.plannedMonth
+FROM refunds r
+INNER JOIN students s ON s.id = r.studentId
+LEFT JOIN users u ON u.id = s.assigneeId
+LEFT JOIN semesters sem ON sem.id = r.semesterId
+WHERE r.approvalStatus = '대기'
+ORDER BY r.createdAt DESC
   `);
 
   return (rows as unknown) as any[];
@@ -6012,29 +6016,82 @@ export async function listPrivateCertificateRequests(assigneeId?: number) {
   const db = await getDb();
   if (!db) return [];
 
-  if (assigneeId) {
-    return db
-      .select()
-      .from(privateCertificateRequests)
-      .where(eq(privateCertificateRequests.assigneeId, assigneeId))
-      .orderBy(desc(privateCertificateRequests.createdAt));
-  }
-
-  return db
-    .select()
+  const rows = await db
+    .select({
+      request: privateCertificateRequests,
+      studentClientName: students.clientName,
+      studentPhone: students.phone,
+      studentAddress: students.address,
+      userName: users.name,
+    })
     .from(privateCertificateRequests)
-    .orderBy(desc(privateCertificateRequests.createdAt));
+    .leftJoin(students, eq(privateCertificateRequests.studentId, students.id))
+    .leftJoin(users, eq(privateCertificateRequests.assigneeId, users.id))
+    .where(
+      assigneeId
+        ? eq(privateCertificateRequests.assigneeId, assigneeId)
+        : undefined
+    )
+    .orderBy(desc(privateCertificateRequests.id));
+
+  return rows.map((row: any) => ({
+    ...row.request,
+    clientName:
+      String(row.request?.clientName || "").trim() ||
+      String(row.studentClientName || "").trim() ||
+      null,
+    phone:
+      String(row.request?.phone || "").trim() ||
+      String(row.studentPhone || "").trim() ||
+      null,
+    assigneeName:
+      String(row.request?.assigneeName || "").trim() ||
+      String(row.userName || "").trim() ||
+      null,
+    inputAddress:
+      String(row.request?.inputAddress || "").trim() ||
+      String(row.studentAddress || "").trim() ||
+      null,
+  }));
 }
 
 export async function listPrivateCertificateRequestsByStudent(studentId: number) {
   const db = await getDb();
   if (!db) return [];
 
-  return db
-    .select()
+  const rows = await db
+    .select({
+      request: privateCertificateRequests,
+      studentClientName: students.clientName,
+      studentPhone: students.phone,
+      studentAddress: students.address,
+      userName: users.name,
+    })
     .from(privateCertificateRequests)
+    .leftJoin(students, eq(privateCertificateRequests.studentId, students.id))
+    .leftJoin(users, eq(privateCertificateRequests.assigneeId, users.id))
     .where(eq(privateCertificateRequests.studentId, studentId))
-    .orderBy(desc(privateCertificateRequests.createdAt));
+    .orderBy(desc(privateCertificateRequests.id));
+
+  return rows.map((row: any) => ({
+    ...row.request,
+    clientName:
+      String(row.request?.clientName || "").trim() ||
+      String(row.studentClientName || "").trim() ||
+      null,
+    phone:
+      String(row.request?.phone || "").trim() ||
+      String(row.studentPhone || "").trim() ||
+      null,
+    assigneeName:
+      String(row.request?.assigneeName || "").trim() ||
+      String(row.userName || "").trim() ||
+      null,
+    inputAddress:
+      String(row.request?.inputAddress || "").trim() ||
+      String(row.studentAddress || "").trim() ||
+      null,
+  }));
 }
 
 export async function updatePrivateCertificateMaster(
@@ -6093,12 +6150,28 @@ export async function updatePrivateCertificateRequest(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db
-    .update(privateCertificateRequests)
-    .set(data as any)
-    .where(eq(privateCertificateRequests.id, id));
+  try {
+    console.log("[privateCertificate.update] id =", id);
+    console.log("[privateCertificate.update] data =", data);
 
-  await syncPrivateCertificateSettlementItemByRequestId(id);
+    await db
+      .update(privateCertificateRequests)
+      .set(data as any)
+      .where(eq(privateCertificateRequests.id, id));
+
+    await syncPrivateCertificateSettlementItemByRequestId(id);
+  } catch (err: any) {
+    console.error("[privateCertificate.update ERROR]", err);
+    console.error("[privateCertificate.update ERROR message]", err?.message);
+    console.error("[privateCertificate.update ERROR cause]", err?.cause);
+    console.error("[privateCertificate.update ERROR sqlMessage]", err?.sqlMessage);
+    console.error("[privateCertificate.update ERROR code]", err?.code);
+    console.error("[privateCertificate.update ERROR errno]", err?.errno);
+    console.error("[privateCertificate.update ERROR sql]", err?.sql);
+    console.error("[privateCertificate.update ERROR params]", err?.params);
+
+    throw err;
+  }
 }
 
 export async function deletePrivateCertificateRequest(id: number) {
@@ -6265,9 +6338,11 @@ export async function listPracticeSupportRequests(assigneeId?: number) {
       psr.updatedAt,
 
       s.clientName AS studentClientName,
-      s.phone AS studentPhone,
-      s.assigneeId AS studentAssigneeId,
-      COALESCE(sem.primaryCourse, s.course) AS semesterCourse,
+s.phone AS studentPhone,
+s.assigneeId AS studentAssigneeId,
+s.address AS studentAddress,
+s.detailAddress AS studentDetailAddress,
+COALESCE(sem.primaryCourse, s.course) AS semesterCourse,
 
       p.practiceDate AS planPracticeDate,
       p.practiceHours AS planPracticeHours,
@@ -6290,18 +6365,18 @@ export async function listPracticeSupportRequests(assigneeId?: number) {
   practiceSupportRequestId: row.id ? Number(row.id) : null,
   hasPracticeSupportRequest: !!row.id,
 
-  semesterId: row.semesterId,
-  studentId: row.studentId,
-  semesterOrder: row.semesterOrder,
+  studentId: Number(row.studentId),
+  semesterId: Number(row.semesterId),
+  semesterOrder: Number(row.semesterOrder),
   semesterUpdatedAt: row.semesterUpdatedAt,
 
   clientName: row.clientName || row.studentClientName || "",
   phone: row.phone || row.studentPhone || "",
   course: row.course || row.semesterCourse || row.planDesiredCourse || "",
-  inputAddress: row.inputAddress || "",
-  detailAddress: row.detailAddress || "",
-  assigneeId: row.assigneeId || row.studentAssigneeId || null,
-  assigneeName: row.assigneeName || row.userName || "",
+  inputAddress: row.inputAddress || row.studentAddress || null,
+  detailAddress: row.detailAddress || row.studentDetailAddress || null,
+  assigneeId: row.assigneeId ?? row.studentAssigneeId ?? null,
+  assigneeName: row.assigneeName || row.userName || null,
   managerName: row.managerName || row.userName || "",
   practiceHours: row.practiceHours ?? row.planPracticeHours ?? null,
   practiceDate: row.practiceDate || row.planPracticeDate || null,

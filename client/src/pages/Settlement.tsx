@@ -181,18 +181,20 @@ const {
     ) ?? 0;
 
   const getRevenueTypeLabel = (type: string, status?: string) => {
-    if (status === "refunded") return "환불";
-    if (type === "subject") return "일반과목";
-    if (type === "private_certificate") return "민간자격증";
-    if (type === "practice_support") return "실습배정";
-    return type || "-";
-  };
+  if (status === "refunded") return "환불";
+  if (type === "refund") return "환불";
+  if (type === "subject") return "일반과목";
+  if (type === "private_certificate") return "민간자격증";
+  if (type === "practice_support") return "실습배정";
+  return type || "-";
+};
 
   const openSourceDetail = (row: any) => {
     const studentId = Number(row?.studentId || 0);
     if (!studentId) return;
 
-    const isRefund = row?.settlementStatus === "refunded";
+    const isRefund =
+  row?.settlementStatus === "refunded" || row?.revenueType === "refund";
 
     if (isRefund) {
       navigate(`/students/${studentId}?tab=refund`);

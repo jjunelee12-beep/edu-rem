@@ -279,15 +279,15 @@ const submitPrivateCertRequest = async () => {
       );
 
       await createPrivateCertificateRequestMut.mutateAsync({
-        studentId,
-        assigneeId,
-        clientName,
-        phone,
-        assigneeName: null,
-        privateCertificateMasterId: master?.id ? Number(master.id) : null,
-        certificateName: String(name).trim(),
-        inputAddress: null,
-        note: null,
+  studentId,
+  assigneeId,
+  clientName,
+  phone,
+  assigneeName: String(student.assigneeName || "").trim() || null,
+  privateCertificateMasterId: master?.id ? Number(master.id) : null,
+  certificateName: String(name).trim(),
+  inputAddress: String(student.address || "").trim() || null,
+  note: null,
         requestStatus: "요청",
         feeAmount: "0",
         freelancerInputAmount: "0",
@@ -577,23 +577,25 @@ practiceAddress: "",
 const [refundDialogOpen, setRefundDialogOpen] = useState(false);
 
     const [refundForm, setRefundForm] = useState({
-    refundAmount: "",
-    refundDate: new Date().toISOString().slice(0, 10),
-    reason: "",
-    refundType: "부분환불",
-    attachmentName: "",
-    attachmentUrl: "",
-  });
+  semesterId: "",
+  refundAmount: "",
+  refundDate: new Date().toISOString().slice(0, 10),
+  reason: "",
+  refundType: "부분환불",
+  attachmentName: "",
+  attachmentUrl: "",
+});
 
   const [editingRefundId, setEditingRefundId] = useState<number | null>(null);
   const [editRefundForm, setEditRefundForm] = useState({
-    refundAmount: "",
-    refundDate: "",
-    reason: "",
-    refundType: "부분환불",
-    attachmentName: "",
-    attachmentUrl: "",
-  });
+  semesterId: "",
+  refundAmount: "",
+  refundDate: "",
+  reason: "",
+  refundType: "부분환불",
+  attachmentName: "",
+  attachmentUrl: "",
+});
 
    const createRefundMut = trpc.refund.create.useMutation({
     onSuccess: async () => {
@@ -601,13 +603,14 @@ const [refundDialogOpen, setRefundDialogOpen] = useState(false);
       toast.success("환불 요청 등록 완료");
       setRefundDialogOpen(false);
       setRefundForm({
-        refundAmount: "",
-        refundDate: new Date().toISOString().slice(0, 10),
-        reason: "",
-        refundType: "부분환불",
-        attachmentName: "",
-        attachmentUrl: "",
-      });
+  semesterId: selectedSemester?.id ? String(selectedSemester.id) : "",
+  refundAmount: "",
+  refundDate: new Date().toISOString().slice(0, 10),
+  reason: "",
+  refundType: "부분환불",
+  attachmentName: "",
+  attachmentUrl: "",
+});
     },
     onError: (e) => toast.error(e.message),
   });
@@ -662,6 +665,36 @@ const [refundDialogOpen, setRefundDialogOpen] = useState(false);
       (s: any) => Number(s.semesterOrder) === Number(selectedSemesterOrder)
     );
   }, [sortedSemesters, selectedSemesterOrder]);
+
+const approvedRefundAmountMap = useMemo(() => {
+  const map: Record<number, number> = {};
+
+  (refundList || []).forEach((row: any) => {
+    if (row.approvalStatus !== "승인") return;
+
+    const semesterId = Number(row.semesterId || 0);
+    if (!semesterId) return;
+
+    map[semesterId] = (map[semesterId] || 0) + toNumber(row.refundAmount);
+  });
+
+  return map;
+}, [refundList]);
+
+const pendingRefundAmountMap = useMemo(() => {
+  const map: Record<number, number> = {};
+
+  (refundList || []).forEach((row: any) => {
+    if (row.approvalStatus !== "대기") return;
+
+    const semesterId = Number(row.semesterId || 0);
+    if (!semesterId) return;
+
+    map[semesterId] = (map[semesterId] || 0) + toNumber(row.refundAmount);
+  });
+
+  return map;
+}, [refundList]);
 
 const selectedPracticeSupport = useMemo(() => {
   if (!practiceSupportList?.length) return null;
@@ -1203,19 +1236,21 @@ const savePlan = async () => {
   }, [sortedSemesters, refundList]);
 
   const registrationSummary = useMemo(() => {
-    const sem = selectedSemester;
+  const sem = selectedSemester;
+  const approvedRefund = sem?.id ? approvedRefundAmountMap[Number(sem.id)] || 0 : 0;
 
-    return {
-      status: student?.status || "",
-      startDate: sem?.actualStartDate || "",
-      paymentAmount: toNumber(sem?.actualAmount),
-      subjectCount: sem?.actualSubjectCount ?? "",
-      paymentDate: sem?.actualPaymentDate || "",
-      institution:
-        sem?.actualInstitution ||
-        (sem?.actualInstitutionId ? getInstitutionName(sem.actualInstitutionId) : ""),
-    };
-  }, [selectedSemester, student, institutionList]);
+  return {
+    status: student?.status || "",
+    startDate: sem?.actualStartDate || "",
+    paymentAmount: Math.max(0, toNumber(sem?.actualAmount) - approvedRefund),
+    approvedRefundAmount: approvedRefund,
+    subjectCount: sem?.actualSubjectCount ?? "",
+    paymentDate: sem?.actualPaymentDate || "",
+    institution:
+      sem?.actualInstitution ||
+      (sem?.actualInstitutionId ? getInstitutionName(sem.actualInstitutionId) : ""),
+  };
+}, [selectedSemester, student, institutionList, approvedRefundAmountMap]);
 
   const registrationInstitutionId = useMemo(() => {
     return selectedSemester?.actualInstitutionId || "";
@@ -1673,6 +1708,11 @@ const existingPlanSubjectMap = useMemo(() => {
               />
             </div>
 
+{registrationSummary.approvedRefundAmount > 0 && (
+  <p className="mt-1 text-[11px] text-red-600">
+    환불 -{registrationSummary.approvedRefundAmount.toLocaleString()}원
+  </p>
+)}
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">과목 수</p>
               <EditableCell
@@ -1786,13 +1826,19 @@ const existingPlanSubjectMap = useMemo(() => {
 </Button>
 
   <Button
-    variant="outline"
-    size="sm"
-    onClick={() => setRefundDialogOpen(true)}
-    className="gap-1 text-red-600 border-red-200 hover:bg-red-50"
-  >
-    환불 등록
-  </Button>
+  variant="outline"
+  size="sm"
+  onClick={() => {
+    setRefundForm((prev) => ({
+      ...prev,
+      semesterId: selectedSemester?.id ? String(selectedSemester.id) : "",
+    }));
+    setRefundDialogOpen(true);
+  }}
+  className="gap-1 text-red-600 border-red-200 hover:bg-red-50"
+>
+  환불 등록
+</Button>
 
   <Button variant="outline" size="sm" onClick={openAddSemester} className="gap-1">
     <Plus className="h-3.5 w-3.5" /> 학기 추가
@@ -1828,6 +1874,19 @@ const existingPlanSubjectMap = useMemo(() => {
                   </tr>
                 ) : (
                   semesters.map((sem: any) => (
+
+const approvedRefundAmount = approvedRefundAmountMap[Number(sem.id)] || 0;
+const pendingRefundAmount = pendingRefundAmountMap[Number(sem.id)] || 0;
+
+const displayPlannedAmount = Math.max(
+  0,
+  toNumber(sem.plannedAmount) - approvedRefundAmount
+);
+
+const displayActualAmount = Math.max(
+  0,
+  toNumber(sem.actualAmount) - approvedRefundAmount
+);
                     <tr key={sem.id} className={`border-b last:border-0 ${sem.isCompleted ? "bg-emerald-50/50" : ""}`}>
                       <td className="px-3 py-1.5 font-medium text-sm">
                         {sem.semesterOrder}학기
@@ -1871,10 +1930,26 @@ const existingPlanSubjectMap = useMemo(() => {
                       </td>
 
                       <td className="px-1 py-0.5">
-                        <EditableCell
-                          value={sem.plannedAmount ? Number(sem.plannedAmount).toLocaleString() : ""}
-                          onBlur={(v) => handleSemFieldBlur(sem.id, "plannedAmount", v.replace(/[^0-9]/g, ""))}
-                        />
+                        <div className="space-y-1">
+  <EditableCell
+    value={displayPlannedAmount ? displayPlannedAmount.toLocaleString() : ""}
+    onBlur={(v) => {
+      const nextValue = v.replace(/[^0-9]/g, "");
+      const nextGross = toNumber(nextValue) + approvedRefundAmount;
+      handleSemFieldBlur(sem.id, "plannedAmount", String(nextGross));
+    }}
+  />
+  {approvedRefundAmount > 0 && (
+    <div className="text-[11px] text-red-600">
+      환불 -{approvedRefundAmount.toLocaleString()}원
+    </div>
+  )}
+  {pendingRefundAmount > 0 && (
+    <div className="text-[11px] text-amber-600">
+      승인대기 {pendingRefundAmount.toLocaleString()}원
+    </div>
+  )}
+</div>
                       </td>
 
                       <td className="px-1 py-0.5">
@@ -1918,11 +1993,27 @@ const existingPlanSubjectMap = useMemo(() => {
                       </td>
 
                       <td className="px-1 py-0.5">
-                        <EditableCell
-                          value={sem.actualAmount ? Number(sem.actualAmount).toLocaleString() : ""}
-                          onBlur={(v) => handleSemFieldBlur(sem.id, "actualAmount", v.replace(/[^0-9]/g, ""))}
-                          className="text-primary font-medium"
-                        />
+                        <div className="space-y-1">
+  <EditableCell
+    value={displayActualAmount ? displayActualAmount.toLocaleString() : ""}
+    onBlur={(v) => {
+      const nextValue = v.replace(/[^0-9]/g, "");
+      const nextGross = toNumber(nextValue) + approvedRefundAmount;
+      handleSemFieldBlur(sem.id, "actualAmount", String(nextGross));
+    }}
+    className="text-primary font-medium"
+  />
+  {approvedRefundAmount > 0 && (
+    <div className="text-[11px] text-red-600">
+      환불 -{approvedRefundAmount.toLocaleString()}원
+    </div>
+  )}
+  {pendingRefundAmount > 0 && (
+    <div className="text-[11px] text-amber-600">
+      승인대기 {pendingRefundAmount.toLocaleString()}원
+    </div>
+  )}
+</div>
                       </td>
 
                       <td className="px-1 py-0.5">
@@ -2140,10 +2231,11 @@ const existingPlanSubjectMap = useMemo(() => {
 
     <p className="mt-1">
       <span className="font-medium">주소:</span>{" "}
-      {selectedPracticeSupport?.inputAddress ||
-        selectedPracticeSupport?.detailAddress ||
-        (student as any)?.detailAddress ||
-        "-"}{" "}
+     {selectedPracticeSupport?.inputAddress ||
+  selectedPracticeSupport?.detailAddress ||
+  (student as any)?.address ||
+  (student as any)?.detailAddress ||
+  "-"}{" "}
       · <span className="font-medium">담당자:</span>{" "}
       {selectedPracticeSupport?.managerName ||
         selectedPracticeSupport?.assigneeName ||
@@ -3107,6 +3199,7 @@ const existingPlanSubjectMap = useMemo(() => {
                 <thead>
                   <tr className="border-b bg-red-50/50">
                     <th className="px-4 py-2 text-left font-medium text-muted-foreground">환불일</th>
+<th className="px-4 py-2 text-sm text-left">대상 학기</th>
                     <th className="px-4 py-2 text-left font-medium text-muted-foreground">유형</th>
                     <th className="px-4 py-2 text-right font-medium text-muted-foreground">환불 금액</th>
                     <th className="px-4 py-2 text-left font-medium text-muted-foreground">사유</th>
@@ -3257,6 +3350,7 @@ const existingPlanSubjectMap = useMemo(() => {
                                   updateRefundMut.mutate({
                                     id: r.id,
                                     refundAmount: editRefundForm.refundAmount,
+semesterId: editRefundForm.semesterId ? Number(editRefundForm.semesterId) : null,
                                     refundDate: editRefundForm.refundDate,
                                     reason: editRefundForm.reason || undefined,
                                     refundType: editRefundForm.refundType || undefined,
@@ -3288,6 +3382,16 @@ const existingPlanSubjectMap = useMemo(() => {
                                 : new Date(r.refundDate).toISOString().slice(0, 10)
                               : "-"}
                           </td>
+<td className="px-4 py-2 text-sm">
+  {r.semesterId
+    ? (() => {
+        const sem = sortedSemesters.find(
+          (x: any) => Number(x.id) === Number(r.semesterId)
+        );
+        return sem ? `${sem.semesterOrder}학기` : "-";
+      })()
+    : "-"}
+</td>
                           <td className="px-4 py-2 text-sm">{r.refundType || "-"}</td>
                           <td className="px-4 py-2 text-right text-red-600 font-medium">
                             -{Number(r.refundAmount).toLocaleString()}원
@@ -3332,6 +3436,7 @@ const existingPlanSubjectMap = useMemo(() => {
                                   setEditingRefundId(r.id);
                                   setEditRefundForm({
                                     refundAmount: r.refundAmount?.toString() || "",
+semesterId: r.semesterId ? String(r.semesterId) : "",
                                     refundDate: r.refundDate
                                       ? typeof r.refundDate === "string"
                                         ? r.refundDate.slice(0, 10)
@@ -3581,6 +3686,47 @@ const existingPlanSubjectMap = useMemo(() => {
               </select>
             </div>
 
+<div className="space-y-1">
+  <Label className="text-xs">환불 대상 학기</Label>
+  <Select
+    value={refundForm.semesterId}
+    onValueChange={(v) =>
+      setRefundForm((prev) => ({
+        ...prev,
+        semesterId: v,
+      }))
+    }
+  >
+    <SelectTrigger>
+      <SelectValue placeholder="학기 선택" />
+    </SelectTrigger>
+    <SelectContent>
+      {sortedSemesters.map((sem: any) => (
+        <SelectItem key={sem.id} value={String(sem.id)}>
+          {sem.semesterOrder}학기
+          {sem.actualStartDate
+            ? ` (${formatDate(sem.actualStartDate)})`
+            : sem.plannedMonth
+            ? ` (${formatPlannedMonth(sem.plannedMonth)})`
+            : ""}
+          {sem.actualInstitution ||
+          (sem.actualInstitutionId
+            ? ` / ${getInstitutionName(sem.actualInstitutionId)}`
+            : sem.plannedInstitutionId
+            ? ` / ${getInstitutionName(sem.plannedInstitutionId)}`
+            : "")
+            ? ` / ${
+                sem.actualInstitution ||
+                getInstitutionName(sem.actualInstitutionId) ||
+                getInstitutionName(sem.plannedInstitutionId)
+              }`
+            : ""}
+        </SelectItem>
+      ))}
+    </SelectContent>
+  </Select>
+</div>
+
             <div className="space-y-1">
               <Label className="text-xs">환불 금액</Label>
               <Input
@@ -3696,15 +3842,21 @@ const existingPlanSubjectMap = useMemo(() => {
                   return;
                 }
 
-                createRefundMut.mutate({
-                  studentId,
-                  refundAmount: refundForm.refundAmount,
-                  refundDate: refundForm.refundDate,
-                  reason: refundForm.reason || undefined,
-                  refundType: refundForm.refundType || undefined,
-                  attachmentName: refundForm.attachmentName || undefined,
-                  attachmentUrl: refundForm.attachmentUrl || undefined,
-                } as any);
+                if (!refundForm.semesterId) {
+  toast.error("환불 대상 학기를 선택해주세요.");
+  return;
+}
+
+createRefundMut.mutate({
+  studentId,
+  semesterId: Number(refundForm.semesterId),
+  refundAmount: refundForm.refundAmount,
+  refundDate: refundForm.refundDate,
+  reason: refundForm.reason,
+  refundType: refundForm.refundType,
+  attachmentName: refundForm.attachmentName,
+  attachmentUrl: refundForm.attachmentUrl,
+} as any);
               }}
               disabled={createRefundMut.isPending}
             >

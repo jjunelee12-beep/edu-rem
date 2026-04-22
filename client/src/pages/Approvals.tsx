@@ -264,21 +264,22 @@ const rejectedSemesters = semesterRows.filter(
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">학생</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">환불일</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">환불유형</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">환불금액</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">사유</th>
-                  <th className="px-4 py-2.5 text-center font-medium text-muted-foreground">첨부</th>
-                  <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">담당자</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">처리</th>
-                </tr>
-              </thead>
+  <tr className="border-b bg-muted/50">
+    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">학생</th>
+    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">학기</th>
+    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">환불일</th>
+    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">환불유형</th>
+    <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">환불금액</th>
+    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">사유</th>
+    <th className="px-4 py-2.5 text-center font-medium text-muted-foreground">첨부</th>
+    <th className="px-4 py-2.5 text-left font-medium text-muted-foreground">담당자</th>
+    <th className="px-4 py-2.5 text-right font-medium text-muted-foreground">처리</th>
+  </tr>
+</thead>
               <tbody>
                 {!pendingRefunds?.length ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                    <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
                       환불 승인 대기 건이 없습니다.
                     </td>
                   </tr>
@@ -286,13 +287,30 @@ const rejectedSemesters = semesterRows.filter(
                   pendingRefunds.map((r: any) => (
                     <tr key={r.id} className="border-b last:border-0 hover:bg-muted/20">
                       <td className="px-4 py-3">
-                        <button
-                          className="font-medium text-primary hover:underline"
-                          onClick={() => setLocation(`/students/${r.studentId}`)}
-                        >
-                          {r.studentId}
-                        </button>
-                      </td>
+  <button
+    className="font-medium text-primary hover:underline"
+    onClick={() => setLocation(`/students/${r.studentId}`)}
+  >
+    {r.clientName || `학생 #${r.studentId}`}
+  </button>
+</td>
+
+<td className="px-4 py-3 text-muted-foreground">
+  {r.semesterOrder
+    ? `${r.semesterOrder}학기`
+    : "-"}
+  {(r.actualStartDate || r.plannedMonth) && (
+    <div className="text-[11px] text-muted-foreground/70">
+      {r.actualStartDate
+        ? formatDate(r.actualStartDate)
+        : r.plannedMonth
+        ? String(r.plannedMonth).length === 6
+          ? `${String(r.plannedMonth).slice(0, 4)}-${String(r.plannedMonth).slice(4)}`
+          : String(r.plannedMonth)
+        : ""}
+    </div>
+  )}
+</td>
                       <td className="px-4 py-3 text-muted-foreground">{formatDate(r.refundDate)}</td>
                       <td className="px-4 py-3">{r.refundType || "-"}</td>
                       <td className="px-4 py-3 text-right font-medium text-red-600">

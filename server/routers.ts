@@ -280,20 +280,10 @@ if (input.freelancerInputAmount !== undefined) {
         if (input.attachmentName !== undefined) data.attachmentName = input.attachmentName?.trim() || null;
         if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl?.trim() || null;
 
-        await db.updatePrivateCertificateRequest(input.id, data);
-        if (
-          input.paymentStatus !== undefined ||
-          input.paidAt !== undefined ||
-          input.feeAmount !== undefined ||
-          input.freelancerInputAmount !== undefined ||
-          input.privateCertificateMasterId !== undefined
-        ) {
-          await db.syncPrivateCertificateSettlementItemByRequestId(
-            Number(input.id),
-            Number(ctx.user.id)
-          );
-        }
+console.log("[privateCertificate.update router] input =", input);
+console.log("[privateCertificate.update router] data =", data);
 
+        await db.updatePrivateCertificateRequest(input.id, data);
         return { success: true };
       }),
 
@@ -3451,7 +3441,7 @@ throw new Error("관리자, 호스트 또는 슈퍼호스트만 확인할 수 �
       .input(
         z.object({
           studentId: z.number(),
-          semesterId: z.number().optional(),
+          semesterId: z.number().optional().nullable(),
           refundAmount: z.string(),
           refundDate: z.string(),
           reason: z.string().optional(),
@@ -3571,6 +3561,7 @@ return { success: true };
       .input(
         z.object({
           id: z.number(),
+semesterId: input.semesterId ?? null,
           refundAmount: z.string().optional(),
           refundDate: z.string().optional(),
           reason: z.string().optional(),

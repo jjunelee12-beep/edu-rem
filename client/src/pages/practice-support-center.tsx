@@ -229,6 +229,10 @@ function normalizeNumberText(value: string) {
     .trim();
 }
 
+function getTodayDateString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function normalizeBooleanText(value: string) {
   return String(value || "").trim().toLowerCase() === "true";
 }
@@ -378,6 +382,84 @@ const {
   onError: (e) => toast.error(e.message),
 });
 
+const upsertPracticeSupportByStudentMut =
+  trpc.practiceSupport.upsertByStudent.useMutation({
+    onSuccess: async () => {
+      await utils.practiceSupport.list.invalidate();
+      toast.success("실습배정지원센터 요청이 생성/저장되었습니다.");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+const patchPracticeRow = async (row: any, patch: Record<string, any>) => {
+  const requestId = Number(row?.id || row?.practiceSupportRequestId || 0);
+  const hasRequest = requestId > 0;
+
+  if (hasRequest) {
+    await updatePracticeSupportMut.mutateAsync({
+      id: requestId,
+      ...patch,
+    } as any);
+    return;
+  }
+
+  const studentId = Number(row?.studentId || 0);
+  const semesterId = row?.semesterId ? Number(row.semesterId) : null;
+  const assigneeId = Number(row?.assigneeId || row?.studentAssigneeId || 0);
+
+  const clientName = String(row?.clientName || row?.studentClientName || "").trim();
+  const phone = String(row?.phone || row?.studentPhone || "").trim();
+  const course = String(
+    row?.course || row?.semesterCourse || row?.planDesiredCourse || ""
+  ).trim();
+
+  if (!studentId || !assigneeId || !clientName || !phone || !course) {
+    throw new Error("실습배정 요청 생성에 필요한 학생 기본 정보가 부족합니다.");
+  }
+
+  await upsertPracticeSupportByStudentMut.mutateAsync({
+    studentId,
+    semesterId,
+    assigneeId,
+    clientName,
+    phone,
+    course,
+    inputAddress:
+      patch.inputAddress !== undefined
+        ? patch.inputAddress
+        : row?.inputAddress || row?.studentAddress || null,
+    detailAddress:
+      patch.detailAddress !== undefined
+        ? patch.detailAddress
+        : row?.detailAddress || row?.studentDetailAddress || null,
+    assigneeName: row?.assigneeName || row?.userName || null,
+    managerName:
+      patch.managerName !== undefined
+        ? patch.managerName
+        : row?.managerName || row?.assigneeName || row?.userName || null,
+    practiceHours:
+      patch.practiceHours !== undefined
+        ? patch.practiceHours
+        : row?.practiceHours ?? row?.planPracticeHours ?? null,
+    practiceDate:
+      patch.practiceDate !== undefined
+        ? patch.practiceDate
+        : row?.practiceDate || row?.planPracticeDate || null,
+    includeEducationCenter:
+      patch.includeEducationCenter !== undefined
+        ? patch.includeEducationCenter
+        : Boolean(row?.includeEducationCenter ?? true),
+    includePracticeInstitution:
+      patch.includePracticeInstitution !== undefined
+        ? patch.includePracticeInstitution
+        : Boolean(row?.includePracticeInstitution ?? true),
+    coordinationStatus:
+      patch.coordinationStatus !== undefined
+        ? patch.coordinationStatus
+        : (row?.coordinationStatus || row?.semesterPracticeStatus || "미섭외"),
+  } as any);
+};
+
   const updateEducationAvailabilityMut =
     trpc.practiceEducationCenter.updateAvailability.useMutation({
       onSuccess: async () => {
@@ -388,6 +470,8 @@ const {
       },
       onError: (e) => toast.error(e.message || "실습교육원 설정 저장 실패"),
     });
+
+
 
   const updateInstitutionAvailabilityMut =
     trpc.practiceInstitution.updateAvailability.useMutation({
@@ -563,14 +647,13 @@ useEffect(() => {
   });
 }, [practiceSupportList, search, selectedPracticeMonth, statusFilter]);
 
-
-const stats = useMemo(() => {
-
 const handleStatCardClick = (
   nextStatus: "전체" | "미섭외" | "섭외중" | "섭외완료"
 ) => {
   setStatusFilter(nextStatus);
 };
+
+const stats = useMemo(() => {
   const total = filteredList.length;
   const pending = filteredList.filter(
     (row: any) => String(row.coordinationStatus || "미섭외") === "미섭외"
@@ -622,70 +705,85 @@ practiceDate: row.practiceDate || "",
     setDetailOpen(true);
   };
 
-  const saveDetail = () => {
+  const saveDetail = async () => {
+  if (
+    selectedRow?.paymentStatus === "결제" &&
+    Number(selectedRow?.feeAmount || 0) < 0
+  ) {
+    toast.error("금액은 0원 이상이어야 합니다.");
+    return;
+  }
 
-if (
-  selectedRow?.paymentStatus === "결제" &&
-  Number(selectedRow?.feeAmount || 0) < 0
-) {
-  toast.error("금액은 0원 이상이어야 합니다.");
-  return;
-}
+  if (!selectedRow) return;
 
-    if (!selectedRow?.id) return;
+  try {
+    await patchPracticeRow(selectedRow, {
+  inputAddress: selectedRow.inputAddress || null,
+  detailAddress: selectedRow.detailAddress || null,
+  managerName: selectedRow.managerName || null,
+  practiceHours: selectedRow.practiceHours
+    ? Number(selectedRow.practiceHours)
+    : null,
+  practiceDate: selectedRow.practiceDate || null,
+  coordinationStatus:
+    selectedRow.coordinationStatus as PracticeCoordinationStatus,
+  includeEducationCenter: !!selectedRow.includeEducationCenter,
+  includePracticeInstitution: !!selectedRow.includePracticeInstitution,
+  paymentStatus: selectedRow.paidAt
+    ? "결제"
+    : (selectedRow.paymentStatus || "미결제"),
+  paidAt: selectedRow.paidAt || null,
+});
 
-    updatePracticeSupportMut.mutate({
-      id: selectedRow.id,
-      inputAddress: selectedRow.inputAddress || undefined,
-      detailAddress: selectedRow.detailAddress || undefined,
-      managerName: selectedRow.managerName || undefined,
-      practiceHours: selectedRow.practiceHours
-        ? Number(selectedRow.practiceHours)
-        : undefined,
-      practiceDate: selectedRow.practiceDate || undefined,
-      coordinationStatus:
-        selectedRow.coordinationStatus as PracticeCoordinationStatus,
-      selectedEducationCenterId: selectedRow.selectedEducationCenterId || undefined,
-      selectedEducationCenterName:
-        selectedRow.selectedEducationCenterName || undefined,
-      selectedEducationCenterAddress:
-        selectedRow.selectedEducationCenterAddress || undefined,
-      selectedEducationCenterDistanceKm:
-        selectedRow.selectedEducationCenterDistanceKm || undefined,
-      selectedPracticeInstitutionId:
-        selectedRow.selectedPracticeInstitutionId || undefined,
-      selectedPracticeInstitutionName:
-        selectedRow.selectedPracticeInstitutionName || undefined,
-      selectedPracticeInstitutionAddress:
-        selectedRow.selectedPracticeInstitutionAddress || undefined,
-      selectedPracticeInstitutionDistanceKm:
-        selectedRow.selectedPracticeInstitutionDistanceKm || undefined,
-      feeAmount: selectedRow.feeAmount || undefined,
-      paymentStatus: selectedRow.paymentStatus as PaymentStatus,
-      note: selectedRow.note || undefined,
-    } as any);
-  };
+    setDetailOpen(false);
+    setSelectedRow(null);
+  } catch (e: any) {
+    toast.error(e.message || "실습배정 저장 중 오류가 발생했습니다.");
+  }
+};
 
-  const handleQuickCoordinationChange = (
-    id: number,
-    nextStatus: PracticeCoordinationStatus
-  ) => {
-    updatePracticeSupportMut.mutate({
-      id,
+  const handleQuickCoordinationChange = async (
+  row: any,
+  nextStatus: PracticeCoordinationStatus
+) => {
+  try {
+    await patchPracticeRow(row, {
       coordinationStatus: nextStatus,
-    } as any);
-  };
+    });
+  } catch (e: any) {
+    toast.error(e.message || "실습섭외 상태 저장 중 오류가 발생했습니다.");
+  }
+};
 
-  const handleQuickPaymentChange = (row: any, nextStatus: PaymentStatus) => {
+  const handleQuickPaymentChange = async (row: any, nextStatus: PaymentStatus) => {
   if (nextStatus === "결제" && Number(row.feeAmount || 0) < 0) {
-  toast.error("금액은 0원 이상이어야 합니다.");
-  return;
-}
+    toast.error("금액은 0원 이상이어야 합니다.");
+    return;
+  }
 
-  updatePracticeSupportMut.mutate({
-    id: row.id,
-    paymentStatus: nextStatus,
-  } as any);
+  try {
+    if (nextStatus === "결제") {
+      await patchPracticeRow(row, {
+        paymentStatus: "결제",
+        paidAt: row.paidAt ? String(row.paidAt).slice(0, 10) : getTodayDateString(),
+      });
+      return;
+    }
+
+    if (nextStatus === "미결제") {
+      await patchPracticeRow(row, {
+        paymentStatus: "미결제",
+        paidAt: null,
+      });
+      return;
+    }
+
+    await patchPracticeRow(row, {
+      paymentStatus: nextStatus,
+    });
+  } catch (e: any) {
+    toast.error(e.message || "결제 상태 저장 중 오류가 발생했습니다.");
+  }
 };
 
   const buildFinderBaseResults = (row?: any | null): FinderItem[] => {
@@ -763,33 +861,61 @@ if (educationCategoryId) {
 }
 };
 
-  const openFinder = (row?: any | null) => {
-refetchPracticeInstitutions();
-refetchEducationCenters();
-refetchInstitutionCategories();
-refetchEducationCategories();
+  const openFinder = async (row?: any | null) => {
+  try {
+    let targetRow = row || null;
 
-    const baseAddress = row?.inputAddress || row?.address || "";
+    if (targetRow) {
+      const hasRequest = Number(targetRow.id || targetRow.practiceSupportRequestId || 0) > 0;
 
-    setFinderTargetRow(row || null);
+      if (!hasRequest) {
+        await patchPracticeRow(targetRow, {});
+        await utils.practiceSupport.list.invalidate();
+
+        const latestList = await utils.practiceSupport.list.fetch();
+        const matched = (latestList || []).find(
+          (item: any) =>
+            Number(item.studentId) === Number(targetRow.studentId) &&
+            Number(item.semesterId || 0) === Number(targetRow.semesterId || 0)
+        );
+
+        if (matched) {
+          targetRow = matched;
+        }
+      }
+    }
+
+    await Promise.all([
+      refetchPracticeInstitutions(),
+      refetchEducationCenters(),
+      refetchInstitutionCategories(),
+      refetchEducationCategories(),
+    ]);
+
+    const baseAddress = targetRow?.inputAddress || targetRow?.address || "";
+
+    setFinderTargetRow(targetRow || null);
     setFinderAddress(baseAddress.trim());
-   setFinderIncludeEducationCenter(true);
-setFinderIncludePracticeInstitution(true);
-setFinderEducationCategoryId(null);
-setFinderInstitutionCategoryId(null);
-setFinderRecommendedEducationCategoryId(null);
-setFinderRecommendedInstitutionCategoryId(null);
-setFilterCategory(null);
+    setFinderIncludeEducationCenter(true);
+    setFinderIncludePracticeInstitution(true);
+    setFinderEducationCategoryId(null);
+    setFinderInstitutionCategoryId(null);
+    setFinderRecommendedEducationCategoryId(null);
+    setFinderRecommendedInstitutionCategoryId(null);
+    setFilterCategory(null);
 
-applyRecommendedFinderCategory(row);
+    applyRecommendedFinderCategory(targetRow);
 
-setFinderResults(buildFinderBaseResults(row));
+    setFinderResults(buildFinderBaseResults(targetRow));
     setSelectedFinderItem(null);
     setFinderSearchPoint(null);
     setFinderResolvedAddress("");
     setFinderSettingsItem(null);
     setFinderOpen(true);
-  };
+  } catch (e: any) {
+    toast.error(e.message || "실습찾기 준비 중 오류가 발생했습니다.");
+  }
+};
 
   const openFinderSettings = (item: FinderItem) => {
     setFinderSettingsItem(item);
@@ -1834,9 +1960,12 @@ useEffect(() => {
                 </thead>
 
                 <tbody>
-                  {filteredList.map((row: any, idx: number) => (
-                    <tr
-  key={row.id}
+                  {filteredList.map((row: any, idx: number) => {
+  const hasRequest = Number(row.id || row.practiceSupportRequestId || 0) > 0;
+
+  return (
+    <tr
+      key={`${row.studentId}-${row.semesterId}-${row.id || "new"}`}
   className={`border-b last:border-0 hover:bg-muted/20 ${
     row.coordinationStatus === "미섭외" ? "bg-amber-50/40" : ""
   }`}
@@ -1897,12 +2026,9 @@ useEffect(() => {
                       <td className="px-3 py-3">
                         <Select
                           value={row.coordinationStatus || "미섭외"}
-                          onValueChange={(v) =>
-                            handleQuickCoordinationChange(
-                              row.id,
-                              v as PracticeCoordinationStatus
-                            )
-                          }
+                          onValueChange={(value) =>
+  handleQuickCoordinationChange(row, value as PracticeCoordinationStatus)
+}
                         >
                           <SelectTrigger className="h-9">
                             <SelectValue />
@@ -1917,22 +2043,19 @@ useEffect(() => {
 
 <td className="px-3 py-3 text-right">
   <Input
+    disabled={!hasRequest}
     className="ml-auto h-9 w-[110px] text-right"
-    value={String(row.feeAmount ?? "0")}
-    onChange={(e) => {
-      const next = e.target.value.replace(/[^0-9]/g, "");
-
-      utils.practiceSupport.list.setData(undefined, (old: any) =>
-        (old || []).map((item: any) =>
-          item.id === row.id ? { ...item, feeAmount: next } : item
-        )
-      );
-    }}
+    defaultValue={String(row.feeAmount ?? "0")}
+    inputMode="numeric"
     onBlur={(e) => {
-      updatePracticeSupportMut.mutate({
-        id: row.id,
-        feeAmount: e.target.value || "0",
-      } as any);
+      const next = normalizeNumberText(e.target.value).replace(/[^0-9]/g, "");
+      const current = normalizeNumberText(String(row.feeAmount ?? "0")).replace(/[^0-9]/g, "");
+
+      if (next === current) return;
+
+      patchPracticeRow(row, {
+        feeAmount: next || "0",
+      });
     }}
   />
 </td>
@@ -1940,11 +2063,12 @@ useEffect(() => {
 
                       <td className="px-3 py-3">
                         <Select
-                          value={row.paymentStatus || "미결제"}
-                          onValueChange={(v) =>
-  handleQuickPaymentChange(row, v as PaymentStatus)
-}
-                        >
+  value={row.paymentStatus || "미결제"}
+  disabled={!hasRequest}
+  onValueChange={(value) =>
+    handleQuickPaymentChange(row, value as PaymentStatus)
+  }
+>
                           <SelectTrigger className="h-9">
                             <SelectValue />
                           </SelectTrigger>
@@ -1986,6 +2110,7 @@ useEffect(() => {
                         </div>
                       </td>
                     </tr>
+);
                   ))}
                 </tbody>
               </table>
@@ -2207,14 +2332,20 @@ useEffect(() => {
   금액 입력 후 결제 상태를 "결제"로 저장하면 정산 리포트에 회사 매출로 자동 반영됩니다.
 </p>
                     <Select
-                      value={selectedRow.paymentStatus || "미결제"}
-                      onValueChange={(v) =>
-                        setSelectedRow((prev: any) => ({
-                          ...prev,
-                          paymentStatus: v,
-                        }))
-                      }
-                    >
+  value={selectedRow.paymentStatus || "미결제"}
+  onValueChange={(value) =>
+    setSelectedRow((prev: any) => ({
+      ...prev,
+      paymentStatus: value,
+      paidAt:
+        value === "결제"
+          ? (prev?.paidAt ? String(prev.paidAt).slice(0, 10) : getTodayDateString())
+          : value === "미결제"
+          ? null
+          : prev?.paidAt || null,
+    }))
+  }
+>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
