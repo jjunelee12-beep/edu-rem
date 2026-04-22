@@ -186,7 +186,9 @@ const rejectedSemesters = semesterRows.filter(
     <td className="px-4 py-3">{sem.primaryCourse || sem.course || "-"}</td>
     <td className="px-4 py-3">{sem.semesterOrder}학기</td>
     <td className="px-4 py-3">{formatDate(sem.actualStartDate)}</td>
-    <td className="px-4 py-3">{sem.actualInstitution || sem.institutionName || "-"}</td>
+    <td className="px-4 py-3">
+  {sem.institutionDisplayName || sem.institution || sem.actualInstitution || sem.plannedInstitution || "-"}
+</td>
     <td className="px-4 py-3 text-right font-medium">
       {formatCurrency(sem.actualAmount)}
     </td>
@@ -395,7 +397,9 @@ rejectRefundMutation.mutate({ id: Number(r.id) })
                 <td className="px-4 py-3">{sem.primaryCourse || sem.course || "-"}</td>
                 <td className="px-4 py-3">{sem.semesterOrder}학기</td>
                 <td className="px-4 py-3">{formatDate(sem.actualStartDate)}</td>
-                <td className="px-4 py-3">{sem.actualInstitution || sem.institutionName || "-"}</td>
+                <td className="px-4 py-3">
+  {sem.institutionDisplayName || sem.institution || sem.actualInstitution || sem.plannedInstitution || "-"}
+</td>
                 <td className="px-4 py-3 text-right font-medium">
                   {formatCurrency(sem.actualAmount)}
                 </td>
@@ -473,7 +477,9 @@ rejectRefundMutation.mutate({ id: Number(r.id) })
                 <td className="px-4 py-3">{sem.primaryCourse || sem.course || "-"}</td>
                 <td className="px-4 py-3">{sem.semesterOrder}학기</td>
                 <td className="px-4 py-3">{formatDate(sem.actualStartDate)}</td>
-                <td className="px-4 py-3">{sem.actualInstitution || sem.institutionName || "-"}</td>
+                <td className="px-4 py-3">
+  {sem.institutionDisplayName || sem.institution || sem.actualInstitution || sem.plannedInstitution || "-"}
+</td>
                 <td className="px-4 py-3 text-right font-medium">
                   {formatCurrency(sem.actualAmount)}
                 </td>

@@ -1,4 +1,4 @@
-import { eq, and, sql, desc, like, asc } from "drizzle-orm";
+import { eq, and, or, sql, desc, like, asc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -2618,15 +2618,35 @@ if (plannedMonthFilter) conditions.push(sql`sem.plannedMonth = ${plannedMonthFil
       ? sql`WHERE ${sql.join(conditions, sql` AND `)}`
       : sql``;
 
-  const [rows] = await db.execute(sql`
-   SELECT sem.*,
-  s.clientName,
-  s.phone,
-  COALESCE(sem.primaryCourse, s.course) as course,
-  s.assigneeId,
+    const [rows] = await db.execute(sql`
+    SELECT sem.*,
+      s.clientName,
+      s.phone,
+      COALESCE(sem.primaryCourse, s.course) as course,
+      s.assigneeId,
       s.status as studentStatus,
       s.approvalStatus,
       u.name as assigneeName,
+
+      COALESCE(
+        actualEi.name,
+        sem.actualInstitution,
+        plannedEi.name,
+        sem.plannedInstitution,
+        '-'
+      ) as institutionDisplayName,
+
+      COALESCE(
+        actualEi.name,
+        sem.actualInstitution,
+        '-'
+      ) as actualInstitutionDisplayName,
+
+      COALESCE(
+        plannedEi.name,
+        sem.plannedInstitution,
+        '-'
+      ) as plannedInstitutionDisplayName,
 
       COALESCE(
         (SELECT SUM(r.refundAmount)
@@ -2639,14 +2659,27 @@ if (plannedMonthFilter) conditions.push(sql`sem.plannedMonth = ${plannedMonthFil
       (SELECT p.hasPractice FROM plans p WHERE p.studentId = s.id LIMIT 1) as hasPractice,
       (SELECT p.practiceHours FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceHours,
       sem.practiceStatus as practiceStatus
-    FROM semesters sem
+        FROM semesters sem
     INNER JOIN students s ON sem.studentId = s.id
     LEFT JOIN users u ON u.id = s.assigneeId
+    LEFT JOIN education_institutions actualEi
+      ON actualEi.id = sem.actualInstitutionId
+    LEFT JOIN education_institutions plannedEi
+      ON plannedEi.id = sem.plannedInstitutionId
     ${whereClause}
     ORDER BY sem.plannedMonth ASC, s.clientName ASC
   `);
 
-  return (rows as unknown) as any[];
+    return ((rows as unknown) as any[]).map((row: any) => ({
+    ...row,
+    institution:
+      row.institutionDisplayName ||
+      row.actualInstitutionDisplayName ||
+      row.plannedInstitutionDisplayName ||
+      row.actualInstitution ||
+      row.plannedInstitution ||
+      "-",
+  }));
 }
 
 // ─── Plans ───────────────────────────────────────────────────────────
@@ -4028,6 +4061,17 @@ const prevEndDate = startDate;
     conditions.push(eq(settlementItems.assigneeId, params.assigneeId));
   }
 
+  const subjectApprovedCondition = or(
+    sql`${settlementItems.revenueType} <> 'subject'`,
+    and(
+      eq(settlementItems.revenueType, "subject"),
+      eq(semesters.id, settlementItems.sourceId),
+      eq(semesters.approvalStatus, "승인")
+    )
+  );
+
+  conditions.push(subjectApprovedCondition);
+
   const rows = await db
     .select({
       id: settlementItems.id,
@@ -4054,7 +4098,14 @@ institutionName: settlementItems.institutionName,
       course: students.course,
       assigneeName: users.name,
     })
-    .from(settlementItems)
+        .from(settlementItems)
+    .leftJoin(
+      semesters,
+      and(
+        eq(settlementItems.revenueType, "subject"),
+        eq(semesters.id, settlementItems.sourceId)
+      )
+    )
     .leftJoin(students, eq(settlementItems.studentId, students.id))
     .leftJoin(users, eq(settlementItems.assigneeId, users.id))
     .where(and(...conditions))
@@ -4582,6 +4633,17 @@ export async function getSettlementReport(
   if (filterAssigneeId) {
     conditions.push(eq(settlementItems.assigneeId, filterAssigneeId));
   }
+
+  const subjectApprovedCondition = or(
+    sql`${settlementItems.revenueType} <> 'subject'`,
+    and(
+      eq(settlementItems.revenueType, "subject"),
+      eq(semesters.id, settlementItems.sourceId),
+      eq(semesters.approvalStatus, "승인")
+    )
+  );
+
+  conditions.push(subjectApprovedCondition);
      
   const rows = await db
     .select({
@@ -4727,7 +4789,14 @@ totalRefundCompanyProfit: sql<string>`
   ), 0)
 `,
     })
-    .from(settlementItems)
+        .from(settlementItems)
+    .leftJoin(
+      semesters,
+      and(
+        eq(settlementItems.revenueType, "subject"),
+        eq(semesters.id, settlementItems.sourceId)
+      )
+    )
     .where(and(...conditions))
     .groupBy(settlementItems.assigneeId);
 
