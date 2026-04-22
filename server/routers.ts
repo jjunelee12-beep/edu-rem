@@ -2981,90 +2981,6 @@ categoryId: z.number().nullable().optional(),
     throw new Error("학생 삭제는 상담 DB 페이지에서만 가능합니다.");
   }),
 
-approve: protectedProcedure
-  .input(
-    z.object({
-      id: z.number(),
-      approvalStatus: z.enum(["승인", "불승인"]),
-    })
-  )
-  .mutation(async ({ ctx, input }) => {
-    if (!isAdminOrHost(ctx.user)) {
-      throw new Error("관리자 또는 호스트만 처리할 수 있습니다");
-    }
-
-    const now = new Date();
-    const updateData: any = { approvalStatus: input.approvalStatus };
-
-    if (input.approvalStatus === "승인") {
-      updateData.approvedAt = now;
-      updateData.rejectedAt = null;
-      updateData.status = "등록";
-    } else {
-      updateData.rejectedAt = now;
-      updateData.approvedAt = null;
-    }
-
-    await db.updateStudent(input.id, updateData);
-
-    if (input.approvalStatus === "승인") {
-      const approvedStudent = await db.getStudent(input.id);
-
-      if (approvedStudent?.consultationId) {
-        await db.updateConsultation(approvedStudent.consultationId, {
-          status: "등록",
-        });
-      }
-    }
-
-    if (input.approvalStatus === "승인") {
-      const sems = await db.listSemesters(input.id);
-      for (const sem of sems) {
-        if (!sem.isLocked) {
-          await db.updateSemester(sem.id, { isLocked: true });
-        }
-      }
-    }
-
-    const updatedStudent = await db.getStudent(input.id);
-
-    if (updatedStudent?.assigneeId) {
-      const notificationTitle =
-        input.approvalStatus === "승인" ? "학생 승인 완료" : "학생 불승인";
-
-      const notificationLevel =
-        input.approvalStatus === "승인" ? "success" : "danger";
-
-      const notificationMessage =
-        input.approvalStatus === "승인"
-          ? `[학생 승인] ${updatedStudent.clientName || "학생"} 학생 승인이 완료되었습니다.`
-          : `[학생 불승인] ${updatedStudent.clientName || "학생"} 학생이 불승인 처리되었습니다.`;
-
-      const notificationId = await db.createNotification({
-        userId: Number(updatedStudent.assigneeId),
-        type: "approval",
-        title: notificationTitle,
-        level: notificationLevel,
-        message: notificationMessage,
-        relatedId: Number(input.id),
-        isRead: false,
-      } as any);
-
-      emitLiveNotification({
-        id: Number(notificationId),
-        userId: Number(updatedStudent.assigneeId),
-        type: "approval",
-        title: notificationTitle,
-        level: notificationLevel,
-        message: notificationMessage,
-        relatedId: Number(input.id),
-        isRead: false,
-      });
-    }
-
-    return { success: true };
-  }),
-
     registrationSummary: protectedProcedure
       .input(z.object({ studentId: z.number() }))
       .query(async ({ ctx, input }) => {
@@ -3404,51 +3320,80 @@ approve: protectedProcedure
       throw new Error("관리자 또는 호스트만 처리할 수 있습니다");
     }
 
-    const sem = await db.getSemester(input.id);
-    if (!sem) throw new Error("학기를 찾을 수 없습니다");
-
     const now = new Date();
 
-    await db.updateSemester(input.id, {
+    await db.updateSemester(Number(input.id), {
       approvalStatus: input.approvalStatus,
       approvedAt: input.approvalStatus === "승인" ? now : null,
       rejectedAt: input.approvalStatus === "불승인" ? now : null,
       isLocked: input.approvalStatus === "승인",
     } as any);
 
-    if (input.approvalStatus === "승인") {
-      await db.syncSubjectSettlementItemBySemesterId(
-        Number(input.id),
-        Number(ctx.user.id)
-      );
-    } else {
-      await db.syncSubjectSettlementItemBySemesterId(
-        Number(input.id),
-        Number(ctx.user.id)
-      );
+    const sem = await db.getSemester(Number(input.id));
+    if (!sem) {
+      throw new Error("학기 정보를 찾을 수 없습니다.");
     }
+
+    await db.syncSubjectSettlementItemBySemesterId(
+      Number(input.id),
+      Number(ctx.user.id)
+    );
 
     const student = await db.getStudent(Number(sem.studentId));
-    if (student?.consultationId && input.approvalStatus === "승인") {
-      await db.updateConsultation(student.consultationId, {
-        status: "등록",
-      });
+    if (!student) {
+      throw new Error("학생 정보를 찾을 수 없습니다.");
     }
 
-    if (student?.assigneeId) {
+    const allSems = await db.listSemesters(Number(student.id));
+    const hasApprovedSemester = (allSems || []).some(
+      (row: any) => row.approvalStatus === "승인"
+    );
+
+    if (hasApprovedSemester) {
+      await db.updateStudent(Number(student.id), {
+        status: "등록",
+        approvalStatus: "승인",
+        approvedAt: now,
+        rejectedAt: null,
+      } as any);
+
+      if (student.consultationId) {
+        await db.updateConsultation(Number(student.consultationId), {
+          status: "등록",
+        } as any);
+      }
+    } else {
+      await db.updateStudent(Number(student.id), {
+        status: "등록예정",
+        approvalStatus: input.approvalStatus === "불승인" ? "불승인" : "대기",
+        approvedAt: null,
+        rejectedAt: input.approvalStatus === "불승인" ? now : null,
+      } as any);
+
+      if (student.consultationId) {
+        await db.updateConsultation(Number(student.consultationId), {
+          status: "등록예정",
+        } as any);
+      }
+    }
+
+    if (student.assigneeId) {
       const notificationTitle =
         input.approvalStatus === "승인" ? "학기 승인 완료" : "학기 불승인";
 
+      const notificationLevel =
+        input.approvalStatus === "승인" ? "success" : "danger";
+
       const notificationMessage =
         input.approvalStatus === "승인"
-          ? `[학기 승인] ${student.clientName || "학생"} / ${sem.semesterOrder}학기 승인 완료`
-          : `[학기 불승인] ${student.clientName || "학생"} / ${sem.semesterOrder}학기 불승인 처리`;
+          ? `[학기 승인] ${student.clientName || "학생"} 학생의 ${sem.semesterOrder}학기 승인이 완료되었습니다.`
+          : `[학기 불승인] ${student.clientName || "학생"} 학생의 ${sem.semesterOrder}학기가 불승인 처리되었습니다.`;
 
       const notificationId = await db.createNotification({
         userId: Number(student.assigneeId),
         type: "approval",
         title: notificationTitle,
-        level: input.approvalStatus === "승인" ? "success" : "danger",
+        level: notificationLevel,
         message: notificationMessage,
         relatedId: Number(input.id),
         isRead: false,
@@ -3459,7 +3404,7 @@ approve: protectedProcedure
         userId: Number(student.assigneeId),
         type: "approval",
         title: notificationTitle,
-        level: input.approvalStatus === "승인" ? "success" : "danger",
+        level: notificationLevel,
         message: notificationMessage,
         relatedId: Number(input.id),
         isRead: false,

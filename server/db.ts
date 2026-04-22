@@ -2635,17 +2635,17 @@ if (plannedMonthFilter) conditions.push(sql`sem.plannedMonth = ${plannedMonthFil
       : sql``;
 
     const [rows] = await db.execute(sql`
-  SELECT sem.*,
-    s.clientName,
-    s.phone,
-    COALESCE(sem.primaryCourse, s.course) as course,
-    s.assigneeId,
-    s.status as studentStatus,
-    sem.approvalStatus as approvalStatus,
-    sem.approvedAt as approvedAt,
-    sem.rejectedAt as rejectedAt,
-    s.approvalStatus as studentApprovalStatus,
-    u.name as assigneeName,
+ SELECT sem.*,
+  s.clientName,
+  s.phone,
+  COALESCE(sem.primaryCourse, s.course) as course,
+  s.assigneeId,
+  s.status as studentStatus,
+  sem.approvalStatus as approvalStatus,
+  sem.approvedAt as approvedAt,
+  sem.rejectedAt as rejectedAt,
+  s.approvalStatus as studentApprovalStatus,
+  u.name as assigneeName,
 
     COALESCE(
       actualEi.name,
