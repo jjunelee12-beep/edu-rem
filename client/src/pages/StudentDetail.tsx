@@ -1873,21 +1873,22 @@ const existingPlanSubjectMap = useMemo(() => {
                     </td>
                   </tr>
                 ) : (
-                  semesters.map((sem: any) => (
+  semesters.map((sem: any) => {
+    const approvedRefundAmount = approvedRefundAmountMap[Number(sem.id)] || 0;
+    const pendingRefundAmount = pendingRefundAmountMap[Number(sem.id)] || 0;
 
-const approvedRefundAmount = approvedRefundAmountMap[Number(sem.id)] || 0;
-const pendingRefundAmount = pendingRefundAmountMap[Number(sem.id)] || 0;
+    const displayPlannedAmount = Math.max(
+      0,
+      toNumber(sem.plannedAmount) - approvedRefundAmount
+    );
 
-const displayPlannedAmount = Math.max(
-  0,
-  toNumber(sem.plannedAmount) - approvedRefundAmount
-);
+    const displayActualAmount = Math.max(
+      0,
+      toNumber(sem.actualAmount) - approvedRefundAmount
+    );
 
-const displayActualAmount = Math.max(
-  0,
-  toNumber(sem.actualAmount) - approvedRefundAmount
-);
-                    <tr key={sem.id} className={`border-b last:border-0 ${sem.isCompleted ? "bg-emerald-50/50" : ""}`}>
+    return (
+      <tr key={sem.id} className={`border-b last:border-0 ${sem.isCompleted ? "bg-emerald-50/50" : ""}`}>
                       <td className="px-3 py-1.5 font-medium text-sm">
                         {sem.semesterOrder}학기
                       </td>
@@ -2103,6 +2104,7 @@ const displayActualAmount = Math.max(
                         </div>
                       </td>
                     </tr>
+);
                   ))
                 )}
               </tbody>
