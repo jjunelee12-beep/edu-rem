@@ -6564,6 +6564,7 @@ return [
     updatedAt: row.updatedAt || null,
   },
 ];
+}
 
 export async function getPracticeSupportRequest(id: number) {
   const db = await getDb();
