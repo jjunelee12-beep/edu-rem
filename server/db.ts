@@ -2702,6 +2702,38 @@ if (plannedMonthFilter) conditions.push(sql`sem.plannedMonth = ${plannedMonthFil
   }));
 }
 
+function validatePlanSummaryCounts(data: Partial<InsertPlan>) {
+  const totalTheorySubjects = Number(data.totalTheorySubjects ?? 0);
+  const requiredMajorCount = Number((data as any).requiredMajorCount ?? 0);
+  const electiveMajorCount = Number((data as any).electiveMajorCount ?? 0);
+  const liberalCount = Number((data as any).liberalCount ?? 0);
+  const generalCount = Number((data as any).generalCount ?? 0);
+
+  const values = [
+    totalTheorySubjects,
+    requiredMajorCount,
+    electiveMajorCount,
+    liberalCount,
+    generalCount,
+  ];
+
+  if (values.some((n) => !Number.isFinite(n) || n < 0)) {
+    throw new Error("플랜 과목 수는 0 이상의 숫자만 저장할 수 있습니다.");
+  }
+
+  const sum =
+    requiredMajorCount +
+    electiveMajorCount +
+    liberalCount +
+    generalCount;
+
+  if (sum !== totalTheorySubjects) {
+    throw new Error(
+      `총 이론 과목 수(${totalTheorySubjects})와 분류 합계(${sum})가 일치하지 않습니다.`
+    );
+  }
+}
+
 // ─── Plans ───────────────────────────────────────────────────────────
 export async function getPlan(studentId: number) {
   const db = await getDb();
@@ -2723,6 +2755,8 @@ export async function getPlan(studentId: number) {
 export async function upsertPlan(data: InsertPlan) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  validatePlanSummaryCounts(data);
 
   const existing = await getPlan(data.studentId);
 
@@ -5298,6 +5332,48 @@ export async function findDuplicatePlanSubject(params: {
   );
 }
 
+async function validatePlanRequirementLimit(params: {
+  studentId: number;
+  requirementType?: "전공필수" | "전공선택" | "교양" | "일반" | null;
+  excludePlanSemesterId?: number;
+}) {
+  const requirementType = params.requirementType ?? null;
+
+  if (!requirementType) return;
+
+  const plan = await getPlan(params.studentId);
+  if (!plan) return;
+
+  const rows = await listPlanSemesters(params.studentId);
+
+  const filteredRows = rows.filter((row: any) => {
+    if (
+      params.excludePlanSemesterId &&
+      Number(row.id) === Number(params.excludePlanSemesterId)
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  const currentCount = filteredRows.filter(
+    (row: any) => String(row.planRequirementType || "") === String(requirementType)
+  ).length;
+
+  const limitMap: Record<string, number> = {
+    "전공필수": Number((plan as any).requiredMajorCount ?? 0),
+    "전공선택": Number((plan as any).electiveMajorCount ?? 0),
+    "교양": Number((plan as any).liberalCount ?? 0),
+    "일반": Number((plan as any).generalCount ?? 0),
+  };
+
+  const limit = limitMap[requirementType] ?? 0;
+
+  if (currentCount + 1 > limit) {
+    throw new Error(`${requirementType} 허용 개수(${limit}개)를 초과할 수 없습니다.`);
+  }
+}
+
 export async function listPlanSemesters(studentId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -5324,6 +5400,11 @@ export async function createPlanSemester(data: InsertPlanSemester) {
     );
   }
 
+  await validatePlanRequirementLimit({
+    studentId: Number(data.studentId),
+    requirementType: (data as any).planRequirementType ?? null,
+  });
+
   const result: any = await db.insert(planSemesters).values(data);
   return getInsertId(result);
 }
@@ -5335,16 +5416,16 @@ export async function updatePlanSemester(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const current = await db
+    .select()
+    .from(planSemesters)
+    .where(eq(planSemesters.id, id))
+    .limit(1);
+
+  const row = current[0];
+  if (!row) throw new Error("우리 플랜 과목을 찾을 수 없습니다");
+
   if (data.subjectName !== undefined) {
-    const current = await db
-      .select()
-      .from(planSemesters)
-      .where(eq(planSemesters.id, id))
-      .limit(1);
-
-    const row = current[0];
-    if (!row) throw new Error("우리 플랜 과목을 찾을 수 없습니다");
-
     const duplicate = await findDuplicatePlanSubject({
       studentId: Number(row.studentId),
       subjectName: String(data.subjectName || ""),
@@ -5357,6 +5438,17 @@ export async function updatePlanSemester(
       );
     }
   }
+
+  const nextRequirementType =
+    data.planRequirementType !== undefined
+      ? data.planRequirementType
+      : row.planRequirementType;
+
+  await validatePlanRequirementLimit({
+    studentId: Number(row.studentId),
+    requirementType: (nextRequirementType as any) ?? null,
+    excludePlanSemesterId: id,
+  });
 
   await db.update(planSemesters).set(data as any).where(eq(planSemesters.id, id));
 }

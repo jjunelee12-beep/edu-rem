@@ -3067,20 +3067,47 @@ categoryId: z.number().nullable().optional(),
       }),
 
     upsert: protectedProcedure
-      .input(
-        z.object({
-          studentId: z.number(),
-          desiredCourse: z.string().optional(),
-          finalEducation: z.string().optional(),
-          totalTheorySubjects: z.number().optional(),
-          hasPractice: z.boolean().optional(),
-          practiceHours: z.number().optional(),
-          practiceDate: z.string().optional(),
-          practiceArranged: z.boolean().optional(),
-          practiceStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
-          specialNotes: z.string().optional(),
-        })
-      )
+     .input(
+  z.object({
+    studentId: z.number(),
+    desiredCourse: z.string().optional(),
+    finalEducation: z.string().optional(),
+    totalTheorySubjects: z.number().min(0).optional(),
+
+    requiredMajorCount: z.number().min(0).optional(),
+    electiveMajorCount: z.number().min(0).optional(),
+    liberalCount: z.number().min(0).optional(),
+    generalCount: z.number().min(0).optional(),
+
+    hasPractice: z.boolean().optional(),
+    practiceHours: z.number().optional(),
+    practiceDate: z.string().optional(),
+    practiceArranged: z.boolean().optional(),
+    practiceStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
+    specialNotes: z.string().optional(),
+  }).superRefine((val, ctx) => {
+    const totalTheorySubjects = Number(val.totalTheorySubjects ?? 0);
+    const requiredMajorCount = Number(val.requiredMajorCount ?? 0);
+    const electiveMajorCount = Number(val.electiveMajorCount ?? 0);
+    const liberalCount = Number(val.liberalCount ?? 0);
+    const generalCount = Number(val.generalCount ?? 0);
+
+    const sum =
+      requiredMajorCount +
+      electiveMajorCount +
+      liberalCount +
+      generalCount;
+
+    if (sum !== totalTheorySubjects) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["totalTheorySubjects"],
+        message:
+          `총 이론 과목 수(${totalTheorySubjects})와 분류 합계(${sum})가 일치하지 않습니다.`,
+      });
+    }
+  })
+)
       .mutation(async ({ ctx, input }) => {
         const student = await db.getStudent(input.studentId);
         if (!student) throw new Error("학생을 찾을 수 없습니다");

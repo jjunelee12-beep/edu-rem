@@ -635,13 +635,19 @@ const upsertPracticeSupportByStudentMut =
   desiredCourse: "",
   finalEducation: "",
   totalTheorySubjects: "",
+
+  requiredMajorCount: "",
+  electiveMajorCount: "",
+  liberalCount: "",
+  generalCount: "",
+
   hasPractice: false,
   practiceHours: "",
   practiceDate: "",
   practiceArranged: false,
   practiceStatus: "미섭외",
   specialNotes: "",
-practiceAddress: "",
+  practiceAddress: "",
 });
 
   const [semDialogOpen, setSemDialogOpen] = useState(false);
@@ -751,6 +757,33 @@ const safeNavigate = (path: string) => {
       (s: any) => Number(s.semesterOrder) === Number(selectedSemesterOrder)
     );
   }, [sortedSemesters, selectedSemesterOrder]);
+
+const planRequirementCounts = useMemo(() => {
+  const counts = {
+    requiredMajor: 0,
+    electiveMajor: 0,
+    liberal: 0,
+    general: 0,
+    total: 0,
+  };
+
+  (planSemesterList || []).forEach((row: any) => {
+    const type = String(row.planRequirementType || "").trim();
+
+    if (type === "전공필수") counts.requiredMajor += 1;
+    if (type === "전공선택") counts.electiveMajor += 1;
+    if (type === "교양") counts.liberal += 1;
+    if (type === "일반") counts.general += 1;
+  });
+
+  counts.total =
+    counts.requiredMajor +
+    counts.electiveMajor +
+    counts.liberal +
+    counts.general;
+
+  return counts;
+}, [planSemesterList]);
 
 const approvedRefundAmountMap = useMemo(() => {
   const map: Record<number, number> = {};
@@ -1099,19 +1132,25 @@ const saveRegisteredCourses = async () => {
     desiredCourse: plan?.desiredCourse || "",
     finalEducation: plan?.finalEducation || "",
     totalTheorySubjects: plan?.totalTheorySubjects?.toString() || "",
+
+    requiredMajorCount: String((plan as any)?.requiredMajorCount ?? ""),
+    electiveMajorCount: String((plan as any)?.electiveMajorCount ?? ""),
+    liberalCount: String((plan as any)?.liberalCount ?? ""),
+    generalCount: String((plan as any)?.generalCount ?? ""),
+
     hasPractice: plan?.hasPractice || false,
     practiceHours: plan?.practiceHours?.toString() || "",
     practiceDate: plan?.practiceDate || "",
     practiceArranged: plan?.practiceArranged || false,
     practiceStatus:
-  selectedPracticeSupport?.coordinationStatus ||
-  (plan as any)?.practiceStatus ||
-  "미섭외",
-specialNotes: plan?.specialNotes || "",
-practiceAddress:
-  selectedPracticeSupport?.inputAddress ||
-  (student as any)?.address ||
-  "",
+      selectedPracticeSupport?.coordinationStatus ||
+      (plan as any)?.practiceStatus ||
+      "미섭외",
+    specialNotes: plan?.specialNotes || "",
+    practiceAddress:
+      selectedPracticeSupport?.inputAddress ||
+      (student as any)?.address ||
+      "",
   });
 
   setEditingPlan(true);
@@ -1120,13 +1159,46 @@ practiceAddress:
  
 const savePlan = async () => {
   try {
+    const totalTheorySubjects = toNumber(planForm.totalTheorySubjects);
+    const requiredMajorCount = toNumber(planForm.requiredMajorCount);
+    const electiveMajorCount = toNumber(planForm.electiveMajorCount);
+    const liberalCount = toNumber(planForm.liberalCount);
+    const generalCount = toNumber(planForm.generalCount);
+
+    const sum =
+      requiredMajorCount +
+      electiveMajorCount +
+      liberalCount +
+      generalCount;
+
+    if (sum !== totalTheorySubjects) {
+      toast.error(
+        `총 이론 과목 수(${totalTheorySubjects})와 분류 합계(${sum})가 일치하지 않습니다.`
+      );
+      return;
+    }
+
     await upsertPlanMut.mutateAsync({
       studentId,
       desiredCourse: planForm.desiredCourse || undefined,
       finalEducation: planForm.finalEducation || undefined,
       totalTheorySubjects: planForm.totalTheorySubjects
         ? parseInt(planForm.totalTheorySubjects)
-        : undefined,
+        : 0,
+
+      requiredMajorCount: planForm.requiredMajorCount
+        ? parseInt(planForm.requiredMajorCount)
+        : 0,
+      electiveMajorCount: planForm.electiveMajorCount
+        ? parseInt(planForm.electiveMajorCount)
+        : 0,
+      liberalCount: planForm.liberalCount
+        ? parseInt(planForm.liberalCount)
+        : 0,
+      generalCount: planForm.generalCount
+        ? parseInt(planForm.generalCount)
+        : 0,
+
       hasPractice: planForm.hasPractice,
       practiceHours: planForm.practiceHours
         ? parseInt(planForm.practiceHours)
@@ -1147,14 +1219,14 @@ const savePlan = async () => {
       }
 
       await upsertPracticeSupportByStudentMut.mutateAsync({
-  studentId,
-  semesterId: null,
-  assigneeId: Number(student.assigneeId || 0),
-  clientName: String(student.clientName || "").trim(),
-  phone: String(student.phone || "").trim(),
-  course: String(planForm.desiredCourse || student.course || "").trim(),
-  inputAddress:
-    String(planForm.practiceAddress || (student as any)?.address || "").trim() || null,
+        studentId,
+        semesterId: null,
+        assigneeId: Number(student.assigneeId || 0),
+        clientName: String(student.clientName || "").trim(),
+        phone: String(student.phone || "").trim(),
+        course: String(planForm.desiredCourse || student.course || "").trim(),
+        inputAddress:
+          String(planForm.practiceAddress || (student as any)?.address || "").trim() || null,
         detailAddress: String((student as any)?.detailAddress || "").trim() || null,
         assigneeName: null,
         managerName: null,
@@ -1332,6 +1404,17 @@ const savePlan = async () => {
       return;
     }
 
+const currentRequired = (planSemesterList || []).filter(
+  (x: any) => String(x.planRequirementType || "") === "전공선택"
+).length;
+
+const targetRequired = Number((plan as any)?.electiveMajorCount ?? 0);
+
+if (currentRequired >= targetRequired) {
+  toast.error("전공선택 허용 개수를 초과했습니다.");
+  return;
+}
+
     createPlanSemesterMut.mutate(
       {
         studentId,
@@ -1377,6 +1460,25 @@ const savePlan = async () => {
       schoolName: "전적대",
     });
   };
+
+const canChangeRequirementType = (nextType: string, rowId: number) => {
+  const rows = (planSemesterList || []).filter(
+    (row: any) => Number(row.id) !== Number(rowId)
+  );
+
+  const currentCount = rows.filter(
+    (row: any) => String(row.planRequirementType || "") === String(nextType)
+  ).length;
+
+  const limitMap: Record<string, number> = {
+    "전공필수": Number((plan as any)?.requiredMajorCount ?? 0),
+    "전공선택": Number((plan as any)?.electiveMajorCount ?? 0),
+    "교양": Number((plan as any)?.liberalCount ?? 0),
+    "일반": Number((plan as any)?.generalCount ?? 0),
+  };
+
+  return currentCount + 1 <= (limitMap[nextType] ?? 0);
+};
 
   const handleTransferBlur = (id: number, field: string, value: any) => {
     const payload: any = { id };
@@ -1627,6 +1729,12 @@ const existingPlanSubjectMap = useMemo(() => {
     default:
       return "bg-gray-100 text-gray-700";
   }
+};
+
+const getCountStatusClass = (current: number, target: number) => {
+  if (current === target) return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (current > target) return "border-red-200 bg-red-50 text-red-700";
+  return "border-amber-200 bg-amber-50 text-amber-700";
 };
 
   return (
@@ -2219,13 +2327,78 @@ const existingPlanSubjectMap = useMemo(() => {
               <div className="space-y-3">
   <div className="bg-muted/50 rounded-lg p-4 text-sm">
     <p>
-      <span className="font-medium">희망과정:</span> {plan.desiredCourse || "-"} ·{" "}
-      <span className="font-medium">최종학력:</span> {plan.finalEducation || "-"} ·{" "}
-      <span className="font-medium">이론 과목:</span> {plan.totalTheorySubjects ?? "-"}과목 ·{" "}
-      <span className="font-medium">실습:</span> {plan.hasPractice ? "있음" : "없음"} ·{" "}
-      <span className="font-medium">특이사항:</span> {plan.specialNotes || "없음"}
-    </p>
+  <span className="font-medium">희망과정:</span> {plan.desiredCourse || "-"} ·{" "}
+  <span className="font-medium">최종학력:</span> {plan.finalEducation || "-"} ·{" "}
+  <span className="font-medium">이론 과목:</span> {plan.totalTheorySubjects ?? "-"}과목 ·{" "}
+  <span className="font-medium">전공필수:</span> {(plan as any)?.requiredMajorCount ?? 0} ·{" "}
+  <span className="font-medium">전공선택:</span> {(plan as any)?.electiveMajorCount ?? 0} ·{" "}
+  <span className="font-medium">교양:</span> {(plan as any)?.liberalCount ?? 0} ·{" "}
+  <span className="font-medium">일반:</span> {(plan as any)?.generalCount ?? 0} ·{" "}
+  <span className="font-medium">실습:</span> {plan.hasPractice ? "있음" : "없음"} ·{" "}
+  <span className="font-medium">특이사항:</span> {plan.specialNotes || "없음"}
+</p>
   </div>
+
+<div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+  <div
+  className={`rounded-lg border px-3 py-2 ${getCountStatusClass(
+    planRequirementCounts.requiredMajor,
+    Number((plan as any)?.requiredMajorCount ?? 0)
+  )}`}
+>
+    <div className="text-muted-foreground">전공필수</div>
+    <div className="font-semibold">
+      {planRequirementCounts.requiredMajor} / {(plan as any)?.requiredMajorCount ?? 0}
+    </div>
+  </div>
+
+  <div
+  className={`rounded-lg border px-3 py-2 ${getCountStatusClass(
+  planRequirementCounts.electiveMajor,
+  Number((plan as any)?.electiveMajorCount ?? 0)
+)}`}
+>
+    <div className="text-muted-foreground">전공선택</div>
+    <div className="font-semibold">
+      {planRequirementCounts.electiveMajor} / {(plan as any)?.electiveMajorCount ?? 0}
+    </div>
+  </div>
+
+  <div
+  className={`rounded-lg border px-3 py-2 ${getCountStatusClass(
+  planRequirementCounts.liberal,
+  Number((plan as any)?.liberalCount ?? 0)
+)}`}
+>
+    <div className="text-muted-foreground">교양</div>
+    <div className="font-semibold">
+      {planRequirementCounts.liberal} / {(plan as any)?.liberalCount ?? 0}
+    </div>
+  </div>
+<div
+  className={`rounded-lg border px-3 py-2 ${getCountStatusClass(
+  planRequirementCounts.general,
+  Number((plan as any)?.generalCount ?? 0)
+)}`}
+>
+    <div className="text-muted-foreground">일반</div>
+    <div className="font-semibold">
+      {planRequirementCounts.general} / {(plan as any)?.generalCount ?? 0}
+    </div>
+  </div>
+
+  <div
+  className={`rounded-lg border px-3 py-2 ${getCountStatusClass(
+  planRequirementCounts.total,
+  Number((plan as any)?.totalTheorySubjects ?? 0)
+)}`}
+>
+    <div className="text-muted-foreground">총 이론 과목</div>
+    <div className="font-semibold">
+      {planRequirementCounts.total} / {(plan as any)?.totalTheorySubjects ?? 0}
+    </div>
+  </div>
+</div>
 
 {requestedPrivateCertList.length > 0 && (
   <div
@@ -2343,7 +2516,73 @@ const existingPlanSubjectMap = useMemo(() => {
                     onChange={(e) => setPlanForm({ ...planForm, totalTheorySubjects: e.target.value })}
                   />
                 </div>
+<div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
+  <div className="space-y-2">
+    <Label>전공필수</Label>
+    <Input
+      type="number"
+      min={0}
+      value={planForm.requiredMajorCount}
+      onChange={(e) =>
+        setPlanForm((prev) => ({
+          ...prev,
+          requiredMajorCount: e.target.value,
+        }))
+      }
+      placeholder="0"
+    />
+  </div>
+
+  <div className="space-y-2">
+    <Label>전공선택</Label>
+    <Input
+      type="number"
+      min={0}
+      value={planForm.electiveMajorCount}
+      onChange={(e) =>
+        setPlanForm((prev) => ({
+          ...prev,
+          electiveMajorCount: e.target.value,
+        }))
+      }
+      placeholder="0"
+    />
+  </div>
+
+  <div className="space-y-2">
+    <Label>교양</Label>
+    <Input
+      type="number"
+      min={0}
+      value={planForm.liberalCount}
+      onChange={(e) =>
+        setPlanForm((prev) => ({
+          ...prev,
+          liberalCount: e.target.value,
+        }))
+      }
+      placeholder="0"
+    />
+  </div>
+
+  <div className="space-y-2">
+    <Label>일반</Label>
+    <Input
+      type="number"
+      min={0}
+      value={planForm.generalCount}
+      onChange={(e) =>
+        setPlanForm((prev) => ({
+          ...prev,
+          generalCount: e.target.value,
+        }))
+      }
+      placeholder="0"
+    />
+  </div>
+</div>
               </div>
+
               <div className="flex items-center gap-2">
                 <Checkbox
                   checked={planForm.hasPractice}
@@ -2574,13 +2813,29 @@ const existingPlanSubjectMap = useMemo(() => {
                                     }}
                                     className={`w-full h-8 px-2 text-sm rounded ${requirementBadgeClass(row.planRequirementType)}`}
                                     value={row.planRequirementType || "전공선택"}
-                                    onChange={(e) => handlePlanSemesterBlur(row.id, "requirementType", e.target.value)}
+                                    onChange={(e) => {
+  const nextType = e.target.value;
+
+  if (!canChangeRequirementType(nextType, row.id)) {
+    toast.error(`${nextType} 허용 개수를 초과했습니다.`);
+    return;
+  }
+
+  handlePlanSemesterBlur(row.id, "requirementType", nextType);
+}}
                                     onKeyDown={(e) =>
                                       cycleSelectValue(
                                         e,
                                         ["전공필수", "전공선택"],
                                         row.planRequirementType || "전공선택",
-                                        (next) => handlePlanSemesterBlur(row.id, "requirementType", next)
+                                        (next) => {
+  if (!canChangeRequirementType(next, row.id)) {
+    toast.error(`${next} 허용 개수를 초과했습니다.`);
+    return;
+  }
+
+  handlePlanSemesterBlur(row.id, "requirementType", next);
+}
                                       )
                                     }
                                   >

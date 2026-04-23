@@ -250,12 +250,16 @@ export const plans = mysqlTable("plans", {
   finalEducation: varchar("finalEducation", { length: 100 }),
   totalTheorySubjects: int("totalTheorySubjects"),
 
+  requiredMajorCount: int("requiredMajorCount").notNull().default(0),
+  electiveMajorCount: int("electiveMajorCount").notNull().default(0),
+  liberalCount: int("liberalCount").notNull().default(0),
+  generalCount: int("generalCount").notNull().default(0),
+
   hasPractice: boolean("hasPractice").default(false),
   practiceHours: int("practiceHours"),
   practiceDate: varchar("practiceDate", { length: 50 }),
   practiceArranged: boolean("practiceArranged").default(false),
 
-  // 표시용으로 일단 유지
   practiceStatus: mysqlEnum("practiceStatus", ["미섭외", "섭외중", "섭외완료"])
     .default("미섭외"),
 
