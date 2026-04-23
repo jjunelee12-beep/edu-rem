@@ -653,8 +653,6 @@ practiceAddress: "",
     plannedAmount: "",
   });
   
-const [refundDialogOpen, setRefundDialogOpen] = useState(false);
-const [refundDialogMounted, setRefundDialogMounted] = useState(false);
 
     const [refundForm, setRefundForm] = useState({
   semesterId: "",
@@ -676,11 +674,6 @@ const resetRefundForm = () => {
     attachmentName: "",
     attachmentUrl: "",
   });
-};
-
-const openRefundDialog = () => {
-  setRefundDialogMounted(true);
-  setRefundDialogOpen(true);
 };
 
 const closeRefundDialog = () => {
@@ -1567,18 +1560,6 @@ useEffect(() => {
   utils.semester.list,
 ]);
 
-useEffect(() => {
-  if (refundDialogOpen) return;
-  if (!refundDialogMounted) return;
-
-  const timer = window.setTimeout(() => {
-    setRefundDialogMounted(false);
-  }, 180);
-
-  return () => window.clearTimeout(timer);
-}, [refundDialogOpen, refundDialogMounted]);
-
-  
   const currentSemesterPlanCount = useMemo(() => {
   if (!templateDialogSemesterNo) return 0;
   return (planSemesterList || []).filter(
@@ -3815,20 +3796,20 @@ semesterId: r.semesterId ? String(r.semesterId) : "",
         </DialogContent>
       </Dialog>
 
-           {refundDialogMounted && (
+       
   <Dialog
-    open={refundDialogOpen}
-    onOpenChange={(nextOpen) => {
-      if (createRefundMut.isPending || uploadingRefund) return;
+  open={refundDialogOpen}
+  onOpenChange={(nextOpen) => {
+    if (createRefundMut.isPending || uploadingRefund) return;
 
-      if (!nextOpen) {
-        closeRefundDialog();
-        return;
-      }
+    if (!nextOpen) {
+      closeRefundDialog();
+      return;
+    }
 
-      setRefundDialogOpen(true);
-    }}
-  >
+    setRefundDialogOpen(true);
+  }}
+>
     <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>환불 요청 등록</DialogTitle>
@@ -4044,7 +4025,6 @@ toast.success("환불 요청 등록 완료");
           </DialogFooter>
         </DialogContent>
         </Dialog>
-)}
 
 <Dialog open={courseDialogOpen} onOpenChange={setCourseDialogOpen}>
   <DialogContent className="max-w-lg">

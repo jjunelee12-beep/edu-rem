@@ -41,7 +41,6 @@ export default function Settlement() {
 const [institutionDialogOpen, setInstitutionDialogOpen] = useState(false);
 const [selectedInstitutionName, setSelectedInstitutionName] = useState<string>("");
 const [institutionTrendMode, setInstitutionTrendMode] = useState<"gross" | "company">("gross");
-const [institutionDialogMounted, setInstitutionDialogMounted] = useState(false);
 
   const isAdminOrHost =
     user?.role === "admin" ||
@@ -134,7 +133,6 @@ const {
     });
 
 const openInstitutionDialog = () => {
-  setInstitutionDialogMounted(true);
   setInstitutionDialogOpen(true);
 };
 
@@ -165,17 +163,6 @@ const changeSettlementMonthSafely = (nextYear: number, nextMonth: number) => {
     () => Array.from({ length: 12 }, (_, i) => i + 1),
     []
   );
-
-useEffect(() => {
-  if (institutionDialogOpen) return;
-  if (!institutionDialogMounted) return;
-
-  const timer = window.setTimeout(() => {
-    setInstitutionDialogMounted(false);
-  }, 180);
-
-  return () => window.clearTimeout(timer);
-}, [institutionDialogOpen, institutionDialogMounted]);
 
   const totalSales =
     report?.reduce(
@@ -1393,7 +1380,6 @@ const downloadInstitutionTrendCSV = () => {
       <p className="text-xs text-muted-foreground text-center">
   * 정산 기준: 결제 완료 건 기준 · 일반과목은 총매출에서 교육원 정산 금액을 먼저 차감한 뒤 회사 매출을 계산하고, 그 회사 매출 안에서 프리랜서 지급액과 세금을 반영하여 회사 순이익을 계산합니다. 환불 발생 시 해당 월 정산에서 차감됩니다.
 </p>
-{institutionDialogMounted && (
   <Dialog
     open={institutionDialogOpen}
     onOpenChange={(nextOpen) => {
@@ -1881,7 +1867,6 @@ const downloadInstitutionTrendCSV = () => {
     </div>
   </DialogContent>
   </Dialog>
-)}
 
     </div>
   );
