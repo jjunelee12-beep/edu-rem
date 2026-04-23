@@ -68,53 +68,54 @@ function PublicRouter() {
 
 function PrivateRouter() {
   return (
-    <DashboardLayout>
-      <Switch>
-        <Route path="/" component={Home} />
-        <Route path="/overview" component={OverviewDashboard} />
-        <Route path="/consultations" component={Consultations} />
-        <Route path="/students" component={Students} />
-        <Route path="/students/:id" component={StudentDetail} />
-        <Route path="/semesters" component={SemesterList} />
-        <Route path="/sms" component={SmsSender} />
-        <Route path="/approvals" component={Approvals} />
-        <Route path="/settlement" component={Settlement} />
-        <Route path="/private-certificate-center" component={PrivateCertificateCenterPage} />
-        <Route path="/practice-support-center" component={PracticeSupportCenterPage} />
-        <Route path="/job-support-center" component={JobSupportCenterPage} />
-        <Route path="/system" component={System} />
-        <Route path="/ai" component={AIAssistant} />
-        <Route path="/education-institutions" component={EducationInstitutions} />
-        <Route path="/superhost" component={SuperhostHome} />
-        <Route path="/attendance" component={AttendancePage} />
-        <Route path="/attendance/view" component={AttendanceViewPage} />
-        <Route path="/my" component={MyPage} />
+    <>
+      <MessengerRealtimeBridge />
+      <AppRealtimeBridge />
 
-        <Route path="/notices" component={NoticesPage} />
-<Route path="/notices/write" component={NoticeWritePage} />
-<Route path="/notices/preview" component={NoticePreviewPage} />
-<Route path="/notices/:id/edit" component={NoticeEditPage} />
-<Route path="/notices/:id" component={NoticeDetailPage} />
-        <Route path="/schedules" component={SchedulePage} />
-        <Route path="/notifications" component={Notifications} />
-
-        <Route path="/e-approval" component={ApprovalsDashboardPage} />
-        <Route path="/e-approval/attendance" component={ApprovalAttendancePage} />
-        <Route path="/e-approval/business-trip" component={ApprovalBusinessTripPage} />
-        <Route path="/e-approval/general" component={ApprovalGeneralPage} />
-        <Route path="/e-approval/inbox" component={ApprovalInboxPage} />
-        <Route path="/e-approval/settings" component={ApprovalSettingsPage} />
-        <Route path="/e-approval/stats" component={ApprovalStatsPage} />
-        <Route path="/e-approval/preview" component={ApprovalPreviewPage} />
-        <Route path="/e-approval/:id/print" component={ApprovalPrintPage} />
-        <Route path="/e-approval/:id" component={ApprovalDetailPage} />
-
-<Route path="/private-certificate-master" component={PrivateCertificateMasterPage} />
-<Route path="/subject-catalog-master" component={SubjectCatalogMasterPage} />
-
-        <Route component={NotFound} />
-      </Switch>
-    </DashboardLayout>
+      <DashboardLayout>
+        <Switch>
+          <Route path="/" component={Home} />
+          <Route path="/overview" component={OverviewDashboard} />
+          <Route path="/consultations" component={Consultations} />
+          <Route path="/students" component={Students} />
+          <Route path="/students/:id" component={StudentDetail} />
+          <Route path="/semesters" component={SemesterList} />
+          <Route path="/sms" component={SmsSender} />
+          <Route path="/approvals" component={Approvals} />
+          <Route path="/settlement" component={Settlement} />
+          <Route path="/private-certificate-center" component={PrivateCertificateCenterPage} />
+          <Route path="/practice-support-center" component={PracticeSupportCenterPage} />
+          <Route path="/job-support-center" component={JobSupportCenterPage} />
+          <Route path="/system" component={System} />
+          <Route path="/ai" component={AIAssistant} />
+          <Route path="/education-institutions" component={EducationInstitutions} />
+          <Route path="/superhost" component={SuperhostHome} />
+          <Route path="/attendance" component={AttendancePage} />
+          <Route path="/attendance/view" component={AttendanceViewPage} />
+          <Route path="/my" component={MyPage} />
+          <Route path="/notices" component={NoticesPage} />
+          <Route path="/notices/write" component={NoticeWritePage} />
+          <Route path="/notices/preview" component={NoticePreviewPage} />
+          <Route path="/notices/:id/edit" component={NoticeEditPage} />
+          <Route path="/notices/:id" component={NoticeDetailPage} />
+          <Route path="/schedules" component={SchedulePage} />
+          <Route path="/notifications" component={Notifications} />
+          <Route path="/e-approval" component={ApprovalsDashboardPage} />
+          <Route path="/e-approval/attendance" component={ApprovalAttendancePage} />
+          <Route path="/e-approval/business-trip" component={ApprovalBusinessTripPage} />
+          <Route path="/e-approval/general" component={ApprovalGeneralPage} />
+          <Route path="/e-approval/inbox" component={ApprovalInboxPage} />
+          <Route path="/e-approval/settings" component={ApprovalSettingsPage} />
+          <Route path="/e-approval/stats" component={ApprovalStatsPage} />
+          <Route path="/e-approval/preview" component={ApprovalPreviewPage} />
+          <Route path="/e-approval/:id/print" component={ApprovalPrintPage} />
+          <Route path="/e-approval/:id" component={ApprovalDetailPage} />
+          <Route path="/private-certificate-master" component={PrivateCertificateMasterPage} />
+          <Route path="/subject-catalog-master" component={SubjectCatalogMasterPage} />
+          <Route component={NotFound} />
+        </Switch>
+      </DashboardLayout>
+    </>
   );
 }
 
@@ -138,8 +139,6 @@ export default function App() {
         <TooltipProvider>
           <Toaster />
           <AppToastHost />
-	<MessengerRealtimeBridge />
-<AppRealtimeBridge />
           <AppContent />
         </TooltipProvider>
       </ThemeProvider>
