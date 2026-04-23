@@ -6420,8 +6420,8 @@ export async function listPracticeSupportRequests(params?: {
   if (!db) return [];
 
   const conditions: any[] = [
-    sql`s.approvalStatus = '승인'`,
-  ];
+  sql`s.approvalStatus = '승인'`,
+];
 
   if (params?.assigneeId) {
     conditions.push(sql`s.assigneeId = ${params.assigneeId}`);
@@ -6459,60 +6459,60 @@ export async function listPracticeSupportRequests(params?: {
       : sql``;
 
   const [rows] = await db.execute(sql`
-    SELECT
-      psr.id,
-      psr.studentId,
-      psr.assigneeId,
-      psr.clientName,
-      psr.phone,
-      psr.course,
-      psr.inputAddress,
-      psr.detailAddress,
-      psr.assigneeName,
-      psr.managerName,
-      psr.practiceHours,
-      psr.practiceDate,
-      psr.includeEducationCenter,
-      psr.includePracticeInstitution,
-      psr.coordinationStatus,
-      psr.selectedEducationCenterId,
-      psr.selectedEducationCenterName,
-      psr.selectedEducationCenterAddress,
-      psr.selectedEducationCenterDistanceKm,
-      psr.selectedPracticeInstitutionId,
-      psr.selectedPracticeInstitutionName,
-      psr.selectedPracticeInstitutionAddress,
-      psr.selectedPracticeInstitutionDistanceKm,
-      psr.feeAmount,
-      psr.paymentStatus,
-      psr.note,
-      psr.createdAt,
-      psr.updatedAt,
+  SELECT
+    psr.id,
+    psr.studentId,
+    psr.assigneeId,
+    psr.clientName,
+    psr.phone,
+    psr.course,
+    psr.inputAddress,
+    psr.detailAddress,
+    psr.assigneeName,
+    psr.managerName,
+    psr.practiceHours,
+    psr.practiceDate,
+    psr.includeEducationCenter,
+    psr.includePracticeInstitution,
+    psr.coordinationStatus,
+    psr.selectedEducationCenterId,
+    psr.selectedEducationCenterName,
+    psr.selectedEducationCenterAddress,
+    psr.selectedEducationCenterDistanceKm,
+    psr.selectedPracticeInstitutionId,
+    psr.selectedPracticeInstitutionName,
+    psr.selectedPracticeInstitutionAddress,
+    psr.selectedPracticeInstitutionDistanceKm,
+    psr.feeAmount,
+    psr.paymentStatus,
+    psr.note,
+    psr.createdAt,
+    psr.updatedAt,
 
-      s.clientName AS studentClientName,
-      s.phone AS studentPhone,
-      s.assigneeId AS studentAssigneeId,
-      s.address AS studentAddress,
-      s.detailAddress AS studentDetailAddress,
-      s.course AS studentCourse,
+    s.clientName AS studentClientName,
+    s.phone AS studentPhone,
+    s.assigneeId AS studentAssigneeId,
+    s.address AS studentAddress,
+    s.detailAddress AS studentDetailAddress,
+    s.course AS studentCourse,
 
-      p.practiceDate AS planPracticeDate,
-      p.practiceHours AS planPracticeHours,
-      p.desiredCourse AS planDesiredCourse,
+    p.practiceDate AS planPracticeDate,
+    p.practiceHours AS planPracticeHours,
+    p.desiredCourse AS planDesiredCourse,
 
-      u.name AS userName
-    FROM students s
-    LEFT JOIN practice_support_requests psr
-      ON psr.studentId = s.id
-    LEFT JOIN plans p
-      ON p.studentId = s.id
-    LEFT JOIN users u
-      ON u.id = s.assigneeId
-    ${whereClause}
-    ORDER BY
-      COALESCE(psr.practiceDate, p.practiceDate) DESC,
-      s.id DESC
-  `);
+    u.name AS userName
+  FROM practice_support_requests psr
+  INNER JOIN students s
+    ON s.id = psr.studentId
+  LEFT JOIN plans p
+    ON p.studentId = s.id
+  LEFT JOIN users u
+    ON u.id = s.assigneeId
+  ${whereClause}
+  ORDER BY
+    LEFT(TRIM(COALESCE(psr.practiceDate, p.practiceDate, '')), 7) ASC,
+    psr.id DESC
+`);
 
   return (rows as any[]).map((row) => ({
     id: row.id ? Number(row.id) : null,

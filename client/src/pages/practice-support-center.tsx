@@ -242,9 +242,7 @@ export default function PracticeSupportCenter() {
   const utils = trpc.useUtils();
 
   const [search, setSearch] = useState("");
-const [selectedPracticeMonth, setSelectedPracticeMonth] = useState<string>(
-  new Date().toISOString().slice(0, 7)
-);
+const [selectedPracticeMonth, setSelectedPracticeMonth] = useState<string>("전체");
 const [statusFilter, setStatusFilter] = useState<string>("전체");
 
   const [selectedRow, setSelectedRow] = useState<any | null>(null);
