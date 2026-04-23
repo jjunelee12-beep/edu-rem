@@ -7,6 +7,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
 
+import Login from "./pages/Login";
 import Home from "./pages/Home";
 import OverviewDashboard from "./pages/OverviewDashboard";
 import Consultations from "./pages/Consultations";
@@ -59,6 +60,7 @@ import AppRealtimeBridge from "@/components/notifications/AppRealtimeBridge";
 function PublicRouter() {
   return (
     <Switch>
+      <Route path="/login" component={Login} />
       <Route path="/form/:token" component={PublicLeadFormPage} />
       <Route path="/ad-form/:token" component={AdFormPage} />
       <Route component={NotFound} />
@@ -122,10 +124,12 @@ function PrivateRouter() {
 function AppContent() {
   const [location] = useLocation();
 
-  const isPublicFormPage =
-    location.startsWith("/form/") || location.startsWith("/ad-form/");
+  const isPublicPage =
+    location === "/login" ||
+    location.startsWith("/form/") ||
+    location.startsWith("/ad-form/");
 
-  if (isPublicFormPage) {
+  if (isPublicPage) {
     return <PublicRouter />;
   }
 
