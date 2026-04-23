@@ -29,12 +29,6 @@ export default function Approvals() {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
 
-const safeNavigate = (path: string) => {
-  window.setTimeout(() => {
-    setLocation(path);
-  }, 120);
-};
-
 const { data: semesters, isLoading: semestersLoading } =
   trpc.semester.listAll.useQuery({});
   const { data: allUsers } = trpc.users.list.useQuery();
@@ -187,7 +181,7 @@ const rejectedSemesters = semesterRows.filter(
     <td className="px-4 py-3">
       <button
         className="font-medium text-primary hover:underline"
-        onClick={() => safeNavigate(`/students/${sem.studentId}`)}
+        onClick={() => setLocation(`/students/${sem.studentId}`)}
       >
         {sem.clientName}
       </button>
@@ -295,7 +289,7 @@ const rejectedSemesters = semesterRows.filter(
                       <td className="px-4 py-3">
   <button
     className="font-medium text-primary hover:underline"
-    onClick={() => safeNavigate(`/students/${r.studentId}`)}
+    onClick={() => setLocation(`/students/${r.studentId}`)}
   >
     {r.clientName || `학생 #${r.studentId}`}
   </button>
