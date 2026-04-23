@@ -3212,7 +3212,7 @@ console.log("🔥 [refundSettlementItemBySource] about to call upsertSettlementI
 
  const refundSettlement = await upsertSettlementItem({
   revenueType: "refund" as any,
-  sourceId: Number(params.sourceId),
+  sourceId: Number((params.payload as any)?.refundId || params.sourceId),
   studentId: Number(baseItem.studentId),
   assigneeId: toNullableNumber(baseItem.assigneeId),
   freelancerUserId: toNullableNumber(baseItem.freelancerUserId),
@@ -6428,10 +6428,10 @@ export async function listPracticeSupportRequests(params?: {
   }
 
   if (params?.month && params.month !== "전체") {
-    conditions.push(
-      sql`DATE_FORMAT(COALESCE(psr.practiceDate, p.practiceDate), '%Y-%m') = ${params.month}`
-    );
-  }
+  conditions.push(
+    sql`LEFT(TRIM(COALESCE(psr.practiceDate, p.practiceDate, '')), 7) = ${params.month}`
+  );
+}
 
   if (params?.status && params.status !== "전체") {
     conditions.push(
