@@ -242,7 +242,9 @@ export default function PracticeSupportCenter() {
   const utils = trpc.useUtils();
 
   const [search, setSearch] = useState("");
-const [selectedPracticeMonth, setSelectedPracticeMonth] = useState<string>("전체");
+const [selectedPracticeMonth, setSelectedPracticeMonth] = useState<string>(
+  new Date().toISOString().slice(0, 7)
+);
 const [statusFilter, setStatusFilter] = useState<string>("전체");
 
   const [selectedRow, setSelectedRow] = useState<any | null>(null);
@@ -319,24 +321,35 @@ const [csvUploadSummary, setCsvUploadSummary] = useState<{
 } | null>(null);
 
   const { data: practiceSupportList, isLoading } =
-    trpc.practiceSupport.list.useQuery();
+  trpc.practiceSupport.list.useQuery(
+    {
+      month: selectedPracticeMonth,
+      status: statusFilter as any,
+      search: search.trim() || undefined,
+    },
+    {
+      keepPreviousData: true,
+      staleTime: 1000 * 60 * 3,
+      refetchOnWindowFocus: false,
+    }
+  );
 
   const {
   data: educationCenterDb = [],
   refetch: refetchEducationCenters,
 } = trpc.practiceEducationCenter.list.useQuery(undefined, {
-  staleTime: 0,
-  refetchOnMount: "always",
-  refetchOnWindowFocus: true,
+  staleTime: 1000 * 60 * 5,
+refetchOnMount: false,
+refetchOnWindowFocus: false,
 });
 
 const {
   data: practiceInstitutionDbRaw = [],
   refetch: refetchPracticeInstitutions,
 } = trpc.practiceInstitution.list.useQuery(undefined, {
-  staleTime: 0,
-  refetchOnMount: "always",
-  refetchOnWindowFocus: true,
+  staleTime: 1000 * 60 * 5,
+refetchOnMount: false,
+refetchOnWindowFocus: false,
 });
 
 const practiceInstitutionDb = useMemo(
@@ -353,9 +366,9 @@ const {
 } = trpc.practiceListCategory.list.useQuery(
   { listType: "education" },
   {
-    staleTime: 0,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
+    staleTime: 1000 * 60 * 5,
+refetchOnMount: false,
+refetchOnWindowFocus: false,
   }
 );
 
@@ -365,9 +378,9 @@ const {
 } = trpc.practiceListCategory.list.useQuery(
   { listType: "institution" },
   {
-    staleTime: 0,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
+    staleTime: 1000 * 60 * 5,
+refetchOnMount: false,
+refetchOnWindowFocus: false,
   }
 );
 
@@ -596,56 +609,13 @@ const formatPracticeMonthLabel = (value: string) => {
 };
 
 const practiceMonthOptions = useMemo(() => {
-  const values = Array.from(
-    new Set(
-      (practiceSupportList || [])
-        .map((row: any) => String(row.practiceDate || "").trim())
-        .filter(Boolean)
-    )
-  ).sort();
-
-  return ["전체", ...values];
-}, [practiceSupportList]);
-
-useEffect(() => {
-  if (!practiceMonthOptions.length) return;
-  if (selectedPracticeMonth !== "전체") return;
-
   const currentMonth = new Date().toISOString().slice(0, 7);
-
-  if (practiceMonthOptions.includes(currentMonth)) {
-    setSelectedPracticeMonth(currentMonth);
-    return;
-  }
-
-  const firstMonth = practiceMonthOptions.find((v) => v !== "전체");
-  if (firstMonth) {
-    setSelectedPracticeMonth(firstMonth);
-  }
-}, [practiceMonthOptions, selectedPracticeMonth]);
+  return ["전체", currentMonth];
+}, []);
 
   const filteredList = useMemo(() => {
-  const keyword = search.trim();
-
-  return (practiceSupportList || []).filter((row: any) => {
-    const matchKeyword =
-      !keyword ||
-      String(row.clientName || "").includes(keyword) ||
-      String(row.phone || "").includes(keyword) ||
-      String(row.managerName || "").includes(keyword) ||
-      String(row.assigneeName || "").includes(keyword);
-
-    const matchMonth =
-      selectedPracticeMonth === "전체" ||
-      String(row.practiceDate || "").trim() === selectedPracticeMonth;
-
-    const matchStatus =
-      statusFilter === "전체" ||
-      String(row.coordinationStatus || "미섭외") === statusFilter;
-
-    return matchKeyword && matchMonth && matchStatus;
-  });
-}, [practiceSupportList, search, selectedPracticeMonth, statusFilter]);
+  return practiceSupportList || [];
+}, [practiceSupportList]);
 
 const handleStatCardClick = (
   nextStatus: "전체" | "미섭외" | "섭외중" | "섭외완료"

@@ -426,14 +426,14 @@ const applySubjectCatalogItemsToSemester = async () => {
   });
 
   const ok = window.confirm(
-    "현재 학기의 기존 과목을 모두 지우고 선택한 과목으로 덮어쓰시겠습니까?"
+   "현재 학기의 기존 과목을 선택한 과목으로 덮어쓰시겠습니까?"
   );
   if (!ok) return;
 
   try {
-    const currentRows = (planSemesterList || []).filter(
-      (row: any) => Number(row.semesterNo) === Number(templateDialogSemesterNo)
-    );
+    const currentRows = (planSemesterList || [])
+  .filter((row: any) => Number(row.semesterNo) === Number(templateDialogSemesterNo))
+  .sort((a: any, b: any) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
 
     // 1) 먼저 입력값 검증
     for (const row of normalizedRows) {
@@ -454,22 +454,45 @@ const applySubjectCatalogItemsToSemester = async () => {
       }
     }
 
-    // 2) 검증 통과 후 기존 과목 삭제
-    for (const row of currentRows) {
-      await deletePlanSemesterMut.mutateAsync({ id: Number(row.id) });
-    }
+   // 2) 기존 row는 가능한 한 그대로 덮어쓰기
+const sharedCount = Math.min(currentRows.length, normalizedRows.length);
 
-    // 3) 새 과목 등록
-    for (const row of normalizedRows) {
-      await createPlanSemesterMut.mutateAsync({
-        studentId,
-        semesterNo: Number(templateDialogSemesterNo),
-        subjectName: String(row.subjectName).trim(),
-        category: row.normalizedCategory,
-        requirementType: row.normalizedRequirementType,
-        sortOrder: row.sortOrder,
-      } as any);
-    }
+for (let i = 0; i < sharedCount; i += 1) {
+  const current = currentRows[i];
+  const next = normalizedRows[i];
+
+  await updatePlanSemesterMut.mutateAsync({
+    id: Number(current.id),
+    subjectName: String(next.subjectName).trim(),
+    category: next.normalizedCategory,
+    requirementType: next.normalizedRequirementType,
+    semesterNo: Number(templateDialogSemesterNo),
+    sortOrder: i,
+  } as any);
+}
+
+// 3) 새로 선택한 과목이 더 많으면 초과분만 추가
+for (let i = sharedCount; i < normalizedRows.length; i += 1) {
+  const next = normalizedRows[i];
+
+  await createPlanSemesterMut.mutateAsync({
+    studentId,
+    semesterNo: Number(templateDialogSemesterNo),
+    subjectName: String(next.subjectName).trim(),
+    category: next.normalizedCategory,
+    requirementType: next.normalizedRequirementType,
+    sortOrder: i,
+  } as any);
+}
+
+// 4) 기존 과목이 더 많으면 남는 뒤쪽 row만 삭제
+for (let i = sharedCount; i < currentRows.length; i += 1) {
+  const current = currentRows[i];
+
+  await deletePlanSemesterMut.mutateAsync({
+    id: Number(current.id),
+  });
+}
 
     await utils.planSemester.list.invalidate({ studentId });
 

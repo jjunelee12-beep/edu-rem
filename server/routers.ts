@@ -334,20 +334,28 @@ console.log("[privateCertificate.update router] data =", data);
 
   practiceSupport: router({
     list: protectedProcedure
-      .input(
-        z
-          .object({
-            assigneeId: z.number().optional(),
-          })
-          .optional()
-      )
-      .query(async ({ ctx, input }) => {
-        const assigneeId = isAdminOrHost(ctx.user)
-          ? input?.assigneeId
-          : Number(ctx.user.id);
+  .input(
+    z
+      .object({
+        assigneeId: z.number().optional(),
+        month: z.string().optional(),
+        status: z.enum(["전체", "미섭외", "섭외중", "섭외완료"]).optional(),
+        search: z.string().optional(),
+      })
+      .optional()
+  )
+  .query(async ({ ctx, input }) => {
+    const assigneeId = isAdminOrHost(ctx.user)
+      ? input?.assigneeId
+      : Number(ctx.user.id);
 
-        return db.listPracticeSupportRequests(assigneeId);
-      }),
+    return db.listPracticeSupportRequests({
+      assigneeId,
+      month: input?.month,
+      status: input?.status,
+      search: input?.search,
+    });
+  }),
 
     listByStudent: protectedProcedure
       .input(

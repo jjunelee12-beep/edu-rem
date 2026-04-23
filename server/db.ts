@@ -6410,7 +6410,12 @@ export async function approvePrivateCertificateRefund(params: {
 
 
 // ─── Practice Support Requests (실습배정지원센터) ───────────────────
-export async function listPracticeSupportRequests(assigneeId?: number) {
+export async function listPracticeSupportRequests(params?: {
+  assigneeId?: number;
+  month?: string;
+  status?: "전체" | "미섭외" | "섭외중" | "섭외완료";
+  search?: string;
+}) {
   const db = await getDb();
   if (!db) return [];
 
@@ -6418,8 +6423,34 @@ export async function listPracticeSupportRequests(assigneeId?: number) {
     sql`s.approvalStatus = '승인'`,
   ];
 
-  if (assigneeId) {
-    conditions.push(sql`s.assigneeId = ${assigneeId}`);
+  if (params?.assigneeId) {
+    conditions.push(sql`s.assigneeId = ${params.assigneeId}`);
+  }
+
+  if (params?.month && params.month !== "전체") {
+    conditions.push(
+      sql`DATE_FORMAT(COALESCE(psr.practiceDate, p.practiceDate), '%Y-%m') = ${params.month}`
+    );
+  }
+
+  if (params?.status && params.status !== "전체") {
+    conditions.push(
+      sql`COALESCE(psr.coordinationStatus, '미섭외') = ${params.status}`
+    );
+  }
+
+  if (params?.search?.trim()) {
+    const keyword = `%${params.search.trim()}%`;
+
+    conditions.push(sql`
+      (
+        COALESCE(psr.clientName, s.clientName, '') LIKE ${keyword}
+        OR COALESCE(psr.phone, s.phone, '') LIKE ${keyword}
+        OR COALESCE(psr.course, s.course, p.desiredCourse, '') LIKE ${keyword}
+        OR COALESCE(psr.managerName, psr.assigneeName, u.name, '') LIKE ${keyword}
+        OR COALESCE(psr.inputAddress, s.address, '') LIKE ${keyword}
+      )
+    `);
   }
 
   const whereClause =
@@ -6478,7 +6509,9 @@ export async function listPracticeSupportRequests(assigneeId?: number) {
     LEFT JOIN users u
       ON u.id = s.assigneeId
     ${whereClause}
-    ORDER BY s.id DESC
+    ORDER BY
+      COALESCE(psr.practiceDate, p.practiceDate) DESC,
+      s.id DESC
   `);
 
   return (rows as any[]).map((row) => ({
