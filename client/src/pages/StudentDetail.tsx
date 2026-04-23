@@ -185,7 +185,6 @@ const { data: practiceSupportList } =
   const [selectedSemesterOrder, setSelectedSemesterOrder] = useState(1);
   const [uploadingRefund, setUploadingRefund] = useState(false);
   const [uploadingRefundEditId, setUploadingRefundEditId] = useState<number | null>(null);
-const [pendingRefundRefresh, setPendingRefundRefresh] = useState(false);
   const [uploadingTransferCommon, setUploadingTransferCommon] = useState(false);
   const [uploadingTransferRowId, setUploadingTransferRowId] = useState<number | null>(null);
 
@@ -877,7 +876,7 @@ useEffect(() => {
     triggerSectionHighlight("semester");
   }
 }
-  }, 120);
+  }, 0);
 }, [
   location,
   studentId,
@@ -1542,36 +1541,6 @@ const savePlan = async () => {
   }
 }, [subjectCatalogList, selectedCatalogId]);
 
-useEffect(() => {
-  if (refundDialogOpen) return;
-  if (!pendingRefundRefresh) return;
-  if (createRefundMut.isPending || uploadingRefund) return;
-
-  const timer = window.setTimeout(async () => {
-    resetRefundForm();
-
-    await Promise.all([
-      utils.refund.listByStudent.invalidate({ studentId }),
-      utils.student.get.invalidate({ id: studentId }),
-      utils.semester.list.invalidate({ studentId }),
-    ]);
-
-    setPendingRefundRefresh(false);
-  }, 220);
-
-  return () => window.clearTimeout(timer);
-}, [
-  refundDialogOpen,
-  pendingRefundRefresh,
-  createRefundMut.isPending,
-  uploadingRefund,
-  studentId,
-  selectedSemester?.id,
-  utils.refund.listByStudent,
-  utils.student.get,
-  utils.semester.list,
-]);
-
   const currentSemesterPlanCount = useMemo(() => {
   if (!templateDialogSemesterNo) return 0;
   return (planSemesterList || []).filter(
@@ -1941,13 +1910,12 @@ const existingPlanSubjectMap = useMemo(() => {
   variant="outline"
   size="sm"
   onClick={() => {
-    setPendingRefundRefresh(false);
-    setRefundForm((prev) => ({
-      ...prev,
-      semesterId: selectedSemester?.id ? String(selectedSemester.id) : "",
-    }));
-    setRefundDialogOpen(true);
-  }}
+  setRefundForm((prev) => ({
+    ...prev,
+    semesterId: selectedSemester?.id ? String(selectedSemester.id) : "",
+  }));
+  setRefundDialogOpen(true);
+}}
   className="gap-1 text-red-600 border-red-200 hover:bg-red-50"
 >
   환불 등록
@@ -4020,7 +3988,14 @@ semesterId: r.semesterId ? String(r.semesterId) : "",
 
   
 closeRefundDialog();
-setPendingRefundRefresh(true);
+resetRefundForm();
+
+await Promise.all([
+  utils.refund.listByStudent.invalidate({ studentId }),
+  utils.student.get.invalidate({ id: studentId }),
+  utils.semester.list.invalidate({ studentId }),
+]);
+
 toast.success("환불 요청 등록 완료");
 
 } catch (e) {
