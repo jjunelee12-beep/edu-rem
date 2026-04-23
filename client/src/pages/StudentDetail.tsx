@@ -654,6 +654,7 @@ practiceAddress: "",
   });
   
 const [refundDialogOpen, setRefundDialogOpen] = useState(false);
+const [refundDialogMounted, setRefundDialogMounted] = useState(false);
 
     const [refundForm, setRefundForm] = useState({
   semesterId: "",
@@ -675,6 +676,11 @@ const resetRefundForm = () => {
     attachmentName: "",
     attachmentUrl: "",
   });
+};
+
+const openRefundDialog = () => {
+  setRefundDialogMounted(true);
+  setRefundDialogOpen(true);
 };
 
 const closeRefundDialog = () => {
@@ -1536,9 +1542,9 @@ useEffect(() => {
   if (!pendingRefundRefresh) return;
   if (createRefundMut.isPending || uploadingRefund) return;
 
-  resetRefundForm();
-
   const timer = window.setTimeout(async () => {
+    resetRefundForm();
+
     await Promise.all([
       utils.refund.listByStudent.invalidate({ studentId }),
       utils.student.get.invalidate({ id: studentId }),
@@ -1546,7 +1552,7 @@ useEffect(() => {
     ]);
 
     setPendingRefundRefresh(false);
-  }, 0);
+  }, 220);
 
   return () => window.clearTimeout(timer);
 }, [
@@ -1560,6 +1566,17 @@ useEffect(() => {
   utils.student.get,
   utils.semester.list,
 ]);
+
+useEffect(() => {
+  if (refundDialogOpen) return;
+  if (!refundDialogMounted) return;
+
+  const timer = window.setTimeout(() => {
+    setRefundDialogMounted(false);
+  }, 180);
+
+  return () => window.clearTimeout(timer);
+}, [refundDialogOpen, refundDialogMounted]);
 
   
   const currentSemesterPlanCount = useMemo(() => {
@@ -1936,7 +1953,7 @@ const existingPlanSubjectMap = useMemo(() => {
       ...prev,
       semesterId: selectedSemester?.id ? String(selectedSemester.id) : "",
     }));
-    setRefundDialogOpen(true);
+    openRefundDialog();
   }}
   className="gap-1 text-red-600 border-red-200 hover:bg-red-50"
 >
@@ -3798,18 +3815,21 @@ semesterId: r.semesterId ? String(r.semesterId) : "",
         </DialogContent>
       </Dialog>
 
-           <Dialog
-  open={refundDialogOpen}
-  onOpenChange={(nextOpen) => {
-    if (createRefundMut.isPending || uploadingRefund) return;
-    if (!nextOpen) {
-      closeRefundDialog();
-      return;
-    }
-    setRefundDialogOpen(true);
-  }}
->
-        <DialogContent className="max-w-md">
+           {refundDialogMounted && (
+  <Dialog
+    open={refundDialogOpen}
+    onOpenChange={(nextOpen) => {
+      if (createRefundMut.isPending || uploadingRefund) return;
+
+      if (!nextOpen) {
+        closeRefundDialog();
+        return;
+      }
+
+      setRefundDialogOpen(true);
+    }}
+  >
+    <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>환불 요청 등록</DialogTitle>
           </DialogHeader>
@@ -4023,7 +4043,8 @@ toast.success("환불 요청 등록 완료");
 </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+        </Dialog>
+)}
 
 <Dialog open={courseDialogOpen} onOpenChange={setCourseDialogOpen}>
   <DialogContent className="max-w-lg">

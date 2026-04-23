@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -41,6 +41,7 @@ export default function Settlement() {
 const [institutionDialogOpen, setInstitutionDialogOpen] = useState(false);
 const [selectedInstitutionName, setSelectedInstitutionName] = useState<string>("");
 const [institutionTrendMode, setInstitutionTrendMode] = useState<"gross" | "company">("gross");
+const [institutionDialogMounted, setInstitutionDialogMounted] = useState(false);
 
   const isAdminOrHost =
     user?.role === "admin" ||
@@ -132,6 +133,27 @@ const {
       },
     });
 
+const openInstitutionDialog = () => {
+  setInstitutionDialogMounted(true);
+  setInstitutionDialogOpen(true);
+};
+
+const closeInstitutionDialog = () => {
+  setInstitutionDialogOpen(false);
+};
+
+const changeSettlementMonthSafely = (nextYear: number, nextMonth: number) => {
+  closeInstitutionDialog();
+  setPayslipOpen(false);
+  setSelectedPayslipAssigneeId(null);
+  setSelectedInstitutionName("");
+
+  window.setTimeout(() => {
+    setYear(nextYear);
+    setMonth(nextMonth);
+  }, 180);
+};
+
 
   const years = useMemo(() => {
     const arr = [];
@@ -143,6 +165,17 @@ const {
     () => Array.from({ length: 12 }, (_, i) => i + 1),
     []
   );
+
+useEffect(() => {
+  if (institutionDialogOpen) return;
+  if (!institutionDialogMounted) return;
+
+  const timer = window.setTimeout(() => {
+    setInstitutionDialogMounted(false);
+  }, 180);
+
+  return () => window.clearTimeout(timer);
+}, [institutionDialogOpen, institutionDialogMounted]);
 
   const totalSales =
     report?.reduce(
@@ -587,13 +620,13 @@ const downloadInstitutionTrendCSV = () => {
 
         <div className="flex items-center gap-2">
   {(user?.role === "host" || user?.role === "superhost") && (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={() => setInstitutionDialogOpen(true)}
-    >
-      교육원별 매출 확인
-    </Button>
+   <Button
+  variant="outline"
+  size="sm"
+  onClick={openInstitutionDialog}
+>
+  교육원별 매출 확인
+</Button>
   )}
 
   <Button
@@ -610,7 +643,10 @@ const downloadInstitutionTrendCSV = () => {
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">
-        <Select value={String(year)} onValueChange={(v) => setYear(Number(v))}>
+        <Select
+  value={String(year)}
+  onValueChange={(v) => changeSettlementMonthSafely(Number(v), month)}
+>
           <SelectTrigger className="w-[120px]">
             <SelectValue />
           </SelectTrigger>
@@ -623,7 +659,10 @@ const downloadInstitutionTrendCSV = () => {
           </SelectContent>
         </Select>
 
-        <Select value={String(month)} onValueChange={(v) => setMonth(Number(v))}>
+        <Select
+  value={String(month)}
+  onValueChange={(v) => changeSettlementMonthSafely(year, Number(v))}
+>
           <SelectTrigger className="w-[100px]">
             <SelectValue />
           </SelectTrigger>
@@ -1354,7 +1393,18 @@ const downloadInstitutionTrendCSV = () => {
       <p className="text-xs text-muted-foreground text-center">
   * 정산 기준: 결제 완료 건 기준 · 일반과목은 총매출에서 교육원 정산 금액을 먼저 차감한 뒤 회사 매출을 계산하고, 그 회사 매출 안에서 프리랜서 지급액과 세금을 반영하여 회사 순이익을 계산합니다. 환불 발생 시 해당 월 정산에서 차감됩니다.
 </p>
-<Dialog open={institutionDialogOpen} onOpenChange={setInstitutionDialogOpen}>
+{institutionDialogMounted && (
+  <Dialog
+    open={institutionDialogOpen}
+    onOpenChange={(nextOpen) => {
+      if (!nextOpen) {
+        closeInstitutionDialog();
+        return;
+      }
+      setInstitutionDialogOpen(true);
+    }}
+  >
+
   <DialogContent className="!fixed !inset-0 !left-0 !top-0 !z-[100] !m-0 !w-screen !h-screen !max-w-none !max-h-none !translate-x-0 !translate-y-0 !rounded-none !border-0 !p-0 !gap-0 !block bg-slate-50">
     <div className="flex w-full h-full flex-col bg-slate-50">
       {/* 상단 헤더 */}
@@ -1388,12 +1438,12 @@ const downloadInstitutionTrendCSV = () => {
           </Button>
 
           <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setInstitutionDialogOpen(false)}
-          >
-            닫기
-          </Button>
+  variant="outline"
+  size="sm"
+  onClick={closeInstitutionDialog}
+>
+  닫기
+</Button>
         </div>
       </div>
 
@@ -1830,7 +1880,8 @@ const downloadInstitutionTrendCSV = () => {
       </div>
     </div>
   </DialogContent>
-</Dialog>
+  </Dialog>
+)}
 
     </div>
   );
