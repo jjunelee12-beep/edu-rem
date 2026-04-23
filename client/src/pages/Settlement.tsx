@@ -144,24 +144,18 @@ const closeInstitutionDialog = () => {
 const safeNavigate = (path: string) => {
   setInstitutionDialogOpen(false);
   setPayslipOpen(false);
-
-  window.setTimeout(() => {
-    setSelectedPayslipAssigneeId(null);
-    setSelectedInstitutionName("");
-    navigate(path);
-  }, 180);
+  setSelectedPayslipAssigneeId(null);
+  setSelectedInstitutionName("");
+  navigate(path);
 };
 
 const changeSettlementMonthSafely = (nextYear: number, nextMonth: number) => {
   setInstitutionDialogOpen(false);
   setPayslipOpen(false);
-
-  window.setTimeout(() => {
-    setSelectedPayslipAssigneeId(null);
-    setSelectedInstitutionName("");
-    setYear(nextYear);
-    setMonth(nextMonth);
-  }, 180);
+  setSelectedPayslipAssigneeId(null);
+  setSelectedInstitutionName("");
+  setYear(nextYear);
+  setMonth(nextMonth);
 };
 
 
