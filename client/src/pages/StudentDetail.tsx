@@ -835,6 +835,8 @@ const canFinalizeRegistrationStatus = isApprovedSemester && isSelectedLastSemest
 
 useEffect(() => {
   if (studentLoading) return;
+  if (refundDialogOpen) return;
+  if (createRefundMut.isPending || uploadingRefund) return;
 
   const tab = new URLSearchParams(window.location.search).get("tab") || "";
   const tabKey = `${studentId}:${tab}:${location}`;
@@ -843,47 +845,46 @@ useEffect(() => {
 
   lastHandledTabRef.current = tabKey;
 
-  window.setTimeout(() => {
-    if (tab === "semester") {
-  scrollToSection(semesterSectionRef.current);
-  triggerSectionHighlight("semester");
-  return;
-}
-
-    if (tab === "private-certificate") {
-  scrollToSection(
-    privateCertificateSectionRef.current || planSummarySectionRef.current
-  );
-  triggerSectionHighlight("private-certificate");
-  return;
-}
-
-    if (tab === "practice-support") {
-  scrollToSection(
-    practiceSupportSectionRef.current || planSummarySectionRef.current
-  );
-  triggerSectionHighlight("practice-support");
-  return;
-}
-
-    if (tab === "refund") {
-  if (refundSectionRef.current) {
-    scrollToSection(refundSectionRef.current);
-    triggerSectionHighlight("refund");
-  } else {
-    setRefundDialogOpen(true);
+  if (tab === "semester") {
     scrollToSection(semesterSectionRef.current);
     triggerSectionHighlight("semester");
+    return;
   }
-}
-  }, 0);
+
+  if (tab === "private-certificate") {
+    scrollToSection(
+      privateCertificateSectionRef.current || planSummarySectionRef.current
+    );
+    triggerSectionHighlight("private-certificate");
+    return;
+  }
+
+  if (tab === "practice-support") {
+    scrollToSection(
+      practiceSupportSectionRef.current || planSummarySectionRef.current
+    );
+    triggerSectionHighlight("practice-support");
+    return;
+  }
+
+  if (tab === "refund") {
+    if (refundSectionRef.current) {
+      scrollToSection(refundSectionRef.current);
+      triggerSectionHighlight("refund");
+    } else {
+      scrollToSection(semesterSectionRef.current);
+      triggerSectionHighlight("semester");
+    }
+  }
 }, [
   location,
   studentId,
   studentLoading,
   requestedPrivateCertList.length,
   selectedPracticeSupport?.id,
-  refundList?.length,
+  refundDialogOpen,
+  createRefundMut.isPending,
+  uploadingRefund,
 ]);
 
   const moveToPlanSemester = (semesterNo: number) => {
