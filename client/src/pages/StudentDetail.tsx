@@ -654,6 +654,8 @@ practiceAddress: "",
   });
   
 
+const [refundDialogOpen, setRefundDialogOpen] = useState(false);
+
     const [refundForm, setRefundForm] = useState({
   semesterId: "",
   refundAmount: "",
