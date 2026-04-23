@@ -841,36 +841,31 @@ useEffect(() => {
   lastHandledTabRef.current = tabKey;
 
   if (tab === "semester") {
-    scrollToSection(semesterSectionRef.current);
-    triggerSectionHighlight("semester");
-    return;
-  }
+  scrollToSection(semesterSectionRef.current);
+  return;
+}
 
   if (tab === "private-certificate") {
-    scrollToSection(
-      privateCertificateSectionRef.current || planSummarySectionRef.current
-    );
-    triggerSectionHighlight("private-certificate");
-    return;
-  }
+  scrollToSection(
+    privateCertificateSectionRef.current || planSummarySectionRef.current
+  );
+  return;
+}
 
-  if (tab === "practice-support") {
-    scrollToSection(
-      practiceSupportSectionRef.current || planSummarySectionRef.current
-    );
-    triggerSectionHighlight("practice-support");
-    return;
-  }
+if (tab === "practice-support") {
+  scrollToSection(
+    practiceSupportSectionRef.current || planSummarySectionRef.current
+  );
+  return;
+}
 
-  if (tab === "refund") {
-    if (refundSectionRef.current) {
-      scrollToSection(refundSectionRef.current);
-      triggerSectionHighlight("refund");
-    } else {
-      scrollToSection(semesterSectionRef.current);
-      triggerSectionHighlight("semester");
-    }
+if (tab === "refund") {
+  if (refundSectionRef.current) {
+    scrollToSection(refundSectionRef.current);
+  } else {
+    scrollToSection(semesterSectionRef.current);
   }
+}
 }, [
   location,
   studentId,
@@ -896,13 +891,7 @@ const scrollToSection = (el: HTMLDivElement | null) => {
 const triggerSectionHighlight = (
   key: "" | "semester" | "private-certificate" | "practice-support" | "refund"
 ) => {
-  if (!key) return;
-
-  setHighlightSection(key);
-
-  window.setTimeout(() => {
-    setHighlightSection((prev) => (prev === key ? "" : prev));
-  }, 2200);
+  return;
 };
 
   const getInstitutionName = (institutionId: any) => {

@@ -410,7 +410,7 @@ rejectRefundMutation.mutate({ id: Number(r.id) })
                 <td className="px-4 py-3">
                   <button
                     className="font-medium text-primary hover:underline"
-                    onClick={() => safeNavigate(`/students/${sem.studentId}`)}
+                    onClick={() => setLocation(`/students/${sem.studentId}`)}
                   >
                     {sem.clientName}
                   </button>
@@ -490,7 +490,7 @@ rejectRefundMutation.mutate({ id: Number(r.id) })
                 <td className="px-4 py-3">
                   <button
                     className="font-medium text-primary hover:underline"
-                    onClick={() => safeNavigate(`/students/${sem.studentId}`)}
+                    onClick={() => setLocation(`/students/${sem.studentId}`)}
                   >
                     {sem.clientName}
                   </button>
