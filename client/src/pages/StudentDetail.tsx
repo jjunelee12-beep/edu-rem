@@ -689,10 +689,7 @@ const safeNavigate = (path: string) => {
   setPrivateCertDialogOpen(false);
   setTemplateDialogOpen(false);
   setSemDialogOpen(false);
-
-  window.setTimeout(() => {
-    setLocation(path);
-  }, 120);
+  setLocation(path);
 };
 
   const [editingRefundId, setEditingRefundId] = useState<number | null>(null);
