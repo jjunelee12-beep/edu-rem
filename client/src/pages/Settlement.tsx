@@ -142,16 +142,42 @@ const closeInstitutionDialog = () => {
 };
 
 const safeNavigate = (path: string) => {
+  const shouldCloseInstitutionDialog = institutionDialogOpen;
+  const shouldClosePayslip = payslipOpen;
+
   setInstitutionDialogOpen(false);
   setPayslipOpen(false);
+
+  if (shouldCloseInstitutionDialog || shouldClosePayslip) {
+    window.setTimeout(() => {
+      setSelectedPayslipAssigneeId(null);
+      setSelectedInstitutionName("");
+      navigate(path);
+    }, 180);
+    return;
+  }
+
   setSelectedPayslipAssigneeId(null);
   setSelectedInstitutionName("");
   navigate(path);
 };
-
 const changeSettlementMonthSafely = (nextYear: number, nextMonth: number) => {
+  const shouldCloseInstitutionDialog = institutionDialogOpen;
+  const shouldClosePayslip = payslipOpen;
+
   setInstitutionDialogOpen(false);
   setPayslipOpen(false);
+
+  if (shouldCloseInstitutionDialog || shouldClosePayslip) {
+    window.setTimeout(() => {
+      setSelectedPayslipAssigneeId(null);
+      setSelectedInstitutionName("");
+      setYear(nextYear);
+      setMonth(nextMonth);
+    }, 180);
+    return;
+  }
+
   setSelectedPayslipAssigneeId(null);
   setSelectedInstitutionName("");
   setYear(nextYear);
