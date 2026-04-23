@@ -2486,17 +2486,21 @@ const existingPlanSubjectMap = useMemo(() => {
                         </thead>
                         <tbody>
                           {group.rows.map((row: any, rowIndex: number) => (
-                            <tr key={row.id} className="border-b last:border-0">
+                            <tr
+  key={`${row.id}-${row.subjectName}-${row.planCategory}-${row.planRequirementType}-${row.sortOrder}`}
+  className="border-b last:border-0"
+>
                               <td className="px-2 py-1">
                                 <Input
-                                  ref={(el) => {
-                                    planFieldRefs.current[`plan-name-${group.semesterNo}-${rowIndex}`] = el;
-                                  }}
-                                  defaultValue={row.subjectName || ""}
-                                  className={`h-8 ${row.planRequirementType === "전공필수" ? "text-red-600 font-medium" : ""}`}
-                                  onBlur={(e) => handlePlanSemesterBlur(row.id, "subjectName", e.target.value)}
-                                  onKeyDown={(e) => handlePlanNameKeyDown(e, group.semesterNo, rowIndex, group.rows)}
-                                />
+  key={`plan-name-${row.id}-${row.subjectName}-${row.sortOrder}`}
+  ref={(el) => {
+    planFieldRefs.current[`plan-name-${group.semesterNo}-${rowIndex}`] = el;
+  }}
+  defaultValue={row.subjectName || ""}
+  className={`h-8 ${row.planRequirementType === "전공필수" ? "text-red-600 font-medium" : ""}`}
+  onBlur={(e) => handlePlanSemesterBlur(row.id, "subjectName", e.target.value)}
+  onKeyDown={(e) => handlePlanNameKeyDown(e, group.semesterNo, rowIndex, group.rows)}
+/>
                               </td>
 
                               <td className="px-2 py-1">
