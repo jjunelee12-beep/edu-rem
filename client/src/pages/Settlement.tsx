@@ -142,18 +142,10 @@ const closeInstitutionDialog = () => {
 };
 
 const safeNavigate = (path: string) => {
-  setInstitutionDialogOpen(false);
-  setPayslipOpen(false);
-  setSelectedPayslipAssigneeId(null);
-  setSelectedInstitutionName("");
   navigate(path);
 };
 
 const changeSettlementMonthSafely = (nextYear: number, nextMonth: number) => {
-  setInstitutionDialogOpen(false);
-  setPayslipOpen(false);
-  setSelectedPayslipAssigneeId(null);
-  setSelectedInstitutionName("");
   setYear(nextYear);
   setMonth(nextMonth);
 };

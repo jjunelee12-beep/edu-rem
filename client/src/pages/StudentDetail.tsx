@@ -683,11 +683,6 @@ const closeRefundDialog = () => {
 };
 
 const safeNavigate = (path: string) => {
-  setRefundDialogOpen(false);
-  setCourseDialogOpen(false);
-  setPrivateCertDialogOpen(false);
-  setTemplateDialogOpen(false);
-  setSemDialogOpen(false);
   setLocation(path);
 };
 
