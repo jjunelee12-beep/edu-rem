@@ -7,7 +7,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
 
-import Login from "./pages/Login";
+import Login from "./components/Login";
 import Home from "./pages/Home";
 import OverviewDashboard from "./pages/OverviewDashboard";
 import Consultations from "./pages/Consultations";

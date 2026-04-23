@@ -91,14 +91,16 @@ export default function MessengerRealtimeBridge() {
   );
 
   const { data: me } = trpc.users.me.useQuery(undefined, {
-    staleTime: 30_000,
-  });
+  staleTime: 30_000,
+  enabled: !!user,
+});
 
   const myUserId = Number((user as any)?.id || (me as any)?.id || 0);
 
   const { data: userList = [] } = trpc.users.list.useQuery(undefined, {
-    staleTime: 30_000,
-  });
+  staleTime: 30_000,
+  enabled: !!user, 
+});
 
   const usersById = useMemo(() => {
     const map = new Map<number, any>();
@@ -243,9 +245,13 @@ export default function MessengerRealtimeBridge() {
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    let liveSocket: any = null;
+ useEffect(() => {
+  if (!(user as any)?.id) {
+    console.log("[MessengerRealtimeBridge] blocked: no authenticated user");
+    return;
+  }
 
+  let liveSocket: any = null;
     const handleNewMessage = (payload: any) => {
       const roomId = Number(payload?.roomId || 0);
       const senderId = Number(payload?.senderId || 0);
@@ -511,13 +517,14 @@ export default function MessengerRealtimeBridge() {
       );
     };
   }, [
-    usersById,
-    myUserId,
-    openRoomIds,
-    mutedRoomIds,
-    soundEnabled,
-    isMessengerMainOpen,
-    appSettings,
+     user,
+  usersById,
+  myUserId,
+  openRoomIds,
+  mutedRoomIds,
+  soundEnabled,
+  isMessengerMainOpen,
+  appSettings,
   ]);
 
   return null;
