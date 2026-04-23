@@ -1473,10 +1473,11 @@ export const settlementGrades = mysqlTable("settlement_grades", {
 export const settlementItems = mysqlTable("settlement_items", {
   id: int("id").autoincrement().primaryKey(),
   revenueType: mysqlEnum("revenueType", [
-    "subject",
-    "practice_support",
-    "private_certificate",
-  ]).notNull(),
+  "subject",
+  "practice_support",
+  "private_certificate",
+  "refund",
+]).notNull(),
   sourceId: int("sourceId").notNull(),
   studentId: int("studentId").notNull(),
   assigneeId: int("assigneeId"),
