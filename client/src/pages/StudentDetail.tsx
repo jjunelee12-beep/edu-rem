@@ -680,6 +680,18 @@ const closeRefundDialog = () => {
   setRefundDialogOpen(false);
 };
 
+const safeNavigate = (path: string) => {
+  setRefundDialogOpen(false);
+  setCourseDialogOpen(false);
+  setPrivateCertDialogOpen(false);
+  setTemplateDialogOpen(false);
+  setSemDialogOpen(false);
+
+  window.setTimeout(() => {
+    setLocation(path);
+  }, 120);
+};
+
   const [editingRefundId, setEditingRefundId] = useState<number | null>(null);
   const [editRefundForm, setEditRefundForm] = useState({
   semesterId: "",
@@ -1641,7 +1653,7 @@ const existingPlanSubjectMap = useMemo(() => {
   if (!student) {
     return (
       <div className="space-y-4">
-        <Button variant="ghost" onClick={() => setLocation("/students")} className="gap-2">
+        <Button variant="ghost" onClick={() => safeNavigate("/students")} className="gap-2">
           <ArrowLeft className="h-4 w-4" /> 목록으로
         </Button>
         <p className="text-muted-foreground text-center py-20">학생 정보를 찾을 수 없습니다.</p>
@@ -1666,7 +1678,7 @@ const existingPlanSubjectMap = useMemo(() => {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/students")}>
+        <Button variant="ghost" size="icon" onClick={() => safeNavigate("/students")}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
 

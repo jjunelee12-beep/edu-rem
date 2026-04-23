@@ -140,6 +140,17 @@ const closeInstitutionDialog = () => {
   setInstitutionDialogOpen(false);
 };
 
+const safeNavigate = (path: string) => {
+  setInstitutionDialogOpen(false);
+  setPayslipOpen(false);
+  setSelectedPayslipAssigneeId(null);
+  setSelectedInstitutionName("");
+
+  window.setTimeout(() => {
+    navigate(path);
+  }, 120);
+};
+
 const changeSettlementMonthSafely = (nextYear: number, nextMonth: number) => {
   closeInstitutionDialog();
   setPayslipOpen(false);
@@ -209,30 +220,30 @@ const changeSettlementMonthSafely = (nextYear: number, nextMonth: number) => {
   return type || "-";
 };
 
-  const openSourceDetail = (row: any) => {
-    const studentId = Number(row?.studentId || 0);
-    if (!studentId) return;
+ const openSourceDetail = (row: any) => {
+  const studentId = Number(row?.studentId || 0);
+  if (!studentId) return;
 
-    const isRefund =
-  row?.settlementStatus === "refunded" || row?.revenueType === "refund";
+  const isRefund =
+    row?.settlementStatus === "refunded" || row?.revenueType === "refund";
 
-    if (isRefund) {
-      navigate(`/students/${studentId}?tab=refund`);
-      return;
-    }
+  if (isRefund) {
+    safeNavigate(`/students/${studentId}?tab=refund`);
+    return;
+  }
 
-    if (row?.revenueType === "private_certificate") {
-      navigate(`/students/${studentId}?tab=private-certificate`);
-      return;
-    }
+  if (row?.revenueType === "private_certificate") {
+    safeNavigate(`/students/${studentId}?tab=private-certificate`);
+    return;
+  }
 
-    if (row?.revenueType === "practice_support") {
-      navigate(`/students/${studentId}?tab=practice-support`);
-      return;
-    }
+  if (row?.revenueType === "practice_support") {
+    safeNavigate(`/students/${studentId}?tab=practice-support`);
+    return;
+  }
 
-    navigate(`/students/${studentId}?tab=semester`);
-  };
+  safeNavigate(`/students/${studentId}?tab=semester`);
+};
 
   const filteredDetailEntries = useMemo(() => {
     const entries = detailData?.entries || [];
