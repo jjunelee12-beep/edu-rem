@@ -1948,7 +1948,7 @@ const existingPlanSubjectMap = useMemo(() => {
       ...prev,
       semesterId: selectedSemester?.id ? String(selectedSemester.id) : "",
     }));
-    openRefundDialog();
+    setRefundDialogOpen(true);
   }}
   className="gap-1 text-red-600 border-red-200 hover:bg-red-50"
 >
