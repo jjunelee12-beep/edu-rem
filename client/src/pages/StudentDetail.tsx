@@ -13,6 +13,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
@@ -3814,20 +3815,17 @@ semesterId: r.semesterId ? String(r.semesterId) : "",
   <Dialog
   open={refundDialogOpen}
   onOpenChange={(nextOpen) => {
-    if (createRefundMut.isPending || uploadingRefund) return;
-
-    if (!nextOpen) {
-      closeRefundDialog();
-      return;
-    }
-
-    setRefundDialogOpen(true);
+    if (!nextOpen && (createRefundMut.isPending || uploadingRefund)) return;
+    setRefundDialogOpen(nextOpen);
   }}
 >
-    <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>환불 요청 등록</DialogTitle>
-          </DialogHeader>
+  <DialogContent className="max-w-md">
+    <DialogHeader>
+      <DialogTitle>환불 요청 등록</DialogTitle>
+      <DialogDescription className="sr-only">
+        환불 유형, 대상 학기, 금액, 사유, 첨부파일을 입력하고 환불 요청을 등록합니다.
+      </DialogDescription>
+    </DialogHeader>
 
           <div className="grid gap-4 py-2">
             <div className="space-y-1">

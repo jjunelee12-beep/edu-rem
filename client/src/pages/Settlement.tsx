@@ -25,6 +25,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 
 export default function Settlement() {
@@ -143,21 +144,21 @@ const closeInstitutionDialog = () => {
 const safeNavigate = (path: string) => {
   setInstitutionDialogOpen(false);
   setPayslipOpen(false);
-  setSelectedPayslipAssigneeId(null);
-  setSelectedInstitutionName("");
 
   window.setTimeout(() => {
+    setSelectedPayslipAssigneeId(null);
+    setSelectedInstitutionName("");
     navigate(path);
-  }, 120);
+  }, 180);
 };
 
 const changeSettlementMonthSafely = (nextYear: number, nextMonth: number) => {
-  closeInstitutionDialog();
+  setInstitutionDialogOpen(false);
   setPayslipOpen(false);
-  setSelectedPayslipAssigneeId(null);
-  setSelectedInstitutionName("");
 
   window.setTimeout(() => {
+    setSelectedPayslipAssigneeId(null);
+    setSelectedInstitutionName("");
     setYear(nextYear);
     setMonth(nextMonth);
   }, 180);
@@ -1407,12 +1408,14 @@ const downloadInstitutionTrendCSV = () => {
       {/* 상단 헤더 */}
       <div className="flex h-16 shrink-0 items-center justify-between border-b bg-white px-6">
         <div>
-          <DialogTitle className="text-lg font-semibold">
-            {year}년 {month}월 교육원별 매출 현황
-          </DialogTitle>
-          <p className="text-sm text-muted-foreground">
-            교육원별 월간 매출 / 우리회사 몫 / 월별 동향 / 상세 리스트를 확인합니다.
-          </p>
+          <DialogHeader className="space-y-1">
+  <DialogTitle className="text-lg font-semibold">
+    {year}년 {month}월 교육원별 매출 현황
+  </DialogTitle>
+  <DialogDescription className="text-sm text-muted-foreground">
+    교육원별 월간 매출, 우리회사 몫, 월별 동향, 상세 리스트를 확인합니다.
+  </DialogDescription>
+</DialogHeader>
         </div>
 
         <div className="flex items-center gap-2">
