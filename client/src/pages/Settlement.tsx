@@ -1393,15 +1393,11 @@ const downloadInstitutionTrendCSV = () => {
   * 정산 기준: 결제 완료 건 기준 · 일반과목은 총매출에서 교육원 정산 금액을 먼저 차감한 뒤 회사 매출을 계산하고, 그 회사 매출 안에서 프리랜서 지급액과 세금을 반영하여 회사 순이익을 계산합니다. 환불 발생 시 해당 월 정산에서 차감됩니다.
 </p>
   <Dialog
-    open={institutionDialogOpen}
-    onOpenChange={(nextOpen) => {
-      if (!nextOpen) {
-        closeInstitutionDialog();
-        return;
-      }
-      setInstitutionDialogOpen(true);
-    }}
-  >
+  open={institutionDialogOpen}
+  onOpenChange={(nextOpen) => {
+    setInstitutionDialogOpen(nextOpen);
+  }}
+>
 
   <DialogContent className="!fixed !inset-0 !left-0 !top-0 !z-[100] !m-0 !w-screen !h-screen !max-w-none !max-h-none !translate-x-0 !translate-y-0 !rounded-none !border-0 !p-0 !gap-0 !block bg-slate-50">
     <div className="flex w-full h-full flex-col bg-slate-50">

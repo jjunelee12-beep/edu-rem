@@ -11,6 +11,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import { formatPhone } from "@/lib/format";
@@ -433,13 +434,21 @@ const canOverrideRegisteredStatus = isHost || isSuperHost;
         </div>
       </div>
 
-      <Dialog open={showCsvImport} onOpenChange={setShowCsvImport}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" /> CSV 파일 임포트
-            </DialogTitle>
-          </DialogHeader>
+      <Dialog
+  open={showCsvImport}
+  onOpenChange={(nextOpen) => {
+    setShowCsvImport(nextOpen);
+  }}
+>
+  <DialogContent className="max-w-2xl">
+    <DialogHeader>
+      <DialogTitle className="flex items-center gap-2">
+        <FileText className="h-5 w-5" /> CSV 파일 임포트
+      </DialogTitle>
+      <DialogDescription className="sr-only">
+        CSV 내용을 확인하고 상담 데이터를 임포트합니다.
+      </DialogDescription>
+    </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
               열 순서: 상담일,문의경로,이름,연락처,최종학력,희망과정,상담내역,상태(옵션)
@@ -474,13 +483,21 @@ const canOverrideRegisteredStatus = isHost || isSuperHost;
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showBulkPaste} onOpenChange={setShowBulkPaste}>
-        <DialogContent className="max-w-5xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" /> 상담DB 일괄등록
-            </DialogTitle>
-          </DialogHeader>
+     <Dialog
+  open={showBulkPaste}
+  onOpenChange={(nextOpen) => {
+    setShowBulkPaste(nextOpen);
+  }}
+>
+  <DialogContent className="max-w-5xl">
+    <DialogHeader>
+      <DialogTitle className="flex items-center gap-2">
+        <FileText className="h-5 w-5" /> 상담DB 일괄등록
+      </DialogTitle>
+      <DialogDescription className="sr-only">
+        탭 구분 텍스트를 붙여넣고 상담 데이터를 일괄 등록합니다.
+      </DialogDescription>
+    </DialogHeader>
 
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
