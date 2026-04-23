@@ -3956,26 +3956,24 @@ semesterId: r.semesterId ? String(r.semesterId) : "",
     attachmentUrl: refundForm.attachmentUrl || undefined,
   } as any);
 
-  await Promise.all([
-    utils.refund.listByStudent.invalidate({ studentId }),
-    utils.student.get.invalidate({ id: studentId }),
-    utils.semester.list.invalidate({ studentId }),
-  ]);
+  setRefundDialogOpen(false);
+setRefundForm({
+  semesterId: selectedSemester?.id ? String(selectedSemester.id) : "",
+  refundAmount: "",
+  refundDate: new Date().toISOString().slice(0, 10),
+  reason: "",
+  refundType: "부분환불",
+  attachmentName: "",
+  attachmentUrl: "",
+});
 
-  toast.success("환불 요청 등록 완료");
+await Promise.all([
+  utils.refund.listByStudent.invalidate({ studentId }),
+  utils.student.get.invalidate({ id: studentId }),
+  utils.semester.list.invalidate({ studentId }),
+]);
 
-  window.setTimeout(() => {
-    setRefundDialogOpen(false);
-    setRefundForm({
-      semesterId: selectedSemester?.id ? String(selectedSemester.id) : "",
-      refundAmount: "",
-      refundDate: new Date().toISOString().slice(0, 10),
-      reason: "",
-      refundType: "부분환불",
-      attachmentName: "",
-      attachmentUrl: "",
-    });
-  }, 0);
+toast.success("환불 요청 등록 완료");
 } catch (e) {
   // onError에서 toast 처리
 }

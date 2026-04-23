@@ -333,6 +333,20 @@ const [csvUploadSummary, setCsvUploadSummary] = useState<{
     }
   );
 
+const { data: practiceSupportList = [], isLoading } =
+  trpc.practiceSupport.list.useQuery(
+    {
+      month: selectedPracticeMonth === "전체" ? undefined : selectedPracticeMonth,
+      status: statusFilter === "전체" ? undefined : (statusFilter as any),
+      search: search.trim() || undefined,
+    },
+    {
+      keepPreviousData: true,
+      staleTime: 1000 * 60 * 3,
+      refetchOnWindowFocus: false,
+    }
+  );
+
   const {
   data: educationCenterDb = [],
   refetch: refetchEducationCenters,
