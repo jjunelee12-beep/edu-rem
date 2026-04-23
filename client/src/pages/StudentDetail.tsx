@@ -184,6 +184,7 @@ const { data: practiceSupportList } =
   const [selectedSemesterOrder, setSelectedSemesterOrder] = useState(1);
   const [uploadingRefund, setUploadingRefund] = useState(false);
   const [uploadingRefundEditId, setUploadingRefundEditId] = useState<number | null>(null);
+const [pendingRefundRefresh, setPendingRefundRefresh] = useState(false);
   const [uploadingTransferCommon, setUploadingTransferCommon] = useState(false);
   const [uploadingTransferRowId, setUploadingTransferRowId] = useState<number | null>(null);
 
@@ -663,6 +664,22 @@ const [refundDialogOpen, setRefundDialogOpen] = useState(false);
   attachmentName: "",
   attachmentUrl: "",
 });
+
+const resetRefundForm = () => {
+  setRefundForm({
+    semesterId: selectedSemester?.id ? String(selectedSemester.id) : "",
+    refundAmount: "",
+    refundDate: new Date().toISOString().slice(0, 10),
+    reason: "",
+    refundType: "부분환불",
+    attachmentName: "",
+    attachmentUrl: "",
+  });
+};
+
+const closeRefundDialog = () => {
+  setRefundDialogOpen(false);
+};
 
   const [editingRefundId, setEditingRefundId] = useState<number | null>(null);
   const [editRefundForm, setEditRefundForm] = useState({
@@ -1514,6 +1531,36 @@ const savePlan = async () => {
   }
 }, [subjectCatalogList, selectedCatalogId]);
 
+useEffect(() => {
+  if (refundDialogOpen) return;
+  if (!pendingRefundRefresh) return;
+  if (createRefundMut.isPending || uploadingRefund) return;
+
+  resetRefundForm();
+
+  const timer = window.setTimeout(async () => {
+    await Promise.all([
+      utils.refund.listByStudent.invalidate({ studentId }),
+      utils.student.get.invalidate({ id: studentId }),
+      utils.semester.list.invalidate({ studentId }),
+    ]);
+
+    setPendingRefundRefresh(false);
+  }, 0);
+
+  return () => window.clearTimeout(timer);
+}, [
+  refundDialogOpen,
+  pendingRefundRefresh,
+  createRefundMut.isPending,
+  uploadingRefund,
+  studentId,
+  selectedSemester?.id,
+  utils.refund.listByStudent,
+  utils.student.get,
+  utils.semester.list,
+]);
+
   
   const currentSemesterPlanCount = useMemo(() => {
   if (!templateDialogSemesterNo) return 0;
@@ -1884,6 +1931,7 @@ const existingPlanSubjectMap = useMemo(() => {
   variant="outline"
   size="sm"
   onClick={() => {
+    setPendingRefundRefresh(false);
     setRefundForm((prev) => ({
       ...prev,
       semesterId: selectedSemester?.id ? String(selectedSemester.id) : "",
@@ -3754,7 +3802,11 @@ semesterId: r.semesterId ? String(r.semesterId) : "",
   open={refundDialogOpen}
   onOpenChange={(nextOpen) => {
     if (createRefundMut.isPending || uploadingRefund) return;
-    setRefundDialogOpen(nextOpen);
+    if (!nextOpen) {
+      closeRefundDialog();
+      return;
+    }
+    setRefundDialogOpen(true);
   }}
 >
         <DialogContent className="max-w-md">
@@ -3926,7 +3978,7 @@ semesterId: r.semesterId ? String(r.semesterId) : "",
           <DialogFooter>
             <Button
   variant="outline"
-  onClick={() => setRefundDialogOpen(false)}
+  onClick={closeRefundDialog}
   disabled={createRefundMut.isPending || uploadingRefund}
 >
   취소
@@ -3956,24 +4008,11 @@ semesterId: r.semesterId ? String(r.semesterId) : "",
     attachmentUrl: refundForm.attachmentUrl || undefined,
   } as any);
 
-  setRefundDialogOpen(false);
-setRefundForm({
-  semesterId: selectedSemester?.id ? String(selectedSemester.id) : "",
-  refundAmount: "",
-  refundDate: new Date().toISOString().slice(0, 10),
-  reason: "",
-  refundType: "부분환불",
-  attachmentName: "",
-  attachmentUrl: "",
-});
-
-await Promise.all([
-  utils.refund.listByStudent.invalidate({ studentId }),
-  utils.student.get.invalidate({ id: studentId }),
-  utils.semester.list.invalidate({ studentId }),
-]);
-
+  
+closeRefundDialog();
+setPendingRefundRefresh(true);
 toast.success("환불 요청 등록 완료");
+
 } catch (e) {
   // onError에서 toast 처리
 }
