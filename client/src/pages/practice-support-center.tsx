@@ -320,16 +320,15 @@ const [csvUploadSummary, setCsvUploadSummary] = useState<{
   failedRows: Array<{ rowIndex: number; name?: string; address?: string; reason: string }>;
 } | null>(null);
 
-  const { data: practiceSupportList, isLoading } =
+  const { data: practiceSupportMonthSource = [] } =
   trpc.practiceSupport.list.useQuery(
     {
-      month: selectedPracticeMonth,
-      status: statusFilter as any,
-      search: search.trim() || undefined,
+      month: undefined,
+      status: undefined,
+      search: undefined,
     },
     {
-      keepPreviousData: true,
-      staleTime: 1000 * 60 * 3,
+      staleTime: 1000 * 60 * 5,
       refetchOnWindowFocus: false,
     }
   );
@@ -609,9 +608,16 @@ const formatPracticeMonthLabel = (value: string) => {
 };
 
 const practiceMonthOptions = useMemo(() => {
-  const currentMonth = new Date().toISOString().slice(0, 7);
-  return ["전체", currentMonth];
-}, []);
+  const values = Array.from(
+    new Set(
+      (practiceSupportMonthSource || [])
+        .map((row: any) => String(row.practiceDate || "").trim().slice(0, 7))
+        .filter(Boolean)
+    )
+  ).sort();
+
+  return ["전체", ...values];
+}, [practiceSupportMonthSource]);
 
   const filteredList = useMemo(() => {
   return practiceSupportList || [];

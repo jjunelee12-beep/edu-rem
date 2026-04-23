@@ -333,6 +333,7 @@ const [templateDialogSemesterNo, setTemplateDialogSemesterNo] = useState<number 
 const [selectedCatalogId, setSelectedCatalogId] = useState<number | null>(null);
 const [templateTab, setTemplateTab] = useState<TemplateTabType>("전공필수");
 const [selectedTemplateIds, setSelectedTemplateIds] = useState<number[]>([]);
+const [isApplyingTemplate, setIsApplyingTemplate] = useState(false);
 
 const { data: subjectCatalogItemList } =
   trpc.subjectCatalog.itemList.useQuery(
@@ -354,25 +355,28 @@ const { data: subjectCatalogItemList } =
   });
 
   const createPlanSemesterMut = trpc.planSemester.create.useMutation({
-    onSuccess: async () => {
-      await utils.planSemester.list.invalidate({ studentId });
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  onSuccess: async () => {
+    if (isApplyingTemplate) return;
+    await utils.planSemester.list.invalidate({ studentId });
+  },
+  onError: (e) => toast.error(e.message),
+});
 
-  const updatePlanSemesterMut = trpc.planSemester.update.useMutation({
-    onSuccess: async () => {
-      await utils.planSemester.list.invalidate({ studentId });
-    },
-    onError: (e) => toast.error(e.message),
-  });
+const updatePlanSemesterMut = trpc.planSemester.update.useMutation({
+  onSuccess: async () => {
+    if (isApplyingTemplate) return;
+    await utils.planSemester.list.invalidate({ studentId });
+  },
+  onError: (e) => toast.error(e.message),
+});
 
-  const deletePlanSemesterMut = trpc.planSemester.delete.useMutation({
-    onSuccess: async () => {
-      await utils.planSemester.list.invalidate({ studentId });
-    },
-    onError: (e) => toast.error(e.message),
-  });
+const deletePlanSemesterMut = trpc.planSemester.delete.useMutation({
+  onSuccess: async () => {
+    if (isApplyingTemplate) return;
+    await utils.planSemester.list.invalidate({ studentId });
+  },
+  onError: (e) => toast.error(e.message),
+});
 
 const applySubjectCatalogItemsToSemester = async () => {
   if (!templateDialogSemesterNo) {
@@ -431,77 +435,116 @@ const applySubjectCatalogItemsToSemester = async () => {
   if (!ok) return;
 
   try {
-    const currentRows = (planSemesterList || [])
-  .filter((row: any) => Number(row.semesterNo) === Number(templateDialogSemesterNo))
-  .sort((a: any, b: any) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+  setIsApplyingTemplate(true);
 
-    // 1) 먼저 입력값 검증
-    for (const row of normalizedRows) {
-      if (!row.subjectName) {
-        throw new Error("과목명 없는 항목이 포함되어 있습니다.");
-      }
+  const currentRows = (planSemesterList || [])
+    .filter((row: any) => Number(row.semesterNo) === Number(templateDialogSemesterNo))
+    .sort((a: any, b: any) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
 
-      if (!["전공", "교양", "일반"].includes(row.normalizedCategory)) {
-        throw new Error(`잘못된 과목 구분값: ${row.normalizedCategory}`);
-      }
-
-      if (
-        !["전공필수", "전공선택", "교양", "일반"].includes(
-          row.normalizedRequirementType
-        )
-      ) {
-        throw new Error(`잘못된 이수구분값: ${row.normalizedRequirementType}`);
-      }
+  for (const row of normalizedRows) {
+    if (!row.subjectName) {
+      throw new Error("과목명 없는 항목이 포함되어 있습니다.");
     }
 
-   // 2) 기존 row는 가능한 한 그대로 덮어쓰기
-const sharedCount = Math.min(currentRows.length, normalizedRows.length);
+    if (!["전공", "교양", "일반"].includes(row.normalizedCategory)) {
+      throw new Error(`잘못된 과목 구분값: ${row.normalizedCategory}`);
+    }
 
-for (let i = 0; i < sharedCount; i += 1) {
-  const current = currentRows[i];
-  const next = normalizedRows[i];
-
-  await updatePlanSemesterMut.mutateAsync({
-    id: Number(current.id),
-    subjectName: String(next.subjectName).trim(),
-    category: next.normalizedCategory,
-    requirementType: next.normalizedRequirementType,
-    semesterNo: Number(templateDialogSemesterNo),
-    sortOrder: i,
-  } as any);
-}
-
-// 3) 새로 선택한 과목이 더 많으면 초과분만 추가
-for (let i = sharedCount; i < normalizedRows.length; i += 1) {
-  const next = normalizedRows[i];
-
-  await createPlanSemesterMut.mutateAsync({
-    studentId,
-    semesterNo: Number(templateDialogSemesterNo),
-    subjectName: String(next.subjectName).trim(),
-    category: next.normalizedCategory,
-    requirementType: next.normalizedRequirementType,
-    sortOrder: i,
-  } as any);
-}
-
-// 4) 기존 과목이 더 많으면 남는 뒤쪽 row만 삭제
-for (let i = sharedCount; i < currentRows.length; i += 1) {
-  const current = currentRows[i];
-
-  await deletePlanSemesterMut.mutateAsync({
-    id: Number(current.id),
-  });
-}
-
-    await utils.planSemester.list.invalidate({ studentId });
-
-    toast.success(`과목 ${normalizedRows.length}개 등록 완료`);
-    setTemplateDialogOpen(false);
-    setSelectedTemplateIds([]);
-  } catch (e: any) {
-    toast.error(e.message || "일괄 등록 중 오류가 발생했습니다.");
+    if (
+      !["전공필수", "전공선택", "교양", "일반"].includes(
+        row.normalizedRequirementType
+      )
+    ) {
+      throw new Error(`잘못된 이수구분값: ${row.normalizedRequirementType}`);
+    }
   }
+
+  const sharedCount = Math.min(currentRows.length, normalizedRows.length);
+
+  // 1) 화면 먼저 즉시 덮어쓰기
+  const optimisticRows = [
+    ...currentRows.slice(0, sharedCount).map((current: any, i: number) => {
+      const next = normalizedRows[i];
+      return {
+        ...current,
+        subjectName: String(next.subjectName).trim(),
+        planCategory: next.normalizedCategory,
+        category: next.normalizedCategory,
+        planRequirementType: next.normalizedRequirementType,
+        requirementType: next.normalizedRequirementType,
+        semesterNo: Number(templateDialogSemesterNo),
+        sortOrder: i,
+      };
+    }),
+    ...normalizedRows.slice(sharedCount).map((next: any, i: number) => ({
+      id: `temp-${templateDialogSemesterNo}-${i}-${Date.now()}`,
+      studentId,
+      semesterNo: Number(templateDialogSemesterNo),
+      subjectName: String(next.subjectName).trim(),
+      planCategory: next.normalizedCategory,
+      category: next.normalizedCategory,
+      planRequirementType: next.normalizedRequirementType,
+      requirementType: next.normalizedRequirementType,
+      sortOrder: sharedCount + i,
+      credits: 3,
+    })),
+  ];
+
+  const preservedOtherRows = (planSemesterList || []).filter(
+    (row: any) => Number(row.semesterNo) !== Number(templateDialogSemesterNo)
+  );
+
+  utils.planSemester.list.setData({ studentId }, [
+    ...preservedOtherRows,
+    ...optimisticRows,
+  ]);
+
+  // 2) 서버 작업은 병렬 처리
+  const updateJobs = Array.from({ length: sharedCount }).map((_, i) => {
+    const current = currentRows[i];
+    const next = normalizedRows[i];
+
+    return updatePlanSemesterMut.mutateAsync({
+      id: Number(current.id),
+      subjectName: String(next.subjectName).trim(),
+      category: next.normalizedCategory,
+      requirementType: next.normalizedRequirementType,
+      semesterNo: Number(templateDialogSemesterNo),
+      sortOrder: i,
+    } as any);
+  });
+
+  const createJobs = normalizedRows.slice(sharedCount).map((next: any, i: number) =>
+    createPlanSemesterMut.mutateAsync({
+      studentId,
+      semesterNo: Number(templateDialogSemesterNo),
+      subjectName: String(next.subjectName).trim(),
+      category: next.normalizedCategory,
+      requirementType: next.normalizedRequirementType,
+      sortOrder: sharedCount + i,
+    } as any)
+  );
+
+  const deleteJobs = currentRows.slice(sharedCount).map((current: any) =>
+    deletePlanSemesterMut.mutateAsync({
+      id: Number(current.id),
+    })
+  );
+
+  await Promise.all([...updateJobs, ...createJobs, ...deleteJobs]);
+
+  // 3) 마지막에 한 번만 동기화
+  await utils.planSemester.list.invalidate({ studentId });
+
+  toast.success(`과목 ${normalizedRows.length}개 덮어쓰기 완료`);
+  setTemplateDialogOpen(false);
+  setSelectedTemplateIds([]);
+} catch (e: any) {
+  await utils.planSemester.list.invalidate({ studentId });
+  toast.error(e.message || "일괄 등록 중 오류가 발생했습니다.");
+} finally {
+  setIsApplyingTemplate(false);
+}
 };
 
   const updateTransferSubjectMut = trpc.transferSubject.update.useMutation({
