@@ -97,6 +97,9 @@ import { ENV } from "./_core/env";
 import bcrypt from "bcryptjs";
 import { emitLiveNotification } from "./_core/live-notifications";
 
+import { FEATURE_FLAGS } from "./_core/featureFlags";
+
+
 async function geocodeAddressServer(address: string) {
   const restKey =
     process.env.KAKAO_REST_API_KEY ||
@@ -2719,6 +2722,10 @@ function validatePlanSummaryCounts(data: Partial<InsertPlan>) {
 
   if (values.some((n) => !Number.isFinite(n) || n < 0)) {
     throw new Error("플랜 과목 수는 0 이상의 숫자만 저장할 수 있습니다.");
+  }
+
+  if (!FEATURE_FLAGS.PLAN_REQUIREMENT_ENFORCE) {
+    return;
   }
 
   const sum =
@@ -5400,10 +5407,12 @@ export async function createPlanSemester(data: InsertPlanSemester) {
     );
   }
 
+  if (FEATURE_FLAGS.PLAN_REQUIREMENT_ENFORCE) {
   await validatePlanRequirementLimit({
     studentId: Number(data.studentId),
     requirementType: (data as any).planRequirementType ?? null,
   });
+}
 
   const result: any = await db.insert(planSemesters).values(data);
   return getInsertId(result);
@@ -5444,11 +5453,13 @@ export async function updatePlanSemester(
       ? data.planRequirementType
       : row.planRequirementType;
 
+  if (FEATURE_FLAGS.PLAN_REQUIREMENT_ENFORCE) {
   await validatePlanRequirementLimit({
     studentId: Number(row.studentId),
     requirementType: (nextRequirementType as any) ?? null,
     excludePlanSemesterId: id,
   });
+}
 
   await db.update(planSemesters).set(data as any).where(eq(planSemesters.id, id));
 }

@@ -39,6 +39,9 @@ import {
 import { toast } from "sonner";
 import { useLocation, useParams } from "wouter";
 import { formatPhone } from "@/lib/format";
+import { FEATURE_FLAGS } from "@/_core/featureFlags";
+
+
 
 function EditableCell({
   value,
@@ -133,6 +136,7 @@ function formatPlannedMonth(plannedMonth?: string | null) {
 
 type TemplateTabType = "전공필수" | "전공선택" | "교양" | "일반";
 
+
 export default function StudentDetail() {
   const params = useParams<{ id: string }>();
   const studentId = parseInt(params.id || "0");
@@ -154,6 +158,8 @@ const lastHandledTabRef = useRef<string>("");
 const [highlightSection, setHighlightSection] = useState<
   "" | "semester" | "private-certificate" | "practice-support" | "refund"
 >("");
+
+const ENABLE_PLAN_REQUIREMENT = FEATURE_FLAGS.PLAN_REQUIREMENT_ENFORCE;
 
   const { data: student, isLoading: studentLoading } = trpc.student.get.useQuery({ id: studentId });
   const { data: semesters } = trpc.semester.list.useQuery({ studentId });
@@ -1165,13 +1171,13 @@ const savePlan = async () => {
     const liberalCount = toNumber(planForm.liberalCount);
     const generalCount = toNumber(planForm.generalCount);
 
-    const sum =
+        const sum =
       requiredMajorCount +
       electiveMajorCount +
       liberalCount +
       generalCount;
 
-    if (sum !== totalTheorySubjects) {
+    if (ENABLE_PLAN_REQUIREMENT && sum !== totalTheorySubjects) {
       toast.error(
         `총 이론 과목 수(${totalTheorySubjects})와 분류 합계(${sum})가 일치하지 않습니다.`
       );
@@ -1404,15 +1410,17 @@ const savePlan = async () => {
       return;
     }
 
-const currentRequired = (planSemesterList || []).filter(
-  (x: any) => String(x.planRequirementType || "") === "전공선택"
-).length;
+if (ENABLE_PLAN_REQUIREMENT) {
+  const currentRequired = (planSemesterList || []).filter(
+    (x: any) => String(x.planRequirementType || "") === "전공선택"
+  ).length;
 
-const targetRequired = Number((plan as any)?.electiveMajorCount ?? 0);
+  const targetRequired = Number((plan as any)?.electiveMajorCount ?? 0);
 
-if (currentRequired >= targetRequired) {
-  toast.error("전공선택 허용 개수를 초과했습니다.");
-  return;
+  if (currentRequired >= targetRequired) {
+    toast.error("전공선택 허용 개수를 초과했습니다.");
+    return;
+  }
 }
 
     createPlanSemesterMut.mutate(
@@ -1462,6 +1470,8 @@ if (currentRequired >= targetRequired) {
   };
 
 const canChangeRequirementType = (nextType: string, rowId: number) => {
+  if (!ENABLE_PLAN_REQUIREMENT) return true;
+
   const rows = (planSemesterList || []).filter(
     (row: any) => Number(row.id) !== Number(rowId)
   );
@@ -2330,15 +2340,21 @@ const getCountStatusClass = (current: number, target: number) => {
   <span className="font-medium">희망과정:</span> {plan.desiredCourse || "-"} ·{" "}
   <span className="font-medium">최종학력:</span> {plan.finalEducation || "-"} ·{" "}
   <span className="font-medium">이론 과목:</span> {plan.totalTheorySubjects ?? "-"}과목 ·{" "}
-  <span className="font-medium">전공필수:</span> {(plan as any)?.requiredMajorCount ?? 0} ·{" "}
-  <span className="font-medium">전공선택:</span> {(plan as any)?.electiveMajorCount ?? 0} ·{" "}
-  <span className="font-medium">교양:</span> {(plan as any)?.liberalCount ?? 0} ·{" "}
-  <span className="font-medium">일반:</span> {(plan as any)?.generalCount ?? 0} ·{" "}
+  {ENABLE_PLAN_REQUIREMENT && (
+  <>
+    <span className="font-medium">전공필수:</span> {(plan as any)?.requiredMajorCount ?? 0} ·{" "}
+    <span className="font-medium">전공선택:</span> {(plan as any)?.electiveMajorCount ?? 0} ·{" "}
+    <span className="font-medium">교양:</span> {(plan as any)?.liberalCount ?? 0} ·{" "}
+    <span className="font-medium">일반:</span> {(plan as any)?.generalCount ?? 0} ·{" "}
+  </>
+)}
   <span className="font-medium">실습:</span> {plan.hasPractice ? "있음" : "없음"} ·{" "}
   <span className="font-medium">특이사항:</span> {plan.specialNotes || "없음"}
 </p>
   </div>
 
+
+{ENABLE_PLAN_REQUIREMENT && (
 <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
   <div
   className={`rounded-lg border px-3 py-2 ${getCountStatusClass(
@@ -2399,6 +2415,7 @@ const getCountStatusClass = (current: number, target: number) => {
     </div>
   </div>
 </div>
+)}
 
 {requestedPrivateCertList.length > 0 && (
   <div
@@ -2516,6 +2533,7 @@ const getCountStatusClass = (current: number, target: number) => {
                     onChange={(e) => setPlanForm({ ...planForm, totalTheorySubjects: e.target.value })}
                   />
                 </div>
+{ENABLE_PLAN_REQUIREMENT && (
 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
   <div className="space-y-2">
     <Label>전공필수</Label>
@@ -2581,6 +2599,7 @@ const getCountStatusClass = (current: number, target: number) => {
     />
   </div>
 </div>
+)}
               </div>
 
               <div className="flex items-center gap-2">

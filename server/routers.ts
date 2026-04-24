@@ -24,6 +24,7 @@ import { scheduleRouter } from "./routes/schedule.router";
 import { approvalRouter } from "./routes/approval.router";
 import { privateCertificateMasterRouter } from "./routes/privateCertificateMaster";
 import { subjectCatalogRouter } from "./routes/subjectCatalog";
+import { FEATURE_FLAGS } from "./_core/featureFlags";
 
 function isAdminOrHost(user: any) {
   return (
@@ -3086,6 +3087,7 @@ categoryId: z.number().nullable().optional(),
     practiceStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
     specialNotes: z.string().optional(),
   }).superRefine((val, ctx) => {
+    if (!FEATURE_FLAGS.PLAN_REQUIREMENT_ENFORCE) return;
     const totalTheorySubjects = Number(val.totalTheorySubjects ?? 0);
     const requiredMajorCount = Number(val.requiredMajorCount ?? 0);
     const electiveMajorCount = Number(val.electiveMajorCount ?? 0);
