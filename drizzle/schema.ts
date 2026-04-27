@@ -1,4 +1,3 @@
-
 import { sql } from "drizzle-orm";
 import {
   int,
@@ -125,6 +124,26 @@ export const brandingSettings = mysqlTable("branding_settings", {
 
 export type BrandingSetting = typeof brandingSettings.$inferSelect;
 export type InsertBrandingSetting = typeof brandingSettings.$inferInsert;
+
+// ─── SMS Settings ───────────────────────────────────────────────────
+export const smsSettings = mysqlTable("sms_settings", {
+  id: int("id").autoincrement().primaryKey(),
+
+  provider: varchar("provider", { length: 50 }).notNull().default("aligo"),
+
+  apiKey: varchar("apiKey", { length: 255 }),
+  userId: varchar("userId", { length: 255 }),
+  senderNumber: varchar("senderNumber", { length: 50 }),
+  senderName: varchar("senderName", { length: 100 }),
+
+  isActive: boolean("isActive").notNull().default(true),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SmsSetting = typeof smsSettings.$inferSelect;
+export type InsertSmsSetting = typeof smsSettings.$inferInsert;
 
 // ─── Consultations (상담 DB) ─────────────────────────────────────────
 export const consultations = mysqlTable("consultations", {
@@ -479,6 +498,13 @@ export const privateCertificateMasters = mysqlTable(
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 
 defaultFeeAmount: decimal("defaultFeeAmount", {
+  precision: 12,
+  scale: 0,
+})
+  .notNull()
+  .default("0"),
+
+defaultCompanyShareAmount: decimal("defaultCompanyShareAmount", {
   precision: 12,
   scale: 0,
 })

@@ -90,6 +90,8 @@ type InsertApprovalSetting,
 approvalLogs,
 brandingSettings,
 type InsertBrandingSetting,
+smsSettings,
+type InsertSmsSetting,
 type InsertApprovalLog,
 } from "../drizzle/schema";
 
@@ -1506,6 +1508,54 @@ export async function saveBrandingSettings(
     updatedBy: data.updatedBy ?? null,
   } as any);
 
+  return getInsertId(result);
+}
+
+export async function getSmsSettings() {
+  const db = await getDb();
+  if (!db) return null;
+
+  const rows = await db
+    .select()
+    .from(smsSettings)
+    .orderBy(desc(smsSettings.id))
+    .limit(1);
+
+  return rows[0] || null;
+}
+
+export async function saveSmsSettings(data: {
+  provider?: string;
+  apiKey?: string | null;
+  userId?: string | null;
+  senderNumber?: string | null;
+  senderName?: string | null;
+  isActive?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const existing = await getSmsSettings();
+
+  const payload = {
+    provider: data.provider || "aligo",
+    apiKey: data.apiKey?.trim() || null,
+    userId: data.userId?.trim() || null,
+    senderNumber: data.senderNumber?.replace(/\D/g, "") || null,
+    senderName: data.senderName?.trim() || null,
+    isActive: data.isActive ?? true,
+  };
+
+  if (existing?.id) {
+    await db
+      .update(smsSettings)
+      .set(payload as any)
+      .where(eq(smsSettings.id, Number(existing.id)));
+
+    return Number(existing.id);
+  }
+
+  const result: any = await db.insert(smsSettings).values(payload as any);
   return getInsertId(result);
 }
 
@@ -3372,6 +3422,10 @@ const masterDefaultFeeAmount = toNumber(
   (master as any)?.defaultFeeAmount ?? 0
 );
 
+const masterDefaultCompanyShareAmount = toNumber(
+  (master as any)?.defaultCompanyShareAmount ?? 0
+);
+
 const masterDefaultFreelancerAmount = toNumber(
   (master as any)?.defaultFreelancerAmount ?? 0
 );
@@ -3381,22 +3435,49 @@ const isSettlementEnabled =
     ? true
     : Boolean((master as any)?.isSettlementEnabled);
 
-// 요청값 우선, 없으면 마스터 기본값
+// 총매출: 고객 결제금액
 const feeAmount =
   requestFeeAmount > 0 ? requestFeeAmount : masterDefaultFeeAmount;
+
+// 우리회사 몫 원금: 민간자격증 회사와 나눈 뒤 우리 회사로 들어오는 금액
+// 예: 고객 결제 88,000원 중 우리회사 몫 원금 38,000원
+const companyShareAmount =
+  masterDefaultCompanyShareAmount > 0
+    ? masterDefaultCompanyShareAmount
+    : feeAmount;
+
+// 우리회사 몫 실수령: 우리회사 몫 원금에서 3.3% 차감
+// 예: 38,000 - 1,254 = 36,746
+const companyShareTaxAmount = Math.floor(companyShareAmount * 0.033);
+const netCompanyShareAmount = Math.max(
+  0,
+  companyShareAmount - companyShareTaxAmount
+);
 
 const resolvedFreelancerAmount =
   requestFreelancerInputAmount > 0
     ? requestFreelancerInputAmount
     : masterDefaultFreelancerAmount;
 
+// 프리랜서 지급액: 입력 단가 그대로
 const freelancerAmount = isSettlementEnabled
-  ? Math.max(0, Math.min(feeAmount, resolvedFreelancerAmount))
+  ? Math.max(0, Math.min(companyShareAmount, resolvedFreelancerAmount))
   : 0;
 
-const taxAmount = Math.floor(freelancerAmount * 0.033);
-const finalPayoutAmount = freelancerAmount - taxAmount;
-const companyAmount = Math.max(0, feeAmount);
+// 정산표에 표시되는 세금: 프리랜서 지급액 기준 3.3%
+// 예: 20,000 * 3.3% = 660
+const taxAmount = isSettlementEnabled
+  ? Math.floor(freelancerAmount * 0.033)
+  : 0;
+
+const finalPayoutAmount = Math.max(0, freelancerAmount - taxAmount);
+
+// 정산 원장의 우리회사 몫은 실수령 기준
+const companyAmount = netCompanyShareAmount;
+
+// 회사 순이익 = 우리회사 몫 실수령 - 프리랜서 지급액
+// 예: 36,746 - 20,000 = 16,746
+const companyProfit = Math.max(0, netCompanyShareAmount - freelancerAmount);
 
   return await upsertSettlementItem({
     revenueType: "private_certificate",
@@ -3407,16 +3488,20 @@ const companyAmount = Math.max(0, feeAmount);
     title: `${master?.name || "민간자격증"} 결제`,
     quantity: 1,
         grossAmount: feeAmount,
-    companyAmount,
-    freelancerAmount,
-    taxAmount,
-    finalPayoutAmount,
-    settlementStatus: "confirmed",
+companyAmount,
+companyProfit,
+freelancerAmount,
+taxAmount,
+finalPayoutAmount,
+settlementStatus: "confirmed",
     occurredAt: (request as any).paidAt ?? (request as any).updatedAt ?? new Date(),
         note: "민간자격증 요청값 및 마스터 기본값 기준으로 자동 생성",
     actorUserId: actorUserId ?? null,
     logNote: "민간자격증 결제 완료 반영",
         payload: {
+companyShareAmount,
+companyShareTaxAmount,
+netCompanyShareAmount,
   requestId: request.id,
   paymentStatus: request.paymentStatus,
   requestFeeAmount,
@@ -6063,12 +6148,18 @@ export async function createPrivateCertificateMaster(
   const nextSortOrder = Number((maxRows as any)?.[0]?.maxSortOrder || 0) + 1;
 
   const result: any = await db.insert(privateCertificateMasters).values({
-    name,
-    sortOrder: (data as any).sortOrder ?? nextSortOrder,
-    isActive: (data as any).isActive ?? true,
-    createdBy: (data as any).createdBy ?? null,
-    updatedBy: (data as any).updatedBy ?? null,
-  });
+  name,
+  sortOrder: (data as any).sortOrder ?? nextSortOrder,
+  isActive: (data as any).isActive ?? true,
+
+  defaultFeeAmount: (data as any).defaultFeeAmount ?? "0",
+  defaultCompanyShareAmount: (data as any).defaultCompanyShareAmount ?? "0",
+  defaultFreelancerAmount: (data as any).defaultFreelancerAmount ?? "0",
+  isSettlementEnabled: (data as any).isSettlementEnabled ?? true,
+
+  createdBy: (data as any).createdBy ?? null,
+  updatedBy: (data as any).updatedBy ?? null,
+});
 
   return getInsertId(result);
 }
@@ -6339,11 +6430,14 @@ export async function updatePrivateCertificateMaster(
       ...(data.sortOrder !== undefined ? { sortOrder: data.sortOrder } : {}),
       ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
       ...(data.defaultFeeAmount !== undefined
-        ? { defaultFeeAmount: data.defaultFeeAmount }
-        : {}),
-      ...(data.defaultFreelancerAmount !== undefined
-        ? { defaultFreelancerAmount: data.defaultFreelancerAmount }
-        : {}),
+  ? { defaultFeeAmount: data.defaultFeeAmount }
+  : {}),
+...((data as any).defaultCompanyShareAmount !== undefined
+  ? { defaultCompanyShareAmount: (data as any).defaultCompanyShareAmount }
+  : {}),
+...(data.defaultFreelancerAmount !== undefined
+  ? { defaultFreelancerAmount: data.defaultFreelancerAmount }
+  : {}),
       ...(data.isSettlementEnabled !== undefined
         ? { isSettlementEnabled: data.isSettlementEnabled }
         : {}),

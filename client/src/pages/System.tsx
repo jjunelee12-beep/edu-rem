@@ -234,6 +234,9 @@ function shallowEqualInstitutionDraft(
 const [bulkCertificateFeeAmount, setBulkCertificateFeeAmount] =
   useState<string>("");
 
+const [bulkCertificateCompanyShareAmount, setBulkCertificateCompanyShareAmount] =
+  useState<string>("");
+
 const [bulkCertificateFreelancerAmount, setBulkCertificateFreelancerAmount] =
   useState<string>("");
 
@@ -339,7 +342,11 @@ useEffect(() => {
   const first = privateCertificateMasters[0];
 
   const nextFeeAmount = String(first?.defaultFeeAmount ?? "0");
-  const nextFreelancerAmount = String(first?.defaultFreelancerAmount ?? "0");
+const nextCompanyShareAmount = String(
+  (first as any)?.defaultCompanyShareAmount ?? "0"
+);
+const nextFreelancerAmount = String(first?.defaultFreelancerAmount ?? "0");
+
   const nextEnabled =
     first?.isSettlementEnabled === undefined
       ? true
@@ -348,6 +355,10 @@ useEffect(() => {
   setBulkCertificateFeeAmount((prev) =>
     prev === nextFeeAmount ? prev : nextFeeAmount
   );
+
+setBulkCertificateCompanyShareAmount((prev) =>
+  prev === nextCompanyShareAmount ? prev : nextCompanyShareAmount
+);
 
   setBulkCertificateFreelancerAmount((prev) =>
     prev === nextFreelancerAmount ? prev : nextFreelancerAmount
@@ -428,12 +439,18 @@ const handleApplyBulkCertificateSettings = async () => {
   }
 
   const feeAmount = bulkCertificateFeeAmount.trim();
-  const freelancerAmount = bulkCertificateFreelancerAmount.trim();
+const companyShareAmount = bulkCertificateCompanyShareAmount.trim();
+const freelancerAmount = bulkCertificateFreelancerAmount.trim();
 
   if (!feeAmount) {
     toast.error("기본 결제금액을 입력해주세요.");
     return;
   }
+
+if (!companyShareAmount) {
+  toast.error("우리회사 몫 원금을 입력해주세요.");
+  return;
+}
 
   if (!freelancerAmount) {
     toast.error("기본 프리랜서 배분금액을 입력해주세요.");
@@ -444,11 +461,12 @@ const handleApplyBulkCertificateSettings = async () => {
     await Promise.all(
       privateCertificateMasters.map((item: any) =>
         updatePrivateCertificateMasterMutation.mutateAsync({
-          id: Number(item.id),
-          defaultFeeAmount: feeAmount,
-          defaultFreelancerAmount: freelancerAmount,
-          isSettlementEnabled: bulkCertificateEnabled,
-        })
+  id: Number(item.id),
+  defaultFeeAmount: feeAmount,
+  defaultCompanyShareAmount: companyShareAmount,
+  defaultFreelancerAmount: freelancerAmount,
+  isSettlementEnabled: bulkCertificateEnabled,
+})
       )
     );
 
@@ -719,7 +737,7 @@ const handleApplyBulkCertificateSettings = async () => {
       </div>
     ) : (
       <>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-4">
           <div className="space-y-2">
             <p className="text-sm font-medium">기본 결제금액</p>
             <Input
@@ -732,6 +750,19 @@ const handleApplyBulkCertificateSettings = async () => {
               placeholder="예: 100000"
             />
           </div>
+
+<div className="space-y-2">
+  <p className="text-sm font-medium">우리회사 몫 원금</p>
+  <Input
+    value={bulkCertificateCompanyShareAmount}
+    onChange={(e) =>
+      setBulkCertificateCompanyShareAmount(
+        e.target.value.replace(/[^0-9]/g, "")
+      )
+    }
+    placeholder="예: 38000"
+  />
+</div>
 
           <div className="space-y-2">
             <p className="text-sm font-medium">기본 프리랜서 배분금액</p>

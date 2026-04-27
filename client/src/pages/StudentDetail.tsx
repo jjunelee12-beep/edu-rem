@@ -468,34 +468,43 @@ const applySubjectCatalogItemsToSemester = async () => {
 
   const sharedCount = Math.min(currentRows.length, normalizedRows.length);
 
-  // 1) 화면 먼저 즉시 덮어쓰기
-  const optimisticRows = [
-    ...currentRows.slice(0, sharedCount).map((current: any, i: number) => {
-      const next = normalizedRows[i];
-      return {
-        ...current,
-        subjectName: String(next.subjectName).trim(),
-        planCategory: next.normalizedCategory,
-        category: next.normalizedCategory,
-        planRequirementType: next.normalizedRequirementType,
-        requirementType: next.normalizedRequirementType,
-        semesterNo: Number(templateDialogSemesterNo),
-        sortOrder: i,
-      };
-    }),
-    ...normalizedRows.slice(sharedCount).map((next: any, i: number) => ({
-      id: `temp-${templateDialogSemesterNo}-${i}-${Date.now()}`,
-      studentId,
-      semesterNo: Number(templateDialogSemesterNo),
-      subjectName: String(next.subjectName).trim(),
-      planCategory: next.normalizedCategory,
-      category: next.normalizedCategory,
-      planRequirementType: next.normalizedRequirementType,
-      requirementType: next.normalizedRequirementType,
-      sortOrder: sharedCount + i,
-      credits: 3,
-    })),
-  ];
+ // 1) 화면 먼저 즉시 덮어쓰기
+// 선택한 과목 수만 앞에서부터 덮어쓰고, 기존 나머지 과목은 삭제하지 않고 유지
+const overwrittenRows = currentRows.slice(0, sharedCount).map((current: any, i: number) => {
+  const next = normalizedRows[i];
+
+  return {
+    ...current,
+    subjectName: String(next.subjectName).trim(),
+    planCategory: next.normalizedCategory,
+    category: next.normalizedCategory,
+    planRequirementType: next.normalizedRequirementType,
+    requirementType: next.normalizedRequirementType,
+    semesterNo: Number(templateDialogSemesterNo),
+    sortOrder: i,
+  };
+});
+
+const preservedRows = currentRows.slice(sharedCount);
+
+const createdRows = normalizedRows.slice(sharedCount).map((next: any, i: number) => ({
+  id: `temp-${templateDialogSemesterNo}-${i}-${Date.now()}`,
+  studentId,
+  semesterNo: Number(templateDialogSemesterNo),
+  subjectName: String(next.subjectName).trim(),
+  planCategory: next.normalizedCategory,
+  category: next.normalizedCategory,
+  planRequirementType: next.normalizedRequirementType,
+  requirementType: next.normalizedRequirementType,
+  sortOrder: sharedCount + i,
+  credits: 3,
+}));
+
+const optimisticRows = [
+  ...overwrittenRows,
+  ...preservedRows,
+  ...createdRows,
+];
 
   const preservedOtherRows = (planSemesterList || []).filter(
     (row: any) => Number(row.semesterNo) !== Number(templateDialogSemesterNo)
@@ -532,13 +541,7 @@ const applySubjectCatalogItemsToSemester = async () => {
     } as any)
   );
 
-  const deleteJobs = currentRows.slice(sharedCount).map((current: any) =>
-    deletePlanSemesterMut.mutateAsync({
-      id: Number(current.id),
-    })
-  );
-
-  await Promise.all([...updateJobs, ...createJobs, ...deleteJobs]);
+  await Promise.all([...updateJobs, ...createJobs]);
 
   // 3) 마지막에 한 번만 동기화
   await utils.planSemester.list.invalidate({ studentId });
@@ -1434,9 +1437,21 @@ if (ENABLE_PLAN_REQUIREMENT) {
       } as any,
       {
         onSuccess: async () => {
-          await utils.planSemester.list.invalidate({ studentId });
-          toast.success("우리 플랜 과목 추가 완료");
-        },
+  const sem = (semesters || []).find(
+    (s: any) => Number(s.semesterOrder) === Number(semesterNo)
+  );
+
+  if (sem?.id) {
+    await updateSemMut.mutateAsync({
+      id: Number(sem.id),
+      plannedSubjectCount: current.length + 1,
+    } as any);
+  }
+
+  await utils.semester.list.invalidate({ studentId });
+  await utils.planSemester.list.invalidate({ studentId });
+  toast.success("우리 플랜 과목 추가 완료");
+},
       }
     );
   };
@@ -2883,9 +2898,23 @@ const getCountStatusClass = (current: number, target: number) => {
                                         { id: row.id },
                                         {
                                           onSuccess: async () => {
-                                            await utils.planSemester.list.invalidate({ studentId });
-                                            toast.success("우리 플랜 과목 삭제 완료");
-                                          },
+  const sem = (semesters || []).find(
+    (s: any) => Number(s.semesterOrder) === Number(group.semesterNo)
+  );
+
+  const nextCount = Math.max(0, group.rows.length - 1);
+
+  if (sem?.id) {
+    await updateSemMut.mutateAsync({
+      id: Number(sem.id),
+      plannedSubjectCount: nextCount,
+    } as any);
+  }
+
+  await utils.semester.list.invalidate({ studentId });
+  await utils.planSemester.list.invalidate({ studentId });
+  toast.success("우리 플랜 과목 삭제 완료");
+},
                                         }
                                       );
                                     }

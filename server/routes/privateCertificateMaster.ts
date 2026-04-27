@@ -25,8 +25,9 @@ export const privateCertificateMasterRouter = router({
   isActive: z.boolean().optional(),
 
   defaultFeeAmount: z.string().optional(),
-  defaultFreelancerAmount: z.string().optional(),
-  isSettlementEnabled: z.boolean().optional(),
+defaultCompanyShareAmount: z.string().optional(),
+defaultFreelancerAmount: z.string().optional(),
+isSettlementEnabled: z.boolean().optional(),
 })
     )
     .mutation(async ({ ctx, input }) => {
@@ -36,8 +37,9 @@ export const privateCertificateMasterRouter = router({
   isActive: input.isActive ?? true,
 
   defaultFeeAmount: input.defaultFeeAmount ?? "0",
-  defaultFreelancerAmount: input.defaultFreelancerAmount ?? "0",
-  isSettlementEnabled: input.isSettlementEnabled ?? true,
+defaultCompanyShareAmount: input.defaultCompanyShareAmount ?? "0",
+defaultFreelancerAmount: input.defaultFreelancerAmount ?? "0",
+isSettlementEnabled: input.isSettlementEnabled ?? true,
 
   createdBy: Number(ctx.user.id),
   updatedBy: Number(ctx.user.id),
@@ -56,8 +58,9 @@ update: hostProcedure
       isActive: z.boolean().optional(),
 
       defaultFeeAmount: z.string().optional(),
-      defaultFreelancerAmount: z.string().optional(),
-      isSettlementEnabled: z.boolean().optional(),
+defaultCompanyShareAmount: z.string().optional(),
+defaultFreelancerAmount: z.string().optional(),
+isSettlementEnabled: z.boolean().optional(),
     })
   )
   .mutation(async ({ ctx, input }) => {
@@ -67,11 +70,14 @@ update: hostProcedure
     if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder;
     if (input.isActive !== undefined) data.isActive = input.isActive;
 
-    if (input.defaultFeeAmount !== undefined)
-      data.defaultFeeAmount = input.defaultFeeAmount;
+   if (input.defaultFeeAmount !== undefined)
+  data.defaultFeeAmount = input.defaultFeeAmount;
 
-    if (input.defaultFreelancerAmount !== undefined)
-      data.defaultFreelancerAmount = input.defaultFreelancerAmount;
+if (input.defaultCompanyShareAmount !== undefined)
+  data.defaultCompanyShareAmount = input.defaultCompanyShareAmount;
+
+if (input.defaultFreelancerAmount !== undefined)
+  data.defaultFreelancerAmount = input.defaultFreelancerAmount;
 
     if (input.isSettlementEnabled !== undefined)
       data.isSettlementEnabled = input.isSettlementEnabled;

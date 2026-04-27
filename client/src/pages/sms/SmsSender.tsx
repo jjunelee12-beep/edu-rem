@@ -25,6 +25,16 @@ export default function SmsSender() {
   const [assigneeId, setAssigneeId] = useState<number | undefined>(undefined);
   const [assigneeKeyword, setAssigneeKeyword] = useState("");
   const [keyword, setKeyword] = useState("");
+const [searchType, setSearchType] = useState<"all" | "name" | "phone" | "course">("course");
+
+const [smsSettings, setSmsSettings] = useState({
+  provider: "aligo",
+  apiKey: "",
+  userId: "",
+  senderNumber: "",
+  senderName: "",
+  isActive: true,
+});
 
   const [message, setMessage] = useState("");
   const [testPhone, setTestPhone] = useState("");
@@ -33,11 +43,24 @@ export default function SmsSender() {
 
   const assigneesQuery = trpc.sms.assignees.useQuery();
 
+const smsSettingsQuery = trpc.sms.settings.useQuery();
+
+const saveSmsSettingsMutation = trpc.sms.saveSettings.useMutation({
+  onSuccess: async () => {
+    alert("문자 API 설정이 저장되었습니다.");
+    await smsSettingsQuery.refetch();
+  },
+  onError: (err) => {
+    alert(err.message || "문자 API 설정 저장 중 오류가 발생했습니다.");
+  },
+});
+
   const preview = trpc.sms.preview.useQuery({
   includeConsultations,
   includeStudents,
   assigneeId,
   keyword,
+  searchType,
 });
 
   const sendMutation = trpc.sms.send.useMutation();
@@ -49,6 +72,22 @@ console.log("assignees", assignees);
   const items: PreviewItem[] = preview.data?.items ?? [];
 console.log("preview.data", preview.data);
 console.log("preview.items", items);
+
+useEffect(() => {
+  if (!smsSettingsQuery.data) return;
+
+  setSmsSettings({
+    provider: smsSettingsQuery.data.provider || "aligo",
+    apiKey: smsSettingsQuery.data.apiKey || "",
+    userId: smsSettingsQuery.data.userId || "",
+    senderNumber: smsSettingsQuery.data.senderNumber || "",
+    senderName: smsSettingsQuery.data.senderName || "",
+    isActive:
+      smsSettingsQuery.data.isActive === undefined
+        ? true
+        : Boolean(smsSettingsQuery.data.isActive),
+  });
+}, [smsSettingsQuery.data]);
 
   const filteredAssignees = useMemo(() => {
     const q = assigneeKeyword.trim().toLowerCase();
@@ -122,6 +161,28 @@ console.log("preview.items", items);
     );
   };
 
+const handleSaveSmsSettings = () => {
+  if (!smsSettings.apiKey.trim()) {
+    alert("API Key를 입력하세요.");
+    return;
+  }
+
+  if (!smsSettings.userId.trim()) {
+    alert("알리고 User ID를 입력하세요.");
+    return;
+  }
+
+  if (!smsSettings.senderNumber.trim()) {
+    alert("발신번호를 입력하세요.");
+    return;
+  }
+
+  saveSmsSettingsMutation.mutate({
+    ...smsSettings,
+    senderNumber: smsSettings.senderNumber.replace(/\D/g, ""),
+  });
+};
+
   const handleTest = () => {
     if (!message.trim()) {
       alert("문자 내용을 입력하세요.");
@@ -154,6 +215,97 @@ console.log("preview.items", items);
   return (
     <div className="space-y-6 p-6">
       <h1 className="text-2xl font-bold">문자 발송</h1>
+
+<div className="border rounded-lg p-4 bg-white space-y-4">
+  <div className="flex items-center justify-between gap-3">
+    <div>
+      <h2 className="font-semibold text-lg">문자 API 설정</h2>
+      <p className="text-xs text-gray-500 mt-1">
+        SaaS 사용 회사별로 알리고 API 정보를 입력하면 해당 설정으로 문자 발송됩니다.
+      </p>
+    </div>
+
+    <button
+      type="button"
+      onClick={handleSaveSmsSettings}
+      disabled={saveSmsSettingsMutation.isPending}
+      className="px-4 py-2 rounded bg-slate-900 text-white text-sm disabled:opacity-50"
+    >
+      {saveSmsSettingsMutation.isPending ? "저장 중..." : "API 설정 저장"}
+    </button>
+  </div>
+
+  <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+    <div className="space-y-1">
+      <label className="text-sm font-medium">제공사</label>
+      <select
+        className="w-full border rounded p-2"
+        value={smsSettings.provider}
+        onChange={(e) =>
+          setSmsSettings((prev) => ({ ...prev, provider: e.target.value }))
+        }
+      >
+        <option value="aligo">알리고</option>
+      </select>
+    </div>
+
+    <div className="space-y-1">
+      <label className="text-sm font-medium">API Key</label>
+      <input
+        className="w-full border rounded p-2"
+        value={smsSettings.apiKey}
+        onChange={(e) =>
+          setSmsSettings((prev) => ({ ...prev, apiKey: e.target.value }))
+        }
+        placeholder="알리고 API Key"
+      />
+    </div>
+
+    <div className="space-y-1">
+      <label className="text-sm font-medium">User ID</label>
+      <input
+        className="w-full border rounded p-2"
+        value={smsSettings.userId}
+        onChange={(e) =>
+          setSmsSettings((prev) => ({ ...prev, userId: e.target.value }))
+        }
+        placeholder="알리고 아이디"
+      />
+    </div>
+
+    <div className="space-y-1">
+      <label className="text-sm font-medium">발신번호</label>
+      <input
+        className="w-full border rounded p-2"
+        value={smsSettings.senderNumber}
+        onChange={(e) =>
+          setSmsSettings((prev) => ({
+            ...prev,
+            senderNumber: e.target.value.replace(/[^0-9-]/g, ""),
+          }))
+        }
+        placeholder="예: 01012345678"
+      />
+    </div>
+
+    <div className="space-y-1">
+      <label className="text-sm font-medium">사용 여부</label>
+      <select
+        className="w-full border rounded p-2"
+        value={smsSettings.isActive ? "true" : "false"}
+        onChange={(e) =>
+          setSmsSettings((prev) => ({
+            ...prev,
+            isActive: e.target.value === "true",
+          }))
+        }
+      >
+        <option value="true">사용</option>
+        <option value="false">미사용</option>
+      </select>
+    </div>
+  </div>
+</div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6">
         {/* 좌측 패널 */}
@@ -239,14 +391,36 @@ console.log("preview.items", items);
           </div>
 
           <div className="space-y-2">
-            <label className="block font-medium">고객 검색</label>
-            <input
-              className="w-full border rounded p-2"
-              placeholder="이름 / 전화번호 / 희망과정 검색"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-            />
-          </div>
+  <label className="block font-medium">고객 검색</label>
+
+  <div className="grid grid-cols-[110px_1fr] gap-2">
+    <select
+      className="border rounded p-2"
+      value={searchType}
+      onChange={(e) => setSearchType(e.target.value as any)}
+    >
+      <option value="course">희망과정</option>
+      <option value="name">이름</option>
+      <option value="phone">전화번호</option>
+      <option value="all">전체</option>
+    </select>
+
+    <input
+      className="w-full border rounded p-2"
+      placeholder={
+        searchType === "course"
+          ? "희망과정 검색 예: 사회복지사"
+          : searchType === "name"
+          ? "이름 검색"
+          : searchType === "phone"
+          ? "전화번호 검색"
+          : "이름 / 전화번호 / 희망과정 검색"
+      }
+      value={keyword}
+      onChange={(e) => setKeyword(e.target.value)}
+    />
+  </div>
+</div>
 
           <div className="space-y-2">
             <label className="block font-medium">문자 내용</label>

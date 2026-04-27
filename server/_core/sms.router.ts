@@ -1,6 +1,12 @@
 import { router, hostProcedure } from "./trpc";
 import { z } from "zod";
-import { listConsultations, listStudents, getAllUsersDetailed } from "../db";
+import {
+  listConsultations,
+  listStudents,
+  getAllUsersDetailed,
+  getSmsSettings,
+  saveSmsSettings,
+} from "../db";
 import { sendBulkSms } from "./sms.sender";
 
 function normalizePhone(phone: string | null | undefined) {
@@ -11,8 +17,70 @@ function includesKeyword(value: unknown, keyword: string) {
   return String(value || "").toLowerCase().includes(keyword.toLowerCase());
 }
 
+function normalizeSearchText(value: unknown) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/-/g, "")
+    .trim();
+}
+
+function courseMatches(courseValue: unknown, keywordValue: string) {
+  const course = normalizeSearchText(courseValue);
+  const keyword = normalizeSearchText(keywordValue);
+
+  if (!keyword) return true;
+
+  if (keyword.includes("사회복지")) {
+    return course.includes("사회복지");
+  }
+
+  if (keyword.includes("보육")) {
+    return course.includes("보육");
+  }
+
+  if (keyword.includes("아동")) {
+    return course.includes("아동");
+  }
+
+  if (keyword.includes("평생교육")) {
+    return course.includes("평생교육");
+  }
+
+  return course.includes(keyword);
+}
+
 export const smsRouter = router({
-  /**
+  
+settings: hostProcedure.query(async () => {
+  const settings = await getSmsSettings();
+
+  return {
+    provider: settings?.provider || "aligo",
+    apiKey: settings?.apiKey || "",
+    userId: settings?.userId || "",
+    senderNumber: settings?.senderNumber || "",
+    senderName: settings?.senderName || "",
+    isActive: settings?.isActive === undefined ? true : Boolean(settings.isActive),
+  };
+}),
+
+saveSettings: hostProcedure
+  .input(
+    z.object({
+      provider: z.string().default("aligo"),
+      apiKey: z.string().optional().default(""),
+      userId: z.string().optional().default(""),
+      senderNumber: z.string().optional().default(""),
+      senderName: z.string().optional().default(""),
+      isActive: z.boolean().default(true),
+    })
+  )
+  .mutation(async ({ input }) => {
+    await saveSmsSettings(input);
+    return { success: true };
+  }),
+/**
    * 담당자 목록
    */
   assignees: hostProcedure.query(async () => {
@@ -46,6 +114,7 @@ export const smsRouter = router({
         includeStudents: z.boolean().default(false),
         assigneeId: z.number().optional(),
         keyword: z.string().optional().default(""),
+searchType: z.enum(["all", "name", "phone", "course"]).optional().default("all"),
       })
     )
     .query(async ({ input }) => {
@@ -74,14 +143,20 @@ export const smsRouter = router({
             }
 
             if (keyword) {
-const matched =
-  includesKeyword(c.clientName, keyword) ||
-  includesKeyword(normalizePhone(c.phone), keyword) ||
-  includesKeyword(c.phone, keyword) ||
-  includesKeyword(c.desiredCourse, keyword) ||
-  includesKeyword(c.notes, keyword) ||
-  includesKeyword(c.channel, keyword) ||
-  includesKeyword(c.finalEducation, keyword);
+  const searchType = input.searchType || "all";
+
+  const matched =
+    searchType === "name"
+      ? includesKeyword(c.clientName, keyword)
+      : searchType === "phone"
+      ? includesKeyword(normalizePhone(c.phone), normalizePhone(keyword)) ||
+        includesKeyword(c.phone, keyword)
+      : searchType === "course"
+      ? courseMatches(c.desiredCourse, keyword)
+      : includesKeyword(c.clientName, keyword) ||
+        includesKeyword(normalizePhone(c.phone), normalizePhone(keyword)) ||
+        includesKeyword(c.phone, keyword) ||
+        courseMatches(c.desiredCourse, keyword);
 
   if (!matched) return false;
 }
@@ -114,13 +189,23 @@ const matched =
             }
 
            if (keyword) {
+  const searchType = input.searchType || "all";
+  const courseText = [s.course, s.desiredCourse, s.hopeCourse]
+    .filter(Boolean)
+    .join(" ");
+
   const matched =
-    includesKeyword(s.clientName, keyword) ||
-    includesKeyword(normalizePhone(s.phone), keyword) ||
-    includesKeyword(s.phone, keyword) ||
-    includesKeyword(s.course, keyword) ||
-    includesKeyword(s.desiredCourse, keyword) ||
-    includesKeyword(s.hopeCourse, keyword);
+    searchType === "name"
+      ? includesKeyword(s.clientName, keyword)
+      : searchType === "phone"
+      ? includesKeyword(normalizePhone(s.phone), normalizePhone(keyword)) ||
+        includesKeyword(s.phone, keyword)
+      : searchType === "course"
+      ? courseMatches(courseText, keyword)
+      : includesKeyword(s.clientName, keyword) ||
+        includesKeyword(normalizePhone(s.phone), normalizePhone(keyword)) ||
+        includesKeyword(s.phone, keyword) ||
+        courseMatches(courseText, keyword);
 
   if (!matched) return false;
 }
@@ -174,7 +259,8 @@ const matched =
 
       const unique = [...new Set(normalized)];
 
-      const result = await sendBulkSms(unique, input.message);
+      const settings = await getSmsSettings();
+const result = await sendBulkSms(unique, input.message, settings);
 
       return {
         total: unique.length,
@@ -200,7 +286,8 @@ const matched =
         throw new Error("유효한 전화번호가 아닙니다.");
       }
 
-      const result = await sendBulkSms([phone], input.message);
+      const settings = await getSmsSettings();
+const result = await sendBulkSms([phone], input.message, settings);
 
       return {
         total: 1,
