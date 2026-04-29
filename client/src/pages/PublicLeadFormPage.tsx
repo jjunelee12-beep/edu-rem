@@ -630,10 +630,32 @@ const handleSaveMyUiConfig = () => {
     return;
   }
 
+  const safeUiConfig: UiConfig = {
+    ...DEFAULT_LEAD_CONFIG,
+    ...uiDraft,
+    canvas:
+      uiDraft?.canvas && typeof uiDraft.canvas === "object"
+        ? {
+            ...DEFAULT_FORM_CANVAS_CONFIG,
+            ...uiDraft.canvas,
+            elements: Array.isArray(uiDraft.canvas.elements)
+              ? uiDraft.canvas.elements
+              : [],
+          }
+        : DEFAULT_FORM_CANVAS_CONFIG,
+    mapping:
+      uiDraft?.mapping && typeof uiDraft.mapping === "object"
+        ? uiDraft.mapping
+        : DEFAULT_LEAD_CONFIG.mapping,
+    fields: Array.isArray(uiDraft?.fields)
+      ? uiDraft.fields
+      : DEFAULT_LEAD_CONFIG.fields,
+  };
+
   saveMyUiConfigMutation.mutate({
     token,
     formType: "landing",
-    uiConfig: uiDraft,
+    uiConfig: safeUiConfig,
   });
 };
 

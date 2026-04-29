@@ -151,8 +151,9 @@ const [autoSaveStatus, setAutoSaveStatus] = useState<
 >("idle");
 
 const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => {
-  if (typeof window === "undefined") return true;
-  return window.localStorage.getItem("formDesignEditor:autoSave") !== "off";
+  //if (typeof window === "undefined") return true;
+  //return window.localStorage.getItem("formDesignEditor:autoSave") !== "off";
+return false;
 });
 
 useEffect(() => {

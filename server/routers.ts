@@ -101,47 +101,53 @@ function cleanTransferRows(rows: any[]) {
 }
 
 const publicFormUiConfigSchema = z.object({
-  title: z.string(),
-  subtitle: z.string(),
-  logoUrl: z.string(),
-  heroImageUrl: z.string(),
-  primaryColor: z.string(),
-  submitButtonText: z.string(),
-  agreementText: z.string(),
-  layoutType: z.enum(["card", "bottomSheet"]),
-  fields: z.array(
-    z.object({
-      fieldKey: z.string().min(1),
-      label: z.string(),
-      placeholder: z.string().optional().default(""),
-      required: z.boolean(),
-      hidden: z.boolean(),
-      order: z.number(),
-      type: z.enum(["text", "phone", "select", "textarea", "checkbox"]),
-      options: z
-        .array(
-          z.object({
-            label: z.string(),
-            value: z.string(),
-          })
-        )
-        .optional(),
+  title: z.string().optional().default(""),
+  subtitle: z.string().optional().default(""),
+  logoUrl: z.string().optional().default(""),
+  heroImageUrl: z.string().optional().default(""),
+  primaryColor: z.string().optional().default("#5fc065"),
+  submitButtonText: z.string().optional().default("1:1 맞춤 상담 받기"),
+  agreementText: z.string().optional().default("개인정보 수집 및 이용에 동의합니다."),
+  layoutType: z.enum(["card", "bottomSheet"]).optional().default("card"),
+
+  fields: z
+    .array(
+      z.object({
+        fieldKey: z.string().min(1),
+        label: z.string().optional().default(""),
+        placeholder: z.string().optional().default(""),
+        required: z.boolean().optional().default(false),
+        hidden: z.boolean().optional().default(false),
+        order: z.number().optional().default(0),
+        type: z.enum(["text", "phone", "select", "textarea", "checkbox"]),
+        options: z
+          .array(
+            z.object({
+              label: z.string(),
+              value: z.string(),
+            })
+          )
+          .optional(),
+      })
+    )
+    .optional()
+    .default([]),
+
+  mapping: z.record(z.string(), z.string()).optional().default({}),
+  description: z.string().optional().default(""),
+  tags: z.string().optional().default(""),
+  isPinned: z.boolean().optional().default(false),
+  lastUsedAt: z.string().optional().default(""),
+
+  canvas: z
+    .object({
+      enabled: z.boolean().optional().default(false),
+      width: z.number().optional().default(1080),
+      height: z.number().optional().default(1920),
+      backgroundColor: z.string().optional().default("#ffffff"),
+      elements: z.array(z.any()).optional().default([]),
     })
-  ),
-  mapping: z.record(z.string()).optional(),
-  description: z.string().optional(),
-tags: z.string().optional(),
-isPinned: z.boolean().optional(),
-lastUsedAt: z.string().optional(),
-canvas: z
-  .object({
-    enabled: z.boolean().optional(),
-    width: z.number().optional(),
-    height: z.number().optional(),
-    backgroundColor: z.string().optional(),
-    elements: z.array(z.any()).optional(),
-  })
-  .optional(),
+    .optional(),
 });
 
 export const appRouter = router({
