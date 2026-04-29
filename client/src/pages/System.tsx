@@ -2436,6 +2436,8 @@ function BaseFormManagementSection({
     "latest" | "oldest" | "activeFirst"
   >("latest");
   const [selectedFormIds, setSelectedFormIds] = useState<number[]>([]);
+const [showTemplateManager, setShowTemplateManager] = useState(false);
+const [showCompanyDefaultDesign, setShowCompanyDefaultDesign] = useState(false);
 
   const [templateName, setTemplateName] = useState("");
   const [renameTemplateName, setRenameTemplateName] = useState("");
@@ -2668,7 +2670,7 @@ function BaseFormManagementSection({
 
   const createBlueprintMutation = trpc.formBlueprintAdmin.create.useMutation({
     onSuccess: async () => {
-      toast.success(`${title} 기본 뼈대가 생성되었습니다.`);
+      toast.success(`${title} 디자인 템플릿이 생성되었습니다.`);
       setBlueprintName("");
       setBlueprintDescription("");
       setBlueprintDraft(createDefaultPublicFormUiConfig(formType));
@@ -2679,7 +2681,7 @@ function BaseFormManagementSection({
 
   const updateBlueprintMutation = trpc.formBlueprintAdmin.update.useMutation({
     onSuccess: async () => {
-      toast.success("뼈대가 수정되었습니다.");
+      toast.success("디자인 템플릿이 수정되었습니다.");
       setEditingBlueprintId(null);
       setBlueprintName("");
       setBlueprintDescription("");
@@ -2691,7 +2693,7 @@ function BaseFormManagementSection({
 
   const deleteBlueprintMutation = trpc.formBlueprintAdmin.delete.useMutation({
     onSuccess: async () => {
-      toast.success("뼈대가 삭제되었습니다.");
+      toast.success("디자인 템플릿이 삭제되었습니다.");
       await utils.formBlueprintAdmin.list.invalidate({ formType });
     },
     onError: (e) => toast.error(e.message),
@@ -2716,7 +2718,7 @@ function BaseFormManagementSection({
 
   const handleSaveBlueprint = () => {
     if (!blueprintName.trim()) {
-      toast.error("뼈대 이름을 입력해주세요.");
+      toast.error("디자인 템플릿 이름을 입력해주세요.");
       return;
     }
 
@@ -2753,6 +2755,39 @@ function BaseFormManagementSection({
     });
   };
 
+const handleUploadCanvasImage = async (file: File) => {
+  if (file.size > 5 * 1024 * 1024) {
+    toast.error("이미지는 5MB 이하만 업로드할 수 있습니다.");
+    throw new Error("이미지는 5MB 이하만 업로드할 수 있습니다.");
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const uploadRes = await fetch(
+    `${import.meta.env.VITE_API_BASE_URL || ""}/api/upload`,
+    {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+    }
+  );
+
+  if (!uploadRes.ok) {
+    throw new Error("캔버스 이미지 업로드에 실패했습니다.");
+  }
+
+  const uploaded = await uploadRes.json();
+  const uploadedUrl = uploaded?.fileUrl || uploaded?.url || "";
+
+  if (!uploadedUrl) {
+    throw new Error("업로드 URL을 찾을 수 없습니다.");
+  }
+
+  toast.success("캔버스 이미지 업로드 완료");
+  return normalizeAssetUrl(uploadedUrl);
+};
+
   const handleApplyTemplateByName = async (templateName: string) => {
     const safeName = String(templateName || "").trim();
 
@@ -2776,7 +2811,7 @@ function BaseFormManagementSection({
       ...preview,
     });
 
-    toast.success("템플릿을 회사 기본 설정에 불러왔습니다.");
+    toast.success("템플릿을 회사 기본 디자인에 불러왔습니다.");
   };
 
   const handleDeleteTemplate = (rawName?: string) => {
@@ -2883,8 +2918,12 @@ function BaseFormManagementSection({
         assigneeName: assignee?.name || "",
         assigneeUsername: assignee?.username || "",
         assigneePhone: assignee?.phone || "",
-        sourceBlueprintName: f.sourceBlueprintName || "회사 기본 설정",
-        isActive: f.isActive ? "활성" : "비활성",
+        sourceBlueprintName: f.sourceBlueprintName || "회사 기본 디자인",
+canvasEnabled: f.uiConfig?.canvas?.enabled ? "사용" : "미사용",
+canvasElementCount: Array.isArray(f.uiConfig?.canvas?.elements)
+  ? f.uiConfig.canvas.elements.length
+  : 0,
+isActive: f.isActive ? "활성" : "비활성",
         createdAt: f.createdAt
           ? new Date(f.createdAt).toLocaleString("ko-KR")
           : "",
@@ -2892,32 +2931,35 @@ function BaseFormManagementSection({
       };
     });
 
-    const header = [
-      "ID",
-      "토큰",
-      "담당자명",
-      "담당자아이디",
-      "전화번호",
-      "뼈대",
-      "상태",
-      "생성일",
-      "링크",
-    ];
-
+  const header = [
+  "ID",
+  "토큰",
+  "담당자명",
+  "담당자아이디",
+  "전화번호",
+  "디자인",
+  "캔버스사용",
+  "캔버스요소수",
+  "상태",
+  "생성일",
+  "링크",
+];
     const csv = [
       header.join(","),
       ...rows.map((row) =>
         [
-          row.id,
-          row.token,
-          row.assigneeName,
-          row.assigneeUsername,
-          row.assigneePhone,
-          row.sourceBlueprintName,
-          row.isActive,
-          row.createdAt,
-          row.url,
-        ]
+  row.id,
+  row.token,
+  row.assigneeName,
+  row.assigneeUsername,
+  row.assigneePhone,
+  row.sourceBlueprintName,
+  row.canvasEnabled,
+  row.canvasElementCount,
+  row.isActive,
+  row.createdAt,
+  row.url,
+]
           .map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`)
           .join(",")
       ),
@@ -2961,711 +3003,846 @@ function BaseFormManagementSection({
   };
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card>
-          <CardContent className="p-5">
-            <p className="text-sm text-muted-foreground">총 생성 링크</p>
-            <p className="mt-2 text-2xl font-bold">{formSummary.total}</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-5">
-            <p className="text-sm text-muted-foreground">활성 링크</p>
-            <p className="mt-2 text-2xl font-bold text-emerald-600">
-              {formSummary.active}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-5">
-            <p className="text-sm text-muted-foreground">비활성 링크</p>
-            <p className="mt-2 text-2xl font-bold text-rose-600">
-              {formSummary.inactive}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-5">
-            <p className="text-sm text-muted-foreground">
-              기본 뼈대 / 전체 뼈대
-            </p>
-            <p className="mt-2 text-2xl font-bold">
-              {formSummary.defaultBlueprints} / {formSummary.totalBlueprints}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+  <div className="space-y-6">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <Card>
+        <CardContent className="p-5">
+          <p className="text-sm text-muted-foreground">총 생성 링크</p>
+          <p className="mt-2 text-2xl font-bold">{formSummary.total}</p>
+        </CardContent>
+      </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>{title} 기본 뼈대 관리</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <p className="text-sm text-muted-foreground">
-            기본 뼈대는 여러 디자인 프리셋을 저장해두는 영역입니다. 링크 생성
-            시 특정 뼈대를 선택하면 해당 디자인으로 담당자 페이지가
-            만들어집니다.
+        <CardContent className="p-5">
+          <p className="text-sm text-muted-foreground">활성 링크</p>
+          <p className="mt-2 text-2xl font-bold text-emerald-600">
+            {formSummary.active}
           </p>
+        </CardContent>
+      </Card>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <p className="text-sm font-medium">뼈대 이름</p>
-              <Input
-                value={blueprintName}
-                onChange={(e) => setBlueprintName(e.target.value)}
-                placeholder={`${title} 기본 뼈대 이름`}
-              />
-            </div>
+      <Card>
+        <CardContent className="p-5">
+          <p className="text-sm text-muted-foreground">비활성 링크</p>
+          <p className="mt-2 text-2xl font-bold text-rose-600">
+            {formSummary.inactive}
+          </p>
+        </CardContent>
+      </Card>
 
-            <div className="space-y-2">
-              <p className="text-sm font-medium">설명</p>
-              <Input
-                value={blueprintDescription}
-                onChange={(e) => setBlueprintDescription(e.target.value)}
-                placeholder="설명을 입력하세요"
-              />
-            </div>
-          </div>
+      <Card>
+        <CardContent className="p-5">
+          <p className="text-sm text-muted-foreground">
+            기본 템플릿 / 전체 템플릿
+          </p>
+          <p className="mt-2 text-2xl font-bold">
+            {formSummary.defaultBlueprints} / {formSummary.totalBlueprints}
+          </p>
+        </CardContent>
+      </Card>
+    </div>
 
-          <FormDesignEditor
-            mode={formType}
-            title={`${title} 기본 뼈대`}
-            value={blueprintDraft}
-            onChange={setBlueprintDraft}
-            canManageTemplates={false}
-          />
+    <Card>
+      <CardHeader>
+        <CardTitle>{title} 링크 관리</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="mb-4 text-sm text-muted-foreground">
+          생성된 담당자별 링크를 관리합니다. 링크 복사, 활성/비활성 처리,
+          CSV 내보내기를 여기서 바로 할 수 있습니다.
+        </p>
 
-          <div className="flex flex-wrap gap-2">
-            <Button
-              onClick={handleSaveBlueprint}
-              disabled={
-                createBlueprintMutation.isPending ||
-                updateBlueprintMutation.isPending
-              }
+        <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center">
+            <Input
+              value={formSearch}
+              onChange={(e) => setFormSearch(e.target.value)}
+              placeholder="토큰 / 담당자명 / 아이디 / 템플릿명 검색"
+              className="max-w-sm"
+            />
+
+            <Select
+              value={formSort}
+              onValueChange={(v: any) => setFormSort(v)}
             >
-              {editingBlueprintId
-                ? updateBlueprintMutation.isPending
-                  ? "수정 중..."
-                  : "뼈대 수정"
-                : createBlueprintMutation.isPending
-                ? "생성 중..."
-                : "뼈대 생성"}
-            </Button>
-
-            {editingBlueprintId ? (
-              <Button variant="outline" onClick={resetBlueprintEditor}>
-                편집 취소
-              </Button>
-            ) : null}
-
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="latest">최신순</SelectItem>
+                <SelectItem value="oldest">오래된순</SelectItem>
+                <SelectItem value="activeFirst">활성 우선</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex flex-wrap gap-2">
             <Button
               type="button"
               size="sm"
-              variant={blueprintFilter === "all" ? "default" : "outline"}
-              onClick={() => setBlueprintFilter("all")}
+              variant={formStatusFilter === "all" ? "default" : "outline"}
+              onClick={() => setFormStatusFilter("all")}
             >
               전체
             </Button>
             <Button
               type="button"
               size="sm"
-              variant={blueprintFilter === "default" ? "default" : "outline"}
-              onClick={() => setBlueprintFilter("default")}
+              variant={formStatusFilter === "active" ? "default" : "outline"}
+              onClick={() => setFormStatusFilter("active")}
             >
-              기본 뼈대만
+              활성
             </Button>
             <Button
               type="button"
               size="sm"
-              variant={blueprintFilter === "inactive" ? "default" : "outline"}
-              onClick={() => setBlueprintFilter("inactive")}
+              variant={
+                formStatusFilter === "inactive" ? "default" : "outline"
+              }
+              onClick={() => setFormStatusFilter("inactive")}
             >
-              비활성만
+              비활성
             </Button>
           </div>
+        </div>
 
-          <div className="space-y-3">
-            <p className="text-sm font-medium">등록된 뼈대 목록</p>
+        <div className="mb-4 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => handleBulkUpdateForms(true)}
+            disabled={
+              selectedFormIds.length === 0 || updateActiveMutation.isPending
+            }
+          >
+            선택 활성
+          </Button>
 
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <Input
-                value={blueprintSearch}
-                onChange={(e) => setBlueprintSearch(e.target.value)}
-                placeholder="뼈대 이름/설명 검색"
-                className="max-w-sm"
-              />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => handleBulkUpdateForms(false)}
+            disabled={
+              selectedFormIds.length === 0 || updateActiveMutation.isPending
+            }
+          >
+            선택 비활성
+          </Button>
 
-              <Select
-                value={blueprintSort}
-                onValueChange={(v: any) => setBlueprintSort(v)}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="defaultFirst">기본 뼈대 우선</SelectItem>
-                  <SelectItem value="latest">최신순</SelectItem>
-                  <SelectItem value="name">이름순</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={handleExportFormsCsv}
+          >
+            CSV 내보내기
+          </Button>
+        </div>
 
-            {blueprintsLoading ? (
-              <div className="text-sm text-muted-foreground">
-                불러오는 중...
-              </div>
-            ) : filteredBlueprints.length === 0 ? (
-              <div className="text-sm text-muted-foreground">
-                등록된 뼈대가 없습니다.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {filteredBlueprints.map((item: any) => (
-                  <div
-                    key={item.id}
-                    className="rounded-xl border p-4 space-y-3"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <div className="font-medium">
-                          {item.name}
-                          {item.isDefault ? " · 기본 뼈대" : ""}
-                          {!item.isActive ? " · 비활성" : ""}
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {item.description || "설명 없음"}
-                        </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          사용 링크 수:{" "}
-                          {blueprintUsageCountMap.get(
-                            String(item.name || "").trim()
-                          ) || 0}
-                          개
-                        </div>
-                      </div>
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground">불러오는 중...</div>
+        ) : filteredForms.length === 0 ? (
+          <div className="text-sm text-muted-foreground">
+            생성된 {title}이 없습니다.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="px-4 py-3 text-left">
+                    <input
+                      type="checkbox"
+                      checked={
+                        filteredForms.length > 0 &&
+                        filteredForms.every((f: any) =>
+                          selectedFormIds.includes(Number(f.id))
+                        )
+                      }
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedFormIds(
+                            filteredForms.map((f: any) => Number(f.id))
+                          );
+                        } else {
+                          setSelectedFormIds([]);
+                        }
+                      }}
+                    />
+                  </th>
+                  <th className="px-4 py-3 text-left">ID</th>
+                  <th className="px-4 py-3 text-left">토큰</th>
+                  <th className="px-4 py-3 text-left">담당자</th>
+                  <th className="px-4 py-3 text-left">아이디</th>
+                  <th className="px-4 py-3 text-left">전화번호</th>
+                  <th className="px-4 py-3 text-left">디자인</th>
+                  <th className="px-4 py-3 text-left">캔버스</th>
+                  <th className="px-4 py-3 text-left">상태</th>
+                  <th className="px-4 py-3 text-left">생성일</th>
+                  <th className="px-4 py-3 text-right">관리</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredForms.map((f: any) => {
+                  const assignee = userMap.get(Number(f.assigneeId));
+                  const fullUrl = `${window.location.origin}${pathPrefix}/${f.token}`;
 
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => startEditBlueprint(item)}
-                        >
-                          수정
-                        </Button>
-
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            updateBlueprintMutation.mutate({
-                              id: Number(item.id),
-                              isDefault: !item.isDefault,
-                            })
-                          }
-                          disabled={updateBlueprintMutation.isPending}
-                        >
-                          {item.isDefault ? "기본 해제" : "기본 지정"}
-                        </Button>
-
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            updateBlueprintMutation.mutate({
-                              id: Number(item.id),
-                              isActive: !item.isActive,
-                            })
-                          }
-                          disabled={updateBlueprintMutation.isPending}
-                        >
-                          {item.isActive ? "비활성" : "활성"}
-                        </Button>
-
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => {
-                            if (item.isDefault) {
-                              toast.error(
-                                "기본 지정된 뼈대는 먼저 기본 해제 후 삭제해주세요."
-                              );
-                              return;
-                            }
-
-                            const ok = window.confirm(
-                              `뼈대 "${item.name}" 을(를) 삭제할까요?`
+                  return (
+                    <tr key={f.id} className="border-b">
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedFormIds.includes(Number(f.id))}
+                          onChange={(e) => {
+                            const id = Number(f.id);
+                            setSelectedFormIds((prev) =>
+                              e.target.checked
+                                ? [...prev, id]
+                                : prev.filter((item) => item !== id)
                             );
-                            if (!ok) return;
-
-                            deleteBlueprintMutation.mutate({
-                              id: Number(item.id),
-                            });
                           }}
-                          disabled={deleteBlueprintMutation.isPending}
-                        >
-                          삭제
-                        </Button>
+                        />
+                      </td>
+
+                      <td className="px-4 py-3">{f.id}</td>
+
+                      <td className="px-4 py-3 font-mono text-xs">
+                        {f.token}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {assignee?.name || assignee?.username || "-"}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {assignee?.username || "-"}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {assignee?.phone || "-"}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {f.sourceBlueprintName || "회사 기본 디자인"}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {f.uiConfig?.canvas?.enabled ? (
+                          <div className="space-y-1">
+                            <div className="font-medium text-emerald-600">
+                              사용 중
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              요소{" "}
+                              {Array.isArray(f.uiConfig?.canvas?.elements)
+                                ? f.uiConfig.canvas.elements.length
+                                : 0}
+                              개
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">미사용</span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {f.isActive ? (
+                          <span className="font-medium text-emerald-600">
+                            활성
+                          </span>
+                        ) : (
+                          <span className="font-medium text-red-600">
+                            비활성
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        {f.createdAt
+                          ? new Date(f.createdAt).toLocaleString("ko-KR")
+                          : "-"}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              navigator.clipboard.writeText(fullUrl);
+                              toast.success(`${title} 링크가 복사되었습니다.`);
+                            }}
+                          >
+                            링크복사
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            variant={f.isActive ? "outline" : "default"}
+                            onClick={() =>
+                              updateActiveMutation.mutate({
+                                id: Number(f.id),
+                                isActive: !f.isActive,
+                              })
+                            }
+                            disabled={updateActiveMutation.isPending}
+                          >
+                            {f.isActive ? "비활성" : "활성"}
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle>{title} 링크 생성</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+  담당 직원을 선택하면 바로 공유 가능한 링크가 만들어집니다.
+  디자인을 고르지 않으면 회사 기본 디자인으로 생성됩니다.
+</p>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <p className="text-sm font-medium">디자인 템플릿 선택</p>
+            <Select
+              value={selectedBlueprintId}
+              onValueChange={setSelectedBlueprintId}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="선택 안 하면 회사 기본 디자인 사용" />
+              </SelectTrigger>
+              <SelectContent>
+                {blueprints.map((item: any) => (
+                  <SelectItem key={item.id} value={String(item.id)}>
+                    {item.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium">담당 직원 선택</p>
+            <Select value={assigneeId} onValueChange={setAssigneeId}>
+              <SelectTrigger>
+                <SelectValue placeholder="담당 직원을 선택하세요" />
+              </SelectTrigger>
+              <SelectContent>
+                {(users ?? []).map((member: any) => (
+                  <SelectItem key={member.id} value={String(member.id)}>
+                    {member.name || member.username || `#${member.id}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() => {
+              if (!assigneeId) {
+                toast.error("담당 직원을 먼저 선택해주세요.");
+                return;
+              }
+
+              createMutation.mutate({
+                assigneeId: Number(assigneeId),
+                formType,
+                blueprintId: selectedBlueprintId
+                  ? Number(selectedBlueprintId)
+                  : undefined,
+              });
+            }}
+            disabled={createMutation.isPending}
+          >
+            {createMutation.isPending ? "생성 중..." : "담당자 링크 생성"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+  <div className="flex items-center justify-between gap-3">
+    <div>
+      <CardTitle>{title} 디자인 템플릿 관리</CardTitle>
+      <p className="mt-1 text-sm text-muted-foreground">
+        자주 쓰는 디자인을 저장해두는 고급 설정입니다.
+      </p>
+    </div>
+
+    <Button
+      type="button"
+      variant="outline"
+      onClick={() => setShowTemplateManager((prev) => !prev)}
+    >
+      {showTemplateManager ? "접기" : "열기"}
+    </Button>
+  </div>
+</CardHeader>
+
+{!showTemplateManager ? (
+  <div className="border-t px-6 py-4">
+    <div className="grid gap-3 text-sm text-muted-foreground md:grid-cols-3">
+      <div>
+        등록 템플릿{" "}
+        <span className="font-semibold text-foreground">
+          {formSummary.totalBlueprints}
+        </span>
+        개
+      </div>
+
+      <div>
+        기본 템플릿{" "}
+        <span className="font-semibold text-foreground">
+          {formSummary.defaultBlueprints}
+        </span>
+        개
+      </div>
+
+      <div>
+        현재 상태{" "}
+        <span className="font-semibold text-foreground">
+          접힘
+        </span>
+      </div>
+    </div>
+  </div>
+) : null}
+
+{showTemplateManager ? (
+  <CardContent className="space-y-6">
+      
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <p className="text-sm font-medium">템플릿 이름</p>
+            <Input
+              value={blueprintName}
+              onChange={(e) => setBlueprintName(e.target.value)}
+              placeholder={`${title} 디자인 템플릿 이름`}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium">설명</p>
+            <Input
+              value={blueprintDescription}
+              onChange={(e) => setBlueprintDescription(e.target.value)}
+              placeholder="설명을 입력하세요"
+            />
+          </div>
+        </div>
+
+        <FormDesignEditor
+          mode={formType}
+          title={`${title} 디자인 템플릿`}
+          value={blueprintDraft}
+          onChange={setBlueprintDraft}
+          canManageTemplates={false}
+          onUploadCanvasImage={handleUploadCanvasImage}
+        />
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={handleSaveBlueprint}
+            disabled={
+              createBlueprintMutation.isPending ||
+              updateBlueprintMutation.isPending
+            }
+          >
+            {editingBlueprintId
+              ? updateBlueprintMutation.isPending
+                ? "수정 중..."
+                : "템플릿 수정"
+              : createBlueprintMutation.isPending
+              ? "생성 중..."
+              : "템플릿 생성"}
+          </Button>
+
+          {editingBlueprintId ? (
+            <Button variant="outline" onClick={resetBlueprintEditor}>
+              편집 취소
+            </Button>
+          ) : null}
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={blueprintFilter === "all" ? "default" : "outline"}
+            onClick={() => setBlueprintFilter("all")}
+          >
+            전체
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={blueprintFilter === "default" ? "default" : "outline"}
+            onClick={() => setBlueprintFilter("default")}
+          >
+            기본 템플릿만
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={blueprintFilter === "inactive" ? "default" : "outline"}
+            onClick={() => setBlueprintFilter("inactive")}
+          >
+            비활성만
+          </Button>
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-sm font-medium">등록된 디자인 템플릿 목록</p>
+
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <Input
+              value={blueprintSearch}
+              onChange={(e) => setBlueprintSearch(e.target.value)}
+              placeholder="템플릿 이름/설명 검색"
+              className="max-w-sm"
+            />
+
+            <Select
+              value={blueprintSort}
+              onValueChange={(v: any) => setBlueprintSort(v)}
+            >
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="defaultFirst">기본 템플릿 우선</SelectItem>
+                <SelectItem value="latest">최신순</SelectItem>
+                <SelectItem value="name">이름순</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {blueprintsLoading ? (
+            <div className="text-sm text-muted-foreground">불러오는 중...</div>
+          ) : filteredBlueprints.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              등록된 디자인 템플릿이 없습니다.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredBlueprints.map((item: any) => (
+                <div key={item.id} className="space-y-3 rounded-xl border p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="font-medium">
+                        {item.name}
+                        {item.isDefault ? " · 기본 템플릿" : ""}
+                        {!item.isActive ? " · 비활성" : ""}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {item.description || "설명 없음"}
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        사용 링크 수:{" "}
+                        {blueprintUsageCountMap.get(
+                          String(item.name || "").trim()
+                        ) || 0}
+                        개
                       </div>
                     </div>
 
-                    <div className="grid gap-2 text-sm text-muted-foreground md:grid-cols-2">
-                      <div>제목: {item.uiConfig?.title || "-"}</div>
-                      <div>부제목: {item.uiConfig?.subtitle || "-"}</div>
-                      <div>대표색상: {item.uiConfig?.primaryColor || "-"}</div>
-                      <div>
-                        버튼문구: {item.uiConfig?.submitButtonText || "-"}
-                      </div>
-                      <div>로고: {item.uiConfig?.logoUrl ? "있음" : "없음"}</div>
-                      <div>
-                        상단 이미지:{" "}
-                        {item.uiConfig?.heroImageUrl ? "있음" : "없음"}
-                      </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => startEditBlueprint(item)}
+                      >
+                        수정
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          updateBlueprintMutation.mutate({
+                            id: Number(item.id),
+                            isDefault: !item.isDefault,
+                          })
+                        }
+                        disabled={updateBlueprintMutation.isPending}
+                      >
+                        {item.isDefault ? "기본 해제" : "기본 지정"}
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          updateBlueprintMutation.mutate({
+                            id: Number(item.id),
+                            isActive: !item.isActive,
+                          })
+                        }
+                        disabled={updateBlueprintMutation.isPending}
+                      >
+                        {item.isActive ? "비활성" : "활성"}
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => {
+                          if (item.isDefault) {
+                            toast.error(
+                              "기본 지정된 템플릿은 먼저 기본 해제 후 삭제해주세요."
+                            );
+                            return;
+                          }
+
+                          const ok = window.confirm(
+                            `디자인 템플릿 "${item.name}" 을(를) 삭제할까요?`
+                          );
+                          if (!ok) return;
+
+                          deleteBlueprintMutation.mutate({
+                            id: Number(item.id),
+                          });
+                        }}
+                        disabled={deleteBlueprintMutation.isPending}
+                      >
+                        삭제
+                      </Button>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+
+                  <div className="grid gap-2 text-sm text-muted-foreground md:grid-cols-2">
+                    <div>제목: {item.uiConfig?.title || "-"}</div>
+                    <div>부제목: {item.uiConfig?.subtitle || "-"}</div>
+                    <div>대표색상: {item.uiConfig?.primaryColor || "-"}</div>
+                    <div>
+                      버튼문구: {item.uiConfig?.submitButtonText || "-"}
+                    </div>
+                    <div>로고: {item.uiConfig?.logoUrl ? "있음" : "없음"}</div>
+                    <div>
+                      상단 이미지:{" "}
+                      {item.uiConfig?.heroImageUrl ? "있음" : "없음"}
+                    </div>
+                    <div>
+                      자유 캔버스:{" "}
+                      {item.uiConfig?.canvas?.enabled ? (
+                        <span className="font-medium text-emerald-600">
+                          사용 중
+                        </span>
+                      ) : (
+                        <span>미사용</span>
+                      )}
+                    </div>
+                    <div>
+                      캔버스 요소:{" "}
+                      {Array.isArray(item.uiConfig?.canvas?.elements)
+                        ? `${item.uiConfig.canvas.elements.length}개`
+                        : "0개"}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         </CardContent>
-      </Card>
+) : null}
+</Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{title} 링크 생성</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            기본 뼈대를 선택하면 해당 뼈대 기준으로 링크가 생성됩니다.
-            뼈대를 선택하지 않으면 현재 저장된 회사 기본 {title} 설정으로
-            생성됩니다.
-          </p>
+    <Card>
+      <CardHeader>
+  <div className="flex items-center justify-between gap-3">
+    <div>
+      <CardTitle>
+        {title === "랜딩폼"
+          ? "회사 기본 랜딩페이지 디자인"
+          : "회사 기본 광고페이지 디자인"}
+      </CardTitle>
+      <p className="mt-1 text-sm text-muted-foreground">
+        템플릿을 선택하지 않고 링크를 만들 때 쓰는 기본 디자인입니다.
+      </p>
+    </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <p className="text-sm font-medium">뼈대 선택</p>
-              <Select
-                value={selectedBlueprintId}
-                onValueChange={setSelectedBlueprintId}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="뼈대를 선택하세요 (선택 안 하면 회사 기본 설정 사용)" />
-                </SelectTrigger>
-                <SelectContent>
-                  {blueprints.map((item: any) => (
-                    <SelectItem key={item.id} value={String(item.id)}>
-                      {item.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+    <Button
+      type="button"
+      variant="outline"
+      onClick={() => setShowCompanyDefaultDesign((prev) => !prev)}
+    >
+      {showCompanyDefaultDesign ? "접기" : "열기"}
+    </Button>
+  </div>
+</CardHeader>
+
+{!showCompanyDefaultDesign ? (
+  <div className="border-t px-6 py-4">
+    <div className="grid gap-3 text-sm text-muted-foreground md:grid-cols-3">
+      <div>
+        제목{" "}
+        <span className="font-semibold text-foreground">
+          {templateDraft.title || "-"}
+        </span>
+      </div>
+
+      <div>
+        캔버스{" "}
+        <span className="font-semibold text-foreground">
+          {templateDraft.canvas?.enabled ? "사용 중" : "미사용"}
+        </span>
+      </div>
+
+      <div>
+        현재 상태{" "}
+        <span className="font-semibold text-foreground">접힘</span>
+      </div>
+    </div>
+  </div>
+) : null}
+
+{showCompanyDefaultDesign ? (
+  <CardContent className="space-y-4">
+    
+        <FormDesignEditor
+          mode={formType}
+          title={title}
+          value={templateDraft}
+          onChange={setTemplateDraft}
+          onSave={() =>
+            saveTemplateMutation.mutate({
+              formType,
+              uiConfig: templateDraft,
+            })
+          }
+          onSaveAsTemplate={(name) => {
+            setTemplateName(name);
+            handleSaveAsTemplate(name);
+          }}
+          onApplyTemplate={(name) => {
+            handleApplyTemplateByName(name);
+          }}
+          onDeleteTemplate={(name) => {
+            setSelectedTemplateName(name);
+            handleDeleteTemplate(name);
+          }}
+          onRenameTemplate={(oldName, newName) => {
+            setSelectedTemplateName(oldName);
+            setRenameTemplateName(newName);
+            handleRenameTemplate(oldName, newName);
+          }}
+          onDuplicateTemplate={(sourceName, newName) => {
+            setSelectedTemplateName(sourceName);
+            setDuplicateTemplateName(newName);
+            handleDuplicateTemplate(sourceName, newName);
+          }}
+          onTogglePinTemplate={(name) => {
+            setSelectedTemplateName(name);
+            handleTogglePinTemplate(name);
+          }}
+          canManageTemplates={true}
+          templateList={templateList}
+          selectedTemplateName={selectedTemplateName}
+          onSelectedTemplateNameChange={setSelectedTemplateName}
+          isSaving={saveTemplateMutation.isPending}
+          onUploadCanvasImage={handleUploadCanvasImage}
+        />
+
+        <div className="space-y-4 rounded-2xl border bg-muted/20 p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">
+                {title === "랜딩폼"
+                  ? "회사 기본 랜딩페이지 미리보기"
+                  : "회사 기본 광고페이지 미리보기"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                현재 저장 전 draft 기준으로 바로 보여주는 미리보기입니다.
+              </p>
             </div>
 
-            <div className="space-y-2">
-              <p className="text-sm font-medium">담당 직원 선택</p>
-              <Select value={assigneeId} onValueChange={setAssigneeId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="담당 직원을 선택하세요" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(users ?? []).map((member: any) => (
-                    <SelectItem key={member.id} value={String(member.id)}>
-                      {member.name || member.username || `#${member.id}`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <div
+              className="h-3 w-16 rounded-full border"
+              style={{
+                backgroundColor: templateDraft.primaryColor || "#2563eb",
+              }}
+            />
           </div>
+
+          {templateDraft.logoUrl ? (
+            <div className="flex items-center gap-3">
+              <img
+                src={normalizeAssetUrl(templateDraft.logoUrl)}
+                alt="로고 미리보기"
+                className="h-12 w-12 rounded-xl border bg-white object-cover"
+              />
+              <div className="text-sm text-muted-foreground">로고 적용됨</div>
+            </div>
+          ) : null}
+
+          {templateDraft.heroImageUrl ? (
+            <div className="overflow-hidden rounded-2xl border bg-white">
+              <img
+                src={normalizeAssetUrl(templateDraft.heroImageUrl)}
+                alt="상단 이미지 미리보기"
+                className="h-40 w-full object-cover"
+              />
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed bg-white px-4 py-10 text-center text-sm text-muted-foreground">
+              상단 이미지가 없으면 기본 텍스트 중심 레이아웃으로 표시됩니다.
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <h3 className="text-xl font-bold leading-tight">
+              {templateDraft.title || `${title} 제목 미리보기`}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {templateDraft.subtitle || "부제목 미리보기"}
+            </p>
+          </div>
+
+          {templateDraft.description ? (
+            <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+              {templateDraft.description}
+            </p>
+          ) : null}
 
           <div className="flex flex-wrap gap-2">
             <Button
-              onClick={() => {
-                if (!assigneeId) {
-                  toast.error("담당 직원을 먼저 선택해주세요.");
-                  return;
-                }
-
-                createMutation.mutate({
-                  assigneeId: Number(assigneeId),
-                  formType,
-                  blueprintId: selectedBlueprintId
-                    ? Number(selectedBlueprintId)
-                    : undefined,
-                });
+              type="button"
+              style={{
+                backgroundColor: templateDraft.primaryColor || "#2563eb",
+                borderColor: templateDraft.primaryColor || "#2563eb",
               }}
-              disabled={createMutation.isPending}
             >
-              {createMutation.isPending ? "생성 중..." : "링크 생성"}
+              {templateDraft.submitButtonText || "신청하기"}
             </Button>
           </div>
+
+          <div className="rounded-xl border bg-white px-3 py-3 text-xs text-muted-foreground">
+            {templateDraft.agreementText ||
+              "개인정보 수집 및 이용에 동의합니다."}
+          </div>
+        </div>
         </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            {title === "랜딩폼"
-              ? "회사 기본 랜딩페이지 설정"
-              : "회사 기본 광고페이지 설정"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <FormDesignEditor
-            mode={formType}
-            title={title}
-            value={templateDraft}
-            onChange={setTemplateDraft}
-            onSave={() =>
-              saveTemplateMutation.mutate({
-                formType,
-                uiConfig: templateDraft,
-              })
-            }
-            onSaveAsTemplate={(name) => {
-              setTemplateName(name);
-              handleSaveAsTemplate(name);
-            }}
-            onApplyTemplate={(name) => {
-              handleApplyTemplateByName(name);
-            }}
-            onDeleteTemplate={(name) => {
-              setSelectedTemplateName(name);
-              handleDeleteTemplate(name);
-            }}
-            onRenameTemplate={(oldName, newName) => {
-              setSelectedTemplateName(oldName);
-              setRenameTemplateName(newName);
-              handleRenameTemplate(oldName, newName);
-            }}
-            onDuplicateTemplate={(sourceName, newName) => {
-              setSelectedTemplateName(sourceName);
-              setDuplicateTemplateName(newName);
-              handleDuplicateTemplate(sourceName, newName);
-            }}
-            onTogglePinTemplate={(name) => {
-              setSelectedTemplateName(name);
-              handleTogglePinTemplate(name);
-            }}
-            canManageTemplates={true}
-            templateList={templateList}
-            selectedTemplateName={selectedTemplateName}
-            onSelectedTemplateNameChange={setSelectedTemplateName}
-            isSaving={saveTemplateMutation.isPending}
-          />
-
-          <div className="rounded-2xl border bg-muted/20 p-4 space-y-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">
-                  {title === "랜딩폼"
-                    ? "회사 기본 랜딩페이지 미리보기"
-                    : "회사 기본 광고페이지 미리보기"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  현재 저장 전 draft 기준으로 바로 보여주는 미리보기입니다.
-                </p>
-              </div>
-
-              <div
-                className="h-3 w-16 rounded-full border"
-                style={{
-                  backgroundColor: templateDraft.primaryColor || "#2563eb",
-                }}
-              />
-            </div>
-
-            {templateDraft.logoUrl ? (
-              <div className="flex items-center gap-3">
-                <img
-                  src={normalizeAssetUrl(templateDraft.logoUrl)}
-                  alt="로고 미리보기"
-                  className="h-12 w-12 rounded-xl border object-cover bg-white"
-                />
-                <div className="text-sm text-muted-foreground">로고 적용됨</div>
-              </div>
-            ) : null}
-
-            {templateDraft.heroImageUrl ? (
-              <div className="overflow-hidden rounded-2xl border bg-white">
-                <img
-                  src={normalizeAssetUrl(templateDraft.heroImageUrl)}
-                  alt="상단 이미지 미리보기"
-                  className="h-40 w-full object-cover"
-                />
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-dashed bg-white px-4 py-10 text-center text-sm text-muted-foreground">
-                상단 이미지가 없으면 기본 텍스트 중심 레이아웃으로 표시됩니다.
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <h3 className="text-xl font-bold leading-tight">
-                {templateDraft.title || `${title} 제목 미리보기`}
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {templateDraft.subtitle || "부제목 미리보기"}
-              </p>
-            </div>
-
-            {templateDraft.description ? (
-              <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                {templateDraft.description}
-              </p>
-            ) : null}
-
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                style={{
-                  backgroundColor: templateDraft.primaryColor || "#2563eb",
-                  borderColor: templateDraft.primaryColor || "#2563eb",
-                }}
-              >
-                {templateDraft.submitButtonText || "신청하기"}
-              </Button>
-            </div>
-
-            <div className="rounded-xl border bg-white px-3 py-3 text-xs text-muted-foreground">
-              {templateDraft.agreementText ||
-                "개인정보 수집 및 이용에 동의합니다."}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{title} 목록</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="mb-4 text-sm text-muted-foreground">
-            생성된 링크 목록입니다. 어떤 뼈대로 생성되었는지 함께 표시되며,
-            뼈대가 없으면 회사 기본 설정으로 생성된 링크입니다.
-          </p>
-
-          <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center">
-              <Input
-                value={formSearch}
-                onChange={(e) => setFormSearch(e.target.value)}
-                placeholder="토큰 / 담당자명 / 아이디 / 뼈대명 검색"
-                className="max-w-sm"
-              />
-
-              <Select
-                value={formSort}
-                onValueChange={(v: any) => setFormSort(v)}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="latest">최신순</SelectItem>
-                  <SelectItem value="oldest">오래된순</SelectItem>
-                  <SelectItem value="activeFirst">활성 우선</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant={formStatusFilter === "all" ? "default" : "outline"}
-                onClick={() => setFormStatusFilter("all")}
-              >
-                전체
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={formStatusFilter === "active" ? "default" : "outline"}
-                onClick={() => setFormStatusFilter("active")}
-              >
-                활성
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={
-                  formStatusFilter === "inactive" ? "default" : "outline"
-                }
-                onClick={() => setFormStatusFilter("inactive")}
-              >
-                비활성
-              </Button>
-            </div>
-          </div>
-
-          <div className="mb-4 flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => handleBulkUpdateForms(true)}
-              disabled={
-                selectedFormIds.length === 0 || updateActiveMutation.isPending
-              }
-            >
-              선택 활성
-            </Button>
-
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => handleBulkUpdateForms(false)}
-              disabled={
-                selectedFormIds.length === 0 || updateActiveMutation.isPending
-              }
-            >
-              선택 비활성
-            </Button>
-
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={handleExportFormsCsv}
-            >
-              CSV 내보내기
-            </Button>
-          </div>
-
-          {isLoading ? (
-            <div className="text-sm text-muted-foreground">불러오는 중...</div>
-          ) : filteredForms.length === 0 ? (
-            <div className="text-sm text-muted-foreground">
-              생성된 {title}이 없습니다.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="px-4 py-3 text-left">
-                      <input
-                        type="checkbox"
-                        checked={
-                          filteredForms.length > 0 &&
-                          filteredForms.every((f: any) =>
-                            selectedFormIds.includes(Number(f.id))
-                          )
-                        }
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedFormIds(
-                              filteredForms.map((f: any) => Number(f.id))
-                            );
-                          } else {
-                            setSelectedFormIds([]);
-                          }
-                        }}
-                      />
-                    </th>
-                    <th className="px-4 py-3 text-left">ID</th>
-                    <th className="px-4 py-3 text-left">토큰</th>
-                    <th className="px-4 py-3 text-left">담당자</th>
-                    <th className="px-4 py-3 text-left">아이디</th>
-                    <th className="px-4 py-3 text-left">전화번호</th>
-                    <th className="px-4 py-3 text-left">뼈대</th>
-                    <th className="px-4 py-3 text-left">상태</th>
-                    <th className="px-4 py-3 text-left">생성일</th>
-                    <th className="px-4 py-3 text-right">관리</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredForms.map((f: any) => {
-                    const assignee = userMap.get(Number(f.assigneeId));
-                    const fullUrl = `${window.location.origin}${pathPrefix}/${f.token}`;
-
-                    return (
-                      <tr key={f.id} className="border-b">
-                        <td className="px-4 py-3">
-                          <input
-                            type="checkbox"
-                            checked={selectedFormIds.includes(Number(f.id))}
-                            onChange={(e) => {
-                              const id = Number(f.id);
-                              setSelectedFormIds((prev) =>
-                                e.target.checked
-                                  ? [...prev, id]
-                                  : prev.filter((item) => item !== id)
-                              );
-                            }}
-                          />
-                        </td>
-                        <td className="px-4 py-3">{f.id}</td>
-                        <td className="px-4 py-3 font-mono text-xs">
-                          {f.token}
-                        </td>
-                        <td className="px-4 py-3">
-                          {assignee?.name || assignee?.username || "-"}
-                        </td>
-                        <td className="px-4 py-3">
-                          {assignee?.username || "-"}
-                        </td>
-                        <td className="px-4 py-3">{assignee?.phone || "-"}</td>
-                        <td className="px-4 py-3">
-                          {f.sourceBlueprintName || "회사 기본 설정"}
-                        </td>
-                        <td className="px-4 py-3">
-                          {f.isActive ? "활성" : "비활성"}
-                        </td>
-                        <td className="px-4 py-3">
-                          {f.createdAt
-                            ? new Date(f.createdAt).toLocaleString("ko-KR")
-                            : "-"}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                navigator.clipboard.writeText(fullUrl);
-                                toast.success(`${title} 링크가 복사되었습니다.`);
-                              }}
-                            >
-                              링크복사
-                            </Button>
-
-                            <Button
-                              size="sm"
-                              variant={f.isActive ? "outline" : "default"}
-                              onClick={() =>
-                                updateActiveMutation.mutate({
-                                  id: Number(f.id),
-                                  isActive: !f.isActive,
-                                })
-                              }
-                              disabled={updateActiveMutation.isPending}
-                            >
-                              {f.isActive ? "비활성" : "활성"}
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
+) : null}
+</Card>
+  </div>
+);
 }
-
 
 function SettingsSection() {
   const utils = trpc.useUtils();

@@ -258,4 +258,7 @@
   .ad-form-title-inner {
     gap: 6px;
   }
+.form-canvas-renderer-scroll::-webkit-scrollbar {
+  display: none;
+}
 }

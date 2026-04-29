@@ -1,3 +1,5 @@
+import type { FormCanvasConfig } from "./canvasTypes";
+
 export type UiField = {
   fieldKey: string;
   label: string;
@@ -24,6 +26,7 @@ export type UiConfig = {
   tags?: string;
   isPinned?: boolean;
   lastUsedAt?: string;
+canvas?: FormCanvasConfig;
 };
 
 export function formatTemplateDate(value?: string | Date | null) {

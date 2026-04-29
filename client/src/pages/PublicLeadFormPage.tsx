@@ -7,6 +7,10 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 import "@/styles/public-lead-form.css";
 import "@/styles/ad-form.css";
+import { DEFAULT_FORM_CANVAS_CONFIG } from "@/lib/formDesign/canvasTypes";
+import FormCanvasRenderer from "@/components/forms/canvas/FormCanvasRenderer";
+import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
+
 
 const DEFAULT_LEAD_CONFIG: UiConfig = {
   title: "목표를 향한 배움의 길, 위드원 교육이 함께할게요",
@@ -21,6 +25,7 @@ const DEFAULT_LEAD_CONFIG: UiConfig = {
   tags: "",
   isPinned: false,
   lastUsedAt: "",
+canvas: DEFAULT_FORM_CANVAS_CONFIG,
   mapping: {
     clientName: "clientName",
     phone: "phone",
@@ -136,10 +141,7 @@ const [editMode, setEditMode] = useState(false);
 const [uiDraft, setUiDraft] = useState<UiConfig>(DEFAULT_LEAD_CONFIG);
 
 
-const [templateName, setTemplateName] = useState("");
 const [selectedTemplateName, setSelectedTemplateName] = useState("");
-const [renameTemplateName, setRenameTemplateName] = useState("");
-const [duplicateTemplateName, setDuplicateTemplateName] = useState("");
 
 const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 const [isUploadingHero, setIsUploadingHero] = useState(false);
@@ -178,7 +180,6 @@ const saveAsTemplateMutation = trpc.formAdmin.saveAsTemplate.useMutation({
   onSuccess: async () => {
     toast.success("템플릿으로 저장되었습니다.");
     await templateListQuery.refetch();
-    setTemplateName("");
   },
   onError: (err) => {
     toast.error(err.message || "템플릿 저장 중 오류가 발생했습니다.");
@@ -186,30 +187,33 @@ const saveAsTemplateMutation = trpc.formAdmin.saveAsTemplate.useMutation({
 });
 
 const applyTemplateMutation = trpc.formAdmin.applyTemplateToMyForm.useMutation({
-  onSuccess: async () => {
-  const preview = templatePreviewQuery.data?.uiConfig;
+  onSuccess: async (_data, variables) => {
 
-  if (selectedTemplateName.trim() && preview) {
-    touchTemplateMutation.mutate({
-      formType: "landing",
-      templateName: selectedTemplateName.trim(),
-      uiConfig: {
-        ...preview,
-        lastUsedAt: new Date().toISOString(),
-      },
-    });
-  }
+    const preview = templatePreviewQuery.data?.uiConfig;
+    const appliedName = String(variables.templateName || "").trim();
 
-  toast.success("템플릿을 현재 페이지에 적용했습니다.");
+    if (appliedName && preview) {
+      touchTemplateMutation.mutate({
+        formType: "landing",
+        templateName: appliedName,
+        uiConfig: {
+          ...preview,
+          lastUsedAt: new Date().toISOString(),
+        },
+      });
+    }
 
-  await utils.publicForm.getByToken.invalidate({
-    token,
-    formType: "landing",
-  });
+    toast.success("템플릿을 현재 페이지에 적용했습니다.");
+setSelectedTemplateName("");
+
+    await utils.publicForm.getByToken.invalidate({
+  token,
+  formType: "landing",
+});
 },
-  onError: (err) => {
-    toast.error(err.message || "템플릿 적용 중 오류가 발생했습니다.");
-  },
+onError: (err) => {
+  toast.error(err.message || "템플릿 적용 중 오류가 발생했습니다.");
+},
 });
 
 const deleteTemplateMutation = trpc.formAdmin.deleteTemplate.useMutation({
@@ -227,8 +231,7 @@ const renameTemplateMutation = trpc.formAdmin.renameTemplate.useMutation({
   onSuccess: async () => {
     toast.success("템플릿 이름을 변경했습니다.");
     await templateListQuery.refetch();
-    setSelectedTemplateName(renameTemplateName.trim());
-    setRenameTemplateName("");
+    setSelectedTemplateName("");
   },
   onError: (err) => {
     toast.error(err.message || "템플릿 이름 변경 중 오류가 발생했습니다.");
@@ -239,8 +242,7 @@ const duplicateTemplateMutation = trpc.formAdmin.duplicateTemplate.useMutation({
   onSuccess: async () => {
     toast.success("템플릿을 복제했습니다.");
     await templateListQuery.refetch();
-    setSelectedTemplateName(duplicateTemplateName.trim());
-    setDuplicateTemplateName("");
+    setSelectedTemplateName("");
   },
   onError: (err) => {
     toast.error(err.message || "템플릿 복제 중 오류가 발생했습니다.");
@@ -294,6 +296,16 @@ const displayConfig = editMode ? uiDraft : uiConfig;
 const safeDisplayConfig: UiConfig = {
   ...DEFAULT_LEAD_CONFIG,
   ...displayConfig,
+  canvas:
+    displayConfig?.canvas && typeof displayConfig.canvas === "object"
+      ? {
+          ...DEFAULT_FORM_CANVAS_CONFIG,
+          ...displayConfig.canvas,
+          elements: Array.isArray(displayConfig.canvas.elements)
+            ? displayConfig.canvas.elements
+            : [],
+        }
+      : DEFAULT_FORM_CANVAS_CONFIG,
   mapping:
     displayConfig && typeof displayConfig.mapping === "object" && displayConfig.mapping
       ? displayConfig.mapping
@@ -302,6 +314,8 @@ const safeDisplayConfig: UiConfig = {
     ? displayConfig.fields
     : DEFAULT_LEAD_CONFIG.fields,
 };
+
+const canvasEnabled = Boolean(safeDisplayConfig.canvas?.enabled);
 
 const normalizedFields = useMemo(() => {
   const incoming = Array.isArray(safeDisplayConfig.fields)
@@ -377,6 +391,9 @@ const safeColor = /^#([0-9A-F]{3}){1,2}$/i.test(
 )
   ? safeDisplayConfig.primaryColor
   : "#5fc065";
+
+const callPhone = formQuery.data?.phone || "";
+const callHref = `tel:${callPhone}`;
 
 
 useEffect(() => {
@@ -476,6 +493,39 @@ useEffect(() => {
   }
 };
 
+const handleUploadCanvasImage = async (file: File) => {
+  if (file.size > 5 * 1024 * 1024) {
+    toast.error("이미지는 5MB 이하만 업로드할 수 있습니다.");
+    throw new Error("이미지는 5MB 이하만 업로드할 수 있습니다.");
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const uploadRes = await fetch(
+    `${import.meta.env.VITE_API_BASE_URL || ""}/api/upload`,
+    {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+    }
+  );
+
+  if (!uploadRes.ok) {
+    throw new Error("이미지 업로드에 실패했습니다.");
+  }
+
+  const uploaded = await uploadRes.json();
+  const uploadedUrl = uploaded?.fileUrl || uploaded?.url || "";
+
+  if (!uploadedUrl) {
+    throw new Error("업로드 URL을 찾을 수 없습니다.");
+  }
+
+  toast.success("캔버스 이미지 업로드 완료");
+  return normalizeAssetUrl(uploadedUrl);
+};
+
   const updateValue = (fieldKey: string, nextValue: any) => {
     setValues((prev) => {
       if (prev[fieldKey] === nextValue) return prev;
@@ -484,6 +534,22 @@ useEffect(() => {
   };
 
   const validateBeforeSubmit = () => {
+const clientName = String(values.clientName ?? "").trim();
+
+if (!clientName) {
+  alert("이름을 입력해주세요.");
+  return false;
+}
+
+if (normalizedPhone.length < 10) {
+  alert("전화번호를 정확히 입력해주세요.");
+  return false;
+}
+
+if (!values.agreed) {
+  alert(safeDisplayConfig.agreementText || "개인정보 수집 및 이용에 동의해주세요.");
+  return false;
+}
     for (const field of sortedFields) {
       const value = values[field.fieldKey];
 
@@ -520,30 +586,14 @@ useEffect(() => {
   if (submitMutation.isPending) return;
   if (!validateBeforeSubmit()) return;
 
-  const fallbackMap = {
-    clientName: "clientName",
-    phone: "phone",
-    finalEducation: "finalEducation",
-    desiredCourse: "desiredCourse",
-    channel: "channel",
-    notes: "notes",
-  };
-
   const mapping = {
-  ...fallbackMap,
   ...(safeDisplayConfig.mapping || {}),
-  clientName:
-    safeDisplayConfig.mapping?.clientName || "clientName",
-  phone:
-    safeDisplayConfig.mapping?.phone || "phone",
-  finalEducation:
-    safeDisplayConfig.mapping?.finalEducation || "finalEducation",
-  desiredCourse:
-    safeDisplayConfig.mapping?.desiredCourse || "desiredCourse",
-  channel:
-    safeDisplayConfig.mapping?.channel || "channel",
-  notes:
-    safeDisplayConfig.mapping?.notes || "notes",
+  clientName: "clientName",
+  phone: "phone",
+  finalEducation: "finalEducation",
+  desiredCourse: "desiredCourse",
+  channel: "channel",
+  notes: "notes",
 };
 
   const payload: Record<string, any> = {
@@ -564,6 +614,13 @@ useEffect(() => {
     payload[dbField] = String(value ?? "").trim();
   });
 
+payload.clientName = String(values.clientName ?? "").trim();
+payload.phone = normalizedPhone;
+payload.finalEducation = String(values.finalEducation ?? "").trim();
+payload.desiredCourse = String(values.desiredCourse ?? "").trim();
+payload.channel = String(values.channel ?? "").trim();
+payload.notes = String(values.notes ?? "").trim();
+
   submitMutation.mutate(payload as any);
 };
 
@@ -580,23 +637,6 @@ const handleSaveMyUiConfig = () => {
   });
 };
 
-const handleDeleteTemplate = () => {
-  const safeName = selectedTemplateName.trim();
-
-  if (!safeName) {
-    toast.error("삭제할 템플릿을 선택해주세요.");
-    return;
-  }
-
-  const ok = window.confirm(`선택한 템플릿 "${safeName}" 을(를) 삭제할까요?`);
-  if (!ok) return;
-
-  deleteTemplateMutation.mutate({
-    formType: "landing",
-    templateName: safeName,
-  });
-};
-
 const handleApplyTemplateByName = (templateName: string) => {
   const safeName = String(templateName || "").trim();
 
@@ -607,137 +647,12 @@ const handleApplyTemplateByName = (templateName: string) => {
 
   setSelectedTemplateName(safeName);
 
-  applyTemplateMutation.mutate({
+applyTemplateMutation.mutate({
     formType: "landing",
     templateName: safeName,
     targetToken: token,
   });
 };
-
-const handleRenameTemplate = () => {
-  const oldName = selectedTemplateName.trim();
-  const newName = renameTemplateName.trim();
-
-  if (!oldName) {
-    toast.error("이름을 변경할 템플릿을 선택해주세요.");
-    return;
-  }
-
-  if (!newName) {
-    toast.error("새 템플릿 이름을 입력해주세요.");
-    return;
-  }
-
-  if (oldName.toLowerCase() === newName.toLowerCase()) {
-    toast.error("기존 이름과 다른 이름을 입력해주세요.");
-    return;
-  }
-
-  const exists = (templateListQuery.data || []).some(
-    (tpl: any) =>
-      String(tpl.templateName || "").trim().toLowerCase() ===
-      newName.toLowerCase()
-  );
-
-  if (exists) {
-    toast.error("같은 이름의 템플릿이 이미 존재합니다.");
-    return;
-  }
-
-  renameTemplateMutation.mutate({
-    formType: "landing",
-    oldTemplateName: oldName,
-    newTemplateName: newName,
-  });
-};
-
-const handleDuplicateTemplate = () => {
-  const sourceName = selectedTemplateName.trim();
-  const newName = duplicateTemplateName.trim();
-
-  if (!sourceName) {
-    toast.error("복제할 템플릿을 선택해주세요.");
-    return;
-  }
-
-  if (!newName) {
-    toast.error("복제할 새 템플릿 이름을 입력해주세요.");
-    return;
-  }
-
-  if (sourceName.toLowerCase() === newName.toLowerCase()) {
-    toast.error("기존 이름과 다른 새 이름을 입력해주세요.");
-    return;
-  }
-
-  const exists = (templateListQuery.data || []).some(
-    (tpl: any) =>
-      String(tpl.templateName || "").trim().toLowerCase() ===
-      newName.toLowerCase()
-  );
-
-  if (exists) {
-    toast.error("같은 이름의 템플릿이 이미 존재합니다.");
-    return;
-  }
-
-  duplicateTemplateMutation.mutate({
-    formType: "landing",
-    sourceTemplateName: sourceName,
-    newTemplateName: newName,
-  });
-};
-
-const handleTogglePinTemplate = () => {
-  const safeName = selectedTemplateName.trim();
-
-  if (!safeName) {
-    toast.error("고정 상태를 변경할 템플릿을 선택해주세요.");
-    return;
-  }
-
-  const preview = templatePreviewQuery.data?.uiConfig;
-  if (!preview) {
-    toast.error("템플릿 정보를 먼저 불러와주세요.");
-    return;
-  }
-
-  pinTemplateMutation.mutate({
-    formType: "landing",
-    templateName: safeName,
-    uiConfig: {
-      ...preview,
-      isPinned: !Boolean(preview.isPinned),
-    },
-  });
-};
-
-const handleSaveAsTemplate = () => {
-  const safeName = templateName.trim();
-
-  if (!safeName) {
-    toast.error("템플릿 이름을 입력해주세요.");
-    return;
-  }
-
-  const exists = (templateListQuery.data || []).some(
-    (tpl: any) => String(tpl.templateName || "").trim().toLowerCase() === safeName.toLowerCase()
-  );
-
-  if (exists) {
-    const ok = window.confirm(
-      `"${safeName}" 템플릿이 이미 있습니다. 덮어쓸까요?`
-    );
-    if (!ok) return;
-  }
-
-  saveAsTemplateMutation.mutate({
-  formType: "landing",
-  templateName: safeName,
-  uiConfig: uiDraft,
-});
-};
-
 
   const renderField = (field: any) => {
     const value = values[field.fieldKey];
@@ -849,173 +764,317 @@ const handleSaveAsTemplate = () => {
   }
 
   return (
-    <PageShell>
-      <div className="lead-form-card">
-        <div className="lead-form-header">
-  <h1 className="lead-form-title">
-    <span className="lead-form-title-line lead-form-title-line--first">
-      {safeDisplayConfig.logoUrl ? (
-        <img
-          src={safeDisplayConfig.logoUrl}
-          alt="폼 로고"
-          className="lead-form-logo"
-          onError={(e) => {
-            (e.currentTarget as HTMLImageElement).style.display = "none";
-          }}
-        />
+  <PageShell>
+    <div className="lead-form-card">
+      {canEdit ? (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+          <button
+            type="button"
+            className="premium-submit-button"
+            style={{
+              backgroundColor: editMode ? "#334155" : safeColor,
+              width: "auto",
+              padding: "12px 18px",
+            }}
+            onClick={() => setEditMode((prev) => !prev)}
+          >
+            {editMode ? "꾸미기 닫기" : "내 페이지 꾸미기"}
+          </button>
+        </div>
       ) : null}
-      <span>{safeDisplayConfig.title.split(",")[0]?.trim() || safeDisplayConfig.title}</span>
-    </span>
 
-    {safeDisplayConfig.title.includes(",") ? (
-      <span className="lead-form-title-line">
-        {safeDisplayConfig.title.split(",").slice(1).join(",").trim()}
-      </span>
-    ) : null}
-  </h1>
+      {canEdit && editMode ? (
+        <div style={{ marginBottom: 20 }}>
+          <FormDesignEditor
+            mode="landing"
+            title="랜딩페이지"
+            value={uiDraft}
+            onChange={setUiDraft}
+            canManageTemplates={true}
+            templateList={templateListQuery.data || []}
+            selectedTemplateName={selectedTemplateName}
+            onSelectedTemplateNameChange={setSelectedTemplateName}
+            onSave={handleSaveMyUiConfig}
+            onSaveAsTemplate={(name) => {
+              const safeName = String(name || "").trim();
 
-  <p className="lead-form-subtitle">{safeDisplayConfig.subtitle}</p>
-</div>
+              if (!safeName) {
+                toast.error("템플릿 이름을 입력해주세요.");
+                return;
+              }
 
-{canEdit ? (
-  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-    <button
-      type="button"
-      className="premium-submit-button"
-      style={{
-        backgroundColor: editMode ? "#334155" : safeColor,
-        width: "auto",
-        padding: "12px 18px",
-      }}
-      onClick={() => setEditMode((prev) => !prev)}
-    >
-      {editMode ? "꾸미기 닫기" : "내 페이지 꾸미기"}
-    </button>
-  </div>
-) : null}
+              const exists = (templateListQuery.data || []).some(
+                (tpl: any) =>
+                  String(tpl.templateName || "").trim().toLowerCase() ===
+                  safeName.toLowerCase()
+              );
 
-        {safeDisplayConfig.heroImageUrl ? (
-  <div style={{ marginBottom: 16 }}>
-    <img
-      src={safeDisplayConfig.heroImageUrl}
-      alt="상단 이미지"
-      style={{
-        width: "100%",
-        borderRadius: 20,
-        display: "block",
-      }}
-      onError={(e) => {
-        (e.currentTarget as HTMLImageElement).style.display = "none";
-      }}
-    />
-  </div>
-) : null}
+              if (exists) {
+                const ok = window.confirm(
+                  `"${safeName}" 템플릿이 이미 있습니다. 덮어쓸까요?`
+                );
+                if (!ok) return;
+              }
 
-{canEdit && editMode ? (
-  <div style={{ marginBottom: 20 }}>
-    <FormDesignEditor
-      mode="landing"
-      title="랜딩페이지"
-      value={uiDraft}
-      onChange={setUiDraft}
-      canManageTemplates={true}
-      templateList={templateListQuery.data || []}
-      selectedTemplateName={selectedTemplateName}
-      onSelectedTemplateNameChange={setSelectedTemplateName}
-      onSave={handleSaveMyUiConfig}
-      onSaveAsTemplate={(name) => {
-        setTemplateName(name);
-      }}
-      onApplyTemplate={(name) => {
-        handleApplyTemplateByName(name);
-      }}
-      onDeleteTemplate={(name) => {
-        setSelectedTemplateName(name);
-        handleDeleteTemplate();
-      }}
-      onRenameTemplate={(oldName, newName) => {
-        setSelectedTemplateName(oldName);
-        setRenameTemplateName(newName);
-        handleRenameTemplate();
-      }}
-      onDuplicateTemplate={(sourceName, newName) => {
-        setSelectedTemplateName(sourceName);
-        setDuplicateTemplateName(newName);
-        handleDuplicateTemplate();
-      }}
-      onTogglePinTemplate={(name) => {
-        setSelectedTemplateName(name);
-        handleTogglePinTemplate();
-      }}
-      isSaving={saveMyUiConfigMutation.isPending}
-      isUploadingLogo={isUploadingLogo}
-      isUploadingHero={isUploadingHero}
-      onUploadImage={handleUploadUiImage}
-    />
-  </div>
-) : null}
+              saveAsTemplateMutation.mutate({
+                formType: "landing",
+                templateName: safeName,
+                uiConfig: uiDraft,
+              });
+            }}
+            onApplyTemplate={(name) => {
+              handleApplyTemplateByName(name);
+            }}
+            onDeleteTemplate={(name) => {
+              const safeName = String(name || "").trim();
 
-       {safeDisplayConfig.layoutType === "card" ? (
-  <form className="lead-form-body" onSubmit={handleSubmit}>
-    {sortedFields.map(renderField)}
+              if (!safeName) {
+                toast.error("삭제할 템플릿을 선택해주세요.");
+                return;
+              }
 
-    <button
-      type="submit"
-      className="premium-submit-button"
-      style={{ backgroundColor: safeColor }}
-      disabled={submitMutation.isPending}
-    >
-      {submitMutation.isPending
-        ? "접수 중..."
-        : safeDisplayConfig.submitButtonText || "1:1 맞춤 상담 받기"}
-    </button>
-  </form>
-) : (
-  <>
-    <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
-      <button
-        type="button"
-        className="premium-submit-button"
-        style={{ backgroundColor: safeColor, maxWidth: 420 }}
-        onClick={() => setOpenSheet(true)}
-      >
-        {safeDisplayConfig.submitButtonText || "1:1 맞춤 상담 받기"}
-      </button>
+              deleteTemplateMutation.mutate({
+                formType: "landing",
+                templateName: safeName,
+              });
+            }}
+            onRenameTemplate={(oldName, newName) => {
+              const oldSafeName = String(oldName || "").trim();
+              const newSafeName = String(newName || "").trim();
+
+              if (!oldSafeName) {
+                toast.error("이름을 변경할 템플릿을 선택해주세요.");
+                return;
+              }
+
+              if (!newSafeName) {
+                toast.error("새 템플릿 이름을 입력해주세요.");
+                return;
+              }
+
+              renameTemplateMutation.mutate({
+                formType: "landing",
+                oldTemplateName: oldSafeName,
+                newTemplateName: newSafeName,
+              });
+            }}
+            onDuplicateTemplate={(sourceName, newName) => {
+              const sourceSafeName = String(sourceName || "").trim();
+              const newSafeName = String(newName || "").trim();
+
+              if (!sourceSafeName) {
+                toast.error("복제할 템플릿을 선택해주세요.");
+                return;
+              }
+
+              if (!newSafeName) {
+                toast.error("복제할 새 템플릿 이름을 입력해주세요.");
+                return;
+              }
+
+              duplicateTemplateMutation.mutate({
+                formType: "landing",
+                sourceTemplateName: sourceSafeName,
+                newTemplateName: newSafeName,
+              });
+            }}
+            onTogglePinTemplate={(name) => {
+              const safeName = String(name || "").trim();
+
+              if (!safeName) {
+                toast.error("고정 상태를 변경할 템플릿을 선택해주세요.");
+                return;
+              }
+
+              const targetTemplate = (templateListQuery.data || []).find(
+                (tpl: any) =>
+                  String(tpl.templateName || "").trim().toLowerCase() ===
+                  safeName.toLowerCase()
+              );
+
+              const preview = templatePreviewQuery.data?.uiConfig;
+
+              if (!preview) {
+                toast.error("템플릿 정보를 먼저 불러와주세요.");
+                return;
+              }
+
+              pinTemplateMutation.mutate({
+                formType: "landing",
+                templateName: safeName,
+                uiConfig: {
+                  ...preview,
+                  isPinned: !Boolean(targetTemplate?.isPinned),
+                },
+              });
+            }}
+            isSaving={saveMyUiConfigMutation.isPending}
+            isUploadingLogo={isUploadingLogo}
+            isUploadingHero={isUploadingHero}
+            onUploadImage={handleUploadUiImage}
+            onUploadCanvasImage={handleUploadCanvasImage}
+          />
+        </div>
+      ) : null}
+
+      <FormCanvasRenderer
+  canvas={safeDisplayConfig.canvas}
+  onOpenForm={() => setOpenSheet(true)}
+  onTel={() => {
+    if (!callPhone) {
+      alert("직원 전화번호가 등록되어 있지 않습니다.");
+      return;
+    }
+
+    window.location.href = callHref;
+  }}
+/>
+
+      {canvasEnabled && openSheet ? (
+        <>
+          <div
+            className="ad-form-sheet-backdrop open"
+            onClick={() => setOpenSheet(false)}
+          />
+
+          <div className="ad-form-sheet open">
+            <div className="ad-form-sheet-header">
+              <h3>{safeDisplayConfig.submitButtonText || "상담 신청"}</h3>
+              <button type="button" onClick={() => setOpenSheet(false)}>
+                닫기
+              </button>
+            </div>
+
+            <form className="ad-form-sheet-body" onSubmit={handleSubmit}>
+              {sortedFields.map(renderField)}
+
+              <button
+                type="submit"
+                className="premium-submit-button"
+                style={{ backgroundColor: safeColor }}
+                disabled={submitMutation.isPending}
+              >
+                {submitMutation.isPending
+                  ? "접수 중..."
+                  : safeDisplayConfig.submitButtonText || "1:1 맞춤 상담 받기"}
+              </button>
+            </form>
+          </div>
+        </>
+      ) : null}
+
+      {!canvasEnabled ? (
+        <>
+          <div className="lead-form-header">
+            <h1 className="lead-form-title">
+              <span className="lead-form-title-line lead-form-title-line--first">
+                {safeDisplayConfig.logoUrl ? (
+                  <img
+                    src={safeDisplayConfig.logoUrl}
+                    alt="폼 로고"
+                    className="lead-form-logo"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                ) : null}
+                <span>
+                  {safeDisplayConfig.title.split(",")[0]?.trim() ||
+                    safeDisplayConfig.title}
+                </span>
+              </span>
+
+              {safeDisplayConfig.title.includes(",") ? (
+                <span className="lead-form-title-line">
+                  {safeDisplayConfig.title.split(",").slice(1).join(",").trim()}
+                </span>
+              ) : null}
+            </h1>
+
+            <p className="lead-form-subtitle">{safeDisplayConfig.subtitle}</p>
+          </div>
+
+          {safeDisplayConfig.layoutType === "card" &&
+          safeDisplayConfig.heroImageUrl ? (
+            <div style={{ marginBottom: 16 }}>
+              <img
+                src={safeDisplayConfig.heroImageUrl}
+                alt="상단 이미지"
+                style={{
+                  width: "100%",
+                  borderRadius: 20,
+                  display: "block",
+                }}
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = "none";
+                }}
+              />
+            </div>
+          ) : null}
+
+          {safeDisplayConfig.layoutType === "card" ? (
+            <form className="lead-form-body" onSubmit={handleSubmit}>
+              {sortedFields.map(renderField)}
+
+              <button
+                type="submit"
+                className="premium-submit-button"
+                style={{ backgroundColor: safeColor }}
+                disabled={submitMutation.isPending}
+              >
+                {submitMutation.isPending
+                  ? "접수 중..."
+                  : safeDisplayConfig.submitButtonText || "1:1 맞춤 상담 받기"}
+              </button>
+            </form>
+          ) : (
+            <>
+              <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
+                <button
+                  type="button"
+                  className="premium-submit-button"
+                  style={{ backgroundColor: safeColor, maxWidth: 420 }}
+                  onClick={() => setOpenSheet(true)}
+                >
+                  {safeDisplayConfig.submitButtonText || "1:1 맞춤 상담 받기"}
+                </button>
+              </div>
+
+              <div
+                className={`ad-form-sheet-backdrop ${openSheet ? "open" : ""}`}
+                onClick={() => setOpenSheet(false)}
+              />
+
+              <div className={`ad-form-sheet ${openSheet ? "open" : ""}`}>
+                <div className="ad-form-sheet-header">
+                  <h3>{safeDisplayConfig.submitButtonText || "상담 신청"}</h3>
+                  <button type="button" onClick={() => setOpenSheet(false)}>
+                    닫기
+                  </button>
+                </div>
+
+                <form className="ad-form-sheet-body" onSubmit={handleSubmit}>
+                  {sortedFields.map(renderField)}
+
+                  <button
+                    type="submit"
+                    className="premium-submit-button"
+                    style={{ backgroundColor: safeColor }}
+                    disabled={submitMutation.isPending}
+                  >
+                    {submitMutation.isPending
+                      ? "접수 중..."
+                      : safeDisplayConfig.submitButtonText || "1:1 맞춤 상담 받기"}
+                  </button>
+                </form>
+              </div>
+            </>
+          )}
+        </>
+      ) : null}
     </div>
-
-    <div
-      className={`ad-form-sheet-backdrop ${openSheet ? "open" : ""}`}
-      onClick={() => setOpenSheet(false)}
-    />
-
-    <div className={`ad-form-sheet ${openSheet ? "open" : ""}`}>
-      <div className="ad-form-sheet-header">
-        <h3>{safeDisplayConfig.submitButtonText || "상담 신청"}</h3>
-        <button type="button" onClick={() => setOpenSheet(false)}>
-          닫기
-        </button>
-      </div>
-
-      <form className="ad-form-sheet-body" onSubmit={handleSubmit}>
-        {sortedFields.map(renderField)}
-
-        <button
-          type="submit"
-          className="premium-submit-button"
-          style={{ backgroundColor: safeColor }}
-          disabled={submitMutation.isPending}
-        >
-          {submitMutation.isPending
-            ? "접수 중..."
-            : safeDisplayConfig.submitButtonText || "1:1 맞춤 상담 받기"}
-        </button>
-      </form>
-    </div>
-  </>
-)}
-      </div>
-    </PageShell>
-  );
+  </PageShell>
+);
 }
 
 function PageShell({ children }: { children: React.ReactNode }) {

@@ -601,6 +601,32 @@ export async function listFormBlueprints(formType: "landing" | "ad") {
   }));
 }
 
+export async function getDefaultFormBlueprint(formType: "landing" | "ad") {
+  const db = await getDb();
+  if (!db) return null;
+
+  const rows = await db
+    .select()
+    .from(formBlueprints)
+    .where(
+      and(
+        eq(formBlueprints.formType, formType),
+        eq(formBlueprints.isDefault, true),
+        eq(formBlueprints.isActive, true)
+      )
+    )
+    .orderBy(desc(formBlueprints.id))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) return null;
+
+  return {
+    ...row,
+    uiConfig: parseUiConfigJson(row.uiConfigJson),
+  };
+}
+
 export async function getFormBlueprintById(id: number) {
   const db = await getDb();
   if (!db) return null;
@@ -691,6 +717,13 @@ export async function updateFormBlueprint(input: {
       throw new Error("같은 이름의 뼈대가 이미 존재합니다.");
     }
   }
+
+if (input.isDefault === true) {
+  await db
+    .update(formBlueprints)
+    .set({ isDefault: false } as any)
+    .where(eq(formBlueprints.formType, target.formType));
+}
 
   await db
     .update(formBlueprints)
@@ -882,6 +915,197 @@ function safeJsonParse(value: any) {
   } catch {
     return null;
   }
+}
+const REQUIRED_FORM_FIELD_KEYS = [
+  "clientName",
+  "phone",
+  "finalEducation",
+  "desiredCourse",
+  "channel",
+  "notes",
+  "agreed",
+];
+
+const DEFAULT_FORM_MAPPING = {
+  clientName: "clientName",
+  phone: "phone",
+  finalEducation: "finalEducation",
+  desiredCourse: "desiredCourse",
+  channel: "channel",
+  notes: "notes",
+};
+
+function getFallbackFormUiConfig(formType: "landing" | "ad") {
+  return {
+    title: "목표를 향한 배움의 길, 위드원 교육이 함께할게요",
+    subtitle: "상담은 100% 무료로 진행됩니다.",
+    logoUrl: "/images/logo.png",
+    heroImageUrl: "",
+    primaryColor: "#5fc065",
+    submitButtonText: "1:1 맞춤 상담 받기",
+    agreementText: "개인정보 수집 및 이용에 동의합니다.",
+    layoutType: formType === "ad" ? "bottomSheet" : "card",
+    description: "",
+    tags: "",
+    isPinned: false,
+    lastUsedAt: "",
+    canvas: {
+      enabled: false,
+      width: 1080,
+      height: 1920,
+      backgroundColor: "#ffffff",
+      elements: [],
+    },
+    mapping: DEFAULT_FORM_MAPPING,
+    fields: [
+      {
+        fieldKey: "clientName",
+        label: "이름",
+        placeholder: "이름",
+        required: true,
+        hidden: false,
+        order: 1,
+        type: "text",
+      },
+      {
+        fieldKey: "phone",
+        label: "전화번호",
+        placeholder: "전화번호",
+        required: true,
+        hidden: false,
+        order: 2,
+        type: "phone",
+      },
+      {
+        fieldKey: "finalEducation",
+        label: "최종학력",
+        placeholder: "최종학력 선택",
+        required: true,
+        hidden: false,
+        order: 3,
+        type: "select",
+        options: [
+          { label: "고등학교 졸업", value: "고등학교 졸업" },
+          { label: "전문학사", value: "전문학사" },
+          { label: "학사", value: "학사" },
+          { label: "석사 이상", value: "석사 이상" },
+          { label: "기타", value: "기타" },
+        ],
+      },
+      {
+        fieldKey: "desiredCourse",
+        label: "희망과정",
+        placeholder: "희망과정 선택",
+        required: true,
+        hidden: false,
+        order: 4,
+        type: "select",
+        options: [
+          { label: "사회복지사", value: "사회복지사" },
+          { label: "보육교사", value: "보육교사" },
+          { label: "평생교육사", value: "평생교육사" },
+          { label: "건강가정사", value: "건강가정사" },
+          { label: "한국어교원", value: "한국어교원" },
+          { label: "청소년지도사", value: "청소년지도사" },
+          { label: "산업기사/기사", value: "산업기사/기사" },
+          { label: "전문학사/학사", value: "전문학사/학사" },
+          { label: "기타", value: "기타" },
+        ],
+      },
+      {
+        fieldKey: "channel",
+        label: "문의경로",
+        placeholder: "문의경로 (예. 블로그, 인스타, 지인추천)",
+        required: false,
+        hidden: false,
+        order: 5,
+        type: "text",
+      },
+      {
+        fieldKey: "notes",
+        label: "상담내역",
+        placeholder: "진행하시면서 걱정되시는 부분 적어주세요!",
+        required: false,
+        hidden: false,
+        order: 6,
+        type: "textarea",
+      },
+      {
+        fieldKey: "agreed",
+        label: "개인정보 수집 및 이용에 동의합니다.",
+        placeholder: "",
+        required: true,
+        hidden: false,
+        order: 7,
+        type: "checkbox",
+      },
+    ],
+  };
+}
+
+function normalizeFormUiConfigForSave(
+  rawConfig: any,
+  formType: "landing" | "ad"
+) {
+  const fallback = getFallbackFormUiConfig(formType);
+  const raw = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+
+  const incomingFields = Array.isArray(raw.fields) ? raw.fields : [];
+  const incomingMap = new Map(
+    incomingFields.map((field: any) => [String(field.fieldKey || ""), field])
+  );
+
+  const mergedFields = fallback.fields.map((defaultField: any) => {
+    const saved = incomingMap.get(defaultField.fieldKey) as any;
+
+    if (!saved) return defaultField;
+
+    return {
+      ...defaultField,
+      ...saved,
+      fieldKey: defaultField.fieldKey,
+      hidden: false,
+      required:
+        defaultField.fieldKey === "notes"
+          ? Boolean(saved.required ?? defaultField.required)
+          : true,
+      type: saved.type || defaultField.type,
+      options:
+        (saved.type || defaultField.type) === "select"
+          ? Array.isArray(saved.options) && saved.options.length > 0
+            ? saved.options
+            : defaultField.options || []
+          : undefined,
+    };
+  });
+
+  const extraFields = incomingFields.filter(
+    (field: any) =>
+      field?.fieldKey &&
+      !REQUIRED_FORM_FIELD_KEYS.includes(String(field.fieldKey))
+  );
+
+  return {
+    ...fallback,
+    ...raw,
+    layoutType:
+      raw.layoutType === "card" || raw.layoutType === "bottomSheet"
+        ? raw.layoutType
+        : fallback.layoutType,
+    mapping: {
+      ...DEFAULT_FORM_MAPPING,
+      ...(raw.mapping && typeof raw.mapping === "object" ? raw.mapping : {}),
+      ...DEFAULT_FORM_MAPPING,
+    },
+    fields: [...mergedFields, ...extraFields].sort(
+      (a: any, b: any) => Number(a.order || 0) - Number(b.order || 0)
+    ),
+    canvas: {
+      ...fallback.canvas,
+      ...(raw.canvas && typeof raw.canvas === "object" ? raw.canvas : {}),
+      elements: Array.isArray(raw.canvas?.elements) ? raw.canvas.elements : [],
+    },
+  };
 }
 
 export async function applyNamedLeadFormTemplateToToken(input: {
@@ -1228,7 +1452,9 @@ export async function updateLeadFormUiConfig(
   await db
     .update(leadForms)
     .set({
-      uiConfigJson: JSON.stringify(uiConfig),
+      uiConfigJson: safeJsonStringify(
+  normalizeFormUiConfigForSave(uiConfig, "landing")
+),
     } as any)
     .where(eq(leadForms.id, id));
 }
@@ -1265,7 +1491,9 @@ export async function updateMyLeadFormUiConfig(input: {
   await db
     .update(leadForms)
     .set({
-      uiConfigJson: safeJsonStringify(input.uiConfig),
+      uiConfigJson: safeJsonStringify(
+  normalizeFormUiConfigForSave(input.uiConfig, input.formType)
+),
     } as any)
     .where(eq(leadForms.id, target.id));
 
@@ -1302,24 +1530,15 @@ export async function createLeadForm(
       ? `ad_${Math.random().toString(36).slice(2, 12)}`
       : `lf_${Math.random().toString(36).slice(2, 12)}`;
 
-  const fallbackUiConfig = {
-    title: "",
-    subtitle: "",
-    logoUrl: "",
-    heroImageUrl: "",
-    primaryColor: "#2563eb",
-    submitButtonText: "신청하기",
-    agreementText: "개인정보 수집 및 이용에 동의합니다.",
-    layoutType: "card",
-    fields: [],
-    mapping: {},
-    description: "",
-    tags: "",
-  };
+  const fallbackUiConfig = getFallbackFormUiConfig(formType);
 
-  const uiConfigJson = template?.uiConfigJson
-    ? template.uiConfigJson
-    : JSON.stringify(fallbackUiConfig);
+  const templateConfig = template?.uiConfigJson
+  ? safeJsonParse(template.uiConfigJson)
+  : fallbackUiConfig;
+
+const uiConfigJson = safeJsonStringify(
+  normalizeFormUiConfigForSave(templateConfig, formType)
+);
 
   await db.insert(leadForms).values({
     assigneeId,

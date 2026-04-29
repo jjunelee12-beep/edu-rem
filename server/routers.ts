@@ -130,9 +130,18 @@ const publicFormUiConfigSchema = z.object({
   ),
   mapping: z.record(z.string()).optional(),
   description: z.string().optional(),
-  tags: z.string().optional(),
+tags: z.string().optional(),
 isPinned: z.boolean().optional(),
 lastUsedAt: z.string().optional(),
+canvas: z
+  .object({
+    enabled: z.boolean().optional(),
+    width: z.number().optional(),
+    height: z.number().optional(),
+    backgroundColor: z.string().optional(),
+    elements: z.array(z.any()).optional(),
+  })
+  .optional(),
 });
 
 export const appRouter = router({
@@ -1073,13 +1082,24 @@ messenger: router({
   }))
     .mutation(async ({ input }) => {
   if (input.blueprintId) {
-    return db.createLeadFormFromBlueprint({
-      blueprintId: input.blueprintId,
-      assigneeId: input.assigneeId,
-    });
-  }
+  return db.createLeadFormFromBlueprint({
+    blueprintId: input.blueprintId,
+    assigneeId: input.assigneeId,
+  });
+}
 
-  return db.createLeadForm(input.assigneeId, input.formType);
+// 👉 기본 blueprint 자동 찾기
+const defaultBlueprint = await db.getDefaultFormBlueprint(input.formType);
+
+if (defaultBlueprint) {
+  return db.createLeadFormFromBlueprint({
+    blueprintId: defaultBlueprint.id,
+    assigneeId: input.assigneeId,
+  });
+}
+
+// 👉 없으면 기존 방식
+return db.createLeadForm(input.assigneeId, input.formType);
 }),
 
   updateActive: hostProcedure
@@ -1187,7 +1207,7 @@ listTemplates: protectedProcedure
   .query(async ({ input }) => {
     const rows = await db.listLeadFormTemplates(input.formType);
 
-    return rows.map((row) => {
+    const items = rows.map((row) => {
       let parsed: any = {};
 
       try {
@@ -1205,8 +1225,26 @@ listTemplates: protectedProcedure
         tags: parsed?.tags || "",
         isPinned: Boolean(parsed?.isPinned),
         lastUsedAt: parsed?.lastUsedAt || "",
+        canvas: parsed?.canvas || null,
       };
     });
+
+    items.sort((a, b) => {
+      if (a.isPinned !== b.isPinned) {
+        return a.isPinned ? -1 : 1;
+      }
+
+      const aLast = a.lastUsedAt ? new Date(a.lastUsedAt).getTime() : 0;
+      const bLast = b.lastUsedAt ? new Date(b.lastUsedAt).getTime() : 0;
+
+      if (aLast !== bLast) {
+        return bLast - aLast;
+      }
+
+      return Number(b.id || 0) - Number(a.id || 0);
+    });
+
+    return items;
   }),
 
 saveAsTemplate: protectedProcedure
