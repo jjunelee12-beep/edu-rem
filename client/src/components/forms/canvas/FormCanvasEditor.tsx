@@ -350,7 +350,9 @@ const uploadSelectedImage = async (file: File) => {
 
 const duplicateSelected = () => {
   const targets = selectedElements.length > 0 ? selectedElements : selectedElement ? [selectedElement] : [];
-  const duplicatableTargets = targets.filter((el) => !el.locked);
+  const duplicatableTargets = targets.filter(
+  (el) => !el.locked && !isRequiredFormElement(el)
+);
 
   if (duplicatableTargets.length === 0) return;
 
@@ -375,7 +377,12 @@ const duplicateSelected = () => {
 
 const duplicateElementById = (id: string) => {
   const target = canvas.elements.find((el) => el.id === id);
-  if (!target || target.locked) return;
+  if (!target || target.locked || isRequiredFormElement(target)) {
+  if (target && isRequiredFormElement(target)) {
+    alert("상담DB로 연결되는 기본 상담폼 요소는 복사할 수 없습니다. 위치/크기/디자인만 수정해주세요.");
+  }
+  return;
+}
 
   const copied = {
     ...target,
