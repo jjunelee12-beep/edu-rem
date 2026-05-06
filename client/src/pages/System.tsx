@@ -2487,6 +2487,10 @@ function BaseFormManagementSection({
     return found?.name || found?.username || `#${id}`;
   };
 
+const getAssignee = (id: any) => {
+  return users.find((u: any) => Number(u.id) === Number(id));
+};
+
   const handleCreate = () => {
     if (!assigneeId) {
       toast.error("담당자를 선택해주세요.");
@@ -2624,26 +2628,47 @@ function BaseFormManagementSection({
               생성된 {title} 링크가 없습니다.
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto rounded-xl border bg-white">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
                     <th className="px-4 py-3 text-left">담당자</th>
-                    <th className="px-4 py-3 text-left">링크</th>
-                    <th className="px-4 py-3 text-left">상태</th>
-                    <th className="px-4 py-3 text-right">관리</th>
+<th className="px-4 py-3 text-left">아이디</th>
+<th className="px-4 py-3 text-left">전화번호</th>
+<th className="px-4 py-3 text-left">직급/권한</th>
+<th className="px-4 py-3 text-left">링크</th>
+<th className="px-4 py-3 text-left">상태</th>
+<th className="px-4 py-3 text-right">관리</th>
                   </tr>
                 </thead>
 
                 <tbody>
                   {sortedForms.map((form: any) => {
-                    const url = `${window.location.origin}${pathPrefix}/${form.token}`;
+  const url = `${window.location.origin}${pathPrefix}/${form.token}`;
+  const assignee = getAssignee(form.assigneeId);
 
-                    return (
-                      <tr key={form.id} className="border-b last:border-0">
+  return (
+                      <tr key={form.id} className="border-b last:border-0 hover:bg-slate-50">
                         <td className="px-4 py-3">
                           {getAssigneeName(form.assigneeId)}
                         </td>
+
+<td className="px-4 py-3">
+  {assignee?.username || "-"}
+</td>
+
+<td className="px-4 py-3">
+  {formatPhone(assignee?.phone || "") || "-"}
+</td>
+
+<td className="px-4 py-3">
+  <div className="flex flex-col">
+    <span>{assignee?.positionName || assignee?.position || "-"}</span>
+    <span className="text-xs text-muted-foreground">
+      {assignee?.role || "-"}
+    </span>
+  </div>
+</td>
 
                         <td className="px-4 py-3">
                           <a

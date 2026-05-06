@@ -48,6 +48,12 @@ function styleValueCell(cell: ExcelJS.Cell, align: "left" | "center" | "right" =
   setThinBorder(cell);
 }
 
+function styleWonCell(cell: ExcelJS.Cell) {
+  cell.numFmt = '#,##0"원"';
+  cell.alignment = { vertical: "middle", horizontal: "right" };
+  setThinBorder(cell);
+}
+
 export async function buildSettlementPayslipExcel(payslipData: any) {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("수당명세서");
@@ -253,26 +259,28 @@ export async function buildSettlementPayslipExcel(payslipData: any) {
   } else {
     for (const item of entries) {
       const values = [
-        dateText(item.occurredAt),
-        revenueTypeLabel(item.revenueType, item.settlementStatus),
-        item.clientName || "-",
-        item.title || "-",
-item.institutionName || "-",
-        wonFormat(item.grossAmount),
-        wonFormat(item.freelancerAmount),
-        wonFormat(item.taxAmount),
-        wonFormat(item.finalPayoutAmount),
-        item.settlementStatus || "-",
-      ];
+  dateText(item.occurredAt),
+  revenueTypeLabel(item.revenueType, item.settlementStatus),
+  item.clientName || "-",
+  item.title || "-",
+  item.institutionName || "-",
+  toWon(item.grossAmount),
+  toWon(item.freelancerAmount),
+  toWon(item.taxAmount),
+  toWon(item.finalPayoutAmount),
+  item.settlementStatus || "-",
+];
 
       values.forEach((value, idx) => {
-        const cell = sheet.getRow(row).getCell(idx + 1);
-        cell.value = value;
-        styleValueCell(
-  cell,
-  idx >= 5 && idx <= 8 ? "right" : idx === 9 ? "center" : "left"
-);
-      });
+  const cell = sheet.getRow(row).getCell(idx + 1);
+  cell.value = value;
+
+  if (idx >= 5 && idx <= 8) {
+    styleWonCell(cell);
+  } else {
+    styleValueCell(cell, idx === 9 ? "center" : "left");
+  }
+});
 
       row++;
     }

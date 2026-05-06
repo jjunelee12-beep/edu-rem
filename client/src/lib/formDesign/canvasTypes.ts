@@ -1,4 +1,9 @@
-export type FormCanvasElementType = "text" | "image" | "button" | "shape";
+export type FormCanvasElementType =
+  | "text"
+  | "image"
+  | "button"
+  | "shape"
+  | "svg";
 
 export type FormCanvasElementBase = {
   id: string;
@@ -18,8 +23,15 @@ export type FormCanvasTextElement = FormCanvasElementBase & {
   text: string;
   fontSize: number;
   fontWeight: number;
-  color: string;
-  textAlign?: "left" | "center" | "right";
+fontFamily?: string;
+color: string;
+textAlign?: "left" | "center" | "right";
+  strokeColor?: string;
+  strokeWidth?: number;
+  shadowColor?: string;
+  shadowBlur?: number;
+  shadowOffsetX?: number;
+  shadowOffsetY?: number;
 };
 
 export type FormCanvasImageElement = FormCanvasElementBase & {
@@ -48,11 +60,26 @@ export type FormCanvasShapeElement = FormCanvasElementBase & {
   borderWidth?: number;
 };
 
+export type FormCanvasSvgElement = FormCanvasElementBase & {
+  type: "svg";
+  svgName:
+    | "line"
+    | "line-dashed"
+    | "arrow-right"
+    | "arrow-left"
+    | "star"
+    | "heart";
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+};
+
 export type FormCanvasElement =
   | FormCanvasTextElement
   | FormCanvasImageElement
   | FormCanvasButtonElement
-  | FormCanvasShapeElement;
+  | FormCanvasShapeElement
+  | FormCanvasSvgElement;
 
 export type FormCanvasConfig = {
   enabled: boolean;
@@ -81,9 +108,16 @@ export function createCanvasTextElement(): FormCanvasTextElement {
     text: "새 텍스트",
     fontSize: 48,
     fontWeight: 800,
-    color: "#111827",
+fontFamily: "Pretendard, sans-serif",
+color: "#111827",
     textAlign: "left",
-    zIndex: 1,
+strokeColor: "#000000",
+strokeWidth: 0,
+shadowColor: "#000000",
+shadowBlur: 0,
+shadowOffsetX: 0,
+shadowOffsetY: 0,
+zIndex: 1,
   };
 }
 
@@ -149,6 +183,24 @@ export function createCanvasCircleElement(): FormCanvasShapeElement {
     backgroundColor: "#fef3c7",
     borderColor: "#f59e0b",
     borderWidth: 2,
+    zIndex: 1,
+  };
+}
+
+export function createCanvasSvgElement(
+  svgName: FormCanvasSvgElement["svgName"] = "arrow-right"
+): FormCanvasSvgElement {
+  return {
+    id: `svg-${svgName}-${Date.now()}`,
+    type: "svg",
+    svgName,
+    x: 120,
+    y: 120,
+    width: 300,
+    height: 120,
+    fill: "#64748b",
+    stroke: "#64748b",
+    strokeWidth: 8,
     zIndex: 1,
   };
 }

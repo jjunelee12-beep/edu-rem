@@ -376,7 +376,7 @@ const moveSelectedElementLayer = (
         position: "fixed",
         inset: 0,
         zIndex: 9999,
-        background: "#f1f5f9",
+        background: "#e8edf5",
         display: "flex",
         overflow: "hidden",
       }}
@@ -397,7 +397,10 @@ const moveSelectedElementLayer = (
           <button
             key={item.key}
             type="button"
-            onClick={() => setActiveTool(item.key)}
+            onClick={() => {
+  setActiveTool(item.key);
+  setSelectedElementId(null);
+}}
             style={{
               width: 62,
               minHeight: 58,
@@ -480,15 +483,17 @@ const moveSelectedElementLayer = (
         </header>
 
         <div
-          style={{
-            flex: 1,
-            overflow: "auto",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            padding: 24,
-          }}
-        >
+  style={{
+    flex: 1,
+    overflow: "auto",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 32,
+    background:
+      "radial-gradient(circle at top, #f8fafc 0, #e2e8f0 45%, #cbd5e1 100%)",
+  }}
+>
           <FormCanvasEditor
   value={canvas}
   onChange={updateCanvas}

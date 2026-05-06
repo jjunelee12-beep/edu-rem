@@ -7,6 +7,7 @@ createDefaultWithOneCanvasConfig,
   createCanvasButtonElement,
 createCanvasRectElement,
 createCanvasCircleElement,
+createCanvasSvgElement,
 type FormCanvasConfig,
 type FormCanvasElement,
 } from "@/lib/formDesign/canvasTypes";
@@ -79,8 +80,11 @@ const [dragState, setDragState] = useState<{
 
 const [resizeState, setResizeState] = useState<{
   id: string;
+  handle: "nw" | "ne" | "sw" | "se";
   startClientX: number;
   startClientY: number;
+  startX: number;
+  startY: number;
   startWidth: number;
   startHeight: number;
 } | null>(null);
@@ -307,6 +311,20 @@ const addCircle = () => {
 
   setActualSelectedId(next.id);
 setSelectedIds([next.id]);
+};
+
+const addSvg = (
+  svgName: "line" | "line-dashed" | "arrow-right" | "arrow-left" | "star" | "heart"
+) => {
+  const next = createCanvasSvgElement(svgName);
+
+  updateCanvas({
+    enabled: true,
+    elements: [...canvas.elements, next],
+  });
+
+  setActualSelectedId(next.id);
+  setSelectedIds([next.id]);
 };
 
 const uploadSelectedImage = async (file: File) => {
@@ -919,22 +937,29 @@ const endDrag = () => {
   endResize();
 };
 
-const startResize = (e: React.MouseEvent, element: FormCanvasElement) => {
+const startResize = (
+  e: React.MouseEvent,
+  element: FormCanvasElement,
+  handle: "nw" | "ne" | "sw" | "se" = "se"
+) => {
   e.stopPropagation();
   e.preventDefault();
 
   if (element.locked) return;
 
   setActualSelectedId(element.id);
-setSelectedIds([element.id]);
-setDragState(null);
+  setSelectedIds([element.id]);
+  setDragState(null);
 
-setHistoryResizeStarted(false);
+  setHistoryResizeStarted(false);
 
   setResizeState({
     id: element.id,
+    handle,
     startClientX: e.clientX,
     startClientY: e.clientY,
+    startX: element.x,
+    startY: element.y,
     startWidth: element.width,
     startHeight: element.height,
   });
@@ -1048,10 +1073,10 @@ if (selectionBox.width < 4 && selectionBox.height < 4) {
 const handleResizeMove = (e: React.MouseEvent) => {
   if (!resizeState) return;
 
-if (!historyResizeStarted) {
-  pushUndoHistory();
-  setHistoryResizeStarted(true);
-}
+  if (!historyResizeStarted) {
+    pushUndoHistory();
+    setHistoryResizeStarted(true);
+  }
 
   const target = canvas.elements.find((el) => el.id === resizeState.id);
   if (!target) return;
@@ -1059,40 +1084,70 @@ if (!historyResizeStarted) {
   const dx = (e.clientX - resizeState.startClientX) / scale;
   const dy = (e.clientY - resizeState.startClientY) / scale;
 
-  let nextWidth = Math.round(Math.max(40, resizeState.startWidth + dx));
-let nextHeight = Math.round(Math.max(40, resizeState.startHeight + dy));
+  let nextX = resizeState.startX;
+  let nextY = resizeState.startY;
+  let nextWidth = resizeState.startWidth;
+  let nextHeight = resizeState.startHeight;
 
-const GRID_SIZE = 20;
+  if (resizeState.handle.includes("e")) {
+    nextWidth = resizeState.startWidth + dx;
+  }
 
-if (gridSnapEnabled && !e.shiftKey) {
-  nextWidth = Math.round(nextWidth / GRID_SIZE) * GRID_SIZE;
-  nextHeight = Math.round(nextHeight / GRID_SIZE) * GRID_SIZE;
-}
+  if (resizeState.handle.includes("s")) {
+    nextHeight = resizeState.startHeight + dy;
+  }
 
-if (snapEnabled && !e.shiftKey) {
-  const snapped = applyResizeSnap(target, nextWidth, nextHeight);
+  if (resizeState.handle.includes("w")) {
+    nextX = resizeState.startX + dx;
+    nextWidth = resizeState.startWidth - dx;
+  }
 
-  nextWidth = snapped.width;
-  nextHeight = snapped.height;
-  setSnapGuide(snapped.guide);
-} else {
+  if (resizeState.handle.includes("n")) {
+    nextY = resizeState.startY + dy;
+    nextHeight = resizeState.startHeight - dy;
+  }
+
+  nextWidth = Math.round(Math.max(40, nextWidth));
+  nextHeight = Math.round(Math.max(40, nextHeight));
+
+  const GRID_SIZE = 20;
+
+  if (gridSnapEnabled && !e.shiftKey) {
+    nextX = Math.round(nextX / GRID_SIZE) * GRID_SIZE;
+    nextY = Math.round(nextY / GRID_SIZE) * GRID_SIZE;
+    nextWidth = Math.round(nextWidth / GRID_SIZE) * GRID_SIZE;
+    nextHeight = Math.round(nextHeight / GRID_SIZE) * GRID_SIZE;
+  }
+
+  nextWidth = Math.max(40, nextWidth);
+  nextHeight = Math.max(40, nextHeight);
+
+  nextX = Math.min(Math.max(0, nextX), Math.max(0, canvas.width - nextWidth));
+  nextY = Math.min(Math.max(0, nextY), Math.max(0, canvas.height - nextHeight));
+
+  if (nextX + nextWidth > canvas.width) {
+    nextWidth = canvas.width - nextX;
+  }
+
+  if (nextY + nextHeight > canvas.height) {
+    nextHeight = canvas.height - nextY;
+  }
+
   setSnapGuide(null);
-}
 
-nextWidth = Math.min(nextWidth, canvas.width - target.x);
-nextHeight = Math.min(nextHeight, canvas.height - target.y);
-
-updateCanvasElementsOnly(
-  canvas.elements.map((el) =>
-    el.id === target.id
-      ? ({
-          ...el,
-          width: nextWidth,
-          height: nextHeight,
-        } as FormCanvasElement)
-      : el
-  )
-);
+  updateCanvasElementsOnly(
+    canvas.elements.map((el) =>
+      el.id === target.id
+        ? ({
+            ...el,
+            x: nextX,
+            y: nextY,
+            width: nextWidth,
+            height: nextHeight,
+          } as FormCanvasElement)
+        : el
+    )
+  );
 };
 
 const endResize = () => {
@@ -1243,36 +1298,179 @@ const renderElementToolbar = (el: FormCanvasElement) => {
   );
 };
 
+const renderSvgContent = (el: any) => {
+  const stroke = el.stroke || "#64748b";
+  const fill = el.fill || "#64748b";
+  const strokeWidth = el.strokeWidth || 8;
+
+  if (el.svgName === "line") {
+    return (
+      <line
+        x1="8"
+        y1="50"
+        x2="92"
+        y2="50"
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+      />
+    );
+  }
+
+  if (el.svgName === "line-dashed") {
+    return (
+      <line
+        x1="8"
+        y1="50"
+        x2="92"
+        y2="50"
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+        strokeDasharray="10 8"
+        strokeLinecap="round"
+      />
+    );
+  }
+
+  if (el.svgName === "arrow-right") {
+    return (
+      <>
+        <line
+          x1="10"
+          y1="50"
+          x2="78"
+          y2="50"
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+        />
+        <polyline
+          points="60,25 85,50 60,75"
+          fill="none"
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </>
+    );
+  }
+
+  if (el.svgName === "arrow-left") {
+    return (
+      <>
+        <line
+          x1="22"
+          y1="50"
+          x2="90"
+          y2="50"
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+        />
+        <polyline
+          points="40,25 15,50 40,75"
+          fill="none"
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </>
+    );
+  }
+
+  if (el.svgName === "star") {
+    return (
+      <polygon
+        points="50,8 61,36 91,36 67,55 76,86 50,68 24,86 33,55 9,36 39,36"
+        fill={fill}
+      />
+    );
+  }
+
+  if (el.svgName === "heart") {
+    return (
+      <path
+        d="M50 85 C20 60 8 42 18 25 C27 10 43 16 50 30 C57 16 73 10 82 25 C92 42 80 60 50 85Z"
+        fill={fill}
+      />
+    );
+  }
+
+  return null;
+};
+
 const renderResizeHandle = (element: FormCanvasElement) => {
   if (!selectedIds.includes(element.id)) return null;
   if (element.locked) return null;
 
+  const handles = [
+    {
+      key: "nw",
+      className:
+        "left-0 top-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize",
+    },
+    {
+      key: "ne",
+      className:
+        "right-0 top-0 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize",
+    },
+    {
+      key: "sw",
+      className:
+        "left-0 bottom-0 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize",
+    },
+    {
+      key: "se",
+      className:
+        "right-0 bottom-0 translate-x-1/2 translate-y-1/2 cursor-nwse-resize",
+    },
+  ] as const;
+
   return (
-    <span
-      onMouseDown={(e) => {
-  e.stopPropagation();
-  e.preventDefault();
-  startResize(e, element);
-}}
-      className="absolute bottom-0 right-0 z-50 h-4 w-4 translate-x-1/2 translate-y-1/2 cursor-se-resize rounded-full border-2 border-white bg-blue-600 shadow-lg ring-2 ring-blue-200 hover:scale-110 active:scale-95"
-      title="크기 조절"
-    />
+    <>
+      {handles.map((handle) => (
+        <span
+          key={handle.key}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            startResize(e, element, handle.key);
+          }}
+          className={`absolute z-50 h-4 w-4 rounded-full border-2 border-white bg-blue-600 shadow-lg ring-2 ring-blue-200 hover:scale-110 active:scale-95 ${handle.className}`}
+          title="크기 조절"
+        />
+      ))}
+    </>
   );
 };
 
 useEffect(() => {
   const handleKeyDown = (e: KeyboardEvent) => {
-    const target = e.target as HTMLElement | null;
-    const tagName = target?.tagName?.toLowerCase();
+  const target = e.target as HTMLElement | null;
+  const tagName = target?.tagName?.toLowerCase();
 
-    if (
-      tagName === "input" ||
-      tagName === "textarea" ||
-      tagName === "select" ||
-      target?.isContentEditable
-    ) {
-      return;
-    }
+  if (e.key === "Escape") {
+    e.preventDefault();
+    setEditingTextId(null);
+    setActualSelectedId(null);
+    setSelectedIds([]);
+    setDragState(null);
+    setResizeState(null);
+    setSelectionBox(null);
+    setSnapGuide(null);
+    return;
+  }
+
+  if (
+    tagName === "input" ||
+    tagName === "textarea" ||
+    tagName === "select" ||
+    target?.isContentEditable
+  ) {
+    return;
+  }
 
     const isCtrlOrMeta = e.ctrlKey || e.metaKey;
 
@@ -1477,47 +1675,199 @@ useEffect(() => {
             </p>
           </div>
 
-          <div className="grid gap-2">
-            <button
-              type="button"
-              onClick={addText}
-              className="rounded-xl bg-slate-900 px-3 py-3 text-sm font-semibold text-white"
-            >
-              텍스트 추가
-            </button>
+<div className="space-y-4">
+  <div className="grid gap-2">
+    <button
+      type="button"
+      onClick={addText}
+      className="rounded-xl bg-slate-900 px-3 py-3 text-sm font-semibold text-white"
+    >
+      텍스트 추가
+    </button>
 
-            <button
-              type="button"
-              onClick={addImage}
-              className="rounded-xl border bg-white px-3 py-3 text-sm font-semibold text-slate-700"
-            >
-              이미지 추가
-            </button>
+    <button
+      type="button"
+      onClick={addImage}
+      className="rounded-xl border bg-white px-3 py-3 text-sm font-semibold text-slate-700"
+    >
+      이미지 추가
+    </button>
 
-            <button
-              type="button"
-              onClick={addButton}
-              className="rounded-xl border bg-white px-3 py-3 text-sm font-semibold text-slate-700"
-            >
-              상담 버튼 추가
-            </button>
+    <button
+      type="button"
+      onClick={addButton}
+      className="rounded-xl border bg-white px-3 py-3 text-sm font-semibold text-slate-700"
+    >
+      상담 버튼 추가
+    </button>
+  </div>
 
-            <button
-              type="button"
-              onClick={addRect}
-              className="rounded-xl border bg-white px-3 py-3 text-sm font-semibold text-slate-700"
-            >
-              사각형 추가
-            </button>
+  <div className="border-t pt-3">
+    <div className="mb-2 flex items-center justify-between">
+      <h5 className="text-sm font-bold text-slate-900">기본 도형</h5>
+      <span className="text-xs font-semibold text-cyan-600">더보기</span>
+    </div>
 
-            <button
-              type="button"
-              onClick={addCircle}
-              className="rounded-xl border bg-white px-3 py-3 text-sm font-semibold text-slate-700"
-            >
-              원형 추가
-            </button>
-          </div>
+    <div className="grid grid-cols-4 gap-2 rounded-2xl bg-slate-100 p-2">
+      <button
+        type="button"
+        onClick={addRect}
+        title="사각형"
+        className="flex h-14 items-center justify-center rounded-xl bg-white hover:bg-cyan-50"
+      >
+        <span className="block h-7 w-7 bg-slate-500" />
+      </button>
+
+      <button
+        type="button"
+        onClick={addCircle}
+        title="원형"
+        className="flex h-14 items-center justify-center rounded-xl bg-white hover:bg-cyan-50"
+      >
+        <span className="block h-8 w-8 rounded-full bg-slate-500" />
+      </button>
+
+      <button
+        type="button"
+        onClick={() => addSvg("star")}
+        title="별"
+        className="flex h-14 items-center justify-center rounded-xl bg-white text-slate-500 hover:bg-cyan-50"
+      >
+        <svg viewBox="0 0 100 100" className="h-9 w-9">
+          <polygon
+            points="50,8 61,36 91,36 67,55 76,86 50,68 24,86 33,55 9,36 39,36"
+            fill="currentColor"
+          />
+        </svg>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => addSvg("heart")}
+        title="하트"
+        className="flex h-14 items-center justify-center rounded-xl bg-white text-slate-500 hover:bg-cyan-50"
+      >
+        <svg viewBox="0 0 100 100" className="h-9 w-9">
+          <path
+            d="M50 85 C20 60 8 42 18 25 C27 10 43 16 50 30 C57 16 73 10 82 25 C92 42 80 60 50 85Z"
+            fill="currentColor"
+          />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div className="border-t pt-3">
+    <div className="mb-2 flex items-center justify-between">
+      <h5 className="text-sm font-bold text-slate-900">선</h5>
+      <span className="text-xs font-semibold text-cyan-600">더보기</span>
+    </div>
+
+    <div className="grid grid-cols-3 gap-2 rounded-2xl bg-slate-100 p-2">
+      <button
+        type="button"
+        onClick={() => addSvg("line")}
+        title="실선"
+        className="flex h-14 items-center justify-center rounded-xl bg-white hover:bg-cyan-50"
+      >
+        <span className="block h-0.5 w-12 rounded bg-slate-600" />
+      </button>
+
+      <button
+        type="button"
+        onClick={() => addSvg("line-dashed")}
+        title="점선"
+        className="flex h-14 items-center justify-center rounded-xl bg-white hover:bg-cyan-50"
+      >
+        <span
+          className="block h-0.5 w-12 rounded"
+          style={{
+            backgroundImage:
+              "repeating-linear-gradient(to right, #475569 0 6px, transparent 6px 10px)",
+          }}
+        />
+      </button>
+
+      <button
+        type="button"
+        onClick={() => addSvg("arrow-right")}
+        title="오른쪽 화살표"
+        className="flex h-14 items-center justify-center rounded-xl bg-white text-slate-600 hover:bg-cyan-50"
+      >
+        <svg viewBox="0 0 100 100" className="h-10 w-12">
+          <line
+            x1="10"
+            y1="50"
+            x2="78"
+            y2="50"
+            stroke="currentColor"
+            strokeWidth="8"
+            strokeLinecap="round"
+          />
+          <polyline
+            points="60,25 85,50 60,75"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div className="border-t pt-3">
+    <div className="mb-2 flex items-center justify-between">
+      <h5 className="text-sm font-bold text-slate-900">기본 화살표</h5>
+      <span className="text-xs font-semibold text-cyan-600">더보기</span>
+    </div>
+
+    <div className="grid grid-cols-4 gap-2 rounded-2xl bg-slate-100 p-2">
+      <button
+        type="button"
+        onClick={() => addSvg("arrow-right")}
+        title="오른쪽"
+        className="flex h-14 items-center justify-center rounded-xl bg-white text-slate-500 hover:bg-cyan-50"
+      >
+        <svg viewBox="0 0 100 100" className="h-10 w-10">
+          <line x1="10" y1="50" x2="78" y2="50" stroke="currentColor" strokeWidth="9" strokeLinecap="round" />
+          <polyline points="60,25 85,50 60,75" fill="none" stroke="currentColor" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => addSvg("arrow-left")}
+        title="왼쪽"
+        className="flex h-14 items-center justify-center rounded-xl bg-white text-slate-500 hover:bg-cyan-50"
+      >
+        <svg viewBox="0 0 100 100" className="h-10 w-10">
+          <line x1="22" y1="50" x2="90" y2="50" stroke="currentColor" strokeWidth="9" strokeLinecap="round" />
+          <polyline points="40,25 15,50 40,75" fill="none" stroke="currentColor" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => addSvg("arrow-right")}
+        title="굵은 오른쪽"
+        className="flex h-14 items-center justify-center rounded-xl bg-white text-slate-500 hover:bg-cyan-50"
+      >
+        <span className="text-3xl font-black leading-none">→</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => addSvg("arrow-left")}
+        title="굵은 왼쪽"
+        className="flex h-14 items-center justify-center rounded-xl bg-white text-slate-500 hover:bg-cyan-50"
+      >
+        <span className="text-3xl font-black leading-none">←</span>
+      </button>
+    </div>
+  </div>
+</div>
 
           <div className="border-t pt-3">
             <h4 className="text-sm font-bold text-slate-900">
@@ -1753,6 +2103,11 @@ data-form-canvas-stage="true"
   ? "linear-gradient(to right, rgba(148,163,184,0.18) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.18) 1px, transparent 1px)"
   : undefined,
 backgroundSize: gridVisible ? `${20 * scale}px ${20 * scale}px` : undefined,
+backgroundColor: canvas.backgroundColor || "#ffffff",
+border: compact ? "2px solid #64748b" : "1px solid #cbd5e1",
+boxShadow: compact
+  ? "0 28px 90px rgba(15, 23, 42, 0.28)"
+  : "0 18px 50px rgba(15, 23, 42, 0.14)",
 }}
   onMouseDown={startAreaSelect}
 onMouseMove={(e) => {
@@ -1849,8 +2204,19 @@ setEditingTextId(el.id);
                         color: el.color,
                         fontSize: el.fontSize * scale,
                         fontWeight: el.fontWeight,
+fontFamily: el.fontFamily || "Pretendard, sans-serif",
                         textAlign: el.textAlign ?? "left",
                         lineHeight: 1.15,
+WebkitTextStroke:
+  el.strokeWidth && el.strokeWidth > 0
+    ? `${el.strokeWidth * scale}px ${el.strokeColor || "#000000"}`
+    : undefined,
+textShadow:
+  el.shadowBlur && el.shadowBlur > 0
+    ? `${(el.shadowOffsetX || 0) * scale}px ${(el.shadowOffsetY || 0) * scale}px ${
+        el.shadowBlur * scale
+      }px ${el.shadowColor || "#000000"}`
+    : undefined,
 userSelect: "none",
   WebkitUserSelect: "none",
                       }}
@@ -1894,6 +2260,7 @@ onKeyDown={(e) => {
       color: el.color,
       fontSize: el.fontSize * scale,
       fontWeight: el.fontWeight,
+fontFamily: el.fontFamily || "Pretendard, sans-serif",
       textAlign: el.textAlign ?? "left",
       lineHeight: 1.15,
     }}
@@ -2026,6 +2393,44 @@ onKeyDown={(e) => {
                     </div>
                   );
                 }
+
+if (el.type === "svg") {
+  return (
+    <div
+      key={el.id}
+      role="button"
+      tabIndex={0}
+      onMouseDown={(e) => startDrag(e, el)}
+      className={`absolute ${isActiveMoving ? "pointer-events-none scale-[1.01] opacity-70 shadow-xl" : "pointer-events-auto scale-100 opacity-100"} ${el.locked ? "cursor-default" : "cursor-move"} ${
+        isSelected
+          ? "ring-2 ring-blue-300 shadow-md"
+          : el.locked
+            ? ""
+            : "hover:ring-1 hover:ring-slate-300"
+      }`}
+      style={{
+        left: el.x * scale,
+        top: el.y * scale,
+        width: el.width * scale,
+        height: el.height * scale,
+        zIndex: isActiveMoving ? 9999 : el.zIndex ?? 1,
+      }}
+    >
+      <svg
+        viewBox="0 0 100 100"
+        width="100%"
+        height="100%"
+        preserveAspectRatio="none"
+        style={{ overflow: "visible" }}
+      >
+        {renderSvgContent(el)}
+      </svg>
+
+      {renderElementToolbar(el)}
+      {renderResizeHandle(el)}
+    </div>
+  );
+}
 
                 return null;
               })}
@@ -2274,6 +2679,82 @@ setSelectedIds([element.id]);
   </p>
 ) : null}
 
+{selectedElement?.type === "svg" ? (
+  <div className="rounded-xl border bg-white p-3 space-y-3">
+    <h5 className="text-sm font-bold text-slate-800">SVG / 선 설정</h5>
+
+    <div>
+      <label className="block text-xs font-medium">종류</label>
+      <select
+        className="w-full rounded border p-2 disabled:bg-slate-100 disabled:text-slate-400"
+        value={selectedElement.svgName}
+        disabled={selectedElement.locked}
+        onChange={(e) =>
+          updateElement(selectedElement.id, {
+            svgName: e.target.value as any,
+          } as Partial<FormCanvasElement>)
+        }
+      >
+        <option value="line">실선</option>
+        <option value="line-dashed">점선</option>
+        <option value="arrow-right">오른쪽 화살표</option>
+        <option value="arrow-left">왼쪽 화살표</option>
+        <option value="star">별</option>
+        <option value="heart">하트</option>
+      </select>
+    </div>
+
+    <div className="grid grid-cols-2 gap-2">
+      <div>
+        <label className="block text-xs font-medium">채움 색상</label>
+        <input
+          type="color"
+          className="h-10 w-full rounded border p-1 disabled:bg-slate-100 disabled:text-slate-400"
+          value={selectedElement.fill || "#64748b"}
+          disabled={selectedElement.locked}
+          onChange={(e) =>
+            updateElement(selectedElement.id, {
+              fill: e.target.value,
+            } as Partial<FormCanvasElement>)
+          }
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium">선 색상</label>
+        <input
+          type="color"
+          className="h-10 w-full rounded border p-1 disabled:bg-slate-100 disabled:text-slate-400"
+          value={selectedElement.stroke || "#64748b"}
+          disabled={selectedElement.locked}
+          onChange={(e) =>
+            updateElement(selectedElement.id, {
+              stroke: e.target.value,
+            } as Partial<FormCanvasElement>)
+          }
+        />
+      </div>
+    </div>
+
+    <div>
+      <label className="block text-xs font-medium">선 두께</label>
+      <input
+        type="number"
+        min={1}
+        max={30}
+        className="w-full rounded border p-2 disabled:bg-slate-100 disabled:text-slate-400"
+        value={selectedElement.strokeWidth || 8}
+        disabled={selectedElement.locked}
+        onChange={(e) =>
+          updateElement(selectedElement.id, {
+            strokeWidth: Number(e.target.value) || 1,
+          } as Partial<FormCanvasElement>)
+        }
+      />
+    </div>
+  </div>
+) : null}
+
   {selectedElement ? (
   <>
   <div className="rounded-xl border bg-white p-2 space-y-2">
@@ -2474,6 +2955,94 @@ setSelectedIds([element.id]);
     />
   </div>
 
+<div>
+  <label className="block text-xs font-medium">글꼴</label>
+  <select
+  className="w-full rounded border p-2 disabled:bg-slate-100 disabled:text-slate-400"
+  value={selectedElement.fontFamily || "Pretendard, sans-serif"}
+  disabled={selectedElement.locked}
+  onChange={(e) =>
+    updateElement(selectedElement.id, {
+      fontFamily: e.target.value,
+    } as Partial<FormCanvasElement>)
+  }
+>
+  <option value="Pretendard, sans-serif">프리텐다드</option>
+
+  <option value="'Noto Sans KR', sans-serif">
+    Noto Sans KR
+  </option>
+
+  <option value="'Gothic A1', sans-serif">
+    고딕 A1
+  </option>
+
+  <option value="'Nanum Gothic', sans-serif">
+    나눔고딕
+  </option>
+
+  <option value="'Nanum Myeongjo', serif">
+    나눔명조
+  </option>
+
+  <option value="'Black Han Sans', sans-serif">
+    검은고딕
+  </option>
+
+  <option value="'Do Hyeon', sans-serif">
+    도현체
+  </option>
+
+  <option value="'Jua', sans-serif">
+    주아체
+  </option>
+
+  <option value="'Sunflower', sans-serif">
+    썬플라워
+  </option>
+
+  <option value="'Poor Story', cursive">
+    푸어스토리
+  </option>
+
+  <option value="'Orbit', sans-serif">
+    Orbit
+  </option>
+
+  <option value="'Nanum Brush Script', cursive">
+    나눔손글씨
+  </option>
+
+  <option value="'Arial', sans-serif">
+    Arial
+  </option>
+
+  <option value="'Verdana', sans-serif">
+    Verdana
+  </option>
+
+  <option value="'Tahoma', sans-serif">
+    Tahoma
+  </option>
+
+  <option value="'Trebuchet MS', sans-serif">
+    Trebuchet MS
+  </option>
+
+  <option value="'Georgia', serif">
+    Georgia
+  </option>
+
+  <option value="'Times New Roman', serif">
+    Times New Roman
+  </option>
+
+  <option value="'Courier New', monospace">
+    Courier New
+  </option>
+</select>
+</div>
+
   <div className="grid grid-cols-2 gap-2">
     <div>
       <label className="block text-xs font-medium">글자 크기</label>
@@ -2538,6 +3107,108 @@ setSelectedIds([element.id]);
       <option value="right">오른쪽</option>
     </select>
   </div>
+
+<div className="rounded-xl border bg-white p-3 space-y-3">
+  <h5 className="text-sm font-bold text-slate-800">텍스트 효과</h5>
+
+  <div className="grid grid-cols-2 gap-2">
+    <div>
+      <label className="block text-xs font-medium">외곽선 색상</label>
+      <input
+        type="color"
+        className="h-10 w-full rounded border p-1"
+        value={selectedElement.strokeColor || "#000000"}
+        onChange={(e) =>
+          updateElement(selectedElement.id, {
+            strokeColor: e.target.value,
+          } as Partial<FormCanvasElement>)
+        }
+      />
+    </div>
+
+    <div>
+      <label className="block text-xs font-medium">외곽선 두께</label>
+      <input
+        type="number"
+        min={0}
+        max={12}
+        className="w-full rounded border p-2"
+        value={selectedElement.strokeWidth || 0}
+        onChange={(e) =>
+          updateElement(selectedElement.id, {
+            strokeWidth: Number(e.target.value) || 0,
+          } as Partial<FormCanvasElement>)
+        }
+      />
+    </div>
+  </div>
+
+  <div className="grid grid-cols-2 gap-2">
+    <div>
+      <label className="block text-xs font-medium">그림자 색상</label>
+      <input
+        type="color"
+        className="h-10 w-full rounded border p-1"
+        value={selectedElement.shadowColor || "#000000"}
+        onChange={(e) =>
+          updateElement(selectedElement.id, {
+            shadowColor: e.target.value,
+          } as Partial<FormCanvasElement>)
+        }
+      />
+    </div>
+
+    <div>
+      <label className="block text-xs font-medium">그림자 흐림</label>
+      <input
+        type="number"
+        min={0}
+        max={40}
+        className="w-full rounded border p-2"
+        value={selectedElement.shadowBlur || 0}
+        onChange={(e) =>
+          updateElement(selectedElement.id, {
+            shadowBlur: Number(e.target.value) || 0,
+          } as Partial<FormCanvasElement>)
+        }
+      />
+    </div>
+  </div>
+
+  <div className="grid grid-cols-2 gap-2">
+    <div>
+      <label className="block text-xs font-medium">그림자 X</label>
+      <input
+        type="number"
+        min={-50}
+        max={50}
+        className="w-full rounded border p-2"
+        value={selectedElement.shadowOffsetX || 0}
+        onChange={(e) =>
+          updateElement(selectedElement.id, {
+            shadowOffsetX: Number(e.target.value) || 0,
+          } as Partial<FormCanvasElement>)
+        }
+      />
+    </div>
+
+    <div>
+      <label className="block text-xs font-medium">그림자 Y</label>
+      <input
+        type="number"
+        min={-50}
+        max={50}
+        className="w-full rounded border p-2"
+        value={selectedElement.shadowOffsetY || 0}
+        onChange={(e) =>
+          updateElement(selectedElement.id, {
+            shadowOffsetY: Number(e.target.value) || 0,
+          } as Partial<FormCanvasElement>)
+        }
+      />
+    </div>
+  </div>
+</div>
 </div>
                       ) : isImageElement(selectedElement) ? (
               <div className="space-y-3">
