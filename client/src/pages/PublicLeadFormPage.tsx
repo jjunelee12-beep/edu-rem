@@ -802,10 +802,20 @@ applyTemplateMutation.mutate({
   }
 
   return (
-  <PageShell>
-    <div className="lead-form-card">
+  <PageShell fullCanvas>
+    <div style={{ width: "100%" }}>
       {canEdit ? (
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+  <div
+    style={{
+      position: canvasEnabled ? "fixed" : "static",
+      top: canvasEnabled ? 24 : undefined,
+      right: canvasEnabled ? 24 : undefined,
+      zIndex: canvasEnabled ? 30 : undefined,
+      display: "flex",
+      justifyContent: "flex-end",
+      marginBottom: canvasEnabled ? 0 : 16,
+    }}
+  >
           <button
             type="button"
             className="premium-submit-button"
@@ -981,6 +991,27 @@ applyTemplateMutation.mutate({
 );
 }
 
-function PageShell({ children }: { children: React.ReactNode }) {
-  return <div className="lead-form-page">{children}</div>;
+function PageShell({
+  children,
+  fullCanvas = false,
+}: {
+  children: React.ReactNode;
+  fullCanvas?: boolean;
+}) {
+  return (
+  <div
+    className="lead-form-page"
+    style={
+      fullCanvas
+        ? {
+            width: "100%",
+            maxWidth: "none",
+            padding: 0,
+          }
+        : undefined
+    }
+  >
+    {children}
+  </div>
+);
 }

@@ -799,9 +799,33 @@ applyTemplateMutation.mutate({
     );
   }
  return (
-  <div className="ad-form-page">
+  <div
+    className="ad-form-page"
+    style={
+      canvasEnabled
+        ? {
+            width: "100%",
+            maxWidth: "none",
+            padding: 0,
+            margin: 0,
+            overflowX: "hidden",
+            background: "#f3f4f6",
+          }
+        : undefined
+    }
+  >
     {canEdit ? (
-      <div style={{ display: "flex", justifyContent: "flex-end", padding: "16px" }}>
+      <div
+        style={{
+          position: canvasEnabled ? "fixed" : "static",
+          top: canvasEnabled ? 24 : undefined,
+          right: canvasEnabled ? 24 : undefined,
+          zIndex: canvasEnabled ? 30 : undefined,
+          display: "flex",
+          justifyContent: "flex-end",
+          padding: canvasEnabled ? 0 : "16px",
+        }}
+      >
         <button
           type="button"
           className="premium-submit-button"
@@ -837,7 +861,26 @@ applyTemplateMutation.mutate({
           onClick={() => setOpenSheet(false)}
         />
 
-        <div className="ad-form-sheet open">
+        <div
+  className="ad-form-sheet open"
+  style={
+    canvasEnabled
+      ? {
+          position: "fixed",
+          left: "50%",
+          top: "50%",
+          bottom: "auto",
+          transform: "translate(-50%, -50%)",
+          width: "min(92vw, 520px)",
+          maxWidth: 520,
+          maxHeight: "86vh",
+          borderRadius: 24,
+          overflowY: "auto",
+          paddingBottom: 0,
+        }
+      : undefined
+  }
+>
           <div className="ad-form-sheet-header">
             <h3>{safeDisplayConfig.submitButtonText || "상담 신청"}</h3>
             <button type="button" onClick={() => setOpenSheet(false)}>
