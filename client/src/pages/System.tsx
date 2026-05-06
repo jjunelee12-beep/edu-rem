@@ -2594,8 +2594,8 @@ const getAssignee = (id: any) => {
               <SelectContent>
                 {sortedUsers.map((u: any) => (
                   <SelectItem key={u.id} value={String(u.id)}>
-                    {u.name || u.username || `#${u.id}`} ({u.role})
-                  </SelectItem>
+  {u.name || "-"} / {u.username || u.openId || `#${u.id}`} ({u.role})
+</SelectItem>
                 ))}
               </SelectContent>
             </Select>

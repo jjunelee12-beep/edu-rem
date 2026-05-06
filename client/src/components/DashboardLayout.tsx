@@ -95,24 +95,23 @@ const adminMenuItems: MenuItem[] = [
  label: "실습배정지원센터",
  path: "/practice-support-center",
  },
- { icon: Briefcase, label: "취업지원센터", path: "/job-support-center" },
+ //{ icon: Briefcase, label: "취업지원센터", path: "/job-support-center" },
 ];
 
 const hostMenuItems: MenuItem[] = [
  { icon: Settings, label: "시스템 관리", path: "/system" },
  { icon: GraduationCap, label: "교육원 관리", path: "/education-institutions" },
-{
+ {
   icon: GraduationCap,
   label: "학점은행제 관리",
   path: "/subject-catalog-master",
-},
+ },
  {
-    icon: Award,
-    label: "민간자격증 관리",
-    path: "/private-certificate-master",
-  },
+  icon: Award,
+  label: "민간자격증 관리",
+  path: "/private-certificate-master",
+ },
  { icon: PhoneCall, label: "문자 발송", path: "/sms" },
- { icon: Sparkles, label: "AI 상담", path: "/ai" },
 ];
 
 const superhostMenuItems: MenuItem[] = [
@@ -120,6 +119,7 @@ const superhostMenuItems: MenuItem[] = [
  { icon: Building2, label: "테넌트 관리", path: "/superhost/tenants" },
  { icon: Palette, label: "레이아웃 빌더", path: "/superhost/layout-builder" },
  { icon: Sparkles, label: "AI 정책 관리", path: "/superhost/ai-policy" },
+{ icon: Sparkles, label: "AI 상담", path: "/ai" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

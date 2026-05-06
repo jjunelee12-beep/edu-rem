@@ -988,6 +988,118 @@ if (room?.roomType === "direct" && newUserIds.length > 0) {
 );
 
 socket.on(
+  "room:group:create-from-room",
+  async (
+    payload: { roomId: number; userIds: number[] },
+    callback?: (data: any) => void
+  ) => {
+    try {
+      const sourceRoomId = Number(payload?.roomId);
+      const addUserIds = (payload?.userIds || [])
+        .map(Number)
+        .filter((id) => Number.isFinite(id) && id > 0);
+
+      if (!sourceRoomId || addUserIds.length === 0) {
+        return callback?.({
+          success: false,
+          message: "roomId / userIds 필요",
+        });
+      }
+
+      const sourceMembers = await listChatRoomMembers(sourceRoomId, userId);
+      const sourceMemberIds = sourceMembers.map((m) => Number(m.userId));
+
+      const actorIsMember = sourceMemberIds.includes(Number(userId));
+
+      if (!actorIsMember) {
+        return callback?.({
+          success: false,
+          message: "해당 채팅방의 참여자만 그룹채팅을 만들 수 있습니다.",
+        });
+      }
+
+      const mergedUserIds = Array.from(
+        new Set([
+          ...sourceMemberIds,
+          ...addUserIds,
+          Number(userId),
+        ])
+      ).filter((id) => Number.isFinite(id) && id > 0);
+
+      if (mergedUserIds.length < 3) {
+        return callback?.({
+          success: false,
+          message: "그룹채팅은 3명 이상이어야 합니다.",
+        });
+      }
+
+      const roomId = await createChatRoom({
+        roomType: "group",
+        title: "새 그룹채팅",
+        createdBy: userId,
+      });
+
+      for (const uid of mergedUserIds) {
+        await addChatRoomMember({
+          roomId: Number(roomId),
+          userId: Number(uid),
+        });
+      }
+
+      const actor = await getUserById(userId);
+      const actorName = actor?.name || actor?.username || "사용자";
+
+      const systemText = `${actorName}님이 그룹채팅을 만들었습니다.`;
+
+      const systemMessageId = await createChatMessage({
+        roomId: Number(roomId),
+        senderId: userId,
+        messageType: "system",
+        content: systemText,
+      });
+
+      const systemMessage = {
+        id: Number(systemMessageId),
+        roomId: Number(roomId),
+        senderId: userId,
+        senderName: "system",
+        senderUsername: "system",
+        messageType: "system",
+        content: systemText,
+        isDeleted: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: null,
+        attachmentId: null,
+        fileUrl: null,
+        fileName: null,
+        fileType: null,
+        fileSize: null,
+      };
+
+      for (const uid of mergedUserIds) {
+        io.to(`user:${uid}`).emit("message:new", systemMessage);
+        io.to(`user:${uid}`).emit("room:list:update", {
+          roomId: Number(roomId),
+          lastMessage: systemMessage,
+        });
+      }
+
+      callback?.({
+        success: true,
+        roomId: Number(roomId),
+        userIds: mergedUserIds,
+      });
+    } catch (err: any) {
+      console.error("[room:group:create-from-room ERROR]", err);
+      callback?.({
+        success: false,
+        message: err?.message || "그룹채팅 생성 실패",
+      });
+    }
+  }
+);
+
+socket.on(
   "room:title:update",
   async (
     payload: { roomId: number; title: string },

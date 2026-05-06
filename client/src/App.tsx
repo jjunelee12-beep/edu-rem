@@ -2,6 +2,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch, useLocation } from "wouter";
+import { useAuth } from "@/_core/hooks/useAuth";
 
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -57,6 +58,22 @@ import AppToastHost from "@/components/notifications/AppToastHost";
 import MessengerRealtimeBridge from "@/components/notifications/MessengerRealtimeBridge";
 import AppRealtimeBridge from "@/components/notifications/AppRealtimeBridge";
 
+function SuperhostRoute({
+  component: Component,
+}: {
+  component: React.ComponentType<any>;
+}) {
+  const { user, loading } = useAuth();
+
+  if (loading) return null;
+
+  if (user?.role !== "superhost") {
+    return <NotFound />;
+  }
+
+  return <Component />;
+}
+
 function PublicRouter() {
   return (
     <Switch>
@@ -89,7 +106,9 @@ function PrivateRouter() {
           <Route path="/practice-support-center" component={PracticeSupportCenterPage} />
           <Route path="/job-support-center" component={JobSupportCenterPage} />
           <Route path="/system" component={System} />
-          <Route path="/ai" component={AIAssistant} />
+          <Route path="/ai">
+  <SuperhostRoute component={AIAssistant} />
+</Route>
           <Route path="/education-institutions" component={EducationInstitutions} />
           <Route path="/superhost" component={SuperhostHome} />
           <Route path="/attendance" component={AttendancePage} />

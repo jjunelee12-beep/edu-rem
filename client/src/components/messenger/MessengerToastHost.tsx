@@ -213,25 +213,19 @@ export default function MessengerToastHost() {
       };
 
       setToasts((prev) => {
-        const existing = prev.find((t) => t.roomId === roomId);
+  const existing = prev[0];
 
-        if (existing) {
-          return prev.map((t) =>
-            t.roomId === roomId
-              ? { ...t, content, unreadCount: t.unreadCount + 1 }
-              : t
-          );
-        }
-
-        return [
-          ...prev,
-          {
-            id: `${Date.now()}`,
-            ...base,
-            unreadCount: 1,
-          },
-        ];
-      });
+  return [
+    {
+      id: existing?.id || `${Date.now()}`,
+      ...base,
+      unreadCount:
+        existing && Number(existing.roomId) === Number(roomId)
+          ? Number(existing.unreadCount || 0) + 1
+          : 1,
+    },
+  ];
+});
 
       const isWindowFocused = document.hasFocus();
 
@@ -289,16 +283,16 @@ export default function MessengerToastHost() {
   ]);
 
   useEffect(() => {
-    if (!toasts.length) return;
+  if (!toasts.length) return;
 
-    const timer = window.setTimeout(() => {
-      setToasts((prev) => prev.slice(1));
-    }, 5000);
+  const timer = window.setTimeout(() => {
+    setToasts([]);
+  }, 5000);
 
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [toasts]);
+  return () => {
+    window.clearTimeout(timer);
+  };
+}, [toasts]);
 
   if (!toasts.length) return null;
 
@@ -316,7 +310,7 @@ export default function MessengerToastHost() {
               })
             );
 
-            setToasts((prev) => prev.filter((item) => item.id !== t.id));
+            setToasts([]);
           }}
           className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-[0_16px_40px_rgba(15,23,42,0.18)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_44px_rgba(15,23,42,0.22)]"
         >

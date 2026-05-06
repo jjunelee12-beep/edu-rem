@@ -208,6 +208,34 @@ async function emitRoomMembersAdd(
   });
 }
 
+async function emitGroupCreateFromRoom(
+  roomId: number,
+  userIds: number[]
+): Promise<{ roomId: number; userIds: number[] }> {
+  const socket = await getSocket();
+
+  return new Promise((resolve, reject) => {
+    socket.emit(
+      "room:group:create-from-room",
+      {
+        roomId: Number(roomId),
+        userIds: userIds.map(Number),
+      },
+      (res: any) => {
+        if (!res?.success) {
+          reject(new Error(res?.message || "그룹채팅 생성 실패"));
+          return;
+        }
+
+        resolve({
+          roomId: Number(res.roomId),
+          userIds: (res?.userIds || []).map((v: any) => Number(v)),
+        });
+      }
+    );
+  });
+}
+
 async function emitTypingStart(roomId: number) {
   const socket = await getSocket();
   socket.emit("typing:start", { roomId });
@@ -1150,39 +1178,72 @@ export default function MessengerPage({
   };
 
   const handleInviteSubmit = async () => {
-    if (!activeRoomForInfo?.id) return;
-    if (selectedInviteUserIds.length === 0) return;
+  const roomId = Number(roomInfoRoomId || 0);
 
-    try {
-      setInviteSubmitting(true);
+  if (!roomId || selectedInviteUserIds.length === 0) return;
 
-      await emitRoomMembersAdd(
-        Number(activeRoomForInfo.id),
+  try {
+    setInviteSubmitting(true);
+
+    const activeRoom =
+      mappedRooms.find((room) => Number(room.id) === roomId) || null;
+
+    if (activeRoom?.type === "direct") {
+      const result = await emitGroupCreateFromRoom(
+        roomId,
         selectedInviteUserIds
       );
 
-      await refetchRooms();
+      const newRoomId = Number(result.roomId);
 
-      setRoomInfoParticipants((prev) => {
-        const existingIds = new Set(prev.map((p) => Number(p.id)));
-        const appended = orgUsers.filter(
-          (u) =>
-            selectedInviteUserIds.includes(Number(u.id)) &&
-            !existingIds.has(Number(u.id))
-        );
-        return [...prev, ...appended];
-      });
-
+      setInviteDialogOpen(false);
       setSelectedInviteUserIds([]);
       setInviteSearch("");
-      setInviteDialogOpen(false);
-setRoomInfoOpen(true);
-    } catch (error: any) {
-      alert(error?.message || "참여자 추가에 실패했습니다.");
-    } finally {
-      setInviteSubmitting(false);
+      setRoomInfoOpen(false);
+      setRoomInfoRoomId(null);
+
+      await refetchRooms();
+
+      setOpenPopups((prev) => {
+        const exists = prev.some(
+          (popup) => popup.type === "room" && Number(popup.roomId) === newRoomId
+        );
+
+        const next = prev.map((popup) =>
+          popup.type === "room" && Number(popup.roomId) === newRoomId
+            ? { ...popup, minimized: false }
+            : popup
+        );
+
+        if (exists) return next;
+
+        return [
+          ...next,
+          {
+            key: `room-${newRoomId}`,
+            type: "room",
+            roomId: newRoomId,
+            minimized: false,
+          },
+        ];
+      });
+
+      return;
     }
-  };
+
+    await emitRoomMembersAdd(roomId, selectedInviteUserIds);
+
+    setInviteDialogOpen(false);
+    setSelectedInviteUserIds([]);
+    setInviteSearch("");
+
+    await refetchRooms();
+  } catch (error: any) {
+    alert(error?.message || "참여자 추가 중 오류가 발생했습니다.");
+  } finally {
+    setInviteSubmitting(false);
+  }
+};
 
   const closePopup = (popupKey: string) => {
     console.log("[MessengerPage] closePopup called", { popupKey });
@@ -1524,7 +1585,7 @@ setRoomInfoOpen(true);
                       <div className="mt-1 text-sm text-slate-500">
   {activeRoomForInfo?.type === "group"
     ? "그룹 채팅방에 초대할 직원을 선택하세요."
-    : "직원을 추가하면 현재 1:1 대화방이 그룹채팅으로 전환됩니다."}
+    : "직원을 추가하면 기존 1:1 대화방은 유지되고 새 그룹채팅방이 생성됩니다."}
 </div>
                     </div>
                   </div>
