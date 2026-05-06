@@ -8,16 +8,15 @@ createCanvasRectElement,
 createCanvasCircleElement,
 type FormCanvasConfig,
 type FormCanvasElement,
-type FormCanvasTextElement,
-type FormCanvasImageElement,
-type FormCanvasButtonElement,
-type FormCanvasShapeElement,
 } from "@/lib/formDesign/canvasTypes";
 
 type Props = {
   value?: FormCanvasConfig;
   onChange: (next: FormCanvasConfig) => void;
   onUploadImage?: (file: File) => Promise<string>;
+  selectedElementId?: string | null;
+  onSelectedElementIdChange?: (id: string | null) => void;
+  compact?: boolean;
 };
 
 function normalizeCanvas(value?: FormCanvasConfig): FormCanvasConfig {
@@ -28,35 +27,30 @@ function normalizeCanvas(value?: FormCanvasConfig): FormCanvasConfig {
   };
 }
 
-function isTextElement(
-  element: FormCanvasElement | undefined
-): element is FormCanvasTextElement {
-  return element?.type === "text";
-}
-
-function isImageElement(
-  element: FormCanvasElement | undefined
-): element is FormCanvasImageElement {
-  return element?.type === "image";
-}
-
-function isButtonElement(
-  element: FormCanvasElement | undefined
-): element is FormCanvasButtonElement {
-  return element?.type === "button";
-}
-
-function isShapeElement(
-  element: FormCanvasElement | undefined
-): element is FormCanvasShapeElement {
-  return element?.type === "shape";
-}
-
-export default function FormCanvasEditor({ value, onChange, onUploadImage }: Props) {
+export default function FormCanvasEditor({
+  value,
+  onChange,
+  onUploadImage,
+  selectedElementId,
+  onSelectedElementIdChange,
+  compact = false,
+}: Props) {
   const canvas = normalizeCanvas(value);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+const actualSelectedId =
+  typeof selectedElementId === "undefined" ? selectedId : selectedElementId;
+
+const setActualSelectedId = (id: string | null) => {
+  setSelectedId(id);
+  onSelectedElementIdChange?.(id);
+};
+
 const [selectedIds, setSelectedIds] = useState<string[]>([]);
-const [zoom, setZoom] = useState(0.32);
+const [zoom, setZoom] = useState(compact ? 0.42 : 0.32);
+useEffect(() => {
+  if (!compact) return;
+  setZoom(0.42);
+}, [compact]);
 const [snapEnabled, setSnapEnabled] = useState(true);
 const [gridVisible, setGridVisible] = useState(true);
 const [gridSnapEnabled, setGridSnapEnabled] = useState(true);
@@ -90,20 +84,34 @@ const [selectionBox, setSelectionBox] = useState<{
   height: number;
 } | null>(null);
 
+const [editingTextId, setEditingTextId] = useState<string | null>(null);
+
 const [snapGuide, setSnapGuide] = useState<{
   x?: number;
   y?: number;
 } | null>(null);
 
   const selectedElement = useMemo(
-    () => canvas.elements.find((el) => el.id === selectedId),
-    [canvas.elements, selectedId]
-  );
+  () => canvas.elements.find((el) => el.id === actualSelectedId),
+  [canvas.elements, actualSelectedId]
+);
 
 const selectedElements = useMemo(
   () => canvas.elements.filter((el) => selectedIds.includes(el.id)),
   [canvas.elements, selectedIds]
 );
+
+const sortedVisibleElements = useMemo(() => {
+  return [...canvas.elements]
+    .filter((el) => !el.hidden)
+    .sort((a, b) => Number(a.zIndex ?? 0) - Number(b.zIndex ?? 0));
+}, [canvas.elements]);
+
+const sortedLayerElements = useMemo(() => {
+  return [...canvas.elements].sort(
+    (a, b) => Number(b.zIndex ?? 0) - Number(a.zIndex ?? 0)
+  );
+}, [canvas.elements]);
 
 const sanitizeElements = (elements: FormCanvasElement[]) => {
   return elements.map((el, i) => {
@@ -116,7 +124,7 @@ const sanitizeElements = (elements: FormCanvasElement[]) => {
       y: Math.min(Math.max(0, Number(el.y) || 0), Math.max(0, canvas.height - height)),
       width,
       height,
-      zIndex: i + 1,
+      zIndex: Number(el.zIndex) || i + 1,
       hidden: !!el.hidden,
       locked: !!el.locked,
     } as FormCanvasElement;
@@ -156,6 +164,13 @@ const pushUndoHistory = () => {
   onChange(nextCanvas);
 };
 
+const updateCanvasElementsOnly = (elements: FormCanvasElement[]) => {
+  onChange({
+    ...canvas,
+    elements,
+  });
+};
+
 const undoCanvas = () => {
   setUndoStack((prev) => {
     if (prev.length === 0) return prev;
@@ -166,7 +181,7 @@ const undoCanvas = () => {
     setRedoStack((redoPrev) => [...redoPrev, cloneCanvas(canvas)].slice(-50));
 
     onChange(cloneCanvas(previous));
-    setSelectedId(null);
+    setActualSelectedId(null);
     setSelectedIds([]);
 
     return rest;
@@ -183,7 +198,7 @@ const redoCanvas = () => {
     setUndoStack((undoPrev) => [...undoPrev, cloneCanvas(canvas)].slice(-50));
 
     onChange(cloneCanvas(next));
-    setSelectedId(null);
+    setActualSelectedId(null);
     setSelectedIds([]);
 
     return rest;
@@ -232,7 +247,7 @@ const updateElementPositionSize = (
       elements: [...canvas.elements, next],
     });
 
-    setSelectedId(next.id);
+    setActualSelectedId(next.id);
 setSelectedIds([next.id]);
   };
 
@@ -244,7 +259,7 @@ setSelectedIds([next.id]);
       elements: [...canvas.elements, next],
     });
 
-    setSelectedId(next.id);
+    setActualSelectedId(next.id);
 setSelectedIds([next.id]);
   };
 
@@ -256,7 +271,7 @@ setSelectedIds([next.id]);
       elements: [...canvas.elements, next],
     });
 
-    setSelectedId(next.id);
+    setActualSelectedId(next.id);
 setSelectedIds([next.id]);
   };
 
@@ -268,7 +283,7 @@ const addRect = () => {
     elements: [...canvas.elements, next],
   });
 
-  setSelectedId(next.id);
+  setActualSelectedId(next.id);
 setSelectedIds([next.id]);
 };
 
@@ -280,7 +295,7 @@ const addCircle = () => {
     elements: [...canvas.elements, next],
   });
 
-  setSelectedId(next.id);
+  setActualSelectedId(next.id);
 setSelectedIds([next.id]);
 };
 
@@ -305,24 +320,22 @@ const duplicateSelected = () => {
 
   if (duplicatableTargets.length === 0) return;
 
-  const copiedElements: FormCanvasElement[] = duplicatableTargets.map((element) => ({
+  const copiedElements: FormCanvasElement[] = duplicatableTargets.map((element, index) => ({
     ...element,
     id: `${element.type}-${Date.now()}-${Math.floor(Math.random() * 10000)}-${element.id}`,
     x: element.x + 30,
     y: element.y + 30,
-    zIndex: canvas.elements.length + 1,
+    zIndex:
+  Math.max(0, ...canvas.elements.map((el) => Number(el.zIndex ?? 0))) +
+  index +
+  1,
   } as FormCanvasElement));
 
-  const nextElements = [...canvas.elements, ...copiedElements].map((el, i) => ({
-    ...el,
-    zIndex: i + 1,
-  }));
-
   updateCanvas({
-    elements: nextElements,
-  });
+  elements: [...canvas.elements, ...copiedElements],
+});
 
-  setSelectedId(copiedElements[copiedElements.length - 1]?.id ?? null);
+  setActualSelectedId(copiedElements[copiedElements.length - 1]?.id ?? null);
   setSelectedIds(copiedElements.map((el) => el.id));
 };
 
@@ -335,17 +348,14 @@ const duplicateElementById = (id: string) => {
     id: `${target.type}-${Date.now()}-${Math.floor(Math.random() * 10000)}-${target.id}`,
     x: target.x + 30,
     y: target.y + 30,
-    zIndex: canvas.elements.length + 1,
+    zIndex: Math.max(0, ...canvas.elements.map((el) => Number(el.zIndex ?? 0))) + 1,
   } as FormCanvasElement;
 
   updateCanvas({
-    elements: [...canvas.elements, copied].map((el, i) => ({
-      ...el,
-      zIndex: i + 1,
-    })),
-  });
+  elements: [...canvas.elements, copied],
+});
 
-  setSelectedId(copied.id);
+  setActualSelectedId(copied.id);
   setSelectedIds([copied.id]);
 };
 
@@ -370,7 +380,7 @@ const clearCanvasElements = () => {
     elements: canvas.elements.filter((el) => el.locked),
   });
 
-  setSelectedId(null);
+  setActualSelectedId(null);
 setSelectedIds([]);
 };
 
@@ -391,7 +401,7 @@ const resetCanvas = () => {
     elements: lockedElements,
   });
 
-  setSelectedId(null);
+  setActualSelectedId(null);
 setSelectedIds([]);
 };
 
@@ -403,13 +413,17 @@ const removeElementById = (id: string) => {
     elements: canvas.elements.filter((el) => el.id !== id),
   });
 
-  setSelectedId(null);
+  setActualSelectedId(null);
   setSelectedIds([]);
 };
 
   const removeSelected = () => {
-  const targetIds =
-    selectedIds.length > 0 ? selectedIds : selectedId ? [selectedId] : [];
+const targetIds =
+  selectedIds.length > 0
+    ? selectedIds
+    : actualSelectedId
+      ? [actualSelectedId]
+      : [];
 
   if (targetIds.length === 0) return;
 
@@ -423,7 +437,7 @@ const removeElementById = (id: string) => {
     elements: canvas.elements.filter((el) => !removableIds.includes(el.id)),
   });
 
-  setSelectedId(null);
+  setActualSelectedId(null);
   setSelectedIds([]);
 };
 
@@ -431,38 +445,46 @@ const reorderElement = (
   id: string,
   mode: "front" | "forward" | "backward" | "back"
 ) => {
-  const idx = canvas.elements.findIndex((el) => el.id === id);
+  const target = canvas.elements.find((el) => el.id === id);
+  if (!target || target.locked || target.hidden) return;
+
+  const visible = [...canvas.elements]
+    .filter((el) => !el.hidden)
+    .sort((a, b) => Number(a.zIndex ?? 0) - Number(b.zIndex ?? 0));
+
+  const hidden = canvas.elements.filter((el) => el.hidden);
+
+  const idx = visible.findIndex((el) => el.id === id);
   if (idx < 0) return;
 
-  const target = canvas.elements[idx];
-  if (target.locked) return;
+  const nextVisible = [...visible];
+  const [picked] = nextVisible.splice(idx, 1);
 
-  const next = [...canvas.elements];
-  const [picked] = next.splice(idx, 1);
+  if (!picked) return;
 
   if (mode === "front") {
-    next.push(picked);
+    nextVisible.push(picked);
   }
 
   if (mode === "back") {
-    next.unshift(picked);
+    nextVisible.unshift(picked);
   }
 
   if (mode === "forward") {
-    const targetIndex = Math.min(next.length, idx + 1);
-    next.splice(targetIndex, 0, picked);
+    nextVisible.splice(Math.min(nextVisible.length, idx + 1), 0, picked);
   }
 
   if (mode === "backward") {
-    const targetIndex = Math.max(0, idx - 1);
-    next.splice(targetIndex, 0, picked);
+    nextVisible.splice(Math.max(0, idx - 1), 0, picked);
   }
 
+  const nextElements = [...nextVisible, ...hidden].map((el, index) => ({
+    ...el,
+    zIndex: index + 1,
+  })) as FormCanvasElement[];
+
   updateCanvas({
-    elements: next.map((el, i) => ({
-      ...el,
-      zIndex: i + 1,
-    })),
+    elements: nextElements,
   });
 };
 
@@ -592,7 +614,7 @@ const distributeSelected = (type: "horizontal" | "vertical") => {
 };
 
 const selectElement = (element: FormCanvasElement, append = false) => {
-  setSelectedId(element.id);
+  setActualSelectedId(element.id);
 
   if (append) {
     setSelectedIds((prev) =>
@@ -872,7 +894,7 @@ return {
   });
 
 setSnapGuide(nextSnapGuide);
-  updateCanvas({ elements: updated }, { skipHistory: true });
+  updateCanvasElementsOnly(updated);
 };
 
 const endDrag = () => {
@@ -888,7 +910,7 @@ const startResize = (e: React.MouseEvent, element: FormCanvasElement) => {
 
   if (element.locked) return;
 
-  setSelectedId(element.id);
+  setActualSelectedId(element.id);
 setSelectedIds([element.id]);
 setDragState(null);
 
@@ -910,7 +932,7 @@ const startAreaSelect = (e: React.MouseEvent<HTMLDivElement>) => {
   const startX = (e.clientX - rect.left) / scale;
   const startY = (e.clientY - rect.top) / scale;
 
-  setSelectedId(null);
+  setActualSelectedId(null);
   setSelectedIds([]);
 
   setSelectionBox({
@@ -975,7 +997,7 @@ const endAreaSelect = () => {
   if (!selectionBox) return;
 
 if (selectionBox.width < 4 && selectionBox.height < 4) {
-  setSelectedId(null);
+  setActualSelectedId(null);
   setSelectedIds([]);
   setSelectionBox(null);
   return;
@@ -1004,7 +1026,7 @@ if (selectionBox.width < 4 && selectionBox.height < 4) {
     .map((el) => el.id);
 
   setSelectedIds(pickedIds);
-  setSelectedId(pickedIds[pickedIds.length - 1] || null);
+  setActualSelectedId(pickedIds[pickedIds.length - 1] || null);
   setSelectionBox(null);
 };
 
@@ -1037,25 +1059,24 @@ if (snapEnabled && !e.shiftKey) {
 
   nextWidth = snapped.width;
   nextHeight = snapped.height;
-
   setSnapGuide(snapped.guide);
 } else {
   setSnapGuide(null);
 }
 
-updateCanvas(
-  {
-    elements: canvas.elements.map((el) =>
-      el.id === target.id
-        ? ({
-            ...el,
-            width: nextWidth,
-            height: nextHeight,
-          } as FormCanvasElement)
-        : el
-    ),
-  },
-  { skipHistory: true }
+nextWidth = Math.min(nextWidth, canvas.width - target.x);
+nextHeight = Math.min(nextHeight, canvas.height - target.y);
+
+updateCanvasElementsOnly(
+  canvas.elements.map((el) =>
+    el.id === target.id
+      ? ({
+          ...el,
+          width: nextWidth,
+          height: nextHeight,
+        } as FormCanvasElement)
+      : el
+  )
 );
 };
 
@@ -1064,8 +1085,151 @@ const endResize = () => {
   setHistoryResizeStarted(false);
 };
 
+const renderElementToolbar = (el: FormCanvasElement) => {
+  const isSelected =
+    actualSelectedId === el.id || selectedIds.includes(el.id);
+
+  if (!isSelected || el.locked) return null;
+
+  return (
+    <div
+      onMouseDown={(e) => e.stopPropagation()}
+      className="absolute left-1/2 top-0 z-[10000] flex max-w-[220px] flex-wrap -translate-x-1/2 -translate-y-[calc(100%+8px)] items-center justify-center gap-1 rounded-lg border bg-white px-2 py-1 shadow-lg"
+    >
+      <button
+        type="button"
+        title="삭제"
+        onClick={(e) => {
+          e.stopPropagation();
+          removeElementById(el.id);
+        }}
+        className="text-xs text-red-500 hover:underline"
+      >
+        삭제
+      </button>
+
+      <button
+        type="button"
+        title="복제"
+        onClick={(e) => {
+  e.stopPropagation();
+
+  setActualSelectedId(el.id);
+  setSelectedIds([el.id]);
+
+  duplicateElementById(el.id);
+}}
+        className="text-xs text-slate-700 hover:underline"
+      >
+        복제
+      </button>
+
+<button
+  type="button"
+  title="맨 뒤로 보내기"
+  onClick={(e) => {
+  e.stopPropagation();
+
+  setActualSelectedId(el.id);
+  setSelectedIds([el.id]);
+
+  reorderElement(el.id, "back");
+}}
+  className="text-xs text-slate-700 hover:underline"
+>
+  ⏪
+</button>
+
+      <button
+        type="button"
+        title="뒤로 보내기"
+        onClick={(e) => {
+  e.stopPropagation();
+
+  setActualSelectedId(el.id);
+  setSelectedIds([el.id]);
+
+  reorderElement(el.id, "backward");
+}}
+        className="text-xs text-slate-700 hover:underline"
+      >
+        ◀
+      </button>
+
+      <button
+        type="button"
+        title="앞으로 보내기"
+        onClick={(e) => {
+  e.stopPropagation();
+
+  setActualSelectedId(el.id);
+  setSelectedIds([el.id]);
+
+  reorderElement(el.id, "forward");
+}}
+        className="text-xs text-slate-700 hover:underline"
+      >
+        ▶
+      </button>
+
+<button
+  type="button"
+  title="맨 앞으로 보내기"
+  onClick={(e) => {
+  e.stopPropagation();
+
+  setActualSelectedId(el.id);
+  setSelectedIds([el.id]);
+
+  reorderElement(el.id, "front");
+}}
+  className="text-xs text-slate-700 hover:underline"
+>
+  ⏩
+</button>
+
+      {el.type === "text" ? (
+        <>
+          <button
+            type="button"
+            title="굵게"
+            onClick={(e) => {
+  e.stopPropagation();
+
+  setActualSelectedId(el.id);
+  setSelectedIds([el.id]);
+
+  updateElement(el.id, {
+    fontWeight: el.fontWeight === 800 ? 400 : 800,
+  } as Partial<FormCanvasElement>);
+}}
+            className="text-xs font-bold"
+          >
+            B
+          </button>
+
+          <input
+            type="color"
+            title="텍스트 색상"
+            value={el.color || "#000000"}
+            onChange={(e) => {
+  setActualSelectedId(el.id);
+  setSelectedIds([el.id]);
+
+  updateElement(el.id, {
+    color: e.target.value,
+  } as Partial<FormCanvasElement>);
+}}
+            className="h-5 w-5 cursor-pointer border"
+          />
+        </>
+      ) : null}
+    </div>
+  );
+};
+
 const renderResizeHandle = (element: FormCanvasElement) => {
-  if (selectedId !== element.id) return null;
+  if (!selectedIds.includes(element.id)) return null;
   if (element.locked) return null;
 
   return (
@@ -1191,6 +1355,7 @@ useEffect(() => {
   selectedElement,
   selectedElements,
   selectedIds,
+  actualSelectedId,
   canvas.elements,
   canvas.width,
   canvas.height,
@@ -1205,9 +1370,7 @@ useEffect(() => {
   };
 
   const handleGlobalMouseUp = () => {
-    setDragState(null);
-    setResizeState(null);
-    setSnapGuide(null);
+  endDrag();
 
     if (selectionBox) {
       endAreaSelect();
@@ -1224,27 +1387,278 @@ useEffect(() => {
 }, [selectionBox, canvas.elements, scale]);
 
   return (
-    <div className="rounded-2xl border bg-white p-4 space-y-4">
+  <div
+    className={
+      compact
+        ? "w-full"
+        : "rounded-2xl border bg-white p-4 space-y-4"
+    }
+  >
+    {!compact ? (
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-lg font-bold">미리캔버스형 자유 디자인</h3>
+          <h3 className="text-lg font-bold">
+            미리캔버스형 자유 디자인
+          </h3>
+
           <p className="text-xs text-slate-500">
-  텍스트 박스를 추가하고 위치/크기/색상을 조정할 수 있습니다. Shift 드래그/리사이즈 시 스냅/격자 맞춤 없이 자유 조정합니다.
-</p>
+            텍스트 박스를 추가하고 위치/크기/색상을 조정할 수 있습니다.
+            Shift 드래그/리사이즈 시 스냅 없이 자유 조정됩니다.
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-<select
-  className="rounded-lg border px-3 py-2 text-sm"
-  value={zoom}
-  onChange={(e) => setZoom(Number(e.target.value))}
+          <select
+            className="rounded-lg border px-3 py-2 text-sm"
+            value={zoom}
+            onChange={(e) => setZoom(Number(e.target.value))}
+          >
+            <option value={0.25}>25%</option>
+            <option value={0.32}>32%</option>
+            <option value={0.5}>50%</option>
+            <option value={0.75}>75%</option>
+            <option value={1}>100%</option>
+          </select>
+
+          <button
+            type="button"
+            onClick={undoCanvas}
+            disabled={undoStack.length === 0}
+            className="rounded-lg border bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-40"
+          >
+            되돌리기
+          </button>
+
+          <button
+            type="button"
+            onClick={redoCanvas}
+            disabled={redoStack.length === 0}
+            className="rounded-lg border bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-40"
+          >
+            다시실행
+          </button>
+
+
+        </div>
+      </div>
+    ) : null}
+
+    <div
+      className={
+        compact
+          ? "block"
+          : "grid gap-4 xl:grid-cols-[220px_1fr_360px]"
+      }
+    >
+      {!compact ? (
+        <div className="sticky top-4 max-h-[calc(100vh-120px)] self-start overflow-auto rounded-2xl border bg-slate-50 p-4 space-y-3">
+          <div>
+            <h4 className="text-sm font-bold text-slate-900">
+              요소 추가
+            </h4>
+
+            <p className="mt-1 text-xs text-slate-500">
+              페이지에 넣을 요소를 선택하세요.
+            </p>
+          </div>
+
+          <div className="grid gap-2">
+            <button
+              type="button"
+              onClick={addText}
+              className="rounded-xl bg-slate-900 px-3 py-3 text-sm font-semibold text-white"
+            >
+              텍스트 추가
+            </button>
+
+            <button
+              type="button"
+              onClick={addImage}
+              className="rounded-xl border bg-white px-3 py-3 text-sm font-semibold text-slate-700"
+            >
+              이미지 추가
+            </button>
+
+            <button
+              type="button"
+              onClick={addButton}
+              className="rounded-xl border bg-white px-3 py-3 text-sm font-semibold text-slate-700"
+            >
+              상담 버튼 추가
+            </button>
+
+            <button
+              type="button"
+              onClick={addRect}
+              className="rounded-xl border bg-white px-3 py-3 text-sm font-semibold text-slate-700"
+            >
+              사각형 추가
+            </button>
+
+            <button
+              type="button"
+              onClick={addCircle}
+              className="rounded-xl border bg-white px-3 py-3 text-sm font-semibold text-slate-700"
+            >
+              원형 추가
+            </button>
+          </div>
+
+          <div className="border-t pt-3">
+            <h4 className="text-sm font-bold text-slate-900">
+              선택 도구
+            </h4>
+
+            <div className="mt-2 grid gap-2">
+              <button
+                type="button"
+                onClick={duplicateSelected}
+                disabled={
+                  selectedElements.length > 0
+                    ? selectedElements.every((el) => el.locked)
+                    : !actualSelectedId || selectedElement?.locked
+                }
+                className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-40"
+              >
+                선택 복제
+              </button>
+
+              <button
+                type="button"
+                onClick={removeSelected}
+                disabled={
+                  selectedElements.length > 0
+                    ? selectedElements.every((el) => el.locked)
+                    : !actualSelectedId || selectedElement?.locked
+                }
+                className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-red-600 disabled:opacity-40"
+              >
+                선택 삭제
+              </button>
+            </div>
+          </div>
+
+          <div className="border-t pt-3">
+            <h4 className="text-sm font-bold text-slate-900">
+              레이어
+            </h4>
+
+            <div className="mt-2 flex flex-col gap-2">
+              {sortedLayerElements.map((element) => {
+                  const active =
+  actualSelectedId === element.id || selectedIds.includes(element.id);
+
+                  return (
+                    <button
+                      key={element.id}
+                      type="button"
+                      onClick={(e) => selectElement(element, e.shiftKey)}
+                      className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm transition ${
+                        active
+                          ? "border-cyan-300 bg-cyan-50"
+                          : "border-slate-200 bg-white"
+                      }`}
+                    >
+                      <span>
+                        {element.hidden
+                          ? "🙈"
+                          : element.locked
+                          ? "🔒"
+                          : "📄"}
+                      </span>
+
+                      <div className="flex-1 overflow-hidden">
+                        <div className="truncate font-semibold text-slate-800">
+                          {getElementLabel(element)}
+                        </div>
+
+                        <div className="text-[11px] text-slate-400">
+                          zIndex: {element.zIndex || 1}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+            </div>
+          </div>
+
+          <div className="border-t pt-3">
+            <h4 className="text-sm font-bold text-slate-900">
+              전체 관리
+            </h4>
+
+            <div className="mt-2 grid gap-2">
+              <button
+                type="button"
+                onClick={clearCanvasElements}
+                disabled={canvas.elements.length === 0}
+                className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-red-600 disabled:opacity-40"
+              >
+                전체 삭제
+              </button>
+
+              <button
+                type="button"
+                onClick={resetCanvas}
+                className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-red-700"
+              >
+                캔버스 초기화
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  updateCanvas({
+                    elements: sanitizeElements(canvas.elements),
+                  })
+                }
+                disabled={canvas.elements.length === 0}
+                className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-40"
+              >
+                요소 정리
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+{compact ? (
+  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+<div className="text-sm font-semibold text-slate-600">
+  {selectedIds.length > 1
+    ? `${selectedIds.length}개 선택됨`
+    : selectedElement
+      ? getElementLabel(selectedElement)
+      : "선택된 요소 없음"}
+</div>
+  <div className="flex flex-wrap items-center gap-2">
+    <button
+      type="button"
+      onClick={() => setZoom((prev) => Math.max(0.25, Number((prev - 0.05).toFixed(2))))}
+      className="rounded-lg border bg-white px-3 py-2 text-sm font-semibold text-slate-700"
+    >
+      -
+    </button>
+
+    <span className="min-w-16 text-center text-sm font-bold text-slate-600">
+      {Math.round(zoom * 100)}%
+    </span>
+
+    <button
+      type="button"
+      onClick={() => setZoom((prev) => Math.min(1, Number((prev + 0.05).toFixed(2))))}
+      className="rounded-lg border bg-white px-3 py-2 text-sm font-semibold text-slate-700"
+    >
+      +
+    </button>
+
+<button
+  type="button"
+  onClick={() => setZoom(0.42)}
+  className="rounded-lg border bg-white px-3 py-2 text-sm font-semibold text-slate-700"
 >
-  <option value={0.25}>25%</option>
-  <option value={0.32}>32%</option>
-  <option value={0.5}>50%</option>
-  <option value={0.75}>75%</option>
-  <option value={1}>100%</option>
-</select>
+  초기화
+</button>
 
 <button
   type="button"
@@ -1264,168 +1678,53 @@ useEffect(() => {
   다시실행
 </button>
 
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={canvas.enabled}
-              onChange={(e) =>
-                updateCanvas({
-                  enabled: e.target.checked,
-                })
-              }
-            />
-            캔버스 사용
-          </label>
-
-<label className="flex items-center gap-2 text-sm">
-  <input
-    type="checkbox"
-    checked={snapEnabled}
-    onChange={(e) => {
-      setSnapEnabled(e.target.checked);
-      if (!e.target.checked) setSnapGuide(null);
-    }}
-  />
-  스냅 사용
-</label>
-<label className="flex items-center gap-2 text-sm">
-  <input
-    type="checkbox"
-    checked={gridVisible}
-    onChange={(e) => setGridVisible(e.target.checked)}
-  />
-  격자 보기
-</label>
-<label className="flex items-center gap-2 text-sm">
-  <input
-    type="checkbox"
-    checked={gridSnapEnabled}
-    onChange={(e) => setGridSnapEnabled(e.target.checked)}
-  />
-  격자 맞춤
-</label>
-        </div>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[220px_1fr_360px]">
-<div className="sticky top-4 max-h-[calc(100vh-120px)] self-start overflow-auto rounded-2xl border bg-slate-50 p-4 space-y-3">
-  <div>
-    <h4 className="text-sm font-bold text-slate-900">요소 추가</h4>
-    <p className="mt-1 text-xs text-slate-500">
-      페이지에 넣을 요소를 선택하세요.
-    </p>
-  </div>
-
-  <div className="grid gap-2">
-    <button
-      type="button"
-      onClick={addText}
-      className="rounded-xl bg-slate-900 px-3 py-3 text-sm font-semibold text-white"
-    >
-      텍스트 추가
-    </button>
-
-    <button
-      type="button"
-      onClick={addImage}
-      className="rounded-xl border bg-white px-3 py-3 text-sm font-semibold text-slate-700"
-    >
-      이미지 추가
-    </button>
-
-    <button
-      type="button"
-      onClick={addButton}
-      className="rounded-xl border bg-white px-3 py-3 text-sm font-semibold text-slate-700"
-    >
-      상담 버튼 추가
-    </button>
-
-    <button
-      type="button"
-      onClick={addRect}
-      className="rounded-xl border bg-white px-3 py-3 text-sm font-semibold text-slate-700"
-    >
-      사각형 추가
-    </button>
-
-    <button
-      type="button"
-      onClick={addCircle}
-      className="rounded-xl border bg-white px-3 py-3 text-sm font-semibold text-slate-700"
-    >
-      원형 추가
-    </button>
-  </div>
-
-  <div className="border-t pt-3">
-    <h4 className="text-sm font-bold text-slate-900">선택 도구</h4>
-
-    <div className="mt-2 grid gap-2">
-      <button
-        type="button"
-        onClick={duplicateSelected}
-        disabled={
-          selectedElements.length > 0
-            ? selectedElements.every((el) => el.locked)
-            : !selectedId || selectedElement?.locked
-        }
-        className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-40"
-      >
-        선택 복제
-      </button>
-
-      <button
-        type="button"
-        onClick={removeSelected}
-        disabled={
-          selectedElements.length > 0
-            ? selectedElements.every((el) => el.locked)
-            : !selectedId || selectedElement?.locked
-        }
-        className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-red-600 disabled:opacity-40"
-      >
-        선택 삭제
-      </button>
-    </div>
-  </div>
-
-  <div className="border-t pt-3">
-    <h4 className="text-sm font-bold text-slate-900">전체 관리</h4>
-
-    <div className="mt-2 grid gap-2">
-      <button
-        type="button"
-        onClick={clearCanvasElements}
-        disabled={canvas.elements.length === 0}
-        className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-red-600 disabled:opacity-40"
-      >
-        전체 삭제
-      </button>
-
-      <button
-        type="button"
-        onClick={resetCanvas}
-        className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-red-700"
-      >
-        캔버스 초기화
-      </button>
 <button
   type="button"
-  onClick={() =>
-    updateCanvas({
-      elements: sanitizeElements(canvas.elements),
-    })
-  }
-  disabled={canvas.elements.length === 0}
-  className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-40"
+  onClick={() => setGridVisible((prev) => !prev)}
+  className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+    gridVisible
+      ? "bg-slate-900 text-white"
+      : "bg-white text-slate-700"
+  }`}
 >
-  요소 정리
+  Grid
 </button>
-    </div>
+
+<button
+  type="button"
+  onClick={() => setSnapEnabled((prev) => !prev)}
+  className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+    snapEnabled
+      ? "bg-slate-900 text-white"
+      : "bg-white text-slate-700"
+  }`}
+>
+  Snap
+</button>
+
+<button
+  type="button"
+  onClick={() => setGridSnapEnabled((prev) => !prev)}
+  className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+    gridSnapEnabled
+      ? "bg-slate-900 text-white"
+      : "bg-white text-slate-700"
+  }`}
+>
+  Grid Snap
+</button>
+
   </div>
 </div>
-        <div className="min-h-[760px] overflow-auto rounded-2xl border bg-slate-100 p-6">
+) : null}
+
+        <div
+  className={
+    compact
+      ? "h-full overflow-auto bg-slate-100 p-4"
+      : "min-h-[760px] overflow-auto rounded-2xl border bg-slate-100 p-6"
+  }
+>
           <div
 data-form-canvas-stage="true"
   className={`relative mx-auto overflow-hidden rounded-xl border bg-white shadow-sm ${
@@ -1489,10 +1788,8 @@ onMouseLeave={() => {
   />
 ) : null}
 
-            {canvas.elements
-              .filter((el) => !el.hidden)
-              .map((el) => {
-                const isSelected = selectedId === el.id || selectedIds.includes(el.id);
+            {sortedVisibleElements.map((el) => {
+                const isSelected = actualSelectedId === el.id || selectedIds.includes(el.id);
 const isDragging = dragState?.ids.includes(el.id) ?? false;
 const isResizing = resizeState?.id === el.id;
 const isActiveMoving = isDragging || isResizing;
@@ -1503,11 +1800,30 @@ const isActiveMoving = isDragging || isResizing;
                       key={el.id}
                       role="button"
                       tabIndex={0}
-                      onMouseDown={(e) => startDrag(e, el)}
-                      className={`absolute transition-all ${isActiveMoving ? "pointer-events-none scale-[1.01] opacity-70 shadow-xl" : "pointer-events-auto scale-100 opacity-100"} ${el.locked ? "cursor-default" : "cursor-move"} select-none whitespace-pre-wrap rounded border ${
+                      onMouseDown={(e) => {
+  if (editingTextId === el.id) {
+    e.stopPropagation();
+    return;
+  }
+
+  startDrag(e, el);
+}}
+onDoubleClick={(e) => {
+  e.stopPropagation();
+
+  if (el.locked) return;
+
+  setActualSelectedId(el.id);
+setSelectedIds([el.id]);
+
+pushUndoHistory();
+
+setEditingTextId(el.id);
+}}
+                      className={`absolute ${isActiveMoving ? "pointer-events-none scale-[1.01] opacity-70 shadow-xl" : "pointer-events-auto scale-100 opacity-100"} ${el.locked ? "cursor-default" : "cursor-move"} select-none whitespace-pre-wrap rounded border ${
                         isSelected
   ? "border-blue-500 ring-2 ring-blue-300 shadow-md"
-                          : el.locked ? "border-transparent" : "border-transparent hover:border-slate-300"
+                          : el.locked ? "border-transparent" : "border-transparent transition-colors hover:border-slate-300"
                       }`}
                       style={{
                         left: el.x * scale,
@@ -1520,65 +1836,58 @@ const isActiveMoving = isDragging || isResizing;
                         fontWeight: el.fontWeight,
                         textAlign: el.textAlign ?? "left",
                         lineHeight: 1.15,
+userSelect: "none",
+  WebkitUserSelect: "none",
                       }}
                     >
-  {el.text}
-{isSelected && !el.locked ? (
-  <div
-    className="absolute -top-10 left-1/2 z-[10000] flex -translate-x-1/2 items-center gap-1 rounded-lg border bg-white px-2 py-1 shadow-lg"
-  >
-    {/* 삭제 */}
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        removeElementById(el.id);
-      }}
-      className="text-xs text-red-500 hover:underline"
-    >
-      삭제
-    </button>
+  {editingTextId === el.id ? (
+  <textarea
+    autoFocus
+    value={el.text}
+    onChange={(e) =>
+  updateCanvas(
+    {
+      elements: canvas.elements.map((item) =>
+        item.id === el.id
+          ? ({
+              ...item,
+              text: e.target.value,
+            } as FormCanvasElement)
+          : item
+      ),
+    },
+    { skipHistory: true }
+  )
+}
+    onBlur={() => {
+  setEditingTextId(null);
+}}
+    onMouseDown={(e) => e.stopPropagation()}
+onKeyDown={(e) => {
+  e.stopPropagation();
 
-    {/* 복제 */}
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        duplicateElementById(el.id);
-      }}
-      className="text-xs text-slate-700 hover:underline"
-    >
-      복제
-    </button>
+  if (e.key === "Escape") {
+    setEditingTextId(null);
+  }
 
-    {/* 텍스트 전용 */}
-    {el.type === "text" ? (
-      <>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            updateElement(el.id, {
-              fontWeight: el.fontWeight === 800 ? 400 : 800,
-            });
-          }}
-          className="text-xs font-bold"
-        >
-          B
-        </button>
-
-        <input
-          type="color"
-          value={el.color || "#000000"}
-          onChange={(e) =>
-            updateElement(el.id, {
-              color: e.target.value,
-            })
-          }
-          className="h-5 w-5 cursor-pointer border"
-        />
-      </>
-    ) : null}
-  </div>
-) : null}
-  {renderResizeHandle(el)}
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+    setEditingTextId(null);
+  }
+}}
+    className="h-full w-full resize-none border-none bg-transparent outline-none"
+    style={{
+      color: el.color,
+      fontSize: el.fontSize * scale,
+      fontWeight: el.fontWeight,
+      textAlign: el.textAlign ?? "left",
+      lineHeight: 1.15,
+    }}
+  />
+) : (
+  el.text
+)}
+{editingTextId === el.id ? null : renderElementToolbar(el)}
+{editingTextId === el.id ? null : renderResizeHandle(el)}
 </div>
                   );
                 }
@@ -1590,10 +1899,10 @@ const isActiveMoving = isDragging || isResizing;
                       role="button"
                       tabIndex={0}
                       onMouseDown={(e) => startDrag(e, el)}
-                      className={`absolute transition-all ${isActiveMoving ? "pointer-events-none scale-[1.01] opacity-70 shadow-xl" : "pointer-events-auto scale-100 opacity-100"} ${el.locked ? "cursor-default" : "cursor-move"} overflow-hidden rounded border bg-slate-200 ${
+                      className={`absolute ${isActiveMoving ? "pointer-events-none scale-[1.01] opacity-70 shadow-xl" : "pointer-events-auto scale-100 opacity-100"} ${el.locked ? "cursor-default" : "cursor-move"} overflow-hidden rounded border bg-slate-200 ${
                         isSelected
   ? "border-blue-500 ring-2 ring-blue-300 shadow-md"
-                          : el.locked ? "border-transparent" : "border-transparent hover:border-slate-300"
+                          : el.locked ? "border-transparent" : "border-transparent transition-colors hover:border-slate-300"
                       }`}
                       style={{
                         left: el.x * scale,
@@ -1621,154 +1930,95 @@ const isActiveMoving = isDragging || isResizing;
                         <div className="flex h-full w-full items-center justify-center text-xs text-slate-500">
                           이미지 URL 입력
                         </div>
-                                            )}
-{isSelected && !el.locked ? (
-  <div className="absolute -top-10 left-1/2 z-[10000] flex -translate-x-1/2 items-center gap-1 rounded-lg border bg-white px-2 py-1 shadow-lg">
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        removeElementById(el.id);
-      }}
-      className="text-xs text-red-500 hover:underline"
-    >
-      삭제
-    </button>
+                      )}
 
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        duplicateElementById(el.id);
-      }}
-      className="text-xs text-slate-700 hover:underline"
-    >
-      복제
-    </button>
-  </div>
-) : null}
+                      {renderElementToolbar(el)}
                       {renderResizeHandle(el)}
                     </div>
                   );
                 }
 
                 if (el.type === "button") {
-  return (
-    <div
-      key={el.id}
-      role="button"
-      tabIndex={0}
-      onMouseDown={(e) => startDrag(e, el)}
-      className={`absolute transition-all ${isActiveMoving ? "pointer-events-none scale-[1.01] opacity-70 shadow-xl" : "pointer-events-auto scale-100 opacity-100"} ${el.locked ? "cursor-default" : "cursor-move"} border ${
-        isSelected
-  ? "border-blue-500 ring-2 ring-blue-300 shadow-md"
-          : el.locked ? "border-transparent" : "border-transparent hover:border-slate-300"
-      }`}
-      style={{
-        left: el.x * scale,
-        top: el.y * scale,
-        width: el.width * scale,
-        height: el.height * scale,
-        zIndex: isActiveMoving ? 9999 : el.zIndex ?? 1,
-        backgroundColor: el.backgroundColor,
-        color: el.color,
-        borderRadius: el.borderRadius * scale,
-        fontWeight: 800,
-        fontSize: 18 * scale,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        userSelect: "none",
-      }}
-    >
-      {el.text}
-{isSelected && !el.locked ? (
-  <div className="absolute -top-10 left-1/2 z-[10000] flex -translate-x-1/2 items-center gap-1 rounded-lg border bg-white px-2 py-1 shadow-lg">
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        removeElementById(el.id);
-      }}
-      className="text-xs text-red-500 hover:underline"
-    >
-      삭제
-    </button>
+                  return (
+                    <div
+                      key={el.id}
+                      role="button"
+                      tabIndex={0}
+                      onMouseDown={(e) => startDrag(e, el)}
+                      className={`absolute ${isActiveMoving ? "pointer-events-none scale-[1.01] opacity-70 shadow-xl" : "pointer-events-auto scale-100 opacity-100"} ${el.locked ? "cursor-default" : "cursor-move"} border ${
+                        isSelected
+                          ? "border-blue-500 ring-2 ring-blue-300 shadow-md"
+                          : el.locked
+                            ? "border-transparent"
+                            : "border-transparent transition-colors hover:border-slate-300"
+                      }`}
+                      style={{
+                        left: el.x * scale,
+                        top: el.y * scale,
+                        width: el.width * scale,
+                        height: el.height * scale,
+                        zIndex: isActiveMoving ? 9999 : el.zIndex ?? 1,
+                        backgroundColor: el.backgroundColor,
+                        color: el.color,
+                        borderRadius: el.borderRadius * scale,
+                        fontWeight: 800,
+                        fontSize: 18 * scale,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        userSelect: "none",
+                      }}
+                    >
+                      {el.text}
 
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        duplicateElementById(el.id);
-      }}
-      className="text-xs text-slate-700 hover:underline"
-    >
-      복제
-    </button>
-  </div>
-) : null}
-      {renderResizeHandle(el)}
-    </div>
-  );
-}
+                      {renderElementToolbar(el)}
+                      {renderResizeHandle(el)}
+                    </div>
+                  );
+                }
 
-if (el.type === "shape") {
-  return (
-    <div
-      key={el.id}
-      role="button"
-      tabIndex={0}
-      onMouseDown={(e) => startDrag(e, el)}
-      className={`absolute transition-all ${isActiveMoving ? "pointer-events-none scale-[1.01] opacity-70 shadow-xl" : "pointer-events-auto scale-100 opacity-100"} ${el.locked ? "cursor-default" : "cursor-move"} ${
-        isSelected
-  ? "ring-2 ring-blue-300 shadow-md"
-          : el.locked ? "" : "hover:ring-1 hover:ring-slate-300"
-      }`}
-      style={{
-        left: el.x * scale,
-        top: el.y * scale,
-        width: el.width * scale,
-        height: el.height * scale,
-        zIndex: isActiveMoving ? 9999 : el.zIndex ?? 1,
-        backgroundColor: el.backgroundColor,
-        borderRadius: el.shape === "circle" ? "999px" : 0,
-        border: el.borderWidth
-          ? `${Math.max(1, el.borderWidth * scale)}px solid ${
-              el.borderColor || "transparent"
-            }`
-          : undefined,
-      }}
-    >
-{isSelected && !el.locked ? (
-  <div className="absolute -top-10 left-1/2 z-[10000] flex -translate-x-1/2 items-center gap-1 rounded-lg border bg-white px-2 py-1 shadow-lg">
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        removeElementById(el.id);
-      }}
-      className="text-xs text-red-500 hover:underline"
-    >
-      삭제
-    </button>
-
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        duplicateElementById(el.id);
-      }}
-      className="text-xs text-slate-700 hover:underline"
-    >
-      복제
-    </button>
-  </div>
-) : null}
-      {renderResizeHandle(el)}
-    </div>
-  );
-}
+                if (el.type === "shape") {
+                  return (
+                    <div
+                      key={el.id}
+                      role="button"
+                      tabIndex={0}
+                      onMouseDown={(e) => startDrag(e, el)}
+                      className={`absolute ${isActiveMoving ? "pointer-events-none scale-[1.01] opacity-70 shadow-xl" : "pointer-events-auto scale-100 opacity-100"} ${el.locked ? "cursor-default" : "cursor-move"} ${
+                        isSelected
+                          ? "ring-2 ring-blue-300 shadow-md"
+                          : el.locked
+                            ? ""
+                            : "hover:ring-1 hover:ring-slate-300"
+                      }`}
+                      style={{
+                        left: el.x * scale,
+                        top: el.y * scale,
+                        width: el.width * scale,
+                        height: el.height * scale,
+                        zIndex: isActiveMoving ? 9999 : el.zIndex ?? 1,
+                        backgroundColor: el.backgroundColor,
+                        borderRadius: el.shape === "circle" ? "999px" : 0,
+                        border: el.borderWidth
+                          ? `${Math.max(1, el.borderWidth * scale)}px solid ${
+                              el.borderColor || "transparent"
+                            }`
+                          : undefined,
+                      }}
+                    >
+                      {renderElementToolbar(el)}
+                      {renderResizeHandle(el)}
+                    </div>
+                  );
+                }
 
                 return null;
               })}
           </div>
         </div>
 
-        <div className="sticky top-4 max-h-[calc(100vh-120px)] self-start overflow-auto rounded-2xl border bg-slate-50 p-4 space-y-4">
+        {!compact ? (
+  <div className="sticky top-4 max-h-[calc(100vh-120px)] self-start overflow-auto rounded-2xl border bg-slate-50 p-4 space-y-4">
           <div className="space-y-2">
 <div className="rounded-xl border bg-white p-3 space-y-2">
   <div className="flex items-center justify-between">
@@ -1780,10 +2030,11 @@ if (el.type === "shape") {
       title="전체 보이기"
       onClick={() =>
         updateCanvas({
-          elements: canvas.elements.map((el) => ({
-            ...el,
-            hidden: false,
-          })),
+          elements: canvas.elements.map((el, index) => ({
+  ...el,
+  hidden: false,
+  zIndex: Number(el.zIndex ?? 0) || index + 1,
+})),
         })
       }
       className="rounded border px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-slate-50"
@@ -1819,15 +2070,16 @@ if (el.type === "shape") {
     </p>
   ) : (
     <div className="max-h-56 space-y-1 overflow-auto">
-      {[...canvas.elements]
-        .sort((a, b) => Number(b.zIndex ?? 0) - Number(a.zIndex ?? 0))
-        .map((element) => {
+      {sortedLayerElements.map((element) => {
           const isSelectedLayer =
-  selectedId === element.id || selectedIds.includes(element.id);
-const layerIndex = canvas.elements.findIndex((el) => el.id === element.id);
-const isBackMost = layerIndex <= 0;
-const isFrontMost = layerIndex >= canvas.elements.length - 1;
+  actualSelectedId === element.id || selectedIds.includes(element.id);
+const layerIndex = sortedVisibleElements.findIndex((el) => el.id === element.id);
+const isVisibleLayer = layerIndex >= 0;
+const isBackMost = !isVisibleLayer || layerIndex <= 0;
+const isFrontMost =
+  !isVisibleLayer || layerIndex >= sortedVisibleElements.length - 1;
 const isLayerLocked = !!element.locked;
+const isLayerHidden = !!element.hidden;
 
           return (
   <div
@@ -1849,7 +2101,7 @@ const isLayerLocked = !!element.locked;
         title={element.locked ? "잠금 해제" : "잠금"}
         onClick={(e) => {
           e.stopPropagation();
-setSelectedId(element.id);
+setActualSelectedId(element.id);
 setSelectedIds([element.id]);
           updateElement(element.id, {
             locked: !element.locked,
@@ -1865,11 +2117,14 @@ setSelectedIds([element.id]);
         title={element.hidden ? "보이기" : "숨김"}
         onClick={(e) => {
           e.stopPropagation();
-setSelectedId(element.id);
+setActualSelectedId(element.id);
 setSelectedIds([element.id]);
           updateElement(element.id, {
-            hidden: !element.hidden,
-          } as Partial<FormCanvasElement>);
+  hidden: !element.hidden,
+  zIndex: element.hidden
+    ? Math.max(0, ...canvas.elements.map((el) => Number(el.zIndex ?? 0))) + 1
+    : element.zIndex,
+} as Partial<FormCanvasElement>);
         }}
         className="rounded px-1 hover:bg-slate-100"
       >
@@ -1879,10 +2134,10 @@ setSelectedIds([element.id]);
 <button
   type="button"
   title="맨 앞으로"
-disabled={isFrontMost || isLayerLocked}
+disabled={isFrontMost || isLayerLocked || isLayerHidden}
   onClick={(e) => {
     e.stopPropagation();
-    setSelectedId(element.id);
+    setActualSelectedId(element.id);
 setSelectedIds([element.id]);
     reorderElement(element.id, "front");
   }}
@@ -1894,10 +2149,10 @@ setSelectedIds([element.id]);
 <button
   type="button"
   title="앞으로"
-disabled={isFrontMost || isLayerLocked}
+disabled={isFrontMost || isLayerLocked || isLayerHidden}
   onClick={(e) => {
     e.stopPropagation();
-    setSelectedId(element.id);
+    setActualSelectedId(element.id);
 setSelectedIds([element.id]);
     reorderElement(element.id, "forward");
   }}
@@ -1909,10 +2164,10 @@ setSelectedIds([element.id]);
 <button
   type="button"
   title="뒤로"
-disabled={isBackMost || isLayerLocked}
+disabled={isBackMost || isLayerLocked || isLayerHidden}
   onClick={(e) => {
     e.stopPropagation();
-    setSelectedId(element.id);
+    setActualSelectedId(element.id);
 setSelectedIds([element.id]);
     reorderElement(element.id, "backward");
   }}
@@ -1924,10 +2179,10 @@ setSelectedIds([element.id]);
 <button
   type="button"
   title="맨 뒤로"
-disabled={isBackMost || isLayerLocked}
+disabled={isBackMost || isLayerLocked || isLayerHidden}
   onClick={(e) => {
     e.stopPropagation();
-    setSelectedId(element.id);
+    setActualSelectedId(element.id);
 setSelectedIds([element.id]);
     reorderElement(element.id, "back");
   }}
@@ -2604,6 +2859,7 @@ disabled={selectedElement.locked}
             )}
           </div>
         </div>
+  ) : null}
       </div>
     </div>
   );

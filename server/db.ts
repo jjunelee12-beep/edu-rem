@@ -1746,7 +1746,11 @@ export async function getSmsSettings() {
 export async function saveSmsSettings(data: {
   provider?: string;
   apiKey?: string | null;
+  apiSecret?: string | null;
   userId?: string | null;
+  accessKey?: string | null;
+  secretKey?: string | null;
+  serviceId?: string | null;
   senderNumber?: string | null;
   senderName?: string | null;
   isActive?: boolean;
@@ -1759,7 +1763,11 @@ export async function saveSmsSettings(data: {
   const payload = {
     provider: data.provider || "aligo",
     apiKey: data.apiKey?.trim() || null,
+    apiSecret: data.apiSecret?.trim() || null,
     userId: data.userId?.trim() || null,
+    accessKey: data.accessKey?.trim() || null,
+    secretKey: data.secretKey?.trim() || null,
+    serviceId: data.serviceId?.trim() || null,
     senderNumber: data.senderNumber?.replace(/\D/g, "") || null,
     senderName: data.senderName?.trim() || null,
     isActive: data.isActive ?? true,

@@ -30,7 +30,11 @@ const [searchType, setSearchType] = useState<"all" | "name" | "phone" | "course"
 const [smsSettings, setSmsSettings] = useState({
   provider: "aligo",
   apiKey: "",
+  apiSecret: "",
   userId: "",
+  accessKey: "",
+  secretKey: "",
+  serviceId: "",
   senderNumber: "",
   senderName: "",
   isActive: true,
@@ -77,16 +81,20 @@ useEffect(() => {
   if (!smsSettingsQuery.data) return;
 
   setSmsSettings({
-    provider: smsSettingsQuery.data.provider || "aligo",
-    apiKey: smsSettingsQuery.data.apiKey || "",
-    userId: smsSettingsQuery.data.userId || "",
-    senderNumber: smsSettingsQuery.data.senderNumber || "",
-    senderName: smsSettingsQuery.data.senderName || "",
-    isActive:
-      smsSettingsQuery.data.isActive === undefined
-        ? true
-        : Boolean(smsSettingsQuery.data.isActive),
-  });
+  provider: smsSettingsQuery.data.provider || "aligo",
+  apiKey: smsSettingsQuery.data.apiKey || "",
+  apiSecret: smsSettingsQuery.data.apiSecret || "",
+  userId: smsSettingsQuery.data.userId || "",
+  accessKey: smsSettingsQuery.data.accessKey || "",
+  secretKey: smsSettingsQuery.data.secretKey || "",
+  serviceId: smsSettingsQuery.data.serviceId || "",
+  senderNumber: smsSettingsQuery.data.senderNumber || "",
+  senderName: smsSettingsQuery.data.senderName || "",
+  isActive:
+    smsSettingsQuery.data.isActive === undefined
+      ? true
+      : Boolean(smsSettingsQuery.data.isActive),
+});
 }, [smsSettingsQuery.data]);
 
   const filteredAssignees = useMemo(() => {
@@ -162,19 +170,55 @@ useEffect(() => {
   };
 
 const handleSaveSmsSettings = () => {
-  if (!smsSettings.apiKey.trim()) {
-    alert("API Key를 입력하세요.");
-    return;
-  }
-
-  if (!smsSettings.userId.trim()) {
-    alert("알리고 User ID를 입력하세요.");
+  if (!smsSettings.provider.trim()) {
+    alert("문자 제공사를 선택하세요.");
     return;
   }
 
   if (!smsSettings.senderNumber.trim()) {
     alert("발신번호를 입력하세요.");
     return;
+  }
+
+  if (smsSettings.provider === "aligo") {
+    if (!smsSettings.apiKey.trim()) {
+      alert("알리고 API Key를 입력하세요.");
+      return;
+    }
+
+    if (!smsSettings.userId.trim()) {
+      alert("알리고 User ID를 입력하세요.");
+      return;
+    }
+  }
+
+  if (smsSettings.provider === "solapi") {
+    if (!smsSettings.apiKey.trim()) {
+      alert("솔라피 API Key를 입력하세요.");
+      return;
+    }
+
+    if (!smsSettings.apiSecret.trim()) {
+      alert("솔라피 API Secret을 입력하세요.");
+      return;
+    }
+  }
+
+  if (smsSettings.provider === "naverCloud") {
+    if (!smsSettings.accessKey.trim()) {
+      alert("네이버 클라우드 Access Key를 입력하세요.");
+      return;
+    }
+
+    if (!smsSettings.secretKey.trim()) {
+      alert("네이버 클라우드 Secret Key를 입력하세요.");
+      return;
+    }
+
+    if (!smsSettings.serviceId.trim()) {
+      alert("네이버 클라우드 Service ID를 입력하세요.");
+      return;
+    }
   }
 
   saveSmsSettingsMutation.mutate({
@@ -235,7 +279,7 @@ const handleSaveSmsSettings = () => {
     </button>
   </div>
 
-  <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+  <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3">
     <div className="space-y-1">
       <label className="text-sm font-medium">제공사</label>
       <select
@@ -246,32 +290,97 @@ const handleSaveSmsSettings = () => {
         }
       >
         <option value="aligo">알리고</option>
+<option value="solapi">솔라피</option>
+<option value="naverCloud">네이버 클라우드 SMS</option>
+<option value="toast">NHN Toast SMS</option>
       </select>
     </div>
 
     <div className="space-y-1">
-      <label className="text-sm font-medium">API Key</label>
+  <label className="text-sm font-medium">API Key</label>
+  <input
+    className="w-full border rounded p-2"
+    value={smsSettings.apiKey}
+    onChange={(e) =>
+      setSmsSettings((prev) => ({ ...prev, apiKey: e.target.value }))
+    }
+    placeholder={
+      smsSettings.provider === "solapi"
+        ? "솔라피 API Key"
+        : smsSettings.provider === "aligo"
+        ? "알리고 API Key"
+        : "API Key"
+    }
+  />
+</div>
+
+{smsSettings.provider === "aligo" && (
+  <div className="space-y-1">
+    <label className="text-sm font-medium">User ID</label>
+    <input
+      className="w-full border rounded p-2"
+      value={smsSettings.userId}
+      onChange={(e) =>
+        setSmsSettings((prev) => ({ ...prev, userId: e.target.value }))
+      }
+      placeholder="알리고 아이디"
+    />
+  </div>
+)}
+
+{smsSettings.provider === "solapi" && (
+  <div className="space-y-1">
+    <label className="text-sm font-medium">API Secret</label>
+    <input
+      className="w-full border rounded p-2"
+      value={smsSettings.apiSecret}
+      onChange={(e) =>
+        setSmsSettings((prev) => ({ ...prev, apiSecret: e.target.value }))
+      }
+      placeholder="솔라피 API Secret"
+    />
+  </div>
+)}
+
+{smsSettings.provider === "naverCloud" && (
+  <>
+    <div className="space-y-1">
+      <label className="text-sm font-medium">Access Key</label>
       <input
         className="w-full border rounded p-2"
-        value={smsSettings.apiKey}
+        value={smsSettings.accessKey}
         onChange={(e) =>
-          setSmsSettings((prev) => ({ ...prev, apiKey: e.target.value }))
+          setSmsSettings((prev) => ({ ...prev, accessKey: e.target.value }))
         }
-        placeholder="알리고 API Key"
+        placeholder="네이버 Access Key"
       />
     </div>
 
     <div className="space-y-1">
-      <label className="text-sm font-medium">User ID</label>
+      <label className="text-sm font-medium">Secret Key</label>
       <input
         className="w-full border rounded p-2"
-        value={smsSettings.userId}
+        value={smsSettings.secretKey}
         onChange={(e) =>
-          setSmsSettings((prev) => ({ ...prev, userId: e.target.value }))
+          setSmsSettings((prev) => ({ ...prev, secretKey: e.target.value }))
         }
-        placeholder="알리고 아이디"
+        placeholder="네이버 Secret Key"
       />
     </div>
+
+    <div className="space-y-1">
+      <label className="text-sm font-medium">Service ID</label>
+      <input
+        className="w-full border rounded p-2"
+        value={smsSettings.serviceId}
+        onChange={(e) =>
+          setSmsSettings((prev) => ({ ...prev, serviceId: e.target.value }))
+        }
+        placeholder="네이버 SMS Service ID"
+      />
+    </div>
+  </>
+)}
 
     <div className="space-y-1">
       <label className="text-sm font-medium">발신번호</label>

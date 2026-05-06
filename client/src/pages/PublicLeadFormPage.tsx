@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import FormDesignEditor from "@/components/forms/FormDesignEditor";
 import { type UiConfig } from "@/lib/formDesign/shared";
 import { useRoute } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -9,6 +8,7 @@ import "@/styles/public-lead-form.css";
 import "@/styles/ad-form.css";
 import { DEFAULT_FORM_CANVAS_CONFIG } from "@/lib/formDesign/canvasTypes";
 import FormCanvasRenderer from "@/components/forms/canvas/FormCanvasRenderer";
+import FullScreenFormCanvasEditor from "@/components/forms/canvas/FullScreenFormCanvasEditor";
 import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
 
 
@@ -750,6 +750,17 @@ applyTemplateMutation.mutate({
     );
   };
 
+  if (canEdit && editMode) {
+    return (
+      <FullScreenFormCanvasEditor
+        value={uiDraft}
+        onChange={setUiDraft}
+        onSave={handleSaveMyUiConfig}
+        onClose={() => setEditMode(false)}
+        onUploadCanvasImage={handleUploadCanvasImage}
+      />
+    );
+  }
   if (formQuery.isLoading) {
     return (
       <PageShell>
@@ -798,144 +809,10 @@ applyTemplateMutation.mutate({
               width: "auto",
               padding: "12px 18px",
             }}
-            onClick={() => setEditMode((prev) => !prev)}
+            onClick={() => setEditMode(true)}
           >
-            {editMode ? "꾸미기 닫기" : "내 페이지 꾸미기"}
+            내 페이지 꾸미기
           </button>
-        </div>
-      ) : null}
-
-      {canEdit && editMode ? (
-        <div style={{ marginBottom: 20 }}>
-          <FormDesignEditor
-            mode="landing"
-            title="랜딩페이지"
-            value={uiDraft}
-            onChange={setUiDraft}
-            canManageTemplates={true}
-            templateList={templateListQuery.data || []}
-            selectedTemplateName={selectedTemplateName}
-            onSelectedTemplateNameChange={setSelectedTemplateName}
-            onSave={handleSaveMyUiConfig}
-            onSaveAsTemplate={(name) => {
-              const safeName = String(name || "").trim();
-
-              if (!safeName) {
-                toast.error("템플릿 이름을 입력해주세요.");
-                return;
-              }
-
-              const exists = (templateListQuery.data || []).some(
-                (tpl: any) =>
-                  String(tpl.templateName || "").trim().toLowerCase() ===
-                  safeName.toLowerCase()
-              );
-
-              if (exists) {
-                const ok = window.confirm(
-                  `"${safeName}" 템플릿이 이미 있습니다. 덮어쓸까요?`
-                );
-                if (!ok) return;
-              }
-
-              saveAsTemplateMutation.mutate({
-                formType: "landing",
-                templateName: safeName,
-                uiConfig: uiDraft,
-              });
-            }}
-            onApplyTemplate={(name) => {
-              handleApplyTemplateByName(name);
-            }}
-            onDeleteTemplate={(name) => {
-              const safeName = String(name || "").trim();
-
-              if (!safeName) {
-                toast.error("삭제할 템플릿을 선택해주세요.");
-                return;
-              }
-
-              deleteTemplateMutation.mutate({
-                formType: "landing",
-                templateName: safeName,
-              });
-            }}
-            onRenameTemplate={(oldName, newName) => {
-              const oldSafeName = String(oldName || "").trim();
-              const newSafeName = String(newName || "").trim();
-
-              if (!oldSafeName) {
-                toast.error("이름을 변경할 템플릿을 선택해주세요.");
-                return;
-              }
-
-              if (!newSafeName) {
-                toast.error("새 템플릿 이름을 입력해주세요.");
-                return;
-              }
-
-              renameTemplateMutation.mutate({
-                formType: "landing",
-                oldTemplateName: oldSafeName,
-                newTemplateName: newSafeName,
-              });
-            }}
-            onDuplicateTemplate={(sourceName, newName) => {
-              const sourceSafeName = String(sourceName || "").trim();
-              const newSafeName = String(newName || "").trim();
-
-              if (!sourceSafeName) {
-                toast.error("복제할 템플릿을 선택해주세요.");
-                return;
-              }
-
-              if (!newSafeName) {
-                toast.error("복제할 새 템플릿 이름을 입력해주세요.");
-                return;
-              }
-
-              duplicateTemplateMutation.mutate({
-                formType: "landing",
-                sourceTemplateName: sourceSafeName,
-                newTemplateName: newSafeName,
-              });
-            }}
-            onTogglePinTemplate={(name) => {
-              const safeName = String(name || "").trim();
-
-              if (!safeName) {
-                toast.error("고정 상태를 변경할 템플릿을 선택해주세요.");
-                return;
-              }
-
-              const targetTemplate = (templateListQuery.data || []).find(
-                (tpl: any) =>
-                  String(tpl.templateName || "").trim().toLowerCase() ===
-                  safeName.toLowerCase()
-              );
-
-              const preview = templatePreviewQuery.data?.uiConfig;
-
-              if (!preview) {
-                toast.error("템플릿 정보를 먼저 불러와주세요.");
-                return;
-              }
-
-              pinTemplateMutation.mutate({
-                formType: "landing",
-                templateName: safeName,
-                uiConfig: {
-                  ...preview,
-                  isPinned: !Boolean(targetTemplate?.isPinned),
-                },
-              });
-            }}
-            isSaving={saveMyUiConfigMutation.isPending}
-            isUploadingLogo={isUploadingLogo}
-            isUploadingHero={isUploadingHero}
-            onUploadImage={handleUploadUiImage}
-            onUploadCanvasImage={handleUploadCanvasImage}
-          />
         </div>
       ) : null}
 

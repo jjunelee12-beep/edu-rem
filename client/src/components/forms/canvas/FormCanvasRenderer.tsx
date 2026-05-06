@@ -80,7 +80,14 @@ export default function FormCanvasRenderer({
         ? element.href
         : `https://${element.href}`;
 
-      window.open(href, "_blank", "noopener,noreferrer");
+      const target = element.target || "_blank";
+
+if (target === "_self") {
+  window.location.href = href;
+  return;
+}
+
+window.open(href, "_blank", "noopener,noreferrer");
       return;
     }
 
@@ -180,7 +187,8 @@ export default function FormCanvasRenderer({
                   style={{
                     ...baseStyle,
                     objectFit: element.objectFit ?? "cover",
-                    display: "block",
+		display: "block",
+		borderRadius: Number((element as any).borderRadius || 0) * scale,
                   }}
                 />
               );
@@ -235,9 +243,9 @@ border: "none",
                     color: element.color,
                     borderRadius: element.borderRadius * scale,
                     fontSize: isMobile
-  ? Math.max(14, 34 * scale)
-  : Math.max(13, 34 * scale),
-                    fontWeight: 900,
+  ? Math.max(14, Number((element as any).fontSize || 34) * scale)
+  : Math.max(13, Number((element as any).fontSize || 34) * scale),
+fontWeight: Number((element as any).fontWeight || 900),
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -266,7 +274,10 @@ transition: "transform 160ms ease, box-shadow 160ms ease, filter 160ms ease",
                             element.borderColor
                           }`
                         : undefined,
-                    borderRadius: element.shape === "circle" ? "999px" : 18,
+                    borderRadius:
+  element.shape === "circle"
+    ? "999px"
+    : Number((element as any).borderRadius ?? 18) * scale,
                   }}
                 />
               );

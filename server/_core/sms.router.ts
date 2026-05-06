@@ -56,25 +56,33 @@ settings: hostProcedure.query(async () => {
   const settings = await getSmsSettings();
 
   return {
-    provider: settings?.provider || "aligo",
-    apiKey: settings?.apiKey || "",
-    userId: settings?.userId || "",
-    senderNumber: settings?.senderNumber || "",
-    senderName: settings?.senderName || "",
-    isActive: settings?.isActive === undefined ? true : Boolean(settings.isActive),
-  };
+  provider: settings?.provider || "aligo",
+  apiKey: settings?.apiKey || "",
+  apiSecret: (settings as any)?.apiSecret || "",
+  userId: settings?.userId || "",
+  accessKey: (settings as any)?.accessKey || "",
+  secretKey: (settings as any)?.secretKey || "",
+  serviceId: (settings as any)?.serviceId || "",
+  senderNumber: settings?.senderNumber || "",
+  senderName: settings?.senderName || "",
+  isActive: settings?.isActive === undefined ? true : Boolean(settings.isActive),
+};
 }),
 
 saveSettings: hostProcedure
   .input(
-    z.object({
-      provider: z.string().default("aligo"),
-      apiKey: z.string().optional().default(""),
-      userId: z.string().optional().default(""),
-      senderNumber: z.string().optional().default(""),
-      senderName: z.string().optional().default(""),
-      isActive: z.boolean().default(true),
-    })
+   z.object({
+  provider: z.string().default("aligo"),
+  apiKey: z.string().optional().default(""),
+  apiSecret: z.string().optional().default(""),
+  userId: z.string().optional().default(""),
+  accessKey: z.string().optional().default(""),
+  secretKey: z.string().optional().default(""),
+  serviceId: z.string().optional().default(""),
+  senderNumber: z.string().optional().default(""),
+  senderName: z.string().optional().default(""),
+  isActive: z.boolean().default(true),
+})
   )
   .mutation(async ({ input }) => {
     await saveSmsSettings(input);

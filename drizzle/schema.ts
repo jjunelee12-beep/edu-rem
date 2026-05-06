@@ -129,10 +129,22 @@ export type InsertBrandingSetting = typeof brandingSettings.$inferInsert;
 export const smsSettings = mysqlTable("sms_settings", {
   id: int("id").autoincrement().primaryKey(),
 
+  // aligo | solapi | naverCloud | toast 등
   provider: varchar("provider", { length: 50 }).notNull().default("aligo"),
 
+  // 공통/알리고/솔라피용
   apiKey: varchar("apiKey", { length: 255 }),
+  apiSecret: varchar("apiSecret", { length: 255 }),
+
+  // 알리고용
   userId: varchar("userId", { length: 255 }),
+
+  // 네이버 클라우드용
+  accessKey: varchar("accessKey", { length: 255 }),
+  secretKey: varchar("secretKey", { length: 255 }),
+  serviceId: varchar("serviceId", { length: 255 }),
+
+  // 공통
   senderNumber: varchar("senderNumber", { length: 50 }),
   senderName: varchar("senderName", { length: 100 }),
 
