@@ -402,15 +402,36 @@ const duplicateElementById = (id: string) => {
 
 const copySelectedElements = () => {
   const targets =
-    selectedElements.length > 0
-      ? selectedElements
-      : selectedElement
-        ? [selectedElement]
-        : [];
+  selectedElements.length > 0
+    ? selectedElements
+    : selectedElement
+      ? [selectedElement]
+      : [];
 
-  if (targets.length === 0) return;
+if (targets.length === 0) return;
 
-  setCopiedElements(targets.map((el) => ({ ...el } as FormCanvasElement)));
+const blockedTargets = targets.filter((el) =>
+  isRequiredFormElement(el)
+);
+
+if (blockedTargets.length > 0) {
+  alert(
+    "상담DB로 연결되는 기본 상담폼 요소는 복사할 수 없습니다."
+  );
+  return;
+}
+
+const copyableTargets = targets.filter(
+  (el) => !el.locked
+);
+
+if (copyableTargets.length === 0) return;
+
+setCopiedElements(
+  copyableTargets.map(
+    (el) => ({ ...el } as FormCanvasElement)
+  )
+);
 };
 
 const pasteCopiedElements = () => {
@@ -421,7 +442,16 @@ const pasteCopiedElements = () => {
     ...canvas.elements.map((el) => Number(el.zIndex ?? 0))
   );
 
-  const pastedElements = copiedElements.map((element, index) => {
+const filteredElements = copiedElements.filter(
+  (el) => !isRequiredFormElement(el)
+);
+
+if (filteredElements.length === 0) {
+  alert("복사 가능한 요소가 없습니다.");
+  return;
+}
+
+ const pastedElements = filteredElements.map((element, index) => {
     const nextWidth = Number(element.width) || 100;
     const nextHeight = Number(element.height) || 100;
 
