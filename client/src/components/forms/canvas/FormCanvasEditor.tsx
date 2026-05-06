@@ -67,6 +67,7 @@ const [gridVisible, setGridVisible] = useState(true);
 const [gridSnapEnabled, setGridSnapEnabled] = useState(true);
 const [undoStack, setUndoStack] = useState<FormCanvasConfig[]>([]);
 const [redoStack, setRedoStack] = useState<FormCanvasConfig[]>([]);
+const [copiedElements, setCopiedElements] = useState<FormCanvasElement[]>([]);
 const [historyDragStarted, setHistoryDragStarted] = useState(false);
 const [historyResizeStarted, setHistoryResizeStarted] = useState(false);
 
@@ -110,6 +111,10 @@ const [snapGuide, setSnapGuide] = useState<{
   [canvas.elements, actualSelectedId]
 );
 
+const isRequiredFormElement = (element?: FormCanvasElement | null) => {
+  return Boolean((element as any)?.requiredFormElement);
+};
+
 const selectedElements = useMemo(
   () => canvas.elements.filter((el) => selectedIds.includes(el.id)),
   [canvas.elements, selectedIds]
@@ -133,15 +138,16 @@ const sanitizeElements = (elements: FormCanvasElement[]) => {
     const height = Math.max(40, Number(el.height) || 40);
 
     return {
-      ...el,
-      x: Math.min(Math.max(0, Number(el.x) || 0), Math.max(0, canvas.width - width)),
-      y: Math.min(Math.max(0, Number(el.y) || 0), Math.max(0, canvas.height - height)),
-      width,
-      height,
-      zIndex: Number(el.zIndex) || i + 1,
-      hidden: !!el.hidden,
-      locked: !!el.locked,
-    } as FormCanvasElement;
+  ...el,
+  x: Math.min(Math.max(0, Number(el.x) || 0), Math.max(0, canvas.width - width)),
+  y: Math.min(Math.max(0, Number(el.y) || 0), Math.max(0, canvas.height - height)),
+  width,
+  height,
+  zIndex: Number(el.zIndex) || i + 1,
+  hidden: !!el.hidden,
+  locked: !!el.locked,
+  requiredFormElement: !!(el as any).requiredFormElement,
+} as FormCanvasElement;
   });
 };
 
@@ -387,60 +393,134 @@ const duplicateElementById = (id: string) => {
   setSelectedIds([copied.id]);
 };
 
+const copySelectedElements = () => {
+  const targets =
+    selectedElements.length > 0
+      ? selectedElements
+      : selectedElement
+        ? [selectedElement]
+        : [];
+
+  if (targets.length === 0) return;
+
+  setCopiedElements(targets.map((el) => ({ ...el } as FormCanvasElement)));
+};
+
+const pasteCopiedElements = () => {
+  if (copiedElements.length === 0) return;
+
+  const maxZIndex = Math.max(
+    0,
+    ...canvas.elements.map((el) => Number(el.zIndex ?? 0))
+  );
+
+  const pastedElements = copiedElements.map((element, index) => {
+    const nextWidth = Number(element.width) || 100;
+    const nextHeight = Number(element.height) || 100;
+
+    const nextX = Math.min(
+      Math.max(0, Number(element.x || 0) + 30),
+      Math.max(0, canvas.width - nextWidth)
+    );
+
+    const nextY = Math.min(
+      Math.max(0, Number(element.y || 0) + 30),
+      Math.max(0, canvas.height - nextHeight)
+    );
+
+    return {
+      ...element,
+      id: `${element.type}-paste-${Date.now()}-${Math.floor(
+        Math.random() * 10000
+      )}-${index}`,
+      x: nextX,
+      y: nextY,
+      zIndex: maxZIndex + index + 1,
+      locked: false,
+      hidden: false,
+      requiredFormElement: false,
+    } as FormCanvasElement;
+  });
+
+  updateCanvas({
+    elements: [...canvas.elements, ...pastedElements],
+  });
+
+  setActualSelectedId(pastedElements[pastedElements.length - 1]?.id ?? null);
+  setSelectedIds(pastedElements.map((el) => el.id));
+};
+
 const clearCanvasElements = () => {
-  const lockedCount = canvas.elements.filter((el) => el.locked).length;
-  const removableCount = canvas.elements.length - lockedCount;
+  const protectedElements = canvas.elements.filter(
+    (el) => el.locked || isRequiredFormElement(el)
+  );
+
+  const protectedCount = protectedElements.length;
+  const removableCount = canvas.elements.length - protectedCount;
 
   if (removableCount <= 0) {
-    alert("삭제할 수 있는 요소가 없습니다. 잠금 해제 후 삭제하세요.");
+    alert("삭제할 수 있는 요소가 없습니다. 기본 상담폼 요소는 삭제할 수 없습니다.");
     return;
   }
 
   const ok = window.confirm(
-    lockedCount > 0
-      ? `잠금 요소 ${lockedCount}개는 유지하고, 나머지 ${removableCount}개 요소만 삭제할까요?`
+    protectedCount > 0
+      ? `잠금/기본 상담폼 요소 ${protectedCount}개는 유지하고, 나머지 ${removableCount}개 요소만 삭제할까요?`
       : "캔버스의 모든 요소를 삭제할까요?"
   );
 
   if (!ok) return;
 
   updateCanvas({
-    elements: canvas.elements.filter((el) => el.locked),
+    elements: protectedElements,
   });
 
   setActualSelectedId(null);
-setSelectedIds([]);
+  setSelectedIds([]);
 };
 
 const resetCanvas = () => {
-  const lockedElements = canvas.elements.filter((el) => el.locked);
-  const lockedCount = lockedElements.length;
+  const protectedElements = canvas.elements.filter(
+    (el) => el.locked || isRequiredFormElement(el)
+  );
+
+  const protectedCount = protectedElements.length;
 
   const ok = window.confirm(
-    lockedCount > 0
-      ? `잠금 요소 ${lockedCount}개는 유지하고, 캔버스 설정만 기본값으로 초기화할까요?`
+    protectedCount > 0
+      ? `잠금/기본 상담폼 요소 ${protectedCount}개는 유지하고, 캔버스 설정만 기본값으로 초기화할까요?`
       : "캔버스를 기본값으로 초기화할까요? 모든 요소와 배경 설정이 삭제됩니다."
   );
 
   if (!ok) return;
 
-const defaultCanvas = createDefaultWithOneCanvasConfig();
+  const defaultCanvas = createDefaultWithOneCanvasConfig();
 
-updateCanvas({
-  ...defaultCanvas,
-  elements:
-    lockedElements.length > 0
-      ? [...defaultCanvas.elements, ...lockedElements]
-      : defaultCanvas.elements,
-});
+  updateCanvas({
+    ...defaultCanvas,
+    elements:
+  protectedElements.length > 0
+    ? [
+        ...defaultCanvas.elements.filter(
+          (el) => !protectedElements.some((protectedEl) => protectedEl.id === el.id)
+        ),
+        ...protectedElements,
+      ]
+    : defaultCanvas.elements,
+  });
 
   setActualSelectedId(null);
-setSelectedIds([]);
+  setSelectedIds([]);
 };
 
 const removeElementById = (id: string) => {
   const target = canvas.elements.find((el) => el.id === id);
   if (!target || target.locked) return;
+
+  if (isRequiredFormElement(target)) {
+    alert("상담DB로 연결되는 기본 상담폼 요소는 삭제할 수 없습니다. 위치/크기/디자인만 수정해주세요.");
+    return;
+  }
 
   updateCanvas({
     elements: canvas.elements.filter((el) => el.id !== id),
@@ -450,18 +530,25 @@ const removeElementById = (id: string) => {
   setSelectedIds([]);
 };
 
-  const removeSelected = () => {
-const targetIds =
-  selectedIds.length > 0
-    ? selectedIds
-    : actualSelectedId
-      ? [actualSelectedId]
-      : [];
+ const removeSelected = () => {
+  const targetIds =
+    selectedIds.length > 0
+      ? selectedIds
+      : actualSelectedId
+        ? [actualSelectedId]
+        : [];
 
   if (targetIds.length === 0) return;
 
-  const removableIds = canvas.elements
-    .filter((el) => targetIds.includes(el.id) && !el.locked)
+  const targets = canvas.elements.filter((el) => targetIds.includes(el.id));
+
+  if (targets.some((el) => isRequiredFormElement(el))) {
+    alert("상담DB로 연결되는 기본 상담폼 요소는 삭제할 수 없습니다. 위치/크기/디자인만 수정해주세요.");
+    return;
+  }
+
+  const removableIds = targets
+    .filter((el) => !el.locked)
     .map((el) => el.id);
 
   if (removableIds.length === 0) return;
@@ -1474,6 +1561,18 @@ useEffect(() => {
 
     const isCtrlOrMeta = e.ctrlKey || e.metaKey;
 
+if (isCtrlOrMeta && e.key.toLowerCase() === "c") {
+  e.preventDefault();
+  copySelectedElements();
+  return;
+}
+
+if (isCtrlOrMeta && e.key.toLowerCase() === "v") {
+  e.preventDefault();
+  pasteCopiedElements();
+  return;
+}
+
     if (isCtrlOrMeta && e.key.toLowerCase() === "z") {
       e.preventDefault();
 
@@ -1574,6 +1673,7 @@ useEffect(() => {
   canvas.height,
   undoStack,
   redoStack,
+copiedElements,
 ]);
 
 useEffect(() => {
@@ -1879,23 +1979,27 @@ useEffect(() => {
                 type="button"
                 onClick={duplicateSelected}
                 disabled={
-                  selectedElements.length > 0
-                    ? selectedElements.every((el) => el.locked)
-                    : !actualSelectedId || selectedElement?.locked
-                }
+  selectedElements.length > 0
+    ? selectedElements.every((el) => el.locked || isRequiredFormElement(el))
+    : !actualSelectedId ||
+      selectedElement?.locked ||
+      isRequiredFormElement(selectedElement)
+}
                 className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-40"
               >
                 선택 복제
               </button>
 
               <button
-                type="button"
-                onClick={removeSelected}
-                disabled={
-                  selectedElements.length > 0
-                    ? selectedElements.every((el) => el.locked)
-                    : !actualSelectedId || selectedElement?.locked
-                }
+  type="button"
+  onClick={removeSelected}
+  disabled={
+    selectedElements.length > 0
+      ? selectedElements.every((el) => el.locked || isRequiredFormElement(el))
+      : !actualSelectedId ||
+        selectedElement?.locked ||
+        isRequiredFormElement(selectedElement)
+  }
                 className="rounded-xl border bg-white px-3 py-2 text-sm font-semibold text-red-600 disabled:opacity-40"
               >
                 선택 삭제

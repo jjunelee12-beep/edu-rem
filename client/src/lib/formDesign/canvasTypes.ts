@@ -16,6 +16,7 @@ export type FormCanvasElementBase = {
   zIndex?: number;
   locked?: boolean;
   hidden?: boolean;
+requiredFormElement?: boolean;
 };
 
 export type FormCanvasTextElement = FormCanvasElementBase & {
@@ -263,6 +264,7 @@ export function createDefaultWithOneCanvasConfig(): FormCanvasConfig {
         borderColor: "#d1d5db",
         borderWidth: 2,
         zIndex: 4,
+requiredFormElement: true,
       },
       {
         id: "default-name-placeholder",
@@ -277,6 +279,7 @@ export function createDefaultWithOneCanvasConfig(): FormCanvasConfig {
         color: "#9ca3af",
         textAlign: "left",
         zIndex: 5,
+requiredFormElement: true,
       },
       {
         id: "default-phone-box",
@@ -290,6 +293,7 @@ export function createDefaultWithOneCanvasConfig(): FormCanvasConfig {
         borderColor: "#d1d5db",
         borderWidth: 2,
         zIndex: 6,
+requiredFormElement: true,
       },
       {
         id: "default-phone-placeholder",
@@ -304,6 +308,7 @@ export function createDefaultWithOneCanvasConfig(): FormCanvasConfig {
         color: "#9ca3af",
         textAlign: "left",
         zIndex: 7,
+requiredFormElement: true,
       },
       {
         id: "default-final-education-box",
@@ -317,6 +322,7 @@ export function createDefaultWithOneCanvasConfig(): FormCanvasConfig {
         borderColor: "#d1d5db",
         borderWidth: 2,
         zIndex: 8,
+requiredFormElement: true,
       },
       {
         id: "default-final-education-placeholder",
@@ -331,6 +337,7 @@ export function createDefaultWithOneCanvasConfig(): FormCanvasConfig {
         color: "#111827",
         textAlign: "left",
         zIndex: 9,
+requiredFormElement: true,
       },
       {
         id: "default-course-box",
@@ -344,6 +351,7 @@ export function createDefaultWithOneCanvasConfig(): FormCanvasConfig {
         borderColor: "#d1d5db",
         borderWidth: 2,
         zIndex: 10,
+requiredFormElement: true,
       },
       {
         id: "default-course-placeholder",
@@ -358,6 +366,7 @@ export function createDefaultWithOneCanvasConfig(): FormCanvasConfig {
         color: "#111827",
         textAlign: "left",
         zIndex: 11,
+requiredFormElement: true,
       },
       {
         id: "default-channel-box",
@@ -371,6 +380,7 @@ export function createDefaultWithOneCanvasConfig(): FormCanvasConfig {
         borderColor: "#d1d5db",
         borderWidth: 2,
         zIndex: 12,
+requiredFormElement: true,
       },
       {
         id: "default-channel-placeholder",
@@ -385,6 +395,7 @@ export function createDefaultWithOneCanvasConfig(): FormCanvasConfig {
         color: "#9ca3af",
         textAlign: "left",
         zIndex: 13,
+requiredFormElement: true,
       },
       {
         id: "default-notes-box",
@@ -398,6 +409,7 @@ export function createDefaultWithOneCanvasConfig(): FormCanvasConfig {
         borderColor: "#d1d5db",
         borderWidth: 2,
         zIndex: 14,
+requiredFormElement: true,
       },
       {
         id: "default-notes-placeholder",
@@ -412,6 +424,7 @@ export function createDefaultWithOneCanvasConfig(): FormCanvasConfig {
         color: "#9ca3af",
         textAlign: "left",
         zIndex: 15,
+requiredFormElement: true,
       },
       {
         id: "default-agreement",
@@ -426,6 +439,7 @@ export function createDefaultWithOneCanvasConfig(): FormCanvasConfig {
         color: "#374151",
         textAlign: "left",
         zIndex: 16,
+requiredFormElement: true,
       },
       {
         id: "default-submit-button",
@@ -443,6 +457,7 @@ export function createDefaultWithOneCanvasConfig(): FormCanvasConfig {
         telNumber: "",
         hoverEffect: "lift",
         zIndex: 17,
+requiredFormElement: true,
       },
     ],
   };
