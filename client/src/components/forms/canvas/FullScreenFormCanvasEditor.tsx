@@ -8,8 +8,9 @@ createDefaultWithOneCanvasConfig,
   createCanvasImageElement,
   createCanvasButtonElement,
   createCanvasRectElement,
-  createCanvasCircleElement,
-  type FormCanvasConfig,
+ createCanvasCircleElement,
+createCanvasSvgElement,
+type FormCanvasConfig,
 type FormCanvasElement,
 } from "@/lib/formDesign/canvasTypes";
 
@@ -325,6 +326,18 @@ const moveSelectedElementLayer = (
     });
   };
 
+const addSvg = (
+  svgName: "line" | "line-dashed" | "arrow-right" | "arrow-left" | "star" | "heart"
+) => {
+  appendElement({
+    ...createCanvasSvgElement(svgName),
+    x: 180,
+    y: 520,
+    width: svgName === "star" || svgName === "heart" ? 220 : 420,
+    height: svgName === "star" || svgName === "heart" ? 220 : 100,
+  });
+};
+
   const setBackgroundColor = (color: string) => {
     updateCanvas({
       ...canvas,
@@ -449,7 +462,8 @@ const moveSelectedElementLayer = (
           addLinkButton={addLinkButton}
           addRect={addRect}
           addCircle={addCircle}
-          setBackgroundColor={setBackgroundColor}
+addSvg={addSvg}
+setBackgroundColor={setBackgroundColor}
           setCanvasSize={setCanvasSize}
           uploadInputRef={uploadInputRef}
           handleUploadImage={handleUploadImage}
@@ -539,8 +553,9 @@ function ToolPanel({
   addTelButton,
   addLinkButton,
   addRect,
-  addCircle,
-  setBackgroundColor,
+addCircle,
+addSvg,
+setBackgroundColor,
   setCanvasSize,
   uploadInputRef,
   handleUploadImage,
@@ -595,6 +610,30 @@ function ToolPanel({
 
         {"fontSize" in selectedElement ? (
           <>
+<label style={labelStyle}>글꼴</label>
+<select
+  value={selectedElement.fontFamily || "Pretendard, sans-serif"}
+  onChange={(e) =>
+    updateSelectedElement({ fontFamily: e.target.value } as any)
+  }
+  style={inputStyle}
+>
+  <option value="Pretendard, sans-serif">프리텐다드</option>
+  <option value="'Noto Sans KR', sans-serif">Noto Sans KR</option>
+  <option value="'Gothic A1', sans-serif">고딕 A1</option>
+  <option value="'Nanum Gothic', sans-serif">나눔고딕</option>
+  <option value="'Nanum Myeongjo', serif">나눔명조</option>
+  <option value="'Black Han Sans', sans-serif">검은고딕</option>
+  <option value="'Do Hyeon', sans-serif">도현체</option>
+  <option value="'Jua', sans-serif">주아체</option>
+  <option value="'Sunflower', sans-serif">썬플라워</option>
+  <option value="'Poor Story', cursive">푸어스토리</option>
+  <option value="'Orbit', sans-serif">Orbit</option>
+  <option value="'Nanum Brush Script', cursive">나눔손글씨</option>
+  <option value="'Arial', sans-serif">Arial</option>
+  <option value="'Georgia', serif">Georgia</option>
+</select>
+
             <label style={labelStyle}>글자 크기</label>
             <input
               type="number"
@@ -985,13 +1024,118 @@ function ToolPanel({
   }
 
   if (activeTool === "element") {
-    return (
-      <Panel title="요소">
-        <PanelButton onClick={addRect}>사각형 추가</PanelButton>
-        <PanelButton onClick={addCircle}>원형 추가</PanelButton>
-      </Panel>
-    );
-  }
+  return (
+    <Panel title="요소">
+      <div style={sectionTitleStyle}>기본 도형</div>
+
+      <div style={assetGridStyle}>
+        <AssetButton title="사각형" onClick={addRect}>
+          <span style={{ width: 34, height: 34, background: "#64748b" }} />
+        </AssetButton>
+
+        <AssetButton title="원형" onClick={addCircle}>
+          <span
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 999,
+              background: "#64748b",
+            }}
+          />
+        </AssetButton>
+
+        <AssetButton title="별" onClick={() => addSvg("star")}>
+          <svg viewBox="0 0 100 100" style={{ width: 42, height: 42 }}>
+            <polygon
+              points="50,8 61,36 91,36 67,55 76,86 50,68 24,86 33,55 9,36 39,36"
+              fill="#64748b"
+            />
+          </svg>
+        </AssetButton>
+
+        <AssetButton title="하트" onClick={() => addSvg("heart")}>
+          <svg viewBox="0 0 100 100" style={{ width: 42, height: 42 }}>
+            <path
+              d="M50 85 C20 60 8 42 18 25 C27 10 43 16 50 30 C57 16 73 10 82 25 C92 42 80 60 50 85Z"
+              fill="#64748b"
+            />
+          </svg>
+        </AssetButton>
+      </div>
+
+      <div style={sectionTitleStyle}>선</div>
+
+      <div style={assetGridStyle}>
+        <AssetButton title="실선" onClick={() => addSvg("line")}>
+          <span
+            style={{
+              width: 54,
+              height: 4,
+              borderRadius: 999,
+              background: "#475569",
+            }}
+          />
+        </AssetButton>
+
+        <AssetButton title="점선" onClick={() => addSvg("line-dashed")}>
+          <span
+            style={{
+              width: 54,
+              height: 4,
+              borderRadius: 999,
+              background:
+                "repeating-linear-gradient(to right, #475569 0 7px, transparent 7px 11px)",
+            }}
+          />
+        </AssetButton>
+
+        <AssetButton title="오른쪽 화살표" onClick={() => addSvg("arrow-right")}>
+          <svg viewBox="0 0 100 100" style={{ width: 52, height: 52 }}>
+            <line
+              x1="10"
+              y1="50"
+              x2="78"
+              y2="50"
+              stroke="#475569"
+              strokeWidth="8"
+              strokeLinecap="round"
+            />
+            <polyline
+              points="60,25 85,50 60,75"
+              fill="none"
+              stroke="#475569"
+              strokeWidth="8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </AssetButton>
+
+        <AssetButton title="왼쪽 화살표" onClick={() => addSvg("arrow-left")}>
+          <svg viewBox="0 0 100 100" style={{ width: 52, height: 52 }}>
+            <line
+              x1="22"
+              y1="50"
+              x2="90"
+              y2="50"
+              stroke="#475569"
+              strokeWidth="8"
+              strokeLinecap="round"
+            />
+            <polyline
+              points="40,25 15,50 40,75"
+              fill="none"
+              stroke="#475569"
+              strokeWidth="8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </AssetButton>
+      </div>
+    </Panel>
+  );
+}
 
   if (activeTool === "background") {
     return (
@@ -1221,6 +1365,27 @@ function PanelButton({
   );
 }
 
+function AssetButton({
+  title,
+  children,
+  onClick,
+}: {
+  title: string;
+  children: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      style={assetButtonStyle}
+    >
+      {children}
+    </button>
+  );
+}
+
 const panelButtonStyle: React.CSSProperties = {
   minHeight: 48,
   border: "1px solid #e2e8f0",
@@ -1272,6 +1437,26 @@ const colorGridStyle: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(4, 46px)",
   gap: 10,
+};
+
+const assetGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, 1fr)",
+  gap: 8,
+  padding: 10,
+  borderRadius: 16,
+  background: "#f1f5f9",
+};
+
+const assetButtonStyle: React.CSSProperties = {
+  height: 58,
+  border: "none",
+  borderRadius: 14,
+  background: "#ffffff",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  cursor: "pointer",
 };
 
 const labelStyle: React.CSSProperties = {

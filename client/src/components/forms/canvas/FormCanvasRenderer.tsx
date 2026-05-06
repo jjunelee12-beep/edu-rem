@@ -53,19 +53,19 @@ export default function FormCanvasRenderer({
   const isMobile = windowWidth < 768;
 
   const scale = useMemo(() => {
-    if (typeof overrideScale === "number") return overrideScale;
+  if (typeof overrideScale === "number") return overrideScale;
 
-    const safeCanvasWidth = Math.max(1, Number(canvas.width) || 1080);
+  const safeCanvasWidth = Math.max(1, Number(canvas.width) || 1080);
 
-    if (isMobile) {
-      const sidePadding = 24;
-      const availableWidth = Math.max(320, windowWidth - sidePadding);
-      return Math.min(1, Math.max(0.85, availableWidth / safeCanvasWidth));
-    }
+  const sidePadding = isMobile ? 24 : 48;
+  const availableWidth = Math.max(320, windowWidth - sidePadding);
 
-    const desktopMaxWidth = maxWidth ?? 430;
-    return Math.min(1, desktopMaxWidth / safeCanvasWidth);
-  }, [overrideScale, canvas.width, isMobile, windowWidth, maxWidth]);
+  if (typeof maxWidth === "number") {
+    return Math.min(1, maxWidth / safeCanvasWidth);
+  }
+
+  return Math.min(1, availableWidth / safeCanvasWidth);
+}, [overrideScale, canvas.width, isMobile, windowWidth, maxWidth]);
 
   if (!canvas.enabled) return null;
 
@@ -114,12 +114,14 @@ window.open(href, "_blank", "noopener,noreferrer");
   style={{
     width: "100%",
     display: "flex",
-    justifyContent: isMobile ? "flex-start" : "center",
-    margin: isMobile ? "10px 0 18px" : "18px 0",
-    overflowX: isMobile ? "auto" : "visible",
-    scrollbarWidth: "none",
-    msOverflowStyle: "none",
-    padding: isMobile ? "0 8px" : 0,
+    justifyContent: "center",
+margin: 0,
+overflowX: "hidden",
+scrollbarWidth: "none",
+msOverflowStyle: "none",
+padding: isMobile ? "12px" : "24px",
+minHeight: "100vh",
+background: "#f3f4f6",
     boxSizing: "border-box",
   }}
 >
@@ -128,7 +130,6 @@ window.open(href, "_blank", "noopener,noreferrer");
           position: "relative",
           width,
           height,
-          maxWidth: "100%",
           overflow: "hidden",
           borderRadius: isMobile ? 18 : 24,
           backgroundColor: canvas.backgroundColor || "#ffffff",
@@ -162,7 +163,8 @@ window.open(href, "_blank", "noopener,noreferrer");
   ? Math.max(14, element.fontSize * scale)
   : Math.max(11, element.fontSize * scale),
                     fontWeight: element.fontWeight,
-                    textAlign: element.textAlign ?? "left",
+fontFamily: element.fontFamily || "Pretendard, sans-serif",
+textAlign: element.textAlign ?? "left",
                     lineHeight: 1.15,
                     whiteSpace: "pre-wrap",
                     overflow: "hidden",
@@ -282,6 +284,125 @@ transition: "transform 160ms ease, box-shadow 160ms ease, filter 160ms ease",
                 />
               );
             }
+
+if (element.type === "svg") {
+  const stroke = element.stroke || "#64748b";
+  const fill = element.fill || "#64748b";
+  const strokeWidth = Number(element.strokeWidth || 8) * scale;
+
+  const renderSvgContent = () => {
+    if (element.svgName === "line") {
+      return (
+        <line
+          x1="8"
+          y1="50"
+          x2="92"
+          y2="50"
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+        />
+      );
+    }
+
+    if (element.svgName === "line-dashed") {
+      return (
+        <line
+          x1="8"
+          y1="50"
+          x2="92"
+          y2="50"
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          strokeDasharray="10 8"
+          strokeLinecap="round"
+        />
+      );
+    }
+
+    if (element.svgName === "arrow-right") {
+      return (
+        <>
+          <line
+            x1="10"
+            y1="50"
+            x2="78"
+            y2="50"
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+          />
+          <polyline
+            points="60,25 85,50 60,75"
+            fill="none"
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </>
+      );
+    }
+
+    if (element.svgName === "arrow-left") {
+      return (
+        <>
+          <line
+            x1="22"
+            y1="50"
+            x2="90"
+            y2="50"
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+          />
+          <polyline
+            points="40,25 15,50 40,75"
+            fill="none"
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </>
+      );
+    }
+
+    if (element.svgName === "star") {
+      return (
+        <polygon
+          points="50,8 61,36 91,36 67,55 76,86 50,68 24,86 33,55 9,36 39,36"
+          fill={fill}
+        />
+      );
+    }
+
+    if (element.svgName === "heart") {
+      return (
+        <path
+          d="M50 85 C20 60 8 42 18 25 C27 10 43 16 50 30 C57 16 73 10 82 25 C92 42 80 60 50 85Z"
+          fill={fill}
+        />
+      );
+    }
+
+    return null;
+  };
+
+  return (
+    <svg
+      key={element.id}
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+      style={{
+        ...baseStyle,
+        overflow: "visible",
+      }}
+    >
+      {renderSvgContent()}
+    </svg>
+  );
+}
 
             return null;
           })}
