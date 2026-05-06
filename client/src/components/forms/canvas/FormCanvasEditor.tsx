@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   DEFAULT_FORM_CANVAS_CONFIG,
+createDefaultWithOneCanvasConfig,
   createCanvasTextElement,
   createCanvasImageElement,
   createCanvasButtonElement,
@@ -20,10 +21,19 @@ type Props = {
 };
 
 function normalizeCanvas(value?: FormCanvasConfig): FormCanvasConfig {
+  if (
+    !value ||
+    !Array.isArray(value.elements) ||
+    value.elements.length === 0
+  ) {
+    return createDefaultWithOneCanvasConfig();
+  }
+
   return {
     ...DEFAULT_FORM_CANVAS_CONFIG,
-    ...(value || {}),
-    elements: Array.isArray(value?.elements) ? value.elements : [],
+    ...value,
+    enabled: true,
+    elements: value.elements,
   };
 }
 
@@ -396,10 +406,15 @@ const resetCanvas = () => {
 
   if (!ok) return;
 
-  updateCanvas({
-    ...DEFAULT_FORM_CANVAS_CONFIG,
-    elements: lockedElements,
-  });
+const defaultCanvas = createDefaultWithOneCanvasConfig();
+
+updateCanvas({
+  ...defaultCanvas,
+  elements:
+    lockedElements.length > 0
+      ? [...defaultCanvas.elements, ...lockedElements]
+      : defaultCanvas.elements,
+});
 
   setActualSelectedId(null);
 setSelectedIds([]);

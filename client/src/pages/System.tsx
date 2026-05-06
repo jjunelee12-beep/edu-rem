@@ -40,6 +40,9 @@ import type {
 } from "@/types/publicFormUi";
 import { createDefaultPublicFormUiConfig } from "@/lib/publicFormUi";
 import FormDesignEditor from "@/components/forms/FormDesignEditor";
+import FullScreenFormCanvasEditor from "@/components/forms/canvas/FullScreenFormCanvasEditor";
+import type { UiConfig } from "@/lib/formDesign/shared";
+import { createDefaultWithOneCanvasConfig } from "@/lib/formDesign/canvasTypes";
 
 type TabKey =
   | "settlement"
@@ -2383,220 +2386,63 @@ function BaseFormManagementSection({
 }) {
   const utils = trpc.useUtils();
 
-  const { data: forms, isLoading } = trpc.formAdmin.list.useQuery({
+  const { data: forms = [], isLoading } = trpc.formAdmin.list.useQuery({
     formType,
   });
 
-  const { data: users } = trpc.users.list.useQuery();
+  const { data: users = [] } = trpc.users.list.useQuery();
 
-  const { data: templateData } = trpc.formAdmin.getTemplate.useQuery(
-    { formType },
-    { staleTime: 0 }
-  );
-
-  const { data: blueprints = [], isLoading: blueprintsLoading } =
-    trpc.formBlueprintAdmin.list.useQuery({
-      formType,
-    });
-
-  const { data: templateList = [], refetch: refetchTemplateList } =
-    trpc.formAdmin.listTemplates.useQuery({
-      formType,
-    });
+  const { data: templateData, isLoading: templateLoading } =
+    trpc.formAdmin.getTemplate.useQuery(
+      { formType },
+      { staleTime: 0 }
+    );
 
   const [assigneeId, setAssigneeId] = useState("");
-  const [selectedBlueprintId, setSelectedBlueprintId] = useState("");
-  const [editingBlueprintId, setEditingBlueprintId] = useState<number | null>(
-    null
-  );
+  const [defaultEditorOpen, setDefaultEditorOpen] = useState(false);
 
-  const [templateDraft, setTemplateDraft] = useState<PublicFormUiConfig>(
-    createDefaultPublicFormUiConfig(formType)
-  );
-
-  const [blueprintName, setBlueprintName] = useState("");
-  const [blueprintDescription, setBlueprintDescription] = useState("");
-  const [blueprintDraft, setBlueprintDraft] = useState<PublicFormUiConfig>(
-    createDefaultPublicFormUiConfig(formType)
-  );
-
-  const [blueprintSearch, setBlueprintSearch] = useState("");
-  const [blueprintSort, setBlueprintSort] = useState<
-    "latest" | "name" | "defaultFirst"
-  >("defaultFirst");
-  const [blueprintFilter, setBlueprintFilter] = useState<
-    "all" | "default" | "inactive"
-  >("all");
-
-  const [formSearch, setFormSearch] = useState("");
-  const [formStatusFilter, setFormStatusFilter] = useState<
-    "all" | "active" | "inactive"
-  >("all");
-  const [formSort, setFormSort] = useState<
-    "latest" | "oldest" | "activeFirst"
-  >("latest");
-  const [selectedFormIds, setSelectedFormIds] = useState<number[]>([]);
-const [showTemplateManager, setShowTemplateManager] = useState(false);
-const [showCompanyDefaultDesign, setShowCompanyDefaultDesign] = useState(false);
-
-  const [templateName, setTemplateName] = useState("");
-  const [renameTemplateName, setRenameTemplateName] = useState("");
-  const [duplicateTemplateName, setDuplicateTemplateName] = useState("");
-  const [selectedTemplateName, setSelectedTemplateName] = useState("");
-
-  const templatePreviewQuery = trpc.formAdmin.getNamedTemplate.useQuery(
-    {
-      formType,
-      templateName: selectedTemplateName,
-    },
-    {
-      enabled: !!selectedTemplateName,
-    }
-  );
-
-  useEffect(() => {
-    const next =
-      templateData?.uiConfig && Object.keys(templateData.uiConfig).length > 0
-        ? {
-            ...createDefaultPublicFormUiConfig(formType),
-            ...templateData.uiConfig,
-          }
-        : createDefaultPublicFormUiConfig(formType);
-
-    setTemplateDraft(next);
-  }, [templateData, formType]);
-
-  const userMap = useMemo(() => {
-    return new Map((users ?? []).map((u: any) => [Number(u.id), u]));
-  }, [users]);
-
-  const formSummary = useMemo(() => {
-    const total = (forms ?? []).length;
-    const active = (forms ?? []).filter((f: any) => Boolean(f.isActive)).length;
-    const inactive = total - active;
-
-    const totalBlueprints = (blueprints ?? []).length;
-    const defaultBlueprints = (blueprints ?? []).filter((b: any) =>
-      Boolean(b.isDefault)
-    ).length;
+  const [defaultDraft, setDefaultDraft] = useState<UiConfig>(() => {
+    const base = createDefaultPublicFormUiConfig(formType) as unknown as UiConfig;
 
     return {
-      total,
-      active,
-      inactive,
-      totalBlueprints,
-      defaultBlueprints,
+      ...base,
+      canvas: createDefaultWithOneCanvasConfig(),
     };
-  }, [forms, blueprints]);
+  });
 
-  const filteredBlueprints = useMemo(() => {
-    const term = blueprintSearch.trim().toLowerCase();
+  useEffect(() => {
+    const base = createDefaultPublicFormUiConfig(formType) as unknown as UiConfig;
+    const saved = (templateData?.uiConfig || {}) as Partial<UiConfig>;
 
-    let list = [...blueprints].filter((item: any) => {
-      if (!term) return true;
-      return (
-        String(item.name || "").toLowerCase().includes(term) ||
-        String(item.description || "").toLowerCase().includes(term)
-      );
+    setDefaultDraft({
+      ...base,
+      ...saved,
+      canvas:
+        saved.canvas &&
+        Array.isArray(saved.canvas.elements) &&
+        saved.canvas.elements.length > 0
+          ? {
+              ...createDefaultWithOneCanvasConfig(),
+              ...saved.canvas,
+              enabled: true,
+              elements: saved.canvas.elements,
+            }
+          : createDefaultWithOneCanvasConfig(),
+      fields: Array.isArray(saved.fields) && saved.fields.length > 0
+        ? saved.fields
+        : base.fields,
+      mapping:
+        saved.mapping && typeof saved.mapping === "object"
+          ? saved.mapping
+          : base.mapping,
     });
-
-    if (blueprintFilter === "default") {
-      list = list.filter((item: any) => Boolean(item.isDefault));
-    } else if (blueprintFilter === "inactive") {
-      list = list.filter((item: any) => !Boolean(item.isActive));
-    }
-
-    if (blueprintSort === "name") {
-      list.sort((a: any, b: any) =>
-        String(a.name || "").localeCompare(String(b.name || ""))
-      );
-    } else if (blueprintSort === "defaultFirst") {
-      list.sort((a: any, b: any) => {
-        if (Boolean(a.isDefault) !== Boolean(b.isDefault)) {
-          return a.isDefault ? -1 : 1;
-        }
-        return Number(b.id) - Number(a.id);
-      });
-    } else {
-      list.sort((a: any, b: any) => Number(b.id) - Number(a.id));
-    }
-
-    return list;
-  }, [blueprints, blueprintSearch, blueprintSort, blueprintFilter]);
-
-  const blueprintUsageCountMap = useMemo(() => {
-    const map = new Map<string, number>();
-
-    (forms ?? []).forEach((f: any) => {
-      const key = String(f.sourceBlueprintName || "").trim();
-      if (!key) return;
-      map.set(key, (map.get(key) || 0) + 1);
-    });
-
-    return map;
-  }, [forms]);
-
-  const filteredForms = useMemo(() => {
-    const term = formSearch.trim().toLowerCase();
-
-    let list = (forms ?? []).filter((f: any) => {
-      const assignee = userMap.get(Number(f.assigneeId));
-
-      const matchesSearch =
-        !term ||
-        String(f.token || "").toLowerCase().includes(term) ||
-        String(assignee?.name || "").toLowerCase().includes(term) ||
-        String(assignee?.username || "").toLowerCase().includes(term) ||
-        String(f.sourceBlueprintName || "").toLowerCase().includes(term);
-
-      const matchesStatus =
-        formStatusFilter === "all" ||
-        (formStatusFilter === "active" && Boolean(f.isActive)) ||
-        (formStatusFilter === "inactive" && !Boolean(f.isActive));
-
-      return matchesSearch && matchesStatus;
-    });
-
-    if (formSort === "oldest") {
-      list.sort(
-        (a: any, b: any) =>
-          new Date(a.createdAt || 0).getTime() -
-          new Date(b.createdAt || 0).getTime()
-      );
-    } else if (formSort === "activeFirst") {
-      list.sort((a: any, b: any) => {
-        if (Boolean(a.isActive) !== Boolean(b.isActive)) {
-          return a.isActive ? -1 : 1;
-        }
-        return (
-          new Date(b.createdAt || 0).getTime() -
-          new Date(a.createdAt || 0).getTime()
-        );
-      });
-    } else {
-      list.sort(
-        (a: any, b: any) =>
-          new Date(b.createdAt || 0).getTime() -
-          new Date(a.createdAt || 0).getTime()
-      );
-    }
-
-    return list;
-  }, [forms, formSearch, formStatusFilter, formSort, userMap]);
+  }, [templateData?.uiConfig, formType]);
 
   const createMutation = trpc.formAdmin.create.useMutation({
-    onSuccess: async (created: any) => {
+    onSuccess: async () => {
       toast.success(`${title} 링크가 생성되었습니다.`);
       setAssigneeId("");
-      setSelectedBlueprintId("");
       await utils.formAdmin.list.invalidate({ formType });
-
-      const token = String(created?.token || "").trim();
-      if (token) {
-        const fullUrl = `${window.location.origin}${pathPrefix}/${token}`;
-        await navigator.clipboard.writeText(fullUrl);
-        toast.success("생성과 동시에 링크가 복사되었습니다.");
-      }
     },
     onError: (e) => toast.error(e.message),
   });
@@ -2612,1236 +2458,254 @@ const [showCompanyDefaultDesign, setShowCompanyDefaultDesign] = useState(false);
     onSuccess: async () => {
       toast.success(
         title === "랜딩폼"
-          ? "회사 기본 랜딩페이지 설정이 저장되었습니다."
-          : "회사 기본 광고폼 설정이 저장되었습니다."
+          ? "랜딩폼 기본 디자인이 저장되었습니다."
+          : "광고폼 기본 디자인이 저장되었습니다."
       );
+
       await utils.formAdmin.getTemplate.invalidate({ formType });
+      setDefaultEditorOpen(false);
     },
     onError: (e) => toast.error(e.message),
   });
 
-  const saveAsTemplateMutation = trpc.formAdmin.saveAsTemplate.useMutation({
-    onSuccess: async () => {
-      toast.success("템플릿으로 저장되었습니다.");
-      await refetchTemplateList();
-      setTemplateName("");
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const deleteTemplateMutation = trpc.formAdmin.deleteTemplate.useMutation({
-    onSuccess: async () => {
-      toast.success("템플릿을 삭제했습니다.");
-      await refetchTemplateList();
-      setSelectedTemplateName("");
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const renameTemplateMutation = trpc.formAdmin.renameTemplate.useMutation({
-    onSuccess: async () => {
-      toast.success("템플릿 이름을 변경했습니다.");
-      await refetchTemplateList();
-      setSelectedTemplateName(renameTemplateName.trim());
-      setRenameTemplateName("");
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const duplicateTemplateMutation =
-    trpc.formAdmin.duplicateTemplate.useMutation({
-      onSuccess: async () => {
-        toast.success("템플릿을 복제했습니다.");
-        await refetchTemplateList();
-        setSelectedTemplateName(duplicateTemplateName.trim());
-        setDuplicateTemplateName("");
-      },
-      onError: (e) => toast.error(e.message),
-    });
-
-  const pinTemplateMutation = trpc.formAdmin.saveAsTemplate.useMutation({
-    onSuccess: async () => {
-      toast.success("템플릿 고정 상태를 변경했습니다.");
-      await refetchTemplateList();
-      await templatePreviewQuery.refetch();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const createBlueprintMutation = trpc.formBlueprintAdmin.create.useMutation({
-    onSuccess: async () => {
-      toast.success(`${title} 디자인 템플릿이 생성되었습니다.`);
-      setBlueprintName("");
-      setBlueprintDescription("");
-      setBlueprintDraft(createDefaultPublicFormUiConfig(formType));
-      await utils.formBlueprintAdmin.list.invalidate({ formType });
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const updateBlueprintMutation = trpc.formBlueprintAdmin.update.useMutation({
-    onSuccess: async () => {
-      toast.success("디자인 템플릿이 수정되었습니다.");
-      setEditingBlueprintId(null);
-      setBlueprintName("");
-      setBlueprintDescription("");
-      setBlueprintDraft(createDefaultPublicFormUiConfig(formType));
-      await utils.formBlueprintAdmin.list.invalidate({ formType });
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const deleteBlueprintMutation = trpc.formBlueprintAdmin.delete.useMutation({
-    onSuccess: async () => {
-      toast.success("디자인 템플릿이 삭제되었습니다.");
-      await utils.formBlueprintAdmin.list.invalidate({ formType });
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const startEditBlueprint = (item: any) => {
-    setEditingBlueprintId(Number(item.id));
-    setBlueprintName(item.name || "");
-    setBlueprintDescription(item.description || "");
-    setBlueprintDraft({
-      ...createDefaultPublicFormUiConfig(formType),
-      ...(item.uiConfig || {}),
-    });
-  };
-
-  const resetBlueprintEditor = () => {
-    setEditingBlueprintId(null);
-    setBlueprintName("");
-    setBlueprintDescription("");
-    setBlueprintDraft(createDefaultPublicFormUiConfig(formType));
-  };
-
-  const handleSaveBlueprint = () => {
-    if (!blueprintName.trim()) {
-      toast.error("디자인 템플릿 이름을 입력해주세요.");
-      return;
-    }
-
-    if (editingBlueprintId) {
-      updateBlueprintMutation.mutate({
-        id: editingBlueprintId,
-        name: blueprintName.trim(),
-        description: blueprintDescription.trim() || null,
-        uiConfig: blueprintDraft,
-      });
-      return;
-    }
-
-    createBlueprintMutation.mutate({
-      formType,
-      name: blueprintName.trim(),
-      description: blueprintDescription.trim() || null,
-      uiConfig: blueprintDraft,
-    });
-  };
-
-  const handleSaveAsTemplate = (rawName?: string) => {
-    const safeName = String(rawName ?? templateName).trim();
-
-    if (!safeName) {
-      toast.error("템플릿 이름을 입력해주세요.");
-      return;
-    }
-
-    saveAsTemplateMutation.mutate({
-      formType,
-      templateName: safeName,
-      uiConfig: templateDraft,
-    });
-  };
-
-const handleUploadCanvasImage = async (file: File) => {
-  if (file.size > 5 * 1024 * 1024) {
-    toast.error("이미지는 5MB 이하만 업로드할 수 있습니다.");
-    throw new Error("이미지는 5MB 이하만 업로드할 수 있습니다.");
-  }
-
-  const formData = new FormData();
-  formData.append("file", file);
-
-  const uploadRes = await fetch(
-    `${import.meta.env.VITE_API_BASE_URL || ""}/api/upload`,
-    {
-      method: "POST",
-      body: formData,
-      credentials: "include",
-    }
-  );
-
-  if (!uploadRes.ok) {
-    throw new Error("캔버스 이미지 업로드에 실패했습니다.");
-  }
-
-  const uploaded = await uploadRes.json();
-  const uploadedUrl = uploaded?.fileUrl || uploaded?.url || "";
-
-  if (!uploadedUrl) {
-    throw new Error("업로드 URL을 찾을 수 없습니다.");
-  }
-
-  toast.success("캔버스 이미지 업로드 완료");
-  return normalizeAssetUrl(uploadedUrl);
-};
-
-  const handleApplyTemplateByName = async (templateName: string) => {
-    const safeName = String(templateName || "").trim();
-
-    if (!safeName) {
-      toast.error("적용할 템플릿을 선택해주세요.");
-      return;
-    }
-
-    setSelectedTemplateName(safeName);
-
-    const result = await templatePreviewQuery.refetch();
-    const preview = result.data?.uiConfig;
-
-    if (!preview) {
-      toast.error("템플릿 정보를 불러오지 못했습니다.");
-      return;
-    }
-
-    setTemplateDraft({
-      ...createDefaultPublicFormUiConfig(formType),
-      ...preview,
-    });
-
-    toast.success("템플릿을 회사 기본 디자인에 불러왔습니다.");
-  };
-
-  const handleDeleteTemplate = (rawName?: string) => {
-    const safeName = String(rawName ?? selectedTemplateName).trim();
-
-    if (!safeName) {
-      toast.error("삭제할 템플릿을 선택해주세요.");
-      return;
-    }
-
-    const ok = window.confirm(
-      `선택한 템플릿 "${safeName}" 을(를) 삭제할까요?`
+  const sortedUsers = useMemo(() => {
+    return [...users].sort((a: any, b: any) =>
+      String(a.name || a.username || "").localeCompare(
+        String(b.name || b.username || "")
+      )
     );
-    if (!ok) return;
+  }, [users]);
 
-    deleteTemplateMutation.mutate({
-      formType,
-      templateName: safeName,
-    });
-  };
-
-  const handleRenameTemplate = (
-    rawOldName?: string,
-    rawNewName?: string
-  ) => {
-    const oldName = String(rawOldName ?? selectedTemplateName).trim();
-    const newName = String(rawNewName ?? renameTemplateName).trim();
-
-    if (!oldName) {
-      toast.error("이름을 변경할 템플릿을 선택해주세요.");
-      return;
-    }
-
-    if (!newName) {
-      toast.error("새 템플릿 이름을 입력해주세요.");
-      return;
-    }
-
-    renameTemplateMutation.mutate({
-      formType,
-      oldTemplateName: oldName,
-      newTemplateName: newName,
-    });
-  };
-
-  const handleDuplicateTemplate = (
-    rawSourceName?: string,
-    rawNewName?: string
-  ) => {
-    const sourceName = String(rawSourceName ?? selectedTemplateName).trim();
-    const newName = String(rawNewName ?? duplicateTemplateName).trim();
-
-    if (!sourceName) {
-      toast.error("복제할 템플릿을 선택해주세요.");
-      return;
-    }
-
-    if (!newName) {
-      toast.error("복제할 새 템플릿 이름을 입력해주세요.");
-      return;
-    }
-
-    duplicateTemplateMutation.mutate({
-      formType,
-      sourceTemplateName: sourceName,
-      newTemplateName: newName,
-    });
-  };
-
-  const handleTogglePinTemplate = async (rawName?: string) => {
-    const safeName = String(rawName ?? selectedTemplateName).trim();
-
-    if (!safeName) {
-      toast.error("템플릿을 선택해주세요.");
-      return;
-    }
-
-    const result = await templatePreviewQuery.refetch();
-    const preview = result.data?.uiConfig;
-
-    if (!preview) {
-      toast.error("템플릿 정보를 먼저 불러와주세요.");
-      return;
-    }
-
-    pinTemplateMutation.mutate({
-      formType,
-      templateName: safeName,
-      uiConfig: {
-        ...preview,
-        isPinned: !Boolean(preview.isPinned),
-      },
-    });
-  };
-
-  const handleExportFormsCsv = () => {
-    const rows = filteredForms.map((f: any) => {
-      const assignee = userMap.get(Number(f.assigneeId));
-      const fullUrl = `${window.location.origin}${pathPrefix}/${f.token}`;
-
-      return {
-        id: f.id,
-        token: f.token,
-        assigneeName: assignee?.name || "",
-        assigneeUsername: assignee?.username || "",
-        assigneePhone: assignee?.phone || "",
-        sourceBlueprintName: f.sourceBlueprintName || "회사 기본 디자인",
-canvasEnabled: f.uiConfig?.canvas?.enabled ? "사용" : "미사용",
-canvasElementCount: Array.isArray(f.uiConfig?.canvas?.elements)
-  ? f.uiConfig.canvas.elements.length
-  : 0,
-isActive: f.isActive ? "활성" : "비활성",
-        createdAt: f.createdAt
-          ? new Date(f.createdAt).toLocaleString("ko-KR")
-          : "",
-        url: fullUrl,
-      };
-    });
-
-  const header = [
-  "ID",
-  "토큰",
-  "담당자명",
-  "담당자아이디",
-  "전화번호",
-  "디자인",
-  "캔버스사용",
-  "캔버스요소수",
-  "상태",
-  "생성일",
-  "링크",
-];
-    const csv = [
-      header.join(","),
-      ...rows.map((row) =>
-        [
-  row.id,
-  row.token,
-  row.assigneeName,
-  row.assigneeUsername,
-  row.assigneePhone,
-  row.sourceBlueprintName,
-  row.canvasEnabled,
-  row.canvasElementCount,
-  row.isActive,
-  row.createdAt,
-  row.url,
-]
-          .map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`)
-          .join(",")
-      ),
-    ].join("\n");
-
-    const blob = new Blob(["\ufeff" + csv], {
-      type: "text/csv;charset=utf-8;",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${title}-링크목록.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleBulkUpdateForms = async (nextIsActive: boolean) => {
-    if (selectedFormIds.length === 0) {
-      toast.error("먼저 링크를 선택해주세요.");
-      return;
-    }
-
-    const label = nextIsActive ? "활성" : "비활성";
-    const ok = window.confirm(
-      `선택한 링크 ${selectedFormIds.length}개를 ${label} 처리할까요?`
+  const sortedForms = useMemo(() => {
+    return [...forms].sort(
+      (a: any, b: any) => Number(b.id || 0) - Number(a.id || 0)
     );
-    if (!ok) return;
+  }, [forms]);
 
-    try {
-      for (const id of selectedFormIds) {
-        await updateActiveMutation.mutateAsync({
-          id,
-          isActive: nextIsActive,
-        });
+  const getAssigneeName = (id: any) => {
+    const found = users.find((u: any) => Number(u.id) === Number(id));
+    return found?.name || found?.username || `#${id}`;
+  };
+
+  const handleCreate = () => {
+    if (!assigneeId) {
+      toast.error("담당자를 선택해주세요.");
+      return;
+    }
+
+    createMutation.mutate({
+      assigneeId: Number(assigneeId),
+      formType,
+    });
+  };
+
+  const handleUploadCanvasImage = async (file: File) => {
+    if (file.size > 5 * 1024 * 1024) {
+      throw new Error("이미지는 5MB 이하만 업로드할 수 있습니다.");
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const uploadRes = await fetch(
+      `${import.meta.env.VITE_API_BASE_URL || ""}/api/upload`,
+      {
+        method: "POST",
+        body: formData,
+        credentials: "include",
       }
-      toast.success(`선택한 링크를 ${label} 처리했습니다.`);
-      setSelectedFormIds([]);
-    } catch (e: any) {
-      toast.error(e.message || `선택 링크 ${label} 처리 중 오류가 발생했습니다.`);
+    );
+
+    if (!uploadRes.ok) {
+      throw new Error("이미지 업로드에 실패했습니다.");
     }
+
+    const uploaded = await uploadRes.json();
+    const uploadedUrl = uploaded?.fileUrl || uploaded?.url || "";
+
+    if (!uploadedUrl) {
+      throw new Error("업로드 URL을 찾을 수 없습니다.");
+    }
+
+    return uploadedUrl;
+  };
+
+  const handleSaveDefaultDesign = () => {
+    saveTemplateMutation.mutate({
+      formType,
+      uiConfig: {
+        ...defaultDraft,
+        canvas:
+          defaultDraft.canvas &&
+          Array.isArray(defaultDraft.canvas.elements) &&
+          defaultDraft.canvas.elements.length > 0
+            ? defaultDraft.canvas
+            : createDefaultWithOneCanvasConfig(),
+      } as any,
+    });
   };
 
   return (
-  <div className="space-y-6">
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div className="space-y-6">
       <Card>
-        <CardContent className="p-5">
-          <p className="text-sm text-muted-foreground">총 생성 링크</p>
-          <p className="mt-2 text-2xl font-bold">{formSummary.total}</p>
+        <CardHeader>
+          <CardTitle>{title} 기본 디자인</CardTitle>
+        </CardHeader>
+
+        <CardContent className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-1">
+            <div className="font-semibold">
+              목표를 향한 배움의 길, 위드원 교육이 함께할게요
+            </div>
+            <p className="text-sm text-muted-foreground">
+              새 {title} 링크를 만들 때 기본으로 복사되는 디자인입니다.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              담당자가 자기 페이지를 수정해도 이 기본 디자인은 변경되지 않습니다.
+            </p>
+          </div>
+
+          <Button
+            type="button"
+            onClick={() => setDefaultEditorOpen(true)}
+            disabled={templateLoading}
+          >
+            기본 디자인 꾸미기
+          </Button>
         </CardContent>
       </Card>
 
       <Card>
-        <CardContent className="p-5">
-          <p className="text-sm text-muted-foreground">활성 링크</p>
-          <p className="mt-2 text-2xl font-bold text-emerald-600">
-            {formSummary.active}
-          </p>
-        </CardContent>
-      </Card>
+        <CardHeader>
+          <CardTitle>{title} 링크 생성</CardTitle>
+        </CardHeader>
 
-      <Card>
-        <CardContent className="p-5">
-          <p className="text-sm text-muted-foreground">비활성 링크</p>
-          <p className="mt-2 text-2xl font-bold text-rose-600">
-            {formSummary.inactive}
-          </p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="p-5">
-          <p className="text-sm text-muted-foreground">
-            기본 템플릿 / 전체 템플릿
-          </p>
-          <p className="mt-2 text-2xl font-bold">
-            {formSummary.defaultBlueprints} / {formSummary.totalBlueprints}
-          </p>
-        </CardContent>
-      </Card>
-    </div>
-
-    <Card>
-      <CardHeader>
-        <CardTitle>{title} 링크 관리</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="mb-4 text-sm text-muted-foreground">
-          생성된 담당자별 링크를 관리합니다. 링크 복사, 활성/비활성 처리,
-          CSV 내보내기를 여기서 바로 할 수 있습니다.
-        </p>
-
-        <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center">
-            <Input
-              value={formSearch}
-              onChange={(e) => setFormSearch(e.target.value)}
-              placeholder="토큰 / 담당자명 / 아이디 / 템플릿명 검색"
-              className="max-w-sm"
-            />
-
-            <Select
-              value={formSort}
-              onValueChange={(v: any) => setFormSort(v)}
-            >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue />
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+            <Select value={assigneeId} onValueChange={setAssigneeId}>
+              <SelectTrigger>
+                <SelectValue placeholder="담당자 선택" />
               </SelectTrigger>
+
               <SelectContent>
-                <SelectItem value="latest">최신순</SelectItem>
-                <SelectItem value="oldest">오래된순</SelectItem>
-                <SelectItem value="activeFirst">활성 우선</SelectItem>
+                {sortedUsers.map((u: any) => (
+                  <SelectItem key={u.id} value={String(u.id)}>
+                    {u.name || u.username || `#${u.id}`} ({u.role})
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
-          </div>
 
-          <div className="flex flex-wrap gap-2">
             <Button
               type="button"
-              size="sm"
-              variant={formStatusFilter === "all" ? "default" : "outline"}
-              onClick={() => setFormStatusFilter("all")}
+              onClick={handleCreate}
+              disabled={!assigneeId || createMutation.isPending}
             >
-              전체
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={formStatusFilter === "active" ? "default" : "outline"}
-              onClick={() => setFormStatusFilter("active")}
-            >
-              활성
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={
-                formStatusFilter === "inactive" ? "default" : "outline"
-              }
-              onClick={() => setFormStatusFilter("inactive")}
-            >
-              비활성
+              {createMutation.isPending ? "생성 중..." : `${title} 링크 생성`}
             </Button>
           </div>
-        </div>
 
-        <div className="mb-4 flex flex-wrap gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => handleBulkUpdateForms(true)}
-            disabled={
-              selectedFormIds.length === 0 || updateActiveMutation.isPending
-            }
-          >
-            선택 활성
-          </Button>
+          <p className="text-xs text-muted-foreground">
+            생성된 링크는 현재 저장된 기본 디자인을 복사해서 담당자 전용 페이지로 만들어집니다.
+          </p>
+        </CardContent>
+      </Card>
 
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => handleBulkUpdateForms(false)}
-            disabled={
-              selectedFormIds.length === 0 || updateActiveMutation.isPending
-            }
-          >
-            선택 비활성
-          </Button>
+      <Card>
+        <CardHeader>
+          <CardTitle>생성된 {title} 링크</CardTitle>
+        </CardHeader>
 
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={handleExportFormsCsv}
-          >
-            CSV 내보내기
-          </Button>
-        </div>
+        <CardContent>
+          {isLoading ? (
+            <div className="text-sm text-muted-foreground">불러오는 중...</div>
+          ) : sortedForms.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              생성된 {title} 링크가 없습니다.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="px-4 py-3 text-left">담당자</th>
+                    <th className="px-4 py-3 text-left">링크</th>
+                    <th className="px-4 py-3 text-left">상태</th>
+                    <th className="px-4 py-3 text-right">관리</th>
+                  </tr>
+                </thead>
 
-        {isLoading ? (
-          <div className="text-sm text-muted-foreground">불러오는 중...</div>
-        ) : filteredForms.length === 0 ? (
-          <div className="text-sm text-muted-foreground">
-            생성된 {title}이 없습니다.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="px-4 py-3 text-left">
-                    <input
-                      type="checkbox"
-                      checked={
-                        filteredForms.length > 0 &&
-                        filteredForms.every((f: any) =>
-                          selectedFormIds.includes(Number(f.id))
-                        )
-                      }
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedFormIds(
-                            filteredForms.map((f: any) => Number(f.id))
-                          );
-                        } else {
-                          setSelectedFormIds([]);
-                        }
-                      }}
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left">ID</th>
-                  <th className="px-4 py-3 text-left">토큰</th>
-                  <th className="px-4 py-3 text-left">담당자</th>
-                  <th className="px-4 py-3 text-left">아이디</th>
-                  <th className="px-4 py-3 text-left">전화번호</th>
-                  <th className="px-4 py-3 text-left">디자인</th>
-                  <th className="px-4 py-3 text-left">캔버스</th>
-                  <th className="px-4 py-3 text-left">상태</th>
-                  <th className="px-4 py-3 text-left">생성일</th>
-                  <th className="px-4 py-3 text-right">관리</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredForms.map((f: any) => {
-                  const assignee = userMap.get(Number(f.assigneeId));
-                  const fullUrl = `${window.location.origin}${pathPrefix}/${f.token}`;
+                <tbody>
+                  {sortedForms.map((form: any) => {
+                    const url = `${window.location.origin}${pathPrefix}/${form.token}`;
 
-                  return (
-                    <tr key={f.id} className="border-b">
-                      <td className="px-4 py-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedFormIds.includes(Number(f.id))}
-                          onChange={(e) => {
-                            const id = Number(f.id);
-                            setSelectedFormIds((prev) =>
-                              e.target.checked
-                                ? [...prev, id]
-                                : prev.filter((item) => item !== id)
-                            );
-                          }}
-                        />
-                      </td>
+                    return (
+                      <tr key={form.id} className="border-b last:border-0">
+                        <td className="px-4 py-3">
+                          {getAssigneeName(form.assigneeId)}
+                        </td>
 
-                      <td className="px-4 py-3">{f.id}</td>
+                        <td className="px-4 py-3">
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-blue-600 underline"
+                          >
+                            {url}
+                          </a>
+                        </td>
 
-                      <td className="px-4 py-3 font-mono text-xs">
-                        {f.token}
-                      </td>
+                        <td className="px-4 py-3">
+                          {form.isActive ? (
+                            <span className="font-medium text-emerald-600">
+                              활성
+                            </span>
+                          ) : (
+                            <span className="font-medium text-red-600">
+                              비활성
+                            </span>
+                          )}
+                        </td>
 
-                      <td className="px-4 py-3">
-                        {assignee?.name || assignee?.username || "-"}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {assignee?.username || "-"}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {assignee?.phone || "-"}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {f.sourceBlueprintName || "회사 기본 디자인"}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {f.uiConfig?.canvas?.enabled ? (
-                          <div className="space-y-1">
-                            <div className="font-medium text-emerald-600">
-                              사용 중
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              요소{" "}
-                              {Array.isArray(f.uiConfig?.canvas?.elements)
-                                ? f.uiConfig.canvas.elements.length
-                                : 0}
-                              개
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">미사용</span>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {f.isActive ? (
-                          <span className="font-medium text-emerald-600">
-                            활성
-                          </span>
-                        ) : (
-                          <span className="font-medium text-red-600">
-                            비활성
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {f.createdAt
-                          ? new Date(f.createdAt).toLocaleString("ko-KR")
-                          : "-"}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <div className="flex justify-end gap-2">
+                        <td className="px-4 py-3 text-right">
                           <Button
+                            type="button"
                             size="sm"
                             variant="outline"
-                            onClick={() => {
-                              navigator.clipboard.writeText(fullUrl);
-                              toast.success(`${title} 링크가 복사되었습니다.`);
-                            }}
-                          >
-                            링크복사
-                          </Button>
-
-                          <Button
-                            size="sm"
-                            variant={f.isActive ? "outline" : "default"}
                             onClick={() =>
                               updateActiveMutation.mutate({
-                                id: Number(f.id),
-                                isActive: !f.isActive,
+                                id: Number(form.id),
+                                isActive: !form.isActive,
                               })
                             }
                             disabled={updateActiveMutation.isPending}
                           >
-                            {f.isActive ? "비활성" : "활성"}
+                            {form.isActive ? "비활성화" : "활성화"}
                           </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-
-    <Card>
-      <CardHeader>
-        <CardTitle>{title} 링크 생성</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-  담당 직원을 선택하면 바로 공유 가능한 링크가 만들어집니다.
-  디자인을 고르지 않으면 회사 기본 디자인으로 생성됩니다.
-</p>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <p className="text-sm font-medium">디자인 템플릿 선택</p>
-            <Select
-              value={selectedBlueprintId}
-              onValueChange={setSelectedBlueprintId}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="선택 안 하면 회사 기본 디자인 사용" />
-              </SelectTrigger>
-              <SelectContent>
-                {blueprints.map((item: any) => (
-                  <SelectItem key={item.id} value={String(item.id)}>
-                    {item.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-sm font-medium">담당 직원 선택</p>
-            <Select value={assigneeId} onValueChange={setAssigneeId}>
-              <SelectTrigger>
-                <SelectValue placeholder="담당 직원을 선택하세요" />
-              </SelectTrigger>
-              <SelectContent>
-                {(users ?? []).map((member: any) => (
-                  <SelectItem key={member.id} value={String(member.id)}>
-                    {member.name || member.username || `#${member.id}`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Button
-            onClick={() => {
-              if (!assigneeId) {
-                toast.error("담당 직원을 먼저 선택해주세요.");
-                return;
-              }
-
-              createMutation.mutate({
-                assigneeId: Number(assigneeId),
-                formType,
-                blueprintId: selectedBlueprintId
-                  ? Number(selectedBlueprintId)
-                  : undefined,
-              });
-            }}
-            disabled={createMutation.isPending}
-          >
-            {createMutation.isPending ? "생성 중..." : "담당자 링크 생성"}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-
-    <Card>
-      <CardHeader>
-  <div className="flex items-center justify-between gap-3">
-    <div>
-      <CardTitle>{title} 디자인 템플릿 관리</CardTitle>
-      <p className="mt-1 text-sm text-muted-foreground">
-        자주 쓰는 디자인을 저장해두는 고급 설정입니다.
-      </p>
-    </div>
-
-    <Button
-      type="button"
-      variant="outline"
-      onClick={() => setShowTemplateManager((prev) => !prev)}
-    >
-      {showTemplateManager ? "접기" : "열기"}
-    </Button>
-  </div>
-</CardHeader>
-
-{!showTemplateManager ? (
-  <div className="border-t px-6 py-4">
-    <div className="grid gap-3 text-sm text-muted-foreground md:grid-cols-3">
-      <div>
-        등록 템플릿{" "}
-        <span className="font-semibold text-foreground">
-          {formSummary.totalBlueprints}
-        </span>
-        개
-      </div>
-
-      <div>
-        기본 템플릿{" "}
-        <span className="font-semibold text-foreground">
-          {formSummary.defaultBlueprints}
-        </span>
-        개
-      </div>
-
-      <div>
-        현재 상태{" "}
-        <span className="font-semibold text-foreground">
-          접힘
-        </span>
-      </div>
-    </div>
-  </div>
-) : null}
-
-{showTemplateManager ? (
-  <CardContent className="space-y-6">
-      
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <p className="text-sm font-medium">템플릿 이름</p>
-            <Input
-              value={blueprintName}
-              onChange={(e) => setBlueprintName(e.target.value)}
-              placeholder={`${title} 디자인 템플릿 이름`}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-sm font-medium">설명</p>
-            <Input
-              value={blueprintDescription}
-              onChange={(e) => setBlueprintDescription(e.target.value)}
-              placeholder="설명을 입력하세요"
-            />
-          </div>
-        </div>
-
-        <FormDesignEditor
-          mode={formType}
-          title={`${title} 디자인 템플릿`}
-          value={blueprintDraft}
-          onChange={setBlueprintDraft}
-          canManageTemplates={false}
-          onUploadCanvasImage={handleUploadCanvasImage}
-        />
-
-        <div className="flex flex-wrap gap-2">
-          <Button
-            onClick={handleSaveBlueprint}
-            disabled={
-              createBlueprintMutation.isPending ||
-              updateBlueprintMutation.isPending
-            }
-          >
-            {editingBlueprintId
-              ? updateBlueprintMutation.isPending
-                ? "수정 중..."
-                : "템플릿 수정"
-              : createBlueprintMutation.isPending
-              ? "생성 중..."
-              : "템플릿 생성"}
-          </Button>
-
-          {editingBlueprintId ? (
-            <Button variant="outline" onClick={resetBlueprintEditor}>
-              편집 취소
-            </Button>
-          ) : null}
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant={blueprintFilter === "all" ? "default" : "outline"}
-            onClick={() => setBlueprintFilter("all")}
-          >
-            전체
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={blueprintFilter === "default" ? "default" : "outline"}
-            onClick={() => setBlueprintFilter("default")}
-          >
-            기본 템플릿만
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={blueprintFilter === "inactive" ? "default" : "outline"}
-            onClick={() => setBlueprintFilter("inactive")}
-          >
-            비활성만
-          </Button>
-        </div>
-
-        <div className="space-y-3">
-          <p className="text-sm font-medium">등록된 디자인 템플릿 목록</p>
-
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <Input
-              value={blueprintSearch}
-              onChange={(e) => setBlueprintSearch(e.target.value)}
-              placeholder="템플릿 이름/설명 검색"
-              className="max-w-sm"
-            />
-
-            <Select
-              value={blueprintSort}
-              onValueChange={(v: any) => setBlueprintSort(v)}
-            >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="defaultFirst">기본 템플릿 우선</SelectItem>
-                <SelectItem value="latest">최신순</SelectItem>
-                <SelectItem value="name">이름순</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {blueprintsLoading ? (
-            <div className="text-sm text-muted-foreground">불러오는 중...</div>
-          ) : filteredBlueprints.length === 0 ? (
-            <div className="text-sm text-muted-foreground">
-              등록된 디자인 템플릿이 없습니다.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filteredBlueprints.map((item: any) => (
-                <div key={item.id} className="space-y-3 rounded-xl border p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <div className="font-medium">
-                        {item.name}
-                        {item.isDefault ? " · 기본 템플릿" : ""}
-                        {!item.isActive ? " · 비활성" : ""}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {item.description || "설명 없음"}
-                      </div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        사용 링크 수:{" "}
-                        {blueprintUsageCountMap.get(
-                          String(item.name || "").trim()
-                        ) || 0}
-                        개
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => startEditBlueprint(item)}
-                      >
-                        수정
-                      </Button>
-
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          updateBlueprintMutation.mutate({
-                            id: Number(item.id),
-                            isDefault: !item.isDefault,
-                          })
-                        }
-                        disabled={updateBlueprintMutation.isPending}
-                      >
-                        {item.isDefault ? "기본 해제" : "기본 지정"}
-                      </Button>
-
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          updateBlueprintMutation.mutate({
-                            id: Number(item.id),
-                            isActive: !item.isActive,
-                          })
-                        }
-                        disabled={updateBlueprintMutation.isPending}
-                      >
-                        {item.isActive ? "비활성" : "활성"}
-                      </Button>
-
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => {
-                          if (item.isDefault) {
-                            toast.error(
-                              "기본 지정된 템플릿은 먼저 기본 해제 후 삭제해주세요."
-                            );
-                            return;
-                          }
-
-                          const ok = window.confirm(
-                            `디자인 템플릿 "${item.name}" 을(를) 삭제할까요?`
-                          );
-                          if (!ok) return;
-
-                          deleteBlueprintMutation.mutate({
-                            id: Number(item.id),
-                          });
-                        }}
-                        disabled={deleteBlueprintMutation.isPending}
-                      >
-                        삭제
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-2 text-sm text-muted-foreground md:grid-cols-2">
-                    <div>제목: {item.uiConfig?.title || "-"}</div>
-                    <div>부제목: {item.uiConfig?.subtitle || "-"}</div>
-                    <div>대표색상: {item.uiConfig?.primaryColor || "-"}</div>
-                    <div>
-                      버튼문구: {item.uiConfig?.submitButtonText || "-"}
-                    </div>
-                    <div>로고: {item.uiConfig?.logoUrl ? "있음" : "없음"}</div>
-                    <div>
-                      상단 이미지:{" "}
-                      {item.uiConfig?.heroImageUrl ? "있음" : "없음"}
-                    </div>
-                    <div>
-                      자유 캔버스:{" "}
-                      {item.uiConfig?.canvas?.enabled ? (
-                        <span className="font-medium text-emerald-600">
-                          사용 중
-                        </span>
-                      ) : (
-                        <span>미사용</span>
-                      )}
-                    </div>
-                    <div>
-                      캔버스 요소:{" "}
-                      {Array.isArray(item.uiConfig?.canvas?.elements)
-                        ? `${item.uiConfig.canvas.elements.length}개`
-                        : "0개"}
-                    </div>
-                  </div>
-                </div>
-              ))}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
-        </div>
         </CardContent>
-) : null}
-</Card>
+      </Card>
 
-    <Card>
-      <CardHeader>
-  <div className="flex items-center justify-between gap-3">
-    <div>
-      <CardTitle>
-        {title === "랜딩폼"
-          ? "회사 기본 랜딩페이지 디자인"
-          : "회사 기본 광고페이지 디자인"}
-      </CardTitle>
-      <p className="mt-1 text-sm text-muted-foreground">
-        템플릿을 선택하지 않고 링크를 만들 때 쓰는 기본 디자인입니다.
-      </p>
+      {defaultEditorOpen ? (
+        <FullScreenFormCanvasEditor
+  value={defaultDraft}
+  onChange={setDefaultDraft}
+  onClose={() => setDefaultEditorOpen(false)}
+  onSave={handleSaveDefaultDesign}
+  onUploadCanvasImage={handleUploadCanvasImage}
+  isHostEditor
+/>
+      ) : null}
     </div>
-
-    <Button
-      type="button"
-      variant="outline"
-      onClick={() => setShowCompanyDefaultDesign((prev) => !prev)}
-    >
-      {showCompanyDefaultDesign ? "접기" : "열기"}
-    </Button>
-  </div>
-</CardHeader>
-
-{!showCompanyDefaultDesign ? (
-  <div className="border-t px-6 py-4">
-    <div className="grid gap-3 text-sm text-muted-foreground md:grid-cols-3">
-      <div>
-        제목{" "}
-        <span className="font-semibold text-foreground">
-          {templateDraft.title || "-"}
-        </span>
-      </div>
-
-      <div>
-        캔버스{" "}
-        <span className="font-semibold text-foreground">
-          {templateDraft.canvas?.enabled ? "사용 중" : "미사용"}
-        </span>
-      </div>
-
-      <div>
-        현재 상태{" "}
-        <span className="font-semibold text-foreground">접힘</span>
-      </div>
-    </div>
-  </div>
-) : null}
-
-{showCompanyDefaultDesign ? (
-  <CardContent className="space-y-4">
-    
-        <FormDesignEditor
-          mode={formType}
-          title={title}
-          value={templateDraft}
-          onChange={setTemplateDraft}
-          onSave={() =>
-            saveTemplateMutation.mutate({
-              formType,
-              uiConfig: templateDraft,
-            })
-          }
-          onSaveAsTemplate={(name) => {
-            setTemplateName(name);
-            handleSaveAsTemplate(name);
-          }}
-          onApplyTemplate={(name) => {
-            handleApplyTemplateByName(name);
-          }}
-          onDeleteTemplate={(name) => {
-            setSelectedTemplateName(name);
-            handleDeleteTemplate(name);
-          }}
-          onRenameTemplate={(oldName, newName) => {
-            setSelectedTemplateName(oldName);
-            setRenameTemplateName(newName);
-            handleRenameTemplate(oldName, newName);
-          }}
-          onDuplicateTemplate={(sourceName, newName) => {
-            setSelectedTemplateName(sourceName);
-            setDuplicateTemplateName(newName);
-            handleDuplicateTemplate(sourceName, newName);
-          }}
-          onTogglePinTemplate={(name) => {
-            setSelectedTemplateName(name);
-            handleTogglePinTemplate(name);
-          }}
-          canManageTemplates={true}
-          templateList={templateList}
-          selectedTemplateName={selectedTemplateName}
-          onSelectedTemplateNameChange={setSelectedTemplateName}
-          isSaving={saveTemplateMutation.isPending}
-          onUploadCanvasImage={handleUploadCanvasImage}
-        />
-
-        <div className="space-y-4 rounded-2xl border bg-muted/20 p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1">
-              <p className="text-sm font-medium">
-                {title === "랜딩폼"
-                  ? "회사 기본 랜딩페이지 미리보기"
-                  : "회사 기본 광고페이지 미리보기"}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                현재 저장 전 draft 기준으로 바로 보여주는 미리보기입니다.
-              </p>
-            </div>
-
-            <div
-              className="h-3 w-16 rounded-full border"
-              style={{
-                backgroundColor: templateDraft.primaryColor || "#2563eb",
-              }}
-            />
-          </div>
-
-          {templateDraft.logoUrl ? (
-            <div className="flex items-center gap-3">
-              <img
-                src={normalizeAssetUrl(templateDraft.logoUrl)}
-                alt="로고 미리보기"
-                className="h-12 w-12 rounded-xl border bg-white object-cover"
-              />
-              <div className="text-sm text-muted-foreground">로고 적용됨</div>
-            </div>
-          ) : null}
-
-          {templateDraft.heroImageUrl ? (
-            <div className="overflow-hidden rounded-2xl border bg-white">
-              <img
-                src={normalizeAssetUrl(templateDraft.heroImageUrl)}
-                alt="상단 이미지 미리보기"
-                className="h-40 w-full object-cover"
-              />
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed bg-white px-4 py-10 text-center text-sm text-muted-foreground">
-              상단 이미지가 없으면 기본 텍스트 중심 레이아웃으로 표시됩니다.
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <h3 className="text-xl font-bold leading-tight">
-              {templateDraft.title || `${title} 제목 미리보기`}
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              {templateDraft.subtitle || "부제목 미리보기"}
-            </p>
-          </div>
-
-          {templateDraft.description ? (
-            <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-              {templateDraft.description}
-            </p>
-          ) : null}
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              style={{
-                backgroundColor: templateDraft.primaryColor || "#2563eb",
-                borderColor: templateDraft.primaryColor || "#2563eb",
-              }}
-            >
-              {templateDraft.submitButtonText || "신청하기"}
-            </Button>
-          </div>
-
-          <div className="rounded-xl border bg-white px-3 py-3 text-xs text-muted-foreground">
-            {templateDraft.agreementText ||
-              "개인정보 수집 및 이용에 동의합니다."}
-          </div>
-        </div>
-        </CardContent>
-) : null}
-</Card>
-  </div>
-);
+  );
 }
 
 function SettingsSection() {

@@ -6,7 +6,10 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 import "@/styles/public-lead-form.css";
 import "@/styles/ad-form.css";
-import { DEFAULT_FORM_CANVAS_CONFIG } from "@/lib/formDesign/canvasTypes";
+import {
+  DEFAULT_FORM_CANVAS_CONFIG,
+  createDefaultWithOneCanvasConfig,
+} from "@/lib/formDesign/canvasTypes";
 import FormCanvasRenderer from "@/components/forms/canvas/FormCanvasRenderer";
 import FullScreenFormCanvasEditor from "@/components/forms/canvas/FullScreenFormCanvasEditor";
 import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
@@ -25,7 +28,7 @@ const DEFAULT_LEAD_CONFIG: UiConfig = {
   tags: "",
   isPinned: false,
   lastUsedAt: "",
-canvas: DEFAULT_FORM_CANVAS_CONFIG,
+canvas: createDefaultWithOneCanvasConfig(),
   mapping: {
     clientName: "clientName",
     phone: "phone",
@@ -297,15 +300,17 @@ const safeDisplayConfig: UiConfig = {
   ...DEFAULT_LEAD_CONFIG,
   ...displayConfig,
   canvas:
-    displayConfig?.canvas && typeof displayConfig.canvas === "object"
-      ? {
-          ...DEFAULT_FORM_CANVAS_CONFIG,
-          ...displayConfig.canvas,
-          elements: Array.isArray(displayConfig.canvas.elements)
-            ? displayConfig.canvas.elements
-            : [],
-        }
-      : DEFAULT_FORM_CANVAS_CONFIG,
+  displayConfig?.canvas &&
+  typeof displayConfig.canvas === "object" &&
+  Array.isArray(displayConfig.canvas.elements) &&
+  displayConfig.canvas.elements.length > 0
+    ? {
+        ...DEFAULT_FORM_CANVAS_CONFIG,
+        ...displayConfig.canvas,
+        enabled: true,
+        elements: displayConfig.canvas.elements,
+      }
+    : createDefaultWithOneCanvasConfig(),
   mapping:
     displayConfig && typeof displayConfig.mapping === "object" && displayConfig.mapping
       ? displayConfig.mapping

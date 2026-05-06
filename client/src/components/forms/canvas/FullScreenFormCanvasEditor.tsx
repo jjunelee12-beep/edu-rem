@@ -3,6 +3,7 @@ import FormCanvasEditor from "./FormCanvasEditor";
 import type { UiConfig } from "@/lib/formDesign/shared";
 import {
   DEFAULT_FORM_CANVAS_CONFIG,
+createDefaultWithOneCanvasConfig,
   createCanvasTextElement,
   createCanvasImageElement,
   createCanvasButtonElement,
@@ -20,7 +21,8 @@ type ToolKey =
   | "upload"
   | "background"
   | "button"
-  | "form";
+  | "form"
+  | "host";
 
 type Props = {
   value: UiConfig;
@@ -28,14 +30,23 @@ type Props = {
   onSave: () => void;
   onClose: () => void;
   onUploadCanvasImage?: (file: File) => Promise<string>;
+  isHostEditor?: boolean;
 };
 
 function normalizeCanvas(canvas?: FormCanvasConfig): FormCanvasConfig {
+  if (
+    !canvas ||
+    !Array.isArray(canvas.elements) ||
+    canvas.elements.length === 0
+  ) {
+    return createDefaultWithOneCanvasConfig();
+  }
+
   return {
     ...DEFAULT_FORM_CANVAS_CONFIG,
-    ...(canvas || {}),
+    ...canvas,
     enabled: true,
-    elements: Array.isArray(canvas?.elements) ? canvas.elements : [],
+    elements: canvas.elements,
   };
 }
 
@@ -45,6 +56,7 @@ export default function FullScreenFormCanvasEditor({
   onSave,
   onClose,
   onUploadCanvasImage,
+  isHostEditor = false,
 }: Props) {
   const [activeTool, setActiveTool] = useState<ToolKey>("text");
 const uploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -345,15 +357,18 @@ const moveSelectedElementLayer = (
   };
 
   const menuItems: Array<{ key: ToolKey; label: string; icon: string }> = [
-    { key: "template", label: "템플릿", icon: "▦" },
-    { key: "element", label: "요소", icon: "◇" },
-    { key: "text", label: "텍스트", icon: "T" },
-    { key: "image", label: "사진", icon: "▣" },
-    { key: "upload", label: "업로드", icon: "⇧" },
-    { key: "background", label: "배경", icon: "▧" },
-    { key: "button", label: "버튼", icon: "▭" },
-    { key: "form", label: "상담폼", icon: "☑" },
-  ];
+  { key: "template", label: "템플릿", icon: "▦" },
+  { key: "element", label: "요소", icon: "◇" },
+  { key: "text", label: "텍스트", icon: "T" },
+  { key: "image", label: "사진", icon: "▣" },
+  { key: "upload", label: "업로드", icon: "⇧" },
+  { key: "background", label: "배경", icon: "▧" },
+  { key: "button", label: "버튼", icon: "▭" },
+  { key: "form", label: "상담폼", icon: "☑" },
+  ...(isHostEditor
+    ? [{ key: "host" as ToolKey, label: "호스트", icon: "⚙" }]
+    : []),
+];
 
   return (
     <div
@@ -413,6 +428,9 @@ const moveSelectedElementLayer = (
       >
         <ToolPanel
   activeTool={activeTool}
+  value={value}
+  onChange={onChange}
+  isHostEditor={isHostEditor}
   selectedElement={selectedElement}
   updateSelectedElement={updateSelectedElement}
   removeSelectedElement={removeSelectedElement}
@@ -499,6 +517,9 @@ const moveSelectedElementLayer = (
 
 function ToolPanel({
   activeTool,
+  value,
+  onChange,
+  isHostEditor,
   selectedElement,
   updateSelectedElement,
   removeSelectedElement,
@@ -1017,6 +1038,139 @@ function ToolPanel({
       </Panel>
     );
   }
+
+if (activeTool === "host" && isHostEditor) {
+  const updateFieldOptions = (
+    fieldKey: string,
+    options: Array<{ label: string; value: string }>
+  ) => {
+    onChange({
+      ...value,
+      fields: (value.fields || []).map((field: any) =>
+        field.fieldKey === fieldKey
+          ? {
+              ...field,
+              options,
+            }
+          : field
+      ),
+    });
+  };
+
+  const finalEducationField = (value.fields || []).find(
+    (field: any) => field.fieldKey === "finalEducation"
+  );
+
+  const desiredCourseField = (value.fields || []).find(
+    (field: any) => field.fieldKey === "desiredCourse"
+  );
+
+  const renderOptionEditor = (
+    title: string,
+    fieldKey: string,
+    options: Array<{ label: string; value: string }>
+  ) => {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={sectionTitleStyle}>{title}</div>
+
+        {options.map((option, index) => (
+          <div
+            key={`${fieldKey}-${index}`}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr auto",
+              gap: 6,
+            }}
+          >
+            <input
+              value={option.label}
+              onChange={(e) => {
+                const nextOptions = options.map((item, itemIndex) =>
+                  itemIndex === index
+                    ? {
+                        label: e.target.value,
+                        value: e.target.value,
+                      }
+                    : item
+                );
+
+                updateFieldOptions(fieldKey, nextOptions);
+              }}
+              style={inputStyle}
+            />
+
+            <button
+              type="button"
+              onClick={() => {
+                const nextOptions = options.filter(
+                  (_item, itemIndex) => itemIndex !== index
+                );
+
+                updateFieldOptions(fieldKey, nextOptions);
+              }}
+              style={{
+                ...panelButtonStyle,
+                minHeight: 40,
+                padding: "0 10px",
+                color: "#dc2626",
+              }}
+            >
+              삭제
+            </button>
+          </div>
+        ))}
+
+        <PanelButton
+          onClick={() => {
+            updateFieldOptions(fieldKey, [
+              ...options,
+              {
+                label: "새 옵션",
+                value: "새 옵션",
+              },
+            ]);
+          }}
+        >
+          옵션 추가
+        </PanelButton>
+      </div>
+    );
+  };
+
+  return (
+    <Panel title="호스트 설정">
+      <div style={hintStyle}>
+        이 메뉴는 시스템관리에서 기본 디자인을 편집할 때만 표시됩니다.
+        담당자 개인 페이지 꾸미기에서는 보이지 않습니다.
+      </div>
+
+      <label style={labelStyle}>개인정보 동의 문구</label>
+      <textarea
+        value={value.agreementText || ""}
+        onChange={(e) =>
+          onChange({
+            ...value,
+            agreementText: e.target.value,
+          })
+        }
+        style={textareaStyle}
+      />
+
+      {renderOptionEditor(
+        "최종학력 선택 옵션",
+        "finalEducation",
+        finalEducationField?.options || []
+      )}
+
+      {renderOptionEditor(
+        "희망과정 선택 옵션",
+        "desiredCourse",
+        desiredCourseField?.options || []
+      )}
+    </Panel>
+  );
+}
 
   return (
     <Panel title="템플릿">

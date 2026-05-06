@@ -1093,17 +1093,6 @@ messenger: router({
     assigneeId: input.assigneeId,
   });
 }
-
-// 👉 기본 blueprint 자동 찾기
-const defaultBlueprint = await db.getDefaultFormBlueprint(input.formType);
-
-if (defaultBlueprint) {
-  return db.createLeadFormFromBlueprint({
-    blueprintId: defaultBlueprint.id,
-    assigneeId: input.assigneeId,
-  });
-}
-
 // 👉 없으면 기존 방식
 return db.createLeadForm(input.assigneeId, input.formType);
 }),
