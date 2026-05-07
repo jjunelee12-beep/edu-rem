@@ -1794,6 +1794,7 @@ export async function createUserAccount(data: {
   email?: string | null;
   phone?: string | null;
   role: "staff" | "admin" | "host" | "superhost";
+organizationId?: number;
   bankName?: string | null;
   bankAccount?: string | null;
   loginMethod?: string | null;
@@ -1813,6 +1814,7 @@ export async function createUserAccount(data: {
     email: data.email ?? null,
     phone: data.phone ?? null,
     role: data.role,
+organizationId: data.organizationId ?? 1,
     bankName: data.bankName ?? null,
     bankAccount: data.bankAccount ?? null,
     loginMethod: data.loginMethod ?? "manual",

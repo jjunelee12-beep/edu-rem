@@ -27,6 +27,7 @@ import PracticeSupportCenterPage from "@/pages/practice-support-center";
 import JobSupportCenterPage from "@/pages/job-support-center";
 import AIAssistant from "@/pages/AIAssistant";
 import SuperhostHome from "@/pages/SuperhostHome";
+import TenantsPage from "@/pages/superhost/TenantsPage";
 import MessengerPage from "@/pages/MessengerPage";
 import AttendancePage from "@/pages/AttendancePage";
 import AttendanceViewPage from "@/pages/AttendanceViewPage";
@@ -111,6 +112,7 @@ function PrivateRouter() {
 </Route>
           <Route path="/education-institutions" component={EducationInstitutions} />
           <Route path="/superhost" component={SuperhostHome} />
+<Route path="/superhost/tenants" component={TenantsPage} />
           <Route path="/attendance" component={AttendancePage} />
           <Route path="/attendance/view" component={AttendanceViewPage} />
           <Route path="/my" component={MyPage} />

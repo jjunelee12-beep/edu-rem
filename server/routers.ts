@@ -25,6 +25,7 @@ import { approvalRouter } from "./routes/approval.router";
 import { privateCertificateMasterRouter } from "./routes/privateCertificateMaster";
 import { subjectCatalogRouter } from "./routes/subjectCatalog";
 import { FEATURE_FLAGS } from "./_core/featureFlags";
+import { saasRouter } from "./routes/saas.router";
 
 function isAdminOrHost(user: any) {
   return (
@@ -154,6 +155,7 @@ export const appRouter = router({
   system: systemRouter,
   leadForm: publicLeadRouter,
   sms: smsRouter,
+saas: saasRouter,
 attendance: attendanceRouter,
 notice: noticeRouter,
 schedule: scheduleRouter,
