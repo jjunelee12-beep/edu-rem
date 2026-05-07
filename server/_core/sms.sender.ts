@@ -69,6 +69,20 @@ async function sendAligoSms(
 ): Promise<SmsSendResult> {
   const url = "https://apis.aligo.in/send/";
 
+  // Railway 서버가 외부로 나갈 때 사용하는 공인 IP 확인용
+  try {
+    const ipRes = await axios.get("https://api.ipify.org?format=json", {
+      timeout: 5000,
+    });
+
+    console.log("[SERVER PUBLIC IP]", ipRes.data);
+  } catch (ipErr) {
+    console.error("[SERVER PUBLIC IP CHECK FAIL]", {
+      response: (ipErr as any)?.response?.data,
+      error: ipErr,
+    });
+  }
+
   const apiKey = settings?.apiKey || process.env.ALIGO_API_KEY || "";
   const userId = settings?.userId || process.env.ALIGO_USER_ID || "";
   const sender = settings?.senderNumber || process.env.ALIGO_SENDER || "";
