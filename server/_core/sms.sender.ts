@@ -70,6 +70,7 @@ async function sendAligoSms(
   const url = "https://apis.aligo.in/send/";
 
   // Railway 서버가 외부로 나갈 때 사용하는 공인 IP 확인용
+ if (process.env.SMS_DEBUG_PUBLIC_IP === "true") {
   try {
     const ipRes = await axios.get("https://api.ipify.org?format=json", {
       timeout: 5000,
@@ -82,6 +83,7 @@ async function sendAligoSms(
       error: ipErr,
     });
   }
+}
 
   const apiKey = settings?.apiKey || process.env.ALIGO_API_KEY || "";
   const userId = settings?.userId || process.env.ALIGO_USER_ID || "";
