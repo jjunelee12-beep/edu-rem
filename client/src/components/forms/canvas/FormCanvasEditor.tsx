@@ -2476,21 +2476,38 @@ fontFamily: el.fontFamily || "Pretendard, sans-serif",
                             : "border-transparent transition-colors hover:border-slate-300"
                       }`}
                       style={{
-                        left: el.x * scale,
-                        top: el.y * scale,
-                        width: el.width * scale,
-                        height: el.height * scale,
-                        zIndex: isActiveMoving ? 9999 : el.zIndex ?? 1,
-                        backgroundColor: el.backgroundColor,
-                        color: el.color,
-                        borderRadius: el.borderRadius * scale,
-                        fontWeight: 800,
-                        fontSize: 18 * scale,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        userSelect: "none",
-                      }}
+  left: el.x * scale,
+  top: el.y * scale,
+  width: el.width * scale,
+  height: el.height * scale,
+  zIndex: isActiveMoving ? 9999 : el.zIndex ?? 1,
+  backgroundColor: el.backgroundColor,
+  color: el.color,
+  borderRadius: Number((el as any).borderRadius || 0) * scale,
+
+  fontWeight: Number((el as any).fontWeight || 900),
+  fontSize: Math.max(
+    10,
+    Number((el as any).fontSize || 34) * scale
+  ),
+  fontFamily: (el as any).fontFamily || "Pretendard, sans-serif",
+  textAlign: ((el as any).textAlign || "center") as any,
+
+  display: "flex",
+  alignItems: "center",
+  justifyContent:
+    (el as any).textAlign === "left"
+      ? "flex-start"
+      : (el as any).textAlign === "right"
+        ? "flex-end"
+        : "center",
+  padding: `0 ${Math.max(8, 14 * scale)}px`,
+  lineHeight: 1.15,
+  whiteSpace: "pre-wrap",
+  wordBreak: "keep-all",
+  overflow: "hidden",
+  userSelect: "none",
+}}
                     >
                       {el.text}
 
