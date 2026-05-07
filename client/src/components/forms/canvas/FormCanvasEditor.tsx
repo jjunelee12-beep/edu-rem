@@ -2491,14 +2491,14 @@ fontFamily: el.fontFamily || "Pretendard, sans-serif",
     Number((el as any).fontSize || 34) * scale
   ),
   fontFamily: (el as any).fontFamily || "Pretendard, sans-serif",
-  textAlign: ((el as any).textAlign || "center") as any,
+  textAlign: (el as any).textAlign || "center",
 
   display: "flex",
   alignItems: "center",
   justifyContent:
-    (el as any).textAlign === "left"
+    ((el as any).textAlign || "center") === "left"
       ? "flex-start"
-      : (el as any).textAlign === "right"
+      : ((el as any).textAlign || "center") === "right"
         ? "flex-end"
         : "center",
   padding: `0 ${Math.max(8, 14 * scale)}px`,
