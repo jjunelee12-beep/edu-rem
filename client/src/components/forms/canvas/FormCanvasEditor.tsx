@@ -2239,13 +2239,12 @@ data-form-canvas-stage="true"
   style={{
   width: canvasWidth,
   height: canvasHeight,
-  backgroundColor: canvas.backgroundColor,
   backgroundImage: gridVisible
-  ? "linear-gradient(to right, rgba(148,163,184,0.18) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.18) 1px, transparent 1px)"
-  : undefined,
-backgroundSize: gridVisible ? `${20 * scale}px ${20 * scale}px` : undefined,
-backgroundColor: canvas.backgroundColor || "#ffffff",
-border: compact ? "2px solid #64748b" : "1px solid #cbd5e1",
+    ? "linear-gradient(to right, rgba(148,163,184,0.18) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.18) 1px, transparent 1px)"
+    : undefined,
+  backgroundSize: gridVisible ? `${20 * scale}px ${20 * scale}px` : undefined,
+  backgroundColor: canvas.backgroundColor || "#ffffff",
+  border: compact ? "2px solid #64748b" : "1px solid #cbd5e1",
 boxShadow: compact
   ? "0 28px 90px rgba(15, 23, 42, 0.28)"
   : "0 18px 50px rgba(15, 23, 42, 0.14)",

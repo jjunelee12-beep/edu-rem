@@ -10612,7 +10612,7 @@ and(
   eq(chatRoomSettings.roomId, params.roomId),
   eq(chatRoomSettings.userId, params.userId)
 )
-
+);
     return existing[0].id;
   }
 
