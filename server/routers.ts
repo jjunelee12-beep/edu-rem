@@ -25,7 +25,7 @@ import { approvalRouter } from "./routes/approval.router";
 import { privateCertificateMasterRouter } from "./routes/privateCertificateMaster";
 import { subjectCatalogRouter } from "./routes/subjectCatalog";
 import { FEATURE_FLAGS } from "./_core/featureFlags";
-import { saasRouter } from "./routes/saas.router";
+import { saasRouter } from "./saas.router";
 
 function isAdminOrHost(user: any) {
   return (
