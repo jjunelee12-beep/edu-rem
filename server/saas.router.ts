@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure } from "./_core/trpc";
 import {
   listOrganizations,
   getOrganizationById,
@@ -8,9 +8,9 @@ import {
   updateOrganization,
   createOrganizationDefaults,
   assignUserToOrganization,
-} from "../saasdb";
+} from "./saasdb";
 import bcrypt from "bcryptjs";
-import * as db from "../db";
+import * as db from "./db";
 
 function assertSuperhost(ctx: any) {
   if (ctx.user?.role !== "superhost") {
