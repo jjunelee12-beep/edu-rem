@@ -9089,11 +9089,11 @@ export async function createPracticeEducationCenter(
   if (!db) throw new Error("DB not available");
 
   const result: any = await db.insert(practiceEducationCenters).values({
-    ...data,
-    feeAmount: (data as any).feeAmount ?? "0",
-    isActive: (data as any).isActive ?? true,
-    sortOrder: (data as any).sortOrder ?? 0,
-  });
+  ...data,
+  feeAmount: (data as any).feeAmount ?? "0",
+  isActive: (data as any).isActive ?? true,
+  sortOrder: (data as any).sortOrder ?? 0,
+} as any);
 
   return getInsertId(result);
 }

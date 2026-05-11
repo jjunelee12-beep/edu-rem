@@ -2459,19 +2459,19 @@ const userName = ctx.user.name || "사용자";
           throw new Error("db.ts에 createAiLearningEntry 함수를 먼저 추가해야 합니다.");
         }
 
-        await db.createAiLearningEntry({
 await db.createAiLearningEntry({
-          userId: Number(ctx.user.id),
-          userName: ctx.user.name,
-          learningType: input.learningType,
-          inputText: input.inputText,
-          normalizedKey: input.normalizedKey,
-          targetStudentId: input.targetStudentId ?? null,
-          targetStudentName: input.targetStudentName ?? null,
-          payload: input.payload,
-          feedback: input.feedback ?? null,
-          isApproved: input.isApproved ?? true,
-        });
+  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  userId: Number(ctx.user.id),
+  userName: ctx.user.name,
+  learningType: input.learningType,
+  inputText: input.inputText,
+  normalizedKey: input.normalizedKey,
+  targetStudentId: input.targetStudentId ?? null,
+  targetStudentName: input.targetStudentName ?? null,
+  payload: input.payload,
+  feedback: input.feedback ?? null,
+  isApproved: input.isApproved ?? true,
+});
 
         return { success: true };
       }),
@@ -5081,10 +5081,11 @@ institutionSummary: hostProcedure
   )
   .query(async ({ input, ctx }) => {
     assertHostOrSuperhost(ctx.user);
-    return db.getSettlementInstitutionSummary({
-      year: input.year,
-      month: input.month,
-    });
+    return db.getSettlementInstitutionEntries({
+  year: input.year,
+  month: input.month,
+  institutionName: input.institutionName,
+});
   }),
 
 institutionEntries: hostProcedure
@@ -5112,9 +5113,11 @@ institutionMonthlyTrend: hostProcedure
   )
   .query(async ({ input, ctx }) => {
     assertHostOrSuperhost(ctx.user);
-    return db.getSettlementInstitutionMonthlyTrend({
-      year: input.year,
-    });
+    const payslipData = await db.getSettlementPayslip({
+  year: input.year,
+  month: input.month,
+  assigneeId,
+});
   }),
 
 downloadPayslipExcel: protectedProcedure
@@ -5272,7 +5275,7 @@ downloadPayslipExcel: protectedProcedure
         };
       }),
   }),
-}),
+});
 
 console.log("[ROUTER OK] planSemester loaded");
 console.log("[ROUTER OK] transferSubject loaded");
