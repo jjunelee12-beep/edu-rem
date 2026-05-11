@@ -2441,7 +2441,7 @@ const userName = ctx.user.name || "사용자";
 }
       }),
 
-    saveLearning: protectedProcedure
+        saveLearning: protectedProcedure
       .input(
         z.object({
           learningType: z.string().min(1),
@@ -2459,19 +2459,19 @@ const userName = ctx.user.name || "사용자";
           throw new Error("db.ts에 createAiLearningEntry 함수를 먼저 추가해야 합니다.");
         }
 
-await db.createAiLearningEntry({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
-  userId: Number(ctx.user.id),
-  userName: ctx.user.name,
-  learningType: input.learningType,
-  inputText: input.inputText,
-  normalizedKey: input.normalizedKey,
-  targetStudentId: input.targetStudentId ?? null,
-  targetStudentName: input.targetStudentName ?? null,
-  payload: input.payload,
-  feedback: input.feedback ?? null,
-  isApproved: input.isApproved ?? true,
-});
+        await db.createAiLearningEntry({
+          organizationId: Number((ctx.user as any)?.organizationId || 1),
+          userId: Number(ctx.user.id),
+          userName: ctx.user.name,
+          learningType: input.learningType,
+          inputText: input.inputText,
+          normalizedKey: input.normalizedKey,
+          targetStudentId: input.targetStudentId ?? null,
+          targetStudentName: input.targetStudentName ?? null,
+          payload: input.payload,
+          feedback: input.feedback ?? null,
+          isApproved: input.isApproved ?? true,
+        } as any);
 
         return { success: true };
       }),
