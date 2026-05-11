@@ -5035,7 +5035,7 @@ organizationId,
       }),
   }),
 
-  settlement: router({
+    settlement: router({
     report: adminProcedure
       .input(
         z.object({
@@ -5072,87 +5072,88 @@ organizationId,
         });
       }),
 
-institutionSummary: hostProcedure
-  .input(
-    z.object({
-      year: z.number(),
-      month: z.number(),
-    })
-  )
-  .query(async ({ input, ctx }) => {
-    assertHostOrSuperhost(ctx.user);
-    return db.getSettlementInstitutionEntries({
-  year: input.year,
-  month: input.month,
-  institutionName: input.institutionName,
-});
-  }),
+    institutionSummary: hostProcedure
+      .input(
+        z.object({
+          year: z.number(),
+          month: z.number(),
+        })
+      )
+      .query(async ({ input, ctx }) => {
+        assertHostOrSuperhost(ctx.user);
 
-institutionEntries: hostProcedure
-  .input(
-    z.object({
-      year: z.number(),
-      month: z.number(),
-      institutionName: z.string().min(1),
-    })
-  )
-  .query(async ({ input, ctx }) => {
-    assertHostOrSuperhost(ctx.user);
-    return db.getSettlementInstitutionEntries({
-      year: input.year,
-      month: input.month,
-      institutionName: input.institutionName,
-    });
-  }),
+        return db.getSettlementInstitutionSummary({
+          year: input.year,
+          month: input.month,
+          organizationId: Number((ctx.user as any)?.organizationId || 1),
+        } as any);
+      }),
 
-institutionMonthlyTrend: hostProcedure
-  .input(
-    z.object({
-      year: z.number(),
-    })
-  )
-  .query(async ({ input, ctx }) => {
-    assertHostOrSuperhost(ctx.user);
-    const payslipData = await db.getSettlementPayslip({
-  year: input.year,
-  month: input.month,
-  assigneeId,
-});
-  }),
+    institutionEntries: hostProcedure
+      .input(
+        z.object({
+          year: z.number(),
+          month: z.number(),
+          institutionName: z.string().min(1),
+        })
+      )
+      .query(async ({ input, ctx }) => {
+        assertHostOrSuperhost(ctx.user);
 
-downloadPayslipExcel: protectedProcedure
-  .input(
-    z.object({
-      year: z.number(),
-      month: z.number(),
-      assigneeId: z.number(),
-    })
-  )
-  .mutation(async ({ ctx, input }) => {
-    const assigneeId = isAdminOrHost(ctx.user)
-      ? input.assigneeId
-      : Number(ctx.user.id);
+        return db.getSettlementInstitutionEntries({
+          year: input.year,
+          month: input.month,
+          institutionName: input.institutionName,
+          organizationId: Number((ctx.user as any)?.organizationId || 1),
+        } as any);
+      }),
 
-    // 1. 명세서 데이터 가져오기
-    const payslipData = await db.getSettlementPayslip({
-      year: input.year,
-      month: input.month,
-      assigneeId,
-    });
+    institutionMonthlyTrend: hostProcedure
+      .input(
+        z.object({
+          year: z.number(),
+        })
+      )
+      .query(async ({ input, ctx }) => {
+        assertHostOrSuperhost(ctx.user);
 
-    // 2. 엑셀 생성
-    const { fileName, buffer } =
-      await buildSettlementPayslipExcel(payslipData);
+        return db.getSettlementInstitutionMonthlyTrend({
+          year: input.year,
+          organizationId: Number((ctx.user as any)?.organizationId || 1),
+        } as any);
+      }),
 
-    // 3. base64로 변환 (프론트 다운로드용)
-    const base64 = Buffer.from(buffer).toString("base64");
+    downloadPayslipExcel: protectedProcedure
+      .input(
+        z.object({
+          year: z.number(),
+          month: z.number(),
+          assigneeId: z.number(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const assigneeId = isAdminOrHost(ctx.user)
+          ? input.assigneeId
+          : Number(ctx.user.id);
 
-    return {
-      success: true,
-      fileName,
-      base64,
-    };
-  }),
+        const payslipData = await db.getSettlementPayslip({
+          year: input.year,
+          month: input.month,
+          assigneeId,
+          organizationId: Number((ctx.user as any)?.organizationId || 1),
+        } as any);
+
+        const { fileName, buffer } =
+          await buildSettlementPayslipExcel(payslipData);
+
+        const base64 = Buffer.from(buffer).toString("base64");
+
+        return {
+          success: true,
+          fileName,
+          base64,
+        };
+      }),
 
     payslip: adminProcedure
       .input(
@@ -5172,10 +5173,12 @@ downloadPayslipExcel: protectedProcedure
           year: input.year,
           month: input.month,
           assigneeId: targetAssigneeId,
-        });
+          organizationId: Number((ctx.user as any)?.organizationId || 1),
+        } as any);
       }),
   }),
-  }),
+
+
   superhost: router({
   /**
    * 슈퍼호스트 홈 대시보드
