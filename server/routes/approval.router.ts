@@ -20,7 +20,9 @@ const formTypeSchema = z.enum(["attendance", "business_trip", "general"]);
 
 export const approvalRouter = router({
   myDocuments: protectedProcedure.query(async ({ ctx }) => {
-    return listMyApprovalDocuments(ctx.user.id);
+    return listMyApprovalDocuments(ctx.user.id, {
+  organizationId: Number(ctx.user.organizationId || 1),
+});
   }),
 
   pendingForMe: protectedProcedure.query(async ({ ctx }) => {
@@ -29,14 +31,18 @@ export const approvalRouter = router({
       throw new Error("승인 문서 조회 권한이 없습니다.");
     }
 
-    return listPendingApprovalDocumentsForApprover(ctx.user.id);
+    return listPendingApprovalDocumentsForApprover(ctx.user.id, {
+  organizationId: Number(ctx.user.organizationId || 1),
+});
   }),
 
   detail: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return getApprovalDocument(input.id);
-    }),
+    .query(async ({ ctx, input }) => {
+  return getApprovalDocument(input.id, {
+    organizationId: Number(ctx.user.organizationId || 1),
+  });
+}),
 
   create: protectedProcedure
     .input(
@@ -69,6 +75,7 @@ export const approvalRouter = router({
       const me = await getUserById(ctx.user.id);
 
       const documentId = await createApprovalDocument({
+organizationId: Number(ctx.user.organizationId || 1),
         formType: input.formType,
         subType: input.subType,
         title: input.title,
@@ -96,7 +103,9 @@ export const approvalRouter = router({
         attachmentUrl: input.attachmentUrl ?? null,
       });
 
-      const detail = await getApprovalDocument(Number(documentId));
+      const detail = await getApprovalDocument(Number(documentId), {
+  organizationId: Number(ctx.user.organizationId || 1),
+});
       const firstLine = detail?.lines?.find(
         (line: any) => Number(line.stepOrder) === 1
       );
@@ -106,6 +115,7 @@ export const approvalRouter = router({
   Number(firstLine.approverUserId) !== Number(ctx.user.id)
 ) {
   const notificationId = await createNotification({
+organizationId: Number(ctx.user.organizationId || 1),
     userId: Number(firstLine.approverUserId),
     type: "approval",
     title: "전자결재 요청",
@@ -116,6 +126,7 @@ export const approvalRouter = router({
   } as any);
 
   emitLiveNotification({
+organizationId: Number(ctx.user.organizationId || 1),
     id: Number(notificationId),
     userId: Number(firstLine.approverUserId),
     type: "approval",
@@ -141,13 +152,16 @@ export const approvalRouter = router({
       const me = await getUserById(ctx.user.id);
 
       await approveApprovalDocument({
-        documentId: input.documentId,
-        approverUserId: ctx.user.id,
-        approverUserName: me?.name ?? null,
-        comment: input.comment ?? null,
-      });
+  organizationId: Number(ctx.user.organizationId || 1),
+  documentId: input.documentId,
+  approverUserId: ctx.user.id,
+  approverUserName: me?.name ?? null,
+  comment: input.comment ?? null,
+} as any);
 
-      const updatedDetail = await getApprovalDocument(input.documentId);
+      const updatedDetail = await getApprovalDocument(input.documentId, {
+  organizationId: Number(ctx.user.organizationId || 1),
+});
       const updatedDoc = updatedDetail?.document;
       const updatedLines = updatedDetail?.lines ?? [];
 
@@ -163,6 +177,7 @@ if (
   Number(nextLine.approverUserId) !== Number(ctx.user.id)
 ) {
   const notificationId = await createNotification({
+organizationId: Number(ctx.user.organizationId || 1),
     userId: Number(nextLine.approverUserId),
     type: "approval",
     title: "전자결재 요청",
@@ -173,6 +188,7 @@ if (
   } as any);
 
   emitLiveNotification({
+organizationId: Number(ctx.user.organizationId || 1),
     id: Number(notificationId),
     userId: Number(nextLine.approverUserId),
     type: "approval",
@@ -192,6 +208,7 @@ if (
   Number(updatedDoc.applicantUserId) !== Number(ctx.user.id)
 ) {
   const notificationId = await createNotification({
+organizationId: Number(ctx.user.organizationId || 1),
     userId: Number(updatedDoc.applicantUserId),
     type: "approval",
     title: "전자결재 승인완료",
@@ -202,6 +219,7 @@ if (
   } as any);
 
   emitLiveNotification({
+organizationId: Number(ctx.user.organizationId || 1),
     id: Number(notificationId),
     userId: Number(updatedDoc.applicantUserId),
     type: "approval",
@@ -227,13 +245,16 @@ if (
       const me = await getUserById(ctx.user.id);
 
       await rejectApprovalDocument({
-        documentId: input.documentId,
-        approverUserId: ctx.user.id,
-        approverUserName: me?.name ?? null,
-        comment: input.comment,
-      });
+  organizationId: Number(ctx.user.organizationId || 1),
+  documentId: input.documentId,
+  approverUserId: ctx.user.id,
+  approverUserName: me?.name ?? null,
+  comment: input.comment,
+} as any);
 
-      const updatedDetail = await getApprovalDocument(input.documentId);
+      const updatedDetail = await getApprovalDocument(input.documentId, {
+  organizationId: Number(ctx.user.organizationId || 1),
+});
       const updatedDoc = updatedDetail?.document;
 
       if (
@@ -241,6 +262,7 @@ if (
   Number(updatedDoc.applicantUserId) !== Number(ctx.user.id)
 ) {
   const notificationId = await createNotification({
+organizationId: Number(ctx.user.organizationId || 1),
     userId: Number(updatedDoc.applicantUserId),
     type: "approval",
     title: "전자결재 반려",
@@ -251,6 +273,7 @@ if (
   } as any);
 
   emitLiveNotification({
+organizationId: Number(ctx.user.organizationId || 1),
     id: Number(notificationId),
     userId: Number(updatedDoc.applicantUserId),
     type: "approval",
@@ -271,7 +294,9 @@ if (
       if (ctx.user.role !== "superhost") {
         throw new Error("설정 조회 권한이 없습니다.");
       }
-      return getApprovalSetting(input.formType);
+      return getApprovalSetting(input.formType, {
+  organizationId: Number(ctx.user.organizationId || 1),
+});
     }),
 
   saveSetting: protectedProcedure
@@ -289,7 +314,8 @@ if (
       }
 
       return saveApprovalSetting({
-        formType: input.formType,
+  organizationId: Number(ctx.user.organizationId || 1),
+  formType: input.formType,
         firstApproverUserId: input.firstApproverUserId ?? null,
         secondApproverUserId: input.secondApproverUserId ?? null,
         thirdApproverUserId: input.thirdApproverUserId ?? null,
@@ -297,9 +323,11 @@ if (
       });
     }),
 
-  getPrintSettings: protectedProcedure.query(async () => {
-    return getApprovalPrintSettings();
-  }),
+  getPrintSettings: protectedProcedure.query(async ({ ctx }) => {
+  return getApprovalPrintSettings({
+    organizationId: Number(ctx.user.organizationId || 1),
+  });
+}),
 
   savePrintSettings: protectedProcedure
     .input(
@@ -316,11 +344,12 @@ if (
       }
 
       return saveApprovalPrintSettings({
-        companyName: input.companyName,
-        documentTitle: input.documentTitle,
-        applicantSignLabel: input.applicantSignLabel,
-        finalApproverSignLabel: input.finalApproverSignLabel,
-        updatedBy: ctx.user.id,
-      });
+  organizationId: Number(ctx.user.organizationId || 1),
+  companyName: input.companyName,
+  documentTitle: input.documentTitle,
+  applicantSignLabel: input.applicantSignLabel,
+  finalApproverSignLabel: input.finalApproverSignLabel,
+  updatedBy: ctx.user.id,
+});
     }),
 });

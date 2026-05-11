@@ -152,14 +152,28 @@ export async function getDb() {
   return _db;
 }
 
-export async function getStudentById(studentId: number) {
+export async function getStudentById(
+  studentId: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return undefined;
+
+  const organizationId = Number(params?.organizationId || 0);
 
   const result = await db
     .select()
     .from(students)
-    .where(eq(students.id, studentId))
+    .where(
+      organizationId > 0
+        ? and(
+            eq(students.id, studentId),
+            eq(students.organizationId, organizationId)
+          )
+        : eq(students.id, studentId)
+    )
     .limit(1);
 
   return result[0];
@@ -236,14 +250,26 @@ async function getNextUserDisplayNo() {
   return maxNo + 1;
 }
 
-export async function getRefundById(id: number) {
+export async function getRefundById(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return undefined;
+
+  const organizationId = Number(params?.organizationId || 0);
 
   const result = await db
     .select()
     .from(refunds)
-    .where(eq(refunds.id, id))
+    .where(
+      organizationId > 0
+        ? and(
+            eq(refunds.id, id),
+            eq(refunds.organizationId, organizationId)
+          )
+        : eq(refunds.id, id)
+    )
     .limit(1);
 
   return result[0];
@@ -255,6 +281,7 @@ export async function getRefundById(id: number) {
 
 // AI 액션 로그 저장
 export async function createAiActionLog(params: {
+organizationId?: number | null;
   userId: number;
   userName: string;
   action: string;
@@ -267,6 +294,7 @@ export async function createAiActionLog(params: {
     if (!db) return;
 
     await db.insert(aiActionLogs).values({
+organizationId: Number(params.organizationId || 1),
       userId: params.userId,
       userName: params.userName,
       action: params.action,
@@ -279,9 +307,13 @@ export async function createAiActionLog(params: {
   }
 }
 
-// 학생 좌표 조회
-export async function getStudentWithCoords(studentId: number) {
-  const student = await getStudent(studentId);
+export async function getStudentWithCoords(
+  studentId: number,
+  params?: { organizationId?: number | null }
+) {
+  const student = await getStudent(studentId, {
+    organizationId: Number(params?.organizationId || 1),
+  });
   if (!student) return null;
 
   return {
@@ -291,37 +323,64 @@ export async function getStudentWithCoords(studentId: number) {
   };
 }
 
-// 실습기관 목록
-export async function listActivePracticeInstitutions() {
+export async function listActivePracticeInstitutions(params?: {
+  organizationId?: number | null;
+}) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 1);
 
   return db
     .select()
     .from(practiceInstitutions)
-    .where(eq(practiceInstitutions.isActive, 1));
+    .where(
+      and(
+        eq(practiceInstitutions.organizationId, organizationId),
+        eq(practiceInstitutions.isActive, 1)
+      )
+    );
 }
 
-// 실습교육원 목록
-export async function listActivePracticeEducationCenters() {
+export async function listActivePracticeEducationCenters(params?: {
+  organizationId?: number | null;
+}) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 1);
 
   return db
     .select()
     .from(practiceEducationCenters)
-   .where(eq(practiceEducationCenters.isActive, 1));
+    .where(
+      and(
+        eq(practiceEducationCenters.organizationId, organizationId),
+        eq(practiceEducationCenters.isActive, 1)
+      )
+    );
 }
 
-// 실습 추천 핵심 함수
-export async function getPracticeRecommendationsForStudent(studentId: number) {
-  const student = await getStudentWithCoords(studentId);
+export async function getPracticeRecommendationsForStudent(
+  studentId: number,
+  params?: { organizationId?: number | null }
+) {
+  const organizationId = Number(params?.organizationId || 1);
+
+  const student = await getStudentWithCoords(studentId, {
+    organizationId,
+  });
+
   if (!student || !student.latitude || !student.longitude) {
     throw new Error("학생 주소 좌표 없음");
   }
 
-  const institutions = await listActivePracticeInstitutions();
-  const centers = await listActivePracticeEducationCenters();
+  const institutions = await listActivePracticeInstitutions({
+    organizationId,
+  });
+  const centers = await listActivePracticeEducationCenters({
+    organizationId,
+  });
 
   const calc = (list: any[]) =>
     list
@@ -341,7 +400,7 @@ export async function getPracticeRecommendationsForStudent(studentId: number) {
         };
       })
       .filter(Boolean)
-      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .sort((a: any, b: any) => a.distanceKm - b.distanceKm)
       .slice(0, 5);
 
   return {
@@ -352,6 +411,7 @@ export async function getPracticeRecommendationsForStudent(studentId: number) {
 }
 
 export async function fixMissingCoordinates(params: {
+  organizationId?: number | null;
   type: "education" | "institution";
   limit?: number;
 }) {
@@ -359,6 +419,8 @@ export async function fixMissingCoordinates(params: {
   if (!db) throw new Error("DB not available");
 
   const limit = params.limit ?? 100;
+
+const organizationId = Number(params.organizationId || 1);
 
   const table =
     params.type === "education"
@@ -369,8 +431,11 @@ export async function fixMissingCoordinates(params: {
     .select()
     .from(table)
     .where(
-      sql`(${table.latitude} IS NULL OR ${table.longitude} IS NULL)`
-    )
+  and(
+    eq((table as any).organizationId, organizationId),
+    sql`(${table.latitude} IS NULL OR ${table.longitude} IS NULL)`
+  )
+)
     .limit(limit);
 
   let success = 0;
@@ -392,7 +457,12 @@ export async function fixMissingCoordinates(params: {
           latitude: String(geo.lat),
           longitude: String(geo.lng),
         } as any)
-        .where(eq(table.id, row.id));
+        .where(
+  and(
+    eq(table.id, row.id),
+    eq((table as any).organizationId, organizationId)
+  )
+);
 
       success++;
     } catch (e) {
@@ -413,6 +483,7 @@ export async function fixMissingCoordinates(params: {
 
 // 학습 데이터 저장
 export async function createAiLearningEntry(params: {
+organizationId?: number | null;
   userId: number;
   userName: string;
   learningType: string;
@@ -425,24 +496,26 @@ export async function createAiLearningEntry(params: {
   const db = await getDb();
   if (!db) return;
 
-  await db.insert(sql`
-    INSERT INTO ai_learning_entries
-    (userId, userName, learningType, inputText, normalizedKey, payload, targetStudentId, targetStudentName)
-    VALUES (
-      ${params.userId},
-      ${params.userName},
-      ${params.learningType},
-      ${params.inputText},
-      ${params.normalizedKey ?? null},
-      ${params.payload ? JSON.stringify(params.payload) : null},
-      ${params.targetStudentId ?? null},
-      ${params.targetStudentName ?? null}
-    )
-  `);
+  await db.execute(sql`
+  INSERT INTO ai_learning_entries
+  (organizationId, userId, userName, learningType, inputText, normalizedKey, payload, targetStudentId, targetStudentName)
+  VALUES (
+    ${Number(params.organizationId || 1)},
+    ${params.userId},
+    ${params.userName},
+    ${params.learningType},
+    ${params.inputText},
+    ${params.normalizedKey ?? null},
+    ${params.payload ? JSON.stringify(params.payload) : null},
+    ${params.targetStudentId ?? null},
+    ${params.targetStudentName ?? null}
+  )
+`);
 }
 
 // 유사 학습 조회
 export async function findSimilarAiLearning(params: {
+organizationId?: number | null;
   learningType?: string;
   normalizedKey?: string;
   keyword?: string;
@@ -454,6 +527,8 @@ export async function findSimilarAiLearning(params: {
     SELECT *
     FROM ai_learning_entries
     WHERE 
+organizationId = ${Number(params.organizationId || 1)}
+AND
       (${params.normalizedKey ?? null} IS NULL OR normalizedKey = ${params.normalizedKey ?? null})
     ORDER BY createdAt DESC
     LIMIT 5
@@ -461,8 +536,16 @@ export async function findSimilarAiLearning(params: {
 
   return rows as any[];
 }
-export async function getStudentRegistrationSummary(studentId: number) {
+
+
+export async function getStudentRegistrationSummary(
+  studentId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
+
+const organizationId = Number(params?.organizationId || 1);
+
   if (!db) {
     return {
       status: "",
@@ -474,7 +557,7 @@ export async function getStudentRegistrationSummary(studentId: number) {
     };
   }
 
-  const student = await getStudent(studentId);
+  const student = await getStudent(studentId, { organizationId });
   if (!student) {
     return {
       status: "",
@@ -486,7 +569,7 @@ export async function getStudentRegistrationSummary(studentId: number) {
     };
   }
 
-  const semesterRows = await listSemesters(studentId);
+  const semesterRows = await listSemesters(studentId, { organizationId });
 
   const actualSemesters = semesterRows
     .filter(
@@ -527,7 +610,8 @@ export async function getStudentRegistrationSummary(studentId: number) {
       0
     ) as totalRefund
   FROM settlement_items
-  WHERE studentId = ${studentId}
+WHERE studentId = ${studentId}
+  AND organizationId = ${organizationId}
 `);
 
 const totalPaid = toNumber((settlementResult as any)[0]?.totalPaid);
@@ -584,15 +668,26 @@ function parseUiConfigJson(value: any) {
 }
 
 // ─── Form Blueprints ─────────────────────────────────────────────────
-
-export async function listFormBlueprints(formType: "landing" | "ad") {
+export async function listFormBlueprints(
+  formType: "landing" | "ad",
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const rows = await db
     .select()
     .from(formBlueprints)
-    .where(eq(formBlueprints.formType, formType))
+    .where(
+      and(
+        eq(formBlueprints.organizationId, organizationId),
+        eq(formBlueprints.formType, formType)
+      )
+    )
     .orderBy(desc(formBlueprints.isDefault), desc(formBlueprints.id));
 
   return rows.map((row: any) => ({
@@ -601,15 +696,23 @@ export async function listFormBlueprints(formType: "landing" | "ad") {
   }));
 }
 
-export async function getDefaultFormBlueprint(formType: "landing" | "ad") {
+export async function getDefaultFormBlueprint(
+  formType: "landing" | "ad",
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return null;
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const rows = await db
     .select()
     .from(formBlueprints)
     .where(
       and(
+        eq(formBlueprints.organizationId, organizationId),
         eq(formBlueprints.formType, formType),
         eq(formBlueprints.isDefault, true),
         eq(formBlueprints.isActive, true)
@@ -627,14 +730,28 @@ export async function getDefaultFormBlueprint(formType: "landing" | "ad") {
   };
 }
 
-export async function getFormBlueprintById(id: number) {
+export async function getFormBlueprintById(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return null;
+
+  const organizationId = Number(params?.organizationId || 0);
 
   const rows = await db
     .select()
     .from(formBlueprints)
-    .where(eq(formBlueprints.id, id))
+    .where(
+      organizationId > 0
+        ? and(
+            eq(formBlueprints.id, id),
+            eq(formBlueprints.organizationId, organizationId)
+          )
+        : eq(formBlueprints.id, id)
+    )
     .limit(1);
 
   const row = rows[0];
@@ -647,6 +764,7 @@ export async function getFormBlueprintById(id: number) {
 }
 
 export async function createFormBlueprint(input: {
+  organizationId?: number | null;
   formType: "landing" | "ad";
   name: string;
   description?: string | null;
@@ -656,11 +774,14 @@ export async function createFormBlueprint(input: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number(input.organizationId || 1);
+
   const exists = await db
     .select()
     .from(formBlueprints)
     .where(
       and(
+        eq(formBlueprints.organizationId, organizationId),
         eq(formBlueprints.formType, input.formType),
         eq(formBlueprints.name, input.name.trim())
       )
@@ -672,6 +793,7 @@ export async function createFormBlueprint(input: {
   }
 
   const result: any = await db.insert(formBlueprints).values({
+    organizationId,
     formType: input.formType,
     name: input.name.trim(),
     description: input.description?.trim() || null,
@@ -682,10 +804,14 @@ export async function createFormBlueprint(input: {
   } as any);
 
   const insertedId = Number(getInsertId(result));
-  return getFormBlueprintById(insertedId);
+
+  return getFormBlueprintById(insertedId, {
+    organizationId,
+  });
 }
 
 export async function updateFormBlueprint(input: {
+  organizationId?: number | null;
   id: number;
   name?: string;
   description?: string | null;
@@ -696,7 +822,12 @@ export async function updateFormBlueprint(input: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const target = await getFormBlueprintById(input.id);
+  const organizationId = Number(input.organizationId || 1);
+
+  const target = await getFormBlueprintById(input.id, {
+    organizationId,
+  });
+
   if (!target) {
     throw new Error("수정할 뼈대를 찾을 수 없습니다.");
   }
@@ -707,6 +838,7 @@ export async function updateFormBlueprint(input: {
       .from(formBlueprints)
       .where(
         and(
+          eq(formBlueprints.organizationId, organizationId),
           eq(formBlueprints.formType, target.formType),
           eq(formBlueprints.name, input.name.trim())
         )
@@ -718,12 +850,17 @@ export async function updateFormBlueprint(input: {
     }
   }
 
-if (input.isDefault === true) {
-  await db
-    .update(formBlueprints)
-    .set({ isDefault: false } as any)
-    .where(eq(formBlueprints.formType, target.formType));
-}
+  if (input.isDefault === true) {
+    await db
+      .update(formBlueprints)
+      .set({ isDefault: false } as any)
+      .where(
+        and(
+          eq(formBlueprints.organizationId, organizationId),
+          eq(formBlueprints.formType, target.formType)
+        )
+      );
+  }
 
   await db
     .update(formBlueprints)
@@ -742,21 +879,45 @@ if (input.isDefault === true) {
       isDefault:
         input.isDefault === undefined ? undefined : Boolean(input.isDefault),
     } as any)
-    .where(eq(formBlueprints.id, input.id));
+    .where(
+      and(
+        eq(formBlueprints.id, input.id),
+        eq(formBlueprints.organizationId, organizationId)
+      )
+    );
 
-  return getFormBlueprintById(input.id);
+  return getFormBlueprintById(input.id, {
+    organizationId,
+  });
 }
 
-export async function deleteFormBlueprint(id: number) {
+export async function deleteFormBlueprint(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const target = await getFormBlueprintById(id);
+  const organizationId = Number(params?.organizationId || 1);
+
+  const target = await getFormBlueprintById(id, {
+    organizationId,
+  });
+
   if (!target) {
     throw new Error("삭제할 뼈대를 찾을 수 없습니다.");
   }
 
-  await db.delete(formBlueprints).where(eq(formBlueprints.id, id));
+  await db
+    .delete(formBlueprints)
+    .where(
+      and(
+        eq(formBlueprints.id, id),
+        eq(formBlueprints.organizationId, organizationId)
+      )
+    );
 
   return {
     ok: true,
@@ -765,13 +926,19 @@ export async function deleteFormBlueprint(id: number) {
 }
 
 export async function createLeadFormFromBlueprint(input: {
+  organizationId?: number | null;
   blueprintId: number;
   assigneeId: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const blueprint = await getFormBlueprintById(input.blueprintId);
+  const organizationId = Number(input.organizationId || 1);
+
+  const blueprint = await getFormBlueprintById(input.blueprintId, {
+    organizationId,
+  });
+
   if (!blueprint) {
     throw new Error("뼈대를 찾을 수 없습니다.");
   }
@@ -782,6 +949,7 @@ export async function createLeadFormFromBlueprint(input: {
       : `lf_${Math.random().toString(36).slice(2, 12)}`;
 
   await db.insert(leadForms).values({
+    organizationId,
     assigneeId: input.assigneeId,
     token,
     formType: blueprint.formType,
@@ -799,10 +967,16 @@ function getLeadFormTemplateToken(formType: "landing" | "ad") {
   return formType === "ad" ? "__template_ad__" : "__template_landing__";
 }
 
-export async function getLeadFormTemplate(formType: "landing" | "ad") {
+export async function getLeadFormTemplate(
+  formType: "landing" | "ad",
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return undefined;
 
+  const organizationId = Number(params?.organizationId || 1);
   const token = getLeadFormTemplateToken(formType);
 
   const result = await db
@@ -810,6 +984,7 @@ export async function getLeadFormTemplate(formType: "landing" | "ad") {
     .from(leadForms)
     .where(
       and(
+        eq(leadForms.organizationId, organizationId),
         eq(leadForms.formType, formType),
         eq(leadForms.token, token)
       )
@@ -820,6 +995,7 @@ export async function getLeadFormTemplate(formType: "landing" | "ad") {
 }
 
 export async function saveLeadFormTemplate(params: {
+  organizationId?: number | null;
   formType: "landing" | "ad";
   actorUserId: number;
   uiConfig: any;
@@ -827,8 +1003,12 @@ export async function saveLeadFormTemplate(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number(params.organizationId || 1);
+
   const token = getLeadFormTemplateToken(params.formType);
-  const existing = await getLeadFormTemplate(params.formType);
+  const existing = await getLeadFormTemplate(params.formType, {
+    organizationId,
+  });
 
   if (existing) {
     await db
@@ -838,12 +1018,18 @@ export async function saveLeadFormTemplate(params: {
         isActive: false,
         uiConfigJson: JSON.stringify(params.uiConfig),
       } as any)
-      .where(eq(leadForms.id, existing.id));
+      .where(
+        and(
+          eq(leadForms.id, existing.id),
+          eq(leadForms.organizationId, organizationId)
+        )
+      );
 
     return existing.id;
   }
 
   const result: any = await db.insert(leadForms).values({
+    organizationId,
     assigneeId: params.actorUserId,
     token,
     formType: params.formType,
@@ -855,6 +1041,7 @@ export async function saveLeadFormTemplate(params: {
 }
 
 export async function saveNamedLeadFormTemplate(input: {
+  organizationId?: number | null;
   formType: "landing" | "ad";
   templateName: string;
   uiConfig: any;
@@ -863,13 +1050,20 @@ export async function saveNamedLeadFormTemplate(input: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number(input.organizationId || 1);
+
   const token = getNamedLeadFormTemplateToken(input.formType, input.templateName);
   const uiConfigJson = safeJsonStringify(input.uiConfig || {});
 
   const existing = await db
     .select()
     .from(leadForms)
-    .where(eq(leadForms.token, token))
+    .where(
+      and(
+        eq(leadForms.organizationId, organizationId),
+        eq(leadForms.token, token)
+      )
+    )
     .limit(1);
 
   if (existing[0]) {
@@ -879,10 +1073,16 @@ export async function saveNamedLeadFormTemplate(input: {
         uiConfigJson,
         assigneeId: input.actorUserId ?? existing[0].assigneeId ?? 0,
       } as any)
-      .where(eq(leadForms.id, existing[0].id));
+      .where(
+        and(
+          eq(leadForms.id, existing[0].id),
+          eq(leadForms.organizationId, organizationId)
+        )
+      );
 
     return {
       ...existing[0],
+      organizationId,
       token,
       uiConfigJson,
       assigneeId: input.actorUserId ?? existing[0].assigneeId ?? 0,
@@ -890,6 +1090,7 @@ export async function saveNamedLeadFormTemplate(input: {
   }
 
   await db.insert(leadForms).values({
+    organizationId,
     formType: input.formType,
     token,
     uiConfigJson,
@@ -900,7 +1101,12 @@ export async function saveNamedLeadFormTemplate(input: {
   const created = await db
     .select()
     .from(leadForms)
-    .where(eq(leadForms.token, token))
+    .where(
+      and(
+        eq(leadForms.organizationId, organizationId),
+        eq(leadForms.token, token)
+      )
+    )
     .limit(1);
 
   return created[0];
@@ -1109,14 +1315,23 @@ function normalizeFormUiConfigForSave(
 }
 
 export async function applyNamedLeadFormTemplateToToken(input: {
+  organizationId?: number | null;
   formType: "landing" | "ad";
   templateName: string;
   targetToken: string;
   actorUserId: number;
 }) {
   const db = await getDb();
+  const organizationId = Number(input.organizationId || 1);
 
-  const template = await getNamedLeadFormTemplate(input.formType, input.templateName);
+  const template = await getNamedLeadFormTemplate(
+    input.formType,
+    input.templateName,
+    {
+      organizationId,
+    }
+  );
+
   if (!template) {
     throw new Error("템플릿을 찾을 수 없습니다.");
   }
@@ -1124,7 +1339,12 @@ export async function applyNamedLeadFormTemplateToToken(input: {
   const targetRows = await db
     .select()
     .from(leadForms)
-    .where(eq(leadForms.token, input.targetToken))
+    .where(
+      and(
+        eq(leadForms.organizationId, organizationId),
+        eq(leadForms.token, input.targetToken)
+      )
+    )
     .limit(1);
 
   const target = targetRows[0];
@@ -1136,17 +1356,23 @@ export async function applyNamedLeadFormTemplateToToken(input: {
     throw new Error("폼 타입이 맞지 않습니다.");
   }
 
- await updateMyLeadFormUiConfig({
-  token: input.targetToken,
-  formType: input.formType,
-  userId: input.actorUserId,
-  uiConfig: safeJsonParse(template.uiConfigJson),
-});
+  await updateMyLeadFormUiConfig({
+    organizationId,
+    token: input.targetToken,
+    formType: input.formType,
+    userId: input.actorUserId,
+    uiConfig: safeJsonParse(template.uiConfigJson),
+  } as any);
 
   const updated = await db
     .select()
     .from(leadForms)
-    .where(eq(leadForms.token, input.targetToken))
+    .where(
+      and(
+        eq(leadForms.organizationId, organizationId),
+        eq(leadForms.token, input.targetToken)
+      )
+    )
     .limit(1);
 
   return updated[0];
@@ -1156,25 +1382,41 @@ export async function applyNamedLeadFormTemplateToToken(input: {
 export async function deleteNamedLeadFormTemplate(
   formType: "landing" | "ad",
   templateName: string,
-  actorUserId: number
+  actorUserId: number,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
+  const organizationId = Number(params?.organizationId || 1);
   const token = getNamedLeadFormTemplateToken(formType, templateName);
 
   const existing = await db
     .select()
     .from(leadForms)
-    .where(eq(leadForms.token, token))
+    .where(
+      and(
+        eq(leadForms.organizationId, organizationId),
+        eq(leadForms.formType, formType),
+        eq(leadForms.token, token)
+      )
+    )
     .limit(1);
 
   if (!existing[0]) {
     throw new Error("삭제할 템플릿을 찾을 수 없습니다.");
   }
-if (Number(existing[0].assigneeId) !== Number(actorUserId)) {
-  throw new Error("본인 템플릿만 삭제할 수 있습니다.");
-}
 
-  await db.delete(leadForms).where(eq(leadForms.id, existing[0].id));
+  if (Number(existing[0].assigneeId) !== Number(actorUserId)) {
+    throw new Error("본인 템플릿만 삭제할 수 있습니다.");
+  }
+
+  await db.delete(leadForms).where(
+    and(
+      eq(leadForms.id, existing[0].id),
+      eq(leadForms.organizationId, organizationId)
+    )
+  );
 
   return {
     ok: true,
@@ -1183,12 +1425,14 @@ if (Number(existing[0].assigneeId) !== Number(actorUserId)) {
 }
 
 export async function renameNamedLeadFormTemplate(input: {
+  organizationId?: number | null;
   formType: "landing" | "ad";
   oldTemplateName: string;
   newTemplateName: string;
   actorUserId: number;
 }) {
   const dbConn = await getDb();
+  const organizationId = Number(input.organizationId || 1);
 
   const oldToken = getNamedLeadFormTemplateToken(
     input.formType,
@@ -1207,7 +1451,13 @@ export async function renameNamedLeadFormTemplate(input: {
   const existingOld = await dbConn
     .select()
     .from(leadForms)
-    .where(eq(leadForms.token, oldToken))
+    .where(
+      and(
+        eq(leadForms.organizationId, organizationId),
+        eq(leadForms.formType, input.formType),
+        eq(leadForms.token, oldToken)
+      )
+    )
     .limit(1);
 
   if (!existingOld[0]) {
@@ -1217,41 +1467,58 @@ export async function renameNamedLeadFormTemplate(input: {
   const existingNew = await dbConn
     .select()
     .from(leadForms)
-    .where(eq(leadForms.token, newToken))
+    .where(
+      and(
+        eq(leadForms.organizationId, organizationId),
+        eq(leadForms.formType, input.formType),
+        eq(leadForms.token, newToken)
+      )
+    )
     .limit(1);
 
   if (existingNew[0]) {
     throw new Error("같은 이름의 템플릿이 이미 존재합니다.");
   }
-if (
-  Number(existingOld[0].assigneeId) !== Number(input.actorUserId)
-) {
-  throw new Error("본인 템플릿만 이름 변경할 수 있습니다.");
-}
+
+  if (Number(existingOld[0].assigneeId) !== Number(input.actorUserId)) {
+    throw new Error("본인 템플릿만 이름 변경할 수 있습니다.");
+  }
 
   await dbConn
-  .update(leadForms)
-  .set({
-    token: newToken,
-  } as any)
-  .where(eq(leadForms.id, existingOld[0].id));
+    .update(leadForms)
+    .set({
+      token: newToken,
+    } as any)
+    .where(
+      and(
+        eq(leadForms.id, existingOld[0].id),
+        eq(leadForms.organizationId, organizationId)
+      )
+    );
 
   const updated = await dbConn
     .select()
     .from(leadForms)
-    .where(eq(leadForms.id, existingOld[0].id))
+    .where(
+      and(
+        eq(leadForms.id, existingOld[0].id),
+        eq(leadForms.organizationId, organizationId)
+      )
+    )
     .limit(1);
 
   return updated[0];
 }
 
 export async function duplicateNamedLeadFormTemplate(input: {
+  organizationId?: number | null;
   formType: "landing" | "ad";
   sourceTemplateName: string;
   newTemplateName: string;
   actorUserId?: number | null;
 }) {
   const dbConn = await getDb();
+  const organizationId = Number(input.organizationId || 1);
 
   const sourceToken = getNamedLeadFormTemplateToken(
     input.formType,
@@ -1270,7 +1537,13 @@ export async function duplicateNamedLeadFormTemplate(input: {
   const sourceRows = await dbConn
     .select()
     .from(leadForms)
-    .where(eq(leadForms.token, sourceToken))
+    .where(
+      and(
+        eq(leadForms.organizationId, organizationId),
+        eq(leadForms.formType, input.formType),
+        eq(leadForms.token, sourceToken)
+      )
+    )
     .limit(1);
 
   const source = sourceRows[0];
@@ -1278,14 +1551,20 @@ export async function duplicateNamedLeadFormTemplate(input: {
     throw new Error("복제할 템플릿을 찾을 수 없습니다.");
   }
 
-if (Number(source.assigneeId) !== Number(input.actorUserId)) {
-  throw new Error("본인 템플릿만 복제할 수 있습니다.");
-}
+  if (Number(source.assigneeId) !== Number(input.actorUserId)) {
+    throw new Error("본인 템플릿만 복제할 수 있습니다.");
+  }
 
   const existingNew = await dbConn
     .select()
     .from(leadForms)
-    .where(eq(leadForms.token, newToken))
+    .where(
+      and(
+        eq(leadForms.organizationId, organizationId),
+        eq(leadForms.formType, input.formType),
+        eq(leadForms.token, newToken)
+      )
+    )
     .limit(1);
 
   if (existingNew[0]) {
@@ -1293,17 +1572,24 @@ if (Number(source.assigneeId) !== Number(input.actorUserId)) {
   }
 
   await dbConn.insert(leadForms).values({
-  formType: input.formType,
-  token: newToken,
-  uiConfigJson: source.uiConfigJson,
-  assigneeId: input.actorUserId ?? source.assigneeId ?? 0,
-  isActive: false,
-} as any);
+    organizationId,
+    formType: input.formType,
+    token: newToken,
+    uiConfigJson: source.uiConfigJson,
+    assigneeId: input.actorUserId ?? source.assigneeId ?? 0,
+    isActive: false,
+  } as any);
 
   const created = await dbConn
     .select()
     .from(leadForms)
-    .where(eq(leadForms.token, newToken))
+    .where(
+      and(
+        eq(leadForms.organizationId, organizationId),
+        eq(leadForms.formType, input.formType),
+        eq(leadForms.token, newToken)
+      )
+    )
     .limit(1);
 
   return created[0];
@@ -1311,15 +1597,25 @@ if (Number(source.assigneeId) !== Number(input.actorUserId)) {
 
 export async function getNamedLeadFormTemplate(
   formType: "landing" | "ad",
-  templateName: string
+  templateName: string,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
+  const organizationId = Number(params?.organizationId || 1);
   const token = getNamedLeadFormTemplateToken(formType, templateName);
 
   const rows = await db
     .select()
     .from(leadForms)
-    .where(eq(leadForms.token, token))
+    .where(
+      and(
+        eq(leadForms.organizationId, organizationId),
+        eq(leadForms.formType, formType),
+        eq(leadForms.token, token)
+      )
+    )
     .limit(1);
 
   return rows[0] || null;
@@ -1333,8 +1629,14 @@ function normalizeTemplateName(templateName: string) {
     .replace(/[^a-z0-9_가-힣-]/g, "");
 }
 
-export async function listLeadFormTemplates(formType: "landing" | "ad") {
+export async function listLeadFormTemplates(
+  formType: "landing" | "ad",
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
+  const organizationId = Number(params?.organizationId || 1);
 
   const prefix = `__template_${formType}_`;
 
@@ -1343,6 +1645,7 @@ export async function listLeadFormTemplates(formType: "landing" | "ad") {
     .from(leadForms)
     .where(
       and(
+        eq(leadForms.organizationId, organizationId),
         eq(leadForms.formType, formType),
         like(leadForms.token, `${prefix}%`)
       )
@@ -1374,14 +1677,28 @@ export function getNamedLeadFormTemplateToken(
   return `__template_${formType}_${safeName}__`;
 }
 
-export async function getLeadFormByToken(token: string) {
+export async function getLeadFormByToken(
+  token: string,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return undefined;
+
+  const organizationId = Number(params?.organizationId || 0);
 
   const result = await db
     .select()
     .from(leadForms)
-    .where(eq(leadForms.token, token))
+    .where(
+      organizationId > 0
+        ? and(
+            eq(leadForms.organizationId, organizationId),
+            eq(leadForms.token, token)
+          )
+        : eq(leadForms.token, token)
+    )
     .limit(1);
 
   return result[0];
@@ -1409,57 +1726,75 @@ export async function getPublicFormByToken(
   const form = result[0];
   if (!form) return { ok: false };
 
+  const organizationId = Number((form as any).organizationId || 1);
+
   const userResult = await db
     .select({
       id: users.id,
+      organizationId: users.organizationId,
       name: users.name,
       phone: users.phone,
     })
     .from(users)
-    .where(eq(users.id, form.assigneeId))
+    .where(
+      and(
+        eq(users.id, form.assigneeId),
+        eq(users.organizationId, organizationId)
+      )
+    )
     .limit(1);
 
-const assignee = userResult[0];
-const parsed = form.uiConfigJson ? safeJsonParse(form.uiConfigJson) || {} : {};
+  const assignee = userResult[0];
+  const parsed = form.uiConfigJson ? safeJsonParse(form.uiConfigJson) || {} : {};
 
-const safeUiConfig = {
-  ...parsed,
-  mapping:
-    parsed && typeof parsed.mapping === "object" && parsed.mapping
-      ? parsed.mapping
-      : {},
-  fields: Array.isArray(parsed?.fields) ? parsed.fields : [],
-};
+  const safeUiConfig = {
+    ...parsed,
+    mapping:
+      parsed && typeof parsed.mapping === "object" && parsed.mapping
+        ? parsed.mapping
+        : {},
+    fields: Array.isArray(parsed?.fields) ? parsed.fields : [],
+  };
 
-return {
-  ok: true,
-  form,
-  assigneeId: form.assigneeId,
-  assigneeName: assignee?.name ?? "",
-  phone: assignee?.phone ?? "",
-  uiConfig: safeUiConfig,
-};
-
-
+  return {
+    ok: true,
+    form,
+    assigneeId: form.assigneeId,
+    assigneeName: assignee?.name ?? "",
+    phone: assignee?.phone ?? "",
+    uiConfig: safeUiConfig,
+  };
 }
+
 export async function updateLeadFormUiConfig(
   id: number,
-  uiConfig: any
+  uiConfig: any,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   await db
     .update(leadForms)
     .set({
       uiConfigJson: safeJsonStringify(
-  normalizeFormUiConfigForSave(uiConfig, "landing")
-),
+        normalizeFormUiConfigForSave(uiConfig, "landing")
+      ),
     } as any)
-    .where(eq(leadForms.id, id));
+    .where(
+      and(
+        eq(leadForms.id, id),
+        eq(leadForms.organizationId, organizationId)
+      )
+    );
 }
 
 export async function updateMyLeadFormUiConfig(input: {
+  organizationId?: number | null;
   token: string;
   formType: "landing" | "ad";
   userId: number;
@@ -1468,11 +1803,14 @@ export async function updateMyLeadFormUiConfig(input: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number(input.organizationId || 1);
+
   const rows = await db
     .select()
     .from(leadForms)
     .where(
       and(
+        eq(leadForms.organizationId, organizationId),
         eq(leadForms.token, input.token),
         eq(leadForms.formType, input.formType)
       )
@@ -1492,23 +1830,36 @@ export async function updateMyLeadFormUiConfig(input: {
     .update(leadForms)
     .set({
       uiConfigJson: safeJsonStringify(
-  normalizeFormUiConfigForSave(input.uiConfig, input.formType)
-),
+        normalizeFormUiConfigForSave(input.uiConfig, input.formType)
+      ),
     } as any)
-    .where(eq(leadForms.id, target.id));
+    .where(
+      and(
+        eq(leadForms.id, target.id),
+        eq(leadForms.organizationId, organizationId)
+      )
+    );
 
   return target.id;
 }
 
-export async function listLeadForms(formType: "landing" | "ad") {
+export async function listLeadForms(
+  formType: "landing" | "ad",
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 1);
 
   return db
     .select()
     .from(leadForms)
     .where(
       and(
+        eq(leadForms.organizationId, organizationId),
         eq(leadForms.formType, formType),
         sql`${leadForms.token} NOT LIKE '__template%'`
       )
@@ -1518,12 +1869,19 @@ export async function listLeadForms(formType: "landing" | "ad") {
 
 export async function createLeadForm(
   assigneeId: number,
-  formType: "landing" | "ad"
+  formType: "landing" | "ad",
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const template = await getLeadFormTemplate(formType);
+  const organizationId = Number(params?.organizationId || 1);
+
+  const template = await getLeadFormTemplate(formType, {
+    organizationId,
+  });
 
   const token =
     formType === "ad"
@@ -1533,14 +1891,15 @@ export async function createLeadForm(
   const fallbackUiConfig = getFallbackFormUiConfig(formType);
 
   const templateConfig = template?.uiConfigJson
-  ? safeJsonParse(template.uiConfigJson)
-  : fallbackUiConfig;
+    ? safeJsonParse(template.uiConfigJson)
+    : fallbackUiConfig;
 
-const uiConfigJson = safeJsonStringify(
-  normalizeFormUiConfigForSave(templateConfig, formType)
-);
+  const uiConfigJson = safeJsonStringify(
+    normalizeFormUiConfigForSave(templateConfig, formType)
+  );
 
   await db.insert(leadForms).values({
+    organizationId,
     assigneeId,
     token,
     formType,
@@ -1553,14 +1912,27 @@ const uiConfigJson = safeJsonStringify(
   return { token };
 }
 
-export async function updateLeadFormActive(id: number, isActive: boolean) {
+export async function updateLeadFormActive(
+  id: number,
+  isActive: boolean,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   await db
     .update(leadForms)
     .set({ isActive } as any)
-    .where(eq(leadForms.id, id));
+    .where(
+      and(
+        eq(leadForms.id, id),
+        eq(leadForms.organizationId, organizationId)
+      )
+    );
 }
 
 // ─── Users ───────────────────────────────────────────────────────────
@@ -1647,14 +2019,19 @@ export async function getAllUsers() {
     .from(users);
 }
 
-export async function getAllUsersDetailed() {
+export async function getAllUsersDetailed(params?: {
+  organizationId?: number | null;
+}) {
   const db = await getDb();
   if (!db) return [];
 
-  return db
+  const organizationId = Number(params?.organizationId || 0);
+
+  let query = db
     .select({
       id: users.id,
       displayNo: users.displayNo,
+      organizationId: users.organizationId,
       openId: users.openId,
       username: users.username,
       name: users.name,
@@ -1669,22 +2046,33 @@ export async function getAllUsersDetailed() {
       updatedAt: users.updatedAt,
       lastSignedIn: users.lastSignedIn,
     })
-    .from(users)
-    .orderBy(users.displayNo, users.id);
+    .from(users);
+
+  if (organizationId > 0) {
+    query = query.where(eq(users.organizationId, organizationId)) as any;
+  }
+
+  return query.orderBy(users.displayNo, users.id);
 }
 
 // ─── Branding Settings ──────────────────────────────────────────────
-export async function getBrandingSettings() {
+export async function getBrandingSettings(params?: {
+  organizationId?: number | null;
+}) {
   const db = await getDb();
   if (!db) return null;
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const result = await db
     .select()
     .from(brandingSettings)
+    .where(eq(brandingSettings.organizationId, organizationId))
     .limit(1);
 
   if (!result[0]) {
     return {
+      organizationId,
       companyName: "위드원 교육",
       companyLogoUrl: null,
       messengerSubtitle: "사내 메신저",
@@ -1695,14 +2083,19 @@ export async function getBrandingSettings() {
 }
 
 export async function saveBrandingSettings(
-  data: InsertBrandingSetting
+  data: InsertBrandingSetting & {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number((data as any).organizationId || 1);
+
   const existing = await db
     .select()
     .from(brandingSettings)
+    .where(eq(brandingSettings.organizationId, organizationId))
     .limit(1);
 
   if (existing[0]) {
@@ -1714,12 +2107,18 @@ export async function saveBrandingSettings(
         messengerSubtitle: data.messengerSubtitle,
         updatedBy: data.updatedBy ?? null,
       } as any)
-      .where(eq(brandingSettings.id, existing[0].id));
+      .where(
+        and(
+          eq(brandingSettings.id, existing[0].id),
+          eq(brandingSettings.organizationId, organizationId)
+        )
+      );
 
     return existing[0].id;
   }
 
   const result: any = await db.insert(brandingSettings).values({
+    organizationId,
     companyName: data.companyName,
     companyLogoUrl: data.companyLogoUrl ?? null,
     messengerSubtitle: data.messengerSubtitle,
@@ -1730,13 +2129,18 @@ export async function saveBrandingSettings(
   return getInsertId(result);
 }
 
-export async function getSmsSettings() {
+export async function getSmsSettings(params?: {
+  organizationId?: number | null;
+}) {
   const db = await getDb();
   if (!db) return null;
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const rows = await db
     .select()
     .from(smsSettings)
+    .where(eq(smsSettings.organizationId, organizationId))
     .orderBy(desc(smsSettings.id))
     .limit(1);
 
@@ -1744,6 +2148,7 @@ export async function getSmsSettings() {
 }
 
 export async function saveSmsSettings(data: {
+  organizationId?: number | null;
   provider?: string;
   apiKey?: string | null;
   apiSecret?: string | null;
@@ -1758,9 +2163,14 @@ export async function saveSmsSettings(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const existing = await getSmsSettings();
+  const organizationId = Number(data.organizationId || 1);
+
+  const existing = await getSmsSettings({
+    organizationId,
+  });
 
   const payload = {
+    organizationId,
     provider: data.provider || "aligo",
     apiKey: data.apiKey?.trim() || null,
     apiSecret: data.apiSecret?.trim() || null,
@@ -1777,7 +2187,12 @@ export async function saveSmsSettings(data: {
     await db
       .update(smsSettings)
       .set(payload as any)
-      .where(eq(smsSettings.id, Number(existing.id)));
+      .where(
+        and(
+          eq(smsSettings.id, Number(existing.id)),
+          eq(smsSettings.organizationId, organizationId)
+        )
+      );
 
     return Number(existing.id);
   }
@@ -1834,78 +2249,167 @@ export async function updateUserAccount(
     phone?: string | null;
     bankName?: string | null;
     bankAccount?: string | null;
-  }
+  },
+  params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number(params?.organizationId || 1);
+
   if (!data || Object.keys(data).length === 0) return;
 
-  await db.update(users).set(data as any).where(eq(users.id, id));
+  await db
+    .update(users)
+    .set(data as any)
+    .where(
+      and(
+        eq(users.id, id),
+        eq(users.organizationId, organizationId)
+      )
+    );
 }
 
 export async function updateUserRole(
   id: number,
-  role: "staff" | "admin" | "host" | "superhost"
+  role: "staff" | "admin" | "host" | "superhost",
+  params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  // superhost 중복 방지
+  const organizationId = Number(params?.organizationId || 1);
+
+  // SaaS 기준: superhost도 전체 유저를 보지 않음.
+  // 같은 조직 안에서만 superhost 중복 방지.
   if (role === "superhost") {
-    const existing = await getAllUsersDetailed();
-    const current = existing.find((u: any) => u.id === id);
-    if (!current) throw new Error("유저 없음");
+    const existing = await getAllUsersDetailed({ organizationId });
+    const current = existing.find((u: any) => Number(u.id) === Number(id));
+
+    if (!current) {
+      throw new Error("유저 없음");
+    }
 
     const count = existing.filter((u: any) => u.role === "superhost").length;
 
     if (current.role !== "superhost" && count >= 1) {
-      throw new Error("슈퍼호스트는 1명만 가능합니다.");
+      throw new Error("해당 조직의 슈퍼호스트는 1명만 가능합니다.");
     }
   }
 
-  await db.update(users).set({ role } as any).where(eq(users.id, id));
+  await db
+    .update(users)
+    .set({ role } as any)
+    .where(
+      and(
+        eq(users.id, id),
+        eq(users.organizationId, organizationId)
+      )
+    );
 }
 
-export async function updateUserActive(id: number, isActive: boolean) {
+export async function updateUserActive(
+  id: number,
+  isActive: boolean,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.update(users).set({ isActive } as any).where(eq(users.id, id));
+  const organizationId = Number(params?.organizationId || 1);
+
+  await db
+    .update(users)
+    .set({ isActive } as any)
+    .where(
+      and(
+        eq(users.id, id),
+        eq(users.organizationId, organizationId)
+      )
+    );
 }
 
-export async function getUserById(id: number) {
+export async function getUserById(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  const organizationId = Number(params?.organizationId || 0);
+
+  const result = await db
+    .select()
+    .from(users)
+    .where(
+      organizationId > 0
+        ? and(
+            eq(users.id, id),
+            eq(users.organizationId, organizationId)
+          )
+        : eq(users.id, id)
+    )
+    .limit(1);
+
   return result[0];
 }
 
 // ─── Consultations ───────────────────────────────────────────────────
-export async function listConsultations(assigneeId?: number) {
+export async function listConsultations(
+  assigneeId?: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return [];
 
-  const baseQuery = db.select().from(consultations);
+  const organizationId = Number(params?.organizationId || 1);
+
+  const baseQuery = db
+    .select()
+    .from(consultations);
 
   if (assigneeId) {
     return baseQuery
-      .where(eq(consultations.assigneeId, assigneeId))
+      .where(
+        and(
+          eq(consultations.organizationId, organizationId),
+          eq(consultations.assigneeId, assigneeId)
+        )
+      )
       .orderBy(desc(consultations.createdAt));
   }
 
-  return baseQuery.orderBy(desc(consultations.createdAt));
+  return baseQuery
+    .where(
+      eq(consultations.organizationId, organizationId)
+    )
+    .orderBy(desc(consultations.createdAt));
 }
 
-export async function getConsultation(id: number) {
+export async function getConsultation(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return undefined;
+
+  const organizationId = Number(params?.organizationId || 0);
 
   const result = await db
     .select()
     .from(consultations)
-    .where(eq(consultations.id, id))
+    .where(
+      organizationId > 0
+        ? and(
+            eq(consultations.id, id),
+            eq(consultations.organizationId, organizationId)
+          )
+        : eq(consultations.id, id)
+    )
     .limit(1);
 
   return result[0];
@@ -1942,10 +2446,15 @@ export async function bulkCreateConsultations(dataList: InsertConsultation[]) {
 
 export async function updateConsultation(
   id: number,
-  data: Partial<InsertConsultation>
+  data: Partial<InsertConsultation>,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   if (!data || Object.keys(data).length === 0) {
     console.log("[DB] updateConsultation skip (empty):", id);
@@ -1956,50 +2465,103 @@ export async function updateConsultation(
   console.log("[DB] updateConsultation keys:", Object.keys(data as any));
   console.log("[DB] updateConsultation data:", data);
 
-  await db.update(consultations).set(data).where(eq(consultations.id, id));
+  await db
+    .update(consultations)
+    .set(data)
+    .where(
+      and(
+        eq(consultations.id, id),
+        eq(consultations.organizationId, organizationId)
+      )
+    );
 
   console.log("[DB] updateConsultation OK:", id);
 }
 
-export async function deleteConsultation(id: number) {
+export async function deleteConsultation(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const linkedStudents = await db
     .select({ id: students.id })
     .from(students)
-    .where(eq(students.consultationId, id));
+    .where(
+      and(
+        eq(students.consultationId, id),
+        eq(students.organizationId, organizationId)
+      )
+    );
 
   for (const row of linkedStudents) {
     await deleteStudentCascadeById(Number(row.id));
   }
 
-  await db.delete(consultations).where(eq(consultations.id, id));
+  await db
+    .delete(consultations)
+    .where(
+      and(
+        eq(consultations.id, id),
+        eq(consultations.organizationId, organizationId)
+      )
+    );
 }
 
-export async function getStudentByConsultationId(consultationId: number) {
+export async function getStudentByConsultationId(
+  consultationId: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return undefined;
+
+  const organizationId = Number(params?.organizationId || 0);
 
   const result = await db
     .select()
     .from(students)
-    .where(eq(students.consultationId, consultationId))
+    .where(
+      organizationId > 0
+        ? and(
+            eq(students.consultationId, consultationId),
+            eq(students.organizationId, organizationId)
+          )
+        : eq(students.consultationId, consultationId)
+    )
     .limit(1);
 
   return result[0];
 }
 
-export async function syncStudentFromConsultation(consultationId: number) {
+export async function syncStudentFromConsultation(
+  consultationId: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const consultation = await getConsultation(consultationId);
+  const organizationId = Number(params?.organizationId || 1);
+
+  const consultation = await getConsultation(consultationId, {
+    organizationId,
+  });
+
   if (!consultation) {
     throw new Error("상담 기록을 찾을 수 없습니다.");
   }
 
-  const linkedStudent = await getStudentByConsultationId(consultationId);
+  const linkedStudent = await getStudentByConsultationId(consultationId, {
+    organizationId,
+  });
 
   if (!linkedStudent) {
     console.log(
@@ -2029,7 +2591,12 @@ export async function syncStudentFromConsultation(consultationId: number) {
   await db
     .update(students)
     .set(nextStudentData)
-    .where(eq(students.id, linkedStudent.id));
+    .where(
+      and(
+        eq(students.id, linkedStudent.id),
+        eq(students.organizationId, organizationId)
+      )
+    );
 
   return linkedStudent.id;
 }
@@ -2043,29 +2610,43 @@ export async function createNotification(data: InsertNotification & {
   if (!db) throw new Error("DB not available");
 
   const result: any = await db.insert(notifications).values({
-    type: "lead",
-    isRead: false,
-    title: data.title ?? null,
-    level: data.level ?? "normal",
-    imageUrl: data.imageUrl ?? null,
-    ...data,
-  } as any);
+  organizationId: Number((data as any).organizationId || 1),
+  type: "lead",
+  isRead: false,
+  title: data.title ?? null,
+  level: data.level ?? "normal",
+  imageUrl: data.imageUrl ?? null,
+  ...data,
+} as any);
 
   return getInsertId(result);
 }
 
-export async function listNotifications(userId: number) {
+export async function listNotifications(
+  userId: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 1);
 
   return db
     .select()
     .from(notifications)
-    .where(eq(notifications.userId, userId))
+    .where(
+      and(
+        eq(notifications.userId, userId),
+        eq(notifications.organizationId, organizationId)
+      )
+    )
     .orderBy(desc(notifications.createdAt), desc(notifications.id));
 }
 
 export async function createNoticeNotifications(params: {
+  organizationId: number;
   noticeId: number;
   actorUserId: number;
   title: string;
@@ -2074,7 +2655,11 @@ export async function createNoticeNotifications(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const allUsers = await getAllUsersDetailed();
+  const organizationId = Number(params.organizationId || 1);
+
+const allUsers = await getAllUsersDetailed({
+  organizationId,
+});
 
   const targets = (allUsers || []).filter(
     (u: any) => Number(u.id) !== Number(params.actorUserId) && !!u.isActive
@@ -2089,6 +2674,7 @@ export async function createNoticeNotifications(params: {
 
 for (const user of targets) {
   await createNotification({
+organizationId,
     userId: Number(user.id),
     type: "notice",
     title:
@@ -2114,26 +2700,51 @@ for (const user of targets) {
   };
 }
 
-export async function markNotificationRead(id: number, userId: number) {
+export async function markNotificationRead(
+  id: number,
+  userId: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   await db
     .update(notifications)
     .set({ isRead: true } as any)
-    .where(and(eq(notifications.id, id), eq(notifications.userId, userId)));
+    .where(
+      and(
+        eq(notifications.id, id),
+        eq(notifications.userId, userId),
+        eq(notifications.organizationId, organizationId)
+      )
+    );
 }
 
-export async function markAllNotificationsRead(userId: number) {
+export async function markAllNotificationsRead(
+  userId: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   await db
     .update(notifications)
     .set({ isRead: true } as any)
-    .where(eq(notifications.userId, userId));
+    .where(
+      and(
+        eq(notifications.userId, userId),
+        eq(notifications.organizationId, organizationId)
+      )
+    );
 }
-
 
 export async function listPendingScheduleNotifications() {
   const db = await getDb();
@@ -2147,20 +2758,29 @@ export async function listPendingScheduleNotifications() {
       AND startAt IS NOT NULL
       AND startAt <= DATE_ADD(NOW(), INTERVAL 10 MINUTE)
       AND startAt > NOW()
-    ORDER BY startAt ASC
+      AND organizationId IS NOT NULL
+    ORDER BY organizationId ASC, startAt ASC
   `);
 
   return (rows as any[]) ?? [];
 }
 
-export async function markScheduleNotified(id: number) {
+export async function markScheduleNotified(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   await db.execute(sql`
     UPDATE schedules
     SET isNotified = 1
     WHERE id = ${id}
+      AND organizationId = ${organizationId}
   `);
 }
 
@@ -2173,90 +2793,105 @@ export async function createScheduleNotifications() {
     return { count: 0 };
   }
 
-  const allUsers = await getAllUsersDetailed();
   let createdCount = 0;
 
   for (const item of schedules) {
+    const organizationId = Number(item.organizationId || 1);
+
     const title = String(item.title ?? "일정");
     const message =
-  item.scope === "global"
-    ? `[전체 일정] ${title} 할 시간입니다.`
-    : `[일정 알림] ${title} 할 시간입니다.`;
+      item.scope === "global"
+        ? `[전체 일정] ${title} 할 시간입니다.`
+        : `[일정 알림] ${title} 할 시간입니다.`;
 
     if (item.scope === "global") {
+      const allUsers = await getAllUsersDetailed({
+        organizationId,
+      });
+
       const targets = (allUsers || []).filter((u: any) => !!u.isActive);
 
       for (const user of targets) {
         const notificationId = await createNotification({
-  userId: Number(user.id),
-  type: "schedule",
-  title: item.scope === "global" ? "전체 일정 알림" : "일정 알림",
-  level: item.scope === "global" ? "important" : "normal",
-  message,
-  relatedId: Number(item.id),
-  isRead: false,
-} as any);
+          organizationId,
+          userId: Number(user.id),
+          type: "schedule",
+          title: "전체 일정 알림",
+          level: "important",
+          message,
+          relatedId: Number(item.id),
+          isRead: false,
+        } as any);
 
-emitLiveNotification({
-  id: Number(notificationId),
-  userId: Number(user.id),
-  type: "schedule",
-  title: item.scope === "global" ? "전체 일정 알림" : "일정 알림",
-  level: item.scope === "global" ? "important" : "normal",
-  message,
-  relatedId: Number(item.id),
-  isRead: false,
-});
+        emitLiveNotification({
+          id: Number(notificationId),
+          organizationId,
+          userId: Number(user.id),
+          type: "schedule",
+          title: "전체 일정 알림",
+          level: "important",
+          message,
+          relatedId: Number(item.id),
+          isRead: false,
+        } as any);
 
-createdCount += 1;
+        createdCount += 1;
       }
     } else {
       if (item.ownerUserId) {
         const notificationId = await createNotification({
-  userId: Number(item.ownerUserId),
-  type: "schedule",
-  title: "일정 알림",
-  level: "normal",
-  message,
-  relatedId: Number(item.id),
-  isRead: false,
-} as any);
+          organizationId,
+          userId: Number(item.ownerUserId),
+          type: "schedule",
+          title: "일정 알림",
+          level: "normal",
+          message,
+          relatedId: Number(item.id),
+          isRead: false,
+        } as any);
 
-emitLiveNotification({
-  id: Number(notificationId),
-  userId: Number(item.ownerUserId),
-  type: "schedule",
-  title: "일정 알림",
-  level: "normal",
-  message,
-  relatedId: Number(item.id),
-  isRead: false,
-});
+        emitLiveNotification({
+          id: Number(notificationId),
+          organizationId,
+          userId: Number(item.ownerUserId),
+          type: "schedule",
+          title: "일정 알림",
+          level: "normal",
+          message,
+          relatedId: Number(item.id),
+          isRead: false,
+        } as any);
 
-createdCount += 1;
+        createdCount += 1;
       }
     }
 
-    await markScheduleNotified(Number(item.id));
+    await markScheduleNotified(Number(item.id), {
+      organizationId,
+    });
   }
 
   return { count: createdCount };
 }
 
 // ─── Approval Print Settings ─────────────────────────────────────────
-
-export async function getApprovalPrintSettings() {
+export async function getApprovalPrintSettings(params?: {
+  organizationId?: number | null;
+}) {
   const db = await getDb();
   if (!db) return null;
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const result = await db
     .select()
     .from(approvalPrintSettings)
+    .where(eq(approvalPrintSettings.organizationId, organizationId))
     .limit(1);
 
-  // 없으면 기본값 반환
   if (!result[0]) {
     return {
+      organizationId,
       companyName: "(주)위드원 교육",
       documentTitle: "전자결재 문서",
       applicantSignLabel: "신청자 서명",
@@ -2268,17 +2903,21 @@ export async function getApprovalPrintSettings() {
 }
 
 export async function saveApprovalPrintSettings(
-  data: InsertApprovalPrintSetting
+  data: InsertApprovalPrintSetting & {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number((data as any).organizationId || 1);
+
   const existing = await db
     .select()
     .from(approvalPrintSettings)
+    .where(eq(approvalPrintSettings.organizationId, organizationId))
     .limit(1);
 
-  // 있으면 update
   if (existing[0]) {
     await db
       .update(approvalPrintSettings)
@@ -2289,18 +2928,24 @@ export async function saveApprovalPrintSettings(
         finalApproverSignLabel: data.finalApproverSignLabel,
         updatedBy: data.updatedBy ?? null,
       } as any)
-      .where(eq(approvalPrintSettings.id, existing[0].id));
+      .where(
+        and(
+          eq(approvalPrintSettings.id, existing[0].id),
+          eq(approvalPrintSettings.organizationId, organizationId)
+        )
+      );
 
     return existing[0].id;
   }
 
-  // 없으면 insert
   const result: any = await db.insert(approvalPrintSettings).values({
+    organizationId,
     companyName: data.companyName,
     documentTitle: data.documentTitle,
     applicantSignLabel: data.applicantSignLabel,
     finalApproverSignLabel: data.finalApproverSignLabel,
     createdBy: data.createdBy ?? null,
+    updatedBy: data.updatedBy ?? null,
   } as any);
 
   return getInsertId(result);
@@ -2308,18 +2953,30 @@ export async function saveApprovalPrintSettings(
 
 // ─── Approval Form Field Settings ─────────────────────────
 
-export async function listApprovalFormFieldSettings(formType: string) {
+export async function listApprovalFormFieldSettings(
+  formType: string,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return [];
 
-  return db
-    .select()
-    .from(sql`approval_form_field_settings`)
-    .where(sql`formType = ${formType}`)
-    .orderBy(sql`sortOrder ASC, id ASC`);
+  const organizationId = Number(params?.organizationId || 1);
+
+  const [rows] = await db.execute(sql`
+    SELECT *
+    FROM approval_form_field_settings
+    WHERE organizationId = ${organizationId}
+      AND formType = ${formType}
+    ORDER BY sortOrder ASC, id ASC
+  `);
+
+  return (rows as any[]) ?? [];
 }
 
 export async function saveApprovalFormFieldSettings(params: {
+  organizationId?: number | null;
   formType: string;
   items: any[];
   actorUserId?: number;
@@ -2327,24 +2984,37 @@ export async function saveApprovalFormFieldSettings(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  // 기존 삭제
+  const organizationId = Number(params.organizationId || 1);
+
   await db.execute(sql`
     DELETE FROM approval_form_field_settings
-    WHERE formType = ${params.formType}
+    WHERE organizationId = ${organizationId}
+      AND formType = ${params.formType}
   `);
 
-  // 새로 insert
-  for (const item of params.items) {
+  for (const item of params.items || []) {
     await db.execute(sql`
       INSERT INTO approval_form_field_settings
-      (formType, fieldKey, label, isVisible, isRequired, sortOrder, createdBy)
+      (
+        organizationId,
+        formType,
+        fieldKey,
+        label,
+        isVisible,
+        isRequired,
+        sortOrder,
+        createdBy,
+        updatedBy
+      )
       VALUES (
+        ${organizationId},
         ${params.formType},
         ${item.fieldKey},
         ${item.label},
         ${item.isVisible ? 1 : 0},
         ${item.isRequired ? 1 : 0},
         ${item.sortOrder || 0},
+        ${params.actorUserId ?? null},
         ${params.actorUserId ?? null}
       )
     `);
@@ -2355,6 +3025,7 @@ export async function saveApprovalFormFieldSettings(params: {
 
 // ─── Device Tokens ───────────────────────────────────────────────────
 export async function upsertDeviceToken(data: {
+  organizationId?: number | null;
   userId: number;
   platform: string;
   expoPushToken: string;
@@ -2362,11 +3033,14 @@ export async function upsertDeviceToken(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number(data.organizationId || 1);
+
   const existing = await db
     .select()
     .from(deviceTokens)
     .where(
       and(
+        eq(deviceTokens.organizationId, organizationId),
         eq(deviceTokens.userId, data.userId),
         eq(deviceTokens.expoPushToken, data.expoPushToken)
       )
@@ -2380,12 +3054,18 @@ export async function upsertDeviceToken(data: {
         platform: data.platform,
         isActive: true,
       } as any)
-      .where(eq(deviceTokens.id, existing[0].id));
+      .where(
+        and(
+          eq(deviceTokens.id, existing[0].id),
+          eq(deviceTokens.organizationId, organizationId)
+        )
+      );
 
     return existing[0].id;
   }
 
   const result: any = await db.insert(deviceTokens).values({
+    organizationId,
     userId: data.userId,
     platform: data.platform,
     expoPushToken: data.expoPushToken,
@@ -2395,15 +3075,21 @@ export async function upsertDeviceToken(data: {
   return getInsertId(result);
 }
 
-export async function listActiveDeviceTokensByUserId(userId: number) {
+export async function listActiveDeviceTokensByUserId(
+  userId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 1);
 
   return db
     .select()
     .from(deviceTokens)
     .where(
       and(
+        eq(deviceTokens.organizationId, organizationId),
         eq(deviceTokens.userId, userId),
         eq(deviceTokens.isActive, true)
       )
@@ -2411,8 +3097,13 @@ export async function listActiveDeviceTokensByUserId(userId: number) {
     .orderBy(desc(deviceTokens.id));
 }
 
-export async function listActiveExpoPushTokensByUserId(userId: number) {
-  const rows = await listActiveDeviceTokensByUserId(userId);
+export async function listActiveExpoPushTokensByUserId(
+  userId: number,
+  params?: { organizationId?: number | null }
+) {
+  const rows = await listActiveDeviceTokensByUserId(userId, {
+    organizationId: Number(params?.organizationId || 1),
+  });
 
   return (rows || [])
     .map((row: any) => row.expoPushToken)
@@ -2420,11 +3111,20 @@ export async function listActiveExpoPushTokensByUserId(userId: number) {
 }
 
 // ─── Students ────────────────────────────────────────────────────────
-export async function listStudents(assigneeId?: number) {
+export async function listStudents(
+  assigneeId?: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return [];
 
-  const assigneeFilter = assigneeId ? sql`WHERE s.assigneeId = ${assigneeId}` : sql``;
+  const organizationId = Number(params?.organizationId || 1);
+
+const assigneeFilter = assigneeId
+  ? sql`WHERE s.organizationId = ${organizationId} AND s.assigneeId = ${assigneeId}`
+  : sql`WHERE s.organizationId = ${organizationId}`;
 
   const [rows] = await db.execute(sql`
   SELECT s.*,
@@ -2554,11 +3254,30 @@ return (rows as any[]).map((row: any) => ({
 }));
 }
 
-export async function getStudent(id: number) {
+export async function getStudent(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.select().from(students).where(eq(students.id, id)).limit(1);
+  const organizationId = Number(params?.organizationId || 0);
+
+  const result = await db
+    .select()
+    .from(students)
+    .where(
+      organizationId > 0
+        ? and(
+            eq(students.id, id),
+            eq(students.organizationId, organizationId)
+          )
+        : eq(students.id, id)
+    )
+    .limit(1);
+
   return result[0];
 }
 
@@ -2566,18 +3285,38 @@ export async function createStudent(data: InsertStudent) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const result = await db.insert(students).values(data);
+  const result = await db.insert(students).values({
+  organizationId: Number((data as any).organizationId || 1),
+  ...data,
+} as any);
   return getInsertId(result);
 }
 
-export async function updateStudent(id: number, data: Partial<InsertStudent>) {
+export async function updateStudent(
+  id: number,
+  data: Partial<InsertStudent>,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.update(students).set(data).where(eq(students.id, id));
+  const organizationId = Number(params?.organizationId || 1);
+
+  await db
+    .update(students)
+    .set(data)
+    .where(
+      and(
+        eq(students.id, id),
+        eq(students.organizationId, organizationId)
+      )
+    );
 }
 
 export async function updateStudentAddressAndCoords(params: {
+  organizationId?: number | null;
   studentId: number;
   address?: string | null;
   detailAddress?: string | null;
@@ -2608,7 +3347,12 @@ export async function updateStudentAddressAndCoords(params: {
           ? new Date()
           : null,
     } as any)
-    .where(eq(students.id, params.studentId));
+    .where(
+  and(
+    eq(students.id, params.studentId),
+    eq(students.organizationId, Number(params.organizationId || 1))
+  )
+);
 }
 
 export async function deleteStudent(id: number) {
@@ -2705,10 +3449,24 @@ export async function deleteStudentCascadeById(studentId: number) {
   await db.delete(refunds).where(eq(refunds.studentId, studentId));
 
   // 8) 전적대 과목 삭제
-  await db.delete(transferSubjects).where(eq(transferSubjects.studentId, studentId));
+  await db
+  .delete(transferSubjects)
+  .where(
+    and(
+      eq(transferSubjects.studentId, studentId),
+      eq(transferSubjects.organizationId, organizationId)
+    )
+  );
 
   // 9) 우리플랜 학기 삭제
-  await db.delete(planSemesters).where(eq(planSemesters.studentId, studentId));
+  await db
+  .delete(planSemesters)
+  .where(
+    and(
+      eq(planSemesters.studentId, studentId),
+      eq(planSemesters.organizationId, organizationId)
+    )
+  );
 
   // 10) 우리플랜 삭제
   await db.delete(plans).where(eq(plans.studentId, studentId));
@@ -3021,16 +3779,26 @@ function validatePlanSummaryCounts(data: Partial<InsertPlan>) {
 }
 
 // ─── Plans ───────────────────────────────────────────────────────────
-export async function getPlan(studentId: number) {
+export async function getPlan(
+  studentId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   console.log("[db.getPlan] db exists =", !!db);
 
   if (!db) return null;
 
+  const organizationId = Number(params?.organizationId || 1);
+
   const result = await db
     .select()
     .from(plans)
-    .where(eq(plans.studentId, studentId))
+    .where(
+      and(
+        eq(plans.studentId, studentId),
+        eq(plans.organizationId, organizationId)
+      )
+    )
     .limit(1);
 
   console.log("[db.getPlan] result =", result);
@@ -3044,12 +3812,25 @@ export async function upsertPlan(data: InsertPlan) {
 
   validatePlanSummaryCounts(data);
 
-  const existing = await getPlan(data.studentId);
+  const existing = await getPlan(data.studentId, {
+  organizationId: Number((data as any).organizationId || 1),
+});
 
   if (existing) {
-    await db.update(plans).set(data).where(eq(plans.studentId, data.studentId));
-    return existing.id;
-  } else {
+  const organizationId = Number((data as any).organizationId || 1);
+
+  await db
+    .update(plans)
+    .set(data)
+    .where(
+      and(
+        eq(plans.studentId, data.studentId),
+        eq(plans.organizationId, organizationId)
+      )
+    );
+
+  return existing.id;
+} else {
     const result = await db.insert(plans).values(data);
     return getInsertId(result);
   }
@@ -3393,6 +4174,7 @@ console.log("🔥 [upsertSettlementItem] insertedId =", insertedId);
 }
 
 export async function cancelSettlementItemBySource(params: {
+  organizationId?: number | null;
   revenueType: "subject" | "practice_support" | "private_certificate";
   sourceId: number;
   actorUserId?: number | null;
@@ -3401,14 +4183,17 @@ export async function cancelSettlementItemBySource(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = Number(params.organizationId || 1);
+
   const exists = await db
     .select()
     .from(settlementItems)
     .where(
       and(
-        eq(settlementItems.revenueType, params.revenueType),
-        eq(settlementItems.sourceId, params.sourceId)
-      )
+  eq(settlementItems.organizationId, organizationId),
+  eq(settlementItems.revenueType, params.revenueType),
+  eq(settlementItems.sourceId, params.sourceId)
+)
     )
     .limit(1);
 
@@ -3423,7 +4208,12 @@ export async function cancelSettlementItemBySource(params: {
     .set({
       settlementStatus: "cancelled",
     } as any)
-    .where(eq(settlementItems.id, item.id));
+    .where(
+  and(
+    eq(settlementItems.id, item.id),
+    eq(settlementItems.organizationId, organizationId)
+  )
+);
 
   await createSettlementItemLog({
     settlementItemId: Number(item.id),
@@ -3606,10 +4396,13 @@ const refundSettlementItemId = Number(refundSettlement.id);
 
 export async function syncPrivateCertificateSettlementItemByRequestId(
   requestId: number,
-  actorUserId?: number
+  actorUserId?: number,
+  params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const rows = await db
     .select({
@@ -3621,7 +4414,12 @@ export async function syncPrivateCertificateSettlementItemByRequestId(
       privateCertificateMasters,
       eq(privateCertificateRequests.privateCertificateMasterId, privateCertificateMasters.id)
     )
-    .where(eq(privateCertificateRequests.id, requestId))
+    .where(
+  and(
+    eq(privateCertificateRequests.id, requestId),
+    eq(privateCertificateRequests.organizationId, organizationId)
+  )
+)
     .limit(1);
 
   const row = rows[0];
@@ -3634,11 +4432,12 @@ export async function syncPrivateCertificateSettlementItemByRequestId(
 
   if (request.paymentStatus !== "결제") {
     await cancelSettlementItemBySource({
-      revenueType: "private_certificate",
-      sourceId: Number(request.id),
-      actorUserId,
-      note: "민간자격증 결제 상태가 결제가 아니어서 정산 취소",
-    });
+  organizationId,
+  revenueType: "private_certificate",
+  sourceId: Number(request.id),
+  actorUserId,
+  note: "민간자격증 결제 상태가 결제가 아니어서 정산 취소",
+} as any);
     return null;
   }
 
@@ -3751,15 +4550,25 @@ companyProfitPreview: companyAmount - freelancerAmount,
 
 export async function syncPracticeSupportSettlementItemByRequestId(
   requestId: number,
-  actorUserId?: number
+  actorUserId?: number,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = Number(params?.organizationId || 1);
+
   const rows = await db
     .select()
     .from(practiceSupportRequests)
-    .where(eq(practiceSupportRequests.id, requestId))
+    .where(
+  and(
+    eq(practiceSupportRequests.id, requestId),
+    eq(practiceSupportRequests.organizationId, organizationId)
+  )
+)
     .limit(1);
 
   const request = rows[0];
@@ -3769,7 +4578,8 @@ export async function syncPracticeSupportSettlementItemByRequestId(
 
   if (request.paymentStatus !== "결제") {
     await cancelSettlementItemBySource({
-      revenueType: "practice_support",
+  organizationId,
+  revenueType: "practice_support",
       sourceId: Number(request.id),
       actorUserId,
       note: "실습배정지원 결제 상태가 결제가 아니어서 정산 취소",
@@ -3780,7 +4590,8 @@ export async function syncPracticeSupportSettlementItemByRequestId(
   const feeAmount = toNumber((request as any).feeAmount ?? 0);
 
   return await upsertSettlementItem({
-    revenueType: "practice_support",
+  organizationId,
+  revenueType: "practice_support",
     sourceId: Number(request.id),
     studentId: Number(request.studentId),
     assigneeId: Number((request as any).assigneeId ?? 0) || null,
@@ -3802,9 +4613,16 @@ export async function syncPracticeSupportSettlementItemByRequestId(
   });
 }
 
-export async function backfillSettlementItems(actorUserId?: number) {
+export async function backfillSettlementItems(
+  actorUserId?: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+const organizationId = Number(params?.organizationId || 1);
 
   let subjectProcessed = 0;
   let subjectSuccess = 0;
@@ -3822,17 +4640,21 @@ export async function backfillSettlementItems(actorUserId?: number) {
 
   // 1) 일반과목(semester) 백필
   const semesterRows = await db
-    .select({ id: semesters.id })
-    .from(semesters)
-    .orderBy(asc(semesters.id));
+  .select({ id: semesters.id })
+  .from(semesters)
+  .where(eq(semesters.organizationId, organizationId))
+  .orderBy(asc(semesters.id));
 
   for (const row of semesterRows) {
     subjectProcessed += 1;
     try {
       await syncSubjectSettlementItemBySemesterId(
-        Number(row.id),
-        actorUserId
-      );
+  Number(row.id),
+  actorUserId,
+  {
+    organizationId,
+  }
+);
       subjectSuccess += 1;
     } catch (err: any) {
       subjectFailed += 1;
@@ -3844,17 +4666,21 @@ export async function backfillSettlementItems(actorUserId?: number) {
 
   // 2) 민간자격증 백필
   const privateRows = await db
-    .select({ id: privateCertificateRequests.id })
-    .from(privateCertificateRequests)
-    .orderBy(asc(privateCertificateRequests.id));
+  .select({ id: privateCertificateRequests.id })
+  .from(privateCertificateRequests)
+  .where(eq(privateCertificateRequests.organizationId, organizationId))
+  .orderBy(asc(privateCertificateRequests.id));
 
   for (const row of privateRows) {
     privateProcessed += 1;
     try {
       await syncPrivateCertificateSettlementItemByRequestId(
-        Number(row.id),
-        actorUserId
-      );
+  Number(row.id),
+  actorUserId,
+  {
+    organizationId,
+  }
+);
       privateSuccess += 1;
     } catch (err: any) {
       privateFailed += 1;
@@ -3866,17 +4692,21 @@ export async function backfillSettlementItems(actorUserId?: number) {
 
   // 3) 실습배정 백필
   const practiceRows = await db
-    .select({ id: practiceSupportRequests.id })
-    .from(practiceSupportRequests)
-    .orderBy(asc(practiceSupportRequests.id));
+  .select({ id: practiceSupportRequests.id })
+  .from(practiceSupportRequests)
+  .where(eq(practiceSupportRequests.organizationId, organizationId))
+  .orderBy(asc(practiceSupportRequests.id));
 
   for (const row of practiceRows) {
     practiceProcessed += 1;
     try {
       await syncPracticeSupportSettlementItemByRequestId(
-        Number(row.id),
-        actorUserId
-      );
+  Number(row.id),
+  actorUserId,
+  {
+    organizationId,
+  }
+);
       practiceSuccess += 1;
     } catch (err: any) {
       practiceFailed += 1;
@@ -4146,8 +4976,12 @@ institutionName: institution?.name || sem.actualInstitution || null,
 }
 
 // ─── Dashboard Stats ────────────────────────────────────────────────
-export async function getDashboardStats(assigneeId?: number) {
+export async function getDashboardStats(
+  assigneeId?: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
+const organizationId = Number(params?.organizationId || 1);
   if (!db) {
     return {
       monthConsultationCount: 0,
@@ -4181,16 +5015,20 @@ export async function getDashboardStats(assigneeId?: number) {
   ).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")} 00:00:00`;
 
   const assigneeStudentCond = assigneeId
-    ? sql`AND s.assigneeId = ${assigneeId}`
-    : sql``;
+  ? sql`AND s.assigneeId = ${assigneeId}`
+  : sql``;
 
-  const assigneeConsultCond = assigneeId
-    ? sql`AND c.assigneeId = ${assigneeId}`
-    : sql``;
+const assigneeConsultCond = assigneeId
+  ? sql`AND c.assigneeId = ${assigneeId}`
+  : sql``;
 
-  const assigneeSettlementCond = assigneeId
-    ? sql`AND si.assigneeId = ${assigneeId}`
-    : sql``;
+const assigneeSettlementCond = assigneeId
+  ? sql`AND si.assigneeId = ${assigneeId}`
+  : sql``;
+
+const organizationStudentCond = sql`AND s.organizationId = ${organizationId}`;
+const organizationConsultCond = sql`AND c.organizationId = ${organizationId}`;
+const organizationSettlementCond = sql`AND si.organizationId = ${organizationId}`;
 
   const [consultRows] = await db.execute(sql`
     SELECT
@@ -4207,7 +5045,8 @@ export async function getDashboardStats(assigneeId?: number) {
       COUNT(*) as totalConsultationCount
     FROM consultations c
     WHERE 1=1
-    ${assigneeConsultCond}
+${organizationConsultCond}
+${assigneeConsultCond}
   `);
 
   const [studentRows] = await db.execute(sql`
@@ -4281,7 +5120,8 @@ export async function getDashboardStats(assigneeId?: number) {
   INNER JOIN students s
     ON s.id = sem.studentId
   WHERE 1=1
-  ${assigneeStudentCond}
+${organizationStudentCond}
+${assigneeStudentCond}
 `);
 
   const [settlementRows] = await db.execute(sql`
@@ -4404,7 +5244,8 @@ export async function getDashboardStats(assigneeId?: number) {
       ) as monthFirstSales
     FROM settlement_items si
     WHERE 1=1
-    ${assigneeSettlementCond}
+${organizationSettlementCond}
+${assigneeSettlementCond}
   `);
 
   const consult = (consultRows as any)?.[0] ?? {};
@@ -4440,7 +5281,10 @@ export async function getDashboardStats(assigneeId?: number) {
 }
 
 // ─── 이번달 매출 엔트리 ──────────────────────────────────────────────
-export async function getMonthSalesEntries(assigneeId?: number) {
+export async function getMonthSalesEntries(
+  assigneeId?: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) {
     return {
@@ -4451,8 +5295,10 @@ export async function getMonthSalesEntries(assigneeId?: number) {
   }
 
   const { monthStart, monthEnd } = getKSTMonthRange();
+const organizationId = Number(params?.organizationId || 1);
 
   const conditions = [
+eq(settlementItems.organizationId, organizationId),
   sql`${settlementItems.occurredAt} >= ${monthStart}`,
   sql`${settlementItems.occurredAt} < ${monthEnd}`,
   sql`${settlementItems.settlementStatus} = 'confirmed'`,
@@ -4487,7 +5333,13 @@ phone: students.phone,
 course: students.course,
     })
     .from(settlementItems)
-    .leftJoin(students, eq(settlementItems.studentId, students.id))
+    .leftJoin(
+  students,
+  and(
+    eq(settlementItems.studentId, students.id),
+    eq(students.organizationId, organizationId)
+  )
+)
     .where(and(...conditions))
     .orderBy(desc(settlementItems.occurredAt), desc(settlementItems.id));
 
@@ -4925,8 +5777,13 @@ export async function getSettlementInstitutionMonthlyTrend(params: {
 }
 
 // ─── 학생별 결제 요약 ────────────────────────────────────────────────
-export async function getStudentPaymentSummary(studentId: number) {
+export async function getStudentPaymentSummary(
+  studentId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
+  const organizationId = Number(params?.organizationId || 1);
+
   if (!db) {
     return {
       totalRequired: 0,
@@ -4937,7 +5794,7 @@ export async function getStudentPaymentSummary(studentId: number) {
     };
   }
 
-  const student = await getStudent(studentId);
+  const student = await getStudent(studentId, { organizationId });
   if (!student) {
     return {
       totalRequired: 0,
@@ -4948,40 +5805,43 @@ export async function getStudentPaymentSummary(studentId: number) {
     };
   }
 
-  const [plannedResult] = await db.execute(
-    sql`SELECT COALESCE(SUM(plannedAmount), 0) as total
-        FROM semesters
-        WHERE studentId = ${studentId}`
-  );
+  const [plannedResult] = await db.execute(sql`
+    SELECT COALESCE(SUM(plannedAmount), 0) as total
+    FROM semesters
+    WHERE studentId = ${studentId}
+      AND organizationId = ${organizationId}
+  `);
+
   const totalRequired = toNumber((plannedResult as any)[0]?.total);
 
   const [settlementResult] = await db.execute(sql`
-  SELECT
-    COALESCE(
-      SUM(
-        CASE
-          WHEN settlementStatus = 'confirmed'
-           AND revenueType != 'refund'
-          THEN grossAmount
-          ELSE 0
-        END
-      ),
-      0
-    ) as totalPaid,
+    SELECT
+      COALESCE(
+        SUM(
+          CASE
+            WHEN settlementStatus = 'confirmed'
+             AND revenueType != 'refund'
+            THEN grossAmount
+            ELSE 0
+          END
+        ),
+        0
+      ) as totalPaid,
 
-    COALESCE(
-      SUM(
-        CASE
-          WHEN revenueType = 'refund'
-          THEN ABS(grossAmount)
-          ELSE 0
-        END
-      ),
-      0
-    ) as totalRefund
-  FROM settlement_items
-  WHERE studentId = ${studentId}
-`);
+      COALESCE(
+        SUM(
+          CASE
+            WHEN revenueType = 'refund'
+            THEN ABS(grossAmount)
+            ELSE 0
+          END
+        ),
+        0
+      ) as totalRefund
+    FROM settlement_items
+    WHERE studentId = ${studentId}
+      AND organizationId = ${organizationId}
+  `);
 
   const totalPaid = toNumber((settlementResult as any)[0]?.totalPaid);
   const totalRefund = toNumber((settlementResult as any)[0]?.totalRefund);
@@ -4998,9 +5858,13 @@ export async function getStudentPaymentSummary(studentId: number) {
   };
 }
 
-export async function cleanupOrphanSettlementItems() {
+export async function cleanupOrphanSettlementItems(params?: {
+  organizationId?: number | null;
+}) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const summary = {
     checkedSettlementItems: 0,
@@ -5015,12 +5879,15 @@ export async function cleanupOrphanSettlementItems() {
 
   const orphanSettlementIds = new Set<number>();
 
-  // 1) studentId는 있는데 students 원본이 없는 정산
+  // 1) studentId는 있는데 같은 조직 students 원본이 없는 정산
   const studentRows = await db.execute(sql`
     SELECT si.id
     FROM settlement_items si
-    LEFT JOIN students s ON s.id = si.studentId
-    WHERE si.studentId IS NOT NULL
+    LEFT JOIN students s
+      ON s.id = si.studentId
+     AND s.organizationId = ${organizationId}
+    WHERE si.organizationId = ${organizationId}
+      AND si.studentId IS NOT NULL
       AND s.id IS NULL
   `);
 
@@ -5029,13 +5896,15 @@ export async function cleanupOrphanSettlementItems() {
     summary.orphanStudentItems += 1;
   }
 
-  // 2) 일반과목(subject)인데 semester 원본이 없는 정산
+  // 2) 일반과목(subject)인데 같은 조직 semester 원본이 없는 정산
   const semesterRows = await db.execute(sql`
     SELECT si.id
     FROM settlement_items si
     LEFT JOIN semesters sem
       ON sem.id = si.sourceId
-    WHERE si.revenueType = 'subject'
+     AND sem.organizationId = ${organizationId}
+    WHERE si.organizationId = ${organizationId}
+      AND si.revenueType = 'subject'
       AND si.sourceId IS NOT NULL
       AND sem.id IS NULL
   `);
@@ -5045,13 +5914,15 @@ export async function cleanupOrphanSettlementItems() {
     summary.orphanSemesterItems += 1;
   }
 
-  // 3) 실습배정(practice_support)인데 원본 request가 없는 정산
+  // 3) 실습배정(practice_support)인데 같은 조직 request 원본이 없는 정산
   const practiceRows = await db.execute(sql`
     SELECT si.id
     FROM settlement_items si
     LEFT JOIN practice_support_requests psr
       ON psr.id = si.sourceId
-    WHERE si.revenueType = 'practice_support'
+     AND psr.organizationId = ${organizationId}
+    WHERE si.organizationId = ${organizationId}
+      AND si.revenueType = 'practice_support'
       AND si.sourceId IS NOT NULL
       AND psr.id IS NULL
   `);
@@ -5061,13 +5932,15 @@ export async function cleanupOrphanSettlementItems() {
     summary.orphanPracticeItems += 1;
   }
 
-  // 4) 민간자격증(private_certificate)인데 원본 request가 없는 정산
+  // 4) 민간자격증(private_certificate)인데 같은 조직 request 원본이 없는 정산
   const privateCertificateRows = await db.execute(sql`
     SELECT si.id
     FROM settlement_items si
     LEFT JOIN private_certificate_requests pcr
       ON pcr.id = si.sourceId
-    WHERE si.revenueType = 'private_certificate'
+     AND pcr.organizationId = ${organizationId}
+    WHERE si.organizationId = ${organizationId}
+      AND si.revenueType = 'private_certificate'
       AND si.sourceId IS NOT NULL
       AND pcr.id IS NULL
   `);
@@ -5105,7 +5978,12 @@ export async function cleanupOrphanSettlementItems() {
 
     const settlementDeleteResult: any = await db
       .delete(settlementItems)
-      .where(eq(settlementItems.id, settlementItemId));
+      .where(
+        and(
+          eq(settlementItems.id, settlementItemId),
+          eq(settlementItems.organizationId, organizationId)
+        )
+      );
 
     const deletedSettlementCount =
       Number(settlementDeleteResult?.rowsAffected || 0) ||
@@ -5396,23 +6274,40 @@ totalRefundCompanyProfit: sql<string>`
   });
 }
 
-export async function getSettlementSettings() {
+export async function getSettlementSettings(params?: {
+  organizationId?: number | null;
+}) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number(params?.organizationId || 1);
+
   const [rows] = await db.execute(sql`
-    SELECT * FROM settlement_settings ORDER BY id DESC LIMIT 1
+    SELECT *
+    FROM settlement_settings
+    WHERE organizationId = ${organizationId}
+    ORDER BY id DESC
+    LIMIT 1
   `);
 
-  return (rows as any[])[0] || { payoutDay: 25 };
+  return (rows as any[])[0] || { organizationId, payoutDay: 25 };
 }
 
-export async function saveSettlementSettings(data: { payoutDay: number }) {
+export async function saveSettlementSettings(data: {
+  organizationId?: number | null;
+  payoutDay: number;
+}) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number(data.organizationId || 1);
+
   const [rows] = await db.execute(sql`
-    SELECT id FROM settlement_settings ORDER BY id DESC LIMIT 1
+    SELECT id
+    FROM settlement_settings
+    WHERE organizationId = ${organizationId}
+    ORDER BY id DESC
+    LIMIT 1
   `);
 
   const existing = (rows as any[])[0];
@@ -5422,20 +6317,22 @@ export async function saveSettlementSettings(data: { payoutDay: number }) {
       UPDATE settlement_settings
       SET payoutDay = ${data.payoutDay}
       WHERE id = ${existing.id}
+        AND organizationId = ${organizationId}
     `);
 
     return Number(existing.id);
   }
 
   const [result]: any = await db.execute(sql`
-    INSERT INTO settlement_settings (payoutDay)
-    VALUES (${data.payoutDay})
+    INSERT INTO settlement_settings (organizationId, payoutDay)
+    VALUES (${organizationId}, ${data.payoutDay})
   `);
 
   return Number(result?.insertId || 0);
 }
 
 export async function getSettlementPayslip(params: {
+organizationId?: number | null;
   year: number;
   month: number;
   assigneeId: number;
@@ -5445,7 +6342,9 @@ export async function getSettlementPayslip(params: {
 
   const start = new Date(params.year, params.month - 1, 1);
   const end = new Date(params.year, params.month, 1);
-const settings = await getSettlementSettings();
+const settings = await getSettlementSettings({
+  organizationId: Number(params.organizationId || 1),
+});
 
     const [profileRows] = await db.execute(sql`
     SELECT
@@ -5475,7 +6374,9 @@ const settings = await getSettlementSettings();
     throw new Error("담당자 정보를 찾을 수 없습니다.");
   }
 
-  const branding = await getBrandingSettings();
+  const branding = await getBrandingSettings({
+  organizationId: Number(params.organizationId || 1),
+});
 
   const payoutDay = Math.max(
     1,
@@ -5625,12 +6526,18 @@ function normalizeSubjectName(name: string) {
 }
 
 export async function findDuplicatePlanSubject(params: {
+  organizationId?: number | null;
   studentId: number;
   subjectName: string;
   excludeId?: number;
   excludeSemesterNo?: number;
 }) {
-  const rows = await listPlanSemesters(params.studentId);
+  const organizationId = Number(params.organizationId || 1);
+
+  const rows = await listPlanSemesters(params.studentId, {
+    organizationId,
+  });
+
   const target = normalizeSubjectName(params.subjectName);
 
   if (!target) return null;
@@ -5654,6 +6561,7 @@ export async function findDuplicatePlanSubject(params: {
 }
 
 async function validatePlanRequirementLimit(params: {
+organizationId?: number | null;
   studentId: number;
   requirementType?: "전공필수" | "전공선택" | "교양" | "일반" | null;
   excludePlanSemesterId?: number;
@@ -5662,10 +6570,15 @@ async function validatePlanRequirementLimit(params: {
 
   if (!requirementType) return;
 
-  const plan = await getPlan(params.studentId);
+  const plan = await getPlan(params.studentId, {
+  organizationId: Number(params?.organizationId || 1),
+})
+;
   if (!plan) return;
 
-  const rows = await listPlanSemesters(params.studentId);
+  const rows = await listPlanSemesters(params.studentId, {
+  organizationId: Number((params as any)?.organizationId || 1),
+});
 
   const filteredRows = rows.filter((row: any) => {
     if (
@@ -5695,14 +6608,24 @@ async function validatePlanRequirementLimit(params: {
   }
 }
 
-export async function listPlanSemesters(studentId: number) {
+export async function listPlanSemesters(
+  studentId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 1);
 
   return db
     .select()
     .from(planSemesters)
-    .where(eq(planSemesters.studentId, studentId))
+    .where(
+      and(
+        eq(planSemesters.studentId, studentId),
+        eq(planSemesters.organizationId, organizationId)
+      )
+    )
     .orderBy(planSemesters.semesterNo, planSemesters.sortOrder, planSemesters.id);
 }
 
@@ -5710,10 +6633,13 @@ export async function createPlanSemester(data: InsertPlanSemester) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number((data as any).organizationId || 1);
+
   const duplicate = await findDuplicatePlanSubject({
     studentId: Number(data.studentId),
     subjectName: String(data.subjectName || ""),
-  });
+    organizationId,
+  } as any);
 
   if (duplicate) {
     throw new Error(
@@ -5722,27 +6648,40 @@ export async function createPlanSemester(data: InsertPlanSemester) {
   }
 
   if (FEATURE_FLAGS.PLAN_REQUIREMENT_ENFORCE) {
-  await validatePlanRequirementLimit({
-    studentId: Number(data.studentId),
-    requirementType: (data as any).planRequirementType ?? null,
-  });
-}
+    await validatePlanRequirementLimit({
+      studentId: Number(data.studentId),
+      requirementType: (data as any).planRequirementType ?? null,
+      organizationId,
+    } as any);
+  }
 
-  const result: any = await db.insert(planSemesters).values(data);
+  const result: any = await db.insert(planSemesters).values({
+    ...data,
+    organizationId,
+  } as any);
+
   return getInsertId(result);
 }
 
 export async function updatePlanSemester(
   id: number,
-  data: Partial<InsertPlanSemester>
+  data: Partial<InsertPlanSemester>,
+  params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number(params?.organizationId || 1);
+
   const current = await db
     .select()
     .from(planSemesters)
-    .where(eq(planSemesters.id, id))
+    .where(
+      and(
+        eq(planSemesters.id, id),
+        eq(planSemesters.organizationId, organizationId)
+      )
+    )
     .limit(1);
 
   const row = current[0];
@@ -5753,7 +6692,8 @@ export async function updatePlanSemester(
       studentId: Number(row.studentId),
       subjectName: String(data.subjectName || ""),
       excludeId: id,
-    });
+      organizationId,
+    } as any);
 
     if (duplicate) {
       throw new Error(
@@ -5768,30 +6708,54 @@ export async function updatePlanSemester(
       : row.planRequirementType;
 
   if (FEATURE_FLAGS.PLAN_REQUIREMENT_ENFORCE) {
-  await validatePlanRequirementLimit({
-    studentId: Number(row.studentId),
-    requirementType: (nextRequirementType as any) ?? null,
-    excludePlanSemesterId: id,
-  });
+    await validatePlanRequirementLimit({
+      studentId: Number(row.studentId),
+      requirementType: (nextRequirementType as any) ?? null,
+      excludePlanSemesterId: id,
+      organizationId,
+    } as any);
+  }
+
+  await db
+    .update(planSemesters)
+    .set(data as any)
+    .where(
+      and(
+        eq(planSemesters.id, id),
+        eq(planSemesters.organizationId, organizationId)
+      )
+    );
 }
 
-  await db.update(planSemesters).set(data as any).where(eq(planSemesters.id, id));
-}
-
-export async function deletePlanSemester(id: number) {
+export async function deletePlanSemester(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.delete(planSemesters).where(eq(planSemesters.id, id));
+  const organizationId = Number(params?.organizationId || 1);
+
+  await db
+    .delete(planSemesters)
+    .where(
+      and(
+        eq(planSemesters.id, id),
+        eq(planSemesters.organizationId, organizationId)
+      )
+    );
 }
 
 export async function syncPlanSemestersByCount(
   studentId: number,
   semesterNo: number,
-  targetCount: number
+  targetCount: number,
+  params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const rows = await db
     .select()
@@ -5799,7 +6763,8 @@ export async function syncPlanSemestersByCount(
     .where(
       and(
         eq(planSemesters.studentId, studentId),
-        eq(planSemesters.semesterNo, semesterNo)
+        eq(planSemesters.semesterNo, semesterNo),
+        eq(planSemesters.organizationId, organizationId)
       )
     )
     .orderBy(planSemesters.sortOrder, planSemesters.id);
@@ -5809,6 +6774,7 @@ export async function syncPlanSemestersByCount(
   if (currentCount < targetCount) {
     for (let i = currentCount; i < targetCount; i++) {
       await db.insert(planSemesters).values({
+        organizationId,
         studentId,
         semesterNo,
         subjectName: `새 과목${i + 1}`,
@@ -5823,7 +6789,14 @@ export async function syncPlanSemestersByCount(
   if (currentCount > targetCount) {
     const toDelete = rows.slice(targetCount);
     for (const row of toDelete) {
-      await db.delete(planSemesters).where(eq(planSemesters.id, row.id));
+      await db
+        .delete(planSemesters)
+        .where(
+          and(
+            eq(planSemesters.id, row.id),
+            eq(planSemesters.organizationId, organizationId)
+          )
+        );
     }
   }
 
@@ -5831,14 +6804,24 @@ export async function syncPlanSemestersByCount(
 }
 
 // ─── Transfer Subjects ───────────────────────────────────────────────
-export async function listTransferSubjects(studentId: number) {
+export async function listTransferSubjects(
+  studentId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 1);
 
   return db
     .select()
     .from(transferSubjects)
-    .where(eq(transferSubjects.studentId, studentId))
+    .where(
+      and(
+        eq(transferSubjects.studentId, studentId),
+        eq(transferSubjects.organizationId, organizationId)
+      )
+    )
     .orderBy(transferSubjects.sortOrder, transferSubjects.id);
 }
 
@@ -5846,25 +6829,54 @@ export async function createTransferSubject(data: InsertTransferSubject) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const result: any = await db.insert(transferSubjects).values(data);
+  const organizationId = Number((data as any).organizationId || 1);
+
+  const result: any = await db.insert(transferSubjects).values({
+    ...data,
+    organizationId,
+  } as any);
+
   return getInsertId(result);
 }
 
 export async function updateTransferSubject(
   id: number,
-  data: Partial<InsertTransferSubject>
+  data: Partial<InsertTransferSubject>,
+  params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.update(transferSubjects).set(data as any).where(eq(transferSubjects.id, id));
+  const organizationId = Number(params?.organizationId || 1);
+
+  await db
+    .update(transferSubjects)
+    .set(data as any)
+    .where(
+      and(
+        eq(transferSubjects.id, id),
+        eq(transferSubjects.organizationId, organizationId)
+      )
+    );
 }
 
-export async function deleteTransferSubject(id: number) {
+export async function deleteTransferSubject(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.delete(transferSubjects).where(eq(transferSubjects.id, id));
+  const organizationId = Number(params?.organizationId || 1);
+
+  await db
+    .delete(transferSubjects)
+    .where(
+      and(
+        eq(transferSubjects.id, id),
+        eq(transferSubjects.organizationId, organizationId)
+      )
+    );
 }
 
 export async function bulkCreateTransferSubjects(dataList: InsertTransferSubject[]) {
@@ -5872,7 +6884,12 @@ export async function bulkCreateTransferSubjects(dataList: InsertTransferSubject
   if (!db) throw new Error("DB not available");
   if (!dataList.length) return [];
 
-  const result = await db.insert(transferSubjects).values(dataList as any);
+  const normalized = dataList.map((row: any) => ({
+    ...row,
+    organizationId: Number(row.organizationId || 1),
+  }));
+
+  const result = await db.insert(transferSubjects).values(normalized as any);
   return result;
 }
 
@@ -5898,18 +6915,28 @@ export async function checkAndAutoComplete(studentId: number) {
 }
 
 // ─── 교육원 ──────────────────────────────────────────────────────────
-export async function listEducationInstitutions() {
+export async function listEducationInstitutions(params?: {
+  organizationId?: number | null;
+}) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 1);
 
   return db
     .select()
     .from(educationInstitutions)
-    .where(eq(educationInstitutions.isActive, true))
+    .where(
+      and(
+        eq(educationInstitutions.organizationId, organizationId),
+        eq(educationInstitutions.isActive, true)
+      )
+    )
     .orderBy(educationInstitutions.sortOrder, educationInstitutions.id);
 }
 
 export async function createEducationInstitution(data: {
+organizationId?: number | null;
   name: string;
   isActive?: boolean;
   sortOrder?: number;
@@ -5921,6 +6948,7 @@ export async function createEducationInstitution(data: {
   if (!db) throw new Error("DB 연결 실패");
 
   const result = await db.insert(educationInstitutions).values({
+organizationId: Number(data.organizationId || 1),
     name: data.name,
     isActive: data.isActive ?? true,
     sortOrder: data.sortOrder ?? 0,
@@ -5951,17 +6979,38 @@ export async function reassignConsultationAndLinkedStudent(
 }
 
 export async function listEducationInstitutionPositionRates(
-  educationInstitutionId?: number
+  educationInstitutionId?: number,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) return [];
 
+  const organizationId = Number(params?.organizationId || 1);
+
+  const whereConditions = [
+    eq(educationInstitutionPositionRates.organizationId, organizationId),
+    eq(educationInstitutionPositionRates.isActive, true),
+  ];
+
+  if (educationInstitutionId) {
+    whereConditions.push(
+      eq(
+        educationInstitutionPositionRates.educationInstitutionId,
+        educationInstitutionId
+      )
+    );
+  }
+
   const rows = await db
     .select({
       id: educationInstitutionPositionRates.id,
-      educationInstitutionId: educationInstitutionPositionRates.educationInstitutionId,
+      educationInstitutionId:
+        educationInstitutionPositionRates.educationInstitutionId,
       positionId: educationInstitutionPositionRates.positionId,
-      freelancerUnitAmount: educationInstitutionPositionRates.freelancerUnitAmount,
+      freelancerUnitAmount:
+        educationInstitutionPositionRates.freelancerUnitAmount,
       isActive: educationInstitutionPositionRates.isActive,
       createdAt: educationInstitutionPositionRates.createdAt,
       updatedAt: educationInstitutionPositionRates.updatedAt,
@@ -5972,23 +7021,19 @@ export async function listEducationInstitutionPositionRates(
     .from(educationInstitutionPositionRates)
     .leftJoin(
       educationInstitutions,
-      eq(educationInstitutionPositionRates.educationInstitutionId, educationInstitutions.id)
+      and(
+        eq(
+          educationInstitutionPositionRates.educationInstitutionId,
+          educationInstitutions.id
+        ),
+        eq(educationInstitutions.organizationId, organizationId)
+      )
     )
     .leftJoin(
       positions,
       eq(educationInstitutionPositionRates.positionId, positions.id)
     )
-    .where(
-      educationInstitutionId
-        ? and(
-            eq(
-              educationInstitutionPositionRates.educationInstitutionId,
-              educationInstitutionId
-            ),
-            eq(educationInstitutionPositionRates.isActive, true)
-          )
-        : eq(educationInstitutionPositionRates.isActive, true)
-    )
+    .where(and(...whereConditions))
     .orderBy(
       asc(educationInstitutionPositionRates.educationInstitutionId),
       asc(positions.sortOrder),
@@ -6000,17 +7045,26 @@ export async function listEducationInstitutionPositionRates(
 
 export async function getEducationInstitutionPositionRate(
   educationInstitutionId: number,
-  positionId: number
+  positionId: number,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) return null;
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const rows = await db
     .select()
     .from(educationInstitutionPositionRates)
     .where(
       and(
-        eq(educationInstitutionPositionRates.educationInstitutionId, educationInstitutionId),
+        eq(educationInstitutionPositionRates.organizationId, organizationId),
+        eq(
+          educationInstitutionPositionRates.educationInstitutionId,
+          educationInstitutionId
+        ),
         eq(educationInstitutionPositionRates.positionId, positionId),
         eq(educationInstitutionPositionRates.isActive, true)
       )
@@ -6021,6 +7075,7 @@ export async function getEducationInstitutionPositionRate(
 }
 
 export async function upsertEducationInstitutionPositionRate(data: {
+  organizationId?: number | null;
   educationInstitutionId: number;
   positionId: number;
   freelancerUnitAmount: string | number;
@@ -6029,12 +7084,18 @@ export async function upsertEducationInstitutionPositionRate(data: {
   const db = await getDb();
   if (!db) throw new Error("DB 연결 실패");
 
+  const organizationId = Number(data.organizationId || 1);
+
   const exists = await db
     .select()
     .from(educationInstitutionPositionRates)
     .where(
       and(
-        eq(educationInstitutionPositionRates.educationInstitutionId, data.educationInstitutionId),
+        eq(educationInstitutionPositionRates.organizationId, organizationId),
+        eq(
+          educationInstitutionPositionRates.educationInstitutionId,
+          data.educationInstitutionId
+        ),
         eq(educationInstitutionPositionRates.positionId, data.positionId)
       )
     )
@@ -6047,12 +7108,18 @@ export async function upsertEducationInstitutionPositionRate(data: {
         freelancerUnitAmount: String(data.freelancerUnitAmount ?? 0),
         isActive: data.isActive ?? true,
       } as any)
-      .where(eq(educationInstitutionPositionRates.id, exists[0].id));
+      .where(
+        and(
+          eq(educationInstitutionPositionRates.id, exists[0].id),
+          eq(educationInstitutionPositionRates.organizationId, organizationId)
+        )
+      );
 
     return Number(exists[0].id);
   }
 
   const result: any = await db.insert(educationInstitutionPositionRates).values({
+    organizationId,
     educationInstitutionId: data.educationInstitutionId,
     positionId: data.positionId,
     freelancerUnitAmount: String(data.freelancerUnitAmount ?? 0),
@@ -6062,14 +7129,26 @@ export async function upsertEducationInstitutionPositionRate(data: {
   return Number(getInsertId(result));
 }
 
-export async function deleteEducationInstitutionPositionRate(id: number) {
+export async function deleteEducationInstitutionPositionRate(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB 연결 실패");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   await db
     .update(educationInstitutionPositionRates)
     .set({ isActive: false } as any)
-    .where(eq(educationInstitutionPositionRates.id, id));
+    .where(
+      and(
+        eq(educationInstitutionPositionRates.id, id),
+        eq(educationInstitutionPositionRates.organizationId, organizationId)
+      )
+    );
 }
 
 export async function getEducationInstitutionById(id: number) {
@@ -6112,6 +7191,9 @@ export async function updateEducationInstitution(
     settlementType?: "credit" | "subject" | "fixed";
     unitCostAmount?: string | number;
     normalSubjectPrice?: string | number;
+  },
+  params?: {
+    organizationId?: number | null;
   }
 ) {
   const db = await getDb();
@@ -6129,10 +7211,17 @@ export async function updateEducationInstitution(
 
   if (Object.keys(payload).length === 0) return;
 
+const organizationId = Number(params?.organizationId || 1);
+
   await db
     .update(educationInstitutions)
     .set(payload as any)
-    .where(eq(educationInstitutions.id, id));
+    .where(
+  and(
+    eq(educationInstitutions.id, id),
+    eq(educationInstitutions.organizationId, organizationId)
+  )
+);
 }
 
 // ─── Transfer Attachments ────────────────────────────────────────────
@@ -6563,9 +7652,16 @@ export async function deleteSubjectCatalogItem(id: number) {
 }
 
 // ─── Private Certificate Requests (민간자격증 요청) ─────────────────
-export async function listPrivateCertificateRequests(assigneeId?: number) {
+export async function listPrivateCertificateRequests(
+  assigneeId?: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const rows = await db
     .select({
@@ -6576,12 +7672,27 @@ export async function listPrivateCertificateRequests(assigneeId?: number) {
       userName: users.name,
     })
     .from(privateCertificateRequests)
-    .leftJoin(students, eq(privateCertificateRequests.studentId, students.id))
-    .leftJoin(users, eq(privateCertificateRequests.assigneeId, users.id))
+    .leftJoin(
+      students,
+      and(
+        eq(privateCertificateRequests.studentId, students.id),
+        eq(students.organizationId, organizationId)
+      )
+    )
+    .leftJoin(
+      users,
+      and(
+        eq(privateCertificateRequests.assigneeId, users.id),
+        eq(users.organizationId, organizationId)
+      )
+    )
     .where(
       assigneeId
-        ? eq(privateCertificateRequests.assigneeId, assigneeId)
-        : undefined
+        ? and(
+            eq(privateCertificateRequests.organizationId, organizationId),
+            eq(privateCertificateRequests.assigneeId, assigneeId)
+          )
+        : eq(privateCertificateRequests.organizationId, organizationId)
     )
     .orderBy(desc(privateCertificateRequests.id));
 
@@ -6606,9 +7717,16 @@ export async function listPrivateCertificateRequests(assigneeId?: number) {
   }));
 }
 
-export async function listPrivateCertificateRequestsByStudent(studentId: number) {
+export async function listPrivateCertificateRequestsByStudent(
+  studentId: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const rows = await db
     .select({
@@ -6619,9 +7737,26 @@ export async function listPrivateCertificateRequestsByStudent(studentId: number)
       userName: users.name,
     })
     .from(privateCertificateRequests)
-    .leftJoin(students, eq(privateCertificateRequests.studentId, students.id))
-    .leftJoin(users, eq(privateCertificateRequests.assigneeId, users.id))
-    .where(eq(privateCertificateRequests.studentId, studentId))
+    .leftJoin(
+      students,
+      and(
+        eq(privateCertificateRequests.studentId, students.id),
+        eq(students.organizationId, organizationId)
+      )
+    )
+    .leftJoin(
+      users,
+      and(
+        eq(privateCertificateRequests.assigneeId, users.id),
+        eq(users.organizationId, organizationId)
+      )
+    )
+    .where(
+      and(
+        eq(privateCertificateRequests.organizationId, organizationId),
+        eq(privateCertificateRequests.studentId, studentId)
+      )
+    )
     .orderBy(desc(privateCertificateRequests.id));
 
   return rows.map((row: any) => ({
@@ -6691,7 +7826,13 @@ export async function createPrivateCertificateRequest(data: InsertPrivateCertifi
   const insertId = getInsertId(result);
 
   if (insertId) {
-    await syncPrivateCertificateSettlementItemByRequestId(Number(insertId));
+    await syncPrivateCertificateSettlementItemByRequestId(
+  Number(insertId),
+  undefined,
+  {
+    organizationId,
+  }
+);
   }
 
   return insertId;
@@ -6699,21 +7840,32 @@ export async function createPrivateCertificateRequest(data: InsertPrivateCertifi
 
 export async function updatePrivateCertificateRequest(
   id: number,
-  data: Partial<InsertPrivateCertificateRequest>
+  data: Partial<InsertPrivateCertificateRequest>,
+  params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number(params?.organizationId || 1);
+
   try {
     console.log("[privateCertificate.update] id =", id);
+    console.log("[privateCertificate.update] organizationId =", organizationId);
     console.log("[privateCertificate.update] data =", data);
 
     await db
       .update(privateCertificateRequests)
       .set(data as any)
-      .where(eq(privateCertificateRequests.id, id));
+      .where(
+        and(
+          eq(privateCertificateRequests.id, id),
+          eq(privateCertificateRequests.organizationId, organizationId)
+        )
+      );
 
-    await syncPrivateCertificateSettlementItemByRequestId(id);
+    await syncPrivateCertificateSettlementItemByRequestId(id, undefined, {
+      organizationId,
+    });
   } catch (err: any) {
     console.error("[privateCertificate.update ERROR]", err);
     console.error("[privateCertificate.update ERROR message]", err?.message);
@@ -6728,20 +7880,34 @@ export async function updatePrivateCertificateRequest(
   }
 }
 
-export async function deletePrivateCertificateRequest(id: number) {
+export async function deletePrivateCertificateRequest(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number(params?.organizationId || 1);
+
   await cancelSettlementItemBySource({
+    organizationId,
     revenueType: "private_certificate",
     sourceId: id,
     note: "민간자격증 요청 삭제로 정산 취소",
-  });
+  } as any);
 
-  await db.delete(privateCertificateRequests).where(eq(privateCertificateRequests.id, id));
+  await db
+    .delete(privateCertificateRequests)
+    .where(
+      and(
+        eq(privateCertificateRequests.id, id),
+        eq(privateCertificateRequests.organizationId, organizationId)
+      )
+    );
 }
 
 export async function requestPrivateCertificateRefund(params: {
+  organizationId?: number | null;
   requestId: number;
   refundAmount: string | number;
   refundReason?: string | null;
@@ -6749,10 +7915,17 @@ export async function requestPrivateCertificateRefund(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = Number(params.organizationId || 1);
+
   const rows = await db
     .select()
     .from(privateCertificateRequests)
-    .where(eq(privateCertificateRequests.id, params.requestId))
+    .where(
+  and(
+    eq(privateCertificateRequests.id, params.requestId),
+    eq(privateCertificateRequests.organizationId, organizationId)
+  )
+)
     .limit(1);
 
   const request = rows[0];
@@ -6772,17 +7945,25 @@ export async function requestPrivateCertificateRefund(params: {
       refundReason: params.refundReason ?? null,
       refundRequestedAt: new Date(),
     } as any)
-    .where(eq(privateCertificateRequests.id, params.requestId));
+    .where(
+  and(
+    eq(privateCertificateRequests.id, params.requestId),
+    eq(privateCertificateRequests.organizationId, organizationId)
+  )
+);
 
   return true;
 }
 
 export async function approvePrivateCertificateRefund(params: {
+  organizationId?: number | null;
   requestId: number;
   approvedBy: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+const organizationId = Number(params.organizationId || 1);
 
   const rows = await db
     .select({
@@ -6794,7 +7975,12 @@ export async function approvePrivateCertificateRefund(params: {
       privateCertificateMasters,
       eq(privateCertificateRequests.privateCertificateMasterId, privateCertificateMasters.id)
     )
-    .where(eq(privateCertificateRequests.id, params.requestId))
+    .where(
+  and(
+    eq(privateCertificateRequests.id, params.requestId),
+    eq(privateCertificateRequests.organizationId, organizationId)
+  )
+)
     .limit(1);
 
   const row = rows[0];
@@ -6813,22 +7999,28 @@ export async function approvePrivateCertificateRefund(params: {
       refundApprovedBy: params.approvedBy,
       paymentStatus: "환불",
     } as any)
-    .where(eq(privateCertificateRequests.id, params.requestId));
+    .where(
+  and(
+    eq(privateCertificateRequests.id, params.requestId),
+    eq(privateCertificateRequests.organizationId, organizationId)
+  )
+);
 
   await refundSettlementItemBySource({
-    revenueType: "private_certificate",
-    sourceId: Number(request.id),
+  organizationId,
+  revenueType: "private_certificate",
+  sourceId: Number(request.id),
+  refundAmount,
+  refundDate: new Date(),
+  actorUserId: params.approvedBy,
+  note: "민간자격증 환불 승인",
+  payload: {
+    requestId: request.id,
+    privateCertificateMasterId: (request as any).privateCertificateMasterId ?? null,
+    privateCertificateName: row.master?.name ?? null,
     refundAmount,
-    refundDate: new Date(),
-    actorUserId: params.approvedBy,
-    note: "민간자격증 환불 승인",
-    payload: {
-      requestId: request.id,
-      privateCertificateMasterId: (request as any).privateCertificateMasterId ?? null,
-      privateCertificateName: row.master?.name ?? null,
-      refundAmount,
-    },
-  });
+  },
+} as any);
 
   return true;
 }
@@ -6837,6 +8029,7 @@ export async function approvePrivateCertificateRefund(params: {
 
 // ─── Practice Support Requests (실습배정지원센터) ───────────────────
 export async function listPracticeSupportRequests(params?: {
+  organizationId?: number | null;
   assigneeId?: number;
   month?: string;
   status?: "전체" | "미섭외" | "섭외중" | "섭외완료";
@@ -6845,7 +8038,11 @@ export async function listPracticeSupportRequests(params?: {
   const db = await getDb();
   if (!db) return [];
 
+const organizationId = Number(params?.organizationId || 1);
+
   const conditions: any[] = [
+  sql`s.organizationId = ${organizationId}`,
+  sql`(psr.organizationId IS NULL OR psr.organizationId = ${organizationId})`,
   sql`s.approvalStatus = '승인'`,
 ];
 
@@ -7204,7 +8401,10 @@ export async function createPracticeSupportRequest(data: InsertPracticeSupportRe
 
 export async function updatePracticeSupportRequest(
   id: number,
-  data: Partial<InsertPracticeSupportRequest>
+  data: Partial<InsertPracticeSupportRequest>,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -7212,25 +8412,48 @@ export async function updatePracticeSupportRequest(
   await db
     .update(practiceSupportRequests)
     .set(data as any)
-    .where(eq(practiceSupportRequests.id, id));
+    .where(
+  and(
+    eq(practiceSupportRequests.id, id),
+    eq(practiceSupportRequests.organizationId, Number(params?.organizationId || 1))
+  )
+);
 
-  await syncPracticeSupportSettlementItemByRequestId(id);
+  await syncPracticeSupportSettlementItemByRequestId(id, undefined, {
+  organizationId: Number(params?.organizationId || 1),
+});
 }
 
-export async function deletePracticeSupportRequest(id: number) {
+export async function deletePracticeSupportRequest(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await cancelSettlementItemBySource({
-    revenueType: "practice_support",
-    sourceId: id,
-    note: "실습배정지원 요청 삭제로 정산 취소",
-  });
+const organizationId = Number(params?.organizationId || 1);
 
-  await db.delete(practiceSupportRequests).where(eq(practiceSupportRequests.id, id));
+  await cancelSettlementItemBySource({
+  organizationId,
+  revenueType: "practice_support",
+  sourceId: id,
+  note: "실습배정지원 요청 삭제로 정산 취소",
+});
+
+  await db
+  .delete(practiceSupportRequests)
+  .where(
+    and(
+      eq(practiceSupportRequests.id, id),
+      eq(practiceSupportRequests.organizationId, organizationId)
+    )
+  );
 }
 
 export async function requestPracticeSupportRefund(params: {
+  organizationId?: number | null;
   requestId: number;
   refundAmount: string | number;
   refundReason?: string | null;
@@ -7238,10 +8461,17 @@ export async function requestPracticeSupportRefund(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = Number(params.organizationId || 1);
+
   const rows = await db
     .select()
     .from(practiceSupportRequests)
-    .where(eq(practiceSupportRequests.id, params.requestId))
+    .where(
+  and(
+    eq(practiceSupportRequests.id, params.requestId),
+    eq(practiceSupportRequests.organizationId, organizationId)
+  )
+)
     .limit(1);
 
   const request = rows[0];
@@ -7261,22 +8491,35 @@ export async function requestPracticeSupportRefund(params: {
       refundReason: params.refundReason ?? null,
       refundRequestedAt: new Date(),
     } as any)
-    .where(eq(practiceSupportRequests.id, params.requestId));
+    .where(
+  and(
+    eq(practiceSupportRequests.id, params.requestId),
+    eq(practiceSupportRequests.organizationId, organizationId)
+  )
+);
 
   return true;
 }
 
 export async function approvePracticeSupportRefund(params: {
+  organizationId?: number | null;
   requestId: number;
   approvedBy: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = Number(params.organizationId || 1);
+
   const rows = await db
     .select()
     .from(practiceSupportRequests)
-    .where(eq(practiceSupportRequests.id, params.requestId))
+    .where(
+  and(
+    eq(practiceSupportRequests.id, params.requestId),
+    eq(practiceSupportRequests.organizationId, organizationId)
+  )
+)
     .limit(1);
 
   const request = rows[0];
@@ -7294,10 +8537,16 @@ export async function approvePracticeSupportRefund(params: {
       refundApprovedBy: params.approvedBy,
       paymentStatus: "환불",
     } as any)
-    .where(eq(practiceSupportRequests.id, params.requestId));
+    .where(
+  and(
+    eq(practiceSupportRequests.id, params.requestId),
+    eq(practiceSupportRequests.organizationId, organizationId)
+  )
+);
 
   await refundSettlementItemBySource({
     revenueType: "practice_support",
+  organizationId,
     sourceId: Number(request.id),
     refundAmount,
     refundDate: new Date(),
@@ -7403,7 +8652,6 @@ const payload: any = {
   }
 
   await db
-   await db
   .update(plans)
   .set({
     hasPractice: true,
@@ -8220,25 +9468,44 @@ export async function assertTargetUserNotProtectedByActor(params: {
 // ORG: Teams
 // -----------------------------------------------------
 
-export async function listTeams() {
+export async function listTeams(params?: { organizationId?: number | null }) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 1);
 
   return db
     .select()
     .from(teams)
+    .where(eq(teams.organizationId, organizationId))
     .orderBy(teams.sortOrder, teams.id);
 }
 
-export async function getTeam(id: number) {
+export async function getTeam(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.select().from(teams).where(eq(teams.id, id)).limit(1);
+  const organizationId = Number(params?.organizationId || 1);
+
+  const result = await db
+    .select()
+    .from(teams)
+    .where(
+      and(
+        eq(teams.id, id),
+        eq(teams.organizationId, organizationId)
+      )
+    )
+    .limit(1);
+
   return result[0];
 }
 
 export async function createTeam(data: {
+  organizationId?: number | null;
   name: string;
   sortOrder?: number | null;
   isActive?: boolean | null;
@@ -8246,7 +9513,10 @@ export async function createTeam(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number(data.organizationId || 1);
+
   const result: any = await db.insert(teams).values({
+    organizationId,
     name: data.name.trim(),
     sortOrder: data.sortOrder ?? 0,
     isActive: data.isActive ?? true,
@@ -8261,10 +9531,13 @@ export async function updateTeam(
     name?: string | null;
     sortOrder?: number | null;
     isActive?: boolean | null;
-  }
+  },
+  params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const payload: Record<string, any> = {};
   if (data.name !== undefined) payload.name = normalizeNullableString(data.name);
@@ -8273,57 +9546,101 @@ export async function updateTeam(
 
   if (Object.keys(payload).length === 0) return;
 
-  await db.update(teams).set(payload).where(eq(teams.id, id));
+  await db
+    .update(teams)
+    .set(payload)
+    .where(
+      and(
+        eq(teams.id, id),
+        eq(teams.organizationId, organizationId)
+      )
+    );
 }
 
-export async function deleteTeam(id: number) {
+export async function deleteTeam(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.delete(teams).where(eq(teams.id, id));
+  const organizationId = Number(params?.organizationId || 1);
+
+  await db
+    .delete(teams)
+    .where(
+      and(
+        eq(teams.id, id),
+        eq(teams.organizationId, organizationId)
+      )
+    );
 }
 
 // -----------------------------------------------------
 // ORG: Positions
 // -----------------------------------------------------
 
-export async function listPositions() {
+export async function listPositions(params?: { organizationId?: number | null }) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 1);
 
   return db
     .select()
     .from(positions)
+    .where(eq(positions.organizationId, organizationId))
     .orderBy(positions.sortOrder, positions.id);
 }
 
-export async function getPosition(id: number) {
+export async function getPosition(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return undefined;
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const result = await db
     .select()
     .from(positions)
-    .where(eq(positions.id, id))
+    .where(
+      and(
+        eq(positions.id, id),
+        eq(positions.organizationId, organizationId)
+      )
+    )
     .limit(1);
 
   return result[0];
 }
 
-export async function getPositionById(id: number) {
+export async function getPositionById(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return undefined;
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const rows = await db
     .select()
     .from(positions)
-    .where(eq(positions.id, id))
+    .where(
+      and(
+        eq(positions.id, id),
+        eq(positions.organizationId, organizationId)
+      )
+    )
     .limit(1);
 
   return rows[0];
 }
 
 export async function createPosition(data: {
+  organizationId?: number | null;
   name: string;
   sortOrder?: number | null;
   isActive?: boolean | null;
@@ -8332,7 +9649,10 @@ export async function createPosition(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number(data.organizationId || 1);
+
   const result: any = await db.insert(positions).values({
+    organizationId,
     name: data.name.trim(),
     sortOrder: data.sortOrder ?? 0,
     isActive: data.isActive ?? true,
@@ -8349,10 +9669,13 @@ export async function updatePosition(
     sortOrder?: number | null;
     isActive?: boolean | null;
     settlementUnitAmount?: string | number | null;
-  }
+  },
+  params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const payload: Record<string, any> = {};
   if (data.name !== undefined) payload.name = data.name?.trim() || null;
@@ -8364,34 +9687,65 @@ export async function updatePosition(
 
   if (Object.keys(payload).length === 0) return;
 
-  await db.update(positions).set(payload).where(eq(positions.id, id));
+  await db
+    .update(positions)
+    .set(payload)
+    .where(
+      and(
+        eq(positions.id, id),
+        eq(positions.organizationId, organizationId)
+      )
+    );
 }
 
-export async function deletePosition(id: number) {
+export async function deletePosition(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.delete(positions).where(eq(positions.id, id));
+  const organizationId = Number(params?.organizationId || 1);
+
+  await db
+    .delete(positions)
+    .where(
+      and(
+        eq(positions.id, id),
+        eq(positions.organizationId, organizationId)
+      )
+    );
 }
 
 // -----------------------------------------------------
 // ORG: User Mapping
 // -----------------------------------------------------
 
-export async function getUserOrgMapping(userId: number) {
+export async function getUserOrgMapping(
+  userId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return undefined;
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const result = await db
     .select()
     .from(userOrgMappings)
-    .where(eq(userOrgMappings.userId, userId))
+    .where(
+      and(
+        eq(userOrgMappings.userId, userId),
+        eq(userOrgMappings.organizationId, organizationId)
+      )
+    )
     .limit(1);
 
   return result[0];
 }
 
 export async function upsertUserOrgMapping(data: {
+  organizationId?: number | null;
   userId: number;
   teamId?: number | null;
   positionId?: number | null;
@@ -8400,21 +9754,24 @@ export async function upsertUserOrgMapping(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number(data.organizationId || 1);
+
   await assertUserExists(data.userId);
 
   if (data.teamId) {
-    const team = await getTeam(data.teamId);
+    const team = await getTeam(data.teamId, { organizationId });
     if (!team) throw new Error("팀을 찾을 수 없습니다.");
   }
 
   if (data.positionId) {
-    const position = await getPosition(data.positionId);
+    const position = await getPosition(data.positionId, { organizationId });
     if (!position) throw new Error("직급을 찾을 수 없습니다.");
   }
 
-  const existing = await getUserOrgMapping(data.userId);
+  const existing = await getUserOrgMapping(data.userId, { organizationId });
 
   const payload = {
+    organizationId,
     userId: data.userId,
     teamId: data.teamId ?? null,
     positionId: data.positionId ?? null,
@@ -8429,7 +9786,12 @@ export async function upsertUserOrgMapping(data: {
         positionId: payload.positionId,
         sortOrder: payload.sortOrder,
       } as any)
-      .where(eq(userOrgMappings.userId, data.userId));
+      .where(
+        and(
+          eq(userOrgMappings.userId, data.userId),
+          eq(userOrgMappings.organizationId, organizationId)
+        )
+      );
 
     return existing.id;
   }
@@ -8438,11 +9800,23 @@ export async function upsertUserOrgMapping(data: {
   return getInsertId(result);
 }
 
-export async function deleteUserOrgMapping(userId: number) {
+export async function deleteUserOrgMapping(
+  userId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.delete(userOrgMappings).where(eq(userOrgMappings.userId, userId));
+  const organizationId = Number(params?.organizationId || 1);
+
+  await db
+    .delete(userOrgMappings)
+    .where(
+      and(
+        eq(userOrgMappings.userId, userId),
+        eq(userOrgMappings.organizationId, organizationId)
+      )
+    );
 }
 
 export async function getUsersWithOrg() {
@@ -8551,6 +9925,7 @@ export async function updateUserActiveProtected(params: {
 }
 
 export async function upsertUserOrgMappingProtected(params: {
+  organizationId?: number | null;
   actorRole: "staff" | "admin" | "host" | "superhost";
   targetUserId: number;
   teamId?: number | null;
@@ -8563,20 +9938,27 @@ export async function upsertUserOrgMappingProtected(params: {
   });
 
   return upsertUserOrgMapping({
-    userId: params.targetUserId,
-    teamId: params.teamId ?? null,
-    positionId: params.positionId ?? null,
-    sortOrder: params.sortOrder ?? 0,
-  });
+  organizationId: Number(params.organizationId || 1),
+  userId: params.targetUserId,
+  teamId: params.teamId ?? null,
+  positionId: params.positionId ?? null,
+  sortOrder: params.sortOrder ?? 0,
+});
 }
 
 // -----------------------------------------------------
 // Messenger helpers
 // -----------------------------------------------------
 
-export async function getDirectChatRoomBetweenUsers(userAId: number, userBId: number) {
+export async function getDirectChatRoomBetweenUsers(
+  userAId: number,
+  userBId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return null;
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const [rows] = await db.execute(sql`
     SELECT r.*
@@ -8584,6 +9966,7 @@ export async function getDirectChatRoomBetweenUsers(userAId: number, userBId: nu
     INNER JOIN chat_room_members m1 ON m1.roomId = r.id
     INNER JOIN chat_room_members m2 ON m2.roomId = r.id
     WHERE r.roomType = 'direct'
+      AND r.organizationId = ${organizationId}
       AND r.isActive = true
       AND m1.userId = ${userAId}
       AND m1.isActive = true
@@ -8596,6 +9979,7 @@ export async function getDirectChatRoomBetweenUsers(userAId: number, userBId: nu
 }
 
 export async function createChatRoom(data: {
+  organizationId?: number | null;
   roomType: "direct" | "group";
   title?: string | null;
   createdBy: number;
@@ -8603,7 +9987,10 @@ export async function createChatRoom(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = Number(data.organizationId || 1);
+
   const result: any = await db.insert(chatRooms).values({
+organizationId,
     roomType: data.roomType,
     title: normalizeNullableString(data.title),
     createdBy: data.createdBy,
@@ -8614,23 +10001,28 @@ export async function createChatRoom(data: {
 }
 
 export async function addChatRoomMember(data: {
+  organizationId?: number | null;
   roomId: number;
   userId: number;
   lastReadMessageId?: number | null;
   isActive?: boolean | null;
 }) {
   const db = await getDb();
+
+const organizationId = Number(data.organizationId || 1);
+
   if (!db) throw new Error("DB not available");
 
   const existing = await db
     .select()
     .from(chatRoomMembers)
     .where(
-      and(
-        eq(chatRoomMembers.roomId, data.roomId),
-        eq(chatRoomMembers.userId, data.userId)
-      )
-    )
+  and(
+    eq(chatRoomMembers.organizationId, organizationId),
+    eq(chatRoomMembers.roomId, data.roomId),
+    eq(chatRoomMembers.userId, data.userId)
+  )
+)
     .limit(1);
 
   if (existing[0]) {
@@ -8641,13 +10033,19 @@ export async function addChatRoomMember(data: {
         lastReadMessageId: data.lastReadMessageId ?? existing[0].lastReadMessageId ?? null,
         leftAt: null,
       } as any)
-      .where(eq(chatRoomMembers.id, existing[0].id));
+      .where(
+  and(
+    eq(chatRoomMembers.id, existing[0].id),
+    eq(chatRoomMembers.organizationId, organizationId)
+  )
+);
 
     return existing[0].id;
   }
 
   const result: any = await db.insert(chatRoomMembers).values({
-    roomId: data.roomId,
+  organizationId,
+  roomId: data.roomId,
     userId: data.userId,
     lastReadMessageId: data.lastReadMessageId ?? null,
     isActive: data.isActive ?? true,
@@ -8659,9 +10057,13 @@ export async function addChatRoomMember(data: {
 }
 
 export async function getOrCreateDirectChatRoom(params: {
+  organizationId?: number | null;
   actorUserId: number;
   otherUserId: number;
 }) {
+
+const organizationId = Number(params.organizationId || 1);
+
   if (params.actorUserId === params.otherUserId) {
     throw new Error("자기 자신과의 채팅방은 만들 수 없습니다.");
   }
@@ -8670,58 +10072,102 @@ export async function getOrCreateDirectChatRoom(params: {
   await assertUserExists(params.otherUserId);
 
   const existing = await getDirectChatRoomBetweenUsers(
-    params.actorUserId,
-    params.otherUserId
-  );
+  params.actorUserId,
+  params.otherUserId,
+  {
+    organizationId,
+  }
+);
 
   if (existing?.id) {
     return existing;
   }
 
   const roomId = await createChatRoom({
-    roomType: "direct",
-    title: null,
-    createdBy: params.actorUserId,
-  });
+  organizationId,
+  roomType: "direct",
+  title: null,
+  createdBy: params.actorUserId,
+});
 
   await addChatRoomMember({
-    roomId: Number(roomId),
-    userId: params.actorUserId,
-  });
+  organizationId,
+  roomId: Number(roomId),
+  userId: params.actorUserId,
+});
 
   await addChatRoomMember({
-    roomId: Number(roomId),
-    userId: params.otherUserId,
-  });
+  organizationId,
+  roomId: Number(roomId),
+  userId: params.otherUserId,
+});
 
-  return await getChatRoomById(Number(roomId));
+  return await getChatRoomById(Number(roomId), {
+  organizationId,
+});
 }
 
-export async function getChatRoomById(roomId: number) {
+export async function getChatRoomById(
+  roomId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return null;
+
+  const organizationId = Number(params?.organizationId || 0);
 
   const result = await db
     .select()
     .from(chatRooms)
-    .where(eq(chatRooms.id, roomId))
+    .where(
+      organizationId > 0
+        ? and(
+            eq(chatRooms.id, roomId),
+            eq(chatRooms.organizationId, organizationId)
+          )
+        : eq(chatRooms.id, roomId)
+    )
     .limit(1);
 
   return result[0] ?? null;
 }
 
-export async function ensureChatRoomMember(roomId: number, userId: number) {
+export async function ensureChatRoomMember(
+  roomId: number,
+  userId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number(params?.organizationId || 0);
+
   const result = await db
-    .select()
+    .select({
+      id: chatRoomMembers.id,
+      roomId: chatRoomMembers.roomId,
+      userId: chatRoomMembers.userId,
+      lastReadMessageId: chatRoomMembers.lastReadMessageId,
+      isActive: chatRoomMembers.isActive,
+      joinedAt: chatRoomMembers.joinedAt,
+      leftAt: chatRoomMembers.leftAt,
+    })
     .from(chatRoomMembers)
+    .innerJoin(
+      chatRooms,
+      and(
+        eq(chatRooms.id, chatRoomMembers.roomId),
+        organizationId > 0
+          ? eq(chatRooms.organizationId, organizationId)
+          : sql`1 = 1`
+      )
+    )
     .where(
       and(
         eq(chatRoomMembers.roomId, roomId),
         eq(chatRoomMembers.userId, userId),
-        eq(chatRoomMembers.isActive, true)
+        eq(chatRoomMembers.isActive, true),
+        eq(chatRooms.isActive, true)
       )
     )
     .limit(1);
@@ -8734,6 +10180,7 @@ export async function ensureChatRoomMember(roomId: number, userId: number) {
 }
 
 export async function createChatMessage(data: {
+  organizationId?: number | null;
   roomId: number;
   senderId: number;
   messageType?: "text" | "image" | "file" | "system";
@@ -8742,9 +10189,14 @@ export async function createChatMessage(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await ensureChatRoomMember(data.roomId, data.senderId);
+const organizationId = Number(data.organizationId || 1);
+
+  await ensureChatRoomMember(data.roomId, data.senderId, {
+  organizationId,
+});
 
   const result: any = await db.insert(chatMessages).values({
+  organizationId,
   roomId: data.roomId,
   senderId: data.senderId,
   messageType: data.messageType ?? "text",
@@ -8759,19 +10211,29 @@ await db
   .set({
     updatedAt: new Date(),
   } as any)
-  .where(eq(chatRooms.id, data.roomId));
+  .where(
+  and(
+    eq(chatRooms.id, data.roomId),
+    eq(chatRooms.organizationId, organizationId)
+  )
+);
 
 return messageId;
 }
 
 export async function updateChatRoomTitle({
+organizationId,
   roomId,
   title,
 }: {
+organizationId?: number | null;
   roomId: number;
   title: string;
 }) {
   const db = await getDb();
+
+const orgId = Number(organizationId || 1);
+
   if (!db) throw new Error("DB not available");
 
   await db
@@ -8780,17 +10242,27 @@ export async function updateChatRoomTitle({
       title,
       updatedAt: new Date(),
     } as any)
-    .where(eq(chatRooms.id, roomId));
+   .where(
+  and(
+    eq(chatRooms.id, roomId),
+    eq(chatRooms.organizationId, orgId)
+  )
+);
 }
 
 export async function updateChatRoomType({
+organizationId,
   roomId,
   roomType,
 }: {
+organizationId?: number | null;
   roomId: number;
   roomType: "direct" | "group";
 }) {
   const db = await getDb();
+
+const orgId = Number(organizationId || 1);
+
   if (!db) throw new Error("DB not available");
 
   await db
@@ -8799,10 +10271,16 @@ export async function updateChatRoomType({
       roomType,
       updatedAt: new Date(),
     } as any)
-    .where(eq(chatRooms.id, roomId));
+    .where(
+  and(
+    eq(chatRooms.id, roomId),
+    eq(chatRooms.organizationId, orgId)
+  )
+);
 }
 
 export async function createChatAttachment(data: {
+  organizationId?: number | null;
   messageId: number;
   fileName: string;
   fileUrl: string;
@@ -8812,7 +10290,25 @@ export async function createChatAttachment(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number(data.organizationId || 1);
+
+  const [messageRows] = await db.execute(sql`
+    SELECT m.id
+    FROM chat_messages m
+    INNER JOIN chat_rooms r ON r.id = m.roomId
+    WHERE m.id = ${data.messageId}
+      AND r.organizationId = ${organizationId}
+AND m.organizationId = ${organizationId}
+    LIMIT 1
+  `);
+
+  const message = ((messageRows as any[]) ?? [])[0];
+  if (!message) {
+    throw new Error("첨부파일을 추가할 메시지를 찾을 수 없습니다.");
+  }
+
   const result: any = await db.insert(chatAttachments).values({
+organizationId,
     messageId: data.messageId,
     fileName: data.fileName.trim(),
     fileUrl: data.fileUrl.trim(),
@@ -8823,11 +10319,19 @@ export async function createChatAttachment(data: {
   return getInsertId(result);
 }
 
-export async function listChatMessages(roomId: number, userId: number) {
+export async function listChatMessages(
+  roomId: number,
+  userId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return [];
 
-  await ensureChatRoomMember(roomId, userId);
+const organizationId = Number(params?.organizationId || 1);
+
+  await ensureChatRoomMember(roomId, userId, {
+  organizationId,
+});
 
   const [rows] = await db.execute(sql`
     SELECT
@@ -8850,9 +10354,11 @@ export async function listChatMessages(roomId: number, userId: number) {
       a.fileSize as fileSize
 
     FROM chat_messages m
-    INNER JOIN users u ON u.id = m.senderId
+INNER JOIN chat_rooms r ON r.id = m.roomId
+INNER JOIN users u ON u.id = m.senderId
     LEFT JOIN chat_attachments a ON a.messageId = m.id
     WHERE m.roomId = ${roomId}
+  AND r.organizationId = ${organizationId}
     ORDER BY m.id ASC
   `);
 
@@ -8860,6 +10366,7 @@ export async function listChatMessages(roomId: number, userId: number) {
 }
 
 export async function markChatRoomRead(params: {
+  organizationId?: number | null;
   roomId: number;
   userId: number;
   lastReadMessageId: number | null;
@@ -8867,15 +10374,21 @@ export async function markChatRoomRead(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await ensureChatRoomMember(params.roomId, params.userId);
+const organizationId = Number(params.organizationId || 1);
+
+  await ensureChatRoomMember(params.roomId, params.userId, {
+  organizationId,
+});
 
 let resolvedLastReadMessageId = params.lastReadMessageId ?? null;
 
 if (resolvedLastReadMessageId === null) {
   const [rows] = await db.execute(sql`
-    SELECT MAX(id) as lastMessageId
-    FROM chat_messages
-    WHERE roomId = ${params.roomId}
+    SELECT MAX(m.id) as lastMessageId
+FROM chat_messages m
+INNER JOIN chat_rooms r ON r.id = m.roomId
+WHERE m.roomId = ${params.roomId}
+  AND r.organizationId = ${organizationId}
   `);
 
   resolvedLastReadMessageId = Number((rows as any[])?.[0]?.lastMessageId || 0) || null;
@@ -8887,16 +10400,21 @@ await db
     lastReadMessageId: resolvedLastReadMessageId,
   } as any)
   .where(
-    and(
-      eq(chatRoomMembers.roomId, params.roomId),
-      eq(chatRoomMembers.userId, params.userId)
-    )
-  );
+  and(
+    eq(chatRoomMembers.roomId, params.roomId),
+    eq(chatRoomMembers.userId, params.userId)
+  )
+);
 }
 
-export async function listMyChatRooms(userId: number) {
+export async function listMyChatRooms(
+  userId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return [];
+
+const organizationId = Number(params?.organizationId || 1);
 
   const [rows] = await db.execute(sql`
     SELECT
@@ -8959,6 +10477,7 @@ export async function listMyChatRooms(userId: number) {
     WHERE me.userId = ${userId}
       AND me.isActive = true
       AND r.isActive = true
+  AND r.organizationId = ${organizationId}
 
     ORDER BY
       COALESCE(lm.createdAt, r.createdAt) DESC,
@@ -8968,9 +10487,17 @@ export async function listMyChatRooms(userId: number) {
   return (rows as any[]) ?? [];
 }
 
-export async function listChatRoomMembers(roomId: number, userId: number) {
+export async function listChatRoomMembers(
+  roomId: number,
+  userId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return [];
+
+await ensureChatRoomMember(roomId, userId, {
+  organizationId,
+});
 
   await ensureChatRoomMember(roomId, userId);
 
@@ -8999,13 +10526,15 @@ u.profileImageUrl,
       p.name as positionName
 
     FROM chat_room_members m
-    INNER JOIN users u ON u.id = m.userId
+INNER JOIN chat_rooms r ON r.id = m.roomId
+INNER JOIN users u ON u.id = m.userId
     LEFT JOIN user_org_mappings map ON map.userId = u.id
     LEFT JOIN teams t ON t.id = map.teamId
     LEFT JOIN positions p ON p.id = map.positionId
 
     WHERE m.roomId = ${roomId}
-      AND m.isActive = true
+  AND m.isActive = true
+  AND r.organizationId = ${organizationId}
 
     ORDER BY u.id ASC
   `);
@@ -9045,6 +10574,7 @@ export async function getChatMessageById(messageId: number) {
 }
 
 export async function setChatRoomMuted(params: {
+organizationId?: number | null;
   roomId: number;
   userId: number;
   isMuted: boolean;
@@ -9052,7 +10582,11 @@ export async function setChatRoomMuted(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await ensureChatRoomMember(params.roomId, params.userId);
+const organizationId = Number(params.organizationId || 1);
+
+  await ensureChatRoomMember(params.roomId, params.userId, {
+  organizationId,
+});
 
   const existing = await db
     .select()
@@ -9072,12 +10606,18 @@ export async function setChatRoomMuted(params: {
         isMuted: params.isMuted,
         updatedAt: new Date(),
       } as any)
-      .where(eq(chatRoomSettings.id, existing[0].id));
+      .where(
+and(
+  eq(chatRoomSettings.organizationId, organizationId),
+  eq(chatRoomSettings.roomId, params.roomId),
+  eq(chatRoomSettings.userId, params.userId)
+)
 
     return existing[0].id;
   }
 
   const result: any = await db.insert(chatRoomSettings).values({
+organizationId,
     roomId: params.roomId,
     userId: params.userId,
     isMuted: params.isMuted,
@@ -9090,13 +10630,18 @@ export async function setChatRoomMuted(params: {
 }
 
 export async function leaveChatRoom(params: {
+organizationId?: number | null;
   roomId: number;
   userId: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await ensureChatRoomMember(params.roomId, params.userId);
+const organizationId = Number(params.organizationId || 1);
+
+  await ensureChatRoomMember(params.roomId, params.userId, {
+  organizationId,
+});
 
   await db
     .update(chatRoomMembers)
@@ -9106,9 +10651,10 @@ export async function leaveChatRoom(params: {
     } as any)
     .where(
       and(
-        eq(chatRoomMembers.roomId, params.roomId),
-        eq(chatRoomMembers.userId, params.userId)
-      )
+  eq(chatRoomMembers.organizationId, organizationId),
+  eq(chatRoomMembers.roomId, params.roomId),
+  eq(chatRoomMembers.userId, params.userId)
+)
     );
 
   return true;
@@ -9132,10 +10678,16 @@ function calcWorkMinutes(start?: Date | string | null, end?: Date | string | nul
   return Math.floor((e - s) / 1000 / 60);
 }
 
-export async function getTodayAttendanceRecord(userId: number) {
+export async function getTodayAttendanceRecord(
+  userId: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return null;
 
+  const organizationId = Number(params?.organizationId || 1);
   const today = getTodayDateStringKST();
 
   const result = await db
@@ -9143,6 +10695,7 @@ export async function getTodayAttendanceRecord(userId: number) {
     .from(attendanceRecords)
     .where(
       and(
+        eq(attendanceRecords.organizationId, organizationId),
         eq(attendanceRecords.userId, userId),
         eq(attendanceRecords.workDate, today)
       )
@@ -9152,19 +10705,30 @@ export async function getTodayAttendanceRecord(userId: number) {
   return result[0] ?? null;
 }
 
-export async function clockInAttendance(userId: number) {
+export async function clockInAttendance(
+  userId: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = Number(params?.organizationId || 1);
+
   const today = getTodayDateStringKST();
-  const existing = await getTodayAttendanceRecord(userId);
+  const existing = await getTodayAttendanceRecord(userId, {
+  organizationId,
+});
 
   if (existing?.clockInAt) {
     throw new Error("이미 오늘 출근 처리되었습니다.");
   }
 
   const now = new Date();
-const late = await calcLateInfo(now);
+const late = await calcLateInfo(now, {
+  organizationId,
+});
 
   if (existing?.id) {
     await db
@@ -9176,12 +10740,20 @@ const late = await calcLateInfo(now);
   lateMinutes: late.lateMinutes,
   isAbsent: 0,
 } as any)
-      .where(eq(attendanceRecords.id, existing.id));
+      .where(
+  and(
+    eq(attendanceRecords.id, existing.id),
+    eq(attendanceRecords.organizationId, organizationId)
+  )
+);
 
-    return await getTodayAttendanceRecord(userId);
+    return await getTodayAttendanceRecord(userId, {
+  organizationId,
+});
   }
 
   const result: any = await db.insert(attendanceRecords).values({
+organizationId,
     userId,
     workDate: today,
     clockInAt: now,
@@ -9209,11 +10781,20 @@ leaveType: null,
   return row[0] ?? null;
 }
 
-export async function clockOutAttendance(userId: number) {
+export async function clockOutAttendance(
+  userId: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const todayRow = await getTodayAttendanceRecord(userId);
+const organizationId = Number(params?.organizationId || 1);
+
+  const todayRow = await getTodayAttendanceRecord(userId, {
+  organizationId,
+});
 
   if (!todayRow?.clockInAt) {
     throw new Error("출근 기록이 없어 퇴근 처리할 수 없습니다.");
@@ -9225,7 +10806,9 @@ export async function clockOutAttendance(userId: number) {
 
   const clockOutAt = new Date();
   const workMinutes = calcWorkMinutes(todayRow.clockInAt, clockOutAt);
-const early = await calcEarlyLeaveInfo(clockOutAt);
+const early = await calcEarlyLeaveInfo(clockOutAt, {
+  organizationId,
+});
 
   await db
   .update(attendanceRecords)
@@ -9241,15 +10824,29 @@ const early = await calcEarlyLeaveInfo(clockOutAt);
     earlyLeaveMinutes: early.earlyLeaveMinutes,
     isAbsent: 0,
   } as any)
-    .where(eq(attendanceRecords.id, todayRow.id));
+    .where(
+  and(
+    eq(attendanceRecords.id, todayRow.id),
+    eq(attendanceRecords.organizationId, organizationId)
+  )
+);
 
-  return await getTodayAttendanceRecord(userId);
+  return await getTodayAttendanceRecord(userId, {
+  organizationId,
+});
 }
 
 
-export async function listMyAttendanceRecords(userId: number) {
+export async function listMyAttendanceRecords(
+  userId: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return [];
+
+const organizationId = Number(params?.organizationId || 1);
 
   const [rows] = await db.execute(sql`
     SELECT
@@ -9283,16 +10880,21 @@ p.name as positionName
 LEFT JOIN user_org_mappings map ON map.userId = u.id
 LEFT JOIN teams t ON t.id = map.teamId
 LEFT JOIN positions p ON p.id = map.positionId
-    WHERE a.userId = ${userId}
+    WHERE a.organizationId = ${organizationId}
+  AND a.userId = ${userId}
     ORDER BY a.workDate DESC, a.id DESC
   `);
 
   return (rows as any[]) ?? [];
 }
 
-export async function listAllAttendanceRecords() {
+export async function listAllAttendanceRecords(params?: {
+  organizationId?: number | null;
+}) {
   const db = await getDb();
   if (!db) return [];
+
+const organizationId = Number(params?.organizationId || 1);
 
   const [rows] = await db.execute(sql`
   SELECT
@@ -9321,11 +10923,12 @@ export async function listAllAttendanceRecords() {
     map.positionId,
     t.name as teamName,
     p.name as positionName
-  FROM attendance_records a
+    FROM attendance_records a
   INNER JOIN users u ON u.id = a.userId
   LEFT JOIN user_org_mappings map ON map.userId = u.id
   LEFT JOIN teams t ON t.id = map.teamId
   LEFT JOIN positions p ON p.id = map.positionId
+  WHERE a.organizationId = ${organizationId}
   ORDER BY a.workDate DESC, a.id DESC
 `);
 
@@ -9367,17 +10970,27 @@ const [freshRows] = await db.execute(sql`
   LEFT JOIN user_org_mappings map ON map.userId = u.id
   LEFT JOIN teams t ON t.id = map.teamId
   LEFT JOIN positions p ON p.id = map.positionId
+  WHERE a.organizationId = ${organizationId}
   ORDER BY a.workDate DESC, a.id DESC
 `);
 
 return (freshRows as any[]) ?? [];
 }
 
-export async function listTeamAttendanceRecords(adminUserId: number) {
+export async function listTeamAttendanceRecords(
+  adminUserId: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return [];
 
-  const myTeamId = await getMyTeamId(adminUserId);
+const organizationId = Number(params?.organizationId || 1);
+
+  const myTeamId = await getMyTeamId(adminUserId, {
+  organizationId,
+});
   if (!myTeamId) return [];
 
   const [rows] = await db.execute(sql`
@@ -9412,7 +11025,8 @@ export async function listTeamAttendanceRecords(adminUserId: number) {
     LEFT JOIN user_org_mappings map ON map.userId = u.id
     LEFT JOIN teams t ON t.id = map.teamId
     LEFT JOIN positions p ON p.id = map.positionId
-    WHERE map.teamId = ${myTeamId}
+    WHERE a.organizationId = ${organizationId}
+  AND map.teamId = ${myTeamId}
     ORDER BY a.workDate DESC, a.id DESC
   `);
 
@@ -9420,13 +11034,18 @@ export async function listTeamAttendanceRecords(adminUserId: number) {
 }
 
 
-async function calcLateInfo(clockInAt?: Date | string | null) {
+async function calcLateInfo(
+  clockInAt?: Date | string | null,
+  params?: { organizationId?: number | null }
+) {
   if (!clockInAt) {
     return { isLate: 0, lateMinutes: 0 };
   }
 
   const d = new Date(clockInAt);
-  const policy = await getAttendancePolicy();
+  const policy = await getAttendancePolicy({
+  organizationId: Number(params?.organizationId || 1),
+});
 
   const startHour = Number(policy?.workStartHour ?? 9);
   const startMinute = Number(policy?.workStartMinute ?? 0);
@@ -9444,13 +11063,18 @@ async function calcLateInfo(clockInAt?: Date | string | null) {
 }
 
 
-async function calcEarlyLeaveInfo(clockOutAt?: Date | string | null) {
+async function calcEarlyLeaveInfo(
+  clockOutAt?: Date | string | null,
+  params?: { organizationId?: number | null }
+) {
   if (!clockOutAt) {
     return { isEarlyLeave: 0, earlyLeaveMinutes: 0 };
   }
 
   const d = new Date(clockOutAt);
-  const policy = await getAttendancePolicy();
+  const policy = await getAttendancePolicy({
+  organizationId: Number(params?.organizationId || 1),
+});
 
   const endHour = Number(policy?.workEndHour ?? 18);
   const endMinute = Number(policy?.workEndMinute ?? 0);
@@ -9467,14 +11091,24 @@ async function calcEarlyLeaveInfo(clockOutAt?: Date | string | null) {
   return { isEarlyLeave: 1, earlyLeaveMinutes: diff };
 }
 
-async function getMyTeamId(userId: number) {
+async function getMyTeamId(
+  userId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return null;
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const row = await db
     .select()
     .from(userOrgMappings)
-    .where(eq(userOrgMappings.userId, userId))
+    .where(
+      and(
+        eq(userOrgMappings.userId, userId),
+        eq(userOrgMappings.organizationId, organizationId)
+      )
+    )
     .limit(1);
 
   return row[0]?.teamId ? Number(row[0].teamId) : null;
@@ -9493,14 +11127,23 @@ async function getDefaultAttendancePolicy() {
   return rows[0] ?? null;
 }
 
-export async function getAttendancePolicy() {
+export async function getAttendancePolicy(params?: {
+  organizationId?: number | null;
+}) {
   const db = await getDb();
   if (!db) return null;
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const rows = await db
     .select()
     .from(attendancePolicies)
-    .where(eq(attendancePolicies.scopeType, "global"))
+    .where(
+      and(
+        eq(attendancePolicies.scopeType, "global"),
+        eq(attendancePolicies.organizationId, organizationId)
+      )
+    )
     .limit(1);
 
   return rows[0] ?? null;
@@ -9512,7 +11155,11 @@ export async function autoClockOutIfNeeded(record: any) {
   const db = await getDb();
   if (!db) return;
 
-  const policy = await getAttendancePolicy();
+  const organizationId = Number(record.organizationId || 1);
+
+  const policy = await getAttendancePolicy({
+    organizationId,
+  });
 
   const endHour = Number(policy?.workEndHour ?? 18);
   const endMinute = Number(policy?.workEndMinute ?? 0);
@@ -9528,8 +11175,12 @@ export async function autoClockOutIfNeeded(record: any) {
   const clockOutAt = autoBase;
 
   const workMinutes = calcWorkMinutes(clockInAt, clockOutAt);
-  const early = await calcEarlyLeaveInfo(clockOutAt);
-  const late = await calcLateInfo(clockInAt);
+  const early = await calcEarlyLeaveInfo(clockOutAt, {
+  organizationId,
+});
+  const late = await calcLateInfo(clockInAt, {
+  organizationId,
+});
 
   let status:
     | "출근전"
@@ -9564,8 +11215,12 @@ export async function autoClockOutIfNeeded(record: any) {
       isAutoClockOut: 1,
       isAbsent: 0,
     } as any)
-    .where(eq(attendanceRecords.id, Number(record.id)));
-
+    .where(
+  and(
+    eq(attendanceRecords.id, Number(record.id)),
+    eq(attendanceRecords.organizationId, organizationId)
+  )
+);
   await db.insert(attendanceAdjustmentLogs).values({
     attendanceId: Number(record.id),
     targetUserId: Number(record.userId),
@@ -9583,6 +11238,7 @@ export async function autoClockOutIfNeeded(record: any) {
 }
 
 export async function saveAttendancePolicy(params: {
+organizationId?: number | null;
   actorUserId: number;
   workStartHour: number;
   workStartMinute: number;
@@ -9595,10 +11251,13 @@ export async function saveAttendancePolicy(params: {
   const db = await getDb();
   if (!db) throw new Error("DB 연결이 없습니다.");
 
-  const current = await getAttendancePolicy();
+const organizationId = Number(params.organizationId || 1);
+
+  const current = await getAttendancePolicy({ organizationId });
 
   if (!current) {
     await db.insert(attendancePolicies).values({
+organizationId,
       scopeType: "global",
       scopeId: null,
       workStartHour: params.workStartHour,
@@ -9630,12 +11289,18 @@ export async function saveAttendancePolicy(params: {
       autoClockOutMinute: params.autoClockOutMinute,
       updatedBy: params.actorUserId,
     } as any)
-    .where(eq(attendancePolicies.id, current.id));
+    .where(
+  and(
+    eq(attendancePolicies.id, current.id),
+    eq(attendancePolicies.organizationId, organizationId)
+  )
+);
 
-  return await getAttendancePolicy();
+  return await getAttendancePolicy({ organizationId });
 }
 
 export async function updateAttendanceStatusByManager(params: {
+organizationId?: number | null;
   attendanceId: number;
   actorUserId: number;
   actorRole: string;
@@ -9655,10 +11320,17 @@ export async function updateAttendanceStatusByManager(params: {
   const db = await getDb();
   if (!db) throw new Error("DB 연결이 없습니다.");
 
+const organizationId = Number(params.organizationId || 1);
+
   const row = await db
     .select()
     .from(attendanceRecords)
-    .where(eq(attendanceRecords.id, params.attendanceId))
+    .where(
+  and(
+    eq(attendanceRecords.id, params.attendanceId),
+    eq(attendanceRecords.organizationId, organizationId)
+  )
+)
     .limit(1);
 
   const current = row[0];
@@ -9775,7 +11447,12 @@ const early = await calcEarlyLeaveInfo(nextClockOutAt);
       isAutoClockOut: 0,
       note: params.reason ?? current.note ?? null,
     } as any)
-    .where(eq(attendanceRecords.id, current.id));
+    .where(
+  and(
+    eq(attendanceRecords.id, params.attendanceId),
+    eq(attendanceRecords.organizationId, organizationId)
+  )
+);
 
   await db.insert(attendanceAdjustmentLogs).values({
     attendanceId: current.id,
@@ -9810,6 +11487,7 @@ function getNowKSTDate() {
 }
 
 export async function updateAttendanceRecordByManager(params: {
+organizationId?: number | null;
   attendanceId: number;
   actorUserId: number;
 actorRole: string;
@@ -9820,10 +11498,17 @@ actorRole: string;
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = Number(params.organizationId || 1);
+
   const row = await db
     .select()
     .from(attendanceRecords)
-    .where(eq(attendanceRecords.id, params.attendanceId))
+    .where(
+  and(
+    eq(attendanceRecords.id, params.attendanceId),
+    eq(attendanceRecords.organizationId, organizationId)
+  )
+)
     .limit(1);
 
   const current = row[0];
@@ -9900,7 +11585,12 @@ if (nextClockInAt && nextClockOutAt) {
 isAbsent: nextClockInAt || nextClockOutAt ? 0 : 1,
 isAutoClockOut: 0,
     } as any)
-    .where(eq(attendanceRecords.id, params.attendanceId));
+    .where(
+  and(
+    eq(attendanceRecords.id, params.attendanceId),
+    eq(attendanceRecords.organizationId, organizationId)
+  )
+);
 
   await db.insert(attendanceAdjustmentLogs).values({
     attendanceId: current.id,
@@ -9926,9 +11616,16 @@ note: params.reason ?? null,
   return updated[0] ?? null;
 }
 
-export async function listAttendanceAdjustmentLogs(attendanceId?: number) {
+export async function listAttendanceAdjustmentLogs(
+  attendanceId?: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return [];
+
+const organizationId = Number(params?.organizationId || 1);
 
   if (attendanceId) {
     const [rows] = await db.execute(sql`
@@ -9939,9 +11636,11 @@ export async function listAttendanceAdjustmentLogs(attendanceId?: number) {
 targetUser.username as targetUserUsername,
 targetUser.phone as targetUserPhone
       FROM attendance_adjustment_logs l
-      INNER JOIN users targetUser ON targetUser.id = l.targetUserId
-      INNER JOIN users actorUser ON actorUser.id = l.actorUserId
-      WHERE l.attendanceId = ${attendanceId}
+INNER JOIN attendance_records a ON a.id = l.attendanceId
+INNER JOIN users targetUser ON targetUser.id = l.targetUserId
+INNER JOIN users actorUser ON actorUser.id = l.actorUserId
+WHERE l.attendanceId = ${attendanceId}
+  AND a.organizationId = ${organizationId}
       ORDER BY l.createdAt DESC, l.id DESC
     `);
 
@@ -9956,9 +11655,11 @@ targetUser.phone as targetUserPhone
     targetUser.username as targetUserUsername,
     targetUser.phone as targetUserPhone
   FROM attendance_adjustment_logs l
-  INNER JOIN users targetUser ON targetUser.id = l.targetUserId
-  INNER JOIN users actorUser ON actorUser.id = l.actorUserId
-  ORDER BY l.createdAt DESC, l.id DESC
+INNER JOIN attendance_records a ON a.id = l.attendanceId
+INNER JOIN users targetUser ON targetUser.id = l.targetUserId
+INNER JOIN users actorUser ON actorUser.id = l.actorUserId
+WHERE a.organizationId = ${organizationId}
+ORDER BY l.createdAt DESC, l.id DESC
 `);
 
   return (rows as any[]) ?? [];
@@ -9966,12 +11667,19 @@ targetUser.phone as targetUserPhone
 
 export async function listTeamAttendanceAdjustmentLogs(
   adminUserId: number,
-  attendanceId?: number
+  attendanceId?: number,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) return [];
 
-  const myTeamId = await getMyTeamId(adminUserId);
+const organizationId = Number(params?.organizationId || 1);
+
+  const myTeamId = await getMyTeamId(adminUserId, {
+  organizationId,
+});
   if (!myTeamId) return [];
 
   if (attendanceId) {
@@ -9985,12 +11693,14 @@ export async function listTeamAttendanceAdjustmentLogs(
         map.teamId,
         t.name as teamName
       FROM attendance_adjustment_logs l
-      INNER JOIN users targetUser ON targetUser.id = l.targetUserId
-      INNER JOIN users actorUser ON actorUser.id = l.actorUserId
-      LEFT JOIN user_org_mappings map ON map.userId = targetUser.id
-      LEFT JOIN teams t ON t.id = map.teamId
-      WHERE l.attendanceId = ${attendanceId}
-        AND map.teamId = ${myTeamId}
+INNER JOIN attendance_records a ON a.id = l.attendanceId
+INNER JOIN users targetUser ON targetUser.id = l.targetUserId
+INNER JOIN users actorUser ON actorUser.id = l.actorUserId
+LEFT JOIN user_org_mappings map ON map.userId = targetUser.id
+LEFT JOIN teams t ON t.id = map.teamId
+WHERE l.attendanceId = ${attendanceId}
+  AND a.organizationId = ${organizationId}
+  AND map.teamId = ${myTeamId}
       ORDER BY l.createdAt DESC, l.id DESC
     `);
 
@@ -10007,11 +11717,13 @@ export async function listTeamAttendanceAdjustmentLogs(
       map.teamId,
       t.name as teamName
     FROM attendance_adjustment_logs l
+INNER JOIN attendance_records a ON a.id = l.attendanceId
     INNER JOIN users targetUser ON targetUser.id = l.targetUserId
     INNER JOIN users actorUser ON actorUser.id = l.actorUserId
     LEFT JOIN user_org_mappings map ON map.userId = targetUser.id
     LEFT JOIN teams t ON t.id = map.teamId
-    WHERE map.teamId = ${myTeamId}
+    WHERE a.organizationId = ${organizationId}
+  AND map.teamId = ${myTeamId}
     ORDER BY l.createdAt DESC, l.id DESC
   `);
 
@@ -10085,36 +11797,50 @@ export async function changeMyPassword(params: {
 
 // ─── Notices (공지사항) ─────────────────────────────
 
-export async function listNotices() {
+export async function listNotices(params?: {
+  organizationId?: number | null;
+}) {
   const db = await getDb();
   if (!db) return [];
 
-  const [rows] = await db.execute(sql`
-    SELECT *
-    FROM notices
-    WHERE isActive = 1
-    ORDER BY isPinned DESC, id DESC
-  `);
+  const organizationId = Number(params?.organizationId || 1);
+
+const [rows] = await db.execute(sql`
+  SELECT *
+  FROM notices
+  WHERE isActive = 1
+    AND organizationId = ${organizationId}
+  ORDER BY isPinned DESC, id DESC
+`);
 
   return (rows as any[]) ?? [];
 }
 
-export async function getNotice(id: number) {
+export async function getNotice(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return null;
 
-  const [rows] = await db.execute(sql`
-    SELECT *
-    FROM notices
-    WHERE id = ${id}
-      AND isActive = 1
-    LIMIT 1
-  `);
+  const organizationId = Number(params?.organizationId || 1);
+
+const [rows] = await db.execute(sql`
+  SELECT *
+  FROM notices
+  WHERE id = ${id}
+    AND organizationId = ${organizationId}
+    AND isActive = 1
+  LIMIT 1
+`);
 
   return ((rows as any[]) ?? [])[0] ?? null;
 }
 
 export async function createNotice(data: {
+organizationId: number;
   title: string;
   content: string;
   authorId: number;
@@ -10127,6 +11853,7 @@ importance?: "normal" | "important" | "urgent";
 
   const result: any = await db.execute(sql`
    INSERT INTO notices (
+organizationId,
   title,
   content,
   authorId,
@@ -10137,6 +11864,7 @@ importance?: "normal" | "important" | "urgent";
   viewCount
 )
 VALUES (
+  ${Number(data.organizationId || 1)},
   ${data.title},
   ${data.content},
   ${data.authorId},
@@ -10154,6 +11882,7 @@ VALUES (
 export async function updateNotice(
   id: number,
   data: {
+    organizationId?: number | null;
     title?: string;
     content?: string;
     isPinned?: boolean;
@@ -10163,63 +11892,98 @@ export async function updateNotice(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
- await db.execute(sql`
-  UPDATE notices
-  SET
-    title = COALESCE(${data.title ?? null}, title),
-    content = COALESCE(${data.content ?? null}, content),
-    isPinned = COALESCE(${data.isPinned !== undefined ? (data.isPinned ? 1 : 0) : null}, isPinned),
-    importance = COALESCE(${data.importance ?? null}, importance)
-  WHERE id = ${id}
-    AND isActive = 1
-`);
+  const organizationId = Number(data.organizationId || 1);
+
+  await db.execute(sql`
+    UPDATE notices
+    SET
+      title = COALESCE(${data.title ?? null}, title),
+      content = COALESCE(${data.content ?? null}, content),
+      isPinned = COALESCE(${data.isPinned !== undefined ? (data.isPinned ? 1 : 0) : null}, isPinned),
+      importance = COALESCE(${data.importance ?? null}, importance)
+    WHERE id = ${id}
+      AND organizationId = ${organizationId}
+      AND isActive = 1
+  `);
 }
 
-export async function deleteNotice(id: number) {
+export async function deleteNotice(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   await db.execute(sql`
     UPDATE notices
     SET isActive = 0
     WHERE id = ${id}
+      AND organizationId = ${organizationId}
   `);
 }
 
-export async function bulkDeleteNotices(ids: number[]) {
+export async function bulkDeleteNotices(
+  ids: number[],
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
   const cleanIds = Array.from(
-    new Set((ids || []).map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0))
+    new Set((ids || []).map((id) => Number(id)).filter(Boolean))
   );
 
   if (!cleanIds.length) return;
 
+  const organizationId = Number(params?.organizationId || 1);
+
   await db.execute(sql`
     UPDATE notices
     SET isActive = 0
-    WHERE id IN (${sql.join(cleanIds.map((id) => sql`${id}`), sql`, `)})
+    WHERE organizationId = ${organizationId}
+      AND id IN (${sql.join(cleanIds.map((id) => sql`${id}`), sql`, `)})
   `);
 }
 
-export async function increaseNoticeView(id: number) {
+export async function increaseNoticeView(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
-  if (!db) return;
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   await db.execute(sql`
     UPDATE notices
-    SET viewCount = viewCount + 1
+    SET viewCount = COALESCE(viewCount, 0) + 1
     WHERE id = ${id}
+      AND organizationId = ${organizationId}
       AND isActive = 1
   `);
 }
 
 // ─── Schedules (일정/캘린더) ─────────────────────────────
 
-export async function listMonthSchedules(year: number, month: number) {
+export async function listMonthSchedules(
+  year: number,
+  month: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const start = `${year}-${String(month).padStart(2, "0")}-01`;
   const endMonth = month === 12 ? 1 : month + 1;
@@ -10229,7 +11993,8 @@ export async function listMonthSchedules(year: number, month: number) {
   const [rows] = await db.execute(sql`
     SELECT *
     FROM schedules
-    WHERE scheduleDate >= ${start}
+    WHERE organizationId = ${organizationId}
+      AND scheduleDate >= ${start}
       AND scheduleDate < ${end}
       AND isActive = 1
     ORDER BY scheduleDate ASC, startAt ASC, id ASC
@@ -10240,10 +12005,15 @@ export async function listMonthSchedules(year: number, month: number) {
 
 export async function listTodaySchedules(
   userId: number,
-  role?: "staff" | "admin" | "host" | "superhost" | string
+  role?: "staff" | "admin" | "host" | "superhost" | string,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const now = new Date();
   const kstOffsetMs = 9 * 60 * 60 * 1000;
@@ -10256,7 +12026,8 @@ export async function listTodaySchedules(
     const [rows] = await db.execute(sql`
       SELECT *
       FROM schedules
-      WHERE scheduleDate = ${today}
+      WHERE organizationId = ${organizationId}
+        AND scheduleDate = ${today}
         AND isActive = 1
       ORDER BY startAt ASC, id ASC
     `);
@@ -10267,7 +12038,8 @@ export async function listTodaySchedules(
   const [rows] = await db.execute(sql`
     SELECT *
     FROM schedules
-    WHERE scheduleDate = ${today}
+    WHERE organizationId = ${organizationId}
+      AND scheduleDate = ${today}
       AND isActive = 1
       AND (
         ownerUserId = ${userId}
@@ -10280,6 +12052,7 @@ export async function listTodaySchedules(
 }
 
 export async function createSchedule(data: {
+  organizationId?: number | null;
   title: string;
   description?: string | null;
   scheduleDate: string;
@@ -10290,13 +12063,16 @@ export async function createSchedule(data: {
   scope: "personal" | "global";
   ownerUserId: number;
   ownerUserName?: string | null;
-  createdByRole: "staff" | "admin" | "host" | "superhost";
+  createdByRole: "staff" | "admin" | "host" | "superhost" | string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = Number(data.organizationId || 1);
+
   const result: any = await db.execute(sql`
     INSERT INTO schedules (
+      organizationId,
       title,
       description,
       scheduleDate,
@@ -10312,6 +12088,7 @@ export async function createSchedule(data: {
       isNotified
     )
     VALUES (
+      ${organizationId},
       ${data.title},
       ${data.description ?? null},
       ${data.scheduleDate},
@@ -10336,6 +12113,7 @@ export async function updateSchedule(
   userId: number,
   role: "staff" | "admin" | "host" | "superhost" | string,
   data: {
+    organizationId?: number | null;
     title?: string;
     description?: string | null;
     scheduleDate?: string;
@@ -10348,16 +12126,18 @@ export async function updateSchedule(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const existingRows = await db.execute(sql`
+  const organizationId = Number(data.organizationId || 1);
+
+  const [rows] = await db.execute(sql`
     SELECT *
     FROM schedules
     WHERE id = ${id}
+      AND organizationId = ${organizationId}
       AND isActive = 1
     LIMIT 1
   `);
 
-  const existing = (((existingRows as any)?.[0]) ?? [])[0] ?? ((existingRows as any)?.[0] ?? null);
-  const row = Array.isArray(existingRows?.[0]) ? (existingRows as any)[0][0] : existing;
+  const row = ((rows as any[]) ?? [])[0] ?? null;
 
   if (!row) {
     throw new Error("일정을 찾을 수 없습니다.");
@@ -10379,8 +12159,10 @@ export async function updateSchedule(
       meridiem = COALESCE(${data.meridiem ?? null}, meridiem),
       hour12 = COALESCE(${data.hour12 ?? null}, hour12),
       minute = COALESCE(${data.minute ?? null}, minute),
-      startAt = COALESCE(${data.startAt ?? null}, startAt)
+      startAt = COALESCE(${data.startAt ?? null}, startAt),
+      isNotified = 0
     WHERE id = ${id}
+      AND organizationId = ${organizationId}
       AND isActive = 1
   `);
 }
@@ -10388,15 +12170,21 @@ export async function updateSchedule(
 export async function deleteSchedule(
   id: number,
   userId: number,
-  role: "staff" | "admin" | "host" | "superhost" | string
+  role: "staff" | "admin" | "host" | "superhost" | string,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const [rows] = await db.execute(sql`
     SELECT *
     FROM schedules
     WHERE id = ${id}
+      AND organizationId = ${organizationId}
       AND isActive = 1
     LIMIT 1
   `);
@@ -10418,17 +12206,27 @@ export async function deleteSchedule(
     UPDATE schedules
     SET isActive = 0
     WHERE id = ${id}
+      AND organizationId = ${organizationId}
   `);
 }
+
+
 
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
 
-async function getNextApprovalDocumentNumber(formType: "attendance" | "business_trip" | "general") {
+async function getNextApprovalDocumentNumber(
+  formType: "attendance" | "business_trip" | "general",
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -10446,30 +12244,41 @@ async function getNextApprovalDocumentNumber(formType: "attendance" | "business_
   const [rows] = await db.execute(sql`
     SELECT COUNT(*) as cnt
     FROM approval_documents
-    WHERE documentNumber LIKE ${likePrefix}
+    WHERE organizationId = ${organizationId}
+      AND documentNumber LIKE ${likePrefix}
   `);
 
   const count = Number((rows as any)?.[0]?.cnt ?? 0) + 1;
   return `${prefix}-${yyyy}${mm}-${String(count).padStart(4, "0")}`;
 }
 
-
 export async function getApprovalSetting(
-  formType: "attendance" | "business_trip" | "general"
+  formType: "attendance" | "business_trip" | "general",
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) return null;
 
+  const organizationId = Number(params?.organizationId || 1);
+
   const rows = await db
     .select()
     .from(approvalSettings)
-    .where(eq(approvalSettings.formType, formType))
+    .where(
+      and(
+        eq(approvalSettings.organizationId, organizationId),
+        eq(approvalSettings.formType, formType)
+      )
+    )
     .limit(1);
 
   return rows[0] ?? null;
 }
 
 export async function saveApprovalSetting(params: {
+  organizationId?: number | null;
   formType: "attendance" | "business_trip" | "general";
   firstApproverUserId?: number | null;
   secondApproverUserId?: number | null;
@@ -10479,9 +12288,14 @@ export async function saveApprovalSetting(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const existing = await getApprovalSetting(params.formType);
+  const organizationId = Number(params.organizationId || 1);
+
+  const existing = await getApprovalSetting(params.formType, {
+    organizationId,
+  });
 
   const payload: InsertApprovalSetting = {
+    organizationId,
     formType: params.formType,
     firstApproverUserId: params.firstApproverUserId ?? null,
     secondApproverUserId: params.secondApproverUserId ?? null,
@@ -10489,7 +12303,7 @@ export async function saveApprovalSetting(params: {
     isActive: true,
     createdBy: params.actorUserId,
     updatedBy: params.actorUserId,
-  };
+  } as any;
 
   if (existing) {
     await db
@@ -10500,7 +12314,12 @@ export async function saveApprovalSetting(params: {
         thirdApproverUserId: params.thirdApproverUserId ?? null,
         updatedBy: params.actorUserId,
       } as any)
-      .where(eq(approvalSettings.id, existing.id));
+      .where(
+        and(
+          eq(approvalSettings.id, existing.id),
+          eq(approvalSettings.organizationId, organizationId)
+        )
+      );
 
     return existing.id;
   }
@@ -10513,11 +12332,17 @@ export async function createApprovalLog(data: InsertApprovalLog) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const result: any = await db.insert(approvalLogs).values(data as any);
+  const result: any = await db.insert(approvalLogs).values({
+    organizationId: Number((data as any).organizationId || 1),
+    ...data,
+  } as any);
+
   return getInsertId(result);
 }
 
 export async function createApprovalDocument(params: {
+  organizationId?: number | null;
+
   formType: "attendance" | "business_trip" | "general";
   subType: string;
   title: string;
@@ -10537,36 +12362,43 @@ export async function createApprovalDocument(params: {
   attachmentName?: string | null;
   attachmentUrl?: string | null;
 
-attendanceDetailType?: string | null;
-attendanceStartTime?: string | null;
-attendanceEndTime?: string | null;
+  attendanceDetailType?: string | null;
+  attendanceStartTime?: string | null;
+  attendanceEndTime?: string | null;
 
-destination?: string | null;
-visitPlace?: string | null;
-companion?: string | null;
+  destination?: string | null;
+  visitPlace?: string | null;
+  companion?: string | null;
 
-requestDepartment?: string | null;
-extraNote?: string | null;
+  requestDepartment?: string | null;
+  extraNote?: string | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const documentNumber = await getNextApprovalDocumentNumber(params.formType);
-  const setting = await getApprovalSetting(params.formType);
+  const organizationId = Number(params.organizationId || 1);
 
-if (params.formType === "attendance" && !params.targetDate) {
-  throw new Error("근태 문서는 시행일자 필수");
-}
+  const documentNumber = await getNextApprovalDocumentNumber(params.formType, {
+    organizationId,
+  });
 
-if (
-  params.formType === "business_trip" &&
-  !params.targetDate &&
-  !(params.startDate && params.endDate)
-) {
-  throw new Error("출장 문서는 시행일자 또는 시작일/종료일이 필요합니다.");
-}
+  const setting = await getApprovalSetting(params.formType, {
+    organizationId,
+  });
 
-const approverIds = [
+  if (params.formType === "attendance" && !params.targetDate) {
+    throw new Error("근태 문서는 시행일자 필수");
+  }
+
+  if (
+    params.formType === "business_trip" &&
+    !params.targetDate &&
+    !(params.startDate && params.endDate)
+  ) {
+    throw new Error("출장 문서는 시행일자 또는 시작일/종료일이 필요합니다.");
+  }
+
+  const approverIds = [
     setting?.firstApproverUserId,
     setting?.secondApproverUserId,
     setting?.thirdApproverUserId,
@@ -10584,6 +12416,7 @@ const approverIds = [
       : null;
 
   const result: any = await db.insert(approvalDocuments).values({
+    organizationId,
     documentNumber,
     formType: params.formType,
     subType: params.subType,
@@ -10610,35 +12443,43 @@ const approverIds = [
     attachmentName: params.attachmentName ?? null,
     attachmentUrl: params.attachmentUrl ?? null,
 
-attendanceDetailType: params.attendanceDetailType ?? null,
-attendanceStartTime: params.attendanceStartTime ?? null,
-attendanceEndTime: params.attendanceEndTime ?? null,
+    attendanceDetailType: params.attendanceDetailType ?? null,
+    attendanceStartTime: params.attendanceStartTime ?? null,
+    attendanceEndTime: params.attendanceEndTime ?? null,
 
-destination: params.destination ?? null,
-visitPlace: params.visitPlace ?? null,
-companion: params.companion ?? null,
+    destination: params.destination ?? null,
+    visitPlace: params.visitPlace ?? null,
+    companion: params.companion ?? null,
 
-requestDepartment: params.requestDepartment ?? null,
-extraNote: params.extraNote ?? null,
+    requestDepartment: params.requestDepartment ?? null,
+    extraNote: params.extraNote ?? null,
   } as any);
 
   const documentId = Number(getInsertId(result));
 
   const lines: InsertApprovalDocumentLine[] = [];
 
-  const approverUsers = await getAllUsersDetailed();
+  const approverUsers = await getAllUsersDetailed({
+    organizationId,
+  });
+
   let step = 1;
 
   for (const approverUserId of approverIds) {
-    const found = approverUsers.find((u: any) => Number(u.id) === Number(approverUserId));
+    const found = approverUsers.find(
+      (u: any) => Number(u.id) === Number(approverUserId)
+    );
+
     lines.push({
+      organizationId,
       documentId,
       stepOrder: step,
       approverUserId: Number(approverUserId),
       approverName: found?.name ?? null,
       approverRole: found?.role ?? null,
       stepStatus: "pending",
-    });
+    } as any);
+
     step += 1;
   }
 
@@ -10647,6 +12488,7 @@ extraNote: params.extraNote ?? null,
   }
 
   await createApprovalLog({
+    organizationId,
     documentId,
     actorUserId: params.applicantUserId,
     actorUserName: params.applicantUserName ?? null,
@@ -10657,28 +12499,44 @@ extraNote: params.extraNote ?? null,
   return documentId;
 }
 
-export async function listMyApprovalDocuments(userId: number) {
+export async function listMyApprovalDocuments(
+  userId: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const [rows] = await db.execute(sql`
     SELECT *
     FROM approval_documents
-    WHERE applicantUserId = ${userId}
+    WHERE organizationId = ${organizationId}
+      AND applicantUserId = ${userId}
     ORDER BY createdAt DESC, id DESC
   `);
 
   return (rows as any[]) ?? [];
 }
 
-export async function getApprovalDocument(id: number) {
+export async function getApprovalDocument(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return null;
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const [docRows] = await db.execute(sql`
     SELECT *
     FROM approval_documents
     WHERE id = ${id}
+      AND organizationId = ${organizationId}
     LIMIT 1
   `);
 
@@ -10688,14 +12546,16 @@ export async function getApprovalDocument(id: number) {
   const [lineRows] = await db.execute(sql`
     SELECT *
     FROM approval_document_lines
-    WHERE documentId = ${id}
+    WHERE organizationId = ${organizationId}
+      AND documentId = ${id}
     ORDER BY stepOrder ASC, id ASC
   `);
 
   const [logRows] = await db.execute(sql`
     SELECT *
     FROM approval_logs
-    WHERE documentId = ${id}
+    WHERE organizationId = ${organizationId}
+      AND documentId = ${id}
     ORDER BY createdAt DESC, id DESC
   `);
 
@@ -10706,16 +12566,26 @@ export async function getApprovalDocument(id: number) {
   };
 }
 
-export async function listPendingApprovalDocumentsForApprover(userId: number) {
+export async function listPendingApprovalDocumentsForApprover(
+  userId: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 1);
 
   const [rows] = await db.execute(sql`
     SELECT d.*, l.id as lineId, l.stepOrder, l.stepStatus
     FROM approval_documents d
     INNER JOIN approval_document_lines l
       ON l.documentId = d.id
-    WHERE l.approverUserId = ${userId}
+     AND l.organizationId = d.organizationId
+    WHERE d.organizationId = ${organizationId}
+      AND l.organizationId = ${organizationId}
+      AND l.approverUserId = ${userId}
       AND l.stepStatus = 'pending'
       AND d.status = 'pending'
       AND d.currentStepOrder = l.stepOrder
@@ -10726,14 +12596,19 @@ export async function listPendingApprovalDocumentsForApprover(userId: number) {
 }
 
 export async function applyApprovedDocumentToAttendance(params: {
+  organizationId?: number | null;
   documentId: number;
   actorUserId: number;
   actorUserName?: string | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+if (!db) throw new Error("DB not available");
 
-  const detail = await getApprovalDocument(params.documentId);
+const organizationId = Number(params.organizationId || 1);
+
+const detail = await getApprovalDocument(params.documentId, {
+  organizationId,
+});
   if (!detail?.document) throw new Error("전자결재 문서를 찾을 수 없습니다.");
 
   const doc: any = detail.document;
@@ -10760,12 +12635,17 @@ const earlyInfo = await calcEarlyLeaveInfo(approvedClockOutAt);
 
   if (doc.formType !== "attendance" && doc.formType !== "business_trip") {
     await db
-      .update(approvalDocuments)
-      .set({
-        attendanceApplied: true,
-        attendanceAppliedAt: new Date(),
-      } as any)
-      .where(eq(approvalDocuments.id, params.documentId));
+  .update(approvalDocuments)
+  .set({
+    attendanceApplied: true,
+    attendanceAppliedAt: new Date(),
+  } as any)
+  .where(
+    and(
+      eq(approvalDocuments.id, params.documentId),
+      eq(approvalDocuments.organizationId, organizationId)
+    )
+  );
 
     return true;
   }
@@ -10846,16 +12726,22 @@ leaveType: "출장",
   }
 
   await db
-    .update(approvalDocuments)
-    .set({
-      attendanceApplied: true,
-      attendanceAppliedAt: new Date(),
-    } as any)
-    .where(eq(approvalDocuments.id, params.documentId));
+  .update(approvalDocuments)
+  .set({
+    attendanceApplied: true,
+    attendanceAppliedAt: new Date(),
+  } as any)
+  .where(
+    and(
+      eq(approvalDocuments.id, params.documentId),
+      eq(approvalDocuments.organizationId, organizationId)
+    )
+  );
 
   await createApprovalLog({
-    documentId: params.documentId,
-    actorUserId: params.actorUserId,
+  organizationId,
+  documentId: params.documentId,
+  actorUserId: params.actorUserId,
     actorUserName: params.actorUserName ?? null,
     actionType: "apply_attendance",
     note: "출장 기간 근태 기록부 자동 반영 완료",
@@ -11060,6 +12946,7 @@ afterClockOutAt:
 }
 
 export async function approveApprovalDocument(params: {
+  organizationId?: number | null;
   documentId: number;
   approverUserId: number;
   approverUserName?: string | null;
@@ -11068,7 +12955,11 @@ export async function approveApprovalDocument(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const detail = await getApprovalDocument(params.documentId);
+  const organizationId = Number(params.organizationId || 1);
+
+  const detail = await getApprovalDocument(params.documentId, {
+    organizationId,
+  });
   if (!detail?.document) throw new Error("문서를 찾을 수 없습니다.");
 
   const doc: any = detail.document;
@@ -11091,10 +12982,16 @@ export async function approveApprovalDocument(params: {
       actedAt: new Date(),
       comment: params.comment ?? null,
     } as any)
-    .where(eq(approvalDocumentLines.id, Number(currentLine.id)));
+    .where(
+      and(
+        eq(approvalDocumentLines.id, Number(currentLine.id)),
+        eq(approvalDocumentLines.organizationId, organizationId)
+      )
+    );
 
   const nextLine = (detail.lines || []).find(
-    (line: any) => Number(line.stepOrder) === Number(doc.currentStepOrder) + 1
+    (line: any) =>
+      Number(line.stepOrder) === Number(doc.currentStepOrder) + 1
   );
 
   if (nextLine) {
@@ -11103,7 +13000,12 @@ export async function approveApprovalDocument(params: {
       .set({
         currentStepOrder: Number(doc.currentStepOrder) + 1,
       } as any)
-      .where(eq(approvalDocuments.id, params.documentId));
+      .where(
+        and(
+          eq(approvalDocuments.id, params.documentId),
+          eq(approvalDocuments.organizationId, organizationId)
+        )
+      );
   } else {
     await db
       .update(approvalDocuments)
@@ -11111,16 +13013,23 @@ export async function approveApprovalDocument(params: {
         status: "approved",
         finalApprovedAt: new Date(),
       } as any)
-      .where(eq(approvalDocuments.id, params.documentId));
+      .where(
+        and(
+          eq(approvalDocuments.id, params.documentId),
+          eq(approvalDocuments.organizationId, organizationId)
+        )
+      );
 
     await applyApprovedDocumentToAttendance({
-      documentId: params.documentId,
-      actorUserId: params.approverUserId,
-      actorUserName: params.approverUserName ?? null,
-    });
+  organizationId,
+  documentId: params.documentId,
+  actorUserId: params.approverUserId,
+  actorUserName: params.approverUserName ?? null,
+});
   }
 
   await createApprovalLog({
+    organizationId,
     documentId: params.documentId,
     actorUserId: params.approverUserId,
     actorUserName: params.approverUserName ?? null,
@@ -11132,6 +13041,7 @@ export async function approveApprovalDocument(params: {
 }
 
 export async function rejectApprovalDocument(params: {
+  organizationId?: number | null;
   documentId: number;
   approverUserId: number;
   approverUserName?: string | null;
@@ -11140,10 +13050,15 @@ export async function rejectApprovalDocument(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const detail = await getApprovalDocument(params.documentId);
+  const organizationId = Number(params.organizationId || 1);
+
+  const detail = await getApprovalDocument(params.documentId, {
+    organizationId,
+  });
   if (!detail?.document) throw new Error("문서를 찾을 수 없습니다.");
 
   const doc: any = detail.document;
+
   const currentLine = (detail.lines || []).find(
     (line: any) =>
       Number(line.approverUserId) === Number(params.approverUserId) &&
@@ -11162,18 +13077,28 @@ export async function rejectApprovalDocument(params: {
       actedAt: new Date(),
       comment: params.comment ?? null,
     } as any)
-    .where(eq(approvalDocumentLines.id, Number(currentLine.id)));
+    .where(
+      and(
+        eq(approvalDocumentLines.id, Number(currentLine.id)),
+        eq(approvalDocumentLines.organizationId, organizationId)
+      )
+    );
 
   await db
     .update(approvalDocuments)
     .set({
       status: "rejected",
       rejectedAt: new Date(),
-      rejectedReason: params.comment ?? null,
     } as any)
-    .where(eq(approvalDocuments.id, params.documentId));
+    .where(
+      and(
+        eq(approvalDocuments.id, params.documentId),
+        eq(approvalDocuments.organizationId, organizationId)
+      )
+    );
 
   await createApprovalLog({
+    organizationId,
     documentId: params.documentId,
     actorUserId: params.approverUserId,
     actorUserName: params.approverUserName ?? null,

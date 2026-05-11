@@ -449,6 +449,7 @@ export type InsertRefund = typeof refunds.$inferInsert;
 // ─── Education Institutions (교육원) ─────────────────────────────────
 export const educationInstitutions = mysqlTable("education_institutions", {
   id: serial("id").primaryKey(),
+organizationId: int("organizationId").notNull().default(1),
   name: varchar("name", { length: 100 }).notNull(),
   isActive: boolean("isActive").notNull().default(true),
   sortOrder: int("sortOrder").notNull().default(0),
@@ -474,6 +475,7 @@ export const educationInstitutionPositionRates = mysqlTable(
   "education_institution_position_rates",
   {
     id: int("id").autoincrement().primaryKey(),
+organizationId: int("organizationId").notNull().default(1),
 
     educationInstitutionId: int("educationInstitutionId").notNull(),
     positionId: int("positionId").notNull(),
@@ -492,9 +494,10 @@ export const educationInstitutionPositionRates = mysqlTable(
   },
   (table) => ({
     institutionPositionIdx: index("idx_inst_pos_rate_unique").on(
-      table.educationInstitutionId,
-      table.positionId
-    ),
+  table.organizationId,
+  table.educationInstitutionId,
+  table.positionId
+),
   })
 );
 
@@ -521,6 +524,7 @@ export type InsertTransferAttachment = typeof transferAttachments.$inferInsert;
 // ─── Course Subject Templates (과정별 과목 템플릿) ──────────────────
 export const courseSubjectTemplates = mysqlTable("course_subject_templates", {
   id: int("id").autoincrement().primaryKey(),
+organizationId: int("organizationId").notNull().default(1),
   courseKey: varchar("courseKey", { length: 100 }).notNull(),
   subjectName: varchar("subjectName", { length: 255 }).notNull(),
   category: mysqlEnum("category", ["전공", "교양", "일반"]).notNull(),
@@ -544,7 +548,7 @@ export const privateCertificateMasters = mysqlTable(
   "private_certificate_masters",
   {
     id: int("id").autoincrement().primaryKey(),
-
+organizationId: int("organizationId").notNull().default(1),
     name: varchar("name", { length: 255 }).notNull(),
 
     sortOrder: int("sortOrder").notNull().default(0),
@@ -591,7 +595,7 @@ export type InsertPrivateCertificateMaster =
 // ─── Subject Catalogs (학점은행제 과정 마스터) ───────────────────────
 export const subjectCatalogs = mysqlTable("subject_catalogs", {
   id: int("id").autoincrement().primaryKey(),
-
+organizationId: int("organizationId").notNull().default(1),
   name: varchar("name", { length: 255 }).notNull(),
 
   sortOrder: int("sortOrder").notNull().default(0),
@@ -610,7 +614,7 @@ export type InsertSubjectCatalog = typeof subjectCatalogs.$inferInsert;
 // ─── Subject Catalog Items (학점은행제 과목 마스터) ──────────────────
 export const subjectCatalogItems = mysqlTable("subject_catalog_items", {
   id: int("id").autoincrement().primaryKey(),
-
+  organizationId: int("organizationId").notNull().default(1),
   catalogId: int("catalogId").notNull(),
 
   subjectName: varchar("subjectName", { length: 255 }).notNull(),
@@ -832,6 +836,7 @@ export type InsertPracticeSupportRequest =
 // ─── Practice Institutions (실습기관/실습교육원 마스터) ──────────────
 export const practiceListCategories = mysqlTable("practice_list_categories", {
   id: int("id").autoincrement().primaryKey(),
+organizationId: int("organizationId").notNull().default(1),
 
   name: varchar("name", { length: 100 }).notNull(),
 
@@ -856,6 +861,7 @@ export type InsertPracticeListCategory =
 
 export const practiceInstitutions = mysqlTable("practice_institutions", {
   id: int("id").autoincrement().primaryKey(),
+organizationId: int("organizationId").notNull().default(1),
 
   institutionType: mysqlEnum("institutionType", ["education", "institution"])
     .notNull(),
@@ -897,6 +903,7 @@ export type InsertPracticeInstitution = typeof practiceInstitutions.$inferInsert
 
 export const practiceEducationCenters = mysqlTable("practice_education_centers", {
   id: int("id").autoincrement().primaryKey(),
+organizationId: int("organizationId").notNull().default(1),
 
 categoryId: int("categoryId"),
 
@@ -1029,6 +1036,7 @@ export type InsertChatRoom = typeof chatRooms.$inferInsert;
 
 export const chatRoomMembers = mysqlTable("chat_room_members", {
   id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull().default(1),
   roomId: int("roomId").notNull(),
   userId: int("userId").notNull(),
 joinedAt: timestamp("joinedAt").notNull().defaultNow(),
@@ -1042,6 +1050,7 @@ export type InsertChatRoomMember = typeof chatRoomMembers.$inferInsert;
 
 export const chatMessages = mysqlTable("chat_messages", {
   id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull().default(1),
   roomId: int("roomId").notNull(),
   senderId: int("senderId").notNull(),
   messageType: mysqlEnum("messageType", ["text", "image", "file", "system"]).notNull().default("text"),
@@ -1056,6 +1065,7 @@ export type InsertChatMessage = typeof chatMessages.$inferInsert;
 
 export const chatAttachments = mysqlTable("chat_attachments", {
   id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull().default(1),
   messageId: int("messageId").notNull(),
   fileName: varchar("fileName", { length: 255 }).notNull(),
   fileUrl: text("fileUrl").notNull(),
@@ -1069,6 +1079,7 @@ export type InsertChatAttachment = typeof chatAttachments.$inferInsert;
 
 export const chatRoomSettings = mysqlTable("chat_room_settings", {
   id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull().default(1),
   roomId: int("roomId").notNull(),
   userId: int("userId").notNull(),
   isMuted: boolean("isMuted").notNull().default(false),
@@ -1083,6 +1094,7 @@ export type InsertChatRoomSetting = typeof chatRoomSettings.$inferInsert;
 // ─── 조직도 테이블 ─────────────────────────────
 export const teams = mysqlTable("teams", {
   id: int("id").autoincrement().primaryKey(),
+organizationId: int("organizationId").notNull().default(1),
   name: varchar("name", { length: 100 }).notNull(),
   sortOrder: int("sortOrder").notNull().default(0),
   isActive: boolean("isActive").notNull().default(true),
@@ -1095,6 +1107,7 @@ export type InsertTeam = typeof teams.$inferInsert;
 
 export const positions = mysqlTable("positions", {
   id: int("id").autoincrement().primaryKey(),
+organizationId: int("organizationId").notNull().default(1),
   name: varchar("name", { length: 100 }).notNull(),
   sortOrder: int("sortOrder").notNull().default(0),
   isActive: boolean("isActive").notNull().default(true),
@@ -1113,6 +1126,7 @@ export type InsertPosition = typeof positions.$inferInsert;
 
 export const userOrgMappings = mysqlTable("user_org_mappings", {
   id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull().default(1),
   userId: int("userId").notNull().unique(),
   teamId: int("teamId"),
   positionId: int("positionId"),
@@ -1127,6 +1141,7 @@ export type InsertUserOrgMapping = typeof userOrgMappings.$inferInsert;
 
 export const attendanceRecords = mysqlTable("attendance_records", {
   id: int("id").autoincrement().primaryKey(),
+organizationId: int("organizationId").notNull().default(1),
   userId: int("userId").notNull(),
   workDate: date("workDate").notNull(),
   clockInAt: datetime("clockInAt"),
@@ -1186,6 +1201,7 @@ export type SelectAttendanceRecord = typeof attendanceRecords.$inferSelect;
 
 export const attendanceAdjustmentLogs = mysqlTable("attendance_adjustment_logs", {
   id: int("id").autoincrement().primaryKey(),
+ organizationId: int("organizationId").notNull().default(1),
   attendanceId: int("attendanceId").notNull(),
   targetUserId: int("targetUserId").notNull(),
   actorUserId: int("actorUserId").notNull(),
@@ -1218,7 +1234,7 @@ export type InsertAttendanceAdjustmentLog =
 
 export const attendancePolicies = mysqlTable("attendance_policies", {
   id: int("id").autoincrement().primaryKey(),
-
+organizationId: int("organizationId").notNull().default(1),
   scopeType: mysqlEnum("scopeType", ["global", "team", "user"])
     .notNull()
     .default("global"),
@@ -1374,7 +1390,7 @@ export type InsertApprovalDocument = typeof approvalDocuments.$inferInsert;
 
 export const approvalDocumentLines = mysqlTable("approval_document_lines", {
   id: int("id").autoincrement().primaryKey(),
-
+organizationId: int("organizationId").notNull().default(1),
   documentId: int("documentId").notNull(),
   stepOrder: int("stepOrder").notNull(),
 
@@ -1405,9 +1421,8 @@ export const approvalSettings = mysqlTable("approval_settings", {
   id: int("id").autoincrement().primaryKey(),
 organizationId: int("organizationId").notNull().default(1),
 
-  formType: mysqlEnum("formType", ["attendance", "business_trip", "general"])
-    .notNull()
-    .unique(),
+ formType: mysqlEnum("formType", ["attendance", "business_trip", "general"])
+  .notNull(),
 
   firstApproverUserId: int("firstApproverUserId"),
   secondApproverUserId: int("secondApproverUserId"),
@@ -1427,7 +1442,7 @@ export type InsertApprovalSetting = typeof approvalSettings.$inferInsert;
 
 export const approvalPrintSettings = mysqlTable("approval_print_settings", {
   id: int("id").autoincrement().primaryKey(),
-
+organizationId: int("organizationId").notNull().default(1),
   companyName: varchar("companyName", { length: 255 })
     .notNull()
     .default("(주)위드원 교육"),
@@ -1456,7 +1471,7 @@ export type InsertApprovalPrintSetting = typeof approvalPrintSettings.$inferInse
 
 export const approvalLogs = mysqlTable("approval_logs", {
   id: int("id").autoincrement().primaryKey(),
-
+organizationId: int("organizationId").notNull().default(1),
   documentId: int("documentId").notNull(),
   actorUserId: int("actorUserId").notNull(),
   actorUserName: varchar("actorUserName", { length: 100 }),
@@ -1479,7 +1494,7 @@ export type InsertApprovalLog = typeof approvalLogs.$inferInsert;
 
 export const approvalFormFieldSettings = mysqlTable("approval_form_field_settings", {
   id: int("id").autoincrement().primaryKey(),
-
+organizationId: int("organizationId").notNull().default(1),
   formType: mysqlEnum("formType", ["attendance", "business_trip", "general"])
     .notNull(),
 
@@ -1507,6 +1522,7 @@ export type InsertApprovalFormFieldSetting =
 // ─── Device Tokens (모바일 푸시 토큰) ───────────────────────────────
 export const deviceTokens = mysqlTable("device_tokens", {
   id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull().default(1),
   userId: int("userId").notNull(),
   platform: varchar("platform", { length: 20 }).notNull(),
   expoPushToken: varchar("expoPushToken", { length: 255 }).notNull(),
@@ -1559,8 +1575,46 @@ organizationId: int("organizationId").notNull().default(1),
   })
 );
 
+export const aiLearningEntries = mysqlTable(
+  "ai_learning_entries",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    organizationId: int("organizationId").notNull().default(1),
+
+    userId: int("userId").notNull(),
+    userName: varchar("userName", { length: 100 }),
+
+    learningType: varchar("learningType", { length: 100 }).notNull(),
+    inputText: text("inputText").notNull(),
+    normalizedKey: varchar("normalizedKey", { length: 255 }),
+
+    payload: text("payload"),
+
+    targetStudentId: int("targetStudentId"),
+    targetStudentName: varchar("targetStudentName", { length: 100 }),
+
+    feedback: text("feedback"),
+    isApproved: boolean("isApproved").notNull().default(true),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    orgIdx: index("idx_ai_learning_org").on(table.organizationId),
+    typeKeyIdx: index("idx_ai_learning_type_key").on(
+      table.organizationId,
+      table.learningType,
+      table.normalizedKey
+    ),
+    createdAtIdx: index("idx_ai_learning_created_at").on(table.createdAt),
+  })
+);
+
+export type AiLearningEntry = typeof aiLearningEntries.$inferSelect;
+export type InsertAiLearningEntry = typeof aiLearningEntries.$inferInsert;
+
 export const settlementGrades = mysqlTable("settlement_grades", {
   id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId").notNull().default(1),
   name: varchar("name", { length: 100 }).notNull(),
   code: varchar("code", { length: 50 }).notNull(),
   sortOrder: int("sortOrder").default(0),
@@ -1629,7 +1683,7 @@ institutionName: varchar("institutionName", { length: 255 }),
 
 export const settlementItemLogs = mysqlTable("settlement_item_logs", {
   id: int("id").autoincrement().primaryKey(),
-
+  organizationId: int("organizationId").notNull().default(1),
   settlementItemId: int("settlementItemId").notNull(),
 
   actionType: mysqlEnum("actionType", [

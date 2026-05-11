@@ -28,6 +28,7 @@ const DEV_USER = {
   id: 1,
   name: "DEV",
   role: "host",
+  organizationId: 1,
 } as any;
 
 function isAdminOrHost(user: any) {

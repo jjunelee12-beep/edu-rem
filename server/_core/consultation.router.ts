@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "./trpc";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { consultations, students } from "../../drizzle/schema";
 
 import {
@@ -65,6 +65,7 @@ function splitCsvLine(line: string) {
 }
 
 async function upsertConsultationByPhone(params: {
+organizationId: number;
   consultDate: string;
   channel: string;
   clientName: string;
@@ -84,10 +85,16 @@ async function upsertConsultationByPhone(params: {
   const [existing] = await db
     .select()
     .from(consultations)
-    .where(eq(consultations.phone, phone))
+    .where(
+  and(
+    eq(consultations.organizationId, params.organizationId),
+    eq(consultations.phone, phone)
+  )
+)
     .limit(1);
 
   const patch: any = {
+organizationId: params.organizationId,
     consultDate: params.consultDate as any,
     channel: params.channel ?? "",
     clientName: params.clientName ?? "",
@@ -104,7 +111,10 @@ async function upsertConsultationByPhone(params: {
     return { id: existing.id as number, action: "updated" as const };
   }
 
-  const insertId = await createConsultation(patch);
+  const insertId = await createConsultation({
+  ...patch,
+  organizationId: params.organizationId,
+});
   return { id: Number(insertId), action: "created" as const };
 }
 
@@ -114,9 +124,15 @@ export const consultationRouter = router({
     if (!db) return [];
 
     const privileged = isPrivileged(ctx.user);
-    const assigneeId = toAssigneeId(ctx.user);
+const assigneeId = toAssigneeId(ctx.user);
+const organizationId = Number((ctx.user as any)?.organizationId || 1);
 
-    const where = privileged ? undefined : eq(consultations.assigneeId, assigneeId);
+const where = privileged
+  ? eq(consultations.organizationId, organizationId)
+  : and(
+      eq(consultations.organizationId, organizationId),
+      eq(consultations.assigneeId, assigneeId)
+    );
 
     const rows = where
       ? await db.select().from(consultations).where(where).orderBy(desc(consultations.createdAt))
@@ -139,6 +155,7 @@ export const consultationRouter = router({
     const assigneeId = toAssigneeId(ctx.user);
 
     const patch = {
+organizationId: Number((ctx.user as any)?.organizationId || 1),
       consultDate: input.consultDate,
       channel: input.channel ?? "",
       clientName: input.clientName,
@@ -155,7 +172,8 @@ export const consultationRouter = router({
   }),
 
   bulkCreate: protectedProcedure.input(BulkCreateInput).mutation(async ({ input, ctx }) => {
-    const assigneeId = toAssigneeId(ctx.user);
+    const organizationId = Number((ctx.user as any)?.organizationId || 1);
+const assigneeId = toAssigneeId(ctx.user);
 
     let created = 0;
     let updated = 0;
@@ -166,6 +184,7 @@ export const consultationRouter = router({
       if (!phone) continue;
 
       const res = await upsertConsultationByPhone({
+  organizationId,
         consultDate: r.consultDate,
         channel: r.channel ?? "",
         clientName: r.clientName,
@@ -185,7 +204,8 @@ export const consultationRouter = router({
   }),
 
   importCsv: protectedProcedure.input(ImportCsvInput).mutation(async ({ input, ctx }) => {
-    const assigneeId = toAssigneeId(ctx.user);
+    const organizationId = Number((ctx.user as any)?.organizationId || 1);
+const assigneeId = toAssigneeId(ctx.user);
 
     const lines = input.csvText
       .split(/\r?\n/)
@@ -211,6 +231,7 @@ export const consultationRouter = router({
       if (!clientName || !phone) continue;
 
       const res = await upsertConsultationByPhone({
+  organizationId,
         consultDate,
         channel,
         clientName,
@@ -233,7 +254,9 @@ export const consultationRouter = router({
     const db = await getDb();
     if (!db) throw new Error("DB not available");
 
-    const prev = await getConsultation(input.id);
+    const prev = await getConsultation(input.id, {
+  organizationId: Number((ctx.user as any)?.organizationId || 1),
+});
     if (!prev) return { ok: false };
 
     const privileged = isPrivileged(ctx.user);
@@ -266,14 +289,21 @@ export const consultationRouter = router({
     if (input.assigneeId !== undefined) patch.assigneeId = input.assigneeId;
 
     if (Object.keys(patch).length > 0) {
-      await updateConsultation(input.id, patch);
+      await updateConsultation(input.id, patch, {
+  organizationId: Number((ctx.user as any)?.organizationId || 1),
+});
     }
 
     if (nextStatus === "등록" && prev.status !== "등록") {
       const [existingStudent] = await db
         .select({ id: students.id })
         .from(students)
-        .where(eq(students.consultationId, input.id))
+        .where(
+  and(
+    eq(students.organizationId, Number((ctx.user as any)?.organizationId || 1)),
+    eq(students.consultationId, input.id)
+  )
+)
         .limit(1);
 
       if (!existingStudent) {
@@ -283,7 +313,8 @@ export const consultationRouter = router({
         const assigneeId = (input.assigneeId ?? prev.assigneeId ?? myId) as any;
 
         await createStudent({
-          clientName: nextName,
+  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  clientName: nextName,
           phone: nextPhone,
           course: nextCourse,
           assigneeId,
@@ -296,7 +327,9 @@ export const consultationRouter = router({
   }),
 
   delete: protectedProcedure.input(DeleteInput).mutation(async ({ input, ctx }) => {
-    const prev = await getConsultation(input.id);
+    const prev = await getConsultation(input.id, {
+  organizationId: Number((ctx.user as any)?.organizationId || 1),
+});
     if (!prev) return { ok: true };
 
     const privileged = isPrivileged(ctx.user);
@@ -306,7 +339,9 @@ export const consultationRouter = router({
       throw new Error("권한이 없습니다 (본인 상담만 삭제 가능)");
     }
 
-    await deleteConsultation(input.id);
+    await deleteConsultation(input.id, {
+  organizationId: Number((ctx.user as any)?.organizationId || 1),
+});
     return { ok: true };
   }),
 });

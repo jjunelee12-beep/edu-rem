@@ -30,8 +30,10 @@ export const noticeRouter = {
       })
       .optional()
   )
-  .query(async ({ input }) => {
-    const rows = await listNotices();
+  .query(async ({ ctx, input }) => {
+    const rows = await listNotices({
+  organizationId: Number(ctx.user.organizationId || 1),
+});
 
     const search = input?.search?.trim().toLowerCase();
 
@@ -74,15 +76,22 @@ export const noticeRouter = {
         increaseView: z.boolean().optional(),
       })
     )
-    .query(async ({ input }) => {
-      const row = await getNotice(input.id);
+    .query(async ({ ctx, input }) => {
+      const row = await getNotice(input.id, {
+  organizationId: Number(ctx.user.organizationId || 1),
+});
       if (!row) {
         throw new Error("공지사항을 찾을 수 없습니다.");
       }
 
       if (input.increaseView ?? true) {
-        await increaseNoticeView(input.id);
-        const updated = await getNotice(input.id);
+        await increaseNoticeView(input.id, {
+  organizationId: Number(ctx.user.organizationId || 1),
+});
+
+const updated = await getNotice(input.id, {
+  organizationId: Number(ctx.user.organizationId || 1),
+});
         return updated ?? row;
       }
 
@@ -102,6 +111,7 @@ export const noticeRouter = {
       assertHostOrSuperhost(ctx.user);
 
       const id = await createNotice({
+organizationId: Number(ctx.user.organizationId || 1),
         title: input.title,
         content: input.content,
         authorId: Number(ctx.user.id),
@@ -111,11 +121,12 @@ export const noticeRouter = {
       });
 
       await createNoticeNotifications({
-        noticeId: Number(id),
-        actorUserId: Number(ctx.user.id),
-        title: input.title,
-        importance: input.importance,
-      });
+  organizationId: Number(ctx.user.organizationId || 1),
+  noticeId: Number(id),
+  actorUserId: Number(ctx.user.id),
+  title: input.title,
+  importance: input.importance,
+});
 
       return {
         ok: true,
@@ -136,12 +147,15 @@ export const noticeRouter = {
     .mutation(async ({ ctx, input }) => {
       assertHostOrSuperhost(ctx.user);
 
-      const existing = await getNotice(input.id);
+      const existing = await getNotice(input.id, {
+  organizationId: Number(ctx.user.organizationId || 1),
+});
       if (!existing) {
         throw new Error("공지사항을 찾을 수 없습니다.");
       }
 
       await updateNotice(input.id, {
+  organizationId: Number(ctx.user.organizationId || 1),
         title: input.title,
         content: input.content,
         isPinned: !!input.isPinned,
@@ -160,12 +174,16 @@ export const noticeRouter = {
     .mutation(async ({ ctx, input }) => {
       assertHostOrSuperhost(ctx.user);
 
-      const existing = await getNotice(input.id);
+      const existing = await getNotice(input.id, {
+  organizationId: Number(ctx.user.organizationId || 1),
+});
       if (!existing) {
         throw new Error("공지사항을 찾을 수 없습니다.");
       }
 
-      await deleteNotice(input.id);
+    await deleteNotice(input.id, {
+  organizationId: Number(ctx.user.organizationId || 1),
+});
 
       return { ok: true };
     }),
@@ -187,7 +205,9 @@ export const noticeRouter = {
         throw new Error("삭제할 공지사항이 없습니다.");
       }
 
-      await bulkDeleteNotices(ids);
+      await bulkDeleteNotices(ids, {
+  organizationId: Number(ctx.user.organizationId || 1),
+});
 
       return {
         ok: true,

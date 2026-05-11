@@ -55,7 +55,9 @@ export const scheduleRouter = {
     .query(async ({ ctx, input }) => {
   assertLoggedIn(ctx.user);
 
-  const rows = await listMonthSchedules(input.year, input.month);
+  const rows = await listMonthSchedules(input.year, input.month, {
+  organizationId: Number(ctx.user.organizationId || 1),
+});
 
   return (rows as any[]).map((row: any) => ({
     id: Number(row.id),
@@ -81,7 +83,13 @@ export const scheduleRouter = {
  listToday: protectedProcedure.query(async ({ ctx }) => {
   assertLoggedIn(ctx.user);
 
-  const rows = await listTodaySchedules(Number(ctx.user.id), String(ctx.user.role));
+  const rows = await listTodaySchedules(
+  Number(ctx.user.id),
+  String(ctx.user.role),
+  {
+    organizationId: Number(ctx.user.organizationId || 1),
+  }
+);
 
   return (rows as any[]).map((row: any) => ({
     id: Number(row.id),
@@ -129,7 +137,8 @@ const startAt = buildDateTimeString(
 );
 
 const id = await createSchedule({
-  title: input.title,
+organizationId: Number(ctx.user.organizationId || 1),  
+title: input.title,
   description: input.description,
   scheduleDate: input.date,
   meridiem: input.ampm,
@@ -177,7 +186,8 @@ const id = await createSchedule({
   Number(ctx.user.id),
   String(ctx.user.role),
   {
-    title: input.title,
+  organizationId: Number(ctx.user.organizationId || 1),
+  title: input.title,
     description: input.description,
     scheduleDate: input.date,
     meridiem: input.ampm,
@@ -203,7 +213,10 @@ const id = await createSchedule({
       await deleteSchedule(
   input.id,
   Number(ctx.user.id),
-  String(ctx.user.role)
+  String(ctx.user.role),
+  {
+    organizationId: Number(ctx.user.organizationId || 1),
+  }
 );
 
       return { ok: true };

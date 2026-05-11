@@ -42,35 +42,39 @@ export const publicLeadRouter = router({
       }
 
       const normalizedPhone = input.phone.replace(/\D/g, "").slice(0, 11);
-      const safeAssigneeId = Number(form.assigneeId);
+const safeAssigneeId = Number(form.assigneeId);
+const organizationId = Number((form as any).organizationId || 1);
 
       if (!Number.isFinite(safeAssigneeId) || safeAssigneeId <= 0) {
         throw new Error("담당자 정보가 올바르지 않습니다.");
       }
 
       const consultationId = await db.createConsultation({
-        consultDate: new Date(),
-        channel: input.channel?.trim() || "랜딩페이지",
-        clientName: input.clientName.trim(),
-        phone: normalizedPhone,
-        finalEducation: input.finalEducation.trim(),
-        desiredCourse: input.desiredCourse.trim(),
-        notes: input.notes?.trim() || "랜딩페이지 유입",
-        status: "상담중",
-        assigneeId: safeAssigneeId,
-      } as any);
+  organizationId,
+  consultDate: new Date(),
+  channel: input.channel?.trim() || "랜딩페이지",
+  clientName: input.clientName.trim(),
+  phone: normalizedPhone,
+  finalEducation: input.finalEducation.trim(),
+  desiredCourse: input.desiredCourse.trim(),
+  notes: input.notes?.trim() || "랜딩페이지 유입",
+  status: "상담중",
+  assigneeId: safeAssigneeId,
+} as any);
 
       await db.createNotification({
-        userId: safeAssigneeId,
-        type: "lead",
-        message: `[신규 상담] ${input.clientName.trim()} / ${normalizedPhone}`,
-        relatedId: consultationId,
-        isRead: false,
-      } as any);
+  organizationId,
+  userId: safeAssigneeId,
+  type: "lead",
+  message: `[신규 상담] ${input.clientName.trim()} / ${normalizedPhone}`,
+  relatedId: consultationId,
+  isRead: false,
+} as any);
 
       const expoPushTokens = await db.listActiveExpoPushTokensByUserId(
-        safeAssigneeId
-      );
+  safeAssigneeId,
+  { organizationId }
+);
 
       if (expoPushTokens.length > 0) {
         try {

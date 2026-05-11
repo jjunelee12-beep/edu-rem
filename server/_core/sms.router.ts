@@ -52,8 +52,12 @@ function courseMatches(courseValue: unknown, keywordValue: string) {
 
 export const smsRouter = router({
   
-settings: hostProcedure.query(async () => {
-  const settings = await getSmsSettings();
+settings: hostProcedure.query(async ({ ctx }) => {
+  const organizationId = Number(ctx.user.organizationId || 1);
+
+  const settings = await getSmsSettings({
+  organizationId,
+});
 
   return {
   provider: settings?.provider || "aligo",
@@ -84,15 +88,20 @@ saveSettings: hostProcedure
   isActive: z.boolean().default(true),
 })
   )
-  .mutation(async ({ input }) => {
-    await saveSmsSettings(input);
+  .mutation(async ({ ctx, input }) => {
+  await saveSmsSettings({
+    ...input,
+    organizationId: Number(ctx.user.organizationId || 1),
+  });
     return { success: true };
   }),
 /**
    * 담당자 목록
    */
-  assignees: hostProcedure.query(async () => {
-  const users = await getAllUsersDetailed();
+  assignees: hostProcedure.query(async ({ ctx }) => {
+  const users = await getAllUsersDetailed({
+  organizationId: Number(ctx.user.organizationId || 1),
+});
 
   const items = users
     .map((u: any) => ({
@@ -125,7 +134,7 @@ saveSettings: hostProcedure
 searchType: z.enum(["all", "name", "phone", "course"]).optional().default("all"),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const items: Array<{
         id: string;
         name: string;
@@ -139,7 +148,9 @@ searchType: z.enum(["all", "name", "phone", "course"]).optional().default("all")
       const keyword = String(input.keyword || "").trim().toLowerCase();
 
       if (input.includeConsultations) {
-        const consultations = await listConsultations();
+        const consultations = await listConsultations(undefined, {
+  organizationId: Number(ctx.user.organizationId || 1),
+});
 
         consultations
           .filter((c: any) => {
@@ -188,7 +199,9 @@ searchType: z.enum(["all", "name", "phone", "course"]).optional().default("all")
       }
 
       if (input.includeStudents) {
-        const students = await listStudents();
+       const students = await listStudents(undefined, {
+  organizationId: Number(ctx.user.organizationId || 1),
+});
 
         students
           .filter((s: any) => {
@@ -260,14 +273,16 @@ searchType: z.enum(["all", "name", "phone", "course"]).optional().default("all")
         message: z.string().min(1),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const normalized = input.phones
         .map((p) => normalizePhone(p))
         .filter((p) => p.length >= 10);
 
       const unique = [...new Set(normalized)];
 
-      const settings = await getSmsSettings();
+      const settings = await getSmsSettings({
+  organizationId: Number(ctx.user.organizationId || 1),
+});
 const result = await sendBulkSms(unique, input.message, settings);
 
       return {
@@ -287,14 +302,16 @@ const result = await sendBulkSms(unique, input.message, settings);
         message: z.string().min(1),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const phone = normalizePhone(input.phone);
 
       if (phone.length < 10) {
         throw new Error("유효한 전화번호가 아닙니다.");
       }
 
-      const settings = await getSmsSettings();
+      const settings = await getSmsSettings(
+  Number(ctx.user.organizationId || 1)
+);
 const result = await sendBulkSms([phone], input.message, settings);
 
       return {
