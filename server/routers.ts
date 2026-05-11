@@ -5260,7 +5260,7 @@ organizationId,
       };
     }),
 
-    update: superHostProcedure
+        update: superHostProcedure
       .input(
         z.object({
           allowSearch: z.boolean(),
@@ -5277,6 +5277,7 @@ organizationId,
           policy: input,
         };
       }),
+  }),
   }),
 });
 
