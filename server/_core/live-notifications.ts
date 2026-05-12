@@ -3,6 +3,7 @@ import type { Server as SocketIOServer } from "socket.io";
 type LiveAppNotificationPayload = {
   id: number;
   userId: number;
+  organizationId?: number | null;
   type?: string | null;
   title?: string | null;
   level?: "normal" | "important" | "urgent" | "success" | "danger" | null;
@@ -21,9 +22,10 @@ export function setLiveNotificationIO(io: SocketIOServer) {
 
 export function emitLiveNotification(payload: LiveAppNotificationPayload) {
   const userId = Number(payload.userId);
+  const organizationId = Number(payload.organizationId || 1);
   if (!liveIo || !userId) return;
 
-  liveIo.to(`user:${userId}`).emit("notification:new", {
+  liveIo.to(`org:${organizationId}:user:${userId}`).emit("notification:new", {
     id: Number(payload.id),
     userId,
     type: payload.type ?? "system",

@@ -2500,7 +2500,9 @@ export async function deleteConsultation(
     );
 
   for (const row of linkedStudents) {
-    await deleteStudentCascadeById(Number(row.id));
+    await deleteStudentCascadeById(Number(row.id), {
+  organizationId,
+});
   }
 
   await db
@@ -3359,18 +3361,29 @@ export async function deleteStudent(id: number) {
   throw new Error("학생 삭제는 상담 DB에서만 가능합니다.");
 }
 
-export async function deleteStudentCascadeById(studentId: number) {
+export async function deleteStudentCascadeById(
+  studentId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
+
+const organizationId = Number(params?.organizationId || 1);
+
   if (!db) throw new Error("DB not available");
 
-  const student = await getStudent(studentId);
+  const student = await getStudent(studentId, { organizationId });
   if (!student) return false;
 
   // 1) semester id 먼저 수집
   const studentSemesters = await db
     .select({ id: semesters.id })
     .from(semesters)
-    .where(eq(semesters.studentId, studentId));
+    .where(
+  and(
+    eq(semesters.studentId, studentId),
+    eq(semesters.organizationId, organizationId)
+  )
+);
 
   const semesterIds = studentSemesters.map((x: any) => Number(x.id)).filter(Boolean);
 
@@ -3378,7 +3391,12 @@ export async function deleteStudentCascadeById(studentId: number) {
   const studentSettlementRows = await db
     .select({ id: settlementItems.id })
     .from(settlementItems)
-    .where(eq(settlementItems.studentId, studentId));
+    .where(
+  and(
+    eq(settlementItems.studentId, studentId),
+    eq(settlementItems.organizationId, organizationId)
+  )
+);
 
   const settlementIds = studentSettlementRows
     .map((x: any) => Number(x.id))
@@ -3423,30 +3441,58 @@ export async function deleteStudentCascadeById(studentId: number) {
   }
 
   // 4) studentId 기준 settlement 삭제
-  await db.delete(settlementItems).where(eq(settlementItems.studentId, studentId));
+  await db
+  .delete(settlementItems)
+  .where(
+    and(
+      eq(settlementItems.studentId, studentId),
+      eq(settlementItems.organizationId, organizationId)
+    )
+  );
 
   // 5) 실습배정지원 정산/원본 삭제
   const practiceRows = await db
-    .select({ id: practiceSupportRequests.id })
-    .from(practiceSupportRequests)
-    .where(eq(practiceSupportRequests.studentId, studentId));
+  .select({ id: practiceSupportRequests.id })
+  .from(practiceSupportRequests)
+  .where(
+    and(
+      eq(practiceSupportRequests.studentId, studentId),
+      eq(practiceSupportRequests.organizationId, organizationId)
+    )
+  );
 
-  for (const row of practiceRows) {
-    await deletePracticeSupportRequest(Number(row.id));
-  }
+for (const row of practiceRows) {
+  await deletePracticeSupportRequest(Number(row.id), {
+    organizationId,
+  });
+}
 
   // 6) 민간자격증 정산/원본 삭제
   const privateCertRows = await db
-    .select({ id: privateCertificateRequests.id })
-    .from(privateCertificateRequests)
-    .where(eq(privateCertificateRequests.studentId, studentId));
+  .select({ id: privateCertificateRequests.id })
+  .from(privateCertificateRequests)
+  .where(
+    and(
+      eq(privateCertificateRequests.studentId, studentId),
+      eq(privateCertificateRequests.organizationId, organizationId)
+    )
+  );
 
-  for (const row of privateCertRows) {
-    await deletePrivateCertificateRequest(Number(row.id));
-  }
+for (const row of privateCertRows) {
+  await deletePrivateCertificateRequest(Number(row.id), {
+    organizationId,
+  });
+}
 
   // 7) 환불 삭제
-  await db.delete(refunds).where(eq(refunds.studentId, studentId));
+  await db
+  .delete(refunds)
+  .where(
+    and(
+      eq(refunds.studentId, studentId),
+      eq(refunds.organizationId, organizationId)
+    )
+  );
 
   // 8) 전적대 과목 삭제
   await db
@@ -3469,26 +3515,59 @@ export async function deleteStudentCascadeById(studentId: number) {
   );
 
   // 10) 우리플랜 삭제
-  await db.delete(plans).where(eq(plans.studentId, studentId));
+  await db
+  .delete(plans)
+  .where(
+    and(
+      eq(plans.studentId, studentId),
+      eq(plans.organizationId, organizationId)
+    )
+  );
 
   // 11) 학기 삭제
-  await db.delete(semesters).where(eq(semesters.studentId, studentId));
+  await db
+  .delete(semesters)
+  .where(
+    and(
+      eq(semesters.studentId, studentId),
+      eq(semesters.organizationId, organizationId)
+    )
+  );
 
   // 12) 마지막에 학생 삭제
-  await db.delete(students).where(eq(students.id, studentId));
+  await db
+  .delete(students)
+  .where(
+    and(
+      eq(students.id, studentId),
+      eq(students.organizationId, organizationId)
+    )
+  );
 
   return true;
 }
 
 // ─── Semesters ───────────────────────────────────────────────────────
-export async function listSemesters(studentId: number) {
+export async function listSemesters(
+  studentId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 0);
 
   const rows = await db
     .select()
     .from(semesters)
-    .where(eq(semesters.studentId, studentId))
+    .where(
+      organizationId > 0
+        ? and(
+            eq(semesters.studentId, studentId),
+            eq(semesters.organizationId, organizationId)
+          )
+        : eq(semesters.studentId, studentId)
+    )
     .orderBy(semesters.semesterOrder);
 
   return rows.map((row: any) => ({
@@ -3497,14 +3576,26 @@ export async function listSemesters(studentId: number) {
   }));
 }
 
-export async function getSemester(id: number) {
+export async function getSemester(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return undefined;
+
+  const organizationId = Number(params?.organizationId || 0);
 
   const result = await db
     .select()
     .from(semesters)
-    .where(eq(semesters.id, id))
+    .where(
+      organizationId > 0
+        ? and(
+            eq(semesters.id, id),
+            eq(semesters.organizationId, organizationId)
+          )
+        : eq(semesters.id, id)
+    )
     .limit(1);
 
   const row = result[0];
@@ -3527,7 +3618,11 @@ export async function createSemester(data: InsertSemester) {
   };
 
   if (!(data as any).primaryCourse || !(data as any).registeredCoursesJson) {
-    const student = await getStudent(Number((data as any).studentId));
+    const organizationId = Number((data as any).organizationId || 1);
+
+const student = await getStudent(Number((data as any).studentId), {
+  organizationId,
+});
 
     const defaultCourse =
       String((data as any).primaryCourse || student?.course || "").trim() || null;
@@ -3549,6 +3644,8 @@ export async function updateSemester(id: number, data: Partial<InsertSemester> &
   if (!db) throw new Error("DB not available");
 
   const nextData: any = { ...data };
+
+const organizationId = Number((data as any).organizationId || 1);
 
 if ((data as any).approvalStatus !== undefined) {
   nextData.approvalStatus = (data as any).approvalStatus;
@@ -3580,9 +3677,19 @@ if ((data as any).isLocked !== undefined) {
     }
   }
 
-    await db.update(semesters).set(nextData).where(eq(semesters.id, id));
+    await db
+  .update(semesters)
+  .set(nextData)
+  .where(
+    and(
+      eq(semesters.id, id),
+      eq(semesters.organizationId, organizationId)
+    )
+  );
 
-  const updatedSemester = await getSemester(id);
+const updatedSemester = await getSemester(id, {
+  organizationId,
+});
   if (!updatedSemester) return;
 
   const nextPrimaryCourse =
@@ -3602,22 +3709,33 @@ if ((data as any).isLocked !== undefined) {
   } as any);
 
   // 3) 상담DB 희망과정 동기화
-  const student = await getStudent(Number(updatedSemester.studentId));
+const student = await getStudent(Number(updatedSemester.studentId), {
+  organizationId,
+});
   if (student?.consultationId) {
-    await updateConsultation(Number(student.consultationId), {
-      desiredCourse: nextPrimaryCourse,
-    } as any);
+    await updateConsultation(
+  Number(student.consultationId),
+  {
+    desiredCourse: nextPrimaryCourse,
+  } as any,
+  { organizationId }
+);
   }
 
   // 4) 실습배정지원센터 과정 동기화
   const practiceRows = await listPracticeSupportRequestsByStudent(
-    Number(updatedSemester.studentId)
-  );
+  Number(updatedSemester.studentId),
+  { organizationId }
+);
 
   for (const row of practiceRows || []) {
-    await updatePracticeSupportRequest(Number(row.id), {
-      course: nextPrimaryCourse,
-    } as any);
+    await updatePracticeSupportRequest(
+  Number(row.id),
+  {
+    course: nextPrimaryCourse,
+  } as any,
+  { organizationId }
+);
   }
 }
 
@@ -3645,17 +3763,30 @@ function parseJsonArray(value: any): string[] {
   }
 }
 
-export async function deleteSemester(id: number) {
+export async function deleteSemester(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await cancelSettlementItemBySource({
-    revenueType: "subject",
-    sourceId: id,
-    note: "학기 삭제로 일반과목 정산 취소",
-  });
+const organizationId = Number(params?.organizationId || 1);
 
-  await db.delete(semesters).where(eq(semesters.id, id));
+  await cancelSettlementItemBySource({
+  organizationId,
+  revenueType: "subject",
+  sourceId: id,
+  note: "학기 삭제로 일반과목 정산 취소",
+} as any);
+
+  await db
+  .delete(semesters)
+  .where(
+    and(
+      eq(semesters.id, id),
+      eq(semesters.organizationId, organizationId)
+    )
+  );
 }
 
 // ─── 학기별 전체 리스트 ──────────────────────────────────────────────
@@ -3837,69 +3968,105 @@ export async function upsertPlan(data: InsertPlan) {
 }
 
 // ─── Refunds ─────────────────────────────────────────────────────────
-export async function listRefunds(assigneeId?: number) {
+export async function listRefunds(
+  assigneeId?: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return [];
+
+const organizationId = Number(params?.organizationId || 1);
 
   if (assigneeId) {
     return db
       .select()
       .from(refunds)
-      .where(eq(refunds.assigneeId, assigneeId))
+      .where(
+  and(
+    eq(refunds.organizationId, organizationId),
+    eq(refunds.assigneeId, assigneeId)
+  )
+)
       .orderBy(desc(refunds.createdAt));
   }
 
-  return db.select().from(refunds).orderBy(desc(refunds.createdAt));
-}
-
-export async function listRefundsByStudent(studentId: number) {
-  const db = await getDb();
-  if (!db) return [];
-
   return db
-    .select()
-    .from(refunds)
-    .where(eq(refunds.studentId, studentId))
-    .orderBy(desc(refunds.createdAt));
+  .select()
+  .from(refunds)
+  .where(eq(refunds.organizationId, organizationId))
+  .orderBy(desc(refunds.createdAt));
 }
 
-export async function listApprovedRefundsByStudent(studentId: number) {
+export async function listRefundsByStudent(
+  studentId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return [];
+
+const organizationId = Number(params?.organizationId || 1);
 
   return db
     .select()
     .from(refunds)
     .where(
-      and(
-        eq(refunds.studentId, studentId),
-        eq(refunds.approvalStatus, "승인")
-      )
-    )
+  and(
+    eq(refunds.studentId, studentId),
+    eq(refunds.organizationId, organizationId)
+  )
+)
     .orderBy(desc(refunds.createdAt));
 }
 
-export async function listPendingRefunds() {
+export async function listApprovedRefundsByStudent(
+  studentId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return [];
 
+const organizationId = Number(params?.organizationId || 1);
+
+  return db
+    .select()
+    .from(refunds)
+   .where(
+  and(
+    eq(refunds.studentId, studentId),
+    eq(refunds.organizationId, organizationId),
+    eq(refunds.approvalStatus, "승인")
+  )
+)
+    .orderBy(desc(refunds.createdAt));
+}
+
+export async function listPendingRefunds(params?: {
+  organizationId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const organizationId = Number(params?.organizationId || 1);
+
   const [rows] = await db.execute(sql`
     SELECT
-  r.*,
-  s.clientName,
-  s.phone,
-  s.course,
-  s.assigneeId,
-  u.name as assigneeName,
-  sem.semesterOrder,
-  sem.actualStartDate,
-  sem.plannedMonth
-FROM refunds r
-INNER JOIN students s ON s.id = r.studentId
-LEFT JOIN users u ON u.id = s.assigneeId
-LEFT JOIN semesters sem ON sem.id = r.semesterId
-WHERE r.approvalStatus = '대기'
-ORDER BY r.createdAt DESC
+      r.*,
+      s.clientName,
+      s.phone,
+      s.course,
+      s.assigneeId,
+      u.name as assigneeName,
+      sem.semesterOrder,
+      sem.actualStartDate,
+      sem.plannedMonth
+    FROM refunds r
+    INNER JOIN students s ON s.id = r.studentId
+    LEFT JOIN users u ON u.id = s.assigneeId
+    LEFT JOIN semesters sem ON sem.id = r.semesterId
+    WHERE r.organizationId = ${organizationId}
+      AND s.organizationId = ${organizationId}
+      AND r.approvalStatus = '대기'
+    ORDER BY r.createdAt DESC
   `);
 
   return (rows as unknown) as any[];
@@ -3913,16 +4080,36 @@ export async function createRefund(data: InsertRefund) {
   return getInsertId(result);
 }
 
-export async function updateRefund(id: number, data: Partial<InsertRefund>) {
+export async function updateRefund(
+  id: number,
+  data: Partial<InsertRefund>,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.update(refunds).set(data).where(eq(refunds.id, id));
+  const organizationId = Number(params?.organizationId || 1);
+
+  await db
+    .update(refunds)
+    .set(data)
+    .where(
+      and(
+        eq(refunds.id, id),
+        eq(refunds.organizationId, organizationId)
+      )
+    );
 }
 
-export async function approveRefund(id: number, approvedBy: number) {
+export async function approveRefund(
+  id: number,
+  approvedBy: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   await db
     .update(refunds)
@@ -3932,23 +4119,35 @@ export async function approveRefund(id: number, approvedBy: number) {
       rejectedAt: null,
       approvedBy,
     } as any)
-    .where(eq(refunds.id, id));
+    .where(
+      and(
+        eq(refunds.id, id),
+        eq(refunds.organizationId, organizationId)
+      )
+    );
 
   const refundRow = await db
     .select()
     .from(refunds)
-    .where(eq(refunds.id, id))
+    .where(
+      and(
+        eq(refunds.id, id),
+        eq(refunds.organizationId, organizationId)
+      )
+    )
     .limit(1);
 
   const refund = refundRow[0];
   if (!refund) return;
 
-   if (refund.semesterId) {
-console.log("🔥 [approveRefund] before refundSettlementItemBySource", {
-  refundId: id,
-  refund,
-});
+  if (refund.semesterId) {
+    console.log("🔥 [approveRefund] before refundSettlementItemBySource", {
+      refundId: id,
+      refund,
+    });
+
     await refundSettlementItemBySource({
+      organizationId,
       revenueType: "subject",
       sourceId: Number(refund.semesterId),
       refundAmount: refund.refundAmount,
@@ -3961,13 +4160,19 @@ console.log("🔥 [approveRefund] before refundSettlementItemBySource", {
         semesterId: Number(refund.semesterId),
         refundType: refund.refundType ?? null,
       },
-    });
+    } as any);
   }
 }
 
-export async function rejectRefund(id: number, approvedBy: number) {
+export async function rejectRefund(
+  id: number,
+  approvedBy: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = Number(params?.organizationId || 1);
 
   await db
     .update(refunds)
@@ -3977,14 +4182,31 @@ export async function rejectRefund(id: number, approvedBy: number) {
       rejectedAt: new Date(),
       approvedBy,
     } as any)
-    .where(eq(refunds.id, id));
+    .where(
+      and(
+        eq(refunds.id, id),
+        eq(refunds.organizationId, organizationId)
+      )
+    );
 }
 
-export async function deleteRefund(id: number) {
+export async function deleteRefund(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.delete(refunds).where(eq(refunds.id, id));
+  const organizationId = Number(params?.organizationId || 1);
+
+  await db
+    .delete(refunds)
+    .where(
+      and(
+        eq(refunds.id, id),
+        eq(refunds.organizationId, organizationId)
+      )
+    );
 }
 
 export async function createSettlementItemLog(params: {
@@ -4747,18 +4969,22 @@ const organizationId = Number(params?.organizationId || 1);
 
 export async function syncSubjectSettlementItemBySemesterId(
   semesterId: number,
-  actorUserId?: number
+  actorUserId?: number,
+  params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
+
+const organizationId = Number(params?.organizationId || 1);
+
   if (!db) throw new Error("DB not available");
 
-  const sem = await getSemester(semesterId);
+  const sem = await getSemester(semesterId, { organizationId });
   if (!sem) {
     throw new Error("학기 데이터를 찾을 수 없습니다.");
   }
 
 const studentId = Number(sem.studentId);
-const student = await getStudent(studentId);
+const student = await getStudent(studentId, { organizationId });
 
 if (!student) {
   const dbStudent = await db
@@ -4768,7 +4994,12 @@ if (!student) {
       assigneeId: students.assigneeId,
     })
     .from(students)
-    .where(eq(students.id, studentId))
+    .where(
+  and(
+    eq(students.id, studentId),
+    eq(students.organizationId, organizationId)
+  )
+)
     .limit(1);
 
   throw new Error(
@@ -6894,14 +7125,20 @@ export async function bulkCreateTransferSubjects(dataList: InsertTransferSubject
 }
 
 // ─── 학기 완료 시 자동 종료 체크 ─────────────────────────────────────
-export async function checkAndAutoComplete(studentId: number) {
+export async function checkAndAutoComplete(
+  studentId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
+
+const organizationId = Number(params?.organizationId || 1);
+
   if (!db) return;
 
-  const student = await getStudent(studentId);
+  const student = await getStudent(studentId, { organizationId });
   if (!student) return;
 
-  const allSems = await listSemesters(studentId);
+  const allSems = await listSemesters(studentId, { organizationId });
   if (!allSems.length) return;
 
   const sorted = [...allSems].sort(
@@ -6909,9 +7146,13 @@ export async function checkAndAutoComplete(studentId: number) {
   );
   const lastSem = sorted[sorted.length - 1];
 
-  await updateStudent(studentId, {
+await updateStudent(
+  studentId,
+  {
     status: lastSem?.status === "등록 종료" ? "등록 종료" : "등록",
-  } as any);
+  } as any,
+  { organizationId }
+);
 }
 
 // ─── 교육원 ──────────────────────────────────────────────────────────
@@ -8279,9 +8520,14 @@ return [
 ];
 }
 
-export async function getPracticeSupportRequest(id: number) {
+export async function getPracticeSupportRequest(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return undefined;
+
+const organizationId = Number(params?.organizationId || 0);
 
   const [rows] = await db.execute(sql`
     SELECT
@@ -8334,7 +8580,9 @@ export async function getPracticeSupportRequest(id: number) {
     LEFT JOIN users u
       ON u.id = COALESCE(psr.assigneeId, s.assigneeId)
     WHERE psr.id = ${id}
-    LIMIT 1
+  AND (${organizationId} = 0 OR psr.organizationId = ${organizationId})
+  AND (${organizationId} = 0 OR s.organizationId = ${organizationId})
+LIMIT 1
   `);
 
   const row = (rows as any[])[0];
@@ -9299,14 +9547,18 @@ export async function deletePracticeEducationCenter(id: number) {
 }
 
 export async function listNearbyPracticeInstitutions(params: {
+  organizationId?: number | null;
   studentId: number;
   institutionType: "education" | "institution";
   limit?: number;
 }) {
   const db = await getDb();
+
+const organizationId = Number(params.organizationId || 1);
+
   if (!db) return [];
 
-  const student = await getStudent(params.studentId);
+  const student = await getStudent(params.studentId, { organizationId });
   if (!student) throw new Error("Student not found");
 
   const studentLat = toNullableNumber((student as any).latitude);
@@ -9320,9 +9572,10 @@ export async function listNearbyPracticeInstitutions(params: {
     .select()
     .from(practiceInstitutions)
     .where(
-      and(
-        eq(practiceInstitutions.institutionType, params.institutionType),
-        eq(practiceInstitutions.isActive, true)
+  and(
+    eq(practiceInstitutions.organizationId, organizationId),
+    eq(practiceInstitutions.institutionType, params.institutionType),
+    eq(practiceInstitutions.isActive, true)
       )
     );
 

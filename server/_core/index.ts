@@ -36,10 +36,10 @@ updateChatRoomType,
 } from "../db";
 import { setLiveNotificationIO } from "./live-notifications";
 
-
 type LiveAppNotificationPayload = {
   id: number;
   userId: number;
+  organizationId?: number | null;
   type?: string | null;
   title?: string | null;
   level?: "normal" | "important" | "urgent" | "success" | "danger" | null;
@@ -55,9 +55,10 @@ function emitLiveNotification(
   payload: LiveAppNotificationPayload
 ) {
   const userId = Number(payload.userId);
+  const organizationId = Number(payload.organizationId || 1);
   if (!userId) return;
 
-  io.to(`user:${userId}`).emit("notification:new", {
+  io.to(`org:${organizationId}:user:${userId}`).emit("notification:new", {
     id: Number(payload.id),
     userId,
     type: payload.type ?? "system",
@@ -220,29 +221,37 @@ async function startServer() {
 
 setLiveNotificationIO(io);
 
-  const onlineUserSocketCounts = new Map<number, number>();
+  const onlineUserSocketCounts = new Map<string, number>();
 
-  const getOnlineUserIds = () => {
-    return Array.from(onlineUserSocketCounts.entries())
-      .filter(([, count]) => count > 0)
-      .map(([userId]) => userId);
-  };
+const getOnlineKey = (organizationId: number, userId: number) =>
+  `${organizationId}:${userId}`;
 
-  const increaseOnlineUser = (userId: number) => {
-    const prev = onlineUserSocketCounts.get(userId) ?? 0;
-    onlineUserSocketCounts.set(userId, prev + 1);
-  };
+  const getOnlineUserIds = (organizationId: number) => {
+  const prefix = `${organizationId}:`;
 
-  const decreaseOnlineUser = (userId: number) => {
-    const prev = onlineUserSocketCounts.get(userId) ?? 0;
-    const next = Math.max(prev - 1, 0);
+  return Array.from(onlineUserSocketCounts.entries())
+    .filter(([key, count]) => key.startsWith(prefix) && count > 0)
+    .map(([key]) => Number(key.split(":")[1]))
+    .filter((id) => Number.isFinite(id) && id > 0);
+};
 
-    if (next <= 0) {
-      onlineUserSocketCounts.delete(userId);
-    } else {
-      onlineUserSocketCounts.set(userId, next);
-    }
-  };
+const increaseOnlineUser = (organizationId: number, userId: number) => {
+  const key = getOnlineKey(organizationId, userId);
+  const prev = onlineUserSocketCounts.get(key) ?? 0;
+  onlineUserSocketCounts.set(key, prev + 1);
+};
+
+const decreaseOnlineUser = (organizationId: number, userId: number) => {
+  const key = getOnlineKey(organizationId, userId);
+  const prev = onlineUserSocketCounts.get(key) ?? 0;
+  const next = Math.max(prev - 1, 0);
+
+  if (next <= 0) {
+    onlineUserSocketCounts.delete(key);
+  } else {
+    onlineUserSocketCounts.set(key, next);
+  }
+};
 
   io.use((socket, next) => {
   try {
@@ -309,30 +318,58 @@ setLiveNotificationIO(io);
 
 
 
-  io.on("connection", (socket) => {
-    const userId = Number(socket.data.userId);
+  io.on("connection", async (socket) => {
+  const userId = Number(socket.data.userId);
+  const socketUser = await getUserById(userId);
+  const organizationId = Number((socketUser as any)?.organizationId || 1);
 
-    console.log("[SOCKET CONNECT]", { socketId: socket.id, userId });
+  socket.data.organizationId = organizationId;
 
-    socket.join(`user:${userId}`);
+  const orgRoom = `org:${organizationId}`;
+  const userRoom = `org:${organizationId}:user:${userId}`;
 
-    increaseOnlineUser(userId);
+  console.log("[SOCKET CONNECT]", {
+    socketId: socket.id,
+    userId,
+    organizationId,
+  });
 
-    socket.emit("online:users", {
-      userIds: getOnlineUserIds(),
-    });
+  socket.join(orgRoom);
+  socket.join(userRoom);
 
-    socket.broadcast.emit("user:online", {
-      userId,
-    });
+  increaseOnlineUser(organizationId, userId);
+
+  socket.emit("online:users", {
+    userIds: getOnlineUserIds(organizationId),
+  });
+
+  socket.to(orgRoom).emit("user:online", {
+    userId,
+  });
 
     socket.on("room:join", async (payload: { roomId: number }) => {
       try {
         const roomId = Number(payload?.roomId);
         if (!roomId) return;
 
-        socket.join(`room:${roomId}`);
-        socket.emit("room:joined", { roomId });
+        const members = await listChatRoomMembers(roomId, userId, {
+  organizationId,
+} as any);
+
+const actorIsMember = members.some(
+  (m: any) => Number(m.userId) === Number(userId)
+);
+
+if (!actorIsMember) {
+  socket.emit("room:join:error", {
+    roomId,
+    message: "해당 회사/채팅방 접근 권한이 없습니다.",
+  });
+  return;
+}
+
+socket.join(`org:${organizationId}:room:${roomId}`);
+socket.emit("room:joined", { roomId });
       } catch (error) {
         console.error("[SOCKET room:join ERROR]", error);
       }
@@ -343,7 +380,7 @@ setLiveNotificationIO(io);
         const roomId = Number(payload?.roomId);
         if (!roomId) return;
 
-        socket.leave(`room:${roomId}`);
+        socket.leave(`org:${organizationId}:room:${roomId}`);
         socket.emit("room:left", { roomId });
       } catch (error) {
         console.error("[SOCKET room:leave ERROR]", error);
@@ -390,11 +427,12 @@ setLiveNotificationIO(io);
           }
 
           const messageId = await createChatMessage({
-            roomId,
-            senderId: userId,
-            messageType,
-            content: content || null,
-          });
+  organizationId,
+  roomId,
+  senderId: userId,
+  messageType,
+  content: content || null,
+} as any);
 
           if (!messageId) {
             const response = {
@@ -410,7 +448,8 @@ setLiveNotificationIO(io);
 
           if (payload?.fileUrl && payload?.fileName) {
             attachmentId = await createChatAttachment({
-              messageId: Number(messageId),
+  organizationId,
+  messageId: Number(messageId),
               fileName: payload.fileName,
               fileUrl: payload.fileUrl,
               fileType: payload.fileType ?? null,
@@ -442,10 +481,12 @@ senderPositionName: senderAny?.positionName ?? null,
             fileSize: payload?.fileSize ?? null,
           };
 
-          const members = await listChatRoomMembers(roomId, userId);
+          const members = await listChatRoomMembers(roomId, userId, {
+  organizationId,
+} as any);
 
 // 방 안에서 보고 있는 사용자용 보조 이벤트
-io.to(`room:${roomId}`).emit("typing:stop", {
+io.to(`org:${organizationId}:room:${roomId}`).emit("typing:stop", {
   roomId,
   userId,
 });
@@ -455,10 +496,13 @@ for (const member of members) {
 
   // sender 본인에게는 message:new를 보내지 않음
   if (memberUserId !== userId) {
-    io.to(`user:${memberUserId}`).emit("message:new", emittedMessage);
-  }
+  io.to(`org:${organizationId}:user:${memberUserId}`).emit(
+    "message:new",
+    emittedMessage
+  );
+}
 
-  io.to(`user:${memberUserId}`).emit("room:list:update", {
+io.to(`org:${organizationId}:user:${memberUserId}`).emit("room:list:update", {
     roomId,
     lastMessage: emittedMessage,
   });
@@ -466,7 +510,8 @@ for (const member of members) {
   if (memberUserId === userId) continue;
 
   await createNotification({
-    userId: memberUserId,
+  organizationId,
+  userId: memberUserId,
     type: "messenger",
     message:
       messageType === "text"
@@ -518,18 +563,19 @@ for (const member of members) {
           }
 
           await markChatRoomRead({
+  organizationId,
+  roomId,
+  userId,
+  lastReadMessageId,
+} as any);
+
+io.to(`org:${organizationId}:room:${roomId}`).emit("read:update", {
             roomId,
             userId,
             lastReadMessageId,
           });
 
-          io.to(`room:${roomId}`).emit("read:update", {
-            roomId,
-            userId,
-            lastReadMessageId,
-          });
-
-          io.to(`user:${userId}`).emit("room:list:update", {
+          io.to(`org:${organizationId}:user:${userId}`).emit("room:list:update", {
             roomId,
             unreadCount: 0,
           });
@@ -561,7 +607,7 @@ for (const member of members) {
           const roomId = Number(payload?.roomId);
           if (!roomId) return;
 
-          socket.to(`room:${roomId}`).emit("typing:start", {
+          socket.to(`org:${organizationId}:room:${roomId}`).emit("typing:start", {
             roomId,
             userId,
           });
@@ -578,7 +624,7 @@ for (const member of members) {
           const roomId = Number(payload?.roomId);
           if (!roomId) return;
 
-          socket.to(`room:${roomId}`).emit("typing:stop", {
+          socket.to(`org:${organizationId}:room:${roomId}`).emit("typing:stop", {
             roomId,
             userId,
           });
@@ -608,10 +654,11 @@ for (const member of members) {
           }
 
           await setChatRoomMuted({
-            roomId,
-            userId,
-            isMuted,
-          });
+  organizationId,
+  roomId,
+  userId,
+  isMuted,
+} as any);
 
           socket.emit("room:muted", {
             roomId,
@@ -665,6 +712,7 @@ const actorName = actor?.name || actor?.username || "사용자";
 const systemText = `${actorName}님이 채팅방을 나갔습니다.`;
 
 const systemMessageId = await createChatMessage({
+  organizationId,
   roomId,
   senderId: userId,
   messageType: "system",
@@ -689,25 +737,31 @@ const emittedSystemMessage = {
   fileSize: null,
 };
 
-const membersBeforeLeave = await listChatRoomMembers(roomId, userId);
+const membersBeforeLeave = await listChatRoomMembers(roomId, userId, {
+  organizationId,
+} as any);
 
 // 참여자 개인 room에도 시스템 메시지 전송
 for (const member of membersBeforeLeave) {
   const memberUserId = Number(member.userId);
 
-  io.to(`user:${memberUserId}`).emit("message:new", emittedSystemMessage);
-  io.to(`user:${memberUserId}`).emit("room:list:update", {
+  io.to(`org:${organizationId}:user:${memberUserId}`).emit(
+  "message:new",
+  emittedSystemMessage
+);
+io.to(`org:${organizationId}:user:${memberUserId}`).emit("room:list:update", {
     roomId,
     lastMessage: emittedSystemMessage,
   });
 }
 
 await leaveChatRoom({
+  organizationId,
   roomId,
   userId,
-});
+} as any);
 
-socket.leave(`room:${roomId}`);
+socket.leave(`org:${organizationId}:room:${roomId}`);
 socket.emit("room:list:update", { roomId });
 
 if (callback) {
@@ -746,10 +800,25 @@ if (callback) {
             return;
           }
 
+const targetUser = await getUserById(targetUserId);
+
+if (
+  !targetUser ||
+  Number((targetUser as any).organizationId || 1) !== Number(organizationId)
+) {
+  const response = {
+    success: false,
+    message: "다른 회사 사용자는 채팅할 수 없습니다.",
+  };
+  if (callback) callback(response);
+  return;
+}
+
           const existingRoom = await getDirectChatRoomBetweenUsers(
-            userId,
-            targetUserId
-          );
+  userId,
+  targetUserId,
+  { organizationId } as any
+);
 
           if (existingRoom?.id) {
             const response = {
@@ -760,32 +829,37 @@ if (callback) {
 
             if (callback) callback(response);
 
-            io.to(`user:${userId}`).emit("room:list:update", {
-              roomId: Number(existingRoom.id),
-            });
-            io.to(`user:${targetUserId}`).emit("room:list:update", {
-              roomId: Number(existingRoom.id),
-            });
+            io.to(`org:${organizationId}:user:${userId}`).emit("room:list:update", {
+  roomId: Number(existingRoom.id),
+});
+io.to(`org:${organizationId}:user:${targetUserId}`).emit("room:list:update", {
+  roomId: Number(existingRoom.id),
+});
             return;
           }
 
           const roomId = await createChatRoom({
-            roomType: "direct",
+  organizationId,
+  roomType: "direct",
             title: null,
             createdBy: userId,
           });
 
           await addChatRoomMember({
-            roomId: Number(roomId),
-            userId,
-          });
+  organizationId,
+  roomId: Number(roomId),
+  userId,
+} as any);
 
           await addChatRoomMember({
-            roomId: Number(roomId),
-            userId: targetUserId,
-          });
+  organizationId,
+  roomId: Number(roomId),
+  userId: targetUserId,
+} as any);
 
-          const createdRoom = await getChatRoomById(Number(roomId));
+          const createdRoom = await getChatRoomById(Number(roomId), {
+  organizationId,
+} as any);
 
           const response = {
             success: true,
@@ -795,12 +869,12 @@ if (callback) {
 
           if (callback) callback(response);
 
-          io.to(`user:${userId}`).emit("room:list:update", {
-            roomId: Number(roomId),
-          });
-          io.to(`user:${targetUserId}`).emit("room:list:update", {
-            roomId: Number(roomId),
-          });
+         io.to(`org:${organizationId}:user:${userId}`).emit("room:list:update", {
+  roomId: Number(roomId),
+});
+io.to(`org:${organizationId}:user:${targetUserId}`).emit("room:list:update", {
+  roomId: Number(roomId),
+});
         } catch (error: any) {
           console.error("[SOCKET direct:create ERROR]", error);
 
@@ -832,7 +906,9 @@ socket.on(
       }
 
       // 현재 방 멤버 확인
-      const members = await listChatRoomMembers(roomId, userId);
+      const members = await listChatRoomMembers(roomId, userId, {
+  organizationId,
+} as any);
       const existingIds = members.map((m) => Number(m.userId));
 
 const actorIsMember = members.some(
@@ -861,6 +937,19 @@ if (filteredUserIds.length === 0) {
   (id) => !existingIds.includes(id)
 );
 
+for (const uid of newUserIds) {
+  const target = await getUserById(uid);
+  if (
+    !target ||
+    Number((target as any).organizationId || 1) !== Number(organizationId)
+  ) {
+    return callback?.({
+      success: false,
+      message: "다른 회사 사용자는 초대할 수 없습니다.",
+    });
+  }
+}
+
 if (newUserIds.length === 0) {
   return callback?.({
     success: false,
@@ -868,17 +957,21 @@ if (newUserIds.length === 0) {
   });
 }
 
-const room = await getChatRoomById(roomId);
+const room = await getChatRoomById(roomId, {
+  organizationId,
+} as any);
 
 if (room?.roomType === "direct" && newUserIds.length > 0) {
   await updateChatRoomType({
-    roomId,
+  organizationId,
+  roomId,
     roomType: "group",
   });
 
   if (!room.title || !String(room.title).trim()) {
     await updateChatRoomTitle({
-      roomId,
+  organizationId,
+  roomId,
       title: "새 그룹채팅",
     });
   }
@@ -886,11 +979,12 @@ if (room?.roomType === "direct" && newUserIds.length > 0) {
   const convertSystemText = "그룹채팅으로 전환되었습니다.";
 
   const convertMessageId = await createChatMessage({
-    roomId,
-    senderId: userId,
-    messageType: "system",
-    content: convertSystemText,
-  });
+  organizationId,
+  roomId,
+  senderId: userId,
+  messageType: "system",
+  content: convertSystemText,
+} as any);
 
   const convertSystemMessage = {
     id: Number(convertMessageId),
@@ -913,8 +1007,11 @@ if (room?.roomType === "direct" && newUserIds.length > 0) {
   for (const member of members) {
     const memberUserId = Number(member.userId);
 
-    io.to(`user:${memberUserId}`).emit("message:new", convertSystemMessage);
-    io.to(`user:${memberUserId}`).emit("room:list:update", {
+    io.to(`org:${organizationId}:user:${memberUserId}`).emit(
+  "message:new",
+  convertSystemMessage
+);
+io.to(`org:${organizationId}:user:${memberUserId}`).emit("room:list:update", {
       roomId,
       lastMessage: convertSystemMessage,
     });
@@ -923,20 +1020,22 @@ if (room?.roomType === "direct" && newUserIds.length > 0) {
 
       for (const uid of newUserIds) {
   await addChatRoomMember({
-    roomId,
-    userId: uid,
-  });
+  organizationId,
+  roomId,
+  userId: uid,
+} as any);
 
   const addedUser = await getUserById(uid);
   const addedUserName = addedUser?.name || addedUser?.username || "사용자";
   const joinSystemText = `${addedUserName}님이 참여했습니다.`;
 
   const joinMessageId = await createChatMessage({
-    roomId,
-    senderId: userId,
-    messageType: "system",
-    content: joinSystemText,
-  });
+  organizationId,
+  roomId,
+  senderId: userId,
+  messageType: "system",
+  content: joinSystemText,
+} as any);
 
   const joinSystemMessage = {
     id: Number(joinMessageId),
@@ -956,22 +1055,29 @@ if (room?.roomType === "direct" && newUserIds.length > 0) {
     fileSize: null,
   };
 
-  const latestMembers = await listChatRoomMembers(roomId, userId);
+  const latestMembers = await listChatRoomMembers(roomId, userId, {
+  organizationId,
+} as any);
 
   for (const member of latestMembers) {
     const memberUserId = Number(member.userId);
 
-    io.to(`user:${memberUserId}`).emit("message:new", joinSystemMessage);
-    io.to(`user:${memberUserId}`).emit("room:list:update", {
+    io.to(`org:${organizationId}:user:${memberUserId}`).emit(
+  "message:new",
+  joinSystemMessage
+);
+io.to(`org:${organizationId}:user:${memberUserId}`).emit("room:list:update", {
       roomId,
       lastMessage: joinSystemMessage,
     });
   }
 
-  io.to(`user:${uid}`).emit("room:list:update", { roomId });
+  io.to(`org:${organizationId}:user:${uid}`).emit("room:list:update", { roomId });
 }
 
-      io.to(`room:${roomId}`).emit("room:list:update", { roomId });
+      io.to(`org:${organizationId}:room:${roomId}`).emit("room:list:update", {
+  roomId,
+});
 
       callback?.({
         success: true,
@@ -1006,7 +1112,9 @@ socket.on(
         });
       }
 
-      const sourceMembers = await listChatRoomMembers(sourceRoomId, userId);
+      const sourceMembers = await listChatRoomMembers(sourceRoomId, userId, {
+  organizationId,
+} as any);
       const sourceMemberIds = sourceMembers.map((m) => Number(m.userId));
 
       const actorIsMember = sourceMemberIds.includes(Number(userId));
@@ -1026,6 +1134,19 @@ socket.on(
         ])
       ).filter((id) => Number.isFinite(id) && id > 0);
 
+for (const uid of mergedUserIds) {
+  const target = await getUserById(uid);
+  if (
+    !target ||
+    Number((target as any).organizationId || 1) !== Number(organizationId)
+  ) {
+    return callback?.({
+      success: false,
+      message: "다른 회사 사용자는 그룹채팅에 포함할 수 없습니다.",
+    });
+  }
+}
+
       if (mergedUserIds.length < 3) {
         return callback?.({
           success: false,
@@ -1034,16 +1155,18 @@ socket.on(
       }
 
       const roomId = await createChatRoom({
-        roomType: "group",
+  organizationId,
+  roomType: "group",
         title: "새 그룹채팅",
         createdBy: userId,
       });
 
       for (const uid of mergedUserIds) {
         await addChatRoomMember({
-          roomId: Number(roomId),
-          userId: Number(uid),
-        });
+  organizationId,
+  roomId: Number(roomId),
+  userId: Number(uid),
+} as any);
       }
 
       const actor = await getUserById(userId);
@@ -1052,11 +1175,12 @@ socket.on(
       const systemText = `${actorName}님이 그룹채팅을 만들었습니다.`;
 
       const systemMessageId = await createChatMessage({
-        roomId: Number(roomId),
-        senderId: userId,
-        messageType: "system",
-        content: systemText,
-      });
+  organizationId,
+  roomId: Number(roomId),
+  senderId: userId,
+  messageType: "system",
+  content: systemText,
+} as any);
 
       const systemMessage = {
         id: Number(systemMessageId),
@@ -1077,8 +1201,8 @@ socket.on(
       };
 
       for (const uid of mergedUserIds) {
-        io.to(`user:${uid}`).emit("message:new", systemMessage);
-        io.to(`user:${uid}`).emit("room:list:update", {
+        io.to(`org:${organizationId}:user:${uid}`).emit("message:new", systemMessage);
+io.to(`org:${organizationId}:user:${uid}`).emit("room:list:update", {
           roomId: Number(roomId),
           lastMessage: systemMessage,
         });
@@ -1118,14 +1242,16 @@ socket.on(
 
       // DB 업데이트 (직접 쿼리 or 함수 필요)
       await updateChatRoomTitle({
-        roomId,
-        title,
-      });
+  organizationId,
+  roomId,
+  title,
+} as any);
 
       const systemText = `채팅방 이름이 "${title}"(으)로 변경되었습니다.`;
 
       const messageId = await createChatMessage({
-        roomId,
+  organizationId,
+  roomId,
         senderId: userId,
         messageType: "system",
         content: systemText,
@@ -1142,13 +1268,18 @@ socket.on(
         createdAt: new Date().toISOString(),
       };
 
-      const members = await listChatRoomMembers(roomId, userId);
+      const members = await listChatRoomMembers(roomId, userId, {
+  organizationId,
+} as any);
 
 for (const m of members) {
   const memberUserId = Number(m.userId);
 
-  io.to(`user:${memberUserId}`).emit("message:new", emittedMessage);
-  io.to(`user:${memberUserId}`).emit("room:list:update", {
+  io.to(`org:${organizationId}:user:${memberUserId}`).emit(
+  "message:new",
+  emittedMessage
+);
+io.to(`org:${organizationId}:user:${memberUserId}`).emit("room:list:update", {
     roomId,
     lastMessage: emittedMessage,
   });
@@ -1189,7 +1320,9 @@ socket.on(
       const assigneeCountMap = new Map<number, number>();
 
       for (const sid of studentIds) {
-        const student = await getStudent(sid);
+        const student = await getStudent(sid, {
+  organizationId,
+});
         if (!student?.assigneeId) continue;
 
         const assigneeId = Number(student.assigneeId);
@@ -1200,7 +1333,9 @@ socket.on(
       }
 
       for (const sid of studentIds) {
-        const student = await getStudent(sid);
+        const student = await getStudent(sid, {
+  organizationId,
+});
         if (!student?.assigneeId) continue;
 
         const assigneeId = Number(student.assigneeId);
@@ -1211,7 +1346,8 @@ socket.on(
         const count = assigneeCountMap.get(assigneeId) || 0;
 
         const notificationId = await createNotification({
-          userId: assigneeId,
+  organizationId,
+  userId: assigneeId,
           type: "payment",
           title: "미결제 알림",
           level: "important",
@@ -1221,7 +1357,8 @@ socket.on(
         } as any);
 
         emitLiveNotification(io, {
-          id: Number(notificationId),
+  organizationId,
+  id: Number(notificationId),
           userId: assigneeId,
           type: "payment",
           title: "미결제 알림",
@@ -1256,15 +1393,13 @@ socket.on(
 );
 
     socket.on("disconnect", (reason) => {
-      decreaseOnlineUser(userId);
+      decreaseOnlineUser(organizationId, userId);
 
-      console.log("[SOCKET DISCONNECT]", { socketId: socket.id, userId, reason });
-
-      if (!onlineUserSocketCounts.has(userId)) {
-        socket.broadcast.emit("user:offline", {
-          userId,
-        });
-      }
+if (!onlineUserSocketCounts.has(getOnlineKey(organizationId, userId))) {
+  socket.to(orgRoom).emit("user:offline", {
+    userId,
+  });
+}
     });
   });
 
@@ -1352,9 +1487,24 @@ socket.on(
       const ext = path.extname(safeOriginalName);
       const base = path.basename(safeOriginalName, ext);
 
-      const key = `${Date.now()}_${Math.random()
-        .toString(36)
-        .slice(2, 8)}_${base}${ext}`;
+      const cookieHeader = req.headers.cookie || "";
+const parsedCookies = cookie.parse(cookieHeader);
+const rawSession = parsedCookies[SESSION_COOKIE];
+const secret = process.env.SESSION_SECRET;
+
+let organizationId = 1;
+
+if (rawSession && secret) {
+  const uploadUserId = readUserIdFromSessionCookieValue(rawSession, secret);
+  if (uploadUserId) {
+    const uploadUser = await getUserById(uploadUserId);
+    organizationId = Number((uploadUser as any)?.organizationId || 1);
+  }
+}
+
+const key = `org-${organizationId}/${Date.now()}_${Math.random()
+  .toString(36)
+  .slice(2, 8)}_${base}${ext}`;
 
       await s3.send(
         new PutObjectCommand({
@@ -1365,11 +1515,16 @@ socket.on(
         })
       );
 
-      return res.json({
-        success: true,
-        fileName: safeOriginalName,
-        fileUrl: `${publicBaseUrl}/${encodeURIComponent(key)}`,
-      });
+      const publicFileUrl = `${publicBaseUrl}/${key
+  .split("/")
+  .map((part) => encodeURIComponent(part))
+  .join("/")}`;
+
+return res.json({
+  success: true,
+  fileName: safeOriginalName,
+  fileUrl: publicFileUrl,
+});
     } catch (error: any) {
       console.error("[UPLOAD ERROR]", error);
       return res.status(500).json({

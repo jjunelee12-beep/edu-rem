@@ -3834,7 +3834,9 @@ const student = await db.getStudent(input.studentId, {
 throw new Error("관리자, 호스트 또는 슈퍼호스트만 확인할 수 있습니다");
       }
 
-      return db.listPendingRefunds();
+      return db.listPendingRefunds({
+  organizationId: Number((ctx.user as any)?.organizationId || 1),
+});
     }),
 
     create: protectedProcedure
@@ -3889,16 +3891,23 @@ organizationId,
       throw new Error("관리자 또는 호스트만 승인할 수 있습니다");
     }
 
-    const targetRefund = await db.getRefundById(input.id);
+    const organizationId = Number((ctx.user as any)?.organizationId || 1);
 
-    await db.approveRefund(input.id, Number(ctx.user.id));
+const targetRefund = await db.getRefundById(input.id, {
+  organizationId,
+});
+
+await db.approveRefund(input.id, Number(ctx.user.id), {
+  organizationId,
+} as any);
 
     if (targetRefund?.assigneeId) {
       const studentName =
         targetRefund.clientName || `학생 #${targetRefund.studentId}`;
 
       const notificationId = await db.createNotification({
-        userId: Number(targetRefund.assigneeId),
+  organizationId,
+  userId: Number(targetRefund.assigneeId),
         type: "approval",
         title: "환불 승인 완료",
         level: "success",
@@ -3908,8 +3917,9 @@ organizationId,
       } as any);
 
       emitLiveNotification({
-        id: Number(notificationId),
-        userId: Number(targetRefund.assigneeId),
+  organizationId,
+  id: Number(notificationId),
+  userId: Number(targetRefund.assigneeId),
         type: "approval",
         title: "환불 승인 완료",
         level: "success",
@@ -3929,16 +3939,23 @@ organizationId,
           throw new Error("관리자 또는 호스트만 불승인 처리할 수 있습니다");
         }
 
-        const targetRefund = await db.getRefundById(input.id);
+        const organizationId = Number((ctx.user as any)?.organizationId || 1);
 
-await db.rejectRefund(input.id, Number(ctx.user.id));
+const targetRefund = await db.getRefundById(input.id, {
+  organizationId,
+});
+
+await db.rejectRefund(input.id, Number(ctx.user.id), {
+  organizationId,
+} as any);
 
 if (targetRefund?.assigneeId) {
   const studentName =
     targetRefund.clientName || `학생 #${targetRefund.studentId}`;
 
   const notificationId = await db.createNotification({
-    userId: Number(targetRefund.assigneeId),
+  organizationId,
+  userId: Number(targetRefund.assigneeId),
     type: "approval",
     title: "환불 반려",
     level: "danger",
@@ -3948,8 +3965,9 @@ if (targetRefund?.assigneeId) {
   } as any);
 
   emitLiveNotification({
-    id: Number(notificationId),
-    userId: Number(targetRefund.assigneeId),
+  organizationId,
+  id: Number(notificationId),
+  userId: Number(targetRefund.assigneeId),
     type: "approval",
     title: "환불 반려",
     level: "danger",
@@ -3977,7 +3995,7 @@ return { success: true };
       attachmentUrl: z.string().optional(),
     })
   )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
   const data: any = {};
 
   if (input.semesterId !== undefined) data.semesterId = input.semesterId ?? null;
@@ -3991,16 +4009,20 @@ return { success: true };
   if (input.attachmentUrl !== undefined)
     data.attachmentUrl = input.attachmentUrl?.trim() || null;
 
-  await db.updateRefund(input.id, data);
-  return { success: true };
+  await db.updateRefund(input.id, data, {
+  organizationId: Number((ctx.user as any)?.organizationId || 1),
+});
+return { success: true };
 }),
 
     delete: hostProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        await db.deleteRefund(input.id);
-        return { success: true };
-      }),
+     .mutation(async ({ ctx, input }) => {
+  await db.deleteRefund(input.id, {
+    organizationId: Number((ctx.user as any)?.organizationId || 1),
+  });
+  return { success: true };
+}),
   }),
 
   planSemester: router({
