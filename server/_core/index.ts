@@ -517,7 +517,7 @@ if (!actorIsMember) {
             });
           }
 
-          const sender = await getUserById(userId);
+          const sender = await getUserById(userId, { organizationId });
 	const senderAny = sender as any;
 
           const emittedMessage = {
@@ -834,7 +834,7 @@ if (!actorIsMember) {
   return;
 }
 
-          const actor = await getUserById(userId);
+          const actor = await getUserById(userId, { organizationId });
 const actorName = actor?.name || actor?.username || "사용자";
 
 const systemText = `${actorName}님이 채팅방을 나갔습니다.`;
@@ -924,7 +924,7 @@ if (callback) {
             return;
           }
 
-const targetUser = await getUserById(targetUserId);
+const targetUser = await getUserById(targetUserId, { organizationId });
 
 if (
   !targetUser ||
@@ -1062,7 +1062,7 @@ if (filteredUserIds.length === 0) {
 );
 
 for (const uid of newUserIds) {
-  const target = await getUserById(uid);
+  const target = await getUserById(uid, { organizationId });
   if (
     !target ||
     Number((target as any).organizationId || 0) !== Number(organizationId)
@@ -1259,7 +1259,7 @@ socket.on(
       ).filter((id) => Number.isFinite(id) && id > 0);
 
 for (const uid of mergedUserIds) {
-  const target = await getUserById(uid);
+  const target = await getUserById(uid, { organizationId });
   if (
     !target ||
     Number((target as any).organizationId || 0) !== Number(organizationId)
@@ -1293,7 +1293,7 @@ for (const uid of mergedUserIds) {
 } as any);
       }
 
-      const actor = await getUserById(userId);
+      const actor = await getUserById(userId, { organizationId });
       const actorName = actor?.name || actor?.username || "사용자";
 
       const systemText = `${actorName}님이 그룹채팅을 만들었습니다.`;

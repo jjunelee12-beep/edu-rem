@@ -2919,7 +2919,7 @@ export async function getUserById(
   const db = await getDb();
   if (!db) return undefined;
 
-  const organizationId = requireOrganizationId(params?.organizationId);
+  const organizationId = Number(params?.organizationId || 0);
 
   const result = await db
     .select()
