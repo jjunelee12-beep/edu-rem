@@ -97,8 +97,18 @@ export const attendanceRouter = router({
         throw new Error("근태 수정 권한이 없습니다.");
       }
 
-      return await updateAttendanceRecordByManager({
-  organizationId: getCtxOrganizationId(ctx),
+      const organizationId = getCtxOrganizationId(ctx);
+
+console.log("[attendance.updateByManager ctx]", {
+  ctxOrganizationId: (ctx as any)?.organizationId,
+  userOrganizationId: (ctx.user as any)?.organizationId,
+  userOrganization: (ctx.user as any)?.organization,
+  userId: ctx.user?.id,
+  role: ctx.user?.role,
+});
+
+return await updateAttendanceRecordByManager({
+  organizationId,
   attendanceId: input.attendanceId,
   actorUserId,
   actorRole: role,

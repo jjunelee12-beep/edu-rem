@@ -12540,6 +12540,7 @@ export async function autoClockOutIfNeeded(record: any) {
   )
 );
   await db.insert(attendanceAdjustmentLogs).values({
+  organizationId,
     attendanceId: Number(record.id),
     targetUserId: Number(record.userId),
     actorUserId: Number(record.userId),
@@ -12773,6 +12774,7 @@ const early = await calcEarlyLeaveInfo(nextClockOutAt);
 );
 
   await db.insert(attendanceAdjustmentLogs).values({
+  organizationId,
     attendanceId: current.id,
     targetUserId: current.userId,
     actorUserId: params.actorUserId,
@@ -12783,7 +12785,7 @@ const early = await calcEarlyLeaveInfo(nextClockOutAt);
     reason: params.reason ?? null,
     actionType: "manual_edit",
     beforeStatus: current.status ?? null,
-    afterStatus: params.status,
+    afterStatus: nextStatus,
     note: params.reason ?? null,
   } as any);
 
@@ -12911,6 +12913,7 @@ isAutoClockOut: 0,
 );
 
   await db.insert(attendanceAdjustmentLogs).values({
+  organizationId,
     attendanceId: current.id,
     targetUserId: current.userId,
     actorUserId: params.actorUserId,
@@ -14000,6 +14003,7 @@ leaveType: "출장",
       const attendanceId = Number(getInsertId(insertResult));
 
       await db.insert(attendanceAdjustmentLogs).values({
+  organizationId,
         attendanceId,
         targetUserId: Number(doc.applicantUserId),
         actorUserId: params.actorUserId,
@@ -14027,6 +14031,7 @@ leaveType: "출장",
         .where(eq(attendanceRecords.id, Number(attendanceRow.id)));
 
       await db.insert(attendanceAdjustmentLogs).values({
+  organizationId,
         attendanceId: Number(attendanceRow.id),
         targetUserId: Number(doc.applicantUserId),
         actorUserId: params.actorUserId,
@@ -14214,6 +14219,7 @@ earlyLeaveMinutes:
   }
 
   await db.insert(attendanceAdjustmentLogs).values({
+  organizationId,
     attendanceId: Number(attendanceRow.id),
     targetUserId: Number(doc.applicantUserId),
     actorUserId: params.actorUserId,
