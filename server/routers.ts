@@ -2363,14 +2363,19 @@ notification: router({
 
 branding: router({
   getPublic: publicProcedure.query(async () => {
-    return db.getBrandingSettings();
+    return {
+      organizationId: null,
+      companyName: "위드원 교육",
+      companyLogoUrl: null,
+      messengerSubtitle: "사내 메신저",
+    };
   }),
 
   get: protectedProcedure.query(async ({ ctx }) => {
-  return db.getBrandingSettings({
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
-  });
-}),
+    return db.getBrandingSettings({
+      organizationId: Number((ctx.user as any)?.organizationId || 0),
+    });
+  }),
 
   save: hostProcedure
     .input(

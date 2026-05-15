@@ -17,6 +17,20 @@ export function useAuth(options?: UseAuthOptions) {
     setLoading(true);
     setError(null);
 
+const pathname = window.location.pathname;
+
+const isPublicPage =
+  pathname === "/login" ||
+  pathname.startsWith("/form/") ||
+  pathname.startsWith("/ad-form/");
+
+if (isPublicPage) {
+  setUser(null);
+  setLoading(false);
+  setError(null);
+  return;
+}
+
     try {
       const res = await fetch(`/api/auth/me`, {
         credentials: "include",
@@ -29,8 +43,10 @@ export function useAuth(options?: UseAuthOptions) {
       }
 
       const data = await res.json();
-      setUser(data);
-      localStorage.setItem("manus-runtime-user-info", JSON.stringify(data));
+const nextUser = data?.user ?? data;
+
+setUser(nextUser);
+localStorage.setItem("manus-runtime-user-info", JSON.stringify(nextUser));
     } catch (e) {
       setError(e);
       setUser(null);

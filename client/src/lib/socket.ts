@@ -13,6 +13,12 @@ function getSocketBaseUrl() {
 }
 
 async function getSocketToken() {
+const cachedUser = localStorage.getItem("manus-runtime-user-info");
+
+if (!cachedUser) {
+  return null;
+}
+
   if (!socketTokenPromise) {
     socketTokenPromise = fetch(`/api/auth/socket-token`, {
       credentials: "include",
@@ -41,7 +47,11 @@ export async function getSocket() {
   const apiBase = getSocketBaseUrl();
   const socketToken = await getSocketToken();
 
-  socket = io(apiBase, {
+if (!socketToken) {
+  throw new Error("NO_SOCKET_TOKEN");
+}
+
+socket = io(apiBase, {
     withCredentials: true,
     transports: ["websocket", "polling"],
     autoConnect: true,

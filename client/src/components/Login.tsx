@@ -49,19 +49,13 @@ export default function Login() {
         return;
       }
 
-      const meRes = await fetch(`/api/auth/me`, {
-  method: "GET",
-  credentials: "include",
-});
+      const loginUser = data?.user as any;
 
-const me = await meRes.json().catch(() => null);
-
-if (!meRes.ok || !me?.user) {
-  window.location.replace("/");
+if (!loginUser) {
+  setError("로그인 응답에서 사용자 정보를 확인할 수 없습니다.");
+  setPending(false);
   return;
 }
-
-const loginUser = me.user as any;
 
 if (loginUser.role === "superhost") {
   window.location.replace("/saas");
