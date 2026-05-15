@@ -859,6 +859,22 @@ const selectedPracticeSupport = useMemo(() => {
   return practiceSupportList[0] ?? null;
 }, [practiceSupportList]);
 
+const isPlanSummaryWritten = useMemo(() => {
+  if (!plan) return false;
+
+  return (
+    !!String(plan.desiredCourse || "").trim() ||
+    !!String(plan.finalEducation || "").trim() ||
+    Number(plan.totalTheorySubjects || 0) > 0 ||
+    Number((plan as any).requiredMajorCount || 0) > 0 ||
+    Number((plan as any).electiveMajorCount || 0) > 0 ||
+    Number((plan as any).liberalCount || 0) > 0 ||
+    Number((plan as any).generalCount || 0) > 0 ||
+    !!plan.hasPractice ||
+    !!String(plan.specialNotes || "").trim()
+  );
+}, [plan]);
+
 
   const lastSemester = useMemo(() => {
     if (!sortedSemesters.length) return null;
@@ -1247,6 +1263,17 @@ const savePlan = async () => {
       practiceStatus: (planForm.practiceStatus as any) || undefined,
       specialNotes: planForm.specialNotes || undefined,
     });
+
+if (
+  !planForm.hasPractice &&
+  selectedPracticeSupport?.id
+) {
+  await trpc.practiceSupport.delete.mutate({
+    id: Number(selectedPracticeSupport.id),
+  });
+
+  await utils.practiceSupport.listByStudent.invalidate({ studentId });
+}
 
     if (planForm.hasPractice) {
       if (!student) {
@@ -2258,9 +2285,18 @@ const getCountStatusClass = (current: number, target: number) => {
                       <td className="px-3 py-1.5 text-center">
   <div title="입력완료는 학기 정보 입력 여부만 표시합니다. 등록 확정 및 매출 반영은 승인관리 승인 후 처리됩니다.">
    <Checkbox
-  checked={sem.isCompleted}
+  checked={!!sem.isCompleted}
   onCheckedChange={(checked) => {
-    if (!!checked && toNumber(sem.actualAmount) <= 0) {
+    const nextChecked = !!checked;
+
+    if (nextChecked && !isPlanSummaryWritten) {
+      toast.error("입력완료 처리 전에 플랜 요약을 먼저 작성해주세요.");
+      scrollToSection(planSummarySectionRef.current);
+      setEditingPlan(true);
+      return;
+    }
+
+    if (nextChecked && toNumber(sem.actualAmount) <= 0) {
       toast.error("입력완료 처리하려면 실제 금액을 먼저 입력해주세요.");
       return;
     }
@@ -2268,13 +2304,13 @@ const getCountStatusClass = (current: number, target: number) => {
     updateSemMut.mutate(
       {
         id: sem.id,
-        isCompleted: !!checked,
-        approvalStatus: checked ? "대기" : "요청전",
+        isCompleted: nextChecked,
+        approvalStatus: nextChecked ? "대기" : "요청전",
       } as any,
       {
         onSuccess: () => {
           toast.success(
-            checked
+            nextChecked
               ? "학기 입력완료로 표시되었습니다. 승인관리에서 이 학기만 승인/불승인 처리할 수 있습니다."
               : "학기 입력완료가 해제되었습니다."
           );
@@ -2649,9 +2685,19 @@ const getCountStatusClass = (current: number, target: number) => {
 
               <div className="flex items-center gap-2">
                 <Checkbox
-                  checked={planForm.hasPractice}
-                  onCheckedChange={(checked) => setPlanForm({ ...planForm, hasPractice: !!checked })}
-                />
+  checked={!!planForm.hasPractice}
+  onCheckedChange={(checked) =>
+    setPlanForm((prev) => ({
+      ...prev,
+      hasPractice: !!checked,
+      practiceStatus: !!checked ? prev.practiceStatus || "미섭외" : "미섭외",
+      practiceHours: !!checked ? prev.practiceHours : "",
+      practiceDate: !!checked ? prev.practiceDate : "",
+      practiceAddress: !!checked ? prev.practiceAddress : "",
+      practiceArranged: !!checked ? prev.practiceArranged : false,
+    }))
+  }
+/>
                 <Label className="text-sm">실습 필요</Label>
               </div>
               {planForm.hasPractice && (

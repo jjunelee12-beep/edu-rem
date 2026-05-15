@@ -63,72 +63,84 @@ export default function SemesterList() {
 
   const monthOptions = useMemo(() => getMonthOptions(), []);
 
-  const filtered = useMemo(() => {
-    const rows = semesters ? [...semesters] : [];
-    const term = searchTerm.trim().toLowerCase();
-    const assigneeTerm = assigneeSearch.trim().toLowerCase();
+ const filtered = useMemo(() => {
+  const rows = semesters ? [...semesters] : [];
+  const term = searchTerm.trim().toLowerCase();
+  const assigneeTerm = assigneeSearch.trim().toLowerCase();
 
-    return rows.filter((s: any) => {
-      if (filterUnassignedPractice && s.practiceStatus !== "미섭외") return false;
+  return rows.filter((s: any) => {
+    const hasActualInfo =
+      !!s.actualStartDate ||
+      !!s.actualInstitution ||
+      !!s.actualInstitutionId ||
+      Number(s.actualSubjectCount || 0) > 0 ||
+      Number(s.actualAmount || 0) > 0 ||
+      !!s.actualPaymentDate;
 
-      if (
-        filterPaymentPlanned &&
-        filterPaymentStatus === "all" &&
-        (s.isCompleted || s.actualPaymentDate)
-      ) {
-        return false;
-      }
+    const hasPaymentInfo =
+      Number(s.actualAmount || 0) > 0 || !!s.actualPaymentDate;
 
-      if (
-        filterSemesterOrder !== "all" &&
-        String(s.semesterOrder) !== String(filterSemesterOrder)
-      ) {
-        return false;
-      }
+    if (!hasActualInfo) return false;
 
-      if (filterPaymentStatus === "unpaid" && (s.isCompleted || s.actualPaymentDate)) {
-        return false;
-      }
+    if (filterUnassignedPractice && s.practiceStatus !== "미섭외") return false;
 
-      if (filterPaymentStatus === "progress" && (!s.actualPaymentDate || s.isCompleted)) {
-        return false;
-      }
+    if (
+      filterPaymentPlanned &&
+      filterPaymentStatus === "all" &&
+      hasPaymentInfo
+    ) {
+      return false;
+    }
 
-      if (filterPaymentStatus === "done" && !s.isCompleted) {
-        return false;
-      }
+    if (
+      filterSemesterOrder !== "all" &&
+      String(s.semesterOrder) !== String(filterSemesterOrder)
+    ) {
+      return false;
+    }
 
-      // 승인 완료 학생만 표시
-      if (s.approvalStatus !== "승인") return false;
+    if (filterPaymentStatus === "unpaid" && hasPaymentInfo) {
+      return false;
+    }
 
-      const assigneeName = (userMap.get(s.assigneeId) || "").toLowerCase();
+    if (filterPaymentStatus === "progress" && !hasPaymentInfo) {
+      return false;
+    }
 
-      const matchesSearch =
-        !term ||
-        s.clientName?.toLowerCase().includes(term) ||
-        s.phone?.includes(term) ||
-        s.course?.toLowerCase().includes(term) ||
-        s.plannedInstitution?.toLowerCase().includes(term) ||
-        s.actualInstitution?.toLowerCase().includes(term);
+    if (filterPaymentStatus === "done" && !hasPaymentInfo) {
+      return false;
+    }
 
-      const matchesAssignee = !assigneeTerm || assigneeName.includes(assigneeTerm);
+    const assigneeName = (userMap.get(s.assigneeId) || "").toLowerCase();
 
-      return matchesSearch && matchesAssignee;
-    });
-  }, [
-    semesters,
-    searchTerm,
-    assigneeSearch,
-    filterUnassignedPractice,
-    filterPaymentPlanned,
-    filterSemesterOrder,
-    filterPaymentStatus,
-    userMap,
-  ]);
+    const matchesSearch =
+      !term ||
+      s.clientName?.toLowerCase().includes(term) ||
+      s.phone?.includes(term) ||
+      s.course?.toLowerCase().includes(term) ||
+      s.plannedInstitution?.toLowerCase().includes(term) ||
+      s.actualInstitution?.toLowerCase().includes(term);
+
+    const matchesAssignee = !assigneeTerm || assigneeName.includes(assigneeTerm);
+
+    return matchesSearch && matchesAssignee;
+  });
+}, [
+  semesters,
+  searchTerm,
+  assigneeSearch,
+  filterUnassignedPractice,
+  filterPaymentPlanned,
+  filterSemesterOrder,
+  filterPaymentStatus,
+  userMap,
+]);
 
   const unpaidList = useMemo(() => {
-    return filtered.filter((s: any) => !s.isCompleted && !s.actualPaymentDate);
-  }, [filtered]);
+  return filtered.filter(
+    (s: any) => !s.actualPaymentDate && Number(s.actualAmount || 0) <= 0
+  );
+}, [filtered]);
 
   const unpaidGroupedByAssignee = useMemo(() => {
     const map = new Map<
@@ -163,39 +175,42 @@ export default function SemesterList() {
   }, [unpaidList, userMap]);
 
   const statusBadge = (sem: any) => {
-    if (sem.isCompleted) {
-      return (
-        <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">
-          결제완료
-        </Badge>
-      );
-    }
+  const hasAmount = Number(sem.actualAmount || 0) > 0;
+  const hasPaymentDate = !!sem.actualPaymentDate;
 
-    if (sem.actualPaymentDate) {
-      return (
-        <Badge className="bg-blue-100 text-blue-700 text-[10px]">
-          결제등록
-        </Badge>
-      );
-    }
-
+  if (hasAmount && hasPaymentDate) {
     return (
-      <Badge className="bg-amber-100 text-amber-700 text-[10px]">
-        미결제
+      <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">
+        결제등록
       </Badge>
     );
-  };
+  }
+
+  if (hasAmount || hasPaymentDate) {
+    return (
+      <Badge className="bg-blue-100 text-blue-700 text-[10px]">
+        입력중
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge className="bg-amber-100 text-amber-700 text-[10px]">
+      미결제
+    </Badge>
+  );
+};
 
   const totalPlanned = useMemo(() => {
     return filtered.reduce((sum: number, s: any) => sum + Number(s.plannedAmount || 0), 0);
   }, [filtered]);
 
   const totalCompleted = useMemo(() => {
-    return filtered.reduce(
-      (sum: number, s: any) => sum + (s.isCompleted ? Number(s.actualAmount || 0) : 0),
-      0
-    );
-  }, [filtered]);
+  return filtered.reduce(
+    (sum: number, s: any) => sum + Number(s.actualAmount || 0),
+    0
+  );
+}, [filtered]);
 
   const totalApprovedRefund = useMemo(() => {
     const refundMap = new Map<number, number>();
@@ -280,7 +295,7 @@ export default function SemesterList() {
       </div>
 
       <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-        이 화면은 승인 완료된 학생만 표시됩니다. 미결제 대상자 자동 추출과 알림 전송은 현재 필터 조건 기준으로 동작합니다.
+        이 화면은 실제 학기 정보가 입력된 학생을 표시합니다. 입력완료 체크 여부와 관계없이 실제 개강월/교육원/과목수/금액 기준으로 표시됩니다.
       </div>
 
       <div className="flex items-center gap-4 flex-wrap">
@@ -518,8 +533,10 @@ export default function SemesterList() {
                 <tr
                   key={sem.id}
                   className={`border-b hover:bg-muted/20 cursor-pointer ${
-                    !sem.isCompleted ? "bg-amber-50/20" : ""
-                  }`}
+  !sem.actualPaymentDate && Number(sem.actualAmount || 0) <= 0
+    ? "bg-amber-50/20"
+    : ""
+}`}
                   onClick={() => setLocation(`/students/${sem.studentId}`)}
                 >
                   <td className="px-3 py-2 font-mono text-sm">{sem.plannedMonth || "-"}</td>
@@ -584,9 +601,9 @@ export default function SemesterList() {
 
                   <td className="px-3 py-2 text-center">
                     <div className="flex items-center justify-center gap-1">
-                      {sem.isCompleted && (
-                        <span className="text-emerald-600 font-bold text-xs">✔</span>
-                      )}
+                      {sem.actualPaymentDate && Number(sem.actualAmount || 0) > 0 && (
+  <span className="text-emerald-600 font-bold text-xs">✔</span>
+)}
                       {statusBadge(sem)}
                     </div>
                   </td>
