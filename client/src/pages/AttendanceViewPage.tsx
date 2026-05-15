@@ -72,10 +72,22 @@ const STATUS_OPTIONS: StatusType[] = [
 export default function AttendanceViewPage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
+
+const organizationSlug =
+  (user as any)?.organizationSlug ||
+  (user as any)?.organization?.slug ||
+  "";
+
+const withOrgPath = (path: string) => {
+  if (!organizationSlug) return path;
+  if (path === "/") return `/${organizationSlug}`;
+  if (path.startsWith(`/${organizationSlug}/`)) return path;
+  return `/${organizationSlug}${path.startsWith("/") ? path : `/${path}`}`;
+};
   const utils = trpc.useUtils();
 
-  const canViewAll = user?.role === "host" || user?.role === "superhost";
-  const isSuperhost = user?.role === "superhost";
+  const canViewAll = user?.role === "host";
+const isSuperhost = false;
 
   const [monthFilter, setMonthFilter] = useState(getCurrentMonthValue());
   const [baseDate, setBaseDate] = useState(getTodayValue());
@@ -329,7 +341,7 @@ const { data: myProfile } = trpc.users.me.useQuery();
               열람 페이지는 호스트 / 슈퍼호스트만 접근할 수 있습니다.
             </p>
             <div className="mt-4">
-              <Button variant="outline" onClick={() => setLocation("/attendance")}>
+              <Button variant="outline" onClick={() => setLocation(withOrgPath("/attendance"))}>
                 근태 관리로 돌아가기
               </Button>
             </div>
@@ -355,7 +367,7 @@ const { data: myProfile } = trpc.users.me.useQuery();
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => setLocation("/attendance")}>
+              <Button variant="outline" onClick={() => setLocation(withOrgPath("/attendance"))}>
                 근태 관리로 돌아가기
               </Button>
               <Button onClick={downloadCsv}>CSV 다운로드</Button>

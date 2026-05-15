@@ -32,10 +32,22 @@ export default function AttendancePage() {
   const utils = trpc.useUtils();
   const [, setLocation] = useLocation();
 
-  const canViewAll = user?.role === "host" || user?.role === "superhost";
+const organizationSlug =
+  (user as any)?.organizationSlug ||
+  (user as any)?.organization?.slug ||
+  "";
+
+const withOrgPath = (path: string) => {
+  if (!organizationSlug) return path;
+  if (path === "/") return `/${organizationSlug}`;
+  if (path.startsWith(`/${organizationSlug}/`)) return path;
+  return `/${organizationSlug}${path.startsWith("/") ? path : `/${path}`}`;
+};
+
+ const canViewAll = user?.role === "host";
   const canViewTeam = user?.role === "admin";
   const canManageAttendance = canViewAll || canViewTeam;
-  const canManageLogs = user?.role === "host" || user?.role === "superhost";
+  const canManageLogs = user?.role === "host";
 
   const [searchName, setSearchName] = useState("");
   const [statusFilter, setStatusFilter] = useState("전체");
@@ -446,7 +458,7 @@ export default function AttendancePage() {
             {canViewAll ? (
               <Button
                 variant="secondary"
-                onClick={() => setLocation("/attendance/view")}
+                onClick={() => setLocation(withOrgPath("/attendance/view"))}
               >
                 열람
               </Button>
