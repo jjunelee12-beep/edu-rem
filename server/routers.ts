@@ -3504,63 +3504,100 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
       }),
   }),
   dashboard: router({
-    monthApprovals: protectedProcedure.query(async ({ ctx }) => {
-      const isAdminHost = isAdminOrHost(ctx.user);
-      const assigneeId = isAdminHost ? undefined : Number(ctx.user.id);
+  monthApprovals: protectedProcedure.query(async ({ ctx }) => {
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const isAdminHost = isAdminOrHost(ctx.user);
+    const assigneeId = isAdminHost ? undefined : Number(ctx.user.id);
 
-      const stats = await db.getDashboardStats(assigneeId);
-      const monthEntries = await db.getMonthSalesEntries(assigneeId);
-      const students = await db.listStudents(assigneeId);
+    const stats = await db.getDashboardStats(assigneeId, {
+      organizationId,
+    });
 
-      const approved = (students || []).filter((s: any) => s.approvalStatus === "승인");
-      const rejected = (students || []).filter((s: any) => s.approvalStatus === "불승인");
-      const pending = (students || []).filter((s: any) => s.approvalStatus === "대기");
+    const monthEntries = await db.getMonthSalesEntries(assigneeId, {
+      organizationId,
+    });
 
-      const approvedTotal = approved.reduce(
-        (sum: number, s: any) => sum + Number(s.netPaidAmount || s.paidAmount || 0),
-        0
-      );
+    const students = await db.listStudents(assigneeId, {
+      organizationId,
+    });
 
-      const rejectedTotal = rejected.reduce(
-        (sum: number, s: any) => sum + Number(s.netPaidAmount || s.paidAmount || 0),
-        0
-      );
+    const approved = (students || []).filter(
+      (s: any) => s.approvalStatus === "승인"
+    );
+    const rejected = (students || []).filter(
+      (s: any) => s.approvalStatus === "불승인"
+    );
+    const pending = (students || []).filter(
+      (s: any) => s.approvalStatus === "대기"
+    );
 
-      const pendingTotal = pending.reduce(
-        (sum: number, s: any) => sum + Number(s.netPaidAmount || s.paidAmount || 0),
-        0
-      );
+    const approvedTotal = approved.reduce(
+      (sum: number, s: any) =>
+        sum + Number(s.netPaidAmount || s.paidAmount || 0),
+      0
+    );
 
-      return {
-        approved,
-        rejected,
-        pending,
-        approvedTotal,
-        rejectedTotal,
-        pendingTotal,
-        monthRefund: stats?.monthRefund ?? 0,
-        totalRefund: stats?.totalRefund ?? 0,
-        entries: monthEntries?.entries ?? [],
-      };
-    }),
+    const rejectedTotal = rejected.reduce(
+      (sum: number, s: any) =>
+        sum + Number(s.netPaidAmount || s.paidAmount || 0),
+      0
+    );
 
-    stats: protectedProcedure.query(async ({ ctx }) => {
-      return db.getDashboardStats(Number(ctx.user.id));
-    }),
+    const pendingTotal = pending.reduce(
+      (sum: number, s: any) =>
+        sum + Number(s.netPaidAmount || s.paidAmount || 0),
+      0
+    );
 
-    totalStats: hostProcedure.query(async () => {
-      return db.getDashboardStats(undefined);
-    }),
-
-    monthSalesEntries: protectedProcedure.query(async ({ ctx }) => {
-      return db.getMonthSalesEntries(Number(ctx.user.id));
-    }),
-
-    totalMonthSalesEntries: hostProcedure.query(async () => {
-      return db.getMonthSalesEntries(undefined);
-    }),
+    return {
+      approved,
+      rejected,
+      pending,
+      approvedTotal,
+      rejectedTotal,
+      pendingTotal,
+      monthRefund: stats?.monthRefund ?? 0,
+      totalRefund: stats?.totalRefund ?? 0,
+      entries: monthEntries?.entries ?? [],
+    };
   }),
 
+  stats: protectedProcedure.query(async ({ ctx }) => {
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const isAdminHost = isAdminOrHost(ctx.user);
+    const assigneeId = isAdminHost ? undefined : Number(ctx.user.id);
+
+    return db.getDashboardStats(assigneeId, {
+      organizationId,
+    });
+  }),
+
+  totalStats: hostProcedure.query(async ({ ctx }) => {
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+    return db.getDashboardStats(undefined, {
+      organizationId,
+    });
+  }),
+
+  monthSalesEntries: protectedProcedure.query(async ({ ctx }) => {
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const isAdminHost = isAdminOrHost(ctx.user);
+    const assigneeId = isAdminHost ? undefined : Number(ctx.user.id);
+
+    return db.getMonthSalesEntries(assigneeId, {
+      organizationId,
+    });
+  }),
+
+  totalMonthSalesEntries: hostProcedure.query(async ({ ctx }) => {
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+    return db.getMonthSalesEntries(undefined, {
+      organizationId,
+    });
+  }),
+}),
   consultation: router({
   list: protectedProcedure
     .input(
@@ -3571,14 +3608,22 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
         .optional()
     )
     .query(async ({ ctx, input }) => {
-      const showAll = !!input?.showAll;
-      const myId = Number(ctx.user.id) || 1;
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-      const assigneeId =
-        isAdminOrHost(ctx.user) && showAll ? undefined : myId;
+  if (!organizationId) {
+    throw new Error("organizationId is required");
+  }
 
-      return db.listConsultations(assigneeId);
-    }),
+  const showAll = !!input?.showAll;
+  const myId = Number(ctx.user.id) || 1;
+
+  const assigneeId =
+    isAdminOrHost(ctx.user) && showAll ? undefined : myId;
+
+  return db.listConsultations(assigneeId, {
+    organizationId,
+  });
+}), 
 
     create: protectedProcedure
       .input(
@@ -3594,19 +3639,26 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const assigneeId = Number(ctx.user.id);
-        const safeAssigneeId =
-          Number.isFinite(assigneeId) && assigneeId > 0 ? assigneeId : 1;
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-        const id = await db.createConsultation({
-          ...input,
-          consultDate: new Date(input.consultDate),
-          finalEducation: input.finalEducation ?? "",
-          assigneeId: safeAssigneeId,
-        } as any);
+  if (!organizationId) {
+    throw new Error("organizationId is required");
+  }
 
-        return { id };
-      }),
+  const assigneeId = Number(ctx.user.id);
+  const safeAssigneeId =
+    Number.isFinite(assigneeId) && assigneeId > 0 ? assigneeId : 1;
+
+  const id = await db.createConsultation({
+    ...input,
+    organizationId,
+    consultDate: new Date(input.consultDate),
+    finalEducation: input.finalEducation ?? "",
+    assigneeId: safeAssigneeId,
+  } as any);
+
+  return { success: true, id };
+}),
 
     bulkCreate: protectedProcedure
       .input(
