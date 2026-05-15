@@ -4987,83 +4987,147 @@ approve: protectedProcedure
       throw new Error("관리자 또는 호스트만 처리할 수 있습니다");
     }
 
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+    if (!organizationId) {
+      throw new Error("organizationId is required");
+    }
+
     const now = new Date();
 
-const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const beforeSemester = await db.getSemester(Number(input.id), {
+      organizationId,
+    });
 
-   await db.updateSemester(Number(input.id), {
-  approvalStatus: input.approvalStatus,
-  approvedAt: input.approvalStatus === "승인" ? now : null,
-  rejectedAt: input.approvalStatus === "불승인" ? now : null,
-  isLocked: input.approvalStatus === "승인",
-} as any, {
-  organizationId,
-});
+    if (!beforeSemester) {
+      throw new Error("학기 정보를 찾을 수 없습니다.");
+    }
+
+    await db.updateSemester(
+      Number(input.id),
+      {
+        approvalStatus: input.approvalStatus,
+        approvedAt: input.approvalStatus === "승인" ? now : null,
+        rejectedAt: input.approvalStatus === "불승인" ? now : null,
+        isLocked: input.approvalStatus === "승인",
+      } as any,
+      {
+        organizationId,
+      }
+    );
 
     const sem = await db.getSemester(Number(input.id), {
-  organizationId,
-});
+      organizationId,
+    });
+
     if (!sem) {
       throw new Error("학기 정보를 찾을 수 없습니다.");
     }
 
     await db.syncSubjectSettlementItemBySemesterId(
-  Number(input.id),
-  Number(ctx.user.id),
-  {
-    organizationId,
-  }
-);
+      Number(input.id),
+      Number(ctx.user.id),
+      {
+        organizationId,
+      }
+    );
 
     const student = await db.getStudent(Number(sem.studentId), {
-  organizationId,
-});
+      organizationId,
+    });
+
     if (!student) {
       throw new Error("학생 정보를 찾을 수 없습니다.");
     }
 
     const allSems = await db.listSemesters(Number(student.id), {
-  organizationId,
-});
+      organizationId,
+    });
+
     const hasApprovedSemester = (allSems || []).some(
       (row: any) => row.approvalStatus === "승인"
     );
 
+    const beforeStudent = student;
+
     if (hasApprovedSemester) {
-      await db.updateStudent(Number(student.id), {
-  status: "등록",
-  approvalStatus: "승인",
-  approvedAt: now,
-  rejectedAt: null,
-} as any, {
-  organizationId,
-});
+      await db.updateStudent(
+        Number(student.id),
+        {
+          status: "등록",
+          approvalStatus: "승인",
+          approvedAt: now,
+          rejectedAt: null,
+        } as any,
+        {
+          organizationId,
+        }
+      );
 
       if (student.consultationId) {
-        await db.updateConsultation(Number(student.consultationId), {
-  status: "등록",
-} as any, {
-  organizationId,
-});
+        await db.updateConsultation(
+          Number(student.consultationId),
+          {
+            status: "등록",
+          } as any,
+          {
+            organizationId,
+          }
+        );
       }
     } else {
-      await db.updateStudent(Number(student.id), {
-  status: "등록예정",
-  approvalStatus: input.approvalStatus === "불승인" ? "불승인" : "대기",
-  approvedAt: null,
-  rejectedAt: input.approvalStatus === "불승인" ? now : null,
-} as any, {
-  organizationId,
-});
+      await db.updateStudent(
+        Number(student.id),
+        {
+          // students.status enum에는 등록예정이 없음
+          // 등록예정 여부는 approvalStatus로 구분
+          status: "등록",
+          approvalStatus:
+            input.approvalStatus === "불승인" ? "불승인" : "대기",
+          approvedAt: null,
+          rejectedAt: input.approvalStatus === "불승인" ? now : null,
+        } as any,
+        {
+          organizationId,
+        }
+      );
 
       if (student.consultationId) {
-        await db.updateConsultation(Number(student.consultationId), {
-  status: "등록예정",
-} as any, {
-  organizationId,
-});
+        await db.updateConsultation(
+          Number(student.consultationId),
+          {
+            status: "등록예정",
+          } as any,
+          {
+            organizationId,
+          }
+        );
       }
     }
+
+    const afterStudent = await db.getStudent(Number(student.id), {
+      organizationId,
+    });
+
+    await writeStudentAuditLog({
+      ctx,
+      studentId: Number(student.id),
+      entityType: "semester",
+      entityId: Number(input.id),
+      action: input.approvalStatus === "승인" ? "complete" : "update",
+      title:
+        input.approvalStatus === "승인"
+          ? `${sem.semesterOrder}학기 승인 처리`
+          : `${sem.semesterOrder}학기 불승인 처리`,
+      beforeJson: {
+        semester: beforeSemester,
+        student: beforeStudent,
+      },
+      afterJson: {
+        semester: sem,
+        student: afterStudent,
+      },
+    });
 
     if (student.assigneeId) {
       const notificationTitle =
@@ -5078,6 +5142,7 @@ const organizationId = Number((ctx.user as any)?.organizationId || 0);
           : `[학기 불승인] ${student.clientName || "학생"} 학생의 ${sem.semesterOrder}학기가 불승인 처리되었습니다.`;
 
       const notificationId = await db.createNotification({
+        organizationId,
         userId: Number(student.assigneeId),
         type: "approval",
         title: notificationTitle,
