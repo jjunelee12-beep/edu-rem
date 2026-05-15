@@ -12659,7 +12659,9 @@ const organizationId = requireOrganizationId(params.organizationId);
 
   // admin은 자기 팀만 수정 가능
   if (params.actorRole === "admin") {
-    const myTeamId = await getMyTeamId(params.actorUserId);
+   const myTeamId = await getMyTeamId(params.actorUserId, {
+  organizationId,
+});
     if (!myTeamId) {
       throw new Error("관리자 팀 정보를 찾을 수 없습니다.");
     }
@@ -12690,7 +12692,9 @@ const organizationId = requireOrganizationId(params.organizationId);
 
   // 퇴근완료로 바꿀 때 출퇴근 시간이 비어 있으면 정책 시간 자동 주입
   if (params.status === "퇴근완료" && !nextClockInAt && !nextClockOutAt) {
-    const policy = await getAttendancePolicy();
+    const policy = await getAttendancePolicy({
+  organizationId,
+});
 
     const workDate = String(current.workDate).slice(0, 10);
     const startHour = Number(policy?.workStartHour ?? 9);
@@ -12712,8 +12716,13 @@ const organizationId = requireOrganizationId(params.organizationId);
 
     nextWorkMinutes = calcWorkMinutes(nextClockInAt, nextClockOutAt);
 
-    const late = await calcLateInfo(nextClockInAt);
-const early = await calcEarlyLeaveInfo(nextClockOutAt);
+const late = await calcLateInfo(nextClockInAt, {
+  organizationId,
+});
+
+const early = await calcEarlyLeaveInfo(nextClockOutAt, {
+  organizationId,
+});
 
     isLate = late.isLate ? 1 : 0;
     lateMinutes = late.lateMinutes;
@@ -12837,7 +12846,9 @@ if (!current) {
 }
 
 if (params.actorRole === "admin") {
-  const myTeamId = await getMyTeamId(params.actorUserId);
+  const myTeamId = await getMyTeamId(params.actorUserId, {
+  organizationId,
+});
   if (!myTeamId) {
     throw new Error("관리자 팀 정보를 찾을 수 없습니다.");
   }
@@ -12861,8 +12872,13 @@ if (params.actorRole === "admin") {
   const nextClockOutAt = params.clockOutAt ? new Date(params.clockOutAt) : null;
 
   const workMinutes = calcWorkMinutes(nextClockInAt, nextClockOutAt);
-const late = await calcLateInfo(nextClockInAt);
-const early = await calcEarlyLeaveInfo(nextClockOutAt);
+const late = await calcLateInfo(nextClockInAt, {
+  organizationId,
+});
+
+const early = await calcEarlyLeaveInfo(nextClockOutAt, {
+  organizationId,
+});
 
   let status:
   | "출근전"
