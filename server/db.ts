@@ -5006,6 +5006,7 @@ export async function createSettlementItemLog(params: {
 }
 
 export async function upsertSettlementItem(params: {
+organizationId?: number | null;
   revenueType: "subject" | "practice_support" | "private_certificate" | "refund";
   sourceId: number;
   studentId: number;
@@ -5042,6 +5043,9 @@ institutionName?: string | null;
   console.log("🔥 [upsertSettlementItem] params =", params);
 
   const db = await getDb();
+
+const organizationId = requireOrganizationId(params.organizationId);
+
   if (!db) throw new Error("DB not available");
 
     const grossAmount = toNumber(params.grossAmount);
@@ -5068,12 +5072,13 @@ console.log("최종 결과", {
   const exists = await db
     .select()
     .from(settlementItems)
-    .where(
-      and(
-        eq(settlementItems.revenueType, params.revenueType),
-        eq(settlementItems.sourceId, params.sourceId)
-      )
-    )
+   .where(
+  and(
+    eq(settlementItems.organizationId, organizationId),
+    eq(settlementItems.revenueType, params.revenueType),
+    eq(settlementItems.sourceId, params.sourceId)
+  )
+)
     .limit(1);
 
   if (exists[0]) {
@@ -5082,6 +5087,7 @@ console.log("최종 결과", {
     await db
       .update(settlementItems)
       .set({
+	organizationId,
         studentId: params.studentId,
         assigneeId: params.assigneeId ?? null,
         freelancerUserId: params.freelancerUserId ?? null,
@@ -5111,7 +5117,12 @@ institutionName: params.institutionName ?? null,
         occurredAt: params.occurredAt ?? null,
         note: params.note ?? null,
       } as any)
-      .where(eq(settlementItems.id, item.id));
+     .where(
+  and(
+    eq(settlementItems.id, item.id),
+    eq(settlementItems.organizationId, organizationId)
+  )
+);
 
     await createSettlementItemLog({
       settlementItemId: Number(item.id),
@@ -5126,6 +5137,7 @@ institutionName: params.institutionName ?? null,
 console.log("🔥 [upsertSettlementItem] before insert");
 
   const result: any = await db.insert(settlementItems).values({
+organizationId,
     revenueType: params.revenueType,
     sourceId: params.sourceId,
     studentId: params.studentId,

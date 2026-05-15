@@ -122,6 +122,18 @@ function toNumber(v: any) {
   return Number(String(v ?? "0").replace(/,/g, "").replace(/[^0-9.-]/g, "").trim()) || 0;
 }
 
+function normalizePracticeSelection(value: any) {
+  if (value === true || value === 1 || value === "1" || value === "true") {
+    return "required";
+  }
+
+  if (value === false || value === 0 || value === "0" || value === "false") {
+    return "not_required";
+  }
+
+  return "";
+}
+
 function normalizePlannedMonthToDate(plannedMonth?: string | null) {
   const raw = String(plannedMonth || "").trim().replace(/[^0-9]/g, "");
   if (raw.length !== 6) return "";
@@ -907,10 +919,7 @@ const isPlanSummaryWritten = useMemo(() => {
   !!desiredCourse &&
   !!finalEducation &&
   totalTheorySubjects > 0 &&
-  (
-    plan.hasPractice === true ||
-    plan.hasPractice === false
-  )
+ !!normalizePracticeSelection((plan as any)?.hasPractice)
 );
 }, [plan]);
 
@@ -1241,13 +1250,8 @@ if (isReadOnly) {
     liberalCount: String((plan as any)?.liberalCount ?? ""),
     generalCount: String((plan as any)?.generalCount ?? ""),
 
-    hasPractice: plan?.hasPractice || false,
-practiceRequiredSelection:
-  plan?.hasPractice === true
-    ? "required"
-    : plan?.hasPractice === false
-      ? "not_required"
-      : "",
+    hasPractice: normalizePracticeSelection((plan as any)?.hasPractice) === "required",
+practiceRequiredSelection: normalizePracticeSelection((plan as any)?.hasPractice),
     practiceHours: plan?.practiceHours?.toString() || "",
     practiceDate: plan?.practiceDate || "",
     practiceArranged: plan?.practiceArranged || false,
@@ -2402,7 +2406,7 @@ const hasRequiredPlanSummary =
   !!String(plan?.desiredCourse || "").trim() &&
   !!String(plan?.finalEducation || "").trim() &&
   Number(plan?.totalTheorySubjects || 0) > 0 &&
-  !!planForm.practiceRequiredSelection;
+  !!normalizePracticeSelection((plan as any)?.hasPractice);
 
    if (nextChecked && !hasRequiredPlanSummary) {
   toast.error("입력완료 처리 전에 플랜 요약의 희망과정, 최종학력, 총 이론 과목 수, 실습 필요 여부를 먼저 작성해주세요.");
