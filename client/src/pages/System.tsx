@@ -105,7 +105,7 @@ export default function System() {
       <div className="flex flex-col items-center justify-center gap-4 py-20">
         <ShieldAlert className="h-12 w-12 text-muted-foreground" />
         <p className="text-muted-foreground">
-          호스트 또는 슈퍼호스트만 접근할 수 있습니다.
+          호스트만 접근할 수 있습니다.
         </p>
       </div>
     );
@@ -824,7 +824,8 @@ if (!companyShareAmount) {
 
 function UserManagementSection() {
   const { user } = useAuth();
-  const isSuperhostOnly = user?.role === "superhost";
+  const canManageOrganization =
+  user?.role === "host" || user?.role === "superhost";
   const utils = trpc.useUtils();
   const { data: users, isLoading } = trpc.users.list.useQuery();
 
@@ -1532,12 +1533,6 @@ const roleFilteredUsers = useMemo(() => {
         <Card>
           <CardHeader className="space-y-4">
             <CardTitle>직원 목록</CardTitle>
-
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              superhost 계정은 기본 보호 대상입니다. 권한 변경 / 비활성화 /
-              비밀번호 재설정이 불가합니다.
-            </div>
-
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
@@ -1781,11 +1776,6 @@ const roleFilteredUsers = useMemo(() => {
         <Card>
           <CardHeader className="space-y-4">
             <CardTitle>권한 변경</CardTitle>
-
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              superhost 계정은 권한 변경이 불가능합니다.
-            </div>
-
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
@@ -1917,10 +1907,6 @@ const roleFilteredUsers = useMemo(() => {
               기존 비밀번호는 확인할 수 없고, 새 비밀번호 입력 후 재설정만
               가능합니다.
             </p>
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              비밀번호 보기 기능은 제거되었습니다. superhost 계정은 비밀번호
-              재설정이 불가합니다.
-            </div>
 
             <Input
               placeholder="표시번호, 이름, 아이디, 전화번호 검색"
@@ -2020,16 +2006,12 @@ const roleFilteredUsers = useMemo(() => {
                 조직도에서 공통으로 사용됩니다.
               </p>
               <p>
-                조직 개편과 팀 구조 변경은 슈퍼호스트 페이지를 기준으로
-                관리하세요.
+                조직 개편과 팀 구조 변경은 회사 호스트가 직접 관리합니다.
               </p>
 
-              {!isSuperhostOnly ? (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  팀 / 직급 / 유저 매핑 수정은 슈퍼호스트만 가능합니다. 현재는
-                  조회만 가능합니다.
-                </div>
-              ) : null}
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+  팀 / 직급 / 유저 매핑은 호스트가 직접 수정할 수 있습니다.
+</div>
             </CardContent>
           </Card>
 
@@ -2044,13 +2026,13 @@ const roleFilteredUsers = useMemo(() => {
                     placeholder="예: 1팀, 2팀, 운영팀"
                     value={newTeamName}
                     onChange={(e) => setNewTeamName(e.target.value)}
-                    disabled={!isSuperhostOnly}
+                    disabled={!canManageOrganization}
                   />
                   <Button
                     type="button"
                     onClick={addTeam}
                     className="gap-2"
-                    disabled={!isSuperhostOnly}
+                    disabled={!canManageOrganization}
                   >
                     <Plus className="h-4 w-4" />
                     추가
@@ -2070,9 +2052,9 @@ const roleFilteredUsers = useMemo(() => {
                         </div>
                         <Input
                           defaultValue={team.name}
-                          disabled={!isSuperhostOnly}
+                          disabled={!canManageOrganization}
                           onBlur={(e) => {
-                            if (!isSuperhostOnly) return;
+                            if (!canManageOrganization) return;
                             const nextName = e.target.value.trim();
                             if (!nextName || nextName === team.name) return;
                             updateTeamMutation.mutate({
@@ -2088,7 +2070,7 @@ const roleFilteredUsers = useMemo(() => {
                           variant="outline"
                           size="icon"
                           onClick={() => removeTeam(team.id)}
-                          disabled={!isSuperhostOnly}
+                          disabled={!canManageOrganization}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -2109,13 +2091,13 @@ const roleFilteredUsers = useMemo(() => {
                     placeholder="예: 사원, 주임, 대리"
                     value={newPositionName}
                     onChange={(e) => setNewPositionName(e.target.value)}
-                    disabled={!isSuperhostOnly}
+                    disabled={!canManageOrganization}
                   />
                   <Button
                     type="button"
                     onClick={addPosition}
                     className="gap-2"
-                    disabled={!isSuperhostOnly}
+                    disabled={!canManageOrganization}
                   >
                     <Plus className="h-4 w-4" />
                     추가
@@ -2138,9 +2120,9 @@ const roleFilteredUsers = useMemo(() => {
                         </div>
                         <Input
                           defaultValue={position.name}
-                          disabled={!isSuperhostOnly}
+                          disabled={!canManageOrganization}
                           onBlur={(e) => {
-                            if (!isSuperhostOnly) return;
+                            if (!canManageOrganization) return;
                             const nextName = e.target.value.trim();
                             if (!nextName || nextName === position.name) return;
                             updatePositionMutation.mutate({
@@ -2156,7 +2138,7 @@ const roleFilteredUsers = useMemo(() => {
                           variant="outline"
                           size="icon"
                           onClick={() => removePosition(position.id)}
-                          disabled={!isSuperhostOnly}
+                          disabled={!canManageOrganization}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -2198,7 +2180,7 @@ const roleFilteredUsers = useMemo(() => {
                       {visibleUsers.map((u: any) => {
                         const mapping = getMapping(u.id);
                         const rowLocked =
-                          !isSuperhostOnly || isProtectedSuperhost(u);
+                          !canManageOrganization || isProtectedSuperhost(u);
 
                         return (
                           <tr key={u.id} className="border-b last:border-0">

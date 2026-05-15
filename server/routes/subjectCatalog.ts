@@ -115,6 +115,32 @@ export const subjectCatalogRouter = router({
       return { success: true, id };
     }),
 
+itemBulkCreate: hostProcedure
+  .input(
+    z.object({
+      catalogId: z.number(),
+      requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]),
+      subjectNames: z.array(z.string()).min(1),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+    if (!organizationId) {
+      throw new Error("organizationId is required");
+    }
+
+    const result = await db.bulkCreateSubjectCatalogItems({
+      organizationId,
+      catalogId: input.catalogId,
+      requirementType: input.requirementType,
+      subjectNames: input.subjectNames,
+      actorUserId: Number(ctx.user.id),
+    });
+
+    return result;
+  }),
+
   itemDelete: hostProcedure
     .input(
       z.object({

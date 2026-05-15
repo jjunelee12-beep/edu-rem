@@ -8941,6 +8941,93 @@ export async function createSubjectCatalogItem(
   return getInsertId(result);
 }
 
+export async function bulkCreateSubjectCatalogItems(params: {
+  organizationId?: number | null;
+  catalogId: number;
+  requirementType: "전공필수" | "전공선택" | "교양" | "일반";
+  subjectNames: string[];
+  actorUserId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const catalogId = Number(params.catalogId || 0);
+
+  if (!catalogId) {
+    throw new Error("과정 정보가 없습니다.");
+  }
+
+  const category =
+    params.requirementType === "교양"
+      ? "교양"
+      : params.requirementType === "일반"
+        ? "일반"
+        : "전공";
+
+  const cleanedNames = Array.from(
+    new Set(
+      (params.subjectNames || [])
+        .map((x) => String(x || "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  if (!cleanedNames.length) {
+    throw new Error("등록할 과목명이 없습니다.");
+  }
+
+  const existingRows = await db
+    .select()
+    .from(subjectCatalogItems)
+    .where(
+      and(
+        eq(subjectCatalogItems.organizationId, organizationId),
+        eq(subjectCatalogItems.catalogId, catalogId),
+        eq(subjectCatalogItems.requirementType, params.requirementType)
+      )
+    );
+
+  const existingNameSet = new Set(
+    existingRows.map((row: any) =>
+      String(row.subjectName || "").trim().replace(/\s+/g, " ")
+    )
+  );
+
+  const startSortOrder =
+    existingRows.reduce(
+      (max: number, row: any) => Math.max(max, Number(row.sortOrder || 0)),
+      -1
+    ) + 1;
+
+  const insertRows = cleanedNames
+    .map((name) => name.replace(/\s+/g, " "))
+    .filter((name) => !existingNameSet.has(name))
+    .map((subjectName, index) => ({
+      organizationId,
+      catalogId,
+      subjectName,
+      requirementType: params.requirementType,
+      category,
+      credits: 3,
+      sortOrder: startSortOrder + index,
+      isActive: true,
+      createdBy: params.actorUserId ?? null,
+      updatedBy: params.actorUserId ?? null,
+    }));
+
+  if (insertRows.length > 0) {
+    await db.insert(subjectCatalogItems).values(insertRows as any);
+  }
+
+  return {
+    success: true,
+    requestedCount: cleanedNames.length,
+    createdCount: insertRows.length,
+    skippedCount: cleanedNames.length - insertRows.length,
+  };
+}
+
 export async function deleteSubjectCatalogItem(
   id: number,
   params?: { organizationId?: number | null }
@@ -9069,24 +9156,24 @@ const organizationId = requireOrganizationId(params?.organizationId);
     .orderBy(desc(privateCertificateRequests.id));
 
   return rows.map((row: any) => ({
-    ...row.request,
-    clientName:
-      String(row.request?.clientName || "").trim() ||
-      String(row.studentClientName || "").trim() ||
-      null,
-    phone:
-      String(row.request?.phone || "").trim() ||
-      String(row.studentPhone || "").trim() ||
-      null,
-    assigneeName:
-      String(row.request?.assigneeName || "").trim() ||
-      String(row.userName || "").trim() ||
-      null,
-    inputAddress:
-      String(row.request?.inputAddress || "").trim() ||
-      String(row.studentAddress || "").trim() ||
-      null,
-  }));
+  ...row.request,
+  clientName:
+    String(row.request?.clientName || "").trim() ||
+    String(row.studentClientName || "").trim() ||
+    null,
+  phone:
+    String(row.request?.phone || "").trim() ||
+    String(row.studentPhone || "").trim() ||
+    null,
+  assigneeName:
+    String(row.request?.assigneeName || "").trim() ||
+    String(row.userName || "").trim() ||
+    null,
+  inputAddress:
+    String(row.request?.inputAddress || "").trim() ||
+    String(row.studentAddress || "").trim() ||
+    null,
+}));
 }
 
 export async function updatePrivateCertificateMaster(
@@ -9133,7 +9220,7 @@ export async function createPrivateCertificateRequest(data: InsertPrivateCertifi
     feeAmount: data.feeAmount ?? "0",
     freelancerInputAmount: data.freelancerInputAmount ?? "0",
     paymentStatus: data.paymentStatus ?? "결제대기",
-  });
+  } as any);
 
   const insertId = getInsertId(result);
 
