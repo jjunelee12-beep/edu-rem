@@ -288,6 +288,18 @@ organizationId: Number(ctx.user.organizationId || 0),
       return true;
     }),
 
+    getFieldSettings: protectedProcedure
+    .input(z.object({ formType: formTypeSchema }))
+    .query(async ({ ctx, input }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
+
+      return [];
+    }),
+
   getSetting: protectedProcedure
     .input(z.object({ formType: formTypeSchema }))
     .query(async ({ ctx, input }) => {

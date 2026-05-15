@@ -67,6 +67,17 @@ function SectionTitle({
 export default function Home() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
+const organizationSlug =
+  (user as any)?.organizationSlug ||
+  (user as any)?.organization?.slug ||
+  "";
+
+const withOrgPath = (path: string) => {
+  if (!organizationSlug) return path;
+  if (path === "/") return `/${organizationSlug}`;
+  if (path.startsWith(`/${organizationSlug}/`)) return path;
+  return `/${organizationSlug}${path.startsWith("/") ? path : `/${path}`}`;
+};
   const [search, setSearch] = useState("");
 
   const { data: attendanceRows = [] } = trpc.attendance.list.useQuery();
@@ -445,9 +456,12 @@ export default function Home() {
               />
             </div>
 
-            <Button variant="outline" onClick={() => setLocation("/overview")}>
-              운영 대시보드
-            </Button>
+            <Button
+  variant="outline"
+  onClick={() => setLocation(withOrgPath("/overview"))}
+>
+  운영 대시보드
+</Button>
           </div>
         </div>
 
@@ -457,7 +471,7 @@ export default function Home() {
               <CardContent className="p-6">
                 <div className="flex flex-col items-center text-center">
                   <button
-                    onClick={() => setLocation("/my")}
+                    onClick={() => setLocation(withOrgPath("/my"))}
                     className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100 text-xl font-semibold text-slate-700"
                   >
                     {profileImageSrc ? (
@@ -543,9 +557,9 @@ export default function Home() {
                     퇴근
                   </Button>
 
-                  <Button variant="secondary" onClick={() => setLocation("/attendance")}>
-                    기록부
-                  </Button>
+                  <Button variant="secondary" onClick={() => setLocation(withOrgPath("/attendance"))}>
+  기록부
+</Button>
                 </div>
 
                 {isSuperAdmin || isTeamManager ? (
@@ -675,7 +689,7 @@ export default function Home() {
                       variant="ghost"
                       size="sm"
                       className="h-8 px-2 text-xs"
-                      onClick={() => setLocation("/notices")}
+                      onClick={() => setLocation(withOrgPath("/notices"))}
                     >
                       더보기
                     </Button>
@@ -686,7 +700,7 @@ export default function Home() {
                   {urgentNotices.slice(0, 3).map((notice: any) => (
                     <button
                       key={notice.id}
-                      onClick={() => setLocation(`/notices/${notice.id}`)}
+                      onClick={() => setLocation(withOrgPath(`/notices/${notice.id}`))}
                       className="w-full rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-left transition hover:bg-red-100"
                     >
                       <div className="flex items-center justify-between gap-3">
@@ -701,7 +715,7 @@ export default function Home() {
                   {pinnedNotices.slice(0, 3).map((notice: any) => (
                     <button
                       key={notice.id}
-                      onClick={() => setLocation(`/notices/${notice.id}`)}
+                      onClick={() => setLocation(withOrgPath(`/notices/${notice.id}`))}
                       className="w-full rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-left transition hover:bg-amber-100"
                     >
                       <div className="flex items-center justify-between gap-3">
@@ -727,7 +741,7 @@ export default function Home() {
                     .map((notice: any) => (
                       <button
                         key={notice.id}
-                        onClick={() => setLocation(`/notices/${notice.id}`)}
+                        onClick={() => setLocation(withOrgPath(`/notices/${notice.id}`))}
                         className="w-full rounded-2xl bg-slate-50 px-4 py-4 text-left transition hover:bg-slate-100"
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -759,7 +773,7 @@ export default function Home() {
                         variant="ghost"
                         size="sm"
                         className="h-8 px-2 text-xs"
-                        onClick={() => setLocation("/schedules")}
+                        onClick={() => setLocation(withOrgPath("/schedules"))}
                       >
                         전체 보기
                       </Button>

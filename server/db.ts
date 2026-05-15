@@ -11813,11 +11813,11 @@ export async function listChatRoomMembers(
   const db = await getDb();
   if (!db) return [];
 
-await ensureChatRoomMember(roomId, userId, {
-  organizationId,
-});
+  const organizationId = requireOrganizationId(params?.organizationId);
 
-  await ensureChatRoomMember(roomId, userId);
+  await ensureChatRoomMember(roomId, userId, {
+    organizationId,
+  });
 
   const [rows] = await db.execute(sql`
     SELECT

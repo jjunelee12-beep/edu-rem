@@ -5299,21 +5299,35 @@ const student = await db.getStudent(input.studentId, {
 
 practiceEducationCenter: router({
   list: protectedProcedure
-  .input(
-    z.object({
-      categoryId: z.number().optional(),
-    }).optional()
-  )
-  .query(async ({ ctx, input }) => {
-    return db.listPracticeEducationCenters(input?.categoryId, {
-  organizationId,
-});
-  }),
+    .input(
+      z.object({
+        categoryId: z.number().optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
+
+      return db.listPracticeEducationCenters(input?.categoryId, {
+        organizationId,
+      });
+    }),
 
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return db.getPracticeEducationCenter(input.id);
+    .query(async ({ ctx, input }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
+
+      return db.getPracticeEducationCenter(input.id, {
+        organizationId,
+      });
     }),
 
   create: protectedProcedure
@@ -5336,7 +5350,14 @@ practiceEducationCenter: router({
         throw new Error("관리자 또는 호스트만 등록할 수 있습니다");
       }
 
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
+
       const id = await db.createPracticeEducationCenter({
+        organizationId,
         name: input.name.trim(),
         phone: input.phone?.trim() || null,
         address: input.address?.trim() || null,
@@ -5352,58 +5373,66 @@ practiceEducationCenter: router({
       return { id, success: true };
     }),
 
-bulkCreate: protectedProcedure
-  .input(
-    z.object({
-      rows: z.array(
-        z.object({
-categoryId: z.number().optional(),
-representativeName: z.string().optional(),
-availableCourse: z.string().optional(),
-memo: z.string().optional(),
-          name: z.string().min(1),
-          phone: z.string().optional(),
-          address: z.string().optional(),
-          detailAddress: z.string().optional(),
-          feeAmount: z.string().optional(),
-          latitude: z.string().optional(),
-          longitude: z.string().optional(),
-          note: z.string().optional(),
-          isActive: z.boolean().optional(),
-          sortOrder: z.number().optional(),
-        })
-      ),
-    })
-  )
-  .mutation(async ({ ctx, input }) => {
-    if (ctx.user.role !== "host" && ctx.user.role !== "superhost") {
-      throw new Error("호스트만 등록할 수 있습니다");
-    }
+  bulkCreate: protectedProcedure
+    .input(
+      z.object({
+        mode: z.enum(["append", "replace"]).default("append"),
+        categoryId: z.number().nullable().optional(),
+        rows: z.array(
+          z.object({
+            categoryId: z.number().optional(),
+            representativeName: z.string().optional(),
+            availableCourse: z.string().optional(),
+            memo: z.string().optional(),
+            name: z.string().min(1),
+            phone: z.string().optional(),
+            address: z.string().optional(),
+            detailAddress: z.string().optional(),
+            feeAmount: z.string().optional(),
+            latitude: z.string().optional(),
+            longitude: z.string().optional(),
+            note: z.string().optional(),
+            isActive: z.boolean().optional(),
+            sortOrder: z.number().optional(),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "host" && ctx.user.role !== "superhost") {
+        throw new Error("호스트만 등록할 수 있습니다");
+      }
 
-    return db.bulkCreatePracticeEducationCenters(
-  input.rows.map((row, idx) => ({
-    categoryId: row.categoryId ?? input.categoryId ?? null,
-    representativeName: row.representativeName?.trim() || null,
-    availableCourse: row.availableCourse?.trim() || null,
-    memo: row.memo?.trim() || null,
-    name: row.name.trim(),
-    phone: row.phone?.trim() || null,
-    address: row.address?.trim() || null,
-    detailAddress: row.detailAddress?.trim() || null,
-    feeAmount: row.feeAmount || "0",
-    latitude: row.latitude || null,
-    longitude: row.longitude || null,
-    note: row.note?.trim() || null,
-    isActive: row.isActive ?? true,
-    sortOrder: row.sortOrder ?? idx,
-  })),
-  {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
-    mode: input.mode,
-    categoryId: input.categoryId ?? null,
-  }
-);
-  }),
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
+
+      return db.bulkCreatePracticeEducationCenters(
+        input.rows.map((row, idx) => ({
+          categoryId: row.categoryId ?? input.categoryId ?? null,
+          representativeName: row.representativeName?.trim() || null,
+          availableCourse: row.availableCourse?.trim() || null,
+          memo: row.memo?.trim() || null,
+          name: row.name.trim(),
+          phone: row.phone?.trim() || null,
+          address: row.address?.trim() || null,
+          detailAddress: row.detailAddress?.trim() || null,
+          feeAmount: row.feeAmount || "0",
+          latitude: row.latitude || null,
+          longitude: row.longitude || null,
+          note: row.note?.trim() || null,
+          isActive: row.isActive ?? true,
+          sortOrder: row.sortOrder ?? idx,
+        })),
+        {
+          organizationId,
+          mode: input.mode,
+          categoryId: input.categoryId ?? null,
+        }
+      );
+    }),
 
   update: protectedProcedure
     .input(
@@ -5426,8 +5455,17 @@ memo: z.string().optional(),
         throw new Error("관리자 또는 호스트만 수정할 수 있습니다");
       }
 
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
+
       const { id, ...rest } = input;
-      await db.updatePracticeEducationCenter(id, rest as any);
+      await db.updatePracticeEducationCenter(id, rest as any, {
+        organizationId,
+      });
+
       return { success: true };
     }),
 
@@ -5451,56 +5489,89 @@ memo: z.string().optional(),
         throw new Error("관리자 또는 호스트만 수정할 수 있습니다");
       }
 
-      await db.updatePracticeEducationCenterAvailability(input.id, {
-        isInactive: input.isInactive,
-        inactiveReason: input.inactiveReason ?? null,
-        inactiveStartDate: input.inactiveStartDate ?? null,
-        inactiveEndDate: input.inactiveEndDate ?? null,
-        hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
-      });
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
+
+      await db.updatePracticeEducationCenterAvailability(
+        input.id,
+        {
+          isInactive: input.isInactive,
+          inactiveReason: input.inactiveReason ?? null,
+          inactiveStartDate: input.inactiveStartDate ?? null,
+          inactiveEndDate: input.inactiveEndDate ?? null,
+          hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
+        },
+        { organizationId }
+      );
 
       return { success: true };
     }),
 
-bulkDeactivate: protectedProcedure
-  .input(
-    z.object({
-      inactiveReason: z.string().nullable().optional(),
-      inactiveStartDate: z.string().nullable().optional(),
-      inactiveEndDate: z.string().nullable().optional(),
-      hideOnMapWhenInactive: z.boolean().optional(),
-    })
-  )
-  .mutation(async ({ ctx, input }) => {
-    if (ctx.user.role !== "host" && ctx.user.role !== "superhost") {
-      throw new Error("호스트만 일괄 비활성화할 수 있습니다");
-    }
+  bulkDeactivate: protectedProcedure
+    .input(
+      z.object({
+        inactiveReason: z.string().nullable().optional(),
+        inactiveStartDate: z.string().nullable().optional(),
+        inactiveEndDate: z.string().nullable().optional(),
+        hideOnMapWhenInactive: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== "host" && ctx.user.role !== "superhost") {
+        throw new Error("호스트만 일괄 비활성화할 수 있습니다");
+      }
 
-    return db.bulkDeactivatePracticeEducationCenters({
-      inactiveReason: input.inactiveReason ?? "일괄 비활성화",
-      inactiveStartDate: input.inactiveStartDate ?? null,
-      inactiveEndDate: input.inactiveEndDate ?? null,
-      hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
-    });
-  }),
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-fixCoords: protectedProcedure
-  .input(
-    z.object({
-      limit: z.number().optional(),
-    })
-  )
-  .mutation(async ({ input }) => {
-    return db.fixMissingCoordinates({
-      type: "education",
-      limit: input.limit,
-    });
-  }),
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
+
+      return db.bulkDeactivatePracticeEducationCenters({
+        organizationId,
+        inactiveReason: input.inactiveReason ?? "일괄 비활성화",
+        inactiveStartDate: input.inactiveStartDate ?? null,
+        inactiveEndDate: input.inactiveEndDate ?? null,
+        hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
+      });
+    }),
+
+  fixCoords: protectedProcedure
+    .input(
+      z.object({
+        limit: z.number().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
+
+      return db.fixMissingCoordinates({
+        organizationId,
+        type: "education",
+        limit: input.limit,
+      });
+    }),
 
   delete: hostProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
-      await db.deletePracticeEducationCenter(input.id);
+    .mutation(async ({ ctx, input }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
+
+      await db.deletePracticeEducationCenter(input.id, {
+        organizationId,
+      });
+
       return { success: true };
     }),
 }),
@@ -5512,18 +5583,33 @@ fixCoords: protectedProcedure
       categoryId: z.number().optional(),
     }).optional()
   )
-  .query(async ({ input }) => {
-    return db.listPracticeInstitutions({
-      institutionType: input?.institutionType,
-      categoryId: input?.categoryId,
-    });
-  }),
+  .query(async ({ ctx, input }) => {
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  if (!organizationId) {
+    throw new Error("organizationId is required");
+  }
+
+  return db.listPracticeInstitutions({
+    organizationId,
+    institutionType: input?.institutionType,
+    categoryId: input?.categoryId,
+  });
+}),
 
     get: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .query(async ({ input }) => {
-        return db.getPracticeInstitution(input.id);
-      }),
+      .query(async ({ ctx, input }) => {
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  if (!organizationId) {
+    throw new Error("organizationId is required");
+  }
+
+  return db.getPracticeInstitution(input.id, {
+    organizationId,
+  });
+}),
 
     create: protectedProcedure
       .input(
@@ -5547,7 +5633,14 @@ fixCoords: protectedProcedure
           throw new Error("관리자 또는 호스트만 등록할 수 있습니다");
         }
 
+const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+if (!organizationId) {
+  throw new Error("organizationId is required");
+}
+
         const id = await db.createPracticeInstitution({
+organizationId,
           institutionType: input.institutionType,
           name: input.name.trim(),
           representativeName: input.representativeName?.trim() || null,
@@ -5595,6 +5688,12 @@ categoryId: z.number().nullable().optional(),
           throw new Error("관리자 또는 호스트만 등록할 수 있습니다");
         }
 
+const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+if (!organizationId) {
+  throw new Error("organizationId is required");
+}
+
        const result = await db.bulkCreatePracticeInstitutions(
   input.rows.map((row, idx) => ({
     institutionType: row.institutionType,
@@ -5613,10 +5712,10 @@ categoryId: z.number().nullable().optional(),
     sortOrder: (row as any).sortOrder ?? idx,
   })) as any,
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
-    mode: input.mode,
-    categoryId: input.categoryId ?? null,
-  }
+  organizationId,
+  mode: input.mode,
+  categoryId: input.categoryId ?? null,
+}
 );
 
 return result;
@@ -5637,8 +5736,15 @@ bulkDeactivate: protectedProcedure
       throw new Error("호스트만 일괄 비활성화할 수 있습니다");
     }
 
-    return db.bulkDeactivatePracticeInstitutions({
-      institutionType: input.institutionType,
+const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+if (!organizationId) {
+  throw new Error("organizationId is required");
+}
+
+return db.bulkDeactivatePracticeInstitutions({
+  organizationId,
+  institutionType: input.institutionType,
       inactiveReason: input.inactiveReason ?? "일괄 비활성화",
       inactiveStartDate: input.inactiveStartDate ?? null,
       inactiveEndDate: input.inactiveEndDate ?? null,
@@ -5685,7 +5791,15 @@ bulkDeactivate: protectedProcedure
         if (rest.memo !== undefined) data.memo = rest.memo;
         if (rest.isActive !== undefined) data.isActive = rest.isActive;
 
-        await db.updatePracticeInstitution(id, data);
+        const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+if (!organizationId) {
+  throw new Error("organizationId is required");
+}
+
+await db.updatePracticeInstitution(id, data, {
+  organizationId,
+});
         return { success: true };
       }),
 
@@ -5709,13 +5823,23 @@ bulkDeactivate: protectedProcedure
         throw new Error("관리자 또는 호스트만 수정할 수 있습니다");
       }
 
-      await db.updatePracticeInstitutionAvailability(input.id, {
-        isInactive: input.isInactive,
-        inactiveReason: input.inactiveReason ?? null,
-        inactiveStartDate: input.inactiveStartDate ?? null,
-        inactiveEndDate: input.inactiveEndDate ?? null,
-        hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
-      });
+const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+if (!organizationId) {
+  throw new Error("organizationId is required");
+}
+
+      await db.updatePracticeInstitutionAvailability(
+  input.id,
+  {
+    isInactive: input.isInactive,
+    inactiveReason: input.inactiveReason ?? null,
+    inactiveStartDate: input.inactiveStartDate ?? null,
+    inactiveEndDate: input.inactiveEndDate ?? null,
+    hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
+  },
+  { organizationId }
+);
 
       return { success: true };
     }),
@@ -5727,16 +5851,31 @@ fixCoords: protectedProcedure
     })
   )
   .mutation(async ({ ctx, input }) => {
-    return db.fixMissingCoordinates({
-      type: "institution",
-      limit: input.limit,
-    });
+   const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+if (!organizationId) {
+  throw new Error("organizationId is required");
+}
+
+return db.fixMissingCoordinates({
+  organizationId,
+  type: "institution",
+  limit: input.limit,
+});
   }),
 
     delete: hostProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        await db.deletePracticeInstitution(input.id);
+     .mutation(async ({ ctx, input }) => {
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  if (!organizationId) {
+    throw new Error("organizationId is required");
+  }
+
+  await db.deletePracticeInstitution(input.id, {
+    organizationId,
+  });
         return { success: true };
       }),
   }),
@@ -5748,10 +5887,16 @@ practiceListCategory: router({
         listType: z.enum(["education", "institution"]).optional(),
       }).optional()
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
+
       return db.listPracticeListCategories(input?.listType, {
-  organizationId,
-});
+        organizationId,
+      });
     }),
 
   create: hostProcedure
@@ -5764,8 +5909,14 @@ practiceListCategory: router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
+
       const id = await db.createPracticeListCategory({
-organizationId,
+        organizationId,
         name: input.name.trim(),
         listType: input.listType,
         description: input.description?.trim() || null,
@@ -5787,19 +5938,34 @@ organizationId,
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
+
       const { id, ...rest } = input;
+
       await db.updatePracticeListCategory(id, rest as any, {
-  organizationId,
-});
+        organizationId,
+      });
+
       return { success: true };
     }),
 
   delete: hostProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
+
       await db.deletePracticeListCategory(input.id, {
-  organizationId,
-});
+        organizationId,
+      });
+
       return { success: true };
     }),
 }),

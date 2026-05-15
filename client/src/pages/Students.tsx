@@ -30,6 +30,18 @@ function isClosedStatus(status: string | null | undefined) {
 
 export default function Students() {
   const { user } = useAuth();
+
+const organizationSlug =
+  (user as any)?.organizationSlug ||
+  (user as any)?.organization?.slug ||
+  "";
+
+const withOrgPath = (path: string) => {
+  if (!organizationSlug) return path;
+  if (path === "/") return `/${organizationSlug}`;
+  if (path.startsWith(`/${organizationSlug}/`)) return path;
+  return `/${organizationSlug}${path.startsWith("/") ? path : `/${path}`}`;
+};
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
   const { data: students, isLoading } = trpc.student.list.useQuery();
@@ -267,7 +279,7 @@ export default function Students() {
   isAdmin={!!isAdmin}
   userMap={userMap}
   onBlur={handleCellBlur}
-  onDetail={(id) => setLocation(`/students/${id}`)}
+  onDetail={(id) => setLocation(withOrgPath(`/students/${id}`))}
   handlePhoneInput={handlePhoneInput}
 />
               ))}

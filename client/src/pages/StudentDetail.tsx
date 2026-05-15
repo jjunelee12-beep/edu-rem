@@ -697,8 +697,38 @@ const closeRefundDialog = () => {
   setRefundDialogOpen(false);
 };
 
+const organizationSlug =
+  (user as any)?.organizationSlug ||
+  (user as any)?.organization?.slug ||
+  "";
+
+const withOrgPath = (path: string) => {
+  const cleanPath = String(path || "").trim();
+
+  if (!cleanPath) return organizationSlug ? `/${organizationSlug}` : "/";
+
+  if (!organizationSlug) return cleanPath;
+
+  if (cleanPath === "/") {
+    return `/${organizationSlug}`;
+  }
+
+  if (cleanPath.startsWith(`/${organizationSlug}/`)) {
+    return cleanPath;
+  }
+
+  return `/${organizationSlug}${cleanPath.startsWith("/") ? cleanPath : `/${cleanPath}`}`;
+};
+
 const safeNavigate = (path: string) => {
-  setLocation(path);
+  const cleanPath = String(path || "").trim();
+
+  if (/^\/?\d+$/.test(cleanPath)) {
+    setLocation(withOrgPath(`/students/${cleanPath.replace("/", "")}`));
+    return;
+  }
+
+  setLocation(withOrgPath(cleanPath));
 };
 
   const [editingRefundId, setEditingRefundId] = useState<number | null>(null);
