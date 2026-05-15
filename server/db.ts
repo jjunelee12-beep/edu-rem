@@ -100,6 +100,8 @@ organizationBackups,
 type InsertOrganizationBackup,
 auditLogs,
 type InsertAuditLog,
+studentAuditLogs,
+type InsertStudentAuditLog,
 } from "../drizzle/schema";
 
 import { ENV } from "./_core/env";
@@ -377,6 +379,46 @@ export async function listAuditLogs(params: {
     .limit(limit);
 }
 
+export async function createStudentAuditLog(
+  input: Omit<InsertStudentAuditLog, "id" | "createdAt">
+) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const organizationId = requireOrganizationId((input as any).organizationId);
+
+  const result: any = await db.insert(studentAuditLogs).values({
+    ...input,
+    organizationId,
+  } as any);
+
+  return getInsertId(result);
+}
+
+export async function listStudentAuditLogs(params: {
+  organizationId?: number | null;
+  studentId: number;
+  limit?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const limit = Math.min(Math.max(Number(params.limit || 100), 1), 300);
+
+  return db
+    .select()
+    .from(studentAuditLogs)
+    .where(
+      and(
+        eq(studentAuditLogs.organizationId, organizationId),
+        eq(studentAuditLogs.studentId, Number(params.studentId))
+      )
+    )
+    .orderBy(desc(studentAuditLogs.createdAt))
+    .limit(limit);
+}
+
 // ==============================
 // ORGANIZATION BACKUPS
 // ==============================
@@ -605,6 +647,7 @@ const ORGANIZATION_BACKUP_TABLES = [
   "settlement_item_logs",
   "settlement_settings",
   "audit_logs",
+"student_audit_logs",
 ];
 
 function sanitizeBackupFilePart(value: any) {

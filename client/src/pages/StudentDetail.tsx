@@ -160,9 +160,19 @@ const [highlightSection, setHighlightSection] = useState<
 >("");
 
 const ENABLE_PLAN_REQUIREMENT = FEATURE_FLAGS.PLAN_REQUIREMENT_ENFORCE;
+const [studentAuditDialogOpen, setStudentAuditDialogOpen] = useState(false);
 
-  const { data: student, isLoading: studentLoading } = trpc.student.get.useQuery({ id: studentId });
-  const { data: semesters } = trpc.semester.list.useQuery({ studentId });
+const { data: student, isLoading: studentLoading } =
+  trpc.student.get.useQuery({ id: studentId });
+
+const canEditStudentDetail =
+  user?.role === "host" ||
+  user?.role === "superhost" ||
+  Number(student?.assigneeId || 0) === Number(user?.id || 0);
+
+const isReadOnly = !!student && !canEditStudentDetail;
+
+const { data: semesters } = trpc.semester.list.useQuery({ studentId });
   const { data: plan } = trpc.plan.get.useQuery({ studentId });
   const { data: allUsers } = trpc.users.list.useQuery();
   const { data: institutionList } = trpc.educationInstitution.list.useQuery();
@@ -186,6 +196,17 @@ const { data: privateCertificateRequestList } =
 
 const { data: practiceSupportList } =
   trpc.practiceSupport.listByStudent.useQuery({ studentId });
+
+const { data: studentAuditLogs = [], isLoading: studentAuditLoading } =
+  trpc.studentAudit.list.useQuery(
+    {
+      studentId,
+      limit: 100,
+    },
+    {
+      enabled: studentAuditDialogOpen && !!studentId,
+    }
+  );
 
 
   const [selectedSemesterOrder, setSelectedSemesterOrder] = useState(1);
@@ -256,6 +277,10 @@ const deletePrivateCertificateRequestMut =
   });
 
 const submitPrivateCertRequest = async () => {
+if (isReadOnly) {
+  toast.error("담당자 또는 호스트만 수정할 수 있습니다.");
+  return;
+}
   if (!selectedPrivateCertNames.length) {
     toast.error("요청할 민간자격증을 선택해주세요.");
     return;
@@ -386,6 +411,10 @@ const deletePlanSemesterMut = trpc.planSemester.delete.useMutation({
 });
 
 const applySubjectCatalogItemsToSemester = async () => {
+if (isReadOnly) {
+  toast.error("담당자 또는 호스트만 수정할 수 있습니다.");
+  return;
+}
   if (!templateDialogSemesterNo) {
     toast.error("학기 정보가 없습니다.");
     return;
@@ -638,6 +667,13 @@ const upsertPracticeSupportByStudentMut =
   trpc.practiceSupport.upsertByStudent.useMutation({
     onError: (e) => toast.error(e.message),
   });
+const deletePracticeSupportMut =
+  trpc.practiceSupport.delete.useMutation({
+    onSuccess: async () => {
+      await utils.practiceSupport.listByStudent.invalidate({ studentId });
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const [editingPlan, setEditingPlan] = useState(false);
   const [planForm, setPlanForm] = useState({
@@ -651,6 +687,7 @@ const upsertPracticeSupportByStudentMut =
   generalCount: "",
 
   hasPractice: false,
+practiceRequiredSelection: "",
   practiceHours: "",
   practiceDate: "",
   practiceArranged: false,
@@ -862,17 +899,19 @@ const selectedPracticeSupport = useMemo(() => {
 const isPlanSummaryWritten = useMemo(() => {
   if (!plan) return false;
 
+  const desiredCourse = String(plan.desiredCourse || "").trim();
+  const finalEducation = String(plan.finalEducation || "").trim();
+  const totalTheorySubjects = Number(plan.totalTheorySubjects || 0);
+
   return (
-    !!String(plan.desiredCourse || "").trim() ||
-    !!String(plan.finalEducation || "").trim() ||
-    Number(plan.totalTheorySubjects || 0) > 0 ||
-    Number((plan as any).requiredMajorCount || 0) > 0 ||
-    Number((plan as any).electiveMajorCount || 0) > 0 ||
-    Number((plan as any).liberalCount || 0) > 0 ||
-    Number((plan as any).generalCount || 0) > 0 ||
-    !!plan.hasPractice ||
-    !!String(plan.specialNotes || "").trim()
-  );
+  !!desiredCourse &&
+  !!finalEducation &&
+  totalTheorySubjects > 0 &&
+  (
+    plan.hasPractice === true ||
+    plan.hasPractice === false
+  )
+);
 }, [plan]);
 
 
@@ -1072,6 +1111,10 @@ const toggleRegisteredCourse = (course: string) => {
 };
 
 const saveRegisteredCourses = async () => {
+if (isReadOnly) {
+  toast.error("담당자 또는 호스트만 수정할 수 있습니다.");
+  return;
+}
   if (!courseDialogSemester) {
     toast.error("학기 정보가 없습니다.");
     return;
@@ -1130,6 +1173,7 @@ const saveRegisteredCourses = async () => {
 };
 
   const handleSemFieldBlur = async (semId: number, field: string, value: string) => {
+if (isReadOnly) return;
     const payload: any = { id: semId };
 
     if (field === "plannedSubjectCount" || field === "actualSubjectCount") {
@@ -1147,6 +1191,10 @@ const saveRegisteredCourses = async () => {
   };
 
   const handleSelectedSemesterStatusChange = (nextStatus: "등록" | "등록 종료") => {
+if (isReadOnly) {
+  toast.error("담당자 또는 호스트만 수정할 수 있습니다.");
+  return;
+}
     if (!selectedSemester) {
       toast.error("선택된 학기가 없습니다.");
       return;
@@ -1194,6 +1242,12 @@ const saveRegisteredCourses = async () => {
     generalCount: String((plan as any)?.generalCount ?? ""),
 
     hasPractice: plan?.hasPractice || false,
+practiceRequiredSelection:
+  plan?.hasPractice === true
+    ? "required"
+    : plan?.hasPractice === false
+      ? "not_required"
+      : "",
     practiceHours: plan?.practiceHours?.toString() || "",
     practiceDate: plan?.practiceDate || "",
     practiceArranged: plan?.practiceArranged || false,
@@ -1213,6 +1267,10 @@ const saveRegisteredCourses = async () => {
 
  
 const savePlan = async () => {
+if (isReadOnly) {
+  toast.error("담당자 또는 호스트만 수정할 수 있습니다.");
+  return;
+}
   try {
     const totalTheorySubjects = toNumber(planForm.totalTheorySubjects);
     const requiredMajorCount = toNumber(planForm.requiredMajorCount);
@@ -1265,14 +1323,12 @@ const savePlan = async () => {
     });
 
 if (
-  !planForm.hasPractice &&
+  planForm.practiceRequiredSelection === "not_required" &&
   selectedPracticeSupport?.id
 ) {
-  await trpc.practiceSupport.delete.mutate({
+  await deletePracticeSupportMut.mutateAsync({
     id: Number(selectedPracticeSupport.id),
   });
-
-  await utils.practiceSupport.listByStudent.invalidate({ studentId });
 }
 
     if (planForm.hasPractice) {
@@ -1340,6 +1396,10 @@ if (
   };
 
   const handleAddSemester = () => {
+if (isReadOnly) {
+  toast.error("담당자 또는 호스트만 수정할 수 있습니다.");
+  return;
+}
     const selectedInstitution = institutionList?.find(
       (inst: any) => Number(inst.id) === Number(semForm.plannedInstitutionId)
     );
@@ -1462,6 +1522,10 @@ if (
   }, [selectedSemester]);
 
   const handleAddPlanSubject = (semesterNo: number) => {
+if (isReadOnly) {
+  toast.error("담당자 또는 호스트만 수정할 수 있습니다.");
+  return;
+}
     const current = (planSemesterList || []).filter(
       (x: any) => Number(x.semesterNo) === Number(semesterNo)
     );
@@ -1514,6 +1578,7 @@ if (ENABLE_PLAN_REQUIREMENT) {
   };
 
   const handlePlanSemesterBlur = (id: number, field: string, value: any) => {
+if (isReadOnly) return;
     const payload: any = { id };
 
     if (field === "semesterNo" || field === "sortOrder") {
@@ -1526,6 +1591,10 @@ if (ENABLE_PLAN_REQUIREMENT) {
   };
 
   const handleAddTransferSubjects = async () => {
+if (isReadOnly) {
+  toast.error("담당자 또는 호스트만 수정할 수 있습니다.");
+  return;
+}
     const count = Math.max(1, Math.min(100, Number(transferAddCount) || 1));
     const currentLen = transferSubjectList?.length ?? 0;
 
@@ -1563,6 +1632,7 @@ const canChangeRequirementType = (nextType: string, rowId: number) => {
 };
 
   const handleTransferBlur = (id: number, field: string, value: any) => {
+if (isReadOnly) return;
     const payload: any = { id };
 
     if (field === "credits" || field === "sortOrder") {
@@ -1575,6 +1645,10 @@ const canChangeRequirementType = (nextType: string, rowId: number) => {
   };
 
     const handleTransferAttachment = async (row: any, file: File) => {
+if (isReadOnly) {
+  toast.error("담당자 또는 호스트만 수정할 수 있습니다.");
+  return;
+}
     try {
       setUploadingTransferRowId(row.id);
 
@@ -1601,6 +1675,10 @@ const canChangeRequirementType = (nextType: string, rowId: number) => {
   };
 
   const clearTransferAttachment = (row: any) => {
+if (isReadOnly) {
+  toast.error("담당자 또는 호스트만 수정할 수 있습니다.");
+  return;
+}
     updateTransferSubjectMut.mutate(
       {
         id: row.id,
@@ -1625,8 +1703,11 @@ const canChangeRequirementType = (nextType: string, rowId: number) => {
   };
 
  const handleCopyPlannedToActual = (sem: any) => {
+if (isReadOnly) {
+  toast.error("담당자 또는 호스트만 수정할 수 있습니다.");
+  return;
+}
   const actualStartDate = normalizePlannedMonthToDate(sem.plannedMonth);
-  const today = new Date().toISOString().slice(0, 10);
 
   updateSemMut.mutate(
     {
@@ -1635,7 +1716,6 @@ const canChangeRequirementType = (nextType: string, rowId: number) => {
       actualInstitutionId: sem.plannedInstitutionId || undefined,
       actualSubjectCount: sem.plannedSubjectCount ?? undefined,
       actualAmount: sem.plannedAmount || undefined,
-      actualPaymentDate: today,
     } as any,
     {
       onSuccess: async () => {
@@ -1768,6 +1848,10 @@ const existingPlanSubjectMap = useMemo(() => {
   };
 
   const openTemplateDialog = (semesterNo: number) => {
+if (isReadOnly) {
+  toast.error("담당자 또는 호스트만 수정할 수 있습니다.");
+  return;
+}
   setTemplateDialogSemesterNo(semesterNo);
   setTemplateDialogOpen(true);
   setSelectedTemplateIds([]);
@@ -1821,6 +1905,11 @@ const getCountStatusClass = (current: number, target: number) => {
 
   return (
     <div className="space-y-6">
+{isReadOnly && (
+  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+    이 학생 상세페이지는 담당자 또는 호스트만 수정할 수 있습니다. 현재 계정은 읽기 전용입니다.
+  </div>
+)}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => safeNavigate("/students")}>
           <ArrowLeft className="h-4 w-4" />
@@ -1837,6 +1926,13 @@ const getCountStatusClass = (current: number, target: number) => {
         </div>
 
         <div className="flex items-center gap-2">
+<Button
+  variant="outline"
+  size="sm"
+  onClick={() => setStudentAuditDialogOpen(true)}
+>
+  학생기록부
+</Button>
   <Badge className={statusColor(displayStudentStatus)}>
     {displayStudentStatus}
   </Badge>
@@ -1909,7 +2005,7 @@ const getCountStatusClass = (current: number, target: number) => {
             <div>
               <p className="text-xs text-muted-foreground mb-0.5">상태</p>
 
-              {canFinalizeRegistrationStatus ? (
+              {canFinalizeRegistrationStatus && !isReadOnly ? (
   <Select
     value={selectedSemesterStatus || "등록"}
     onValueChange={(v) =>
@@ -2063,6 +2159,7 @@ const getCountStatusClass = (current: number, target: number) => {
   <Button
     variant="outline"
     size="sm"
+disabled={isReadOnly}
     onClick={() => {
       setSelectedPrivateCertNames([]);
       setPrivateCertDialogOpen(true);
@@ -2075,6 +2172,7 @@ const getCountStatusClass = (current: number, target: number) => {
 <Button
   variant="outline"
   size="sm"
+disabled={isReadOnly}
   onClick={() => openCourseDialog(selectedSemester || sortedSemesters[0])}
   className="gap-1 text-violet-600 border-violet-200 hover:bg-violet-50"
 >
@@ -2084,6 +2182,7 @@ const getCountStatusClass = (current: number, target: number) => {
   <Button
   variant="outline"
   size="sm"
+disabled={isReadOnly}
   onClick={() => {
   setRefundForm((prev) => ({
     ...prev,
@@ -2096,7 +2195,7 @@ const getCountStatusClass = (current: number, target: number) => {
   환불 등록
 </Button>
 
-  <Button variant="outline" size="sm" onClick={openAddSemester} className="gap-1">
+  <Button variant="outline" size="sm" onClick={openAddSemester} disabled={isReadOnly} className="gap-1">
     <Plus className="h-3.5 w-3.5" /> 학기 추가
   </Button>
 </div>
@@ -2153,12 +2252,14 @@ const getCountStatusClass = (current: number, target: number) => {
                         <EditableCell
                           value={sem.plannedMonth ? (sem.plannedMonth.length === 6 ? sem.plannedMonth.slice(0, 4) + "-" + sem.plannedMonth.slice(4) : sem.plannedMonth) : ""}
                           onBlur={(v) => handleSemFieldBlur(sem.id, "plannedMonth", v)}
+disabled={isReadOnly}
                         />
                       </td>
 
                       <td className="px-1 py-0.5">
                         <Select
                           value={sem.plannedInstitutionId ? String(sem.plannedInstitutionId) : ""}
+		disabled={isReadOnly}
                           onValueChange={(v) =>
                             updateSemMut.mutate({
                               id: sem.id,
@@ -2183,6 +2284,7 @@ const getCountStatusClass = (current: number, target: number) => {
                         <EditableCell
                           value={sem.plannedSubjectCount?.toString() || ""}
                           onBlur={(v) => handleSemFieldBlur(sem.id, "plannedSubjectCount", v)}
+	disabled={isReadOnly}
                         />
                       </td>
 
@@ -2195,6 +2297,7 @@ const getCountStatusClass = (current: number, target: number) => {
       const nextGross = toNumber(nextValue) + approvedRefundAmount;
       handleSemFieldBlur(sem.id, "plannedAmount", String(nextGross));
     }}
+disabled={isReadOnly}
   />
   {approvedRefundAmount > 0 && (
     <div className="text-[11px] text-red-600">
@@ -2213,6 +2316,7 @@ const getCountStatusClass = (current: number, target: number) => {
                         <EditableCell
                           value={sem.actualStartDate ? (typeof sem.actualStartDate === "string" ? sem.actualStartDate.slice(0, 10) : new Date(sem.actualStartDate).toISOString().slice(0, 10)) : ""}
                           onBlur={(v) => handleSemFieldBlur(sem.id, "actualStartDate", v)}
+	disabled={isReadOnly}
                           type="date"
                           className="text-primary"
                         />
@@ -2221,6 +2325,7 @@ const getCountStatusClass = (current: number, target: number) => {
                       <td className="px-1 py-0.5">
                         <Select
                           value={sem.actualInstitutionId ? String(sem.actualInstitutionId) : ""}
+		disabled={isReadOnly}
                           onValueChange={(v) =>
                             updateSemMut.mutate({
                               id: sem.id,
@@ -2245,6 +2350,7 @@ const getCountStatusClass = (current: number, target: number) => {
                         <EditableCell
                           value={sem.actualSubjectCount?.toString() || ""}
                           onBlur={(v) => handleSemFieldBlur(sem.id, "actualSubjectCount", v)}
+		disabled={isReadOnly}
                           className="text-primary"
                         />
                       </td>
@@ -2258,6 +2364,7 @@ const getCountStatusClass = (current: number, target: number) => {
       const nextGross = toNumber(nextValue) + approvedRefundAmount;
       handleSemFieldBlur(sem.id, "actualAmount", String(nextGross));
     }}
+disabled={isReadOnly}
     className="text-primary font-medium"
   />
   {approvedRefundAmount > 0 && (
@@ -2277,6 +2384,7 @@ const getCountStatusClass = (current: number, target: number) => {
                         <EditableCell
                           value={sem.actualPaymentDate ? (typeof sem.actualPaymentDate === "string" ? sem.actualPaymentDate.slice(0, 10) : new Date(sem.actualPaymentDate).toISOString().slice(0, 10)) : ""}
                           onBlur={(v) => handleSemFieldBlur(sem.id, "actualPaymentDate", v)}
+		disabled={isReadOnly}
                           type="date"
                           className="text-primary"
                         />
@@ -2286,15 +2394,22 @@ const getCountStatusClass = (current: number, target: number) => {
   <div title="입력완료는 학기 정보 입력 여부만 표시합니다. 등록 확정 및 매출 반영은 승인관리 승인 후 처리됩니다.">
    <Checkbox
   checked={!!sem.isCompleted}
+  disabled={isReadOnly}
   onCheckedChange={(checked) => {
     const nextChecked = !!checked;
 
-    if (nextChecked && !isPlanSummaryWritten) {
-      toast.error("입력완료 처리 전에 플랜 요약을 먼저 작성해주세요.");
-      scrollToSection(planSummarySectionRef.current);
-      setEditingPlan(true);
-      return;
-    }
+const hasRequiredPlanSummary =
+  !!String(plan?.desiredCourse || "").trim() &&
+  !!String(plan?.finalEducation || "").trim() &&
+  Number(plan?.totalTheorySubjects || 0) > 0 &&
+  !!planForm.practiceRequiredSelection;
+
+   if (nextChecked && !hasRequiredPlanSummary) {
+  toast.error("입력완료 처리 전에 플랜 요약의 희망과정, 최종학력, 총 이론 과목 수, 실습 필요 여부를 먼저 작성해주세요.");
+  scrollToSection(planSummarySectionRef.current);
+  setEditingPlan(true);
+  return;
+}
 
     if (nextChecked && toNumber(sem.actualAmount) <= 0) {
       toast.error("입력완료 처리하려면 실제 금액을 먼저 입력해주세요.");
@@ -2339,6 +2454,7 @@ const getCountStatusClass = (current: number, target: number) => {
                             size="icon"
                             className="h-7 w-7"
                             title="예정표 가져오기"
+		disabled={isReadOnly}
                             onClick={() => handleCopyPlannedToActual(sem)}
                           >
                             <Copy className="h-3 w-3 text-blue-500" />
@@ -2349,6 +2465,7 @@ const getCountStatusClass = (current: number, target: number) => {
   size="icon"
   className="h-7 w-7"
   title="등록 과정 설정"
+disabled={isReadOnly}
   onClick={() => openCourseDialog(sem)}
 >
   <Pencil className="h-3 w-3 text-violet-500" />
@@ -2359,6 +2476,7 @@ const getCountStatusClass = (current: number, target: number) => {
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7 text-destructive hover:text-destructive"
+			disabled={isReadOnly}
                               onClick={() => {
                                 if (confirm("삭제하시겠습니까?")) deleteSemMut.mutate({ id: sem.id });
                               }}
@@ -2391,7 +2509,13 @@ const getCountStatusClass = (current: number, target: number) => {
     <CardHeader className="flex flex-row items-center justify-between pb-3">
       <CardTitle className="text-base">플랜 요약</CardTitle>
           {!editingPlan ? (
-            <Button variant="outline" size="sm" onClick={startEditPlan} className="gap-1">
+            <Button
+  variant="outline"
+  size="sm"
+  onClick={startEditPlan}
+  disabled={isReadOnly}
+  className="gap-1"
+>
               {plan ? "수정" : "작성"}
             </Button>
           ) : (
@@ -2403,7 +2527,7 @@ const getCountStatusClass = (current: number, target: number) => {
   <Button
     size="sm"
     onClick={savePlan}
-    disabled={upsertPlanMut.isPending}
+    disabled={isReadOnly || upsertPlanMut.isPending}
     className="gap-1"
   >
     <Save className="h-3.5 w-3.5" /> 저장
@@ -2596,6 +2720,7 @@ const getCountStatusClass = (current: number, target: number) => {
                   <Label className="text-xs">희망과정</Label>
                   <Input
                     value={planForm.desiredCourse}
+		disabled={isReadOnly}
                     onChange={(e) => setPlanForm({ ...planForm, desiredCourse: e.target.value })}
                   />
                 </div>
@@ -2603,6 +2728,7 @@ const getCountStatusClass = (current: number, target: number) => {
                   <Label className="text-xs">최종학력</Label>
                   <Input
                     value={planForm.finalEducation}
+		disabled={isReadOnly}
                     onChange={(e) => setPlanForm({ ...planForm, finalEducation: e.target.value })}
                   />
                 </div>
@@ -2611,6 +2737,7 @@ const getCountStatusClass = (current: number, target: number) => {
                   <Input
                     type="number"
                     value={planForm.totalTheorySubjects}
+		disabled={isReadOnly}
                     onChange={(e) => setPlanForm({ ...planForm, totalTheorySubjects: e.target.value })}
                   />
                 </div>
@@ -2622,6 +2749,7 @@ const getCountStatusClass = (current: number, target: number) => {
       type="number"
       min={0}
       value={planForm.requiredMajorCount}
+disabled={isReadOnly}
       onChange={(e) =>
         setPlanForm((prev) => ({
           ...prev,
@@ -2638,6 +2766,7 @@ const getCountStatusClass = (current: number, target: number) => {
       type="number"
       min={0}
       value={planForm.electiveMajorCount}
+disabled={isReadOnly}
       onChange={(e) =>
         setPlanForm((prev) => ({
           ...prev,
@@ -2654,6 +2783,7 @@ const getCountStatusClass = (current: number, target: number) => {
       type="number"
       min={0}
       value={planForm.liberalCount}
+disabled={isReadOnly}
       onChange={(e) =>
         setPlanForm((prev) => ({
           ...prev,
@@ -2670,6 +2800,7 @@ const getCountStatusClass = (current: number, target: number) => {
       type="number"
       min={0}
       value={planForm.generalCount}
+disabled={isReadOnly}
       onChange={(e) =>
         setPlanForm((prev) => ({
           ...prev,
@@ -2683,24 +2814,59 @@ const getCountStatusClass = (current: number, target: number) => {
 )}
               </div>
 
-              <div className="flex items-center gap-2">
-                <Checkbox
-  checked={!!planForm.hasPractice}
-  onCheckedChange={(checked) =>
-    setPlanForm((prev) => ({
-      ...prev,
-      hasPractice: !!checked,
-      practiceStatus: !!checked ? prev.practiceStatus || "미섭외" : "미섭외",
-      practiceHours: !!checked ? prev.practiceHours : "",
-      practiceDate: !!checked ? prev.practiceDate : "",
-      practiceAddress: !!checked ? prev.practiceAddress : "",
-      practiceArranged: !!checked ? prev.practiceArranged : false,
-    }))
-  }
-/>
-                <Label className="text-sm">실습 필요</Label>
-              </div>
-              {planForm.hasPractice && (
+              <div className="space-y-2">
+  <Label className="text-xs">실습 여부</Label>
+
+  <div className="flex items-center gap-6">
+    <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+      <Checkbox
+        checked={planForm.practiceRequiredSelection === "required"}
+disabled={isReadOnly}
+        onCheckedChange={(checked) => {
+          if (!checked) return;
+
+          setPlanForm((prev) => ({
+            ...prev,
+            practiceRequiredSelection: "required",
+            hasPractice: true,
+            practiceStatus: prev.practiceStatus || "미섭외",
+          }));
+        }}
+      />
+      <span>실습 필요</span>
+    </label>
+
+    <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+      <Checkbox
+        checked={planForm.practiceRequiredSelection === "not_required"}
+disabled={isReadOnly}
+        onCheckedChange={(checked) => {
+          if (!checked) return;
+
+          setPlanForm((prev) => ({
+            ...prev,
+            practiceRequiredSelection: "not_required",
+            hasPractice: false,
+            practiceStatus: "미섭외",
+            practiceHours: "",
+            practiceDate: "",
+            practiceAddress: "",
+            practiceArranged: false,
+          }));
+        }}
+      />
+      <span>실습 불필요</span>
+    </label>
+  </div>
+
+  {!planForm.practiceRequiredSelection && (
+    <p className="text-xs text-amber-600">
+      입력완료 체크 전 실습 필요 여부를 선택해야 합니다.
+    </p>
+  )}
+</div>
+
+{planForm.practiceRequiredSelection === "required" && (
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-6 border-l-2 border-blue-200">
     <div className="md:col-span-2">
       <p className="text-xs text-muted-foreground">
@@ -2713,6 +2879,7 @@ const getCountStatusClass = (current: number, target: number) => {
       <Input
         type="number"
         value={planForm.practiceHours}
+disabled={isReadOnly}
         onChange={(e) =>
           setPlanForm({ ...planForm, practiceHours: e.target.value })
         }
@@ -2724,6 +2891,7 @@ const getCountStatusClass = (current: number, target: number) => {
       <Label className="text-xs">실습 예정일</Label>
       <Input
         value={planForm.practiceDate}
+disabled={isReadOnly}
         onChange={(e) =>
           setPlanForm({ ...planForm, practiceDate: e.target.value })
         }
@@ -2735,6 +2903,7 @@ const getCountStatusClass = (current: number, target: number) => {
       <Label className="text-xs">주소</Label>
       <Input
         value={planForm.practiceAddress}
+disabled={isReadOnly}
         onChange={(e) =>
           setPlanForm({ ...planForm, practiceAddress: e.target.value })
         }
@@ -2745,6 +2914,7 @@ const getCountStatusClass = (current: number, target: number) => {
     <div className="space-y-1">
       <Label className="text-xs">섭외 상태</Label>
       <select
+  disabled={isReadOnly}
         className="w-full h-9 px-3 text-sm border rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-primary"
         value={planForm.practiceStatus}
         onChange={(e) =>
@@ -2767,6 +2937,7 @@ const getCountStatusClass = (current: number, target: number) => {
                 <Label className="text-xs">특이사항</Label>
                 <Textarea
                   value={planForm.specialNotes}
+disabled={isReadOnly}
                   onChange={(e) => setPlanForm({ ...planForm, specialNotes: e.target.value })}
                   rows={2}
                 />
@@ -2818,7 +2989,7 @@ const getCountStatusClass = (current: number, target: number) => {
                           size="sm"
                           variant="outline"
                           onClick={() => handleAddPlanSubject(group.semesterNo)}
-                          disabled={group.rows.length >= 8}
+                          disabled={isReadOnly || group.rows.length >= 8}
                         >
                           과목 추가
                         </Button>
@@ -2827,9 +2998,10 @@ const getCountStatusClass = (current: number, target: number) => {
                           size="sm"
                           variant="outline"
                           onClick={() => openTemplateDialog(group.semesterNo)}
-                        >
-                          일괄 등록
-                        </Button>
+disabled={isReadOnly}
+>
+  일괄 등록
+</Button>
                       </div>
                     </div>
 
@@ -2857,6 +3029,7 @@ const getCountStatusClass = (current: number, target: number) => {
     planFieldRefs.current[`plan-name-${group.semesterNo}-${rowIndex}`] = el;
   }}
   defaultValue={row.subjectName || ""}
+disabled={isReadOnly}
   className={`h-8 ${row.planRequirementType === "전공필수" ? "text-red-600 font-medium" : ""}`}
   onBlur={(e) => handlePlanSemesterBlur(row.id, "subjectName", e.target.value)}
   onKeyDown={(e) => handlePlanNameKeyDown(e, group.semesterNo, rowIndex, group.rows)}
@@ -2865,6 +3038,7 @@ const getCountStatusClass = (current: number, target: number) => {
 
                               <td className="px-2 py-1">
                                 <select
+			disabled={isReadOnly}
                                   ref={(el) => {
                                     planFieldRefs.current[`plan-category-${group.semesterNo}-${rowIndex}`] = el;
                                   }}
@@ -2918,6 +3092,7 @@ const getCountStatusClass = (current: number, target: number) => {
                               <td className="px-2 py-1">
                                 {row.planCategory === "전공" ? (
                                   <select
+			disabled={isReadOnly}
                                     ref={(el) => {
                                       planFieldRefs.current[`plan-type-${group.semesterNo}-${rowIndex}`] = el;
                                     }}
@@ -2967,6 +3142,7 @@ const getCountStatusClass = (current: number, target: number) => {
                                 <Button
                                   variant="ghost"
                                   size="icon"
+			disabled={isReadOnly}
                                   className="h-7 w-7 text-destructive hover:text-destructive"
                                   onClick={() => {
                                     if (confirm("과목을 삭제하시겠습니까?")) {
@@ -3025,9 +3201,14 @@ const getCountStatusClass = (current: number, target: number) => {
                   value={transferAddCount}
                   onChange={(e) => setTransferAddCount(e.target.value.replace(/[^0-9]/g, ""))}
                 />
-                <Button size="sm" variant="outline" onClick={handleAddTransferSubjects}>
-                  일괄 추가
-                </Button>
+                <Button
+  size="sm"
+  variant="outline"
+  onClick={handleAddTransferSubjects}
+  disabled={isReadOnly}
+>
+  일괄 추가
+</Button>
                 <>
   <input
     id="transfer-common-file"
@@ -3063,7 +3244,7 @@ const getCountStatusClass = (current: number, target: number) => {
       const el = document.getElementById("transfer-common-file") as HTMLInputElement | null;
       el?.click();
     }}
-    disabled={uploadingTransferCommon}
+    disabled={isReadOnly || uploadingTransferCommon}
   >
     {uploadingTransferCommon ? "업로드중..." : "첨부 추가"}
   </Button>
@@ -3090,6 +3271,7 @@ const getCountStatusClass = (current: number, target: number) => {
                     <Button
                       variant="ghost"
                       size="icon"
+		disabled={isReadOnly}
                       className="h-6 w-6 text-destructive"
                       onClick={() => {
                         if (confirm("첨부파일을 삭제하시겠습니까?")) {
@@ -3276,7 +3458,7 @@ const getCountStatusClass = (current: number, target: number) => {
       <Button
         variant="outline"
         size="sm"
-        disabled={uploadingTransferRowId === row.id}
+        disabled={isReadOnly || uploadingTransferRowId === row.id}
         onClick={(e) => {
           e.stopPropagation();
           const el = document.getElementById(
@@ -3311,7 +3493,7 @@ const getCountStatusClass = (current: number, target: number) => {
   <Button
     variant="ghost"
     size="sm"
-    disabled={uploadingTransferRowId === row.id}
+    disabled={isReadOnly || uploadingTransferRowId === row.id}
     onClick={(e) => {
       e.stopPropagation();
       const el = document.getElementById(
@@ -3328,6 +3510,7 @@ const getCountStatusClass = (current: number, target: number) => {
                                 <Button
                                   variant="ghost"
                                   size="sm"
+			disabled={isReadOnly}
                                   className="text-muted-foreground"
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -3341,6 +3524,7 @@ const getCountStatusClass = (current: number, target: number) => {
                               <Button
                                 variant="ghost"
                                 size="icon"
+		disabled={isReadOnly}
                                 className="h-7 w-7 text-destructive hover:text-destructive"
                                 onClick={() => {
                                   if (confirm("전적대 과목을 삭제하시겠습니까?")) {
@@ -3629,7 +3813,9 @@ const getCountStatusClass = (current: number, target: number) => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSemDialogOpen(false)}>취소</Button>
-            <Button onClick={handleAddSemester} disabled={createSemMut.isPending}>추가</Button>
+            <Button onClick={handleAddSemester} disabled={isReadOnly || createSemMut.isPending}>
+  추가
+</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -4130,9 +4316,10 @@ semesterId: r.semesterId ? String(r.semesterId) : "",
             <Button
   onClick={submitPrivateCertRequest}
   disabled={
-    createPrivateCertificateRequestMut.isPending ||
-    selectedPrivateCertNames.length === 0
-  }
+  isReadOnly ||
+  createPrivateCertificateRequestMut.isPending ||
+  selectedPrivateCertNames.length === 0
+}
 >
   요청
 </Button>
@@ -4366,7 +4553,7 @@ toast.success("환불 요청 등록 완료");
   // onError에서 toast 처리
 }
   }}
-  disabled={createRefundMut.isPending}
+  disabled={isReadOnly || createRefundMut.isPending || uploadingRefund}
 >
   환불 요청 등록
 </Button>
@@ -4399,6 +4586,7 @@ toast.success("환불 요청 등록 완료");
               <div className="flex items-center gap-2">
                 <Checkbox
                   checked={checked}
+		disabled={isReadOnly}
                   onCheckedChange={() => toggleRegisteredCourse(course)}
                 />
                 <span className="text-sm">{course}</span>
@@ -4407,6 +4595,7 @@ toast.success("환불 요청 등록 완료");
               {checked && (
                 <button
                   type="button"
+		  disabled={isReadOnly}
                   className={`text-xs px-2 py-1 rounded border ${
                     primaryRegisteredCourse === course
                       ? "bg-violet-100 text-violet-700 border-violet-200"
@@ -4437,8 +4626,83 @@ toast.success("환불 요청 등록 완료");
       >
         취소
       </Button>
-      <Button onClick={saveRegisteredCourses}>저장</Button>
+      <Button onClick={saveRegisteredCourses} disabled={isReadOnly}>
+  저장
+</Button>
     </DialogFooter>
+  </DialogContent>
+</Dialog>
+<Dialog open={studentAuditDialogOpen} onOpenChange={setStudentAuditDialogOpen}>
+  <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+    <DialogHeader>
+      <DialogTitle>학생기록부</DialogTitle>
+      <DialogDescription>
+        학생 상세페이지 수정, 삭제, 입력완료 체크 기록입니다.
+      </DialogDescription>
+    </DialogHeader>
+
+    {studentAuditLoading ? (
+      <div className="py-8 text-center text-sm text-muted-foreground">
+        기록을 불러오는 중...
+      </div>
+    ) : !studentAuditLogs.length ? (
+      <div className="py-8 text-center text-sm text-muted-foreground">
+        아직 기록이 없습니다.
+      </div>
+    ) : (
+      <div className="space-y-3">
+        {studentAuditLogs.map((log: any) => {
+          const created = log.createdAt ? new Date(log.createdAt) : null;
+
+          return (
+            <div key={log.id} className="rounded-lg border p-3 space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-medium text-sm">
+                    {log.title || `${log.entityType} ${log.action}`}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    수정자: {log.actorName || `사용자 #${log.actorUserId || "-"}`} · 권한: {log.actorRole || "-"}
+                  </div>
+                </div>
+
+                <div className="text-xs text-muted-foreground whitespace-nowrap">
+                  {created ? formatDate(created) : "-"}{" "}
+                  {created
+                    ? created.toLocaleTimeString("ko-KR", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                      })
+                    : ""}
+                </div>
+              </div>
+
+              {log.diffJson && Object.keys(log.diffJson || {}).length > 0 && (
+                <div className="rounded-md bg-muted/40 p-2 text-xs space-y-1">
+                  {Object.entries(log.diffJson || {}).map(([key, value]: any) => (
+                    <div key={key} className="grid grid-cols-[130px_1fr] gap-2">
+                      <div className="font-medium text-muted-foreground">
+                        {key}
+                      </div>
+                      <div className="break-all">
+                        <span className="text-red-600">
+                          {String(value?.before ?? "-")}
+                        </span>
+                        <span className="mx-2 text-muted-foreground">→</span>
+                        <span className="text-blue-600">
+                          {String(value?.after ?? "-")}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    )}
   </DialogContent>
 </Dialog>
     </div>

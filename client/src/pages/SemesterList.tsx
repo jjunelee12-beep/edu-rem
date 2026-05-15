@@ -175,28 +175,17 @@ export default function SemesterList() {
   }, [unpaidList, userMap]);
 
   const statusBadge = (sem: any) => {
-  const hasAmount = Number(sem.actualAmount || 0) > 0;
-  const hasPaymentDate = !!sem.actualPaymentDate;
-
-  if (hasAmount && hasPaymentDate) {
+  if (sem.isCompleted) {
     return (
       <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">
-        결제등록
-      </Badge>
-    );
-  }
-
-  if (hasAmount || hasPaymentDate) {
-    return (
-      <Badge className="bg-blue-100 text-blue-700 text-[10px]">
-        입력중
+        결제완료
       </Badge>
     );
   }
 
   return (
     <Badge className="bg-amber-100 text-amber-700 text-[10px]">
-      미결제
+      결제예정
     </Badge>
   );
 };

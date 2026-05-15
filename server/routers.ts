@@ -75,6 +75,114 @@ function assertHostOrSuperhost(user: any) {
   }
 }
 
+function assertStudentEditable(params: {
+  currentUser: any;
+  student: any;
+}) {
+  const { currentUser, student } = params;
+
+  if (!currentUser) {
+    throw new Error("로그인이 필요합니다.");
+  }
+
+  if (
+    currentUser.role === "host" ||
+    currentUser.role === "superhost"
+  ) {
+    return true;
+  }
+
+  if (
+    Number(student?.assigneeId || 0) ===
+    Number(currentUser.id)
+  ) {
+    return true;
+  }
+
+  throw new Error("해당 학생은 담당자 또는 호스트만 수정할 수 있습니다.");
+}
+
+function normalizeAuditJson(value: any) {
+  if (value === undefined) return null;
+  if (value === null) return null;
+
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return value;
+  }
+}
+
+function buildAuditDiff(beforeValue: any, afterValue: any) {
+  const beforeObj = beforeValue || {};
+  const afterObj = afterValue || {};
+
+  const keys = Array.from(
+    new Set([
+      ...Object.keys(beforeObj),
+      ...Object.keys(afterObj),
+    ])
+  );
+
+  const diff: Record<string, any> = {};
+
+  for (const key of keys) {
+    const beforeRaw = beforeObj[key];
+    const afterRaw = afterObj[key];
+
+    const beforeText = JSON.stringify(beforeRaw ?? null);
+    const afterText = JSON.stringify(afterRaw ?? null);
+
+    if (beforeText !== afterText) {
+      diff[key] = {
+        before: beforeRaw ?? null,
+        after: afterRaw ?? null,
+      };
+    }
+  }
+
+  return diff;
+}
+
+async function writeStudentAuditLog(params: {
+  ctx: any;
+  studentId: number;
+  entityType: string;
+  entityId?: number | null;
+  action: "create" | "update" | "delete" | "restore" | "complete" | "uncomplete";
+  title: string;
+  beforeJson?: any;
+  afterJson?: any;
+}) {
+  const organizationId = Number((params.ctx.user as any)?.organizationId || 0);
+
+  if (!organizationId) {
+    throw new Error("organizationId is required");
+  }
+
+  await db.createStudentAuditLog({
+    organizationId,
+    studentId: Number(params.studentId),
+
+    entityType: params.entityType,
+    entityId: params.entityId ?? null,
+    action: params.action,
+    title: params.title,
+
+    beforeJson: normalizeAuditJson(params.beforeJson),
+    afterJson: normalizeAuditJson(params.afterJson),
+    diffJson: buildAuditDiff(params.beforeJson, params.afterJson),
+
+    actorUserId: Number(params.ctx.user.id),
+    actorName:
+      String((params.ctx.user as any)?.name || (params.ctx.user as any)?.username || "").trim() ||
+      null,
+    actorRole: String((params.ctx.user as any)?.role || "").trim() || null,
+
+    ipAddress: null,
+    userAgent: null,
+  } as any);
+}
 
 function isSuperhost(user: any) {
   return user?.role === "superhost";
@@ -649,6 +757,36 @@ if (!isSuperhostUser) {
     }),
 }),
 
+studentAudit: router({
+  list: protectedProcedure
+    .input(
+      z.object({
+        studentId: z.number(),
+        limit: z.number().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
+
+      const student = await db.getStudent(input.studentId, {
+        organizationId,
+      });
+
+      if (!student) {
+        throw new Error("학생을 찾을 수 없습니다.");
+      }
+      return db.listStudentAuditLogs({
+        organizationId,
+        studentId: input.studentId,
+        limit: input.limit ?? 100,
+      });
+    }),
+}),
+
 attendance: attendanceRouter,
 notice: noticeRouter,
 schedule: scheduleRouter,
@@ -702,11 +840,6 @@ subjectCatalog: subjectCatalogRouter,
     organizationId,
   });
         if (!student) return [];
-
-        if (!isAdminOrHost(ctx.user) && Number(student.assigneeId) !== Number(ctx.user.id)) {
-          throw new Error("권한이 없습니다.");
-        }
-
         return db.listPrivateCertificateRequestsByStudent(input.studentId, {
   organizationId,
 });
@@ -749,9 +882,10 @@ subjectCatalog: subjectCatalogRouter,
   });
         if (!student) throw new Error("학생을 찾을 수 없습니다.");
 
-        if (!isAdminOrHost(ctx.user) && Number(student.assigneeId) !== Number(ctx.user.id)) {
-          throw new Error("권한이 없습니다.");
-        }
+        assertStudentEditable({
+  currentUser: ctx.user,
+  student,
+});
 
           const id = await db.createPrivateCertificateRequest({
  organizationId,
@@ -782,6 +916,20 @@ subjectCatalog: subjectCatalogRouter,
   }
 );
         }
+const createdRequest = await db.getPrivateCertificateRequest(Number(id), {
+  organizationId,
+});
+
+await writeStudentAuditLog({
+  ctx,
+  studentId: Number(input.studentId),
+  entityType: "private_certificate",
+  entityId: Number(id),
+  action: "create",
+  title: "민간자격증 요청 생성",
+  beforeJson: null,
+  afterJson: createdRequest,
+});
 
         return { success: true, id };
       }),
@@ -816,6 +964,27 @@ freelancerInputAmount: z.string().optional(),
     "현재 회사는 민간자격증 기능을 사용할 수 없습니다."
   );
 
+const beforeRequest = await db.getPrivateCertificateRequest(input.id, {
+  organizationId,
+});
+
+if (!beforeRequest) {
+  throw new Error("민간자격증 요청을 찾을 수 없습니다.");
+}
+
+const student = await db.getStudent(beforeRequest.studentId, {
+  organizationId,
+});
+
+if (!student) {
+  throw new Error("학생을 찾을 수 없습니다.");
+}
+
+assertStudentEditable({
+  currentUser: ctx.user,
+  student,
+});
+
   const data: any = {};
 
         if (input.assigneeId !== undefined) data.assigneeId = input.assigneeId;
@@ -841,26 +1010,75 @@ console.log("[privateCertificate.update router] data =", data);
         await db.updatePrivateCertificateRequest(input.id, data, {
   organizationId,
 });
+
+const afterRequest = await db.getPrivateCertificateRequest(input.id, {
+  organizationId,
+});
+
+await writeStudentAuditLog({
+  ctx,
+  studentId: Number(student.id),
+  entityType: "private_certificate",
+  entityId: Number(input.id),
+  action: "update",
+  title: "민간자격증 요청 수정",
+  beforeJson: beforeRequest,
+  afterJson: afterRequest,
+});
+
         return { success: true };
       }),
 
-    delete: hostProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ input, ctx }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    delete: protectedProcedure
+  .input(z.object({ id: z.number() }))
+  .mutation(async ({ input, ctx }) => {
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-  await assertOrganizationFeatureEnabled(
-    organizationId,
-    "allowPrivateCertificate",
-    "현재 회사는 민간자격증 기능을 사용할 수 없습니다."
-  );
+    await assertOrganizationFeatureEnabled(
+      organizationId,
+      "allowPrivateCertificate",
+      "현재 회사는 민간자격증 기능을 사용할 수 없습니다."
+    );
 
-  await db.deletePrivateCertificateRequest(input.id, {
-    organizationId,
-  });
+    const beforeRequest = await db.getPrivateCertificateRequest(input.id, {
+      organizationId,
+    });
 
-  return { success: true };
-}),
+    if (!beforeRequest) {
+      throw new Error("민간자격증 요청을 찾을 수 없습니다.");
+    }
+
+    const student = await db.getStudent(beforeRequest.studentId, {
+      organizationId,
+    });
+
+    if (!student) {
+      throw new Error("학생을 찾을 수 없습니다.");
+    }
+
+    assertStudentEditable({
+      currentUser: ctx.user,
+      student,
+    });
+
+    await db.deletePrivateCertificateRequest(input.id, {
+      organizationId,
+    });
+
+    await writeStudentAuditLog({
+      ctx,
+      studentId: Number(student.id),
+      entityType: "private_certificate",
+      entityId: Number(input.id),
+      action: "delete",
+      title: "민간자격증 요청 삭제",
+      beforeJson: beforeRequest,
+      afterJson: null,
+    });
+
+    return { success: true };
+  }),
+
 
     requestRefund: protectedProcedure
       .input(
@@ -971,11 +1189,6 @@ console.log("[privateCertificate.update router] data =", data);
     organizationId,
   });
         if (!student) return [];
-
-        if (!isAdminOrHost(ctx.user) && Number(student.assigneeId) !== Number(ctx.user.id)) {
-          throw new Error("권한이 없습니다.");
-        }
-
        return db.listPracticeSupportRequestsByStudent(input.studentId, {
   organizationId,
 });
@@ -1038,9 +1251,10 @@ includeEducationCenter: z.boolean().optional(),
 
         if (!student) throw new Error("학생을 찾을 수 없습니다.");
 
-        if (!isAdminOrHost(ctx.user) && Number(student.assigneeId) !== Number(ctx.user.id)) {
-          throw new Error("권한이 없습니다.");
-        }
+        assertStudentEditable({
+  currentUser: ctx.user,
+  student,
+});
 
          const id = await db.createPracticeSupportRequest({
   organizationId,
@@ -1076,6 +1290,21 @@ includeEducationCenter: input.includeEducationCenter ?? true,
   }
 );
         }
+
+const createdRequest = await db.getPracticeSupportRequest(Number(id), {
+  organizationId,
+});
+
+await writeStudentAuditLog({
+  ctx,
+  studentId: Number(input.studentId),
+  entityType: "practice_support",
+  entityId: Number(id),
+  action: "create",
+  title: "실습 요청 생성",
+  beforeJson: null,
+  afterJson: createdRequest,
+});
 
         return { success: true, id };
       }),
@@ -1124,6 +1353,27 @@ selectedPracticeInstitutionDistanceKm: z.string().optional().nullable(),
     "allowPracticeCenter",
     "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
   );
+
+const beforeRequest = await db.getPracticeSupportRequest(input.id, {
+  organizationId,
+});
+
+if (!beforeRequest) {
+  throw new Error("실습 요청을 찾을 수 없습니다.");
+}
+
+const student = await db.getStudent(beforeRequest.studentId, {
+  organizationId,
+});
+
+if (!student) {
+  throw new Error("학생을 찾을 수 없습니다.");
+}
+
+assertStudentEditable({
+  currentUser: ctx.user,
+  student,
+});
 
   const data: any = {};
 
@@ -1190,6 +1440,22 @@ if (Object.keys(data).length === 0) {
         await db.updatePracticeSupportRequest(input.id, data, {
  organizationId,
 });
+
+const afterRequest = await db.getPracticeSupportRequest(input.id, {
+  organizationId,
+});
+
+await writeStudentAuditLog({
+  ctx,
+  studentId: Number(student.id),
+  entityType: "practice_support",
+  entityId: Number(input.id),
+  action: "update",
+  title: "실습 요청 수정",
+  beforeJson: beforeRequest,
+  afterJson: afterRequest,
+});
+
        if (input.paymentStatus === "결제") {
   await db.syncPracticeSupportSettlementItemByRequestId(
   Number(input.id),
@@ -1202,23 +1468,56 @@ if (Object.keys(data).length === 0) {
         return { success: true };
       }),
 
-    delete: hostProcedure
-      .input(z.object({ id: z.number() }))
-     .mutation(async ({ input, ctx }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    delete: protectedProcedure
+  .input(z.object({ id: z.number() }))
+  .mutation(async ({ input, ctx }) => {
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-  await assertOrganizationFeatureEnabled(
-    organizationId,
-    "allowPracticeCenter",
-    "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
-  );
+    await assertOrganizationFeatureEnabled(
+      organizationId,
+      "allowPracticeCenter",
+      "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
+    );
 
-  await db.deletePracticeSupportRequest(input.id, {
-    organizationId,
-  });
+    const beforeRequest = await db.getPracticeSupportRequest(input.id, {
+      organizationId,
+    });
 
-  return { success: true };
-}),
+    if (!beforeRequest) {
+      throw new Error("실습 요청을 찾을 수 없습니다.");
+    }
+
+    const student = await db.getStudent(beforeRequest.studentId, {
+      organizationId,
+    });
+
+    if (!student) {
+      throw new Error("학생을 찾을 수 없습니다.");
+    }
+
+    assertStudentEditable({
+      currentUser: ctx.user,
+      student,
+    });
+
+    await db.deletePracticeSupportRequest(input.id, {
+      organizationId,
+    });
+
+    await writeStudentAuditLog({
+      ctx,
+      studentId: Number(student.id),
+      entityType: "practice_support",
+      entityId: Number(input.id),
+      action: "delete",
+      title: "실습 요청 삭제",
+      beforeJson: beforeRequest,
+      afterJson: null,
+    });
+
+    return { success: true };
+  }),
+
 
     requestRefund: protectedProcedure
       .input(
@@ -1303,6 +1602,19 @@ upsertByStudent: protectedProcedure
     "allowPracticeCenter",
     "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
   );
+
+const student = await db.getStudent(input.studentId, {
+  organizationId,
+});
+
+if (!student) {
+  throw new Error("학생을 찾을 수 없습니다.");
+}
+
+assertStudentEditable({
+  currentUser: ctx.user,
+  student,
+});
 
   return db.upsertPracticeSupportRequestByStudent({
     organizationId,
@@ -4369,221 +4681,299 @@ const student = await db.getStudent(input.studentId, {
 }),
 
     update: protectedProcedure
-      .input(
-        z.object({
-          id: z.number(),
-          plannedMonth: z.string().optional(),
-          plannedInstitution: z.string().optional(),
-          plannedSubjectCount: z.number().optional(),
-          plannedAmount: z.string().optional(),
-          plannedInstitutionId: z.number().optional(),
-          actualInstitutionId: z.number().optional(),
-          actualStartDate: z.string().optional(),
-          actualInstitution: z.string().optional(),
-          actualSubjectCount: z.number().optional(),
-          actualAmount: z.string().optional(),
-          actualPaymentDate: z.string().optional(),
-          isCompleted: z.boolean().optional(),
-approvalStatus: z.enum(["요청전", "대기", "승인", "불승인"]).optional(),
-          status: z.enum(["등록", "종료", "등록 종료"]).optional(),
-          practiceStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
-          practiceSupportRequestId: z.number().optional(),
-primaryCourse: z.string().optional(),
-registeredCourses: z.array(z.string()).optional(),
-        })
-      )
-      .mutation(async ({ ctx, input }) => {
+  .input(
+    z.object({
+      id: z.number(),
+      plannedMonth: z.string().optional(),
+      plannedInstitution: z.string().optional(),
+      plannedSubjectCount: z.number().optional(),
+      plannedAmount: z.string().optional(),
+      plannedInstitutionId: z.number().optional(),
+      actualInstitutionId: z.number().optional(),
+      actualStartDate: z.string().optional(),
+      actualInstitution: z.string().optional(),
+      actualSubjectCount: z.number().optional(),
+      actualAmount: z.string().optional(),
+      actualPaymentDate: z.string().optional(),
+      isCompleted: z.boolean().optional(),
+      approvalStatus: z.enum(["요청전", "대기", "승인", "불승인"]).optional(),
+      status: z.enum(["등록", "종료", "등록 종료"]).optional(),
+      practiceStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
+      practiceSupportRequestId: z.number().optional(),
+      primaryCourse: z.string().optional(),
+      registeredCourses: z.array(z.string()).optional(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const sem = await db.getSemester(input.id, { organizationId });
+    if (!sem) throw new Error("학기를 찾을 수 없습니다");
 
-       const sem = await db.getSemester(input.id, {
-  organizationId,
-});
-        if (!sem) throw new Error("학기를 찾을 수 없습니다");
-
-       const allSemsForStatusCheck = await db.listSemesters(sem.studentId, {
-  organizationId,
-});
-        const sortedSemsForStatusCheck = [...allSemsForStatusCheck].sort(
-          (a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder)
-        );
-        const lastSem = sortedSemsForStatusCheck[sortedSemsForStatusCheck.length - 1];
-
-        if (input.status === "등록 종료") {
-          if (!lastSem || Number(lastSem.id) !== Number(sem.id)) {
-            throw new Error("마지막 학기에서만 등록 종료할 수 있습니다");
-          }
-        }
-
-        if (
-          input.status !== undefined &&
-          input.status !== "등록" &&
-          input.status !== "종료" &&
-          input.status !== "등록 종료"
-        ) {
-          throw new Error("올바르지 않은 상태값입니다");
-        }
-        const { id, ...rest } = input;
-        const data: any = { ...rest };
-
-        if (rest.actualStartDate) data.actualStartDate = new Date(rest.actualStartDate);
-        if (rest.actualPaymentDate) data.actualPaymentDate = new Date(rest.actualPaymentDate);
-
-        await db.updateSemester(id, data, {
-  organizationId,
-});
-        const shouldSyncSubjectSettlement =
-          input.actualInstitutionId !== undefined ||
-          input.actualSubjectCount !== undefined ||
-          input.actualAmount !== undefined ||
-          input.actualPaymentDate !== undefined ||
-          input.actualStartDate !== undefined;
-
-if (input.primaryCourse !== undefined) {
-  data.primaryCourse = input.primaryCourse?.trim() || null;
-}
-
-if (input.registeredCourses !== undefined) {
-  data.registeredCoursesJson = JSON.stringify(
-    input.registeredCourses
-      .map((x) => String(x || "").trim())
-      .filter(Boolean)
-  );
-
-  if (input.primaryCourse === undefined) {
-    data.primaryCourse =
-      input.registeredCourses.find((x) => String(x || "").trim()) || null;
-  }
-}
-
-        if (shouldSyncSubjectSettlement) {
-          await db.syncSubjectSettlementItemBySemesterId(
-  id,
-  Number(ctx.user.id),
-  {
-    organizationId,
-  }
-);
-        }
-
-        if (input.plannedSubjectCount !== undefined) {
-  await db.syncPlanSemestersByCount(
-    Number(sem.studentId),
-    Number(sem.semesterOrder),
-    input.plannedSubjectCount,
-    {
+    const student = await db.getStudent(Number(sem.studentId), {
       organizationId,
+    });
+
+    if (!student) throw new Error("학생을 찾을 수 없습니다.");
+
+    assertStudentEditable({
+      currentUser: ctx.user,
+      student,
+    });
+
+    const allSemsForStatusCheck = await db.listSemesters(sem.studentId, {
+      organizationId,
+    });
+
+    const sortedSemsForStatusCheck = [...allSemsForStatusCheck].sort(
+      (a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder)
+    );
+
+    const lastSem =
+      sortedSemsForStatusCheck[sortedSemsForStatusCheck.length - 1];
+
+    if (input.status === "등록 종료") {
+      if (!lastSem || Number(lastSem.id) !== Number(sem.id)) {
+        throw new Error("마지막 학기에서만 등록 종료할 수 있습니다");
+      }
     }
-  );
-}
 
-        if (input.status !== undefined) {
-  const refreshedSems = await db.listSemesters(sem.studentId, {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
-  });
-          const sortedRefreshedSems = [...refreshedSems].sort(
-            (a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder)
-          );
-          const refreshedLastSem =
-            sortedRefreshedSems[sortedRefreshedSems.length - 1];
+    const { id, registeredCourses, ...rest } = input;
+    const data: any = { ...rest };
 
-          const studentStatus =
-            refreshedLastSem?.status === "등록 종료" ? "등록 종료" : "등록";
+    if (rest.actualStartDate) {
+      data.actualStartDate = new Date(rest.actualStartDate);
+    }
 
-          await db.updateStudent(sem.studentId, {
-  status: studentStatus,
-}, {
-  organizationId,
-});
-        }
+    if (rest.actualPaymentDate) {
+      data.actualPaymentDate = new Date(rest.actualPaymentDate);
+    }
 
-        const allSems = await db.listSemesters(sem.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
-});
+    if (input.primaryCourse !== undefined) {
+      data.primaryCourse = input.primaryCourse?.trim() || null;
+    }
 
-        const firstActual = allSems
-          .filter(
-            (s: any) =>
-              s.actualStartDate ||
-              s.actualInstitutionId ||
-              s.actualAmount ||
-              s.actualPaymentDate
-          )
-          .sort((a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder))[0];
+    if (registeredCourses !== undefined) {
+      const cleanedCourses = registeredCourses
+        .map((x) => String(x || "").trim())
+        .filter(Boolean);
 
-        if (firstActual) {
-          let institutionName: string | undefined = undefined;
+      data.registeredCoursesJson = JSON.stringify(cleanedCourses);
 
-          if (firstActual.actualInstitutionId) {
-            const institutions = await db.listEducationInstitutions({
-  organizationId,
-});
-            const found = institutions.find(
-              (x: any) => Number(x.id) === Number(firstActual.actualInstitutionId)
-            );
-            institutionName = found?.name;
-          }
+      if (input.primaryCourse === undefined) {
+        data.primaryCourse = cleanedCourses[0] || null;
+      }
+    }
 
-          const refreshedSems = await db.listSemesters(sem.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
-});
-          const sortedRefreshedSems = [...refreshedSems].sort(
-            (a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder)
-          );
-          const refreshedLastSem =
-            sortedRefreshedSems[sortedRefreshedSems.length - 1];
+    const beforeSemester = sem;
 
-          const studentStatus =
-            refreshedLastSem?.status === "등록 종료" ? "등록 종료" : "등록";
+    await db.updateSemester(id, data, {
+      organizationId,
+    });
 
-          await db.updateStudent(sem.studentId, {
-  startDate: firstActual.actualStartDate || undefined,
-  institutionId: firstActual.actualInstitutionId || undefined,
-  institution: institutionName || undefined,
-  subjectCount: firstActual.actualSubjectCount || undefined,
-  paymentAmount: firstActual.actualAmount || undefined,
-  paymentDate: firstActual.actualPaymentDate || undefined,
-  status: studentStatus,
-}, {
-  organizationId,
-});
-        }
+    const afterSemester = await db.getSemester(id, {
+      organizationId,
+    });
 
-        if (input.isCompleted) {
-  await db.checkAndAutoComplete(sem.studentId, {
-    organizationId,
-  });
-}
+    const semesterAction =
+      beforeSemester?.isCompleted !== afterSemester?.isCompleted
+        ? afterSemester?.isCompleted
+          ? "complete"
+          : "uncomplete"
+        : "update";
 
-        return { success: true };
-      }),
+    await writeStudentAuditLog({
+      ctx,
+      studentId: Number(beforeSemester.studentId),
+      entityType: "semester",
+      entityId: Number(id),
+      action: semesterAction as any,
+      title:
+        semesterAction === "complete"
+          ? `${beforeSemester.semesterOrder}학기 입력완료 체크`
+          : semesterAction === "uncomplete"
+            ? `${beforeSemester.semesterOrder}학기 입력완료 해제`
+            : `${beforeSemester.semesterOrder}학기 학기별 예정표/결제표 수정`,
+      beforeJson: beforeSemester,
+      afterJson: afterSemester,
+    });
+
+    const shouldSyncSubjectSettlement =
+      input.actualInstitutionId !== undefined ||
+      input.actualSubjectCount !== undefined ||
+      input.actualAmount !== undefined ||
+      input.actualPaymentDate !== undefined ||
+      input.actualStartDate !== undefined;
+
+    if (shouldSyncSubjectSettlement) {
+      await db.syncSubjectSettlementItemBySemesterId(
+        id,
+        Number(ctx.user.id),
+        { organizationId }
+      );
+    }
+
+    if (input.plannedSubjectCount !== undefined) {
+      await db.syncPlanSemestersByCount(
+        Number(sem.studentId),
+        Number(sem.semesterOrder),
+        input.plannedSubjectCount,
+        { organizationId }
+      );
+    }
+
+    if (input.status !== undefined) {
+      const refreshedSems = await db.listSemesters(sem.studentId, {
+        organizationId,
+      });
+
+      const sortedRefreshedSems = [...refreshedSems].sort(
+        (a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder)
+      );
+
+      const refreshedLastSem =
+        sortedRefreshedSems[sortedRefreshedSems.length - 1];
+
+      const studentStatus =
+        refreshedLastSem?.status === "등록 종료" ? "등록 종료" : "등록";
+
+      await db.updateStudent(
+        sem.studentId,
+        { status: studentStatus },
+        { organizationId }
+      );
+    }
+
+    const allSems = await db.listSemesters(sem.studentId, {
+      organizationId,
+    });
+
+    const firstActual = allSems
+      .filter(
+        (s: any) =>
+          s.actualStartDate ||
+          s.actualInstitutionId ||
+          s.actualAmount ||
+          s.actualPaymentDate
+      )
+      .sort(
+        (a: any, b: any) =>
+          Number(a.semesterOrder) - Number(b.semesterOrder)
+      )[0];
+
+    if (firstActual) {
+      let institutionName: string | undefined = undefined;
+
+      if (firstActual.actualInstitutionId) {
+        const institutions = await db.listEducationInstitutions({
+          organizationId,
+        });
+
+        const found = institutions.find(
+          (x: any) => Number(x.id) === Number(firstActual.actualInstitutionId)
+        );
+
+        institutionName = found?.name;
+      }
+
+      const refreshedSems = await db.listSemesters(sem.studentId, {
+        organizationId,
+      });
+
+      const sortedRefreshedSems = [...refreshedSems].sort(
+        (a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder)
+      );
+
+      const refreshedLastSem =
+        sortedRefreshedSems[sortedRefreshedSems.length - 1];
+
+      const studentStatus =
+        refreshedLastSem?.status === "등록 종료" ? "등록 종료" : "등록";
+
+      await db.updateStudent(
+        sem.studentId,
+        {
+          startDate: firstActual.actualStartDate || undefined,
+          institutionId: firstActual.actualInstitutionId || undefined,
+          institution: institutionName || undefined,
+          subjectCount: firstActual.actualSubjectCount || undefined,
+          paymentAmount: firstActual.actualAmount || undefined,
+          paymentDate: firstActual.actualPaymentDate || undefined,
+          status: studentStatus,
+        },
+        { organizationId }
+      );
+    }
+
+    if (input.isCompleted) {
+      await db.checkAndAutoComplete(sem.studentId, {
+        organizationId,
+      });
+    }
+
+    return { success: true };
+  }),
 
     copyPlannedToActual: protectedProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  .input(z.object({ id: z.number() }))
+  .mutation(async ({ ctx, input }) => {
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-const sem = await db.getSemester(input.id, {
-  organizationId,
-});
-        if (!sem) throw new Error("학기를 찾을 수 없습니다");
+    const sem = await db.getSemester(input.id, {
+      organizationId,
+    });
 
-        const raw = String(sem.plannedMonth || "").replace(/[^0-9]/g, "");
-        const actualStartDate =
-          raw.length === 6 ? new Date(`${raw.slice(0, 4)}-${raw.slice(4, 6)}-01`) : undefined;
+    if (!sem) throw new Error("학기를 찾을 수 없습니다");
 
-               await db.updateSemester(input.id, {
-  actualStartDate,
-  actualInstitutionId: sem.plannedInstitutionId,
-  actualInstitution: sem.plannedInstitution,
-  actualSubjectCount: sem.plannedSubjectCount,
-  actualAmount: sem.plannedAmount,
-}, {
-  organizationId,
-});
+    const student = await db.getStudent(Number(sem.studentId), {
+      organizationId,
+    });
 
-return { success: true };
-      }),
+    if (!student) throw new Error("학생을 찾을 수 없습니다.");
+
+    assertStudentEditable({
+      currentUser: ctx.user,
+      student,
+    });
+
+    const raw = String(sem.plannedMonth || "").replace(/[^0-9]/g, "");
+
+    const actualStartDate =
+      raw.length === 6
+        ? new Date(`${raw.slice(0, 4)}-${raw.slice(4, 6)}-01`)
+        : undefined;
+
+    const beforeSemester = sem;
+
+    await db.updateSemester(
+      input.id,
+      {
+        actualStartDate,
+        actualInstitutionId: sem.plannedInstitutionId,
+        actualInstitution: sem.plannedInstitution,
+        actualSubjectCount: sem.plannedSubjectCount,
+        actualAmount: sem.plannedAmount,
+      },
+      { organizationId }
+    );
+
+    const afterSemester = await db.getSemester(input.id, {
+      organizationId,
+    });
+
+    await writeStudentAuditLog({
+      ctx,
+      studentId: Number(sem.studentId),
+      entityType: "semester",
+      entityId: Number(input.id),
+      action: "update",
+      title: `${sem.semesterOrder}학기 예정 정보를 실제 결제 정보로 복사`,
+      beforeJson: beforeSemester,
+      afterJson: afterSemester,
+    });
+
+    return { success: true };
+  }),
 
 approve: protectedProcedure
   .input(

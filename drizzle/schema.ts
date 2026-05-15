@@ -13,6 +13,7 @@ import {
   datetime,
   serial,
 index,
+json,
 } from "drizzle-orm/mysql-core";
 
 // ─── Lead Forms ──────────────────────────────────────────────────────
@@ -419,6 +420,39 @@ export const students = mysqlTable(
 
 export type Student = typeof students.$inferSelect;
 export type InsertStudent = typeof students.$inferInsert;
+
+export const studentAuditLogs = mysqlTable("student_audit_logs", {
+  id: int("id").primaryKey().autoincrement(),
+
+  organizationId: int("organizationId").notNull(),
+  studentId: int("studentId").notNull(),
+
+  entityType: varchar("entityType", { length: 50 }).notNull(),
+  entityId: int("entityId"),
+
+  action: varchar("action", { length: 30 }).notNull(),
+  title: varchar("title", { length: 255 }),
+
+  beforeJson: json("beforeJson"),
+  afterJson: json("afterJson"),
+  diffJson: json("diffJson"),
+
+  actorUserId: int("actorUserId"),
+  actorName: varchar("actorName", { length: 100 }),
+  actorRole: varchar("actorRole", { length: 50 }),
+
+  ipAddress: varchar("ipAddress", { length: 100 }),
+  userAgent: text("userAgent"),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  orgStudentIdx: index("idx_student_audit_org_student").on(table.organizationId, table.studentId),
+  actorIdx: index("idx_student_audit_actor").on(table.actorUserId),
+  createdIdx: index("idx_student_audit_created").on(table.createdAt),
+}));
+
+export type StudentAuditLog = typeof studentAuditLogs.$inferSelect;
+export type InsertStudentAuditLog = typeof studentAuditLogs.$inferInsert;
 
 // ─── Semesters (학기별 예정표/결제표) ────────────────────────────────
 export const semesters = mysqlTable(
