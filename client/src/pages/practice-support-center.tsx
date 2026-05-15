@@ -1963,8 +1963,23 @@ useEffect(() => {
                       </td>
 
                       <td className="px-3 py-3">
-                        <div className="font-medium">{row.clientName || "-"}</div>
-                      </td>
+  <button
+    type="button"
+    onClick={() => {
+      const studentId = Number(row.studentId || 0);
+
+      if (!studentId) {
+        toast.error("연결된 학생 정보가 없습니다.");
+        return;
+      }
+
+      window.location.href = `/students/${studentId}`;
+    }}
+    className="font-medium text-blue-600 hover:underline"
+  >
+    {row.clientName || "-"}
+  </button>
+</td>
 
                       <td className="px-3 py-3">
                         <div className="inline-flex items-center gap-1">
