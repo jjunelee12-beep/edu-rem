@@ -43,7 +43,8 @@ export const publicLeadRouter = router({
 
       const normalizedPhone = input.phone.replace(/\D/g, "").slice(0, 11);
 const safeAssigneeId = Number(form.assigneeId);
-const organizationId = Number((form as any).organizationId || 1);
+const organizationId = Number((form as any).organizationId || 0);
+if (!organizationId) return { ok: false };
 
       if (!Number.isFinite(safeAssigneeId) || safeAssigneeId <= 0) {
         throw new Error("담당자 정보가 올바르지 않습니다.");

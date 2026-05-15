@@ -11,6 +11,7 @@ superHostProcedure,
 } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
+import { getOrganizationLimitStatus, getOrganizationFeatureFlags } from "./saasdb";
 import { buildSettlementPayslipExcel } from "./_core/settlement-payslip-excel";
 import { emitLiveNotification } from "./_core/live-notifications";
 import { publicLeadRouter } from "./publicLead.router";
@@ -26,6 +27,11 @@ import { privateCertificateMasterRouter } from "./routes/privateCertificateMaste
 import { subjectCatalogRouter } from "./routes/subjectCatalog";
 import { FEATURE_FLAGS } from "./_core/featureFlags";
 import { saasRouter } from "./saas.router";
+import {
+  uploadPrivateJsonObject,
+  createPrivateDownloadUrl,
+  readPrivateTextObject,
+} from "./_core/objectStorage";
 
 function isAdminOrHost(user: any) {
   return (
@@ -151,11 +157,498 @@ const publicFormUiConfigSchema = z.object({
     .optional(),
 });
 
+async function assertOrganizationFeatureEnabled(
+  organizationId: number,
+  featureKey:
+    | "allowBackup"
+    | "allowAuditLog"
+    | "allowMessenger"
+    | "allowPracticeCenter"
+    | "allowSettlementReport"
+    | "allowPrivateCertificate",
+  message: string
+) {
+  const features = await getOrganizationFeatureFlags(organizationId);
+
+  if (!features[featureKey]) {
+    throw new Error(message);
+  }
+}
+
+
 export const appRouter = router({
   system: systemRouter,
   leadForm: publicLeadRouter,
   sms: smsRouter,
 saas: saasRouter,
+
+organizationFeatures: protectedProcedure.query(async ({ ctx }) => {
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  if (!organizationId) {
+    throw new Error("organizationId is required");
+  }
+
+  return getOrganizationFeatureFlags(organizationId);
+}),
+
+backup: router({
+  list: hostProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().optional(),
+        })
+        .optional()
+    )
+    .query(async ({ ctx, input }) => {
+  if ((ctx.user as any)?.role === "superhost") {
+    throw new Error("슈퍼호스트는 회사 백업 원문을 조회할 수 없습니다.");
+  }
+
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  if (!organizationId) {
+    throw new Error("organizationId is required");
+  }
+
+const features = await getOrganizationFeatureFlags(organizationId);
+
+if (!features.allowBackup) {
+  throw new Error("현재 회사는 백업/복구 기능을 사용할 수 없습니다.");
+}
+
+  return db.listOrganizationBackups({
+    organizationId,
+    limit: input?.limit ?? 30,
+  });
+}),
+
+downloadUrl: hostProcedure
+  .input(
+    z.object({
+      id: z.number(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    if ((ctx.user as any)?.role === "superhost") {
+      throw new Error("슈퍼호스트는 회사 백업 파일을 다운로드할 수 없습니다.");
+    }
+
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+    if (!organizationId) {
+      throw new Error("organizationId is required");
+    }
+
+    const features = await getOrganizationFeatureFlags(organizationId);
+
+    if (!features.allowBackup) {
+      throw new Error("현재 회사는 백업/복구 기능을 사용할 수 없습니다.");
+    }
+
+    const backup = await db.getOrganizationBackupById(input.id, {
+      organizationId,
+    });
+
+    if (!backup) {
+      throw new Error("백업 파일을 찾을 수 없습니다.");
+    }
+
+    if (!backup.fileKey) {
+      throw new Error("다운로드 가능한 백업 파일이 없습니다.");
+    }
+
+    const url = await createPrivateDownloadUrl({
+      key: String(backup.fileKey),
+      expiresInSeconds: 60 * 5,
+    });
+
+await db.createAuditLog({
+  organizationId,
+  actorUserId: Number(ctx.user.id),
+  actorRole: String((ctx.user as any)?.role || ""),
+  action: "organization.backup.download",
+  targetType: "organization_backup",
+  targetId: Number(input.id),
+  memo: `회사 백업 다운로드 URL 발급: backupId=${input.id}`,
+} as any);
+
+    return {
+      success: true,
+      url,
+      expiresInSeconds: 60 * 5,
+    };
+  }),
+
+  create: hostProcedure
+  .input(
+    z
+      .object({
+        backupType: z
+          .enum(["manual", "auto", "restore_snapshot"])
+          .optional(),
+      })
+      .optional()
+  )
+  .mutation(async ({ ctx, input }) => {
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+if ((ctx.user as any)?.role === "superhost") {
+  throw new Error("슈퍼호스트는 회사 백업 원문을 생성할 수 없습니다.");
+}
+
+    if (!organizationId) {
+      throw new Error("organizationId is required");
+    }
+
+const features = await getOrganizationFeatureFlags(organizationId);
+
+if (!features.allowBackup) {
+  throw new Error("현재 회사는 백업/복구 기능을 사용할 수 없습니다.");
+}
+
+const limitStatus = await getOrganizationLimitStatus(organizationId);
+
+if (limitStatus.exceeded.storage) {
+  throw new Error(
+    `저장공간 제한을 초과했습니다. 현재 ${limitStatus.usage.storageUsedMb}MB / 제한 ${limitStatus.limits.maxStorageMb}MB`
+  );
+}
+
+    const backupId = await db.createOrganizationBackupRecord({
+      organizationId,
+      requestedBy: Number(ctx.user.id),
+      backupType: input?.backupType ?? "manual",
+    });
+
+    try {
+      const exported = await db.exportOrganizationBackupData({
+        organizationId,
+        requestedBy: Number(ctx.user.id),
+	actorRole: String((ctx.user as any)?.role || ""),
+      });
+
+const backupKey = `organization-backups/${organizationId}/${exported.fileName}`;
+
+await uploadPrivateJsonObject({
+  key: backupKey,
+  json: exported.json,
+});
+
+      await db.markOrganizationBackupCompleted({
+        id: Number(backupId),
+        organizationId,
+        fileUrl: null,
+fileKey: backupKey,
+        fileSizeBytes: exported.fileSizeBytes,
+        tableCount: exported.tableCount,
+        rowCount: exported.rowCount,
+      });
+
+      await db.createAuditLog({
+        organizationId,
+        actorUserId: Number(ctx.user.id),
+        actorRole: String((ctx.user as any)?.role || ""),
+        action: "organization.backup.create",
+        targetType: "organization_backup",
+        targetId: Number(backupId),
+        memo: `회사 백업 생성: ${exported.fileName}`,
+      } as any);
+
+      return {
+  success: true,
+  id: Number(backupId),
+  fileName: exported.fileName,
+  fileSizeBytes: exported.fileSizeBytes,
+  tableCount: exported.tableCount,
+  rowCount: exported.rowCount,
+};
+    } catch (error: any) {
+      await db.markOrganizationBackupFailed({
+        id: Number(backupId),
+        organizationId,
+        errorMessage: error?.message || "백업 생성 실패",
+      });
+
+      throw error;
+    }
+  }),
+
+  previewRestore: hostProcedure
+  .input(
+    z.object({
+      backupId: z.number().int().positive(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+    if ((ctx.user as any)?.role === "superhost") {
+      throw new Error("슈퍼호스트는 회사 백업 원문을 검증할 수 없습니다.");
+    }
+
+    if (!organizationId) {
+      throw new Error("organizationId is required");
+    }
+
+    const features = await getOrganizationFeatureFlags(organizationId);
+
+    if (!features.allowBackup) {
+      throw new Error("현재 회사는 백업/복구 기능을 사용할 수 없습니다.");
+    }
+
+    const backup = await db.getOrganizationBackupById(input.backupId, {
+  organizationId,
+});
+
+    if (!backup) {
+      throw new Error("백업을 찾을 수 없습니다.");
+    }
+
+    if (backup.status === "deleted") {
+      throw new Error("삭제된 백업은 복구할 수 없습니다.");
+    }
+
+    if (!backup.fileKey) {
+      throw new Error("백업 파일 경로가 없습니다.");
+    }
+
+    const backupText = await readPrivateTextObject({
+  key: String(backup.fileKey),
+});
+
+    let parsed: any = null;
+
+    try {
+      parsed = JSON.parse(backupText);
+    } catch {
+      throw new Error("백업 파일 형식이 올바르지 않습니다.");
+    }
+
+    if (parsed?.app !== "Edu-CRM") {
+      throw new Error("Edu-CRM 백업 파일이 아닙니다.");
+    }
+
+    if (parsed?.backupType !== "organization_full") {
+      throw new Error("지원하지 않는 백업 유형입니다.");
+    }
+
+    if (Number(parsed?.organizationId) !== Number(organizationId)) {
+      throw new Error("다른 회사의 백업 파일은 복구할 수 없습니다.");
+    }
+
+    const tables = parsed?.tables || {};
+    const tableNames = Object.keys(tables);
+
+    let rowCount = 0;
+
+    for (const tableName of tableNames) {
+      const rows = tables[tableName];
+      if (Array.isArray(rows)) {
+        rowCount += rows.length;
+      }
+    }
+
+    return {
+      success: true,
+      backupId: input.backupId,
+      organizationId,
+      backupOrganizationId: Number(parsed.organizationId),
+      organizationName: parsed?.organization?.name || "",
+      organizationSlug: parsed?.organization?.slug || "",
+      createdAt: parsed?.createdAt || null,
+      tableCount: tableNames.length,
+      rowCount,
+      tables: tableNames.map((tableName) => ({
+        tableName,
+        rowCount: Array.isArray(tables[tableName])
+          ? tables[tableName].length
+          : 0,
+      })),
+    };
+  }),
+
+    restore: hostProcedure
+    .input(
+      z.object({
+        backupId: z.number(),
+        confirmText: z.string().min(1),
+restoreReason: z.string().min(1).max(300),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+if ((ctx.user as any)?.role === "superhost") {
+  throw new Error("슈퍼호스트는 회사 백업 원문을 복구할 수 없습니다.");
+}
+
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
+
+const features = await getOrganizationFeatureFlags(organizationId);
+
+if (!features.allowBackup) {
+  throw new Error("현재 회사는 백업/복구 기능을 사용할 수 없습니다.");
+}
+
+      if (input.confirmText !== "복구합니다") {
+        throw new Error("복구 확인 문구가 일치하지 않습니다.");
+      }
+
+      const backupRecord = await db.getOrganizationBackupById(input.backupId, {
+  organizationId,
+});
+
+if (!backupRecord) {
+  throw new Error("백업 파일을 찾을 수 없습니다.");
+}
+
+if (!backupRecord.fileKey) {
+  throw new Error("백업 파일 경로가 없습니다.");
+}
+
+let parsed: any = null;
+let backupText = "";
+
+try {
+  backupText = await readPrivateTextObject({
+    key: String(backupRecord.fileKey),
+  });
+
+  parsed = JSON.parse(backupText);
+} catch {
+  throw new Error("백업 파일 형식이 올바르지 않습니다.");
+}
+
+      if (parsed?.app !== "Edu-CRM") {
+        throw new Error("Edu-CRM 백업 파일이 아닙니다.");
+      }
+
+      if (parsed?.backupType !== "organization_full") {
+        throw new Error("지원하지 않는 백업 유형입니다.");
+      }
+
+     if (Number(parsed?.organizationId) !== Number(organizationId)) {
+  throw new Error("다른 회사의 백업 파일은 복구할 수 없습니다.");
+}
+
+const restoreLimitStatus = await getOrganizationLimitStatus(organizationId);
+
+if (restoreLimitStatus.exceeded.storage) {
+  throw new Error(
+    `저장공간 제한을 초과했습니다. 현재 ${restoreLimitStatus.usage.storageUsedMb}MB / 제한 ${restoreLimitStatus.limits.maxStorageMb}MB`
+  );
+}
+
+const snapshotBackupId = await db.createOrganizationBackupRecord({
+  organizationId,
+  requestedBy: Number(ctx.user.id),
+  backupType: "restore_snapshot",
+});
+
+const snapshotExported = await db.exportOrganizationBackupData({
+  organizationId,
+  requestedBy: Number(ctx.user.id),
+  actorRole: String((ctx.user as any)?.role || ""),
+});
+
+const snapshotKey = `organization-backups/${organizationId}/restore-snapshots/${snapshotExported.fileName}`;
+
+await uploadPrivateJsonObject({
+  key: snapshotKey,
+  json: snapshotExported.json,
+});
+
+await db.markOrganizationBackupCompleted({
+  id: Number(snapshotBackupId),
+  organizationId,
+  fileUrl: null,
+  fileKey: snapshotKey,
+  fileSizeBytes: snapshotExported.fileSizeBytes,
+  tableCount: snapshotExported.tableCount,
+  rowCount: snapshotExported.rowCount,
+});
+
+const restored = await db.restoreOrganizationBackupData({
+  organizationId,
+  backup: parsed,
+  restoredBy: Number(ctx.user.id),
+  actorRole: String((ctx.user as any)?.role || ""),
+});
+
+      await db.markOrganizationBackupRestored({
+  id: Number(snapshotBackupId),
+  organizationId,
+  restoredBy: Number(ctx.user.id),
+  restoreReason: input.restoreReason,
+});
+
+      await db.createAuditLog({
+        organizationId,
+        actorUserId: Number(ctx.user.id),
+        actorRole: String((ctx.user as any)?.role || ""),
+        action: "organization.backup.restore",
+        targetType: "organization_backup",
+        targetId: Number(snapshotBackupId),
+        memo: `회사 백업 복구 완료: ${restored.restoredTableCount}개 테이블 / ${restored.restoredRowCount}개 데이터 / 사유: ${input.restoreReason}`,
+      } as any);
+
+      return {
+        success: true,
+        previewOnly: false,
+        message: "백업 복구가 완료되었습니다.",
+        tableCount: restored.restoredTableCount,
+        rowCount: restored.restoredRowCount,
+      };
+    }),
+}),
+
+audit: router({
+  list: hostProcedure
+    .input(
+      z
+        .object({
+          organizationId: z.number().optional(),
+          action: z.string().optional(),
+          actorUserId: z.number().optional(),
+          targetType: z.string().optional(),
+          limit: z.number().optional(),
+        })
+        .optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const isSuperhostUser = (ctx.user as any)?.role === "superhost";
+
+      const organizationId = isSuperhostUser
+        ? input?.organizationId
+        : Number((ctx.user as any)?.organizationId || 0);
+
+      if (!isSuperhostUser && !organizationId) {
+        throw new Error("organizationId is required");
+      }
+
+if (!isSuperhostUser) {
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowAuditLog",
+    "현재 회사는 감사로그 기능을 사용할 수 없습니다."
+  );
+}
+
+      return db.listAuditLogs({
+        organizationId,
+        isSuperhost: isSuperhostUser,
+        action: input?.action,
+        actorUserId: input?.actorUserId,
+        targetType: input?.targetType,
+        limit: input?.limit ?? 100,
+      });
+    }),
+}),
+
 attendance: attendanceRouter,
 notice: noticeRouter,
 schedule: scheduleRouter,
@@ -172,15 +665,23 @@ subjectCatalog: subjectCatalogRouter,
           })
           .optional()
       )
-      .query(async ({ ctx, input }) => {
-        const assigneeId = isAdminOrHost(ctx.user)
-          ? input?.assigneeId
-          : Number(ctx.user.id);
+     .query(async ({ ctx, input }) => {
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-        return db.listPrivateCertificateRequests(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
-});
-      }),
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowPrivateCertificate",
+    "현재 회사는 민간자격증 기능을 사용할 수 없습니다."
+  );
+
+  const assigneeId = isAdminOrHost(ctx.user)
+    ? input?.assigneeId
+    : Number(ctx.user.id);
+
+  return db.listPrivateCertificateRequests(assigneeId, {
+    organizationId,
+  });
+}),
 
     listByStudent: protectedProcedure
       .input(
@@ -189,9 +690,17 @@ subjectCatalog: subjectCatalogRouter,
         })
       )
       .query(async ({ ctx, input }) => {
-        const student = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
-});
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowPrivateCertificate",
+    "현재 회사는 민간자격증 기능을 사용할 수 없습니다."
+  );
+
+  const student = await db.getStudent(input.studentId, {
+    organizationId,
+  });
         if (!student) return [];
 
         if (!isAdminOrHost(ctx.user) && Number(student.assigneeId) !== Number(ctx.user.id)) {
@@ -199,7 +708,7 @@ subjectCatalog: subjectCatalogRouter,
         }
 
         return db.listPrivateCertificateRequestsByStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId,
 });
       }),
 
@@ -227,9 +736,17 @@ subjectCatalog: subjectCatalogRouter,
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const student = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
-});
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowPrivateCertificate",
+    "현재 회사는 민간자격증 기능을 사용할 수 없습니다."
+  );
+
+  const student = await db.getStudent(input.studentId, {
+    organizationId,
+  });
         if (!student) throw new Error("학생을 찾을 수 없습니다.");
 
         if (!isAdminOrHost(ctx.user) && Number(student.assigneeId) !== Number(ctx.user.id)) {
@@ -237,7 +754,7 @@ subjectCatalog: subjectCatalogRouter,
         }
 
           const id = await db.createPrivateCertificateRequest({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+ organizationId,
           studentId: input.studentId,
           assigneeId: input.assigneeId,
           clientName: input.clientName.trim(),
@@ -261,7 +778,7 @@ subjectCatalog: subjectCatalogRouter,
   Number(id),
   Number(ctx.user.id),
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId,
   }
 );
         }
@@ -291,7 +808,15 @@ freelancerInputAmount: z.string().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const data: any = {};
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowPrivateCertificate",
+    "현재 회사는 민간자격증 기능을 사용할 수 없습니다."
+  );
+
+  const data: any = {};
 
         if (input.assigneeId !== undefined) data.assigneeId = input.assigneeId;
         if (input.assigneeName !== undefined) data.assigneeName = input.assigneeName?.trim() || null;
@@ -314,7 +839,7 @@ console.log("[privateCertificate.update router] input =", input);
 console.log("[privateCertificate.update router] data =", data);
 
         await db.updatePrivateCertificateRequest(input.id, data, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId,
 });
         return { success: true };
       }),
@@ -322,11 +847,20 @@ console.log("[privateCertificate.update router] data =", data);
     delete: hostProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowPrivateCertificate",
+    "현재 회사는 민간자격증 기능을 사용할 수 없습니다."
+  );
+
   await db.deletePrivateCertificateRequest(input.id, {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId,
   });
-        return { success: true };
-      }),
+
+  return { success: true };
+}),
 
     requestRefund: protectedProcedure
       .input(
@@ -336,9 +870,17 @@ console.log("[privateCertificate.update router] data =", data);
           refundReason: z.string().optional().nullable(),
         })
       )
-      .mutation(async ({ ctx, input }) => {
-        await db.requestPrivateCertificateRefund({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+     .mutation(async ({ ctx, input }) => {
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowPrivateCertificate",
+    "현재 회사는 민간자격증 기능을 사용할 수 없습니다."
+  );
+
+  await db.requestPrivateCertificateRefund({
+    organizationId,
           requestId: input.requestId,
           refundAmount: input.refundAmount,
           refundReason: input.refundReason ?? null,
@@ -354,12 +896,20 @@ console.log("[privateCertificate.update router] data =", data);
         })
       )
       .mutation(async ({ ctx, input }) => {
-        if (!isAdminOrHost(ctx.user)) {
-          throw new Error("관리자 또는 호스트만 환불 승인할 수 있습니다.");
-        }
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-        await db.approvePrivateCertificateRefund({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowPrivateCertificate",
+    "현재 회사는 민간자격증 기능을 사용할 수 없습니다."
+  );
+
+  if (!isAdminOrHost(ctx.user)) {
+    throw new Error("관리자 또는 호스트만 환불 승인할 수 있습니다.");
+  }
+
+  await db.approvePrivateCertificateRefund({
+    organizationId,
           requestId: input.requestId,
           approvedBy: Number(ctx.user.id),
         });
@@ -381,12 +931,20 @@ console.log("[privateCertificate.update router] data =", data);
       .optional()
   )
   .query(async ({ ctx, input }) => {
-    const assigneeId = isAdminOrHost(ctx.user)
-      ? input?.assigneeId
-      : Number(ctx.user.id);
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-    return db.listPracticeSupportRequests({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowPracticeCenter",
+    "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
+  );
+
+  const assigneeId = isAdminOrHost(ctx.user)
+    ? input?.assigneeId
+    : Number(ctx.user.id);
+
+  return db.listPracticeSupportRequests({
+    organizationId,
   assigneeId,
   month: input?.month,
   status: input?.status,
@@ -401,9 +959,17 @@ console.log("[privateCertificate.update router] data =", data);
         })
       )
       .query(async ({ ctx, input }) => {
-        const student = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
-});
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowPracticeCenter",
+    "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
+  );
+
+  const student = await db.getStudent(input.studentId, {
+    organizationId,
+  });
         if (!student) return [];
 
         if (!isAdminOrHost(ctx.user) && Number(student.assigneeId) !== Number(ctx.user.id)) {
@@ -411,15 +977,23 @@ console.log("[privateCertificate.update router] data =", data);
         }
 
        return db.listPracticeSupportRequestsByStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId,
 });
       }),
 
     get: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .query(async ({ input, ctx }) => {
+     .query(async ({ input, ctx }) => {
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowPracticeCenter",
+    "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
+  );
+
   return db.getPracticeSupportRequest(input.id, {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId,
   });
 }),
 
@@ -450,9 +1024,18 @@ includeEducationCenter: z.boolean().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const student = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
-});
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowPracticeCenter",
+    "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
+  );
+
+  const student = await db.getStudent(input.studentId, {
+    organizationId,
+  });
+
         if (!student) throw new Error("학생을 찾을 수 없습니다.");
 
         if (!isAdminOrHost(ctx.user) && Number(student.assigneeId) !== Number(ctx.user.id)) {
@@ -460,7 +1043,7 @@ includeEducationCenter: z.boolean().optional(),
         }
 
          const id = await db.createPracticeSupportRequest({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId,
   studentId: input.studentId,
           semesterId: input.semesterId ?? null,
           assigneeId: input.assigneeId,
@@ -489,7 +1072,7 @@ includeEducationCenter: input.includeEducationCenter ?? true,
   Number(id),
   Number(ctx.user.id),
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId,
   }
 );
         }
@@ -533,8 +1116,16 @@ selectedPracticeInstitutionAddress: z.string().optional().nullable(),
 selectedPracticeInstitutionDistanceKm: z.string().optional().nullable(),
         })
       )
-            .mutation(async ({ ctx, input }) => {
-        const data: any = {};
+          .mutation(async ({ ctx, input }) => {
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowPracticeCenter",
+    "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
+  );
+
+  const data: any = {};
 
         if (input.semesterId !== undefined) data.semesterId = input.semesterId ?? null;
         if (input.assigneeId !== undefined) data.assigneeId = input.assigneeId;
@@ -597,14 +1188,14 @@ if (Object.keys(data).length === 0) {
 }
 
         await db.updatePracticeSupportRequest(input.id, data, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+ organizationId,
 });
        if (input.paymentStatus === "결제") {
   await db.syncPracticeSupportSettlementItemByRequestId(
   Number(input.id),
   Number(ctx.user.id),
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId,
   }
 );
 }
@@ -613,12 +1204,21 @@ if (Object.keys(data).length === 0) {
 
     delete: hostProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input, ctx }) => {
+     .mutation(async ({ input, ctx }) => {
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowPracticeCenter",
+    "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
+  );
+
   await db.deletePracticeSupportRequest(input.id, {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId,
   });
-        return { success: true };
-      }),
+
+  return { success: true };
+}),
 
     requestRefund: protectedProcedure
       .input(
@@ -629,8 +1229,16 @@ if (Object.keys(data).length === 0) {
         })
       )
      .mutation(async ({ input, ctx }) => {
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowPracticeCenter",
+    "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
+  );
+
   await db.requestPracticeSupportRefund({
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId,
     requestId: input.requestId,
           refundAmount: input.refundAmount,
           refundReason: input.refundReason ?? null,
@@ -645,13 +1253,21 @@ if (Object.keys(data).length === 0) {
           requestId: z.number(),
         })
       )
-      .mutation(async ({ ctx, input }) => {
-        if (!isAdminOrHost(ctx.user)) {
-          throw new Error("관리자 또는 호스트만 환불 승인할 수 있습니다.");
-        }
+     .mutation(async ({ ctx, input }) => {
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-        await db.approvePracticeSupportRefund({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowPracticeCenter",
+    "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
+  );
+
+  if (!isAdminOrHost(ctx.user)) {
+    throw new Error("관리자 또는 호스트만 환불 승인할 수 있습니다.");
+  }
+
+  await db.approvePracticeSupportRefund({
+    organizationId,
   requestId: input.requestId,
   approvedBy: Number(ctx.user.id),
 });
@@ -680,11 +1296,19 @@ upsertByStudent: protectedProcedure
     })
   )
   .mutation(async ({ ctx, input }) => {
-    return db.upsertPracticeSupportRequestByStudent({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
-  ...input,
-});
-  }),
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowPracticeCenter",
+    "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
+  );
+
+  return db.upsertPracticeSupportRequestByStudent({
+    organizationId,
+    ...input,
+  });
+}),
   }),
 
   auth: router({
@@ -702,7 +1326,7 @@ upsertByStudent: protectedProcedure
   users: router({
   list: protectedProcedure.query(async ({ ctx }) => {
   return db.getAllUsersDetailed({
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
 }),
 
@@ -755,11 +1379,21 @@ upsertByStudent: protectedProcedure
         bankAccount: z.string().optional(),
       })
     )
-    .mutation(async ({ ctx, input }) => {
-      const passwordHash = await bcrypt.hash(input.password, 10);
+   .mutation(async ({ ctx, input }) => {
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-      await db.createUserAccount({
-organizationId: Number((ctx.user as any)?.organizationId || 1),
+  const limitStatus = await getOrganizationLimitStatus(organizationId);
+
+  if (limitStatus.exceeded.users) {
+    throw new Error(
+      `사용자 수 제한을 초과했습니다. 현재 ${limitStatus.usage.userCount}명 / 제한 ${limitStatus.limits.maxUsers}명`
+    );
+  }
+
+  const passwordHash = await bcrypt.hash(input.password, 10);
+
+  await db.createUserAccount({
+    organizationId,
         openId: input.openId.trim(),
         username: input.username.trim(),
         passwordHash,
@@ -810,7 +1444,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
     passwordHash,
   },
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   }
 );
 
@@ -829,7 +1463,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
   input.id,
   input.role,
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   }
 );
 
@@ -848,7 +1482,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
   input.id,
   input.isActive,
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   }
 );
 
@@ -860,7 +1494,7 @@ org: router({
   teams: router({
     list: protectedProcedure.query(async ({ ctx }) => {
   return db.listTeams({
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
 }),
 
@@ -874,7 +1508,7 @@ org: router({
       )
       .mutation(async ({ ctx, input }) => {
   const id = await db.createTeam({
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
     name: input.name,
           sortOrder: input.sortOrder ?? 0,
           isActive: input.isActive ?? true,
@@ -901,7 +1535,7 @@ org: router({
       isActive: input.isActive,
     },
     {
-      organizationId: Number((ctx.user as any)?.organizationId || 1),
+      organizationId: Number((ctx.user as any)?.organizationId || 0),
     }
   );
 
@@ -916,7 +1550,7 @@ org: router({
       )
       .mutation(async ({ ctx, input }) => {
   await db.deleteTeam(input.id, {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
         return { success: true };
       }),
@@ -925,7 +1559,7 @@ org: router({
   positions: router({
     list: protectedProcedure.query(async ({ ctx }) => {
   return db.listPositions({
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
 }),
 
@@ -940,7 +1574,7 @@ settlementUnitAmount: z.string().optional(),
       )
      .mutation(async ({ ctx, input }) => {
   const id = await db.createPosition({
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
     name: input.name,
     sortOrder: input.sortOrder ?? 0,
     isActive: input.isActive ?? true,
@@ -970,7 +1604,7 @@ settlementUnitAmount: z.string().optional(),
       settlementUnitAmount: input.settlementUnitAmount,
     },
     {
-      organizationId: Number((ctx.user as any)?.organizationId || 1),
+      organizationId: Number((ctx.user as any)?.organizationId || 0),
     }
   );
 
@@ -985,7 +1619,7 @@ settlementUnitAmount: z.string().optional(),
       )
       .mutation(async ({ ctx, input }) => {
   await db.deletePosition(input.id, {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
         return { success: true };
       }),
@@ -1000,7 +1634,7 @@ settlementUnitAmount: z.string().optional(),
       )
       .query(async ({ ctx, input }) => {
   return db.getUserOrgMapping(input.userId, {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
 }),
 
@@ -1015,7 +1649,7 @@ settlementUnitAmount: z.string().optional(),
       )
       .mutation(async ({ ctx, input }) => {
         const id = await db.upsertUserOrgMappingProtected({
-organizationId: Number((ctx.user as any)?.organizationId || 1),
+organizationId: Number((ctx.user as any)?.organizationId || 0),
           actorRole: ctx.user.role,
           targetUserId: input.userId,
           teamId: input.teamId ?? null,
@@ -1034,7 +1668,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
       )
       .mutation(async ({ ctx, input }) => {
   await db.deleteUserOrgMapping(input.userId, {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
         return { success: true };
       }),
@@ -1043,8 +1677,16 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
 
 messenger: router({
   myRooms: protectedProcedure.query(async ({ ctx }) => {
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowMessenger",
+    "현재 회사는 메신저 기능을 사용할 수 없습니다."
+  );
+
   return db.listMyChatRooms(Number(ctx.user.id), {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId,
   });
 }),
 
@@ -1055,8 +1697,16 @@ messenger: router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const room = await db.getOrCreateDirectChatRoom({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowMessenger",
+    "현재 회사는 메신저 기능을 사용할 수 없습니다."
+  );
+
+  const room = await db.getOrCreateDirectChatRoom({
+    organizationId,
   actorUserId: Number(ctx.user.id),
   otherUserId: input.userId,
 });
@@ -1074,10 +1724,18 @@ messenger: router({
       })
     )
     .query(async ({ ctx, input }) => {
-     return db.listChatMessages(input.roomId, Number(ctx.user.id), {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
-});
-    }),
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowMessenger",
+    "현재 회사는 메신저 기능을 사용할 수 없습니다."
+  );
+
+  return db.listChatMessages(input.roomId, Number(ctx.user.id), {
+    organizationId,
+  });
+}),
 
   members: protectedProcedure
     .input(
@@ -1086,10 +1744,18 @@ messenger: router({
       })
     )
     .query(async ({ ctx, input }) => {
-     return db.listChatRoomMembers(input.roomId, Number(ctx.user.id), {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
-});
-    }),
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowMessenger",
+    "현재 회사는 메신저 기능을 사용할 수 없습니다."
+  );
+
+  return db.listChatRoomMembers(input.roomId, Number(ctx.user.id), {
+    organizationId,
+  });
+}),
 
   sendMessage: protectedProcedure
     .input(
@@ -1100,8 +1766,16 @@ messenger: router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const messageId = await db.createChatMessage({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowMessenger",
+    "현재 회사는 메신저 기능을 사용할 수 없습니다."
+  );
+
+  const messageId = await db.createChatMessage({
+    organizationId,
   roomId: input.roomId,
   senderId: Number(ctx.user.id),
   messageType: input.messageType ?? "text",
@@ -1126,8 +1800,16 @@ messenger: router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      await db.markChatRoomRead({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowMessenger",
+    "현재 회사는 메신저 기능을 사용할 수 없습니다."
+  );
+
+  await db.markChatRoomRead({
+    organizationId,
   roomId: input.roomId,
   userId: Number(ctx.user.id),
   lastReadMessageId: input.lastReadMessageId,
@@ -1147,8 +1829,16 @@ messenger: router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowMessenger",
+    "현재 회사는 메신저 기능을 사용할 수 없습니다."
+  );
+
   const id = await db.createChatAttachment({
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId,
         messageId: input.messageId,
         fileName: input.fileName,
         fileUrl: input.fileUrl,
@@ -1167,7 +1857,7 @@ messenger: router({
     }))
     .query(async ({ input, ctx }) => {
   return db.listLeadForms(input.formType, {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
 }),
 
@@ -1178,16 +1868,26 @@ messenger: router({
     blueprintId: z.number().optional(),
   }))
     .mutation(async ({ input, ctx }) => {
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  const limitStatus = await getOrganizationLimitStatus(organizationId);
+
+  if (limitStatus.exceeded.landingForms) {
+    throw new Error(
+      `랜딩/광고폼 생성 제한을 초과했습니다. 현재 ${limitStatus.usage.landingFormCount}개 / 제한 ${limitStatus.limits.maxLandingForms}개`
+    );
+  }
+
   if (input.blueprintId) {
   return db.createLeadFormFromBlueprint({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId,
   blueprintId: input.blueprintId,
   assigneeId: input.assigneeId,
 });
 }
 // 👉 없으면 기존 방식
 return db.createLeadForm(input.assigneeId, input.formType, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId,
 });
 }),
 
@@ -1198,7 +1898,7 @@ return db.createLeadForm(input.assigneeId, input.formType, {
     }))
    .mutation(async ({ input, ctx }) => {
   return db.updateLeadFormActive(input.id, input.isActive, {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
 }),
 
@@ -1210,7 +1910,7 @@ return db.createLeadForm(input.assigneeId, input.formType, {
   )
  .query(async ({ input, ctx }) => {
   const template = await db.getLeadFormTemplate(input.formType, {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
 
     return {
@@ -1231,7 +1931,7 @@ renameTemplate: protectedProcedure
   )
   .mutation(async ({ input, ctx }) => {
     const updated = await db.renameNamedLeadFormTemplate({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
   formType: input.formType,
       oldTemplateName: input.oldTemplateName.trim(),
       newTemplateName: input.newTemplateName.trim(),
@@ -1253,7 +1953,7 @@ renameTemplate: protectedProcedure
     )
     .mutation(async ({ ctx, input }) => {
       const id = await db.saveLeadFormTemplate({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
   formType: input.formType,
         actorUserId: Number(ctx.user.id),
         uiConfig: input.uiConfig,
@@ -1271,7 +1971,7 @@ renameTemplate: protectedProcedure
   )
   .mutation(async ({ input, ctx }) => {
   await db.updateLeadFormUiConfig(input.id, input.uiConfig, {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
     return { success: true };
   }),
@@ -1286,7 +1986,7 @@ renameTemplate: protectedProcedure
     )
     .mutation(async ({ ctx, input }) => {
       const id = await db.updateMyLeadFormUiConfig({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
   token: input.token,
         formType: input.formType,
         userId: Number(ctx.user.id),
@@ -1304,7 +2004,7 @@ listTemplates: protectedProcedure
   )
  .query(async ({ input, ctx }) => {
   const rows = await db.listLeadFormTemplates(input.formType, {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
 
     const items = rows.map((row) => {
@@ -1357,7 +2057,7 @@ saveAsTemplate: protectedProcedure
   )
   .mutation(async ({ input, ctx }) => {
     const saved = await db.saveNamedLeadFormTemplate({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
   formType: input.formType,
       templateName: input.templateName.trim(),
       uiConfig: input.uiConfig,
@@ -1380,7 +2080,7 @@ applyTemplateToMyForm: protectedProcedure
   )
   .mutation(async ({ input, ctx }) => {
     const updated = await db.applyNamedLeadFormTemplateToToken({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
   formType: input.formType,
       templateName: input.templateName.trim(),
       targetToken: input.targetToken,
@@ -1406,7 +2106,7 @@ deleteTemplate: protectedProcedure
   input.templateName.trim(),
   Number(ctx.user.id),
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   }
 );
 
@@ -1425,7 +2125,7 @@ duplicateTemplate: protectedProcedure
   )
   .mutation(async ({ input, ctx }) => {
     const created = await db.duplicateNamedLeadFormTemplate({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
   formType: input.formType,
       sourceTemplateName: input.sourceTemplateName.trim(),
       newTemplateName: input.newTemplateName.trim(),
@@ -1452,7 +2152,7 @@ formBlueprintAdmin: router({
       return db.listFormBlueprints(
   input.formType,
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   }
 );
     }),
@@ -1469,7 +2169,7 @@ formBlueprintAdmin: router({
       const row = await db.getFormBlueprintById(
   input.id,
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   }
 );
       if (!row) {
@@ -1492,7 +2192,7 @@ formBlueprintAdmin: router({
       assertHostOrSuperhost(ctx.user);
 
       const created = await db.createFormBlueprint({
-organizationId: Number((ctx.user as any)?.organizationId || 1),
+organizationId: Number((ctx.user as any)?.organizationId || 0),
         formType: input.formType,
         name: input.name,
         description: input.description ?? null,
@@ -1521,7 +2221,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
       assertHostOrSuperhost(ctx.user);
 
       const updated = await db.updateFormBlueprint({
-organizationId: Number((ctx.user as any)?.organizationId || 1),
+organizationId: Number((ctx.user as any)?.organizationId || 0),
         id: input.id,
         name: input.name,
         description: input.description,
@@ -1548,7 +2248,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
       await db.deleteFormBlueprint(
   input.id,
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   }
 );
 
@@ -1568,7 +2268,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
       assertHostOrSuperhost(ctx.user);
 
       const created = await db.createLeadFormFromBlueprint({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
   blueprintId: input.blueprintId,
   assigneeId: input.assigneeId,
 });
@@ -1616,7 +2316,7 @@ publicForm: router({
       }
 
 const id = await db.createConsultation({
-  organizationId: Number((form as any)?.form?.organizationId || 1),
+  organizationId: Number((form as any)?.form?.organizationId || 0),
   consultDate: new Date(),
   channel: input.channel,
   clientName: input.clientName,
@@ -1636,7 +2336,7 @@ return { success: true, id };
 notification: router({
   list: protectedProcedure.query(async ({ ctx }) => {
     return db.listNotifications(Number(ctx.user.id), {
-  organizationId: Number(ctx.user.organizationId || 1),
+  organizationId: Number(ctx.user.organizationId || 0),
 });
   }),
 
@@ -1648,14 +2348,14 @@ notification: router({
     )
     .mutation(async ({ ctx, input }) => {
       await db.markNotificationRead(input.id, Number(ctx.user.id), {
-  organizationId: Number(ctx.user.organizationId || 1),
+  organizationId: Number(ctx.user.organizationId || 0),
 });
       return { success: true };
     }),
 
   markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
     await db.markAllNotificationsRead(Number(ctx.user.id), {
-  organizationId: Number(ctx.user.organizationId || 1),
+  organizationId: Number(ctx.user.organizationId || 0),
 });
     return { success: true };
   }),
@@ -1668,7 +2368,7 @@ branding: router({
 
   get: protectedProcedure.query(async ({ ctx }) => {
   return db.getBrandingSettings({
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
 }),
 
@@ -1682,7 +2382,7 @@ branding: router({
     )
     .mutation(async ({ ctx, input }) => {
       const id = await db.saveBrandingSettings({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
   companyName: input.companyName.trim(),
         companyLogoUrl: input.companyLogoUrl?.trim() || null,
         messengerSubtitle: input.messengerSubtitle.trim(),
@@ -1716,7 +2416,7 @@ if (!user) {
 }
 
 const id = await db.upsertDeviceToken({
-  organizationId: Number((user as any).organizationId || 1),
+  organizationId: Number((user as any).organizationId || 0),
   userId: input.userId,
   platform: input.platform,
   expoPushToken: input.expoPushToken,
@@ -1729,7 +2429,7 @@ const id = await db.upsertDeviceToken({
   educationInstitution: router({
     list: protectedProcedure.query(async ({ ctx }) => {
   return db.listEducationInstitutions({
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
 }),
 
@@ -1745,7 +2445,7 @@ normalSubjectPrice: z.string().optional(),
       )
       .mutation(async ({ input, ctx }) => {
   const id = await db.createEducationInstitution({
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
     name: input.name.trim(),
     isActive: true,
     sortOrder: input.sortOrder ?? 0,
@@ -1773,7 +2473,7 @@ normalSubjectPrice: z.string().optional(),
   const { id, ...rest } = input;
 
   await db.updateEducationInstitution(id, rest, {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
 
   return { success: true };
@@ -1793,7 +2493,7 @@ normalSubjectPrice: z.string().optional(),
   return db.listEducationInstitutionPositionRates(
     input?.educationInstitutionId,
     {
-      organizationId: Number((ctx.user as any)?.organizationId || 1),
+      organizationId: Number((ctx.user as any)?.organizationId || 0),
     }
   );
 }),
@@ -1810,7 +2510,7 @@ normalSubjectPrice: z.string().optional(),
     input.educationInstitutionId,
     input.positionId,
     {
-      organizationId: Number((ctx.user as any)?.organizationId || 1),
+      organizationId: Number((ctx.user as any)?.organizationId || 0),
     }
   );
 }),
@@ -1826,7 +2526,7 @@ normalSubjectPrice: z.string().optional(),
       )
       .mutation(async ({ input, ctx }) => {
   const id = await db.upsertEducationInstitutionPositionRate({
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
     educationInstitutionId: input.educationInstitutionId,
     positionId: input.positionId,
     freelancerUnitAmount: input.freelancerUnitAmount,
@@ -1844,7 +2544,7 @@ normalSubjectPrice: z.string().optional(),
       )
       .mutation(async ({ input, ctx }) => {
   await db.deleteEducationInstitutionPositionRate(input.id, {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
 
   return { success: true };
@@ -1853,14 +2553,14 @@ normalSubjectPrice: z.string().optional(),
     listPrivateCertificateMastersForSettlement: protectedProcedure.query(
   async ({ ctx }) => {
     return db.listPrivateCertificateMasters(false, {
-      organizationId: Number((ctx.user as any)?.organizationId || 1),
+      organizationId: Number((ctx.user as any)?.organizationId || 0),
     });
   }
 ),
 
 getSettings: protectedProcedure.query(async ({ ctx }) => {
   return db.getSettlementSettings({
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
 }),
 
@@ -1872,7 +2572,7 @@ getSettings: protectedProcedure.query(async ({ ctx }) => {
       )
       .mutation(async ({ input, ctx }) => {
   const id = await db.saveSettlementSettings({
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
     payoutDay: input.payoutDay,
   });
 
@@ -1882,14 +2582,14 @@ getSettings: protectedProcedure.query(async ({ ctx }) => {
     backfillSettlementItems: hostProcedure
       .mutation(async ({ ctx }) => {
         return await db.backfillSettlementItems(Number(ctx.user.id), {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
       }),
 
 cleanupOrphanSettlementItems: hostProcedure
   .mutation(async ({ ctx }) => {
     return await db.cleanupOrphanSettlementItems({
-      organizationId: Number((ctx.user as any)?.organizationId || 1),
+      organizationId: Number((ctx.user as any)?.organizationId || 0),
     });
   }),
   }),
@@ -1938,10 +2638,10 @@ cleanupOrphanSettlementItems: hostProcedure
 
         const [students, consultations] = await Promise.all([
           db.listStudents(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 }),
 db.listConsultations(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 }),
         ]);
 
@@ -1983,13 +2683,13 @@ db.listConsultations(assigneeId, {
 
       const [students, consultations, semesters] = await Promise.all([
         db.listStudents(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 }),
 db.listConsultations(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 }),
 db.listAllSemesters(assigneeId, undefined, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 }),
       ]);
 
@@ -2042,7 +2742,7 @@ db.listAllSemesters(assigneeId, undefined, {
       )
       .mutation(async ({ ctx, input }) => {
         const student = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         if (!student) throw new Error("학생을 찾을 수 없습니다");
 
@@ -2051,14 +2751,14 @@ db.listAllSemesters(assigneeId, undefined, {
         }
 
         const existing = await db.listTransferSubjects(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         if ((existing?.length ?? 0) >= 100) {
           throw new Error("전적대 과목은 최대 100개까지 등록할 수 있습니다");
         }
 
         const id = await db.createTransferSubject({
-organizationId: Number((ctx.user as any)?.organizationId || 1),
+organizationId: Number((ctx.user as any)?.organizationId || 0),
           studentId: input.studentId,
           schoolName: input.schoolName?.trim() || null,
           subjectName: input.subjectName.trim(),
@@ -2072,7 +2772,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
 
         if (db.createAiActionLog) {
           await db.createAiActionLog({
-organizationId: Number((ctx.user as any)?.organizationId || 1),
+organizationId: Number((ctx.user as any)?.organizationId || 0),
             userId: Number(ctx.user.id),
             userName: ctx.user.name,
             action: "create_transfer_subject_manual",
@@ -2094,7 +2794,7 @@ uploadTranscriptImage: protectedProcedure
   )
   .mutation(async ({ ctx, input }) => {
     const student = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
     if (!student) throw new Error("학생 없음");
 
@@ -2220,7 +2920,7 @@ try {
       )
       .mutation(async ({ ctx, input }) => {
         const student = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         if (!student) throw new Error("학생을 찾을 수 없습니다");
 
@@ -2229,7 +2929,7 @@ try {
         }
 
         const existing = await db.listPlanSemesters(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         const semesterCount = existing.filter(
           (x: any) => Number(x.semesterNo) === Number(input.semesterNo)
@@ -2240,7 +2940,7 @@ try {
         }
 
         const id = await db.createPlanSemester({
-organizationId: Number((ctx.user as any)?.organizationId || 1),
+organizationId: Number((ctx.user as any)?.organizationId || 0),
           studentId: input.studentId,
           semesterNo: input.semesterNo,
           subjectName: input.subjectName.trim(),
@@ -2252,7 +2952,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
 
         if (db.createAiActionLog) {
           await db.createAiActionLog({
-organizationId: Number((ctx.user as any)?.organizationId || 1),
+organizationId: Number((ctx.user as any)?.organizationId || 0),
             userId: Number(ctx.user.id),
             userName: ctx.user.name,
             action: "create_plan_semester_manual",
@@ -2277,7 +2977,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
         }
 
         const student = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         if (!student) throw new Error("학생을 찾을 수 없습니다");
 
@@ -2286,12 +2986,12 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
         }
 
         const result = await db.getPracticeRecommendationsForStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
 
         if (db.createAiActionLog) {
           await db.createAiActionLog({
-organizationId: Number((ctx.user as any)?.organizationId || 1),
+organizationId: Number((ctx.user as any)?.organizationId || 0),
             userId: Number(ctx.user.id),
             userName: ctx.user.name,
             action: "recommend_practice_place",
@@ -2323,10 +3023,10 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
 
         const [students, consultations] = await Promise.all([
           db.listStudents(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 }),
 db.listConsultations(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 }),
         ]);
 const userName = ctx.user.name || "사용자";
@@ -2460,7 +3160,7 @@ const userName = ctx.user.name || "사용자";
         }
 
         await db.createAiLearningEntry({
-          organizationId: Number((ctx.user as any)?.organizationId || 1),
+          organizationId: Number((ctx.user as any)?.organizationId || 0),
           userId: Number(ctx.user.id),
           userName: ctx.user.name,
           learningType: input.learningType,
@@ -2490,7 +3190,7 @@ const userName = ctx.user.name || "사용자";
         }
 
         const examples = await db.findSimilarAiLearning({
-organizationId: Number((ctx.user as any)?.organizationId || 1),
+organizationId: Number((ctx.user as any)?.organizationId || 0),
           learningType: input.learningType,
           normalizedKey: input.normalizedKey,
           keyword: input.keyword,
@@ -2527,7 +3227,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
           : Number(ctx.user.id) || 1;
 
         const students = await db.listStudents(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         const keyword = input.studentKeyword.trim();
         const keywordLower = keyword.toLowerCase();
@@ -2613,7 +3313,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
 
           if (db.createAiActionLog) {
             await db.createAiActionLog({
-organizationId: Number((ctx.user as any)?.organizationId || 1),
+organizationId: Number((ctx.user as any)?.organizationId || 0),
               userId: Number(ctx.user.id),
               userName: ctx.user.name,
               action: "create_transfer_subject",
@@ -2679,7 +3379,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
           }
 
           const existing = await db.listPlanSemesters(student.id, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
           const semesterCount = (existing || []).filter(
             (x: any) => Number(x.semesterNo) === Number(input.semesterNo)
@@ -2701,7 +3401,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
 
           if (db.createAiActionLog) {
             await db.createAiActionLog({
-organizationId: Number((ctx.user as any)?.organizationId || 1),
+organizationId: Number((ctx.user as any)?.organizationId || 0),
               userId: Number(ctx.user.id),
               userName: ctx.user.name,
               action: "create_plan_semester",
@@ -2748,12 +3448,12 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
           }
 
           const recommendations = await db.getPracticeRecommendationsForStudent(student.id, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
 
           if (db.createAiActionLog) {
             await db.createAiActionLog({
-organizationId: Number((ctx.user as any)?.organizationId || 1),
+organizationId: Number((ctx.user as any)?.organizationId || 0),
               userId: Number(ctx.user.id),
               userName: ctx.user.name,
               action: "recommend_practice_place",
@@ -3143,10 +3843,62 @@ categoryId: z.number().nullable().optional(),
     assertHostOrSuperhost(ctx.user);
 
 
-    await db.deleteConsultation(input.id);
+    await db.deleteConsultation(input.id, {
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  deletedBy: Number(ctx.user.id),
+});
+
+await db.createAuditLog({
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  actorUserId: Number(ctx.user.id),
+  actorRole: String((ctx.user as any)?.role || ""),
+  action: "consultation.soft_delete",
+  targetType: "consultation",
+  targetId: input.id,
+  memo: "상담DB 삭제 처리",
+} as any);
 
     return { success: true };
   }),
+
+listDeleted: hostProcedure
+  .input(
+    z
+      .object({
+        limit: z.number().optional(),
+      })
+      .optional()
+  )
+  .query(async ({ ctx, input }) => {
+    return db.listDeletedConsultations({
+      organizationId: Number((ctx.user as any)?.organizationId || 0),
+      limit: input?.limit ?? 100,
+    });
+  }),
+
+restore: hostProcedure
+  .input(z.object({ id: z.number() }))
+  .mutation(async ({ ctx, input }) => {
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+    await db.restoreConsultation({
+      id: input.id,
+      organizationId,
+    });
+
+    await db.createAuditLog({
+      organizationId,
+      actorUserId: Number(ctx.user.id),
+      actorRole: String((ctx.user as any)?.role || ""),
+      action: "consultation.restore",
+      targetType: "consultation",
+      targetId: input.id,
+      memo: "삭제된 상담DB 복구 처리",
+    } as any);
+
+    return { success: true };
+  }),
+
   }),
 
   student: router({
@@ -3156,7 +3908,7 @@ categoryId: z.number().nullable().optional(),
         : Number(ctx.user.id) || 1;
 
       return db.listStudents(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
     }),
 
@@ -3164,7 +3916,7 @@ categoryId: z.number().nullable().optional(),
       .input(z.object({ id: z.number() }))
       .query(async ({ ctx, input }) => {
         const item = await db.getStudent(input.id, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         if (!item) return null;
 
@@ -3200,7 +3952,7 @@ categoryId: z.number().nullable().optional(),
       )
       .mutation(async ({ ctx, input }) => {
         const data: any = {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
   ...input,
   assigneeId: Number(ctx.user.id) || 1,
 };
@@ -3235,7 +3987,7 @@ categoryId: z.number().nullable().optional(),
         console.log("[student.update] input =", input);
 
         const item = await db.getStudent(input.id, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         if (!item) throw new Error("학생 기록을 찾을 수 없습니다");
 
@@ -3253,7 +4005,7 @@ categoryId: z.number().nullable().optional(),
         console.log("[student.update] data =", data);
 
         await db.updateStudent(id, data, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         return { success: true };
       }),
@@ -3270,7 +4022,7 @@ categoryId: z.number().nullable().optional(),
       )
       .mutation(async ({ ctx, input }) => {
         const item = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         if (!item) throw new Error("학생 기록을 찾을 수 없습니다");
 
@@ -3281,7 +4033,7 @@ categoryId: z.number().nullable().optional(),
 
         await db.updateStudentAddressAndCoords({
   ...input,
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         return { success: true };
       }),
@@ -3296,7 +4048,7 @@ categoryId: z.number().nullable().optional(),
       .input(z.object({ studentId: z.number() }))
       .query(async ({ ctx, input }) => {
         const student = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         if (!student) return null;
 
@@ -3305,7 +4057,7 @@ categoryId: z.number().nullable().optional(),
         }
 
         return db.getStudentRegistrationSummary(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
       }),
 }),
@@ -3314,7 +4066,7 @@ categoryId: z.number().nullable().optional(),
     get: protectedProcedure
   .input(z.object({ studentId: z.number() }))
   .query(async ({ ctx, input }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 1);
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
     const student = await db.getStudent(input.studentId, {
       organizationId,
@@ -3388,7 +4140,7 @@ categoryId: z.number().nullable().optional(),
   })
 )
       .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 1);
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
   const student = await db.getStudent(input.studentId, {
     organizationId,
@@ -3413,7 +4165,7 @@ categoryId: z.number().nullable().optional(),
     list: protectedProcedure
       .input(z.object({ studentId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 1);
+        const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -3459,7 +4211,7 @@ const student = await db.getStudent(input.studentId, {
 })
       )
       .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 1);
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
   const student = await db.getStudent(input.studentId, {
     organizationId,
@@ -3493,7 +4245,7 @@ const student = await db.getStudent(input.studentId, {
   input.semesterOrder,
   input.plannedSubjectCount,
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   }
 );
   }
@@ -3526,10 +4278,17 @@ registeredCourses: z.array(z.string()).optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const sem = await db.getSemester(input.id);
+
+const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+       const sem = await db.getSemester(input.id, {
+  organizationId,
+});
         if (!sem) throw new Error("학기를 찾을 수 없습니다");
 
-        const allSemsForStatusCheck = await db.listSemesters(sem.studentId);
+       const allSemsForStatusCheck = await db.listSemesters(sem.studentId, {
+  organizationId,
+});
         const sortedSemsForStatusCheck = [...allSemsForStatusCheck].sort(
           (a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder)
         );
@@ -3555,7 +4314,9 @@ registeredCourses: z.array(z.string()).optional(),
         if (rest.actualStartDate) data.actualStartDate = new Date(rest.actualStartDate);
         if (rest.actualPaymentDate) data.actualPaymentDate = new Date(rest.actualPaymentDate);
 
-        await db.updateSemester(id, data);
+        await db.updateSemester(id, data, {
+  organizationId,
+});
         const shouldSyncSubjectSettlement =
           input.actualInstitutionId !== undefined ||
           input.actualSubjectCount !== undefined ||
@@ -3582,9 +4343,12 @@ if (input.registeredCourses !== undefined) {
 
         if (shouldSyncSubjectSettlement) {
           await db.syncSubjectSettlementItemBySemesterId(
-            id,
-            Number(ctx.user.id)
-          );
+  id,
+  Number(ctx.user.id),
+  {
+    organizationId,
+  }
+);
         }
 
         if (input.plannedSubjectCount !== undefined) {
@@ -3593,14 +4357,14 @@ if (input.registeredCourses !== undefined) {
   input.semesterOrder,
   input.plannedSubjectCount,
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   }
 );
         }
 
         if (input.status !== undefined) {
   const refreshedSems = await db.listSemesters(sem.studentId, {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
           const sortedRefreshedSems = [...refreshedSems].sort(
             (a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder)
@@ -3612,12 +4376,14 @@ if (input.registeredCourses !== undefined) {
             refreshedLastSem?.status === "등록 종료" ? "등록 종료" : "등록";
 
           await db.updateStudent(sem.studentId, {
-            status: studentStatus,
-          });
+  status: studentStatus,
+}, {
+  organizationId,
+});
         }
 
         const allSems = await db.listSemesters(sem.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
 
         const firstActual = allSems
@@ -3634,7 +4400,9 @@ if (input.registeredCourses !== undefined) {
           let institutionName: string | undefined = undefined;
 
           if (firstActual.actualInstitutionId) {
-            const institutions = await db.listEducationInstitutions();
+            const institutions = await db.listEducationInstitutions({
+  organizationId,
+});
             const found = institutions.find(
               (x: any) => Number(x.id) === Number(firstActual.actualInstitutionId)
             );
@@ -3642,7 +4410,7 @@ if (input.registeredCourses !== undefined) {
           }
 
           const refreshedSems = await db.listSemesters(sem.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
           const sortedRefreshedSems = [...refreshedSems].sort(
             (a: any, b: any) => Number(a.semesterOrder) - Number(b.semesterOrder)
@@ -3654,14 +4422,16 @@ if (input.registeredCourses !== undefined) {
             refreshedLastSem?.status === "등록 종료" ? "등록 종료" : "등록";
 
           await db.updateStudent(sem.studentId, {
-            startDate: firstActual.actualStartDate || undefined,
-            institutionId: firstActual.actualInstitutionId || undefined,
-            institution: institutionName || undefined,
-            subjectCount: firstActual.actualSubjectCount || undefined,
-            paymentAmount: firstActual.actualAmount || undefined,
-            paymentDate: firstActual.actualPaymentDate || undefined,
-            status: studentStatus,
-          });
+  startDate: firstActual.actualStartDate || undefined,
+  institutionId: firstActual.actualInstitutionId || undefined,
+  institution: institutionName || undefined,
+  subjectCount: firstActual.actualSubjectCount || undefined,
+  paymentAmount: firstActual.actualAmount || undefined,
+  paymentDate: firstActual.actualPaymentDate || undefined,
+  status: studentStatus,
+}, {
+  organizationId,
+});
         }
 
         if (input.isCompleted) {
@@ -3674,19 +4444,25 @@ if (input.registeredCourses !== undefined) {
     copyPlannedToActual: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        const sem = await db.getSemester(input.id);
+        const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+const sem = await db.getSemester(input.id, {
+  organizationId,
+});
         if (!sem) throw new Error("학기를 찾을 수 없습니다");
 
         const raw = String(sem.plannedMonth || "").replace(/[^0-9]/g, "");
         const actualStartDate =
           raw.length === 6 ? new Date(`${raw.slice(0, 4)}-${raw.slice(4, 6)}-01`) : undefined;
 
-                await db.updateSemester(input.id, {
+               await db.updateSemester(input.id, {
   actualStartDate,
   actualInstitutionId: sem.plannedInstitutionId,
   actualInstitution: sem.plannedInstitution,
   actualSubjectCount: sem.plannedSubjectCount,
   actualAmount: sem.plannedAmount,
+}, {
+  organizationId,
 });
 
 return { success: true };
@@ -3706,58 +4482,79 @@ approve: protectedProcedure
 
     const now = new Date();
 
-    await db.updateSemester(Number(input.id), {
-      approvalStatus: input.approvalStatus,
-      approvedAt: input.approvalStatus === "승인" ? now : null,
-      rejectedAt: input.approvalStatus === "불승인" ? now : null,
-      isLocked: input.approvalStatus === "승인",
-    } as any);
+const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-    const sem = await db.getSemester(Number(input.id));
+   await db.updateSemester(Number(input.id), {
+  approvalStatus: input.approvalStatus,
+  approvedAt: input.approvalStatus === "승인" ? now : null,
+  rejectedAt: input.approvalStatus === "불승인" ? now : null,
+  isLocked: input.approvalStatus === "승인",
+} as any, {
+  organizationId,
+});
+
+    const sem = await db.getSemester(Number(input.id), {
+  organizationId,
+});
     if (!sem) {
       throw new Error("학기 정보를 찾을 수 없습니다.");
     }
 
     await db.syncSubjectSettlementItemBySemesterId(
-      Number(input.id),
-      Number(ctx.user.id)
-    );
+  Number(input.id),
+  Number(ctx.user.id),
+  {
+    organizationId,
+  }
+);
 
-    const student = await db.getStudent(Number(sem.studentId));
+    const student = await db.getStudent(Number(sem.studentId), {
+  organizationId,
+});
     if (!student) {
       throw new Error("학생 정보를 찾을 수 없습니다.");
     }
 
-    const allSems = await db.listSemesters(Number(student.id));
+    const allSems = await db.listSemesters(Number(student.id), {
+  organizationId,
+});
     const hasApprovedSemester = (allSems || []).some(
       (row: any) => row.approvalStatus === "승인"
     );
 
     if (hasApprovedSemester) {
       await db.updateStudent(Number(student.id), {
-        status: "등록",
-        approvalStatus: "승인",
-        approvedAt: now,
-        rejectedAt: null,
-      } as any);
+  status: "등록",
+  approvalStatus: "승인",
+  approvedAt: now,
+  rejectedAt: null,
+} as any, {
+  organizationId,
+});
 
       if (student.consultationId) {
         await db.updateConsultation(Number(student.consultationId), {
-          status: "등록",
-        } as any);
+  status: "등록",
+} as any, {
+  organizationId,
+});
       }
     } else {
       await db.updateStudent(Number(student.id), {
-        status: "등록예정",
-        approvalStatus: input.approvalStatus === "불승인" ? "불승인" : "대기",
-        approvedAt: null,
-        rejectedAt: input.approvalStatus === "불승인" ? now : null,
-      } as any);
+  status: "등록예정",
+  approvalStatus: input.approvalStatus === "불승인" ? "불승인" : "대기",
+  approvedAt: null,
+  rejectedAt: input.approvalStatus === "불승인" ? now : null,
+} as any, {
+  organizationId,
+});
 
       if (student.consultationId) {
         await db.updateConsultation(Number(student.consultationId), {
-          status: "등록예정",
-        } as any);
+  status: "등록예정",
+} as any, {
+  organizationId,
+});
       }
     }
 
@@ -3800,11 +4597,18 @@ approve: protectedProcedure
 
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        const sem = await db.getSemester(input.id);
-        if (sem?.isLocked) throw new Error("승인된 학기는 삭제할 수 없습니다");
+      .mutation(async ({ input, ctx }) => {
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-        await db.deleteSemester(input.id);
+  const sem = await db.getSemester(input.id, {
+    organizationId,
+  });
+
+  if (sem?.isLocked) throw new Error("승인된 학기는 삭제할 수 없습니다.");
+
+  await db.deleteSemester(input.id, {
+    organizationId,
+  });
         return { success: true };
       }),
   }),
@@ -3813,7 +4617,7 @@ approve: protectedProcedure
     listByStudent: protectedProcedure
       .input(z.object({ studentId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 1);
+        const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -3835,7 +4639,7 @@ throw new Error("관리자, 호스트 또는 슈퍼호스트만 확인할 수 �
       }
 
       return db.listPendingRefunds({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
     }),
 
@@ -3855,7 +4659,7 @@ throw new Error("관리자, 호스트 또는 슈퍼호스트만 확인할 수 �
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 1);
+        const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -3891,7 +4695,7 @@ organizationId,
       throw new Error("관리자 또는 호스트만 승인할 수 있습니다");
     }
 
-    const organizationId = Number((ctx.user as any)?.organizationId || 1);
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 const targetRefund = await db.getRefundById(input.id, {
   organizationId,
@@ -3939,7 +4743,7 @@ await db.approveRefund(input.id, Number(ctx.user.id), {
           throw new Error("관리자 또는 호스트만 불승인 처리할 수 있습니다");
         }
 
-        const organizationId = Number((ctx.user as any)?.organizationId || 1);
+        const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 const targetRefund = await db.getRefundById(input.id, {
   organizationId,
@@ -4010,7 +4814,7 @@ return { success: true };
     data.attachmentUrl = input.attachmentUrl?.trim() || null;
 
   await db.updateRefund(input.id, data, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
 return { success: true };
 }),
@@ -4019,7 +4823,7 @@ return { success: true };
       .input(z.object({ id: z.number() }))
      .mutation(async ({ ctx, input }) => {
   await db.deleteRefund(input.id, {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
   return { success: true };
 }),
@@ -4029,7 +4833,7 @@ return { success: true };
     list: protectedProcedure
       .input(z.object({ studentId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 1);
+        const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -4041,7 +4845,7 @@ const student = await db.getStudent(input.studentId, {
         }
 
         return db.listPlanSemesters(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
       }),
 
@@ -4057,7 +4861,7 @@ const student = await db.getStudent(input.studentId, {
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 1);
+        const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -4080,7 +4884,7 @@ const student = await db.getStudent(input.studentId, {
         }
 
         const id = await db.createPlanSemester({
-organizationId: Number((ctx.user as any)?.organizationId || 1),
+organizationId: Number((ctx.user as any)?.organizationId || 0),
           studentId: input.studentId,
           semesterNo: input.semesterNo,
           subjectName: input.subjectName.trim(),
@@ -4114,7 +4918,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
         if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder;
 
         await db.updatePlanSemester(input.id, data, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         return { success: true };
       }),
@@ -4123,7 +4927,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
         await db.deletePlanSemester(input.id, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         return { success: true };
       }),
@@ -4134,7 +4938,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
       .input(z.object({ studentId: z.number() }))
       .query(async ({ ctx, input }) => {
         const student = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         if (!student) return [];
 
@@ -4143,7 +4947,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
         }
 
         return db.listTransferSubjects(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
       }),
 
@@ -4163,7 +4967,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
       )
       .mutation(async ({ ctx, input }) => {
         const student = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         if (!student) throw new Error("학생을 찾을 수 없습니다");
 
@@ -4172,14 +4976,14 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
         }
 
         const existing = await db.listTransferSubjects(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         if ((existing?.length ?? 0) >= 100) {
           throw new Error("전적대 과목은 최대 100개까지 등록할 수 있습니다");
         }
 
         const id = await db.createTransferSubject({
- organizationId: Number((ctx.user as any)?.organizationId || 1),
+ organizationId: Number((ctx.user as any)?.organizationId || 0),
           studentId: input.studentId,
           schoolName: input.schoolName?.trim() || null,
           subjectName: input.subjectName.trim(),
@@ -4203,7 +5007,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 1);
+        const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -4215,7 +5019,7 @@ const student = await db.getStudent(input.studentId, {
         }
 
        const existing = await db.listTransferSubjects(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         const existingCount = existing?.length ?? 0;
 
@@ -4268,7 +5072,7 @@ const student = await db.getStudent(input.studentId, {
         if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl.trim();
 
         await db.updateTransferSubject(input.id, data, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         return { success: true };
       }),
@@ -4277,7 +5081,7 @@ const student = await db.getStudent(input.studentId, {
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
         await db.deleteTransferSubject(input.id, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         return { success: true };
       }),
@@ -4287,7 +5091,7 @@ const student = await db.getStudent(input.studentId, {
     list: protectedProcedure
       .input(z.object({ studentId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 1);
+        const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -4313,7 +5117,7 @@ const student = await db.getStudent(input.studentId, {
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 1);
+        const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -4414,7 +5218,7 @@ organizationId,
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 1);
+        const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -4443,8 +5247,10 @@ practiceEducationCenter: router({
       categoryId: z.number().optional(),
     }).optional()
   )
-  .query(async ({ input }) => {
-    return db.listPracticeEducationCenters(input?.categoryId);
+  .query(async ({ ctx, input }) => {
+    return db.listPracticeEducationCenters(input?.categoryId, {
+  organizationId,
+});
   }),
 
   get: protectedProcedure
@@ -4535,6 +5341,7 @@ memo: z.string().optional(),
     sortOrder: row.sortOrder ?? idx,
   })),
   {
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
     mode: input.mode,
     categoryId: input.categoryId ?? null,
   }
@@ -4749,6 +5556,7 @@ categoryId: z.number().nullable().optional(),
     sortOrder: (row as any).sortOrder ?? idx,
   })) as any,
   {
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
     mode: input.mode,
     categoryId: input.categoryId ?? null,
   }
@@ -4861,7 +5669,7 @@ fixCoords: protectedProcedure
       limit: z.number().optional(),
     })
   )
-  .mutation(async ({ input }) => {
+  .mutation(async ({ ctx, input }) => {
     return db.fixMissingCoordinates({
       type: "institution",
       limit: input.limit,
@@ -4884,7 +5692,9 @@ practiceListCategory: router({
       }).optional()
     )
     .query(async ({ input }) => {
-      return db.listPracticeListCategories(input?.listType);
+      return db.listPracticeListCategories(input?.listType, {
+  organizationId,
+});
     }),
 
   create: hostProcedure
@@ -4896,8 +5706,9 @@ practiceListCategory: router({
         sortOrder: z.number().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const id = await db.createPracticeListCategory({
+organizationId,
         name: input.name.trim(),
         listType: input.listType,
         description: input.description?.trim() || null,
@@ -4918,16 +5729,20 @@ practiceListCategory: router({
         isActive: z.boolean().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const { id, ...rest } = input;
-      await db.updatePracticeListCategory(id, rest as any);
+      await db.updatePracticeListCategory(id, rest as any, {
+  organizationId,
+});
       return { success: true };
     }),
 
   delete: hostProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
-      await db.deletePracticeListCategory(input.id);
+    .mutation(async ({ ctx, input }) => {
+      await db.deletePracticeListCategory(input.id, {
+  organizationId,
+});
       return { success: true };
     }),
 }),
@@ -4936,14 +5751,14 @@ practiceListCategory: router({
     list: protectedProcedure.query(async ({ ctx }) => {
       const assigneeId = isAdminOrHost(ctx.user) ? undefined : Number(ctx.user.id) || 1;
       return db.listJobSupportRequests(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
     }),
 
     listByStudent: protectedProcedure
       .input(z.object({ studentId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 1);
+        const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -4972,7 +5787,7 @@ const student = await db.getStudent(input.studentId, {
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 1);
+        const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -5067,9 +5882,17 @@ organizationId,
         })
       )
       .query(async ({ input, ctx }) => {
-        const canSeeAll = isAdminOrHost(ctx.user);
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-        return db.getSettlementReport(
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowSettlementReport",
+    "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+  );
+
+  const canSeeAll = isAdminOrHost(ctx.user);
+
+  return db.getSettlementReport(
           input.year,
           input.month,
           canSeeAll ? input.assigneeId : Number(ctx.user.id)
@@ -5085,9 +5908,17 @@ organizationId,
         })
       )
       .query(async ({ input, ctx }) => {
-        const canSeeAll = isAdminOrHost(ctx.user);
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-        return db.getSettlementEntries({
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowSettlementReport",
+    "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+  );
+
+  const canSeeAll = isAdminOrHost(ctx.user);
+
+  return db.getSettlementEntries({
           year: input.year,
           month: input.month,
           assigneeId: canSeeAll ? input.assigneeId : Number(ctx.user.id),
@@ -5102,12 +5933,20 @@ organizationId,
         })
       )
       .query(async ({ input, ctx }) => {
-        assertHostOrSuperhost(ctx.user);
+  assertHostOrSuperhost(ctx.user);
 
-        return db.getSettlementInstitutionSummary({
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowSettlementReport",
+    "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+  );
+
+  return db.getSettlementInstitutionSummary({
           year: input.year,
           month: input.month,
-          organizationId: Number((ctx.user as any)?.organizationId || 1),
+          organizationId,
         } as any);
       }),
 
@@ -5120,13 +5959,21 @@ organizationId,
         })
       )
       .query(async ({ input, ctx }) => {
-        assertHostOrSuperhost(ctx.user);
+  assertHostOrSuperhost(ctx.user);
 
-        return db.getSettlementInstitutionEntries({
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowSettlementReport",
+    "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+  );
+
+  return db.getSettlementInstitutionEntries({
           year: input.year,
           month: input.month,
           institutionName: input.institutionName,
-          organizationId: Number((ctx.user as any)?.organizationId || 1),
+          organizationId,
         } as any);
       }),
 
@@ -5137,11 +5984,19 @@ organizationId,
         })
       )
       .query(async ({ input, ctx }) => {
-        assertHostOrSuperhost(ctx.user);
+  assertHostOrSuperhost(ctx.user);
 
-        return db.getSettlementInstitutionMonthlyTrend({
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowSettlementReport",
+    "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+  );
+
+  return db.getSettlementInstitutionMonthlyTrend({
           year: input.year,
-          organizationId: Number((ctx.user as any)?.organizationId || 1),
+          organizationId,
         } as any);
       }),
 
@@ -5153,8 +6008,16 @@ organizationId,
           assigneeId: z.number(),
         })
       )
-      .mutation(async ({ ctx, input }) => {
-        const assigneeId = isAdminOrHost(ctx.user)
+     .mutation(async ({ ctx, input }) => {
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowSettlementReport",
+    "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+  );
+
+  const assigneeId = isAdminOrHost(ctx.user)
           ? input.assigneeId
           : Number(ctx.user.id);
 
@@ -5162,7 +6025,7 @@ organizationId,
           year: input.year,
           month: input.month,
           assigneeId,
-          organizationId: Number((ctx.user as any)?.organizationId || 1),
+          organizationId,
         } as any);
 
         const { fileName, buffer } =
@@ -5186,7 +6049,15 @@ organizationId,
         })
       )
       .query(async ({ input, ctx }) => {
-        const canSeeAll = isAdminOrHost(ctx.user);
+  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+  await assertOrganizationFeatureEnabled(
+    organizationId,
+    "allowSettlementReport",
+    "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+  );
+
+  const canSeeAll = isAdminOrHost(ctx.user);
         const targetAssigneeId = canSeeAll
           ? input.assigneeId
           : Number(ctx.user.id);
@@ -5195,7 +6066,7 @@ organizationId,
           year: input.year,
           month: input.month,
           assigneeId: targetAssigneeId,
-          organizationId: Number((ctx.user as any)?.organizationId || 1),
+          organizationId,
         } as any);
       }),
   }),

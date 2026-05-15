@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
-  int,
+    int,
+  bigint,
   mysqlEnum,
   mysqlTable,
   text,
@@ -75,6 +76,7 @@ export const organizations = mysqlTable("organizations", {
   id: int("id").autoincrement().primaryKey(),
 
   name: varchar("name", { length: 150 }).notNull(),
+  slug: varchar("slug", { length: 100 }).notNull().unique(),
   businessName: varchar("businessName", { length: 150 }),
   businessNumber: varchar("businessNumber", { length: 50 }),
 
@@ -90,8 +92,19 @@ export const organizations = mysqlTable("organizations", {
 
   maxUsers: int("maxUsers").notNull().default(10),
   maxLandingForms: int("maxLandingForms").notNull().default(10),
-  maxSmsPerMonth: int("maxSmsPerMonth").notNull().default(1000),
+maxAdForms: int("maxAdForms").notNull().default(10),
+maxSmsMonthly: int("maxSmsMonthly").notNull().default(1000),
 
+allowBackup: boolean("allowBackup").notNull().default(true),
+allowAuditLog: boolean("allowAuditLog").notNull().default(true),
+allowMessenger: boolean("allowMessenger").notNull().default(true),
+allowPracticeCenter: boolean("allowPracticeCenter").notNull().default(true),
+allowSettlementReport: boolean("allowSettlementReport").notNull().default(true),
+allowPrivateCertificate: boolean("allowPrivateCertificate")
+  .notNull()
+  .default(true),
+  maxSmsPerMonth: int("maxSmsPerMonth").notNull().default(1000),
+maxStorageMb: int("maxStorageMb").notNull().default(1024),
   memo: text("memo"),
 
   createdBy: int("createdBy"),
@@ -103,6 +116,51 @@ export const organizations = mysqlTable("organizations", {
 
 export type Organization = typeof organizations.$inferSelect;
 export type InsertOrganization = typeof organizations.$inferInsert;
+
+// ─── Organization Backups (회사별 백업/복구 메타) ─────────────────────
+export const organizationBackups = mysqlTable(
+  "organization_backups",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull(),
+    requestedBy: int("requestedBy").notNull(),
+
+    backupType: varchar("backupType", { length: 50 })
+      .notNull()
+      .default("manual"),
+
+    status: varchar("status", { length: 50 })
+      .notNull()
+      .default("pending"),
+
+    fileUrl: varchar("fileUrl", { length: 1000 }),
+    fileKey: varchar("fileKey", { length: 1000 }),
+    fileSizeBytes: bigint("fileSizeBytes", { mode: "number" }),
+
+    tableCount: int("tableCount"),
+    rowCount: int("rowCount"),
+
+    errorMessage: text("errorMessage"),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    completedAt: timestamp("completedAt"),
+    restoredAt: timestamp("restoredAt"),
+    restoredBy: int("restoredBy"),
+restoreReason: text("restoreReason"),
+  },
+  (table) => ({
+    orgCreatedIdx: index("idx_org_backups_org_created").on(
+      table.organizationId,
+      table.createdAt
+    ),
+    statusIdx: index("idx_org_backups_status").on(table.status),
+    requestedByIdx: index("idx_org_backups_requested_by").on(table.requestedBy),
+  })
+);
+
+export type OrganizationBackup = typeof organizationBackups.$inferSelect;
+export type InsertOrganizationBackup = typeof organizationBackups.$inferInsert;
 
 // ─── Users ───────────────────────────────────────────────────────────
 export const users = mysqlTable("users", {
@@ -196,120 +254,277 @@ organizationId: int("organizationId").notNull().default(1),
 export type SmsSetting = typeof smsSettings.$inferSelect;
 export type InsertSmsSetting = typeof smsSettings.$inferInsert;
 
-// ─── Consultations (상담 DB) ─────────────────────────────────────────
-export const consultations = mysqlTable("consultations", {
+export const smsLogs = mysqlTable("sms_logs", {
   id: int("id").autoincrement().primaryKey(),
-organizationId: int("organizationId").notNull().default(1),
-  consultDate: date("consultDate").notNull(),
-  channel: varchar("channel", { length: 100 }).notNull(),
-  clientName: varchar("clientName", { length: 100 }).notNull(),
+  organizationId: int("organizationId").notNull().default(1),
+  senderUserId: int("senderUserId"),
   phone: varchar("phone", { length: 30 }).notNull(),
-
-  finalEducation: varchar("finalEducation", { length: 100 })
-    .notNull()
-    .default(""),
-
-  desiredCourse: varchar("desiredCourse", { length: 200 }),
-  notes: text("notes"),
-  status: varchar("status", { length: 50 }).default("상담중").notNull(),
-  assigneeId: int("assigneeId").notNull().default(1),
+  message: text("message").notNull(),
+  status: mysqlEnum("status", ["success", "fail"]).notNull().default("success"),
+  provider: varchar("provider", { length: 50 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
+
+export type SmsLog = typeof smsLogs.$inferSelect;
+export type InsertSmsLog = typeof smsLogs.$inferInsert;
+
+// ─── Consultations (상담 DB) ─────────────────────────────────────────
+export const consultations = mysqlTable(
+  "consultations",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    organizationId: int("organizationId").notNull().default(1),
+
+    consultDate: date("consultDate").notNull(),
+    channel: varchar("channel", { length: 100 }).notNull(),
+
+    clientName: varchar("clientName", { length: 100 }).notNull(),
+    phone: varchar("phone", { length: 30 }).notNull(),
+
+    finalEducation: varchar("finalEducation", { length: 100 })
+      .notNull()
+      .default(""),
+
+    desiredCourse: varchar("desiredCourse", { length: 200 }),
+
+    notes: text("notes"),
+
+    status: varchar("status", { length: 50 })
+      .default("상담중")
+      .notNull(),
+
+    assigneeId: int("assigneeId").notNull().default(1),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+
+    deletedAt: datetime("deletedAt"),
+    deletedBy: int("deletedBy"),
+  },
+  (table) => ({
+    orgCreatedIdx: index("idx_consultations_org_created").on(
+      table.organizationId,
+      table.createdAt
+    ),
+
+    orgAssigneeIdx: index("idx_consultations_org_assignee").on(
+      table.organizationId,
+      table.assigneeId
+    ),
+
+    orgStatusIdx: index("idx_consultations_org_status").on(
+      table.organizationId,
+      table.status
+    ),
+  })
+);
 
 export type Consultation = typeof consultations.$inferSelect;
 export type InsertConsultation = typeof consultations.$inferInsert;
 
 // ─── Students (학생 등록/관리) ───────────────────────────────────────
-export const students = mysqlTable("students", {
-  id: int("id").autoincrement().primaryKey(),
-organizationId: int("organizationId").notNull().default(1),
-  clientName: varchar("clientName", { length: 100 }).notNull(),
-  phone: varchar("phone", { length: 30 }).notNull(),
-  course: varchar("course", { length: 200 }).notNull(),
+export const students = mysqlTable(
+  "students",
+  {
+    id: int("id").autoincrement().primaryKey(),
 
-  status: mysqlEnum("status", ["등록", "종료", "등록 종료"])
-    .default("등록")
-    .notNull(),
+    organizationId: int("organizationId").notNull().default(1),
 
-  startDate: date("startDate"),
-  paymentAmount: decimal("paymentAmount", { precision: 12, scale: 0 }),
-  subjectCount: int("subjectCount"),
-  paymentDate: date("paymentDate"),
+    clientName: varchar("clientName", { length: 100 }).notNull(),
+    phone: varchar("phone", { length: 30 }).notNull(),
 
-  institution: varchar("institution", { length: 200 }),
-  institutionId: int("institutionId"),
+    course: varchar("course", { length: 200 }).notNull(),
 
-  totalSemesters: int("totalSemesters"),
-  assigneeId: int("assigneeId").notNull(),
-  consultationId: int("consultationId"),
+    status: mysqlEnum("status", ["등록", "종료", "등록 종료"])
+      .default("등록")
+      .notNull(),
 
-  approvalStatus: mysqlEnum("approvalStatus", ["대기", "승인", "불승인"])
-    .default("대기")
-    .notNull(),
+    startDate: date("startDate"),
 
-  approvedAt: datetime("approvedAt"),
-  rejectedAt: datetime("rejectedAt"),
-  // 지도/거리 계산용 학생 주소
-  address: varchar("address", { length: 255 }),
-  detailAddress: varchar("detailAddress", { length: 255 }),
-  latitude: decimal("latitude", { precision: 10, scale: 7 }),
-  longitude: decimal("longitude", { precision: 10, scale: 7 }),
-  geocodedAt: datetime("geocodedAt"),
+    paymentAmount: decimal("paymentAmount", {
+      precision: 12,
+      scale: 0,
+    }),
 
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+    subjectCount: int("subjectCount"),
+
+    paymentDate: date("paymentDate"),
+
+    institution: varchar("institution", { length: 200 }),
+    institutionId: int("institutionId"),
+
+    totalSemesters: int("totalSemesters"),
+
+    assigneeId: int("assigneeId").notNull(),
+
+    consultationId: int("consultationId"),
+
+    approvalStatus: mysqlEnum("approvalStatus", [
+      "대기",
+      "승인",
+      "불승인",
+    ])
+      .default("대기")
+      .notNull(),
+
+    approvedAt: datetime("approvedAt"),
+    rejectedAt: datetime("rejectedAt"),
+
+    address: varchar("address", { length: 255 }),
+    detailAddress: varchar("detailAddress", { length: 255 }),
+
+    latitude: decimal("latitude", {
+      precision: 10,
+      scale: 7,
+    }),
+
+    longitude: decimal("longitude", {
+      precision: 10,
+      scale: 7,
+    }),
+
+    geocodedAt: datetime("geocodedAt"),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+
+    deletedAt: datetime("deletedAt"),
+    deletedBy: int("deletedBy"),
+  },
+  (table) => ({
+    orgCreatedIdx: index("idx_students_org_created").on(
+      table.organizationId,
+      table.createdAt
+    ),
+
+    orgAssigneeIdx: index("idx_students_org_assignee").on(
+      table.organizationId,
+      table.assigneeId
+    ),
+
+    orgStatusIdx: index("idx_students_org_status").on(
+      table.organizationId,
+      table.status
+    ),
+  })
+);
 
 export type Student = typeof students.$inferSelect;
 export type InsertStudent = typeof students.$inferInsert;
 
 // ─── Semesters (학기별 예정표/결제표) ────────────────────────────────
-export const semesters = mysqlTable("semesters", {
-  id: int("id").autoincrement().primaryKey(),
-organizationId: int("organizationId").notNull().default(1),
-  studentId: int("studentId").notNull(),
-  semesterOrder: int("semesterOrder").notNull(),
+export const semesters = mysqlTable(
+  "semesters",
+  {
+    id: int("id").autoincrement().primaryKey(),
 
-  status: mysqlEnum("status", ["등록", "종료", "등록 종료"])
-    .default("등록")
-    .notNull(),
+    organizationId: int("organizationId").notNull().default(1),
 
-approvalStatus: mysqlEnum("approvalStatus", ["요청전", "대기", "승인", "불승인"])
-  .default("요청전")
-  .notNull(),
+    studentId: int("studentId").notNull(),
 
-approvedAt: datetime("approvedAt"),
-rejectedAt: datetime("rejectedAt"),
+    semesterOrder: int("semesterOrder").notNull(),
 
-  plannedMonth: varchar("plannedMonth", { length: 20 }),
-  plannedInstitution: varchar("plannedInstitution", { length: 200 }),
-  plannedInstitutionId: int("plannedInstitutionId"),
-  plannedSubjectCount: int("plannedSubjectCount"),
-  plannedAmount: decimal("plannedAmount", { precision: 12, scale: 0 }),
-  isLocked: boolean("isLocked").default(false).notNull(),
+    status: mysqlEnum("status", ["등록", "종료", "등록 종료"])
+      .default("등록")
+      .notNull(),
 
-  actualStartDate: date("actualStartDate"),
-  actualInstitution: varchar("actualInstitution", { length: 200 }),
-  actualInstitutionId: int("actualInstitutionId"),
-  actualSubjectCount: int("actualSubjectCount"),
-  actualAmount: decimal("actualAmount", { precision: 12, scale: 0 }),
-  actualPaymentDate: date("actualPaymentDate"),
-  isCompleted: boolean("isCompleted").default(false).notNull(),
+    approvalStatus: mysqlEnum(
+      "approvalStatus",
+      ["요청전", "대기", "승인", "불승인"]
+    )
+      .default("요청전")
+      .notNull(),
 
-  primaryCourse: varchar("primaryCourse", { length: 200 }),
-  registeredCoursesJson: text("registeredCoursesJson"),
+    approvedAt: datetime("approvedAt"),
+    rejectedAt: datetime("rejectedAt"),
 
-  // 실습 상태 연동용
-  practiceStatus: mysqlEnum("practiceStatus", ["미섭외", "섭외중", "섭외완료"])
-    .notNull()
-    .default("미섭외"),
+    plannedMonth: varchar("plannedMonth", { length: 20 }),
 
-  practiceSupportRequestId: int("practiceSupportRequestId"),
+    plannedInstitution: varchar("plannedInstitution", {
+      length: 200,
+    }),
 
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+    plannedInstitutionId: int("plannedInstitutionId"),
+
+    plannedSubjectCount: int("plannedSubjectCount"),
+
+    plannedAmount: decimal("plannedAmount", {
+      precision: 12,
+      scale: 0,
+    }),
+
+    isLocked: boolean("isLocked")
+      .default(false)
+      .notNull(),
+
+    actualStartDate: date("actualStartDate"),
+
+    actualInstitution: varchar("actualInstitution", {
+      length: 200,
+    }),
+
+    actualInstitutionId: int("actualInstitutionId"),
+
+    actualSubjectCount: int("actualSubjectCount"),
+
+    actualAmount: decimal("actualAmount", {
+      precision: 12,
+      scale: 0,
+    }),
+
+    actualPaymentDate: date("actualPaymentDate"),
+
+    isCompleted: boolean("isCompleted")
+      .default(false)
+      .notNull(),
+
+    primaryCourse: varchar("primaryCourse", {
+      length: 200,
+    }),
+
+    registeredCoursesJson: text("registeredCoursesJson"),
+
+    practiceStatus: mysqlEnum(
+      "practiceStatus",
+      ["미섭외", "섭외중", "섭외완료"]
+    )
+      .notNull()
+      .default("미섭외"),
+
+    practiceSupportRequestId: int("practiceSupportRequestId"),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    orgStudentIdx: index("idx_semesters_org_student").on(
+      table.organizationId,
+      table.studentId
+    ),
+
+    orgApprovalIdx: index("idx_semesters_org_approval").on(
+      table.organizationId,
+      table.approvalStatus
+    ),
+
+    orgApprovedAtIdx: index("idx_semesters_org_approved_at").on(
+      table.organizationId,
+      table.approvedAt
+    ),
+  })
+);
 
 export type Semester = typeof semesters.$inferSelect;
 export type InsertSemester = typeof semesters.$inferInsert;
@@ -646,7 +861,9 @@ export type SubjectCatalogItem = typeof subjectCatalogItems.$inferSelect;
 export type InsertSubjectCatalogItem = typeof subjectCatalogItems.$inferInsert;
 
 // ─── Private Certificate Requests (민간자격증 요청) ─────────────────
-export const privateCertificateRequests = mysqlTable("private_certificate_requests", {
+export const privateCertificateRequests = mysqlTable(
+  "private_certificate_requests",
+{
   id: int("id").autoincrement().primaryKey(),
 organizationId: int("organizationId").notNull().default(1),
 
@@ -717,9 +934,27 @@ organizationId: int("organizationId").notNull().default(1),
   attachmentName: varchar("attachmentName", { length: 255 }),
   attachmentUrl: varchar("attachmentUrl", { length: 1000 }),
 
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+     createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    orgStudentIdx: index("idx_private_cert_org_student").on(
+      table.organizationId,
+      table.studentId
+    ),
+
+    orgAssigneeIdx: index("idx_private_cert_org_assignee").on(
+      table.organizationId,
+      table.assigneeId
+    ),
+
+    orgStatusIdx: index("idx_private_cert_org_status").on(
+      table.organizationId,
+      table.requestStatus,
+      table.paymentStatus
+    ),
+  })
+);
 
 export type PrivateCertificateRequest =
   typeof privateCertificateRequests.$inferSelect;
@@ -727,7 +962,9 @@ export type InsertPrivateCertificateRequest =
   typeof privateCertificateRequests.$inferInsert;
 
 // ─── Practice Support Requests (실습배정지원센터) ────────────────────
-export const practiceSupportRequests = mysqlTable("practice_support_requests", {
+export const practiceSupportRequests = mysqlTable(
+  "practice_support_requests",
+{
   id: int("id").autoincrement().primaryKey(),
 organizationId: int("organizationId").notNull().default(1),
 
@@ -824,9 +1061,31 @@ organizationId: int("organizationId").notNull().default(1),
   attachmentName: varchar("attachmentName", { length: 255 }),
   attachmentUrl: varchar("attachmentUrl", { length: 1000 }),
 
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+      createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    orgStudentIdx: index("idx_practice_support_org_student").on(
+      table.organizationId,
+      table.studentId
+    ),
+
+    orgAssigneeIdx: index("idx_practice_support_org_assignee").on(
+      table.organizationId,
+      table.assigneeId
+    ),
+
+    orgCoordinationIdx: index("idx_practice_support_org_coord").on(
+      table.organizationId,
+      table.coordinationStatus
+    ),
+
+    orgPaymentIdx: index("idx_practice_support_org_payment").on(
+      table.organizationId,
+      table.paymentStatus
+    ),
+  })
+);
 
 export type PracticeSupportRequest =
   typeof practiceSupportRequests.$inferSelect;
@@ -1020,59 +1279,156 @@ export type InsertJobSupportRequest = typeof jobSupportRequests.$inferInsert;
 
 
 // ─── Chat Rooms ─────────────────────────────
-export const chatRooms = mysqlTable("chat_rooms", {
-  id: int("id").autoincrement().primaryKey(),
-organizationId: int("organizationId").notNull().default(1),
-  roomType: mysqlEnum("roomType", ["direct", "group"]).notNull().default("direct"),
-  title: varchar("title", { length: 255 }),
-  createdBy: int("createdBy").notNull(),
-  isActive: boolean("isActive").notNull().default(true),
-createdAt: timestamp("createdAt").notNull().defaultNow(),
-updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
-});
+export const chatRooms = mysqlTable(
+  "chat_rooms",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    organizationId: int("organizationId").notNull().default(1),
+
+    roomType: mysqlEnum("roomType", ["direct", "group"])
+      .notNull()
+      .default("direct"),
+
+    title: varchar("title", { length: 255 }),
+
+    createdBy: int("createdBy").notNull(),
+
+    isActive: boolean("isActive").notNull().default(true),
+
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+
+    updatedAt: timestamp("updatedAt")
+      .notNull()
+      .defaultNow()
+      .onUpdateNow(),
+  },
+  (table) => ({
+    orgTypeIdx: index("idx_chat_rooms_org_type").on(
+      table.organizationId,
+      table.roomType
+    ),
+
+    orgActiveIdx: index("idx_chat_rooms_org_active").on(
+      table.organizationId,
+      table.isActive
+    ),
+  })
+);
 
 export type ChatRoom = typeof chatRooms.$inferSelect;
 export type InsertChatRoom = typeof chatRooms.$inferInsert;
 
-export const chatRoomMembers = mysqlTable("chat_room_members", {
-  id: int("id").autoincrement().primaryKey(),
-  organizationId: int("organizationId").notNull().default(1),
-  roomId: int("roomId").notNull(),
-  userId: int("userId").notNull(),
-joinedAt: timestamp("joinedAt").notNull().defaultNow(),
-  leftAt: datetime("leftAt"),
-  isActive: boolean("isActive").notNull().default(true),
-  lastReadMessageId: int("lastReadMessageId"),
-});
+export const chatRoomMembers = mysqlTable(
+  "chat_room_members",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull().default(1),
+
+    roomId: int("roomId").notNull(),
+
+    userId: int("userId").notNull(),
+
+    joinedAt: timestamp("joinedAt").notNull().defaultNow(),
+
+    leftAt: datetime("leftAt"),
+
+    isActive: boolean("isActive").notNull().default(true),
+
+    lastReadMessageId: int("lastReadMessageId"),
+  },
+  (table) => ({
+    orgRoomUserIdx: index("idx_chat_members_org_room_user").on(
+      table.organizationId,
+      table.roomId,
+      table.userId
+    ),
+
+    orgUserActiveIdx: index("idx_chat_members_org_user_active").on(
+      table.organizationId,
+      table.userId,
+      table.isActive
+    ),
+  })
+);
 
 export type ChatRoomMember = typeof chatRoomMembers.$inferSelect;
 export type InsertChatRoomMember = typeof chatRoomMembers.$inferInsert;
 
-export const chatMessages = mysqlTable("chat_messages", {
-  id: int("id").autoincrement().primaryKey(),
-  organizationId: int("organizationId").notNull().default(1),
-  roomId: int("roomId").notNull(),
-  senderId: int("senderId").notNull(),
-  messageType: mysqlEnum("messageType", ["text", "image", "file", "system"]).notNull().default("text"),
-  content: text("content"),
- createdAt: timestamp("createdAt").notNull().defaultNow(),
-updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
-  isDeleted: boolean("isDeleted").notNull().default(false),
-});
+export const chatMessages = mysqlTable(
+  "chat_messages",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull().default(1),
+
+    roomId: int("roomId").notNull(),
+
+    senderId: int("senderId").notNull(),
+
+    messageType: mysqlEnum("messageType", [
+      "text",
+      "image",
+      "file",
+      "system",
+    ])
+      .notNull()
+      .default("text"),
+
+    content: text("content"),
+
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+
+    updatedAt: timestamp("updatedAt")
+      .notNull()
+      .defaultNow()
+      .onUpdateNow(),
+
+    isDeleted: boolean("isDeleted").notNull().default(false),
+  },
+  (table) => ({
+    orgRoomCreatedIdx: index("idx_chat_messages_org_room_created").on(
+      table.organizationId,
+      table.roomId,
+      table.createdAt
+    ),
+
+    orgSenderIdx: index("idx_chat_messages_org_sender").on(
+      table.organizationId,
+      table.senderId
+    ),
+  })
+);
 
 export type ChatMessage = typeof chatMessages.$inferSelect;
 export type InsertChatMessage = typeof chatMessages.$inferInsert;
 
-export const chatAttachments = mysqlTable("chat_attachments", {
-  id: int("id").autoincrement().primaryKey(),
-  organizationId: int("organizationId").notNull().default(1),
-  messageId: int("messageId").notNull(),
-  fileName: varchar("fileName", { length: 255 }).notNull(),
-  fileUrl: text("fileUrl").notNull(),
-  fileType: varchar("fileType", { length: 100 }),
-  fileSize: int("fileSize"),
-createdAt: timestamp("createdAt").notNull().defaultNow(),
-});
+export const chatAttachments = mysqlTable(
+  "chat_attachments",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull().default(1),
+
+    messageId: int("messageId").notNull(),
+
+    fileName: varchar("fileName", { length: 255 }).notNull(),
+
+    fileUrl: text("fileUrl").notNull(),
+
+    fileType: varchar("fileType", { length: 100 }),
+
+    fileSize: int("fileSize"),
+
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+  },
+  (table) => ({
+    orgMessageIdx: index("idx_chat_attachments_org_message").on(
+      table.organizationId,
+      table.messageId
+    ),
+  })
+);
 
 export type ChatAttachment = typeof chatAttachments.$inferSelect;
 export type InsertChatAttachment = typeof chatAttachments.$inferInsert;
@@ -1139,7 +1495,9 @@ export type UserOrgMapping = typeof userOrgMappings.$inferSelect;
 export type InsertUserOrgMapping = typeof userOrgMappings.$inferInsert;
 
 
-export const attendanceRecords = mysqlTable("attendance_records", {
+export const attendanceRecords = mysqlTable(
+  "attendance_records",
+  {
   id: int("id").autoincrement().primaryKey(),
 organizationId: int("organizationId").notNull().default(1),
   userId: int("userId").notNull(),
@@ -1191,9 +1549,28 @@ organizationId: int("organizationId").notNull().default(1),
   scheduledEndAt: datetime("scheduledEndAt"),
   autoClockOutAt: datetime("autoClockOutAt"),
 
-  teamIdSnapshot: int("teamIdSnapshot"),
-  positionIdSnapshot: int("positionIdSnapshot"),
-});
+     teamIdSnapshot: int("teamIdSnapshot"),
+    positionIdSnapshot: int("positionIdSnapshot"),
+  },
+  (table) => ({
+    orgUserDateIdx: index("idx_attendance_org_user_date").on(
+      table.organizationId,
+      table.userId,
+      table.workDate
+    ),
+
+    orgDateIdx: index("idx_attendance_org_date").on(
+      table.organizationId,
+      table.workDate
+    ),
+
+    orgStatusDateIdx: index("idx_attendance_org_status_date").on(
+      table.organizationId,
+      table.status,
+      table.workDate
+    ),
+  })
+);
 
 
 export type InsertAttendanceRecord = typeof attendanceRecords.$inferInsert;
@@ -1286,29 +1663,58 @@ importance: mysqlEnum("importance", ["normal", "important", "urgent"])
   updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
 });
 
-export const schedules = mysqlTable("schedules", {
-  id: int("id").autoincrement().primaryKey(),
-organizationId: int("organizationId").notNull().default(1),
-  title: varchar("title", { length: 255 }).notNull(),
-  description: text("description"),
-  scheduleDate: date("scheduleDate").notNull(),
-  meridiem: mysqlEnum("meridiem", ["AM", "PM"]).notNull(),
-  hour12: int("hour12").notNull(),
-  minute: int("minute").notNull(),
-  startAt: datetime("startAt").notNull(),
-  scope: mysqlEnum("scope", ["personal", "global"]).notNull().default("personal"),
-  ownerUserId: int("ownerUserId").notNull(),
-  ownerUserName: varchar("ownerUserName", { length: 100 }),
-  createdByRole: mysqlEnum("createdByRole", ["staff", "admin", "host", "superhost"]).notNull(),
-  isActive: boolean("isActive").notNull().default(true),
-  isNotified: boolean("isNotified").notNull().default(false),
-  createdAt: timestamp("createdAt").notNull().defaultNow(),
-  updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
-});
+export const schedules = mysqlTable(
+  "schedules",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    organizationId: int("organizationId").notNull().default(1),
+    title: varchar("title", { length: 255 }).notNull(),
+    description: text("description"),
+    scheduleDate: date("scheduleDate").notNull(),
+    meridiem: mysqlEnum("meridiem", ["AM", "PM"]).notNull(),
+    hour12: int("hour12").notNull(),
+    minute: int("minute").notNull(),
+    startAt: datetime("startAt").notNull(),
+    scope: mysqlEnum("scope", ["personal", "global"])
+      .notNull()
+      .default("personal"),
+    ownerUserId: int("ownerUserId").notNull(),
+    ownerUserName: varchar("ownerUserName", { length: 100 }),
+    createdByRole: mysqlEnum("createdByRole", [
+      "staff",
+      "admin",
+      "host",
+      "superhost",
+    ]).notNull(),
+    isActive: boolean("isActive").notNull().default(true),
+    isNotified: boolean("isNotified").notNull().default(false),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+    updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => ({
+    orgDateIdx: index("idx_schedules_org_date").on(
+      table.organizationId,
+      table.scheduleDate
+    ),
+    orgNotifyIdx: index("idx_schedules_org_notify").on(
+      table.organizationId,
+      table.isActive,
+      table.isNotified,
+      table.startAt
+    ),
+    orgOwnerDateIdx: index("idx_schedules_org_owner_date").on(
+      table.organizationId,
+      table.ownerUserId,
+      table.scheduleDate
+    ),
+  })
+);
 
 // ─── Electronic Approvals (전자결재) ───────────────────────────────
 
-export const approvalDocuments = mysqlTable("approval_documents", {
+export const approvalDocuments = mysqlTable(
+  "approval_documents",
+  {
   id: int("id").autoincrement().primaryKey(),
 organizationId: int("organizationId").notNull().default(1),
 
@@ -1381,9 +1787,26 @@ extraNote: text("extraNote"),
   attachmentName: varchar("attachmentName", { length: 255 }),
   attachmentUrl: varchar("attachmentUrl", { length: 1000 }),
 
-  createdAt: timestamp("createdAt").notNull().defaultNow(),
-  updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
-});
+      createdAt: timestamp("createdAt").notNull().defaultNow(),
+    updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
+  },
+  (table) => ({
+    orgApplicantIdx: index("idx_approval_docs_org_applicant").on(
+      table.organizationId,
+      table.applicantUserId
+    ),
+
+    orgStatusIdx: index("idx_approval_docs_org_status").on(
+      table.organizationId,
+      table.status
+    ),
+
+    orgCreatedIdx: index("idx_approval_docs_org_created").on(
+      table.organizationId,
+      table.createdAt
+    ),
+  })
+);
 
 export type ApprovalDocument = typeof approvalDocuments.$inferSelect;
 export type InsertApprovalDocument = typeof approvalDocuments.$inferInsert;
@@ -1534,19 +1957,34 @@ export const deviceTokens = mysqlTable("device_tokens", {
 export type DeviceToken = typeof deviceTokens.$inferSelect;
 export type InsertDeviceToken = typeof deviceTokens.$inferInsert;
 
-export const notifications = mysqlTable("notifications", {
-  id: int("id").autoincrement().primaryKey(),
-organizationId: int("organizationId").notNull().default(1),
-  userId: int("userId").notNull(),
-  type: varchar("type", { length: 50 }).notNull().default("lead"),
-  title: varchar("title", { length: 255 }),
- level: varchar("level", { length: 20 }).notNull().default("normal"),
-  message: text("message").notNull(),
-imageUrl: varchar("imageUrl", { length: 500 }),
-  relatedId: int("relatedId"),
-  isRead: boolean("isRead").notNull().default(false),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+export const notifications = mysqlTable(
+  "notifications",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    organizationId: int("organizationId").notNull().default(1),
+    userId: int("userId").notNull(),
+    type: varchar("type", { length: 50 }).notNull().default("lead"),
+    title: varchar("title", { length: 255 }),
+    level: varchar("level", { length: 20 }).notNull().default("normal"),
+    message: text("message").notNull(),
+    imageUrl: varchar("imageUrl", { length: 500 }),
+    relatedId: int("relatedId"),
+    isRead: boolean("isRead").notNull().default(false),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    orgUserReadIdx: index("idx_notifications_org_user_read").on(
+      table.organizationId,
+      table.userId,
+      table.isRead
+    ),
+    orgUserCreatedIdx: index("idx_notifications_org_user_created").on(
+      table.organizationId,
+      table.userId,
+      table.createdAt
+    ),
+  })
+);
 
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = typeof notifications.$inferInsert;
@@ -1679,7 +2117,30 @@ institutionName: varchar("institutionName", { length: 255 }),
   freelancerUnitAmount: decimal("freelancerUnitAmount", { precision: 12, scale: 0 }).notNull().default("0"),
   taxAmount: decimal("taxAmount", { precision: 12, scale: 0 }).notNull().default("0"),
   finalPayoutAmount: decimal("finalPayoutAmount", { precision: 12, scale: 0 }).notNull().default("0"),
-});
+},
+  (table) => ({
+    orgOccurredIdx: index("idx_settlement_items_org_occurred").on(
+      table.organizationId,
+      table.occurredAt
+    ),
+
+    orgAssigneeIdx: index("idx_settlement_items_org_assignee").on(
+      table.organizationId,
+      table.assigneeId
+    ),
+
+    orgStudentIdx: index("idx_settlement_items_org_student").on(
+      table.organizationId,
+      table.studentId
+    ),
+
+    orgRevenueStatusIdx: index("idx_settlement_items_org_revenue_status").on(
+      table.organizationId,
+      table.revenueType,
+      table.settlementStatus
+    ),
+  })
+);
 
 export const settlementItemLogs = mysqlTable("settlement_item_logs", {
   id: int("id").autoincrement().primaryKey(),
@@ -1714,3 +2175,24 @@ organizationId: int("organizationId").notNull().default(1),
   createdAt: timestamp("createdAt").defaultNow(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow(),
 });
+
+export const auditLogs = mysqlTable("audit_logs", {
+  id: int("id").autoincrement().primaryKey(),
+
+  organizationId: int("organizationId").notNull().default(1),
+  actorUserId: int("actorUserId"),
+  actorRole: varchar("actorRole", { length: 50 }),
+
+  action: varchar("action", { length: 100 }).notNull(),
+  targetType: varchar("targetType", { length: 100 }),
+  targetId: int("targetId"),
+
+  beforeJson: text("beforeJson"),
+  afterJson: text("afterJson"),
+  memo: text("memo"),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type InsertAuditLog = typeof auditLogs.$inferInsert;
+export type AuditLog = typeof auditLogs.$inferSelect;

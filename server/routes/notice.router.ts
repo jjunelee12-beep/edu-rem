@@ -32,7 +32,7 @@ export const noticeRouter = {
   )
   .query(async ({ ctx, input }) => {
     const rows = await listNotices({
-  organizationId: Number(ctx.user.organizationId || 1),
+  organizationId: Number(ctx.user.organizationId || 0),
 });
 
     const search = input?.search?.trim().toLowerCase();
@@ -78,7 +78,7 @@ export const noticeRouter = {
     )
     .query(async ({ ctx, input }) => {
       const row = await getNotice(input.id, {
-  organizationId: Number(ctx.user.organizationId || 1),
+  organizationId: Number(ctx.user.organizationId || 0),
 });
       if (!row) {
         throw new Error("공지사항을 찾을 수 없습니다.");
@@ -86,11 +86,11 @@ export const noticeRouter = {
 
       if (input.increaseView ?? true) {
         await increaseNoticeView(input.id, {
-  organizationId: Number(ctx.user.organizationId || 1),
+  organizationId: Number(ctx.user.organizationId || 0),
 });
 
 const updated = await getNotice(input.id, {
-  organizationId: Number(ctx.user.organizationId || 1),
+  organizationId: Number(ctx.user.organizationId || 0),
 });
         return updated ?? row;
       }
@@ -111,7 +111,7 @@ const updated = await getNotice(input.id, {
       assertHostOrSuperhost(ctx.user);
 
       const id = await createNotice({
-organizationId: Number(ctx.user.organizationId || 1),
+organizationId: Number(ctx.user.organizationId || 0),
         title: input.title,
         content: input.content,
         authorId: Number(ctx.user.id),
@@ -121,7 +121,7 @@ organizationId: Number(ctx.user.organizationId || 1),
       });
 
       await createNoticeNotifications({
-  organizationId: Number(ctx.user.organizationId || 1),
+  organizationId: Number(ctx.user.organizationId || 0),
   noticeId: Number(id),
   actorUserId: Number(ctx.user.id),
   title: input.title,
@@ -148,14 +148,14 @@ organizationId: Number(ctx.user.organizationId || 1),
       assertHostOrSuperhost(ctx.user);
 
       const existing = await getNotice(input.id, {
-  organizationId: Number(ctx.user.organizationId || 1),
+  organizationId: Number(ctx.user.organizationId || 0),
 });
       if (!existing) {
         throw new Error("공지사항을 찾을 수 없습니다.");
       }
 
       await updateNotice(input.id, {
-  organizationId: Number(ctx.user.organizationId || 1),
+  organizationId: Number(ctx.user.organizationId || 0),
         title: input.title,
         content: input.content,
         isPinned: !!input.isPinned,
@@ -175,14 +175,14 @@ organizationId: Number(ctx.user.organizationId || 1),
       assertHostOrSuperhost(ctx.user);
 
       const existing = await getNotice(input.id, {
-  organizationId: Number(ctx.user.organizationId || 1),
+  organizationId: Number(ctx.user.organizationId || 0),
 });
       if (!existing) {
         throw new Error("공지사항을 찾을 수 없습니다.");
       }
 
     await deleteNotice(input.id, {
-  organizationId: Number(ctx.user.organizationId || 1),
+  organizationId: Number(ctx.user.organizationId || 0),
 });
 
       return { ok: true };
@@ -206,7 +206,7 @@ organizationId: Number(ctx.user.organizationId || 1),
       }
 
       await bulkDeleteNotices(ids, {
-  organizationId: Number(ctx.user.organizationId || 1),
+  organizationId: Number(ctx.user.organizationId || 0),
 });
 
       return {

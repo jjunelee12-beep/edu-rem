@@ -22,7 +22,8 @@ export function setLiveNotificationIO(io: SocketIOServer) {
 
 export function emitLiveNotification(payload: LiveAppNotificationPayload) {
   const userId = Number(payload.userId);
-  const organizationId = Number(payload.organizationId || 1);
+  const organizationId = Number(payload.organizationId || 0);
+if (!organizationId) return;
   if (!liveIo || !userId) return;
 
   liveIo.to(`org:${organizationId}:user:${userId}`).emit("notification:new", {

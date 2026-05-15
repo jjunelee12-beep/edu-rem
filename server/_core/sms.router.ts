@@ -6,8 +6,10 @@ import {
   getAllUsersDetailed,
   getSmsSettings,
   saveSmsSettings,
+createSmsLogs,
 } from "../db";
 import { sendBulkSms } from "./sms.sender";
+import { getOrganizationLimitStatus } from "../saasdb";
 
 function normalizePhone(phone: string | null | undefined) {
   return String(phone || "").replace(/\D/g, "");
@@ -53,7 +55,7 @@ function courseMatches(courseValue: unknown, keywordValue: string) {
 export const smsRouter = router({
   
 settings: hostProcedure.query(async ({ ctx }) => {
-  const organizationId = Number(ctx.user.organizationId || 1);
+  const organizationId = Number(ctx.user.organizationId || 0);
 
   const settings = await getSmsSettings({
   organizationId,
@@ -91,7 +93,7 @@ saveSettings: hostProcedure
   .mutation(async ({ ctx, input }) => {
   await saveSmsSettings({
     ...input,
-    organizationId: Number(ctx.user.organizationId || 1),
+    organizationId: Number(ctx.user.organizationId || 0),
   });
     return { success: true };
   }),
@@ -100,7 +102,7 @@ saveSettings: hostProcedure
    */
   assignees: hostProcedure.query(async ({ ctx }) => {
   const users = await getAllUsersDetailed({
-  organizationId: Number(ctx.user.organizationId || 1),
+  organizationId: Number(ctx.user.organizationId || 0),
 });
 
   const items = users
@@ -149,7 +151,7 @@ searchType: z.enum(["all", "name", "phone", "course"]).optional().default("all")
 
       if (input.includeConsultations) {
         const consultations = await listConsultations(undefined, {
-  organizationId: Number(ctx.user.organizationId || 1),
+  organizationId: Number(ctx.user.organizationId || 0),
 });
 
         consultations
@@ -200,7 +202,7 @@ searchType: z.enum(["all", "name", "phone", "course"]).optional().default("all")
 
       if (input.includeStudents) {
        const students = await listStudents(undefined, {
-  organizationId: Number(ctx.user.organizationId || 1),
+  organizationId: Number(ctx.user.organizationId || 0),
 });
 
         students
@@ -278,12 +280,36 @@ searchType: z.enum(["all", "name", "phone", "course"]).optional().default("all")
         .map((p) => normalizePhone(p))
         .filter((p) => p.length >= 10);
 
-      const unique = [...new Set(normalized)];
+     const unique = [...new Set(normalized)];
 
-      const settings = await getSmsSettings({
-  organizationId: Number(ctx.user.organizationId || 1),
+const organizationId = Number(ctx.user.organizationId || 0);
+
+const limitStatus = await getOrganizationLimitStatus(organizationId);
+
+const nextUsage =
+  Number(limitStatus.usage.smsSentThisMonth || 0) + unique.length;
+
+if (nextUsage > Number(limitStatus.limits.maxSmsPerMonth || 0)) {
+  throw new Error(
+    `문자 발송 제한을 초과했습니다. 현재 ${limitStatus.usage.smsSentThisMonth}건 / 제한 ${limitStatus.limits.maxSmsPerMonth}건`
+  );
+}
+
+const settings = await getSmsSettings({
+  organizationId,
 });
 const result = await sendBulkSms(unique, input.message, settings);
+
+const smsLogRows = unique.map((phone) => ({
+  organizationId,
+  senderUserId: Number(ctx.user.id),
+  phone,
+  message: input.message,
+  status: "success" as const,
+  provider: settings?.provider || "aligo",
+}));
+
+await createSmsLogs(smsLogRows);
 
       return {
         total: unique.length,
@@ -303,16 +329,38 @@ const result = await sendBulkSms(unique, input.message, settings);
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const phone = normalizePhone(input.phone);
+  const phone = normalizePhone(input.phone);
+  const organizationId = Number(ctx.user.organizationId || 0);
+const limitStatus = await getOrganizationLimitStatus(organizationId);
+
+const nextUsage =
+  Number(limitStatus.usage.smsSentThisMonth || 0) + 1;
+
+if (nextUsage > Number(limitStatus.limits.maxSmsPerMonth || 0)) {
+  throw new Error(
+    `문자 발송 제한을 초과했습니다. 현재 ${limitStatus.usage.smsSentThisMonth}건 / 제한 ${limitStatus.limits.maxSmsPerMonth}건`
+  );
+}
 
       if (phone.length < 10) {
         throw new Error("유효한 전화번호가 아닙니다.");
       }
 
-      const settings = await getSmsSettings(
-  Number(ctx.user.organizationId || 1)
-);
+      const settings = await getSmsSettings({
+  organizationId,
+});
 const result = await sendBulkSms([phone], input.message, settings);
+
+await createSmsLogs([
+  {
+    organizationId,
+    senderUserId: Number(ctx.user.id),
+    phone,
+    message: input.message,
+    status: "success" as const,
+    provider: settings?.provider || "aligo",
+  },
+]);
 
       return {
         total: 1,

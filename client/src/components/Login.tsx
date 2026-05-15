@@ -49,7 +49,36 @@ export default function Login() {
         return;
       }
 
-      window.location.replace("/");
+      const meRes = await fetch(`/api/auth/me`, {
+  method: "GET",
+  credentials: "include",
+});
+
+const me = await meRes.json().catch(() => null);
+
+if (!meRes.ok || !me?.user) {
+  window.location.replace("/");
+  return;
+}
+
+const loginUser = me.user as any;
+
+if (loginUser.role === "superhost") {
+  window.location.replace("/saas");
+  return;
+}
+
+const slug =
+  loginUser.organizationSlug ||
+  loginUser.organization?.slug ||
+  loginUser.organization?.organizationSlug;
+
+if (slug) {
+  window.location.replace(`/${slug}`);
+  return;
+}
+
+window.location.replace("/");
     } catch (_e) {
       setError("로그인 중 오류가 발생했습니다.");
       setPending(false);

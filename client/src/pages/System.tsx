@@ -2734,6 +2734,19 @@ const getAssignee = (id: any) => {
 }
 
 function SettingsSection() {
+
+const { user } = useAuth();
+const isSuperhostBackupBlocked = user?.role === "superhost";
+const { data: organizationFeatures } =
+  trpc.organizationFeatures.useQuery(undefined, {
+    enabled: user?.role !== "superhost",
+  });
+
+const canUseBackup =
+  user?.role !== "superhost" && organizationFeatures?.allowBackup !== false;
+
+const canUseAuditLog =
+  user?.role === "superhost" || organizationFeatures?.allowAuditLog !== false;
   const utils = trpc.useUtils();
 
   const { data, isLoading } = trpc.branding.get.useQuery();
@@ -2771,6 +2784,52 @@ const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 const previewLogoUrl = normalizeAssetUrl(companyLogoUrl || "");
 const [notificationSettings, setNotificationSettings] =
   useState<AppNotificationSettings>(() => readAppNotificationSettings());
+
+const backupCreateMut = trpc.backup.create.useMutation();
+const backupDownloadUrlMut = trpc.backup.downloadUrl.useMutation();
+const backupListQuery = trpc.backup.list.useQuery(
+  { limit: 20 },
+  {
+    enabled: canUseBackup,
+  }
+);
+
+const backupPreviewMut = trpc.backup.previewRestore.useMutation();
+const backupRestoreMut = trpc.backup.restore.useMutation();
+
+const [selectedRestoreBackupId, setSelectedRestoreBackupId] =
+  useState<number | null>(null);
+const [backupPreview, setBackupPreview] = useState<any>(null);
+const [restoreConfirmText, setRestoreConfirmText] = useState("");
+const [restoreReason, setRestoreReason] = useState("");
+
+const [auditActionFilter, setAuditActionFilter] = useState("");
+const [auditTargetTypeFilter, setAuditTargetTypeFilter] = useState("");
+
+const auditLogsQuery = trpc.audit.list.useQuery(
+  {
+    action: auditActionFilter || undefined,
+    targetType: auditTargetTypeFilter || undefined,
+limit: 100,
+  },
+  {
+    enabled: canUseAuditLog,
+  }
+);
+
+const deletedConsultationsQuery = trpc.consultation.listDeleted.useQuery({
+  limit: 100,
+});
+
+const restoreConsultationMut = trpc.consultation.restore.useMutation({
+  onSuccess: async () => {
+  toast.success("상담DB가 복구되었습니다.");
+
+  await utils.consultation.list.invalidate();
+  await utils.consultation.listDeleted.invalidate();
+},
+  onError: (e) => toast.error(e.message),
+});
 
 const updateNotificationSetting = (
   key: keyof AppNotificationSettings,
@@ -2871,6 +2930,150 @@ toast.success("로고 업로드 완료");
     });
   };
 
+const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+
+  return window.btoa(binary);
+};
+
+const base64ToArrayBuffer = (base64: string) => {
+  const binary = window.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  return bytes.buffer;
+};
+
+const deriveBackupKey = async (password: string, salt: Uint8Array) => {
+  const encoder = new TextEncoder();
+
+  const baseKey = await window.crypto.subtle.importKey(
+    "raw",
+    encoder.encode(password),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+
+  return window.crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt,
+      iterations: 150000,
+      hash: "SHA-256",
+    },
+    baseKey,
+    {
+      name: "AES-GCM",
+      length: 256,
+    },
+    false,
+    ["encrypt", "decrypt"]
+  );
+};
+
+const handleDownloadBackup = async (backupId: number) => {
+  try {
+    const result = await backupDownloadUrlMut.mutateAsync({
+      id: backupId,
+    });
+
+    if (!result?.url) {
+      toast.error("다운로드 URL을 생성하지 못했습니다.");
+      return;
+    }
+
+    window.open(result.url, "_blank", "noopener,noreferrer");
+  } catch (e: any) {
+    toast.error(e.message || "백업 다운로드 중 오류가 발생했습니다.");
+  }
+};
+
+const handleCreateBackup = async () => {
+  const ok = window.confirm(
+    "현재 회사 데이터를 서버 백업 저장소에 생성하시겠습니까?"
+  );
+
+  if (!ok) return;
+
+  try {
+    const result = await backupCreateMut.mutateAsync();
+
+    toast.success(
+      `백업 생성 완료 (${result.tableCount}개 테이블 / ${result.rowCount}개 데이터)`
+    );
+
+    await backupListQuery.refetch();
+  } catch (e: any) {
+    toast.error(e?.message || "백업 생성 중 오류가 발생했습니다.");
+  }
+};
+
+const handleSelectRestoreBackup = async (backupId: number) => {
+  try {
+    setSelectedRestoreBackupId(backupId);
+
+    const preview = await backupPreviewMut.mutateAsync({
+      backupId,
+    });
+
+    setBackupPreview(preview);
+    setRestoreConfirmText("");
+    toast.success("복구할 백업을 선택했습니다.");
+  } catch (e: any) {
+    setSelectedRestoreBackupId(null);
+    setBackupPreview(null);
+    toast.error(e?.message || "백업 미리보기 조회 실패");
+  }
+};
+
+const handleRestoreBackup = async () => {
+  if (!selectedRestoreBackupId || !backupPreview) {
+    toast.error("복구할 백업을 먼저 선택해주세요.");
+    return;
+  }
+
+  if (!restoreReason.trim()) {
+    toast.error("복구 사유를 입력해주세요.");
+    return;
+  }
+
+  if (restoreConfirmText !== "복구합니다") {
+    toast.error('확인 문구로 "복구합니다"를 입력해주세요.');
+    return;
+  }
+
+  const ok = window.confirm(
+    "복구를 실행하시겠습니까?\n현재 회사 데이터가 선택한 백업 기준으로 되돌아갑니다."
+  );
+
+  if (!ok) return;
+
+  try {
+    toast.success(result.message || "백업 복구가 완료되었습니다.");
+
+    setSelectedRestoreBackupId(null);
+    setBackupPreview(null);
+    setRestoreConfirmText("");
+    setRestoreReason("");
+
+    await backupListQuery.refetch();
+
+    window.setTimeout(() => {
+      window.location.reload();
+    }, 800);
+  } catch (e: any) {
+    toast.error(e?.message || "복구 실행 중 오류가 발생했습니다.");
+  }
+};
   return (
     <div className="space-y-6">
       <Card>
@@ -3144,7 +3347,378 @@ toast.success("로고 업로드 완료");
             </div>
           </div>
         </CardContent>
+            </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>백업 관리</CardTitle>
+        </CardHeader>
+
+        <CardContent className="space-y-4">
+{!canUseBackup ? (
+  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+    현재 회사는 백업/복구 기능을 사용할 수 없습니다.
+백업과 복구는 기능이 활성화된 회사 HOST 계정에서만 진행할 수 있습니다.
+  </div>
+) : (
+  <>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+            <p className="text-sm font-medium text-slate-900">
+              현재 회사 데이터 전체 백업
+            </p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+  현재 로그인한 회사의 데이터만 서버 백업 저장소에 생성합니다.
+  백업 원문은 브라우저로 직접 노출되지 않으며, 다운로드는 백업 목록의 다운로드 버튼을 통해 진행합니다.
+</p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              onClick={handleCreateBackup}
+              disabled={backupCreateMut.isPending}
+            >
+              {backupCreateMut.isPending ? "백업 생성 중..." : "백업 생성"}
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => backupListQuery.refetch()}
+              disabled={backupListQuery.isFetching}
+            >
+              {backupListQuery.isFetching ? "새로고침 중..." : "기록 새로고침"}
+            </Button>
+          </div>
+
+<div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
+  <p className="text-sm font-semibold text-amber-900">
+  백업 복구 준비
+</p>
+<p className="mt-1 text-xs leading-5 text-amber-800">
+  아래 백업 목록에서 복구할 백업을 선택한 뒤, 복구 사유와 확인 문구를 입력하세요.
+  복구는 현재 회사 데이터에만 적용됩니다.
+</p>
+
+  {backupPreview ? (
+    <div className="mt-4 rounded-xl border border-amber-200 bg-white p-4">
+      <div className="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
+        <div>
+          <p className="text-xs text-muted-foreground">회사명</p>
+          <p className="font-medium">{backupPreview.organizationName || "-"}</p>
+        </div>
+
+        <div>
+          <p className="text-xs text-muted-foreground">회사 slug</p>
+          <p className="font-medium">{backupPreview.organizationSlug || "-"}</p>
+        </div>
+
+        <div>
+          <p className="text-xs text-muted-foreground">테이블 수</p>
+          <p className="font-medium">{backupPreview.tableCount ?? 0}</p>
+        </div>
+
+        <div>
+          <p className="text-xs text-muted-foreground">데이터 수</p>
+          <p className="font-medium">{backupPreview.rowCount ?? 0}</p>
+        </div>
+      </div>
+
+      <p className="mt-3 text-xs text-muted-foreground">
+        백업 생성일:{" "}
+        {backupPreview.createdAt
+          ? new Date(backupPreview.createdAt).toLocaleString()
+          : "-"}
+      </p>
+
+      <div className="mt-4 max-h-48 overflow-y-auto rounded-lg border">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b bg-muted/50">
+              <th className="px-3 py-2 text-left">테이블</th>
+              <th className="px-3 py-2 text-left">데이터 수</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(backupPreview.tables || []).map((item: any) => (
+              <tr key={item.tableName} className="border-b last:border-0">
+                <td className="px-3 py-2">{item.tableName}</td>
+                <td className="px-3 py-2">{item.rowCount ?? 0}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4">
+        <p className="text-sm font-semibold text-red-900">
+          복구 실행 확인
+        </p>
+        <p className="mt-1 text-xs leading-5 text-red-800">
+          실제 복구 전 안전 확인 단계입니다. 확인 문구를 입력해야 진행됩니다.
+        </p>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+
+<div className="space-y-2">
+  <p className="text-sm font-medium">복구 사유</p>
+
+  <Input
+    value={restoreReason}
+    onChange={(e) => setRestoreReason(e.target.value)}
+    placeholder="예: 잘못 삭제된 학생 데이터 복구"
+  />
+
+  <p className="text-xs text-muted-foreground">
+    복구 이력에 함께 저장됩니다.
+  </p>
+</div>
+
+          <Input
+            value={restoreConfirmText}
+            onChange={(e) => setRestoreConfirmText(e.target.value)}
+            placeholder='복구합니다'
+            className="max-w-[240px] bg-white"
+          />
+
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={handleRestoreBackup}
+            disabled={
+  backupRestoreMut.isPending ||
+  backupCreateMut.isPending ||
+              !selectedRestoreBackupId ||
+!backupPreview ||
+restoreConfirmText !== "복구합니다"
+            }
+          >
+            {backupRestoreMut.isPending
+              ? "복구 중..."
+	: "복구 실행"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  ) : null}
+</div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-slate-900">
+              최근 백업 기록
+            </p>
+
+            {backupListQuery.isLoading ? (
+              <div className="text-sm text-muted-foreground">
+                백업 기록을 불러오는 중...
+              </div>
+            ) : !backupListQuery.data?.length ? (
+              <div className="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
+                백업 기록이 없습니다.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="px-4 py-3 text-left">상태</th>
+                      <th className="px-4 py-3 text-left">유형</th>
+                      <th className="px-4 py-3 text-left">테이블 수</th>
+                      <th className="px-4 py-3 text-left">데이터 수</th>
+                      <th className="px-4 py-3 text-left">크기</th>
+                      <th className="px-4 py-3 text-left">생성일</th>
+		<th className="px-4 py-3 text-right">관리</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {backupListQuery.data.map((item: any) => (
+                      <tr key={item.id} className="border-b last:border-0">
+                        <td className="px-4 py-3">{item.status || "-"}</td>
+                        <td className="px-4 py-3">{item.backupType || "-"}</td>
+                        <td className="px-4 py-3">{item.tableCount ?? 0}</td>
+                        <td className="px-4 py-3">{item.rowCount ?? 0}</td>
+                        <td className="px-4 py-3">
+                          {Math.round(Number(item.fileSizeBytes || 0) / 1024)}KB
+                        </td>
+                        <td className="px-4 py-3">
+                          {item.createdAt
+                            ? new Date(item.createdAt).toLocaleString()
+                            : "-"}
+                        </td>
+
+<td className="px-4 py-3 text-right">
+  <Button
+    size="sm"
+    variant="outline"
+    disabled={backupDownloadUrlMut.isPending || !item.fileKey}
+    onClick={() => handleDownloadBackup(Number(item.id))}
+  >
+    다운로드
+  </Button>
+<Button
+  size="sm"
+  variant="outline"
+  onClick={() => handleSelectRestoreBackup(Number(item.id))}
+  disabled={backupPreviewMut.isPending || backupRestoreMut.isPending}
+>
+  복구 선택
+</Button>
+</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+ </>
+  )}
+        </CardContent>
       </Card>
+
+{!canUseAuditLog ? (
+  <Card>
+    <CardHeader>
+      <CardTitle>감사 로그</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <p className="text-sm text-muted-foreground">
+        현재 회사는 감사로그 기능을 사용할 수 없습니다.
+      </p>
+    </CardContent>
+  </Card>
+) : (
+<Card>
+  <CardHeader>
+    <CardTitle>감사 로그</CardTitle>
+  </CardHeader>
+  <CardContent className="space-y-4">
+    <div className="grid gap-3 md:grid-cols-3">
+      <Input
+        value={auditActionFilter}
+        onChange={(e) => setAuditActionFilter(e.target.value)}
+        placeholder="액션 검색 예: backup, upload"
+      />
+      <Input
+        value={auditTargetTypeFilter}
+        onChange={(e) => setAuditTargetTypeFilter(e.target.value)}
+        placeholder="대상 검색 예: organization_backup"
+      />
+      <Button onClick={() => auditLogsQuery.refetch()}>
+        조회
+      </Button>
+    </div>
+
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b bg-muted/50">
+            <th className="px-3 py-2 text-left">시간</th>
+            <th className="px-3 py-2 text-left">사용자</th>
+            <th className="px-3 py-2 text-left">역할</th>
+            <th className="px-3 py-2 text-left">액션</th>
+            <th className="px-3 py-2 text-left">대상</th>
+            <th className="px-3 py-2 text-left">메모</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(auditLogsQuery.data || []).map((log: any) => (
+            <tr key={log.id} className="border-b last:border-0">
+              <td className="px-3 py-2 whitespace-nowrap">
+                {log.createdAt ? new Date(log.createdAt).toLocaleString() : "-"}
+              </td>
+              <td className="px-3 py-2">{log.actorUserId || "-"}</td>
+              <td className="px-3 py-2">{log.actorRole || "-"}</td>
+              <td className="px-3 py-2">{log.action || "-"}</td>
+              <td className="px-3 py-2">{log.targetType || "-"}</td>
+              <td className="px-3 py-2">{log.memo || "-"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </CardContent>
+</Card>
+)}
+
+<Card>
+  <CardHeader>
+    <CardTitle>삭제된 상담DB</CardTitle>
+  </CardHeader>
+  <CardContent className="space-y-4">
+    <div className="flex justify-end">
+      <Button
+        variant="outline"
+        onClick={() => deletedConsultationsQuery.refetch()}
+      >
+        새로고침
+      </Button>
+    </div>
+
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b bg-muted/50">
+            <th className="px-3 py-2 text-left">삭제일</th>
+            <th className="px-3 py-2 text-left">이름</th>
+            <th className="px-3 py-2 text-left">연락처</th>
+            <th className="px-3 py-2 text-left">희망과정</th>
+            <th className="px-3 py-2 text-left">삭제자</th>
+	<th className="px-3 py-2 text-right">관리</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(deletedConsultationsQuery.data || []).map((item: any) => (
+            <tr key={item.id} className="border-b last:border-0">
+              <td className="px-3 py-2 whitespace-nowrap">
+                {item.deletedAt
+                  ? new Date(item.deletedAt).toLocaleString()
+                  : "-"}
+              </td>
+              <td className="px-3 py-2">{item.clientName || "-"}</td>
+              <td className="px-3 py-2">{item.phone || "-"}</td>
+              <td className="px-3 py-2">{item.desiredCourse || "-"}</td>
+<td className="px-3 py-2">{item.deletedBy || "-"}</td>
+
+<td className="px-3 py-2 text-right">
+  <Button
+    size="sm"
+    variant="outline"
+    disabled={restoreConsultationMut.isPending}
+    onClick={() => {
+      const ok = window.confirm(
+        `${item.clientName || "상담DB"} 데이터를 복구하시겠습니까?`
+      );
+
+      if (!ok) return;
+
+      restoreConsultationMut.mutate({
+        id: Number(item.id),
+      });
+    }}
+  >
+    복구
+  </Button>
+</td>
+            </tr>
+          ))}
+
+          {!deletedConsultationsQuery.isLoading &&
+            (deletedConsultationsQuery.data || []).length === 0 && (
+              <tr>
+                <td
+                  colSpan={6}
+                  className="px-3 py-6 text-center text-muted-foreground"
+                >
+                  삭제된 상담DB가 없습니다.
+                </td>
+              </tr>
+            )}
+        </tbody>
+      </table>
+    </div>
+  </CardContent>
+</Card>
     </div>
   );
 }

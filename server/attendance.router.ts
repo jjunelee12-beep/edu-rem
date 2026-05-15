@@ -18,25 +18,25 @@ updateAttendanceStatusByManager,
 export const attendanceRouter = router({
   today: protectedProcedure.query(async ({ ctx }) => {
   return await getTodayAttendanceRecord(Number(ctx.user.id), {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
 }),
 
   clockIn: protectedProcedure.mutation(async ({ ctx }) => {
   return await clockInAttendance(Number(ctx.user.id), {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
 }),
 
   clockOut: protectedProcedure.mutation(async ({ ctx }) => {
   return await clockOutAttendance(Number(ctx.user.id), {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
 }),
 
   myList: protectedProcedure.query(async ({ ctx }) => {
   return await listMyAttendanceRecords(Number(ctx.user.id), {
-    organizationId: Number((ctx.user as any)?.organizationId || 1),
+    organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
 }),
 
@@ -47,20 +47,20 @@ export const attendanceRouter = router({
     // 호스트/슈퍼호스트: 전체 조회
     if (role === "host" || role === "superhost") {
       return await listAllAttendanceRecords({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
     }
 
     // 관리자: 자기 팀만 조회
     if (role === "admin") {
       return await listTeamAttendanceRecords(userId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
     }
 
     // 직원: 본인만 조회
     return await listMyAttendanceRecords(userId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
   }),
 
@@ -83,7 +83,7 @@ export const attendanceRouter = router({
       }
 
       return await updateAttendanceRecordByManager({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
   attendanceId: input.attendanceId,
   actorUserId,
   actorRole: role,
@@ -106,14 +106,14 @@ export const attendanceRouter = router({
       // 호스트/슈퍼호스트: 전체 수정 로그
       if (role === "host" || role === "superhost") {
         return await listAttendanceAdjustmentLogs(input.attendanceId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
       }
 
       // 관리자: 자기 팀 수정 로그만
       if (role === "admin") {
         return await listTeamAttendanceAdjustmentLogs(userId, input.attendanceId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
       }
 
@@ -128,7 +128,7 @@ export const attendanceRouter = router({
     }
 
     return await getAttendancePolicy({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
   }),
 
@@ -151,7 +151,7 @@ export const attendanceRouter = router({
       }
 
       return await saveAttendancePolicy({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
   actorUserId: Number(ctx.user.id),
   ...input,
 });
@@ -185,7 +185,7 @@ export const attendanceRouter = router({
       }
 
       return await updateAttendanceStatusByManager({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
   attendanceId: input.attendanceId,
   actorUserId,
   actorRole: role,

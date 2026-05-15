@@ -8,7 +8,7 @@ import { Server as SocketIOServer } from "socket.io";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import path from "path";
 import multer from "multer";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -29,11 +29,16 @@ import {
   setChatRoomMuted,
   leaveChatRoom,
   createScheduleNotifications,
-  createNotification,
-updateChatRoomTitle,
-updateChatRoomType,
- getStudent,
+    createNotification,
+  createAuditLog,
+  updateChatRoomTitle,
+  updateChatRoomType,
+  getStudent,
 } from "../db";
+import { 
+getOrganizationById,
+getOrganizationLimitStatus,
+ } from "../saasdb";
 import { setLiveNotificationIO } from "./live-notifications";
 
 type LiveAppNotificationPayload = {
@@ -55,8 +60,8 @@ function emitLiveNotification(
   payload: LiveAppNotificationPayload
 ) {
   const userId = Number(payload.userId);
-  const organizationId = Number(payload.organizationId || 1);
-  if (!userId) return;
+  const organizationId = Number(payload.organizationId || 0);
+if (!userId || !organizationId) return;
 
   io.to(`org:${organizationId}:user:${userId}`).emit("notification:new", {
     id: Number(payload.id),
@@ -321,7 +326,33 @@ const decreaseOnlineUser = (organizationId: number, userId: number) => {
   io.on("connection", async (socket) => {
   const userId = Number(socket.data.userId);
   const socketUser = await getUserById(userId);
-  const organizationId = Number((socketUser as any)?.organizationId || 1);
+
+  if (!socketUser) {
+    socket.disconnect(true);
+    return;
+  }
+
+  const organizationId = Number((socketUser as any)?.organizationId || 0);
+
+if ((socketUser as any)?.role !== "superhost" && !organizationId) {
+  socket.disconnect(true);
+  return;
+}
+
+if ((socketUser as any)?.role !== "superhost") {
+    const organization = await getOrganizationById(organizationId);
+
+    if (!organization || organization.status !== "active") {
+      console.warn("[SOCKET BLOCKED ORG]", {
+        userId,
+        organizationId,
+        status: organization?.status,
+      });
+
+      socket.disconnect(true);
+      return;
+    }
+  }
 
   socket.data.organizationId = organizationId;
 
@@ -380,6 +411,16 @@ socket.emit("room:joined", { roomId });
         const roomId = Number(payload?.roomId);
         if (!roomId) return;
 
+const members = await listChatRoomMembers(roomId, userId, {
+  organizationId,
+} as any);
+
+const actorIsMember = members.some(
+  (m: any) => Number(m.userId) === Number(userId)
+);
+
+if (!actorIsMember) return;
+
         socket.leave(`org:${organizationId}:room:${roomId}`);
         socket.emit("room:left", { roomId });
       } catch (error) {
@@ -425,6 +466,25 @@ socket.emit("room:joined", { roomId });
             socket.emit("message:error", response);
             return;
           }
+
+const members = await listChatRoomMembers(roomId, userId, {
+  organizationId,
+} as any);
+
+const actorIsMember = members.some(
+  (m: any) => Number(m.userId) === Number(userId)
+);
+
+if (!actorIsMember) {
+  const response = {
+    success: false,
+    message: "해당 회사/채팅방에 메시지를 보낼 권한이 없습니다.",
+  };
+
+  if (callback) callback(response);
+  socket.emit("message:error", response);
+  return;
+}
 
           const messageId = await createChatMessage({
   organizationId,
@@ -480,10 +540,6 @@ senderPositionName: senderAny?.positionName ?? null,
             fileType: payload?.fileType ?? null,
             fileSize: payload?.fileSize ?? null,
           };
-
-          const members = await listChatRoomMembers(roomId, userId, {
-  organizationId,
-} as any);
 
 // 방 안에서 보고 있는 사용자용 보조 이벤트
 io.to(`org:${organizationId}:room:${roomId}`).emit("typing:stop", {
@@ -562,6 +618,23 @@ io.to(`org:${organizationId}:user:${memberUserId}`).emit("room:list:update", {
             return;
           }
 
+const members = await listChatRoomMembers(roomId, userId, {
+  organizationId,
+} as any);
+
+const actorIsMember = members.some(
+  (m: any) => Number(m.userId) === Number(userId)
+);
+
+if (!actorIsMember) {
+  const response = {
+    success: false,
+    message: "해당 회사/채팅방 읽음 처리 권한이 없습니다.",
+  };
+  if (callback) callback(response);
+  return;
+}
+
           await markChatRoomRead({
   organizationId,
   roomId,
@@ -607,6 +680,16 @@ io.to(`org:${organizationId}:room:${roomId}`).emit("read:update", {
           const roomId = Number(payload?.roomId);
           if (!roomId) return;
 
+const members = await listChatRoomMembers(roomId, userId, {
+  organizationId,
+} as any);
+
+const actorIsMember = members.some(
+  (m: any) => Number(m.userId) === Number(userId)
+);
+
+if (!actorIsMember) return;
+
           socket.to(`org:${organizationId}:room:${roomId}`).emit("typing:start", {
             roomId,
             userId,
@@ -623,6 +706,16 @@ io.to(`org:${organizationId}:room:${roomId}`).emit("read:update", {
         try {
           const roomId = Number(payload?.roomId);
           if (!roomId) return;
+
+const members = await listChatRoomMembers(roomId, userId, {
+  organizationId,
+} as any);
+
+const actorIsMember = members.some(
+  (m: any) => Number(m.userId) === Number(userId)
+);
+
+if (!actorIsMember) return;
 
           socket.to(`org:${organizationId}:room:${roomId}`).emit("typing:stop", {
             roomId,
@@ -652,6 +745,23 @@ io.to(`org:${organizationId}:room:${roomId}`).emit("read:update", {
             if (callback) callback(response);
             return;
           }
+
+const members = await listChatRoomMembers(roomId, userId, {
+  organizationId,
+} as any);
+
+const actorIsMember = members.some(
+  (m: any) => Number(m.userId) === Number(userId)
+);
+
+if (!actorIsMember) {
+  const response = {
+    success: false,
+    message: "해당 회사/채팅방 알림 설정 권한이 없습니다.",
+  };
+  if (callback) callback(response);
+  return;
+}
 
           await setChatRoomMuted({
   organizationId,
@@ -706,6 +816,24 @@ io.to(`org:${organizationId}:room:${roomId}`).emit("read:update", {
             return;
           }
 
+const membersBeforeLeave = await listChatRoomMembers(roomId, userId, {
+  organizationId,
+} as any);
+
+const actorIsMember = membersBeforeLeave.some(
+  (m: any) => Number(m.userId) === Number(userId)
+);
+
+if (!actorIsMember) {
+  const response = {
+    success: false,
+    message: "해당 회사/채팅방 나가기 권한이 없습니다.",
+  };
+
+  if (callback) callback(response);
+  return;
+}
+
           const actor = await getUserById(userId);
 const actorName = actor?.name || actor?.username || "사용자";
 
@@ -736,10 +864,6 @@ const emittedSystemMessage = {
   fileType: null,
   fileSize: null,
 };
-
-const membersBeforeLeave = await listChatRoomMembers(roomId, userId, {
-  organizationId,
-} as any);
 
 // 참여자 개인 room에도 시스템 메시지 전송
 for (const member of membersBeforeLeave) {
@@ -804,7 +928,7 @@ const targetUser = await getUserById(targetUserId);
 
 if (
   !targetUser ||
-  Number((targetUser as any).organizationId || 1) !== Number(organizationId)
+  Number((targetUser as any).organizationId || 0) !== Number(organizationId)
 ) {
   const response = {
     success: false,
@@ -941,7 +1065,7 @@ for (const uid of newUserIds) {
   const target = await getUserById(uid);
   if (
     !target ||
-    Number((target as any).organizationId || 1) !== Number(organizationId)
+    Number((target as any).organizationId || 0) !== Number(organizationId)
   ) {
     return callback?.({
       success: false,
@@ -1138,7 +1262,7 @@ for (const uid of mergedUserIds) {
   const target = await getUserById(uid);
   if (
     !target ||
-    Number((target as any).organizationId || 1) !== Number(organizationId)
+    Number((target as any).organizationId || 0) !== Number(organizationId)
   ) {
     return callback?.({
       success: false,
@@ -1240,6 +1364,21 @@ socket.on(
         });
       }
 
+const members = await listChatRoomMembers(roomId, userId, {
+  organizationId,
+} as any);
+
+const actorIsMember = members.some(
+  (m: any) => Number(m.userId) === Number(userId)
+);
+
+if (!actorIsMember) {
+  return callback?.({
+    success: false,
+    message: "해당 회사/채팅방 이름 변경 권한이 없습니다.",
+  });
+}
+
       // DB 업데이트 (직접 쿼리 or 함수 필요)
       await updateChatRoomTitle({
   organizationId,
@@ -1268,9 +1407,6 @@ socket.on(
         createdAt: new Date().toISOString(),
       };
 
-      const members = await listChatRoomMembers(roomId, userId, {
-  organizationId,
-} as any);
 
 for (const m of members) {
   const memberUserId = Number(m.userId);
@@ -1412,6 +1548,29 @@ if (!onlineUserSocketCounts.has(getOnlineKey(organizationId, userId))) {
     },
   });
 
+async function getR2PrefixUsageBytes(prefix: string) {
+  let totalBytes = 0;
+  let continuationToken: string | undefined = undefined;
+
+  do {
+    const result = await s3.send(
+      new ListObjectsV2Command({
+        Bucket: process.env.R2_BUCKET_NAME!,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      })
+    );
+
+    for (const item of result.Contents || []) {
+      totalBytes += Number(item.Size || 0);
+    }
+
+    continuationToken = result.NextContinuationToken;
+  } while (continuationToken);
+
+  return totalBytes;
+}
+
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
@@ -1492,14 +1651,53 @@ const parsedCookies = cookie.parse(cookieHeader);
 const rawSession = parsedCookies[SESSION_COOKIE];
 const secret = process.env.SESSION_SECRET;
 
-let organizationId = 1;
+let organizationId = 0;
+
+let uploadUser: any = null;
 
 if (rawSession && secret) {
   const uploadUserId = readUserIdFromSessionCookieValue(rawSession, secret);
   if (uploadUserId) {
-    const uploadUser = await getUserById(uploadUserId);
-    organizationId = Number((uploadUser as any)?.organizationId || 1);
+    uploadUser = await getUserById(uploadUserId);
+   organizationId = Number((uploadUser as any)?.organizationId || 0);
   }
+}
+
+if (!uploadUser) {
+  return res.status(401).json({
+    message: "로그인이 필요합니다.",
+  });
+}
+
+if ((uploadUser as any)?.role !== "superhost" && !organizationId) {
+  return res.status(403).json({
+    message: "organizationId is required",
+  });
+}
+
+if ((uploadUser as any)?.role !== "superhost") {
+  const limitStatus = await getOrganizationLimitStatus(organizationId);
+  const organization = limitStatus.organization as any;
+
+  if (!organization || organization.status !== "active") {
+    return res.status(403).json({
+      message: "현재 이용이 제한된 회사 계정입니다.",
+    });
+  }
+
+  const maxStorageMb = Number(limitStatus.limits.maxStorageMb || 0);
+
+if (maxStorageMb > 0) {
+  const currentBytes = Number((limitStatus.usage as any)?.storageUsedBytes || 0);
+  const nextBytes = currentBytes + Number(file.size || 0);
+  const maxBytes = maxStorageMb * 1024 * 1024;
+
+  if (nextBytes > maxBytes) {
+    return res.status(403).json({
+      message: `저장공간 제한(${maxStorageMb}MB)을 초과했습니다.`,
+    });
+  }
+}
 }
 
 const key = `org-${organizationId}/${Date.now()}_${Math.random()
@@ -1515,10 +1713,28 @@ const key = `org-${organizationId}/${Date.now()}_${Math.random()
         })
       );
 
-      const publicFileUrl = `${publicBaseUrl}/${key
+            const publicFileUrl = `${publicBaseUrl}/${key
   .split("/")
   .map((part) => encodeURIComponent(part))
   .join("/")}`;
+
+      await createAuditLog({
+        organizationId,
+        actorUserId: Number(uploadUser.id),
+        actorRole: String(uploadUser.role || ""),
+        action: "upload.file",
+        targetType: "upload",
+        targetId: null,
+        beforeJson: null,
+        afterJson: JSON.stringify({
+          key,
+          url: publicFileUrl,
+          originalName: safeOriginalName,
+          size: file.size,
+          mimeType: file.mimetype,
+        }),
+        memo: "file upload",
+      });
 
 return res.json({
   success: true,
@@ -1532,31 +1748,6 @@ return res.json({
       });
     }
   });
-
-  registerOAuthRoutes(app);
-
-  app.use(
-    (
-      err: any,
-      _req: express.Request,
-      res: express.Response,
-      next: express.NextFunction
-    ) => {
-      if (err instanceof multer.MulterError) {
-        return res.status(400).json({
-          message: err.message || "업로드 오류가 발생했습니다.",
-        });
-      }
-
-      if (err?.message?.includes("지원하지 않는 파일 형식")) {
-        return res.status(400).json({
-          message: err.message,
-        });
-      }
-
-      next(err);
-    }
-  );
 
   registerOAuthRoutes(app);
 
@@ -1631,14 +1822,6 @@ const ogPageUrl = "https://go.withone.kr/alpha";
     </html>
   `);
 });
-
-  app.use(
-    "/api/trpc",
-    createExpressMiddleware({
-      router: appRouter,
-      createContext,
-    })
-  );
 
   app.use(
     "/api/trpc",

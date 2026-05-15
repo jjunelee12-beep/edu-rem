@@ -2,8 +2,9 @@ import { eq, and, or, sql, desc, like, asc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
-  users,
-  consultations,
+users,
+organizations,
+consultations,
   InsertConsultation,
   students,
   InsertStudent,
@@ -92,7 +93,13 @@ brandingSettings,
 type InsertBrandingSetting,
 smsSettings,
 type InsertSmsSetting,
+smsLogs,
+type InsertSmsLog,
 type InsertApprovalLog,
+organizationBackups,
+type InsertOrganizationBackup,
+auditLogs,
+type InsertAuditLog,
 } from "../drizzle/schema";
 
 import { ENV } from "./_core/env";
@@ -152,6 +159,17 @@ export async function getDb() {
   return _db;
 }
 
+
+function requireOrganizationId(value: any) {
+  const organizationId = Number(value || 0);
+
+  if (!Number.isFinite(organizationId) || organizationId <= 0) {
+    throw new Error("organizationId is required");
+  }
+
+  return organizationId;
+}
+
 export async function getStudentById(
   studentId: number,
   params?: {
@@ -161,18 +179,17 @@ export async function getStudentById(
   const db = await getDb();
   if (!db) return undefined;
 
-  const organizationId = Number(params?.organizationId || 0);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const result = await db
     .select()
     .from(students)
     .where(
-      organizationId > 0
-        ? and(
-            eq(students.id, studentId),
-            eq(students.organizationId, organizationId)
-          )
-        : eq(students.id, studentId)
+      and(
+  eq(students.id, studentId),
+  eq(students.organizationId, organizationId),
+  sql`${students.deletedAt} IS NULL`
+)
     )
     .limit(1);
 
@@ -257,18 +274,16 @@ export async function getRefundById(
   const db = await getDb();
   if (!db) return undefined;
 
-  const organizationId = Number(params?.organizationId || 0);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const result = await db
     .select()
     .from(refunds)
     .where(
-      organizationId > 0
-        ? and(
-            eq(refunds.id, id),
-            eq(refunds.organizationId, organizationId)
-          )
-        : eq(refunds.id, id)
+      and(
+        eq(refunds.id, id),
+        eq(refunds.organizationId, organizationId)
+      )
     )
     .limit(1);
 
@@ -294,7 +309,7 @@ organizationId?: number | null;
     if (!db) return;
 
     await db.insert(aiActionLogs).values({
-organizationId: Number(params.organizationId || 1),
+organizationId: requireOrganizationId(params.organizationId),
       userId: params.userId,
       userName: params.userName,
       action: params.action,
@@ -307,12 +322,539 @@ organizationId: Number(params.organizationId || 1),
   }
 }
 
+export async function createAuditLog(
+  input: Omit<InsertAuditLog, "id" | "createdAt">
+) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result: any = await db.insert(auditLogs).values(input as any);
+  return getInsertId(result);
+}
+
+export async function listAuditLogs(params: {
+  organizationId?: number | null;
+  isSuperhost?: boolean;
+  action?: string | null;
+  actorUserId?: number | null;
+  targetType?: string | null;
+  limit?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const limit = Math.min(Math.max(Number(params.limit || 100), 1), 300);
+
+  const conditions: any[] = [];
+
+  if (!params.isSuperhost) {
+    const organizationId = requireOrganizationId(params.organizationId);
+    conditions.push(eq(auditLogs.organizationId, organizationId));
+  } else if (params.organizationId) {
+    conditions.push(eq(auditLogs.organizationId, Number(params.organizationId)));
+  }
+
+  if (params.action?.trim()) {
+    conditions.push(like(auditLogs.action, `%${params.action.trim()}%`));
+  }
+
+  if (params.actorUserId) {
+    conditions.push(eq(auditLogs.actorUserId, Number(params.actorUserId)));
+  }
+
+  if (params.targetType?.trim()) {
+    conditions.push(like(auditLogs.targetType, `%${params.targetType.trim()}%`));
+  }
+
+  const whereExpr =
+    conditions.length > 0 ? and(...conditions) : undefined;
+
+  return db
+    .select()
+    .from(auditLogs)
+    .where(whereExpr)
+    .orderBy(desc(auditLogs.createdAt))
+    .limit(limit);
+}
+
+// ==============================
+// ORGANIZATION BACKUPS
+// ==============================
+
+export async function createOrganizationBackupRecord(input: {
+  organizationId?: number | null;
+  requestedBy: number;
+  backupType?: "manual" | "auto" | "restore_snapshot";
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(input.organizationId);
+
+  const result: any = await db.insert(organizationBackups).values({
+    organizationId,
+    requestedBy: input.requestedBy,
+    backupType: input.backupType || "manual",
+    status: "pending",
+  } as any);
+
+  return getInsertId(result);
+}
+
+export async function listOrganizationBackups(params: {
+  organizationId?: number | null;
+  limit?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const limit = Math.min(Math.max(Number(params.limit || 30), 1), 100);
+
+  return db
+    .select()
+    .from(organizationBackups)
+    .where(eq(organizationBackups.organizationId, organizationId))
+    .orderBy(desc(organizationBackups.createdAt))
+    .limit(limit);
+}
+
+export async function getOrganizationBackupById(
+  id: number,
+  params: { organizationId?: number | null }
+) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  const rows = await db
+    .select()
+    .from(organizationBackups)
+    .where(
+      and(
+        eq(organizationBackups.id, id),
+        eq(organizationBackups.organizationId, organizationId)
+      )
+    )
+    .limit(1);
+
+  return rows[0] || null;
+}
+
+export async function markOrganizationBackupCompleted(input: {
+  id: number;
+  organizationId?: number | null;
+  fileUrl?: string | null;
+  fileKey?: string | null;
+  fileSizeBytes?: number | null;
+  tableCount?: number | null;
+  rowCount?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(input.organizationId);
+
+  await db
+    .update(organizationBackups)
+    .set({
+      status: "completed",
+      fileUrl: input.fileUrl ?? null,
+      fileKey: input.fileKey ?? null,
+      fileSizeBytes: input.fileSizeBytes ?? null,
+      tableCount: input.tableCount ?? null,
+      rowCount: input.rowCount ?? null,
+      errorMessage: null,
+      completedAt: new Date(),
+    } as any)
+    .where(
+      and(
+        eq(organizationBackups.id, input.id),
+        eq(organizationBackups.organizationId, organizationId)
+      )
+    );
+
+  return getOrganizationBackupById(input.id, { organizationId });
+}
+
+export async function markOrganizationBackupFailed(input: {
+  id: number;
+  organizationId?: number | null;
+  errorMessage: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(input.organizationId);
+
+  await db
+    .update(organizationBackups)
+    .set({
+      status: "failed",
+      errorMessage: input.errorMessage || "백업 처리 중 오류가 발생했습니다.",
+      completedAt: new Date(),
+    } as any)
+    .where(
+      and(
+        eq(organizationBackups.id, input.id),
+        eq(organizationBackups.organizationId, organizationId)
+      )
+    );
+
+  return getOrganizationBackupById(input.id, { organizationId });
+}
+
+export async function markOrganizationBackupRestored(input: {
+  id: number;
+  organizationId?: number | null;
+  restoredBy: number;
+  restoreReason?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(input.organizationId);
+
+  await db
+    .update(organizationBackups)
+    .set({
+      status: "restored",
+      restoredAt: new Date(),
+      restoredBy: input.restoredBy,
+	restoreReason: input.restoreReason ?? null,
+    } as any)
+    .where(
+      and(
+        eq(organizationBackups.id, input.id),
+        eq(organizationBackups.organizationId, organizationId)
+      )
+    );
+
+  return getOrganizationBackupById(input.id, { organizationId });
+}
+
+// ==============================
+// ORGANIZATION BACKUP EXPORT
+// SaaS 전체가 아니라 로그인한 회사 organizationId 데이터만 내보낸다.
+// ==============================
+
+const ORGANIZATION_BACKUP_TABLES = [
+  "lead_forms",
+  "form_blueprints",
+  "users",
+  "branding_settings",
+  "sms_settings",
+  "sms_logs",
+
+  "consultations",
+  "students",
+  "semesters",
+  "plans",
+  "plan_semesters",
+  "transfer_subjects",
+  "refunds",
+
+  "education_institutions",
+  "education_institution_position_rates",
+  "transfer_attachments",
+  "course_subject_templates",
+  "private_certificate_masters",
+  "subject_catalogs",
+  "subject_catalog_items",
+
+  "private_certificate_requests",
+  "practice_support_requests",
+  "practice_list_categories",
+  "practice_institutions",
+  "practice_education_centers",
+  "job_support_requests",
+
+  "chat_rooms",
+  "chat_room_members",
+  "chat_messages",
+  "chat_attachments",
+  "chat_room_settings",
+
+  "teams",
+  "positions",
+  "user_org_mappings",
+
+  "attendance_records",
+  "attendance_adjustment_logs",
+  "attendance_policies",
+
+  "notices",
+  "schedules",
+
+  "approval_documents",
+  "approval_document_lines",
+  "approval_settings",
+  "approval_print_settings",
+  "approval_logs",
+  "approval_form_field_settings",
+
+  "device_tokens",
+  "notifications",
+
+  "ai_action_logs",
+  "ai_learning_entries",
+
+  "settlement_grades",
+  "settlement_items",
+  "settlement_item_logs",
+  "settlement_settings",
+  "audit_logs",
+];
+
+function sanitizeBackupFilePart(value: any) {
+  return String(value || "organization")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣_-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+export async function exportOrganizationBackupData(params: {
+  organizationId?: number | null;
+  requestedBy: number;
+  actorRole?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+if (params.actorRole === "superhost") {
+  throw new Error("슈퍼호스트는 회사 백업 원문을 생성할 수 없습니다.");
+}
+
+  const orgRows = await db
+    .select()
+    .from(organizations)
+    .where(eq(organizations.id, organizationId))
+    .limit(1);
+
+  const organization = orgRows[0];
+
+  if (!organization) {
+    throw new Error("회사를 찾을 수 없습니다.");
+  }
+
+  const [columnRows] = await db.execute(sql`
+    SELECT TABLE_NAME as tableName
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND COLUMN_NAME = 'organizationId'
+  `);
+
+  const orgScopedTables = new Set(
+    ((columnRows as any[]) || []).map((row: any) => String(row.tableName))
+  );
+
+  const tables: Record<string, any[]> = {};
+  let tableCount = 0;
+  let rowCount = 0;
+
+  for (const tableName of ORGANIZATION_BACKUP_TABLES) {
+    if (!orgScopedTables.has(tableName)) continue;
+
+    const safeTableName = tableName.replace(/[^a-zA-Z0-9_]/g, "");
+
+    const [rows] = await db.execute(sql.raw(`
+      SELECT *
+      FROM \`${safeTableName}\`
+      WHERE organizationId = ${organizationId}
+    `));
+
+    const list = Array.isArray(rows) ? rows : [];
+
+    tables[safeTableName] = list;
+    tableCount += 1;
+    rowCount += list.length;
+  }
+
+  const createdAt = new Date().toISOString();
+
+  const backup = {
+    version: 1,
+    app: "Edu-CRM",
+    backupType: "organization_full",
+    createdAt,
+
+    // 복구 시 이 값과 로그인한 host organizationId가 반드시 같아야 함
+    organizationId,
+
+    organization: {
+      id: organization.id,
+      name: organization.name,
+      slug: organization.slug,
+      businessName: organization.businessName,
+      businessNumber: organization.businessNumber,
+      planCode: organization.planCode,
+      status: organization.status,
+    },
+
+    meta: {
+      requestedBy: params.requestedBy,
+      tableCount,
+      rowCount,
+    },
+
+    tables,
+  };
+
+  const json = JSON.stringify(backup, null, 2);
+  const fileSizeBytes = Buffer.byteLength(json, "utf8");
+
+  const slug = sanitizeBackupFilePart((organization as any).slug || organizationId);
+  const stamp = createdAt
+    .replace(/[:.]/g, "-")
+    .replace("T", "_")
+    .replace("Z", "");
+
+  return {
+    backup,
+    json,
+    fileName: `edu-crm-backup_${slug}_${stamp}.json`,
+    fileSizeBytes,
+    tableCount,
+    rowCount,
+  };
+}
+
+export async function restoreOrganizationBackupData(params: {
+  organizationId?: number | null;
+  backup: any;
+  restoredBy: number;
+  actorRole?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+if (params.actorRole === "superhost") {
+  throw new Error("슈퍼호스트는 회사 백업 원문을 복구할 수 없습니다.");
+}
+
+  const backup = params.backup;
+
+  if (!backup || backup.app !== "Edu-CRM") {
+    throw new Error("Edu-CRM 백업 파일이 아닙니다.");
+  }
+
+  if (backup.backupType !== "organization_full") {
+    throw new Error("지원하지 않는 백업 유형입니다.");
+  }
+
+  if (Number(backup.organizationId) !== Number(organizationId)) {
+    throw new Error("다른 회사의 백업 파일은 복구할 수 없습니다.");
+  }
+
+  const tables = backup.tables || {};
+  const tableNames = Object.keys(tables);
+
+  const allowedTables = new Set(ORGANIZATION_BACKUP_TABLES);
+
+  let restoredTableCount = 0;
+  let restoredRowCount = 0;
+
+  await db.execute(sql`SET FOREIGN_KEY_CHECKS = 0`);
+
+  try {
+    // 1) 기존 organization 데이터 삭제
+    // 역순 삭제: 자식 테이블부터 최대한 먼저 삭제
+    for (const tableName of [...tableNames].reverse()) {
+      if (!allowedTables.has(tableName)) continue;
+
+      const safeTableName = tableName.replace(/[^a-zA-Z0-9_]/g, "");
+      if (!safeTableName) continue;
+
+      await db.execute(sql.raw(`
+        DELETE FROM \`${safeTableName}\`
+        WHERE organizationId = ${organizationId}
+      `));
+    }
+
+    // 2) 백업 데이터 재삽입
+    for (const tableName of tableNames) {
+      if (!allowedTables.has(tableName)) continue;
+
+      const safeTableName = tableName.replace(/[^a-zA-Z0-9_]/g, "");
+      if (!safeTableName) continue;
+
+      const rows = Array.isArray(tables[tableName])
+        ? tables[tableName]
+        : [];
+
+      if (rows.length === 0) {
+        restoredTableCount += 1;
+        continue;
+      }
+
+      for (const row of rows) {
+        const nextRow = {
+          ...row,
+          organizationId,
+        };
+
+        const columns = Object.keys(nextRow).filter((key) =>
+          /^[a-zA-Z0-9_]+$/.test(key)
+        );
+
+        if (columns.length === 0) continue;
+
+        const columnSql = columns
+          .map((column) => `\`${column}\``)
+          .join(", ");
+
+        const valueSql = columns
+          .map((column) => {
+            const value = nextRow[column];
+
+            if (value === null || value === undefined) return "NULL";
+
+            if (typeof value === "number") {
+              return String(value);
+            }
+
+            if (typeof value === "boolean") {
+              return value ? "1" : "0";
+            }
+
+            return `'${String(value).replace(/'/g, "''")}'`;
+          })
+          .join(", ");
+
+        await db.execute(sql.raw(`
+          INSERT INTO \`${safeTableName}\` (${columnSql})
+          VALUES (${valueSql})
+        `));
+
+        restoredRowCount += 1;
+      }
+
+      restoredTableCount += 1;
+    }
+  } finally {
+    await db.execute(sql`SET FOREIGN_KEY_CHECKS = 1`);
+  }
+
+  return {
+    success: true,
+    restoredTableCount,
+    restoredRowCount,
+  };
+}
+
 export async function getStudentWithCoords(
   studentId: number,
   params?: { organizationId?: number | null }
 ) {
   const student = await getStudent(studentId, {
-    organizationId: Number(params?.organizationId || 1),
+    organizationId: requireOrganizationId(params?.organizationId),
   });
   if (!student) return null;
 
@@ -329,7 +871,7 @@ export async function listActivePracticeInstitutions(params?: {
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   return db
     .select()
@@ -348,7 +890,7 @@ export async function listActivePracticeEducationCenters(params?: {
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   return db
     .select()
@@ -365,7 +907,7 @@ export async function getPracticeRecommendationsForStudent(
   studentId: number,
   params?: { organizationId?: number | null }
 ) {
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const student = await getStudentWithCoords(studentId, {
     organizationId,
@@ -420,7 +962,7 @@ export async function fixMissingCoordinates(params: {
 
   const limit = params.limit ?? 100;
 
-const organizationId = Number(params.organizationId || 1);
+const organizationId = requireOrganizationId(params.organizationId);
 
   const table =
     params.type === "education"
@@ -500,7 +1042,7 @@ organizationId?: number | null;
   INSERT INTO ai_learning_entries
   (organizationId, userId, userName, learningType, inputText, normalizedKey, payload, targetStudentId, targetStudentName)
   VALUES (
-    ${Number(params.organizationId || 1)},
+    ${requireOrganizationId(params.organizationId)},
     ${params.userId},
     ${params.userName},
     ${params.learningType},
@@ -527,7 +1069,7 @@ organizationId?: number | null;
     SELECT *
     FROM ai_learning_entries
     WHERE 
-organizationId = ${Number(params.organizationId || 1)}
+organizationId = ${requireOrganizationId(params.organizationId)}
 AND
       (${params.normalizedKey ?? null} IS NULL OR normalizedKey = ${params.normalizedKey ?? null})
     ORDER BY createdAt DESC
@@ -544,7 +1086,7 @@ export async function getStudentRegistrationSummary(
 ) {
   const db = await getDb();
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   if (!db) {
     return {
@@ -677,7 +1219,7 @@ export async function listFormBlueprints(
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+ const organizationId = requireOrganizationId(params?.organizationId);
 
   const rows = await db
     .select()
@@ -705,7 +1247,7 @@ export async function getDefaultFormBlueprint(
   const db = await getDb();
   if (!db) return null;
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const rows = await db
     .select()
@@ -739,18 +1281,16 @@ export async function getFormBlueprintById(
   const db = await getDb();
   if (!db) return null;
 
-  const organizationId = Number(params?.organizationId || 0);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const rows = await db
     .select()
     .from(formBlueprints)
     .where(
-      organizationId > 0
-        ? and(
-            eq(formBlueprints.id, id),
-            eq(formBlueprints.organizationId, organizationId)
-          )
-        : eq(formBlueprints.id, id)
+      and(
+        eq(formBlueprints.id, id),
+        eq(formBlueprints.organizationId, organizationId)
+      )
     )
     .limit(1);
 
@@ -774,7 +1314,7 @@ export async function createFormBlueprint(input: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(input.organizationId || 1);
+const organizationId = requireOrganizationId(input.organizationId);
 
   const exists = await db
     .select()
@@ -822,7 +1362,7 @@ export async function updateFormBlueprint(input: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(input.organizationId || 1);
+const organizationId = requireOrganizationId(input.organizationId);
 
   const target = await getFormBlueprintById(input.id, {
     organizationId,
@@ -900,7 +1440,7 @@ export async function deleteFormBlueprint(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const target = await getFormBlueprintById(id, {
     organizationId,
@@ -933,7 +1473,7 @@ export async function createLeadFormFromBlueprint(input: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(input.organizationId || 1);
+const organizationId = requireOrganizationId(input.organizationId);
 
   const blueprint = await getFormBlueprintById(input.blueprintId, {
     organizationId,
@@ -976,7 +1516,7 @@ export async function getLeadFormTemplate(
   const db = await getDb();
   if (!db) return undefined;
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
   const token = getLeadFormTemplateToken(formType);
 
   const result = await db
@@ -1003,7 +1543,7 @@ export async function saveLeadFormTemplate(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params.organizationId || 1);
+  const organizationId = requireOrganizationId(params.organizationId);
 
   const token = getLeadFormTemplateToken(params.formType);
   const existing = await getLeadFormTemplate(params.formType, {
@@ -1050,7 +1590,7 @@ export async function saveNamedLeadFormTemplate(input: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(input.organizationId || 1);
+const organizationId = requireOrganizationId(input.organizationId);
 
   const token = getNamedLeadFormTemplateToken(input.formType, input.templateName);
   const uiConfigJson = safeJsonStringify(input.uiConfig || {});
@@ -1322,7 +1862,7 @@ export async function applyNamedLeadFormTemplateToToken(input: {
   actorUserId: number;
 }) {
   const db = await getDb();
-  const organizationId = Number(input.organizationId || 1);
+const organizationId = requireOrganizationId(input.organizationId);
 
   const template = await getNamedLeadFormTemplate(
     input.formType,
@@ -1388,7 +1928,7 @@ export async function deleteNamedLeadFormTemplate(
   }
 ) {
   const db = await getDb();
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
   const token = getNamedLeadFormTemplateToken(formType, templateName);
 
   const existing = await db
@@ -1432,7 +1972,7 @@ export async function renameNamedLeadFormTemplate(input: {
   actorUserId: number;
 }) {
   const dbConn = await getDb();
-  const organizationId = Number(input.organizationId || 1);
+const organizationId = requireOrganizationId(input.organizationId);
 
   const oldToken = getNamedLeadFormTemplateToken(
     input.formType,
@@ -1518,7 +2058,7 @@ export async function duplicateNamedLeadFormTemplate(input: {
   actorUserId?: number | null;
 }) {
   const dbConn = await getDb();
-  const organizationId = Number(input.organizationId || 1);
+const organizationId = requireOrganizationId(input.organizationId);
 
   const sourceToken = getNamedLeadFormTemplateToken(
     input.formType,
@@ -1603,7 +2143,7 @@ export async function getNamedLeadFormTemplate(
   }
 ) {
   const db = await getDb();
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
   const token = getNamedLeadFormTemplateToken(formType, templateName);
 
   const rows = await db
@@ -1636,7 +2176,7 @@ export async function listLeadFormTemplates(
   }
 ) {
   const db = await getDb();
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const prefix = `__template_${formType}_`;
 
@@ -1686,18 +2226,16 @@ export async function getLeadFormByToken(
   const db = await getDb();
   if (!db) return undefined;
 
-  const organizationId = Number(params?.organizationId || 0);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const result = await db
     .select()
     .from(leadForms)
     .where(
-      organizationId > 0
-        ? and(
-            eq(leadForms.organizationId, organizationId),
-            eq(leadForms.token, token)
-          )
-        : eq(leadForms.token, token)
+      and(
+        eq(leadForms.organizationId, organizationId),
+        eq(leadForms.token, token)
+      )
     )
     .limit(1);
 
@@ -1726,7 +2264,7 @@ export async function getPublicFormByToken(
   const form = result[0];
   if (!form) return { ok: false };
 
-  const organizationId = Number((form as any).organizationId || 1);
+  const organizationId = requireOrganizationId((form as any).organizationId);
 
   const userResult = await db
     .select({
@@ -1776,7 +2314,7 @@ export async function updateLeadFormUiConfig(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .update(leadForms)
@@ -1803,7 +2341,7 @@ export async function updateMyLeadFormUiConfig(input: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(input.organizationId || 1);
+const organizationId = requireOrganizationId(input.organizationId);
 
   const rows = await db
     .select()
@@ -1852,7 +2390,7 @@ export async function listLeadForms(
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   return db
     .select()
@@ -1877,7 +2415,7 @@ export async function createLeadForm(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const template = await getLeadFormTemplate(formType, {
     organizationId,
@@ -1922,7 +2460,7 @@ export async function updateLeadFormActive(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .update(leadForms)
@@ -2025,7 +2563,7 @@ export async function getAllUsersDetailed(params?: {
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 0);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   let query = db
     .select({
@@ -2062,7 +2600,7 @@ export async function getBrandingSettings(params?: {
   const db = await getDb();
   if (!db) return null;
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const result = await db
     .select()
@@ -2090,7 +2628,7 @@ export async function saveBrandingSettings(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number((data as any).organizationId || 1);
+  const organizationId = requireOrganizationId((data as any).organizationId);
 
   const existing = await db
     .select()
@@ -2135,7 +2673,7 @@ export async function getSmsSettings(params?: {
   const db = await getDb();
   if (!db) return null;
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const rows = await db
     .select()
@@ -2163,7 +2701,7 @@ export async function saveSmsSettings(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(data.organizationId || 1);
+  const organizationId = requireOrganizationId(data.organizationId);
 
   const existing = await getSmsSettings({
     organizationId,
@@ -2199,6 +2737,34 @@ export async function saveSmsSettings(data: {
 
   const result: any = await db.insert(smsSettings).values(payload as any);
   return getInsertId(result);
+}
+
+export async function createSmsLogs(
+  rows: Array<
+    Omit<InsertSmsLog, "id" | "createdAt"> & {
+      organizationId?: number | null;
+    }
+  >
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  if (!rows.length) return { success: true, count: 0 };
+
+  const values = rows.map((row) => ({
+    organizationId: requireOrganizationId(row.organizationId),
+    senderUserId: row.senderUserId ?? null,
+    phone: row.phone,
+    message: row.message,
+    status: row.status ?? "success",
+    provider: row.provider ?? null,
+  }));
+
+  await db.insert(smsLogs).values(values as any);
+
+  return {
+    success: true,
+    count: values.length,
+  };
 }
 
 export async function createUserAccount(data: {
@@ -2239,6 +2805,23 @@ organizationId: data.organizationId ?? 1,
   return getInsertId(result);
 }
 
+export async function getUserByUsername(username: string) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const normalizedUsername = username.trim();
+
+  if (!normalizedUsername) return null;
+
+  const rows = await db
+    .select()
+    .from(users)
+    .where(eq(users.username, normalizedUsername))
+    .limit(1);
+
+  return rows[0] ?? null;
+}
+
 export async function updateUserAccount(
   id: number,
   data: {
@@ -2255,7 +2838,7 @@ export async function updateUserAccount(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   if (!data || Object.keys(data).length === 0) return;
 
@@ -2278,7 +2861,7 @@ export async function updateUserRole(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   // SaaS 기준: superhost도 전체 유저를 보지 않음.
   // 같은 조직 안에서만 superhost 중복 방지.
@@ -2316,7 +2899,7 @@ export async function updateUserActive(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .update(users)
@@ -2336,7 +2919,7 @@ export async function getUserById(
   const db = await getDb();
   if (!db) return undefined;
 
-  const organizationId = Number(params?.organizationId || 0);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const result = await db
     .select()
@@ -2364,28 +2947,32 @@ export async function listConsultations(
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const baseQuery = db
     .select()
     .from(consultations);
 
   if (assigneeId) {
-    return baseQuery
-      .where(
-        and(
-          eq(consultations.organizationId, organizationId),
-          eq(consultations.assigneeId, assigneeId)
-        )
-      )
-      .orderBy(desc(consultations.createdAt));
-  }
-
   return baseQuery
     .where(
-      eq(consultations.organizationId, organizationId)
+      and(
+        eq(consultations.organizationId, organizationId),
+        eq(consultations.assigneeId, assigneeId),
+        sql`${consultations.deletedAt} IS NULL`
+      )
     )
     .orderBy(desc(consultations.createdAt));
+}
+
+return baseQuery
+  .where(
+    and(
+      eq(consultations.organizationId, organizationId),
+      sql`${consultations.deletedAt} IS NULL`
+    )
+  )
+  .orderBy(desc(consultations.createdAt));
 }
 
 export async function getConsultation(
@@ -2397,18 +2984,17 @@ export async function getConsultation(
   const db = await getDb();
   if (!db) return undefined;
 
-  const organizationId = Number(params?.organizationId || 0);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const result = await db
     .select()
     .from(consultations)
     .where(
-      organizationId > 0
-        ? and(
-            eq(consultations.id, id),
-            eq(consultations.organizationId, organizationId)
-          )
-        : eq(consultations.id, id)
+      and(
+  eq(consultations.id, id),
+  eq(consultations.organizationId, organizationId),
+  sql`${consultations.deletedAt} IS NULL`
+)
     )
     .limit(1);
 
@@ -2454,7 +3040,7 @@ export async function updateConsultation(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   if (!data || Object.keys(data).length === 0) {
     console.log("[DB] updateConsultation skip (empty):", id);
@@ -2482,12 +3068,15 @@ export async function deleteConsultation(
   id: number,
   params?: {
     organizationId?: number | null;
+    deletedBy?: number | null;
   }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
+  const deletedBy = params?.deletedBy ? Number(params.deletedBy) : null;
+  const now = new Date();
 
   const linkedStudents = await db
     .select({ id: students.id })
@@ -2495,22 +3084,118 @@ export async function deleteConsultation(
     .where(
       and(
         eq(students.consultationId, id),
-        eq(students.organizationId, organizationId)
+        eq(students.organizationId, organizationId),
+        sql`${students.deletedAt} IS NULL`
       )
     );
 
   for (const row of linkedStudents) {
-    await deleteStudentCascadeById(Number(row.id), {
-  organizationId,
-});
+    await softDeleteStudent(Number(row.id), {
+      organizationId,
+      deletedBy,
+    });
   }
 
   await db
-    .delete(consultations)
+    .update(consultations)
+    .set({
+      deletedAt: now,
+      deletedBy,
+    } as any)
     .where(
       and(
         eq(consultations.id, id),
-        eq(consultations.organizationId, organizationId)
+        eq(consultations.organizationId, organizationId),
+        sql`${consultations.deletedAt} IS NULL`
+      )
+    );
+}
+
+export async function listDeletedConsultations(params?: {
+  organizationId?: number | null;
+  limit?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const organizationId = requireOrganizationId(params?.organizationId);
+  const limit = Math.min(Math.max(Number(params?.limit || 100), 1), 300);
+
+  return db
+    .select()
+    .from(consultations)
+    .where(
+      and(
+        eq(consultations.organizationId, organizationId),
+        sql`${consultations.deletedAt} IS NOT NULL`
+      )
+    )
+    .orderBy(desc(consultations.deletedAt))
+    .limit(limit);
+}
+
+export async function restoreConsultation(params: {
+  id: number;
+  organizationId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  await db
+    .update(consultations)
+    .set({
+      deletedAt: null,
+      deletedBy: null,
+    } as any)
+    .where(
+      and(
+        eq(consultations.id, params.id),
+        eq(consultations.organizationId, organizationId),
+        sql`${consultations.deletedAt} IS NOT NULL`
+      )
+    );
+
+  await db
+    .update(students)
+    .set({
+      deletedAt: null,
+      deletedBy: null,
+    } as any)
+    .where(
+      and(
+        eq(students.consultationId, params.id),
+        eq(students.organizationId, organizationId),
+        sql`${students.deletedAt} IS NOT NULL`
+      )
+    );
+}
+
+export async function softDeleteStudent(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+    deletedBy?: number | null;
+  }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params?.organizationId);
+  const deletedBy = params?.deletedBy ? Number(params.deletedBy) : null;
+
+  await db
+    .update(students)
+    .set({
+      deletedAt: new Date(),
+      deletedBy,
+    } as any)
+    .where(
+      and(
+        eq(students.id, id),
+        eq(students.organizationId, organizationId),
+        sql`${students.deletedAt} IS NULL`
       )
     );
 }
@@ -2524,18 +3209,17 @@ export async function getStudentByConsultationId(
   const db = await getDb();
   if (!db) return undefined;
 
-  const organizationId = Number(params?.organizationId || 0);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const result = await db
     .select()
     .from(students)
     .where(
-      organizationId > 0
-        ? and(
-            eq(students.consultationId, consultationId),
-            eq(students.organizationId, organizationId)
-          )
-        : eq(students.consultationId, consultationId)
+      and(
+  eq(students.consultationId, consultationId),
+  eq(students.organizationId, organizationId),
+  sql`${students.deletedAt} IS NULL`
+)
     )
     .limit(1);
 
@@ -2551,7 +3235,7 @@ export async function syncStudentFromConsultation(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const consultation = await getConsultation(consultationId, {
     organizationId,
@@ -2612,7 +3296,7 @@ export async function createNotification(data: InsertNotification & {
   if (!db) throw new Error("DB not available");
 
   const result: any = await db.insert(notifications).values({
-  organizationId: Number((data as any).organizationId || 1),
+  organizationId: requireOrganizationId((data as any).organizationId),
   type: "lead",
   isRead: false,
   title: data.title ?? null,
@@ -2633,7 +3317,7 @@ export async function listNotifications(
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   return db
     .select()
@@ -2657,7 +3341,7 @@ export async function createNoticeNotifications(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params.organizationId || 1);
+  const organizationId = requireOrganizationId(params.organizationId);
 
 const allUsers = await getAllUsersDetailed({
   organizationId,
@@ -2712,7 +3396,7 @@ export async function markNotificationRead(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .update(notifications)
@@ -2735,7 +3419,7 @@ export async function markAllNotificationsRead(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .update(notifications)
@@ -2776,7 +3460,7 @@ export async function markScheduleNotified(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   await db.execute(sql`
     UPDATE schedules
@@ -2798,7 +3482,7 @@ export async function createScheduleNotifications() {
   let createdCount = 0;
 
   for (const item of schedules) {
-    const organizationId = Number(item.organizationId || 1);
+    const organizationId = requireOrganizationId(item.organizationId);
 
     const title = String(item.title ?? "일정");
     const message =
@@ -2883,7 +3567,7 @@ export async function getApprovalPrintSettings(params?: {
   const db = await getDb();
   if (!db) return null;
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const result = await db
     .select()
@@ -2912,7 +3596,7 @@ export async function saveApprovalPrintSettings(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number((data as any).organizationId || 1);
+  const organizationId = requireOrganizationId((data as any).organizationId);
 
   const existing = await db
     .select()
@@ -2964,7 +3648,7 @@ export async function listApprovalFormFieldSettings(
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const [rows] = await db.execute(sql`
     SELECT *
@@ -2986,7 +3670,7 @@ export async function saveApprovalFormFieldSettings(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params.organizationId || 1);
+  const organizationId = requireOrganizationId(params.organizationId);
 
   await db.execute(sql`
     DELETE FROM approval_form_field_settings
@@ -3035,7 +3719,7 @@ export async function upsertDeviceToken(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(data.organizationId || 1);
+  const organizationId = requireOrganizationId(data.organizationId);
 
   const existing = await db
     .select()
@@ -3084,7 +3768,7 @@ export async function listActiveDeviceTokensByUserId(
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   return db
     .select()
@@ -3104,7 +3788,7 @@ export async function listActiveExpoPushTokensByUserId(
   params?: { organizationId?: number | null }
 ) {
   const rows = await listActiveDeviceTokensByUserId(userId, {
-    organizationId: Number(params?.organizationId || 1),
+    organizationId: requireOrganizationId(params?.organizationId),
   });
 
   return (rows || [])
@@ -3122,11 +3806,11 @@ export async function listStudents(
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
 const assigneeFilter = assigneeId
-  ? sql`WHERE s.organizationId = ${organizationId} AND s.assigneeId = ${assigneeId}`
-  : sql`WHERE s.organizationId = ${organizationId}`;
+  ? sql`WHERE s.organizationId = ${organizationId} AND s.assigneeId = ${assigneeId} AND s.deletedAt IS NULL`
+  : sql`WHERE s.organizationId = ${organizationId} AND s.deletedAt IS NULL`;
 
   const [rows] = await db.execute(sql`
   SELECT s.*,
@@ -3233,8 +3917,17 @@ const assigneeFilter = assigneeId
       LIMIT 1
     ) as firstActualPaymentDate,
 
-    (SELECT p.practiceStatus FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceStatus,
-    (SELECT p.hasPractice FROM plans p WHERE p.studentId = s.id LIMIT 1) as hasPractice,
+    (SELECT p.practiceStatus
+ FROM plans p
+ WHERE p.studentId = s.id
+   AND p.organizationId = s.organizationId
+ LIMIT 1) as practiceStatus,
+
+(SELECT p.hasPractice
+ FROM plans p
+ WHERE p.studentId = s.id
+   AND p.organizationId = s.organizationId
+ LIMIT 1) as hasPractice,
 COALESCE(
   (SELECT COUNT(*)
    FROM semesters semc
@@ -3265,18 +3958,17 @@ export async function getStudent(
   const db = await getDb();
   if (!db) return undefined;
 
-  const organizationId = Number(params?.organizationId || 0);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const result = await db
     .select()
     .from(students)
     .where(
-      organizationId > 0
-        ? and(
-            eq(students.id, id),
-            eq(students.organizationId, organizationId)
-          )
-        : eq(students.id, id)
+      and(
+  eq(students.id, id),
+  eq(students.organizationId, organizationId),
+  sql`${students.deletedAt} IS NULL`
+)
     )
     .limit(1);
 
@@ -3288,7 +3980,7 @@ export async function createStudent(data: InsertStudent) {
   if (!db) throw new Error("DB not available");
 
   const result = await db.insert(students).values({
-  organizationId: Number((data as any).organizationId || 1),
+  organizationId: requireOrganizationId((data as any).organizationId),
   ...data,
 } as any);
   return getInsertId(result);
@@ -3304,7 +3996,7 @@ export async function updateStudent(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .update(students)
@@ -3352,13 +4044,22 @@ export async function updateStudentAddressAndCoords(params: {
     .where(
   and(
     eq(students.id, params.studentId),
-    eq(students.organizationId, Number(params.organizationId || 1))
+    eq(students.organizationId, requireOrganizationId(params.organizationId))
   )
 );
 }
 
-export async function deleteStudent(id: number) {
-  throw new Error("학생 삭제는 상담 DB에서만 가능합니다.");
+export async function deleteStudent(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+    deletedBy?: number | null;
+  }
+) {
+  return softDeleteStudent(id, {
+    organizationId: params?.organizationId,
+    deletedBy: params?.deletedBy,
+  });
 }
 
 export async function deleteStudentCascadeById(
@@ -3367,7 +4068,7 @@ export async function deleteStudentCascadeById(
 ) {
   const db = await getDb();
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   if (!db) throw new Error("DB not available");
 
@@ -3555,18 +4256,16 @@ export async function listSemesters(
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 0);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const rows = await db
     .select()
     .from(semesters)
     .where(
-      organizationId > 0
-        ? and(
-            eq(semesters.studentId, studentId),
-            eq(semesters.organizationId, organizationId)
-          )
-        : eq(semesters.studentId, studentId)
+      and(
+        eq(semesters.studentId, studentId),
+        eq(semesters.organizationId, organizationId)
+      )
     )
     .orderBy(semesters.semesterOrder);
 
@@ -3583,18 +4282,16 @@ export async function getSemester(
   const db = await getDb();
   if (!db) return undefined;
 
-  const organizationId = Number(params?.organizationId || 0);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const result = await db
     .select()
     .from(semesters)
     .where(
-      organizationId > 0
-        ? and(
-            eq(semesters.id, id),
-            eq(semesters.organizationId, organizationId)
-          )
-        : eq(semesters.id, id)
+      and(
+        eq(semesters.id, id),
+        eq(semesters.organizationId, organizationId)
+      )
     )
     .limit(1);
 
@@ -3618,7 +4315,7 @@ export async function createSemester(data: InsertSemester) {
   };
 
   if (!(data as any).primaryCourse || !(data as any).registeredCoursesJson) {
-    const organizationId = Number((data as any).organizationId || 1);
+    const organizationId = requireOrganizationId((data as any).organizationId);
 
 const student = await getStudent(Number((data as any).studentId), {
   organizationId,
@@ -3645,7 +4342,7 @@ export async function updateSemester(id: number, data: Partial<InsertSemester> &
 
   const nextData: any = { ...data };
 
-const organizationId = Number((data as any).organizationId || 1);
+const organizationId = requireOrganizationId((data as any).organizationId);
 
 if ((data as any).approvalStatus !== undefined) {
   nextData.approvalStatus = (data as any).approvalStatus;
@@ -3770,7 +4467,7 @@ export async function deleteSemester(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await cancelSettlementItemBySource({
   organizationId,
@@ -3919,7 +4616,7 @@ export async function getPlan(
 
   if (!db) return null;
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const result = await db
     .select()
@@ -3944,11 +4641,11 @@ export async function upsertPlan(data: InsertPlan) {
   validatePlanSummaryCounts(data);
 
   const existing = await getPlan(data.studentId, {
-  organizationId: Number((data as any).organizationId || 1),
+  organizationId: requireOrganizationId((data as any).organizationId),
 });
 
   if (existing) {
-  const organizationId = Number((data as any).organizationId || 1);
+  const organizationId = requireOrganizationId((data as any).organizationId);
 
   await db
     .update(plans)
@@ -3975,7 +4672,7 @@ export async function listRefunds(
   const db = await getDb();
   if (!db) return [];
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   if (assigneeId) {
     return db
@@ -4004,7 +4701,7 @@ export async function listRefundsByStudent(
   const db = await getDb();
   if (!db) return [];
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   return db
     .select()
@@ -4025,7 +4722,7 @@ export async function listApprovedRefundsByStudent(
   const db = await getDb();
   if (!db) return [];
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   return db
     .select()
@@ -4046,7 +4743,7 @@ export async function listPendingRefunds(params?: {
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const [rows] = await db.execute(sql`
     SELECT
@@ -4088,7 +4785,7 @@ export async function updateRefund(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .update(refunds)
@@ -4109,7 +4806,7 @@ export async function approveRefund(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .update(refunds)
@@ -4172,7 +4869,7 @@ export async function rejectRefund(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .update(refunds)
@@ -4197,7 +4894,7 @@ export async function deleteRefund(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .delete(refunds)
@@ -4405,7 +5102,7 @@ export async function cancelSettlementItemBySource(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-const organizationId = Number(params.organizationId || 1);
+const organizationId = requireOrganizationId(params.organizationId);
 
   const exists = await db
     .select()
@@ -4624,7 +5321,7 @@ export async function syncPrivateCertificateSettlementItemByRequestId(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const rows = await db
     .select({
@@ -4780,7 +5477,7 @@ export async function syncPracticeSupportSettlementItemByRequestId(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const rows = await db
     .select()
@@ -4844,7 +5541,7 @@ export async function backfillSettlementItems(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   let subjectProcessed = 0;
   let subjectSuccess = 0;
@@ -4974,7 +5671,7 @@ export async function syncSubjectSettlementItemBySemesterId(
 ) {
   const db = await getDb();
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   if (!db) throw new Error("DB not available");
 
@@ -5212,7 +5909,7 @@ export async function getDashboardStats(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
   if (!db) {
     return {
       monthConsultationCount: 0,
@@ -5526,7 +6223,7 @@ export async function getMonthSalesEntries(
   }
 
   const { monthStart, monthEnd } = getKSTMonthRange();
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const conditions = [
 eq(settlementItems.organizationId, organizationId),
@@ -6013,7 +6710,7 @@ export async function getStudentPaymentSummary(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   if (!db) {
     return {
@@ -6095,7 +6792,7 @@ export async function cleanupOrphanSettlementItems(params?: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const summary = {
     checkedSettlementItems: 0,
@@ -6511,7 +7208,7 @@ export async function getSettlementSettings(params?: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const [rows] = await db.execute(sql`
     SELECT *
@@ -6531,7 +7228,7 @@ export async function saveSettlementSettings(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(data.organizationId || 1);
+  const organizationId = requireOrganizationId(data.organizationId);
 
   const [rows] = await db.execute(sql`
     SELECT id
@@ -6574,31 +7271,37 @@ organizationId?: number | null;
   const start = new Date(params.year, params.month - 1, 1);
   const end = new Date(params.year, params.month, 1);
 const settings = await getSettlementSettings({
-  organizationId: Number(params.organizationId || 1),
+  organizationId: requireOrganizationId(params.organizationId),
 });
 
-    const [profileRows] = await db.execute(sql`
-    SELECT
-      u.id,
-      u.name,
-      u.username,
-      u.role,
-      u.bankName,
-      u.bankAccount,
-      map.teamId,
-      map.positionId,
-      t.name AS teamName,
-      p.name AS positionName
-    FROM users u
-    LEFT JOIN user_org_mappings map
-      ON map.userId = u.id
-    LEFT JOIN teams t
-      ON t.id = map.teamId
-    LEFT JOIN positions p
-      ON p.id = map.positionId
-    WHERE u.id = ${params.assigneeId}
-    LIMIT 1
-  `);
+    const organizationId = requireOrganizationId(params.organizationId);
+
+const [profileRows] = await db.execute(sql`
+  SELECT
+    u.id,
+    u.name,
+    u.username,
+    u.role,
+    u.bankName,
+    u.bankAccount,
+    map.teamId,
+    map.positionId,
+    t.name AS teamName,
+    p.name AS positionName
+  FROM users u
+  LEFT JOIN user_org_mappings map
+    ON map.userId = u.id
+   AND map.organizationId = ${organizationId}
+  LEFT JOIN teams t
+    ON t.id = map.teamId
+   AND t.organizationId = ${organizationId}
+  LEFT JOIN positions p
+    ON p.id = map.positionId
+   AND p.organizationId = ${organizationId}
+  WHERE u.id = ${params.assigneeId}
+    AND u.organizationId = ${organizationId}
+  LIMIT 1
+`);
 
   const profile = (profileRows as any[])?.[0];
   if (!profile) {
@@ -6606,7 +7309,7 @@ const settings = await getSettlementSettings({
   }
 
   const branding = await getBrandingSettings({
-  organizationId: Number(params.organizationId || 1),
+  organizationId: requireOrganizationId(params.organizationId),
 });
 
   const payoutDay = Math.max(
@@ -6637,9 +7340,12 @@ s.institutionName,
       s.occurredAt,
       st.clientName
     FROM settlement_items s
-    LEFT JOIN students st
-      ON st.id = s.studentId
-    WHERE s.assigneeId = ${params.assigneeId}
+   LEFT JOIN students st
+  ON st.id = s.studentId
+ AND st.organizationId = ${requireOrganizationId(params.organizationId)}
+
+WHERE s.organizationId = ${requireOrganizationId(params.organizationId)}
+  AND s.assigneeId = ${params.assigneeId}
       AND s.occurredAt >= ${start}
       AND s.occurredAt < ${end}
       AND s.settlementStatus = 'confirmed'
@@ -6763,7 +7469,7 @@ export async function findDuplicatePlanSubject(params: {
   excludeId?: number;
   excludeSemesterNo?: number;
 }) {
-  const organizationId = Number(params.organizationId || 1);
+  const organizationId = requireOrganizationId(params.organizationId);
 
   const rows = await listPlanSemesters(params.studentId, {
     organizationId,
@@ -6802,13 +7508,13 @@ organizationId?: number | null;
   if (!requirementType) return;
 
   const plan = await getPlan(params.studentId, {
-  organizationId: Number(params?.organizationId || 1),
+  organizationId: requireOrganizationId(params?.organizationId),
 })
 ;
   if (!plan) return;
 
   const rows = await listPlanSemesters(params.studentId, {
-  organizationId: Number((params as any)?.organizationId || 1),
+  organizationId: requireOrganizationId((params as any)?.organizationId),
 });
 
   const filteredRows = rows.filter((row: any) => {
@@ -6846,7 +7552,7 @@ export async function listPlanSemesters(
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   return db
     .select()
@@ -6864,7 +7570,7 @@ export async function createPlanSemester(data: InsertPlanSemester) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number((data as any).organizationId || 1);
+  const organizationId = requireOrganizationId((data as any).organizationId);
 
   const duplicate = await findDuplicatePlanSubject({
     studentId: Number(data.studentId),
@@ -6902,7 +7608,7 @@ export async function updatePlanSemester(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const current = await db
     .select()
@@ -6965,7 +7671,7 @@ export async function deletePlanSemester(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .delete(planSemesters)
@@ -6986,7 +7692,7 @@ export async function syncPlanSemestersByCount(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const rows = await db
     .select()
@@ -7042,7 +7748,7 @@ export async function listTransferSubjects(
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   return db
     .select()
@@ -7060,7 +7766,7 @@ export async function createTransferSubject(data: InsertTransferSubject) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number((data as any).organizationId || 1);
+  const organizationId = requireOrganizationId((data as any).organizationId);
 
   const result: any = await db.insert(transferSubjects).values({
     ...data,
@@ -7078,7 +7784,7 @@ export async function updateTransferSubject(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .update(transferSubjects)
@@ -7098,7 +7804,7 @@ export async function deleteTransferSubject(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .delete(transferSubjects)
@@ -7117,7 +7823,7 @@ export async function bulkCreateTransferSubjects(dataList: InsertTransferSubject
 
   const normalized = dataList.map((row: any) => ({
     ...row,
-    organizationId: Number(row.organizationId || 1),
+    organizationId: requireOrganizationId(row.organizationId),
   }));
 
   const result = await db.insert(transferSubjects).values(normalized as any);
@@ -7131,7 +7837,7 @@ export async function checkAndAutoComplete(
 ) {
   const db = await getDb();
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   if (!db) return;
 
@@ -7162,7 +7868,7 @@ export async function listEducationInstitutions(params?: {
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   return db
     .select()
@@ -7189,7 +7895,7 @@ organizationId?: number | null;
   if (!db) throw new Error("DB 연결 실패");
 
   const result = await db.insert(educationInstitutions).values({
-organizationId: Number(data.organizationId || 1),
+organizationId: requireOrganizationId(data.organizationId),
     name: data.name,
     isActive: data.isActive ?? true,
     sortOrder: data.sortOrder ?? 0,
@@ -7203,20 +7909,35 @@ organizationId: Number(data.organizationId || 1),
 
 export async function reassignConsultationAndLinkedStudent(
   consultationId: number,
-  assigneeId: number
+  assigneeId: number,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = requireOrganizationId(params?.organizationId);
+
   await db
     .update(consultations)
     .set({ assigneeId } as any)
-    .where(eq(consultations.id, consultationId));
+    .where(
+  and(
+    eq(consultations.id, consultationId),
+    eq(consultations.organizationId, organizationId)
+  )
+);
 
   await db
     .update(students)
     .set({ assigneeId } as any)
-    .where(eq(students.consultationId, consultationId));
+    .where(
+  and(
+    eq(students.consultationId, consultationId),
+    eq(students.organizationId, organizationId)
+  )
+);
 }
 
 export async function listEducationInstitutionPositionRates(
@@ -7228,7 +7949,7 @@ export async function listEducationInstitutionPositionRates(
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const whereConditions = [
     eq(educationInstitutionPositionRates.organizationId, organizationId),
@@ -7294,7 +8015,7 @@ export async function getEducationInstitutionPositionRate(
   const db = await getDb();
   if (!db) return null;
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const rows = await db
     .select()
@@ -7325,7 +8046,7 @@ export async function upsertEducationInstitutionPositionRate(data: {
   const db = await getDb();
   if (!db) throw new Error("DB 연결 실패");
 
-  const organizationId = Number(data.organizationId || 1);
+  const organizationId = requireOrganizationId(data.organizationId);
 
   const exists = await db
     .select()
@@ -7379,7 +8100,7 @@ export async function deleteEducationInstitutionPositionRate(
   const db = await getDb();
   if (!db) throw new Error("DB 연결 실패");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .update(educationInstitutionPositionRates)
@@ -7392,14 +8113,26 @@ export async function deleteEducationInstitutionPositionRate(
     );
 }
 
-export async function getEducationInstitutionById(id: number) {
+export async function getEducationInstitutionById(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return undefined;
+
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const rows = await db
     .select()
     .from(educationInstitutions)
-    .where(eq(educationInstitutions.id, id))
+    .where(
+      and(
+        eq(educationInstitutions.id, id),
+        eq(educationInstitutions.organizationId, organizationId)
+      )
+    )
     .limit(1);
 
   return rows[0];
@@ -7407,20 +8140,35 @@ export async function getEducationInstitutionById(id: number) {
 
 export async function bulkReassignConsultationsAndLinkedStudents(
   fromAssigneeId: number,
-  toAssigneeId: number
+  toAssigneeId: number,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = requireOrganizationId(params?.organizationId);
+
   await db
     .update(consultations)
     .set({ assigneeId: toAssigneeId } as any)
-    .where(eq(consultations.assigneeId, fromAssigneeId));
+    .where(
+  and(
+    eq(consultations.assigneeId, fromAssigneeId),
+    eq(consultations.organizationId, organizationId)
+  )
+);
 
   await db
     .update(students)
     .set({ assigneeId: toAssigneeId } as any)
-    .where(eq(students.assigneeId, fromAssigneeId));
+    .where(
+  and(
+    eq(students.assigneeId, fromAssigneeId),
+    eq(students.organizationId, organizationId)
+  )
+);
 }
 
 export async function updateEducationInstitution(
@@ -7452,7 +8200,7 @@ export async function updateEducationInstitution(
 
   if (Object.keys(payload).length === 0) return;
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .update(educationInstitutions)
@@ -7466,14 +8214,25 @@ const organizationId = Number(params?.organizationId || 1);
 }
 
 // ─── Transfer Attachments ────────────────────────────────────────────
-export async function listTransferAttachments(studentId: number) {
+export async function listTransferAttachments(
+  studentId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return [];
+
+const organizationId = requireOrganizationId(params?.organizationId);
 
   return db
     .select()
     .from(transferAttachments)
-    .where(eq(transferAttachments.studentId, studentId))
+    .innerJoin(students, eq(students.id, transferAttachments.studentId))
+    .where(
+      and(
+        eq(transferAttachments.studentId, studentId),
+        eq(students.organizationId, organizationId)
+      )
+    )
     .orderBy(transferAttachments.sortOrder, transferAttachments.id);
 }
 
@@ -7487,17 +8246,60 @@ export async function createTransferAttachment(data: InsertTransferAttachment) {
 
 export async function updateTransferAttachment(
   id: number,
-  data: Partial<InsertTransferAttachment>
+  data: Partial<InsertTransferAttachment>,
+  params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.update(transferAttachments).set(data as any).where(eq(transferAttachments.id, id));
+const organizationId = requireOrganizationId(params?.organizationId);
+
+  const rows = await db
+    .select({ id: transferAttachments.id })
+    .from(transferAttachments)
+    .innerJoin(students, eq(students.id, transferAttachments.studentId))
+    .where(
+      and(
+        eq(transferAttachments.id, id),
+        eq(students.organizationId, organizationId)
+      )
+    )
+    .limit(1);
+
+  if (!rows[0]) {
+    throw new Error("첨부파일을 찾을 수 없습니다.");
+  }
+
+  await db
+    .update(transferAttachments)
+    .set(data as any)
+    .where(eq(transferAttachments.id, id));
 }
 
-export async function deleteTransferAttachment(id: number) {
+export async function deleteTransferAttachment(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+const organizationId = requireOrganizationId(params?.organizationId);
+
+  const rows = await db
+    .select({ id: transferAttachments.id })
+    .from(transferAttachments)
+    .innerJoin(students, eq(students.id, transferAttachments.studentId))
+    .where(
+      and(
+        eq(transferAttachments.id, id),
+        eq(students.organizationId, organizationId)
+      )
+    )
+    .limit(1);
+
+  if (!rows[0]) {
+    throw new Error("첨부파일을 찾을 수 없습니다.");
+  }
 
   await db.delete(transferAttachments).where(eq(transferAttachments.id, id));
 }
@@ -7902,7 +8704,7 @@ export async function listPrivateCertificateRequests(
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const rows = await db
     .select({
@@ -7967,7 +8769,7 @@ export async function listPrivateCertificateRequestsByStudent(
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const rows = await db
     .select({
@@ -8087,7 +8889,7 @@ export async function updatePrivateCertificateRequest(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   try {
     console.log("[privateCertificate.update] id =", id);
@@ -8128,7 +8930,7 @@ export async function deletePrivateCertificateRequest(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await cancelSettlementItemBySource({
     organizationId,
@@ -8156,7 +8958,7 @@ export async function requestPrivateCertificateRefund(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-const organizationId = Number(params.organizationId || 1);
+const organizationId = requireOrganizationId(params.organizationId);
 
   const rows = await db
     .select()
@@ -8204,7 +9006,7 @@ export async function approvePrivateCertificateRefund(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-const organizationId = Number(params.organizationId || 1);
+const organizationId = requireOrganizationId(params.organizationId);
 
   const rows = await db
     .select({
@@ -8279,7 +9081,7 @@ export async function listPracticeSupportRequests(params?: {
   const db = await getDb();
   if (!db) return [];
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const conditions: any[] = [
   sql`s.organizationId = ${organizationId}`,
@@ -8527,7 +9329,7 @@ export async function getPracticeSupportRequest(
   const db = await getDb();
   if (!db) return undefined;
 
-const organizationId = Number(params?.organizationId || 0);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const [rows] = await db.execute(sql`
     SELECT
@@ -8580,8 +9382,8 @@ const organizationId = Number(params?.organizationId || 0);
     LEFT JOIN users u
       ON u.id = COALESCE(psr.assigneeId, s.assigneeId)
     WHERE psr.id = ${id}
-  AND (${organizationId} = 0 OR psr.organizationId = ${organizationId})
-  AND (${organizationId} = 0 OR s.organizationId = ${organizationId})
+  AND psr.organizationId = ${organizationId}
+  AND s.organizationId = ${organizationId}
 LIMIT 1
   `);
 
@@ -8663,12 +9465,12 @@ export async function updatePracticeSupportRequest(
     .where(
   and(
     eq(practiceSupportRequests.id, id),
-    eq(practiceSupportRequests.organizationId, Number(params?.organizationId || 1))
+    eq(practiceSupportRequests.organizationId, requireOrganizationId(params?.organizationId))
   )
 );
 
   await syncPracticeSupportSettlementItemByRequestId(id, undefined, {
-  organizationId: Number(params?.organizationId || 1),
+  organizationId: requireOrganizationId(params?.organizationId),
 });
 }
 
@@ -8681,7 +9483,7 @@ export async function deletePracticeSupportRequest(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await cancelSettlementItemBySource({
   organizationId,
@@ -8709,7 +9511,7 @@ export async function requestPracticeSupportRefund(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-const organizationId = Number(params.organizationId || 1);
+const organizationId = requireOrganizationId(params.organizationId);
 
   const rows = await db
     .select()
@@ -8757,7 +9559,7 @@ export async function approvePracticeSupportRefund(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-const organizationId = Number(params.organizationId || 1);
+const organizationId = requireOrganizationId(params.organizationId);
 
   const rows = await db
     .select()
@@ -8810,6 +9612,7 @@ const organizationId = Number(params.organizationId || 1);
 }
 
 export async function upsertPracticeSupportRequestByStudent(params: {
+  organizationId?: number | null;
   studentId: number;
   semesterId?: number | null;
   assigneeId: number;
@@ -8829,16 +9632,24 @@ export async function upsertPracticeSupportRequestByStudent(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = requireOrganizationId(params.organizationId);
+
   const existing = await db
   .select()
   .from(practiceSupportRequests)
-  .where(eq(practiceSupportRequests.studentId, params.studentId))
+  .where(
+  and(
+    eq(practiceSupportRequests.organizationId, organizationId),
+    eq(practiceSupportRequests.studentId, params.studentId)
+  )
+)
   .limit(1);
 
   const nextCoordinationStatus =
   params.coordinationStatus ?? "미섭외";
 
 const payload: any = {
+organizationId,
   studentId: params.studentId,
   semesterId: null,
   assigneeId: params.assigneeId,
@@ -8862,7 +9673,12 @@ const payload: any = {
     await db
       .update(practiceSupportRequests)
       .set(payload)
-      .where(eq(practiceSupportRequests.id, existing[0].id));
+      .where(
+  and(
+    eq(practiceSupportRequests.id, existing[0].id),
+    eq(practiceSupportRequests.organizationId, organizationId)
+  )
+);
 
     if (params.semesterId) {
      await db
@@ -8871,7 +9687,12 @@ const payload: any = {
     practiceStatus: nextCoordinationStatus,
     practiceSupportRequestId: existing[0].id,
   } as any)
-  .where(eq(semesters.id, params.semesterId));
+  .where(
+  and(
+    eq(semesters.id, params.semesterId),
+    eq(semesters.organizationId, organizationId)
+  )
+);
     }
 
     await db
@@ -8881,7 +9702,12 @@ const payload: any = {
     practiceHours: params.practiceHours ?? null,
     practiceStatus: nextCoordinationStatus,
   } as any)
-  .where(eq(plans.studentId, params.studentId));
+  .where(
+  and(
+    eq(plans.studentId, params.studentId),
+    eq(plans.organizationId, organizationId)
+  )
+);
 
     return existing[0].id;
   }
@@ -8896,7 +9722,12 @@ const payload: any = {
     practiceStatus: nextCoordinationStatus,
     practiceSupportRequestId: insertId,
   } as any)
-  .where(eq(semesters.id, params.semesterId));
+  .where(
+  and(
+    eq(semesters.id, params.semesterId),
+    eq(semesters.organizationId, organizationId)
+  )
+);
   }
 
   await db
@@ -8906,22 +9737,35 @@ const payload: any = {
     practiceHours: params.practiceHours ?? null,
     practiceStatus: nextCoordinationStatus,
   } as any)
-  .where(eq(plans.studentId, params.studentId));
+  .where(
+  and(
+    eq(plans.studentId, params.studentId),
+    eq(plans.organizationId, organizationId)
+  )
+);
 
   return insertId;
 }
 
 export async function updatePracticeSupportStatusAndSyncSemester(params: {
+  organizationId?: number | null;
   practiceSupportRequestId: number;
   coordinationStatus: "미섭외" | "섭외중" | "섭외완료";
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = requireOrganizationId(params.organizationId);
+
   const row = await db
     .select()
     .from(practiceSupportRequests)
-    .where(eq(practiceSupportRequests.id, params.practiceSupportRequestId))
+    .where(
+  and(
+    eq(practiceSupportRequests.id, params.practiceSupportRequestId),
+    eq(practiceSupportRequests.organizationId, organizationId)
+  )
+)
     .limit(1);
 
   const target = row[0];
@@ -8932,8 +9776,12 @@ export async function updatePracticeSupportStatusAndSyncSemester(params: {
     .set({
       coordinationStatus: params.coordinationStatus,
     } as any)
-    .where(eq(practiceSupportRequests.id, params.practiceSupportRequestId));
-
+    .where(
+  and(
+    eq(practiceSupportRequests.id, params.practiceSupportRequestId),
+    eq(practiceSupportRequests.organizationId, organizationId)
+  )
+);
   if (target.semesterId) {
     await db
       .update(semesters)
@@ -8941,7 +9789,12 @@ export async function updatePracticeSupportStatusAndSyncSemester(params: {
         practiceStatus: params.coordinationStatus,
         practiceSupportRequestId: target.id,
       } as any)
-      .where(eq(semesters.id, target.semesterId));
+      .where(
+  and(
+    eq(semesters.id, target.semesterId),
+    eq(semesters.organizationId, organizationId)
+  )
+);
   }
 
   await db
@@ -8949,28 +9802,46 @@ export async function updatePracticeSupportStatusAndSyncSemester(params: {
     .set({
       practiceStatus: params.coordinationStatus,
     } as any)
-    .where(eq(plans.studentId, target.studentId));
+    .where(
+  and(
+    eq(plans.studentId, target.studentId),
+    eq(plans.organizationId, organizationId)
+  )
+);
 
   return true;
 }
 
 export async function selectPracticeInstitutionForRequest(params: {
+  organizationId?: number | null;
   practiceSupportRequestId: number;
   institutionId: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = requireOrganizationId(params.organizationId);
+
   const requestRows = await db
     .select()
     .from(practiceSupportRequests)
-    .where(eq(practiceSupportRequests.id, params.practiceSupportRequestId))
+    .where(
+  and(
+    eq(practiceSupportRequests.id, params.practiceSupportRequestId),
+    eq(practiceSupportRequests.organizationId, organizationId)
+  )
+)
     .limit(1);
 
   const institutionRows = await db
     .select()
     .from(practiceInstitutions)
-    .where(eq(practiceInstitutions.id, params.institutionId))
+    .where(
+  and(
+    eq(practiceInstitutions.id, params.institutionId),
+    eq(practiceInstitutions.organizationId, organizationId)
+  )
+)
     .limit(1);
 
   const request = requestRows[0];
@@ -8981,7 +9852,9 @@ export async function selectPracticeInstitutionForRequest(params: {
 
   const updateData: any = {};
 
-  const student = await getStudent(request.studentId);
+  const student = await getStudent(request.studentId, {
+  organizationId,
+});
   const studentLat = toNullableNumber((student as any)?.latitude);
   const studentLng = toNullableNumber((student as any)?.longitude);
   const institutionLat = toNullableNumber((institution as any)?.latitude);
@@ -9018,15 +9891,27 @@ export async function selectPracticeInstitutionForRequest(params: {
   await db
     .update(practiceSupportRequests)
     .set(updateData)
-    .where(eq(practiceSupportRequests.id, params.practiceSupportRequestId));
+    .where(
+  and(
+    eq(practiceSupportRequests.id, params.practiceSupportRequestId),
+    eq(practiceSupportRequests.organizationId, organizationId)
+  )
+);
 
   return true;
 }
 
 // ─── Practice Institutions (실습기관/실습교육원 마스터) ──────────────
-export async function listPracticeListCategories(listType?: "education" | "institution") {
+export async function listPracticeListCategories(
+  listType?: "education" | "institution",
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return [];
+
+const organizationId = requireOrganizationId(params?.organizationId);
 
   if (listType) {
     return db
@@ -9034,9 +9919,10 @@ export async function listPracticeListCategories(listType?: "education" | "insti
       .from(practiceListCategories)
       .where(
         and(
-          eq(practiceListCategories.listType, listType),
-          eq(practiceListCategories.isActive, true)
-        )
+  eq(practiceListCategories.organizationId, organizationId),
+  eq(practiceListCategories.listType, listType),
+  eq(practiceListCategories.isActive, true)
+)
       )
       .orderBy(practiceListCategories.sortOrder, desc(practiceListCategories.createdAt));
   }
@@ -9044,16 +9930,28 @@ export async function listPracticeListCategories(listType?: "education" | "insti
   return db
     .select()
     .from(practiceListCategories)
-    .where(eq(practiceListCategories.isActive, true))
+    .where(
+  and(
+    eq(practiceListCategories.organizationId, organizationId),
+    eq(practiceListCategories.isActive, true)
+  )
+)
     .orderBy(practiceListCategories.sortOrder, desc(practiceListCategories.createdAt));
 }
 
-export async function createPracticeListCategory(data: InsertPracticeListCategory) {
+export async function createPracticeListCategory(
+  data: InsertPracticeListCategory & {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = requireOrganizationId(data.organizationId);
+
   const result: any = await db.insert(practiceListCategories).values({
     ...data,
+  organizationId,
     sortOrder: (data as any).sortOrder ?? 0,
     isActive: (data as any).isActive ?? true,
   });
@@ -9063,34 +9961,62 @@ export async function createPracticeListCategory(data: InsertPracticeListCategor
 
 export async function updatePracticeListCategory(
   id: number,
-  data: Partial<InsertPracticeListCategory>
+  data: Partial<InsertPracticeListCategory>,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = requireOrganizationId(params?.organizationId);
+
   await db
     .update(practiceListCategories)
     .set(data as any)
-    .where(eq(practiceListCategories.id, id));
+    .where(
+  and(
+    eq(practiceListCategories.id, id),
+    eq(practiceListCategories.organizationId, organizationId)
+  )
+);
 }
 
-export async function deletePracticeListCategory(id: number) {
+export async function deletePracticeListCategory(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = requireOrganizationId(params?.organizationId);
+
   await db
     .delete(practiceListCategories)
-    .where(eq(practiceListCategories.id, id));
+    .where(
+  and(
+    eq(practiceListCategories.id, id),
+    eq(practiceListCategories.organizationId, organizationId)
+  )
+);
 }
 
 export async function listPracticeInstitutions(params?: {
+  organizationId?: number | null;
   institutionType?: "education" | "institution";
   categoryId?: number;
 }) {
   const db = await getDb();
   if (!db) return [];
 
-  const conditions = [eq(practiceInstitutions.isActive, true)];
+const organizationId = requireOrganizationId(params?.organizationId);
+
+  const conditions = [
+  eq(practiceInstitutions.organizationId, organizationId),
+  eq(practiceInstitutions.isActive, true),
+];
 
   if (params?.institutionType) {
     conditions.push(
@@ -9112,14 +10038,26 @@ export async function listPracticeInstitutions(params?: {
     );
 }
 
-export async function getPracticeInstitution(id: number) {
+export async function getPracticeInstitution(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return undefined;
+
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const rows = await db
     .select()
     .from(practiceInstitutions)
-    .where(eq(practiceInstitutions.id, id))
+    .where(
+      and(
+        eq(practiceInstitutions.id, id),
+        eq(practiceInstitutions.organizationId, organizationId)
+      )
+    )
     .limit(1);
 
   return rows[0];
@@ -9140,120 +10078,163 @@ export async function createPracticeInstitution(data: InsertPracticeInstitution)
 
 export async function updatePracticeInstitution(
   id: number,
-  data: Partial<InsertPracticeInstitution>
+  data: Partial<InsertPracticeInstitution>,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = requireOrganizationId(params?.organizationId);
+
   await db
     .update(practiceInstitutions)
     .set(data as any)
-    .where(eq(practiceInstitutions.id, id));
+    .where(
+      and(
+        eq(practiceInstitutions.id, id),
+        eq(practiceInstitutions.organizationId, organizationId)
+      )
+    );
 }
 
-export async function deletePracticeInstitution(id: number) {
+export async function deletePracticeInstitution(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = requireOrganizationId(params?.organizationId);
+
   await db
     .delete(practiceInstitutions)
-    .where(eq(practiceInstitutions.id, id));
+    .where(
+      and(
+        eq(practiceInstitutions.id, id),
+        eq(practiceInstitutions.organizationId, organizationId)
+      )
+    );
 }
 
 export async function bulkCreatePracticeInstitutions(
   dataList: InsertPracticeInstitution[],
   options?: {
+    organizationId?: number | null;
     mode?: "append" | "replace";
     categoryId?: number | null;
   }
 ) {
-    const db = await getDb();
+  const db = await getDb();
   if (!db) throw new Error("DB not available");
   if (!dataList.length) return { success: true, count: 0 };
+
+  const organizationId = requireOrganizationId(options?.organizationId);
 
   if (options?.mode === "replace" && options?.categoryId) {
     await db
       .delete(practiceInstitutions)
-      .where(eq(practiceInstitutions.categoryId, options.categoryId));
+      .where(
+        and(
+          eq(practiceInstitutions.organizationId, organizationId),
+          eq(practiceInstitutions.categoryId, options.categoryId)
+        )
+      );
   }
 
-let createdCount = 0;
-let updatedCount = 0;
-const failedRows: Array<{ rowIndex: number; name?: string; address?: string; reason: string }> = [];
+  let createdCount = 0;
+  let updatedCount = 0;
+  const failedRows: Array<{
+    rowIndex: number;
+    name?: string;
+    address?: string;
+    reason: string;
+  }> = [];
 
   for (let idx = 0; idx < dataList.length; idx++) {
-  const row = dataList[idx];
+    const row = dataList[idx];
 
-  try {
-    const value = {
-  institutionType: row.institutionType ?? "institution",
-  categoryId: row.categoryId ?? null,
-  name: row.name.trim(),
-  representativeName: row.representativeName?.trim() || null,
-  phone: row.phone?.trim() || null,
-  address: row.address?.trim() || null,
-  detailAddress: row.detailAddress?.trim() || null,
-  price: row.price || "0",
-  latitude: row.latitude || null,
-  longitude: row.longitude || null,
-  availableCourse: row.availableCourse?.trim() || null,
-  memo: row.memo || null,
-  isActive: row.isActive ?? true,
-  sortOrder: row.sortOrder ?? idx,
-};
+    try {
+      const value = {
+        organizationId,
+        institutionType: row.institutionType ?? "institution",
+        categoryId: row.categoryId ?? options?.categoryId ?? null,
+        name: row.name.trim(),
+        representativeName: row.representativeName?.trim() || null,
+        phone: row.phone?.trim() || null,
+        address: row.address?.trim() || null,
+        detailAddress: row.detailAddress?.trim() || null,
+        price: row.price || "0",
+        latitude: row.latitude || null,
+        longitude: row.longitude || null,
+        availableCourse: row.availableCourse?.trim() || null,
+        memo: row.memo || null,
+        isActive: row.isActive ?? true,
+        sortOrder: row.sortOrder ?? idx,
+      };
 
-    if (!value.name) {
+      if (!value.name) {
+        failedRows.push({
+          rowIndex: idx + 2,
+          name: row.name,
+          address: row.address,
+          reason: "이름이 비어 있습니다.",
+        });
+        continue;
+      }
+
+      const existing = await db
+        .select()
+        .from(practiceInstitutions)
+        .where(
+          and(
+            eq(practiceInstitutions.organizationId, organizationId),
+            eq(practiceInstitutions.institutionType, value.institutionType),
+            eq(practiceInstitutions.categoryId, value.categoryId),
+            eq(practiceInstitutions.name, value.name),
+            eq(practiceInstitutions.address, value.address)
+          )
+        )
+        .limit(1);
+
+      if (existing[0]) {
+        await db
+          .update(practiceInstitutions)
+          .set(value as any)
+          .where(
+            and(
+              eq(practiceInstitutions.id, existing[0].id),
+              eq(practiceInstitutions.organizationId, organizationId)
+            )
+          );
+
+        updatedCount += 1;
+      } else {
+        await db.insert(practiceInstitutions).values(value as any);
+        createdCount += 1;
+      }
+    } catch (error: any) {
       failedRows.push({
         rowIndex: idx + 2,
         name: row.name,
         address: row.address,
-        reason: "이름이 비어 있습니다.",
+        reason: error?.message || "등록 중 오류가 발생했습니다.",
       });
-      continue;
     }
-
-    const existing = await db
-  .select()
-  .from(practiceInstitutions)
-  .where(
-    and(
-      eq(practiceInstitutions.institutionType, value.institutionType),
-      eq(practiceInstitutions.categoryId, value.categoryId),
-      eq(practiceInstitutions.name, value.name),
-      eq(practiceInstitutions.address, value.address)
-    )
-  )
-  .limit(1);
-
-    if (existing[0]) {
-      await db
-        .update(practiceInstitutions)
-        .set(value as any)
-        .where(eq(practiceInstitutions.id, existing[0].id));
-      updatedCount += 1;
-    } else {
-      await db.insert(practiceInstitutions).values(value as any);
-      createdCount += 1;
-    }
-  } catch (error: any) {
-    failedRows.push({
-      rowIndex: idx + 2,
-      name: row.name,
-      address: row.address,
-      reason: error?.message || "등록 중 오류가 발생했습니다.",
-    });
   }
-}
 
   return {
-  success: true,
-  mode: options?.mode ?? "append",
-  total: dataList.length,
-  created: createdCount,
-  updated: updatedCount,
-  failed: failedRows.length,
-  failedRows,
-};
+    success: true,
+    mode: options?.mode ?? "append",
+    total: dataList.length,
+    created: createdCount,
+    updated: updatedCount,
+    failed: failedRows.length,
+    failedRows,
+  };
 }
 
 export async function bulkDeactivatePracticeInstitutions(params: {
@@ -9293,9 +10274,16 @@ export async function bulkDeactivatePracticeInstitutions(params: {
 }
 
 
-export async function listPracticeEducationCenters(categoryId?: number) {
+export async function listPracticeEducationCenters(
+  categoryId?: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return [];
+
+const organizationId = requireOrganizationId(params?.organizationId);
 
   if (categoryId) {
     return db
@@ -9303,9 +10291,10 @@ export async function listPracticeEducationCenters(categoryId?: number) {
       .from(practiceEducationCenters)
       .where(
         and(
-          eq(practiceEducationCenters.isActive, true),
-          eq(practiceEducationCenters.categoryId, categoryId)
-        )
+  eq(practiceEducationCenters.organizationId, organizationId),
+  eq(practiceEducationCenters.isActive, true),
+  eq(practiceEducationCenters.categoryId, categoryId)
+)
       )
       .orderBy(practiceEducationCenters.sortOrder, desc(practiceEducationCenters.createdAt));
   }
@@ -9313,31 +10302,53 @@ export async function listPracticeEducationCenters(categoryId?: number) {
   return db
     .select()
     .from(practiceEducationCenters)
-    .where(eq(practiceEducationCenters.isActive, true))
+    .where(
+  and(
+    eq(practiceEducationCenters.organizationId, organizationId),
+    eq(practiceEducationCenters.isActive, true)
+  )
+)
     .orderBy(practiceEducationCenters.sortOrder, desc(practiceEducationCenters.createdAt));
 }
 
-export async function getPracticeEducationCenter(id: number) {
+export async function getPracticeEducationCenter(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return undefined;
+
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const rows = await db
     .select()
     .from(practiceEducationCenters)
-    .where(eq(practiceEducationCenters.id, id))
+    .where(
+      and(
+        eq(practiceEducationCenters.id, id),
+        eq(practiceEducationCenters.organizationId, organizationId)
+      )
+    )
     .limit(1);
 
   return rows[0];
 }
 
 export async function createPracticeEducationCenter(
-  data: InsertPracticeEducationCenter
+  data: InsertPracticeEducationCenter & {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = requireOrganizationId(data.organizationId);
+
   const result: any = await db.insert(practiceEducationCenters).values({
   ...data,
+  organizationId,
   feeAmount: (data as any).feeAmount ?? "0",
   isActive: (data as any).isActive ?? true,
   sortOrder: (data as any).sortOrder ?? 0,
@@ -9364,18 +10375,27 @@ export async function bulkCreatePracticeEducationCenters(
     sortOrder?: number;
   }>,
   options?: {
-    mode?: "append" | "replace";
-    categoryId?: number | null;
-  }
+  organizationId?: number | null;
+  mode?: "append" | "replace";
+  categoryId?: number | null;
+}
 ) {
     const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+const organizationId = requireOrganizationId(options?.organizationId);
+
   if (!rows.length) return { success: true, count: 0 };
 
   if (options?.mode === "replace" && options?.categoryId) {
     await db
       .delete(practiceEducationCenters)
-      .where(eq(practiceEducationCenters.categoryId, options.categoryId));
+      .where(
+  and(
+    eq(practiceEducationCenters.organizationId, organizationId),
+    eq(practiceEducationCenters.categoryId, options.categoryId)
+  )
+);
   }
 
   let createdCount = 0;
@@ -9387,6 +10407,7 @@ const failedRows: Array<{ rowIndex: number; name?: string; address?: string; rea
 
   try {
     const value = {
+organizationId,
       categoryId: row.categoryId ?? null,
       representativeName: row.representativeName?.trim() || null,
       availableCourse: row.availableCourse?.trim() || null,
@@ -9418,6 +10439,7 @@ const failedRows: Array<{ rowIndex: number; name?: string; address?: string; rea
       .from(practiceEducationCenters)
       .where(
         and(
+eq(practiceEducationCenters.organizationId, organizationId),
           eq(practiceEducationCenters.categoryId, value.categoryId),
           eq(practiceEducationCenters.name, value.name),
           eq(practiceEducationCenters.address, value.address)
@@ -9429,7 +10451,11 @@ const failedRows: Array<{ rowIndex: number; name?: string; address?: string; rea
       await db
         .update(practiceEducationCenters)
         .set(value as any)
-        .where(eq(practiceEducationCenters.id, existing[0].id));
+        .where(
+and(
+  eq(practiceEducationCenters.id, existing[0].id),
+  eq(practiceEducationCenters.organizationId, organizationId)
+);
       updatedCount += 1;
     } else {
       await db.insert(practiceEducationCenters).values(value as any);
@@ -9480,15 +10506,25 @@ export async function bulkDeactivatePracticeEducationCenters(params?: {
 
 export async function updatePracticeEducationCenter(
   id: number,
-  data: Partial<InsertPracticeEducationCenter>
+  data: Partial<InsertPracticeEducationCenter>,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = requireOrganizationId(params?.organizationId);
+
   await db
     .update(practiceEducationCenters)
     .set(data as any)
-    .where(eq(practiceEducationCenters.id, id));
+    .where(
+  and(
+    eq(practiceEducationCenters.id, id),
+    eq(practiceEducationCenters.organizationId, organizationId)
+  )
+);
 }
 
 type PracticeAvailabilityUpdateInput = {
@@ -9501,10 +10537,15 @@ type PracticeAvailabilityUpdateInput = {
 
 export async function updatePracticeInstitutionAvailability(
   id: number,
-  data: PracticeAvailabilityUpdateInput
+  data: PracticeAvailabilityUpdateInput,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .update(practiceInstitutions)
@@ -9515,15 +10556,25 @@ export async function updatePracticeInstitutionAvailability(
       inactiveEndDate: data.inactiveEndDate ?? null,
       hideOnMapWhenInactive: data.hideOnMapWhenInactive ?? true,
     } as any)
-    .where(eq(practiceInstitutions.id, id));
+    .where(
+  and(
+    eq(practiceInstitutions.id, id),
+    eq(practiceInstitutions.organizationId, organizationId)
+  )
+);
 }
 
 export async function updatePracticeEducationCenterAvailability(
   id: number,
-  data: PracticeAvailabilityUpdateInput
+  data: PracticeAvailabilityUpdateInput,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .update(practiceEducationCenters)
@@ -9534,16 +10585,33 @@ export async function updatePracticeEducationCenterAvailability(
       inactiveEndDate: data.inactiveEndDate ?? null,
       hideOnMapWhenInactive: data.hideOnMapWhenInactive ?? true,
     } as any)
-    .where(eq(practiceEducationCenters.id, id));
+    .where(
+  and(
+    eq(practiceEducationCenters.id, id),
+    eq(practiceEducationCenters.organizationId, organizationId)
+  )
+);
 }
 
-export async function deletePracticeEducationCenter(id: number) {
+export async function deletePracticeEducationCenter(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+const organizationId = requireOrganizationId(params?.organizationId);
+
   await db
     .delete(practiceEducationCenters)
-    .where(eq(practiceEducationCenters.id, id));
+    .where(
+  and(
+    eq(practiceEducationCenters.id, id),
+    eq(practiceEducationCenters.organizationId, organizationId)
+  )
+);
 }
 
 export async function listNearbyPracticeInstitutions(params: {
@@ -9554,7 +10622,7 @@ export async function listNearbyPracticeInstitutions(params: {
 }) {
   const db = await getDb();
 
-const organizationId = Number(params.organizationId || 1);
+const organizationId = requireOrganizationId(params.organizationId);
 
   if (!db) return [];
 
@@ -9725,7 +10793,7 @@ export async function listTeams(params?: { organizationId?: number | null }) {
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   return db
     .select()
@@ -9741,7 +10809,7 @@ export async function getTeam(
   const db = await getDb();
   if (!db) return undefined;
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const result = await db
     .select()
@@ -9766,7 +10834,7 @@ export async function createTeam(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(data.organizationId || 1);
+  const organizationId = requireOrganizationId(data.organizationId);
 
   const result: any = await db.insert(teams).values({
     organizationId,
@@ -9790,7 +10858,7 @@ export async function updateTeam(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const payload: Record<string, any> = {};
   if (data.name !== undefined) payload.name = normalizeNullableString(data.name);
@@ -9817,7 +10885,7 @@ export async function deleteTeam(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .delete(teams)
@@ -9837,7 +10905,7 @@ export async function listPositions(params?: { organizationId?: number | null })
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   return db
     .select()
@@ -9853,7 +10921,7 @@ export async function getPosition(
   const db = await getDb();
   if (!db) return undefined;
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const result = await db
     .select()
@@ -9876,7 +10944,7 @@ export async function getPositionById(
   const db = await getDb();
   if (!db) return undefined;
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const rows = await db
     .select()
@@ -9902,7 +10970,7 @@ export async function createPosition(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(data.organizationId || 1);
+  const organizationId = requireOrganizationId(data.organizationId);
 
   const result: any = await db.insert(positions).values({
     organizationId,
@@ -9928,7 +10996,7 @@ export async function updatePosition(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const payload: Record<string, any> = {};
   if (data.name !== undefined) payload.name = data.name?.trim() || null;
@@ -9958,7 +11026,7 @@ export async function deletePosition(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .delete(positions)
@@ -9981,7 +11049,7 @@ export async function getUserOrgMapping(
   const db = await getDb();
   if (!db) return undefined;
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const result = await db
     .select()
@@ -10007,7 +11075,7 @@ export async function upsertUserOrgMapping(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(data.organizationId || 1);
+  const organizationId = requireOrganizationId(data.organizationId);
 
   await assertUserExists(data.userId);
 
@@ -10060,7 +11128,7 @@ export async function deleteUserOrgMapping(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .delete(userOrgMappings)
@@ -10191,7 +11259,7 @@ export async function upsertUserOrgMappingProtected(params: {
   });
 
   return upsertUserOrgMapping({
-  organizationId: Number(params.organizationId || 1),
+  organizationId: requireOrganizationId(params.organizationId),
   userId: params.targetUserId,
   teamId: params.teamId ?? null,
   positionId: params.positionId ?? null,
@@ -10211,7 +11279,7 @@ export async function getDirectChatRoomBetweenUsers(
   const db = await getDb();
   if (!db) return null;
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const [rows] = await db.execute(sql`
     SELECT r.*
@@ -10240,7 +11308,7 @@ export async function createChatRoom(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-const organizationId = Number(data.organizationId || 1);
+const organizationId = requireOrganizationId(data.organizationId);
 
   const result: any = await db.insert(chatRooms).values({
 organizationId,
@@ -10262,7 +11330,7 @@ export async function addChatRoomMember(data: {
 }) {
   const db = await getDb();
 
-const organizationId = Number(data.organizationId || 1);
+const organizationId = requireOrganizationId(data.organizationId);
 
   if (!db) throw new Error("DB not available");
 
@@ -10315,7 +11383,7 @@ export async function getOrCreateDirectChatRoom(params: {
   otherUserId: number;
 }) {
 
-const organizationId = Number(params.organizationId || 1);
+const organizationId = requireOrganizationId(params.organizationId);
 
   if (params.actorUserId === params.otherUserId) {
     throw new Error("자기 자신과의 채팅방은 만들 수 없습니다.");
@@ -10367,18 +11435,16 @@ export async function getChatRoomById(
   const db = await getDb();
   if (!db) return null;
 
-  const organizationId = Number(params?.organizationId || 0);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const result = await db
     .select()
     .from(chatRooms)
     .where(
-      organizationId > 0
-        ? and(
-            eq(chatRooms.id, roomId),
-            eq(chatRooms.organizationId, organizationId)
-          )
-        : eq(chatRooms.id, roomId)
+      and(
+        eq(chatRooms.id, roomId),
+        eq(chatRooms.organizationId, organizationId)
+      )
     )
     .limit(1);
 
@@ -10393,7 +11459,7 @@ export async function ensureChatRoomMember(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 0);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   const result = await db
     .select({
@@ -10410,9 +11476,7 @@ export async function ensureChatRoomMember(
       chatRooms,
       and(
         eq(chatRooms.id, chatRoomMembers.roomId),
-        organizationId > 0
-          ? eq(chatRooms.organizationId, organizationId)
-          : sql`1 = 1`
+        eq(chatRooms.organizationId, organizationId)
       )
     )
     .where(
@@ -10442,7 +11506,7 @@ export async function createChatMessage(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-const organizationId = Number(data.organizationId || 1);
+const organizationId = requireOrganizationId(data.organizationId);
 
   await ensureChatRoomMember(data.roomId, data.senderId, {
   organizationId,
@@ -10485,7 +11549,7 @@ organizationId?: number | null;
 }) {
   const db = await getDb();
 
-const orgId = Number(organizationId || 1);
+const orgId = requireOrganizationId(organizationId);
 
   if (!db) throw new Error("DB not available");
 
@@ -10514,7 +11578,7 @@ organizationId?: number | null;
 }) {
   const db = await getDb();
 
-const orgId = Number(organizationId || 1);
+const orgId = requireOrganizationId(organizationId);
 
   if (!db) throw new Error("DB not available");
 
@@ -10543,7 +11607,7 @@ export async function createChatAttachment(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(data.organizationId || 1);
+  const organizationId = requireOrganizationId(data.organizationId);
 
   const [messageRows] = await db.execute(sql`
     SELECT m.id
@@ -10580,7 +11644,7 @@ export async function listChatMessages(
   const db = await getDb();
   if (!db) return [];
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await ensureChatRoomMember(roomId, userId, {
   organizationId,
@@ -10627,7 +11691,7 @@ export async function markChatRoomRead(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-const organizationId = Number(params.organizationId || 1);
+const organizationId = requireOrganizationId(params.organizationId);
 
   await ensureChatRoomMember(params.roomId, params.userId, {
   organizationId,
@@ -10667,7 +11731,7 @@ export async function listMyChatRooms(
   const db = await getDb();
   if (!db) return [];
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const [rows] = await db.execute(sql`
     SELECT
@@ -10835,7 +11899,7 @@ organizationId?: number | null;
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-const organizationId = Number(params.organizationId || 1);
+const organizationId = requireOrganizationId(params.organizationId);
 
   await ensureChatRoomMember(params.roomId, params.userId, {
   organizationId,
@@ -10890,7 +11954,7 @@ organizationId?: number | null;
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-const organizationId = Number(params.organizationId || 1);
+const organizationId = requireOrganizationId(params.organizationId);
 
   await ensureChatRoomMember(params.roomId, params.userId, {
   organizationId,
@@ -10940,7 +12004,7 @@ export async function getTodayAttendanceRecord(
   const db = await getDb();
   if (!db) return null;
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
   const today = getTodayDateStringKST();
 
   const result = await db
@@ -10967,7 +12031,7 @@ export async function clockInAttendance(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const today = getTodayDateStringKST();
   const existing = await getTodayAttendanceRecord(userId, {
@@ -11043,7 +12107,7 @@ export async function clockOutAttendance(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const todayRow = await getTodayAttendanceRecord(userId, {
   organizationId,
@@ -11099,7 +12163,7 @@ export async function listMyAttendanceRecords(
   const db = await getDb();
   if (!db) return [];
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const [rows] = await db.execute(sql`
     SELECT
@@ -11147,7 +12211,7 @@ export async function listAllAttendanceRecords(params?: {
   const db = await getDb();
   if (!db) return [];
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const [rows] = await db.execute(sql`
   SELECT
@@ -11239,7 +12303,7 @@ export async function listTeamAttendanceRecords(
   const db = await getDb();
   if (!db) return [];
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const myTeamId = await getMyTeamId(adminUserId, {
   organizationId,
@@ -11297,7 +12361,7 @@ async function calcLateInfo(
 
   const d = new Date(clockInAt);
   const policy = await getAttendancePolicy({
-  organizationId: Number(params?.organizationId || 1),
+  organizationId: requireOrganizationId(params?.organizationId),
 });
 
   const startHour = Number(policy?.workStartHour ?? 9);
@@ -11326,7 +12390,7 @@ async function calcEarlyLeaveInfo(
 
   const d = new Date(clockOutAt);
   const policy = await getAttendancePolicy({
-  organizationId: Number(params?.organizationId || 1),
+  organizationId: requireOrganizationId(params?.organizationId),
 });
 
   const endHour = Number(policy?.workEndHour ?? 18);
@@ -11351,7 +12415,7 @@ async function getMyTeamId(
   const db = await getDb();
   if (!db) return null;
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const row = await db
     .select()
@@ -11386,7 +12450,7 @@ export async function getAttendancePolicy(params?: {
   const db = await getDb();
   if (!db) return null;
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const rows = await db
     .select()
@@ -11408,7 +12472,7 @@ export async function autoClockOutIfNeeded(record: any) {
   const db = await getDb();
   if (!db) return;
 
-  const organizationId = Number(record.organizationId || 1);
+  const organizationId = requireOrganizationId(record.organizationId);
 
   const policy = await getAttendancePolicy({
     organizationId,
@@ -11504,7 +12568,7 @@ organizationId?: number | null;
   const db = await getDb();
   if (!db) throw new Error("DB 연결이 없습니다.");
 
-const organizationId = Number(params.organizationId || 1);
+const organizationId = requireOrganizationId(params.organizationId);
 
   const current = await getAttendancePolicy({ organizationId });
 
@@ -11573,7 +12637,7 @@ organizationId?: number | null;
   const db = await getDb();
   if (!db) throw new Error("DB 연결이 없습니다.");
 
-const organizationId = Number(params.organizationId || 1);
+const organizationId = requireOrganizationId(params.organizationId);
 
   const row = await db
     .select()
@@ -11751,7 +12815,7 @@ actorRole: string;
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-const organizationId = Number(params.organizationId || 1);
+const organizationId = requireOrganizationId(params.organizationId);
 
   const row = await db
     .select()
@@ -11878,7 +12942,7 @@ export async function listAttendanceAdjustmentLogs(
   const db = await getDb();
   if (!db) return [];
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   if (attendanceId) {
     const [rows] = await db.execute(sql`
@@ -11928,7 +12992,7 @@ export async function listTeamAttendanceAdjustmentLogs(
   const db = await getDb();
   if (!db) return [];
 
-const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const myTeamId = await getMyTeamId(adminUserId, {
   organizationId,
@@ -12056,7 +13120,7 @@ export async function listNotices(params?: {
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
 const [rows] = await db.execute(sql`
   SELECT *
@@ -12078,7 +13142,7 @@ export async function getNotice(
   const db = await getDb();
   if (!db) return null;
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
 const [rows] = await db.execute(sql`
   SELECT *
@@ -12117,7 +13181,7 @@ organizationId,
   viewCount
 )
 VALUES (
-  ${Number(data.organizationId || 1)},
+  ${requireOrganizationId(data.organizationId)},
   ${data.title},
   ${data.content},
   ${data.authorId},
@@ -12145,7 +13209,7 @@ export async function updateNotice(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(data.organizationId || 1);
+  const organizationId = requireOrganizationId(data.organizationId);
 
   await db.execute(sql`
     UPDATE notices
@@ -12169,7 +13233,7 @@ export async function deleteNotice(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await db.execute(sql`
     UPDATE notices
@@ -12194,7 +13258,7 @@ export async function bulkDeleteNotices(
 
   if (!cleanIds.length) return;
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await db.execute(sql`
     UPDATE notices
@@ -12213,7 +13277,7 @@ export async function increaseNoticeView(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   await db.execute(sql`
     UPDATE notices
@@ -12236,7 +13300,7 @@ export async function listMonthSchedules(
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const start = `${year}-${String(month).padStart(2, "0")}-01`;
   const endMonth = month === 12 ? 1 : month + 1;
@@ -12266,7 +13330,7 @@ export async function listTodaySchedules(
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const now = new Date();
   const kstOffsetMs = 9 * 60 * 60 * 1000;
@@ -12321,7 +13385,7 @@ export async function createSchedule(data: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(data.organizationId || 1);
+  const organizationId = requireOrganizationId(data.organizationId);
 
   const result: any = await db.execute(sql`
     INSERT INTO schedules (
@@ -12379,7 +13443,7 @@ export async function updateSchedule(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(data.organizationId || 1);
+  const organizationId = requireOrganizationId(data.organizationId);
 
   const [rows] = await db.execute(sql`
     SELECT *
@@ -12431,7 +13495,7 @@ export async function deleteSchedule(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const [rows] = await db.execute(sql`
     SELECT *
@@ -12479,7 +13543,7 @@ async function getNextApprovalDocumentNumber(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -12514,7 +13578,7 @@ export async function getApprovalSetting(
   const db = await getDb();
   if (!db) return null;
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const rows = await db
     .select()
@@ -12541,7 +13605,7 @@ export async function saveApprovalSetting(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params.organizationId || 1);
+  const organizationId = requireOrganizationId(params.organizationId);
 
   const existing = await getApprovalSetting(params.formType, {
     organizationId,
@@ -12586,7 +13650,7 @@ export async function createApprovalLog(data: InsertApprovalLog) {
   if (!db) throw new Error("DB not available");
 
   const result: any = await db.insert(approvalLogs).values({
-    organizationId: Number((data as any).organizationId || 1),
+    organizationId: requireOrganizationId((data as any).organizationId),
     ...data,
   } as any);
 
@@ -12629,7 +13693,7 @@ export async function createApprovalDocument(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params.organizationId || 1);
+  const organizationId = requireOrganizationId(params.organizationId);
 
   const documentNumber = await getNextApprovalDocumentNumber(params.formType, {
     organizationId,
@@ -12761,7 +13825,7 @@ export async function listMyApprovalDocuments(
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const [rows] = await db.execute(sql`
     SELECT *
@@ -12783,7 +13847,7 @@ export async function getApprovalDocument(
   const db = await getDb();
   if (!db) return null;
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const [docRows] = await db.execute(sql`
     SELECT *
@@ -12828,7 +13892,7 @@ export async function listPendingApprovalDocumentsForApprover(
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = Number(params?.organizationId || 1);
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const [rows] = await db.execute(sql`
     SELECT d.*, l.id as lineId, l.stepOrder, l.stepStatus
@@ -12857,7 +13921,7 @@ export async function applyApprovedDocumentToAttendance(params: {
   const db = await getDb();
 if (!db) throw new Error("DB not available");
 
-const organizationId = Number(params.organizationId || 1);
+const organizationId = requireOrganizationId(params.organizationId);
 
 const detail = await getApprovalDocument(params.documentId, {
   organizationId,
@@ -13208,7 +14272,7 @@ export async function approveApprovalDocument(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params.organizationId || 1);
+  const organizationId = requireOrganizationId(params.organizationId);
 
   const detail = await getApprovalDocument(params.documentId, {
     organizationId,
@@ -13303,7 +14367,7 @@ export async function rejectApprovalDocument(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const organizationId = Number(params.organizationId || 1);
+  const organizationId = requireOrganizationId(params.organizationId);
 
   const detail = await getApprovalDocument(params.documentId, {
     organizationId,

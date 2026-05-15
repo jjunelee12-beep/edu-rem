@@ -2,6 +2,7 @@ import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from "@shared/const";
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import type { TrpcContext } from "./context";
+import { getOrganizationById } from "../saasdb";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
@@ -43,6 +44,30 @@ function isSuperhost(user: any) {
   return user?.role === "superhost";
 }
 
+async function assertOrganizationActive(user: any) {
+  if (!user) return;
+
+  if (user.role === "superhost") return;
+
+  const organizationId = Number(user.organizationId || 0);
+
+if (!organizationId) {
+  throw new TRPCError({
+    code: "FORBIDDEN",
+    message: "organizationId is required",
+  });
+}
+
+const organization = await getOrganizationById(organizationId);
+
+  if (!organization || organization.status !== "active") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "현재 이용이 제한된 회사 계정입니다.",
+    });
+  }
+}
+
 const requireUser = t.middleware(async (opts) => {
   const { ctx, next } = opts;
 
@@ -61,6 +86,8 @@ const requireUser = t.middleware(async (opts) => {
       message: UNAUTHED_ERR_MSG,
     });
   }
+
+await assertOrganizationActive(ctx.user);
 
   return next({
     ctx: {
@@ -97,6 +124,8 @@ export const adminProcedure = t.procedure.use(
       });
     }
 
+await assertOrganizationActive(ctx.user);
+
     return next({
       ctx: {
         ...ctx,
@@ -132,6 +161,8 @@ export const hostProcedure = t.procedure.use(
     message: "호스트 권한이 필요합니다.",
   });
 }
+
+await assertOrganizationActive(ctx.user);
 
     return next({
       ctx: {

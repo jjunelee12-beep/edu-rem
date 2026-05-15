@@ -9,7 +9,7 @@ import { db } from "../db";
 
 // ✅ schema 경로는 보통 여기임(네가 올린 코드 기준 drizzle/schema.ts)
 // 필요하면 실제 위치로 수정
-import { users } from "../../drizzle/schema";
+import { users, organizations } from "../../drizzle/schema";
 
 export const authRouter = Router();
 
@@ -25,6 +25,16 @@ authRouter.post("/login", async (req, res) => {
 
   const ok = await bcrypt.compare(password, user.passwordHash ?? "");
   if (!ok) return res.status(401).json({ message: "invalid credentials" });
+
+const organization = await db.query.organizations.findFirst({
+  where: eq(organizations.id, Number(user.organizationId || 0)),
+});
+
+if (user.role !== "superhost" && (!organization || organization.status !== "active")) {
+  return res.status(403).json({
+    message: "현재 이용이 제한된 회사 계정입니다.",
+  });
+}
 
   const secret = process.env.SESSION_SECRET || "dev-secret";
   res.setHeader("Set-Cookie", makeSessionCookie(user.id, secret));
@@ -52,6 +62,16 @@ authRouter.get("/me", async (req, res) => {
   });
 
   if (!user || user.isActive === false) return res.status(401).json({ message: "not logged in" });
+
+const organization = await db.query.organizations.findFirst({
+  where: eq(organizations.id, Number(user.organizationId || 0)),
+});
+
+if (user.role !== "superhost" && (!organization || organization.status !== "active")) {
+  return res.status(403).json({
+    message: "현재 이용이 제한된 회사 계정입니다.",
+  });
+}
 
   return res.json({
     id: user.id,

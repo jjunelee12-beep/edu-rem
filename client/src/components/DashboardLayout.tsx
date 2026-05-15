@@ -33,8 +33,6 @@ import { pushAppToast } from "@/lib/appNotifications";
 import { useIsMobile } from "@/hooks/useMobile";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import MessengerPage from "@/pages/MessengerPage";
-import { GraduationCap, Award } from "lucide-react";
-
 import {
  readAppNotificationSettings,
  isNowInDndRange,
@@ -133,6 +131,10 @@ type AuthUser = {
  role: UserRole;
  name?: string;
  profileImageUrl?: string | null;
+ organizationSlug?: string | null;
+ organization?: {
+  slug?: string | null;
+ };
 };
 
 type NotificationItem = {
@@ -218,6 +220,10 @@ function DashboardLayoutContent({
  const { data: myProfile, refetch: refetchMyProfile } =
  trpc.users.me.useQuery();
  const { data: branding } = trpc.branding.get.useQuery();
+const { data: organizationFeatures } =
+  trpc.organizationFeatures.useQuery(undefined, {
+    enabled: user.role !== "superhost",
+  });
  const utils = trpc.useUtils();
 
  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(
@@ -244,6 +250,15 @@ function DashboardLayoutContent({
  const companyName = branding?.companyName || "위드원 교육";
  const companySubtitle = branding?.messengerSubtitle || "사내 메신저";
  const companyLogoUrl = normalizeAssetUrl(branding?.companyLogoUrl || "");
+
+const canUseMessenger =
+  user.role === "superhost" || organizationFeatures?.allowMessenger !== false;
+
+useEffect(() => {
+  if (!canUseMessenger && isMessengerOpen) {
+    setIsMessengerOpen(false);
+  }
+}, [canUseMessenger, isMessengerOpen]);
 
  useEffect(() => {
  const saved = localStorage.getItem("messenger-open");
@@ -306,7 +321,10 @@ function DashboardLayoutContent({
  }, []);
 
  useEffect(() => {
- const handleOpenMessenger = () => setIsMessengerOpen(true);
+ const handleOpenMessenger = () => {
+  if (!canUseMessenger) return;
+  setIsMessengerOpen(true);
+};
  const handleCloseMessenger = () => setIsMessengerOpen(false);
 
  window.addEventListener("open-messenger", handleOpenMessenger);
@@ -322,7 +340,7 @@ function DashboardLayoutContent({
  handleCloseMessenger
  );
  };
- }, []);
+}, [canUseMessenger]);
 
  useEffect(() => {
  const handleProfileImageUpdated = () => {
@@ -338,38 +356,6 @@ function DashboardLayoutContent({
  );
  };
  }, [refetchMyProfile]);
-
- useEffect(() => {
- const handleBrandingUpdated = () => {
- void utils.branding.get.invalidate();
- };
-
- window.addEventListener("branding:updated", handleBrandingUpdated);
-
- return () => {
- window.removeEventListener("branding:updated", handleBrandingUpdated);
- };
- }, [utils]);
-
- useEffect(() => {
- const handlePushOpen = (event: Event) => {
- const customEvent = event as CustomEvent;
- const detail = customEvent.detail || {};
-
- if (detail.type === "lead") {
- setLocation("/consultations");
- return;
- }
-
- setLocation("/consultations");
- };
-
- window.addEventListener("push-open", handlePushOpen as EventListener);
-
- return () => {
- window.removeEventListener("push-open", handlePushOpen as EventListener);
- };
- }, [setLocation]);
 
  const { state, toggleSidebar, setOpen } = useSidebar();
 
@@ -423,6 +409,50 @@ useEffect(() => {
  const isAdmin = user?.role === "admin";
  const isHost = user?.role === "host";
  const isSuperhost = user?.role === "superhost";
+
+const organizationSlug =
+  (user as any).organizationSlug ||
+  (user as any).organization?.slug ||
+  "";
+
+const withOrgPath = (path: string) => {
+  if (isSuperhost) return path;
+  if (!organizationSlug) return path;
+  if (path === "/") return `/${organizationSlug}`;
+  return `/${organizationSlug}${path}`;
+};
+
+useEffect(() => {
+ const handleBrandingUpdated = () => {
+ void utils.branding.get.invalidate();
+ };
+
+ window.addEventListener("branding:updated", handleBrandingUpdated);
+
+ return () => {
+ window.removeEventListener("branding:updated", handleBrandingUpdated);
+ };
+ }, [utils]);
+
+ useEffect(() => {
+ const handlePushOpen = (event: Event) => {
+ const customEvent = event as CustomEvent;
+ const detail = customEvent.detail || {};
+
+ if (detail.type === "lead") {
+ setLocation(withOrgPath("/consultations"));
+ return;
+ }
+
+ setLocation(withOrgPath("/consultations"));
+ };
+
+ window.addEventListener("push-open", handlePushOpen as EventListener);
+
+ return () => {
+ window.removeEventListener("push-open", handlePushOpen as EventListener);
+ };
+}, [setLocation, organizationSlug, isSuperhost]);
 
  const canViewApprovalInbox = isAdmin || isHost || isSuperhost;
  const canViewApprovalStats = isAdmin || isHost || isSuperhost;
@@ -521,10 +551,39 @@ useEffect(() => {
 
  const visibleStaffMenuItems =
  isStaff || isAdmin || isHost || isSuperhost ? staffMenuItems : [];
- const visibleAdminMenuItems =
- isAdmin || isHost || isSuperhost ? adminMenuItems : [];
- const visibleHostMenuItems = isHost || isSuperhost ? hostMenuItems : [];
- const visibleSuperhostMenuItems = isSuperhost ? superhostMenuItems : [];
+ const featureFilteredAdminMenuItems = adminMenuItems.filter((item) => {
+  if (!organizationFeatures) return true;
+
+  if (item.path === "/settlement") {
+    return organizationFeatures.allowSettlementReport;
+  }
+
+  if (item.path === "/private-certificate-center") {
+    return organizationFeatures.allowPrivateCertificate;
+  }
+
+  if (item.path === "/practice-support-center") {
+    return organizationFeatures.allowPracticeCenter;
+  }
+
+  return true;
+});
+
+const visibleAdminMenuItems =
+  isAdmin || isHost || isSuperhost ? featureFilteredAdminMenuItems : [];
+
+const featureFilteredHostMenuItems = hostMenuItems.filter((item) => {
+  if (!organizationFeatures) return true;
+
+  if (item.path === "/private-certificate-master") {
+    return organizationFeatures.allowPrivateCertificate;
+  }
+
+  return true;
+});
+
+const visibleHostMenuItems =
+  isHost || isSuperhost ? featureFilteredHostMenuItems : [];
 
 const primaryMenuItems = [
   { icon: LayoutDashboard, label: "홈", path: "/" },
@@ -777,7 +836,7 @@ const primaryMenuItems = [
  <SidebarMenuItem key={item.path}>
  <SidebarMenuButton
  isActive={isActive}
- onClick={() => setLocation(item.path)}
+ onClick={() => setLocation(withOrgPath(item.path))}
  tooltip={item.label}
  className="min-w-0 font-medium text-black"
  >
@@ -809,7 +868,7 @@ const renderPrimaryMenuSection = () => {
           <SidebarMenuItem key={item.path}>
             <SidebarMenuButton
               isActive={isActive}
-              onClick={() => setLocation(item.path)}
+              onClick={() => setLocation(withOrgPath(item.path))}
               tooltip={item.label}
               className="min-w-0 font-medium text-black"
             >
@@ -866,7 +925,7 @@ const renderPrimaryMenuSection = () => {
                     type="button"
                     isActive={isActive}
                     size="md"
-                    onClick={() => setLocation(item.href)}
+                    onClick={() => setLocation(withOrgPath(item.href))}
                     className="font-medium text-black"
                   >
                     <span className="truncate text-black">{item.label}</span>
@@ -891,6 +950,7 @@ const renderPrimaryMenuSection = () => {
  }
 
  if (item.type === "messenger" && item.relatedId) {
+if (!canUseMessenger) return;
  setIsMessengerOpen(true);
 
  window.dispatchEvent(new Event("open-messenger"));
@@ -903,47 +963,48 @@ const renderPrimaryMenuSection = () => {
  }
 
  if (item.type === "approval" && item.relatedId) {
- setLocation(`/e-approval/${item.relatedId}`);
+ setLocation(withOrgPath(`/e-approval/${item.relatedId}`));
  return;
  }
 
  if (item.type === "notice" && item.relatedId) {
- setLocation(`/notices/${item.relatedId}`);
+ setLocation(withOrgPath(`/notices/${item.relatedId}`));
  return;
  }
 
  if (item.type === "schedule" && item.relatedId) {
- setLocation(`/schedules`);
+ setLocation(withOrgPath("/schedules"));
  return;
  }
 
  if (item.type === "lead") {
- setLocation("/consultations");
+ setLocation(withOrgPath("/consultations"));
  return;
  }
 
- if (item.type === "messenger") {
+if (item.type === "messenger") {
+ if (!canUseMessenger) return;
  setIsMessengerOpen(true);
  window.dispatchEvent(new Event("open-messenger"));
  return;
- }
+}
 
  if (item.type === "notice") {
- setLocation("/notices");
+ setLocation(withOrgPath("/notices"));
  return;
  }
 
  if (item.type === "schedule") {
- setLocation("/schedules");
+ setLocation(withOrgPath("/schedules"));
  return;
  }
 
  if (item.type === "approval") {
- setLocation("/e-approval");
+ setLocation(withOrgPath("/e-approval"));
  return;
  }
 
- setLocation("/notifications");
+ setLocation(withOrgPath("/notifications"));
  };
 
  const displayProfileImageUrl = normalizeProfileImageUrl(
@@ -1131,7 +1192,7 @@ const renderPrimaryMenuSection = () => {
 
  <button
  type="button"
- onClick={() => setLocation("/notifications")}
+ onClick={() => setLocation(withOrgPath("/notifications"))}
  className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-700 transition hover:bg-slate-50"
  >
  전체보기
@@ -1232,16 +1293,18 @@ const renderPrimaryMenuSection = () => {
  </DropdownMenuContent>
  </DropdownMenu>
 
- <button
- onClick={() => setIsMessengerOpen(true)}
- className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-900 transition hover:bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
- aria-label="메신저"
- >
- <MessageSquare className="h-4 w-4" />
- </button>
+ {canUseMessenger && (
+  <button
+    onClick={() => setIsMessengerOpen(true)}
+    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-900 transition hover:bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    aria-label="메신저"
+  >
+    <MessageSquare className="h-4 w-4" />
+  </button>
+)}
 
  <button
- onClick={() => setLocation("/my")}
+ onClick={() => setLocation(withOrgPath("/my"))}
  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-900 transition hover:bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
  aria-label="내 정보"
  >
@@ -1250,7 +1313,7 @@ const renderPrimaryMenuSection = () => {
 
  {(isHost || isSuperhost || isAdmin) && (
  <button
- onClick={() => setLocation("/system")}
+ onClick={() => setLocation(withOrgPath("/system"))}
  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-900 transition hover:bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
  aria-label="설정"
  >
@@ -1263,7 +1326,7 @@ const renderPrimaryMenuSection = () => {
  <div className="flex min-h-0 flex-1 overflow-x-auto">
   <main
     className={`min-w-[980px] flex-1 p-4 md:p-6 transition-all duration-200 ${
-      isMessengerOpen && !isMobile ? "pr-[560px]" : ""
+      canUseMessenger && isMessengerOpen && !isMobile ? "pr-[560px]" : ""
     }`}
   >
  {children}
@@ -1271,7 +1334,7 @@ const renderPrimaryMenuSection = () => {
  </div>
  </SidebarInset>
 
- {isMessengerOpen && !isMobile && (
+ {canUseMessenger && isMessengerOpen && !isMobile && (
  <div className="fixed right-0 top-16 z-[9999] h-[calc(100vh-64px)] w-[520px] border-l border-black/5 bg-white shadow-[-12px_0_40px_rgba(15,23,42,0.10)]">
  <div className="flex h-16 items-center justify-between border-b border-black/5 bg-white px-4">
  <div className="flex min-w-0 items-center gap-3">

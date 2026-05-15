@@ -125,7 +125,7 @@ export const consultationRouter = router({
 
     const privileged = isPrivileged(ctx.user);
 const assigneeId = toAssigneeId(ctx.user);
-const organizationId = Number((ctx.user as any)?.organizationId || 1);
+const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 const where = privileged
   ? eq(consultations.organizationId, organizationId)
@@ -155,7 +155,7 @@ const where = privileged
     const assigneeId = toAssigneeId(ctx.user);
 
     const patch = {
-organizationId: Number((ctx.user as any)?.organizationId || 1),
+organizationId: Number((ctx.user as any)?.organizationId || 0),
       consultDate: input.consultDate,
       channel: input.channel ?? "",
       clientName: input.clientName,
@@ -172,7 +172,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 1),
   }),
 
   bulkCreate: protectedProcedure.input(BulkCreateInput).mutation(async ({ input, ctx }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 1);
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
 const assigneeId = toAssigneeId(ctx.user);
 
     let created = 0;
@@ -204,7 +204,7 @@ const assigneeId = toAssigneeId(ctx.user);
   }),
 
   importCsv: protectedProcedure.input(ImportCsvInput).mutation(async ({ input, ctx }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 1);
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
 const assigneeId = toAssigneeId(ctx.user);
 
     const lines = input.csvText
@@ -255,7 +255,7 @@ const assigneeId = toAssigneeId(ctx.user);
     if (!db) throw new Error("DB not available");
 
     const prev = await getConsultation(input.id, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
     if (!prev) return { ok: false };
 
@@ -290,7 +290,7 @@ const assigneeId = toAssigneeId(ctx.user);
 
     if (Object.keys(patch).length > 0) {
       await updateConsultation(input.id, patch, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
     }
 
@@ -300,7 +300,7 @@ const assigneeId = toAssigneeId(ctx.user);
         .from(students)
         .where(
   and(
-    eq(students.organizationId, Number((ctx.user as any)?.organizationId || 1)),
+    eq(students.organizationId, Number((ctx.user as any)?.organizationId || 0)),
     eq(students.consultationId, input.id)
   )
 )
@@ -313,7 +313,7 @@ const assigneeId = toAssigneeId(ctx.user);
         const assigneeId = (input.assigneeId ?? prev.assigneeId ?? myId) as any;
 
         await createStudent({
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
   clientName: nextName,
           phone: nextPhone,
           course: nextCourse,
@@ -328,7 +328,7 @@ const assigneeId = toAssigneeId(ctx.user);
 
   delete: protectedProcedure.input(DeleteInput).mutation(async ({ input, ctx }) => {
     const prev = await getConsultation(input.id, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
     if (!prev) return { ok: true };
 
@@ -340,7 +340,7 @@ const assigneeId = toAssigneeId(ctx.user);
     }
 
     await deleteConsultation(input.id, {
-  organizationId: Number((ctx.user as any)?.organizationId || 1),
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
     return { ok: true };
   }),

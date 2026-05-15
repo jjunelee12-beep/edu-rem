@@ -56,7 +56,7 @@ export const scheduleRouter = {
   assertLoggedIn(ctx.user);
 
   const rows = await listMonthSchedules(input.year, input.month, {
-  organizationId: Number(ctx.user.organizationId || 1),
+  organizationId: Number(ctx.user.organizationId || 0),
 });
 
   return (rows as any[]).map((row: any) => ({
@@ -87,7 +87,7 @@ export const scheduleRouter = {
   Number(ctx.user.id),
   String(ctx.user.role),
   {
-    organizationId: Number(ctx.user.organizationId || 1),
+    organizationId: Number(ctx.user.organizationId || 0),
   }
 );
 
@@ -137,7 +137,7 @@ const startAt = buildDateTimeString(
 );
 
 const id = await createSchedule({
-organizationId: Number(ctx.user.organizationId || 1),  
+organizationId: Number(ctx.user.organizationId || 0),  
 title: input.title,
   description: input.description,
   scheduleDate: input.date,
@@ -186,7 +186,7 @@ title: input.title,
   Number(ctx.user.id),
   String(ctx.user.role),
   {
-  organizationId: Number(ctx.user.organizationId || 1),
+  organizationId: Number(ctx.user.organizationId || 0),
   title: input.title,
     description: input.description,
     scheduleDate: input.date,
@@ -215,7 +215,7 @@ title: input.title,
   Number(ctx.user.id),
   String(ctx.user.role),
   {
-    organizationId: Number(ctx.user.organizationId || 1),
+    organizationId: Number(ctx.user.organizationId || 0),
   }
 );
 
