@@ -48,7 +48,7 @@ export async function getSocket() {
   const socketToken = await getSocketToken();
 
 if (!socketToken) {
-  throw new Error("NO_SOCKET_TOKEN");
+  return null as any;
 }
 
 socket = io(apiBase, {

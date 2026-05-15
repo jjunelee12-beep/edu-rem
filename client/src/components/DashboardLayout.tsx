@@ -549,9 +549,10 @@ useEffect(() => {
  return items;
  }, [canViewApprovalInbox, canViewApprovalStats, canViewApprovalSettings]);
 
- const visibleStaffMenuItems =
- isStaff || isAdmin || isHost || isSuperhost ? staffMenuItems : [];
- const featureFilteredAdminMenuItems = adminMenuItems.filter((item) => {
+const visibleStaffMenuItems =
+  isSuperhost ? [] : isStaff || isAdmin || isHost ? staffMenuItems : [];
+
+const featureFilteredAdminMenuItems = adminMenuItems.filter((item) => {
   if (!organizationFeatures) return true;
 
   if (item.path === "/settlement") {
@@ -570,7 +571,7 @@ useEffect(() => {
 });
 
 const visibleAdminMenuItems =
-  isAdmin || isHost || isSuperhost ? featureFilteredAdminMenuItems : [];
+  isSuperhost ? [] : isAdmin || isHost ? featureFilteredAdminMenuItems : [];
 
 const featureFilteredHostMenuItems = hostMenuItems.filter((item) => {
   if (!organizationFeatures) return true;
@@ -583,7 +584,10 @@ const featureFilteredHostMenuItems = hostMenuItems.filter((item) => {
 });
 
 const visibleHostMenuItems =
-  isHost || isSuperhost ? featureFilteredHostMenuItems : [];
+  isSuperhost ? [] : isHost ? featureFilteredHostMenuItems : [];
+
+const visibleSuperhostMenuItems =
+  isSuperhost ? superhostMenuItems : [];
 
 const primaryMenuItems = [
   { icon: LayoutDashboard, label: "홈", path: "/" },

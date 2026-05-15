@@ -178,11 +178,19 @@ function PublicRouter() {
 }
 
 function PrivateRouter() {
+  const { user, loading } = useAuth();
+
+  if (loading) return null;
+
+  if (!user) {
+    return <Login />;
+  }
+
   return (
     <>
       <MessengerRealtimeBridge />
       <AppRealtimeBridge />
-	<TenantPathGuard>
+      <TenantPathGuard>
   <DashboardLayout>
     <Switch>
       {/* slug 없는 기존 경로 → 자기 organization 으로 강제 이동 */}

@@ -31,8 +31,17 @@ if (isPublicPage) {
   return;
 }
 
-    try {
-      const res = await fetch(`/api/auth/me`, {
+const cachedUser = localStorage.getItem("manus-runtime-user-info");
+
+if (!cachedUser && !redirectOnUnauthenticated) {
+  setUser(null);
+  setLoading(false);
+  setError(null);
+  return;
+}
+
+try {
+  const res = await fetch(`/api/auth/me`, {
         credentials: "include",
       });
 
