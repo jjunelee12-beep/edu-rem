@@ -4500,76 +4500,102 @@ const organizationId = requireOrganizationId(params?.organizationId);
 // ─── 학기별 전체 리스트 ──────────────────────────────────────────────
 export async function listAllSemesters(
   assigneeId?: number,
-  plannedMonthFilter?: string
+  plannedMonthFilter?: string,
+  params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
   if (!db) return [];
 
- const conditions: any[] = [];
-if (assigneeId) conditions.push(sql`s.assigneeId = ${assigneeId}`);
-if (plannedMonthFilter) conditions.push(sql`sem.plannedMonth = ${plannedMonthFilter}`);
+  const organizationId = requireOrganizationId(params?.organizationId);
 
-  const whereClause =
-    conditions.length > 0
-      ? sql`WHERE ${sql.join(conditions, sql` AND `)}`
-      : sql``;
+  const conditions: any[] = [
+    sql`sem.organizationId = ${organizationId}`,
+    sql`s.organizationId = ${organizationId}`,
+  ];
 
-    const [rows] = await db.execute(sql`
- SELECT sem.*,
-  s.clientName,
-  s.phone,
-  COALESCE(sem.primaryCourse, s.course) as course,
-  s.assigneeId,
-  s.status as studentStatus,
-  sem.approvalStatus as approvalStatus,
-  sem.approvedAt as approvedAt,
-  sem.rejectedAt as rejectedAt,
-  s.approvalStatus as studentApprovalStatus,
-  u.name as assigneeName,
+  if (assigneeId) {
+    conditions.push(sql`s.assigneeId = ${assigneeId}`);
+  }
 
-    COALESCE(
-      actualEi.name,
-      sem.actualInstitution,
-      plannedEi.name,
-      sem.plannedInstitution,
-      '-'
-    ) as institutionDisplayName,
+  if (plannedMonthFilter) {
+    conditions.push(sql`sem.plannedMonth = ${plannedMonthFilter}`);
+  }
 
-    COALESCE(
-      actualEi.name,
-      sem.actualInstitution,
-      '-'
-    ) as actualInstitutionDisplayName,
+  const whereClause = sql`WHERE ${sql.join(conditions, sql` AND `)}`;
 
-    COALESCE(
-      plannedEi.name,
-      sem.plannedInstitution,
-      '-'
-    ) as plannedInstitutionDisplayName,
+  const [rows] = await db.execute(sql`
+    SELECT sem.*,
+      s.clientName,
+      s.phone,
+      COALESCE(sem.primaryCourse, s.course) as course,
+      s.assigneeId,
+      s.status as studentStatus,
+      sem.approvalStatus as approvalStatus,
+      sem.approvedAt as approvedAt,
+      sem.rejectedAt as rejectedAt,
+      s.approvalStatus as studentApprovalStatus,
+      u.name as assigneeName,
 
-    COALESCE(
-      (SELECT SUM(r.refundAmount)
-       FROM refunds r
-       WHERE r.studentId = s.id
-         AND r.approvalStatus = '승인'),
-      0
-    ) as approvedRefundAmount,
+      COALESCE(
+        actualEi.name,
+        sem.actualInstitution,
+        plannedEi.name,
+        sem.plannedInstitution,
+        '-'
+      ) as institutionDisplayName,
 
-    (SELECT p.hasPractice FROM plans p WHERE p.studentId = s.id LIMIT 1) as hasPractice,
-    (SELECT p.practiceHours FROM plans p WHERE p.studentId = s.id LIMIT 1) as practiceHours,
-    sem.practiceStatus as practiceStatus
-  FROM semesters sem
-  INNER JOIN students s ON sem.studentId = s.id
-  LEFT JOIN users u ON u.id = s.assigneeId
-  LEFT JOIN education_institutions actualEi
-    ON actualEi.id = sem.actualInstitutionId
-  LEFT JOIN education_institutions plannedEi
-    ON plannedEi.id = sem.plannedInstitutionId
-  ${whereClause}
-  ORDER BY sem.plannedMonth ASC, s.clientName ASC
-`);
+      COALESCE(
+        actualEi.name,
+        sem.actualInstitution,
+        '-'
+      ) as actualInstitutionDisplayName,
 
-    return ((rows as unknown) as any[]).map((row: any) => ({
+      COALESCE(
+        plannedEi.name,
+        sem.plannedInstitution,
+        '-'
+      ) as plannedInstitutionDisplayName,
+
+      COALESCE(
+        (SELECT SUM(r.refundAmount)
+         FROM refunds r
+         WHERE r.organizationId = ${organizationId}
+           AND r.studentId = s.id
+           AND r.approvalStatus = '승인'),
+        0
+      ) as approvedRefundAmount,
+
+      (SELECT p.hasPractice
+       FROM plans p
+       WHERE p.organizationId = ${organizationId}
+         AND p.studentId = s.id
+       LIMIT 1) as hasPractice,
+
+      (SELECT p.practiceHours
+       FROM plans p
+       WHERE p.organizationId = ${organizationId}
+         AND p.studentId = s.id
+       LIMIT 1) as practiceHours,
+
+      sem.practiceStatus as practiceStatus
+    FROM semesters sem
+    INNER JOIN students s
+      ON sem.studentId = s.id
+      AND s.organizationId = ${organizationId}
+    LEFT JOIN users u
+      ON u.id = s.assigneeId
+      AND u.organizationId = ${organizationId}
+    LEFT JOIN education_institutions actualEi
+      ON actualEi.id = sem.actualInstitutionId
+      AND actualEi.organizationId = ${organizationId}
+    LEFT JOIN education_institutions plannedEi
+      ON plannedEi.id = sem.plannedInstitutionId
+      AND plannedEi.organizationId = ${organizationId}
+    ${whereClause}
+    ORDER BY sem.plannedMonth ASC, s.clientName ASC
+  `);
+
+  return ((rows as unknown) as any[]).map((row: any) => ({
     ...row,
     institution:
       row.institutionDisplayName ||
@@ -6336,6 +6362,7 @@ course: students.course,
 }
 
 export async function getSettlementEntries(params: {
+  organizationId?: number | null;
   year: number;
   month: number;
   assigneeId?: number;
@@ -6349,21 +6376,19 @@ export async function getSettlementEntries(params: {
     };
   }
 
+  const organizationId = requireOrganizationId(params.organizationId);
+
   const startDate = `${params.year}-${String(params.month).padStart(2, "0")}-01`;
   const nextMonth = params.month === 12 ? 1 : params.month + 1;
   const nextYear = params.month === 12 ? params.year + 1 : params.year;
   const endDate = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
 
-const prevMonth = params.month === 1 ? 12 : params.month - 1;
-const prevYear = params.month === 1 ? params.year - 1 : params.year;
-const prevStartDate = `${prevYear}-${String(prevMonth).padStart(2, "0")}-01`;
-const prevEndDate = startDate;
-
-  const conditions = [
-  sql`${settlementItems.occurredAt} >= ${startDate}`,
-  sql`${settlementItems.occurredAt} < ${endDate}`,
-  sql`${settlementItems.settlementStatus} = 'confirmed'`,
-];
+  const conditions: any[] = [
+    eq(settlementItems.organizationId, organizationId),
+    sql`${settlementItems.occurredAt} >= ${startDate}`,
+    sql`${settlementItems.occurredAt} < ${endDate}`,
+    sql`${settlementItems.settlementStatus} = 'confirmed'`,
+  ];
 
   if (params.assigneeId) {
     conditions.push(eq(settlementItems.assigneeId, params.assigneeId));
@@ -6374,6 +6399,7 @@ const prevEndDate = startDate;
     and(
       eq(settlementItems.revenueType, "subject"),
       eq(semesters.id, settlementItems.sourceId),
+      eq(semesters.organizationId, organizationId),
       eq(semesters.approvalStatus, "승인")
     )
   );
@@ -6388,7 +6414,7 @@ const prevEndDate = startDate;
       studentId: settlementItems.studentId,
       assigneeId: settlementItems.assigneeId,
       title: settlementItems.title,
-institutionName: settlementItems.institutionName,
+      institutionName: settlementItems.institutionName,
       subjectType: settlementItems.subjectType,
       subjectCount: settlementItems.subjectCount,
       quantity: settlementItems.quantity,
@@ -6406,75 +6432,70 @@ institutionName: settlementItems.institutionName,
       course: students.course,
       assigneeName: users.name,
     })
-        .from(settlementItems)
+    .from(settlementItems)
     .leftJoin(
       semesters,
       and(
         eq(settlementItems.revenueType, "subject"),
-        eq(semesters.id, settlementItems.sourceId)
+        eq(semesters.id, settlementItems.sourceId),
+        eq(semesters.organizationId, organizationId)
       )
     )
-    .leftJoin(students, eq(settlementItems.studentId, students.id))
-    .leftJoin(users, eq(settlementItems.assigneeId, users.id))
+    .leftJoin(
+      students,
+      and(
+        eq(settlementItems.studentId, students.id),
+        eq(students.organizationId, organizationId)
+      )
+    )
+    .leftJoin(
+      users,
+      and(
+        eq(settlementItems.assigneeId, users.id),
+        eq(users.organizationId, organizationId)
+      )
+    )
     .where(and(...conditions))
     .orderBy(desc(settlementItems.occurredAt), desc(settlementItems.id));
 
-const prevRows = await db
-  .select({
-    institutionName: settlementItems.institutionName,
-    revenueType: settlementItems.revenueType,
-    grossAmount: settlementItems.grossAmount,
-    companyAmount: settlementItems.companyAmount,
-    settlementStatus: settlementItems.settlementStatus,
-  })
-  .from(settlementItems)
-  .where(
-    and(
-      sql`${settlementItems.occurredAt} >= ${prevStartDate}`,
-      sql`${settlementItems.occurredAt} < ${prevEndDate}`,
-      sql`${settlementItems.settlementStatus} = 'confirmed'`
-    )
-  )
-  .orderBy(asc(settlementItems.institutionName), desc(settlementItems.occurredAt));
-
   const entries = (rows || []).map((r: any) => {
-  const isRefund = r.revenueType === "refund";
+    const isRefund = r.revenueType === "refund";
 
-  return {
-    id: Number(r.id),
-    settlementItemId: Number(r.id),
-    sourceId: Number(r.sourceId),
-    studentId: Number(r.studentId || 0),
-    assigneeId: Number(r.assigneeId || 0),
+    return {
+      id: Number(r.id),
+      settlementItemId: Number(r.id),
+      sourceId: Number(r.sourceId),
+      studentId: Number(r.studentId || 0),
+      assigneeId: Number(r.assigneeId || 0),
 
-    type: isRefund ? "refund" : String(r.revenueType || "unknown"),
-    revenueType: r.revenueType,
-    settlementStatus: r.settlementStatus,
+      type: isRefund ? "refund" : String(r.revenueType || "unknown"),
+      revenueType: r.revenueType,
+      settlementStatus: r.settlementStatus,
 
-    assigneeName: r.assigneeName || "",
-    occurredAt: r.occurredAt || null,
+      assigneeName: r.assigneeName || "",
+      occurredAt: r.occurredAt || null,
 
-    title: r.title || "",
-    institutionName: r.institutionName || "",
-    clientName: r.clientName || "",
-    phone: r.phone || "",
-    course: r.course || "",
-    subjectType: r.subjectType || null,
-    subjectCount: Number(r.subjectCount || 0),
-    quantity: Number(r.quantity || 0),
+      title: r.title || "",
+      institutionName: r.institutionName || "",
+      clientName: r.clientName || "",
+      phone: r.phone || "",
+      course: r.course || "",
+      subjectType: r.subjectType || null,
+      subjectCount: Number(r.subjectCount || 0),
+      quantity: Number(r.quantity || 0),
 
-    amount: toNumber(r.grossAmount),
-    grossAmount: toNumber(r.grossAmount),
-    companyAmount: toNumber(r.companyAmount),
-    freelancerAmount: toNumber(r.freelancerAmount),
-    taxAmount: toNumber(r.taxAmount),
-    finalPayoutAmount: toNumber(r.finalPayoutAmount),
-    companyProfit: toNumber(r.companyProfit),
+      amount: toNumber(r.grossAmount),
+      grossAmount: toNumber(r.grossAmount),
+      companyAmount: toNumber(r.companyAmount),
+      freelancerAmount: toNumber(r.freelancerAmount),
+      taxAmount: toNumber(r.taxAmount),
+      finalPayoutAmount: toNumber(r.finalPayoutAmount),
+      companyProfit: toNumber(r.companyProfit),
 
-    paymentDate: r.occurredAt || null,
-    note: r.note || "",
-  };
-});
+      paymentDate: r.occurredAt || null,
+      note: r.note || "",
+    };
+  });
 
   const totalAmount = entries.reduce(
     (sum: number, row: any) => sum + toNumber(row.grossAmount),
@@ -6957,10 +6978,13 @@ const organizationId = requireOrganizationId(params?.organizationId);
 export async function getSettlementReport(
   year: number,
   month: number,
-  filterAssigneeId?: number
+  filterAssigneeId?: number,
+  params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
   if (!db) return [];
+
+const organizationId = requireOrganizationId(params?.organizationId);
 
   const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
   const nextMonth = month === 12 ? 1 : month + 1;
@@ -6968,22 +6992,24 @@ export async function getSettlementReport(
   const endDate = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
 
   const conditions = [
-    sql`${settlementItems.occurredAt} >= ${startDate}`,
-    sql`${settlementItems.occurredAt} < ${endDate}`,
-  ];
+  eq(settlementItems.organizationId, organizationId),
+  sql`${settlementItems.occurredAt} >= ${startDate}`,
+  sql`${settlementItems.occurredAt} < ${endDate}`,
+];
 
   if (filterAssigneeId) {
     conditions.push(eq(settlementItems.assigneeId, filterAssigneeId));
   }
 
   const subjectApprovedCondition = or(
-    sql`${settlementItems.revenueType} <> 'subject'`,
-    and(
-      eq(settlementItems.revenueType, "subject"),
-      eq(semesters.id, settlementItems.sourceId),
-      eq(semesters.approvalStatus, "승인")
-    )
-  );
+  sql`${settlementItems.revenueType} <> 'subject'`,
+  and(
+    eq(settlementItems.revenueType, "subject"),
+    eq(semesters.id, settlementItems.sourceId),
+    eq(semesters.organizationId, organizationId),
+    eq(semesters.approvalStatus, "승인")
+  )
+);
 
   conditions.push(subjectApprovedCondition);
      

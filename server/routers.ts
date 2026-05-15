@@ -4289,18 +4289,26 @@ const student = await db.getStudent(input.studentId, {
       }),
 
     listAll: protectedProcedure
-      .input(
-        z.object({
-          plannedMonth: z.string().optional(),
-        })
-      )
-      .query(async ({ ctx, input }) => {
-        const assigneeId = isAdminOrHost(ctx.user)
-          ? undefined
-          : Number(ctx.user.id) || 1;
+  .input(
+    z.object({
+      plannedMonth: z.string().optional(),
+    })
+  )
+  .query(async ({ ctx, input }) => {
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-        return db.listAllSemesters(assigneeId, input.plannedMonth);
-      }),
+    if (!organizationId) {
+      throw new Error("organizationId is required");
+    }
+
+    const assigneeId = isAdminOrHost(ctx.user)
+      ? undefined
+      : Number(ctx.user.id) || undefined;
+
+    return db.listAllSemesters(assigneeId, input.plannedMonth, {
+      organizationId,
+    });
+  }),
 
     create: protectedProcedure
       .input(
@@ -6188,12 +6196,15 @@ organizationId,
 
   const canSeeAll = isAdminOrHost(ctx.user);
 
-  return db.getSettlementReport(
-          input.year,
-          input.month,
-          canSeeAll ? input.assigneeId : Number(ctx.user.id)
-        );
-      }),
+    return db.getSettlementReport(
+    input.year,
+    input.month,
+    canSeeAll ? input.assigneeId : Number(ctx.user.id),
+    {
+      organizationId,
+    }
+  );
+}),
 
     entries: adminProcedure
       .input(
@@ -6215,10 +6226,11 @@ organizationId,
   const canSeeAll = isAdminOrHost(ctx.user);
 
   return db.getSettlementEntries({
-          year: input.year,
-          month: input.month,
-          assigneeId: canSeeAll ? input.assigneeId : Number(ctx.user.id),
-        });
+  organizationId,
+  year: input.year,
+  month: input.month,
+  assigneeId: canSeeAll ? input.assigneeId : Number(ctx.user.id),
+});
       }),
 
     institutionSummary: hostProcedure
