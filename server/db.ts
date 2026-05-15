@@ -10452,9 +10452,10 @@ eq(practiceEducationCenters.organizationId, organizationId),
         .update(practiceEducationCenters)
         .set(value as any)
         .where(
-and(
-  eq(practiceEducationCenters.id, existing[0].id),
-  eq(practiceEducationCenters.organizationId, organizationId)
+  and(
+    eq(practiceEducationCenters.id, existing[0].id),
+    eq(practiceEducationCenters.organizationId, organizationId)
+  )
 );
       updatedCount += 1;
     } else {
