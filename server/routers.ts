@@ -5004,17 +5004,33 @@ approve: protectedProcedure
     }
 
     await db.updateSemester(
-      Number(input.id),
-      {
-        approvalStatus: input.approvalStatus,
-        approvedAt: input.approvalStatus === "승인" ? now : null,
-        rejectedAt: input.approvalStatus === "불승인" ? now : null,
-        isLocked: input.approvalStatus === "승인",
-      } as any,
-      {
-        organizationId,
-      }
-    );
+  Number(input.id),
+  {
+    approvalStatus: input.approvalStatus,
+
+    approvedAt:
+      input.approvalStatus === "승인"
+        ? now
+        : null,
+
+    rejectedAt:
+      input.approvalStatus === "불승인"
+        ? now
+        : null,
+
+    isLocked:
+      input.approvalStatus === "승인",
+
+    // 불승인 시 입력완료 체크 자동 해제
+    isCompleted:
+      input.approvalStatus === "불승인"
+        ? false
+        : true,
+  } as any,
+  {
+    organizationId,
+  }
+);
 
     const sem = await db.getSemester(Number(input.id), {
       organizationId,
