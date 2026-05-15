@@ -8584,62 +8584,6 @@ export async function createPrivateCertificateMaster(
   return getInsertId(result);
 }
 
-export async function updatePrivateCertificateMaster(
-  id: number,
-  data: Partial<InsertPrivateCertificateMaster>,
-  params?: { organizationId?: number | null }
-) {
-  const db = await getDb();
-  if (!db) throw new Error("DB not available");
-
-  const organizationId = requireOrganizationId(params?.organizationId);
-
-  const rows = await db
-    .select({ id: privateCertificateMasters.id })
-    .from(privateCertificateMasters)
-    .where(
-      and(
-        eq(privateCertificateMasters.id, id),
-        eq(privateCertificateMasters.organizationId, organizationId)
-      )
-    )
-    .limit(1);
-
-  if (!rows[0]) {
-    throw new Error("수정할 민간자격증 마스터를 찾을 수 없습니다.");
-  }
-
-  await db
-    .update(privateCertificateMasters)
-    .set({
-      ...(data.name !== undefined ? { name: data.name } : {}),
-      ...(data.sortOrder !== undefined ? { sortOrder: data.sortOrder } : {}),
-      ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
-      ...(data.defaultFeeAmount !== undefined
-        ? { defaultFeeAmount: data.defaultFeeAmount }
-        : {}),
-      ...((data as any).defaultCompanyShareAmount !== undefined
-        ? {
-            defaultCompanyShareAmount:
-              (data as any).defaultCompanyShareAmount,
-          }
-        : {}),
-      ...(data.defaultFreelancerAmount !== undefined
-        ? { defaultFreelancerAmount: data.defaultFreelancerAmount }
-        : {}),
-      ...(data.isSettlementEnabled !== undefined
-        ? { isSettlementEnabled: data.isSettlementEnabled }
-        : {}),
-      ...(data.updatedBy !== undefined ? { updatedBy: data.updatedBy } : {}),
-    } as any)
-    .where(
-      and(
-        eq(privateCertificateMasters.id, id),
-        eq(privateCertificateMasters.organizationId, organizationId)
-      )
-    );
-}
-
 export async function deletePrivateCertificateMaster(
   id: number,
   params?: { organizationId?: number | null }
