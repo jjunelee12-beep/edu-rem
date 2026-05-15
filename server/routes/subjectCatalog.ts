@@ -2,6 +2,14 @@ import { z } from "zod";
 import { router, protectedProcedure, hostProcedure } from "../_core/trpc";
 import * as db from "../db";
 
+function getCtxOrganizationId(ctx: any) {
+  const organizationId = Number(ctx?.user?.organizationId || 0);
+  if (!Number.isFinite(organizationId) || organizationId <= 0) {
+    throw new Error("organizationId is required");
+  }
+  return organizationId;
+}
+
 export const subjectCatalogRouter = router({
   list: protectedProcedure
     .input(
@@ -11,8 +19,11 @@ export const subjectCatalogRouter = router({
         })
         .optional()
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
+      const organizationId = getCtxOrganizationId(ctx);
+
       return db.listSubjectCatalogs({
+        organizationId,
         activeOnly: input?.activeOnly ?? false,
       });
     }),
@@ -26,7 +37,10 @@ export const subjectCatalogRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const organizationId = getCtxOrganizationId(ctx);
+
       const id = await db.createSubjectCatalog({
+        organizationId,
         name: input.name.trim(),
         sortOrder: input.sortOrder ?? 0,
         isActive: input.isActive ?? true,
@@ -43,8 +57,13 @@ export const subjectCatalogRouter = router({
         id: z.number(),
       })
     )
-    .mutation(async ({ input }) => {
-      await db.deleteSubjectCatalog(input.id);
+    .mutation(async ({ ctx, input }) => {
+      const organizationId = getCtxOrganizationId(ctx);
+
+      await db.deleteSubjectCatalog(input.id, {
+        organizationId,
+      });
+
       return { success: true };
     }),
 
@@ -55,8 +74,11 @@ export const subjectCatalogRouter = router({
         activeOnly: z.boolean().optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
+      const organizationId = getCtxOrganizationId(ctx);
+
       return db.listSubjectCatalogItems({
+        organizationId,
         catalogId: input.catalogId,
         activeOnly: input.activeOnly ?? false,
       });
@@ -75,7 +97,10 @@ export const subjectCatalogRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const organizationId = getCtxOrganizationId(ctx);
+
       const id = await db.createSubjectCatalogItem({
+        organizationId,
         catalogId: input.catalogId,
         subjectName: input.subjectName.trim(),
         requirementType: input.requirementType,
@@ -96,8 +121,13 @@ export const subjectCatalogRouter = router({
         id: z.number(),
       })
     )
-    .mutation(async ({ input }) => {
-      await db.deleteSubjectCatalogItem(input.id);
+    .mutation(async ({ ctx, input }) => {
+      const organizationId = getCtxOrganizationId(ctx);
+
+      await db.deleteSubjectCatalogItem(input.id, {
+        organizationId,
+      });
+
       return { success: true };
     }),
 });

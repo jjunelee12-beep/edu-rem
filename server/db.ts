@@ -8326,27 +8326,29 @@ const organizationId = requireOrganizationId(params?.organizationId);
 }
 
 // ─── Course Templates ────────────────────────────────────────────────
-export async function listCourseSubjectTemplates(courseKey?: string) {
+// ─── Course Templates ────────────────────────────────────────────────
+export async function listCourseSubjectTemplates(
+  courseKey?: string,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return [];
 
+  const organizationId = requireOrganizationId(params?.organizationId);
+
+  const conditions: any[] = [
+    eq(courseSubjectTemplates.organizationId, organizationId),
+    eq(courseSubjectTemplates.isActive, true),
+  ];
+
   if (courseKey) {
-    return db
-      .select()
-      .from(courseSubjectTemplates)
-      .where(
-        and(
-          eq(courseSubjectTemplates.courseKey, courseKey),
-          eq(courseSubjectTemplates.isActive, true)
-        )
-      )
-      .orderBy(courseSubjectTemplates.sortOrder, courseSubjectTemplates.id);
+    conditions.push(eq(courseSubjectTemplates.courseKey, courseKey));
   }
 
   return db
     .select()
     .from(courseSubjectTemplates)
-    .where(eq(courseSubjectTemplates.isActive, true))
+    .where(and(...conditions))
     .orderBy(
       courseSubjectTemplates.courseKey,
       courseSubjectTemplates.sortOrder,
@@ -8354,21 +8356,40 @@ export async function listCourseSubjectTemplates(courseKey?: string) {
     );
 }
 
-export async function createCourseSubjectTemplate(data: InsertCourseSubjectTemplate) {
+export async function createCourseSubjectTemplate(
+  data: InsertCourseSubjectTemplate & { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const result: any = await db.insert(courseSubjectTemplates).values(data);
+  const organizationId = requireOrganizationId((data as any).organizationId);
+
+  const result: any = await db.insert(courseSubjectTemplates).values({
+    ...data,
+    organizationId,
+  } as any);
+
   return getInsertId(result);
 }
 
 export async function bulkCreatePlanSemestersFromTemplate(params: {
+  organizationId?: number | null;
   studentId: number;
   semesterNo: number;
   subjectIds: number[];
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  const student = await getStudent(params.studentId, {
+    organizationId,
+  });
+
+  if (!student) {
+    throw new Error("학생을 찾을 수 없습니다.");
+  }
 
   const subjectIds = Array.from(
     new Set(
@@ -8391,6 +8412,7 @@ export async function bulkCreatePlanSemestersFromTemplate(params: {
     .from(courseSubjectTemplates)
     .where(
       and(
+        eq(courseSubjectTemplates.organizationId, organizationId),
         sql`${courseSubjectTemplates.id} IN (${sql.join(
           subjectIds.map((id) => sql`${id}`),
           sql`, `
@@ -8404,27 +8426,38 @@ export async function bulkCreatePlanSemestersFromTemplate(params: {
     return { count: 0 };
   }
 
+  if (templates.length !== subjectIds.length) {
+    throw new Error("선택한 과목 중 현재 회사에 없는 과목이 포함되어 있습니다.");
+  }
+
   if (templates.length > 8) {
     throw new Error("우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다");
   }
 
-  const templateNames = templates.map((t: any) => normalizeSubjectName(t.subjectName));
+  const templateNames = templates.map((t: any) =>
+    normalizeSubjectName(t.subjectName)
+  );
 
   const duplicateInsideSelection = templateNames.find(
     (name: string, idx: number) => templateNames.indexOf(name) !== idx
   );
 
   if (duplicateInsideSelection) {
-    throw new Error(`선택한 템플릿 안에 중복 과목이 있습니다: ${duplicateInsideSelection}`);
+    throw new Error(
+      `선택한 템플릿 안에 중복 과목이 있습니다: ${duplicateInsideSelection}`
+    );
   }
 
-  const existingRows = await listPlanSemesters(params.studentId);
+  const existingRows = await listPlanSemesters(params.studentId, {
+    organizationId,
+  });
 
   const duplicateInOtherSemester = templates.find((t: any) =>
     existingRows.some(
       (row: any) =>
         Number(row.semesterNo) !== Number(params.semesterNo) &&
-        normalizeSubjectName(row.subjectName) === normalizeSubjectName(t.subjectName)
+        normalizeSubjectName(row.subjectName) ===
+          normalizeSubjectName(t.subjectName)
     )
   );
 
@@ -8445,12 +8478,14 @@ export async function bulkCreatePlanSemestersFromTemplate(params: {
     .delete(planSemesters)
     .where(
       and(
+        eq(planSemesters.organizationId, organizationId),
         eq(planSemesters.studentId, params.studentId),
         eq(planSemesters.semesterNo, params.semesterNo)
       )
     );
 
   const rows = templates.map((t: any, idx: number) => ({
+    organizationId,
     studentId: params.studentId,
     semesterNo: params.semesterNo,
     subjectName: t.subjectName,
@@ -8465,36 +8500,28 @@ export async function bulkCreatePlanSemestersFromTemplate(params: {
   return { count: rows.length };
 }
 
-// ─── Master: Private Certificates / Subject Catalogs ────────────────
-function resolveCategoryFromRequirementType(
-  requirementType: "전공필수" | "전공선택" | "교양" | "일반"
-): "전공" | "교양" | "일반" {
-  if (requirementType === "교양") return "교양";
-  if (requirementType === "일반") return "일반";
-  return "전공";
-}
-
 // 민간자격증 마스터
 export async function listPrivateCertificateMasters(options?: {
+  organizationId?: number | null;
   activeOnly?: boolean;
 }) {
   const db = await getDb();
   if (!db) return [];
 
+  const organizationId = requireOrganizationId(options?.organizationId);
+
+  const conditions: any[] = [
+    eq(privateCertificateMasters.organizationId, organizationId),
+  ];
+
   if (options?.activeOnly) {
-    return db
-      .select()
-      .from(privateCertificateMasters)
-      .where(eq(privateCertificateMasters.isActive, true))
-      .orderBy(
-        asc(privateCertificateMasters.sortOrder),
-        asc(privateCertificateMasters.id)
-      );
+    conditions.push(eq(privateCertificateMasters.isActive, true));
   }
 
   return db
     .select()
     .from(privateCertificateMasters)
+    .where(and(...conditions))
     .orderBy(
       asc(privateCertificateMasters.sortOrder),
       asc(privateCertificateMasters.id)
@@ -8502,10 +8529,12 @@ export async function listPrivateCertificateMasters(options?: {
 }
 
 export async function createPrivateCertificateMaster(
-  data: InsertPrivateCertificateMaster
+  data: InsertPrivateCertificateMaster & { organizationId?: number | null }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId((data as any).organizationId);
 
   const name = String(data.name || "").trim();
   if (!name) {
@@ -8515,7 +8544,12 @@ export async function createPrivateCertificateMaster(
   const existing = await db
     .select()
     .from(privateCertificateMasters)
-    .where(eq(privateCertificateMasters.name, name))
+    .where(
+      and(
+        eq(privateCertificateMasters.organizationId, organizationId),
+        eq(privateCertificateMasters.name, name)
+      )
+    )
     .limit(1);
 
   if (existing[0]) {
@@ -8525,60 +8559,138 @@ export async function createPrivateCertificateMaster(
   const [maxRows] = await db.execute(sql`
     SELECT COALESCE(MAX(sortOrder), 0) as maxSortOrder
     FROM private_certificate_masters
+    WHERE organizationId = ${organizationId}
   `);
 
   const nextSortOrder = Number((maxRows as any)?.[0]?.maxSortOrder || 0) + 1;
 
   const result: any = await db.insert(privateCertificateMasters).values({
-  name,
-  sortOrder: (data as any).sortOrder ?? nextSortOrder,
-  isActive: (data as any).isActive ?? true,
+    organizationId,
+    name,
+    sortOrder: (data as any).sortOrder ?? nextSortOrder,
+    isActive: (data as any).isActive ?? true,
 
-  defaultFeeAmount: (data as any).defaultFeeAmount ?? "0",
-  defaultCompanyShareAmount: (data as any).defaultCompanyShareAmount ?? "0",
-  defaultFreelancerAmount: (data as any).defaultFreelancerAmount ?? "0",
-  isSettlementEnabled: (data as any).isSettlementEnabled ?? true,
+    defaultFeeAmount: (data as any).defaultFeeAmount ?? "0",
+    defaultCompanyShareAmount:
+      (data as any).defaultCompanyShareAmount ?? "0",
+    defaultFreelancerAmount:
+      (data as any).defaultFreelancerAmount ?? "0",
+    isSettlementEnabled: (data as any).isSettlementEnabled ?? true,
 
-  createdBy: (data as any).createdBy ?? null,
-  updatedBy: (data as any).updatedBy ?? null,
-});
+    createdBy: (data as any).createdBy ?? null,
+    updatedBy: (data as any).updatedBy ?? null,
+  } as any);
 
   return getInsertId(result);
 }
 
-export async function deletePrivateCertificateMaster(id: number) {
+export async function updatePrivateCertificateMaster(
+  id: number,
+  data: Partial<InsertPrivateCertificateMaster>,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = requireOrganizationId(params?.organizationId);
+
+  const rows = await db
+    .select({ id: privateCertificateMasters.id })
+    .from(privateCertificateMasters)
+    .where(
+      and(
+        eq(privateCertificateMasters.id, id),
+        eq(privateCertificateMasters.organizationId, organizationId)
+      )
+    )
+    .limit(1);
+
+  if (!rows[0]) {
+    throw new Error("수정할 민간자격증 마스터를 찾을 수 없습니다.");
+  }
+
+  await db
+    .update(privateCertificateMasters)
+    .set({
+      ...(data.name !== undefined ? { name: data.name } : {}),
+      ...(data.sortOrder !== undefined ? { sortOrder: data.sortOrder } : {}),
+      ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+      ...(data.defaultFeeAmount !== undefined
+        ? { defaultFeeAmount: data.defaultFeeAmount }
+        : {}),
+      ...((data as any).defaultCompanyShareAmount !== undefined
+        ? {
+            defaultCompanyShareAmount:
+              (data as any).defaultCompanyShareAmount,
+          }
+        : {}),
+      ...(data.defaultFreelancerAmount !== undefined
+        ? { defaultFreelancerAmount: data.defaultFreelancerAmount }
+        : {}),
+      ...(data.isSettlementEnabled !== undefined
+        ? { isSettlementEnabled: data.isSettlementEnabled }
+        : {}),
+      ...(data.updatedBy !== undefined ? { updatedBy: data.updatedBy } : {}),
+    } as any)
+    .where(
+      and(
+        eq(privateCertificateMasters.id, id),
+        eq(privateCertificateMasters.organizationId, organizationId)
+      )
+    );
+}
+
+export async function deletePrivateCertificateMaster(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params?.organizationId);
+
   await db
     .delete(privateCertificateMasters)
-    .where(eq(privateCertificateMasters.id, id));
+    .where(
+      and(
+        eq(privateCertificateMasters.id, id),
+        eq(privateCertificateMasters.organizationId, organizationId)
+      )
+    );
 }
 
 // 과정 마스터
 export async function listSubjectCatalogs(options?: {
+  organizationId?: number | null;
   activeOnly?: boolean;
 }) {
   const db = await getDb();
   if (!db) return [];
 
+  const organizationId = requireOrganizationId(options?.organizationId);
+
+  const conditions: any[] = [
+    eq(subjectCatalogs.organizationId, organizationId),
+  ];
+
   if (options?.activeOnly) {
-    return db
-      .select()
-      .from(subjectCatalogs)
-      .where(eq(subjectCatalogs.isActive, true))
-      .orderBy(asc(subjectCatalogs.sortOrder), asc(subjectCatalogs.id));
+    conditions.push(eq(subjectCatalogs.isActive, true));
   }
 
   return db
     .select()
     .from(subjectCatalogs)
+    .where(and(...conditions))
     .orderBy(asc(subjectCatalogs.sortOrder), asc(subjectCatalogs.id));
 }
 
-export async function createSubjectCatalog(data: InsertSubjectCatalog) {
+export async function createSubjectCatalog(
+  data: InsertSubjectCatalog & { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId((data as any).organizationId);
 
   const name = String(data.name || "").trim();
   if (!name) {
@@ -8588,7 +8700,12 @@ export async function createSubjectCatalog(data: InsertSubjectCatalog) {
   const existing = await db
     .select()
     .from(subjectCatalogs)
-    .where(eq(subjectCatalogs.name, name))
+    .where(
+      and(
+        eq(subjectCatalogs.organizationId, organizationId),
+        eq(subjectCatalogs.name, name)
+      )
+    )
     .limit(1);
 
   if (existing[0]) {
@@ -8598,41 +8715,96 @@ export async function createSubjectCatalog(data: InsertSubjectCatalog) {
   const [maxRows] = await db.execute(sql`
     SELECT COALESCE(MAX(sortOrder), 0) as maxSortOrder
     FROM subject_catalogs
+    WHERE organizationId = ${organizationId}
   `);
 
   const nextSortOrder = Number((maxRows as any)?.[0]?.maxSortOrder || 0) + 1;
 
   const result: any = await db.insert(subjectCatalogs).values({
+    organizationId,
     name,
     sortOrder: (data as any).sortOrder ?? nextSortOrder,
     isActive: (data as any).isActive ?? true,
     createdBy: (data as any).createdBy ?? null,
     updatedBy: (data as any).updatedBy ?? null,
-  });
+  } as any);
 
   return getInsertId(result);
 }
 
-export async function deleteSubjectCatalog(id: number) {
+export async function deleteSubjectCatalog(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = requireOrganizationId(params?.organizationId);
+
+  const rows = await db
+    .select({ id: subjectCatalogs.id })
+    .from(subjectCatalogs)
+    .where(
+      and(
+        eq(subjectCatalogs.id, id),
+        eq(subjectCatalogs.organizationId, organizationId)
+      )
+    )
+    .limit(1);
+
+  if (!rows[0]) {
+    throw new Error("삭제할 과정을 찾을 수 없습니다.");
+  }
+
   await db
     .delete(subjectCatalogItems)
-    .where(eq(subjectCatalogItems.catalogId, id));
+    .where(
+      and(
+        eq(subjectCatalogItems.catalogId, id),
+        eq(subjectCatalogItems.organizationId, organizationId)
+      )
+    );
 
-  await db.delete(subjectCatalogs).where(eq(subjectCatalogs.id, id));
+  await db
+    .delete(subjectCatalogs)
+    .where(
+      and(
+        eq(subjectCatalogs.id, id),
+        eq(subjectCatalogs.organizationId, organizationId)
+      )
+    );
 }
 
 // 과목 마스터
 export async function listSubjectCatalogItems(params: {
+  organizationId?: number | null;
   catalogId: number;
   activeOnly?: boolean;
 }) {
   const db = await getDb();
   if (!db) return [];
 
-  const conditions = [eq(subjectCatalogItems.catalogId, params.catalogId)];
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  const catalogRows = await db
+    .select({ id: subjectCatalogs.id })
+    .from(subjectCatalogs)
+    .where(
+      and(
+        eq(subjectCatalogs.id, Number(params.catalogId)),
+        eq(subjectCatalogs.organizationId, organizationId)
+      )
+    )
+    .limit(1);
+
+  if (!catalogRows[0]) {
+    return [];
+  }
+
+  const conditions: any[] = [
+    eq(subjectCatalogItems.organizationId, organizationId),
+    eq(subjectCatalogItems.catalogId, Number(params.catalogId)),
+  ];
 
   if (params.activeOnly) {
     conditions.push(eq(subjectCatalogItems.isActive, true));
@@ -8650,10 +8822,12 @@ export async function listSubjectCatalogItems(params: {
 }
 
 export async function createSubjectCatalogItem(
-  data: InsertSubjectCatalogItem
+  data: InsertSubjectCatalogItem & { organizationId?: number | null }
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId((data as any).organizationId);
 
   const subjectName = String(data.subjectName || "").trim();
   if (!subjectName) {
@@ -8665,12 +8839,33 @@ export async function createSubjectCatalogItem(
     throw new Error("과목 구분을 선택해주세요.");
   }
 
+  const catalogId = Number(data.catalogId || 0);
+  if (!catalogId) {
+    throw new Error("과정 정보가 없습니다.");
+  }
+
+  const catalogRows = await db
+    .select({ id: subjectCatalogs.id })
+    .from(subjectCatalogs)
+    .where(
+      and(
+        eq(subjectCatalogs.id, catalogId),
+        eq(subjectCatalogs.organizationId, organizationId)
+      )
+    )
+    .limit(1);
+
+  if (!catalogRows[0]) {
+    throw new Error("현재 회사의 과정이 아닙니다.");
+  }
+
   const existing = await db
     .select()
     .from(subjectCatalogItems)
     .where(
       and(
-        eq(subjectCatalogItems.catalogId, Number(data.catalogId)),
+        eq(subjectCatalogItems.organizationId, organizationId),
+        eq(subjectCatalogItems.catalogId, catalogId),
         eq(subjectCatalogItems.subjectName, subjectName),
         eq(subjectCatalogItems.requirementType, requirementType)
       )
@@ -8684,13 +8879,15 @@ export async function createSubjectCatalogItem(
   const [maxRows] = await db.execute(sql`
     SELECT COALESCE(MAX(sortOrder), 0) as maxSortOrder
     FROM subject_catalog_items
-    WHERE catalogId = ${Number(data.catalogId)}
+    WHERE organizationId = ${organizationId}
+      AND catalogId = ${catalogId}
   `);
 
   const nextSortOrder = Number((maxRows as any)?.[0]?.maxSortOrder || 0) + 1;
 
   const result: any = await db.insert(subjectCatalogItems).values({
-    catalogId: Number(data.catalogId),
+    organizationId,
+    catalogId,
     subjectName,
     requirementType,
     category:
@@ -8701,18 +8898,28 @@ export async function createSubjectCatalogItem(
     isActive: (data as any).isActive ?? true,
     createdBy: (data as any).createdBy ?? null,
     updatedBy: (data as any).updatedBy ?? null,
-  });
+  } as any);
 
   return getInsertId(result);
 }
 
-export async function deleteSubjectCatalogItem(id: number) {
+export async function deleteSubjectCatalogItem(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = requireOrganizationId(params?.organizationId);
+
   await db
     .delete(subjectCatalogItems)
-    .where(eq(subjectCatalogItems.id, id));
+    .where(
+      and(
+        eq(subjectCatalogItems.id, id),
+        eq(subjectCatalogItems.organizationId, organizationId)
+      )
+    );
 }
 
 // ─── Private Certificate Requests (민간자격증 요청) ─────────────────

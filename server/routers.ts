@@ -2557,8 +2557,15 @@ normalSubjectPrice: z.string().optional(),
 
     listPrivateCertificateMastersForSettlement: protectedProcedure.query(
   async ({ ctx }) => {
-    return db.listPrivateCertificateMasters(false, {
-      organizationId: Number((ctx.user as any)?.organizationId || 0),
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+    if (!organizationId) {
+      throw new Error("organizationId is required");
+    }
+
+    return db.listPrivateCertificateMasters({
+      organizationId,
+      activeOnly: false,
     });
   }
 ),
@@ -5275,72 +5282,93 @@ organizationId,
       }),
   }),
 
-  courseTemplate: router({
-    list: protectedProcedure
-      .input(
-        z
-          .object({
-            courseKey: z.string().optional(),
-          })
-          .optional()
-      )
-      .query(async ({ input }) => {
-        return db.listCourseSubjectTemplates(input?.courseKey);
-      }),
-
-    create: hostProcedure
-      .input(
-        z.object({
-          courseKey: z.string().min(1),
-          subjectName: z.string().min(1),
-          category: z.enum(["전공", "교양", "일반"]),
-          requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]).optional(),
-          sortOrder: z.number().optional(),
+courseTemplate: router({
+  list: protectedProcedure
+    .input(
+      z
+        .object({
+          courseKey: z.string().optional(),
         })
-      )
-      .mutation(async ({ input }) => {
-        const id = await db.createCourseSubjectTemplate({
-          courseKey: input.courseKey.trim(),
-          subjectName: input.subjectName.trim(),
-          category: input.category,
-          requirementType: input.requirementType ?? null,
-          sortOrder: input.sortOrder ?? 0,
-          isActive: true,
-        } as any);
+        .optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-        return { id, success: true };
-      }),
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
 
-    applyToPlanSemester: protectedProcedure
-      .input(
-        z.object({
-          studentId: z.number(),
-          semesterNo: z.number(),
-          subjectIds: z.array(z.number()).min(1),
-        })
-      )
-      .mutation(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      return db.listCourseSubjectTemplates(input?.courseKey, {
+        organizationId,
+      });
+    }),
 
-const student = await db.getStudent(input.studentId, {
-  organizationId,
-});
-        if (!student) throw new Error("학생을 찾을 수 없습니다");
+  create: hostProcedure
+    .input(
+      z.object({
+        courseKey: z.string().min(1),
+        subjectName: z.string().min(1),
+        category: z.enum(["전공", "교양", "일반"]),
+        requirementType: z
+          .enum(["전공필수", "전공선택", "교양", "일반"])
+          .optional(),
+        sortOrder: z.number().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-        if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-          throw new Error("권한이 없습니다");
-        }
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
 
-        const result = await db.bulkCreatePlanSemestersFromTemplate({
-  organizationId,
-  studentId: input.studentId,
-  semesterNo: input.semesterNo,
-  subjectIds: input.subjectIds,
-} as any);
+      const id = await db.createCourseSubjectTemplate({
+        organizationId,
+        courseKey: input.courseKey.trim(),
+        subjectName: input.subjectName.trim(),
+        category: input.category,
+        requirementType: input.requirementType ?? null,
+        sortOrder: input.sortOrder ?? 0,
+        isActive: true,
+      } as any);
 
-        return { success: true, count: result.count };
-      }),
-  }),
+      return { id, success: true };
+    }),
+
+  applyToPlanSemester: protectedProcedure
+    .input(
+      z.object({
+        studentId: z.number(),
+        semesterNo: z.number(),
+        subjectIds: z.array(z.number()).min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
+
+      const student = await db.getStudent(input.studentId, {
+        organizationId,
+      });
+      if (!student) throw new Error("학생을 찾을 수 없습니다");
+
+      if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
+        throw new Error("권한이 없습니다");
+      }
+
+      const result = await db.bulkCreatePlanSemestersFromTemplate({
+        organizationId,
+        studentId: input.studentId,
+        semesterNo: input.semesterNo,
+        subjectIds: input.subjectIds,
+      });
+
+      return { success: true, count: result.count };
+    }),
+}), 
 
 practiceEducationCenter: router({
   list: protectedProcedure
