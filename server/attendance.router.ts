@@ -15,28 +15,43 @@ saveAttendancePolicy,
 updateAttendanceStatusByManager,
 } from "./db";
 
+function getCtxOrganizationId(ctx: any) {
+  const organizationId = Number(
+    ctx?.organizationId ||
+      ctx?.user?.organizationId ||
+      ctx?.user?.organization?.id ||
+      0
+  );
+
+  if (!organizationId) {
+    throw new Error("organizationId is required");
+  }
+
+  return organizationId;
+}
+
 export const attendanceRouter = router({
   today: protectedProcedure.query(async ({ ctx }) => {
   return await getTodayAttendanceRecord(Number(ctx.user.id), {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
 }),
 
   clockIn: protectedProcedure.mutation(async ({ ctx }) => {
   return await clockInAttendance(Number(ctx.user.id), {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
 }),
 
   clockOut: protectedProcedure.mutation(async ({ ctx }) => {
   return await clockOutAttendance(Number(ctx.user.id), {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
 }),
 
   myList: protectedProcedure.query(async ({ ctx }) => {
   return await listMyAttendanceRecords(Number(ctx.user.id), {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
 }),
 
@@ -45,22 +60,22 @@ export const attendanceRouter = router({
     const userId = Number(ctx.user.id);
 
     // 호스트/슈퍼호스트: 전체 조회
-    if (role === "host" || role === "superhost") {
+    if (role === "host") {
       return await listAllAttendanceRecords({
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
     }
 
     // 관리자: 자기 팀만 조회
     if (role === "admin") {
       return await listTeamAttendanceRecords(userId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
     }
 
     // 직원: 본인만 조회
     return await listMyAttendanceRecords(userId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
   }),
 
@@ -78,12 +93,12 @@ export const attendanceRouter = router({
       const actorUserId = Number(ctx.user.id);
 
       // 호스트/슈퍼호스트/관리자까지만 수정 가능
-      if (role !== "host" && role !== "superhost" && role !== "admin") {
+      if (role !== "host" && role !== "admin") {
         throw new Error("근태 수정 권한이 없습니다.");
       }
 
       return await updateAttendanceRecordByManager({
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
   attendanceId: input.attendanceId,
   actorUserId,
   actorRole: role,
@@ -104,16 +119,16 @@ export const attendanceRouter = router({
       const userId = Number(ctx.user.id);
 
       // 호스트/슈퍼호스트: 전체 수정 로그
-      if (role === "host" || role === "superhost") {
+      if (role === "host") {
         return await listAttendanceAdjustmentLogs(input.attendanceId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
       }
 
       // 관리자: 자기 팀 수정 로그만
       if (role === "admin") {
         return await listTeamAttendanceAdjustmentLogs(userId, input.attendanceId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
       }
 
@@ -123,12 +138,12 @@ export const attendanceRouter = router({
 	  getPolicy: protectedProcedure.query(async ({ ctx }) => {
     const role = String(ctx.user.role || "");
 
-    if (role !== "host" && role !== "superhost") {
+    if (role !== "host") {
       throw new Error("근무시간 설정 조회 권한이 없습니다.");
     }
 
     return await getAttendancePolicy({
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
   }),
 
@@ -146,12 +161,12 @@ export const attendanceRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const role = String(ctx.user.role || "");
-      if (role !== "host" && role !== "superhost") {
+      if (role !== "host") {
         throw new Error("근무시간 설정 저장 권한이 없습니다.");
       }
 
       return await saveAttendancePolicy({
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
   actorUserId: Number(ctx.user.id),
   ...input,
 });
@@ -180,12 +195,12 @@ export const attendanceRouter = router({
       const role = String(ctx.user.role || "");
       const actorUserId = Number(ctx.user.id);
 
-      if (role !== "host" && role !== "superhost" && role !== "admin") {
+      if (role !== "host" && role !== "admin") {
         throw new Error("상태 수정 권한이 없습니다.");
       }
 
       return await updateAttendanceStatusByManager({
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
   attendanceId: input.attendanceId,
   actorUserId,
   actorRole: role,
