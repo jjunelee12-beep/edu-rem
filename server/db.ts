@@ -212,6 +212,15 @@ function toNullableNumber(v: any) {
   return Number.isFinite(n) ? n : null;
 }
 
+function resolveCategoryFromRequirementType(requirementType: any) {
+  const value = String(requirementType || "").trim();
+
+  if (value === "교양") return "교양";
+  if (value === "일반") return "일반";
+
+  return "전공";
+}
+
 function parseApprovalTimeToDate(dateStr: string, timeStr?: string | null) {
   if (!dateStr || !timeStr) return null;
 
@@ -5237,6 +5246,7 @@ const organizationId = requireOrganizationId(params.organizationId);
 }
 
 export async function refundSettlementItemBySource(params: {
+  organizationId?: number | null;
   revenueType: "subject" | "practice_support" | "private_certificate" | "refund";
   sourceId: number;
   refundAmount?: number | string | null;
@@ -5245,23 +5255,25 @@ export async function refundSettlementItemBySource(params: {
   note?: string | null;
   payload?: any;
 }) {
-console.log("🔥 [refundSettlementItemBySource] START", params);
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params.organizationId);
 
   const exists = await db
     .select()
     .from(settlementItems)
     .where(
-      and(
-        eq(settlementItems.revenueType, params.revenueType),
-        eq(settlementItems.sourceId, params.sourceId),
-        or(
-          eq(settlementItems.settlementStatus, "confirmed"),
-          eq(settlementItems.settlementStatus, "pending")
-        )
-      )
+  and(
+    eq(settlementItems.organizationId, organizationId),
+    eq(settlementItems.revenueType, params.revenueType),
+    eq(settlementItems.sourceId, params.sourceId),
+    or(
+      eq(settlementItems.settlementStatus, "confirmed"),
+      eq(settlementItems.settlementStatus, "pending")
     )
+  )
+)
     .orderBy(desc(settlementItems.id))
     .limit(1);
 
@@ -5332,6 +5344,7 @@ console.log("🔥 [refundSettlementItemBySource] about to call upsertSettlementI
 });
 
  const refundSettlement = await upsertSettlementItem({
+  organizationId,
   revenueType: "refund" as any,
   sourceId: Number((params.payload as any)?.refundId || params.sourceId),
   studentId: Number(baseItem.studentId),
@@ -9112,23 +9125,26 @@ export async function createPrivateCertificateRequest(data: InsertPrivateCertifi
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-   const result: any = await db.insert(privateCertificateRequests).values({
-  ...data,
-  feeAmount: data.feeAmount ?? "0",
-  freelancerInputAmount: data.freelancerInputAmount ?? "0",
-  paymentStatus: data.paymentStatus ?? "결제대기",
-});
+  const organizationId = requireOrganizationId((data as any).organizationId);
+
+  const result: any = await db.insert(privateCertificateRequests).values({
+    ...data,
+    organizationId,
+    feeAmount: data.feeAmount ?? "0",
+    freelancerInputAmount: data.freelancerInputAmount ?? "0",
+    paymentStatus: data.paymentStatus ?? "결제대기",
+  });
 
   const insertId = getInsertId(result);
 
   if (insertId) {
     await syncPrivateCertificateSettlementItemByRequestId(
-  Number(insertId),
-  undefined,
-  {
-    organizationId,
-  }
-);
+      Number(insertId),
+      undefined,
+      {
+        organizationId,
+      }
+    );
   }
 
   return insertId;
