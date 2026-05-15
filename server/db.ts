@@ -5722,52 +5722,61 @@ if (!student) {
 
 if ((sem as any).approvalStatus !== "승인") {
   await cancelSettlementItemBySource({
-    revenueType: "subject",
-    sourceId: Number(sem.id),
-    actorUserId: actorUserId ?? null,
-    note: `학기 승인상태가 승인 아님(${(sem as any).approvalStatus || "요청전"})이라 과목 정산 취소`,
-  });
+  organizationId,
+  revenueType: "subject",
+  sourceId: Number(sem.id),
+  actorUserId: actorUserId ?? null,
+  note: `학기 승인상태가 승인 아님(${(sem as any).approvalStatus || "요청전"})이라 과목 정산 취소`,
+});
   return null;
 }
 
   // 실제 결제 완료 전이면 정산 원장 취소
   if (!grossAmount || !subjectCount || !educationInstitutionId || !occurredAt) {
   await cancelSettlementItemBySource({
-    revenueType: "subject",
-    sourceId: Number(sem.id),
-    actorUserId: actorUserId ?? null,
-    note: `학기 실제 결제정보 미완성으로 과목 정산 취소 (grossAmount=${grossAmount}, subjectCount=${subjectCount}, educationInstitutionId=${educationInstitutionId}, occurredAt=${occurredAt})`,
-  });
+  organizationId,
+  revenueType: "subject",
+  sourceId: Number(sem.id),
+  actorUserId: actorUserId ?? null,
+  note: `학기 실제 결제정보 미완성으로 과목 정산 취소 (grossAmount=${grossAmount}, subjectCount=${subjectCount}, educationInstitutionId=${educationInstitutionId}, occurredAt=${occurredAt})`,
+});
   return null;
 }
 
-  const institution = await getEducationInstitutionById(educationInstitutionId);
+  const institution = await getEducationInstitutionById(educationInstitutionId, {
+  organizationId,
+});
   if (!institution) {
     throw new Error("교육원 정보를 찾을 수 없습니다.");
   }
 
-  const userOrg = await getUserOrgMapping(Number(student.assigneeId));
+  const userOrg = await getUserOrgMapping(Number(student.assigneeId), {
+  organizationId,
+});
   const positionId = Number(userOrg?.positionId ?? 0) || null;
 
     let positionUnitAmount = 0;
   if (positionId && educationInstitutionId) {
     const institutionPositionRate = await getEducationInstitutionPositionRate(
-      educationInstitutionId,
-      positionId
-    );
+  educationInstitutionId,
+  positionId,
+  { organizationId }
+);
 
     if (institutionPositionRate) {
       positionUnitAmount = toNumber(
         (institutionPositionRate as any).freelancerUnitAmount ?? 0
       );
     } else {
-      const position = await getPosition(positionId);
+      const position = await getPosition(positionId, {
+  organizationId,
+});
       positionUnitAmount = toNumber(
         (position as any)?.settlementUnitAmount ?? 0
       );
     }
   } else if (positionId) {
-    const position = await getPosition(positionId);
+    const position = await getPosition(positionId, { organizationId });
     positionUnitAmount = toNumber(
       (position as any)?.settlementUnitAmount ?? 0
     );
@@ -5857,6 +5866,7 @@ const finalPayoutAmount = freelancerAmount - taxAmount;
 const title = `${student.clientName || "학생"} ${Number(sem.semesterOrder)}학기 일반과목`;
 
   const result = await upsertSettlementItem({
+  organizationId,
     revenueType: "subject",
     sourceId: Number(sem.id),
     studentId: Number(student.id),
