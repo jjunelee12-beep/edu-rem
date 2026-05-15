@@ -57,6 +57,8 @@ if (!loginUser) {
   return;
 }
 
+localStorage.setItem("manus-runtime-user-info", JSON.stringify(loginUser));
+
 if (loginUser.role === "superhost") {
   window.location.replace("/saas");
   return;
