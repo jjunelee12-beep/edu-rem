@@ -3680,6 +3680,15 @@ categoryId: z.number().nullable().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
+
+const MAX_BULK_CONSULTATIONS = 500;
+
+if (input.rows.length > MAX_BULK_CONSULTATIONS) {
+  throw new Error(
+    `상담DB 일괄등록은 서버 안정성을 위해 1회 최대 ${MAX_BULK_CONSULTATIONS}건까지만 가능합니다. 현재 ${input.rows.length}건입니다.`
+  );
+}
+
         const assigneeId = Number(ctx.user.id);
         const safeAssigneeId =
           Number.isFinite(assigneeId) && assigneeId > 0 ? assigneeId : 1;
@@ -3746,11 +3755,19 @@ categoryId: z.number().nullable().optional(),
           });
         }
 
-        if (rows.length === 0) {
-          throw new Error("유효한 데이터가 없습니다");
-        }
+       if (rows.length === 0) {
+  throw new Error("유효한 데이터가 없습니다");
+}
 
-        await db.bulkCreateConsultations(rows as any);
+const MAX_BULK_CONSULTATIONS = 500;
+
+if (rows.length > MAX_BULK_CONSULTATIONS) {
+  throw new Error(
+    `CSV 임포트는 서버 안정성을 위해 1회 최대 ${MAX_BULK_CONSULTATIONS}건까지만 가능합니다. 현재 유효 데이터는 ${rows.length}건입니다.`
+  );
+}
+
+await db.bulkCreateConsultations(rows as any);
 
         return {
           success: true,
@@ -3819,7 +3836,9 @@ categoryId: z.number().nullable().optional(),
           }
         }
 
-        await db.syncStudentFromConsultation(id);
+        await db.syncStudentFromConsultation(id, {
+  organizationId,
+});
       }
 
       return { success: true };
@@ -3850,7 +3869,9 @@ categoryId: z.number().nullable().optional(),
       }
     }
 
-    await db.syncStudentFromConsultation(id);
+    await db.syncStudentFromConsultation(id, {
+  organizationId,
+});
 
     return { success: true };
   }),

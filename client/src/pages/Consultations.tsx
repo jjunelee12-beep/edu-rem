@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/dialog";
 import { formatPhone } from "@/lib/format";
 
+const MAX_BULK_CONSULTATIONS = 500;
+
 function toISODate(v: string) {
   const s = (v ?? "").trim();
   if (!s) return "";
@@ -238,8 +240,16 @@ const canOverrideRegisteredStatus = isHost || isSuperHost;
 
     const finalRows = looksLikeHeader ? rows.slice(1) : rows;
 
-    setBulkPreviewRows(finalRows);
-    toast.success(`${finalRows.length}건 미리보기 생성`);
+if (finalRows.length > MAX_BULK_CONSULTATIONS) {
+  toast.error(
+    `상담DB 일괄등록은 서버 안정성을 위해 1회 최대 ${MAX_BULK_CONSULTATIONS}건까지만 가능합니다. 현재 ${finalRows.length}건입니다.`
+  );
+  setBulkPreviewRows([]);
+  return;
+}
+
+setBulkPreviewRows(finalRows);
+toast.success(`${finalRows.length}건 미리보기 생성`);
   };
 
   const handleBulkSave = () => {
@@ -252,12 +262,19 @@ const canOverrideRegisteredStatus = isHost || isSuperHost;
       (row) => row.clientName && row.phone
     );
 
-    if (!validRows.length) {
-      toast.error("이름과 연락처가 있는 행이 없습니다");
-      return;
-    }
+   if (!validRows.length) {
+  toast.error("이름과 연락처가 있는 행이 없습니다");
+  return;
+}
 
-    bulkCreateMut.mutate({
+if (validRows.length > MAX_BULK_CONSULTATIONS) {
+  toast.error(
+    `상담DB 일괄등록은 서버 안정성을 위해 1회 최대 ${MAX_BULK_CONSULTATIONS}건까지만 가능합니다. 현재 유효 데이터는 ${validRows.length}건입니다.`
+  );
+  return;
+}
+
+bulkCreateMut.mutate({
       rows: validRows.map((row) => ({
         consultDate: new Date().toISOString().slice(0, 10),
         channel: row.channel,
@@ -338,11 +355,27 @@ const canOverrideRegisteredStatus = isHost || isSuperHost;
   };
 
   const handleCsvImport = () => {
-    if (!csvText.trim()) {
-      toast.error("CSV 내용이 없습니다");
-      return;
-    }
-    importCsvMut.mutate({ csvText, hasHeader: csvHasHeader } as any);
+   if (!csvText.trim()) {
+  toast.error("CSV 내용이 없습니다");
+  return;
+}
+
+const csvLines = csvText
+  .replace(/\r/g, "")
+  .split("\n")
+  .map((line) => line.trim())
+  .filter(Boolean);
+
+const dataCount = Math.max(csvLines.length - (csvHasHeader ? 1 : 0), 0);
+
+if (dataCount > MAX_BULK_CONSULTATIONS) {
+  toast.error(
+    `CSV 임포트는 서버 안정성을 위해 1회 최대 ${MAX_BULK_CONSULTATIONS}건까지만 가능합니다. 현재 ${dataCount}건입니다.`
+  );
+  return;
+}
+
+importCsvMut.mutate({ csvText, hasHeader: csvHasHeader } as any);
     setCsvText("");
     setShowCsvImport(false);
   };
