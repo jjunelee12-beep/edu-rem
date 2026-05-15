@@ -4334,15 +4334,23 @@ const student = await getStudent(Number((data as any).studentId), {
   return getInsertId(result);
 }
 
-export async function updateSemester(id: number, data: Partial<InsertSemester> & {
-  registeredCourses?: string[];
-}) {
+export async function updateSemester(
+  id: number,
+  data: Partial<InsertSemester> & {
+    registeredCourses?: string[];
+  },
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
   const nextData: any = { ...data };
 
-const organizationId = requireOrganizationId((data as any).organizationId);
+const organizationId = requireOrganizationId(
+  params?.organizationId ?? (data as any).organizationId
+);
 
 if ((data as any).approvalStatus !== undefined) {
   nextData.approvalStatus = (data as any).approvalStatus;
@@ -4395,15 +4403,18 @@ const updatedSemester = await getSemester(id, {
   if (!nextPrimaryCourse) return;
 
   // 1) 학생 대표과정 동기화
-  await updateStudent(Number(updatedSemester.studentId), {
-    course: nextPrimaryCourse,
-  } as any);
+await updateStudent(Number(updatedSemester.studentId), {
+  course: nextPrimaryCourse,
+} as any, {
+  organizationId,
+});
 
   // 2) 플랜 요약 희망과정 동기화
   await upsertPlan({
-    studentId: Number(updatedSemester.studentId),
-    desiredCourse: nextPrimaryCourse,
-  } as any);
+  organizationId,
+  studentId: Number(updatedSemester.studentId),
+  desiredCourse: nextPrimaryCourse,
+} as any);
 
   // 3) 상담DB 희망과정 동기화
 const student = await getStudent(Number(updatedSemester.studentId), {

@@ -4452,15 +4452,15 @@ if (input.registeredCourses !== undefined) {
         }
 
         if (input.plannedSubjectCount !== undefined) {
-          await db.syncPlanSemestersByCount(
-  input.studentId,
-  input.semesterOrder,
-  input.plannedSubjectCount,
-  {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
-  }
-);
-        }
+  await db.syncPlanSemestersByCount(
+    Number(sem.studentId),
+    Number(sem.semesterOrder),
+    input.plannedSubjectCount,
+    {
+      organizationId,
+    }
+  );
+}
 
         if (input.status !== undefined) {
   const refreshedSems = await db.listSemesters(sem.studentId, {
@@ -4535,8 +4535,10 @@ if (input.registeredCourses !== undefined) {
         }
 
         if (input.isCompleted) {
-          await db.checkAndAutoComplete(sem.studentId);
-        }
+  await db.checkAndAutoComplete(sem.studentId, {
+    organizationId,
+  });
+}
 
         return { success: true };
       }),
