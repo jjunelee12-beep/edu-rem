@@ -9228,9 +9228,7 @@ export async function createPrivateCertificateRequest(data: InsertPrivateCertifi
     await syncPrivateCertificateSettlementItemByRequestId(
       Number(insertId),
       undefined,
-      {
-        organizationId,
-      }
+      { organizationId }
     );
   }
 

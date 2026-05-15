@@ -1712,6 +1712,7 @@ if (isReadOnly) {
   return;
 }
   const actualStartDate = normalizePlannedMonthToDate(sem.plannedMonth);
+const today = new Date().toISOString().slice(0, 10);
 
   updateSemMut.mutate(
     {
@@ -1720,13 +1721,14 @@ if (isReadOnly) {
       actualInstitutionId: sem.plannedInstitutionId || undefined,
       actualSubjectCount: sem.plannedSubjectCount ?? undefined,
       actualAmount: sem.plannedAmount || undefined,
+	actualPaymentDate: today,
     } as any,
     {
       onSuccess: async () => {
         await utils.semester.list.invalidate({ studentId });
         await utils.student.get.invalidate({ id: studentId });
         await utils.plan.get.invalidate({ studentId });
-        toast.success("예정 정보를 실제 결제 정보로 복사했습니다.");
+       toast.success("예정 정보와 결제일을 실제 결제 정보로 복사했습니다.");
       },
     }
   );

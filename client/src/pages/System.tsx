@@ -206,23 +206,23 @@ function SettlementSystemSection() {
   const [payoutDay, setPayoutDay] = useState<string>("25");
 
 const [institutionDraft, setInstitutionDraft] = useState<{
-  settlementType: "credit" | "subject" | "fixed";
+  settlementType: "subject";
   normalSubjectPrice: string;
   unitCostAmount: string;
 }>({
-  settlementType: "credit",
+  settlementType: "subject",
   normalSubjectPrice: "75000",
   unitCostAmount: "0",
 });
 
 function shallowEqualInstitutionDraft(
   a: {
-    settlementType: "credit" | "subject" | "fixed";
+    settlementType: "subject";
     normalSubjectPrice: string;
     unitCostAmount: string;
   },
   b: {
-    settlementType: "credit" | "subject" | "fixed";
+    settlementType: "subject";
     normalSubjectPrice: string;
     unitCostAmount: string;
   }
@@ -309,7 +309,7 @@ const updateInstitutionMutation =
 
 useEffect(() => {
   const fallbackDraft = {
-    settlementType: "credit" as const,
+    settlementType: "subject" as const,
     normalSubjectPrice: "75000",
     unitCostAmount: "0",
   };
@@ -329,7 +329,7 @@ useEffect(() => {
 
   const nextDraft = {
     settlementType:
-      (selected.settlementType as "credit" | "subject" | "fixed") || "credit",
+      "subject",
     normalSubjectPrice: String(selected.normalSubjectPrice ?? "75000"),
     unitCostAmount: String(selected.unitCostAmount ?? "0"),
   };
@@ -393,20 +393,53 @@ setBulkCertificateCompanyShareAmount((prev) =>
   );
 
   const handleSaveInstitutionRate = (positionId: number) => {
-    if (!selectedInstitutionId) {
-      toast.error("교육원을 먼저 선택해주세요.");
-      return;
-    }
+  if (!selectedInstitutionId) {
+    toast.error("교육원을 먼저 선택해주세요.");
+    return;
+  }
 
-    const freelancerUnitAmount = rateDrafts[String(positionId)] ?? "0";
+  const freelancerUnitAmount = Number(rateDrafts[String(positionId)] || 0);
+  const normalSubjectPrice = Number(institutionDraft.normalSubjectPrice || 0);
+  const unitCostAmount = Number(institutionDraft.unitCostAmount || 0);
 
-    upsertRateMutation.mutate({
-      educationInstitutionId: Number(selectedInstitutionId),
-      positionId: Number(positionId),
-      freelancerUnitAmount,
-      isActive: true,
-    });
-  };
+  if (normalSubjectPrice <= 0) {
+    toast.error("과목 기본 가격을 먼저 입력해주세요.");
+    return;
+  }
+
+  if (unitCostAmount < 0) {
+    toast.error("교육원 정산 금액이 올바르지 않습니다.");
+    return;
+  }
+
+  if (freelancerUnitAmount <= 0) {
+    toast.error("직급별 프리랜서 단가를 입력해주세요.");
+    return;
+  }
+
+  const companySharePerUnit = normalSubjectPrice - unitCostAmount;
+
+  if (companySharePerUnit <= 0) {
+    toast.error(
+      "정산 설정값이 잘못되었습니다. 과목 기본 가격보다 교육원 정산 금액이 크거나 같습니다."
+    );
+    return;
+  }
+
+  if (freelancerUnitAmount > companySharePerUnit) {
+    toast.error(
+      `정산 설정값이 잘못되었습니다. 프리랜서 단가(${freelancerUnitAmount.toLocaleString()}원)가 회사 몫(${companySharePerUnit.toLocaleString()}원)을 초과합니다.`
+    );
+    return;
+  }
+
+  upsertRateMutation.mutate({
+    educationInstitutionId: Number(selectedInstitutionId),
+    positionId: Number(positionId),
+    freelancerUnitAmount: String(freelancerUnitAmount),
+    isActive: true,
+  });
+};
 
   const handleSaveSettlementSettings = () => {
     const nextPayoutDay = Number(String(payoutDay || "").replace(/[^0-9]/g, ""));
@@ -429,7 +462,7 @@ const handleSaveInstitutionBaseSettings = () => {
 
   updateInstitutionMutation.mutate({
     id: Number(selectedInstitutionId),
-    settlementType: institutionDraft.settlementType,
+    settlementType: "subject",
     normalSubjectPrice: institutionDraft.normalSubjectPrice || "75000",
     unitCostAmount: institutionDraft.unitCostAmount || "0",
   });
@@ -576,26 +609,14 @@ if (!companyShareAmount) {
     ) : (
       <div className="grid gap-4 md:grid-cols-3">
         <div className="space-y-2">
-          <p className="text-sm font-medium">정산 방식</p>
-          <Select
-            value={institutionDraft.settlementType}
-            onValueChange={(value: "credit" | "subject" | "fixed") =>
-              setInstitutionDraft((prev) => ({
-                ...prev,
-                settlementType: value,
-              }))
-            }
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="credit">학점 기준</SelectItem>
-              <SelectItem value="subject">과목 기준</SelectItem>
-              <SelectItem value="fixed">고정 금액</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+  <p className="text-sm font-medium">정산 방식</p>
+
+  <Input
+    value="과목 기준"
+    disabled
+    className="bg-muted"
+  />
+</div>
 
         <div className="space-y-2">
           <p className="text-sm font-medium">과목 기본 가격</p>
