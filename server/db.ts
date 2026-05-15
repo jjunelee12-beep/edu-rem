@@ -9049,6 +9049,29 @@ export async function deleteSubjectCatalogItem(
 }
 
 // ─── Private Certificate Requests (민간자격증 요청) ─────────────────
+export async function getPrivateCertificateRequest(
+  id: number,
+  params?: { organizationId?: number | null }
+) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const organizationId = requireOrganizationId(params?.organizationId);
+
+  const rows = await db
+    .select()
+    .from(privateCertificateRequests)
+    .where(
+      and(
+        eq(privateCertificateRequests.id, Number(id)),
+        eq(privateCertificateRequests.organizationId, organizationId)
+      )
+    )
+    .limit(1);
+
+  return rows[0];
+}
+
 export async function listPrivateCertificateRequests(
   assigneeId?: number,
   params?: {
