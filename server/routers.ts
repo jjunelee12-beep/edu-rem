@@ -3790,7 +3790,15 @@ await db.bulkCreateConsultations(rows as any);
     })
   )
   .mutation(async ({ ctx, input }) => {
-    const item = await db.getConsultation(input.id);
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+    if (!organizationId) {
+      throw new Error("organizationId is required");
+    }
+
+    const item = await db.getConsultation(input.id, {
+      organizationId,
+    });
 
     if (!item) {
       throw new Error("상담 기록을 찾을 수 없습니다");
@@ -3816,17 +3824,24 @@ await db.bulkCreateConsultations(rows as any);
         allowedForStaff.status = rest.status;
       }
 
-      await db.updateConsultation(id, allowedForStaff);
+      await db.updateConsultation(id, allowedForStaff, {
+  organizationId,
+});
 
       if (rest.status === "등록예정") {
-        const linkedStudent = await db.getStudentByConsultationId(id);
+        const linkedStudent = await db.getStudentByConsultationId(id, {
+  organizationId,
+});
 
         if (!linkedStudent) {
-          const latestConsultation = await db.getConsultation(id);
+          const latestConsultation = await db.getConsultation(id, {
+  organizationId,
+});
 
           if (latestConsultation) {
             await db.createStudent({
-              clientName: latestConsultation.clientName,
+  organizationId,
+  clientName: latestConsultation.clientName,
               phone: latestConsultation.phone,
               course: latestConsultation.desiredCourse || "",
               finalEducation: latestConsultation.finalEducation || "",
@@ -3848,17 +3863,24 @@ await db.bulkCreateConsultations(rows as any);
       data.consultDate = new Date(rest.consultDate);
     }
 
-    await db.updateConsultation(id, data);
+    await db.updateConsultation(id, data, {
+  organizationId,
+});
 
     if (rest.status === "등록예정") {
-      const linkedStudent = await db.getStudentByConsultationId(id);
+     const linkedStudent = await db.getStudentByConsultationId(id, {
+  organizationId,
+});
 
       if (!linkedStudent) {
-        const latestConsultation = await db.getConsultation(id);
+        const latestConsultation = await db.getConsultation(id, {
+  organizationId,
+});
 
         if (latestConsultation) {
           await db.createStudent({
-            clientName: latestConsultation.clientName,
+  organizationId,
+  clientName: latestConsultation.clientName,
             phone: latestConsultation.phone,
             course: latestConsultation.desiredCourse || "",
             finalEducation: latestConsultation.finalEducation || "",
