@@ -5531,8 +5531,9 @@ const companyAmount = netCompanyShareAmount;
 // 예: 36,746 - 20,000 = 16,746
 const companyProfit = Math.max(0, netCompanyShareAmount - freelancerAmount);
 
-  return await upsertSettlementItem({
-    revenueType: "private_certificate",
+return await upsertSettlementItem({
+  organizationId,
+  revenueType: "private_certificate",
     sourceId: Number(request.id),
     studentId: Number(request.studentId),
     assigneeId: Number((request as any).assigneeId ?? 0) || null,
