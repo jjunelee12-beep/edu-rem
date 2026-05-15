@@ -87,7 +87,7 @@ const withOrgPath = (path: string) => {
   const utils = trpc.useUtils();
 
   const canViewAll = user?.role === "host";
-const isSuperhost = false;
+const canManagePolicy = user?.role === "host";
 
   const [monthFilter, setMonthFilter] = useState(getCurrentMonthValue());
   const [baseDate, setBaseDate] = useState(getTodayValue());
@@ -104,8 +104,8 @@ const isSuperhost = false;
   const [policyAutoClockOut, setPolicyAutoClockOut] = useState(true);
 
   const { data: attendancePolicy } = trpc.attendance.getPolicy.useQuery(undefined, {
-    enabled: isSuperhost,
-  });
+  enabled: canManagePolicy,
+});
 
   useEffect(() => {
     if (!attendancePolicy) return;
@@ -423,13 +423,13 @@ const { data: myProfile } = trpc.users.me.useQuery();
         </CardContent>
       </Card>
 
-      {isSuperhost ? (
+      {canManagePolicy ? (
         <Card>
           <CardContent className="p-5">
             <div className="mb-4">
-              <h3 className="text-base font-bold">슈퍼호스트 근무시간 설정</h3>
+              <h3 className="text-base font-bold">근무시간 설정</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                슈퍼호스트가 기본 출근/퇴근 시간과 자동 퇴근 사용 여부를 설정할 수 있습니다.
+                호스트가 회사의 기본 출근/퇴근 시간과 자동 퇴근 사용 여부를 설정할 수 있습니다.
               </p>
             </div>
 
