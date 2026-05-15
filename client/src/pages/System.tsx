@@ -982,11 +982,15 @@ function UserManagementSection() {
   const handlePhoneInput = (value: string) =>
     value.replace(/\D/g, "").slice(0, 11);
 
-  const roleFilteredUsers = useMemo(() => {
-    const list = users ?? [];
-    if (roleFilter === "all") return list;
-    return list.filter((u: any) => u.role === roleFilter);
-  }, [users, roleFilter]);
+  const visibleUsers = useMemo(() => {
+  return (users ?? []).filter((u: any) => u.role !== "superhost");
+}, [users]);
+
+const roleFilteredUsers = useMemo(() => {
+  const list = visibleUsers;
+  if (roleFilter === "all") return list;
+  return list.filter((u: any) => u.role === roleFilter);
+}, [visibleUsers, roleFilter]);
 
   const filteredUsers = useMemo(() => {
     if (!searchTerm.trim()) return roleFilteredUsers;
@@ -1027,7 +1031,7 @@ function UserManagementSection() {
   }, [roleFilteredUsers, roleSearchTerm]);
 
   const passwordFilteredUsers = useMemo(() => {
-    const list = users ?? [];
+  const list = visibleUsers;
     if (!passwordSearch.trim()) return list;
 
     const term = passwordSearch.trim().toLowerCase();
@@ -1482,7 +1486,7 @@ function UserManagementSection() {
                       <SelectValue placeholder="기존 담당자 선택" />
                     </SelectTrigger>
                     <SelectContent>
-                      {users?.map((u: any) => (
+                      {visibleUsers.map((u: any) => (
                         <SelectItem key={u.id} value={String(u.id)}>
                           {u.name || u.username || `#${u.id}`} ({u.role})
                         </SelectItem>
@@ -1498,7 +1502,7 @@ function UserManagementSection() {
                       <SelectValue placeholder="변경할 담당자 선택" />
                     </SelectTrigger>
                     <SelectContent>
-                      {users?.map((u: any) => (
+                      {visibleUsers.map((u: any) => (
                         <SelectItem key={u.id} value={String(u.id)}>
                           {u.name || u.username || `#${u.id}`} ({u.role})
                         </SelectItem>
@@ -2191,7 +2195,7 @@ function UserManagementSection() {
                       </tr>
                     </thead>
                     <tbody>
-                      {users.map((u: any) => {
+                      {visibleUsers.map((u: any) => {
                         const mapping = getMapping(u.id);
                         const rowLocked =
                           !isSuperhostOnly || isProtectedSuperhost(u);

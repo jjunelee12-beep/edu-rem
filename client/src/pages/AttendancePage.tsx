@@ -361,7 +361,7 @@ const withOrgPath = (path: string) => {
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 {canViewAll
-                  ? "호스트 / 슈퍼호스트는 전체 직원 기록을 볼 수 있습니다."
+                  ? "호스트는 전체 직원 기록을 볼 수 있습니다."
                   : canViewTeam
                   ? "관리자는 자기 팀 직원 기록만 조회하고 수정할 수 있습니다."
                   : "직원은 본인 기록만 조회할 수 있습니다."}

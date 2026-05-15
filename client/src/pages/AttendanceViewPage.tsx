@@ -338,7 +338,7 @@ const { data: myProfile } = trpc.users.me.useQuery();
           <CardContent className="p-8 text-center">
             <p className="text-base font-semibold">접근 권한이 없습니다.</p>
             <p className="mt-2 text-sm text-muted-foreground">
-              열람 페이지는 호스트 / 슈퍼호스트만 접근할 수 있습니다.
+              열람 페이지는 호스트만 접근할 수 있습니다.
             </p>
             <div className="mt-4">
               <Button variant="outline" onClick={() => setLocation(withOrgPath("/attendance"))}>
@@ -363,7 +363,7 @@ const { data: myProfile } = trpc.users.me.useQuery();
   <p>
     {displayTeamName} · {displayPositionName}
   </p>
-</div>s
+</div>
             </div>
 
             <div className="flex flex-wrap gap-2">
