@@ -32,12 +32,13 @@ import {
   createPrivateDownloadUrl,
   readPrivateTextObject,
 } from "./_core/objectStorage";
+import { maskPersonalData, maskPersonalDataList } from "./_core/privacy";
+import { sendVerificationEmail } from "./_core/mail";
 
 function isAdminOrHost(user: any) {
   return (
     user?.role === "admin" ||
-    user?.role === "host" ||
-    user?.role === "superhost"
+    user?.role === "host"
   );
 }
 
@@ -65,16 +66,6 @@ function assertCanManageOwnFormOrHigher(currentUser: any, targetAssigneeId?: num
   }
 }
 
-function assertHostOrSuperhost(user: any) {
-  if (!user) {
-    throw new Error("로그인이 필요합니다.");
-  }
-
-  if (user.role !== "host" && user.role !== "superhost") {
-    throw new Error("호스트 또는 슈퍼호스트만 접근할 수 있습니다.");
-  }
-}
-
 function assertStudentEditable(params: {
   currentUser: any;
   student: any;
@@ -85,12 +76,9 @@ function assertStudentEditable(params: {
     throw new Error("로그인이 필요합니다.");
   }
 
-  if (
-    currentUser.role === "host" ||
-    currentUser.role === "superhost"
-  ) {
-    return true;
-  }
+  if (currentUser.role === "host") {
+  return true;
+}
 
   if (
     Number(student?.assigneeId || 0) ===
@@ -290,6 +278,56 @@ export const appRouter = router({
   sms: smsRouter,
 saas: saasRouter,
 
+monitoring: router({
+  organizationSummary: superHostProcedure.query(async () => {
+    return db.getOrganizationMonitoringSummary();
+  }),
+
+  organizationDetail: superHostProcedure
+    .input(
+      z.object({
+        organizationId: z.number(),
+      })
+    )
+    .query(async ({ input }) => {
+      return db.getOrganizationMonitoringDetail({
+        organizationId: input.organizationId,
+      });
+    }),
+
+  organizationApiErrors: superHostProcedure
+    .input(
+      z.object({
+        organizationId: z.number(),
+        limit: z.number().optional(),
+      })
+    )
+    .query(async ({ input }) => {
+      return db.listOrganizationApiErrorLogs({
+        organizationId: input.organizationId,
+        limit: input.limit ?? 100,
+      });
+    }),
+
+  organizationApiErrorSummary: superHostProcedure
+    .input(
+      z.object({
+        organizationId: z.number(),
+        days: z.number().optional(),
+      })
+    )
+    .query(async ({ input }) => {
+      return db.getOrganizationApiErrorSummary({
+        organizationId: input.organizationId,
+        days: input.days ?? 7,
+      });
+    }),
+
+systemHealth: superHostProcedure.query(async () => {
+  return db.getSystemHealthStatus();
+}),
+}),
+
 organizationFeatures: protectedProcedure.query(async ({ ctx }) => {
   const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
@@ -299,6 +337,7 @@ organizationFeatures: protectedProcedure.query(async ({ ctx }) => {
 
   return getOrganizationFeatureFlags(organizationId);
 }),
+
 
 backup: router({
   list: hostProcedure
@@ -816,9 +855,11 @@ subjectCatalog: subjectCatalogRouter,
     ? input?.assigneeId
     : Number(ctx.user.id);
 
-  return db.listPrivateCertificateRequests(assigneeId, {
-    organizationId,
-  });
+  const rows = await db.listPrivateCertificateRequests(assigneeId, {
+  organizationId,
+});
+
+return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
 }),
 
     listByStudent: protectedProcedure
@@ -840,9 +881,11 @@ subjectCatalog: subjectCatalogRouter,
     organizationId,
   });
         if (!student) return [];
-        return db.listPrivateCertificateRequestsByStudent(input.studentId, {
+        const rows = await db.listPrivateCertificateRequestsByStudent(input.studentId, {
   organizationId,
 });
+
+return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
       }),
 
     create: protectedProcedure
@@ -1161,13 +1204,15 @@ await writeStudentAuditLog({
     ? input?.assigneeId
     : Number(ctx.user.id);
 
-  return db.listPracticeSupportRequests({
-    organizationId,
+  const rows = await db.listPracticeSupportRequests({
+  organizationId,
   assigneeId,
   month: input?.month,
   status: input?.status,
   search: input?.search,
 });
+
+return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
   }),
 
     listByStudent: protectedProcedure
@@ -1189,9 +1234,11 @@ await writeStudentAuditLog({
     organizationId,
   });
         if (!student) return [];
-       return db.listPracticeSupportRequestsByStudent(input.studentId, {
+       const rows = await db.listPracticeSupportRequestsByStudent(input.studentId, {
   organizationId,
 });
+
+return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
       }),
 
     get: protectedProcedure
@@ -1205,9 +1252,11 @@ await writeStudentAuditLog({
     "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
   );
 
-  return db.getPracticeSupportRequest(input.id, {
-    organizationId,
-  });
+  const row = await db.getPracticeSupportRequest(input.id, {
+  organizationId,
+});
+
+return isSuperhost(ctx.user) && row ? maskPersonalData(row as any) : row;
 }),
 
     create: protectedProcedure
@@ -1635,11 +1684,294 @@ assertStudentEditable({
     }),
   }),
 
+authRecovery: router({
+  sendCode: publicProcedure
+    .input(
+      z.object({
+  organizationId: z.number().optional().default(1),
+  purpose: z.enum(["find_id", "reset_password"]),
+
+  name: z.string().min(1),
+  phone: z.string().optional(),
+  username: z.string().optional(),
+
+  email: z.string().email(),
+})
+    )
+    .mutation(async ({ ctx, input }) => {
+      const organizationId = Number(input.organizationId || 1);
+      const email = input.email.trim().toLowerCase();
+
+      const code = String(Math.floor(100000 + Math.random() * 900000));
+      const codeHash = await bcrypt.hash(code, 10);
+
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+const recentCode = await db.getRecentEmailVerificationCode({
+  organizationId,
+  email,
+  purpose: input.purpose,
+  seconds: 30,
+});
+
+if (recentCode) {
+  throw new Error("인증코드는 30초 후 다시 발송할 수 있습니다.");
+}
+
+const recentCount = await db.countRecentEmailVerificationCodes({
+  organizationId,
+  email,
+  purpose: input.purpose,
+  minutes: 5,
+});
+
+if (recentCount >= 5) {
+  throw new Error("인증코드 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+}
+
+if (input.purpose === "find_id") {
+  const users = await db.findUsersForIdRecovery({
+    organizationId,
+    name: input.name,
+    phone: input.phone || "",
+    email,
+  });
+
+  if (users.length === 0) {
+    throw new Error("입력한 정보와 일치하는 계정을 찾을 수 없습니다.");
+  }
+}
+
+if (input.purpose === "reset_password") {
+  if (!input.username?.trim()) {
+    throw new Error("아이디를 입력해주세요.");
+  }
+
+  const user = await db.findUserForPasswordReset({
+    organizationId,
+    name: input.name,
+    username: input.username,
+    email,
+  });
+
+  if (!user) {
+    throw new Error("입력한 정보와 일치하는 계정을 찾을 수 없습니다.");
+  }
+}
+
+      await db.createEmailVerificationCode({
+        organizationId,
+        email,
+        purpose: input.purpose,
+        codeHash,
+        attempts: 0,
+        maxAttempts: 5,
+        expiresAt,
+        usedAt: null,
+        ipAddress: ctx.req?.ip || null,
+        userAgent: ctx.req?.headers?.["user-agent"] || null,
+      } as any);
+
+      await sendVerificationEmail({
+  to: email,
+  code,
+  purpose: input.purpose,
+});
+
+      return {
+        success: true,
+        message: "인증코드가 발송되었습니다.",
+        devCode: process.env.NODE_ENV !== "production" ? code : undefined,
+      };
+    }),
+
+  verifyFindIdCode: publicProcedure
+    .input(
+      z.object({
+        organizationId: z.number().optional().default(1),
+        email: z.string().email(),
+        code: z.string().min(4),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const organizationId = Number(input.organizationId || 1);
+      const email = input.email.trim().toLowerCase();
+
+      const record = await db.getLatestEmailVerificationCode({
+        organizationId,
+        email,
+        purpose: "find_id",
+      });
+
+      if (!record) {
+        throw new Error("유효한 인증코드가 없습니다.");
+      }
+
+      if (Number((record as any).attempts || 0) >= Number((record as any).maxAttempts || 5)) {
+        throw new Error("인증 시도 횟수를 초과했습니다.");
+      }
+
+      const ok = await bcrypt.compare(input.code.trim(), String((record as any).codeHash || ""));
+
+      if (!ok) {
+        await db.increaseEmailVerificationAttempt(Number((record as any).id));
+        throw new Error("인증코드가 일치하지 않습니다.");
+      }
+
+      await db.markEmailVerificationUsed(Number((record as any).id));
+
+      const users = await db.findUsersByEmailForRecovery({
+        organizationId,
+        email,
+      });
+
+      return {
+        success: true,
+        users: users.map((u: any) => ({
+          username: u.username,
+          name: u.name,
+          role: u.role,
+        })),
+      };
+    }),
+
+  verifyResetPasswordCode: publicProcedure
+    .input(
+      z.object({
+        organizationId: z.number().optional().default(1),
+	name: z.string().min(1),
+        username: z.string().min(1),
+        email: z.string().email(),
+        code: z.string().min(4),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const organizationId = Number(input.organizationId || 1);
+      const email = input.email.trim().toLowerCase();
+
+     const user = await db.findUserForPasswordReset({
+  organizationId,
+  name: input.name,
+  username: input.username,
+  email,
+});
+
+      if (!user) {
+        throw new Error("일치하는 계정을 찾을 수 없습니다.");
+      }
+
+      const record = await db.getLatestEmailVerificationCode({
+        organizationId,
+        email,
+        purpose: "reset_password",
+      });
+
+      if (!record) {
+        throw new Error("유효한 인증코드가 없습니다.");
+      }
+
+      if (Number((record as any).attempts || 0) >= Number((record as any).maxAttempts || 5)) {
+        throw new Error("인증 시도 횟수를 초과했습니다.");
+      }
+
+      const ok = await bcrypt.compare(input.code.trim(), String((record as any).codeHash || ""));
+
+      if (!ok) {
+        await db.increaseEmailVerificationAttempt(Number((record as any).id));
+        throw new Error("인증코드가 일치하지 않습니다.");
+      }
+
+      return {
+        success: true,
+        resetAllowed: true,
+      };
+    }),
+
+  resetPassword: publicProcedure
+    .input(
+      z.object({
+        organizationId: z.number().optional().default(1),
+name: z.string().min(1),        
+username: z.string().min(1),
+        email: z.string().email(),
+        code: z.string().min(4),
+        newPassword: z.string().min(8),
+        newPasswordConfirm: z.string().min(8),
+      })
+    )
+    .mutation(async ({ input }) => {
+      if (input.newPassword !== input.newPasswordConfirm) {
+        throw new Error("새 비밀번호가 서로 일치하지 않습니다.");
+      }
+
+      const organizationId = Number(input.organizationId || 1);
+      const email = input.email.trim().toLowerCase();
+
+      const user = await db.findUserForPasswordReset({
+  organizationId,
+  name: input.name,
+  username: input.username,
+  email,
+});
+
+      if (!user) {
+        throw new Error("일치하는 계정을 찾을 수 없습니다.");
+      }
+
+      const record = await db.getLatestEmailVerificationCode({
+        organizationId,
+        email,
+        purpose: "reset_password",
+      });
+
+      if (!record) {
+        throw new Error("유효한 인증코드가 없습니다.");
+      }
+
+      const ok = await bcrypt.compare(input.code.trim(), String((record as any).codeHash || ""));
+
+      if (!ok) {
+        await db.increaseEmailVerificationAttempt(Number((record as any).id));
+        throw new Error("인증코드가 일치하지 않습니다.");
+      }
+
+const samePassword = await bcrypt.compare(
+  input.newPassword,
+  String((user as any).passwordHash || "")
+);
+
+if (samePassword) {
+  throw new Error("기존 비밀번호와 동일한 비밀번호는 사용할 수 없습니다.");
+}
+
+      const passwordHash = await bcrypt.hash(input.newPassword, 10);
+
+      await db.updateUserAccount(
+        Number((user as any).id),
+        {
+          passwordHash,
+        },
+        {
+          organizationId,
+        }
+      );
+
+      await db.markEmailVerificationUsed(Number((record as any).id));
+
+      return {
+        success: true,
+        message: "비밀번호가 변경되었습니다.",
+      };
+    }),
+}),
+
   users: router({
   list: protectedProcedure.query(async ({ ctx }) => {
-  return db.getAllUsersDetailed({
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
-  });
+  const rows = await db.getAllUsersDetailed({
+  organizationId: Number((ctx.user as any)?.organizationId || 0),
+});
+
+return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
 }),
 
   me: protectedProcedure.query(async ({ ctx }) => {
@@ -2460,7 +2792,6 @@ formBlueprintAdmin: router({
       })
     )
     .query(async ({ input, ctx }) => {
-      assertHostOrSuperhost(ctx.user);
       return db.listFormBlueprints(
   input.formType,
   {
@@ -2476,7 +2807,6 @@ formBlueprintAdmin: router({
       })
     )
     .query(async ({ input, ctx }) => {
-      assertHostOrSuperhost(ctx.user);
 
       const row = await db.getFormBlueprintById(
   input.id,
@@ -2501,7 +2831,6 @@ formBlueprintAdmin: router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      assertHostOrSuperhost(ctx.user);
 
       const created = await db.createFormBlueprint({
 organizationId: Number((ctx.user as any)?.organizationId || 0),
@@ -2530,7 +2859,6 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
       })
     )
     .mutation(async ({ input, ctx }) => {
-      assertHostOrSuperhost(ctx.user);
 
       const updated = await db.updateFormBlueprint({
 organizationId: Number((ctx.user as any)?.organizationId || 0),
@@ -2555,7 +2883,6 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
       })
     )
     .mutation(async ({ input, ctx }) => {
-      assertHostOrSuperhost(ctx.user);
 
       await db.deleteFormBlueprint(
   input.id,
@@ -2577,7 +2904,6 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
       })
     )
     .mutation(async ({ input, ctx }) => {
-      assertHostOrSuperhost(ctx.user);
 
       const created = await db.createLeadFormFromBlueprint({
   organizationId: Number((ctx.user as any)?.organizationId || 0),
@@ -4259,7 +4585,6 @@ await db.bulkCreateConsultations(rows as any);
     }
 
 
-    assertHostOrSuperhost(ctx.user);
 
 
     await db.deleteConsultation(input.id, {
@@ -6712,7 +7037,6 @@ organizationId,
         })
       )
       .query(async ({ input, ctx }) => {
-  assertHostOrSuperhost(ctx.user);
 
   const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
@@ -6738,7 +7062,6 @@ organizationId,
         })
       )
       .query(async ({ input, ctx }) => {
-  assertHostOrSuperhost(ctx.user);
 
   const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
@@ -6763,7 +7086,6 @@ organizationId,
         })
       )
       .query(async ({ input, ctx }) => {
-  assertHostOrSuperhost(ctx.user);
 
   const organizationId = Number((ctx.user as any)?.organizationId || 0);
 

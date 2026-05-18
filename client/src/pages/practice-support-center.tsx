@@ -1973,7 +1973,13 @@ useEffect(() => {
         return;
       }
 
-      window.location.href = `/students/${studentId}`;
+      const currentPath = window.location.pathname;
+      const orgSlug = currentPath.split("/").filter(Boolean)[0] || "";
+      const targetPath = orgSlug
+        ? `/${orgSlug}/students/${studentId}`
+        : `/students/${studentId}`;
+
+      window.location.href = targetPath;
     }}
     className="font-medium text-blue-600 hover:underline"
   >

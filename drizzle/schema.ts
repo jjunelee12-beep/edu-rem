@@ -97,6 +97,7 @@ maxAdForms: int("maxAdForms").notNull().default(10),
 maxSmsMonthly: int("maxSmsMonthly").notNull().default(1000),
 
 allowBackup: boolean("allowBackup").notNull().default(true),
+allowAutoBackup: boolean("allowAutoBackup").notNull().default(false),
 allowAuditLog: boolean("allowAuditLog").notNull().default(true),
 allowMessenger: boolean("allowMessenger").notNull().default(true),
 allowPracticeCenter: boolean("allowPracticeCenter").notNull().default(true),
@@ -453,6 +454,68 @@ export const studentAuditLogs = mysqlTable("student_audit_logs", {
 
 export type StudentAuditLog = typeof studentAuditLogs.$inferSelect;
 export type InsertStudentAuditLog = typeof studentAuditLogs.$inferInsert;
+
+export const emailVerificationCodes = mysqlTable(
+  "email_verification_codes",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId")
+      .notNull()
+      .default(1),
+
+    email: varchar("email", { length: 255 })
+      .notNull(),
+
+    purpose: mysqlEnum("purpose", [
+      "find_id",
+      "reset_password",
+    ]).notNull(),
+
+    codeHash: varchar("codeHash", { length: 255 })
+      .notNull(),
+
+    attempts: int("attempts")
+      .notNull()
+      .default(0),
+
+    maxAttempts: int("maxAttempts")
+      .notNull()
+      .default(5),
+
+    expiresAt: datetime("expiresAt")
+      .notNull(),
+
+    usedAt: datetime("usedAt"),
+
+    ipAddress: varchar("ipAddress", { length: 100 }),
+
+    userAgent: text("userAgent"),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    orgIdx: index("idx_email_verification_org")
+      .on(table.organizationId),
+
+    emailIdx: index("idx_email_verification_email")
+      .on(table.email),
+
+    purposeIdx: index("idx_email_verification_purpose")
+      .on(table.purpose),
+
+    expiresIdx: index("idx_email_verification_expires")
+      .on(table.expiresAt),
+  })
+);
+
+export type EmailVerificationCode =
+  typeof emailVerificationCodes.$inferSelect;
+
+export type InsertEmailVerificationCode =
+  typeof emailVerificationCodes.$inferInsert;
 
 // ─── Semesters (학기별 예정표/결제표) ────────────────────────────────
 export const semesters = mysqlTable(
@@ -2230,3 +2293,41 @@ export const auditLogs = mysqlTable("audit_logs", {
 
 export type InsertAuditLog = typeof auditLogs.$inferInsert;
 export type AuditLog = typeof auditLogs.$inferSelect;
+
+export const apiErrorLogs = mysqlTable(
+  "api_error_logs",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull().default(1),
+
+    userId: int("userId"),
+    userRole: varchar("userRole", { length: 50 }),
+
+    path: varchar("path", { length: 255 }).notNull(),
+    method: varchar("method", { length: 20 }),
+    statusCode: int("statusCode").notNull().default(500),
+
+    errorName: varchar("errorName", { length: 120 }),
+    errorMessage: text("errorMessage"),
+    errorStack: text("errorStack"),
+
+    inputJson: text("inputJson"),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    orgCreatedIdx: index("idx_api_error_logs_org_created").on(
+      table.organizationId,
+      table.createdAt
+    ),
+    orgPathCreatedIdx: index("idx_api_error_logs_org_path_created").on(
+      table.organizationId,
+      table.path,
+      table.createdAt
+    ),
+  })
+);
+
+export type ApiErrorLog = typeof apiErrorLogs.$inferSelect;
+export type InsertApiErrorLog = typeof apiErrorLogs.$inferInsert;

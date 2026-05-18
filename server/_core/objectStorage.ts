@@ -2,6 +2,7 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -9,7 +10,9 @@ function getObjectStorageClient() {
   const endpoint =
     process.env.S3_ENDPOINT ||
     process.env.R2_ENDPOINT ||
-    undefined;
+    (process.env.R2_ACCOUNT_ID
+      ? `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`
+      : undefined);
 
   return new S3Client({
     region: process.env.S3_REGION || "auto",
@@ -32,6 +35,7 @@ export function getObjectStorageBucket() {
   return (
     process.env.S3_BUCKET ||
     process.env.R2_BUCKET ||
+    process.env.R2_BUCKET_NAME ||
     ""
   );
 }
@@ -111,4 +115,37 @@ export async function readPrivateTextObject(params: {
   }
 
   return body;
+}
+
+export async function deletePrivateObject(params: {
+  key: string;
+}) {
+  const bucket = getObjectStorageBucket();
+
+  if (!bucket) {
+    throw new Error("S3_BUCKET 또는 R2_BUCKET이 설정되지 않았습니다.");
+  }
+
+  if (!params.key?.trim()) {
+    return {
+      bucket,
+      key: params.key,
+      deleted: false,
+    };
+  }
+
+  const client = getObjectStorageClient();
+
+  await client.send(
+    new DeleteObjectCommand({
+      Bucket: bucket,
+      Key: params.key,
+    })
+  );
+
+  return {
+    bucket,
+    key: params.key,
+    deleted: true,
+  };
 }

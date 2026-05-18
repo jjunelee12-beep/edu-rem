@@ -133,6 +133,7 @@ export async function createOrganization(input: {
   maxLandingForms?: number;
 maxAdForms?: number;
 allowBackup?: boolean;
+allowAutoBackup?: boolean;
 allowAuditLog?: boolean;
 allowMessenger?: boolean;
 allowPracticeCenter?: boolean;
@@ -159,6 +160,7 @@ maxStorageMb?: number;
 maxStorageMb: input.maxStorageMb ?? 1024,
 maxAdForms: input.maxAdForms ?? 10,
 allowBackup: input.allowBackup ?? true,
+allowAutoBackup: input.allowAutoBackup ?? false,
 allowAuditLog: input.allowAuditLog ?? true,
 allowMessenger: input.allowMessenger ?? true,
 allowPracticeCenter: input.allowPracticeCenter ?? true,
@@ -185,6 +187,7 @@ export async function updateOrganization(input: {
   maxLandingForms?: number;
 maxAdForms?: number;
 allowBackup?: boolean;
+allowAutoBackup?: boolean;
 allowAuditLog?: boolean;
 allowMessenger?: boolean;
 allowPracticeCenter?: boolean;
@@ -224,6 +227,7 @@ const before = await getOrganizationById(input.id);
 maxStorageMb: input.maxStorageMb,
 maxAdForms: input.maxAdForms,
 allowBackup: input.allowBackup,
+allowAutoBackup: input.allowAutoBackup,
 allowAuditLog: input.allowAuditLog,
 allowMessenger: input.allowMessenger,
 allowPracticeCenter: input.allowPracticeCenter,

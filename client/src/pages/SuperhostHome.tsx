@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Users,
 } from "lucide-react";
+import { Link } from "wouter";
 
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +21,40 @@ import { Button } from "@/components/ui/button";
 export default function SuperhostHome() {
   const { user } = useAuth();
 const { data: logs } = trpc.ai.logs.useQuery();
+
+const monitoringQuery =
+  trpc.monitoring.organizationSummary.useQuery(undefined, {
+    enabled: user?.role === "superhost",
+  });
+
+const monitoringRows = monitoringQuery.data ?? [];
+
+const monitoringTotals = useMemo(() => {
+  return monitoringRows.reduce(
+    (acc: any, row: any) => {
+      acc.organizationCount += 1;
+      acc.userCount += Number(row.userCount || 0);
+      acc.studentCount += Number(row.studentCount || 0);
+      acc.consultationCount += Number(row.consultationCount || 0);
+      acc.totalTrackedRows += Number(row.totalTrackedRows || 0);
+
+      if (!row.latestBackupAt) {
+        acc.noBackupCount += 1;
+      }
+
+      return acc;
+    },
+    {
+      organizationCount: 0,
+      userCount: 0,
+      studentCount: 0,
+      consultationCount: 0,
+      totalTrackedRows: 0,
+      noBackupCount: 0,
+    }
+  );
+}, [monitoringRows]);
+
 const backfillMutation =
   trpc.settlementSystem.backfillSettlementItems.useMutation({
     onSuccess: (res) => {
@@ -203,6 +238,164 @@ const cleanupOrphanMutation =
           </Card>
         ))}
       </div>
+
+<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+  {[
+    ["총 회사", monitoringTotals.organizationCount],
+    ["총 사용자", monitoringTotals.userCount],
+    ["총 학생", monitoringTotals.studentCount],
+    ["총 상담DB", monitoringTotals.consultationCount],
+    ["백업 없음", monitoringTotals.noBackupCount],
+  ].map(([label, value]) => (
+    <Card key={String(label)} className="rounded-2xl">
+      <CardContent className="p-5">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="mt-2 text-2xl font-bold">{value}</p>
+      </CardContent>
+    </Card>
+  ))}
+</div>
+
+<Card className="rounded-2xl">
+  <CardHeader>
+    <CardTitle className="flex items-center gap-2">
+      <Building2 className="h-5 w-5" />
+      회사 모니터링
+    </CardTitle>
+  </CardHeader>
+
+  <CardContent className="space-y-4">
+    {monitoringQuery.isLoading ? (
+  <div className="text-sm text-muted-foreground">
+    회사 사용량을 불러오는 중입니다...
+  </div>
+) : monitoringQuery.isError ? (
+  <div className="text-sm text-red-600">
+    회사 사용량을 불러오지 못했습니다.
+  </div>
+) : monitoringRows.length === 0 ? (
+  <div className="text-sm text-muted-foreground">
+    등록된 회사 없음
+  </div>
+) : (
+      monitoringRows.map((row: any) => (
+        <div
+          key={row.id}
+          className="rounded-xl border p-4"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="font-semibold">
+                {row.name}
+              </div>
+
+              <div className="text-xs text-muted-foreground">
+                /{row.slug}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+  <Badge variant="secondary">
+    {row.planCode || "-"}
+  </Badge>
+
+  {Number(row.totalEstimatedMb || 0) > 0 &&
+  Number(row.maxStorageMb || 0) > 0 ? (
+    <Badge
+      variant={
+        Number(row.totalEstimatedMb) >= Number(row.maxStorageMb)
+          ? "destructive"
+          : Number(row.totalEstimatedMb) / Number(row.maxStorageMb) >= 0.8
+            ? "outline"
+            : "secondary"
+      }
+    >
+      {Math.round(
+        (Number(row.totalEstimatedMb) / Number(row.maxStorageMb)) * 100
+      )}
+      %
+    </Badge>
+  ) : null}
+</div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+            <div>
+              사용자:{" "}
+              <span className="font-medium">
+                {row.userCount}
+              </span>
+            </div>
+
+            <div>
+              학생:{" "}
+              <span className="font-medium">
+                {row.studentCount}
+              </span>
+            </div>
+
+            <div>
+              상담DB:{" "}
+              <span className="font-medium">
+                {row.consultationCount}
+              </span>
+            </div>
+
+            <div>
+              정산:{" "}
+              <span className="font-medium">
+                {row.settlementItemCount}
+              </span>
+            </div>
+
+            <div>
+              실습:{" "}
+              <span className="font-medium">
+                {row.practiceSupportCount}
+              </span>
+            </div>
+
+            <div>
+              민간자격증:{" "}
+              <span className="font-medium">
+                {row.privateCertificateCount}
+              </span>
+            </div>
+
+            <div>
+              백업:{" "}
+              <span className="font-medium">
+                {row.backupCount}
+              </span>
+            </div>
+
+            <div>
+              총 Row:{" "}
+              <span className="font-medium">
+                {row.totalTrackedRows}
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-3 text-xs text-muted-foreground">
+            최근 백업:
+            {" "}
+            {row.latestBackupAt
+              ? new Date(row.latestBackupAt).toLocaleString()
+              : "-"}
+          </div>
+<div className="mt-4">
+  <Link href={`/saas/monitoring/${row.id}`}>
+    <Button variant="outline" size="sm">
+      상세 모니터링
+    </Button>
+  </Link>
+</div>
+        </div>
+      ))
+    )}
+  </CardContent>
+</Card>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="rounded-2xl lg:col-span-2">

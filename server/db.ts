@@ -102,11 +102,16 @@ auditLogs,
 type InsertAuditLog,
 studentAuditLogs,
 type InsertStudentAuditLog,
+emailVerificationCodes,
+type InsertEmailVerificationCode,
+apiErrorLogs,
+type InsertApiErrorLog,
 } from "../drizzle/schema";
 
 import { ENV } from "./_core/env";
 import bcrypt from "bcryptjs";
 import { emitLiveNotification } from "./_core/live-notifications";
+import { getSocketStatus } from "./_core/socket-status";
 
 import { FEATURE_FLAGS } from "./_core/featureFlags";
 
@@ -159,6 +164,86 @@ export async function getDb() {
     console.log("[DB] CONNECTED:", (r as any)[0]);
   }
   return _db;
+}
+
+export async function getSystemHealthStatus() {
+  const startedAt = new Date(Date.now() - process.uptime() * 1000);
+  const checkedAt = new Date();
+
+  let dbStatus: "ok" | "error" = "error";
+  let dbName: string | null = null;
+  let dbHost: string | null = null;
+  let dbPort: number | null = null;
+  let dbError: string | null = null;
+
+  try {
+    const db = await getDb();
+
+    if (!db) {
+      throw new Error("DB not available");
+    }
+
+    const [rows] = await db.execute(sql`
+      SELECT
+        1 as ok,
+        DATABASE() as dbName,
+        @@hostname as dbHost,
+        @@port as dbPort
+    `);
+
+    const row = (rows as any)?.[0];
+
+    dbStatus = Number(row?.ok || 0) === 1 ? "ok" : "error";
+    dbName = row?.dbName || null;
+    dbHost = row?.dbHost || null;
+    dbPort = row?.dbPort ? Number(row.dbPort) : null;
+  } catch (error: any) {
+    dbStatus = "error";
+    dbError = error?.message || String(error);
+  }
+
+  const envStatus = {
+    nodeEnv: process.env.NODE_ENV || null,
+    railwayEnvironment: process.env.RAILWAY_ENVIRONMENT || null,
+    railwayServiceName: process.env.RAILWAY_SERVICE_NAME || null,
+    railwayProjectName: process.env.RAILWAY_PROJECT_NAME || null,
+    railwayDeploymentId: process.env.RAILWAY_DEPLOYMENT_ID || null,
+    railwayGitCommitSha: process.env.RAILWAY_GIT_COMMIT_SHA || null,
+  };
+
+const gitCommitSha = process.env.RAILWAY_GIT_COMMIT_SHA || null;
+
+  return {
+  api: {
+    status: "ok",
+    checkedAt: checkedAt.toISOString(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    startedAt: startedAt.toISOString(),
+  },
+  socket: getSocketStatus(),
+  db: {
+      status: dbStatus,
+      dbName,
+      dbHost,
+      dbPort,
+      error: dbError,
+    },
+    runtime: {
+      nodeVersion: process.version,
+      platform: process.platform,
+      memoryMb: {
+        rss: Math.round(process.memoryUsage().rss / 1024 / 1024),
+        heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+        heapTotal: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+      },
+    },
+    env: {
+  ...envStatus,
+  gitCommitShort: gitCommitSha ? gitCommitSha.slice(0, 8) : null,
+  serverStartedAt: startedAt.toISOString(),
+  checkedAt: checkedAt.toISOString(),
+},
+  };
 }
 
 
@@ -388,6 +473,72 @@ export async function listAuditLogs(params: {
     .limit(limit);
 }
 
+export async function createApiErrorLog(
+  input: Omit<InsertApiErrorLog, "id" | "createdAt">
+) {
+  try {
+    const db = await getDb();
+    if (!db) return null;
+
+    const organizationId = Number((input as any).organizationId || 0);
+    if (!organizationId) return null;
+
+    const result: any = await db.insert(apiErrorLogs).values(input as any);
+    return getInsertId(result);
+  } catch (err) {
+    console.error("[API ERROR LOG SAVE FAILED]", err);
+    return null;
+  }
+}
+
+export async function listOrganizationApiErrorLogs(params: {
+  organizationId: number;
+  limit?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const limit = Math.min(Math.max(Number(params.limit || 100), 1), 300);
+
+  const [rows] = await db.execute(sql`
+    SELECT *
+    FROM api_error_logs
+    WHERE organizationId = ${organizationId}
+    ORDER BY createdAt DESC
+    LIMIT ${limit}
+  `);
+
+  return rows as any[];
+}
+
+export async function getOrganizationApiErrorSummary(params: {
+  organizationId: number;
+  days?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const days = Math.min(Math.max(Number(params.days || 7), 1), 90);
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      path,
+      statusCode,
+      COUNT(*) as errorCount,
+      MAX(createdAt) as latestAt
+    FROM api_error_logs
+    WHERE organizationId = ${organizationId}
+      AND createdAt >= DATE_SUB(NOW(), INTERVAL ${days} DAY)
+    GROUP BY path, statusCode
+    ORDER BY errorCount DESC, latestAt DESC
+    LIMIT 50
+  `);
+
+  return rows as any[];
+}
+
 export async function createStudentAuditLog(
   input: Omit<InsertStudentAuditLog, "id" | "createdAt">
 ) {
@@ -426,6 +577,210 @@ export async function listStudentAuditLogs(params: {
     )
     .orderBy(desc(studentAuditLogs.createdAt))
     .limit(limit);
+}
+
+export async function createEmailVerificationCode(
+  input: Omit<InsertEmailVerificationCode, "id" | "createdAt">
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(emailVerificationCodes).values(input as any);
+  return getInsertId(result);
+}
+
+export async function getLatestEmailVerificationCode(params: {
+  organizationId?: number | null;
+  email: string;
+  purpose: "find_id" | "reset_password";
+}) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  const rows = await db
+    .select()
+    .from(emailVerificationCodes)
+    .where(
+      and(
+        eq(emailVerificationCodes.organizationId, organizationId),
+        eq(emailVerificationCodes.email, params.email.trim().toLowerCase()),
+        eq(emailVerificationCodes.purpose, params.purpose),
+        sql`${emailVerificationCodes.usedAt} IS NULL`,
+        sql`${emailVerificationCodes.expiresAt} > NOW()`
+      )
+    )
+    .orderBy(desc(emailVerificationCodes.createdAt))
+    .limit(1);
+
+  return rows[0] || null;
+}
+
+export async function getRecentEmailVerificationCode(params: {
+  organizationId?: number | null;
+  email: string;
+  purpose: "find_id" | "reset_password";
+  seconds?: number;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const seconds = Number(params.seconds || 30);
+
+  const rows = await db
+    .select()
+    .from(emailVerificationCodes)
+    .where(
+      and(
+        eq(emailVerificationCodes.organizationId, organizationId),
+        eq(emailVerificationCodes.email, params.email.trim().toLowerCase()),
+        eq(emailVerificationCodes.purpose, params.purpose),
+        sql`${emailVerificationCodes.createdAt} > DATE_SUB(NOW(), INTERVAL ${seconds} SECOND)`
+      )
+    )
+    .orderBy(desc(emailVerificationCodes.createdAt))
+    .limit(1);
+
+  return rows[0] || null;
+}
+
+export async function countRecentEmailVerificationCodes(params: {
+  organizationId?: number | null;
+  email: string;
+  purpose: "find_id" | "reset_password";
+  minutes?: number;
+}) {
+  const db = await getDb();
+  if (!db) return 0;
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const minutes = Number(params.minutes || 5);
+
+  const [rows] = await db.execute(sql`
+    SELECT COUNT(*) as count
+    FROM email_verification_codes
+    WHERE organizationId = ${organizationId}
+      AND email = ${params.email.trim().toLowerCase()}
+      AND purpose = ${params.purpose}
+      AND createdAt > DATE_SUB(NOW(), INTERVAL ${minutes} MINUTE)
+  `);
+
+  return Number((rows as any)?.[0]?.count || 0);
+}
+
+export async function increaseEmailVerificationAttempt(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(emailVerificationCodes)
+    .set({
+      attempts: sql`${emailVerificationCodes.attempts} + 1`,
+    } as any)
+    .where(eq(emailVerificationCodes.id, id));
+}
+
+export async function markEmailVerificationUsed(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(emailVerificationCodes)
+    .set({
+      usedAt: new Date(),
+    } as any)
+    .where(eq(emailVerificationCodes.id, id));
+}
+
+export async function findUsersByEmailForRecovery(params: {
+  organizationId?: number | null;
+  email: string;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  return db
+    .select({
+      id: users.id,
+      username: users.username,
+      name: users.name,
+      email: users.email,
+      role: users.role,
+      isActive: users.isActive,
+    })
+    .from(users)
+    .where(
+      and(
+        eq(users.organizationId, organizationId),
+        eq(users.email, params.email.trim().toLowerCase()),
+        eq(users.isActive, true)
+      )
+    );
+}
+
+export async function findUsersForIdRecovery(params: {
+  organizationId?: number | null;
+  name: string;
+  phone: string;
+  email: string;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  return db
+    .select({
+      id: users.id,
+      username: users.username,
+      name: users.name,
+      email: users.email,
+      phone: users.phone,
+      role: users.role,
+      isActive: users.isActive,
+    })
+    .from(users)
+    .where(
+      and(
+        eq(users.organizationId, organizationId),
+        eq(users.name, params.name.trim()),
+        eq(users.phone, params.phone.trim()),
+        eq(users.email, params.email.trim().toLowerCase()),
+        eq(users.isActive, true)
+      )
+    );
+}
+
+export async function findUserForPasswordReset(params: {
+  organizationId?: number | null;
+  name: string;
+  username: string;
+  email: string;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  const rows = await db
+    .select()
+    .from(users)
+    .where(
+      and(
+        eq(users.organizationId, organizationId),
+        eq(users.name, params.name.trim()),
+        eq(users.username, params.username.trim()),
+        eq(users.email, params.email.trim().toLowerCase()),
+        eq(users.isActive, true)
+      )
+    )
+    .limit(1);
+
+  return rows[0] || null;
 }
 
 // ==============================
@@ -583,6 +938,60 @@ export async function markOrganizationBackupRestored(input: {
     );
 
   return getOrganizationBackupById(input.id, { organizationId });
+}
+
+export async function listAutoBackupsToPrune(params: {
+  organizationId?: number | null;
+  keepCount?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const keepCount = Math.max(Number(params.keepCount || 7), 1);
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      id,
+      organizationId,
+      fileKey,
+      createdAt
+    FROM organization_backups
+    WHERE organizationId = ${organizationId}
+      AND backupType = 'auto'
+      AND status = 'completed'
+    ORDER BY createdAt DESC, id DESC
+    LIMIT 1000
+  `);
+
+  const backups = Array.isArray(rows) ? (rows as any[]) : [];
+
+  return backups.slice(keepCount);
+}
+
+export async function deleteOrganizationBackupRecord(params: {
+  id: number;
+  organizationId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  await db
+    .delete(organizationBackups)
+    .where(
+      and(
+        eq(organizationBackups.id, Number(params.id)),
+        eq(organizationBackups.organizationId, organizationId),
+        eq(organizationBackups.backupType, "auto")
+      )
+    );
+
+  return {
+    ok: true,
+    id: Number(params.id),
+  };
 }
 
 // ==============================
@@ -2844,7 +3253,7 @@ organizationId?: number;
     username: data.username,
     passwordHash: data.passwordHash ?? null,
     name: data.name,
-    email: data.email ?? null,
+    email: data.email?.trim().toLowerCase() || null,
     phone: data.phone ?? null,
     role: data.role,
 organizationId: data.organizationId ?? 1,
@@ -2894,9 +3303,17 @@ export async function updateUserAccount(
 
   if (!data || Object.keys(data).length === 0) return;
 
+const nextData = {
+  ...data,
+  email:
+    data.email === undefined
+      ? undefined
+      : data.email?.trim().toLowerCase() || null,
+};
+
   await db
     .update(users)
-    .set(data as any)
+    .set(nextData as any)
     .where(
       and(
         eq(users.id, id),
@@ -14910,4 +15327,335 @@ export async function migrateCourseTemplatesToSubjectCatalogs(db: any) {
   }
 
   console.log("✅ 이관 완료");
+}
+
+export async function getOrganizationMonitoringSummary() {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      o.id,
+      o.name,
+      o.slug,
+      o.status,
+      o.planCode,
+      o.maxUsers,
+      o.maxStudents,
+      o.maxStorageMb,
+      o.createdAt,
+
+      COALESCE(u.userCount, 0) as userCount,
+      COALESCE(s.studentCount, 0) as studentCount,
+      COALESCE(c.consultationCount, 0) as consultationCount,
+      COALESCE(si.settlementItemCount, 0) as settlementItemCount,
+      COALESCE(ps.practiceSupportCount, 0) as practiceSupportCount,
+      COALESCE(pc.privateCertificateCount, 0) as privateCertificateCount,
+      COALESCE(b.backupCount, 0) as backupCount,
+COALESCE(b.backupStorageBytes, 0) as backupStorageBytes,
+ROUND(COALESCE(b.backupStorageBytes, 0) / 1024 / 1024, 2) as backupStorageMb,
+b.latestBackupAt,
+
+      (
+        COALESCE(u.userCount, 0) +
+        COALESCE(s.studentCount, 0) +
+        COALESCE(c.consultationCount, 0) +
+        COALESCE(si.settlementItemCount, 0) +
+        COALESCE(ps.practiceSupportCount, 0) +
+        COALESCE(pc.privateCertificateCount, 0) +
+        COALESCE(b.backupCount, 0)
+      ) as totalTrackedRows
+
+    FROM organizations o
+
+    LEFT JOIN (
+      SELECT organizationId, COUNT(*) as userCount
+      FROM users
+      GROUP BY organizationId
+    ) u ON u.organizationId = o.id
+
+    LEFT JOIN (
+      SELECT organizationId, COUNT(*) as studentCount
+      FROM students
+      WHERE deletedAt IS NULL
+      GROUP BY organizationId
+    ) s ON s.organizationId = o.id
+
+    LEFT JOIN (
+      SELECT organizationId, COUNT(*) as consultationCount
+      FROM consultations
+      GROUP BY organizationId
+    ) c ON c.organizationId = o.id
+
+    LEFT JOIN (
+      SELECT organizationId, COUNT(*) as settlementItemCount
+      FROM settlement_items
+      GROUP BY organizationId
+    ) si ON si.organizationId = o.id
+
+    LEFT JOIN (
+      SELECT organizationId, COUNT(*) as practiceSupportCount
+      FROM practice_support_requests
+      GROUP BY organizationId
+    ) ps ON ps.organizationId = o.id
+
+    LEFT JOIN (
+      SELECT organizationId, COUNT(*) as privateCertificateCount
+      FROM private_certificate_requests
+      GROUP BY organizationId
+    ) pc ON pc.organizationId = o.id
+
+    LEFT JOIN (
+  SELECT
+    organizationId,
+    COUNT(*) as backupCount,
+    COALESCE(SUM(fileSizeBytes), 0) as backupStorageBytes,
+    MAX(createdAt) as latestBackupAt
+  FROM organization_backups
+  GROUP BY organizationId
+) b ON b.organizationId = o.id
+
+    ORDER BY totalTrackedRows DESC, o.id DESC
+  `);
+
+const [dbSizeRows] = await db.execute(sql`
+  SELECT
+    table_name as tableName,
+    data_length + index_length as tableBytes
+  FROM information_schema.tables
+  WHERE table_schema = DATABASE()
+`);
+
+const [totalCountRows] = await db.execute(sql`
+  SELECT 'users' as tableName, COUNT(*) as totalRowCount FROM users
+  UNION ALL
+  SELECT 'consultations', COUNT(*) FROM consultations
+  UNION ALL
+  SELECT 'students', COUNT(*) FROM students WHERE deletedAt IS NULL
+  UNION ALL
+  SELECT 'settlement_items', COUNT(*) FROM settlement_items
+  UNION ALL
+  SELECT 'practice_support_requests', COUNT(*) FROM practice_support_requests
+  UNION ALL
+  SELECT 'private_certificate_requests', COUNT(*) FROM private_certificate_requests
+  UNION ALL
+  SELECT 'organization_backups', COUNT(*) FROM organization_backups
+`);
+
+const dbSizeMap = new Map<string, number>();
+for (const row of dbSizeRows as any[]) {
+  dbSizeMap.set(String(row.tableName), Number(row.tableBytes || 0));
+}
+
+const totalCountMap = new Map<string, number>();
+for (const row of totalCountRows as any[]) {
+  totalCountMap.set(String(row.tableName), Number(row.totalRowCount || 0));
+}
+
+function estimateTableBytes(tableName: string, orgRowCount: any) {
+  const orgCount = Number(orgRowCount || 0);
+  const totalCount = totalCountMap.get(tableName) || 0;
+  const tableBytes = dbSizeMap.get(tableName) || 0;
+
+  if (orgCount <= 0 || totalCount <= 0 || tableBytes <= 0) return 0;
+
+  return Math.round(tableBytes * (orgCount / totalCount));
+}
+
+const summaryRows = (rows as any[]).map((row: any) => {
+  const estimatedDatabaseBytes =
+    estimateTableBytes("users", row.userCount) +
+    estimateTableBytes("consultations", row.consultationCount) +
+    estimateTableBytes("students", row.studentCount) +
+    estimateTableBytes("settlement_items", row.settlementItemCount) +
+    estimateTableBytes("practice_support_requests", row.practiceSupportCount) +
+    estimateTableBytes("private_certificate_requests", row.privateCertificateCount) +
+    estimateTableBytes("organization_backups", row.backupCount);
+
+  const estimatedDatabaseMb = Number(
+    (estimatedDatabaseBytes / 1024 / 1024).toFixed(2)
+  );
+
+  const totalEstimatedMb =
+    estimatedDatabaseMb + Number(row.backupStorageMb || 0);
+
+  return {
+    ...row,
+    estimatedDatabaseBytes,
+    estimatedDatabaseMb,
+    totalEstimatedMb,
+  };
+});
+
+  return summaryRows;
+}
+
+export async function getOrganizationMonitoringDetail(params: {
+  organizationId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  const [orgRows] = await db.execute(sql`
+    SELECT
+      id,
+      name,
+      slug,
+      status,
+      planCode,
+      maxUsers,
+      maxStudents,
+      maxStorageMb,
+      createdAt
+    FROM organizations
+    WHERE id = ${organizationId}
+    LIMIT 1
+  `);
+
+  const organization = (orgRows as any[])?.[0];
+
+  if (!organization) {
+    throw new Error("회사를 찾을 수 없습니다.");
+  }
+
+  const [countRows] = await db.execute(sql`
+    SELECT 'users' as tableName, COUNT(*) as rowCount FROM users WHERE organizationId = ${organizationId}
+    UNION ALL
+    SELECT 'consultations', COUNT(*) FROM consultations WHERE organizationId = ${organizationId}
+    UNION ALL
+    SELECT 'students', COUNT(*) FROM students WHERE organizationId = ${organizationId} AND deletedAt IS NULL
+    UNION ALL
+    SELECT 'semesters', COUNT(*) FROM semesters WHERE organizationId = ${organizationId}
+    UNION ALL
+    SELECT 'plans', COUNT(*) FROM plans WHERE organizationId = ${organizationId}
+    UNION ALL
+    SELECT 'plan_semesters', COUNT(*) FROM plan_semesters WHERE organizationId = ${organizationId}
+    UNION ALL
+    SELECT 'transfer_subjects', COUNT(*) FROM transfer_subjects WHERE organizationId = ${organizationId}
+    UNION ALL
+    SELECT 'refunds', COUNT(*) FROM refunds WHERE organizationId = ${organizationId}
+    UNION ALL
+    SELECT 'settlement_items', COUNT(*) FROM settlement_items WHERE organizationId = ${organizationId}
+    UNION ALL
+    SELECT 'practice_support_requests', COUNT(*) FROM practice_support_requests WHERE organizationId = ${organizationId}
+    UNION ALL
+    SELECT 'private_certificate_requests', COUNT(*) FROM private_certificate_requests WHERE organizationId = ${organizationId}
+    UNION ALL
+    SELECT 'organization_backups', COUNT(*) FROM organization_backups WHERE organizationId = ${organizationId}
+    UNION ALL
+    SELECT 'audit_logs', COUNT(*) FROM audit_logs WHERE organizationId = ${organizationId}
+    UNION ALL
+    SELECT 'student_audit_logs', COUNT(*) FROM student_audit_logs WHERE organizationId = ${organizationId}
+  `);
+
+  const [backupRows] = await db.execute(sql`
+    SELECT
+      id,
+      backupType,
+      status,
+      fileSizeBytes,
+      tableCount,
+      rowCount,
+      createdAt,
+      completedAt,
+      restoredAt
+    FROM organization_backups
+    WHERE organizationId = ${organizationId}
+    ORDER BY createdAt DESC
+    LIMIT 10
+  `);
+
+const [usageRows] = await db.execute(sql`
+  SELECT
+    COALESCE(SUM(fileSizeBytes), 0) as backupStorageBytes
+  FROM organization_backups
+  WHERE organizationId = ${organizationId}
+`);
+
+const [dbSizeRows] = await db.execute(sql`
+  SELECT
+    table_name as tableName,
+    data_length + index_length as tableBytes
+  FROM information_schema.tables
+  WHERE table_schema = DATABASE()
+`);
+
+const [totalCountRows] = await db.execute(sql`
+  SELECT 'users' as tableName, COUNT(*) as totalRowCount FROM users
+  UNION ALL
+  SELECT 'consultations', COUNT(*) FROM consultations
+  UNION ALL
+  SELECT 'students', COUNT(*) FROM students WHERE deletedAt IS NULL
+  UNION ALL
+  SELECT 'semesters', COUNT(*) FROM semesters
+  UNION ALL
+  SELECT 'plans', COUNT(*) FROM plans
+  UNION ALL
+  SELECT 'plan_semesters', COUNT(*) FROM plan_semesters
+  UNION ALL
+  SELECT 'transfer_subjects', COUNT(*) FROM transfer_subjects
+  UNION ALL
+  SELECT 'refunds', COUNT(*) FROM refunds
+  UNION ALL
+  SELECT 'settlement_items', COUNT(*) FROM settlement_items
+  UNION ALL
+  SELECT 'practice_support_requests', COUNT(*) FROM practice_support_requests
+  UNION ALL
+  SELECT 'private_certificate_requests', COUNT(*) FROM private_certificate_requests
+  UNION ALL
+  SELECT 'organization_backups', COUNT(*) FROM organization_backups
+  UNION ALL
+  SELECT 'audit_logs', COUNT(*) FROM audit_logs
+  UNION ALL
+  SELECT 'student_audit_logs', COUNT(*) FROM student_audit_logs
+`);
+
+const backupStorageBytes = Number((usageRows as any)?.[0]?.backupStorageBytes || 0);
+
+const dbSizeMap = new Map<string, number>();
+
+for (const row of dbSizeRows as any[]) {
+  dbSizeMap.set(String(row.tableName), Number(row.tableBytes || 0));
+}
+
+const totalCountMap = new Map<string, number>();
+
+for (const row of totalCountRows as any[]) {
+  totalCountMap.set(String(row.tableName), Number(row.totalRowCount || 0));
+}
+
+const tableCountsList = countRows as any[];
+
+const estimatedDatabaseBytes = tableCountsList.reduce((sum, row) => {
+  const tableName = String(row.tableName || "");
+  const orgRowCount = Number(row.rowCount || 0);
+  const totalRowCount = totalCountMap.get(tableName) || 0;
+  const tableBytes = dbSizeMap.get(tableName) || 0;
+
+  if (orgRowCount <= 0 || totalRowCount <= 0 || tableBytes <= 0) {
+    return sum;
+  }
+
+  return sum + Math.round(tableBytes * (orgRowCount / totalRowCount));
+}, 0);
+
+ return {
+  organization,
+  tableCounts: countRows as any[],
+  backups: backupRows as any[],
+  usage: {
+  backupStorageBytes,
+  backupStorageMb: Number((backupStorageBytes / 1024 / 1024).toFixed(2)),
+
+  estimatedDatabaseBytes,
+  estimatedDatabaseMb: Number((estimatedDatabaseBytes / 1024 / 1024).toFixed(2)),
+
+  totalEstimatedBytes: backupStorageBytes + estimatedDatabaseBytes,
+  totalEstimatedMb: Number(
+    ((backupStorageBytes + estimatedDatabaseBytes) / 1024 / 1024).toFixed(2)
+  ),
+},
+};
 }

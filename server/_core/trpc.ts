@@ -3,6 +3,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import type { TrpcContext } from "./context";
 import { getOrganizationById } from "../saasdb";
+import * as db from "../db";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
@@ -68,6 +69,47 @@ const organization = await getOrganizationById(organizationId);
   }
 }
 
+const apiErrorLogMiddleware = t.middleware(
+  async ({ ctx, path, type, rawInput, next }) => {
+    const result = await next();
+
+    if (!result.ok) {
+      const user = (ctx as any)?.user;
+      const input = rawInput as any;
+
+      const organizationId = Number(
+        user?.organizationId ||
+          input?.organizationId ||
+          input?.json?.organizationId ||
+          0
+      );
+
+      if (organizationId > 0) {
+        await db.createApiErrorLog({
+          organizationId,
+          userId: Number(user?.id || 0) || null,
+          userRole: String(user?.role || "") || null,
+          path,
+          method: type,
+          statusCode: 500,
+          errorName: result.error?.name || "TRPCError",
+          errorMessage: result.error?.message || "Unknown error",
+          errorStack:
+            process.env.NODE_ENV === "production"
+              ? null
+              : result.error?.stack || null,
+          inputJson:
+            rawInput === undefined
+              ? null
+              : JSON.stringify(rawInput).slice(0, 5000),
+        } as any);
+      }
+    }
+
+    return result;
+  }
+);
+
 const requireUser = t.middleware(async (opts) => {
   const { ctx, next } = opts;
 
@@ -97,111 +139,118 @@ await assertOrganizationActive(ctx.user);
   });
 });
 
-export const protectedProcedure = t.procedure.use(requireUser);
-
+export const protectedProcedure = t.procedure
+  .use(requireUser)
+  .use(apiErrorLogMiddleware);
 /**
  * admin / host 전용
  * superhost는 포함하지 않음
  * -> superhost는 별도 콘솔/별도 권한으로 완전 분리
  */
-export const adminProcedure = t.procedure.use(
-  t.middleware(async (opts) => {
-    const { ctx, next } = opts;
+export const adminProcedure = t.procedure
+  .use(
+    t.middleware(async (opts) => {
+      const { ctx, next } = opts;
 
-    if (DEV_AUTH_BYPASS && !ctx.user) {
+      if (DEV_AUTH_BYPASS && !ctx.user) {
+        return next({
+          ctx: {
+            ...ctx,
+            user: DEV_USER,
+          },
+        });
+      }
+
+      if (!ctx.user || !isAdminOrHost(ctx.user)) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: NOT_ADMIN_ERR_MSG,
+        });
+      }
+
+      await assertOrganizationActive(ctx.user);
+
       return next({
         ctx: {
           ...ctx,
-          user: DEV_USER,
+          user: ctx.user,
         },
       });
-    }
-
-    if (!ctx.user || !isAdminOrHost(ctx.user)) {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: NOT_ADMIN_ERR_MSG,
-      });
-    }
-
-await assertOrganizationActive(ctx.user);
-
-    return next({
-      ctx: {
-        ...ctx,
-        user: ctx.user,
-      },
-    });
-  })
-);
+    })
+  )
+  .use(apiErrorLogMiddleware);
 
 /**
  * host 전용
  * superhost 포함 안 함
  */
-export const hostProcedure = t.procedure.use(
-  t.middleware(async (opts) => {
-    const { ctx, next } = opts;
+export const hostProcedure = t.procedure
+  .use(
+    t.middleware(async (opts) => {
+      const { ctx, next } = opts;
 
-    if (DEV_AUTH_BYPASS && !ctx.user) {
+      if (DEV_AUTH_BYPASS && !ctx.user) {
+        return next({
+          ctx: {
+            ...ctx,
+            user: DEV_USER,
+          },
+        });
+      }
+
+      if (
+        !ctx.user ||
+        (ctx.user.role !== "host" && ctx.user.role !== "superhost")
+      ) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "호스트 권한이 필요합니다.",
+        });
+      }
+
+      await assertOrganizationActive(ctx.user);
+
       return next({
         ctx: {
           ...ctx,
-          user: DEV_USER,
+          user: ctx.user,
         },
       });
-    }
-
-   if (
-  !ctx.user ||
-  (ctx.user.role !== "host" && ctx.user.role !== "superhost")
-) {
-  throw new TRPCError({
-    code: "FORBIDDEN",
-    message: "호스트 권한이 필요합니다.",
-  });
-}
-
-await assertOrganizationActive(ctx.user);
-
-    return next({
-      ctx: {
-        ...ctx,
-        user: ctx.user,
-      },
-    });
-  })
-);
+    })
+  )
+  .use(apiErrorLogMiddleware);
 
 /**
  * superhost 전용
  * host / admin / staff 모두 접근 불가
  */
-export const superHostProcedure = t.procedure.use(
-  t.middleware(async (opts) => {
-    const { ctx, next } = opts;
+export const superHostProcedure = t.procedure
+  .use(
+    t.middleware(async (opts) => {
+      const { ctx, next } = opts;
 
-    if (DEV_AUTH_BYPASS && !ctx.user) {
+      if (DEV_AUTH_BYPASS && !ctx.user) {
+        return next({
+          ctx: {
+            ...ctx,
+            user: DEV_USER,
+          },
+        });
+      }
+
+      if (!ctx.user || !isSuperhost(ctx.user)) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "슈퍼호스트 권한이 필요합니다.",
+        });
+      }
+
       return next({
         ctx: {
           ...ctx,
-          user: DEV_USER,
+          user: ctx.user,
         },
       });
-    }
-
-    if (!ctx.user || !isSuperhost(ctx.user)) {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "슈퍼호스트 권한이 필요합니다.",
-      });
-    }
-
-    return next({
-      ctx: {
-        ...ctx,
-        user: ctx.user,
-      },
-    });
-  })
-);
+    })
+  )
+  .use(apiErrorLogMiddleware);

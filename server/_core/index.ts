@@ -40,6 +40,8 @@ getOrganizationById,
 getOrganizationLimitStatus,
  } from "../saasdb";
 import { setLiveNotificationIO } from "./live-notifications";
+import { setSocketServer } from "./socket-status";
+import { startAutoBackupScheduler } from "./auto-backup-scheduler";
 
 type LiveAppNotificationPayload = {
   id: number;
@@ -225,6 +227,8 @@ async function startServer() {
   });
 
 setLiveNotificationIO(io);
+setSocketServer(io);
+startAutoBackupScheduler();
 
   const onlineUserSocketCounts = new Map<string, number>();
 
