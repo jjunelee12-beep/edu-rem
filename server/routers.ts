@@ -6228,9 +6228,10 @@ practiceEducationCenter: router({
         throw new Error("organizationId is required");
       }
 
-      return db.listPracticeEducationCenters(input?.categoryId, {
-        organizationId,
-      });
+     return db.listMergedPracticeEducationCenters({
+  organizationId,
+  categoryId: input?.categoryId,
+});
     }),
 
   get: protectedProcedure
@@ -6242,9 +6243,17 @@ practiceEducationCenter: router({
         throw new Error("organizationId is required");
       }
 
-      return db.getPracticeEducationCenter(input.id, {
-        organizationId,
-      });
+      if (input.id < 0) {
+  const rows = await db.listMergedPracticeEducationCenters({
+    organizationId,
+  });
+
+  return rows.find((row: any) => Number(row.id) === Number(input.id)) ?? null;
+}
+
+return db.getPracticeEducationCenter(input.id, {
+  organizationId,
+});
     }),
 
   create: protectedProcedure
@@ -6378,10 +6387,28 @@ practiceEducationCenter: router({
         throw new Error("organizationId is required");
       }
 
-      const { id, ...rest } = input;
-      await db.updatePracticeEducationCenter(id, rest as any, {
-        organizationId,
-      });
+     const { id, ...rest } = input;
+
+if (id < 0) {
+  await db.upsertPracticeEducationCenterOverride({
+    organizationId,
+    masterId: Math.abs(id),
+    data: {
+      name: rest.name?.trim() ?? undefined,
+      phone: rest.phone?.trim() ?? undefined,
+      address: rest.address?.trim() ?? undefined,
+      detailAddress: rest.detailAddress?.trim() ?? undefined,
+      feeAmount: rest.feeAmount ?? undefined,
+      latitude: rest.latitude || undefined,
+      longitude: rest.longitude || undefined,
+      memo: rest.note?.trim() ?? undefined,
+    },
+  });
+} else {
+  await db.updatePracticeEducationCenter(id, rest as any, {
+    organizationId,
+  });
+}
 
       return { success: true };
     }),
@@ -6412,17 +6439,29 @@ practiceEducationCenter: router({
         throw new Error("organizationId is required");
       }
 
-      await db.updatePracticeEducationCenterAvailability(
-        input.id,
-        {
-          isInactive: input.isInactive,
-          inactiveReason: input.inactiveReason ?? null,
-          inactiveStartDate: input.inactiveStartDate ?? null,
-          inactiveEndDate: input.inactiveEndDate ?? null,
-          hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
-        },
-        { organizationId }
-      );
+      if (input.id < 0) {
+  await db.updatePracticeEducationCenterAvailabilityOverride({
+    organizationId,
+    masterId: Math.abs(input.id),
+    isInactive: input.isInactive,
+    inactiveReason: input.inactiveReason ?? null,
+    inactiveStartDate: input.inactiveStartDate ?? null,
+    inactiveEndDate: input.inactiveEndDate ?? null,
+    hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
+  });
+} else {
+  await db.updatePracticeEducationCenterAvailability(
+    input.id,
+    {
+      isInactive: input.isInactive,
+      inactiveReason: input.inactiveReason ?? null,
+      inactiveStartDate: input.inactiveStartDate ?? null,
+      inactiveEndDate: input.inactiveEndDate ?? null,
+      hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
+    },
+    { organizationId }
+  );
+}
 
       return { success: true };
     }),
@@ -6430,11 +6469,12 @@ practiceEducationCenter: router({
   bulkDeactivate: protectedProcedure
     .input(
       z.object({
-        inactiveReason: z.string().nullable().optional(),
-        inactiveStartDate: z.string().nullable().optional(),
-        inactiveEndDate: z.string().nullable().optional(),
-        hideOnMapWhenInactive: z.boolean().optional(),
-      })
+  categoryId: z.number().optional().nullable(),
+  inactiveReason: z.string().nullable().optional(),
+  inactiveStartDate: z.string().nullable().optional(),
+  inactiveEndDate: z.string().nullable().optional(),
+  hideOnMapWhenInactive: z.boolean().optional(),
+})
     )
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== "host" && ctx.user.role !== "superhost") {
@@ -6447,13 +6487,14 @@ practiceEducationCenter: router({
         throw new Error("organizationId is required");
       }
 
-      return db.bulkDeactivatePracticeEducationCenters({
-        organizationId,
-        inactiveReason: input.inactiveReason ?? "일괄 비활성화",
-        inactiveStartDate: input.inactiveStartDate ?? null,
-        inactiveEndDate: input.inactiveEndDate ?? null,
-        hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
-      });
+      return db.bulkDeactivatePracticeEducationCenterOverrides({
+  organizationId,
+  categoryId: input.categoryId ?? null,
+  inactiveReason: input.inactiveReason ?? "일괄 비활성화",
+  inactiveStartDate: input.inactiveStartDate ?? null,
+  inactiveEndDate: input.inactiveEndDate ?? null,
+  hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
+});
     }),
 
   fixCoords: protectedProcedure
@@ -6485,9 +6526,16 @@ practiceEducationCenter: router({
         throw new Error("organizationId is required");
       }
 
-      await db.deletePracticeEducationCenter(input.id, {
-        organizationId,
-      });
+     if (input.id < 0) {
+  await db.hidePracticeEducationCenterOverride({
+    organizationId,
+    masterId: Math.abs(input.id),
+  });
+} else {
+  await db.deletePracticeEducationCenter(input.id, {
+    organizationId,
+  });
+}
 
       return { success: true };
     }),
@@ -6507,11 +6555,11 @@ practiceEducationCenter: router({
     throw new Error("organizationId is required");
   }
 
-  return db.listPracticeInstitutions({
-    organizationId,
-    institutionType: input?.institutionType,
-    categoryId: input?.categoryId,
-  });
+  return db.listMergedPracticeInstitutions({
+  organizationId,
+  institutionType: input?.institutionType,
+  categoryId: input?.categoryId,
+});
 }),
 
     get: protectedProcedure
@@ -6523,9 +6571,17 @@ practiceEducationCenter: router({
     throw new Error("organizationId is required");
   }
 
-  return db.getPracticeInstitution(input.id, {
+  if (input.id < 0) {
+  const rows = await db.listMergedPracticeInstitutions({
     organizationId,
   });
+
+  return rows.find((row: any) => Number(row.id) === Number(input.id)) ?? null;
+}
+
+return db.getPracticeInstitution(input.id, {
+  organizationId,
+});
 }),
 
     create: protectedProcedure
@@ -6641,12 +6697,13 @@ return result;
 bulkDeactivate: protectedProcedure
   .input(
     z.object({
-      institutionType: z.enum(["education", "institution"]).optional(),
-      inactiveReason: z.string().nullable().optional(),
-      inactiveStartDate: z.string().nullable().optional(),
-      inactiveEndDate: z.string().nullable().optional(),
-      hideOnMapWhenInactive: z.boolean().optional(),
-    })
+  institutionType: z.enum(["education", "institution"]).optional(),
+  categoryId: z.number().optional().nullable(),
+  inactiveReason: z.string().nullable().optional(),
+  inactiveStartDate: z.string().nullable().optional(),
+  inactiveEndDate: z.string().nullable().optional(),
+  hideOnMapWhenInactive: z.boolean().optional(),
+})
   )
   .mutation(async ({ ctx, input }) => {
     if (ctx.user.role !== "host" && ctx.user.role !== "superhost") {
@@ -6659,14 +6716,15 @@ if (!organizationId) {
   throw new Error("organizationId is required");
 }
 
-return db.bulkDeactivatePracticeInstitutions({
+return db.bulkDeactivatePracticeInstitutionOverrides({
   organizationId,
   institutionType: input.institutionType,
-      inactiveReason: input.inactiveReason ?? "일괄 비활성화",
-      inactiveStartDate: input.inactiveStartDate ?? null,
-      inactiveEndDate: input.inactiveEndDate ?? null,
-      hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
-    });
+  categoryId: input.categoryId ?? null,
+  inactiveReason: input.inactiveReason ?? "일괄 비활성화",
+  inactiveStartDate: input.inactiveStartDate ?? null,
+  inactiveEndDate: input.inactiveEndDate ?? null,
+  hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
+});
   }),
 
     update: protectedProcedure
@@ -6714,9 +6772,27 @@ if (!organizationId) {
   throw new Error("organizationId is required");
 }
 
-await db.updatePracticeInstitution(id, data, {
-  organizationId,
-});
+if (id < 0) {
+  await db.upsertPracticeInstitutionOverride({
+    organizationId,
+    masterId: Math.abs(id),
+    data: {
+      name: data.name,
+      phone: data.phone,
+      address: data.address,
+      detailAddress: data.detailAddress,
+      price: data.price,
+      latitude: data.latitude,
+      longitude: data.longitude,
+      availableCourse: data.availableCourse,
+      memo: data.memo,
+    },
+  });
+} else {
+  await db.updatePracticeInstitution(id, data, {
+    organizationId,
+  });
+}
         return { success: true };
       }),
 
@@ -6746,19 +6822,31 @@ if (!organizationId) {
   throw new Error("organizationId is required");
 }
 
-      await db.updatePracticeInstitutionAvailability(
-  input.id,
-  {
+if (input.id < 0) {
+  await db.updatePracticeInstitutionAvailabilityOverride({
+    organizationId,
+    masterId: Math.abs(input.id),
     isInactive: input.isInactive,
     inactiveReason: input.inactiveReason ?? null,
     inactiveStartDate: input.inactiveStartDate ?? null,
     inactiveEndDate: input.inactiveEndDate ?? null,
     hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
-  },
-  { organizationId }
-);
+  });
+} else {
+  await db.updatePracticeInstitutionAvailability(
+    input.id,
+    {
+      isInactive: input.isInactive,
+      inactiveReason: input.inactiveReason ?? null,
+      inactiveStartDate: input.inactiveStartDate ?? null,
+      inactiveEndDate: input.inactiveEndDate ?? null,
+      hideOnMapWhenInactive: input.hideOnMapWhenInactive ?? true,
+    },
+    { organizationId }
+  );
+}
 
-      return { success: true };
+return { success: true };
     }),
 
 fixCoords: protectedProcedure
@@ -6790,9 +6878,16 @@ return db.fixMissingCoordinates({
     throw new Error("organizationId is required");
   }
 
+  if (input.id < 0) {
+  await db.hidePracticeInstitutionOverride({
+    organizationId,
+    masterId: Math.abs(input.id),
+  });
+} else {
   await db.deletePracticeInstitution(input.id, {
     organizationId,
   });
+}
         return { success: true };
       }),
   }),

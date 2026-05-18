@@ -1311,6 +1311,8 @@ export const practiceInstitutionMasters = mysqlTable("practice_institution_maste
   institutionType: mysqlEnum("institutionType", ["education", "institution"])
     .notNull(),
 
+categoryId: int("categoryId"),
+
   categoryName: varchar("categoryName", { length: 100 }),
 
   name: varchar("name", { length: 255 }).notNull(),
@@ -1388,6 +1390,8 @@ export type InsertOrganizationPracticeInstitutionOverride =
 
 export const practiceEducationCenterMasters = mysqlTable("practice_education_center_masters", {
   id: int("id").autoincrement().primaryKey(),
+
+categoryId: int("categoryId"),
 
   categoryName: varchar("categoryName", { length: 100 }),
 

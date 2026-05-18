@@ -52,6 +52,10 @@ InsertPracticeListCategory,
   InsertJobSupportRequest,
 practiceEducationCenters,
   InsertPracticeEducationCenter,
+practiceInstitutionMasters,
+organizationPracticeInstitutionOverrides,
+practiceEducationCenterMasters,
+organizationPracticeEducationCenterOverrides,
   notifications,
   InsertNotification,
 deviceTokens,
@@ -1026,9 +1030,11 @@ const ORGANIZATION_BACKUP_TABLES = [
   "private_certificate_requests",
   "practice_support_requests",
   "practice_list_categories",
-  "practice_institutions",
-  "practice_education_centers",
-  "job_support_requests",
+"practice_institutions",
+"practice_education_centers",
+"organization_practice_institution_overrides",
+"organization_practice_education_center_overrides",
+"job_support_requests",
 
   "chat_rooms",
   "chat_room_members",
@@ -1329,39 +1335,31 @@ export async function getStudentWithCoords(
 export async function listActivePracticeInstitutions(params?: {
   organizationId?: number | null;
 }) {
-  const db = await getDb();
-  if (!db) return [];
+  const rows = await listMergedPracticeInstitutions({
+    organizationId: requireOrganizationId(params?.organizationId),
+  });
 
-  const organizationId = requireOrganizationId(params?.organizationId);
-
-  return db
-    .select()
-    .from(practiceInstitutions)
-    .where(
-      and(
-        eq(practiceInstitutions.organizationId, organizationId),
-        eq(practiceInstitutions.isActive, 1)
-      )
-    );
+  return (rows || []).filter(
+    (row: any) =>
+      row.isActive !== false &&
+      row.isInactive !== true &&
+      row.isHidden !== true
+  );
 }
 
 export async function listActivePracticeEducationCenters(params?: {
   organizationId?: number | null;
 }) {
-  const db = await getDb();
-  if (!db) return [];
+  const rows = await listMergedPracticeEducationCenters({
+    organizationId: requireOrganizationId(params?.organizationId),
+  });
 
-  const organizationId = requireOrganizationId(params?.organizationId);
-
-  return db
-    .select()
-    .from(practiceEducationCenters)
-    .where(
-      and(
-        eq(practiceEducationCenters.organizationId, organizationId),
-        eq(practiceEducationCenters.isActive, 1)
-      )
-    );
+  return (rows || []).filter(
+    (row: any) =>
+      row.isActive !== false &&
+      row.isInactive !== true &&
+      row.isHidden !== true
+  );
 }
 
 export async function getPracticeRecommendationsForStudent(
@@ -1426,16 +1424,15 @@ export async function fixMissingCoordinates(params: {
 const organizationId = requireOrganizationId(params.organizationId);
 
   const table =
-    params.type === "education"
-      ? practiceEducationCenters
-      : practiceInstitutions;
+  params.type === "education"
+    ? practiceEducationCenterMasters
+    : practiceInstitutionMasters;
 
   const rows = await db
     .select()
     .from(table)
     .where(
   and(
-    eq((table as any).organizationId, organizationId),
     sql`(${table.latitude} IS NULL OR ${table.longitude} IS NULL)`
   )
 )
@@ -1460,12 +1457,7 @@ const organizationId = requireOrganizationId(params.organizationId);
           latitude: String(geo.lat),
           longitude: String(geo.lng),
         } as any)
-        .where(
-  and(
-    eq(table.id, row.id),
-    eq((table as any).organizationId, organizationId)
-  )
-);
+       .where(eq(table.id, row.id));
 
       success++;
     } catch (e) {
@@ -10833,6 +10825,134 @@ const organizationId = requireOrganizationId(params?.organizationId);
     );
 }
 
+export async function listMergedPracticeInstitutions(params?: {
+  organizationId?: number | null;
+  institutionType?: "education" | "institution";
+  categoryId?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const organizationId = requireOrganizationId(params?.organizationId);
+
+  const masterConditions: any[] = [
+    eq(practiceInstitutionMasters.isActive, true),
+  ];
+
+  if (params?.institutionType) {
+    masterConditions.push(
+      eq(practiceInstitutionMasters.institutionType, params.institutionType)
+    );
+  }
+
+  if (params?.categoryId) {
+    masterConditions.push(
+      eq(practiceInstitutionMasters.categoryId, params.categoryId)
+    );
+  }
+
+  const rows = await db
+    .select({
+      master: practiceInstitutionMasters,
+      override: organizationPracticeInstitutionOverrides,
+    })
+    .from(practiceInstitutionMasters)
+    .leftJoin(
+      organizationPracticeInstitutionOverrides,
+      and(
+        eq(
+          organizationPracticeInstitutionOverrides.masterId,
+          practiceInstitutionMasters.id
+        ),
+        eq(
+          organizationPracticeInstitutionOverrides.organizationId,
+          organizationId
+        )
+      )
+    )
+    .where(and(...masterConditions))
+    .orderBy(
+      practiceInstitutionMasters.sortOrder,
+      desc(practiceInstitutionMasters.createdAt)
+    );
+
+  const masterRows = rows
+    .filter((row: any) => !row.override?.isHidden)
+    .map((row: any) => {
+      const master = row.master;
+      const override = row.override;
+
+      return {
+        ...master,
+
+        // 공용 master id와 회사별 custom id 충돌 방지
+        id: -Number(master.id),
+
+        sourceType: "master",
+        masterId: master.id,
+        overrideId: override?.id ?? null,
+
+        name: override?.customName ?? master.name,
+        phone: override?.customPhone ?? master.phone,
+        address: override?.customAddress ?? master.address,
+        detailAddress:
+          override?.customDetailAddress ?? master.detailAddress,
+        price: override?.customPrice ?? master.price,
+        latitude: override?.customLatitude ?? master.latitude,
+        longitude: override?.customLongitude ?? master.longitude,
+        availableCourse:
+          override?.customAvailableCourse ?? master.availableCourse,
+        memo: override?.customMemo ?? master.memo,
+
+        isInactive: override?.isInactive ?? false,
+        inactiveReason: override?.inactiveReason ?? null,
+        inactiveStartDate: override?.inactiveStartDate ?? null,
+        inactiveEndDate: override?.inactiveEndDate ?? null,
+        hideOnMapWhenInactive:
+          override?.hideOnMapWhenInactive ?? true,
+
+        isCustomized: Boolean(override),
+      };
+    });
+
+  const customConditions: any[] = [
+    eq(practiceInstitutions.organizationId, organizationId),
+    eq(practiceInstitutions.isActive, true),
+  ];
+
+  if (params?.institutionType) {
+    customConditions.push(
+      eq(practiceInstitutions.institutionType, params.institutionType)
+    );
+  }
+
+  if (params?.categoryId) {
+    customConditions.push(
+      eq(practiceInstitutions.categoryId, params.categoryId)
+    );
+  }
+
+  const customRows = await db
+    .select()
+    .from(practiceInstitutions)
+    .where(and(...customConditions))
+    .orderBy(
+      practiceInstitutions.sortOrder,
+      desc(practiceInstitutions.createdAt)
+    );
+
+  return [
+    ...masterRows,
+    ...customRows.map((row: any) => ({
+      ...row,
+      sourceType: "organization",
+      masterId: null,
+      overrideId: null,
+      isCustomized: true,
+    })),
+  ];
+}
+
 export async function getPracticeInstitution(
   id: number,
   params?: {
@@ -11105,6 +11225,121 @@ const organizationId = requireOrganizationId(params?.organizationId);
   )
 )
     .orderBy(practiceEducationCenters.sortOrder, desc(practiceEducationCenters.createdAt));
+}
+
+export async function listMergedPracticeEducationCenters(params?: {
+  organizationId?: number | null;
+  categoryId?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const organizationId = requireOrganizationId(params?.organizationId);
+
+  const masterConditions: any[] = [
+    eq(practiceEducationCenterMasters.isActive, true),
+  ];
+
+  if (params?.categoryId) {
+    masterConditions.push(
+      eq(practiceEducationCenterMasters.categoryId, params.categoryId)
+    );
+  }
+
+  const rows = await db
+    .select({
+      master: practiceEducationCenterMasters,
+      override: organizationPracticeEducationCenterOverrides,
+    })
+    .from(practiceEducationCenterMasters)
+    .leftJoin(
+      organizationPracticeEducationCenterOverrides,
+      and(
+        eq(
+          organizationPracticeEducationCenterOverrides.masterId,
+          practiceEducationCenterMasters.id
+        ),
+        eq(
+          organizationPracticeEducationCenterOverrides.organizationId,
+          organizationId
+        )
+      )
+    )
+    .where(and(...masterConditions))
+    .orderBy(
+      practiceEducationCenterMasters.sortOrder,
+      desc(practiceEducationCenterMasters.createdAt)
+    );
+
+  const masterRows = rows
+    .filter((row: any) => !row.override?.isHidden)
+    .map((row: any) => {
+      const master = row.master;
+      const override = row.override;
+
+      return {
+        ...master,
+
+        // 공용 master id와 회사별 custom id 충돌 방지
+        id: -Number(master.id),
+
+        sourceType: "master",
+        masterId: master.id,
+        overrideId: override?.id ?? null,
+
+        name: override?.customName ?? master.name,
+        phone: override?.customPhone ?? master.phone,
+        address: override?.customAddress ?? master.address,
+        detailAddress:
+          override?.customDetailAddress ?? master.detailAddress,
+        feeAmount: override?.customFeeAmount ?? master.feeAmount,
+        latitude: override?.customLatitude ?? master.latitude,
+        longitude: override?.customLongitude ?? master.longitude,
+        availableCourse:
+          override?.customAvailableCourse ?? master.availableCourse,
+        memo: override?.customMemo ?? master.memo,
+
+        isInactive: override?.isInactive ?? false,
+        inactiveReason: override?.inactiveReason ?? null,
+        inactiveStartDate: override?.inactiveStartDate ?? null,
+        inactiveEndDate: override?.inactiveEndDate ?? null,
+        hideOnMapWhenInactive:
+          override?.hideOnMapWhenInactive ?? true,
+
+        isCustomized: Boolean(override),
+      };
+    });
+
+  const customConditions: any[] = [
+    eq(practiceEducationCenters.organizationId, organizationId),
+    eq(practiceEducationCenters.isActive, true),
+  ];
+
+  if (params?.categoryId) {
+    customConditions.push(
+      eq(practiceEducationCenters.categoryId, params.categoryId)
+    );
+  }
+
+  const customRows = await db
+    .select()
+    .from(practiceEducationCenters)
+    .where(and(...customConditions))
+    .orderBy(
+      practiceEducationCenters.sortOrder,
+      desc(practiceEducationCenters.createdAt)
+    );
+
+  return [
+    ...masterRows,
+    ...customRows.map((row: any) => ({
+      ...row,
+      sourceType: "organization",
+      masterId: null,
+      overrideId: null,
+      isCustomized: true,
+    })),
+  ];
 }
 
 export async function getPracticeEducationCenter(
@@ -11392,6 +11627,471 @@ const organizationId = requireOrganizationId(params?.organizationId);
     eq(practiceEducationCenters.organizationId, organizationId)
   )
 );
+}
+
+async function getPracticeInstitutionOverride(params: {
+  organizationId?: number | null;
+  masterId: number;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  const rows = await db
+    .select()
+    .from(organizationPracticeInstitutionOverrides)
+    .where(
+      and(
+        eq(organizationPracticeInstitutionOverrides.organizationId, organizationId),
+        eq(organizationPracticeInstitutionOverrides.masterId, Number(params.masterId))
+      )
+    )
+    .limit(1);
+
+  return rows[0] || null;
+}
+
+export async function upsertPracticeInstitutionOverride(params: {
+  organizationId?: number | null;
+  masterId: number;
+  data: {
+    name?: string | null;
+    phone?: string | null;
+    address?: string | null;
+    detailAddress?: string | null;
+    price?: string | null;
+    latitude?: string | null;
+    longitude?: string | null;
+    availableCourse?: string | null;
+    memo?: string | null;
+  };
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const masterId = Number(params.masterId);
+
+  const existing = await getPracticeInstitutionOverride({
+    organizationId,
+    masterId,
+  });
+
+  const value: any = {
+    organizationId,
+    masterId,
+
+    customName: params.data.name ?? undefined,
+    customPhone: params.data.phone ?? undefined,
+    customAddress: params.data.address ?? undefined,
+    customDetailAddress: params.data.detailAddress ?? undefined,
+    customPrice: params.data.price ?? undefined,
+    customLatitude: params.data.latitude ?? undefined,
+    customLongitude: params.data.longitude ?? undefined,
+    customAvailableCourse: params.data.availableCourse ?? undefined,
+    customMemo: params.data.memo ?? undefined,
+  };
+
+  if (existing) {
+    await db
+      .update(organizationPracticeInstitutionOverrides)
+      .set(value)
+      .where(
+        and(
+          eq(organizationPracticeInstitutionOverrides.id, existing.id),
+          eq(organizationPracticeInstitutionOverrides.organizationId, organizationId)
+        )
+      );
+
+    return existing.id;
+  }
+
+  const result: any = await db
+    .insert(organizationPracticeInstitutionOverrides)
+    .values({
+      ...value,
+      isHidden: false,
+      isInactive: false,
+    });
+
+  return getInsertId(result);
+}
+
+export async function updatePracticeInstitutionAvailabilityOverride(params: {
+  organizationId?: number | null;
+  masterId: number;
+  isInactive: boolean;
+  inactiveReason?: string | null;
+  inactiveStartDate?: string | null;
+  inactiveEndDate?: string | null;
+  hideOnMapWhenInactive?: boolean | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const masterId = Number(params.masterId);
+
+  const existing = await getPracticeInstitutionOverride({
+    organizationId,
+    masterId,
+  });
+
+  const value: any = {
+    organizationId,
+    masterId,
+    isInactive: params.isInactive,
+    inactiveReason: params.inactiveReason ?? null,
+    inactiveStartDate: params.inactiveStartDate ?? null,
+    inactiveEndDate: params.inactiveEndDate ?? null,
+    hideOnMapWhenInactive: params.hideOnMapWhenInactive ?? true,
+  };
+
+  if (existing) {
+    await db
+      .update(organizationPracticeInstitutionOverrides)
+      .set(value)
+      .where(
+        and(
+          eq(organizationPracticeInstitutionOverrides.id, existing.id),
+          eq(organizationPracticeInstitutionOverrides.organizationId, organizationId)
+        )
+      );
+
+    return existing.id;
+  }
+
+  const result: any = await db
+    .insert(organizationPracticeInstitutionOverrides)
+    .values({
+      ...value,
+      isHidden: false,
+    });
+
+  return getInsertId(result);
+}
+
+export async function hidePracticeInstitutionOverride(params: {
+  organizationId?: number | null;
+  masterId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const masterId = Number(params.masterId);
+
+  const existing = await getPracticeInstitutionOverride({
+    organizationId,
+    masterId,
+  });
+
+  if (existing) {
+    await db
+      .update(organizationPracticeInstitutionOverrides)
+      .set({
+        isHidden: true,
+      } as any)
+      .where(
+        and(
+          eq(organizationPracticeInstitutionOverrides.id, existing.id),
+          eq(organizationPracticeInstitutionOverrides.organizationId, organizationId)
+        )
+      );
+
+    return existing.id;
+  }
+
+  const result: any = await db
+    .insert(organizationPracticeInstitutionOverrides)
+    .values({
+      organizationId,
+      masterId,
+      isHidden: true,
+      isInactive: false,
+    } as any);
+
+  return getInsertId(result);
+}
+
+export async function bulkDeactivatePracticeInstitutionOverrides(params: {
+  organizationId?: number | null;
+  institutionType?: "education" | "institution";
+  categoryId?: number | null;
+  inactiveReason?: string | null;
+  inactiveStartDate?: string | null;
+  inactiveEndDate?: string | null;
+  hideOnMapWhenInactive?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  const conditions: any[] = [
+    eq(practiceInstitutionMasters.isActive, true),
+  ];
+
+  if (params.institutionType) {
+    conditions.push(eq(practiceInstitutionMasters.institutionType, params.institutionType));
+  }
+
+  if (params.categoryId) {
+    conditions.push(eq(practiceInstitutionMasters.categoryId, params.categoryId));
+  }
+
+  const masters = await db
+    .select()
+    .from(practiceInstitutionMasters)
+    .where(and(...conditions));
+
+  for (const master of masters as any[]) {
+    await updatePracticeInstitutionAvailabilityOverride({
+      organizationId,
+      masterId: Number(master.id),
+      isInactive: true,
+      inactiveReason: params.inactiveReason ?? "일괄 비활성화",
+      inactiveStartDate: params.inactiveStartDate ?? null,
+      inactiveEndDate: params.inactiveEndDate ?? null,
+      hideOnMapWhenInactive: params.hideOnMapWhenInactive ?? true,
+    });
+  }
+
+  return {
+    success: true,
+    total: masters.length,
+  };
+}
+
+async function getPracticeEducationCenterOverride(params: {
+  organizationId?: number | null;
+  masterId: number;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  const rows = await db
+    .select()
+    .from(organizationPracticeEducationCenterOverrides)
+    .where(
+      and(
+        eq(organizationPracticeEducationCenterOverrides.organizationId, organizationId),
+        eq(organizationPracticeEducationCenterOverrides.masterId, Number(params.masterId))
+      )
+    )
+    .limit(1);
+
+  return rows[0] || null;
+}
+
+export async function upsertPracticeEducationCenterOverride(params: {
+  organizationId?: number | null;
+  masterId: number;
+  data: {
+    name?: string | null;
+    phone?: string | null;
+    address?: string | null;
+    detailAddress?: string | null;
+    feeAmount?: string | null;
+    latitude?: string | null;
+    longitude?: string | null;
+    availableCourse?: string | null;
+    memo?: string | null;
+  };
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const masterId = Number(params.masterId);
+
+  const existing = await getPracticeEducationCenterOverride({
+    organizationId,
+    masterId,
+  });
+
+  const value: any = {
+    organizationId,
+    masterId,
+
+    customName: params.data.name ?? undefined,
+    customPhone: params.data.phone ?? undefined,
+    customAddress: params.data.address ?? undefined,
+    customDetailAddress: params.data.detailAddress ?? undefined,
+    customFeeAmount: params.data.feeAmount ?? undefined,
+    customLatitude: params.data.latitude ?? undefined,
+    customLongitude: params.data.longitude ?? undefined,
+    customAvailableCourse: params.data.availableCourse ?? undefined,
+    customMemo: params.data.memo ?? undefined,
+  };
+
+  if (existing) {
+    await db
+      .update(organizationPracticeEducationCenterOverrides)
+      .set(value)
+      .where(
+        and(
+          eq(organizationPracticeEducationCenterOverrides.id, existing.id),
+          eq(organizationPracticeEducationCenterOverrides.organizationId, organizationId)
+        )
+      );
+
+    return existing.id;
+  }
+
+  const result: any = await db
+    .insert(organizationPracticeEducationCenterOverrides)
+    .values({
+      ...value,
+      isHidden: false,
+      isInactive: false,
+    });
+
+  return getInsertId(result);
+}
+
+export async function updatePracticeEducationCenterAvailabilityOverride(params: {
+  organizationId?: number | null;
+  masterId: number;
+  isInactive: boolean;
+  inactiveReason?: string | null;
+  inactiveStartDate?: string | null;
+  inactiveEndDate?: string | null;
+  hideOnMapWhenInactive?: boolean | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const masterId = Number(params.masterId);
+
+  const existing = await getPracticeEducationCenterOverride({
+    organizationId,
+    masterId,
+  });
+
+  const value: any = {
+    organizationId,
+    masterId,
+    isInactive: params.isInactive,
+    inactiveReason: params.inactiveReason ?? null,
+    inactiveStartDate: params.inactiveStartDate ?? null,
+    inactiveEndDate: params.inactiveEndDate ?? null,
+    hideOnMapWhenInactive: params.hideOnMapWhenInactive ?? true,
+  };
+
+  if (existing) {
+    await db
+      .update(organizationPracticeEducationCenterOverrides)
+      .set(value)
+      .where(
+        and(
+          eq(organizationPracticeEducationCenterOverrides.id, existing.id),
+          eq(organizationPracticeEducationCenterOverrides.organizationId, organizationId)
+        )
+      );
+
+    return existing.id;
+  }
+
+  const result: any = await db
+    .insert(organizationPracticeEducationCenterOverrides)
+    .values({
+      ...value,
+      isHidden: false,
+    });
+
+  return getInsertId(result);
+}
+
+export async function hidePracticeEducationCenterOverride(params: {
+  organizationId?: number | null;
+  masterId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const masterId = Number(params.masterId);
+
+  const existing = await getPracticeEducationCenterOverride({
+    organizationId,
+    masterId,
+  });
+
+  if (existing) {
+    await db
+      .update(organizationPracticeEducationCenterOverrides)
+      .set({
+        isHidden: true,
+      } as any)
+      .where(
+        and(
+          eq(organizationPracticeEducationCenterOverrides.id, existing.id),
+          eq(organizationPracticeEducationCenterOverrides.organizationId, organizationId)
+        )
+      );
+
+    return existing.id;
+  }
+
+  const result: any = await db
+    .insert(organizationPracticeEducationCenterOverrides)
+    .values({
+      organizationId,
+      masterId,
+      isHidden: true,
+      isInactive: false,
+    } as any);
+
+  return getInsertId(result);
+}
+
+export async function bulkDeactivatePracticeEducationCenterOverrides(params: {
+  organizationId?: number | null;
+  categoryId?: number | null;
+  inactiveReason?: string | null;
+  inactiveStartDate?: string | null;
+  inactiveEndDate?: string | null;
+  hideOnMapWhenInactive?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  const conditions: any[] = [
+    eq(practiceEducationCenterMasters.isActive, true),
+  ];
+
+  if (params.categoryId) {
+    conditions.push(eq(practiceEducationCenterMasters.categoryId, params.categoryId));
+  }
+
+  const masters = await db
+    .select()
+    .from(practiceEducationCenterMasters)
+    .where(and(...conditions));
+
+  for (const master of masters as any[]) {
+    await updatePracticeEducationCenterAvailabilityOverride({
+      organizationId,
+      masterId: Number(master.id),
+      isInactive: true,
+      inactiveReason: params.inactiveReason ?? "일괄 비활성화",
+      inactiveStartDate: params.inactiveStartDate ?? null,
+      inactiveEndDate: params.inactiveEndDate ?? null,
+      hideOnMapWhenInactive: params.hideOnMapWhenInactive ?? true,
+    });
+  }
+
+  return {
+    success: true,
+    total: masters.length,
+  };
 }
 
 export async function deletePracticeEducationCenter(
