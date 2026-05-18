@@ -31,6 +31,24 @@ const [filter, setFilter] = useState<
 
   const canManage = user?.role === "host" || user?.role === "superhost";
 
+const organizationSlug =
+  (user as any)?.organizationSlug ||
+  (user as any)?.organization?.slug ||
+  "";
+
+const withOrgPath = (path: string) => {
+  const cleanPath = String(path || "").trim();
+
+  if (!cleanPath) return organizationSlug ? `/${organizationSlug}` : "/";
+  if (!organizationSlug) return cleanPath;
+
+  if (cleanPath === "/") {
+    return `/${organizationSlug}`;
+  }
+
+  return `/${organizationSlug}${cleanPath.startsWith("/") ? cleanPath : `/${cleanPath}`}`;
+};
+
   const { data: rows = [], isLoading } = trpc.notice.list.useQuery(
     {
       search: search.trim() || undefined,
@@ -245,7 +263,10 @@ const [filter, setFilter] = useState<
                         선택 삭제
                       </Button>
                     ) : (
-                      <Button className="h-11 rounded-xl" onClick={() => setLocation("/notices/write")}>
+                      <Button
+  className="h-11 rounded-xl"
+  onClick={() => setLocation(withOrgPath("/notices/write"))}
+>
                         <Plus className="mr-2 h-4 w-4" />
                         글쓰기
                       </Button>
@@ -269,7 +290,7 @@ const [filter, setFilter] = useState<
                 selectedIds={selectedIds}
                 onToggleSelect={handleToggleSelect}
                 onToggleSelectAll={handleToggleSelectAll}
-                onOpenDetail={(id) => setLocation(`/notices/${id}`)}
+                onOpenDetail={(id) => setLocation(withOrgPath(`/notices/${id}`))}
 
               />
             )}

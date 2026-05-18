@@ -401,28 +401,38 @@ export async function buildOrganizationExcelExport(params: {
   ]);
 
   const practiceSupport = await queryRows(sql`
-    SELECT
-      clientName AS 이름,
-      phone AS 연락처,
-      course AS 과정,
-      inputAddress AS 입력주소,
-      detailAddress AS 상세주소,
-      requestStatus AS 요청상태,
-      coordinationStatus AS 섭외상태,
-      paymentStatus AS 결제상태,
-      feeAmount AS 수수료,
-      paidAt AS 입금일,
-      managerName AS 담당자명,
-      practiceHours AS 실습시간,
-      practiceDate AS 실습예정일,
-      institutionName AS 기관명,
-      educationCenterName AS 교육원명,
-      createdAt AS 생성일,
-      updatedAt AS 수정일
-    FROM practice_support_requests
-    WHERE organizationId = ${organizationId}
-    ORDER BY createdAt DESC
-  `);
+  SELECT
+    clientName AS 이름,
+    phone AS 연락처,
+    assigneeName AS 담당자,
+    managerName AS 관리담당자,
+    course AS 과정,
+    inputAddress AS 입력주소,
+    detailAddress AS 상세주소,
+    coordinationStatus AS 섭외상태,
+    paymentStatus AS 결제상태,
+    feeAmount AS 수수료,
+    paidAt AS 입금일,
+    practiceHours AS 실습시간,
+    practiceDate AS 실습예정일,
+    selectedPracticeInstitutionName AS 실습기관명,
+    selectedPracticeInstitutionAddress AS 실습기관주소,
+    selectedPracticeInstitutionDistanceKm AS 실습기관거리,
+    selectedEducationCenterName AS 실습교육원명,
+    selectedEducationCenterAddress AS 실습교육원주소,
+    selectedEducationCenterDistanceKm AS 실습교육원거리,
+    refundStatus AS 환불상태,
+    refundAmount AS 환불금액,
+    refundReason AS 환불사유,
+    note AS 메모,
+    attachmentName AS 첨부파일명,
+    attachmentUrl AS 첨부파일URL,
+    createdAt AS 생성일,
+    updatedAt AS 수정일
+  FROM practice_support_requests
+  WHERE organizationId = ${organizationId}
+  ORDER BY createdAt DESC
+`);
 
   addSheet(workbook, "실습배정", practiceSupport, [
     "이름",
