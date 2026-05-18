@@ -92,6 +92,7 @@ export const organizations = mysqlTable("organizations", {
     .default("active"),
 
   maxUsers: int("maxUsers").notNull().default(10),
+maxStudents: int("maxStudents").notNull().default(500),
   maxLandingForms: int("maxLandingForms").notNull().default(10),
 maxAdForms: int("maxAdForms").notNull().default(10),
 maxSmsMonthly: int("maxSmsMonthly").notNull().default(1000),

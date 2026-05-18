@@ -17,13 +17,30 @@ updateAttendanceStatusByManager,
 
 function getCtxOrganizationId(ctx: any) {
   const organizationId = Number(
-    ctx?.organizationId ||
-      ctx?.user?.organizationId ||
-      ctx?.user?.organization?.id ||
+    ctx?.organizationId ??
+      ctx?.user?.organizationId ??
+      ctx?.user?.organization_id ??
+      ctx?.user?.organization?.id ??
+      ctx?.session?.organizationId ??
+      ctx?.session?.user?.organizationId ??
+      ctx?.auth?.organizationId ??
       0
   );
 
-  if (!organizationId) {
+  if (!Number.isFinite(organizationId) || organizationId <= 0) {
+    console.error("[attendance] organizationId missing", {
+      ctxOrganizationId: ctx?.organizationId,
+      userOrganizationId: ctx?.user?.organizationId,
+      userOrganization_id: ctx?.user?.organization_id,
+      userOrganization: ctx?.user?.organization,
+      sessionOrganizationId: ctx?.session?.organizationId,
+      sessionUserOrganizationId: ctx?.session?.user?.organizationId,
+      authOrganizationId: ctx?.auth?.organizationId,
+      userId: ctx?.user?.id,
+      username: ctx?.user?.username,
+      role: ctx?.user?.role,
+    });
+
     throw new Error("organizationId is required");
   }
 

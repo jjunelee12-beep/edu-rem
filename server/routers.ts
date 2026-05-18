@@ -13,6 +13,7 @@ import { z } from "zod";
 import * as db from "./db";
 import { getOrganizationLimitStatus, getOrganizationFeatureFlags } from "./saasdb";
 import { buildSettlementPayslipExcel } from "./_core/settlement-payslip-excel";
+import { buildOrganizationExcelExport } from "./_core/organization-excel-export";
 import { emitLiveNotification } from "./_core/live-notifications";
 import { publicLeadRouter } from "./publicLead.router";
 import bcrypt from "bcryptjs";
@@ -340,6 +341,45 @@ organizationFeatures: protectedProcedure.query(async ({ ctx }) => {
 
 
 backup: router({
+  exportExcel: hostProcedure.mutation(async ({ ctx }) => {
+    if ((ctx.user as any)?.role === "superhost") {
+      throw new Error("슈퍼호스트는 회사 엑셀 백업을 다운로드할 수 없습니다.");
+    }
+
+    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+    if (!organizationId) {
+      throw new Error("organizationId is required");
+    }
+
+    const features = await getOrganizationFeatureFlags(organizationId);
+
+    if (!features.allowBackup) {
+      throw new Error("현재 회사는 백업 기능을 사용할 수 없습니다.");
+    }
+
+    const exported = await buildOrganizationExcelExport({
+      organizationId,
+      requestedBy: Number(ctx.user.id),
+    });
+
+    await db.createAuditLog({
+      organizationId,
+      actorUserId: Number(ctx.user.id),
+      actorRole: String((ctx.user as any)?.role || ""),
+      action: "organization.excel_export.download",
+      targetType: "organization",
+      targetId: organizationId,
+      memo: `회사 데이터 엑셀 내보내기: ${exported.fileName}`,
+    } as any);
+
+    return {
+      success: true,
+      fileName: exported.fileName,
+      mimeType: exported.mimeType,
+      base64: exported.base64,
+    };
+  }),
   list: hostProcedure
     .input(
       z

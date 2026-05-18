@@ -249,9 +249,7 @@ const [primaryRegisteredCourse, setPrimaryRegisteredCourse] = useState("");
     const formData = new FormData();
     formData.append("file", file);
 
-  const apiBase = import.meta.env.VITE_API_BASE_URL || "";
-
-const res = await fetch(`${apiBase}/api/upload`, {
+  const res = await fetch("/api/upload", {
   method: "POST",
   body: formData,
   credentials: "include",
@@ -3222,25 +3220,26 @@ disabled={isReadOnly}
     className="hidden"
     accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.hwp"
     onChange={async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
+  const input = e.currentTarget;
+  const file = input.files?.[0];
+  if (!file) return;
 
-      try {
-        setUploadingTransferCommon(true);
-        const uploaded = await uploadFile(file);
+  try {
+    setUploadingTransferCommon(true);
+    const uploaded = await uploadFile(file);
 
-        createTransferAttachmentMut.mutate({
-          studentId,
-          fileName: uploaded.fileName,
-          fileUrl: uploaded.fileUrl,
-        });
-      } catch (err: any) {
-        toast.error(err.message || "공통 첨부 업로드에 실패했습니다.");
-      } finally {
-        setUploadingTransferCommon(false);
-        e.currentTarget.value = "";
-      }
-    }}
+    createTransferAttachmentMut.mutate({
+      studentId,
+      fileName: uploaded.fileName,
+      fileUrl: uploaded.fileUrl,
+    });
+  } catch (err: any) {
+    toast.error(err.message || "공통 첨부 업로드에 실패했습니다.");
+  } finally {
+    setUploadingTransferCommon(false);
+    input.value = "";
+  }
+}}
   />
 
   <Button
@@ -3453,12 +3452,17 @@ disabled={isReadOnly}
         className="hidden"
         accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.hwp"
         onChange={async (e) => {
-          e.stopPropagation();
-          const file = e.target.files?.[0];
-          if (!file) return;
-          await handleTransferAttachment(row, file);
-          e.currentTarget.value = "";
-        }}
+  e.stopPropagation();
+  const input = e.currentTarget;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  try {
+    await handleTransferAttachment(row, file);
+  } finally {
+    input.value = "";
+  }
+}}
       />
 
       <Button
@@ -3488,12 +3492,17 @@ disabled={isReadOnly}
     className="hidden"
     accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.hwp"
     onChange={async (e) => {
-      e.stopPropagation();
-      const file = e.target.files?.[0];
-      if (!file) return;
-      await handleTransferAttachment(row, file);
-      e.currentTarget.value = "";
-    }}
+  e.stopPropagation();
+  const input = e.currentTarget;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  try {
+    await handleTransferAttachment(row, file);
+  } finally {
+    input.value = "";
+  }
+}}
   />
 
   <Button
@@ -3912,27 +3921,28 @@ disabled={isReadOnly}
       className="hidden"
       accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.hwp"
       onChange={async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+  const input = e.currentTarget;
+  const file = input.files?.[0];
+  if (!file) return;
 
-        try {
-          setUploadingRefundEditId(r.id);
-          const uploaded = await uploadFile(file);
+  try {
+    setUploadingRefundEditId(r.id);
+    const uploaded = await uploadFile(file);
 
-          setEditRefundForm((prev) => ({
-            ...prev,
-            attachmentName: uploaded.fileName,
-            attachmentUrl: uploaded.fileUrl,
-          }));
+    setEditRefundForm((prev) => ({
+      ...prev,
+      attachmentName: uploaded.fileName,
+      attachmentUrl: uploaded.fileUrl,
+    }));
 
-          toast.success("첨부파일 업로드 완료");
-        } catch (err: any) {
-          toast.error(err.message || "첨부 업로드 실패");
-        } finally {
-          setUploadingRefundEditId(null);
-          e.currentTarget.value = "";
-        }
-      }}
+    toast.success("첨부파일 업로드 완료");
+  } catch (err: any) {
+    toast.error(err.message || "첨부 업로드 실패");
+  } finally {
+    setUploadingRefundEditId(null);
+    input.value = "";
+  }
+}}
     />
 
     <Button
@@ -4453,27 +4463,28 @@ semesterId: r.semesterId ? String(r.semesterId) : "",
     className="hidden"
     accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.hwp"
     onChange={async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
+  const input = e.currentTarget;
+  const file = input.files?.[0];
+  if (!file) return;
 
-      try {
-        setUploadingRefund(true);
-        const uploaded = await uploadFile(file);
+  try {
+    setUploadingRefund(true);
+    const uploaded = await uploadFile(file);
 
-        setRefundForm((prev) => ({
-          ...prev,
-          attachmentName: uploaded.fileName,
-          attachmentUrl: uploaded.fileUrl,
-        }));
+    setRefundForm((prev) => ({
+      ...prev,
+      attachmentName: uploaded.fileName,
+      attachmentUrl: uploaded.fileUrl,
+    }));
 
-        toast.success("첨부파일 업로드 완료");
-      } catch (err: any) {
-        toast.error(err.message || "첨부 업로드 실패");
-      } finally {
-        setUploadingRefund(false);
-        e.currentTarget.value = "";
-      }
-    }}
+    toast.success("첨부파일 업로드 완료");
+  } catch (err: any) {
+    toast.error(err.message || "첨부 업로드 실패");
+  } finally {
+    setUploadingRefund(false);
+    input.value = "";
+  }
+}}
   />
 
   <div className="flex items-center gap-2 flex-wrap">

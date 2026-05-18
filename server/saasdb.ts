@@ -130,6 +130,7 @@ export async function createOrganization(input: {
   businessNumber?: string | null;
   planCode?: "free" | "basic" | "pro" | "enterprise";
   maxUsers?: number;
+maxStudents?: number;
   maxLandingForms?: number;
 maxAdForms?: number;
 allowBackup?: boolean;
@@ -155,6 +156,7 @@ maxStorageMb?: number;
     planCode: input.planCode || "basic",
     status: "active",
     maxUsers: input.maxUsers ?? 10,
+maxStudents: input.maxStudents ?? 500,
     maxLandingForms: input.maxLandingForms ?? 10,
     maxSmsPerMonth: input.maxSmsPerMonth ?? 1000,
 maxStorageMb: input.maxStorageMb ?? 1024,
@@ -184,6 +186,7 @@ export async function updateOrganization(input: {
   planCode?: "free" | "basic" | "pro" | "enterprise";
   status?: "active" | "inactive" | "suspended";
   maxUsers?: number;
+maxStudents?: number;
   maxLandingForms?: number;
 maxAdForms?: number;
 allowBackup?: boolean;
@@ -222,6 +225,7 @@ const before = await getOrganizationById(input.id);
       planCode: input.planCode,
       status: input.status,
       maxUsers: input.maxUsers,
+maxStudents: input.maxStudents,
       maxLandingForms: input.maxLandingForms,
       maxSmsPerMonth: input.maxSmsPerMonth,
 maxStorageMb: input.maxStorageMb,
