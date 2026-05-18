@@ -491,29 +491,32 @@ export async function buildOrganizationExcelExport(params: {
   ]);
 
   const settlement = await queryRows(sql`
-    SELECT
-      revenueType AS 매출유형,
-      title AS 제목,
-      clientName AS 학생명,
-      institutionName AS 교육원,
-      subjectType AS 과목유형,
-      subjectCount AS 과목수,
-      quantity AS 수량,
-      occurredAt AS 발생일,
-      grossAmount AS 총매출,
-      companyAmount AS 회사몫,
-      freelancerAmount AS 프리랜서금액,
-      taxAmount AS 세금,
-      finalPayoutAmount AS 최종지급액,
-      companyProfit AS 회사순이익,
-      settlementStatus AS 정산상태,
-      note AS 메모,
-      createdAt AS 생성일,
-      updatedAt AS 수정일
-    FROM settlement_items
-    WHERE organizationId = ${organizationId}
-    ORDER BY occurredAt DESC, createdAt DESC
-  `);
+  SELECT
+    si.revenueType AS 매출유형,
+    si.title AS 제목,
+    COALESCE(s.clientName, '') AS 학생명,
+    si.institutionName AS 교육원,
+    si.subjectType AS 과목유형,
+    si.subjectCount AS 과목수,
+    si.quantity AS 수량,
+    si.occurredAt AS 발생일,
+    si.grossAmount AS 총매출,
+    si.companyAmount AS 회사몫,
+    si.freelancerAmount AS 프리랜서금액,
+    si.taxAmount AS 세금,
+    si.finalPayoutAmount AS 최종지급액,
+    si.companyProfit AS 회사순이익,
+    si.settlementStatus AS 정산상태,
+    si.note AS 메모,
+    si.createdAt AS 생성일,
+    si.updatedAt AS 수정일
+  FROM settlement_items si
+  LEFT JOIN students s
+    ON s.id = si.studentId
+   AND s.organizationId = si.organizationId
+  WHERE si.organizationId = ${organizationId}
+  ORDER BY si.occurredAt DESC, si.createdAt DESC
+`);
 
   addSheet(workbook, "정산내역", settlement, [
     "매출유형",
