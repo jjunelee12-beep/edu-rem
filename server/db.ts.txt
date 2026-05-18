@@ -11033,6 +11033,7 @@ export async function bulkCreatePracticeInstitutions(
 }
 
 export async function bulkDeactivatePracticeInstitutions(params: {
+  organizationId?: number | null;
   institutionType?: "education" | "institution";
   inactiveReason?: string | null;
   inactiveStartDate?: string | null;
@@ -11042,28 +11043,28 @@ export async function bulkDeactivatePracticeInstitutions(params: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  const conditions: any[] = [
+    eq(practiceInstitutions.organizationId, organizationId),
+  ];
+
   if (params.institutionType) {
-    await db
-      .update(practiceInstitutions)
-      .set({
-        isInactive: true,
-        inactiveReason: params.inactiveReason ?? "일괄 비활성화",
-        inactiveStartDate: params.inactiveStartDate ?? null,
-        inactiveEndDate: params.inactiveEndDate ?? null,
-        hideOnMapWhenInactive: params.hideOnMapWhenInactive ?? true,
-      } as any)
-      .where(eq(practiceInstitutions.institutionType, params.institutionType));
-  } else {
-    await db
-      .update(practiceInstitutions)
-      .set({
-        isInactive: true,
-        inactiveReason: params.inactiveReason ?? "일괄 비활성화",
-        inactiveStartDate: params.inactiveStartDate ?? null,
-        inactiveEndDate: params.inactiveEndDate ?? null,
-        hideOnMapWhenInactive: params.hideOnMapWhenInactive ?? true,
-      } as any);
+    conditions.push(
+      eq(practiceInstitutions.institutionType, params.institutionType)
+    );
   }
+
+  await db
+    .update(practiceInstitutions)
+    .set({
+      isInactive: true,
+      inactiveReason: params.inactiveReason ?? "일괄 비활성화",
+      inactiveStartDate: params.inactiveStartDate ?? null,
+      inactiveEndDate: params.inactiveEndDate ?? null,
+      hideOnMapWhenInactive: params.hideOnMapWhenInactive ?? true,
+    } as any)
+    .where(and(...conditions));
 
   return { success: true };
 }
@@ -11279,6 +11280,7 @@ eq(practiceEducationCenters.organizationId, organizationId),
 }
 
 export async function bulkDeactivatePracticeEducationCenters(params?: {
+  organizationId?: number | null;
   inactiveReason?: string | null;
   inactiveStartDate?: string | null;
   inactiveEndDate?: string | null;
@@ -11286,6 +11288,8 @@ export async function bulkDeactivatePracticeEducationCenters(params?: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .update(practiceEducationCenters)
@@ -11295,7 +11299,8 @@ export async function bulkDeactivatePracticeEducationCenters(params?: {
       inactiveStartDate: params?.inactiveStartDate ?? null,
       inactiveEndDate: params?.inactiveEndDate ?? null,
       hideOnMapWhenInactive: params?.hideOnMapWhenInactive ?? true,
-    } as any);
+    } as any)
+    .where(eq(practiceEducationCenters.organizationId, organizationId));
 
   return { success: true };
 }

@@ -1302,6 +1302,171 @@ export type PracticeEducationCenter =
 export type InsertPracticeEducationCenter =
   typeof practiceEducationCenters.$inferInsert;
 
+
+// ─── Practice Shared Master / Organization Overrides ────────────────
+
+export const practiceInstitutionMasters = mysqlTable("practice_institution_masters", {
+  id: int("id").autoincrement().primaryKey(),
+
+  institutionType: mysqlEnum("institutionType", ["education", "institution"])
+    .notNull(),
+
+  categoryName: varchar("categoryName", { length: 100 }),
+
+  name: varchar("name", { length: 255 }).notNull(),
+  representativeName: varchar("representativeName", { length: 100 }),
+  phone: varchar("phone", { length: 30 }),
+
+  address: varchar("address", { length: 255 }).notNull(),
+  detailAddress: varchar("detailAddress", { length: 255 }),
+
+  price: decimal("price", { precision: 12, scale: 0 }).notNull().default("0"),
+
+  latitude: decimal("latitude", { precision: 10, scale: 7 }),
+  longitude: decimal("longitude", { precision: 10, scale: 7 }),
+
+  availableCourse: varchar("availableCourse", { length: 255 }),
+  memo: text("memo"),
+
+  isActive: boolean("isActive").notNull().default(true),
+  sortOrder: int("sortOrder").notNull().default(0),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PracticeInstitutionMaster =
+  typeof practiceInstitutionMasters.$inferSelect;
+export type InsertPracticeInstitutionMaster =
+  typeof practiceInstitutionMasters.$inferInsert;
+
+export const organizationPracticeInstitutionOverrides = mysqlTable(
+  "organization_practice_institution_overrides",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull(),
+    masterId: int("masterId").notNull(),
+
+    customName: varchar("customName", { length: 255 }),
+    customPhone: varchar("customPhone", { length: 30 }),
+    customAddress: varchar("customAddress", { length: 255 }),
+    customDetailAddress: varchar("customDetailAddress", { length: 255 }),
+    customPrice: decimal("customPrice", { precision: 12, scale: 0 }),
+
+    customLatitude: decimal("customLatitude", { precision: 10, scale: 7 }),
+    customLongitude: decimal("customLongitude", { precision: 10, scale: 7 }),
+
+    customAvailableCourse: varchar("customAvailableCourse", { length: 255 }),
+    customMemo: text("customMemo"),
+
+    isHidden: boolean("isHidden").notNull().default(false),
+
+    isInactive: boolean("isInactive").notNull().default(false),
+    inactiveReason: varchar("inactiveReason", { length: 255 }),
+    inactiveStartDate: date("inactiveStartDate"),
+    inactiveEndDate: date("inactiveEndDate"),
+    hideOnMapWhenInactive: boolean("hideOnMapWhenInactive")
+      .notNull()
+      .default(true),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    orgMasterIdx: index("idx_org_practice_inst_override_org_master").on(
+      table.organizationId,
+      table.masterId
+    ),
+  })
+);
+
+export type OrganizationPracticeInstitutionOverride =
+  typeof organizationPracticeInstitutionOverrides.$inferSelect;
+export type InsertOrganizationPracticeInstitutionOverride =
+  typeof organizationPracticeInstitutionOverrides.$inferInsert;
+
+export const practiceEducationCenterMasters = mysqlTable("practice_education_center_masters", {
+  id: int("id").autoincrement().primaryKey(),
+
+  categoryName: varchar("categoryName", { length: 100 }),
+
+  name: varchar("name", { length: 255 }).notNull(),
+  representativeName: varchar("representativeName", { length: 100 }),
+  phone: varchar("phone", { length: 30 }),
+
+  address: varchar("address", { length: 255 }),
+  detailAddress: varchar("detailAddress", { length: 255 }),
+
+  feeAmount: decimal("feeAmount", { precision: 12, scale: 0 })
+    .notNull()
+    .default("0"),
+
+  latitude: decimal("latitude", { precision: 10, scale: 7 }),
+  longitude: decimal("longitude", { precision: 10, scale: 7 }),
+  geocodedAt: datetime("geocodedAt"),
+
+  availableCourse: varchar("availableCourse", { length: 255 }),
+  memo: text("memo"),
+
+  isActive: boolean("isActive").notNull().default(true),
+  sortOrder: int("sortOrder").notNull().default(0),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PracticeEducationCenterMaster =
+  typeof practiceEducationCenterMasters.$inferSelect;
+export type InsertPracticeEducationCenterMaster =
+  typeof practiceEducationCenterMasters.$inferInsert;
+
+export const organizationPracticeEducationCenterOverrides = mysqlTable(
+  "organization_practice_education_center_overrides",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull(),
+    masterId: int("masterId").notNull(),
+
+    customName: varchar("customName", { length: 255 }),
+    customPhone: varchar("customPhone", { length: 30 }),
+    customAddress: varchar("customAddress", { length: 255 }),
+    customDetailAddress: varchar("customDetailAddress", { length: 255 }),
+    customFeeAmount: decimal("customFeeAmount", { precision: 12, scale: 0 }),
+
+    customLatitude: decimal("customLatitude", { precision: 10, scale: 7 }),
+    customLongitude: decimal("customLongitude", { precision: 10, scale: 7 }),
+
+    customAvailableCourse: varchar("customAvailableCourse", { length: 255 }),
+    customMemo: text("customMemo"),
+
+    isHidden: boolean("isHidden").notNull().default(false),
+
+    isInactive: boolean("isInactive").notNull().default(false),
+    inactiveReason: varchar("inactiveReason", { length: 255 }),
+    inactiveStartDate: date("inactiveStartDate"),
+    inactiveEndDate: date("inactiveEndDate"),
+    hideOnMapWhenInactive: boolean("hideOnMapWhenInactive")
+      .notNull()
+      .default(true),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    orgMasterIdx: index("idx_org_practice_center_override_org_master").on(
+      table.organizationId,
+      table.masterId
+    ),
+  })
+);
+
+export type OrganizationPracticeEducationCenterOverride =
+  typeof organizationPracticeEducationCenterOverrides.$inferSelect;
+export type InsertOrganizationPracticeEducationCenterOverride =
+  typeof organizationPracticeEducationCenterOverrides.$inferInsert;
+
 // ─── Job Support Requests (취업지원센터) ────────────────────────────
 export const jobSupportRequests = mysqlTable("job_support_requests", {
   id: int("id").autoincrement().primaryKey(),
