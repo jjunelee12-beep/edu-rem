@@ -63,17 +63,10 @@ export default function MessengerOrgPanel({
  const groupedUsers = useMemo(() => {
  const sourceUsers = [...(users || [])];
 
- if (
- currentUser &&
- !sourceUsers.some((item) => Number(item.id) === Number(currentUser.id))
- ) {
- sourceUsers.unshift(currentUser);
- }
-
  const map: Record<string, MessengerUser[]> = {};
 
  sourceUsers.forEach((user) => {
- const team = user.team || "미분류";
+ const team = user.team || "";
  if (!map[team]) map[team] = [];
  map[team].push(user);
  });
@@ -128,9 +121,11 @@ export default function MessengerOrgPanel({
  <div className="mt-0.5 truncate text-xs text-slate-600">
  {currentUser.position || "직급 미지정"}
  </div>
- <div className="mt-0.5 truncate text-[11px] text-slate-500">
- {currentUser.team || "미분류"}
- </div>
+ {currentUser.team ? (
+  <div className="mt-0.5 truncate text-[11px] text-slate-500">
+    {currentUser.team}
+  </div>
+) : null}
  </div>
  </div>
  </div>
@@ -149,9 +144,11 @@ export default function MessengerOrgPanel({
 
  return (
  <div key={teamName}>
- <div className="mb-2 px-2 text-xs font-semibold tracking-[0.02em] text-slate-600">
- {teamName}
- </div>
+ {teamName ? (
+  <div className="mb-2 px-2 text-xs font-semibold tracking-[0.02em] text-slate-600">
+    {teamName}
+  </div>
+) : null}
 
  <div className="space-y-2">
  {members.map((member) => {
@@ -232,9 +229,11 @@ export default function MessengerOrgPanel({
  <div className="mt-1 truncate text-sm font-medium text-slate-700">
  {selectedUser.position || "직급 미지정"}
  </div>
- <div className="mt-1 truncate text-sm text-slate-500">
- {selectedUser.team || "미분류"}
- </div>
+ {selectedUser.team ? (
+  <div className="mt-1 truncate text-sm text-slate-500">
+    {selectedUser.team}
+  </div>
+) : null}
  </div>
  </div>
 

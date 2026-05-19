@@ -3027,60 +3027,63 @@ export async function getAllUsersDetailed(params?: {
     conditions.push(eq(users.organizationId, organizationId));
   }
 
-  const query = db
-    .select({
-      id: users.id,
-      displayNo: users.displayNo,
-      organizationId: users.organizationId,
-      openId: users.openId,
-      username: users.username,
-      name: users.name,
-      email: users.email,
-      phone: users.phone,
-      birthday: users.birthday,
-      role: users.role,
-      bankName: users.bankName,
-      bankAccount: users.bankAccount,
-      profileImageUrl: users.profileImageUrl,
-      isActive: users.isActive,
-      loginMethod: users.loginMethod,
-      createdAt: users.createdAt,
-      updatedAt: users.updatedAt,
-      lastSignedIn: users.lastSignedIn,
+  let query = db
+  .select({
+    id: users.id,
+    displayNo: users.displayNo,
+    organizationId: users.organizationId,
+    openId: users.openId,
+    username: users.username,
+    name: users.name,
+    email: users.email,
+    phone: users.phone,
+    role: users.role,
+    bankName: users.bankName,
+    bankAccount: users.bankAccount,
+    profileImageUrl: users.profileImageUrl,
+    isActive: users.isActive,
+    loginMethod: users.loginMethod,
+    createdAt: users.createdAt,
+    updatedAt: users.updatedAt,
+    lastSignedIn: users.lastSignedIn,
 
-      teamId: userOrgMappings.teamId,
-      positionId: userOrgMappings.positionId,
-      orgSortOrder: userOrgMappings.sortOrder,
-      teamName: teams.name,
-      positionName: positions.name,
-    })
-    .from(users)
-    .leftJoin(
-      userOrgMappings,
-      and(
-        eq(userOrgMappings.userId, users.id),
-        eq(userOrgMappings.organizationId, users.organizationId)
-      )
+    teamId: userOrgMappings.teamId,
+    positionId: userOrgMappings.positionId,
+    orgSortOrder: userOrgMappings.sortOrder,
+    teamName: teams.name,
+    positionName: positions.name,
+  })
+  .from(users)
+  .leftJoin(
+    userOrgMappings,
+    and(
+      eq(userOrgMappings.userId, users.id),
+      eq(userOrgMappings.organizationId, users.organizationId)
     )
-    .leftJoin(
-      teams,
-      and(
-        eq(teams.id, userOrgMappings.teamId),
-        eq(teams.organizationId, users.organizationId)
-      )
+  )
+  .leftJoin(
+    teams,
+    and(
+      eq(teams.id, userOrgMappings.teamId),
+      eq(teams.organizationId, users.organizationId)
     )
-    .leftJoin(
-      positions,
-      and(
-        eq(positions.id, userOrgMappings.positionId),
-        eq(positions.organizationId, users.organizationId)
-      )
+  )
+  .leftJoin(
+    positions,
+    and(
+      eq(positions.id, userOrgMappings.positionId),
+      eq(positions.organizationId, users.organizationId)
     )
-    .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(users.displayNo, users.id);
+  );
 
-  return query;
+if (conditions.length > 0) {
+  query = query.where(and(...conditions)) as any;
 }
+
+return query.orderBy(users.displayNo, users.id);
+}
+
+
 
 export async function getUserPersonnelDetail(params: {
   organizationId?: number | null;
