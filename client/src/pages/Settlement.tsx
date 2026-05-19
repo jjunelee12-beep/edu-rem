@@ -142,7 +142,15 @@ const closeInstitutionDialog = () => {
 };
 
 const safeNavigate = (path: string) => {
-  navigate(path);
+  const slug = window.location.pathname.split("/").filter(Boolean)[0];
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  if (slug && !["students", "student", "settlement", "semester-list"].includes(slug)) {
+    navigate(`/${slug}${normalizedPath}`);
+    return;
+  }
+
+  navigate(normalizedPath);
 };
 
 const changeSettlementMonthSafely = (nextYear: number, nextMonth: number) => {

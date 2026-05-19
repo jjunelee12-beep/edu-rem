@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sql } from "drizzle-orm";
 import { router, protectedProcedure } from "./_core/trpc";
 import {
   getTodayAttendanceRecord,
@@ -10,13 +11,14 @@ import {
   updateAttendanceRecordByManager,
   listAttendanceAdjustmentLogs,
   listTeamAttendanceAdjustmentLogs,
-getAttendancePolicy,
-saveAttendancePolicy,
-updateAttendanceStatusByManager,
+  getAttendancePolicy,
+  saveAttendancePolicy,
+  updateAttendanceStatusByManager,
+  getDb,
 } from "./db";
 
-function getCtxOrganizationId(ctx: any) {
-  const organizationId = Number(
+async function getCtxOrganizationId(ctx: any) {
+  const directOrganizationId = Number(
     ctx?.organizationId ??
       ctx?.user?.organizationId ??
       ctx?.user?.organization_id ??
@@ -27,73 +29,74 @@ function getCtxOrganizationId(ctx: any) {
       0
   );
 
-  if (!Number.isFinite(organizationId) || organizationId <= 0) {
-    console.error("[attendance] organizationId missing", {
-      ctxOrganizationId: ctx?.organizationId,
-      userOrganizationId: ctx?.user?.organizationId,
-      userOrganization_id: ctx?.user?.organization_id,
-      userOrganization: ctx?.user?.organization,
-      sessionOrganizationId: ctx?.session?.organizationId,
-      sessionUserOrganizationId: ctx?.session?.user?.organizationId,
-      authOrganizationId: ctx?.auth?.organizationId,
-      userId: ctx?.user?.id,
-      username: ctx?.user?.username,
-      role: ctx?.user?.role,
-    });
-
-    throw new Error("organizationId is required");
+  if (Number.isFinite(directOrganizationId) && directOrganizationId > 0) {
+    return directOrganizationId;
   }
 
-  return organizationId;
+  const userId = Number(ctx?.user?.id || 0);
+
+  if (userId > 0) {
+    const db = await getDb();
+
+    if (db) {
+      const [rows] = await db.execute(sql`
+        SELECT organizationId
+        FROM users
+        WHERE id = ${userId}
+        LIMIT 1
+      `);
+
+      const row = Array.isArray(rows) ? (rows as any[])[0] : null;
+      const organizationId = Number(row?.organizationId || 0);
+
+      if (Number.isFinite(organizationId) && organizationId > 0) {
+        return organizationId;
+      }
+    }
+  }
+
+  throw new Error("organizationId is required");
 }
 
 export const attendanceRouter = router({
   today: protectedProcedure.query(async ({ ctx }) => {
-  return await getTodayAttendanceRecord(Number(ctx.user.id), {
-    organizationId: getCtxOrganizationId(ctx),
-  });
-}),
+    return await getTodayAttendanceRecord(Number(ctx.user.id), {
+      organizationId: await getCtxOrganizationId(ctx),
+    });
+  }),
 
   clockIn: protectedProcedure.mutation(async ({ ctx }) => {
-  return await clockInAttendance(Number(ctx.user.id), {
-    organizationId: getCtxOrganizationId(ctx),
-  });
-}),
+    return await clockInAttendance(Number(ctx.user.id), {
+      organizationId: await getCtxOrganizationId(ctx),
+    });
+  }),
 
   clockOut: protectedProcedure.mutation(async ({ ctx }) => {
-  return await clockOutAttendance(Number(ctx.user.id), {
-    organizationId: getCtxOrganizationId(ctx),
-  });
-}),
+    return await clockOutAttendance(Number(ctx.user.id), {
+      organizationId: await getCtxOrganizationId(ctx),
+    });
+  }),
 
   myList: protectedProcedure.query(async ({ ctx }) => {
-  return await listMyAttendanceRecords(Number(ctx.user.id), {
-    organizationId: getCtxOrganizationId(ctx),
-  });
-}),
+    return await listMyAttendanceRecords(Number(ctx.user.id), {
+      organizationId: await getCtxOrganizationId(ctx),
+    });
+  }),
 
   list: protectedProcedure.query(async ({ ctx }) => {
     const role = String(ctx.user.role || "");
     const userId = Number(ctx.user.id);
+    const organizationId = await getCtxOrganizationId(ctx);
 
-    // 호스트/슈퍼호스트: 전체 조회
     if (role === "host") {
-      return await listAllAttendanceRecords({
-  organizationId: getCtxOrganizationId(ctx),
-});
+      return await listAllAttendanceRecords({ organizationId });
     }
 
-    // 관리자: 자기 팀만 조회
     if (role === "admin") {
-      return await listTeamAttendanceRecords(userId, {
-  organizationId: getCtxOrganizationId(ctx),
-});
+      return await listTeamAttendanceRecords(userId, { organizationId });
     }
 
-    // 직원: 본인만 조회
-    return await listMyAttendanceRecords(userId, {
-  organizationId: getCtxOrganizationId(ctx),
-});
+    return await listMyAttendanceRecords(userId, { organizationId });
   }),
 
   updateByManager: protectedProcedure
@@ -109,30 +112,19 @@ export const attendanceRouter = router({
       const role = String(ctx.user.role || "");
       const actorUserId = Number(ctx.user.id);
 
-      // 호스트/슈퍼호스트/관리자까지만 수정 가능
       if (role !== "host" && role !== "admin") {
         throw new Error("근태 수정 권한이 없습니다.");
       }
 
-      const organizationId = getCtxOrganizationId(ctx);
-
-console.log("[attendance.updateByManager ctx]", {
-  ctxOrganizationId: (ctx as any)?.organizationId,
-  userOrganizationId: (ctx.user as any)?.organizationId,
-  userOrganization: (ctx.user as any)?.organization,
-  userId: ctx.user?.id,
-  role: ctx.user?.role,
-});
-
-return await updateAttendanceRecordByManager({
-  organizationId,
-  attendanceId: input.attendanceId,
-  actorUserId,
-  actorRole: role,
-  clockInAt: input.clockInAt ?? null,
-  clockOutAt: input.clockOutAt ?? null,
-  reason: input.reason ?? null,
-});
+      return await updateAttendanceRecordByManager({
+        organizationId: await getCtxOrganizationId(ctx),
+        attendanceId: input.attendanceId,
+        actorUserId,
+        actorRole: role,
+        clockInAt: input.clockInAt ?? null,
+        clockOutAt: input.clockOutAt ?? null,
+        reason: input.reason ?? null,
+      });
     }),
 
   adjustmentLogs: protectedProcedure
@@ -144,25 +136,26 @@ return await updateAttendanceRecordByManager({
     .query(async ({ ctx, input }) => {
       const role = String(ctx.user.role || "");
       const userId = Number(ctx.user.id);
+      const organizationId = await getCtxOrganizationId(ctx);
 
-      // 호스트/슈퍼호스트: 전체 수정 로그
       if (role === "host") {
         return await listAttendanceAdjustmentLogs(input.attendanceId, {
-  organizationId: getCtxOrganizationId(ctx),
-});
+          organizationId,
+        });
       }
 
-      // 관리자: 자기 팀 수정 로그만
       if (role === "admin") {
-        return await listTeamAttendanceAdjustmentLogs(userId, input.attendanceId, {
-  organizationId: getCtxOrganizationId(ctx),
-});
+        return await listTeamAttendanceAdjustmentLogs(
+          userId,
+          input.attendanceId,
+          { organizationId }
+        );
       }
 
       throw new Error("수정 로그 조회 권한이 없습니다.");
     }),
 
-	  getPolicy: protectedProcedure.query(async ({ ctx }) => {
+  getPolicy: protectedProcedure.query(async ({ ctx }) => {
     const role = String(ctx.user.role || "");
 
     if (role !== "host") {
@@ -170,8 +163,8 @@ return await updateAttendanceRecordByManager({
     }
 
     return await getAttendancePolicy({
-  organizationId: getCtxOrganizationId(ctx),
-});
+      organizationId: await getCtxOrganizationId(ctx),
+    });
   }),
 
   savePolicy: protectedProcedure
@@ -188,15 +181,16 @@ return await updateAttendanceRecordByManager({
     )
     .mutation(async ({ ctx, input }) => {
       const role = String(ctx.user.role || "");
+
       if (role !== "host") {
         throw new Error("근무시간 설정 저장 권한이 없습니다.");
       }
 
       return await saveAttendancePolicy({
-  organizationId: getCtxOrganizationId(ctx),
-  actorUserId: Number(ctx.user.id),
-  ...input,
-});
+        organizationId: await getCtxOrganizationId(ctx),
+        actorUserId: Number(ctx.user.id),
+        ...input,
+      });
     }),
 
   updateStatus: protectedProcedure
@@ -227,12 +221,12 @@ return await updateAttendanceRecordByManager({
       }
 
       return await updateAttendanceStatusByManager({
-  organizationId: getCtxOrganizationId(ctx),
-  attendanceId: input.attendanceId,
-  actorUserId,
-  actorRole: role,
-  status: input.status,
-  reason: input.reason ?? null,
-});
+        organizationId: await getCtxOrganizationId(ctx),
+        attendanceId: input.attendanceId,
+        actorUserId,
+        actorRole: role,
+        status: input.status,
+        reason: input.reason ?? null,
+      });
     }),
 });

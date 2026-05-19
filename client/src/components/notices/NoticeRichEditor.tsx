@@ -72,6 +72,7 @@ export default function NoticeRichEditor({
   onChange,
 }: NoticeRichEditorProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+const isApplyingExternalValueRef = useRef(false);
 
   const editor = useEditor({
     extensions: [
@@ -135,17 +136,33 @@ export default function NoticeRichEditor({
       },
     },
     onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
-    },
+  if (isApplyingExternalValueRef.current) return;
+  onChange(editor.getHTML());
+},
   });
 
   useEffect(() => {
-    if (!editor) return;
-    const current = editor.getHTML();
-    if (value !== current) {
-      editor.commands.setContent(value || "<p></p>", { emitUpdate: false });
-    }
-  }, [value, editor]);
+  if (!editor || editor.isDestroyed) return;
+
+  const nextValue = value || "<p></p>";
+  const current = editor.getHTML();
+
+  if (nextValue === current) return;
+
+  isApplyingExternalValueRef.current = true;
+
+  requestAnimationFrame(() => {
+    if (!editor || editor.isDestroyed) return;
+
+    try {
+  editor.commands.setContent(nextValue, {
+    emitUpdate: false,
+  });
+} finally {
+  isApplyingExternalValueRef.current = false;
+}
+  });
+}, [value, editor]);
 
   const handlePickImage = async (file?: File | null) => {
     if (!file || !editor) return;

@@ -850,6 +850,31 @@ function UserManagementSection() {
   const utils = trpc.useUtils();
   const { data: users, isLoading } = trpc.users.list.useQuery();
 
+const [selectedPersonnelUserId, setSelectedPersonnelUserId] = useState<number | null>(null);
+
+const { data: personnelDetail, isLoading: personnelDetailLoading } =
+  trpc.users.personnelDetail.useQuery(
+    { userId: selectedPersonnelUserId || 0 },
+    { enabled: !!selectedPersonnelUserId }
+  );
+
+const formatMoney = (value: any) =>
+  `${Number(value || 0).toLocaleString()}원`;
+
+const formatDate = (value: any) => {
+  if (!value) return "-";
+  return String(value).slice(0, 10);
+};
+
+const calcWorkDays = (createdAt: any) => {
+  if (!createdAt) return "-";
+  const start = new Date(createdAt);
+  const now = new Date();
+  const diff = now.getTime() - start.getTime();
+  if (!Number.isFinite(diff) || diff < 0) return "-";
+  return `${Math.floor(diff / 86400000) + 1}일`;
+};
+
   const createMutation = trpc.users.create.useMutation({
     onSuccess: () => {
       toast.success("직원 계정이 생성되었습니다.");
@@ -974,7 +999,8 @@ function UserManagementSection() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
+const [birthday, setBirthday] = useState("");
+const [password, setPassword] = useState("");
   const [bankName, setBankName] = useState("");
   const [bankAccount, setBankAccount] = useState("");
   const [createRole, setCreateRole] = useState<UserRole>("staff");
@@ -1098,8 +1124,9 @@ const roleFilteredUsers = useMemo(() => {
     setName("");
     setEmail("");
     setPhone("");
-    setPassword("");
-    setBankName("");
+setBirthday("");
+setPassword("");
+setBankName("");
     setBankAccount("");
     setCreateRole("staff");
   };
@@ -1118,7 +1145,8 @@ const roleFilteredUsers = useMemo(() => {
         name: name.trim(),
         email: email.trim() || undefined,
         phone: phone.trim() || undefined,
-        role: createRole,
+birthday: birthday || undefined,
+role: createRole,
         bankName: bankName.trim() || undefined,
         bankAccount: bankAccount.trim() || undefined,
       },
@@ -1445,6 +1473,12 @@ const roleFilteredUsers = useMemo(() => {
                   value={phone}
                   onChange={(e) => setPhone(handlePhoneInput(e.target.value))}
                 />
+<Input
+  type="date"
+  placeholder="생년월일"
+  value={birthday}
+  onChange={(e) => setBirthday(e.target.value)}
+/>
                 <Input
                   type="password"
                   placeholder="비밀번호"
@@ -1642,15 +1676,21 @@ const roleFilteredUsers = useMemo(() => {
                           </td>
 
                           <td className="px-4 py-3">
-                            {isEditing ? (
-                              <Input
-                                value={editName}
-                                onChange={(e) => setEditName(e.target.value)}
-                              />
-                            ) : (
-                              u.name || "-"
-                            )}
-                          </td>
+  {isEditing ? (
+    <Input
+      value={editName}
+      onChange={(e) => setEditName(e.target.value)}
+    />
+  ) : (
+    <button
+      type="button"
+      className="font-medium text-blue-600 underline-offset-2 hover:underline"
+      onClick={() => setSelectedPersonnelUserId(Number(u.id))}
+    >
+      {u.name || u.username || `#${u.id}`}
+    </button>
+  )}
+</td>
 
                           <td className="px-4 py-3">
                             {isEditing ? (
@@ -1792,6 +1832,165 @@ const roleFilteredUsers = useMemo(() => {
           </CardContent>
         </Card>
       )}
+
+{selectedPersonnelUserId ? (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold">직원 상세 정보</h2>
+          <p className="text-sm text-muted-foreground">
+            직원 생성 정보, 조직 정보, 근속 기간, 월별 매출 이력을 확인합니다.
+          </p>
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setSelectedPersonnelUserId(null)}
+        >
+          닫기
+        </Button>
+      </div>
+
+      {personnelDetailLoading ? (
+        <div className="text-sm text-muted-foreground">불러오는 중...</div>
+      ) : !personnelDetail?.profile ? (
+        <div className="text-sm text-muted-foreground">
+          직원 정보를 찾을 수 없습니다.
+        </div>
+      ) : (
+        <>
+          {(() => {
+            const profile = (personnelDetail as any).profile;
+            const total = (personnelDetail as any).totalRevenue || {};
+            const monthly = (personnelDetail as any).monthlyRevenue || [];
+
+            return (
+              <div className="space-y-6">
+                <div className="grid gap-4 md:grid-cols-[220px_1fr]">
+                  <Card>
+                    <CardContent className="flex flex-col items-center p-5 text-center">
+                      {profile.profileImageUrl ? (
+                        <img
+                          src={normalizeAssetUrl(profile.profileImageUrl)}
+                          alt="직원 프로필"
+                          className="h-28 w-28 rounded-full border object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-28 w-28 items-center justify-center rounded-full bg-slate-100 text-3xl font-bold text-slate-500">
+                          {profile.name?.[0] || profile.username?.[0] || "U"}
+                        </div>
+                      )}
+
+                      <div className="mt-3 text-lg font-bold">
+                        {profile.name || "-"}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {profile.teamName || "부서 미지정"} /{" "}
+                        {profile.positionName || "직급 미지정"}
+                      </div>
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        입사일 {formatDate(profile.createdAt)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        근속 {calcWorkDays(profile.createdAt)}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardContent className="grid gap-3 p-5 md:grid-cols-2">
+                      <InfoRow label="표시번호" value={profile.displayNo ?? profile.id} />
+                      <InfoRow label="아이디" value={profile.username} />
+                      <InfoRow label="이름" value={profile.name} />
+                      <InfoRow label="이메일" value={profile.email} />
+                      <InfoRow label="전화번호" value={formatPhone(profile.phone || "")} />
+                      <InfoRow label="생년월일" value={formatDate(profile.birthday)} />
+                      <InfoRow label="권한" value={roleLabel(profile.role)} />
+                      <InfoRow label="상태" value={profile.isActive ? "활성" : "비활성"} />
+                      <InfoRow label="은행명" value={profile.bankName} />
+                      <InfoRow label="계좌번호" value={profile.bankAccount} />
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-4">
+                  <SummaryBox label="총매출" value={formatMoney(total.grossAmount)} />
+                  <SummaryBox label="회사순이익" value={formatMoney(total.companyProfit)} />
+                  <SummaryBox label="프리랜서금액" value={formatMoney(total.freelancerAmount)} />
+                  <SummaryBox label="최종지급액" value={formatMoney(total.finalPayoutAmount)} />
+                </div>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>월별 매출 이력</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {monthly.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">
+                        매출 이력이 없습니다.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b bg-muted/50">
+                              <th className="px-3 py-2 text-left">월</th>
+                              <th className="px-3 py-2 text-right">건수</th>
+                              <th className="px-3 py-2 text-right">총매출</th>
+                              <th className="px-3 py-2 text-right">회사몫</th>
+                              <th className="px-3 py-2 text-right">회사순이익</th>
+                              <th className="px-3 py-2 text-right">프리랜서</th>
+                              <th className="px-3 py-2 text-right">세금</th>
+                              <th className="px-3 py-2 text-right">최종지급</th>
+                              <th className="px-3 py-2 text-right">환불</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {monthly.map((row: any) => (
+                              <tr key={row.month} className="border-b last:border-0">
+                                <td className="px-3 py-2">{row.month}</td>
+                                <td className="px-3 py-2 text-right">
+                                  {Number(row.itemCount || 0).toLocaleString()}
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  {formatMoney(row.grossAmount)}
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  {formatMoney(row.companyAmount)}
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  {formatMoney(row.companyProfit)}
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  {formatMoney(row.freelancerAmount)}
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  {formatMoney(row.taxAmount)}
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  {formatMoney(row.finalPayoutAmount)}
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  {formatMoney(row.refundAmount)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            );
+          })()}
+        </>
+      )}
+    </div>
+  </div>
+) : null}
 
       {userTab === "role" && (
         <Card>
@@ -2362,6 +2561,26 @@ const roleFilteredUsers = useMemo(() => {
   );
 }
 
+function InfoRow({ label, value }: { label: string; value: any }) {
+  return (
+    <div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 font-medium">{value || "-"}</div>
+    </div>
+  );
+}
+
+function SummaryBox({ label, value }: { label: string; value: any }) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className="mt-1 text-lg font-bold">{value || "0원"}</div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function LeadFormManagementSection() {
   return (
     <BaseFormManagementSection
@@ -2566,8 +2785,8 @@ const getAssignee = (id: any) => {
         <CardContent className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="space-y-1">
             <div className="font-semibold">
-              목표를 향한 배움의 길, 위드원 교육이 함께할게요
-            </div>
+  학점은행제 맞춤 상담 신청
+</div>
             <p className="text-sm text-muted-foreground">
               새 {title} 링크를 만들 때 기본으로 복사되는 디자인입니다.
             </p>

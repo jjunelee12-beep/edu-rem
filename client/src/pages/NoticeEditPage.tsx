@@ -436,7 +436,11 @@ const handleSaveDraft = () => {
                 <label className="block text-sm font-semibold text-slate-700">
                   내용
                 </label>
-                <NoticeRichEditor value={content} onChange={setContent} />
+                <NoticeRichEditor
+  key={`notice-edit-editor-${noticeId}`}
+  value={content}
+  onChange={setContent}
+/>
               </div>
             </div>
           </div>

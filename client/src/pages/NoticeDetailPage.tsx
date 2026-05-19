@@ -59,10 +59,31 @@ function stripAttachmentBlock(html?: string | null) {
 export default function NoticeDetailPage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
-  const [, params] = useRoute("/notices/:id");
+  const [, orgParams] = useRoute("/:organizationSlug/notices/:id");
+const [, plainParams] = useRoute("/notices/:id");
+
+const params = orgParams || plainParams;
 
   const noticeId = Number(params?.id || 0);
   const canManage = user?.role === "host" || user?.role === "superhost";
+
+const organizationSlug =
+  (user as any)?.organizationSlug ||
+  (user as any)?.organization?.slug ||
+  "";
+
+const withOrgPath = (path: string) => {
+  const cleanPath = String(path || "").trim();
+
+  if (!cleanPath) return organizationSlug ? `/${organizationSlug}` : "/";
+  if (!organizationSlug) return cleanPath;
+
+  if (cleanPath === "/") {
+    return `/${organizationSlug}`;
+  }
+
+  return `/${organizationSlug}${cleanPath.startsWith("/") ? cleanPath : `/${cleanPath}`}`;
+};
 
   const utils = trpc.useUtils();
 
@@ -97,22 +118,21 @@ export default function NoticeDetailPage() {
   }, [allNotices, noticeId]);
 
   const updateMutation = trpc.notice.update.useMutation({
-    onSuccess: async () => {
-      toast.success("공지사항이 수정되었습니다.");
-      setEditorOpen(false);
-      await utils.notice.get.invalidate({ id: noticeId, increaseView: true });
-      await utils.notice.list.invalidate();
-    },
-    onError: (err) => {
-      toast.error(err.message || "공지사항 수정 중 오류가 발생했습니다.");
-    },
-  });
+  onSuccess: async () => {
+    toast.success("공지사항이 수정되었습니다.");
+    await utils.notice.get.invalidate({ id: noticeId, increaseView: true });
+    await utils.notice.list.invalidate();
+  },
+  onError: (err) => {
+    toast.error(err.message || "공지사항 수정 중 오류가 발생했습니다.");
+  },
+});
 
   const deleteMutation = trpc.notice.delete.useMutation({
     onSuccess: async () => {
       toast.success("공지사항이 삭제되었습니다.");
       await utils.notice.list.invalidate();
-      setLocation("/notices");
+      setLocation(withOrgPath("/notices"));
     },
     onError: (err) => {
       toast.error(err.message || "공지사항 삭제 중 오류가 발생했습니다.");
@@ -179,7 +199,7 @@ export default function NoticeDetailPage() {
                 <Button
                   variant="outline"
                   className="h-11 rounded-xl"
-                  onClick={() => setLocation("/notices")}
+                 onClick={() => setLocation(withOrgPath("/notices"))}
                 >
                   <ArrowLeft className="mr-2 h-4 w-4" />
                   목록으로
@@ -190,7 +210,7 @@ export default function NoticeDetailPage() {
                     <Button
                       variant="outline"
                       className="h-11 rounded-xl"
-                      onClick={() => setLocation(`/notices/${noticeId}/edit`)}
+                      onClick={() => setLocation(withOrgPath(`/notices/${noticeId}/edit`))}
                       disabled={!notice}
                     >
                       <PencilLine className="mr-2 h-4 w-4" />
@@ -319,7 +339,7 @@ export default function NoticeDetailPage() {
                   <div className="divide-y">
                     <button
                       onClick={() => {
-                        if (prevNotice) setLocation(`/notices/${prevNotice.id}`);
+                        if (prevNotice) setLocation(withOrgPath(`/notices/${prevNotice.id}`));
                       }}
                       disabled={!prevNotice}
                       className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left hover:bg-slate-50 disabled:opacity-50"
@@ -335,7 +355,7 @@ export default function NoticeDetailPage() {
 
                     <button
                       onClick={() => {
-                        if (nextNotice) setLocation(`/notices/${nextNotice.id}`);
+                        if (nextNotice) setLocation(withOrgPath(`/notices/${nextNotice.id}`));
                       }}
                       disabled={!nextNotice}
                       className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left hover:bg-slate-50 disabled:opacity-50"

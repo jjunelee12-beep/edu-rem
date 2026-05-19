@@ -3046,6 +3046,106 @@ export async function getAllUsersDetailed(params?: {
   return query.orderBy(users.displayNo, users.id);
 }
 
+export async function getUserPersonnelDetail(params: {
+  organizationId?: number | null;
+  userId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const userId = Number(params.userId);
+
+  const [profileRows] = await db.execute(sql`
+    SELECT
+      u.id,
+      u.displayNo,
+      u.openId,
+      u.username,
+      u.name,
+      u.email,
+      u.phone,
+      u.birthday,
+      u.role,
+      u.bankName,
+      u.bankAccount,
+      u.profileImageUrl,
+      u.isActive,
+      u.createdAt,
+      t.name AS teamName,
+      p.name AS positionName
+    FROM users u
+    LEFT JOIN user_org_mappings m
+      ON m.userId = u.id
+     AND m.organizationId = u.organizationId
+    LEFT JOIN teams t
+      ON t.id = m.teamId
+     AND t.organizationId = u.organizationId
+    LEFT JOIN positions p
+      ON p.id = m.positionId
+     AND p.organizationId = u.organizationId
+    WHERE u.organizationId = ${organizationId}
+      AND u.id = ${userId}
+    LIMIT 1
+  `);
+
+  const profile = (profileRows as any[])?.[0] || null;
+  if (!profile) return null;
+
+  const [monthlyRows] = await db.execute(sql`
+    SELECT
+      DATE_FORMAT(occurredAt, '%Y-%m') AS month,
+      COUNT(*) AS itemCount,
+      SUM(COALESCE(grossAmount, 0)) AS grossAmount,
+      SUM(COALESCE(companyAmount, 0)) AS companyAmount,
+      SUM(COALESCE(companyProfit, 0)) AS companyProfit,
+      SUM(COALESCE(freelancerAmount, 0)) AS freelancerAmount,
+      SUM(COALESCE(taxAmount, 0)) AS taxAmount,
+      SUM(COALESCE(finalPayoutAmount, 0)) AS finalPayoutAmount,
+      SUM(
+        CASE
+          WHEN revenueType = 'refund' THEN COALESCE(grossAmount, 0)
+          ELSE 0
+        END
+      ) AS refundAmount
+    FROM settlement_items
+    WHERE organizationId = ${organizationId}
+      AND assigneeId = ${userId}
+      AND settlementStatus = 'confirmed'
+      AND occurredAt IS NOT NULL
+    GROUP BY DATE_FORMAT(occurredAt, '%Y-%m')
+    ORDER BY month DESC
+    LIMIT 24
+  `);
+
+  const [totalRows] = await db.execute(sql`
+    SELECT
+      COUNT(*) AS itemCount,
+      SUM(COALESCE(grossAmount, 0)) AS grossAmount,
+      SUM(COALESCE(companyAmount, 0)) AS companyAmount,
+      SUM(COALESCE(companyProfit, 0)) AS companyProfit,
+      SUM(COALESCE(freelancerAmount, 0)) AS freelancerAmount,
+      SUM(COALESCE(taxAmount, 0)) AS taxAmount,
+      SUM(COALESCE(finalPayoutAmount, 0)) AS finalPayoutAmount,
+      SUM(
+        CASE
+          WHEN revenueType = 'refund' THEN COALESCE(grossAmount, 0)
+          ELSE 0
+        END
+      ) AS refundAmount
+    FROM settlement_items
+    WHERE organizationId = ${organizationId}
+      AND assigneeId = ${userId}
+      AND settlementStatus = 'confirmed'
+  `);
+
+  return {
+    profile,
+    monthlyRevenue: monthlyRows as any[],
+    totalRevenue: (totalRows as any[])?.[0] || null,
+  };
+}
+
 // ─── Branding Settings ──────────────────────────────────────────────
 export async function getBrandingSettings(params?: {
   organizationId?: number | null;
@@ -3227,7 +3327,8 @@ export async function createUserAccount(data: {
   name: string;
   email?: string | null;
   phone?: string | null;
-  role: "staff" | "admin" | "host" | "superhost";
+birthday?: string | null;
+role: "staff" | "admin" | "host" | "superhost";
 organizationId?: number;
   bankName?: string | null;
   bankAccount?: string | null;
@@ -3247,7 +3348,8 @@ organizationId?: number;
     name: data.name,
     email: data.email?.trim().toLowerCase() || null,
     phone: data.phone ?? null,
-    role: data.role,
+birthday: data.birthday ?? null,
+role: data.role,
 organizationId: data.organizationId ?? 1,
     bankName: data.bankName ?? null,
     bankAccount: data.bankAccount ?? null,
@@ -14578,8 +14680,9 @@ export async function getMyProfile(userId: number) {
       u.username,
       u.name,
       u.email,
-      u.phone,
-      u.role,
+u.phone,
+u.birthday,
+u.role,
       u.profileImageUrl,
       map.teamId,
       map.positionId,

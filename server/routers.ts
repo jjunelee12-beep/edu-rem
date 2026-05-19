@@ -2014,6 +2014,25 @@ if (samePassword) {
 return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
 }),
 
+  personnelDetail: hostProcedure
+    .input(
+      z.object({
+        userId: z.number(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      if (!organizationId) {
+        throw new Error("organizationId is required");
+      }
+
+      return await db.getUserPersonnelDetail({
+        organizationId,
+        userId: input.userId,
+      });
+    }),
+
   me: protectedProcedure.query(async ({ ctx }) => {
     return await db.getMyProfile(Number(ctx.user.id));
   }),
@@ -2057,8 +2076,9 @@ return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
         password: z.string().min(4),
         name: z.string().min(1),
         email: z.string().optional(),
-        phone: z.string().optional(),
-        role: z.enum(["staff", "admin", "host"]).default("staff"),
+       phone: z.string().optional(),
+birthday: z.string().optional().nullable(),
+role: z.enum(["staff", "admin", "host"]).default("staff"),
         bankName: z.string().optional(),
         bankAccount: z.string().optional(),
       })
@@ -2083,8 +2103,9 @@ return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
         passwordHash,
         name: input.name.trim(),
         email: input.email?.trim() || null,
-        phone: input.phone?.trim() || null,
-        role: input.role,
+       phone: input.phone?.trim() || null,
+birthday: input.birthday?.trim() || null,
+role: input.role,
         bankName: input.bankName?.trim() || null,
         bankAccount: input.bankAccount?.trim() || null,
         loginMethod: "manual",

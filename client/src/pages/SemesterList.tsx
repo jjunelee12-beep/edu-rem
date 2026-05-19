@@ -41,6 +41,27 @@ export default function SemesterList() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
 
+ const withOrgPath = (path: string) => {
+    const slug = window.location.pathname.split("/").filter(Boolean)[0];
+    const normalizedPath = path.startsWith("/")
+      ? path
+      : `/${path}`;
+
+    if (
+      slug &&
+      ![
+        "students",
+        "student",
+        "settlement",
+        "semester-list",
+      ].includes(slug)
+    ) {
+      return `/${slug}${normalizedPath}`;
+    }
+
+    return normalizedPath;
+  };
+
   const [plannedMonth, setPlannedMonth] = useState(getCurrentMonthKey());
   const [searchTerm, setSearchTerm] = useState("");
   const [assigneeSearch, setAssigneeSearch] = useState("");
@@ -69,18 +90,17 @@ export default function SemesterList() {
   const assigneeTerm = assigneeSearch.trim().toLowerCase();
 
   return rows.filter((s: any) => {
-    const hasActualInfo =
-      !!s.actualStartDate ||
-      !!s.actualInstitution ||
-      !!s.actualInstitutionId ||
-      Number(s.actualSubjectCount || 0) > 0 ||
-      Number(s.actualAmount || 0) > 0 ||
-      !!s.actualPaymentDate;
+    const hasPlannedInfo =
+  !!s.plannedMonth ||
+  !!s.plannedInstitution ||
+  !!s.plannedInstitutionId ||
+  Number(s.plannedSubjectCount || 0) > 0 ||
+  Number(s.plannedAmount || 0) > 0;
 
-    const hasPaymentInfo =
-      Number(s.actualAmount || 0) > 0 || !!s.actualPaymentDate;
+const hasPaymentInfo =
+  Number(s.actualAmount || 0) > 0 || !!s.actualPaymentDate;
 
-    if (!hasActualInfo) return false;
+if (!hasPlannedInfo) return false;
 
     if (filterUnassignedPractice && s.practiceStatus !== "미섭외") return false;
 
@@ -284,7 +304,7 @@ export default function SemesterList() {
       </div>
 
       <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-        이 화면은 실제 학기 정보가 입력된 학생을 표시합니다. 입력완료 체크 여부와 관계없이 실제 개강월/교육원/과목수/금액 기준으로 표시됩니다.
+        이 화면은 예정 개강월 기준으로 학생의 학기별 예정/결제 정보를 표시합니다. 실제 개강일 입력 여부와 관계없이 예정 개강월이 있으면 표시됩니다.
       </div>
 
       <div className="flex items-center gap-4 flex-wrap">
@@ -526,7 +546,9 @@ export default function SemesterList() {
     ? "bg-amber-50/20"
     : ""
 }`}
-                  onClick={() => setLocation(`/students/${sem.studentId}`)}
+                  onClick={() =>
+  setLocation(withOrgPath(`/students/${sem.studentId}`))
+}
                 >
                   <td className="px-3 py-2 font-mono text-sm">{sem.plannedMonth || "-"}</td>
 

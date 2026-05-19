@@ -15,14 +15,14 @@ import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
 
 
 const DEFAULT_AD_CONFIG: UiConfig = {
-  title: "목표를 향한 배움의 길, 위드원 교육이 함께할게요",
-  subtitle: "상담은 100% 무료로 진행됩니다.",
-  logoUrl: "/images/logo.png",
-  heroImageUrl: "",
-  primaryColor: "#5fc065",
-  submitButtonText: "1:1 맞춤 상담 받기",
+  title: "학점은행제 맞춤 상담 신청",
+subtitle: "전문 담당자가 학습 상황에 맞춰 무료로 안내드립니다.",
+logoUrl: "",
+heroImageUrl: "",
+primaryColor: "#2563eb",
+submitButtonText: "무료 상담 신청하기",
   agreementText: "개인정보 수집 및 이용에 동의합니다.",
-  layoutType: "bottomSheet",
+  layoutType: "card",
   description: "",
   tags: "",
   isPinned: false,
@@ -136,7 +136,6 @@ const utils = trpc.useUtils();
   });
 
   const [done, setDone] = useState(false);
-  const [openSheet, setOpenSheet] = useState(false);
 
 const [editMode, setEditMode] = useState(false);
 const [uiDraft, setUiDraft] = useState<UiConfig>(DEFAULT_AD_CONFIG);
@@ -156,9 +155,8 @@ const [isUploadingHero, setIsUploadingHero] = useState(false);
 
   const submitMutation = trpc.publicForm.submit.useMutation({
     onSuccess: () => {
-      setDone(true);
-      setOpenSheet(false);
-    },
+  setDone(true);
+},
     onError: (err) => {
       alert(err.message || "접수 중 오류가 발생했습니다.");
     },
@@ -489,7 +487,7 @@ const handleUploadUiImage = async (
     formData.append("file", file);
 
     const uploadRes = await fetch(
-      `${import.meta.env.VITE_API_BASE_URL || ""}/api/upload`,
+      "/api/upload",
       {
         method: "POST",
         body: formData,
@@ -534,7 +532,7 @@ const handleUploadCanvasImage = async (file: File) => {
   formData.append("file", file);
 
   const uploadRes = await fetch(
-    `${import.meta.env.VITE_API_BASE_URL || ""}/api/upload`,
+    "/api/upload",
     {
       method: "POST",
       body: formData,
@@ -843,7 +841,10 @@ applyTemplateMutation.mutate({
 
     <FormCanvasRenderer
   canvas={safeDisplayConfig.canvas}
-  onOpenForm={() => setOpenSheet(true)}
+  onOpenForm={() => {
+    const target = document.getElementById("public-ad-form-section");
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }}
   onTel={() => {
     if (!callPhone) {
       alert("직원 전화번호가 등록되어 있지 않습니다.");
@@ -854,65 +855,39 @@ applyTemplateMutation.mutate({
   }}
 />
 
-    {canvasEnabled && openSheet ? (
-      <>
-        <div
-          className="ad-form-sheet-backdrop open"
-          onClick={() => setOpenSheet(false)}
-        />
+   {canvasEnabled ? (
+  <div
+    id="public-ad-form-section"
+    className="mx-auto mt-6 w-full max-w-xl px-4 pb-10"
+  >
+    <form
+      className="premium-form-card"
+      onSubmit={handleSubmit}
+    >
+      <div className="mb-4">
+        <h2 className="text-xl font-bold">
+          {safeDisplayConfig.submitButtonText || "상담 신청"}
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          아래 정보를 입력하시면 담당자가 확인 후 연락드립니다.
+        </p>
+      </div>
 
-        <div
-  className="ad-form-sheet open"
-  style={
-    canvasEnabled
-      ? {
-          position: "fixed",
-          left: "50%",
-          top: "50%",
-          bottom: "auto",
-          transform: "translate(-50%, -50%)",
-          width: "min(92vw, 520px)",
-          maxWidth: 520,
-          maxHeight: "86vh",
-          borderRadius: 24,
-          overflowY: "auto",
-          paddingBottom: 0,
-        }
-      : undefined
-  }
->
-          <div className="ad-form-sheet-header">
-            <h3>{safeDisplayConfig.submitButtonText || "상담 신청"}</h3>
-            <button type="button" onClick={() => setOpenSheet(false)}>
-              닫기
-            </button>
-          </div>
+      {sortedFields.map(renderField)}
 
-          {done ? (
-            <div className="ad-form-success">
-              상담 신청이 접수되었습니다.
-              <br />
-              순차적으로 연락드리겠습니다.
-            </div>
-          ) : (
-            <form className="ad-form-sheet-body" onSubmit={handleSubmit}>
-              {sortedFields.map(renderField)}
-
-              <button
-                type="submit"
-                className="premium-submit-button"
-                style={{ backgroundColor: safeColor }}
-                disabled={submitMutation.isPending}
-              >
-                {submitMutation.isPending
-                  ? "접수 중..."
-                  : safeDisplayConfig.submitButtonText || "1:1 맞춤 상담 받기"}
-              </button>
-            </form>
-          )}
-        </div>
-      </>
-    ) : null}
+      <button
+        type="submit"
+        className="premium-submit-button"
+        style={{ backgroundColor: safeColor }}
+        disabled={submitMutation.isPending}
+      >
+        {submitMutation.isPending
+          ? "접수 중..."
+          : safeDisplayConfig.submitButtonText || "무료 상담 신청하기"}
+      </button>
+    </form>
+  </div>
+) : null}
 
     {!canvasEnabled ? (
       <>
@@ -976,97 +951,30 @@ applyTemplateMutation.mutate({
           <section className="ad-form-section spacer"></section>
         </div>
 
-        {safeDisplayConfig.layoutType === "bottomSheet" ? (
-          <>
-            <div className="ad-form-bottom-bar">
-              <a
-                href={callPhone ? callHref : undefined}
-                className={`ad-form-call-btn ${!callPhone ? "is-disabled" : ""}`}
-                onClick={(e) => {
-                  if (!callPhone) {
-                    e.preventDefault();
-                    alert("직원 전화번호가 등록되어 있지 않습니다.");
-                  }
-                }}
-              >
-                빠른 전화하기
-              </a>
+       <div style={{ maxWidth: 720, margin: "24px auto 0", padding: "0 16px" }}>
+  {done ? (
+    <div className="ad-form-success">
+      상담 신청이 접수되었습니다.
+      <br />
+      순차적으로 연락드리겠습니다.
+    </div>
+  ) : (
+    <form className="premium-form-card" onSubmit={handleSubmit}>
+      {sortedFields.map(renderField)}
 
-              <button
-                type="button"
-                className="ad-form-apply-btn"
-                style={{ backgroundColor: safeColor }}
-                onClick={() => setOpenSheet(true)}
-              >
-                상담 신청
-              </button>
-            </div>
-
-            <div
-              className={`ad-form-sheet-backdrop ${openSheet ? "open" : ""}`}
-              onClick={() => setOpenSheet(false)}
-            />
-
-            <div className={`ad-form-sheet ${openSheet ? "open" : ""}`}>
-              <div className="ad-form-sheet-header">
-                <h3>{safeDisplayConfig.submitButtonText || "상담 신청"}</h3>
-                <button type="button" onClick={() => setOpenSheet(false)}>
-                  닫기
-                </button>
-              </div>
-
-              {done ? (
-                <div className="ad-form-success">
-                  상담 신청이 접수되었습니다.
-                  <br />
-                  순차적으로 연락드리겠습니다.
-                </div>
-              ) : (
-                <form className="ad-form-sheet-body" onSubmit={handleSubmit}>
-                  {sortedFields.map(renderField)}
-
-                  <button
-                    type="submit"
-                    className="premium-submit-button"
-                    style={{ backgroundColor: safeColor }}
-                    disabled={submitMutation.isPending}
-                  >
-                    {submitMutation.isPending
-                      ? "접수 중..."
-                      : safeDisplayConfig.submitButtonText ||
-                        "1:1 맞춤 상담 받기"}
-                  </button>
-                </form>
-              )}
-            </div>
-          </>
-        ) : (
-          <div style={{ maxWidth: 720, margin: "24px auto 0", padding: "0 16px" }}>
-            {done ? (
-              <div className="ad-form-success">
-                상담 신청이 접수되었습니다.
-                <br />
-                순차적으로 연락드리겠습니다.
-              </div>
-            ) : (
-              <form className="ad-form-sheet-body" onSubmit={handleSubmit}>
-                {sortedFields.map(renderField)}
-
-                <button
-                  type="submit"
-                  className="premium-submit-button"
-                  style={{ backgroundColor: safeColor }}
-                  disabled={submitMutation.isPending}
-                >
-                  {submitMutation.isPending
-                    ? "접수 중..."
-                    : safeDisplayConfig.submitButtonText ||
-                      "1:1 맞춤 상담 받기"}
-                </button>
-              </form>
-            )}
-          </div>
-        )}
+      <button
+        type="submit"
+        className="premium-submit-button"
+        style={{ backgroundColor: safeColor }}
+        disabled={submitMutation.isPending}
+      >
+        {submitMutation.isPending
+          ? "접수 중..."
+          : safeDisplayConfig.submitButtonText || "무료 상담 신청하기"}
+      </button>
+    </form>
+  )}
+</div>
       </>
     ) : null}
   </div>

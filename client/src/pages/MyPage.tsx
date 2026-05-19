@@ -17,6 +17,7 @@ export default function MyPage() {
   const utils = trpc.useUtils();
 
   const { data: myProfile, isLoading } = trpc.users.me.useQuery();
+const { data: branding } = trpc.branding.get.useQuery();
 
   const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
@@ -45,8 +46,8 @@ export default function MyPage() {
   };
 
   const [previewImage, setPreviewImage] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
+const [newPassword, setNewPassword] = useState("");
+const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
 
     const updatePhotoMutation = trpc.users.updateMyPhoto.useMutation({
     onSuccess: async () => {
@@ -74,11 +75,19 @@ export default function MyPage() {
     },
   });
 
-  const companyName = "위드원";
-  const departmentName = (myProfile as any)?.teamName || "미분류";
-  const positionName =
-    (myProfile as any)?.positionName || roleToLabel((myProfile as any)?.role || user?.role);
-  const birthday = (myProfile as any)?.birthday || "-";
+const companyName =
+  String((branding as any)?.companyName || "").trim() || "-";
+ const departmentName =
+  (myProfile as any)?.teamName ||
+  (user as any)?.teamName ||
+  "미분류";
+
+const positionName =
+  (myProfile as any)?.positionName ||
+  (user as any)?.positionName ||
+  roleToLabel((myProfile as any)?.role || user?.role);
+
+  const birthday = String((myProfile as any)?.birthday || "").slice(0, 10) || "-";
 
   const passwordError = useMemo(() => {
     if (!newPassword && !newPasswordConfirm) return "";
@@ -119,14 +128,11 @@ export default function MyPage() {
     const formData = new FormData();
     formData.append("file", blob, "profile-image.png");
 
-    const uploadRes = await fetch(
-      `${import.meta.env.VITE_API_BASE_URL || ""}/api/upload`,
-      {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      }
-    );
+    const uploadRes = await fetch("/api/upload", {
+  method: "POST",
+  body: formData,
+  credentials: "include",
+});
 
     if (!uploadRes.ok) {
       alert("사진 업로드에 실패했습니다.");
