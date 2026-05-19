@@ -75,6 +75,18 @@ localStorage.setItem("manus-runtime-user-info", JSON.stringify(nextUser));
     refresh();
   }, [refresh]);
 
+useEffect(() => {
+  const handleAuthUserUpdated = () => {
+    void refresh();
+  };
+
+  window.addEventListener("auth:user-updated", handleAuthUserUpdated);
+
+  return () => {
+    window.removeEventListener("auth:user-updated", handleAuthUserUpdated);
+  };
+}, [refresh]);
+
   const state = useMemo(() => {
     return {
       user,

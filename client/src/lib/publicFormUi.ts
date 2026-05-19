@@ -4,14 +4,13 @@ export function createDefaultPublicFormUiConfig(
   formType: "landing" | "ad"
 ): PublicFormUiConfig {
   return {
-    title: "목표를 향한 배움의 길, 위드원 교육이 함께할게요",
-    subtitle: "상담은 100% 무료로 진행됩니다.",
-    logoUrl: "/images/logo.png",
-    heroImageUrl: "",
-    primaryColor: "#5fc065",
-    submitButtonText: "1:1 맞춤 상담 받기",
+    title: "학점은행제 맞춤 상담 신청",
+subtitle: "전문 담당자가 학습 상황에 맞춰 무료로 안내드립니다.",
+logoUrl: "",
+primaryColor: "#2563eb",
+submitButtonText: "무료 상담 신청하기",
     agreementText: "개인정보 수집 및 이용에 동의합니다.",
-    layoutType: formType === "ad" ? "bottomSheet" : "card",
+    layoutType: "card",
 
     fields: [
       {

@@ -1653,10 +1653,13 @@ function safeJsonStringify(value: any) {
 
 function parseUiConfigJson(value: any) {
   if (!value) return {};
-  if (typeof value !== "string") return value;
+
+  if (typeof value === "object") {
+    return value;
+  }
 
   try {
-    return JSON.parse(value);
+    return JSON.parse(String(value));
   } catch {
     return {};
   }
@@ -2136,14 +2139,14 @@ const DEFAULT_FORM_MAPPING = {
 
 function getFallbackFormUiConfig(formType: "landing" | "ad") {
   return {
-    title: "목표를 향한 배움의 길, 위드원 교육이 함께할게요",
-    subtitle: "상담은 100% 무료로 진행됩니다.",
-    logoUrl: "/images/logo.png",
+    title: "학점은행제 맞춤 상담 신청",
+    subtitle: "전문 담당자가 학습 상황에 맞춰 무료로 안내드립니다.",
+    logoUrl: "",
     heroImageUrl: "",
-    primaryColor: "#5fc065",
-    submitButtonText: "1:1 맞춤 상담 받기",
+    primaryColor: "#2563eb",
+    submitButtonText: "무료 상담 신청하기",
     agreementText: "개인정보 수집 및 이용에 동의합니다.",
-    layoutType: formType === "ad" ? "bottomSheet" : "card",
+    layoutType: "card",
     description: "",
     tags: "",
     isPinned: false,
@@ -3016,9 +3019,15 @@ export async function getAllUsersDetailed(params?: {
   const db = await getDb();
   if (!db) return [];
 
-  const organizationId = requireOrganizationId(params?.organizationId);
+  const organizationId = Number(params?.organizationId || 0);
 
-  let query = db
+  const conditions: any[] = [];
+
+  if (organizationId > 0) {
+    conditions.push(eq(users.organizationId, organizationId));
+  }
+
+  const query = db
     .select({
       id: users.id,
       displayNo: users.displayNo,
@@ -3028,22 +3037,49 @@ export async function getAllUsersDetailed(params?: {
       name: users.name,
       email: users.email,
       phone: users.phone,
+      birthday: users.birthday,
       role: users.role,
       bankName: users.bankName,
       bankAccount: users.bankAccount,
+      profileImageUrl: users.profileImageUrl,
       isActive: users.isActive,
       loginMethod: users.loginMethod,
       createdAt: users.createdAt,
       updatedAt: users.updatedAt,
       lastSignedIn: users.lastSignedIn,
+
+      teamId: userOrgMappings.teamId,
+      positionId: userOrgMappings.positionId,
+      orgSortOrder: userOrgMappings.sortOrder,
+      teamName: teams.name,
+      positionName: positions.name,
     })
-    .from(users);
+    .from(users)
+    .leftJoin(
+      userOrgMappings,
+      and(
+        eq(userOrgMappings.userId, users.id),
+        eq(userOrgMappings.organizationId, users.organizationId)
+      )
+    )
+    .leftJoin(
+      teams,
+      and(
+        eq(teams.id, userOrgMappings.teamId),
+        eq(teams.organizationId, users.organizationId)
+      )
+    )
+    .leftJoin(
+      positions,
+      and(
+        eq(positions.id, userOrgMappings.positionId),
+        eq(positions.organizationId, users.organizationId)
+      )
+    )
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(users.displayNo, users.id);
 
-  if (organizationId > 0) {
-    query = query.where(eq(users.organizationId, organizationId)) as any;
-  }
-
-  return query.orderBy(users.displayNo, users.id);
+  return query;
 }
 
 export async function getUserPersonnelDetail(params: {

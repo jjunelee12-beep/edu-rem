@@ -117,6 +117,18 @@ export default function NoticeWritePage() {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
 
+const organizationSlug = window.location.pathname.split("/").filter(Boolean)[0] || "";
+
+const withOrgPath = (path: string) => {
+  const cleanPath = String(path || "").trim();
+
+  if (!organizationSlug) return cleanPath;
+  if (cleanPath === "/") return `/${organizationSlug}`;
+  if (cleanPath.startsWith(`/${organizationSlug}/`)) return cleanPath;
+
+  return `/${organizationSlug}${cleanPath.startsWith("/") ? cleanPath : `/${cleanPath}`}`;
+};
+
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [isPinned, setIsPinned] = useState(false);
@@ -140,7 +152,7 @@ useEffect(() => {
   sessionStorage.removeItem(NOTICE_WRITE_DRAFT_KEY);
   toast.success("공지사항이 등록되었습니다.");
   await utils.notice.list.invalidate();
-  setLocation("/notices");
+  setLocation(withOrgPath("/notices"));
 },
     onError: (err) => {
       toast.error(err.message || "공지사항 등록 중 오류가 발생했습니다.");
@@ -239,7 +251,7 @@ const handleSaveDraft = () => {
           <Button
   variant="outline"
   className="h-11 rounded-xl"
-  onClick={() => setLocation("/notices")}
+  onClick={() => setLocation(withOrgPath("/notices"))}
 >
   <ArrowLeft className="mr-2 h-4 w-4" />
   목록으로
@@ -280,7 +292,7 @@ const handleSaveDraft = () => {
       "notice-preview",
       JSON.stringify({
         mode: "create",
-        backPath: "/notices/write",
+        backPath: withOrgPath("/notices/write"),
         title: nextTitle,
         content: mergedContent,
         isPinned,
@@ -288,7 +300,7 @@ const handleSaveDraft = () => {
       })
     );
 
-    setLocation("/notices/preview");
+    setLocation(withOrgPath("/notices/preview"));
   }}
 >
   <Eye className="mr-2 h-4 w-4" />

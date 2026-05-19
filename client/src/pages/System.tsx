@@ -97,7 +97,7 @@ function shallowEqualStringRecord(
 
 
 export default function System() {
-  const { user } = useAuth();
+ const { user } = useAuth();
  const [tab, setTab] = useState<TabKey>("users");
 
   if (user?.role !== "host" && user?.role !== "superhost") {
@@ -844,11 +844,22 @@ if (!companyShareAmount) {
 }
 
 function UserManagementSection() {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const canManageOrganization =
   user?.role === "host" || user?.role === "superhost";
   const utils = trpc.useUtils();
   const { data: users, isLoading } = trpc.users.list.useQuery();
+
+const refreshUserOrganizationViews = async () => {
+  await Promise.all([
+    utils.users.list.invalidate(),
+    utils.users.me.invalidate(),
+    refresh(),
+  ]);
+
+  window.dispatchEvent(new Event("auth:user-updated"));
+  window.dispatchEvent(new Event("profile-image-updated"));
+};
 
 const [selectedPersonnelUserId, setSelectedPersonnelUserId] = useState<number | null>(null);
 
@@ -908,72 +919,76 @@ const calcWorkDays = (createdAt: any) => {
   });
 
   const createTeamMutation = trpc.org.teams.create.useMutation({
-    onSuccess: () => {
-      toast.success("팀이 추가되었습니다.");
-      utils.org.teams.list.invalidate();
-      setNewTeamName("");
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  onSuccess: async () => {
+    toast.success("팀이 추가되었습니다.");
+    await utils.org.teams.list.invalidate();
+    setNewTeamName("");
+    await refreshUserOrganizationViews();
+  },
+  onError: (e) => toast.error(e.message),
+});
 
   const updateTeamMutation = trpc.org.teams.update.useMutation({
-    onSuccess: () => {
-      toast.success("팀 정보가 수정되었습니다.");
-      utils.org.teams.list.invalidate();
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  onSuccess: async () => {
+    toast.success("팀 정보가 수정되었습니다.");
+    await utils.org.teams.list.invalidate();
+    await refreshUserOrganizationViews();
+  },
+  onError: (e) => toast.error(e.message),
+});
 
   const deleteTeamMutation = trpc.org.teams.delete.useMutation({
-    onSuccess: () => {
-      toast.success("팀이 삭제되었습니다.");
-      utils.org.teams.list.invalidate();
-      utils.users.list.invalidate();
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  onSuccess: async () => {
+    toast.success("팀이 삭제되었습니다.");
+    await utils.org.teams.list.invalidate();
+    await refreshUserOrganizationViews();
+  },
+  onError: (e) => toast.error(e.message),
+});
 
   const createPositionMutation = trpc.org.positions.create.useMutation({
-    onSuccess: () => {
-      toast.success("직급이 추가되었습니다.");
-      utils.org.positions.list.invalidate();
-      setNewPositionName("");
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  onSuccess: async () => {
+    toast.success("직급이 추가되었습니다.");
+    await utils.org.positions.list.invalidate();
+    setNewPositionName("");
+    await refreshUserOrganizationViews();
+  },
+  onError: (e) => toast.error(e.message),
+});
 
   const updatePositionMutation = trpc.org.positions.update.useMutation({
-    onSuccess: () => {
-      toast.success("직급 정보가 수정되었습니다.");
-      utils.org.positions.list.invalidate();
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  onSuccess: async () => {
+    toast.success("직급 정보가 수정되었습니다.");
+    await utils.org.positions.list.invalidate();
+    await refreshUserOrganizationViews();
+  },
+  onError: (e) => toast.error(e.message),
+});
 
   const deletePositionMutation = trpc.org.positions.delete.useMutation({
-    onSuccess: () => {
-      toast.success("직급이 삭제되었습니다.");
-      utils.org.positions.list.invalidate();
-      utils.users.list.invalidate();
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  onSuccess: async () => {
+    toast.success("직급이 삭제되었습니다.");
+    await utils.org.positions.list.invalidate();
+    await refreshUserOrganizationViews();
+  },
+  onError: (e) => toast.error(e.message),
+});
 
   const upsertUserMappingMutation = trpc.org.userMappings.upsert.useMutation({
-    onSuccess: () => {
-      toast.success("유저 조직 정보가 저장되었습니다.");
-      utils.users.list.invalidate();
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  onSuccess: async () => {
+    toast.success("유저 조직 정보가 저장되었습니다.");
+    await refreshUserOrganizationViews();
+  },
+  onError: (e) => toast.error(e.message),
+});
 
-  const deleteUserMappingMutation = trpc.org.userMappings.delete.useMutation({
-    onSuccess: () => {
-      toast.success("유저 조직 정보가 제거되었습니다.");
-      utils.users.list.invalidate();
-    },
-    onError: (e) => toast.error(e.message),
-  });
+ const deleteUserMappingMutation = trpc.org.userMappings.delete.useMutation({
+  onSuccess: async () => {
+    toast.success("유저 조직 정보가 제거되었습니다.");
+    await refreshUserOrganizationViews();
+  },
+  onError: (e) => toast.error(e.message),
+});
 
   const bulkReassignMutation = trpc.consultation.bulkReassign.useMutation({
     onSuccess: () => {
@@ -2737,14 +2752,11 @@ const getAssignee = (id: any) => {
     const formData = new FormData();
     formData.append("file", file);
 
-    const uploadRes = await fetch(
-      `${import.meta.env.VITE_API_BASE_URL || ""}/api/upload`,
-      {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      }
-    );
+    const uploadRes = await fetch("/api/upload", {
+  method: "POST",
+  body: formData,
+  credentials: "include",
+});
 
     if (!uploadRes.ok) {
       throw new Error("이미지 업로드에 실패했습니다.");
@@ -3113,14 +3125,11 @@ const handleUploadLogo = async (e: ChangeEvent<HTMLInputElement>) => {
     const formData = new FormData();
     formData.append("file", file);
 
-    const uploadRes = await fetch(
-      `${import.meta.env.VITE_API_BASE_URL || ""}/api/upload`,
-      {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      }
-    );
+    const uploadRes = await fetch("/api/upload", {
+  method: "POST",
+  body: formData,
+  credentials: "include",
+});
 
     if (!uploadRes.ok) {
       throw new Error("로고 업로드에 실패했습니다.");

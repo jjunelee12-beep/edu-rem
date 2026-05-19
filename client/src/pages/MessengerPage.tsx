@@ -32,7 +32,7 @@ function normalizeUsers(
     id: Number(user.id),
     name: user.name || user.username || "이름없음",
     position: user.positionName || user.position || roleToPosition(user.role),
-    team: user.teamName || user.team || "미분류",
+    team: user.teamName || user.team || "",
     avatar: normalizeAssetUrl(
       user.avatarUrl || user.profileImageUrl || user.avatar || ""
     ),
@@ -412,7 +412,7 @@ function PopupRoomData({
       id: Number(member.userId),
       name: member.name || member.username || "이름없음",
       position: member.positionName || roleToPosition(member.role),
-      team: member.teamName || "미분류",
+      team: member.teamName || "",
       avatar: normalizeAssetUrl(
         member.avatarUrl || member.profileImageUrl || member.avatar || ""
       ),
@@ -964,7 +964,7 @@ export default function MessengerPage({
         (user as any)?.positionName ||
         (user as any)?.position ||
         roleToPosition(user.role),
-      team: (user as any)?.teamName || (user as any)?.team || "미분류",
+      team: (user as any)?.teamName || (user as any)?.team || "",
       avatar: normalizeAssetUrl(
         (user as any)?.profileImageUrl ||
           (user as any)?.avatarUrl ||
@@ -1358,7 +1358,7 @@ export default function MessengerPage({
                 .filter((popup) => popup.type === "room")
                 .map((popup) => Number(popup.roomId))[0] ?? null
             }
-            users={orgUsers}
+            users={orgUsers.filter((item) => Number(item.id) !== Number(user?.id))}
             currentUser={currentUserProfile}
             typingRoomIds={Object.keys(typingByRoom)
               .map((key) => Number(key))
@@ -1754,8 +1754,7 @@ export default function MessengerPage({
                           </div>
 
                           <div className="mt-1 truncate text-xs text-slate-500">
-                            {member.team || "미분류"}
-                            {member.position ? ` · ${member.position}` : ""}
+                            {[member.team, member.position].filter(Boolean).join(" · ")}
                           </div>
                         </div>
 

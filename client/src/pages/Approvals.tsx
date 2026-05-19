@@ -29,6 +29,34 @@ export default function Approvals() {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
 
+const organizationSlug =
+  (user as any)?.organizationSlug ||
+  (user as any)?.organization?.slug ||
+  window.location.pathname.split("/").filter(Boolean)[0] ||
+  "";
+
+const withOrgPath = (path: string) => {
+  const cleanPath = String(path || "").trim();
+
+  if (!cleanPath) {
+    return organizationSlug ? `/${organizationSlug}` : "/";
+  }
+
+  if (!organizationSlug) {
+    return cleanPath;
+  }
+
+  if (cleanPath === "/") {
+    return `/${organizationSlug}`;
+  }
+
+  if (cleanPath.startsWith(`/${organizationSlug}/`)) {
+    return cleanPath;
+  }
+
+  return `/${organizationSlug}${cleanPath.startsWith("/") ? cleanPath : `/${cleanPath}`}`;
+};
+
 const { data: semesters, isLoading: semestersLoading } =
   trpc.semester.listAll.useQuery({});
   const { data: allUsers } = trpc.users.list.useQuery();
@@ -181,7 +209,7 @@ const rejectedSemesters = semesterRows.filter(
     <td className="px-4 py-3">
       <button
         className="font-medium text-primary hover:underline"
-        onClick={() => setLocation(`/students/${sem.studentId}`)}
+        onClick={() => setLocation(withOrgPath(`/students/${sem.studentId}`))}
       >
         {sem.clientName}
       </button>
@@ -289,7 +317,7 @@ const rejectedSemesters = semesterRows.filter(
                       <td className="px-4 py-3">
   <button
     className="font-medium text-primary hover:underline"
-    onClick={() => setLocation(`/students/${r.studentId}`)}
+    onClick={() => setLocation(withOrgPath(`/students/${r.studentId}`))}
   >
     {r.clientName || `학생 #${r.studentId}`}
   </button>
@@ -410,7 +438,7 @@ rejectRefundMutation.mutate({ id: Number(r.id) })
                 <td className="px-4 py-3">
                   <button
                     className="font-medium text-primary hover:underline"
-                    onClick={() => setLocation(`/students/${sem.studentId}`)}
+                    onClick={() => setLocation(withOrgPath(`/students/${sem.studentId}`))}
                   >
                     {sem.clientName}
                   </button>
@@ -490,7 +518,7 @@ rejectRefundMutation.mutate({ id: Number(r.id) })
                 <td className="px-4 py-3">
                   <button
                     className="font-medium text-primary hover:underline"
-                    onClick={() => setLocation(`/students/${sem.studentId}`)}
+                    onClick={() => setLocation(withOrgPath(`/students/${sem.studentId}`))}
                   >
                     {sem.clientName}
                   </button>

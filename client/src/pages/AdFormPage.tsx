@@ -9,7 +9,6 @@ import {
   DEFAULT_FORM_CANVAS_CONFIG,
   createDefaultWithOneCanvasConfig,
 } from "@/lib/formDesign/canvasTypes";
-import FormCanvasRenderer from "@/components/forms/canvas/FormCanvasRenderer";
 import FullScreenFormCanvasEditor from "@/components/forms/canvas/FullScreenFormCanvasEditor";
 import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
 
@@ -839,37 +838,19 @@ applyTemplateMutation.mutate({
       </div>
     ) : null}
 
-    <FormCanvasRenderer
-  canvas={safeDisplayConfig.canvas}
-  onOpenForm={() => {
-    const target = document.getElementById("public-ad-form-section");
-    target?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }}
-  onTel={() => {
-    if (!callPhone) {
-      alert("직원 전화번호가 등록되어 있지 않습니다.");
-      return;
-    }
-
-    window.location.href = callHref;
-  }}
-/>
-
-   {canvasEnabled ? (
+    {canvasEnabled ? (
   <div
     id="public-ad-form-section"
-    className="mx-auto mt-6 w-full max-w-xl px-4 pb-10"
+    className="mx-auto w-full max-w-xl px-4 pt-8 pb-10"
   >
-    <form
-      className="premium-form-card"
-      onSubmit={handleSubmit}
-    >
+    <form className="premium-form-card" onSubmit={handleSubmit}>
       <div className="mb-4">
         <h2 className="text-xl font-bold">
-          {safeDisplayConfig.submitButtonText || "상담 신청"}
+          {safeDisplayConfig.title || "학점은행제 맞춤 상담 신청"}
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          아래 정보를 입력하시면 담당자가 확인 후 연락드립니다.
+          {safeDisplayConfig.subtitle ||
+            "전문 담당자가 학습 상황에 맞춰 무료로 안내드립니다."}
         </p>
       </div>
 

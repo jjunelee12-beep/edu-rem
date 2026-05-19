@@ -139,8 +139,29 @@ function parseDraftSafely(raw: string | null) {
 
 export default function NoticeEditPage() {
   const [, setLocation] = useLocation();
-  const [, params] = useRoute("/notices/:id/edit");
-  const noticeId = Number(params?.id || 0);
+const [, orgParams] = useRoute("/:organizationSlug/notices/:id/edit");
+const [, plainParams] = useRoute("/notices/:id/edit");
+
+const params = orgParams || plainParams;
+const noticeId = Number(params?.id || 0);
+
+const organizationSlug =
+  (params as any)?.organizationSlug ||
+  window.location.pathname.split("/").filter(Boolean)[0] ||
+  "";
+
+const withOrgPath = (path: string) => {
+  const cleanPath = String(path || "").trim();
+
+  if (!cleanPath) return organizationSlug ? `/${organizationSlug}` : "/";
+  if (!organizationSlug) return cleanPath;
+
+  if (cleanPath === "/") return `/${organizationSlug}`;
+
+  if (cleanPath.startsWith(`/${organizationSlug}/`)) return cleanPath;
+
+  return `/${organizationSlug}${cleanPath.startsWith("/") ? cleanPath : `/${cleanPath}`}`;
+};
 
   const utils = trpc.useUtils();
 
@@ -198,7 +219,7 @@ export default function NoticeEditPage() {
   await utils.notice.get.invalidate({ id: noticeId, increaseView: false });
   await utils.notice.get.invalidate({ id: noticeId, increaseView: true });
   await utils.notice.list.invalidate();
-  setLocation(`/notices/${noticeId}`);
+  setLocation(withOrgPath(`/notices/${noticeId}`));
 },
     onError: (err) => {
       toast.error(err.message || "공지사항 수정 중 오류가 발생했습니다.");
@@ -322,7 +343,7 @@ const handleSaveDraft = () => {
             <Button
   variant="outline"
   className="h-11 rounded-xl"
-  onClick={() => setLocation(`/notices/${noticeId}`)}
+  onClick={() => setLocation(withOrgPath(`/notices/${noticeId}`))}
 >
   <ArrowLeft className="mr-2 h-4 w-4" />
   상세로
@@ -363,7 +384,7 @@ const handleSaveDraft = () => {
       "notice-preview",
       JSON.stringify({
         mode: "edit",
-        backPath: `/notices/${noticeId}/edit`,
+        backPath: withOrgPath(`/notices/${noticeId}/edit`),
         title: nextTitle,
         content: mergedContent,
         isPinned,
@@ -371,7 +392,7 @@ const handleSaveDraft = () => {
       })
     );
 
-    setLocation("/notices/preview");
+    setLocation(withOrgPath("/notices/preview"));
   }}
 >
   <Eye className="mr-2 h-4 w-4" />
