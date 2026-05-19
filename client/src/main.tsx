@@ -20,11 +20,42 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   window.location.href = getLoginUrl();
 };
 
+const getAppErrorInfo = (error: unknown) => {
+  if (!(error instanceof TRPCClientError)) {
+    return {
+      appCode: "E902",
+      appMessage: "알 수 없는 오류가 발생했습니다.",
+    };
+  }
+
+  const data = error.data as any;
+
+  return {
+    appCode: data?.appCode || "E902",
+    appMessage: data?.appMessage || error.message || "서버 오류가 발생했습니다.",
+  };
+};
+
+const showGlobalApiError = (error: unknown) => {
+  const { appCode, appMessage } = getAppErrorInfo(error);
+
+  if (typeof window === "undefined") return;
+
+  window.dispatchEvent(
+    new CustomEvent("app:api-error", {
+      detail: {
+        code: appCode,
+        message: appMessage,
+      },
+    })
+  );
+};
+
 queryClient.getQueryCache().subscribe((event) => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.query.state.error;
     redirectToLoginIfUnauthorized(error);
-    console.error("[API Query Error]", error);
+showGlobalApiError(error);
   }
 });
 
@@ -32,7 +63,7 @@ queryClient.getMutationCache().subscribe((event) => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.mutation.state.error;
     redirectToLoginIfUnauthorized(error);
-    console.error("[API Mutation Error]", error);
+showGlobalApiError(error);
   }
 });
 

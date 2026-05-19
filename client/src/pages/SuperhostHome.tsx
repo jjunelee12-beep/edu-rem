@@ -58,7 +58,6 @@ const monitoringTotals = useMemo(() => {
 const backfillMutation =
   trpc.settlementSystem.backfillSettlementItems.useMutation({
     onSuccess: (res) => {
-  console.log("백필 완료:", res);
 
   const errorText =
     Array.isArray(res.errors) && res.errors.length > 0
@@ -88,7 +87,6 @@ const backfillMutation =
 const cleanupOrphanMutation =
   trpc.settlementSystem.cleanupOrphanSettlementItems.useMutation({
     onSuccess: (res) => {
-      console.log("고아 정산 정리 완료:", res);
 
       alert(
         [

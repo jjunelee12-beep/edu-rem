@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
+import { throwAppError } from "./_core/appError";
+import { ERROR_CODES } from "./_core/errorCodes";
 
 export const publicLeadRouter = router({
   getByToken: publicProcedure
@@ -38,7 +40,11 @@ export const publicLeadRouter = router({
       const form = await db.getLeadFormByToken(input.token);
 
       if (!form || !form.isActive) {
-        throw new Error("유효하지 않은 링크입니다.");
+        throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "유효하지 않은 링크입니다.",
+  400
+);
       }
 
       const normalizedPhone = input.phone.replace(/\D/g, "").slice(0, 11);
@@ -47,7 +53,11 @@ const organizationId = Number((form as any).organizationId || 0);
 if (!organizationId) return { ok: false };
 
       if (!Number.isFinite(safeAssigneeId) || safeAssigneeId <= 0) {
-        throw new Error("담당자 정보가 올바르지 않습니다.");
+        throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "담당자 정보가 올바르지 않습니다.",
+  400
+);
       }
 
       const consultationId = await db.createConsultation({
@@ -77,49 +87,33 @@ if (!organizationId) return { ok: false };
   { organizationId }
 );
 
-      if (expoPushTokens.length > 0) {
-        try {
-          const messages = expoPushTokens.map((token) => ({
-            to: token,
-            sound: "default",
-            title: "신규 상담 접수",
-            body: `${input.clientName.trim()} / ${normalizedPhone}`,
-            data: {
-              type: "lead",
-              consultationId,
-              userId: safeAssigneeId,
-            },
-          }));
-
-          const pushResponse = await fetch("https://exp.host/--/api/v2/push/send", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(messages),
-          });
-
-          const pushResultText = await pushResponse.text();
-
-          console.log("[EXPO PUSH SEND STATUS]", pushResponse.status);
-          console.log("[EXPO PUSH SEND RESPONSE]", pushResultText);
-        } catch (pushError) {
-          console.error("[EXPO PUSH SEND ERROR]", pushError);
-        }
-      } else {
-        console.log("[EXPO PUSH] active token 없음", {
-          assigneeId: safeAssigneeId,
-        });
-      }
-
-      console.log("[PUBLIC LEAD SUBMIT]", {
+     if (expoPushTokens.length > 0) {
+  try {
+    const messages = expoPushTokens.map((token) => ({
+      to: token,
+      sound: "default",
+      title: "신규 상담 접수",
+      body: `${input.clientName.trim()} / ${normalizedPhone}`,
+      data: {
+        type: "lead",
         consultationId,
-        assigneeId: safeAssigneeId,
-        clientName: input.clientName.trim(),
-        phone: normalizedPhone,
-        tokenCount: expoPushTokens.length,
-      });
+        userId: safeAssigneeId,
+      },
+    }));
 
+    const pushResponse = await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(messages),
+    });
+
+    await pushResponse.text();
+  } catch (pushError) {
+    console.error("[EXPO PUSH SEND ERROR]", pushError);
+  }
+}
       return {
         ok: true,
         id: consultationId,

@@ -228,7 +228,6 @@ useEffect(() => {
     await onSave?.();
     setAutoSaveStatus("saved");
   } catch (error) {
-    console.error("자동 저장 실패:", error);
     setAutoSaveStatus("error");
     setHasUnsavedChanges(true);
   }
@@ -1981,7 +1980,6 @@ setTimeout(async () => {
     await onSave?.();
     setAutoSaveStatus("saved");
   } catch (error) {
-    console.error("디자인 저장 실패:", error);
     setAutoSaveStatus("error");
     setHasUnsavedChanges(true);
   }

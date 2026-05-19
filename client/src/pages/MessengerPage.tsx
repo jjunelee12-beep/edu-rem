@@ -823,12 +823,6 @@ export default function MessengerPage({
         .map((popup) => Number(popup.roomId))
         .filter(Boolean);
 
-      console.log("[MessengerPage] emit opened rooms", {
-        openPopups,
-        visibilityState: document.visibilityState,
-        openedRoomIds,
-      });
-
       localStorage.setItem(
         "messenger-opened-room-ids",
         JSON.stringify(openedRoomIds)
@@ -859,11 +853,6 @@ export default function MessengerPage({
       const custom = event as CustomEvent;
       const roomId = Number(custom.detail?.roomId || 0);
       if (!roomId) return;
-
-      console.log("[MessengerPage] handleOpenRoom event fired", {
-        roomId,
-        detail: custom.detail,
-      });
 
       setLocallyViewedRoomIds((prev) =>
         prev.includes(roomId) ? prev : [...prev, roomId]
@@ -1084,8 +1073,6 @@ export default function MessengerPage({
   };
 
   const handleSelectRoom = async (roomId: number) => {
-    console.log("[MessengerPage] handleSelectRoom called", { roomId });
-    console.trace("[MessengerPage] handleSelectRoom trace", { roomId });
 
     handleMarkRoomViewed(roomId);
 
@@ -1246,7 +1233,6 @@ export default function MessengerPage({
 };
 
   const closePopup = (popupKey: string) => {
-    console.log("[MessengerPage] closePopup called", { popupKey });
 
     setOpenPopups((prev) => {
       const target = prev.find((popup) => popup.key === popupKey);

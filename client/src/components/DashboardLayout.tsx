@@ -949,7 +949,6 @@ const renderPrimaryMenuSection = () => {
  try {
  await markReadMutation.mutateAsync({ id: item.id });
  } catch (e) {
- console.error("[notification.markRead] failed:", e);
  }
  }
 

@@ -1,6 +1,8 @@
 import ExcelJS from "exceljs";
 import { sql } from "drizzle-orm";
 import { getDb } from "../db";
+import { throwAppError } from "./appError";
+import { ERROR_CODES } from "./errorCodes";
 
 function safeSheetName(name: string) {
   return String(name || "Sheet").slice(0, 31);
@@ -109,7 +111,11 @@ export async function buildOrganizationExcelExport(params: {
   const organizationId = Number(params.organizationId || 0);
 
   if (!Number.isFinite(organizationId) || organizationId <= 0) {
-    throw new Error("organizationId is required");
+    throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
   }
 
   const [orgRows] = await db.execute(sql`

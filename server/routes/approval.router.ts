@@ -15,6 +15,8 @@ import {
   getApprovalPrintSettings,
   saveApprovalPrintSettings,
 } from "../db";
+import { throwAppError } from "../_core/appError";
+import { ERROR_CODES } from "../_core/errorCodes";
 
 const formTypeSchema = z.enum(["attendance", "business_trip", "general"]);
 
@@ -28,7 +30,11 @@ export const approvalRouter = router({
   pendingForMe: protectedProcedure.query(async ({ ctx }) => {
     const role = String(ctx.user.role || "");
     if (!["admin", "host", "superhost"].includes(role)) {
-      throw new Error("승인 문서 조회 권한이 없습니다.");
+      throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "승인 문서 조회 권한이 없습니다.",
+  403
+);
     }
 
     return listPendingApprovalDocumentsForApprover(ctx.user.id, {
@@ -294,7 +300,11 @@ organizationId: Number(ctx.user.organizationId || 0),
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
       return [];
@@ -304,7 +314,11 @@ organizationId: Number(ctx.user.organizationId || 0),
     .input(z.object({ formType: formTypeSchema }))
     .query(async ({ ctx, input }) => {
       if (ctx.user.role !== "superhost") {
-        throw new Error("설정 조회 권한이 없습니다.");
+        throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "설정 조회 권한이 없습니다.",
+  403
+);
       }
       return getApprovalSetting(input.formType, {
   organizationId: Number(ctx.user.organizationId || 0),
@@ -322,7 +336,11 @@ organizationId: Number(ctx.user.organizationId || 0),
     )
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== "superhost") {
-        throw new Error("설정 저장 권한이 없습니다.");
+       throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "설정 저장 권한이 없습니다.",
+  403
+);
       }
 
       return saveApprovalSetting({
@@ -352,7 +370,11 @@ organizationId: Number(ctx.user.organizationId || 0),
     )
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== "superhost") {
-        throw new Error("출력 설정 저장 권한이 없습니다.");
+        throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "출력 설정 저장 권한이 없습니다.",
+  403
+);
       }
 
       return saveApprovalPrintSettings({

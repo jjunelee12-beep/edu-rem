@@ -364,6 +364,52 @@ export default function AppToastHost() {
     };
   }, []);
 
+useEffect(() => {
+  const handleApiError = (event: Event) => {
+    const custom = event as CustomEvent<{
+      code?: string;
+      message?: string;
+    }>;
+
+    const code = custom.detail?.code || "E902";
+    const message =
+      custom.detail?.message || "서버 오류가 발생했습니다.";
+
+    const notificationId = `api-error-${Date.now()}-${Math.random()
+  .toString(36)
+  .slice(2, 8)}`;
+
+setToasts((prev) => [
+  {
+    id: notificationId,
+    createdAt: new Date().toISOString(),
+    read: false,
+    visible: true,
+    category: "system",
+    level: "danger",
+    title: `오류코드: ${code}`,
+    body: message,
+    durationMs: 6000,
+  },
+  ...prev,
+]);
+
+if (timersRef.current[notificationId]) {
+  window.clearTimeout(timersRef.current[notificationId]);
+}
+
+timersRef.current[notificationId] = window.setTimeout(() => {
+  startRemove(notificationId);
+}, 6000);
+  };
+
+  window.addEventListener("app:api-error", handleApiError as EventListener);
+
+  return () => {
+    window.removeEventListener("app:api-error", handleApiError as EventListener);
+  };
+}, []);
+
   useEffect(() => {
     const handleResize = () => {
       setWindowWidth(window.innerWidth);

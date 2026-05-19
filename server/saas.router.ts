@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { TRPCError } from "@trpc/server";
+import { throwAppError } from "./_core/appError";
+import { ERROR_CODES } from "./_core/errorCodes";
 import { router, protectedProcedure } from "./_core/trpc";
 import {
   listOrganizations,
@@ -17,10 +18,11 @@ import * as db from "./db";
 
 function assertSuperhost(ctx: any) {
   if (ctx.user?.role !== "superhost") {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "superhost만 접근 가능합니다.",
-    });
+    throwAppError(
+  ERROR_CODES.SUPERHOST_REQUIRED,
+  "superhost만 접근 가능합니다.",
+  403
+);
   }
 }
 
@@ -47,17 +49,19 @@ function assertValidOrganizationSlug(slug: string) {
   const normalized = normalizeOrganizationSlug(slug);
 
   if (!/^[a-z0-9-]+$/.test(normalized)) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "회사 URL은 영문 소문자, 숫자, 하이픈만 사용할 수 있습니다.",
-    });
+    throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "회사 URL은 영문 소문자, 숫자, 하이픈만 사용할 수 있습니다.",
+  400
+);
   }
 
   if (RESERVED_ORGANIZATION_SLUGS.has(normalized)) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "예약된 회사 URL입니다. 다른 값을 입력해주세요.",
-    });
+    throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "예약된 회사 URL입니다. 다른 값을 입력해주세요.",
+  400
+);
   }
 
   return normalized;
@@ -91,10 +95,11 @@ getOrganizationUsageStats: protectedProcedure
 
     const organization = await getOrganizationById(input.organizationId);
     if (!organization) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "회사를 찾을 수 없습니다.",
-      });
+      throwAppError(
+  ERROR_CODES.ORGANIZATION_NOT_FOUND,
+  "회사를 찾을 수 없습니다.",
+  404
+);
     }
 
     return getOrganizationUsageStats(input.organizationId);
@@ -182,10 +187,11 @@ listOrganizationAuditLogs: protectedProcedure
 
     const organization = await getOrganizationById(input.organizationId);
     if (!organization) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "회사를 찾을 수 없습니다.",
-      });
+      throwAppError(
+  ERROR_CODES.ORGANIZATION_NOT_FOUND,
+  "회사를 찾을 수 없습니다.",
+  404
+);
     }
 
     return listOrganizationAuditLogs(input.organizationId);
@@ -266,19 +272,21 @@ createHostAccount: protectedProcedure
 
     const organization = await getOrganizationById(input.organizationId);
     if (!organization) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "회사를 찾을 수 없습니다.",
-      });
+      throwAppError(
+  ERROR_CODES.ORGANIZATION_NOT_FOUND,
+  "회사를 찾을 수 없습니다.",
+  404
+);
     }
 
 const limitStatus = await getOrganizationLimitStatus(input.organizationId);
 
 if (limitStatus.exceeded.users) {
-  throw new TRPCError({
-    code: "FORBIDDEN",
-    message: `사용자 수 제한을 초과했습니다. 현재 ${limitStatus.usage.userCount}명 / 제한 ${limitStatus.limits.maxUsers}명`,
-  });
+  throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  `사용자 수 제한을 초과했습니다. 현재 ${limitStatus.usage.userCount}명 / 제한 ${limitStatus.limits.maxUsers}명`,
+  403
+);
 }
 
 const normalizedUsername = input.username.trim();
@@ -286,10 +294,11 @@ const normalizedUsername = input.username.trim();
 const existingUser = await db.getUserByUsername(normalizedUsername);
 
 if (existingUser) {
-  throw new TRPCError({
-    code: "CONFLICT",
-    message: "이미 사용 중인 아이디입니다. 다른 아이디를 입력해주세요.",
-  });
+  throwAppError(
+  ERROR_CODES.DUPLICATE_RESOURCE,
+  "이미 사용 중인 아이디입니다. 다른 아이디를 입력해주세요.",
+  409
+);
 }
 
     const passwordHash = await bcrypt.hash(input.password, 10);

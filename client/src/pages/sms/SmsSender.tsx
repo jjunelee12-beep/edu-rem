@@ -71,12 +71,7 @@ const saveSmsSettingsMutation = trpc.sms.saveSettings.useMutation({
   const testSendMutation = trpc.sms.testSend.useMutation();
 
   const assignees: AssigneeItem[] = assigneesQuery.data?.items ?? [];
-console.log("assigneesQuery.data", assigneesQuery.data);
-console.log("assignees", assignees);
   const items: PreviewItem[] = preview.data?.items ?? [];
-console.log("preview.data", preview.data);
-console.log("preview.items", items);
-
 useEffect(() => {
   if (!smsSettingsQuery.data) return;
 

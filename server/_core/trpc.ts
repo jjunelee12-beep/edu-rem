@@ -4,9 +4,34 @@ import superjson from "superjson";
 import type { TrpcContext } from "./context";
 import { getOrganizationById } from "../saasdb";
 import * as db from "../db";
+import { ERROR_CODES } from "./errorCodes";
+import { throwAppError } from "./appError";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
+
+  errorFormatter({ shape, error }) {
+    const cause = error.cause as any;
+
+    return {
+      ...shape,
+      data: {
+        ...shape.data,
+        appCode:
+          cause?.code ||
+          cause?.data?.code ||
+          ERROR_CODES.INTERNAL_SERVER_ERROR,
+        appMessage:
+          cause?.message ||
+          error.message ||
+          "서버 오류가 발생했습니다.",
+        appStatus:
+          cause?.status ||
+          shape.data?.httpStatus ||
+          500,
+      },
+    };
+  },
 });
 
 export const router = t.router;
@@ -53,19 +78,21 @@ async function assertOrganizationActive(user: any) {
   const organizationId = Number(user.organizationId || 0);
 
 if (!organizationId) {
-  throw new TRPCError({
-    code: "FORBIDDEN",
-    message: "organizationId is required",
-  });
+  throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
 }
 
 const organization = await getOrganizationById(organizationId);
 
   if (!organization || organization.status !== "active") {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "현재 이용이 제한된 회사 계정입니다.",
-    });
+    throwAppError(
+  ERROR_CODES.ORGANIZATION_INACTIVE,
+  "현재 이용이 제한된 회사 계정입니다.",
+  403
+);
   }
 }
 
@@ -123,10 +150,11 @@ const requireUser = t.middleware(async (opts) => {
   }
 
   if (!ctx.user) {
-    throw new TRPCError({
-      code: "UNAUTHORIZED",
-      message: UNAUTHED_ERR_MSG,
-    });
+    throwAppError(
+  ERROR_CODES.AUTH_REQUIRED,
+  UNAUTHED_ERR_MSG,
+  401
+);
   }
 
 await assertOrganizationActive(ctx.user);
@@ -162,10 +190,11 @@ export const adminProcedure = t.procedure
       }
 
       if (!ctx.user || !isAdminOrHost(ctx.user)) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: NOT_ADMIN_ERR_MSG,
-        });
+        throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  NOT_ADMIN_ERR_MSG,
+  403
+);
       }
 
       await assertOrganizationActive(ctx.user);
@@ -202,10 +231,11 @@ export const hostProcedure = t.procedure
         !ctx.user ||
         (ctx.user.role !== "host" && ctx.user.role !== "superhost")
       ) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "호스트 권한이 필요합니다.",
-        });
+        throwAppError(
+  ERROR_CODES.HOST_REQUIRED,
+  "호스트 권한이 필요합니다.",
+  403
+);
       }
 
       await assertOrganizationActive(ctx.user);
@@ -239,10 +269,11 @@ export const superHostProcedure = t.procedure
       }
 
       if (!ctx.user || !isSuperhost(ctx.user)) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "슈퍼호스트 권한이 필요합니다.",
-        });
+       throwAppError(
+  ERROR_CODES.SUPERHOST_REQUIRED,
+  "슈퍼호스트 권한이 필요합니다.",
+  403
+);
       }
 
       return next({

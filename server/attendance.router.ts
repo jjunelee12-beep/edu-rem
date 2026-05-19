@@ -16,6 +16,8 @@ import {
   updateAttendanceStatusByManager,
   getDb,
 } from "./db";
+import { throwAppError } from "./_core/appError";
+import { ERROR_CODES } from "./_core/errorCodes";
 
 async function getCtxOrganizationId(ctx: any) {
   const directOrganizationId = Number(
@@ -55,7 +57,11 @@ async function getCtxOrganizationId(ctx: any) {
     }
   }
 
-  throw new Error("organizationId is required");
+  throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
 }
 
 export const attendanceRouter = router({
@@ -113,7 +119,11 @@ export const attendanceRouter = router({
       const actorUserId = Number(ctx.user.id);
 
       if (role !== "host" && role !== "admin") {
-        throw new Error("근태 수정 권한이 없습니다.");
+        throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "근태 수정 권한이 없습니다.",
+  403
+);
       }
 
       return await updateAttendanceRecordByManager({
@@ -152,14 +162,22 @@ export const attendanceRouter = router({
         );
       }
 
-      throw new Error("수정 로그 조회 권한이 없습니다.");
+      throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "수정 로그 조회 권한이 없습니다.",
+  403
+);
     }),
 
   getPolicy: protectedProcedure.query(async ({ ctx }) => {
     const role = String(ctx.user.role || "");
 
     if (role !== "host") {
-      throw new Error("근무시간 설정 조회 권한이 없습니다.");
+      throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "근무시간 설정 조회 권한이 없습니다.",
+  403
+);
     }
 
     return await getAttendancePolicy({
@@ -183,7 +201,11 @@ export const attendanceRouter = router({
       const role = String(ctx.user.role || "");
 
       if (role !== "host") {
-        throw new Error("근무시간 설정 저장 권한이 없습니다.");
+        throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "근무시간 설정 저장 권한이 없습니다.",
+  403
+);
       }
 
       return await saveAttendancePolicy({
@@ -217,7 +239,11 @@ export const attendanceRouter = router({
       const actorUserId = Number(ctx.user.id);
 
       if (role !== "host" && role !== "admin") {
-        throw new Error("상태 수정 권한이 없습니다.");
+        throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "상태 수정 권한이 없습니다.",
+  403
+);
       }
 
       return await updateAttendanceStatusByManager({

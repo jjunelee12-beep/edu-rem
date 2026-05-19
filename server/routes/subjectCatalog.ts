@@ -1,11 +1,17 @@
 import { z } from "zod";
 import { router, protectedProcedure, hostProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { throwAppError } from "../_core/appError";
+import { ERROR_CODES } from "../_core/errorCodes";
 
 function getCtxOrganizationId(ctx: any) {
   const organizationId = Number(ctx?.user?.organizationId || 0);
   if (!Number.isFinite(organizationId) || organizationId <= 0) {
-    throw new Error("organizationId is required");
+    throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
   }
   return organizationId;
 }
@@ -127,7 +133,11 @@ itemBulkCreate: hostProcedure
     const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
     if (!organizationId) {
-      throw new Error("organizationId is required");
+      throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
     }
 
     const result = await db.bulkCreateSubjectCatalogItems({

@@ -35,6 +35,8 @@ import {
 } from "./_core/objectStorage";
 import { maskPersonalData, maskPersonalDataList } from "./_core/privacy";
 import { sendVerificationEmail } from "./_core/mail";
+import { throwAppError } from "./_core/appError";
+import { ERROR_CODES } from "./_core/errorCodes";
 
 function isAdminOrHost(user: any) {
   return (
@@ -59,11 +61,19 @@ function canManageOwnFormOrHigher(currentUser: any, targetAssigneeId?: number | 
 
 function assertCanManageOwnFormOrHigher(currentUser: any, targetAssigneeId?: number | null) {
   if (!currentUser) {
-    throw new Error("로그인이 필요합니다.");
+    throwAppError(
+  ERROR_CODES.AUTH_REQUIRED,
+  "로그인이 필요합니다.",
+  401
+);
   }
 
   if (!canManageOwnFormOrHigher(currentUser, targetAssigneeId)) {
-    throw new Error("본인 페이지 또는 관리자만 수정할 수 있습니다.");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "본인 페이지 또는 관리자만 수정할 수 있습니다.",
+  403
+);
   }
 }
 
@@ -73,9 +83,13 @@ function assertStudentEditable(params: {
 }) {
   const { currentUser, student } = params;
 
-  if (!currentUser) {
-    throw new Error("로그인이 필요합니다.");
-  }
+ if (!currentUser) {
+  throwAppError(
+    ERROR_CODES.AUTH_REQUIRED,
+    "로그인이 필요합니다.",
+    401
+  );
+}
 
   if (currentUser.role === "host") {
   return true;
@@ -88,7 +102,11 @@ function assertStudentEditable(params: {
     return true;
   }
 
-  throw new Error("해당 학생은 담당자 또는 호스트만 수정할 수 있습니다.");
+  throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "해당 학생은 담당자 또는 호스트만 수정할 수 있습니다.",
+  403
+);
 }
 
 function normalizeAuditJson(value: any) {
@@ -146,7 +164,11 @@ async function writeStudentAuditLog(params: {
   const organizationId = Number((params.ctx.user as any)?.organizationId || 0);
 
   if (!organizationId) {
-    throw new Error("organizationId is required");
+    throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
   }
 
   await db.createStudentAuditLog({
@@ -268,7 +290,11 @@ async function assertOrganizationFeatureEnabled(
   const features = await getOrganizationFeatureFlags(organizationId);
 
   if (!features[featureKey]) {
-    throw new Error(message);
+    throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  message,
+  400
+);
   }
 }
 
@@ -333,7 +359,11 @@ organizationFeatures: protectedProcedure.query(async ({ ctx }) => {
   const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
   if (!organizationId) {
-    throw new Error("organizationId is required");
+    throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
   }
 
   return getOrganizationFeatureFlags(organizationId);
@@ -343,19 +373,31 @@ organizationFeatures: protectedProcedure.query(async ({ ctx }) => {
 backup: router({
   exportExcel: hostProcedure.mutation(async ({ ctx }) => {
     if ((ctx.user as any)?.role === "superhost") {
-      throw new Error("슈퍼호스트는 회사 엑셀 백업을 다운로드할 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.SUPERHOST_REQUIRED,
+  "슈퍼호스트는 회사 엑셀 백업을 다운로드할 수 없습니다.",
+  403
+);
     }
 
     const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
     if (!organizationId) {
-      throw new Error("organizationId is required");
+      throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
     }
 
     const features = await getOrganizationFeatureFlags(organizationId);
 
     if (!features.allowBackup) {
-      throw new Error("현재 회사는 백업 기능을 사용할 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "현재 회사는 백업 기능을 사용할 수 없습니다.",
+  403
+);
     }
 
     const exported = await buildOrganizationExcelExport({
@@ -390,19 +432,31 @@ backup: router({
     )
     .query(async ({ ctx, input }) => {
   if ((ctx.user as any)?.role === "superhost") {
-    throw new Error("슈퍼호스트는 회사 백업 원문을 조회할 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.SUPERHOST_REQUIRED,
+  "슈퍼호스트는 회사 백업 원문을 조회할 수 없습니다.",
+  403
+);
   }
 
   const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
   if (!organizationId) {
-    throw new Error("organizationId is required");
+    throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
   }
 
 const features = await getOrganizationFeatureFlags(organizationId);
 
 if (!features.allowBackup) {
-  throw new Error("현재 회사는 백업/복구 기능을 사용할 수 없습니다.");
+  throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "현재 회사는 백업/복구 기능을 사용할 수 없습니다.",
+  403
+);
 }
 
   return db.listOrganizationBackups({
@@ -419,19 +473,31 @@ downloadUrl: hostProcedure
   )
   .mutation(async ({ ctx, input }) => {
     if ((ctx.user as any)?.role === "superhost") {
-      throw new Error("슈퍼호스트는 회사 백업 파일을 다운로드할 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.SUPERHOST_REQUIRED,
+  "슈퍼호스트는 회사 백업 파일을 다운로드할 수 없습니다.",
+  403
+);
     }
 
     const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
     if (!organizationId) {
-      throw new Error("organizationId is required");
+      throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
     }
 
     const features = await getOrganizationFeatureFlags(organizationId);
 
     if (!features.allowBackup) {
-      throw new Error("현재 회사는 백업/복구 기능을 사용할 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "현재 회사는 백업/복구 기능을 사용할 수 없습니다.",
+  403
+);
     }
 
     const backup = await db.getOrganizationBackupById(input.id, {
@@ -439,11 +505,19 @@ downloadUrl: hostProcedure
     });
 
     if (!backup) {
-      throw new Error("백업 파일을 찾을 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "백업 파일을 찾을 수 없습니다.",
+  404
+);
     }
 
     if (!backup.fileKey) {
-      throw new Error("다운로드 가능한 백업 파일이 없습니다.");
+      throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "다운로드 가능한 백업 파일이 없습니다.",
+  404
+);
     }
 
     const url = await createPrivateDownloadUrl({
@@ -482,25 +556,39 @@ await db.createAuditLog({
     const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 if ((ctx.user as any)?.role === "superhost") {
-  throw new Error("슈퍼호스트는 회사 백업 원문을 생성할 수 없습니다.");
+  throwAppError(
+  ERROR_CODES.SUPERHOST_REQUIRED,
+  "슈퍼호스트는 회사 백업 원문을 생성할 수 없습니다.",
+  403
+);
 }
 
     if (!organizationId) {
-      throw new Error("organizationId is required");
+      throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
     }
 
 const features = await getOrganizationFeatureFlags(organizationId);
 
 if (!features.allowBackup) {
-  throw new Error("현재 회사는 백업/복구 기능을 사용할 수 없습니다.");
+  throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "현재 회사는 백업/복구 기능을 사용할 수 없습니다.",
+  403
+);
 }
 
 const limitStatus = await getOrganizationLimitStatus(organizationId);
 
 if (limitStatus.exceeded.storage) {
-  throw new Error(
-    `저장공간 제한을 초과했습니다. 현재 ${limitStatus.usage.storageUsedMb}MB / 제한 ${limitStatus.limits.maxStorageMb}MB`
-  );
+  throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  `저장공간 제한을 초과했습니다. 현재 ${limitStatus.usage.storageUsedMb}MB / 제한 ${limitStatus.limits.maxStorageMb}MB`,
+  403
+);
 }
 
     const backupId = await db.createOrganizationBackupRecord({
@@ -572,17 +660,29 @@ fileKey: backupKey,
     const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
     if ((ctx.user as any)?.role === "superhost") {
-      throw new Error("슈퍼호스트는 회사 백업 원문을 검증할 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.SUPERHOST_REQUIRED,
+  "슈퍼호스트는 회사 백업 원문을 검증할 수 없습니다.",
+  403
+);
     }
 
     if (!organizationId) {
-      throw new Error("organizationId is required");
+      throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
     }
 
     const features = await getOrganizationFeatureFlags(organizationId);
 
     if (!features.allowBackup) {
-      throw new Error("현재 회사는 백업/복구 기능을 사용할 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "현재 회사는 백업/복구 기능을 사용할 수 없습니다.",
+  403
+);
     }
 
     const backup = await db.getOrganizationBackupById(input.backupId, {
@@ -590,15 +690,27 @@ fileKey: backupKey,
 });
 
     if (!backup) {
-      throw new Error("백업을 찾을 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "백업을 찾을 수 없습니다.",
+  404
+);
     }
 
     if (backup.status === "deleted") {
-      throw new Error("삭제된 백업은 복구할 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "삭제된 백업은 복구할 수 없습니다.",
+  400
+);
     }
 
     if (!backup.fileKey) {
-      throw new Error("백업 파일 경로가 없습니다.");
+      throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "백업 파일 경로가 없습니다.",
+  404
+);
     }
 
     const backupText = await readPrivateTextObject({
@@ -610,19 +722,35 @@ fileKey: backupKey,
     try {
       parsed = JSON.parse(backupText);
     } catch {
-      throw new Error("백업 파일 형식이 올바르지 않습니다.");
+      throwAppError(
+  ERROR_CODES.RESTORE_FAILED,
+  "백업 파일 형식이 올바르지 않습니다.",
+  400
+);
     }
 
     if (parsed?.app !== "Edu-CRM") {
-      throw new Error("Edu-CRM 백업 파일이 아닙니다.");
+      throwAppError(
+  ERROR_CODES.RESTORE_FAILED,
+  "Edu-CRM 백업 파일이 아닙니다.",
+  400
+);
     }
 
     if (parsed?.backupType !== "organization_full") {
-      throw new Error("지원하지 않는 백업 유형입니다.");
+      throwAppError(
+  ERROR_CODES.RESTORE_FAILED,
+  "지원하지 않는 백업 유형입니다.",
+  400
+);
     }
 
     if (Number(parsed?.organizationId) !== Number(organizationId)) {
-      throw new Error("다른 회사의 백업 파일은 복구할 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.RESTORE_FAILED,
+  "다른 회사의 백업 파일은 복구할 수 없습니다.",
+  403
+);
     }
 
     const tables = parsed?.tables || {};
@@ -668,21 +796,37 @@ restoreReason: z.string().min(1).max(300),
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 if ((ctx.user as any)?.role === "superhost") {
-  throw new Error("슈퍼호스트는 회사 백업 원문을 복구할 수 없습니다.");
+  throwAppError(
+  ERROR_CODES.SUPERHOST_REQUIRED,
+  "슈퍼호스트는 회사 백업 원문을 복구할 수 없습니다.",
+  403
+);
 }
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
 const features = await getOrganizationFeatureFlags(organizationId);
 
 if (!features.allowBackup) {
-  throw new Error("현재 회사는 백업/복구 기능을 사용할 수 없습니다.");
+  throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "현재 회사는 백업/복구 기능을 사용할 수 없습니다.",
+  403
+);
 }
 
       if (input.confirmText !== "복구합니다") {
-        throw new Error("복구 확인 문구가 일치하지 않습니다.");
+        throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "복구 확인 문구가 일치하지 않습니다.",
+  400
+);
       }
 
       const backupRecord = await db.getOrganizationBackupById(input.backupId, {
@@ -690,11 +834,19 @@ if (!features.allowBackup) {
 });
 
 if (!backupRecord) {
-  throw new Error("백업 파일을 찾을 수 없습니다.");
+  throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "백업 파일을 찾을 수 없습니다.",
+  404
+);
 }
 
 if (!backupRecord.fileKey) {
-  throw new Error("백업 파일 경로가 없습니다.");
+  throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "백업 파일 경로가 없습니다.",
+  404
+);
 }
 
 let parsed: any = null;
@@ -707,27 +859,45 @@ try {
 
   parsed = JSON.parse(backupText);
 } catch {
-  throw new Error("백업 파일 형식이 올바르지 않습니다.");
+  throwAppError(
+  ERROR_CODES.RESTORE_FAILED,
+  "백업 파일 형식이 올바르지 않습니다.",
+  400
+);
 }
 
       if (parsed?.app !== "Edu-CRM") {
-        throw new Error("Edu-CRM 백업 파일이 아닙니다.");
+        throwAppError(
+  ERROR_CODES.RESTORE_FAILED,
+  "Edu-CRM 백업 파일이 아닙니다.",
+  400
+);
       }
 
       if (parsed?.backupType !== "organization_full") {
-        throw new Error("지원하지 않는 백업 유형입니다.");
+        throwAppError(
+  ERROR_CODES.RESTORE_FAILED,
+  "지원하지 않는 백업 유형입니다.",
+  400
+);
       }
 
      if (Number(parsed?.organizationId) !== Number(organizationId)) {
-  throw new Error("다른 회사의 백업 파일은 복구할 수 없습니다.");
+  throwAppError(
+  ERROR_CODES.RESTORE_FAILED,
+  "다른 회사의 백업 파일은 복구할 수 없습니다.",
+  403
+);
 }
 
 const restoreLimitStatus = await getOrganizationLimitStatus(organizationId);
 
 if (restoreLimitStatus.exceeded.storage) {
-  throw new Error(
-    `저장공간 제한을 초과했습니다. 현재 ${restoreLimitStatus.usage.storageUsedMb}MB / 제한 ${restoreLimitStatus.limits.maxStorageMb}MB`
-  );
+  throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  `저장공간 제한을 초과했습니다. 현재 ${restoreLimitStatus.usage.storageUsedMb}MB / 제한 ${restoreLimitStatus.limits.maxStorageMb}MB`,
+  403
+);
 }
 
 const snapshotBackupId = await db.createOrganizationBackupRecord({
@@ -814,7 +984,11 @@ audit: router({
         : Number((ctx.user as any)?.organizationId || 0);
 
       if (!isSuperhostUser && !organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
 if (!isSuperhostUser) {
@@ -848,7 +1022,11 @@ studentAudit: router({
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
       const student = await db.getStudent(input.studentId, {
@@ -856,7 +1034,11 @@ studentAudit: router({
       });
 
       if (!student) {
-        throw new Error("학생을 찾을 수 없습니다.");
+        throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
       }
       return db.listStudentAuditLogs({
         organizationId,
@@ -963,7 +1145,11 @@ return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
   const student = await db.getStudent(input.studentId, {
     organizationId,
   });
-        if (!student) throw new Error("학생을 찾을 수 없습니다.");
+        if (!student) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 
         assertStudentEditable({
   currentUser: ctx.user,
@@ -1052,7 +1238,11 @@ const beforeRequest = await db.getPrivateCertificateRequest(input.id, {
 });
 
 if (!beforeRequest) {
-  throw new Error("민간자격증 요청을 찾을 수 없습니다.");
+  throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "민간자격증 요청을 찾을 수 없습니다.",
+  404
+);
 }
 
 const student = await db.getStudent(beforeRequest.studentId, {
@@ -1060,7 +1250,11 @@ const student = await db.getStudent(beforeRequest.studentId, {
 });
 
 if (!student) {
-  throw new Error("학생을 찾을 수 없습니다.");
+  throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 }
 
 assertStudentEditable({
@@ -1086,9 +1280,6 @@ if (input.freelancerInputAmount !== undefined) {
         if (input.paidAt !== undefined) data.paidAt = input.paidAt ? new Date(input.paidAt) : null;
         if (input.attachmentName !== undefined) data.attachmentName = input.attachmentName?.trim() || null;
         if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl?.trim() || null;
-
-console.log("[privateCertificate.update router] input =", input);
-console.log("[privateCertificate.update router] data =", data);
 
         await db.updatePrivateCertificateRequest(input.id, data, {
   organizationId,
@@ -1128,7 +1319,11 @@ await writeStudentAuditLog({
     });
 
     if (!beforeRequest) {
-      throw new Error("민간자격증 요청을 찾을 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "민간자격증 요청을 찾을 수 없습니다.",
+  404
+);
     }
 
     const student = await db.getStudent(beforeRequest.studentId, {
@@ -1136,7 +1331,11 @@ await writeStudentAuditLog({
     });
 
     if (!student) {
-      throw new Error("학생을 찾을 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
     }
 
     assertStudentEditable({
@@ -1206,7 +1405,11 @@ await writeStudentAuditLog({
   );
 
   if (!isAdminOrHost(ctx.user)) {
-    throw new Error("관리자 또는 호스트만 환불 승인할 수 있습니다.");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "관리자 또는 호스트만 환불 승인할 수 있습니다.",
+  403
+);
   }
 
   await db.approvePrivateCertificateRefund({
@@ -1338,7 +1541,11 @@ includeEducationCenter: z.boolean().optional(),
     organizationId,
   });
 
-        if (!student) throw new Error("학생을 찾을 수 없습니다.");
+        if (!student) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 
         assertStudentEditable({
   currentUser: ctx.user,
@@ -1448,7 +1655,11 @@ const beforeRequest = await db.getPracticeSupportRequest(input.id, {
 });
 
 if (!beforeRequest) {
-  throw new Error("실습 요청을 찾을 수 없습니다.");
+  throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "실습 요청을 찾을 수 없습니다.",
+  404
+);
 }
 
 const student = await db.getStudent(beforeRequest.studentId, {
@@ -1456,7 +1667,11 @@ const student = await db.getStudent(beforeRequest.studentId, {
 });
 
 if (!student) {
-  throw new Error("학생을 찾을 수 없습니다.");
+  throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 }
 
 assertStudentEditable({
@@ -1523,7 +1738,11 @@ if (input.selectedPracticeInstitutionDistanceKm !== undefined) {
 }
 
 if (Object.keys(data).length === 0) {
-  throw new Error("수정할 값이 없습니다.");
+  throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "수정할 값이 없습니다.",
+  400
+);
 }
 
         await db.updatePracticeSupportRequest(input.id, data, {
@@ -1573,7 +1792,11 @@ await writeStudentAuditLog({
     });
 
     if (!beforeRequest) {
-      throw new Error("실습 요청을 찾을 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "실습 요청을 찾을 수 없습니다.",
+  404
+);
     }
 
     const student = await db.getStudent(beforeRequest.studentId, {
@@ -1581,7 +1804,11 @@ await writeStudentAuditLog({
     });
 
     if (!student) {
-      throw new Error("학생을 찾을 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
     }
 
     assertStudentEditable({
@@ -1651,7 +1878,11 @@ await writeStudentAuditLog({
   );
 
   if (!isAdminOrHost(ctx.user)) {
-    throw new Error("관리자 또는 호스트만 환불 승인할 수 있습니다.");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "관리자 또는 호스트만 환불 승인할 수 있습니다.",
+  403
+);
   }
 
   await db.approvePracticeSupportRefund({
@@ -1697,7 +1928,11 @@ const student = await db.getStudent(input.studentId, {
 });
 
 if (!student) {
-  throw new Error("학생을 찾을 수 없습니다.");
+  throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 }
 
 assertStudentEditable({
@@ -1755,7 +1990,11 @@ const recentCode = await db.getRecentEmailVerificationCode({
 });
 
 if (recentCode) {
-  throw new Error("인증코드는 30초 후 다시 발송할 수 있습니다.");
+  throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "인증코드는 30초 후 다시 발송할 수 있습니다.",
+  400
+);
 }
 
 const recentCount = await db.countRecentEmailVerificationCodes({
@@ -1766,7 +2005,11 @@ const recentCount = await db.countRecentEmailVerificationCodes({
 });
 
 if (recentCount >= 5) {
-  throw new Error("인증코드 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+  throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "인증코드 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+  429
+);
 }
 
 if (input.purpose === "find_id") {
@@ -1777,14 +2020,21 @@ if (input.purpose === "find_id") {
     email,
   });
 
-  if (users.length === 0) {
-    throw new Error("입력한 정보와 일치하는 계정을 찾을 수 없습니다.");
+  if (users.length === 0) {throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "입력한 정보와 일치하는 계정을 찾을 수 없습니다.",
+  404
+);
   }
 }
 
 if (input.purpose === "reset_password") {
   if (!input.username?.trim()) {
-    throw new Error("아이디를 입력해주세요.");
+   throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "아이디를 입력해주세요.",
+  400
+);
   }
 
   const user = await db.findUserForPasswordReset({
@@ -1795,7 +2045,11 @@ if (input.purpose === "reset_password") {
   });
 
   if (!user) {
-    throw new Error("입력한 정보와 일치하는 계정을 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "입력한 정보와 일치하는 계정을 찾을 수 없습니다.",
+  404
+);
   }
 }
 
@@ -1844,18 +2098,30 @@ if (input.purpose === "reset_password") {
       });
 
       if (!record) {
-        throw new Error("유효한 인증코드가 없습니다.");
+        throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "유효한 인증코드가 없습니다.",
+  400
+);
       }
 
       if (Number((record as any).attempts || 0) >= Number((record as any).maxAttempts || 5)) {
-        throw new Error("인증 시도 횟수를 초과했습니다.");
+        throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "인증 시도 횟수를 초과했습니다.",
+  400
+);
       }
 
       const ok = await bcrypt.compare(input.code.trim(), String((record as any).codeHash || ""));
 
       if (!ok) {
         await db.increaseEmailVerificationAttempt(Number((record as any).id));
-        throw new Error("인증코드가 일치하지 않습니다.");
+        throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "인증코드가 일치하지 않습니다.",
+  400
+);
       }
 
       await db.markEmailVerificationUsed(Number((record as any).id));
@@ -1897,7 +2163,11 @@ if (input.purpose === "reset_password") {
 });
 
       if (!user) {
-        throw new Error("일치하는 계정을 찾을 수 없습니다.");
+        throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "일치하는 계정을 찾을 수 없습니다.",
+  404
+);
       }
 
       const record = await db.getLatestEmailVerificationCode({
@@ -1907,18 +2177,30 @@ if (input.purpose === "reset_password") {
       });
 
       if (!record) {
-        throw new Error("유효한 인증코드가 없습니다.");
+        throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "유효한 인증코드가 없습니다.",
+  400
+);
       }
 
       if (Number((record as any).attempts || 0) >= Number((record as any).maxAttempts || 5)) {
-        throw new Error("인증 시도 횟수를 초과했습니다.");
+        throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "인증 시도 횟수를 초과했습니다.",
+  400
+);
       }
 
       const ok = await bcrypt.compare(input.code.trim(), String((record as any).codeHash || ""));
 
       if (!ok) {
         await db.increaseEmailVerificationAttempt(Number((record as any).id));
-        throw new Error("인증코드가 일치하지 않습니다.");
+        throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "인증코드가 일치하지 않습니다.",
+  400
+);
       }
 
       return {
@@ -1941,7 +2223,11 @@ username: z.string().min(1),
     )
     .mutation(async ({ input }) => {
       if (input.newPassword !== input.newPasswordConfirm) {
-        throw new Error("새 비밀번호가 서로 일치하지 않습니다.");
+        throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "새 비밀번호가 서로 일치하지 않습니다.",
+  400
+);
       }
 
       const organizationId = Number(input.organizationId || 1);
@@ -1955,7 +2241,11 @@ username: z.string().min(1),
 });
 
       if (!user) {
-        throw new Error("일치하는 계정을 찾을 수 없습니다.");
+        throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "일치하는 계정을 찾을 수 없습니다.",
+  404
+);
       }
 
       const record = await db.getLatestEmailVerificationCode({
@@ -1965,14 +2255,22 @@ username: z.string().min(1),
       });
 
       if (!record) {
-        throw new Error("유효한 인증코드가 없습니다.");
+       throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "유효한 인증코드가 없습니다.",
+  400
+);
       }
 
       const ok = await bcrypt.compare(input.code.trim(), String((record as any).codeHash || ""));
 
       if (!ok) {
         await db.increaseEmailVerificationAttempt(Number((record as any).id));
-        throw new Error("인증코드가 일치하지 않습니다.");
+        throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "인증코드가 일치하지 않습니다.",
+  400
+);
       }
 
 const samePassword = await bcrypt.compare(
@@ -1981,7 +2279,11 @@ const samePassword = await bcrypt.compare(
 );
 
 if (samePassword) {
-  throw new Error("기존 비밀번호와 동일한 비밀번호는 사용할 수 없습니다.");
+  throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "기존 비밀번호와 동일한 비밀번호는 사용할 수 없습니다.",
+  400
+);
 }
 
       const passwordHash = await bcrypt.hash(input.newPassword, 10);
@@ -2024,7 +2326,11 @@ return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
       return await db.getUserPersonnelDetail({
@@ -2059,7 +2365,11 @@ return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
     )
     .mutation(async ({ ctx, input }) => {
       if (input.newPassword !== input.newPasswordConfirm) {
-        throw new Error("새 비밀번호가 서로 일치하지 않습니다.");
+        throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "새 비밀번호가 서로 일치하지 않습니다.",
+  400
+);
       }
 
       return await db.changeMyPassword({
@@ -2089,9 +2399,11 @@ role: z.enum(["staff", "admin", "host"]).default("staff"),
   const limitStatus = await getOrganizationLimitStatus(organizationId);
 
   if (limitStatus.exceeded.users) {
-    throw new Error(
-      `사용자 수 제한을 초과했습니다. 현재 ${limitStatus.usage.userCount}명 / 제한 ${limitStatus.limits.maxUsers}명`
-    );
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  `사용자 수 제한을 초과했습니다. 현재 ${limitStatus.usage.userCount}명 / 제한 ${limitStatus.limits.maxUsers}명`,
+  403
+);
   }
 
   const passwordHash = await bcrypt.hash(input.password, 10);
@@ -2578,9 +2890,11 @@ messenger: router({
   const limitStatus = await getOrganizationLimitStatus(organizationId);
 
   if (limitStatus.exceeded.landingForms) {
-    throw new Error(
-      `랜딩/광고폼 생성 제한을 초과했습니다. 현재 ${limitStatus.usage.landingFormCount}개 / 제한 ${limitStatus.limits.maxLandingForms}개`
-    );
+   throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  `랜딩/광고폼 생성 제한을 초과했습니다. 현재 ${limitStatus.usage.landingFormCount}개 / 제한 ${limitStatus.limits.maxLandingForms}개`,
+  403
+);
   }
 
   if (input.blueprintId) {
@@ -2876,7 +3190,11 @@ formBlueprintAdmin: router({
   }
 );
       if (!row) {
-        throw new Error("뼈대를 찾을 수 없습니다.");
+        throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "뼈대를 찾을 수 없습니다.",
+  404
+);
       }
 
       return row;
@@ -3011,7 +3329,11 @@ publicForm: router({
       );
 
       if (!form?.ok) {
-        throw new Error("유효하지 않은 폼입니다.");
+       throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "유효하지 않은 폼입니다.",
+  400
+);
       }
 
 const id = await db.createConsultation({
@@ -3110,13 +3432,21 @@ branding: router({
     )
     .mutation(async ({ input }) => {
       if (input.secret !== process.env.MOBILE_TOKEN_SECRET) {
-        throw new Error("인증에 실패했습니다.");
+        throwAppError(
+  ERROR_CODES.AUTH_REQUIRED,
+  "인증에 실패했습니다.",
+  401
+);
       }
 
       const user = await db.getUserById(input.userId);
 
 if (!user) {
-  throw new Error("유저를 찾을 수 없습니다.");
+  throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "유저를 찾을 수 없습니다.",
+  404
+);
 }
 
 const id = await db.upsertDeviceToken({
@@ -3259,7 +3589,11 @@ normalSubjectPrice: z.string().optional(),
     const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
     if (!organizationId) {
-      throw new Error("organizationId is required");
+      throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
     }
 
     return db.listPrivateCertificateMasters({
@@ -3455,17 +3789,29 @@ db.listAllSemesters(assigneeId, undefined, {
         const student = await db.getStudent(input.studentId, {
   organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
-        if (!student) throw new Error("학생을 찾을 수 없습니다");
+        if (!student) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 
         if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-          throw new Error("권한이 없습니다");
+         throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "권한이 없습니다.",
+  403
+);
         }
 
         const existing = await db.listTransferSubjects(input.studentId, {
   organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         if ((existing?.length ?? 0) >= 100) {
-          throw new Error("전적대 과목은 최대 100개까지 등록할 수 있습니다");
+          throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "전적대 과목은 최대 100개까지 등록할 수 있습니다.",
+  400
+);
         }
 
         const id = await db.createTransferSubject({
@@ -3507,10 +3853,18 @@ uploadTranscriptImage: protectedProcedure
     const student = await db.getStudent(input.studentId, {
   organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
-    if (!student) throw new Error("학생 없음");
+    if (!student) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 
     if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-      throw new Error("권한 없음");
+      throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "권한이 없습니다.",
+  403
+);
     }
 
     const { data: { text } } = await Tesseract.recognize(
@@ -3633,10 +3987,18 @@ try {
         const student = await db.getStudent(input.studentId, {
   organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
-        if (!student) throw new Error("학생을 찾을 수 없습니다");
+        if (!student) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 
         if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-          throw new Error("권한이 없습니다");
+          throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "권한이 없습니다.",
+  403
+);
         }
 
         const existing = await db.listPlanSemesters(input.studentId, {
@@ -3647,7 +4009,11 @@ try {
         ).length;
 
         if (semesterCount >= 8) {
-          throw new Error("우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다");
+          throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다.",
+  400
+);
         }
 
         const id = await db.createPlanSemester({
@@ -3684,16 +4050,28 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
       )
       .mutation(async ({ ctx, input }) => {
         if (!db.getPracticeRecommendationsForStudent) {
-          throw new Error("db.ts에 getPracticeRecommendationsForStudent 함수를 먼저 추가해야 합니다.");
+          throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "db.ts에 getPracticeRecommendationsForStudent 함수를 먼저 추가해야 합니다.",
+  500
+);
         }
 
         const student = await db.getStudent(input.studentId, {
   organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
-        if (!student) throw new Error("학생을 찾을 수 없습니다");
+        if (!student) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 
         if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-          throw new Error("권한이 없습니다");
+          throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "권한이 없습니다.",
+  403
+);
         }
 
         const result = await db.getPracticeRecommendationsForStudent(input.studentId, {
@@ -3867,7 +4245,11 @@ const userName = ctx.user.name || "사용자";
       )
       .mutation(async ({ ctx, input }) => {
         if (!db.createAiLearningEntry) {
-          throw new Error("db.ts에 createAiLearningEntry 함수를 먼저 추가해야 합니다.");
+         throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "db.ts에 createAiLearningEntry 함수를 먼저 추가해야 합니다.",
+  500
+);
         }
 
         await db.createAiLearningEntry({
@@ -3897,7 +4279,11 @@ const userName = ctx.user.name || "사용자";
       )
       .query(async ({ ctx, input }) => {
         if (!db.findSimilarAiLearning) {
-          throw new Error("db.ts에 findSimilarAiLearning 함수를 먼저 추가해야 합니다.");
+          throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "db.ts에 findSimilarAiLearning 함수를 먼저 추가해야 합니다.",
+  500
+);
         }
 
         const examples = await db.findSimilarAiLearning({
@@ -3952,7 +4338,11 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
           );
 
           if (!selected) {
-            throw new Error("선택한 학생을 찾을 수 없습니다.");
+            throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "선택한 학생을 찾을 수 없습니다.",
+  404
+);
           }
 
           matchedStudents = [selected];
@@ -3968,7 +4358,11 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
         }
 
         if (matchedStudents.length === 0) {
-          throw new Error("해당 학생을 찾을 수 없습니다.");
+          throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "해당 학생을 찾을 수 없습니다.",
+  404
+);
         }
 
         if (matchedStudents.length > 1) {
@@ -4007,7 +4401,11 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
           }
 
           if (!input.category) {
-            throw new Error("전적대 과목 구분이 필요합니다.");
+            throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "전적대 과목 구분이 필요합니다.",
+  400
+);
           }
 
           const id = await db.createTransferSubject({
@@ -4082,11 +4480,19 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
           }
 
           if (!input.semesterNo) {
-            throw new Error("학기 정보가 필요합니다.");
+           throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "학기 정보가 필요합니다.",
+  400
+);
           }
 
           if (!input.category) {
-            throw new Error("플랜 과목 구분이 필요합니다.");
+            throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "플랜 과목 구분이 필요합니다.",
+  400
+);
           }
 
           const existing = await db.listPlanSemesters(student.id, {
@@ -4097,7 +4503,11 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
           ).length;
 
           if (semesterCount >= 8) {
-            throw new Error("우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다.");
+            throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다.",
+  400
+);
           }
 
           const id = await db.createPlanSemester({
@@ -4155,7 +4565,11 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
 
         if (input.action === "recommend_practice_place") {
           if (!db.getPracticeRecommendationsForStudent) {
-            throw new Error("db.ts에 getPracticeRecommendationsForStudent 함수를 먼저 추가해야 합니다.");
+            throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "db.ts에 getPracticeRecommendationsForStudent 함수를 먼저 추가해야 합니다.",
+  500
+);
           }
 
           const recommendations = await db.getPracticeRecommendationsForStudent(student.id, {
@@ -4206,7 +4620,11 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
           };
         }
 
-        throw new Error("지원하지 않는 액션입니다.");
+        throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "지원하지 않는 액션입니다.",
+  400
+);
       }),
   }),
   dashboard: router({
@@ -4317,7 +4735,11 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
   const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
   if (!organizationId) {
-    throw new Error("organizationId is required");
+    throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
   }
 
   const showAll = !!input?.showAll;
@@ -4348,7 +4770,11 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
   const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
   if (!organizationId) {
-    throw new Error("organizationId is required");
+    throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
   }
 
   const assigneeId = Number(ctx.user.id);
@@ -4390,9 +4816,11 @@ categoryId: z.number().nullable().optional(),
 const MAX_BULK_CONSULTATIONS = 500;
 
 if (input.rows.length > MAX_BULK_CONSULTATIONS) {
-  throw new Error(
-    `상담DB 일괄등록은 서버 안정성을 위해 1회 최대 ${MAX_BULK_CONSULTATIONS}건까지만 가능합니다. 현재 ${input.rows.length}건입니다.`
-  );
+  throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  `상담DB 일괄등록은 서버 안정성을 위해 1회 최대 ${MAX_BULK_CONSULTATIONS}건까지만 가능합니다. 현재 ${input.rows.length}건입니다.`,
+  400
+);
 }
 
         const assigneeId = Number(ctx.user.id);
@@ -4462,15 +4890,21 @@ if (input.rows.length > MAX_BULK_CONSULTATIONS) {
         }
 
        if (rows.length === 0) {
-  throw new Error("유효한 데이터가 없습니다");
+  throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "유효한 데이터가 없습니다.",
+  400
+);
 }
 
 const MAX_BULK_CONSULTATIONS = 500;
 
 if (rows.length > MAX_BULK_CONSULTATIONS) {
-  throw new Error(
-    `CSV 임포트는 서버 안정성을 위해 1회 최대 ${MAX_BULK_CONSULTATIONS}건까지만 가능합니다. 현재 유효 데이터는 ${rows.length}건입니다.`
-  );
+  throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  `CSV 임포트는 서버 안정성을 위해 1회 최대 ${MAX_BULK_CONSULTATIONS}건까지만 가능합니다. 현재 유효 데이터는 ${rows.length}건입니다.`,
+  400
+);
 }
 
 await db.bulkCreateConsultations(rows as any);
@@ -4499,7 +4933,11 @@ await db.bulkCreateConsultations(rows as any);
     const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
     if (!organizationId) {
-      throw new Error("organizationId is required");
+      throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
     }
 
     const item = await db.getConsultation(input.id, {
@@ -4507,13 +4945,21 @@ await db.bulkCreateConsultations(rows as any);
     });
 
     if (!item) {
-      throw new Error("상담 기록을 찾을 수 없습니다");
+      throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "상담 기록을 찾을 수 없습니다.",
+  404
+);
     }
 
     const myId = Number(ctx.user.id) || 1;
 
     if (!isAdminOrHost(ctx.user) && item.assigneeId !== myId) {
-      throw new Error("권한이 없습니다");
+      throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "권한이 없습니다.",
+  403
+);
     }
 
     const { id, ...rest } = input;
@@ -4642,7 +5088,11 @@ await db.bulkCreateConsultations(rows as any);
     const item = await db.getConsultation(input.id);
 
     if (!item) {
-      throw new Error("상담 기록을 찾을 수 없습니다");
+      throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생 기록을 찾을 수 없습니다.",
+  404
+);
     }
 
 
@@ -4789,16 +5239,22 @@ restore: hostProcedure
         })
       )
       .mutation(async ({ ctx, input }) => {
-        console.log("[student.update] input =", input);
-
         const item = await db.getStudent(input.id, {
   organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
-        if (!item) throw new Error("학생 기록을 찾을 수 없습니다");
+        if (!item) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생 기록을 찾을 수 없습니다.",
+  404
+);
 
         const myId = Number(ctx.user.id) || 1;
         if (!isAdminOrHost(ctx.user) && item.assigneeId !== myId) {
-          throw new Error("권한이 없습니다");
+          throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "권한이 없습니다.",
+  403
+);
         }
 
         const { id, ...rest } = input;
@@ -4806,9 +5262,6 @@ restore: hostProcedure
 
         if (rest.startDate) data.startDate = new Date(rest.startDate);
         if (rest.paymentDate) data.paymentDate = new Date(rest.paymentDate);
-
-        console.log("[student.update] data =", data);
-
         await db.updateStudent(id, data, {
   organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
@@ -4829,11 +5282,19 @@ restore: hostProcedure
         const item = await db.getStudent(input.studentId, {
   organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
-        if (!item) throw new Error("학생 기록을 찾을 수 없습니다");
+        if (!item) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생 기록을 찾을 수 없습니다.",
+  404
+);
 
         const myId = Number(ctx.user.id) || 1;
         if (!isAdminOrHost(ctx.user) && item.assigneeId !== myId) {
-          throw new Error("권한이 없습니다");
+          throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "권한이 없습니다.",
+  403
+);
         }
 
         await db.updateStudentAddressAndCoords({
@@ -4846,7 +5307,11 @@ restore: hostProcedure
     delete: protectedProcedure
   .input(z.object({ id: z.number() }))
   .mutation(async () => {
-    throw new Error("학생 삭제는 상담 DB 페이지에서만 가능합니다.");
+    throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "학생 삭제는 상담 DB 페이지에서만 가능합니다.",
+  400
+);
   }),
 
     registrationSummary: protectedProcedure
@@ -4876,28 +5341,17 @@ restore: hostProcedure
     const student = await db.getStudent(input.studentId, {
       organizationId,
     });
-
-    console.log("[plan.get] student =", student);
-
     if (!student) {
-      console.log("[plan.get] no student");
       return null;
     }
 
     if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-      console.log("[plan.get] no permission", {
-        userId: ctx.user.id,
-        assigneeId: student.assigneeId,
-      });
       return null;
     }
 
     const plan = await db.getPlan(input.studentId, {
       organizationId,
     });
-
-    console.log("[plan.get] plan =", plan);
-
     return plan ?? null;
   }),
 
@@ -4951,10 +5405,18 @@ restore: hostProcedure
     organizationId,
   });
 
-  if (!student) throw new Error("학생을 찾을 수 없습니다");
+  if (!student) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 
   if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-    throw new Error("권한이 없습니다");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "권한이 없습니다.",
+  403
+);
   }
 
   const id = await db.upsertPlan({
@@ -4996,7 +5458,11 @@ const student = await db.getStudent(input.studentId, {
     const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
     if (!organizationId) {
-      throw new Error("organizationId is required");
+      throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
     }
 
     const assigneeId = isAdminOrHost(ctx.user)
@@ -5030,10 +5496,18 @@ const student = await db.getStudent(input.studentId, {
     organizationId,
   });
 
-  if (!student) throw new Error("학생을 찾을 수 없습니다");
+  if (!student) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 
   if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-    throw new Error("권한이 없습니다");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "권한이 없습니다.",
+  403
+);
   }
 
   const id = await db.createSemester({
@@ -5094,13 +5568,21 @@ const student = await db.getStudent(input.studentId, {
     const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
     const sem = await db.getSemester(input.id, { organizationId });
-    if (!sem) throw new Error("학기를 찾을 수 없습니다");
+    if (!sem) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학기를 찾을 수 없습니다.",
+  404
+);
 
     const student = await db.getStudent(Number(sem.studentId), {
       organizationId,
     });
 
-    if (!student) throw new Error("학생을 찾을 수 없습니다.");
+    if (!student) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 
     assertStudentEditable({
       currentUser: ctx.user,
@@ -5120,7 +5602,11 @@ const student = await db.getStudent(input.studentId, {
 
     if (input.status === "등록 종료") {
       if (!lastSem || Number(lastSem.id) !== Number(sem.id)) {
-        throw new Error("마지막 학기에서만 등록 종료할 수 있습니다");
+        throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "마지막 학기에서만 등록 종료할 수 있습니다.",
+  400
+);
       }
     }
 
@@ -5309,13 +5795,21 @@ const student = await db.getStudent(input.studentId, {
       organizationId,
     });
 
-    if (!sem) throw new Error("학기를 찾을 수 없습니다");
+    if (!sem) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학기를 찾을 수 없습니다.",
+  404
+);
 
     const student = await db.getStudent(Number(sem.studentId), {
       organizationId,
     });
 
-    if (!student) throw new Error("학생을 찾을 수 없습니다.");
+    if (!student) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 
     assertStudentEditable({
       currentUser: ctx.user,
@@ -5370,13 +5864,21 @@ approve: protectedProcedure
   )
   .mutation(async ({ ctx, input }) => {
     if (!isAdminOrHost(ctx.user)) {
-      throw new Error("관리자 또는 호스트만 처리할 수 있습니다");
+      throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "관리자 또는 호스트만 처리할 수 있습니다.",
+  403
+);
     }
 
     const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
     if (!organizationId) {
-      throw new Error("organizationId is required");
+      throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
     }
 
     const now = new Date();
@@ -5386,7 +5888,11 @@ approve: protectedProcedure
     });
 
     if (!beforeSemester) {
-      throw new Error("학기 정보를 찾을 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학기 정보를 찾을 수 없습니다.",
+  404
+);
     }
 
     await db.updateSemester(
@@ -5423,7 +5929,11 @@ approve: protectedProcedure
     });
 
     if (!sem) {
-      throw new Error("학기 정보를 찾을 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학기 정보를 찾을 수 없습니다.",
+  404
+);
     }
 
     await db.syncSubjectSettlementItemBySemesterId(
@@ -5439,7 +5949,11 @@ approve: protectedProcedure
     });
 
     if (!student) {
-      throw new Error("학생 정보를 찾을 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생 정보를 찾을 수 없습니다.",
+  404
+);
     }
 
     const allSems = await db.listSemesters(Number(student.id), {
@@ -5578,7 +6092,11 @@ approve: protectedProcedure
     organizationId,
   });
 
-  if (sem?.isLocked) throw new Error("승인된 학기는 삭제할 수 없습니다.");
+  if (sem?.isLocked) throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "승인된 학기는 삭제할 수 없습니다.",
+  400
+);
 
   await db.deleteSemester(input.id, {
     organizationId,
@@ -5609,7 +6127,11 @@ const student = await db.getStudent(input.studentId, {
 
     listPending: protectedProcedure.query(async ({ ctx }) => {
       if (!isAdminOrHost(ctx.user)) {
-throw new Error("관리자, 호스트 또는 슈퍼호스트만 확인할 수 있습니다");
+throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "관리자, 호스트 또는 슈퍼호스트만 확인할 수 있습니다.",
+  403
+);
       }
 
       return db.listPendingRefunds({
@@ -5638,10 +6160,18 @@ throw new Error("관리자, 호스트 또는 슈퍼호스트만 확인할 수 �
 const student = await db.getStudent(input.studentId, {
   organizationId,
 });
-        if (!student) throw new Error("학생을 찾을 수 없습니다");
+        if (!student) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 
         if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-          throw new Error("권한이 없습니다");
+          throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "권한이 없습니다.",
+  403
+);
         }
 
         const id = await db.createRefund({
@@ -5666,7 +6196,11 @@ organizationId,
   .input(z.object({ id: z.number() }))
   .mutation(async ({ ctx, input }) => {
     if (!isAdminOrHost(ctx.user)) {
-      throw new Error("관리자 또는 호스트만 승인할 수 있습니다");
+      throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "관리자 또는 호스트만 승인할 수 있습니다.",
+  403
+);
     }
 
     const organizationId = Number((ctx.user as any)?.organizationId || 0);
@@ -5714,7 +6248,11 @@ await db.approveRefund(input.id, Number(ctx.user.id), {
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
         if (!isAdminOrHost(ctx.user)) {
-          throw new Error("관리자 또는 호스트만 불승인 처리할 수 있습니다");
+          throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "관리자 또는 호스트만 불승인 처리할 수 있습니다.",
+  403
+);
         }
 
         const organizationId = Number((ctx.user as any)?.organizationId || 0);
@@ -5840,10 +6378,18 @@ const student = await db.getStudent(input.studentId, {
 const student = await db.getStudent(input.studentId, {
   organizationId,
 });
-        if (!student) throw new Error("학생을 찾을 수 없습니다");
+        if (!student) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 
         if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-          throw new Error("권한이 없습니다");
+          throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "권한이 없습니다.",
+  403
+);
         }
 
         const existing = await db.listPlanSemesters(input.studentId, {
@@ -5854,7 +6400,11 @@ const student = await db.getStudent(input.studentId, {
         ).length;
 
         if (semesterCount >= 8) {
-          throw new Error("우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다");
+          throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다.",
+  400
+);
         }
 
         const id = await db.createPlanSemester({
@@ -5943,17 +6493,29 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
         const student = await db.getStudent(input.studentId, {
   organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
-        if (!student) throw new Error("학생을 찾을 수 없습니다");
+        if (!student) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 
         if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-          throw new Error("권한이 없습니다");
+         throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "권한이 없습니다.",
+  403
+);
         }
 
         const existing = await db.listTransferSubjects(input.studentId, {
   organizationId: Number((ctx.user as any)?.organizationId || 0),
 });
         if ((existing?.length ?? 0) >= 100) {
-          throw new Error("전적대 과목은 최대 100개까지 등록할 수 있습니다");
+          throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "전적대 과목은 최대 100개까지 등록할 수 있습니다.",
+  400
+);
         }
 
         const id = await db.createTransferSubject({
@@ -5986,10 +6548,18 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
 const student = await db.getStudent(input.studentId, {
   organizationId,
 });
-        if (!student) throw new Error("학생을 찾을 수 없습니다");
+        if (!student) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 
         if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-          throw new Error("권한이 없습니다");
+          throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "권한이 없습니다.",
+  403
+);
         }
 
        const existing = await db.listTransferSubjects(input.studentId, {
@@ -5998,7 +6568,11 @@ const student = await db.getStudent(input.studentId, {
         const existingCount = existing?.length ?? 0;
 
         if (existingCount + input.count > 100) {
-          throw new Error("전적대 과목은 최대 100개까지 등록할 수 있습니다");
+          throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "전적대 과목은 최대 100개까지 등록할 수 있습니다.",
+  400
+);
         }
 
         const rows = Array.from({ length: input.count }).map((_, i) => ({
@@ -6096,17 +6670,29 @@ const student = await db.getStudent(input.studentId, {
 const student = await db.getStudent(input.studentId, {
   organizationId,
 });
-        if (!student) throw new Error("학생을 찾을 수 없습니다");
+        if (!student) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 
         if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-          throw new Error("권한이 없습니다");
+          throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "권한이 없습니다.",
+  403
+);
         }
 
         const existing = await db.listTransferAttachments(input.studentId, {
   organizationId,
 });
         if ((existing?.length ?? 0) >= 4) {
-          throw new Error("첨부파일은 최대 4개까지 등록할 수 있습니다");
+          throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "첨부파일은 최대 4개까지 등록할 수 있습니다.",
+  400
+);
         }
 
         const id = await db.createTransferAttachment({
@@ -6160,7 +6746,11 @@ courseTemplate: router({
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
       return db.listCourseSubjectTemplates(input?.courseKey, {
@@ -6184,7 +6774,11 @@ courseTemplate: router({
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
       const id = await db.createCourseSubjectTemplate({
@@ -6212,16 +6806,28 @@ courseTemplate: router({
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
       const student = await db.getStudent(input.studentId, {
         organizationId,
       });
-      if (!student) throw new Error("학생을 찾을 수 없습니다");
+      if (!student) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 
       if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-        throw new Error("권한이 없습니다");
+        throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "권한이 없습니다.",
+  403
+);
       }
 
       const result = await db.bulkCreatePlanSemestersFromTemplate({
@@ -6246,7 +6852,11 @@ practiceEducationCenter: router({
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
      return db.listMergedPracticeEducationCenters({
@@ -6261,7 +6871,11 @@ practiceEducationCenter: router({
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
       if (input.id < 0) {
@@ -6294,13 +6908,21 @@ return db.getPracticeEducationCenter(input.id, {
     )
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== "admin" && ctx.user.role !== "host") {
-        throw new Error("관리자 또는 호스트만 등록할 수 있습니다");
+        throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "관리자 또는 호스트만 등록할 수 있습니다.",
+  403
+);
       }
 
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
       const id = await db.createPracticeEducationCenter({
@@ -6347,13 +6969,21 @@ return db.getPracticeEducationCenter(input.id, {
     )
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== "host" && ctx.user.role !== "superhost") {
-        throw new Error("호스트만 등록할 수 있습니다");
+        throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "호스트만 등록할 수 있습니다.",
+  403
+);
       }
 
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
       return db.bulkCreatePracticeEducationCenters(
@@ -6399,13 +7029,21 @@ return db.getPracticeEducationCenter(input.id, {
     )
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== "admin" && ctx.user.role !== "host") {
-        throw new Error("관리자 또는 호스트만 수정할 수 있습니다");
+        throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "관리자 또는 호스트만 등록할 수 있습니다.",
+  403
+);
       }
 
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
      const { id, ...rest } = input;
@@ -6451,13 +7089,21 @@ if (id < 0) {
         ctx.user.role !== "host" &&
         ctx.user.role !== "superhost"
       ) {
-        throw new Error("관리자 또는 호스트만 수정할 수 있습니다");
+        throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "관리자 또는 호스트만 등록할 수 있습니다.",
+  403
+);
       }
 
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
       if (input.id < 0) {
@@ -6499,13 +7145,21 @@ if (id < 0) {
     )
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== "host" && ctx.user.role !== "superhost") {
-        throw new Error("호스트만 일괄 비활성화할 수 있습니다");
+        throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "호스트만 일괄 비활성화할 수 있습니다.",
+  403
+);
       }
 
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
       return db.bulkDeactivatePracticeEducationCenterOverrides({
@@ -6528,7 +7182,11 @@ if (id < 0) {
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
       return db.fixMissingCoordinates({
@@ -6544,7 +7202,11 @@ if (id < 0) {
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
      if (input.id < 0) {
@@ -6573,7 +7235,11 @@ if (id < 0) {
   const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
   if (!organizationId) {
-    throw new Error("organizationId is required");
+    throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
   }
 
   return db.listMergedPracticeInstitutions({
@@ -6589,7 +7255,11 @@ if (id < 0) {
   const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
   if (!organizationId) {
-    throw new Error("organizationId is required");
+    throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
   }
 
   if (input.id < 0) {
@@ -6624,13 +7294,21 @@ return db.getPracticeInstitution(input.id, {
       )
       .mutation(async ({ ctx, input }) => {
         if (!isAdminOrHost(ctx.user)) {
-          throw new Error("관리자 또는 호스트만 등록할 수 있습니다");
+          throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "관리자 또는 호스트만 수정할 수 있습니다.",
+  403
+);
         }
 
 const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 if (!organizationId) {
-  throw new Error("organizationId is required");
+  throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
 }
 
         const id = await db.createPracticeInstitution({
@@ -6679,13 +7357,21 @@ categoryId: z.number().nullable().optional(),
       )
       .mutation(async ({ ctx, input }) => {
         if (!isAdminOrHost(ctx.user)) {
-          throw new Error("관리자 또는 호스트만 등록할 수 있습니다");
+          throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "관리자 또는 호스트만 수정할 수 있습니다.",
+  403
+);
         }
 
 const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 if (!organizationId) {
-  throw new Error("organizationId is required");
+  throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
 }
 
        const result = await db.bulkCreatePracticeInstitutions(
@@ -6728,13 +7414,21 @@ bulkDeactivate: protectedProcedure
   )
   .mutation(async ({ ctx, input }) => {
     if (ctx.user.role !== "host" && ctx.user.role !== "superhost") {
-      throw new Error("호스트만 일괄 비활성화할 수 있습니다");
+      throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "호스트만 일괄 비활성화할 수 있습니다.",
+  403
+);
     }
 
 const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 if (!organizationId) {
-  throw new Error("organizationId is required");
+  throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
 }
 
 return db.bulkDeactivatePracticeInstitutionOverrides({
@@ -6768,7 +7462,11 @@ return db.bulkDeactivatePracticeInstitutionOverrides({
       )
       .mutation(async ({ ctx, input }) => {
         if (!isAdminOrHost(ctx.user)) {
-          throw new Error("관리자 또는 호스트만 수정할 수 있습니다");
+          throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "관리자 또는 호스트만 수정할 수 있습니다.",
+  403
+);
         }
 
         const { id, ...rest } = input;
@@ -6790,7 +7488,11 @@ return db.bulkDeactivatePracticeInstitutionOverrides({
         const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 if (!organizationId) {
-  throw new Error("organizationId is required");
+  throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
 }
 
 if (id < 0) {
@@ -6834,13 +7536,21 @@ if (id < 0) {
         ctx.user.role !== "host" &&
         ctx.user.role !== "superhost"
       ) {
-        throw new Error("관리자 또는 호스트만 수정할 수 있습니다");
+        throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "관리자 또는 호스트만 수정할 수 있습니다.",
+  403
+);
       }
 
 const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 if (!organizationId) {
-  throw new Error("organizationId is required");
+  throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
 }
 
 if (input.id < 0) {
@@ -6880,7 +7590,11 @@ fixCoords: protectedProcedure
    const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
 if (!organizationId) {
-  throw new Error("organizationId is required");
+  throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
 }
 
 return db.fixMissingCoordinates({
@@ -6896,7 +7610,11 @@ return db.fixMissingCoordinates({
   const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
   if (!organizationId) {
-    throw new Error("organizationId is required");
+    throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
   }
 
   if (input.id < 0) {
@@ -6924,7 +7642,11 @@ practiceListCategory: router({
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
       return db.listPracticeListCategories(input?.listType, {
@@ -6945,7 +7667,11 @@ practiceListCategory: router({
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
       const id = await db.createPracticeListCategory({
@@ -6974,7 +7700,11 @@ practiceListCategory: router({
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
       const { id, ...rest } = input;
@@ -6992,7 +7722,11 @@ practiceListCategory: router({
       const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
       if (!organizationId) {
-        throw new Error("organizationId is required");
+        throwAppError(
+  ERROR_CODES.ORGANIZATION_REQUIRED,
+  "organizationId is required",
+  400
+);
       }
 
       await db.deletePracticeListCategory(input.id, {
@@ -7048,10 +7782,18 @@ const student = await db.getStudent(input.studentId, {
 const student = await db.getStudent(input.studentId, {
   organizationId,
 });
-        if (!student) throw new Error("학생을 찾을 수 없습니다");
+        if (!student) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
 
         if (!isAdminOrHost(ctx.user) && student.assigneeId !== Number(ctx.user.id)) {
-          throw new Error("권한이 없습니다");
+          throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "권한이 없습니다.",
+  403
+);
         }
 
         const assignee = await db.getUserById(student.assigneeId);
@@ -7099,7 +7841,11 @@ organizationId,
       )
       .mutation(async ({ ctx, input }) => {
         if (!isAdminOrHost(ctx.user)) {
-          throw new Error("관리자 또는 호스트만 수정할 수 있습니다");
+          throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "관리자 또는 호스트만 등록할 수 있습니다.",
+  403
+);
         }
 
         const data: any = {};
@@ -7365,7 +8111,11 @@ organizationId,
       })
     )
     .mutation(async () => {
-      throw new Error("SaaS 운영자는 각 회사 직원을 직접 생성할 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "SaaS 운영자는 각 회사 직원을 직접 생성할 수 없습니다.",
+  403
+);
     }),
 
   /**
@@ -7380,7 +8130,11 @@ organizationId,
       })
     )
     .mutation(async () => {
-      throw new Error("SaaS 운영자는 각 회사 직원 권한을 직접 변경할 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "SaaS 운영자는 각 회사 직원 권한을 직접 변경할 수 없습니다.",
+  403
+);
     }),
 
   /**
@@ -7388,7 +8142,11 @@ organizationId,
    * superhost도 전체 회사 직원 목록을 볼 수 없다.
    */
   listUsers: superHostProcedure.query(async () => {
-    throw new Error("SaaS 운영자는 각 회사 직원을 직접 조회할 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "SaaS 운영자는 각 회사 직원을 직접 조회할 수 없습니다.",
+  403
+);
   }),
 
   /**
@@ -7431,13 +8189,5 @@ organizationId,
   }),
 });
 
-console.log("[ROUTER OK] planSemester loaded");
-console.log("[ROUTER OK] transferSubject loaded");
-console.log("[ROUTER OK] transferAttachment loaded");
-console.log("[ROUTER OK] courseTemplate loaded");
-console.log("[ROUTER OK] privateCertificate loaded");
-console.log("[ROUTER OK] practiceSupport loaded");
-console.log("[ROUTER OK] practiceInstitution loaded");
-console.log("[ROUTER OK] jobSupport loaded");
 
 export type AppRouter = typeof appRouter;

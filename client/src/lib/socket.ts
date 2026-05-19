@@ -65,13 +65,9 @@ socket = io(apiBase, {
     },
   });
 
-  socket.on("connect", () => {
-    console.log("[socket] connected:", socket?.id);
-  });
+ socket.on("connect", () => {});
 
-  socket.on("disconnect", (reason) => {
-    console.log("[socket] disconnected:", reason);
-  });
+  socket.on("disconnect", () => {});
 
   socket.on("connect_error", async (error) => {
     console.error("[socket] connect_error:", error?.message || error);
@@ -89,13 +85,9 @@ socket = io(apiBase, {
     }
   });
 
-  socket.on("reconnect_attempt", (attempt) => {
-    console.log("[socket] reconnect_attempt:", attempt);
-  });
+  socket.on("reconnect_attempt", () => {});
 
-  socket.on("reconnect", (attempt) => {
-    console.log("[socket] reconnected:", attempt);
-  });
+  socket.on("reconnect", () => {});
 
   return socket;
 }

@@ -112,23 +112,12 @@ export default function MessengerRealtimeBridge() {
 
   useEffect(() => {
     if (!("Notification" in window)) {
-      console.log(
-        "[MessengerRealtimeBridge] Browser Notification API not supported"
-      );
       return;
     }
-
-    console.log(
-      "[MessengerRealtimeBridge] Notification permission:",
-      Notification.permission
-    );
 
     if (Notification.permission !== "default") return;
 
     const timer = setTimeout(() => {
-      console.log(
-        "[MessengerRealtimeBridge] Requesting notification permission"
-      );
       Notification.requestPermission().catch(() => {});
     }, 1000);
 
@@ -139,14 +128,9 @@ export default function MessengerRealtimeBridge() {
     audioRef.current = new Audio("/sounds/message.mp3");
     audioRef.current.preload = "auto";
 
-    console.log(
-      "[MessengerRealtimeBridge] Audio initialized: /sounds/message.mp3"
-    );
-
     return () => {
       audioRef.current?.pause();
       audioRef.current = null;
-      console.log("[MessengerRealtimeBridge] Audio cleaned up");
     };
   }, []);
 
@@ -161,13 +145,6 @@ export default function MessengerRealtimeBridge() {
       setSoundEnabled(nextSound);
       setAppSettings(nextAppSettings);
       setOpenRoomIds(nextOpenedRoomIds);
-
-      console.log("[MessengerRealtimeBridge] sync settings", {
-        mutedRoomIds: nextMuted,
-        soundEnabled: nextSound,
-        appSettings: nextAppSettings,
-        openRoomIds: nextOpenedRoomIds,
-      });
     };
 
     sync();
@@ -191,19 +168,12 @@ export default function MessengerRealtimeBridge() {
         : [];
 
       setOpenRoomIds(roomIds);
-
-      console.log("[MessengerRealtimeBridge] opened rooms changed", roomIds);
     };
 
     const handleMain = (event: Event) => {
       const custom = event as CustomEvent;
       const isOpen = !!custom.detail?.isOpen;
       setIsMessengerMainOpen(isOpen);
-
-      console.log(
-        "[MessengerRealtimeBridge] main messenger open changed",
-        isOpen
-      );
     };
 
     window.addEventListener(
@@ -234,11 +204,6 @@ export default function MessengerRealtimeBridge() {
       if (shownMessageKeysRef.current.size > 300) {
         const recent = Array.from(shownMessageKeysRef.current).slice(-150);
         shownMessageKeysRef.current = new Set(recent);
-
-        console.log(
-          "[MessengerRealtimeBridge] duplicate key cache trimmed",
-          recent.length
-        );
       }
     }, 60_000);
 
@@ -247,7 +212,6 @@ export default function MessengerRealtimeBridge() {
 
  useEffect(() => {
   if (!(user as any)?.id) {
-    console.log("[MessengerRealtimeBridge] blocked: no authenticated user");
     return;
   }
 
@@ -258,31 +222,13 @@ export default function MessengerRealtimeBridge() {
       const messageId = Number(payload?.id || payload?.messageId || 0);
       const createdAtKey = payload?.createdAt || payload?.created_at || "";
       const messageType = String(payload?.messageType || "text");
-
-      console.log("[MessengerRealtimeBridge] message:new received", {
-        payload,
-        roomId,
-        senderId,
-        messageId,
-        myUserId,
-      });
-
       if (!roomId || !senderId) {
-        console.log(
-          "[MessengerRealtimeBridge] blocked: invalid roomId or senderId",
-          {
-            roomId,
-            senderId,
-          }
-        );
+
         return;
       }
 
       if (myUserId > 0 && senderId === myUserId) {
-        console.log("[MessengerRealtimeBridge] blocked: self message", {
-          senderId,
-          myUserId,
-        });
+       
         return;
       }
 
@@ -291,10 +237,7 @@ export default function MessengerRealtimeBridge() {
       }`;
 
       if (shownMessageKeysRef.current.has(messageKey)) {
-        console.log(
-          "[MessengerRealtimeBridge] blocked: duplicate messageKey",
-          messageKey
-        );
+        
         return;
       }
 
@@ -303,49 +246,24 @@ export default function MessengerRealtimeBridge() {
 
       const roomIsOpen = latestOpenedRoomIds.includes(roomId);
 
-      console.log("[MessengerRealtimeBridge] check conditions", {
-        roomId,
-        senderId,
-        messageKey,
-        mutedRoomIds,
-        openRoomIds,
-        latestOpenedRoomIds,
-        roomIsOpen,
-        isMessengerMainOpen,
-        soundEnabled,
-        appSettings,
-        visibilityState: document.visibilityState,
-        hasFocus: document.hasFocus(),
-        localMessengerOpen: localStorage.getItem("messenger-open"),
-      });
 
       if (!appSettings.enabled) {
-        console.log(
-          "[MessengerRealtimeBridge] blocked: appSettings.enabled = false"
-        );
+        
         return;
       }
 
       if (!appSettings.messenger) {
-        console.log(
-          "[MessengerRealtimeBridge] blocked: appSettings.messenger = false"
-        );
+        
         return;
       }
 
       if (mutedRoomIds.includes(roomId)) {
-        console.log("[MessengerRealtimeBridge] blocked: room muted", {
-          roomId,
-          mutedRoomIds,
-        });
+        
         return;
       }
 
       if (roomIsOpen) {
-        console.log("[MessengerRealtimeBridge] blocked: room already open", {
-          roomId,
-          latestOpenedRoomIds,
-        });
+        
         return;
       }
 
@@ -353,10 +271,7 @@ export default function MessengerRealtimeBridge() {
         appSettings.dndEnabled &&
         isNowInDndRange(appSettings.dndStart, appSettings.dndEnd)
       ) {
-        console.log("[MessengerRealtimeBridge] blocked: app DND active", {
-          dndStart: appSettings.dndStart,
-          dndEnd: appSettings.dndEnd,
-        });
+       
         return;
       }
 
@@ -387,13 +302,6 @@ export default function MessengerRealtimeBridge() {
           ""
       );
 
-      console.log("[MessengerRealtimeBridge] toast data prepared", {
-        sender,
-        senderName,
-        senderPosition,
-        content,
-        senderAvatar,
-      });
 
       const toast = pushAppToast({
         category: "messenger",
@@ -408,30 +316,17 @@ export default function MessengerRealtimeBridge() {
         },
       });
 
-      console.log("[MessengerRealtimeBridge] pushAppToast fired", toast);
-
       const isFocused = document.hasFocus();
 
       if (soundEnabled && appSettings.sound && !isFocused) {
-        console.log("[MessengerRealtimeBridge] playing sound");
+    
         playMessageSound(audioRef);
-      } else {
-        console.log("[MessengerRealtimeBridge] sound skipped", {
-          soundEnabled,
-          appSoundEnabled: appSettings.sound,
-          isFocused,
-        });
-      }
+      } 
 
       if ("Notification" in window && Notification.permission === "granted") {
         const old = notificationMapRef.current.get(roomId);
         if (old) {
-          console.log(
-            "[MessengerRealtimeBridge] closing previous browser notification",
-            {
-              roomId,
-            }
-          );
+          
           old.close();
         }
 
@@ -441,20 +336,9 @@ export default function MessengerRealtimeBridge() {
           silent: !(soundEnabled && appSettings.sound),
         });
 
-        console.log("[MessengerRealtimeBridge] browser notification created", {
-          roomId,
-          senderName,
-          senderPosition,
-          content,
-        });
+        
 
         noti.onclick = () => {
-          console.log(
-            "[MessengerRealtimeBridge] browser notification clicked",
-            {
-              roomId,
-            }
-          );
 
           window.focus();
 
@@ -472,20 +356,7 @@ export default function MessengerRealtimeBridge() {
         setTimeout(() => {
           noti.close();
           notificationMapRef.current.delete(roomId);
-
-          console.log(
-            "[MessengerRealtimeBridge] browser notification auto closed",
-            {
-              roomId,
-            }
-          );
         }, 5000);
-      } else {
-        console.log("[MessengerRealtimeBridge] browser notification skipped", {
-          supported: "Notification" in window,
-          permission:
-            "Notification" in window ? Notification.permission : "unsupported",
-        });
       }
     };
 
@@ -495,14 +366,9 @@ export default function MessengerRealtimeBridge() {
         liveSocket = socket;
         socketRef.current = socket;
 
-        console.log("[MessengerRealtimeBridge] socket connected", socket);
-
         socket.off("message:new", handleNewMessage);
         socket.on("message:new", handleNewMessage);
 
-        console.log(
-          "[MessengerRealtimeBridge] socket listener attached: message:new"
-        );
       } catch (error) {
         console.error("[MessengerRealtimeBridge] socket init failed", error);
       }
@@ -512,9 +378,6 @@ export default function MessengerRealtimeBridge() {
       if (!liveSocket) return;
       liveSocket.off("message:new", handleNewMessage);
 
-      console.log(
-        "[MessengerRealtimeBridge] socket listener removed: message:new"
-      );
     };
   }, [
      user,

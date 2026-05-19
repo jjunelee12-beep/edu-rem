@@ -116,6 +116,8 @@ import { ENV } from "./_core/env";
 import bcrypt from "bcryptjs";
 import { emitLiveNotification } from "./_core/live-notifications";
 import { getSocketStatus } from "./_core/socket-status";
+import { throwAppError } from "./_core/appError";
+import { ERROR_CODES } from "./_core/errorCodes";
 
 import { FEATURE_FLAGS } from "./_core/featureFlags";
 
@@ -127,7 +129,11 @@ async function geocodeAddressServer(address: string) {
     "";
 
   if (!restKey) {
-    throw new Error("KAKAO_REST_API_KEY가 설정되지 않았습니다.");
+    throwAppError(
+  ERROR_CODES.EXTERNAL_API_FAILED,
+  "KAKAO_REST_API_KEY가 설정되지 않았습니다.",
+  500
+);
   }
 
   const url =
@@ -141,13 +147,21 @@ async function geocodeAddressServer(address: string) {
   });
 
   if (!res.ok) {
-    throw new Error(`카카오 주소 변환 요청 실패 (${res.status})`);
+    throwAppError(
+  ERROR_CODES.EXTERNAL_API_FAILED,
+  `카카오 주소 변환 요청 실패 (${res.status})`,
+  502
+);
   }
 
   const json = await res.json();
 
   if (!json?.documents?.length) {
-    throw new Error("주소 변환 결과가 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "주소 변환 결과가 없습니다.",
+  404
+);
   }
 
   return {
@@ -160,12 +174,10 @@ let _db: ReturnType<typeof drizzle> | null = null;
 
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
-    console.log("[DB] DATABASE_URL =", process.env.DATABASE_URL);
     _db = drizzle(process.env.DATABASE_URL);
     const [r] = await _db.execute(
       sql`SELECT DATABASE() as db, @@port as port, @@hostname as host`
     );
-    console.log("[DB] CONNECTED:", (r as any)[0]);
   }
   return _db;
 }
@@ -184,7 +196,11 @@ export async function getSystemHealthStatus() {
     const db = await getDb();
 
     if (!db) {
-      throw new Error("DB not available");
+      throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
     }
 
     const [rows] = await db.execute(sql`
@@ -255,7 +271,11 @@ function requireOrganizationId(value: any) {
   const organizationId = Number(value || 0);
 
   if (!Number.isFinite(organizationId) || organizationId <= 0) {
-    throw new Error("organizationId is required");
+    throwAppError(
+      ERROR_CODES.ORGANIZATION_REQUIRED,
+      "organizationId is required",
+      400
+    );
   }
 
   return organizationId;
@@ -357,7 +377,11 @@ function haversineDistanceKm(
 
 async function getNextUserDisplayNo() {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const [rows] = await db.execute(
     sql`SELECT COALESCE(MAX(displayNo), 0) as maxNo FROM users`
@@ -418,7 +442,6 @@ organizationId: requireOrganizationId(params.organizationId),
       payload: params.payload ? JSON.stringify(params.payload) : null,
     } as any);
   } catch (e) {
-    console.error("[AI LOG ERROR]", e);
   }
 }
 
@@ -490,7 +513,6 @@ export async function createApiErrorLog(
     const result: any = await db.insert(apiErrorLogs).values(input as any);
     return getInsertId(result);
   } catch (err) {
-    console.error("[API ERROR LOG SAVE FAILED]", err);
     return null;
   }
 }
@@ -587,7 +609,11 @@ export async function createEmailVerificationCode(
   input: Omit<InsertEmailVerificationCode, "id" | "createdAt">
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const result: any = await db.insert(emailVerificationCodes).values(input as any);
   return getInsertId(result);
@@ -676,7 +702,11 @@ export async function countRecentEmailVerificationCodes(params: {
 
 export async function increaseEmailVerificationAttempt(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   await db
     .update(emailVerificationCodes)
@@ -688,7 +718,11 @@ export async function increaseEmailVerificationAttempt(id: number) {
 
 export async function markEmailVerificationUsed(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   await db
     .update(emailVerificationCodes)
@@ -797,7 +831,11 @@ export async function createOrganizationBackupRecord(input: {
   backupType?: "manual" | "auto" | "restore_snapshot";
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(input.organizationId);
 
@@ -862,7 +900,11 @@ export async function markOrganizationBackupCompleted(input: {
   rowCount?: number | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(input.organizationId);
 
@@ -894,7 +936,11 @@ export async function markOrganizationBackupFailed(input: {
   errorMessage: string;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(input.organizationId);
 
@@ -922,7 +968,11 @@ export async function markOrganizationBackupRestored(input: {
   restoreReason?: string | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(input.organizationId);
 
@@ -978,7 +1028,11 @@ export async function deleteOrganizationBackupRecord(params: {
   organizationId?: number | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
 
@@ -1089,12 +1143,20 @@ export async function exportOrganizationBackupData(params: {
   actorRole?: string | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
 
 if (params.actorRole === "superhost") {
-  throw new Error("슈퍼호스트는 회사 백업 원문을 생성할 수 없습니다.");
+  throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "슈퍼호스트는 회사 백업 원문을 생성할 수 없습니다.",
+  403
+);
 }
 
   const orgRows = await db
@@ -1106,7 +1168,11 @@ if (params.actorRole === "superhost") {
   const organization = orgRows[0];
 
   if (!organization) {
-    throw new Error("회사를 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "회사를 찾을 수 없습니다.",
+  404
+);
   }
 
   const [columnRows] = await db.execute(sql`
@@ -1198,26 +1264,46 @@ export async function restoreOrganizationBackupData(params: {
   actorRole?: string | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
 
 if (params.actorRole === "superhost") {
-  throw new Error("슈퍼호스트는 회사 백업 원문을 복구할 수 없습니다.");
+  throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "슈퍼호스트는 회사 백업 원문을 복구할 수 없습니다.",
+  403
+);
 }
 
   const backup = params.backup;
 
   if (!backup || backup.app !== "Edu-CRM") {
-    throw new Error("Edu-CRM 백업 파일이 아닙니다.");
+   throwAppError(
+  ERROR_CODES.RESTORE_FAILED,
+  "Edu-CRM 백업 파일이 아닙니다.",
+  400
+);
   }
 
   if (backup.backupType !== "organization_full") {
-    throw new Error("지원하지 않는 백업 유형입니다.");
+    throwAppError(
+  ERROR_CODES.RESTORE_FAILED,
+  "지원하지 않는 백업 유형입니다.",
+  400
+);
   }
 
   if (Number(backup.organizationId) !== Number(organizationId)) {
-    throw new Error("다른 회사의 백업 파일은 복구할 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.RESTORE_FAILED,
+  "다른 회사의 백업 파일은 복구할 수 없습니다.",
+  403
+);
   }
 
   const tables = backup.tables || {};
@@ -1373,7 +1459,11 @@ export async function getPracticeRecommendationsForStudent(
   });
 
   if (!student || !student.latitude || !student.longitude) {
-    throw new Error("학생 주소 좌표 없음");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생 주소 좌표가 없습니다.",
+  404
+);
   }
 
   const institutions = await listActivePracticeInstitutions({
@@ -1417,7 +1507,11 @@ export async function fixMissingCoordinates(params: {
   limit?: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const limit = params.limit ?? 100;
 
@@ -1768,7 +1862,11 @@ export async function createFormBlueprint(input: {
   createdBy: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(input.organizationId);
 
@@ -1785,7 +1883,11 @@ const organizationId = requireOrganizationId(input.organizationId);
     .limit(1);
 
   if (exists[0]) {
-    throw new Error("같은 이름의 뼈대가 이미 존재합니다.");
+    throwAppError(
+  ERROR_CODES.DUPLICATE_RESOURCE,
+  "같은 이름의 뼈대가 이미 존재합니다.",
+  409
+);
   }
 
   const result: any = await db.insert(formBlueprints).values({
@@ -1816,7 +1918,11 @@ export async function updateFormBlueprint(input: {
   isDefault?: boolean;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(input.organizationId);
 
@@ -1825,7 +1931,11 @@ const organizationId = requireOrganizationId(input.organizationId);
   });
 
   if (!target) {
-    throw new Error("수정할 뼈대를 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "수정할 뼈대를 찾을 수 없습니다.",
+  404
+);
   }
 
   if (input.name && input.name.trim() !== target.name) {
@@ -1842,7 +1952,11 @@ const organizationId = requireOrganizationId(input.organizationId);
       .limit(1);
 
     if (exists[0] && Number(exists[0].id) !== Number(input.id)) {
-      throw new Error("같은 이름의 뼈대가 이미 존재합니다.");
+      throwAppError(
+  ERROR_CODES.DUPLICATE_RESOURCE,
+  "같은 이름의 뼈대가 이미 존재합니다.",
+  409
+);
     }
   }
 
@@ -1894,7 +2008,11 @@ export async function deleteFormBlueprint(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -1903,7 +2021,11 @@ export async function deleteFormBlueprint(
   });
 
   if (!target) {
-    throw new Error("삭제할 뼈대를 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "삭제할 뼈대를 찾을 수 없습니다.",
+  404
+);
   }
 
   await db
@@ -1927,7 +2049,11 @@ export async function createLeadFormFromBlueprint(input: {
   assigneeId: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(input.organizationId);
 
@@ -1936,7 +2062,11 @@ const organizationId = requireOrganizationId(input.organizationId);
   });
 
   if (!blueprint) {
-    throw new Error("뼈대를 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "뼈대를 찾을 수 없습니다.",
+  404
+);
   }
 
   const token =
@@ -1997,7 +2127,11 @@ export async function saveLeadFormTemplate(params: {
   uiConfig: any;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
 
@@ -2044,7 +2178,11 @@ export async function saveNamedLeadFormTemplate(input: {
   actorUserId?: number | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(input.organizationId);
 
@@ -2329,7 +2467,11 @@ const organizationId = requireOrganizationId(input.organizationId);
   );
 
   if (!template) {
-    throw new Error("템플릿을 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "템플릿을 찾을 수 없습니다.",
+  404
+);
   }
 
   const targetRows = await db
@@ -2345,11 +2487,19 @@ const organizationId = requireOrganizationId(input.organizationId);
 
   const target = targetRows[0];
   if (!target) {
-    throw new Error("대상 폼을 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "대상 폼을 찾을 수 없습니다.",
+  404
+);
   }
 
   if (target.formType !== input.formType) {
-    throw new Error("폼 타입이 맞지 않습니다.");
+    throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "폼 타입이 맞지 않습니다.",
+  400
+);
   }
 
   await updateMyLeadFormUiConfig({
@@ -2400,11 +2550,19 @@ export async function deleteNamedLeadFormTemplate(
     .limit(1);
 
   if (!existing[0]) {
-    throw new Error("삭제할 템플릿을 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "삭제할 템플릿을 찾을 수 없습니다.",
+  404
+);
   }
 
   if (Number(existing[0].assigneeId) !== Number(actorUserId)) {
-    throw new Error("본인 템플릿만 삭제할 수 있습니다.");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "본인 템플릿만 삭제할 수 있습니다.",
+  403
+);
   }
 
   await db.delete(leadForms).where(
@@ -2441,7 +2599,11 @@ const organizationId = requireOrganizationId(input.organizationId);
   );
 
   if (oldToken === newToken) {
-    throw new Error("이전 이름과 새 이름이 같습니다.");
+    throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "이전 이름과 새 이름이 같습니다.",
+  400
+);
   }
 
   const existingOld = await dbConn
@@ -2457,7 +2619,11 @@ const organizationId = requireOrganizationId(input.organizationId);
     .limit(1);
 
   if (!existingOld[0]) {
-    throw new Error("변경할 템플릿을 찾을 수 없습니다.");
+   throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "변경할 템플릿을 찾을 수 없습니다.",
+  404
+);
   }
 
   const existingNew = await dbConn
@@ -2473,11 +2639,19 @@ const organizationId = requireOrganizationId(input.organizationId);
     .limit(1);
 
   if (existingNew[0]) {
-    throw new Error("같은 이름의 템플릿이 이미 존재합니다.");
+    throwAppError(
+  ERROR_CODES.DUPLICATE_RESOURCE,
+  "같은 이름의 템플릿이 이미 존재합니다.",
+  409
+);
   }
 
   if (Number(existingOld[0].assigneeId) !== Number(input.actorUserId)) {
-    throw new Error("본인 템플릿만 이름 변경할 수 있습니다.");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "본인 템플릿만 이름 변경할 수 있습니다.",
+  403
+);
   }
 
   await dbConn
@@ -2527,7 +2701,11 @@ const organizationId = requireOrganizationId(input.organizationId);
   );
 
   if (sourceToken === newToken) {
-    throw new Error("복제할 새 이름이 기존 이름과 같습니다.");
+    throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "복제할 새 이름이 기존 이름과 같습니다.",
+  400
+);
   }
 
   const sourceRows = await dbConn
@@ -2544,11 +2722,19 @@ const organizationId = requireOrganizationId(input.organizationId);
 
   const source = sourceRows[0];
   if (!source) {
-    throw new Error("복제할 템플릿을 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "복제할 템플릿을 찾을 수 없습니다.",
+  404
+);
   }
 
   if (Number(source.assigneeId) !== Number(input.actorUserId)) {
-    throw new Error("본인 템플릿만 복제할 수 있습니다.");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "본인 템플릿만 복제할 수 있습니다.",
+  403
+);
   }
 
   const existingNew = await dbConn
@@ -2564,7 +2750,11 @@ const organizationId = requireOrganizationId(input.organizationId);
     .limit(1);
 
   if (existingNew[0]) {
-    throw new Error("같은 이름의 템플릿이 이미 존재합니다.");
+    throwAppError(
+  ERROR_CODES.DUPLICATE_RESOURCE,
+  "같은 이름의 템플릿이 이미 존재합니다.",
+  409
+);
   }
 
   await dbConn.insert(leadForms).values({
@@ -2667,7 +2857,11 @@ export function getNamedLeadFormTemplateToken(
 ) {
   const safeName = normalizeTemplateName(templateName);
   if (!safeName) {
-    throw new Error("템플릿 이름이 비어 있습니다.");
+    throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "템플릿 이름이 비어 있습니다.",
+  400
+);
   }
 
   return `__template_${formType}_${safeName}__`;
@@ -2768,7 +2962,11 @@ export async function updateLeadFormUiConfig(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -2795,7 +2993,11 @@ export async function updateMyLeadFormUiConfig(input: {
   uiConfig: any;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(input.organizationId);
 
@@ -2813,11 +3015,19 @@ const organizationId = requireOrganizationId(input.organizationId);
 
   const target = rows[0];
   if (!target) {
-    throw new Error("수정할 폼을 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "수정할 폼을 찾을 수 없습니다.",
+  404
+);
   }
 
   if (Number(target.assigneeId) !== Number(input.userId)) {
-    throw new Error("본인 페이지 외에는 수정할 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "본인 페이지 외에는 수정할 수 없습니다.",
+  403
+);
   }
 
   await db
@@ -2869,7 +3079,11 @@ export async function createLeadForm(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -2914,7 +3128,11 @@ export async function updateLeadFormActive(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -2931,11 +3149,19 @@ export async function updateLeadFormActive(
 
 // ─── Users ───────────────────────────────────────────────────────────
 export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) throw new Error("User openId is required for upsert");
+  if (!user.openId) throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "User openId is required for upsert",
+  400
+);
 
   const db = await getDb();
   if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
+    throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
     return;
   }
 
@@ -2981,7 +3207,6 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
     await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
   } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
     throw error;
   }
 }
@@ -3090,7 +3315,11 @@ export async function getUserPersonnelDetail(params: {
   userId: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
   const userId = Number(params.userId);
@@ -3218,7 +3447,11 @@ export async function saveBrandingSettings(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId((data as any).organizationId);
 
@@ -3291,7 +3524,11 @@ export async function saveSmsSettings(data: {
   isActive?: boolean;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(data.organizationId);
 
@@ -3339,7 +3576,11 @@ export async function createSmsLogs(
   >
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
   if (!rows.length) return { success: true, count: 0 };
 
   const values = rows.map((row) => ({
@@ -3375,7 +3616,11 @@ organizationId?: number;
   isActive?: boolean;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const displayNo = await getNextUserDisplayNo();
 
@@ -3430,7 +3675,11 @@ export async function updateUserAccount(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -3461,7 +3710,11 @@ export async function updateUserRole(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -3472,13 +3725,21 @@ export async function updateUserRole(
     const current = existing.find((u: any) => Number(u.id) === Number(id));
 
     if (!current) {
-      throw new Error("유저 없음");
+      throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "유저 없음",
+  404
+);
     }
 
     const count = existing.filter((u: any) => u.role === "superhost").length;
 
     if (current.role !== "superhost" && count >= 1) {
-      throw new Error("해당 조직의 슈퍼호스트는 1명만 가능합니다.");
+      throwAppError(
+  ERROR_CODES.DUPLICATE_RESOURCE,
+  "해당 조직의 슈퍼호스트는 1명만 가능합니다.",
+  409
+);
     }
   }
 
@@ -3499,7 +3760,11 @@ export async function updateUserActive(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -3605,30 +3870,28 @@ export async function getConsultation(
 
 export async function createConsultation(data: InsertConsultation) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const result: any = await db.insert(consultations).values(data);
   const insertId = getInsertId(result);
-
-  console.log("[DB] createConsultation insertId:", insertId);
   return insertId;
 }
 
 export async function bulkCreateConsultations(dataList: InsertConsultation[]) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
   if (dataList.length === 0) return [];
-
-  console.log("[DB] bulkCreateConsultations count:", dataList.length);
-  console.log(
-    "[DB] bulkCreateConsultations first keys:",
-    Object.keys((dataList[0] ?? {}) as any)
-  );
-  console.log("[DB] bulkCreateConsultations first row:", dataList[0]);
 
   const result = await db.insert(consultations).values(dataList);
 
-  console.log("[DB] bulkCreateConsultations result:", result);
   return result;
 }
 
@@ -3640,19 +3903,17 @@ export async function updateConsultation(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
   if (!data || Object.keys(data).length === 0) {
-    console.log("[DB] updateConsultation skip (empty):", id);
     return;
   }
-
-  console.log("[DB] updateConsultation id:", id);
-  console.log("[DB] updateConsultation keys:", Object.keys(data as any));
-  console.log("[DB] updateConsultation data:", data);
-
   await db
     .update(consultations)
     .set(data)
@@ -3662,8 +3923,6 @@ export async function updateConsultation(
         eq(consultations.organizationId, organizationId)
       )
     );
-
-  console.log("[DB] updateConsultation OK:", id);
 }
 
 export async function deleteConsultation(
@@ -3674,7 +3933,11 @@ export async function deleteConsultation(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
   const deletedBy = params?.deletedBy ? Number(params.deletedBy) : null;
@@ -3741,7 +4004,11 @@ export async function restoreConsultation(params: {
   organizationId?: number | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
 
@@ -3782,7 +4049,11 @@ export async function softDeleteStudent(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
   const deletedBy = params?.deletedBy ? Number(params.deletedBy) : null;
@@ -3835,7 +4106,11 @@ export async function syncStudentFromConsultation(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -3844,7 +4119,11 @@ export async function syncStudentFromConsultation(
   });
 
   if (!consultation) {
-    throw new Error("상담 기록을 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "상담 기록을 찾을 수 없습니다.",
+  404
+);
   }
 
   const linkedStudent = await getStudentByConsultationId(consultationId, {
@@ -3852,10 +4131,6 @@ export async function syncStudentFromConsultation(
   });
 
   if (!linkedStudent) {
-    console.log(
-      "[syncStudentFromConsultation] linked student not found:",
-      consultationId
-    );
     return null;
   }
 
@@ -3866,15 +4141,6 @@ export async function syncStudentFromConsultation(
     course: consultation.desiredCourse ?? "",
     assigneeId: consultation.assigneeId ?? linkedStudent.assigneeId,
   };
-
-  console.log(
-    "[syncStudentFromConsultation] consultationId:",
-    consultationId,
-    "studentId:",
-    linkedStudent.id,
-    "data:",
-    nextStudentData
-  );
 
   await db
     .update(students)
@@ -3895,7 +4161,11 @@ export async function createNotification(data: InsertNotification & {
   imageUrl?: string | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const result: any = await db.insert(notifications).values({
   organizationId: requireOrganizationId((data as any).organizationId),
@@ -3941,7 +4211,11 @@ export async function createNoticeNotifications(params: {
   importance?: "normal" | "important" | "urgent";
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
 
@@ -3996,7 +4270,11 @@ export async function markNotificationRead(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -4019,7 +4297,11 @@ export async function markAllNotificationsRead(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -4060,7 +4342,11 @@ export async function markScheduleNotified(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -4074,7 +4360,11 @@ export async function markScheduleNotified(
 
 export async function createScheduleNotifications() {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const schedules = await listPendingScheduleNotifications();
   if (!schedules.length) {
@@ -4196,7 +4486,11 @@ export async function saveApprovalPrintSettings(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId((data as any).organizationId);
 
@@ -4270,7 +4564,11 @@ export async function saveApprovalFormFieldSettings(params: {
   actorUserId?: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
 
@@ -4319,7 +4617,11 @@ export async function upsertDeviceToken(data: {
   expoPushToken: string;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(data.organizationId);
 
@@ -4579,7 +4881,11 @@ export async function getStudent(
 
 export async function createStudent(data: InsertStudent) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const result = await db.insert(students).values({
   organizationId: requireOrganizationId((data as any).organizationId),
@@ -4596,7 +4902,11 @@ export async function updateStudent(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -4620,7 +4930,11 @@ export async function updateStudentAddressAndCoords(params: {
   longitude?: number | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   await db
     .update(students)
@@ -4672,7 +4986,11 @@ export async function deleteStudentCascadeById(
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const student = await getStudent(studentId, { organizationId });
   if (!student) return false;
@@ -4908,7 +5226,11 @@ export async function getSemester(
 
 export async function createSemester(data: InsertSemester) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   let nextData: any = {
     ...data,
@@ -4946,7 +5268,11 @@ export async function updateSemester(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const nextData: any = { ...data };
 
@@ -5078,7 +5404,11 @@ export async function deleteSemester(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -5225,7 +5555,11 @@ function validatePlanSummaryCounts(data: Partial<InsertPlan>) {
   ];
 
   if (values.some((n) => !Number.isFinite(n) || n < 0)) {
-    throw new Error("플랜 과목 수는 0 이상의 숫자만 저장할 수 있습니다.");
+    throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "플랜 과목 수는 0 이상의 숫자만 저장할 수 있습니다.",
+  400
+);
   }
 
   if (!FEATURE_FLAGS.PLAN_REQUIREMENT_ENFORCE) {
@@ -5239,9 +5573,11 @@ function validatePlanSummaryCounts(data: Partial<InsertPlan>) {
     generalCount;
 
   if (sum !== totalTheorySubjects) {
-    throw new Error(
-      `총 이론 과목 수(${totalTheorySubjects})와 분류 합계(${sum})가 일치하지 않습니다.`
-    );
+    throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  `총 이론 과목 수(${totalTheorySubjects})와 분류 합계(${sum})가 일치하지 않습니다.`,
+  400
+);
   }
 }
 
@@ -5251,7 +5587,6 @@ export async function getPlan(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  console.log("[db.getPlan] db exists =", !!db);
 
   if (!db) return null;
 
@@ -5268,15 +5603,16 @@ const organizationId = requireOrganizationId(params?.organizationId);
     )
     .limit(1);
 
-  console.log("[db.getPlan] result =", result);
-
   return result[0] ?? null;
 }
 
 export async function upsertPlan(data: InsertPlan) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
-
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
   validatePlanSummaryCounts(data);
 
   const existing = await getPlan(data.studentId, {
@@ -5410,7 +5746,11 @@ const organizationId = requireOrganizationId(params?.organizationId);
 
 export async function createRefund(data: InsertRefund) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const result = await db.insert(refunds).values(data);
   return getInsertId(result);
@@ -5422,7 +5762,11 @@ export async function updateRefund(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -5443,7 +5787,11 @@ export async function approveRefund(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -5477,10 +5825,6 @@ const organizationId = requireOrganizationId(params?.organizationId);
   if (!refund) return;
 
   if (refund.semesterId) {
-    console.log("🔥 [approveRefund] before refundSettlementItemBySource", {
-      refundId: id,
-      refund,
-    });
 
     await refundSettlementItemBySource({
       organizationId,
@@ -5506,7 +5850,11 @@ export async function rejectRefund(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -5531,7 +5879,11 @@ export async function deleteRefund(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -5553,7 +5905,11 @@ export async function createSettlementItemLog(params: {
   payload?: string | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   await db.insert(settlementItemLogs).values({
     settlementItemId: params.settlementItemId,
@@ -5599,13 +5955,16 @@ institutionName?: string | null;
   logNote?: string | null;
   payload?: any;
 }) {
-  console.log("🔥 [upsertSettlementItem] params =", params);
 
   const db = await getDb();
 
 const organizationId = requireOrganizationId(params.organizationId);
 
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
     const grossAmount = toNumber(params.grossAmount);
   const companyAmount = toNumber(params.companyAmount);
@@ -5619,14 +5978,6 @@ const organizationId = requireOrganizationId(params.organizationId);
   const freelancerUnitAmount = toNumber(params.freelancerUnitAmount ?? 0);
   const taxAmount = toNumber(params.taxAmount ?? 0);
   const finalPayoutAmount = toNumber(params.finalPayoutAmount ?? 0);
-
-console.log("최종 결과", {
-  companyAmount,
-  freelancerAmount,
-  taxAmount,
-  finalPayoutAmount,
-  companyProfit,
-});
 
   const exists = await db
     .select()
@@ -5693,7 +6044,6 @@ institutionName: params.institutionName ?? null,
 
     return { id: Number(item.id), mode: "update" as const };
   }
-console.log("🔥 [upsertSettlementItem] before insert");
 
   const result: any = await db.insert(settlementItems).values({
 organizationId,
@@ -5730,7 +6080,6 @@ institutionName: params.institutionName ?? null,
   } as any);
 
   const insertedId = Number(getInsertId(result));
-console.log("🔥 [upsertSettlementItem] insertedId =", insertedId);
 
   await createSettlementItemLog({
     settlementItemId: insertedId,
@@ -5751,7 +6100,11 @@ export async function cancelSettlementItemBySource(params: {
   note?: string | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params.organizationId);
 
@@ -5806,7 +6159,11 @@ export async function refundSettlementItemBySource(params: {
   payload?: any;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
 
@@ -5832,7 +6189,6 @@ export async function refundSettlementItemBySource(params: {
   }
 
   const baseItem = exists[0];
-console.log("🔥 [refundSettlementItemBySource] baseItem =", baseItem);
 
 const baseGrossAmount = toNumber(baseItem.grossAmount);
   const requestedRefundAmount = toNumber(params.refundAmount ?? 0);
@@ -5841,14 +6197,8 @@ const baseGrossAmount = toNumber(baseItem.grossAmount);
   Math.min(requestedRefundAmount || baseGrossAmount, baseGrossAmount)
 );
 
-console.log("🔥 [refundSettlementItemBySource] amounts =", {
-  baseGrossAmount,
-  requestedRefundAmount,
-  refundAmount,
-});
 
 if (refundAmount <= 0) {
-  console.log("🔥 [refundSettlementItemBySource] refundAmount <= 0, return null");
   return null;
 }
 
@@ -5874,24 +6224,12 @@ if (refundAmount <= 0) {
     ? new Date(params.refundDate)
     : new Date();
 
-console.log("🔥 [refundSettlementItemBySource] refundOccurredAt =", refundOccurredAt);
-
   const refundTitle =
     params.revenueType === "subject"
       ? `${baseItem.title || "일반과목"} 환불`
       : params.revenueType === "practice_support"
       ? `${baseItem.title || "실습배정"} 환불`
       : `${baseItem.title || "민간자격증"} 환불`;
-
-
-console.log("🔥 [refundSettlementItemBySource] about to call upsertSettlementItem", {
-  revenueType: "refund",
-  sourceId: Number(params.sourceId),
-  studentId: Number(baseItem.studentId),
-  refundAmount,
-  refundOccurredAt,
-  title: refundTitle,
-});
 
  const refundSettlement = await upsertSettlementItem({
   organizationId,
@@ -5945,8 +6283,6 @@ console.log("🔥 [refundSettlementItemBySource] about to call upsertSettlementI
   },
 });
 
-console.log("🔥 [refundSettlementItemBySource] refundSettlement =", refundSettlement);
-
 const refundSettlementItemId = Number(refundSettlement.id);
 
   await createSettlementItemLog({
@@ -5974,7 +6310,11 @@ export async function syncPrivateCertificateSettlementItemByRequestId(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -5998,7 +6338,11 @@ const organizationId = requireOrganizationId(params?.organizationId);
 
   const row = rows[0];
   if (!row?.request) {
-    throw new Error("민간자격증 요청 데이터를 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "민간자격증 요청 데이터를 찾을 수 없습니다.",
+  404
+);
   }
 
   const request = row.request;
@@ -6131,7 +6475,11 @@ export async function syncPracticeSupportSettlementItemByRequestId(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -6195,7 +6543,11 @@ export async function backfillSettlementItems(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -6329,11 +6681,19 @@ export async function syncSubjectSettlementItemBySemesterId(
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const sem = await getSemester(semesterId, { organizationId });
   if (!sem) {
-    throw new Error("학기 데이터를 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학기 데이터를 찾을 수 없습니다.",
+  404
+);
   }
 
 const studentId = Number(sem.studentId);
@@ -6355,9 +6715,11 @@ if (!student) {
 )
     .limit(1);
 
-  throw new Error(
-    `[학생조회실패] semesterId=${sem.id}, studentId=${studentId}, directCount=${dbStudent.length}`
-  );
+  throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  `[학생조회실패] semesterId=${sem.id}, studentId=${studentId}, directCount=${dbStudent.length}`,
+  404
+);
 }
 
   const grossAmount = toNumber((sem as any).actualAmount ?? 0);
@@ -6392,7 +6754,11 @@ if ((sem as any).approvalStatus !== "승인") {
   organizationId,
 });
   if (!institution) {
-    throw new Error("교육원 정보를 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "교육원 정보를 찾을 수 없습니다.",
+  404
+);
   }
 
   const userOrg = await getUserOrgMapping(Number(student.assigneeId), {
@@ -6472,17 +6838,6 @@ if ((institution as any).settlementType === "credit") {
 // 교육원 차감 후 우리회사 몫
 const companyAmount = Math.max(0, grossAmount - institutionCost);
 
-console.log("정산 디버그", {
-  semesterId: sem.id,
-  grossAmount,
-  subjectCount,
-  actualUnitPrice,
-  settlementCredits,
-  institutionUnitCost,
-  institutionCost,
-  companyAmount,
-});
-
 // 프리랜서 기본 계산값
 // 현재는 정산기준 학점(settlementCredits) × 직급 단가(positionUnitAmount)로 계산
 
@@ -6493,13 +6848,6 @@ const freelancerAmount =
   settlementCredits <= 0
     ? 0
     : Math.max(0, Math.min(companyAmount, rawFreelancerAmount));
-
-console.log("프리랜서 계산", {
-  settlementCredits,
-  positionUnitAmount,
-  rawFreelancerAmount,
-  freelancerAmount,
-});
 
 const taxAmount =
   freelancerAmount > 0
@@ -7451,7 +7799,11 @@ export async function cleanupOrphanSettlementItems(params?: {
   organizationId?: number | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -7872,7 +8224,11 @@ export async function getSettlementSettings(params?: {
   organizationId?: number | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -7892,7 +8248,11 @@ export async function saveSettlementSettings(data: {
   payoutDay: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(data.organizationId);
 
@@ -7932,7 +8292,11 @@ organizationId?: number | null;
   assigneeId: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const start = new Date(params.year, params.month - 1, 1);
   const end = new Date(params.year, params.month, 1);
@@ -7971,7 +8335,11 @@ const [profileRows] = await db.execute(sql`
 
   const profile = (profileRows as any[])?.[0];
   if (!profile) {
-    throw new Error("담당자 정보를 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "담당자 정보를 찾을 수 없습니다.",
+  404
+);
   }
 
   const branding = await getBrandingSettings({
@@ -8207,7 +8575,11 @@ organizationId?: number | null;
   const limit = limitMap[requirementType] ?? 0;
 
   if (currentCount + 1 > limit) {
-    throw new Error(`${requirementType} 허용 개수(${limit}개)를 초과할 수 없습니다.`);
+    throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  `${requirementType} 허용 개수(${limit}개)를 초과할 수 없습니다.`,
+  400
+);
   }
 }
 
@@ -8234,7 +8606,11 @@ const organizationId = requireOrganizationId(params?.organizationId);
 
 export async function createPlanSemester(data: InsertPlanSemester) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId((data as any).organizationId);
 
@@ -8245,9 +8621,11 @@ export async function createPlanSemester(data: InsertPlanSemester) {
   } as any);
 
   if (duplicate) {
-    throw new Error(
-      `이미 ${duplicate.semesterNo}학기에 등록된 과목입니다: ${duplicate.subjectName}`
-    );
+    throwAppError(
+  ERROR_CODES.DUPLICATE_RESOURCE,
+  `이미 ${duplicate.semesterNo}학기에 등록된 과목입니다: ${duplicate.subjectName}`,
+  409
+);
   }
 
   if (FEATURE_FLAGS.PLAN_REQUIREMENT_ENFORCE) {
@@ -8272,7 +8650,11 @@ export async function updatePlanSemester(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -8288,7 +8670,11 @@ const organizationId = requireOrganizationId(params?.organizationId);
     .limit(1);
 
   const row = current[0];
-  if (!row) throw new Error("우리 플랜 과목을 찾을 수 없습니다");
+  if (!row) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "우리 플랜 과목을 찾을 수 없습니다",
+  404
+);
 
   if (data.subjectName !== undefined) {
     const duplicate = await findDuplicatePlanSubject({
@@ -8299,9 +8685,11 @@ const organizationId = requireOrganizationId(params?.organizationId);
     } as any);
 
     if (duplicate) {
-      throw new Error(
-        `이미 ${duplicate.semesterNo}학기에 등록된 과목입니다: ${duplicate.subjectName}`
-      );
+      throwAppError(
+  ERROR_CODES.DUPLICATE_RESOURCE,
+  `이미 ${duplicate.semesterNo}학기에 등록된 과목입니다: ${duplicate.subjectName}`,
+  409
+);
     }
   }
 
@@ -8335,7 +8723,11 @@ export async function deletePlanSemester(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -8356,7 +8748,11 @@ export async function syncPlanSemestersByCount(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -8430,7 +8826,11 @@ const organizationId = requireOrganizationId(params?.organizationId);
 
 export async function createTransferSubject(data: InsertTransferSubject) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId((data as any).organizationId);
 
@@ -8448,7 +8848,11 @@ export async function updateTransferSubject(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -8468,7 +8872,11 @@ export async function deleteTransferSubject(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -8484,7 +8892,11 @@ const organizationId = requireOrganizationId(params?.organizationId);
 
 export async function bulkCreateTransferSubjects(dataList: InsertTransferSubject[]) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
   if (!dataList.length) return [];
 
   const normalized = dataList.map((row: any) => ({
@@ -8558,7 +8970,11 @@ organizationId?: number | null;
   normalSubjectPrice?: string | number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB 연결 실패");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB 연결 실패",
+  500
+);
 
   const result = await db.insert(educationInstitutions).values({
 organizationId: requireOrganizationId(data.organizationId),
@@ -8581,7 +8997,11 @@ export async function reassignConsultationAndLinkedStudent(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -8710,7 +9130,11 @@ export async function upsertEducationInstitutionPositionRate(data: {
   isActive?: boolean;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB 연결 실패");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB 연결 실패",
+  500
+);
 
   const organizationId = requireOrganizationId(data.organizationId);
 
@@ -8764,7 +9188,11 @@ export async function deleteEducationInstitutionPositionRate(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB 연결 실패");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB 연결 실패",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -8812,7 +9240,11 @@ export async function bulkReassignConsultationsAndLinkedStudents(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -8852,7 +9284,11 @@ export async function updateEducationInstitution(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB 연결 실패");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB 연결 실패",
+  500
+);
 
   const payload: Record<string, any> = {};
 
@@ -8904,7 +9340,11 @@ const organizationId = requireOrganizationId(params?.organizationId);
 
 export async function createTransferAttachment(data: InsertTransferAttachment) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const result: any = await db.insert(transferAttachments).values(data);
   return getInsertId(result);
@@ -8916,7 +9356,11 @@ export async function updateTransferAttachment(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -8933,7 +9377,11 @@ const organizationId = requireOrganizationId(params?.organizationId);
     .limit(1);
 
   if (!rows[0]) {
-    throw new Error("첨부파일을 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "첨부파일을 찾을 수 없습니다.",
+  404
+);
   }
 
   await db
@@ -8947,7 +9395,11 @@ export async function deleteTransferAttachment(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -8964,13 +9416,16 @@ const organizationId = requireOrganizationId(params?.organizationId);
     .limit(1);
 
   if (!rows[0]) {
-    throw new Error("첨부파일을 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "첨부파일을 찾을 수 없습니다.",
+  404
+);
   }
 
   await db.delete(transferAttachments).where(eq(transferAttachments.id, id));
 }
 
-// ─── Course Templates ────────────────────────────────────────────────
 // ─── Course Templates ────────────────────────────────────────────────
 export async function listCourseSubjectTemplates(
   courseKey?: string,
@@ -9005,7 +9460,11 @@ export async function createCourseSubjectTemplate(
   data: InsertCourseSubjectTemplate & { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId((data as any).organizationId);
 
@@ -9024,7 +9483,11 @@ export async function bulkCreatePlanSemestersFromTemplate(params: {
   subjectIds: number[];
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
 
@@ -9033,7 +9496,11 @@ export async function bulkCreatePlanSemestersFromTemplate(params: {
   });
 
   if (!student) {
-    throw new Error("학생을 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "학생을 찾을 수 없습니다.",
+  404
+);
   }
 
   const subjectIds = Array.from(
@@ -9049,7 +9516,11 @@ export async function bulkCreatePlanSemestersFromTemplate(params: {
   }
 
   if (subjectIds.length > 8) {
-    throw new Error("우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다");
+    throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다",
+  400
+);
   }
 
   const templates = await db
@@ -9072,11 +9543,19 @@ export async function bulkCreatePlanSemestersFromTemplate(params: {
   }
 
   if (templates.length !== subjectIds.length) {
-    throw new Error("선택한 과목 중 현재 회사에 없는 과목이 포함되어 있습니다.");
+    throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "선택한 과목 중 현재 회사에 없는 과목이 포함되어 있습니다.",
+  400
+);
   }
 
   if (templates.length > 8) {
-    throw new Error("우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다");
+    throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "우리 플랜은 학기당 최대 8과목까지 등록할 수 있습니다",
+  400
+);
   }
 
   const templateNames = templates.map((t: any) =>
@@ -9088,9 +9567,11 @@ export async function bulkCreatePlanSemestersFromTemplate(params: {
   );
 
   if (duplicateInsideSelection) {
-    throw new Error(
-      `선택한 템플릿 안에 중복 과목이 있습니다: ${duplicateInsideSelection}`
-    );
+    throwAppError(
+  ERROR_CODES.DUPLICATE_RESOURCE,
+  `선택한 템플릿 안에 중복 과목이 있습니다: ${duplicateInsideSelection}`,
+  409
+);
   }
 
   const existingRows = await listPlanSemesters(params.studentId, {
@@ -9114,9 +9595,11 @@ export async function bulkCreatePlanSemestersFromTemplate(params: {
           normalizeSubjectName(duplicateInOtherSemester.subjectName)
     );
 
-    throw new Error(
-      `이미 ${found?.semesterNo}학기에 등록된 과목입니다: ${duplicateInOtherSemester.subjectName}`
-    );
+    throwAppError(
+  ERROR_CODES.DUPLICATE_RESOURCE,
+  `이미 ${found?.semesterNo}학기에 등록된 과목입니다: ${duplicateInOtherSemester.subjectName}`,
+  409
+);
   }
 
   await db
@@ -9177,13 +9660,21 @@ export async function createPrivateCertificateMaster(
   data: InsertPrivateCertificateMaster & { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId((data as any).organizationId);
 
   const name = String(data.name || "").trim();
   if (!name) {
-    throw new Error("자격증명을 입력해주세요.");
+    throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "자격증명을 입력해주세요.",
+  400
+);
   }
 
   const existing = await db
@@ -9198,7 +9689,11 @@ export async function createPrivateCertificateMaster(
     .limit(1);
 
   if (existing[0]) {
-    throw new Error("이미 등록된 민간자격증입니다.");
+    throwAppError(
+  ERROR_CODES.DUPLICATE_RESOURCE,
+  "이미 등록된 민간자격증입니다.",
+  409
+);
   }
 
   const [maxRows] = await db.execute(sql`
@@ -9234,7 +9729,11 @@ export async function deletePrivateCertificateMaster(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -9277,13 +9776,21 @@ export async function createSubjectCatalog(
   data: InsertSubjectCatalog & { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId((data as any).organizationId);
 
   const name = String(data.name || "").trim();
   if (!name) {
-    throw new Error("과정명을 입력해주세요.");
+    throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "과정명을 입력해주세요.",
+  400
+);
   }
 
   const existing = await db
@@ -9298,7 +9805,11 @@ export async function createSubjectCatalog(
     .limit(1);
 
   if (existing[0]) {
-    throw new Error("이미 등록된 과정입니다.");
+    throwAppError(
+  ERROR_CODES.DUPLICATE_RESOURCE,
+  "이미 등록된 과정입니다.",
+  409
+);
   }
 
   const [maxRows] = await db.execute(sql`
@@ -9326,7 +9837,11 @@ export async function deleteSubjectCatalog(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -9342,7 +9857,11 @@ export async function deleteSubjectCatalog(
     .limit(1);
 
   if (!rows[0]) {
-    throw new Error("삭제할 과정을 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "삭제할 과정을 찾을 수 없습니다.",
+  404
+);
   }
 
   await db
@@ -9414,23 +9933,39 @@ export async function createSubjectCatalogItem(
   data: InsertSubjectCatalogItem & { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId((data as any).organizationId);
 
   const subjectName = String(data.subjectName || "").trim();
   if (!subjectName) {
-    throw new Error("과목명을 입력해주세요.");
+    throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "과목명을 입력해주세요.",
+  400
+);
   }
 
   const requirementType = data.requirementType;
   if (!requirementType) {
-    throw new Error("과목 구분을 선택해주세요.");
+    throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "과목 구분을 선택해주세요.",
+  400
+);
   }
 
   const catalogId = Number(data.catalogId || 0);
   if (!catalogId) {
-    throw new Error("과정 정보가 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "과정 정보가 없습니다.",
+  404
+);
   }
 
   const catalogRows = await db
@@ -9445,7 +9980,11 @@ export async function createSubjectCatalogItem(
     .limit(1);
 
   if (!catalogRows[0]) {
-    throw new Error("현재 회사의 과정이 아닙니다.");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "현재 회사의 과정이 아닙니다.",
+  403
+);
   }
 
   const existing = await db
@@ -9462,7 +10001,11 @@ export async function createSubjectCatalogItem(
     .limit(1);
 
   if (existing[0]) {
-    throw new Error("이미 등록된 과목입니다.");
+    throwAppError(
+  ERROR_CODES.DUPLICATE_RESOURCE,
+  "이미 등록된 과목입니다.",
+  409
+);
   }
 
   const [maxRows] = await db.execute(sql`
@@ -9500,13 +10043,21 @@ export async function bulkCreateSubjectCatalogItems(params: {
   actorUserId?: number | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
   const catalogId = Number(params.catalogId || 0);
 
   if (!catalogId) {
-    throw new Error("과정 정보가 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "과정 정보가 없습니다.",
+  404
+);
   }
 
   const category =
@@ -9525,7 +10076,11 @@ export async function bulkCreateSubjectCatalogItems(params: {
   );
 
   if (!cleanedNames.length) {
-    throw new Error("등록할 과목명이 없습니다.");
+    throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "등록할 과목명이 없습니다.",
+  400
+);
   }
 
   const existingRows = await db
@@ -9584,7 +10139,11 @@ export async function deleteSubjectCatalogItem(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -9755,7 +10314,11 @@ export async function updatePrivateCertificateMaster(
   data: Partial<InsertPrivateCertificateMaster>
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   await db
     .update(privateCertificateMasters)
@@ -9784,7 +10347,11 @@ export async function updatePrivateCertificateMaster(
 
 export async function createPrivateCertificateRequest(data: InsertPrivateCertificateRequest) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId((data as any).organizationId);
 
@@ -9815,15 +10382,15 @@ export async function updatePrivateCertificateRequest(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
   try {
-    console.log("[privateCertificate.update] id =", id);
-    console.log("[privateCertificate.update] organizationId =", organizationId);
-    console.log("[privateCertificate.update] data =", data);
-
     await db
       .update(privateCertificateRequests)
       .set(data as any)
@@ -9838,15 +10405,6 @@ const organizationId = requireOrganizationId(params?.organizationId);
       organizationId,
     });
   } catch (err: any) {
-    console.error("[privateCertificate.update ERROR]", err);
-    console.error("[privateCertificate.update ERROR message]", err?.message);
-    console.error("[privateCertificate.update ERROR cause]", err?.cause);
-    console.error("[privateCertificate.update ERROR sqlMessage]", err?.sqlMessage);
-    console.error("[privateCertificate.update ERROR code]", err?.code);
-    console.error("[privateCertificate.update ERROR errno]", err?.errno);
-    console.error("[privateCertificate.update ERROR sql]", err?.sql);
-    console.error("[privateCertificate.update ERROR params]", err?.params);
-
     throw err;
   }
 }
@@ -9856,7 +10414,11 @@ export async function deletePrivateCertificateRequest(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -9884,7 +10446,11 @@ export async function requestPrivateCertificateRefund(params: {
   refundReason?: string | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params.organizationId);
 
@@ -9901,11 +10467,19 @@ const organizationId = requireOrganizationId(params.organizationId);
 
   const request = rows[0];
   if (!request) {
-    throw new Error("민간자격증 요청 데이터를 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "민간자격증 요청 데이터를 찾을 수 없습니다.",
+  404
+);
   }
 
   if (request.paymentStatus !== "결제") {
-    throw new Error("결제 완료된 건만 환불 요청할 수 있습니다.");
+    throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "결제 완료된 건만 환불 요청할 수 있습니다.",
+  400
+);
   }
 
   await db
@@ -9932,7 +10506,11 @@ export async function approvePrivateCertificateRefund(params: {
   approvedBy: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params.organizationId);
 
@@ -9956,7 +10534,11 @@ const organizationId = requireOrganizationId(params.organizationId);
 
   const row = rows[0];
   if (!row?.request) {
-    throw new Error("민간자격증 요청 데이터를 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "민간자격증 요청 데이터를 찾을 수 없습니다.",
+  404
+);
   }
 
   const request = row.request;
@@ -10359,7 +10941,11 @@ LIMIT 1
 
 export async function createPracticeSupportRequest(data: InsertPracticeSupportRequest) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const result: any = await db.insert(practiceSupportRequests).values({
     ...data,
@@ -10385,7 +10971,11 @@ export async function updatePracticeSupportRequest(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   await db
     .update(practiceSupportRequests)
@@ -10409,7 +10999,11 @@ export async function deletePracticeSupportRequest(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -10437,7 +11031,11 @@ export async function requestPracticeSupportRefund(params: {
   refundReason?: string | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params.organizationId);
 
@@ -10454,11 +11052,19 @@ const organizationId = requireOrganizationId(params.organizationId);
 
   const request = rows[0];
   if (!request) {
-    throw new Error("실습배정지원 요청 데이터를 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "실습배정지원 요청 데이터를 찾을 수 없습니다.",
+  404
+);
   }
 
   if (request.paymentStatus !== "결제") {
-    throw new Error("결제 완료된 건만 환불 요청할 수 있습니다.");
+    throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "결제 완료된 건만 환불 요청할 수 있습니다.",
+  400
+);
   }
 
   await db
@@ -10485,7 +11091,11 @@ export async function approvePracticeSupportRefund(params: {
   approvedBy: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params.organizationId);
 
@@ -10502,7 +11112,11 @@ const organizationId = requireOrganizationId(params.organizationId);
 
   const request = rows[0];
   if (!request) {
-    throw new Error("실습배정지원 요청 데이터를 찾을 수 없습니다.");
+   throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "실습배정지원 요청 데이터를 찾을 수 없습니다.",
+  404
+);
   }
 
   const refundAmount = toNumber((request as any).refundAmount ?? request.feeAmount ?? 0);
@@ -10558,7 +11172,11 @@ export async function upsertPracticeSupportRequestByStudent(params: {
   coordinationStatus?: "미섭외" | "섭외중" | "섭외완료";
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params.organizationId);
 
@@ -10681,7 +11299,11 @@ export async function updatePracticeSupportStatusAndSyncSemester(params: {
   coordinationStatus: "미섭외" | "섭외중" | "섭외완료";
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params.organizationId);
 
@@ -10697,7 +11319,11 @@ const organizationId = requireOrganizationId(params.organizationId);
     .limit(1);
 
   const target = row[0];
-  if (!target) throw new Error("Practice support request not found");
+  if (!target) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "Practice support request not found",
+  404
+);
 
   await db
     .update(practiceSupportRequests)
@@ -10746,7 +11372,11 @@ export async function selectPracticeInstitutionForRequest(params: {
   institutionId: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params.organizationId);
 
@@ -10775,8 +11405,16 @@ const organizationId = requireOrganizationId(params.organizationId);
   const request = requestRows[0];
   const institution = institutionRows[0];
 
-  if (!request) throw new Error("Practice support request not found");
-  if (!institution) throw new Error("Practice institution not found");
+  if (!request) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "Practice support request not found",
+  404
+);
+  if (!institution) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "Practice institution not found",
+  404
+);
 
   const updateData: any = {};
 
@@ -10873,7 +11511,11 @@ export async function createPracticeListCategory(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(data.organizationId);
 
@@ -10895,7 +11537,11 @@ export async function updatePracticeListCategory(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -10917,7 +11563,11 @@ export async function deletePracticeListCategory(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -11121,7 +11771,11 @@ export async function getPracticeInstitution(
 
 export async function createPracticeInstitution(data: InsertPracticeInstitution) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const result: any = await db.insert(practiceInstitutions).values({
     ...data,
@@ -11140,7 +11794,11 @@ export async function updatePracticeInstitution(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -11162,7 +11820,11 @@ export async function deletePracticeInstitution(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -11185,7 +11847,11 @@ export async function bulkCreatePracticeInstitutions(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
   if (!dataList.length) return { success: true, count: 0 };
 
   const organizationId = requireOrganizationId(options?.organizationId);
@@ -11302,7 +11968,11 @@ export async function bulkDeactivatePracticeInstitutions(params: {
   hideOnMapWhenInactive?: boolean;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
 
@@ -11514,7 +12184,11 @@ export async function createPracticeEducationCenter(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(data.organizationId);
 
@@ -11553,7 +12227,11 @@ export async function bulkCreatePracticeEducationCenters(
 }
 ) {
     const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(options?.organizationId);
 
@@ -11663,7 +12341,11 @@ export async function bulkDeactivatePracticeEducationCenters(params?: {
   hideOnMapWhenInactive?: boolean;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -11689,7 +12371,11 @@ export async function updatePracticeEducationCenter(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -11720,7 +12406,11 @@ export async function updatePracticeInstitutionAvailability(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -11749,7 +12439,11 @@ export async function updatePracticeEducationCenterAvailability(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -11809,7 +12503,11 @@ export async function upsertPracticeInstitutionOverride(params: {
   };
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
   const masterId = Number(params.masterId);
@@ -11869,7 +12567,11 @@ export async function updatePracticeInstitutionAvailabilityOverride(params: {
   hideOnMapWhenInactive?: boolean | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
   const masterId = Number(params.masterId);
@@ -11918,7 +12620,11 @@ export async function hidePracticeInstitutionOverride(params: {
   masterId: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
   const masterId = Number(params.masterId);
@@ -11966,7 +12672,11 @@ export async function bulkDeactivatePracticeInstitutionOverrides(params: {
   hideOnMapWhenInactive?: boolean;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
 
@@ -12044,7 +12754,11 @@ export async function upsertPracticeEducationCenterOverride(params: {
   };
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
   const masterId = Number(params.masterId);
@@ -12104,7 +12818,11 @@ export async function updatePracticeEducationCenterAvailabilityOverride(params: 
   hideOnMapWhenInactive?: boolean | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
   const masterId = Number(params.masterId);
@@ -12153,7 +12871,11 @@ export async function hidePracticeEducationCenterOverride(params: {
   masterId: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
   const masterId = Number(params.masterId);
@@ -12200,7 +12922,11 @@ export async function bulkDeactivatePracticeEducationCenterOverrides(params: {
   hideOnMapWhenInactive?: boolean;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
 
@@ -12242,7 +12968,11 @@ export async function deletePracticeEducationCenter(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -12269,13 +12999,22 @@ const organizationId = requireOrganizationId(params.organizationId);
   if (!db) return [];
 
   const student = await getStudent(params.studentId, { organizationId });
-  if (!student) throw new Error("Student not found");
+  if (!student) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "Student not found",
+  404
+);
 
   const studentLat = toNullableNumber((student as any).latitude);
   const studentLng = toNullableNumber((student as any).longitude);
 
   if (studentLat === null || studentLng === null) {
-    throw new Error("Student latitude/longitude not found");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "Student latitude/longitude not found",
+  404
+);
+
   }
 
   const rows = await db
@@ -12341,7 +13080,11 @@ export async function listJobSupportRequestsByStudent(studentId: number) {
 
 export async function createJobSupportRequest(data: InsertJobSupportRequest) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const result: any = await db.insert(jobSupportRequests).values({
     ...data,
@@ -12357,7 +13100,11 @@ export async function updateJobSupportRequest(
   data: Partial<InsertJobSupportRequest>
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   await db
     .update(jobSupportRequests)
@@ -12367,7 +13114,11 @@ export async function updateJobSupportRequest(
 
 export async function deleteJobSupportRequest(id: number) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   await db.delete(jobSupportRequests).where(eq(jobSupportRequests.id, id));
 }
@@ -12381,7 +13132,11 @@ export async function createAiActionLogV2(data: {
   payload?: any;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   return await db.insert(aiActionLogs).values({
     userId: data.userId,
@@ -12406,7 +13161,11 @@ function normalizeNullableString(v: any) {
 export async function assertUserExists(userId: number) {
   const user = await getUserById(userId);
   if (!user) {
-    throw new Error("유저를 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "유저를 찾을 수 없습니다.",
+  404
+);
   }
   return user;
 }
@@ -12417,11 +13176,19 @@ export async function assertTargetUserNotProtectedByActor(params: {
 }) {
   const target = await getUserById(params.targetUserId);
   if (!target) {
-    throw new Error("대상 유저를 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "대상 유저를 찾을 수 없습니다.",
+  404
+);
   }
 
   if (target.role === "superhost" && params.actorRole !== "superhost") {
-    throw new Error("슈퍼호스트 계정은 수정할 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "슈퍼호스트 계정은 수정할 수 없습니다.",
+  403
+);
   }
 
   return target;
@@ -12474,7 +13241,11 @@ export async function createTeam(data: {
   isActive?: boolean | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(data.organizationId);
 
@@ -12498,7 +13269,11 @@ export async function updateTeam(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -12525,7 +13300,11 @@ export async function deleteTeam(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -12610,7 +13389,11 @@ export async function createPosition(data: {
   settlementUnitAmount?: string | number | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(data.organizationId);
 
@@ -12636,7 +13419,11 @@ export async function updatePosition(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -12666,7 +13453,11 @@ export async function deletePosition(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -12715,7 +13506,11 @@ export async function upsertUserOrgMapping(data: {
   sortOrder?: number | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(data.organizationId);
 
@@ -12723,12 +13518,20 @@ export async function upsertUserOrgMapping(data: {
 
   if (data.teamId) {
     const team = await getTeam(data.teamId, { organizationId });
-    if (!team) throw new Error("팀을 찾을 수 없습니다.");
+    if (!team) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "팀을 찾을 수 없습니다.",
+  404
+);
   }
 
   if (data.positionId) {
     const position = await getPosition(data.positionId, { organizationId });
-    if (!position) throw new Error("직급을 찾을 수 없습니다.");
+    if (!position) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "직급을 찾을 수 없습니다.",
+  404
+);
   }
 
   const existing = await getUserOrgMapping(data.userId, { organizationId });
@@ -12768,7 +13571,11 @@ export async function deleteUserOrgMapping(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -12868,7 +13675,11 @@ export async function updateUserRoleProtected(params: {
   });
 
   if (target.role === "superhost" && params.role !== "superhost") {
-    throw new Error("슈퍼호스트 권한은 변경할 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "슈퍼호스트 권한은 변경할 수 없습니다.",
+  403
+);
   }
 
   return updateUserRole(params.targetUserId, params.role);
@@ -12948,7 +13759,11 @@ export async function createChatRoom(data: {
   createdBy: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(data.organizationId);
 
@@ -12974,7 +13789,11 @@ export async function addChatRoomMember(data: {
 
 const organizationId = requireOrganizationId(data.organizationId);
 
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const existing = await db
     .select()
@@ -13028,7 +13847,11 @@ export async function getOrCreateDirectChatRoom(params: {
 const organizationId = requireOrganizationId(params.organizationId);
 
   if (params.actorUserId === params.otherUserId) {
-    throw new Error("자기 자신과의 채팅방은 만들 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "자기 자신과의 채팅방은 만들 수 없습니다.",
+  400
+);
   }
 
   await assertUserExists(params.actorUserId);
@@ -13099,7 +13922,11 @@ export async function ensureChatRoomMember(
   params?: { organizationId?: number | null }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -13132,7 +13959,11 @@ export async function ensureChatRoomMember(
     .limit(1);
 
   if (!result[0]) {
-    throw new Error("해당 채팅방에 접근 권한이 없습니다.");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "해당 채팅방에 접근 권한이 없습니다.",
+  403
+);
   }
 
   return result[0];
@@ -13146,7 +13977,11 @@ export async function createChatMessage(data: {
   content?: string | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(data.organizationId);
 
@@ -13193,7 +14028,11 @@ organizationId?: number | null;
 
 const orgId = requireOrganizationId(organizationId);
 
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   await db
     .update(chatRooms)
@@ -13222,7 +14061,11 @@ organizationId?: number | null;
 
 const orgId = requireOrganizationId(organizationId);
 
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   await db
     .update(chatRooms)
@@ -13247,7 +14090,11 @@ export async function createChatAttachment(data: {
   fileSize?: number | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(data.organizationId);
 
@@ -13263,7 +14110,11 @@ AND m.organizationId = ${organizationId}
 
   const message = ((messageRows as any[]) ?? [])[0];
   if (!message) {
-    throw new Error("첨부파일을 추가할 메시지를 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "첨부파일을 추가할 메시지를 찾을 수 없습니다.",
+  404
+);
   }
 
   const result: any = await db.insert(chatAttachments).values({
@@ -13331,7 +14182,11 @@ export async function markChatRoomRead(params: {
   lastReadMessageId: number | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params.organizationId);
 
@@ -13539,7 +14394,11 @@ organizationId?: number | null;
   isMuted: boolean;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params.organizationId);
 
@@ -13594,7 +14453,11 @@ organizationId?: number | null;
   userId: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params.organizationId);
 
@@ -13671,7 +14534,11 @@ export async function clockInAttendance(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -13681,7 +14548,11 @@ const organizationId = requireOrganizationId(params?.organizationId);
 });
 
   if (existing?.clockInAt) {
-    throw new Error("이미 오늘 출근 처리되었습니다.");
+    throwAppError(
+  ERROR_CODES.DUPLICATE_RESOURCE,
+  "이미 오늘 출근 처리되었습니다.",
+  409
+);
   }
 
   const now = new Date();
@@ -13747,7 +14618,11 @@ export async function clockOutAttendance(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -13756,11 +14631,19 @@ const organizationId = requireOrganizationId(params?.organizationId);
 });
 
   if (!todayRow?.clockInAt) {
-    throw new Error("출근 기록이 없어 퇴근 처리할 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "출근 기록이 없어 퇴근 처리할 수 없습니다.",
+  400
+);
   }
 
   if (todayRow?.clockOutAt) {
-    throw new Error("이미 오늘 퇴근 처리되었습니다.");
+    throwAppError(
+  ERROR_CODES.DUPLICATE_RESOURCE,
+  "이미 오늘 퇴근 처리되었습니다.",
+  409
+);
   }
 
   const clockOutAt = new Date();
@@ -14209,7 +15092,11 @@ organizationId?: number | null;
   autoClockOutMinute: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB 연결이 없습니다.");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB 연결이 없습니다.",
+  500
+);
 
 const organizationId = requireOrganizationId(params.organizationId);
 
@@ -14278,7 +15165,11 @@ organizationId?: number | null;
   reason?: string | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB 연결이 없습니다.");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB 연결이 없습니다.",
+  500
+);
 
 const organizationId = requireOrganizationId(params.organizationId);
 
@@ -14295,7 +15186,11 @@ const organizationId = requireOrganizationId(params.organizationId);
 
   const current = row[0];
   if (!current) {
-    throw new Error("근태 기록을 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "근태 기록을 찾을 수 없습니다.",
+  404
+);
   }
 
   // admin은 자기 팀만 수정 가능
@@ -14304,7 +15199,11 @@ const organizationId = requireOrganizationId(params.organizationId);
   organizationId,
 });
     if (!myTeamId) {
-      throw new Error("관리자 팀 정보를 찾을 수 없습니다.");
+      throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "관리자 팀 정보를 찾을 수 없습니다.",
+  404
+);
     }
 
     const [targetRows] = await db.execute(sql`
@@ -14318,7 +15217,11 @@ const organizationId = requireOrganizationId(params.organizationId);
     const targetTeamId = Number((targetRows as any[])?.[0]?.teamId || 0);
 
     if (!targetTeamId || targetTeamId !== myTeamId) {
-      throw new Error("자기 팀 직원의 근태만 수정할 수 있습니다.");
+      throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "자기 팀 직원의 근태만 수정할 수 있습니다.",
+  403
+);
     }
   }
 
@@ -14466,7 +15369,11 @@ actorRole: string;
   reason?: string | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params.organizationId);
 
@@ -14483,7 +15390,11 @@ const organizationId = requireOrganizationId(params.organizationId);
 
   const current = row[0];
 if (!current) {
-  throw new Error("근태 기록을 찾을 수 없습니다.");
+  throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "근태 기록을 찾을 수 없습니다.",
+  404
+);
 }
 
 if (params.actorRole === "admin") {
@@ -14491,7 +15402,11 @@ if (params.actorRole === "admin") {
   organizationId,
 });
   if (!myTeamId) {
-    throw new Error("관리자 팀 정보를 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "관리자 팀 정보를 찾을 수 없습니다.",
+  404
+);
   }
 
   const [targetRows] = await db.execute(sql`
@@ -14505,7 +15420,11 @@ if (params.actorRole === "admin") {
   const targetTeamId = Number((targetRows as any[])?.[0]?.teamId || 0);
 
   if (!targetTeamId || targetTeamId !== myTeamId) {
-    throw new Error("자기 팀 직원의 근태만 수정할 수 있습니다.");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "자기 팀 직원의 근태만 수정할 수 있습니다.",
+  403
+);
   }
 }
 
@@ -14743,7 +15662,11 @@ export async function updateMyProfilePhoto(params: {
   profileImageUrl: string;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   await db
     .update(users)
@@ -14760,7 +15683,11 @@ export async function changeMyPassword(params: {
   newPassword: string;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const passwordHash = await bcrypt.hash(params.newPassword, 10);
 
@@ -14828,7 +15755,11 @@ organizationId: number;
 importance?: "normal" | "important" | "urgent";
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const result: any = await db.execute(sql`
    INSERT INTO notices (
@@ -14869,7 +15800,11 @@ export async function updateNotice(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(data.organizationId);
 
@@ -14893,7 +15828,11 @@ export async function deleteNotice(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -14912,7 +15851,11 @@ export async function bulkDeleteNotices(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const cleanIds = Array.from(
     new Set((ids || []).map((id) => Number(id)).filter(Boolean))
@@ -14937,7 +15880,11 @@ export async function increaseNoticeView(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -15045,7 +15992,11 @@ export async function createSchedule(data: {
   createdByRole: "staff" | "admin" | "host" | "superhost" | string;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(data.organizationId);
 
@@ -15103,7 +16054,11 @@ export async function updateSchedule(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(data.organizationId);
 
@@ -15119,14 +16074,22 @@ export async function updateSchedule(
   const row = ((rows as any[]) ?? [])[0] ?? null;
 
   if (!row) {
-    throw new Error("일정을 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "일정을 찾을 수 없습니다.",
+  404
+);
   }
 
   const isOwner = Number(row.ownerUserId) === Number(userId);
   const isPrivileged = role === "host" || role === "superhost";
 
   if (!isOwner && !isPrivileged) {
-    throw new Error("수정 권한이 없습니다.");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "수정 권한이 없습니다.",
+  403
+);
   }
 
   await db.execute(sql`
@@ -15155,7 +16118,11 @@ export async function deleteSchedule(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -15171,14 +16138,22 @@ const organizationId = requireOrganizationId(params?.organizationId);
   const row = ((rows as any[]) ?? [])[0] ?? null;
 
   if (!row) {
-    throw new Error("일정을 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "일정을 찾을 수 없습니다.",
+  404
+);
   }
 
   const isOwner = Number(row.ownerUserId) === Number(userId);
   const isPrivileged = role === "host" || role === "superhost";
 
   if (!isOwner && !isPrivileged) {
-    throw new Error("삭제 권한이 없습니다.");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "삭제 권한이 없습니다.",
+  403
+);
   }
 
   await db.execute(sql`
@@ -15203,7 +16178,11 @@ async function getNextApprovalDocumentNumber(
   }
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
@@ -15265,7 +16244,11 @@ export async function saveApprovalSetting(params: {
   actorUserId: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
 
@@ -15309,7 +16292,11 @@ export async function saveApprovalSetting(params: {
 
 export async function createApprovalLog(data: InsertApprovalLog) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const result: any = await db.insert(approvalLogs).values({
     organizationId: requireOrganizationId((data as any).organizationId),
@@ -15353,7 +16340,11 @@ export async function createApprovalDocument(params: {
   extraNote?: string | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
 
@@ -15366,7 +16357,11 @@ export async function createApprovalDocument(params: {
   });
 
   if (params.formType === "attendance" && !params.targetDate) {
-    throw new Error("근태 문서는 시행일자 필수");
+    throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "근태 문서는 시행일자 필수",
+  400
+);
   }
 
   if (
@@ -15374,7 +16369,11 @@ export async function createApprovalDocument(params: {
     !params.targetDate &&
     !(params.startDate && params.endDate)
   ) {
-    throw new Error("출장 문서는 시행일자 또는 시작일/종료일이 필요합니다.");
+    throwAppError(
+  ERROR_CODES.INVALID_INPUT,
+  "출장 문서는 시행일자 또는 시작일/종료일이 필요합니다.",
+  400
+);
   }
 
   const approverIds = [
@@ -15384,7 +16383,11 @@ export async function createApprovalDocument(params: {
   ].filter((x) => Number(x || 0) > 0);
 
   if (!approverIds.length) {
-    throw new Error("전자결재 승인자가 설정되지 않았습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "전자결재 승인자가 설정되지 않았습니다.",
+  404
+);
   }
 
   const attendanceTargetStatus =
@@ -15581,14 +16584,22 @@ export async function applyApprovedDocumentToAttendance(params: {
   actorUserName?: string | null;
 }) {
   const db = await getDb();
-if (!db) throw new Error("DB not available");
+if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
 const organizationId = requireOrganizationId(params.organizationId);
 
 const detail = await getApprovalDocument(params.documentId, {
   organizationId,
 });
-  if (!detail?.document) throw new Error("전자결재 문서를 찾을 수 없습니다.");
+  if (!detail?.document) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "전자결재 문서를 찾을 수 없습니다.",
+  404
+);
 
   const doc: any = detail.document;
 
@@ -15733,7 +16744,11 @@ leaveType: "출장",
 
  const applyDate = doc.targetDate || doc.startDate || doc.endDate;
   if (!targetDate) {
-    throw new Error("근태 반영 대상 날짜가 없습니다.");
+   throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "근태 반영 대상 날짜가 없습니다.",
+  400
+);
   }
 
   const [rows] = await db.execute(sql`
@@ -15935,14 +16950,22 @@ export async function approveApprovalDocument(params: {
   comment?: string | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
 
   const detail = await getApprovalDocument(params.documentId, {
     organizationId,
   });
-  if (!detail?.document) throw new Error("문서를 찾을 수 없습니다.");
+  if (!detail?.document) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "문서를 찾을 수 없습니다.",
+  404
+);
 
   const doc: any = detail.document;
 
@@ -15954,7 +16977,11 @@ export async function approveApprovalDocument(params: {
   );
 
   if (!currentLine) {
-    throw new Error("현재 승인 권한이 없습니다.");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "현재 승인 권한이 없습니다.",
+  403
+);
   }
 
   await db
@@ -16030,14 +17057,22 @@ export async function rejectApprovalDocument(params: {
   comment?: string | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
 
   const detail = await getApprovalDocument(params.documentId, {
     organizationId,
   });
-  if (!detail?.document) throw new Error("문서를 찾을 수 없습니다.");
+  if (!detail?.document) throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "문서를 찾을 수 없습니다.",
+  404
+);
 
   const doc: any = detail.document;
 
@@ -16049,7 +17084,11 @@ export async function rejectApprovalDocument(params: {
   );
 
   if (!currentLine) {
-    throw new Error("현재 반려 권한이 없습니다.");
+    throwAppError(
+  ERROR_CODES.PERMISSION_DENIED,
+  "현재 반려 권한이 없습니다.",
+  403
+);
   }
 
   await db
@@ -16095,7 +17134,6 @@ export async function rejectApprovalDocument(params: {
 // 학점은행제 템플릿 → subjectCatalog 이관 (1회용)
 // ===============================
 export async function migrateCourseTemplatesToSubjectCatalogs(db: any) {
-  console.log("🚀 courseTemplate → subjectCatalog 이관 시작");
 
   // 1. 기존 템플릿 가져오기
   const templates = await db
@@ -16103,7 +17141,6 @@ export async function migrateCourseTemplatesToSubjectCatalogs(db: any) {
     .from(courseTemplate); // 기존 테이블명
 
   if (!templates.length) {
-    console.log("⚠️ courseTemplate 데이터 없음");
     return;
   }
 
@@ -16122,7 +17159,7 @@ export async function migrateCourseTemplatesToSubjectCatalogs(db: any) {
 
   // 3. catalog 생성 + item 넣기
   for (const [courseKey, items] of map.entries()) {
-    console.log(`📦 과정 생성: ${courseKey}`);
+ 
 
     // catalog 존재 체크
     let [catalog] = await db
@@ -16172,13 +17209,15 @@ export async function migrateCourseTemplatesToSubjectCatalogs(db: any) {
       });
     }
   }
-
-  console.log("✅ 이관 완료");
 }
 
 export async function getOrganizationMonitoringSummary() {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const [rows] = await db.execute(sql`
     SELECT
@@ -16341,7 +17380,11 @@ export async function getOrganizationMonitoringDetail(params: {
   organizationId: number;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  if (!db) throwAppError(
+  ERROR_CODES.INTERNAL_SERVER_ERROR,
+  "DB not available",
+  500
+);
 
   const organizationId = requireOrganizationId(params.organizationId);
 
@@ -16364,7 +17407,11 @@ export async function getOrganizationMonitoringDetail(params: {
   const organization = (orgRows as any[])?.[0];
 
   if (!organization) {
-    throw new Error("회사를 찾을 수 없습니다.");
+    throwAppError(
+  ERROR_CODES.DATA_NOT_FOUND,
+  "회사를 찾을 수 없습니다.",
+  404
+);
   }
 
   const [countRows] = await db.execute(sql`
