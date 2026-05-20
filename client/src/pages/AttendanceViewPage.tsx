@@ -103,28 +103,37 @@ const canManagePolicy = user?.role === "host";
   const [policyEndTime, setPolicyEndTime] = useState("18:00");
   const [policyAutoClockOut, setPolicyAutoClockOut] = useState(true);
 
-  const { data: attendancePolicy } = trpc.attendance.getPolicy.useQuery(undefined, {
-  enabled: canManagePolicy,
+  const canUseAttendance =
+  !!user &&
+  !!(user as any).organizationId;
+
+const { data: attendancePolicy } = trpc.attendance.getPolicy.useQuery(undefined, {
+  enabled: canManagePolicy && canUseAttendance,
 });
 
-  useEffect(() => {
-    if (!attendancePolicy) return;
+useEffect(() => {
+  if (!attendancePolicy) return;
 
-    setPolicyStartTime(
-      `${String(attendancePolicy.workStartHour ?? 9).padStart(2, "0")}:${String(
-        attendancePolicy.workStartMinute ?? 0
-      ).padStart(2, "0")}`
-    );
-    setPolicyEndTime(
-      `${String(attendancePolicy.workEndHour ?? 18).padStart(2, "0")}:${String(
-        attendancePolicy.workEndMinute ?? 0
-      ).padStart(2, "0")}`
-    );
-    setPolicyAutoClockOut(!!attendancePolicy.autoClockOutEnabled);
-  }, [attendancePolicy]);
+  setPolicyStartTime(
+    `${String(attendancePolicy.workStartHour ?? 9).padStart(2, "0")}:${String(
+      attendancePolicy.workStartMinute ?? 0
+    ).padStart(2, "0")}`
+  );
+  setPolicyEndTime(
+    `${String(attendancePolicy.workEndHour ?? 18).padStart(2, "0")}:${String(
+      attendancePolicy.workEndMinute ?? 0
+    ).padStart(2, "0")}`
+  );
+  setPolicyAutoClockOut(!!attendancePolicy.autoClockOutEnabled);
+}, [attendancePolicy]);
 
-  const { data: records = [], isLoading: listLoading } =
-    trpc.attendance.list.useQuery();
+const {
+  data: records = [],
+  isLoading: listLoading,
+} = trpc.attendance.list.useQuery(undefined, {
+  enabled: canUseAttendance,
+  retry: false,
+});
 
 const { data: myProfile } = trpc.users.me.useQuery();
 
@@ -136,7 +145,7 @@ const { data: myProfile } = trpc.users.me.useQuery();
     trpc.attendance.adjustmentLogs.useQuery(
       {},
       {
-        enabled: !!canViewAll,
+        enabled: !!canViewAll && canUseAttendance,
       }
     );
 

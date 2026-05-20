@@ -115,9 +115,10 @@ const hostMenuItems: MenuItem[] = [
 const superhostMenuItems: MenuItem[] = [
  { icon: Crown, label: "슈퍼호스트 대시보드", path: "/superhost" },
  { icon: Building2, label: "테넌트 관리", path: "/superhost/tenants" },
+ { icon: MessageSquare, label: "SaaS 문의 관리", path: "/superhost/saas-inquiries" },
  { icon: Palette, label: "레이아웃 빌더", path: "/superhost/layout-builder" },
  { icon: Sparkles, label: "AI 정책 관리", path: "/superhost/ai-policy" },
-{ icon: Sparkles, label: "AI 상담", path: "/ai" },
+ { icon: Sparkles, label: "AI 상담", path: "/ai" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

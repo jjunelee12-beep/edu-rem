@@ -9,6 +9,11 @@ import {
   brandingSettings,
   smsSettings,
   auditLogs,
+  teams,
+  positions,
+  systemSettings,
+  educationInstitutions,
+  saasInquiries,
 } from "../drizzle/schema";
 
 export async function getOrganizationById(id: number) {
@@ -267,40 +272,138 @@ export async function createOrganizationDefaults(input: {
   organizationId: number;
   actorUserId?: number | null;
   companyName: string;
+  defaultTeams?: string[];
+  defaultPositions?: string[];
+  defaultEducationInstitution?: string;
+  defaultPayoutDay?: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  await db.insert(brandingSettings).values({
-    organizationId: input.organizationId,
-    companyName: input.companyName,
-    messengerSubtitle: "사내 메신저",
-    createdBy: input.actorUserId ?? null,
-    updatedBy: input.actorUserId ?? null,
-  } as any);
+  const organizationId = Number(input.organizationId);
 
-  await db.insert(smsSettings).values({
-    organizationId: input.organizationId,
-    provider: "aligo",
-    isActive: false,
-  } as any);
+  const defaultTeams =
+    input.defaultTeams?.length
+      ? input.defaultTeams
+      : ["상담팀", "학사팀", "정산팀"];
 
-  return { ok: true };
-}
+  const defaultPositions =
+    input.defaultPositions?.length
+      ? input.defaultPositions
+      : ["사원", "관리자", "대표"];
 
-export async function assignUserToOrganization(input: {
-  userId: number;
-  organizationId: number;
-}) {
-  const db = await getDb();
-  if (!db) throw new Error("DB not available");
+  const defaultEducationInstitution =
+    input.defaultEducationInstitution?.trim() || "기본 교육원";
 
-  await db
-    .update(users)
-    .set({
-      organizationId: input.organizationId,
-    } as any)
-    .where(eq(users.id, input.userId));
+  const defaultPayoutDay = Math.min(
+    31,
+    Math.max(1, Number(input.defaultPayoutDay || 25))
+  );
+
+  const existingBranding = await db
+    .select()
+    .from(brandingSettings)
+    .where(eq(brandingSettings.organizationId, organizationId))
+    .limit(1);
+
+  if (existingBranding.length === 0) {
+    await db.insert(brandingSettings).values({
+      organizationId,
+      companyName: input.companyName,
+      messengerSubtitle: "사내 메신저",
+      createdBy: input.actorUserId ?? null,
+      updatedBy: input.actorUserId ?? null,
+    } as any);
+  }
+
+  const existingSms = await db
+    .select()
+    .from(smsSettings)
+    .where(eq(smsSettings.organizationId, organizationId))
+    .limit(1);
+
+  if (existingSms.length === 0) {
+    await db.insert(smsSettings).values({
+      organizationId,
+      provider: "aligo",
+      isActive: false,
+    } as any);
+  }
+
+  const existingTeams = await db
+    .select()
+    .from(teams)
+    .where(eq(teams.organizationId, organizationId))
+    .limit(1);
+
+  if (existingTeams.length === 0) {
+    await db.insert(teams).values(
+      defaultTeams.map((name, index) => ({
+        organizationId,
+        name,
+        sortOrder: index + 1,
+        isActive: true,
+      })) as any
+    );
+  }
+
+  const existingPositions = await db
+    .select()
+    .from(positions)
+    .where(eq(positions.organizationId, organizationId))
+    .limit(1);
+
+  if (existingPositions.length === 0) {
+    await db.insert(positions).values(
+      defaultPositions.map((name, index) => ({
+        organizationId,
+        name,
+        sortOrder: index + 1,
+        isActive: true,
+        settlementUnitAmount: "0",
+      })) as any
+    );
+  }
+
+  const existingSystemSettings = await db
+    .select()
+    .from(systemSettings)
+    .where(eq(systemSettings.organizationId, organizationId))
+    .limit(1);
+
+  if (existingSystemSettings.length === 0) {
+    await db.insert(systemSettings).values({
+      organizationId,
+      payoutDay: defaultPayoutDay,
+    } as any);
+  }
+
+  const existingInstitutions = await db
+    .select()
+    .from(educationInstitutions)
+    .where(eq(educationInstitutions.organizationId, organizationId))
+    .limit(1);
+
+  if (existingInstitutions.length === 0) {
+    await db.insert(educationInstitutions).values({
+      organizationId,
+      name: defaultEducationInstitution,
+      settlementType: "subject",
+      normalSubjectPrice: "75000",
+      unitCostAmount: "0",
+      isActive: true,
+    } as any);
+  }
+
+  await createSaasAuditLog({
+    organizationId,
+    actorUserId: input.actorUserId ?? null,
+    actorRole: "superhost",
+    action: "organization.defaults.create",
+    targetType: "organization",
+    targetId: organizationId,
+    memo: "신규 회사 기본 세팅 자동 생성",
+  });
 
   return { ok: true };
 }
@@ -410,4 +513,119 @@ export async function getOrganizationFeatureFlags(
     allowSettlementReport: Boolean(org.allowSettlementReport),
     allowPrivateCertificate: Boolean(org.allowPrivateCertificate),
   };
+}
+
+export async function getOrganizationOnboardingStatus(organizationId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      (SELECT COUNT(*) FROM teams WHERE organizationId = ${organizationId}) as teamCount,
+      (SELECT COUNT(*) FROM positions WHERE organizationId = ${organizationId}) as positionCount,
+      (SELECT COUNT(*) FROM education_institutions WHERE organizationId = ${organizationId}) as educationInstitutionCount,
+      (SELECT payoutDay FROM system_settings WHERE organizationId = ${organizationId} LIMIT 1) as payoutDay
+  `);
+
+  const row = (rows as any)?.[0] || {};
+
+  return {
+    teamCount: Number(row.teamCount || 0),
+    positionCount: Number(row.positionCount || 0),
+    educationInstitutionCount: Number(row.educationInstitutionCount || 0),
+    payoutDay: row.payoutDay ? Number(row.payoutDay) : null,
+    completed:
+      Number(row.teamCount || 0) > 0 &&
+      Number(row.positionCount || 0) > 0 &&
+      Number(row.educationInstitutionCount || 0) > 0 &&
+      Boolean(row.payoutDay),
+  };
+}
+
+export async function createSaasInquiry(input: {
+  inquiryType?: "beta" | "demo" | "pricing" | "contact";
+  clientName: string;
+  phone: string;
+  companyName?: string | null;
+  businessType?: string | null;
+  email?: string | null;
+  message?: string | null;
+  source?: string | null;
+  pagePath?: string | null;
+  utmSource?: string | null;
+  utmMedium?: string | null;
+  utmCampaign?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(saasInquiries).values({
+    inquiryType: input.inquiryType || "beta",
+    clientName: input.clientName.trim(),
+    phone: input.phone.trim(),
+    companyName: input.companyName?.trim() || null,
+    businessType: input.businessType?.trim() || null,
+    email: input.email?.trim() || null,
+    message: input.message?.trim() || null,
+    source: input.source?.trim() || "homepage",
+    pagePath: input.pagePath?.trim() || null,
+    utmSource: input.utmSource?.trim() || null,
+    utmMedium: input.utmMedium?.trim() || null,
+    utmCampaign: input.utmCampaign?.trim() || null,
+    ipAddress: input.ipAddress || null,
+    userAgent: input.userAgent || null,
+  } as any);
+
+  return {
+    ok: true,
+    id: Number(result?.insertId ?? result?.[0]?.insertId ?? 0),
+  };
+}
+
+export async function listSaasInquiries(input?: {
+  status?: "new" | "contacted" | "qualified" | "closed" | "spam" | "all";
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const status = input?.status || "all";
+
+  if (status === "all") {
+    return db
+      .select()
+      .from(saasInquiries)
+      .orderBy(desc(saasInquiries.createdAt))
+      .limit(300);
+  }
+
+  return db
+    .select()
+    .from(saasInquiries)
+    .where(eq(saasInquiries.status, status))
+    .orderBy(desc(saasInquiries.createdAt))
+    .limit(300);
+}
+
+export async function updateSaasInquiry(input: {
+  id: number;
+  status?: "new" | "contacted" | "qualified" | "closed" | "spam";
+  memo?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(saasInquiries)
+    .set({
+      status: input.status,
+      memo:
+        input.memo === undefined
+          ? undefined
+          : input.memo?.trim() || null,
+    } as any)
+    .where(eq(saasInquiries.id, input.id));
+
+  return { ok: true };
 }

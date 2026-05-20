@@ -244,6 +244,7 @@ export default function PracticeSupportCenter() {
   const [search, setSearch] = useState("");
 const [selectedPracticeMonth, setSelectedPracticeMonth] = useState<string>("전체");
 const [statusFilter, setStatusFilter] = useState<string>("전체");
+const [showCompletedPractice, setShowCompletedPractice] = useState(false);
 
   const [selectedRow, setSelectedRow] = useState<any | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -631,9 +632,17 @@ const practiceMonthOptions = useMemo(() => {
   return ["전체", ...values];
 }, [practiceSupportMonthSource]);
 
-  const filteredList = useMemo(() => {
-  return practiceSupportList || [];
-}, [practiceSupportList]);
+const filteredList = useMemo(() => {
+  const rows = practiceSupportList || [];
+
+  if (showCompletedPractice) {
+    return rows;
+  }
+
+  return rows.filter(
+    (row: any) => String(row.coordinationStatus || "미섭외") !== "섭외완료"
+  );
+}, [practiceSupportList, showCompletedPractice]);
 
 const handleStatCardClick = (
   nextStatus: "전체" | "미섭외" | "섭외중" | "섭외완료"
@@ -1887,6 +1896,15 @@ useEffect(() => {
             요청 리스트 ({filteredList.length}건)
           </CardTitle>
         </CardHeader>
+
+<label className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+  <input
+    type="checkbox"
+    checked={showCompletedPractice}
+    onChange={(e) => setShowCompletedPractice(e.target.checked)}
+  />
+  섭외완료 보기
+</label>
 
         <CardContent className="p-0">
           {isLoading ? (

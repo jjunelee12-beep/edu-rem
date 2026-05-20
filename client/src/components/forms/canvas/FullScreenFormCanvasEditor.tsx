@@ -63,6 +63,10 @@ export default function FullScreenFormCanvasEditor({
 const uploadInputRef = useRef<HTMLInputElement | null>(null);
 const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
 
+const isRequiredFormElement = (element?: FormCanvasElement | null) => {
+  return Boolean((element as any)?.requiredFormElement);
+};
+
 const canvas = normalizeCanvas(value.canvas);
 
 const selectedElement =
@@ -84,6 +88,11 @@ const updateSelectedElement = (patch: Partial<FormCanvasElement>) => {
 const removeSelectedElement = () => {
   if (!selectedElement) return;
 
+  if (isRequiredFormElement(selectedElement)) {
+    alert("상담DB로 연결되는 기본 상담폼 요소는 삭제할 수 없습니다. 위치/크기/디자인만 수정해주세요.");
+    return;
+  }
+
   updateCanvas({
     ...canvas,
     elements: canvas.elements.filter(
@@ -97,24 +106,30 @@ const removeSelectedElement = () => {
 const duplicateSelectedElement = () => {
   if (!selectedElement) return;
 
+  if (isRequiredFormElement(selectedElement)) {
+    alert("상담DB로 연결되는 기본 상담폼 요소는 복사할 수 없습니다. 위치/크기/디자인만 수정해주세요.");
+    return;
+  }
+
   const copiedElement = {
-  ...selectedElement,
-  id: `${selectedElement.type}-${Date.now()}-${Math.floor(
-    Math.random() * 10000
-  )}`,
-  x: selectedElement.x + 30,
-  y: selectedElement.y + 30,
-  zIndex:
-    Math.max(
-      0,
-      ...canvas.elements.map((el) => Number(el.zIndex ?? 0))
-    ) + 1,
-} as FormCanvasElement;
+    ...selectedElement,
+    id: `${selectedElement.type}-${Date.now()}-${Math.floor(
+      Math.random() * 10000
+    )}`,
+    x: selectedElement.x + 30,
+    y: selectedElement.y + 30,
+    zIndex:
+      Math.max(
+        0,
+        ...canvas.elements.map((el) => Number(el.zIndex ?? 0))
+      ) + 1,
+    requiredFormElement: false,
+  } as FormCanvasElement;
 
   updateCanvas({
-  ...canvas,
-  elements: [...canvas.elements, copiedElement],
-});
+    ...canvas,
+    elements: [...canvas.elements, copiedElement],
+  });
 
   setSelectedElementId(copiedElement.id);
 };

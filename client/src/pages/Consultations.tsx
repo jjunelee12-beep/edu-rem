@@ -63,6 +63,7 @@ export default function Consultations() {
 const canOverrideRegisteredStatus = isHost || isSuperHost;
 
   const [showAll, setShowAll] = useState(false);
+const [showRegistered, setShowRegistered] = useState(false);
 
   const utils = trpc.useUtils();
 
@@ -338,7 +339,11 @@ bulkCreateMut.mutate({
       ? true
       : assigneeName.toLowerCase().includes(assigneeSearch.toLowerCase());
 
-    return matchesSearch && matchesAssignee;
+    const matchesRegistered = showRegistered
+  ? true
+  : String(item.status || "").trim() !== "등록";
+
+return matchesSearch && matchesAssignee && matchesRegistered;
   });
 
   const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -543,7 +548,7 @@ importCsvMut.mutate({ csvText, hasHeader: csvHasHeader } as any);
               className="w-full h-40 px-3 py-2 text-sm border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-primary font-mono"
               value={bulkPasteText}
               onChange={(e) => setBulkPasteText(e.target.value)}
-              placeholder={`맘카페\t차은우\t01012345678\t대학교졸업\t사회복지사\t상담 내역`}
+              placeholder={`맘카페\김철수\t01012345678\t대학교졸업\t사회복지사\t상담 내역`}
             />
 
             <div className="flex gap-2">
@@ -636,6 +641,15 @@ importCsvMut.mutate({ csvText, hasHeader: csvHasHeader } as any);
           onChange={(e) => setAssigneeSearch(e.target.value)}
           className="w-[180px]"
         />
+
+<label className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+  <input
+    type="checkbox"
+    checked={showRegistered}
+    onChange={(e) => setShowRegistered(e.target.checked)}
+  />
+  등록자 보기
+</label>
 
         {canViewAllDb && (
           <label className="flex items-center gap-2 text-sm text-muted-foreground ml-1">

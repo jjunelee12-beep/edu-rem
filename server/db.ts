@@ -2953,6 +2953,18 @@ export async function getPublicFormByToken(
     uiConfig: safeUiConfig,
   };
 }
+export async function getPublicLeadFormByToken(token: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(leadForms)
+    .where(eq(leadForms.token, token))
+    .limit(1);
+
+  return result[0];
+}
 
 export async function updateLeadFormUiConfig(
   id: number,
@@ -10972,24 +10984,50 @@ export async function updatePracticeSupportRequest(
 ) {
   const db = await getDb();
   if (!db) throwAppError(
-  ERROR_CODES.INTERNAL_SERVER_ERROR,
-  "DB not available",
-  500
-);
+    ERROR_CODES.INTERNAL_SERVER_ERROR,
+    "DB not available",
+    500
+  );
+
+  const organizationId = requireOrganizationId(params?.organizationId);
+
+  const [existing] = await db
+    .select()
+    .from(practiceSupportRequests)
+    .where(
+      and(
+        eq(practiceSupportRequests.id, id),
+        eq(practiceSupportRequests.organizationId, organizationId)
+      )
+    )
+    .limit(1);
 
   await db
     .update(practiceSupportRequests)
     .set(data as any)
     .where(
-  and(
-    eq(practiceSupportRequests.id, id),
-    eq(practiceSupportRequests.organizationId, requireOrganizationId(params?.organizationId))
-  )
-);
+      and(
+        eq(practiceSupportRequests.id, id),
+        eq(practiceSupportRequests.organizationId, organizationId)
+      )
+    );
+
+  if (data.coordinationStatus && existing?.studentId) {
+    const nextStatus = String(data.coordinationStatus || "").trim();
+
+    await db
+      .update(studentPlans)
+      .set({
+        practiceArranged: nextStatus === "섭외완료",
+        practiceStatus: nextStatus || "미섭외",
+        updatedAt: new Date(),
+      } as any)
+      .where(eq(studentPlans.studentId, Number(existing.studentId)));
+  }
 
   await syncPracticeSupportSettlementItemByRequestId(id, undefined, {
-  organizationId: requireOrganizationId(params?.organizationId),
-});
+    organizationId,
+  });
 }
 
 export async function deletePracticeSupportRequest(
@@ -11180,15 +11218,26 @@ export async function upsertPracticeSupportRequestByStudent(params: {
 
 const organizationId = requireOrganizationId(params.organizationId);
 
-  const existing = await db
+  const normalizedCourse = String(params.course || "").trim();
+
+if (!normalizedCourse) {
+  throwAppError(
+    ERROR_CODES.INVALID_INPUT,
+    "실습 희망과정은 필수입니다.",
+    400
+  );
+}
+
+const existing = await db
   .select()
   .from(practiceSupportRequests)
   .where(
-  and(
-    eq(practiceSupportRequests.organizationId, organizationId),
-    eq(practiceSupportRequests.studentId, params.studentId)
+    and(
+      eq(practiceSupportRequests.organizationId, organizationId),
+      eq(practiceSupportRequests.studentId, params.studentId),
+      eq(practiceSupportRequests.course, normalizedCourse)
+    )
   )
-)
   .limit(1);
 
   const nextCoordinationStatus =
@@ -11197,11 +11246,11 @@ const organizationId = requireOrganizationId(params.organizationId);
 const payload: any = {
 organizationId,
   studentId: params.studentId,
-  semesterId: null,
+  semesterId: params.semesterId ?? null,
   assigneeId: params.assigneeId,
   clientName: params.clientName,
   phone: params.phone,
-  course: params.course,
+  course: normalizedCourse,
   inputAddress: params.inputAddress ?? null,
   detailAddress: params.detailAddress ?? null,
   assigneeName: params.assigneeName ?? null,

@@ -80,9 +80,20 @@ const withOrgPath = (path: string) => {
 };
   const [search, setSearch] = useState("");
 
-  const { data: attendanceRows = [] } = trpc.attendance.list.useQuery();
+  const canUseAttendance =
+  !!user &&
+  !!(user as any).organizationId &&
+  user.role !== "superhost";
+
+const { data: attendanceRows = [] } = trpc.attendance.list.useQuery(undefined, {
+  enabled: canUseAttendance,
+  retry: false,
+});
   const { data: userRows = [] } = trpc.users.list.useQuery();
-  const { data: todayAttendanceRow } = trpc.attendance.today.useQuery();
+  const { data: todayAttendanceRow } = trpc.attendance.today.useQuery(undefined, {
+  enabled: canUseAttendance,
+  retry: false,
+});
   const { data: myProfile } = trpc.users.me.useQuery();
   const { data: notices = [] } = trpc.notice.list.useQuery();
   const { data: notifications = [] } = trpc.notification.list.useQuery();

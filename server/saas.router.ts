@@ -12,6 +12,10 @@ import {
 getOrganizationUsageStats,
 getOrganizationLimitStatus,
 listOrganizationAuditLogs,
+getOrganizationOnboardingStatus,
+  createSaasInquiry,
+  listSaasInquiries,
+  updateSaasInquiry,
 } from "./saasdb";
 import bcrypt from "bcryptjs";
 import * as db from "./db";
@@ -126,6 +130,27 @@ listOrganizationLimitStatuses: protectedProcedure.query(async ({ ctx }) => {
   return items;
 }),
 
+listOrganizationOnboardingStatuses: protectedProcedure.query(async ({ ctx }) => {
+  assertSuperhost(ctx);
+
+  const organizations = await listOrganizations();
+
+  const items = await Promise.all(
+    organizations.map(async (organization: any) => {
+      const onboarding = await getOrganizationOnboardingStatus(
+        Number(organization.id)
+      );
+
+      return {
+        organizationId: Number(organization.id),
+        onboarding,
+      };
+    })
+  );
+
+  return items;
+}),
+
   createOrganization: protectedProcedure
     .input(
       z.object({
@@ -152,6 +177,10 @@ allowPracticeCenter: z.boolean().optional(),
 allowSettlementReport: z.boolean().optional(),
 allowPrivateCertificate: z.boolean().optional(),
 memo: z.string().optional().nullable(),
+defaultTeams: z.array(z.string()).optional(),
+defaultPositions: z.array(z.string()).optional(),
+defaultEducationInstitution: z.string().optional(),
+defaultPayoutDay: z.number().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -167,14 +196,72 @@ const organization = await createOrganization({
 
       if (organization?.id) {
         await createOrganizationDefaults({
-          organizationId: Number(organization.id),
-          actorUserId: Number(ctx.user.id),
-          companyName: input.businessName || input.name,
-        });
+  organizationId: Number(organization.id),
+  actorUserId: Number(ctx.user.id),
+  companyName: input.businessName || input.name,
+  defaultTeams: input.defaultTeams,
+  defaultPositions: input.defaultPositions,
+  defaultEducationInstitution: input.defaultEducationInstitution,
+  defaultPayoutDay: input.defaultPayoutDay,
+});
       }
 
       return organization;
     }),
+
+listSaasInquiries: protectedProcedure
+  .input(
+    z.object({
+      status: z
+        .enum(["new", "contacted", "qualified", "closed", "spam", "all"])
+        .default("all"),
+    }).optional()
+  )
+  .query(async ({ ctx, input }) => {
+    assertSuperhost(ctx);
+    return listSaasInquiries(input);
+  }),
+
+updateSaasInquiry: protectedProcedure
+  .input(
+    z.object({
+      id: z.number(),
+      status: z.enum(["new", "contacted", "qualified", "closed", "spam"]).optional(),
+      memo: z.string().optional().nullable(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    assertSuperhost(ctx);
+    return updateSaasInquiry(input);
+  }),
+
+
+repairOrganizationDefaults: protectedProcedure
+  .input(
+    z.object({
+      organizationId: z.number(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    assertSuperhost(ctx);
+
+    const organization = await getOrganizationById(input.organizationId);
+    if (!organization) {
+      throwAppError(
+        ERROR_CODES.ORGANIZATION_NOT_FOUND,
+        "회사를 찾을 수 없습니다.",
+        404
+      );
+    }
+
+    await createOrganizationDefaults({
+      organizationId: Number(organization.id),
+      actorUserId: Number(ctx.user.id),
+      companyName: organization.businessName || organization.name,
+    });
+
+    return { ok: true };
+  }),
 
 listOrganizationAuditLogs: protectedProcedure
   .input(

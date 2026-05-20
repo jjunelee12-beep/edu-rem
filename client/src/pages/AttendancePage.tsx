@@ -57,20 +57,32 @@ const withOrgPath = (path: string) => {
   const [editClockIn, setEditClockIn] = useState("");
   const [editClockOut, setEditClockOut] = useState("");
   const [editReason, setEditReason] = useState("");
+	
+  const canUseAttendance =
+  !!user &&
+  !!(user as any).organizationId;
 
-  const { data: todayRow, isLoading: todayLoading } =
-    trpc.attendance.today.useQuery();
+const { data: todayRow, isLoading: todayLoading } =
+  trpc.attendance.today.useQuery(undefined, {
+    enabled: canUseAttendance,
+    retry: false,
+  });
 
-  const { data: records = [], isLoading: listLoading } =
-    trpc.attendance.list.useQuery();
+const {
+  data: records = [],
+  isLoading: listLoading,
+} = trpc.attendance.list.useQuery(undefined, {
+  enabled: canUseAttendance,
+  retry: false,
+});
 
   const { data: adjustmentLogs = [], isLoading: logsLoading } =
-    trpc.attendance.adjustmentLogs.useQuery(
-      {},
-      {
-        enabled: !!canManageLogs,
-      }
-    );
+  trpc.attendance.adjustmentLogs.useQuery(
+    {},
+    {
+      enabled: !!canManageLogs && canUseAttendance,
+    }
+  );
 
   const { data: myProfile } = trpc.users.me.useQuery();
 

@@ -89,21 +89,26 @@ export const attendanceRouter = router({
     });
   }),
 
-  list: protectedProcedure.query(async ({ ctx }) => {
-    const role = String(ctx.user.role || "");
-    const userId = Number(ctx.user.id);
-    const organizationId = await getCtxOrganizationId(ctx);
+ list: protectedProcedure.query(async ({ ctx }) => {
+  const role = String(ctx.user.role || "");
+  const userId = Number(ctx.user.id);
 
-    if (role === "host") {
-      return await listAllAttendanceRecords({ organizationId });
-    }
+  if (role === "superhost") {
+    return [];
+  }
 
-    if (role === "admin") {
-      return await listTeamAttendanceRecords(userId, { organizationId });
-    }
+  const organizationId = await getCtxOrganizationId(ctx);
 
-    return await listMyAttendanceRecords(userId, { organizationId });
-  }),
+  if (role === "host") {
+    return await listAllAttendanceRecords({ organizationId });
+  }
+
+  if (role === "admin") {
+    return await listTeamAttendanceRecords(userId, { organizationId });
+  }
+
+  return await listMyAttendanceRecords(userId, { organizationId });
+}),
 
   updateByManager: protectedProcedure
     .input(

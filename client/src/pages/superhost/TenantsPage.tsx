@@ -62,6 +62,10 @@ allowSettlementReport: true,
 allowPrivateCertificate: true,
 maxStorageMb: "1024",
     memo: "",
+defaultTeams: "상담팀,학사팀,정산팀",
+defaultPositions: "사원,관리자,대표",
+defaultEducationInstitution: "기본 교육원",
+defaultPayoutDay: "25",
   });
 
   const [hostForm, setHostForm] = useState({
@@ -75,6 +79,9 @@ maxStorageMb: "1024",
 
 const [editingOrgId, setEditingOrgId] = useState<number | null>(null);
 const [auditOrgId, setAuditOrgId] = useState<number | null>(null);
+const [showRiskOnly, setShowRiskOnly] = useState(false);
+const [orgSearch, setOrgSearch] = useState("");
+
 
 const [editOrgForm, setEditOrgForm] = useState({
   name: "",
@@ -107,6 +114,11 @@ const organizationLimitStatusesQuery =
     enabled: user?.role === "superhost",
   });
 
+const organizationOnboardingStatusesQuery =
+  trpc.saas.listOrganizationOnboardingStatuses.useQuery(undefined, {
+    enabled: user?.role === "superhost",
+  });
+
   const createOrganizationMut = trpc.saas.createOrganization.useMutation({
     onSuccess: async (created) => {
       toast.success("회사 생성 완료");
@@ -119,16 +131,20 @@ const organizationLimitStatusesQuery =
   maxUsers: "10",
   maxLandingForms: "10",
   maxSmsPerMonth: "1000",
-maxAdForms: "10",
-allowBackup: true,
-allowAutoBackup: false,
-allowAuditLog: true,
-allowMessenger: true,
-allowPracticeCenter: true,
-allowSettlementReport: true,
-allowPrivateCertificate: true,
+  maxAdForms: "10",
+  allowBackup: true,
+  allowAutoBackup: false,
+  allowAuditLog: true,
+  allowMessenger: true,
+  allowPracticeCenter: true,
+  allowSettlementReport: true,
+  allowPrivateCertificate: true,
   maxStorageMb: "1024",
   memo: "",
+  defaultTeams: "상담팀,학사팀,정산팀",
+  defaultPositions: "사원,관리자,대표",
+  defaultEducationInstitution: "기본 교육원",
+  defaultPayoutDay: "25",
 });
 
       if (created?.id) {
@@ -140,6 +156,7 @@ allowPrivateCertificate: true,
 
       await utils.saas.listOrganizations.invalidate();
 	await utils.saas.listOrganizationLimitStatuses.invalidate();
+await utils.saas.listOrganizationOnboardingStatuses.invalidate();
     },
     onError: (err) => {
       toast.error(err.message || "회사 생성 실패");
@@ -159,6 +176,7 @@ allowPrivateCertificate: true,
       });
       await utils.saas.listOrganizations.invalidate();
 await utils.saas.listOrganizationLimitStatuses.invalidate();
+await utils.saas.listOrganizationOnboardingStatuses.invalidate();
     },
     onError: (err) => {
       toast.error(err.message || "Host 계정 생성 실패");
@@ -171,15 +189,41 @@ const updateOrganizationMut = trpc.saas.updateOrganization.useMutation({
     setEditingOrgId(null);
     await utils.saas.listOrganizations.invalidate();
 await utils.saas.listOrganizationLimitStatuses.invalidate();
+await utils.saas.listOrganizationOnboardingStatuses.invalidate();
   },
   onError: (err) => {
     toast.error(err.message || "회사 수정 실패");
   },
 });
 
+const repairOrganizationDefaultsMut = trpc.saas.repairOrganizationDefaults.useMutation({
+  onSuccess: async () => {
+    toast.success("기본세팅 보정 완료");
+    await utils.saas.listOrganizations.invalidate();
+    await utils.saas.listOrganizationLimitStatuses.invalidate();
+    await utils.saas.listOrganizationOnboardingStatuses.invalidate();
+  },
+  onError: (err) => {
+    toast.error(err.message || "기본세팅 보정 실패");
+  },
+});
+
   const organizations = organizationsQuery.data ?? [];
 
 const organizationLimitStatuses = organizationLimitStatusesQuery.data ?? [];
+
+const organizationOnboardingStatuses =
+  organizationOnboardingStatusesQuery.data ?? [];
+
+const organizationOnboardingStatusMap = useMemo(() => {
+  const map = new Map<number, any>();
+
+  organizationOnboardingStatuses.forEach((item: any) => {
+    map.set(Number(item.organizationId), item.onboarding);
+  });
+
+  return map;
+}, [organizationOnboardingStatuses]);
 
 const organizationLimitStatusMap = useMemo(() => {
   const map = new Map<number, any>();
@@ -190,6 +234,38 @@ const organizationLimitStatusMap = useMemo(() => {
 
   return map;
 }, [organizationLimitStatuses]);
+
+const filteredOrganizations = useMemo(() => {
+  const keyword = orgSearch.trim().toLowerCase();
+
+  return organizations.filter((org: any) => {
+    const usageStatus = organizationLimitStatusMap.get(Number(org.id));
+    const exceeded = usageStatus?.exceeded;
+    const onboarding = organizationOnboardingStatusMap.get(Number(org.id));
+
+    const isRisk =
+      org.status !== "active" ||
+      exceeded?.users ||
+      exceeded?.landingForms ||
+      exceeded?.storage ||
+      !onboarding?.completed;
+
+    const matchesKeyword =
+      !keyword ||
+      String(org.name || "").toLowerCase().includes(keyword) ||
+      String(org.slug || "").toLowerCase().includes(keyword) ||
+      String(org.businessName || "").toLowerCase().includes(keyword) ||
+      String(org.id || "").includes(keyword);
+
+    return (!showRiskOnly || isRisk) && matchesKeyword;
+  });
+}, [
+  organizations,
+  orgSearch,
+  showRiskOnly,
+  organizationLimitStatusMap,
+  organizationOnboardingStatusMap,
+]);
 
   const selectedOrg = useMemo(() => {
     const id = Number(hostForm.organizationId);
@@ -277,6 +353,18 @@ allowSettlementReport: orgForm.allowSettlementReport,
 allowPrivateCertificate: orgForm.allowPrivateCertificate,
 maxStorageMb: Number(orgForm.maxStorageMb || 1024),
       memo: orgForm.memo.trim() || null,
+defaultTeams: orgForm.defaultTeams
+  .split(",")
+  .map((v) => v.trim())
+  .filter(Boolean),
+
+defaultPositions: orgForm.defaultPositions
+  .split(",")
+  .map((v) => v.trim())
+  .filter(Boolean),
+
+defaultEducationInstitution: orgForm.defaultEducationInstitution.trim() || "기본 교육원",
+defaultPayoutDay: Number(orgForm.defaultPayoutDay || 25),
     });
   };
 
@@ -403,6 +491,7 @@ maxStorageMb: Number(editOrgForm.maxStorageMb || 1024),
           onClick={() => {
   organizationsQuery.refetch();
   organizationLimitStatusesQuery.refetch();
+organizationOnboardingStatusesQuery.refetch();
 }}
           disabled={organizationsQuery.isFetching}
         >
@@ -415,7 +504,7 @@ maxStorageMb: Number(editOrgForm.maxStorageMb || 1024),
         </Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card className="rounded-2xl">
           <CardContent className="p-5">
             <p className="text-xs text-muted-foreground">전체 회사</p>
@@ -454,6 +543,18 @@ maxStorageMb: Number(editOrgForm.maxStorageMb || 1024),
     </p>
   </CardContent>
 </Card>
+<Card className="rounded-2xl">
+  <CardContent className="p-5">
+    <p className="text-xs text-muted-foreground">기본세팅 미완료 회사</p>
+    <p className="mt-1 text-2xl font-bold">
+      {
+        organizationOnboardingStatuses.filter(
+          (item: any) => !item.onboarding?.completed
+        ).length
+      }
+    </p>
+  </CardContent>
+</Card>
       </div>
 
       <Tabs defaultValue="list" className="space-y-4">
@@ -465,15 +566,32 @@ maxStorageMb: Number(editOrgForm.maxStorageMb || 1024),
 
         <TabsContent value="list">
           <Card className="rounded-2xl">
-            <CardHeader>
-              <CardTitle>회사 목록</CardTitle>
-            </CardHeader>
+            <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+  <CardTitle>회사 목록</CardTitle>
+
+  <div className="flex flex-col gap-2 md:flex-row md:items-center">
+    <Input
+      value={orgSearch}
+      onChange={(e) => setOrgSearch(e.target.value)}
+      placeholder="회사명, URL, 사업자명, ID 검색"
+      className="md:w-72"
+    />
+
+    <Button
+      size="sm"
+      variant={showRiskOnly ? "default" : "outline"}
+      onClick={() => setShowRiskOnly((prev) => !prev)}
+    >
+      {showRiskOnly ? "전체 보기" : "위험 회사만 보기"}
+    </Button>
+  </div>
+</CardHeader>
             <CardContent>
               {organizationsQuery.isLoading ? (
                 <div className="py-10 text-center text-sm text-muted-foreground">
                   불러오는 중...
                 </div>
-              ) : organizations.length === 0 ? (
+              ) : filteredOrganizations.length === 0 ? (
                 <div className="py-10 text-center text-sm text-muted-foreground">
                   등록된 회사가 없습니다.
                 </div>
@@ -492,21 +610,60 @@ maxStorageMb: Number(editOrgForm.maxStorageMb || 1024),
 		<th className="px-3 py-3">랜딩/광고폼</th>
 		<th className="px-3 py-3">문자</th>
 		<th className="px-3 py-3">저장공간</th>
-                        <th className="px-3 py-3">생성일</th>
+		<th className="px-3 py-3">기본세팅</th>
+		<th className="px-3 py-3">생성일</th>
 		<th className="px-3 py-3">관리</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {organizations.map((org: any) => {
+                      {filteredOrganizations.map((org: any) => {
   const usageStatus = organizationLimitStatusMap.get(Number(org.id));
   const usage = usageStatus?.usage;
   const limits = usageStatus?.limits;
   const exceeded = usageStatus?.exceeded;
+const onboarding = organizationOnboardingStatusMap.get(Number(org.id));
+
+const isRiskOrg =
+  org.status !== "active" ||
+  exceeded?.users ||
+  exceeded?.landingForms ||
+  exceeded?.storage ||
+  !onboarding?.completed;
+
+const riskReasons = [
+  org.status === "suspended" ? "정지" : null,
+  org.status === "inactive" ? "비활성" : null,
+  exceeded?.users ? "사용자초과" : null,
+  exceeded?.landingForms ? "폼초과" : null,
+  exceeded?.storage ? "저장소초과" : null,
+  !onboarding?.completed ? "기본세팅미완료" : null,
+].filter(Boolean);
 
   return (
-    <tr key={org.id} className="border-b">
+    <tr
+  key={org.id}
+  className={`border-b ${
+    isRiskOrg ? "bg-amber-50/50" : ""
+  }`}
+>
                           <td className="px-3 py-3">{org.id}</td>
-                          <td className="px-3 py-3 font-medium">{org.name}</td>
+                          <td className="px-3 py-3">
+  <div className="font-medium">{org.name}</div>
+
+  {riskReasons.length > 0 && (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {riskReasons.map((reason: any) => (
+        <Badge
+          key={reason}
+          variant="secondary"
+          className="bg-amber-100 text-amber-700 hover:bg-amber-100"
+        >
+          {reason}
+        </Badge>
+      ))}
+    </div>
+  )}
+</td>
 		<td className="px-3 py-3 text-muted-foreground">/{org.slug || "-"}</td>
                           <td className="px-3 py-3">
                             {org.businessName || "-"}
@@ -558,11 +715,36 @@ maxStorageMb: Number(editOrgForm.maxStorageMb || 1024),
   </span>
 </td>
 <td className="px-3 py-3">
+  <div className="space-y-1">
+    <Badge
+      variant={onboarding?.completed ? "default" : "secondary"}
+      className={
+        onboarding?.completed
+          ? ""
+          : "bg-amber-100 text-amber-700 hover:bg-amber-100"
+      }
+    >
+      {onboarding?.completed ? "완료" : "미완료"}
+    </Badge>
+
+    <div className="text-xs text-muted-foreground">
+      팀 {onboarding?.teamCount ?? 0} · 직급{" "}
+      {onboarding?.positionCount ?? 0} · 교육원{" "}
+      {onboarding?.educationInstitutionCount ?? 0}
+    </div>
+
+    <div className="text-xs text-muted-foreground">
+      정산일: {onboarding?.payoutDay ? `${onboarding.payoutDay}일` : "-"}
+    </div>
+  </div>
+</td>
+<td className="px-3 py-3">
   {org.createdAt
                               ? new Date(org.createdAt).toLocaleString()
                               : "-"}
                           </td>
 <td className="px-3 py-3">
+  <div className="flex flex-wrap gap-2">
   <Button
     size="sm"
     variant="outline"
@@ -578,6 +760,20 @@ maxStorageMb: Number(editOrgForm.maxStorageMb || 1024),
 >
   이력
 </Button>
+
+<Button
+  size="sm"
+  variant="outline"
+  disabled={repairOrganizationDefaultsMut.isPending}
+  onClick={() =>
+    repairOrganizationDefaultsMut.mutate({
+      organizationId: Number(org.id),
+    })
+  }
+>
+  기본세팅 보정
+</Button>
+  </div>
 </td>
                                                </tr>
                       );
@@ -842,7 +1038,6 @@ maxStorageMb: Number(editOrgForm.maxStorageMb || 1024),
           }
         />
       </div>
-
       <div className="md:col-span-2">
         <Button
           onClick={handleUpdateOrganization}
@@ -1119,6 +1314,85 @@ maxStorageMb: Number(editOrgForm.maxStorageMb || 1024),
                   placeholder="계약 조건, 특이사항 등"
                 />
               </div>
+
+<div className="rounded-xl border bg-muted/20 p-4 md:col-span-2">
+  <div className="mb-3">
+    <h3 className="font-semibold">초기 세팅값</h3>
+    <p className="text-xs text-muted-foreground">
+      회사 생성 시 기본 팀/직급/교육원/정산일을 자동 생성합니다.
+      쉼표(,)로 구분해서 입력하면 여러 개가 생성됩니다.
+    </p>
+  </div>
+
+  <div className="grid gap-4 md:grid-cols-2">
+    <div className="space-y-2">
+      <Label>기본 팀</Label>
+      <Input
+        value={orgForm.defaultTeams}
+        onChange={(e) =>
+          setOrgForm((prev) => ({
+            ...prev,
+            defaultTeams: e.target.value,
+          }))
+        }
+        placeholder="예: 1팀,2팀,3팀,4팀,5팀"
+      />
+      <p className="text-xs text-muted-foreground">
+        예: 상담팀,학사팀,정산팀 또는 1팀,2팀,3팀
+      </p>
+    </div>
+
+    <div className="space-y-2">
+      <Label>기본 직급</Label>
+      <Input
+        value={orgForm.defaultPositions}
+        onChange={(e) =>
+          setOrgForm((prev) => ({
+            ...prev,
+            defaultPositions: e.target.value,
+          }))
+        }
+        placeholder="예: 사원,주임,대리,과장,차장,부장"
+      />
+      <p className="text-xs text-muted-foreground">
+        입력한 순서대로 직급이 생성됩니다.
+      </p>
+    </div>
+
+    <div className="space-y-2">
+      <Label>기본 교육원</Label>
+      <Input
+        value={orgForm.defaultEducationInstitution}
+        onChange={(e) =>
+          setOrgForm((prev) => ({
+            ...prev,
+            defaultEducationInstitution: e.target.value,
+          }))
+        }
+        placeholder="예: 알파원격평생교육원"
+      />
+    </div>
+
+    <div className="space-y-2">
+      <Label>기본 정산일</Label>
+      <Input
+        type="number"
+        min={1}
+        max={31}
+        value={orgForm.defaultPayoutDay}
+        onChange={(e) =>
+          setOrgForm((prev) => ({
+            ...prev,
+            defaultPayoutDay: e.target.value,
+          }))
+        }
+      />
+      <p className="text-xs text-muted-foreground">
+        1~31 사이 값. 예: 매월 15일이면 15 입력
+      </p>
+    </div>
+  </div>
+</div>
 
               <div className="md:col-span-2">
                 <Button

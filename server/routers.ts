@@ -5479,6 +5479,7 @@ const student = await db.getStudent(input.studentId, {
         z.object({
   studentId: z.number(),
   semesterOrder: z.number(),
+semesterLabel: z.string().optional().nullable(),
   plannedMonth: z.string().optional(),
   plannedInstitution: z.string().optional(),
   plannedInstitutionId: z.number().optional(),
@@ -5544,6 +5545,7 @@ const student = await db.getStudent(input.studentId, {
   .input(
     z.object({
       id: z.number(),
+semesterLabel: z.string().optional().nullable(),
       plannedMonth: z.string().optional(),
       plannedInstitution: z.string().optional(),
       plannedSubjectCount: z.number().optional(),

@@ -529,6 +529,7 @@ export const semesters = mysqlTable(
     studentId: int("studentId").notNull(),
 
     semesterOrder: int("semesterOrder").notNull(),
+semesterLabel: varchar("semesterLabel", { length: 50 }),
 
     status: mysqlEnum("status", ["등록", "종료", "등록 종료"])
       .default("등록")
@@ -2463,6 +2464,68 @@ export const auditLogs = mysqlTable("audit_logs", {
 
 export type InsertAuditLog = typeof auditLogs.$inferInsert;
 export type AuditLog = typeof auditLogs.$inferSelect;
+
+export const saasInquiries = mysqlTable(
+  "saas_inquiries",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    inquiryType: mysqlEnum("inquiryType", [
+      "beta",
+      "demo",
+      "pricing",
+      "contact",
+    ])
+      .notNull()
+      .default("beta"),
+
+    status: mysqlEnum("status", [
+      "new",
+      "contacted",
+      "qualified",
+      "closed",
+      "spam",
+    ])
+      .notNull()
+      .default("new"),
+
+    clientName: varchar("clientName", { length: 100 }).notNull(),
+    phone: varchar("phone", { length: 30 }).notNull(),
+
+    companyName: varchar("companyName", { length: 150 }),
+    businessType: varchar("businessType", { length: 100 }),
+    email: varchar("email", { length: 255 }),
+
+    message: text("message"),
+    memo: text("memo"),
+
+    source: varchar("source", { length: 100 }).notNull().default("homepage"),
+    pagePath: varchar("pagePath", { length: 255 }),
+    utmSource: varchar("utmSource", { length: 100 }),
+    utmMedium: varchar("utmMedium", { length: 100 }),
+    utmCampaign: varchar("utmCampaign", { length: 150 }),
+
+    ipAddress: varchar("ipAddress", { length: 100 }),
+    userAgent: text("userAgent"),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    statusCreatedIdx: index("idx_saas_inquiries_status_created").on(
+      table.status,
+      table.createdAt
+    ),
+    phoneIdx: index("idx_saas_inquiries_phone").on(table.phone),
+    typeCreatedIdx: index("idx_saas_inquiries_type_created").on(
+      table.inquiryType,
+      table.createdAt
+    ),
+  })
+);
+
+export type SaasInquiry = typeof saasInquiries.$inferSelect;
+export type InsertSaasInquiry = typeof saasInquiries.$inferInsert;
 
 export const apiErrorLogs = mysqlTable(
   "api_error_logs",

@@ -30,6 +30,7 @@ import AIAssistant from "@/pages/AIAssistant";
 import SuperhostHome from "@/pages/SuperhostHome";
 import TenantsPage from "@/pages/superhost/TenantsPage";
 import OrganizationMonitoringPage from "@/pages/superhost/OrganizationMonitoringPage";
+import SaasInquiriesPage from "@/pages/superhost/SaasInquiriesPage";
 import MessengerPage from "@/pages/MessengerPage";
 import AttendancePage from "@/pages/AttendancePage";
 import AttendanceViewPage from "@/pages/AttendanceViewPage";
@@ -255,6 +256,9 @@ function PrivateRouter() {
       </Route>
       <Route path="/superhost" component={SuperhostHome} />
       <Route path="/superhost/tenants" component={TenantsPage} />
+<Route path="/superhost/saas-inquiries">
+  <SuperhostRoute component={SaasInquiriesPage} />
+</Route>
 <Route path="/saas/monitoring/:organizationId">
   <SuperhostRoute component={OrganizationMonitoringPage} />
 </Route>      

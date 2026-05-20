@@ -12,16 +12,30 @@ export const publicLeadRouter = router({
       })
     )
     .query(async ({ input }) => {
-      const form = await db.getLeadFormByToken(input.token);
+      const form = await db.getPublicLeadFormByToken(input.token);
 
       if (!form || !form.isActive) {
         return { ok: false };
       }
 
       return {
-        ok: true,
-        formId: form.id,
-      };
+  ok: true,
+
+  formId: form.id,
+  assigneeId: Number(form.assigneeId || 0),
+  formType: form.formType,
+  organizationId: Number((form as any).organizationId || 0),
+
+  uiConfig: (() => {
+    try {
+      return form.uiConfigJson
+        ? JSON.parse(form.uiConfigJson)
+        : null;
+    } catch {
+      return null;
+    }
+  })(),
+};
     }),
 
   submit: publicProcedure
@@ -37,7 +51,7 @@ export const publicLeadRouter = router({
       })
     )
     .mutation(async ({ input }) => {
-      const form = await db.getLeadFormByToken(input.token);
+      const form = await db.getPublicLeadFormByToken(input.token);
 
       if (!form || !form.isActive) {
         throwAppError(

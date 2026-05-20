@@ -145,6 +145,43 @@ function formatPlannedMonth(plannedMonth?: string | null) {
   if (raw.length !== 6) return "";
   return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-01`;
 }
+function buildSemesterLabelOptions() {
+  const currentYear = new Date().getFullYear();
+  const startYear = currentYear - 2;
+  const endYear = currentYear + 5;
+
+  const options: string[] = [];
+
+  for (let year = startYear; year <= endYear; year++) {
+    options.push(`${year}년 1학기`);
+    options.push(`${year}년 2학기`);
+  }
+
+  return options;
+}
+
+function getNextSemesterLabel(sortedSemesters: any[]) {
+  const last = sortedSemesters?.length
+    ? sortedSemesters[sortedSemesters.length - 1]
+    : null;
+
+  const raw = String(last?.semesterLabel || "").trim();
+  const match = raw.match(/^(\d{4})년\s*([12])학기$/);
+
+  if (match) {
+    const year = Number(match[1]);
+    const term = Number(match[2]);
+
+    if (term === 1) return `${year}년 2학기`;
+    return `${year + 1}년 1학기`;
+  }
+
+  const now = new Date();
+  const month = now.getMonth() + 1;
+  const baseYear = now.getFullYear();
+
+  return month <= 6 ? `${baseYear}년 1학기` : `${baseYear}년 2학기`;
+}
 
 type TemplateTabType = "전공필수" | "전공선택" | "교양" | "일반";
 
@@ -704,16 +741,18 @@ practiceRequiredSelection: "",
   practiceStatus: "미섭외",
   specialNotes: "",
   practiceAddress: "",
+practiceCourse: "",
 });
 
   const [semDialogOpen, setSemDialogOpen] = useState(false);
   const [semForm, setSemForm] = useState({
-    semesterOrder: "",
-    plannedMonth: "",
-    plannedInstitutionId: "",
-    plannedSubjectCount: "",
-    plannedAmount: "",
-  });
+  semesterOrder: "",
+  semesterLabel: "",
+  plannedMonth: "",
+  plannedInstitutionId: "",
+  plannedSubjectCount: "",
+  plannedAmount: "",
+});
   
 
 const [refundDialogOpen, setRefundDialogOpen] = useState(false);
@@ -818,6 +857,10 @@ const safeNavigate = (path: string) => {
     );
   }, [semesters]);
 
+const semesterLabelOptions = useMemo(() => {
+  return buildSemesterLabelOptions();
+}, []);
+
   const semesterMetaMap = useMemo(() => {
     return new Map(sortedSemesters.map((sem: any) => [Number(sem.semesterOrder), sem]));
   }, [sortedSemesters]);
@@ -902,9 +945,24 @@ const pendingRefundAmountMap = useMemo(() => {
 }, [refundList]);
 
 const selectedPracticeSupport = useMemo(() => {
-  if (!practiceSupportList?.length) return null;
-  return practiceSupportList[0] ?? null;
-}, [practiceSupportList]);
+  const rows = practiceSupportList || [];
+  if (!rows.length) return null;
+
+  const targetCourse = String(plan?.desiredCourse || student?.course || "")
+    .trim()
+    .split(",")[0]
+    ?.trim();
+
+  if (targetCourse) {
+    const matched = rows.find(
+      (row: any) => String(row.course || "").trim() === targetCourse
+    );
+
+    if (matched) return matched;
+  }
+
+  return rows[0] ?? null;
+}, [practiceSupportList, plan?.desiredCourse, student?.course]);
 
 const isPlanSummaryWritten = useMemo(() => {
   if (!plan) return false;
@@ -1262,11 +1320,16 @@ practiceRequiredSelection: normalizePracticeSelection((plan as any)?.hasPractice
       selectedPracticeSupport?.inputAddress ||
       (student as any)?.address ||
       "",
+practiceCourse:
+  selectedPracticeSupport?.course ||
+  String(plan?.desiredCourse || student?.course || "")
+    .split(",")[0]
+    ?.trim() ||
+  "",
   });
 
   setEditingPlan(true);
 };
-
  
 const savePlan = async () => {
 if (isReadOnly) {
@@ -1324,23 +1387,40 @@ if (isReadOnly) {
       specialNotes: planForm.specialNotes || undefined,
     });
 
-if (
-  planForm.practiceRequiredSelection === "not_required" &&
-  selectedPracticeSupport?.id
-) {
-  await deletePracticeSupportMut.mutateAsync({
-    id: Number(selectedPracticeSupport.id),
-  });
+if (planForm.practiceRequiredSelection === "not_required") {
+  const rows = practiceSupportList || [];
+
+  for (const row of rows as any[]) {
+    if (!row?.id) continue;
+
+    await deletePracticeSupportMut.mutateAsync({
+      id: Number(row.id),
+    });
+  }
 }
 
     if (planForm.hasPractice) {
       if (!student) {
         throw new Error("학생 정보를 찾을 수 없습니다.");
       }
+if (!planForm.practiceDate?.trim()) {
+  throw new Error("실습 필요 선택 시 실습 예정일은 필수입니다.");
+}
 
       if (!planForm.desiredCourse?.trim()) {
         throw new Error("희망과정을 먼저 입력해주세요.");
       }
+
+const practiceCourse = String(
+  planForm.practiceCourse || planForm.desiredCourse || student.course || ""
+)
+  .trim()
+  .split(",")[0]
+  ?.trim();
+
+if (!practiceCourse) {
+  throw new Error("실습 희망과정을 선택해주세요.");
+}
 
       await upsertPracticeSupportByStudentMut.mutateAsync({
         studentId,
@@ -1348,7 +1428,7 @@ if (
         assigneeId: Number(student.assigneeId || 0),
         clientName: String(student.clientName || "").trim(),
         phone: String(student.phone || "").trim(),
-        course: String(planForm.desiredCourse || student.course || "").trim(),
+        course: practiceCourse,
         inputAddress:
           String(planForm.practiceAddress || (student as any)?.address || "").trim() || null,
         detailAddress: String((student as any)?.detailAddress || "").trim() || null,
@@ -1389,6 +1469,7 @@ if (
 
     setSemForm({
       semesterOrder: String(nextOrder),
+semesterLabel: getNextSemesterLabel(sortedSemesters),
       plannedMonth: "",
       plannedInstitutionId: "",
       plannedSubjectCount: "",
@@ -1409,6 +1490,7 @@ if (isReadOnly) {
     createSemMut.mutate({
       studentId,
       semesterOrder: parseInt(semForm.semesterOrder),
+semesterLabel: semForm.semesterLabel || null,
       plannedMonth: semForm.plannedMonth || undefined,
       plannedInstitutionId: semForm.plannedInstitutionId
         ? Number(semForm.plannedInstitutionId)
@@ -2210,6 +2292,9 @@ disabled={isReadOnly}
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
+<th className="px-3 py-2 text-left font-medium text-muted-foreground w-[130px]">
+  학기 구분
+</th>
                   <th className="px-3 py-2 text-left font-medium text-muted-foreground w-[60px]">학기</th>
                   <th className="px-3 py-2 text-left font-medium text-muted-foreground">예정 개강월</th>
                   <th className="px-3 py-2 text-left font-medium text-muted-foreground">예정 교육원</th>
@@ -2227,7 +2312,7 @@ disabled={isReadOnly}
               <tbody>
                 {!semesters || semesters.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="px-4 py-8 text-center text-muted-foreground">
+                    <td colSpan={13} className="px-4 py-8 text-center text-muted-foreground">
                       등록된 학기가 없습니다.
                     </td>
                   </tr>
@@ -2248,9 +2333,33 @@ disabled={isReadOnly}
 
     return (
       <tr key={sem.id} className={`border-b last:border-0 ${sem.isCompleted ? "bg-emerald-50/50" : ""}`}>
-                      <td className="px-3 py-1.5 font-medium text-sm">
-                        {sem.semesterOrder}학기
-                      </td>
+                      <td className="px-1 py-0.5">
+  <Select
+    value={String(sem.semesterLabel || "")}
+    disabled={isReadOnly}
+    onValueChange={(value) =>
+      updateSemMut.mutate({
+        id: Number(sem.id),
+        semesterLabel: value,
+      } as any)
+    }
+  >
+    <SelectTrigger className="h-8 w-[130px] text-sm">
+      <SelectValue placeholder="학기 구분" />
+    </SelectTrigger>
+    <SelectContent>
+      {semesterLabelOptions.map((label) => (
+        <SelectItem key={label} value={label}>
+          {label}
+        </SelectItem>
+      ))}
+    </SelectContent>
+  </Select>
+</td>
+
+<td className="px-3 py-1.5 font-medium text-sm whitespace-nowrap">
+  {sem.semesterOrder}학기
+</td>
 
                       <td className="px-1 py-0.5">
                         <EditableCell
@@ -2672,7 +2781,7 @@ disabled={isReadOnly}
   </div>
 )} 
 
- {plan.hasPractice && (
+{plan.hasPractice && (
   <div
     ref={practiceSupportSectionRef}
     className={`rounded-lg p-4 text-sm transition-all duration-500 ${
@@ -2681,36 +2790,86 @@ disabled={isReadOnly}
         : "bg-blue-50"
     }`}
   >
-    <p className="font-medium text-blue-700 mb-1">실습 정보</p>
-    <p>
-      <span className="font-medium">실습 시간:</span>{" "}
-      {selectedPracticeSupport?.practiceHours
-        ? `${selectedPracticeSupport.practiceHours}시간`
-        : plan.practiceHours
-        ? `${plan.practiceHours}시간`
-        : "-"}{" "}
-      ·{" "}
-      <span className="font-medium">실습 예정일:</span>{" "}
-      {selectedPracticeSupport?.practiceDate || plan.practiceDate || "-"} ·{" "}
-      <span className="font-medium">섭외 상태:</span>{" "}
-      {selectedPracticeSupport?.coordinationStatus || "미섭외"}
-    </p>
+    <div className="flex items-center justify-between gap-2 mb-3">
+      <div>
+        <p className="font-medium text-blue-700">실습 정보</p>
+        <p className="text-xs text-blue-700/70 mt-1">
+          과정별 실습 요청 내역입니다. 같은 과정은 재요청 시 덮어쓰기, 다른 과정은 신규 요청으로 관리됩니다.
+        </p>
+      </div>
 
-    <p className="mt-1">
-      <span className="font-medium">주소:</span>{" "}
-     {selectedPracticeSupport?.inputAddress ||
-  selectedPracticeSupport?.detailAddress ||
-  (student as any)?.address ||
-  (student as any)?.detailAddress ||
-  "-"}{" "}
-      · <span className="font-medium">담당자:</span>{" "}
-      {selectedPracticeSupport?.managerName ||
-        selectedPracticeSupport?.assigneeName ||
-        userMap.get(student.assigneeId) ||
-        "-"}
-    </p>
+      <Badge variant="outline" className="bg-white">
+        {(practiceSupportList || []).length || 0}건
+      </Badge>
+    </div>
+
+    {(practiceSupportList || []).length > 0 ? (
+      <div className="grid gap-2">
+        {(practiceSupportList || []).map((row: any) => (
+          <div
+            key={row.id}
+            className="rounded-lg border border-blue-100 bg-white px-3 py-2"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="font-semibold text-slate-900">
+                {row.course || "실습 과정 미지정"}
+              </div>
+
+              <Badge
+                className={
+                  row.coordinationStatus === "섭외완료"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : row.coordinationStatus === "섭외중"
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-slate-100 text-slate-700"
+                }
+              >
+                {row.coordinationStatus || "미섭외"}
+              </Badge>
+            </div>
+
+            <div className="mt-2 grid gap-1 text-xs text-slate-600 md:grid-cols-2">
+              <div>
+                <span className="font-medium">실습 시간:</span>{" "}
+                {row.practiceHours
+                  ? `${row.practiceHours}시간`
+                  : plan.practiceHours
+                  ? `${plan.practiceHours}시간`
+                  : "-"}
+              </div>
+
+              <div>
+                <span className="font-medium">실습 예정일:</span>{" "}
+                {row.practiceDate || plan.practiceDate || "-"}
+              </div>
+
+              <div className="md:col-span-2">
+                <span className="font-medium">주소:</span>{" "}
+                {row.inputAddress ||
+                  row.detailAddress ||
+                  (student as any)?.address ||
+                  (student as any)?.detailAddress ||
+                  "-"}
+              </div>
+
+              <div>
+                <span className="font-medium">담당자:</span>{" "}
+                {row.managerName ||
+                  row.assigneeName ||
+                  userMap.get(student.assigneeId) ||
+                  "-"}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    ) : (
+      <div className="rounded-lg border border-dashed border-blue-200 bg-white px-3 py-3 text-xs text-slate-500">
+        아직 실습배정지원센터로 요청된 실습이 없습니다. 플랜 수정에서 실습 필요를 선택하고 저장하면 요청됩니다.
+      </div>
+    )}
   </div>
-)}
+)} 
 </div>
             ) : (
               <p className="text-sm text-muted-foreground py-4 text-center">
@@ -2822,45 +2981,75 @@ disabled={isReadOnly}
   <Label className="text-xs">실습 여부</Label>
 
   <div className="flex items-center gap-6">
-    <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-      <Checkbox
-        checked={planForm.practiceRequiredSelection === "required"}
-disabled={isReadOnly}
-        onCheckedChange={(checked) => {
-          if (!checked) return;
-
-          setPlanForm((prev) => ({
-            ...prev,
-            practiceRequiredSelection: "required",
-            hasPractice: true,
-            practiceStatus: prev.practiceStatus || "미섭외",
-          }));
-        }}
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+  <button
+    type="button"
+    disabled={isReadOnly}
+    onClick={() =>
+      setPlanForm((prev) => ({
+        ...prev,
+        practiceRequiredSelection: "required",
+        hasPractice: true,
+        practiceStatus: prev.practiceStatus || "미섭외",
+      }))
+    }
+    className={`rounded-xl border p-4 text-left transition ${
+      planForm.practiceRequiredSelection === "required"
+        ? "border-blue-400 bg-blue-50 ring-2 ring-blue-100"
+        : "border-slate-200 bg-white hover:bg-slate-50"
+    } ${isReadOnly ? "opacity-60 cursor-not-allowed" : ""}`}
+  >
+    <div className="flex items-center gap-2">
+      <Check
+        className={`h-4 w-4 ${
+          planForm.practiceRequiredSelection === "required"
+            ? "text-blue-600"
+            : "text-slate-300"
+        }`}
       />
-      <span>실습 필요</span>
-    </label>
+      <span className="font-bold text-sm">실습 필요</span>
+    </div>
+    <p className="mt-2 text-xs text-muted-foreground">
+      실습배정지원센터로 요청을 보내고 섭외 상태를 관리합니다.
+    </p>
+  </button>
 
-    <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-      <Checkbox
-        checked={planForm.practiceRequiredSelection === "not_required"}
-disabled={isReadOnly}
-        onCheckedChange={(checked) => {
-          if (!checked) return;
-
-          setPlanForm((prev) => ({
-            ...prev,
-            practiceRequiredSelection: "not_required",
-            hasPractice: false,
-            practiceStatus: "미섭외",
-            practiceHours: "",
-            practiceDate: "",
-            practiceAddress: "",
-            practiceArranged: false,
-          }));
-        }}
+  <button
+    type="button"
+    disabled={isReadOnly}
+    onClick={() =>
+      setPlanForm((prev) => ({
+        ...prev,
+        practiceRequiredSelection: "not_required",
+        hasPractice: false,
+        practiceStatus: "미섭외",
+        practiceHours: "",
+        practiceDate: "",
+        practiceAddress: "",
+        practiceArranged: false,
+      }))
+    }
+    className={`rounded-xl border p-4 text-left transition ${
+      planForm.practiceRequiredSelection === "not_required"
+        ? "border-emerald-400 bg-emerald-50 ring-2 ring-emerald-100"
+        : "border-slate-200 bg-white hover:bg-slate-50"
+    } ${isReadOnly ? "opacity-60 cursor-not-allowed" : ""}`}
+  >
+    <div className="flex items-center gap-2">
+      <X
+        className={`h-4 w-4 ${
+          planForm.practiceRequiredSelection === "not_required"
+            ? "text-emerald-600"
+            : "text-slate-300"
+        }`}
       />
-      <span>실습 불필요</span>
-    </label>
+      <span className="font-bold text-sm">실습 불필요</span>
+    </div>
+    <p className="mt-2 text-xs text-muted-foreground">
+      실습 요청을 생성하지 않고 플랜 요약만 저장합니다.
+    </p>
+  </button>
+</div>
   </div>
 
   {!planForm.practiceRequiredSelection && (
@@ -2877,6 +3066,35 @@ disabled={isReadOnly}
         실습교육원/실습기관 선택은 실습배정지원센터에서 진행됩니다.
       </p>
     </div>
+
+<div className="space-y-2">
+  <Label>실습 요청 과정</Label>
+  <Select
+    value={planForm.practiceCourse}
+    onValueChange={(value) =>
+      setPlanForm((prev) => ({
+        ...prev,
+        practiceCourse: value,
+      }))
+    }
+    disabled={isReadOnly}
+  >
+    <SelectTrigger>
+      <SelectValue placeholder="실습 요청 과정 선택" />
+    </SelectTrigger>
+    <SelectContent>
+      {courseOptions.map((course) => (
+        <SelectItem key={course} value={course}>
+          {course}
+        </SelectItem>
+      ))}
+    </SelectContent>
+  </Select>
+
+  <p className="text-xs text-muted-foreground">
+    같은 과정으로 다시 요청하면 기존 실습 요청을 덮어쓰고, 다른 과정은 신규 실습 요청으로 생성됩니다.
+  </p>
+</div>
 
     <div className="space-y-1">
       <Label className="text-xs">실습 시간</Label>
@@ -3778,6 +3996,26 @@ disabled={isReadOnly}
                   onChange={(e) => setSemForm({ ...semForm, semesterOrder: e.target.value })}
                 />
               </div>
+<div className="space-y-2">
+  <Label>학기 구분</Label>
+  <Select
+    value={semForm.semesterLabel}
+    onValueChange={(value) =>
+      setSemForm({ ...semForm, semesterLabel: value })
+    }
+  >
+    <SelectTrigger>
+      <SelectValue placeholder="학기 구분 선택" />
+    </SelectTrigger>
+    <SelectContent>
+      {semesterLabelOptions.map((label) => (
+        <SelectItem key={label} value={label}>
+          {label}
+        </SelectItem>
+      ))}
+    </SelectContent>
+  </Select>
+</div>
               <div className="space-y-1">
                 <Label className="text-xs">개강 예정월</Label>
                 <Input

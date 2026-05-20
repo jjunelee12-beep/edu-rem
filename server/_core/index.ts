@@ -16,6 +16,7 @@ import { serveStatic, setupVite } from "./vite";
 import { authRouter } from "./routes/auth";
 import noticeUploadRouter from "../routes/notice-upload";
 import holidayRouter from "../routes/holiday.router";
+import { registerSaasInquiryRoutes } from "../routes/saas-inquiry";
 import {
   createChatAttachment,
   createChatMessage,
@@ -163,10 +164,13 @@ function sanitizeFilename(name: string) {
 async function startServer() {
   const app = express();
 
-  const exactAllowedOrigins = [
+    const exactAllowedOrigins = [
     "http://localhost:3000",
     "http://localhost:5173",
     "https://edu-crm-five.vercel.app",
+    "https://edu-crm-home.vercel.app",
+    "https://edu-crm.kr",
+    "https://www.edu-crm.kr",
     process.env.FRONTEND_URL,
   ].filter(Boolean) as string[];
 
@@ -1618,6 +1622,7 @@ async function getR2PrefixUsageBytes(prefix: string) {
   app.use("/api/auth", authRouter);
   app.use("/api/holidays", holidayRouter);
   app.use(noticeUploadRouter);
+  registerSaasInquiryRoutes(app);
 
   app.post("/api/upload", upload.single("file"), async (req, res) => {
     try {
