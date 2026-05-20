@@ -184,7 +184,7 @@ function getNextSemesterLabel(sortedSemesters: any[]) {
 }
 
 type TemplateTabType = "전공필수" | "전공선택" | "교양" | "일반";
-
+const ALL_PRACTICE_COURSES_VALUE = "__all_practice_courses__";
 
 export default function StudentDetail() {
   const params = useParams<{ id: string }>();
@@ -1320,12 +1320,7 @@ practiceRequiredSelection: normalizePracticeSelection((plan as any)?.hasPractice
       selectedPracticeSupport?.inputAddress ||
       (student as any)?.address ||
       "",
-practiceCourse:
-  selectedPracticeSupport?.course ||
-  String(plan?.desiredCourse || student?.course || "")
-    .split(",")[0]
-    ?.trim() ||
-  "",
+practiceCourse: ALL_PRACTICE_COURSES_VALUE,
   });
 
   setEditingPlan(true);
@@ -1411,41 +1406,46 @@ if (!planForm.practiceDate?.trim()) {
         throw new Error("희망과정을 먼저 입력해주세요.");
       }
 
-const practiceCourse = String(
-  planForm.practiceCourse || planForm.desiredCourse || student.course || ""
-)
-  .trim()
-  .split(",")[0]
-  ?.trim();
+const rawPracticeCourses =
+  planForm.practiceCourse &&
+  planForm.practiceCourse !== ALL_PRACTICE_COURSES_VALUE
+    ? [planForm.practiceCourse]
+    : String(planForm.desiredCourse || student.course || "")
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean);
 
-if (!practiceCourse) {
+const practiceCourses = Array.from(new Set(rawPracticeCourses));
+
+if (!practiceCourses.length) {
   throw new Error("실습 희망과정을 선택해주세요.");
 }
 
-      await upsertPracticeSupportByStudentMut.mutateAsync({
-        studentId,
-        semesterId: null,
-        assigneeId: Number(student.assigneeId || 0),
-        clientName: String(student.clientName || "").trim(),
-        phone: String(student.phone || "").trim(),
-        course: practiceCourse,
-        inputAddress:
-          String(planForm.practiceAddress || (student as any)?.address || "").trim() || null,
-        detailAddress: String((student as any)?.detailAddress || "").trim() || null,
-        assigneeName: null,
-        managerName: null,
-        practiceHours: planForm.practiceHours
-          ? Number(planForm.practiceHours)
-          : null,
-        practiceDate: planForm.practiceDate || null,
-        includeEducationCenter: true,
-        includePracticeInstitution: true,
-        coordinationStatus:
-          planForm.practiceStatus === "섭외중" || planForm.practiceStatus === "섭외완료"
-            ? planForm.practiceStatus
-            : "미섭외",
-      });
-    }
+for (const practiceCourse of practiceCourses) {
+  await upsertPracticeSupportByStudentMut.mutateAsync({
+    studentId,
+    semesterId: null,
+    assigneeId: Number(student.assigneeId || 0),
+    clientName: String(student.clientName || "").trim(),
+    phone: String(student.phone || "").trim(),
+    course: practiceCourse,
+    inputAddress:
+      String(planForm.practiceAddress || (student as any)?.address || "").trim() || null,
+    detailAddress: String((student as any)?.detailAddress || "").trim() || null,
+    assigneeName: null,
+    managerName: null,
+    practiceHours: planForm.practiceHours
+      ? Number(planForm.practiceHours)
+      : null,
+    practiceDate: planForm.practiceDate || null,
+    includeEducationCenter: true,
+    includePracticeInstitution: true,
+    coordinationStatus:
+      planForm.practiceStatus === "섭외중" || planForm.practiceStatus === "섭외완료"
+        ? planForm.practiceStatus
+        : "미섭외",
+  });
+}
 
     await Promise.all([
       utils.plan.get.invalidate({ studentId }),
@@ -3083,12 +3083,16 @@ disabled={isReadOnly}
       <SelectValue placeholder="실습 요청 과정 선택" />
     </SelectTrigger>
     <SelectContent>
-      {courseOptions.map((course) => (
-        <SelectItem key={course} value={course}>
-          {course}
-        </SelectItem>
-      ))}
-    </SelectContent>
+  <SelectItem value={ALL_PRACTICE_COURSES_VALUE}>
+    희망과정 전체 요청
+  </SelectItem>
+
+  {courseOptions.map((course) => (
+    <SelectItem key={course} value={course}>
+      {course}
+    </SelectItem>
+  ))}
+</SelectContent>
   </Select>
 
   <p className="text-xs text-muted-foreground">

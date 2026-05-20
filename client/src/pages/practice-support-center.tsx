@@ -336,7 +336,7 @@ const { data: practiceSupportList = [], isLoading } =
   trpc.practiceSupport.list.useQuery(
     {
       month: selectedPracticeMonth === "전체" ? undefined : selectedPracticeMonth,
-      status: statusFilter === "전체" ? undefined : (statusFilter as any),
+      status: undefined,
       search: search.trim() || undefined,
     },
     {
@@ -635,14 +635,22 @@ const practiceMonthOptions = useMemo(() => {
 const filteredList = useMemo(() => {
   const rows = practiceSupportList || [];
 
-  if (showCompletedPractice) {
-    return rows;
+  const statusFiltered =
+    statusFilter === "전체"
+      ? rows
+      : rows.filter(
+          (row: any) =>
+            String(row.coordinationStatus || "미섭외") === statusFilter
+        );
+
+  if (showCompletedPractice || statusFilter === "섭외완료") {
+    return statusFiltered;
   }
 
-  return rows.filter(
+  return statusFiltered.filter(
     (row: any) => String(row.coordinationStatus || "미섭외") !== "섭외완료"
   );
-}, [practiceSupportList, showCompletedPractice]);
+}, [practiceSupportList, statusFilter, showCompletedPractice]);
 
 const handleStatCardClick = (
   nextStatus: "전체" | "미섭외" | "섭외중" | "섭외완료"

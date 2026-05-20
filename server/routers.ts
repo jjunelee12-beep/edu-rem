@@ -2932,12 +2932,20 @@ return db.createLeadForm(input.assigneeId, input.formType, {
     organizationId: Number((ctx.user as any)?.organizationId || 0),
   });
 
-    return {
-      success: true,
-      uiConfig: template?.uiConfigJson
-        ? JSON.parse(template.uiConfigJson)
-        : {},
-    };
+   const rawUiConfig = (template as any)?.uiConfigJson;
+
+let uiConfig: any = {};
+
+if (typeof rawUiConfig === "string" && rawUiConfig.trim()) {
+  uiConfig = JSON.parse(rawUiConfig);
+} else if (rawUiConfig && typeof rawUiConfig === "object") {
+  uiConfig = rawUiConfig;
+}
+
+return {
+  success: true,
+  uiConfig,
+};
   }),
 
 renameTemplate: protectedProcedure
@@ -3030,7 +3038,15 @@ listTemplates: protectedProcedure
       let parsed: any = {};
 
       try {
-        parsed = row.uiConfigJson ? JSON.parse(row.uiConfigJson) : {};
+        const rawUiConfig = (row as any)?.uiConfigJson;
+
+if (typeof rawUiConfig === "string" && rawUiConfig.trim()) {
+  parsed = JSON.parse(rawUiConfig);
+} else if (rawUiConfig && typeof rawUiConfig === "object") {
+  parsed = rawUiConfig;
+} else {
+  parsed = {};
+}
       } catch {
         parsed = {};
       }
