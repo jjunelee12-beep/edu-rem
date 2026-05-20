@@ -1447,7 +1447,9 @@ for (const practiceCourse of practiceCourses) {
   });
 }
 
-    await Promise.all([
+}
+
+await Promise.all([
       utils.plan.get.invalidate({ studentId }),
       utils.practiceSupport.listByStudent.invalidate({ studentId }),
       utils.semester.list.invalidate({ studentId }),
