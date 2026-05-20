@@ -2,7 +2,6 @@ import { useRef, useState } from "react";
 import FormCanvasEditor from "./FormCanvasEditor";
 import type { UiConfig } from "@/lib/formDesign/shared";
 import {
-  DEFAULT_FORM_CANVAS_CONFIG,
 createDefaultWithOneCanvasConfig,
   createCanvasTextElement,
   createCanvasImageElement,
@@ -35,16 +34,18 @@ type Props = {
 };
 
 function normalizeCanvas(canvas?: FormCanvasConfig): FormCanvasConfig {
+  const defaultCanvas = createDefaultWithOneCanvasConfig();
+
   if (
     !canvas ||
     !Array.isArray(canvas.elements) ||
     canvas.elements.length === 0
   ) {
-    return createDefaultWithOneCanvasConfig();
+    return defaultCanvas;
   }
 
   return {
-    ...DEFAULT_FORM_CANVAS_CONFIG,
+    ...defaultCanvas,
     ...canvas,
     enabled: true,
     elements: canvas.elements,
