@@ -128,3 +128,106 @@ export function createDefaultWithOneCanvasConfig(): FormCanvasConfig {
     ],
   };
 }
+const createCanvasId = (prefix: string) =>
+  `${prefix}-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
+export function createCanvasTextElement(): FormCanvasTextElement {
+  return {
+    id: createCanvasId("text"),
+    type: "text",
+    x: 120,
+    y: 120,
+    width: 360,
+    height: 80,
+    text: "새 텍스트",
+    fontSize: 32,
+    fontWeight: 700,
+    fontFamily: "Pretendard, sans-serif",
+    color: "#111827",
+    textAlign: "left",
+    zIndex: 100,
+  };
+}
+
+export function createCanvasImageElement(): FormCanvasImageElement {
+  return {
+    id: createCanvasId("image"),
+    type: "image",
+    x: 120,
+    y: 120,
+    width: 320,
+    height: 220,
+    url: "",
+    objectFit: "cover",
+    borderRadius: 16,
+    zIndex: 100,
+  };
+}
+
+export function createCanvasButtonElement(): FormCanvasButtonElement {
+  return {
+    id: createCanvasId("button"),
+    type: "button",
+    x: 120,
+    y: 120,
+    width: 320,
+    height: 80,
+    text: "버튼",
+    backgroundColor: "#2563eb",
+    color: "#ffffff",
+    borderRadius: 18,
+    action: "openForm",
+    hoverEffect: "lift",
+    zIndex: 100,
+  };
+}
+
+export function createCanvasRectElement(): FormCanvasShapeElement {
+  return {
+    id: createCanvasId("rect"),
+    type: "shape",
+    shape: "rect",
+    x: 120,
+    y: 120,
+    width: 260,
+    height: 160,
+    backgroundColor: "#e2e8f0",
+    borderColor: "#cbd5e1",
+    borderWidth: 1,
+    zIndex: 100,
+  };
+}
+
+export function createCanvasCircleElement(): FormCanvasShapeElement {
+  return {
+    id: createCanvasId("circle"),
+    type: "shape",
+    shape: "circle",
+    x: 120,
+    y: 120,
+    width: 180,
+    height: 180,
+    backgroundColor: "#e2e8f0",
+    borderColor: "#cbd5e1",
+    borderWidth: 1,
+    zIndex: 100,
+  };
+}
+
+export function createCanvasSvgElement(
+  svgName: "line" | "line-dashed" | "arrow-right" | "arrow-left" | "star" | "heart"
+): FormCanvasSvgElement {
+  return {
+    id: createCanvasId("svg"),
+    type: "svg",
+    svgName,
+    x: 120,
+    y: 120,
+    width: 180,
+    height: 80,
+    stroke: "#64748b",
+    fill: "#64748b",
+    strokeWidth: 8,
+    zIndex: 100,
+  };
+}
