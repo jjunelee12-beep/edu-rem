@@ -7,7 +7,6 @@ import { toast } from "sonner";
 import "@/styles/public-lead-form.css";
 import "@/styles/ad-form.css";
 import {
-  DEFAULT_FORM_CANVAS_CONFIG,
   createDefaultWithOneCanvasConfig,
 } from "@/lib/formDesign/canvasTypes";
 import FullScreenFormCanvasEditor from "@/components/forms/canvas/FullScreenFormCanvasEditor";
@@ -302,7 +301,7 @@ const safeDisplayConfig: UiConfig = {
   Array.isArray(displayConfig.canvas.elements) &&
   displayConfig.canvas.elements.length > 0
     ? {
-        ...DEFAULT_FORM_CANVAS_CONFIG,
+        ...createDefaultWithOneCanvasConfig(),
         ...displayConfig.canvas,
         enabled: true,
         elements: displayConfig.canvas.elements,
@@ -636,15 +635,16 @@ const handleSaveMyUiConfig = () => {
     ...DEFAULT_LEAD_CONFIG,
     ...uiDraft,
     canvas:
-      uiDraft?.canvas && typeof uiDraft.canvas === "object"
-        ? {
-            ...DEFAULT_FORM_CANVAS_CONFIG,
-            ...uiDraft.canvas,
-            elements: Array.isArray(uiDraft.canvas.elements)
-              ? uiDraft.canvas.elements
-              : [],
-          }
-        : DEFAULT_FORM_CANVAS_CONFIG,
+  uiDraft?.canvas && typeof uiDraft.canvas === "object"
+    ? {
+        ...createDefaultWithOneCanvasConfig(),
+        ...uiDraft.canvas,
+        enabled: true,
+        elements: Array.isArray(uiDraft.canvas.elements)
+          ? uiDraft.canvas.elements
+          : [],
+      }
+    : createDefaultWithOneCanvasConfig(),
     mapping:
       uiDraft?.mapping && typeof uiDraft.mapping === "object"
         ? uiDraft.mapping
