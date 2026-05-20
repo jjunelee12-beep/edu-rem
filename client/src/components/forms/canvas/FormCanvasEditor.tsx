@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  DEFAULT_FORM_CANVAS_CONFIG,
 createDefaultWithOneCanvasConfig,
   createCanvasTextElement,
   createCanvasImageElement,
@@ -22,16 +21,18 @@ type Props = {
 };
 
 function normalizeCanvas(value?: FormCanvasConfig): FormCanvasConfig {
+  const defaultCanvas = createDefaultWithOneCanvasConfig();
+
   if (
     !value ||
     !Array.isArray(value.elements) ||
     value.elements.length === 0
   ) {
-    return createDefaultWithOneCanvasConfig();
+    return defaultCanvas;
   }
 
   return {
-    ...DEFAULT_FORM_CANVAS_CONFIG,
+    ...defaultCanvas,
     ...value,
     enabled: true,
     elements: value.elements,
