@@ -11,7 +11,6 @@ import {
   auditLogs,
   teams,
   positions,
-  systemSettings,
   educationInstitutions,
   saasInquiries,
 } from "../drizzle/schema";
@@ -365,18 +364,19 @@ export async function createOrganizationDefaults(input: {
     );
   }
 
-  const existingSystemSettings = await db
-    .select()
-    .from(systemSettings)
-    .where(eq(systemSettings.organizationId, organizationId))
-    .limit(1);
+  const [existingSystemSettings] = await db.execute(sql`
+  SELECT id
+  FROM settlement_settings
+  WHERE organizationId = ${organizationId}
+  LIMIT 1
+`);
 
-  if (existingSystemSettings.length === 0) {
-    await db.insert(systemSettings).values({
-      organizationId,
-      payoutDay: defaultPayoutDay,
-    } as any);
-  }
+if (((existingSystemSettings as any[]) || []).length === 0) {
+  await db.execute(sql`
+    INSERT INTO settlement_settings (organizationId, payoutDay)
+    VALUES (${organizationId}, ${defaultPayoutDay})
+  `);
+}
 
   const existingInstitutions = await db
     .select()
@@ -524,7 +524,7 @@ export async function getOrganizationOnboardingStatus(organizationId: number) {
       (SELECT COUNT(*) FROM teams WHERE organizationId = ${organizationId}) as teamCount,
       (SELECT COUNT(*) FROM positions WHERE organizationId = ${organizationId}) as positionCount,
       (SELECT COUNT(*) FROM education_institutions WHERE organizationId = ${organizationId}) as educationInstitutionCount,
-      (SELECT payoutDay FROM system_settings WHERE organizationId = ${organizationId} LIMIT 1) as payoutDay
+      (SELECT payoutDay FROM settlement_settings WHERE organizationId = ${organizationId} LIMIT 1) as payoutDay
   `);
 
   const row = (rows as any)?.[0] || {};
@@ -628,4 +628,35 @@ export async function updateSaasInquiry(input: {
     .where(eq(saasInquiries.id, input.id));
 
   return { ok: true };
+}
+
+export async function assignUserToOrganization(input: {
+  userId: number;
+  organizationId: number;
+  updatedBy?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(users)
+    .set({
+      organizationId: Number(input.organizationId),
+      updatedAt: new Date(),
+    } as any)
+    .where(eq(users.id, Number(input.userId)));
+
+  await createSaasAuditLog({
+    organizationId: Number(input.organizationId),
+    actorUserId: input.updatedBy ?? null,
+    actorRole: "superhost",
+    action: "organization.user.assign",
+    targetType: "user",
+    targetId: Number(input.userId),
+    memo: `사용자 조직 이동: ${input.userId} -> ${input.organizationId}`,
+  });
+
+  return {
+    ok: true,
+  };
 }
