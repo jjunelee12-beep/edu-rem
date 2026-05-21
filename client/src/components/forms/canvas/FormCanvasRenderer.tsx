@@ -12,6 +12,7 @@ type Props = {
   onTel?: () => void;
   scale?: number;
   maxWidth?: number;
+renderForm?: () => React.ReactNode;
 };
 
 function normalizeCanvas(value?: FormCanvasConfig): FormCanvasConfig {
@@ -49,6 +50,7 @@ export default function FormCanvasRenderer({
   onTel,
   scale: overrideScale,
   maxWidth,
+  renderForm,
 }: Props) {
   const canvas = normalizeCanvas(rawCanvas);
   const windowWidth = useWindowWidth();
@@ -154,6 +156,27 @@ background: "#f3f4f6",
                 ? `rotate(${element.rotation}deg)`
                 : undefined,
             };
+
+const isFormElement =
+  (element as any).requiredFormElement === true ||
+  element.type === "form" ||
+  element.id === "required-form-element";
+
+if (isFormElement) {
+  if (!renderForm) return null;
+
+  return (
+    <div
+      key={element.id}
+      style={{
+        ...baseStyle,
+        overflow: "visible",
+      }}
+    >
+      {renderForm()}
+    </div>
+  );
+}
 
             if (element.type === "text") {
               return (

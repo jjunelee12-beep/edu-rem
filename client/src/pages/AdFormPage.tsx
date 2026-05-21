@@ -277,14 +277,6 @@ const canEdit =
     Number(formQuery.data?.assigneeId) === Number(user.id)
   );
 
-console.log("[AdFormPage canEdit]", {
-  userId: user?.id,
-  userRole: (user as any)?.role,
-  formOk: formQuery.data?.ok,
-  formAssigneeId: formQuery.data?.assigneeId,
-  canEdit,
-});
-
 const templateListQuery = trpc.formAdmin.listTemplates.useQuery(
   { formType: "ad" },
   { enabled: canEdit }
@@ -826,12 +818,12 @@ applyTemplateMutation.mutate({
     {canEdit ? (
       <div
         style={{
-          position: "sticky",
+          position: "fixed",
 top: 16,
 right: 16,
 marginLeft: "auto",
 width: "fit-content",
-          zIndex: canvasEnabled ? 30 : undefined,
+          zIndex: 9999,
           display: "flex",
           justifyContent: "flex-end",
           padding: canvasEnabled ? 0 : "16px",
@@ -852,83 +844,57 @@ width: "fit-content",
       </div>
     ) : null}
 
-   {canvasEnabled ? (
   <FormCanvasRenderer
-    canvas={safeDisplayConfig.canvas}
-    onOpenForm={() => {
-      document
-        .getElementById("public-lead-form-section")
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }}
-    onTel={() => {
-      if (callPhone) window.location.href = callHref;
-    }}
-  />
-) : null}
-
-{!canvasEnabled ? (
-  <div
-    style={{
-      maxWidth: 720,
-      margin: "0 auto",
-      padding: "40px 16px 24px",
-      textAlign: "center",
-    }}
-  >
-    <h1
-      style={{
-        fontSize: 32,
-        fontWeight: 800,
-        marginBottom: 12,
-      }}
-    >
-      {safeDisplayConfig.title}
-    </h1>
-
-    {safeDisplayConfig.subtitle ? (
-      <p
+  canvas={safeDisplayConfig.canvas}
+  onOpenForm={() => {
+    document
+      .getElementById("public-lead-form-section")
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }}
+  onTel={() => {
+    if (callPhone) window.location.href = callHref;
+  }}
+  renderForm={() =>
+    done ? (
+      <div
+        id="public-lead-form-section"
+        className="ad-form-success"
         style={{
-          fontSize: 16,
-          opacity: 0.8,
+          width: "100%",
+          height: "100%",
         }}
       >
-        {safeDisplayConfig.subtitle}
-      </p>
-    ) : null}
-  </div>
-) : null}
-
-    <div
-  id="public-lead-form-section"
-  style={{
-    maxWidth: 720,
-    margin: canvasEnabled ? "24px auto 0" : "0 auto",
-    padding: "0 16px 40px",
-  }}
->
-  {done ? (
-    <div className="ad-form-success">
-      상담 신청이 접수되었습니다.
-      <br />
-      순차적으로 연락드리겠습니다.
-    </div>
-  ) : (
-    <form className="premium-form-card" onSubmit={handleSubmit}>
-      {sortedFields.map(renderField)}
-
-      <button
-        type="submit"
-        className="premium-submit-button"
-        style={{ backgroundColor: safeColor }}
-        disabled={submitMutation.isPending}
+        상담 신청이 접수되었습니다.
+        <br />
+        순차적으로 연락드리겠습니다.
+      </div>
+    ) : (
+      <form
+        id="public-lead-form-section"
+        className="premium-form-card"
+        onSubmit={handleSubmit}
+        style={{
+          width: "100%",
+          height: "100%",
+          boxSizing: "border-box",
+        }}
       >
-        {submitMutation.isPending
-          ? "접수 중..."
-          : safeDisplayConfig.submitButtonText || "무료 상담 신청하기"}
-      </button>
-    </form>
-  )}
-</div>
+        {sortedFields.map(renderField)}
+
+        <button
+          type="submit"
+          className="premium-submit-button"
+          style={{ backgroundColor: safeColor }}
+          disabled={submitMutation.isPending}
+        >
+          {submitMutation.isPending
+            ? "접수 중..."
+            : safeDisplayConfig.submitButtonText || "무료 상담 신청하기"}
+        </button>
+      </form>
+    )
+  }
+/>
   </div>
 );
 }

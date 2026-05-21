@@ -279,14 +279,6 @@ const canEdit =
     Number(formQuery.data?.assigneeId) === Number(user.id)
   );
 
-console.log("[PublicLeadFormPage canEdit]", {
-  userId: user?.id,
-  userRole: (user as any)?.role,
-  formOk: formQuery.data?.ok,
-  formAssigneeId: formQuery.data?.assigneeId,
-  canEdit,
-});
-
 const templateListQuery = trpc.formAdmin.listTemplates.useQuery(
   { formType: "landing" },
   { enabled: canEdit }
@@ -797,31 +789,18 @@ applyTemplateMutation.mutate({
     );
   }
 
-  if (done) {
-    return (
-      <PageShell>
-        <div className="lead-form-state-box">
-          <h2 className="lead-form-state-title">상담 신청이 접수되었습니다.</h2>
-          <p className="lead-form-state-text">
-            순차적으로 확인 후 빠르게 연락드리겠습니다.
-          </p>
-        </div>
-      </PageShell>
-    );
-  }
-
   return (
   <PageShell fullCanvas>
     <div style={{ width: "100%" }}>
       {canEdit ? (
   <div
     style={{
-      position: "sticky",
+      position: "fixed",
 top: 16,
 right: 16,
 marginLeft: "auto",
 width: "fit-content",
-      zIndex: canvasEnabled ? 30 : undefined,
+      zIndex: 9999,
       display: "flex",
       justifyContent: "flex-end",
       marginBottom: canvasEnabled ? 0 : 16,
@@ -842,59 +821,59 @@ width: "fit-content",
         </div>
       ) : null}
 
-     {canvasEnabled ? (
   <FormCanvasRenderer
-    canvas={safeDisplayConfig.canvas}
-    onOpenForm={() => {
-      document
-        .getElementById("public-lead-form-section")
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }}
-    onTel={() => {
-      if (callPhone) window.location.href = callHref;
-    }}
-  />
-) : null}
-     
-{!canvasEnabled ? (
-  <div className="lead-form-card">
-    <div className="lead-form-header">
-      <h1 className="lead-form-title">
-        {safeDisplayConfig.title}
-      </h1>
-
-      {safeDisplayConfig.subtitle ? (
-        <p className="lead-form-subtitle">
-          {safeDisplayConfig.subtitle}
-        </p>
-      ) : null}
-    </div>
-  </div>
-) : null}
-
-    <div
-  id="public-lead-form-section"
-  style={{
-    maxWidth: 720,
-    margin: canvasEnabled ? "24px auto 0" : "0 auto",
-    padding: "0 16px 40px",
+  canvas={safeDisplayConfig.canvas}
+  onOpenForm={() => {
+    document
+      .getElementById("public-lead-form-section")
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
   }}
->
-  <form className="lead-form-body" onSubmit={handleSubmit}>
-    {sortedFields.map(renderField)}
-
-    <button
-      type="submit"
-      className="premium-submit-button"
-      style={{ backgroundColor: safeColor }}
-      disabled={submitMutation.isPending}
+  onTel={() => {
+    if (callPhone) window.location.href = callHref;
+  }}
+  renderForm={() =>
+  done ? (
+    <div
+      id="public-lead-form-section"
+      className="lead-form-state-box"
+      style={{
+        width: "100%",
+        height: "100%",
+        boxSizing: "border-box",
+      }}
     >
-      {submitMutation.isPending
-        ? "접수 중..."
-        : safeDisplayConfig.submitButtonText || "무료 상담 신청하기"}
-    </button>
-  </form>
-</div>
+      <h2 className="lead-form-state-title">상담 신청이 접수되었습니다.</h2>
+      <p className="lead-form-state-text">
+        순차적으로 확인 후 빠르게 연락드리겠습니다.
+      </p>
+    </div>
+  ) : (
+    <form
+      id="public-lead-form-section"
+      className="lead-form-body"
+      onSubmit={handleSubmit}
+      style={{
+        width: "100%",
+        height: "100%",
+        boxSizing: "border-box",
+      }}
+    >
+      {sortedFields.map(renderField)}
+
+      <button
+        type="submit"
+        className="premium-submit-button"
+        style={{ backgroundColor: safeColor }}
+        disabled={submitMutation.isPending}
+      >
+        {submitMutation.isPending
+          ? "접수 중..."
+          : safeDisplayConfig.submitButtonText || "무료 상담 신청하기"}
+      </button>
+    </form>
+  )
+}
+/>
     </div>
   </PageShell>
 );
