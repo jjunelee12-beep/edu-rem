@@ -45,11 +45,21 @@ function isAdminOrHost(user: any) {
   );
 }
 
-function isPracticeSupportManager(user: any) {
-  const openId = String(user?.openId || "").trim();
+const PRACTICE_SUPPORT_TEMP_ALLOWED_USERS = [
+  { organizationId: 1, userId: 15 },
+];
 
+function isPracticeSupportTempAllowedUser(user: any) {
+  return PRACTICE_SUPPORT_TEMP_ALLOWED_USERS.some(
+    (row) =>
+      Number(row.organizationId) === Number(user?.organizationId || 0) &&
+      Number(row.userId) === Number(user?.id || 0)
+  );
+}
+
+function isPracticeSupportManager(user: any) {
   return (
-    openId === "withone2" ||
+    isPracticeSupportTempAllowedUser(user) ||
     user?.role === "admin" ||
     user?.role === "host"
   );

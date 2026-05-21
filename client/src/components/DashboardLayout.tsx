@@ -133,9 +133,11 @@ type AuthUser = {
  name?: string;
  profileImageUrl?: string | null;
  organizationSlug?: string | null;
- organization?: {
+ organizationId?: number | null;
+organization?: {
+  id?: number | null;
   slug?: string | null;
- };
+};
 };
 
 type NotificationItem = {
@@ -411,9 +413,22 @@ useEffect(() => {
  const isHost = user?.role === "host";
  const isSuperhost = user?.role === "superhost";
 
+const PRACTICE_SUPPORT_TEMP_ALLOWED_USERS = [
+  { organizationSlug: "with-one", userId: 15 },
+];
+
+const currentOrganizationSlug = String(
+  (user as any)?.organizationSlug ||
+  (user as any)?.organization?.slug ||
+  ""
+).trim();
+
 const isPracticeSupportTempAllowedUser =
-  String((user as any)?.openId || "").trim() === "withone2" ||
-  String((user as any)?.username || "").trim() === "withone2";
+  PRACTICE_SUPPORT_TEMP_ALLOWED_USERS.some(
+    (row) =>
+      row.organizationSlug === currentOrganizationSlug &&
+      Number(row.userId) === Number(user?.id || 0)
+  );
 
 const organizationSlug =
   (user as any).organizationSlug ||
