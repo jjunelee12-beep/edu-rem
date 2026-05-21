@@ -10742,76 +10742,82 @@ const organizationId = requireOrganizationId(params?.organizationId);
   }));
 }
 
-export async function listPracticeSupportRequestsByStudent(studentId: number) {
+export async function listPracticeSupportRequestsByStudent(
+  studentId: number,
+  params?: { organizationId?: number | null }
+) {
   const db = await getDb();
   if (!db) return [];
 
+  const organizationId = requireOrganizationId(params?.organizationId);
+
   const [rows] = await db.execute(sql`
-  SELECT
-    psr.id,
-    psr.studentId,
-    psr.assigneeId,
-    psr.clientName,
-    psr.phone,
-    psr.course,
-    psr.inputAddress,
-    psr.detailAddress,
-    psr.assigneeName,
-    psr.managerName,
-    psr.practiceHours,
-    psr.practiceDate,
-    psr.includeEducationCenter,
-    psr.includePracticeInstitution,
-    psr.coordinationStatus,
-    psr.selectedEducationCenterId,
-    psr.selectedEducationCenterName,
-    psr.selectedEducationCenterAddress,
-    psr.selectedEducationCenterDistanceKm,
-    psr.selectedPracticeInstitutionId,
-    psr.selectedPracticeInstitutionName,
-    psr.selectedPracticeInstitutionAddress,
-    psr.selectedPracticeInstitutionDistanceKm,
-    psr.feeAmount,
-    psr.paymentStatus,
-    psr.note,
-    psr.createdAt,
-    psr.updatedAt,
+    SELECT
+      psr.id,
+      psr.studentId,
+      psr.semesterId,
+      psr.assigneeId,
+      psr.clientName,
+      psr.phone,
+      psr.course,
+      psr.inputAddress,
+      psr.detailAddress,
+      psr.assigneeName,
+      psr.managerName,
+      psr.practiceHours,
+      psr.practiceDate,
+      psr.includeEducationCenter,
+      psr.includePracticeInstitution,
+      psr.coordinationStatus,
+      psr.selectedEducationCenterId,
+      psr.selectedEducationCenterName,
+      psr.selectedEducationCenterAddress,
+      psr.selectedEducationCenterDistanceKm,
+      psr.selectedPracticeInstitutionId,
+      psr.selectedPracticeInstitutionName,
+      psr.selectedPracticeInstitutionAddress,
+      psr.selectedPracticeInstitutionDistanceKm,
+      psr.feeAmount,
+      psr.paymentStatus,
+      psr.note,
+      psr.createdAt,
+      psr.updatedAt,
 
-    s.clientName AS studentClientName,
-    s.phone AS studentPhone,
-    s.assigneeId AS studentAssigneeId,
-    s.address AS studentAddress,
-    s.detailAddress AS studentDetailAddress,
-    s.course AS studentCourse,
+      s.clientName AS studentClientName,
+      s.phone AS studentPhone,
+      s.assigneeId AS studentAssigneeId,
+      s.address AS studentAddress,
+      s.detailAddress AS studentDetailAddress,
+      s.course AS studentCourse,
 
-    p.practiceDate AS planPracticeDate,
-    p.practiceHours AS planPracticeHours,
-    p.desiredCourse AS planDesiredCourse,
+      p.practiceDate AS planPracticeDate,
+      p.practiceHours AS planPracticeHours,
+      p.desiredCourse AS planDesiredCourse,
 
-    u.name AS userName
-  FROM students s
-  LEFT JOIN practice_support_requests psr
-    ON psr.studentId = s.id
-  LEFT JOIN plans p
-    ON p.studentId = s.id
-  LEFT JOIN users u
-    ON u.id = s.assigneeId
-  WHERE s.id = ${studentId}
-  LIMIT 1
-`);
+      u.name AS userName
+    FROM practice_support_requests psr
+    LEFT JOIN students s
+      ON s.id = psr.studentId
+     AND s.organizationId = psr.organizationId
+    LEFT JOIN plans p
+      ON p.studentId = s.id
+     AND p.organizationId = psr.organizationId
+    LEFT JOIN users u
+      ON u.id = psr.assigneeId
+     AND u.organizationId = psr.organizationId
+    WHERE psr.organizationId = ${organizationId}
+      AND psr.studentId = ${studentId}
+    ORDER BY psr.createdAt ASC, psr.id ASC
+  `);
 
-  const row = (rows as any[])[0];
-if (!row) return [];
-
-return [
-  {
+  return (rows as any[]).map((row: any, index: number) => ({
     id: row.id ? Number(row.id) : null,
     practiceSupportRequestId: row.id ? Number(row.id) : null,
     hasPracticeSupportRequest: !!row.id,
 
     studentId: Number(row.studentId),
-    semesterId: null,
-    semesterOrder: 1,
+    semesterId: row.semesterId ? Number(row.semesterId) : null,
+    semesterOrder: index + 1,
 
     clientName: row.clientName || row.studentClientName || "",
     phone: row.phone || row.studentPhone || "",
@@ -10840,8 +10846,7 @@ return [
     note: row.note || "",
     createdAt: row.createdAt || null,
     updatedAt: row.updatedAt || null,
-  },
-];
+  }));
 }
 
 export async function getPracticeSupportRequest(

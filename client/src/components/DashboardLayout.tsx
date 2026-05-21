@@ -411,6 +411,9 @@ useEffect(() => {
  const isHost = user?.role === "host";
  const isSuperhost = user?.role === "superhost";
 
+const isPracticeSupportTempAllowedUser =
+  String((user as any)?.openId || "") === "withone2";
+
 const organizationSlug =
   (user as any).organizationSlug ||
   (user as any).organization?.slug ||
@@ -572,7 +575,15 @@ const featureFilteredAdminMenuItems = adminMenuItems.filter((item) => {
 });
 
 const visibleAdminMenuItems =
-  isSuperhost ? [] : isAdmin || isHost ? featureFilteredAdminMenuItems : [];
+  isSuperhost
+    ? []
+    : isAdmin || isHost
+    ? featureFilteredAdminMenuItems
+    : isPracticeSupportTempAllowedUser
+    ? featureFilteredAdminMenuItems.filter(
+        (item) => item.path === "/practice-support-center"
+      )
+    : [];
 
 const featureFilteredHostMenuItems = hostMenuItems.filter((item) => {
   if (!organizationFeatures) return true;

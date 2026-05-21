@@ -417,10 +417,16 @@ const upsertPracticeSupportByStudentMut =
   });
 
 const patchPracticeRow = async (row: any, patch: Record<string, any>) => {
-  const requestId = Number(row?.id || row?.practiceSupportRequestId || 0);
+  const requestId = Number(row?.practiceSupportRequestId || row?.id || 0);
   const hasRequest = requestId > 0;
 
   if (hasRequest) {
+console.log("[practiceSupport.patch]", {
+  rowId: row?.id,
+  practiceSupportRequestId: row?.practiceSupportRequestId,
+  requestId,
+  patch,
+});
     await updatePracticeSupportMut.mutateAsync({
       id: requestId,
       ...patch,
