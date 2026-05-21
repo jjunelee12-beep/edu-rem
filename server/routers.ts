@@ -39,13 +39,17 @@ import { throwAppError } from "./_core/appError";
 import { ERROR_CODES } from "./_core/errorCodes";
 
 function isAdminOrHost(user: any) {
+  return (
+    user?.role === "admin" ||
+    user?.role === "host"
+  );
+}
+
+function isPracticeSupportManager(user: any) {
   const openId = String(user?.openId || "").trim();
 
-  if (openId === "withone2") {
-    return true;
-  }
-
   return (
+    openId === "withone2" ||
     user?.role === "admin" ||
     user?.role === "host"
   );
@@ -1079,9 +1083,9 @@ subjectCatalog: subjectCatalogRouter,
     "현재 회사는 민간자격증 기능을 사용할 수 없습니다."
   );
 
-  const assigneeId = isAdminOrHost(ctx.user)
-    ? input?.assigneeId
-    : Number(ctx.user.id);
+  const assigneeId = isPracticeSupportManager(ctx.user)
+  ? input?.assigneeId
+  : Number(ctx.user.id);
 
   const rows = await db.listPrivateCertificateRequests(assigneeId, {
   organizationId,
