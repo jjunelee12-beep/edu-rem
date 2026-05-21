@@ -11,6 +11,7 @@ import {
 } from "@/lib/formDesign/canvasTypes";
 import FullScreenFormCanvasEditor from "@/components/forms/canvas/FullScreenFormCanvasEditor";
 import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
+import FormCanvasRenderer from "@/components/forms/canvas/FormCanvasRenderer";
 
 
 const DEFAULT_LEAD_CONFIG: UiConfig = {
@@ -273,7 +274,18 @@ const touchTemplateMutation = trpc.formAdmin.saveAsTemplate.useMutation({
 const canEdit =
   !!user &&
   !!formQuery.data?.ok &&
-  Number(formQuery.data?.assigneeId) === Number(user.id);
+  (
+    String((user as any).role || "") === "host" ||
+    Number(formQuery.data?.assigneeId) === Number(user.id)
+  );
+
+console.log("[PublicLeadFormPage canEdit]", {
+  userId: user?.id,
+  userRole: (user as any)?.role,
+  formOk: formQuery.data?.ok,
+  formAssigneeId: formQuery.data?.assigneeId,
+  canEdit,
+});
 
 const templateListQuery = trpc.formAdmin.listTemplates.useQuery(
   { formType: "landing" },
@@ -303,7 +315,7 @@ const safeDisplayConfig: UiConfig = {
     ? {
         ...createDefaultCompanyCanvasConfig(),
         ...displayConfig.canvas,
-        enabled: true,
+        enabled: Boolean(displayConfig.canvas?.enabled),
         elements: displayConfig.canvas.elements,
       }
     : createDefaultCompanyCanvasConfig(),
@@ -639,7 +651,7 @@ const handleSaveMyUiConfig = () => {
     ? {
         ...createDefaultCompanyCanvasConfig(),
         ...uiDraft.canvas,
-        enabled: true,
+        enabled: Boolean(uiDraft.canvas?.enabled),
         elements: Array.isArray(uiDraft.canvas.elements)
           ? uiDraft.canvas.elements
           : [],
@@ -804,9 +816,11 @@ applyTemplateMutation.mutate({
       {canEdit ? (
   <div
     style={{
-      position: canvasEnabled ? "fixed" : "static",
-      top: canvasEnabled ? 24 : undefined,
-      right: canvasEnabled ? 24 : undefined,
+      position: "sticky",
+top: 16,
+right: 16,
+marginLeft: "auto",
+width: "fit-content",
       zIndex: canvasEnabled ? 30 : undefined,
       display: "flex",
       justifyContent: "flex-end",
@@ -828,102 +842,59 @@ applyTemplateMutation.mutate({
         </div>
       ) : null}
 
-      {canvasEnabled ? (
-  <div
-    id="public-lead-form-section"
-    className="mx-auto w-full max-w-xl px-4 pt-8 pb-10"
-  >
-    <form className="premium-form-card" onSubmit={handleSubmit}>
-      <div className="mb-4">
-        <h2 className="text-xl font-bold">
-          {safeDisplayConfig.title || "학점은행제 맞춤 상담 신청"}
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {safeDisplayConfig.subtitle ||
-            "전문 담당자가 학습 상황에 맞춰 무료로 안내드립니다."}
-        </p>
-      </div>
-
-      {sortedFields.map(renderField)}
-
-      <button
-        type="submit"
-        className="premium-submit-button"
-        style={{ backgroundColor: safeColor }}
-        disabled={submitMutation.isPending}
-      >
-        {submitMutation.isPending
-          ? "접수 중..."
-          : safeDisplayConfig.submitButtonText || "무료 상담 신청하기"}
-      </button>
-    </form>
-  </div>
+     {canvasEnabled ? (
+  <FormCanvasRenderer
+    canvas={safeDisplayConfig.canvas}
+    onOpenForm={() => {
+      document
+        .getElementById("public-lead-form-section")
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }}
+    onTel={() => {
+      if (callPhone) window.location.href = callHref;
+    }}
+  />
 ) : null}
      
-     {!canvasEnabled ? (
-  <>
+{!canvasEnabled ? (
+  <div className="lead-form-card">
     <div className="lead-form-header">
       <h1 className="lead-form-title">
-        <span className="lead-form-title-line lead-form-title-line--first">
-          {safeDisplayConfig.logoUrl ? (
-            <img
-              src={safeDisplayConfig.logoUrl}
-              alt="폼 로고"
-              className="lead-form-logo"
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = "none";
-              }}
-            />
-          ) : null}
-          <span>
-            {safeDisplayConfig.title.split(",")[0]?.trim() ||
-              safeDisplayConfig.title}
-          </span>
-        </span>
-
-        {safeDisplayConfig.title.includes(",") ? (
-          <span className="lead-form-title-line">
-            {safeDisplayConfig.title.split(",").slice(1).join(",").trim()}
-          </span>
-        ) : null}
+        {safeDisplayConfig.title}
       </h1>
 
-      <p className="lead-form-subtitle">{safeDisplayConfig.subtitle}</p>
+      {safeDisplayConfig.subtitle ? (
+        <p className="lead-form-subtitle">
+          {safeDisplayConfig.subtitle}
+        </p>
+      ) : null}
     </div>
-
-    {safeDisplayConfig.heroImageUrl ? (
-      <div style={{ marginBottom: 16 }}>
-        <img
-          src={safeDisplayConfig.heroImageUrl}
-          alt="상단 이미지"
-          style={{
-            width: "100%",
-            borderRadius: 20,
-            display: "block",
-          }}
-          onError={(e) => {
-            (e.currentTarget as HTMLImageElement).style.display = "none";
-          }}
-        />
-      </div>
-    ) : null}
-
-    <form className="lead-form-body" onSubmit={handleSubmit}>
-      {sortedFields.map(renderField)}
-
-      <button
-        type="submit"
-        className="premium-submit-button"
-        style={{ backgroundColor: safeColor }}
-        disabled={submitMutation.isPending}
-      >
-        {submitMutation.isPending
-          ? "접수 중..."
-          : safeDisplayConfig.submitButtonText || "무료 상담 신청하기"}
-      </button>
-    </form>
-  </>
+  </div>
 ) : null}
+
+    <div
+  id="public-lead-form-section"
+  style={{
+    maxWidth: 720,
+    margin: canvasEnabled ? "24px auto 0" : "0 auto",
+    padding: "0 16px 40px",
+  }}
+>
+  <form className="lead-form-body" onSubmit={handleSubmit}>
+    {sortedFields.map(renderField)}
+
+    <button
+      type="submit"
+      className="premium-submit-button"
+      style={{ backgroundColor: safeColor }}
+      disabled={submitMutation.isPending}
+    >
+      {submitMutation.isPending
+        ? "접수 중..."
+        : safeDisplayConfig.submitButtonText || "무료 상담 신청하기"}
+    </button>
+  </form>
+</div>
     </div>
   </PageShell>
 );
