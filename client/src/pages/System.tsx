@@ -42,7 +42,7 @@ import { createDefaultPublicFormUiConfig } from "@/lib/publicFormUi";
 import FormDesignEditor from "@/components/forms/FormDesignEditor";
 import FullScreenFormCanvasEditor from "@/components/forms/canvas/FullScreenFormCanvasEditor";
 import type { UiConfig } from "@/lib/formDesign/shared";
-import { createDefaultWithOneCanvasConfig } from "@/lib/formDesign/canvasTypes";
+import { createDefaultCompanyCanvasConfig } from "@/lib/formDesign/canvasTypes";
 
 type TabKey =
   | "settlement"
@@ -2647,7 +2647,7 @@ function BaseFormManagementSection({
 
     return {
       ...base,
-      canvas: createDefaultWithOneCanvasConfig(),
+      canvas: createDefaultCompanyCanvasConfig(),
     };
   });
 
@@ -2663,12 +2663,12 @@ function BaseFormManagementSection({
         Array.isArray(saved.canvas.elements) &&
         saved.canvas.elements.length > 0
           ? {
-              ...createDefaultWithOneCanvasConfig(),
+              ...createDefaultCompanyCanvasConfig(),
               ...saved.canvas,
               enabled: true,
               elements: saved.canvas.elements,
             }
-          : createDefaultWithOneCanvasConfig(),
+          : createDefaultCompanyCanvasConfig(),
       fields: Array.isArray(saved.fields) && saved.fields.length > 0
         ? saved.fields
         : base.fields,
@@ -2773,19 +2773,37 @@ const getAssignee = (id: any) => {
   };
 
   const handleSaveDefaultDesign = () => {
-    saveTemplateMutation.mutate({
-      formType,
-      uiConfig: {
-        ...defaultDraft,
-        canvas:
-          defaultDraft.canvas &&
-          Array.isArray(defaultDraft.canvas.elements) &&
-          defaultDraft.canvas.elements.length > 0
-            ? defaultDraft.canvas
-            : createDefaultWithOneCanvasConfig(),
-      } as any,
-    });
-  };
+  const canvas =
+    defaultDraft.canvas &&
+    Array.isArray(defaultDraft.canvas.elements) &&
+    defaultDraft.canvas.elements.length > 0
+      ? defaultDraft.canvas
+      : createDefaultCompanyCanvasConfig();
+
+  const titleElement = canvas.elements.find((el: any) =>
+    String(el.id || "").includes("title")
+  );
+
+  const subtitleElement = canvas.elements.find((el: any) =>
+    String(el.id || "").includes("subtitle")
+  );
+
+  saveTemplateMutation.mutate({
+    formType,
+    uiConfig: {
+      ...defaultDraft,
+      title:
+        String((titleElement as any)?.text || "").trim() ||
+        defaultDraft.title ||
+        "학점은행제 맞춤 상담 신청",
+      subtitle:
+        String((subtitleElement as any)?.text || "").trim() ||
+        defaultDraft.subtitle ||
+        "전문 담당자가 학습 상황에 맞춰 무료로 안내드립니다.",
+      canvas,
+    } as any,
+  });
+};
 
   return (
     <div className="space-y-6">

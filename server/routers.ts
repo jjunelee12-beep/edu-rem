@@ -68,11 +68,7 @@ function isPracticeSupportManager(user: any) {
 function canManageOwnFormOrHigher(currentUser: any, targetAssigneeId?: number | null) {
   if (!currentUser) return false;
 
-  if (
-    currentUser.role === "admin" ||
-    currentUser.role === "host" ||
-    currentUser.role === "superhost"
-  ) {
+  if (currentUser.role === "host") {
     return true;
   }
 
@@ -91,7 +87,7 @@ function assertCanManageOwnFormOrHigher(currentUser: any, targetAssigneeId?: num
   if (!canManageOwnFormOrHigher(currentUser, targetAssigneeId)) {
     throwAppError(
   ERROR_CODES.PERMISSION_DENIED,
-  "본인 페이지 또는 관리자만 수정할 수 있습니다.",
+  "본인 페이지 또는 호스트만 수정할 수 있습니다.",
   403
 );
   }

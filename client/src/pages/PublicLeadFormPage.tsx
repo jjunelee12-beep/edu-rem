@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import "@/styles/public-lead-form.css";
 import "@/styles/ad-form.css";
 import {
-  createDefaultWithOneCanvasConfig,
+  createDefaultCompanyCanvasConfig,
 } from "@/lib/formDesign/canvasTypes";
 import FullScreenFormCanvasEditor from "@/components/forms/canvas/FullScreenFormCanvasEditor";
 import { normalizeAssetUrl } from "@/lib/normalizeAssetUrl";
@@ -26,7 +26,7 @@ submitButtonText: "무료 상담 신청하기",
   tags: "",
   isPinned: false,
   lastUsedAt: "",
-canvas: createDefaultWithOneCanvasConfig(),
+canvas: createDefaultCompanyCanvasConfig(),
   mapping: {
     clientName: "clientName",
     phone: "phone",
@@ -301,12 +301,12 @@ const safeDisplayConfig: UiConfig = {
   Array.isArray(displayConfig.canvas.elements) &&
   displayConfig.canvas.elements.length > 0
     ? {
-        ...createDefaultWithOneCanvasConfig(),
+        ...createDefaultCompanyCanvasConfig(),
         ...displayConfig.canvas,
         enabled: true,
         elements: displayConfig.canvas.elements,
       }
-    : createDefaultWithOneCanvasConfig(),
+    : createDefaultCompanyCanvasConfig(),
   mapping:
     displayConfig && typeof displayConfig.mapping === "object" && displayConfig.mapping
       ? displayConfig.mapping
@@ -637,14 +637,14 @@ const handleSaveMyUiConfig = () => {
     canvas:
   uiDraft?.canvas && typeof uiDraft.canvas === "object"
     ? {
-        ...createDefaultWithOneCanvasConfig(),
+        ...createDefaultCompanyCanvasConfig(),
         ...uiDraft.canvas,
         enabled: true,
         elements: Array.isArray(uiDraft.canvas.elements)
           ? uiDraft.canvas.elements
           : [],
       }
-    : createDefaultWithOneCanvasConfig(),
+    : createDefaultCompanyCanvasConfig(),
     mapping:
       uiDraft?.mapping && typeof uiDraft.mapping === "object"
         ? uiDraft.mapping

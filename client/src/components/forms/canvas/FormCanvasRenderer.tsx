@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  createDefaultWithOneCanvasConfig,
+  createDefaultCompanyCanvasConfig,
   type FormCanvasConfig,
   type FormCanvasElement,
 } from "@/lib/formDesign/canvasTypes";
@@ -15,7 +15,7 @@ type Props = {
 };
 
 function normalizeCanvas(value?: FormCanvasConfig): FormCanvasConfig {
-  const defaultCanvas = createDefaultWithOneCanvasConfig();
+  const defaultCanvas = createDefaultCompanyCanvasConfig();
 
   return {
     ...defaultCanvas,

@@ -11017,17 +11017,23 @@ export async function updatePracticeSupportRequest(
       )
     );
 
-  if (data.coordinationStatus && existing?.studentId) {
+    if (data.coordinationStatus && existing?.studentId) {
     const nextStatus = String(data.coordinationStatus || "").trim();
 
     await db
-      .update(studentPlans)
+      .update(plans)
       .set({
-        practiceArranged: nextStatus === "섭외완료",
-        practiceStatus: nextStatus || "미섭외",
-        updatedAt: new Date(),
-      } as any)
-      .where(eq(studentPlans.studentId, Number(existing.studentId)));
+  hasPractice: true,
+  practiceArranged: nextStatus === "섭외완료",
+  practiceStatus: nextStatus || "미섭외",
+  updatedAt: new Date(),
+} as any)
+      .where(
+        and(
+          eq(plans.studentId, Number(existing.studentId)),
+          eq(plans.organizationId, organizationId)
+        )
+      );
   }
 
   await syncPracticeSupportSettlementItemByRequestId(id, undefined, {

@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import FormCanvasEditor from "./FormCanvasEditor";
 import type { UiConfig } from "@/lib/formDesign/shared";
 import {
-createDefaultWithOneCanvasConfig,
+createDefaultCompanyCanvasConfig,
   createCanvasTextElement,
   createCanvasImageElement,
   createCanvasButtonElement,
@@ -34,7 +34,7 @@ type Props = {
 };
 
 function normalizeCanvas(canvas?: FormCanvasConfig): FormCanvasConfig {
-  const defaultCanvas = createDefaultWithOneCanvasConfig();
+  const defaultCanvas = createDefaultCompanyCanvasConfig();
 
   if (
     !canvas ||

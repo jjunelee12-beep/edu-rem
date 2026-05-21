@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-createDefaultWithOneCanvasConfig,
+createDefaultCompanyCanvasConfig,
   createCanvasTextElement,
   createCanvasImageElement,
   createCanvasButtonElement,
@@ -21,7 +21,7 @@ type Props = {
 };
 
 function normalizeCanvas(value?: FormCanvasConfig): FormCanvasConfig {
-  const defaultCanvas = createDefaultWithOneCanvasConfig();
+  const defaultCanvas = createDefaultCompanyCanvasConfig();
 
   if (
     !value ||
@@ -532,7 +532,7 @@ const resetCanvas = () => {
 
   if (!ok) return;
 
-  const defaultCanvas = createDefaultWithOneCanvasConfig();
+  const defaultCanvas = createDefaultCompanyCanvasConfig();
 
   updateCanvas({
     ...defaultCanvas,

@@ -1,4 +1,4 @@
-export function createDefaultWithOneCanvasConfig(): FormCanvasConfig {
+export function createDefaultCompanyCanvasConfig(): FormCanvasConfig {
   const required = true;
 
   return {
