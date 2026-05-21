@@ -1083,7 +1083,7 @@ subjectCatalog: subjectCatalogRouter,
     "현재 회사는 민간자격증 기능을 사용할 수 없습니다."
   );
 
-  const assigneeId = isPracticeSupportManager(ctx.user)
+  const assigneeId = isAdminOrHost(ctx.user)
   ? input?.assigneeId
   : Number(ctx.user.id);
 
@@ -1453,9 +1453,9 @@ await writeStudentAuditLog({
     "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
   );
 
-  const assigneeId = isAdminOrHost(ctx.user)
-    ? input?.assigneeId
-    : Number(ctx.user.id);
+  const assigneeId = isPracticeSupportManager(ctx.user)
+  ? input?.assigneeId
+  : Number(ctx.user.id);
 
   const rows = await db.listPracticeSupportRequests({
   organizationId,
