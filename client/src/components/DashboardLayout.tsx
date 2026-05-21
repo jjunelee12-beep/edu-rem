@@ -412,7 +412,8 @@ useEffect(() => {
  const isSuperhost = user?.role === "superhost";
 
 const isPracticeSupportTempAllowedUser =
-  String((user as any)?.openId || "") === "withone2";
+  String((user as any)?.openId || "").trim() === "withone2" ||
+  String((user as any)?.username || "").trim() === "withone2";
 
 const organizationSlug =
   (user as any).organizationSlug ||
