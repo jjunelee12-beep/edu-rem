@@ -86,7 +86,6 @@ const staffMenuItems: MenuItem[] = [
 
 const adminMenuItems: MenuItem[] = [
  { icon: ShieldCheck, label: "승인 관리", path: "/approvals" },
- { icon: Calculator, label: "정산 리포트", path: "/settlement" },
  { icon: Award, label: "민간자격증", path: "/private-certificate-center" },
  {
  icon: GraduationCap,
@@ -98,6 +97,7 @@ const adminMenuItems: MenuItem[] = [
 
 const hostMenuItems: MenuItem[] = [
  { icon: Settings, label: "시스템 관리", path: "/system" },
+ { icon: Calculator, label: "정산 리포트", path: "/settlement" },
  { icon: GraduationCap, label: "교육원 관리", path: "/education-institutions" },
  {
   icon: GraduationCap,

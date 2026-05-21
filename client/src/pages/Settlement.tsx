@@ -43,13 +43,10 @@ const [institutionDialogOpen, setInstitutionDialogOpen] = useState(false);
 const [selectedInstitutionName, setSelectedInstitutionName] = useState<string>("");
 const [institutionTrendMode, setInstitutionTrendMode] = useState<"gross" | "company">("gross");
 
-  const isAdminOrHost =
-    user?.role === "admin" ||
-    user?.role === "host" ||
-    user?.role === "superhost";
+  const canViewSettlement = user?.role === "host";
 
   const { data: allUsers } = trpc.users.list.useQuery(undefined, {
-    enabled: isAdminOrHost,
+    enabled: canViewSettlement,
   });
 
   const { data: report, isLoading } = trpc.settlement.report.useQuery(
@@ -59,7 +56,7 @@ const [institutionTrendMode, setInstitutionTrendMode] = useState<"gross" | "comp
       assigneeId: filterAssignee !== "all" ? Number(filterAssignee) : undefined,
     },
     {
-      enabled: isAdminOrHost,
+      enabled: canViewSettlement,
     }
   );
 
@@ -71,7 +68,7 @@ const [institutionTrendMode, setInstitutionTrendMode] = useState<"gross" | "comp
         assigneeId: filterAssignee !== "all" ? Number(filterAssignee) : undefined,
       },
       {
-        enabled: isAdminOrHost,
+        enabled: canViewSettlement,
       }
     );  
 
@@ -85,7 +82,7 @@ const [institutionTrendMode, setInstitutionTrendMode] = useState<"gross" | "comp
       assigneeId: selectedPayslipAssigneeId || 0,
     },
     {
-      enabled: isAdminOrHost && !!selectedPayslipAssigneeId && payslipOpen,
+      enabled: canViewSettlement && !!selectedPayslipAssigneeId && payslipOpen,
     }
   );
 
@@ -93,9 +90,7 @@ const { data: institutionSummary = [], isLoading: institutionSummaryLoading } =
   trpc.settlement.institutionSummary.useQuery(
     { year, month },
     {
-      enabled:
-        institutionDialogOpen &&
-        (user?.role === "host" || user?.role === "superhost"),
+      enabled: institutionDialogOpen && canViewSettlement,
     }
   );
 
@@ -108,9 +103,9 @@ const { data: institutionEntriesData, isLoading: institutionEntriesLoading } =
     },
     {
       enabled:
-        institutionDialogOpen &&
-        !!selectedInstitutionName &&
-        (user?.role === "host" || user?.role === "superhost"),
+  institutionDialogOpen &&
+  !!selectedInstitutionName &&
+  canViewSettlement,
     }
   );
 
@@ -120,9 +115,7 @@ const {
 } = trpc.settlement.institutionMonthlyTrend.useQuery(
   { year },
   {
-    enabled:
-      institutionDialogOpen &&
-      (user?.role === "host" || user?.role === "superhost"),
+    enabled: institutionDialogOpen && canViewSettlement,
   }
 );
 
@@ -590,12 +583,12 @@ const downloadInstitutionTrendCSV = () => {
     }
   };
 
-  if (!isAdminOrHost) {
+  if (!canViewSettlement) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
         <ShieldAlert className="h-12 w-12 text-muted-foreground" />
         <p className="text-muted-foreground">
-          관리자, 호스트 또는 슈퍼호스트만 접근할 수 있습니다.
+          호스트만 접근할 수 있습니다.
         </p>
       </div>
     );

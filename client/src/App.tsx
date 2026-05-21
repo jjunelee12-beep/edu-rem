@@ -126,6 +126,18 @@ function FeatureGate({
   return <>{children}</>;
 }
 
+function HostOnly({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+
+  if (loading) return null;
+
+  if (user?.role !== "host") {
+    return <NotFound />;
+  }
+
+  return <>{children}</>;
+}
+
 function TenantPathGuard({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const [location, setLocation] = useLocation();
@@ -278,7 +290,9 @@ function PrivateRouter() {
   path="/:organizationSlug/settlement"
   component={() => (
     <FeatureGate feature="allowSettlementReport">
-      <Settlement />
+      <HostOnly>
+        <Settlement />
+      </HostOnly>
     </FeatureGate>
   )}
 />

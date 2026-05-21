@@ -7893,204 +7893,182 @@ organizationId,
   }),
 
     settlement: router({
-    report: adminProcedure
-      .input(
-        z.object({
-          year: z.number(),
-          month: z.number(),
-          assigneeId: z.number().optional(),
-        })
-      )
-      .query(async ({ input, ctx }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  report: hostProcedure
+    .input(
+      z.object({
+        year: z.number(),
+        month: z.number(),
+        assigneeId: z.number().optional(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
-  await assertOrganizationFeatureEnabled(
-    organizationId,
-    "allowSettlementReport",
-    "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
-  );
+      await assertOrganizationFeatureEnabled(
+        organizationId,
+        "allowSettlementReport",
+        "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+      );
 
-  const canSeeAll = isAdminOrHost(ctx.user);
+      return db.getSettlementReport(input.year, input.month, input.assigneeId, {
+        organizationId,
+      });
+    }),
 
-    return db.getSettlementReport(
-    input.year,
-    input.month,
-    canSeeAll ? input.assigneeId : Number(ctx.user.id),
-    {
-      organizationId,
-    }
-  );
+  entries: hostProcedure
+    .input(
+      z.object({
+        year: z.number(),
+        month: z.number(),
+        assigneeId: z.number().optional(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      await assertOrganizationFeatureEnabled(
+        organizationId,
+        "allowSettlementReport",
+        "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+      );
+
+      return db.getSettlementEntries({
+        organizationId,
+        year: input.year,
+        month: input.month,
+        assigneeId: input.assigneeId,
+      });
+    }),
+
+  institutionSummary: hostProcedure
+    .input(
+      z.object({
+        year: z.number(),
+        month: z.number(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      await assertOrganizationFeatureEnabled(
+        organizationId,
+        "allowSettlementReport",
+        "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+      );
+
+      return db.getSettlementInstitutionSummary({
+        year: input.year,
+        month: input.month,
+        organizationId,
+      } as any);
+    }),
+
+  institutionEntries: hostProcedure
+    .input(
+      z.object({
+        year: z.number(),
+        month: z.number(),
+        institutionName: z.string().min(1),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      await assertOrganizationFeatureEnabled(
+        organizationId,
+        "allowSettlementReport",
+        "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+      );
+
+      return db.getSettlementInstitutionEntries({
+        year: input.year,
+        month: input.month,
+        institutionName: input.institutionName,
+        organizationId,
+      } as any);
+    }),
+
+  institutionMonthlyTrend: hostProcedure
+    .input(
+      z.object({
+        year: z.number(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      await assertOrganizationFeatureEnabled(
+        organizationId,
+        "allowSettlementReport",
+        "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+      );
+
+      return db.getSettlementInstitutionMonthlyTrend({
+        year: input.year,
+        organizationId,
+      } as any);
+    }),
+
+  downloadPayslipExcel: hostProcedure
+    .input(
+      z.object({
+        year: z.number(),
+        month: z.number(),
+        assigneeId: z.number(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      await assertOrganizationFeatureEnabled(
+        organizationId,
+        "allowSettlementReport",
+        "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+      );
+
+      const payslipData = await db.getSettlementPayslip({
+        year: input.year,
+        month: input.month,
+        assigneeId: input.assigneeId,
+        organizationId,
+      } as any);
+
+      const { fileName, buffer } = await buildSettlementPayslipExcel(payslipData);
+
+      const base64 = Buffer.from(buffer).toString("base64");
+
+      return {
+        success: true,
+        fileName,
+        base64,
+      };
+    }),
+
+  payslip: hostProcedure
+    .input(
+      z.object({
+        year: z.number(),
+        month: z.number(),
+        assigneeId: z.number(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      await assertOrganizationFeatureEnabled(
+        organizationId,
+        "allowSettlementReport",
+        "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+      );
+
+      return db.getSettlementPayslip({
+        year: input.year,
+        month: input.month,
+        assigneeId: input.assigneeId,
+        organizationId,
+      } as any);
+    }),
 }),
-
-    entries: adminProcedure
-      .input(
-        z.object({
-          year: z.number(),
-          month: z.number(),
-          assigneeId: z.number().optional(),
-        })
-      )
-      .query(async ({ input, ctx }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
-
-  await assertOrganizationFeatureEnabled(
-    organizationId,
-    "allowSettlementReport",
-    "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
-  );
-
-  const canSeeAll = isAdminOrHost(ctx.user);
-
-  return db.getSettlementEntries({
-  organizationId,
-  year: input.year,
-  month: input.month,
-  assigneeId: canSeeAll ? input.assigneeId : Number(ctx.user.id),
-});
-      }),
-
-    institutionSummary: hostProcedure
-      .input(
-        z.object({
-          year: z.number(),
-          month: z.number(),
-        })
-      )
-      .query(async ({ input, ctx }) => {
-
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
-
-  await assertOrganizationFeatureEnabled(
-    organizationId,
-    "allowSettlementReport",
-    "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
-  );
-
-  return db.getSettlementInstitutionSummary({
-          year: input.year,
-          month: input.month,
-          organizationId,
-        } as any);
-      }),
-
-    institutionEntries: hostProcedure
-      .input(
-        z.object({
-          year: z.number(),
-          month: z.number(),
-          institutionName: z.string().min(1),
-        })
-      )
-      .query(async ({ input, ctx }) => {
-
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
-
-  await assertOrganizationFeatureEnabled(
-    organizationId,
-    "allowSettlementReport",
-    "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
-  );
-
-  return db.getSettlementInstitutionEntries({
-          year: input.year,
-          month: input.month,
-          institutionName: input.institutionName,
-          organizationId,
-        } as any);
-      }),
-
-    institutionMonthlyTrend: hostProcedure
-      .input(
-        z.object({
-          year: z.number(),
-        })
-      )
-      .query(async ({ input, ctx }) => {
-
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
-
-  await assertOrganizationFeatureEnabled(
-    organizationId,
-    "allowSettlementReport",
-    "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
-  );
-
-  return db.getSettlementInstitutionMonthlyTrend({
-          year: input.year,
-          organizationId,
-        } as any);
-      }),
-
-    downloadPayslipExcel: protectedProcedure
-      .input(
-        z.object({
-          year: z.number(),
-          month: z.number(),
-          assigneeId: z.number(),
-        })
-      )
-     .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
-
-  await assertOrganizationFeatureEnabled(
-    organizationId,
-    "allowSettlementReport",
-    "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
-  );
-
-  const assigneeId = isAdminOrHost(ctx.user)
-          ? input.assigneeId
-          : Number(ctx.user.id);
-
-        const payslipData = await db.getSettlementPayslip({
-          year: input.year,
-          month: input.month,
-          assigneeId,
-          organizationId,
-        } as any);
-
-        const { fileName, buffer } =
-          await buildSettlementPayslipExcel(payslipData);
-
-        const base64 = Buffer.from(buffer).toString("base64");
-
-        return {
-          success: true,
-          fileName,
-          base64,
-        };
-      }),
-
-    payslip: adminProcedure
-      .input(
-        z.object({
-          year: z.number(),
-          month: z.number(),
-          assigneeId: z.number(),
-        })
-      )
-      .query(async ({ input, ctx }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
-
-  await assertOrganizationFeatureEnabled(
-    organizationId,
-    "allowSettlementReport",
-    "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
-  );
-
-  const canSeeAll = isAdminOrHost(ctx.user);
-        const targetAssigneeId = canSeeAll
-          ? input.assigneeId
-          : Number(ctx.user.id);
-
-        return db.getSettlementPayslip({
-          year: input.year,
-          month: input.month,
-          assigneeId: targetAssigneeId,
-          organizationId,
-        } as any);
-      }),
-  }),
 
 
   superhost: router({
