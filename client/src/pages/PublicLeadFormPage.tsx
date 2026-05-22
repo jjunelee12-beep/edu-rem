@@ -279,6 +279,15 @@ const canEdit =
     Number(formQuery.data?.assigneeId) === Number(user.id)
   );
 
+console.log("[FORM EDIT CHECK]", {
+  page: "landing", // AdFormPage는 "ad"로 바꿔
+  userId: user?.id,
+  role: (user as any)?.role,
+  formOk: formQuery.data?.ok,
+  assigneeId: formQuery.data?.assigneeId,
+  canEdit,
+});
+
 const templateListQuery = trpc.formAdmin.listTemplates.useQuery(
   { formType: "landing" },
   { enabled: canEdit }

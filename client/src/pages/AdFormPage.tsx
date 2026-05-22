@@ -282,6 +282,15 @@ const templateListQuery = trpc.formAdmin.listTemplates.useQuery(
   { enabled: canEdit }
 );
 
+console.log("[FORM EDIT CHECK]", {
+  page: "ad",
+  userId: user?.id,
+  role: (user as any)?.role,
+  formOk: formQuery.data?.ok,
+  assigneeId: formQuery.data?.assigneeId,
+  canEdit,
+});
+
 const templatePreviewQuery = trpc.formAdmin.getNamedTemplate.useQuery(
   {
     formType: "ad",
