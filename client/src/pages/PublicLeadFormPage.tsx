@@ -794,26 +794,27 @@ applyTemplateMutation.mutate({
     <div style={{ width: "100%" }}>
       {canEdit ? (
   <div
-    style={{
-      position: "fixed",
-top: 16,
-right: 16,
-marginLeft: "auto",
-width: "fit-content",
-      zIndex: 9999,
-      display: "flex",
-      justifyContent: "flex-end",
-      marginBottom: canvasEnabled ? 0 : 16,
-    }}
+   style={{
+  position: "fixed",
+  top: 20,
+  right: 20,
+  width: "fit-content",
+  zIndex: 2147483647,
+  display: "flex",
+  justifyContent: "flex-end",
+}}
   >
           <button
             type="button"
             className="premium-submit-button"
             style={{
-              backgroundColor: editMode ? "#334155" : safeColor,
-              width: "auto",
-              padding: "12px 18px",
-            }}
+  backgroundColor: editMode ? "#334155" : "#111827",
+  width: "auto",
+  padding: "12px 18px",
+  borderRadius: 12,
+  color: "#ffffff",
+  boxShadow: "0 10px 30px rgba(15,23,42,0.25)",
+}}
             onClick={() => setEditMode(true)}
           >
             내 페이지 꾸미기
@@ -837,10 +838,15 @@ width: "fit-content",
       id="public-lead-form-section"
       className="lead-form-state-box"
       style={{
-        width: "100%",
-        height: "100%",
-        boxSizing: "border-box",
-      }}
+  width: "100%",
+  height: "100%",
+  boxSizing: "border-box",
+  display: "flex",
+  flexDirection: "column",
+  gap: 10,
+  padding: 0,
+  margin: 0,
+}}
     >
       <h2 className="lead-form-state-title">상담 신청이 접수되었습니다.</h2>
       <p className="lead-form-state-text">
@@ -849,15 +855,20 @@ width: "fit-content",
     </div>
   ) : (
     <form
-      id="public-lead-form-section"
-      className="lead-form-body"
-      onSubmit={handleSubmit}
-      style={{
-        width: "100%",
-        height: "100%",
-        boxSizing: "border-box",
-      }}
-    >
+  id="public-lead-form-section"
+  className="lead-form-body"
+  onSubmit={handleSubmit}
+  style={{
+    width: "100%",
+    height: "100%",
+    boxSizing: "border-box",
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+    padding: 0,
+    margin: 0,
+  }}
+>
       {sortedFields.map(renderField)}
 
       <button

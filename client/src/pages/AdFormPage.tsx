@@ -818,25 +818,26 @@ applyTemplateMutation.mutate({
     {canEdit ? (
       <div
         style={{
-          position: "fixed",
-top: 16,
-right: 16,
-marginLeft: "auto",
-width: "fit-content",
-          zIndex: 9999,
-          display: "flex",
-          justifyContent: "flex-end",
-          padding: canvasEnabled ? 0 : "16px",
-        }}
+  position: "fixed",
+  top: 20,
+  right: 20,
+  width: "fit-content",
+  zIndex: 2147483647,
+  display: "flex",
+  justifyContent: "flex-end",
+}}
       >
         <button
           type="button"
           className="premium-submit-button"
           style={{
-            width: "auto",
-            padding: "10px 14px",
-            backgroundColor: editMode ? "#334155" : safeColor,
-          }}
+  backgroundColor: editMode ? "#334155" : "#111827",
+  width: "auto",
+  padding: "12px 18px",
+  borderRadius: 12,
+  color: "#ffffff",
+  boxShadow: "0 10px 30px rgba(15,23,42,0.25)",
+}}
           onClick={() => setEditMode(true)}
         >
           내 페이지 꾸미기
@@ -874,10 +875,15 @@ width: "fit-content",
         className="premium-form-card"
         onSubmit={handleSubmit}
         style={{
-          width: "100%",
-          height: "100%",
-          boxSizing: "border-box",
-        }}
+  width: "100%",
+  height: "100%",
+  boxSizing: "border-box",
+  display: "flex",
+  flexDirection: "column",
+  gap: 10,
+  padding: 0,
+  margin: 0,
+}}
       >
         {sortedFields.map(renderField)}
 

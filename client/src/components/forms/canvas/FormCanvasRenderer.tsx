@@ -175,10 +175,19 @@ if (isFormElement) {
       key={element.id}
       style={{
         ...baseStyle,
-        overflow: "visible",
+        overflow: "hidden",
+        boxSizing: "border-box",
       }}
     >
-      {renderForm()}
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          boxSizing: "border-box",
+        }}
+      >
+        {renderForm()}
+      </div>
     </div>
   );
 }
