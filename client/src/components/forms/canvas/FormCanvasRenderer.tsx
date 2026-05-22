@@ -77,6 +77,8 @@ export default function FormCanvasRenderer({
   const width = canvas.width * scale;
   const height = canvas.height * scale;
 
+let renderedRequiredForm = false;
+
   const handleButtonClick = (element: FormCanvasElement) => {
     if (element.type !== "button") return;
 
@@ -163,6 +165,9 @@ const isFormElement =
   element.id === "required-form-element";
 
 if (isFormElement) {
+  if (renderedRequiredForm) return null;
+  renderedRequiredForm = true;
+
   if (!renderForm) return null;
 
   return (
