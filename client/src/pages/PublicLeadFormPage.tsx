@@ -838,16 +838,10 @@ applyTemplateMutation.mutate({
       id="public-lead-form-section"
       className="lead-form-state-box"
       style={{
-  width: "100%",
-  height: "100%",
-  boxSizing: "border-box",
-  display: "flex",
-  flexDirection: "column",
-  gap: 10,
-  padding: 0,
-  margin: 0,
-}}
-    >
+          width: "100%",
+          height: "100%",
+        }}
+      >
       <h2 className="lead-form-state-title">상담 신청이 접수되었습니다.</h2>
       <p className="lead-form-state-text">
         순차적으로 확인 후 빠르게 연락드리겠습니다.
@@ -860,7 +854,7 @@ applyTemplateMutation.mutate({
   onSubmit={handleSubmit}
   style={{
     width: "100%",
-    height: "100%",
+    minHeight: "100%",
     boxSizing: "border-box",
     display: "flex",
     flexDirection: "column",
