@@ -292,15 +292,57 @@ export default function FormCanvasRenderer({
     return fallbackFormSubmits[0];
   })();
 
-  const safeFormFields = hasRawFormFields
-    ? rawModeFormFields
-    : fallbackFormFields;
+  const legacyVisualFormFields = REQUIRED_FIELD_KEYS.map((key, index) => {
+  if (key === "agreed") {
+    const notesShape = inputLikeVisualShapes[5];
+    return {
+      id: "legacy-field-agreed",
+      type: "formField",
+      fieldKey: "agreed",
+      inputType: "checkbox",
+      label: FIELD_LABELS.agreed,
+      placeholder: "",
+      x: Number(notesShape?.x ?? 110),
+      y: Number(
+        notesShape
+          ? Number(notesShape.y || 0) + Number(notesShape.height || 0) + 24
+          : 1120
+      ),
+      width: 860,
+      height: 36,
+      zIndex: 1000,
+    } as any;
+  }
 
-  const formElements = [...safeFormFields, submitElement].filter(
-    Boolean
-  ) as FormCanvasElement[];
+  const shape = inputLikeVisualShapes[index];
+  const fallback = fallbackFormFields.find(
+    (element: any) => getFieldKey(element) === key
+  );
 
-  const shouldHideLegacyFieldVisuals = hasRawFormFields;
+  return {
+    id: `legacy-field-${key}`,
+    type: "formField",
+    fieldKey: key,
+    inputType: FIELD_INPUT_TYPES[key],
+    label: "",
+    placeholder: FIELD_PLACEHOLDERS[key],
+    x: Number(shape?.x ?? fallback?.x ?? 110),
+    y: Number(shape?.y ?? fallback?.y ?? 360 + index * 100),
+    width: Number(shape?.width ?? fallback?.width ?? 860),
+    height: Number(shape?.height ?? fallback?.height ?? 70),
+    zIndex: 1000,
+  } as any;
+}).filter(Boolean);
+
+const safeFormFields = hasRawFormFields
+  ? rawModeFormFields
+  : legacyVisualFormFields;
+
+const formElements = [...safeFormFields, submitElement].filter(
+  Boolean
+) as FormCanvasElement[];
+
+  const shouldHideLegacyFieldVisuals = false;
   const shouldHideVisualSubmitButton = Boolean(
     submitElement && visualSubmitButton
   );
