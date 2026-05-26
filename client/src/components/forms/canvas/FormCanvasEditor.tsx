@@ -163,22 +163,15 @@ const FIELD_VISUAL_TEXT_NEEDLES = [
 const isLegacyFieldVisualElement = (element: any) => {
   if (!hasFormFieldElements) return false;
 
-  if (element.type === "text") {
-    const text = normalizeFieldVisualText(element.text);
+  if (element.type !== "text") return false;
 
-    return FIELD_VISUAL_TEXT_NEEDLES.some((needle) =>
-      text.includes(normalizeFieldVisualText(needle))
-    );
-  }
+  const text = normalizeFieldVisualText(element.text);
 
-  if (element.type === "shape") {
-    const w = Number(element.width || 0);
-    const h = Number(element.height || 0);
+  if (!text) return false;
 
-    return w >= 300 && h >= 25 && h <= 260;
-  }
-
-  return false;
+  return FIELD_VISUAL_TEXT_NEEDLES.some((needle) =>
+    text.includes(normalizeFieldVisualText(needle))
+  );
 };
 
 const sortedVisibleElements = useMemo(() => {
@@ -2395,6 +2388,9 @@ onMouseLeave={() => {
 ) : null}
 
             {sortedVisibleElements.map((el) => {
+if (isLegacyFieldVisualElement(el)) {
+  return null;
+}
                 const isSelected = actualSelectedId === el.id || selectedIds.includes(el.id);
 const isDragging = dragState?.ids.includes(el.id) ?? false;
 const isResizing = resizeState?.id === el.id;

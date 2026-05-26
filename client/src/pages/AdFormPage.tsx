@@ -804,42 +804,17 @@ applyTemplateMutation.mutate({
     return <div className="ad-form-loading">유효하지 않은 광고폼 링크입니다.</div>;
   }
 
-  if (canEdit && editMode) {
-    return (
-      <FullScreenFormCanvasEditor
-  value={uiDraft}
-  onChange={setUiDraft}
-  onSave={handleSaveMyUiConfig}
-  onClose={() => setEditMode(false)}
-  onUploadCanvasImage={handleUploadCanvasImage}
-  renderFormPreview={() => (
-    <form
-      className="premium-form-card"
-      style={{
-        width: "100%",
-        minHeight: "100%",
-        boxSizing: "border-box",
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-        padding: 0,
-        margin: 0,
-      }}
-    >
-      {sortedFields.map(renderField)}
-
-      <button
-        type="button"
-        className="premium-submit-button"
-        style={{ backgroundColor: safeColor }}
-      >
-        {safeDisplayConfig.submitButtonText || "무료 상담 신청하기"}
-      </button>
-    </form>
-  )}
-/>
-    );
-  }
+ if (canEdit && editMode) {
+  return (
+    <FullScreenFormCanvasEditor
+      value={uiDraft}
+      onChange={setUiDraft}
+      onSave={handleSaveMyUiConfig}
+      onClose={() => setEditMode(false)}
+      onUploadCanvasImage={handleUploadCanvasImage}
+    />
+  );
+}
 if (done) {
   return (
     <div className="min-h-screen bg-slate-100 px-4 py-10">

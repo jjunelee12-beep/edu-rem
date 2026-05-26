@@ -418,7 +418,7 @@ const FIELD_VISUAL_TEXT_NEEDLES = [
 ];
 
 const isFieldLikeVisualText = (element: any) => {
-  if (!hasAnyRawFormField) return false;
+  if (!hasAnyRawFormField && !shouldUseAnchoredFields) return false;
   if (element.type !== "text") return false;
 
   const text = normalizeText(element.text);
@@ -431,7 +431,7 @@ const isFieldLikeVisualText = (element: any) => {
 };
 
 const isFieldLikeVisualShape = (element: any) => {
-  if (!hasAnyRawFormField) return false;
+  if (!hasAnyRawFormField && !shouldUseAnchoredFields) return false;
   if (element.type !== "shape") return false;
 
   return inputLikeVisualShapes.some(
