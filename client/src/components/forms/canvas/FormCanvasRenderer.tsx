@@ -97,6 +97,69 @@ export default function FormCanvasRenderer({
     return element.type === "formField" || element.type === "formSubmit";
   });
 
+useEffect(() => {
+  console.log("[FORM CANVAS DEBUG:init]", {
+    canvasEnabled: canvas.enabled,
+    canvasSize: {
+      width: canvas.width,
+      height: canvas.height,
+      scaledWidth: width,
+      scaledHeight: height,
+      scale,
+    },
+    values,
+    fields: fields.map((field: any) => ({
+      fieldKey: field.fieldKey,
+      type: field.type,
+      optionsCount: Array.isArray(field.options) ? field.options.length : 0,
+      hidden: field.hidden,
+      required: field.required,
+    })),
+    formElements: formElements.map((el: any) => ({
+      id: el.id,
+      type: el.type,
+      fieldKey: el.fieldKey,
+      inputType: el.inputType,
+      x: el.x,
+      y: el.y,
+      width: el.width,
+      height: el.height,
+      zIndex: el.zIndex,
+      hidden: el.hidden,
+    })),
+    visualElements: visualElements.map((el: any) => ({
+      id: el.id,
+      type: el.type,
+      x: el.x,
+      y: el.y,
+      width: el.width,
+      height: el.height,
+      zIndex: el.zIndex,
+      hidden: el.hidden,
+    })),
+  });
+}, [canvas.enabled, canvas.width, canvas.height, scale, width, height, fields, values, formElements, visualElements]);
+useEffect(() => {
+  const handlePointerDown = (event: PointerEvent) => {
+    const target = document.elementFromPoint(event.clientX, event.clientY);
+
+    console.log("[FORM CANVAS DEBUG:pointer]", {
+      x: event.clientX,
+      y: event.clientY,
+      targetTag: target?.tagName,
+      targetClass: (target as HTMLElement | null)?.className,
+      targetId: (target as HTMLElement | null)?.id,
+      targetOuterHTML: target?.outerHTML?.slice(0, 500),
+    });
+  };
+
+  window.addEventListener("pointerdown", handlePointerDown, true);
+
+  return () => {
+    window.removeEventListener("pointerdown", handlePointerDown, true);
+  };
+}, []);
+
   const handleButtonClick = (element: FormCanvasElement) => {
     if (element.type !== "button") return;
 
@@ -135,14 +198,14 @@ export default function FormCanvasRenderer({
 
   const renderFormElement = (element: FormCanvasElement) => {
     const baseStyle: React.CSSProperties = {
-      position: "absolute",
-      left: element.x * scale,
-      top: element.y * scale,
-      width: element.width * scale,
-      height: element.height * scale,
-      zIndex: 2147483647,
-      transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
-    };
+  position: "absolute",
+  left: element.x * scale,
+  top: element.y * scale,
+  width: element.width * scale,
+  height: element.height * scale,
+  zIndex: Number((element as any).zIndex || 1),
+  transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
+};
 
     if ((element as any).type === "formSubmit") {
       return (
@@ -289,20 +352,21 @@ export default function FormCanvasRenderer({
   userSelect: "text",
   WebkitUserSelect: "text",
   backgroundClip: "padding-box",
+  zIndex: 1000 + Number((element as any).zIndex || 1),
 };
 
     if (inputType === "textarea") {
   return (
     <textarea
-      key={element.id}
-      placeholder={placeholder}
-      defaultValue={fieldValue}
-      onInput={(e) =>
-        onValueChange?.(
-          fieldKey,
-          (e.currentTarget as HTMLTextAreaElement).value
-        )
-      }
+  key={element.id}
+  placeholder={placeholder}
+  defaultValue={fieldValue}
+  onFocus={() => console.log("[FORM CANVAS DEBUG:focus]", fieldKey, "textarea")}
+  onInput={(e) => {
+    const next = (e.currentTarget as HTMLTextAreaElement).value;
+    console.log("[FORM CANVAS DEBUG:input]", fieldKey, next);
+    onValueChange?.(fieldKey, next);
+  }}
       style={{
         ...controlStyle,
         border: "1px solid #d1d5db",
@@ -321,9 +385,13 @@ export default function FormCanvasRenderer({
 
   return (
     <select
-      key={element.id}
-      defaultValue={fieldValue}
-      onChange={(e) => onValueChange?.(fieldKey, e.target.value)}
+  key={element.id}
+  defaultValue={fieldValue}
+  onFocus={() => console.log("[FORM CANVAS DEBUG:focus]", fieldKey, "select")}
+  onChange={(e) => {
+    console.log("[FORM CANVAS DEBUG:change]", fieldKey, e.target.value);
+    onValueChange?.(fieldKey, e.target.value);
+  }}
       style={{
         ...controlStyle,
         border: "1px solid #d1d5db",
@@ -371,27 +439,28 @@ export default function FormCanvasRenderer({
 
    return (
   <input
-    key={element.id}
-    placeholder={placeholder}
-    defaultValue={fieldValue}
-    inputMode={fieldKey === "phone" ? "numeric" : undefined}
-    autoComplete={
-      fieldKey === "clientName"
-        ? "name"
-        : fieldKey === "phone"
-          ? "tel"
-          : "off"
-    }
-    onInput={(e) => {
-      const rawValue = (e.currentTarget as HTMLInputElement).value;
+  key={element.id}
+  placeholder={placeholder}
+  defaultValue={fieldValue}
+  inputMode={fieldKey === "phone" ? "numeric" : undefined}
+  autoComplete={
+    fieldKey === "clientName"
+      ? "name"
+      : fieldKey === "phone"
+        ? "tel"
+        : "off"
+  }
+  onFocus={() => console.log("[FORM CANVAS DEBUG:focus]", fieldKey, "input")}
+  onInput={(e) => {
+    const rawValue = (e.currentTarget as HTMLInputElement).value;
+    const nextValue =
+      fieldKey === "phone"
+        ? rawValue.replace(/\D/g, "").slice(0, 11)
+        : rawValue;
 
-      const nextValue =
-        fieldKey === "phone"
-          ? rawValue.replace(/\D/g, "").slice(0, 11)
-          : rawValue;
-
-      onValueChange?.(fieldKey, nextValue);
-    }}
+    console.log("[FORM CANVAS DEBUG:input]", fieldKey, nextValue);
+    onValueChange?.(fieldKey, nextValue);
+  }}
     style={{
       ...controlStyle,
       border: "1px solid #d1d5db",
@@ -423,27 +492,28 @@ export default function FormCanvasRenderer({
     >
       <div
         style={{
-          position: "relative",
-          width,
-          height,
-          overflow: "visible",
-          borderRadius: isMobile ? 18 : 24,
-          backgroundColor: canvas.backgroundColor || "#ffffff",
-          boxShadow: "0 18px 50px rgba(15, 23, 42, 0.14)",
-        }}
+  position: "relative",
+  width,
+  height,
+  overflow: "hidden",
+  isolation: "isolate",
+  borderRadius: isMobile ? 18 : 24,
+  backgroundColor: canvas.backgroundColor || "#ffffff",
+  boxShadow: "0 18px 50px rgba(15, 23, 42, 0.14)",
+}}
       >
         {visualElements.map((element) => {
           const baseStyle: React.CSSProperties = {
-            position: "absolute",
-            left: element.x * scale,
-            top: element.y * scale,
-            width: element.width * scale,
-            height: element.height * scale,
-            zIndex: Number(element.zIndex ?? 1),
-            transform: element.rotation
-              ? `rotate(${element.rotation}deg)`
-              : undefined,
-          };
+  position: "absolute",
+  left: element.x * scale,
+  top: element.y * scale,
+  width: element.width * scale,
+  height: element.height * scale,
+  zIndex: Math.min(Number(element.zIndex ?? 1), 100),
+  transform: element.rotation
+    ? `rotate(${element.rotation}deg)`
+    : undefined,
+};
 
           if (element.type === "text") {
             return (
