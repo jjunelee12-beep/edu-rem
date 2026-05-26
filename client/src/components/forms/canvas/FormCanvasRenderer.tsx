@@ -395,6 +395,50 @@ const formElements = [...safeFormFields, ...safeFormSubmits];
 const shouldHideAnchoredVisuals =
   shouldUseAnchoredFields || hasAnyRawFormField;
 
+const FIELD_VISUAL_TEXT_NEEDLES = [
+  "이름",
+  "전화번호",
+  "전화",
+  "최종학력",
+  "학력",
+  "희망과정",
+  "과정",
+  "문의경로",
+  "경로",
+  "상담내용",
+  "진행하시면서",
+  "걱정",
+  "적어주세요",
+  "개인정보",
+  "동의",
+  "수집및이용",
+  "블로그",
+  "인스타",
+  "지인추천",
+];
+
+const isFieldLikeVisualText = (element: any) => {
+  if (!hasAnyRawFormField) return false;
+  if (element.type !== "text") return false;
+
+  const text = normalizeText(element.text);
+
+  if (!text) return false;
+
+  return FIELD_VISUAL_TEXT_NEEDLES.some((needle) =>
+    text.includes(normalizeText(needle))
+  );
+};
+
+const isFieldLikeVisualShape = (element: any) => {
+  if (!hasAnyRawFormField) return false;
+  if (element.type !== "shape") return false;
+
+  return inputLikeVisualShapes.some(
+    (shape: any) => String(shape.id) === String(element.id)
+  );
+};
+
   const handleButtonClick = (element: FormCanvasElement) => {
     if (element.type !== "button") return;
 
@@ -803,6 +847,10 @@ const shouldHideAnchoredVisuals =
 };
 
           if (element.type === "text") {
+if (isFieldLikeVisualText(element)) {
+  return null;
+}
+
 if (shouldHideAnchoredVisuals && usedVisualElementIds.has(String(element.id))) {
   return null;
 }
@@ -918,6 +966,10 @@ if (usedVisualElementIds.has(String(element.id))) {
           }
 
           if (element.type === "shape") {
+
+if (isFieldLikeVisualShape(element)) {
+  return null;
+}
 
 if (shouldHideAnchoredVisuals && usedVisualElementIds.has(String(element.id))) {
   return null;

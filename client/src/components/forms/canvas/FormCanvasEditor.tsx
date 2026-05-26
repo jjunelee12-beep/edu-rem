@@ -129,11 +129,64 @@ const selectedElements = useMemo(
   [canvas.elements, selectedIds]
 );
 
+const hasFormFieldElements = useMemo(() => {
+  return canvas.elements.some((element: any) => element.type === "formField");
+}, [canvas.elements]);
+
+const normalizeFieldVisualText = (value: any) =>
+  String(value || "")
+    .replace(/\s/g, "")
+    .toLowerCase();
+
+const FIELD_VISUAL_TEXT_NEEDLES = [
+  "이름",
+  "전화번호",
+  "전화",
+  "최종학력",
+  "학력",
+  "희망과정",
+  "과정",
+  "문의경로",
+  "경로",
+  "상담내용",
+  "진행하시면서",
+  "걱정",
+  "적어주세요",
+  "개인정보",
+  "동의",
+  "수집및이용",
+  "블로그",
+  "인스타",
+  "지인추천",
+];
+
+const isLegacyFieldVisualElement = (element: any) => {
+  if (!hasFormFieldElements) return false;
+
+  if (element.type === "text") {
+    const text = normalizeFieldVisualText(element.text);
+
+    return FIELD_VISUAL_TEXT_NEEDLES.some((needle) =>
+      text.includes(normalizeFieldVisualText(needle))
+    );
+  }
+
+  if (element.type === "shape") {
+    const w = Number(element.width || 0);
+    const h = Number(element.height || 0);
+
+    return w >= 300 && h >= 25 && h <= 260;
+  }
+
+  return false;
+};
+
 const sortedVisibleElements = useMemo(() => {
   return [...canvas.elements]
     .filter((el) => !el.hidden)
+    .filter((el) => !isLegacyFieldVisualElement(el))
     .sort((a, b) => Number(a.zIndex ?? 0) - Number(b.zIndex ?? 0));
-}, [canvas.elements]);
+}, [canvas.elements, hasFormFieldElements]);
 
 const sortedLayerElements = useMemo(() => {
   return [...canvas.elements].sort(
