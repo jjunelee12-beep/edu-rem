@@ -326,11 +326,10 @@ export default function FormCanvasRenderer({
               ? Number(notesShape.y || 0) + Number(notesShape.height || 0) + 20
               : 1120)
         ),
-        width: 320,
-height: 28,
-zIndex: 1000,
-overlayMode: true,
-overlayCheckbox: true,
+        width: Number(agreeText?.width ?? 520),
+        height: Number(agreeText?.height ?? 40),
+        zIndex: 1000,
+        overlayMode: true,
       };
     }
 
@@ -582,15 +581,13 @@ overlayCheckbox: true,
           <label
             key={element.id}
             style={{
-  ...overlayBase,
-  width: 320 * scale,
-  height: 28 * scale,
-  display: "flex",
-  alignItems: "center",
-  gap: 6 * scale,
-  fontSize: Math.max(10, 13 * scale),
-  color: "transparent",
-}}
+              ...overlayBase,
+              display: "flex",
+              alignItems: "center",
+              gap: 6 * scale,
+              fontSize: Math.max(10, 13 * scale),
+              color: "transparent",
+            }}
           >
             <input
               type="checkbox"
