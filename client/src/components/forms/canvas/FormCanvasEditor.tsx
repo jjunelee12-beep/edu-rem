@@ -60,10 +60,11 @@ const setActualSelectedId = (id: string | null) => {
 };
 
 const [selectedIds, setSelectedIds] = useState<string[]>([]);
-const [zoom, setZoom] = useState(compact ? 0.42 : 0.32);
+const [zoom, setZoom] = useState(compact ? 0.68 : 0.32);
+
 useEffect(() => {
   if (!compact) return;
-  setZoom(0.42);
+  setZoom(0.68);
 }, [compact]);
 const [snapEnabled, setSnapEnabled] = useState(true);
 const [gridVisible, setGridVisible] = useState(true);
@@ -2165,7 +2166,7 @@ let renderedRequiredForm = false;
 
 <button
   type="button"
-  onClick={() => setZoom(0.42)}
+  onClick={() => setZoom(0.68)}
   className="rounded-lg border bg-white px-3 py-2 text-sm font-semibold text-slate-700"
 >
   초기화
@@ -2309,7 +2310,7 @@ const isDragging = dragState?.ids.includes(el.id) ?? false;
 const isResizing = resizeState?.id === el.id;
 const isActiveMoving = isDragging || isResizing;
 
-if (el.type === "form" || isRequiredFormElement(el)) {
+if ((el as any).type === "form") {
   if (renderedRequiredForm) return null;
   renderedRequiredForm = true;
 
@@ -2372,6 +2373,143 @@ if (el.type === "form" || isRequiredFormElement(el)) {
   );
 }
 
+if ((el as any).type === "formField") {
+  const inputType = (el as any).inputType || "text";
+  const placeholder = (el as any).placeholder || "";
+  const label = (el as any).label || "";
+
+  return (
+    <div
+      key={el.id}
+      onMouseDown={(e) => startDrag(e, el)}
+      className={`absolute rounded-xl ${
+        isSelected
+          ? "ring-2 ring-blue-400"
+          : "hover:ring-1 hover:ring-slate-300"
+      }`}
+      style={{
+        left: el.x * scale,
+        top: el.y * scale,
+        width: el.width * scale,
+        height: el.height * scale,
+        zIndex: isActiveMoving ? 9999 : el.zIndex ?? 1,
+      }}
+    >
+      <div
+        style={{
+          width: el.width,
+          height: el.height,
+          transform: `scale(${scale})`,
+          transformOrigin: "top left",
+          pointerEvents: "none",
+        }}
+      >
+        {inputType === "textarea" ? (
+          <textarea
+            disabled
+            placeholder={placeholder}
+            style={{
+              width: "100%",
+              height: "100%",
+              border: "1px solid #d1d5db",
+              borderRadius: 12,
+              padding: 14,
+              fontSize: 16,
+              background: "#ffffff",
+              resize: "none",
+              boxSizing: "border-box",
+            }}
+          />
+        ) : inputType === "select" ? (
+          <select
+            disabled
+            style={{
+              width: "100%",
+              height: "100%",
+              border: "1px solid #d1d5db",
+              borderRadius: 12,
+              padding: "0 14px",
+              fontSize: 16,
+              background: "#ffffff",
+              boxSizing: "border-box",
+            }}
+          >
+            <option>{placeholder || "선택"}</option>
+          </select>
+        ) : inputType === "checkbox" ? (
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              width: "100%",
+              height: "100%",
+              fontSize: 14,
+              color: "#334155",
+              boxSizing: "border-box",
+            }}
+          >
+            <input type="checkbox" disabled />
+            {label || "개인정보 수집 및 이용에 동의합니다."}
+          </label>
+        ) : (
+          <input
+            disabled
+            placeholder={placeholder}
+            style={{
+              width: "100%",
+              height: "100%",
+              border: "1px solid #d1d5db",
+              borderRadius: 12,
+              padding: "0 14px",
+              fontSize: 16,
+              background: "#f8fafc",
+              boxSizing: "border-box",
+            }}
+          />
+        )}
+      </div>
+
+      {renderElementToolbar(el)}
+      {renderResizeHandle(el)}
+    </div>
+  );
+}
+
+if ((el as any).type === "formSubmit") {
+  return (
+    <button
+      key={el.id}
+      type="button"
+      onMouseDown={(e) => startDrag(e, el)}
+      className={`absolute rounded-xl ${
+        isSelected
+          ? "ring-2 ring-blue-400"
+          : "hover:ring-1 hover:ring-slate-300"
+      }`}
+      style={{
+        left: el.x * scale,
+        top: el.y * scale,
+        width: el.width * scale,
+        height: el.height * scale,
+        zIndex: isActiveMoving ? 9999 : el.zIndex ?? 1,
+        backgroundColor: (el as any).backgroundColor || "#5fc065",
+        color: (el as any).color || "#ffffff",
+        borderRadius: ((el as any).borderRadius || 18) * scale,
+        border: "none",
+        fontWeight: 900,
+        fontSize: 16 * scale,
+        cursor: "move",
+        boxShadow: "0 14px 30px rgba(34, 197, 94, 0.25)",
+      }}
+    >
+      {(el as any).text || "1:1 맞춤 상담 받기"}
+
+      {renderElementToolbar(el)}
+      {renderResizeHandle(el)}
+    </button>
+  );
+}
 
                 if (el.type === "text") {
                   return (

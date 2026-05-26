@@ -12,7 +12,13 @@ type Props = {
   onTel?: () => void;
   scale?: number;
   maxWidth?: number;
-renderForm?: () => React.ReactNode;
+  renderForm?: () => React.ReactNode;
+
+  values?: Record<string, any>;
+  fields?: any[];
+  onValueChange?: (fieldKey: string, value: any) => void;
+  onSubmit?: () => void;
+  isSubmitting?: boolean;
 };
 
 function normalizeCanvas(value?: FormCanvasConfig): FormCanvasConfig {
@@ -51,6 +57,12 @@ export default function FormCanvasRenderer({
   scale: overrideScale,
   maxWidth,
   renderForm,
+
+  values = {},
+  fields = [],
+  onValueChange,
+  onSubmit,
+  isSubmitting = false,
 }: Props) {
   const canvas = normalizeCanvas(rawCanvas);
   const windowWidth = useWindowWidth();
@@ -160,7 +172,6 @@ background: "#f3f4f6",
             };
 
 const isFormElement =
-  (element as any).requiredFormElement === true ||
   element.type === "form" ||
   element.id === "required-form-element";
 
@@ -181,6 +192,131 @@ if (isFormElement) {
     >
       {renderForm()}
     </div>
+  );
+}
+
+if ((element as any).type === "formField") {
+  const inputType = (element as any).inputType || "text";
+  const placeholder = (element as any).placeholder || "";
+  const label = (element as any).label || "";
+const fieldKey = String((element as any).fieldKey || "");
+const field = fields.find((item: any) => item.fieldKey === fieldKey);
+const fieldValue = values[fieldKey] ?? "";
+
+  return (
+    <div
+      key={element.id}
+      style={{
+        ...baseStyle,
+        overflow: "visible",
+      }}
+    >
+      {inputType === "textarea" ? (
+        <textarea
+  placeholder={placeholder}
+  value={fieldValue}
+  onChange={(e) => onValueChange?.(fieldKey, e.target.value)}
+  style={{
+            width: "100%",
+            height: "100%",
+            border: "1px solid #d1d5db",
+            borderRadius: 12 * scale,
+            padding: 14 * scale,
+            fontSize: Math.max(14, 16 * scale),
+            background: "#ffffff",
+            resize: "none",
+            boxSizing: "border-box",
+          }}
+        />
+      ) : inputType === "select" ? (
+        <select
+  value={fieldValue}
+  onChange={(e) => onValueChange?.(fieldKey, e.target.value)}
+  style={{
+            width: "100%",
+            height: "100%",
+            border: "1px solid #d1d5db",
+            borderRadius: 12 * scale,
+            padding: `0 ${14 * scale}px`,
+            fontSize: Math.max(14, 16 * scale),
+            background: "#ffffff",
+            boxSizing: "border-box",
+          }}
+        >
+         <option value="">{placeholder || "선택"}</option>
+{(field?.options || []).map((option: any) => (
+  <option key={option.value} value={option.value}>
+    {option.label}
+  </option>
+))}
+        </select>
+      ) : inputType === "checkbox" ? (
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8 * scale,
+            width: "100%",
+            height: "100%",
+            fontSize: Math.max(12, 14 * scale),
+            color: "#334155",
+          }}
+        >
+          <input
+  type="checkbox"
+  checked={Boolean(values[fieldKey])}
+  onChange={(e) => onValueChange?.(fieldKey, e.target.checked)}
+/>
+          {label || "개인정보 수집 및 이용 동의"}
+        </label>
+      ) : (
+        <input
+  placeholder={placeholder}
+  value={fieldValue}
+  onChange={(e) => onValueChange?.(fieldKey, e.target.value)}
+  style={{
+            width: "100%",
+            height: "100%",
+            border: "1px solid #d1d5db",
+            borderRadius: 12 * scale,
+            padding: `0 ${14 * scale}px`,
+            fontSize: Math.max(14, 16 * scale),
+            background: "#f8fafc",
+            boxSizing: "border-box",
+          }}
+        />
+      )}
+    </div>
+  );
+}
+if ((element as any).type === "formSubmit") {
+  return (
+    <button
+  key={element.id}
+  type="button"
+  onClick={onSubmit}
+  disabled={isSubmitting}
+  style={{
+        ...baseStyle,
+        border: "none",
+        cursor: "pointer",
+        backgroundColor:
+          (element as any).backgroundColor || "#5fc065",
+        color: (element as any).color || "#ffffff",
+        borderRadius:
+          Number((element as any).borderRadius || 18) * scale,
+        fontSize: Math.max(
+          14,
+          Number((element as any).fontSize || 18) * scale
+        ),
+        fontWeight: 900,
+        boxShadow: "0 10px 24px rgba(15, 23, 42, 0.18)",
+      }}
+    >
+      {isSubmitting
+  ? "접수 중..."
+  : (element as any).text || "1:1 맞춤 상담 받기"}
+    </button>
   );
 }
 

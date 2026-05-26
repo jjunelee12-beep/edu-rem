@@ -865,6 +865,11 @@ applyTemplateMutation.mutate({
 
   <FormCanvasRenderer
   canvas={safeDisplayConfig.canvas}
+  values={values}
+  fields={sortedFields}
+  onValueChange={updateValue}
+  onSubmit={() => handleSubmit({ preventDefault: () => {} } as any)}
+  isSubmitting={submitMutation.isPending}
   onOpenForm={() => {
     document
       .getElementById("public-lead-form-section")
