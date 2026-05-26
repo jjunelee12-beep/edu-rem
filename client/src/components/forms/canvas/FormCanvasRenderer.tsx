@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   createDefaultCompanyCanvasConfig,
   type FormCanvasConfig,
@@ -20,6 +20,77 @@ type Props = {
   onSubmit?: () => void;
   isSubmitting?: boolean;
 };
+
+const REQUIRED_FIELD_KEYS = [
+  "clientName",
+  "phone",
+  "finalEducation",
+  "desiredCourse",
+  "channel",
+  "notes",
+  "agreed",
+];
+
+const FIELD_LABELS: Record<string, string> = {
+  clientName: "이름",
+  phone: "전화번호",
+  finalEducation: "최종학력",
+  desiredCourse: "희망과정",
+  channel: "문의경로",
+  notes: "상담내용",
+  agreed: "개인정보 수집 및 이용에 동의합니다.",
+};
+
+const FIELD_PLACEHOLDERS: Record<string, string> = {
+  clientName: "이름",
+  phone: "전화번호",
+  finalEducation: "최종학력 선택",
+  desiredCourse: "희망과정 선택",
+  channel: "문의경로 (예. 블로그, 인스타, 지인추천)",
+  notes: "진행하시면서 걱정되시는 부분 적어주세요!",
+  agreed: "",
+};
+
+const FIELD_INPUT_TYPES: Record<string, string> = {
+  clientName: "text",
+  phone: "phone",
+  finalEducation: "select",
+  desiredCourse: "select",
+  channel: "text",
+  notes: "textarea",
+  agreed: "checkbox",
+};
+
+const FIELD_VISUAL_TEXT_NEEDLES = [
+  "이름",
+  "이름을입력해주세요",
+  "입력해주세요",
+  "전화번호",
+  "전화",
+  "010",
+  "0000",
+  "최종학력",
+  "학력",
+  "최종학력선택",
+  "선택",
+  "희망과정",
+  "희망과정선택",
+  "과정",
+  "문의경로",
+  "문의경로입력",
+  "경로",
+  "상담내용",
+  "상담내역",
+  "진행하시면서",
+  "걱정",
+  "적어주세요",
+  "개인정보",
+  "동의",
+  "수집및이용",
+  "블로그",
+  "인스타",
+  "지인추천",
+];
 
 function normalizeCanvas(value?: FormCanvasConfig): FormCanvasConfig {
   const defaultCanvas = createDefaultCompanyCanvasConfig();
@@ -51,6 +122,23 @@ function useWindowWidth() {
 
   return width;
 }
+
+const normalizeText = (value: any) =>
+  String(value || "")
+    .replace(/\s/g, "")
+    .toLowerCase();
+
+const getFieldKey = (element: any) => String(element?.fieldKey || "").trim();
+
+const pickBestElement = (items: any[]) => {
+  return [...items].sort((a, b) => {
+    const areaA = Number(a.width || 0) * Number(a.height || 0);
+    const areaB = Number(b.width || 0) * Number(b.height || 0);
+
+    if (areaA !== areaB) return areaB - areaA;
+    return Number(b.zIndex || 0) - Number(a.zIndex || 0);
+  })[0];
+};
 
 export default function FormCanvasRenderer({
   canvas: rawCanvas,
@@ -89,364 +177,256 @@ export default function FormCanvasRenderer({
 
   const visibleElements = canvas.elements.filter((element) => !element.hidden);
 
+  const rawFormFields = visibleElements.filter(
+    (element: any) => element.type === "formField"
+  );
+
+  const rawFormSubmits = visibleElements.filter(
+    (element: any) => element.type === "formSubmit"
+  );
+
+  const hasRawFormFields = rawFormFields.length > 0;
+
   const visualElements = visibleElements.filter((element: any) => {
     return element.type !== "formField" && element.type !== "formSubmit";
   });
 
-  const rawFormFields = visibleElements.filter((element: any) => {
-  return element.type === "formField";
-});
-
-const rawFormSubmits = visibleElements.filter((element: any) => {
-  return element.type === "formSubmit";
-});
-
-const defaultCanvasForForm = createDefaultCompanyCanvasConfig();
-
-const fallbackFormFields = defaultCanvasForForm.elements.filter((element: any) => {
-  return element.type === "formField";
-});
-
-const fallbackFormSubmits = defaultCanvasForForm.elements.filter((element: any) => {
-  return element.type === "formSubmit";
-});
-
-const normalizeText = (value: any) =>
-  String(value || "")
-    .replace(/\s/g, "")
-    .toLowerCase();
-
-const visualTextElements = visualElements.filter(
-  (element: any) => element.type === "text"
-);
-
-const inputLikeVisualShapes = visualElements
-  .filter((element: any) => {
-    if (element.type !== "shape") return false;
-
-    const w = Number(element.width || 0);
-    const h = Number(element.height || 0);
-
-    return w >= 300 && h >= 25 && h <= 260;
-  })
-  .sort((a: any, b: any) => Number(a.y || 0) - Number(b.y || 0));
-
-const findTextElement = (needles: string[]) => {
-  return visualTextElements.find((element: any) => {
-    const text = normalizeText((element as any).text);
-    return needles.some((needle) => text.includes(normalizeText(needle)));
-  });
-};
-
-const findShapeAroundText = (textElement: any) => {
-  if (!textElement) return null;
-
-  const tx = Number(textElement.x || 0);
-  const ty = Number(textElement.y || 0);
-
-  const candidates = inputLikeVisualShapes.filter((shape: any) => {
-    const sx = Number(shape.x || 0);
-    const sy = Number(shape.y || 0);
-    const sw = Number(shape.width || 0);
-    const sh = Number(shape.height || 0);
-
-    return (
-      tx >= sx - 40 &&
-      tx <= sx + sw + 40 &&
-      ty >= sy - 40 &&
-      ty <= sy + sh + 40
-    );
-  });
-
-  return (
-    candidates.sort((a: any, b: any) => {
-      const ay =
-        Math.abs(Number(a.y || 0) - ty) + Math.abs(Number(a.x || 0) - tx);
-      const by =
-        Math.abs(Number(b.y || 0) - ty) + Math.abs(Number(b.x || 0) - tx);
-      return ay - by;
-    })[0] || null
+  const visualTextElements = visualElements.filter(
+    (element: any) => element.type === "text"
   );
-};
 
-const anchorTextByFieldKey: Record<string, any> = {
-  clientName: findTextElement(["이름"]),
-  phone: findTextElement(["전화번호", "전화"]),
-  finalEducation: findTextElement(["최종학력", "학력"]),
-  desiredCourse: findTextElement(["희망과정", "과정"]),
-  channel: findTextElement(["문의경로", "경로"]),
-  notes: findTextElement(["진행하시면서", "걱정", "적어주세요"]),
-  agreed: findTextElement(["개인정보", "동의"]),
-};
+  const inputLikeVisualShapes = visualElements
+    .filter((element: any) => {
+      if (element.type !== "shape") return false;
 
-const anchorShapeByFieldKey: Record<string, any> = {
-  clientName: findShapeAroundText(anchorTextByFieldKey.clientName),
-  phone: findShapeAroundText(anchorTextByFieldKey.phone),
-  finalEducation: findShapeAroundText(anchorTextByFieldKey.finalEducation),
-  desiredCourse: findShapeAroundText(anchorTextByFieldKey.desiredCourse),
-  channel: findShapeAroundText(anchorTextByFieldKey.channel),
-  notes: findShapeAroundText(anchorTextByFieldKey.notes),
-};
+      const w = Number(element.width || 0);
+      const h = Number(element.height || 0);
 
-const anchoredFieldDefs = [
-  { fieldKey: "clientName", inputType: "text", placeholder: "이름" },
-  { fieldKey: "phone", inputType: "phone", placeholder: "전화번호" },
-  { fieldKey: "finalEducation", inputType: "select", placeholder: "최종학력 선택" },
-  { fieldKey: "desiredCourse", inputType: "select", placeholder: "희망과정 선택" },
-  { fieldKey: "channel", inputType: "text", placeholder: "문의경로 (예. 블로그, 인스타, 지인추천)" },
-  { fieldKey: "notes", inputType: "textarea", placeholder: "진행하시면서 걱정되시는 부분 적어주세요!" },
-];
+      return w >= 240 && h >= 20 && h <= 280;
+    })
+    .sort((a: any, b: any) => Number(a.y || 0) - Number(b.y || 0));
 
-const anchoredInputFields = anchoredFieldDefs.map((field, index) => {
-  const shape = anchorShapeByFieldKey[field.fieldKey];
-  const fallbackShape = inputLikeVisualShapes[index];
-
-  return {
-    id: `anchored-${field.fieldKey}`,
-    type: "formField",
-    ...field,
-    x: Number(shape?.x ?? fallbackShape?.x ?? 140),
-    y: Number(shape?.y ?? fallbackShape?.y ?? 300 + index * 95),
-    width: Number(shape?.width ?? fallbackShape?.width ?? 800),
-    height:
-      field.fieldKey === "notes"
-        ? Number(shape?.height ?? fallbackShape?.height ?? 150)
-        : Number(shape?.height ?? fallbackShape?.height ?? 72),
-    zIndex: 1000,
-  };
-});
-
-const notesShape = anchorShapeByFieldKey.notes;
-const agreeText = anchorTextByFieldKey.agreed;
-
-const anchoredAgreeField = {
-  id: "anchored-agreed",
-  type: "formField",
-  fieldKey: "agreed",
-  inputType: "checkbox",
-  placeholder: "",
-  label: "개인정보 수집 및 이용에 동의합니다.",
-  x: Number(agreeText?.x ?? notesShape?.x ?? 140),
-  y: Number(
-    agreeText?.y ??
-      (notesShape
-        ? Number(notesShape.y || 0) + Number(notesShape.height || 0) + 32
-        : 950)
-  ),
-  width: 520,
-  height: 40,
-  zIndex: 1000,
-};
-
-const anchoredFormFields = [...anchoredInputFields, anchoredAgreeField];
-
-const usedVisualElementIds = new Set<string>();
-
-Object.values(anchorTextByFieldKey).forEach((element: any) => {
-  if (element?.id) usedVisualElementIds.add(String(element.id));
-});
-
-Object.values(anchorShapeByFieldKey).forEach((element: any) => {
-  if (element?.id) usedVisualElementIds.add(String(element.id));
-});
-
-const visualSubmitButton = visualElements.find((element: any) => {
-  if (element.type !== "button") return false;
-  const text = normalizeText((element as any).text);
-  return text.includes("상담") || text.includes("받기");
-});
-
-if ((visualSubmitButton as any)?.id) {
-  usedVisualElementIds.add(String((visualSubmitButton as any).id));
-}
-
-if (rawFormSubmits.length > 0) {
-  visualElements.forEach((element: any) => {
-    if (element.type !== "button") return;
+  const isFieldLikeVisualText = (element: any) => {
+    if (element.type !== "text") return false;
 
     const text = normalizeText(element.text);
-    const action = String(element.action || "");
+    if (!text) return false;
 
-    if (
-      action === "openForm" ||
-      action === "submit" ||
-      text.includes("상담") ||
-      text.includes("신청") ||
-      text.includes("받기")
-    ) {
-      usedVisualElementIds.add(String(element.id));
-    }
+    return FIELD_VISUAL_TEXT_NEEDLES.some((needle) =>
+      text.includes(normalizeText(needle))
+    );
+  };
+
+  const isFieldLikeVisualShape = (element: any) => {
+    if (element.type !== "shape") return false;
+
+    return inputLikeVisualShapes.some(
+      (shape: any) => String(shape.id) === String(element.id)
+    );
+  };
+
+  const findVisualText = (needles: string[]) => {
+    return visualTextElements.find((element: any) => {
+      const text = normalizeText(element.text);
+
+      return needles.some((needle) => text.includes(normalizeText(needle)));
+    });
+  };
+
+  const findShapeAroundText = (textElement: any, fallbackIndex: number) => {
+    if (!textElement) return inputLikeVisualShapes[fallbackIndex] || null;
+
+    const tx = Number(textElement.x || 0);
+    const ty = Number(textElement.y || 0);
+
+    const candidates = inputLikeVisualShapes.filter((shape: any) => {
+      const sx = Number(shape.x || 0);
+      const sy = Number(shape.y || 0);
+      const sw = Number(shape.width || 0);
+      const sh = Number(shape.height || 0);
+
+      return (
+        tx >= sx - 80 &&
+        tx <= sx + sw + 80 &&
+        ty >= sy - 80 &&
+        ty <= sy + sh + 80
+      );
+    });
+
+    return (
+      candidates.sort((a: any, b: any) => {
+        const da =
+          Math.abs(Number(a.y || 0) - ty) + Math.abs(Number(a.x || 0) - tx);
+        const db =
+          Math.abs(Number(b.y || 0) - ty) + Math.abs(Number(b.x || 0) - tx);
+        return da - db;
+      })[0] ||
+      inputLikeVisualShapes[fallbackIndex] ||
+      null
+    );
+  };
+
+  const rawFormFieldsByKey = new Map<string, any[]>();
+
+  rawFormFields.forEach((element: any) => {
+    const key = getFieldKey(element);
+    if (!key) return;
+
+    rawFormFieldsByKey.set(key, [
+      ...(rawFormFieldsByKey.get(key) || []),
+      element,
+    ]);
   });
-}
 
-const visualFormSubmitElements = visualSubmitButton
-  ? [
-      {
-        id: "visual-submit-as-form-submit",
-        type: "formSubmit",
-        text: (visualSubmitButton as any).text || "무료 상담 신청하기",
-        x: Number((visualSubmitButton as any).x || 140),
-        y: Number((visualSubmitButton as any).y || 1020),
-        width: Number((visualSubmitButton as any).width || 800),
-        height: Number((visualSubmitButton as any).height || 80),
-        backgroundColor:
-          (visualSubmitButton as any).backgroundColor || "#2563eb",
-        color: (visualSubmitButton as any).color || "#ffffff",
-        borderRadius: Number((visualSubmitButton as any).borderRadius || 18),
-        fontSize: Number((visualSubmitButton as any).fontSize || 18),
-        zIndex: 1000,
-      },
-    ]
-  : [];
+  const defaultCanvasForForm = createDefaultCompanyCanvasConfig();
 
-const anchoredFormSubmit = visualSubmitButton
-  ? [
-      {
-        id: "anchored-submit",
-        type: "formSubmit",
-        text: (visualSubmitButton as any).text || "1:1 맞춤 상담 받기",
-        x: Number((visualSubmitButton as any).x || 140),
-        y: Number((visualSubmitButton as any).y || 1020),
-        width: Number((visualSubmitButton as any).width || 800),
-        height: Number((visualSubmitButton as any).height || 80),
-        backgroundColor:
-          (visualSubmitButton as any).backgroundColor || "#5fc065",
-        color: (visualSubmitButton as any).color || "#ffffff",
-        borderRadius: Number((visualSubmitButton as any).borderRadius || 18),
-        fontSize: Number((visualSubmitButton as any).fontSize || 18),
-        zIndex: 1000,
-      },
-    ]
-  : fallbackFormSubmits;
+  const fallbackFormFields = defaultCanvasForForm.elements.filter(
+    (element: any) => element.type === "formField"
+  );
 
-const REQUIRED_FORM_FIELD_KEYS = [
-  "clientName",
-  "phone",
-  "finalEducation",
-  "desiredCourse",
-  "channel",
-  "notes",
-  "agreed",
-];
+  const fallbackFormSubmits = defaultCanvasForForm.elements.filter(
+    (element: any) => element.type === "formSubmit"
+  );
 
-const getFieldKey = (element: any) => String(element?.fieldKey || "").trim();
-
-const pickBestElement = (items: any[]) => {
-  return [...items].sort((a, b) => {
-    const areaA = Number(a.width || 0) * Number(a.height || 0);
-    const areaB = Number(b.width || 0) * Number(b.height || 0);
-
-    if (areaA !== areaB) return areaB - areaA;
-
-    return Number(b.zIndex || 0) - Number(a.zIndex || 0);
-  })[0];
-};
-
-const rawFormFieldsByKey = new Map<string, any[]>();
-
-rawFormFields.forEach((element: any) => {
-  const key = getFieldKey(element);
-  if (!key) return;
-
-  rawFormFieldsByKey.set(key, [
-    ...(rawFormFieldsByKey.get(key) || []),
-    element,
-  ]);
-});
-
-const dedupedRawFormFields = REQUIRED_FORM_FIELD_KEYS
-  .map((key) => {
+  const rawModeFormFields = REQUIRED_FIELD_KEYS.map((key) => {
     const picked = pickBestElement(rawFormFieldsByKey.get(key) || []);
     if (picked) return picked;
 
     return fallbackFormFields.find(
       (element: any) => getFieldKey(element) === key
     );
-  })
-  .filter(Boolean);
+  }).filter(Boolean);
 
-const hasAnyRawFormField = rawFormFields.length > 0;
+  const legacyAnchors = {
+    clientName: findVisualText(["이름", "이름을입력해주세요"]),
+    phone: findVisualText(["전화번호", "전화", "010"]),
+    finalEducation: findVisualText(["최종학력", "학력", "최종학력선택"]),
+    desiredCourse: findVisualText(["희망과정", "과정", "희망과정선택"]),
+    channel: findVisualText(["문의경로", "경로", "문의경로입력"]),
+    notes: findVisualText(["상담내용", "상담내역", "진행하시면서", "걱정"]),
+    agreed: findVisualText(["개인정보", "동의"]),
+  };
 
-const shouldUseAnchoredFields =
-  !hasAnyRawFormField &&
-  Boolean(anchorShapeByFieldKey.clientName) &&
-  Boolean(anchorShapeByFieldKey.phone) &&
-  Boolean(anchorShapeByFieldKey.channel) &&
-  Boolean(anchorShapeByFieldKey.notes);
+  const legacyModeFormFields = REQUIRED_FIELD_KEYS.map((key, index) => {
+    if (key === "agreed") {
+      const notesShape = findShapeAroundText(legacyAnchors.notes, 5);
+      const agreeText = legacyAnchors.agreed;
 
-const safeFormFields = hasAnyRawFormField
-  ? dedupedRawFormFields
-  : shouldUseAnchoredFields
-    ? anchoredFormFields
-    : fallbackFormFields;
+      return {
+        id: "legacy-overlay-agreed",
+        type: "formField",
+        fieldKey: "agreed",
+        inputType: "checkbox",
+        label: FIELD_LABELS.agreed,
+        placeholder: "",
+        x: Number(agreeText?.x ?? notesShape?.x ?? 110),
+        y: Number(
+          agreeText?.y ??
+            (notesShape
+              ? Number(notesShape.y || 0) + Number(notesShape.height || 0) + 20
+              : 1120)
+        ),
+        width: Number(agreeText?.width ?? 520),
+        height: Number(agreeText?.height ?? 40),
+        zIndex: 1000,
+        overlayMode: true,
+      };
+    }
 
-const pickedRawSubmit = pickBestElement(rawFormSubmits);
+    const shape = findShapeAroundText((legacyAnchors as any)[key], index);
+    const fallback = fallbackFormFields.find(
+      (element: any) => getFieldKey(element) === key
+    );
 
-const safeFormSubmits = pickedRawSubmit
-  ? [pickedRawSubmit]
-  : shouldUseAnchoredFields
-    ? anchoredFormSubmit.slice(0, 1)
-    : visualFormSubmitElements.length > 0
-      ? visualFormSubmitElements.slice(0, 1)
-      : fallbackFormSubmits.slice(0, 1);
+    return {
+      id: `legacy-overlay-${key}`,
+      type: "formField",
+      fieldKey: key,
+      inputType: FIELD_INPUT_TYPES[key],
+      label: "",
+      placeholder: "",
+      x: Number(shape?.x ?? fallback?.x ?? 110),
+      y: Number(shape?.y ?? fallback?.y ?? 360 + index * 100),
+      width: Number(shape?.width ?? fallback?.width ?? 860),
+      height: Number(shape?.height ?? fallback?.height ?? 70),
+      zIndex: 1000,
+      overlayMode: true,
+    };
+  });
 
-const formElements = [...safeFormFields, ...safeFormSubmits];
+  const visualSubmitButton = visualElements.find((element: any) => {
+    if (element.type !== "button") return false;
 
-const shouldHideAnchoredVisuals =
-  shouldUseAnchoredFields || hasAnyRawFormField;
+    const text = normalizeText(element.text);
+    const action = String(element.action || "");
 
-const FIELD_VISUAL_TEXT_NEEDLES = [
-  "이름",
-  "이름을입력해주세요",
-  "입력해주세요",
-  "전화번호",
-  "전화",
-  "010",
-  "0000",
-  "최종학력",
-  "학력",
-  "최종학력선택",
-  "선택",
-  "희망과정",
-  "희망과정선택",
-  "과정",
-  "문의경로",
-  "문의경로입력",
-  "경로",
-  "상담내용",
-  "상담내역",
-  "진행하시면서",
-  "걱정",
-  "적어주세요",
-  "개인정보",
-  "동의",
-  "수집및이용",
-  "블로그",
-  "인스타",
-  "지인추천",
-];
+    return (
+      action === "openForm" ||
+      action === "submit" ||
+      text.includes("상담") ||
+      text.includes("신청") ||
+      text.includes("받기")
+    );
+  });
 
-const isFieldLikeVisualText = (element: any) => {
-  if (!hasAnyRawFormField && !shouldUseAnchoredFields) return false;
-  if (element.type !== "text") return false;
+  const submitElement = (() => {
+    const rawSubmit = pickBestElement(rawFormSubmits);
+    if (rawSubmit) return rawSubmit;
 
-  const text = normalizeText(element.text);
+    if (visualSubmitButton) {
+      return {
+        id: "visual-button-as-submit",
+        type: "formSubmit",
+        text: (visualSubmitButton as any).text || "무료 상담 신청하기",
+        x: Number((visualSubmitButton as any).x || 110),
+        y: Number((visualSubmitButton as any).y || 1190),
+        width: Number((visualSubmitButton as any).width || 860),
+        height: Number((visualSubmitButton as any).height || 76),
+        backgroundColor:
+          (visualSubmitButton as any).backgroundColor || "#2563eb",
+        color: (visualSubmitButton as any).color || "#ffffff",
+        borderRadius: Number((visualSubmitButton as any).borderRadius || 18),
+        fontSize: Number((visualSubmitButton as any).fontSize || 18),
+        zIndex: 1000,
+      };
+    }
 
-  if (!text) return false;
+    return fallbackFormSubmits[0];
+  })();
 
-  return FIELD_VISUAL_TEXT_NEEDLES.some((needle) =>
-    text.includes(normalizeText(needle))
-  );
-};
+  const formElements = [
+    ...(hasRawFormFields ? rawModeFormFields : legacyModeFormFields),
+    submitElement,
+  ].filter(Boolean) as FormCanvasElement[];
 
-const isFieldLikeVisualShape = (element: any) => {
-  if (!hasAnyRawFormField && !shouldUseAnchoredFields) return false;
-  if (element.type !== "shape") return false;
+  const shouldHideLegacyFieldVisuals = hasRawFormFields;
+  const shouldHideVisualSubmitButton = Boolean(submitElement && visualSubmitButton);
 
-  return inputLikeVisualShapes.some(
-    (shape: any) => String(shape.id) === String(element.id)
-  );
-};
+  const getFieldMeta = (fieldKey: string) => {
+    const field = fields.find((item: any) => String(item.fieldKey) === fieldKey);
+
+    return {
+      field,
+      label: field?.label || FIELD_LABELS[fieldKey] || "",
+      placeholder: field?.placeholder || FIELD_PLACEHOLDERS[fieldKey] || "",
+      inputType: field?.type || FIELD_INPUT_TYPES[fieldKey] || "text",
+      options: Array.isArray(field?.options) ? field.options : [],
+    };
+  };
+
+  const updateFieldValue = (fieldKey: string, nextValue: any) => {
+    if (fieldKey === "phone") {
+      onValueChange?.(
+        fieldKey,
+        String(nextValue || "")
+          .replace(/\D/g, "")
+          .slice(0, 11)
+      );
+      return;
+    }
+
+    onValueChange?.(fieldKey, nextValue);
+  };
 
   const handleButtonClick = (element: FormCanvasElement) => {
     if (element.type !== "button") return;
@@ -456,9 +436,7 @@ const isFieldLikeVisualShape = (element: any) => {
         ? element.href
         : `https://${element.href}`;
 
-      const target = element.target || "_blank";
-
-      if (target === "_self") {
+      if ((element.target || "_blank") === "_self") {
         window.location.href = href;
         return;
       }
@@ -480,20 +458,22 @@ const isFieldLikeVisualShape = (element: any) => {
     }
 
     if (element.action === "openForm" || element.action === "submit") {
-      onOpenForm?.();
+      onSubmit?.();
     }
   };
 
   const renderFormElement = (element: FormCanvasElement) => {
-    const baseStyle: React.CSSProperties = {
-  position: "absolute",
-  left: element.x * scale,
-  top: element.y * scale,
-  width: element.width * scale,
-  height: element.height * scale,
-  zIndex: Number((element as any).zIndex || 1),
-  transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
-};
+    const baseStyle: CSSProperties = {
+      position: "absolute",
+      left: element.x * scale,
+      top: element.y * scale,
+      width: element.width * scale,
+      height: element.height * scale,
+      zIndex: 1000 + Number((element as any).zIndex || 1),
+      transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
+      boxSizing: "border-box",
+      pointerEvents: "auto",
+    };
 
     if ((element as any).type === "formSubmit") {
       return (
@@ -506,190 +486,182 @@ const isFieldLikeVisualShape = (element: any) => {
             ...baseStyle,
             border: "none",
             cursor: isSubmitting ? "not-allowed" : "pointer",
-            backgroundColor: (element as any).backgroundColor || "#5fc065",
+            backgroundColor: (element as any).backgroundColor || "#2563eb",
             color: (element as any).color || "#ffffff",
             borderRadius: Number((element as any).borderRadius || 18) * scale,
             fontSize: Math.max(
-              14,
+              11,
               Number((element as any).fontSize || 18) * scale
             ),
             fontWeight: 900,
             boxShadow: "0 10px 24px rgba(15, 23, 42, 0.18)",
-            pointerEvents: "auto",
           }}
         >
           {isSubmitting
             ? "접수 완료"
-            : (element as any).text || "1:1 맞춤 상담 받기"}
+            : (element as any).text || "무료 상담 신청하기"}
         </button>
       );
     }
 
     if ((element as any).type !== "formField") return null;
 
-    const rawId = String((element as any).id || "");
-    const rawFieldKey = String((element as any).fieldKey || "");
-    const rawPlaceholder = String((element as any).placeholder || "");
-    const rawLabel = String((element as any).label || "");
-    const rawText = String((element as any).text || "");
+    const fieldKey = getFieldKey(element);
+    const { label, placeholder, inputType, options } = getFieldMeta(fieldKey);
+    const overlayMode = Boolean((element as any).overlayMode);
 
-    const normalizeKeyText = (text: string) =>
-      String(text || "")
-        .replace(/[_\-\s]/g, "")
-        .toLowerCase();
-
-    const sourceText = normalizeKeyText(
-      `${rawId} ${rawFieldKey} ${rawPlaceholder} ${rawLabel} ${rawText}`
-    );
-
-    const resolveFieldKey = () => {
-      if (rawFieldKey === "clientName") return "clientName";
-      if (rawFieldKey === "phone") return "phone";
-      if (rawFieldKey === "finalEducation") return "finalEducation";
-      if (rawFieldKey === "desiredCourse") return "desiredCourse";
-      if (rawFieldKey === "channel") return "channel";
-      if (rawFieldKey === "notes") return "notes";
-      if (rawFieldKey === "agreed") return "agreed";
-
-      if (
-        sourceText.includes("clientname") ||
-        sourceText.includes("client") ||
-        sourceText.includes("name") ||
-        sourceText.includes("이름")
-      ) {
-        return "clientName";
-      }
-
-      if (
-        sourceText.includes("phone") ||
-        sourceText.includes("tel") ||
-        sourceText.includes("전화")
-      ) {
-        return "phone";
-      }
-
-      if (
-        sourceText.includes("finaleducation") ||
-        sourceText.includes("final") ||
-        sourceText.includes("education") ||
-        sourceText.includes("최종학력") ||
-        sourceText.includes("학력")
-      ) {
-        return "finalEducation";
-      }
-
-      if (
-        sourceText.includes("desiredcourse") ||
-        sourceText.includes("desired") ||
-        sourceText.includes("course") ||
-        sourceText.includes("희망과정") ||
-        sourceText.includes("과정")
-      ) {
-        return "desiredCourse";
-      }
-
-      if (
-        sourceText.includes("channel") ||
-        sourceText.includes("문의경로") ||
-        sourceText.includes("경로")
-      ) {
-        return "channel";
-      }
-
-      if (
-        sourceText.includes("notes") ||
-        sourceText.includes("memo") ||
-        sourceText.includes("상담내역") ||
-        sourceText.includes("걱정") ||
-        sourceText.includes("부분")
-      ) {
-        return "notes";
-      }
-
-      if (
-        sourceText.includes("agreed") ||
-        sourceText.includes("agree") ||
-        sourceText.includes("개인정보") ||
-        sourceText.includes("동의")
-      ) {
-        return "agreed";
-      }
-
-      return rawFieldKey || rawId.replace("required-field-", "").replace("field-", "");
-    };
-
-    const fieldKey = resolveFieldKey();
-    const field = fields.find((item: any) => String(item.fieldKey) === fieldKey);
-
-    const inputType = (element as any).inputType || field?.type || "text";
-    const placeholder =
-      (element as any).placeholder || field?.placeholder || field?.label || "";
-    const label =
-  (element as any).label ||
-  field?.label ||
-  (fieldKey === "clientName"
-    ? "이름"
-    : fieldKey === "phone"
-      ? "전화번호"
-      : fieldKey === "finalEducation"
-        ? "최종학력"
-        : fieldKey === "desiredCourse"
-          ? "희망과정"
-          : fieldKey === "channel"
-            ? "문의경로"
-            : fieldKey === "notes"
-              ? "상담내용"
-              : "");
-
-    const fieldValue =
+    const value =
       fieldKey === "phone"
         ? String(values.phone ?? "")
-        : String(values[fieldKey] ?? "");
+        : fieldKey === "agreed"
+          ? Boolean(values[fieldKey])
+          : String(values[fieldKey] ?? "");
 
-        const labelText = String(label || "").trim();
+    if (overlayMode) {
+      const overlayBase: CSSProperties = {
+        ...baseStyle,
+        background: "transparent",
+      };
 
-    const labelHeight = labelText && inputType !== "checkbox" ? 26 * scale : 0;
-    const gap = labelText && inputType !== "checkbox" ? 6 * scale : 0;
-    const inputTop = labelHeight + gap;
-    const inputHeight = Math.max(
-      32,
-      element.height * scale - inputTop
-    );
+      const overlayInputStyle: CSSProperties = {
+        width: "100%",
+        height: "100%",
+        border: "none",
+        outline: "none",
+        background: "transparent",
+        boxSizing: "border-box",
+        padding: `${4 * scale}px ${12 * scale}px`,
+        fontSize: Math.max(11, 16 * scale),
+        fontWeight: 700,
+        color: value ? "#111827" : "transparent",
+        caretColor: "#111827",
+      };
 
-    const wrapperStyle: React.CSSProperties = {
-      ...baseStyle,
-      width: Math.max(40, element.width * scale),
-      height: Math.max(32, element.height * scale),
-      boxSizing: "border-box",
-      pointerEvents: "auto",
-      zIndex: 1000 + Number((element as any).zIndex || 1),
-    };
+      if (inputType === "textarea") {
+        return (
+          <textarea
+            key={element.id}
+            value={String(value ?? "")}
+            onChange={(e) => updateFieldValue(fieldKey, e.target.value)}
+            style={{
+              ...overlayBase,
+              ...overlayInputStyle,
+              resize: "none",
+              padding: `${10 * scale}px ${12 * scale}px`,
+            }}
+          />
+        );
+      }
 
-    const labelNode =
-      labelText && inputType !== "checkbox" ? (
-        <div
+      if (inputType === "select") {
+        return (
+          <select
+            key={element.id}
+            value={String(value ?? "")}
+            onChange={(e) => updateFieldValue(fieldKey, e.target.value)}
+            style={{
+              ...overlayBase,
+              ...overlayInputStyle,
+              appearance: "auto",
+              WebkitAppearance: "menulist",
+            }}
+          >
+            <option value="">{placeholder || "선택"}</option>
+            {options.map((option: any) => (
+              <option key={`${fieldKey}-${option.value}`} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        );
+      }
+
+      if (inputType === "checkbox") {
+        return (
+          <label
+            key={element.id}
+            style={{
+              ...overlayBase,
+              display: "flex",
+              alignItems: "center",
+              gap: 6 * scale,
+              fontSize: Math.max(10, 13 * scale),
+              color: "transparent",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={Boolean(value)}
+              onChange={(e) => updateFieldValue(fieldKey, e.target.checked)}
+            />
+            {label}
+          </label>
+        );
+      }
+
+      return (
+        <input
+          key={element.id}
+          value={String(value ?? "")}
+          onChange={(e) => updateFieldValue(fieldKey, e.target.value)}
+          inputMode={fieldKey === "phone" ? "numeric" : undefined}
+          autoComplete={
+            fieldKey === "clientName"
+              ? "name"
+              : fieldKey === "phone"
+                ? "tel"
+                : "off"
+          }
           style={{
-            position: "absolute",
-            left: 0,
-            top: 0,
-            width: "100%",
-            height: labelHeight,
+            ...overlayBase,
+            ...overlayInputStyle,
+          }}
+        />
+      );
+    }
+
+    const labelText =
+      String((element as any).label || label || FIELD_LABELS[fieldKey] || "")
+        .trim();
+
+    const finalPlaceholder =
+      String(
+        (element as any).placeholder ||
+          placeholder ||
+          FIELD_PLACEHOLDERS[fieldKey] ||
+          ""
+      ).trim();
+
+    if (inputType === "checkbox") {
+      return (
+        <label
+          key={element.id}
+          style={{
+            ...baseStyle,
             display: "flex",
             alignItems: "center",
-            fontSize: Math.max(12, 15 * scale),
-            fontWeight: 800,
-            color: "#111827",
-            pointerEvents: "none",
-            lineHeight: 1,
-            overflow: "hidden",
-            whiteSpace: "nowrap",
+            gap: 8 * scale,
+            fontSize: Math.max(11, 14 * scale),
+            color: "#334155",
+            background: "transparent",
           }}
         >
-          {labelText}
-        </div>
-      ) : null;
+          <input
+            type="checkbox"
+            checked={Boolean(value)}
+            onChange={(e) => updateFieldValue(fieldKey, e.target.checked)}
+          />
+          {labelText || FIELD_LABELS.agreed}
+        </label>
+      );
+    }
 
-    const inputStyle: React.CSSProperties = {
+    const labelHeight = labelText ? 26 * scale : 0;
+    const gap = labelText ? 6 * scale : 0;
+    const inputTop = labelHeight + gap;
+    const inputHeight = Math.max(32, element.height * scale - inputTop);
+
+    const inputStyle: CSSProperties = {
       position: "absolute",
       left: 0,
       top: inputTop,
@@ -704,20 +676,40 @@ const isFieldLikeVisualShape = (element: any) => {
       padding: `0 ${14 * scale}px`,
       fontSize: Math.max(14, 16 * scale),
       background: "#f8fafc",
+      color: "#111827",
     };
+
+    const labelNode = labelText ? (
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          width: "100%",
+          height: labelHeight,
+          display: "flex",
+          alignItems: "center",
+          fontSize: Math.max(12, 15 * scale),
+          fontWeight: 800,
+          color: "#111827",
+          pointerEvents: "none",
+          lineHeight: 1,
+          overflow: "hidden",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {labelText}
+      </div>
+    ) : null;
 
     if (inputType === "textarea") {
       return (
-        <div key={element.id} style={wrapperStyle}>
+        <div key={element.id} style={baseStyle}>
           {labelNode}
           <textarea
-            data-form-field-key={fieldKey}
-            placeholder={placeholder}
-            defaultValue={fieldValue}
-            onInput={(e) => {
-              const next = (e.currentTarget as HTMLTextAreaElement).value;
-              onValueChange?.(fieldKey, next);
-            }}
+            value={String(value ?? "")}
+            placeholder={finalPlaceholder}
+            onChange={(e) => updateFieldValue(fieldKey, e.target.value)}
             style={{
               ...inputStyle,
               padding: 14 * scale,
@@ -730,17 +722,12 @@ const isFieldLikeVisualShape = (element: any) => {
     }
 
     if (inputType === "select") {
-      const options = Array.isArray(field?.options) ? field.options : [];
-
       return (
-        <div key={element.id} style={wrapperStyle}>
+        <div key={element.id} style={baseStyle}>
           {labelNode}
           <select
-            data-form-field-key={fieldKey}
-            defaultValue={fieldValue}
-            onChange={(e) => {
-              onValueChange?.(fieldKey, e.target.value);
-            }}
+            value={String(value ?? "")}
+            onChange={(e) => updateFieldValue(fieldKey, e.target.value)}
             style={{
               ...inputStyle,
               background: "#ffffff",
@@ -748,7 +735,7 @@ const isFieldLikeVisualShape = (element: any) => {
               WebkitAppearance: "menulist",
             }}
           >
-            <option value="">{placeholder || "선택"}</option>
+            <option value="">{finalPlaceholder || "선택"}</option>
             {options.map((option: any) => (
               <option key={`${fieldKey}-${option.value}`} value={option.value}>
                 {option.label}
@@ -759,37 +746,12 @@ const isFieldLikeVisualShape = (element: any) => {
       );
     }
 
-    if (inputType === "checkbox") {
-      return (
-        <label
-          key={element.id}
-          style={{
-            ...wrapperStyle,
-            display: "flex",
-            alignItems: "center",
-            gap: 8 * scale,
-            fontSize: Math.max(12, 14 * scale),
-            color: "#334155",
-            background: "transparent",
-          }}
-        >
-          <input
-            type="checkbox"
-            defaultChecked={Boolean(values[fieldKey])}
-            onChange={(e) => onValueChange?.(fieldKey, e.target.checked)}
-          />
-          {labelText || "개인정보 수집 및 이용에 동의합니다."}
-        </label>
-      );
-    }
-
     return (
-      <div key={element.id} style={wrapperStyle}>
+      <div key={element.id} style={baseStyle}>
         {labelNode}
         <input
-          data-form-field-key={fieldKey}
-          placeholder={placeholder}
-          defaultValue={fieldValue}
+          value={String(value ?? "")}
+          placeholder={finalPlaceholder}
           inputMode={fieldKey === "phone" ? "numeric" : undefined}
           autoComplete={
             fieldKey === "clientName"
@@ -798,15 +760,7 @@ const isFieldLikeVisualShape = (element: any) => {
                 ? "tel"
                 : "off"
           }
-          onInput={(e) => {
-            const rawValue = (e.currentTarget as HTMLInputElement).value;
-            const nextValue =
-              fieldKey === "phone"
-                ? rawValue.replace(/\D/g, "").slice(0, 11)
-                : rawValue;
-
-            onValueChange?.(fieldKey, nextValue);
-          }}
+          onChange={(e) => updateFieldValue(fieldKey, e.target.value)}
           style={inputStyle}
         />
       </div>
@@ -832,37 +786,34 @@ const isFieldLikeVisualShape = (element: any) => {
     >
       <div
         style={{
-  position: "relative",
-  width,
-  height,
-  overflow: "hidden",
-  isolation: "isolate",
-  borderRadius: isMobile ? 18 : 24,
-  backgroundColor: canvas.backgroundColor || "#ffffff",
-  boxShadow: "0 18px 50px rgba(15, 23, 42, 0.14)",
-}}
+          position: "relative",
+          width,
+          height,
+          overflow: "hidden",
+          isolation: "isolate",
+          borderRadius: isMobile ? 18 : 24,
+          backgroundColor: canvas.backgroundColor || "#ffffff",
+          boxShadow: "0 18px 50px rgba(15, 23, 42, 0.14)",
+        }}
       >
         {visualElements.map((element) => {
-          const baseStyle: React.CSSProperties = {
-  position: "absolute",
-  left: element.x * scale,
-  top: element.y * scale,
-  width: element.width * scale,
-  height: element.height * scale,
-  zIndex: Math.min(Number(element.zIndex ?? 1), 100),
-  transform: element.rotation
-    ? `rotate(${element.rotation}deg)`
-    : undefined,
-};
+          const baseStyle: CSSProperties = {
+            position: "absolute",
+            left: element.x * scale,
+            top: element.y * scale,
+            width: element.width * scale,
+            height: element.height * scale,
+            zIndex: Math.min(Number(element.zIndex ?? 1), 100),
+            transform: element.rotation
+              ? `rotate(${element.rotation}deg)`
+              : undefined,
+          };
 
           if (element.type === "text") {
-if (isFieldLikeVisualText(element)) {
-  return null;
-}
+            if (shouldHideLegacyFieldVisuals && isFieldLikeVisualText(element)) {
+              return null;
+            }
 
-if (shouldHideAnchoredVisuals && usedVisualElementIds.has(String(element.id))) {
-  return null;
-}
             return (
               <div
                 key={element.id}
@@ -902,44 +853,31 @@ if (shouldHideAnchoredVisuals && usedVisualElementIds.has(String(element.id))) {
                   pointerEvents: "none",
                   objectFit: element.objectFit ?? "cover",
                   display: "block",
-                  borderRadius: Number((element as any).borderRadius || 0) * scale,
+                  borderRadius:
+                    Number((element as any).borderRadius || 0) * scale,
                 }}
               />
             );
           }
 
           if (element.type === "button") {
-if (usedVisualElementIds.has(String(element.id))) {
-  return null;
-}
+            if (
+              shouldHideVisualSubmitButton &&
+              visualSubmitButton &&
+              String(visualSubmitButton.id) === String(element.id)
+            ) {
+              return null;
+            }
+
             const baseTransform = element.rotation
               ? `rotate(${element.rotation}deg)`
               : "";
-
-            const hoverEffect = element.hoverEffect || "none";
-
-            const hoverStyle =
-              hoverEffect === "lift"
-                ? { transform: `${baseTransform} translateY(-2px)`.trim() }
-                : hoverEffect === "scale"
-                  ? { transform: `${baseTransform} scale(1.03)`.trim() }
-                  : hoverEffect === "glow"
-                    ? { boxShadow: "0 14px 34px rgba(15, 23, 42, 0.28)" }
-                    : {};
 
             return (
               <button
                 key={element.id}
                 type="button"
                 onClick={() => handleButtonClick(element)}
-                onMouseEnter={(e) => {
-                  Object.assign(e.currentTarget.style, hoverStyle);
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = baseTransform;
-                  e.currentTarget.style.boxShadow =
-                    "0 10px 24px rgba(15, 23, 42, 0.18)";
-                }}
                 style={{
                   ...baseStyle,
                   width: isMobile
@@ -955,8 +893,14 @@ if (usedVisualElementIds.has(String(element.id))) {
                   color: element.color,
                   borderRadius: element.borderRadius * scale,
                   fontSize: isMobile
-                    ? Math.max(14, Number((element as any).fontSize || 34) * scale)
-                    : Math.max(13, Number((element as any).fontSize || 34) * scale),
+                    ? Math.max(
+                        14,
+                        Number((element as any).fontSize || 34) * scale
+                      )
+                    : Math.max(
+                        13,
+                        Number((element as any).fontSize || 34) * scale
+                      ),
                   fontWeight: Number((element as any).fontWeight || 900),
                   display: "flex",
                   alignItems: "center",
@@ -965,8 +909,7 @@ if (usedVisualElementIds.has(String(element.id))) {
                   boxShadow: "0 10px 24px rgba(15, 23, 42, 0.18)",
                   WebkitTapHighlightColor: "transparent",
                   touchAction: "manipulation",
-                  transition:
-                    "transform 160ms ease, box-shadow 160ms ease, filter 160ms ease",
+                  transform: baseTransform,
                 }}
               >
                 {element.text}
@@ -975,14 +918,10 @@ if (usedVisualElementIds.has(String(element.id))) {
           }
 
           if (element.type === "shape") {
+            if (shouldHideLegacyFieldVisuals && isFieldLikeVisualShape(element)) {
+              return null;
+            }
 
-if (isFieldLikeVisualShape(element)) {
-  return null;
-}
-
-if (shouldHideAnchoredVisuals && usedVisualElementIds.has(String(element.id))) {
-  return null;
-}
             return (
               <div
                 key={element.id}
@@ -1008,9 +947,18 @@ if (shouldHideAnchoredVisuals && usedVisualElementIds.has(String(element.id))) {
             const fill = element.fill || "#64748b";
             const strokeWidth = Number(element.strokeWidth || 8) * scale;
 
-            const renderSvgContent = () => {
-              if (element.svgName === "line") {
-                return (
+            return (
+              <svg
+                key={element.id}
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                style={{
+                  ...baseStyle,
+                  pointerEvents: "none",
+                  overflow: "visible",
+                }}
+              >
+                {element.svgName === "line" ? (
                   <line
                     x1="8"
                     y1="50"
@@ -1020,11 +968,9 @@ if (shouldHideAnchoredVisuals && usedVisualElementIds.has(String(element.id))) {
                     strokeWidth={strokeWidth}
                     strokeLinecap="round"
                   />
-                );
-              }
+                ) : null}
 
-              if (element.svgName === "line-dashed") {
-                return (
+                {element.svgName === "line-dashed" ? (
                   <line
                     x1="8"
                     y1="50"
@@ -1035,11 +981,9 @@ if (shouldHideAnchoredVisuals && usedVisualElementIds.has(String(element.id))) {
                     strokeDasharray="10 8"
                     strokeLinecap="round"
                   />
-                );
-              }
+                ) : null}
 
-              if (element.svgName === "arrow-right") {
-                return (
+                {element.svgName === "arrow-right" ? (
                   <>
                     <line
                       x1="10"
@@ -1059,11 +1003,9 @@ if (shouldHideAnchoredVisuals && usedVisualElementIds.has(String(element.id))) {
                       strokeLinejoin="round"
                     />
                   </>
-                );
-              }
+                ) : null}
 
-              if (element.svgName === "arrow-left") {
-                return (
+                {element.svgName === "arrow-left" ? (
                   <>
                     <line
                       x1="22"
@@ -1083,42 +1025,21 @@ if (shouldHideAnchoredVisuals && usedVisualElementIds.has(String(element.id))) {
                       strokeLinejoin="round"
                     />
                   </>
-                );
-              }
+                ) : null}
 
-              if (element.svgName === "star") {
-                return (
+                {element.svgName === "star" ? (
                   <polygon
                     points="50,8 61,36 91,36 67,55 76,86 50,68 24,86 33,55 9,36 39,36"
                     fill={fill}
                   />
-                );
-              }
+                ) : null}
 
-              if (element.svgName === "heart") {
-                return (
+                {element.svgName === "heart" ? (
                   <path
                     d="M50 85 C20 60 8 42 18 25 C27 10 43 16 50 30 C57 16 73 10 82 25 C92 42 80 60 50 85Z"
                     fill={fill}
                   />
-                );
-              }
-
-              return null;
-            };
-
-            return (
-              <svg
-                key={element.id}
-                viewBox="0 0 100 100"
-                preserveAspectRatio="none"
-                style={{
-                  ...baseStyle,
-                  pointerEvents: "none",
-                  overflow: "visible",
-                }}
-              >
-                {renderSvgContent()}
+                ) : null}
               </svg>
             );
           }
