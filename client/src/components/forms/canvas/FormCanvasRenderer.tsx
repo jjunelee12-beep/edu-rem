@@ -122,18 +122,19 @@ const inputLikeVisualShapes = visualElements
   })
   .sort((a: any, b: any) => Number(a.y || 0) - Number(b.y || 0));
 
-const emergencyFieldKeys = [
+const formControlShapes = inputLikeVisualShapes.slice(0, 6);
+
+const emergencyInputFieldDefs = [
   { fieldKey: "clientName", inputType: "text", placeholder: "이름" },
   { fieldKey: "phone", inputType: "phone", placeholder: "전화번호" },
   { fieldKey: "finalEducation", inputType: "select", placeholder: "최종학력 선택" },
   { fieldKey: "desiredCourse", inputType: "select", placeholder: "희망과정 선택" },
   { fieldKey: "channel", inputType: "text", placeholder: "문의경로 (예. 블로그, 인스타, 지인추천)" },
   { fieldKey: "notes", inputType: "textarea", placeholder: "진행하시면서 걱정되시는 부분 적어주세요!" },
-  { fieldKey: "agreed", inputType: "checkbox", placeholder: "", label: "개인정보 수집 및 이용에 동의합니다." },
 ];
 
-const emergencyFormFields = emergencyFieldKeys.map((field, index) => {
-  const shape = inputLikeVisualShapes[index];
+const emergencyInputFields = emergencyInputFieldDefs.map((field, index) => {
+  const shape = formControlShapes[index];
 
   return {
     id: `emergency-${field.fieldKey}`,
@@ -142,10 +143,39 @@ const emergencyFormFields = emergencyFieldKeys.map((field, index) => {
     x: Number(shape?.x ?? 140),
     y: Number(shape?.y ?? 300 + index * 95),
     width: Number(shape?.width ?? 800),
-    height: field.fieldKey === "agreed" ? 40 : Number(shape?.height ?? 72),
+    height:
+      field.fieldKey === "notes"
+        ? Number(shape?.height ?? 150)
+        : Number(shape?.height ?? 72),
     zIndex: 1000,
   };
 });
+
+const notesShape = formControlShapes[5];
+
+const emergencyAgreeField = {
+  id: "emergency-agreed",
+  type: "formField",
+  fieldKey: "agreed",
+  inputType: "checkbox",
+  placeholder: "",
+  label: "개인정보 수집 및 이용에 동의합니다.",
+  x: Number(notesShape?.x ?? 140),
+  y: Number(
+    notesShape
+      ? Number(notesShape.y || 0) + Number(notesShape.height || 0) + 32
+      : 950
+  ),
+  width: 520,
+  height: 40,
+  zIndex: 1000,
+};
+
+const emergencyFormFields = [...emergencyInputFields, emergencyAgreeField];
+
+const inputLikeVisualShapeIds = new Set(
+  formControlShapes.map((shape: any) => shape.id)
+);
 
 const REQUIRED_FORM_FIELD_KEYS = [
   "clientName",
@@ -167,9 +197,13 @@ const hasAllRequiredFormFields = REQUIRED_FORM_FIELD_KEYS.every((key) =>
   rawFormFieldKeys.has(key)
 );
 
-const safeFormFields = hasAllRequiredFormFields
-  ? rawFormFields
-  : emergencyFormFields;
+const shouldUseShapeAnchoredFields = formControlShapes.length >= 6;
+
+const safeFormFields = shouldUseShapeAnchoredFields
+  ? emergencyFormFields
+  : hasAllRequiredFormFields
+    ? rawFormFields
+    : fallbackFormFields;
 
 const formElements = [
   ...safeFormFields,
@@ -725,9 +759,7 @@ useEffect(() => {
 
           if (element.type === "shape") {
 
-const isInputLikeShape = inputLikeVisualShapes.some(
-  (shape: any) => shape.id === element.id
-);
+const isInputLikeShape = inputLikeVisualShapeIds.has(element.id);
 
 if (isInputLikeShape) {
   return null;
