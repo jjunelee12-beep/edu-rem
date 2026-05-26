@@ -461,11 +461,19 @@ const formElements = [...safeFormFields, submitElement].filter(
           ? Boolean(values[fieldKey])
           : String(values[fieldKey] ?? "");
 
-    const labelText = String(
+   const isLegacyVisualField = String((element as any).id || "").startsWith(
+  "legacy-field-"
+);
+
+const labelText = isLegacyVisualField
+  ? ""
+  : String(
       (element as any).label || label || FIELD_LABELS[fieldKey] || ""
     ).trim();
 
-    const finalPlaceholder = String(
+const finalPlaceholder = isLegacyVisualField
+  ? ""
+  : String(
       (element as any).placeholder ||
         placeholder ||
         FIELD_PLACEHOLDERS[fieldKey] ||
@@ -491,7 +499,7 @@ const formElements = [...safeFormFields, submitElement].filter(
             checked={Boolean(value)}
             onChange={(e) => updateFieldValue(fieldKey, e.target.checked)}
           />
-          {labelText || FIELD_LABELS.agreed}
+         {isLegacyVisualField ? "" : labelText || FIELD_LABELS.agreed}
         </label>
       );
     }
@@ -511,11 +519,11 @@ const formElements = [...safeFormFields, submitElement].filter(
       pointerEvents: "auto",
       userSelect: "text",
       WebkitUserSelect: "text",
-      border: "1px solid #d1d5db",
+      border: isLegacyVisualField ? "none" : "1px solid #d1d5db",
       borderRadius: 12 * scale,
       padding: `0 ${14 * scale}px`,
       fontSize: Math.max(14, 16 * scale),
-      background: "#f8fafc",
+      background: isLegacyVisualField ? "transparent" : "#f8fafc",
       color: "#111827",
     };
 
@@ -553,7 +561,7 @@ const formElements = [...safeFormFields, submitElement].filter(
             style={{
               ...inputStyle,
               padding: 14 * scale,
-              background: "#ffffff",
+              background: isLegacyVisualField ? "transparent" : "#ffffff",
               resize: "none",
             }}
           />
@@ -570,7 +578,7 @@ const formElements = [...safeFormFields, submitElement].filter(
             onChange={(e) => updateFieldValue(fieldKey, e.target.value)}
             style={{
               ...inputStyle,
-              background: "#ffffff",
+              background: isLegacyVisualField ? "transparent" : "#ffffff",
               appearance: "auto",
               WebkitAppearance: "menulist",
             }}
