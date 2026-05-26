@@ -31,6 +31,7 @@ type Props = {
   onClose: () => void;
   onUploadCanvasImage?: (file: File) => Promise<string>;
   isHostEditor?: boolean;
+  renderFormPreview?: () => any;
 };
 
 function normalizeCanvas(canvas?: FormCanvasConfig): FormCanvasConfig {
@@ -59,6 +60,7 @@ export default function FullScreenFormCanvasEditor({
   onClose,
   onUploadCanvasImage,
   isHostEditor = false,
+  renderFormPreview,
 }: Props) {
   const [activeTool, setActiveTool] = useState<ToolKey>("text");
 const uploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -531,6 +533,7 @@ setBackgroundColor={setBackgroundColor}
   selectedElementId={selectedElementId}
   onSelectedElementIdChange={setSelectedElementId}
   compact
+  renderFormPreview={renderFormPreview}
 />
         </div>
       </main>

@@ -18,6 +18,7 @@ type Props = {
   selectedElementId?: string | null;
   onSelectedElementIdChange?: (id: string | null) => void;
   compact?: boolean;
+  renderFormPreview?: () => any;
 };
 
 function normalizeCanvas(value?: FormCanvasConfig): FormCanvasConfig {
@@ -46,6 +47,7 @@ export default function FormCanvasEditor({
   selectedElementId,
   onSelectedElementIdChange,
   compact = false,
+  renderFormPreview,
 }: Props) {
   const canvas = normalizeCanvas(value);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -2304,6 +2306,67 @@ onMouseLeave={() => {
 const isDragging = dragState?.ids.includes(el.id) ?? false;
 const isResizing = resizeState?.id === el.id;
 const isActiveMoving = isDragging || isResizing;
+
+if (el.type === "form" || isRequiredFormElement(el)) {
+  const active =
+    actualSelectedId === el.id || selectedIds.includes(el.id);
+
+  return (
+    <div
+      key={el.id}
+      onMouseDown={(e) => startDrag(e, el)}
+      className={`absolute rounded-xl ${
+        active
+          ? "ring-2 ring-blue-400"
+          : "hover:ring-1 hover:ring-slate-300"
+      }`}
+      style={{
+        left: el.x * scale,
+        top: el.y * scale,
+        width: el.width * scale,
+        height: el.height * scale,
+        zIndex: isActiveMoving ? 9999 : el.zIndex ?? 1,
+        overflow: "visible",
+        background: "transparent",
+      }}
+    >
+      <div
+        style={{
+          width: el.width,
+          minHeight: el.height,
+          transform: `scale(${scale})`,
+          transformOrigin: "top left",
+          pointerEvents: "none",
+        }}
+      >
+        {renderFormPreview ? (
+          renderFormPreview()
+        ) : (
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              border: "1px dashed #94a3b8",
+              borderRadius: 16,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#64748b",
+              fontWeight: 800,
+              background: "rgba(255,255,255,0.7)",
+            }}
+          >
+            상담폼 미리보기
+          </div>
+        )}
+      </div>
+
+      {renderElementToolbar(el)}
+      {renderResizeHandle(el)}
+    </div>
+  );
+}
+
 
                 if (el.type === "text") {
                   return (

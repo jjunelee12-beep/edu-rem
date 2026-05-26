@@ -120,7 +120,14 @@ canvas: createDefaultCompanyCanvasConfig(),
 
 export default function AdFormPage() {
   const [match, params] = useRoute("/ad-form/:token");
-const { user } = useAuth();
+const { user: authUser } = useAuth();
+
+const { data: me } = trpc.users.me.useQuery(undefined, {
+  retry: false,
+  refetchOnWindowFocus: false,
+});
+
+const user = me || authUser;
 const utils = trpc.useUtils();
   const token = match ? params.token : "";
 
@@ -800,12 +807,37 @@ applyTemplateMutation.mutate({
   if (canEdit && editMode) {
     return (
       <FullScreenFormCanvasEditor
-        value={uiDraft}
-        onChange={setUiDraft}
-        onSave={handleSaveMyUiConfig}
-        onClose={() => setEditMode(false)}
-        onUploadCanvasImage={handleUploadCanvasImage}
-      />
+  value={uiDraft}
+  onChange={setUiDraft}
+  onSave={handleSaveMyUiConfig}
+  onClose={() => setEditMode(false)}
+  onUploadCanvasImage={handleUploadCanvasImage}
+  renderFormPreview={() => (
+    <form
+      className="premium-form-card"
+      style={{
+        width: "100%",
+        minHeight: "100%",
+        boxSizing: "border-box",
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+        padding: 0,
+        margin: 0,
+      }}
+    >
+      {sortedFields.map(renderField)}
+
+      <button
+        type="button"
+        className="premium-submit-button"
+        style={{ backgroundColor: safeColor }}
+      >
+        {safeDisplayConfig.submitButtonText || "무료 상담 신청하기"}
+      </button>
+    </form>
+  )}
+/>
     );
   }
  return (

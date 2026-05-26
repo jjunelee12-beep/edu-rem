@@ -2979,10 +2979,116 @@ const getAssignee = (id: any) => {
         <FullScreenFormCanvasEditor
   value={defaultDraft}
   onChange={setDefaultDraft}
+  onSave={handleSaveTemplate}
   onClose={() => setDefaultEditorOpen(false)}
-  onSave={handleSaveDefaultDesign}
   onUploadCanvasImage={handleUploadCanvasImage}
   isHostEditor
+  renderFormPreview={() => {
+    const fields = Array.isArray(defaultDraft.fields)
+      ? defaultDraft.fields
+      : [];
+
+    const sortedFields = [...fields]
+      .filter((field: any) => !field.hidden)
+      .sort((a: any, b: any) => Number(a.order || 0) - Number(b.order || 0));
+
+    const safeColor =
+      /^#([0-9A-F]{3}){1,2}$/i.test(defaultDraft.primaryColor || "")
+        ? defaultDraft.primaryColor
+        : "#5fc065";
+
+    const isAd = formType === "ad";
+
+    const renderPreviewField = (field: any) => {
+      if (field.type === "checkbox") {
+        return (
+          <label
+            key={field.fieldKey}
+            className={isAd ? "ad-form-agree" : "lead-form-agree"}
+          >
+            <input type="checkbox" readOnly checked={false} />
+            <span>{defaultDraft.agreementText || field.label}</span>
+          </label>
+        );
+      }
+
+      if (field.type === "textarea") {
+        return (
+          <textarea
+            key={field.fieldKey}
+            className={isAd ? "ad-form-textarea" : "lead-form-textarea"}
+            value=""
+            readOnly
+            placeholder={field.placeholder || field.label}
+          />
+        );
+      }
+
+      if (field.type === "select") {
+        if (isAd) {
+          return (
+            <select
+              key={field.fieldKey}
+              className="premium-select"
+              value=""
+              disabled
+            >
+              <option value="">
+                {field.placeholder || `${field.label} 선택`}
+              </option>
+            </select>
+          );
+        }
+
+        return (
+          <div key={field.fieldKey} className="lead-form-select-wrap">
+            <select className="lead-form-select" value="" disabled>
+              <option value="">
+                {field.placeholder || `${field.label} 선택`}
+              </option>
+            </select>
+            <span className="lead-form-select-arrow">⌄</span>
+          </div>
+        );
+      }
+
+      return (
+        <input
+          key={field.fieldKey}
+          className="premium-input"
+          value=""
+          readOnly
+          placeholder={field.placeholder || field.label}
+        />
+      );
+    };
+
+    return (
+      <form
+        className={isAd ? "premium-form-card" : "lead-form-body"}
+        style={{
+          width: "100%",
+          minHeight: "100%",
+          boxSizing: "border-box",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          padding: 0,
+          margin: 0,
+        }}
+      >
+        {sortedFields.map(renderPreviewField)}
+
+        <button
+          type="button"
+          className="premium-submit-button"
+          style={{ backgroundColor: safeColor }}
+        >
+          {defaultDraft.submitButtonText || "무료 상담 신청하기"}
+        </button>
+      </form>
+    );
+  }}
 />
       ) : null}
     </div>
