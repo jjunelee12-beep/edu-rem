@@ -144,13 +144,30 @@ useEffect(() => {
     const target = document.elementFromPoint(event.clientX, event.clientY);
 
     console.log("[FORM CANVAS DEBUG:pointer]", {
-      x: event.clientX,
-      y: event.clientY,
-      targetTag: target?.tagName,
-      targetClass: (target as HTMLElement | null)?.className,
-      targetId: (target as HTMLElement | null)?.id,
-      targetOuterHTML: target?.outerHTML?.slice(0, 500),
-    });
+  x: event.clientX,
+  y: event.clientY,
+  targetTag: target?.tagName,
+  targetClass: (target as HTMLElement | null)?.className,
+  targetId: (target as HTMLElement | null)?.id,
+  targetOuterHTML: target?.outerHTML?.slice(0, 500),
+  inputRects: Array.from(
+    document.querySelectorAll("input, select, textarea")
+  ).map((node: any) => {
+    const rect = node.getBoundingClientRect();
+
+    return {
+      tag: node.tagName,
+      fieldKey: node.dataset?.formFieldKey,
+      left: rect.left,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      width: rect.width,
+      height: rect.height,
+      value: node.value,
+    };
+  }),
+});
   };
 
   window.addEventListener("pointerdown", handlePointerDown, true);
@@ -345,20 +362,22 @@ useEffect(() => {
 
     const controlStyle: React.CSSProperties = {
   ...baseStyle,
-  width: element.width * scale,
-  height: element.height * scale,
+  width: Math.max(40, element.width * scale),
+  height: Math.max(32, element.height * scale),
   boxSizing: "border-box",
   pointerEvents: "auto",
   userSelect: "text",
   WebkitUserSelect: "text",
   backgroundClip: "padding-box",
   zIndex: 1000 + Number((element as any).zIndex || 1),
+  outline: "2px solid red",
 };
 
     if (inputType === "textarea") {
   return (
     <textarea
   key={element.id}
+  data-form-field-key={fieldKey}
   placeholder={placeholder}
   defaultValue={fieldValue}
   onFocus={() => console.log("[FORM CANVAS DEBUG:focus]", fieldKey, "textarea")}
@@ -386,6 +405,7 @@ useEffect(() => {
   return (
     <select
   key={element.id}
+  data-form-field-key={fieldKey}
   defaultValue={fieldValue}
   onFocus={() => console.log("[FORM CANVAS DEBUG:focus]", fieldKey, "select")}
   onChange={(e) => {
@@ -440,6 +460,7 @@ useEffect(() => {
    return (
   <input
   key={element.id}
+  data-form-field-key={fieldKey}
   placeholder={placeholder}
   defaultValue={fieldValue}
   inputMode={fieldKey === "phone" ? "numeric" : undefined}
