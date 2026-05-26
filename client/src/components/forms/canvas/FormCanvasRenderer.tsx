@@ -122,7 +122,7 @@ const inputLikeVisualShapes = visualElements
   })
   .sort((a: any, b: any) => Number(a.y || 0) - Number(b.y || 0));
 
-const formControlShapes = inputLikeVisualShapes.slice(0, 6);
+const formControlShapes = inputLikeVisualShapes.slice(0, Math.min(6, inputLikeVisualShapes.length));
 
 const emergencyInputFieldDefs = [
   { fieldKey: "clientName", inputType: "text", placeholder: "이름" },
@@ -197,7 +197,7 @@ const hasAllRequiredFormFields = REQUIRED_FORM_FIELD_KEYS.every((key) =>
   rawFormFieldKeys.has(key)
 );
 
-const shouldUseShapeAnchoredFields = formControlShapes.length >= 6;
+const shouldUseShapeAnchoredFields = inputLikeVisualShapes.length >= 1;
 
 const safeFormFields = shouldUseShapeAnchoredFields
   ? emergencyFormFields
