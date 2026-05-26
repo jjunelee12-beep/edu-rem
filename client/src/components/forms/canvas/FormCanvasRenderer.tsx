@@ -377,7 +377,7 @@ const formElements = [...safeFormFields, submitElement].filter(
   Boolean
 ) as FormCanvasElement[];
 
-  const shouldHideLegacyFieldVisuals = hasRawFormFields;
+  const shouldHideLegacyFieldVisuals = true;
   const shouldHideVisualSubmitButton = Boolean(
     submitElement && visualSubmitButton
   );
@@ -500,11 +500,9 @@ const formElements = [...safeFormFields, submitElement].filter(
   "legacy-field-"
 );
 
-const labelText = isLegacyVisualField
-  ? ""
-  : String(
-      (element as any).label || label || FIELD_LABELS[fieldKey] || ""
-    ).trim();
+const labelText = String(
+  (element as any).label || label || FIELD_LABELS[fieldKey] || ""
+).trim();
 
 const finalPlaceholder = String(
   (element as any).placeholder ||
@@ -532,7 +530,7 @@ const finalPlaceholder = String(
             checked={Boolean(value)}
             onChange={(e) => updateFieldValue(fieldKey, e.target.checked)}
           />
-         {isLegacyVisualField ? "" : labelText || FIELD_LABELS.agreed}
+         {labelText || FIELD_LABELS.agreed}
         </label>
       );
     }
@@ -552,11 +550,11 @@ const finalPlaceholder = String(
       pointerEvents: "auto",
       userSelect: "text",
       WebkitUserSelect: "text",
-      border: "none",
+      border: "1px solid #d1d5db",
       borderRadius: 12 * scale,
       padding: `0 ${14 * scale}px`,
       fontSize: Math.max(14, 16 * scale),
-     background: "transparent",
+     background: "#f8fafc",
       color: "#111827",
     };
 
@@ -594,7 +592,7 @@ const finalPlaceholder = String(
             style={{
               ...inputStyle,
               padding: 14 * scale,
-              background: "transparent",
+             background: "#ffffff",
               resize: "none",
             }}
           />
@@ -611,7 +609,7 @@ const finalPlaceholder = String(
             onChange={(e) => updateFieldValue(fieldKey, e.target.value)}
             style={{
               ...inputStyle,
-              background: "transparent",
+              background: "#ffffff",
               appearance: "auto",
               WebkitAppearance: "menulist",
             }}
