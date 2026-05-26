@@ -655,6 +655,34 @@ const reorderElement = (
 };
 
 const getElementLabel = (element: FormCanvasElement) => {
+  if ((element as any).type === "formField") {
+    const fieldKey = String((element as any).fieldKey || "").trim();
+
+    const label =
+      String((element as any).label || "").trim() ||
+      (fieldKey === "clientName"
+        ? "이름"
+        : fieldKey === "phone"
+          ? "전화번호"
+          : fieldKey === "finalEducation"
+            ? "최종학력"
+            : fieldKey === "desiredCourse"
+              ? "희망과정"
+              : fieldKey === "channel"
+                ? "문의경로"
+                : fieldKey === "notes"
+                  ? "상담내용"
+                  : fieldKey === "agreed"
+                    ? "개인정보 동의"
+                    : "상담폼 입력칸");
+
+    return `상담폼 · ${label}`;
+  }
+
+  if ((element as any).type === "formSubmit") {
+    return `상담폼 · ${(element as any).text || "신청 버튼"}`;
+  }
+
   if (element.type === "text") {
     return `텍스트 · ${element.text?.slice(0, 12) || "새 텍스트"}`;
   }
@@ -669,6 +697,10 @@ const getElementLabel = (element: FormCanvasElement) => {
 
   if (element.type === "shape") {
     return element.shape === "circle" ? "원형 도형" : "사각형 도형";
+  }
+
+  if ((element as any).type === "svg") {
+    return "아이콘/선";
   }
 
   return "요소";
@@ -2381,7 +2413,43 @@ if ((el as any).type === "form") {
 if ((el as any).type === "formField") {
   const inputType = (el as any).inputType || "text";
   const placeholder = (el as any).placeholder || "";
-  const label = (el as any).label || "";
+  const fieldKey = String((el as any).fieldKey || "").trim();
+
+const label = String(
+  (el as any).label ||
+    (fieldKey === "clientName"
+      ? "이름"
+      : fieldKey === "phone"
+        ? "전화번호"
+        : fieldKey === "finalEducation"
+          ? "최종학력"
+          : fieldKey === "desiredCourse"
+            ? "희망과정"
+            : fieldKey === "channel"
+              ? "문의경로"
+              : fieldKey === "notes"
+                ? "상담내용"
+                : "")
+).trim();
+
+  const labelHeight = label && inputType !== "checkbox" ? 26 : 0;
+  const gap = label && inputType !== "checkbox" ? 6 : 0;
+  const inputTop = labelHeight + gap;
+  const inputHeight = Math.max(32, el.height - inputTop);
+
+  const previewInputStyle: React.CSSProperties = {
+    position: "absolute",
+    left: 0,
+    top: inputTop,
+    width: "100%",
+    height: inputHeight,
+    border: "1px solid #d1d5db",
+    borderRadius: 12,
+    padding: "0 14px",
+    fontSize: 16,
+    background: "#f8fafc",
+    boxSizing: "border-box",
+  };
 
   return (
     <div
@@ -2407,36 +2475,49 @@ if ((el as any).type === "formField") {
           transform: `scale(${scale})`,
           transformOrigin: "top left",
           pointerEvents: "none",
+          position: "relative",
+          boxSizing: "border-box",
         }}
       >
+        {inputType !== "checkbox" && label ? (
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              width: "100%",
+              height: labelHeight,
+              display: "flex",
+              alignItems: "center",
+              fontSize: 15,
+              fontWeight: 800,
+              color: "#111827",
+              overflow: "hidden",
+              whiteSpace: "nowrap",
+              lineHeight: 1,
+            }}
+          >
+            {label}
+          </div>
+        ) : null}
+
         {inputType === "textarea" ? (
           <textarea
             disabled
             placeholder={placeholder}
             style={{
-              width: "100%",
-              height: "100%",
-              border: "1px solid #d1d5db",
-              borderRadius: 12,
+              ...previewInputStyle,
               padding: 14,
-              fontSize: 16,
               background: "#ffffff",
               resize: "none",
-              boxSizing: "border-box",
             }}
           />
         ) : inputType === "select" ? (
           <select
             disabled
             style={{
-              width: "100%",
-              height: "100%",
-              border: "1px solid #d1d5db",
-              borderRadius: 12,
-              padding: "0 14px",
-              fontSize: 16,
+              ...previewInputStyle,
               background: "#ffffff",
-              boxSizing: "border-box",
             }}
           >
             <option>{placeholder || "선택"}</option>
@@ -2461,16 +2542,7 @@ if ((el as any).type === "formField") {
           <input
             disabled
             placeholder={placeholder}
-            style={{
-              width: "100%",
-              height: "100%",
-              border: "1px solid #d1d5db",
-              borderRadius: 12,
-              padding: "0 14px",
-              fontSize: 16,
-              background: "#f8fafc",
-              boxSizing: "border-box",
-            }}
+            style={previewInputStyle}
           />
         )}
       </div>

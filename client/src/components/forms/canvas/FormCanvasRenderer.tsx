@@ -571,87 +571,147 @@ const shouldHideAnchoredVisuals =
     const inputType = (element as any).inputType || field?.type || "text";
     const placeholder =
       (element as any).placeholder || field?.placeholder || field?.label || "";
-    const label = (element as any).label || field?.label || "";
+    const label =
+  (element as any).label ||
+  field?.label ||
+  (fieldKey === "clientName"
+    ? "이름"
+    : fieldKey === "phone"
+      ? "전화번호"
+      : fieldKey === "finalEducation"
+        ? "최종학력"
+        : fieldKey === "desiredCourse"
+          ? "희망과정"
+          : fieldKey === "channel"
+            ? "문의경로"
+            : fieldKey === "notes"
+              ? "상담내용"
+              : "");
 
     const fieldValue =
       fieldKey === "phone"
         ? String(values.phone ?? "")
         : String(values[fieldKey] ?? "");
 
-    const controlStyle: React.CSSProperties = {
-  ...baseStyle,
-  width: Math.max(40, element.width * scale),
-  height: Math.max(32, element.height * scale),
-  boxSizing: "border-box",
-  pointerEvents: "auto",
-  userSelect: "text",
-  WebkitUserSelect: "text",
-  backgroundClip: "padding-box",
-  zIndex: 1000 + Number((element as any).zIndex || 1),
-};
+        const labelText = String(label || "").trim();
+
+    const labelHeight = labelText && inputType !== "checkbox" ? 26 * scale : 0;
+    const gap = labelText && inputType !== "checkbox" ? 6 * scale : 0;
+    const inputTop = labelHeight + gap;
+    const inputHeight = Math.max(
+      32,
+      element.height * scale - inputTop
+    );
+
+    const wrapperStyle: React.CSSProperties = {
+      ...baseStyle,
+      width: Math.max(40, element.width * scale),
+      height: Math.max(32, element.height * scale),
+      boxSizing: "border-box",
+      pointerEvents: "auto",
+      zIndex: 1000 + Number((element as any).zIndex || 1),
+    };
+
+    const labelNode =
+      labelText && inputType !== "checkbox" ? (
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            width: "100%",
+            height: labelHeight,
+            display: "flex",
+            alignItems: "center",
+            fontSize: Math.max(12, 15 * scale),
+            fontWeight: 800,
+            color: "#111827",
+            pointerEvents: "none",
+            lineHeight: 1,
+            overflow: "hidden",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {labelText}
+        </div>
+      ) : null;
+
+    const inputStyle: React.CSSProperties = {
+      position: "absolute",
+      left: 0,
+      top: inputTop,
+      width: "100%",
+      height: inputHeight,
+      boxSizing: "border-box",
+      pointerEvents: "auto",
+      userSelect: "text",
+      WebkitUserSelect: "text",
+      border: "1px solid #d1d5db",
+      borderRadius: 12 * scale,
+      padding: `0 ${14 * scale}px`,
+      fontSize: Math.max(14, 16 * scale),
+      background: "#f8fafc",
+    };
 
     if (inputType === "textarea") {
-  return (
-    <textarea
-  key={element.id}
-  data-form-field-key={fieldKey}
-  placeholder={placeholder}
-  defaultValue={fieldValue}
-  onInput={(e) => {
-    const next = (e.currentTarget as HTMLTextAreaElement).value;
-    onValueChange?.(fieldKey, next);
-  }}
-      style={{
-        ...controlStyle,
-        border: "1px solid #d1d5db",
-        borderRadius: 12 * scale,
-        padding: 14 * scale,
-        fontSize: Math.max(14, 16 * scale),
-        background: "#ffffff",
-        resize: "none",
-      }}
-    />
-  );
-}
+      return (
+        <div key={element.id} style={wrapperStyle}>
+          {labelNode}
+          <textarea
+            data-form-field-key={fieldKey}
+            placeholder={placeholder}
+            defaultValue={fieldValue}
+            onInput={(e) => {
+              const next = (e.currentTarget as HTMLTextAreaElement).value;
+              onValueChange?.(fieldKey, next);
+            }}
+            style={{
+              ...inputStyle,
+              padding: 14 * scale,
+              background: "#ffffff",
+              resize: "none",
+            }}
+          />
+        </div>
+      );
+    }
 
-   if (inputType === "select") {
-  const options = Array.isArray(field?.options) ? field.options : [];
+    if (inputType === "select") {
+      const options = Array.isArray(field?.options) ? field.options : [];
 
-  return (
-    <select
-  key={element.id}
-  data-form-field-key={fieldKey}
-  defaultValue={fieldValue}
-  onChange={(e) => {
-    onValueChange?.(fieldKey, e.target.value);
-  }}
-      style={{
-        ...controlStyle,
-        border: "1px solid #d1d5db",
-        borderRadius: 12 * scale,
-        padding: `0 ${14 * scale}px`,
-        fontSize: Math.max(14, 16 * scale),
-        background: "#ffffff",
-        appearance: "auto",
-        WebkitAppearance: "menulist",
-      }}
-    >
-      <option value="">{placeholder || "선택"}</option>
-      {options.map((option: any) => (
-        <option key={`${fieldKey}-${option.value}`} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  );
-}
+      return (
+        <div key={element.id} style={wrapperStyle}>
+          {labelNode}
+          <select
+            data-form-field-key={fieldKey}
+            defaultValue={fieldValue}
+            onChange={(e) => {
+              onValueChange?.(fieldKey, e.target.value);
+            }}
+            style={{
+              ...inputStyle,
+              background: "#ffffff",
+              appearance: "auto",
+              WebkitAppearance: "menulist",
+            }}
+          >
+            <option value="">{placeholder || "선택"}</option>
+            {options.map((option: any) => (
+              <option key={`${fieldKey}-${option.value}`} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      );
+    }
 
     if (inputType === "checkbox") {
       return (
         <label
           key={element.id}
           style={{
-            ...controlStyle,
+            ...wrapperStyle,
             display: "flex",
             alignItems: "center",
             gap: 8 * scale,
@@ -661,48 +721,43 @@ const shouldHideAnchoredVisuals =
           }}
         >
           <input
-  type="checkbox"
-  defaultChecked={Boolean(values[fieldKey])}
-  onChange={(e) => onValueChange?.(fieldKey, e.target.checked)}
-/>
-          {label || "개인정보 수집 및 이용 동의"}
+            type="checkbox"
+            defaultChecked={Boolean(values[fieldKey])}
+            onChange={(e) => onValueChange?.(fieldKey, e.target.checked)}
+          />
+          {labelText || "개인정보 수집 및 이용에 동의합니다."}
         </label>
       );
     }
 
-   return (
-  <input
-  key={element.id}
-  data-form-field-key={fieldKey}
-  placeholder={placeholder}
-  defaultValue={fieldValue}
-  inputMode={fieldKey === "phone" ? "numeric" : undefined}
-  autoComplete={
-    fieldKey === "clientName"
-      ? "name"
-      : fieldKey === "phone"
-        ? "tel"
-        : "off"
-  }
-  onInput={(e) => {
-    const rawValue = (e.currentTarget as HTMLInputElement).value;
-    const nextValue =
-      fieldKey === "phone"
-        ? rawValue.replace(/\D/g, "").slice(0, 11)
-        : rawValue;
+    return (
+      <div key={element.id} style={wrapperStyle}>
+        {labelNode}
+        <input
+          data-form-field-key={fieldKey}
+          placeholder={placeholder}
+          defaultValue={fieldValue}
+          inputMode={fieldKey === "phone" ? "numeric" : undefined}
+          autoComplete={
+            fieldKey === "clientName"
+              ? "name"
+              : fieldKey === "phone"
+                ? "tel"
+                : "off"
+          }
+          onInput={(e) => {
+            const rawValue = (e.currentTarget as HTMLInputElement).value;
+            const nextValue =
+              fieldKey === "phone"
+                ? rawValue.replace(/\D/g, "").slice(0, 11)
+                : rawValue;
 
-    onValueChange?.(fieldKey, nextValue);
-  }}
-    style={{
-      ...controlStyle,
-      border: "1px solid #d1d5db",
-      borderRadius: 12 * scale,
-      padding: `0 ${14 * scale}px`,
-      fontSize: Math.max(14, 16 * scale),
-      background: "#f8fafc",
-    }}
-  />
-);
+            onValueChange?.(fieldKey, nextValue);
+          }}
+          style={inputStyle}
+        />
+      </div>
+    );
   };
 
   return (
