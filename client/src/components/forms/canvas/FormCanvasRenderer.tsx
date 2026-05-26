@@ -191,10 +191,6 @@ export default function FormCanvasRenderer({
     return element.type !== "formField" && element.type !== "formSubmit";
   });
 
-  const visualTextElements = visualElements.filter(
-    (element: any) => element.type === "text"
-  );
-
   const inputLikeVisualShapes = visualElements
     .filter((element: any) => {
       if (element.type !== "shape") return false;
@@ -225,46 +221,15 @@ export default function FormCanvasRenderer({
     );
   };
 
-  const findVisualText = (needles: string[]) => {
-    return visualTextElements.find((element: any) => {
-      const text = normalizeText(element.text);
+  const defaultCanvasForForm = createDefaultCompanyCanvasConfig();
 
-      return needles.some((needle) => text.includes(normalizeText(needle)));
-    });
-  };
+  const fallbackFormFields = defaultCanvasForForm.elements.filter(
+    (element: any) => element.type === "formField"
+  );
 
-  const findShapeAroundText = (textElement: any, fallbackIndex: number) => {
-    if (!textElement) return inputLikeVisualShapes[fallbackIndex] || null;
-
-    const tx = Number(textElement.x || 0);
-    const ty = Number(textElement.y || 0);
-
-    const candidates = inputLikeVisualShapes.filter((shape: any) => {
-      const sx = Number(shape.x || 0);
-      const sy = Number(shape.y || 0);
-      const sw = Number(shape.width || 0);
-      const sh = Number(shape.height || 0);
-
-      return (
-        tx >= sx - 80 &&
-        tx <= sx + sw + 80 &&
-        ty >= sy - 80 &&
-        ty <= sy + sh + 80
-      );
-    });
-
-    return (
-      candidates.sort((a: any, b: any) => {
-        const da =
-          Math.abs(Number(a.y || 0) - ty) + Math.abs(Number(a.x || 0) - tx);
-        const db =
-          Math.abs(Number(b.y || 0) - ty) + Math.abs(Number(b.x || 0) - tx);
-        return da - db;
-      })[0] ||
-      inputLikeVisualShapes[fallbackIndex] ||
-      null
-    );
-  };
+  const fallbackFormSubmits = defaultCanvasForForm.elements.filter(
+    (element: any) => element.type === "formSubmit"
+  );
 
   const rawFormFieldsByKey = new Map<string, any[]>();
 
@@ -278,16 +243,6 @@ export default function FormCanvasRenderer({
     ]);
   });
 
-  const defaultCanvasForForm = createDefaultCompanyCanvasConfig();
-
-  const fallbackFormFields = defaultCanvasForForm.elements.filter(
-    (element: any) => element.type === "formField"
-  );
-
-  const fallbackFormSubmits = defaultCanvasForForm.elements.filter(
-    (element: any) => element.type === "formSubmit"
-  );
-
   const rawModeFormFields = REQUIRED_FIELD_KEYS.map((key) => {
     const picked = pickBestElement(rawFormFieldsByKey.get(key) || []);
     if (picked) return picked;
@@ -296,63 +251,6 @@ export default function FormCanvasRenderer({
       (element: any) => getFieldKey(element) === key
     );
   }).filter(Boolean);
-
-  const legacyAnchors = {
-    clientName: findVisualText(["이름", "이름을입력해주세요"]),
-    phone: findVisualText(["전화번호", "전화", "010"]),
-    finalEducation: findVisualText(["최종학력", "학력", "최종학력선택"]),
-    desiredCourse: findVisualText(["희망과정", "과정", "희망과정선택"]),
-    channel: findVisualText(["문의경로", "경로", "문의경로입력"]),
-    notes: findVisualText(["상담내용", "상담내역", "진행하시면서", "걱정"]),
-    agreed: findVisualText(["개인정보", "동의"]),
-  };
-
-  const legacyModeFormFields = REQUIRED_FIELD_KEYS.map((key, index) => {
-    if (key === "agreed") {
-      const notesShape = findShapeAroundText(legacyAnchors.notes, 5);
-      const agreeText = legacyAnchors.agreed;
-
-      return {
-        id: "legacy-overlay-agreed",
-        type: "formField",
-        fieldKey: "agreed",
-        inputType: "checkbox",
-        label: FIELD_LABELS.agreed,
-        placeholder: "",
-        x: Number(agreeText?.x ?? notesShape?.x ?? 110),
-        y: Number(
-          agreeText?.y ??
-            (notesShape
-              ? Number(notesShape.y || 0) + Number(notesShape.height || 0) + 20
-              : 1120)
-        ),
-        width: Number(agreeText?.width ?? 520),
-        height: Number(agreeText?.height ?? 40),
-        zIndex: 1000,
-        overlayMode: true,
-      };
-    }
-
-    const shape = findShapeAroundText((legacyAnchors as any)[key], index);
-    const fallback = fallbackFormFields.find(
-      (element: any) => getFieldKey(element) === key
-    );
-
-    return {
-      id: `legacy-overlay-${key}`,
-      type: "formField",
-      fieldKey: key,
-      inputType: FIELD_INPUT_TYPES[key],
-      label: "",
-      placeholder: "",
-      x: Number(shape?.x ?? fallback?.x ?? 110),
-      y: Number(shape?.y ?? fallback?.y ?? 360 + index * 100),
-      width: Number(shape?.width ?? fallback?.width ?? 860),
-      height: Number(shape?.height ?? fallback?.height ?? 70),
-      zIndex: 1000,
-      overlayMode: true,
-    };
-  });
 
   const visualSubmitButton = visualElements.find((element: any) => {
     if (element.type !== "button") return false;
@@ -388,19 +286,24 @@ export default function FormCanvasRenderer({
         borderRadius: Number((visualSubmitButton as any).borderRadius || 18),
         fontSize: Number((visualSubmitButton as any).fontSize || 18),
         zIndex: 1000,
-      };
+      } as FormCanvasElement;
     }
 
     return fallbackFormSubmits[0];
   })();
 
-  const formElements = [
-    ...(hasRawFormFields ? rawModeFormFields : legacyModeFormFields),
-    submitElement,
-  ].filter(Boolean) as FormCanvasElement[];
+  const safeFormFields = hasRawFormFields
+    ? rawModeFormFields
+    : fallbackFormFields;
+
+  const formElements = [...safeFormFields, submitElement].filter(
+    Boolean
+  ) as FormCanvasElement[];
 
   const shouldHideLegacyFieldVisuals = hasRawFormFields;
-  const shouldHideVisualSubmitButton = Boolean(submitElement && visualSubmitButton);
+  const shouldHideVisualSubmitButton = Boolean(
+    submitElement && visualSubmitButton
+  );
 
   const getFieldMeta = (fieldKey: string) => {
     const field = fields.find((item: any) => String(item.fieldKey) === fieldKey);
@@ -508,7 +411,6 @@ export default function FormCanvasRenderer({
 
     const fieldKey = getFieldKey(element);
     const { label, placeholder, inputType, options } = getFieldMeta(fieldKey);
-    const overlayMode = Boolean((element as any).overlayMode);
 
     const value =
       fieldKey === "phone"
@@ -517,120 +419,16 @@ export default function FormCanvasRenderer({
           ? Boolean(values[fieldKey])
           : String(values[fieldKey] ?? "");
 
-    if (overlayMode) {
-      const overlayBase: CSSProperties = {
-        ...baseStyle,
-        background: "transparent",
-      };
+    const labelText = String(
+      (element as any).label || label || FIELD_LABELS[fieldKey] || ""
+    ).trim();
 
-      const overlayInputStyle: CSSProperties = {
-        width: "100%",
-        height: "100%",
-        border: "none",
-        outline: "none",
-        background: "transparent",
-        boxSizing: "border-box",
-        padding: `${4 * scale}px ${12 * scale}px`,
-        fontSize: Math.max(11, 16 * scale),
-        fontWeight: 700,
-        color: value ? "#111827" : "transparent",
-        caretColor: "#111827",
-      };
-
-      if (inputType === "textarea") {
-        return (
-          <textarea
-            key={element.id}
-            value={String(value ?? "")}
-            onChange={(e) => updateFieldValue(fieldKey, e.target.value)}
-            style={{
-              ...overlayBase,
-              ...overlayInputStyle,
-              resize: "none",
-              padding: `${10 * scale}px ${12 * scale}px`,
-            }}
-          />
-        );
-      }
-
-      if (inputType === "select") {
-        return (
-          <select
-            key={element.id}
-            value={String(value ?? "")}
-            onChange={(e) => updateFieldValue(fieldKey, e.target.value)}
-            style={{
-              ...overlayBase,
-              ...overlayInputStyle,
-              appearance: "auto",
-              WebkitAppearance: "menulist",
-            }}
-          >
-            <option value="">{placeholder || "선택"}</option>
-            {options.map((option: any) => (
-              <option key={`${fieldKey}-${option.value}`} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        );
-      }
-
-      if (inputType === "checkbox") {
-        return (
-          <label
-            key={element.id}
-            style={{
-              ...overlayBase,
-              display: "flex",
-              alignItems: "center",
-              gap: 6 * scale,
-              fontSize: Math.max(10, 13 * scale),
-              color: "transparent",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={Boolean(value)}
-              onChange={(e) => updateFieldValue(fieldKey, e.target.checked)}
-            />
-            {label}
-          </label>
-        );
-      }
-
-      return (
-        <input
-          key={element.id}
-          value={String(value ?? "")}
-          onChange={(e) => updateFieldValue(fieldKey, e.target.value)}
-          inputMode={fieldKey === "phone" ? "numeric" : undefined}
-          autoComplete={
-            fieldKey === "clientName"
-              ? "name"
-              : fieldKey === "phone"
-                ? "tel"
-                : "off"
-          }
-          style={{
-            ...overlayBase,
-            ...overlayInputStyle,
-          }}
-        />
-      );
-    }
-
-    const labelText =
-      String((element as any).label || label || FIELD_LABELS[fieldKey] || "")
-        .trim();
-
-    const finalPlaceholder =
-      String(
-        (element as any).placeholder ||
-          placeholder ||
-          FIELD_PLACEHOLDERS[fieldKey] ||
-          ""
-      ).trim();
+    const finalPlaceholder = String(
+      (element as any).placeholder ||
+        placeholder ||
+        FIELD_PLACEHOLDERS[fieldKey] ||
+        ""
+    ).trim();
 
     if (inputType === "checkbox") {
       return (
