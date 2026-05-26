@@ -194,12 +194,34 @@ if (isFormElement) {
 }
 
 if ((element as any).type === "formField") {
-  const inputType = (element as any).inputType || "text";
-  const placeholder = (element as any).placeholder || "";
-  const label = (element as any).label || "";
-const fieldKey = String((element as any).fieldKey || "");
-const field = fields.find((item: any) => item.fieldKey === fieldKey);
-const fieldValue = values[fieldKey] ?? "";
+  const rawId = String((element as any).id || "");
+  const rawFieldKey = String((element as any).fieldKey || "");
+
+  const fieldKey =
+    rawFieldKey ||
+    rawId.replace("required-field-", "").replace("field-", "");
+
+  const field = fields.find(
+    (item: any) => String(item.fieldKey) === fieldKey
+  );
+
+  const inputType =
+    (element as any).inputType ||
+    field?.type ||
+    "text";
+
+  const placeholder =
+    (element as any).placeholder ||
+    field?.placeholder ||
+    field?.label ||
+    "";
+
+  const label =
+    (element as any).label ||
+    field?.label ||
+    "";
+
+  const fieldValue = values[fieldKey] ?? "";
 
  return (
   <div
@@ -207,7 +229,7 @@ const fieldValue = values[fieldKey] ?? "";
     style={{
       ...baseStyle,
       overflow: "visible",
-      pointerEvents: "none",
+      pointerEvents: "auto",
     }}
   >
       {inputType === "textarea" ? (
@@ -226,6 +248,8 @@ const fieldValue = values[fieldKey] ?? "";
             resize: "none",
             boxSizing: "border-box",
 	 pointerEvents: "auto",
+position: "relative",
+zIndex: 10,
           }}
         />
       ) : inputType === "select" ? (
@@ -242,6 +266,8 @@ const fieldValue = values[fieldKey] ?? "";
             background: "#ffffff",
             boxSizing: "border-box",
 	 pointerEvents: "auto",
+position: "relative",
+zIndex: 10,
           }}
         >
          <option value="">{placeholder || "선택"}</option>
@@ -267,7 +293,11 @@ const fieldValue = values[fieldKey] ?? "";
   type="checkbox"
   checked={Boolean(values[fieldKey])}
   onChange={(e) => onValueChange?.(fieldKey, e.target.checked)}
-  style={{ pointerEvents: "auto" }}
+  style={{
+  pointerEvents: "auto",
+  position: "relative",
+  zIndex: 10,
+}}
 />
           {label || "개인정보 수집 및 이용 동의"}
         </label>
@@ -285,7 +315,9 @@ const fieldValue = values[fieldKey] ?? "";
             fontSize: Math.max(14, 16 * scale),
             background: "#f8fafc",
             boxSizing: "border-box",
-	    pointerEvents: "auto",
+	 pointerEvents: "auto",
+position: "relative",
+zIndex: 10,
           }}
         />
       )}

@@ -901,51 +901,6 @@ applyTemplateMutation.mutate({
   onTel={() => {
     if (callPhone) window.location.href = callHref;
   }}
-  renderForm={() =>
-    done ? (
-      <div
-        id="public-lead-form-section"
-        className="ad-form-success"
-        style={{
-          width: "100%",
-          height: "100%",
-        }}
-      >
-        상담 신청이 접수되었습니다.
-        <br />
-        순차적으로 연락드리겠습니다.
-      </div>
-    ) : (
-      <form
-        id="public-lead-form-section"
-        className="premium-form-card"
-        onSubmit={handleSubmit}
-        style={{
-  width: "100%",
-  minHeight: "100%",
-  boxSizing: "border-box",
-  display: "flex",
-  flexDirection: "column",
-  gap: 10,
-  padding: 0,
-  margin: 0,
-}}
-      >
-        {sortedFields.map(renderField)}
-
-        <button
-          type="submit"
-          className="premium-submit-button"
-          style={{ backgroundColor: safeColor }}
-          disabled={submitMutation.isPending}
-        >
-          {submitMutation.isPending
-            ? "접수 중..."
-            : safeDisplayConfig.submitButtonText || "무료 상담 신청하기"}
-        </button>
-      </form>
-    )
-  }
 />
   </div>
 );
