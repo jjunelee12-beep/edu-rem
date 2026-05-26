@@ -149,12 +149,7 @@ export default function FormCanvasRenderer({
         <button
           key={element.id}
           type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            onSubmit?.();
-          }}
+          onClick={onSubmit}
           disabled={isSubmitting}
           style={{
             ...baseStyle,
@@ -170,8 +165,6 @@ export default function FormCanvasRenderer({
             fontWeight: 900,
             boxShadow: "0 10px 24px rgba(15, 23, 42, 0.18)",
             pointerEvents: "auto",
-            WebkitTapHighlightColor: "transparent",
-            touchAction: "auto",
           }}
         >
           {isSubmitting
@@ -288,78 +281,74 @@ export default function FormCanvasRenderer({
         : String(values[fieldKey] ?? "");
 
     const controlStyle: React.CSSProperties = {
-      ...baseStyle,
-      width: element.width * scale,
-      height: element.height * scale,
-      boxSizing: "border-box",
-      pointerEvents: "auto",
-      userSelect: "text",
-      WebkitUserSelect: "text",
-      touchAction: "auto",
-    };
-
-    const stopInputEvent = (e: React.SyntheticEvent) => {
-      e.stopPropagation();
-    };
+  ...baseStyle,
+  width: element.width * scale,
+  height: element.height * scale,
+  boxSizing: "border-box",
+  pointerEvents: "auto",
+  userSelect: "text",
+  WebkitUserSelect: "text",
+  backgroundClip: "padding-box",
+};
 
     if (inputType === "textarea") {
-      return (
-        <textarea
-          key={element.id}
-          placeholder={placeholder}
-          value={fieldValue}
-          onPointerDown={stopInputEvent}
-          onMouseDown={stopInputEvent}
-          onClick={stopInputEvent}
-          onChange={(e) => onValueChange?.(fieldKey, e.target.value)}
-          style={{
-            ...controlStyle,
-            border: "1px solid #d1d5db",
-            borderRadius: 12 * scale,
-            padding: 14 * scale,
-            fontSize: Math.max(14, 16 * scale),
-            background: "#ffffff",
-            resize: "none",
-          }}
-        />
-      );
-    }
+  return (
+    <textarea
+      key={element.id}
+      placeholder={placeholder}
+      defaultValue={fieldValue}
+      onInput={(e) =>
+        onValueChange?.(
+          fieldKey,
+          (e.currentTarget as HTMLTextAreaElement).value
+        )
+      }
+      style={{
+        ...controlStyle,
+        border: "1px solid #d1d5db",
+        borderRadius: 12 * scale,
+        padding: 14 * scale,
+        fontSize: Math.max(14, 16 * scale),
+        background: "#ffffff",
+        resize: "none",
+      }}
+    />
+  );
+}
 
-    if (inputType === "select") {
-      return (
-        <select
-          key={element.id}
-          value={fieldValue}
-          onPointerDown={stopInputEvent}
-          onMouseDown={stopInputEvent}
-          onClick={stopInputEvent}
-          onChange={(e) => onValueChange?.(fieldKey, e.target.value)}
-          style={{
-            ...controlStyle,
-            border: "1px solid #d1d5db",
-            borderRadius: 12 * scale,
-            padding: `0 ${14 * scale}px`,
-            fontSize: Math.max(14, 16 * scale),
-            background: "#ffffff",
-          }}
-        >
-          <option value="">{placeholder || "선택"}</option>
-          {(field?.options || []).map((option: any) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      );
-    }
+   if (inputType === "select") {
+  const options = Array.isArray(field?.options) ? field.options : [];
+
+  return (
+    <select
+      key={element.id}
+      defaultValue={fieldValue}
+      onChange={(e) => onValueChange?.(fieldKey, e.target.value)}
+      style={{
+        ...controlStyle,
+        border: "1px solid #d1d5db",
+        borderRadius: 12 * scale,
+        padding: `0 ${14 * scale}px`,
+        fontSize: Math.max(14, 16 * scale),
+        background: "#ffffff",
+        appearance: "auto",
+        WebkitAppearance: "menulist",
+      }}
+    >
+      <option value="">{placeholder || "선택"}</option>
+      {options.map((option: any) => (
+        <option key={`${fieldKey}-${option.value}`} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
 
     if (inputType === "checkbox") {
       return (
         <label
           key={element.id}
-          onPointerDown={stopInputEvent}
-          onMouseDown={stopInputEvent}
-          onClick={stopInputEvent}
           style={{
             ...controlStyle,
             display: "flex",
@@ -371,41 +360,48 @@ export default function FormCanvasRenderer({
           }}
         >
           <input
-            type="checkbox"
-            checked={Boolean(values[fieldKey])}
-            onChange={(e) => onValueChange?.(fieldKey, e.target.checked)}
-          />
+  type="checkbox"
+  defaultChecked={Boolean(values[fieldKey])}
+  onChange={(e) => onValueChange?.(fieldKey, e.target.checked)}
+/>
           {label || "개인정보 수집 및 이용 동의"}
         </label>
       );
     }
 
-    return (
-      <input
-        key={element.id}
-        placeholder={placeholder}
-        value={fieldValue}
-        onPointerDown={stopInputEvent}
-        onMouseDown={stopInputEvent}
-        onClick={stopInputEvent}
-        onChange={(e) => {
-          const nextValue =
-            fieldKey === "phone"
-              ? e.target.value.replace(/\D/g, "").slice(0, 11)
-              : e.target.value;
+   return (
+  <input
+    key={element.id}
+    placeholder={placeholder}
+    defaultValue={fieldValue}
+    inputMode={fieldKey === "phone" ? "numeric" : undefined}
+    autoComplete={
+      fieldKey === "clientName"
+        ? "name"
+        : fieldKey === "phone"
+          ? "tel"
+          : "off"
+    }
+    onInput={(e) => {
+      const rawValue = (e.currentTarget as HTMLInputElement).value;
 
-          onValueChange?.(fieldKey, nextValue);
-        }}
-        style={{
-          ...controlStyle,
-          border: "1px solid #d1d5db",
-          borderRadius: 12 * scale,
-          padding: `0 ${14 * scale}px`,
-          fontSize: Math.max(14, 16 * scale),
-          background: "#f8fafc",
-        }}
-      />
-    );
+      const nextValue =
+        fieldKey === "phone"
+          ? rawValue.replace(/\D/g, "").slice(0, 11)
+          : rawValue;
+
+      onValueChange?.(fieldKey, nextValue);
+    }}
+    style={{
+      ...controlStyle,
+      border: "1px solid #d1d5db",
+      borderRadius: 12 * scale,
+      padding: `0 ${14 * scale}px`,
+      fontSize: Math.max(14, 16 * scale),
+      background: "#f8fafc",
+    }}
+  />
+);
   };
 
   return (
@@ -430,11 +426,10 @@ export default function FormCanvasRenderer({
           position: "relative",
           width,
           height,
-          overflow: "hidden",
+          overflow: "visible",
           borderRadius: isMobile ? 18 : 24,
           backgroundColor: canvas.backgroundColor || "#ffffff",
           boxShadow: "0 18px 50px rgba(15, 23, 42, 0.14)",
-          touchAction: "auto",
         }}
       >
         {visualElements.map((element) => {
