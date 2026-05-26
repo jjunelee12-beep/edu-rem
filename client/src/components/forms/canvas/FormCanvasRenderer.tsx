@@ -300,7 +300,20 @@ const hasAllRequiredFormFields = REQUIRED_FORM_FIELD_KEYS.every((key) =>
   rawFormFieldKeys.has(key)
 );
 
+const hasUsableRawFormFields =
+  rawFormFields.length >= 6 &&
+  REQUIRED_FORM_FIELD_KEYS.slice(0, 6).every((key) =>
+    rawFormFields.some((element: any) => {
+      return (
+        String(element.fieldKey || "").trim() === key &&
+        Number(element.width || 0) > 10 &&
+        Number(element.height || 0) > 10
+      );
+    })
+  );
+
 const shouldUseAnchoredFields =
+  !hasUsableRawFormFields &&
   Boolean(anchorShapeByFieldKey.clientName) &&
   Boolean(anchorShapeByFieldKey.phone) &&
   Boolean(anchorShapeByFieldKey.channel) &&
@@ -319,86 +332,6 @@ const safeFormSubmits = shouldUseAnchoredFields
     : fallbackFormSubmits;
 
 const formElements = [...safeFormFields, ...safeFormSubmits];
-
-useEffect(() => {
-  console.log("[FORM CANVAS DEBUG:init]", {
-    canvasEnabled: canvas.enabled,
-    canvasSize: {
-      width: canvas.width,
-      height: canvas.height,
-      scaledWidth: width,
-      scaledHeight: height,
-      scale,
-    },
-    values,
-    fields: fields.map((field: any) => ({
-      fieldKey: field.fieldKey,
-      type: field.type,
-      optionsCount: Array.isArray(field.options) ? field.options.length : 0,
-      hidden: field.hidden,
-      required: field.required,
-    })),
-    formElements: formElements.map((el: any) => ({
-      id: el.id,
-      type: el.type,
-      fieldKey: el.fieldKey,
-      inputType: el.inputType,
-      x: el.x,
-      y: el.y,
-      width: el.width,
-      height: el.height,
-      zIndex: el.zIndex,
-      hidden: el.hidden,
-    })),
-    visualElements: visualElements.map((el: any) => ({
-      id: el.id,
-      type: el.type,
-      x: el.x,
-      y: el.y,
-      width: el.width,
-      height: el.height,
-      zIndex: el.zIndex,
-      hidden: el.hidden,
-    })),
-  });
-}, [canvas.enabled, canvas.width, canvas.height, scale, width, height, fields, values, formElements, visualElements]);
-useEffect(() => {
-  const handlePointerDown = (event: PointerEvent) => {
-    const target = document.elementFromPoint(event.clientX, event.clientY);
-
-    console.log("[FORM CANVAS DEBUG:pointer]", {
-  x: event.clientX,
-  y: event.clientY,
-  targetTag: target?.tagName,
-  targetClass: (target as HTMLElement | null)?.className,
-  targetId: (target as HTMLElement | null)?.id,
-  targetOuterHTML: target?.outerHTML?.slice(0, 500),
-  inputRects: Array.from(
-    document.querySelectorAll("input, select, textarea")
-  ).map((node: any) => {
-    const rect = node.getBoundingClientRect();
-
-    return {
-      tag: node.tagName,
-      fieldKey: node.dataset?.formFieldKey,
-      left: rect.left,
-      top: rect.top,
-      right: rect.right,
-      bottom: rect.bottom,
-      width: rect.width,
-      height: rect.height,
-      value: node.value,
-    };
-  }),
-});
-  };
-
-  window.addEventListener("pointerdown", handlePointerDown, true);
-
-  return () => {
-    window.removeEventListener("pointerdown", handlePointerDown, true);
-  };
-}, []);
 
   const handleButtonClick = (element: FormCanvasElement) => {
     if (element.type !== "button") return;
@@ -471,7 +404,7 @@ useEffect(() => {
           }}
         >
           {isSubmitting
-            ? "접수 중..."
+            ? "접수 완료"
             : (element as any).text || "1:1 맞춤 상담 받기"}
         </button>
       );
@@ -602,10 +535,8 @@ useEffect(() => {
   data-form-field-key={fieldKey}
   placeholder={placeholder}
   defaultValue={fieldValue}
-  onFocus={() => console.log("[FORM CANVAS DEBUG:focus]", fieldKey, "textarea")}
   onInput={(e) => {
     const next = (e.currentTarget as HTMLTextAreaElement).value;
-    console.log("[FORM CANVAS DEBUG:input]", fieldKey, next);
     onValueChange?.(fieldKey, next);
   }}
       style={{
@@ -629,9 +560,7 @@ useEffect(() => {
   key={element.id}
   data-form-field-key={fieldKey}
   defaultValue={fieldValue}
-  onFocus={() => console.log("[FORM CANVAS DEBUG:focus]", fieldKey, "select")}
   onChange={(e) => {
-    console.log("[FORM CANVAS DEBUG:change]", fieldKey, e.target.value);
     onValueChange?.(fieldKey, e.target.value);
   }}
       style={{
@@ -693,7 +622,6 @@ useEffect(() => {
         ? "tel"
         : "off"
   }
-  onFocus={() => console.log("[FORM CANVAS DEBUG:focus]", fieldKey, "input")}
   onInput={(e) => {
     const rawValue = (e.currentTarget as HTMLInputElement).value;
     const nextValue =
@@ -701,7 +629,6 @@ useEffect(() => {
         ? rawValue.replace(/\D/g, "").slice(0, 11)
         : rawValue;
 
-    console.log("[FORM CANVAS DEBUG:input]", fieldKey, nextValue);
     onValueChange?.(fieldKey, nextValue);
   }}
     style={{

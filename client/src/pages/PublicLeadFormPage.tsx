@@ -601,10 +601,10 @@ if (!values.agreed) {
     return true;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-  e.preventDefault();
+  const handleSubmit = (e?: React.FormEvent | React.MouseEvent) => {
+  e?.preventDefault?.();
 
-  if (submitMutation.isPending) return;
+  if (done || submitMutation.isPending) return;
   if (!validateBeforeSubmit()) return;
 
   const mapping = {
@@ -808,6 +808,21 @@ applyTemplateMutation.mutate({
 />
     );
   }
+
+if (done) {
+  return (
+    <div className="min-h-screen bg-slate-100 px-4 py-10">
+      <div className="mx-auto max-w-xl rounded-3xl bg-white p-8 text-center shadow-xl">
+        <h1 className="text-2xl font-black text-slate-900">
+          상담 신청이 접수되었습니다.
+        </h1>
+        <p className="mt-4 text-base font-semibold text-slate-600">
+          담당자가 확인 후 곧 연락드리겠습니다.
+        </p>
+      </div>
+    </div>
+  );
+}
   if (formQuery.isLoading) {
     return (
       <PageShell>
@@ -871,7 +886,7 @@ pointerEvents: "auto",
   fields={sortedFields}
   onValueChange={updateValue}
   onSubmit={() => handleSubmit({ preventDefault: () => {} } as any)}
-  isSubmitting={submitMutation.isPending}
+ isSubmitting={submitMutation.isPending || done}
   onOpenForm={() => {
     document
       .getElementById("public-lead-form-section")
