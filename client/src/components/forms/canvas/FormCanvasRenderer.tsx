@@ -111,93 +111,41 @@ const fallbackFormSubmits = defaultCanvasForForm.elements.filter((element: any) 
   return element.type === "formSubmit";
 });
 
-const emergencyFormFields = [
-  {
-    id: "emergency-clientName",
-    type: "formField",
-    fieldKey: "clientName",
-    inputType: "text",
-    placeholder: "이름",
-    x: 140,
-    y: 300,
-    width: 800,
-    height: 72,
-    zIndex: 1000,
-  },
-  {
-    id: "emergency-phone",
-    type: "formField",
-    fieldKey: "phone",
-    inputType: "phone",
-    placeholder: "전화번호",
-    x: 140,
-    y: 395,
-    width: 800,
-    height: 72,
-    zIndex: 1000,
-  },
-  {
-    id: "emergency-finalEducation",
-    type: "formField",
-    fieldKey: "finalEducation",
-    inputType: "select",
-    placeholder: "최종학력 선택",
-    x: 140,
-    y: 490,
-    width: 800,
-    height: 72,
-    zIndex: 1000,
-  },
-  {
-    id: "emergency-desiredCourse",
-    type: "formField",
-    fieldKey: "desiredCourse",
-    inputType: "select",
-    placeholder: "희망과정 선택",
-    x: 140,
-    y: 585,
-    width: 800,
-    height: 72,
-    zIndex: 1000,
-  },
-  {
-    id: "emergency-channel",
-    type: "formField",
-    fieldKey: "channel",
-    inputType: "text",
-    placeholder: "문의경로 (예. 블로그, 인스타, 지인추천)",
-    x: 140,
-    y: 680,
-    width: 800,
-    height: 72,
-    zIndex: 1000,
-  },
-  {
-    id: "emergency-notes",
-    type: "formField",
-    fieldKey: "notes",
-    inputType: "textarea",
-    placeholder: "진행하시면서 걱정되시는 부분 적어주세요!",
-    x: 140,
-    y: 775,
-    width: 800,
-    height: 150,
-    zIndex: 1000,
-  },
-  {
-    id: "emergency-agreed",
-    type: "formField",
-    fieldKey: "agreed",
-    inputType: "checkbox",
-    placeholder: "",
-    label: "개인정보 수집 및 이용에 동의합니다.",
-    x: 140,
-    y: 950,
-    width: 520,
-    height: 40,
-    zIndex: 1000,
-  },
+const inputLikeVisualShapes = visualElements
+  .filter((element: any) => {
+    if (element.type !== "shape") return false;
+
+    const w = Number(element.width || 0);
+    const h = Number(element.height || 0);
+
+    return w >= 300 && h >= 30 && h <= 220;
+  })
+  .sort((a: any, b: any) => Number(a.y || 0) - Number(b.y || 0));
+
+const emergencyFieldKeys = [
+  { fieldKey: "clientName", inputType: "text", placeholder: "이름" },
+  { fieldKey: "phone", inputType: "phone", placeholder: "전화번호" },
+  { fieldKey: "finalEducation", inputType: "select", placeholder: "최종학력 선택" },
+  { fieldKey: "desiredCourse", inputType: "select", placeholder: "희망과정 선택" },
+  { fieldKey: "channel", inputType: "text", placeholder: "문의경로 (예. 블로그, 인스타, 지인추천)" },
+  { fieldKey: "notes", inputType: "textarea", placeholder: "진행하시면서 걱정되시는 부분 적어주세요!" },
+  { fieldKey: "agreed", inputType: "checkbox", placeholder: "", label: "개인정보 수집 및 이용에 동의합니다." },
 ];
+
+const emergencyFormFields = emergencyFieldKeys.map((field, index) => {
+  const shape = inputLikeVisualShapes[index];
+
+  return {
+    id: `emergency-${field.fieldKey}`,
+    type: "formField",
+    ...field,
+    x: Number(shape?.x ?? 140),
+    y: Number(shape?.y ?? 300 + index * 95),
+    width: Number(shape?.width ?? 800),
+    height: field.fieldKey === "agreed" ? 40 : Number(shape?.height ?? 72),
+    zIndex: 1000,
+  };
+});
 
 const REQUIRED_FORM_FIELD_KEYS = [
   "clientName",
@@ -777,27 +725,11 @@ useEffect(() => {
 
           if (element.type === "shape") {
 
-const shapeText = String(
-  [
-    (element as any).text,
-    (element as any).label,
-    (element as any).placeholder,
-    (element as any).id,
-  ]
-    .filter(Boolean)
-    .join(" ")
-).toLowerCase();
+const isInputLikeShape = inputLikeVisualShapes.some(
+  (shape: any) => shape.id === element.id
+);
 
-const isFormShape =
-  shapeText.includes("이름") ||
-  shapeText.includes("전화") ||
-  shapeText.includes("학력") ||
-  shapeText.includes("과정") ||
-  shapeText.includes("문의") ||
-  shapeText.includes("상담") ||
-  shapeText.includes("동의");
-
-if (isFormShape) {
+if (isInputLikeShape) {
   return null;
 }
             return (
