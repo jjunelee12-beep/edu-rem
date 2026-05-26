@@ -93,9 +93,140 @@ export default function FormCanvasRenderer({
     return element.type !== "formField" && element.type !== "formSubmit";
   });
 
-  const formElements = visibleElements.filter((element: any) => {
-    return element.type === "formField" || element.type === "formSubmit";
-  });
+  const rawFormFields = visibleElements.filter((element: any) => {
+  return element.type === "formField";
+});
+
+const rawFormSubmits = visibleElements.filter((element: any) => {
+  return element.type === "formSubmit";
+});
+
+const defaultCanvasForForm = createDefaultCompanyCanvasConfig();
+
+const fallbackFormFields = defaultCanvasForForm.elements.filter((element: any) => {
+  return element.type === "formField";
+});
+
+const fallbackFormSubmits = defaultCanvasForForm.elements.filter((element: any) => {
+  return element.type === "formSubmit";
+});
+
+const emergencyFormFields = [
+  {
+    id: "emergency-clientName",
+    type: "formField",
+    fieldKey: "clientName",
+    inputType: "text",
+    placeholder: "이름",
+    x: 140,
+    y: 300,
+    width: 800,
+    height: 72,
+    zIndex: 1000,
+  },
+  {
+    id: "emergency-phone",
+    type: "formField",
+    fieldKey: "phone",
+    inputType: "phone",
+    placeholder: "전화번호",
+    x: 140,
+    y: 395,
+    width: 800,
+    height: 72,
+    zIndex: 1000,
+  },
+  {
+    id: "emergency-finalEducation",
+    type: "formField",
+    fieldKey: "finalEducation",
+    inputType: "select",
+    placeholder: "최종학력 선택",
+    x: 140,
+    y: 490,
+    width: 800,
+    height: 72,
+    zIndex: 1000,
+  },
+  {
+    id: "emergency-desiredCourse",
+    type: "formField",
+    fieldKey: "desiredCourse",
+    inputType: "select",
+    placeholder: "희망과정 선택",
+    x: 140,
+    y: 585,
+    width: 800,
+    height: 72,
+    zIndex: 1000,
+  },
+  {
+    id: "emergency-channel",
+    type: "formField",
+    fieldKey: "channel",
+    inputType: "text",
+    placeholder: "문의경로 (예. 블로그, 인스타, 지인추천)",
+    x: 140,
+    y: 680,
+    width: 800,
+    height: 72,
+    zIndex: 1000,
+  },
+  {
+    id: "emergency-notes",
+    type: "formField",
+    fieldKey: "notes",
+    inputType: "textarea",
+    placeholder: "진행하시면서 걱정되시는 부분 적어주세요!",
+    x: 140,
+    y: 775,
+    width: 800,
+    height: 150,
+    zIndex: 1000,
+  },
+  {
+    id: "emergency-agreed",
+    type: "formField",
+    fieldKey: "agreed",
+    inputType: "checkbox",
+    placeholder: "",
+    label: "개인정보 수집 및 이용에 동의합니다.",
+    x: 140,
+    y: 950,
+    width: 520,
+    height: 40,
+    zIndex: 1000,
+  },
+];
+
+const REQUIRED_FORM_FIELD_KEYS = [
+  "clientName",
+  "phone",
+  "finalEducation",
+  "desiredCourse",
+  "channel",
+  "notes",
+  "agreed",
+];
+
+const rawFormFieldKeys = new Set(
+  rawFormFields
+    .map((element: any) => String(element.fieldKey || "").trim())
+    .filter(Boolean)
+);
+
+const hasAllRequiredFormFields = REQUIRED_FORM_FIELD_KEYS.every((key) =>
+  rawFormFieldKeys.has(key)
+);
+
+const safeFormFields = hasAllRequiredFormFields
+  ? rawFormFields
+  : emergencyFormFields;
+
+const formElements = [
+  ...safeFormFields,
+  ...(rawFormSubmits.length > 0 ? rawFormSubmits : fallbackFormSubmits),
+];
 
 useEffect(() => {
   console.log("[FORM CANVAS DEBUG:init]", {
