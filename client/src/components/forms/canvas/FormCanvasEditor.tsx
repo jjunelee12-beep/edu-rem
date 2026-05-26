@@ -1739,6 +1739,8 @@ useEffect(() => {
   };
 }, [selectionBox, canvas.elements, scale]);
 
+let renderedRequiredForm = false;
+
   return (
   <div
     className={
@@ -2308,6 +2310,9 @@ const isResizing = resizeState?.id === el.id;
 const isActiveMoving = isDragging || isResizing;
 
 if (el.type === "form" || isRequiredFormElement(el)) {
+  if (renderedRequiredForm) return null;
+  renderedRequiredForm = true;
+
   const active =
     actualSelectedId === el.id || selectedIds.includes(el.id);
 
@@ -2326,7 +2331,7 @@ if (el.type === "form" || isRequiredFormElement(el)) {
         width: el.width * scale,
         height: el.height * scale,
         zIndex: isActiveMoving ? 9999 : el.zIndex ?? 1,
-        overflow: "visible",
+        overflow: "hidden",
         background: "transparent",
       }}
     >
@@ -2642,7 +2647,7 @@ if (el.type === "svg") {
         width="100%"
         height="100%"
         preserveAspectRatio="none"
-        style={{ overflow: "visible" }}
+        style={{ overflow: "hidden" }}
       >
         {renderSvgContent(el)}
       </svg>
