@@ -501,7 +501,6 @@ useEffect(() => {
   WebkitUserSelect: "text",
   backgroundClip: "padding-box",
   zIndex: 1000 + Number((element as any).zIndex || 1),
-  outline: "2px solid red",
 };
 
     if (inputType === "textarea") {
@@ -777,6 +776,30 @@ useEffect(() => {
           }
 
           if (element.type === "shape") {
+
+const shapeText = String(
+  [
+    (element as any).text,
+    (element as any).label,
+    (element as any).placeholder,
+    (element as any).id,
+  ]
+    .filter(Boolean)
+    .join(" ")
+).toLowerCase();
+
+const isFormShape =
+  shapeText.includes("이름") ||
+  shapeText.includes("전화") ||
+  shapeText.includes("학력") ||
+  shapeText.includes("과정") ||
+  shapeText.includes("문의") ||
+  shapeText.includes("상담") ||
+  shapeText.includes("동의");
+
+if (isFormShape) {
+  return null;
+}
             return (
               <div
                 key={element.id}
