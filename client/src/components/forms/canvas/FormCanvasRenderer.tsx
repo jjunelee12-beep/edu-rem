@@ -111,6 +111,15 @@ const fallbackFormSubmits = defaultCanvasForForm.elements.filter((element: any) 
   return element.type === "formSubmit";
 });
 
+const normalizeText = (value: any) =>
+  String(value || "")
+    .replace(/\s/g, "")
+    .toLowerCase();
+
+const visualTextElements = visualElements.filter(
+  (element: any) => element.type === "text"
+);
+
 const inputLikeVisualShapes = visualElements
   .filter((element: any) => {
     if (element.type !== "shape") return false;
@@ -118,13 +127,68 @@ const inputLikeVisualShapes = visualElements
     const w = Number(element.width || 0);
     const h = Number(element.height || 0);
 
-    return w >= 300 && h >= 30 && h <= 220;
+    return w >= 300 && h >= 25 && h <= 260;
   })
   .sort((a: any, b: any) => Number(a.y || 0) - Number(b.y || 0));
 
-const formControlShapes = inputLikeVisualShapes.slice(0, Math.min(6, inputLikeVisualShapes.length));
+const findTextElement = (needles: string[]) => {
+  return visualTextElements.find((element: any) => {
+    const text = normalizeText((element as any).text);
+    return needles.some((needle) => text.includes(normalizeText(needle)));
+  });
+};
 
-const emergencyInputFieldDefs = [
+const findShapeAroundText = (textElement: any) => {
+  if (!textElement) return null;
+
+  const tx = Number(textElement.x || 0);
+  const ty = Number(textElement.y || 0);
+
+  const candidates = inputLikeVisualShapes.filter((shape: any) => {
+    const sx = Number(shape.x || 0);
+    const sy = Number(shape.y || 0);
+    const sw = Number(shape.width || 0);
+    const sh = Number(shape.height || 0);
+
+    return (
+      tx >= sx - 40 &&
+      tx <= sx + sw + 40 &&
+      ty >= sy - 40 &&
+      ty <= sy + sh + 40
+    );
+  });
+
+  return (
+    candidates.sort((a: any, b: any) => {
+      const ay =
+        Math.abs(Number(a.y || 0) - ty) + Math.abs(Number(a.x || 0) - tx);
+      const by =
+        Math.abs(Number(b.y || 0) - ty) + Math.abs(Number(b.x || 0) - tx);
+      return ay - by;
+    })[0] || null
+  );
+};
+
+const anchorTextByFieldKey: Record<string, any> = {
+  clientName: findTextElement(["이름"]),
+  phone: findTextElement(["전화번호", "전화"]),
+  finalEducation: findTextElement(["최종학력", "학력"]),
+  desiredCourse: findTextElement(["희망과정", "과정"]),
+  channel: findTextElement(["문의경로", "경로"]),
+  notes: findTextElement(["진행하시면서", "걱정", "적어주세요"]),
+  agreed: findTextElement(["개인정보", "동의"]),
+};
+
+const anchorShapeByFieldKey: Record<string, any> = {
+  clientName: findShapeAroundText(anchorTextByFieldKey.clientName),
+  phone: findShapeAroundText(anchorTextByFieldKey.phone),
+  finalEducation: findShapeAroundText(anchorTextByFieldKey.finalEducation),
+  desiredCourse: findShapeAroundText(anchorTextByFieldKey.desiredCourse),
+  channel: findShapeAroundText(anchorTextByFieldKey.channel),
+  notes: findShapeAroundText(anchorTextByFieldKey.notes),
+};
+
+const anchoredFieldDefs = [
   { fieldKey: "clientName", inputType: "text", placeholder: "이름" },
   { fieldKey: "phone", inputType: "phone", placeholder: "전화번호" },
   { fieldKey: "finalEducation", inputType: "select", placeholder: "최종학력 선택" },
@@ -133,49 +197,88 @@ const emergencyInputFieldDefs = [
   { fieldKey: "notes", inputType: "textarea", placeholder: "진행하시면서 걱정되시는 부분 적어주세요!" },
 ];
 
-const emergencyInputFields = emergencyInputFieldDefs.map((field, index) => {
-  const shape = formControlShapes[index];
+const anchoredInputFields = anchoredFieldDefs.map((field, index) => {
+  const shape = anchorShapeByFieldKey[field.fieldKey];
+  const fallbackShape = inputLikeVisualShapes[index];
 
   return {
-    id: `emergency-${field.fieldKey}`,
+    id: `anchored-${field.fieldKey}`,
     type: "formField",
     ...field,
-    x: Number(shape?.x ?? 140),
-    y: Number(shape?.y ?? 300 + index * 95),
-    width: Number(shape?.width ?? 800),
+    x: Number(shape?.x ?? fallbackShape?.x ?? 140),
+    y: Number(shape?.y ?? fallbackShape?.y ?? 300 + index * 95),
+    width: Number(shape?.width ?? fallbackShape?.width ?? 800),
     height:
       field.fieldKey === "notes"
-        ? Number(shape?.height ?? 150)
-        : Number(shape?.height ?? 72),
+        ? Number(shape?.height ?? fallbackShape?.height ?? 150)
+        : Number(shape?.height ?? fallbackShape?.height ?? 72),
     zIndex: 1000,
   };
 });
 
-const notesShape = formControlShapes[5];
+const notesShape = anchorShapeByFieldKey.notes;
+const agreeText = anchorTextByFieldKey.agreed;
 
-const emergencyAgreeField = {
-  id: "emergency-agreed",
+const anchoredAgreeField = {
+  id: "anchored-agreed",
   type: "formField",
   fieldKey: "agreed",
   inputType: "checkbox",
   placeholder: "",
   label: "개인정보 수집 및 이용에 동의합니다.",
-  x: Number(notesShape?.x ?? 140),
+  x: Number(agreeText?.x ?? notesShape?.x ?? 140),
   y: Number(
-    notesShape
-      ? Number(notesShape.y || 0) + Number(notesShape.height || 0) + 32
-      : 950
+    agreeText?.y ??
+      (notesShape
+        ? Number(notesShape.y || 0) + Number(notesShape.height || 0) + 32
+        : 950)
   ),
   width: 520,
   height: 40,
   zIndex: 1000,
 };
 
-const emergencyFormFields = [...emergencyInputFields, emergencyAgreeField];
+const anchoredFormFields = [...anchoredInputFields, anchoredAgreeField];
 
-const inputLikeVisualShapeIds = new Set(
-  formControlShapes.map((shape: any) => shape.id)
-);
+const usedVisualElementIds = new Set<string>();
+
+Object.values(anchorTextByFieldKey).forEach((element: any) => {
+  if (element?.id) usedVisualElementIds.add(String(element.id));
+});
+
+Object.values(anchorShapeByFieldKey).forEach((element: any) => {
+  if (element?.id) usedVisualElementIds.add(String(element.id));
+});
+
+const visualSubmitButton = visualElements.find((element: any) => {
+  if (element.type !== "button") return false;
+  const text = normalizeText((element as any).text);
+  return text.includes("상담") || text.includes("받기");
+});
+
+if ((visualSubmitButton as any)?.id) {
+  usedVisualElementIds.add(String((visualSubmitButton as any).id));
+}
+
+const anchoredFormSubmit = visualSubmitButton
+  ? [
+      {
+        id: "anchored-submit",
+        type: "formSubmit",
+        text: (visualSubmitButton as any).text || "1:1 맞춤 상담 받기",
+        x: Number((visualSubmitButton as any).x || 140),
+        y: Number((visualSubmitButton as any).y || 1020),
+        width: Number((visualSubmitButton as any).width || 800),
+        height: Number((visualSubmitButton as any).height || 80),
+        backgroundColor:
+          (visualSubmitButton as any).backgroundColor || "#5fc065",
+        color: (visualSubmitButton as any).color || "#ffffff",
+        borderRadius: Number((visualSubmitButton as any).borderRadius || 18),
+        fontSize: Number((visualSubmitButton as any).fontSize || 18),
+        zIndex: 1000,
+      },
+    ]
+  : fallbackFormSubmits;
 
 const REQUIRED_FORM_FIELD_KEYS = [
   "clientName",
@@ -197,18 +300,25 @@ const hasAllRequiredFormFields = REQUIRED_FORM_FIELD_KEYS.every((key) =>
   rawFormFieldKeys.has(key)
 );
 
-const shouldUseShapeAnchoredFields = inputLikeVisualShapes.length >= 1;
+const shouldUseAnchoredFields =
+  Boolean(anchorShapeByFieldKey.clientName) &&
+  Boolean(anchorShapeByFieldKey.phone) &&
+  Boolean(anchorShapeByFieldKey.channel) &&
+  Boolean(anchorShapeByFieldKey.notes);
 
-const safeFormFields = shouldUseShapeAnchoredFields
-  ? emergencyFormFields
+const safeFormFields = shouldUseAnchoredFields
+  ? anchoredFormFields
   : hasAllRequiredFormFields
     ? rawFormFields
     : fallbackFormFields;
 
-const formElements = [
-  ...safeFormFields,
-  ...(rawFormSubmits.length > 0 ? rawFormSubmits : fallbackFormSubmits),
-];
+const safeFormSubmits = shouldUseAnchoredFields
+  ? anchoredFormSubmit
+  : rawFormSubmits.length > 0
+    ? rawFormSubmits
+    : fallbackFormSubmits;
+
+const formElements = [...safeFormFields, ...safeFormSubmits];
 
 useEffect(() => {
   console.log("[FORM CANVAS DEBUG:init]", {
@@ -649,13 +759,8 @@ useEffect(() => {
 };
 
           if (element.type === "text") {
-if (shouldUseShapeAnchoredFields) {
-  const textY = Number((element as any).y || 0);
-  const firstFormY = Number(formControlShapes[0]?.y || 0);
-
-  if (textY >= firstFormY - 20) {
+if (shouldUseAnchoredFields && usedVisualElementIds.has(String(element.id))) {
   return null;
-}
 }
             return (
               <div
@@ -703,12 +808,8 @@ if (shouldUseShapeAnchoredFields) {
           }
 
           if (element.type === "button") {
-if (shouldUseShapeAnchoredFields) {
-  const buttonY = Number((element as any).y || 0);
-  const firstFormY = Number(formControlShapes[0]?.y || 0);
-  if (buttonY >= firstFormY - 20) {
+if (shouldUseAnchoredFields && usedVisualElementIds.has(String(element.id))) {
   return null;
-}
 }
             const baseTransform = element.rotation
               ? `rotate(${element.rotation}deg)`
@@ -774,12 +875,8 @@ if (shouldUseShapeAnchoredFields) {
 
           if (element.type === "shape") {
 
-if (shouldUseShapeAnchoredFields) {
-  const shapeY = Number((element as any).y || 0);
-  const firstFormY = Number(formControlShapes[0]?.y || 0);
-  if (shapeY >= firstFormY - 20) {
+if (shouldUseAnchoredFields && usedVisualElementIds.has(String(element.id))) {
   return null;
-}
 }
             return (
               <div
