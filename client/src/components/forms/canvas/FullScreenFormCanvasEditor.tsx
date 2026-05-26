@@ -45,12 +45,16 @@ function normalizeCanvas(canvas?: FormCanvasConfig): FormCanvasConfig {
     return defaultCanvas;
   }
 
-  return {
-    ...defaultCanvas,
-    ...canvas,
-    enabled: true,
-    elements: canvas.elements,
-  };
+ return {
+  ...defaultCanvas,
+  ...canvas,
+  enabled: true,
+  elements: canvas.elements.filter(
+    (element: any) =>
+      element.type !== "form" &&
+      element.id !== "required-form-element"
+  ),
+};
 }
 
 export default function FullScreenFormCanvasEditor({
@@ -67,6 +71,11 @@ const uploadInputRef = useRef<HTMLInputElement | null>(null);
 const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
 
 const isRequiredFormElement = (element?: FormCanvasElement | null) => {
+  if (!element) return false;
+
+  if ((element as any).type === "form") return false;
+  if ((element as any).id === "required-form-element") return false;
+
   return Boolean((element as any)?.requiredFormElement);
 };
 
