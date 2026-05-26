@@ -652,13 +652,10 @@ useEffect(() => {
 if (shouldUseShapeAnchoredFields) {
   const textY = Number((element as any).y || 0);
   const firstFormY = Number(formControlShapes[0]?.y || 0);
-  const lastFormShape = formControlShapes[5];
-  const lastFormBottom =
-    Number(lastFormShape?.y || 0) + Number(lastFormShape?.height || 0);
 
-  if (textY >= firstFormY - 20 && textY <= lastFormBottom + 90) {
-    return null;
-  }
+  if (textY >= firstFormY - 20) {
+  return null;
+}
 }
             return (
               <div
@@ -709,13 +706,9 @@ if (shouldUseShapeAnchoredFields) {
 if (shouldUseShapeAnchoredFields) {
   const buttonY = Number((element as any).y || 0);
   const firstFormY = Number(formControlShapes[0]?.y || 0);
-  const lastFormShape = formControlShapes[5];
-  const lastFormBottom =
-    Number(lastFormShape?.y || 0) + Number(lastFormShape?.height || 0);
-
-  if (buttonY >= firstFormY - 20 && buttonY <= lastFormBottom + 140) {
-    return null;
-  }
+  if (buttonY >= firstFormY - 20) {
+  return null;
+}
 }
             const baseTransform = element.rotation
               ? `rotate(${element.rotation}deg)`
@@ -784,13 +777,9 @@ if (shouldUseShapeAnchoredFields) {
 if (shouldUseShapeAnchoredFields) {
   const shapeY = Number((element as any).y || 0);
   const firstFormY = Number(formControlShapes[0]?.y || 0);
-  const lastFormShape = formControlShapes[5];
-  const lastFormBottom =
-    Number(lastFormShape?.y || 0) + Number(lastFormShape?.height || 0);
-
-  if (shapeY >= firstFormY - 20 && shapeY <= lastFormBottom + 140) {
-    return null;
-  }
+  if (shapeY >= firstFormY - 20) {
+  return null;
+}
 }
             return (
               <div
