@@ -199,15 +199,101 @@ if (isFormElement) {
 
 if ((element as any).type === "formField") {
   const rawId = String((element as any).id || "");
-  const rawFieldKey = String((element as any).fieldKey || "");
+const rawFieldKey = String((element as any).fieldKey || "");
+const rawPlaceholder = String((element as any).placeholder || "");
+const rawLabel = String((element as any).label || "");
+const rawText = String((element as any).text || "");
 
-  const fieldKey =
-    rawFieldKey ||
-    rawId.replace("required-field-", "").replace("field-", "");
+const normalizeKeyText = (text: string) =>
+  String(text || "")
+    .replace(/[_\-\s]/g, "")
+    .toLowerCase();
 
-  const field = fields.find(
-    (item: any) => String(item.fieldKey) === fieldKey
-  );
+const sourceText = normalizeKeyText(
+  `${rawId} ${rawFieldKey} ${rawPlaceholder} ${rawLabel} ${rawText}`
+);
+
+const resolveFieldKey = () => {
+  if (rawFieldKey === "clientName") return "clientName";
+  if (rawFieldKey === "phone") return "phone";
+  if (rawFieldKey === "finalEducation") return "finalEducation";
+  if (rawFieldKey === "desiredCourse") return "desiredCourse";
+  if (rawFieldKey === "channel") return "channel";
+  if (rawFieldKey === "notes") return "notes";
+  if (rawFieldKey === "agreed") return "agreed";
+
+  if (
+    sourceText.includes("clientname") ||
+    sourceText.includes("client") ||
+    sourceText.includes("name") ||
+    sourceText.includes("이름")
+  ) {
+    return "clientName";
+  }
+
+  if (
+    sourceText.includes("phone") ||
+    sourceText.includes("tel") ||
+    sourceText.includes("전화")
+  ) {
+    return "phone";
+  }
+
+  if (
+    sourceText.includes("finaleducation") ||
+    sourceText.includes("final") ||
+    sourceText.includes("education") ||
+    sourceText.includes("최종학력") ||
+    sourceText.includes("학력")
+  ) {
+    return "finalEducation";
+  }
+
+  if (
+    sourceText.includes("desiredcourse") ||
+    sourceText.includes("desired") ||
+    sourceText.includes("course") ||
+    sourceText.includes("희망과정") ||
+    sourceText.includes("과정")
+  ) {
+    return "desiredCourse";
+  }
+
+  if (
+    sourceText.includes("channel") ||
+    sourceText.includes("문의경로") ||
+    sourceText.includes("경로")
+  ) {
+    return "channel";
+  }
+
+  if (
+    sourceText.includes("notes") ||
+    sourceText.includes("memo") ||
+    sourceText.includes("상담내역") ||
+    sourceText.includes("걱정") ||
+    sourceText.includes("부분")
+  ) {
+    return "notes";
+  }
+
+  if (
+    sourceText.includes("agreed") ||
+    sourceText.includes("agree") ||
+    sourceText.includes("개인정보") ||
+    sourceText.includes("동의")
+  ) {
+    return "agreed";
+  }
+
+  return rawFieldKey || rawId.replace("required-field-", "").replace("field-", "");
+};
+
+const fieldKey = resolveFieldKey();
+
+const field = fields.find(
+  (item: any) => String(item.fieldKey) === fieldKey
+);
 
   const inputType =
     (element as any).inputType ||
@@ -225,108 +311,112 @@ if ((element as any).type === "formField") {
     field?.label ||
     "";
 
-  const fieldValue = values[fieldKey] ?? "";
+  const fieldValue =
+  fieldKey === "phone"
+    ? String(values.phone ?? "")
+    : String(values[fieldKey] ?? "");
 
- return (
-  <div
-    key={element.id}
-    style={{
-      ...baseStyle,
-      overflow: "visible",
-      pointerEvents: "auto",
-    }}
-  >
-      {inputType === "textarea" ? (
-        <textarea
-  placeholder={placeholder}
-  value={fieldValue}
-  onChange={(e) => onValueChange?.(fieldKey, e.target.value)}
-  style={{
-            width: "100%",
-            height: "100%",
-            border: "1px solid #d1d5db",
-            borderRadius: 12 * scale,
-            padding: 14 * scale,
-            fontSize: Math.max(14, 16 * scale),
-            background: "#ffffff",
-            resize: "none",
-            boxSizing: "border-box",
-	 pointerEvents: "auto",
-position: "relative",
-zIndex: 10,
-          }}
-        />
-      ) : inputType === "select" ? (
-        <select
-  value={fieldValue}
-  onChange={(e) => onValueChange?.(fieldKey, e.target.value)}
-  style={{
-            width: "100%",
-            height: "100%",
-            border: "1px solid #d1d5db",
-            borderRadius: 12 * scale,
-            padding: `0 ${14 * scale}px`,
-            fontSize: Math.max(14, 16 * scale),
-            background: "#ffffff",
-            boxSizing: "border-box",
-	 pointerEvents: "auto",
-position: "relative",
-zIndex: 10,
-          }}
-        >
-         <option value="">{placeholder || "선택"}</option>
-{(field?.options || []).map((option: any) => (
-  <option key={option.value} value={option.value}>
-    {option.label}
-  </option>
-))}
-        </select>
-      ) : inputType === "checkbox" ? (
-        <label
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8 * scale,
-            width: "100%",
-            height: "100%",
-            fontSize: Math.max(12, 14 * scale),
-            color: "#334155",
-          }}
-        >
-          <input
-  type="checkbox"
-  checked={Boolean(values[fieldKey])}
-  onChange={(e) => onValueChange?.(fieldKey, e.target.checked)}
-  style={{
+const controlStyle: React.CSSProperties = {
+  ...baseStyle,
+  width: element.width * scale,
+  height: element.height * scale,
+  boxSizing: "border-box",
   pointerEvents: "auto",
-  position: "relative",
-  zIndex: 10,
-}}
-/>
-          {label || "개인정보 수집 및 이용 동의"}
-        </label>
-      ) : (
-        <input
-  placeholder={placeholder}
-  value={fieldValue}
-  onChange={(e) => onValueChange?.(fieldKey, e.target.value)}
-  style={{
-            width: "100%",
-            height: "100%",
-            border: "1px solid #d1d5db",
-            borderRadius: 12 * scale,
-            padding: `0 ${14 * scale}px`,
-            fontSize: Math.max(14, 16 * scale),
-            background: "#f8fafc",
-            boxSizing: "border-box",
-	 pointerEvents: "auto",
-position: "relative",
-zIndex: 10,
-          }}
-        />
-      )}
-    </div>
+  zIndex: 999999,
+};
+
+if (inputType === "textarea") {
+  return (
+    <textarea
+      key={element.id}
+      placeholder={placeholder}
+      value={fieldValue}
+      onChange={(e) => onValueChange?.(fieldKey, e.target.value)}
+      style={{
+        ...controlStyle,
+        border: "1px solid #d1d5db",
+        borderRadius: 12 * scale,
+        padding: 14 * scale,
+        fontSize: Math.max(14, 16 * scale),
+        background: "#ffffff",
+        resize: "none",
+      }}
+    />
   );
+}
+
+if (inputType === "select") {
+  return (
+    <select
+      key={element.id}
+      value={fieldValue}
+      onChange={(e) => onValueChange?.(fieldKey, e.target.value)}
+      style={{
+        ...controlStyle,
+        border: "1px solid #d1d5db",
+        borderRadius: 12 * scale,
+        padding: `0 ${14 * scale}px`,
+        fontSize: Math.max(14, 16 * scale),
+        background: "#ffffff",
+      }}
+    >
+      <option value="">{placeholder || "선택"}</option>
+      {(field?.options || []).map((option: any) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+if (inputType === "checkbox") {
+  return (
+    <label
+      key={element.id}
+      style={{
+        ...controlStyle,
+        display: "flex",
+        alignItems: "center",
+        gap: 8 * scale,
+        fontSize: Math.max(12, 14 * scale),
+        color: "#334155",
+        background: "transparent",
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={Boolean(values[fieldKey])}
+        onChange={(e) => onValueChange?.(fieldKey, e.target.checked)}
+      />
+      {label || "개인정보 수집 및 이용 동의"}
+    </label>
+  );
+}
+
+return (
+  <input
+    key={element.id}
+    placeholder={placeholder}
+    value={fieldValue}
+    onChange={(e) => {
+      const nextValue =
+        fieldKey === "phone"
+          ? e.target.value.replace(/\D/g, "").slice(0, 11)
+          : e.target.value;
+
+      onValueChange?.(fieldKey, nextValue);
+    }}
+    style={{
+      ...controlStyle,
+      border: "1px solid #d1d5db",
+      borderRadius: 12 * scale,
+      padding: `0 ${14 * scale}px`,
+      fontSize: Math.max(14, 16 * scale),
+      background: "#f8fafc",
+    }}
+  />
+);
 }
 if ((element as any).type === "formSubmit") {
   return (
