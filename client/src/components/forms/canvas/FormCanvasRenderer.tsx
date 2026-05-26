@@ -260,6 +260,26 @@ if ((visualSubmitButton as any)?.id) {
   usedVisualElementIds.add(String((visualSubmitButton as any).id));
 }
 
+const visualFormSubmitElements = visualSubmitButton
+  ? [
+      {
+        id: "visual-submit-as-form-submit",
+        type: "formSubmit",
+        text: (visualSubmitButton as any).text || "무료 상담 신청하기",
+        x: Number((visualSubmitButton as any).x || 140),
+        y: Number((visualSubmitButton as any).y || 1020),
+        width: Number((visualSubmitButton as any).width || 800),
+        height: Number((visualSubmitButton as any).height || 80),
+        backgroundColor:
+          (visualSubmitButton as any).backgroundColor || "#2563eb",
+        color: (visualSubmitButton as any).color || "#ffffff",
+        borderRadius: Number((visualSubmitButton as any).borderRadius || 18),
+        fontSize: Number((visualSubmitButton as any).fontSize || 18),
+        zIndex: 1000,
+      },
+    ]
+  : [];
+
 const anchoredFormSubmit = visualSubmitButton
   ? [
       {
@@ -304,10 +324,13 @@ const hasUsableRawFormFields =
   rawFormFields.length >= 6 &&
   REQUIRED_FORM_FIELD_KEYS.slice(0, 6).every((key) =>
     rawFormFields.some((element: any) => {
+      const width = Number(element.width || 0);
+      const height = Number(element.height || 0);
+
       return (
         String(element.fieldKey || "").trim() === key &&
-        Number(element.width || 0) > 10 &&
-        Number(element.height || 0) > 10
+        width >= 250 &&
+        height >= 30
       );
     })
   );
@@ -325,11 +348,14 @@ const safeFormFields = shouldUseAnchoredFields
     ? rawFormFields
     : fallbackFormFields;
 
-const safeFormSubmits = shouldUseAnchoredFields
-  ? anchoredFormSubmit
-  : rawFormSubmits.length > 0
-    ? rawFormSubmits
-    : fallbackFormSubmits;
+const safeFormSubmits =
+  visualFormSubmitElements.length > 0
+    ? visualFormSubmitElements
+    : shouldUseAnchoredFields
+      ? anchoredFormSubmit
+      : rawFormSubmits.length > 0
+        ? rawFormSubmits
+        : fallbackFormSubmits;
 
 const formElements = [...safeFormFields, ...safeFormSubmits];
 
@@ -735,7 +761,7 @@ if (shouldUseAnchoredFields && usedVisualElementIds.has(String(element.id))) {
           }
 
           if (element.type === "button") {
-if (shouldUseAnchoredFields && usedVisualElementIds.has(String(element.id))) {
+if (usedVisualElementIds.has(String(element.id))) {
   return null;
 }
             const baseTransform = element.rotation
