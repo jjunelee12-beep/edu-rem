@@ -2331,7 +2331,7 @@ if (el.type === "form" || isRequiredFormElement(el)) {
         width: el.width * scale,
         height: el.height * scale,
         zIndex: isActiveMoving ? 9999 : el.zIndex ?? 1,
-        overflow: "hidden",
+        overflow: "visible",
         background: "transparent",
       }}
     >
