@@ -2979,7 +2979,7 @@ const getAssignee = (id: any) => {
         <FullScreenFormCanvasEditor
   value={defaultDraft}
   onChange={setDefaultDraft}
-  onSave={handleSaveTemplate}
+  onSave={handleSaveDefaultDesign}
   onClose={() => setDefaultEditorOpen(false)}
   onUploadCanvasImage={handleUploadCanvasImage}
   isHostEditor
