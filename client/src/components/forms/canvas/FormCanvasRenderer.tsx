@@ -649,6 +649,17 @@ useEffect(() => {
 };
 
           if (element.type === "text") {
+if (shouldUseShapeAnchoredFields) {
+  const textY = Number((element as any).y || 0);
+  const firstFormY = Number(formControlShapes[0]?.y || 0);
+  const lastFormShape = formControlShapes[5];
+  const lastFormBottom =
+    Number(lastFormShape?.y || 0) + Number(lastFormShape?.height || 0);
+
+  if (textY >= firstFormY - 20 && textY <= lastFormBottom + 90) {
+    return null;
+  }
+}
             return (
               <div
                 key={element.id}
@@ -695,6 +706,17 @@ useEffect(() => {
           }
 
           if (element.type === "button") {
+if (shouldUseShapeAnchoredFields) {
+  const buttonY = Number((element as any).y || 0);
+  const firstFormY = Number(formControlShapes[0]?.y || 0);
+  const lastFormShape = formControlShapes[5];
+  const lastFormBottom =
+    Number(lastFormShape?.y || 0) + Number(lastFormShape?.height || 0);
+
+  if (buttonY >= firstFormY - 20 && buttonY <= lastFormBottom + 140) {
+    return null;
+  }
+}
             const baseTransform = element.rotation
               ? `rotate(${element.rotation}deg)`
               : "";
@@ -759,10 +781,16 @@ useEffect(() => {
 
           if (element.type === "shape") {
 
-const isInputLikeShape = inputLikeVisualShapeIds.has(element.id);
+if (shouldUseShapeAnchoredFields) {
+  const shapeY = Number((element as any).y || 0);
+  const firstFormY = Number(formControlShapes[0]?.y || 0);
+  const lastFormShape = formControlShapes[5];
+  const lastFormBottom =
+    Number(lastFormShape?.y || 0) + Number(lastFormShape?.height || 0);
 
-if (isInputLikeShape) {
-  return null;
+  if (shapeY >= firstFormY - 20 && shapeY <= lastFormBottom + 140) {
+    return null;
+  }
 }
             return (
               <div
