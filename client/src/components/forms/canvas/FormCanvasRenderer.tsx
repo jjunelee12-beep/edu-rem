@@ -185,7 +185,18 @@ export default function FormCanvasRenderer({
     (element: any) => element.type === "formSubmit"
   );
 
-  const hasRawFormFields = rawFormFields.length > 0;
+  const hasUsableRawFormFields =
+  rawFormFields.length >= 6 &&
+  REQUIRED_FIELD_KEYS.slice(0, 6).every((key) =>
+    rawFormFields.some(
+      (field: any) =>
+        getFieldKey(field) === key &&
+        Number(field.width || 0) >= 240 &&
+        Number(field.height || 0) >= 20
+    )
+  );
+
+const hasRawFormFields = hasUsableRawFormFields;
 
   const visualElements = visibleElements.filter((element: any) => {
     return element.type !== "formField" && element.type !== "formSubmit";
@@ -220,6 +231,30 @@ export default function FormCanvasRenderer({
       (shape: any) => String(shape.id) === String(element.id)
     );
   };
+
+const isPlaceholderLikeVisualText = (element: any) => {
+  if (element.type !== "text") return false;
+
+  const text = normalizeText(element.text);
+  if (!text) return false;
+
+  return [
+    "이름을입력해주세요",
+    "입력해주세요",
+    "010",
+    "0000",
+    "최종학력선택",
+    "희망과정선택",
+    "문의경로입력",
+    "블로그",
+    "인스타",
+    "지인추천",
+        "진행하시면서",
+    "걱정",
+    "적어주세요",
+    "개인정보수집및이용에동의합니다",
+  ].some((needle) => text.includes(normalizeText(needle)));
+};
 
   const defaultCanvasForForm = createDefaultCompanyCanvasConfig();
 
@@ -342,7 +377,7 @@ const formElements = [...safeFormFields, submitElement].filter(
   Boolean
 ) as FormCanvasElement[];
 
-  const shouldHideLegacyFieldVisuals = false;
+  const shouldHideLegacyFieldVisuals = hasRawFormFields;
   const shouldHideVisualSubmitButton = Boolean(
     submitElement && visualSubmitButton
   );
@@ -471,14 +506,12 @@ const labelText = isLegacyVisualField
       (element as any).label || label || FIELD_LABELS[fieldKey] || ""
     ).trim();
 
-const finalPlaceholder = isLegacyVisualField
-  ? ""
-  : String(
-      (element as any).placeholder ||
-        placeholder ||
-        FIELD_PLACEHOLDERS[fieldKey] ||
-        ""
-    ).trim();
+const finalPlaceholder = String(
+  (element as any).placeholder ||
+    placeholder ||
+    FIELD_PLACEHOLDERS[fieldKey] ||
+    ""
+).trim();
 
     if (inputType === "checkbox") {
       return (
@@ -519,11 +552,11 @@ const finalPlaceholder = isLegacyVisualField
       pointerEvents: "auto",
       userSelect: "text",
       WebkitUserSelect: "text",
-      border: isLegacyVisualField ? "none" : "1px solid #d1d5db",
+      border: "none",
       borderRadius: 12 * scale,
       padding: `0 ${14 * scale}px`,
       fontSize: Math.max(14, 16 * scale),
-      background: isLegacyVisualField ? "transparent" : "#f8fafc",
+     background: "transparent",
       color: "#111827",
     };
 
@@ -561,7 +594,7 @@ const finalPlaceholder = isLegacyVisualField
             style={{
               ...inputStyle,
               padding: 14 * scale,
-              background: isLegacyVisualField ? "transparent" : "#ffffff",
+              background: "transparent",
               resize: "none",
             }}
           />
@@ -578,7 +611,7 @@ const finalPlaceholder = isLegacyVisualField
             onChange={(e) => updateFieldValue(fieldKey, e.target.value)}
             style={{
               ...inputStyle,
-              background: isLegacyVisualField ? "transparent" : "#ffffff",
+              background: "transparent",
               appearance: "auto",
               WebkitAppearance: "menulist",
             }}
@@ -658,9 +691,13 @@ const finalPlaceholder = isLegacyVisualField
           };
 
           if (element.type === "text") {
-            if (shouldHideLegacyFieldVisuals && isFieldLikeVisualText(element)) {
-              return null;
-            }
+  if (shouldHideLegacyFieldVisuals && isFieldLikeVisualText(element)) {
+    return null;
+  }
+
+  if (!hasRawFormFields && isPlaceholderLikeVisualText(element)) {
+    return null;
+  }
 
             return (
               <div
