@@ -201,14 +201,15 @@ const fieldKey = String((element as any).fieldKey || "");
 const field = fields.find((item: any) => item.fieldKey === fieldKey);
 const fieldValue = values[fieldKey] ?? "";
 
-  return (
-    <div
-      key={element.id}
-      style={{
-        ...baseStyle,
-        overflow: "visible",
-      }}
-    >
+ return (
+  <div
+    key={element.id}
+    style={{
+      ...baseStyle,
+      overflow: "visible",
+      pointerEvents: "none",
+    }}
+  >
       {inputType === "textarea" ? (
         <textarea
   placeholder={placeholder}
@@ -224,6 +225,7 @@ const fieldValue = values[fieldKey] ?? "";
             background: "#ffffff",
             resize: "none",
             boxSizing: "border-box",
+	 pointerEvents: "auto",
           }}
         />
       ) : inputType === "select" ? (
@@ -239,6 +241,7 @@ const fieldValue = values[fieldKey] ?? "";
             fontSize: Math.max(14, 16 * scale),
             background: "#ffffff",
             boxSizing: "border-box",
+	 pointerEvents: "auto",
           }}
         >
          <option value="">{placeholder || "선택"}</option>
@@ -264,6 +267,7 @@ const fieldValue = values[fieldKey] ?? "";
   type="checkbox"
   checked={Boolean(values[fieldKey])}
   onChange={(e) => onValueChange?.(fieldKey, e.target.checked)}
+  style={{ pointerEvents: "auto" }}
 />
           {label || "개인정보 수집 및 이용 동의"}
         </label>
@@ -281,6 +285,7 @@ const fieldValue = values[fieldKey] ?? "";
             fontSize: Math.max(14, 16 * scale),
             background: "#f8fafc",
             boxSizing: "border-box",
+	    pointerEvents: "auto",
           }}
         />
       )}
@@ -309,6 +314,7 @@ if ((element as any).type === "formSubmit") {
         ),
         fontWeight: 900,
         boxShadow: "0 10px 24px rgba(15, 23, 42, 0.18)",
+	        pointerEvents: "auto",
       }}
     >
       {isSubmitting
