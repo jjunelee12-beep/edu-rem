@@ -260,6 +260,25 @@ if ((visualSubmitButton as any)?.id) {
   usedVisualElementIds.add(String((visualSubmitButton as any).id));
 }
 
+if (rawFormSubmits.length > 0) {
+  visualElements.forEach((element: any) => {
+    if (element.type !== "button") return;
+
+    const text = normalizeText(element.text);
+    const action = String(element.action || "");
+
+    if (
+      action === "openForm" ||
+      action === "submit" ||
+      text.includes("상담") ||
+      text.includes("신청") ||
+      text.includes("받기")
+    ) {
+      usedVisualElementIds.add(String(element.id));
+    }
+  });
+}
+
 const visualFormSubmitElements = visualSubmitButton
   ? [
       {
@@ -310,54 +329,71 @@ const REQUIRED_FORM_FIELD_KEYS = [
   "agreed",
 ];
 
-const rawFormFieldKeys = new Set(
-  rawFormFields
-    .map((element: any) => String(element.fieldKey || "").trim())
-    .filter(Boolean)
-);
+const getFieldKey = (element: any) => String(element?.fieldKey || "").trim();
 
-const hasAllRequiredFormFields = REQUIRED_FORM_FIELD_KEYS.every((key) =>
-  rawFormFieldKeys.has(key)
-);
+const pickBestElement = (items: any[]) => {
+  return [...items].sort((a, b) => {
+    const areaA = Number(a.width || 0) * Number(a.height || 0);
+    const areaB = Number(b.width || 0) * Number(b.height || 0);
 
-const hasUsableRawFormFields =
-  rawFormFields.length >= 6 &&
-  REQUIRED_FORM_FIELD_KEYS.slice(0, 6).every((key) =>
-    rawFormFields.some((element: any) => {
-      const width = Number(element.width || 0);
-      const height = Number(element.height || 0);
+    if (areaA !== areaB) return areaB - areaA;
 
-      return (
-        String(element.fieldKey || "").trim() === key &&
-        width >= 250 &&
-        height >= 30
-      );
-    })
-  );
+    return Number(b.zIndex || 0) - Number(a.zIndex || 0);
+  })[0];
+};
+
+const rawFormFieldsByKey = new Map<string, any[]>();
+
+rawFormFields.forEach((element: any) => {
+  const key = getFieldKey(element);
+  if (!key) return;
+
+  rawFormFieldsByKey.set(key, [
+    ...(rawFormFieldsByKey.get(key) || []),
+    element,
+  ]);
+});
+
+const dedupedRawFormFields = REQUIRED_FORM_FIELD_KEYS
+  .map((key) => {
+    const picked = pickBestElement(rawFormFieldsByKey.get(key) || []);
+    if (picked) return picked;
+
+    return fallbackFormFields.find(
+      (element: any) => getFieldKey(element) === key
+    );
+  })
+  .filter(Boolean);
+
+const hasAnyRawFormField = rawFormFields.length > 0;
 
 const shouldUseAnchoredFields =
-  !hasUsableRawFormFields &&
+  !hasAnyRawFormField &&
   Boolean(anchorShapeByFieldKey.clientName) &&
   Boolean(anchorShapeByFieldKey.phone) &&
   Boolean(anchorShapeByFieldKey.channel) &&
   Boolean(anchorShapeByFieldKey.notes);
 
-const safeFormFields = shouldUseAnchoredFields
-  ? anchoredFormFields
-  : hasAllRequiredFormFields
-    ? rawFormFields
+const safeFormFields = hasAnyRawFormField
+  ? dedupedRawFormFields
+  : shouldUseAnchoredFields
+    ? anchoredFormFields
     : fallbackFormFields;
 
-const safeFormSubmits =
-  visualFormSubmitElements.length > 0
-    ? visualFormSubmitElements
-    : shouldUseAnchoredFields
-      ? anchoredFormSubmit
-      : rawFormSubmits.length > 0
-        ? rawFormSubmits
-        : fallbackFormSubmits;
+const pickedRawSubmit = pickBestElement(rawFormSubmits);
+
+const safeFormSubmits = pickedRawSubmit
+  ? [pickedRawSubmit]
+  : shouldUseAnchoredFields
+    ? anchoredFormSubmit.slice(0, 1)
+    : visualFormSubmitElements.length > 0
+      ? visualFormSubmitElements.slice(0, 1)
+      : fallbackFormSubmits.slice(0, 1);
 
 const formElements = [...safeFormFields, ...safeFormSubmits];
+
+const shouldHideAnchoredVisuals =
+  shouldUseAnchoredFields || hasAnyRawFormField;
 
   const handleButtonClick = (element: FormCanvasElement) => {
     if (element.type !== "button") return;
@@ -712,7 +748,7 @@ const formElements = [...safeFormFields, ...safeFormSubmits];
 };
 
           if (element.type === "text") {
-if (shouldUseAnchoredFields && usedVisualElementIds.has(String(element.id))) {
+if (shouldHideAnchoredVisuals && usedVisualElementIds.has(String(element.id))) {
   return null;
 }
             return (
@@ -828,7 +864,7 @@ if (usedVisualElementIds.has(String(element.id))) {
 
           if (element.type === "shape") {
 
-if (shouldUseAnchoredFields && usedVisualElementIds.has(String(element.id))) {
+if (shouldHideAnchoredVisuals && usedVisualElementIds.has(String(element.id))) {
   return null;
 }
             return (
