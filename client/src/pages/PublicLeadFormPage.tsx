@@ -840,9 +840,10 @@ applyTemplateMutation.mutate({
   top: 20,
   right: 20,
   width: "fit-content",
-  zIndex: 2147483647,
+  zIndex: 1000,
   display: "flex",
   justifyContent: "flex-end",
+  pointerEvents: "none",
 }}
   >
           <button
@@ -855,6 +856,7 @@ applyTemplateMutation.mutate({
   borderRadius: 12,
   color: "#ffffff",
   boxShadow: "0 10px 30px rgba(15,23,42,0.25)",
+pointerEvents: "auto",
 }}
             onClick={() => setEditMode(true)}
           >

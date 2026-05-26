@@ -165,7 +165,11 @@ background: "#f3f4f6",
               top: element.y * scale,
               width: element.width * scale,
               height: element.height * scale,
-              zIndex: element.zIndex ?? 1,
+              zIndex:
+  (element as any).type === "formField" ||
+  (element as any).type === "formSubmit"
+    ? 100000 + Number(element.zIndex ?? 1)
+    : Number(element.zIndex ?? 1),
               transform: element.rotation
                 ? `rotate(${element.rotation}deg)`
                 : undefined,
@@ -356,13 +360,14 @@ if ((element as any).type === "formSubmit") {
   );
 }
 
-            if (element.type === "text") {
-              return (
-                <div
-                  key={element.id}
-                  style={{
-                    ...baseStyle,
-                    color: element.color,
+          if (element.type === "text") {
+  return (
+    <div
+      key={element.id}
+      style={{
+        ...baseStyle,
+        pointerEvents: "none",
+        color: element.color,
                     fontSize: isMobile
   ? Math.max(14, element.fontSize * scale)
   : Math.max(11, element.fontSize * scale),
@@ -390,9 +395,10 @@ textAlign: element.textAlign ?? "left",
                   key={element.id}
                   src={normalizeAssetUrl(element.url)}
                   alt=""
-                  style={{
-                    ...baseStyle,
-                    objectFit: element.objectFit ?? "cover",
+                 style={{
+  ...baseStyle,
+  pointerEvents: "none",
+  objectFit: element.objectFit ?? "cover",
 		display: "block",
 		borderRadius: Number((element as any).borderRadius || 0) * scale,
                   }}
@@ -471,9 +477,10 @@ transition: "transform 160ms ease, box-shadow 160ms ease, filter 160ms ease",
               return (
                 <div
                   key={element.id}
-                  style={{
-                    ...baseStyle,
-                    backgroundColor: element.backgroundColor,
+                 style={{
+  ...baseStyle,
+  pointerEvents: "none",
+  backgroundColor: element.backgroundColor,
                     border:
                       element.borderWidth && element.borderColor
                         ? `${element.borderWidth * scale}px solid ${
@@ -599,9 +606,10 @@ if (element.type === "svg") {
       viewBox="0 0 100 100"
       preserveAspectRatio="none"
       style={{
-        ...baseStyle,
-        overflow: "visible",
-      }}
+  ...baseStyle,
+  pointerEvents: "none",
+  overflow: "visible",
+}}
     >
       {renderSvgContent()}
     </svg>
