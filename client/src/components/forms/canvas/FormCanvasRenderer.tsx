@@ -171,9 +171,7 @@ background: "#f3f4f6",
                 : undefined,
             };
 
-const isFormElement =
-  element.type === "form" ||
-  element.id === "required-form-element";
+const isFormElement = false;
 
 if (isFormElement) {
   if (renderedRequiredForm) return null;

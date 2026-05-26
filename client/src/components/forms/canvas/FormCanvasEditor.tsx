@@ -116,6 +116,11 @@ const [snapGuide, setSnapGuide] = useState<{
 );
 
 const isRequiredFormElement = (element?: FormCanvasElement | null) => {
+  if (!element) return false;
+
+  if ((element as any).type === "form") return false;
+  if ((element as any).id === "required-form-element") return false;
+
   return Boolean((element as any)?.requiredFormElement);
 };
 
