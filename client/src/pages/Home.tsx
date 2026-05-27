@@ -96,7 +96,10 @@ const { data: attendanceRows = [] } = trpc.attendance.list.useQuery(undefined, {
 });
   const { data: myProfile } = trpc.users.me.useQuery();
   const { data: notices = [] } = trpc.notice.list.useQuery();
-  const { data: notifications = [] } = trpc.notification.list.useQuery();
+  const { data: notifications = [] } = trpc.notification.list.useQuery(undefined, {
+  enabled: !!user && !!(user as any).organizationId && user.role !== "superhost",
+  retry: false,
+});
   const { data: todaySchedules = [] } = trpc.schedule.listToday.useQuery();
 
   const { urgentNotices, pinnedNotices, normalNotices } = useMemo(() => {
@@ -226,12 +229,18 @@ const { data: attendanceRows = [] } = trpc.attendance.list.useQuery(undefined, {
   }, [userRows, user?.id, isSuperAdmin, isTeamManager]);
 
   const todayAttendanceByUserId = useMemo(() => {
-    const map = new Map<number, any>();
-    (todayAttendance as any[]).forEach((row: any) => {
-      map.set(Number(row.userId), row);
-    });
-    return map;
-  }, [todayAttendance]);
+  const map = new Map<number, any>();
+
+  (todayAttendance as any[]).forEach((row: any) => {
+    map.set(Number(row.userId), row);
+  });
+
+  if (todayAttendanceRow && user?.id) {
+    map.set(Number(user.id), todayAttendanceRow);
+  }
+
+  return map;
+}, [todayAttendance, todayAttendanceRow, user?.id]);
 
   const myTodayAttendance = useMemo(() => {
     if (!user?.id) return null;
@@ -271,7 +280,8 @@ const { data: attendanceRows = [] } = trpc.attendance.list.useQuery(undefined, {
       if (!user?.id) return [];
 
       const myUser = usersById.get(Number(user.id));
-      const myRow = todayAttendanceByUserId.get(Number(user.id));
+      const myRow =
+  todayAttendanceRow ?? todayAttendanceByUserId.get(Number(user.id));
 
       if (!myRow) {
         return [
@@ -330,8 +340,11 @@ const { data: attendanceRows = [] } = trpc.attendance.list.useQuery(undefined, {
     }
 
     return activeUsers
-      .map((u: any) => {
-        const row = todayAttendanceByUserId.get(Number(u.id));
+  .map((u: any) => {
+    const row =
+      Number(u.id) === Number(user?.id)
+        ? todayAttendanceRow ?? todayAttendanceByUserId.get(Number(u.id))
+        : todayAttendanceByUserId.get(Number(u.id));
 
         if (!row) {
           return {
@@ -393,7 +406,16 @@ const { data: attendanceRows = [] } = trpc.attendance.list.useQuery(undefined, {
 
         return String(a.name || "").localeCompare(String(b.name || ""));
       });
-  }, [isSuperAdmin, isTeamManager, user?.id, user?.name, activeUsers, todayAttendanceByUserId, usersById]);
+  }, [
+  isSuperAdmin,
+  isTeamManager,
+  user?.id,
+  user?.name,
+  activeUsers,
+  todayAttendanceByUserId,
+  todayAttendanceRow,
+  usersById,
+]);
 
   const visibleAttendanceList = useMemo(() => {
     return attendanceListUI;

@@ -45,6 +45,28 @@ function isAdminOrHost(user: any) {
   );
 }
 
+function getCtxOrganizationId(ctx: any) {
+  const organizationId = Number(
+    ctx?.organizationId ??
+      ctx?.user?.organizationId ??
+      ctx?.user?.organization_id ??
+      ctx?.user?.organization?.id ??
+      ctx?.session?.organizationId ??
+      ctx?.session?.user?.organizationId ??
+      0
+  );
+
+  if (!Number.isFinite(organizationId) || organizationId <= 0) {
+    throwAppError(
+      ERROR_CODES.ORGANIZATION_REQUIRED,
+      "organizationId is required",
+      400
+    );
+  }
+
+  return organizationId;
+}
+
 const PRACTICE_SUPPORT_TEMP_ALLOWED_USERS = [
   { organizationId: 1, userId: 15 },
 ];
@@ -372,7 +394,7 @@ systemHealth: superHostProcedure.query(async () => {
 }),
 
 organizationFeatures: protectedProcedure.query(async ({ ctx }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   if (!organizationId) {
     throwAppError(
@@ -396,7 +418,7 @@ backup: router({
 );
     }
 
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
 
     if (!organizationId) {
       throwAppError(
@@ -455,7 +477,7 @@ backup: router({
 );
   }
 
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   if (!organizationId) {
     throwAppError(
@@ -496,7 +518,7 @@ downloadUrl: hostProcedure
 );
     }
 
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
 
     if (!organizationId) {
       throwAppError(
@@ -569,7 +591,7 @@ await db.createAuditLog({
       .optional()
   )
   .mutation(async ({ ctx, input }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
 
 if ((ctx.user as any)?.role === "superhost") {
   throwAppError(
@@ -673,7 +695,7 @@ fileKey: backupKey,
     })
   )
   .mutation(async ({ ctx, input }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
 
     if ((ctx.user as any)?.role === "superhost") {
       throwAppError(
@@ -809,7 +831,7 @@ restoreReason: z.string().min(1).max(300),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
 if ((ctx.user as any)?.role === "superhost") {
   throwAppError(
@@ -1035,7 +1057,7 @@ studentAudit: router({
       })
     )
     .query(async ({ ctx, input }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -1073,7 +1095,7 @@ approvalHistory: router({
       })
     )
     .query(async ({ ctx, input }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -1114,7 +1136,7 @@ subjectCatalog: subjectCatalogRouter,
           .optional()
       )
      .query(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -1140,7 +1162,7 @@ return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
         })
       )
       .query(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -1183,7 +1205,7 @@ return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
         })
       )
       .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -1274,7 +1296,7 @@ freelancerInputAmount: z.string().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -1355,7 +1377,7 @@ await writeStudentAuditLog({
     delete: protectedProcedure
   .input(z.object({ id: z.number() }))
   .mutation(async ({ input, ctx }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
 
     await assertOrganizationFeatureEnabled(
       organizationId,
@@ -1420,7 +1442,7 @@ await writeStudentAuditLog({
         })
       )
      .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -1445,7 +1467,7 @@ await writeStudentAuditLog({
         })
       )
       .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -1484,7 +1506,7 @@ await writeStudentAuditLog({
       .optional()
   )
   .query(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -1514,7 +1536,7 @@ return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
         })
       )
       .query(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -1536,7 +1558,7 @@ return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
     get: protectedProcedure
       .input(z.object({ id: z.number() }))
      .query(async ({ input, ctx }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -1578,7 +1600,7 @@ includeEducationCenter: z.boolean().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -1691,7 +1713,7 @@ selectedPracticeInstitutionDistanceKm: z.string().optional().nullable(),
         })
       )
           .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+ const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -1828,7 +1850,7 @@ await writeStudentAuditLog({
     delete: protectedProcedure
   .input(z.object({ id: z.number() }))
   .mutation(async ({ input, ctx }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
 
     await assertOrganizationFeatureEnabled(
       organizationId,
@@ -1893,7 +1915,7 @@ await writeStudentAuditLog({
         })
       )
      .mutation(async ({ input, ctx }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -1918,7 +1940,7 @@ await writeStudentAuditLog({
         })
       )
      .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -1964,7 +1986,7 @@ upsertByStudent: protectedProcedure
     })
   )
   .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -2359,7 +2381,7 @@ if (samePassword) {
   users: router({
   list: protectedProcedure.query(async ({ ctx }) => {
   const rows = await db.getAllUsersDetailed({
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
 
 return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
@@ -2372,7 +2394,7 @@ return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
       })
     )
     .query(async ({ ctx, input }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -2460,7 +2482,7 @@ role: z.enum(["staff", "admin", "host"]).default("staff"),
       })
     )
    .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+ const organizationId = getCtxOrganizationId(ctx);
 
   const limitStatus = await getOrganizationLimitStatus(organizationId);
 
@@ -2553,7 +2575,7 @@ role: input.role,
     passwordHash,
   },
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   }
 );
 
@@ -2572,7 +2594,7 @@ role: input.role,
   input.id,
   input.role,
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   }
 );
 
@@ -2591,7 +2613,7 @@ role: input.role,
   input.id,
   input.isActive,
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   }
 );
 
@@ -2603,7 +2625,7 @@ org: router({
   teams: router({
     list: protectedProcedure.query(async ({ ctx }) => {
   return db.listTeams({
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
 }),
 
@@ -2617,7 +2639,7 @@ org: router({
       )
       .mutation(async ({ ctx, input }) => {
   const id = await db.createTeam({
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
     name: input.name,
           sortOrder: input.sortOrder ?? 0,
           isActive: input.isActive ?? true,
@@ -2644,7 +2666,7 @@ org: router({
       isActive: input.isActive,
     },
     {
-      organizationId: Number((ctx.user as any)?.organizationId || 0),
+      organizationId: getCtxOrganizationId(ctx),
     }
   );
 
@@ -2659,7 +2681,7 @@ org: router({
       )
       .mutation(async ({ ctx, input }) => {
   await db.deleteTeam(input.id, {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
         return { success: true };
       }),
@@ -2668,7 +2690,7 @@ org: router({
   positions: router({
     list: protectedProcedure.query(async ({ ctx }) => {
   return db.listPositions({
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
 }),
 
@@ -2683,7 +2705,7 @@ settlementUnitAmount: z.string().optional(),
       )
      .mutation(async ({ ctx, input }) => {
   const id = await db.createPosition({
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
     name: input.name,
     sortOrder: input.sortOrder ?? 0,
     isActive: input.isActive ?? true,
@@ -2713,7 +2735,7 @@ settlementUnitAmount: z.string().optional(),
       settlementUnitAmount: input.settlementUnitAmount,
     },
     {
-      organizationId: Number((ctx.user as any)?.organizationId || 0),
+      organizationId: getCtxOrganizationId(ctx),
     }
   );
 
@@ -2728,7 +2750,7 @@ settlementUnitAmount: z.string().optional(),
       )
       .mutation(async ({ ctx, input }) => {
   await db.deletePosition(input.id, {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
         return { success: true };
       }),
@@ -2743,7 +2765,7 @@ settlementUnitAmount: z.string().optional(),
       )
       .query(async ({ ctx, input }) => {
   return db.getUserOrgMapping(input.userId, {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
 }),
 
@@ -2758,7 +2780,7 @@ settlementUnitAmount: z.string().optional(),
       )
       .mutation(async ({ ctx, input }) => {
         const id = await db.upsertUserOrgMappingProtected({
-organizationId: Number((ctx.user as any)?.organizationId || 0),
+organizationId: getCtxOrganizationId(ctx),
           actorRole: ctx.user.role,
           targetUserId: input.userId,
           teamId: input.teamId ?? null,
@@ -2777,7 +2799,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
       )
       .mutation(async ({ ctx, input }) => {
   await db.deleteUserOrgMapping(input.userId, {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
         return { success: true };
       }),
@@ -2786,7 +2808,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
 
 messenger: router({
   myRooms: protectedProcedure.query(async ({ ctx }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -2806,7 +2828,7 @@ messenger: router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -2833,7 +2855,7 @@ messenger: router({
       })
     )
     .query(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -2853,7 +2875,7 @@ messenger: router({
       })
     )
     .query(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -2875,7 +2897,7 @@ messenger: router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -2909,7 +2931,7 @@ messenger: router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -2938,7 +2960,7 @@ messenger: router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   await assertOrganizationFeatureEnabled(
     organizationId,
@@ -2966,7 +2988,7 @@ messenger: router({
     }))
     .query(async ({ input, ctx }) => {
   return db.listLeadForms(input.formType, {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
 }),
 
@@ -2977,7 +2999,7 @@ messenger: router({
     blueprintId: z.number().optional(),
   }))
     .mutation(async ({ input, ctx }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   const limitStatus = await getOrganizationLimitStatus(organizationId);
 
@@ -3009,7 +3031,7 @@ return db.createLeadForm(input.assigneeId, input.formType, {
     }))
    .mutation(async ({ input, ctx }) => {
   return db.updateLeadFormActive(input.id, input.isActive, {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+   organizationId: getCtxOrganizationId(ctx),
   });
 }),
 
@@ -3021,7 +3043,7 @@ return db.createLeadForm(input.assigneeId, input.formType, {
   )
  .query(async ({ input, ctx }) => {
   const template = await db.getLeadFormTemplate(input.formType, {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
 
    const rawUiConfig = (template as any)?.uiConfigJson;
@@ -3050,7 +3072,7 @@ renameTemplate: protectedProcedure
   )
   .mutation(async ({ input, ctx }) => {
     const updated = await db.renameNamedLeadFormTemplate({
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
   formType: input.formType,
       oldTemplateName: input.oldTemplateName.trim(),
       newTemplateName: input.newTemplateName.trim(),
@@ -3072,7 +3094,7 @@ renameTemplate: protectedProcedure
     )
     .mutation(async ({ ctx, input }) => {
       const id = await db.saveLeadFormTemplate({
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
   formType: input.formType,
         actorUserId: Number(ctx.user.id),
         uiConfig: input.uiConfig,
@@ -3090,7 +3112,7 @@ renameTemplate: protectedProcedure
   )
   .mutation(async ({ input, ctx }) => {
   await db.updateLeadFormUiConfig(input.id, input.uiConfig, {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
     return { success: true };
   }),
@@ -3105,7 +3127,7 @@ renameTemplate: protectedProcedure
     )
     .mutation(async ({ ctx, input }) => {
       const id = await db.updateMyLeadFormUiConfig({
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
   token: input.token,
         formType: input.formType,
         userId: Number(ctx.user.id),
@@ -3123,7 +3145,7 @@ listTemplates: protectedProcedure
   )
  .query(async ({ input, ctx }) => {
   const rows = await db.listLeadFormTemplates(input.formType, {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
 
     const items = rows.map((row) => {
@@ -3184,7 +3206,7 @@ saveAsTemplate: protectedProcedure
   )
   .mutation(async ({ input, ctx }) => {
     const saved = await db.saveNamedLeadFormTemplate({
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
   formType: input.formType,
       templateName: input.templateName.trim(),
       uiConfig: input.uiConfig,
@@ -3207,7 +3229,7 @@ applyTemplateToMyForm: protectedProcedure
   )
   .mutation(async ({ input, ctx }) => {
     const updated = await db.applyNamedLeadFormTemplateToToken({
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
   formType: input.formType,
       templateName: input.templateName.trim(),
       targetToken: input.targetToken,
@@ -3233,7 +3255,7 @@ deleteTemplate: protectedProcedure
   input.templateName.trim(),
   Number(ctx.user.id),
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   }
 );
 
@@ -3252,7 +3274,7 @@ duplicateTemplate: protectedProcedure
   )
   .mutation(async ({ input, ctx }) => {
     const created = await db.duplicateNamedLeadFormTemplate({
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
   formType: input.formType,
       sourceTemplateName: input.sourceTemplateName.trim(),
       newTemplateName: input.newTemplateName.trim(),
@@ -3278,7 +3300,7 @@ formBlueprintAdmin: router({
       return db.listFormBlueprints(
   input.formType,
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   }
 );
     }),
@@ -3294,7 +3316,7 @@ formBlueprintAdmin: router({
       const row = await db.getFormBlueprintById(
   input.id,
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   }
 );
       if (!row) {
@@ -3320,7 +3342,7 @@ formBlueprintAdmin: router({
     .mutation(async ({ input, ctx }) => {
 
       const created = await db.createFormBlueprint({
-organizationId: Number((ctx.user as any)?.organizationId || 0),
+organizationId: getCtxOrganizationId(ctx),
         formType: input.formType,
         name: input.name,
         description: input.description ?? null,
@@ -3348,7 +3370,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
     .mutation(async ({ input, ctx }) => {
 
       const updated = await db.updateFormBlueprint({
-organizationId: Number((ctx.user as any)?.organizationId || 0),
+organizationId: getCtxOrganizationId(ctx),
         id: input.id,
         name: input.name,
         description: input.description,
@@ -3374,7 +3396,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
       await db.deleteFormBlueprint(
   input.id,
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   }
 );
 
@@ -3393,7 +3415,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
     .mutation(async ({ input, ctx }) => {
 
       const created = await db.createLeadFormFromBlueprint({
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
   blueprintId: input.blueprintId,
   assigneeId: input.assigneeId,
 });
@@ -3464,30 +3486,62 @@ return { success: true, id };
 
 notification: router({
   list: protectedProcedure.query(async ({ ctx }) => {
-    return db.listNotifications(Number(ctx.user.id), {
-  organizationId: Number(ctx.user.organizationId || 0),
-});
-  }),
+  const organizationId = getCtxOrganizationId(ctx);
 
-  markRead: protectedProcedure
-    .input(
-      z.object({
-        id: z.number(),
-      })
-    )
-    .mutation(async ({ ctx, input }) => {
-      await db.markNotificationRead(input.id, Number(ctx.user.id), {
-  organizationId: Number(ctx.user.organizationId || 0),
-});
-      return { success: true };
-    }),
+  if (!organizationId) {
+    throwAppError(
+      ERROR_CODES.ORGANIZATION_REQUIRED,
+      "organizationId is required",
+      400
+    );
+  }
 
-  markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
-    await db.markAllNotificationsRead(Number(ctx.user.id), {
-  organizationId: Number(ctx.user.organizationId || 0),
-});
+  return db.listNotifications(Number(ctx.user.id), {
+    organizationId,
+  });
+}),
+
+ markRead: protectedProcedure
+  .input(
+    z.object({
+      id: z.number(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const organizationId = getCtxOrganizationId(ctx);
+
+    if (!organizationId) {
+      throwAppError(
+        ERROR_CODES.ORGANIZATION_REQUIRED,
+        "organizationId is required",
+        400
+      );
+    }
+
+    await db.markNotificationRead(input.id, Number(ctx.user.id), {
+      organizationId,
+    });
+
     return { success: true };
   }),
+
+markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
+ const organizationId = getCtxOrganizationId(ctx);
+
+  if (!organizationId) {
+    throwAppError(
+      ERROR_CODES.ORGANIZATION_REQUIRED,
+      "organizationId is required",
+      400
+    );
+  }
+
+  await db.markAllNotificationsRead(Number(ctx.user.id), {
+    organizationId,
+  });
+
+  return { success: true };
+}),
 }),
 
 branding: router({
@@ -3502,7 +3556,7 @@ branding: router({
 
   get: protectedProcedure.query(async ({ ctx }) => {
     return db.getBrandingSettings({
-      organizationId: Number((ctx.user as any)?.organizationId || 0),
+      organizationId: getCtxOrganizationId(ctx),
     });
   }),
 
@@ -3516,7 +3570,7 @@ branding: router({
     )
     .mutation(async ({ ctx, input }) => {
       const id = await db.saveBrandingSettings({
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
   companyName: input.companyName.trim(),
         companyLogoUrl: input.companyLogoUrl?.trim() || null,
         messengerSubtitle: input.messengerSubtitle.trim(),
@@ -3571,7 +3625,7 @@ const id = await db.upsertDeviceToken({
   educationInstitution: router({
     list: protectedProcedure.query(async ({ ctx }) => {
   return db.listEducationInstitutions({
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
 }),
 
@@ -3587,7 +3641,7 @@ normalSubjectPrice: z.string().optional(),
       )
       .mutation(async ({ input, ctx }) => {
   const id = await db.createEducationInstitution({
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
     name: input.name.trim(),
     isActive: true,
     sortOrder: input.sortOrder ?? 0,
@@ -3615,7 +3669,7 @@ normalSubjectPrice: z.string().optional(),
   const { id, ...rest } = input;
 
   await db.updateEducationInstitution(id, rest, {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
 
   return { success: true };
@@ -3635,7 +3689,7 @@ normalSubjectPrice: z.string().optional(),
   return db.listEducationInstitutionPositionRates(
     input?.educationInstitutionId,
     {
-      organizationId: Number((ctx.user as any)?.organizationId || 0),
+      organizationId: getCtxOrganizationId(ctx),
     }
   );
 }),
@@ -3652,7 +3706,7 @@ normalSubjectPrice: z.string().optional(),
     input.educationInstitutionId,
     input.positionId,
     {
-      organizationId: Number((ctx.user as any)?.organizationId || 0),
+      organizationId: getCtxOrganizationId(ctx),
     }
   );
 }),
@@ -3668,7 +3722,7 @@ normalSubjectPrice: z.string().optional(),
       )
       .mutation(async ({ input, ctx }) => {
   const id = await db.upsertEducationInstitutionPositionRate({
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
     educationInstitutionId: input.educationInstitutionId,
     positionId: input.positionId,
     freelancerUnitAmount: input.freelancerUnitAmount,
@@ -3686,7 +3740,7 @@ normalSubjectPrice: z.string().optional(),
       )
       .mutation(async ({ input, ctx }) => {
   await db.deleteEducationInstitutionPositionRate(input.id, {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
 
   return { success: true };
@@ -3694,7 +3748,7 @@ normalSubjectPrice: z.string().optional(),
 
     listPrivateCertificateMastersForSettlement: protectedProcedure.query(
   async ({ ctx }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
 
     if (!organizationId) {
       throwAppError(
@@ -3713,7 +3767,7 @@ normalSubjectPrice: z.string().optional(),
 
 getSettings: protectedProcedure.query(async ({ ctx }) => {
   return db.getSettlementSettings({
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
 }),
 
@@ -3725,7 +3779,7 @@ getSettings: protectedProcedure.query(async ({ ctx }) => {
       )
       .mutation(async ({ input, ctx }) => {
   const id = await db.saveSettlementSettings({
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
     payoutDay: input.payoutDay,
   });
 
@@ -3735,14 +3789,14 @@ getSettings: protectedProcedure.query(async ({ ctx }) => {
     backfillSettlementItems: hostProcedure
       .mutation(async ({ ctx }) => {
         return await db.backfillSettlementItems(Number(ctx.user.id), {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
       }),
 
 cleanupOrphanSettlementItems: hostProcedure
   .mutation(async ({ ctx }) => {
     return await db.cleanupOrphanSettlementItems({
-      organizationId: Number((ctx.user as any)?.organizationId || 0),
+      organizationId: getCtxOrganizationId(ctx),
     });
   }),
   }),
@@ -3791,10 +3845,10 @@ cleanupOrphanSettlementItems: hostProcedure
 
         const [students, consultations] = await Promise.all([
           db.listStudents(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 }),
 db.listConsultations(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 }),
         ]);
 
@@ -3836,13 +3890,13 @@ db.listConsultations(assigneeId, {
 
       const [students, consultations, semesters] = await Promise.all([
         db.listStudents(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 }),
 db.listConsultations(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 }),
 db.listAllSemesters(assigneeId, undefined, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 }),
       ]);
 
@@ -3895,7 +3949,7 @@ db.listAllSemesters(assigneeId, undefined, {
       )
       .mutation(async ({ ctx, input }) => {
         const student = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         if (!student) throwAppError(
   ERROR_CODES.DATA_NOT_FOUND,
@@ -3912,7 +3966,7 @@ db.listAllSemesters(assigneeId, undefined, {
         }
 
         const existing = await db.listTransferSubjects(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         if ((existing?.length ?? 0) >= 100) {
           throwAppError(
@@ -3923,7 +3977,7 @@ db.listAllSemesters(assigneeId, undefined, {
         }
 
         const id = await db.createTransferSubject({
-organizationId: Number((ctx.user as any)?.organizationId || 0),
+organizationId: getCtxOrganizationId(ctx),
           studentId: input.studentId,
           schoolName: input.schoolName?.trim() || null,
           subjectName: input.subjectName.trim(),
@@ -3937,7 +3991,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
 
         if (db.createAiActionLog) {
           await db.createAiActionLog({
-organizationId: Number((ctx.user as any)?.organizationId || 0),
+organizationId: getCtxOrganizationId(ctx),
             userId: Number(ctx.user.id),
             userName: ctx.user.name,
             action: "create_transfer_subject_manual",
@@ -3959,7 +4013,7 @@ uploadTranscriptImage: protectedProcedure
   )
   .mutation(async ({ ctx, input }) => {
     const student = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
     if (!student) throwAppError(
   ERROR_CODES.DATA_NOT_FOUND,
@@ -4093,7 +4147,7 @@ try {
       )
       .mutation(async ({ ctx, input }) => {
         const student = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         if (!student) throwAppError(
   ERROR_CODES.DATA_NOT_FOUND,
@@ -4110,7 +4164,7 @@ try {
         }
 
         const existing = await db.listPlanSemesters(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         const semesterCount = existing.filter(
           (x: any) => Number(x.semesterNo) === Number(input.semesterNo)
@@ -4125,7 +4179,7 @@ try {
         }
 
         const id = await db.createPlanSemester({
-organizationId: Number((ctx.user as any)?.organizationId || 0),
+organizationId: getCtxOrganizationId(ctx),
           studentId: input.studentId,
           semesterNo: input.semesterNo,
           subjectName: input.subjectName.trim(),
@@ -4137,7 +4191,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
 
         if (db.createAiActionLog) {
           await db.createAiActionLog({
-organizationId: Number((ctx.user as any)?.organizationId || 0),
+organizationId: getCtxOrganizationId(ctx),
             userId: Number(ctx.user.id),
             userName: ctx.user.name,
             action: "create_plan_semester_manual",
@@ -4166,7 +4220,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
         }
 
         const student = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         if (!student) throwAppError(
   ERROR_CODES.DATA_NOT_FOUND,
@@ -4183,12 +4237,12 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
         }
 
         const result = await db.getPracticeRecommendationsForStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
 
         if (db.createAiActionLog) {
           await db.createAiActionLog({
-organizationId: Number((ctx.user as any)?.organizationId || 0),
+organizationId: getCtxOrganizationId(ctx),
             userId: Number(ctx.user.id),
             userName: ctx.user.name,
             action: "recommend_practice_place",
@@ -4220,10 +4274,10 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
 
         const [students, consultations] = await Promise.all([
           db.listStudents(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 }),
 db.listConsultations(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 }),
         ]);
 const userName = ctx.user.name || "사용자";
@@ -4361,7 +4415,7 @@ const userName = ctx.user.name || "사용자";
         }
 
         await db.createAiLearningEntry({
-          organizationId: Number((ctx.user as any)?.organizationId || 0),
+          organizationId: getCtxOrganizationId(ctx),
           userId: Number(ctx.user.id),
           userName: ctx.user.name,
           learningType: input.learningType,
@@ -4395,7 +4449,7 @@ const userName = ctx.user.name || "사용자";
         }
 
         const examples = await db.findSimilarAiLearning({
-organizationId: Number((ctx.user as any)?.organizationId || 0),
+organizationId: getCtxOrganizationId(ctx),
           learningType: input.learningType,
           normalizedKey: input.normalizedKey,
           keyword: input.keyword,
@@ -4432,7 +4486,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
           : Number(ctx.user.id) || 1;
 
         const students = await db.listStudents(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         const keyword = input.studentKeyword.trim();
         const keywordLower = keyword.toLowerCase();
@@ -4530,7 +4584,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
 
           if (db.createAiActionLog) {
             await db.createAiActionLog({
-organizationId: Number((ctx.user as any)?.organizationId || 0),
+organizationId: getCtxOrganizationId(ctx),
               userId: Number(ctx.user.id),
               userName: ctx.user.name,
               action: "create_transfer_subject",
@@ -4604,7 +4658,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
           }
 
           const existing = await db.listPlanSemesters(student.id, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
           const semesterCount = (existing || []).filter(
             (x: any) => Number(x.semesterNo) === Number(input.semesterNo)
@@ -4630,7 +4684,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
 
           if (db.createAiActionLog) {
             await db.createAiActionLog({
-organizationId: Number((ctx.user as any)?.organizationId || 0),
+organizationId: getCtxOrganizationId(ctx),
               userId: Number(ctx.user.id),
               userName: ctx.user.name,
               action: "create_plan_semester",
@@ -4681,12 +4735,12 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
           }
 
           const recommendations = await db.getPracticeRecommendationsForStudent(student.id, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
 
           if (db.createAiActionLog) {
             await db.createAiActionLog({
-organizationId: Number((ctx.user as any)?.organizationId || 0),
+organizationId: getCtxOrganizationId(ctx),
               userId: Number(ctx.user.id),
               userName: ctx.user.name,
               action: "recommend_practice_place",
@@ -4737,7 +4791,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
   }),
   dashboard: router({
   monthApprovals: protectedProcedure.query(async ({ ctx }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
     const isAdminHost = isAdminOrHost(ctx.user);
     const assigneeId = isAdminHost ? undefined : Number(ctx.user.id);
 
@@ -4795,7 +4849,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
   }),
 
   stats: protectedProcedure.query(async ({ ctx }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
     const isAdminHost = isAdminOrHost(ctx.user);
     const assigneeId = isAdminHost ? undefined : Number(ctx.user.id);
 
@@ -4805,7 +4859,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
   }),
 
   totalStats: hostProcedure.query(async ({ ctx }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
 
     return db.getDashboardStats(undefined, {
       organizationId,
@@ -4813,7 +4867,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
   }),
 
   monthSalesEntries: protectedProcedure.query(async ({ ctx }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
     const isAdminHost = isAdminOrHost(ctx.user);
     const assigneeId = isAdminHost ? undefined : Number(ctx.user.id);
 
@@ -4823,7 +4877,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
   }),
 
   totalMonthSalesEntries: hostProcedure.query(async ({ ctx }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+   const organizationId = getCtxOrganizationId(ctx);
 
     return db.getMonthSalesEntries(undefined, {
       organizationId,
@@ -4840,7 +4894,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
         .optional()
     )
     .query(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   if (!organizationId) {
     throwAppError(
@@ -4875,7 +4929,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
         })
       )
       .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   if (!organizationId) {
     throwAppError(
@@ -5038,7 +5092,7 @@ await db.bulkCreateConsultations(rows as any);
     })
   )
   .mutation(async ({ ctx, input }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
 
     if (!organizationId) {
       throwAppError(
@@ -5207,12 +5261,12 @@ await db.bulkCreateConsultations(rows as any);
 
 
     await db.deleteConsultation(input.id, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
   deletedBy: Number(ctx.user.id),
 });
 
 await db.createAuditLog({
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
   actorUserId: Number(ctx.user.id),
   actorRole: String((ctx.user as any)?.role || ""),
   action: "consultation.soft_delete",
@@ -5234,7 +5288,7 @@ listDeleted: hostProcedure
   )
   .query(async ({ ctx, input }) => {
     return db.listDeletedConsultations({
-      organizationId: Number((ctx.user as any)?.organizationId || 0),
+      organizationId: getCtxOrganizationId(ctx),
       limit: input?.limit ?? 100,
     });
   }),
@@ -5242,7 +5296,7 @@ listDeleted: hostProcedure
 restore: hostProcedure
   .input(z.object({ id: z.number() }))
   .mutation(async ({ ctx, input }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
 
     await db.restoreConsultation({
       id: input.id,
@@ -5271,7 +5325,7 @@ restore: hostProcedure
         : Number(ctx.user.id) || 1;
 
       return db.listStudents(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
     }),
 
@@ -5279,7 +5333,7 @@ restore: hostProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ ctx, input }) => {
         const item = await db.getStudent(input.id, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         if (!item) return null;
 
@@ -5315,7 +5369,7 @@ restore: hostProcedure
       )
       .mutation(async ({ ctx, input }) => {
         const data: any = {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
   ...input,
   assigneeId: Number(ctx.user.id) || 1,
 };
@@ -5348,7 +5402,7 @@ restore: hostProcedure
       )
       .mutation(async ({ ctx, input }) => {
         const item = await db.getStudent(input.id, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         if (!item) throwAppError(
   ERROR_CODES.DATA_NOT_FOUND,
@@ -5371,7 +5425,7 @@ restore: hostProcedure
         if (rest.startDate) data.startDate = new Date(rest.startDate);
         if (rest.paymentDate) data.paymentDate = new Date(rest.paymentDate);
         await db.updateStudent(id, data, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         return { success: true };
       }),
@@ -5388,7 +5442,7 @@ restore: hostProcedure
       )
       .mutation(async ({ ctx, input }) => {
         const item = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         if (!item) throwAppError(
   ERROR_CODES.DATA_NOT_FOUND,
@@ -5407,7 +5461,7 @@ restore: hostProcedure
 
         await db.updateStudentAddressAndCoords({
   ...input,
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         return { success: true };
       }),
@@ -5426,7 +5480,7 @@ restore: hostProcedure
       .input(z.object({ studentId: z.number() }))
       .query(async ({ ctx, input }) => {
         const student = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         if (!student) return null;
 
@@ -5435,7 +5489,7 @@ restore: hostProcedure
         }
 
         return db.getStudentRegistrationSummary(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
       }),
 }),
@@ -5444,7 +5498,7 @@ restore: hostProcedure
     get: protectedProcedure
   .input(z.object({ studentId: z.number() }))
   .query(async ({ ctx, input }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
 
     const student = await db.getStudent(input.studentId, {
       organizationId,
@@ -5507,7 +5561,7 @@ restore: hostProcedure
   })
 )
       .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   const student = await db.getStudent(input.studentId, {
     organizationId,
@@ -5540,7 +5594,7 @@ restore: hostProcedure
     list: protectedProcedure
       .input(z.object({ studentId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 0);
+        const organizationId = getCtxOrganizationId(ctx);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -5563,7 +5617,7 @@ const student = await db.getStudent(input.studentId, {
     })
   )
   .query(async ({ ctx, input }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
 
     if (!organizationId) {
       throwAppError(
@@ -5599,7 +5653,7 @@ semesterLabel: z.string().optional().nullable(),
 })
       )
       .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   const student = await db.getStudent(input.studentId, {
     organizationId,
@@ -5641,7 +5695,7 @@ semesterLabel: z.string().optional().nullable(),
   input.semesterOrder,
   input.plannedSubjectCount,
   {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   }
 );
   }
@@ -5675,7 +5729,7 @@ semesterLabel: z.string().optional().nullable(),
     })
   )
   .mutation(async ({ ctx, input }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
 
     const sem = await db.getSemester(input.id, { organizationId });
     if (!sem) throwAppError(
@@ -5899,7 +5953,7 @@ semesterLabel: z.string().optional().nullable(),
     copyPlannedToActual: protectedProcedure
   .input(z.object({ id: z.number() }))
   .mutation(async ({ ctx, input }) => {
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
 
     const sem = await db.getSemester(input.id, {
       organizationId,
@@ -5982,7 +6036,7 @@ approve: protectedProcedure
 );
     }
 
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
 
     if (!organizationId) {
       throwAppError(
@@ -6228,7 +6282,7 @@ metadataJson: JSON.stringify({
     delete: protectedProcedure
      .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   const sem = await db.getSemester(input.id, {
     organizationId,
@@ -6251,7 +6305,7 @@ metadataJson: JSON.stringify({
     listByStudent: protectedProcedure
       .input(z.object({ studentId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 0);
+        const organizationId = getCtxOrganizationId(ctx);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -6277,7 +6331,7 @@ throwAppError(
       }
 
       return db.listPendingRefunds({
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
     }),
 
@@ -6297,7 +6351,7 @@ throwAppError(
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 0);
+        const organizationId = getCtxOrganizationId(ctx);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -6345,7 +6399,7 @@ organizationId,
 );
     }
 
-    const organizationId = Number((ctx.user as any)?.organizationId || 0);
+    const organizationId = getCtxOrganizationId(ctx);
 
 const targetRefund = await db.getRefundById(input.id, {
   organizationId,
@@ -6414,7 +6468,7 @@ isRead: false,
 );
         }
 
-        const organizationId = Number((ctx.user as any)?.organizationId || 0);
+        const organizationId = getCtxOrganizationId(ctx);
 
 const targetRefund = await db.getRefundById(input.id, {
   organizationId,
@@ -6500,7 +6554,7 @@ return { success: true };
     data.attachmentUrl = input.attachmentUrl?.trim() || null;
 
   await db.updateRefund(input.id, data, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
 return { success: true };
 }),
@@ -6509,7 +6563,7 @@ return { success: true };
       .input(z.object({ id: z.number() }))
      .mutation(async ({ ctx, input }) => {
   await db.deleteRefund(input.id, {
-    organizationId: Number((ctx.user as any)?.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   });
   return { success: true };
 }),
@@ -6519,7 +6573,7 @@ return { success: true };
     list: protectedProcedure
       .input(z.object({ studentId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 0);
+       const organizationId = getCtxOrganizationId(ctx);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -6531,7 +6585,7 @@ const student = await db.getStudent(input.studentId, {
         }
 
         return db.listPlanSemesters(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
       }),
 
@@ -6547,7 +6601,7 @@ const student = await db.getStudent(input.studentId, {
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 0);
+        const organizationId = getCtxOrganizationId(ctx);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -6582,7 +6636,7 @@ const student = await db.getStudent(input.studentId, {
         }
 
         const id = await db.createPlanSemester({
-organizationId: Number((ctx.user as any)?.organizationId || 0),
+organizationId: getCtxOrganizationId(ctx),
           studentId: input.studentId,
           semesterNo: input.semesterNo,
           subjectName: input.subjectName.trim(),
@@ -6616,7 +6670,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
         if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder;
 
         await db.updatePlanSemester(input.id, data, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         return { success: true };
       }),
@@ -6625,7 +6679,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
         await db.deletePlanSemester(input.id, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         return { success: true };
       }),
@@ -6636,7 +6690,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
       .input(z.object({ studentId: z.number() }))
       .query(async ({ ctx, input }) => {
         const student = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         if (!student) return [];
 
@@ -6645,7 +6699,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
         }
 
         return db.listTransferSubjects(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
       }),
 
@@ -6665,7 +6719,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
       )
       .mutation(async ({ ctx, input }) => {
         const student = await db.getStudent(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         if (!student) throwAppError(
   ERROR_CODES.DATA_NOT_FOUND,
@@ -6682,7 +6736,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
         }
 
         const existing = await db.listTransferSubjects(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         if ((existing?.length ?? 0) >= 100) {
           throwAppError(
@@ -6693,7 +6747,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
         }
 
         const id = await db.createTransferSubject({
- organizationId: Number((ctx.user as any)?.organizationId || 0),
+ organizationId: getCtxOrganizationId(ctx),
           studentId: input.studentId,
           schoolName: input.schoolName?.trim() || null,
           subjectName: input.subjectName.trim(),
@@ -6717,7 +6771,7 @@ organizationId: Number((ctx.user as any)?.organizationId || 0),
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 0);
+        const organizationId = getCtxOrganizationId(ctx);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -6737,7 +6791,7 @@ const student = await db.getStudent(input.studentId, {
         }
 
        const existing = await db.listTransferSubjects(input.studentId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         const existingCount = existing?.length ?? 0;
 
@@ -6794,7 +6848,7 @@ const student = await db.getStudent(input.studentId, {
         if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl.trim();
 
         await db.updateTransferSubject(input.id, data, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         return { success: true };
       }),
@@ -6803,7 +6857,7 @@ const student = await db.getStudent(input.studentId, {
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
         await db.deleteTransferSubject(input.id, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         return { success: true };
       }),
@@ -6813,7 +6867,7 @@ const student = await db.getStudent(input.studentId, {
     list: protectedProcedure
       .input(z.object({ studentId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 0);
+        const organizationId = getCtxOrganizationId(ctx);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -6839,7 +6893,7 @@ const student = await db.getStudent(input.studentId, {
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 0);
+        const organizationId = getCtxOrganizationId(ctx);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -6917,7 +6971,7 @@ courseTemplate: router({
         .optional()
     )
     .query(async ({ ctx, input }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -6945,7 +6999,7 @@ courseTemplate: router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -6977,7 +7031,7 @@ courseTemplate: router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -7023,7 +7077,7 @@ practiceEducationCenter: router({
       }).optional()
     )
     .query(async ({ ctx, input }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -7042,7 +7096,7 @@ practiceEducationCenter: router({
   get: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -7089,7 +7143,7 @@ return db.getPracticeEducationCenter(input.id, {
 );
       }
 
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -7150,7 +7204,7 @@ return db.getPracticeEducationCenter(input.id, {
 );
       }
 
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -7210,7 +7264,7 @@ return db.getPracticeEducationCenter(input.id, {
 );
       }
 
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -7270,7 +7324,7 @@ if (id < 0) {
 );
       }
 
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -7326,7 +7380,7 @@ if (id < 0) {
 );
       }
 
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -7353,7 +7407,7 @@ if (id < 0) {
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -7373,7 +7427,7 @@ if (id < 0) {
   delete: hostProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -7406,7 +7460,7 @@ if (id < 0) {
     }).optional()
   )
   .query(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   if (!organizationId) {
     throwAppError(
@@ -7426,7 +7480,7 @@ if (id < 0) {
     get: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   if (!organizationId) {
     throwAppError(
@@ -7475,7 +7529,7 @@ return db.getPracticeInstitution(input.id, {
 );
         }
 
-const organizationId = Number((ctx.user as any)?.organizationId || 0);
+const organizationId = getCtxOrganizationId(ctx);
 
 if (!organizationId) {
   throwAppError(
@@ -7538,7 +7592,7 @@ categoryId: z.number().nullable().optional(),
 );
         }
 
-const organizationId = Number((ctx.user as any)?.organizationId || 0);
+const organizationId = getCtxOrganizationId(ctx);
 
 if (!organizationId) {
   throwAppError(
@@ -7595,7 +7649,7 @@ bulkDeactivate: protectedProcedure
 );
     }
 
-const organizationId = Number((ctx.user as any)?.organizationId || 0);
+const organizationId = getCtxOrganizationId(ctx);
 
 if (!organizationId) {
   throwAppError(
@@ -7659,7 +7713,7 @@ return db.bulkDeactivatePracticeInstitutionOverrides({
         if (rest.memo !== undefined) data.memo = rest.memo;
         if (rest.isActive !== undefined) data.isActive = rest.isActive;
 
-        const organizationId = Number((ctx.user as any)?.organizationId || 0);
+        const organizationId = getCtxOrganizationId(ctx);
 
 if (!organizationId) {
   throwAppError(
@@ -7717,7 +7771,7 @@ if (id < 0) {
 );
       }
 
-const organizationId = Number((ctx.user as any)?.organizationId || 0);
+const organizationId = getCtxOrganizationId(ctx);
 
 if (!organizationId) {
   throwAppError(
@@ -7761,7 +7815,7 @@ fixCoords: protectedProcedure
     })
   )
   .mutation(async ({ ctx, input }) => {
-   const organizationId = Number((ctx.user as any)?.organizationId || 0);
+   const organizationId = getCtxOrganizationId(ctx);
 
 if (!organizationId) {
   throwAppError(
@@ -7781,7 +7835,7 @@ return db.fixMissingCoordinates({
     delete: hostProcedure
       .input(z.object({ id: z.number() }))
      .mutation(async ({ ctx, input }) => {
-  const organizationId = Number((ctx.user as any)?.organizationId || 0);
+  const organizationId = getCtxOrganizationId(ctx);
 
   if (!organizationId) {
     throwAppError(
@@ -7813,7 +7867,7 @@ practiceListCategory: router({
       }).optional()
     )
     .query(async ({ ctx, input }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -7838,7 +7892,7 @@ practiceListCategory: router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -7871,7 +7925,7 @@ practiceListCategory: router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -7893,7 +7947,7 @@ practiceListCategory: router({
   delete: hostProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       if (!organizationId) {
         throwAppError(
@@ -7915,14 +7969,14 @@ practiceListCategory: router({
     list: protectedProcedure.query(async ({ ctx }) => {
       const assigneeId = isAdminOrHost(ctx.user) ? undefined : Number(ctx.user.id) || 1;
       return db.listJobSupportRequests(assigneeId, {
-  organizationId: Number((ctx.user as any)?.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
     }),
 
     listByStudent: protectedProcedure
       .input(z.object({ studentId: z.number() }))
       .query(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 0);
+        const organizationId = getCtxOrganizationId(ctx);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -7951,7 +8005,7 @@ const student = await db.getStudent(input.studentId, {
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const organizationId = Number((ctx.user as any)?.organizationId || 0);
+        const organizationId = getCtxOrganizationId(ctx);
 
 const student = await db.getStudent(input.studentId, {
   organizationId,
@@ -8058,7 +8112,7 @@ organizationId,
       })
     )
     .query(async ({ input, ctx }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+     const organizationId = getCtxOrganizationId(ctx);
 
       await assertOrganizationFeatureEnabled(
         organizationId,
@@ -8080,7 +8134,7 @@ organizationId,
       })
     )
     .query(async ({ input, ctx }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       await assertOrganizationFeatureEnabled(
         organizationId,
@@ -8104,7 +8158,7 @@ organizationId,
       })
     )
     .query(async ({ input, ctx }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       await assertOrganizationFeatureEnabled(
         organizationId,
@@ -8128,7 +8182,7 @@ organizationId,
       })
     )
     .query(async ({ input, ctx }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       await assertOrganizationFeatureEnabled(
         organizationId,
@@ -8151,7 +8205,7 @@ organizationId,
       })
     )
     .query(async ({ input, ctx }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       await assertOrganizationFeatureEnabled(
         organizationId,
@@ -8174,7 +8228,7 @@ organizationId,
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       await assertOrganizationFeatureEnabled(
         organizationId,
@@ -8209,7 +8263,7 @@ organizationId,
       })
     )
     .query(async ({ input, ctx }) => {
-      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+      const organizationId = getCtxOrganizationId(ctx);
 
       await assertOrganizationFeatureEnabled(
         organizationId,
