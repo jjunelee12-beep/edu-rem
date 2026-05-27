@@ -46,14 +46,6 @@ const showGlobalApiError = (
 ) => {
   const { appCode, appMessage } = getAppErrorInfo(error);
 
-console.error("[APP API ERROR]", {
-  code: appCode,
-  message: appMessage,
-  source: meta?.source,
-  queryKey: meta?.queryKey,
-  mutationKey: meta?.mutationKey,
-});
-
   if (typeof window === "undefined") return;
 
   window.dispatchEvent(

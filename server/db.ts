@@ -14817,8 +14817,9 @@ const organizationId = requireOrganizationId(params?.organizationId);
 
   const [rows] = await db.execute(sql`
   SELECT
-    a.id,
-    a.userId,
+  a.id,
+  a.organizationId,
+  a.userId,
     a.workDate,
     a.clockInAt,
     a.clockOutAt,
@@ -14859,8 +14860,9 @@ for (const row of normalizedRows) {
 
 const [freshRows] = await db.execute(sql`
   SELECT
-    a.id,
-    a.userId,
+  a.id,
+  a.organizationId,
+  a.userId,
     a.workDate,
     a.clockInAt,
     a.clockOutAt,
