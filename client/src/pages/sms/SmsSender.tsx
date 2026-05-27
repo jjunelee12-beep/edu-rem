@@ -262,6 +262,26 @@ const handleSaveSmsSettings = () => {
       <p className="text-xs text-gray-500 mt-1">
         SaaS 사용 회사별로 알리고 API 정보를 입력하면 해당 설정으로 문자 발송됩니다.
       </p>
+<div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 space-y-2">
+  <div className="font-semibold">
+    외부 문자 API 화이트리스트 IP 등록 안내
+  </div>
+
+  <div>
+    알리고 / 솔라피 / 네이버클라우드 / Toast SMS 등 외부 문자 API 사용 시
+    아래 SaaS 고정 발신 IP를 반드시 화이트리스트에 등록해주세요.
+  </div>
+
+  <div className="rounded bg-white border p-2 font-mono text-[11px] break-all">
+    162.220.232.250<br />
+    162.220.232.251<br />
+    152.55.176.240
+  </div>
+
+  <div className="text-[11px] text-amber-700">
+    등록하지 않을 경우 문자 발송 시 인증오류(IP 제한)가 발생할 수 있습니다.
+  </div>
+</div>
     </div>
 
     <button
