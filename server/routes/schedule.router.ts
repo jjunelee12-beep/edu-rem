@@ -10,11 +10,35 @@ import {
   getAllUsersDetailed,
 } from "../db";
 import { emitLiveNotification } from "../_core/live-notifications";
+import { throwAppError } from "../_core/appError";
+import { ERROR_CODES } from "../_core/errorCodes";
 
 function assertLoggedIn(user: any) {
   if (!user) {
     throw new Error("로그인이 필요합니다.");
   }
+}
+
+function getCtxOrganizationId(ctx: any) {
+  const organizationId = Number(
+    ctx?.organizationId ??
+      ctx?.user?.organizationId ??
+      ctx?.user?.organization_id ??
+      ctx?.user?.organization?.id ??
+      ctx?.session?.organizationId ??
+      ctx?.session?.user?.organizationId ??
+      0
+  );
+
+  if (!Number.isFinite(organizationId) || organizationId <= 0) {
+    throwAppError(
+      ERROR_CODES.ORGANIZATION_REQUIRED,
+      "organizationId is required",
+      400
+    );
+  }
+
+  return organizationId;
 }
 
 function canCreateGlobalSchedule(user: any) {
@@ -56,7 +80,7 @@ export const scheduleRouter = {
   assertLoggedIn(ctx.user);
 
   const rows = await listMonthSchedules(input.year, input.month, {
-  organizationId: Number(ctx.user.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
 
   return (rows as any[]).map((row: any) => ({
@@ -87,7 +111,7 @@ export const scheduleRouter = {
   Number(ctx.user.id),
   String(ctx.user.role),
   {
-    organizationId: Number(ctx.user.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   }
 );
 
@@ -137,7 +161,7 @@ const startAt = buildDateTimeString(
 );
 
 const id = await createSchedule({
-organizationId: Number(ctx.user.organizationId || 0),  
+organizationId: getCtxOrganizationId(ctx),  
 title: input.title,
   description: input.description,
   scheduleDate: input.date,
@@ -186,7 +210,7 @@ title: input.title,
   Number(ctx.user.id),
   String(ctx.user.role),
   {
-  organizationId: Number(ctx.user.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
   title: input.title,
     description: input.description,
     scheduleDate: input.date,
@@ -215,7 +239,7 @@ title: input.title,
   Number(ctx.user.id),
   String(ctx.user.role),
   {
-    organizationId: Number(ctx.user.organizationId || 0),
+    organizationId: getCtxOrganizationId(ctx),
   }
 );
 

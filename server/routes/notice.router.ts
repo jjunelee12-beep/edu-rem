@@ -10,6 +10,8 @@ import {
   increaseNoticeView,
   createNoticeNotifications,
 } from "../db";
+import { throwAppError } from "../_core/appError";
+import { ERROR_CODES } from "../_core/errorCodes";
 
 function assertHostOrSuperhost(user: any) {
   if (!user) {
@@ -19,6 +21,28 @@ function assertHostOrSuperhost(user: any) {
   if (user.role !== "host" && user.role !== "superhost") {
     throw new Error("공지사항 작성 권한이 없습니다.");
   }
+}
+
+function getCtxOrganizationId(ctx: any) {
+  const organizationId = Number(
+    ctx?.organizationId ??
+      ctx?.user?.organizationId ??
+      ctx?.user?.organization_id ??
+      ctx?.user?.organization?.id ??
+      ctx?.session?.organizationId ??
+      ctx?.session?.user?.organizationId ??
+      0
+  );
+
+  if (!Number.isFinite(organizationId) || organizationId <= 0) {
+    throwAppError(
+      ERROR_CODES.ORGANIZATION_REQUIRED,
+      "organizationId is required",
+      400
+    );
+  }
+
+  return organizationId;
 }
 
 export const noticeRouter = {
@@ -32,7 +56,7 @@ export const noticeRouter = {
   )
   .query(async ({ ctx, input }) => {
     const rows = await listNotices({
-  organizationId: Number(ctx.user.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
 
     const search = input?.search?.trim().toLowerCase();
@@ -78,7 +102,7 @@ export const noticeRouter = {
     )
     .query(async ({ ctx, input }) => {
       const row = await getNotice(input.id, {
-  organizationId: Number(ctx.user.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
       if (!row) {
         throw new Error("공지사항을 찾을 수 없습니다.");
@@ -86,11 +110,11 @@ export const noticeRouter = {
 
       if (input.increaseView ?? true) {
         await increaseNoticeView(input.id, {
-  organizationId: Number(ctx.user.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
 
 const updated = await getNotice(input.id, {
-  organizationId: Number(ctx.user.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
         return updated ?? row;
       }
@@ -111,7 +135,7 @@ const updated = await getNotice(input.id, {
       assertHostOrSuperhost(ctx.user);
 
       const id = await createNotice({
-organizationId: Number(ctx.user.organizationId || 0),
+organizationId: getCtxOrganizationId(ctx),
         title: input.title,
         content: input.content,
         authorId: Number(ctx.user.id),
@@ -121,7 +145,7 @@ organizationId: Number(ctx.user.organizationId || 0),
       });
 
       await createNoticeNotifications({
-  organizationId: Number(ctx.user.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
   noticeId: Number(id),
   actorUserId: Number(ctx.user.id),
   title: input.title,
@@ -148,14 +172,14 @@ organizationId: Number(ctx.user.organizationId || 0),
       assertHostOrSuperhost(ctx.user);
 
       const existing = await getNotice(input.id, {
-  organizationId: Number(ctx.user.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
       if (!existing) {
         throw new Error("공지사항을 찾을 수 없습니다.");
       }
 
       await updateNotice(input.id, {
-  organizationId: Number(ctx.user.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
         title: input.title,
         content: input.content,
         isPinned: !!input.isPinned,
@@ -175,14 +199,14 @@ organizationId: Number(ctx.user.organizationId || 0),
       assertHostOrSuperhost(ctx.user);
 
       const existing = await getNotice(input.id, {
-  organizationId: Number(ctx.user.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
       if (!existing) {
         throw new Error("공지사항을 찾을 수 없습니다.");
       }
 
     await deleteNotice(input.id, {
-  organizationId: Number(ctx.user.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
 
       return { ok: true };
@@ -206,7 +230,7 @@ organizationId: Number(ctx.user.organizationId || 0),
       }
 
       await bulkDeleteNotices(ids, {
-  organizationId: Number(ctx.user.organizationId || 0),
+  organizationId: getCtxOrganizationId(ctx),
 });
 
       return {
