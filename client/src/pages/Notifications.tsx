@@ -31,6 +31,10 @@ type NotificationItem = {
   relatedId?: number | null;
   isRead?: boolean | null;
   createdAt?: string | Date | null;
+  targetType?: string | null;
+  targetId?: number | null;
+  linkUrl?: string | null;
+  metadataJson?: string | null;
 };
 
 function formatDateTime(value?: string | Date | null) {
@@ -319,6 +323,22 @@ export default function Notifications() {
         return;
       }
     }
+
+const linkUrl = String(item.linkUrl || "").trim();
+
+if (linkUrl) {
+  const firstSegment =
+    window.location.pathname.split("/").filter(Boolean)[0] || "";
+
+  const shouldPrefixOrgSlug =
+    firstSegment &&
+    !["login", "form", "ad-form", "saas", "superhost"].includes(firstSegment) &&
+    linkUrl.startsWith("/") &&
+    !linkUrl.startsWith(`/${firstSegment}/`);
+
+  setLocation(shouldPrefixOrgSlug ? `/${firstSegment}${linkUrl}` : linkUrl);
+  return;
+}
 
 if (item.type === "payment" && item.relatedId) {
   setLocation(`/students/${item.relatedId}`);

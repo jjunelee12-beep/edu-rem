@@ -125,6 +125,40 @@ const { data: semesters, isLoading: semestersLoading } =
   user?.role === "host" ||
   user?.role === "superhost";
 
+const askRejectionReason = (title: string) => {
+  const reason = window.prompt(`${title}\n\n불허가/반려 사유를 입력하세요.`);
+  if (reason === null) return null;
+
+  const trimmed = reason.trim();
+  if (!trimmed) {
+    toast.error("불허가 사유는 필수입니다.");
+    return null;
+  }
+
+  return trimmed;
+};
+
+const handleRejectSemester = (sem: any) => {
+  const rejectionReason = askRejectionReason("학기 불승인 처리");
+  if (!rejectionReason) return;
+
+  approveSemesterMutation.mutate({
+    id: Number(sem.id),
+    approvalStatus: "불승인",
+    rejectionReason,
+  } as any);
+};
+
+const handleRejectRefund = (r: any) => {
+  const rejectionReason = askRejectionReason("환불 불승인 처리");
+  if (!rejectionReason) return;
+
+  rejectRefundMutation.mutate({
+    id: Number(r.id),
+    rejectionReason,
+  } as any);
+};
+
   if (!isAdminOrHost) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -251,12 +285,7 @@ const rejectedSemesters = semesterRows.filter(
           size="sm"
           variant="outline"
           className="gap-1 text-red-600 border-red-200 hover:bg-red-50 h-8"
-          onClick={() =>
-            approveSemesterMutation.mutate({
-              id: Number(sem.id),
-              approvalStatus: "불승인",
-            })
-          }
+          onClick={() => handleRejectSemester(sem)}
           disabled={approveSemesterMutation.isPending}
         >
           <X className="h-3.5 w-3.5" /> 불승인
@@ -380,9 +409,7 @@ approveRefundMutation.mutate({ id: Number(r.id) })
                             size="sm"
                             variant="outline"
                             className="gap-1 text-red-600 border-red-200 hover:bg-red-50 h-8"
-                            onClick={() => 
-rejectRefundMutation.mutate({ id: Number(r.id) })
-}
+                            onClick={() => handleRejectRefund(r)}
                             disabled={rejectRefundMutation.isPending}
                           >
                             <X className="h-3.5 w-3.5" /> 불승인
@@ -464,12 +491,7 @@ rejectRefundMutation.mutate({ id: Number(r.id) })
                     size="sm"
                     variant="ghost"
                     className="text-red-600 text-xs h-7"
-                    onClick={() =>
-                      approveSemesterMutation.mutate({
-                        id: Number(sem.id),
-                        approvalStatus: "불승인",
-                      })
-                    }
+                    onClick={() => handleRejectSemester(sem)}
                     disabled={approveSemesterMutation.isPending}
                   >
                     불승인으로 변경

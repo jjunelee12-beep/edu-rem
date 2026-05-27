@@ -186,7 +186,7 @@ organizationId: int("organizationId").notNull().default(1),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 
-  username: varchar("username", { length: 64 }),
+  username: varchar("username", { length: 64 }).unique(),
   passwordHash: varchar("passwordHash", { length: 255 }),
   isActive: boolean("isActive").notNull().default(true),
 
@@ -542,8 +542,9 @@ semesterLabel: varchar("semesterLabel", { length: 50 }),
       .default("요청전")
       .notNull(),
 
-    approvedAt: datetime("approvedAt"),
+        approvedAt: datetime("approvedAt"),
     rejectedAt: datetime("rejectedAt"),
+    rejectionReason: text("rejectionReason"),
 
     plannedMonth: varchar("plannedMonth", { length: 20 }),
 
@@ -744,9 +745,10 @@ organizationId: int("organizationId").notNull().default(1),
     .notNull()
     .default("대기"),
 
-  approvedAt: datetime("approvedAt"),
+    approvedAt: datetime("approvedAt"),
   rejectedAt: datetime("rejectedAt"),
   approvedBy: int("approvedBy"),
+  rejectionReason: text("rejectionReason"),
 
   attachmentName: varchar("attachmentName", { length: 255 }),
   attachmentUrl: varchar("attachmentUrl", { length: 1000 }),
@@ -2237,6 +2239,10 @@ export const notifications = mysqlTable(
     message: text("message").notNull(),
     imageUrl: varchar("imageUrl", { length: 500 }),
     relatedId: int("relatedId"),
+    targetType: varchar("targetType", { length: 80 }),
+    targetId: int("targetId"),
+    linkUrl: varchar("linkUrl", { length: 500 }),
+    metadataJson: text("metadataJson"),
     isRead: boolean("isRead").notNull().default(false),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },

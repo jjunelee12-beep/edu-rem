@@ -54,6 +54,7 @@ import ApprovalDetailPage from "./pages/ApprovalDetailPage";
 import ApprovalPrintPage from "./pages/ApprovalPrintPage";
 import ApprovalStatsPage from "./pages/ApprovalStatsPage";
 import ApprovalPreviewPage from "./pages/ApprovalPreviewPage";
+import ApprovalHistoryDetailPage from "./pages/ApprovalHistoryDetailPage";
 import PrivateCertificateMasterPage from "./pages/PrivateCertificateMasterPage";
 import SubjectCatalogMasterPage from "./pages/SubjectCatalogMasterPage";
 
@@ -286,6 +287,12 @@ function PrivateRouter() {
       <Route path="/:organizationSlug/semesters" component={SemesterList} />
       <Route path="/:organizationSlug/sms" component={SmsSender} />
       <Route path="/:organizationSlug/approvals" component={Approvals} />
+
+<Route
+  path="/:organizationSlug/approval-history/:type/:id"
+  component={ApprovalHistoryDetailPage}
+/>
+
       <Route
   path="/:organizationSlug/settlement"
   component={() => (

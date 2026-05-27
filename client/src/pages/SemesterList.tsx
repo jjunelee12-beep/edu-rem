@@ -63,6 +63,8 @@ export default function SemesterList() {
   };
 
   const [plannedMonth, setPlannedMonth] = useState(getCurrentMonthKey());
+const [dateMode, setDateMode] = useState<"plannedMonth" | "actualStartDate">("plannedMonth");
+const [selectedActualStartDate, setSelectedActualStartDate] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const [filterUnassignedPractice, setFilterUnassignedPractice] = useState(false);
@@ -72,8 +74,9 @@ export default function SemesterList() {
 
   const { data: allUsers } = trpc.users.list.useQuery();
   const { data: semesters, isLoading } = trpc.semester.listAll.useQuery({
-    plannedMonth: plannedMonth || undefined,
-  });
+  plannedMonth:
+    dateMode === "plannedMonth" ? plannedMonth || undefined : undefined,
+});
 
   const isAdmin = user?.role === "admin" || user?.role === "host";
 
@@ -83,6 +86,19 @@ export default function SemesterList() {
   );
 
   const monthOptions = useMemo(() => getMonthOptions(), []);
+const actualStartDateOptions = useMemo(() => {
+  const rows = semesters ? [...semesters] : [];
+
+  const dates = rows
+    .map((s: any) => String(s.actualStartDate || "").slice(0, 10))
+    .filter((v) => /^\d{4}-\d{2}-\d{2}$/.test(v))
+    .filter((v) => {
+      if (!plannedMonth) return true;
+      return v.startsWith(plannedMonth);
+    });
+
+  return Array.from(new Set(dates)).sort();
+}, [semesters, plannedMonth]);
 
  const filtered = useMemo(() => {
   const rows = semesters ? [...semesters] : [];
@@ -90,6 +106,22 @@ export default function SemesterList() {
   const assigneeTerm = assigneeSearch.trim().toLowerCase();
 
   return rows.filter((s: any) => {
+const actualStartDate = String(s.actualStartDate || "").slice(0, 10);
+
+if (dateMode === "actualStartDate") {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(actualStartDate)) return false;
+
+  if (plannedMonth && !actualStartDate.startsWith(plannedMonth)) {
+    return false;
+  }
+
+  if (
+    selectedActualStartDate !== "all" &&
+    actualStartDate !== selectedActualStartDate
+  ) {
+    return false;
+  }
+}
     const hasPlannedInfo =
   !!s.plannedMonth ||
   !!s.plannedInstitution ||
@@ -100,7 +132,15 @@ export default function SemesterList() {
 const hasPaymentInfo =
   Number(s.actualAmount || 0) > 0 || !!s.actualPaymentDate;
 
-if (!hasPlannedInfo) return false;
+if (dateMode === "plannedMonth" && !hasPlannedInfo) return false;
+
+if (
+  dateMode === "actualStartDate" &&
+  !hasPlannedInfo &&
+  !actualStartDate
+) {
+  return false;
+}
 
     if (filterUnassignedPractice && s.practiceStatus !== "미섭외") return false;
 
@@ -154,6 +194,9 @@ if (!hasPlannedInfo) return false;
   filterSemesterOrder,
   filterPaymentStatus,
   userMap,
+dateMode,
+selectedActualStartDate,
+plannedMonth,
 ]);
 
   const unpaidList = useMemo(() => {
@@ -304,7 +347,9 @@ if (!hasPlannedInfo) return false;
       </div>
 
       <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-        이 화면은 예정 개강월 기준으로 학생의 학기별 예정/결제 정보를 표시합니다. 실제 개강일 입력 여부와 관계없이 예정 개강월이 있으면 표시됩니다.
+        {dateMode === "actualStartDate"
+  ? "이 화면은 선택한 월 안에서 실제 개강일이 입력된 학기만 날짜별로 확인할 수 있습니다."
+  : "이 화면은 예정 개강월 기준으로 학생의 학기별 예정/결제 정보를 표시합니다. 실제 개강일 입력 여부와 관계없이 예정 개강월이 있으면 표시됩니다."}
       </div>
 
       <div className="flex items-center gap-4 flex-wrap">
@@ -322,6 +367,33 @@ if (!hasPlannedInfo) return false;
               </option>
             ))}
           </select>
+<select
+  className="text-sm border rounded px-3 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+  value={dateMode}
+  onChange={(e) => {
+    const next = e.target.value as "plannedMonth" | "actualStartDate";
+    setDateMode(next);
+    setSelectedActualStartDate("all");
+  }}
+>
+  <option value="plannedMonth">예정개강월 기준</option>
+  <option value="actualStartDate">실제 개강일 기준</option>
+</select>
+
+{dateMode === "actualStartDate" && (
+  <select
+    className="text-sm border rounded px-3 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-primary"
+    value={selectedActualStartDate}
+    onChange={(e) => setSelectedActualStartDate(e.target.value)}
+  >
+    <option value="all">전체 개강일</option>
+    {actualStartDateOptions.map((date) => (
+      <option key={date} value={date}>
+        {date}
+      </option>
+    ))}
+  </select>
+)}
         </div>
 
         <div className="relative max-w-sm flex-1 min-w-[220px]">
@@ -497,7 +569,7 @@ if (!hasPlannedInfo) return false;
             <thead>
               <tr className="bg-muted/50 border-b">
                 <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[90px]">
-                  예정개강월
+                  {dateMode === "actualStartDate" ? "실제개강일" : "예정개강월"}
                 </th>
                 <th className="text-center px-2 py-2.5 font-medium text-muted-foreground w-[50px]">
                   학기
@@ -550,7 +622,11 @@ if (!hasPlannedInfo) return false;
   setLocation(withOrgPath(`/students/${sem.studentId}`))
 }
                 >
-                  <td className="px-3 py-2 font-mono text-sm">{sem.plannedMonth || "-"}</td>
+                  <td className="px-3 py-2 font-mono text-sm">
+  {dateMode === "actualStartDate"
+    ? String(sem.actualStartDate || "").slice(0, 10) || "-"
+    : sem.plannedMonth || "-"}
+</td>
 
                   <td className="px-2 py-2 text-center">
                     <Badge className="bg-violet-100 text-violet-700 text-[10px]">
@@ -627,9 +703,13 @@ if (!hasPlannedInfo) return false;
                     colSpan={isAdmin ? 12 : 11}
                     className="text-center py-8 text-muted-foreground text-sm"
                   >
-                    {plannedMonth
-                      ? `${plannedMonth} 조건에 맞는 예정 학기가 없습니다.`
-                      : "조건에 맞는 학기 데이터가 없습니다."}
+                    {dateMode === "actualStartDate"
+  ? plannedMonth
+    ? `${plannedMonth} 조건에 맞는 실제 개강일 학기가 없습니다.`
+    : "조건에 맞는 실제 개강일 학기가 없습니다."
+  : plannedMonth
+  ? `${plannedMonth} 조건에 맞는 예정 학기가 없습니다.`
+  : "조건에 맞는 학기 데이터가 없습니다."}
                   </td>
                 </tr>
               )}

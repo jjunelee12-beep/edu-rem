@@ -1064,6 +1064,39 @@ studentAudit: router({
     }),
 }),
 
+approvalHistory: router({
+  detail: protectedProcedure
+    .input(
+      z.object({
+        type: z.enum(["semester", "refund"]),
+        id: z.number(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const organizationId = Number((ctx.user as any)?.organizationId || 0);
+
+      if (!organizationId) {
+        throwAppError(
+          ERROR_CODES.ORGANIZATION_REQUIRED,
+          "organizationId is required",
+          400
+        );
+      }
+
+      if (input.type === "semester") {
+        return db.getSemesterApprovalHistoryDetail({
+          organizationId,
+          id: input.id,
+        });
+      }
+
+      return db.getRefundApprovalHistoryDetail({
+        organizationId,
+        id: input.id,
+      });
+    }),
+}),
+
 attendance: attendanceRouter,
 notice: noticeRouter,
 schedule: scheduleRouter,
@@ -2372,6 +2405,24 @@ return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
       });
     }),
 
+checkUsernameAvailable: protectedProcedure
+  .input(
+    z.object({
+      username: z.string().min(1),
+    })
+  )
+  .query(async ({ input }) => {
+    const normalizedUsername =
+      input.username.trim();
+
+    const exists =
+      await db.getUserByUsername(normalizedUsername);
+
+    return {
+      available: !exists,
+    };
+  }),
+
   changeMyPassword: protectedProcedure
     .input(
       z.object({
@@ -2397,7 +2448,6 @@ return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
   create: hostProcedure
     .input(
       z.object({
-        openId: z.string().min(1),
         username: z.string().min(1),
         password: z.string().min(4),
         name: z.string().min(1),
@@ -2422,12 +2472,24 @@ role: z.enum(["staff", "admin", "host"]).default("staff"),
 );
   }
 
+  const normalizedUsername = input.username.trim();
+
+  const existingUser = await db.getUserByUsername(normalizedUsername);
+
+  if (existingUser) {
+    throwAppError(
+      ERROR_CODES.DUPLICATE_RESOURCE,
+      "이미 사용 중인 로그인 아이디입니다.",
+      409
+    );
+  }
+
   const passwordHash = await bcrypt.hash(input.password, 10);
 
   await db.createUserAccount({
     organizationId,
-        openId: input.openId.trim(),
-        username: input.username.trim(),
+        openId: normalizedUsername,
+username: normalizedUsername,
         passwordHash,
         name: input.name.trim(),
         email: input.email?.trim() || null,
@@ -2459,6 +2521,20 @@ role: input.role,
     .mutation(async ({ ctx, input }) => {
       const { id, password, ...rest } = input;
 
+      const normalizedUsername = rest.username?.trim();
+
+      if (normalizedUsername) {
+        const existingUser = await db.getUserByUsername(normalizedUsername);
+
+        if (existingUser && Number((existingUser as any).id) !== Number(id)) {
+          throwAppError(
+            ERROR_CODES.DUPLICATE_RESOURCE,
+            "이미 사용 중인 로그인 아이디입니다.",
+            409
+          );
+        }
+      }
+
       let passwordHash: string | undefined = undefined;
 
       if (password !== undefined && password.trim() !== "") {
@@ -2468,7 +2544,7 @@ role: input.role,
      await db.updateUserAccount(
   id,
   {
-    username: rest.username?.trim(),
+    username: normalizedUsername,
     name: rest.name?.trim(),
     email: rest.email?.trim(),
     phone: rest.phone?.trim(),
@@ -5892,9 +5968,10 @@ semesterLabel: z.string().optional().nullable(),
 approve: protectedProcedure
   .input(
     z.object({
-      id: z.number(),
-      approvalStatus: z.enum(["승인", "불승인"]),
-    })
+  id: z.number(),
+  approvalStatus: z.enum(["승인", "불승인"]),
+  rejectionReason: z.string().optional().nullable(),
+})
   )
   .mutation(async ({ ctx, input }) => {
     if (!isAdminOrHost(ctx.user)) {
@@ -5916,6 +5993,16 @@ approve: protectedProcedure
     }
 
     const now = new Date();
+
+const rejectionReason = String(input.rejectionReason || "").trim();
+
+if (input.approvalStatus === "불승인" && !rejectionReason) {
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    "불승인 사유는 필수입니다.",
+    400
+  );
+}
 
     const beforeSemester = await db.getSemester(Number(input.id), {
       organizationId,
@@ -5943,6 +6030,11 @@ approve: protectedProcedure
       input.approvalStatus === "불승인"
         ? now
         : null,
+
+rejectionReason:
+  input.approvalStatus === "불승인"
+    ? rejectionReason
+    : null,
 
     isLocked:
       input.approvalStatus === "승인",
@@ -6099,6 +6191,14 @@ approve: protectedProcedure
         level: notificationLevel,
         message: notificationMessage,
         relatedId: Number(input.id),
+targetType: "semester",
+targetId: Number(input.id),
+linkUrl: `/approval-history/semester/${input.id}`,
+metadataJson: JSON.stringify({
+  approvalStatus: input.approvalStatus,
+  rejectionReason:
+    input.approvalStatus === "불승인" ? rejectionReason : null,
+}),
         isRead: false,
       } as any);
 
@@ -6110,6 +6210,14 @@ approve: protectedProcedure
         level: notificationLevel,
         message: notificationMessage,
         relatedId: Number(input.id),
+targetType: "semester",
+targetId: Number(input.id),
+linkUrl: `/approval-history/semester/${input.id}`,
+metadataJson: JSON.stringify({
+  approvalStatus: input.approvalStatus,
+  rejectionReason:
+    input.approvalStatus === "불승인" ? rejectionReason : null,
+}),
         isRead: false,
       });
     }
@@ -6118,7 +6226,7 @@ approve: protectedProcedure
   }),
 
     delete: protectedProcedure
-      .input(z.object({ id: z.number() }))
+     .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
   const organizationId = Number((ctx.user as any)?.organizationId || 0);
 
@@ -6259,7 +6367,13 @@ await db.approveRefund(input.id, Number(ctx.user.id), {
         level: "success",
         message: `[환불 승인] ${studentName} 환불이 승인되었습니다.`,
         relatedId: Number(input.id),
-        isRead: false,
+targetType: "refund",
+targetId: Number(input.id),
+linkUrl: `/approval-history/refund/${input.id}`,
+metadataJson: JSON.stringify({
+  approvalStatus: "승인",
+}),
+isRead: false,
       } as any);
 
       emitLiveNotification({
@@ -6271,7 +6385,13 @@ await db.approveRefund(input.id, Number(ctx.user.id), {
         level: "success",
         message: `[환불 승인] ${studentName} 환불이 승인되었습니다.`,
         relatedId: Number(input.id),
-        isRead: false,
+targetType: "refund",
+targetId: Number(input.id),
+linkUrl: `/approval-history/refund/${input.id}`,
+metadataJson: JSON.stringify({
+  approvalStatus: "승인",
+}),
+isRead: false,
       });
     }
 
@@ -6279,7 +6399,12 @@ await db.approveRefund(input.id, Number(ctx.user.id), {
   }),
 
     reject: protectedProcedure
-      .input(z.object({ id: z.number() }))
+      .input(
+  z.object({
+    id: z.number(),
+    rejectionReason: z.string().min(1, "환불 반려 사유는 필수입니다."),
+  })
+)
       .mutation(async ({ ctx, input }) => {
         if (!isAdminOrHost(ctx.user)) {
           throwAppError(
@@ -6297,6 +6422,7 @@ const targetRefund = await db.getRefundById(input.id, {
 
 await db.rejectRefund(input.id, Number(ctx.user.id), {
   organizationId,
+  rejectionReason: input.rejectionReason.trim(),
 } as any);
 
 if (targetRefund?.assigneeId) {
@@ -6311,7 +6437,14 @@ if (targetRefund?.assigneeId) {
     level: "danger",
     message: `[환불 반려] ${studentName} 환불이 반려되었습니다.`,
     relatedId: Number(input.id),
-    isRead: false,
+targetType: "refund",
+targetId: Number(input.id),
+linkUrl: `/approval-history/refund/${input.id}`,
+metadataJson: JSON.stringify({
+  approvalStatus: "불승인",
+  rejectionReason: input.rejectionReason.trim(),
+}),
+isRead: false,
   } as any);
 
   emitLiveNotification({
@@ -6323,7 +6456,14 @@ if (targetRefund?.assigneeId) {
     level: "danger",
     message: `[환불 반려] ${studentName} 환불이 반려되었습니다.`,
     relatedId: Number(input.id),
-    isRead: false,
+targetType: "refund",
+targetId: Number(input.id),
+linkUrl: `/approval-history/refund/${input.id}`,
+metadataJson: JSON.stringify({
+  approvalStatus: "불승인",
+  rejectionReason: input.rejectionReason.trim(),
+}),
+isRead: false,
   });
 }
 

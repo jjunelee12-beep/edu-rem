@@ -3634,12 +3634,24 @@ organizationId?: number;
   500
 );
 
+  const normalizedUsername = data.username.trim();
+
+  const existingUser = await getUserByUsername(normalizedUsername);
+
+  if (existingUser) {
+    throwAppError(
+      ERROR_CODES.DUPLICATE_RESOURCE,
+      "이미 사용 중인 로그인 아이디입니다.",
+      409
+    );
+  }
+
   const displayNo = await getNextUserDisplayNo();
 
   const result = await db.insert(users).values({
     displayNo,
-    openId: data.openId,
-    username: data.username,
+    openId: normalizedUsername,
+username: normalizedUsername,
     passwordHash: data.passwordHash ?? null,
     name: data.name,
     email: data.email?.trim().toLowerCase() || null,
@@ -5814,6 +5826,7 @@ const organizationId = requireOrganizationId(params?.organizationId);
       approvedAt: new Date(),
       rejectedAt: null,
       approvedBy,
+rejectionReason: null,
     } as any)
     .where(
       and(
@@ -5859,7 +5872,10 @@ const organizationId = requireOrganizationId(params?.organizationId);
 export async function rejectRefund(
   id: number,
   approvedBy: number,
-  params?: { organizationId?: number | null }
+  params?: {
+  organizationId?: number | null;
+  rejectionReason?: string | null;
+}
 ) {
   const db = await getDb();
   if (!db) throwAppError(
@@ -5877,6 +5893,7 @@ const organizationId = requireOrganizationId(params?.organizationId);
       approvedAt: null,
       rejectedAt: new Date(),
       approvedBy,
+rejectionReason: String(params?.rejectionReason || "").trim() || null,
     } as any)
     .where(
       and(
@@ -16802,8 +16819,9 @@ leaveType: "출장",
   return true;
 }
 
- const applyDate = doc.targetDate || doc.startDate || doc.endDate;
-  if (!targetDate) {
+ const applyDate = String(doc.targetDate || doc.startDate || doc.endDate || "").slice(0, 10);
+
+if (!applyDate) {
    throwAppError(
   ERROR_CODES.INVALID_REQUEST,
   "근태 반영 대상 날짜가 없습니다.",
@@ -16815,7 +16833,7 @@ leaveType: "출장",
     SELECT *
     FROM attendance_records
     WHERE userId = ${doc.applicantUserId}
-      AND workDate = ${targetDate}
+      AND workDate = ${applyDate}
     LIMIT 1
   `);
 
@@ -17612,4 +17630,87 @@ const estimatedDatabaseBytes = tableCountsList.reduce((sum, row) => {
   ),
 },
 };
+}
+export async function getSemesterApprovalHistoryDetail(params: {
+  organizationId?: number | null;
+  id: number;
+}) {
+  const db = await getDb();
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      sem.*,
+      s.clientName,
+      s.phone,
+      s.course,
+      s.assigneeId,
+      u.name AS assigneeName
+    FROM semesters sem
+    LEFT JOIN students s
+      ON s.id = sem.studentId
+      AND s.organizationId = sem.organizationId
+    LEFT JOIN users u
+      ON u.id = s.assigneeId
+      AND u.organizationId = sem.organizationId
+    WHERE sem.organizationId = ${organizationId}
+      AND sem.id = ${Number(params.id)}
+    LIMIT 1
+  `);
+
+  return (rows as any[])?.[0] || null;
+}
+
+export async function getRefundApprovalHistoryDetail(params: {
+  organizationId?: number | null;
+  id: number;
+}) {
+  const db = await getDb();
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      r.*,
+      s.clientName,
+      s.phone,
+      s.course,
+      s.assigneeId,
+      u.name AS assigneeName,
+      sem.semesterOrder,
+      sem.semesterLabel,
+      sem.actualStartDate,
+      sem.actualInstitution,
+      sem.actualAmount
+    FROM refunds r
+    LEFT JOIN students s
+      ON s.id = r.studentId
+      AND s.organizationId = r.organizationId
+    LEFT JOIN users u
+      ON u.id = r.assigneeId
+      AND u.organizationId = r.organizationId
+    LEFT JOIN semesters sem
+      ON sem.id = r.semesterId
+      AND sem.organizationId = r.organizationId
+    WHERE r.organizationId = ${organizationId}
+      AND r.id = ${Number(params.id)}
+    LIMIT 1
+  `);
+
+  return (rows as any[])?.[0] || null;
 }

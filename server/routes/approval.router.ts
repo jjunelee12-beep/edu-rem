@@ -128,7 +128,15 @@ organizationId: Number(ctx.user.organizationId || 0),
     level: "important",
     message: `[전자결재 요청] ${me?.name ?? "사용자"}님의 "${input.title}" 문서 결재 요청이 도착했습니다.`,
     relatedId: Number(documentId),
-    isRead: false,
+targetType: "approval_document",
+targetId: Number(documentId),
+linkUrl: `/e-approval/${documentId}`,
+metadataJson: JSON.stringify({
+  status: "pending",
+  formType: input.formType,
+  subType: input.subType,
+}),
+isRead: false,
   } as any);
 
   emitLiveNotification({
@@ -140,7 +148,15 @@ organizationId: Number(ctx.user.organizationId || 0),
     level: "important",
     message: `[전자결재 요청] ${me?.name ?? "사용자"}님의 "${input.title}" 문서 결재 요청이 도착했습니다.`,
     relatedId: Number(documentId),
-    isRead: false,
+targetType: "approval_document",
+targetId: Number(documentId),
+linkUrl: `/e-approval/${documentId}`,
+metadataJson: JSON.stringify({
+  status: "pending",
+  formType: input.formType,
+  subType: input.subType,
+}),
+isRead: false,
   });
 }
 
@@ -190,7 +206,14 @@ organizationId: Number(ctx.user.organizationId || 0),
     level: "important",
     message: `[전자결재 요청] "${updatedDoc.title}" 문서가 다음 결재 단계로 넘어왔습니다. 확인 후 승인해 주세요.`,
     relatedId: Number(input.documentId),
-    isRead: false,
+targetType: "approval_document",
+targetId: Number(input.documentId),
+linkUrl: `/e-approval/${input.documentId}`,
+metadataJson: JSON.stringify({
+  status: "pending",
+  currentStepOrder: updatedDoc.currentStepOrder,
+}),
+isRead: false,
   } as any);
 
   emitLiveNotification({
@@ -202,7 +225,14 @@ organizationId: Number(ctx.user.organizationId || 0),
     level: "important",
     message: `[전자결재 요청] "${updatedDoc.title}" 문서가 다음 결재 단계로 넘어왔습니다. 확인 후 승인해 주세요.`,
     relatedId: Number(input.documentId),
-    isRead: false,
+targetType: "approval_document",
+targetId: Number(input.documentId),
+linkUrl: `/e-approval/${input.documentId}`,
+metadataJson: JSON.stringify({
+  status: "pending",
+  currentStepOrder: updatedDoc.currentStepOrder,
+}),
+isRead: false,
   });
 }       
 
@@ -221,7 +251,13 @@ organizationId: Number(ctx.user.organizationId || 0),
     level: "success",
     message: `[전자결재 승인완료] "${updatedDoc.title}" 문서가 최종 승인되었습니다.`,
     relatedId: Number(input.documentId),
-    isRead: false,
+targetType: "approval_document",
+targetId: Number(input.documentId),
+linkUrl: `/e-approval/${input.documentId}`,
+metadataJson: JSON.stringify({
+  status: "approved",
+}),
+isRead: false,
   } as any);
 
   emitLiveNotification({
@@ -233,7 +269,13 @@ organizationId: Number(ctx.user.organizationId || 0),
     level: "success",
     message: `[전자결재 승인완료] "${updatedDoc.title}" 문서가 최종 승인되었습니다.`,
     relatedId: Number(input.documentId),
-    isRead: false,
+targetType: "approval_document",
+targetId: Number(input.documentId),
+linkUrl: `/e-approval/${input.documentId}`,
+metadataJson: JSON.stringify({
+  status: "approved",
+}),
+isRead: false,
   });
 }
 
@@ -275,7 +317,14 @@ organizationId: Number(ctx.user.organizationId || 0),
     level: "danger",
     message: `[전자결재 반려] "${updatedDoc.title}" 문서가 반려되었습니다. 사유를 확인해 주세요.`,
     relatedId: Number(input.documentId),
-    isRead: false,
+targetType: "approval_document",
+targetId: Number(input.documentId),
+linkUrl: `/e-approval/${input.documentId}`,
+metadataJson: JSON.stringify({
+  status: "rejected",
+  rejectionReason: input.comment,
+}),
+isRead: false,
   } as any);
 
   emitLiveNotification({
@@ -287,7 +336,14 @@ organizationId: Number(ctx.user.organizationId || 0),
     level: "danger",
     message: `[전자결재 반려] "${updatedDoc.title}" 문서가 반려되었습니다. 사유를 확인해 주세요.`,
     relatedId: Number(input.documentId),
-    isRead: false,
+targetType: "approval_document",
+targetId: Number(input.documentId),
+linkUrl: `/e-approval/${input.documentId}`,
+metadataJson: JSON.stringify({
+  status: "rejected",
+  rejectionReason: input.comment,
+}),
+isRead: false,
   });
 }
 
@@ -313,7 +369,7 @@ organizationId: Number(ctx.user.organizationId || 0),
   getSetting: protectedProcedure
     .input(z.object({ formType: formTypeSchema }))
     .query(async ({ ctx, input }) => {
-      if (ctx.user.role !== "superhost") {
+      if (!["host", "superhost"].includes(String(ctx.user.role || ""))) {
         throwAppError(
   ERROR_CODES.PERMISSION_DENIED,
   "설정 조회 권한이 없습니다.",
@@ -335,7 +391,7 @@ organizationId: Number(ctx.user.organizationId || 0),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "superhost") {
+      if (!["host", "superhost"].includes(String(ctx.user.role || ""))) {
        throwAppError(
   ERROR_CODES.PERMISSION_DENIED,
   "설정 저장 권한이 없습니다.",
@@ -369,7 +425,7 @@ organizationId: Number(ctx.user.organizationId || 0),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "superhost") {
+      if (!["host", "superhost"].includes(String(ctx.user.role || ""))) {
         throwAppError(
   ERROR_CODES.PERMISSION_DENIED,
   "출력 설정 저장 권한이 없습니다.",

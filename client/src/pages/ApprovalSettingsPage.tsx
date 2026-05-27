@@ -63,7 +63,7 @@ function getUserLabel(user: UserRow) {
 
 export default function ApprovalSettingsPage() {
   const { user } = useAuth();
-  const canView = user?.role === "superhost";
+  const canView = user?.role === "host" || user?.role === "superhost";
 
   const [activeTab, setActiveTab] = useState<FormType>("attendance");
 

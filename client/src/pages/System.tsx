@@ -1008,10 +1008,32 @@ const calcWorkDays = (createdAt: any) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [roleSearchTerm, setRoleSearchTerm] = useState("");
   const [passwordSearch, setPasswordSearch] = useState("");
-
-  const [openId, setOpenId] = useState("");
   const [username, setUsername] = useState("");
   const [name, setName] = useState("");
+
+const normalizedUsernameForCheck = username.trim();
+
+const usernameCheckQuery =
+  trpc.users.checkUsernameAvailable.useQuery(
+    {
+      username: normalizedUsernameForCheck,
+    },
+    {
+      enabled: normalizedUsernameForCheck.length >= 3,
+    }
+  );
+
+const usernameCheckStatus =
+  normalizedUsernameForCheck.length < 3
+    ? "idle"
+    : usernameCheckQuery.isFetching
+    ? "checking"
+    : usernameCheckQuery.data?.available === true
+    ? "available"
+    : usernameCheckQuery.data?.available === false
+    ? "taken"
+    : "idle";
+
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
 const [birthday, setBirthday] = useState("");
@@ -1134,7 +1156,6 @@ const roleFilteredUsers = useMemo(() => {
   );
 
   const resetCreateForm = () => {
-    setOpenId("");
     setUsername("");
     setName("");
     setEmail("");
@@ -1147,15 +1168,28 @@ setBankName("");
   };
 
   const handleCreate = () => {
-    if (!openId.trim()) return toast.error("openId를 입력해주세요.");
-    if (!username.trim()) return toast.error("아이디를 입력해주세요.");
-    if (!name.trim()) return toast.error("이름을 입력해주세요.");
+  const normalizedUsername = username.trim();
+
+  if (!normalizedUsername) return toast.error("아이디를 입력해주세요.");
+
+  if (normalizedUsername.length < 3) {
+    return toast.error("아이디는 3자 이상 입력해주세요.");
+  }
+
+  if (usernameCheckQuery.isFetching) {
+    return toast.error("아이디 중복 확인 중입니다. 잠시 후 다시 시도해주세요.");
+  }
+
+  if (usernameCheckQuery.data?.available === false) {
+    return toast.error("이미 사용 중인 아이디입니다.");
+  }
+
+  if (!name.trim()) return toast.error("이름을 입력해주세요.");
     if (!password.trim()) return toast.error("비밀번호를 입력해주세요.");
 
     createMutation.mutate(
       {
-        openId: openId.trim(),
-        username: username.trim(),
+        username: normalizedUsername,
         password: password.trim(),
         name: name.trim(),
         email: email.trim() || undefined,
@@ -1463,16 +1497,37 @@ role: createRole,
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
-                <Input
-                  placeholder="openId (고유 식별값)"
-                  value={openId}
-                  onChange={(e) => setOpenId(e.target.value)}
-                />
-                <Input
-                  placeholder="아이디(username)"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                />
+                <div className="space-y-1">
+  <Input
+    placeholder="아이디(username)"
+    value={username}
+    onChange={(e) => setUsername(e.target.value.trim())}
+  />
+
+  {usernameCheckStatus === "checking" && (
+    <p className="text-xs text-muted-foreground">
+      아이디 중복 확인 중...
+    </p>
+  )}
+
+  {usernameCheckStatus === "available" && (
+    <p className="text-xs text-emerald-600">
+      사용 가능한 아이디입니다.
+    </p>
+  )}
+
+  {usernameCheckStatus === "taken" && (
+    <p className="text-xs text-red-500">
+      이미 사용 중인 아이디입니다.
+    </p>
+  )}
+
+  {username.trim() && username.trim().length < 3 && (
+    <p className="text-xs text-amber-600">
+      아이디는 3자 이상 입력해주세요.
+    </p>
+  )}
+</div>
                 <Input
                   placeholder="이름"
                   value={name}
@@ -1528,7 +1583,11 @@ role: createRole,
               <div>
                 <Button
                   onClick={handleCreate}
-                  disabled={createMutation.isPending}
+                 disabled={
+  createMutation.isPending ||
+  usernameCheckQuery.isFetching ||
+  usernameCheckStatus === "taken"
+}
                 >
                   {createMutation.isPending ? "생성 중..." : "직원 계정 생성"}
                 </Button>
