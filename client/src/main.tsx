@@ -36,7 +36,14 @@ const getAppErrorInfo = (error: unknown) => {
   };
 };
 
-const showGlobalApiError = (error: unknown) => {
+const showGlobalApiError = (
+  error: unknown,
+  meta?: {
+    source?: "query" | "mutation";
+    queryKey?: unknown;
+    mutationKey?: unknown;
+  }
+) => {
   const { appCode, appMessage } = getAppErrorInfo(error);
 
   if (typeof window === "undefined") return;
@@ -46,6 +53,9 @@ const showGlobalApiError = (error: unknown) => {
       detail: {
         code: appCode,
         message: appMessage,
+        source: meta?.source,
+        queryKey: meta?.queryKey,
+        mutationKey: meta?.mutationKey,
       },
     })
   );
@@ -55,7 +65,10 @@ queryClient.getQueryCache().subscribe((event) => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.query.state.error;
     redirectToLoginIfUnauthorized(error);
-showGlobalApiError(error);
+showGlobalApiError(error, {
+  source: "query",
+  queryKey: event.query.queryKey,
+});
   }
 });
 
@@ -63,7 +76,10 @@ queryClient.getMutationCache().subscribe((event) => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.mutation.state.error;
     redirectToLoginIfUnauthorized(error);
-showGlobalApiError(error);
+showGlobalApiError(error, {
+  source: "mutation",
+  mutationKey: event.mutation.options.mutationKey,
+});
   }
 });
 
