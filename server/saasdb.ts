@@ -781,7 +781,7 @@ const PLAN_PRICES: Record<string, number> = {
   free: 0,
   basic: 99000,
   pro: 199000,
-  enterprise: 399000,
+  enterprise: 299000,
 };
 
 function getPlanBillingAmount(planCode?: string | null) {
