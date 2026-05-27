@@ -135,7 +135,10 @@ const {
   retry: false,
 });
 
-const { data: myProfile } = trpc.users.me.useQuery();
+const { data: myProfile } = trpc.users.me.useQuery(undefined, {
+  enabled: canUseAttendance,
+  retry: false,
+});
 
   const displayTeamName = (myProfile as any)?.teamName || "미분류";
   const displayPositionName = (myProfile as any)?.positionName || "미분류";

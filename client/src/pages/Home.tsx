@@ -89,18 +89,31 @@ const { data: attendanceRows = [] } = trpc.attendance.list.useQuery(undefined, {
   enabled: canUseAttendance,
   retry: false,
 });
-  const { data: userRows = [] } = trpc.users.list.useQuery();
+  const { data: userRows = [] } = trpc.users.list.useQuery(undefined, {
+  enabled: canUseAttendance,
+  retry: false,
+});
   const { data: todayAttendanceRow } = trpc.attendance.today.useQuery(undefined, {
   enabled: canUseAttendance,
   retry: false,
 });
-  const { data: myProfile } = trpc.users.me.useQuery();
-  const { data: notices = [] } = trpc.notice.list.useQuery();
+  const { data: myProfile } = trpc.users.me.useQuery(undefined, {
+  enabled: canUseAttendance,
+  retry: false,
+});
+  const { data: notices = [] } = trpc.notice.list.useQuery(undefined, {
+  enabled: canUseAttendance,
+  retry: false,
+});
   const { data: notifications = [] } = trpc.notification.list.useQuery(undefined, {
   enabled: !!user && !!(user as any).organizationId && user.role !== "superhost",
   retry: false,
 });
-  const { data: todaySchedules = [] } = trpc.schedule.listToday.useQuery();
+  const { data: todaySchedules = [] } =
+  trpc.schedule.listToday.useQuery(undefined, {
+    enabled: canUseAttendance,
+    retry: false,
+  });
 
   const { urgentNotices, pinnedNotices, normalNotices } = useMemo(() => {
     const list = notices as any[];
@@ -132,10 +145,17 @@ const { data: attendanceRows = [] } = trpc.attendance.list.useQuery(undefined, {
   );
   const [scheduleEditorOpen, setScheduleEditorOpen] = useState(false);
 
-  const { data: homeMonthSchedules = [] } = trpc.schedule.listMonth.useQuery({
-    year: calendarYear,
-    month: calendarMonth,
-  });
+  const { data: homeMonthSchedules = [] } =
+  trpc.schedule.listMonth.useQuery(
+    {
+      year: calendarYear,
+      month: calendarMonth,
+    },
+    {
+      enabled: canUseAttendance,
+      retry: false,
+    }
+  );
 
   const utils = trpc.useUtils();
 
