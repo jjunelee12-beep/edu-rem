@@ -220,12 +220,21 @@ function DashboardLayoutContent({
  readAppNotificationSettings()
  );
 
- const { data: myProfile, refetch: refetchMyProfile } =
- trpc.users.me.useQuery();
+const canUseOrgQueries =
+  !!user &&
+  !!(user as any).organizationId &&
+  user.role !== "superhost";
+
+const { data: myProfile, refetch: refetchMyProfile } =
+  trpc.users.me.useQuery(undefined, {
+    enabled: canUseOrgQueries,
+    retry: false,
+  });
  const { data: branding } = trpc.branding.get.useQuery();
 const { data: organizationFeatures } =
   trpc.organizationFeatures.useQuery(undefined, {
-    enabled: user.role !== "superhost",
+    enabled: canUseOrgQueries,
+    retry: false,
   });
  const utils = trpc.useUtils();
 
@@ -648,12 +657,16 @@ const primaryMenuItems = [
  return location.startsWith(item.path);
  });
 
- const notificationEnabled = true;
+ const notificationEnabled =
+  !!user &&
+  !!(user as any).organizationId &&
+  user.role !== "superhost";
 
  const notificationQuery = trpc.notification.list.useQuery(undefined, {
- refetchInterval: notificationEnabled ? 10000 : false,
- enabled: notificationEnabled,
- });
+  refetchInterval: notificationEnabled ? 10000 : false,
+  enabled: notificationEnabled,
+  retry: false,
+});
 
  const markReadMutation = trpc.notification.markRead.useMutation({
  onSuccess: () => {
