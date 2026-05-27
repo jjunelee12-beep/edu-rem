@@ -15,6 +15,7 @@ type FinderItem = {
   inactiveStartDate?: string | null;
   inactiveEndDate?: string | null;
   hideOnMapWhenInactive?: boolean;
+isPartner?: boolean;
 };
 
 type KakaoMapProps = {
@@ -115,7 +116,18 @@ function getTypeLabel(type: "education" | "institution") {
   return type === "education" ? "실습교육원" : "실습기관";
 }
 
-function getTypeClasses(type: "education" | "institution") {
+function getTypeClasses(
+  type: "education" | "institution",
+  isPartner?: boolean
+) {
+  if (type === "education" && isPartner) {
+    return {
+      badgeBg: "#dcfce7",
+      badgeColor: "#047857",
+      borderColor: "#34d399",
+    };
+  }
+
   return type === "education"
     ? {
         badgeBg: "#dbeafe",
@@ -346,7 +358,7 @@ export default function KakaoMap({
         | "education"
         | "institution";
 
-      const colors = getTypeClasses(type);
+      const colors = getTypeClasses(type, item.isPartner);
       const inactiveNow = isFinderItemInactiveNow(item);
       const pos = new kakao.maps.LatLng(lat, lng);
 
@@ -381,6 +393,20 @@ export default function KakaoMap({
             ">
               ${getTypeLabel(type)}
             </span>
+
+${
+  type === "education" && item.isPartner
+    ? `<span style="
+        display:inline-flex;
+        padding:2px 8px;
+        border-radius:999px;
+        font-size:11px;
+        font-weight:800;
+        background:#dcfce7;
+        color:#047857;
+      ">협약교육원</span>`
+    : ""
+}
             ${
               inactiveNow
                 ? `<span style="
@@ -462,7 +488,7 @@ export default function KakaoMap({
     const type = (safeSelectedResult.type ||
       safeSelectedResult.institutionType ||
       "institution") as "education" | "institution";
-    const colors = getTypeClasses(type);
+    const colors = getTypeClasses(type, safeSelectedResult.isPartner);
     const inactiveNow = isFinderItemInactiveNow(safeSelectedResult);
     const inactiveText = getInactiveText(safeSelectedResult);
 
@@ -492,6 +518,19 @@ export default function KakaoMap({
           ">
             선택됨 · ${getTypeLabel(type)}
           </span>
+${
+  type === "education" && safeSelectedResult.isPartner
+    ? `<span style="
+        display:inline-flex;
+        padding:2px 8px;
+        border-radius:999px;
+        font-size:11px;
+        font-weight:800;
+        background:#dcfce7;
+        color:#047857;
+      ">협약교육원</span>`
+    : ""
+}
           ${
             inactiveNow
               ? `<span style="

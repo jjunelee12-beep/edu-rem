@@ -1243,6 +1243,15 @@ organizationId: int("organizationId").notNull().default(1),
   availableCourse: varchar("availableCourse", { length: 255 }),
   memo: text("memo"),
 
+practiceAvailabilityType: mysqlEnum("practiceAvailabilityType", [
+  "unknown",
+  "weekday",
+  "weekend",
+  "both",
+])
+  .notNull()
+  .default("unknown"),
+
   isActive: boolean("isActive").notNull().default(true),
   sortOrder: int("sortOrder").notNull().default(0),
 
@@ -1284,6 +1293,7 @@ categoryId: int("categoryId"),
 
   availableCourse: varchar("availableCourse", { length: 255 }),
   memo: text("memo"),
+isPartner: boolean("isPartner").notNull().default(false),
 
 isInactive: boolean("isInactive").notNull().default(false),
   inactiveReason: varchar("inactiveReason", { length: 255 }),
@@ -1333,6 +1343,15 @@ categoryId: int("categoryId"),
   availableCourse: varchar("availableCourse", { length: 255 }),
   memo: text("memo"),
 
+practiceAvailabilityType: mysqlEnum("practiceAvailabilityType", [
+  "unknown",
+  "weekday",
+  "weekend",
+  "both",
+])
+  .notNull()
+  .default("unknown"),
+
   isActive: boolean("isActive").notNull().default(true),
   sortOrder: int("sortOrder").notNull().default(0),
 
@@ -1364,6 +1383,15 @@ export const organizationPracticeInstitutionOverrides = mysqlTable(
 
     customAvailableCourse: varchar("customAvailableCourse", { length: 255 }),
     customMemo: text("customMemo"),
+
+practiceAvailabilityType: mysqlEnum("practiceAvailabilityType", [
+  "unknown",
+  "weekday",
+  "weekend",
+  "both",
+])
+  .notNull()
+  .default("unknown"),
 
     isHidden: boolean("isHidden").notNull().default(false),
 
@@ -1416,6 +1444,8 @@ categoryId: int("categoryId"),
   availableCourse: varchar("availableCourse", { length: 255 }),
   memo: text("memo"),
 
+isPartner: boolean("isPartner").notNull().default(false),
+
   isActive: boolean("isActive").notNull().default(true),
   sortOrder: int("sortOrder").notNull().default(0),
 
@@ -1447,6 +1477,8 @@ export const organizationPracticeEducationCenterOverrides = mysqlTable(
 
     customAvailableCourse: varchar("customAvailableCourse", { length: 255 }),
     customMemo: text("customMemo"),
+
+isPartner: boolean("isPartner").notNull().default(false),
 
     isHidden: boolean("isHidden").notNull().default(false),
 

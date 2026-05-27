@@ -11771,6 +11771,8 @@ export async function listMergedPracticeInstitutions(params?: {
         availableCourse:
           override?.customAvailableCourse ?? master.availableCourse,
         memo: override?.customMemo ?? master.memo,
+practiceAvailabilityType:
+  override?.practiceAvailabilityType ?? master.practiceAvailabilityType ?? "unknown",
 
         isInactive: override?.isInactive ?? false,
         inactiveReason: override?.inactiveReason ?? null,
@@ -12187,7 +12189,9 @@ export async function listMergedPracticeEducationCenters(params?: {
           override?.customAvailableCourse ?? master.availableCourse,
         memo: override?.customMemo ?? master.memo,
 
-        isInactive: override?.isInactive ?? false,
+isPartner: override?.isPartner ?? master.isPartner ?? false,
+
+isInactive: override?.isInactive ?? false,
         inactiveReason: override?.inactiveReason ?? null,
         inactiveStartDate: override?.inactiveStartDate ?? null,
         inactiveEndDate: override?.inactiveEndDate ?? null,
@@ -12507,6 +12511,30 @@ const organizationId = requireOrganizationId(params?.organizationId);
   )
 );
 }
+export async function updatePracticeInstitutionPracticeAvailability(
+  id: number,
+  practiceAvailabilityType: "unknown" | "weekday" | "weekend" | "both",
+  params?: { organizationId?: number | null }
+) {
+  const db = await getDb();
+  if (!db) throwAppError(
+    ERROR_CODES.INTERNAL_SERVER_ERROR,
+    "DB not available",
+    500
+  );
+
+  const organizationId = requireOrganizationId(params?.organizationId);
+
+  await db
+    .update(practiceInstitutions)
+    .set({ practiceAvailabilityType } as any)
+    .where(
+      and(
+        eq(practiceInstitutions.id, id),
+        eq(practiceInstitutions.organizationId, organizationId)
+      )
+    );
+}
 
 export async function updatePracticeEducationCenterAvailability(
   id: number,
@@ -12539,6 +12567,33 @@ const organizationId = requireOrganizationId(params?.organizationId);
     eq(practiceEducationCenters.organizationId, organizationId)
   )
 );
+}
+
+export async function updatePracticeEducationCenterPartner(
+  id: number,
+  isPartner: boolean,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
+  const db = await getDb();
+  if (!db) throwAppError(
+    ERROR_CODES.INTERNAL_SERVER_ERROR,
+    "DB not available",
+    500
+  );
+
+  const organizationId = requireOrganizationId(params?.organizationId);
+
+  await db
+    .update(practiceEducationCenters)
+    .set({ isPartner } as any)
+    .where(
+      and(
+        eq(practiceEducationCenters.id, id),
+        eq(practiceEducationCenters.organizationId, organizationId)
+      )
+    );
 }
 
 async function getPracticeInstitutionOverride(params: {
@@ -12688,6 +12743,55 @@ export async function updatePracticeInstitutionAvailabilityOverride(params: {
       ...value,
       isHidden: false,
     });
+
+  return getInsertId(result);
+}
+
+export async function updatePracticeInstitutionPracticeAvailabilityOverride(params: {
+  organizationId?: number | null;
+  masterId: number;
+  practiceAvailabilityType: "unknown" | "weekday" | "weekend" | "both";
+}) {
+  const db = await getDb();
+  if (!db) throwAppError(
+    ERROR_CODES.INTERNAL_SERVER_ERROR,
+    "DB not available",
+    500
+  );
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const masterId = Number(params.masterId);
+
+  const existing = await getPracticeInstitutionOverride({
+    organizationId,
+    masterId,
+  });
+
+  if (existing) {
+    await db
+      .update(organizationPracticeInstitutionOverrides)
+      .set({
+        practiceAvailabilityType: params.practiceAvailabilityType,
+      } as any)
+      .where(
+        and(
+          eq(organizationPracticeInstitutionOverrides.id, existing.id),
+          eq(organizationPracticeInstitutionOverrides.organizationId, organizationId)
+        )
+      );
+
+    return existing.id;
+  }
+
+  const result: any = await db
+    .insert(organizationPracticeInstitutionOverrides)
+    .values({
+      organizationId,
+      masterId,
+      practiceAvailabilityType: params.practiceAvailabilityType,
+      isHidden: false,
+      isInactive: false,
+    } as any);
 
   return getInsertId(result);
 }
@@ -12939,6 +13043,55 @@ export async function updatePracticeEducationCenterAvailabilityOverride(params: 
       ...value,
       isHidden: false,
     });
+
+  return getInsertId(result);
+}
+
+export async function updatePracticeEducationCenterPartnerOverride(params: {
+  organizationId?: number | null;
+  masterId: number;
+  isPartner: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throwAppError(
+    ERROR_CODES.INTERNAL_SERVER_ERROR,
+    "DB not available",
+    500
+  );
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const masterId = Number(params.masterId);
+
+  const existing = await getPracticeEducationCenterOverride({
+    organizationId,
+    masterId,
+  });
+
+  if (existing) {
+    await db
+      .update(organizationPracticeEducationCenterOverrides)
+      .set({
+        isPartner: params.isPartner,
+      } as any)
+      .where(
+        and(
+          eq(organizationPracticeEducationCenterOverrides.id, existing.id),
+          eq(organizationPracticeEducationCenterOverrides.organizationId, organizationId)
+        )
+      );
+
+    return existing.id;
+  }
+
+  const result: any = await db
+    .insert(organizationPracticeEducationCenterOverrides)
+    .values({
+      organizationId,
+      masterId,
+      isPartner: params.isPartner,
+      isHidden: false,
+      isInactive: false,
+    } as any);
 
   return getInsertId(result);
 }

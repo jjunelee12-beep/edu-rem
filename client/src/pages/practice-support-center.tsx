@@ -56,6 +56,8 @@ categoryId?: number;
   distanceKm?: string | number;
   latitude?: string | number | null;
   longitude?: string | number | null;
+practiceAvailabilityType?: "unknown" | "weekday" | "weekend" | "both";
+isPartner?: boolean;
 
   isInactive?: boolean;
   inactiveReason?: string;
@@ -162,6 +164,54 @@ function getTypeLabel(type: FinderItemType) {
   return type === "education" ? "실습교육원" : "실습기관";
 }
 
+type PracticeAvailabilityType = "unknown" | "weekday" | "weekend" | "both";
+
+function getPracticeAvailabilityLabel(type?: string | null) {
+  switch (type) {
+    case "weekday":
+      return "주중실습";
+    case "weekend":
+      return "주말실습";
+    case "both":
+      return "주중·주말";
+    default:
+      return "미확인";
+  }
+}
+
+function getPracticeAvailabilityBadgeClass(type?: string | null) {
+  switch (type) {
+    case "weekday":
+      return "bg-blue-50 text-blue-700 border-blue-200";
+    case "weekend":
+      return "bg-purple-50 text-purple-700 border-purple-200";
+    case "both":
+      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    default:
+      return "bg-slate-50 text-slate-600 border-slate-200";
+  }
+}
+
+function matchPracticeAvailabilityFilter(
+  itemType: FinderItemType,
+  itemAvailability: string | undefined | null,
+  filter: string
+) {
+  if (filter === "전체") return true;
+
+  // 실습교육원은 필터 대상 아님
+  if (itemType !== "institution") return true;
+
+  const type = String(itemAvailability || "unknown");
+
+  if (filter === "unknown") return type === "unknown";
+  if (filter === "weekday") return type === "weekday" || type === "both";
+  if (filter === "weekend") return type === "weekend" || type === "both";
+  if (filter === "both") return type === "both";
+
+  return true;
+}
+
 function toDateOnly(value?: string | null) {
   if (!value) return null;
   const s = String(value).slice(0, 10);
@@ -257,6 +307,8 @@ const [showCompletedPractice, setShowCompletedPractice] = useState(false);
     useState(true);
 const [finderEducationCategoryId, setFinderEducationCategoryId] = useState<number | null>(null);
 const [finderInstitutionCategoryId, setFinderInstitutionCategoryId] = useState<number | null>(null);
+const [finderPracticeAvailabilityFilter, setFinderPracticeAvailabilityFilter] =
+  useState<string>("전체");
 const [finderRecommendedEducationCategoryId, setFinderRecommendedEducationCategoryId] =
   useState<number | null>(null);
 const [finderRecommendedInstitutionCategoryId, setFinderRecommendedInstitutionCategoryId] =
@@ -502,6 +554,16 @@ console.log("[practiceSupport.patch]", {
       onError: (e) => toast.error(e.message || "실습교육원 설정 저장 실패"),
     });
 
+const updateEducationPartnerMut =
+  trpc.practiceEducationCenter.updatePartner.useMutation({
+    onSuccess: async () => {
+      await utils.practiceEducationCenter.list.invalidate();
+      await refetchEducationCenters();
+      toast.success("협약교육원 설정이 저장되었습니다.");
+    },
+    onError: (e) => toast.error(e.message || "협약교육원 설정 저장 실패"),
+  });
+
 
 
   const updateInstitutionAvailabilityMut =
@@ -514,6 +576,16 @@ console.log("[practiceSupport.patch]", {
       },
       onError: (e) => toast.error(e.message || "실습기관 설정 저장 실패"),
     });
+
+const updateInstitutionPracticeAvailabilityMut =
+  trpc.practiceInstitution.updatePracticeAvailability.useMutation({
+    onSuccess: async () => {
+      await utils.practiceInstitution.list.invalidate();
+      await refetchPracticeInstitutions();
+      toast.success("실습 가능 유형이 저장되었습니다.");
+    },
+    onError: (e) => toast.error(e.message || "실습 가능 유형 저장 실패"),
+  });
 
 const bulkCreateEducationCentersMut =
   trpc.practiceEducationCenter.bulkCreate.useMutation({
@@ -911,6 +983,7 @@ if (educationCategoryId) {
     setFinderIncludePracticeInstitution(true);
     setFinderEducationCategoryId(null);
     setFinderInstitutionCategoryId(null);
+setFinderPracticeAvailabilityFilter("전체");
     setFinderRecommendedEducationCategoryId(null);
     setFinderRecommendedInstitutionCategoryId(null);
     setFilterCategory(null);
@@ -962,6 +1035,50 @@ if (educationCategoryId) {
       return { ...prev, ...patch };
     });
   };
+
+const handlePracticeAvailabilityChange = async (
+  item: FinderItem,
+  practiceAvailabilityType: PracticeAvailabilityType
+) => {
+  if (item.type !== "institution") return;
+
+  try {
+    applyFinderItemLocalPatch(item.id, item.type, {
+      practiceAvailabilityType,
+    });
+
+    await updateInstitutionPracticeAvailabilityMut.mutateAsync({
+      id: Number(item.id),
+      practiceAvailabilityType,
+    });
+  } catch (e: any) {
+    toast.error(e?.message || "실습 가능 유형 저장 중 오류가 발생했습니다.");
+  }
+};
+
+const handleEducationPartnerChange = async (
+  item: FinderItem,
+  isPartner: boolean
+) => {
+  if (item.type !== "education") return;
+
+  try {
+    applyFinderItemLocalPatch(item.id, item.type, {
+      isPartner,
+    });
+
+    await updateEducationPartnerMut.mutateAsync({
+      id: Number(item.id),
+      isPartner,
+    });
+  } catch (e: any) {
+    applyFinderItemLocalPatch(item.id, item.type, {
+      isPartner: !isPartner,
+    });
+
+    toast.error(e?.message || "협약교육원 설정 중 오류가 발생했습니다.");
+  }
+};
 
 const hasFinderApplyTarget = !!selectedRow?.id || !!finderTargetRow?.id;
 
@@ -1411,15 +1528,25 @@ if (
     inactiveStartDate: item.inactiveStartDate || null,
     inactiveEndDate: item.inactiveEndDate || null,
     hideOnMapWhenInactive: item.hideOnMapWhenInactive ?? true,
+isPartner: !!item.isPartner,
   });
 }
       }
 
       if (finderIncludePracticeInstitution) {
   const institutionItems = (practiceInstitutionDb as any[]).filter((item) => {
-    if (!finderInstitutionCategoryId) return true;
-    return Number(item.categoryId || 0) === finderInstitutionCategoryId;
-  });
+  const categoryMatched =
+    !finderInstitutionCategoryId ||
+    Number(item.categoryId || 0) === finderInstitutionCategoryId;
+
+  if (!categoryMatched) return false;
+
+  return matchPracticeAvailabilityFilter(
+    "institution",
+    item.practiceAvailabilityType || "unknown",
+    finderPracticeAvailabilityFilter
+  );
+});
 
   for (const item of institutionItems) {
 if (
@@ -1459,6 +1586,8 @@ if (
     inactiveStartDate: item.inactiveStartDate || null,
     inactiveEndDate: item.inactiveEndDate || null,
     hideOnMapWhenInactive: item.hideOnMapWhenInactive ?? true,
+practiceAvailabilityType:
+  item.practiceAvailabilityType || "unknown",
   });
 }
       }
@@ -1560,6 +1689,16 @@ if (
       return false;
     }
 
+    if (
+      !matchPracticeAvailabilityFilter(
+        item.type,
+        item.practiceAvailabilityType || "unknown",
+        finderPracticeAvailabilityFilter
+      )
+    ) {
+      return false;
+    }
+
     const lat = toNum(item.latitude);
     const lng = toNum(item.longitude);
     if (lat === null || lng === null) return false;
@@ -1571,7 +1710,7 @@ if (
 
     return false;
   });
-}, [finderResults, filterCategory]);
+}, [finderResults, filterCategory, finderPracticeAvailabilityFilter]);
 
   const FinderTypeToggle = ({
     checked,
@@ -2879,7 +3018,17 @@ useEffect(() => {
   key={`${item.type}-${item.id}`}
   className="border-b align-top transition hover:bg-slate-50/70"
 >
-                      <td className="px-4 py-3 font-medium">{item.name}</td>
+                     <td className="px-4 py-3 font-medium">
+  <div className="flex flex-wrap items-center gap-2">
+    <span>{item.name}</span>
+
+    {masterListType === "education" && item.isPartner && (
+      <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+        협약교육원
+      </span>
+    )}
+  </div>
+</td>
 <td className="px-4 py-3 text-slate-600">
   {(masterListType === "education" ? educationCategories : institutionCategories).find(
     (cat: any) => Number(cat.id) === Number(item.categoryId)
@@ -2907,6 +3056,22 @@ useEffect(() => {
 </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
+{masterListType === "education" && (
+  <label className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs">
+    <input
+      type="checkbox"
+      checked={!!item.isPartner}
+      disabled={updateEducationPartnerMut.isPending}
+      onChange={(e) =>
+        updateEducationPartnerMut.mutate({
+          id: Number(item.id),
+          isPartner: e.target.checked,
+        })
+      }
+    />
+    협약
+  </label>
+)}
                           <Button
                             type="button"
                             variant="outline"
@@ -3249,6 +3414,7 @@ useEffect(() => {
     setFinderIncludePracticeInstitution(checked);
     if (!checked) {
       setFinderInstitutionCategoryId(null);
+setFinderPracticeAvailabilityFilter("전체");
       setFinderRecommendedInstitutionCategoryId(null);
     }
   }}
@@ -3321,6 +3487,42 @@ const isRecommended = Number(finderRecommendedEducationCategoryId) === Number(ca
       <div className="text-xs font-medium text-muted-foreground">
         실습기관 리스트 선택 (전체 선택 시 모든 기관 리스트가 함께 검색됩니다)
       </div>
+{finderIncludePracticeInstitution && (
+  <div className="space-y-2">
+    <div className="text-xs font-medium text-muted-foreground">
+      실습 가능 유형 필터
+    </div>
+
+    <div className="flex flex-wrap gap-2">
+      {[
+        ["전체", "전체"],
+        ["unknown", "미확인"],
+        ["weekday", "주중실습"],
+        ["weekend", "주말실습"],
+        ["both", "주중·주말"],
+      ].map(([value, label]) => {
+        const selected = finderPracticeAvailabilityFilter === value;
+
+        return (
+          <Button
+            key={value}
+            type="button"
+            variant={selected ? "default" : "outline"}
+            size="sm"
+            className={
+              selected
+                ? "bg-slate-800 text-white hover:bg-slate-900"
+                : "border-slate-200 text-slate-700 hover:bg-slate-50"
+            }
+            onClick={() => setFinderPracticeAvailabilityFilter(value)}
+          >
+            {label}
+          </Button>
+        );
+      })}
+    </div>
+  </div>
+)}
       <div className="flex flex-wrap gap-2">
 {institutionCategories.length === 0 && (
   <div className="rounded-lg border border-dashed border-orange-200 bg-orange-50 px-3 py-3 text-xs text-orange-700">
@@ -3433,15 +3635,19 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
                       return (
   <div
   key={`${item.type}-${item.id}`}
-  className={`relative border-l-4 border-transparent ${
-    isSelected
-      ? item.type === "education"
-        ? "border-l-blue-500 bg-blue-50"
-        : "border-l-orange-500 bg-orange-50"
-      : hasConfig
-      ? "bg-yellow-50/80"
-      : ""
-  }`}
+  className={`relative border-l-4 ${
+  isSelected
+    ? item.type === "education"
+      ? item.isPartner
+        ? "border-l-emerald-500 bg-emerald-50"
+        : "border-l-blue-500 bg-blue-50"
+      : "border-l-orange-500 bg-orange-50"
+    : item.type === "education" && item.isPartner
+    ? "border-l-emerald-400 bg-emerald-50/70"
+    : hasConfig
+    ? "border-l-yellow-400 bg-yellow-50/80"
+    : "border-l-transparent"
+}`}
 >
   <div
     className="w-full cursor-pointer p-4 pr-10 text-left transition hover:bg-slate-50"
@@ -3459,6 +3665,28 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
                             <Settings2 className="h-4 w-4" />
                           </button>
 
+{item.type === "education" && (
+  <label
+    className={`absolute right-3 top-12 z-10 inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold shadow-sm ${
+      item.isPartner
+        ? "border-emerald-200 bg-emerald-100 text-emerald-700"
+        : "border-slate-200 bg-white text-slate-500"
+    }`}
+    onClick={(e) => e.stopPropagation()}
+  >
+    <input
+      type="checkbox"
+      className="h-3 w-3"
+      checked={!!item.isPartner}
+      disabled={updateEducationPartnerMut.isPending}
+      onChange={(e) =>
+        handleEducationPartnerChange(item, e.target.checked)
+      }
+    />
+    협약교육원
+  </label>
+)}
+
                           <div className="space-y-2 pr-10">
                             <div className="flex items-center gap-2">
                               <span
@@ -3474,6 +3702,11 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
                               <span className="truncate font-medium">
                                 {item.name}
                               </span>
+{item.type === "education" && item.isPartner && (
+  <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+    협약
+  </span>
+)}
                             </div>
 
                             {hasConfig ? (
@@ -3488,6 +3721,43 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
                             ) : (
                               <div className="text-xs text-emerald-600">사용 가능</div>
                             )}
+{item.type === "institution" && (
+  <div
+    className="flex flex-wrap gap-1.5"
+    onClick={(e) => e.stopPropagation()}
+  >
+    {[
+      ["unknown", "미확인"],
+      ["weekday", "주중"],
+      ["weekend", "주말"],
+      ["both", "둘다"],
+    ].map(([value, label]) => {
+      const selected =
+        String(item.practiceAvailabilityType || "unknown") === value;
+
+      return (
+        <button
+          key={value}
+          type="button"
+          disabled={updateInstitutionPracticeAvailabilityMut.isPending}
+          onClick={() =>
+            handlePracticeAvailabilityChange(
+              item,
+              value as PracticeAvailabilityType
+            )
+          }
+          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
+            selected
+              ? getPracticeAvailabilityBadgeClass(value)
+              : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+          }`}
+        >
+          {label}
+        </button>
+      );
+    })}
+  </div>
+)}
 
                             {item.address && (
                               <div className="flex items-start gap-2 text-xs text-muted-foreground">
@@ -3546,6 +3816,11 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
                         {getTypeLabel(selectedFinderItem.type)}
                       </span>
                       <span>{selectedFinderItem.name}</span>
+{selectedFinderItem.type === "education" && selectedFinderItem.isPartner && (
+  <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+    협약교육원
+  </span>
+)}
                     </div>
                    <div className="mt-2">
   {selectedFinderItem.distanceKm &&

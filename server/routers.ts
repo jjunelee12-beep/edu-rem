@@ -7361,6 +7361,53 @@ if (id < 0) {
       return { success: true };
     }),
 
+updatePartner: protectedProcedure
+  .input(
+    z.object({
+      id: z.number(),
+      isPartner: z.boolean(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    if (
+      ctx.user.role !== "admin" &&
+      ctx.user.role !== "host" &&
+      ctx.user.role !== "superhost"
+    ) {
+      throwAppError(
+        ERROR_CODES.PERMISSION_DENIED,
+        "관리자 또는 호스트만 수정할 수 있습니다.",
+        403
+      );
+    }
+
+    const organizationId = getCtxOrganizationId(ctx);
+
+    if (!organizationId) {
+      throwAppError(
+        ERROR_CODES.ORGANIZATION_REQUIRED,
+        "organizationId is required",
+        400
+      );
+    }
+
+    if (input.id < 0) {
+      await db.updatePracticeEducationCenterPartnerOverride({
+        organizationId,
+        masterId: Math.abs(input.id),
+        isPartner: input.isPartner,
+      });
+    } else {
+      await db.updatePracticeEducationCenterPartner(
+        input.id,
+        input.isPartner,
+        { organizationId }
+      );
+    }
+
+    return { success: true };
+  }),
+
   bulkDeactivate: protectedProcedure
     .input(
       z.object({
@@ -7807,6 +7854,50 @@ if (input.id < 0) {
 
 return { success: true };
     }),
+
+updatePracticeAvailability: protectedProcedure
+  .input(
+    z.object({
+      id: z.number(),
+      practiceAvailabilityType: z.enum([
+        "unknown",
+        "weekday",
+        "weekend",
+        "both",
+      ]),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    if (
+      ctx.user.role !== "admin" &&
+      ctx.user.role !== "host" &&
+      ctx.user.role !== "superhost"
+    ) {
+      throwAppError(
+        ERROR_CODES.PERMISSION_DENIED,
+        "관리자 또는 호스트만 수정할 수 있습니다.",
+        403
+      );
+    }
+
+    const organizationId = getCtxOrganizationId(ctx);
+
+    if (input.id < 0) {
+      await db.updatePracticeInstitutionPracticeAvailabilityOverride({
+        organizationId,
+        masterId: Math.abs(input.id),
+        practiceAvailabilityType: input.practiceAvailabilityType,
+      });
+    } else {
+      await db.updatePracticeInstitutionPracticeAvailability(
+        input.id,
+        input.practiceAvailabilityType,
+        { organizationId }
+      );
+    }
+
+    return { success: true };
+  }),
 
 fixCoords: protectedProcedure
   .input(
