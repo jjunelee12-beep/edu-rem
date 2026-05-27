@@ -367,13 +367,28 @@ export default function AppToastHost() {
 useEffect(() => {
   const handleApiError = (event: Event) => {
     const custom = event as CustomEvent<{
-      code?: string;
-      message?: string;
-    }>;
+  code?: string;
+  message?: string;
+  path?: string;
+  url?: string;
+  procedure?: string;
+}>;
 
-    const code = custom.detail?.code || "E902";
-    const message =
-      custom.detail?.message || "서버 오류가 발생했습니다.";
+console.error("[APP API ERROR]", custom.detail);
+
+const code = custom.detail?.code || "E902";
+const apiName =
+  custom.detail?.path ||
+  custom.detail?.procedure ||
+  custom.detail?.url ||
+  "";
+
+const message = [
+  custom.detail?.message || "서버 오류가 발생했습니다.",
+  apiName ? `API: ${apiName}` : "",
+]
+  .filter(Boolean)
+  .join("\n");
 
     const notificationId = `api-error-${Date.now()}-${Math.random()
   .toString(36)
