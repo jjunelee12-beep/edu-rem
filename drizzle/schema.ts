@@ -91,6 +91,37 @@ export const organizations = mysqlTable("organizations", {
     .notNull()
     .default("active"),
 
+  subscriptionStatus: mysqlEnum("subscriptionStatus", [
+    "trial",
+    "active",
+    "overdue",
+    "cancelled",
+    "refund",
+    "paused",
+  ])
+    .notNull()
+    .default("trial"),
+
+  trialStartedAt: datetime("trialStartedAt"),
+  trialEndsAt: datetime("trialEndsAt"),
+  nextBillingAt: datetime("nextBillingAt"),
+  lastPaidAt: datetime("lastPaidAt"),
+
+billingAmount: int("billingAmount").notNull().default(0),
+nextBillingAmount: int("nextBillingAmount").notNull().default(0),
+
+customPlanName: varchar("customPlanName", { length: 50 }),
+
+paymentFailedAt: datetime("paymentFailedAt"),
+paymentFailureCount: int("paymentFailureCount").notNull().default(0),
+graceUntilAt: datetime("graceUntilAt"),
+
+  cancelledAt: datetime("cancelledAt"),
+  refundedAt: datetime("refundedAt"),
+
+  billingKey: varchar("billingKey", { length: 255 }),
+  customerKey: varchar("customerKey", { length: 255 }),
+
   maxUsers: int("maxUsers").notNull().default(10),
 maxStudents: int("maxStudents").notNull().default(500),
   maxLandingForms: int("maxLandingForms").notNull().default(10),
@@ -188,6 +219,8 @@ organizationId: int("organizationId").notNull().default(1),
 
   username: varchar("username", { length: 64 }).unique(),
   passwordHash: varchar("passwordHash", { length: 255 }),
+saasAdminPasswordHash: varchar("saasAdminPasswordHash", { length: 255 }),
+saasAdminUnlockedAt: datetime("saasAdminUnlockedAt"),
   isActive: boolean("isActive").notNull().default(true),
 
   bankName: varchar("bankName", { length: 100 }),
@@ -2564,6 +2597,136 @@ export const saasInquiries = mysqlTable(
 
 export type SaasInquiry = typeof saasInquiries.$inferSelect;
 export type InsertSaasInquiry = typeof saasInquiries.$inferInsert;
+
+export const saasSignupRequests = mysqlTable(
+  "saas_signup_requests",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId"),
+
+    planCode: mysqlEnum("planCode", ["free", "basic", "pro", "enterprise"])
+      .notNull()
+      .default("basic"),
+
+    companyName: varchar("companyName", { length: 150 }).notNull(),
+    slug: varchar("slug", { length: 100 }).notNull(),
+
+    businessName: varchar("businessName", { length: 150 }),
+    businessNumber: varchar("businessNumber", { length: 50 }),
+
+    managerName: varchar("managerName", { length: 100 }).notNull(),
+    phone: varchar("phone", { length: 30 }).notNull(),
+    birthDate: varchar("birthDate", { length: 20 }),
+
+    username: varchar("username", { length: 64 }).notNull(),
+
+    status: mysqlEnum("status", [
+      "created",
+      "trial",
+      "active",
+      "cancelled",
+      "failed",
+    ])
+      .notNull()
+      .default("created"),
+
+    trialStartedAt: datetime("trialStartedAt"),
+    trialEndsAt: datetime("trialEndsAt"),
+
+    memo: text("memo"),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    slugIdx: index("idx_saas_signup_slug").on(table.slug),
+    usernameIdx: index("idx_saas_signup_username").on(table.username),
+    statusCreatedIdx: index("idx_saas_signup_status_created").on(
+      table.status,
+      table.createdAt
+    ),
+  })
+);
+
+export type SaasSignupRequest = typeof saasSignupRequests.$inferSelect;
+export type InsertSaasSignupRequest = typeof saasSignupRequests.$inferInsert;
+
+export const billingRegistrationTokens = mysqlTable(
+  "billing_registration_tokens",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    organizationId: int("organizationId").notNull(),
+    token: varchar("token", { length: 100 }).notNull().unique(),
+    expiresAt: datetime("expiresAt").notNull(),
+    usedAt: datetime("usedAt"),
+    createdBy: int("createdBy"),
+    createdAt: datetime("createdAt").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    orgIdx: index("idx_billing_tokens_org").on(table.organizationId),
+    tokenIdx: index("idx_billing_tokens_token").on(table.token),
+    expiresIdx: index("idx_billing_tokens_expires").on(table.expiresAt),
+  })
+);
+
+export type BillingRegistrationToken =
+  typeof billingRegistrationTokens.$inferSelect;
+export type InsertBillingRegistrationToken =
+  typeof billingRegistrationTokens.$inferInsert;
+
+export const subscriptionPayments = mysqlTable(
+  "subscription_payments",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    organizationId: int("organizationId").notNull(),
+    planCode: varchar("planCode", { length: 50 }).notNull(),
+    customPlanName: varchar("customPlanName", { length: 50 }),
+    billingAmount: int("billingAmount").notNull().default(0),
+    paymentStatus: varchar("paymentStatus", { length: 30 })
+      .notNull()
+      .default("pending"),
+    billingCycleStart: datetime("billingCycleStart"),
+    billingCycleEnd: datetime("billingCycleEnd"),
+    paidAt: datetime("paidAt"),
+    failedAt: datetime("failedAt"),
+    failureReason: text("failureReason"),
+    tossPaymentKey: varchar("tossPaymentKey", { length: 255 }),
+    tossOrderId: varchar("tossOrderId", { length: 255 }),
+    createdAt: datetime("createdAt").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    orgIdx: index("idx_subscription_payments_org").on(table.organizationId),
+    statusIdx: index("idx_subscription_payments_status").on(table.paymentStatus),
+    createdIdx: index("idx_subscription_payments_created").on(table.createdAt),
+  })
+);
+
+export type SubscriptionPayment = typeof subscriptionPayments.$inferSelect;
+export type InsertSubscriptionPayment = typeof subscriptionPayments.$inferInsert;
+
+export const subscriptionPaymentEvents = mysqlTable(
+  "subscription_payment_events",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    organizationId: int("organizationId").notNull(),
+    paymentId: int("paymentId"),
+    eventType: varchar("eventType", { length: 50 }).notNull(),
+    message: text("message"),
+    rawJson: text("rawJson"),
+    createdAt: datetime("createdAt").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => ({
+    orgIdx: index("idx_subscription_payment_events_org").on(table.organizationId),
+    paymentIdx: index("idx_subscription_payment_events_payment").on(table.paymentId),
+    eventTypeIdx: index("idx_subscription_payment_events_type").on(table.eventType),
+  })
+);
+
+export type SubscriptionPaymentEvent =
+  typeof subscriptionPaymentEvents.$inferSelect;
+export type InsertSubscriptionPaymentEvent =
+  typeof subscriptionPaymentEvents.$inferInsert;
 
 export const apiErrorLogs = mysqlTable(
   "api_error_logs",

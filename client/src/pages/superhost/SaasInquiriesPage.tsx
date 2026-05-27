@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import SaasAdminGuard from "@/components/saas/SaasAdminGuard";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "전체" },
@@ -73,6 +74,7 @@ export default function SaasInquiriesPage() {
   }, [inquiries]);
 
   return (
+  <SaasAdminGuard>
     <div className="space-y-6 p-6">
       <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
         <div>
@@ -260,8 +262,9 @@ export default function SaasInquiriesPage() {
           </div>
         )}
       </div>
-    </div>
-  );
+        </div>
+  </SaasAdminGuard>
+);
 }
 
 function SummaryCard({ title, value }: { title: string; value: number }) {

@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
+import SaasAdminGuard from "@/components/saas/SaasAdminGuard";
 
 
 export default function SuperhostHome() {
@@ -141,7 +142,8 @@ const cleanupOrphanMutation =
 
   if (user?.role !== "superhost") {
     return (
-      <div className="space-y-6 p-6">
+  <SaasAdminGuard>
+    <div className="space-y-6 p-6">
         <Card className="border-destructive/20">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-destructive">
@@ -474,6 +476,7 @@ const cleanupOrphanMutation =
     <div>시간: {log.createdAt}</div>
   </div>
 ))}
-    </div>
-  );
+        </div>
+  </SaasAdminGuard>
+);
 }

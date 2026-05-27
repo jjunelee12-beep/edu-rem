@@ -16,6 +16,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import SaasAdminGuard from "@/components/saas/SaasAdminGuard";
 
 export default function OrganizationMonitoringPage() {
   const { user } = useAuth();
@@ -91,6 +92,7 @@ const isStorageExceeded = storageUsageRate >= 100;
   }
 
   return (
+  <SaasAdminGuard>
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
@@ -612,6 +614,7 @@ const isStorageExceeded = storageUsageRate >= 100;
 </Card>
         </>
       )}
-    </div>
-  );
+        </div>
+  </SaasAdminGuard>
+);
 }

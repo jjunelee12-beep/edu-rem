@@ -31,6 +31,8 @@ import SuperhostHome from "@/pages/SuperhostHome";
 import TenantsPage from "@/pages/superhost/TenantsPage";
 import OrganizationMonitoringPage from "@/pages/superhost/OrganizationMonitoringPage";
 import SaasInquiriesPage from "@/pages/superhost/SaasInquiriesPage";
+import SubscriptionPaymentsPage from "@/pages/superhost/SubscriptionPaymentsPage";
+import BillingRegisterPage from "@/pages/BillingRegisterPage";
 import MessengerPage from "@/pages/MessengerPage";
 import AttendancePage from "@/pages/AttendancePage";
 import AttendanceViewPage from "@/pages/AttendanceViewPage";
@@ -187,6 +189,10 @@ function PublicRouter() {
       <Route path="/login" component={Login} />
       <Route path="/form/:token" component={PublicLeadFormPage} />
       <Route path="/ad-form/:token" component={AdFormPage} />
+<Route
+  path="/billing/register/:token"
+  component={BillingRegisterPage}
+/>
       <Route component={NotFound} />
     </Switch>
   );
@@ -271,6 +277,9 @@ function PrivateRouter() {
       <Route path="/superhost/tenants" component={TenantsPage} />
 <Route path="/superhost/saas-inquiries">
   <SuperhostRoute component={SaasInquiriesPage} />
+</Route>
+<Route path="/superhost/subscription-payments">
+  <SuperhostRoute component={SubscriptionPaymentsPage} />
 </Route>
 <Route path="/saas/monitoring/:organizationId">
   <SuperhostRoute component={OrganizationMonitoringPage} />
@@ -373,9 +382,10 @@ function AppContent() {
   const [location] = useLocation();
 
   const isPublicPage =
-    location === "/login" ||
-    location.startsWith("/form/") ||
-    location.startsWith("/ad-form/");
+  location === "/login" ||
+  location.startsWith("/form/") ||
+  location.startsWith("/ad-form/") ||
+  location.startsWith("/billing/register/");
 
   if (isPublicPage) {
     return <PublicRouter />;

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Building2, Crown, Pencil, Plus, RefreshCw, UserPlus } from "lucide-react";
+import { Building2, Crown, Pencil, Plus, RefreshCw, UserPlus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { trpc } from "@/lib/trpc";
@@ -23,6 +23,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import SaasAdminGuard from "@/components/saas/SaasAdminGuard";
 
 type PlanCode = "free" | "basic" | "pro" | "enterprise";
 
@@ -103,6 +104,9 @@ allowSettlementReport: true,
 allowPrivateCertificate: true,
 maxStorageMb: "1024",
   memo: "",
+customPlanName: "",
+billingAmount: "0",
+nextBillingAmount: "0",
 });
 
   const organizationsQuery = trpc.saas.listOrganizations.useQuery(undefined, {
@@ -208,6 +212,18 @@ const repairOrganizationDefaultsMut = trpc.saas.repairOrganizationDefaults.useMu
   },
 });
 
+const cancelTenantMut = trpc.saas.cancelTenant.useMutation({
+  onSuccess: async () => {
+    toast.success("테넌트가 중지 처리되었습니다.");
+    await utils.saas.listOrganizations.invalidate();
+    await utils.saas.listOrganizationLimitStatuses.invalidate();
+    await utils.saas.listOrganizationOnboardingStatuses.invalidate();
+  },
+  onError: (err) => {
+    toast.error(err.message || "테넌트 중지 실패");
+  },
+});
+
   const organizations = organizationsQuery.data ?? [];
 
 const organizationLimitStatuses = organizationLimitStatusesQuery.data ?? [];
@@ -255,7 +271,11 @@ const filteredOrganizations = useMemo(() => {
       String(org.name || "").toLowerCase().includes(keyword) ||
       String(org.slug || "").toLowerCase().includes(keyword) ||
       String(org.businessName || "").toLowerCase().includes(keyword) ||
-      String(org.id || "").includes(keyword);
+String(org.businessNumber || "").toLowerCase().includes(keyword) ||
+String(org.hostUsername || "").toLowerCase().includes(keyword) ||
+String(org.hostName || "").toLowerCase().includes(keyword) ||
+String(org.hostPhone || "").toLowerCase().includes(keyword) ||
+String(org.id || "").includes(keyword);
 
     return (!showRiskOnly || isRisk) && matchesKeyword;
   });
@@ -421,6 +441,9 @@ allowSettlementReport: org.allowSettlementReport ?? true,
 allowPrivateCertificate: org.allowPrivateCertificate ?? true,
 maxStorageMb: String(org.maxStorageMb ?? 1024),
     memo: org.memo || "",
+customPlanName: org.customPlanName || "",
+billingAmount: String(org.billingAmount ?? 0),
+nextBillingAmount: String(org.nextBillingAmount ?? 0),
   });
 };
 
@@ -465,10 +488,14 @@ allowSettlementReport: editOrgForm.allowSettlementReport,
 allowPrivateCertificate: editOrgForm.allowPrivateCertificate,
 maxStorageMb: Number(editOrgForm.maxStorageMb || 1024),
     memo: editOrgForm.memo.trim() || null,
+customPlanName: editOrgForm.customPlanName.trim() || null,
+billingAmount: Number(editOrgForm.billingAmount || 0),
+nextBillingAmount: Number(editOrgForm.nextBillingAmount || 0),
   });
 };
 
   return (
+  <SaasAdminGuard>
     <div className="space-y-6 p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
@@ -597,15 +624,22 @@ organizationOnboardingStatusesQuery.refetch();
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[900px] border-collapse text-sm">
+                 <table className="w-full min-w-[1800px] border-collapse text-sm">
                     <thead>
                       <tr className="border-b bg-muted/40 text-left">
                         <th className="px-3 py-3">ID</th>
                         <th className="px-3 py-3">회사명</th>
 		<th className="px-3 py-3">회사 URL</th>
                         <th className="px-3 py-3">사업자명</th>
-                        <th className="px-3 py-3">플랜</th>
-                        <th className="px-3 py-3">상태</th>
+<th className="px-3 py-3">사업자번호</th>
+<th className="px-3 py-3">Host</th>
+<th className="px-3 py-3">플랜</th>
+<th className="px-3 py-3">상태</th>
+<th className="px-3 py-3">구독</th>
+<th className="px-3 py-3">Trial 종료</th>
+<th className="px-3 py-3">결제금액</th>
+<th className="px-3 py-3">카드등록</th>
+<th className="px-3 py-3">실패/유예</th>
                         <th className="px-3 py-3">사용자</th>
 		<th className="px-3 py-3">랜딩/광고폼</th>
 		<th className="px-3 py-3">문자</th>
@@ -666,15 +700,35 @@ const riskReasons = [
 </td>
 		<td className="px-3 py-3 text-muted-foreground">/{org.slug || "-"}</td>
                           <td className="px-3 py-3">
-                            {org.businessName || "-"}
-                          </td>
-                          <td className="px-3 py-3">
-                            <Badge variant="outline">
-                              {PLAN_LABEL[org.planCode as PlanCode] ||
-                                org.planCode}
-                            </Badge>
-                          </td>
-                          <td className="px-3 py-3">
+  {org.businessName || "-"}
+</td>
+
+<td className="px-3 py-3 text-muted-foreground">
+  {org.businessNumber || "-"}
+</td>
+
+<td className="px-3 py-3">
+  <div className="space-y-1">
+    <div className="font-medium">
+      {org.hostName || "-"}
+    </div>
+    <div className="text-xs text-muted-foreground">
+      ID: {org.hostUsername || "-"}
+    </div>
+    <div className="text-xs text-muted-foreground">
+      {org.hostPhone || "-"}
+    </div>
+  </div>
+</td>
+
+<td className="px-3 py-3">
+  <Badge variant="outline">
+    {PLAN_LABEL[org.planCode as PlanCode] ||
+      org.planCode}
+  </Badge>
+</td>
+
+<td className="px-3 py-3">
                             <Badge
   variant={org.status === "active" ? "default" : "secondary"}
   className={
@@ -688,6 +742,47 @@ const riskReasons = [
                               {STATUS_LABEL[org.status] || org.status}
                             </Badge>
                           </td>
+
+<td className="px-3 py-3">
+  <Badge variant="secondary">
+    {org.subscriptionStatus || "-"}
+  </Badge>
+</td>
+
+<td className="px-3 py-3 text-muted-foreground">
+  {org.trialEndsAt
+    ? new Date(org.trialEndsAt).toLocaleDateString()
+    : "-"}
+</td>
+<td className="px-3 py-3">
+  <div className="space-y-1">
+    <div className="font-medium">
+      {Number(org.nextBillingAmount || org.billingAmount || 0).toLocaleString()}원
+    </div>
+    {org.customPlanName && (
+      <div className="text-xs text-muted-foreground">
+        {org.customPlanName}
+      </div>
+    )}
+  </div>
+</td>
+
+<td className="px-3 py-3">
+  <Badge variant={org.billingKey ? "default" : "secondary"}>
+    {org.billingKey ? "등록완료" : "미등록"}
+  </Badge>
+</td>
+
+<td className="px-3 py-3">
+  <div className="space-y-1 text-xs">
+    <div className={Number(org.paymentFailureCount || 0) > 0 ? "font-semibold text-red-600" : "text-muted-foreground"}>
+      실패 {org.paymentFailureCount || 0}회
+    </div>
+    <div className="text-muted-foreground">
+      유예: {org.graceUntilAt ? new Date(org.graceUntilAt).toLocaleDateString() : "-"}
+    </div>
+  </div>
+</td>
                           <td className="px-3 py-3">
   <span className={exceeded?.users ? "font-semibold text-red-600" : ""}>
     {usage?.userCount ?? "-"} / {limits?.maxUsers ?? org.maxUsers}
@@ -772,6 +867,22 @@ const riskReasons = [
   }
 >
   기본세팅 보정
+</Button>
+<Button
+  size="sm"
+  variant="destructive"
+  disabled={cancelTenantMut.isPending || org.status === "inactive"}
+  onClick={() => {
+    if (!confirm(`${org.name} 테넌트를 중지 처리할까요?`)) return;
+
+    cancelTenantMut.mutate({
+      organizationId: Number(org.id),
+      reason: "superhost manual cancel",
+    });
+  }}
+>
+  <Trash2 className="mr-1 h-3 w-3" />
+  중지
 </Button>
   </div>
 </td>
@@ -932,6 +1043,61 @@ const riskReasons = [
   active: 정상 이용 / inactive: 이용 제한 / suspended: 정지 상태로 접근 차단
 </p>
       </div>
+
+<div className="rounded-xl border bg-background p-3 md:col-span-2">
+  <h4 className="mb-3 font-semibold">결제 설정</h4>
+
+  <div className="grid gap-4 md:grid-cols-3">
+    <div className="space-y-2">
+      <Label>커스텀 플랜명</Label>
+      <Input
+        value={editOrgForm.customPlanName}
+        onChange={(e) =>
+          setEditOrgForm((prev) => ({
+            ...prev,
+            customPlanName: e.target.value,
+          }))
+        }
+        placeholder="예: MAX, 베타특가"
+      />
+    </div>
+
+    <div className="space-y-2">
+      <Label>기본 결제금액</Label>
+      <Input
+        type="number"
+        value={editOrgForm.billingAmount}
+        onChange={(e) =>
+          setEditOrgForm((prev) => ({
+            ...prev,
+            billingAmount: e.target.value,
+          }))
+        }
+        placeholder="예: 99000"
+      />
+    </div>
+
+    <div className="space-y-2">
+      <Label>다음 결제금액</Label>
+      <Input
+        type="number"
+        value={editOrgForm.nextBillingAmount}
+        onChange={(e) =>
+          setEditOrgForm((prev) => ({
+            ...prev,
+            nextBillingAmount: e.target.value,
+          }))
+        }
+        placeholder="예: 99000"
+      />
+    </div>
+  </div>
+
+  <p className="mt-2 text-xs text-muted-foreground">
+    자동결제는 다음 결제금액을 우선 사용하고, 0원이면 기본 결제금액을 사용합니다.
+    MAX/베타특가처럼 회사별 금액이 다를 때 여기서 조정합니다.
+  </p>
+</div>
 
       <div className="space-y-2">
         <Label>최대 사용자 수</Label>
@@ -1531,5 +1697,6 @@ const riskReasons = [
         </TabsContent>
       </Tabs>
     </div>
+  </SaasAdminGuard>
   );
 }

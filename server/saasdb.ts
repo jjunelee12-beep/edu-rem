@@ -13,7 +13,13 @@ import {
   positions,
   educationInstitutions,
   saasInquiries,
+  saasSignupRequests,
+  billingRegistrationTokens,
+  subscriptionPayments,
+  subscriptionPaymentEvents,
 } from "../drizzle/schema";
+import bcrypt from "bcryptjs";
+import { randomBytes } from "crypto";
 
 export async function getOrganizationById(id: number) {
   const db = await getDb();
@@ -32,10 +38,67 @@ export async function listOrganizations() {
   const db = await getDb();
   if (!db) return [];
 
-  return db
-    .select()
+  const rows = await db
+    .select({
+      id: organizations.id,
+      name: organizations.name,
+      slug: organizations.slug,
+      businessName: organizations.businessName,
+      businessNumber: organizations.businessNumber,
+
+      ownerUserId: organizations.ownerUserId,
+
+      planCode: organizations.planCode,
+      status: organizations.status,
+      subscriptionStatus: organizations.subscriptionStatus,
+
+      trialStartedAt: organizations.trialStartedAt,
+      trialEndsAt: organizations.trialEndsAt,
+      nextBillingAt: organizations.nextBillingAt,
+      lastPaidAt: organizations.lastPaidAt,
+billingAmount: organizations.billingAmount,
+nextBillingAmount: organizations.nextBillingAmount,
+customPlanName: organizations.customPlanName,
+paymentFailedAt: organizations.paymentFailedAt,
+paymentFailureCount: organizations.paymentFailureCount,
+graceUntilAt: organizations.graceUntilAt,
+billingKey: organizations.billingKey,
+customerKey: organizations.customerKey,
+      cancelledAt: organizations.cancelledAt,
+      refundedAt: organizations.refundedAt,
+
+      maxUsers: organizations.maxUsers,
+      maxStudents: organizations.maxStudents,
+      maxLandingForms: organizations.maxLandingForms,
+      maxAdForms: organizations.maxAdForms,
+      maxSmsPerMonth: organizations.maxSmsPerMonth,
+      maxStorageMb: organizations.maxStorageMb,
+
+      allowBackup: organizations.allowBackup,
+      allowAutoBackup: organizations.allowAutoBackup,
+      allowAuditLog: organizations.allowAuditLog,
+      allowMessenger: organizations.allowMessenger,
+      allowPracticeCenter: organizations.allowPracticeCenter,
+      allowSettlementReport: organizations.allowSettlementReport,
+      allowPrivateCertificate: organizations.allowPrivateCertificate,
+
+      memo: organizations.memo,
+      createdBy: organizations.createdBy,
+      updatedBy: organizations.updatedBy,
+      createdAt: organizations.createdAt,
+      updatedAt: organizations.updatedAt,
+
+      hostId: users.id,
+      hostUsername: users.username,
+      hostName: users.name,
+      hostEmail: users.email,
+      hostPhone: users.phone,
+    })
     .from(organizations)
+    .leftJoin(users, eq(users.id, organizations.ownerUserId))
     .orderBy(desc(organizations.id));
+
+  return rows;
 }
 
 function getLocalNoticeUploadUsageBytes(organizationId: number) {
@@ -148,6 +211,8 @@ allowPrivateCertificate?: boolean;
 maxStorageMb?: number;
   memo?: string | null;
   createdBy?: number | null;
+billingAmount?: number;
+nextBillingAmount?: number | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -175,6 +240,8 @@ allowPrivateCertificate: input.allowPrivateCertificate ?? true,
     memo: input.memo?.trim() || null,
     createdBy: input.createdBy ?? null,
     updatedBy: input.createdBy ?? null,
+billingAmount: input.billingAmount ?? 0,
+nextBillingAmount: input.nextBillingAmount ?? null,
   } as any);
 
   const insertId = result?.insertId ?? result?.[0]?.insertId;
@@ -204,6 +271,9 @@ allowPrivateCertificate?: boolean;
 maxStorageMb?: number;
   memo?: string | null;
   updatedBy?: number | null;
+billingAmount?: number;
+nextBillingAmount?: number | null;
+customPlanName?: string | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -246,6 +316,12 @@ allowPrivateCertificate: input.allowPrivateCertificate,
           ? undefined
           : input.memo?.trim() || null,
       updatedBy: input.updatedBy ?? undefined,
+billingAmount: input.billingAmount,
+nextBillingAmount: input.nextBillingAmount,
+customPlanName:
+  input.customPlanName === undefined
+    ? undefined
+    : input.customPlanName?.trim() || null,
     } as any)
     .where(eq(organizations.id, input.id));
 
@@ -415,7 +491,9 @@ export async function getOrganizationUsageStats(organizationId: number) {
   const [rows] = await db.execute(sql`
     SELECT
       (SELECT COUNT(*) FROM users WHERE organizationId = ${organizationId}) as userCount,
-      (SELECT COUNT(*) FROM lead_forms WHERE organizationId = ${organizationId}) as landingFormCount,
+            (SELECT COUNT(*) FROM lead_forms WHERE organizationId = ${organizationId}) as totalFormCount,
+      (SELECT COUNT(*) FROM lead_forms WHERE organizationId = ${organizationId} AND formType = 'landing') as landingFormCount,
+      (SELECT COUNT(*) FROM lead_forms WHERE organizationId = ${organizationId} AND formType = 'ad') as adFormCount,
       (SELECT COUNT(*) FROM consultations WHERE organizationId = ${organizationId}) as consultationCount,
       (SELECT COUNT(*) FROM students WHERE organizationId = ${organizationId}) as studentCount,
       (SELECT COUNT(*) FROM settlement_items WHERE organizationId = ${organizationId}) as settlementItemCount,
@@ -435,6 +513,7 @@ const totalStorageBytes = localNoticeBytes + r2Bytes;
 
 return {
   ...row,
+  smsCountThisMonth: Number(row.smsSentThisMonth || 0),
   storageUsedBytes: totalStorageBytes,
   storageUsedMb: Number((totalStorageBytes / 1024 / 1024).toFixed(2)),
   localNoticeStorageBytes: localNoticeBytes,
@@ -451,30 +530,43 @@ export async function getOrganizationLimitStatus(organizationId: number) {
 
   const usage = await getOrganizationUsageStats(organizationId);
 
+  const maxUsers = Number((org as any).maxUsers || 0);
+  const maxLandingForms = Number((org as any).maxLandingForms || 0);
+  const maxAdForms = Number((org as any).maxAdForms || 0);
+  const maxSmsPerMonth = Number((org as any).maxSmsPerMonth || 0);
+  const maxStorageMb = Number((org as any).maxStorageMb || 0);
+
   return {
     organization: org,
     usage,
     limits: {
-  maxUsers: Number((org as any).maxUsers || 0),
-  maxLandingForms: Number((org as any).maxLandingForms || 0),
-  maxSmsPerMonth: Number((org as any).maxSmsPerMonth || 0),
-  maxStorageMb: Number((org as any).maxStorageMb || 0),
-},
+      maxUsers,
+      maxLandingForms,
+      maxAdForms,
+      maxSmsPerMonth,
+      maxStorageMb,
+    },
     exceeded: {
-  users:
-    Number((org as any).maxUsers || 0) > 0 &&
-    Number(usage.userCount || 0) >= Number((org as any).maxUsers || 0),
+      users:
+        maxUsers > 0 &&
+        Number(usage.userCount || 0) >= maxUsers,
 
-  landingForms:
-    Number((org as any).maxLandingForms || 0) > 0 &&
-    Number(usage.landingFormCount || 0) >=
-      Number((org as any).maxLandingForms || 0),
+      landingForms:
+        maxLandingForms > 0 &&
+        Number(usage.landingFormCount || 0) >= maxLandingForms,
 
-  storage:
-    Number((org as any).maxStorageMb || 0) > 0 &&
-    Number(usage.storageUsedBytes || 0) >=
-      Number((org as any).maxStorageMb || 0) * 1024 * 1024,
-},
+      adForms:
+        maxAdForms > 0 &&
+        Number(usage.adFormCount || 0) >= maxAdForms,
+
+      sms:
+        maxSmsPerMonth > 0 &&
+        Number((usage as any).smsCountThisMonth || 0) >= maxSmsPerMonth,
+
+      storage:
+        maxStorageMb > 0 &&
+        Number(usage.storageUsedBytes || 0) >= maxStorageMb * 1024 * 1024,
+    },
   };
 }
 
@@ -659,4 +751,702 @@ export async function assignUserToOrganization(input: {
   return {
     ok: true,
   };
+}
+
+const PLAN_LIMITS: Record<string, any> = {
+  basic: {
+    maxUsers: 5,
+    maxLandingForms: 10,
+    maxAdForms: 10,
+    maxSmsPerMonth: 1000,
+    maxStorageMb: 1024,
+  },
+  pro: {
+    maxUsers: 15,
+    maxLandingForms: 30,
+    maxAdForms: 30,
+    maxSmsPerMonth: 3000,
+    maxStorageMb: 3072,
+  },
+  enterprise: {
+    maxUsers: 30,
+    maxLandingForms: 60,
+    maxAdForms: 60,
+    maxSmsPerMonth: 10000,
+    maxStorageMb: 10240,
+  },
+};
+
+const PLAN_PRICES: Record<string, number> = {
+  free: 0,
+  basic: 99000,
+  pro: 199000,
+  enterprise: 399000,
+};
+
+function getPlanBillingAmount(planCode?: string | null) {
+  return PLAN_PRICES[planCode || "basic"] ?? 0;
+}
+
+export async function getUserByUsernameForSaas(username: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const rows = await db
+    .select()
+    .from(users)
+    .where(eq(users.username, username.trim()))
+    .limit(1);
+
+  return rows[0] || null;
+}
+
+export async function getOrganizationBySlug(slug: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const rows = await db
+    .select()
+    .from(organizations)
+    .where(eq(organizations.slug, slug.trim().toLowerCase()))
+    .limit(1);
+
+  return rows[0] || null;
+}
+
+export async function checkUsernameAvailable(username: string) {
+  const existing = await getUserByUsernameForSaas(username);
+  return { available: !existing };
+}
+
+export async function checkOrganizationSlugAvailable(slug: string) {
+  const existing = await getOrganizationBySlug(slug);
+  return { available: !existing };
+}
+
+export async function createHostUserForOrganization(input: {
+  organizationId: number;
+  username: string;
+  passwordHash: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(users).values({
+    organizationId: input.organizationId,
+    openId: `manual_${input.username}`,
+    username: input.username,
+    passwordHash: input.passwordHash,
+    name: input.name,
+    email: input.email || null,
+    phone: input.phone || null,
+    role: "host",
+    loginMethod: "manual",
+    isActive: true,
+  } as any);
+
+  return Number(result?.insertId ?? result?.[0]?.insertId ?? 0);
+}
+
+export async function createTenantSignup(input: {
+  companyName: string;
+  slug: string;
+  businessName?: string | null;
+  businessNumber?: string | null;
+  managerName: string;
+  phone: string;
+  birthDate?: string | null;
+  username: string;
+  passwordHash: string;
+  planCode: "basic" | "pro" | "enterprise";
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const now = new Date();
+  const trialEndsAt = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+  const limits = PLAN_LIMITS[input.planCode];
+
+  const organization = await createOrganization({
+    name: input.companyName,
+    slug: input.slug,
+    businessName: input.businessName,
+    businessNumber: input.businessNumber,
+    planCode: input.planCode,
+    status: "active",
+    maxUsers: limits.maxUsers,
+    maxLandingForms: limits.maxLandingForms,
+    maxAdForms: limits.maxAdForms,
+    maxSmsPerMonth: limits.maxSmsPerMonth,
+    maxStorageMb: limits.maxStorageMb,
+    allowBackup: true,
+    allowAuditLog: true,
+    allowMessenger: true,
+    allowPracticeCenter: true,
+    allowSettlementReport: true,
+    allowPrivateCertificate: true,
+    memo: "자동가입 trial",
+    createdBy: null,
+billingAmount: getPlanBillingAmount(input.planCode),
+nextBillingAmount: getPlanBillingAmount(input.planCode),
+  } as any);
+
+  if (!organization?.id) {
+    throw new Error("회사 생성에 실패했습니다.");
+  }
+
+  await db
+    .update(organizations)
+    .set({
+      subscriptionStatus: "trial",
+      trialStartedAt: now,
+      trialEndsAt,
+      nextBillingAt: trialEndsAt,
+    } as any)
+    .where(eq(organizations.id, Number(organization.id)));
+
+  const hostUserId = await createHostUserForOrganization({
+    organizationId: Number(organization.id),
+    username: input.username,
+    passwordHash: input.passwordHash,
+    name: input.managerName,
+    phone: input.phone,
+  });
+
+  await db
+    .update(organizations)
+    .set({
+      ownerUserId: hostUserId,
+    } as any)
+    .where(eq(organizations.id, Number(organization.id)));
+
+  await createOrganizationDefaults({
+    organizationId: Number(organization.id),
+    actorUserId: hostUserId,
+    companyName: input.businessName || input.companyName,
+  });
+
+  const signupResult: any = await db.insert(saasSignupRequests).values({
+    organizationId: Number(organization.id),
+    planCode: input.planCode,
+    companyName: input.companyName,
+    slug: input.slug,
+    businessName: input.businessName || null,
+    businessNumber: input.businessNumber || null,
+    managerName: input.managerName,
+    phone: input.phone,
+    birthDate: input.birthDate || null,
+    username: input.username,
+    status: "trial",
+    trialStartedAt: now,
+    trialEndsAt,
+  } as any);
+
+  return {
+    ok: true,
+    organizationId: Number(organization.id),
+    hostUserId,
+    signupRequestId: Number(signupResult?.insertId ?? signupResult?.[0]?.insertId ?? 0),
+    slug: input.slug,
+    trialEndsAt,
+  };
+}
+
+export async function createBillingRegistrationToken(input: {
+  organizationId: number;
+  createdBy?: number | null;
+  expiresInMinutes?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const token = randomBytes(32).toString("hex");
+  const expiresAt = new Date(
+    Date.now() + (input.expiresInMinutes ?? 60 * 24) * 60 * 1000
+  );
+
+  await db.insert(billingRegistrationTokens).values({
+    organizationId: input.organizationId,
+    token,
+    expiresAt,
+    createdBy: input.createdBy ?? null,
+  } as any);
+
+  await createSaasAuditLog({
+    organizationId: input.organizationId,
+    actorUserId: input.createdBy ?? null,
+    actorRole: "superhost",
+    action: "billing.token.create",
+    targetType: "billing_registration_token",
+    memo: "카드 등록 링크 생성",
+  });
+
+ const appBaseUrl =
+  process.env.APP_BASE_URL ||
+  process.env.PUBLIC_APP_URL ||
+  process.env.VITE_APP_BASE_URL ||
+  "https://educrm.june.kr";
+
+return {
+  ok: true,
+  token,
+  expiresAt,
+  billingRegistrationUrl: `${appBaseUrl}/billing/register/${token}`,
+};
+}
+
+export async function getBillingRegistrationToken(token: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const rows = await db
+    .select()
+    .from(billingRegistrationTokens)
+    .where(eq(billingRegistrationTokens.token, token))
+    .limit(1);
+
+  return rows[0] || null;
+}
+
+export async function saveOrganizationBillingKey(input: {
+  token: string;
+  billingKey: string;
+  customerKey: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const tokenRow = await getBillingRegistrationToken(input.token);
+
+  if (!tokenRow) {
+    throw new Error("유효하지 않은 카드 등록 토큰입니다.");
+  }
+
+  if ((tokenRow as any).usedAt) {
+    throw new Error("이미 사용된 카드 등록 링크입니다.");
+  }
+
+  if (new Date((tokenRow as any).expiresAt).getTime() < Date.now()) {
+    throw new Error("만료된 카드 등록 링크입니다.");
+  }
+
+  const organizationId = Number((tokenRow as any).organizationId);
+
+  await db
+    .update(organizations)
+    .set({
+      billingKey: input.billingKey,
+      customerKey: input.customerKey,
+      subscriptionStatus: "active",
+      paymentFailureCount: 0,
+      paymentFailedAt: null,
+      graceUntilAt: null,
+      updatedAt: new Date(),
+    } as any)
+    .where(eq(organizations.id, organizationId));
+
+  await db
+    .update(billingRegistrationTokens)
+    .set({
+      usedAt: new Date(),
+    } as any)
+    .where(eq(billingRegistrationTokens.token, input.token));
+
+  await createSaasAuditLog({
+    organizationId,
+    action: "billing.key.save",
+    targetType: "organization",
+    targetId: organizationId,
+    memo: "Toss billingKey 저장 완료",
+  });
+
+  return {
+    ok: true,
+    organizationId,
+  };
+}
+
+export async function createSubscriptionPayment(input: {
+  organizationId: number;
+  planCode: string;
+  customPlanName?: string | null;
+  billingAmount: number;
+  billingCycleStart?: Date | null;
+  billingCycleEnd?: Date | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(subscriptionPayments).values({
+    organizationId: input.organizationId,
+    planCode: input.planCode,
+    customPlanName: input.customPlanName ?? null,
+    billingAmount: input.billingAmount,
+    paymentStatus: "pending",
+    billingCycleStart: input.billingCycleStart ?? null,
+    billingCycleEnd: input.billingCycleEnd ?? null,
+  } as any);
+
+  const paymentId = Number(result?.insertId ?? result?.[0]?.insertId ?? 0);
+
+  await recordSubscriptionPaymentEvent({
+    organizationId: input.organizationId,
+    paymentId,
+    eventType: "payment.created",
+    message: "구독 결제 원장 생성",
+  });
+
+  return {
+    ok: true,
+    paymentId,
+  };
+}
+
+export async function recordSubscriptionPaymentEvent(input: {
+  organizationId: number;
+  paymentId?: number | null;
+  eventType: string;
+  message?: string | null;
+  rawJson?: any;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db.insert(subscriptionPaymentEvents).values({
+    organizationId: input.organizationId,
+    paymentId: input.paymentId ?? null,
+    eventType: input.eventType,
+    message: input.message ?? null,
+    rawJson:
+      input.rawJson === undefined || input.rawJson === null
+        ? null
+        : JSON.stringify(input.rawJson),
+  } as any);
+
+  return { ok: true };
+}
+
+export async function markSubscriptionPaymentPaid(input: {
+  organizationId: number;
+  paymentId: number;
+  tossPaymentKey?: string | null;
+  tossOrderId?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const nextBillingAt = new Date();
+  nextBillingAt.setMonth(nextBillingAt.getMonth() + 1);
+
+  await db
+    .update(subscriptionPayments)
+    .set({
+      paymentStatus: "paid",
+      paidAt: new Date(),
+      tossPaymentKey: input.tossPaymentKey ?? null,
+      tossOrderId: input.tossOrderId ?? null,
+    } as any)
+    .where(eq(subscriptionPayments.id, input.paymentId));
+
+  await db
+    .update(organizations)
+    .set({
+      subscriptionStatus: "active",
+      status: "active",
+      lastPaidAt: new Date(),
+      nextBillingAt,
+      paymentFailureCount: 0,
+      paymentFailedAt: null,
+      graceUntilAt: null,
+    } as any)
+    .where(eq(organizations.id, input.organizationId));
+
+  await recordSubscriptionPaymentEvent({
+    organizationId: input.organizationId,
+    paymentId: input.paymentId,
+    eventType: "payment.paid",
+    message: "구독 결제 성공",
+  });
+
+  return { ok: true };
+}
+
+export async function markSubscriptionPaymentFailed(input: {
+  organizationId: number;
+  paymentId: number;
+  failureReason?: string | null;
+  rawJson?: any;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const org = await getOrganizationById(input.organizationId);
+  const failureCount = Number((org as any)?.paymentFailureCount || 0) + 1;
+
+  const graceUntilAt = new Date();
+  graceUntilAt.setDate(graceUntilAt.getDate() + 7);
+
+  const nextStatus = failureCount >= 3 ? "paused" : "overdue";
+
+  await db
+    .update(subscriptionPayments)
+    .set({
+      paymentStatus: "failed",
+      failedAt: new Date(),
+      failureReason: input.failureReason ?? null,
+    } as any)
+    .where(eq(subscriptionPayments.id, input.paymentId));
+
+  await db
+    .update(organizations)
+    .set({
+      subscriptionStatus: nextStatus,
+      paymentFailureCount: failureCount,
+      paymentFailedAt: new Date(),
+      graceUntilAt,
+    } as any)
+    .where(eq(organizations.id, input.organizationId));
+
+  await recordSubscriptionPaymentEvent({
+    organizationId: input.organizationId,
+    paymentId: input.paymentId,
+    eventType: "payment.failed",
+    message: input.failureReason || "구독 결제 실패",
+    rawJson: input.rawJson,
+  });
+
+  return {
+    ok: true,
+    failureCount,
+    subscriptionStatus: nextStatus,
+    graceUntilAt,
+  };
+}
+
+export async function cancelTenant(input: {
+  organizationId: number;
+  actorUserId?: number | null;
+  reason?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const before = await getOrganizationById(input.organizationId);
+
+  await db
+    .update(organizations)
+    .set({
+      status: "inactive",
+      subscriptionStatus: "cancelled",
+      cancelledAt: new Date(),
+      memo: input.reason?.trim() || "superhost cancelled tenant",
+      updatedBy: input.actorUserId ?? null,
+    } as any)
+    .where(eq(organizations.id, input.organizationId));
+
+  const after = await getOrganizationById(input.organizationId);
+
+  await createSaasAuditLog({
+    organizationId: input.organizationId,
+    actorUserId: input.actorUserId ?? null,
+    actorRole: "superhost",
+    action: "organization.cancel",
+    targetType: "organization",
+    targetId: input.organizationId,
+    beforeJson: JSON.stringify(before ?? {}),
+    afterJson: JSON.stringify(after ?? {}),
+    memo: input.reason || "테넌트 중지/삭제 처리",
+  });
+
+  return { ok: true };
+}
+
+const SAAS_ADMIN_UNLOCK_MINUTES = 30;
+
+export async function getSaasAdminLockStatus(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const rows = await db
+    .select({
+      id: users.id,
+      saasAdminPasswordHash: users.saasAdminPasswordHash,
+      saasAdminUnlockedAt: users.saasAdminUnlockedAt,
+    })
+    .from(users)
+    .where(eq(users.id, Number(userId)))
+    .limit(1);
+
+  const user = rows[0] as any;
+  if (!user) throw new Error("사용자를 찾을 수 없습니다.");
+
+  const hasPassword = Boolean(user.saasAdminPasswordHash);
+  const unlockedAt = user.saasAdminUnlockedAt
+    ? new Date(user.saasAdminUnlockedAt)
+    : null;
+
+  const unlockExpiresAt = unlockedAt
+    ? new Date(unlockedAt.getTime() + SAAS_ADMIN_UNLOCK_MINUTES * 60 * 1000)
+    : null;
+
+  const unlocked =
+    hasPassword &&
+    Boolean(unlockExpiresAt) &&
+    unlockExpiresAt!.getTime() > Date.now();
+
+  return {
+    hasPassword,
+    unlocked,
+    unlockedAt,
+    unlockExpiresAt,
+  };
+}
+
+export async function setSaasAdminPassword(input: {
+  userId: number;
+  password: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const passwordHash = await bcrypt.hash(input.password, 12);
+
+  await db
+    .update(users)
+    .set({
+      saasAdminPasswordHash: passwordHash,
+      saasAdminUnlockedAt: null,
+    } as any)
+    .where(eq(users.id, Number(input.userId)));
+
+  return { ok: true };
+}
+
+export async function unlockSaasAdmin(input: {
+  userId: number;
+  password: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const rows = await db
+    .select({
+      id: users.id,
+      saasAdminPasswordHash: users.saasAdminPasswordHash,
+    })
+    .from(users)
+    .where(eq(users.id, Number(input.userId)))
+    .limit(1);
+
+  const user = rows[0] as any;
+  if (!user?.saasAdminPasswordHash) {
+    throw new Error("SaaS 관리자 암호가 설정되어 있지 않습니다.");
+  }
+
+  const ok = await bcrypt.compare(
+    input.password,
+    String(user.saasAdminPasswordHash)
+  );
+
+  if (!ok) {
+    throw new Error("SaaS 관리자 암호가 일치하지 않습니다.");
+  }
+
+  const now = new Date();
+
+  await db
+    .update(users)
+    .set({
+      saasAdminUnlockedAt: now,
+    } as any)
+    .where(eq(users.id, Number(input.userId)));
+
+  return {
+    ok: true,
+    unlockedAt: now,
+    unlockExpiresAt: new Date(
+      now.getTime() + SAAS_ADMIN_UNLOCK_MINUTES * 60 * 1000
+    ),
+  };
+}
+
+export async function lockSaasAdmin(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(users)
+    .set({
+      saasAdminUnlockedAt: null,
+    } as any)
+    .where(eq(users.id, Number(userId)));
+
+  return { ok: true };
+}
+
+export async function requireSaasAdminUnlocked(userId: number) {
+  const status = await getSaasAdminLockStatus(userId);
+
+  if (!status.hasPassword) {
+    throw new Error("SaaS 관리자 암호를 먼저 설정해야 합니다.");
+  }
+
+  if (!status.unlocked) {
+    throw new Error("SaaS 관리자 잠금 해제가 필요합니다.");
+  }
+
+  return true;
+}
+
+export async function listSubscriptionPayments(input?: {
+  organizationId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  if (input?.organizationId) {
+    return db
+      .select()
+      .from(subscriptionPayments)
+      .where(eq(subscriptionPayments.organizationId, input.organizationId))
+      .orderBy(desc(subscriptionPayments.createdAt))
+      .limit(300);
+  }
+
+  return db
+    .select()
+    .from(subscriptionPayments)
+    .orderBy(desc(subscriptionPayments.createdAt))
+    .limit(300);
+}
+
+export async function listSubscriptionPaymentEvents(input: {
+  paymentId?: number | null;
+  organizationId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  if (input.paymentId) {
+    return db
+      .select()
+      .from(subscriptionPaymentEvents)
+      .where(eq(subscriptionPaymentEvents.paymentId, input.paymentId))
+      .orderBy(desc(subscriptionPaymentEvents.createdAt))
+      .limit(300);
+  }
+
+  if (input.organizationId) {
+    return db
+      .select()
+      .from(subscriptionPaymentEvents)
+      .where(eq(subscriptionPaymentEvents.organizationId, input.organizationId))
+      .orderBy(desc(subscriptionPaymentEvents.createdAt))
+      .limit(300);
+  }
+
+  return [];
 }
