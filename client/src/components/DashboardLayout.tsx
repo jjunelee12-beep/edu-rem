@@ -1,3 +1,4 @@
+import type React from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";

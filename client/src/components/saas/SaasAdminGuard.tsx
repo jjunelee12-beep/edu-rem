@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type React from "react";
 import { Lock, ShieldCheck, Delete } from "lucide-react";
 import { toast } from "sonner";
 
