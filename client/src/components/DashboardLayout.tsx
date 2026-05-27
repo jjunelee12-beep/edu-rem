@@ -236,6 +236,27 @@ const { data: organizationFeatures } =
     enabled: canUseOrgQueries,
     retry: false,
   });
+
+const currentOrg = (organizationFeatures as any)?.organization || {};
+const subscriptionStatus = String(currentOrg.subscriptionStatus || "");
+const paymentFailureCount = Number(currentOrg.paymentFailureCount || 0);
+const graceUntilAt = currentOrg.graceUntilAt
+  ? new Date(currentOrg.graceUntilAt)
+  : null;
+
+const shouldShowPaymentWarning =
+  user.role !== "superhost" &&
+  ["overdue", "paused"].includes(subscriptionStatus);
+
+const paymentWarningMessage =
+  subscriptionStatus === "paused"
+    ? "구독 결제가 처리되지 않아 현재 서비스 이용이 제한될 수 있습니다. 관리자에게 결제 상태 확인을 요청해주세요."
+    : `구독 결제가 처리되지 않았습니다.${
+        graceUntilAt
+          ? ` ${graceUntilAt.toLocaleDateString()} 이후 서비스가 비활성화될 수 있습니다.`
+          : " 유예기간 이후 서비스가 비활성화될 수 있습니다."
+      } 결제수단 확인이 필요합니다.`;
+
  const utils = trpc.useUtils();
 
  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(
@@ -1369,12 +1390,32 @@ if (item.type === "messenger") {
 
  <div className="flex min-h-0 flex-1 overflow-x-auto">
   <main
-    className={`min-w-[980px] flex-1 p-4 md:p-6 transition-all duration-200 ${
-      canUseMessenger && isMessengerOpen && !isMobile ? "pr-[560px]" : ""
-    }`}
-  >
- {children}
- </main>
+  className={`min-w-[980px] flex-1 p-4 md:p-6 transition-all duration-200 ${
+    canUseMessenger && isMessengerOpen && !isMobile ? "pr-[560px]" : ""
+  }`}
+>
+  {shouldShowPaymentWarning && (
+    <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+      <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="font-extrabold">
+            결제 미처리 안내
+          </p>
+          <p className="mt-1">
+            {paymentWarningMessage}
+          </p>
+          {paymentFailureCount > 0 && (
+            <p className="mt-1 text-xs font-bold">
+              결제 실패 횟수: {paymentFailureCount}회
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  )}
+
+  {children}
+</main>
  </div>
  </SidebarInset>
 

@@ -224,6 +224,22 @@ const cancelTenantMut = trpc.saas.cancelTenant.useMutation({
   },
 });
 
+const deactivateExpiredOverdueMut =
+  trpc.saas.deactivateExpiredOverdueOrganizations.useMutation({
+    onSuccess: async (result) => {
+      toast.success(
+        `유예기간 만료 테넌트 ${result?.count ?? 0}개 비활성화 처리 완료`
+      );
+
+      await utils.saas.listOrganizations.invalidate();
+      await utils.saas.listOrganizationLimitStatuses.invalidate();
+      await utils.saas.listOrganizationOnboardingStatuses.invalidate();
+    },
+    onError: (err) => {
+      toast.error(err.message || "유예기간 만료 테넌트 비활성화 실패");
+    },
+  });
+
   const organizations = organizationsQuery.data ?? [];
 
 const organizationLimitStatuses = organizationLimitStatusesQuery.data ?? [];
@@ -513,22 +529,42 @@ nextBillingAmount: Number(editOrgForm.nextBillingAmount || 0),
           </p>
         </div>
 
-        <Button
-          variant="outline"
-          onClick={() => {
-  organizationsQuery.refetch();
-  organizationLimitStatusesQuery.refetch();
-organizationOnboardingStatusesQuery.refetch();
-}}
-          disabled={organizationsQuery.isFetching}
-        >
-          <RefreshCw
-            className={`mr-2 h-4 w-4 ${
-              organizationsQuery.isFetching ? "animate-spin" : ""
-            }`}
-          />
-          새로고침
-        </Button>
+        <div className="flex flex-wrap gap-2">
+  <Button
+    variant="outline"
+    onClick={() => {
+      organizationsQuery.refetch();
+      organizationLimitStatusesQuery.refetch();
+      organizationOnboardingStatusesQuery.refetch();
+    }}
+    disabled={organizationsQuery.isFetching}
+  >
+    <RefreshCw
+      className={`mr-2 h-4 w-4 ${
+        organizationsQuery.isFetching ? "animate-spin" : ""
+      }`}
+    />
+    새로고침
+  </Button>
+
+  <Button
+    variant="destructive"
+    disabled={deactivateExpiredOverdueMut.isPending}
+    onClick={() => {
+      const ok = window.confirm(
+        "결제 유예기간이 지난 overdue 테넌트를 inactive/paused 처리할까요?"
+      );
+
+      if (!ok) return;
+
+      deactivateExpiredOverdueMut.mutate();
+    }}
+  >
+    {deactivateExpiredOverdueMut.isPending
+      ? "처리 중..."
+      : "유예기간 만료 비활성화"}
+  </Button>
+</div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-5">

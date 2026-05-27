@@ -33,6 +33,7 @@ getOrganizationOnboardingStatus,
   markSubscriptionPaymentFailed,
   listSubscriptionPayments,
   listSubscriptionPaymentEvents,
+deactivateExpiredOverdueOrganizations,
 } from "./saasdb";
 import bcrypt from "bcryptjs";
 import * as db from "./db";
@@ -843,4 +844,12 @@ username: normalizedUsername,
       id,
     };
   }),
+deactivateExpiredOverdueOrganizations: protectedProcedure.mutation(
+  async ({ ctx }) => {
+    assertSuperhost(ctx);
+    await requireSaasAdminUnlocked(Number(ctx.user.id));
+
+    return deactivateExpiredOverdueOrganizations();
+  }
+),
 });

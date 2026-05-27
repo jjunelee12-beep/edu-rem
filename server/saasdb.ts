@@ -598,13 +598,23 @@ export async function getOrganizationFeatureFlags(
   }
 
   return {
-    allowBackup: Boolean(org.allowBackup),
-    allowAuditLog: Boolean(org.allowAuditLog),
-    allowMessenger: Boolean(org.allowMessenger),
-    allowPracticeCenter: Boolean(org.allowPracticeCenter),
-    allowSettlementReport: Boolean(org.allowSettlementReport),
-    allowPrivateCertificate: Boolean(org.allowPrivateCertificate),
-  };
+  allowBackup: Boolean(org.allowBackup),
+  allowAuditLog: Boolean(org.allowAuditLog),
+  allowMessenger: Boolean(org.allowMessenger),
+  allowPracticeCenter: Boolean(org.allowPracticeCenter),
+  allowSettlementReport: Boolean(org.allowSettlementReport),
+  allowPrivateCertificate: Boolean(org.allowPrivateCertificate),
+
+  organization: {
+    id: org.id,
+    slug: org.slug,
+    status: org.status,
+    subscriptionStatus: org.subscriptionStatus,
+    paymentFailureCount: org.paymentFailureCount,
+    paymentFailedAt: org.paymentFailedAt,
+    graceUntilAt: org.graceUntilAt,
+  },
+};
 }
 
 export async function getOrganizationOnboardingStatus(organizationId: number) {
@@ -762,12 +772,12 @@ const PLAN_LIMITS: Record<string, any> = {
     maxStorageMb: 1024,
   },
   pro: {
-    maxUsers: 15,
-    maxLandingForms: 30,
-    maxAdForms: 30,
-    maxSmsPerMonth: 3000,
-    maxStorageMb: 3072,
-  },
+  maxUsers: 15,
+  maxLandingForms: 30,
+  maxAdForms: 30,
+  maxSmsPerMonth: 3000,
+  maxStorageMb: 2048,
+},
   enterprise: {
     maxUsers: 30,
     maxLandingForms: 60,
@@ -1449,4 +1459,43 @@ export async function listSubscriptionPaymentEvents(input: {
   }
 
   return [];
+}
+
+export async function deactivateExpiredOverdueOrganizations() {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const [rows] = await db.execute(sql`
+    SELECT id
+    FROM organizations
+    WHERE subscriptionStatus = 'overdue'
+      AND graceUntilAt IS NOT NULL
+      AND graceUntilAt < NOW()
+  `);
+
+  const targets = (rows as any[]) || [];
+
+  for (const row of targets) {
+    const organizationId = Number(row.id);
+
+    await db
+      .update(organizations)
+      .set({
+        subscriptionStatus: "paused",
+        status: "inactive",
+        updatedAt: new Date(),
+      } as any)
+      .where(eq(organizations.id, organizationId));
+
+    await recordSubscriptionPaymentEvent({
+      organizationId,
+      eventType: "subscription.paused",
+      message: "결제 유예기간 만료로 서비스 비활성화 처리",
+    });
+  }
+
+  return {
+    ok: true,
+    count: targets.length,
+  };
 }
