@@ -17,6 +17,7 @@ import {
   billingRegistrationTokens,
   subscriptionPayments,
   subscriptionPaymentEvents,
+  saasAnnouncements,
 } from "../drizzle/schema";
 import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
@@ -1459,6 +1460,130 @@ export async function listSubscriptionPaymentEvents(input: {
   }
 
   return [];
+}
+
+export async function listSaasAnnouncements() {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  return db
+    .select()
+    .from(saasAnnouncements)
+    .orderBy(desc(saasAnnouncements.createdAt))
+    .limit(100);
+}
+
+export async function getActiveSaasAnnouncement() {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const rows = await db
+    .select()
+    .from(saasAnnouncements)
+    .where(sql`
+      ${saasAnnouncements.isActive} = true
+      AND (${saasAnnouncements.startsAt} IS NULL OR ${saasAnnouncements.startsAt} <= NOW())
+      AND (${saasAnnouncements.endsAt} IS NULL OR ${saasAnnouncements.endsAt} >= NOW())
+    `)
+    .orderBy(desc(saasAnnouncements.createdAt))
+    .limit(1);
+
+  return rows[0] || null;
+}
+
+export async function createSaasAnnouncement(input: {
+  title: string;
+  content: string;
+  type?: "notice" | "update" | "maintenance" | "billing";
+  versionLabel?: string | null;
+  ctaText?: string | null;
+  ctaUrl?: string | null;
+  isActive?: boolean;
+  startsAt?: Date | null;
+  endsAt?: Date | null;
+  actorUserId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const result: any = await db.insert(saasAnnouncements).values({
+    title: input.title.trim(),
+    content: input.content.trim(),
+    type: input.type || "notice",
+    versionLabel: input.versionLabel?.trim() || null,
+    ctaText: input.ctaText?.trim() || null,
+    ctaUrl: input.ctaUrl?.trim() || null,
+    isActive: input.isActive ?? true,
+    startsAt: input.startsAt ?? null,
+    endsAt: input.endsAt ?? null,
+    createdBy: input.actorUserId ?? null,
+    updatedBy: input.actorUserId ?? null,
+  } as any);
+
+  return {
+    ok: true,
+    id: Number(result?.insertId ?? result?.[0]?.insertId ?? 0),
+  };
+}
+
+export async function updateSaasAnnouncement(input: {
+  id: number;
+  title?: string;
+  content?: string;
+  type?: "notice" | "update" | "maintenance" | "billing";
+  versionLabel?: string | null;
+  ctaText?: string | null;
+  ctaUrl?: string | null;
+  isActive?: boolean;
+  startsAt?: Date | null;
+  endsAt?: Date | null;
+  actorUserId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(saasAnnouncements)
+    .set({
+      title: input.title === undefined ? undefined : input.title.trim(),
+      content: input.content === undefined ? undefined : input.content.trim(),
+      type: input.type,
+      versionLabel:
+        input.versionLabel === undefined
+          ? undefined
+          : input.versionLabel?.trim() || null,
+      ctaText:
+        input.ctaText === undefined
+          ? undefined
+          : input.ctaText?.trim() || null,
+      ctaUrl:
+        input.ctaUrl === undefined
+          ? undefined
+          : input.ctaUrl?.trim() || null,
+      isActive: input.isActive,
+      startsAt: input.startsAt === undefined ? undefined : input.startsAt,
+      endsAt: input.endsAt === undefined ? undefined : input.endsAt,
+      updatedBy: input.actorUserId ?? undefined,
+      updatedAt: new Date(),
+    } as any)
+    .where(eq(saasAnnouncements.id, input.id));
+
+  return { ok: true };
+}
+
+export async function deleteSaasAnnouncement(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  await db
+    .update(saasAnnouncements)
+    .set({
+      isActive: false,
+      updatedAt: new Date(),
+    } as any)
+    .where(eq(saasAnnouncements.id, id));
+
+  return { ok: true };
 }
 
 export async function deactivateExpiredOverdueOrganizations() {

@@ -6237,43 +6237,50 @@ rejectionReason:
           ? `[학기 승인] ${student.clientName || "학생"} 학생의 ${sem.semesterOrder}학기 승인이 완료되었습니다.`
           : `[학기 불승인] ${student.clientName || "학생"} 학생의 ${sem.semesterOrder}학기가 불승인 처리되었습니다.`;
 
-      const notificationId = await db.createNotification({
-        organizationId,
-        userId: Number(student.assigneeId),
-        type: "approval",
-        title: notificationTitle,
-        level: notificationLevel,
-        message: notificationMessage,
-        relatedId: Number(input.id),
-targetType: "semester",
-targetId: Number(input.id),
-linkUrl: `/approval-history/semester/${input.id}`,
-metadataJson: JSON.stringify({
+    const semesterNotificationMetadata = {
   approvalStatus: input.approvalStatus,
+  studentId: Number(student.id),
+  semesterId: Number(input.id),
+  semesterOrder: Number(sem.semesterOrder || 0),
   rejectionReason:
     input.approvalStatus === "불승인" ? rejectionReason : null,
-}),
-        isRead: false,
-      } as any);
+};
 
-      emitLiveNotification({
-        id: Number(notificationId),
-        userId: Number(student.assigneeId),
-        type: "approval",
-        title: notificationTitle,
-        level: notificationLevel,
-        message: notificationMessage,
-        relatedId: Number(input.id),
-targetType: "semester",
-targetId: Number(input.id),
-linkUrl: `/approval-history/semester/${input.id}`,
-metadataJson: JSON.stringify({
-  approvalStatus: input.approvalStatus,
-  rejectionReason:
-    input.approvalStatus === "불승인" ? rejectionReason : null,
-}),
-        isRead: false,
-      });
+const semesterNotificationMessage =
+  input.approvalStatus === "승인"
+    ? notificationMessage
+    : `${notificationMessage}\n\n불승인 사유:\n${rejectionReason}`;
+
+const notificationId = await db.createNotification({
+  organizationId,
+  userId: Number(student.assigneeId),
+  type: "semester_approval",
+  title: notificationTitle,
+  level: notificationLevel,
+  message: semesterNotificationMessage,
+  relatedId: Number(student.id),
+  targetType: "semester",
+  targetId: Number(input.id),
+  linkUrl: `/students/${student.id}`,
+  metadataJson: JSON.stringify(semesterNotificationMetadata),
+  isRead: false,
+} as any);
+
+emitLiveNotification({
+  organizationId,
+  id: Number(notificationId),
+  userId: Number(student.assigneeId),
+  type: "semester_approval",
+  title: notificationTitle,
+  level: notificationLevel,
+  message: semesterNotificationMessage,
+  relatedId: Number(student.id),
+  targetType: "semester",
+  targetId: Number(input.id),
+  linkUrl: `/students/${student.id}`,
+  metadataJson: JSON.stringify(semesterNotificationMetadata),
+  isRead: false,
+});
     }
 
     return { success: true };

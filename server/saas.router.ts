@@ -34,6 +34,11 @@ getOrganizationOnboardingStatus,
   listSubscriptionPayments,
   listSubscriptionPaymentEvents,
 deactivateExpiredOverdueOrganizations,
+  listSaasAnnouncements,
+  getActiveSaasAnnouncement,
+  createSaasAnnouncement,
+  updateSaasAnnouncement,
+  deleteSaasAnnouncement,
 } from "./saasdb";
 import bcrypt from "bcryptjs";
 import * as db from "./db";
@@ -774,6 +779,81 @@ listSubscriptionPaymentEvents: protectedProcedure
       paymentId: input.paymentId ?? null,
       organizationId: input.organizationId ?? null,
     });
+  }),
+
+getActiveAnnouncement: protectedProcedure.query(async () => {
+  return getActiveSaasAnnouncement();
+}),
+
+listAnnouncements: protectedProcedure.query(async ({ ctx }) => {
+  assertSuperhost(ctx);
+  await requireSaasAdminUnlocked(Number(ctx.user.id));
+
+  return listSaasAnnouncements();
+}),
+
+createAnnouncement: protectedProcedure
+  .input(
+    z.object({
+      title: z.string().min(1),
+      content: z.string().min(1),
+      type: z
+        .enum(["notice", "update", "maintenance", "billing"])
+        .default("notice"),
+      versionLabel: z.string().optional().nullable(),
+      ctaText: z.string().optional().nullable(),
+      ctaUrl: z.string().optional().nullable(),
+      isActive: z.boolean().default(true),
+      startsAt: z.date().optional().nullable(),
+      endsAt: z.date().optional().nullable(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    assertSuperhost(ctx);
+    await requireSaasAdminUnlocked(Number(ctx.user.id));
+
+    return createSaasAnnouncement({
+      ...input,
+      actorUserId: Number(ctx.user.id),
+    });
+  }),
+
+updateAnnouncement: protectedProcedure
+  .input(
+    z.object({
+      id: z.number(),
+      title: z.string().min(1).optional(),
+      content: z.string().min(1).optional(),
+      type: z.enum(["notice", "update", "maintenance", "billing"]).optional(),
+      versionLabel: z.string().optional().nullable(),
+      ctaText: z.string().optional().nullable(),
+      ctaUrl: z.string().optional().nullable(),
+      isActive: z.boolean().optional(),
+      startsAt: z.date().optional().nullable(),
+      endsAt: z.date().optional().nullable(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    assertSuperhost(ctx);
+    await requireSaasAdminUnlocked(Number(ctx.user.id));
+
+    return updateSaasAnnouncement({
+      ...input,
+      actorUserId: Number(ctx.user.id),
+    });
+  }),
+
+deleteAnnouncement: protectedProcedure
+  .input(
+    z.object({
+      id: z.number(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    assertSuperhost(ctx);
+    await requireSaasAdminUnlocked(Number(ctx.user.id));
+
+    return deleteSaasAnnouncement(input.id);
   }),
 
 createHostAccount: protectedProcedure

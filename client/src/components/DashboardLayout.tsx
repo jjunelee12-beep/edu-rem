@@ -65,6 +65,7 @@ import {
  ChevronRight,
  ChevronDown,
  FileCheck2,
+CreditCard,
 } from "lucide-react";
 
 type UserRole = "staff" | "admin" | "host" | "superhost";
@@ -117,6 +118,8 @@ const superhostMenuItems: MenuItem[] = [
  { icon: Crown, label: "슈퍼호스트 대시보드", path: "/superhost" },
  { icon: Building2, label: "테넌트 관리", path: "/superhost/tenants" },
  { icon: MessageSquare, label: "SaaS 문의 관리", path: "/superhost/saas-inquiries" },
+{ icon: CreditCard, label: "SaaS 정산", path: "/superhost/subscription-payments" },
+{ icon: Megaphone, label: "SaaS 공지 관리", path: "/superhost/announcements" },
  { icon: Palette, label: "레이아웃 빌더", path: "/superhost/layout-builder" },
  { icon: Sparkles, label: "AI 정책 관리", path: "/superhost/ai-policy" },
  { icon: Sparkles, label: "AI 상담", path: "/ai" },
@@ -150,6 +153,10 @@ type NotificationItem = {
  message: string;
  imageUrl?: string | null;
  relatedId?: number | null;
+ targetType?: string | null;
+ targetId?: number | null;
+ linkUrl?: string | null;
+ metadataJson?: string | null;
  isRead: boolean;
  createdAt?: string | Date;
 };
@@ -237,6 +244,27 @@ const { data: organizationFeatures } =
     enabled: canUseOrgQueries,
     retry: false,
   });
+
+const [saasAnnouncementOpen, setSaasAnnouncementOpen] = useState(false);
+const [semesterRejectionModal, setSemesterRejectionModal] =
+  useState<NotificationItem | null>(null);
+
+const { data: activeSaasAnnouncement } =
+  trpc.saas.getActiveAnnouncement.useQuery(undefined, {
+    enabled: !!user,
+    retry: false,
+  });
+
+useEffect(() => {
+  if (!activeSaasAnnouncement?.id) return;
+
+  const dismissedKey = `saas-announcement-dismissed-${activeSaasAnnouncement.id}`;
+  const dismissed = localStorage.getItem(dismissedKey);
+
+  if (!dismissed) {
+    setSaasAnnouncementOpen(true);
+  }
+}, [activeSaasAnnouncement?.id]);
 
 const currentOrg = (organizationFeatures as any)?.organization || {};
 const subscriptionStatus = String(currentOrg.subscriptionStatus || "");
@@ -1015,6 +1043,11 @@ const renderPrimaryMenuSection = () => {
  }
  }
 
+if (item.type === "semester_approval") {
+  openSemesterApprovalNotification(item);
+  return;
+}
+
  if (item.type === "messenger" && item.relatedId) {
 if (!canUseMessenger) return;
  setIsMessengerOpen(true);
@@ -1082,8 +1115,162 @@ if (item.type === "messenger") {
  const displayPositionName =
  (myProfile as any)?.positionName || "직급 미지정";
 
+const closeSaasAnnouncement = () => {
+  if (activeSaasAnnouncement?.id) {
+    localStorage.setItem(
+      `saas-announcement-dismissed-${activeSaasAnnouncement.id}`,
+      "1"
+    );
+  }
+
+  setSaasAnnouncementOpen(false);
+};
+
+const parseNotificationMetadata = (item: NotificationItem) => {
+  try {
+    return item.metadataJson ? JSON.parse(item.metadataJson) : {};
+  } catch {
+    return {};
+  }
+};
+
+const openSemesterApprovalNotification = (item: NotificationItem) => {
+  const metadata = parseNotificationMetadata(item);
+  const studentId = Number(metadata.studentId || item.relatedId || 0);
+
+  if (studentId > 0) {
+    setLocation(withOrgPath(`/students/${studentId}`));
+  }
+
+  const isRejected =
+    metadata.approvalStatus === "불승인" ||
+    item.level === "danger" ||
+    item.message.includes("불승인");
+
+  if (!isRejected) return;
+
+  const key = `semester-rejection-reason-seen-${item.id}`;
+  if (localStorage.getItem(key)) return;
+
+  localStorage.setItem(key, "1");
+  setSemesterRejectionModal(item);
+};
+
+const saasAnnouncementTypeLabel: Record<string, string> = {
+  notice: "공지",
+  update: "업데이트",
+  maintenance: "점검",
+  billing: "결제",
+};
+
  return (
  <>
+ {activeSaasAnnouncement && saasAnnouncementOpen && (
+   <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4">
+     <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+       <div className="flex items-start justify-between gap-4">
+         <div>
+           <div className="mb-2 inline-flex rounded-full bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
+             {saasAnnouncementTypeLabel[activeSaasAnnouncement.type] ||
+               "공지"}
+             {activeSaasAnnouncement.versionLabel
+               ? ` · ${activeSaasAnnouncement.versionLabel}`
+               : ""}
+           </div>
+
+           <h2 className="text-xl font-extrabold text-black">
+             {activeSaasAnnouncement.title}
+           </h2>
+         </div>
+
+         <button
+           type="button"
+           onClick={closeSaasAnnouncement}
+           className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-black"
+           aria-label="공지 닫기"
+         >
+           <X className="h-5 w-5" />
+         </button>
+       </div>
+
+       <div className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+         {activeSaasAnnouncement.content}
+       </div>
+
+       <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+         <button
+           type="button"
+           onClick={closeSaasAnnouncement}
+           className="inline-flex h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50"
+         >
+           다시 보지 않기
+         </button>
+
+         {activeSaasAnnouncement.ctaUrl && (
+           <button
+             type="button"
+             onClick={() => {
+               window.open(activeSaasAnnouncement.ctaUrl, "_blank");
+               closeSaasAnnouncement();
+             }}
+             className="inline-flex h-10 items-center justify-center rounded-2xl bg-primary px-4 text-sm font-bold text-white hover:bg-primary/90"
+           >
+             {activeSaasAnnouncement.ctaText || "자세히 보기"}
+           </button>
+         )}
+       </div>
+     </div>
+   </div>
+ )}
+
+{semesterRejectionModal && (
+  <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/40 px-4">
+    <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="mb-2 inline-flex rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700">
+            학기 불승인
+          </div>
+
+          <h2 className="text-xl font-extrabold text-black">
+            불승인 사유
+          </h2>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setSemesterRejectionModal(null)}
+          className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-black"
+          aria-label="불승인 사유 닫기"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="mt-4 whitespace-pre-wrap rounded-2xl bg-red-50 px-4 py-3 text-sm leading-6 text-red-900">
+        {(() => {
+          const metadata = parseNotificationMetadata(semesterRejectionModal);
+          return (
+            metadata.rejectionReason ||
+            semesterRejectionModal.message ||
+            "불승인 사유가 등록되어 있습니다."
+          );
+        })()}
+      </div>
+
+      <div className="mt-6 flex justify-end">
+        <button
+          type="button"
+          onClick={() => setSemesterRejectionModal(null)}
+          className="inline-flex h-10 items-center justify-center rounded-2xl bg-primary px-4 text-sm font-bold text-white hover:bg-primary/90"
+        >
+          확인
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
  <div className="relative" ref={sidebarRef}>
  <Sidebar
   collapsible="icon"
@@ -1470,86 +1657,107 @@ if (item.type === "messenger") {
 function getNotificationBadge(item: NotificationItem) {
  const level = String(item.level || "normal");
 
+ if (item.type === "semester_approval") {
+   if (level === "success") {
+     return {
+       label: "학기승인",
+       className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+     };
+   }
+
+   if (level === "danger") {
+     return {
+       label: "학기불승인",
+       className: "border-rose-200 bg-rose-50 text-rose-700",
+     };
+   }
+
+   return {
+     label: "학기승인",
+     className: "border-slate-200 bg-slate-50 text-slate-700",
+   };
+ }
+
  if (item.type === "approval") {
- if (level === "success") {
- return {
- label: "승인완료",
- className: "border-emerald-200 bg-emerald-50 text-emerald-700",
- };
- }
+   if (level === "success") {
+     return {
+       label: "승인완료",
+       className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+     };
+   }
 
- if (level === "danger") {
- return {
- label: "반려",
- className: "border-rose-200 bg-rose-50 text-rose-700",
- };
- }
+   if (level === "danger") {
+     return {
+       label: "반려",
+       className: "border-rose-200 bg-rose-50 text-rose-700",
+     };
+   }
 
- if (level === "important" || level === "urgent") {
- return {
- label: "결재요청",
- className: "border-blue-200 bg-blue-50 text-blue-700",
- };
- }
+   if (level === "important" || level === "urgent") {
+     return {
+       label: "결재요청",
+       className: "border-blue-200 bg-blue-50 text-blue-700",
+     };
+   }
 
- return {
- label: "전자결재",
- className: "border-slate-200 bg-slate-50 text-slate-700",
- };
+   return {
+     label: "전자결재",
+     className: "border-slate-200 bg-slate-50 text-slate-700",
+   };
  }
 
  if (item.type === "notice") {
- if (level === "urgent") {
- return {
- label: "긴급공지",
- className: "border-red-200 bg-red-50 text-red-700",
- };
- }
+   if (level === "urgent") {
+     return {
+       label: "긴급공지",
+       className: "border-red-200 bg-red-50 text-red-700",
+     };
+   }
 
- if (level === "important") {
- return {
- label: "중요공지",
- className: "border-amber-200 bg-amber-50 text-amber-700",
- };
- }
+   if (level === "important") {
+     return {
+       label: "중요공지",
+       className: "border-amber-200 bg-amber-50 text-amber-700",
+     };
+   }
 
- return {
- label: "공지",
- className: "border-amber-200 bg-amber-50 text-amber-700",
- };
+   return {
+     label: "공지",
+     className: "border-amber-200 bg-amber-50 text-amber-700",
+   };
  }
 
  if (item.type === "schedule") {
- if (level === "important" || level === "urgent") {
- return {
- label: "중요일정",
- className: "border-violet-200 bg-violet-50 text-violet-700",
- };
- }
+   if (level === "important" || level === "urgent") {
+     return {
+       label: "중요일정",
+       className: "border-violet-200 bg-violet-50 text-violet-700",
+     };
+   }
 
- return {
- label: "일정",
- className: "border-violet-200 bg-violet-50 text-violet-700",
- };
+   return {
+     label: "일정",
+     className: "border-violet-200 bg-violet-50 text-violet-700",
+   };
  }
 
  if (item.type === "messenger") {
- return {
- label: "메신저",
- className: "border-sky-200 bg-sky-50 text-sky-700",
- };
+   return {
+     label: "메신저",
+     className: "border-sky-200 bg-sky-50 text-sky-700",
+   };
  }
 
  if (item.type === "lead") {
- return {
- label: "상담DB",
- className: "border-teal-200 bg-teal-50 text-teal-700",
- };
+   return {
+     label: "상담DB",
+     className: "border-teal-200 bg-teal-50 text-teal-700",
+   };
  }
 
  return {
- label: "알림",
- className: "border-slate-200 bg-slate-50 text-slate-700",
+   label: "알림",
+   className: "border-slate-200 bg-slate-50 text-slate-700",
  };
 }
 
@@ -1560,38 +1768,48 @@ function getNotificationTitle(item: NotificationItem) {
  const message = String(item.message || "");
  const level = String(item.level || "normal");
 
+ if (item.type === "semester_approval") {
+   if (level === "success") return "학기 승인 완료";
+   if (level === "danger") return "학기 불승인";
+
+   if (message.includes("불승인")) return "학기 불승인";
+   if (message.includes("승인")) return "학기 승인 완료";
+
+   return "학기 승인 알림";
+ }
+
  if (item.type === "approval") {
- if (level === "success") return "전자결재 승인완료";
- if (level === "danger") return "전자결재 반려";
- if (level === "important" || level === "urgent") return "전자결재 요청";
+   if (level === "success") return "전자결재 승인완료";
+   if (level === "danger") return "전자결재 반려";
+   if (level === "important" || level === "urgent") return "전자결재 요청";
 
- if (message.includes("승인완료") || message.includes("최종 승인")) {
- return "전자결재 승인완료";
- }
- if (message.includes("반려")) {
- return "전자결재 반려";
- }
- if (
- message.includes("요청") ||
- message.includes("결재 요청") ||
- message.includes("결재 단계") ||
- message.includes("결재 차례")
- ) {
- return "전자결재 요청";
- }
+   if (message.includes("승인완료") || message.includes("최종 승인")) {
+     return "전자결재 승인완료";
+   }
+   if (message.includes("반려")) {
+     return "전자결재 반려";
+   }
+   if (
+     message.includes("요청") ||
+     message.includes("결재 요청") ||
+     message.includes("결재 단계") ||
+     message.includes("결재 차례")
+   ) {
+     return "전자결재 요청";
+   }
 
- return "전자결재 알림";
+   return "전자결재 알림";
  }
 
  if (item.type === "notice") {
- if (level === "urgent") return "긴급 공지";
- if (level === "important") return "중요 공지";
- return "공지 알림";
+   if (level === "urgent") return "긴급 공지";
+   if (level === "important") return "중요 공지";
+   return "공지 알림";
  }
 
  if (item.type === "schedule") {
- if (level === "important" || level === "urgent") return "중요 일정";
- return "일정 알림";
+   if (level === "important" || level === "urgent") return "중요 일정";
+   return "일정 알림";
  }
 
  if (item.type === "messenger") return "메신저 알림";

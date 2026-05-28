@@ -2728,6 +2728,51 @@ export type SubscriptionPaymentEvent =
 export type InsertSubscriptionPaymentEvent =
   typeof subscriptionPaymentEvents.$inferInsert;
 
+export const saasAnnouncements = mysqlTable(
+  "saas_announcements",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    title: varchar("title", { length: 200 }).notNull(),
+    content: text("content").notNull(),
+
+    type: mysqlEnum("type", [
+      "notice",
+      "update",
+      "maintenance",
+      "billing",
+    ])
+      .notNull()
+      .default("notice"),
+
+    versionLabel: varchar("versionLabel", { length: 100 }),
+    ctaText: varchar("ctaText", { length: 100 }),
+    ctaUrl: varchar("ctaUrl", { length: 500 }),
+
+    isActive: boolean("isActive").notNull().default(true),
+
+    startsAt: datetime("startsAt"),
+    endsAt: datetime("endsAt"),
+
+    createdBy: int("createdBy"),
+    updatedBy: int("updatedBy"),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    activePeriodIdx: index("idx_saas_announcements_active_period").on(
+      table.isActive,
+      table.startsAt,
+      table.endsAt
+    ),
+    createdIdx: index("idx_saas_announcements_created").on(table.createdAt),
+  })
+);
+
+export type SaasAnnouncement = typeof saasAnnouncements.$inferSelect;
+export type InsertSaasAnnouncement = typeof saasAnnouncements.$inferInsert;
+
 export const apiErrorLogs = mysqlTable(
   "api_error_logs",
   {

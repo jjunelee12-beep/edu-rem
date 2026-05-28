@@ -10,6 +10,10 @@ type LiveAppNotificationPayload = {
   message: string;
   imageUrl?: string | null;
   relatedId?: number | null;
+  targetType?: string | null;
+  targetId?: number | null;
+  linkUrl?: string | null;
+  metadataJson?: string | null;
   isRead?: boolean;
   createdAt?: string | Date | null;
 };
@@ -34,7 +38,11 @@ if (!organizationId) return;
     level: payload.level ?? "normal",
     message: payload.message,
     imageUrl: payload.imageUrl ?? null,
-    relatedId: payload.relatedId ?? null,
+        relatedId: payload.relatedId ?? null,
+    targetType: payload.targetType ?? null,
+    targetId: payload.targetId ?? null,
+    linkUrl: payload.linkUrl ?? null,
+    metadataJson: payload.metadataJson ?? null,
     isRead: payload.isRead ?? false,
     createdAt: payload.createdAt
       ? new Date(payload.createdAt).toISOString()

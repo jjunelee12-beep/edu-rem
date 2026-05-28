@@ -33,6 +33,7 @@ import TenantsPage from "@/pages/superhost/TenantsPage";
 import OrganizationMonitoringPage from "@/pages/superhost/OrganizationMonitoringPage";
 import SaasInquiriesPage from "@/pages/superhost/SaasInquiriesPage";
 import SubscriptionPaymentsPage from "@/pages/superhost/SubscriptionPaymentsPage";
+import SaasAnnouncementsPage from "@/pages/superhost/SaasAnnouncementsPage";
 import BillingRegisterPage from "@/pages/BillingRegisterPage";
 import MessengerPage from "@/pages/MessengerPage";
 import AttendancePage from "@/pages/AttendancePage";
@@ -281,6 +282,9 @@ function PrivateRouter() {
 </Route>
 <Route path="/superhost/subscription-payments">
   <SuperhostRoute component={SubscriptionPaymentsPage} />
+</Route>
+<Route path="/superhost/announcements">
+  <SuperhostRoute component={SaasAnnouncementsPage} />
 </Route>
 <Route path="/saas/monitoring/:organizationId">
   <SuperhostRoute component={OrganizationMonitoringPage} />
