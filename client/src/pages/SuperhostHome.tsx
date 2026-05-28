@@ -142,7 +142,6 @@ const cleanupOrphanMutation =
 
   if (user?.role !== "superhost") {
     return (
-  <SaasAdminGuard>
     <div className="space-y-6 p-6">
         <Card className="border-destructive/20">
           <CardHeader>
@@ -160,6 +159,7 @@ const cleanupOrphanMutation =
   }
 
   return (
+  <SaasAdminGuard>
     <div className="space-y-6 p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
   <div>
