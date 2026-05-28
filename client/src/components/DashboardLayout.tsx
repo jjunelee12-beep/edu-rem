@@ -257,14 +257,15 @@ const { data: activeSaasAnnouncement } =
 
 useEffect(() => {
   if (!activeSaasAnnouncement?.id) return;
+  if (!user?.id) return;
 
-  const dismissedKey = `saas-announcement-dismissed-${activeSaasAnnouncement.id}`;
+  const dismissedKey = `saas-announcement-dismissed-${user.id}-${activeSaasAnnouncement.id}`;
   const dismissed = localStorage.getItem(dismissedKey);
 
   if (!dismissed) {
     setSaasAnnouncementOpen(true);
   }
-}, [activeSaasAnnouncement?.id]);
+}, [activeSaasAnnouncement?.id, user?.id]);
 
 const currentOrg = (organizationFeatures as any)?.organization || {};
 const subscriptionStatus = String(currentOrg.subscriptionStatus || "");
@@ -1116,9 +1117,9 @@ if (item.type === "messenger") {
  (myProfile as any)?.positionName || "직급 미지정";
 
 const closeSaasAnnouncement = () => {
-  if (activeSaasAnnouncement?.id) {
+  if (activeSaasAnnouncement?.id && user?.id) {
     localStorage.setItem(
-      `saas-announcement-dismissed-${activeSaasAnnouncement.id}`,
+      `saas-announcement-dismissed-${user.id}-${activeSaasAnnouncement.id}`,
       "1"
     );
   }

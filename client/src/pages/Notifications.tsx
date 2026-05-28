@@ -310,6 +310,14 @@ export default function Notifications() {
     return notifications.filter((item) => !item.isRead).length;
   }, [notifications]);
 
+const parseNotificationMetadata = (item: NotificationItem) => {
+  try {
+    return item.metadataJson ? JSON.parse(item.metadataJson) : {};
+  } catch {
+    return {};
+  }
+};
+
   const handleOpenNotification = async (item: NotificationItem) => {
     if (!item.isRead) {
       try {
@@ -323,6 +331,28 @@ export default function Notifications() {
         return;
       }
     }
+
+const metadata = parseNotificationMetadata(item);
+
+if (
+  item.type === "semester_approval" ||
+  item.targetType === "semester"
+) {
+  const studentId = Number(metadata.studentId || item.relatedId || 0);
+
+  if (studentId > 0) {
+    const firstSegment =
+      window.location.pathname.split("/").filter(Boolean)[0] || "";
+
+    setLocation(
+      firstSegment &&
+        !["login", "form", "ad-form", "saas", "superhost"].includes(firstSegment)
+        ? `/${firstSegment}/students/${studentId}`
+        : `/students/${studentId}`
+    );
+    return;
+  }
+}
 
 const linkUrl = String(item.linkUrl || "").trim();
 
