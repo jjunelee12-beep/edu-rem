@@ -100,8 +100,12 @@ checkAdminUnlocked: protectedProcedure.query(async ({ ctx }) => {
 setAdminPassword: protectedProcedure
   .input(
     z.object({
-      password: z.string().min(8, "관리자 암호는 최소 8자 이상이어야 합니다."),
-      passwordConfirm: z.string().min(8),
+      password: z
+        .string()
+        .regex(/^\d{6}$/, "관리자 PIN은 숫자 6자리여야 합니다."),
+      passwordConfirm: z
+        .string()
+        .regex(/^\d{6}$/, "관리자 PIN 확인은 숫자 6자리여야 합니다."),
     })
   )
   .mutation(async ({ ctx, input }) => {
@@ -124,7 +128,9 @@ setAdminPassword: protectedProcedure
 unlockAdmin: protectedProcedure
   .input(
     z.object({
-      password: z.string().min(1),
+      password: z
+  .string()
+  .regex(/^\d{6}$/, "관리자 PIN은 숫자 6자리여야 합니다."),
     })
   )
   .mutation(async ({ ctx, input }) => {
