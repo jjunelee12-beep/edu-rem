@@ -41,7 +41,7 @@ getOrganizationById,
 getOrganizationLimitStatus,
 processTrialEndedOrganizations,
 deactivateExpiredOverdueOrganizations,
- } from "./saasdb";
+ } from "../saasdb";
 import { setLiveNotificationIO } from "./live-notifications";
 import { setSocketServer } from "./socket-status";
 import { startAutoBackupScheduler } from "./auto-backup-scheduler";
