@@ -87,13 +87,53 @@ if (!organizationId) {
 
 const organization = await getOrganizationById(organizationId);
 
-  if (!organization || organization.status !== "active") {
-    throwAppError(
-  ERROR_CODES.ORGANIZATION_INACTIVE,
-  "현재 이용이 제한된 회사 계정입니다.",
-  403
-);
-  }
+if (!organization) {
+  throwAppError(
+    ERROR_CODES.ORGANIZATION_INACTIVE,
+    "소속 회사 정보를 확인할 수 없습니다. 관리자에게 문의해주세요.",
+    403
+  );
+}
+
+if (organization.status === "inactive") {
+  throwAppError(
+    ERROR_CODES.ORGANIZATION_INACTIVE,
+    "서비스가 비활성화되었습니다. 결제 상태를 확인하거나 관리자에게 문의해주세요.",
+    403
+  );
+}
+
+if (organization.status === "suspended") {
+  throwAppError(
+    ERROR_CODES.ORGANIZATION_INACTIVE,
+    "서비스 이용이 일시정지되었습니다. 관리자에게 문의해주세요.",
+    403
+  );
+}
+
+if (organization.subscriptionStatus === "overdue") {
+  throwAppError(
+    ERROR_CODES.ORGANIZATION_INACTIVE,
+    "결제 확인이 필요합니다. 결제 정보를 확인하거나 관리자에게 문의해주세요.",
+    403
+  );
+}
+
+if (organization.subscriptionStatus === "paused") {
+  throwAppError(
+    ERROR_CODES.ORGANIZATION_INACTIVE,
+    "결제 유예기간이 만료되어 서비스가 비활성화되었습니다. 관리자에게 문의해주세요.",
+    403
+  );
+}
+
+if (organization.subscriptionStatus === "cancelled") {
+  throwAppError(
+    ERROR_CODES.ORGANIZATION_INACTIVE,
+    "구독이 해지된 회사 계정입니다. 관리자에게 문의해주세요.",
+    403
+  );
+}
 }
 
 const apiErrorLogMiddleware = t.middleware(

@@ -39,7 +39,9 @@ import {
 import { 
 getOrganizationById,
 getOrganizationLimitStatus,
- } from "../saasdb";
+processTrialEndedOrganizations,
+deactivateExpiredOverdueOrganizations,
+ } from "./saasdb";
 import { setLiveNotificationIO } from "./live-notifications";
 import { setSocketServer } from "./socket-status";
 import { startAutoBackupScheduler } from "./auto-backup-scheduler";
@@ -161,6 +163,39 @@ function sanitizeFilename(name: string) {
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, "");
 }
 
+let saasBillingGuardStarted = false;
+
+function startSaasBillingGuardScheduler() {
+  if (saasBillingGuardStarted) return;
+  saasBillingGuardStarted = true;
+
+  const run = async () => {
+  try {
+    const trialResult = await processTrialEndedOrganizations();
+    const overdueResult = await deactivateExpiredOverdueOrganizations();
+
+    if (Number(trialResult?.count || 0) > 0) {
+      console.log("[SAAS BILLING GUARD] processed ended trials:", trialResult.count);
+    }
+
+    if (Number(overdueResult?.count || 0) > 0) {
+      console.log("[SAAS BILLING GUARD] paused organizations:", overdueResult.count);
+    }
+  } catch (error: any) {
+    console.error(
+      "[SAAS BILLING GUARD] failed:",
+      error?.message || error
+    );
+  }
+};
+
+  run();
+
+  setInterval(run, 60 * 60 * 1000);
+
+  console.log("[SAAS BILLING GUARD] scheduler started");
+}
+
 async function startServer() {
   const app = express();
 
@@ -233,6 +268,7 @@ async function startServer() {
 setLiveNotificationIO(io);
 setSocketServer(io);
 startAutoBackupScheduler();
+startSaasBillingGuardScheduler();
 
   const onlineUserSocketCounts = new Map<string, number>();
 

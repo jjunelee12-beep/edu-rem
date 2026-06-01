@@ -1205,8 +1205,7 @@ export async function markSubscriptionPaymentFailed(input: {
   const failureCount = Number((org as any)?.paymentFailureCount || 0) + 1;
 
   const graceUntilAt = new Date();
-  graceUntilAt.setDate(graceUntilAt.getDate() + 7);
-
+  graceUntilAt.setDate(graceUntilAt.getDate() + 3);
   const nextStatus = failureCount >= 3 ? "paused" : "overdue";
 
   await db
@@ -1623,6 +1622,49 @@ export async function deactivateExpiredOverdueOrganizations() {
       organizationId,
       eventType: "subscription.paused",
       message: "결제 유예기간 만료로 서비스 비활성화 처리",
+    });
+  }
+
+  return {
+    ok: true,
+    count: targets.length,
+  };
+}
+
+export async function processTrialEndedOrganizations() {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const [rows] = await db.execute(sql`
+    SELECT id
+    FROM organizations
+    WHERE subscriptionStatus = 'trial'
+      AND trialEndsAt IS NOT NULL
+      AND trialEndsAt < NOW()
+      AND status = 'active'
+  `);
+
+  const targets = (rows as any[]) || [];
+
+  for (const row of targets) {
+    const organizationId = Number(row.id);
+    const graceUntilAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+
+    await db
+      .update(organizations)
+      .set({
+        subscriptionStatus: "overdue",
+        paymentFailedAt: new Date(),
+        paymentFailureCount: 1,
+        graceUntilAt,
+        updatedAt: new Date(),
+      } as any)
+      .where(eq(organizations.id, organizationId));
+
+    await recordSubscriptionPaymentEvent({
+      organizationId,
+      eventType: "trial.payment_failed",
+message: "Trial 종료 후 자동결제 실패로 3일 유예 상태 전환",
     });
   }
 
