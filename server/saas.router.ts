@@ -188,6 +188,15 @@ checkSlug: publicProcedure
   }),
 
 createSignup: publicProcedure
+  .mutation(async () => {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "카드 등록 완료 후에만 회사 계정을 생성할 수 있습니다.",
+      400
+    );
+  }),
+
+createSignupAfterBilling: publicProcedure
   .input(
     z.object({
       companyName: z.string().min(1),
@@ -205,6 +214,8 @@ createSignup: publicProcedure
       password: z.string().min(4),
       passwordConfirm: z.string().min(4),
       planCode: z.enum(["starter", "business", "enterprise"]),
+      billingKey: z.string().min(10),
+      customerKey: z.string().min(5),
     })
   )
   .mutation(async ({ input }) => {
@@ -250,11 +261,13 @@ createSignup: publicProcedure
       username,
       passwordHash,
       planCode:
-  input.planCode === "starter"
-    ? "basic"
-    : input.planCode === "business"
-      ? "pro"
-      : "enterprise",
+        input.planCode === "starter"
+          ? "basic"
+          : input.planCode === "business"
+            ? "pro"
+            : "enterprise",
+      billingKey: input.billingKey.trim(),
+      customerKey: input.customerKey.trim(),
     });
   }),
 

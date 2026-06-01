@@ -160,27 +160,20 @@ function buildSemesterLabelOptions() {
   return options;
 }
 
-function getNextSemesterLabel(sortedSemesters: any[]) {
-  const last = sortedSemesters?.length
-    ? sortedSemesters[sortedSemesters.length - 1]
-    : null;
+function getCurrentAcademicSemesterLabel(date = new Date()) {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
 
-  const raw = String(last?.semesterLabel || "").trim();
-  const match = raw.match(/^(\d{4})년\s*([12])학기$/);
-
-  if (match) {
-    const year = Number(match[1]);
-    const term = Number(match[2]);
-
-    if (term === 1) return `${year}년 2학기`;
+  if (month > 11 || (month === 11 && day >= 15)) {
     return `${year + 1}년 1학기`;
   }
 
-  const now = new Date();
-  const month = now.getMonth() + 1;
-  const baseYear = now.getFullYear();
+  if (month > 5 || (month === 5 && day >= 15)) {
+    return `${year}년 2학기`;
+  }
 
-  return month <= 6 ? `${baseYear}년 1학기` : `${baseYear}년 2학기`;
+  return `${year}년 1학기`;
 }
 
 type TemplateTabType = "전공필수" | "전공선택" | "교양" | "일반";
@@ -1471,7 +1464,7 @@ await Promise.all([
 
     setSemForm({
       semesterOrder: String(nextOrder),
-semesterLabel: getNextSemesterLabel(sortedSemesters),
+semesterLabel: getCurrentAcademicSemesterLabel(),
       plannedMonth: "",
       plannedInstitutionId: "",
       plannedSubjectCount: "",

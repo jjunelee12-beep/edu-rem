@@ -873,6 +873,8 @@ export async function createTenantSignup(input: {
   username: string;
   passwordHash: string;
   planCode: "basic" | "pro" | "enterprise";
+  billingKey: string;
+  customerKey: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -910,14 +912,19 @@ nextBillingAmount: getPlanBillingAmount(input.planCode),
   }
 
   await db
-    .update(organizations)
-    .set({
-      subscriptionStatus: "trial",
-      trialStartedAt: now,
-      trialEndsAt,
-      nextBillingAt: trialEndsAt,
-    } as any)
-    .where(eq(organizations.id, Number(organization.id)));
+  .update(organizations)
+  .set({
+    subscriptionStatus: "trial",
+    trialStartedAt: now,
+    trialEndsAt,
+    nextBillingAt: trialEndsAt,
+    billingKey: input.billingKey,
+    customerKey: input.customerKey,
+    paymentFailureCount: 0,
+    paymentFailedAt: null,
+    graceUntilAt: null,
+  } as any)
+  .where(eq(organizations.id, Number(organization.id)));
 
   const hostUserId = await createHostUserForOrganization({
     organizationId: Number(organization.id),
