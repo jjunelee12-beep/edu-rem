@@ -122,6 +122,9 @@ graceUntilAt: datetime("graceUntilAt"),
   billingKey: varchar("billingKey", { length: 255 }),
   customerKey: varchar("customerKey", { length: 255 }),
 
+isBillingExempt: boolean("isBillingExempt").notNull().default(false),
+billingExemptReason: varchar("billingExemptReason", { length: 255 }),
+
   maxUsers: int("maxUsers").notNull().default(10),
 maxStudents: int("maxStudents").notNull().default(500),
   maxLandingForms: int("maxLandingForms").notNull().default(10),

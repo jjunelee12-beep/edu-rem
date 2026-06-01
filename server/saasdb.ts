@@ -65,6 +65,10 @@ paymentFailureCount: organizations.paymentFailureCount,
 graceUntilAt: organizations.graceUntilAt,
 billingKey: organizations.billingKey,
 customerKey: organizations.customerKey,
+
+isBillingExempt: organizations.isBillingExempt,
+billingExemptReason: organizations.billingExemptReason,
+
       cancelledAt: organizations.cancelledAt,
       refundedAt: organizations.refundedAt,
 
@@ -214,6 +218,8 @@ maxStorageMb?: number;
   createdBy?: number | null;
 billingAmount?: number;
 nextBillingAmount?: number | null;
+isBillingExempt?: boolean;
+billingExemptReason?: string | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -243,6 +249,8 @@ allowPrivateCertificate: input.allowPrivateCertificate ?? true,
     updatedBy: input.createdBy ?? null,
 billingAmount: input.billingAmount ?? 0,
 nextBillingAmount: input.nextBillingAmount ?? null,
+isBillingExempt: input.isBillingExempt ?? false,
+billingExemptReason: input.billingExemptReason?.trim() || null,
   } as any);
 
   const insertId = result?.insertId ?? result?.[0]?.insertId;
@@ -275,6 +283,8 @@ maxStorageMb?: number;
 billingAmount?: number;
 nextBillingAmount?: number | null;
 customPlanName?: string | null;
+isBillingExempt?: boolean;
+billingExemptReason?: string | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -323,6 +333,11 @@ customPlanName:
   input.customPlanName === undefined
     ? undefined
     : input.customPlanName?.trim() || null,
+isBillingExempt: input.isBillingExempt,
+billingExemptReason:
+  input.billingExemptReason === undefined
+    ? undefined
+    : input.billingExemptReason?.trim() || null,
     } as any)
     .where(eq(organizations.id, input.id));
 
@@ -1600,6 +1615,7 @@ export async function deactivateExpiredOverdueOrganizations() {
     SELECT id
     FROM organizations
     WHERE subscriptionStatus = 'overdue'
+	 AND isBillingExempt = false
       AND graceUntilAt IS NOT NULL
       AND graceUntilAt < NOW()
   `);
@@ -1639,6 +1655,7 @@ export async function processTrialEndedOrganizations() {
     SELECT id
     FROM organizations
     WHERE subscriptionStatus = 'trial'
+AND isBillingExempt = false
       AND trialEndsAt IS NOT NULL
       AND trialEndsAt < NOW()
       AND status = 'active'
@@ -1672,4 +1689,50 @@ message: "Trial 종료 후 자동결제 실패로 3일 유예 상태 전환",
     ok: true,
     count: targets.length,
   };
+}
+
+export async function reactivateTenant(input: {
+  organizationId: number;
+  actorUserId?: number | null;
+  reason?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const before = await getOrganizationById(input.organizationId);
+
+  await db
+    .update(organizations)
+    .set({
+      status: "active",
+      subscriptionStatus: "active",
+      paymentFailureCount: 0,
+      paymentFailedAt: null,
+      graceUntilAt: null,
+      updatedBy: input.actorUserId ?? null,
+      updatedAt: new Date(),
+    } as any)
+    .where(eq(organizations.id, input.organizationId));
+
+  const after = await getOrganizationById(input.organizationId);
+
+  await createSaasAuditLog({
+    organizationId: input.organizationId,
+    actorUserId: input.actorUserId ?? null,
+    actorRole: "superhost",
+    action: "organization.reactivate",
+    targetType: "organization",
+    targetId: input.organizationId,
+    beforeJson: JSON.stringify(before ?? {}),
+    afterJson: JSON.stringify(after ?? {}),
+    memo: input.reason || "superhost manual reactivate",
+  });
+
+  await recordSubscriptionPaymentEvent({
+    organizationId: input.organizationId,
+    eventType: "subscription.reactivated",
+    message: input.reason || "슈퍼호스트 수동 복구 처리",
+  });
+
+  return { ok: true };
 }

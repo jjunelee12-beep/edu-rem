@@ -67,6 +67,8 @@ defaultTeams: "상담팀,학사팀,정산팀",
 defaultPositions: "사원,관리자,대표",
 defaultEducationInstitution: "기본 교육원",
 defaultPayoutDay: "25",
+isBillingExempt: false,
+billingExemptReason: "",
   });
 
   const [hostForm, setHostForm] = useState({
@@ -107,6 +109,8 @@ maxStorageMb: "1024",
 customPlanName: "",
 billingAmount: "0",
 nextBillingAmount: "0",
+isBillingExempt: false,
+billingExemptReason: "",
 });
 
   const organizationsQuery = trpc.saas.listOrganizations.useQuery(undefined, {
@@ -149,6 +153,8 @@ const organizationOnboardingStatusesQuery =
   defaultPositions: "사원,관리자,대표",
   defaultEducationInstitution: "기본 교육원",
   defaultPayoutDay: "25",
+isBillingExempt: false,
+billingExemptReason: "",
 });
 
       if (created?.id) {
@@ -221,6 +227,18 @@ const cancelTenantMut = trpc.saas.cancelTenant.useMutation({
   },
   onError: (err) => {
     toast.error(err.message || "테넌트 중지 실패");
+  },
+});
+
+const reactivateTenantMut = trpc.saas.reactivateTenant.useMutation({
+  onSuccess: async () => {
+    toast.success("테넌트가 복구되었습니다.");
+    await utils.saas.listOrganizations.invalidate();
+    await utils.saas.listOrganizationLimitStatuses.invalidate();
+    await utils.saas.listOrganizationOnboardingStatuses.invalidate();
+  },
+  onError: (err) => {
+    toast.error(err.message || "테넌트 복구 실패");
   },
 });
 
@@ -363,7 +381,7 @@ if (!/^[a-z0-9-]+$/.test(normalizedSlug)) {
   return;
 }
 
-const reservedSlugs = ["saas", "api", "login", "logout", "uploads", "form", "ad-form", "go", "admin", "settings", "dashboard"];
+const reservedSlugs = ["saas", "api", "login", "logout", "uploads", "form", "ad-form", "go", "admin", "settings", "dashboard", "superhost"];
 
 if (reservedSlugs.includes(normalizedSlug)) {
   toast.error("예약된 URL입니다. 다른 값을 입력해주세요.");
@@ -401,6 +419,8 @@ defaultPositions: orgForm.defaultPositions
 
 defaultEducationInstitution: orgForm.defaultEducationInstitution.trim() || "기본 교육원",
 defaultPayoutDay: Number(orgForm.defaultPayoutDay || 25),
+isBillingExempt: orgForm.isBillingExempt,
+billingExemptReason: orgForm.billingExemptReason.trim() || null,
     });
   };
 
@@ -460,6 +480,8 @@ maxStorageMb: String(org.maxStorageMb ?? 1024),
 customPlanName: org.customPlanName || "",
 billingAmount: String(org.billingAmount ?? 0),
 nextBillingAmount: String(org.nextBillingAmount ?? 0),
+isBillingExempt: Boolean(org.isBillingExempt),
+billingExemptReason: org.billingExemptReason || "",
   });
 };
 
@@ -507,6 +529,8 @@ maxStorageMb: Number(editOrgForm.maxStorageMb || 1024),
 customPlanName: editOrgForm.customPlanName.trim() || null,
 billingAmount: Number(editOrgForm.billingAmount || 0),
 nextBillingAmount: Number(editOrgForm.nextBillingAmount || 0),
+isBillingExempt: editOrgForm.isBillingExempt,
+billingExemptReason: editOrgForm.billingExemptReason.trim() || null,
   });
 };
 
@@ -673,6 +697,7 @@ nextBillingAmount: Number(editOrgForm.nextBillingAmount || 0),
 <th className="px-3 py-3">상태</th>
 <th className="px-3 py-3">구독</th>
 <th className="px-3 py-3">Trial 종료</th>
+<th className="px-3 py-3">다음 결제일</th>
 <th className="px-3 py-3">결제금액</th>
 <th className="px-3 py-3">카드등록</th>
 <th className="px-3 py-3">실패/유예</th>
@@ -780,15 +805,52 @@ const riskReasons = [
                           </td>
 
 <td className="px-3 py-3">
-  <Badge variant="secondary">
-    {org.subscriptionStatus || "-"}
-  </Badge>
+  {org.isBillingExempt ? (
+    <div className="space-y-1">
+      <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+        결제면제
+      </Badge>
+      {org.billingExemptReason && (
+        <div className="text-xs text-muted-foreground">
+          {org.billingExemptReason}
+        </div>
+      )}
+    </div>
+  ) : (
+    <Badge
+  variant="secondary"
+  className={
+    org.subscriptionStatus === "active"
+      ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100"
+      : org.subscriptionStatus === "trial"
+        ? "bg-blue-100 text-blue-700 hover:bg-blue-100"
+        : org.subscriptionStatus === "overdue"
+          ? "bg-amber-100 text-amber-700 hover:bg-amber-100"
+          : org.subscriptionStatus === "paused"
+            ? "bg-red-100 text-red-700 hover:bg-red-100"
+            : org.subscriptionStatus === "cancelled"
+              ? "bg-zinc-200 text-zinc-700 hover:bg-zinc-200"
+              : ""
+  }
+>
+  {org.subscriptionStatus || "-"}
+</Badge>
+  )}
 </td>
 
 <td className="px-3 py-3 text-muted-foreground">
-  {org.trialEndsAt
-    ? new Date(org.trialEndsAt).toLocaleDateString()
-    : "-"}
+  {org.isBillingExempt
+    ? "-"
+    : org.trialEndsAt
+      ? new Date(org.trialEndsAt).toLocaleDateString()
+      : "-"}
+</td>
+<td className="px-3 py-3 text-muted-foreground">
+  {org.isBillingExempt
+    ? "-"
+    : org.nextBillingAt
+      ? new Date(org.nextBillingAt).toLocaleDateString()
+      : "-"}
 </td>
 <td className="px-3 py-3">
   <div className="space-y-1">
@@ -904,6 +966,23 @@ const riskReasons = [
 >
   기본세팅 보정
 </Button>
+{org.status !== "active" && (
+  <Button
+    size="sm"
+    variant="outline"
+    disabled={reactivateTenantMut.isPending}
+    onClick={() => {
+      if (!confirm(`${org.name} 테넌트를 복구할까요?`)) return;
+
+      reactivateTenantMut.mutate({
+        organizationId: Number(org.id),
+        reason: "superhost manual reactivate",
+      });
+    }}
+  >
+    복구
+  </Button>
+)}
 <Button
   size="sm"
   variant="destructive"
@@ -1127,6 +1206,39 @@ const riskReasons = [
         placeholder="예: 99000"
       />
     </div>
+
+        <div className="space-y-2 md:col-span-3">
+      <Label>결제 면제</Label>
+
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={editOrgForm.isBillingExempt}
+          onChange={(e) =>
+            setEditOrgForm((prev) => ({
+              ...prev,
+              isBillingExempt: e.target.checked,
+            }))
+          }
+        />
+        결제 없이 무제한 사용
+      </label>
+
+      <Input
+        value={editOrgForm.billingExemptReason}
+        onChange={(e) =>
+          setEditOrgForm((prev) => ({
+            ...prev,
+            billingExemptReason: e.target.value,
+          }))
+        }
+        placeholder="예: 위드원 본사용 / 내부 테스트 / 협력사"
+      />
+
+      <p className="text-xs text-muted-foreground">
+        체크하면 Trial 종료/결제 실패 자동정지 대상에서 제외됩니다.
+      </p>
+    </div>
   </div>
 
   <p className="mt-2 text-xs text-muted-foreground">
@@ -1230,7 +1342,6 @@ const riskReasons = [
     </label>
   ))}
 </div>
-
 <div className="space-y-2 md:col-span-2">
   <Label>메모</Label>
         <Input
@@ -1504,6 +1615,39 @@ const riskReasons = [
       {label}
     </label>
   ))}
+</div>
+
+<div className="space-y-2 rounded-xl border bg-background p-3 md:col-span-2">
+  <Label>결제 면제</Label>
+
+  <label className="flex items-center gap-2 text-sm">
+    <input
+      type="checkbox"
+      checked={orgForm.isBillingExempt}
+      onChange={(e) =>
+        setOrgForm((prev) => ({
+          ...prev,
+          isBillingExempt: e.target.checked,
+        }))
+      }
+    />
+    결제 없이 무제한 사용
+  </label>
+
+  <Input
+    value={orgForm.billingExemptReason}
+    onChange={(e) =>
+      setOrgForm((prev) => ({
+        ...prev,
+        billingExemptReason: e.target.value,
+      }))
+    }
+    placeholder="예: 위드원 본사용 / 내부 테스트 / 협력사"
+  />
+
+  <p className="text-xs text-muted-foreground">
+    체크하면 Trial 종료/결제 실패 자동정지 대상에서 제외됩니다.
+  </p>
 </div>
 
 <div className="space-y-2 md:col-span-2">

@@ -34,6 +34,7 @@ getOrganizationOnboardingStatus,
   listSubscriptionPayments,
   listSubscriptionPaymentEvents,
 deactivateExpiredOverdueOrganizations,
+reactivateTenant as reactivateTenantInDb,
   listSaasAnnouncements,
   getActiveSaasAnnouncement,
   createSaasAnnouncement,
@@ -298,6 +299,33 @@ const organization = await getOrganizationById(input.organizationId);
     });
   }),
 
+reactivateTenant: protectedProcedure
+  .input(
+    z.object({
+      organizationId: z.number(),
+      reason: z.string().optional().nullable(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    assertSuperhost(ctx);
+    await requireSaasAdminUnlocked(Number(ctx.user.id));
+
+    const organization = await getOrganizationById(input.organizationId);
+    if (!organization) {
+      throwAppError(
+        ERROR_CODES.ORGANIZATION_NOT_FOUND,
+        "회사를 찾을 수 없습니다.",
+        404
+      );
+    }
+
+    return reactivateTenantInDb({
+      organizationId: input.organizationId,
+      actorUserId: Number(ctx.user.id),
+      reason: input.reason || "superhost manual reactivate",
+    });
+  }),
+
   listOrganizations: protectedProcedure.query(async ({ ctx }) => {
   assertSuperhost(ctx);
   await requireSaasAdminUnlocked(Number(ctx.user.id));
@@ -413,6 +441,8 @@ defaultTeams: z.array(z.string()).optional(),
 defaultPositions: z.array(z.string()).optional(),
 defaultEducationInstitution: z.string().optional(),
 defaultPayoutDay: z.number().optional(),
+isBillingExempt: z.boolean().optional(),
+billingExemptReason: z.string().optional().nullable(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -556,6 +586,8 @@ memo: z.string().optional().nullable(),
 billingAmount: z.number().optional(),
 nextBillingAmount: z.number().optional().nullable(),
 customPlanName: z.string().optional().nullable(),
+isBillingExempt: z.boolean().optional(),
+billingExemptReason: z.string().optional().nullable(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -571,6 +603,8 @@ return updateOrganization({
   ...input,
   slug: normalizedSlug,
   updatedBy: Number(ctx.user.id),
+isBillingExempt: input.isBillingExempt,
+billingExemptReason: input.billingExemptReason?.trim() || null,
 });
     }),
 
