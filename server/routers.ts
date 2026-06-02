@@ -5219,14 +5219,17 @@ await db.bulkCreateConsultations(rows as any);
           assigneeId: z.number(),
         })
       )
-      .mutation(async ({ input }) => {
-        await db.reassignConsultationAndLinkedStudent(
-          input.id,
-          input.assigneeId
-        );
+      .mutation(async ({ ctx, input }) => {
+  const organizationId = getCtxOrganizationId(ctx);
 
-        return { success: true };
-      }),
+  await db.reassignConsultationAndLinkedStudent(
+    input.id,
+    input.assigneeId,
+    { organizationId }
+  );
+
+  return { success: true };
+}),
 
     bulkReassign: hostProcedure
       .input(
@@ -5235,45 +5238,49 @@ await db.bulkCreateConsultations(rows as any);
           toAssigneeId: z.number(),
         })
       )
-      .mutation(async ({ input }) => {
-        await db.bulkReassignConsultationsAndLinkedStudents(
-          input.fromAssigneeId,
-          input.toAssigneeId
-        );
+     .mutation(async ({ ctx, input }) => {
+  const organizationId = getCtxOrganizationId(ctx);
 
-        return { success: true };
-      }),
+  await db.bulkReassignConsultationsAndLinkedStudents(
+    input.fromAssigneeId,
+    input.toAssigneeId,
+    { organizationId }
+  );
 
-    delete: hostProcedure
+  return { success: true };
+}),
+
+  delete: hostProcedure
   .input(z.object({ id: z.number() }))
   .mutation(async ({ ctx, input }) => {
-    const item = await db.getConsultation(input.id);
+    const organizationId = getCtxOrganizationId(ctx);
+
+    const item = await db.getConsultation(input.id, {
+      organizationId,
+    });
 
     if (!item) {
       throwAppError(
-  ERROR_CODES.DATA_NOT_FOUND,
-  "학생 기록을 찾을 수 없습니다.",
-  404
-);
+        ERROR_CODES.DATA_NOT_FOUND,
+        "상담 기록을 찾을 수 없습니다.",
+        404
+      );
     }
 
-
-
-
     await db.deleteConsultation(input.id, {
-  organizationId: getCtxOrganizationId(ctx),
-  deletedBy: Number(ctx.user.id),
-});
+      organizationId,
+      deletedBy: Number(ctx.user.id),
+    });
 
-await db.createAuditLog({
-  organizationId: getCtxOrganizationId(ctx),
-  actorUserId: Number(ctx.user.id),
-  actorRole: String((ctx.user as any)?.role || ""),
-  action: "consultation.soft_delete",
-  targetType: "consultation",
-  targetId: input.id,
-  memo: "상담DB 삭제 처리",
-} as any);
+    await db.createAuditLog({
+      organizationId,
+      actorUserId: Number(ctx.user.id),
+      actorRole: String((ctx.user as any)?.role || ""),
+      action: "consultation.soft_delete",
+      targetType: "consultation",
+      targetId: input.id,
+      memo: "상담DB 삭제 처리",
+    } as any);
 
     return { success: true };
   }),
