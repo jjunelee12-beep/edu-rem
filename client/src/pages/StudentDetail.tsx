@@ -3353,6 +3353,7 @@ disabled={isReadOnly}
     onKeyDown={(e) => handlePlanNameKeyDown(e, group.semesterNo, rowIndex, group.rows)}
   />
 
+  {/실습|이벤트|무료/.test(String(row.subjectName || "")) && (
   <label className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
     <input
       type="checkbox"
@@ -3372,6 +3373,7 @@ disabled={isReadOnly}
       {row.settlementIncluded === false ? "정산 제외" : "정산 포함"}
     </span>
   </label>
+)}
 </td>
 
                               <td className="px-2 py-1">
