@@ -94,6 +94,48 @@ function shallowEqualStringRecord(
   return true;
 }
 
+function shallowEqualSubjectPriceRuleDrafts(
+  a: Record<
+    string,
+    {
+      label: string;
+      thresholdAmount: string;
+      creditValue: string;
+      sortOrder: string;
+      isActive: boolean;
+    }
+  >,
+  b: Record<
+    string,
+    {
+      label: string;
+      thresholdAmount: string;
+      creditValue: string;
+      sortOrder: string;
+      isActive: boolean;
+    }
+  >
+) {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+
+  if (aKeys.length !== bKeys.length) return false;
+
+  for (const key of aKeys) {
+    const av = a[key];
+    const bv = b[key];
+
+    if (!bv) return false;
+    if (av.label !== bv.label) return false;
+    if (av.thresholdAmount !== bv.thresholdAmount) return false;
+    if (av.creditValue !== bv.creditValue) return false;
+    if (av.sortOrder !== bv.sortOrder) return false;
+    if (av.isActive !== bv.isActive) return false;
+  }
+
+  return true;
+}
+
 
 
 export default function System() {
@@ -331,29 +373,31 @@ const updateInstitutionMutation =
   const [rateDrafts, setRateDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    const next: Record<
-      string,
-      {
-        label: string;
-        thresholdAmount: string;
-        creditValue: string;
-        sortOrder: string;
-        isActive: boolean;
-      }
-    > = {};
+  const next: Record<
+    string,
+    {
+      label: string;
+      thresholdAmount: string;
+      creditValue: string;
+      sortOrder: string;
+      isActive: boolean;
+    }
+  > = {};
 
-    (subjectPriceRules || []).forEach((row: any) => {
-      next[String(row.id)] = {
-        label: String(row.label ?? ""),
-        thresholdAmount: String(row.thresholdAmount ?? "0"),
-        creditValue: String(row.creditValue ?? "0"),
-        sortOrder: String(row.sortOrder ?? "0"),
-        isActive: row.isActive !== false,
-      };
-    });
+  (subjectPriceRules || []).forEach((row: any) => {
+    next[String(row.id)] = {
+      label: String(row.label ?? ""),
+      thresholdAmount: String(row.thresholdAmount ?? "0"),
+      creditValue: String(row.creditValue ?? "0"),
+      sortOrder: String(row.sortOrder ?? "0"),
+      isActive: row.isActive !== false,
+    };
+  });
 
-    setSubjectPriceRuleDrafts(next);
-  }, [subjectPriceRules]);
+  setSubjectPriceRuleDrafts((prev) =>
+    shallowEqualSubjectPriceRuleDrafts(prev, next) ? prev : next
+  );
+}, [subjectPriceRules]);
 
   useEffect(() => {
   const next: Record<string, string> = {};
