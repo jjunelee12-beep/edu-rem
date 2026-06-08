@@ -3262,7 +3262,7 @@ useEffect(() => {
   </DialogContent>
 </Dialog>
 <Dialog open={partnerPriceOpen} onOpenChange={setPartnerPriceOpen}>
-  <DialogContent className="w-[95vw] max-w-7xl">
+  <DialogContent className="!w-[95vw] !max-w-[1200px]">
     <DialogHeader>
       <DialogTitle>협약교육원 단가 설정</DialogTitle>
       <DialogDescription>
