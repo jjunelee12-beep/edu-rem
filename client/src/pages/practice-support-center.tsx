@@ -3262,7 +3262,7 @@ useEffect(() => {
   </DialogContent>
 </Dialog>
 <Dialog open={partnerPriceOpen} onOpenChange={setPartnerPriceOpen}>
-  <DialogContent className="w-full max-w-5xl">
+  <DialogContent className="w-[95vw] max-w-7xl">
     <DialogHeader>
       <DialogTitle>협약교육원 단가 설정</DialogTitle>
       <DialogDescription>
@@ -3270,11 +3270,11 @@ useEffect(() => {
       </DialogDescription>
     </DialogHeader>
 
-    <div className="max-h-[70vh] overflow-auto rounded-md border">
+    <div className="min-h-[500px] max-h-[75vh] overflow-auto rounded-md border">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b bg-muted/40">
-           <th className="w-[450px] px-4 py-3 text-left">
+           <th className="w-[700px] px-4 py-3 text-left">
   교육원명
 </th>
             <th className="px-4 py-3 text-left">협약여부</th>
