@@ -9869,33 +9869,62 @@ function resolveSettlementSubjectPriceCombination(params: {
 }) {
   const grossAmount = toNumber(params.grossAmount);
   const subjectCount = Number(params.subjectCount || 0);
+
   const rules = (params.rules || [])
-    .filter((row) => toNumber(row.thresholdAmount) > 0)
+    .map((row) => ({
+      thresholdAmount: toNumber(row.thresholdAmount),
+      creditValue: Number(row.creditValue || 0),
+      label: row.label || "",
+    }))
+    .filter((row) => row.thresholdAmount > 0)
     .sort((a, b) => toNumber(b.thresholdAmount) - toNumber(a.thresholdAmount));
 
-  const memo = new Map<string, any[] | null>();
+  if (!grossAmount || !subjectCount || !rules.length) {
+    return null;
+  }
+
+  // 1순위: 평균단가가 기준표에 정확히 있으면 무조건 그 단가로 처리
+  // 예: 600,000 / 8 = 75,000 → 75,000 × 8
+  const averageUnitPrice =
+    grossAmount % subjectCount === 0
+      ? Math.floor(grossAmount / subjectCount)
+      : 0;
+
+  const exactAverageRule = rules.find(
+    (row) => row.thresholdAmount === averageUnitPrice
+  );
+
+  if (exactAverageRule) {
+    return [
+      {
+        unitPrice: averageUnitPrice,
+        count: subjectCount,
+        creditValue: Number(exactAverageRule.creditValue || 0),
+        label: exactAverageRule.label || "",
+      },
+    ];
+  }
+
+  // 2순위: 금액 + 과목수 둘 다 맞는 모든 조합 찾기
+  const candidates: any[][] = [];
 
   function dfs(
     index: number,
     remainAmount: number,
-    remainCount: number
-  ): any[] | null {
-    const key = `${index}:${remainAmount}:${remainCount}`;
-
-    if (memo.has(key)) {
-      return memo.get(key) || null;
-    }
-
+    remainCount: number,
+    selected: any[]
+  ) {
     if (remainAmount === 0 && remainCount === 0) {
-      return [];
+      candidates.push(selected.filter((row) => Number(row.count || 0) > 0));
+      return;
     }
 
     if (remainAmount < 0 || remainCount < 0 || index >= rules.length) {
-      return null;
+      return;
     }
 
     const rule = rules[index];
-    const price = toNumber(rule.thresholdAmount);
+    const price = Number(rule.thresholdAmount || 0);
 
     const maxCount = Math.min(
       remainCount,
@@ -9903,36 +9932,65 @@ function resolveSettlementSubjectPriceCombination(params: {
     );
 
     for (let count = maxCount; count >= 0; count--) {
-      const next = dfs(
+      dfs(
         index + 1,
         remainAmount - price * count,
-        remainCount - count
+        remainCount - count,
+        [
+          ...selected,
+          {
+            unitPrice: price,
+            count,
+            creditValue: Number(rule.creditValue || 0),
+            label: rule.label || "",
+          },
+        ]
       );
-
-      if (next) {
-        const current =
-          count > 0
-            ? [
-                {
-                  unitPrice: price,
-                  count,
-                  creditValue: Number(rule.creditValue || 0),
-                  label: rule.label || "",
-                },
-              ]
-            : [];
-
-        const result = [...current, ...next];
-        memo.set(key, result);
-        return result;
-      }
     }
+  }
 
-    memo.set(key, null);
+  dfs(0, grossAmount, subjectCount, []);
+
+  if (!candidates.length) {
     return null;
   }
 
-  return dfs(0, grossAmount, subjectCount);
+  // 3순위: 평균단가에 가장 가까운 조합 선택
+  // 675,000 / 6 = 112,500일 때
+  // 330,000 섞인 조합보다 150,000 + 75,000 조합을 우선 선택
+  const scoreCombination = (combo: any[]) => {
+    const varianceScore = combo.reduce((sum, row) => {
+      const diff = Number(row.unitPrice || 0) - averageUnitPrice;
+      return sum + diff * diff * Number(row.count || 0);
+    }, 0);
+
+    const distinctCount = combo.length;
+
+    const totalCredits = combo.reduce(
+      (sum, row) =>
+        sum + Number(row.count || 0) * Number(row.creditValue || 0),
+      0
+    );
+
+    return {
+      varianceScore,
+      distinctCount,
+      totalCredits,
+    };
+  };
+
+  candidates.sort((a, b) => {
+    const sa = scoreCombination(a);
+    const sb = scoreCombination(b);
+
+    return (
+      sa.varianceScore - sb.varianceScore ||
+      sa.distinctCount - sb.distinctCount ||
+      sb.totalCredits - sa.totalCredits
+    );
+  });
+
+  return candidates[0];
 }
 
 export async function upsertEducationInstitutionPositionRate(data: {
