@@ -3694,6 +3694,73 @@ normalSubjectPrice: z.string().optional(),
   );
 }),
 
+listSubjectPriceRules: hostProcedure
+  .input(
+    z
+      .object({
+        educationInstitutionId: z.number().nullable().optional(),
+        includeInactive: z.boolean().optional(),
+      })
+      .optional()
+  )
+  .query(async ({ ctx, input }) => {
+    const organizationId = getCtxOrganizationId(ctx);
+
+    return db.listSettlementSubjectPriceRules({
+      organizationId,
+      educationInstitutionId:
+        input?.educationInstitutionId === undefined
+          ? undefined
+          : input.educationInstitutionId,
+      includeInactive: input?.includeInactive ?? true,
+    });
+  }),
+
+upsertSubjectPriceRule: hostProcedure
+  .input(
+    z.object({
+      id: z.number().optional(),
+      educationInstitutionId: z.number().nullable().optional(),
+      label: z.string().min(1),
+      thresholdAmount: z.union([z.string(), z.number()]),
+      creditValue: z.number(),
+      sortOrder: z.number().optional(),
+      isActive: z.boolean().optional(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const organizationId = getCtxOrganizationId(ctx);
+
+    return db.upsertSettlementSubjectPriceRule({
+      organizationId,
+      id: input.id,
+      educationInstitutionId:
+        input.educationInstitutionId === undefined
+          ? null
+          : input.educationInstitutionId,
+      label: input.label,
+      thresholdAmount: input.thresholdAmount,
+      creditValue: input.creditValue,
+      sortOrder: input.sortOrder ?? 0,
+      isActive: input.isActive ?? true,
+    });
+  }),
+
+deleteSubjectPriceRule: hostProcedure
+  .input(
+    z.object({
+      id: z.number(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const organizationId = getCtxOrganizationId(ctx);
+
+    return db.deleteSettlementSubjectPriceRule({
+      organizationId,
+      id: input.id,
+    });
+  }),
+
     getInstitutionPositionRate: protectedProcedure
       .input(
         z.object({
@@ -6612,6 +6679,7 @@ const student = await db.getStudent(input.studentId, {
           category: z.enum(["전공", "교양", "일반"]),
           requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]).optional(),
           sortOrder: z.number().optional(),
+settlementIncluded: z.boolean().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -6658,6 +6726,7 @@ organizationId: getCtxOrganizationId(ctx),
           planRequirementType: input.requirementType ?? null,
           credits: 3,
           sortOrder: input.sortOrder ?? 0,
+settlementIncluded: input.settlementIncluded,
         } as any);
 
         return { id, success: true };
@@ -6672,6 +6741,7 @@ organizationId: getCtxOrganizationId(ctx),
           requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]).optional(),
           semesterNo: z.number().optional(),
           sortOrder: z.number().optional(),
+settlementIncluded: z.boolean().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -6682,6 +6752,9 @@ organizationId: getCtxOrganizationId(ctx),
         if (input.requirementType !== undefined) data.planRequirementType = input.requirementType;
         if (input.semesterNo !== undefined) data.semesterNo = input.semesterNo;
         if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder;
+if (input.settlementIncluded !== undefined) {
+  data.settlementIncluded = input.settlementIncluded;
+}
 
         await db.updatePlanSemester(input.id, data, {
   organizationId: getCtxOrganizationId(ctx),
@@ -7375,7 +7448,7 @@ if (id < 0) {
       return { success: true };
     }),
 
-updatePartner: protectedProcedure
+updatePartner: hostProcedure
   .input(
     z.object({
       id: z.number(),
@@ -7384,7 +7457,6 @@ updatePartner: protectedProcedure
   )
   .mutation(async ({ ctx, input }) => {
     if (
-      ctx.user.role !== "admin" &&
       ctx.user.role !== "host" &&
       ctx.user.role !== "superhost"
     ) {
@@ -7417,6 +7489,32 @@ updatePartner: protectedProcedure
         input.isPartner,
         { organizationId }
       );
+    }
+
+    return { success: true };
+  }),
+
+updatePartnerPrice: hostProcedure
+  .input(
+    z.object({
+      id: z.number(),
+      partnerPrice: z.union([z.string(), z.number()]),
+    })
+  )
+  .mutation(async ({ input, ctx }) => {
+    const organizationId = getCtxOrganizationId(ctx);
+
+    if (input.id < 0) {
+      await db.updatePracticeEducationCenterPartnerPriceOverride({
+        organizationId,
+        masterId: Math.abs(input.id),
+        partnerPrice: input.partnerPrice,
+      });
+    } else {
+      await db.updatePracticeEducationCenterPartnerPrice(input.id, {
+        organizationId,
+        partnerPrice: input.partnerPrice,
+      });
     }
 
     return { success: true };
@@ -8208,6 +8306,94 @@ organizationId,
   }),
 
     settlement: router({
+  monthLockStatus: hostProcedure
+    .input(
+      z.object({
+        year: z.number(),
+        month: z.number(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const organizationId = getCtxOrganizationId(ctx);
+
+      await assertOrganizationFeatureEnabled(
+        organizationId,
+        "allowSettlementReport",
+        "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+      );
+
+      const lock = await db.getSettlementMonthLock({
+        organizationId,
+        year: input.year,
+        month: input.month,
+      });
+
+      return {
+        isLocked: Boolean(lock && (lock as any).isLocked !== false),
+        lock,
+      };
+    }),
+
+  lockMonth: hostProcedure
+    .input(
+      z.object({
+        year: z.number(),
+        month: z.number(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const organizationId = getCtxOrganizationId(ctx);
+
+      await assertOrganizationFeatureEnabled(
+        organizationId,
+        "allowSettlementReport",
+        "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+      );
+
+      const lock = await db.lockSettlementMonth({
+        organizationId,
+        year: input.year,
+        month: input.month,
+        actorUserId: Number(ctx.user.id),
+      });
+
+      return {
+        success: true,
+        lock,
+      };
+    }),
+
+  unlockMonth: hostProcedure
+    .input(
+      z.object({
+        year: z.number(),
+        month: z.number(),
+        reason: z.string().min(2).max(300),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const organizationId = getCtxOrganizationId(ctx);
+
+      await assertOrganizationFeatureEnabled(
+        organizationId,
+        "allowSettlementReport",
+        "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+      );
+
+      const lock = await db.unlockSettlementMonth({
+        organizationId,
+        year: input.year,
+        month: input.month,
+        actorUserId: Number(ctx.user.id),
+        reason: input.reason,
+      });
+
+      return {
+        success: true,
+        lock,
+      };
+    }),
+
   report: hostProcedure
     .input(
       z.object({

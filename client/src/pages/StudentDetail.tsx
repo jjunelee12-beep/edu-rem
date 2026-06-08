@@ -551,6 +551,7 @@ const overwrittenRows = currentRows.slice(0, sharedCount).map((current: any, i: 
     requirementType: next.normalizedRequirementType,
     semesterNo: Number(templateDialogSemesterNo),
     sortOrder: i,
+settlementIncluded: !/실습|이벤트|무료/.test(String(next.subjectName || "")),
   };
 });
 
@@ -567,6 +568,7 @@ const createdRows = normalizedRows.slice(sharedCount).map((next: any, i: number)
   requirementType: next.normalizedRequirementType,
   sortOrder: sharedCount + i,
   credits: 3,
+settlementIncluded: !/실습|이벤트|무료/.test(String(next.subjectName || "")),
 }));
 
 const optimisticRows = [
@@ -596,6 +598,7 @@ const optimisticRows = [
       requirementType: next.normalizedRequirementType,
       semesterNo: Number(templateDialogSemesterNo),
       sortOrder: i,
+settlementIncluded: !/실습|이벤트|무료/.test(String(next.subjectName || "")),
     } as any);
   });
 
@@ -607,6 +610,7 @@ const optimisticRows = [
       category: next.normalizedCategory,
       requirementType: next.normalizedRequirementType,
       sortOrder: sharedCount + i,
+settlementIncluded: !/실습|이벤트|무료/.test(String(next.subjectName || "")),
     } as any)
   );
 
@@ -873,6 +877,39 @@ const semesterLabelOptions = useMemo(() => {
         rows: rows.sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)),
       }));
   }, [planSemesterList]);
+
+const planAnnualSubjectWarnings = useMemo(() => {
+  const yearMap: Record<string, Record<string, number>> = {};
+
+  (groupedPlanSemesters || []).forEach((group: any) => {
+    const semMeta = semesterMetaMap.get(Number(group.semesterNo));
+    const label = String(semMeta?.semesterLabel || "").trim();
+
+    const yearMatch = label.match(/(\d{4})년/);
+    const termMatch = label.match(/([12])학기/);
+
+    if (!yearMatch) return;
+
+    const year = yearMatch[1];
+    const term = termMatch ? `${termMatch[1]}학기` : `${group.semesterNo}학기`;
+
+    if (!yearMap[year]) yearMap[year] = {};
+    yearMap[year][term] = (yearMap[year][term] || 0) + Number(group.rows?.length || 0);
+  });
+
+  return Object.entries(yearMap)
+    .map(([year, terms]) => {
+      const total = Object.values(terms).reduce((sum, count) => sum + count, 0);
+
+      return {
+        year,
+        terms,
+        total,
+        exceeded: total > 14,
+      };
+    })
+    .filter((row) => row.exceeded);
+}, [groupedPlanSemesters, semesterMetaMap]);
 
   const selectedSemester = useMemo(() => {
     return sortedSemesters.find(
@@ -1634,6 +1671,7 @@ if (ENABLE_PLAN_REQUIREMENT) {
         category: "전공",
         requirementType: "전공선택",
         sortOrder: current.length,
+settlementIncluded: true,
       } as any,
       {
         onSuccess: async () => {
@@ -1668,6 +1706,26 @@ if (isReadOnly) return;
 
     updatePlanSemesterMut.mutate(payload);
   };
+
+const handlePlanSettlementIncludedChange = (row: any, checked: boolean) => {
+  if (isReadOnly) {
+    toast.error("담당자 또는 호스트만 수정할 수 있습니다.");
+    return;
+  }
+
+  updatePlanSemesterMut.mutate(
+    {
+      id: Number(row.id),
+      settlementIncluded: checked,
+    } as any,
+    {
+      onSuccess: async () => {
+        await utils.planSemester.list.invalidate({ studentId });
+        toast.success(checked ? "정산포함으로 변경되었습니다." : "정산제외로 변경되었습니다.");
+      },
+    }
+  );
+};
 
   const handleAddTransferSubjects = async () => {
 if (isReadOnly) {
@@ -3177,14 +3235,53 @@ disabled={isReadOnly}
         <CardContent className="space-y-6">
           <div className="space-y-4">
             <div>
-              <h3 className="font-semibold text-sm">우리 플랜 (학점은행제 / 과목당 3학점 고정)</h3>
-              <p className="text-xs text-muted-foreground mt-1">
-                학기별 예정표에서 학기를 추가하면 과목 수 기준으로 자동 생성됩니다.
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                과목명 입력칸에서 Enter / Tab 누르면 다음 과목명으로 이동합니다.
-              </p>
-            </div>
+  <h3 className="font-semibold text-sm">
+    우리 플랜 (학점은행제 / 과목당 3학점 고정)
+  </h3>
+
+  <p className="text-xs text-muted-foreground mt-1">
+    학기별 예정표에서 학기를 추가하면 과목 수 기준으로 자동 생성됩니다.
+  </p>
+
+  <p className="text-xs text-muted-foreground mt-1">
+    과목명 입력칸에서 Enter / Tab 누르면 다음 과목명으로 이동합니다.
+  </p>
+
+  <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+    <div className="font-semibold text-slate-700">※ 학점은행제 과목 수 기준</div>
+    <div className="mt-1 space-y-0.5">
+      <p>- 학기당 최대 8과목</p>
+      <p>- 연간 최대 14과목</p>
+      <p>- 연도 변경 시 과목 수 제한은 초기화됩니다.</p>
+    </div>
+    <div className="mt-2 text-[11px] text-slate-500">
+      예: 2025년 1학기 8과목 + 2025년 2학기 6과목 가능 / 8과목 + 8과목은 초과
+    </div>
+  </div>
+
+  {planAnnualSubjectWarnings.length > 0 && (
+    <div className="mt-2 space-y-1">
+      {planAnnualSubjectWarnings.map((warning) => (
+        <div
+          key={warning.year}
+          className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+        >
+          <div className="font-semibold">
+            ⚠ {warning.year}년도 우리플랜 과목 수가 {warning.total}과목입니다.
+          </div>
+          <div className="mt-1">
+            학점은행제 기준상 연간 최대 14과목을 초과했습니다.
+          </div>
+          <div className="mt-1 text-[11px]">
+            {Object.entries(warning.terms)
+              .map(([term, count]) => `${term} ${count}과목`)
+              .join(" / ")}
+          </div>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
 
             {groupedPlanSemesters.length === 0 ? (
               <div className="border rounded-lg p-6 text-sm text-muted-foreground text-center">
@@ -3244,18 +3341,38 @@ disabled={isReadOnly}
   className="border-b last:border-0"
 >
                               <td className="px-2 py-1">
-                                <Input
-  key={`plan-name-${row.id}-${row.subjectName}-${row.sortOrder}`}
-  ref={(el) => {
-    planFieldRefs.current[`plan-name-${group.semesterNo}-${rowIndex}`] = el;
-  }}
-  defaultValue={row.subjectName || ""}
-disabled={isReadOnly}
-  className={`h-8 ${row.planRequirementType === "전공필수" ? "text-red-600 font-medium" : ""}`}
-  onBlur={(e) => handlePlanSemesterBlur(row.id, "subjectName", e.target.value)}
-  onKeyDown={(e) => handlePlanNameKeyDown(e, group.semesterNo, rowIndex, group.rows)}
-/>
-                              </td>
+  <Input
+    key={`plan-name-${row.id}-${row.subjectName}-${row.sortOrder}`}
+    ref={(el) => {
+      planFieldRefs.current[`plan-name-${group.semesterNo}-${rowIndex}`] = el;
+    }}
+    defaultValue={row.subjectName || ""}
+    disabled={isReadOnly}
+    className={`h-8 ${row.planRequirementType === "전공필수" ? "text-red-600 font-medium" : ""}`}
+    onBlur={(e) => handlePlanSemesterBlur(row.id, "subjectName", e.target.value)}
+    onKeyDown={(e) => handlePlanNameKeyDown(e, group.semesterNo, rowIndex, group.rows)}
+  />
+
+  <label className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+    <input
+      type="checkbox"
+      disabled={isReadOnly || updatePlanSemesterMut.isPending}
+      checked={row.settlementIncluded !== false}
+      onChange={(e) =>
+        handlePlanSettlementIncludedChange(row, e.target.checked)
+      }
+    />
+    <span
+      className={
+        row.settlementIncluded === false
+          ? "text-red-600 font-medium"
+          : "text-muted-foreground"
+      }
+    >
+      {row.settlementIncluded === false ? "정산 제외" : "정산 포함"}
+    </span>
+  </label>
+</td>
 
                               <td className="px-2 py-1">
                                 <select

@@ -193,6 +193,12 @@ function SettlementSystemSection() {
   const { data: settlementSettings, isLoading: settlementSettingsLoading } =
     trpc.settlementSystem.getSettings.useQuery();
 
+  const { data: subjectPriceRules = [], isLoading: subjectPriceRulesLoading } =
+    trpc.settlementSystem.listSubjectPriceRules.useQuery({
+      educationInstitutionId: null,
+      includeInactive: true,
+    });
+
   const saveSettlementSettingsMutation =
     trpc.settlementSystem.saveSettings.useMutation({
       onSuccess: async () => {
@@ -202,8 +208,47 @@ function SettlementSystemSection() {
       onError: (e) => toast.error(e.message),
     });
 
+  const upsertSubjectPriceRuleMutation =
+    trpc.settlementSystem.upsertSubjectPriceRule.useMutation({
+      onSuccess: async () => {
+        toast.success("과목단가 규칙이 저장되었습니다.");
+        await utils.settlementSystem.listSubjectPriceRules.invalidate();
+      },
+      onError: (e) => toast.error(e.message),
+    });
+
+  const deleteSubjectPriceRuleMutation =
+    trpc.settlementSystem.deleteSubjectPriceRule.useMutation({
+      onSuccess: async () => {
+        toast.success("과목단가 규칙이 삭제되었습니다.");
+        await utils.settlementSystem.listSubjectPriceRules.invalidate();
+      },
+      onError: (e) => toast.error(e.message),
+    });
+
   const [selectedInstitutionId, setSelectedInstitutionId] = useState<string | undefined>(undefined);
   const [payoutDay, setPayoutDay] = useState<string>("25");
+
+  const [subjectPriceRuleDrafts, setSubjectPriceRuleDrafts] = useState<
+    Record<
+      string,
+      {
+        label: string;
+        thresholdAmount: string;
+        creditValue: string;
+        sortOrder: string;
+        isActive: boolean;
+      }
+    >
+  >({});
+
+  const [newSubjectPriceRule, setNewSubjectPriceRule] = useState({
+    label: "",
+    thresholdAmount: "",
+    creditValue: "",
+    sortOrder: "",
+    isActive: true,
+  });
 
 const [institutionDraft, setInstitutionDraft] = useState<{
   settlementType: "subject";
@@ -284,6 +329,31 @@ const updateInstitutionMutation =
     });
 
   const [rateDrafts, setRateDrafts] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const next: Record<
+      string,
+      {
+        label: string;
+        thresholdAmount: string;
+        creditValue: string;
+        sortOrder: string;
+        isActive: boolean;
+      }
+    > = {};
+
+    (subjectPriceRules || []).forEach((row: any) => {
+      next[String(row.id)] = {
+        label: String(row.label ?? ""),
+        thresholdAmount: String(row.thresholdAmount ?? "0"),
+        creditValue: String(row.creditValue ?? "0"),
+        sortOrder: String(row.sortOrder ?? "0"),
+        isActive: row.isActive !== false,
+      };
+    });
+
+    setSubjectPriceRuleDrafts(next);
+  }, [subjectPriceRules]);
 
   useEffect(() => {
   const next: Record<string, string> = {};
@@ -441,6 +511,101 @@ setBulkCertificateCompanyShareAmount((prev) =>
   });
 };
 
+  const handleSaveSubjectPriceRule = (ruleId: number) => {
+    const draft = subjectPriceRuleDrafts[String(ruleId)];
+
+    if (!draft) {
+      toast.error("저장할 과목단가 규칙을 찾을 수 없습니다.");
+      return;
+    }
+
+    const label = draft.label.trim();
+    const thresholdAmount = draft.thresholdAmount.replace(/[^0-9]/g, "");
+    const creditValue = Number(draft.creditValue.replace(/[^0-9]/g, ""));
+    const sortOrder = Number(draft.sortOrder.replace(/[^0-9]/g, "") || 0);
+
+    if (!label) {
+      toast.error("기준명을 입력해주세요.");
+      return;
+    }
+
+    if (!thresholdAmount) {
+      toast.error("기준금액을 입력해주세요.");
+      return;
+    }
+
+    if (!Number.isFinite(creditValue) || creditValue < 0) {
+      toast.error("학점값을 입력해주세요.");
+      return;
+    }
+
+    upsertSubjectPriceRuleMutation.mutate({
+      id: Number(ruleId),
+      educationInstitutionId: null,
+      label,
+      thresholdAmount,
+      creditValue,
+      sortOrder,
+      isActive: draft.isActive,
+    });
+  };
+
+  const handleCreateSubjectPriceRule = () => {
+    const label = newSubjectPriceRule.label.trim();
+    const thresholdAmount = newSubjectPriceRule.thresholdAmount.replace(/[^0-9]/g, "");
+    const creditValue = Number(newSubjectPriceRule.creditValue.replace(/[^0-9]/g, ""));
+    const sortOrder = Number(newSubjectPriceRule.sortOrder.replace(/[^0-9]/g, "") || 0);
+
+    if (!label) {
+      toast.error("기준명을 입력해주세요.");
+      return;
+    }
+
+    if (!thresholdAmount) {
+      toast.error("기준금액을 입력해주세요.");
+      return;
+    }
+
+    if (!Number.isFinite(creditValue) || creditValue < 0) {
+      toast.error("학점값을 입력해주세요.");
+      return;
+    }
+
+    upsertSubjectPriceRuleMutation.mutate(
+      {
+        educationInstitutionId: null,
+        label,
+        thresholdAmount,
+        creditValue,
+        sortOrder,
+        isActive: newSubjectPriceRule.isActive,
+      },
+      {
+        onSuccess: () => {
+          setNewSubjectPriceRule({
+            label: "",
+            thresholdAmount: "",
+            creditValue: "",
+            sortOrder: "",
+            isActive: true,
+          });
+        },
+      }
+    );
+  };
+
+  const handleDeleteSubjectPriceRule = (rule: any) => {
+    const ok = window.confirm(
+      `${rule.label || "과목단가 규칙"}을 삭제하시겠습니까?`
+    );
+
+    if (!ok) return;
+
+    deleteSubjectPriceRuleMutation.mutate({
+      id: Number(rule.id),
+    });
+  };
+
   const handleSaveSettlementSettings = () => {
     const nextPayoutDay = Number(String(payoutDay || "").replace(/[^0-9]/g, ""));
 
@@ -574,6 +739,273 @@ if (!companyShareAmount) {
                 </Button>
               </div>
             </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>과목단가 학점 규칙</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            일반과목 정산 시 과목당 실제금액에 따라 적용할 학점값을 관리합니다.
+            저장된 금액 기준 중 실제 과목당 금액 이하의 가장 높은 기준이 적용됩니다.
+          </p>
+
+          {subjectPriceRulesLoading ? (
+            <div className="text-sm text-muted-foreground">불러오는 중...</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="px-4 py-3 text-left">기준명</th>
+                    <th className="px-4 py-3 text-left">기준금액</th>
+                    <th className="px-4 py-3 text-left">학점값</th>
+                    <th className="px-4 py-3 text-left">정렬</th>
+                    <th className="px-4 py-3 text-left">사용</th>
+                    <th className="px-4 py-3 text-right">관리</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {subjectPriceRules.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="px-4 py-6 text-center text-sm text-muted-foreground"
+                      >
+                        등록된 과목단가 규칙이 없습니다.
+                      </td>
+                    </tr>
+                  ) : (
+                    subjectPriceRules.map((rule: any) => {
+                      const draft = subjectPriceRuleDrafts[String(rule.id)] || {
+                        label: String(rule.label ?? ""),
+                        thresholdAmount: String(rule.thresholdAmount ?? "0"),
+                        creditValue: String(rule.creditValue ?? "0"),
+                        sortOrder: String(rule.sortOrder ?? "0"),
+                        isActive: rule.isActive !== false,
+                      };
+
+                      return (
+                        <tr key={rule.id} className="border-b last:border-0">
+                          <td className="px-4 py-3">
+                            <Input
+                              value={draft.label}
+                              onChange={(e) =>
+                                setSubjectPriceRuleDrafts((prev) => ({
+                                  ...prev,
+                                  [String(rule.id)]: {
+                                    ...draft,
+                                    label: e.target.value,
+                                  },
+                                }))
+                              }
+                              className="min-w-[150px]"
+                            />
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <Input
+                              value={draft.thresholdAmount}
+                              onChange={(e) =>
+                                setSubjectPriceRuleDrafts((prev) => ({
+                                  ...prev,
+                                  [String(rule.id)]: {
+                                    ...draft,
+                                    thresholdAmount: e.target.value.replace(
+                                      /[^0-9]/g,
+                                      ""
+                                    ),
+                                  },
+                                }))
+                              }
+                              className="min-w-[130px]"
+                            />
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <Input
+                              value={draft.creditValue}
+                              onChange={(e) =>
+                                setSubjectPriceRuleDrafts((prev) => ({
+                                  ...prev,
+                                  [String(rule.id)]: {
+                                    ...draft,
+                                    creditValue: e.target.value.replace(
+                                      /[^0-9]/g,
+                                      ""
+                                    ),
+                                  },
+                                }))
+                              }
+                              className="min-w-[90px]"
+                            />
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <Input
+                              value={draft.sortOrder}
+                              onChange={(e) =>
+                                setSubjectPriceRuleDrafts((prev) => ({
+                                  ...prev,
+                                  [String(rule.id)]: {
+                                    ...draft,
+                                    sortOrder: e.target.value.replace(
+                                      /[^0-9]/g,
+                                      ""
+                                    ),
+                                  },
+                                }))
+                              }
+                              className="min-w-[90px]"
+                            />
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <Select
+                              value={draft.isActive ? "true" : "false"}
+                              onValueChange={(value) =>
+                                setSubjectPriceRuleDrafts((prev) => ({
+                                  ...prev,
+                                  [String(rule.id)]: {
+                                    ...draft,
+                                    isActive: value === "true",
+                                  },
+                                }))
+                              }
+                            >
+                              <SelectTrigger className="w-[110px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="true">사용</SelectItem>
+                                <SelectItem value="false">미사용</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </td>
+
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() =>
+                                  handleSaveSubjectPriceRule(Number(rule.id))
+                                }
+                                disabled={upsertSubjectPriceRuleMutation.isPending}
+                              >
+                                저장
+                              </Button>
+
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => handleDeleteSubjectPriceRule(rule)}
+                                disabled={deleteSubjectPriceRuleMutation.isPending}
+                              >
+                                삭제
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+
+                  <tr className="border-t bg-muted/20">
+                    <td className="px-4 py-3">
+                      <Input
+                        value={newSubjectPriceRule.label}
+                        onChange={(e) =>
+                          setNewSubjectPriceRule((prev) => ({
+                            ...prev,
+                            label: e.target.value,
+                          }))
+                        }
+                        placeholder="기준명"
+                        className="min-w-[150px]"
+                      />
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <Input
+                        value={newSubjectPriceRule.thresholdAmount}
+                        onChange={(e) =>
+                          setNewSubjectPriceRule((prev) => ({
+                            ...prev,
+                            thresholdAmount: e.target.value.replace(
+                              /[^0-9]/g,
+                              ""
+                            ),
+                          }))
+                        }
+                        placeholder="기준금액"
+                        className="min-w-[130px]"
+                      />
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <Input
+                        value={newSubjectPriceRule.creditValue}
+                        onChange={(e) =>
+                          setNewSubjectPriceRule((prev) => ({
+                            ...prev,
+                            creditValue: e.target.value.replace(/[^0-9]/g, ""),
+                          }))
+                        }
+                        placeholder="학점값"
+                        className="min-w-[90px]"
+                      />
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <Input
+                        value={newSubjectPriceRule.sortOrder}
+                        onChange={(e) =>
+                          setNewSubjectPriceRule((prev) => ({
+                            ...prev,
+                            sortOrder: e.target.value.replace(/[^0-9]/g, ""),
+                          }))
+                        }
+                        placeholder="정렬"
+                        className="min-w-[90px]"
+                      />
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <Select
+                        value={newSubjectPriceRule.isActive ? "true" : "false"}
+                        onValueChange={(value) =>
+                          setNewSubjectPriceRule((prev) => ({
+                            ...prev,
+                            isActive: value === "true",
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="w-[110px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">사용</SelectItem>
+                          <SelectItem value="false">미사용</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </td>
+
+                    <td className="px-4 py-3 text-right">
+                      <Button
+                        size="sm"
+                        onClick={handleCreateSubjectPriceRule}
+                        disabled={upsertSubjectPriceRuleMutation.isPending}
+                      >
+                        추가
+                      </Button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           )}
         </CardContent>
       </Card>

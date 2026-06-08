@@ -718,6 +718,7 @@ organizationId: int("organizationId").notNull().default(1),
 
   credits: int("credits").notNull().default(3),
   sortOrder: int("sortOrder").notNull().default(0),
+settlementIncluded: boolean("settlementIncluded").notNull().default(true),
 
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -822,6 +823,84 @@ organizationId: int("organizationId").notNull().default(1),
 
 export type EducationInstitution = typeof educationInstitutions.$inferSelect;
 export type InsertEducationInstitution = typeof educationInstitutions.$inferInsert;
+
+export const settlementSubjectPriceRules = mysqlTable(
+  "settlement_subject_price_rules",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    organizationId: int("organizationId").notNull().default(1),
+    educationInstitutionId: int("educationInstitutionId"),
+
+    label: varchar("label", { length: 100 }).notNull(),
+    thresholdAmount: decimal("thresholdAmount", { precision: 12, scale: 0 })
+      .notNull()
+      .default("0"),
+    creditValue: int("creditValue").notNull().default(0),
+
+    sortOrder: int("sortOrder").notNull().default(0),
+    isActive: boolean("isActive").notNull().default(true),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    orgInstIdx: index("idx_sspr_org_inst").on(
+      table.organizationId,
+      table.educationInstitutionId
+    ),
+    activeIdx: index("idx_sspr_active").on(table.isActive),
+    thresholdIdx: index("idx_sspr_threshold").on(table.thresholdAmount),
+  })
+);
+
+export type SettlementSubjectPriceRule =
+  typeof settlementSubjectPriceRules.$inferSelect;
+export type InsertSettlementSubjectPriceRule =
+  typeof settlementSubjectPriceRules.$inferInsert;
+
+export const settlementMonthLocks = mysqlTable(
+  "settlement_month_locks",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    organizationId: int("organizationId").notNull().default(1),
+
+    settlementYear: int("settlementYear").notNull(),
+    settlementMonth: int("settlementMonth").notNull(),
+
+    isLocked: boolean("isLocked").notNull().default(true),
+
+    lockedAt: timestamp("lockedAt"),
+    lockedBy: int("lockedBy"),
+
+    unlockedAt: timestamp("unlockedAt"),
+    unlockedBy: int("unlockedBy"),
+    unlockReason: text("unlockReason"),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    uniqueOrgMonthIdx: index("uq_settlement_month_lock_org_month").on(
+      table.organizationId,
+      table.settlementYear,
+      table.settlementMonth
+    ),
+    orgMonthIdx: index("idx_sml_org_month").on(
+      table.organizationId,
+      table.settlementYear,
+      table.settlementMonth
+    ),
+    lockedIdx: index("idx_sml_locked").on(
+      table.organizationId,
+      table.isLocked
+    ),
+  })
+);
+
+export type SettlementMonthLock =
+  typeof settlementMonthLocks.$inferSelect;
+export type InsertSettlementMonthLock =
+  typeof settlementMonthLocks.$inferInsert;
 
 export const educationInstitutionPositionRates = mysqlTable(
   "education_institution_position_rates",
@@ -1330,6 +1409,9 @@ categoryId: int("categoryId"),
   availableCourse: varchar("availableCourse", { length: 255 }),
   memo: text("memo"),
 isPartner: boolean("isPartner").notNull().default(false),
+partnerPrice: decimal("partnerPrice", { precision: 12, scale: 0 })
+  .notNull()
+  .default("0"),
 
 isInactive: boolean("isInactive").notNull().default(false),
   inactiveReason: varchar("inactiveReason", { length: 255 }),
@@ -1515,6 +1597,9 @@ export const organizationPracticeEducationCenterOverrides = mysqlTable(
     customMemo: text("customMemo"),
 
 isPartner: boolean("isPartner").notNull().default(false),
+partnerPrice: decimal("partnerPrice", { precision: 12, scale: 0 })
+  .notNull()
+  .default("0"),
 
     isHidden: boolean("isHidden").notNull().default(false),
 

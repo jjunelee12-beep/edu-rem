@@ -344,6 +344,12 @@ const isHostManager =
   (Number(user?.organizationId || 0) === 1 &&
     Number(user?.id || 0) === 15);
 
+const canManagePartnerPrice =
+  user?.role === "host" || user?.role === "superhost";
+
+const canManageEducationPartner =
+  user?.role === "host" || user?.role === "superhost";
+
 const [masterOpen, setMasterOpen] = useState(false);
 const [masterListType, setMasterListType] = useState<"education" | "institution">("education");
 const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
@@ -359,6 +365,8 @@ const [csvText, setCsvText] = useState("");
 const [isCsvDragOver, setIsCsvDragOver] = useState(false);
 const [csvMode, setCsvMode] = useState<"append" | "replace">("append");
 const [deactivateOpen, setDeactivateOpen] = useState(false);
+const [partnerPriceOpen, setPartnerPriceOpen] = useState(false);
+const [partnerPriceDrafts, setPartnerPriceDrafts] = useState<Record<string, string>>({});
 const [bulkInactiveReason, setBulkInactiveReason] = useState("일괄 비활성화");
 const [bulkInactiveStartDate, setBulkInactiveStartDate] = useState("");
 const [bulkInactiveEndDate, setBulkInactiveEndDate] = useState("");
@@ -566,6 +574,16 @@ const updateEducationPartnerMut =
       toast.success("협약교육원 설정이 저장되었습니다.");
     },
     onError: (e) => toast.error(e.message || "협약교육원 설정 저장 실패"),
+  });
+
+const updateEducationPartnerPriceMut =
+  trpc.practiceEducationCenter.updatePartnerPrice.useMutation({
+    onSuccess: async () => {
+      await utils.practiceEducationCenter.list.invalidate();
+      await refetchEducationCenters();
+      toast.success("협약교육원 단가가 저장되었습니다.");
+    },
+    onError: (e) => toast.error(e.message || "협약교육원 단가 저장 실패"),
   });
 
 
@@ -1938,6 +1956,24 @@ useEffect(() => {
     >
       일괄 비활성화
     </Button>
+    {canManagePartnerPrice && (
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => {
+          const next: Record<string, string> = {};
+
+          (educationCenterDb as any[]).forEach((item: any) => {
+            next[String(item.id)] = String(item.partnerPrice ?? "0");
+          });
+
+          setPartnerPriceDrafts(next);
+          setPartnerPriceOpen(true);
+        }}
+      >
+        단가 설정
+      </Button>
+    )}
   </div>
 )}
 
@@ -3061,20 +3097,32 @@ useEffect(() => {
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
 {masterListType === "education" && (
-  <label className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs">
-    <input
-      type="checkbox"
-      checked={!!item.isPartner}
-      disabled={updateEducationPartnerMut.isPending}
-      onChange={(e) =>
-        updateEducationPartnerMut.mutate({
-          id: Number(item.id),
-          isPartner: e.target.checked,
-        })
-      }
-    />
-    협약
-  </label>
+  canManageEducationPartner ? (
+    <label className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs">
+      <input
+        type="checkbox"
+        checked={!!item.isPartner}
+        disabled={updateEducationPartnerMut.isPending}
+        onChange={(e) =>
+          updateEducationPartnerMut.mutate({
+            id: Number(item.id),
+            isPartner: e.target.checked,
+          })
+        }
+      />
+      협약
+    </label>
+  ) : (
+    <span
+      className={`inline-flex rounded-md border px-2 py-1 text-xs ${
+        item.isPartner
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+          : "border-slate-200 bg-slate-50 text-slate-500"
+      }`}
+    >
+      {item.isPartner ? "협약" : "일반"}
+    </span>
+  )
 )}
                           <Button
                             type="button"
@@ -3209,6 +3257,101 @@ useEffect(() => {
       </Button>
       <Button type="button" variant="destructive" onClick={handleBulkDeactivate}>
         확인 후 일괄 비활성화
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+<Dialog open={partnerPriceOpen} onOpenChange={setPartnerPriceOpen}>
+  <DialogContent className="max-w-3xl">
+    <DialogHeader>
+      <DialogTitle>협약교육원 단가 설정</DialogTitle>
+      <DialogDescription>
+        HOST 전용 설정입니다. 저장한 단가는 실습배정 정산 시 입력 금액에 자동 합산됩니다.
+      </DialogDescription>
+    </DialogHeader>
+
+    <div className="max-h-[60vh] overflow-y-auto rounded-md border">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b bg-muted/40">
+            <th className="px-4 py-3 text-left">교육원명</th>
+            <th className="px-4 py-3 text-left">협약여부</th>
+            <th className="px-4 py-3 text-right">단가</th>
+            <th className="px-4 py-3 text-right">관리</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(educationCenterDb as any[])
+            .filter((item: any) => !!item.isPartner)
+            .map((item: any) => {
+              const key = String(item.id);
+              const draft = partnerPriceDrafts[key] ?? String(item.partnerPrice ?? "0");
+
+              return (
+                <tr key={key} className="border-b last:border-0">
+                  <td className="px-4 py-3">
+                    <div className="font-medium">{item.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {[item.address, item.detailAddress].filter(Boolean).join(" ")}
+                    </div>
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                      협약
+                    </span>
+                  </td>
+
+                  <td className="px-4 py-3 text-right">
+                    <Input
+                      value={draft}
+                      onChange={(e) =>
+                        setPartnerPriceDrafts((prev) => ({
+                          ...prev,
+                          [key]: e.target.value.replace(/[^0-9]/g, ""),
+                        }))
+                      }
+                      className="ml-auto w-[140px] text-right"
+                      placeholder="0"
+                    />
+                  </td>
+
+                  <td className="px-4 py-3 text-right">
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        updateEducationPartnerPriceMut.mutate({
+                          id: Number(item.id),
+                          partnerPrice: draft || "0",
+                        })
+                      }
+                      disabled={updateEducationPartnerPriceMut.isPending}
+                    >
+                      저장
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
+
+          {(educationCenterDb as any[]).filter((item: any) => !!item.isPartner)
+            .length === 0 && (
+            <tr>
+              <td
+                colSpan={4}
+                className="px-4 py-8 text-center text-sm text-muted-foreground"
+              >
+                협약교육원으로 체크된 교육원이 없습니다.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+
+    <DialogFooter>
+      <Button variant="outline" onClick={() => setPartnerPriceOpen(false)}>
+        닫기
       </Button>
     </DialogFooter>
   </DialogContent>
@@ -3670,25 +3813,33 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
                           </button>
 
 {item.type === "education" && (
-  <label
-    className={`absolute right-3 top-12 z-10 inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold shadow-sm ${
-      item.isPartner
-        ? "border-emerald-200 bg-emerald-100 text-emerald-700"
-        : "border-slate-200 bg-white text-slate-500"
-    }`}
-    onClick={(e) => e.stopPropagation()}
-  >
-    <input
-      type="checkbox"
-      className="h-3 w-3"
-      checked={!!item.isPartner}
-      disabled={updateEducationPartnerMut.isPending}
-      onChange={(e) =>
-        handleEducationPartnerChange(item, e.target.checked)
-      }
-    />
-    협약교육원
-  </label>
+  canManageEducationPartner ? (
+    <label
+      className={`absolute right-3 top-12 z-10 inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold shadow-sm ${
+        item.isPartner
+          ? "border-emerald-200 bg-emerald-100 text-emerald-700"
+          : "border-slate-200 bg-white text-slate-500"
+      }`}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <input
+        type="checkbox"
+        className="h-3 w-3"
+        checked={!!item.isPartner}
+        disabled={updateEducationPartnerMut.isPending}
+        onChange={(e) =>
+          handleEducationPartnerChange(item, e.target.checked)
+        }
+      />
+      협약교육원
+    </label>
+  ) : (
+    item.isPartner && (
+      <span className="absolute right-3 top-12 z-10 inline-flex rounded-full border border-emerald-200 bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-700 shadow-sm">
+        협약교육원
+      </span>
+    )
+  )
 )}
 
                           <div className="space-y-2 pr-10">

@@ -30,6 +30,7 @@ import {
 
 export default function Settlement() {
   const { user } = useAuth();
+  const utils = trpc.useUtils();
   const [, navigate] = useLocation();
   const now = new Date();
 
@@ -48,6 +49,20 @@ const [institutionTrendMode, setInstitutionTrendMode] = useState<"gross" | "comp
   const { data: allUsers } = trpc.users.list.useQuery(undefined, {
     enabled: canViewSettlement,
   });
+
+  const { data: monthLockStatus } =
+    trpc.settlement.monthLockStatus.useQuery(
+      {
+        year,
+        month,
+      },
+      {
+        enabled: canViewSettlement,
+      }
+    );
+
+  const isMonthLocked = Boolean(monthLockStatus?.isLocked);
+  const monthLock = monthLockStatus?.lock;
 
   const { data: report, isLoading } = trpc.settlement.report.useQuery(
     {
@@ -126,6 +141,26 @@ const {
       },
     });
 
+  const lockMonthMutation = trpc.settlement.lockMonth.useMutation({
+    onSuccess: async () => {
+      toast.success(`${year}년 ${month}월 정산이 확정되었습니다.`);
+      await utils.settlement.monthLockStatus.invalidate();
+    },
+    onError: (err) => {
+      toast.error(err.message || "정산 확정 중 오류가 발생했습니다.");
+    },
+  });
+
+  const unlockMonthMutation = trpc.settlement.unlockMonth.useMutation({
+    onSuccess: async () => {
+      toast.success(`${year}년 ${month}월 정산 확정이 해제되었습니다.`);
+      await utils.settlement.monthLockStatus.invalidate();
+    },
+    onError: (err) => {
+      toast.error(err.message || "정산 확정 해제 중 오류가 발생했습니다.");
+    },
+  });
+
 const openInstitutionDialog = () => {
   setInstitutionDialogOpen(true);
 };
@@ -149,6 +184,36 @@ const safeNavigate = (path: string) => {
 const changeSettlementMonthSafely = (nextYear: number, nextMonth: number) => {
   setYear(nextYear);
   setMonth(nextMonth);
+};
+
+const handleLockMonth = () => {
+  const ok = window.confirm(
+    `${year}년 ${month}월 정산을 확정하시겠습니까?\n확정 후 해당 월 정산 재계산/백필이 제한됩니다.`
+  );
+
+  if (!ok) return;
+
+  lockMonthMutation.mutate({
+    year,
+    month,
+  });
+};
+
+const handleUnlockMonth = () => {
+  const reason = window.prompt(
+    `${year}년 ${month}월 정산 확정을 해제하는 사유를 입력해주세요.`
+  );
+
+  if (!reason || reason.trim().length < 2) {
+    toast.error("확정 해제 사유를 입력해주세요.");
+    return;
+  }
+
+  unlockMonthMutation.mutate({
+    year,
+    month,
+    reason: reason.trim(),
+  });
 };
 
 
@@ -674,7 +739,38 @@ const downloadInstitutionTrendCSV = () => {
             ))}
           </SelectContent>
         </Select>
+        {isMonthLocked ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleUnlockMonth}
+            disabled={unlockMonthMutation.isPending}
+          >
+            확정 해제
+          </Button>
+        ) : (
+          <Button
+            variant="default"
+            size="sm"
+            onClick={handleLockMonth}
+            disabled={lockMonthMutation.isPending}
+          >
+            정산 확정
+          </Button>
+        )}
       </div>
+      {isMonthLocked && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="py-3 text-sm text-amber-800">
+            🔒 {year}년 {month}월 정산이 확정되었습니다.
+            {monthLock?.lockedAt && (
+              <span className="ml-2">
+                확정일: {new Date(monthLock.lockedAt).toLocaleString("ko-KR")}
+              </span>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 md:grid-cols-6">
         <Card>

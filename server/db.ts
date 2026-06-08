@@ -44,6 +44,8 @@ settlementItemLogs,
 settlementGrades,
 settlementRules,
 settlementRuleGroups,
+settlementSubjectPriceRules,
+settlementMonthLocks,
 practiceListCategories,
 InsertPracticeListCategory,
   practiceInstitutions,
@@ -319,6 +321,20 @@ function toNullableNumber(v: any) {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(String(v).replace(/,/g, "").trim());
   return Number.isFinite(n) ? n : null;
+}
+
+function resolvePlanSemesterSettlementIncluded(subjectName: any, explicitValue?: any) {
+  if (explicitValue !== undefined && explicitValue !== null) {
+    return Boolean(explicitValue);
+  }
+
+  const name = String(subjectName || "").trim();
+
+  if (/실습|이벤트|무료/.test(name)) {
+    return false;
+  }
+
+  return true;
 }
 
 function resolveCategoryFromRequirementType(requirementType: any) {
@@ -1124,6 +1140,8 @@ const ORGANIZATION_BACKUP_TABLES = [
   "settlement_items",
   "settlement_item_logs",
   "settlement_settings",
+"settlement_subject_price_rules",
+"settlement_month_locks",
   "audit_logs",
 "student_audit_logs",
 ];
@@ -6447,6 +6465,13 @@ const taxAmount = isSettlementEnabled
 
 const finalPayoutAmount = Math.max(0, freelancerAmount - taxAmount);
 
+const occurredAt = (request as any).paidAt ?? (request as any).updatedAt ?? new Date();
+
+await assertSettlementMonthEditable({
+  organizationId,
+  date: occurredAt,
+});
+
 // 정산 원장의 우리회사 몫은 실수령 기준
 const companyAmount = netCompanyShareAmount;
 
@@ -6470,7 +6495,7 @@ freelancerAmount,
 taxAmount,
 finalPayoutAmount,
 settlementStatus: "confirmed",
-    occurredAt: (request as any).paidAt ?? (request as any).updatedAt ?? new Date(),
+        occurredAt,
         note: "민간자격증 요청값 및 마스터 기본값 기준으로 자동 생성",
     actorUserId: actorUserId ?? null,
     logNote: "민간자격증 결제 완료 반영",
@@ -6494,6 +6519,69 @@ netCompanyShareAmount,
 companyProfitPreview: companyAmount - freelancerAmount,
 },
   });
+}
+
+async function resolvePracticeEducationCenterPartnerPrice(params: {
+  organizationId?: number | null;
+  selectedEducationCenterId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) return 0;
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const selectedEducationCenterId = Number(params.selectedEducationCenterId || 0);
+
+  if (!selectedEducationCenterId) return 0;
+
+  if (selectedEducationCenterId < 0) {
+    const masterId = Math.abs(selectedEducationCenterId);
+
+    const rows = await db
+      .select({
+        master: practiceEducationCenterMasters,
+        override: organizationPracticeEducationCenterOverrides,
+      })
+      .from(practiceEducationCenterMasters)
+      .leftJoin(
+        organizationPracticeEducationCenterOverrides,
+        and(
+          eq(
+            organizationPracticeEducationCenterOverrides.masterId,
+            practiceEducationCenterMasters.id
+          ),
+          eq(
+            organizationPracticeEducationCenterOverrides.organizationId,
+            organizationId
+          )
+        )
+      )
+      .where(eq(practiceEducationCenterMasters.id, masterId))
+      .limit(1);
+
+    const row: any = rows[0];
+    if (!row) return 0;
+
+    const isPartner = row.override?.isPartner ?? row.master?.isPartner ?? false;
+    if (!isPartner) return 0;
+
+    return toNumber(row.override?.partnerPrice ?? row.master?.partnerPrice ?? 0);
+  }
+
+  const rows = await db
+    .select()
+    .from(practiceEducationCenters)
+    .where(
+      and(
+        eq(practiceEducationCenters.id, selectedEducationCenterId),
+        eq(practiceEducationCenters.organizationId, organizationId)
+      )
+    )
+    .limit(1);
+
+  const row: any = rows[0];
+  if (!row?.isPartner) return 0;
+
+  return toNumber(row.partnerPrice ?? 0);
 }
 
 export async function syncPracticeSupportSettlementItemByRequestId(
@@ -6540,6 +6628,17 @@ const organizationId = requireOrganizationId(params?.organizationId);
   }
 
   const feeAmount = toNumber((request as any).feeAmount ?? 0);
+const partnerPrice = await resolvePracticeEducationCenterPartnerPrice({
+  organizationId,
+  selectedEducationCenterId: (request as any).selectedEducationCenterId,
+});
+const settlementGrossAmount = feeAmount + partnerPrice;
+const occurredAt = (request as any).paidAt ?? (request as any).updatedAt ?? new Date();
+
+  await assertSettlementMonthEditable({
+    organizationId,
+    date: occurredAt,
+  });
 
   return await upsertSettlementItem({
   organizationId,
@@ -6549,19 +6648,23 @@ const organizationId = requireOrganizationId(params?.organizationId);
     assigneeId: Number((request as any).assigneeId ?? 0) || null,
     title: "실습배정지원 결제",
     quantity: 1,
-    grossAmount: feeAmount,
-    companyAmount: feeAmount,
+   grossAmount: settlementGrossAmount,
+companyAmount: settlementGrossAmount,
     freelancerAmount: 0,
     settlementStatus: "confirmed",
-    occurredAt: (request as any).paidAt ?? (request as any).updatedAt ?? new Date(),
+        occurredAt,
     note: "실습배정지원 결제 완료로 자동 생성",
     actorUserId: actorUserId ?? null,
     logNote: "실습배정지원 결제 완료 반영",
-    payload: {
-      requestId: request.id,
-      paymentStatus: request.paymentStatus,
-      feeAmount,
-    },
+   payload: {
+  requestId: request.id,
+  paymentStatus: request.paymentStatus,
+  feeAmount,
+  partnerPrice,
+  settlementGrossAmount,
+  selectedEducationCenterId: (request as any).selectedEducationCenterId ?? null,
+  selectedEducationCenterName: (request as any).selectedEducationCenterName ?? null,
+},
   });
 }
 
@@ -6579,6 +6682,24 @@ export async function backfillSettlementItems(
 );
 
 const organizationId = requireOrganizationId(params?.organizationId);
+
+  const [lockedRows] = await db.execute(sql`
+    SELECT settlementYear, settlementMonth
+    FROM settlement_month_locks
+    WHERE organizationId = ${organizationId}
+      AND isLocked = 1
+    ORDER BY settlementYear DESC, settlementMonth DESC
+    LIMIT 1
+  `);
+
+  if (Array.isArray(lockedRows) && lockedRows.length > 0) {
+    const row: any = lockedRows[0];
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      `${row.settlementYear}년 ${row.settlementMonth}월 확정 정산이 있어 전체 백필을 실행할 수 없습니다. 확정 해제 후 진행해주세요.`,
+      400
+    );
+  }
 
   let subjectProcessed = 0;
   let subjectSuccess = 0;
@@ -6751,10 +6872,32 @@ if (!student) {
 );
 }
 
-  const grossAmount = toNumber((sem as any).actualAmount ?? 0);
-  const subjectCount = Number((sem as any).actualSubjectCount ?? 0);
+    const grossAmount = toNumber((sem as any).actualAmount ?? 0);
+  const displaySubjectCount = Number((sem as any).actualSubjectCount ?? 0);
   const educationInstitutionId = Number((sem as any).actualInstitutionId ?? 0) || null;
   const occurredAt = (sem as any).actualPaymentDate ?? (sem as any).actualStartDate ?? null;
+
+  await assertSettlementMonthEditable({
+    organizationId,
+    date: occurredAt,
+  });
+
+  const planRows = await listPlanSemesters(studentId, {
+    organizationId,
+  });
+
+  const semesterPlanRows = (planRows || []).filter(
+    (row: any) => Number(row.semesterNo) === Number((sem as any).semesterOrder)
+  );
+
+  const settlementIncludedSubjectCount = semesterPlanRows.filter(
+    (row: any) => row.settlementIncluded !== false
+  ).length;
+
+  const subjectCount =
+  semesterPlanRows.length > 0
+    ? settlementIncludedSubjectCount
+    : displaySubjectCount;
 
 if ((sem as any).approvalStatus !== "승인") {
   await cancelSettlementItemBySource({
@@ -6768,16 +6911,16 @@ if ((sem as any).approvalStatus !== "승인") {
 }
 
   // 실제 결제 완료 전이면 정산 원장 취소
-  if (!grossAmount || !subjectCount || !educationInstitutionId || !occurredAt) {
-  await cancelSettlementItemBySource({
-  organizationId,
-  revenueType: "subject",
-  sourceId: Number(sem.id),
-  actorUserId: actorUserId ?? null,
-  note: `학기 실제 결제정보 미완성으로 과목 정산 취소 (grossAmount=${grossAmount}, subjectCount=${subjectCount}, educationInstitutionId=${educationInstitutionId}, occurredAt=${occurredAt})`,
-});
-  return null;
-}
+    if (!grossAmount || !subjectCount || !educationInstitutionId || !occurredAt) {
+    await cancelSettlementItemBySource({
+      organizationId,
+      revenueType: "subject",
+      sourceId: Number(sem.id),
+      actorUserId: actorUserId ?? null,
+      note: `학기 실제 결제정보 미완성 또는 정산포함 과목 없음으로 과목 정산 취소 (grossAmount=${grossAmount}, displaySubjectCount=${displaySubjectCount}, settlementSubjectCount=${subjectCount}, educationInstitutionId=${educationInstitutionId}, occurredAt=${occurredAt})`,
+    });
+    return null;
+  }
 
   const institution = await getEducationInstitutionById(educationInstitutionId, {
   organizationId,
@@ -6831,21 +6974,15 @@ const actualUnitPrice =
 const actualCredits = subjectCount * 3;
 
 // ✅ 과목당 금액 기준 학점 계산
-let settlementCreditPerSubject = 0;
+const resolvedSettlementRule = await resolveSettlementCreditPerSubject({
+  organizationId,
+  educationInstitutionId,
+  actualUnitPrice,
+});
 
-if (actualUnitPrice >= normalSubjectPrice) {
-  // 75,000 이상
-  settlementCreditPerSubject = 3;
-} else if (actualUnitPrice >= 60000) {
-// 60,000 이상
-  settlementCreditPerSubject = 2;
-} else if (actualUnitPrice >= 45000) {
-// 45,000 이상
-  settlementCreditPerSubject = 1;
-} else {
-  // 45,000 미만
-  settlementCreditPerSubject = 0;
-}
+const settlementCreditPerSubject = Number(
+  resolvedSettlementRule.creditValue || 0
+);
 
 // 총 정산 학점
 const settlementCredits = subjectCount * settlementCreditPerSubject;
@@ -6926,7 +7063,14 @@ institutionName: institution?.name || sem.actualInstitution || null,
   assigneeId: Number(student.assigneeId),
   positionId,
   educationInstitutionId,
-  grossAmount,
+    grossAmount,
+  displaySubjectCount,
+  settlementSubjectCount: subjectCount,
+  settlementIncludedSubjectCount,
+  excludedSettlementSubjectCount: Math.max(
+    0,
+    displaySubjectCount - subjectCount
+  ),
   subjectCount,
   actualUnitPrice,
   normalSubjectPrice,
@@ -7975,6 +8119,249 @@ const organizationId = requireOrganizationId(params?.organizationId);
 }
 
 // ─── Settlement ──────────────────────────────────────────────────────
+export async function getSettlementMonthLock(params: {
+  organizationId?: number | null;
+  year: number;
+  month: number;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const year = Number(params.year);
+  const month = Number(params.month);
+
+  const rows = await db
+    .select()
+    .from(settlementMonthLocks)
+    .where(
+      and(
+        eq(settlementMonthLocks.organizationId, organizationId),
+        eq(settlementMonthLocks.settlementYear, year),
+        eq(settlementMonthLocks.settlementMonth, month)
+      )
+    )
+    .limit(1);
+
+  return rows[0] || null;
+}
+
+export async function isSettlementMonthLocked(params: {
+  organizationId?: number | null;
+  year: number;
+  month: number;
+}) {
+  const lock = await getSettlementMonthLock(params);
+
+  return Boolean(lock && (lock as any).isLocked !== false);
+}
+
+export async function lockSettlementMonth(params: {
+  organizationId?: number | null;
+  year: number;
+  month: number;
+  actorUserId: number;
+}) {
+  const db = await getDb();
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const year = Number(params.year);
+  const month = Number(params.month);
+  const actorUserId = Number(params.actorUserId || 0);
+
+  if (!year || year < 2020 || year > 2100) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "정산 연도가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (!month || month < 1 || month > 12) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "정산 월이 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const existing = await getSettlementMonthLock({
+    organizationId,
+    year,
+    month,
+  });
+
+  if (existing) {
+    await db
+      .update(settlementMonthLocks)
+      .set({
+        isLocked: true,
+        lockedAt: new Date(),
+        lockedBy: actorUserId,
+        unlockedAt: null,
+        unlockedBy: null,
+        unlockReason: null,
+      } as any)
+      .where(
+        and(
+          eq(settlementMonthLocks.organizationId, organizationId),
+          eq(settlementMonthLocks.settlementYear, year),
+          eq(settlementMonthLocks.settlementMonth, month)
+        )
+      );
+
+    return getSettlementMonthLock({
+      organizationId,
+      year,
+      month,
+    });
+  }
+
+  await db.insert(settlementMonthLocks).values({
+    organizationId,
+    settlementYear: year,
+    settlementMonth: month,
+    isLocked: true,
+    lockedAt: new Date(),
+    lockedBy: actorUserId,
+    unlockedAt: null,
+    unlockedBy: null,
+    unlockReason: null,
+  } as any);
+
+  return getSettlementMonthLock({
+    organizationId,
+    year,
+    month,
+  });
+}
+
+export async function unlockSettlementMonth(params: {
+  organizationId?: number | null;
+  year: number;
+  month: number;
+  actorUserId: number;
+  reason: string;
+}) {
+  const db = await getDb();
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const year = Number(params.year);
+  const month = Number(params.month);
+  const actorUserId = Number(params.actorUserId || 0);
+  const reason = String(params.reason || "").trim();
+
+  if (!year || year < 2020 || year > 2100) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "정산 연도가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (!month || month < 1 || month > 12) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "정산 월이 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (reason.length < 2) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "확정 해제 사유를 입력해주세요.",
+      400
+    );
+  }
+
+  const existing = await getSettlementMonthLock({
+    organizationId,
+    year,
+    month,
+  });
+
+  if (!existing) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "확정된 정산 월을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  await db
+    .update(settlementMonthLocks)
+    .set({
+      isLocked: false,
+      unlockedAt: new Date(),
+      unlockedBy: actorUserId,
+      unlockReason: reason,
+    } as any)
+    .where(
+      and(
+        eq(settlementMonthLocks.organizationId, organizationId),
+        eq(settlementMonthLocks.settlementYear, year),
+        eq(settlementMonthLocks.settlementMonth, month)
+      )
+    );
+
+  return getSettlementMonthLock({
+    organizationId,
+    year,
+    month,
+  });
+}
+
+async function assertSettlementMonthEditable(params: {
+  organizationId?: number | null;
+  date?: any;
+  year?: number;
+  month?: number;
+}) {
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  let year = Number(params.year || 0);
+  let month = Number(params.month || 0);
+
+  if ((!year || !month) && params.date) {
+    const d = new Date(params.date);
+    if (!Number.isNaN(d.getTime())) {
+      year = d.getFullYear();
+      month = d.getMonth() + 1;
+    }
+  }
+
+  if (!year || !month) return;
+
+  const locked = await isSettlementMonthLocked({
+    organizationId,
+    year,
+    month,
+  });
+
+  if (locked) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      `${year}년 ${month}월 정산이 확정되어 수정할 수 없습니다.`,
+      400
+    );
+  }
+}
+
 export async function getSettlementReport(
   year: number,
   month: number,
@@ -8666,9 +9053,13 @@ export async function createPlanSemester(data: InsertPlanSemester) {
   }
 
   const result: any = await db.insert(planSemesters).values({
-    ...data,
-    organizationId,
-  } as any);
+  ...data,
+  organizationId,
+  settlementIncluded: resolvePlanSemesterSettlementIncluded(
+    (data as any).subjectName,
+    (data as any).settlementIncluded
+  ),
+} as any);
 
   return getInsertId(result);
 }
@@ -8721,6 +9112,14 @@ const organizationId = requireOrganizationId(params?.organizationId);
 );
     }
   }
+
+if (
+  data.subjectName !== undefined &&
+  (data as any).settlementIncluded === undefined
+) {
+  (data as any).settlementIncluded =
+    resolvePlanSemesterSettlementIncluded(data.subjectName);
+}
 
   const nextRequirementType =
     data.planRequirementType !== undefined
@@ -8810,6 +9209,7 @@ const organizationId = requireOrganizationId(params?.organizationId);
         planRequirementType: "전공선택",
         credits: 3,
         sortOrder: i,
+settlementIncluded: true,
       } as any);
     }
   }
@@ -9149,6 +9549,206 @@ const organizationId = requireOrganizationId(params?.organizationId);
     .limit(1);
 
   return rows[0] ?? null;
+}
+
+export async function listSettlementSubjectPriceRules(params: {
+  organizationId?: number | null;
+  educationInstitutionId?: number | null;
+  includeInactive?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const educationInstitutionId =
+    params.educationInstitutionId === undefined
+      ? undefined
+      : params.educationInstitutionId === null
+      ? null
+      : Number(params.educationInstitutionId || 0) || null;
+
+  const conditions: any[] = [
+    eq(settlementSubjectPriceRules.organizationId, organizationId),
+  ];
+
+  if (educationInstitutionId !== undefined) {
+    if (educationInstitutionId === null) {
+      conditions.push(sql`${settlementSubjectPriceRules.educationInstitutionId} IS NULL`);
+    } else {
+      conditions.push(
+        eq(settlementSubjectPriceRules.educationInstitutionId, educationInstitutionId)
+      );
+    }
+  }
+
+  if (!params.includeInactive) {
+    conditions.push(eq(settlementSubjectPriceRules.isActive, true));
+  }
+
+  return db
+    .select()
+    .from(settlementSubjectPriceRules)
+    .where(and(...conditions))
+    .orderBy(
+      asc(settlementSubjectPriceRules.sortOrder),
+      asc(settlementSubjectPriceRules.thresholdAmount),
+      asc(settlementSubjectPriceRules.id)
+    );
+}
+
+export async function upsertSettlementSubjectPriceRule(input: {
+  organizationId?: number | null;
+  id?: number | null;
+  educationInstitutionId?: number | null;
+  label: string;
+  thresholdAmount: number | string;
+  creditValue: number;
+  sortOrder?: number | null;
+  isActive?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(input.organizationId);
+  const id = Number(input.id || 0);
+  const label = String(input.label || "").trim();
+  const thresholdAmount = toNumber(input.thresholdAmount);
+  const creditValue = Number(input.creditValue ?? 0);
+  const educationInstitutionId =
+    input.educationInstitutionId === undefined || input.educationInstitutionId === null
+      ? null
+      : Number(input.educationInstitutionId || 0) || null;
+
+  if (!label) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "단가 기준명을 입력해주세요.",
+      400
+    );
+  }
+
+  if (thresholdAmount < 0) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "기준 금액은 0원 이상이어야 합니다.",
+      400
+    );
+  }
+
+  if (!Number.isFinite(creditValue) || creditValue < 0) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학점 값은 0 이상이어야 합니다.",
+      400
+    );
+  }
+
+  const payload = {
+    organizationId,
+    educationInstitutionId,
+    label,
+    thresholdAmount: String(thresholdAmount),
+    creditValue,
+    sortOrder: Number(input.sortOrder ?? 0),
+    isActive: input.isActive === undefined ? true : Boolean(input.isActive),
+  };
+
+  if (id > 0) {
+    await db
+      .update(settlementSubjectPriceRules)
+      .set(payload as any)
+      .where(
+        and(
+          eq(settlementSubjectPriceRules.id, id),
+          eq(settlementSubjectPriceRules.organizationId, organizationId)
+        )
+      );
+
+    return { success: true, id };
+  }
+
+  const result: any = await db
+    .insert(settlementSubjectPriceRules)
+    .values(payload as any);
+
+  return {
+    success: true,
+    id: getInsertId(result),
+  };
+}
+
+export async function deleteSettlementSubjectPriceRule(input: {
+  organizationId?: number | null;
+  id: number;
+}) {
+  const db = await getDb();
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(input.organizationId);
+
+  await db
+    .delete(settlementSubjectPriceRules)
+    .where(
+      and(
+        eq(settlementSubjectPriceRules.id, Number(input.id)),
+        eq(settlementSubjectPriceRules.organizationId, organizationId)
+      )
+    );
+
+  return {
+    success: true,
+    id: Number(input.id),
+  };
+}
+
+export async function resolveSettlementCreditPerSubject(params: {
+  organizationId?: number | null;
+  educationInstitutionId?: number | null;
+  actualUnitPrice: number;
+}) {
+  const organizationId = requireOrganizationId(params.organizationId);
+  const educationInstitutionId = Number(params.educationInstitutionId || 0) || null;
+  const actualUnitPrice = toNumber(params.actualUnitPrice);
+
+  const institutionRules =
+    educationInstitutionId
+      ? await listSettlementSubjectPriceRules({
+          organizationId,
+          educationInstitutionId,
+        })
+      : [];
+
+  const globalRules = await listSettlementSubjectPriceRules({
+    organizationId,
+    educationInstitutionId: null,
+  });
+
+  const rules = institutionRules.length > 0 ? institutionRules : globalRules;
+
+  const matched = [...rules]
+    .filter((row: any) => actualUnitPrice >= toNumber(row.thresholdAmount))
+    .sort(
+      (a: any, b: any) =>
+        toNumber(b.thresholdAmount) - toNumber(a.thresholdAmount) ||
+        Number(b.creditValue || 0) - Number(a.creditValue || 0)
+    )[0];
+
+  return {
+    creditValue: matched ? Number((matched as any).creditValue || 0) : 0,
+    rule: matched || null,
+  };
 }
 
 export async function upsertEducationInstitutionPositionRate(data: {
@@ -12190,6 +12790,7 @@ export async function listMergedPracticeEducationCenters(params?: {
         memo: override?.customMemo ?? master.memo,
 
 isPartner: override?.isPartner ?? master.isPartner ?? false,
+partnerPrice: override?.partnerPrice ?? master.partnerPrice ?? "0",
 
 isInactive: override?.isInactive ?? false,
         inactiveReason: override?.inactiveReason ?? null,
@@ -12277,6 +12878,7 @@ const organizationId = requireOrganizationId(data.organizationId);
   ...data,
   organizationId,
   feeAmount: (data as any).feeAmount ?? "0",
+  partnerPrice: (data as any).partnerPrice ?? "0",
   isActive: (data as any).isActive ?? true,
   sortOrder: (data as any).sortOrder ?? 0,
 } as any);
@@ -12577,17 +13179,21 @@ export async function updatePracticeEducationCenterPartner(
   }
 ) {
   const db = await getDb();
-  if (!db) throwAppError(
-    ERROR_CODES.INTERNAL_SERVER_ERROR,
-    "DB not available",
-    500
-  );
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
   await db
     .update(practiceEducationCenters)
-    .set({ isPartner } as any)
+    .set({
+      isPartner,
+    } as any)
     .where(
       and(
         eq(practiceEducationCenters.id, id),
@@ -13053,11 +13659,13 @@ export async function updatePracticeEducationCenterPartnerOverride(params: {
   isPartner: boolean;
 }) {
   const db = await getDb();
-  if (!db) throwAppError(
-    ERROR_CODES.INTERNAL_SERVER_ERROR,
-    "DB not available",
-    500
-  );
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
 
   const organizationId = requireOrganizationId(params.organizationId);
   const masterId = Number(params.masterId);
@@ -13089,6 +13697,84 @@ export async function updatePracticeEducationCenterPartnerOverride(params: {
       organizationId,
       masterId,
       isPartner: params.isPartner,
+      isHidden: false,
+      isInactive: false,
+    } as any);
+
+  return getInsertId(result);
+}
+
+export async function updatePracticeEducationCenterPartnerPrice(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+    partnerPrice?: number | string | null;
+  }
+) {
+  const db = await getDb();
+  if (!db) {
+    throwAppError(ERROR_CODES.INTERNAL_SERVER_ERROR, "DB not available", 500);
+  }
+
+  const organizationId = requireOrganizationId(params?.organizationId);
+  const partnerPrice = toNumber(params?.partnerPrice ?? 0);
+
+  await db
+    .update(practiceEducationCenters)
+    .set({
+      partnerPrice: String(partnerPrice),
+    } as any)
+    .where(
+      and(
+        eq(practiceEducationCenters.id, id),
+        eq(practiceEducationCenters.organizationId, organizationId)
+      )
+    );
+
+  return { success: true };
+}
+
+export async function updatePracticeEducationCenterPartnerPriceOverride(params: {
+  organizationId?: number | null;
+  masterId: number;
+  partnerPrice?: number | string | null;
+}) {
+  const db = await getDb();
+  if (!db) {
+    throwAppError(ERROR_CODES.INTERNAL_SERVER_ERROR, "DB not available", 500);
+  }
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const masterId = Number(params.masterId);
+  const partnerPrice = toNumber(params.partnerPrice ?? 0);
+
+  const existing = await getPracticeEducationCenterOverride({
+    organizationId,
+    masterId,
+  });
+
+  if (existing) {
+    await db
+      .update(organizationPracticeEducationCenterOverrides)
+      .set({
+        partnerPrice: String(partnerPrice),
+      } as any)
+      .where(
+        and(
+          eq(organizationPracticeEducationCenterOverrides.id, existing.id),
+          eq(organizationPracticeEducationCenterOverrides.organizationId, organizationId)
+        )
+      );
+
+    return existing.id;
+  }
+
+  const result: any = await db
+    .insert(organizationPracticeEducationCenterOverrides)
+    .values({
+      organizationId,
+      masterId,
+      partnerPrice: String(partnerPrice),
       isHidden: false,
       isInactive: false,
     } as any);
