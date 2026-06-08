@@ -50,20 +50,6 @@ const [institutionTrendMode, setInstitutionTrendMode] = useState<"gross" | "comp
     enabled: canViewSettlement,
   });
 
-  const { data: monthLockStatus } =
-    trpc.settlement.monthLockStatus.useQuery(
-      {
-        year,
-        month,
-      },
-      {
-        enabled: canViewSettlement,
-      }
-    );
-
-  const isMonthLocked = Boolean(monthLockStatus?.isLocked);
-  const monthLock = monthLockStatus?.lock;
-
   const { data: report, isLoading } = trpc.settlement.report.useQuery(
     {
       year,
@@ -141,23 +127,21 @@ const {
       },
     });
 
-  const lockMonthMutation = trpc.settlement.lockMonth.useMutation({
-    onSuccess: async () => {
-      toast.success(`${year}년 ${month}월 정산이 확정되었습니다.`);
-      await utils.settlement.monthLockStatus.invalidate();
-    },
-    onError: (err) => {
-      toast.error(err.message || "정산 확정 중 오류가 발생했습니다.");
-    },
-  });
+const regenerateLedgerMutation =
+  trpc.settlementSystem.backfillSettlementItems.useMutation({
+    onSuccess: async (result: any) => {
+      toast.success("정산 원장이 현재 설정값 기준으로 재생성되었습니다.");
 
-  const unlockMonthMutation = trpc.settlement.unlockMonth.useMutation({
-    onSuccess: async () => {
-      toast.success(`${year}년 ${month}월 정산 확정이 해제되었습니다.`);
-      await utils.settlement.monthLockStatus.invalidate();
+      await Promise.all([
+        utils.settlement.report.invalidate(),
+        utils.settlement.entries.invalidate(),
+        utils.settlement.institutionSummary.invalidate(),
+        utils.settlement.institutionEntries.invalidate(),
+        utils.settlement.institutionMonthlyTrend.invalidate(),
+      ]);
     },
     onError: (err) => {
-      toast.error(err.message || "정산 확정 해제 중 오류가 발생했습니다.");
+      toast.error(err.message || "정산 원장 재생성 중 오류가 발생했습니다.");
     },
   });
 
@@ -186,36 +170,18 @@ const changeSettlementMonthSafely = (nextYear: number, nextMonth: number) => {
   setMonth(nextMonth);
 };
 
-const handleLockMonth = () => {
+const handleRegenerateLedger = () => {
   const ok = window.confirm(
-    `${year}년 ${month}월 정산을 확정하시겠습니까?\n확정 후 해당 월 정산 재계산/백필이 제한됩니다.`
+    `${year}년 ${month}월 정산 원장을 현재 설정값 기준으로 재생성하시겠습니까?\n\n교육원 정산금액, 직급 단가, 과목단가 학점규칙, 민간자격증, 협약교육원 단가가 다시 반영됩니다.`
   );
 
   if (!ok) return;
 
-  lockMonthMutation.mutate({
-    year,
-    month,
-  });
+  regenerateLedgerMutation.mutate({
+  year,
+  month,
+});
 };
-
-const handleUnlockMonth = () => {
-  const reason = window.prompt(
-    `${year}년 ${month}월 정산 확정을 해제하는 사유를 입력해주세요.`
-  );
-
-  if (!reason || reason.trim().length < 2) {
-    toast.error("확정 해제 사유를 입력해주세요.");
-    return;
-  }
-
-  unlockMonthMutation.mutate({
-    year,
-    month,
-    reason: reason.trim(),
-  });
-};
-
 
   const years = useMemo(() => {
     const arr = [];
@@ -739,39 +705,17 @@ const downloadInstitutionTrendCSV = () => {
             ))}
           </SelectContent>
         </Select>
-        {isMonthLocked ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleUnlockMonth}
-            disabled={unlockMonthMutation.isPending}
-          >
-            확정 해제
-          </Button>
-        ) : (
-          <Button
-            variant="default"
-            size="sm"
-            onClick={handleLockMonth}
-            disabled={lockMonthMutation.isPending}
-          >
-            정산 확정
-          </Button>
-        )}
+        <Button
+  variant="destructive"
+  size="sm"
+  onClick={handleRegenerateLedger}
+  disabled={regenerateLedgerMutation.isPending}
+>
+  {regenerateLedgerMutation.isPending
+    ? "재생성 중..."
+    : "정산 원장 재생성"}
+</Button>
       </div>
-      {isMonthLocked && (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="py-3 text-sm text-amber-800">
-            🔒 {year}년 {month}월 정산이 확정되었습니다.
-            {monthLock?.lockedAt && (
-              <span className="ml-2">
-                확정일: {new Date(monthLock.lockedAt).toLocaleString("ko-KR")}
-              </span>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
       <div className="grid gap-4 md:grid-cols-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">

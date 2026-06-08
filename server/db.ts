@@ -6672,6 +6672,8 @@ export async function backfillSettlementItems(
   actorUserId?: number,
   params?: {
     organizationId?: number | null;
+    year?: number | null;
+    month?: number | null;
   }
 ) {
   const db = await getDb();
@@ -6683,20 +6685,36 @@ export async function backfillSettlementItems(
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
+const targetYear = Number(params?.year || 0);
+const targetMonth = Number(params?.month || 0);
+
+if (!targetYear || !targetMonth) {
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    "정산 원장 재생성 대상 년월이 필요합니다.",
+    400
+  );
+}
+
+const monthStart = `${targetYear}-${String(targetMonth).padStart(2, "0")}-01`;
+const nextMonth = targetMonth === 12 ? 1 : targetMonth + 1;
+const nextYear = targetMonth === 12 ? targetYear + 1 : targetYear;
+const monthEnd = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+
   const [lockedRows] = await db.execute(sql`
-    SELECT settlementYear, settlementMonth
-    FROM settlement_month_locks
-    WHERE organizationId = ${organizationId}
-      AND isLocked = 1
-    ORDER BY settlementYear DESC, settlementMonth DESC
-    LIMIT 1
-  `);
+  SELECT settlementYear, settlementMonth
+  FROM settlement_month_locks
+  WHERE organizationId = ${organizationId}
+    AND settlementYear = ${targetYear}
+    AND settlementMonth = ${targetMonth}
+    AND isLocked = 1
+  LIMIT 1
+`);
 
   if (Array.isArray(lockedRows) && lockedRows.length > 0) {
-    const row: any = lockedRows[0];
     throwAppError(
       ERROR_CODES.INVALID_REQUEST,
-      `${row.settlementYear}년 ${row.settlementMonth}월 확정 정산이 있어 전체 백필을 실행할 수 없습니다. 확정 해제 후 진행해주세요.`,
+     `${targetYear}년 ${targetMonth}월 확정 정산이 있어 정산 원장을 재생성할 수 없습니다. 확정 해제 후 진행해주세요.`,
       400
     );
   }
@@ -6719,7 +6737,13 @@ const organizationId = requireOrganizationId(params?.organizationId);
   const semesterRows = await db
   .select({ id: semesters.id })
   .from(semesters)
-  .where(eq(semesters.organizationId, organizationId))
+  .where(
+    and(
+      eq(semesters.organizationId, organizationId),
+      sql`COALESCE(${semesters.actualPaymentDate}, ${semesters.actualStartDate}) >= ${monthStart}`,
+      sql`COALESCE(${semesters.actualPaymentDate}, ${semesters.actualStartDate}) < ${monthEnd}`
+    )
+  )
   .orderBy(asc(semesters.id));
 
   for (const row of semesterRows) {
@@ -6742,10 +6766,16 @@ const organizationId = requireOrganizationId(params?.organizationId);
   }
 
   // 2) 민간자격증 백필
-  const privateRows = await db
+ const privateRows = await db
   .select({ id: privateCertificateRequests.id })
   .from(privateCertificateRequests)
-  .where(eq(privateCertificateRequests.organizationId, organizationId))
+  .where(
+    and(
+      eq(privateCertificateRequests.organizationId, organizationId),
+      sql`COALESCE(${privateCertificateRequests.paidAt}, ${privateCertificateRequests.updatedAt}) >= ${monthStart}`,
+      sql`COALESCE(${privateCertificateRequests.paidAt}, ${privateCertificateRequests.updatedAt}) < ${monthEnd}`
+    )
+  )
   .orderBy(asc(privateCertificateRequests.id));
 
   for (const row of privateRows) {
@@ -6771,7 +6801,13 @@ const organizationId = requireOrganizationId(params?.organizationId);
   const practiceRows = await db
   .select({ id: practiceSupportRequests.id })
   .from(practiceSupportRequests)
-  .where(eq(practiceSupportRequests.organizationId, organizationId))
+  .where(
+    and(
+      eq(practiceSupportRequests.organizationId, organizationId),
+      sql`COALESCE(${practiceSupportRequests.paidAt}, ${practiceSupportRequests.updatedAt}) >= ${monthStart}`,
+      sql`COALESCE(${practiceSupportRequests.paidAt}, ${practiceSupportRequests.updatedAt}) < ${monthEnd}`
+    )
+  )
   .orderBy(asc(practiceSupportRequests.id));
 
   for (const row of practiceRows) {
@@ -6968,24 +7004,48 @@ if ((sem as any).approvalStatus !== "승인") {
   const normalSubjectPrice = toNumber((institution as any).normalSubjectPrice ?? 75000);
 const institutionUnitCost = toNumber((institution as any).unitCostAmount ?? 0);
 
-const actualUnitPrice =
-  subjectCount > 0 ? Math.floor(grossAmount / subjectCount) : 0;
-
 const actualCredits = subjectCount * 3;
 
-// ✅ 과목당 금액 기준 학점 계산
-const resolvedSettlementRule = await resolveSettlementCreditPerSubject({
+const subjectPriceRules = await listActiveSettlementSubjectPriceRulesForCalc({
   organizationId,
   educationInstitutionId,
-  actualUnitPrice,
 });
 
-const settlementCreditPerSubject = Number(
-  resolvedSettlementRule.creditValue || 0
-);
+const subjectPriceCombination =
+  resolveSettlementSubjectPriceCombination({
+    grossAmount,
+    subjectCount,
+    rules: subjectPriceRules,
+  });
 
-// 총 정산 학점
-const settlementCredits = subjectCount * settlementCreditPerSubject;
+let actualUnitPrice = 0;
+let settlementCredits = 0;
+
+if (subjectPriceCombination && subjectPriceCombination.length > 0) {
+  actualUnitPrice =
+    subjectCount > 0 ? Math.floor(grossAmount / subjectCount) : 0;
+
+  settlementCredits = subjectPriceCombination.reduce(
+    (sum: number, row: any) =>
+      sum + Number(row.count || 0) * Number(row.creditValue || 0),
+    0
+  );
+} else {
+  actualUnitPrice =
+    subjectCount > 0 ? Math.floor(grossAmount / subjectCount) : 0;
+
+  const resolvedSettlementRule = await resolveSettlementCreditPerSubject({
+    organizationId,
+    educationInstitutionId,
+    actualUnitPrice,
+  });
+
+  const settlementCreditPerSubject = Number(
+    resolvedSettlementRule.creditValue || 0
+  );
+
+  settlementCredits = subjectCount * settlementCreditPerSubject;
+}
 
 // 교육원 몫
 let institutionCost = 0;
@@ -7076,6 +7136,7 @@ institutionName: institution?.name || sem.actualInstitution || null,
   normalSubjectPrice,
   actualCredits,
   settlementCredits,
+subjectPriceCombination,
   institutionUnitCost,
   institutionCost,
   companyAmount,
@@ -9749,6 +9810,129 @@ export async function resolveSettlementCreditPerSubject(params: {
     creditValue: matched ? Number((matched as any).creditValue || 0) : 0,
     rule: matched || null,
   };
+}
+
+async function listActiveSettlementSubjectPriceRulesForCalc(params: {
+  organizationId?: number | null;
+  educationInstitutionId?: number | null;
+}) {
+  const organizationId = requireOrganizationId(params.organizationId);
+  const educationInstitutionId =
+    params.educationInstitutionId === undefined ||
+    params.educationInstitutionId === null
+      ? null
+      : Number(params.educationInstitutionId || 0) || null;
+
+  const institutionRules =
+    educationInstitutionId
+      ? await listSettlementSubjectPriceRules({
+          organizationId,
+          educationInstitutionId,
+          activeOnly: true,
+        })
+      : [];
+
+  const commonRules = await listSettlementSubjectPriceRules({
+    organizationId,
+    educationInstitutionId: null,
+    activeOnly: true,
+  });
+
+  const merged = [...institutionRules, ...commonRules]
+    .map((row: any) => ({
+      thresholdAmount: toNumber(row.thresholdAmount),
+      creditValue: Number(row.creditValue || 0),
+      label: String(row.label || ""),
+    }))
+    .filter((row) => row.thresholdAmount > 0)
+    .sort((a, b) => b.thresholdAmount - a.thresholdAmount);
+
+  const unique = new Map<number, any>();
+
+  for (const row of merged) {
+    if (!unique.has(row.thresholdAmount)) {
+      unique.set(row.thresholdAmount, row);
+    }
+  }
+
+  return Array.from(unique.values());
+}
+
+function resolveSettlementSubjectPriceCombination(params: {
+  grossAmount: number;
+  subjectCount: number;
+  rules: Array<{
+    thresholdAmount: number;
+    creditValue: number;
+    label?: string;
+  }>;
+}) {
+  const grossAmount = toNumber(params.grossAmount);
+  const subjectCount = Number(params.subjectCount || 0);
+  const rules = (params.rules || [])
+    .filter((row) => toNumber(row.thresholdAmount) > 0)
+    .sort((a, b) => toNumber(b.thresholdAmount) - toNumber(a.thresholdAmount));
+
+  const memo = new Map<string, any[] | null>();
+
+  function dfs(
+    index: number,
+    remainAmount: number,
+    remainCount: number
+  ): any[] | null {
+    const key = `${index}:${remainAmount}:${remainCount}`;
+
+    if (memo.has(key)) {
+      return memo.get(key) || null;
+    }
+
+    if (remainAmount === 0 && remainCount === 0) {
+      return [];
+    }
+
+    if (remainAmount < 0 || remainCount < 0 || index >= rules.length) {
+      return null;
+    }
+
+    const rule = rules[index];
+    const price = toNumber(rule.thresholdAmount);
+
+    const maxCount = Math.min(
+      remainCount,
+      price > 0 ? Math.floor(remainAmount / price) : 0
+    );
+
+    for (let count = maxCount; count >= 0; count--) {
+      const next = dfs(
+        index + 1,
+        remainAmount - price * count,
+        remainCount - count
+      );
+
+      if (next) {
+        const current =
+          count > 0
+            ? [
+                {
+                  unitPrice: price,
+                  count,
+                  creditValue: Number(rule.creditValue || 0),
+                  label: rule.label || "",
+                },
+              ]
+            : [];
+
+        const result = [...current, ...next];
+        memo.set(key, result);
+        return result;
+      }
+    }
+
+    memo.set(key, null);
+    return null;
+  }
+
+  return dfs(0, grossAmount, subjectCount);
 }
 
 export async function upsertEducationInstitutionPositionRate(data: {

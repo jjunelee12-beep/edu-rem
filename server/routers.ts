@@ -3854,11 +3854,21 @@ getSettings: protectedProcedure.query(async ({ ctx }) => {
 }),
 
     backfillSettlementItems: hostProcedure
-      .mutation(async ({ ctx }) => {
-        return await db.backfillSettlementItems(Number(ctx.user.id), {
-  organizationId: getCtxOrganizationId(ctx),
-});
-      }),
+  .input(
+    z.object({
+      year: z.number().int().min(2020).max(2100),
+      month: z.number().int().min(1).max(12),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const organizationId = getCtxOrganizationId(ctx);
+
+    return db.backfillSettlementItems(Number(ctx.user.id), {
+      organizationId,
+      year: input.year,
+      month: input.month,
+    });
+  }),
 
 cleanupOrphanSettlementItems: hostProcedure
   .mutation(async ({ ctx }) => {
