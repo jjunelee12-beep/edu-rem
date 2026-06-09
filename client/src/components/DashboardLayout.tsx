@@ -536,7 +536,7 @@ useEffect(() => {
 
  const canViewApprovalInbox = isAdmin || isHost || isSuperhost;
  const canViewApprovalStats = isAdmin || isHost || isSuperhost;
- const canViewApprovalSettings = isSuperhost;
+const canViewApprovalSettings = isHost || isSuperhost;
 
  const isEApprovalPath =
  location === "/e-approval" || location.startsWith("/e-approval/");
