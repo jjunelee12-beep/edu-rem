@@ -442,6 +442,256 @@ const formElements = [...safeFormFields, submitElement].filter(
     }
   };
 
+if (isMobile) {
+  const logoElement = visualElements.find(
+    (element: any) => element.type === "image" && element.url
+  );
+
+  const titleElement = visualElements.find((element: any) => {
+    if (element.type !== "text") return false;
+    const text = String(element.text || "").trim();
+    return text.length > 0 && text.length <= 80;
+  });
+
+  const subtitleElement = visualElements.find((element: any) => {
+    if (element.type !== "text") return false;
+    const text = String(element.text || "").trim();
+    if (!text) return false;
+    return (
+      text.includes("상담") ||
+      text.includes("무료") ||
+      text.includes("안내") ||
+      text.includes("함께")
+    );
+  });
+
+  const mobileSubmitText = String(
+    (submitElement as any)?.text || "무료 상담 신청하기"
+  ).trim();
+
+  const mobileSubmitBg =
+    (submitElement as any)?.backgroundColor || "#22c55e";
+
+  const mobileSubmitColor = (submitElement as any)?.color || "#ffffff";
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        minHeight: "100vh",
+        background: "#f3f4f6",
+        padding: "12px",
+        boxSizing: "border-box",
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 430,
+          margin: "0 auto",
+          background: canvas.backgroundColor || "#ffffff",
+          borderRadius: 22,
+          boxShadow: "0 18px 50px rgba(15, 23, 42, 0.14)",
+          padding: "28px 18px",
+          boxSizing: "border-box",
+        }}
+      >
+        {logoElement ? (
+          <img
+            src={normalizeAssetUrl((logoElement as any).url)}
+            alt=""
+            style={{
+              display: "block",
+              width: 72,
+              height: 72,
+              objectFit: "contain",
+              margin: "0 auto 18px",
+            }}
+          />
+        ) : null}
+
+        {titleElement ? (
+          <div
+            style={{
+              fontSize: 26,
+              fontWeight: 900,
+              lineHeight: 1.2,
+              textAlign: "center",
+              color: String((titleElement as any).color || "#111827"),
+              marginBottom: 10,
+              wordBreak: "keep-all",
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {(titleElement as any).text}
+          </div>
+        ) : null}
+
+        {subtitleElement && subtitleElement !== titleElement ? (
+          <div
+            style={{
+              fontSize: 15,
+              fontWeight: 600,
+              lineHeight: 1.45,
+              textAlign: "center",
+              color: String((subtitleElement as any).color || "#475569"),
+              marginBottom: 24,
+              wordBreak: "keep-all",
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {(subtitleElement as any).text}
+          </div>
+        ) : null}
+
+        <div style={{ display: "grid", gap: 13 }}>
+          {safeFormFields
+            .filter((element: any) => getFieldKey(element) !== "agreed")
+            .map((element: any) => {
+              const fieldKey = getFieldKey(element);
+              const { label, placeholder, inputType, options } =
+                getFieldMeta(fieldKey);
+
+              const value =
+                fieldKey === "phone"
+                  ? String(values.phone ?? "")
+                  : String(values[fieldKey] ?? "");
+
+              return (
+                <label key={element.id} style={{ display: "grid", gap: 6 }}>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 900,
+                      color: "#111827",
+                    }}
+                  >
+                    {label || FIELD_LABELS[fieldKey] || ""}
+                  </span>
+
+                  {inputType === "textarea" ? (
+                    <textarea
+                      value={value}
+                      placeholder={placeholder}
+                      onChange={(e) =>
+                        updateFieldValue(fieldKey, e.target.value)
+                      }
+                      style={{
+                        width: "100%",
+                        minHeight: 104,
+                        border: "1px solid #d1d5db",
+                        borderRadius: 10,
+                        padding: 12,
+                        fontSize: 14,
+                        boxSizing: "border-box",
+                        resize: "none",
+                        background: "#ffffff",
+                        color: "#111827",
+                      }}
+                    />
+                  ) : inputType === "select" ? (
+                    <select
+                      value={value}
+                      onChange={(e) =>
+                        updateFieldValue(fieldKey, e.target.value)
+                      }
+                      style={{
+                        width: "100%",
+                        height: 46,
+                        border: "1px solid #d1d5db",
+                        borderRadius: 10,
+                        padding: "0 12px",
+                        fontSize: 14,
+                        boxSizing: "border-box",
+                        background: "#ffffff",
+                        color: "#111827",
+                      }}
+                    >
+                      <option value="">{placeholder || "선택"}</option>
+                      {options.map((option: any) => (
+                        <option
+                          key={`${fieldKey}-${option.value}`}
+                          value={option.value}
+                        >
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={value}
+                      placeholder={placeholder}
+                      inputMode={fieldKey === "phone" ? "numeric" : undefined}
+                      autoComplete={
+                        fieldKey === "clientName"
+                          ? "name"
+                          : fieldKey === "phone"
+                            ? "tel"
+                            : "off"
+                      }
+                      onChange={(e) =>
+                        updateFieldValue(fieldKey, e.target.value)
+                      }
+                      style={{
+                        width: "100%",
+                        height: 46,
+                        border: "1px solid #d1d5db",
+                        borderRadius: 10,
+                        padding: "0 12px",
+                        fontSize: 14,
+                        boxSizing: "border-box",
+                        background: "#ffffff",
+                        color: "#111827",
+                      }}
+                    />
+                  )}
+                </label>
+              );
+            })}
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 12,
+              color: "#334155",
+              marginTop: 2,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={Boolean(values.agreed)}
+              onChange={(e) => updateFieldValue("agreed", e.target.checked)}
+            />
+            {getFieldMeta("agreed").label || FIELD_LABELS.agreed}
+          </label>
+
+          <button
+            type="button"
+            onClick={onSubmit}
+            disabled={isSubmitting}
+            style={{
+              width: "100%",
+              height: 54,
+              border: "none",
+              borderRadius: 14,
+              background: mobileSubmitBg,
+              color: mobileSubmitColor,
+              fontSize: 17,
+              fontWeight: 900,
+              cursor: isSubmitting ? "not-allowed" : "pointer",
+              boxShadow: "0 10px 24px rgba(15, 23, 42, 0.18)",
+            }}
+          >
+            {isSubmitting ? "접수 완료" : mobileSubmitText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
   const renderFormElement = (element: FormCanvasElement) => {
     const baseStyle: CSSProperties = {
       position: "absolute",
