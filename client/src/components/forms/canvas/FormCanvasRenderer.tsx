@@ -157,23 +157,30 @@ export default function FormCanvasRenderer({
   const isMobile = windowWidth < 768;
 
   const scale = useMemo(() => {
-    if (typeof overrideScale === "number") return overrideScale;
+  if (typeof overrideScale === "number") return overrideScale;
 
-    const safeCanvasWidth = Math.max(1, Number(canvas.width) || 1080);
-    const sidePadding = isMobile ? 24 : 48;
-    const availableWidth = Math.max(320, windowWidth - sidePadding);
+  const safeCanvasWidth = Math.max(1, Number(canvas.width) || 1080);
+  const sidePadding = isMobile ? 20 : 48;
+  const availableWidth = Math.max(320, windowWidth - sidePadding);
 
-    if (typeof maxWidth === "number") {
-      return Math.min(1, maxWidth / safeCanvasWidth);
-    }
+  if (typeof maxWidth === "number") {
+    return Math.min(1, maxWidth / safeCanvasWidth);
+  }
 
-    return Math.min(1, availableWidth / safeCanvasWidth);
-  }, [overrideScale, canvas.width, isMobile, windowWidth, maxWidth]);
+  return Math.min(1, availableWidth / safeCanvasWidth);
+}, [overrideScale, canvas.width, isMobile, windowWidth, maxWidth]);
 
-  if (!canvas.enabled) return null;
+const renderScale = useMemo(() => {
+  if (!isMobile) return scale;
 
-  const width = canvas.width * scale;
-  const height = canvas.height * scale;
+  // 모바일에서는 너무 작아지지 않게 최소 크기 보장
+  return Math.max(scale, 0.48);
+}, [scale, isMobile]);
+
+if (!canvas.enabled) return null;
+
+const width = canvas.width * renderScale;
+const height = canvas.height * renderScale;
 
   const visibleElements = canvas.elements.filter((element) => !element.hidden);
 
@@ -445,10 +452,10 @@ const formElements = [...safeFormFields, submitElement].filter(
   const renderFormElement = (element: FormCanvasElement) => {
     const baseStyle: CSSProperties = {
       position: "absolute",
-      left: element.x * scale,
-      top: element.y * scale,
-      width: element.width * scale,
-      height: element.height * scale,
+      left: element.x * renderScale,
+top: element.y * renderScale,
+width: element.width * renderScale,
+height: element.height * renderScale,
       zIndex: 1000 + Number((element as any).zIndex || 1),
       transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
       boxSizing: "border-box",
@@ -468,11 +475,11 @@ const formElements = [...safeFormFields, submitElement].filter(
             cursor: isSubmitting ? "not-allowed" : "pointer",
             backgroundColor: (element as any).backgroundColor || "#2563eb",
             color: (element as any).color || "#ffffff",
-            borderRadius: Number((element as any).borderRadius || 18) * scale,
-            fontSize: Math.max(
-              11,
-              Number((element as any).fontSize || 18) * scale
-            ),
+            borderRadius: Number((element as any).borderRadius || 18) * renderScale,
+fontSize: Math.max(
+  11,
+  Number((element as any).fontSize || 18) * renderScale
+),
             fontWeight: 900,
             boxShadow: "0 10px 24px rgba(15, 23, 42, 0.18)",
           }}
@@ -519,8 +526,8 @@ const finalPlaceholder = String(
             ...baseStyle,
             display: "flex",
             alignItems: "center",
-            gap: 8 * scale,
-            fontSize: Math.max(11, 14 * scale),
+            gap: 8 * renderScale,
+fontSize: Math.max(11, 14 * renderScale),
             color: "#334155",
             background: "transparent",
           }}
@@ -535,10 +542,10 @@ const finalPlaceholder = String(
       );
     }
 
-    const labelHeight = labelText ? 26 * scale : 0;
-    const gap = labelText ? 6 * scale : 0;
-    const inputTop = labelHeight + gap;
-    const inputHeight = Math.max(32, element.height * scale - inputTop);
+    const labelHeight = labelText ? 26 * renderScale : 0;
+const gap = labelText ? 6 * renderScale : 0;
+const inputTop = labelHeight + gap;
+const inputHeight = Math.max(32, element.height * renderScale - inputTop);
 
     const inputStyle: CSSProperties = {
       position: "absolute",
@@ -551,9 +558,9 @@ const finalPlaceholder = String(
       userSelect: "text",
       WebkitUserSelect: "text",
       border: "1px solid #d1d5db",
-      borderRadius: 12 * scale,
-      padding: `0 ${14 * scale}px`,
-      fontSize: Math.max(14, 16 * scale),
+      borderRadius: 12 * renderScale,
+padding: `0 ${14 * renderScale}px`,
+fontSize: Math.max(14, 16 * renderScale),
      background: "#f8fafc",
       color: "#111827",
     };
@@ -568,7 +575,7 @@ const finalPlaceholder = String(
           height: labelHeight,
           display: "flex",
           alignItems: "center",
-          fontSize: Math.max(12, 15 * scale),
+          fontSize: Math.max(12, 15 * renderScale),
           fontWeight: 800,
           color: "#111827",
           pointerEvents: "none",
@@ -591,7 +598,7 @@ const finalPlaceholder = String(
             onChange={(e) => updateFieldValue(fieldKey, e.target.value)}
             style={{
               ...inputStyle,
-              padding: 14 * scale,
+              padding: 14 * renderScale,
              background: "#ffffff",
               resize: "none",
             }}
@@ -654,10 +661,10 @@ const finalPlaceholder = String(
         display: "flex",
         justifyContent: "center",
         margin: 0,
-        overflowX: "hidden",
+        overflowX: isMobile ? "auto" : "hidden",
         scrollbarWidth: "none",
         msOverflowStyle: "none",
-        padding: isMobile ? "12px" : "24px",
+        padding: isMobile ? "10px" : "24px",
         minHeight: "100vh",
         background: "#f3f4f6",
         boxSizing: "border-box",
@@ -677,11 +684,11 @@ const finalPlaceholder = String(
       >
         {visualElements.map((element) => {
           const baseStyle: CSSProperties = {
-            position: "absolute",
-            left: element.x * scale,
-            top: element.y * scale,
-            width: element.width * scale,
-            height: element.height * scale,
+  position: "absolute",
+  left: element.x * renderScale,
+  top: element.y * renderScale,
+  width: element.width * renderScale,
+  height: element.height * renderScale,
             zIndex: Math.min(Number(element.zIndex ?? 1), 100),
             transform: element.rotation
               ? `rotate(${element.rotation}deg)`
@@ -705,8 +712,8 @@ const finalPlaceholder = String(
                   pointerEvents: "none",
                   color: element.color,
                   fontSize: isMobile
-                    ? Math.max(14, element.fontSize * scale)
-                    : Math.max(11, element.fontSize * scale),
+  ? Math.max(14, element.fontSize * renderScale)
+  : Math.max(11, element.fontSize * renderScale),
                   fontWeight: element.fontWeight,
                   fontFamily: element.fontFamily || "Pretendard, sans-serif",
                   textAlign: element.textAlign ?? "left",
@@ -737,7 +744,7 @@ const finalPlaceholder = String(
                   objectFit: element.objectFit ?? "cover",
                   display: "block",
                   borderRadius:
-                    Number((element as any).borderRadius || 0) * scale,
+                    Number((element as any).borderRadius || 0) * renderScale,
                 }}
               />
             );
@@ -764,26 +771,26 @@ const finalPlaceholder = String(
                 style={{
                   ...baseStyle,
                   width: isMobile
-                    ? Math.max(element.width * scale, 120)
-                    : element.width * scale,
+                    ? Math.max(element.width * renderScale, 120)
+                    : element.width * renderScale,
                   height: isMobile
-                    ? Math.max(element.height * scale, 44)
-                    : element.height * scale,
+                    ? Math.max(element.height * renderScale, 44)
+                    : element.height * renderScale,
                   minHeight: isMobile ? 44 : undefined,
                   border: "none",
                   cursor: "pointer",
                   backgroundColor: element.backgroundColor,
                   color: element.color,
-                  borderRadius: element.borderRadius * scale,
+                  borderRadius: element.borderRadius * renderScale,
                   fontSize: isMobile
-                    ? Math.max(
-                        14,
-                        Number((element as any).fontSize || 34) * scale
-                      )
-                    : Math.max(
-                        13,
-                        Number((element as any).fontSize || 34) * scale
-                      ),
+  ? Math.max(
+      14,
+      Number((element as any).fontSize || 34) * renderScale
+    )
+  : Math.max(
+      13,
+      Number((element as any).fontSize || 34) * renderScale
+    ),
                   fontWeight: Number((element as any).fontWeight || 900),
                   display: "flex",
                   alignItems: "center",
@@ -814,12 +821,12 @@ const finalPlaceholder = String(
                   backgroundColor: element.backgroundColor,
                   border:
                     element.borderWidth && element.borderColor
-                      ? `${element.borderWidth * scale}px solid ${element.borderColor}`
+                      ? `${element.borderWidth * renderScale}px solid ${element.borderColor}`
                       : undefined,
                   borderRadius:
                     element.shape === "circle"
                       ? "999px"
-                      : Number((element as any).borderRadius ?? 18) * scale,
+                      : Number((element as any).borderRadius ?? 18) * renderScale,
                 }}
               />
             );
@@ -828,7 +835,7 @@ const finalPlaceholder = String(
           if (element.type === "svg") {
             const stroke = element.stroke || "#64748b";
             const fill = element.fill || "#64748b";
-            const strokeWidth = Number(element.strokeWidth || 8) * scale;
+            const strokeWidth = Number(element.strokeWidth || 8) * renderScale;
 
             return (
               <svg
