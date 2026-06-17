@@ -1300,8 +1300,8 @@ if (!companyShareAmount) {
         교육원을 먼저 선택하면 과목 기본 가격과 교육원 정산 금액을 설정할 수 있습니다.
       </div>
     ) : (
-      <>
-        <div className="grid gap-4 md:grid-cols-3">
+      <div className="space-y-3">
+        <div className="grid gap-3 md:grid-cols-[1.1fr_1fr_1fr_0.7fr_0.8fr_auto]">
           <div className="space-y-2">
             <p className="text-sm font-medium">정산 방식</p>
             <Input value="과목 기준" disabled className="bg-muted" />
@@ -1334,274 +1334,241 @@ if (!companyShareAmount) {
               placeholder="예: 33000"
             />
           </div>
-        </div>
 
-        <div>
-          <Button
-            onClick={handleSaveInstitutionBaseSettings}
-            disabled={
-              !selectedInstitutionId || updateInstitutionMutation.isPending
-            }
-          >
-            {updateInstitutionMutation.isPending
-              ? "저장 중..."
-              : "교육원 기본 정산 저장"}
-          </Button>
-        </div>
-
-        <div className="border-t pt-4">
-          <div className="mb-3 space-y-1">
-            <p className="text-sm font-semibold">
-              기준금액별 교육원 정산금액
-            </p>
-            <p className="text-xs text-muted-foreground">
-              같은 교육원에서 과목 금액별 교육원 정산금액이 다를 때 입력합니다.
-              예: 75,000원 → 33,000원 / 150,000원 → 90,000원
-            </p>
+          <div className="space-y-2">
+            <p className="text-sm font-medium">정렬</p>
+            <Input value="기본" disabled className="bg-muted" />
           </div>
 
-          {institutionPriceRulesLoading ? (
-            <div className="text-sm text-muted-foreground">불러오는 중...</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="px-4 py-3 text-left">기준금액</th>
-                    <th className="px-4 py-3 text-left">교육원 정산금액</th>
-                    <th className="px-4 py-3 text-left">정렬</th>
-                    <th className="px-4 py-3 text-left">사용</th>
-                    <th className="px-4 py-3 text-right">관리</th>
-                  </tr>
-                </thead>
+          <div className="space-y-2">
+            <p className="text-sm font-medium">사용</p>
+            <Input value="사용" disabled className="bg-muted" />
+          </div>
 
-                <tbody>
-                  {institutionPriceRules.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={5}
-                        className="px-4 py-6 text-center text-sm text-muted-foreground"
-                      >
-                        등록된 기준금액별 교육원 정산금액이 없습니다.
-                      </td>
-                    </tr>
-                  ) : (
-                    institutionPriceRules.map((rule: any) => {
-                      const draft = institutionPriceRuleDrafts[
-                        String(rule.id)
-                      ] || {
-                        thresholdAmount: String(rule.thresholdAmount ?? "0"),
-                        institutionUnitCost: String(
-                          rule.institutionUnitCost ?? "0"
-                        ),
-                        sortOrder: String(rule.sortOrder ?? "0"),
-                        isActive: rule.isActive !== false,
-                      };
+          <div className="flex items-end">
+            <Button
+              onClick={handleSaveInstitutionBaseSettings}
+              disabled={
+                !selectedInstitutionId || updateInstitutionMutation.isPending
+              }
+            >
+              {updateInstitutionMutation.isPending ? "저장 중..." : "저장"}
+            </Button>
+          </div>
+        </div>
 
-                      return (
-                        <tr key={rule.id} className="border-b last:border-0">
-                          <td className="px-4 py-3">
-                            <Input
-                              value={draft.thresholdAmount}
-                              onChange={(e) =>
-                                setInstitutionPriceRuleDrafts((prev) => ({
-                                  ...prev,
-                                  [String(rule.id)]: {
-                                    ...draft,
-                                    thresholdAmount: e.target.value.replace(
-                                      /[^0-9]/g,
-                                      ""
-                                    ),
-                                  },
-                                }))
-                              }
-                              className="min-w-[130px]"
-                            />
-                          </td>
+        {institutionPriceRulesLoading ? (
+          <div className="text-sm text-muted-foreground">불러오는 중...</div>
+        ) : (
+          <>
+            {institutionPriceRules.map((rule: any) => {
+              const draft = institutionPriceRuleDrafts[String(rule.id)] || {
+                thresholdAmount: String(rule.thresholdAmount ?? "0"),
+                institutionUnitCost: String(rule.institutionUnitCost ?? "0"),
+                sortOrder: String(rule.sortOrder ?? "0"),
+                isActive: rule.isActive !== false,
+              };
 
-                          <td className="px-4 py-3">
-                            <Input
-                              value={draft.institutionUnitCost}
-                              onChange={(e) =>
-                                setInstitutionPriceRuleDrafts((prev) => ({
-                                  ...prev,
-                                  [String(rule.id)]: {
-                                    ...draft,
-                                    institutionUnitCost:
-                                      e.target.value.replace(/[^0-9]/g, ""),
-                                  },
-                                }))
-                              }
-                              className="min-w-[150px]"
-                            />
-                          </td>
+              return (
+                <div
+                  key={rule.id}
+                  className="grid gap-3 border-t pt-3 md:grid-cols-[1.1fr_1fr_1fr_0.7fr_0.8fr_auto]"
+                >
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">정산 방식</p>
+                    <Input value="기준금액별" disabled className="bg-muted" />
+                  </div>
 
-                          <td className="px-4 py-3">
-                            <Input
-                              value={draft.sortOrder}
-                              onChange={(e) =>
-                                setInstitutionPriceRuleDrafts((prev) => ({
-                                  ...prev,
-                                  [String(rule.id)]: {
-                                    ...draft,
-                                    sortOrder: e.target.value.replace(
-                                      /[^0-9]/g,
-                                      ""
-                                    ),
-                                  },
-                                }))
-                              }
-                              className="min-w-[90px]"
-                            />
-                          </td>
-
-                          <td className="px-4 py-3">
-                            <Select
-                              value={draft.isActive ? "true" : "false"}
-                              onValueChange={(value) =>
-                                setInstitutionPriceRuleDrafts((prev) => ({
-                                  ...prev,
-                                  [String(rule.id)]: {
-                                    ...draft,
-                                    isActive: value === "true",
-                                  },
-                                }))
-                              }
-                            >
-                              <SelectTrigger className="w-[110px]">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="true">사용</SelectItem>
-                                <SelectItem value="false">미사용</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </td>
-
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                size="sm"
-                                onClick={() =>
-                                  handleSaveInstitutionPriceRule(
-                                    Number(rule.id)
-                                  )
-                                }
-                                disabled={
-                                  upsertInstitutionPriceRuleMutation.isPending
-                                }
-                              >
-                                저장
-                              </Button>
-
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() =>
-                                  handleDeleteInstitutionPriceRule(rule)
-                                }
-                                disabled={
-                                  deleteInstitutionPriceRuleMutation.isPending
-                                }
-                              >
-                                삭제
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-
-                  <tr className="border-t bg-muted/20">
-                    <td className="px-4 py-3">
-                      <Input
-                        value={newInstitutionPriceRule.thresholdAmount}
-                        onChange={(e) =>
-                          setNewInstitutionPriceRule((prev) => ({
-                            ...prev,
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">기준금액</p>
+                    <Input
+                      value={draft.thresholdAmount}
+                      onChange={(e) =>
+                        setInstitutionPriceRuleDrafts((prev) => ({
+                          ...prev,
+                          [String(rule.id)]: {
+                            ...draft,
                             thresholdAmount: e.target.value.replace(
                               /[^0-9]/g,
                               ""
                             ),
-                          }))
-                        }
-                        placeholder="기준금액"
-                        className="min-w-[130px]"
-                      />
-                    </td>
+                          },
+                        }))
+                      }
+                      placeholder="예: 150000"
+                    />
+                  </div>
 
-                    <td className="px-4 py-3">
-                      <Input
-                        value={newInstitutionPriceRule.institutionUnitCost}
-                        onChange={(e) =>
-                          setNewInstitutionPriceRule((prev) => ({
-                            ...prev,
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">교육원 정산금액</p>
+                    <Input
+                      value={draft.institutionUnitCost}
+                      onChange={(e) =>
+                        setInstitutionPriceRuleDrafts((prev) => ({
+                          ...prev,
+                          [String(rule.id)]: {
+                            ...draft,
                             institutionUnitCost: e.target.value.replace(
                               /[^0-9]/g,
                               ""
                             ),
-                          }))
-                        }
-                        placeholder="교육원 정산금액"
-                        className="min-w-[150px]"
-                      />
-                    </td>
+                          },
+                        }))
+                      }
+                      placeholder="예: 90000"
+                    />
+                  </div>
 
-                    <td className="px-4 py-3">
-                      <Input
-                        value={newInstitutionPriceRule.sortOrder}
-                        onChange={(e) =>
-                          setNewInstitutionPriceRule((prev) => ({
-                            ...prev,
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">정렬</p>
+                    <Input
+                      value={draft.sortOrder}
+                      onChange={(e) =>
+                        setInstitutionPriceRuleDrafts((prev) => ({
+                          ...prev,
+                          [String(rule.id)]: {
+                            ...draft,
                             sortOrder: e.target.value.replace(/[^0-9]/g, ""),
-                          }))
-                        }
-                        placeholder="정렬"
-                        className="min-w-[90px]"
-                      />
-                    </td>
+                          },
+                        }))
+                      }
+                      placeholder="정렬"
+                    />
+                  </div>
 
-                    <td className="px-4 py-3">
-                      <Select
-                        value={
-                          newInstitutionPriceRule.isActive ? "true" : "false"
-                        }
-                        onValueChange={(value) =>
-                          setNewInstitutionPriceRule((prev) => ({
-                            ...prev,
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">사용</p>
+                    <Select
+                      value={draft.isActive ? "true" : "false"}
+                      onValueChange={(value) =>
+                        setInstitutionPriceRuleDrafts((prev) => ({
+                          ...prev,
+                          [String(rule.id)]: {
+                            ...draft,
                             isActive: value === "true",
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="w-[110px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="true">사용</SelectItem>
-                          <SelectItem value="false">미사용</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </td>
+                          },
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="true">사용</SelectItem>
+                        <SelectItem value="false">미사용</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                    <td className="px-4 py-3 text-right">
-                      <Button
-                        size="sm"
-                        onClick={handleCreateInstitutionPriceRule}
-                        disabled={
-                          upsertInstitutionPriceRuleMutation.isPending
-                        }
-                      >
-                        추가
-                      </Button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                  <div className="flex items-end gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        handleSaveInstitutionPriceRule(Number(rule.id))
+                      }
+                      disabled={upsertInstitutionPriceRuleMutation.isPending}
+                    >
+                      저장
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => handleDeleteInstitutionPriceRule(rule)}
+                      disabled={deleteInstitutionPriceRuleMutation.isPending}
+                    >
+                      삭제
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+
+            <div className="grid gap-3 border-t pt-3 md:grid-cols-[1.1fr_1fr_1fr_0.7fr_0.8fr_auto]">
+              <div className="space-y-2">
+                <p className="text-sm font-medium">정산 방식</p>
+                <Input value="기준금액별" disabled className="bg-muted" />
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium">기준금액</p>
+                <Input
+                  value={newInstitutionPriceRule.thresholdAmount}
+                  onChange={(e) =>
+                    setNewInstitutionPriceRule((prev) => ({
+                      ...prev,
+                      thresholdAmount: e.target.value.replace(/[^0-9]/g, ""),
+                    }))
+                  }
+                  placeholder="예: 150000"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium">교육원 정산금액</p>
+                <Input
+                  value={newInstitutionPriceRule.institutionUnitCost}
+                  onChange={(e) =>
+                    setNewInstitutionPriceRule((prev) => ({
+                      ...prev,
+                      institutionUnitCost: e.target.value.replace(
+                        /[^0-9]/g,
+                        ""
+                      ),
+                    }))
+                  }
+                  placeholder="예: 90000"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium">정렬</p>
+                <Input
+                  value={newInstitutionPriceRule.sortOrder}
+                  onChange={(e) =>
+                    setNewInstitutionPriceRule((prev) => ({
+                      ...prev,
+                      sortOrder: e.target.value.replace(/[^0-9]/g, ""),
+                    }))
+                  }
+                  placeholder="정렬"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium">사용</p>
+                <Select
+                  value={newInstitutionPriceRule.isActive ? "true" : "false"}
+                  onValueChange={(value) =>
+                    setNewInstitutionPriceRule((prev) => ({
+                      ...prev,
+                      isActive: value === "true",
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">사용</SelectItem>
+                    <SelectItem value="false">미사용</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-end">
+                <Button
+                  size="sm"
+                  onClick={handleCreateInstitutionPriceRule}
+                  disabled={upsertInstitutionPriceRuleMutation.isPending}
+                >
+                  추가
+                </Button>
+              </div>
             </div>
-          )}
-        </div>
-      </>
+          </>
+        )}
+      </div>
     )}
   </CardContent>
 </Card>
