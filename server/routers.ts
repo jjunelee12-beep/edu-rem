@@ -336,6 +336,218 @@ async function assertOrganizationFeatureEnabled(
   }
 }
 
+function normalizeCreditSubjectName(value: any) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, "")
+    .replace(/[ⅠⅡⅢⅣⅤ]/g, "")
+    .toLowerCase();
+}
+
+function getRequirementKey(requirementType: any) {
+  const value = String(requirementType || "").trim();
+
+  if (value === "전공필수") return "majorRequired";
+  if (value === "전공선택") return "majorElective";
+  if (value === "교양") return "liberal";
+  if (value === "일반") return "general";
+
+  return "majorElective";
+}
+
+function buildCreditSummaryResult(params: {
+  student: any;
+  plan: any;
+  rule: any;
+  planSemesters: any[];
+  transferSubjects: any[];
+  extraItems: any[];
+}) {
+  const rule = params.rule || null;
+
+  const allItems = [
+    ...(params.planSemesters || []).map((row: any) => ({
+      source: "plan",
+      sourceLabel: "우리플랜",
+      subjectName: row.subjectName,
+      requirementType: row.planRequirementType || row.planCategory || "전공선택",
+      category: row.planCategory || "전공",
+      credits: Number(row.credits || 0),
+      isExcluded: false,
+      raw: row,
+    })),
+
+    ...(params.transferSubjects || []).map((row: any) => ({
+      source: "transfer",
+      sourceLabel: "전적대",
+      subjectName: row.subjectName,
+      requirementType: row.transferRequirementType || row.transferCategory || "전공선택",
+      category: row.transferCategory || "전공",
+      credits: Number(row.credits || 0),
+      isExcluded: false,
+      raw: row,
+    })),
+
+    ...(params.extraItems || []).map((row: any) => ({
+      source: row.sourceType || "manual",
+      sourceLabel: "추가입력",
+      subjectName: row.subjectName,
+      requirementType: row.requirementType,
+      category: row.category,
+      credits: Number(row.credits || 0),
+      isExcluded: Boolean(row.isExcluded),
+      raw: row,
+    })),
+  ].filter((row) => !row.isExcluded);
+
+  const categories: any = {
+    majorRequired: {
+      label: "전공필수",
+      requiredSubjects: Number(rule?.requiredMajorRequiredSubjects || 0),
+      requiredCredits: Number(rule?.requiredMajorRequiredCredits || 0),
+      currentSubjects: 0,
+      currentCredits: 0,
+      remainingSubjects: 0,
+      remainingCredits: 0,
+      status: "normal",
+    },
+    majorElective: {
+      label: "전공선택",
+      requiredSubjects: Number(rule?.requiredMajorElectiveSubjects || 0),
+      requiredCredits: Number(rule?.requiredMajorElectiveCredits || 0),
+      currentSubjects: 0,
+      currentCredits: 0,
+      remainingSubjects: 0,
+      remainingCredits: 0,
+      status: "normal",
+    },
+    liberal: {
+      label: "교양",
+      requiredSubjects: Number(rule?.requiredLiberalSubjects || 0),
+      requiredCredits: Number(rule?.requiredLiberalCredits || 0),
+      currentSubjects: 0,
+      currentCredits: 0,
+      remainingSubjects: 0,
+      remainingCredits: 0,
+      status: "normal",
+    },
+    general: {
+      label: "일반",
+      requiredSubjects: Number(rule?.requiredGeneralSubjects || 0),
+      requiredCredits: Number(rule?.requiredGeneralCredits || 0),
+      currentSubjects: 0,
+      currentCredits: 0,
+      remainingSubjects: 0,
+      remainingCredits: 0,
+      status: "normal",
+    },
+  };
+
+  for (const item of allItems) {
+    const key = getRequirementKey(item.requirementType);
+    categories[key].currentSubjects += item.subjectName ? 1 : 0;
+    categories[key].currentCredits += Number(item.credits || 0);
+  }
+
+  const alerts: any[] = [];
+
+  for (const key of Object.keys(categories)) {
+    const row = categories[key];
+
+    row.remainingSubjects = Math.max(row.requiredSubjects - row.currentSubjects, 0);
+    row.remainingCredits = Math.max(row.requiredCredits - row.currentCredits, 0);
+
+    if (row.remainingSubjects > 0 || row.remainingCredits > 0) {
+      row.status = "shortage";
+      alerts.push({
+        level: "danger",
+        title: `${row.label} 부족`,
+        message: `${row.label} 기준 ${row.requiredSubjects}과목 / ${row.requiredCredits}학점 중 현재 ${row.currentSubjects}과목 / ${row.currentCredits}학점입니다.`,
+      });
+    }
+
+    const allowOver =
+      key === "majorElective"
+        ? Boolean(rule?.allowMajorElectiveOver)
+        : key === "liberal"
+        ? Boolean(rule?.allowLiberalOver)
+        : key === "general"
+        ? Boolean(rule?.allowGeneralOver)
+        : false;
+
+    if (!allowOver && row.requiredSubjects > 0 && row.currentSubjects > row.requiredSubjects) {
+      row.status = "exceeded";
+      alerts.push({
+        level: "warning",
+        title: `${row.label} 초과`,
+        message: `${row.label} 기준은 ${row.requiredSubjects}과목인데 현재 ${row.currentSubjects}과목입니다.`,
+      });
+    }
+  }
+
+  if (rule?.duplicateCheckEnabled !== false) {
+    const map = new Map<string, any[]>();
+
+    for (const item of allItems) {
+      const key = normalizeCreditSubjectName(item.subjectName);
+      if (!key) continue;
+
+      map.set(key, [...(map.get(key) || []), item]);
+    }
+
+    for (const [, rows] of map.entries()) {
+      if (rows.length >= 2) {
+        alerts.push({
+          level: "warning",
+          title: "중복 과목 확인",
+          message: `${rows[0].subjectName} 과목이 ${rows.length}건 등록되어 있습니다.`,
+        });
+      }
+    }
+  }
+
+  const requiredTotalCredits = Number(rule?.requiredTotalCredits || 0);
+  const currentCredits = allItems.reduce(
+    (sum, row) => sum + Number(row.credits || 0),
+    0
+  );
+  const remainingCredits = Math.max(requiredTotalCredits - currentCredits, 0);
+  const progressRate =
+    requiredTotalCredits > 0
+      ? Math.min(Math.round((currentCredits / requiredTotalCredits) * 100), 100)
+      : 0;
+
+  if (!rule) {
+    alerts.unshift({
+      level: "info",
+      title: "요약 기준 미설정",
+      message: "과정별 학점 기준을 먼저 설정해야 정확한 부족/초과 검증이 가능합니다.",
+    });
+  } else if (remainingCredits > 0) {
+    alerts.unshift({
+      level: "danger",
+      title: "총 학점 부족",
+      message: `총 ${requiredTotalCredits}학점 기준 현재 ${currentCredits}학점으로 ${remainingCredits}학점 부족합니다.`,
+    });
+  } else {
+    alerts.unshift({
+      level: "success",
+      title: "총 학점 충족",
+      message: `총 ${requiredTotalCredits}학점 기준 현재 ${currentCredits}학점입니다.`,
+    });
+  }
+
+  return {
+    requiredTotalCredits,
+    currentCredits,
+    remainingCredits,
+    progressRate,
+    categories,
+    alerts,
+    items: allItems,
+  };
+}
+
 
 export const appRouter = router({
   system: systemRouter,
@@ -1125,6 +1337,508 @@ schedule: scheduleRouter,
   approval: approvalRouter,
 privateCertificateMaster: privateCertificateMasterRouter,
 subjectCatalog: subjectCatalogRouter,
+
+creditSummary: router({
+  rules: router({
+    list: protectedProcedure
+      .input(
+        z
+          .object({
+            activeOnly: z.boolean().optional(),
+          })
+          .optional()
+      )
+      .query(async ({ ctx, input }) => {
+        const organizationId = getCtxOrganizationId(ctx);
+
+        return db.listCreditSummaryRules({
+          organizationId,
+          activeOnly: input?.activeOnly ?? false,
+        });
+      }),
+
+    create: protectedProcedure
+      .input(
+        z.object({
+  studentId: z.number(),
+  courseName: z.string().optional().nullable(),
+          finalEducation: z.string().optional().nullable(),
+
+          requiredTotalCredits: z.number().min(0).optional(),
+
+          requiredMajorRequiredSubjects: z.number().min(0).optional(),
+          requiredMajorElectiveSubjects: z.number().min(0).optional(),
+          requiredLiberalSubjects: z.number().min(0).optional(),
+          requiredGeneralSubjects: z.number().min(0).optional(),
+
+          requiredMajorRequiredCredits: z.number().min(0).optional(),
+          requiredMajorElectiveCredits: z.number().min(0).optional(),
+          requiredLiberalCredits: z.number().min(0).optional(),
+          requiredGeneralCredits: z.number().min(0).optional(),
+
+          allowMajorElectiveOver: z.boolean().optional(),
+          allowLiberalOver: z.boolean().optional(),
+          allowGeneralOver: z.boolean().optional(),
+          duplicateCheckEnabled: z.boolean().optional(),
+
+          isActive: z.boolean().optional(),
+          memo: z.string().optional().nullable(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const organizationId = getCtxOrganizationId(ctx);
+
+        const student = await db.getStudent(input.studentId, {
+  organizationId,
+});
+
+if (!student) {
+  throwAppError(
+    ERROR_CODES.DATA_NOT_FOUND,
+    "학생을 찾을 수 없습니다.",
+    404
+  );
+}
+
+assertStudentEditable({
+  currentUser: ctx.user,
+  student,
+});
+
+        const id = await db.createCreditSummaryRule({
+          organizationId,
+studentId: Number(input.studentId),
+courseName: input.courseName?.trim() || null,
+finalEducation: input.finalEducation?.trim() || null,
+
+          requiredTotalCredits: input.requiredTotalCredits ?? 0,
+
+          requiredMajorRequiredSubjects: input.requiredMajorRequiredSubjects ?? 0,
+          requiredMajorElectiveSubjects: input.requiredMajorElectiveSubjects ?? 0,
+          requiredLiberalSubjects: input.requiredLiberalSubjects ?? 0,
+          requiredGeneralSubjects: input.requiredGeneralSubjects ?? 0,
+
+          requiredMajorRequiredCredits: input.requiredMajorRequiredCredits ?? 0,
+          requiredMajorElectiveCredits: input.requiredMajorElectiveCredits ?? 0,
+          requiredLiberalCredits: input.requiredLiberalCredits ?? 0,
+          requiredGeneralCredits: input.requiredGeneralCredits ?? 0,
+
+          allowMajorElectiveOver: input.allowMajorElectiveOver ?? false,
+          allowLiberalOver: input.allowLiberalOver ?? true,
+          allowGeneralOver: input.allowGeneralOver ?? true,
+          duplicateCheckEnabled: input.duplicateCheckEnabled ?? true,
+
+          isActive: input.isActive ?? true,
+          memo: input.memo?.trim() || null,
+
+          createdBy: Number(ctx.user.id),
+          updatedBy: Number(ctx.user.id),
+        } as any);
+
+        return { success: true, id };
+      }),
+
+    update: protectedProcedure
+      .input(
+  z.object({
+    id: z.number(),
+    studentId: z.number(),
+
+    courseName: z.string().optional().nullable(),
+          finalEducation: z.string().optional().nullable(),
+
+          requiredTotalCredits: z.number().min(0).optional(),
+
+          requiredMajorRequiredSubjects: z.number().min(0).optional(),
+          requiredMajorElectiveSubjects: z.number().min(0).optional(),
+          requiredLiberalSubjects: z.number().min(0).optional(),
+          requiredGeneralSubjects: z.number().min(0).optional(),
+
+          requiredMajorRequiredCredits: z.number().min(0).optional(),
+          requiredMajorElectiveCredits: z.number().min(0).optional(),
+          requiredLiberalCredits: z.number().min(0).optional(),
+          requiredGeneralCredits: z.number().min(0).optional(),
+
+          allowMajorElectiveOver: z.boolean().optional(),
+          allowLiberalOver: z.boolean().optional(),
+          allowGeneralOver: z.boolean().optional(),
+          duplicateCheckEnabled: z.boolean().optional(),
+
+          isActive: z.boolean().optional(),
+          memo: z.string().optional().nullable(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const organizationId = getCtxOrganizationId(ctx);
+
+        const student = await db.getStudent(input.studentId, {
+  organizationId,
+});
+
+if (!student) {
+  throwAppError(
+    ERROR_CODES.DATA_NOT_FOUND,
+    "학생을 찾을 수 없습니다.",
+    404
+  );
+}
+
+assertStudentEditable({
+  currentUser: ctx.user,
+  student,
+});
+
+        const data: any = {
+          updatedBy: Number(ctx.user.id),
+        };
+
+        if (input.studentId !== undefined) data.studentId = Number(input.studentId);
+
+if (input.courseName !== undefined)
+  data.courseName = input.courseName?.trim() || null;
+        if (input.finalEducation !== undefined)
+          data.finalEducation = input.finalEducation?.trim() || null;
+
+        if (input.requiredTotalCredits !== undefined)
+          data.requiredTotalCredits = input.requiredTotalCredits;
+
+        if (input.requiredMajorRequiredSubjects !== undefined)
+          data.requiredMajorRequiredSubjects = input.requiredMajorRequiredSubjects;
+        if (input.requiredMajorElectiveSubjects !== undefined)
+          data.requiredMajorElectiveSubjects = input.requiredMajorElectiveSubjects;
+        if (input.requiredLiberalSubjects !== undefined)
+          data.requiredLiberalSubjects = input.requiredLiberalSubjects;
+        if (input.requiredGeneralSubjects !== undefined)
+          data.requiredGeneralSubjects = input.requiredGeneralSubjects;
+
+        if (input.requiredMajorRequiredCredits !== undefined)
+          data.requiredMajorRequiredCredits = input.requiredMajorRequiredCredits;
+        if (input.requiredMajorElectiveCredits !== undefined)
+          data.requiredMajorElectiveCredits = input.requiredMajorElectiveCredits;
+        if (input.requiredLiberalCredits !== undefined)
+          data.requiredLiberalCredits = input.requiredLiberalCredits;
+        if (input.requiredGeneralCredits !== undefined)
+          data.requiredGeneralCredits = input.requiredGeneralCredits;
+
+        if (input.allowMajorElectiveOver !== undefined)
+          data.allowMajorElectiveOver = input.allowMajorElectiveOver;
+        if (input.allowLiberalOver !== undefined)
+          data.allowLiberalOver = input.allowLiberalOver;
+        if (input.allowGeneralOver !== undefined)
+          data.allowGeneralOver = input.allowGeneralOver;
+        if (input.duplicateCheckEnabled !== undefined)
+          data.duplicateCheckEnabled = input.duplicateCheckEnabled;
+
+        if (input.isActive !== undefined) data.isActive = input.isActive;
+        if (input.memo !== undefined) data.memo = input.memo?.trim() || null;
+
+        const updated = await db.updateCreditSummaryRule(input.id, data, {
+          organizationId,
+        });
+
+        return { success: true, data: updated };
+      }),
+
+    delete: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const organizationId = getCtxOrganizationId(ctx);
+
+        if (!isAdminOrHost(ctx.user)) {
+          throwAppError(
+            ERROR_CODES.PERMISSION_DENIED,
+            "관리자 또는 호스트만 요약 기준을 삭제할 수 있습니다.",
+            403
+          );
+        }
+
+        await db.deleteCreditSummaryRule({
+          id: input.id,
+          organizationId,
+        });
+
+        return { success: true };
+      }),
+  }),
+
+  student: router({
+    getSummary: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+          ruleId: z.number().optional().nullable(),
+        })
+      )
+      .query(async ({ ctx, input }) => {
+        const organizationId = getCtxOrganizationId(ctx);
+
+        const student = await db.getStudent(input.studentId, {
+          organizationId,
+        });
+
+        if (!student) {
+          throwAppError(
+            ERROR_CODES.DATA_NOT_FOUND,
+            "학생을 찾을 수 없습니다.",
+            404
+          );
+        }
+
+        if (!isAdminOrHost(ctx.user) && Number(student.assigneeId) !== Number(ctx.user.id)) {
+          throwAppError(
+            ERROR_CODES.PERMISSION_DENIED,
+            "권한이 없습니다.",
+            403
+          );
+        }
+
+        const plan = await db.getPlan(input.studentId, {
+          organizationId,
+        });
+
+        const planSemesters = await db.listPlanSemesters(input.studentId, {
+          organizationId,
+        });
+
+        const transferSubjects = await db.listTransferSubjects(input.studentId, {
+          organizationId,
+        });
+
+        const extraItems = await db.listStudentCreditSummaryItems({
+          organizationId,
+          studentId: input.studentId,
+        });
+
+        let rule: any = null;
+
+        if (input.ruleId) {
+          rule = await db.getCreditSummaryRuleById({
+            id: input.ruleId,
+            organizationId,
+          });
+        }
+
+        if (!rule) {
+          rule = await db.findCreditSummaryRule({
+  organizationId,
+  studentId: input.studentId,
+});
+        }
+
+        const summary = buildCreditSummaryResult({
+          student,
+          plan,
+          rule,
+          planSemesters,
+          transferSubjects,
+          extraItems,
+        });
+
+        return {
+          student,
+          plan,
+          rule,
+          planSemesters,
+          transferSubjects,
+          extraItems,
+          summary,
+        };
+      }),
+
+    createItem: protectedProcedure
+      .input(
+        z.object({
+          studentId: z.number(),
+          sourceType: z
+            .enum(["manual", "transfer", "certificate", "exam", "recognized", "etc"])
+            .optional(),
+          subjectName: z.string().optional().nullable(),
+          institutionName: z.string().optional().nullable(),
+          semesterLabel: z.string().optional().nullable(),
+          category: z.enum(["전공", "교양", "일반"]),
+          requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]),
+          credits: z.number().min(0).max(100),
+          isCompleted: z.boolean().optional(),
+          isExcluded: z.boolean().optional(),
+          memo: z.string().optional().nullable(),
+          sortOrder: z.number().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const organizationId = getCtxOrganizationId(ctx);
+
+        const student = await db.getStudent(input.studentId, {
+          organizationId,
+        });
+
+        if (!student) {
+          throwAppError(
+            ERROR_CODES.DATA_NOT_FOUND,
+            "학생을 찾을 수 없습니다.",
+            404
+          );
+        }
+
+        assertStudentEditable({
+          currentUser: ctx.user,
+          student,
+        });
+
+        const id = await db.createStudentCreditSummaryItem({
+          organizationId,
+          studentId: input.studentId,
+          sourceType: input.sourceType ?? "manual",
+          subjectName: input.subjectName?.trim() || null,
+          institutionName: input.institutionName?.trim() || null,
+          semesterLabel: input.semesterLabel?.trim() || null,
+          category: input.category,
+          requirementType: input.requirementType,
+          credits: input.credits,
+          isCompleted: input.isCompleted ?? true,
+          isExcluded: input.isExcluded ?? false,
+          memo: input.memo?.trim() || null,
+          sortOrder: input.sortOrder ?? 0,
+          createdBy: Number(ctx.user.id),
+          updatedBy: Number(ctx.user.id),
+        } as any);
+
+        return { success: true, id };
+      }),
+
+    updateItem: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          studentId: z.number(),
+
+          sourceType: z
+            .enum(["manual", "transfer", "certificate", "exam", "recognized", "etc"])
+            .optional(),
+          subjectName: z.string().optional().nullable(),
+          institutionName: z.string().optional().nullable(),
+          semesterLabel: z.string().optional().nullable(),
+          category: z.enum(["전공", "교양", "일반"]).optional(),
+          requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]).optional(),
+          credits: z.number().min(0).max(100).optional(),
+          isCompleted: z.boolean().optional(),
+          isExcluded: z.boolean().optional(),
+          memo: z.string().optional().nullable(),
+          sortOrder: z.number().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const organizationId = getCtxOrganizationId(ctx);
+
+        const student = await db.getStudent(input.studentId, {
+          organizationId,
+        });
+
+        if (!student) {
+          throwAppError(
+            ERROR_CODES.DATA_NOT_FOUND,
+            "학생을 찾을 수 없습니다.",
+            404
+          );
+        }
+
+        assertStudentEditable({
+          currentUser: ctx.user,
+          student,
+        });
+
+        const beforeItem = await db.getStudentCreditSummaryItemById({
+          id: input.id,
+          organizationId,
+        });
+
+        if (!beforeItem || Number(beforeItem.studentId) !== Number(input.studentId)) {
+          throwAppError(
+            ERROR_CODES.DATA_NOT_FOUND,
+            "요약 추가 과목을 찾을 수 없습니다.",
+            404
+          );
+        }
+
+        const data: any = {
+          updatedBy: Number(ctx.user.id),
+        };
+
+        if (input.sourceType !== undefined) data.sourceType = input.sourceType;
+        if (input.subjectName !== undefined)
+          data.subjectName = input.subjectName?.trim() || null;
+        if (input.institutionName !== undefined)
+          data.institutionName = input.institutionName?.trim() || null;
+        if (input.semesterLabel !== undefined)
+          data.semesterLabel = input.semesterLabel?.trim() || null;
+        if (input.category !== undefined) data.category = input.category;
+        if (input.requirementType !== undefined)
+          data.requirementType = input.requirementType;
+        if (input.credits !== undefined) data.credits = input.credits;
+        if (input.isCompleted !== undefined) data.isCompleted = input.isCompleted;
+        if (input.isExcluded !== undefined) data.isExcluded = input.isExcluded;
+        if (input.memo !== undefined) data.memo = input.memo?.trim() || null;
+        if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder;
+
+        const updated = await db.updateStudentCreditSummaryItem(input.id, data, {
+          organizationId,
+        });
+
+        return { success: true, data: updated };
+      }),
+
+    deleteItem: protectedProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          studentId: z.number(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const organizationId = getCtxOrganizationId(ctx);
+
+        const student = await db.getStudent(input.studentId, {
+          organizationId,
+        });
+
+        if (!student) {
+          throwAppError(
+            ERROR_CODES.DATA_NOT_FOUND,
+            "학생을 찾을 수 없습니다.",
+            404
+          );
+        }
+
+        assertStudentEditable({
+          currentUser: ctx.user,
+          student,
+        });
+
+        const beforeItem = await db.getStudentCreditSummaryItemById({
+          id: input.id,
+          organizationId,
+        });
+
+        if (!beforeItem || Number(beforeItem.studentId) !== Number(input.studentId)) {
+          throwAppError(
+            ERROR_CODES.DATA_NOT_FOUND,
+            "요약 추가 과목을 찾을 수 없습니다.",
+            404
+          );
+        }
+
+        await db.deleteStudentCreditSummaryItem({
+          id: input.id,
+          organizationId,
+        });
+
+        return { success: true };
+      }),
+  }),
+}),
 
   privateCertificate: router({
     list: protectedProcedure

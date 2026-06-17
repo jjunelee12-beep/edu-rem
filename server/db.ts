@@ -112,6 +112,10 @@ emailVerificationCodes,
 type InsertEmailVerificationCode,
 apiErrorLogs,
 type InsertApiErrorLog,
+creditSummaryRules,
+type InsertCreditSummaryRule,
+studentCreditSummaryItems,
+type InsertStudentCreditSummaryItem,
 } from "../drizzle/schema";
 
 import { ENV } from "./_core/env";
@@ -1105,6 +1109,8 @@ const ORGANIZATION_BACKUP_TABLES = [
 "organization_practice_institution_overrides",
 "organization_practice_education_center_overrides",
 "job_support_requests",
+"credit_summary_rules",
+"student_credit_summary_items",
 
   "chat_rooms",
   "chat_room_members",
@@ -9396,6 +9402,299 @@ export async function bulkCreateTransferSubjects(dataList: InsertTransferSubject
 
   const result = await db.insert(transferSubjects).values(normalized as any);
   return result;
+}
+
+// ==============================
+// CREDIT SUMMARY
+// 학생 정보 요약 / 학점 검증
+// ==============================
+
+export async function listCreditSummaryRules(params: {
+  organizationId?: number | null;
+  activeOnly?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  const conditions: any[] = [
+    eq(creditSummaryRules.organizationId, organizationId),
+  ];
+
+  if (params.activeOnly) {
+    conditions.push(eq(creditSummaryRules.isActive, true));
+  }
+
+  return db
+    .select()
+    .from(creditSummaryRules)
+    .where(and(...conditions))
+    .orderBy(
+      creditSummaryRules.courseName,
+      creditSummaryRules.finalEducation,
+      creditSummaryRules.id
+    );
+}
+
+export async function getCreditSummaryRuleById(params: {
+  id: number;
+  organizationId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  const rows = await db
+    .select()
+    .from(creditSummaryRules)
+    .where(
+      and(
+        eq(creditSummaryRules.id, Number(params.id)),
+        eq(creditSummaryRules.organizationId, organizationId)
+      )
+    )
+    .limit(1);
+
+  return rows[0] || null;
+}
+
+export async function findCreditSummaryRule(params: {
+  organizationId?: number | null;
+  studentId: number;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const studentId = Number(params.studentId || 0);
+
+  if (!studentId) return null;
+
+  const rows = await db
+    .select()
+    .from(creditSummaryRules)
+    .where(
+      and(
+        eq(creditSummaryRules.organizationId, organizationId),
+        eq(creditSummaryRules.studentId, studentId),
+        eq(creditSummaryRules.isActive, true)
+      )
+    )
+    .orderBy(desc(creditSummaryRules.id))
+    .limit(1);
+
+  return rows[0] || null;
+}
+
+export async function createCreditSummaryRule(
+  data: InsertCreditSummaryRule
+) {
+  const db = await getDb();
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId((data as any).organizationId);
+
+  const result: any = await db.insert(creditSummaryRules).values({
+    ...data,
+    organizationId,
+  } as any);
+
+  return getInsertId(result);
+}
+
+export async function updateCreditSummaryRule(
+  id: number,
+  data: Partial<InsertCreditSummaryRule>,
+  params?: { organizationId?: number | null }
+) {
+  const db = await getDb();
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(params?.organizationId);
+
+  await db
+    .update(creditSummaryRules)
+    .set(data as any)
+    .where(
+      and(
+        eq(creditSummaryRules.id, Number(id)),
+        eq(creditSummaryRules.organizationId, organizationId)
+      )
+    );
+
+  return getCreditSummaryRuleById({
+    id: Number(id),
+    organizationId,
+  });
+}
+
+export async function deleteCreditSummaryRule(params: {
+  id: number;
+  organizationId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  await db
+    .delete(creditSummaryRules)
+    .where(
+      and(
+        eq(creditSummaryRules.id, Number(params.id)),
+        eq(creditSummaryRules.organizationId, organizationId)
+      )
+    );
+
+  return { ok: true };
+}
+
+export async function listStudentCreditSummaryItems(params: {
+  organizationId?: number | null;
+  studentId: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  return db
+    .select()
+    .from(studentCreditSummaryItems)
+    .where(
+      and(
+        eq(studentCreditSummaryItems.organizationId, organizationId),
+        eq(studentCreditSummaryItems.studentId, Number(params.studentId))
+      )
+    )
+    .orderBy(
+      studentCreditSummaryItems.sortOrder,
+      studentCreditSummaryItems.id
+    );
+}
+
+export async function getStudentCreditSummaryItemById(params: {
+  id: number;
+  organizationId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  const rows = await db
+    .select()
+    .from(studentCreditSummaryItems)
+    .where(
+      and(
+        eq(studentCreditSummaryItems.id, Number(params.id)),
+        eq(studentCreditSummaryItems.organizationId, organizationId)
+      )
+    )
+    .limit(1);
+
+  return rows[0] || null;
+}
+
+export async function createStudentCreditSummaryItem(
+  data: InsertStudentCreditSummaryItem
+) {
+  const db = await getDb();
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId((data as any).organizationId);
+
+  const result: any = await db.insert(studentCreditSummaryItems).values({
+    ...data,
+    organizationId,
+  } as any);
+
+  return getInsertId(result);
+}
+
+export async function updateStudentCreditSummaryItem(
+  id: number,
+  data: Partial<InsertStudentCreditSummaryItem>,
+  params?: { organizationId?: number | null }
+) {
+  const db = await getDb();
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(params?.organizationId);
+
+  await db
+    .update(studentCreditSummaryItems)
+    .set(data as any)
+    .where(
+      and(
+        eq(studentCreditSummaryItems.id, Number(id)),
+        eq(studentCreditSummaryItems.organizationId, organizationId)
+      )
+    );
+
+  return getStudentCreditSummaryItemById({
+    id: Number(id),
+    organizationId,
+  });
+}
+
+export async function deleteStudentCreditSummaryItem(params: {
+  id: number;
+  organizationId?: number | null;
+}) {
+  const db = await getDb();
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  await db
+    .delete(studentCreditSummaryItems)
+    .where(
+      and(
+        eq(studentCreditSummaryItems.id, Number(params.id)),
+        eq(studentCreditSummaryItems.organizationId, organizationId)
+      )
+    );
+
+  return { ok: true };
 }
 
 // ─── 학기 완료 시 자동 종료 체크 ─────────────────────────────────────

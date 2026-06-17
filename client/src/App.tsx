@@ -17,6 +17,7 @@ import Consultations from "./pages/Consultations";
 import Students from "./pages/Students";
 import SmsSender from "@/pages/sms/SmsSender";
 import StudentDetail from "./pages/StudentDetail";
+import StudentCreditSummaryPage from "./pages/StudentCreditSummaryPage";
 import Approvals from "./pages/Approvals";
 import Settlement from "./pages/Settlement";
 import SemesterList from "./pages/SemesterList";
@@ -294,6 +295,10 @@ function PrivateRouter() {
       </Route>
 
       {/* organization slug 실제 CRM - 상세/하위 경로가 항상 먼저 */}
+<Route
+  path="/:organizationSlug/students/:id/summary"
+  component={StudentCreditSummaryPage}
+/>
       <Route path="/:organizationSlug/students/:id" component={StudentDetail} />
       <Route path="/:organizationSlug/students" component={Students} />
       <Route path="/:organizationSlug/overview" component={OverviewDashboard} />

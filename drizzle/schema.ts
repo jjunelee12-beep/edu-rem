@@ -759,6 +759,152 @@ organizationId: int("organizationId").notNull().default(1),
 export type TransferSubject = typeof transferSubjects.$inferSelect;
 export type InsertTransferSubject = typeof transferSubjects.$inferInsert;
 
+// ─── Credit Summary Rules (학생 정보 요약 기준 설정) ───────────────
+export const creditSummaryRules = mysqlTable(
+  "credit_summary_rules",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull().default(1),
+studentId: int("studentId").notNull(),
+
+courseName: varchar("courseName", { length: 200 }),
+finalEducation: varchar("finalEducation", { length: 100 }),
+
+    requiredTotalCredits: int("requiredTotalCredits").notNull().default(0),
+
+    requiredMajorRequiredSubjects: int("requiredMajorRequiredSubjects")
+      .notNull()
+      .default(0),
+    requiredMajorElectiveSubjects: int("requiredMajorElectiveSubjects")
+      .notNull()
+      .default(0),
+    requiredLiberalSubjects: int("requiredLiberalSubjects")
+      .notNull()
+      .default(0),
+    requiredGeneralSubjects: int("requiredGeneralSubjects")
+      .notNull()
+      .default(0),
+
+    requiredMajorRequiredCredits: int("requiredMajorRequiredCredits")
+      .notNull()
+      .default(0),
+    requiredMajorElectiveCredits: int("requiredMajorElectiveCredits")
+      .notNull()
+      .default(0),
+    requiredLiberalCredits: int("requiredLiberalCredits")
+      .notNull()
+      .default(0),
+    requiredGeneralCredits: int("requiredGeneralCredits")
+      .notNull()
+      .default(0),
+
+    allowMajorElectiveOver: boolean("allowMajorElectiveOver")
+      .notNull()
+      .default(false),
+    allowLiberalOver: boolean("allowLiberalOver").notNull().default(true),
+    allowGeneralOver: boolean("allowGeneralOver").notNull().default(true),
+
+    duplicateCheckEnabled: boolean("duplicateCheckEnabled")
+      .notNull()
+      .default(true),
+
+    isActive: boolean("isActive").notNull().default(true),
+
+    memo: text("memo"),
+
+    createdBy: int("createdBy"),
+    updatedBy: int("updatedBy"),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    orgStudentIdx: index("idx_credit_summary_rules_org_student").on(
+  table.organizationId,
+  table.studentId
+),
+orgActiveIdx: index("idx_credit_summary_rules_org_active").on(
+  table.organizationId,
+  table.isActive
+),
+  })
+);
+
+export type CreditSummaryRule = typeof creditSummaryRules.$inferSelect;
+export type InsertCreditSummaryRule = typeof creditSummaryRules.$inferInsert;
+
+// ─── Student Credit Summary Items (학생별 요약 추가 학점/과목) ───────
+export const studentCreditSummaryItems = mysqlTable(
+  "student_credit_summary_items",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull().default(1),
+    studentId: int("studentId").notNull(),
+
+    sourceType: mysqlEnum("sourceType", [
+      "manual",
+      "transfer",
+      "certificate",
+      "exam",
+      "recognized",
+      "etc",
+    ])
+      .notNull()
+      .default("manual"),
+
+    subjectName: varchar("subjectName", { length: 255 }),
+    institutionName: varchar("institutionName", { length: 255 }),
+    semesterLabel: varchar("semesterLabel", { length: 100 }),
+
+    category: mysqlEnum("category", ["전공", "교양", "일반"])
+      .notNull()
+      .default("전공"),
+
+    requirementType: mysqlEnum("requirementType", [
+      "전공필수",
+      "전공선택",
+      "교양",
+      "일반",
+    ]).notNull(),
+
+    credits: int("credits").notNull().default(0),
+
+    isCompleted: boolean("isCompleted").notNull().default(true),
+    isExcluded: boolean("isExcluded").notNull().default(false),
+
+    memo: text("memo"),
+
+    sortOrder: int("sortOrder").notNull().default(0),
+
+    createdBy: int("createdBy"),
+    updatedBy: int("updatedBy"),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    orgStudentIdx: index("idx_student_credit_summary_org_student").on(
+      table.organizationId,
+      table.studentId
+    ),
+    orgStudentTypeIdx: index("idx_student_credit_summary_org_student_type").on(
+      table.organizationId,
+      table.studentId,
+      table.sourceType
+    ),
+    orgStudentRequirementIdx: index(
+      "idx_student_credit_summary_org_student_req"
+    ).on(table.organizationId, table.studentId, table.requirementType),
+  })
+);
+
+export type StudentCreditSummaryItem =
+  typeof studentCreditSummaryItems.$inferSelect;
+export type InsertStudentCreditSummaryItem =
+  typeof studentCreditSummaryItems.$inferInsert;
+
 // ─── Refunds (환불 기록) ─────────────────────────────────────────────
 export const refunds = mysqlTable("refunds", {
   id: int("id").autoincrement().primaryKey(),

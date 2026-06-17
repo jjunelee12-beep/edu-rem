@@ -2072,6 +2072,13 @@ const getCountStatusClass = (current: number, target: number) => {
 >
   학생기록부
 </Button>
+<Button
+  variant="outline"
+  size="sm"
+  onClick={() => safeNavigate(`/students/${studentId}/summary`)}
+>
+  학점 요약
+</Button>
   <Badge className={statusColor(displayStudentStatus)}>
     {displayStudentStatus}
   </Badge>
