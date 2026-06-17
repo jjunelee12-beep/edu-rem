@@ -4475,6 +4475,65 @@ deleteSubjectPriceRule: hostProcedure
     });
   }),
 
+listInstitutionPriceRules: hostProcedure
+  .input(
+    z.object({
+      educationInstitutionId: z.number(),
+      includeInactive: z.boolean().optional(),
+    })
+  )
+  .query(async ({ ctx, input }) => {
+    const organizationId = getCtxOrganizationId(ctx);
+
+    return db.listSettlementInstitutionPriceRules({
+      organizationId,
+      educationInstitutionId: input.educationInstitutionId,
+      includeInactive: input.includeInactive ?? true,
+    });
+  }),
+
+upsertInstitutionPriceRule: hostProcedure
+  .input(
+    z.object({
+      id: z.number().optional(),
+      educationInstitutionId: z.number(),
+      thresholdAmount: z.union([z.string(), z.number()]),
+      institutionUnitCost: z.union([z.string(), z.number()]),
+      sortOrder: z.number().optional(),
+      isActive: z.boolean().optional(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const organizationId = getCtxOrganizationId(ctx);
+
+    return db.upsertSettlementInstitutionPriceRule({
+      organizationId,
+      id: input.id,
+      educationInstitutionId: input.educationInstitutionId,
+      thresholdAmount: input.thresholdAmount,
+      institutionUnitCost: input.institutionUnitCost,
+      sortOrder: input.sortOrder ?? 0,
+      isActive: input.isActive ?? true,
+    });
+  }),
+
+deleteInstitutionPriceRule: hostProcedure
+  .input(
+    z.object({
+      id: z.number(),
+      educationInstitutionId: z.number(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const organizationId = getCtxOrganizationId(ctx);
+
+    return db.deleteSettlementInstitutionPriceRule({
+      organizationId,
+      id: input.id,
+      educationInstitutionId: input.educationInstitutionId,
+    });
+  }),
+
     getInstitutionPositionRate: protectedProcedure
       .input(
         z.object({

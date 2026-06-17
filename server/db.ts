@@ -45,6 +45,7 @@ settlementGrades,
 settlementRules,
 settlementRuleGroups,
 settlementSubjectPriceRules,
+settlementInstitutionPriceRules,
 settlementMonthLocks,
 practiceListCategories,
 InsertPracticeListCategory,
@@ -1147,6 +1148,7 @@ const ORGANIZATION_BACKUP_TABLES = [
   "settlement_item_logs",
   "settlement_settings",
 "settlement_subject_price_rules",
+"settlement_institution_price_rules",
 "settlement_month_locks",
   "audit_logs",
 "student_audit_logs",
@@ -7017,6 +7019,12 @@ const subjectPriceRules = await listActiveSettlementSubjectPriceRulesForCalc({
   educationInstitutionId,
 });
 
+const institutionPriceRules =
+  await listActiveSettlementInstitutionPriceRulesForCalc({
+    organizationId,
+    educationInstitutionId,
+  });
+
 const subjectPriceCombination =
   resolveSettlementSubjectPriceCombination({
     grossAmount,
@@ -7054,18 +7062,17 @@ if (subjectPriceCombination && subjectPriceCombination.length > 0) {
 }
 
 // 교육원 몫
-let institutionCost = 0;
+// 1순위: 교육원 + 기준금액별 교육원 정산금액
+// 2순위: 교육원 기본 정산금액
+// 3순위: 0원
+const institutionCostResult = resolveInstitutionCostFromSubjectCombination({
+  subjectPriceCombination,
+  subjectCount,
+  fallbackUnitCost: institutionUnitCost,
+  rules: institutionPriceRules,
+});
 
-if ((institution as any).settlementType === "credit") {
-  // 학점 기준
-  institutionCost = institutionUnitCost * actualCredits;
-} else if ((institution as any).settlementType === "subject") {
-  // 과목 기준
-  institutionCost = institutionUnitCost * subjectCount;
-} else {
-  // fixed 또는 기타값이면 입력값 그대로 1회 반영
-  institutionCost = institutionUnitCost;
-}
+const institutionCost = institutionCostResult.institutionCost;
 
 // 교육원 차감 후 우리회사 몫
 const companyAmount = Math.max(0, grossAmount - institutionCost);
@@ -7143,8 +7150,9 @@ institutionName: institution?.name || sem.actualInstitution || null,
   actualCredits,
   settlementCredits,
 subjectPriceCombination,
-  institutionUnitCost,
-  institutionCost,
+institutionPriceRules: institutionCostResult.appliedRules,
+institutionUnitCost,
+institutionCost,
   companyAmount,
   positionUnitAmount,
   rawFreelancerAmount,
@@ -10070,6 +10078,249 @@ export async function deleteSettlementSubjectPriceRule(input: {
   return {
     success: true,
     id: Number(input.id),
+  };
+}
+
+export async function listSettlementInstitutionPriceRules(params: {
+  organizationId?: number | null;
+  educationInstitutionId: number;
+  includeInactive?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const educationInstitutionId = Number(params.educationInstitutionId || 0);
+
+  if (!educationInstitutionId) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "교육원을 선택해주세요.",
+      400
+    );
+  }
+
+  const conditions: any[] = [
+    eq(settlementInstitutionPriceRules.organizationId, organizationId),
+    eq(
+      settlementInstitutionPriceRules.educationInstitutionId,
+      educationInstitutionId
+    ),
+  ];
+
+  if (!params.includeInactive) {
+    conditions.push(eq(settlementInstitutionPriceRules.isActive, true));
+  }
+
+  return db
+    .select()
+    .from(settlementInstitutionPriceRules)
+    .where(and(...conditions))
+    .orderBy(
+      asc(settlementInstitutionPriceRules.sortOrder),
+      asc(settlementInstitutionPriceRules.thresholdAmount),
+      asc(settlementInstitutionPriceRules.id)
+    );
+}
+
+export async function upsertSettlementInstitutionPriceRule(input: {
+  organizationId?: number | null;
+  id?: number | null;
+  educationInstitutionId: number;
+  thresholdAmount: number | string;
+  institutionUnitCost: number | string;
+  sortOrder?: number | null;
+  isActive?: boolean;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(input.organizationId);
+  const id = Number(input.id || 0);
+  const educationInstitutionId = Number(input.educationInstitutionId || 0);
+  const thresholdAmount = toNumber(input.thresholdAmount);
+  const institutionUnitCost = toNumber(input.institutionUnitCost);
+
+  if (!educationInstitutionId) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "교육원을 선택해주세요.",
+      400
+    );
+  }
+
+  if (thresholdAmount <= 0) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "기준금액은 1원 이상이어야 합니다.",
+      400
+    );
+  }
+
+  if (institutionUnitCost < 0) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "교육원 정산금액은 0원 이상이어야 합니다.",
+      400
+    );
+  }
+
+  const payload = {
+    organizationId,
+    educationInstitutionId,
+    thresholdAmount: String(thresholdAmount),
+    institutionUnitCost: String(institutionUnitCost),
+    sortOrder: Number(input.sortOrder ?? 0),
+    isActive: input.isActive === undefined ? true : Boolean(input.isActive),
+  };
+
+  if (id > 0) {
+    await db
+      .update(settlementInstitutionPriceRules)
+      .set(payload as any)
+      .where(
+        and(
+          eq(settlementInstitutionPriceRules.id, id),
+          eq(settlementInstitutionPriceRules.organizationId, organizationId),
+          eq(
+            settlementInstitutionPriceRules.educationInstitutionId,
+            educationInstitutionId
+          )
+        )
+      );
+
+    return { success: true, id };
+  }
+
+  const result: any = await db
+    .insert(settlementInstitutionPriceRules)
+    .values(payload as any);
+
+  return {
+    success: true,
+    id: getInsertId(result),
+  };
+}
+
+export async function deleteSettlementInstitutionPriceRule(input: {
+  organizationId?: number | null;
+  id: number;
+  educationInstitutionId: number;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(input.organizationId);
+  const educationInstitutionId = Number(input.educationInstitutionId || 0);
+
+  if (!educationInstitutionId) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "교육원을 선택해주세요.",
+      400
+    );
+  }
+
+  await db
+    .delete(settlementInstitutionPriceRules)
+    .where(
+      and(
+        eq(settlementInstitutionPriceRules.id, Number(input.id)),
+        eq(settlementInstitutionPriceRules.organizationId, organizationId),
+        eq(
+          settlementInstitutionPriceRules.educationInstitutionId,
+          educationInstitutionId
+        )
+      )
+    );
+
+  return {
+    success: true,
+    id: Number(input.id),
+  };
+}
+
+export async function listActiveSettlementInstitutionPriceRulesForCalc(params: {
+  organizationId?: number | null;
+  educationInstitutionId: number;
+}) {
+  return listSettlementInstitutionPriceRules({
+    organizationId: params.organizationId,
+    educationInstitutionId: params.educationInstitutionId,
+    includeInactive: false,
+  });
+}
+
+function resolveInstitutionCostFromSubjectCombination(params: {
+  subjectPriceCombination: any[] | null;
+  subjectCount: number;
+  fallbackUnitCost: number;
+  rules: any[];
+}) {
+  const subjectCount = Number(params.subjectCount || 0);
+  const fallbackUnitCost = toNumber(params.fallbackUnitCost);
+
+  const ruleMap = new Map<number, number>();
+
+  (params.rules || []).forEach((row: any) => {
+    const thresholdAmount = toNumber(row.thresholdAmount);
+    if (!thresholdAmount) return;
+
+    ruleMap.set(thresholdAmount, toNumber(row.institutionUnitCost));
+  });
+
+  const combination = params.subjectPriceCombination || [];
+
+  if (combination.length > 0) {
+    let institutionCost = 0;
+
+    const appliedRules = combination.map((row: any) => {
+      const unitPrice = toNumber(row.unitPrice);
+      const count = Number(row.count || 0);
+      const matchedUnitCost = ruleMap.has(unitPrice)
+        ? Number(ruleMap.get(unitPrice) || 0)
+        : fallbackUnitCost;
+
+      institutionCost += matchedUnitCost * count;
+
+      return {
+        unitPrice,
+        count,
+        institutionUnitCost: matchedUnitCost,
+        source: ruleMap.has(unitPrice) ? "institution_price_rule" : "fallback",
+      };
+    });
+
+    return {
+      institutionCost,
+      appliedRules,
+    };
+  }
+
+  return {
+    institutionCost: fallbackUnitCost * subjectCount,
+    appliedRules: [
+      {
+        unitPrice: null,
+        count: subjectCount,
+        institutionUnitCost: fallbackUnitCost,
+        source: "fallback",
+      },
+    ],
   };
 }
 

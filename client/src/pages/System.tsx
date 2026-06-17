@@ -136,6 +136,45 @@ function shallowEqualSubjectPriceRuleDrafts(
   return true;
 }
 
+function shallowEqualInstitutionPriceRuleDrafts(
+  a: Record<
+    string,
+    {
+      thresholdAmount: string;
+      institutionUnitCost: string;
+      sortOrder: string;
+      isActive: boolean;
+    }
+  >,
+  b: Record<
+    string,
+    {
+      thresholdAmount: string;
+      institutionUnitCost: string;
+      sortOrder: string;
+      isActive: boolean;
+    }
+  >
+) {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+
+  if (aKeys.length !== bKeys.length) return false;
+
+  for (const key of aKeys) {
+    const av = a[key];
+    const bv = b[key];
+
+    if (!bv) return false;
+    if (av.thresholdAmount !== bv.thresholdAmount) return false;
+    if (av.institutionUnitCost !== bv.institutionUnitCost) return false;
+    if (av.sortOrder !== bv.sortOrder) return false;
+    if (av.isActive !== bv.isActive) return false;
+  }
+
+  return true;
+}
+
 
 
 export default function System() {
@@ -235,11 +274,27 @@ function SettlementSystemSection() {
   const { data: settlementSettings, isLoading: settlementSettingsLoading } =
     trpc.settlementSystem.getSettings.useQuery();
 
+  const [selectedInstitutionId, setSelectedInstitutionId] = useState<string | undefined>(undefined);
+  const [payoutDay, setPayoutDay] = useState<string>("25");
+
   const { data: subjectPriceRules = [], isLoading: subjectPriceRulesLoading } =
     trpc.settlementSystem.listSubjectPriceRules.useQuery({
       educationInstitutionId: null,
       includeInactive: true,
     });
+
+const {
+  data: institutionPriceRules = [],
+  isLoading: institutionPriceRulesLoading,
+} = trpc.settlementSystem.listInstitutionPriceRules.useQuery(
+  {
+    educationInstitutionId: Number(selectedInstitutionId || 0),
+    includeInactive: true,
+  },
+  {
+    enabled: !!selectedInstitutionId,
+  }
+);
 
   const saveSettlementSettingsMutation =
     trpc.settlementSystem.saveSettings.useMutation({
@@ -268,8 +323,23 @@ function SettlementSystemSection() {
       onError: (e) => toast.error(e.message),
     });
 
-  const [selectedInstitutionId, setSelectedInstitutionId] = useState<string | undefined>(undefined);
-  const [payoutDay, setPayoutDay] = useState<string>("25");
+const upsertInstitutionPriceRuleMutation =
+  trpc.settlementSystem.upsertInstitutionPriceRule.useMutation({
+    onSuccess: async () => {
+      toast.success("기준금액별 교육원 정산금액이 저장되었습니다.");
+      await utils.settlementSystem.listInstitutionPriceRules.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+const deleteInstitutionPriceRuleMutation =
+  trpc.settlementSystem.deleteInstitutionPriceRule.useMutation({
+    onSuccess: async () => {
+      toast.success("기준금액별 교육원 정산금액이 삭제되었습니다.");
+      await utils.settlementSystem.listInstitutionPriceRules.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const [subjectPriceRuleDrafts, setSubjectPriceRuleDrafts] = useState<
     Record<
@@ -291,6 +361,25 @@ function SettlementSystemSection() {
     sortOrder: "",
     isActive: true,
   });
+
+const [institutionPriceRuleDrafts, setInstitutionPriceRuleDrafts] = useState<
+  Record<
+    string,
+    {
+      thresholdAmount: string;
+      institutionUnitCost: string;
+      sortOrder: string;
+      isActive: boolean;
+    }
+  >
+>({});
+
+const [newInstitutionPriceRule, setNewInstitutionPriceRule] = useState({
+  thresholdAmount: "",
+  institutionUnitCost: "",
+  sortOrder: "",
+  isActive: true,
+});
 
 const [institutionDraft, setInstitutionDraft] = useState<{
   settlementType: "subject";
@@ -398,6 +487,31 @@ const updateInstitutionMutation =
     shallowEqualSubjectPriceRuleDrafts(prev, next) ? prev : next
   );
 }, [subjectPriceRules]);
+
+useEffect(() => {
+  const next: Record<
+    string,
+    {
+      thresholdAmount: string;
+      institutionUnitCost: string;
+      sortOrder: string;
+      isActive: boolean;
+    }
+  > = {};
+
+  (institutionPriceRules || []).forEach((row: any) => {
+    next[String(row.id)] = {
+      thresholdAmount: String(row.thresholdAmount ?? "0"),
+      institutionUnitCost: String(row.institutionUnitCost ?? "0"),
+      sortOrder: String(row.sortOrder ?? "0"),
+      isActive: row.isActive !== false,
+    };
+  });
+
+  setInstitutionPriceRuleDrafts((prev) =>
+    shallowEqualInstitutionPriceRuleDrafts(prev, next) ? prev : next
+  );
+}, [institutionPriceRules]);
 
   useEffect(() => {
   const next: Record<string, string> = {};
@@ -674,6 +788,108 @@ const handleSaveInstitutionBaseSettings = () => {
     settlementType: "subject",
     normalSubjectPrice: institutionDraft.normalSubjectPrice || "75000",
     unitCostAmount: institutionDraft.unitCostAmount || "0",
+  });
+};
+
+const handleSaveInstitutionPriceRule = (ruleId: number) => {
+  if (!selectedInstitutionId) {
+    toast.error("교육원을 먼저 선택해주세요.");
+    return;
+  }
+
+  const draft = institutionPriceRuleDrafts[String(ruleId)];
+
+  if (!draft) {
+    toast.error("저장할 추가 정산 규칙을 찾을 수 없습니다.");
+    return;
+  }
+
+  const thresholdAmount = draft.thresholdAmount.replace(/[^0-9]/g, "");
+  const institutionUnitCost = draft.institutionUnitCost.replace(/[^0-9]/g, "");
+  const sortOrder = Number(draft.sortOrder.replace(/[^0-9]/g, "") || 0);
+
+  if (!thresholdAmount) {
+    toast.error("기준금액을 입력해주세요.");
+    return;
+  }
+
+  if (!institutionUnitCost) {
+    toast.error("교육원 정산금액을 입력해주세요.");
+    return;
+  }
+
+  upsertInstitutionPriceRuleMutation.mutate({
+    id: Number(ruleId),
+    educationInstitutionId: Number(selectedInstitutionId),
+    thresholdAmount,
+    institutionUnitCost,
+    sortOrder,
+    isActive: draft.isActive,
+  });
+};
+
+const handleCreateInstitutionPriceRule = () => {
+  if (!selectedInstitutionId) {
+    toast.error("교육원을 먼저 선택해주세요.");
+    return;
+  }
+
+  const thresholdAmount = newInstitutionPriceRule.thresholdAmount.replace(
+    /[^0-9]/g,
+    ""
+  );
+  const institutionUnitCost =
+    newInstitutionPriceRule.institutionUnitCost.replace(/[^0-9]/g, "");
+  const sortOrder = Number(
+    newInstitutionPriceRule.sortOrder.replace(/[^0-9]/g, "") || 0
+  );
+
+  if (!thresholdAmount) {
+    toast.error("기준금액을 입력해주세요.");
+    return;
+  }
+
+  if (!institutionUnitCost) {
+    toast.error("교육원 정산금액을 입력해주세요.");
+    return;
+  }
+
+  upsertInstitutionPriceRuleMutation.mutate(
+    {
+      educationInstitutionId: Number(selectedInstitutionId),
+      thresholdAmount,
+      institutionUnitCost,
+      sortOrder,
+      isActive: newInstitutionPriceRule.isActive,
+    },
+    {
+      onSuccess: () => {
+        setNewInstitutionPriceRule({
+          thresholdAmount: "",
+          institutionUnitCost: "",
+          sortOrder: "",
+          isActive: true,
+        });
+      },
+    }
+  );
+};
+
+const handleDeleteInstitutionPriceRule = (rule: any) => {
+  if (!selectedInstitutionId) {
+    toast.error("교육원을 먼저 선택해주세요.");
+    return;
+  }
+
+  const ok = window.confirm(
+    `${Number(rule.thresholdAmount || 0).toLocaleString()}원 기준 교육원 정산금액을 삭제하시겠습니까?`
+  );
+
+  if (!ok) return;
+
+  deleteInstitutionPriceRuleMutation.mutate({
+    id: Number(rule.id),
+    educationInstitutionId: Number(selectedInstitutionId),
   });
 };
 
@@ -1058,13 +1274,14 @@ if (!companyShareAmount) {
   <CardHeader>
     <CardTitle>교육원 기본 정산 설정</CardTitle>
   </CardHeader>
+
   <CardContent className="space-y-4">
     <div className="max-w-md space-y-2">
       <p className="text-sm font-medium">교육원 선택</p>
       <Select
-  value={selectedInstitutionId ?? undefined}
-  onValueChange={setSelectedInstitutionId}
->
+        value={selectedInstitutionId ?? undefined}
+        onValueChange={setSelectedInstitutionId}
+      >
         <SelectTrigger>
           <SelectValue placeholder="교육원을 선택하세요" />
         </SelectTrigger>
@@ -1080,60 +1297,312 @@ if (!companyShareAmount) {
 
     {!selectedInstitutionId ? (
       <div className="rounded-xl border border-dashed px-4 py-6 text-sm text-muted-foreground">
-        교육원을 먼저 선택하면 과목 기본 가격과 교육원 원가를 설정할 수 있습니다.
+        교육원을 먼저 선택하면 과목 기본 가격과 교육원 정산 금액을 설정할 수 있습니다.
       </div>
     ) : (
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="space-y-2">
-  <p className="text-sm font-medium">정산 방식</p>
+      <>
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="space-y-2">
+            <p className="text-sm font-medium">정산 방식</p>
+            <Input value="과목 기준" disabled className="bg-muted" />
+          </div>
 
-  <Input
-    value="과목 기준"
-    disabled
-    className="bg-muted"
-  />
-</div>
+          <div className="space-y-2">
+            <p className="text-sm font-medium">과목 기본 가격</p>
+            <Input
+              value={institutionDraft.normalSubjectPrice}
+              onChange={(e) =>
+                setInstitutionDraft((prev) => ({
+                  ...prev,
+                  normalSubjectPrice: e.target.value.replace(/[^0-9]/g, ""),
+                }))
+              }
+              placeholder="예: 75000"
+            />
+          </div>
 
-        <div className="space-y-2">
-          <p className="text-sm font-medium">과목 기본 가격</p>
-          <Input
-            value={institutionDraft.normalSubjectPrice}
-            onChange={(e) =>
-              setInstitutionDraft((prev) => ({
-                ...prev,
-                normalSubjectPrice: e.target.value.replace(/[^0-9]/g, ""),
-              }))
-            }
-            placeholder="예: 75000"
-          />
+          <div className="space-y-2">
+            <p className="text-sm font-medium">기본 교육원 정산 금액</p>
+            <Input
+              value={institutionDraft.unitCostAmount}
+              onChange={(e) =>
+                setInstitutionDraft((prev) => ({
+                  ...prev,
+                  unitCostAmount: e.target.value.replace(/[^0-9]/g, ""),
+                }))
+              }
+              placeholder="예: 33000"
+            />
+          </div>
         </div>
 
-        <div className="space-y-2">
-          <p className="text-sm font-medium">교육원 정산 금액</p>
-          <Input
-            value={institutionDraft.unitCostAmount}
-            onChange={(e) =>
-              setInstitutionDraft((prev) => ({
-                ...prev,
-                unitCostAmount: e.target.value.replace(/[^0-9]/g, ""),
-              }))
+        <div>
+          <Button
+            onClick={handleSaveInstitutionBaseSettings}
+            disabled={
+              !selectedInstitutionId || updateInstitutionMutation.isPending
             }
-            placeholder="예: 24000"
-          />
+          >
+            {updateInstitutionMutation.isPending
+              ? "저장 중..."
+              : "교육원 기본 정산 저장"}
+          </Button>
         </div>
-      </div>
+
+        <div className="border-t pt-4">
+          <div className="mb-3 space-y-1">
+            <p className="text-sm font-semibold">
+              기준금액별 교육원 정산금액
+            </p>
+            <p className="text-xs text-muted-foreground">
+              같은 교육원에서 과목 금액별 교육원 정산금액이 다를 때 입력합니다.
+              예: 75,000원 → 33,000원 / 150,000원 → 90,000원
+            </p>
+          </div>
+
+          {institutionPriceRulesLoading ? (
+            <div className="text-sm text-muted-foreground">불러오는 중...</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="px-4 py-3 text-left">기준금액</th>
+                    <th className="px-4 py-3 text-left">교육원 정산금액</th>
+                    <th className="px-4 py-3 text-left">정렬</th>
+                    <th className="px-4 py-3 text-left">사용</th>
+                    <th className="px-4 py-3 text-right">관리</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {institutionPriceRules.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="px-4 py-6 text-center text-sm text-muted-foreground"
+                      >
+                        등록된 기준금액별 교육원 정산금액이 없습니다.
+                      </td>
+                    </tr>
+                  ) : (
+                    institutionPriceRules.map((rule: any) => {
+                      const draft = institutionPriceRuleDrafts[
+                        String(rule.id)
+                      ] || {
+                        thresholdAmount: String(rule.thresholdAmount ?? "0"),
+                        institutionUnitCost: String(
+                          rule.institutionUnitCost ?? "0"
+                        ),
+                        sortOrder: String(rule.sortOrder ?? "0"),
+                        isActive: rule.isActive !== false,
+                      };
+
+                      return (
+                        <tr key={rule.id} className="border-b last:border-0">
+                          <td className="px-4 py-3">
+                            <Input
+                              value={draft.thresholdAmount}
+                              onChange={(e) =>
+                                setInstitutionPriceRuleDrafts((prev) => ({
+                                  ...prev,
+                                  [String(rule.id)]: {
+                                    ...draft,
+                                    thresholdAmount: e.target.value.replace(
+                                      /[^0-9]/g,
+                                      ""
+                                    ),
+                                  },
+                                }))
+                              }
+                              className="min-w-[130px]"
+                            />
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <Input
+                              value={draft.institutionUnitCost}
+                              onChange={(e) =>
+                                setInstitutionPriceRuleDrafts((prev) => ({
+                                  ...prev,
+                                  [String(rule.id)]: {
+                                    ...draft,
+                                    institutionUnitCost:
+                                      e.target.value.replace(/[^0-9]/g, ""),
+                                  },
+                                }))
+                              }
+                              className="min-w-[150px]"
+                            />
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <Input
+                              value={draft.sortOrder}
+                              onChange={(e) =>
+                                setInstitutionPriceRuleDrafts((prev) => ({
+                                  ...prev,
+                                  [String(rule.id)]: {
+                                    ...draft,
+                                    sortOrder: e.target.value.replace(
+                                      /[^0-9]/g,
+                                      ""
+                                    ),
+                                  },
+                                }))
+                              }
+                              className="min-w-[90px]"
+                            />
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <Select
+                              value={draft.isActive ? "true" : "false"}
+                              onValueChange={(value) =>
+                                setInstitutionPriceRuleDrafts((prev) => ({
+                                  ...prev,
+                                  [String(rule.id)]: {
+                                    ...draft,
+                                    isActive: value === "true",
+                                  },
+                                }))
+                              }
+                            >
+                              <SelectTrigger className="w-[110px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="true">사용</SelectItem>
+                                <SelectItem value="false">미사용</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </td>
+
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() =>
+                                  handleSaveInstitutionPriceRule(
+                                    Number(rule.id)
+                                  )
+                                }
+                                disabled={
+                                  upsertInstitutionPriceRuleMutation.isPending
+                                }
+                              >
+                                저장
+                              </Button>
+
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() =>
+                                  handleDeleteInstitutionPriceRule(rule)
+                                }
+                                disabled={
+                                  deleteInstitutionPriceRuleMutation.isPending
+                                }
+                              >
+                                삭제
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+
+                  <tr className="border-t bg-muted/20">
+                    <td className="px-4 py-3">
+                      <Input
+                        value={newInstitutionPriceRule.thresholdAmount}
+                        onChange={(e) =>
+                          setNewInstitutionPriceRule((prev) => ({
+                            ...prev,
+                            thresholdAmount: e.target.value.replace(
+                              /[^0-9]/g,
+                              ""
+                            ),
+                          }))
+                        }
+                        placeholder="기준금액"
+                        className="min-w-[130px]"
+                      />
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <Input
+                        value={newInstitutionPriceRule.institutionUnitCost}
+                        onChange={(e) =>
+                          setNewInstitutionPriceRule((prev) => ({
+                            ...prev,
+                            institutionUnitCost: e.target.value.replace(
+                              /[^0-9]/g,
+                              ""
+                            ),
+                          }))
+                        }
+                        placeholder="교육원 정산금액"
+                        className="min-w-[150px]"
+                      />
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <Input
+                        value={newInstitutionPriceRule.sortOrder}
+                        onChange={(e) =>
+                          setNewInstitutionPriceRule((prev) => ({
+                            ...prev,
+                            sortOrder: e.target.value.replace(/[^0-9]/g, ""),
+                          }))
+                        }
+                        placeholder="정렬"
+                        className="min-w-[90px]"
+                      />
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <Select
+                        value={
+                          newInstitutionPriceRule.isActive ? "true" : "false"
+                        }
+                        onValueChange={(value) =>
+                          setNewInstitutionPriceRule((prev) => ({
+                            ...prev,
+                            isActive: value === "true",
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="w-[110px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">사용</SelectItem>
+                          <SelectItem value="false">미사용</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </td>
+
+                    <td className="px-4 py-3 text-right">
+                      <Button
+                        size="sm"
+                        onClick={handleCreateInstitutionPriceRule}
+                        disabled={
+                          upsertInstitutionPriceRuleMutation.isPending
+                        }
+                      >
+                        추가
+                      </Button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </>
     )}
-
-    <div>
-      <Button
-        onClick={handleSaveInstitutionBaseSettings}
-        disabled={!selectedInstitutionId || updateInstitutionMutation.isPending}
-      >
-        {updateInstitutionMutation.isPending
-          ? "저장 중..."
-          : "교육원 기본 정산 저장"}
-      </Button>
-    </div>
   </CardContent>
 </Card>
 

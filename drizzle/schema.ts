@@ -970,6 +970,53 @@ organizationId: int("organizationId").notNull().default(1),
 export type EducationInstitution = typeof educationInstitutions.$inferSelect;
 export type InsertEducationInstitution = typeof educationInstitutions.$inferInsert;
 
+export const settlementInstitutionPriceRules = mysqlTable(
+  "settlement_institution_price_rules",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull().default(1),
+
+    educationInstitutionId: int("educationInstitutionId").notNull(),
+
+    thresholdAmount: decimal("thresholdAmount", {
+      precision: 12,
+      scale: 0,
+    })
+      .notNull()
+      .default("0"),
+
+    institutionUnitCost: decimal("institutionUnitCost", {
+      precision: 12,
+      scale: 0,
+    })
+      .notNull()
+      .default("0"),
+
+    sortOrder: int("sortOrder").notNull().default(0),
+
+    isActive: boolean("isActive").notNull().default(true),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    orgInstIdx: index("idx_sipr_org_inst").on(
+      table.organizationId,
+      table.educationInstitutionId
+    ),
+    thresholdIdx: index("idx_sipr_threshold").on(table.thresholdAmount),
+    activeIdx: index("idx_sipr_active").on(table.isActive),
+  })
+);
+
+export type SettlementInstitutionPriceRule =
+  typeof settlementInstitutionPriceRules.$inferSelect;
+
+export type InsertSettlementInstitutionPriceRule =
+  typeof settlementInstitutionPriceRules.$inferInsert;
+
 export const settlementSubjectPriceRules = mysqlTable(
   "settlement_subject_price_rules",
   {
