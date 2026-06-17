@@ -170,13 +170,7 @@ export default function FormCanvasRenderer({
   return Math.min(1, availableWidth / safeCanvasWidth);
 }, [overrideScale, canvas.width, isMobile, windowWidth, maxWidth]);
 
-const renderScale = useMemo(() => {
-  if (!isMobile) return scale;
-
-  // 모바일에서는 너무 작아지지 않게 최소 크기 보장
-  return Math.max(scale, 0.48);
-}, [scale, isMobile]);
-
+const renderScale = scale;
 if (!canvas.enabled) return null;
 
 const width = canvas.width * renderScale;
@@ -477,7 +471,7 @@ height: element.height * renderScale,
             color: (element as any).color || "#ffffff",
             borderRadius: Number((element as any).borderRadius || 18) * renderScale,
 fontSize: Math.max(
-  11,
+  8,
   Number((element as any).fontSize || 18) * renderScale
 ),
             fontWeight: 900,
@@ -527,7 +521,7 @@ const finalPlaceholder = String(
             display: "flex",
             alignItems: "center",
             gap: 8 * renderScale,
-fontSize: Math.max(11, 14 * renderScale),
+fontSize: Math.max(8, 14 * renderScale),
             color: "#334155",
             background: "transparent",
           }}
@@ -545,7 +539,7 @@ fontSize: Math.max(11, 14 * renderScale),
     const labelHeight = labelText ? 26 * renderScale : 0;
 const gap = labelText ? 6 * renderScale : 0;
 const inputTop = labelHeight + gap;
-const inputHeight = Math.max(32, element.height * renderScale - inputTop);
+const inputHeight = Math.max(18, element.height * renderScale - inputTop);
 
     const inputStyle: CSSProperties = {
       position: "absolute",
@@ -560,7 +554,7 @@ const inputHeight = Math.max(32, element.height * renderScale - inputTop);
       border: "1px solid #d1d5db",
       borderRadius: 12 * renderScale,
 padding: `0 ${14 * renderScale}px`,
-fontSize: Math.max(14, 16 * renderScale),
+fontSize: Math.max(8, 16 * renderScale),
      background: "#f8fafc",
       color: "#111827",
     };
@@ -575,7 +569,7 @@ fontSize: Math.max(14, 16 * renderScale),
           height: labelHeight,
           display: "flex",
           alignItems: "center",
-          fontSize: Math.max(12, 15 * renderScale),
+          fontSize: Math.max(8, 15 * renderScale),
           fontWeight: 800,
           color: "#111827",
           pointerEvents: "none",
@@ -711,9 +705,7 @@ fontSize: Math.max(14, 16 * renderScale),
                   ...baseStyle,
                   pointerEvents: "none",
                   color: element.color,
-                  fontSize: isMobile
-  ? Math.max(14, element.fontSize * renderScale)
-  : Math.max(11, element.fontSize * renderScale),
+                  fontSize: Math.max(8, element.fontSize * renderScale),
                   fontWeight: element.fontWeight,
                   fontFamily: element.fontFamily || "Pretendard, sans-serif",
                   textAlign: element.textAlign ?? "left",
@@ -770,32 +762,23 @@ fontSize: Math.max(14, 16 * renderScale),
                 onClick={() => handleButtonClick(element)}
                 style={{
                   ...baseStyle,
-                  width: isMobile
-                    ? Math.max(element.width * renderScale, 120)
-                    : element.width * renderScale,
-                  height: isMobile
-                    ? Math.max(element.height * renderScale, 44)
-                    : element.height * renderScale,
-                  minHeight: isMobile ? 44 : undefined,
+                  width: element.width * renderScale,
+height: element.height * renderScale,
+minHeight: undefined,
                   border: "none",
                   cursor: "pointer",
                   backgroundColor: element.backgroundColor,
                   color: element.color,
                   borderRadius: element.borderRadius * renderScale,
-                  fontSize: isMobile
-  ? Math.max(
-      14,
-      Number((element as any).fontSize || 34) * renderScale
-    )
-  : Math.max(
-      13,
-      Number((element as any).fontSize || 34) * renderScale
-    ),
+                  fontSize: Math.max(
+  8,
+  Number((element as any).fontSize || 34) * renderScale
+),
                   fontWeight: Number((element as any).fontWeight || 900),
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  padding: isMobile ? "0 10px" : "0 14px",
+                  padding: `0 ${14 * renderScale}px`,
                   boxShadow: "0 10px 24px rgba(15, 23, 42, 0.18)",
                   WebkitTapHighlightColor: "transparent",
                   touchAction: "manipulation",
