@@ -24,6 +24,78 @@ function roleToPosition(role?: string) {
   return "직원";
 }
 
+function parseMessengerDate(value?: string | Date | null) {
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime())
+      ? null
+      : value;
+  }
+
+  const raw = String(value).trim();
+
+  if (!raw) {
+    return null;
+  }
+
+  /**
+   * 이미 시간대가 포함된 값
+   *
+   * 2026-07-14T02:30:00.000Z
+   * 2026-07-14T11:30:00+09:00
+   */
+  const hasTimezone =
+    /Z$/i.test(raw) ||
+    /[+-]\d{2}:\d{2}$/.test(raw);
+
+  /**
+   * MySQL 원시 SQL 결과
+   *
+   * 2026-07-14 02:30:00
+   * 2026-07-14T02:30:00
+   *
+   * 서버 DB 시간이 UTC 기준이므로 Z를 붙여
+   * UTC 시간으로 해석한 뒤 브라우저에서 한국시간으로 표시한다.
+   */
+  const normalized = hasTimezone
+    ? raw
+    : `${raw.replace(" ", "T")}Z`;
+
+  const date = new Date(normalized);
+
+  return Number.isNaN(date.getTime())
+    ? null
+    : date;
+}
+
+function formatMessengerTime(
+  value?: string | Date | null
+) {
+  const date = parseMessengerDate(value);
+
+  if (!date) {
+    return "";
+  }
+
+  return date.toLocaleTimeString("ko-KR", {
+    timeZone: "Asia/Seoul",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function toMessengerIso(
+  value?: string | Date | null
+) {
+  const date = parseMessengerDate(value);
+
+  return date
+    ? date.toISOString()
+    : "";
+}
+
 function normalizeUsers(
   userList: any[],
   onlineUserIds: Set<number>
@@ -431,13 +503,12 @@ function PopupRoomData({
       senderId: Number(m.senderId),
       type: m.messageType || "text",
       content: m.content || "",
-      createdAtRaw: m.createdAt || "",
-      createdAt: m.createdAt
-        ? new Date(m.createdAt).toLocaleTimeString("ko-KR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })
-        : "",
+      createdAtRaw: toMessengerIso(
+  m.createdAt
+),
+createdAt: formatMessengerTime(
+  m.createdAt
+),
       fileName: m.fileName || m.attachmentName || "",
       fileUrl: normalizeAssetUrl(m.fileUrl || m.attachmentUrl || ""),
     })) as MessengerMessage[];
@@ -1016,18 +1087,18 @@ export default function MessengerPage({
         participantIds: [],
         unreadCount: isViewed ? 0 : Number(room.unreadCount || 0),
         lastMessage: room.lastMessageContent || "",
-        updatedAt: room.lastMessageCreatedAt
-          ? new Date(room.lastMessageCreatedAt).toISOString()
-          : room.updatedAt
-            ? new Date(room.updatedAt).toISOString()
-            : "",
+        updatedAt:
+  toMessengerIso(
+    room.lastMessageCreatedAt ||
+    room.updatedAt
+  ),
         notificationsEnabled: !room.isMuted,
         avatar: normalizeAssetUrl(room.otherUserProfileImageUrl || ""),
-        sortAt: room.lastMessageCreatedAt
-          ? new Date(room.lastMessageCreatedAt).getTime()
-          : room.updatedAt
-            ? new Date(room.updatedAt).getTime()
-            : 0,
+        sortAt:
+  parseMessengerDate(
+    room.lastMessageCreatedAt ||
+    room.updatedAt
+  )?.getTime() || 0,
       } as MessengerRoom & { sortAt: number };
     });
 

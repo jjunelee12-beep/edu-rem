@@ -57,7 +57,7 @@ async function uploadNoticeAttachment(file: File): Promise<UploadedAttachment> {
   formData.append("file", file);
 
   const res = await fetch(
-    `${import.meta.env.VITE_API_BASE_URL || ""}/api/upload`,
+    `${import.meta.env.VITE_API_BASE_URL || ""}/api/notices/upload-file`,
     {
       method: "POST",
       body: formData,
@@ -72,19 +72,70 @@ async function uploadNoticeAttachment(file: File): Promise<UploadedAttachment> {
   const json = await res.json();
   const fileUrl = json?.fileUrl || json?.url;
 
-  if (!fileUrl) {
-    throw new Error("업로드 URL을 가져오지 못했습니다.");
-  }
+if (!fileUrl) {
+  throw new Error("업로드 URL을 가져오지 못했습니다.");
+}
+
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
+
+const fullUrl =
+  String(fileUrl).startsWith("http")
+    ? String(fileUrl)
+    : `${apiBaseUrl}${String(fileUrl).startsWith("/") ? "" : "/"}${fileUrl}`;
 
   return {
     name: file.name,
-    url: String(fileUrl),
+    url: fullUrl,
     size: file.size,
   };
 }
 
-function buildAttachmentHtml(content: string, attachments: UploadedAttachment[]) {
-  if (!attachments.length) return content;
+function extractAttachmentsFromHtml(
+  html?: string | null
+): UploadedAttachment[] {
+  if (!html) return [];
+
+  const blockMatch = html.match(
+    /<div class="notice-attachments-block" data-notice-attachments="true">([\s\S]*?)<\/div>/i
+  );
+
+  if (!blockMatch?.[1]) return [];
+
+  const matches = Array.from(
+    blockMatch[1].matchAll(
+      /<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi
+    )
+  );
+
+  return matches.map((match) => ({
+    url: String(match[1] || "").trim(),
+    name:
+      String(match[2] || "")
+        .replace(/<[^>]+>/g, "")
+        .trim() || "첨부파일",
+  }));
+}
+
+function stripAttachmentBlock(html?: string | null) {
+  if (!html) return "";
+
+  return html
+    .replace(
+      /<div class="notice-attachments-block" data-notice-attachments="true">[\s\S]*?<\/div>/gi,
+      ""
+    )
+    .trim();
+}
+
+function buildAttachmentHtml(
+  content: string,
+  attachments: UploadedAttachment[]
+) {
+  const cleaned = stripAttachmentBlock(content);
+
+  if (!attachments.length) {
+    return cleaned;
+  }
 
   const attachmentHtml = `
     <div class="notice-attachments-block" data-notice-attachments="true">
@@ -100,11 +151,6 @@ function buildAttachmentHtml(content: string, attachments: UploadedAttachment[])
       </ul>
     </div>
   `;
-
-  const cleaned = content.replace(
-    /<div class="notice-attachments-block" data-notice-attachments="true">[\s\S]*?<\/div>/g,
-    ""
-  );
 
   return `${cleaned}${attachmentHtml}`;
 }
@@ -125,14 +171,21 @@ export default function NoticeEditorDialog({
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
+  if (!open) return;
 
-    setTitle(initialValue?.title ?? "");
-    setContent(initialValue?.content ?? "");
-    setIsPinned(!!initialValue?.isPinned);
-    setImportance(initialValue?.importance ?? "normal");
-    setAttachments([]);
-  }, [open, initialValue]);
+  const initialContent = initialValue?.content ?? "";
+
+  setTitle(initialValue?.title ?? "");
+  setContent(stripAttachmentBlock(initialContent));
+  setIsPinned(!!initialValue?.isPinned);
+  setImportance(initialValue?.importance ?? "normal");
+
+  setAttachments(
+    mode === "edit"
+      ? extractAttachmentsFromHtml(initialContent)
+      : []
+  );
+}, [open, mode, initialValue]);
 
   const importanceLabel = useMemo(() => {
     if (importance === "urgent") return "긴급 공지";

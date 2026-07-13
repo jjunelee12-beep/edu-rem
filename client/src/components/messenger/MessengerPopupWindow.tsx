@@ -85,27 +85,139 @@ function isVideoFile(url?: string, fileName?: string) {
   );
 }
 
-function formatDateDividerLabel(raw: string) {
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return raw;
-  return `${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일`;
+function parseMessengerDate(
+  value?: string | Date | null
+) {
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime())
+      ? null
+      : value;
+  }
+
+  const raw = String(value).trim();
+
+  if (!raw) {
+    return null;
+  }
+
+  const hasTimezone =
+    /Z$/i.test(raw) ||
+    /[+-]\d{2}:\d{2}$/.test(raw);
+
+  const normalized = hasTimezone
+    ? raw
+    : `${raw.replace(" ", "T")}Z`;
+
+  const date = new Date(normalized);
+
+  return Number.isNaN(date.getTime())
+    ? null
+    : date;
 }
 
-function getMessageDateKey(message: MessengerMessage) {
-  const source = String(message.createdAtRaw || message.createdAt || "");
-  const date = new Date(source);
-  if (Number.isNaN(date.getTime())) return source;
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+function formatMessengerTime(
+  value?: string | Date | null
+) {
+  const date = parseMessengerDate(value);
+
+  if (!date) {
+    return "";
+  }
+
+  return date.toLocaleTimeString(
+    "ko-KR",
+    {
+      timeZone: "Asia/Seoul",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    }
+  );
 }
 
-function getMessageTimestamp(message: MessengerMessage) {
-  const source = String(message.createdAtRaw || message.createdAt || "");
-  const date = new Date(source);
-  if (Number.isNaN(date.getTime())) return 0;
-  return date.getTime();
+function formatDateDividerLabel(
+  raw: string
+) {
+  const date =
+    parseMessengerDate(raw);
+
+  if (!date) {
+    return raw;
+  }
+
+  return new Intl.DateTimeFormat(
+    "ko-KR",
+    {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }
+  ).format(date);
+}
+
+function getMessageDateKey(
+  message: MessengerMessage
+) {
+  const source =
+    message.createdAtRaw ||
+    message.createdAt ||
+    "";
+
+  const date =
+    parseMessengerDate(source);
+
+  if (!date) {
+    return String(source);
+  }
+
+  const parts =
+    new Intl.DateTimeFormat(
+      "en-CA",
+      {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }
+    ).formatToParts(date);
+
+  const year =
+    parts.find(
+      (part) =>
+        part.type === "year"
+    )?.value || "";
+
+  const month =
+    parts.find(
+      (part) =>
+        part.type === "month"
+    )?.value || "";
+
+  const day =
+    parts.find(
+      (part) =>
+        part.type === "day"
+    )?.value || "";
+
+  return `${year}-${month}-${day}`;
+}
+
+function getMessageTimestamp(
+  message: MessengerMessage
+) {
+  const source =
+    message.createdAtRaw ||
+    message.createdAt ||
+    "";
+
+  return (
+    parseMessengerDate(
+      source
+    )?.getTime() || 0
+  );
 }
 
 function escapeRegExp(value: string) {
@@ -1169,7 +1281,12 @@ useEffect(() => {
                                   {readCount}
                                 </span>
                               ) : null}
-                              <span>{message.createdAt}</span>
+                              <span>
+  {formatMessengerTime(
+    message.createdAtRaw ||
+    message.createdAt
+  )}
+</span>
                             </div>
                           )}
                         </div>

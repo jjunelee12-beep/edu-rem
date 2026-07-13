@@ -45,6 +45,26 @@ function isAdminOrHost(user: any) {
   );
 }
 
+function isHost(user: any) {
+  return user?.role === "host";
+}
+
+function isAdmin(user: any) {
+  return user?.role === "admin";
+}
+
+const WITHONE_ORGANIZATION_ID = 1;
+const WITHONE_ASSIGNEE_ID = 7;
+
+const WITHONE_LANDING_CHANNEL = "위드원교육 랜딩페이지";
+const WITHONE_LANDING_COURSE = "사회복지사 2급";
+
+function normalizePublicLandingPhone(value: unknown) {
+  return String(value ?? "")
+    .replace(/\D/g, "")
+    .slice(0, 11);
+}
+
 function getCtxOrganizationId(ctx: any) {
   const organizationId = Number(
     ctx?.organizationId ??
@@ -84,6 +104,38 @@ function isPracticeSupportManager(user: any) {
     isPracticeSupportTempAllowedUser(user) ||
     user?.role === "admin" ||
     user?.role === "host"
+  );
+}
+
+function assertPracticeSupportEditable(params: {
+  currentUser: any;
+  student: any;
+}) {
+  const { currentUser, student } = params;
+
+  if (!currentUser) {
+    throwAppError(
+      ERROR_CODES.AUTH_REQUIRED,
+      "로그인이 필요합니다.",
+      401
+    );
+  }
+
+  if (isPracticeSupportManager(currentUser)) {
+    return;
+  }
+
+  if (
+    Number(student?.assigneeId || 0) ===
+    Number(currentUser.id || 0)
+  ) {
+    return;
+  }
+
+  throwAppError(
+    ERROR_CODES.PERMISSION_DENIED,
+    "실습배정지원센터는 담당자, 관리자 또는 호스트만 수정할 수 있습니다.",
+    403
   );
 }
 
@@ -554,6 +606,91 @@ export const appRouter = router({
   leadForm: publicLeadRouter,
   sms: smsRouter,
 saas: saasRouter,
+
+withOneLanding: router({
+  submit: publicProcedure
+    .input(
+      z.object({
+        clientName: z
+          .string()
+          .trim()
+          .min(1, "이름을 입력해주세요.")
+          .max(100),
+
+        phone: z
+          .string()
+          .trim()
+          .min(1, "연락처를 입력해주세요.")
+          .max(30),
+
+        finalEducation: z
+          .string()
+          .trim()
+          .max(100)
+          .optional()
+          .default(""),
+
+        consultationTime: z
+          .string()
+          .trim()
+          .max(100)
+          .optional()
+          .default(""),
+
+        privacyAgreed: z.literal(true, {
+          errorMap: () => ({
+            message: "개인정보 수집 및 이용에 동의해주세요.",
+          }),
+        }),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const phone = normalizePublicLandingPhone(input.phone);
+
+      if (phone.length < 10 || phone.length > 11) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          "올바른 연락처를 입력해주세요.",
+          400
+        );
+      }
+
+      const notesParts: string[] = [];
+
+      if (input.consultationTime?.trim()) {
+        notesParts.push(
+          `상담 가능 시간: ${input.consultationTime.trim()}`
+        );
+      }
+
+      const id = await db.createConsultation({
+        organizationId: WITHONE_ORGANIZATION_ID,
+        assigneeId: WITHONE_ASSIGNEE_ID,
+
+        consultDate: new Date(),
+
+        channel: WITHONE_LANDING_CHANNEL,
+        clientName: input.clientName.trim(),
+        phone,
+
+        finalEducation:
+          input.finalEducation?.trim() || "",
+
+        desiredCourse: WITHONE_LANDING_COURSE,
+
+        notes: notesParts.join("\n"),
+
+        status: "상담중",
+      } as any);
+
+      return {
+        success: true,
+        id,
+        message:
+          "상담 신청이 완료되었습니다. 담당자가 신청 내용을 확인한 후 순차적으로 연락드리고 있습니다. 감사합니다.",
+      };
+    }),
+}),
 
 monitoring: router({
   organizationSummary: superHostProcedure.query(async () => {
@@ -2298,9 +2435,10 @@ return isSuperhost(ctx.user) && row ? maskPersonalData(row as any) : row;
           assigneeName: z.string().optional().nullable(),
           managerName: z.string().optional().nullable(),
           course: z.string().min(1),
-          inputAddress: z.string().optional().nullable(),
-          detailAddress: z.string().optional().nullable(),
-         practiceHours: z.number().optional().nullable(),
+         inputAddress: z.string().optional().nullable(),
+detailAddress: z.string().optional().nullable(),
+practiceSemesterLabel: z.string().max(50).optional().nullable(),
+practiceHours: z.number().optional().nullable(),
 practiceDate: z.string().optional().nullable(),
 includeEducationCenter: z.boolean().optional(),
           includePracticeInstitution: z.boolean().optional(),
@@ -2348,9 +2486,11 @@ includeEducationCenter: z.boolean().optional(),
           managerName: input.managerName?.trim() || null,
           course: input.course.trim(),
           inputAddress: input.inputAddress?.trim() || null,
-          detailAddress: input.detailAddress?.trim() || null,
-         practiceHours: input.practiceHours ?? null,
-practiceDate: input.practiceDate ?? null, 
+detailAddress: input.detailAddress?.trim() || null,
+practiceSemesterLabel:
+  input.practiceSemesterLabel?.trim() || null,
+practiceHours: input.practiceHours ?? null,
+practiceDate: input.practiceDate ?? null,
 includeEducationCenter: input.includeEducationCenter ?? true,
           includePracticeInstitution: input.includePracticeInstitution ?? true,
           coordinationStatus: input.coordinationStatus ?? "미섭외",
@@ -2401,9 +2541,10 @@ await writeStudentAuditLog({
           assigneeName: z.string().optional().nullable(),
           managerName: z.string().optional().nullable(),
           course: z.string().optional(),
-          inputAddress: z.string().optional().nullable(),
-          detailAddress: z.string().optional().nullable(),
-          practiceHours: z.number().optional().nullable(),
+         inputAddress: z.string().optional().nullable(),
+detailAddress: z.string().optional().nullable(),
+practiceSemesterLabel: z.string().max(50).optional().nullable(),
+practiceHours: z.number().optional().nullable(),
 practiceDate: z.string().optional().nullable(),
 includeEducationCenter: z.boolean().optional(),
           includePracticeInstitution: z.boolean().optional(),
@@ -2459,7 +2600,7 @@ if (!student) {
 );
 }
 
-assertStudentEditable({
+assertPracticeSupportEditable({
   currentUser: ctx.user,
   student,
 });
@@ -2475,6 +2616,10 @@ assertStudentEditable({
         if (input.course !== undefined) data.course = input.course.trim();
         if (input.inputAddress !== undefined) data.inputAddress = input.inputAddress?.trim() || null;
         if (input.detailAddress !== undefined) data.detailAddress = input.detailAddress?.trim() || null;
+if (input.practiceSemesterLabel !== undefined) {
+  data.practiceSemesterLabel =
+    input.practiceSemesterLabel?.trim() || null;
+}
         if (input.practiceHours !== undefined) data.practiceHours = input.practiceHours ?? null;
 if (input.practiceDate !== undefined)
   data.practiceDate = input.practiceDate ?? null;
@@ -2596,10 +2741,10 @@ await writeStudentAuditLog({
 );
     }
 
-    assertStudentEditable({
-      currentUser: ctx.user,
-      student,
-    });
+  assertPracticeSupportEditable({
+  currentUser: ctx.user,
+  student,
+});
 
     await db.deletePracticeSupportRequest(input.id, {
       organizationId,
@@ -2692,9 +2837,10 @@ upsertByStudent: protectedProcedure
       detailAddress: z.string().optional().nullable(),
       assigneeName: z.string().optional().nullable(),
       managerName: z.string().optional().nullable(),
-      practiceHours: z.number().optional().nullable(),
-      practiceDate: z.string().optional().nullable(),
-      includeEducationCenter: z.boolean().optional(),
+     practiceSemesterLabel: z.string().max(50).optional().nullable(),
+practiceHours: z.number().optional().nullable(),
+practiceDate: z.string().optional().nullable(),
+includeEducationCenter: z.boolean().optional(),
       includePracticeInstitution: z.boolean().optional(),
       coordinationStatus: z.enum(["미섭외","섭외중","섭외완료"]).optional(),
     })
@@ -2720,7 +2866,7 @@ if (!student) {
 );
 }
 
-assertStudentEditable({
+assertPracticeSupportEditable({
   currentUser: ctx.user,
   student,
 });
@@ -6175,31 +6321,59 @@ restore: hostProcedure
 
   }),
 
-  student: router({
-    list: protectedProcedure.query(async ({ ctx }) => {
-      const assigneeId = isAdminOrHost(ctx.user)
-        ? undefined
-        : Number(ctx.user.id) || 1;
+ student: router({
+  list: protectedProcedure.query(async ({ ctx }) => {
+    const organizationId = getCtxOrganizationId(ctx);
+    const currentUserId = Number(ctx.user.id) || 0;
 
-      return db.listStudents(assigneeId, {
-  organizationId: getCtxOrganizationId(ctx),
-});
-    }),
+    if (!currentUserId) {
+      throwAppError(
+        ERROR_CODES.AUTH_REQUIRED,
+        "사용자 정보를 확인할 수 없습니다.",
+        401
+      );
+    }
+
+    // HOST는 회사 전체 학생 조회
+    if (isHost(ctx.user)) {
+      return db.listStudents(undefined, {
+        organizationId,
+      });
+    }
+
+    // ADMIN은 같은 팀 담당 학생 조회
+    if (isAdmin(ctx.user)) {
+      const teamMemberIds =
+        await db.getUserTeamMemberIds(
+          currentUserId,
+          {
+            organizationId,
+          }
+        );
+
+      return db.listStudents(teamMemberIds, {
+        organizationId,
+      });
+    }
+
+    // STAFF는 본인 담당 학생만 조회
+    return db.listStudents(currentUserId, {
+      organizationId,
+    });
+  }),
 
     get: protectedProcedure
-      .input(z.object({ id: z.number() }))
-      .query(async ({ ctx, input }) => {
-        const item = await db.getStudent(input.id, {
-  organizationId: getCtxOrganizationId(ctx),
-});
-        if (!item) return null;
-
-        if (!isAdminOrHost(ctx.user) && item.assigneeId !== Number(ctx.user.id)) {
-          return null;
-        }
-
-        return item;
-      }),
+  .input(
+    z.object({
+      id: z.number(),
+    })
+  )
+  .query(async ({ ctx, input }) => {
+    return db.getStudent(input.id, {
+      organizationId:
+        getCtxOrganizationId(ctx),
+    });
+  }),
 
     paymentSummary: protectedProcedure
       .input(z.object({ studentId: z.number() }))
@@ -6467,30 +6641,68 @@ const student = await db.getStudent(input.studentId, {
 });
       }),
 
-    listAll: protectedProcedure
+   listAll: protectedProcedure
   .input(
     z.object({
-      plannedMonth: z.string().optional(),
+      plannedMonth: z
+        .string()
+        .optional(),
     })
   )
   .query(async ({ ctx, input }) => {
-    const organizationId = getCtxOrganizationId(ctx);
+    const organizationId =
+      getCtxOrganizationId(ctx);
 
-    if (!organizationId) {
+    const currentUserId =
+      Number(ctx.user.id) || 0;
+
+    if (!currentUserId) {
       throwAppError(
-  ERROR_CODES.ORGANIZATION_REQUIRED,
-  "organizationId is required",
-  400
-);
+        ERROR_CODES.AUTH_REQUIRED,
+        "사용자 정보를 확인할 수 없습니다.",
+        401
+      );
     }
 
-    const assigneeId = isAdminOrHost(ctx.user)
-      ? undefined
-      : Number(ctx.user.id) || undefined;
+    // HOST는 회사 전체 학기별 예정표 조회
+    if (isHost(ctx.user)) {
+      return db.listAllSemesters(
+        undefined,
+        input.plannedMonth,
+        {
+          organizationId,
+        }
+      );
+    }
 
-    return db.listAllSemesters(assigneeId, input.plannedMonth, {
-      organizationId,
-    });
+    // ADMIN은 같은 팀 담당자의
+    // 학기별 예정표 조회
+    if (isAdmin(ctx.user)) {
+      const teamMemberIds =
+        await db.getUserTeamMemberIds(
+          currentUserId,
+          {
+            organizationId,
+          }
+        );
+
+      return db.listAllSemesters(
+        teamMemberIds,
+        input.plannedMonth,
+        {
+          organizationId,
+        }
+      );
+    }
+
+    // STAFF는 본인 담당 예정표만 조회
+    return db.listAllSemesters(
+      currentUserId,
+      input.plannedMonth,
+      {
+        organizationId,
+      }
+    );
   }),
 
     create: protectedProcedure
@@ -6927,6 +7139,45 @@ if (input.approvalStatus === "불승인" && !rejectionReason) {
 );
     }
 
+// ADMIN은 같은 팀 학생의 학기만 처리 가능
+if (isAdmin(ctx.user)) {
+  const student =
+    await db.getStudent(
+      Number(beforeSemester.studentId),
+      {
+        organizationId,
+      }
+    );
+
+  if (!student) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "학생 정보를 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  const teamMemberIds =
+    await db.getUserTeamMemberIds(
+      Number(ctx.user.id),
+      {
+        organizationId,
+      }
+    );
+
+  if (
+    !teamMemberIds.includes(
+      Number(student.assigneeId)
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "같은 팀 학생의 학기만 승인 처리할 수 있습니다.",
+      403
+    );
+  }
+}
+
     await db.updateSemester(
   Number(input.id),
   {
@@ -7185,19 +7436,52 @@ const student = await db.getStudent(input.studentId, {
 });
       }),
 
-    listPending: protectedProcedure.query(async ({ ctx }) => {
-      if (!isAdminOrHost(ctx.user)) {
-throwAppError(
-  ERROR_CODES.PERMISSION_DENIED,
-  "관리자, 호스트 또는 슈퍼호스트만 확인할 수 있습니다.",
-  403
-);
-      }
+    listPending: protectedProcedure.query(
+  async ({ ctx }) => {
+    if (!isAdminOrHost(ctx.user)) {
+      throwAppError(
+        ERROR_CODES.PERMISSION_DENIED,
+        "관리자 또는 호스트만 확인할 수 있습니다.",
+        403
+      );
+    }
 
+    const organizationId =
+      getCtxOrganizationId(ctx);
+
+    const currentUserId =
+      Number(ctx.user.id) || 0;
+
+    if (!currentUserId) {
+      throwAppError(
+        ERROR_CODES.AUTH_REQUIRED,
+        "사용자 정보를 확인할 수 없습니다.",
+        401
+      );
+    }
+
+    // HOST는 회사 전체 대기 환불 조회
+    if (isHost(ctx.user)) {
       return db.listPendingRefunds({
-  organizationId: getCtxOrganizationId(ctx),
-});
-    }),
+        organizationId,
+      });
+    }
+
+    // ADMIN은 같은 팀 대기 환불만 조회
+    const teamMemberIds =
+      await db.getUserTeamMemberIds(
+        currentUserId,
+        {
+          organizationId,
+        }
+      );
+
+    return db.listPendingRefunds({
+      organizationId,
+      assigneeIds: teamMemberIds,
+    });
+  }
+),
 
     create: protectedProcedure
       .input(
@@ -7269,6 +7553,37 @@ const targetRefund = await db.getRefundById(input.id, {
   organizationId,
 });
 
+if (!targetRefund) {
+  throwAppError(
+    ERROR_CODES.DATA_NOT_FOUND,
+    "환불 요청을 찾을 수 없습니다.",
+    404
+  );
+}
+
+// ADMIN은 같은 팀 환불만 승인 가능
+if (isAdmin(ctx.user)) {
+  const teamMemberIds =
+    await db.getUserTeamMemberIds(
+      Number(ctx.user.id),
+      {
+        organizationId,
+      }
+    );
+
+  if (
+    !teamMemberIds.includes(
+      Number(targetRefund.assigneeId)
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "같은 팀의 환불 요청만 승인할 수 있습니다.",
+      403
+    );
+  }
+}
+
 await db.approveRefund(input.id, Number(ctx.user.id), {
   organizationId,
 } as any);
@@ -7337,6 +7652,36 @@ isRead: false,
 const targetRefund = await db.getRefundById(input.id, {
   organizationId,
 });
+
+if (!targetRefund) {
+  throwAppError(
+    ERROR_CODES.DATA_NOT_FOUND,
+    "환불 요청을 찾을 수 없습니다.",
+    404
+  );
+}
+
+if (isAdmin(ctx.user)) {
+  const teamMemberIds =
+    await db.getUserTeamMemberIds(
+      Number(ctx.user.id),
+      {
+        organizationId,
+      }
+    );
+
+  if (
+    !teamMemberIds.includes(
+      Number(targetRefund.assigneeId)
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "같은 팀의 환불 요청만 불승인 처리할 수 있습니다.",
+      403
+    );
+  }
+}
 
 await db.rejectRefund(input.id, Number(ctx.user.id), {
   organizationId,
@@ -9194,12 +9539,12 @@ organizationId,
         "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
       );
 
-      return db.getSettlementReport(input.year, input.month, input.assigneeId, {
+           return db.getSettlementReport(input.year, input.month, input.assigneeId, {
         organizationId,
       });
     }),
 
-  entries: hostProcedure
+  customerTypeSummary: hostProcedure
     .input(
       z.object({
         year: z.number(),
@@ -9216,11 +9561,40 @@ organizationId,
         "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
       );
 
+      return db.getSettlementCustomerTypeSummary({
+        organizationId,
+        year: input.year,
+        month: input.month,
+        assigneeId: input.assigneeId,
+      });
+    }),
+
+    entries: hostProcedure
+    .input(
+      z.object({
+        year: z.number(),
+        month: z.number(),
+        assigneeId: z.number().optional(),
+        customerType: z
+          .enum(["new", "existing"])
+          .optional(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      const organizationId = getCtxOrganizationId(ctx);
+
+      await assertOrganizationFeatureEnabled(
+        organizationId,
+        "allowSettlementReport",
+        "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+      );
+
       return db.getSettlementEntries({
         organizationId,
         year: input.year,
         month: input.month,
         assigneeId: input.assigneeId,
+        customerType: input.customerType,
       });
     }),
 

@@ -41,7 +41,7 @@ async function uploadNoticeAttachment(file: File): Promise<UploadedAttachment> {
   formData.append("file", file);
 
   const res = await fetch(
-    `${import.meta.env.VITE_API_BASE_URL || ""}/api/upload`,
+    `${import.meta.env.VITE_API_BASE_URL || ""}/api/notices/upload-file`,
     {
       method: "POST",
       body: formData,
@@ -56,13 +56,20 @@ async function uploadNoticeAttachment(file: File): Promise<UploadedAttachment> {
   const json = await res.json();
   const fileUrl = json?.fileUrl || json?.url;
 
-  if (!fileUrl) {
-    throw new Error("업로드 URL을 가져오지 못했습니다.");
-  }
+if (!fileUrl) {
+  throw new Error("업로드 URL을 가져오지 못했습니다.");
+}
+
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
+
+const fullUrl =
+  String(fileUrl).startsWith("http")
+    ? String(fileUrl)
+    : `${apiBaseUrl}${String(fileUrl).startsWith("/") ? "" : "/"}${fileUrl}`;
 
   return {
     name: file.name,
-    url: String(fileUrl),
+    url: fullUrl,
     size: file.size,
   };
 }

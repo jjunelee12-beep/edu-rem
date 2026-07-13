@@ -6,7 +6,13 @@ import {
   getAllUsersDetailed,
   getSmsSettings,
   saveSmsSettings,
-createSmsLogs,
+  createSmsLogs,
+  createOrReactivateSmsOptOut,
+  releaseSmsOptOut,
+  listSmsOptOuts,
+  getActiveSmsOptOutHashSet,
+  createSmsPhoneHash,
+  splitSmsPhonesByOptOut,
 } from "../db";
 import { sendBulkSms } from "./sms.sender";
 import { getOrganizationLimitStatus } from "../saasdb";
@@ -138,14 +144,21 @@ searchType: z.enum(["all", "name", "phone", "course"]).optional().default("all")
     )
     .query(async ({ ctx, input }) => {
       const items: Array<{
-        id: string;
-        name: string;
-        phone: string;
-        course: string;
-        targetType: "consultation" | "student";
-        category: "미등록" | "등록";
-        assigneeId: number | null;
-      }> = [];
+  id: string;
+  name: string;
+  phone: string;
+  course: string;
+  targetType: "consultation" | "student";
+  category: "미등록" | "등록";
+  assigneeId: number | null;
+  isOptedOut: boolean;
+}> = [];
+
+const organizationId = Number(ctx.user.organizationId || 0);
+
+const optedOutHashSet = await getActiveSmsOptOutHashSet({
+  organizationId,
+});
 
       const keyword = String(input.keyword || "").trim().toLowerCase();
 
@@ -186,9 +199,14 @@ searchType: z.enum(["all", "name", "phone", "course"]).optional().default("all")
           })
           .forEach((c: any) => {
             const phone = normalizePhone(c.phone);
-            if (phone.length < 10) return;
 
-         items.push({
+if (phone.length < 10 || phone.length > 11) {
+  return;
+}
+
+        const phoneHash = createSmsPhoneHash(phone);
+
+items.push({
   id: `consultation-${c.id}`,
   name: String(c.clientName || ""),
   phone,
@@ -196,6 +214,7 @@ searchType: z.enum(["all", "name", "phone", "course"]).optional().default("all")
   targetType: "consultation",
   category: "미등록",
   assigneeId: c.assigneeId ? Number(c.assigneeId) : null,
+  isOptedOut: optedOutHashSet.has(phoneHash),
 });
           });
       }
@@ -236,10 +255,15 @@ searchType: z.enum(["all", "name", "phone", "course"]).optional().default("all")
             return true;
           })
           .forEach((s: any) => {
-            const phone = normalizePhone(s.phone);
-            if (phone.length < 10) return;
+           const phone = normalizePhone(s.phone);
 
-     items.push({
+if (phone.length < 10 || phone.length > 11) {
+  return;
+}
+
+     const phoneHash = createSmsPhoneHash(phone);
+
+items.push({
   id: `student-${s.id}`,
   name: String(s.clientName || ""),
   phone,
@@ -247,6 +271,7 @@ searchType: z.enum(["all", "name", "phone", "course"]).optional().default("all")
   targetType: "student",
   category: "등록",
   assigneeId: s.assigneeId ? Number(s.assigneeId) : null,
+  isOptedOut: optedOutHashSet.has(phoneHash),
 });
           });
       }
@@ -260,11 +285,98 @@ searchType: z.enum(["all", "name", "phone", "course"]).optional().default("all")
       });
 
       return {
-        total: uniqueItems.length,
-        items: uniqueItems,
-      };
+  total: uniqueItems.length,
+  optedOutCount: uniqueItems.filter(
+    (item) => item.isOptedOut
+  ).length,
+  sendableCount: uniqueItems.filter(
+    (item) => !item.isOptedOut
+  ).length,
+  items: uniqueItems,
+};
     }),
 
+
+optOutList: hostProcedure
+  .input(
+    z.object({
+      activeOnly: z.boolean().optional().default(true),
+      keyword: z.string().optional().default(""),
+      limit: z.number().min(1).max(500).optional().default(200),
+    })
+  )
+  .query(async ({ ctx, input }) => {
+    const organizationId = Number(ctx.user.organizationId || 0);
+
+    const items = await listSmsOptOuts({
+      organizationId,
+      activeOnly: input.activeOnly,
+      keyword: input.keyword,
+      limit: input.limit,
+    });
+
+    return {
+  total: items.length,
+  items: items.map((item: any) => ({
+    id: Number(item.id),
+    organizationId: Number(item.organizationId),
+    phoneLast4: item.phoneLast4 || null,
+    reason: item.reason || null,
+    source: item.source,
+    isActive: Boolean(item.isActive),
+    optedOutAt: item.optedOutAt,
+    optedOutBy: item.optedOutBy
+      ? Number(item.optedOutBy)
+      : null,
+    releasedAt: item.releasedAt || null,
+    releasedBy: item.releasedBy
+      ? Number(item.releasedBy)
+      : null,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  })),
+};
+  }),
+
+optOutCreate: hostProcedure
+  .input(
+    z.object({
+      phone: z.string().min(10),
+      reason: z.string().optional().default("회원 요청"),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const organizationId = Number(ctx.user.organizationId || 0);
+
+    const result = await createOrReactivateSmsOptOut({
+      organizationId,
+      phone: input.phone,
+      reason: input.reason,
+      source: "manual",
+      optedOutBy: Number(ctx.user.id),
+    });
+
+    return {
+      success: true,
+      item: result,
+    };
+  }),
+
+optOutRelease: hostProcedure
+  .input(
+    z.object({
+      id: z.number().int().positive(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const organizationId = Number(ctx.user.organizationId || 0);
+
+    return releaseSmsOptOut({
+      organizationId,
+      id: input.id,
+      releasedBy: Number(ctx.user.id),
+    });
+  }),
   /**
    * 실제 문자 발송
    */
@@ -276,18 +388,22 @@ searchType: z.enum(["all", "name", "phone", "course"]).optional().default("all")
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const normalized = input.phones
-        .map((p) => normalizePhone(p))
-        .filter((p) => p.length >= 10);
+     const organizationId = Number(ctx.user.organizationId || 0);
 
-     const unique = [...new Set(normalized)];
+const splitResult = await splitSmsPhonesByOptOut({
+  organizationId,
+  phones: input.phones,
+});
 
-const organizationId = Number(ctx.user.organizationId || 0);
+const requestedPhones = splitResult.requested;
+const sendablePhones = splitResult.sendable;
+const optedOutPhones = splitResult.optedOut;
 
 const limitStatus = await getOrganizationLimitStatus(organizationId);
 
 const nextUsage =
-  Number(limitStatus.usage.smsSentThisMonth || 0) + unique.length;
+  Number(limitStatus.usage.smsSentThisMonth || 0) +
+  sendablePhones.length;
 
 if (nextUsage > Number(limitStatus.limits.maxSmsPerMonth || 0)) {
   throw new Error(
@@ -295,27 +411,45 @@ if (nextUsage > Number(limitStatus.limits.maxSmsPerMonth || 0)) {
   );
 }
 
+if (sendablePhones.length === 0) {
+  return {
+    requestedTotal: requestedPhones.length,
+    optedOutExcluded: optedOutPhones.length,
+    total: 0,
+    success: 0,
+    fail: 0,
+  };
+}
+
 const settings = await getSmsSettings({
   organizationId,
 });
-const result = await sendBulkSms(unique, input.message, settings);
+const result = await sendBulkSms(
+  sendablePhones,
+  input.message,
+  settings
+);
 
-const smsLogRows = unique.map((phone) => ({
-  organizationId,
-  senderUserId: Number(ctx.user.id),
-  phone,
-  message: input.message,
-  status: "success" as const,
-  provider: settings?.provider || "aligo",
-}));
+if (Number(result.fail || 0) === 0) {
+  const smsLogRows = sendablePhones.map((phone) => ({
+    organizationId,
+    senderUserId: Number(ctx.user.id),
+    phone,
+    message: input.message,
+    status: "success" as const,
+    provider: settings?.provider || "aligo",
+  }));
 
-await createSmsLogs(smsLogRows);
+  await createSmsLogs(smsLogRows);
+}
 
       return {
-        total: unique.length,
-        success: result.success ?? 0,
-        fail: result.fail ?? 0,
-      };
+  requestedTotal: requestedPhones.length,
+  optedOutExcluded: optedOutPhones.length,
+  total: sendablePhones.length,
+  success: result.success ?? 0,
+  fail: result.fail ?? 0,
+};
     }),
 
   /**
@@ -342,9 +476,9 @@ if (nextUsage > Number(limitStatus.limits.maxSmsPerMonth || 0)) {
   );
 }
 
-      if (phone.length < 10) {
-        throw new Error("유효한 전화번호가 아닙니다.");
-      }
+      if (phone.length < 10 || phone.length > 11) {
+  throw new Error("유효한 전화번호가 아닙니다.");
+}
 
       const settings = await getSmsSettings({
   organizationId,
@@ -357,7 +491,10 @@ await createSmsLogs([
     senderUserId: Number(ctx.user.id),
     phone,
     message: input.message,
-    status: "success" as const,
+    status:
+      Number(result.fail || 0) > 0
+        ? ("fail" as const)
+        : ("success" as const),
     provider: settings?.provider || "aligo",
   },
 ]);

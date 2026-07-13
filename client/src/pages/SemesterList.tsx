@@ -72,13 +72,31 @@ const [selectedActualStartDate, setSelectedActualStartDate] = useState("all");
   const [filterPaymentStatus, setFilterPaymentStatus] = useState<string>("all");
   const [filterSemesterOrder, setFilterSemesterOrder] = useState<string>("all");
 
-  const { data: allUsers } = trpc.users.list.useQuery();
-  const { data: semesters, isLoading } = trpc.semester.listAll.useQuery({
-  plannedMonth:
-    dateMode === "plannedMonth" ? plannedMonth || undefined : undefined,
-});
+  const role = String(
+  user?.role || ""
+).toLowerCase();
 
-  const isAdmin = user?.role === "admin" || user?.role === "host";
+const isHost = role === "host";
+const isAdmin = role === "admin";
+
+const canViewAssignee =
+  isHost || isAdmin;
+
+const { data: allUsers } =
+  trpc.users.list.useQuery(
+    undefined,
+    {
+      enabled: canViewAssignee,
+    }
+  );
+
+const { data: semesters, isLoading } =
+  trpc.semester.listAll.useQuery({
+    plannedMonth:
+      dateMode === "plannedMonth"
+        ? plannedMonth || undefined
+        : undefined,
+  });
 
   const userMap = useMemo(
     () => new Map(allUsers?.map((u: any) => [u.id, u.name || "이름없음"]) ?? []),
@@ -406,7 +424,7 @@ plannedMonth,
           />
         </div>
 
-        {isAdmin && (
+        {canViewAssignee && (
           <Input
             placeholder="담당자 검색"
             value={assigneeSearch}
@@ -583,7 +601,7 @@ plannedMonth,
                 <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[120px]">
                   과정
                 </th>
-                {isAdmin && (
+                {canViewAssignee && (
                   <th className="text-left px-3 py-2.5 font-medium text-muted-foreground w-[90px]">
                     담당자
                   </th>
@@ -644,7 +662,7 @@ plannedMonth,
 
                   <td className="px-3 py-2 text-sm">{sem.course || "-"}</td>
 
-                  {isAdmin && (
+                  {canViewAssignee && (
                     <td className="px-3 py-2 text-xs text-muted-foreground">
                       {userMap.get(sem.assigneeId) || "-"}
                     </td>
@@ -700,7 +718,7 @@ plannedMonth,
               {!filtered.length && (
                 <tr>
                   <td
-                    colSpan={isAdmin ? 12 : 11}
+                    colSpan={canViewAssignee ? 12 : 11}
                     className="text-center py-8 text-muted-foreground text-sm"
                   >
                     {dateMode === "actualStartDate"

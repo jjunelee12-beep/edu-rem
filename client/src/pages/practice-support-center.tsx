@@ -283,6 +283,21 @@ function getTodayDateString() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function buildPracticeSemesterLabelOptions() {
+  const currentYear = new Date().getFullYear();
+  const startYear = currentYear - 2;
+  const endYear = currentYear + 5;
+
+  const options: string[] = [];
+
+  for (let year = startYear; year <= endYear; year++) {
+    options.push(`${year}년 1학기`);
+    options.push(`${year}년 2학기`);
+  }
+
+  return options;
+}
+
 function normalizeBooleanText(value: string) {
   return String(value || "").trim().toLowerCase() === "true";
 }
@@ -290,6 +305,11 @@ function normalizeBooleanText(value: string) {
 export default function PracticeSupportCenter() {
   const { user } = useAuth();
   const utils = trpc.useUtils();
+
+  const practiceSemesterLabelOptions = useMemo(
+    () => buildPracticeSemesterLabelOptions(),
+    []
+  );
 
   const [search, setSearch] = useState("");
 const [selectedPracticeMonth, setSelectedPracticeMonth] = useState<string>("전체");
@@ -528,10 +548,16 @@ console.log("[practiceSupport.patch]", {
         ? patch.detailAddress
         : row?.detailAddress || row?.studentDetailAddress || null,
     assigneeName: row?.assigneeName || row?.userName || null,
-    managerName:
+        managerName:
       patch.managerName !== undefined
         ? patch.managerName
         : row?.managerName || row?.assigneeName || row?.userName || null,
+
+    practiceSemesterLabel:
+      patch.practiceSemesterLabel !== undefined
+        ? patch.practiceSemesterLabel
+        : row?.practiceSemesterLabel || null,
+
     practiceHours:
       patch.practiceHours !== undefined
         ? patch.practiceHours
@@ -786,9 +812,14 @@ const stats = useMemo(() => {
       inputAddress: row.inputAddress || "",
       detailAddress: row.detailAddress || "",
       managerName: row.managerName || row.assigneeName || "",
-      practiceHours:
+            practiceHours:
         row.practiceHours?.toString?.() || row.practiceHours || "",
-practiceDate: row.practiceDate || "",
+
+      practiceSemesterLabel:
+        row.practiceSemesterLabel || "",
+
+      practiceDate:
+        row.practiceDate || "",
       selectedEducationCenterId: row.selectedEducationCenterId || undefined,
       selectedEducationCenterName: row.selectedEducationCenterName || "",
       selectedEducationCenterAddress: row.selectedEducationCenterAddress || "",
@@ -821,15 +852,26 @@ practiceDate: row.practiceDate || "",
 
   if (!selectedRow) return;
 
+if (!String(selectedRow.practiceSemesterLabel || "").trim()) {
+  toast.error("학기구분을 선택해주세요.");
+  return;
+}
+
   try {
     await patchPracticeRow(selectedRow, {
   inputAddress: selectedRow.inputAddress || null,
   detailAddress: selectedRow.detailAddress || null,
-  managerName: selectedRow.managerName || null,
+    managerName: selectedRow.managerName || null,
+
+  practiceSemesterLabel:
+    selectedRow.practiceSemesterLabel || null,
+
   practiceHours: selectedRow.practiceHours
     ? Number(selectedRow.practiceHours)
     : null,
-  practiceDate: selectedRow.practiceDate || null,
+
+  practiceDate:
+    selectedRow.practiceDate || null,
   coordinationStatus:
     selectedRow.coordinationStatus as PracticeCoordinationStatus,
   includeEducationCenter: !!selectedRow.includeEducationCenter,
@@ -2110,7 +2152,7 @@ useEffect(() => {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1500px] text-sm">
+            <table className="w-full min-w-[1640px] text-sm">
                 <thead>
                   <tr className="border-b bg-muted/40">
                     <th className="w-[60px] px-3 py-3 text-left font-medium text-muted-foreground">
@@ -2126,8 +2168,13 @@ useEffect(() => {
                       희망과정
                     </th>
                     <th className="min-w-[220px] px-3 py-3 text-left font-medium text-muted-foreground">
-                      주소
-                    </th>
+  주소
+</th>
+
+<th className="min-w-[120px] px-3 py-3 text-left font-medium text-muted-foreground">
+  학기구분
+</th>
+
 <th className="px-3 py-3 text-left font-medium text-muted-foreground">
   실습예정일
 </th>
@@ -2207,12 +2254,16 @@ useEffect(() => {
 
                       <td className="px-3 py-3">{row.course || "-"}</td>
 
-                      <td className="px-3 py-3">
-  <div className="text-sm">{row.inputAddress || "-"}</div>
+                     <td className="px-3 py-3">
+  {row.inputAddress || row.studentAddress || "-"}
 </td>
 
-<td className="px-3 py-3">
-  <div className="text-sm">{row.practiceDate || "-"}</div>
+<td className="px-3 py-3 whitespace-nowrap">
+  {row.practiceSemesterLabel || "-"}
+</td>
+
+<td className="px-3 py-3 whitespace-nowrap">
+  {row.practiceDate || row.planPracticeDate || "-"}
 </td>
 <td className="px-3 py-3">
   <div className="space-y-1">
@@ -2410,6 +2461,32 @@ useEffect(() => {
                       placeholder="예: 401호"
                     />
                   </div>
+
+<div className="space-y-1">
+  <Label className="text-xs">학기구분</Label>
+
+  <Select
+    value={selectedRow.practiceSemesterLabel || ""}
+    onValueChange={(value) =>
+      setSelectedRow((prev: any) => ({
+        ...prev,
+        practiceSemesterLabel: value,
+      }))
+    }
+  >
+    <SelectTrigger>
+      <SelectValue placeholder="학기구분 선택" />
+    </SelectTrigger>
+
+    <SelectContent>
+      {practiceSemesterLabelOptions.map((label) => (
+        <SelectItem key={label} value={label}>
+          {label}
+        </SelectItem>
+      ))}
+    </SelectContent>
+  </Select>
+</div>
 
                   <div className="space-y-1">
   <Label className="text-xs">실습예정일</Label>

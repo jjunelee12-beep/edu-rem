@@ -37,7 +37,9 @@ function statusBadgeClass(status: string) {
 export default function StudentCreditSummaryPage() {
   const params = useParams<{ id: string }>();
   const studentId = Number(params.id || 0);
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+
+const organizationSlug = location.split("/").filter(Boolean)[0];
 
   const {
   data,
@@ -66,6 +68,25 @@ const [ruleForm, setRuleForm] = useState({
   requiredGeneralSubjects: "",
   requiredGeneralCredits: "",
 });
+
+const RULE_PRESETS = {
+  socialWorker2: {
+    label: "사회복지사 2급",
+    values: {
+      requiredTotalCredits: "51",
+      requiredMajorRequiredSubjects: "10",
+      requiredMajorRequiredCredits: "30",
+      requiredMajorElectiveSubjects: "7",
+      requiredMajorElectiveCredits: "21",
+      requiredLiberalSubjects: "0",
+      requiredLiberalCredits: "0",
+      requiredGeneralSubjects: "0",
+      requiredGeneralCredits: "0",
+    },
+  },
+};
+
+const [selectedPreset, setSelectedPreset] = useState("");
 
 const createRuleMut = trpc.creditSummary.rules.create.useMutation({
   onError: (e) => toast.error(e.message),
@@ -127,6 +148,21 @@ const handleRuleFormChange = (key: keyof typeof ruleForm, value: string) => {
     ...prev,
     [key]: value.replace(/[^0-9]/g, ""),
   }));
+};
+
+const applyRulePreset = (presetKey: string) => {
+  setSelectedPreset(presetKey);
+
+  if (!presetKey) return;
+
+  const preset =
+    RULE_PRESETS[presetKey as keyof typeof RULE_PRESETS];
+
+  if (!preset) return;
+
+  setRuleForm(preset.values);
+
+  toast.success(`${preset.label} 기준이 자동 입력되었습니다.`);
 };
 
 const saveRuleSetting = async () => {
@@ -198,7 +234,12 @@ const saveRuleSetting = async () => {
   if (!student || !summary) {
     return (
       <div className="space-y-4">
-        <Button variant="ghost" onClick={() => setLocation(`/students/${studentId}`)}>
+        <Button
+  variant="ghost"
+  onClick={() =>
+  setLocation(`/${organizationSlug}/students/${studentId}`)
+}
+>
           <ArrowLeft className="h-4 w-4 mr-2" />
           상세페이지로
         </Button>
@@ -214,7 +255,13 @@ const saveRuleSetting = async () => {
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => setLocation(`/students/${studentId}`)}>
+        <Button
+  variant="ghost"
+  size="icon"
+  onClick={() =>
+  setLocation(`/${organizationSlug}/students/${studentId}`)
+}
+>
           <ArrowLeft className="h-4 w-4" />
         </Button>
 
@@ -282,9 +329,29 @@ const saveRuleSetting = async () => {
         <Badge variant="outline" className="bg-white">
           {rule ? "수정 모드" : "신규 설정"}
         </Badge>
+
+<div className="mt-4">
+  <p className="text-xs text-muted-foreground mb-1">
+    과정 기본값
+  </p>
+
+  <select
+    value={selectedPreset}
+    onChange={(e) => applyRulePreset(e.target.value)}
+    className="h-10 w-full md:w-64 rounded-md border border-input bg-white px-3 text-sm"
+  >
+    <option value="">직접 입력</option>
+
+    {Object.entries(RULE_PRESETS).map(([key, preset]) => (
+      <option key={key} value={key}>
+        {preset.label}
+      </option>
+    ))}
+  </select>
+</div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+<div className="grid grid-cols-1 md:grid-cols-5 gap-3">
         <RuleInput
           label="총 필요 학점"
           value={ruleForm.requiredTotalCredits}

@@ -10,6 +10,22 @@ type PreviewItem = {
   targetType: "consultation" | "student";
   category: "미등록" | "등록";
   assigneeId: number | null;
+  isOptedOut: boolean;
+};
+
+type SmsOptOutItem = {
+  id: number;
+  organizationId: number;
+  phoneLast4: string | null;
+  reason: string | null;
+  source: "manual" | "provider" | "import";
+  isActive: boolean;
+  optedOutAt: string | Date;
+  optedOutBy: number | null;
+  releasedAt: string | Date | null;
+  releasedBy: number | null;
+  createdAt: string | Date;
+  updatedAt: string | Date;
 };
 
 type AssigneeItem = {
@@ -41,13 +57,27 @@ const [smsSettings, setSmsSettings] = useState({
 });
 
   const [message, setMessage] = useState("");
-  const [testPhone, setTestPhone] = useState("");
+const [testPhone, setTestPhone] = useState("");
 
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+const [optOutKeyword, setOptOutKeyword] = useState("");
+const [showOptOutManager, setShowOptOutManager] = useState(false);
 
   const assigneesQuery = trpc.sms.assignees.useQuery();
 
 const smsSettingsQuery = trpc.sms.settings.useQuery();
+
+const optOutListQuery = trpc.sms.optOutList.useQuery(
+  {
+    activeOnly: true,
+    keyword: optOutKeyword,
+    limit: 200,
+  },
+  {
+    enabled: showOptOutManager,
+  }
+);
 
 const saveSmsSettingsMutation = trpc.sms.saveSettings.useMutation({
   onSuccess: async () => {
@@ -70,8 +100,40 @@ const saveSmsSettingsMutation = trpc.sms.saveSettings.useMutation({
   const sendMutation = trpc.sms.send.useMutation();
   const testSendMutation = trpc.sms.testSend.useMutation();
 
+const optOutCreateMutation = trpc.sms.optOutCreate.useMutation({
+  onSuccess: async () => {
+    alert("문자 수신거부 처리가 완료되었습니다.");
+
+    await Promise.all([
+      preview.refetch(),
+      optOutListQuery.refetch(),
+    ]);
+  },
+  onError: (err) => {
+    alert(err.message || "수신거부 처리 중 오류가 발생했습니다.");
+  },
+});
+
+const optOutReleaseMutation = trpc.sms.optOutRelease.useMutation({
+  onSuccess: async () => {
+    alert("문자 수신거부가 해제되었습니다.");
+
+    await Promise.all([
+      preview.refetch(),
+      optOutListQuery.refetch(),
+    ]);
+  },
+  onError: (err) => {
+    alert(err.message || "수신거부 해제 중 오류가 발생했습니다.");
+  },
+});
+
   const assignees: AssigneeItem[] = assigneesQuery.data?.items ?? [];
-  const items: PreviewItem[] = preview.data?.items ?? [];
+const items: PreviewItem[] = preview.data?.items ?? [];
+
+const optOutItems: SmsOptOutItem[] =
+  optOutListQuery.data?.items ?? [];
+
 useEffect(() => {
   if (!smsSettingsQuery.data) return;
 
@@ -109,31 +171,95 @@ useEffect(() => {
   }, [assignees, assigneeId]);
 
   useEffect(() => {
-    setSelectedIds(items.map((item) => item.id));
-  }, [items]);
+  setSelectedIds(
+    items
+      .filter((item) => !item.isOptedOut)
+      .map((item) => item.id)
+  );
+}, [items]);
 
   const selectedItems = useMemo(() => {
-    const selectedSet = new Set(selectedIds);
-    return items.filter((item) => selectedSet.has(item.id));
-  }, [items, selectedIds]);
+  const selectedSet = new Set(selectedIds);
+
+  return items.filter(
+    (item) =>
+      selectedSet.has(item.id) &&
+      !item.isOptedOut
+  );
+}, [items, selectedIds]);
 
   const selectedPhones = useMemo(() => {
     return [...new Set(selectedItems.map((item) => item.phone).filter(Boolean))];
   }, [selectedItems]);
 
-  const toggleItem = (id: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]
-    );
-  };
+  const toggleItem = (item: PreviewItem) => {
+  if (item.isOptedOut) {
+    return;
+  }
+
+  setSelectedIds((prev) =>
+    prev.includes(item.id)
+      ? prev.filter((v) => v !== item.id)
+      : [...prev, item.id]
+  );
+};
 
   const handleSelectAll = () => {
-    setSelectedIds(items.map((item) => item.id));
-  };
+  setSelectedIds(
+    items
+      .filter((item) => !item.isOptedOut)
+      .map((item) => item.id)
+  );
+};
 
   const handleClearAll = () => {
     setSelectedIds([]);
   };
+
+const handleOptOut = (item: PreviewItem) => {
+  if (item.isOptedOut) {
+    alert("이미 수신거부 처리된 번호입니다.");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `${item.name || "해당 고객"}님을 문자 수신거부 처리하시겠습니까?\n\n전화번호: ${
+      item.phone ? formatPhone(item.phone) : "-"
+    }`
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  const reasonInput = window.prompt(
+    "수신거부 사유를 입력해주세요.",
+    "회원 요청"
+  );
+
+  if (reasonInput === null) {
+    return;
+  }
+
+  optOutCreateMutation.mutate({
+    phone: item.phone,
+    reason: reasonInput.trim() || "회원 요청",
+  });
+};
+
+const handleReleaseOptOut = (item: SmsOptOutItem) => {
+  const confirmed = window.confirm(
+    `전화번호 끝자리 ${item.phoneLast4 || "----"}의 수신거부를 해제하시겠습니까?`
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  optOutReleaseMutation.mutate({
+    id: Number(item.id),
+  });
+};
 
   const handleSend = () => {
     if (!message.trim()) {
@@ -153,10 +279,17 @@ useEffect(() => {
       },
       {
         onSuccess: (res) => {
-          alert(
-            `문자 발송 완료\n총 ${res.total}건\n성공 ${res.success}건\n실패 ${res.fail}건`
-          );
-        },
+  alert(
+    [
+      "문자 발송 완료",
+      `요청 ${res.requestedTotal ?? res.total}건`,
+      `수신거부 제외 ${res.optedOutExcluded ?? 0}건`,
+      `실제 발송 ${res.total}건`,
+      `성공 ${res.success}건`,
+      `실패 ${res.fail}건`,
+    ].join("\n")
+  );
+},
         onError: (err) => {
           alert(err.message || "문자 발송 중 오류가 발생했습니다.");
         },
@@ -576,9 +709,31 @@ const handleSaveSmsSettings = () => {
           </div>
 
           <div className="pt-2 border-t">
-            <div className="mb-3 text-sm">
-              선택 발송 인원: <b>{selectedItems.length}</b>명
-            </div>
+            <div className="mb-3 text-sm space-y-1">
+  <div>
+    조회 대상: <b>{preview.data?.total ?? 0}</b>명
+  </div>
+
+  <div>
+    수신 가능:{" "}
+    <b className="text-blue-700">
+      {preview.data?.sendableCount ?? 0}
+    </b>
+    명
+  </div>
+
+  <div>
+    수신거부:{" "}
+    <b className="text-red-600">
+      {preview.data?.optedOutCount ?? 0}
+    </b>
+    명
+  </div>
+
+  <div>
+    선택 발송 인원: <b>{selectedItems.length}</b>명
+  </div>
+</div>
 
             <button
               onClick={handleSend}
@@ -593,84 +748,316 @@ const handleSaveSmsSettings = () => {
         {/* 우측 패널 */}
         <div className="border rounded-lg p-4 bg-white space-y-4">
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <h2 className="font-semibold text-lg">발송 대상 리스트</h2>
+            <h2 className="font-semibold text-lg">
+  {showOptOutManager
+    ? "수신거부 관리"
+    : "발송 대상 리스트"}
+</h2>
 
-            <div className="flex gap-2">
-              <button
-                onClick={handleSelectAll}
-                className="border rounded px-3 py-2 text-sm"
-                type="button"
-              >
-                전체 선택
-              </button>
-              <button
-                onClick={handleClearAll}
-                className="border rounded px-3 py-2 text-sm"
-                type="button"
-              >
-                전체 해제
-              </button>
-            </div>
+           <div className="flex gap-2">
+  <button
+    type="button"
+    onClick={() =>
+      setShowOptOutManager((prev) => !prev)
+    }
+    className={`border rounded px-3 py-2 text-sm ${
+      showOptOutManager
+        ? "bg-red-50 border-red-300 text-red-700"
+        : ""
+    }`}
+  >
+    {showOptOutManager
+      ? "발송 대상 보기"
+      : "수신거부 관리"}
+  </button>
+
+  {!showOptOutManager && (
+    <>
+      <button
+        onClick={handleSelectAll}
+        className="border rounded px-3 py-2 text-sm"
+        type="button"
+      >
+        전체 선택
+      </button>
+
+      <button
+        onClick={handleClearAll}
+        className="border rounded px-3 py-2 text-sm"
+        type="button"
+      >
+        전체 해제
+      </button>
+    </>
+  )}
+</div>
           </div>
 
-          <div className="text-sm text-gray-600">
-            조회 대상: <b>{preview.data?.total ?? 0}</b>명 / 선택 인원:{" "}
-            <b>{selectedItems.length}</b>명
-          </div>
+          {!showOptOutManager && (
+  <div className="text-sm text-gray-600">
+    조회 대상: <b>{preview.data?.total ?? 0}</b>명
+    {" / "}
+    수신 가능:{" "}
+    <b className="text-blue-700">
+      {preview.data?.sendableCount ?? 0}
+    </b>
+    명
+    {" / "}
+    수신거부:{" "}
+    <b className="text-red-600">
+      {preview.data?.optedOutCount ?? 0}
+    </b>
+    명
+    {" / "}
+    선택 인원: <b>{selectedItems.length}</b>명
+  </div>
+)}
 
-          {preview.isLoading ? (
-            <div className="py-10 text-center text-gray-500">불러오는 중...</div>
-          ) : items.length === 0 ? (
-            <div className="py-10 text-center text-gray-500">
-              발송 대상이 없습니다.
-            </div>
-          ) : (
-            <div className="overflow-auto border rounded">
-              <table className="w-full border-collapse text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="border-b px-3 py-2 text-left w-16">선택</th>
-                    <th className="border-b px-3 py-2 text-left">이름</th>
-                    <th className="border-b px-3 py-2 text-left">전화번호</th>
-                    <th className="border-b px-3 py-2 text-left">희망과정</th>
-                    <th className="border-b px-3 py-2 text-left">구분</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item) => {
-                    const checked = selectedIds.includes(item.id);
+          {showOptOutManager ? (
+  <div className="space-y-3">
+    <div className="flex gap-2">
+      <input
+        className="flex-1 border rounded p-2"
+        placeholder="전화번호 끝자리 검색"
+        value={optOutKeyword}
+        onChange={(e) =>
+          setOptOutKeyword(
+            e.target.value.replace(/\D/g, "")
+          )
+        }
+      />
 
-                    return (
-                      <tr key={item.id} className="hover:bg-gray-50">
-                        <td className="border-b px-3 py-2">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleItem(item.id)}
-                          />
-                        </td>
-                        <td className="border-b px-3 py-2">{item.name || "-"}</td>
-                        <td className="border-b px-3 py-2">{item.phone ? formatPhone(item.phone) : "-"}</td>
-                        <td className="border-b px-3 py-2">{item.course || "-"}</td>
-                        <td className="border-b px-3 py-2">{item.category}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+      <button
+        type="button"
+        onClick={() => optOutListQuery.refetch()}
+        className="border rounded px-4 py-2 text-sm"
+      >
+        검색
+      </button>
+    </div>
+
+    <div className="text-sm text-gray-600">
+      활성 수신거부:{" "}
+      <b className="text-red-600">
+        {optOutListQuery.data?.total ?? 0}
+      </b>
+      건
+    </div>
+
+    {optOutListQuery.isLoading ? (
+      <div className="py-10 text-center text-gray-500">
+        불러오는 중...
+      </div>
+    ) : optOutItems.length === 0 ? (
+      <div className="py-10 text-center text-gray-500">
+        수신거부 내역이 없습니다.
+      </div>
+    ) : (
+      <div className="overflow-auto border rounded">
+        <table className="w-full border-collapse text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="border-b px-3 py-2 text-left">
+                전화번호
+              </th>
+              <th className="border-b px-3 py-2 text-left">
+                사유
+              </th>
+              <th className="border-b px-3 py-2 text-left">
+                등록경로
+              </th>
+              <th className="border-b px-3 py-2 text-left">
+                수신거부일
+              </th>
+              <th className="border-b px-3 py-2 text-left w-24">
+                관리
+              </th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {optOutItems.map((item) => (
+              <tr key={item.id} className="hover:bg-gray-50">
+                <td className="border-b px-3 py-2">
+                  ***-****-{item.phoneLast4 || "----"}
+                </td>
+
+                <td className="border-b px-3 py-2">
+                  {item.reason || "회원 요청"}
+                </td>
+
+                <td className="border-b px-3 py-2">
+                  {item.source === "manual"
+                    ? "수동 등록"
+                    : item.source === "provider"
+                    ? "업체 연동"
+                    : "일괄 등록"}
+                </td>
+
+                <td className="border-b px-3 py-2">
+                  {item.optedOutAt
+                    ? new Date(
+                        item.optedOutAt
+                      ).toLocaleString("ko-KR")
+                    : "-"}
+                </td>
+
+                <td className="border-b px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleReleaseOptOut(item)
+                    }
+                    disabled={
+                      optOutReleaseMutation.isPending
+                    }
+                    className="border border-red-300 text-red-700 rounded px-2 py-1 text-xs disabled:opacity-50"
+                  >
+                    {optOutReleaseMutation.isPending
+  ? "처리 중..."
+  : "해제"}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+) : preview.isLoading ? (
+  <div className="py-10 text-center text-gray-500">
+    불러오는 중...
+  </div>
+) : items.length === 0 ? (
+  <div className="py-10 text-center text-gray-500">
+    발송 대상이 없습니다.
+  </div>
+) : (
+  <div className="overflow-auto border rounded">
+    <table className="w-full border-collapse text-sm">
+      <thead className="bg-gray-50">
+        <tr>
+          <th className="border-b px-3 py-2 text-left w-16">
+            선택
+          </th>
+          <th className="border-b px-3 py-2 text-left">
+            이름
+          </th>
+          <th className="border-b px-3 py-2 text-left">
+            전화번호
+          </th>
+          <th className="border-b px-3 py-2 text-left">
+            희망과정
+          </th>
+          <th className="border-b px-3 py-2 text-left">
+            구분
+          </th>
+          <th className="border-b px-3 py-2 text-left">
+            수신 상태
+          </th>
+          <th className="border-b px-3 py-2 text-left w-28">
+            관리
+          </th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {items.map((item) => {
+          const checked =
+            !item.isOptedOut &&
+            selectedIds.includes(item.id);
+
+          return (
+            <tr
+              key={item.id}
+              className={
+                item.isOptedOut
+                  ? "bg-red-50 text-gray-500"
+                  : "hover:bg-gray-50"
+              }
+            >
+              <td className="border-b px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={item.isOptedOut}
+                  onChange={() => toggleItem(item)}
+                />
+              </td>
+
+              <td className="border-b px-3 py-2">
+                {item.name || "-"}
+              </td>
+
+              <td className="border-b px-3 py-2">
+                {item.phone
+                  ? formatPhone(item.phone)
+                  : "-"}
+              </td>
+
+              <td className="border-b px-3 py-2">
+                {item.course || "-"}
+              </td>
+
+              <td className="border-b px-3 py-2">
+                {item.category}
+              </td>
+
+              <td className="border-b px-3 py-2">
+                {item.isOptedOut ? (
+                  <span className="inline-flex rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-700">
+                    수신거부
+                  </span>
+                ) : (
+                  <span className="inline-flex rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
+                    수신 가능
+                  </span>
+                )}
+              </td>
+
+              <td className="border-b px-3 py-2">
+                {item.isOptedOut ? (
+                  <span className="text-xs text-gray-400">
+                    처리 완료
+                  </span>
+                ) : (
+                  <button
+  type="button"
+  onClick={() => handleOptOut(item)}
+  disabled={optOutCreateMutation.isPending}
+  className="border border-red-300 text-red-700 rounded px-2 py-1 text-xs disabled:opacity-50"
+>
+  {optOutCreateMutation.isPending
+    ? "처리 중..."
+    : "수신거부"}
+</button>
+                )}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+)}
 
           {(sendMutation.data || testSendMutation.data) && (
             <div className="border rounded p-3 bg-gray-50 text-sm space-y-1">
               <div className="font-medium">최근 발송 결과</div>
 
-              {sendMutation.data && (
-                <div>
-                  실제 발송 → 총 {sendMutation.data.total}건 / 성공{" "}
-                  {sendMutation.data.success}건 / 실패 {sendMutation.data.fail}건
-                </div>
-              )}
+             {sendMutation.data && (
+  <div>
+    문자 발송 → 요청{" "}
+    {sendMutation.data.requestedTotal ??
+      sendMutation.data.total}
+    건 / 수신거부 제외{" "}
+    {sendMutation.data.optedOutExcluded ?? 0}
+    건 / 실제 발송 {sendMutation.data.total}건 / 성공{" "}
+    {sendMutation.data.success}건 / 실패{" "}
+    {sendMutation.data.fail}건
+  </div>
+)}
 
               {testSendMutation.data && (
                 <div>

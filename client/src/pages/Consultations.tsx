@@ -53,14 +53,17 @@ export default function Consultations() {
   const { user } = useAuth();
 
   const role = String(user?.role ?? "").toLowerCase();
-  const isSuperHost =
-    role === "superhost" || role === "super_host" || role === "super-host";
-  const isHost = role === "host";
-  const isStaff = role === "staff";
-  const isAdmin = role === "admin";
-  const canViewAllDb = isHost || isAdmin || isSuperHost;
-  const canManageAll = isHost || isSuperHost;
-const canOverrideRegisteredStatus = isHost || isSuperHost;
+const isHost = role === "host";
+const isAdmin = role === "admin";
+
+// 조회 범위 선택 버튼
+const canViewOrganizationDb = isHost;
+const canViewTeamDb = isAdmin;
+const canSelectDbScope = canViewOrganizationDb || canViewTeamDb;
+
+// 모든 필드 수정·담당자 변경·삭제는 HOST만 가능
+const canManageAll = isHost;
+const canOverrideRegisteredStatus = isHost;
 
   const [showAll, setShowAll] = useState(false);
 const [showRegistered, setShowRegistered] = useState(false);
@@ -68,12 +71,12 @@ const [showRegistered, setShowRegistered] = useState(false);
   const utils = trpc.useUtils();
 
   const { data: list, isLoading } = trpc.consultation.list.useQuery(
-    canViewAllDb ? { showAll } : {}
-  );
+  canSelectDbScope ? { showAll } : {}
+);
 
   const { data: usersList } = trpc.users.list.useQuery(undefined, {
-    enabled: canManageAll,
-  });
+  enabled: isHost || isAdmin,
+});
 
   const createMut = trpc.consultation.create.useMutation({
     onSuccess: () => {
@@ -435,7 +438,11 @@ importCsvMut.mutate({ csvText, hasHeader: csvHasHeader } as any);
           <p className="text-sm text-muted-foreground mt-1">
   상담일 클릭 후 Ctrl+V → 상담일~상담내역(7칸) 자동 채움 (공란 유지)
   {" / 상태를 '등록예정'으로 변경하면 학생관리로 이관되고, 승인관리 승인 후 최종 '등록' 처리됩니다."}
-  {canViewAllDb ? " / 기본은 개인 DB, 체크 시 전체 DB 조회" : ""}
+  {isHost
+  ? " / 기본은 개인 DB, 체크 시 전체 DB 조회"
+  : isAdmin
+    ? " / 기본은 개인 DB, 체크 시 팀 DB 조회"
+    : ""}
 </p>
         </div>
 
@@ -635,12 +642,14 @@ importCsvMut.mutate({ csvText, hasHeader: csvHasHeader } as any);
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
-        <Input
-          placeholder="담당자 검색"
-          value={assigneeSearch}
-          onChange={(e) => setAssigneeSearch(e.target.value)}
-          className="w-[180px]"
-        />
+        {(isHost || isAdmin) && (
+  <Input
+    placeholder={isAdmin ? "팀원 검색" : "담당자 검색"}
+    value={assigneeSearch}
+    onChange={(e) => setAssigneeSearch(e.target.value)}
+    className="w-[180px]"
+  />
+)}
 
 <label className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
   <input
@@ -651,16 +660,17 @@ importCsvMut.mutate({ csvText, hasHeader: csvHasHeader } as any);
   등록자 보기
 </label>
 
-        {canViewAllDb && (
-          <label className="flex items-center gap-2 text-sm text-muted-foreground ml-1">
-            <input
-              type="checkbox"
-              checked={showAll}
-              onChange={(e) => setShowAll(e.target.checked)}
-            />
-            전체 DB 보기
-          </label>
-        )}
+        {canSelectDbScope && (
+  <label className="flex items-center gap-2 text-sm text-muted-foreground ml-1">
+    <input
+      type="checkbox"
+      checked={showAll}
+      onChange={(e) => setShowAll(e.target.checked)}
+    />
+
+    {isHost ? "전체 DB 보기" : "팀 DB 보기"}
+  </label>
+)}
       </div>
 
       {isLoading ? (
@@ -839,12 +849,14 @@ importCsvMut.mutate({ csvText, hasHeader: csvHasHeader } as any);
 
               {filtered.map((item: any, idx: number) => (
                 <InlineRow
-                  key={item.id}
-                  item={item}
-                  rowNum={idx + 1}
-                  canManageAll={canManageAll}
-                  isStaff={!!isStaff}
-  canOverrideRegisteredStatus={canOverrideRegisteredStatus}
+  key={item.id}
+  item={item}
+  rowNum={idx + 1}
+  canManageAll={canManageAll}
+  isHost={isHost}
+currentUserId={Number(user?.id || 0)}
+currentUserName={String(user?.name || "")}
+canOverrideRegisteredStatus={canOverrideRegisteredStatus}
                   usersList={usersList || []}
                   getUserName={getUserName}
                   onBlur={handleCellBlur}
@@ -889,7 +901,9 @@ function InlineRow({
   item,
   rowNum,
   canManageAll,
-  isStaff,
+  isHost,
+  currentUserId,
+  currentUserName,
   canOverrideRegisteredStatus,
   usersList,
   getUserName,
@@ -902,8 +916,10 @@ function InlineRow({
   item: any;
   rowNum: number;
   canManageAll: boolean;
-  isStaff: boolean;
-  canOverrideRegisteredStatus: boolean;
+isHost: boolean;
+currentUserId: number;
+currentUserName: string;
+canOverrideRegisteredStatus: boolean;
   usersList: any[];
   getUserName: (id: number) => string;
   onBlur: (id: number, field: string, value: string) => void;
@@ -920,6 +936,19 @@ function InlineRow({
 
   const isRegistered = item.status === "등록";
 const isPendingRegister = item.status === "등록예정";
+
+const isOwnConsultation =
+  Number(item.assigneeId) === Number(currentUserId);
+
+// 상담일·문의경로·이름·연락처·최종학력·희망과정
+// HOST만 수정 가능
+const canEditCoreFields = isHost;
+
+// 상담내역·상태
+// HOST 또는 해당 상담 담당자 본인만 수정 가능
+const canEditNotesAndStatus =
+  isHost || isOwnConsultation;
+
 const canDelete = canManageAll;
 
   return (
@@ -941,7 +970,7 @@ const canDelete = canManageAll;
           value={dateStr}
           onBlur={(v) => onBlur(item.id, "consultDate", v)}
           type="date"
-          disabled={isStaff}
+          disabled={!canEditCoreFields}
         />
       </td>
 
@@ -950,7 +979,7 @@ const canDelete = canManageAll;
           value={item.channel || ""}
           onBlur={(v) => onBlur(item.id, "channel", v)}
           className="whitespace-nowrap"
-          disabled={isStaff}
+          disabled={!canEditCoreFields}
         />
       </td>
 
@@ -958,7 +987,7 @@ const canDelete = canManageAll;
         <EditableCell
           value={item.clientName || ""}
           onBlur={(v) => onBlur(item.id, "clientName", v)}
-          disabled={isStaff}
+          disabled={!canEditCoreFields}
         />
       </td>
 
@@ -968,7 +997,7 @@ const canDelete = canManageAll;
   onBlur={(v) => onBlur(item.id, "phone", normalizePhoneInput(v))}
   transform={normalizePhoneInput}
   maxLength={20}
-  disabled={isStaff}
+  disabled={!canEditCoreFields}
 />
       </td>
 
@@ -976,7 +1005,7 @@ const canDelete = canManageAll;
         <EditableCell
           value={item.finalEducation || ""}
           onBlur={(v) => onBlur(item.id, "finalEducation", v)}
-          disabled={isStaff}
+          disabled={!canEditCoreFields}
         />
       </td>
 
@@ -984,22 +1013,27 @@ const canDelete = canManageAll;
         <EditableCell
           value={item.desiredCourse || ""}
           onBlur={(v) => onBlur(item.id, "desiredCourse", v)}
-          disabled={isStaff}
+          disabled={!canEditCoreFields}
         />
       </td>
 
       <td className="px-1 py-2">
         <InlineNotesCell
-          value={item.notes || ""}
-          onCommit={(v) => onBlur(item.id, "notes", v)}
-        />
+  value={item.notes || ""}
+  onCommit={(v) => onBlur(item.id, "notes", v)}
+  disabled={!canEditNotesAndStatus}
+/>
       </td>
 
       <td className="px-1 py-2">
         <StatusCell
   value={item.status || "상담중"}
   onChange={(v) => onStatusChange(item.id, v)}
-  locked={item.status === "등록" && !canOverrideRegisteredStatus}
+  locked={
+    !canEditNotesAndStatus ||
+    (item.status === "등록" &&
+      !canOverrideRegisteredStatus)
+  }
 />
       </td>
 
@@ -1017,8 +1051,10 @@ const canDelete = canManageAll;
             ))}
           </select>
         ) : (
-          getUserName(Number(item.assigneeId))
-        )}
+  Number(item.assigneeId) === Number(currentUserId)
+    ? currentUserName || "-"
+    : getUserName(Number(item.assigneeId))
+)}
       </td>
 
       <td className="px-1 py-2">
@@ -1183,7 +1219,11 @@ function EditableCell({
       onClick={() => {
         if (!disabled) setEditing(true);
       }}
-      title={disabled ? "직원은 이 항목을 수정할 수 없습니다." : value || ""}
+      title={
+  disabled
+    ? "일반 항목은 호스트만 수정할 수 있습니다."
+    : value || ""
+}
     >
       {value || <span className="text-muted-foreground/40">-</span>}
     </div>
@@ -1193,9 +1233,11 @@ function EditableCell({
 function InlineNotesCell({
   value,
   onCommit,
+  disabled = false,
 }: {
   value: string;
   onCommit: (v: string) => void;
+  disabled?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [local, setLocal] = useState(value);
@@ -1215,13 +1257,25 @@ function InlineNotesCell({
     if (local !== value) onCommit(local);
   };
 
-  if (!editing) {
-    return (
-      <div
-        className="px-2 py-1.5 text-sm cursor-text rounded hover:bg-muted/30 min-h-[32px] whitespace-pre-wrap"
-        onClick={() => setEditing(true)}
-        title="클릭하여 편집"
-      >
+  if (!editing || disabled) {
+  return (
+    <div
+      className={`px-2 py-1.5 text-sm rounded min-h-[32px] whitespace-pre-wrap ${
+        disabled
+          ? "cursor-not-allowed"
+          : "cursor-text hover:bg-muted/30"
+      }`}
+      onClick={() => {
+        if (!disabled) {
+          setEditing(true);
+        }
+      }}
+      title={
+        disabled
+          ? "본인 담당 상담만 수정할 수 있습니다."
+          : "클릭하여 편집"
+      }
+    >
         {value ? value : <span className="text-muted-foreground/40">-</span>}
       </div>
     );

@@ -16,6 +16,8 @@ import {
   ShieldAlert,
   Calculator,
   TrendingDown,
+  TrendingUp,
+  UserPlus,
   Banknote,
   Download,
   Receipt,
@@ -61,6 +63,23 @@ const [institutionTrendMode, setInstitutionTrendMode] = useState<"gross" | "comp
     }
   );
 
+const {
+  data: customerTypeSummary,
+  isLoading: customerTypeSummaryLoading,
+} = trpc.settlement.customerTypeSummary.useQuery(
+  {
+    year,
+    month,
+    assigneeId:
+      filterAssignee !== "all"
+        ? Number(filterAssignee)
+        : undefined,
+  },
+  {
+    enabled: canViewSettlement,
+  }
+);
+
   const { data: detailData, isLoading: isDetailLoading } =
     trpc.settlement.entries.useQuery(
       {
@@ -86,6 +105,40 @@ const [institutionTrendMode, setInstitutionTrendMode] = useState<"gross" | "comp
       enabled: canViewSettlement && !!selectedPayslipAssigneeId && payslipOpen,
     }
   );
+
+const {
+  data: payslipCustomerTypeSummary,
+  isLoading: isPayslipCustomerTypeLoading,
+} = trpc.settlement.customerTypeSummary.useQuery(
+  {
+    year,
+    month,
+    assigneeId: selectedPayslipAssigneeId || undefined,
+  },
+  {
+    enabled:
+      canViewSettlement &&
+      !!selectedPayslipAssigneeId &&
+      payslipOpen,
+  }
+);
+
+const {
+  data: payslipDetailData,
+  isLoading: isPayslipDetailLoading,
+} = trpc.settlement.entries.useQuery(
+  {
+    year,
+    month,
+    assigneeId: selectedPayslipAssigneeId || undefined,
+  },
+  {
+    enabled:
+      canViewSettlement &&
+      !!selectedPayslipAssigneeId &&
+      payslipOpen,
+  }
+);
 
 const { data: institutionSummary = [], isLoading: institutionSummaryLoading } =
   trpc.settlement.institutionSummary.useQuery(
@@ -133,12 +186,13 @@ const regenerateLedgerMutation =
       toast.success("정산 원장이 현재 설정값 기준으로 재생성되었습니다.");
 
       await Promise.all([
-        utils.settlement.report.invalidate(),
-        utils.settlement.entries.invalidate(),
-        utils.settlement.institutionSummary.invalidate(),
-        utils.settlement.institutionEntries.invalidate(),
-        utils.settlement.institutionMonthlyTrend.invalidate(),
-      ]);
+  utils.settlement.report.invalidate(),
+  utils.settlement.entries.invalidate(),
+  utils.settlement.customerTypeSummary.invalidate(),
+  utils.settlement.institutionSummary.invalidate(),
+  utils.settlement.institutionEntries.invalidate(),
+  utils.settlement.institutionMonthlyTrend.invalidate(),
+]);
     },
     onError: (err) => {
       toast.error(err.message || "정산 원장 재생성 중 오류가 발생했습니다.");
@@ -359,6 +413,7 @@ const handleRegenerateLedger = () => {
     const headers = [
   "일자",
   "유형",
+  "신규/기존",
   "담당자",
   "학생명",
   "제목",
@@ -377,8 +432,10 @@ const handleRegenerateLedger = () => {
         ? new Date(row.occurredAt).toLocaleDateString("ko-KR")
         : "",
       getRevenueTypeLabel(row.revenueType, row.settlementStatus),
-      row.assigneeName || "",
-      row.clientName || "",
+row.customerTypeLabel ||
+  (row.customerType === "new" ? "신규" : "기존"),
+row.assigneeName || "",
+row.clientName || "",
       row.title || "",
 row.institutionName || "",
       row.grossAmount || 0,
@@ -391,10 +448,11 @@ row.institutionName || "",
     ]);
 
     rows.push([
-      "합계",
-      "",
-      "",
- "",
+  "합계",
+  "",
+  "",
+  "",
+  "",
       "",
       "",
       filteredDetailSummary.totalGrossAmount,
@@ -716,6 +774,83 @@ const downloadInstitutionTrendCSV = () => {
     : "정산 원장 재생성"}
 </Button>
       </div>
+<div className="grid gap-4 md:grid-cols-2">
+  <Card>
+    <CardHeader className="flex flex-row items-center justify-between pb-2">
+      <CardTitle className="text-sm font-medium text-muted-foreground">
+        신규
+      </CardTitle>
+
+      <UserPlus className="h-4 w-4 text-emerald-600" />
+    </CardHeader>
+
+    <CardContent>
+      {customerTypeSummaryLoading ? (
+        <div className="text-sm text-muted-foreground">
+          불러오는 중...
+        </div>
+      ) : (
+        <>
+          <div className="text-2xl font-bold text-emerald-600">
+            {Number(
+              customerTypeSummary?.newStudentCount || 0
+            ).toLocaleString()}
+            명
+          </div>
+
+          <div className="mt-1 text-lg font-semibold">
+            {Number(
+              customerTypeSummary?.newSales || 0
+            ).toLocaleString()}
+            원
+          </div>
+
+          <p className="mt-1 text-xs text-muted-foreground">
+            1학기 등록 · 환불 차감 반영
+          </p>
+        </>
+      )}
+    </CardContent>
+  </Card>
+
+  <Card>
+    <CardHeader className="flex flex-row items-center justify-between pb-2">
+      <CardTitle className="text-sm font-medium text-muted-foreground">
+        기존
+      </CardTitle>
+
+      <TrendingUp className="h-4 w-4 text-blue-600" />
+    </CardHeader>
+
+    <CardContent>
+      {customerTypeSummaryLoading ? (
+        <div className="text-sm text-muted-foreground">
+          불러오는 중...
+        </div>
+      ) : (
+        <>
+          <div className="text-2xl font-bold text-blue-600">
+            {Number(
+              customerTypeSummary?.existingStudentCount || 0
+            ).toLocaleString()}
+            명
+          </div>
+
+          <div className="mt-1 text-lg font-semibold">
+            {Number(
+              customerTypeSummary?.existingSales || 0
+            ).toLocaleString()}
+            원
+          </div>
+
+          <p className="mt-1 text-xs text-muted-foreground">
+            2학기 이상 · 환불 차감 반영
+          </p>
+        </>
+      )}
+    </CardContent>
+  </Card>
+</div>
       <div className="grid gap-4 md:grid-cols-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -1028,7 +1163,7 @@ const downloadInstitutionTrendCSV = () => {
                   </div>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-4">
+               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
                   <Card>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm">지급액 합계</CardTitle>
@@ -1039,6 +1174,65 @@ const downloadInstitutionTrendCSV = () => {
                       ).toLocaleString()}원
                     </CardContent>
                   </Card>
+<Card>
+  <CardHeader className="pb-2">
+    <CardTitle className="text-sm">신규</CardTitle>
+  </CardHeader>
+
+  <CardContent>
+    {isPayslipCustomerTypeLoading ? (
+      <div className="text-sm text-muted-foreground">
+        불러오는 중...
+      </div>
+    ) : (
+      <>
+        <div className="text-xl font-bold text-emerald-600">
+          {Number(
+            payslipCustomerTypeSummary?.newStudentCount || 0
+          ).toLocaleString()}
+          명
+        </div>
+
+        <div className="mt-1 text-sm font-semibold">
+          {Number(
+            payslipCustomerTypeSummary?.newSales || 0
+          ).toLocaleString()}
+          원
+        </div>
+      </>
+    )}
+  </CardContent>
+</Card>
+
+<Card>
+  <CardHeader className="pb-2">
+    <CardTitle className="text-sm">기존</CardTitle>
+  </CardHeader>
+
+  <CardContent>
+    {isPayslipCustomerTypeLoading ? (
+      <div className="text-sm text-muted-foreground">
+        불러오는 중...
+      </div>
+    ) : (
+      <>
+        <div className="text-xl font-bold text-blue-600">
+          {Number(
+            payslipCustomerTypeSummary?.existingStudentCount || 0
+          ).toLocaleString()}
+          명
+        </div>
+
+        <div className="mt-1 text-sm font-semibold">
+          {Number(
+            payslipCustomerTypeSummary?.existingSales || 0
+          ).toLocaleString()}
+          원
+        </div>
+      </>
+    )}
+  </CardContent>
+</Card>
 
                   <Card>
                     <CardHeader className="pb-2">
@@ -1158,8 +1352,9 @@ const downloadInstitutionTrendCSV = () => {
                         <thead>
                           <tr className="border-b bg-muted/50">
                             <th className="px-4 py-3 text-left">일자</th>
-                            <th className="px-4 py-3 text-left">유형</th>
-                            <th className="px-4 py-3 text-left">학생명</th>
+<th className="px-4 py-3 text-left">유형</th>
+<th className="px-4 py-3 text-center">신규/기존</th>
+<th className="px-4 py-3 text-left">학생명</th>
                             <th className="px-4 py-3 text-left">제목</th>
 <th className="px-4 py-3 text-left">교육원</th>
                             <th className="px-4 py-3 text-right">총매출</th>
@@ -1170,8 +1365,17 @@ const downloadInstitutionTrendCSV = () => {
                           </tr>
                         </thead>
                         <tbody>
-                          {payslipData.entries?.length ? (
-                            payslipData.entries.map((row: any) => (
+                         {isPayslipDetailLoading ? (
+  <tr>
+    <td
+      colSpan={11}
+      className="px-4 py-10 text-center text-muted-foreground"
+    >
+      상세 지급 내역을 불러오는 중...
+    </td>
+  </tr>
+) : payslipDetailData?.entries?.length ? (
+  payslipDetailData.entries.map((row: any) => (
                               <tr key={row.id} className="border-b last:border-0">
                                 <td className="px-4 py-3">
                                   {row.occurredAt
@@ -1179,12 +1383,28 @@ const downloadInstitutionTrendCSV = () => {
                                     : "-"}
                                 </td>
                                 <td className="px-4 py-3">
-                                  {getRevenueTypeLabel(
-                                    row.revenueType,
-                                    row.settlementStatus
-                                  )}
-                                </td>
-                                <td className="px-4 py-3">{row.clientName || "-"}</td>
+  {getRevenueTypeLabel(
+    row.revenueType,
+    row.settlementStatus
+  )}
+</td>
+
+<td className="px-4 py-3 text-center">
+  <span
+    className={
+      row.customerType === "new"
+        ? "inline-flex rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700"
+        : "inline-flex rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700"
+    }
+  >
+    {row.customerTypeLabel ||
+      (row.customerType === "new" ? "신규" : "기존")}
+  </span>
+</td>
+
+<td className="px-4 py-3">
+  {row.clientName || "-"}
+</td>
                                 <td className="px-4 py-3">
                                   <div className="max-w-[260px] truncate">
                                     {row.title || "-"}
@@ -1211,7 +1431,7 @@ const downloadInstitutionTrendCSV = () => {
                           ) : (
                             <tr>
                               <td
-                                colSpan={10}
+                                colSpan={11}
                                 className="px-4 py-10 text-center text-muted-foreground"
                               >
                                 상세 지급 내역이 없습니다.
@@ -1268,14 +1488,20 @@ const downloadInstitutionTrendCSV = () => {
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-                    일자
-                  </th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-                    유형
-                  </th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">
-                    담당자
-                  </th>
+  일자
+</th>
+
+<th className="px-4 py-3 text-left font-medium text-muted-foreground">
+  유형
+</th>
+
+<th className="px-4 py-3 text-center font-medium text-muted-foreground">
+  신규/기존
+</th>
+
+<th className="px-4 py-3 text-left font-medium text-muted-foreground">
+  담당자
+</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                     학생명
                   </th>
@@ -1310,7 +1536,7 @@ const downloadInstitutionTrendCSV = () => {
                 {isDetailLoading ? (
                   <tr>
                     <td
-                      colSpan={11}
+                      colSpan={13}
                       className="px-4 py-12 text-center text-muted-foreground"
                     >
                       상세 원장 불러오는 중...
@@ -1319,7 +1545,7 @@ const downloadInstitutionTrendCSV = () => {
                 ) : !filteredDetailEntries || filteredDetailEntries.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={11}
+                      colSpan={13}
                       className="px-4 py-12 text-center text-muted-foreground"
                     >
                       해당 조건의 상세 원장 데이터가 없습니다.
@@ -1339,9 +1565,28 @@ const downloadInstitutionTrendCSV = () => {
                             : "-"}
                         </td>
                         <td className="px-4 py-3">
-                          {getRevenueTypeLabel(row.revenueType, row.settlementStatus)}
-                        </td>
-                        <td className="px-4 py-3">{row.assigneeName || "-"}</td>
+  {getRevenueTypeLabel(
+    row.revenueType,
+    row.settlementStatus
+  )}
+</td>
+
+<td className="px-4 py-3 text-center">
+  <span
+    className={
+      row.customerType === "new"
+        ? "inline-flex rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700"
+        : "inline-flex rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700"
+    }
+  >
+    {row.customerTypeLabel ||
+      (row.customerType === "new" ? "신규" : "기존")}
+  </span>
+</td>
+
+<td className="px-4 py-3">
+  {row.assigneeName || "-"}
+</td>
                         <td className="px-4 py-3 font-medium text-blue-600">
                           {row.clientName || "-"}
                         </td>
@@ -1382,7 +1627,7 @@ const downloadInstitutionTrendCSV = () => {
                     ))}
 
                     <tr className="bg-muted/50 font-bold">
-                      <td colSpan={6} className="px-4 py-3 text-right">
+                      <td colSpan={7} className="px-4 py-3 text-right">
                         합계
                       </td>
 
@@ -1837,7 +2082,7 @@ const downloadInstitutionTrendCSV = () => {
                       {institutionEntriesLoading ? (
                         <tr>
                           <td
-                            colSpan={11}
+                            colSpan={12}
                             className="px-4 py-16 text-center text-muted-foreground"
                           >
                             불러오는 중...
@@ -1846,7 +2091,7 @@ const downloadInstitutionTrendCSV = () => {
                       ) : !institutionEntriesData?.entries?.length ? (
                         <tr>
                           <td
-                            colSpan={11}
+                            colSpan={12}
                             className="px-4 py-16 text-center text-muted-foreground"
                           >
                             상세 데이터가 없습니다.

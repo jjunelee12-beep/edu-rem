@@ -102,6 +102,8 @@ smsSettings,
 type InsertSmsSetting,
 smsLogs,
 type InsertSmsLog,
+smsOptOuts,
+type InsertSmsOptOut,
 type InsertApprovalLog,
 organizationBackups,
 type InsertOrganizationBackup,
@@ -121,6 +123,7 @@ type InsertStudentCreditSummaryItem,
 
 import { ENV } from "./_core/env";
 import bcrypt from "bcryptjs";
+import { createHmac } from "node:crypto";
 import { emitLiveNotification } from "./_core/live-notifications";
 import { getSocketStatus } from "./_core/socket-status";
 import { throwAppError } from "./_core/appError";
@@ -316,6 +319,60 @@ export async function getStudentById(
 
 function getInsertId(result: any) {
   return result?.insertId ?? result?.[0]?.insertId ?? null;
+}
+
+function normalizeSmsPhone(value: any) {
+  return String(value || "")
+    .replace(/\D/g, "")
+    .trim();
+}
+
+function getPhoneHashSecret() {
+  const secret = String(process.env.PHONE_HASH_SECRET || "").trim();
+
+  if (!secret) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "PHONE_HASH_SECRET 환경변수가 설정되지 않았습니다.",
+      500
+    );
+  }
+
+  if (secret.length < 32) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "PHONE_HASH_SECRET는 최소 32자 이상이어야 합니다.",
+      500
+    );
+  }
+
+  return secret;
+}
+
+export function createSmsPhoneHash(phone: any) {
+  const normalizedPhone = normalizeSmsPhone(phone);
+
+  if (normalizedPhone.length < 10 || normalizedPhone.length > 11) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "올바른 전화번호를 입력해주세요.",
+      400
+    );
+  }
+
+  return createHmac("sha256", getPhoneHashSecret())
+    .update(normalizedPhone, "utf8")
+    .digest("hex");
+}
+
+function getSmsPhoneLast4(phone: any) {
+  const normalizedPhone = normalizeSmsPhone(phone);
+
+  if (normalizedPhone.length < 4) {
+    return null;
+  }
+
+  return normalizedPhone.slice(-4);
 }
 
 function toNumber(v: any) {
@@ -1084,7 +1141,8 @@ const ORGANIZATION_BACKUP_TABLES = [
   "users",
   "branding_settings",
   "sms_settings",
-  "sms_logs",
+"sms_logs",
+"sms_opt_outs",
 
   "consultations",
   "students",
@@ -3548,6 +3606,345 @@ export async function getSmsSettings(params?: {
   return rows[0] || null;
 }
 
+// ==============================
+// SMS OPT OUTS
+// ==============================
+
+export async function createOrReactivateSmsOptOut(params: {
+  organizationId?: number | null;
+  phone: string;
+  reason?: string | null;
+  source?: "manual" | "provider" | "import";
+  optedOutBy?: number | null;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const normalizedPhone = normalizeSmsPhone(params.phone);
+
+  if (normalizedPhone.length < 10 || normalizedPhone.length > 11) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "올바른 전화번호를 입력해주세요.",
+      400
+    );
+  }
+
+  const phoneHash = createSmsPhoneHash(normalizedPhone);
+  const phoneLast4 = getSmsPhoneLast4(normalizedPhone);
+  const now = new Date();
+
+  const existingRows = await db
+    .select()
+    .from(smsOptOuts)
+    .where(
+      and(
+        eq(smsOptOuts.organizationId, organizationId),
+        eq(smsOptOuts.phoneHash, phoneHash)
+      )
+    )
+    .limit(1);
+
+  const existing = existingRows[0];
+
+  if (existing) {
+    await db
+      .update(smsOptOuts)
+      .set({
+        phoneLast4,
+        reason: params.reason?.trim() || "회원 요청",
+        source: params.source || "manual",
+        isActive: true,
+        optedOutAt: now,
+        optedOutBy: params.optedOutBy ?? null,
+        releasedAt: null,
+        releasedBy: null,
+      } as any)
+      .where(
+        and(
+          eq(smsOptOuts.id, existing.id),
+          eq(smsOptOuts.organizationId, organizationId)
+        )
+      );
+
+    const updatedRows = await db
+      .select()
+      .from(smsOptOuts)
+      .where(
+        and(
+          eq(smsOptOuts.id, existing.id),
+          eq(smsOptOuts.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    return updatedRows[0] || null;
+  }
+
+  const result: any = await db.insert(smsOptOuts).values({
+    organizationId,
+    phoneHash,
+    phoneLast4,
+    reason: params.reason?.trim() || "회원 요청",
+    source: params.source || "manual",
+    isActive: true,
+    optedOutAt: now,
+    optedOutBy: params.optedOutBy ?? null,
+    releasedAt: null,
+    releasedBy: null,
+  } as InsertSmsOptOut);
+
+  const insertedId = Number(getInsertId(result) || 0);
+
+  if (!insertedId) {
+    return null;
+  }
+
+  const createdRows = await db
+    .select()
+    .from(smsOptOuts)
+    .where(
+      and(
+        eq(smsOptOuts.id, insertedId),
+        eq(smsOptOuts.organizationId, organizationId)
+      )
+    )
+    .limit(1);
+
+  return createdRows[0] || null;
+}
+
+export async function releaseSmsOptOut(params: {
+  organizationId?: number | null;
+  id: number;
+  releasedBy?: number | null;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const id = Number(params.id || 0);
+
+  if (!id) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "수신거부 항목 ID가 필요합니다.",
+      400
+    );
+  }
+
+  const existingRows = await db
+    .select()
+    .from(smsOptOuts)
+    .where(
+      and(
+        eq(smsOptOuts.id, id),
+        eq(smsOptOuts.organizationId, organizationId)
+      )
+    )
+    .limit(1);
+
+  const existing = existingRows[0];
+
+  if (!existing) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "수신거부 내역을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  await db
+    .update(smsOptOuts)
+    .set({
+      isActive: false,
+      releasedAt: new Date(),
+      releasedBy: params.releasedBy ?? null,
+    } as any)
+    .where(
+      and(
+        eq(smsOptOuts.id, id),
+        eq(smsOptOuts.organizationId, organizationId)
+      )
+    );
+
+  return {
+    success: true,
+    id,
+  };
+}
+
+export async function listSmsOptOuts(params: {
+  organizationId?: number | null;
+  activeOnly?: boolean;
+  keyword?: string | null;
+  limit?: number | null;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    return [];
+  }
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const limit = Math.min(
+    Math.max(Number(params.limit || 200), 1),
+    500
+  );
+
+  const conditions: any[] = [
+    eq(smsOptOuts.organizationId, organizationId),
+  ];
+
+  if (params.activeOnly !== false) {
+    conditions.push(eq(smsOptOuts.isActive, true));
+  }
+
+  const keyword = String(params.keyword || "")
+    .replace(/\D/g, "")
+    .trim();
+
+  if (keyword) {
+    conditions.push(
+      like(smsOptOuts.phoneLast4, `%${keyword.slice(-4)}%`)
+    );
+  }
+
+  return db
+    .select()
+    .from(smsOptOuts)
+    .where(and(...conditions))
+    .orderBy(
+      desc(smsOptOuts.isActive),
+      desc(smsOptOuts.optedOutAt),
+      desc(smsOptOuts.id)
+    )
+    .limit(limit);
+}
+
+export async function getActiveSmsOptOutHashSet(params: {
+  organizationId?: number | null;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    return new Set<string>();
+  }
+
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  const rows = await db
+    .select({
+      phoneHash: smsOptOuts.phoneHash,
+    })
+    .from(smsOptOuts)
+    .where(
+      and(
+        eq(smsOptOuts.organizationId, organizationId),
+        eq(smsOptOuts.isActive, true)
+      )
+    );
+
+  return new Set(
+    rows
+      .map((row: any) => String(row.phoneHash || "").trim())
+      .filter(Boolean)
+  );
+}
+
+export async function isSmsPhoneOptedOut(params: {
+  organizationId?: number | null;
+  phone: string;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    return false;
+  }
+
+  const organizationId = requireOrganizationId(params.organizationId);
+  const normalizedPhone = normalizeSmsPhone(params.phone);
+
+  if (normalizedPhone.length < 10 || normalizedPhone.length > 11) {
+    return false;
+  }
+
+  const phoneHash = createSmsPhoneHash(normalizedPhone);
+
+  const rows = await db
+    .select({
+      id: smsOptOuts.id,
+    })
+    .from(smsOptOuts)
+    .where(
+      and(
+        eq(smsOptOuts.organizationId, organizationId),
+        eq(smsOptOuts.phoneHash, phoneHash),
+        eq(smsOptOuts.isActive, true)
+      )
+    )
+    .limit(1);
+
+  return Boolean(rows[0]);
+}
+
+export async function splitSmsPhonesByOptOut(params: {
+  organizationId?: number | null;
+  phones: string[];
+}) {
+  const organizationId = requireOrganizationId(params.organizationId);
+
+  const normalizedPhones = Array.from(
+    new Set(
+      (params.phones || [])
+        .map((phone) => normalizeSmsPhone(phone))
+        .filter(
+          (phone) =>
+            phone.length >= 10 &&
+            phone.length <= 11
+        )
+    )
+  );
+
+  const optedOutHashSet = await getActiveSmsOptOutHashSet({
+    organizationId,
+  });
+
+  const sendable: string[] = [];
+  const optedOut: string[] = [];
+
+  for (const phone of normalizedPhones) {
+    const phoneHash = createSmsPhoneHash(phone);
+
+    if (optedOutHashSet.has(phoneHash)) {
+      optedOut.push(phone);
+    } else {
+      sendable.push(phone);
+    }
+  }
+
+  return {
+    requested: normalizedPhones,
+    sendable,
+    optedOut,
+  };
+}
+
 export async function saveSmsSettings(data: {
   organizationId?: number | null;
   provider?: string;
@@ -4752,7 +5149,7 @@ export async function listActiveExpoPushTokensByUserId(
 
 // ─── Students ────────────────────────────────────────────────────────
 export async function listStudents(
-  assigneeId?: number,
+  assigneeId?: number | number[],
   params?: {
     organizationId?: number | null;
   }
@@ -4762,9 +5159,33 @@ export async function listStudents(
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
-const assigneeFilter = assigneeId
-  ? sql`WHERE s.organizationId = ${organizationId} AND s.assigneeId = ${assigneeId} AND s.deletedAt IS NULL`
-  : sql`WHERE s.organizationId = ${organizationId} AND s.deletedAt IS NULL`;
+const normalizedAssigneeIds = Array.isArray(assigneeId)
+  ? assigneeId
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id) && id > 0)
+  : assigneeId
+    ? [Number(assigneeId)]
+    : [];
+
+let assigneeFilter;
+
+if (normalizedAssigneeIds.length > 0) {
+  const assigneeIdSql = sql.join(
+    normalizedAssigneeIds.map((id) => sql`${id}`),
+    sql`, `
+  );
+
+  assigneeFilter = sql`
+    WHERE s.organizationId = ${organizationId}
+      AND s.assigneeId IN (${assigneeIdSql})
+      AND s.deletedAt IS NULL
+  `;
+} else {
+  assigneeFilter = sql`
+    WHERE s.organizationId = ${organizationId}
+      AND s.deletedAt IS NULL
+  `;
+}
 
   const [rows] = await db.execute(sql`
   SELECT s.*,
@@ -5481,7 +5902,7 @@ const organizationId = requireOrganizationId(params?.organizationId);
 
 // ─── 학기별 전체 리스트 ──────────────────────────────────────────────
 export async function listAllSemesters(
-  assigneeId?: number,
+  assigneeId?: number | number[],
   plannedMonthFilter?: string,
   params?: { organizationId?: number | null }
 ) {
@@ -5495,9 +5916,30 @@ export async function listAllSemesters(
     sql`s.organizationId = ${organizationId}`,
   ];
 
-  if (assigneeId) {
-    conditions.push(sql`s.assigneeId = ${assigneeId}`);
-  }
+  const normalizedAssigneeIds = Array.isArray(assigneeId)
+  ? assigneeId
+      .map((id) => Number(id))
+      .filter(
+        (id) =>
+          Number.isFinite(id) &&
+          id > 0
+      )
+  : assigneeId
+    ? [Number(assigneeId)]
+    : [];
+
+if (normalizedAssigneeIds.length > 0) {
+  const assigneeIdSql = sql.join(
+    normalizedAssigneeIds.map(
+      (id) => sql`${id}`
+    ),
+    sql`, `
+  );
+
+  conditions.push(
+    sql`s.assigneeId IN (${assigneeIdSql})`
+  );
+}
 
   if (plannedMonthFilter) {
     conditions.push(sql`sem.plannedMonth = ${plannedMonthFilter}`);
@@ -5764,11 +6206,34 @@ const organizationId = requireOrganizationId(params?.organizationId);
 
 export async function listPendingRefunds(params?: {
   organizationId?: number | null;
+  assigneeIds?: number[];
 }) {
   const db = await getDb();
   if (!db) return [];
 
 const organizationId = requireOrganizationId(params?.organizationId);
+
+const assigneeIds = (params?.assigneeIds || [])
+  .map((id) => Number(id))
+  .filter(
+    (id) =>
+      Number.isFinite(id) &&
+      id > 0
+  );
+
+const assigneeFilter =
+  assigneeIds.length > 0
+    ? sql`
+        AND s.assigneeId IN (
+          ${sql.join(
+            assigneeIds.map(
+              (id) => sql`${id}`
+            ),
+            sql`, `
+          )}
+        )
+      `
+    : sql``;
 
   const [rows] = await db.execute(sql`
     SELECT
@@ -5786,8 +6251,9 @@ const organizationId = requireOrganizationId(params?.organizationId);
     LEFT JOIN users u ON u.id = s.assigneeId
     LEFT JOIN semesters sem ON sem.id = r.semesterId
     WHERE r.organizationId = ${organizationId}
-      AND s.organizationId = ${organizationId}
-      AND r.approvalStatus = '대기'
+  AND s.organizationId = ${organizationId}
+  AND r.approvalStatus = '대기'
+  ${assigneeFilter}
     ORDER BY r.createdAt DESC
   `);
 
@@ -7032,34 +7498,27 @@ const subjectPriceCombination =
     rules: subjectPriceRules,
   });
 
-let actualUnitPrice = 0;
-let settlementCredits = 0;
+const actualUnitPrice =
+  subjectCount > 0 ? Math.floor(grossAmount / subjectCount) : 0;
 
-if (subjectPriceCombination && subjectPriceCombination.length > 0) {
-  actualUnitPrice =
-    subjectCount > 0 ? Math.floor(grossAmount / subjectCount) : 0;
-
-  settlementCredits = subjectPriceCombination.reduce(
-    (sum: number, row: any) =>
-      sum + Number(row.count || 0) * Number(row.creditValue || 0),
-    0
+if (!subjectPriceCombination || subjectPriceCombination.length === 0) {
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    [
+      "등록된 과목단가 조합으로 정산금액을 계산할 수 없습니다.",
+      `총 결제금액: ${grossAmount.toLocaleString()}원`,
+      `정산 과목 수: ${subjectCount}과목`,
+      "정산 시스템 관리에서 과목단가 규칙을 확인해주세요.",
+    ].join(" "),
+    400
   );
-} else {
-  actualUnitPrice =
-    subjectCount > 0 ? Math.floor(grossAmount / subjectCount) : 0;
-
-  const resolvedSettlementRule = await resolveSettlementCreditPerSubject({
-    organizationId,
-    educationInstitutionId,
-    actualUnitPrice,
-  });
-
-  const settlementCreditPerSubject = Number(
-    resolvedSettlementRule.creditValue || 0
-  );
-
-  settlementCredits = subjectCount * settlementCreditPerSubject;
 }
+
+const settlementCredits = subjectPriceCombination.reduce(
+  (sum: number, row: any) =>
+    sum + Number(row.count || 0) * Number(row.creditValue || 0),
+  0
+);
 
 // 교육원 몫
 // 1순위: 교육원 + 기준금액별 교육원 정산금액
@@ -7179,6 +7638,14 @@ const organizationId = requireOrganizationId(params?.organizationId);
       todaySales: 0,
       monthSales: 0,
       totalSales: 0,
+monthNewSales: 0,
+monthExistingSales: 0,
+
+monthNewRefund: 0,
+monthExistingRefund: 0,
+
+monthNewStudentCount: 0,
+monthExistingStudentCount: 0,
       todayFirstSales: 0,
       monthFirstSales: 0,
       todaySemesterSales: 0,
@@ -7353,29 +7820,31 @@ ${assigneeStudentCond}
         0
       ) as totalSales,
 
-      COALESCE(
-        SUM(
-          CASE
-            WHEN si.settlementStatus = 'refunded'
-             AND si.updatedAt >= ${monthStart}
-             AND si.updatedAt < ${monthEnd}
-            THEN COALESCE(si.grossAmount, 0)
-            ELSE 0
-          END
-        ),
-        0
-      ) as monthRefund,
+     COALESCE(
+  SUM(
+    CASE
+      WHEN si.revenueType = 'refund'
+       AND si.settlementStatus = 'confirmed'
+       AND si.occurredAt >= ${monthStart}
+       AND si.occurredAt < ${monthEnd}
+      THEN ABS(COALESCE(si.grossAmount, 0))
+      ELSE 0
+    END
+  ),
+  0
+) as monthRefund,
 
       COALESCE(
-        SUM(
-          CASE
-            WHEN si.settlementStatus = 'refunded'
-            THEN COALESCE(si.grossAmount, 0)
-            ELSE 0
-          END
-        ),
-        0
-      ) as totalRefund,
+  SUM(
+    CASE
+      WHEN si.revenueType = 'refund'
+       AND si.settlementStatus = 'confirmed'
+      THEN ABS(COALESCE(si.grossAmount, 0))
+      ELSE 0
+    END
+  ),
+  0
+) as totalRefund,
 
       COALESCE(
         SUM(
@@ -7438,9 +7907,129 @@ ${organizationSettlementCond}
 ${assigneeSettlementCond}
   `);
 
+const [customerTypeRows] = await db.execute(sql`
+  SELECT
+    COALESCE(
+      SUM(
+        CASE
+          WHEN COALESCE(sem.semesterOrder, 0) = 1
+           AND si.settlementStatus = 'confirmed'
+           AND si.occurredAt >= ${monthStart}
+           AND si.occurredAt < ${monthEnd}
+          THEN COALESCE(si.grossAmount, 0)
+          ELSE 0
+        END
+      ),
+      0
+    ) AS monthNewSales,
+
+    COALESCE(
+      SUM(
+        CASE
+          WHEN (
+            COALESCE(sem.semesterOrder, 0) >= 2
+            OR sem.semesterOrder IS NULL
+          )
+           AND si.settlementStatus = 'confirmed'
+           AND si.occurredAt >= ${monthStart}
+           AND si.occurredAt < ${monthEnd}
+          THEN COALESCE(si.grossAmount, 0)
+          ELSE 0
+        END
+      ),
+      0
+    ) AS monthExistingSales,
+
+    COALESCE(
+      SUM(
+        CASE
+          WHEN si.revenueType = 'refund'
+           AND COALESCE(sem.semesterOrder, 0) = 1
+           AND si.settlementStatus = 'confirmed'
+           AND si.occurredAt >= ${monthStart}
+           AND si.occurredAt < ${monthEnd}
+          THEN ABS(COALESCE(si.grossAmount, 0))
+          ELSE 0
+        END
+      ),
+      0
+    ) AS monthNewRefund,
+
+    COALESCE(
+      SUM(
+        CASE
+          WHEN si.revenueType = 'refund'
+           AND (
+             COALESCE(sem.semesterOrder, 0) >= 2
+             OR sem.semesterOrder IS NULL
+           )
+           AND si.settlementStatus = 'confirmed'
+           AND si.occurredAt >= ${monthStart}
+           AND si.occurredAt < ${monthEnd}
+          THEN ABS(COALESCE(si.grossAmount, 0))
+          ELSE 0
+        END
+      ),
+      0
+    ) AS monthExistingRefund,
+
+    COUNT(
+      DISTINCT CASE
+        WHEN COALESCE(sem.semesterOrder, 0) = 1
+         AND si.revenueType != 'refund'
+         AND si.settlementStatus = 'confirmed'
+         AND si.occurredAt >= ${monthStart}
+         AND si.occurredAt < ${monthEnd}
+        THEN si.studentId
+        ELSE NULL
+      END
+    ) AS monthNewStudentCount,
+
+    COUNT(
+      DISTINCT CASE
+        WHEN (
+          COALESCE(sem.semesterOrder, 0) >= 2
+          OR sem.semesterOrder IS NULL
+        )
+         AND si.revenueType != 'refund'
+         AND si.settlementStatus = 'confirmed'
+         AND si.occurredAt >= ${monthStart}
+         AND si.occurredAt < ${monthEnd}
+        THEN si.studentId
+        ELSE NULL
+      END
+    ) AS monthExistingStudentCount
+
+  FROM settlement_items si
+
+  LEFT JOIN refunds rf
+    ON si.revenueType = 'refund'
+   AND rf.id = si.sourceId
+   AND rf.organizationId = ${organizationId}
+
+  LEFT JOIN semesters sem
+    ON sem.organizationId = ${organizationId}
+   AND (
+     (
+       si.revenueType = 'subject'
+       AND sem.id = si.sourceId
+     )
+     OR
+     (
+       si.revenueType = 'refund'
+       AND sem.id = rf.semesterId
+     )
+   )
+
+  WHERE si.organizationId = ${organizationId}
+    ${assigneeSettlementCond}
+`);
+
   const consult = (consultRows as any)?.[0] ?? {};
   const student = (studentRows as any)?.[0] ?? {};
   const settlement = (settlementRows as any)?.[0] ?? {};
+const customerType =
+  (customerTypeRows as any)?.[0] ?? {};
 
   return {
     monthConsultationCount: toNumber(consult.monthConsultationCount),
@@ -7449,6 +8038,24 @@ ${assigneeSettlementCond}
     todaySales: toNumber(settlement.todaySales),
     monthSales: toNumber(settlement.monthSales),
     totalSales: toNumber(settlement.totalSales),
+
+monthNewSales:
+  toNumber(customerType.monthNewSales),
+
+monthExistingSales:
+  toNumber(customerType.monthExistingSales),
+
+monthNewRefund:
+  toNumber(customerType.monthNewRefund),
+
+monthExistingRefund:
+  toNumber(customerType.monthExistingRefund),
+
+monthNewStudentCount:
+  toNumber(customerType.monthNewStudentCount),
+
+monthExistingStudentCount:
+  toNumber(customerType.monthExistingStudentCount),
 
     todayFirstSales: toNumber(settlement.todayFirstSales),
     monthFirstSales: toNumber(settlement.monthFirstSales),
@@ -7581,6 +8188,7 @@ export async function getSettlementEntries(params: {
   year: number;
   month: number;
   assigneeId?: number;
+  customerType?: "new" | "existing";
 }) {
   const db = await getDb();
   if (!db) {
@@ -7608,6 +8216,21 @@ export async function getSettlementEntries(params: {
   if (params.assigneeId) {
     conditions.push(eq(settlementItems.assigneeId, params.assigneeId));
   }
+
+if (params.customerType === "new") {
+  conditions.push(
+    eq(semesters.semesterOrder, 1)
+  );
+}
+
+if (params.customerType === "existing") {
+  conditions.push(
+    or(
+      sql`${semesters.semesterOrder} >= 2`,
+      sql`${semesters.semesterOrder} IS NULL`
+    )
+  );
+}
 
   const subjectApprovedCondition = or(
     sql`${settlementItems.revenueType} <> 'subject'`,
@@ -7643,21 +8266,39 @@ export async function getSettlementEntries(params: {
       occurredAt: settlementItems.occurredAt,
       note: settlementItems.note,
       clientName: students.clientName,
-      phone: students.phone,
-      course: students.course,
-      assigneeName: users.name,
+phone: students.phone,
+course: students.course,
+assigneeName: users.name,
+
+semesterOrder: semesters.semesterOrder,
     })
-    .from(settlementItems)
-    .leftJoin(
-      semesters,
+   .from(settlementItems)
+.leftJoin(
+  refunds,
+  and(
+    eq(settlementItems.revenueType, "refund"),
+    eq(refunds.id, settlementItems.sourceId),
+    eq(refunds.organizationId, organizationId)
+  )
+)
+.leftJoin(
+  semesters,
+  and(
+    eq(semesters.organizationId, organizationId),
+    or(
       and(
         eq(settlementItems.revenueType, "subject"),
-        eq(semesters.id, settlementItems.sourceId),
-        eq(semesters.organizationId, organizationId)
+        eq(semesters.id, settlementItems.sourceId)
+      ),
+      and(
+        eq(settlementItems.revenueType, "refund"),
+        eq(semesters.id, refunds.semesterId)
       )
     )
-    .leftJoin(
-      students,
+  )
+)
+.leftJoin(
+  students,
       and(
         eq(settlementItems.studentId, students.id),
         eq(students.organizationId, organizationId)
@@ -7685,10 +8326,25 @@ export async function getSettlementEntries(params: {
 
       type: isRefund ? "refund" : String(r.revenueType || "unknown"),
       revenueType: r.revenueType,
-      settlementStatus: r.settlementStatus,
+settlementStatus: r.settlementStatus,
 
-      assigneeName: r.assigneeName || "",
-      occurredAt: r.occurredAt || null,
+semesterOrder:
+  r.semesterOrder
+    ? Number(r.semesterOrder)
+    : null,
+
+customerType:
+  Number(r.semesterOrder || 0) === 1
+    ? ("new" as const)
+    : ("existing" as const),
+
+customerTypeLabel:
+  Number(r.semesterOrder || 0) === 1
+    ? "신규"
+    : "기존",
+
+assigneeName: r.assigneeName || "",
+occurredAt: r.occurredAt || null,
 
       title: r.title || "",
       institutionName: r.institutionName || "",
@@ -7721,6 +8377,236 @@ export async function getSettlementEntries(params: {
     entries,
     totalCount: entries.length,
     totalAmount,
+  };
+}
+
+export async function getSettlementCustomerTypeSummary(params: {
+  organizationId?: number | null;
+  year: number;
+  month: number;
+  assigneeId?: number;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    return {
+      newSales: 0,
+      existingSales: 0,
+      totalSales: 0,
+
+      newRefund: 0,
+      existingRefund: 0,
+      totalRefund: 0,
+
+      newStudentCount: 0,
+      existingStudentCount: 0,
+      totalStudentCount: 0,
+
+      newEntryCount: 0,
+      existingEntryCount: 0,
+      totalEntryCount: 0,
+    };
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const year = Number(params.year || 0);
+  const month = Number(params.month || 0);
+
+  if (!year || month < 1 || month > 12) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "정산 조회 년월이 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const startDate =
+    `${year}-${String(month).padStart(2, "0")}-01`;
+
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+
+  const endDate =
+    `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+
+  const assigneeCondition = params.assigneeId
+    ? sql`AND si.assigneeId = ${Number(params.assigneeId)}`
+    : sql``;
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      COALESCE(
+        SUM(
+          CASE
+            WHEN COALESCE(sem.semesterOrder, 0) = 1
+            THEN COALESCE(si.grossAmount, 0)
+            ELSE 0
+          END
+        ),
+        0
+      ) AS newSales,
+
+      COALESCE(
+        SUM(
+          CASE
+            WHEN COALESCE(sem.semesterOrder, 0) >= 2
+              OR sem.semesterOrder IS NULL
+            THEN COALESCE(si.grossAmount, 0)
+            ELSE 0
+          END
+        ),
+        0
+      ) AS existingSales,
+
+      COALESCE(
+        SUM(
+          CASE
+            WHEN si.revenueType = 'refund'
+             AND COALESCE(sem.semesterOrder, 0) = 1
+            THEN ABS(COALESCE(si.grossAmount, 0))
+            ELSE 0
+          END
+        ),
+        0
+      ) AS newRefund,
+
+      COALESCE(
+        SUM(
+          CASE
+            WHEN si.revenueType = 'refund'
+             AND (
+               COALESCE(sem.semesterOrder, 0) >= 2
+               OR sem.semesterOrder IS NULL
+             )
+            THEN ABS(COALESCE(si.grossAmount, 0))
+            ELSE 0
+          END
+        ),
+        0
+      ) AS existingRefund,
+
+      COUNT(
+        DISTINCT CASE
+          WHEN COALESCE(sem.semesterOrder, 0) = 1
+           AND si.revenueType != 'refund'
+          THEN si.studentId
+          ELSE NULL
+        END
+      ) AS newStudentCount,
+
+      COUNT(
+        DISTINCT CASE
+          WHEN (
+            COALESCE(sem.semesterOrder, 0) >= 2
+            OR sem.semesterOrder IS NULL
+          )
+           AND si.revenueType != 'refund'
+          THEN si.studentId
+          ELSE NULL
+        END
+      ) AS existingStudentCount,
+
+      COALESCE(
+        SUM(
+          CASE
+            WHEN COALESCE(sem.semesterOrder, 0) = 1
+            THEN 1
+            ELSE 0
+          END
+        ),
+        0
+      ) AS newEntryCount,
+
+      COALESCE(
+        SUM(
+          CASE
+            WHEN COALESCE(sem.semesterOrder, 0) >= 2
+              OR sem.semesterOrder IS NULL
+            THEN 1
+            ELSE 0
+          END
+        ),
+        0
+      ) AS existingEntryCount
+
+    FROM settlement_items si
+
+    LEFT JOIN refunds rf
+      ON si.revenueType = 'refund'
+     AND rf.id = si.sourceId
+     AND rf.organizationId = ${organizationId}
+
+    LEFT JOIN semesters sem
+      ON sem.organizationId = ${organizationId}
+     AND (
+       (
+         si.revenueType = 'subject'
+         AND sem.id = si.sourceId
+       )
+       OR
+       (
+         si.revenueType = 'refund'
+         AND sem.id = rf.semesterId
+       )
+     )
+
+    WHERE si.organizationId = ${organizationId}
+      AND si.occurredAt >= ${startDate}
+      AND si.occurredAt < ${endDate}
+      AND si.settlementStatus = 'confirmed'
+
+      AND (
+        si.revenueType != 'subject'
+        OR sem.approvalStatus = '승인'
+      )
+
+      ${assigneeCondition}
+  `);
+
+  const row = (rows as any[])?.[0] || {};
+
+  const newSales = toNumber(row.newSales);
+  const existingSales = toNumber(row.existingSales);
+
+  const newRefund = toNumber(row.newRefund);
+  const existingRefund = toNumber(row.existingRefund);
+
+  const newStudentCount =
+    toNumber(row.newStudentCount);
+
+  const existingStudentCount =
+    toNumber(row.existingStudentCount);
+
+  const newEntryCount =
+    toNumber(row.newEntryCount);
+
+  const existingEntryCount =
+    toNumber(row.existingEntryCount);
+
+  return {
+    // 환불 원장은 grossAmount가 음수이므로
+    // 이미 해당 신규/기존 매출에서 차감된 순매출
+    newSales,
+    existingSales,
+    totalSales: newSales + existingSales,
+
+    // 화면에서 환불액을 별도로 표시하기 위한 양수 금액
+    newRefund,
+    existingRefund,
+    totalRefund: newRefund + existingRefund,
+
+    newStudentCount,
+    existingStudentCount,
+    totalStudentCount:
+      newStudentCount + existingStudentCount,
+
+    newEntryCount,
+    existingEntryCount,
+    totalEntryCount:
+      newEntryCount + existingEntryCount,
   };
 }
 
@@ -10348,13 +11234,10 @@ export async function resolveSettlementCreditPerSubject(params: {
 
   const rules = institutionRules.length > 0 ? institutionRules : globalRules;
 
-  const matched = [...rules]
-    .filter((row: any) => actualUnitPrice >= toNumber(row.thresholdAmount))
-    .sort(
-      (a: any, b: any) =>
-        toNumber(b.thresholdAmount) - toNumber(a.thresholdAmount) ||
-        Number(b.creditValue || 0) - Number(a.creditValue || 0)
-    )[0];
+  const matched = [...rules].find(
+  (row: any) =>
+    actualUnitPrice === toNumber(row.thresholdAmount)
+);
 
   return {
     creditValue: matched ? Number((matched as any).creditValue || 0) : 0,
@@ -10374,19 +11257,19 @@ async function listActiveSettlementSubjectPriceRulesForCalc(params: {
       : Number(params.educationInstitutionId || 0) || null;
 
   const institutionRules =
-    educationInstitutionId
-      ? await listSettlementSubjectPriceRules({
-          organizationId,
-          educationInstitutionId,
-          activeOnly: true,
-        })
-      : [];
+  educationInstitutionId
+    ? await listSettlementSubjectPriceRules({
+        organizationId,
+        educationInstitutionId,
+        includeInactive: false,
+      })
+    : [];
 
-  const commonRules = await listSettlementSubjectPriceRules({
-    organizationId,
-    educationInstitutionId: null,
-    activeOnly: true,
-  });
+const commonRules = await listSettlementSubjectPriceRules({
+  organizationId,
+  educationInstitutionId: null,
+  includeInactive: false,
+});
 
   const merged = [...institutionRules, ...commonRules]
     .map((row: any) => ({
@@ -10505,42 +11388,61 @@ function resolveSettlementSubjectPriceCombination(params: {
     return null;
   }
 
-  // 3순위: 평균단가에 가장 가까운 조합 선택
-  // 675,000 / 6 = 112,500일 때
-  // 330,000 섞인 조합보다 150,000 + 75,000 조합을 우선 선택
-  const scoreCombination = (combo: any[]) => {
-    const varianceScore = combo.reduce((sum, row) => {
-      const diff = Number(row.unitPrice || 0) - averageUnitPrice;
-      return sum + diff * diff * Number(row.count || 0);
-    }, 0);
+  // 3순위: 높은 단가가 많이 포함된 조합을 우선 선택
+// rules 배열이 이미 높은 금액순으로 정렬되어 있으므로,
+// 각 단가별 과목 수를 앞에서부터 비교한다.
+candidates.sort((a, b) => {
+  const countMapA = new Map<number, number>();
+  const countMapB = new Map<number, number>();
 
-    const distinctCount = combo.length;
-
-    const totalCredits = combo.reduce(
-      (sum, row) =>
-        sum + Number(row.count || 0) * Number(row.creditValue || 0),
-      0
+  for (const row of a) {
+    countMapA.set(
+      Number(row.unitPrice || 0),
+      Number(row.count || 0)
     );
+  }
 
-    return {
-      varianceScore,
-      distinctCount,
-      totalCredits,
-    };
-  };
-
-  candidates.sort((a, b) => {
-    const sa = scoreCombination(a);
-    const sb = scoreCombination(b);
-
-    return (
-      sa.varianceScore - sb.varianceScore ||
-      sa.distinctCount - sb.distinctCount ||
-      sb.totalCredits - sa.totalCredits
+  for (const row of b) {
+    countMapB.set(
+      Number(row.unitPrice || 0),
+      Number(row.count || 0)
     );
-  });
+  }
 
-  return candidates[0];
+  for (const rule of rules) {
+    const price = Number(rule.thresholdAmount || 0);
+
+    const countA = Number(countMapA.get(price) || 0);
+    const countB = Number(countMapB.get(price) || 0);
+
+    // 높은 단가에서 과목 수가 많은 조합을 먼저 선택
+    if (countA !== countB) {
+      return countB - countA;
+    }
+  }
+
+  // 높은 단가 구성이 같다면 단가 종류가 적은 조합 우선
+  if (a.length !== b.length) {
+    return a.length - b.length;
+  }
+
+  // 마지막으로 총 정산학점이 높은 조합 우선
+  const totalCreditsA = a.reduce(
+    (sum, row) =>
+      sum + Number(row.count || 0) * Number(row.creditValue || 0),
+    0
+  );
+
+  const totalCreditsB = b.reduce(
+    (sum, row) =>
+      sum + Number(row.count || 0) * Number(row.creditValue || 0),
+    0
+  );
+
+  return totalCreditsB - totalCreditsA;
+});
+
+return candidates[0];
 }
 
 export async function upsertEducationInstitutionPositionRate(data: {
@@ -12623,9 +13525,10 @@ export async function upsertPracticeSupportRequestByStudent(params: {
   detailAddress?: string | null;
   assigneeName?: string | null;
   managerName?: string | null;
-  practiceHours?: number | null;
-  practiceDate?: string | null;
-  includeEducationCenter?: boolean;
+practiceSemesterLabel?: string | null;
+practiceHours?: number | null;
+practiceDate?: string | null;
+includeEducationCenter?: boolean;
   includePracticeInstitution?: boolean;
   coordinationStatus?: "미섭외" | "섭외중" | "섭외완료";
 }) {
@@ -12675,8 +13578,10 @@ organizationId,
   detailAddress: params.detailAddress ?? null,
   assigneeName: params.assigneeName ?? null,
   managerName: params.managerName ?? null,
-  practiceHours: params.practiceHours ?? null,
-  practiceDate: params.practiceDate ?? null,
+practiceSemesterLabel:
+  params.practiceSemesterLabel?.trim() || null,
+practiceHours: params.practiceHours ?? null,
+practiceDate: params.practiceDate ?? null,
   includeEducationCenter: params.includeEducationCenter ?? true,
   includePracticeInstitution: params.includePracticeInstitution ?? true,
   coordinationStatus: params.coordinationStatus ?? "미섭외",
@@ -15183,6 +16088,8 @@ const organizationId = requireOrganizationId(params?.organizationId);
 // ORG: User Mapping
 // -----------------------------------------------------
 
+
+
 export async function getUserOrgMapping(
   userId: number,
   params?: { organizationId?: number | null }
@@ -15204,6 +16111,50 @@ const organizationId = requireOrganizationId(params?.organizationId);
     .limit(1);
 
   return result[0];
+}
+
+export async function getUserTeamMemberIds(
+  userId: number,
+  params?: { organizationId?: number | null }
+) {
+  const db = await getDb();
+  if (!db) return [Number(userId)];
+
+  const organizationId = requireOrganizationId(params?.organizationId);
+  const normalizedUserId = Number(userId);
+
+  const mapping = await getUserOrgMapping(normalizedUserId, {
+    organizationId,
+  });
+
+  const teamId = Number(mapping?.teamId || 0);
+
+  // 팀이 설정되지 않은 관리자는 본인 DB만 조회
+  if (!teamId) {
+    return [normalizedUserId];
+  }
+
+  const rows = await db
+    .select({
+      userId: userOrgMappings.userId,
+    })
+    .from(userOrgMappings)
+    .where(
+      and(
+        eq(userOrgMappings.organizationId, organizationId),
+        eq(userOrgMappings.teamId, teamId)
+      )
+    );
+
+  const userIds = rows
+    .map((row) => Number(row.userId))
+    .filter((id) => Number.isFinite(id) && id > 0);
+
+  if (!userIds.includes(normalizedUserId)) {
+    userIds.push(normalizedUserId);
+  }
+
+  return Array.from(new Set(userIds));
 }
 
 export async function upsertUserOrgMapping(data: {

@@ -176,6 +176,25 @@ function getCurrentAcademicSemesterLabel(date = new Date()) {
   return `${year}년 1학기`;
 }
 
+function getNextSemesterLabel(currentLabel?: string | null) {
+  const label = String(currentLabel || "").trim();
+
+  const match = label.match(/^(\d{4})년\s*([12])학기$/);
+
+  if (!match) {
+    return getCurrentAcademicSemesterLabel();
+  }
+
+  const year = Number(match[1]);
+  const semester = Number(match[2]);
+
+  if (semester === 1) {
+    return `${year}년 2학기`;
+  }
+
+  return `${year + 1}년 1학기`;
+}
+
 type TemplateTabType = "전공필수" | "전공선택" | "교양" | "일반";
 const ALL_PRACTICE_COURSES_VALUE = "__all_practice_courses__";
 
@@ -732,9 +751,10 @@ const deletePracticeSupportMut =
 
   hasPractice: false,
 practiceRequiredSelection: "",
-  practiceHours: "",
-  practiceDate: "",
-  practiceArranged: false,
+ practiceHours: "",
+practiceSemesterLabel: "",
+practiceDate: "",
+practiceArranged: false,
   practiceStatus: "미섭외",
   specialNotes: "",
   practiceAddress: "",
@@ -1339,7 +1359,13 @@ if (isReadOnly) {
     hasPractice: normalizePracticeSelection((plan as any)?.hasPractice) === "required",
 practiceRequiredSelection: normalizePracticeSelection((plan as any)?.hasPractice),
     practiceHours: plan?.practiceHours?.toString() || "",
-    practiceDate: plan?.practiceDate || "",
+
+practiceSemesterLabel:
+  selectedPracticeSupport?.practiceSemesterLabel ||
+  selectedSemester?.semesterLabel ||
+  getCurrentAcademicSemesterLabel(),
+
+practiceDate: plan?.practiceDate || "",
     practiceArranged: plan?.practiceArranged || false,
     practiceStatus:
       selectedPracticeSupport?.coordinationStatus ||
@@ -1428,6 +1454,9 @@ if (planForm.practiceRequiredSelection === "not_required") {
       if (!student) {
         throw new Error("학생 정보를 찾을 수 없습니다.");
       }
+if (!planForm.practiceSemesterLabel?.trim()) {
+  throw new Error("실습 필요 선택 시 학기구분은 필수입니다.");
+}
 if (!planForm.practiceDate?.trim()) {
   throw new Error("실습 필요 선택 시 실습 예정일은 필수입니다.");
 }
@@ -1464,10 +1493,15 @@ for (const practiceCourse of practiceCourses) {
     detailAddress: String((student as any)?.detailAddress || "").trim() || null,
     assigneeName: null,
     managerName: null,
-    practiceHours: planForm.practiceHours
-      ? Number(planForm.practiceHours)
-      : null,
-    practiceDate: planForm.practiceDate || null,
+
+practiceSemesterLabel:
+  planForm.practiceSemesterLabel || null,
+
+practiceHours: planForm.practiceHours
+  ? Number(planForm.practiceHours)
+  : null,
+
+practiceDate: planForm.practiceDate || null,
     includeEducationCenter: true,
     includePracticeInstitution: true,
     coordinationStatus:
@@ -1494,21 +1528,34 @@ await Promise.all([
 };
 
   const openAddSemester = () => {
-    const nextOrder =
-      sortedSemesters.length > 0
-        ? Math.max(...sortedSemesters.map((s: any) => Number(s.semesterOrder))) + 1
-        : 1;
+  const lastSemester =
+    sortedSemesters.length > 0
+      ? [...sortedSemesters].sort(
+          (a: any, b: any) =>
+            Number(b.semesterOrder || 0) -
+            Number(a.semesterOrder || 0)
+        )[0]
+      : null;
 
-    setSemForm({
-      semesterOrder: String(nextOrder),
-semesterLabel: getCurrentAcademicSemesterLabel(),
-      plannedMonth: "",
-      plannedInstitutionId: "",
-      plannedSubjectCount: "",
-      plannedAmount: "",
-    });
-    setSemDialogOpen(true);
-  };
+  const nextOrder = lastSemester
+    ? Number(lastSemester.semesterOrder || 0) + 1
+    : 1;
+
+  const nextSemesterLabel = lastSemester?.semesterLabel
+    ? getNextSemesterLabel(lastSemester.semesterLabel)
+    : getCurrentAcademicSemesterLabel();
+
+  setSemForm({
+    semesterOrder: String(nextOrder),
+    semesterLabel: nextSemesterLabel,
+    plannedMonth: "",
+    plannedInstitutionId: "",
+    plannedSubjectCount: "",
+    plannedAmount: "",
+  });
+
+  setSemDialogOpen(true);
+};
 
   const handleAddSemester = () => {
 if (isReadOnly) {
@@ -3173,18 +3220,6 @@ disabled={isReadOnly}
       />
     </div>
 
-    <div className="space-y-1">
-      <Label className="text-xs">실습 예정일</Label>
-      <Input
-        value={planForm.practiceDate}
-disabled={isReadOnly}
-        onChange={(e) =>
-          setPlanForm({ ...planForm, practiceDate: e.target.value })
-        }
-        placeholder="예: 2026-06"
-      />
-    </div>
-
     <div className="space-y-1 md:col-span-2">
       <Label className="text-xs">주소</Label>
       <Input
@@ -3194,6 +3229,45 @@ disabled={isReadOnly}
           setPlanForm({ ...planForm, practiceAddress: e.target.value })
         }
         placeholder="실습 진행 지역 입력 (상세주소 X) ..."
+      />
+    </div>
+
+<div className="space-y-1">
+  <Label className="text-xs">학기구분</Label>
+
+  <Select
+    value={planForm.practiceSemesterLabel}
+    onValueChange={(value) =>
+      setPlanForm((prev) => ({
+        ...prev,
+        practiceSemesterLabel: value,
+      }))
+    }
+    disabled={isReadOnly}
+  >
+    <SelectTrigger>
+      <SelectValue placeholder="학기구분 선택" />
+    </SelectTrigger>
+
+    <SelectContent>
+      {semesterLabelOptions.map((label) => (
+        <SelectItem key={label} value={label}>
+          {label}
+        </SelectItem>
+      ))}
+    </SelectContent>
+  </Select>
+</div>
+
+<div className="space-y-1">
+      <Label className="text-xs">실습 예정일</Label>
+      <Input
+        value={planForm.practiceDate}
+disabled={isReadOnly}
+        onChange={(e) =>
+          setPlanForm({ ...planForm, practiceDate: e.target.value })
+        }
+        placeholder="예: 2026-06"
       />
     </div>
 

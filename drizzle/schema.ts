@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
-    int,
+  int,
   bigint,
   mysqlEnum,
   mysqlTable,
@@ -12,8 +12,9 @@ import {
   boolean,
   datetime,
   serial,
-index,
-json,
+  index,
+  uniqueIndex,
+  json,
 } from "drizzle-orm/mysql-core";
 
 // ─── Lead Forms ──────────────────────────────────────────────────────
@@ -306,6 +307,104 @@ export const smsLogs = mysqlTable("sms_logs", {
 
 export type SmsLog = typeof smsLogs.$inferSelect;
 export type InsertSmsLog = typeof smsLogs.$inferInsert;
+
+// ─── SMS Opt Outs (문자 수신거부) ───────────────────────────────────
+export const smsOptOuts = mysqlTable(
+  "sms_opt_outs",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId")
+      .notNull()
+      .default(1),
+
+    // 전화번호 원문은 저장하지 않고
+    // 정규화된 전화번호의 HMAC-SHA256 결과만 저장
+    phoneHash: varchar("phoneHash", {
+      length: 64,
+    }).notNull(),
+
+    // 관리 화면에서 대상을 구분하기 위한 전화번호 마지막 4자리
+    phoneLast4: varchar("phoneLast4", {
+      length: 4,
+    }),
+
+    // 수신거부 처리 사유
+    reason: varchar("reason", {
+      length: 255,
+    }),
+
+    // 현재는 manual 사용
+    // 이후 080 연동, 엑셀 등록 등의 확장을 고려
+    source: mysqlEnum("source", [
+      "manual",
+      "provider",
+      "import",
+    ])
+      .notNull()
+      .default("manual"),
+
+    // true: 현재 수신거부 상태
+    // false: 수신거부 해제 상태
+    isActive: boolean("isActive")
+      .notNull()
+      .default(true),
+
+    optedOutAt: datetime("optedOutAt")
+      .notNull(),
+
+    optedOutBy: int("optedOutBy"),
+
+    releasedAt: datetime("releasedAt"),
+
+    releasedBy: int("releasedBy"),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    // 같은 회사에서 같은 번호가 중복 등록되지 않도록 제한
+    uniqueOrgPhoneHashIdx: uniqueIndex(
+      "uq_sms_opt_out_org_phone_hash"
+    ).on(
+      table.organizationId,
+      table.phoneHash
+    ),
+
+    // 회사별 활성 수신거부 목록 조회
+    orgActiveIdx: index(
+      "idx_sms_opt_out_org_active"
+    ).on(
+      table.organizationId,
+      table.isActive
+    ),
+
+    // 수신거부 목록 최신순 조회
+    orgOptedOutAtIdx: index(
+      "idx_sms_opt_out_org_opted_at"
+    ).on(
+      table.organizationId,
+      table.optedOutAt
+    ),
+
+    // 전화번호 뒷자리 검색
+    orgLast4Idx: index(
+      "idx_sms_opt_out_org_last4"
+    ).on(
+      table.organizationId,
+      table.phoneLast4
+    ),
+  })
+);
+
+export type SmsOptOut = typeof smsOptOuts.$inferSelect;
+export type InsertSmsOptOut = typeof smsOptOuts.$inferInsert;
 
 // ─── Consultations (상담 DB) ─────────────────────────────────────────
 export const consultations = mysqlTable(
@@ -1388,8 +1487,12 @@ organizationId: int("organizationId").notNull().default(1),
 
   course: varchar("course", { length: 200 }).notNull(),
 
-  inputAddress: varchar("inputAddress", { length: 255 }),
+    inputAddress: varchar("inputAddress", { length: 255 }),
   detailAddress: varchar("detailAddress", { length: 255 }),
+
+  practiceSemesterLabel: varchar("practiceSemesterLabel", {
+    length: 50,
+  }),
 
   practiceHours: int("practiceHours"),
   practiceDate: varchar("practiceDate", { length: 50 }),

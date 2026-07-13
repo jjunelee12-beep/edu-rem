@@ -96,8 +96,83 @@ export default function OverviewDashboard() {
         <div className="flex justify-center py-12">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
-      ) : (
+            ) : (
         <>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <UserPlus className="h-4 w-4 text-primary" />
+              <h2 className="text-base font-semibold">
+                이번 달 신규·기존 현황
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Card>
+                <CardContent className="px-6 py-5">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">
+                        신규
+                      </p>
+
+                      <div className="mt-2 flex flex-wrap items-end gap-x-4 gap-y-1">
+                        <span className="text-3xl font-bold text-emerald-600">
+                          {currentStats.monthNewStudentCount ?? 0}명
+                        </span>
+
+                        <span className="text-xl font-bold">
+                          {formatCurrency(
+                            Number(currentStats.monthNewSales ?? 0)
+                          )}
+                        </span>
+                      </div>
+
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        1학기 등록 · 환불 차감 반영
+                      </p>
+                    </div>
+
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border bg-emerald-50">
+                      <UserPlus className="h-5 w-5 text-emerald-600" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="px-6 py-5">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">
+                        기존
+                      </p>
+
+                      <div className="mt-2 flex flex-wrap items-end gap-x-4 gap-y-1">
+                        <span className="text-3xl font-bold text-blue-600">
+                          {currentStats.monthExistingStudentCount ?? 0}명
+                        </span>
+
+                        <span className="text-xl font-bold">
+                          {formatCurrency(
+                            Number(currentStats.monthExistingSales ?? 0)
+                          )}
+                        </span>
+                      </div>
+
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        2학기 이상 · 환불 차감 반영
+                      </p>
+                    </div>
+
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border bg-blue-50">
+                      <TrendingUp className="h-5 w-5 text-blue-600" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-primary" />

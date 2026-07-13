@@ -39,37 +39,132 @@ onToggleNotification?: () => void;
 
 type SidebarTab = "org" | "rooms" | "notificationSettings" | "chatSettings";
 
-function formatRoomTimeLabel(value?: string) {
- if (!value) return "";
+function parseMessengerDate(
+  value?: string | Date | null
+) {
+  if (!value) return null;
 
- const date = new Date(value);
- if (Number.isNaN(date.getTime())) {
- return value;
- }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime())
+      ? null
+      : value;
+  }
 
- const now = new Date();
+  const raw = String(value).trim();
 
- const isSameDay =
- now.getFullYear() === date.getFullYear() &&
- now.getMonth() === date.getMonth() &&
- now.getDate() === date.getDate();
+  if (!raw) {
+    return null;
+  }
 
- if (isSameDay) {
- return date.toLocaleTimeString("ko-KR", {
- hour: "2-digit",
- minute: "2-digit",
- });
- }
+  const hasTimezone =
+    /Z$/i.test(raw) ||
+    /[+-]\d{2}:\d{2}$/.test(raw);
 
- const diffMs = now.getTime() - date.getTime();
- const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const normalized = hasTimezone
+    ? raw
+    : `${raw.replace(" ", "T")}Z`;
 
- if (diffDays === 1) return "어제";
- if (diffDays < 7) {
- return ["일", "월", "화", "수", "목", "금", "토"][date.getDay()];
- }
+  const date = new Date(normalized);
 
- return `${date.getMonth() + 1}/${date.getDate()}`;
+  return Number.isNaN(date.getTime())
+    ? null
+    : date;
+}
+
+function getSeoulDateKey(
+  value: string | Date
+) {
+  const date =
+    parseMessengerDate(value);
+
+  if (!date) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat(
+    "en-CA",
+    {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }
+  ).format(date);
+}
+
+function formatRoomTimeLabel(
+  value?: string
+) {
+  const date =
+    parseMessengerDate(value);
+
+  if (!date) {
+    return value || "";
+  }
+
+  const now = new Date();
+
+  const dateKey =
+    getSeoulDateKey(date);
+
+  const todayKey =
+    getSeoulDateKey(now);
+
+  if (dateKey === todayKey) {
+    return date.toLocaleTimeString(
+      "ko-KR",
+      {
+        timeZone: "Asia/Seoul",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      }
+    );
+  }
+
+  const dateStart =
+    new Date(
+      `${dateKey}T00:00:00+09:00`
+    );
+
+  const todayStart =
+    new Date(
+      `${todayKey}T00:00:00+09:00`
+    );
+
+  const diffDays = Math.round(
+    (
+      todayStart.getTime() -
+      dateStart.getTime()
+    ) /
+      (1000 * 60 * 60 * 24)
+  );
+
+  if (diffDays === 1) {
+    return "어제";
+  }
+
+  if (
+    diffDays > 1 &&
+    diffDays < 7
+  ) {
+    return new Intl.DateTimeFormat(
+      "ko-KR",
+      {
+        timeZone: "Asia/Seoul",
+        weekday: "short",
+      }
+    ).format(date);
+  }
+
+  return new Intl.DateTimeFormat(
+    "ko-KR",
+    {
+      timeZone: "Asia/Seoul",
+      month: "numeric",
+      day: "numeric",
+    }
+  ).format(date);
 }
 
 function getLastMessagePreview(value?: string) {

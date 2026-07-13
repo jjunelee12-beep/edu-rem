@@ -24,6 +24,7 @@ import SemesterList from "./pages/SemesterList";
 import System from "./pages/System";
 import PublicLeadFormPage from "@/pages/PublicLeadFormPage";
 import AdFormPage from "@/pages/AdFormPage";
+import WithOneLanding from "@/pages/WithOneLanding";
 import EducationInstitutions from "@/pages/EducationInstitutions";
 import PrivateCertificateCenterPage from "@/pages/private-certificate-center";
 import PracticeSupportCenterPage from "@/pages/practice-support-center";
@@ -192,6 +193,7 @@ function PublicRouter() {
       <Route path="/login" component={Login} />
       <Route path="/form/:token" component={PublicLeadFormPage} />
       <Route path="/ad-form/:token" component={AdFormPage} />
+<Route path="/withone" component={WithOneLanding} />
 <Route
   path="/billing/register/:token"
   component={BillingRegisterPage}
@@ -392,10 +394,11 @@ function AppContent() {
   const [location] = useLocation();
 
   const isPublicPage =
-  location === "/login" ||
-  location.startsWith("/form/") ||
-  location.startsWith("/ad-form/") ||
-  location.startsWith("/billing/register/");
+    location === "/login" ||
+    location === "/withone" ||
+    location.startsWith("/form/") ||
+    location.startsWith("/ad-form/") ||
+    location.startsWith("/billing/register/");
 
   if (isPublicPage) {
     return <PublicRouter />;

@@ -9,6 +9,9 @@ import TableRow from "@tiptap/extension-table-row";
 import TableHeader from "@tiptap/extension-table-header";
 import TableCell from "@tiptap/extension-table-cell";
 import HorizontalRule from "@tiptap/extension-horizontal-rule";
+import { TextStyle } from "@tiptap/extension-text-style";
+import { Extension } from "@tiptap/core";
+import { Color } from "@tiptap/extension-color";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +38,57 @@ import {
 } from "lucide-react";
 import { useEffect, useRef } from "react";
 
+const FontSize = Extension.create({
+  name: "fontSize",
+
+  addOptions() {
+    return {
+      types: ["textStyle"],
+    };
+  },
+
+  addGlobalAttributes() {
+    return [
+      {
+        types: this.options.types,
+        attributes: {
+          fontSize: {
+            default: null,
+            parseHTML: (element) =>
+              element.style.fontSize?.replace(/['"]+/g, "") || null,
+            renderHTML: (attributes) => {
+              if (!attributes.fontSize) {
+                return {};
+              }
+
+              return {
+                style: `font-size: ${attributes.fontSize}`,
+              };
+            },
+          },
+        },
+      },
+    ];
+  },
+
+  addCommands() {
+    return {
+      setFontSize:
+        (fontSize: string) =>
+        ({ chain }) =>
+          chain().setMark("textStyle", { fontSize }).run(),
+
+      unsetFontSize:
+        () =>
+        ({ chain }) =>
+          chain()
+            .setMark("textStyle", { fontSize: null })
+            .removeEmptyTextStyle()
+            .run(),
+    } as any;
+  },
+});
+
 type NoticeRichEditorProps = {
   value: string;
   onChange: (html: string) => void;
@@ -42,10 +96,10 @@ type NoticeRichEditorProps = {
 
 async function uploadNoticeImage(file: File) {
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("image", file);
 
   const res = await fetch(
-    `${import.meta.env.VITE_API_BASE_URL || ""}/api/upload`,
+    `${import.meta.env.VITE_API_BASE_URL || ""}/api/notices/upload-image`,
     {
       method: "POST",
       body: formData,
@@ -54,8 +108,15 @@ async function uploadNoticeImage(file: File) {
   );
 
   if (!res.ok) {
-    throw new Error("이미지 업로드에 실패했습니다.");
-  }
+  let message = "이미지 업로드에 실패했습니다.";
+
+  try {
+    const error = await res.json();
+    message = error?.message || message;
+  } catch {}
+
+  throw new Error(message);
+}
 
   const json = await res.json();
   const fileUrl = json?.fileUrl || json?.url;
@@ -64,7 +125,13 @@ async function uploadNoticeImage(file: File) {
     throw new Error("업로드 URL을 받지 못했습니다.");
   }
 
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
+
+if (String(fileUrl).startsWith("http")) {
   return String(fileUrl);
+}
+
+return `${apiBaseUrl}${String(fileUrl).startsWith("/") ? "" : "/"}${fileUrl}`;
 }
 
 export default function NoticeRichEditor({
@@ -76,12 +143,19 @@ const isApplyingExternalValueRef = useRef(false);
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({
-        heading: {
-          levels: [1, 2],
-        },
-      }),
-      Image.configure({
+  StarterKit.configure({
+    heading: {
+      levels: [1, 2],
+    },
+  }),
+
+ TextStyle,
+FontSize,
+Color.configure({
+  types: ["textStyle"],
+}),
+
+  Image.configure({
         inline: false,
         allowBase64: false,
       }),
@@ -170,7 +244,39 @@ const isApplyingExternalValueRef = useRef(false);
     editor.chain().focus().setImage({ src: url, alt: file.name }).run();
   };
 
-  const handleSetLink = () => {
+  const handleFontSizeChange = (value: string) => {
+  if (!editor) return;
+
+  if (!value) {
+    editor.chain().focus().unsetFontSize().run();
+    return;
+  }
+
+  const size = Number(value);
+
+  if (!Number.isFinite(size)) return;
+
+  const safeSize = Math.max(8, Math.min(size, 72));
+
+  editor
+    .chain()
+    .focus()
+    .setFontSize(`${safeSize}px`)
+    .run();
+};
+
+const handleTextColorChange = (color: string) => {
+  if (!editor) return;
+
+  if (!color) {
+    editor.chain().focus().unsetColor().run();
+    return;
+  }
+
+  editor.chain().focus().setColor(color).run();
+};
+
+const handleSetLink = () => {
     if (!editor) return;
 
     const previousUrl = editor.getAttributes("link").href || "";
@@ -242,7 +348,7 @@ const handleDeleteTable = () => {
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+    <div className="rounded-2xl border bg-white shadow-sm">
       <input
         ref={inputRef}
         type="file"
@@ -251,7 +357,7 @@ const handleDeleteTable = () => {
         onChange={(e) => handlePickImage(e.target.files?.[0] ?? null)}
       />
 
-      <div className="flex flex-wrap items-center gap-2 border-b bg-slate-50 px-4 py-3">
+      <div className="sticky top-16 z-30 flex flex-wrap items-center gap-2 border-b bg-slate-50/95 px-4 py-3 backdrop-blur">
         <Button
           type="button"
           size="sm"
@@ -269,6 +375,44 @@ const handleDeleteTable = () => {
         >
           <Italic className="h-4 w-4" />
         </Button>
+
+<div className="flex items-center gap-1">
+  <input
+  type="number"
+  min={8}
+  max={72}
+  defaultValue={15}
+  onBlur={(e) => handleFontSizeChange(e.target.value)}
+  onKeyDown={(e) => {
+    if (e.key === "Enter") {
+      handleFontSizeChange(e.currentTarget.value);
+      e.currentTarget.blur();
+    }
+  }}
+  className="h-9 w-16 rounded-md border bg-white px-2 text-center text-sm"
+/>
+
+  <span className="text-xs text-slate-500">px</span>
+</div>
+
+<div className="flex items-center gap-1">
+  <input
+    type="color"
+    defaultValue="#000000"
+    onChange={(e) => handleTextColorChange(e.target.value)}
+    className="h-9 w-10 cursor-pointer rounded-md border bg-white p-1"
+    title="글씨 색상"
+  />
+
+  <Button
+    type="button"
+    size="sm"
+    variant="outline"
+    onClick={() => editor.chain().focus().unsetColor().run()}
+  >
+    색상 초기화
+  </Button>
+</div>
 
         <Button
           type="button"
@@ -490,4 +634,13 @@ const handleDeleteTable = () => {
       <EditorContent editor={editor} />
     </div>
   );
+}
+
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    fontSize: {
+      setFontSize: (fontSize: string) => ReturnType;
+      unsetFontSize: () => ReturnType;
+    };
+  }
 }
