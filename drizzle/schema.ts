@@ -496,6 +496,7 @@ export const students = mysqlTable(
     institutionId: int("institutionId"),
 
     totalSemesters: int("totalSemesters"),
+studentLoginId: varchar("studentLoginId", { length: 100 }),
 
     assigneeId: int("assigneeId").notNull(),
 

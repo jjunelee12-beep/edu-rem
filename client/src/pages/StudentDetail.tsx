@@ -2288,14 +2288,28 @@ const getCountStatusClass = (current: number, target: number) => {
               </div>
             </div>
 
-            <div>
-              <p className="text-xs text-muted-foreground mb-0.5">총 학기 수</p>
-              <EditableCell
-                value={sortedSemesters.length ? String(sortedSemesters.length) : "0"}
-                onBlur={() => {}}
-                disabled
-              />
-            </div>
+           <div>
+  <p className="text-xs text-muted-foreground mb-0.5">총 학기 수</p>
+  <EditableCell
+    value={sortedSemesters.length ? String(sortedSemesters.length) : "0"}
+    onBlur={() => {}}
+    disabled
+  />
+</div>
+
+<div>
+  <p className="text-xs text-muted-foreground mb-0.5">학생 아이디</p>
+  <EditableCell
+    value={String((student as any)?.studentLoginId || "")}
+    disabled={isReadOnly}
+    onBlur={(value) => {
+      updateStudentMut.mutate({
+        id: studentId,
+        studentLoginId: value.trim() || null,
+      } as any);
+    }}
+  />
+</div>
           </div>
 
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">

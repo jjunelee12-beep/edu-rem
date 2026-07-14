@@ -6426,8 +6426,9 @@ restore: hostProcedure
           paymentDate: z.string().optional(),
           institution: z.string().optional(),
           institutionId: z.number().optional(),
-          totalSemesters: z.number().optional(),
-          address: z.string().optional(),
+totalSemesters: z.number().optional(),
+studentLoginId: z.string().max(100).optional().nullable(),
+address: z.string().optional(),
           detailAddress: z.string().optional(),
         })
       )
@@ -6455,6 +6456,11 @@ restore: hostProcedure
 
         if (rest.startDate) data.startDate = new Date(rest.startDate);
         if (rest.paymentDate) data.paymentDate = new Date(rest.paymentDate);
+if (rest.studentLoginId !== undefined) {
+  data.studentLoginId =
+    String(rest.studentLoginId || "").trim() || null;
+}
+
         await db.updateStudent(id, data, {
   organizationId: getCtxOrganizationId(ctx),
 });
