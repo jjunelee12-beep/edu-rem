@@ -940,9 +940,29 @@ const isPendingRegister = item.status === "등록예정";
 const isOwnConsultation =
   Number(item.assigneeId) === Number(currentUserId);
 
-// 상담일·문의경로·이름·연락처·최종학력·희망과정
+// 상담일·문의경로·이름·연락처
 // HOST만 수정 가능
 const canEditCoreFields = isHost;
+
+// 최종학력
+// HOST는 항상 수정 가능
+// ADMIN / STAFF는 본인 상담이며 값이 비어 있을 때만 최초 입력 가능
+const canEditFinalEducation =
+  isHost ||
+  (
+    isOwnConsultation &&
+    !String(item.finalEducation || "").trim()
+  );
+
+// 희망과정
+// HOST는 항상 수정 가능
+// ADMIN / STAFF는 본인 상담이며 값이 비어 있을 때만 최초 입력 가능
+const canEditDesiredCourse =
+  isHost ||
+  (
+    isOwnConsultation &&
+    !String(item.desiredCourse || "").trim()
+  );
 
 // 상담내역·상태
 // HOST 또는 해당 상담 담당자 본인만 수정 가능
@@ -1002,18 +1022,18 @@ const canDelete = canManageAll;
       </td>
 
       <td className="px-1 py-2">
-        <EditableCell
-          value={item.finalEducation || ""}
-          onBlur={(v) => onBlur(item.id, "finalEducation", v)}
-          disabled={!canEditCoreFields}
-        />
-      </td>
+  <EditableCell
+    value={item.finalEducation || ""}
+    onBlur={(v) => onBlur(item.id, "finalEducation", v)}
+    disabled={!canEditFinalEducation}
+  />
+</td>
 
       <td className="px-1 py-2">
         <EditableCell
           value={item.desiredCourse || ""}
           onBlur={(v) => onBlur(item.id, "desiredCourse", v)}
-          disabled={!canEditCoreFields}
+          disabled={!canEditDesiredCourse}
         />
       </td>
 

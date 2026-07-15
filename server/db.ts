@@ -1,4 +1,4 @@
-import { eq, and, or, sql, desc, like, asc } from "drizzle-orm";
+import { eq, and, or, sql, desc, like, asc, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -4256,6 +4256,7 @@ export async function listConsultations(
   assigneeId?: number,
   params?: {
     organizationId?: number | null;
+    assigneeIds?: number[];
   }
 ) {
   const db = await getDb();
@@ -4266,6 +4267,18 @@ export async function listConsultations(
   const baseQuery = db
     .select()
     .from(consultations);
+
+if (params?.assigneeIds?.length) {
+  return baseQuery
+    .where(
+      and(
+        eq(consultations.organizationId, organizationId),
+        inArray(consultations.assigneeId, params.assigneeIds),
+        sql`${consultations.deletedAt} IS NULL`
+      )
+    )
+    .orderBy(desc(consultations.createdAt));
+}
 
   if (assigneeId) {
   return baseQuery

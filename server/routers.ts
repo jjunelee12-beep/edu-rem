@@ -5903,12 +5903,27 @@ organizationId: getCtxOrganizationId(ctx),
   const showAll = !!input?.showAll;
   const myId = Number(ctx.user.id) || 1;
 
-  const assigneeId =
-    isAdminOrHost(ctx.user) && showAll ? undefined : myId;
-
-  return db.listConsultations(assigneeId, {
+  if (isHost(ctx.user) && showAll) {
+  return db.listConsultations(undefined, {
     organizationId,
   });
+}
+
+if (isAdmin(ctx.user) && showAll) {
+  const teamMemberIds =
+    await db.getUserTeamMemberIds(myId, {
+      organizationId,
+    });
+
+  return db.listConsultations(undefined, {
+    organizationId,
+    assigneeIds: teamMemberIds,
+  });
+}
+
+return db.listConsultations(myId, {
+  organizationId,
+});
 }), 
 
     create: protectedProcedure
@@ -6112,7 +6127,7 @@ await db.bulkCreateConsultations(rows as any);
 
     const myId = Number(ctx.user.id) || 1;
 
-    if (!isAdminOrHost(ctx.user) && item.assigneeId !== myId) {
+    if (!isHost(ctx.user) && Number(item.assigneeId) !== myId) {
       throwAppError(
   ERROR_CODES.PERMISSION_DENIED,
   "권한이 없습니다.",
@@ -6123,7 +6138,7 @@ await db.bulkCreateConsultations(rows as any);
     const { id, ...rest } = input;
     const data: any = { ...rest };
 
-    if (ctx.user.role === "staff") {
+    if (!isHost(ctx.user)) {
       const allowedForStaff: any = {};
 
       if (rest.notes !== undefined) {
@@ -6133,6 +6148,50 @@ await db.bulkCreateConsultations(rows as any);
       if (rest.status !== undefined) {
         allowedForStaff.status = rest.status;
       }
+
+if (rest.finalEducation !== undefined) {
+  const currentValue = String(
+    item.finalEducation || ""
+  ).trim();
+
+  const nextValue = String(
+    rest.finalEducation || ""
+  ).trim();
+
+  if (currentValue && currentValue !== nextValue) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "최종학력은 최초 입력 후 수정할 수 없습니다.",
+      403
+    );
+  }
+
+  if (!currentValue && nextValue) {
+    allowedForStaff.finalEducation = nextValue;
+  }
+}
+
+if (rest.desiredCourse !== undefined) {
+  const currentValue = String(
+    item.desiredCourse || ""
+  ).trim();
+
+  const nextValue = String(
+    rest.desiredCourse || ""
+  ).trim();
+
+  if (currentValue && currentValue !== nextValue) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "희망과정은 최초 입력 후 수정할 수 없습니다.",
+      403
+    );
+  }
+
+  if (!currentValue && nextValue) {
+    allowedForStaff.desiredCourse = nextValue;
+  }
+}
 
       await db.updateConsultation(id, allowedForStaff, {
   organizationId,
