@@ -53,6 +53,13 @@ export type PracticeMasterInstitutionUploadRow = {
   detailAddress?: string | null;
 
   availableCourse?: string | null;
+
+  price?: string | null;
+
+  associationManagementNo?: string | null;
+  selectionValidFrom?: string | null;
+  selectionValidTo?: string | null;
+  selectionStatus?: string | null;
 };
 
 export type PracticeMasterEducationCenterUploadRow = {
@@ -81,6 +88,12 @@ type PracticeMasterPreviewIncoming = {
   detailAddress?: string | null;
 
   availableCourse?: string | null;
+  price?: string | null;
+
+  associationManagementNo?: string | null;
+  selectionValidFrom?: string | null;
+  selectionValidTo?: string | null;
+  selectionStatus?: string | null;
 };
 
 type PracticeMasterPreviewAction = {
@@ -2307,6 +2320,16 @@ function normalizePracticeMasterPhone(
     .trim();
 }
 
+function normalizePracticeManagementNo(
+  value?: string | null
+) {
+  return String(value || "")
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, "")
+    .toUpperCase();
+}
+
 function normalizePracticeMasterAddress(
   value?: string | null
 ) {
@@ -2369,6 +2392,81 @@ function practiceMasterNullableText(
   return normalized || null;
 }
 
+function normalizePracticeMasterDate(
+  value?: string | null
+) {
+  const raw =
+    normalizePracticeMasterText(value);
+
+  if (!raw) return null;
+
+  const normalized =
+    raw
+      .replace(/[./]/g, "-")
+      .replace(/\s+/g, "");
+
+  const match =
+    normalized.match(
+      /^(\d{4})-(\d{1,2})-(\d{1,2})$/
+    );
+
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  const date =
+    new Date(year, month - 1, day);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return [
+    String(year).padStart(4, "0"),
+    String(month).padStart(2, "0"),
+    String(day).padStart(2, "0"),
+  ].join("-");
+}
+
+function resolvePracticeInstitutionActive(input: {
+  selectionStatus?: string | null;
+  selectionValidTo?: string | null;
+}) {
+  const status =
+    normalizePracticeMasterText(
+      input.selectionStatus
+    );
+
+  if (status.includes("취소")) {
+    return false;
+  }
+
+  const validTo =
+    normalizePracticeMasterDate(
+      input.selectionValidTo
+    );
+
+  if (!validTo) {
+    return true;
+  }
+
+  const now = new Date();
+
+  const today = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
+
+  return validTo >= today;
+}
+
 function arePracticeMasterValuesEqual(
   left?: string | null,
   right?: string | null
@@ -2388,6 +2486,12 @@ function getPracticeMasterChangedFields(input: {
     address?: string | null;
     detailAddress?: string | null;
     availableCourse?: string | null;
+    price?: string | null;
+
+    associationManagementNo?: string | null;
+    selectionValidFrom?: string | null;
+    selectionValidTo?: string | null;
+    selectionStatus?: string | null;
   };
 
   incoming: {
@@ -2398,6 +2502,12 @@ function getPracticeMasterChangedFields(input: {
     address?: string | null;
     detailAddress?: string | null;
     availableCourse?: string | null;
+    price?: string | null;
+
+    associationManagementNo?: string | null;
+    selectionValidFrom?: string | null;
+    selectionValidTo?: string | null;
+    selectionStatus?: string | null;
   };
 }) {
   const changedFields: string[] = [];
@@ -2467,6 +2577,67 @@ function getPracticeMasterChangedFields(input: {
     )
   ) {
     changedFields.push("availableCourse");
+  }
+
+  if (
+    normalizePracticeMasterText(
+      input.existing.price
+    ).replace(/,/g, "") !==
+    normalizePracticeMasterText(
+      input.incoming.price
+    ).replace(/,/g, "")
+  ) {
+    changedFields.push("price");
+  }
+
+  if (
+    normalizePracticeManagementNo(
+      input.existing.associationManagementNo
+    ) !==
+    normalizePracticeManagementNo(
+      input.incoming.associationManagementNo
+    )
+  ) {
+    changedFields.push(
+      "associationManagementNo"
+    );
+  }
+
+  if (
+    normalizePracticeMasterDate(
+      input.existing.selectionValidFrom
+    ) !==
+    normalizePracticeMasterDate(
+      input.incoming.selectionValidFrom
+    )
+  ) {
+    changedFields.push(
+      "selectionValidFrom"
+    );
+  }
+
+  if (
+    normalizePracticeMasterDate(
+      input.existing.selectionValidTo
+    ) !==
+    normalizePracticeMasterDate(
+      input.incoming.selectionValidTo
+    )
+  ) {
+    changedFields.push(
+      "selectionValidTo"
+    );
+  }
+
+  if (
+    !arePracticeMasterValuesEqual(
+      input.existing.selectionStatus,
+      input.incoming.selectionStatus
+    )
+  ) {
+    changedFields.push(
+      "selectionStatus"
+    );
   }
 
   return changedFields;
@@ -2645,6 +2816,28 @@ export async function analyzePracticeMasterSync(input: {
         availableCourse:
           row.availableCourse || null,
 
+        price:
+          row.price !== undefined &&
+          row.price !== null
+            ? String(row.price)
+            : null,
+
+        associationManagementNo:
+          row.associationManagementNo || null,
+
+        selectionValidFrom:
+          row.selectionValidFrom
+            ? String(row.selectionValidFrom).slice(0, 10)
+            : null,
+
+        selectionValidTo:
+          row.selectionValidTo
+            ? String(row.selectionValidTo).slice(0, 10)
+            : null,
+
+        selectionStatus:
+          row.selectionStatus || null,
+
         isActive:
           Boolean(row.isActive),
       }));
@@ -2656,6 +2849,32 @@ export async function analyzePracticeMasterSync(input: {
     } = createPracticeMasterLookupMaps(
       existingRowsAsCommon
     );
+
+    const managementNoMap =
+      new Map<string, any[]>();
+
+    if (input.dataType === "institution") {
+      for (const row of existingRowsAsCommon) {
+        const managementNo =
+          normalizePracticeManagementNo(
+            row.associationManagementNo
+          );
+
+        if (!managementNo) continue;
+
+        const current =
+          managementNoMap.get(
+            managementNo
+          ) || [];
+
+        current.push(row);
+
+        managementNoMap.set(
+          managementNo,
+          current
+        );
+      }
+    }
 
     const unchanged: any[] = [];
     const inserts: any[] = [];
@@ -2672,6 +2891,9 @@ export async function analyzePracticeMasterSync(input: {
       new Set<number>();
 
     const sourceExactKeys =
+      new Map<string, number[]>();
+
+    const sourceManagementNoRows =
       new Map<string, number[]>();
 
     for (const rawRow of sourceRows as any[]) {
@@ -2711,10 +2933,45 @@ export async function analyzePracticeMasterSync(input: {
             rawRow.detailAddress
           ),
 
-        availableCourse:
+                availableCourse:
           practiceMasterNullableText(
             rawRow.availableCourse
           ),
+
+        price:
+          input.dataType === "institution"
+            ? practiceMasterNullableText(
+                rawRow.price
+              )?.replace(/,/g, "") || null
+            : null,
+
+        associationManagementNo:
+          input.dataType === "institution"
+            ? practiceMasterNullableText(
+                rawRow.associationManagementNo
+              )
+            : null,
+
+        selectionValidFrom:
+          input.dataType === "institution"
+            ? normalizePracticeMasterDate(
+                rawRow.selectionValidFrom
+              )
+            : null,
+
+        selectionValidTo:
+          input.dataType === "institution"
+            ? normalizePracticeMasterDate(
+                rawRow.selectionValidTo
+              )
+            : null,
+
+        selectionStatus:
+          input.dataType === "institution"
+            ? practiceMasterNullableText(
+                rawRow.selectionStatus
+              )
+            : null,
       };
 
       const rowErrors: string[] = [];
@@ -2743,6 +3000,83 @@ export async function analyzePracticeMasterSync(input: {
         );
       }
 
+      if (
+        input.dataType === "institution" &&
+        !incoming.associationManagementNo
+      ) {
+        rowErrors.push(
+          "협회 관리번호가 없습니다."
+        );
+      }
+
+      if (
+        input.dataType === "institution" &&
+        !incoming.selectionValidFrom
+      ) {
+        rowErrors.push(
+          "선정유효기간 시작일이 없습니다."
+        );
+      }
+
+      if (
+        input.dataType === "institution" &&
+        !incoming.selectionValidTo
+      ) {
+        rowErrors.push(
+          "선정유효기간 종료일이 없습니다."
+        );
+      }
+
+      if (
+        input.dataType === "institution" &&
+        !incoming.selectionStatus
+      ) {
+        rowErrors.push(
+          "선정상태가 없습니다."
+        );
+      }
+
+	      if (
+        input.dataType === "institution" &&
+        rawRow.selectionValidFrom &&
+        !incoming.selectionValidFrom
+      ) {
+        rowErrors.push(
+          "선정유효기간 시작일 형식이 올바르지 않습니다."
+        );
+      }
+
+      if (
+        input.dataType === "institution" &&
+        rawRow.selectionValidTo &&
+        !incoming.selectionValidTo
+      ) {
+        rowErrors.push(
+          "선정유효기간 종료일 형식이 올바르지 않습니다."
+        );
+      }
+
+      if (
+        incoming.selectionValidFrom &&
+        incoming.selectionValidTo &&
+        incoming.selectionValidFrom >
+          incoming.selectionValidTo
+      ) {
+        rowErrors.push(
+          "선정유효기간 시작일이 종료일보다 늦습니다."
+        );
+      }
+
+      if (
+        input.dataType === "institution" &&
+        incoming.price &&
+        !/^\d+$/.test(incoming.price)
+      ) {
+        rowErrors.push(
+          "실습비는 숫자만 입력되어야 합니다."
+        );
+      }
+
       if (rowErrors.length > 0) {
         invalidRows.push({
           rowNumber,
@@ -2751,6 +3085,165 @@ export async function analyzePracticeMasterSync(input: {
         });
 
         continue;
+      }
+
+      const incomingManagementNo =
+        input.dataType === "institution"
+          ? normalizePracticeManagementNo(
+              incoming.associationManagementNo
+            )
+          : "";
+
+      if (incomingManagementNo) {
+        const sourceManagementRows =
+          sourceManagementNoRows.get(
+            incomingManagementNo
+          ) || [];
+
+        sourceManagementRows.push(
+          rowNumber
+        );
+
+        sourceManagementNoRows.set(
+          incomingManagementNo,
+          sourceManagementRows
+        );
+
+        if (
+          sourceManagementRows.length > 1
+        ) {
+          continue;
+        }
+      }
+
+      if (incomingManagementNo) {
+        const managementCandidates =
+          managementNoMap.get(
+            incomingManagementNo
+          ) || [];
+
+        if (
+          managementCandidates.length === 1
+        ) {
+          const existing =
+            managementCandidates[0];
+
+          matchedMasterIds.add(
+            existing.id
+          );
+
+          const changedFields =
+            getPracticeMasterChangedFields({
+              existing,
+              incoming,
+            });
+
+          const shouldBeActive =
+            resolvePracticeInstitutionActive({
+              selectionStatus:
+                incoming.selectionStatus,
+
+              selectionValidTo:
+                incoming.selectionValidTo,
+            });
+
+                    if (!shouldBeActive) {
+            if (
+              existing.isActive ||
+              changedFields.length > 0
+            ) {
+              updates.push({
+                rowNumber,
+                masterId: existing.id,
+                existing,
+                incoming,
+                changedFields:
+                  existing.isActive
+                    ? [
+                        ...changedFields,
+                        "isActive",
+                      ]
+                    : changedFields,
+                matchType:
+                  "management_no",
+              });
+            } else {
+              unchanged.push({
+                rowNumber,
+                masterId: existing.id,
+                incoming,
+              });
+            }
+
+            continue;
+          }
+
+          if (!existing.isActive) {
+            reactivates.push({
+              rowNumber,
+              masterId: existing.id,
+              existing,
+              incoming,
+              changedFields: [
+                ...changedFields,
+                "isActive",
+              ],
+              matchType:
+                "management_no",
+            });
+          } else if (
+            changedFields.length > 0
+          ) {
+            updates.push({
+              rowNumber,
+              masterId: existing.id,
+              existing,
+              incoming,
+              changedFields,
+              matchType:
+                "management_no",
+            });
+          } else {
+            unchanged.push({
+              rowNumber,
+              masterId: existing.id,
+              incoming,
+            });
+          }
+
+          continue;
+        }
+
+        if (
+          managementCandidates.length > 1
+        ) {
+          for (
+            const candidate of
+            managementCandidates
+          ) {
+            protectedMasterIds.add(
+              candidate.id
+            );
+          }
+
+          reviews.push({
+            type:
+              "multiple_management_no_matches",
+
+            rowNumber,
+            incoming,
+
+            candidateMasterIds:
+              managementCandidates.map(
+                (row) => row.id
+              ),
+
+            message:
+              "동일한 협회 관리번호를 가진 기존 마스터가 여러 건 존재합니다.",
+          });
+
+          continue;
+        }
       }
 
       const exactKey =
@@ -2789,38 +3282,60 @@ export async function analyzePracticeMasterSync(input: {
             incoming,
           });
 
-        if (changedFields.length === 0) {
-          if (existing.isActive) {
-            unchanged.push({
-              rowNumber,
-              masterId: existing.id,
-              incoming,
-            });
-          } else {
-            reactivates.push({
-              rowNumber,
-              masterId: existing.id,
-              existing,
-              incoming,
-              changedFields: [],
-            });
-          }
-        } else if (existing.isActive) {
-          updates.push({
+                const shouldBeActive =
+          input.dataType === "institution"
+            ? resolvePracticeInstitutionActive({
+                selectionStatus:
+                  incoming.selectionStatus,
+                selectionValidTo:
+                  incoming.selectionValidTo,
+              })
+            : true;
+
+        const activeStateChanged =
+          Boolean(existing.isActive) !==
+          shouldBeActive;
+
+        if (
+          changedFields.length === 0 &&
+          !activeStateChanged
+        ) {
+          unchanged.push({
             rowNumber,
             masterId: existing.id,
-            existing,
             incoming,
-            changedFields,
-            matchType: "exact",
           });
-        } else {
+        } else if (
+          shouldBeActive &&
+          !existing.isActive
+        ) {
           reactivates.push({
             rowNumber,
             masterId: existing.id,
             existing,
             incoming,
-            changedFields,
+            changedFields:
+              activeStateChanged
+                ? [
+                    ...changedFields,
+                    "isActive",
+                  ]
+                : changedFields,
+            matchType: "exact",
+          });
+        } else {
+          updates.push({
+            rowNumber,
+            masterId: existing.id,
+            existing,
+            incoming,
+            changedFields:
+              activeStateChanged
+                ? [
+                    ...changedFields,
+                    "isActive",
+                  ]
+                : changedFields,
             matchType: "exact",
           });
         }
@@ -2878,19 +3393,47 @@ export async function analyzePracticeMasterSync(input: {
             incoming,
           });
 
+                const shouldBeActive =
+          input.dataType === "institution"
+            ? resolvePracticeInstitutionActive({
+                selectionStatus:
+                  incoming.selectionStatus,
+                selectionValidTo:
+                  incoming.selectionValidTo,
+              })
+            : true;
+
+        const activeStateChanged =
+          Boolean(existing.isActive) !==
+          shouldBeActive;
+
         const action = {
           rowNumber,
           masterId: existing.id,
           existing,
           incoming,
-          changedFields,
+          changedFields:
+            activeStateChanged
+              ? [
+                  ...changedFields,
+                  "isActive",
+                ]
+              : changedFields,
           matchType: "name_address",
         };
 
-        if (existing.isActive) {
+        if (
+          shouldBeActive &&
+          !existing.isActive
+        ) {
+          reactivates.push(action);
+        } else if (
+          changedFields.length > 0 ||
+          activeStateChanged
+        ) {
           updates.push(action);
         } else {
-          reactivates.push(action);
+          unchanged.push(action);
         }
 
         continue;
@@ -3002,6 +3545,116 @@ export async function analyzePracticeMasterSync(input: {
 
         const duplicatedSourceRowNumbers =
       new Set<number>();
+
+    for (
+      const [
+        managementNo,
+        rowNumbers,
+      ] of sourceManagementNoRows.entries()
+    ) {
+      if (rowNumbers.length <= 1) {
+        continue;
+      }
+
+      for (const rowNumber of rowNumbers) {
+        duplicatedSourceRowNumbers.add(
+          rowNumber
+        );
+
+        const sourceRow =
+          (sourceRows as any[]).find(
+            (row) =>
+              Number(row.rowNumber) ===
+              Number(rowNumber)
+          );
+
+        reviews.push({
+          type:
+            "source_management_no_duplicate",
+
+          rowNumber,
+
+          sourceRowNumbers: [
+            ...rowNumbers,
+          ],
+
+          incoming: sourceRow
+            ? {
+                rowNumber:
+                  Number(
+                    sourceRow.rowNumber
+                  ),
+
+                categoryName:
+                  practiceMasterNullableText(
+                    sourceRow.categoryName
+                  ),
+
+                name:
+                  normalizePracticeMasterText(
+                    sourceRow.name
+                  ),
+
+                representativeName:
+                  practiceMasterNullableText(
+                    sourceRow.representativeName
+                  ),
+
+                phone:
+                  practiceMasterNullableText(
+                    sourceRow.phone
+                  ),
+
+                address:
+                  practiceMasterNullableText(
+                    sourceRow.address
+                  ),
+
+                detailAddress:
+                  practiceMasterNullableText(
+                    sourceRow.detailAddress
+                  ),
+
+                availableCourse:
+                  practiceMasterNullableText(
+                    sourceRow.availableCourse
+                  ),
+
+                price:
+                  practiceMasterNullableText(
+                    sourceRow.price
+                  )?.replace(/,/g, "") ||
+                  null,
+
+                associationManagementNo:
+                  practiceMasterNullableText(
+                    sourceRow.associationManagementNo
+                  ),
+
+                selectionValidFrom:
+                  normalizePracticeMasterDate(
+                    sourceRow.selectionValidFrom
+                  ),
+
+                selectionValidTo:
+                  normalizePracticeMasterDate(
+                    sourceRow.selectionValidTo
+                  ),
+
+                selectionStatus:
+                  practiceMasterNullableText(
+                    sourceRow.selectionStatus
+                  ),
+              }
+            : undefined,
+
+          managementNo,
+
+          message:
+            "업로드 파일에 동일한 협회 관리번호가 여러 행 존재합니다.",
+        });
+      }
+    }
 
     for (
       const [
@@ -3397,9 +4050,34 @@ function getPracticeMasterIncomingValues(
         incoming.detailAddress
       ),
 
-    availableCourse:
+        availableCourse:
       practiceMasterNullableText(
         incoming.availableCourse
+      ),
+
+    price:
+      practiceMasterNullableText(
+        incoming.price
+      )?.replace(/,/g, "") || null,
+
+    associationManagementNo:
+      practiceMasterNullableText(
+        incoming.associationManagementNo
+      ),
+
+    selectionValidFrom:
+      normalizePracticeMasterDate(
+        incoming.selectionValidFrom
+      ),
+
+    selectionValidTo:
+      normalizePracticeMasterDate(
+        incoming.selectionValidTo
+      ),
+
+    selectionStatus:
+      practiceMasterNullableText(
+        incoming.selectionStatus
       ),
   };
 }
@@ -3622,10 +4300,32 @@ export async function executePracticeMasterSync(input: {
                 detailAddress:
                   values.detailAddress,
 
-                availableCourse:
+                                availableCourse:
                   values.availableCourse,
 
-                isActive: true,
+                price:
+                  values.price,
+
+                associationManagementNo:
+                  values.associationManagementNo,
+
+                selectionValidFrom:
+                  values.selectionValidFrom,
+
+                selectionValidTo:
+                  values.selectionValidTo,
+
+                selectionStatus:
+                  values.selectionStatus,
+
+                isActive:
+                  resolvePracticeInstitutionActive({
+                    selectionStatus:
+                      values.selectionStatus,
+
+                    selectionValidTo:
+                      values.selectionValidTo,
+                  }),
               } as any);
 
             insertedCount += 1;
@@ -3694,8 +4394,32 @@ export async function executePracticeMasterSync(input: {
                 detailAddress:
                   values.detailAddress,
 
-                availableCourse:
+                                availableCourse:
                   values.availableCourse,
+
+                price:
+                  values.price,
+
+                associationManagementNo:
+                  values.associationManagementNo,
+
+                selectionValidFrom:
+                  values.selectionValidFrom,
+
+                selectionValidTo:
+                  values.selectionValidTo,
+
+                selectionStatus:
+                  values.selectionStatus,
+
+                isActive:
+                  resolvePracticeInstitutionActive({
+                    selectionStatus:
+                      values.selectionStatus,
+
+                    selectionValidTo:
+                      values.selectionValidTo,
+                  }),
               } as any)
               .where(
                 eq(
@@ -3770,10 +4494,32 @@ export async function executePracticeMasterSync(input: {
                 detailAddress:
                   values.detailAddress,
 
-                availableCourse:
+                                availableCourse:
                   values.availableCourse,
 
-                isActive: true,
+                price:
+                  values.price,
+
+                associationManagementNo:
+                  values.associationManagementNo,
+
+                selectionValidFrom:
+                  values.selectionValidFrom,
+
+                selectionValidTo:
+                  values.selectionValidTo,
+
+                selectionStatus:
+                  values.selectionStatus,
+
+                isActive:
+                  resolvePracticeInstitutionActive({
+                    selectionStatus:
+                      values.selectionStatus,
+
+                    selectionValidTo:
+                      values.selectionValidTo,
+                  }),
               } as any)
               .where(
                 eq(

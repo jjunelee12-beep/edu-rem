@@ -14015,8 +14015,19 @@ export async function listMergedPracticeInstitutions(params?: {
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
-  const masterConditions: any[] = [
+    const masterConditions: any[] = [
     eq(practiceInstitutionMasters.isActive, true),
+
+    sql`(
+      ${practiceInstitutionMasters.selectionStatus} IS NULL
+      OR TRIM(${practiceInstitutionMasters.selectionStatus}) = ''
+      OR ${practiceInstitutionMasters.selectionStatus} NOT LIKE '%취소%'
+    )`,
+
+    sql`(
+      ${practiceInstitutionMasters.selectionValidTo} IS NULL
+      OR ${practiceInstitutionMasters.selectionValidTo} >= CURDATE()
+    )`,
   ];
 
   if (params?.institutionType) {
@@ -14072,6 +14083,18 @@ export async function listMergedPracticeInstitutions(params?: {
         masterId: master.id,
         overrideId: override?.id ?? null,
 
+        associationManagementNo:
+          master.associationManagementNo ?? null,
+
+        selectionValidFrom:
+          master.selectionValidFrom ?? null,
+
+        selectionValidTo:
+          master.selectionValidTo ?? null,
+
+        selectionStatus:
+          master.selectionStatus ?? null,
+
         name: override?.customName ?? master.name,
         phone: override?.customPhone ?? master.phone,
         address: override?.customAddress ?? master.address,
@@ -14125,11 +14148,18 @@ practiceAvailabilityType:
 
   return [
     ...masterRows,
-    ...customRows.map((row: any) => ({
+        ...customRows.map((row: any) => ({
       ...row,
+
       sourceType: "organization",
       masterId: null,
       overrideId: null,
+
+      associationManagementNo: null,
+      selectionValidFrom: null,
+      selectionValidTo: null,
+      selectionStatus: null,
+
       isCustomized: true,
     })),
   ];

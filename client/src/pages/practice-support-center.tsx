@@ -59,6 +59,11 @@ categoryId?: number;
 practiceAvailabilityType?: "unknown" | "weekday" | "weekend" | "both";
 isPartner?: boolean;
 
+  associationManagementNo?: string | null;
+  selectionValidFrom?: string | null;
+  selectionValidTo?: string | null;
+  selectionStatus?: string | null;
+
   isInactive?: boolean;
   inactiveReason?: string;
   inactiveStartDate?: string | null;
@@ -190,6 +195,69 @@ function getPracticeAvailabilityBadgeClass(type?: string | null) {
     default:
       return "bg-slate-50 text-slate-600 border-slate-200";
   }
+}
+
+function hasSelectionInformation(item: FinderItem) {
+  if (item.type !== "institution") return false;
+
+  return !!(
+    String(item.selectionStatus || "").trim() ||
+    item.selectionValidFrom ||
+    item.selectionValidTo
+  );
+}
+
+function getSelectionStatusLabel(status?: string | null) {
+  const value = String(status || "").trim();
+
+  if (!value) return "상태 미확인";
+  if (value.includes("취소")) return "선정 취소";
+  if (value.includes("정지")) return "선정 정지";
+  if (value === "정상") return "정상";
+
+  return value;
+}
+
+function getSelectionStatusBadgeClass(status?: string | null) {
+  const value = String(status || "").trim();
+
+  if (value.includes("취소")) {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  if (value.includes("정지")) {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
+
+  if (value === "정상") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-600";
+}
+
+function getSelectionValidPeriodText(item: FinderItem) {
+  const start = item.selectionValidFrom
+    ? formatDateOnly(item.selectionValidFrom)
+    : "";
+
+  const end = item.selectionValidTo
+    ? formatDateOnly(item.selectionValidTo)
+    : "";
+
+  if (start && end) {
+    return `${start} ~ ${end}`;
+  }
+
+  if (start) {
+    return `${start}부터`;
+  }
+
+  if (end) {
+    return `${end}까지`;
+  }
+
+  return "";
 }
 
 function matchPracticeAvailabilityFilter(
@@ -1645,6 +1713,17 @@ if (
     distanceKm: hasCoords ? distanceKm!.toFixed(2) : "좌표없음",
     latitude: item.latitude,
     longitude: item.longitude,
+    associationManagementNo:
+      item.associationManagementNo || null,
+
+    selectionValidFrom:
+      item.selectionValidFrom || null,
+
+    selectionValidTo:
+      item.selectionValidTo || null,
+
+    selectionStatus:
+      item.selectionStatus || null,
     isInactive: !!item.isInactive,
     inactiveReason: item.inactiveReason || "",
     inactiveStartDate: item.inactiveStartDate || null,
@@ -4015,6 +4094,38 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
                               </div>
                             )}
 
+                            {hasSelectionInformation(item) && (
+                              <div className="mt-2 space-y-1.5 rounded-lg border border-slate-200 bg-white/70 px-3 py-2">
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="text-[11px] font-medium text-slate-500">
+                                    선정상태
+                                  </span>
+
+                                  <span
+                                    className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${getSelectionStatusBadgeClass(
+                                      item.selectionStatus
+                                    )}`}
+                                  >
+                                    {getSelectionStatusLabel(
+                                      item.selectionStatus
+                                    )}
+                                  </span>
+                                </div>
+
+                                {getSelectionValidPeriodText(item) && (
+                                  <div className="flex items-start justify-between gap-3 text-[11px]">
+                                    <span className="shrink-0 font-medium text-slate-500">
+                                      선정유효기간
+                                    </span>
+
+                                    <span className="text-right font-medium text-slate-700">
+                                      {getSelectionValidPeriodText(item)}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
                          <div className="flex items-center gap-2">
   {item.distanceKm && item.distanceKm !== "좌표없음" && (
     <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
@@ -4072,6 +4183,43 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
     </span>
   )}
 </div>
+
+                    {hasSelectionInformation(selectedFinderItem) && (
+                      <div className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-[11px] font-medium text-slate-500">
+                            선정상태
+                          </span>
+
+                          <span
+                            className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${getSelectionStatusBadgeClass(
+                              selectedFinderItem.selectionStatus
+                            )}`}
+                          >
+                            {getSelectionStatusLabel(
+                              selectedFinderItem.selectionStatus
+                            )}
+                          </span>
+                        </div>
+
+                        {getSelectionValidPeriodText(
+                          selectedFinderItem
+                        ) && (
+                          <div className="mt-1.5 flex items-start justify-between gap-3 text-[11px]">
+                            <span className="shrink-0 font-medium text-slate-500">
+                              선정유효기간
+                            </span>
+
+                            <span className="text-right font-medium text-slate-700">
+                              {getSelectionValidPeriodText(
+                                selectedFinderItem
+                              )}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {hasFinderInactiveConfig(selectedFinderItem) && (
                       <div className="mt-2 text-yellow-700">
                         {getFinderInactiveText(selectedFinderItem)}

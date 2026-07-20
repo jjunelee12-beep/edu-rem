@@ -1752,6 +1752,17 @@ categoryId: int("categoryId"),
 
   price: decimal("price", { precision: 12, scale: 0 }).notNull().default("0"),
 
+  associationManagementNo: varchar("associationManagementNo", {
+    length: 100,
+  }),
+
+  selectionValidFrom: date("selectionValidFrom"),
+  selectionValidTo: date("selectionValidTo"),
+
+  selectionStatus: varchar("selectionStatus", {
+    length: 50,
+  }),
+
   latitude: decimal("latitude", { precision: 10, scale: 7 }),
   longitude: decimal("longitude", { precision: 10, scale: 7 }),
 

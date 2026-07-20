@@ -41,6 +41,13 @@ type ExcelUploadRow = {
   address?: string | null;
   detailAddress?: string | null;
   availableCourse?: string | null;
+
+  price?: string | null;
+
+  associationManagementNo?: string | null;
+  selectionValidFrom?: string | null;
+  selectionValidTo?: string | null;
+  selectionStatus?: string | null;
 };
 
 type PracticeMasterPreview = {
@@ -75,10 +82,11 @@ type PracticeMasterPreview = {
 };
 
 const HEADER_ALIASES = {
-  categoryName: [
+    categoryName: [
     "구분",
     "기관구분",
     "교육원구분",
+    "시설분류",
     "분류",
     "지역",
     "시도",
@@ -102,9 +110,10 @@ const HEADER_ALIASES = {
     "담당자",
   ],
 
-  phone: [
+    phone: [
     "전화번호",
     "연락처",
+    "기관연락처",
     "기관전화",
     "대표전화",
     "전화",
@@ -125,13 +134,53 @@ const HEADER_ALIASES = {
     "나머지주소",
   ],
 
-  availableCourse: [
+    availableCourse: [
     "가능과정",
     "교육과정",
     "실습과정",
     "운영과정",
     "과정",
     "비고",
+  ],
+
+  price: [
+    "실습비",
+    "실습비용",
+    "비용",
+    "금액",
+  ],
+
+  associationManagementNo: [
+    "관리번호",
+    "선정관리번호",
+    "협회관리번호",
+    "기관관리번호",
+  ],
+
+  selectionValidFrom: [
+    "선정유효기간시작일",
+    "선정유효시작일",
+    "유효기간시작일",
+    "유효시작일",
+  ],
+
+  selectionValidTo: [
+    "선정유효기간종료일",
+    "선정유효종료일",
+    "유효기간종료일",
+    "유효종료일",
+  ],
+
+  selectionValidPeriod: [
+    "선정유효기간",
+    "유효기간",
+    "선정기간",
+  ],
+
+  selectionStatus: [
+    "선정상태",
+    "기관선정상태",
+    "상태",
   ],
 } as const;
 
@@ -196,6 +245,102 @@ function getExcelCellValue(
   return normalizeCellValue(
     row[columnIndex]
   );
+}
+
+function normalizeExcelDateValue(
+  value: unknown
+) {
+  const text =
+    normalizeCellValue(value);
+
+  if (!text) return null;
+
+  const normalized =
+    text
+      .replace(/년/g, "-")
+      .replace(/월/g, "-")
+      .replace(/일/g, "")
+      .replace(/[./]/g, "-")
+      .replace(/\s+/g, "")
+      .replace(/-+$/g, "");
+
+  const match =
+    normalized.match(
+      /^(\d{4})-(\d{1,2})-(\d{1,2})$/
+    );
+
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  const date =
+    new Date(year, month - 1, day);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return [
+    String(year).padStart(4, "0"),
+    String(month).padStart(2, "0"),
+    String(day).padStart(2, "0"),
+  ].join("-");
+}
+
+function splitSelectionValidPeriod(
+  value: unknown
+) {
+  const text =
+    normalizeCellValue(value);
+
+  if (!text) {
+    return {
+      from: null,
+      to: null,
+    };
+  }
+
+  const dateMatches =
+    text.match(
+      /\d{4}\s*(?:년|[./-])\s*\d{1,2}\s*(?:월|[./-])\s*\d{1,2}\s*일?\.?/g
+    ) || [];
+
+  if (dateMatches.length >= 2) {
+    return {
+      from:
+        normalizeExcelDateValue(
+          dateMatches[0]
+        ),
+
+      to:
+        normalizeExcelDateValue(
+          dateMatches[1]
+        ),
+    };
+  }
+
+  const parts =
+    text.split(
+      /\s*(?:~|∼|～|부터|까지)\s*/
+    );
+
+  return {
+    from:
+      normalizeExcelDateValue(
+        parts[0]
+      ),
+
+    to:
+      normalizeExcelDateValue(
+        parts[1]
+      ),
+  };
 }
 
 function parseJsonValue<T>(
@@ -507,7 +652,7 @@ export default function PracticeMasterSyncPage() {
 
     let selectedHeaderRowIndex = -1;
 
-    let selectedColumnIndexes: {
+        let selectedColumnIndexes: {
       categoryName: number;
       name: number;
       representativeName: number;
@@ -515,6 +660,14 @@ export default function PracticeMasterSyncPage() {
       address: number;
       detailAddress: number;
       availableCourse: number;
+
+      price: number;
+
+      associationManagementNo: number;
+      selectionValidPeriod: number;
+      selectionValidFrom: number;
+      selectionValidTo: number;
+      selectionStatus: number;
     } | null = null;
 
     for (
@@ -581,10 +734,55 @@ export default function PracticeMasterSyncPage() {
             HEADER_ALIASES.phone
           );
 
+                const managementNoColumnIndex =
+          findHeaderColumnIndex(
+            candidateRow,
+            HEADER_ALIASES
+              .associationManagementNo
+          );
+
+        const selectionValidPeriodColumnIndex =
+          findHeaderColumnIndex(
+            candidateRow,
+            HEADER_ALIASES
+              .selectionValidPeriod
+          );
+
+        const selectionValidFromColumnIndex =
+          findHeaderColumnIndex(
+            candidateRow,
+            HEADER_ALIASES
+              .selectionValidFrom
+          );
+
+        const selectionValidToColumnIndex =
+          findHeaderColumnIndex(
+            candidateRow,
+            HEADER_ALIASES
+              .selectionValidTo
+          );
+
+        const selectionStatusColumnIndex =
+          findHeaderColumnIndex(
+            candidateRow,
+            HEADER_ALIASES
+              .selectionStatus
+          );
+
+        const hasSelectionPeriodHeader =
+          selectionValidPeriodColumnIndex >= 0 ||
+          (
+            selectionValidFromColumnIndex >= 0 &&
+            selectionValidToColumnIndex >= 0
+          );
+
         const hasRequiredHeader =
           dataType === "institution"
             ? nameColumnIndex >= 0 &&
-              addressColumnIndex >= 0
+              addressColumnIndex >= 0 &&
+              managementNoColumnIndex >= 0 &&
+              hasSelectionPeriodHeader &&
+              selectionStatusColumnIndex >= 0
             : nameColumnIndex >= 0;
 
         const hasSupportingHeader =
@@ -643,11 +841,52 @@ export default function PracticeMasterSyncPage() {
                 .detailAddress
             ),
 
-          availableCourse:
+                    availableCourse:
             findHeaderColumnIndex(
               candidateRow,
               HEADER_ALIASES
                 .availableCourse
+            ),
+
+          price:
+            findHeaderColumnIndex(
+              candidateRow,
+              HEADER_ALIASES.price
+            ),
+
+          associationManagementNo:
+            findHeaderColumnIndex(
+              candidateRow,
+              HEADER_ALIASES
+                .associationManagementNo
+            ),
+
+          selectionValidPeriod:
+            findHeaderColumnIndex(
+              candidateRow,
+              HEADER_ALIASES
+                .selectionValidPeriod
+            ),
+
+          selectionValidFrom:
+            findHeaderColumnIndex(
+              candidateRow,
+              HEADER_ALIASES
+                .selectionValidFrom
+            ),
+
+          selectionValidTo:
+            findHeaderColumnIndex(
+              candidateRow,
+              HEADER_ALIASES
+                .selectionValidTo
+            ),
+
+          selectionStatus:
+            findHeaderColumnIndex(
+              candidateRow,
+              HEADER_ALIASES
+                .selectionStatus
             ),
         };
 
@@ -669,7 +908,7 @@ export default function PracticeMasterSyncPage() {
     ) {
       throw new Error(
         dataType === "institution"
-          ? "엑셀에서 기관명과 주소 열을 찾을 수 없습니다. 열 제목이 기관명·실습기관명, 주소·소재지 형태인지 확인해주세요."
+                    ? "실습기관 엑셀의 필수 열을 찾을 수 없습니다. 기관명, 기관주소, 관리 번호, 선정 유효기간, 선정상태 열을 확인해주세요."
           : "엑셀에서 교육원명 열을 찾을 수 없습니다. 열 제목이 교육원명·실습교육원명 형태인지 확인해주세요."
       );
     }
@@ -714,6 +953,35 @@ export default function PracticeMasterSyncPage() {
                 selectedColumnIndexes.name
               ) || "";
 
+            const selectionPeriod =
+              splitSelectionValidPeriod(
+                getExcelCellValue(
+                  row,
+                  selectedColumnIndexes
+                    .selectionValidPeriod
+                )
+              );
+
+            const selectionValidFrom =
+              normalizeExcelDateValue(
+                getExcelCellValue(
+                  row,
+                  selectedColumnIndexes
+                    .selectionValidFrom
+                )
+              ) ||
+              selectionPeriod.from;
+
+            const selectionValidTo =
+              normalizeExcelDateValue(
+                getExcelCellValue(
+                  row,
+                  selectedColumnIndexes
+                    .selectionValidTo
+                )
+              ) ||
+              selectionPeriod.to;
+
             return {
               rowNumber:
                 actualRowNumber,
@@ -755,12 +1023,53 @@ export default function PracticeMasterSyncPage() {
                     .detailAddress
                 ),
 
-              availableCourse:
+                            availableCourse:
                 getExcelCellValue(
                   row,
                   selectedColumnIndexes
                     .availableCourse
                 ),
+
+              price:
+                dataType === "institution"
+                  ? String(
+                      getExcelCellValue(
+                        row,
+                        selectedColumnIndexes
+                          .price
+                      ) || ""
+                    )
+                      .replace(/,/g, "")
+                      .trim() || null
+                  : null,
+
+              associationManagementNo:
+                dataType === "institution"
+                  ? getExcelCellValue(
+                      row,
+                      selectedColumnIndexes
+                        .associationManagementNo
+                    )
+                  : null,
+
+              selectionValidFrom:
+                dataType === "institution"
+                  ? selectionValidFrom
+                  : null,
+
+              selectionValidTo:
+                dataType === "institution"
+                  ? selectionValidTo
+                  : null,
+
+              selectionStatus:
+                dataType === "institution"
+                  ? getExcelCellValue(
+                      row,
+                      selectedColumnIndexes
+                        .selectionStatus
+                    )
+                  : null,
             };
           }
         );
@@ -1948,7 +2257,7 @@ function PreviewTable({
 }) {
   return (
     <div className="overflow-x-auto rounded-2xl border border-slate-200">
-      <table className="min-w-[1100px] w-full">
+      <table className="min-w-[1550px] w-full">
         <thead className="bg-slate-50">
           <tr className="border-b border-slate-200 text-left text-xs font-bold text-slate-600">
             <th className="px-4 py-3">
@@ -1969,6 +2278,18 @@ function PreviewTable({
 
             <th className="px-4 py-3">
               주소
+            </th>
+
+            <th className="px-4 py-3">
+              관리번호
+            </th>
+
+            <th className="px-4 py-3">
+              선정상태
+            </th>
+
+            <th className="px-4 py-3">
+              선정유효기간
             </th>
 
             <th className="px-4 py-3">
@@ -2007,6 +2328,36 @@ function PreviewTable({
                 existing?.address ||
                 "-";
 
+              const managementNo =
+                incoming?.associationManagementNo ||
+                existing?.associationManagementNo ||
+                "-";
+
+              const selectionStatus =
+                incoming?.selectionStatus ||
+                existing?.selectionStatus ||
+                "-";
+
+              const selectionValidFrom =
+                incoming?.selectionValidFrom ||
+                existing?.selectionValidFrom ||
+                "";
+
+              const selectionValidTo =
+                incoming?.selectionValidTo ||
+                existing?.selectionValidTo ||
+                "";
+
+              const selectionValidPeriod =
+                selectionValidFrom &&
+                selectionValidTo
+                  ? `${selectionValidFrom} ~ ${selectionValidTo}`
+                  : selectionValidFrom
+                    ? `${selectionValidFrom}부터`
+                    : selectionValidTo
+                      ? `${selectionValidTo}까지`
+                      : "-";
+
               const message =
                 row?.message ||
                 row?.reason ||
@@ -2041,6 +2392,35 @@ function PreviewTable({
 
                   <td className="max-w-[360px] px-4 py-4 text-slate-700">
                     {address}
+                  </td>
+
+                  <td className="px-4 py-4 text-slate-700">
+                    {managementNo}
+                  </td>
+
+                  <td className="px-4 py-4">
+                    <span
+                      className={`inline-flex rounded-full border px-2 py-1 text-xs font-bold ${
+                        String(
+                          selectionStatus
+                        ).includes("취소")
+                          ? "border-red-200 bg-red-50 text-red-700"
+                          : String(
+                              selectionStatus
+                            ).includes("정지")
+                            ? "border-amber-200 bg-amber-50 text-amber-700"
+                            : selectionStatus ===
+                                "정상"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                              : "border-slate-200 bg-slate-50 text-slate-600"
+                      }`}
+                    >
+                      {selectionStatus}
+                    </span>
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-4 text-slate-700">
+                    {selectionValidPeriod}
                   </td>
 
                   <td className="px-4 py-4 text-slate-700">

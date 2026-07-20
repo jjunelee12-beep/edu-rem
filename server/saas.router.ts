@@ -139,6 +139,31 @@ const practiceMasterInstitutionUploadRowSchema =
       .string()
       .optional()
       .nullable(),
+
+    price: z
+      .string()
+      .optional()
+      .nullable(),
+
+    associationManagementNo: z
+      .string()
+      .optional()
+      .nullable(),
+
+    selectionValidFrom: z
+      .string()
+      .optional()
+      .nullable(),
+
+    selectionValidTo: z
+      .string()
+      .optional()
+      .nullable(),
+
+    selectionStatus: z
+      .string()
+      .optional()
+      .nullable(),
   });
 
 const practiceMasterEducationCenterUploadRowSchema =
