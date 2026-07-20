@@ -219,8 +219,13 @@ function DashboardLayoutContent({
  logout,
  setSidebarWidth,
 }: DashboardLayoutContentProps) {
- const [location, setLocation] = useLocation();
- const [isMessengerOpen, setIsMessengerOpen] = useState(false);
+const [location, setLocation] = useLocation();
+
+const isNoticeEditorPage =
+  /\/notices\/write\/?$/.test(location) ||
+  /\/notices\/\d+\/edit\/?$/.test(location);
+
+const [isMessengerOpen, setIsMessengerOpen] = useState(false);
  const [openedRoomIds, setOpenedRoomIds] = useState<number[]>([]);
  const shownToastIdsRef = useRef<Set<number>>(new Set());
  const didInitToastRef = useRef(false);
@@ -1577,7 +1582,13 @@ const saasAnnouncementTypeLabel: Record<string, string> = {
  </div>
  </div>
 
- <div className="flex min-h-0 flex-1 overflow-x-auto">
+ <div
+  className={
+    isNoticeEditorPage
+      ? "flex min-h-0 flex-1 overflow-visible"
+      : "flex min-h-0 flex-1 overflow-x-auto"
+  }
+>
   <main
   className={`min-w-[980px] flex-1 p-4 md:p-6 transition-all duration-200 ${
     canUseMessenger && isMessengerOpen && !isMobile ? "pr-[560px]" : ""
