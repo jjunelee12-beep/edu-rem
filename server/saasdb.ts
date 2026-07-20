@@ -1957,6 +1957,83 @@ export async function getPracticeMasterSummary() {
   };
 }
 
+const practiceMasterSyncHistoryListSelect = {
+  id:
+    practiceMasterSyncHistory.id,
+
+  dataType:
+    practiceMasterSyncHistory.dataType,
+
+  sourceType:
+    practiceMasterSyncHistory.sourceType,
+
+  sourceFileName:
+    practiceMasterSyncHistory.sourceFileName,
+
+  sourceFileKey:
+    practiceMasterSyncHistory.sourceFileKey,
+
+  sourceFileUrl:
+    practiceMasterSyncHistory.sourceFileUrl,
+
+  sourceFileHash:
+    practiceMasterSyncHistory.sourceFileHash,
+
+  sourceVersion:
+    practiceMasterSyncHistory.sourceVersion,
+
+  status:
+    practiceMasterSyncHistory.status,
+
+  totalRows:
+    practiceMasterSyncHistory.totalRows,
+
+  validRows:
+    practiceMasterSyncHistory.validRows,
+
+  invalidRows:
+    practiceMasterSyncHistory.invalidRows,
+
+  unchangedCount:
+    practiceMasterSyncHistory.unchangedCount,
+
+  insertCount:
+    practiceMasterSyncHistory.insertCount,
+
+  updateCount:
+    practiceMasterSyncHistory.updateCount,
+
+  deactivateCount:
+    practiceMasterSyncHistory.deactivateCount,
+
+  reactivateCount:
+    practiceMasterSyncHistory.reactivateCount,
+
+  reviewCount:
+    practiceMasterSyncHistory.reviewCount,
+
+  memo:
+    practiceMasterSyncHistory.memo,
+
+  createdBy:
+    practiceMasterSyncHistory.createdBy,
+
+  executedBy:
+    practiceMasterSyncHistory.executedBy,
+
+  startedAt:
+    practiceMasterSyncHistory.startedAt,
+
+  completedAt:
+    practiceMasterSyncHistory.completedAt,
+
+  createdAt:
+    practiceMasterSyncHistory.createdAt,
+
+  updatedAt:
+    practiceMasterSyncHistory.updatedAt,
+};
+
 export async function listPracticeMasterSyncHistory(input?: {
   dataType?: PracticeMasterSyncDataType | "all";
   status?: PracticeMasterSyncStatus | "all";
@@ -1978,8 +2055,10 @@ export async function listPracticeMasterSyncHistory(input?: {
 
   if (dataType !== "all" && status !== "all") {
     return db
-      .select()
-      .from(practiceMasterSyncHistory)
+      .select(
+  practiceMasterSyncHistoryListSelect
+)
+.from(practiceMasterSyncHistory)
       .where(
         sql`
           ${practiceMasterSyncHistory.dataType} = ${dataType}
@@ -1992,8 +2071,10 @@ export async function listPracticeMasterSyncHistory(input?: {
 
   if (dataType !== "all") {
     return db
-      .select()
-      .from(practiceMasterSyncHistory)
+     .select(
+  practiceMasterSyncHistoryListSelect
+)
+.from(practiceMasterSyncHistory)
       .where(
         eq(
           practiceMasterSyncHistory.dataType,
@@ -2006,8 +2087,10 @@ export async function listPracticeMasterSyncHistory(input?: {
 
   if (status !== "all") {
     return db
-      .select()
-      .from(practiceMasterSyncHistory)
+      .select(
+  practiceMasterSyncHistoryListSelect
+)
+.from(practiceMasterSyncHistory)
       .where(
         eq(
           practiceMasterSyncHistory.status,
@@ -2019,8 +2102,10 @@ export async function listPracticeMasterSyncHistory(input?: {
   }
 
   return db
-    .select()
-    .from(practiceMasterSyncHistory)
+    .select(
+  practiceMasterSyncHistoryListSelect
+)
+.from(practiceMasterSyncHistory)
     .orderBy(desc(practiceMasterSyncHistory.createdAt))
     .limit(limit);
 }
