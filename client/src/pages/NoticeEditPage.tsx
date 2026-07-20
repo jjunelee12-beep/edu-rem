@@ -328,7 +328,7 @@ const handleSaveDraft = () => {
 
   return (
     <div className="space-y-6">
-      <div className="sticky top-0 z-10 rounded-3xl border bg-white/90 px-6 py-4 shadow-sm backdrop-blur">
+      <div className="rounded-3xl border bg-white px-6 py-4 shadow-sm">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
@@ -430,7 +430,7 @@ const handleSaveDraft = () => {
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid gap-6 overflow-visible xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-6">
           <div className="overflow-visible rounded-3xl border bg-white shadow-sm">
   <div className="rounded-t-3xl border-b bg-slate-50 px-6 py-5">
