@@ -2028,6 +2028,8 @@ export const practiceMasterSyncHistory = mysqlTable(
 
     createdBy: int("createdBy").notNull(),
 
+executedBy: int("executedBy"),
+
     startedAt: datetime("startedAt"),
 
     completedAt: datetime("completedAt"),
@@ -2059,6 +2061,10 @@ export const practiceMasterSyncHistory = mysqlTable(
     createdByIdx: index(
       "idx_practice_master_sync_created_by"
     ).on(table.createdBy),
+
+    executedByIdx: index(
+      "idx_practice_master_sync_history_executed_by"
+    ).on(table.executedBy),
   })
 );
 

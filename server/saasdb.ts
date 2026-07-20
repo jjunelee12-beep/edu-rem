@@ -3483,27 +3483,78 @@ export async function analyzePracticeMasterSync(input: {
             namePhoneKey
           ) || [];
 
-        if (
+                if (
           namePhoneCandidates.length === 1
         ) {
           const existing =
             namePhoneCandidates[0];
 
-          protectedMasterIds.add(
+          matchedMasterIds.add(
             existing.id
           );
 
-          reviews.push({
-            type: "address_changed",
-            rowNumber,
-            incoming,
-            candidateMasterIds: [
-              existing.id,
-            ],
-            existing,
-            message:
-              "기관명과 전화번호는 같지만 주소가 변경되었습니다. 이전 또는 다른 지점인지 확인이 필요합니다.",
-          });
+          const changedFields =
+            getPracticeMasterChangedFields({
+              existing,
+              incoming,
+            });
+
+          const shouldBeActive =
+            input.dataType === "institution"
+              ? resolvePracticeInstitutionActive({
+                  selectionStatus:
+                    incoming.selectionStatus,
+
+                  selectionValidTo:
+                    incoming.selectionValidTo,
+                })
+              : true;
+
+          const activeStateChanged =
+            Boolean(existing.isActive) !==
+            shouldBeActive;
+
+          const finalChangedFields = [
+            ...changedFields,
+          ];
+
+          if (
+            activeStateChanged &&
+            !finalChangedFields.includes(
+              "isActive"
+            )
+          ) {
+            finalChangedFields.push(
+              "isActive"
+            );
+          }
+
+          if (
+            shouldBeActive &&
+            !existing.isActive
+          ) {
+            reactivates.push({
+              rowNumber,
+              masterId: existing.id,
+              existing,
+              incoming,
+              changedFields:
+                finalChangedFields,
+              matchType:
+                "name_phone_initial_migration",
+            });
+          } else {
+            updates.push({
+              rowNumber,
+              masterId: existing.id,
+              existing,
+              incoming,
+              changedFields:
+                finalChangedFields,
+              matchType:
+                "name_phone_initial_migration",
+            });
+          }
 
           continue;
         }
@@ -4236,8 +4287,9 @@ export async function executePracticeMasterSync(input: {
           .update(
             practiceMasterSyncHistory
           )
-          .set({
+                    .set({
             status: "running",
+            executedBy: actorUserId,
             errorJson: null,
             completedAt: null,
           } as any)
