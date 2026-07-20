@@ -8281,6 +8281,7 @@ if (params.customerType === "existing") {
       clientName: students.clientName,
 phone: students.phone,
 course: students.course,
+studentLoginId: students.studentLoginId,
 assigneeName: users.name,
 
 semesterOrder: semesters.semesterOrder,
@@ -8361,10 +8362,11 @@ occurredAt: r.occurredAt || null,
 
       title: r.title || "",
       institutionName: r.institutionName || "",
-      clientName: r.clientName || "",
-      phone: r.phone || "",
-      course: r.course || "",
-      subjectType: r.subjectType || null,
+clientName: r.clientName || "",
+phone: r.phone || "",
+course: r.course || "",
+studentLoginId: r.studentLoginId || "",
+subjectType: r.subjectType || null,
       subjectCount: Number(r.subjectCount || 0),
       quantity: Number(r.quantity || 0),
 

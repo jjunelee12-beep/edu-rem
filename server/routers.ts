@@ -13,6 +13,7 @@ import { z } from "zod";
 import * as db from "./db";
 import { getOrganizationLimitStatus, getOrganizationFeatureFlags } from "./saasdb";
 import { buildSettlementPayslipExcel } from "./_core/settlement-payslip-excel";
+import { buildSettlementSalesSummaryExcel } from "./_core/settlement-sales-summary-excel";
 import { buildOrganizationExcelExport } from "./_core/organization-excel-export";
 import { emitLiveNotification } from "./_core/live-notifications";
 import { publicLeadRouter } from "./publicLead.router";
@@ -9764,6 +9765,54 @@ organizationId,
         success: true,
         fileName,
         base64,
+      };
+    }),
+
+  downloadSalesSummaryExcel: hostProcedure
+    .input(
+      z.object({
+        year: z.number(),
+        month: z.number(),
+        assigneeId: z.number(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const organizationId = getCtxOrganizationId(ctx);
+
+      await assertOrganizationFeatureEnabled(
+        organizationId,
+        "allowSettlementReport",
+        "현재 회사는 정산 리포트 기능을 사용할 수 없습니다."
+      );
+
+      const settlementData = await db.getSettlementEntries({
+        organizationId,
+        year: input.year,
+        month: input.month,
+        assigneeId: input.assigneeId,
+      });
+
+      const entries = settlementData?.entries || [];
+
+      const assigneeName =
+        String(entries[0]?.assigneeName || "").trim() ||
+        `담당자_${input.assigneeId}`;
+
+      const { fileName, buffer, rowCount } =
+        await buildSettlementSalesSummaryExcel({
+          year: input.year,
+          month: input.month,
+          assigneeName,
+          entries,
+        });
+
+      const base64 = Buffer.from(buffer).toString("base64");
+
+      return {
+        success: true,
+        fileName,
+        base64,
+        rowCount,
       };
     }),
 

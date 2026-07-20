@@ -26,12 +26,25 @@ async function getUploadUser(req: express.Request) {
   const rawSession = parsedCookies[SESSION_COOKIE];
   const secret = process.env.SESSION_SECRET;
 
-  if (!rawSession || !secret) return null;
+  console.log("[UPLOAD] cookie =", cookieHeader);
+  console.log("[UPLOAD] rawSession =", rawSession);
+
+  if (!rawSession || !secret) {
+    console.log("[UPLOAD] session or secret missing");
+    return null;
+  }
 
   const userId = readUserIdFromSessionCookieValue(rawSession, secret);
+
+  console.log("[UPLOAD] parsedUserId =", userId);
+
   if (!userId) return null;
 
-  return getUserById(userId);
+  const user = await getUserById(userId);
+
+  console.log("[UPLOAD] dbUser =", user);
+
+  return user;
 }
 
 function getOrgUploadDir(organizationId: number) {

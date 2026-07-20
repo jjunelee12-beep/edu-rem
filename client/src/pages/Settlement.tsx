@@ -180,6 +180,15 @@ const {
       },
     });
 
+const downloadSalesSummaryExcelMutation =
+  trpc.settlement.downloadSalesSummaryExcel.useMutation({
+    onError: (err) => {
+      toast.error(
+        err.message || "매출 결산 파일 다운로드 중 오류가 발생했습니다."
+      );
+    },
+  });
+
 const regenerateLedgerMutation =
   trpc.settlementSystem.backfillSettlementItems.useMutation({
     onSuccess: async (result: any) => {
@@ -672,6 +681,61 @@ const downloadInstitutionTrendCSV = () => {
     }
   };
 
+const handleDownloadSalesSummaryExcel = async (assigneeId?: number) => {
+  const targetAssigneeId = Number(assigneeId || 0);
+
+  if (!targetAssigneeId) {
+    toast.error("담당자 정보가 없습니다.");
+    return;
+  }
+
+  try {
+    const result =
+      await downloadSalesSummaryExcelMutation.mutateAsync({
+        year,
+        month,
+        assigneeId: targetAssigneeId,
+      });
+
+    if (!result?.base64 || !result?.fileName) {
+      toast.error("매출 결산 파일 생성 결과가 올바르지 않습니다.");
+      return;
+    }
+
+    const byteCharacters = atob(result.base64);
+    const byteNumbers = new Array(byteCharacters.length);
+
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+
+    const byteArray = new Uint8Array(byteNumbers);
+
+    const blob = new Blob([byteArray], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+
+    a.href = url;
+    a.download = result.fileName;
+    a.click();
+
+    URL.revokeObjectURL(url);
+
+    toast.success(
+      `매출 결산 파일 다운로드 완료${
+        result.rowCount !== undefined
+          ? ` · ${result.rowCount}건`
+          : ""
+      }`
+    );
+  } catch (error) {
+    console.error("[handleDownloadSalesSummaryExcel]", error);
+  }
+};
+
   if (!canViewSettlement) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -1052,6 +1116,18 @@ const downloadInstitutionTrendCSV = () => {
     >
       엑셀 다운로드
     </Button>
+<Button
+  variant="secondary"
+  size="sm"
+  onClick={() =>
+    handleDownloadSalesSummaryExcel(Number(r.assigneeId))
+  }
+  disabled={downloadSalesSummaryExcelMutation.isPending}
+>
+  {downloadSalesSummaryExcelMutation.isPending
+    ? "생성 중..."
+    : "매출결산 다운로드"}
+</Button>
   </div>
 </td>
                       </tr>

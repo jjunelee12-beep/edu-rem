@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +30,21 @@ function getMonthOptions() {
   return options;
 }
 
+const SEMESTER_FILTER_STORAGE_KEY = "semester-list:filters";
+const SEMESTER_FILTER_RESTORE_KEY = "semester-list:restore-on-return";
+
+type SemesterListFilters = {
+  plannedMonth: string;
+  dateMode: "plannedMonth" | "actualStartDate";
+  selectedActualStartDate: string;
+  searchTerm: string;
+  assigneeSearch: string;
+  filterUnassignedPractice: boolean;
+  filterPaymentPlanned: boolean;
+  filterPaymentStatus: string;
+  filterSemesterOrder: string;
+};
+
 function getCurrentMonthKey() {
   const now = new Date();
   const y = now.getFullYear();
@@ -40,6 +55,7 @@ function getCurrentMonthKey() {
 export default function SemesterList() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
+const [isFilterHydrated, setIsFilterHydrated] = useState(false);
 
  const withOrgPath = (path: string) => {
     const slug = window.location.pathname.split("/").filter(Boolean)[0];
@@ -71,6 +87,115 @@ const [selectedActualStartDate, setSelectedActualStartDate] = useState("all");
   const [filterPaymentPlanned, setFilterPaymentPlanned] = useState(false);
   const [filterPaymentStatus, setFilterPaymentStatus] = useState<string>("all");
   const [filterSemesterOrder, setFilterSemesterOrder] = useState<string>("all");
+
+useEffect(() => {
+  const shouldRestore =
+    sessionStorage.getItem(SEMESTER_FILTER_RESTORE_KEY) === "true";
+
+  if (!shouldRestore) {
+  sessionStorage.removeItem(SEMESTER_FILTER_STORAGE_KEY);
+  setIsFilterHydrated(true);
+  return;
+}
+
+  try {
+    const savedRaw = sessionStorage.getItem(
+      SEMESTER_FILTER_STORAGE_KEY
+    );
+
+    if (savedRaw) {
+      const saved = JSON.parse(savedRaw) as Partial<SemesterListFilters>;
+
+      setPlannedMonth(
+        typeof saved.plannedMonth === "string"
+          ? saved.plannedMonth
+          : getCurrentMonthKey()
+      );
+
+      setDateMode(
+        saved.dateMode === "actualStartDate"
+          ? "actualStartDate"
+          : "plannedMonth"
+      );
+
+      setSelectedActualStartDate(
+        typeof saved.selectedActualStartDate === "string"
+          ? saved.selectedActualStartDate
+          : "all"
+      );
+
+      setSearchTerm(
+        typeof saved.searchTerm === "string"
+          ? saved.searchTerm
+          : ""
+      );
+
+      setAssigneeSearch(
+        typeof saved.assigneeSearch === "string"
+          ? saved.assigneeSearch
+          : ""
+      );
+
+      setFilterUnassignedPractice(
+        Boolean(saved.filterUnassignedPractice)
+      );
+
+      setFilterPaymentPlanned(
+        Boolean(saved.filterPaymentPlanned)
+      );
+
+      setFilterPaymentStatus(
+        typeof saved.filterPaymentStatus === "string"
+          ? saved.filterPaymentStatus
+          : "all"
+      );
+
+      setFilterSemesterOrder(
+        typeof saved.filterSemesterOrder === "string"
+          ? saved.filterSemesterOrder
+          : "all"
+      );
+    }
+  } catch (error) {
+    console.error("[SemesterList filter restore]", error);
+    sessionStorage.removeItem(SEMESTER_FILTER_STORAGE_KEY);
+  } finally {
+  sessionStorage.removeItem(SEMESTER_FILTER_RESTORE_KEY);
+  setIsFilterHydrated(true);
+}
+}, []);
+
+useEffect(() => {
+  if (!isFilterHydrated) return;
+
+  const filters: SemesterListFilters = {
+    plannedMonth,
+    dateMode,
+    selectedActualStartDate,
+    searchTerm,
+    assigneeSearch,
+    filterUnassignedPractice,
+    filterPaymentPlanned,
+    filterPaymentStatus,
+    filterSemesterOrder,
+  };
+
+  sessionStorage.setItem(
+    SEMESTER_FILTER_STORAGE_KEY,
+    JSON.stringify(filters)
+  );
+}, [
+  plannedMonth,
+  dateMode,
+  selectedActualStartDate,
+  searchTerm,
+  assigneeSearch,
+  filterUnassignedPractice,
+  filterPaymentPlanned,
+  filterPaymentStatus,
+  filterSemesterOrder,
+  isFilterHydrated,
+]);
 
   const role = String(
   user?.role || ""
@@ -636,9 +761,16 @@ plannedMonth,
     ? "bg-amber-50/20"
     : ""
 }`}
-                  onClick={() =>
-  setLocation(withOrgPath(`/students/${sem.studentId}`))
-}
+                  onClick={() => {
+  sessionStorage.setItem(
+    SEMESTER_FILTER_RESTORE_KEY,
+    "true"
+  );
+
+  setLocation(
+    withOrgPath(`/students/${sem.studentId}`)
+  );
+}}
                 >
                   <td className="px-3 py-2 font-mono text-sm">
   {dateMode === "actualStartDate"
