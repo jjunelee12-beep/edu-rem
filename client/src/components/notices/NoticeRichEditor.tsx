@@ -357,7 +357,7 @@ const handleDeleteTable = () => {
         onChange={(e) => handlePickImage(e.target.files?.[0] ?? null)}
       />
 
-      <div className="sticky top-16 z-30 flex flex-wrap items-center gap-2 border-b bg-slate-50/95 px-4 py-3 backdrop-blur">
+      <div className="sticky top-[92px] z-30 flex flex-wrap items-center gap-2 border-b bg-slate-50/95 px-4 py-3 shadow-sm backdrop-blur">
         <Button
           type="button"
           size="sm"

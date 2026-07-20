@@ -61,11 +61,18 @@ async function uploadNoticeAttachment(file: File): Promise<UploadedAttachment> {
     throw new Error("업로드 URL을 가져오지 못했습니다.");
   }
 
-  return {
-    name: file.name,
-    url: String(fileUrl),
-    size: file.size,
-  };
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
+
+const fullUrl =
+  String(fileUrl).startsWith("http")
+    ? String(fileUrl)
+    : `${apiBaseUrl}${String(fileUrl).startsWith("/") ? "" : "/"}${fileUrl}`;
+
+return {
+  name: file.name,
+  url: fullUrl,
+  size: file.size,
+};
 }
 
 function buildAttachmentHtml(content: string, attachments: UploadedAttachment[]) {
@@ -425,8 +432,8 @@ const handleSaveDraft = () => {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-6">
-          <div className="overflow-hidden rounded-3xl border bg-white shadow-sm">
-            <div className="border-b bg-slate-50 px-6 py-5">
+          <div className="overflow-visible rounded-3xl border bg-white shadow-sm">
+  <div className="rounded-t-3xl border-b bg-slate-50 px-6 py-5">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
                   {importanceLabel}
