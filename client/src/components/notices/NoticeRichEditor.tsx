@@ -99,8 +99,8 @@ async function uploadNoticeImage(file: File) {
   formData.append("image", file);
 
   const res = await fetch(
-    `${import.meta.env.VITE_API_BASE_URL || ""}/api/notices/upload-image`,
-    {
+  "/api/notices/upload-image",
+  {
       method: "POST",
       body: formData,
       credentials: "include",
