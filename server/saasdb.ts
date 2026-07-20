@@ -2519,6 +2519,88 @@ function normalizePracticeMasterDate(
   ].join("-");
 }
 
+function getPracticeSourceRowPriority(
+  row: PracticeMasterPreviewIncoming
+) {
+  const validTo =
+    normalizePracticeMasterDate(
+      row.selectionValidTo
+    ) || "0000-00-00";
+
+  const validFrom =
+    normalizePracticeMasterDate(
+      row.selectionValidFrom
+    ) || "0000-00-00";
+
+  const status =
+    normalizePracticeMasterText(
+      row.selectionStatus
+    );
+
+  const statusPriority =
+    status.includes("정상")
+      ? 3
+      : status.includes("정지")
+        ? 2
+        : status.includes("취소")
+          ? 1
+          : 0;
+
+  return {
+    validTo,
+    validFrom,
+    statusPriority,
+    rowNumber: Number(row.rowNumber || 0),
+  };
+}
+
+function selectLatestPracticeSourceRow<
+  T extends PracticeMasterPreviewIncoming
+>(
+  rows: T[]
+) {
+  return [...rows].sort((left, right) => {
+    const leftPriority =
+      getPracticeSourceRowPriority(left);
+
+    const rightPriority =
+      getPracticeSourceRowPriority(right);
+
+    if (
+      leftPriority.validTo !==
+      rightPriority.validTo
+    ) {
+      return rightPriority.validTo.localeCompare(
+        leftPriority.validTo
+      );
+    }
+
+    if (
+      leftPriority.statusPriority !==
+      rightPriority.statusPriority
+    ) {
+      return (
+        rightPriority.statusPriority -
+        leftPriority.statusPriority
+      );
+    }
+
+    if (
+      leftPriority.validFrom !==
+      rightPriority.validFrom
+    ) {
+      return rightPriority.validFrom.localeCompare(
+        leftPriority.validFrom
+      );
+    }
+
+    return (
+      rightPriority.rowNumber -
+      leftPriority.rowNumber
+    );
+  })[0];
+}
+
 function resolvePracticeInstitutionActive(input: {
   selectionStatus?: string | null;
   selectionValidTo?: string | null;
@@ -2968,6 +3050,8 @@ export async function analyzePracticeMasterSync(input: {
     const deactivates: any[] = [];
     const reviews: any[] = [];
     const invalidRows: any[] = [];
+const skippedSourceRowNumbers =
+  new Set<number>();
 
     const matchedMasterIds =
       new Set<number>();
@@ -3076,14 +3160,16 @@ export async function analyzePracticeMasterSync(input: {
         );
       }
 
-      if (
-        input.dataType === "institution" &&
-        !incoming.address
-      ) {
-        rowErrors.push(
-          "실습기관 주소가 없습니다."
-        );
-      }
+    if (
+  input.dataType === "institution" &&
+  !incoming.address
+) {
+  skippedSourceRowNumbers.add(
+    rowNumber
+  );
+
+  continue;
+}
 
       if (
         input.dataType === "institution" &&
@@ -3179,27 +3265,21 @@ export async function analyzePracticeMasterSync(input: {
             )
           : "";
 
-      if (incomingManagementNo) {
-        const sourceManagementRows =
-          sourceManagementNoRows.get(
-            incomingManagementNo
-          ) || [];
+     if (incomingManagementNo) {
+  const sourceManagementRows =
+    sourceManagementNoRows.get(
+      incomingManagementNo
+    ) || [];
 
-        sourceManagementRows.push(
-          rowNumber
-        );
+  sourceManagementRows.push(
+    rowNumber
+  );
 
-        sourceManagementNoRows.set(
-          incomingManagementNo,
-          sourceManagementRows
-        );
-
-        if (
-          sourceManagementRows.length > 1
-        ) {
-          continue;
-        }
-      }
+  sourceManagementNoRows.set(
+    incomingManagementNo,
+    sourceManagementRows
+  );
+}
 
       if (incomingManagementNo) {
         const managementCandidates =
@@ -3299,36 +3379,124 @@ export async function analyzePracticeMasterSync(input: {
           continue;
         }
 
-        if (
-          managementCandidates.length > 1
-        ) {
-          for (
-            const candidate of
-            managementCandidates
-          ) {
-            protectedMasterIds.add(
-              candidate.id
-            );
-          }
+       if (
+  managementCandidates.length > 1
+) {
+  const sortedCandidates =
+    [...managementCandidates].sort(
+      (left, right) =>
+        Number(left.id) -
+        Number(right.id)
+    );
 
-          reviews.push({
-            type:
-              "multiple_management_no_matches",
+  const existing =
+    sortedCandidates[0];
 
-            rowNumber,
-            incoming,
+  const duplicateCandidates =
+    sortedCandidates.slice(1);
 
-            candidateMasterIds:
-              managementCandidates.map(
-                (row) => row.id
-              ),
+  matchedMasterIds.add(
+    existing.id
+  );
 
-            message:
-              "동일한 협회 관리번호를 가진 기존 마스터가 여러 건 존재합니다.",
-          });
+  const changedFields =
+    getPracticeMasterChangedFields({
+      existing,
+      incoming,
+    });
 
-          continue;
-        }
+  const shouldBeActive =
+    resolvePracticeInstitutionActive({
+      selectionStatus:
+        incoming.selectionStatus,
+
+      selectionValidTo:
+        incoming.selectionValidTo,
+    });
+
+  const activeStateChanged =
+    Boolean(existing.isActive) !==
+    shouldBeActive;
+
+  const finalChangedFields = [
+    ...changedFields,
+  ];
+
+  if (
+    activeStateChanged &&
+    !finalChangedFields.includes(
+      "isActive"
+    )
+  ) {
+    finalChangedFields.push(
+      "isActive"
+    );
+  }
+
+  if (
+    shouldBeActive &&
+    !existing.isActive
+  ) {
+    reactivates.push({
+      rowNumber,
+      masterId:
+        existing.id,
+      existing,
+      incoming,
+      changedFields:
+        finalChangedFields,
+      matchType:
+        "management_no_duplicate_merge",
+    });
+  } else if (
+    finalChangedFields.length > 0
+  ) {
+    updates.push({
+      rowNumber,
+      masterId:
+        existing.id,
+      existing,
+      incoming,
+      changedFields:
+        finalChangedFields,
+      matchType:
+        "management_no_duplicate_merge",
+    });
+  } else {
+    unchanged.push({
+      rowNumber,
+      masterId:
+        existing.id,
+      existing,
+      incoming,
+      changedFields: [],
+      matchType:
+        "management_no_duplicate_merge",
+    });
+  }
+
+  for (
+    const duplicate of
+    duplicateCandidates
+  ) {
+    protectedMasterIds.add(
+      duplicate.id
+    );
+
+    deactivates.push({
+      masterId:
+        duplicate.id,
+
+      existing:
+        duplicate,
+
+      reason:
+        `동일 관리번호 중복 통합: 대표 마스터 ${existing.id}`,
+    });
+  }
+
+  continue;
+}
       }
 
       const exactKey =
@@ -3337,18 +3505,14 @@ export async function analyzePracticeMasterSync(input: {
         );
 
             const duplicateRows =
-        sourceExactKeys.get(exactKey) || [];
+  sourceExactKeys.get(exactKey) || [];
 
-      duplicateRows.push(rowNumber);
+duplicateRows.push(rowNumber);
 
-      sourceExactKeys.set(
-        exactKey,
-        duplicateRows
-      );
-
-      if (duplicateRows.length > 1) {
-        continue;
-      }
+sourceExactKeys.set(
+  exactKey,
+  duplicateRows
+);
 
       const exactCandidates =
         exactMap.get(exactKey) || [];
@@ -3428,29 +3592,124 @@ export async function analyzePracticeMasterSync(input: {
         continue;
       }
 
-      if (exactCandidates.length > 1) {
-        for (
-          const candidate of exactCandidates
-        ) {
-          protectedMasterIds.add(
-            candidate.id
-          );
-        }
+     if (exactCandidates.length > 1) {
+  const sortedCandidates =
+    [...exactCandidates].sort(
+      (left, right) =>
+        Number(left.id) -
+        Number(right.id)
+    );
 
-        reviews.push({
-          type: "multiple_exact_matches",
-          rowNumber,
-          incoming,
-          candidateMasterIds:
-            exactCandidates.map(
-              (row) => row.id
-            ),
-          message:
-            "기존 마스터에 동일한 기관명·전화번호·주소가 여러 건 존재합니다.",
-        });
+  const existing =
+    sortedCandidates[0];
 
-        continue;
-      }
+  const duplicateCandidates =
+    sortedCandidates.slice(1);
+
+  matchedMasterIds.add(
+    existing.id
+  );
+
+  const changedFields =
+    getPracticeMasterChangedFields({
+      existing,
+      incoming,
+    });
+
+  const shouldBeActive =
+    input.dataType === "institution"
+      ? resolvePracticeInstitutionActive({
+          selectionStatus:
+            incoming.selectionStatus,
+
+          selectionValidTo:
+            incoming.selectionValidTo,
+        })
+      : true;
+
+  const activeStateChanged =
+    Boolean(existing.isActive) !==
+    shouldBeActive;
+
+  const finalChangedFields = [
+    ...changedFields,
+  ];
+
+  if (
+    activeStateChanged &&
+    !finalChangedFields.includes(
+      "isActive"
+    )
+  ) {
+    finalChangedFields.push(
+      "isActive"
+    );
+  }
+
+  if (
+    shouldBeActive &&
+    !existing.isActive
+  ) {
+    reactivates.push({
+      rowNumber,
+      masterId:
+        existing.id,
+      existing,
+      incoming,
+      changedFields:
+        finalChangedFields,
+      matchType:
+        "exact_duplicate_merge",
+    });
+  } else if (
+    finalChangedFields.length > 0
+  ) {
+    updates.push({
+      rowNumber,
+      masterId:
+        existing.id,
+      existing,
+      incoming,
+      changedFields:
+        finalChangedFields,
+      matchType:
+        "exact_duplicate_merge",
+    });
+  } else {
+    unchanged.push({
+      rowNumber,
+      masterId:
+        existing.id,
+      existing,
+      incoming,
+      changedFields: [],
+      matchType:
+        "exact_duplicate_merge",
+    });
+  }
+
+  for (
+    const duplicate of
+    duplicateCandidates
+  ) {
+    protectedMasterIds.add(
+      duplicate.id
+    );
+
+    deactivates.push({
+      masterId:
+        duplicate.id,
+
+      existing:
+        duplicate,
+
+      reason:
+        `정확히 일치하는 중복 마스터 통합: 대표 마스터 ${existing.id}`,
+    });
+  }
+
+  continue;
+}
 
       const nameAddressKey =
         createPracticeMasterNameAddressKey(
@@ -3524,30 +3783,108 @@ export async function analyzePracticeMasterSync(input: {
         continue;
       }
 
-      if (
+            if (
         nameAddressCandidates.length > 1
       ) {
-        for (
-          const candidate of
-          nameAddressCandidates
+        const sortedCandidates =
+          [...nameAddressCandidates].sort(
+            (left, right) =>
+              Number(left.id) -
+              Number(right.id)
+          );
+
+        const existing =
+          sortedCandidates[0];
+
+        const duplicateCandidates =
+          sortedCandidates.slice(1);
+
+        matchedMasterIds.add(
+          existing.id
+        );
+
+        const changedFields =
+          getPracticeMasterChangedFields({
+            existing,
+            incoming,
+          });
+
+        const shouldBeActive =
+          input.dataType === "institution"
+            ? resolvePracticeInstitutionActive({
+                selectionStatus:
+                  incoming.selectionStatus,
+
+                selectionValidTo:
+                  incoming.selectionValidTo,
+              })
+            : true;
+
+        const activeStateChanged =
+          Boolean(existing.isActive) !==
+          shouldBeActive;
+
+        const finalChangedFields = [
+          ...changedFields,
+        ];
+
+        if (
+          activeStateChanged &&
+          !finalChangedFields.includes(
+            "isActive"
+          )
         ) {
-          protectedMasterIds.add(
-            candidate.id
+          finalChangedFields.push(
+            "isActive"
           );
         }
 
-        reviews.push({
-          type:
-            "multiple_name_address_matches",
-          rowNumber,
-          incoming,
-          candidateMasterIds:
-            nameAddressCandidates.map(
-              (row) => row.id
-            ),
-          message:
-            "동일한 기관명과 주소를 가진 기존 마스터가 여러 건 존재합니다.",
-        });
+        if (
+          shouldBeActive &&
+          !existing.isActive
+        ) {
+          reactivates.push({
+            rowNumber,
+            masterId: existing.id,
+            existing,
+            incoming,
+            changedFields:
+              finalChangedFields,
+            matchType:
+              "name_address_duplicate_merge",
+          });
+        } else {
+          updates.push({
+            rowNumber,
+            masterId: existing.id,
+            existing,
+            incoming,
+            changedFields:
+              finalChangedFields,
+            matchType:
+              "name_address_duplicate_merge",
+          });
+        }
+
+        for (
+          const duplicate of
+          duplicateCandidates
+        ) {
+          protectedMasterIds.add(
+            duplicate.id
+          );
+
+          deactivates.push({
+            masterId:
+              duplicate.id,
+
+            existing:
+              duplicate,
+
+            reason:
+              `중복 마스터 통합: 대표 마스터 ${existing.id}`,
+          });
+        }
 
         continue;
       }
@@ -3644,30 +3981,110 @@ export async function analyzePracticeMasterSync(input: {
           continue;
         }
 
-        if (
+               if (
           namePhoneCandidates.length > 1
         ) {
-          for (
-            const candidate of
-            namePhoneCandidates
+          const sortedCandidates =
+            [...namePhoneCandidates].sort(
+              (left, right) =>
+                Number(left.id) -
+                Number(right.id)
+            );
+
+          const existing =
+            sortedCandidates[0];
+
+          const duplicateCandidates =
+            sortedCandidates.slice(1);
+
+          matchedMasterIds.add(
+            existing.id
+          );
+
+          const changedFields =
+            getPracticeMasterChangedFields({
+              existing,
+              incoming,
+            });
+
+          const shouldBeActive =
+            input.dataType === "institution"
+              ? resolvePracticeInstitutionActive({
+                  selectionStatus:
+                    incoming.selectionStatus,
+
+                  selectionValidTo:
+                    incoming.selectionValidTo,
+                })
+              : true;
+
+          const activeStateChanged =
+            Boolean(existing.isActive) !==
+            shouldBeActive;
+
+          const finalChangedFields = [
+            ...changedFields,
+          ];
+
+          if (
+            activeStateChanged &&
+            !finalChangedFields.includes(
+              "isActive"
+            )
           ) {
-            protectedMasterIds.add(
-              candidate.id
+            finalChangedFields.push(
+              "isActive"
             );
           }
 
-          reviews.push({
-            type:
-              "multiple_name_phone_matches",
-            rowNumber,
-            incoming,
-            candidateMasterIds:
-              namePhoneCandidates.map(
-                (row) => row.id
-              ),
-            message:
-              "동일한 기관명과 전화번호를 가진 기존 마스터가 여러 건 존재합니다.",
-          });
+          if (
+            shouldBeActive &&
+            !existing.isActive
+          ) {
+            reactivates.push({
+              rowNumber,
+              masterId:
+                existing.id,
+              existing,
+              incoming,
+              changedFields:
+                finalChangedFields,
+              matchType:
+                "name_phone_duplicate_merge",
+            });
+          } else {
+            updates.push({
+              rowNumber,
+              masterId:
+                existing.id,
+              existing,
+              incoming,
+              changedFields:
+                finalChangedFields,
+              matchType:
+                "name_phone_duplicate_merge",
+            });
+          }
+
+          for (
+            const duplicate of
+            duplicateCandidates
+          ) {
+            protectedMasterIds.add(
+              duplicate.id
+            );
+
+            deactivates.push({
+              masterId:
+                duplicate.id,
+
+              existing:
+                duplicate,
+
+              reason:
+                `중복 마스터 통합: 대표 마스터 ${existing.id}`,
+            });
+          }
 
           continue;
         }
@@ -3682,115 +4099,111 @@ export async function analyzePracticeMasterSync(input: {
         const duplicatedSourceRowNumbers =
       new Set<number>();
 
-    for (
-      const [
-        managementNo,
-        rowNumbers,
-      ] of sourceManagementNoRows.entries()
+   for (
+  const [
+    managementNo,
+    rowNumbers,
+  ] of sourceManagementNoRows.entries()
+) {
+  if (rowNumbers.length <= 1) {
+    continue;
+  }
+
+  const duplicatedRows =
+    (sourceRows as any[])
+      .filter((row) =>
+        rowNumbers.includes(
+          Number(row.rowNumber)
+        )
+      )
+      .map((row) => ({
+        rowNumber:
+          Number(row.rowNumber),
+
+        categoryName:
+          practiceMasterNullableText(
+            row.categoryName
+          ),
+
+        name:
+          normalizePracticeMasterText(
+            row.name
+          ),
+
+        representativeName:
+          practiceMasterNullableText(
+            row.representativeName
+          ),
+
+        phone:
+          practiceMasterNullableText(
+            row.phone
+          ),
+
+        address:
+          practiceMasterNullableText(
+            row.address
+          ),
+
+        detailAddress:
+          practiceMasterNullableText(
+            row.detailAddress
+          ),
+
+        availableCourse:
+          practiceMasterNullableText(
+            row.availableCourse
+          ),
+
+        price:
+          practiceMasterNullableText(
+            row.price
+          )?.replace(/,/g, "") ||
+          null,
+
+        associationManagementNo:
+          practiceMasterNullableText(
+            row.associationManagementNo
+          ),
+
+        selectionValidFrom:
+          normalizePracticeMasterDate(
+            row.selectionValidFrom
+          ),
+
+        selectionValidTo:
+          normalizePracticeMasterDate(
+            row.selectionValidTo
+          ),
+
+        selectionStatus:
+          practiceMasterNullableText(
+            row.selectionStatus
+          ),
+      }));
+
+  const canonicalRow =
+    selectLatestPracticeSourceRow(
+      duplicatedRows
+    );
+
+  if (!canonicalRow) {
+    continue;
+  }
+
+  for (const row of duplicatedRows) {
+    if (
+      Number(row.rowNumber) ===
+      Number(canonicalRow.rowNumber)
     ) {
-      if (rowNumbers.length <= 1) {
-        continue;
-      }
-
-      for (const rowNumber of rowNumbers) {
-        duplicatedSourceRowNumbers.add(
-          rowNumber
-        );
-
-        const sourceRow =
-          (sourceRows as any[]).find(
-            (row) =>
-              Number(row.rowNumber) ===
-              Number(rowNumber)
-          );
-
-        reviews.push({
-          type:
-            "source_management_no_duplicate",
-
-          rowNumber,
-
-          sourceRowNumbers: [
-            ...rowNumbers,
-          ],
-
-          incoming: sourceRow
-            ? {
-                rowNumber:
-                  Number(
-                    sourceRow.rowNumber
-                  ),
-
-                categoryName:
-                  practiceMasterNullableText(
-                    sourceRow.categoryName
-                  ),
-
-                name:
-                  normalizePracticeMasterText(
-                    sourceRow.name
-                  ),
-
-                representativeName:
-                  practiceMasterNullableText(
-                    sourceRow.representativeName
-                  ),
-
-                phone:
-                  practiceMasterNullableText(
-                    sourceRow.phone
-                  ),
-
-                address:
-                  practiceMasterNullableText(
-                    sourceRow.address
-                  ),
-
-                detailAddress:
-                  practiceMasterNullableText(
-                    sourceRow.detailAddress
-                  ),
-
-                availableCourse:
-                  practiceMasterNullableText(
-                    sourceRow.availableCourse
-                  ),
-
-                price:
-                  practiceMasterNullableText(
-                    sourceRow.price
-                  )?.replace(/,/g, "") ||
-                  null,
-
-                associationManagementNo:
-                  practiceMasterNullableText(
-                    sourceRow.associationManagementNo
-                  ),
-
-                selectionValidFrom:
-                  normalizePracticeMasterDate(
-                    sourceRow.selectionValidFrom
-                  ),
-
-                selectionValidTo:
-                  normalizePracticeMasterDate(
-                    sourceRow.selectionValidTo
-                  ),
-
-                selectionStatus:
-                  practiceMasterNullableText(
-                    sourceRow.selectionStatus
-                  ),
-              }
-            : undefined,
-
-          managementNo,
-
-          message:
-            "업로드 파일에 동일한 협회 관리번호가 여러 행 존재합니다.",
-        });
-      }
+      continue;
     }
+
+    duplicatedSourceRowNumbers.add(
+      Number(row.rowNumber)
+    );
+  }
+}
 
     for (
       const [
@@ -3802,80 +4215,99 @@ export async function analyzePracticeMasterSync(input: {
         continue;
       }
 
-      for (
-        const rowNumber of rowNumbers
-      ) {
-        duplicatedSourceRowNumbers.add(
-          rowNumber
+      const duplicatedRows =
+        (sourceRows as any[])
+          .filter((row) =>
+            rowNumbers.includes(
+              Number(row.rowNumber)
+            )
+          )
+          .map((row) => ({
+            rowNumber:
+              Number(row.rowNumber),
+
+            categoryName:
+              practiceMasterNullableText(
+                row.categoryName
+              ),
+
+            name:
+              normalizePracticeMasterText(
+                row.name
+              ),
+
+            representativeName:
+              practiceMasterNullableText(
+                row.representativeName
+              ),
+
+            phone:
+              practiceMasterNullableText(
+                row.phone
+              ),
+
+            address:
+              practiceMasterNullableText(
+                row.address
+              ),
+
+            detailAddress:
+              practiceMasterNullableText(
+                row.detailAddress
+              ),
+
+            availableCourse:
+              practiceMasterNullableText(
+                row.availableCourse
+              ),
+
+            price:
+              practiceMasterNullableText(
+                row.price
+              )?.replace(/,/g, "") ||
+              null,
+
+            associationManagementNo:
+              practiceMasterNullableText(
+                row.associationManagementNo
+              ),
+
+            selectionValidFrom:
+              normalizePracticeMasterDate(
+                row.selectionValidFrom
+              ),
+
+            selectionValidTo:
+              normalizePracticeMasterDate(
+                row.selectionValidTo
+              ),
+
+            selectionStatus:
+              practiceMasterNullableText(
+                row.selectionStatus
+              ),
+          }));
+
+      const canonicalRow =
+        selectLatestPracticeSourceRow(
+          duplicatedRows
         );
 
-        const sourceRow =
-          (sourceRows as any[]).find(
-            (row) =>
-              Number(row.rowNumber) ===
-              Number(rowNumber)
-          );
+      if (!canonicalRow) {
+        continue;
+      }
 
-        reviews.push({
-          type: "source_duplicate",
+      for (const row of duplicatedRows) {
+        if (
+          Number(row.rowNumber) ===
+          Number(canonicalRow.rowNumber)
+        ) {
+          continue;
+        }
 
-          rowNumber,
-
-          sourceRowNumbers: [
-            ...rowNumbers,
-          ],
-
-          incoming: sourceRow
-            ? {
-                rowNumber:
-                  Number(
-                    sourceRow.rowNumber
-                  ),
-
-                categoryName:
-                  practiceMasterNullableText(
-                    sourceRow.categoryName
-                  ),
-
-                name:
-                  normalizePracticeMasterText(
-                    sourceRow.name
-                  ),
-
-                representativeName:
-                  practiceMasterNullableText(
-                    sourceRow.representativeName
-                  ),
-
-                phone:
-                  practiceMasterNullableText(
-                    sourceRow.phone
-                  ),
-
-                address:
-                  practiceMasterNullableText(
-                    sourceRow.address
-                  ),
-
-                detailAddress:
-                  practiceMasterNullableText(
-                    sourceRow.detailAddress
-                  ),
-
-                availableCourse:
-                  practiceMasterNullableText(
-                    sourceRow.availableCourse
-                  ),
-              }
-            : null,
-
-          exactKey,
-
-          candidateMasterIds: [],
-
-          message:
-            "업로드 자료 안에 동일한 기관명·전화번호·주소가 중복되어 있습니다.",
-        });
+        duplicatedSourceRowNumbers.add(
+          Number(row.rowNumber)
+        );
       }
     }
 
@@ -3923,6 +4355,17 @@ export async function analyzePracticeMasterSync(input: {
           reactivates
         )
       );
+
+      reviews.splice(
+        0,
+        reviews.length,
+        ...reviews.filter(
+          (review: any) =>
+            !duplicatedSourceRowNumbers.has(
+              Number(review.rowNumber)
+            )
+        )
+      );
     }
 
     for (
@@ -3955,6 +4398,27 @@ export async function analyzePracticeMasterSync(input: {
       });
     }
 
+for (
+  const rowNumber of
+  duplicatedSourceRowNumbers
+) {
+  skippedSourceRowNumbers.add(
+    rowNumber
+  );
+}
+
+    const uniqueDeactivates =
+      Array.from(
+        new Map(
+          deactivates.map(
+            (item: any) => [
+              Number(item.masterId),
+              item,
+            ]
+          )
+        ).values()
+      );
+
     const preview = {
       version: 1,
 
@@ -3968,8 +4432,9 @@ export async function analyzePracticeMasterSync(input: {
           sourceRows.length,
 
         validRows:
-          sourceRows.length -
-          invalidRows.length,
+  sourceRows.length -
+  invalidRows.length -
+  skippedSourceRowNumbers.size,
 
         invalidRows:
           invalidRows.length,
@@ -3984,7 +4449,7 @@ export async function analyzePracticeMasterSync(input: {
           updates.length,
 
         deactivateCount:
-          deactivates.length,
+  uniqueDeactivates.length,
 
         reactivateCount:
           reactivates.length,
@@ -3996,8 +4461,9 @@ export async function analyzePracticeMasterSync(input: {
       unchanged,
       inserts,
       updates,
-      deactivates,
-      reactivates,
+      deactivates:
+  uniqueDeactivates,
+reactivates,
       reviews,
       invalidRows,
     };
