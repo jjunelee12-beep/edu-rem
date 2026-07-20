@@ -37,9 +37,16 @@ deactivateExpiredOverdueOrganizations,
 reactivateTenant as reactivateTenantInDb,
   listSaasAnnouncements,
   getActiveSaasAnnouncement,
-  createSaasAnnouncement,
+    createSaasAnnouncement,
   updateSaasAnnouncement,
   deleteSaasAnnouncement,
+  getPracticeMasterSummary,
+  listPracticeMasterSyncHistory,
+  getPracticeMasterSyncHistoryById,
+    createPracticeMasterSyncHistory,
+    updatePracticeMasterSyncHistory,
+  analyzePracticeMasterSync,
+  executePracticeMasterSync,
 } from "./saasdb";
 import bcrypt from "bcryptjs";
 import * as db from "./db";
@@ -92,8 +99,88 @@ function assertValidOrganizationSlug(slug: string) {
 );
   }
 
-  return normalized;
+    return normalized;
 }
+
+const practiceMasterInstitutionUploadRowSchema =
+  z.object({
+    rowNumber: z
+      .number()
+      .int()
+      .positive(),
+
+    categoryName: z
+      .string()
+      .optional()
+      .nullable(),
+
+    name: z
+      .string(),
+
+    representativeName: z
+      .string()
+      .optional()
+      .nullable(),
+
+    phone: z
+      .string()
+      .optional()
+      .nullable(),
+
+    address: z
+      .string(),
+
+    detailAddress: z
+      .string()
+      .optional()
+      .nullable(),
+
+    availableCourse: z
+      .string()
+      .optional()
+      .nullable(),
+  });
+
+const practiceMasterEducationCenterUploadRowSchema =
+  z.object({
+    rowNumber: z
+      .number()
+      .int()
+      .positive(),
+
+    categoryName: z
+      .string()
+      .optional()
+      .nullable(),
+
+    name: z
+      .string(),
+
+    representativeName: z
+      .string()
+      .optional()
+      .nullable(),
+
+    phone: z
+      .string()
+      .optional()
+      .nullable(),
+
+    address: z
+      .string()
+      .optional()
+      .nullable(),
+
+    detailAddress: z
+      .string()
+      .optional()
+      .nullable(),
+
+    availableCourse: z
+      .string()
+      .optional()
+      .nullable(),
+  });
 
 export const saasRouter = router({
 
@@ -985,4 +1072,478 @@ deactivateExpiredOverdueOrganizations: protectedProcedure.mutation(
     return deactivateExpiredOverdueOrganizations();
   }
 ),
+
+getPracticeMasterSummary: protectedProcedure.query(
+  async ({ ctx }) => {
+    assertSuperhost(ctx);
+    await requireSaasAdminUnlocked(
+      Number(ctx.user.id)
+    );
+
+    return getPracticeMasterSummary();
+  }
+),
+
+listPracticeMasterSyncHistory: protectedProcedure
+  .input(
+    z
+      .object({
+        dataType: z
+          .enum([
+            "institution",
+            "education_center",
+            "all",
+          ])
+          .default("all"),
+
+        status: z
+          .enum([
+            "analyzing",
+            "preview_ready",
+            "running",
+            "completed",
+            "failed",
+            "cancelled",
+            "all",
+          ])
+          .default("all"),
+
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(300)
+          .default(100),
+      })
+      .optional()
+  )
+  .query(async ({ ctx, input }) => {
+    assertSuperhost(ctx);
+    await requireSaasAdminUnlocked(
+      Number(ctx.user.id)
+    );
+
+    return listPracticeMasterSyncHistory({
+      dataType: input?.dataType || "all",
+      status: input?.status || "all",
+      limit: input?.limit || 100,
+    });
+  }),
+
+getPracticeMasterSyncHistory: protectedProcedure
+  .input(
+    z.object({
+      id: z.number().int().positive(),
+    })
+  )
+  .query(async ({ ctx, input }) => {
+    assertSuperhost(ctx);
+    await requireSaasAdminUnlocked(
+      Number(ctx.user.id)
+    );
+
+    const row =
+      await getPracticeMasterSyncHistoryById(
+        input.id
+      );
+
+    if (!row) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "공용 실습 데이터 동기화 이력을 찾을 수 없습니다.",
+        404
+      );
+    }
+
+    return row;
+  }),
+
+createPracticeMasterSyncHistory: protectedProcedure
+  .input(
+    z.object({
+      dataType: z.enum([
+        "institution",
+        "education_center",
+      ]),
+
+      sourceType: z
+        .enum([
+          "social_worker_association",
+          "educanvas",
+        ])
+        .default(
+          "social_worker_association"
+        ),
+
+      sourceFileName: z
+        .string()
+        .trim()
+        .min(1)
+        .max(255),
+
+      sourceFileKey: z
+        .string()
+        .trim()
+        .max(1000)
+        .optional()
+        .nullable(),
+
+      sourceFileUrl: z
+        .string()
+        .trim()
+        .max(1000)
+        .optional()
+        .nullable(),
+
+      sourceFileHash: z
+        .string()
+        .trim()
+        .length(64)
+        .optional()
+        .nullable(),
+
+      sourceVersion: z
+        .string()
+        .trim()
+        .max(100)
+        .optional()
+        .nullable(),
+
+      memo: z
+        .string()
+        .trim()
+        .optional()
+        .nullable(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    assertSuperhost(ctx);
+    await requireSaasAdminUnlocked(
+      Number(ctx.user.id)
+    );
+
+    return createPracticeMasterSyncHistory({
+      ...input,
+      createdBy: Number(ctx.user.id),
+    });
+  }),
+
+updatePracticeMasterSyncHistory: protectedProcedure
+  .input(
+    z.object({
+      id: z.number().int().positive(),
+
+      status: z
+        .enum([
+          "analyzing",
+          "preview_ready",
+          "running",
+          "completed",
+          "failed",
+          "cancelled",
+        ])
+        .optional(),
+
+      sourceFileKey: z
+        .string()
+        .trim()
+        .max(1000)
+        .optional()
+        .nullable(),
+
+      sourceFileUrl: z
+        .string()
+        .trim()
+        .max(1000)
+        .optional()
+        .nullable(),
+
+      sourceFileHash: z
+        .string()
+        .trim()
+        .length(64)
+        .optional()
+        .nullable(),
+
+      sourceVersion: z
+        .string()
+        .trim()
+        .max(100)
+        .optional()
+        .nullable(),
+
+      totalRows: z
+        .number()
+        .int()
+        .min(0)
+        .optional(),
+
+      validRows: z
+        .number()
+        .int()
+        .min(0)
+        .optional(),
+
+      invalidRows: z
+        .number()
+        .int()
+        .min(0)
+        .optional(),
+
+      unchangedCount: z
+        .number()
+        .int()
+        .min(0)
+        .optional(),
+
+      insertCount: z
+        .number()
+        .int()
+        .min(0)
+        .optional(),
+
+      updateCount: z
+        .number()
+        .int()
+        .min(0)
+        .optional(),
+
+      deactivateCount: z
+        .number()
+        .int()
+        .min(0)
+        .optional(),
+
+      reactivateCount: z
+        .number()
+        .int()
+        .min(0)
+        .optional(),
+
+      reviewCount: z
+        .number()
+        .int()
+        .min(0)
+        .optional(),
+
+      previewJson: z
+        .unknown()
+        .optional(),
+
+      errorJson: z
+        .unknown()
+        .optional(),
+
+      memo: z
+        .string()
+        .trim()
+        .optional()
+        .nullable(),
+
+      startedAt: z
+        .date()
+        .optional()
+        .nullable(),
+
+      completedAt: z
+        .date()
+        .optional()
+        .nullable(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    assertSuperhost(ctx);
+    await requireSaasAdminUnlocked(
+      Number(ctx.user.id)
+    );
+
+    const existing =
+      await getPracticeMasterSyncHistoryById(
+        input.id
+      );
+
+    if (!existing) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "공용 실습 데이터 동기화 이력을 찾을 수 없습니다.",
+        404
+      );
+    }
+
+        return updatePracticeMasterSyncHistory(
+      input
+    );
+  }),
+
+analyzePracticeMasterSync: protectedProcedure
+  .input(
+    z.discriminatedUnion(
+      "dataType",
+      [
+        z.object({
+          syncHistoryId: z
+            .number()
+            .int()
+            .positive(),
+
+          dataType:
+            z.literal("institution"),
+
+          institutionRows: z
+            .array(
+              practiceMasterInstitutionUploadRowSchema
+            )
+            .min(1)
+            .max(30000),
+        }),
+
+        z.object({
+          syncHistoryId: z
+            .number()
+            .int()
+            .positive(),
+
+          dataType:
+            z.literal(
+              "education_center"
+            ),
+
+          educationCenterRows: z
+            .array(
+              practiceMasterEducationCenterUploadRowSchema
+            )
+            .min(1)
+            .max(30000),
+        }),
+      ]
+    )
+  )
+  .mutation(async ({ ctx, input }) => {
+    assertSuperhost(ctx);
+
+    await requireSaasAdminUnlocked(
+      Number(ctx.user.id)
+    );
+
+    if (
+      input.dataType ===
+      "institution"
+    ) {
+      return analyzePracticeMasterSync({
+        syncHistoryId:
+          input.syncHistoryId,
+
+        dataType: "institution",
+
+        institutionRows:
+          input.institutionRows,
+      });
+    }
+
+        return analyzePracticeMasterSync({
+      syncHistoryId:
+        input.syncHistoryId,
+
+      dataType:
+        "education_center",
+
+      educationCenterRows:
+        input.educationCenterRows,
+    });
+  }),
+
+executePracticeMasterSync: protectedProcedure
+  .input(
+    z.object({
+      syncHistoryId: z
+        .number()
+        .int()
+        .positive(),
+
+      confirmationText: z
+        .string()
+        .trim(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    assertSuperhost(ctx);
+
+    await requireSaasAdminUnlocked(
+      Number(ctx.user.id)
+    );
+
+    if (
+      input.confirmationText !==
+      "동기화 실행"
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "확인 문구가 일치하지 않습니다. '동기화 실행'을 정확히 입력해주세요.",
+        400
+      );
+    }
+
+    const history =
+      await getPracticeMasterSyncHistoryById(
+        input.syncHistoryId
+      );
+
+    if (!history) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "공용 실습 데이터 동기화 이력을 찾을 수 없습니다.",
+        404
+      );
+    }
+
+    if (
+      history.status !==
+      "preview_ready"
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "미리보기 준비가 완료된 동기화만 실행할 수 있습니다.",
+        400
+      );
+    }
+
+    if (
+      Number(history.invalidRows || 0) >
+      0
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "오류 행이 남아 있어 동기화를 실행할 수 없습니다.",
+        400
+      );
+    }
+
+    if (
+      Number(history.reviewCount || 0) >
+      0
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "확인 필요 항목이 남아 있어 동기화를 실행할 수 없습니다.",
+        400
+      );
+    }
+
+    try {
+      return await executePracticeMasterSync({
+        syncHistoryId:
+          input.syncHistoryId,
+
+        actorUserId:
+          Number(ctx.user.id),
+      });
+    } catch (error: any) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        error?.message ||
+          "공용 실습 데이터 동기화 실행 중 오류가 발생했습니다.",
+        400
+      );
+    }
+  }),
 });

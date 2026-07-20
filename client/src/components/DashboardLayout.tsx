@@ -64,8 +64,9 @@ import {
  X,
  ChevronRight,
  ChevronDown,
- FileCheck2,
+FileCheck2,
 CreditCard,
+Database,
 } from "lucide-react";
 
 type UserRole = "staff" | "admin" | "host" | "superhost";
@@ -118,8 +119,9 @@ const superhostMenuItems: MenuItem[] = [
  { icon: Crown, label: "슈퍼호스트 대시보드", path: "/superhost" },
  { icon: Building2, label: "테넌트 관리", path: "/superhost/tenants" },
  { icon: MessageSquare, label: "SaaS 문의 관리", path: "/superhost/saas-inquiries" },
-{ icon: CreditCard, label: "SaaS 정산", path: "/superhost/subscription-payments" },
-{ icon: Megaphone, label: "SaaS 공지 관리", path: "/superhost/announcements" },
+ { icon: CreditCard, label: "SaaS 정산", path: "/superhost/subscription-payments" },
+ { icon: Megaphone, label: "SaaS 공지 관리", path: "/superhost/announcements" },
+ { icon: Database, label: "공용 실습 데이터", path: "/superhost/practice-master-sync" },
  { icon: Palette, label: "레이아웃 빌더", path: "/superhost/layout-builder" },
  { icon: Sparkles, label: "AI 정책 관리", path: "/superhost/ai-policy" },
  { icon: Sparkles, label: "AI 상담", path: "/ai" },

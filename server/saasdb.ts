@@ -18,9 +18,109 @@ import {
   subscriptionPayments,
   subscriptionPaymentEvents,
   saasAnnouncements,
+  practiceMasterSyncHistory,
+  practiceInstitutionMasters,
+  practiceEducationCenterMasters,
 } from "../drizzle/schema";
 import bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
+
+export type PracticeMasterSyncDataType =
+  | "institution"
+  | "education_center";
+
+export type PracticeMasterSyncSourceType =
+  | "social_worker_association"
+  | "educanvas";
+
+export type PracticeMasterSyncStatus =
+  | "analyzing"
+  | "preview_ready"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type PracticeMasterInstitutionUploadRow = {
+  rowNumber: number;
+
+  categoryName?: string | null;
+  name: string;
+  representativeName?: string | null;
+  phone?: string | null;
+
+  address: string;
+  detailAddress?: string | null;
+
+  availableCourse?: string | null;
+};
+
+export type PracticeMasterEducationCenterUploadRow = {
+  rowNumber: number;
+
+  categoryName?: string | null;
+  name: string;
+  representativeName?: string | null;
+  phone?: string | null;
+
+  address?: string | null;
+  detailAddress?: string | null;
+
+  availableCourse?: string | null;
+};
+
+type PracticeMasterPreviewIncoming = {
+  rowNumber?: number;
+
+  categoryName?: string | null;
+  name?: string | null;
+  representativeName?: string | null;
+  phone?: string | null;
+
+  address?: string | null;
+  detailAddress?: string | null;
+
+  availableCourse?: string | null;
+};
+
+type PracticeMasterPreviewAction = {
+  rowNumber?: number;
+  masterId?: number;
+
+  incoming?: PracticeMasterPreviewIncoming;
+  existing?: Record<string, unknown>;
+
+  changedFields?: string[];
+  matchType?: string;
+  reason?: string;
+};
+
+type PracticeMasterSyncPreview = {
+  version: number;
+  dataType: PracticeMasterSyncDataType;
+  analyzedAt: string;
+
+  summary: {
+    totalRows: number;
+    validRows: number;
+    invalidRows: number;
+
+    unchangedCount: number;
+    insertCount: number;
+    updateCount: number;
+    deactivateCount: number;
+    reactivateCount: number;
+    reviewCount: number;
+  };
+
+  unchanged: PracticeMasterPreviewAction[];
+  inserts: PracticeMasterPreviewAction[];
+  updates: PracticeMasterPreviewAction[];
+  deactivates: PracticeMasterPreviewAction[];
+  reactivates: PracticeMasterPreviewAction[];
+  reviews: unknown[];
+  invalidRows: unknown[];
+};
 
 export async function getOrganizationById(id: number) {
   const db = await getDb();
@@ -1735,4 +1835,2353 @@ export async function reactivateTenant(input: {
   });
 
   return { ok: true };
+}
+
+// ─── Practice Master Sync (슈퍼호스트 공용 실습 데이터 관리) ───────
+
+export async function getPracticeMasterSummary() {
+  const db = await getDb();
+
+  if (!db) {
+    throw new Error("DB not available");
+  }
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      (
+        SELECT COUNT(*)
+        FROM practice_institution_masters
+      ) AS institutionTotalCount,
+
+      (
+        SELECT COUNT(*)
+        FROM practice_institution_masters
+        WHERE isActive = true
+      ) AS institutionActiveCount,
+
+      (
+        SELECT COUNT(*)
+        FROM practice_institution_masters
+        WHERE isActive = false
+      ) AS institutionInactiveCount,
+
+      (
+        SELECT COUNT(*)
+        FROM practice_education_center_masters
+      ) AS educationCenterTotalCount,
+
+      (
+        SELECT COUNT(*)
+        FROM practice_education_center_masters
+        WHERE isActive = true
+      ) AS educationCenterActiveCount,
+
+      (
+        SELECT COUNT(*)
+        FROM practice_education_center_masters
+        WHERE isActive = false
+      ) AS educationCenterInactiveCount,
+
+      (
+        SELECT completedAt
+        FROM practice_master_sync_history
+        WHERE
+          dataType = 'institution'
+          AND status = 'completed'
+        ORDER BY id DESC
+        LIMIT 1
+      ) AS institutionLastSyncedAt,
+
+      (
+        SELECT sourceVersion
+        FROM practice_master_sync_history
+        WHERE
+          dataType = 'institution'
+          AND status = 'completed'
+        ORDER BY id DESC
+        LIMIT 1
+      ) AS institutionSourceVersion,
+
+      (
+        SELECT completedAt
+        FROM practice_master_sync_history
+        WHERE
+          dataType = 'education_center'
+          AND status = 'completed'
+        ORDER BY id DESC
+        LIMIT 1
+      ) AS educationCenterLastSyncedAt,
+
+      (
+        SELECT sourceVersion
+        FROM practice_master_sync_history
+        WHERE
+          dataType = 'education_center'
+          AND status = 'completed'
+        ORDER BY id DESC
+        LIMIT 1
+      ) AS educationCenterSourceVersion
+  `);
+
+  const row = ((rows as any[]) || [])[0] || {};
+
+  return {
+    institution: {
+      totalCount: Number(row.institutionTotalCount || 0),
+      activeCount: Number(row.institutionActiveCount || 0),
+      inactiveCount: Number(row.institutionInactiveCount || 0),
+      lastSyncedAt: row.institutionLastSyncedAt || null,
+      sourceVersion: row.institutionSourceVersion || null,
+    },
+
+    educationCenter: {
+      totalCount: Number(row.educationCenterTotalCount || 0),
+      activeCount: Number(row.educationCenterActiveCount || 0),
+      inactiveCount: Number(row.educationCenterInactiveCount || 0),
+      lastSyncedAt: row.educationCenterLastSyncedAt || null,
+      sourceVersion: row.educationCenterSourceVersion || null,
+    },
+  };
+}
+
+export async function listPracticeMasterSyncHistory(input?: {
+  dataType?: PracticeMasterSyncDataType | "all";
+  status?: PracticeMasterSyncStatus | "all";
+  limit?: number;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throw new Error("DB not available");
+  }
+
+  const dataType = input?.dataType || "all";
+  const status = input?.status || "all";
+
+  const limit = Math.min(
+    300,
+    Math.max(1, Number(input?.limit || 100))
+  );
+
+  if (dataType !== "all" && status !== "all") {
+    return db
+      .select()
+      .from(practiceMasterSyncHistory)
+      .where(
+        sql`
+          ${practiceMasterSyncHistory.dataType} = ${dataType}
+          AND ${practiceMasterSyncHistory.status} = ${status}
+        `
+      )
+      .orderBy(desc(practiceMasterSyncHistory.createdAt))
+      .limit(limit);
+  }
+
+  if (dataType !== "all") {
+    return db
+      .select()
+      .from(practiceMasterSyncHistory)
+      .where(
+        eq(
+          practiceMasterSyncHistory.dataType,
+          dataType
+        )
+      )
+      .orderBy(desc(practiceMasterSyncHistory.createdAt))
+      .limit(limit);
+  }
+
+  if (status !== "all") {
+    return db
+      .select()
+      .from(practiceMasterSyncHistory)
+      .where(
+        eq(
+          practiceMasterSyncHistory.status,
+          status
+        )
+      )
+      .orderBy(desc(practiceMasterSyncHistory.createdAt))
+      .limit(limit);
+  }
+
+  return db
+    .select()
+    .from(practiceMasterSyncHistory)
+    .orderBy(desc(practiceMasterSyncHistory.createdAt))
+    .limit(limit);
+}
+
+export async function getPracticeMasterSyncHistoryById(id: number) {
+  const db = await getDb();
+
+  if (!db) {
+    throw new Error("DB not available");
+  }
+
+  const rows = await db
+    .select()
+    .from(practiceMasterSyncHistory)
+    .where(
+      eq(
+        practiceMasterSyncHistory.id,
+        Number(id)
+      )
+    )
+    .limit(1);
+
+  return rows[0] || null;
+}
+
+export async function createPracticeMasterSyncHistory(input: {
+  dataType: PracticeMasterSyncDataType;
+  sourceType: PracticeMasterSyncSourceType;
+  sourceFileName: string;
+  sourceFileKey?: string | null;
+  sourceFileUrl?: string | null;
+  sourceFileHash?: string | null;
+  sourceVersion?: string | null;
+  memo?: string | null;
+  createdBy: number;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throw new Error("DB not available");
+  }
+
+  const result: any = await db
+    .insert(practiceMasterSyncHistory)
+    .values({
+      dataType: input.dataType,
+      sourceType: input.sourceType,
+
+      sourceFileName: input.sourceFileName.trim(),
+
+      sourceFileKey:
+        input.sourceFileKey?.trim() || null,
+
+      sourceFileUrl:
+        input.sourceFileUrl?.trim() || null,
+
+      sourceFileHash:
+        input.sourceFileHash?.trim() || null,
+
+      sourceVersion:
+        input.sourceVersion?.trim() || null,
+
+      status: "analyzing",
+
+      totalRows: 0,
+      validRows: 0,
+      invalidRows: 0,
+
+      unchangedCount: 0,
+      insertCount: 0,
+      updateCount: 0,
+      deactivateCount: 0,
+      reactivateCount: 0,
+      reviewCount: 0,
+
+      previewJson: null,
+      errorJson: null,
+
+      memo:
+        input.memo?.trim() || null,
+
+      createdBy: Number(input.createdBy),
+
+      startedAt: new Date(),
+      completedAt: null,
+    } as any);
+
+  const id = Number(
+    result?.insertId ??
+      result?.[0]?.insertId ??
+      0
+  );
+
+  if (!id) {
+    throw new Error(
+      "공용 실습 데이터 동기화 이력 생성에 실패했습니다."
+    );
+  }
+
+  return getPracticeMasterSyncHistoryById(id);
+}
+
+export async function updatePracticeMasterSyncHistory(input: {
+  id: number;
+
+  status?: PracticeMasterSyncStatus;
+
+  sourceFileKey?: string | null;
+  sourceFileUrl?: string | null;
+  sourceFileHash?: string | null;
+  sourceVersion?: string | null;
+
+  totalRows?: number;
+  validRows?: number;
+  invalidRows?: number;
+
+  unchangedCount?: number;
+  insertCount?: number;
+  updateCount?: number;
+  deactivateCount?: number;
+  reactivateCount?: number;
+  reviewCount?: number;
+
+  previewJson?: unknown;
+  errorJson?: unknown;
+
+  memo?: string | null;
+
+  startedAt?: Date | null;
+  completedAt?: Date | null;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throw new Error("DB not available");
+  }
+
+  const before =
+    await getPracticeMasterSyncHistoryById(
+      Number(input.id)
+    );
+
+  if (!before) {
+    throw new Error(
+      "공용 실습 데이터 동기화 이력을 찾을 수 없습니다."
+    );
+  }
+
+  await db
+    .update(practiceMasterSyncHistory)
+    .set({
+      status: input.status,
+
+      sourceFileKey:
+        input.sourceFileKey === undefined
+          ? undefined
+          : input.sourceFileKey?.trim() || null,
+
+      sourceFileUrl:
+        input.sourceFileUrl === undefined
+          ? undefined
+          : input.sourceFileUrl?.trim() || null,
+
+      sourceFileHash:
+        input.sourceFileHash === undefined
+          ? undefined
+          : input.sourceFileHash?.trim() || null,
+
+      sourceVersion:
+        input.sourceVersion === undefined
+          ? undefined
+          : input.sourceVersion?.trim() || null,
+
+      totalRows:
+        input.totalRows === undefined
+          ? undefined
+          : Math.max(0, Number(input.totalRows)),
+
+      validRows:
+        input.validRows === undefined
+          ? undefined
+          : Math.max(0, Number(input.validRows)),
+
+      invalidRows:
+        input.invalidRows === undefined
+          ? undefined
+          : Math.max(0, Number(input.invalidRows)),
+
+      unchangedCount:
+        input.unchangedCount === undefined
+          ? undefined
+          : Math.max(
+              0,
+              Number(input.unchangedCount)
+            ),
+
+      insertCount:
+        input.insertCount === undefined
+          ? undefined
+          : Math.max(
+              0,
+              Number(input.insertCount)
+            ),
+
+      updateCount:
+        input.updateCount === undefined
+          ? undefined
+          : Math.max(
+              0,
+              Number(input.updateCount)
+            ),
+
+      deactivateCount:
+        input.deactivateCount === undefined
+          ? undefined
+          : Math.max(
+              0,
+              Number(input.deactivateCount)
+            ),
+
+      reactivateCount:
+        input.reactivateCount === undefined
+          ? undefined
+          : Math.max(
+              0,
+              Number(input.reactivateCount)
+            ),
+
+      reviewCount:
+        input.reviewCount === undefined
+          ? undefined
+          : Math.max(
+              0,
+              Number(input.reviewCount)
+            ),
+
+      previewJson:
+        input.previewJson === undefined
+          ? undefined
+          : input.previewJson,
+
+      errorJson:
+        input.errorJson === undefined
+          ? undefined
+          : input.errorJson,
+
+      memo:
+        input.memo === undefined
+          ? undefined
+          : input.memo?.trim() || null,
+
+      startedAt:
+        input.startedAt === undefined
+          ? undefined
+          : input.startedAt,
+
+      completedAt:
+        input.completedAt === undefined
+          ? undefined
+          : input.completedAt,
+    } as any)
+    .where(
+      eq(
+        practiceMasterSyncHistory.id,
+        Number(input.id)
+      )
+    );
+
+  return getPracticeMasterSyncHistoryById(
+    Number(input.id)
+  );
+}
+
+function normalizePracticeMasterText(
+  value?: string | null
+) {
+  return String(value || "")
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function normalizePracticeMasterName(
+  value?: string | null
+) {
+  return normalizePracticeMasterText(value)
+    .replace(/\s*㈜\s*/g, "(주)")
+    .replace(/\s*\(주\)\s*/gi, "(주)")
+    .toLowerCase();
+}
+
+function normalizePracticeMasterPhone(
+  value?: string | null
+) {
+  return String(value || "")
+    .replace(/[^0-9]/g, "")
+    .trim();
+}
+
+function normalizePracticeMasterAddress(
+  value?: string | null
+) {
+  return normalizePracticeMasterText(value)
+    .replace(/\s*,\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+function createPracticeMasterExactKey(input: {
+  name?: string | null;
+  phone?: string | null;
+  address?: string | null;
+}) {
+  return [
+    normalizePracticeMasterName(input.name),
+    normalizePracticeMasterPhone(input.phone),
+    normalizePracticeMasterAddress(input.address),
+  ].join("|");
+}
+
+function createPracticeMasterNameAddressKey(input: {
+  name?: string | null;
+  address?: string | null;
+}) {
+  return [
+    normalizePracticeMasterName(input.name),
+    normalizePracticeMasterAddress(input.address),
+  ].join("|");
+}
+
+function createPracticeMasterNamePhoneKey(input: {
+  name?: string | null;
+  phone?: string | null;
+}) {
+  return [
+    normalizePracticeMasterName(input.name),
+    normalizePracticeMasterPhone(input.phone),
+  ].join("|");
+}
+
+function addPracticeMasterMapItem<T extends { id: number }>(
+  map: Map<string, T[]>,
+  key: string,
+  row: T
+) {
+  if (!key) return;
+
+  const current = map.get(key) || [];
+  current.push(row);
+  map.set(key, current);
+}
+
+function practiceMasterNullableText(
+  value?: string | null
+) {
+  const normalized =
+    normalizePracticeMasterText(value);
+
+  return normalized || null;
+}
+
+function arePracticeMasterValuesEqual(
+  left?: string | null,
+  right?: string | null
+) {
+  return (
+    normalizePracticeMasterText(left) ===
+    normalizePracticeMasterText(right)
+  );
+}
+
+function getPracticeMasterChangedFields(input: {
+  existing: {
+    categoryName?: string | null;
+    name?: string | null;
+    representativeName?: string | null;
+    phone?: string | null;
+    address?: string | null;
+    detailAddress?: string | null;
+    availableCourse?: string | null;
+  };
+
+  incoming: {
+    categoryName?: string | null;
+    name?: string | null;
+    representativeName?: string | null;
+    phone?: string | null;
+    address?: string | null;
+    detailAddress?: string | null;
+    availableCourse?: string | null;
+  };
+}) {
+  const changedFields: string[] = [];
+
+  if (
+    !arePracticeMasterValuesEqual(
+      input.existing.categoryName,
+      input.incoming.categoryName
+    )
+  ) {
+    changedFields.push("categoryName");
+  }
+
+  if (
+    !arePracticeMasterValuesEqual(
+      input.existing.name,
+      input.incoming.name
+    )
+  ) {
+    changedFields.push("name");
+  }
+
+  if (
+    !arePracticeMasterValuesEqual(
+      input.existing.representativeName,
+      input.incoming.representativeName
+    )
+  ) {
+    changedFields.push("representativeName");
+  }
+
+  if (
+    normalizePracticeMasterPhone(
+      input.existing.phone
+    ) !==
+    normalizePracticeMasterPhone(
+      input.incoming.phone
+    )
+  ) {
+    changedFields.push("phone");
+  }
+
+  if (
+    normalizePracticeMasterAddress(
+      input.existing.address
+    ) !==
+    normalizePracticeMasterAddress(
+      input.incoming.address
+    )
+  ) {
+    changedFields.push("address");
+  }
+
+  if (
+    !arePracticeMasterValuesEqual(
+      input.existing.detailAddress,
+      input.incoming.detailAddress
+    )
+  ) {
+    changedFields.push("detailAddress");
+  }
+
+  if (
+    !arePracticeMasterValuesEqual(
+      input.existing.availableCourse,
+      input.incoming.availableCourse
+    )
+  ) {
+    changedFields.push("availableCourse");
+  }
+
+  return changedFields;
+}
+
+function createPracticeMasterLookupMaps<
+  T extends {
+    id: number;
+    name?: string | null;
+    phone?: string | null;
+    address?: string | null;
+  }
+>(rows: T[]) {
+  const exactMap = new Map<string, T[]>();
+  const nameAddressMap = new Map<string, T[]>();
+  const namePhoneMap = new Map<string, T[]>();
+
+  for (const row of rows) {
+    const exactKey =
+      createPracticeMasterExactKey(row);
+
+    const nameAddressKey =
+      createPracticeMasterNameAddressKey(row);
+
+    const phone =
+      normalizePracticeMasterPhone(row.phone);
+
+    const namePhoneKey =
+      phone
+        ? createPracticeMasterNamePhoneKey(row)
+        : "";
+
+    addPracticeMasterMapItem(
+      exactMap,
+      exactKey,
+      row
+    );
+
+    addPracticeMasterMapItem(
+      nameAddressMap,
+      nameAddressKey,
+      row
+    );
+
+    if (namePhoneKey) {
+      addPracticeMasterMapItem(
+        namePhoneMap,
+        namePhoneKey,
+        row
+      );
+    }
+  }
+
+  return {
+    exactMap,
+    nameAddressMap,
+    namePhoneMap,
+  };
+}
+
+export async function analyzePracticeMasterSync(input: {
+  syncHistoryId: number;
+
+  dataType: PracticeMasterSyncDataType;
+
+  institutionRows?:
+    PracticeMasterInstitutionUploadRow[];
+
+  educationCenterRows?:
+    PracticeMasterEducationCenterUploadRow[];
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throw new Error("DB not available");
+  }
+
+  const syncHistory =
+    await getPracticeMasterSyncHistoryById(
+      Number(input.syncHistoryId)
+    );
+
+  if (!syncHistory) {
+    throw new Error(
+      "공용 실습 데이터 동기화 이력을 찾을 수 없습니다."
+    );
+  }
+
+  if (
+    syncHistory.dataType !== input.dataType
+  ) {
+    throw new Error(
+      "동기화 이력의 자료 유형과 분석 요청 유형이 일치하지 않습니다."
+    );
+  }
+
+  if (
+    ![
+      "analyzing",
+      "failed",
+      "cancelled",
+    ].includes(String(syncHistory.status))
+  ) {
+    throw new Error(
+      "현재 상태에서는 다시 분석할 수 없습니다."
+    );
+  }
+
+  const sourceRows =
+    input.dataType === "institution"
+      ? input.institutionRows || []
+      : input.educationCenterRows || [];
+
+  if (sourceRows.length === 0) {
+    throw new Error(
+      "분석할 데이터가 없습니다."
+    );
+  }
+
+  await updatePracticeMasterSyncHistory({
+    id: Number(input.syncHistoryId),
+    status: "analyzing",
+    totalRows: sourceRows.length,
+    validRows: 0,
+    invalidRows: 0,
+    unchangedCount: 0,
+    insertCount: 0,
+    updateCount: 0,
+    deactivateCount: 0,
+    reactivateCount: 0,
+    reviewCount: 0,
+    previewJson: null,
+    errorJson: null,
+    startedAt: new Date(),
+    completedAt: null,
+  });
+
+  try {
+    const existingRows =
+      input.dataType === "institution"
+        ? await db
+            .select()
+            .from(practiceInstitutionMasters)
+            .orderBy(
+              practiceInstitutionMasters.id
+            )
+        : await db
+            .select()
+            .from(practiceEducationCenterMasters)
+            .orderBy(
+              practiceEducationCenterMasters.id
+            );
+
+    const existingRowsAsCommon =
+      existingRows.map((row: any) => ({
+        id: Number(row.id),
+
+        categoryName:
+          row.categoryName || null,
+
+        name:
+          row.name || "",
+
+        representativeName:
+          row.representativeName || null,
+
+        phone:
+          row.phone || null,
+
+        address:
+          row.address || "",
+
+        detailAddress:
+          row.detailAddress || null,
+
+        availableCourse:
+          row.availableCourse || null,
+
+        isActive:
+          Boolean(row.isActive),
+      }));
+
+    const {
+      exactMap,
+      nameAddressMap,
+      namePhoneMap,
+    } = createPracticeMasterLookupMaps(
+      existingRowsAsCommon
+    );
+
+    const unchanged: any[] = [];
+    const inserts: any[] = [];
+    const updates: any[] = [];
+    const reactivates: any[] = [];
+    const deactivates: any[] = [];
+    const reviews: any[] = [];
+    const invalidRows: any[] = [];
+
+    const matchedMasterIds =
+      new Set<number>();
+
+    const protectedMasterIds =
+      new Set<number>();
+
+    const sourceExactKeys =
+      new Map<string, number[]>();
+
+    for (const rawRow of sourceRows as any[]) {
+      const rowNumber =
+        Number(rawRow.rowNumber || 0);
+
+      const incoming = {
+        rowNumber,
+
+        categoryName:
+          practiceMasterNullableText(
+            rawRow.categoryName
+          ),
+
+        name:
+          normalizePracticeMasterText(
+            rawRow.name
+          ),
+
+        representativeName:
+          practiceMasterNullableText(
+            rawRow.representativeName
+          ),
+
+        phone:
+          practiceMasterNullableText(
+            rawRow.phone
+          ),
+
+        address:
+          practiceMasterNullableText(
+            rawRow.address
+          ),
+
+        detailAddress:
+          practiceMasterNullableText(
+            rawRow.detailAddress
+          ),
+
+        availableCourse:
+          practiceMasterNullableText(
+            rawRow.availableCourse
+          ),
+      };
+
+      const rowErrors: string[] = [];
+
+      if (
+        !Number.isInteger(rowNumber) ||
+        rowNumber <= 0
+      ) {
+        rowErrors.push(
+          "엑셀 행 번호가 올바르지 않습니다."
+        );
+      }
+
+      if (!incoming.name) {
+        rowErrors.push(
+          "기관명이 없습니다."
+        );
+      }
+
+      if (
+        input.dataType === "institution" &&
+        !incoming.address
+      ) {
+        rowErrors.push(
+          "실습기관 주소가 없습니다."
+        );
+      }
+
+      if (rowErrors.length > 0) {
+        invalidRows.push({
+          rowNumber,
+          row: incoming,
+          errors: rowErrors,
+        });
+
+        continue;
+      }
+
+      const exactKey =
+        createPracticeMasterExactKey(
+          incoming
+        );
+
+            const duplicateRows =
+        sourceExactKeys.get(exactKey) || [];
+
+      duplicateRows.push(rowNumber);
+
+      sourceExactKeys.set(
+        exactKey,
+        duplicateRows
+      );
+
+      if (duplicateRows.length > 1) {
+        continue;
+      }
+
+      const exactCandidates =
+        exactMap.get(exactKey) || [];
+
+      if (exactCandidates.length === 1) {
+        const existing =
+          exactCandidates[0];
+
+        matchedMasterIds.add(
+          existing.id
+        );
+
+        const changedFields =
+          getPracticeMasterChangedFields({
+            existing,
+            incoming,
+          });
+
+        if (changedFields.length === 0) {
+          if (existing.isActive) {
+            unchanged.push({
+              rowNumber,
+              masterId: existing.id,
+              incoming,
+            });
+          } else {
+            reactivates.push({
+              rowNumber,
+              masterId: existing.id,
+              existing,
+              incoming,
+              changedFields: [],
+            });
+          }
+        } else if (existing.isActive) {
+          updates.push({
+            rowNumber,
+            masterId: existing.id,
+            existing,
+            incoming,
+            changedFields,
+            matchType: "exact",
+          });
+        } else {
+          reactivates.push({
+            rowNumber,
+            masterId: existing.id,
+            existing,
+            incoming,
+            changedFields,
+            matchType: "exact",
+          });
+        }
+
+        continue;
+      }
+
+      if (exactCandidates.length > 1) {
+        for (
+          const candidate of exactCandidates
+        ) {
+          protectedMasterIds.add(
+            candidate.id
+          );
+        }
+
+        reviews.push({
+          type: "multiple_exact_matches",
+          rowNumber,
+          incoming,
+          candidateMasterIds:
+            exactCandidates.map(
+              (row) => row.id
+            ),
+          message:
+            "기존 마스터에 동일한 기관명·전화번호·주소가 여러 건 존재합니다.",
+        });
+
+        continue;
+      }
+
+      const nameAddressKey =
+        createPracticeMasterNameAddressKey(
+          incoming
+        );
+
+      const nameAddressCandidates =
+        nameAddressMap.get(
+          nameAddressKey
+        ) || [];
+
+      if (
+        nameAddressCandidates.length === 1
+      ) {
+        const existing =
+          nameAddressCandidates[0];
+
+        matchedMasterIds.add(
+          existing.id
+        );
+
+        const changedFields =
+          getPracticeMasterChangedFields({
+            existing,
+            incoming,
+          });
+
+        const action = {
+          rowNumber,
+          masterId: existing.id,
+          existing,
+          incoming,
+          changedFields,
+          matchType: "name_address",
+        };
+
+        if (existing.isActive) {
+          updates.push(action);
+        } else {
+          reactivates.push(action);
+        }
+
+        continue;
+      }
+
+      if (
+        nameAddressCandidates.length > 1
+      ) {
+        for (
+          const candidate of
+          nameAddressCandidates
+        ) {
+          protectedMasterIds.add(
+            candidate.id
+          );
+        }
+
+        reviews.push({
+          type:
+            "multiple_name_address_matches",
+          rowNumber,
+          incoming,
+          candidateMasterIds:
+            nameAddressCandidates.map(
+              (row) => row.id
+            ),
+          message:
+            "동일한 기관명과 주소를 가진 기존 마스터가 여러 건 존재합니다.",
+        });
+
+        continue;
+      }
+
+      const normalizedPhone =
+        normalizePracticeMasterPhone(
+          incoming.phone
+        );
+
+      if (normalizedPhone) {
+        const namePhoneKey =
+          createPracticeMasterNamePhoneKey(
+            incoming
+          );
+
+        const namePhoneCandidates =
+          namePhoneMap.get(
+            namePhoneKey
+          ) || [];
+
+        if (
+          namePhoneCandidates.length === 1
+        ) {
+          const existing =
+            namePhoneCandidates[0];
+
+          protectedMasterIds.add(
+            existing.id
+          );
+
+          reviews.push({
+            type: "address_changed",
+            rowNumber,
+            incoming,
+            candidateMasterIds: [
+              existing.id,
+            ],
+            existing,
+            message:
+              "기관명과 전화번호는 같지만 주소가 변경되었습니다. 이전 또는 다른 지점인지 확인이 필요합니다.",
+          });
+
+          continue;
+        }
+
+        if (
+          namePhoneCandidates.length > 1
+        ) {
+          for (
+            const candidate of
+            namePhoneCandidates
+          ) {
+            protectedMasterIds.add(
+              candidate.id
+            );
+          }
+
+          reviews.push({
+            type:
+              "multiple_name_phone_matches",
+            rowNumber,
+            incoming,
+            candidateMasterIds:
+              namePhoneCandidates.map(
+                (row) => row.id
+              ),
+            message:
+              "동일한 기관명과 전화번호를 가진 기존 마스터가 여러 건 존재합니다.",
+          });
+
+          continue;
+        }
+      }
+
+      inserts.push({
+        rowNumber,
+        incoming,
+      });
+    }
+
+        const duplicatedSourceRowNumbers =
+      new Set<number>();
+
+    for (
+      const [
+        exactKey,
+        rowNumbers,
+      ] of sourceExactKeys.entries()
+    ) {
+      if (rowNumbers.length <= 1) {
+        continue;
+      }
+
+      for (
+        const rowNumber of rowNumbers
+      ) {
+        duplicatedSourceRowNumbers.add(
+          rowNumber
+        );
+
+        const sourceRow =
+          (sourceRows as any[]).find(
+            (row) =>
+              Number(row.rowNumber) ===
+              Number(rowNumber)
+          );
+
+        reviews.push({
+          type: "source_duplicate",
+
+          rowNumber,
+
+          sourceRowNumbers: [
+            ...rowNumbers,
+          ],
+
+          incoming: sourceRow
+            ? {
+                rowNumber:
+                  Number(
+                    sourceRow.rowNumber
+                  ),
+
+                categoryName:
+                  practiceMasterNullableText(
+                    sourceRow.categoryName
+                  ),
+
+                name:
+                  normalizePracticeMasterText(
+                    sourceRow.name
+                  ),
+
+                representativeName:
+                  practiceMasterNullableText(
+                    sourceRow.representativeName
+                  ),
+
+                phone:
+                  practiceMasterNullableText(
+                    sourceRow.phone
+                  ),
+
+                address:
+                  practiceMasterNullableText(
+                    sourceRow.address
+                  ),
+
+                detailAddress:
+                  practiceMasterNullableText(
+                    sourceRow.detailAddress
+                  ),
+
+                availableCourse:
+                  practiceMasterNullableText(
+                    sourceRow.availableCourse
+                  ),
+              }
+            : null,
+
+          exactKey,
+
+          candidateMasterIds: [],
+
+          message:
+            "업로드 자료 안에 동일한 기관명·전화번호·주소가 중복되어 있습니다.",
+        });
+      }
+    }
+
+    if (
+      duplicatedSourceRowNumbers.size > 0
+    ) {
+      const removeDuplicatedRows = (
+        rows: any[]
+      ) =>
+        rows.filter(
+          (row) =>
+            !duplicatedSourceRowNumbers.has(
+              Number(row.rowNumber)
+            )
+        );
+
+      unchanged.splice(
+        0,
+        unchanged.length,
+        ...removeDuplicatedRows(
+          unchanged
+        )
+      );
+
+      inserts.splice(
+        0,
+        inserts.length,
+        ...removeDuplicatedRows(
+          inserts
+        )
+      );
+
+      updates.splice(
+        0,
+        updates.length,
+        ...removeDuplicatedRows(
+          updates
+        )
+      );
+
+      reactivates.splice(
+        0,
+        reactivates.length,
+        ...removeDuplicatedRows(
+          reactivates
+        )
+      );
+    }
+
+    for (
+      const existing of
+      existingRowsAsCommon
+    ) {
+      if (!existing.isActive) {
+        continue;
+      }
+
+      if (
+        matchedMasterIds.has(existing.id)
+      ) {
+        continue;
+      }
+
+      if (
+        protectedMasterIds.has(
+          existing.id
+        )
+      ) {
+        continue;
+      }
+
+      deactivates.push({
+        masterId: existing.id,
+        existing,
+        reason:
+          "최신 업로드 자료에서 확인되지 않음",
+      });
+    }
+
+    const preview = {
+      version: 1,
+
+      dataType: input.dataType,
+
+      analyzedAt:
+        new Date().toISOString(),
+
+      summary: {
+        totalRows:
+          sourceRows.length,
+
+        validRows:
+          sourceRows.length -
+          invalidRows.length,
+
+        invalidRows:
+          invalidRows.length,
+
+        unchangedCount:
+          unchanged.length,
+
+        insertCount:
+          inserts.length,
+
+        updateCount:
+          updates.length,
+
+        deactivateCount:
+          deactivates.length,
+
+        reactivateCount:
+          reactivates.length,
+
+        reviewCount:
+          reviews.length,
+      },
+
+      unchanged,
+      inserts,
+      updates,
+      deactivates,
+      reactivates,
+      reviews,
+      invalidRows,
+    };
+
+    const updatedHistory =
+      await updatePracticeMasterSyncHistory({
+        id: Number(
+          input.syncHistoryId
+        ),
+
+        status: "preview_ready",
+
+        totalRows:
+          preview.summary.totalRows,
+
+        validRows:
+          preview.summary.validRows,
+
+        invalidRows:
+          preview.summary.invalidRows,
+
+        unchangedCount:
+          preview.summary
+            .unchangedCount,
+
+        insertCount:
+          preview.summary.insertCount,
+
+        updateCount:
+          preview.summary.updateCount,
+
+        deactivateCount:
+          preview.summary
+            .deactivateCount,
+
+        reactivateCount:
+          preview.summary
+            .reactivateCount,
+
+        reviewCount:
+          preview.summary.reviewCount,
+
+        previewJson: preview,
+
+        errorJson: null,
+
+        completedAt: null,
+      });
+
+    return {
+      ok: true,
+      history: updatedHistory,
+      preview,
+    };
+  } catch (error: any) {
+    const errorPayload = {
+      message:
+        error?.message ||
+        "공용 실습 데이터 분석 중 오류가 발생했습니다.",
+
+      analyzedAt:
+        new Date().toISOString(),
+    };
+
+    await updatePracticeMasterSyncHistory({
+      id: Number(
+        input.syncHistoryId
+      ),
+
+      status: "failed",
+
+      errorJson: errorPayload,
+
+      completedAt: new Date(),
+    });
+
+    throw error;
+  }
+}
+
+function parsePracticeMasterPreview(
+  value: unknown
+): PracticeMasterSyncPreview {
+  let parsed: unknown = value;
+
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      throw new Error(
+        "저장된 동기화 미리보기 데이터를 해석할 수 없습니다."
+      );
+    }
+  }
+
+  if (
+    !parsed ||
+    typeof parsed !== "object"
+  ) {
+    throw new Error(
+      "저장된 동기화 미리보기 데이터가 없습니다."
+    );
+  }
+
+  const preview =
+    parsed as Partial<PracticeMasterSyncPreview>;
+
+  if (
+    preview.version !== 1 ||
+    !preview.summary ||
+    !Array.isArray(preview.inserts) ||
+    !Array.isArray(preview.updates) ||
+    !Array.isArray(preview.deactivates) ||
+    !Array.isArray(preview.reactivates) ||
+    !Array.isArray(preview.reviews) ||
+    !Array.isArray(preview.invalidRows)
+  ) {
+    throw new Error(
+      "저장된 동기화 미리보기 데이터 형식이 올바르지 않습니다."
+    );
+  }
+
+  if (
+    preview.dataType !== "institution" &&
+    preview.dataType !== "education_center"
+  ) {
+    throw new Error(
+      "저장된 동기화 미리보기 자료 유형이 올바르지 않습니다."
+    );
+  }
+
+  return preview as PracticeMasterSyncPreview;
+}
+
+function getPracticeMasterIncomingValues(
+  action: PracticeMasterPreviewAction
+) {
+  const incoming = action.incoming;
+
+  if (!incoming) {
+    throw new Error(
+      "동기화 대상 행의 입력 데이터가 없습니다."
+    );
+  }
+
+  const name =
+    normalizePracticeMasterText(
+      incoming.name
+    );
+
+  const address =
+    practiceMasterNullableText(
+      incoming.address
+    );
+
+  if (!name) {
+    throw new Error(
+      `동기화 대상 ${Number(
+        action.rowNumber || 0
+      )}행의 기관명이 없습니다.`
+    );
+  }
+
+  return {
+    categoryName:
+      practiceMasterNullableText(
+        incoming.categoryName
+      ),
+
+    name,
+
+    representativeName:
+      practiceMasterNullableText(
+        incoming.representativeName
+      ),
+
+    phone:
+      practiceMasterNullableText(
+        incoming.phone
+      ),
+
+    address,
+
+    detailAddress:
+      practiceMasterNullableText(
+        incoming.detailAddress
+      ),
+
+    availableCourse:
+      practiceMasterNullableText(
+        incoming.availableCourse
+      ),
+  };
+}
+
+function assertPracticeMasterActionId(
+  action: PracticeMasterPreviewAction
+) {
+  const masterId =
+    Number(action.masterId || 0);
+
+  if (
+    !Number.isInteger(masterId) ||
+    masterId <= 0
+  ) {
+    throw new Error(
+      "동기화 대상 마스터 ID가 올바르지 않습니다."
+    );
+  }
+
+  return masterId;
+}
+
+export async function executePracticeMasterSync(input: {
+  syncHistoryId: number;
+  actorUserId: number;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throw new Error("DB not available");
+  }
+
+  const syncHistoryId =
+    Number(input.syncHistoryId);
+
+  const actorUserId =
+    Number(input.actorUserId);
+
+  if (
+    !Number.isInteger(syncHistoryId) ||
+    syncHistoryId <= 0
+  ) {
+    throw new Error(
+      "동기화 이력 ID가 올바르지 않습니다."
+    );
+  }
+
+  if (
+    !Number.isInteger(actorUserId) ||
+    actorUserId <= 0
+  ) {
+    throw new Error(
+      "실행 사용자 정보가 올바르지 않습니다."
+    );
+  }
+
+  try {
+    const result = await db.transaction(
+      async (tx) => {
+        const [lockedRows] =
+          await tx.execute(sql`
+            SELECT *
+            FROM practice_master_sync_history
+            WHERE id = ${syncHistoryId}
+            LIMIT 1
+            FOR UPDATE
+          `);
+
+        const syncHistory =
+          ((lockedRows as any[]) || [])[0];
+
+        if (!syncHistory) {
+          throw new Error(
+            "공용 실습 데이터 동기화 이력을 찾을 수 없습니다."
+          );
+        }
+
+        if (
+          String(syncHistory.status) !==
+          "preview_ready"
+        ) {
+          throw new Error(
+            "미리보기 준비가 완료된 동기화만 실행할 수 있습니다."
+          );
+        }
+
+        const preview =
+          parsePracticeMasterPreview(
+            syncHistory.previewJson
+          );
+
+        if (
+          preview.dataType !==
+          syncHistory.dataType
+        ) {
+          throw new Error(
+            "동기화 이력과 미리보기의 자료 유형이 일치하지 않습니다."
+          );
+        }
+
+        const invalidCount =
+          Number(
+            preview.summary.invalidRows || 0
+          );
+
+        const reviewCount =
+          Number(
+            preview.summary.reviewCount || 0
+          );
+
+        if (
+          invalidCount > 0 ||
+          preview.invalidRows.length > 0
+        ) {
+          throw new Error(
+            `오류 행 ${Math.max(
+              invalidCount,
+              preview.invalidRows.length
+            )}건이 있어 동기화를 실행할 수 없습니다.`
+          );
+        }
+
+        if (
+          reviewCount > 0 ||
+          preview.reviews.length > 0
+        ) {
+          throw new Error(
+            `확인 필요 항목 ${Math.max(
+              reviewCount,
+              preview.reviews.length
+            )}건이 있어 동기화를 실행할 수 없습니다.`
+          );
+        }
+
+        if (
+          Number(
+            syncHistory.invalidRows || 0
+          ) > 0
+        ) {
+          throw new Error(
+            "동기화 이력에 오류 행이 남아 있어 실행할 수 없습니다."
+          );
+        }
+
+        if (
+          Number(
+            syncHistory.reviewCount || 0
+          ) > 0
+        ) {
+          throw new Error(
+            "동기화 이력에 확인 필요 항목이 남아 있어 실행할 수 없습니다."
+          );
+        }
+
+        await tx
+          .update(
+            practiceMasterSyncHistory
+          )
+          .set({
+            status: "running",
+            errorJson: null,
+            completedAt: null,
+          } as any)
+          .where(
+            eq(
+              practiceMasterSyncHistory.id,
+              syncHistoryId
+            )
+          );
+
+        let insertedCount = 0;
+        let updatedCount = 0;
+        let deactivatedCount = 0;
+        let reactivatedCount = 0;
+
+        if (
+          preview.dataType ===
+          "institution"
+        ) {
+          for (
+            const action of
+            preview.inserts
+          ) {
+            const values =
+              getPracticeMasterIncomingValues(
+                action
+              );
+
+            if (!values.address) {
+              throw new Error(
+                `신규 실습기관 ${Number(
+                  action.rowNumber || 0
+                )}행의 주소가 없습니다.`
+              );
+            }
+
+            await tx
+              .insert(
+                practiceInstitutionMasters
+              )
+              .values({
+                institutionType:
+                  "institution",
+
+                categoryName:
+                  values.categoryName,
+
+                name:
+                  values.name,
+
+                representativeName:
+                  values.representativeName,
+
+                phone:
+                  values.phone,
+
+                address:
+                  values.address,
+
+                detailAddress:
+                  values.detailAddress,
+
+                availableCourse:
+                  values.availableCourse,
+
+                isActive: true,
+              } as any);
+
+            insertedCount += 1;
+          }
+
+          for (
+            const action of
+            preview.updates
+          ) {
+            const masterId =
+              assertPracticeMasterActionId(
+                action
+              );
+
+            const values =
+              getPracticeMasterIncomingValues(
+                action
+              );
+
+            if (!values.address) {
+              throw new Error(
+                `변경 실습기관 ${Number(
+                  action.rowNumber || 0
+                )}행의 주소가 없습니다.`
+              );
+            }
+
+            const [targetRows] =
+              await tx.execute(sql`
+                SELECT id
+                FROM practice_institution_masters
+                WHERE id = ${masterId}
+                LIMIT 1
+                FOR UPDATE
+              `);
+
+            if (
+              ((targetRows as any[]) || [])
+                .length !== 1
+            ) {
+              throw new Error(
+                `변경 대상 실습기관 ID ${masterId}를 찾을 수 없습니다.`
+              );
+            }
+
+            await tx
+              .update(
+                practiceInstitutionMasters
+              )
+              .set({
+                categoryName:
+                  values.categoryName,
+
+                name:
+                  values.name,
+
+                representativeName:
+                  values.representativeName,
+
+                phone:
+                  values.phone,
+
+                address:
+                  values.address,
+
+                detailAddress:
+                  values.detailAddress,
+
+                availableCourse:
+                  values.availableCourse,
+              } as any)
+              .where(
+                eq(
+                  practiceInstitutionMasters.id,
+                  masterId
+                )
+              );
+
+            updatedCount += 1;
+          }
+
+          for (
+            const action of
+            preview.reactivates
+          ) {
+            const masterId =
+              assertPracticeMasterActionId(
+                action
+              );
+
+            const values =
+              getPracticeMasterIncomingValues(
+                action
+              );
+
+            if (!values.address) {
+              throw new Error(
+                `재활성 실습기관 ${Number(
+                  action.rowNumber || 0
+                )}행의 주소가 없습니다.`
+              );
+            }
+
+            const [targetRows] =
+              await tx.execute(sql`
+                SELECT id
+                FROM practice_institution_masters
+                WHERE id = ${masterId}
+                LIMIT 1
+                FOR UPDATE
+              `);
+
+            if (
+              ((targetRows as any[]) || [])
+                .length !== 1
+            ) {
+              throw new Error(
+                `재활성 대상 실습기관 ID ${masterId}를 찾을 수 없습니다.`
+              );
+            }
+
+            await tx
+              .update(
+                practiceInstitutionMasters
+              )
+              .set({
+                categoryName:
+                  values.categoryName,
+
+                name:
+                  values.name,
+
+                representativeName:
+                  values.representativeName,
+
+                phone:
+                  values.phone,
+
+                address:
+                  values.address,
+
+                detailAddress:
+                  values.detailAddress,
+
+                availableCourse:
+                  values.availableCourse,
+
+                isActive: true,
+              } as any)
+              .where(
+                eq(
+                  practiceInstitutionMasters.id,
+                  masterId
+                )
+              );
+
+            reactivatedCount += 1;
+          }
+
+          for (
+            const action of
+            preview.deactivates
+          ) {
+            const masterId =
+              assertPracticeMasterActionId(
+                action
+              );
+
+            const [targetRows] =
+              await tx.execute(sql`
+                SELECT id
+                FROM practice_institution_masters
+                WHERE id = ${masterId}
+                LIMIT 1
+                FOR UPDATE
+              `);
+
+            if (
+              ((targetRows as any[]) || [])
+                .length !== 1
+            ) {
+              throw new Error(
+                `비활성 대상 실습기관 ID ${masterId}를 찾을 수 없습니다.`
+              );
+            }
+
+            await tx
+              .update(
+                practiceInstitutionMasters
+              )
+              .set({
+                isActive: false,
+              } as any)
+              .where(
+                eq(
+                  practiceInstitutionMasters.id,
+                  masterId
+                )
+              );
+
+            deactivatedCount += 1;
+          }
+        } else {
+          for (
+            const action of
+            preview.inserts
+          ) {
+            const values =
+              getPracticeMasterIncomingValues(
+                action
+              );
+
+            await tx
+              .insert(
+                practiceEducationCenterMasters
+              )
+              .values({
+                categoryName:
+                  values.categoryName,
+
+                name:
+                  values.name,
+
+                representativeName:
+                  values.representativeName,
+
+                phone:
+                  values.phone,
+
+                address:
+                  values.address,
+
+                detailAddress:
+                  values.detailAddress,
+
+                availableCourse:
+                  values.availableCourse,
+
+                isActive: true,
+              } as any);
+
+            insertedCount += 1;
+          }
+
+          for (
+            const action of
+            preview.updates
+          ) {
+            const masterId =
+              assertPracticeMasterActionId(
+                action
+              );
+
+            const values =
+              getPracticeMasterIncomingValues(
+                action
+              );
+
+            const [targetRows] =
+              await tx.execute(sql`
+                SELECT id
+                FROM practice_education_center_masters
+                WHERE id = ${masterId}
+                LIMIT 1
+                FOR UPDATE
+              `);
+
+            if (
+              ((targetRows as any[]) || [])
+                .length !== 1
+            ) {
+              throw new Error(
+                `변경 대상 실습교육원 ID ${masterId}를 찾을 수 없습니다.`
+              );
+            }
+
+            await tx
+              .update(
+                practiceEducationCenterMasters
+              )
+              .set({
+                categoryName:
+                  values.categoryName,
+
+                name:
+                  values.name,
+
+                representativeName:
+                  values.representativeName,
+
+                phone:
+                  values.phone,
+
+                address:
+                  values.address,
+
+                detailAddress:
+                  values.detailAddress,
+
+                availableCourse:
+                  values.availableCourse,
+              } as any)
+              .where(
+                eq(
+                  practiceEducationCenterMasters.id,
+                  masterId
+                )
+              );
+
+            updatedCount += 1;
+          }
+
+          for (
+            const action of
+            preview.reactivates
+          ) {
+            const masterId =
+              assertPracticeMasterActionId(
+                action
+              );
+
+            const values =
+              getPracticeMasterIncomingValues(
+                action
+              );
+
+            const [targetRows] =
+              await tx.execute(sql`
+                SELECT id
+                FROM practice_education_center_masters
+                WHERE id = ${masterId}
+                LIMIT 1
+                FOR UPDATE
+              `);
+
+            if (
+              ((targetRows as any[]) || [])
+                .length !== 1
+            ) {
+              throw new Error(
+                `재활성 대상 실습교육원 ID ${masterId}를 찾을 수 없습니다.`
+              );
+            }
+
+            await tx
+              .update(
+                practiceEducationCenterMasters
+              )
+              .set({
+                categoryName:
+                  values.categoryName,
+
+                name:
+                  values.name,
+
+                representativeName:
+                  values.representativeName,
+
+                phone:
+                  values.phone,
+
+                address:
+                  values.address,
+
+                detailAddress:
+                  values.detailAddress,
+
+                availableCourse:
+                  values.availableCourse,
+
+                isActive: true,
+              } as any)
+              .where(
+                eq(
+                  practiceEducationCenterMasters.id,
+                  masterId
+                )
+              );
+
+            reactivatedCount += 1;
+          }
+
+          for (
+            const action of
+            preview.deactivates
+          ) {
+            const masterId =
+              assertPracticeMasterActionId(
+                action
+              );
+
+            const [targetRows] =
+              await tx.execute(sql`
+                SELECT id
+                FROM practice_education_center_masters
+                WHERE id = ${masterId}
+                LIMIT 1
+                FOR UPDATE
+              `);
+
+            if (
+              ((targetRows as any[]) || [])
+                .length !== 1
+            ) {
+              throw new Error(
+                `비활성 대상 실습교육원 ID ${masterId}를 찾을 수 없습니다.`
+              );
+            }
+
+            await tx
+              .update(
+                practiceEducationCenterMasters
+              )
+              .set({
+                isActive: false,
+              } as any)
+              .where(
+                eq(
+                  practiceEducationCenterMasters.id,
+                  masterId
+                )
+              );
+
+            deactivatedCount += 1;
+          }
+        }
+
+        if (
+          insertedCount !==
+          preview.inserts.length
+        ) {
+          throw new Error(
+            "신규 추가 처리 건수가 미리보기와 일치하지 않습니다."
+          );
+        }
+
+        if (
+          updatedCount !==
+          preview.updates.length
+        ) {
+          throw new Error(
+            "정보 변경 처리 건수가 미리보기와 일치하지 않습니다."
+          );
+        }
+
+        if (
+          deactivatedCount !==
+          preview.deactivates.length
+        ) {
+          throw new Error(
+            "비활성 처리 건수가 미리보기와 일치하지 않습니다."
+          );
+        }
+
+        if (
+          reactivatedCount !==
+          preview.reactivates.length
+        ) {
+          throw new Error(
+            "재활성 처리 건수가 미리보기와 일치하지 않습니다."
+          );
+        }
+
+        const completedAt =
+          new Date();
+
+        await tx
+          .update(
+            practiceMasterSyncHistory
+          )
+          .set({
+            status: "completed",
+
+            insertCount:
+              insertedCount,
+
+            updateCount:
+              updatedCount,
+
+            deactivateCount:
+              deactivatedCount,
+
+            reactivateCount:
+              reactivatedCount,
+
+            errorJson: null,
+
+            completedAt,
+          } as any)
+          .where(
+            eq(
+              practiceMasterSyncHistory.id,
+              syncHistoryId
+            )
+          );
+
+        return {
+          ok: true,
+
+          syncHistoryId,
+
+          dataType:
+            preview.dataType,
+
+          unchangedCount:
+            preview.unchanged.length,
+
+          insertCount:
+            insertedCount,
+
+          updateCount:
+            updatedCount,
+
+          deactivateCount:
+            deactivatedCount,
+
+          reactivateCount:
+            reactivatedCount,
+
+          completedAt,
+        };
+      }
+    );
+
+    return result;
+  } catch (error: any) {
+    const current =
+      await getPracticeMasterSyncHistoryById(
+        syncHistoryId
+      );
+
+    if (
+      current &&
+      String(current.status) !==
+        "completed"
+    ) {
+      await updatePracticeMasterSyncHistory({
+        id: syncHistoryId,
+
+        status: "failed",
+
+        errorJson: {
+          message:
+            error?.message ||
+            "공용 실습 데이터 동기화 실행 중 오류가 발생했습니다.",
+
+          failedAt:
+            new Date().toISOString(),
+
+          actorUserId,
+        },
+
+        completedAt: new Date(),
+      });
+    }
+
+    throw error;
+  }
 }

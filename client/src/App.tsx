@@ -36,6 +36,7 @@ import OrganizationMonitoringPage from "@/pages/superhost/OrganizationMonitoring
 import SaasInquiriesPage from "@/pages/superhost/SaasInquiriesPage";
 import SubscriptionPaymentsPage from "@/pages/superhost/SubscriptionPaymentsPage";
 import SaasAnnouncementsPage from "@/pages/superhost/SaasAnnouncementsPage";
+import PracticeMasterSyncPage from "@/pages/superhost/PracticeMasterSyncPage";
 import BillingRegisterPage from "@/pages/BillingRegisterPage";
 import MessengerPage from "@/pages/MessengerPage";
 import AttendancePage from "@/pages/AttendancePage";
@@ -289,6 +290,11 @@ function PrivateRouter() {
 <Route path="/superhost/announcements">
   <SuperhostRoute component={SaasAnnouncementsPage} />
 </Route>
+
+<Route path="/superhost/practice-master-sync">
+  <SuperhostRoute component={PracticeMasterSyncPage} />
+</Route>
+
 <Route path="/saas/monitoring/:organizationId">
   <SuperhostRoute component={OrganizationMonitoringPage} />
 </Route>      

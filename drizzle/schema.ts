@@ -1924,6 +1924,139 @@ export type OrganizationPracticeEducationCenterOverride =
 export type InsertOrganizationPracticeEducationCenterOverride =
   typeof organizationPracticeEducationCenterOverrides.$inferInsert;
 
+// ─── Practice Master Sync History (공용 실습 데이터 동기화 이력) ───
+export const practiceMasterSyncHistory = mysqlTable(
+  "practice_master_sync_history",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    dataType: mysqlEnum("dataType", [
+      "institution",
+      "education_center",
+    ]).notNull(),
+
+    sourceType: mysqlEnum("sourceType", [
+      "social_worker_association",
+      "educanvas",
+    ])
+      .notNull()
+      .default("social_worker_association"),
+
+    sourceFileName: varchar("sourceFileName", {
+      length: 255,
+    }).notNull(),
+
+    sourceFileKey: varchar("sourceFileKey", {
+      length: 1000,
+    }),
+
+    sourceFileUrl: varchar("sourceFileUrl", {
+      length: 1000,
+    }),
+
+    sourceFileHash: varchar("sourceFileHash", {
+      length: 64,
+    }),
+
+    sourceVersion: varchar("sourceVersion", {
+      length: 100,
+    }),
+
+    status: mysqlEnum("status", [
+      "analyzing",
+      "preview_ready",
+      "running",
+      "completed",
+      "failed",
+      "cancelled",
+    ])
+      .notNull()
+      .default("analyzing"),
+
+    totalRows: int("totalRows")
+      .notNull()
+      .default(0),
+
+    validRows: int("validRows")
+      .notNull()
+      .default(0),
+
+    invalidRows: int("invalidRows")
+      .notNull()
+      .default(0),
+
+    unchangedCount: int("unchangedCount")
+      .notNull()
+      .default(0),
+
+    insertCount: int("insertCount")
+      .notNull()
+      .default(0),
+
+    updateCount: int("updateCount")
+      .notNull()
+      .default(0),
+
+    deactivateCount: int("deactivateCount")
+      .notNull()
+      .default(0),
+
+    reactivateCount: int("reactivateCount")
+      .notNull()
+      .default(0),
+
+    reviewCount: int("reviewCount")
+      .notNull()
+      .default(0),
+
+    previewJson: json("previewJson"),
+
+    errorJson: json("errorJson"),
+
+    memo: text("memo"),
+
+    createdBy: int("createdBy").notNull(),
+
+    startedAt: datetime("startedAt"),
+
+    completedAt: datetime("completedAt"),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    dataTypeCreatedIdx: index(
+      "idx_practice_master_sync_type_created"
+    ).on(
+      table.dataType,
+      table.createdAt
+    ),
+
+    statusCreatedIdx: index(
+      "idx_practice_master_sync_status_created"
+    ).on(
+      table.status,
+      table.createdAt
+    ),
+
+    createdByIdx: index(
+      "idx_practice_master_sync_created_by"
+    ).on(table.createdBy),
+  })
+);
+
+export type PracticeMasterSyncHistory =
+  typeof practiceMasterSyncHistory.$inferSelect;
+
+export type InsertPracticeMasterSyncHistory =
+  typeof practiceMasterSyncHistory.$inferInsert;
+
 // ─── Job Support Requests (취업지원센터) ────────────────────────────
 export const jobSupportRequests = mysqlTable("job_support_requests", {
   id: int("id").autoincrement().primaryKey(),
