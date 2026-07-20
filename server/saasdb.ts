@@ -3108,11 +3108,11 @@ const skippedSourceRowNumbers =
           ),
 
         price:
-          input.dataType === "institution"
-            ? practiceMasterNullableText(
-                rawRow.price
-              )?.replace(/,/g, "") || null
-            : null,
+  input.dataType === "institution"
+    ? practiceMasterNullableText(
+        rawRow.price
+      )?.replace(/[^0-9]/g, "") || "0"
+    : null,
 
         associationManagementNo:
           input.dataType === "institution"
@@ -4156,10 +4156,10 @@ sourceExactKeys.set(
           ),
 
         price:
-          practiceMasterNullableText(
-            row.price
-          )?.replace(/,/g, "") ||
-          null,
+  practiceMasterNullableText(
+    row.price
+  )?.replace(/[^0-9]/g, "") ||
+  "0",
 
         associationManagementNo:
           practiceMasterNullableText(
@@ -4262,10 +4262,10 @@ sourceExactKeys.set(
               ),
 
             price:
-              practiceMasterNullableText(
-                row.price
-              )?.replace(/,/g, "") ||
-              null,
+  practiceMasterNullableText(
+    row.price
+  )?.replace(/[^0-9]/g, "") ||
+  "0",
 
             associationManagementNo:
               practiceMasterNullableText(
@@ -4658,9 +4658,9 @@ function getPracticeMasterIncomingValues(
       ),
 
     price:
-      practiceMasterNullableText(
-        incoming.price
-      )?.replace(/,/g, "") || null,
+  practiceMasterNullableText(
+    incoming.price
+  )?.replace(/[^0-9]/g, "") || "0",
 
     associationManagementNo:
       practiceMasterNullableText(
