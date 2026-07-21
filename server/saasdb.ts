@@ -4702,6 +4702,25 @@ function assertPracticeMasterActionId(
   return masterId;
 }
 
+function chunkPracticeMasterActions<T>(
+  items: T[],
+  size: number
+) {
+  const chunks: T[][] = [];
+
+  for (
+    let index = 0;
+    index < items.length;
+    index += size
+  ) {
+    chunks.push(
+      items.slice(index, index + size)
+    );
+  }
+
+  return chunks;
+}
+
 export async function executePracticeMasterSync(input: {
   syncHistoryId: number;
   actorUserId: number;
@@ -4737,769 +4756,822 @@ export async function executePracticeMasterSync(input: {
   }
 
   try {
-    const result = await db.transaction(
-      async (tx) => {
-        const [lockedRows] =
-          await tx.execute(sql`
-            SELECT *
-            FROM practice_master_sync_history
-            WHERE id = ${syncHistoryId}
-            LIMIT 1
-            FOR UPDATE
-          `);
+    const preview =
+      await db.transaction(
+        async (tx) => {
+          const [lockedRows] =
+            await tx.execute(sql`
+              SELECT *
+              FROM practice_master_sync_history
+              WHERE id = ${syncHistoryId}
+              LIMIT 1
+              FOR UPDATE
+            `);
 
-        const syncHistory =
-          ((lockedRows as any[]) || [])[0];
+          const syncHistory =
+            ((lockedRows as any[]) || [])[0];
 
-        if (!syncHistory) {
-          throw new Error(
-            "공용 실습 데이터 동기화 이력을 찾을 수 없습니다."
-          );
-        }
+          if (!syncHistory) {
+            throw new Error(
+              "공용 실습 데이터 동기화 이력을 찾을 수 없습니다."
+            );
+          }
 
-        if (
-          String(syncHistory.status) !==
-          "preview_ready"
-        ) {
-          throw new Error(
-            "미리보기 준비가 완료된 동기화만 실행할 수 있습니다."
-          );
-        }
+          if (
+            String(syncHistory.status) !==
+            "preview_ready"
+          ) {
+            throw new Error(
+              "미리보기 준비가 완료된 동기화만 실행할 수 있습니다."
+            );
+          }
 
-        const preview =
-          parsePracticeMasterPreview(
-            syncHistory.previewJson
-          );
+          const parsedPreview =
+            parsePracticeMasterPreview(
+              syncHistory.previewJson
+            );
 
-        if (
-          preview.dataType !==
-          syncHistory.dataType
-        ) {
-          throw new Error(
-            "동기화 이력과 미리보기의 자료 유형이 일치하지 않습니다."
-          );
-        }
+          if (
+            parsedPreview.dataType !==
+            syncHistory.dataType
+          ) {
+            throw new Error(
+              "동기화 이력과 미리보기의 자료 유형이 일치하지 않습니다."
+            );
+          }
 
-        const invalidCount =
-          Number(
-            preview.summary.invalidRows || 0
-          );
+          const invalidCount =
+            Number(
+              parsedPreview.summary
+                .invalidRows || 0
+            );
 
-        const reviewCount =
-          Number(
-            preview.summary.reviewCount || 0
-          );
+          const reviewCount =
+            Number(
+              parsedPreview.summary
+                .reviewCount || 0
+            );
 
-        if (
-          invalidCount > 0 ||
-          preview.invalidRows.length > 0
-        ) {
-          throw new Error(
-            `오류 행 ${Math.max(
-              invalidCount,
-              preview.invalidRows.length
-            )}건이 있어 동기화를 실행할 수 없습니다.`
-          );
-        }
+          if (
+            invalidCount > 0 ||
+            parsedPreview.invalidRows
+              .length > 0
+          ) {
+            throw new Error(
+              `오류 행 ${Math.max(
+                invalidCount,
+                parsedPreview.invalidRows
+                  .length
+              )}건이 있어 동기화를 실행할 수 없습니다.`
+            );
+          }
 
-        if (
-          reviewCount > 0 ||
-          preview.reviews.length > 0
-        ) {
-          throw new Error(
-            `확인 필요 항목 ${Math.max(
-              reviewCount,
-              preview.reviews.length
-            )}건이 있어 동기화를 실행할 수 없습니다.`
-          );
-        }
+          if (
+            reviewCount > 0 ||
+            parsedPreview.reviews.length >
+              0
+          ) {
+            throw new Error(
+              `확인 필요 항목 ${Math.max(
+                reviewCount,
+                parsedPreview.reviews
+                  .length
+              )}건이 있어 동기화를 실행할 수 없습니다.`
+            );
+          }
 
-        if (
-          Number(
-            syncHistory.invalidRows || 0
-          ) > 0
-        ) {
-          throw new Error(
-            "동기화 이력에 오류 행이 남아 있어 실행할 수 없습니다."
-          );
-        }
+          if (
+            Number(
+              syncHistory.invalidRows || 0
+            ) > 0
+          ) {
+            throw new Error(
+              "동기화 이력에 오류 행이 남아 있어 실행할 수 없습니다."
+            );
+          }
 
-        if (
-          Number(
-            syncHistory.reviewCount || 0
-          ) > 0
-        ) {
-          throw new Error(
-            "동기화 이력에 확인 필요 항목이 남아 있어 실행할 수 없습니다."
-          );
-        }
+          if (
+            Number(
+              syncHistory.reviewCount || 0
+            ) > 0
+          ) {
+            throw new Error(
+              "동기화 이력에 확인 필요 항목이 남아 있어 실행할 수 없습니다."
+            );
+          }
 
-        await tx
-          .update(
-            practiceMasterSyncHistory
-          )
-                    .set({
-            status: "running",
-            executedBy: actorUserId,
-            errorJson: null,
-            completedAt: null,
-          } as any)
-          .where(
-            eq(
-              practiceMasterSyncHistory.id,
-              syncHistoryId
+          await tx
+            .update(
+              practiceMasterSyncHistory
             )
-          );
-
-        let insertedCount = 0;
-        let updatedCount = 0;
-        let deactivatedCount = 0;
-        let reactivatedCount = 0;
-
-        if (
-          preview.dataType ===
-          "institution"
-        ) {
-          for (
-            const action of
-            preview.inserts
-          ) {
-            const values =
-              getPracticeMasterIncomingValues(
-                action
-              );
-
-            if (!values.address) {
-              throw new Error(
-                `신규 실습기관 ${Number(
-                  action.rowNumber || 0
-                )}행의 주소가 없습니다.`
-              );
-            }
-
-            await tx
-              .insert(
-                practiceInstitutionMasters
+            .set({
+              status: "running",
+              executedBy: actorUserId,
+              errorJson: null,
+              completedAt: null,
+            } as any)
+            .where(
+              eq(
+                practiceMasterSyncHistory.id,
+                syncHistoryId
               )
-              .values({
-                institutionType:
-                  "institution",
+            );
 
-                categoryName:
-                  values.categoryName,
-
-                name:
-                  values.name,
-
-                representativeName:
-                  values.representativeName,
-
-                phone:
-                  values.phone,
-
-                address:
-                  values.address,
-
-                detailAddress:
-                  values.detailAddress,
-
-                                availableCourse:
-                  values.availableCourse,
-
-                price:
-                  values.price,
-
-                associationManagementNo:
-                  values.associationManagementNo,
-
-                selectionValidFrom:
-                  values.selectionValidFrom,
-
-                selectionValidTo:
-                  values.selectionValidTo,
-
-                selectionStatus:
-                  values.selectionStatus,
-
-                isActive:
-                  resolvePracticeInstitutionActive({
-                    selectionStatus:
-                      values.selectionStatus,
-
-                    selectionValidTo:
-                      values.selectionValidTo,
-                  }),
-              } as any);
-
-            insertedCount += 1;
-          }
-
-          for (
-            const action of
-            preview.updates
-          ) {
-            const masterId =
-              assertPracticeMasterActionId(
-                action
-              );
-
-            const values =
-              getPracticeMasterIncomingValues(
-                action
-              );
-
-            if (!values.address) {
-              throw new Error(
-                `변경 실습기관 ${Number(
-                  action.rowNumber || 0
-                )}행의 주소가 없습니다.`
-              );
-            }
-
-            const [targetRows] =
-              await tx.execute(sql`
-                SELECT id
-                FROM practice_institution_masters
-                WHERE id = ${masterId}
-                LIMIT 1
-                FOR UPDATE
-              `);
-
-            if (
-              ((targetRows as any[]) || [])
-                .length !== 1
-            ) {
-              throw new Error(
-                `변경 대상 실습기관 ID ${masterId}를 찾을 수 없습니다.`
-              );
-            }
-
-            await tx
-              .update(
-                practiceInstitutionMasters
-              )
-              .set({
-                categoryName:
-                  values.categoryName,
-
-                name:
-                  values.name,
-
-                representativeName:
-                  values.representativeName,
-
-                phone:
-                  values.phone,
-
-                address:
-                  values.address,
-
-                detailAddress:
-                  values.detailAddress,
-
-                                availableCourse:
-                  values.availableCourse,
-
-                price:
-                  values.price,
-
-                associationManagementNo:
-                  values.associationManagementNo,
-
-                selectionValidFrom:
-                  values.selectionValidFrom,
-
-                selectionValidTo:
-                  values.selectionValidTo,
-
-                selectionStatus:
-                  values.selectionStatus,
-
-                isActive:
-                  resolvePracticeInstitutionActive({
-                    selectionStatus:
-                      values.selectionStatus,
-
-                    selectionValidTo:
-                      values.selectionValidTo,
-                  }),
-              } as any)
-              .where(
-                eq(
-                  practiceInstitutionMasters.id,
-                  masterId
-                )
-              );
-
-            updatedCount += 1;
-          }
-
-          for (
-            const action of
-            preview.reactivates
-          ) {
-            const masterId =
-              assertPracticeMasterActionId(
-                action
-              );
-
-            const values =
-              getPracticeMasterIncomingValues(
-                action
-              );
-
-            if (!values.address) {
-              throw new Error(
-                `재활성 실습기관 ${Number(
-                  action.rowNumber || 0
-                )}행의 주소가 없습니다.`
-              );
-            }
-
-            const [targetRows] =
-              await tx.execute(sql`
-                SELECT id
-                FROM practice_institution_masters
-                WHERE id = ${masterId}
-                LIMIT 1
-                FOR UPDATE
-              `);
-
-            if (
-              ((targetRows as any[]) || [])
-                .length !== 1
-            ) {
-              throw new Error(
-                `재활성 대상 실습기관 ID ${masterId}를 찾을 수 없습니다.`
-              );
-            }
-
-            await tx
-              .update(
-                practiceInstitutionMasters
-              )
-              .set({
-                categoryName:
-                  values.categoryName,
-
-                name:
-                  values.name,
-
-                representativeName:
-                  values.representativeName,
-
-                phone:
-                  values.phone,
-
-                address:
-                  values.address,
-
-                detailAddress:
-                  values.detailAddress,
-
-                                availableCourse:
-                  values.availableCourse,
-
-                price:
-                  values.price,
-
-                associationManagementNo:
-                  values.associationManagementNo,
-
-                selectionValidFrom:
-                  values.selectionValidFrom,
-
-                selectionValidTo:
-                  values.selectionValidTo,
-
-                selectionStatus:
-                  values.selectionStatus,
-
-                isActive:
-                  resolvePracticeInstitutionActive({
-                    selectionStatus:
-                      values.selectionStatus,
-
-                    selectionValidTo:
-                      values.selectionValidTo,
-                  }),
-              } as any)
-              .where(
-                eq(
-                  practiceInstitutionMasters.id,
-                  masterId
-                )
-              );
-
-            reactivatedCount += 1;
-          }
-
-          for (
-            const action of
-            preview.deactivates
-          ) {
-            const masterId =
-              assertPracticeMasterActionId(
-                action
-              );
-
-            const [targetRows] =
-              await tx.execute(sql`
-                SELECT id
-                FROM practice_institution_masters
-                WHERE id = ${masterId}
-                LIMIT 1
-                FOR UPDATE
-              `);
-
-            if (
-              ((targetRows as any[]) || [])
-                .length !== 1
-            ) {
-              throw new Error(
-                `비활성 대상 실습기관 ID ${masterId}를 찾을 수 없습니다.`
-              );
-            }
-
-            await tx
-              .update(
-                practiceInstitutionMasters
-              )
-              .set({
-                isActive: false,
-              } as any)
-              .where(
-                eq(
-                  practiceInstitutionMasters.id,
-                  masterId
-                )
-              );
-
-            deactivatedCount += 1;
-          }
-        } else {
-          for (
-            const action of
-            preview.inserts
-          ) {
-            const values =
-              getPracticeMasterIncomingValues(
-                action
-              );
-
-            await tx
-              .insert(
-                practiceEducationCenterMasters
-              )
-              .values({
-                categoryName:
-                  values.categoryName,
-
-                name:
-                  values.name,
-
-                representativeName:
-                  values.representativeName,
-
-                phone:
-                  values.phone,
-
-                address:
-                  values.address,
-
-                detailAddress:
-                  values.detailAddress,
-
-                availableCourse:
-                  values.availableCourse,
-
-                isActive: true,
-              } as any);
-
-            insertedCount += 1;
-          }
-
-          for (
-            const action of
-            preview.updates
-          ) {
-            const masterId =
-              assertPracticeMasterActionId(
-                action
-              );
-
-            const values =
-              getPracticeMasterIncomingValues(
-                action
-              );
-
-            const [targetRows] =
-              await tx.execute(sql`
-                SELECT id
-                FROM practice_education_center_masters
-                WHERE id = ${masterId}
-                LIMIT 1
-                FOR UPDATE
-              `);
-
-            if (
-              ((targetRows as any[]) || [])
-                .length !== 1
-            ) {
-              throw new Error(
-                `변경 대상 실습교육원 ID ${masterId}를 찾을 수 없습니다.`
-              );
-            }
-
-            await tx
-              .update(
-                practiceEducationCenterMasters
-              )
-              .set({
-                categoryName:
-                  values.categoryName,
-
-                name:
-                  values.name,
-
-                representativeName:
-                  values.representativeName,
-
-                phone:
-                  values.phone,
-
-                address:
-                  values.address,
-
-                detailAddress:
-                  values.detailAddress,
-
-                availableCourse:
-                  values.availableCourse,
-              } as any)
-              .where(
-                eq(
-                  practiceEducationCenterMasters.id,
-                  masterId
-                )
-              );
-
-            updatedCount += 1;
-          }
-
-          for (
-            const action of
-            preview.reactivates
-          ) {
-            const masterId =
-              assertPracticeMasterActionId(
-                action
-              );
-
-            const values =
-              getPracticeMasterIncomingValues(
-                action
-              );
-
-            const [targetRows] =
-              await tx.execute(sql`
-                SELECT id
-                FROM practice_education_center_masters
-                WHERE id = ${masterId}
-                LIMIT 1
-                FOR UPDATE
-              `);
-
-            if (
-              ((targetRows as any[]) || [])
-                .length !== 1
-            ) {
-              throw new Error(
-                `재활성 대상 실습교육원 ID ${masterId}를 찾을 수 없습니다.`
-              );
-            }
-
-            await tx
-              .update(
-                practiceEducationCenterMasters
-              )
-              .set({
-                categoryName:
-                  values.categoryName,
-
-                name:
-                  values.name,
-
-                representativeName:
-                  values.representativeName,
-
-                phone:
-                  values.phone,
-
-                address:
-                  values.address,
-
-                detailAddress:
-                  values.detailAddress,
-
-                availableCourse:
-                  values.availableCourse,
-
-                isActive: true,
-              } as any)
-              .where(
-                eq(
-                  practiceEducationCenterMasters.id,
-                  masterId
-                )
-              );
-
-            reactivatedCount += 1;
-          }
-
-          for (
-            const action of
-            preview.deactivates
-          ) {
-            const masterId =
-              assertPracticeMasterActionId(
-                action
-              );
-
-            const [targetRows] =
-              await tx.execute(sql`
-                SELECT id
-                FROM practice_education_center_masters
-                WHERE id = ${masterId}
-                LIMIT 1
-                FOR UPDATE
-              `);
-
-            if (
-              ((targetRows as any[]) || [])
-                .length !== 1
-            ) {
-              throw new Error(
-                `비활성 대상 실습교육원 ID ${masterId}를 찾을 수 없습니다.`
-              );
-            }
-
-            await tx
-              .update(
-                practiceEducationCenterMasters
-              )
-              .set({
-                isActive: false,
-              } as any)
-              .where(
-                eq(
-                  practiceEducationCenterMasters.id,
-                  masterId
-                )
-              );
-
-            deactivatedCount += 1;
-          }
+          return parsedPreview;
         }
+      );
 
-        if (
-          insertedCount !==
-          preview.inserts.length
-        ) {
-          throw new Error(
-            "신규 추가 처리 건수가 미리보기와 일치하지 않습니다."
-          );
-        }
+    let insertedCount = 0;
+    let updatedCount = 0;
+    let deactivatedCount = 0;
+    let reactivatedCount = 0;
 
-        if (
-          updatedCount !==
-          preview.updates.length
-        ) {
-          throw new Error(
-            "정보 변경 처리 건수가 미리보기와 일치하지 않습니다."
-          );
-        }
+    const insertChunks =
+      chunkPracticeMasterActions(
+        preview.inserts,
+        200
+      );
 
-        if (
-          deactivatedCount !==
-          preview.deactivates.length
-        ) {
-          throw new Error(
-            "비활성 처리 건수가 미리보기와 일치하지 않습니다."
-          );
-        }
+    const updateChunks =
+      chunkPracticeMasterActions(
+        preview.updates,
+        100
+      );
 
-        if (
-          reactivatedCount !==
-          preview.reactivates.length
-        ) {
-          throw new Error(
-            "재활성 처리 건수가 미리보기와 일치하지 않습니다."
-          );
-        }
+    const reactivateChunks =
+      chunkPracticeMasterActions(
+        preview.reactivates,
+        100
+      );
 
-        const completedAt =
-          new Date();
+    const deactivateChunks =
+      chunkPracticeMasterActions(
+        preview.deactivates,
+        200
+      );
 
-        await tx
-          .update(
-            practiceMasterSyncHistory
-          )
-          .set({
-            status: "completed",
+    if (
+      preview.dataType ===
+      "institution"
+    ) {
+      for (
+        const chunk of insertChunks
+      ) {
+        await db.transaction(
+          async (tx) => {
+            for (const action of chunk) {
+              const values =
+                getPracticeMasterIncomingValues(
+                  action
+                );
 
-            insertCount:
-              insertedCount,
+              if (!values.address) {
+                throw new Error(
+                  `신규 실습기관 ${Number(
+                    action.rowNumber || 0
+                  )}행의 주소가 없습니다.`
+                );
+              }
 
-            updateCount:
-              updatedCount,
+              await tx
+                .insert(
+                  practiceInstitutionMasters
+                )
+                .values({
+                  institutionType:
+                    "institution",
 
-            deactivateCount:
-              deactivatedCount,
+                  categoryName:
+                    values.categoryName,
 
-            reactivateCount:
-              reactivatedCount,
+                  name:
+                    values.name,
 
-            errorJson: null,
+                  representativeName:
+                    values.representativeName,
 
-            completedAt,
-          } as any)
-          .where(
-            eq(
-              practiceMasterSyncHistory.id,
-              syncHistoryId
-            )
-          );
+                  phone:
+                    values.phone,
 
-        return {
-          ok: true,
+                  address:
+                    values.address,
 
-          syncHistoryId,
+                  detailAddress:
+                    values.detailAddress,
 
-          dataType:
-            preview.dataType,
+                  availableCourse:
+                    values.availableCourse,
 
-          unchangedCount:
-            preview.unchanged.length,
+                  price:
+                    values.price,
 
-          insertCount:
-            insertedCount,
+                  associationManagementNo:
+                    values.associationManagementNo,
 
-          updateCount:
-            updatedCount,
+                  selectionValidFrom:
+                    values.selectionValidFrom,
 
-          deactivateCount:
-            deactivatedCount,
+                  selectionValidTo:
+                    values.selectionValidTo,
 
-          reactivateCount:
-            reactivatedCount,
+                  selectionStatus:
+                    values.selectionStatus,
 
-          completedAt,
-        };
+                  isActive:
+                    resolvePracticeInstitutionActive({
+                      selectionStatus:
+                        values.selectionStatus,
+
+                      selectionValidTo:
+                        values.selectionValidTo,
+                    }),
+                } as any);
+            }
+          }
+        );
+
+        insertedCount += chunk.length;
       }
-    );
 
-    return result;
+      for (
+        const chunk of updateChunks
+      ) {
+        await db.transaction(
+          async (tx) => {
+            for (const action of chunk) {
+              const masterId =
+                assertPracticeMasterActionId(
+                  action
+                );
+
+              const values =
+                getPracticeMasterIncomingValues(
+                  action
+                );
+
+              if (!values.address) {
+                throw new Error(
+                  `변경 실습기관 ${Number(
+                    action.rowNumber || 0
+                  )}행의 주소가 없습니다.`
+                );
+              }
+
+              const result: any =
+                await tx
+                  .update(
+                    practiceInstitutionMasters
+                  )
+                  .set({
+                    categoryName:
+                      values.categoryName,
+
+                    name:
+                      values.name,
+
+                    representativeName:
+                      values.representativeName,
+
+                    phone:
+                      values.phone,
+
+                    address:
+                      values.address,
+
+                    detailAddress:
+                      values.detailAddress,
+
+                    availableCourse:
+                      values.availableCourse,
+
+                    price:
+                      values.price,
+
+                    associationManagementNo:
+                      values.associationManagementNo,
+
+                    selectionValidFrom:
+                      values.selectionValidFrom,
+
+                    selectionValidTo:
+                      values.selectionValidTo,
+
+                    selectionStatus:
+                      values.selectionStatus,
+
+                    isActive:
+                      resolvePracticeInstitutionActive({
+                        selectionStatus:
+                          values.selectionStatus,
+
+                        selectionValidTo:
+                          values.selectionValidTo,
+                      }),
+                  } as any)
+                  .where(
+                    eq(
+                      practiceInstitutionMasters.id,
+                      masterId
+                    )
+                  );
+
+              const affectedRows =
+                Number(
+                  result?.affectedRows ??
+                    result?.[0]
+                      ?.affectedRows ??
+                    0
+                );
+
+              if (affectedRows !== 1) {
+                throw new Error(
+                  `변경 대상 실습기관 ID ${masterId}를 찾을 수 없습니다.`
+                );
+              }
+            }
+          }
+        );
+
+        updatedCount += chunk.length;
+      }
+
+      for (
+        const chunk of
+        reactivateChunks
+      ) {
+        await db.transaction(
+          async (tx) => {
+            for (const action of chunk) {
+              const masterId =
+                assertPracticeMasterActionId(
+                  action
+                );
+
+              const values =
+                getPracticeMasterIncomingValues(
+                  action
+                );
+
+              if (!values.address) {
+                throw new Error(
+                  `재활성 실습기관 ${Number(
+                    action.rowNumber || 0
+                  )}행의 주소가 없습니다.`
+                );
+              }
+
+              const result: any =
+                await tx
+                  .update(
+                    practiceInstitutionMasters
+                  )
+                  .set({
+                    categoryName:
+                      values.categoryName,
+
+                    name:
+                      values.name,
+
+                    representativeName:
+                      values.representativeName,
+
+                    phone:
+                      values.phone,
+
+                    address:
+                      values.address,
+
+                    detailAddress:
+                      values.detailAddress,
+
+                    availableCourse:
+                      values.availableCourse,
+
+                    price:
+                      values.price,
+
+                    associationManagementNo:
+                      values.associationManagementNo,
+
+                    selectionValidFrom:
+                      values.selectionValidFrom,
+
+                    selectionValidTo:
+                      values.selectionValidTo,
+
+                    selectionStatus:
+                      values.selectionStatus,
+
+                    isActive:
+                      resolvePracticeInstitutionActive({
+                        selectionStatus:
+                          values.selectionStatus,
+
+                        selectionValidTo:
+                          values.selectionValidTo,
+                      }),
+                  } as any)
+                  .where(
+                    eq(
+                      practiceInstitutionMasters.id,
+                      masterId
+                    )
+                  );
+
+              const affectedRows =
+                Number(
+                  result?.affectedRows ??
+                    result?.[0]
+                      ?.affectedRows ??
+                    0
+                );
+
+              if (affectedRows !== 1) {
+                throw new Error(
+                  `재활성 대상 실습기관 ID ${masterId}를 찾을 수 없습니다.`
+                );
+              }
+            }
+          }
+        );
+
+        reactivatedCount +=
+          chunk.length;
+      }
+
+      for (
+        const chunk of
+        deactivateChunks
+      ) {
+        await db.transaction(
+          async (tx) => {
+            for (const action of chunk) {
+              const masterId =
+                assertPracticeMasterActionId(
+                  action
+                );
+
+              const result: any =
+                await tx
+                  .update(
+                    practiceInstitutionMasters
+                  )
+                  .set({
+                    isActive: false,
+                  } as any)
+                  .where(
+                    eq(
+                      practiceInstitutionMasters.id,
+                      masterId
+                    )
+                  );
+
+              const affectedRows =
+                Number(
+                  result?.affectedRows ??
+                    result?.[0]
+                      ?.affectedRows ??
+                    0
+                );
+
+              if (affectedRows !== 1) {
+                throw new Error(
+                  `비활성 대상 실습기관 ID ${masterId}를 찾을 수 없습니다.`
+                );
+              }
+            }
+          }
+        );
+
+        deactivatedCount +=
+          chunk.length;
+      }
+    } else {
+      for (
+        const chunk of insertChunks
+      ) {
+        await db.transaction(
+          async (tx) => {
+            for (const action of chunk) {
+              const values =
+                getPracticeMasterIncomingValues(
+                  action
+                );
+
+              await tx
+                .insert(
+                  practiceEducationCenterMasters
+                )
+                .values({
+                  categoryName:
+                    values.categoryName,
+
+                  name:
+                    values.name,
+
+                  representativeName:
+                    values.representativeName,
+
+                  phone:
+                    values.phone,
+
+                  address:
+                    values.address,
+
+                  detailAddress:
+                    values.detailAddress,
+
+                  availableCourse:
+                    values.availableCourse,
+
+                  isActive: true,
+                } as any);
+            }
+          }
+        );
+
+        insertedCount += chunk.length;
+      }
+
+      for (
+        const chunk of updateChunks
+      ) {
+        await db.transaction(
+          async (tx) => {
+            for (const action of chunk) {
+              const masterId =
+                assertPracticeMasterActionId(
+                  action
+                );
+
+              const values =
+                getPracticeMasterIncomingValues(
+                  action
+                );
+
+              const result: any =
+                await tx
+                  .update(
+                    practiceEducationCenterMasters
+                  )
+                  .set({
+                    categoryName:
+                      values.categoryName,
+
+                    name:
+                      values.name,
+
+                    representativeName:
+                      values.representativeName,
+
+                    phone:
+                      values.phone,
+
+                    address:
+                      values.address,
+
+                    detailAddress:
+                      values.detailAddress,
+
+                    availableCourse:
+                      values.availableCourse,
+                  } as any)
+                  .where(
+                    eq(
+                      practiceEducationCenterMasters.id,
+                      masterId
+                    )
+                  );
+
+              const affectedRows =
+                Number(
+                  result?.affectedRows ??
+                    result?.[0]
+                      ?.affectedRows ??
+                    0
+                );
+
+              if (affectedRows !== 1) {
+                throw new Error(
+                  `변경 대상 실습교육원 ID ${masterId}를 찾을 수 없습니다.`
+                );
+              }
+            }
+          }
+        );
+
+        updatedCount += chunk.length;
+      }
+
+      for (
+        const chunk of
+        reactivateChunks
+      ) {
+        await db.transaction(
+          async (tx) => {
+            for (const action of chunk) {
+              const masterId =
+                assertPracticeMasterActionId(
+                  action
+                );
+
+              const values =
+                getPracticeMasterIncomingValues(
+                  action
+                );
+
+              const result: any =
+                await tx
+                  .update(
+                    practiceEducationCenterMasters
+                  )
+                  .set({
+                    categoryName:
+                      values.categoryName,
+
+                    name:
+                      values.name,
+
+                    representativeName:
+                      values.representativeName,
+
+                    phone:
+                      values.phone,
+
+                    address:
+                      values.address,
+
+                    detailAddress:
+                      values.detailAddress,
+
+                    availableCourse:
+                      values.availableCourse,
+
+                    isActive: true,
+                  } as any)
+                  .where(
+                    eq(
+                      practiceEducationCenterMasters.id,
+                      masterId
+                    )
+                  );
+
+              const affectedRows =
+                Number(
+                  result?.affectedRows ??
+                    result?.[0]
+                      ?.affectedRows ??
+                    0
+                );
+
+              if (affectedRows !== 1) {
+                throw new Error(
+                  `재활성 대상 실습교육원 ID ${masterId}를 찾을 수 없습니다.`
+                );
+              }
+            }
+          }
+        );
+
+        reactivatedCount +=
+          chunk.length;
+      }
+
+      for (
+        const chunk of
+        deactivateChunks
+      ) {
+        await db.transaction(
+          async (tx) => {
+            for (const action of chunk) {
+              const masterId =
+                assertPracticeMasterActionId(
+                  action
+                );
+
+              const result: any =
+                await tx
+                  .update(
+                    practiceEducationCenterMasters
+                  )
+                  .set({
+                    isActive: false,
+                  } as any)
+                  .where(
+                    eq(
+                      practiceEducationCenterMasters.id,
+                      masterId
+                    )
+                  );
+
+              const affectedRows =
+                Number(
+                  result?.affectedRows ??
+                    result?.[0]
+                      ?.affectedRows ??
+                    0
+                );
+
+              if (affectedRows !== 1) {
+                throw new Error(
+                  `비활성 대상 실습교육원 ID ${masterId}를 찾을 수 없습니다.`
+                );
+              }
+            }
+          }
+        );
+
+        deactivatedCount +=
+          chunk.length;
+      }
+    }
+
+    if (
+      insertedCount !==
+      preview.inserts.length
+    ) {
+      throw new Error(
+        "신규 추가 처리 건수가 미리보기와 일치하지 않습니다."
+      );
+    }
+
+    if (
+      updatedCount !==
+      preview.updates.length
+    ) {
+      throw new Error(
+        "정보 변경 처리 건수가 미리보기와 일치하지 않습니다."
+      );
+    }
+
+    if (
+      deactivatedCount !==
+      preview.deactivates.length
+    ) {
+      throw new Error(
+        "비활성 처리 건수가 미리보기와 일치하지 않습니다."
+      );
+    }
+
+    if (
+      reactivatedCount !==
+      preview.reactivates.length
+    ) {
+      throw new Error(
+        "재활성 처리 건수가 미리보기와 일치하지 않습니다."
+      );
+    }
+
+    const completedAt =
+      new Date();
+
+    await updatePracticeMasterSyncHistory({
+      id: syncHistoryId,
+
+      status: "completed",
+
+      insertCount:
+        insertedCount,
+
+      updateCount:
+        updatedCount,
+
+      deactivateCount:
+        deactivatedCount,
+
+      reactivateCount:
+        reactivatedCount,
+
+      errorJson: null,
+
+      completedAt,
+    });
+
+    return {
+      ok: true,
+
+      syncHistoryId,
+
+      dataType:
+        preview.dataType,
+
+      unchangedCount:
+        preview.unchanged.length,
+
+      insertCount:
+        insertedCount,
+
+      updateCount:
+        updatedCount,
+
+      deactivateCount:
+        deactivatedCount,
+
+      reactivateCount:
+        reactivatedCount,
+
+      completedAt,
+    };
   } catch (error: any) {
     const current =
       await getPracticeMasterSyncHistoryById(
@@ -5527,7 +5599,8 @@ export async function executePracticeMasterSync(input: {
           actorUserId,
         },
 
-        completedAt: new Date(),
+        completedAt:
+          new Date(),
       });
     }
 

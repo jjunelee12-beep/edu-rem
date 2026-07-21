@@ -1,4 +1,9 @@
-import { useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   AlertTriangle,
   Building2,
@@ -472,6 +477,11 @@ export default function PracticeMasterSyncPage() {
     setConfirmationText,
   ] = useState("");
 
+const [
+  isWatchingExecution,
+  setIsWatchingExecution,
+] = useState(false);
+
   const utils = trpc.useUtils();
 
   const summaryQuery =
@@ -518,9 +528,58 @@ export default function PracticeMasterSyncPage() {
     trpc.saas.executePracticeMasterSync.useMutation();
 
   const currentHistory =
-    historyDetailQuery.data || null;
+  historyDetailQuery.data || null;
 
-  const currentPreview =
+useEffect(() => {
+  if (
+    !selectedHistoryId ||
+    !isWatchingExecution
+  ) {
+    return;
+  }
+
+  if (
+    currentHistory?.status ===
+      "completed" ||
+    currentHistory?.status ===
+      "failed" ||
+    currentHistory?.status ===
+      "cancelled"
+  ) {
+    setIsWatchingExecution(false);
+
+    void Promise.all([
+      historyQuery.refetch(),
+      summaryQuery.refetch(),
+    ]);
+
+    return;
+  }
+
+  const intervalId =
+    window.setInterval(() => {
+      void Promise.all([
+        historyDetailQuery.refetch(),
+        historyQuery.refetch(),
+        summaryQuery.refetch(),
+      ]);
+    }, 3000);
+
+  return () => {
+    window.clearInterval(
+      intervalId
+    );
+  };
+}, [
+  selectedHistoryId,
+  isWatchingExecution,
+  currentHistory?.status,
+  historyDetailQuery.refetch,
+  historyQuery.refetch,
+  summaryQuery.refetch,
+]);
+
+const currentPreview =
     useMemo(() => {
       return parseJsonValue<PracticeMasterPreview>(
         (currentHistory as any)
@@ -1168,9 +1227,11 @@ export default function PracticeMasterSyncPage() {
       setActivePreviewTab("summary");
       setConfirmationText("");
 
-      await refreshAll();
+setIsWatchingExecution(true);
 
-      toast.success(
+await refreshAll();
+
+toast.success(
         "엑셀 분석이 완료되었습니다."
       );
     } catch (error: any) {
@@ -1199,39 +1260,40 @@ export default function PracticeMasterSyncPage() {
       return;
     }
 
-    try {
-      await executeMutation.mutateAsync(
-        {
-          syncHistoryId:
-            selectedHistoryId,
+  try {
+  await executeMutation.mutateAsync(
+    {
+      syncHistoryId:
+        selectedHistoryId,
 
-          confirmationText:
-            confirmationText.trim(),
-        }
-      );
-
-      setConfirmationText("");
-
-      await refreshAll();
-
-      toast.success(
-        "공용 실습 데이터 동기화가 완료되었습니다."
-      );
-    } catch (error: any) {
-      toast.error(
-        error?.message ||
-          "공용 실습 데이터 동기화에 실패했습니다."
-      );
+      confirmationText:
+        confirmationText.trim(),
     }
+  );
+
+  setConfirmationText("");
+
+  await refreshAll();
+
+  toast.success(
+    "동기화를 시작했습니다. 완료될 때까지 잠시 기다려주세요."
+  );
+} catch (error: any) {
+  toast.error(
+    error?.message ||
+      "공용 실습 데이터 동기화 시작에 실패했습니다."
+  );
+}
   };
 
-  const selectHistory = (
-    id: number
-  ) => {
-    setSelectedHistoryId(id);
-    setActivePreviewTab("summary");
-    setConfirmationText("");
-  };
+const selectHistory = (
+  id: number
+) => {
+  setSelectedHistoryId(id);
+  setActivePreviewTab("summary");
+  setConfirmationText("");
+  setIsWatchingExecution(false);
+};
 
   const previewTabs: Array<{
     key: PreviewTab;

@@ -1554,21 +1554,22 @@ executePracticeMasterSync: protectedProcedure
       );
     }
 
-    try {
-      return await executePracticeMasterSync({
-        syncHistoryId:
-          input.syncHistoryId,
+    void executePracticeMasterSync({
+  syncHistoryId:
+    input.syncHistoryId,
 
-        actorUserId:
-          Number(ctx.user.id),
-      });
-    } catch (error: any) {
-      throwAppError(
-        ERROR_CODES.INVALID_REQUEST,
-        error?.message ||
-          "공용 실습 데이터 동기화 실행 중 오류가 발생했습니다.",
-        400
-      );
-    }
+  actorUserId:
+    Number(ctx.user.id),
+}).catch(() => {
+  // 실행 함수 내부에서 이력 상태를 failed로 기록하므로
+  // 여기에서는 다시 예외를 발생시키지 않습니다.
+});
+
+return {
+  ok: true,
+  started: true,
+  syncHistoryId:
+    input.syncHistoryId,
+};
   }),
 });
