@@ -9487,16 +9487,34 @@ organizationId,
         if (input.attachmentName !== undefined) data.attachmentName = input.attachmentName;
         if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl;
 
-        await db.updateJobSupportRequest(input.id, data);
+        const organizationId =
+  getCtxOrganizationId(ctx);
+
+await db.updateJobSupportRequest(
+  input.id,
+  data,
+  {
+    organizationId,
+  }
+);
         return { success: true };
       }),
 
     delete: hostProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        await db.deleteJobSupportRequest(input.id);
-        return { success: true };
-      }),
+  .input(z.object({ id: z.number() }))
+  .mutation(async ({ ctx, input }) => {
+    const organizationId =
+      getCtxOrganizationId(ctx);
+
+    await db.deleteJobSupportRequest(
+      input.id,
+      {
+        organizationId,
+      }
+    );
+
+    return { success: true };
+  }),
   }),
 
     settlement: router({

@@ -201,36 +201,109 @@ export type OrganizationBackup = typeof organizationBackups.$inferSelect;
 export type InsertOrganizationBackup = typeof organizationBackups.$inferInsert;
 
 // ─── Users ───────────────────────────────────────────────────────────
-export const users = mysqlTable("users", {
-  id: int("id").autoincrement().primaryKey(),
+export const users = mysqlTable(
+  "users",
+  {
+    id: int("id").autoincrement().primaryKey(),
 
-  displayNo: int("displayNo").notNull().default(1),
-organizationId: int("organizationId").notNull().default(1),
+    displayNo: int("displayNo").notNull().default(1),
+    organizationId: int("organizationId").notNull().default(1),
 
-  openId: varchar("openId", { length: 64 }).notNull(),
-  name: text("name"),
-  email: varchar("email", { length: 320 }),
-  phone: varchar("phone", { length: 20 }),
-  loginMethod: varchar("loginMethod", { length: 64 }),
+    openId: varchar("openId", { length: 64 }).notNull(),
 
-  role: mysqlEnum("role", ["host", "admin", "staff", "superhost"])
-  .notNull()
-  .default("staff"),
+    // 개인정보 암호화
+name: text("name"),
+nameHash: varchar("nameHash", {
+  length: 64,
+}),
 
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+email: text("email"),
+emailHash: varchar("emailHash", {
+  length: 64,
+}),
 
-  username: varchar("username", { length: 64 }).unique(),
-  passwordHash: varchar("passwordHash", { length: 255 }),
-saasAdminPasswordHash: varchar("saasAdminPasswordHash", { length: 255 }),
-saasAdminUnlockedAt: datetime("saasAdminUnlockedAt"),
-  isActive: boolean("isActive").notNull().default(true),
+    phone: text("phone"),
+    phoneHash: varchar("phoneHash", { length: 64 }),
+    phoneLast4: varchar("phoneLast4", { length: 4 }),
 
-  bankName: varchar("bankName", { length: 100 }),
-  bankAccount: varchar("bankAccount", { length: 100 }),
-profileImageUrl: varchar("profileImageUrl", { length: 500 }),
-});
+    loginMethod: varchar("loginMethod", { length: 64 }),
+
+    role: mysqlEnum("role", [
+      "host",
+      "admin",
+      "staff",
+      "superhost",
+    ])
+      .notNull()
+      .default("staff"),
+
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+    lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+
+    // 로그인 아이디는 우선 평문 유지
+    username: varchar("username", { length: 64 }).unique(),
+
+    // 비밀번호는 암호화가 아니라 단방향 해시 유지
+    passwordHash: varchar("passwordHash", { length: 255 }),
+    saasAdminPasswordHash: varchar("saasAdminPasswordHash", {
+      length: 255,
+    }),
+
+    saasAdminUnlockedAt: datetime("saasAdminUnlockedAt"),
+    isActive: boolean("isActive").notNull().default(true),
+
+    bankName: varchar("bankName", { length: 100 }),
+
+    // 계좌번호 암호문
+bankAccount: text("bankAccount"),
+
+// 계좌번호 정확한 확인용 HMAC
+bankAccountHash: varchar("bankAccountHash", {
+  length: 64,
+}),
+
+// 관리화면 마스킹 표시용
+bankAccountLast4: varchar("bankAccountLast4", {
+  length: 4,
+}),
+
+    profileImageUrl: varchar("profileImageUrl", { length: 500 }),
+  },
+  (table) => ({
+
+orgNameHashIdx: index(
+  "idx_users_org_name_hash"
+).on(
+  table.organizationId,
+  table.nameHash
+),
+
+orgEmailHashIdx: index(
+  "idx_users_org_email_hash"
+).on(
+  table.organizationId,
+  table.emailHash
+),
+
+    orgPhoneHashIdx: index("idx_users_org_phone_hash").on(
+      table.organizationId,
+      table.phoneHash
+    ),
+
+    orgPhoneLast4Idx: index("idx_users_org_phone_last4").on(
+      table.organizationId,
+      table.phoneLast4
+    ),
+
+orgBankAccountHashIdx: index(
+  "idx_users_org_bank_account_hash"
+).on(
+  table.organizationId,
+  table.bankAccountHash
+),
+  })
+);
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
@@ -294,16 +367,71 @@ organizationId: int("organizationId").notNull().default(1),
 export type SmsSetting = typeof smsSettings.$inferSelect;
 export type InsertSmsSetting = typeof smsSettings.$inferInsert;
 
-export const smsLogs = mysqlTable("sms_logs", {
-  id: int("id").autoincrement().primaryKey(),
-  organizationId: int("organizationId").notNull().default(1),
-  senderUserId: int("senderUserId"),
-  phone: varchar("phone", { length: 30 }).notNull(),
-  message: text("message").notNull(),
-  status: mysqlEnum("status", ["success", "fail"]).notNull().default("success"),
-  provider: varchar("provider", { length: 50 }),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+export const smsLogs = mysqlTable(
+  "sms_logs",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId")
+      .notNull()
+      .default(1),
+
+    senderUserId: int("senderUserId"),
+
+    // 수신 전화번호 암호문 저장
+    phone: text("phone").notNull(),
+
+    // 정확한 전화번호 검색 및 발송이력 조회용
+    phoneHash: varchar("phoneHash", {
+      length: 64,
+    }),
+
+    // 관리화면 표시 및 뒷자리 검색용
+    phoneLast4: varchar("phoneLast4", {
+      length: 4,
+    }),
+
+    // 문자 내용은 이번 암호화 대상에서 제외
+    message: text("message").notNull(),
+
+    status: mysqlEnum("status", [
+      "success",
+      "fail",
+    ])
+      .notNull()
+      .default("success"),
+
+    provider: varchar("provider", {
+      length: 50,
+    }),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    orgPhoneHashIdx: index(
+      "idx_sms_logs_org_phone_hash"
+    ).on(
+      table.organizationId,
+      table.phoneHash
+    ),
+
+    orgPhoneLast4Idx: index(
+      "idx_sms_logs_org_phone_last4"
+    ).on(
+      table.organizationId,
+      table.phoneLast4
+    ),
+
+    orgCreatedIdx: index(
+      "idx_sms_logs_org_created"
+    ).on(
+      table.organizationId,
+      table.createdAt
+    ),
+  })
+);
 
 export type SmsLog = typeof smsLogs.$inferSelect;
 export type InsertSmsLog = typeof smsLogs.$inferInsert;
@@ -416,15 +544,18 @@ export const consultations = mysqlTable(
     consultDate: date("consultDate").notNull(),
     channel: varchar("channel", { length: 100 }).notNull(),
 
-    clientName: varchar("clientName", { length: 100 }).notNull(),
-    phone: varchar("phone", { length: 30 }).notNull(),
+    clientName: text("clientName").notNull(),
+    clientNameHash: varchar("clientNameHash", { length: 64 }),
+
+    phone: text("phone").notNull(),
+    phoneHash: varchar("phoneHash", { length: 64 }),
+    phoneLast4: varchar("phoneLast4", { length: 4 }),
 
     finalEducation: varchar("finalEducation", { length: 100 })
       .notNull()
       .default(""),
 
     desiredCourse: varchar("desiredCourse", { length: 200 }),
-
     notes: text("notes"),
 
     status: varchar("status", { length: 50 })
@@ -434,7 +565,6 @@ export const consultations = mysqlTable(
     assigneeId: int("assigneeId").notNull().default(1),
 
     createdAt: timestamp("createdAt").defaultNow().notNull(),
-
     updatedAt: timestamp("updatedAt")
       .defaultNow()
       .onUpdateNow()
@@ -458,6 +588,20 @@ export const consultations = mysqlTable(
       table.organizationId,
       table.status
     ),
+
+    orgPhoneHashIdx: index("idx_consultations_org_phone_hash").on(
+      table.organizationId,
+      table.phoneHash
+    ),
+
+    orgPhoneLast4Idx: index("idx_consultations_org_phone_last4").on(
+      table.organizationId,
+      table.phoneLast4
+    ),
+
+    orgClientNameHashIdx: index(
+      "idx_consultations_org_client_name_hash"
+    ).on(table.organizationId, table.clientNameHash),
   })
 );
 
@@ -469,11 +613,14 @@ export const students = mysqlTable(
   "students",
   {
     id: int("id").autoincrement().primaryKey(),
-
     organizationId: int("organizationId").notNull().default(1),
 
-    clientName: varchar("clientName", { length: 100 }).notNull(),
-    phone: varchar("phone", { length: 30 }).notNull(),
+    clientName: text("clientName").notNull(),
+    clientNameHash: varchar("clientNameHash", { length: 64 }),
+
+    phone: text("phone").notNull(),
+    phoneHash: varchar("phoneHash", { length: 64 }),
+    phoneLast4: varchar("phoneLast4", { length: 4 }),
 
     course: varchar("course", { length: 200 }).notNull(),
 
@@ -489,17 +636,17 @@ export const students = mysqlTable(
     }),
 
     subjectCount: int("subjectCount"),
-
     paymentDate: date("paymentDate"),
 
     institution: varchar("institution", { length: 200 }),
     institutionId: int("institutionId"),
 
     totalSemesters: int("totalSemesters"),
-studentLoginId: varchar("studentLoginId", { length: 100 }),
+
+    // 학생이 사용하는 교육원 계정 아이디라면 암호화
+    studentLoginId: text("studentLoginId"),
 
     assigneeId: int("assigneeId").notNull(),
-
     consultationId: int("consultationId"),
 
     approvalStatus: mysqlEnum("approvalStatus", [
@@ -513,9 +660,10 @@ studentLoginId: varchar("studentLoginId", { length: 100 }),
     approvedAt: datetime("approvedAt"),
     rejectedAt: datetime("rejectedAt"),
 
-    address: varchar("address", { length: 255 }),
-    detailAddress: varchar("detailAddress", { length: 255 }),
+    address: text("address"),
+    detailAddress: text("detailAddress"),
 
+    // 거리 검색용 좌표는 평문 유지
     latitude: decimal("latitude", {
       precision: 10,
       scale: 7,
@@ -553,6 +701,21 @@ studentLoginId: varchar("studentLoginId", { length: 100 }),
       table.organizationId,
       table.status
     ),
+
+    orgPhoneHashIdx: index("idx_students_org_phone_hash").on(
+      table.organizationId,
+      table.phoneHash
+    ),
+
+    orgPhoneLast4Idx: index("idx_students_org_phone_last4").on(
+      table.organizationId,
+      table.phoneLast4
+    ),
+
+    orgClientNameHashIdx: index("idx_students_org_client_name_hash").on(
+      table.organizationId,
+      table.clientNameHash
+    ),
   })
 );
 
@@ -576,8 +739,13 @@ export const studentAuditLogs = mysqlTable("student_audit_logs", {
   diffJson: json("diffJson"),
 
   actorUserId: int("actorUserId"),
-  actorName: varchar("actorName", { length: 100 }),
-  actorRole: varchar("actorRole", { length: 50 }),
+
+// 작업자 이름 암호문 저장
+actorName: text("actorName"),
+
+actorRole: varchar("actorRole", {
+  length: 50,
+}),
 
   ipAddress: varchar("ipAddress", { length: 100 }),
   userAgent: text("userAgent"),
@@ -601,8 +769,14 @@ export const emailVerificationCodes = mysqlTable(
       .notNull()
       .default(1),
 
-    email: varchar("email", { length: 255 })
-      .notNull(),
+    // 인증 대상 이메일 암호문
+email: text("email")
+  .notNull(),
+
+// 정규화된 이메일 HMAC-SHA256
+emailHash: varchar("emailHash", {
+  length: 64,
+}),
 
     purpose: mysqlEnum("purpose", [
       "find_id",
@@ -637,8 +811,12 @@ export const emailVerificationCodes = mysqlTable(
     orgIdx: index("idx_email_verification_org")
       .on(table.organizationId),
 
-    emailIdx: index("idx_email_verification_email")
-      .on(table.email),
+    orgEmailHashIdx: index(
+  "idx_email_verification_org_email_hash"
+).on(
+  table.organizationId,
+  table.emailHash
+),
 
     purposeIdx: index("idx_email_verification_purpose")
       .on(table.purpose),
@@ -1379,13 +1557,43 @@ organizationId: int("organizationId").notNull().default(1),
   studentId: int("studentId").notNull(),
   assigneeId: int("assigneeId").notNull(),
 
-  clientName: varchar("clientName", { length: 100 }).notNull(),
-  phone: varchar("phone", { length: 30 }).notNull(),
-  assigneeName: varchar("assigneeName", { length: 100 }),
+  // 학생 이름 암호문
+clientName: text("clientName")
+  .notNull(),
 
-  privateCertificateMasterId: int("privateCertificateMasterId"),
-  certificateName: varchar("certificateName", { length: 255 }).notNull(),
-  inputAddress: varchar("inputAddress", { length: 255 }),
+// 학생 이름 정확한 검색용 HMAC
+clientNameHash: varchar("clientNameHash", {
+  length: 64,
+}),
+
+// 학생 전화번호 암호문
+phone: text("phone")
+  .notNull(),
+
+// 전화번호 정확한 검색용 HMAC
+phoneHash: varchar("phoneHash", {
+  length: 64,
+}),
+
+// 관리화면 및 뒷자리 검색용
+phoneLast4: varchar("phoneLast4", {
+  length: 4,
+}),
+
+// 담당자 이름도 개인정보이므로 암호문
+assigneeName: text("assigneeName"),
+
+privateCertificateMasterId: int(
+  "privateCertificateMasterId"
+),
+
+certificateName: varchar("certificateName", {
+  length: 255,
+}).notNull(),
+
+// 신청자 주소 암호문
+inputAddress: text("inputAddress"),
+detailAddress: text("detailAddress"),
   note: text("note"),
 
   requestStatus: mysqlEnum("requestStatus", [
@@ -1452,6 +1660,27 @@ organizationId: int("organizationId").notNull().default(1),
       table.studentId
     ),
 
+orgPhoneHashIdx: index(
+  "idx_private_cert_org_phone_hash"
+).on(
+  table.organizationId,
+  table.phoneHash
+),
+
+orgPhoneLast4Idx: index(
+  "idx_private_cert_org_phone_last4"
+).on(
+  table.organizationId,
+  table.phoneLast4
+),
+
+orgClientNameHashIdx: index(
+  "idx_private_cert_org_client_name_hash"
+).on(
+  table.organizationId,
+  table.clientNameHash
+),
+
     orgAssigneeIdx: index("idx_private_cert_org_assignee").on(
       table.organizationId,
       table.assigneeId
@@ -1481,15 +1710,44 @@ organizationId: int("organizationId").notNull().default(1),
   semesterId: int("semesterId"),
   assigneeId: int("assigneeId").notNull(),
 
-  clientName: varchar("clientName", { length: 100 }).notNull(),
-  phone: varchar("phone", { length: 30 }).notNull(),
-  assigneeName: varchar("assigneeName", { length: 100 }),
-  managerName: varchar("managerName", { length: 100 }),
+  // 학생 이름 암호문
+clientName: text("clientName")
+  .notNull(),
 
-  course: varchar("course", { length: 200 }).notNull(),
+// 학생 이름 정확한 검색용 HMAC
+clientNameHash: varchar("clientNameHash", {
+  length: 64,
+}),
 
-    inputAddress: varchar("inputAddress", { length: 255 }),
-  detailAddress: varchar("detailAddress", { length: 255 }),
+// 학생 전화번호 암호문
+phone: text("phone")
+  .notNull(),
+
+// 전화번호 정확한 검색용 HMAC
+phoneHash: varchar("phoneHash", {
+  length: 64,
+}),
+
+// 전화번호 마지막 네 자리
+phoneLast4: varchar("phoneLast4", {
+  length: 4,
+}),
+
+// 담당자 이름 암호문
+assigneeName: text("assigneeName"),
+
+// 실습센터 처리 담당자 이름 암호문
+managerName: text("managerName"),
+
+course: varchar("course", {
+  length: 200,
+}).notNull(),
+
+// 학생이 입력한 주소 암호문
+inputAddress: text("inputAddress"),
+
+// 학생 상세주소 암호문
+detailAddress: text("detailAddress"),
 
   practiceSemesterLabel: varchar("practiceSemesterLabel", {
     length: 50,
@@ -1597,6 +1855,27 @@ organizationId: int("organizationId").notNull().default(1),
       table.organizationId,
       table.paymentStatus
     ),
+
+orgPhoneHashIdx: index(
+  "idx_practice_support_org_phone_hash"
+).on(
+  table.organizationId,
+  table.phoneHash
+),
+
+orgPhoneLast4Idx: index(
+  "idx_practice_support_org_phone_last4"
+).on(
+  table.organizationId,
+  table.phoneLast4
+),
+
+orgClientNameHashIdx: index(
+  "idx_practice_support_org_client_name_hash"
+).on(
+  table.organizationId,
+  table.clientNameHash
+),
   })
 );
 
@@ -2075,19 +2354,48 @@ export type InsertPracticeMasterSyncHistory =
   typeof practiceMasterSyncHistory.$inferInsert;
 
 // ─── Job Support Requests (취업지원센터) ────────────────────────────
-export const jobSupportRequests = mysqlTable("job_support_requests", {
+export const jobSupportRequests = mysqlTable(
+  "job_support_requests",
+  {
   id: int("id").autoincrement().primaryKey(),
 organizationId: int("organizationId").notNull().default(1),
 
   studentId: int("studentId").notNull(),
   assigneeId: int("assigneeId").notNull(),
 
-  clientName: varchar("clientName", { length: 100 }).notNull(),
-  phone: varchar("phone", { length: 30 }).notNull(),
-  assigneeName: varchar("assigneeName", { length: 100 }),
+  // 학생 이름 암호문
+clientName: text("clientName")
+  .notNull(),
 
-  inputAddress: varchar("inputAddress", { length: 255 }),
-  desiredArea: varchar("desiredArea", { length: 255 }),
+// 학생 이름 정확한 검색용 HMAC
+clientNameHash: varchar("clientNameHash", {
+  length: 64,
+}),
+
+// 학생 전화번호 암호문
+phone: text("phone")
+  .notNull(),
+
+// 전화번호 정확한 검색용 HMAC
+phoneHash: varchar("phoneHash", {
+  length: 64,
+}),
+
+// 관리화면 및 뒷자리 검색용
+phoneLast4: varchar("phoneLast4", {
+  length: 4,
+}),
+
+// 담당 직원 이름 암호문
+assigneeName: text("assigneeName"),
+
+// 학생 주소 암호문
+inputAddress: text("inputAddress"),
+
+// 희망지역은 지역 단위 정보이므로 평문 유지
+desiredArea: varchar("desiredArea", {
+  length: 255,
+}),
 
   includeWelfareCenter: boolean("includeWelfareCenter")
     .notNull()
@@ -2140,9 +2448,60 @@ organizationId: int("organizationId").notNull().default(1),
   attachmentName: varchar("attachmentName", { length: 255 }),
   attachmentUrl: varchar("attachmentUrl", { length: 1000 }),
 
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+  createdAt: timestamp("createdAt")
+  .defaultNow()
+  .notNull(),
+
+updatedAt: timestamp("updatedAt")
+  .defaultNow()
+  .onUpdateNow()
+  .notNull(),
+  },
+  (table) => ({
+    orgStudentIdx: index(
+      "idx_job_support_org_student"
+    ).on(
+      table.organizationId,
+      table.studentId
+    ),
+
+    orgAssigneeIdx: index(
+      "idx_job_support_org_assignee"
+    ).on(
+      table.organizationId,
+      table.assigneeId
+    ),
+
+    orgStatusIdx: index(
+      "idx_job_support_org_status"
+    ).on(
+      table.organizationId,
+      table.supportStatus,
+      table.paymentStatus
+    ),
+
+    orgPhoneHashIdx: index(
+      "idx_job_support_org_phone_hash"
+    ).on(
+      table.organizationId,
+      table.phoneHash
+    ),
+
+    orgPhoneLast4Idx: index(
+      "idx_job_support_org_phone_last4"
+    ).on(
+      table.organizationId,
+      table.phoneLast4
+    ),
+
+    orgClientNameHashIdx: index(
+      "idx_job_support_org_client_name_hash"
+    ).on(
+      table.organizationId,
+      table.clientNameHash
+    ),
+  })
+);
 
 export type JobSupportRequest = typeof jobSupportRequests.$inferSelect;
 export type InsertJobSupportRequest = typeof jobSupportRequests.$inferInsert;

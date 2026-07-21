@@ -130,6 +130,16 @@ import { throwAppError } from "./_core/appError";
 import { ERROR_CODES } from "./_core/errorCodes";
 
 import { FEATURE_FLAGS } from "./_core/featureFlags";
+import {
+  encryptPersonalData,
+  decryptPersonalData,
+  createEmailHash,
+  createNameHash,
+  createPhoneHash,
+  createBankAccountHash,
+  getPhoneLast4,
+  getBankAccountLast4,
+} from "./security/crypto";
 
 
 async function geocodeAddressServer(address: string) {
@@ -314,11 +324,720 @@ export async function getStudentById(
     )
     .limit(1);
 
-  return result[0];
+  return result[0]
+  ? decryptStudentPersonalData(result[0])
+  : undefined;
 }
 
 function getInsertId(result: any) {
   return result?.insertId ?? result?.[0]?.insertId ?? null;
+}
+
+function decryptUserPersonalData<T extends Record<string, any>>(
+  row: T | null | undefined
+): T | null | undefined {
+  if (!row) {
+    return row;
+  }
+
+  return {
+    ...row,
+
+    name:
+      row.name === null || row.name === undefined
+        ? row.name
+        : decryptPersonalData(row.name),
+
+    email:
+      row.email === null || row.email === undefined
+        ? row.email
+        : decryptPersonalData(row.email),
+
+    phone:
+      row.phone === null || row.phone === undefined
+        ? row.phone
+        : decryptPersonalData(row.phone),
+
+    bankAccount:
+      row.bankAccount === null || row.bankAccount === undefined
+        ? row.bankAccount
+        : decryptPersonalData(row.bankAccount),
+  };
+}
+
+function decryptConsultationPersonalData<T extends Record<string, any>>(
+  row: T | null | undefined
+): T | null | undefined {
+  if (!row) {
+    return row;
+  }
+
+  return {
+    ...row,
+
+    clientName:
+      row.clientName === null || row.clientName === undefined
+        ? row.clientName
+        : decryptPersonalData(row.clientName),
+
+    phone:
+      row.phone === null || row.phone === undefined
+        ? row.phone
+        : decryptPersonalData(row.phone),
+  };
+}
+
+function prepareConsultationPersonalData<
+  T extends Record<string, any>
+>(data: T): T & Record<string, any> {
+  const nextData: Record<string, any> = {
+    ...data,
+  };
+
+  if (data.clientName !== undefined) {
+    const plainClientName =
+      data.clientName === null
+        ? null
+        : String(data.clientName).trim() || null;
+
+    nextData.clientName = plainClientName
+      ? encryptPersonalData(plainClientName)
+      : null;
+
+    nextData.clientNameHash = plainClientName
+      ? createNameHash(plainClientName)
+      : null;
+  }
+
+  if (data.phone !== undefined) {
+    const plainPhone =
+      data.phone === null
+        ? null
+        : String(data.phone).replace(/\D/g, "") || null;
+
+    nextData.phone = plainPhone
+      ? encryptPersonalData(plainPhone)
+      : null;
+
+    nextData.phoneHash = plainPhone
+      ? createPhoneHash(plainPhone)
+      : null;
+
+    nextData.phoneLast4 = plainPhone
+      ? getPhoneLast4(plainPhone)
+      : null;
+  }
+
+  return nextData as T & Record<string, any>;
+}
+
+function decryptStudentPersonalData<T extends Record<string, any>>(
+  row: T | null | undefined
+): T | null | undefined {
+  if (!row) {
+    return row;
+  }
+
+  return {
+    ...row,
+
+    clientName:
+      row.clientName === null || row.clientName === undefined
+        ? row.clientName
+        : decryptPersonalData(row.clientName),
+
+    phone:
+      row.phone === null || row.phone === undefined
+        ? row.phone
+        : decryptPersonalData(row.phone),
+
+    address:
+      row.address === null || row.address === undefined
+        ? row.address
+        : decryptPersonalData(row.address),
+
+    detailAddress:
+      row.detailAddress === null ||
+      row.detailAddress === undefined
+        ? row.detailAddress
+        : decryptPersonalData(row.detailAddress),
+
+    studentLoginId:
+      row.studentLoginId === null ||
+      row.studentLoginId === undefined
+        ? row.studentLoginId
+        : decryptPersonalData(row.studentLoginId),
+  };
+}
+
+function prepareStudentPersonalData<
+  T extends Record<string, any>
+>(data: T): T & Record<string, any> {
+  const nextData: Record<string, any> = {
+    ...data,
+  };
+
+  if (data.clientName !== undefined) {
+    const plainClientName =
+      data.clientName === null
+        ? null
+        : String(data.clientName).trim() || null;
+
+    nextData.clientName = plainClientName
+      ? encryptPersonalData(plainClientName)
+      : null;
+
+    nextData.clientNameHash = plainClientName
+      ? createNameHash(plainClientName)
+      : null;
+  }
+
+  if (data.phone !== undefined) {
+    const plainPhone =
+      data.phone === null
+        ? null
+        : String(data.phone).replace(/\D/g, "") || null;
+
+    nextData.phone = plainPhone
+      ? encryptPersonalData(plainPhone)
+      : null;
+
+    nextData.phoneHash = plainPhone
+      ? createPhoneHash(plainPhone)
+      : null;
+
+    nextData.phoneLast4 = plainPhone
+      ? getPhoneLast4(plainPhone)
+      : null;
+  }
+
+  if (data.address !== undefined) {
+    const plainAddress =
+      data.address === null
+        ? null
+        : String(data.address).trim() || null;
+
+    nextData.address = plainAddress
+      ? encryptPersonalData(plainAddress)
+      : null;
+  }
+
+  if (data.detailAddress !== undefined) {
+    const plainDetailAddress =
+      data.detailAddress === null
+        ? null
+        : String(data.detailAddress).trim() || null;
+
+    nextData.detailAddress = plainDetailAddress
+      ? encryptPersonalData(plainDetailAddress)
+      : null;
+  }
+
+  if (data.studentLoginId !== undefined) {
+    const plainStudentLoginId =
+      data.studentLoginId === null
+        ? null
+        : String(data.studentLoginId).trim() || null;
+
+    nextData.studentLoginId = plainStudentLoginId
+      ? encryptPersonalData(plainStudentLoginId)
+      : null;
+  }
+
+  return nextData as T & Record<string, any>;
+}
+
+function decryptStudentJoinedRow<T extends Record<string, any>>(
+  row: T
+): T & Record<string, any> {
+  return {
+    ...row,
+
+    clientName:
+      row.clientName === null || row.clientName === undefined
+        ? row.clientName
+        : decryptPersonalData(row.clientName),
+
+    phone:
+      row.phone === null || row.phone === undefined
+        ? row.phone
+        : decryptPersonalData(row.phone),
+
+    address:
+      row.address === null || row.address === undefined
+        ? row.address
+        : decryptPersonalData(row.address),
+
+    detailAddress:
+      row.detailAddress === null ||
+      row.detailAddress === undefined
+        ? row.detailAddress
+        : decryptPersonalData(row.detailAddress),
+
+    studentLoginId:
+      row.studentLoginId === null ||
+      row.studentLoginId === undefined
+        ? row.studentLoginId
+        : decryptPersonalData(row.studentLoginId),
+
+    assigneeName:
+      row.assigneeName === null ||
+      row.assigneeName === undefined
+        ? row.assigneeName
+        : decryptPersonalData(row.assigneeName),
+  };
+}
+
+function decryptPracticeSupportPersonalData<
+  T extends Record<string, any>
+>(
+  row: T | null | undefined
+): T | null | undefined {
+  if (!row) {
+    return row;
+  }
+
+  return {
+    ...row,
+
+    clientName:
+      row.clientName === null ||
+      row.clientName === undefined
+        ? row.clientName
+        : decryptPersonalData(row.clientName),
+
+    phone:
+      row.phone === null ||
+      row.phone === undefined
+        ? row.phone
+        : decryptPersonalData(row.phone),
+
+    inputAddress:
+      row.inputAddress === null ||
+      row.inputAddress === undefined
+        ? row.inputAddress
+        : decryptPersonalData(row.inputAddress),
+
+    detailAddress:
+      row.detailAddress === null ||
+      row.detailAddress === undefined
+        ? row.detailAddress
+        : decryptPersonalData(row.detailAddress),
+
+    assigneeName:
+      row.assigneeName === null ||
+      row.assigneeName === undefined
+        ? row.assigneeName
+        : decryptPersonalData(row.assigneeName),
+
+    managerName:
+      row.managerName === null ||
+      row.managerName === undefined
+        ? row.managerName
+        : decryptPersonalData(row.managerName),
+
+    studentClientName:
+      row.studentClientName === null ||
+      row.studentClientName === undefined
+        ? row.studentClientName
+        : decryptPersonalData(row.studentClientName),
+
+    studentPhone:
+      row.studentPhone === null ||
+      row.studentPhone === undefined
+        ? row.studentPhone
+        : decryptPersonalData(row.studentPhone),
+
+    studentAddress:
+      row.studentAddress === null ||
+      row.studentAddress === undefined
+        ? row.studentAddress
+        : decryptPersonalData(row.studentAddress),
+
+    studentDetailAddress:
+      row.studentDetailAddress === null ||
+      row.studentDetailAddress === undefined
+        ? row.studentDetailAddress
+        : decryptPersonalData(row.studentDetailAddress),
+
+    userName:
+      row.userName === null ||
+      row.userName === undefined
+        ? row.userName
+        : decryptPersonalData(row.userName),
+  };
+}
+
+function preparePracticeSupportPersonalData<
+  T extends Record<string, any>
+>(data: T): T & Record<string, any> {
+  const nextData: Record<string, any> = {
+    ...data,
+  };
+
+  if (data.clientName !== undefined) {
+    const plainValue =
+      data.clientName === null
+        ? null
+        : String(data.clientName).trim() || null;
+
+    nextData.clientName = plainValue
+      ? encryptPersonalData(plainValue)
+      : null;
+  }
+
+  if (data.phone !== undefined) {
+    const plainValue =
+      data.phone === null
+        ? null
+        : String(data.phone).replace(/\D/g, "") || null;
+
+    nextData.phone = plainValue
+      ? encryptPersonalData(plainValue)
+      : null;
+  }
+
+  if (data.inputAddress !== undefined) {
+    const plainValue =
+      data.inputAddress === null
+        ? null
+        : String(data.inputAddress).trim() || null;
+
+    nextData.inputAddress = plainValue
+      ? encryptPersonalData(plainValue)
+      : null;
+  }
+
+  if (data.detailAddress !== undefined) {
+    const plainValue =
+      data.detailAddress === null
+        ? null
+        : String(data.detailAddress).trim() || null;
+
+    nextData.detailAddress = plainValue
+      ? encryptPersonalData(plainValue)
+      : null;
+  }
+
+  if (data.assigneeName !== undefined) {
+    const plainValue =
+      data.assigneeName === null
+        ? null
+        : String(data.assigneeName).trim() || null;
+
+    nextData.assigneeName = plainValue
+      ? encryptPersonalData(plainValue)
+      : null;
+  }
+
+  if (data.managerName !== undefined) {
+    const plainValue =
+      data.managerName === null
+        ? null
+        : String(data.managerName).trim() || null;
+
+    nextData.managerName = plainValue
+      ? encryptPersonalData(plainValue)
+      : null;
+  }
+
+  return nextData as T & Record<string, any>;
+}
+
+function decryptPrivateCertificatePersonalData<
+  T extends Record<string, any>
+>(
+  row: T | null | undefined
+): T | null | undefined {
+  if (!row) {
+    return row;
+  }
+
+  return {
+    ...row,
+
+    clientName:
+      row.clientName === null ||
+      row.clientName === undefined
+        ? row.clientName
+        : decryptPersonalData(row.clientName),
+
+    phone:
+      row.phone === null ||
+      row.phone === undefined
+        ? row.phone
+        : decryptPersonalData(row.phone),
+
+    inputAddress:
+      row.inputAddress === null ||
+      row.inputAddress === undefined
+        ? row.inputAddress
+        : decryptPersonalData(row.inputAddress),
+
+    assigneeName:
+      row.assigneeName === null ||
+      row.assigneeName === undefined
+        ? row.assigneeName
+        : decryptPersonalData(row.assigneeName),
+
+    studentClientName:
+      row.studentClientName === null ||
+      row.studentClientName === undefined
+        ? row.studentClientName
+        : decryptPersonalData(row.studentClientName),
+
+    studentPhone:
+      row.studentPhone === null ||
+      row.studentPhone === undefined
+        ? row.studentPhone
+        : decryptPersonalData(row.studentPhone),
+
+    studentAddress:
+      row.studentAddress === null ||
+      row.studentAddress === undefined
+        ? row.studentAddress
+        : decryptPersonalData(row.studentAddress),
+
+    userName:
+      row.userName === null ||
+      row.userName === undefined
+        ? row.userName
+        : decryptPersonalData(row.userName),
+  };
+}
+
+function encryptStudentAuditJson(value: any) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return encryptPersonalData(
+    JSON.stringify(value)
+  );
+}
+
+function decryptStudentAuditJson(value: any) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === "object") {
+    return value;
+  }
+
+  try {
+    const decrypted =
+      decryptPersonalData(String(value));
+
+    return JSON.parse(decrypted);
+  } catch {
+    return value;
+  }
+}
+
+function decryptStudentAuditLogPersonalData<
+  T extends Record<string, any>
+>(
+  row: T | null | undefined
+): T | null | undefined {
+  if (!row) {
+    return row;
+  }
+
+  return {
+    ...row,
+
+    actorName:
+      row.actorName === null ||
+      row.actorName === undefined
+        ? row.actorName
+        : decryptPersonalData(row.actorName),
+
+    beforeJson:
+      decryptStudentAuditJson(
+        row.beforeJson
+      ),
+
+    afterJson:
+      decryptStudentAuditJson(
+        row.afterJson
+      ),
+
+    diffJson:
+      decryptStudentAuditJson(
+        row.diffJson
+      ),
+  };
+}
+
+function preparePrivateCertificatePersonalData<
+  T extends Record<string, any>
+>(data: T): T & Record<string, any> {
+  const nextData: Record<string, any> = {
+    ...data,
+  };
+
+  if (data.clientName !== undefined) {
+  const plainValue =
+    data.clientName === null
+      ? null
+      : String(data.clientName).trim() || null;
+
+  nextData.clientName = plainValue
+    ? encryptPersonalData(plainValue)
+    : null;
+
+  nextData.clientNameHash = plainValue
+    ? createNameHash(plainValue)
+    : null;
+}
+
+ if (data.phone !== undefined) {
+  const plainValue =
+    data.phone === null
+      ? null
+      : String(data.phone).replace(/\D/g, "") || null;
+
+  nextData.phone = plainValue
+    ? encryptPersonalData(plainValue)
+    : null;
+
+  nextData.phoneHash = plainValue
+    ? createPhoneHash(plainValue)
+    : null;
+
+  nextData.phoneLast4 = plainValue
+    ? getPhoneLast4(plainValue)
+    : null;
+}
+
+  if (data.inputAddress !== undefined) {
+    const plainValue =
+      data.inputAddress === null
+        ? null
+        : String(data.inputAddress).trim() || null;
+
+    nextData.inputAddress = plainValue
+      ? encryptPersonalData(plainValue)
+      : null;
+  }
+
+  if (data.assigneeName !== undefined) {
+    const plainValue =
+      data.assigneeName === null
+        ? null
+        : String(data.assigneeName).trim() || null;
+
+    nextData.assigneeName = plainValue
+      ? encryptPersonalData(plainValue)
+      : null;
+  }
+
+  return nextData as T & Record<string, any>;
+}
+
+function decryptJobSupportPersonalData<
+  T extends Record<string, any>
+>(
+  row: T | null | undefined
+): T | null | undefined {
+  if (!row) {
+    return row;
+  }
+
+  return {
+    ...row,
+
+    clientName:
+      row.clientName === null ||
+      row.clientName === undefined
+        ? row.clientName
+        : decryptPersonalData(row.clientName),
+
+    phone:
+      row.phone === null ||
+      row.phone === undefined
+        ? row.phone
+        : decryptPersonalData(row.phone),
+
+    assigneeName:
+      row.assigneeName === null ||
+      row.assigneeName === undefined
+        ? row.assigneeName
+        : decryptPersonalData(row.assigneeName),
+
+    inputAddress:
+      row.inputAddress === null ||
+      row.inputAddress === undefined
+        ? row.inputAddress
+        : decryptPersonalData(row.inputAddress),
+  };
+}
+
+function prepareJobSupportPersonalData<
+  T extends Record<string, any>
+>(data: T): T & Record<string, any> {
+  const nextData: Record<string, any> = {
+    ...data,
+  };
+
+  if (data.clientName !== undefined) {
+    const plainValue =
+      data.clientName === null
+        ? null
+        : String(data.clientName).trim() || null;
+
+    nextData.clientName = plainValue
+      ? encryptPersonalData(plainValue)
+      : null;
+
+    nextData.clientNameHash = plainValue
+      ? createNameHash(plainValue)
+      : null;
+  }
+
+  if (data.phone !== undefined) {
+    const plainValue =
+      data.phone === null
+        ? null
+        : String(data.phone).replace(/\D/g, "") || null;
+
+    nextData.phone = plainValue
+      ? encryptPersonalData(plainValue)
+      : null;
+
+    nextData.phoneHash = plainValue
+      ? createPhoneHash(plainValue)
+      : null;
+
+    nextData.phoneLast4 = plainValue
+      ? getPhoneLast4(plainValue)
+      : null;
+  }
+
+  if (data.assigneeName !== undefined) {
+    const plainValue =
+      data.assigneeName === null
+        ? null
+        : String(data.assigneeName).trim() || null;
+
+    nextData.assigneeName = plainValue
+      ? encryptPersonalData(plainValue)
+      : null;
+  }
+
+  if (data.inputAddress !== undefined) {
+    const plainValue =
+      data.inputAddress === null
+        ? null
+        : String(data.inputAddress).trim() || null;
+
+    nextData.inputAddress = plainValue
+      ? encryptPersonalData(plainValue)
+      : null;
+  }
+
+  return nextData as T & Record<string, any>;
 }
 
 function normalizeSmsPhone(value: any) {
@@ -523,13 +1242,86 @@ organizationId: requireOrganizationId(params.organizationId),
   }
 }
 
+function decryptAuditLogPersonalData<
+  T extends Record<string, any>
+>(
+  row: T
+): T & Record<string, any> {
+  return {
+    ...row,
+
+    beforeJson:
+      row.beforeJson === null ||
+      row.beforeJson === undefined
+        ? row.beforeJson
+        : decryptPersonalData(
+            String(row.beforeJson)
+          ),
+
+    afterJson:
+      row.afterJson === null ||
+      row.afterJson === undefined
+        ? row.afterJson
+        : decryptPersonalData(
+            String(row.afterJson)
+          ),
+
+    memo:
+      row.memo === null ||
+      row.memo === undefined
+        ? row.memo
+        : decryptPersonalData(
+            String(row.memo)
+          ),
+  };
+}
+
 export async function createAuditLog(
   input: Omit<InsertAuditLog, "id" | "createdAt">
 ) {
   const db = await getDb();
   if (!db) return null;
 
-  const result: any = await db.insert(auditLogs).values(input as any);
+  const result: any =
+  await db
+    .insert(auditLogs)
+    .values({
+      ...input,
+
+      beforeJson:
+        (input as any).beforeJson === null ||
+        (input as any).beforeJson === undefined
+          ? null
+          : encryptPersonalData(
+              typeof (input as any).beforeJson ===
+                "string"
+                ? (input as any).beforeJson
+                : JSON.stringify(
+                    (input as any).beforeJson
+                  )
+            ),
+
+      afterJson:
+        (input as any).afterJson === null ||
+        (input as any).afterJson === undefined
+          ? null
+          : encryptPersonalData(
+              typeof (input as any).afterJson ===
+                "string"
+                ? (input as any).afterJson
+                : JSON.stringify(
+                    (input as any).afterJson
+                  )
+            ),
+
+      memo:
+        (input as any).memo === null ||
+        (input as any).memo === undefined
+          ? null
+          : encryptPersonalData(
+              String((input as any).memo)
+            ),
+    } as any);
   return getInsertId(result);
 }
 
@@ -570,12 +1362,18 @@ export async function listAuditLogs(params: {
   const whereExpr =
     conditions.length > 0 ? and(...conditions) : undefined;
 
-  return db
-    .select()
-    .from(auditLogs)
-    .where(whereExpr)
-    .orderBy(desc(auditLogs.createdAt))
-    .limit(limit);
+  const rows = await db
+  .select()
+  .from(auditLogs)
+  .where(whereExpr)
+  .orderBy(
+    desc(auditLogs.createdAt)
+  )
+  .limit(limit);
+
+return rows.map((row: any) =>
+  decryptAuditLogPersonalData(row)
+);
 }
 
 export async function createApiErrorLog(
@@ -651,10 +1449,38 @@ export async function createStudentAuditLog(
 
   const organizationId = requireOrganizationId((input as any).organizationId);
 
-  const result: any = await db.insert(studentAuditLogs).values({
-    ...input,
-    organizationId,
-  } as any);
+ const plainActorName =
+  (input as any).actorName === null ||
+  (input as any).actorName === undefined
+    ? null
+    : String((input as any).actorName).trim() || null;
+
+const result: any =
+  await db
+    .insert(studentAuditLogs)
+    .values({
+      ...input,
+      organizationId,
+
+      actorName: plainActorName
+        ? encryptPersonalData(plainActorName)
+        : null,
+
+      beforeJson:
+        encryptStudentAuditJson(
+          (input as any).beforeJson
+        ),
+
+      afterJson:
+        encryptStudentAuditJson(
+          (input as any).afterJson
+        ),
+
+      diffJson:
+        encryptStudentAuditJson(
+          (input as any).diffJson
+        ),
+    } as any);
 
   return getInsertId(result);
 }
@@ -670,17 +1496,29 @@ export async function listStudentAuditLogs(params: {
   const organizationId = requireOrganizationId(params.organizationId);
   const limit = Math.min(Math.max(Number(params.limit || 100), 1), 300);
 
-  return db
-    .select()
-    .from(studentAuditLogs)
-    .where(
-      and(
-        eq(studentAuditLogs.organizationId, organizationId),
-        eq(studentAuditLogs.studentId, Number(params.studentId))
+  const rows = await db
+  .select()
+  .from(studentAuditLogs)
+  .where(
+    and(
+      eq(
+        studentAuditLogs.organizationId,
+        organizationId
+      ),
+      eq(
+        studentAuditLogs.studentId,
+        Number(params.studentId)
       )
     )
-    .orderBy(desc(studentAuditLogs.createdAt))
-    .limit(limit);
+  )
+  .orderBy(
+    desc(studentAuditLogs.createdAt)
+  )
+  .limit(limit);
+
+return rows.map((row: any) =>
+  decryptStudentAuditLogPersonalData(row)
+);
 }
 
 export async function createEmailVerificationCode(
@@ -693,7 +1531,17 @@ export async function createEmailVerificationCode(
   500
 );
 
-  const result: any = await db.insert(emailVerificationCodes).values(input as any);
+  const normalizedEmail = String((input as any).email || "")
+  .trim()
+  .toLowerCase();
+
+const result: any = await db
+  .insert(emailVerificationCodes)
+  .values({
+    ...input,
+    email: encryptPersonalData(normalizedEmail),
+    emailHash: createEmailHash(normalizedEmail),
+  } as any);
   return getInsertId(result);
 }
 
@@ -713,7 +1561,10 @@ export async function getLatestEmailVerificationCode(params: {
     .where(
       and(
         eq(emailVerificationCodes.organizationId, organizationId),
-        eq(emailVerificationCodes.email, params.email.trim().toLowerCase()),
+        eq(
+  emailVerificationCodes.emailHash,
+  createEmailHash(params.email)
+),
         eq(emailVerificationCodes.purpose, params.purpose),
         sql`${emailVerificationCodes.usedAt} IS NULL`,
         sql`${emailVerificationCodes.expiresAt} > NOW()`
@@ -743,7 +1594,10 @@ export async function getRecentEmailVerificationCode(params: {
     .where(
       and(
         eq(emailVerificationCodes.organizationId, organizationId),
-        eq(emailVerificationCodes.email, params.email.trim().toLowerCase()),
+        eq(
+  emailVerificationCodes.emailHash,
+  createEmailHash(params.email)
+),
         eq(emailVerificationCodes.purpose, params.purpose),
         sql`${emailVerificationCodes.createdAt} > DATE_SUB(NOW(), INTERVAL ${seconds} SECOND)`
       )
@@ -765,12 +1619,13 @@ export async function countRecentEmailVerificationCodes(params: {
 
   const organizationId = requireOrganizationId(params.organizationId);
   const minutes = Number(params.minutes || 5);
+const emailHash = createEmailHash(params.email);
 
   const [rows] = await db.execute(sql`
     SELECT COUNT(*) as count
     FROM email_verification_codes
     WHERE organizationId = ${organizationId}
-      AND email = ${params.email.trim().toLowerCase()}
+      AND emailHash = ${emailHash}
       AND purpose = ${params.purpose}
       AND createdAt > DATE_SUB(NOW(), INTERVAL ${minutes} MINUTE)
   `);
@@ -819,23 +1674,40 @@ export async function findUsersByEmailForRecovery(params: {
 
   const organizationId = requireOrganizationId(params.organizationId);
 
-  return db
-    .select({
-      id: users.id,
-      username: users.username,
-      name: users.name,
-      email: users.email,
-      role: users.role,
-      isActive: users.isActive,
-    })
-    .from(users)
-    .where(
-      and(
-        eq(users.organizationId, organizationId),
-        eq(users.email, params.email.trim().toLowerCase()),
-        eq(users.isActive, true)
-      )
-    );
+  const rows = await db
+  .select({
+    id: users.id,
+    username: users.username,
+    name: users.name,
+    email: users.email,
+    role: users.role,
+    isActive: users.isActive,
+  })
+  .from(users)
+  .where(
+    and(
+      eq(users.organizationId, organizationId),
+      eq(
+        users.emailHash,
+        createEmailHash(params.email)
+      ),
+      eq(users.isActive, true)
+    )
+  );
+
+return rows.map((row) => ({
+  ...row,
+
+  name:
+    row.name === null || row.name === undefined
+      ? row.name
+      : decryptPersonalData(row.name),
+
+  email:
+    row.email === null || row.email === undefined
+      ? row.email
+      : decryptPersonalData(row.email),
+}));
 }
 
 export async function findUsersForIdRecovery(params: {
@@ -849,7 +1721,7 @@ export async function findUsersForIdRecovery(params: {
 
   const organizationId = requireOrganizationId(params.organizationId);
 
-  return db
+  const rows = await db
     .select({
       id: users.id,
       username: users.username,
@@ -863,12 +1735,40 @@ export async function findUsersForIdRecovery(params: {
     .where(
       and(
         eq(users.organizationId, organizationId),
-        eq(users.name, params.name.trim()),
-        eq(users.phone, params.phone.trim()),
-        eq(users.email, params.email.trim().toLowerCase()),
+        eq(
+  users.nameHash,
+  createNameHash(params.name)
+),
+eq(
+  users.phoneHash,
+  createPhoneHash(params.phone)
+),
+eq(
+  users.emailHash,
+  createEmailHash(params.email)
+),
         eq(users.isActive, true)
       )
     );
+
+return rows.map((row) => ({
+  ...row,
+
+  name:
+    row.name === null || row.name === undefined
+      ? row.name
+      : decryptPersonalData(row.name),
+
+  email:
+    row.email === null || row.email === undefined
+      ? row.email
+      : decryptPersonalData(row.email),
+
+  phone:
+    row.phone === null || row.phone === undefined
+      ? row.phone
+      : decryptPersonalData(row.phone),
+}));
 }
 
 export async function findUserForPasswordReset(params: {
@@ -888,15 +1788,26 @@ export async function findUserForPasswordReset(params: {
     .where(
       and(
         eq(users.organizationId, organizationId),
-        eq(users.name, params.name.trim()),
-        eq(users.username, params.username.trim()),
-        eq(users.email, params.email.trim().toLowerCase()),
+        eq(
+  users.nameHash,
+  createNameHash(params.name)
+),
+eq(
+  users.username,
+  params.username.trim()
+),
+eq(
+  users.emailHash,
+  createEmailHash(params.email)
+),
         eq(users.isActive, true)
       )
     )
     .limit(1);
 
-  return rows[0] || null;
+  return rows[0]
+  ? decryptUserPersonalData(rows[0])
+  : null;
 }
 
 // ==============================
@@ -3272,18 +4183,81 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
     const updateSet: Record<string, unknown> = {};
 
-    const textFields = ["name", "email", "phone", "loginMethod"] as const;
-    type TextField = (typeof textFields)[number];
+    if (user.name !== undefined) {
+  const plainName =
+    user.name === null
+      ? null
+      : String(user.name).trim();
 
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      (values as any)[field] = normalized;
-      updateSet[field] = normalized;
-    };
+  const encryptedName = plainName
+    ? encryptPersonalData(plainName)
+    : plainName;
 
-    textFields.forEach(assignNullable);
+  const nameHash = plainName
+    ? createNameHash(plainName)
+    : null;
+
+  (values as any).name = encryptedName;
+  (values as any).nameHash = nameHash;
+
+  updateSet.name = encryptedName;
+  updateSet.nameHash = nameHash;
+}
+
+if (user.email !== undefined) {
+  const plainEmail =
+    user.email === null
+      ? null
+      : String(user.email).trim().toLowerCase();
+
+  const encryptedEmail = plainEmail
+    ? encryptPersonalData(plainEmail)
+    : plainEmail;
+
+  const emailHash = plainEmail
+    ? createEmailHash(plainEmail)
+    : null;
+
+  (values as any).email = encryptedEmail;
+  (values as any).emailHash = emailHash;
+
+  updateSet.email = encryptedEmail;
+  updateSet.emailHash = emailHash;
+}
+
+if (user.phone !== undefined) {
+  const plainPhone =
+    user.phone === null
+      ? null
+      : String(user.phone).replace(/\D/g, "");
+
+  const encryptedPhone = plainPhone
+    ? encryptPersonalData(plainPhone)
+    : plainPhone;
+
+  const phoneHash = plainPhone
+    ? createPhoneHash(plainPhone)
+    : null;
+
+  const phoneLast4 = plainPhone
+    ? getPhoneLast4(plainPhone)
+    : null;
+
+  (values as any).phone = encryptedPhone;
+  (values as any).phoneHash = phoneHash;
+  (values as any).phoneLast4 = phoneLast4;
+
+  updateSet.phone = encryptedPhone;
+  updateSet.phoneHash = phoneHash;
+  updateSet.phoneLast4 = phoneLast4;
+}
+
+if (user.loginMethod !== undefined) {
+  const loginMethod = user.loginMethod ?? null;
+
+  (values as any).loginMethod = loginMethod;
+  updateSet.loginMethod = loginMethod;
+}
 
     if (user.lastSignedIn !== undefined) {
       values.lastSignedIn = user.lastSignedIn;
@@ -3317,21 +4291,31 @@ export async function getUserByOpenId(openId: string) {
     .where(eq(users.openId, openId))
     .limit(1);
 
-  return result.length > 0 ? result[0] : undefined;
+  return result.length > 0
+  ? decryptUserPersonalData(result[0])
+  : undefined;
 }
 
 export async function getAllUsers() {
   const db = await getDb();
   if (!db) return [];
 
-  return db
-    .select({
-      id: users.id,
-      displayNo: users.displayNo,
-      name: users.name,
-      role: users.role,
-    })
-    .from(users);
+ const rows = await db
+  .select({
+    id: users.id,
+    displayNo: users.displayNo,
+    name: users.name,
+    role: users.role,
+  })
+  .from(users);
+
+return rows.map((row) => ({
+  ...row,
+  name:
+    row.name === null || row.name === undefined
+      ? row.name
+      : decryptPersonalData(row.name),
+}));
 }
 
 export async function getAllUsersDetailed(params?: {
@@ -3401,7 +4385,35 @@ if (conditions.length > 0) {
   query = query.where(and(...conditions)) as any;
 }
 
-return query.orderBy(users.displayNo, users.id);
+const rows = await query.orderBy(
+  users.displayNo,
+  users.id
+);
+
+return rows.map((row: any) => ({
+  ...row,
+
+  name:
+    row.name === null || row.name === undefined
+      ? row.name
+      : decryptPersonalData(row.name),
+
+  email:
+    row.email === null || row.email === undefined
+      ? row.email
+      : decryptPersonalData(row.email),
+
+  phone:
+    row.phone === null || row.phone === undefined
+      ? row.phone
+      : decryptPersonalData(row.phone),
+
+  bankAccount:
+    row.bankAccount === null ||
+    row.bankAccount === undefined
+      ? row.bankAccount
+      : decryptPersonalData(row.bankAccount),
+}));
 }
 
 
@@ -3456,6 +4468,8 @@ export async function getUserPersonnelDetail(params: {
   const profile = (profileRows as any[])?.[0] || null;
   if (!profile) return null;
 
+const decryptedProfile = decryptUserPersonalData(profile);
+
   const [monthlyRows] = await db.execute(sql`
     SELECT
       DATE_FORMAT(occurredAt, '%Y-%m') AS month,
@@ -3504,10 +4518,10 @@ export async function getUserPersonnelDetail(params: {
   `);
 
   return {
-    profile,
-    monthlyRevenue: monthlyRows as any[],
-    totalRevenue: (totalRows as any[])?.[0] || null,
-  };
+  profile: decryptedProfile,
+  monthlyRevenue: monthlyRows as any[],
+  totalRevenue: (totalRows as any[])?.[0] || null,
+};
 }
 
 // ─── Branding Settings ──────────────────────────────────────────────
@@ -4070,20 +5084,70 @@ organizationId?: number;
   }
 
   const displayNo = await getNextUserDisplayNo();
+const plainName = String(data.name || "").trim();
+
+const plainEmail =
+  data.email === null || data.email === undefined
+    ? null
+    : String(data.email).trim().toLowerCase() || null;
+
+const plainPhone =
+  data.phone === null || data.phone === undefined
+    ? null
+    : String(data.phone).replace(/\D/g, "") || null;
+
+const plainBankAccount =
+  data.bankAccount === null || data.bankAccount === undefined
+    ? null
+    : String(data.bankAccount).replace(/\D/g, "") || null;
 
   const result = await db.insert(users).values({
     displayNo,
     openId: normalizedUsername,
 username: normalizedUsername,
     passwordHash: data.passwordHash ?? null,
-    name: data.name,
-    email: data.email?.trim().toLowerCase() || null,
-    phone: data.phone ?? null,
+    name: plainName
+  ? encryptPersonalData(plainName)
+  : null,
+
+nameHash: plainName
+  ? createNameHash(plainName)
+  : null,
+
+email: plainEmail
+  ? encryptPersonalData(plainEmail)
+  : null,
+
+emailHash: plainEmail
+  ? createEmailHash(plainEmail)
+  : null,
+
+phone: plainPhone
+  ? encryptPersonalData(plainPhone)
+  : null,
+
+phoneHash: plainPhone
+  ? createPhoneHash(plainPhone)
+  : null,
+
+phoneLast4: plainPhone
+  ? getPhoneLast4(plainPhone)
+  : null,
 birthday: data.birthday ?? null,
 role: data.role,
 organizationId: data.organizationId ?? 1,
     bankName: data.bankName ?? null,
-    bankAccount: data.bankAccount ?? null,
+    bankAccount: plainBankAccount
+  ? encryptPersonalData(plainBankAccount)
+  : null,
+
+bankAccountHash: plainBankAccount
+  ? createBankAccountHash(plainBankAccount)
+  : null,
+
+bankAccountLast4: plainBankAccount
+  ? getBankAccountLast4(plainBankAccount)
+  : null,
     loginMethod: data.loginMethod ?? "manual",
     isActive: data.isActive ?? true,
   } as any);
@@ -4105,7 +5169,9 @@ export async function getUserByUsername(username: string) {
     .where(eq(users.username, normalizedUsername))
     .limit(1);
 
-  return rows[0] ?? null;
+  return rows[0]
+  ? decryptUserPersonalData(rows[0])
+  : null;
 }
 
 export async function updateUserAccount(
@@ -4132,13 +5198,77 @@ export async function updateUserAccount(
 
   if (!data || Object.keys(data).length === 0) return;
 
-const nextData = {
+const nextData: Record<string, any> = {
   ...data,
-  email:
-    data.email === undefined
-      ? undefined
-      : data.email?.trim().toLowerCase() || null,
 };
+
+if (data.name !== undefined) {
+  const plainName =
+    data.name === null
+      ? null
+      : String(data.name).trim() || null;
+
+  nextData.name = plainName
+    ? encryptPersonalData(plainName)
+    : null;
+
+  nextData.nameHash = plainName
+    ? createNameHash(plainName)
+    : null;
+}
+
+if (data.email !== undefined) {
+  const plainEmail =
+    data.email === null
+      ? null
+      : String(data.email).trim().toLowerCase() || null;
+
+  nextData.email = plainEmail
+    ? encryptPersonalData(plainEmail)
+    : null;
+
+  nextData.emailHash = plainEmail
+    ? createEmailHash(plainEmail)
+    : null;
+}
+
+if (data.phone !== undefined) {
+  const plainPhone =
+    data.phone === null
+      ? null
+      : String(data.phone).replace(/\D/g, "") || null;
+
+  nextData.phone = plainPhone
+    ? encryptPersonalData(plainPhone)
+    : null;
+
+  nextData.phoneHash = plainPhone
+    ? createPhoneHash(plainPhone)
+    : null;
+
+  nextData.phoneLast4 = plainPhone
+    ? getPhoneLast4(plainPhone)
+    : null;
+}
+
+if (data.bankAccount !== undefined) {
+  const plainBankAccount =
+    data.bankAccount === null
+      ? null
+      : String(data.bankAccount).replace(/\D/g, "") || null;
+
+  nextData.bankAccount = plainBankAccount
+    ? encryptPersonalData(plainBankAccount)
+    : null;
+
+  nextData.bankAccountHash = plainBankAccount
+    ? createBankAccountHash(plainBankAccount)
+    : null;
+
+  nextData.bankAccountLast4 = plainBankAccount
+    ? getBankAccountLast4(plainBankAccount)
+    : null;
+}
 
   await db
     .update(users)
@@ -4269,7 +5399,7 @@ export async function listConsultations(
     .from(consultations);
 
 if (params?.assigneeIds?.length) {
-  return baseQuery
+  const rows = await baseQuery
     .where(
       and(
         eq(consultations.organizationId, organizationId),
@@ -4278,10 +5408,14 @@ if (params?.assigneeIds?.length) {
       )
     )
     .orderBy(desc(consultations.createdAt));
+
+  return rows.map((row) =>
+    decryptConsultationPersonalData(row)
+  );
 }
 
-  if (assigneeId) {
-  return baseQuery
+ if (assigneeId) {
+  const rows = await baseQuery
     .where(
       and(
         eq(consultations.organizationId, organizationId),
@@ -4290,9 +5424,13 @@ if (params?.assigneeIds?.length) {
       )
     )
     .orderBy(desc(consultations.createdAt));
+
+  return rows.map((row) =>
+    decryptConsultationPersonalData(row)
+  );
 }
 
-return baseQuery
+const rows = await baseQuery
   .where(
     and(
       eq(consultations.organizationId, organizationId),
@@ -4300,6 +5438,10 @@ return baseQuery
     )
   )
   .orderBy(desc(consultations.createdAt));
+
+return rows.map((row) =>
+  decryptConsultationPersonalData(row)
+);
 }
 
 export async function getConsultation(
@@ -4325,7 +5467,9 @@ export async function getConsultation(
     )
     .limit(1);
 
-  return result[0];
+  return result[0]
+  ? decryptConsultationPersonalData(result[0])
+  : undefined;
 }
 
 export async function createConsultation(data: InsertConsultation) {
@@ -4336,7 +5480,11 @@ export async function createConsultation(data: InsertConsultation) {
   500
 );
 
-  const result: any = await db.insert(consultations).values(data);
+  const preparedData = prepareConsultationPersonalData(data);
+
+const result: any = await db
+  .insert(consultations)
+  .values(preparedData as any);
   const insertId = getInsertId(result);
   return insertId;
 }
@@ -4350,7 +5498,13 @@ export async function bulkCreateConsultations(dataList: InsertConsultation[]) {
 );
   if (dataList.length === 0) return [];
 
-  const result = await db.insert(consultations).values(dataList);
+  const preparedDataList = dataList.map((data) =>
+  prepareConsultationPersonalData(data)
+);
+
+const result = await db
+  .insert(consultations)
+  .values(preparedDataList as any);
 
   return result;
 }
@@ -4372,11 +5526,14 @@ export async function updateConsultation(
   const organizationId = requireOrganizationId(params?.organizationId);
 
   if (!data || Object.keys(data).length === 0) {
-    return;
-  }
-  await db
-    .update(consultations)
-    .set(data)
+  return;
+}
+
+const preparedData = prepareConsultationPersonalData(data);
+
+await db
+  .update(consultations)
+  .set(preparedData as any)
     .where(
       and(
         eq(consultations.id, id),
@@ -4446,17 +5603,21 @@ export async function listDeletedConsultations(params?: {
   const organizationId = requireOrganizationId(params?.organizationId);
   const limit = Math.min(Math.max(Number(params?.limit || 100), 1), 300);
 
-  return db
-    .select()
-    .from(consultations)
-    .where(
-      and(
-        eq(consultations.organizationId, organizationId),
-        sql`${consultations.deletedAt} IS NOT NULL`
-      )
+  const rows = await db
+  .select()
+  .from(consultations)
+  .where(
+    and(
+      eq(consultations.organizationId, organizationId),
+      sql`${consultations.deletedAt} IS NOT NULL`
     )
-    .orderBy(desc(consultations.deletedAt))
-    .limit(limit);
+  )
+  .orderBy(desc(consultations.deletedAt))
+  .limit(limit);
+
+return rows.map((row) =>
+  decryptConsultationPersonalData(row)
+);
 }
 
 export async function restoreConsultation(params: {
@@ -5328,13 +6489,34 @@ COALESCE(
   ORDER BY s.createdAt DESC
 `);
 
-return (rows as any[]).map((row: any) => ({
-  ...row,
-  startDate: row.firstActualStartDate || row.startDate || null,
-  institutionId: row.firstActualInstitutionId || row.institutionId || null,
-  institution: row.firstActualInstitutionName || row.institution || "",
-  paymentDate: row.firstActualPaymentDate || row.paymentDate || null,
-}));
+return (rows as any[]).map((row: any) => {
+  const decryptedRow =
+    decryptStudentPersonalData(row) as any;
+
+  return {
+    ...decryptedRow,
+
+    startDate:
+      decryptedRow.firstActualStartDate ||
+      decryptedRow.startDate ||
+      null,
+
+    institutionId:
+      decryptedRow.firstActualInstitutionId ||
+      decryptedRow.institutionId ||
+      null,
+
+    institution:
+      decryptedRow.firstActualInstitutionName ||
+      decryptedRow.institution ||
+      "",
+
+    paymentDate:
+      decryptedRow.firstActualPaymentDate ||
+      decryptedRow.paymentDate ||
+      null,
+  };
+});
 }
 
 export async function getStudent(
@@ -5360,7 +6542,9 @@ export async function getStudent(
     )
     .limit(1);
 
-  return result[0];
+  return result[0]
+  ? decryptStudentPersonalData(result[0])
+  : undefined;
 }
 
 export async function createStudent(data: InsertStudent) {
@@ -5371,10 +6555,19 @@ export async function createStudent(data: InsertStudent) {
   500
 );
 
-  const result = await db.insert(students).values({
-  organizationId: requireOrganizationId((data as any).organizationId),
-  ...data,
-} as any);
+  const organizationId = requireOrganizationId(
+  (data as any).organizationId
+);
+
+const preparedData =
+  prepareStudentPersonalData(data);
+
+const result = await db
+  .insert(students)
+  .values({
+    ...preparedData,
+    organizationId,
+  } as any);
   return getInsertId(result);
 }
 
@@ -5394,9 +6587,12 @@ export async function updateStudent(
 
   const organizationId = requireOrganizationId(params?.organizationId);
 
-  await db
-    .update(students)
-    .set(data)
+  const preparedData =
+  prepareStudentPersonalData(data);
+
+await db
+  .update(students)
+  .set(preparedData as any)
     .where(
       and(
         eq(students.id, id),
@@ -5420,27 +6616,35 @@ export async function updateStudentAddressAndCoords(params: {
   500
 );
 
-  await db
-    .update(students)
-    .set({
-      address: params.address ?? null,
-      detailAddress: params.detailAddress ?? null,
-      latitude:
-        params.latitude === null || params.latitude === undefined
-          ? null
-          : String(params.latitude),
-      longitude:
-        params.longitude === null || params.longitude === undefined
-          ? null
-          : String(params.longitude),
-      geocodedAt:
-        params.latitude !== null &&
-        params.latitude !== undefined &&
-        params.longitude !== null &&
-        params.longitude !== undefined
-          ? new Date()
-          : null,
-    } as any)
+  const preparedAddressData =
+  prepareStudentPersonalData({
+    address: params.address ?? null,
+    detailAddress: params.detailAddress ?? null,
+  });
+
+await db
+  .update(students)
+  .set({
+    ...preparedAddressData,
+
+    latitude:
+      params.latitude === null || params.latitude === undefined
+        ? null
+        : String(params.latitude),
+
+    longitude:
+      params.longitude === null || params.longitude === undefined
+        ? null
+        : String(params.longitude),
+
+    geocodedAt:
+      params.latitude !== null &&
+      params.latitude !== undefined &&
+      params.longitude !== null &&
+      params.longitude !== undefined
+        ? new Date()
+        : null,
+  } as any)
     .where(
   and(
     eq(students.id, params.studentId),
@@ -6029,19 +7233,25 @@ if (normalizedAssigneeIds.length > 0) {
       ON plannedEi.id = sem.plannedInstitutionId
       AND plannedEi.organizationId = ${organizationId}
     ${whereClause}
-    ORDER BY sem.plannedMonth ASC, s.clientName ASC
+    ORDER BY sem.plannedMonth ASC, s.id ASC
   `);
 
-  return ((rows as unknown) as any[]).map((row: any) => ({
-    ...row,
+  return ((rows as unknown) as any[]).map((row: any) => {
+  const decryptedRow =
+    decryptStudentJoinedRow(row);
+
+  return {
+    ...decryptedRow,
+
     institution:
-      row.institutionDisplayName ||
-      row.actualInstitutionDisplayName ||
-      row.plannedInstitutionDisplayName ||
-      row.actualInstitution ||
-      row.plannedInstitution ||
+      decryptedRow.institutionDisplayName ||
+      decryptedRow.actualInstitutionDisplayName ||
+      decryptedRow.plannedInstitutionDisplayName ||
+      decryptedRow.actualInstitution ||
+      decryptedRow.plannedInstitution ||
       "-",
-  }));
+  };
+});
 }
 
 function validatePlanSummaryCounts(data: Partial<InsertPlan>) {
@@ -6270,7 +7480,9 @@ const assigneeFilter =
     ORDER BY r.createdAt DESC
   `);
 
-  return (rows as unknown) as any[];
+  return ((rows as unknown) as any[]).map(
+  (row: any) => decryptStudentJoinedRow(row)
+);
 }
 
 export async function createRefund(data: InsertRefund) {
@@ -8154,7 +9366,11 @@ course: students.course,
     .orderBy(desc(settlementItems.occurredAt), desc(settlementItems.id));
 
   const entries = (rows || []).map((r: any) => {
-  const isRefund = r.revenueType === "refund";
+  const decryptedRow =
+    decryptStudentJoinedRow(r);
+
+  const isRefund =
+    decryptedRow.revenueType === "refund";
 
   return {
     id: Number(r.id),
@@ -8167,8 +9383,8 @@ course: students.course,
     settlementStatus: r.settlementStatus,
     title: r.title || "",
     institutionName: r.institutionName || "",
-    clientName: r.clientName || "",
-    phone: r.phone || "",
+    clientName: decryptedRow.clientName || "",
+    phone: decryptedRow.phone || "",
     course: r.course || "",
     subjectType: r.subjectType || null,
     subjectCount: Number(r.subjectCount || 0),
@@ -8329,9 +9545,13 @@ semesterOrder: semesters.semesterOrder,
     .orderBy(desc(settlementItems.occurredAt), desc(settlementItems.id));
 
   const entries = (rows || []).map((r: any) => {
-    const isRefund = r.revenueType === "refund";
+  const decryptedRow =
+    decryptStudentJoinedRow(r);
 
-    return {
+  const isRefund =
+    decryptedRow.revenueType === "refund";
+
+  return {
       id: Number(r.id),
       settlementItemId: Number(r.id),
       sourceId: Number(r.sourceId),
@@ -8357,15 +9577,15 @@ customerTypeLabel:
     ? "신규"
     : "기존",
 
-assigneeName: r.assigneeName || "",
+assigneeName: decryptedRow.assigneeName || "",
 occurredAt: r.occurredAt || null,
 
       title: r.title || "",
       institutionName: r.institutionName || "",
-clientName: r.clientName || "",
-phone: r.phone || "",
+clientName: decryptedRow.clientName || "",
+phone: decryptedRow.phone || "",
 course: r.course || "",
-studentLoginId: r.studentLoginId || "",
+studentLoginId: decryptedRow.studentLoginId || "",
 subjectType: r.subjectType || null,
       subjectCount: Number(r.subjectCount || 0),
       quantity: Number(r.quantity || 0),
@@ -12516,7 +13736,9 @@ export async function getPrivateCertificateRequest(
     )
     .limit(1);
 
-  return rows[0];
+  return rows[0]
+  ? decryptPrivateCertificatePersonalData(rows[0])
+  : undefined;
 }
 
 export async function listPrivateCertificateRequests(
@@ -12563,25 +13785,48 @@ const organizationId = requireOrganizationId(params?.organizationId);
     )
     .orderBy(desc(privateCertificateRequests.id));
 
-  return rows.map((row: any) => ({
-    ...row.request,
+  return rows.map((rawRow: any) => {
+  const row =
+    decryptPrivateCertificatePersonalData({
+      ...rawRow.request,
+
+      studentClientName:
+        rawRow.studentClientName,
+
+      studentPhone:
+        rawRow.studentPhone,
+
+      studentAddress:
+        rawRow.studentAddress,
+
+      userName:
+        rawRow.userName,
+    }) as any;
+
+  return {
+    ...row,
+
     clientName:
-      String(row.request?.clientName || "").trim() ||
+      String(row.clientName || "").trim() ||
       String(row.studentClientName || "").trim() ||
       null,
+
     phone:
-      String(row.request?.phone || "").trim() ||
+      String(row.phone || "").trim() ||
       String(row.studentPhone || "").trim() ||
       null,
+
     assigneeName:
-      String(row.request?.assigneeName || "").trim() ||
+      String(row.assigneeName || "").trim() ||
       String(row.userName || "").trim() ||
       null,
+
     inputAddress:
-      String(row.request?.inputAddress || "").trim() ||
+      String(row.inputAddress || "").trim() ||
       String(row.studentAddress || "").trim() ||
       null,
-  }));
+  };
+});
 }
 
 export async function listPrivateCertificateRequestsByStudent(
@@ -12626,25 +13871,48 @@ const organizationId = requireOrganizationId(params?.organizationId);
     )
     .orderBy(desc(privateCertificateRequests.id));
 
-  return rows.map((row: any) => ({
-  ...row.request,
-  clientName:
-    String(row.request?.clientName || "").trim() ||
-    String(row.studentClientName || "").trim() ||
-    null,
-  phone:
-    String(row.request?.phone || "").trim() ||
-    String(row.studentPhone || "").trim() ||
-    null,
-  assigneeName:
-    String(row.request?.assigneeName || "").trim() ||
-    String(row.userName || "").trim() ||
-    null,
-  inputAddress:
-    String(row.request?.inputAddress || "").trim() ||
-    String(row.studentAddress || "").trim() ||
-    null,
-}));
+  return rows.map((rawRow: any) => {
+  const row =
+    decryptPrivateCertificatePersonalData({
+      ...rawRow.request,
+
+      studentClientName:
+        rawRow.studentClientName,
+
+      studentPhone:
+        rawRow.studentPhone,
+
+      studentAddress:
+        rawRow.studentAddress,
+
+      userName:
+        rawRow.userName,
+    }) as any;
+
+  return {
+    ...row,
+
+    clientName:
+      String(row.clientName || "").trim() ||
+      String(row.studentClientName || "").trim() ||
+      null,
+
+    phone:
+      String(row.phone || "").trim() ||
+      String(row.studentPhone || "").trim() ||
+      null,
+
+    assigneeName:
+      String(row.assigneeName || "").trim() ||
+      String(row.userName || "").trim() ||
+      null,
+
+    inputAddress:
+      String(row.inputAddress || "").trim() ||
+      String(row.studentAddress || "").trim() ||
+      null,
+  };
+});
 }
 
 export async function updatePrivateCertificateMaster(
@@ -12693,12 +13961,23 @@ export async function createPrivateCertificateRequest(data: InsertPrivateCertifi
 
   const organizationId = requireOrganizationId((data as any).organizationId);
 
-  const result: any = await db.insert(privateCertificateRequests).values({
-    ...data,
+  const preparedData =
+  preparePrivateCertificatePersonalData(data);
+
+const result: any = await db
+  .insert(privateCertificateRequests)
+  .values({
+    ...preparedData,
     organizationId,
-    feeAmount: data.feeAmount ?? "0",
-    freelancerInputAmount: data.freelancerInputAmount ?? "0",
-    paymentStatus: data.paymentStatus ?? "결제대기",
+
+    feeAmount:
+      data.feeAmount ?? "0",
+
+    freelancerInputAmount:
+      data.freelancerInputAmount ?? "0",
+
+    paymentStatus:
+      data.paymentStatus ?? "결제대기",
   } as any);
 
   const insertId = getInsertId(result);
@@ -12729,9 +14008,12 @@ export async function updatePrivateCertificateRequest(
 const organizationId = requireOrganizationId(params?.organizationId);
 
   try {
-    await db
-      .update(privateCertificateRequests)
-      .set(data as any)
+  const preparedData =
+    preparePrivateCertificatePersonalData(data);
+
+  await db
+    .update(privateCertificateRequests)
+    .set(preparedData as any)
       .where(
         and(
           eq(privateCertificateRequests.id, id),
@@ -12953,20 +14235,6 @@ const organizationId = requireOrganizationId(params?.organizationId);
     );
   }
 
-  if (params?.search?.trim()) {
-    const keyword = `%${params.search.trim()}%`;
-
-    conditions.push(sql`
-      (
-        COALESCE(psr.clientName, s.clientName, '') LIKE ${keyword}
-        OR COALESCE(psr.phone, s.phone, '') LIKE ${keyword}
-        OR COALESCE(psr.course, s.course, p.desiredCourse, '') LIKE ${keyword}
-        OR COALESCE(psr.managerName, psr.assigneeName, u.name, '') LIKE ${keyword}
-        OR COALESCE(psr.inputAddress, s.address, '') LIKE ${keyword}
-      )
-    `);
-  }
-
   const whereClause =
     conditions.length > 0
       ? sql`WHERE ${sql.join(conditions, sql` AND `)}`
@@ -13017,18 +14285,27 @@ const organizationId = requireOrganizationId(params?.organizationId);
     u.name AS userName
   FROM practice_support_requests psr
   INNER JOIN students s
-    ON s.id = psr.studentId
-  LEFT JOIN plans p
-    ON p.studentId = s.id
-  LEFT JOIN users u
-    ON u.id = s.assigneeId
+  ON s.id = psr.studentId
+ AND s.organizationId = psr.organizationId
+
+LEFT JOIN plans p
+  ON p.studentId = s.id
+ AND p.organizationId = psr.organizationId
+
+LEFT JOIN users u
+  ON u.id = COALESCE(psr.assigneeId, s.assigneeId)
+ AND u.organizationId = psr.organizationId
   ${whereClause}
   ORDER BY
     LEFT(TRIM(COALESCE(psr.practiceDate, p.practiceDate, '')), 7) ASC,
     psr.id DESC
 `);
 
-  return (rows as any[]).map((row) => ({
+  const mappedRows = (rows as any[]).map((rawRow: any) => {
+  const row =
+    decryptPracticeSupportPersonalData(rawRow) as any;
+
+  return {
     id: row.id ? Number(row.id) : null,
     practiceSupportRequestId: row.id ? Number(row.id) : null,
     hasPracticeSupportRequest: !!row.id,
@@ -13038,34 +14315,147 @@ const organizationId = requireOrganizationId(params?.organizationId);
     semesterOrder: 1,
     semesterUpdatedAt: row.updatedAt || null,
 
-    clientName: row.clientName || row.studentClientName || "",
-    phone: row.phone || row.studentPhone || "",
-    course: row.course || row.studentCourse || row.planDesiredCourse || "",
-    inputAddress: row.inputAddress || row.studentAddress || null,
-    detailAddress: row.detailAddress || row.studentDetailAddress || null,
-    assigneeId: row.assigneeId ?? row.studentAssigneeId ?? null,
-    assigneeName: row.assigneeName || row.userName || null,
-    managerName: row.managerName || row.userName || "",
-    practiceHours: row.practiceHours ?? row.planPracticeHours ?? null,
-    practiceDate: row.practiceDate || row.planPracticeDate || null,
-    coordinationStatus: row.coordinationStatus || "미섭외",
+    clientName:
+      row.clientName ||
+      row.studentClientName ||
+      "",
 
-    selectedEducationCenterId: row.selectedEducationCenterId || null,
-    selectedEducationCenterName: row.selectedEducationCenterName || "",
-    selectedEducationCenterAddress: row.selectedEducationCenterAddress || "",
-    selectedEducationCenterDistanceKm: row.selectedEducationCenterDistanceKm || "",
+    phone:
+      row.phone ||
+      row.studentPhone ||
+      "",
 
-    selectedPracticeInstitutionId: row.selectedPracticeInstitutionId || null,
-    selectedPracticeInstitutionName: row.selectedPracticeInstitutionName || "",
-    selectedPracticeInstitutionAddress: row.selectedPracticeInstitutionAddress || "",
-    selectedPracticeInstitutionDistanceKm: row.selectedPracticeInstitutionDistanceKm || "",
+    course:
+      row.course ||
+      row.studentCourse ||
+      row.planDesiredCourse ||
+      "",
 
-    feeAmount: row.feeAmount || "0",
-    paymentStatus: row.paymentStatus || "미결제",
-    note: row.note || "",
-    createdAt: row.createdAt || null,
-    updatedAt: row.updatedAt || null,
-  }));
+    inputAddress:
+      row.inputAddress ||
+      row.studentAddress ||
+      null,
+
+    detailAddress:
+      row.detailAddress ||
+      row.studentDetailAddress ||
+      null,
+
+    assigneeId:
+      row.assigneeId ??
+      row.studentAssigneeId ??
+      null,
+
+    assigneeName:
+      row.assigneeName ||
+      row.userName ||
+      null,
+
+    managerName:
+      row.managerName ||
+      row.userName ||
+      "",
+
+    practiceHours:
+      row.practiceHours ??
+      row.planPracticeHours ??
+      null,
+
+    practiceDate:
+      row.practiceDate ||
+      row.planPracticeDate ||
+      null,
+
+    coordinationStatus:
+      row.coordinationStatus ||
+      "미섭외",
+
+    selectedEducationCenterId:
+      row.selectedEducationCenterId || null,
+
+    selectedEducationCenterName:
+      row.selectedEducationCenterName || "",
+
+    selectedEducationCenterAddress:
+      row.selectedEducationCenterAddress || "",
+
+    selectedEducationCenterDistanceKm:
+      row.selectedEducationCenterDistanceKm || "",
+
+    selectedPracticeInstitutionId:
+      row.selectedPracticeInstitutionId || null,
+
+    selectedPracticeInstitutionName:
+      row.selectedPracticeInstitutionName || "",
+
+    selectedPracticeInstitutionAddress:
+      row.selectedPracticeInstitutionAddress || "",
+
+    selectedPracticeInstitutionDistanceKm:
+      row.selectedPracticeInstitutionDistanceKm || "",
+
+    feeAmount:
+      row.feeAmount || "0",
+
+    paymentStatus:
+      row.paymentStatus || "미결제",
+
+    note:
+      row.note || "",
+
+    createdAt:
+      row.createdAt || null,
+
+    updatedAt:
+      row.updatedAt || null,
+  };
+});
+
+const searchKeyword =
+  String(params?.search || "")
+    .trim()
+    .toLowerCase();
+
+if (!searchKeyword) {
+  return mappedRows;
+}
+
+const normalizedPhoneKeyword =
+  searchKeyword.replace(/\D/g, "");
+
+return mappedRows.filter((row: any) => {
+  const textTargets = [
+    row.clientName,
+    row.course,
+    row.assigneeName,
+    row.managerName,
+    row.inputAddress,
+    row.detailAddress,
+  ]
+    .map((value) =>
+      String(value || "").toLowerCase()
+    );
+
+  if (
+    textTargets.some((value) =>
+      value.includes(searchKeyword)
+    )
+  ) {
+    return true;
+  }
+
+  if (normalizedPhoneKeyword) {
+    const rowPhone =
+      String(row.phone || "")
+        .replace(/\D/g, "");
+
+    if (rowPhone.includes(normalizedPhoneKeyword)) {
+      return true;
+    }
+  }
+
+  return false;
+});
 }
 
 export async function listPracticeSupportRequestsByStudent(
@@ -13136,7 +14526,11 @@ export async function listPracticeSupportRequestsByStudent(
     ORDER BY psr.createdAt ASC, psr.id ASC
   `);
 
-  return (rows as any[]).map((row: any, index: number) => ({
+  return (rows as any[]).map((rawRow: any, index: number) => {
+  const row =
+    decryptPracticeSupportPersonalData(rawRow) as any;
+
+  return {
     id: row.id ? Number(row.id) : null,
     practiceSupportRequestId: row.id ? Number(row.id) : null,
     hasPracticeSupportRequest: !!row.id,
@@ -13172,7 +14566,8 @@ export async function listPracticeSupportRequestsByStudent(
     note: row.note || "",
     createdAt: row.createdAt || null,
     updatedAt: row.updatedAt || null,
-  }));
+    };
+});
 }
 
 export async function getPracticeSupportRequest(
@@ -13231,19 +14626,25 @@ const organizationId = requireOrganizationId(params?.organizationId);
     INNER JOIN students s
       ON s.id = psr.studentId
     LEFT JOIN plans p
-      ON p.studentId = s.id
-    LEFT JOIN users u
-      ON u.id = COALESCE(psr.assigneeId, s.assigneeId)
+  ON p.studentId = s.id
+ AND p.organizationId = psr.organizationId
+
+LEFT JOIN users u
+  ON u.id = COALESCE(psr.assigneeId, s.assigneeId)
+ AND u.organizationId = psr.organizationId
     WHERE psr.id = ${id}
   AND psr.organizationId = ${organizationId}
   AND s.organizationId = ${organizationId}
 LIMIT 1
   `);
 
-  const row = (rows as any[])[0];
-  if (!row) return undefined;
+  const rawRow = (rows as any[])[0];
+if (!rawRow) return undefined;
 
-  return {
+const row =
+  decryptPracticeSupportPersonalData(rawRow) as any;
+
+return {
     id: Number(row.id),
     practiceSupportRequestId: Number(row.id),
     hasPracticeSupportRequest: true,
@@ -13290,12 +14691,23 @@ export async function createPracticeSupportRequest(data: InsertPracticeSupportRe
   500
 );
 
-  const result: any = await db.insert(practiceSupportRequests).values({
-    ...data,
-    feeAmount: data.feeAmount ?? "0",
-    paymentStatus: data.paymentStatus ?? "미결제",
-    coordinationStatus: data.coordinationStatus ?? "미섭외",
-  });
+  const preparedData =
+  preparePracticeSupportPersonalData(data);
+
+const result: any = await db
+  .insert(practiceSupportRequests)
+  .values({
+    ...preparedData,
+
+    feeAmount:
+      data.feeAmount ?? "0",
+
+    paymentStatus:
+      data.paymentStatus ?? "미결제",
+
+    coordinationStatus:
+      data.coordinationStatus ?? "미섭외",
+  } as any);
 
   const insertId = getInsertId(result);
 
@@ -13333,9 +14745,12 @@ export async function updatePracticeSupportRequest(
     )
     .limit(1);
 
-  await db
-    .update(practiceSupportRequests)
-    .set(data as any)
+  const preparedData =
+  preparePracticeSupportPersonalData(data);
+
+await db
+  .update(practiceSupportRequests)
+  .set(preparedData as any)
     .where(
       and(
         eq(practiceSupportRequests.id, id),
@@ -15707,33 +17122,85 @@ const organizationId = requireOrganizationId(params.organizationId);
 }
 
 // ─── Job Support Requests (취업지원센터) ────────────────────────────
-export async function listJobSupportRequests(assigneeId?: number) {
+export async function listJobSupportRequests(
+  assigneeId?: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return [];
+
+  const organizationId =
+    requireOrganizationId(
+      params?.organizationId
+    );
+
+  const conditions: any[] = [
+    eq(
+      jobSupportRequests.organizationId,
+      organizationId
+    ),
+  ];
 
   if (assigneeId) {
-    return db
-      .select()
-      .from(jobSupportRequests)
-      .where(eq(jobSupportRequests.assigneeId, assigneeId))
-      .orderBy(desc(jobSupportRequests.createdAt));
+    conditions.push(
+      eq(
+        jobSupportRequests.assigneeId,
+        assigneeId
+      )
+    );
   }
 
-  return db
+  const rows = await db
     .select()
     .from(jobSupportRequests)
-    .orderBy(desc(jobSupportRequests.createdAt));
+    .where(and(...conditions))
+    .orderBy(
+      desc(jobSupportRequests.createdAt)
+    );
+
+  return rows.map((row: any) =>
+    decryptJobSupportPersonalData(row)
+  );
 }
 
-export async function listJobSupportRequestsByStudent(studentId: number) {
+export async function listJobSupportRequestsByStudent(
+  studentId: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
   if (!db) return [];
 
-  return db
+  const organizationId =
+    requireOrganizationId(
+      params?.organizationId
+    );
+
+  const rows = await db
     .select()
     .from(jobSupportRequests)
-    .where(eq(jobSupportRequests.studentId, studentId))
-    .orderBy(desc(jobSupportRequests.createdAt));
+    .where(
+      and(
+        eq(
+          jobSupportRequests.studentId,
+          studentId
+        ),
+        eq(
+          jobSupportRequests.organizationId,
+          organizationId
+        )
+      )
+    )
+    .orderBy(
+      desc(jobSupportRequests.createdAt)
+    );
+
+  return rows.map((row: any) =>
+    decryptJobSupportPersonalData(row)
+  );
 }
 
 export async function createJobSupportRequest(data: InsertJobSupportRequest) {
@@ -15744,18 +17211,36 @@ export async function createJobSupportRequest(data: InsertJobSupportRequest) {
   500
 );
 
-  const result: any = await db.insert(jobSupportRequests).values({
-    ...data,
-    feeAmount: data.feeAmount ?? "0",
-    paymentStatus: data.paymentStatus ?? "결제대기",
-  });
+  const organizationId =
+  requireOrganizationId(
+    (data as any).organizationId
+  );
+
+const preparedData =
+  prepareJobSupportPersonalData(data);
+
+const result: any = await db
+  .insert(jobSupportRequests)
+  .values({
+    ...preparedData,
+    organizationId,
+
+    feeAmount:
+      data.feeAmount ?? "0",
+
+    paymentStatus:
+      data.paymentStatus ?? "결제대기",
+  } as any);
 
   return getInsertId(result);
 }
 
 export async function updateJobSupportRequest(
   id: number,
-  data: Partial<InsertJobSupportRequest>
+  data: Partial<InsertJobSupportRequest>,
+  params?: {
+    organizationId?: number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) throwAppError(
@@ -15764,21 +17249,61 @@ export async function updateJobSupportRequest(
   500
 );
 
-  await db
-    .update(jobSupportRequests)
-    .set(data as any)
-    .where(eq(jobSupportRequests.id, id));
+ const organizationId =
+  requireOrganizationId(
+    params?.organizationId ??
+    (data as any).organizationId
+  );
+
+const preparedData =
+  prepareJobSupportPersonalData(data);
+
+await db
+  .update(jobSupportRequests)
+  .set(preparedData as any)
+  .where(
+    and(
+      eq(jobSupportRequests.id, id),
+      eq(
+        jobSupportRequests.organizationId,
+        organizationId
+      )
+    )
+  );
 }
 
-export async function deleteJobSupportRequest(id: number) {
+export async function deleteJobSupportRequest(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
   const db = await getDb();
-  if (!db) throwAppError(
-  ERROR_CODES.INTERNAL_SERVER_ERROR,
-  "DB not available",
-  500
-);
 
-  await db.delete(jobSupportRequests).where(eq(jobSupportRequests.id, id));
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params?.organizationId
+    );
+
+  await db
+    .delete(jobSupportRequests)
+    .where(
+      and(
+        eq(jobSupportRequests.id, id),
+        eq(
+          jobSupportRequests.organizationId,
+          organizationId
+        )
+      )
+    );
 }
 
 export async function createAiActionLogV2(data: {
