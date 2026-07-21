@@ -5755,18 +5755,21 @@ export async function syncStudentFromConsultation(
     return null;
   }
 
-  const nextStudentData: any = {
-    clientName: consultation.clientName ?? "",
-    phone: consultation.phone ?? "",
-    finalEducation: consultation.finalEducation ?? "",
-    course: consultation.desiredCourse ?? "",
-    assigneeId: consultation.assigneeId ?? linkedStudent.assigneeId,
-  };
+ const nextStudentData: any = {
+  clientName: consultation.clientName ?? "",
+  phone: consultation.phone ?? "",
+  finalEducation: consultation.finalEducation ?? "",
+  course: consultation.desiredCourse ?? "",
+  assigneeId: consultation.assigneeId ?? linkedStudent.assigneeId,
+};
 
-  await db
-    .update(students)
-    .set(nextStudentData)
-    .where(
+const preparedStudentData =
+  prepareStudentPersonalData(nextStudentData);
+
+await db
+  .update(students)
+  .set(preparedStudentData as any)
+  .where(
       and(
         eq(students.id, linkedStudent.id),
         eq(students.organizationId, organizationId)
