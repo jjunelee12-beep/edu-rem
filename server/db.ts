@@ -15022,10 +15022,13 @@ practiceDate: params.practiceDate ?? null,
   feeAmount: "0",
 };
 
+const preparedPayload =
+  preparePracticeSupportPersonalData(payload);
+
   if (existing[0]) {
     await db
       .update(practiceSupportRequests)
-      .set(payload)
+.set(preparedPayload as any)
       .where(
   and(
     eq(practiceSupportRequests.id, existing[0].id),
@@ -15065,7 +15068,9 @@ practiceDate: params.practiceDate ?? null,
     return existing[0].id;
   }
 
-  const result: any = await db.insert(practiceSupportRequests).values(payload);
+  const result: any = await db
+  .insert(practiceSupportRequests)
+  .values(preparedPayload as any);
   const insertId = getInsertId(result);
 
   if (params.semesterId && insertId) {
