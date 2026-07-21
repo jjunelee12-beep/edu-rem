@@ -16,8 +16,9 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
-  Upload,
-  XCircle,
+Upload,
+Trash2,
+XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -395,6 +396,47 @@ function getDataTypeLabel(
     : "실습기관";
 }
 
+function formatFileSize(
+  value?: number | null
+) {
+  const bytes =
+    Math.max(
+      0,
+      Number(value || 0)
+    );
+
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (
+    bytes <
+    1024 * 1024
+  ) {
+    return `${(
+      bytes / 1024
+    ).toFixed(1)} KB`;
+  }
+
+  if (
+    bytes <
+    1024 * 1024 * 1024
+  ) {
+    return `${(
+      bytes /
+      1024 /
+      1024
+    ).toFixed(1)} MB`;
+  }
+
+  return `${(
+    bytes /
+    1024 /
+    1024 /
+    1024
+  ).toFixed(2)} GB`;
+}
+
 function getStatusLabel(
   status?: string | null
 ) {
@@ -527,6 +569,12 @@ const [
   const executeMutation =
     trpc.saas.executePracticeMasterSync.useMutation();
 
+const clearPayloadMutation =
+  trpc.saas.clearPracticeMasterSyncPayload.useMutation();
+
+const clearAllPayloadsMutation =
+  trpc.saas.clearCompletedPracticeMasterSyncPayloads.useMutation();
+
   const currentHistory =
   historyDetailQuery.data || null;
 
@@ -591,10 +639,12 @@ const currentPreview =
   const previewSummary =
     currentPreview.summary || {};
 
-  const isBusy =
-    createHistoryMutation.isPending ||
-    analyzeMutation.isPending ||
-    executeMutation.isPending;
+const isBusy =
+  createHistoryMutation.isPending ||
+  analyzeMutation.isPending ||
+  executeMutation.isPending ||
+  clearPayloadMutation.isPending ||
+  clearAllPayloadsMutation.isPending;
 
   const selectedSummary =
     dataType === "institution"
@@ -1224,10 +1274,9 @@ const currentPreview =
       }
 
       setSelectedHistoryId(historyId);
-      setActivePreviewTab("summary");
-      setConfirmationText("");
-
-setIsWatchingExecution(true);
+setActivePreviewTab("summary");
+setConfirmationText("");
+setIsWatchingExecution(false);
 
 await refreshAll();
 
@@ -1271,9 +1320,10 @@ toast.success(
     }
   );
 
-  setConfirmationText("");
+setConfirmationText("");
+setIsWatchingExecution(true);
 
-  await refreshAll();
+await refreshAll();
 
   toast.success(
     "동기화를 시작했습니다. 완료될 때까지 잠시 기다려주세요."
@@ -1284,6 +1334,133 @@ toast.success(
       "공용 실습 데이터 동기화 시작에 실패했습니다."
   );
 }
+  };
+
+const handleClearSelectedPayload =
+  async () => {
+    if (!selectedHistoryId) {
+      toast.error(
+        "정리할 동기화 이력을 선택해주세요."
+      );
+
+      return;
+    }
+
+    const status =
+      String(
+        currentHistory?.status || ""
+      );
+
+    if (
+      ![
+        "completed",
+        "failed",
+        "cancelled",
+      ].includes(status)
+    ) {
+      toast.error(
+        "완료·실패·취소된 이력만 정리할 수 있습니다."
+      );
+
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        [
+          "선택한 동기화 이력의 미리보기 JSON을 정리합니다.",
+          "",
+          "실습기관·실습교육원 실제 데이터는 삭제되지 않습니다.",
+          "처리 건수와 완료 이력도 그대로 유지됩니다.",
+          "",
+          "계속하시겠습니까?",
+        ].join("\n")
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const result =
+        await clearPayloadMutation.mutateAsync(
+          {
+            syncHistoryId:
+              selectedHistoryId,
+
+            confirmationText:
+              "미리보기 정리",
+          }
+        );
+
+      await Promise.all([
+        historyDetailQuery.refetch(),
+        historyQuery.refetch(),
+      ]);
+
+      toast.success(
+        `미리보기 데이터 ${formatFileSize(
+          Number(
+            result.clearedBytes || 0
+          )
+        )}를 정리했습니다.`
+      );
+    } catch (error: any) {
+      toast.error(
+        error?.message ||
+          "미리보기 데이터 정리에 실패했습니다."
+      );
+    }
+  };
+
+const handleClearAllPayloads =
+  async () => {
+    const confirmed =
+      window.confirm(
+        [
+          "완료·실패·취소된 모든 동기화 이력의",
+          "미리보기 JSON과 오류 JSON을 정리합니다.",
+          "",
+          "실습기관·실습교육원 실제 데이터는 삭제되지 않습니다.",
+          "동기화 처리 건수와 완료 이력은 그대로 유지됩니다.",
+          "",
+          "계속하시겠습니까?",
+        ].join("\n")
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const result =
+        await clearAllPayloadsMutation.mutateAsync(
+          {
+            confirmationText:
+              "전체 정리",
+          }
+        );
+
+      await Promise.all([
+        historyQuery.refetch(),
+        historyDetailQuery.refetch(),
+      ]);
+
+      toast.success(
+        `${Number(
+          result.targetCount || 0
+        )}건, ${formatFileSize(
+          Number(
+            result.clearedBytes || 0
+          )
+        )}를 정리했습니다.`
+      );
+    } catch (error: any) {
+      toast.error(
+        error?.message ||
+          "완료된 미리보기 데이터 정리에 실패했습니다."
+      );
+    }
   };
 
 const selectHistory = (
@@ -1397,17 +1574,36 @@ const selectHistory = (
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            void refreshAll();
-          }}
-          disabled={isBusy}
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <RefreshCw className="h-4 w-4" />
-          새로고침
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+  <button
+    type="button"
+    onClick={() => {
+      void handleClearAllPayloads();
+    }}
+    disabled={isBusy}
+    className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 text-sm font-extrabold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    {clearAllPayloadsMutation.isPending ? (
+      <Loader2 className="h-4 w-4 animate-spin" />
+    ) : (
+      <Trash2 className="h-4 w-4" />
+    )}
+
+    완료 데이터 전체 정리
+  </button>
+
+  <button
+    type="button"
+    onClick={() => {
+      void refreshAll();
+    }}
+    disabled={isBusy}
+    className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    <RefreshCw className="h-4 w-4" />
+    새로고침
+  </button>
+</div>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
@@ -1927,6 +2123,63 @@ const selectHistory = (
                     </button>
                   </div>
                 </div>
+
+{currentHistory &&
+  [
+    "completed",
+    "failed",
+    "cancelled",
+  ].includes(
+    String(currentHistory.status)
+  ) &&
+  (
+    (currentHistory as any)
+      .previewJson ||
+    (currentHistory as any)
+      .errorJson ||
+    (currentHistory as any)
+      .sourceFileKey ||
+    (currentHistory as any)
+  .sourceFileUrl ||
+(currentHistory as any)
+  .sourceFileHash
+  ) && (
+    <div className="border-t border-slate-200 bg-red-50/60 px-5 py-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-sm font-extrabold text-red-800">
+            저장 용량 정리
+          </h3>
+
+          <p className="mt-1 text-xs leading-5 text-red-700">
+            미리보기·오류 JSON만
+            삭제합니다. 동기화된 실제
+            실습 데이터와 처리 이력은
+            유지됩니다.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            void handleClearSelectedPayload();
+          }}
+          disabled={
+            clearPayloadMutation.isPending
+          }
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-red-600 px-5 text-sm font-extrabold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {clearPayloadMutation.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Trash2 className="h-4 w-4" />
+          )}
+
+          선택 이력 JSON 정리
+        </button>
+      </div>
+    </div>
+  )}
 
                 {!canExecute && (
                   <div className="mt-3 flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">

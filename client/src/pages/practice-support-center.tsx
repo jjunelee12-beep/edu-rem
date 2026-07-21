@@ -280,19 +280,102 @@ function matchPracticeAvailabilityFilter(
   return true;
 }
 
-function toDateOnly(value?: string | null) {
-  if (!value) return null;
-  const s = String(value).slice(0, 10);
-  const d = new Date(`${s}T00:00:00`);
-  return Number.isNaN(d.getTime()) ? null : d;
+function toDateOnly(
+  value?: string | Date | null
+) {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(
+      value.getTime()
+    )
+      ? null
+      : new Date(
+          value.getFullYear(),
+          value.getMonth(),
+          value.getDate()
+        );
+  }
+
+  const text =
+    String(value).trim();
+
+  const dateOnlyMatch =
+    text.match(
+      /^(\d{4})-(\d{1,2})-(\d{1,2})/
+    );
+
+  if (dateOnlyMatch) {
+    const year =
+      Number(dateOnlyMatch[1]);
+
+    const month =
+      Number(dateOnlyMatch[2]);
+
+    const day =
+      Number(dateOnlyMatch[3]);
+
+    const date =
+      new Date(
+        year,
+        month - 1,
+        day
+      );
+
+    if (
+      date.getFullYear() !== year ||
+      date.getMonth() !== month - 1 ||
+      date.getDate() !== day
+    ) {
+      return null;
+    }
+
+    return date;
+  }
+
+  const parsedDate =
+    new Date(text);
+
+  if (
+    Number.isNaN(
+      parsedDate.getTime()
+    )
+  ) {
+    return null;
+  }
+
+  return new Date(
+    parsedDate.getFullYear(),
+    parsedDate.getMonth(),
+    parsedDate.getDate()
+  );
 }
 
-function formatDateOnly(value?: string | null) {
-  const d = toDateOnly(value);
-  if (!d) return "-";
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
+function formatDateOnly(
+  value?: string | Date | null
+) {
+  const date =
+    toDateOnly(value);
+
+  if (!date) {
+    return "";
+  }
+
+  return [
+    String(
+      date.getFullYear()
+    ).padStart(4, "0"),
+
+    String(
+      date.getMonth() + 1
+    ).padStart(2, "0"),
+
+    String(
+      date.getDate()
+    ).padStart(2, "0"),
+  ].join("-");
 }
 
 function isFinderItemInactiveNow(item: FinderItem) {

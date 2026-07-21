@@ -45,8 +45,10 @@ reactivateTenant as reactivateTenantInDb,
   getPracticeMasterSyncHistoryById,
     createPracticeMasterSyncHistory,
     updatePracticeMasterSyncHistory,
-  analyzePracticeMasterSync,
-  executePracticeMasterSync,
+analyzePracticeMasterSync,
+executePracticeMasterSync,
+clearPracticeMasterSyncPayload,
+clearCompletedPracticeMasterSyncPayloads,
 } from "./saasdb";
 import bcrypt from "bcryptjs";
 import * as db from "./db";
@@ -1572,4 +1574,55 @@ return {
     input.syncHistoryId,
 };
   }),
+
+clearPracticeMasterSyncPayload:
+  protectedProcedure
+    .input(
+      z.object({
+        syncHistoryId:
+          z.number().int().positive(),
+
+        confirmationText:
+          z.literal("미리보기 정리"),
+      })
+    )
+    .mutation(
+      async ({
+        ctx,
+        input,
+      }) => {
+        assertSuperhost(ctx);
+
+        await requireSaasAdminUnlocked(
+          Number(ctx.user.id)
+        );
+
+        return clearPracticeMasterSyncPayload({
+          syncHistoryId:
+            input.syncHistoryId,
+        });
+      }
+    ),
+
+clearCompletedPracticeMasterSyncPayloads:
+  protectedProcedure
+    .input(
+      z.object({
+        confirmationText:
+          z.literal("전체 정리"),
+      })
+    )
+    .mutation(
+      async ({
+        ctx,
+      }) => {
+        assertSuperhost(ctx);
+
+        await requireSaasAdminUnlocked(
+          Number(ctx.user.id)
+        );
+
+        return clearCompletedPracticeMasterSyncPayloads();
+      }
+    ),
 });

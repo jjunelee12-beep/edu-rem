@@ -2379,6 +2379,198 @@ export async function updatePracticeMasterSyncHistory(input: {
   );
 }
 
+export async function clearPracticeMasterSyncPayload(
+  input: {
+    syncHistoryId: number;
+  }
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throw new Error("DB not available");
+  }
+
+  const syncHistoryId =
+    Number(input.syncHistoryId);
+
+  if (
+    !Number.isInteger(syncHistoryId) ||
+    syncHistoryId <= 0
+  ) {
+    throw new Error(
+      "동기화 이력 ID가 올바르지 않습니다."
+    );
+  }
+
+  const history =
+    await getPracticeMasterSyncHistoryById(
+      syncHistoryId
+    );
+
+  if (!history) {
+    throw new Error(
+      "공용 실습 데이터 동기화 이력을 찾을 수 없습니다."
+    );
+  }
+
+  const status =
+    String(history.status || "");
+
+  if (
+    status === "analyzing" ||
+    status === "preview_ready" ||
+    status === "running"
+  ) {
+    throw new Error(
+      "분석 중이거나 실행 전인 데이터는 정리할 수 없습니다."
+    );
+  }
+
+  const previewBytes =
+    Buffer.byteLength(
+      typeof history.previewJson === "string"
+        ? history.previewJson
+        : JSON.stringify(
+            history.previewJson || {}
+          ),
+      "utf8"
+    );
+
+  const errorBytes =
+    Buffer.byteLength(
+      typeof history.errorJson === "string"
+        ? history.errorJson
+        : JSON.stringify(
+            history.errorJson || {}
+          ),
+      "utf8"
+    );
+
+  await db
+    .update(practiceMasterSyncHistory)
+    .set({
+      previewJson: null,
+      errorJson: null,
+
+      sourceFileKey: null,
+      sourceFileUrl: null,
+      sourceFileHash: null,
+    } as any)
+    .where(
+      eq(
+        practiceMasterSyncHistory.id,
+        syncHistoryId
+      )
+    );
+
+  return {
+    ok: true,
+
+    syncHistoryId,
+
+    clearedBytes:
+      previewBytes + errorBytes,
+  };
+}
+
+export async function clearCompletedPracticeMasterSyncPayloads() {
+  const db = await getDb();
+
+  if (!db) {
+    throw new Error("DB not available");
+  }
+
+  const [sizeRows] =
+    await db.execute(sql`
+      SELECT
+        COUNT(*) AS targetCount,
+
+        COALESCE(
+          SUM(
+            OCTET_LENGTH(
+              CAST(previewJson AS CHAR)
+            )
+          ),
+          0
+        ) AS previewBytes,
+
+        COALESCE(
+          SUM(
+            OCTET_LENGTH(
+              CAST(errorJson AS CHAR)
+            )
+          ),
+          0
+        ) AS errorBytes
+
+      FROM practice_master_sync_history
+
+      WHERE status IN (
+        'completed',
+        'failed',
+        'cancelled'
+      )
+
+      AND (
+        previewJson IS NOT NULL
+        OR errorJson IS NOT NULL
+        OR sourceFileKey IS NOT NULL
+        OR sourceFileUrl IS NOT NULL
+        OR sourceFileHash IS NOT NULL
+      )
+    `);
+
+  const sizeRow =
+    ((sizeRows as any[]) || [])[0] ||
+    {};
+
+  const targetCount =
+    Number(
+      sizeRow.targetCount || 0
+    );
+
+  const clearedBytes =
+    Number(
+      sizeRow.previewBytes || 0
+    ) +
+    Number(
+      sizeRow.errorBytes || 0
+    );
+
+  await db.execute(sql`
+    UPDATE practice_master_sync_history
+
+    SET
+      previewJson = NULL,
+      errorJson = NULL,
+      sourceFileKey = NULL,
+      sourceFileUrl = NULL,
+      sourceFileHash = NULL
+
+    WHERE status IN (
+      'completed',
+      'failed',
+      'cancelled'
+    )
+
+    AND (
+      previewJson IS NOT NULL
+      OR errorJson IS NOT NULL
+      OR sourceFileKey IS NOT NULL
+      OR sourceFileUrl IS NOT NULL
+      OR sourceFileHash IS NOT NULL
+    )
+  `);
+
+  return {
+    ok: true,
+
+    targetCount,
+
+    clearedBytes,
+  };
+}
+
 function normalizePracticeMasterText(
   value?: string | null
 ) {
@@ -5526,52 +5718,31 @@ export async function executePracticeMasterSync(input: {
       new Date();
 
     await updatePracticeMasterSyncHistory({
-      id: syncHistoryId,
+  id: syncHistoryId,
 
-      status: "completed",
+  status: "completed",
 
-      insertCount:
-        insertedCount,
+  insertCount:
+    insertedCount,
 
-      updateCount:
-        updatedCount,
+  updateCount:
+    updatedCount,
 
-      deactivateCount:
-        deactivatedCount,
+  deactivateCount:
+    deactivatedCount,
 
-      reactivateCount:
-        reactivatedCount,
+  reactivateCount:
+    reactivatedCount,
 
-      errorJson: null,
+  previewJson: null,
+  errorJson: null,
 
-      completedAt,
-    });
+  sourceFileKey: null,
+  sourceFileUrl: null,
+  sourceFileHash: null,
 
-    return {
-      ok: true,
-
-      syncHistoryId,
-
-      dataType:
-        preview.dataType,
-
-      unchangedCount:
-        preview.unchanged.length,
-
-      insertCount:
-        insertedCount,
-
-      updateCount:
-        updatedCount,
-
-      deactivateCount:
-        deactivatedCount,
-
-      reactivateCount:
-        reactivatedCount,
-
-      completedAt,
-    };
+  completedAt,
+});
   } catch (error: any) {
     const current =
       await getPracticeMasterSyncHistoryById(
