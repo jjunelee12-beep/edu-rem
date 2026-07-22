@@ -142,15 +142,26 @@ const closeConsultForm = () => {
       {/* PC에서는 모바일형 랜딩페이지가 중앙에 표시됩니다. */}
       <main className="relative mx-auto min-h-screen w-full max-w-[520px] overflow-hidden bg-white pb-[108px] shadow-2xl">
         {/* 긴 랜딩 디자인 이미지 */}
-        <section className="w-full bg-white">
-          <img
-            src="/images/withone/withone.png"
-            alt="위드원교육 사회복지사 2급 상담 안내"
-            className="block h-auto w-full"
-            loading="eager"
-            draggable={false}
-          />
-        </section>
+        {/* 랜딩 디자인 이미지 1~6 순서대로 출력 */}
+<section className="w-full bg-white">
+  {[
+    "/images/withone/landingform1.png",
+    "/images/withone/landingform2.png",
+    "/images/withone/landingform3.png",
+    "/images/withone/landingform4.png",
+    "/images/withone/landingform5.png",
+    "/images/withone/landingform6.png",
+  ].map((src, index) => (
+    <img
+      key={src}
+      src={src}
+      alt={`위드원교육 사회복지사 2급 상담 안내 ${index + 1}`}
+      className="block h-auto w-full"
+      loading={index === 0 ? "eager" : "lazy"}
+      draggable={false}
+    />
+  ))}
+</section>
       </main>
 
       {/* 화면 하단 고정 상담 버튼 */}

@@ -34,6 +34,7 @@ import { pushAppToast } from "@/lib/appNotifications";
 import { useIsMobile } from "@/hooks/useMobile";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import MessengerPage from "@/pages/MessengerPage";
+import DashboardAIAssistant from "@/components/dashboard-ai/DashboardAIAssistant";
 import {
  readAppNotificationSettings,
  isNowInDndRange,
@@ -228,7 +229,9 @@ const isNoticeEditorPage =
   /\/notices\/\d+\/edit\/?$/.test(location);
 
 const [isMessengerOpen, setIsMessengerOpen] = useState(false);
- const [openedRoomIds, setOpenedRoomIds] = useState<number[]>([]);
+const [isAiOpen, setIsAiOpen] = useState(false);
+
+const [openedRoomIds, setOpenedRoomIds] = useState<number[]>([]);
  const shownToastIdsRef = useRef<Set<number>>(new Set());
  const didInitToastRef = useRef(false);
  const [appNotificationSettings, setAppNotificationSettings] = useState(() =>
@@ -393,6 +396,8 @@ useEffect(() => {
  useEffect(() => {
  const handleOpenMessenger = () => {
   if (!canUseMessenger) return;
+
+  setIsAiOpen(false);
   setIsMessengerOpen(true);
 };
  const handleCloseMessenger = () => setIsMessengerOpen(false);
@@ -479,6 +484,29 @@ useEffect(() => {
  const isAdmin = user?.role === "admin";
  const isHost = user?.role === "host";
  const isSuperhost = user?.role === "superhost";
+
+const canUseAI =
+  isStaff ||
+  isAdmin ||
+  isHost;
+
+const openAiPanel = () => {
+  if (!canUseAI) return;
+
+  setIsMessengerOpen(false);
+  setIsAiOpen(true);
+};
+
+const closeAiPanel = () => {
+  setIsAiOpen(false);
+};
+
+const openMessengerPanel = () => {
+  if (!canUseMessenger) return;
+
+  setIsAiOpen(false);
+  setIsMessengerOpen(true);
+};
 
 const PRACTICE_SUPPORT_TEMP_ALLOWED_USERS = [
   { organizationSlug: "with-one", userId: 15 },
@@ -1057,10 +1085,12 @@ if (item.type === "semester_approval") {
 }
 
  if (item.type === "messenger" && item.relatedId) {
-if (!canUseMessenger) return;
- setIsMessengerOpen(true);
+  if (!canUseMessenger) return;
 
- window.dispatchEvent(new Event("open-messenger"));
+  setIsAiOpen(false);
+  setIsMessengerOpen(true);
+
+  window.dispatchEvent(new Event("open-messenger"));
  window.dispatchEvent(
  new CustomEvent("messenger:open-room", {
  detail: { roomId: Number(item.relatedId) },
@@ -1090,10 +1120,13 @@ if (!canUseMessenger) return;
  }
 
 if (item.type === "messenger") {
- if (!canUseMessenger) return;
- setIsMessengerOpen(true);
- window.dispatchEvent(new Event("open-messenger"));
- return;
+  if (!canUseMessenger) return;
+
+  setIsAiOpen(false);
+  setIsMessengerOpen(true);
+
+  window.dispatchEvent(new Event("open-messenger"));
+  return;
 }
 
  if (item.type === "notice") {
@@ -1554,11 +1587,47 @@ const saasAnnouncementTypeLabel: Record<string, string> = {
  </DropdownMenuContent>
  </DropdownMenu>
 
+
+{canUseAI && (
+  <button
+    type="button"
+    onClick={() => {
+      if (isAiOpen) {
+        closeAiPanel();
+        return;
+      }
+
+      openAiPanel();
+    }}
+    className={`relative inline-flex h-10 w-10 items-center justify-center rounded-2xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30 ${
+      isAiOpen
+        ? "bg-[#2F6B3B] text-white shadow-[0_6px_16px_rgba(47,107,59,0.22)]"
+        : "bg-white text-[#2F6B3B] shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] hover:bg-emerald-50"
+    }`}
+    aria-label="AI 업무비서"
+    title="AI 업무비서"
+  >
+    <Sparkles className="h-4 w-4" />
+
+    {!isAiOpen && (
+      <span className="absolute -right-1 -top-1 rounded-full border border-white bg-[#2F6B3B] px-1.5 py-0.5 text-[8px] font-bold leading-none text-white shadow-sm">
+        AI
+      </span>
+    )}
+  </button>
+)}
+
  {canUseMessenger && (
   <button
-    onClick={() => setIsMessengerOpen(true)}
-    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-900 transition hover:bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    type="button"
+    onClick={openMessengerPanel}
+    className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+      isMessengerOpen
+        ? "bg-slate-900 text-white shadow-sm"
+        : "bg-white text-slate-900 shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)] hover:bg-slate-50"
+    }`}
     aria-label="메신저"
+    title="메신저"
   >
     <MessageSquare className="h-4 w-4" />
   </button>
@@ -1592,8 +1661,14 @@ const saasAnnouncementTypeLabel: Record<string, string> = {
   }
 >
   <main
-  className={`min-w-[980px] flex-1 p-4 md:p-6 transition-all duration-200 ${
-    canUseMessenger && isMessengerOpen && !isMobile ? "pr-[560px]" : ""
+  className={`min-w-[980px] flex-1 p-4 md:p-6 transition-all duration-300 ${
+    !isMobile &&
+    (
+      (canUseMessenger && isMessengerOpen) ||
+      (canUseAI && isAiOpen)
+    )
+      ? "pr-[560px]"
+      : ""
   }`}
 >
   {shouldShowPaymentWarning && (
@@ -1622,53 +1697,149 @@ const saasAnnouncementTypeLabel: Record<string, string> = {
  </SidebarInset>
 
  {canUseMessenger && isMessengerOpen && !isMobile && (
- <div className="fixed right-0 top-16 z-[9999] h-[calc(100vh-64px)] w-[520px] border-l border-black/5 bg-white shadow-[-12px_0_40px_rgba(15,23,42,0.10)]">
- <div className="flex h-16 items-center justify-between border-b border-black/5 bg-white px-4">
- <div className="flex min-w-0 items-center gap-3">
- <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06),0_6px_16px_rgba(15,23,42,0.06)]">
- {companyLogoUrl ? (
- <img
- src={companyLogoUrl}
- alt={companyName}
- className="h-[82%] w-[82%] object-contain"
- />
- ) : (
- <MessageSquare className="h-5 w-5 text-slate-900" />
- )}
- </div>
+  <div className="fixed right-0 top-16 z-[9999] h-[calc(100vh-64px)] w-[520px] border-l border-black/5 bg-white shadow-[-12px_0_40px_rgba(15,23,42,0.10)]">
+    <div className="flex h-16 items-center justify-between border-b border-black/5 bg-white px-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06),0_6px_16px_rgba(15,23,42,0.06)]">
+          {companyLogoUrl ? (
+            <img
+              src={companyLogoUrl}
+              alt={companyName}
+              className="h-[82%] w-[82%] object-contain"
+            />
+          ) : (
+            <MessageSquare className="h-5 w-5 text-slate-900" />
+          )}
+        </div>
 
- <div className="min-w-0">
- <p className="truncate text-sm font-semibold text-black">
- {companyName}
- </p>
- <p className="truncate text-xs text-slate-500">
- {companySubtitle}
- </p>
- </div>
- </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-black">
+            {companyName}
+          </p>
 
- <button
- onClick={() => setIsMessengerOpen(false)}
- className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-slate-700 transition hover:bg-slate-100"
- aria-label="메신저 닫기"
- >
- <X className="h-4 w-4" />
- </button>
- </div>
+          <p className="truncate text-xs text-slate-500">
+            {companySubtitle}
+          </p>
+        </div>
+      </div>
 
- <div className="h-[calc(100%-64px)] overflow-hidden">
- <MessengerPage
- companyName={companyName}
- onRequestClose={() => setIsMessengerOpen(false)}
- />
- </div>
- </div>
- )}
- </>
- );
+      <button
+        type="button"
+        onClick={() => setIsMessengerOpen(false)}
+        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-slate-700 transition hover:bg-slate-100"
+        aria-label="메신저 닫기"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+
+    <div className="h-[calc(100%-64px)] overflow-hidden">
+      <MessengerPage
+        companyName={companyName}
+        onRequestClose={() => setIsMessengerOpen(false)}
+      />
+    </div>
+  </div>
+)}
+
+{canUseAI && isAiOpen && !isMobile && (
+  <div
+    className="
+      fixed right-0 top-16 z-[9998]
+      h-[calc(100vh-64px)] w-[520px]
+      overflow-hidden
+      border-l border-black/5
+      bg-[#F7F9F8]
+      shadow-[-16px_0_42px_rgba(15,23,42,0.11)]
+    "
+  >
+    <div className="flex h-16 items-center justify-between border-b border-black/5 bg-white px-5">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#2F6B3B] text-white shadow-[0_6px_16px_rgba(47,107,59,0.20)]">
+          <Sparkles className="h-5 w-5" />
+        </div>
+
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="truncate text-sm font-bold text-slate-900">
+              EduCanvas AI
+            </p>
+
+            <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold tracking-wide text-emerald-700">
+              BETA
+            </span>
+          </div>
+
+          <p className="mt-0.5 truncate text-xs text-slate-500">
+            CRM 업무에 대해 자유롭게 질문해주세요.
+          </p>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={closeAiPanel}
+        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+        aria-label="AI 업무비서 닫기"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+
+    <div className="h-[calc(100%-64px)] overflow-hidden">
+      <DashboardAIAssistant />
+    </div>
+  </div>
+)}
+
+{canUseAI && isAiOpen && isMobile && (
+  <div className="fixed inset-0 z-[10000] flex flex-col bg-[#F7F9F8]">
+    <div className="flex h-16 shrink-0 items-center justify-between border-b border-black/5 bg-white px-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#2F6B3B] text-white">
+          <Sparkles className="h-5 w-5" />
+        </div>
+
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="truncate text-sm font-bold text-slate-900">
+              EduCanvas AI
+            </p>
+
+            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-700">
+              BETA
+            </span>
+          </div>
+
+          <p className="truncate text-xs text-slate-500">
+            CRM 업무에 대해 질문해주세요.
+          </p>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={closeAiPanel}
+        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-slate-600 hover:bg-slate-100"
+        aria-label="AI 업무비서 닫기"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+
+    <div className="min-h-0 flex-1 overflow-hidden">
+      <DashboardAIAssistant />
+    </div>
+  </div>
+)}
+
+</>
+);
 }
 
-function getNotificationBadge(item: NotificationItem) {
+function getNotificationBadge(
+  item: NotificationItem
+) {
  const level = String(item.level || "normal");
 
  if (item.type === "semester_approval") {

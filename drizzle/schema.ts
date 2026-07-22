@@ -1521,6 +1521,11 @@ export const subjectCatalogItems = mysqlTable("subject_catalog_items", {
 
   subjectName: varchar("subjectName", { length: 255 }).notNull(),
 
+  semesterNo:
+    int("semesterNo")
+      .notNull()
+      .default(1),
+
   category: mysqlEnum("category", ["전공", "교양", "일반"])
     .notNull()
     .default("전공"),
@@ -3245,6 +3250,254 @@ organizationId: int("organizationId").notNull().default(1),
     createdAtIdx: index("idx_ai_logs_created_at").on(table.createdAt),
   })
 );
+
+// ==============================
+// AI PENDING ACTIONS
+// AI 등록·수정 승인 대기 초안
+// ==============================
+
+export const aiPendingActions = mysqlTable(
+  "ai_pending_actions",
+  {
+    id: int("id")
+      .autoincrement()
+      .primaryKey(),
+
+    /**
+     * 테넌트 경계
+     *
+     * 승인 조회와 실행 시 반드시
+     * 로그인 사용자의 organizationId와 일치해야 한다.
+     */
+    organizationId: int("organizationId")
+      .notNull(),
+
+    /**
+     * 최초 초안을 요청한 사용자
+     */
+    requestedByUserId: int("requestedByUserId")
+      .notNull(),
+
+    requestedByRole: varchar("requestedByRole", {
+      length: 50,
+    }).notNull(),
+
+    /**
+     * 실제 승인한 사용자
+     *
+     * 기본 정책은 요청자 본인만 승인 가능하게 하고,
+     * 추후 Admin/Host 승인 정책이 필요하면 서버에서 확장한다.
+     */
+    confirmedByUserId: int("confirmedByUserId"),
+
+    /**
+     * 작업 종류
+     *
+     * 삭제 작업은 절대로 추가하지 않는다.
+     */
+    actionType: mysqlEnum("actionType", [
+      "student_registration_create",
+      "student_update",
+      "semester_create",
+      "semester_update",
+      "plan_create",
+      "plan_update",
+      "plan_subjects_create",
+      "plan_subjects_update",
+      "payment_update",
+      "practice_request_create",
+      "consultation_update",
+    ]).notNull(),
+
+    /**
+     * 초안의 현재 상태
+     */
+    status: mysqlEnum("status", [
+      "draft",
+      "awaiting_confirmation",
+      "executing",
+      "executed",
+      "cancelled",
+      "expired",
+      "failed",
+    ])
+      .notNull()
+      .default("draft"),
+
+    /**
+     * 원본 상담DB 대상
+     *
+     * 학생 통합등록은 상담DB에서 시작하므로
+     * consultationId가 주 대상이 된다.
+     */
+    consultationId: int("consultationId"),
+
+    /**
+     * 기존 학생 수정 또는
+     * 학생 생성 완료 후 연결되는 학생 ID
+     */
+    studentId: int("studentId"),
+
+    /**
+     * 특정 학기 수정 작업용
+     */
+    semesterId: int("semesterId"),
+
+    /**
+     * 사용자에게 보여줄 전체 확인 내용
+     *
+     * 학생 기본정보, 학기, 교육원, 금액,
+     * 과목 분류, 경고 등을 저장한다.
+     */
+    previewJson: json("previewJson")
+      .notNull(),
+
+    /**
+     * 승인 후 실제 DB 함수에 전달할 값
+     *
+     * 프론트가 승인 시 payload를 다시 보내면 안 된다.
+     * 서버는 반드시 이 컬럼에 저장된 payload를 실행해야 한다.
+     */
+    payloadJson: json("payloadJson")
+      .notNull(),
+
+    /**
+     * 초안을 만들 당시의 기존 DB 상태
+     *
+     * 수정 작업에서 변경 전·후 비교와
+     * 승인 직전 충돌 검사용으로 사용한다.
+     */
+    sourceSnapshotJson: json(
+      "sourceSnapshotJson"
+    ),
+
+    /**
+     * 누락값과 경고를 별도로 저장
+     */
+    missingFieldsJson: json(
+      "missingFieldsJson"
+    ),
+
+    warningsJson: json("warningsJson"),
+
+    /**
+     * 초안 버전
+     *
+     * 사용자가 확인 화면에서 내용을 수정하면
+     * version을 증가시켜 이전 승인을 막는다.
+     */
+    version: int("version")
+      .notNull()
+      .default(1),
+
+    /**
+     * 동일 승인 요청 중복 실행 방지
+     */
+    idempotencyKey: varchar(
+      "idempotencyKey",
+      {
+        length: 100,
+      }
+    ).notNull(),
+
+    /**
+     * 실행 결과
+     */
+    executionResultJson: json(
+      "executionResultJson"
+    ),
+
+    errorMessage: text("errorMessage"),
+
+    /**
+     * 초안 만료 시각
+     *
+     * 오래된 초안이 현재 DB에 실행되는 것을 방지한다.
+     */
+    expiresAt: datetime("expiresAt")
+      .notNull(),
+
+    confirmedAt: datetime("confirmedAt"),
+    executedAt: datetime("executedAt"),
+    cancelledAt: datetime("cancelledAt"),
+    failedAt: datetime("failedAt"),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    /**
+     * 회사별 승인 대기 목록
+     */
+    orgStatusIdx: index(
+      "idx_ai_pending_org_status"
+    ).on(
+      table.organizationId,
+      table.status
+    ),
+
+    /**
+     * 사용자가 생성한 초안 목록
+     */
+    orgRequesterIdx: index(
+      "idx_ai_pending_org_requester"
+    ).on(
+      table.organizationId,
+      table.requestedByUserId
+    ),
+
+    /**
+     * 상담DB에서 진행 중인 초안 조회
+     */
+    orgConsultationIdx: index(
+      "idx_ai_pending_org_consultation"
+    ).on(
+      table.organizationId,
+      table.consultationId
+    ),
+
+    /**
+     * 학생별 진행 중인 초안 조회
+     */
+    orgStudentIdx: index(
+      "idx_ai_pending_org_student"
+    ).on(
+      table.organizationId,
+      table.studentId
+    ),
+
+    /**
+     * 만료 초안 정리
+     */
+    statusExpiresIdx: index(
+      "idx_ai_pending_status_expires"
+    ).on(
+      table.status,
+      table.expiresAt
+    ),
+
+    /**
+     * 같은 실행 요청이 두 번 처리되는 것을 방지
+     */
+    idempotencyIdx: uniqueIndex(
+      "uq_ai_pending_idempotency"
+    ).on(
+      table.idempotencyKey
+    ),
+  })
+);
+
+export type AiPendingAction =
+  typeof aiPendingActions.$inferSelect;
+
+export type InsertAiPendingAction =
+  typeof aiPendingActions.$inferInsert;
 
 export const aiLearningEntries = mysqlTable(
   "ai_learning_entries",

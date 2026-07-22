@@ -39,6 +39,42 @@ import { sendVerificationEmail } from "./_core/mail";
 import { throwAppError } from "./_core/appError";
 import { ERROR_CODES } from "./_core/errorCodes";
 
+import { buildAiContext } from "./ai/ai-context";
+import {
+  executeAiTool,
+  listRegisteredAiTools,
+} from "./ai/ai-tool-registry";
+
+import type {
+  AiDocumentAnalysisResult,
+  ConsultationSearchToolOutput,
+  MissingDataAlertToolOutput,
+  StudentSearchToolOutput,
+} from "./ai/ai.types";
+
+import {
+  runAiAssistant,
+} from "./ai/ai-runner";
+import {
+  buildStudentRegistrationDraft,
+} from "./ai/student-registration-draft";
+
+import {
+  executeStudentRegistrationPendingAction,
+} from "./ai/student-registration-executor";
+
+import {
+  executeDocumentImportPendingAction,
+} from "./ai/document-import-executor";
+
+import {
+  analyzeAiDocument,
+} from "./ai/document-analysis";
+
+import {
+  buildDocumentImportDraft,
+} from "./ai/document-import-draft";
+
 function isAdminOrHost(user: any) {
   return (
     user?.role === "admin" ||
@@ -293,6 +329,328 @@ function isSuperhost(user: any) {
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+async function createRequestAiContext(params: {
+  ctx: any;
+  targetOrganizationId?: number | null;
+}) {
+  return buildAiContext({
+    user: params.ctx.user,
+
+    /**
+     * 일반 사용자는 이 값을 넘겨도 세션 organizationId가 사용된다.
+     * Superhost만 선택한 회사 ID가 적용된다.
+     */
+    targetOrganizationId:
+      params.targetOrganizationId ?? null,
+  });
+}
+
+function throwAiToolError(result: {
+  success: boolean;
+  error?: {
+    code?: string;
+    message?: string;
+  };
+}) {
+  if (result.success) return;
+
+  const code =
+    result.error?.code ||
+    "AI_TOOL_EXECUTION_FAILED";
+
+  const status =
+    code === "AI_PERMISSION_DENIED"
+      ? 403
+      : code === "AI_TARGET_NOT_FOUND"
+        ? 404
+        : code === "AI_INVALID_INPUT"
+          ? 400
+          : 500;
+
+  throwAppError(
+    code as any,
+    result.error?.message ||
+      "AI 기능 실행 중 오류가 발생했습니다.",
+    status
+  );
+}
+
+function parseAiPendingJson<T>(
+  value: unknown,
+  fallback: T
+): T {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return fallback;
+  }
+
+  if (typeof value === "object") {
+    return value as T;
+  }
+
+  try {
+    return JSON.parse(
+      String(value)
+    ) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function toAiPendingActionPublicResult(
+  row: any
+) {
+  if (!row) {
+    return null;
+  }
+
+  const preview =
+    parseAiPendingJson(
+      row.previewJson,
+      {
+        title: "",
+        summary: "",
+        sections: [],
+        changes: [],
+        executionSteps: [],
+        missingFields: [],
+        warnings: [],
+        canConfirm: false,
+      }
+    );
+
+  const missingFields =
+    parseAiPendingJson<string[]>(
+      row.missingFieldsJson,
+      []
+    );
+
+  const warnings =
+    parseAiPendingJson<string[]>(
+      row.warningsJson,
+      []
+    );
+
+  const executionResult =
+    parseAiPendingJson<{
+      pendingActionId?: number;
+
+      status?: string;
+
+      studentId?: number | null;
+
+      planId?: number | null;
+
+      semesterIds?: number[];
+
+      planSubjectIds?: number[];
+
+      transferSubjectIds?: number[];
+
+      practiceSaved?: boolean;
+
+paymentUpdated?: boolean;
+
+      completedSteps?: string[];
+
+      failedSteps?: string[];
+
+      message?: string;
+    } | null>(
+      row.executionResultJson,
+      null
+    );
+
+  return {
+    id: Number(row.id),
+
+    actionType:
+      row.actionType,
+
+    status:
+      row.status,
+
+    consultationId:
+      row.consultationId === null ||
+      row.consultationId === undefined
+        ? null
+        : Number(
+            row.consultationId
+          ),
+
+    studentId:
+      row.studentId === null ||
+      row.studentId === undefined
+        ? null
+        : Number(row.studentId),
+
+    semesterId:
+      row.semesterId === null ||
+      row.semesterId === undefined
+        ? null
+        : Number(row.semesterId),
+
+    preview: {
+      ...preview,
+
+      /**
+       * 별도 컬럼을 최종 기준으로 사용한다.
+       */
+      missingFields,
+      warnings,
+
+      canConfirm:
+        row.status ===
+          "awaiting_confirmation" &&
+        missingFields.length === 0 &&
+        preview?.canConfirm === true,
+    },
+
+    version:
+      Number(row.version || 1),
+
+    expiresAt:
+      row.expiresAt ?? null,
+
+    confirmedAt:
+      row.confirmedAt ?? null,
+
+    executedAt:
+      row.executedAt ?? null,
+
+    cancelledAt:
+      row.cancelledAt ?? null,
+
+    failedAt:
+      row.failedAt ?? null,
+
+    errorMessage:
+      row.status === "failed"
+        ? row.errorMessage ?? null
+        : null,
+
+    executionResult:
+      row.status ===
+        "executed" ||
+      row.status ===
+        "failed"
+        ? executionResult
+          ? {
+              ...executionResult,
+
+              studentId:
+                executionResult
+                  .studentId ===
+                  null ||
+                executionResult
+                  .studentId ===
+                  undefined
+                  ? null
+                  : Number(
+                      executionResult
+                        .studentId
+                    ),
+
+              planId:
+                executionResult
+                  .planId ===
+                  null ||
+                executionResult
+                  .planId ===
+                  undefined
+                  ? null
+                  : Number(
+                      executionResult
+                        .planId
+                    ),
+
+              semesterIds:
+                Array.isArray(
+                  executionResult
+                    .semesterIds
+                )
+                  ? Array.from(
+                      new Set(
+                        executionResult
+                          .semesterIds
+                          .map(Number)
+                          .filter(
+                            (id) =>
+                              Number.isFinite(
+                                id
+                              ) &&
+                              id > 0
+                          )
+                      )
+                    )
+                  : [],
+
+              planSubjectIds:
+                Array.isArray(
+                  executionResult
+                    .planSubjectIds
+                )
+                  ? Array.from(
+                      new Set(
+                        executionResult
+                          .planSubjectIds
+                          .map(Number)
+                          .filter(
+                            (id) =>
+                              Number.isFinite(
+                                id
+                              ) &&
+                              id > 0
+                          )
+                      )
+                    )
+                  : [],
+
+              transferSubjectIds:
+                Array.isArray(
+                  executionResult
+                    .transferSubjectIds
+                )
+                  ? Array.from(
+                      new Set(
+                        executionResult
+                          .transferSubjectIds
+                          .map(Number)
+                          .filter(
+                            (id) =>
+                              Number.isFinite(
+                                id
+                              ) &&
+                              id > 0
+                          )
+                      )
+                    )
+                  : [],
+
+              practiceSaved:
+                executionResult
+                  .practiceSaved ===
+                true,
+
+paymentUpdated:
+  executionResult
+    .paymentUpdated ===
+  true,
+            }
+          : null
+        : null,
+
+    createdAt:
+      row.createdAt ?? null,
+
+    updatedAt:
+      row.updatedAt ?? null,
+  };
+}
+
 function cleanTransferRows(rows: any[]) {
   return (rows || [])
     .filter((row) => row && row.subjectName)
@@ -316,6 +674,527 @@ function cleanTransferRows(rows: any[]) {
     }))
     .filter((row) => row.subjectName.length >= 2);
 }
+
+/**
+ * 학생 통합등록 미리보기에 전달할
+ * 앞으로 수강할 우리플랜 과목
+ *
+ * planSemesters 테이블에 저장할 대상이다.
+ * organizationId, assigneeId, userId 등
+ * 권한 관련 값은 프론트에서 받지 않는다.
+ */
+const studentRegistrationPlanSubjectSchema =
+  z.object({
+    semesterNo:
+      z.number()
+        .int()
+        .positive()
+        .max(20)
+        .optional()
+        .nullable(),
+
+    subjectName:
+      z.string()
+        .trim()
+        .min(
+          2,
+          "과목명은 2자 이상이어야 합니다."
+        )
+        .max(200),
+
+    category:
+      z.enum([
+        "전공",
+        "교양",
+        "일반",
+      ])
+        .optional()
+        .nullable(),
+
+    requirementType:
+      z.enum([
+        "전공필수",
+        "전공선택",
+        "교양",
+        "일반",
+      ])
+        .optional()
+        .nullable(),
+
+    credits:
+      z.number()
+        .int()
+        .positive()
+        .max(30)
+        .optional()
+        .nullable(),
+
+    isConfirmed:
+      z.boolean()
+        .optional()
+        .nullable(),
+  });
+
+/**
+ * 학생 통합등록 미리보기에 전달할 OCR 과목
+ *
+ * organizationId, assigneeId, userId 등
+ * 권한 관련 값은 프론트에서 받지 않는다.
+ */
+const studentRegistrationOcrSubjectSchema =
+  z.object({
+    semesterNo: z
+      .number()
+      .int()
+      .positive()
+      .max(20)
+      .optional()
+      .nullable(),
+
+    schoolName:
+      z.string()
+        .trim()
+        .max(
+          200,
+          "학교명은 200자를 초과할 수 없습니다."
+        )
+        .optional()
+        .nullable(),
+
+    subjectName: z
+      .string()
+      .trim()
+      .min(
+        2,
+        "과목명은 2자 이상이어야 합니다."
+      )
+      .max(200),
+
+    category: z
+      .enum([
+        "전공",
+        "교양",
+        "일반",
+      ])
+      .optional()
+      .nullable(),
+
+    requirementType: z
+      .enum([
+        "전공필수",
+        "전공선택",
+        "교양",
+        "일반",
+      ])
+      .optional()
+      .nullable(),
+
+    credits: z
+      .number()
+      .int()
+      .positive()
+      .max(30)
+      .optional()
+      .nullable(),
+
+    isConfirmed: z
+      .boolean()
+      .optional()
+      .nullable(),
+  });
+
+/**
+ * AI 범용 문서 분석 입력
+ *
+ * 이 입력은 이미지 분석만 수행하며
+ * DB 등록이나 수정은 실행하지 않는다.
+ */
+const aiDocumentAnalysisInputSchema =
+  z.object({
+    /**
+     * 현재 선택된 학생
+     *
+     * 학생을 선택하지 않고 문서만
+     * 분석하는 경우 null 또는 생략 가능
+     */
+    studentId:
+      z.number()
+        .int()
+        .positive()
+        .optional()
+        .nullable(),
+
+    /**
+     * 이미지 형식
+     */
+    mimeType:
+      z.enum([
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+      ]),
+
+    /**
+     * 사용자에게 표시할 파일명
+     */
+    fileName:
+      z.string()
+        .trim()
+        .min(
+          1,
+          "파일명이 필요합니다."
+        )
+        .max(
+          255,
+          "파일명은 255자를 초과할 수 없습니다."
+        ),
+
+    /**
+     * data URL 접두사를 제거한
+     * 순수 Base64 이미지
+     */
+    imageBase64:
+      z.string()
+        .min(
+          100,
+          "분석할 이미지가 없습니다."
+        )
+        .max(
+          14_000_000,
+          "이미지 용량이 너무 큽니다."
+        ),
+
+    /**
+     * Superhost가 회사를 선택해서
+     * 점검할 때만 사용한다.
+     *
+     * 일반 사용자는 이 값을 보내도
+     * 로그인 세션의 organizationId가 사용된다.
+     */
+    targetOrganizationId:
+      z.number()
+        .int()
+        .positive()
+        .optional()
+        .nullable(),
+  });
+
+const aiDocumentConfidenceLevelSchema =
+  z.enum([
+    "high",
+    "medium",
+    "low",
+  ]);
+
+const aiDocumentFieldStatusSchema =
+  z.enum([
+    "extracted",
+    "confirmed",
+    "edited",
+  ]);
+
+function createAiDocumentExtractedFieldSchema<
+  T extends z.ZodTypeAny
+>(
+  valueSchema: T
+) {
+  return z.object({
+    value:
+      valueSchema
+        .nullable(),
+
+    confidence:
+      z.number()
+        .min(0)
+        .max(1),
+
+    confidenceLevel:
+      aiDocumentConfidenceLevelSchema,
+
+    status:
+      aiDocumentFieldStatusSchema,
+
+    warning:
+      z.string()
+        .max(1000)
+        .nullable(),
+  });
+}
+
+const aiDocumentExtractedSubjectSchema =
+  z.object({
+    rowId:
+      z.string()
+        .trim()
+        .min(1)
+        .max(200),
+
+    selected:
+      z.boolean(),
+
+    subjectName:
+      createAiDocumentExtractedFieldSchema(
+        z.string()
+          .trim()
+          .max(200)
+      ),
+
+    credits:
+      createAiDocumentExtractedFieldSchema(
+        z.number()
+          .min(0)
+          .max(30)
+      ),
+
+    grade:
+      createAiDocumentExtractedFieldSchema(
+        z.string()
+          .trim()
+          .max(100)
+      ),
+
+    category:
+      createAiDocumentExtractedFieldSchema(
+        z.enum([
+          "전공",
+          "교양",
+          "일반",
+        ])
+      ),
+
+    requirementType:
+      createAiDocumentExtractedFieldSchema(
+        z.enum([
+          "전공필수",
+          "전공선택",
+          "교양",
+          "일반",
+        ])
+      ),
+
+    semesterNo:
+      createAiDocumentExtractedFieldSchema(
+        z.number()
+          .int()
+          .positive()
+          .max(20)
+      ),
+
+    rawText:
+      z.string()
+        .max(5000)
+        .nullable(),
+
+    warnings:
+      z.array(
+        z.string()
+          .trim()
+          .min(1)
+          .max(1000)
+      )
+        .max(50),
+  });
+
+const aiDocumentAnalysisResultSchema =
+  z.object({
+    analysisId:
+      z.string()
+        .trim()
+        .min(1)
+        .max(200),
+
+    documentType:
+      z.enum([
+        "university_transcript",
+        "education_enrollment",
+        "education_payment",
+        "education_enrollment_and_payment",
+        "unknown",
+      ]),
+
+    documentTypeLabel:
+      z.string()
+        .trim()
+        .min(1)
+        .max(200),
+
+    recommendedTarget:
+      z.enum([
+        "plan",
+        "transfer",
+        "payment",
+        "plan_and_payment",
+        "analysis_only",
+      ]),
+
+    recommendedTargetLabel:
+      z.string()
+        .trim()
+        .min(1)
+        .max(200),
+
+    confidence:
+      z.number()
+        .min(0)
+        .max(1),
+
+    confidenceLevel:
+      aiDocumentConfidenceLevelSchema,
+
+    institutionName:
+      createAiDocumentExtractedFieldSchema(
+        z.string()
+          .trim()
+          .max(300)
+      ),
+
+    studentName:
+      createAiDocumentExtractedFieldSchema(
+        z.string()
+          .trim()
+          .max(200)
+      ),
+
+    courseName:
+      createAiDocumentExtractedFieldSchema(
+        z.string()
+          .trim()
+          .max(300)
+      ),
+
+    semesterLabel:
+      createAiDocumentExtractedFieldSchema(
+        z.string()
+          .trim()
+          .max(200)
+      ),
+
+    startDate:
+      createAiDocumentExtractedFieldSchema(
+        z.string()
+          .trim()
+          .max(100)
+      ),
+
+    endDate:
+      createAiDocumentExtractedFieldSchema(
+        z.string()
+          .trim()
+          .max(100)
+      ),
+
+    paymentAmount:
+      createAiDocumentExtractedFieldSchema(
+        z.number()
+          .min(0)
+          .max(1_000_000_000)
+      ),
+
+    paymentStatus:
+      createAiDocumentExtractedFieldSchema(
+        z.enum([
+          "결제완료",
+          "결제예정",
+          "미결제",
+          "부분환불",
+          "전액환불",
+          "취소",
+        ])
+      ),
+
+    paidAt:
+      createAiDocumentExtractedFieldSchema(
+        z.string()
+          .trim()
+          .max(100)
+      ),
+
+    subjects:
+      z.array(
+        aiDocumentExtractedSubjectSchema
+      )
+        .max(
+          200,
+          "문서 과목은 최대 200개까지 처리할 수 있습니다."
+        ),
+
+    rawText:
+      z.string()
+        .max(
+          100_000,
+          "문서 원문이 너무 깁니다."
+        ),
+
+    warnings:
+      z.array(
+        z.string()
+          .trim()
+          .min(1)
+          .max(1000)
+      )
+        .max(100),
+
+    requiredConfirmations:
+      z.array(
+        z.string()
+          .trim()
+          .min(1)
+          .max(1000)
+      )
+        .max(100),
+
+    analyzedAt:
+      z.string()
+        .trim()
+        .min(1)
+        .max(100),
+  });
+
+const aiDocumentImportPreviewInputSchema =
+  z.object({
+    studentId:
+      z.number()
+        .int()
+        .positive(),
+
+    analysis:
+      aiDocumentAnalysisResultSchema,
+
+    /**
+     * AI 추천 위치를 그대로 사용하면 생략한다.
+     *
+     * 담당자가 카드에서 반영 위치를 바꿀 경우
+     * 선택값을 전달한다.
+     */
+    target:
+      z.enum([
+        "plan",
+        "transfer",
+        "payment",
+        "plan_and_payment",
+      ])
+        .optional()
+        .nullable(),
+
+    /**
+     * Superhost 확장용이다.
+     *
+     * 현재 Staff 단계에서는 전달하지 않는다.
+     */
+    targetOrganizationId:
+      z.number()
+        .int()
+        .positive()
+        .optional()
+        .nullable(),
+
+    expiresInMinutes:
+      z.number()
+        .int()
+        .min(5)
+        .max(24 * 60)
+        .optional(),
+  });
 
 const publicFormUiConfigSchema = z.object({
   title: z.string().optional().default(""),
@@ -366,6 +1245,118 @@ const publicFormUiConfigSchema = z.object({
     })
     .optional(),
 });
+
+function normalizeSubjectCatalogName(
+  value: unknown
+) {
+  return String(
+    value ?? ""
+  )
+    .trim()
+    .replace(
+      /\s+/g,
+      ""
+    )
+    .replace(
+      /[()（）[\]·ㆍ.,_-]/g,
+      ""
+    )
+    .toLowerCase();
+}
+
+async function buildRegistrationPlanSubjectsFromCatalog(params: {
+  organizationId:
+    number;
+
+  courseName:
+    string | null | undefined;
+}) {
+  const normalizedCourseName =
+    normalizeSubjectCatalogName(
+      params.courseName
+    );
+
+  if (
+    !normalizedCourseName
+  ) {
+    return [];
+  }
+
+  const catalogs =
+    await db.listSubjectCatalogs({
+      organizationId:
+        params.organizationId,
+
+      activeOnly:
+        true,
+    });
+
+  const matchedCatalog =
+    catalogs.find(
+      (catalog: any) =>
+        normalizeSubjectCatalogName(
+          catalog.name
+        ) ===
+        normalizedCourseName
+    );
+
+  if (
+    !matchedCatalog
+  ) {
+    return [];
+  }
+
+  const catalogItems =
+    await db.listSubjectCatalogItems({
+      organizationId:
+        params.organizationId,
+
+      catalogId:
+        Number(
+          matchedCatalog.id
+        ),
+
+      activeOnly:
+        true,
+    });
+
+  return catalogItems
+    .map(
+      (item: any) => ({
+        semesterNo:
+          Number(
+            item.semesterNo ||
+            1
+          ),
+
+        subjectName:
+          String(
+            item.subjectName ||
+            ""
+          ).trim(),
+
+        category:
+          item.category,
+
+        requirementType:
+          item.requirementType,
+
+        credits:
+          Number(
+            item.credits ||
+            3
+          ),
+
+        isConfirmed:
+          true,
+      })
+    )
+    .filter(
+      (item: any) =>
+        item.subjectName
+          .length >= 2
+    );
+}
 
 async function assertOrganizationFeatureEnabled(
   organizationId: number,
@@ -4803,132 +5794,2006 @@ cleanupOrphanSettlementItems: hostProcedure
      * AI 페이지 초기 진입용
      * 현재 로그인 유저 기준으로 사용 가능 기능 요약
      */
-    bootstrap: protectedProcedure.query(async ({ ctx }) => {
-      return {
-        success: true,
-        user: {
-          id: Number(ctx.user.id),
-          name: ctx.user.name,
-          role: ctx.user.role,
-        },
-        capabilities: {
-          canSearchStudents: true,
-          canSearchConsultations: true,
-          canReadNotifications: true,
-          canCreateTransferSubject: true,
-          canCreatePlanSemester: true,
-          canRecommendPracticePlace: true,
-          canModifyServer: false,
-          canDeleteData: false,
-          canAlterSchema: false,
-        },
-      };
-    }),
+  bootstrap: protectedProcedure
+  .input(
+    z
+      .object({
+        targetOrganizationId: z
+          .number()
+          .int()
+          .positive()
+          .optional(),
+      })
+      .optional()
+  )
+  .query(async ({ ctx, input }) => {
+    const aiContext =
+      await createRequestAiContext({
+        ctx,
+        targetOrganizationId:
+          input?.targetOrganizationId,
+      });
+
+    const availableTools =
+      listRegisteredAiTools().filter(
+        (tool) =>
+          tool.allowedRoles.includes(
+            aiContext.role
+          )
+      );
+
+    return {
+      success: true,
+
+      user: {
+        id: aiContext.userId,
+        name: aiContext.userName,
+        role: aiContext.role,
+      },
+
+      context: {
+        organizationId:
+          aiContext.organizationId,
+
+        teamId: aiContext.teamId,
+        positionId:
+          aiContext.positionId,
+
+        scope: aiContext.scope,
+
+        /**
+         * 사용자 ID 목록 자체는 프론트에 줄 필요가 없으므로
+         * 개수만 전달한다.
+         */
+        allowedAssigneeCount:
+          aiContext.allowedAssigneeIds ===
+          null
+            ? null
+            : aiContext
+                .allowedAssigneeIds
+                .length,
+
+        canWrite:
+          aiContext.canWrite,
+
+        canDelete:
+          aiContext.canDelete,
+      },
+
+      capabilities: {
+        canSearchStudents:
+          availableTools.some(
+            (tool) =>
+              tool.name ===
+              "student.search"
+          ),
+
+        canSearchConsultations:
+          availableTools.some(
+            (tool) =>
+              tool.name ===
+              "consultation.search"
+          ),
+
+        canReadNotifications:
+          availableTools.some(
+            (tool) =>
+              tool.name ===
+              "alert.missingData"
+          ),
+
+          canUsePendingActions:
+          true,
+
+        /**
+ * AI 학생 통합등록 승인 실행 API 연결 완료
+ */
+canConfirmPendingActions:
+  aiContext.canWrite === true,
+
+        /**
+         * 기존 직접 등록 API 존재 여부
+         *
+         * 현재는 true지만,
+         * AI 자동등록 승인 기능과는 별개다.
+         */
+        canCreateTransferSubject:
+          true,
+
+        canCreatePlanSemester:
+          true,
+
+        canRecommendPracticePlace:
+          true,
+
+        canRunRiskScan:
+          availableTools.some(
+            (tool) =>
+              tool.name ===
+              "risk.studentDetail" ||
+              tool.name ===
+              "risk.studentList"
+          ),
+
+        canModifyServer: false,
+        canDeleteData: false,
+        canAlterSchema: false,
+      },
+
+      tools: availableTools,
+    };
+  }),
+
+/**
+ * 교육 관련 이미지 문서 분석
+ *
+ * 성적증명서, 교육원 수강내역,
+ * 결제내역, 홈페이지 캡처 등을 분석한다.
+ *
+ * 분석 결과만 반환하며
+ * DB 저장은 절대로 실행하지 않는다.
+ */
+analyzeDocument:
+  protectedProcedure
+    .input(
+      aiDocumentAnalysisInputSchema
+    )
+    .mutation(
+      async ({
+        ctx,
+        input,
+      }) => {
+        const aiContext =
+          await createRequestAiContext({
+            ctx,
+
+            targetOrganizationId:
+              input
+                .targetOrganizationId ??
+              null,
+          });
+
+        /**
+         * 현재 1차 문서 분석은
+         * Staff 본인 업무용으로만 허용한다.
+         *
+         * Admin, Host, Superhost 문서 분석은
+         * 역할별 AI 개발 단계에서 별도로 확장한다.
+         */
+        if (
+          aiContext.role !==
+          "staff"
+        ) {
+          throwAppError(
+            ERROR_CODES
+              .PERMISSION_DENIED,
+            "현재 AI 문서 분석은 담당자 계정에서만 사용할 수 있습니다.",
+            403
+          );
+        }
+
+        /**
+         * 학생이 선택된 상태라면
+         * 해당 학생이 실제로 존재하는지 확인한다.
+         */
+        if (
+  input.studentId
+) {
+  const student =
+    await db.getStudent(
+      Number(
+        input.studentId
+      ),
+      {
+        organizationId:
+          aiContext
+            .organizationId,
+      }
+    );
+
+  if (!student) {
+    throwAppError(
+      ERROR_CODES
+        .DATA_NOT_FOUND,
+      "선택한 학생을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  if (
+    Number(
+      student
+        .assigneeId ||
+      0
+    ) !==
+    Number(
+      aiContext.userId
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES
+        .PERMISSION_DENIED,
+      "본인 담당 학생의 문서만 분석할 수 있습니다.",
+      403
+    );
+  }
+}
+
+        try {
+          const result =
+            await analyzeAiDocument({
+              studentId:
+                input.studentId ??
+                null,
+
+              mimeType:
+                input.mimeType,
+
+              fileName:
+                input.fileName,
+
+              imageBase64:
+                input.imageBase64,
+            });
+
+          return {
+            success: true,
+
+            /**
+             * DB에 저장된 데이터가 아니라
+             * 담당자 확인용 분석 결과다.
+             */
+            analysis:
+              result,
+
+            meta: {
+              organizationId:
+                aiContext
+                  .organizationId,
+
+              userId:
+                aiContext.userId,
+
+              scope:
+                aiContext.scope,
+
+              saved:
+                false,
+            },
+          };
+        } catch (error) {
+          console.error(
+            "[AI DOCUMENT] 문서 분석 실패",
+            {
+              organizationId:
+                aiContext
+                  .organizationId,
+
+              userId:
+                aiContext.userId,
+
+              studentId:
+                input.studentId ??
+                null,
+
+              fileName:
+                input.fileName,
+
+              error,
+            }
+          );
+
+          throwAppError(
+            ERROR_CODES
+              .INTERNAL_SERVER_ERROR,
+            error instanceof Error
+              ? error.message
+              : "AI 문서 분석 중 오류가 발생했습니다.",
+            500
+          );
+        }
+      }
+    ),
+
+/**
+ * 문서 분석 결과 CRM 반영 승인 초안 생성
+ *
+ * 실제 학생·과목·결제정보는 변경하지 않는다.
+ * ai_pending_actions에 승인용 초안만 저장한다.
+ */
+documentImportPreview:
+  protectedProcedure
+    .input(
+      aiDocumentImportPreviewInputSchema
+    )
+    .mutation(
+      async ({
+        ctx,
+        input,
+      }) => {
+        const aiContext =
+          await createRequestAiContext({
+            ctx,
+
+            targetOrganizationId:
+              input
+                .targetOrganizationId ??
+              null,
+          });
+
+        /**
+         * 현재 1차 문서 반영 기능은
+         * Staff 본인 담당 학생만 허용한다.
+         *
+         * Admin, Host, Superhost는
+         * 역할별 범위 개발 때 별도 확장한다.
+         */
+        if (
+          aiContext.role !==
+          "staff"
+        ) {
+          throwAppError(
+            ERROR_CODES.PERMISSION_DENIED,
+            "현재 문서 CRM 반영 기능은 Staff 계정만 사용할 수 있습니다.",
+            403
+          );
+        }
+
+        if (
+          aiContext.canWrite !==
+          true
+        ) {
+          throwAppError(
+            ERROR_CODES.PERMISSION_DENIED,
+            "현재 계정은 AI 문서 반영 초안을 생성할 수 없습니다.",
+            403
+          );
+        }
+
+        const student =
+          await db.getStudent(
+            Number(
+              input.studentId
+            ),
+            {
+              organizationId:
+                aiContext.organizationId,
+            }
+          );
+
+        if (!student) {
+          throwAppError(
+            ERROR_CODES.DATA_NOT_FOUND,
+            "반영 대상 학생을 찾을 수 없습니다.",
+            404
+          );
+        }
+
+        /**
+         * Staff는 본인 담당 학생만
+         * 문서 반영 초안을 만들 수 있다.
+         */
+        if (
+          Number(
+            student.assigneeId ||
+            0
+          ) !==
+          aiContext.userId
+        ) {
+          throwAppError(
+            ERROR_CODES.PERMISSION_DENIED,
+            "본인 담당 학생의 문서만 CRM 반영할 수 있습니다.",
+            403
+          );
+        }
+
+        const analysis =
+          input.analysis as
+            AiDocumentAnalysisResult;
+
+        /**
+         * 문서에 추출된 학생명이 있고
+         * 현재 선택 학생명과 다르면 경고를 추가한다.
+         *
+         * 이름 불일치만으로 초안 생성을 차단하지는 않는다.
+         */
+        const selectedStudentName =
+          String(
+            student.clientName ||
+            ""
+          ).trim();
+
+        const documentStudentName =
+          String(
+            analysis
+              .studentName
+              ?.value ||
+            ""
+          ).trim();
+
+        const nameMismatch =
+          Boolean(
+            selectedStudentName &&
+            documentStudentName &&
+            selectedStudentName !==
+              documentStudentName
+          );
+
+        const normalizedAnalysis:
+          AiDocumentAnalysisResult = {
+          ...analysis,
+
+          warnings:
+            Array.from(
+              new Set([
+                ...(
+                  analysis.warnings ||
+                  []
+                ),
+
+                ...(
+                  nameMismatch
+                    ? [
+                        `문서 학생명(${documentStudentName})과 선택 학생명(${selectedStudentName})이 일치하지 않습니다.`,
+                      ]
+                    : []
+                ),
+              ])
+            ),
+        };
+
+        let built:
+          ReturnType<
+            typeof buildDocumentImportDraft
+          >;
+
+        try {
+          built =
+            buildDocumentImportDraft({
+              studentId:
+                Number(
+                  student.id
+                ),
+
+              analysis:
+                normalizedAnalysis,
+
+              target:
+                input.target ??
+                null,
+            });
+        } catch (
+          error
+        ) {
+          throwAppError(
+            ERROR_CODES.INVALID_REQUEST,
+            error instanceof
+              Error
+              ? error.message
+              : "문서 CRM 반영 초안을 생성하지 못했습니다.",
+            400
+          );
+        }
+
+        const pendingAction =
+          await db.createAiPendingAction({
+            organizationId:
+              aiContext.organizationId,
+
+            requestedByUserId:
+              aiContext.userId,
+
+            requestedByRole:
+              aiContext.role,
+
+            actionType:
+              built
+                .draft
+                .actionType,
+
+            consultationId:
+              null,
+
+            studentId:
+              Number(
+                student.id
+              ),
+
+            semesterId:
+              null,
+
+            preview:
+              built.preview,
+
+            /**
+             * 실제 Executor가 사용할 데이터다.
+             *
+             * 현재는 암호화된 Pending JSON으로만 저장되며
+             * 실제 학생 데이터에는 반영되지 않는다.
+             */
+            payload: {
+              draft:
+                built.draft,
+            },
+
+            /**
+             * 승인 시점에 원본 변경 여부를 비교하기 위한
+             * 최소 학생 스냅샷이다.
+             */
+            sourceSnapshot: {
+              student: {
+                id:
+                  Number(
+                    student.id
+                  ),
+
+                organizationId:
+                  Number(
+                    student.organizationId
+                  ),
+
+                assigneeId:
+                  student.assigneeId ===
+                    null ||
+                  student.assigneeId ===
+                    undefined
+                    ? null
+                    : Number(
+                        student.assigneeId
+                      ),
+
+                clientName:
+                  student.clientName ||
+                  null,
+
+                course:
+                  student.course ||
+                  null,
+
+                paymentAmount:
+                  student.paymentAmount ??
+                  null,
+
+                paymentDate:
+                  student.paymentDate ??
+                  null,
+
+                updatedAt:
+                  student.updatedAt ??
+                  null,
+              },
+
+              document: {
+                analysisId:
+                  built
+                    .draft
+                    .analysisId,
+
+                documentType:
+                  built
+                    .draft
+                    .documentType,
+
+                target:
+                  built
+                    .draft
+                    .target,
+
+                analyzedAt:
+                  built
+                    .draft
+                    .analyzedAt,
+              },
+            },
+
+            expiresInMinutes:
+              input
+                .expiresInMinutes ??
+              30,
+          });
+
+        const publicPendingAction =
+          toAiPendingActionPublicResult(
+            pendingAction
+          );
+
+        if (
+          !publicPendingAction
+        ) {
+          throwAppError(
+            ERROR_CODES.INTERNAL_SERVER_ERROR,
+            "문서 CRM 반영 초안을 생성했지만 조회하지 못했습니다.",
+            500
+          );
+        }
+
+        await db.createAiActionLog({
+  organizationId:
+    aiContext.organizationId,
+
+  userId:
+    aiContext.userId,
+
+  userName:
+    aiContext.userName ||
+    String(
+      (ctx.user as any)
+        ?.username ||
+      ""
+    ),
+
+  action:
+    "ai_document_import_preview",
+
+  targetStudentId:
+    Number(
+      student.id
+    ),
+
+  targetStudentName:
+    student.clientName ||
+    null,
+
+  payload: {
+    request: {
+      analysisId:
+        built
+          .draft
+          .analysisId,
+
+      documentType:
+        built
+          .draft
+          .documentType,
+
+      target:
+        built
+          .draft
+          .target,
+
+      actionType:
+        built
+          .draft
+          .actionType,
+
+      subjectCount:
+        built
+          .draft
+          .subjects
+          .length,
+
+      hasPaymentAmount:
+        built
+          .draft
+          .paymentAmount !==
+        null,
+    },
+
+    result: {
+      pendingActionId:
+        publicPendingAction.id,
+
+      status:
+        publicPendingAction.status,
+
+      canConfirm:
+        publicPendingAction
+          .preview
+          ?.canConfirm ===
+        true,
+
+      missingFieldCount:
+        publicPendingAction
+          .preview
+          ?.missingFields
+          ?.length ||
+        0,
+
+      warningCount:
+        publicPendingAction
+          .preview
+          ?.warnings
+          ?.length ||
+        0,
+    },
+  },
+});
+
+        return {
+          success:
+            true,
+
+          message:
+            publicPendingAction
+              .preview
+              ?.canConfirm ===
+            true
+              ? "문서 CRM 반영 내용을 확인한 후 승인해주세요."
+              : "문서 CRM 반영에 필요한 일부 정보를 확인해주세요.",
+
+          pendingAction:
+            publicPendingAction,
+        };
+      }
+    ),
+
+/**
+ * 학생 통합등록 승인 초안 생성
+ *
+ * 실제 학생, 플랜, 학기, 과목은 생성하지 않는다.
+ * ai_pending_actions에 승인용 초안만 저장한다.
+ */
+studentRegistrationPreview:
+  protectedProcedure
+    .input(
+      z.object({
+        /**
+         * 상담DB에서 선택한 상담 ID
+         */
+        consultationId: z
+          .number()
+          .int()
+          .positive(),
+
+        /**
+         * 사용자가 입력한 학생 등록 지시문
+         */
+        message: z
+          .string()
+          .trim()
+          .min(
+            1,
+            "학생 등록 내용을 입력해주세요."
+          )
+          .max(
+            10000,
+            "학생 등록 내용은 10,000자를 초과할 수 없습니다."
+          ),
+
+        /**
+         * AI가 설계한 앞으로 수강할
+         * 우리플랜 과목
+         */
+        planSubjects:
+          z.array(
+            studentRegistrationPlanSubjectSchema
+          )
+            .max(
+              100,
+              "한 번에 설계할 수 있는 우리플랜 과목은 최대 100개입니다."
+            )
+            .optional()
+            .default([]),       
+
+ /**
+         * OCR 또는 별도 과목 추출 결과
+         */
+        ocrSubjects: z
+          .array(
+            studentRegistrationOcrSubjectSchema
+          )
+          .max(
+            100,
+            "한 번에 등록할 수 있는 과목은 최대 100개입니다."
+          )
+          .optional()
+          .default([]),
+
+        /**
+         * Superhost가 특정 회사를 선택한 경우에만 사용한다.
+         * 일반 사용자는 서버 세션 organizationId로 고정된다.
+         */
+        targetOrganizationId: z
+          .number()
+          .int()
+          .positive()
+          .optional(),
+
+        /**
+         * 초안 만료시간
+         *
+         * 프론트에서 생략하면 DB 함수 기본값 30분 사용
+         */
+        expiresInMinutes: z
+          .number()
+          .int()
+          .min(5)
+          .max(24 * 60)
+          .optional(),
+      })
+    )
+    .mutation(
+      async ({
+        ctx,
+        input,
+      }) => {
+        /**
+         * 1. 세션 기반 AI 권한 Context 생성
+         */
+        const aiContext =
+          await createRequestAiContext({
+            ctx,
+
+            targetOrganizationId:
+              input.targetOrganizationId ??
+              null,
+          });
+
+        /**
+         * 현재 단계에서는 등록 초안 생성 기능이므로
+         * 조회 전용 Context라 하더라도 미리보기 생성은 허용한다.
+         *
+         * 실제 Confirm 실행 단계에서는 canWrite를 다시 확인한다.
+         */
+
+        /**
+         * 2. 상담DB 원본 조회
+         *
+         * organizationId는 프론트 값을 사용하지 않고
+         * AI Context에 확정된 값을 사용한다.
+         */
+        const consultation =
+          await db.getConsultation(
+            input.consultationId,
+            {
+              organizationId:
+                aiContext.organizationId,
+            }
+          );
+
+        if (!consultation) {
+          throwAppError(
+            ERROR_CODES.DATA_NOT_FOUND,
+            "상담DB 정보를 찾을 수 없습니다.",
+            404
+          );
+        }
+
+        /**
+         * 3. 상담DB 담당자 접근 권한 확인
+         *
+         * Staff:
+         * 본인 상담만 가능
+         *
+         * Admin:
+         * 같은 팀 담당자 상담만 가능
+         *
+         * Host:
+         * 회사 전체 가능
+         *
+         * Superhost:
+         * 선택한 회사 전체 가능
+         */
+        if (
+          aiContext.allowedAssigneeIds !==
+            null &&
+          !aiContext.allowedAssigneeIds.includes(
+            Number(
+              consultation.assigneeId
+            )
+          )
+        ) {
+          throwAppError(
+            ERROR_CODES.PERMISSION_DENIED,
+            "해당 상담DB는 현재 사용자의 접근 범위에 포함되지 않습니다.",
+            403
+          );
+        }
+
+        /**
+         * 4. 이미 학생으로 전환된 상담인지 확인
+         */
+        const existingStudent =
+          await db.getStudentByConsultationId(
+            input.consultationId,
+            {
+              organizationId:
+                aiContext.organizationId,
+            }
+          );
+
+               if (existingStudent) {
+          throwAppError(
+            ERROR_CODES.DUPLICATE_RESOURCE,
+            "이미 등록예정 학생으로 전환되었거나 기존 학생과 연결된 상담DB입니다.",
+            409
+          );
+        }
+
+        const requestedPlanSubjects =
+          Array.isArray(
+            input.planSubjects
+          )
+            ? input.planSubjects
+            : [];
+
+        const catalogPlanSubjects =
+          requestedPlanSubjects.length > 0
+            ? []
+            : await buildRegistrationPlanSubjectsFromCatalog({
+                organizationId:
+                  aiContext.organizationId,
+
+                courseName:
+                  consultation.desiredCourse,
+              });
+
+        const resolvedPlanSubjects =
+          requestedPlanSubjects.length > 0
+            ? requestedPlanSubjects
+            : catalogPlanSubjects;
+
+        /**
+         * 5. 학생 통합등록 Draft 생성
+         *
+         * 실제 DB 변경 없음
+         */
+        let builtDraft:
+          ReturnType<
+            typeof buildStudentRegistrationDraft
+          >;
+
+        try {
+          builtDraft =
+            buildStudentRegistrationDraft({
+              message:
+                input.message,
+
+              consultation: {
+                id:
+                  Number(
+                    consultation.id
+                  ),
+
+                clientName:
+                  consultation.clientName ??
+                  null,
+
+                phone:
+                  consultation.phone ??
+                  null,
+
+                desiredCourse:
+                  consultation.desiredCourse ??
+                  null,
+
+                finalEducation:
+                  consultation.finalEducation ??
+                  null,
+
+                assigneeId:
+                  consultation.assigneeId ??
+                  null,
+
+                status:
+                  consultation.status ??
+                  null,
+              },
+
+              /**
+               * 상담DB 담당자가 없을 때만
+               * 현재 로그인 사용자 ID를 사용한다.
+               */
+              fallbackAssigneeId:
+                aiContext.userId,
+
+                        planSubjects:
+            resolvedPlanSubjects,
+
+          ocrSubjects:
+            input.ocrSubjects,
+            });
+        } catch (
+          error: any
+        ) {
+          throwAppError(
+            ERROR_CODES.INVALID_REQUEST,
+            error?.message ||
+              "학생 통합등록 초안을 생성하지 못했습니다.",
+            400
+          );
+        }
+
+        /**
+         * 6. 중복 및 원본 상태 경고 보완
+         */
+        const additionalWarnings:
+          string[] = [];
+
+               if (
+          consultation.status ===
+            "등록" ||
+          consultation.status ===
+            "등록예정"
+        ) {
+          additionalWarnings.push(
+            `상담DB 상태가 이미 '${consultation.status}'으로 표시되어 있습니다. 기존 학생 연결 여부를 확인해주세요.`
+          );
+        }
+
+        if (
+          !String(
+            consultation.clientName ??
+            ""
+          ).trim()
+        ) {
+          additionalWarnings.push(
+            "상담DB 회원명이 비어 있습니다."
+          );
+        }
+
+        if (
+          !String(
+            consultation.phone ??
+            ""
+          ).replace(/\D/g, "")
+        ) {
+          additionalWarnings.push(
+            "상담DB 연락처가 비어 있습니다."
+          );
+        }
+
+        const combinedWarnings =
+          Array.from(
+            new Set([
+              ...builtDraft.draft
+                .warnings,
+
+              ...additionalWarnings,
+            ])
+          );
+
+        builtDraft.draft.warnings =
+          combinedWarnings;
+
+        builtDraft.preview.warnings =
+          combinedWarnings;
+
+        /**
+         * 7. 최종 승인 가능 여부 재계산
+         */
+       /**
+ * 7. 최종 승인 가능 여부 재계산
+ *
+ * 누락값뿐만 아니라 중복과목과
+ * 미확정 과목도 모두 확인한다.
+ */
+const hasDuplicateSubjects =
+  Array.isArray(
+    builtDraft.draft
+      .duplicateSubjects
+  ) &&
+  builtDraft.draft
+    .duplicateSubjects
+    .length > 0;
+
+const hasUnconfirmedPlanSubjects =
+  Array.isArray(
+    builtDraft.draft
+      .planSubjects
+  ) &&
+  builtDraft.draft
+    .planSubjects
+    .some(
+      (subject) =>
+        subject.isConfirmed !==
+        true
+    );
+
+const hasUnconfirmedTransferSubjects =
+  Array.isArray(
+    builtDraft.draft
+      .transferSubjects
+  ) &&
+  builtDraft.draft
+    .transferSubjects
+    .some(
+      (subject) =>
+        subject.isConfirmed !==
+        true
+    );
+
+const canConfirm =
+  builtDraft.draft
+    .missingFields
+    .length === 0 &&
+  !hasDuplicateSubjects &&
+  !hasUnconfirmedPlanSubjects &&
+  !hasUnconfirmedTransferSubjects;
+
+builtDraft.draft.canConfirm =
+  canConfirm;
+
+builtDraft.preview.canConfirm =
+  canConfirm;
+
+        /**
+         * 8. 암호화된 ai_pending_actions 초안 저장
+         */
+        const pendingAction =
+          await db.createAiPendingAction({
+            organizationId:
+              aiContext.organizationId,
+
+            requestedByUserId:
+              aiContext.userId,
+
+            requestedByRole:
+              aiContext.role,
+
+            actionType:
+              "student_registration_create",
+
+            consultationId:
+              Number(
+                consultation.id
+              ),
+
+            studentId:
+              null,
+
+            semesterId:
+              null,
+
+            preview:
+              builtDraft.preview,
+
+            payload:
+              builtDraft.draft as unknown as Record<
+                string,
+                unknown
+              >,
+
+            /**
+             * 실행 시 상담DB가 변경됐는지 비교할 원본
+             */
+            sourceSnapshot: {
+              consultation: {
+                id:
+                  Number(
+                    consultation.id
+                  ),
+
+                organizationId:
+                  aiContext.organizationId,
+
+                clientName:
+                  consultation.clientName ??
+                  null,
+
+                phone:
+                  consultation.phone ??
+                  null,
+
+                desiredCourse:
+                  consultation.desiredCourse ??
+                  null,
+
+                finalEducation:
+                  consultation.finalEducation ??
+                  null,
+
+                status:
+                  consultation.status ??
+                  null,
+
+                assigneeId:
+                  consultation.assigneeId ??
+                  null,
+
+                updatedAt:
+  consultation.updatedAt
+    ? new Date(
+        consultation.updatedAt
+      ).toISOString()
+    : null,
+              },
+
+              existingStudentId:
+                null,
+            },
+
+            expiresInMinutes:
+              input.expiresInMinutes,
+          });
+
+        if (!pendingAction) {
+          throwAppError(
+            ERROR_CODES.INTERNAL_SERVER_ERROR,
+            "학생 통합등록 승인 초안을 저장하지 못했습니다.",
+            500
+          );
+        }
+
+        /**
+         * 9. 내부 payload는 반환하지 않고
+         * 공개용 DTO만 반환
+         */
+        return {
+          success: true,
+
+          message:
+            canConfirm
+              ? "학생 통합등록 내용을 확인한 후 승인해주세요."
+              : "학생 통합등록에 필요한 일부 정보가 누락되어 있습니다.",
+
+          pendingAction:
+            toAiPendingActionPublicResult(
+              pendingAction
+            ),
+        };
+      }
+    ),
+
+pendingAction: router({
+  /**
+   * 본인이 만든 AI 승인 초안 조회
+   *
+   * payloadJson, idempotencyKey 등
+   * 서버 내부 실행값은 반환하지 않는다.
+   */
+  get: protectedProcedure
+    .input(
+      z.object({
+        id: z
+          .number()
+          .int()
+          .positive(),
+
+        /**
+         * 일반 사용자는 무시되고
+         * Superhost만 선택 회사에 적용된다.
+         */
+        targetOrganizationId: z
+          .number()
+          .int()
+          .positive()
+          .optional(),
+      })
+    )
+    .query(
+      async ({
+        ctx,
+        input,
+      }) => {
+        const aiContext =
+          await createRequestAiContext({
+            ctx,
+
+            targetOrganizationId:
+              input.targetOrganizationId,
+          });
+
+        const row =
+          await db.getAiPendingActionForConfirmation({
+            id: input.id,
+
+            organizationId:
+              aiContext.organizationId,
+
+            requestedByUserId:
+              aiContext.userId,
+          });
+
+        const action =
+          toAiPendingActionPublicResult(
+            row
+          );
+
+        if (!action) {
+          throwAppError(
+            ERROR_CODES.DATA_NOT_FOUND,
+            "AI 승인 초안을 찾을 수 없습니다.",
+            404
+          );
+        }
+
+        return {
+          success: true,
+          action,
+        };
+      }
+    ),
+
+  /**
+   * 본인이 만든 AI 승인 초안 취소
+   *
+   * 실제 CRM 데이터에는 영향을 주지 않는다.
+   */
+  cancel: protectedProcedure
+    .input(
+      z.object({
+        id: z
+          .number()
+          .int()
+          .positive(),
+
+        expectedVersion: z
+          .number()
+          .int()
+          .positive(),
+
+        targetOrganizationId: z
+          .number()
+          .int()
+          .positive()
+          .optional(),
+      })
+    )
+    .mutation(
+      async ({
+        ctx,
+        input,
+      }) => {
+        const aiContext =
+          await createRequestAiContext({
+            ctx,
+
+            targetOrganizationId:
+              input.targetOrganizationId,
+          });
+
+        const row =
+          await db.cancelAiPendingAction({
+            id: input.id,
+
+            organizationId:
+              aiContext.organizationId,
+
+            requestedByUserId:
+              aiContext.userId,
+
+            expectedVersion:
+              input.expectedVersion,
+          });
+
+        /**
+         * AI 초안 취소 이력
+         *
+         * payload 원문은 기록하지 않는다.
+         */
+        await db.createAiActionLog({
+          organizationId:
+            aiContext.organizationId,
+
+          userId:
+            aiContext.userId,
+
+          userName:
+            aiContext.userName ||
+            String(
+              (ctx.user as any)
+                ?.username ||
+                ""
+            ),
+
+          action:
+            "ai_pending_action_cancel",
+
+          targetStudentId:
+            row?.studentId
+              ? Number(
+                  row.studentId
+                )
+              : null,
+
+          targetStudentName:
+            null,
+
+          payload: {
+            pendingActionId:
+              Number(row?.id || input.id),
+
+            actionType:
+              row?.actionType || null,
+
+            version:
+              Number(
+                row?.version ||
+                input.expectedVersion
+              ),
+
+            status:
+              row?.status ||
+              "cancelled",
+          },
+        });
+
+        return {
+  success: true,
+
+  action:
+    toAiPendingActionPublicResult(
+      row
+    ),
+
+  message:
+    "AI 승인 초안이 취소되었습니다.",
+};
+      }
+    ),
+
+  /**
+ * AI Pending Action 승인 및 실행
+ *
+ * 지원 작업:
+ * 1. 등록예정 학생 통합등록
+ * 2. AI 문서 분석 결과 CRM 반영
+ *
+ * 현재 로그인 사용자가 직접 생성한 초안만
+ * 조회·승인·실행할 수 있다.
+ *
+ * 실제 Executor에서도 회사, 사용자,
+ * 대상 학생과 원본 변경 여부를 다시 검증한다.
+ */
+  confirm: protectedProcedure
+    .input(
+      z.object({
+        id: z
+          .number()
+          .int()
+          .positive(),
+
+        expectedVersion: z
+          .number()
+          .int()
+          .positive(),
+
+        /**
+         * 일반 사용자에게는 세션 회사가 적용된다.
+         * Superhost만 선택 회사가 적용된다.
+         */
+        targetOrganizationId: z
+          .number()
+          .int()
+          .positive()
+          .optional(),
+      })
+    )
+    .mutation(
+      async ({
+        ctx,
+        input,
+      }) => {
+        /**
+         * 서버 세션을 기준으로 AI 권한과
+         * organizationId를 다시 확정한다.
+         */
+        const aiContext =
+          await createRequestAiContext({
+            ctx,
+
+            targetOrganizationId:
+              input.targetOrganizationId,
+          });
+
+        /**
+         * 학생 등록은 쓰기 작업이므로
+         * 조회 전용 AI 권한에서는 실행하지 않는다.
+         */
+        if (
+          aiContext.canWrite !==
+          true
+        ) {
+          throwAppError(
+            ERROR_CODES.PERMISSION_DENIED,
+            "현재 계정은 AI 승인 작업을 실행할 수 없습니다.",
+            403
+          );
+        }
+
+       /**
+ * Executor를 호출하기 전에
+ * 현재 Pending Action의 작업 유형을 확인한다.
+ *
+ * 실제 실행 선점은 각 Executor 내부에서
+ * 다시 수행하므로 여기서는 조회만 한다.
+ */
+const pendingAction =
+  await db.getAiPendingActionForConfirmation({
+    id:
+      input.id,
+
+    organizationId:
+      aiContext.organizationId,
+
+    requestedByUserId:
+      aiContext.userId,
+  });
+
+if (!pendingAction) {
+  throwAppError(
+    ERROR_CODES.DATA_NOT_FOUND,
+    "AI 승인 초안을 찾을 수 없습니다.",
+    404
+  );
+}
+
+const actionType =
+  String(
+    pendingAction.actionType ||
+    ""
+  );
+
+const actorName =
+  aiContext.userName ||
+  String(
+    (ctx.user as any)
+      ?.name ||
+    (ctx.user as any)
+      ?.username ||
+    ""
+  ).trim() ||
+  null;
+
+/**
+ * 등록예정 학생 통합등록 실행
+ */
+if (
+  actionType ===
+  "student_registration_create"
+) {
+  const result =
+    await executeStudentRegistrationPendingAction({
+      pendingActionId:
+        input.id,
+
+      organizationId:
+        aiContext.organizationId,
+
+      requestedByUserId:
+        aiContext.userId,
+
+      confirmedByUserId:
+        aiContext.userId,
+
+      expectedVersion:
+        input.expectedVersion,
+
+      actorName,
+
+      actorRole:
+        aiContext.role,
+    });
+
+  const publicPendingAction =
+    toAiPendingActionPublicResult(
+      result.pendingAction
+    );
+
+  return {
+    success:
+      result.success,
+
+    alreadyExecuted:
+      result.alreadyExecuted,
+
+    executing:
+      result.executing,
+
+    actionType,
+
+    studentId:
+      result.studentId,
+
+    planId:
+      result.planId,
+
+    semesterId:
+      result.semesterIds[0] ??
+      null,
+
+    semesterIds:
+      result.semesterIds,
+
+    planSubjectIds:
+      result.planSubjectIds,
+
+    transferSubjectIds:
+      result.transferSubjectIds,
+
+    practiceSaved:
+      result.practiceSaved,
+
+    paymentUpdated:
+      false,
+
+    /**
+     * 기존 프론트 호환을 위해
+     * action과 pendingAction을 모두 반환한다.
+     */
+    action:
+      publicPendingAction,
+
+    pendingAction:
+      publicPendingAction,
+
+    message:
+      result.message,
+  };
+}
+
+/**
+ * 문서 분석 결과 CRM 반영 실행
+ */
+const documentActionTypes =
+  new Set([
+    "document_transfer_import",
+    "document_plan_import",
+    "document_payment_import",
+    "document_plan_payment_import",
+  ]);
+
+if (
+  documentActionTypes.has(
+    actionType
+  )
+) {
+  const result =
+    await executeDocumentImportPendingAction({
+      pendingActionId:
+        input.id,
+
+      organizationId:
+        aiContext.organizationId,
+
+      requestedByUserId:
+        aiContext.userId,
+
+      confirmedByUserId:
+        aiContext.userId,
+
+      expectedVersion:
+        input.expectedVersion,
+
+      actorName,
+
+      actorRole:
+        aiContext.role,
+    });
+
+  const publicPendingAction =
+    toAiPendingActionPublicResult(
+      result.pendingAction
+    );
+
+  return {
+    success:
+      result.success,
+
+    alreadyExecuted:
+      result.alreadyExecuted,
+
+    executing:
+      result.executing,
+
+    actionType,
+
+    studentId:
+      result.studentId,
+
+    planId:
+      null,
+
+    semesterId:
+      result.semesterId,
+
+    semesterIds:
+      result.semesterId
+        ? [
+            result.semesterId,
+          ]
+        : [],
+
+    planSubjectIds:
+      result.planSubjectIds,
+
+    transferSubjectIds:
+      result.transferSubjectIds,
+
+    practiceSaved:
+      false,
+
+    paymentUpdated:
+      result.paymentUpdated,
+
+    action:
+      publicPendingAction,
+
+    pendingAction:
+      publicPendingAction,
+
+    message:
+      result.message,
+  };
+}
+
+throwAppError(
+  ERROR_CODES.INVALID_REQUEST,
+  "현재 승인 실행을 지원하지 않는 AI 작업입니다.",
+  400
+);
+      }
+    ),
+}),
 
     /**
      * 학생 / 상담 자연어 검색용 1차 버전
      */
     search: protectedProcedure
-      .input(
-        z.object({
-          query: z.string().min(1),
-        })
-      )
-      .query(async ({ ctx, input }) => {
-        const q = input.query.trim();
-        const assigneeId = isAdminOrHost(ctx.user)
-          ? undefined
-          : Number(ctx.user.id) || 1;
+  .input(
+    z.object({
+      query: z
+        .string()
+        .trim()
+        .min(1)
+        .max(200),
 
-        const [students, consultations] = await Promise.all([
-          db.listStudents(assigneeId, {
-  organizationId: getCtxOrganizationId(ctx),
-}),
-db.listConsultations(assigneeId, {
-  organizationId: getCtxOrganizationId(ctx),
-}),
-        ]);
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(50)
+        .optional(),
 
-        const qLower = q.toLowerCase();
-        const qDigits = q.replace(/\D/g, "");
+      targetOrganizationId: z
+        .number()
+        .int()
+        .positive()
+        .optional(),
+    })
+  )
+  .query(async ({ ctx, input }) => {
+    const aiContext =
+      await createRequestAiContext({
+        ctx,
+        targetOrganizationId:
+          input.targetOrganizationId,
+      });
 
-        const matchedStudents = (students || []).filter((item: any) => {
-          return (
-            String(item.clientName || "").toLowerCase().includes(qLower) ||
-            String(item.phone || "").replace(/\D/g, "").includes(qDigits) ||
-            String(item.course || "").toLowerCase().includes(qLower)
-          );
-        });
-
-        const matchedConsultations = (consultations || []).filter((item: any) => {
-          return (
-            String(item.clientName || "").toLowerCase().includes(qLower) ||
-            String(item.phone || "").replace(/\D/g, "").includes(qDigits) ||
-            String(item.desiredCourse || "").toLowerCase().includes(qLower) ||
-            String(item.notes || "").toLowerCase().includes(qLower)
-          );
-        });
-
-        return {
-          success: true,
-          query: q,
-          students: matchedStudents.slice(0, 20),
-          consultations: matchedConsultations.slice(0, 20),
-        };
+    const [
+      studentResult,
+      consultationResult,
+    ] = await Promise.all([
+      executeAiTool<
+        {
+          query: string;
+          limit?: number;
+        },
+        StudentSearchToolOutput
+      >({
+        toolName: "student.search",
+        context: aiContext,
+        input: {
+          query: input.query,
+          limit: input.limit ?? 20,
+        },
       }),
+
+      executeAiTool<
+        {
+          query: string;
+          limit?: number;
+        },
+        ConsultationSearchToolOutput
+      >({
+        toolName:
+          "consultation.search",
+        context: aiContext,
+        input: {
+          query: input.query,
+          limit: input.limit ?? 20,
+        },
+      }),
+    ]);
+
+    throwAiToolError(studentResult);
+    throwAiToolError(
+      consultationResult
+    );
+
+    const studentData =
+      studentResult.data!;
+
+    const consultationData =
+      consultationResult.data!;
+
+    /**
+     * 프론트 AIAssistant에서 사용하던 응답 구조 유지
+     */
+    return {
+      success: true,
+      query: input.query,
+
+      students:
+        studentData.students,
+
+      consultations:
+        consultationData
+          .consultations,
+
+      meta: {
+        studentRequestId:
+          studentResult.meta
+            .requestId,
+
+        consultationRequestId:
+          consultationResult.meta
+            .requestId,
+
+        scope: aiContext.scope,
+      },
+    };
+  }),
 
     /**
      * AI 알림/누락 브리핑용
      */
-    alerts: protectedProcedure.query(async ({ ctx }) => {
-      const assigneeId = isAdminOrHost(ctx.user)
-        ? undefined
-        : Number(ctx.user.id) || 1;
+    alerts: protectedProcedure
+  .input(
+    z
+      .object({
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(300)
+          .optional(),
 
-      const [students, consultations, semesters] = await Promise.all([
-        db.listStudents(assigneeId, {
-  organizationId: getCtxOrganizationId(ctx),
-}),
-db.listConsultations(assigneeId, {
-  organizationId: getCtxOrganizationId(ctx),
-}),
-db.listAllSemesters(assigneeId, undefined, {
-  organizationId: getCtxOrganizationId(ctx),
-}),
-      ]);
+        targetOrganizationId: z
+          .number()
+          .int()
+          .positive()
+          .optional(),
+      })
+      .optional()
+  )
+  .query(async ({ ctx, input }) => {
+    const aiContext =
+      await createRequestAiContext({
+        ctx,
+        targetOrganizationId:
+          input?.targetOrganizationId,
+      });
 
-      const paymentDateMissing = (students || []).filter(
-        (s: any) => s.status === "등록" && !s.paymentDate
-      );
-
-      const paymentAmountMissing = (students || []).filter(
-        (s: any) => s.status === "등록" && !s.paymentAmount
-      );
-
-      const consultationAssigneeMissing = (consultations || []).filter(
-        (c: any) => !c.assigneeId
-      );
-
-      const practiceUnassigned = (semesters || []).filter(
-        (s: any) => s.practiceStatus === "미섭외"
-      );
-
-      return {
-        success: true,
-        summary: {
-          paymentDateMissingCount: paymentDateMissing.length,
-          paymentAmountMissingCount: paymentAmountMissing.length,
-          consultationAssigneeMissingCount: consultationAssigneeMissing.length,
-          practiceUnassignedCount: practiceUnassigned.length,
+    const result =
+      await executeAiTool<
+        {
+          limit?: number;
         },
-        items: {
-          paymentDateMissing: paymentDateMissing.slice(0, 20),
-          paymentAmountMissing: paymentAmountMissing.slice(0, 20),
-          consultationAssigneeMissing: consultationAssigneeMissing.slice(0, 20),
-          practiceUnassigned: practiceUnassigned.slice(0, 20),
+        MissingDataAlertToolOutput
+      >({
+        toolName:
+          "alert.missingData",
+
+        context: aiContext,
+
+        input: {
+          limit:
+            input?.limit ?? 100,
         },
-      };
-    }),
+      });
+
+    throwAiToolError(result);
+
+    const data = result.data!;
+
+    /**
+     * 기존 프론트가 response.summary를 사용하므로 유지
+     */
+    return {
+      success: true,
+
+      summary: data.summary,
+
+      /**
+       * 새 구조에서는 모든 문제를 통합된 배열로 반환한다.
+       */
+      items: data.items,
+
+      meta: {
+        requestId:
+          result.meta.requestId,
+
+        scope: aiContext.scope,
+      },
+    };
+  }),
+
+tools: protectedProcedure
+  .input(
+    z
+      .object({
+        targetOrganizationId: z
+          .number()
+          .int()
+          .positive()
+          .optional(),
+      })
+      .optional()
+  )
+  .query(async ({ ctx, input }) => {
+    const aiContext =
+      await createRequestAiContext({
+        ctx,
+        targetOrganizationId:
+          input?.targetOrganizationId,
+      });
+
+    const tools =
+      listRegisteredAiTools()
+        .filter((tool) =>
+          tool.allowedRoles.includes(
+            aiContext.role
+          )
+        )
+        .map((tool) => ({
+          name: tool.name,
+          description:
+            tool.description,
+
+          accessMode:
+            tool.accessMode,
+
+          requiresConfirmation:
+            tool.requiresConfirmation,
+
+          autoExecutable:
+            tool.autoExecutable,
+        }));
+
+    return {
+      success: true,
+      scope: aiContext.scope,
+      tools,
+    };
+  }),
+
+executeTool: protectedProcedure
+  .input(
+    z.object({
+     toolName: z.enum([
+  "student.search",
+  "student.summary",
+  "consultation.search",
+  "alert.missingData",
+  "risk.studentDetail",
+]),
+
+      input: z
+        .record(z.string(), z.any())
+        .optional()
+        .default({}),
+
+      targetOrganizationId: z
+        .number()
+        .int()
+        .positive()
+        .optional(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const aiContext =
+      await createRequestAiContext({
+        ctx,
+        targetOrganizationId:
+          input.targetOrganizationId,
+      });
+
+    const result =
+      await executeAiTool({
+        toolName:
+          input.toolName,
+
+        context: aiContext,
+
+        input: input.input,
+      });
+
+    throwAiToolError(result);
+
+    return result;
+  }),
 
     createTransferSubject: protectedProcedure
       .input(
@@ -5259,208 +8124,82 @@ organizationId: getCtxOrganizationId(ctx),
       }),
 
     chat: protectedProcedure
-      .input(
-        z.object({
-          message: z.string().min(1),
-        })
-      )
-      .mutation(async ({ ctx, input }) => {
-        const assigneeId = isAdminOrHost(ctx.user)
-          ? undefined
-          : Number(ctx.user.id) || 1;
+  .input(
+    z.object({
+      message: z
+        .string()
+        .trim()
+        .min(1)
+        .max(3000),
 
-        const [students, consultations] = await Promise.all([
-          db.listStudents(assigneeId, {
-  organizationId: getCtxOrganizationId(ctx),
-}),
-db.listConsultations(assigneeId, {
-  organizationId: getCtxOrganizationId(ctx),
-}),
-        ]);
-const userName = ctx.user.name || "사용자";
+      selectedStudentId: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .nullable(),
 
-        const msg = input.message.trim();
-        const msgLower = msg.toLowerCase();
+      selectedStudentName: z
+        .string()
+        .trim()
+        .max(100)
+        .optional()
+        .nullable(),
 
-        if (msg.includes("찾아")) {
-          const keyword = msg.replace("찾아줘", "").replace("찾아", "").trim();
-          const keywordLower = keyword.toLowerCase();
-          const keywordDigits = keyword.replace(/\D/g, "");
+      targetOrganizationId: z
+        .number()
+        .int()
+        .positive()
+        .optional(),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    const aiContext =
+      await createRequestAiContext({
+        ctx,
 
-          const matchedStudents = (students || []).filter((item: any) => {
-            return (
-              String(item.clientName || "").toLowerCase().includes(keywordLower) ||
-              String(item.phone || "").replace(/\D/g, "").includes(keywordDigits) ||
-              String(item.course || "").toLowerCase().includes(keywordLower)
-            );
-          });
+        targetOrganizationId:
+          input.targetOrganizationId,
+      });
 
-          const matchedConsultations = (consultations || []).filter((item: any) => {
-            return (
-              String(item.clientName || "").toLowerCase().includes(keywordLower) ||
-              String(item.phone || "").replace(/\D/g, "").includes(keywordDigits) ||
-              String(item.desiredCourse || "").toLowerCase().includes(keywordLower)
-            );
-          });
+    const result =
+      await runAiAssistant({
+        context: aiContext,
 
-          return {
-            success: true,
-            mode: "search",
-            answer: `검색어 "${keyword}" 기준으로 학생 ${matchedStudents.length}건, 상담 ${matchedConsultations.length}건을 찾았어요.`,
-            data: {
-              students: matchedStudents.slice(0, 10),
-              consultations: matchedConsultations.slice(0, 10),
-            },
-          };
-        }
+        message:
+          input.message,
 
-        if (msg.includes("누락") || msg.includes("결제")) {
-          const paymentDateMissing = (students || []).filter(
-            (s: any) => s.status === "등록" && !s.paymentDate
-          );
-          const paymentAmountMissing = (students || []).filter(
-            (s: any) => s.status === "등록" && !s.paymentAmount
-          );
+        selectedStudentId:
+          input.selectedStudentId,
 
-          return {
-            success: true,
-            mode: "alert",
-            answer: `확인해봤어요. 결제일 누락 ${paymentDateMissing.length}건, 결제금액 누락 ${paymentAmountMissing.length}건입니다.`,
-            data: {
-              paymentDateMissing: paymentDateMissing.slice(0, 10),
-              paymentAmountMissing: paymentAmountMissing.slice(0, 10),
-            },
-          };
-        }
+        selectedStudentName:
+          input.selectedStudentName,
+      });
 
-        if (msgLower.includes("실습") && (msgLower.includes("가까운") || msgLower.includes("교육원") || msgLower.includes("기관"))) {
-          return {
-            success: true,
-            mode: "general",
-            answer: "실습 추천은 학생을 먼저 선택한 뒤 실행하는 방식으로 연결하는 것이 안전합니다. 프론트에서 recommend_practice_place 액션으로 연결해주세요.",
-          };
-        }
+   if (!result.success) {
+  /**
+   * Tool 실행 중 발생한 권한·대상·서버 오류는
+   * 기존 AI Tool 오류 상태를 그대로 사용한다.
+   */
+  if (result.toolResult) {
+    throwAiToolError(
+      result.toolResult
+    );
+  }
 
-        try {
-  const response = await openai.responses.create({
-    model: "gpt-5.4-mini",
-    input: [
-      {
-        role: "system",
-        content: [
-          {
-            type: "input_text",
-            text:
-  `너는 학점은행제 CRM 내부 AI 작업도우미다. 현재 대화 상대 이름은 ${userName}이다. ` +
-  "말투는 너무 기계적이지 않게 자연스럽고 간결하게 답해라. " +
-  "모르는 것은 모른다고 하고, 현재 연결된 기능과 연결되지 않은 기능을 구분해서 안내해라. " +
-  "현재 CRM에서 가능한 기능은 학생/상담 검색, 누락/결제 점검, 전적대 과목 입력, 우리 플랜 입력, 실습 추천이다.",
-          },
-        ],
-      },
-      {
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: input.message,
-          },
-        ],
-      },
-    ],
-  });
-
-  return {
-    success: true,
-    mode: "general",
-    answer:
-      response.output_text?.trim() ||
-      "답변을 생성하지 못했습니다.",
-  };
-} catch (err) {
-  console.error("[ai.chat][openai error]", err);
-
-  return {
-    success: true,
-    mode: "general",
-    answer:
-      "지금은 AI 답변 연결 중 오류가 있어서 기본 안내만 드릴게요. 학생/상담 검색, 누락/결제 점검, 전적대 과목 입력, 우리 플랜 입력, 실습 추천 기능부터 사용할 수 있어요.",
-  };
+  /**
+   * Tool 실행 이전 단계에서 실패한 일반 입력 오류
+   */
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    result.reply ||
+      "AI 요청을 처리하지 못했습니다.",
+    400
+  );
 }
-      }),
 
-        saveLearning: protectedProcedure
-      .input(
-        z.object({
-          learningType: z.string().min(1),
-          inputText: z.string().min(1),
-          normalizedKey: z.string().min(1),
-          targetStudentId: z.number().optional(),
-          targetStudentName: z.string().optional(),
-          payload: z.any(),
-          feedback: z.string().optional(),
-          isApproved: z.boolean().optional(),
-        })
-      )
-      .mutation(async ({ ctx, input }) => {
-        if (!db.createAiLearningEntry) {
-         throwAppError(
-  ERROR_CODES.INTERNAL_SERVER_ERROR,
-  "db.ts에 createAiLearningEntry 함수를 먼저 추가해야 합니다.",
-  500
-);
-        }
-
-        await db.createAiLearningEntry({
-          organizationId: getCtxOrganizationId(ctx),
-          userId: Number(ctx.user.id),
-          userName: ctx.user.name,
-          learningType: input.learningType,
-          inputText: input.inputText,
-          normalizedKey: input.normalizedKey,
-          targetStudentId: input.targetStudentId ?? null,
-          targetStudentName: input.targetStudentName ?? null,
-          payload: input.payload,
-          feedback: input.feedback ?? null,
-          isApproved: input.isApproved ?? true,
-        } as any);
-
-        return { success: true };
-      }),
-
-    getLearningExamples: protectedProcedure
-      .input(
-        z.object({
-          learningType: z.string().min(1),
-          normalizedKey: z.string().optional(),
-          keyword: z.string().optional(),
-        })
-      )
-      .query(async ({ ctx, input }) => {
-        if (!db.findSimilarAiLearning) {
-          throwAppError(
-  ERROR_CODES.INTERNAL_SERVER_ERROR,
-  "db.ts에 findSimilarAiLearning 함수를 먼저 추가해야 합니다.",
-  500
-);
-        }
-
-        const examples = await db.findSimilarAiLearning({
-organizationId: getCtxOrganizationId(ctx),
-          learningType: input.learningType,
-          normalizedKey: input.normalizedKey,
-          keyword: input.keyword,
-        });
-
-        return {
-          success: true,
-          examples,
-        };
-      }),
-
-    logs: superHostProcedure.query(async () => {
-      return [];
-    }),
+    return result;
+  }),
 
     runAction: protectedProcedure
       .input(
@@ -5478,13 +8217,21 @@ organizationId: getCtxOrganizationId(ctx),
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const assigneeId = isAdminOrHost(ctx.user)
-          ? undefined
-          : Number(ctx.user.id) || 1;
+  const organizationId =
+    getCtxOrganizationId(ctx);
 
-        const students = await db.listStudents(assigneeId, {
-  organizationId: getCtxOrganizationId(ctx),
-});
+  const assigneeId =
+    isAdminOrHost(ctx.user)
+      ? undefined
+      : Number(ctx.user.id) || 1;
+
+  const students =
+    await db.listStudents(
+      assigneeId,
+      {
+        organizationId,
+      }
+    );
         const keyword = input.studentKeyword.trim();
         const keywordLower = keyword.toLowerCase();
         const keywordDigits = keyword.replace(/\D/g, "");
@@ -5567,44 +8314,91 @@ organizationId: getCtxOrganizationId(ctx),
 );
           }
 
-          const id = await db.createTransferSubject({
-            studentId: student.id,
-            schoolName: null,
-            subjectName: input.subjectName.trim(),
-            transferCategory: input.category,
-            transferRequirementType: null,
-            credits: 3,
-            sortOrder: 0,
-            attachmentName: null,
-            attachmentUrl: null,
-          } as any);
+          const id =
+  await db.createTransferSubject({
+    organizationId,
 
-          if (db.createAiActionLog) {
-            await db.createAiActionLog({
-organizationId: getCtxOrganizationId(ctx),
-              userId: Number(ctx.user.id),
-              userName: ctx.user.name,
-              action: "create_transfer_subject",
-              targetStudentId: student.id,
-              targetStudentName: student.clientName,
-              payload: input,
-            });
-          }
+    studentId:
+      Number(student.id),
+
+    schoolName:
+      null,
+
+    subjectName:
+      input.subjectName.trim(),
+
+    transferCategory:
+      input.category,
+
+    transferRequirementType:
+      null,
+
+    credits:
+      3,
+
+    sortOrder:
+      0,
+
+    attachmentName:
+      null,
+
+    attachmentUrl:
+      null,
+  } as any);
+
+        if (db.createAiActionLog) {
+  await db.createAiActionLog({
+    organizationId,
+
+    userId:
+      Number(ctx.user.id),
+
+    userName:
+      ctx.user.name,
+
+    action:
+      "create_transfer_subject",
+
+    targetStudentId:
+      Number(student.id),
+
+    targetStudentName:
+      student.clientName,
+
+    payload:
+      input,
+  });
+}
 
           if (db.createAiLearningEntry) {
-            await db.createAiLearningEntry({
-              userId: Number(ctx.user.id),
-              userName: ctx.user.name,
-              learningType: "transfer_subject_input",
-              inputText: `${student.clientName} 전적대 ${input.subjectName} ${input.category}`,
-              normalizedKey: `transfer_subject|${input.category}`,
-              targetStudentId: student.id,
-              targetStudentName: student.clientName,
-              payload: input,
-              feedback: null,
-              isApproved: true,
-            });
-          }
+  await db.createAiLearningEntry({
+    organizationId,
+
+    userId:
+      Number(ctx.user.id),
+
+    userName:
+      ctx.user.name,
+
+    learningType:
+      "transfer_subject_input",
+
+    inputText:
+      `${student.clientName} 전적대 ${input.subjectName} ${input.category}`,
+
+    normalizedKey:
+      `transfer_subject|${input.category}`,
+
+    targetStudentId:
+      Number(student.id),
+
+    targetStudentName:
+      student.clientName,
+
+    payload:
+      input,
+  });
+}
 
           return {
             success: true,
@@ -5654,9 +8448,13 @@ organizationId: getCtxOrganizationId(ctx),
 );
           }
 
-          const existing = await db.listPlanSemesters(student.id, {
-  organizationId: getCtxOrganizationId(ctx),
-});
+          const existing =
+  await db.listPlanSemesters(
+    Number(student.id),
+    {
+      organizationId,
+    }
+  );
           const semesterCount = (existing || []).filter(
             (x: any) => Number(x.semesterNo) === Number(input.semesterNo)
           ).length;
@@ -5669,42 +8467,85 @@ organizationId: getCtxOrganizationId(ctx),
 );
           }
 
-          const id = await db.createPlanSemester({
-            studentId: student.id,
-            semesterNo: input.semesterNo,
-            subjectName: input.subjectName.trim(),
-            planCategory: input.category,
-            planRequirementType: null,
-            credits: 3,
-            sortOrder: 0,
-          } as any);
+          const id =
+  await db.createPlanSemester({
+    organizationId,
+
+    studentId:
+      Number(student.id),
+
+    semesterNo:
+      Number(input.semesterNo),
+
+    subjectName:
+      input.subjectName.trim(),
+
+    planCategory:
+      input.category,
+
+    planRequirementType:
+      null,
+
+    credits:
+      3,
+
+    sortOrder:
+      0,
+  } as any);
 
           if (db.createAiActionLog) {
-            await db.createAiActionLog({
-organizationId: getCtxOrganizationId(ctx),
-              userId: Number(ctx.user.id),
-              userName: ctx.user.name,
-              action: "create_plan_semester",
-              targetStudentId: student.id,
-              targetStudentName: student.clientName,
-              payload: input,
-            });
-          }
+  await db.createAiActionLog({
+    organizationId,
+
+    userId:
+      Number(ctx.user.id),
+
+    userName:
+      ctx.user.name,
+
+    action:
+      "create_plan_semester",
+
+    targetStudentId:
+      Number(student.id),
+
+    targetStudentName:
+      student.clientName,
+
+    payload:
+      input,
+  });
+}
 
           if (db.createAiLearningEntry) {
-            await db.createAiLearningEntry({
-              userId: Number(ctx.user.id),
-              userName: ctx.user.name,
-              learningType: "plan_semester_input",
-              inputText: `${student.clientName} ${input.semesterNo}학기 ${input.subjectName} ${input.category}`,
-              normalizedKey: `plan_semester|${input.semesterNo}|${input.category}`,
-              targetStudentId: student.id,
-              targetStudentName: student.clientName,
-              payload: input,
-              feedback: null,
-              isApproved: true,
-            });
-          }
+  await db.createAiLearningEntry({
+    organizationId,
+
+    userId:
+      Number(ctx.user.id),
+
+    userName:
+      ctx.user.name,
+
+    learningType:
+      "plan_semester_input",
+
+    inputText:
+      `${student.clientName} ${input.semesterNo}학기 ${input.subjectName} ${input.category}`,
+
+    normalizedKey:
+      `plan_semester|${input.semesterNo}|${input.category}`,
+
+    targetStudentId:
+      Number(student.id),
+
+    targetStudentName:
+      student.clientName,
+
+    payload:
+      input,
+  });
+}
 
           return {
             success: true,
@@ -5731,21 +8572,37 @@ organizationId: getCtxOrganizationId(ctx),
 );
           }
 
-          const recommendations = await db.getPracticeRecommendationsForStudent(student.id, {
-  organizationId: getCtxOrganizationId(ctx),
-});
+          const recommendations =
+  await db.getPracticeRecommendationsForStudent(
+    Number(student.id),
+    {
+      organizationId,
+    }
+  );
 
-          if (db.createAiActionLog) {
-            await db.createAiActionLog({
-organizationId: getCtxOrganizationId(ctx),
-              userId: Number(ctx.user.id),
-              userName: ctx.user.name,
-              action: "recommend_practice_place",
-              targetStudentId: student.id,
-              targetStudentName: student.clientName,
-              payload: input,
-            });
-          }
+         if (db.createAiActionLog) {
+  await db.createAiActionLog({
+    organizationId,
+
+    userId:
+      Number(ctx.user.id),
+
+    userName:
+      ctx.user.name,
+
+    action:
+      "recommend_practice_place",
+
+    targetStudentId:
+      Number(student.id),
+
+    targetStudentName:
+      student.clientName,
+
+    payload:
+      input,
+  });
+}
 
           const educationLines = (recommendations.educationCenters || [])
             .slice(0, 3)

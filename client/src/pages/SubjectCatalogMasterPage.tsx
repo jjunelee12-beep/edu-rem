@@ -16,6 +16,13 @@ import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 type RequirementType = "전공필수" | "전공선택" | "교양" | "일반";
+type SemesterNo =
+  | 1
+  | 2
+  | 3
+  | 4
+  | 5
+  | 6;
 
 export default function SubjectCatalogMasterPage() {
   const { user } = useAuth();
@@ -31,12 +38,41 @@ export default function SubjectCatalogMasterPage() {
 
   const [openItemDialog, setOpenItemDialog] = useState(false);
 const [openBulkItemDialog, setOpenBulkItemDialog] = useState(false);
-const [bulkRequirementType, setBulkRequirementType] =
-  useState<RequirementType>("전공필수");
-const [bulkSubjectText, setBulkSubjectText] = useState("");
-  const [newSubjectName, setNewSubjectName] = useState("");
-  const [newRequirementType, setNewRequirementType] =
-    useState<RequirementType>("전공필수");
+const [
+  bulkRequirementType,
+  setBulkRequirementType,
+] =
+  useState<RequirementType>(
+    "전공필수"
+  );
+
+const [
+  bulkSemesterNo,
+  setBulkSemesterNo,
+] =
+  useState<SemesterNo>(1);
+
+const [
+  bulkSubjectText,
+  setBulkSubjectText,
+] =
+  useState("");
+    const [newSubjectName, setNewSubjectName] =
+    useState("");
+
+  const [
+    newRequirementType,
+    setNewRequirementType,
+  ] =
+    useState<RequirementType>(
+      "전공필수"
+    );
+
+  const [
+    newSemesterNo,
+    setNewSemesterNo,
+  ] =
+    useState<SemesterNo>(1);
 
   const { data: catalogList, isLoading: catalogLoading } =
     trpc.subjectCatalog.list.useQuery({
@@ -92,8 +128,11 @@ const [bulkSubjectText, setBulkSubjectText] = useState("");
     onSuccess: async () => {
       await utils.subjectCatalog.itemList.invalidate();
       toast.success("과목이 추가되었습니다.");
-      setNewSubjectName("");
-      setNewRequirementType("전공필수");
+            setNewSubjectName("");
+      setNewRequirementType(
+        "전공필수"
+      );
+      setNewSemesterNo(1);
       setOpenItemDialog(false);
     },
     onError: (e) => toast.error(e.message),
@@ -110,7 +149,10 @@ const bulkCreateItemMut = trpc.subjectCatalog.itemBulkCreate.useMutation({
     );
 
     setBulkSubjectText("");
-    setBulkRequirementType("전공필수");
+    setBulkRequirementType(
+      "전공필수"
+    );
+    setBulkSemesterNo(1);
     setOpenBulkItemDialog(false);
   },
   onError: (e) => toast.error(e.message),
@@ -165,11 +207,20 @@ const bulkCreateItemMut = trpc.subjectCatalog.itemBulkCreate.useMutation({
       return;
     }
 
-    createItemMut.mutate({
-      catalogId: selectedCatalogId,
+        createItemMut.mutate({
+      catalogId:
+        selectedCatalogId,
+
       subjectName,
-      requirementType: newRequirementType,
-      credits: 3,
+
+      semesterNo:
+        newSemesterNo,
+
+      requirementType:
+        newRequirementType,
+
+      credits:
+        3,
     } as any);
   };
 
@@ -189,9 +240,16 @@ const handleBulkCreateItems = () => {
     return;
   }
 
-  bulkCreateItemMut.mutate({
-    catalogId: selectedCatalogId,
-    requirementType: bulkRequirementType,
+   bulkCreateItemMut.mutate({
+    catalogId:
+      selectedCatalogId,
+
+    semesterNo:
+      bulkSemesterNo,
+
+    requirementType:
+      bulkRequirementType,
+
     subjectNames,
   } as any);
 };
@@ -327,8 +385,11 @@ const handleBulkCreateItems = () => {
         return;
       }
 
-      setBulkSubjectText("");
-      setBulkRequirementType("전공필수");
+            setBulkSubjectText("");
+      setBulkRequirementType(
+        "전공필수"
+      );
+      setBulkSemesterNo(1);
       setOpenBulkItemDialog(true);
     }}
     className="gap-1"
@@ -343,8 +404,11 @@ const handleBulkCreateItems = () => {
         toast.error("과정을 먼저 선택해주세요.");
         return;
       }
-      setNewSubjectName("");
-      setNewRequirementType("전공필수");
+           setNewSubjectName("");
+      setNewRequirementType(
+        "전공필수"
+      );
+      setNewSemesterNo(1);
       setOpenItemDialog(true);
     }}
     className="gap-1"
@@ -396,8 +460,18 @@ const handleBulkCreateItems = () => {
                                 {item.subjectName}
                               </div>
                               <div className="text-xs text-muted-foreground mt-1">
-                                학점 {Number(item.credits || 3)} / 카테고리 {item.category}
-                              </div>
+  {Number(
+    item.semesterNo ||
+    1
+  )}
+  학기 / 학점{" "}
+  {Number(
+    item.credits ||
+    3
+  )}{" "}
+  / 카테고리{" "}
+  {item.category}
+</div>
                             </div>
 
                             <Button
@@ -479,6 +553,45 @@ const handleBulkCreateItems = () => {
             </div>
 
             <div className="space-y-2">
+              <label className="text-sm font-medium">
+                학기
+              </label>
+
+              <select
+                className="w-full h-10 px-3 text-sm border rounded-md bg-white"
+                value={
+                  newSemesterNo
+                }
+                onChange={(e) =>
+                  setNewSemesterNo(
+                    Number(
+                      e.target.value
+                    ) as SemesterNo
+                  )
+                }
+              >
+                <option value={1}>
+                  1학기
+                </option>
+                <option value={2}>
+                  2학기
+                </option>
+                <option value={3}>
+                  3학기
+                </option>
+                <option value={4}>
+                  4학기
+                </option>
+                <option value={5}>
+                  5학기
+                </option>
+                <option value={6}>
+                  6학기
+                </option>
+              </select>
+            </div>
+
+            <div className="space-y-2">
               <label className="text-sm font-medium">구분</label>
               <select
                 className="w-full h-10 px-3 text-sm border rounded-md bg-white"
@@ -516,6 +629,44 @@ const handleBulkCreateItems = () => {
 
     <div className="space-y-4 py-2">
       <div className="space-y-2">
+        <label className="text-sm font-medium">
+          학기
+        </label>
+
+        <select
+          className="w-full h-10 px-3 text-sm border rounded-md bg-white"
+          value={
+            bulkSemesterNo
+          }
+          onChange={(e) =>
+            setBulkSemesterNo(
+              Number(
+                e.target.value
+              ) as SemesterNo
+            )
+          }
+        >
+          <option value={1}>
+            1학기
+          </option>
+          <option value={2}>
+            2학기
+          </option>
+          <option value={3}>
+            3학기
+          </option>
+          <option value={4}>
+            4학기
+          </option>
+          <option value={5}>
+            5학기
+          </option>
+          <option value={6}>
+            6학기
+          </option>
+        </select>
+      </div>
+      <div className="space-y-2">
         <label className="text-sm font-medium">구분</label>
         <select
           className="w-full h-10 px-3 text-sm border rounded-md bg-white"
@@ -540,8 +691,10 @@ const handleBulkCreateItems = () => {
           placeholder={`한 줄에 한 과목씩 입력하세요.\n\n예:\n사회복지학개론\n사회복지법제와실천\n사회복지실천론`}
         />
         <p className="text-xs text-muted-foreground">
-          한 줄당 1과목으로 등록됩니다. 같은 과정/구분/과목명은 중복 제외됩니다.
-        </p>
+  한 줄당 1과목으로 등록됩니다.
+  선택한 학기가 모든 과목에 동일하게 적용되며,
+  같은 과정/구분/과목명은 중복 제외됩니다.
+</p>
       </div>
     </div>
 

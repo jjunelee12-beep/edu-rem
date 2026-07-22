@@ -95,6 +95,12 @@ export const subjectCatalogRouter = router({
       z.object({
         catalogId: z.number(),
         subjectName: z.string().min(1),
+        semesterNo:
+          z.number()
+            .int()
+            .positive()
+            .max(20)
+            .optional(),
         requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]),
         category: z.enum(["전공", "교양", "일반"]).optional(),
         credits: z.number().optional(),
@@ -109,6 +115,8 @@ export const subjectCatalogRouter = router({
         organizationId,
         catalogId: input.catalogId,
         subjectName: input.subjectName.trim(),
+        semesterNo:
+          input.semesterNo ?? 1,
         requirementType: input.requirementType,
         category: input.category,
         credits: input.credits ?? 3,
@@ -123,10 +131,30 @@ export const subjectCatalogRouter = router({
 
 itemBulkCreate: hostProcedure
   .input(
-    z.object({
-      catalogId: z.number(),
-      requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]),
-      subjectNames: z.array(z.string()).min(1),
+        z.object({
+      catalogId:
+        z.number(),
+
+      semesterNo:
+        z.number()
+          .int()
+          .positive()
+          .max(20)
+          .optional(),
+
+      requirementType:
+        z.enum([
+          "전공필수",
+          "전공선택",
+          "교양",
+          "일반",
+        ]),
+
+      subjectNames:
+        z.array(
+          z.string()
+        )
+          .min(1),
     })
   )
   .mutation(async ({ ctx, input }) => {
@@ -140,13 +168,27 @@ itemBulkCreate: hostProcedure
 );
     }
 
-    const result = await db.bulkCreateSubjectCatalogItems({
-      organizationId,
-      catalogId: input.catalogId,
-      requirementType: input.requirementType,
-      subjectNames: input.subjectNames,
-      actorUserId: Number(ctx.user.id),
-    });
+       const result =
+      await db.bulkCreateSubjectCatalogItems({
+        organizationId,
+
+        catalogId:
+          input.catalogId,
+
+        semesterNo:
+          input.semesterNo ?? 1,
+
+        requirementType:
+          input.requirementType,
+
+        subjectNames:
+          input.subjectNames,
+
+        actorUserId:
+          Number(
+            ctx.user.id
+          ),
+      });
 
     return result;
   }),

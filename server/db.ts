@@ -64,7 +64,9 @@ organizationPracticeEducationCenterOverrides,
 deviceTokens,
   InsertDeviceToken,
 aiActionLogs,
- teams,
+aiPendingActions,
+type InsertAiPendingAction,
+teams,
   type InsertTeam,
   positions,
   type InsertPosition,
@@ -123,11 +125,19 @@ type InsertStudentCreditSummaryItem,
 
 import { ENV } from "./_core/env";
 import bcrypt from "bcryptjs";
-import { createHmac } from "node:crypto";
+import {
+  createHmac,
+  randomUUID,
+} from "node:crypto";
 import { emitLiveNotification } from "./_core/live-notifications";
 import { getSocketStatus } from "./_core/socket-status";
 import { throwAppError } from "./_core/appError";
 import { ERROR_CODES } from "./_core/errorCodes";
+import type {
+  AiDocumentImportDraft,
+  AiPendingActionType,
+  StudentRegistrationDraft,
+} from "./ai/ai.types";
 
 import { FEATURE_FLAGS } from "./_core/featureFlags";
 import {
@@ -1211,9 +1221,3891 @@ export async function getRefundById(
   return result[0];
 }
 
+export type ExecuteDocumentImportTransactionInput = {
+  organizationId:
+    number;
+
+  studentId:
+    number;
+
+  draft:
+    AiDocumentImportDraft;
+
+  actorUserId:
+    number;
+
+  actorName?:
+    string |
+    null;
+
+  actorRole?:
+    string |
+    null;
+};
+
+export type ExecuteDocumentImportTransactionResult = {
+  studentId:
+    number;
+
+  semesterId:
+    number |
+    null;
+
+  planSubjectIds:
+    number[];
+
+  transferSubjectIds:
+    number[];
+
+  paymentUpdated:
+    boolean;
+
+  completedSteps:
+    string[];
+};
+
+function normalizeDocumentImportSubjectName(
+  value:
+    unknown
+) {
+  return String(
+    value ||
+    ""
+  )
+    .trim()
+    .replace(
+      /\s+/g,
+      " "
+    );
+}
+
+function normalizeDocumentImportDate(
+  value:
+    unknown
+): string | null {
+  const text =
+    String(
+      value ||
+      ""
+    ).trim();
+
+  if (!text) {
+    return null;
+  }
+
+  const matched =
+    text.match(
+      /^(\d{4})[-./](\d{1,2})[-./](\d{1,2})$/
+    );
+
+  if (!matched) {
+    return null;
+  }
+
+  const year =
+    Number(
+      matched[1]
+    );
+
+  const month =
+    Number(
+      matched[2]
+    );
+
+  const day =
+    Number(
+      matched[3]
+    );
+
+  const date =
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day
+      )
+    );
+
+  if (
+    date.getUTCFullYear() !==
+      year ||
+    date.getUTCMonth() !==
+      month - 1 ||
+    date.getUTCDate() !==
+      day
+  ) {
+    return null;
+  }
+
+  return [
+    String(
+      year
+    ).padStart(
+      4,
+      "0"
+    ),
+
+    String(
+      month
+    ).padStart(
+      2,
+      "0"
+    ),
+
+    String(
+      day
+    ).padStart(
+      2,
+      "0"
+    ),
+  ].join("-");
+}
+
+function normalizeDocumentImportDraft(
+  value:
+    unknown
+): AiDocumentImportDraft {
+  if (
+    !value ||
+    typeof value !==
+      "object"
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "문서 CRM 반영 초안 데이터가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const draft =
+    value as
+      AiDocumentImportDraft;
+
+  const allowedActionTypes =
+    new Set<
+      AiDocumentImportDraft["actionType"]
+    >([
+      "document_transfer_import",
+      "document_plan_import",
+      "document_payment_import",
+      "document_plan_payment_import",
+    ]);
+
+  if (
+    !allowedActionTypes.has(
+      draft.actionType
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "지원하지 않는 문서 CRM 반영 유형입니다.",
+      400
+    );
+  }
+
+  if (
+    draft.canConfirm !==
+      true ||
+    !Array.isArray(
+      draft.missingFields
+    ) ||
+    draft.missingFields
+      .length > 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "필수 정보가 누락된 문서 CRM 반영 초안입니다.",
+      409
+    );
+  }
+
+  const studentId =
+    Number(
+      draft.studentId ||
+      0
+    );
+
+  if (
+    !Number.isFinite(
+      studentId
+    ) ||
+    studentId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "문서 반영 대상 학생 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (
+    !String(
+      draft.analysisId ||
+      ""
+    ).trim()
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "문서 분석 ID가 없습니다.",
+      400
+    );
+  }
+
+  const requiresSubjects =
+    draft.actionType ===
+      "document_transfer_import" ||
+    draft.actionType ===
+      "document_plan_import" ||
+    draft.actionType ===
+      "document_plan_payment_import";
+
+  const selectedSubjects =
+    Array.isArray(
+      draft.subjects
+    )
+      ? draft.subjects.filter(
+          (
+            subject
+          ) =>
+            subject?.selected !==
+              false &&
+            normalizeDocumentImportSubjectName(
+              subject?.subjectName
+            ).length >= 2
+        )
+      : [];
+
+  if (
+    requiresSubjects &&
+    selectedSubjects.length ===
+      0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "문서에서 CRM에 반영할 과목이 없습니다.",
+      400
+    );
+  }
+
+  const requiresPayment =
+    draft.actionType ===
+      "document_payment_import" ||
+    draft.actionType ===
+      "document_plan_payment_import";
+
+  if (
+    requiresPayment &&
+    draft.paymentAmount ===
+      null &&
+    !String(
+      draft.paymentStatus ||
+      ""
+    ).trim() &&
+    !String(
+      draft.paidAt ||
+      ""
+    ).trim()
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "문서에서 반영할 결제정보가 없습니다.",
+      400
+    );
+  }
+
+  return {
+    ...draft,
+
+    studentId:
+      Math.floor(
+        studentId
+      ),
+
+    subjects:
+      selectedSubjects.map(
+        (
+          subject,
+          index
+        ) => ({
+          ...subject,
+
+          rowId:
+            String(
+              subject.rowId ||
+              `document-subject-${index + 1}`
+            ),
+
+          selected:
+            true,
+
+          subjectName:
+            normalizeDocumentImportSubjectName(
+              subject.subjectName
+            ),
+
+          credits:
+            Number(
+              subject.credits
+            ) > 0
+              ? Math.floor(
+                  Number(
+                    subject.credits
+                  )
+                )
+              : 3,
+
+          semesterNo:
+            Number(
+              subject.semesterNo
+            ) > 0
+              ? Math.floor(
+                  Number(
+                    subject.semesterNo
+                  )
+                )
+              : null,
+        })
+      ),
+  };
+}
+
 // ==============================
 // AI HELPERS
 // ==============================
+
+/**
+ * AI 승인 초안 JSON 암호화
+ *
+ * 학생명, 연락처, 결제정보 등 개인정보가
+ * ai_pending_actions JSON 컬럼에 평문으로
+ * 저장되지 않도록 전체 JSON을 암호화한다.
+ */
+function encryptAiPendingJson(
+  value: unknown
+) {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return null;
+  }
+
+  return encryptPersonalData(
+    JSON.stringify(value)
+  );
+}
+
+/**
+ * AI 승인 초안 JSON 복호화
+ *
+ * 신규 암호화 데이터와
+ * 기존 평문 JSON 데이터를 모두 처리한다.
+ */
+function decryptAiPendingJson<T>(
+  value: unknown,
+  fallback: T
+): T {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return fallback;
+  }
+
+  /**
+   * 기존에 JSON 컬럼에 객체 형태로
+   * 저장된 평문 데이터 호환
+   */
+  if (
+    typeof value === "object"
+  ) {
+    return value as T;
+  }
+
+  const text =
+    String(value);
+
+  /**
+   * 암호화된 데이터 우선 복호화
+   */
+  try {
+    const decrypted =
+      decryptPersonalData(text);
+
+    return JSON.parse(
+      decrypted
+    ) as T;
+  } catch {
+    /**
+     * 기존 평문 JSON 문자열 호환
+     */
+    try {
+      return JSON.parse(
+        text
+      ) as T;
+    } catch {
+      return fallback;
+    }
+  }
+}
+
+/**
+ * ai_pending_actions 조회 결과의
+ * JSON 컬럼을 복호화한다.
+ */
+function decryptAiPendingActionRow<
+  T extends Record<string, any>
+>(
+  row: T | null | undefined
+): T | null | undefined {
+  if (!row) {
+    return row;
+  }
+
+  return {
+    ...row,
+
+    previewJson:
+      decryptAiPendingJson(
+        row.previewJson,
+        null
+      ),
+
+    payloadJson:
+      decryptAiPendingJson(
+        row.payloadJson,
+        null
+      ),
+
+    sourceSnapshotJson:
+      decryptAiPendingJson(
+        row.sourceSnapshotJson,
+        null
+      ),
+
+    missingFieldsJson:
+      decryptAiPendingJson<string[]>(
+        row.missingFieldsJson,
+        []
+      ),
+
+    warningsJson:
+      decryptAiPendingJson<string[]>(
+        row.warningsJson,
+        []
+      ),
+
+    executionResultJson:
+      decryptAiPendingJson(
+        row.executionResultJson,
+        null
+      ),
+  };
+}
+
+type AiPendingActionRole =
+  | "staff"
+  | "admin"
+  | "host"
+  | "superhost";
+
+type AiPendingActionCreateInput = {
+  organizationId?: number | null;
+
+  requestedByUserId: number;
+  requestedByRole: AiPendingActionRole;
+
+  actionType:
+  AiPendingActionType;
+
+  consultationId?: number | null;
+  studentId?: number | null;
+  semesterId?: number | null;
+
+  preview: {
+    title: string;
+    summary: string;
+
+    sections: Array<{
+      label: string;
+      items: string[];
+    }>;
+
+    changes: Array<{
+      label: string;
+      before:
+        | string
+        | number
+        | boolean
+        | null;
+      after:
+        | string
+        | number
+        | boolean
+        | null;
+    }>;
+
+    executionSteps: string[];
+    missingFields: string[];
+    warnings: string[];
+
+    canConfirm: boolean;
+  };
+
+  payload: Record<string, unknown>;
+
+  sourceSnapshot?: Record<
+    string,
+    unknown
+  > | null;
+
+  /**
+   * 기본 30분
+   * 최소 5분, 최대 24시간
+   */
+  expiresInMinutes?: number | null;
+};
+
+const AI_PENDING_ACTION_TYPES =
+  new Set<AiPendingActionType>([
+    "student_registration_create",
+    "student_update",
+    "semester_create",
+    "semester_update",
+    "plan_create",
+    "plan_update",
+    "plan_subjects_create",
+    "plan_subjects_update",
+    "payment_update",
+    "practice_request_create",
+    "consultation_update",
+
+    "document_transfer_import",
+    "document_plan_import",
+    "document_payment_import",
+    "document_plan_payment_import",
+  ]);
+
+const AI_PENDING_ACTION_ROLES =
+  new Set([
+    "staff",
+    "admin",
+    "host",
+    "superhost",
+  ]);
+
+function normalizeAiPendingActionId(
+  value: unknown
+) {
+  const id = Number(value || 0);
+
+  if (
+    !Number.isFinite(id) ||
+    id <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "올바른 AI 승인 요청 ID가 필요합니다.",
+      400
+    );
+  }
+
+  return Math.floor(id);
+}
+
+function normalizeAiPendingActionVersion(
+  value: unknown
+) {
+  const version = Number(value || 0);
+
+  if (
+    !Number.isFinite(version) ||
+    version <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "올바른 AI 초안 버전이 필요합니다.",
+      400
+    );
+  }
+
+  return Math.floor(version);
+}
+
+/**
+ * AI 등록·수정 승인 초안 생성
+ *
+ * 실제 학생·학기·플랜 데이터는 변경하지 않는다.
+ * 초안만 ai_pending_actions에 저장한다.
+ */
+export async function createAiPendingAction(
+  input: AiPendingActionCreateInput
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      input.organizationId
+    );
+
+  const requestedByUserId =
+    Number(
+      input.requestedByUserId || 0
+    );
+
+  if (
+    !Number.isFinite(
+      requestedByUserId
+    ) ||
+    requestedByUserId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 초안 요청 사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (
+    !AI_PENDING_ACTION_ROLES.has(
+      String(input.requestedByRole)
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "AI 초안을 생성할 수 없는 사용자 권한입니다.",
+      403
+    );
+  }
+
+  if (
+    !AI_PENDING_ACTION_TYPES.has(
+      String(input.actionType)
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "지원하지 않는 AI 작업 유형입니다.",
+      400
+    );
+  }
+
+  const preview =
+    input.preview &&
+    typeof input.preview === "object"
+      ? input.preview
+      : null;
+
+  const payload =
+    input.payload &&
+    typeof input.payload === "object"
+      ? input.payload
+      : null;
+
+  if (!preview || !payload) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 등록 초안 내용이 필요합니다.",
+      400
+    );
+  }
+
+  const missingFields =
+    Array.isArray(
+      preview.missingFields
+    )
+      ? preview.missingFields
+      : [];
+
+  const warnings =
+    Array.isArray(preview.warnings)
+      ? preview.warnings
+      : [];
+
+  /**
+   * 필수값이 누락되어 있으면
+   * 사용자가 승인할 수 없는 draft 상태로 저장한다.
+   */
+  const canConfirm =
+    preview.canConfirm === true &&
+    missingFields.length === 0;
+
+  const status =
+    canConfirm
+      ? "awaiting_confirmation"
+      : "draft";
+
+  const rawExpiresInMinutes =
+    Number(
+      input.expiresInMinutes ?? 30
+    );
+
+  const expiresInMinutes =
+    Math.min(
+      Math.max(
+        Number.isFinite(
+          rawExpiresInMinutes
+        )
+          ? rawExpiresInMinutes
+          : 30,
+        5
+      ),
+      24 * 60
+    );
+
+  const expiresAt =
+    new Date(
+      Date.now() +
+        expiresInMinutes *
+          60 *
+          1000
+    );
+
+  /**
+   * 프론트가 전달하는 키를 사용하지 않고
+   * 서버에서만 생성한다.
+   */
+  const idempotencyKey =
+    randomUUID();
+
+  const result: any =
+    await db
+      .insert(aiPendingActions)
+      .values({
+        organizationId,
+
+        requestedByUserId:
+          Math.floor(
+            requestedByUserId
+          ),
+
+        requestedByRole:
+          input.requestedByRole,
+
+        confirmedByUserId:
+          null,
+
+        actionType:
+          input.actionType,
+
+        status,
+
+        consultationId:
+          input.consultationId ??
+          null,
+
+        studentId:
+          input.studentId ??
+          null,
+
+        semesterId:
+          input.semesterId ??
+          null,
+
+       previewJson:
+  encryptAiPendingJson(
+    preview
+  ),
+
+payloadJson:
+  encryptAiPendingJson(
+    payload
+  ),
+
+sourceSnapshotJson:
+  encryptAiPendingJson(
+    input.sourceSnapshot ??
+    null
+  ),
+
+missingFieldsJson:
+  encryptAiPendingJson(
+    missingFields
+  ),
+
+warningsJson:
+  encryptAiPendingJson(
+    warnings
+  ),
+
+version: 1,
+
+idempotencyKey,
+
+executionResultJson:
+  null,
+
+        errorMessage:
+          null,
+
+        expiresAt,
+
+        confirmedAt:
+          null,
+
+        executedAt:
+          null,
+
+        cancelledAt:
+          null,
+
+        failedAt:
+          null,
+      } satisfies Omit<
+        InsertAiPendingAction,
+        "id" |
+        "createdAt" |
+        "updatedAt"
+      >);
+
+  const pendingActionId =
+    Number(getInsertId(result) || 0);
+
+  if (!pendingActionId) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "AI 승인 초안을 생성하지 못했습니다.",
+      500
+    );
+  }
+
+  return getAiPendingActionForConfirmation({
+    id: pendingActionId,
+    organizationId,
+    requestedByUserId:
+      Math.floor(
+        requestedByUserId
+      ),
+  });
+}
+
+/**
+ * AI 승인 초안 조회
+ *
+ * 현재 단계에서는 초안을 생성한 본인만 조회한다.
+ * organizationId와 requestedByUserId를 모두 검사한다.
+ */
+export async function getAiPendingActionForConfirmation(
+  params: {
+    id: number;
+    organizationId?: number | null;
+    requestedByUserId: number;
+  }
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const id =
+    normalizeAiPendingActionId(
+      params.id
+    );
+
+  const requestedByUserId =
+    Number(
+      params.requestedByUserId || 0
+    );
+
+  if (
+    !Number.isFinite(
+      requestedByUserId
+    ) ||
+    requestedByUserId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 초안 요청 사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const rows =
+    await db
+      .select()
+      .from(aiPendingActions)
+      .where(
+        and(
+          eq(
+            aiPendingActions.id,
+            id
+          ),
+
+          eq(
+            aiPendingActions.organizationId,
+            organizationId
+          ),
+
+          eq(
+            aiPendingActions.requestedByUserId,
+            Math.floor(
+              requestedByUserId
+            )
+          )
+        )
+      )
+      .limit(1);
+
+  const rawRow =
+  rows[0];
+
+if (!rawRow) {
+  throwAppError(
+    ERROR_CODES.DATA_NOT_FOUND,
+    "AI 승인 초안을 찾을 수 없습니다.",
+    404
+  );
+}
+
+const row =
+  decryptAiPendingActionRow(
+    rawRow
+  );
+
+if (!row) {
+  throwAppError(
+    ERROR_CODES.DATA_NOT_FOUND,
+    "AI 승인 초안을 복호화하지 못했습니다.",
+    404
+  );
+}
+
+  /**
+   * 승인 대기 중인데 만료 시각이 지났으면
+   * 조회 시 expired 상태로 전환한다.
+   */
+  const isPendingStatus =
+    row.status === "draft" ||
+    row.status ===
+      "awaiting_confirmation";
+
+  const expiresAt =
+    row.expiresAt
+      ? new Date(row.expiresAt)
+      : null;
+
+  if (
+    isPendingStatus &&
+    expiresAt &&
+    expiresAt.getTime() <=
+      Date.now()
+  ) {
+    await db
+      .update(aiPendingActions)
+      .set({
+        status: "expired",
+      })
+      .where(
+        and(
+          eq(
+            aiPendingActions.id,
+            id
+          ),
+
+          eq(
+            aiPendingActions.organizationId,
+            organizationId
+          ),
+
+          eq(
+            aiPendingActions.requestedByUserId,
+            Math.floor(
+              requestedByUserId
+            )
+          ),
+
+          or(
+            eq(
+              aiPendingActions.status,
+              "draft"
+            ),
+            eq(
+              aiPendingActions.status,
+              "awaiting_confirmation"
+            )
+          )
+        )
+      );
+
+    const expiredRows =
+      await db
+        .select()
+        .from(aiPendingActions)
+        .where(
+          and(
+            eq(
+              aiPendingActions.id,
+              id
+            ),
+
+            eq(
+              aiPendingActions.organizationId,
+              organizationId
+            ),
+
+            eq(
+              aiPendingActions.requestedByUserId,
+              Math.floor(
+                requestedByUserId
+              )
+            )
+          )
+        )
+        .limit(1);
+
+    return decryptAiPendingActionRow(
+  expiredRows[0]
+) || null;
+  }
+
+  return row;
+}
+
+/**
+ * AI 승인 초안 취소
+ *
+ * draft 또는 awaiting_confirmation 상태만 취소한다.
+ * 실제 CRM 데이터는 변경하지 않는다.
+ */
+export async function cancelAiPendingAction(
+  params: {
+    id: number;
+    organizationId?: number | null;
+    requestedByUserId: number;
+    expectedVersion: number;
+  }
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const id =
+    normalizeAiPendingActionId(
+      params.id
+    );
+
+  const expectedVersion =
+    normalizeAiPendingActionVersion(
+      params.expectedVersion
+    );
+
+  const requestedByUserId =
+    Number(
+      params.requestedByUserId || 0
+    );
+
+  if (
+    !Number.isFinite(
+      requestedByUserId
+    ) ||
+    requestedByUserId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 초안 요청 사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const current =
+    await getAiPendingActionForConfirmation({
+      id,
+      organizationId,
+      requestedByUserId:
+        Math.floor(
+          requestedByUserId
+        ),
+    });
+
+  if (!current) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "AI 승인 초안을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  if (
+    Number(current.version) !==
+    expectedVersion
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 초안 내용이 변경되었습니다. 최신 내용을 다시 확인해주세요.",
+      409
+    );
+  }
+
+  /**
+   * 이미 취소된 요청은
+   * 같은 결과를 그대로 반환한다.
+   */
+  if (
+    current.status ===
+    "cancelled"
+  ) {
+    return current;
+  }
+
+  if (
+    current.status ===
+    "expired"
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "만료된 AI 초안은 취소할 수 없습니다.",
+      409
+    );
+  }
+
+  if (
+    current.status ===
+      "executing" ||
+    current.status ===
+      "executed"
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "이미 실행되었거나 실행 중인 AI 작업은 취소할 수 없습니다.",
+      409
+    );
+  }
+
+  if (
+    current.status === "failed"
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "실패 처리된 AI 작업은 취소할 수 없습니다.",
+      409
+    );
+  }
+
+  const updateResult: any =
+  await db
+    .update(aiPendingActions)
+    .set({
+      status: "cancelled",
+      cancelledAt: new Date(),
+    })
+    .where(
+      and(
+        eq(
+          aiPendingActions.id,
+          id
+        ),
+
+        eq(
+          aiPendingActions.organizationId,
+          organizationId
+        ),
+
+        eq(
+          aiPendingActions.requestedByUserId,
+          Math.floor(
+            requestedByUserId
+          )
+        ),
+
+        eq(
+          aiPendingActions.version,
+          expectedVersion
+        ),
+
+        or(
+          eq(
+            aiPendingActions.status,
+            "draft"
+          ),
+
+          eq(
+            aiPendingActions.status,
+            "awaiting_confirmation"
+          )
+        )
+      )
+    );
+
+const affectedRows =
+  Number(
+    updateResult?.rowsAffected ??
+    updateResult?.affectedRows ??
+    updateResult?.[0]?.affectedRows ??
+    0
+  );
+
+if (affectedRows <= 0) {
+  const latest =
+    await getAiPendingActionForConfirmation({
+      id,
+      organizationId,
+      requestedByUserId:
+        Math.floor(
+          requestedByUserId
+        ),
+    });
+
+  if (
+    latest?.status === "cancelled"
+  ) {
+    return latest;
+  }
+
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    "AI 초안 상태가 변경되어 취소하지 못했습니다. 최신 내용을 다시 확인해주세요.",
+    409
+  );
+}
+
+  return getAiPendingActionForConfirmation({
+    id,
+    organizationId,
+    requestedByUserId:
+      Math.floor(
+        requestedByUserId
+      ),
+  });
+}
+
+type AiPendingActionExecutionClaimInput = {
+  /**
+   * 승인할 AI 초안 ID
+   */
+  id: number;
+
+  /**
+   * 현재 회사
+   */
+  organizationId?: number | null;
+
+  /**
+   * 초안을 생성한 사용자
+   */
+  requestedByUserId: number;
+
+  /**
+   * 실제 승인 버튼을 누른 사용자
+   */
+  confirmedByUserId: number;
+
+  /**
+   * 화면에 표시된 초안 버전
+   */
+  expectedVersion: number;
+};
+
+/**
+ * AI 승인 초안 실행 선점
+ *
+ * awaiting_confirmation 상태의 초안을
+ * executing 상태로 원자적으로 변경한다.
+ *
+ * 중복 클릭이나 재요청으로 동일 작업이
+ * 두 번 실행되는 것을 방지한다.
+ *
+ * 이 함수는 실제 학생 데이터를 생성하지 않는다.
+ */
+export async function claimAiPendingActionForExecution(
+  input: AiPendingActionExecutionClaimInput
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      input.organizationId
+    );
+
+  const id =
+    normalizeAiPendingActionId(
+      input.id
+    );
+
+  const expectedVersion =
+    normalizeAiPendingActionVersion(
+      input.expectedVersion
+    );
+
+  const requestedByUserId =
+    Number(
+      input.requestedByUserId || 0
+    );
+
+  const confirmedByUserId =
+    Number(
+      input.confirmedByUserId || 0
+    );
+
+  if (
+    !Number.isFinite(
+      requestedByUserId
+    ) ||
+    requestedByUserId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 초안 요청 사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (
+    !Number.isFinite(
+      confirmedByUserId
+    ) ||
+    confirmedByUserId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 초안 승인 사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  /**
+   * 현재 상태와 만료 여부를 먼저 확인한다.
+   */
+  const current =
+    await getAiPendingActionForConfirmation({
+      id,
+
+      organizationId,
+
+      requestedByUserId:
+        Math.floor(
+          requestedByUserId
+        ),
+    });
+
+  if (!current) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "AI 승인 초안을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  if (
+    Number(current.version) !==
+    expectedVersion
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 초안 내용이 변경되었습니다. 최신 내용을 다시 확인해주세요.",
+      409
+    );
+  }
+
+ const executableActionTypes =
+  new Set<AiPendingActionType>([
+    "student_registration_create",
+
+    "document_transfer_import",
+    "document_plan_import",
+    "document_payment_import",
+    "document_plan_payment_import",
+  ]);
+
+if (
+  !executableActionTypes.has(
+    current.actionType as
+      AiPendingActionType
+  )
+) {
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    "현재 실행할 수 없는 AI 승인 작업입니다.",
+    400
+  );
+}
+
+  if (
+    current.status ===
+    "draft"
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "필수 정보가 누락된 초안은 승인할 수 없습니다.",
+      409
+    );
+  }
+
+  if (
+    current.status ===
+    "expired"
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "만료된 AI 초안은 승인할 수 없습니다.",
+      409
+    );
+  }
+
+  if (
+    current.status ===
+    "cancelled"
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "취소된 AI 초안은 승인할 수 없습니다.",
+      409
+    );
+  }
+
+  if (
+    current.status ===
+    "failed"
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "실패 처리된 AI 작업입니다.",
+      409
+    );
+  }
+
+  /**
+   * 이미 실행된 경우 기존 결과를 반환한다.
+   *
+   * 동일 요청 재전송에 대한 멱등성 처리다.
+   */
+  if (
+    current.status ===
+    "executed"
+  ) {
+    return {
+      claimed:
+        false,
+
+      alreadyExecuted:
+        true,
+
+      action:
+        current,
+    };
+  }
+
+  /**
+   * 다른 요청이 이미 실행 중인 경우
+   */
+  if (
+    current.status ===
+    "executing"
+  ) {
+    return {
+      claimed:
+        false,
+
+      alreadyExecuted:
+        false,
+
+      action:
+        current,
+    };
+  }
+
+  if (
+    current.status !==
+    "awaiting_confirmation"
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "현재 상태에서는 AI 초안을 승인할 수 없습니다.",
+      409
+    );
+  }
+
+  /**
+   * 상태, 버전, 사용자, 회사 조건을 모두 걸어서
+   * awaiting_confirmation → executing을 한 번만 허용한다.
+   */
+  const updateResult: any =
+    await db
+      .update(aiPendingActions)
+      .set({
+        status:
+          "executing",
+
+        confirmedByUserId:
+          Math.floor(
+            confirmedByUserId
+          ),
+
+        confirmedAt:
+          new Date(),
+
+        errorMessage:
+          null,
+      })
+      .where(
+        and(
+          eq(
+            aiPendingActions.id,
+            id
+          ),
+
+          eq(
+            aiPendingActions.organizationId,
+            organizationId
+          ),
+
+          eq(
+            aiPendingActions.requestedByUserId,
+            Math.floor(
+              requestedByUserId
+            )
+          ),
+
+          eq(
+            aiPendingActions.version,
+            expectedVersion
+          ),
+
+          eq(
+            aiPendingActions.status,
+            "awaiting_confirmation"
+          ),
+
+          sql`${aiPendingActions.expiresAt} > NOW()`
+        )
+      );
+
+  const affectedRows =
+    Number(
+      updateResult?.rowsAffected ??
+      updateResult?.affectedRows ??
+      updateResult?.[0]
+        ?.affectedRows ??
+      0
+    );
+
+  /**
+   * 업데이트된 행이 없다면
+   * 다른 요청이 먼저 상태를 변경했을 가능성이 있다.
+   */
+  if (
+    affectedRows <= 0
+  ) {
+    const latest =
+      await getAiPendingActionForConfirmation({
+        id,
+
+        organizationId,
+
+        requestedByUserId:
+          Math.floor(
+            requestedByUserId
+          ),
+      });
+
+    if (
+      latest?.status ===
+      "executing"
+    ) {
+      return {
+        claimed:
+          false,
+
+        alreadyExecuted:
+          false,
+
+        action:
+          latest,
+      };
+    }
+
+    if (
+      latest?.status ===
+      "executed"
+    ) {
+      return {
+        claimed:
+          false,
+
+        alreadyExecuted:
+          true,
+
+        action:
+          latest,
+      };
+    }
+
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 초안 상태가 변경되어 승인하지 못했습니다. 최신 내용을 다시 확인해주세요.",
+      409
+    );
+  }
+
+  const claimedAction =
+    await getAiPendingActionForConfirmation({
+      id,
+
+      organizationId,
+
+      requestedByUserId:
+        Math.floor(
+          requestedByUserId
+        ),
+    });
+
+  if (!claimedAction) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "실행 상태로 변경된 AI 초안을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  return {
+    claimed:
+      true,
+
+    alreadyExecuted:
+      false,
+
+    action:
+      claimedAction,
+  };
+}
+
+/**
+ * AI 승인 작업 성공 처리
+ */
+export async function markAiPendingActionExecuted(
+  params: {
+    id: number;
+    organizationId?: number | null;
+    requestedByUserId: number;
+    expectedVersion: number;
+
+       studentId: number;
+
+    planId?: number | null;
+
+    semesterIds: number[];
+
+    planSubjectIds?: number[];
+
+    transferSubjectIds?: number[];
+
+    practiceSaved?: boolean;
+
+paymentUpdated?: boolean;
+
+    completedSteps: string[];
+    failedSteps?: string[];
+    message: string;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const id =
+    normalizeAiPendingActionId(
+      params.id
+    );
+
+  const expectedVersion =
+    normalizeAiPendingActionVersion(
+      params.expectedVersion
+    );
+
+const requestedByUserId =
+  Number(
+    params.requestedByUserId || 0
+  );
+
+const studentId =
+  Number(
+    params.studentId || 0
+  );
+
+const planId =
+  params.planId === null ||
+  params.planId === undefined
+    ? null
+    : Number(
+        params.planId
+      );
+
+const normalizedSemesterIds =
+  Array.from(
+    new Set(
+      (
+        params.semesterIds ||
+        []
+      )
+        .map(Number)
+        .filter(
+          (value) =>
+            Number.isFinite(
+              value
+            ) &&
+            value > 0
+        )
+    )
+  );
+
+const normalizedPlanSubjectIds =
+  Array.from(
+    new Set(
+      (
+        params.planSubjectIds ||
+        []
+      )
+        .map(Number)
+        .filter(
+          (value) =>
+            Number.isFinite(
+              value
+            ) &&
+            value > 0
+        )
+    )
+  );
+
+const normalizedTransferSubjectIds =
+  Array.from(
+    new Set(
+      (
+        params.transferSubjectIds ||
+        []
+      )
+        .map(Number)
+        .filter(
+          (value) =>
+            Number.isFinite(
+              value
+            ) &&
+            value > 0
+        )
+    )
+  );
+
+if (
+  !Number.isFinite(
+    requestedByUserId
+  ) ||
+  requestedByUserId <= 0
+) {
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    "AI 초안 요청 사용자 정보가 올바르지 않습니다.",
+    400
+  );
+}
+
+if (
+  planId !== null &&
+  (
+    !Number.isFinite(
+      planId
+    ) ||
+    planId <= 0
+  )
+) {
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    "생성된 학생 플랜 정보가 올바르지 않습니다.",
+    400
+  );
+}
+
+if (
+  !Number.isFinite(
+    studentId
+  ) ||
+  studentId <= 0
+) {
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    "생성된 학생 정보가 올바르지 않습니다.",
+    400
+  );
+}
+
+    const executionResult = {
+    pendingActionId:
+      id,
+
+    status:
+      "executed",
+
+    studentId,
+
+    planId,
+
+    semesterIds:
+      normalizedSemesterIds,
+
+    planSubjectIds:
+      normalizedPlanSubjectIds,
+
+    transferSubjectIds:
+      normalizedTransferSubjectIds,
+
+    practiceSaved:
+      params.practiceSaved ===
+      true,
+
+paymentUpdated:
+  params.paymentUpdated ===
+  true,
+
+    completedSteps:
+      params.completedSteps ||
+      [],
+
+    failedSteps:
+      params.failedSteps ||
+      [],
+
+    message:
+      String(
+        params.message ||
+        "등록예정 학생 생성 및 과목설계 저장이 완료되었습니다."
+      ),
+  };
+
+  const result: any =
+    await db
+      .update(aiPendingActions)
+      .set({
+        status:
+          "executed",
+
+        studentId,
+
+        executionResultJson:
+          encryptAiPendingJson(
+            executionResult
+          ),
+
+        errorMessage:
+          null,
+
+        executedAt:
+          new Date(),
+      })
+      .where(
+        and(
+          eq(
+            aiPendingActions.id,
+            id
+          ),
+
+          eq(
+            aiPendingActions.organizationId,
+            organizationId
+          ),
+
+          eq(
+  aiPendingActions.requestedByUserId,
+  Math.floor(
+    requestedByUserId
+  )
+),
+
+          eq(
+            aiPendingActions.version,
+            expectedVersion
+          ),
+
+          eq(
+            aiPendingActions.status,
+            "executing"
+          )
+        )
+      );
+
+  const affectedRows =
+    Number(
+      result?.rowsAffected ??
+      result?.affectedRows ??
+      result?.[0]
+        ?.affectedRows ??
+      0
+    );
+
+  if (
+    affectedRows <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 실행 완료 상태를 저장하지 못했습니다.",
+      409
+    );
+  }
+
+  return getAiPendingActionForConfirmation({
+    id,
+
+    organizationId,
+
+    requestedByUserId:
+  Math.floor(
+    requestedByUserId
+  ),
+  });
+}
+
+/**
+ * AI 승인 작업 실패 처리
+ */
+export async function markAiPendingActionFailed(
+  params: {
+    id: number;
+    organizationId?: number | null;
+    requestedByUserId: number;
+    expectedVersion: number;
+
+    errorMessage: string;
+
+    completedSteps?: string[];
+    failedSteps?: string[];
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const id =
+    normalizeAiPendingActionId(
+      params.id
+    );
+
+  const expectedVersion =
+    normalizeAiPendingActionVersion(
+      params.expectedVersion
+    );
+
+const requestedByUserId =
+  Number(
+    params.requestedByUserId || 0
+  );
+
+if (
+  !Number.isFinite(
+    requestedByUserId
+  ) ||
+  requestedByUserId <= 0
+) {
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    "AI 초안 요청 사용자 정보가 올바르지 않습니다.",
+    400
+  );
+}
+
+  const safeErrorMessage =
+    String(
+      params.errorMessage ||
+      "등록예정 학생 생성 및 과목설계 저장 중 오류가 발생했습니다."
+    ).slice(
+      0,
+      2000
+    );
+
+    const executionResult = {
+    pendingActionId:
+      id,
+
+    status:
+      "failed",
+
+    studentId:
+      null,
+
+    planId:
+      null,
+
+    semesterIds:
+      [],
+
+    planSubjectIds:
+      [],
+
+    transferSubjectIds:
+      [],
+
+    practiceSaved:
+      false,
+
+    completedSteps:
+      params.completedSteps ||
+      [],
+
+    failedSteps:
+      params.failedSteps ||
+      [],
+
+    message:
+      safeErrorMessage,
+  };
+
+  const result: any =
+    await db
+      .update(aiPendingActions)
+      .set({
+        status:
+          "failed",
+
+        executionResultJson:
+          encryptAiPendingJson(
+            executionResult
+          ),
+
+        errorMessage:
+          safeErrorMessage,
+
+        failedAt:
+          new Date(),
+      })
+      .where(
+        and(
+          eq(
+            aiPendingActions.id,
+            id
+          ),
+
+          eq(
+            aiPendingActions.organizationId,
+            organizationId
+          ),
+
+          eq(
+            aiPendingActions.requestedByUserId,
+            Math.floor(
+  requestedByUserId
+)
+          ),
+
+          eq(
+            aiPendingActions.version,
+            expectedVersion
+          ),
+
+          eq(
+            aiPendingActions.status,
+            "executing"
+          )
+        )
+      );
+
+  const affectedRows =
+    Number(
+      result?.rowsAffected ??
+      result?.affectedRows ??
+      result?.[0]
+        ?.affectedRows ??
+      0
+    );
+
+  if (
+    affectedRows <= 0
+  ) {
+    const latest =
+  await getAiPendingActionForConfirmation({
+    id,
+
+    organizationId,
+
+    requestedByUserId:
+      Math.floor(
+        requestedByUserId
+      ),
+  });
+
+    return latest;
+  }
+
+  return getAiPendingActionForConfirmation({
+  id,
+
+  organizationId,
+
+  requestedByUserId:
+    Math.floor(
+      requestedByUserId
+    ),
+});
+}
+
+
+export type ExecuteStudentRegistrationTransactionInput = {
+  organizationId?: number | null;
+
+  draft: StudentRegistrationDraft;
+
+  actorUserId: number;
+  actorName?: string | null;
+  actorRole?: string | null;
+};
+
+/**
+ * AI 학생 통합등록 실제 실행
+ *
+ * 학생, 플랜, 학기, 플랜 과목, 상담 상태를
+ * 하나의 DB 트랜잭션 안에서 처리한다.
+ *
+ * 하나라도 실패하면 전체 작업이 롤백된다.
+ */
+export async function executeStudentRegistrationTransaction(
+  input: ExecuteStudentRegistrationTransactionInput
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      input.organizationId
+    );
+
+  const actorUserId =
+    Number(
+      input.actorUserId || 0
+    );
+
+  if (
+    !Number.isFinite(
+      actorUserId
+    ) ||
+    actorUserId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학생 등록 실행 사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const draft =
+    input.draft;
+
+  if (
+    !draft ||
+    typeof draft !== "object"
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학생 통합등록 초안이 필요합니다.",
+      400
+    );
+  }
+
+  if (
+    draft.canConfirm !== true ||
+    (
+      Array.isArray(
+        draft.missingFields
+      ) &&
+      draft.missingFields.length > 0
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "필수 정보가 누락된 학생 등록 초안입니다.",
+      409
+    );
+  }
+
+  const consultationId =
+    Number(
+      draft.consultationId || 0
+    );
+
+  const assigneeId =
+    Number(
+      draft.student
+        ?.assigneeId || 0
+    );
+
+  const clientName =
+    String(
+      draft.student
+        ?.clientName || ""
+    ).trim();
+
+  const phone =
+    String(
+      draft.student
+        ?.phone || ""
+    )
+      .replace(/\D/g, "");
+
+  const desiredCourse =
+    String(
+      draft.student
+        ?.desiredCourse ||
+      draft.plan
+        ?.courseName ||
+      ""
+    ).trim();
+
+  const finalEducation =
+    String(
+      draft.student
+        ?.finalEducation ||
+      draft.plan
+        ?.finalEducation ||
+      ""
+    ).trim();
+
+  if (
+    !consultationId ||
+    !assigneeId ||
+    !clientName ||
+    phone.length < 10 ||
+    !desiredCourse ||
+    !finalEducation
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학생 등록 필수 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const semesterDrafts =
+    Array.isArray(
+      draft.semesters
+    )
+      ? [...draft.semesters]
+          .sort(
+            (a, b) =>
+              Number(
+                a.semesterNo
+              ) -
+              Number(
+                b.semesterNo
+              )
+          )
+      : [];
+
+  if (
+    semesterDrafts.length === 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "등록할 학기 정보가 없습니다.",
+      400
+    );
+  }
+
+    const planSubjectDrafts =
+    Array.isArray(
+      draft.planSubjects
+    )
+      ? draft.planSubjects
+      : [];
+
+  const transferSubjectDrafts =
+    Array.isArray(
+      draft.transferSubjects
+    )
+      ? draft.transferSubjects
+      : [];
+
+  const duplicateSubjectDrafts =
+    Array.isArray(
+      draft.duplicateSubjects
+    )
+      ? draft.duplicateSubjects
+      : [];
+
+  const practiceDraft =
+    draft.practice &&
+    typeof draft.practice ===
+      "object"
+      ? draft.practice
+      : null;
+
+  if (
+    duplicateSubjectDrafts.length > 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "중복 과목이 포함된 초안은 저장할 수 없습니다. 중복 과목을 정리한 후 다시 실행해주세요.",
+      409
+    );
+  }
+
+  const hasUnconfirmedPlanSubject =
+    planSubjectDrafts.some(
+      (subject) =>
+        subject.isConfirmed ===
+        false
+    );
+
+  const hasUnconfirmedTransferSubject =
+    transferSubjectDrafts.some(
+      (subject) =>
+        subject.isConfirmed ===
+        false
+    );
+
+  if (
+    hasUnconfirmedPlanSubject ||
+    hasUnconfirmedTransferSubject
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "확인이 완료되지 않은 과목이 포함되어 있습니다.",
+      409
+    );
+  }
+
+  if (
+    planSubjectDrafts.length === 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "저장할 우리플랜 과목이 없습니다.",
+      400
+    );
+  }
+
+  const semesterDraftNoSet =
+    new Set(
+      semesterDrafts.map(
+        (semester) =>
+          Number(
+            semester.semesterNo
+          )
+      )
+    );
+
+  const invalidPlanSubject =
+    planSubjectDrafts.find(
+      (subject) => {
+        const semesterNo =
+          Number(
+            subject.semesterNo ||
+            0
+          );
+
+        return (
+          !Number.isFinite(
+            semesterNo
+          ) ||
+          semesterNo <= 0 ||
+          !semesterDraftNoSet.has(
+            semesterNo
+          )
+        );
+      }
+    );
+
+  if (
+    invalidPlanSubject
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      `우리플랜 과목 '${String(
+        invalidPlanSubject
+          .subjectName ||
+        ""
+      )}'에 해당하는 예정 학기가 없습니다.`,
+      409
+    );
+  }
+
+  return db.transaction(
+    async (tx: any) => {
+      /**
+       * 1. 상담 원본 잠금 및 재검증
+       */
+      /**
+ * 1. 상담 원본 행 잠금 및 재검증
+ *
+ * 동일 consultationId를 대상으로 서로 다른
+ * AI 승인 초안이 동시에 실행되는 경우를 방지한다.
+ */
+const [
+  lockedConsultationRows,
+] =
+  await tx.execute(sql`
+    SELECT id
+    FROM consultations
+    WHERE id = ${consultationId}
+      AND organizationId = ${organizationId}
+      AND deletedAt IS NULL
+    LIMIT 1
+    FOR UPDATE
+  `);
+
+const lockedConsultation =
+  Array.isArray(
+    lockedConsultationRows
+  )
+    ? (
+        lockedConsultationRows as any[]
+      )[0]
+    : null;
+
+if (!lockedConsultation) {
+  throwAppError(
+    ERROR_CODES.DATA_NOT_FOUND,
+    "상담DB 정보를 찾을 수 없습니다.",
+    404
+  );
+}
+
+      /**
+       * 2. 같은 상담으로 이미 생성된 학생 재검증
+       */
+      const existingStudents =
+        await tx
+          .select({
+            id:
+              students.id,
+          })
+          .from(students)
+          .where(
+            and(
+              eq(
+                students.consultationId,
+                consultationId
+              ),
+
+              eq(
+                students.organizationId,
+                organizationId
+              ),
+
+              sql`${students.deletedAt} IS NULL`
+            )
+          )
+          .limit(1);
+
+      if (
+        existingStudents[0]
+      ) {
+        throwAppError(
+          ERROR_CODES.DUPLICATE_RESOURCE,
+          "이미 학생으로 전환된 상담DB입니다.",
+          409
+        );
+      }
+
+      /**
+       * 3. 학생 개인정보 암호화 후 생성
+       */
+      const preparedStudent =
+        prepareStudentPersonalData({
+          organizationId,
+
+          consultationId,
+
+          assigneeId,
+
+          clientName,
+
+          phone,
+
+          finalEducation,
+
+          course:
+            desiredCourse,
+
+                    status:
+            "등록",
+
+          approvalStatus:
+            "대기",
+
+          approvedAt:
+            null,
+
+          rejectedAt:
+            null,
+        });
+
+      const studentInsertResult:
+        any =
+        await tx
+          .insert(students)
+          .values(
+            preparedStudent as any
+          );
+
+      const studentId =
+        Number(
+          getInsertId(
+            studentInsertResult
+          ) || 0
+        );
+
+      if (!studentId) {
+        throwAppError(
+          ERROR_CODES.INTERNAL_SERVER_ERROR,
+          "학생 정보를 생성하지 못했습니다.",
+          500
+        );
+      }
+
+      /**
+       * 4. 플랜 생성
+       */
+      const planInsertResult:
+        any =
+        await tx
+          .insert(plans)
+          .values({
+            organizationId,
+
+            studentId,
+
+            desiredCourse,
+
+            finalEducation,
+
+            totalTheorySubjects:
+              Number(
+                draft.plan
+                  ?.totalTheorySubjects ||
+                0
+              ),
+
+            requiredMajorCount:
+              0,
+
+            electiveMajorCount:
+              0,
+
+            liberalCount:
+              0,
+
+            generalCount:
+              0,
+
+                       hasPractice:
+              practiceDraft === null
+                ? null
+                : Boolean(
+                    practiceDraft.required
+                  ),
+
+            practiceHours:
+              practiceDraft
+                ?.required === true
+                ? practiceDraft
+                    .requiredHours ??
+                  null
+                : null,
+
+            practiceDate:
+              practiceDraft
+                ?.required === true
+                ? practiceDraft
+                    .plannedMonth ||
+                  null
+                : null,
+
+            practiceArranged:
+              false,
+
+            practiceStatus:
+              "미섭외",
+
+            specialNotes:
+              [
+                draft.plan
+                  ?.summaryText ||
+                null,
+
+                practiceDraft
+                  ?.required === true &&
+                practiceDraft
+                  .courseName
+                  ? `실습과목: ${practiceDraft.courseName}`
+                  : null,
+
+                practiceDraft
+                  ?.required === true &&
+                practiceDraft
+                  .semesterNo
+                  ? `실습예정학기: ${practiceDraft.semesterNo}학기`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join("\n") ||
+              null,
+          } as any);
+
+      const planId =
+        Number(
+          getInsertId(
+            planInsertResult
+          ) || 0
+        );
+
+      if (!planId) {
+        throwAppError(
+          ERROR_CODES.INTERNAL_SERVER_ERROR,
+          "학생 플랜을 생성하지 못했습니다.",
+          500
+        );
+      }
+
+      /**
+       * 5. 학기 생성
+       */
+      const semesterIds:
+        number[] = [];
+
+      for (
+        const semester of
+        semesterDrafts
+      ) {
+        const semesterNo =
+          Number(
+            semester.semesterNo ||
+            0
+          );
+
+        if (
+          !Number.isFinite(
+            semesterNo
+          ) ||
+          semesterNo <= 0
+        ) {
+          throwAppError(
+            ERROR_CODES.INVALID_REQUEST,
+            "학기 번호가 올바르지 않습니다.",
+            400
+          );
+        }
+
+        const semesterResult:
+          any =
+          await tx
+            .insert(semesters)
+            .values({
+              organizationId,
+
+              studentId,
+
+              semesterOrder:
+                semesterNo,
+
+              semesterLabel:
+                `${semesterNo}학기`,
+
+              plannedMonth:
+                semester
+                  .plannedStartMonth ||
+                null,
+
+              plannedInstitution:
+                semester
+                  .plannedInstitution ||
+                null,
+
+                            plannedSubjectCount:
+                semester
+                  .plannedSubjectCount ??
+                planSubjectDrafts.filter(
+                  (subject) =>
+                    Number(
+                      subject.semesterNo
+                    ) ===
+                    semesterNo
+                ).length,
+
+              plannedAmount:
+                semester
+                  .plannedAmount ===
+                  null
+                  ? "0"
+                  : String(
+                      semester
+                        .plannedAmount
+                    ),
+
+                          actualStartDate:
+                null,
+
+              actualInstitution:
+                null,
+
+              actualSubjectCount:
+                null,
+
+              actualAmount:
+                null,
+
+              actualPaymentDate:
+                null,
+
+                            status:
+                "등록",
+
+              approvalStatus:
+                "요청전",
+
+              isCompleted:
+                false,
+
+              practiceStatus:
+                "미섭외",
+
+              primaryCourse:
+                desiredCourse,
+
+              registeredCoursesJson:
+                JSON.stringify([
+                  desiredCourse,
+                ]),
+            } as any);
+
+        const semesterId =
+          Number(
+            getInsertId(
+              semesterResult
+            ) || 0
+          );
+
+        if (!semesterId) {
+          throwAppError(
+            ERROR_CODES.INTERNAL_SERVER_ERROR,
+            `${semesterNo}학기 정보를 생성하지 못했습니다.`,
+            500
+          );
+        }
+
+        semesterIds.push(
+          semesterId
+        );
+      }
+
+            /**
+       * 6-1. 우리플랜 과목 생성
+       */
+      const planSubjectIds:
+        number[] = [];
+
+      const semesterSubjectOrderMap =
+        new Map<number, number>();
+
+      for (
+        let index = 0;
+        index <
+        planSubjectDrafts.length;
+        index += 1
+      ) {
+        const subject =
+          planSubjectDrafts[index];
+
+        const subjectName =
+          String(
+            subject.subjectName ||
+            ""
+          ).trim();
+
+        const semesterNo =
+          Number(
+            subject.semesterNo ||
+            0
+          );
+
+        if (
+          !subjectName
+        ) {
+          continue;
+        }
+
+        if (
+          !Number.isFinite(
+            semesterNo
+          ) ||
+          semesterNo <= 0
+        ) {
+          throwAppError(
+            ERROR_CODES.INVALID_REQUEST,
+            `우리플랜 과목 '${subjectName}'의 학기 정보가 올바르지 않습니다.`,
+            400
+          );
+        }
+
+        const semesterSortOrder =
+          semesterSubjectOrderMap.get(
+            semesterNo
+          ) || 0;
+
+        semesterSubjectOrderMap.set(
+          semesterNo,
+          semesterSortOrder + 1
+        );
+
+        const planSubjectResult:
+          any =
+          await tx
+            .insert(
+              planSemesters
+            )
+            .values({
+              organizationId,
+
+              studentId,
+
+              semesterNo,
+
+              subjectName,
+
+              planCategory:
+                subject.category ||
+                "전공",
+
+              planRequirementType:
+                subject
+                  .requirementType ||
+                "전공선택",
+
+              credits:
+                Number(
+                  subject.credits ||
+                  3
+                ),
+
+                            sortOrder:
+                semesterSortOrder,
+
+              settlementIncluded:
+                !/실습|이벤트|무료/.test(
+                  subjectName
+                ),
+            } as any);
+
+        const planSubjectId =
+          Number(
+            getInsertId(
+              planSubjectResult
+            ) || 0
+          );
+
+        if (
+          !planSubjectId
+        ) {
+          throwAppError(
+            ERROR_CODES.INTERNAL_SERVER_ERROR,
+            `우리플랜 과목 '${subjectName}'을 저장하지 못했습니다.`,
+            500
+          );
+        }
+
+        planSubjectIds.push(
+          planSubjectId
+        );
+      }
+
+      /**
+       * 6-2. 전적대 및 기존 이수 과목 생성
+       */
+      const transferSubjectIds:
+        number[] = [];
+
+      for (
+        let index = 0;
+        index <
+        transferSubjectDrafts.length;
+        index += 1
+      ) {
+        const subject =
+          transferSubjectDrafts[index];
+
+        const subjectName =
+          String(
+            subject.subjectName ||
+            ""
+          ).trim();
+
+        if (
+          !subjectName
+        ) {
+          continue;
+        }
+
+        const transferSubjectResult:
+          any =
+          await tx
+            .insert(
+              transferSubjects
+            )
+            .values({
+              organizationId,
+
+              studentId,
+
+              schoolName:
+                subject.schoolName ||
+                null,
+
+              subjectName,
+
+              transferCategory:
+                subject.category ||
+                "전공",
+
+              transferRequirementType:
+                subject
+                  .requirementType ||
+                "전공선택",
+
+              credits:
+                Number(
+                  subject.credits ||
+                  3
+                ),
+
+              sortOrder:
+                index,
+
+              attachmentName:
+                null,
+
+              attachmentUrl:
+                null,
+            } as any);
+
+        const transferSubjectId =
+          Number(
+            getInsertId(
+              transferSubjectResult
+            ) || 0
+          );
+
+        if (
+          !transferSubjectId
+        ) {
+          throwAppError(
+            ERROR_CODES.INTERNAL_SERVER_ERROR,
+            `전적대 과목 '${subjectName}'을 저장하지 못했습니다.`,
+            500
+          );
+        }
+
+        transferSubjectIds.push(
+          transferSubjectId
+        );
+      }
+
+           /**
+       * 7. 상담DB 상태를 등록예정으로 변경
+       *
+       * 실제 등록·승인·정산 처리는 수행하지 않는다.
+       * 이름과 연락처는 변경하지 않는다.
+       */
+      await tx
+        .update(consultations)
+        .set({
+                  status:
+            "등록예정",
+
+          desiredCourse,
+
+          finalEducation,
+
+          assigneeId,
+        } as any)
+        .where(
+          and(
+            eq(
+              consultations.id,
+              consultationId
+            ),
+
+            eq(
+              consultations.organizationId,
+              organizationId
+            )
+          )
+        );
+
+            return {
+        studentId,
+
+        planId,
+
+        semesterIds,
+
+        planSubjectIds,
+
+        transferSubjectIds,
+
+        practiceSaved:
+          practiceDraft !== null,
+
+        consultationId,
+
+        completedSteps: [
+          "상담DB 원본 재검증",
+          "등록예정 학생 생성",
+          "학생 플랜 생성",
+          `${semesterIds.length}개 예정 학기 생성`,
+          `${planSubjectIds.length}개 우리플랜 과목 생성`,
+          `${transferSubjectIds.length}개 전적대 과목 생성`,
+          practiceDraft !== null
+            ? "실습 설계정보 저장"
+            : "실습 설계정보 미확정",
+          "상담DB 상태를 등록예정으로 변경",
+        ],
+      };
+    }
+  );
+}
+
+/**
+ * AI 문서 분석 결과 CRM 반영 트랜잭션
+ *
+ * 지원 범위
+ * 1. 전적대·기존 이수 과목
+ * 2. 우리플랜 과목
+ * 3. 학생 결제정보
+ * 4. 우리플랜 과목 + 결제정보
+ *
+ * Pending Action 승인 전에는 호출하지 않는다.
+ */
+export async function executeDocumentImportTransaction(
+  input:
+    ExecuteDocumentImportTransactionInput
+): Promise<
+  ExecuteDocumentImportTransactionResult
+> {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      input.organizationId
+    );
+
+  const studentId =
+    Number(
+      input.studentId ||
+      0
+    );
+
+  const actorUserId =
+    Number(
+      input.actorUserId ||
+      0
+    );
+
+  if (
+    !Number.isFinite(
+      studentId
+    ) ||
+    studentId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "올바른 학생 정보가 필요합니다.",
+      400
+    );
+  }
+
+  if (
+    !Number.isFinite(
+      actorUserId
+    ) ||
+    actorUserId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "문서 반영 실행 사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const draft =
+    normalizeDocumentImportDraft(
+      input.draft
+    );
+
+  if (
+    draft.studentId !==
+    Math.floor(
+      studentId
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "승인 초안의 학생 정보가 일치하지 않습니다.",
+      409
+    );
+  }
+
+  const completedSteps:
+    string[] = [];
+
+  return db.transaction(
+    async (
+      tx:
+        any
+    ) => {
+      /**
+       * 학생 행 잠금
+       */
+      const [
+        lockedStudentRows,
+      ] =
+        await tx.execute(
+          sql`
+            SELECT *
+            FROM students
+            WHERE id = ${Math.floor(
+              studentId
+            )}
+              AND organizationId = ${organizationId}
+              AND deletedAt IS NULL
+            LIMIT 1
+            FOR UPDATE
+          `
+        );
+
+      const lockedStudent =
+        Array.isArray(
+          lockedStudentRows
+        )
+          ? lockedStudentRows[0]
+          : null;
+
+      if (!lockedStudent) {
+        throwAppError(
+          ERROR_CODES.DATA_NOT_FOUND,
+          "문서 반영 대상 학생을 찾을 수 없습니다.",
+          404
+        );
+      }
+
+      completedSteps.push(
+        "반영 대상 학생 재검증"
+      );
+
+      const planSubjectIds:
+        number[] = [];
+
+      const transferSubjectIds:
+        number[] = [];
+
+      let semesterId:
+        number |
+        null = null;
+
+      let paymentUpdated =
+        false;
+
+      const importsTransfer =
+        draft.actionType ===
+        "document_transfer_import";
+
+      const importsPlan =
+        draft.actionType ===
+          "document_plan_import" ||
+        draft.actionType ===
+          "document_plan_payment_import";
+
+      const importsPayment =
+        draft.actionType ===
+          "document_payment_import" ||
+        draft.actionType ===
+          "document_plan_payment_import";
+
+      /**
+       * 기존 전적대 과목 이름 잠금 조회
+       */
+      if (
+        importsTransfer
+      ) {
+        const existingTransferRows =
+          await tx
+            .select()
+            .from(
+              transferSubjects
+            )
+            .where(
+              and(
+                eq(
+                  transferSubjects.studentId,
+                  Math.floor(
+                    studentId
+                  )
+                ),
+
+                eq(
+                  transferSubjects.organizationId,
+                  organizationId
+                )
+              )
+            )
+            .orderBy(
+              transferSubjects.sortOrder,
+              transferSubjects.id
+            );
+
+        const existingNameSet =
+          new Set(
+            existingTransferRows.map(
+              (
+                row:
+                  any
+              ) =>
+                normalizeDocumentImportSubjectName(
+                  row.subjectName
+                ).toLowerCase()
+            )
+          );
+
+        let sortOrder =
+          existingTransferRows.length;
+
+        for (
+          const subject of
+          draft.subjects
+        ) {
+          const normalizedName =
+            normalizeDocumentImportSubjectName(
+              subject.subjectName
+            );
+
+          const duplicateKey =
+            normalizedName.toLowerCase();
+
+          if (
+            existingNameSet.has(
+              duplicateKey
+            )
+          ) {
+            throwAppError(
+              ERROR_CODES.DUPLICATE_RESOURCE,
+              `이미 기존 이수 과목에 등록된 과목입니다: ${normalizedName}`,
+              409
+            );
+          }
+
+          const result:
+            any =
+            await tx
+              .insert(
+                transferSubjects
+              )
+              .values({
+                organizationId,
+
+                studentId:
+                  Math.floor(
+                    studentId
+                  ),
+
+                schoolName:
+                  draft.institutionName,
+
+                subjectName:
+                  normalizedName,
+
+                transferCategory:
+                  subject.category,
+
+                transferRequirementType:
+                  subject.requirementType,
+
+                credits:
+                  subject.credits,
+
+                sortOrder,
+
+                attachmentName:
+                  null,
+
+                attachmentUrl:
+                  null,
+              } as any);
+
+          const insertedId =
+            Number(
+              getInsertId(
+                result
+              ) ||
+              0
+            );
+
+          if (!insertedId) {
+            throwAppError(
+              ERROR_CODES.INTERNAL_SERVER_ERROR,
+              `기존 이수 과목을 저장하지 못했습니다: ${normalizedName}`,
+              500
+            );
+          }
+
+          transferSubjectIds.push(
+            insertedId
+          );
+
+          existingNameSet.add(
+            duplicateKey
+          );
+
+          sortOrder +=
+            1;
+        }
+
+        completedSteps.push(
+          `기존 이수 과목 ${transferSubjectIds.length}개 등록`
+        );
+      }
+
+      /**
+       * 우리플랜 과목 등록
+       */
+      if (
+        importsPlan
+      ) {
+        const existingPlanRows =
+          await tx
+            .select()
+            .from(
+              planSemesters
+            )
+            .where(
+              and(
+                eq(
+                  planSemesters.studentId,
+                  Math.floor(
+                    studentId
+                  )
+                ),
+
+                eq(
+                  planSemesters.organizationId,
+                  organizationId
+                )
+              )
+            )
+            .orderBy(
+              planSemesters.semesterNo,
+              planSemesters.sortOrder,
+              planSemesters.id
+            );
+
+        const existingNameSet =
+          new Set(
+            existingPlanRows.map(
+              (
+                row:
+                  any
+              ) =>
+                normalizeDocumentImportSubjectName(
+                  row.subjectName
+                ).toLowerCase()
+            )
+          );
+
+        const semesterRows =
+          await tx
+            .select()
+            .from(
+              semesters
+            )
+            .where(
+              and(
+                eq(
+                  semesters.studentId,
+                  Math.floor(
+                    studentId
+                  )
+                ),
+
+                eq(
+                  semesters.organizationId,
+                  organizationId
+                )
+              )
+            )
+            .orderBy(
+              semesters.semesterOrder,
+              semesters.id
+            );
+
+        if (
+          semesterRows.length ===
+          0
+        ) {
+          throwAppError(
+            ERROR_CODES.DATA_NOT_FOUND,
+            "우리플랜 과목을 반영할 학생 학기정보가 없습니다.",
+            409
+          );
+        }
+
+        const defaultSemester =
+          semesterRows[
+            semesterRows.length -
+            1
+          ];
+
+        semesterId =
+          Number(
+            defaultSemester.id
+          );
+
+        const sortOrderBySemester =
+          new Map<
+            number,
+            number
+          >();
+
+        for (
+          const row of
+          existingPlanRows
+        ) {
+          const semesterNo =
+            Number(
+              row.semesterNo ||
+              1
+            );
+
+          const nextSortOrder =
+            Math.max(
+              sortOrderBySemester.get(
+                semesterNo
+              ) ||
+                0,
+
+              Number(
+                row.sortOrder ||
+                0
+              ) +
+                1
+            );
+
+          sortOrderBySemester.set(
+            semesterNo,
+            nextSortOrder
+          );
+        }
+
+        for (
+          const subject of
+          draft.subjects
+        ) {
+          const normalizedName =
+            normalizeDocumentImportSubjectName(
+              subject.subjectName
+            );
+
+          const duplicateKey =
+            normalizedName.toLowerCase();
+
+          if (
+            existingNameSet.has(
+              duplicateKey
+            )
+          ) {
+            throwAppError(
+              ERROR_CODES.DUPLICATE_RESOURCE,
+              `이미 우리플랜에 등록된 과목입니다: ${normalizedName}`,
+              409
+            );
+          }
+
+          const semesterNo =
+            subject.semesterNo &&
+            subject.semesterNo > 0
+              ? subject.semesterNo
+              : Number(
+                  defaultSemester
+                    .semesterOrder ||
+                  1
+                );
+
+          const sortOrder =
+            sortOrderBySemester.get(
+              semesterNo
+            ) ||
+            0;
+
+          const result:
+            any =
+            await tx
+              .insert(
+                planSemesters
+              )
+              .values({
+                organizationId,
+
+                studentId:
+                  Math.floor(
+                    studentId
+                  ),
+
+                semesterNo,
+
+                subjectName:
+                  normalizedName,
+
+                planCategory:
+                  subject.category,
+
+                planRequirementType:
+                  subject.requirementType,
+
+                credits:
+                  subject.credits,
+
+                sortOrder,
+
+                settlementIncluded:
+                  resolvePlanSemesterSettlementIncluded(
+                    normalizedName
+                  ),
+              } as any);
+
+          const insertedId =
+            Number(
+              getInsertId(
+                result
+              ) ||
+              0
+            );
+
+          if (!insertedId) {
+            throwAppError(
+              ERROR_CODES.INTERNAL_SERVER_ERROR,
+              `우리플랜 과목을 저장하지 못했습니다: ${normalizedName}`,
+              500
+            );
+          }
+
+          planSubjectIds.push(
+            insertedId
+          );
+
+          existingNameSet.add(
+            duplicateKey
+          );
+
+          sortOrderBySemester.set(
+            semesterNo,
+            sortOrder +
+              1
+          );
+        }
+
+        completedSteps.push(
+          `우리플랜 과목 ${planSubjectIds.length}개 등록`
+        );
+      }
+
+      /**
+       * 학생 결제정보 반영
+       *
+       * 환불 정산은 별도 정산 Executor가 필요하므로
+       * 현재 문서 반영에서는 원 결제정보만 수정한다.
+       */
+      if (
+        importsPayment
+      ) {
+        const paymentUpdate:
+          Record<
+            string,
+            unknown
+          > = {};
+
+        if (
+          draft.paymentAmount !==
+          null &&
+          Number.isFinite(
+            Number(
+              draft.paymentAmount
+            )
+          ) &&
+          Number(
+            draft.paymentAmount
+          ) >= 0
+        ) {
+          paymentUpdate.paymentAmount =
+            String(
+              Math.floor(
+                Number(
+                  draft.paymentAmount
+                )
+              )
+            );
+        }
+
+        const normalizedPaidAt =
+          normalizeDocumentImportDate(
+            draft.paidAt
+          );
+
+        if (
+          normalizedPaidAt
+        ) {
+          paymentUpdate.paymentDate =
+            normalizedPaidAt;
+        }
+
+        if (
+          draft.institutionName
+        ) {
+          paymentUpdate.institution =
+            draft.institutionName;
+        }
+
+        if (
+          Object.keys(
+            paymentUpdate
+          ).length ===
+          0
+        ) {
+          throwAppError(
+            ERROR_CODES.INVALID_REQUEST,
+            "학생에게 반영할 유효한 결제정보가 없습니다.",
+            400
+          );
+        }
+
+        await tx
+          .update(
+            students
+          )
+          .set(
+            paymentUpdate as any
+          )
+          .where(
+            and(
+              eq(
+                students.id,
+                Math.floor(
+                  studentId
+                )
+              ),
+
+              eq(
+                students.organizationId,
+                organizationId
+              ),
+
+              sql`${students.deletedAt} IS NULL`
+            )
+          );
+
+        paymentUpdated =
+          true;
+
+        completedSteps.push(
+          "학생 결제정보 반영"
+        );
+      }
+
+      /**
+       * 학생 변경이력
+       */
+      const auditAfter = {
+        analysisId:
+          draft.analysisId,
+
+        actionType:
+          draft.actionType,
+
+        target:
+          draft.target,
+
+        documentType:
+          draft.documentType,
+
+        planSubjectIds,
+
+        transferSubjectIds,
+
+        paymentUpdated,
+
+        paymentAmount:
+          draft.paymentAmount,
+
+        paymentStatus:
+          draft.paymentStatus,
+
+        paidAt:
+          draft.paidAt,
+
+        institutionName:
+          draft.institutionName,
+      };
+
+      await tx
+        .insert(
+          studentAuditLogs
+        )
+        .values({
+          organizationId,
+
+          studentId:
+            Math.floor(
+              studentId
+            ),
+
+          entityType:
+            "ai_document_import",
+
+          entityId:
+            null,
+
+          action:
+            "update",
+
+          title:
+            "AI 문서 분석 결과 CRM 반영",
+
+          beforeJson:
+            encryptStudentAuditJson({
+              student: {
+                paymentAmount:
+                  lockedStudent.paymentAmount ??
+                  null,
+
+                paymentDate:
+                  lockedStudent.paymentDate ??
+                  null,
+
+                institution:
+                  lockedStudent.institution ??
+                  null,
+              },
+            }),
+
+          afterJson:
+            encryptStudentAuditJson(
+              auditAfter
+            ),
+
+          diffJson:
+            encryptStudentAuditJson(
+              auditAfter
+            ),
+
+          actorUserId:
+            Math.floor(
+              actorUserId
+            ),
+
+          actorName:
+            input.actorName
+              ? encryptPersonalData(
+                  String(
+                    input.actorName
+                  ).trim()
+                )
+              : null,
+
+          actorRole:
+            input.actorRole ??
+            null,
+        } as any);
+
+      completedSteps.push(
+        "학생 변경이력 기록"
+      );
+
+      return {
+        studentId:
+          Math.floor(
+            studentId
+          ),
+
+        semesterId,
+
+        planSubjectIds,
+
+        transferSubjectIds,
+
+        paymentUpdated,
+
+        completedSteps,
+      };
+    }
+  );
+}
 
 // AI 액션 로그 저장
 export async function createAiActionLog(params: {
@@ -2110,7 +6002,8 @@ const ORGANIZATION_BACKUP_TABLES = [
   "notifications",
 
   "ai_action_logs",
-  "ai_learning_entries",
+"ai_pending_actions",
+"ai_learning_entries",
 
   "settlement_grades",
   "settlement_items",
@@ -2631,27 +6524,38 @@ export async function getStudentRegistrationSummary(
 const organizationId = requireOrganizationId(params?.organizationId);
 
   if (!db) {
-    return {
-      status: "",
-      startDate: null,
-      paymentAmount: 0,
-      subjectCount: 0,
-      paymentDate: null,
-      institution: "",
-    };
-  }
+  return {
+    status: "",
+    startDate: null,
+    paymentAmount: 0,
+    subjectCount: 0,
+    paymentDate: null,
+    institution: "",
+    totalSemesters: 0,
 
-  const student = await getStudent(studentId, { organizationId });
-  if (!student) {
-    return {
-      status: "",
-      startDate: null,
-      paymentAmount: 0,
-      subjectCount: 0,
-      paymentDate: null,
-      institution: "",
-    };
-  }
+    hasSettlementData: false,
+    totalPaid: 0,
+    totalRefund: 0,
+  };
+}
+
+ const student = await getStudent(studentId, { organizationId });
+
+if (!student) {
+  return {
+    status: "",
+    startDate: null,
+    paymentAmount: 0,
+    subjectCount: 0,
+    paymentDate: null,
+    institution: "",
+    totalSemesters: 0,
+
+    hasSettlementData: false,
+    totalPaid: 0,
+    totalRefund: 0,
+  };
+}
 
   const semesterRows = await listSemesters(studentId, { organizationId });
 
@@ -2674,45 +6578,99 @@ const organizationId = requireOrganizationId(params?.organizationId);
 
    const [settlementResult] = await db.execute(sql`
   SELECT
+    COUNT(*) as settlementRowCount,
+
     COALESCE(
       SUM(
         CASE
           WHEN settlementStatus = 'confirmed'
            AND revenueType != 'refund'
-          THEN grossAmount ELSE 0
+          THEN grossAmount
+          ELSE 0
         END
       ),
       0
     ) as totalPaid,
+
     COALESCE(
       SUM(
         CASE
           WHEN revenueType = 'refund'
-          THEN ABS(grossAmount) ELSE 0
+          THEN ABS(grossAmount)
+          ELSE 0
         END
       ),
       0
     ) as totalRefund
+
   FROM settlement_items
-WHERE studentId = ${studentId}
-  AND organizationId = ${organizationId}
+
+  WHERE studentId = ${studentId}
+    AND organizationId = ${organizationId}
 `);
 
-const totalPaid = toNumber((settlementResult as any)[0]?.totalPaid);
-const totalRefund = toNumber((settlementResult as any)[0]?.totalRefund);
-const rawPaymentAmount = totalPaid - totalRefund;
+const settlementRow =
+  (settlementResult as any)?.[0] ?? {};
+
+const settlementRowCount =
+  toNumber(
+    settlementRow.settlementRowCount
+  );
+
+const hasSettlementData =
+  settlementRowCount > 0;
+
+const totalPaid =
+  toNumber(
+    settlementRow.totalPaid
+  );
+
+const totalRefund =
+  toNumber(
+    settlementRow.totalRefund
+  );
+
+const rawPaymentAmount =
+  totalPaid - totalRefund;
 
   return {
-    status:
-      lastSemester?.status === "등록 종료"
-        ? "등록 종료"
-        : student.status || "등록",
-    startDate: firstActual?.actualStartDate || student.startDate || null,
-        paymentAmount: Math.max(rawPaymentAmount, 0),
-    subjectCount: firstActual?.actualSubjectCount ?? student.subjectCount ?? 0,
-    paymentDate: firstActual?.actualPaymentDate || student.paymentDate || null,
-    institution: firstActual?.actualInstitution || student.institution || "",
-  };
+  status:
+    lastSemester?.status === "등록 종료"
+      ? "등록 종료"
+      : student.status || "등록",
+
+  startDate:
+    firstActual?.actualStartDate ||
+    student.startDate ||
+    null,
+
+  paymentAmount:
+    Math.max(rawPaymentAmount, 0),
+
+  subjectCount:
+    firstActual?.actualSubjectCount ??
+    student.subjectCount ??
+    0,
+
+  paymentDate:
+    firstActual?.actualPaymentDate ||
+    student.paymentDate ||
+    null,
+
+  institution:
+    firstActual?.actualInstitution ||
+    student.institution ||
+    "",
+
+totalSemesters:
+  semesterRows.length > 0
+    ? semesterRows.length
+    : Number(student.totalSemesters || 0),
+
+hasSettlementData,
+totalPaid,
+totalRefund,
+};
 }
 
 // ─── Helper: Asia/Seoul 기준 이번달 범위 ────────────────────────────
@@ -13483,10 +17441,21 @@ export async function listSubjectCatalogItems(params: {
     .select()
     .from(subjectCatalogItems)
     .where(and(...conditions))
-    .orderBy(
-      asc(subjectCatalogItems.requirementType),
-      asc(subjectCatalogItems.sortOrder),
-      asc(subjectCatalogItems.id)
+        .orderBy(
+      asc(
+        subjectCatalogItems
+          .semesterNo
+      ),
+
+      asc(
+        subjectCatalogItems
+          .sortOrder
+      ),
+
+      asc(
+        subjectCatalogItems
+          .id
+      )
     );
 }
 
@@ -13509,6 +17478,27 @@ export async function createSubjectCatalogItem(
   "과목명을 입력해주세요.",
   400
 );
+  }
+
+  const semesterNo =
+    Number(
+      (data as any)
+        .semesterNo ??
+      1
+    );
+
+  if (
+    !Number.isInteger(
+      semesterNo
+    ) ||
+    semesterNo <= 0 ||
+    semesterNo > 20
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_INPUT,
+      "학기 번호가 올바르지 않습니다.",
+      400
+    );
   }
 
   const requirementType = data.requirementType;
@@ -13582,6 +17572,7 @@ export async function createSubjectCatalogItem(
     organizationId,
     catalogId,
     subjectName,
+       semesterNo,
     requirementType,
     category:
       (data.category as any) ??
@@ -13597,11 +17588,26 @@ export async function createSubjectCatalogItem(
 }
 
 export async function bulkCreateSubjectCatalogItems(params: {
-  organizationId?: number | null;
-  catalogId: number;
-  requirementType: "전공필수" | "전공선택" | "교양" | "일반";
-  subjectNames: string[];
-  actorUserId?: number | null;
+  organizationId?:
+    number | null;
+
+  catalogId:
+    number;
+
+  semesterNo?:
+    number | null;
+
+  requirementType:
+    | "전공필수"
+    | "전공선택"
+    | "교양"
+    | "일반";
+
+  subjectNames:
+    string[];
+
+  actorUserId?:
+    number | null;
 }) {
   const db = await getDb();
   if (!db) throwAppError(
@@ -13612,6 +17618,24 @@ export async function bulkCreateSubjectCatalogItems(params: {
 
   const organizationId = requireOrganizationId(params.organizationId);
   const catalogId = Number(params.catalogId || 0);
+  const semesterNo =
+    Number(
+      params.semesterNo ||
+      1
+    );
+  if (
+    !Number.isInteger(
+      semesterNo
+    ) ||
+    semesterNo <= 0 ||
+    semesterNo > 20
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_INPUT,
+      "학기 번호가 올바르지 않습니다.",
+      400
+    );
+  }
 
   if (!catalogId) {
     throwAppError(
@@ -13671,17 +17695,35 @@ export async function bulkCreateSubjectCatalogItems(params: {
     .map((name) => name.replace(/\s+/g, " "))
     .filter((name) => !existingNameSet.has(name))
     .map((subjectName, index) => ({
-      organizationId,
-      catalogId,
-      subjectName,
-      requirementType: params.requirementType,
-      category,
-      credits: 3,
-      sortOrder: startSortOrder + index,
-      isActive: true,
-      createdBy: params.actorUserId ?? null,
-      updatedBy: params.actorUserId ?? null,
-    }));
+  organizationId,
+  catalogId,
+  subjectName,
+
+  semesterNo,
+
+  requirementType:
+    params.requirementType,
+
+  category,
+
+  credits:
+    3,
+
+  sortOrder:
+    startSortOrder +
+    index,
+
+  isActive:
+    true,
+
+  createdBy:
+    params.actorUserId ??
+    null,
+
+  updatedBy:
+    params.actorUserId ??
+    null,
+}));
 
   if (insertRows.length > 0) {
     await db.insert(subjectCatalogItems).values(insertRows as any);
