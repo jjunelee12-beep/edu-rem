@@ -788,10 +788,9 @@ scheduleId:
                 ?.pendingAction ||
               null,
 
-            registrationResult,
-            },
-          },
-        })
+                  registrationResult,
+    },
+  })
       );
 
 await saveSpecialChatMessage(
