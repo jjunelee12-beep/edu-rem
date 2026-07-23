@@ -66,6 +66,8 @@ deviceTokens,
 aiActionLogs,
 aiPendingActions,
 type InsertAiPendingAction,
+aiChatMessages,
+type InsertAiChatMessage,
 teams,
   type InsertTeam,
   positions,
@@ -1778,7 +1780,8 @@ const AI_PENDING_ACTION_TYPES =
     "plan_subjects_update",
     "payment_update",
     "practice_request_create",
-    "consultation_update",
+        "consultation_update",
+    "schedule_create",
 
     "document_transfer_import",
     "document_plan_import",
@@ -2637,6 +2640,8 @@ export async function claimAiPendingActionForExecution(
  const executableActionTypes =
   new Set<AiPendingActionType>([
     "student_registration_create",
+    "schedule_create",
+    "consultation_update",
 
     "document_transfer_import",
     "document_plan_import",
@@ -2916,11 +2921,19 @@ export async function markAiPendingActionExecuted(
     requestedByUserId: number;
     expectedVersion: number;
 
-       studentId: number;
+       consultationId?:
+  number |
+  null;
 
-    planId?: number | null;
+studentId?:
+  number |
+  null;
 
-    semesterIds: number[];
+scheduleId?: number | null;
+
+planId?: number | null;
+
+semesterIds: number[];
 
     planSubjectIds?: number[];
 
@@ -2966,10 +2979,35 @@ const requestedByUserId =
     params.requestedByUserId || 0
   );
 
+const consultationId =
+  params.consultationId ===
+    null ||
+  params.consultationId ===
+    undefined
+    ? null
+    : Number(
+        params.consultationId
+      );
+
 const studentId =
-  Number(
-    params.studentId || 0
-  );
+  params.studentId ===
+    null ||
+  params.studentId ===
+    undefined
+    ? null
+    : Number(
+        params.studentId
+      );
+
+const scheduleId =
+  params.scheduleId ===
+    null ||
+  params.scheduleId ===
+    undefined
+    ? null
+    : Number(
+        params.scheduleId
+      );
 
 const planId =
   params.planId === null ||
@@ -3047,6 +3085,22 @@ if (
 }
 
 if (
+  scheduleId !== null &&
+  (
+    !Number.isFinite(
+      scheduleId
+    ) ||
+    scheduleId <= 0
+  )
+) {
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    "생성된 일정 정보가 올바르지 않습니다.",
+    400
+  );
+}
+
+if (
   planId !== null &&
   (
     !Number.isFinite(
@@ -3062,29 +3116,63 @@ if (
   );
 }
 
-if (
-  !Number.isFinite(
+const normalizedConsultationId =
+  consultationId !==
+    null &&
+  Number.isFinite(
+    consultationId
+  ) &&
+  consultationId >
+    0
+    ? Math.floor(
+        consultationId
+      )
+    : null;
+
+const normalizedStudentId =
+  studentId !==
+    null &&
+  Number.isFinite(
     studentId
-  ) ||
-  studentId <= 0
+  ) &&
+  studentId >
+    0
+    ? Math.floor(
+        studentId
+      )
+    : null;
+
+/**
+ * 작업 종류에 따라 필요한 대상 ID가 다르다.
+ */
+if (
+  !normalizedConsultationId &&
+  !normalizedStudentId &&
+  !scheduleId
 ) {
   throwAppError(
     ERROR_CODES.INVALID_REQUEST,
-    "생성된 학생 정보가 올바르지 않습니다.",
+    "AI 작업 실행 대상 정보를 확인할 수 없습니다.",
     400
   );
 }
 
     const executionResult = {
-    pendingActionId:
-      id,
+  pendingActionId:
+    id,
 
-    status:
-      "executed",
+  status:
+    "executed",
 
-    studentId,
+  consultationId:
+  normalizedConsultationId,
 
-    planId,
+studentId:
+  normalizedStudentId,
+
+  scheduleId,
+
+  planId,
 
     semesterIds:
       normalizedSemesterIds,
@@ -3122,12 +3210,16 @@ paymentUpdated:
     await db
       .update(aiPendingActions)
       .set({
-        status:
-          "executed",
+  status:
+    "executed",
 
-        studentId,
+  consultationId:
+    normalizedConsultationId,
 
-        executionResultJson:
+  studentId:
+    normalizedStudentId,
+
+  executionResultJson:
           encryptAiPendingJson(
             executionResult
           ),
@@ -24258,10 +24350,192 @@ const organizationId = requireOrganizationId(params?.organizationId);
   return (rows as any[]) ?? [];
 }
 
+/**
+ * 특정 학생과 직접 연결된 활성 일정을 조회한다.
+ *
+ * 조회 조건:
+ * - 같은 organizationId
+ * - 같은 studentId
+ * - isActive = 1
+ *
+ * 일정 제목이나 학생 이름으로 추측하지 않고
+ * schedules.studentId로만 연결한다.
+ */
+export async function listStudentSchedules(
+  studentId:
+    number,
+
+  params?: {
+    organizationId?:
+      number |
+      null;
+
+    includePast?:
+      boolean;
+
+    limit?:
+      number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES
+        .INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params
+        ?.organizationId
+    );
+
+  const normalizedStudentId =
+    Number(
+      studentId
+    );
+
+  if (
+    !Number.isFinite(
+      normalizedStudentId
+    ) ||
+    normalizedStudentId <=
+      0
+  ) {
+    throwAppError(
+      ERROR_CODES
+        .INVALID_REQUEST,
+      "올바른 학생 ID가 필요합니다.",
+      400
+    );
+  }
+
+  const limit =
+    Math.min(
+      Math.max(
+        Number(
+          params?.limit ||
+          100
+        ),
+        1
+      ),
+      500
+    );
+
+  const includePast =
+    params?.includePast ===
+    true;
+
+  if (
+    includePast
+  ) {
+    const [rows] =
+      await db.execute(
+        sql`
+          SELECT
+            id,
+            organizationId,
+            studentId,
+            title,
+            description,
+            scheduleDate,
+            meridiem,
+            hour12,
+            minute,
+            startAt,
+            scope,
+            ownerUserId,
+            ownerUserName,
+            createdByRole,
+            isActive,
+            isNotified,
+            createdAt,
+            updatedAt
+          FROM schedules
+          WHERE organizationId =
+            ${organizationId}
+            AND studentId =
+              ${normalizedStudentId}
+            AND isActive = 1
+          ORDER BY
+            startAt ASC,
+            id ASC
+          LIMIT ${limit}
+        `
+      );
+
+    return (
+      (
+        rows as
+          any[]
+      ) || []
+    );
+  }
+
+  const [rows] =
+    await db.execute(
+      sql`
+        SELECT
+          id,
+          organizationId,
+          studentId,
+          title,
+          description,
+          scheduleDate,
+          meridiem,
+          hour12,
+          minute,
+          startAt,
+          scope,
+          ownerUserId,
+          ownerUserName,
+          createdByRole,
+          isActive,
+          isNotified,
+          createdAt,
+          updatedAt
+        FROM schedules
+        WHERE organizationId =
+          ${organizationId}
+          AND studentId =
+            ${normalizedStudentId}
+          AND isActive = 1
+          AND startAt >= NOW()
+        ORDER BY
+          startAt ASC,
+          id ASC
+        LIMIT ${limit}
+      `
+    );
+
+  return (
+    (
+      rows as
+        any[]
+    ) || []
+  );
+}
+
 export async function createSchedule(data: {
-  organizationId?: number | null;
-  title: string;
-  description?: string | null;
+  organizationId?:
+    number |
+    null;
+
+  studentId?:
+    number |
+    null;
+
+  title:
+    string;
+
+  description?:
+    string |
+    null;
   scheduleDate: string;
   meridiem: "AM" | "PM";
   hour12: number;
@@ -24279,13 +24553,49 @@ export async function createSchedule(data: {
   500
 );
 
-  const organizationId = requireOrganizationId(data.organizationId);
+  const organizationId =
+  requireOrganizationId(
+    data.organizationId
+  );
 
-  const result: any = await db.execute(sql`
+const studentId =
+  data.studentId ===
+    null ||
+  data.studentId ===
+    undefined
+    ? null
+    : Number(
+        data.studentId
+      );
+
+if (
+  studentId !==
+    null &&
+  (
+    !Number.isFinite(
+      studentId
+    ) ||
+    studentId <=
+      0
+  )
+) {
+  throwAppError(
+    ERROR_CODES
+      .INVALID_REQUEST,
+    "올바른 학생 ID가 필요합니다.",
+    400
+  );
+}
+
+const result:
+  any =
+  await db.execute(
+    sql`
     INSERT INTO schedules (
-      organizationId,
-      title,
-      description,
+  organizationId,
+  studentId,
+  title,
+  description,
       scheduleDate,
       meridiem,
       hour12,
@@ -24299,9 +24609,10 @@ export async function createSchedule(data: {
       isNotified
     )
     VALUES (
-      ${organizationId},
-      ${data.title},
-      ${data.description ?? null},
+  ${organizationId},
+  ${studentId},
+  ${data.title},
+  ${data.description ?? null},
       ${data.scheduleDate},
       ${data.meridiem},
       ${data.hour12},
@@ -24324,9 +24635,20 @@ export async function updateSchedule(
   userId: number,
   role: "staff" | "admin" | "host" | "superhost" | string,
   data: {
-    organizationId?: number | null;
-    title?: string;
-    description?: string | null;
+  organizationId?:
+    number |
+    null;
+
+  studentId?:
+    number |
+    null;
+
+  title?:
+    string;
+
+  description?:
+    string |
+    null;
     scheduleDate?: string;
     meridiem?: "AM" | "PM";
     hour12?: number;
@@ -24341,9 +24663,52 @@ export async function updateSchedule(
   500
 );
 
-  const organizationId = requireOrganizationId(data.organizationId);
+  const organizationId =
+  requireOrganizationId(
+    data.organizationId
+  );
 
-  const [rows] = await db.execute(sql`
+const hasStudentIdUpdate =
+  Object.prototype
+    .hasOwnProperty
+    .call(
+      data,
+      "studentId"
+    );
+
+const studentId =
+  data.studentId ===
+    null ||
+  data.studentId ===
+    undefined
+    ? null
+    : Number(
+        data.studentId
+      );
+
+if (
+  hasStudentIdUpdate &&
+  studentId !==
+    null &&
+  (
+    !Number.isFinite(
+      studentId
+    ) ||
+    studentId <=
+      0
+  )
+) {
+  throwAppError(
+    ERROR_CODES
+      .INVALID_REQUEST,
+    "올바른 학생 ID가 필요합니다.",
+    400
+  );
+}
+
+const [rows] =
+  await db.execute(
+    sql`
     SELECT *
     FROM schedules
     WHERE id = ${id}
@@ -24375,9 +24740,25 @@ export async function updateSchedule(
 
   await db.execute(sql`
     UPDATE schedules
-    SET
-      title = COALESCE(${data.title ?? null}, title),
-      description = COALESCE(${data.description ?? null}, description),
+SET
+  studentId =
+    CASE
+      WHEN ${hasStudentIdUpdate}
+        THEN ${studentId}
+      ELSE studentId
+    END,
+
+  title =
+    COALESCE(
+      ${data.title ?? null},
+      title
+    ),
+
+  description =
+    COALESCE(
+      ${data.description ?? null},
+      description
+    ),
       scheduleDate = COALESCE(${data.scheduleDate ?? null}, scheduleDate),
       meridiem = COALESCE(${data.meridiem ?? null}, meridiem),
       hour12 = COALESCE(${data.hour12 ?? null}, hour12),
@@ -25917,4 +26298,132 @@ export async function getRefundApprovalHistoryDetail(params: {
   `);
 
   return (rows as any[])?.[0] || null;
+}
+
+export async function saveAiChatMessage(
+  input: Omit<
+    InsertAiChatMessage,
+    "id" | "createdAt"
+  >
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      input.organizationId
+    );
+
+  const result: any =
+    await db
+      .insert(aiChatMessages)
+      .values({
+        ...input,
+        organizationId,
+      });
+
+  return Number(
+    getInsertId(result) || 0
+  );
+}
+
+export async function getAiChatMessages(
+  params: {
+    organizationId?: number | null;
+    userId: number;
+    limit?: number;
+  }
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userId =
+    Math.floor(
+      Number(
+        params.userId ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      userId
+    ) ||
+    userId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 대화 사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const limit =
+    Math.min(
+      Math.max(
+        Math.floor(
+          Number(
+            params.limit ||
+            500
+          )
+        ),
+        1
+      ),
+      500
+    );
+
+  const rows =
+    await db
+      .select()
+      .from(
+        aiChatMessages
+      )
+      .where(
+        and(
+          eq(
+            aiChatMessages.organizationId,
+            organizationId
+          ),
+          eq(
+            aiChatMessages.userId,
+            userId
+          )
+        )
+      )
+      .orderBy(
+        desc(
+          aiChatMessages.createdAt
+        ),
+        desc(
+          aiChatMessages.id
+        )
+      )
+      .limit(
+        limit
+      );
+
+  /**
+   * DB에서는 최신순으로 필요한 개수만 조회하고,
+   * 채팅 화면에는 과거 → 최신 순서로 전달한다.
+   */
+  return rows.reverse();
 }

@@ -29,14 +29,18 @@ export type AiDataScope =
 export type AiToolName =
   | "student.search"
   | "student.summary"
+  | "student.dashboard"
   | "consultation.search"
+  | "consultation.update"
   | "alert.missingData"
   | "risk.studentDetail"
   | "risk.studentList"
   | "practice.institutionSearch"
   | "practice.supportStatus"
   | "error.recentList"
-  | "error.detail";
+| "error.detail"
+| "schedule.create"
+| "student.update";
 
 export type AiToolStatus =
   | "started"
@@ -68,6 +72,8 @@ export type AiUserContext = {
    */
   teamId: number | null;
   positionId: number | null;
+positionName: string | null;
+userHonorific: string;
 
   /**
    * AI 조회 범위
@@ -94,14 +100,20 @@ export type AiUserContext = {
    */
   allowedAssigneeIds: number[] | null;
 
-  /**
- * AI가 변경 기능을 실행할 수 있는지 여부
+/**
+ * AI 쓰기 Tool 진입 가능 여부
  *
- * 현재 1차:
- * Staff의 본인 담당 상담DB 학생 통합등록만 허용한다.
+ * Staff / Admin / Host:
+ * true
  *
- * Admin, Host, Superhost 쓰기 기능은
- * 역할별 기능 개발 시 별도로 확장한다.
+ * 단, true라고 해서 모든 데이터를 수정할 수 있는 것은 아니다.
+ * 실제 수정 대상의 담당자 여부는 각 Executor에서 다시 검사한다.
+ *
+ * Superhost:
+ * false
+ *
+ * Superhost는 선택 회사 데이터를 조회하고 점검할 수 있지만
+ * CRM 데이터를 직접 변경할 수 없다.
  */
 canWrite: boolean;
 
@@ -249,6 +261,149 @@ export type ConsultationSearchToolOutput = {
   consultations: ConsultationSearchResultItem[];
 };
 
+/**
+ * AI 상담DB 수정 초안 입력
+ *
+ * 실제 consultations 테이블을 바로 수정하지 않는다.
+ * 확정된 상담 ID와 변경할 값만 Tool에 전달한다.
+ */
+export type ConsultationUpdateToolInput = {
+  consultationId:
+    number;
+
+  /**
+   * 1차 허용 필드
+   *
+   * 담당자, 조직, 이름, 전화번호 등은
+   * 이번 단계에서 수정하지 않는다.
+   */
+  status?:
+    string |
+    null;
+
+  notes?:
+    string |
+    null;
+};
+
+export type ConsultationUpdateChange = {
+  field:
+    | "status"
+    | "notes";
+
+  label:
+    string;
+
+  before:
+    string |
+    null;
+
+  after:
+    string |
+    null;
+};
+
+/**
+ * consultation.update Tool 결과
+ *
+ * pendingActionRequired가 true여도
+ * 아직 DB 변경은 실행되지 않은 상태다.
+ */
+export type ConsultationUpdateToolOutput = {
+  pendingActionRequired:
+    true;
+
+  consultationId:
+    number;
+
+  clientName:
+    string |
+    null;
+
+  phone:
+    string |
+    null;
+
+  changes:
+    ConsultationUpdateChange[];
+
+  draft: {
+    consultationId:
+      number;
+
+    clientName:
+      string |
+      null;
+
+    /**
+     * 초안 생성 당시 값이다.
+     *
+     * 실행 단계에서 현재 DB값과 다시 비교해
+     * 다른 사용자가 먼저 수정했는지 검사한다.
+     */
+    originalValues: {
+      status:
+        string |
+        null;
+
+      notes:
+        string |
+        null;
+    };
+
+    updates: {
+      status?:
+        string |
+        null;
+
+      notes?:
+        string |
+        null;
+    };
+
+    requestedByUserId:
+      number;
+
+    requestedByRole:
+      AiRole;
+
+    createdAt:
+      string;
+  };
+
+  preview: {
+    title:
+      string;
+
+    summary:
+      string;
+
+    sections:
+      Array<{
+        title:
+          string;
+
+        items:
+          string[];
+      }>;
+
+    changes:
+      ConsultationUpdateChange[];
+
+    executionSteps:
+      string[];
+
+    missingFields:
+      string[];
+
+    warnings:
+      string[];
+
+    canConfirm:
+      boolean;
+  };
+};
+
 export type StudentSummaryToolInput = {
   studentId: number;
 };
@@ -293,6 +448,615 @@ export type StudentSummaryResult = {
 
 export type StudentSummaryToolOutput = {
   student: StudentSummaryResult;
+};
+
+/**
+ * AI 학생 기본정보 수정 초안 입력
+ *
+ * 실제 students 테이블을 바로 수정하지 않는다.
+ * 변경할 값만 전달하고 Tool에서 현재 값과 비교한다.
+ *
+ * 담당자, 회사, 승인상태 등 권한 관련 필드는
+ * 이번 단계에서 수정하지 않는다.
+ */
+export type StudentUpdateToolInput = {
+  studentId:
+    number;
+
+  status?:
+    string |
+    null;
+
+  course?:
+    string |
+    null;
+
+  finalEducation?:
+    string |
+    null;
+
+  address?:
+    string |
+    null;
+
+  detailAddress?:
+    string |
+    null;
+};
+
+/**
+ * AI 학생 수정이 허용하는 필드
+ */
+export type StudentUpdateField =
+  | "status"
+  | "course"
+  | "finalEducation"
+  | "address"
+  | "detailAddress";
+
+/**
+ * 사용자 승인 화면에 표시할 변경 전·후
+ */
+export type StudentUpdateChange = {
+  field:
+    StudentUpdateField;
+
+  label:
+    string;
+
+  before:
+    string |
+    null;
+
+  after:
+    string |
+    null;
+};
+
+/**
+ * Pending Action에 저장할 학생 수정 초안
+ *
+ * originalValues:
+ * 초안 생성 당시 학생 값
+ *
+ * updates:
+ * 실제 승인 후 변경할 값
+ */
+export type StudentUpdateDraft = {
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  originalValues: {
+    status:
+      string |
+      null;
+
+    course:
+      string |
+      null;
+
+    finalEducation:
+      string |
+      null;
+
+    address:
+      string |
+      null;
+
+    detailAddress:
+      string |
+      null;
+  };
+
+  updates: {
+    status?:
+      string |
+      null;
+
+    course?:
+      string |
+      null;
+
+    finalEducation?:
+      string |
+      null;
+
+    address?:
+      string |
+      null;
+
+    detailAddress?:
+      string |
+      null;
+  };
+
+  requestedByUserId:
+    number;
+
+  requestedByRole:
+    AiRole;
+
+  createdAt:
+    string;
+};
+
+/**
+ * student.update Tool 결과
+ *
+ * 이 결과가 생성돼도 아직 students 테이블은
+ * 변경되지 않은 상태다.
+ */
+export type StudentUpdateToolOutput = {
+  pendingActionRequired:
+    true;
+
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  changes:
+    StudentUpdateChange[];
+
+  draft:
+    StudentUpdateDraft;
+
+  preview: {
+    title:
+      string;
+
+    summary:
+      string;
+
+    sections:
+      Array<{
+        title:
+          string;
+
+        items:
+          string[];
+      }>;
+
+    changes:
+      StudentUpdateChange[];
+
+    executionSteps:
+      string[];
+
+    missingFields:
+      string[];
+
+    warnings:
+      string[];
+
+    canConfirm:
+      boolean;
+  };
+};
+
+/**
+ * 학생 종합 업무 현황 조회
+ *
+ * 학생 기본정보뿐만 아니라
+ * 학기, 과목, 학점, 결제, 실습,
+ * 누락정보, 위험요소 및 다음 업무를
+ * 한 번에 조회하기 위한 AI Tool 타입이다.
+ */
+export type StudentDashboardToolInput = {
+  studentId: number;
+};
+
+export type StudentDashboardSemesterItem = {
+  id: number;
+
+  semesterNo: number | null;
+
+  plannedStartMonth: string | null;
+  plannedInstitution: string | null;
+
+  actualStartDate:
+    | string
+    | Date
+    | null;
+
+  actualInstitution: string | null;
+
+  plannedSubjectCount: number | null;
+
+  plannedAmount:
+    | number
+    | string
+    | null;
+
+  actualPaymentAmount:
+    | number
+    | string
+    | null;
+
+  paymentDate:
+    | string
+    | Date
+    | null;
+};
+
+export type StudentDashboardSubjectItem = {
+  id: number | null;
+
+  source:
+    | "plan"
+    | "transfer"
+    | "extra";
+
+  sourceLabel: string;
+
+  subjectName: string;
+
+  requirementType: string | null;
+  category: string | null;
+
+  credits: number;
+
+  semesterNo: number | null;
+
+  isConfirmed: boolean | null;
+};
+
+export type StudentDashboardPracticeItem = {
+  id: number;
+
+  status: string | null;
+
+  coordinationStatus: string | null;
+  paymentStatus: string | null;
+
+  institutionName: string | null;
+  institutionAddress: string | null;
+  institutionPhone: string | null;
+
+  plannedStartDate:
+    | string
+    | Date
+    | null;
+
+  plannedEndDate:
+    | string
+    | Date
+    | null;
+
+  feeAmount:
+    | number
+    | string
+    | null;
+
+  createdAt:
+    | string
+    | Date
+    | null;
+};
+
+export type StudentDashboardScheduleItem = {
+  id:
+    number;
+
+  studentId:
+    number |
+    null;
+
+  title:
+    string;
+
+  description:
+    string |
+    null;
+
+  scheduleDate:
+    | string
+    | Date
+    | null;
+
+  startAt:
+    | string
+    | Date
+    | null;
+
+  meridiem:
+    string |
+    null;
+
+  hour12:
+    number |
+    null;
+
+  minute:
+    number |
+    null;
+
+  scope:
+    string |
+    null;
+
+  ownerUserId:
+    number |
+    null;
+
+  ownerUserName:
+    string |
+    null;
+
+  isNotified:
+    boolean;
+};
+
+export type StudentDashboardNextAction = {
+  code: string;
+
+  priority:
+    | "low"
+    | "medium"
+    | "high";
+
+  title: string;
+  message: string;
+
+  source:
+    | "student"
+    | "semester"
+    | "subject"
+    | "credit"
+    | "payment"
+    | "practice"
+    | "schedule"
+    | "risk";
+};
+
+export type StudentDashboardToolOutput = {
+  student: StudentSummaryResult;
+
+  semesters: StudentDashboardSemesterItem[];
+
+  subjects: {
+    plan: StudentDashboardSubjectItem[];
+    transfer: StudentDashboardSubjectItem[];
+    extra: StudentDashboardSubjectItem[];
+
+    recognized: StudentDashboardSubjectItem[];
+    duplicates: StudentDashboardSubjectItem[];
+  };
+
+  creditSummary: {
+    registeredSubjectCount: number;
+    recognizedSubjectCount: number;
+
+    currentCredits: number;
+
+    requiredCredits: number | null;
+    remainingCredits: number | null;
+
+    duplicateSubjectCount: number;
+  };
+
+  paymentSummary: {
+    plannedAmount: number;
+    paidAmount: number;
+    refundedAmount: number;
+    actualPaidAmount: number;
+
+    paymentStatus: string | null;
+    paymentDate:
+      | string
+      | Date
+      | null;
+  };
+
+  practice: {
+    required: boolean | null;
+
+    requestCount: number;
+
+    latestRequest:
+      | StudentDashboardPracticeItem
+      | null;
+
+    requests:
+      StudentDashboardPracticeItem[];
+  };
+
+  schedules: StudentDashboardScheduleItem[];
+
+  missingFields: string[];
+
+  risk: {
+    riskLevel:
+      | "normal"
+      | "warning"
+      | "danger";
+
+    riskScore: number;
+
+    totalIssueCount: number;
+
+    items: StudentRiskItem[];
+  };
+
+  nextActions: StudentDashboardNextAction[];
+
+  generatedAt: string;
+};
+
+export type ScheduleCreateToolInput = {
+  /**
+   * 선택된 학생이 있거나
+   * student.search로 학생 ID가 확정된 경우 사용한다.
+   */
+  studentId:
+    number;
+
+  /**
+   * 사용자 확인 화면에 표시할 학생명이다.
+   *
+   * 권한검사에는 사용하지 않는다.
+   * 실제 학생 정보는 서버에서 다시 조회한다.
+   */
+  studentName?:
+    string |
+    null;
+
+  title:
+    string;
+
+  description?:
+    string |
+    null;
+
+  /**
+   * YYYY-MM-DD
+   */
+  scheduleDate:
+    string;
+
+  meridiem:
+    | "AM"
+    | "PM";
+
+  hour12:
+    number;
+
+  minute:
+    number;
+
+  /**
+ * 회사 공용 일정 여부
+ *
+ * Staff/Admin:
+ * false만 허용한다.
+ *
+ * Host:
+ * true를 사용할 수 있다.
+ *
+ * Superhost:
+ * 일정 초안과 실제 일정 등록을 모두 사용할 수 없다.
+ */
+isGlobal?:
+  boolean;
+};
+export type ScheduleCreateToolOutput = {
+  /**
+   * 일정이 바로 생성된 것이 아니라
+   * 승인 대기 초안이 생성됐음을 의미한다.
+   */
+  pendingActionRequired:
+    true;
+
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  title:
+    string;
+
+  description:
+    string |
+    null;
+
+  scheduleDate:
+    string;
+
+  meridiem:
+    | "AM"
+    | "PM";
+
+  hour12:
+    number;
+
+  minute:
+    number;
+
+  startAt:
+    string;
+
+  isGlobal:
+    boolean;
+
+  preview: {
+    title:
+      string;
+
+    summary:
+      string;
+
+    items:
+      string[];
+
+    warnings:
+      string[];
+
+    canConfirm:
+      boolean;
+  };
+};
+
+/**
+ * AI 일정 등록 승인 초안
+ *
+ * 이 데이터 자체로 schedules 테이블을 수정하지 않는다.
+ * Pending Action 승인 후 Executor에서 실제 등록한다.
+ */
+export type ScheduleCreateDraft = {
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  title:
+    string;
+
+  description:
+    string |
+    null;
+
+  scheduleDate:
+    string;
+
+  meridiem:
+    | "AM"
+    | "PM";
+
+  hour12:
+    number;
+
+  minute:
+    number;
+
+  startAt:
+    string;
+
+  scope:
+    | "personal"
+    | "global";
+
+  ownerUserId:
+    number;
+
+  ownerUserName:
+    string |
+    null;
+
+  createdByRole:
+    AiRole;
+
+  createdAt:
+    string;
 };
 
 export type MissingDataAlertToolInput = {
@@ -1103,6 +1867,7 @@ export type AiPendingActionType =
   | "payment_update"
   | "practice_request_create"
   | "consultation_update"
+  | "schedule_create"
   | "document_transfer_import"
   | "document_plan_import"
   | "document_payment_import"

@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 
 import { getDb, getUserTeamMemberIds } from "../db";
 import {
+  positions,
   userOrgMappings,
 } from "../../drizzle/schema";
 
@@ -53,6 +54,36 @@ function resolveScope(role: AiRole): AiDataScope {
   return "system";
 }
 
+function buildUserHonorific(params: {
+  userName: string | null;
+  positionName: string | null;
+}) {
+  const userName =
+    String(params.userName || "").trim();
+
+  const rawPositionName =
+    String(params.positionName || "").trim();
+
+  /**
+   * 직급 데이터에 이미 "님"이 저장된 경우
+   * "팀장님님"이 되는 것을 방지한다.
+   */
+  const positionName =
+    rawPositionName.endsWith("님")
+      ? rawPositionName.slice(0, -1).trim()
+      : rawPositionName;
+
+  if (userName && positionName) {
+    return `${userName} ${positionName}님`;
+  }
+
+  if (userName) {
+    return `${userName}님`;
+  }
+
+  return "사용자님";
+}
+
 async function getUserOrganizationMapping(params: {
   userId: number;
   organizationId: number;
@@ -67,8 +98,22 @@ async function getUserOrganizationMapping(params: {
     .select({
       teamId: userOrgMappings.teamId,
       positionId: userOrgMappings.positionId,
+      positionName: positions.name,
     })
     .from(userOrgMappings)
+    .leftJoin(
+      positions,
+      and(
+        eq(
+          positions.id,
+          userOrgMappings.positionId
+        ),
+        eq(
+          positions.organizationId,
+          params.organizationId
+        )
+      )
+    )
     .where(
       and(
         eq(
@@ -85,6 +130,7 @@ async function getUserOrganizationMapping(params: {
 
   return rows[0] || null;
 }
+
 
 function resolveOrganizationId(params: {
   user: any;
@@ -227,10 +273,15 @@ export async function buildAiContext(
   const teamId =
     normalizePositiveInteger(mapping?.teamId);
 
-  const positionId =
+    const positionId =
     normalizePositiveInteger(
       mapping?.positionId
     );
+
+  const positionName =
+    String(
+      mapping?.positionName || ""
+    ).trim() || null;
 
   const allowedAssigneeIds =
     await resolveAllowedAssigneeIds({
@@ -240,40 +291,62 @@ export async function buildAiContext(
       teamId,
     });
 
-  const userName =
+    const userName =
     String(
       user.name ||
         user.username ||
         ""
     ).trim() || null;
 
- return {
+  const userHonorific =
+    buildUserHonorific({
+      userName,
+      positionName,
+    });
+
+  return {
   userId,
   userName,
   role,
   organizationId,
 
-  teamId,
+    teamId,
   positionId,
+  positionName,
+  userHonorific,
 
   scope: resolveScope(role),
   allowedAssigneeIds,
 
   /**
-   * AI 쓰기 권한
-   *
-   * Staff:
-   * 본인 담당 상담DB를 학생으로 전환하는
-   * Pending Action 승인 실행만 허용한다.
-   *
-   * Admin / Host:
-   * 추후 역할별 쓰기 기능을 추가할 때 확장한다.
-   *
-   * Superhost:
-   * 회사 학생 데이터를 직접 생성하지 못하도록 차단한다.
-   */
-  canWrite:
-    role === "staff",
+ * AI 쓰기 Tool 진입 가능 여부
+ *
+ * Staff / Admin / Host:
+ * AI 쓰기 Tool 진입은 허용한다.
+ *
+ * 실제 데이터 변경 가능 여부는
+ * 각 Executor에서 다시 검사한다.
+ *
+ * - 상담 수정:
+ *   assertCanWriteConsultation()
+ *
+ * - 학생 일정 등록:
+ *   assertCanWriteStudent()
+ *
+ * - 학생 통합등록:
+ *   실제 consultation.assigneeId 재검사
+ *
+ * 따라서 Admin과 Host도 본인 담당 데이터만
+ * 실제로 변경할 수 있다.
+ *
+ * Superhost:
+ * 조회 및 점검만 가능하고
+ * CRM 데이터를 직접 변경할 수 없다.
+ */
+canWrite:
+  role === "staff" ||
+  role === "admin" ||
+  role === "host",
 
   /**
    * AI 삭제는 영구 금지

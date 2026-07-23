@@ -2625,28 +2625,58 @@ disabled={isReadOnly}
                       </td>
 
                       <td className="px-3 py-1.5 text-center">
-  <div title="입력완료는 학기 정보 입력 여부만 표시합니다. 등록 확정 및 매출 반영은 승인관리 승인 후 처리됩니다.">
+ <div
+  title={
+    sem.approvalStatus === "승인" && user?.role !== "host"
+      ? "승인 완료된 학기의 입력완료 체크는 호스트만 해제할 수 있습니다."
+      : "입력완료는 학기 정보 입력 여부만 표시합니다. 등록 확정 및 매출 반영은 승인관리 승인 후 처리됩니다."
+  }
+>
    <Checkbox
   checked={!!sem.isCompleted}
-  disabled={isReadOnly}
+  disabled={
+    isReadOnly ||
+    (
+      sem.approvalStatus === "승인" &&
+      user?.role !== "host"
+    )
+  }
   onCheckedChange={(checked) => {
     const nextChecked = !!checked;
 
-const hasRequiredPlanSummary =
-  !!String(plan?.desiredCourse || "").trim() &&
-  !!String(plan?.finalEducation || "").trim() &&
-  Number(plan?.totalTheorySubjects || 0) > 0 &&
-  !!normalizePracticeSelection((plan as any)?.hasPractice);
+    // 승인된 학기의 입력완료 해제는 호스트만 가능
+    if (
+      sem.approvalStatus === "승인" &&
+      sem.isCompleted &&
+      !nextChecked &&
+      user?.role !== "host"
+    ) {
+      toast.error(
+        "승인 완료된 학기의 입력완료 체크는 호스트만 해제할 수 있습니다."
+      );
+      return;
+    }
 
-   if (nextChecked && !hasRequiredPlanSummary) {
-  toast.error("입력완료 처리 전에 플랜 요약의 희망과정, 최종학력, 총 이론 과목 수, 실습 필요 여부를 먼저 작성해주세요.");
-  scrollToSection(planSummarySectionRef.current);
-  setEditingPlan(true);
-  return;
-}
+    const hasRequiredPlanSummary =
+      !!String(plan?.desiredCourse || "").trim() &&
+      !!String(plan?.finalEducation || "").trim() &&
+      Number(plan?.totalTheorySubjects || 0) > 0 &&
+      !!normalizePracticeSelection((plan as any)?.hasPractice);
+
+    if (nextChecked && !hasRequiredPlanSummary) {
+      toast.error(
+        "입력완료 처리 전에 플랜 요약의 희망과정, 최종학력, 총 이론 과목 수, 실습 필요 여부를 먼저 작성해주세요."
+      );
+
+      scrollToSection(planSummarySectionRef.current);
+      setEditingPlan(true);
+      return;
+    }
 
     if (nextChecked && toNumber(sem.actualAmount) <= 0) {
-      toast.error("입력완료 처리하려면 실제 금액을 먼저 입력해주세요.");
+      toast.error(
+        "입력완료 처리하려면 실제 금액을 먼저 입력해주세요."
+      );
       return;
     }
 

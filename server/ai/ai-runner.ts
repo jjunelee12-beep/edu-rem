@@ -9,6 +9,7 @@ import type {
   AiToolExecutionResult,
   AiToolName,
   AiUserContext,
+  StudentUpdateToolOutput,
 } from "./ai.types";
 
 const openai = new OpenAI({
@@ -16,25 +17,35 @@ const openai = new OpenAI({
 });
 
 type AiRunnerIntent =
+  | "greeting"
+  | "small_talk"
   | "student_search"
   | "student_summary"
+  | "student_dashboard"
+  | "student_update"
   | "consultation_search"
+  | "consultation_update"
   | "missing_data"
   | "student_detail_risk"
   | "student_list_risk"
   | "student_registration_preview"
+  | "schedule_create"
   | "general_help";
 
 type AiRunnerPlan = {
   intent: AiRunnerIntent;
 
-  toolName:
+    toolName:
     | "student.search"
     | "student.summary"
+    | "student.dashboard"
+    | "student.update"
     | "consultation.search"
+    | "consultation.update"
     | "alert.missingData"
     | "risk.studentDetail"
     | "risk.studentList"
+    | "schedule.create"
     | null;
 
   input:
@@ -47,12 +58,38 @@ type AiRunnerPlan = {
     boolean;
 };
 
-export type RunAiAssistantInput = {
-  context: AiUserContext;
-  message: string;
+export type AiConversationHistoryMessage = {
+  role:
+    | "user"
+    | "assistant";
 
-  selectedStudentId?: number | null;
-  selectedStudentName?: string | null;
+  content:
+    string;
+};
+
+export type RunAiAssistantInput = {
+  context:
+    AiUserContext;
+
+  message:
+    string;
+
+  selectedStudentId?:
+    number |
+    null;
+
+  selectedStudentName?:
+    string |
+    null;
+
+  /**
+   * DB에서 서버가 직접 불러온
+   * 최근 AI 대화 기록이다.
+   *
+   * 프론트에서 전달받지 않는다.
+   */
+  conversationHistory?:
+    AiConversationHistoryMessage[];
 };
 
 export type RunAiAssistantOutput = {
@@ -76,6 +113,184 @@ export type RunAiAssistantOutput = {
     originalMessage: string;
   } | null;
 
+scheduleCreateDraft?: {
+  pendingActionRequired:
+    true;
+
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  title:
+    string;
+
+  description:
+    string |
+    null;
+
+  scheduleDate:
+    string;
+
+  meridiem:
+    "AM" |
+    "PM";
+
+  hour12:
+    number;
+
+  minute:
+    number;
+
+  startAt:
+    string;
+
+  isGlobal:
+    boolean;
+
+  preview: {
+    title:
+      string;
+
+    summary:
+      string;
+
+    items:
+      string[];
+
+    warnings:
+      string[];
+
+    canConfirm:
+      boolean;
+  };
+} | null;
+
+consultationUpdateDraft?: {
+  pendingActionRequired:
+    true;
+
+  consultationId:
+    number;
+
+  clientName:
+    string |
+    null;
+
+  phone:
+    string |
+    null;
+
+  changes:
+    Array<{
+      field:
+        "status" |
+        "notes";
+
+      label:
+        string;
+
+      before:
+        string |
+        null;
+
+      after:
+        string |
+        null;
+    }>;
+
+  draft: {
+    consultationId:
+      number;
+
+    clientName:
+      string |
+      null;
+
+    originalValues: {
+      status:
+        string |
+        null;
+
+      notes:
+        string |
+        null;
+    };
+
+    updates: {
+      status?:
+        string |
+        null;
+
+      notes?:
+        string |
+        null;
+    };
+
+    requestedByUserId:
+      number;
+
+    requestedByRole:
+      AiUserContext["role"];
+
+    createdAt:
+      string;
+  };
+
+  preview: {
+    title:
+      string;
+
+    summary:
+      string;
+
+    sections:
+      Array<{
+        title:
+          string;
+
+        items:
+          string[];
+      }>;
+
+    changes:
+      Array<{
+        field:
+          "status" |
+          "notes";
+
+        label:
+          string;
+
+        before:
+          string |
+          null;
+
+        after:
+          string |
+          null;
+      }>;
+
+    executionSteps:
+      string[];
+
+    missingFields:
+      string[];
+
+    warnings:
+      string[];
+
+    canConfirm:
+      boolean;
+  };
+} | null;
+
+studentUpdateDraft?:
+  StudentUpdateToolOutput |
+  null;
+
   meta: {
     scope: AiUserContext["scope"];
     organizationId: number;
@@ -87,6 +302,82 @@ function normalizeMessage(value: unknown) {
   return String(value ?? "")
     .trim()
     .slice(0, 3000);
+}
+
+function normalizeConversationHistory(
+  value:
+    unknown
+): AiConversationHistoryMessage[] {
+  if (
+    !Array.isArray(
+      value
+    )
+  ) {
+    return [];
+  }
+
+  return value
+    .filter(
+      (
+        row
+      ): row is {
+        role:
+          unknown;
+
+        content:
+          unknown;
+      } =>
+        Boolean(
+          row
+        ) &&
+        typeof row ===
+          "object"
+    )
+    .map(
+      (
+        row
+      ) => {
+        const role =
+          row.role ===
+            "assistant"
+            ? "assistant"
+            : row.role ===
+                "user"
+              ? "user"
+              : null;
+
+        const content =
+          String(
+            row.content ??
+            ""
+          )
+            .trim()
+            .slice(
+              0,
+              1000
+            );
+
+        if (
+          !role ||
+          !content
+        ) {
+          return null;
+        }
+
+        return {
+          role,
+          content,
+        };
+      }
+    )
+    .filter(
+      (
+        row
+      ): row is
+        AiConversationHistoryMessage =>
+        row !== null
+    )
+    .slice(-30);
 }
 
 function extractStudentIdFromMessage(
@@ -148,12 +439,595 @@ function extractConsultationIdFromMessage(
   return null;
 }
 
+function extractScheduleDateFromMessage(
+  message:
+    string
+): string | null {
+  const normalized =
+    String(
+      message ||
+      ""
+    ).trim();
+
+  /**
+   * 2026-07-30 / 2026.07.30 / 2026년 7월 30일
+   */
+  const fullDateMatch =
+    normalized.match(
+      /(\d{4})\s*(?:년|[-./])\s*(\d{1,2})\s*(?:월|[-./])\s*(\d{1,2})\s*일?/
+    );
+
+  if (
+    fullDateMatch
+  ) {
+    const year =
+      Number(
+        fullDateMatch[1]
+      );
+
+    const month =
+      Number(
+        fullDateMatch[2]
+      );
+
+    const day =
+      Number(
+        fullDateMatch[3]
+      );
+
+    const candidate =
+      new Date(
+        year,
+        month - 1,
+        day
+      );
+
+    if (
+      candidate.getFullYear() ===
+        year &&
+      candidate.getMonth() ===
+        month - 1 &&
+      candidate.getDate() ===
+        day
+    ) {
+      return `${year}-${String(
+        month
+      ).padStart(
+        2,
+        "0"
+      )}-${String(
+        day
+      ).padStart(
+        2,
+        "0"
+      )}`;
+    }
+  }
+
+  /**
+   * 7월 30일
+   *
+   * 현재 연도를 기본으로 사용하고,
+   * 이미 지난 날짜면 다음 연도로 넘긴다.
+   */
+  const monthDayMatch =
+    normalized.match(
+      /(\d{1,2})\s*월\s*(\d{1,2})\s*일/
+    );
+
+  if (
+    monthDayMatch
+  ) {
+    const now =
+      new Date();
+
+    let year =
+      now.getFullYear();
+
+    const month =
+      Number(
+        monthDayMatch[1]
+      );
+
+    const day =
+      Number(
+        monthDayMatch[2]
+      );
+
+    let candidate =
+      new Date(
+        year,
+        month - 1,
+        day
+      );
+
+    if (
+      candidate.getFullYear() !==
+        year ||
+      candidate.getMonth() !==
+        month - 1 ||
+      candidate.getDate() !==
+        day
+    ) {
+      return null;
+    }
+
+    const today =
+      new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate()
+      );
+
+    if (
+      candidate <
+      today
+    ) {
+      year += 1;
+
+      candidate =
+        new Date(
+          year,
+          month - 1,
+          day
+        );
+    }
+
+    return `${year}-${String(
+      month
+    ).padStart(
+      2,
+      "0"
+    )}-${String(
+      day
+    ).padStart(
+      2,
+      "0"
+    )}`;
+  }
+
+  return null;
+}
+
+function extractScheduleTimeFromMessage(
+  message:
+    string
+): {
+  meridiem:
+    "AM" |
+    "PM";
+
+  hour12:
+    number;
+
+  minute:
+    number;
+} | null {
+  const normalized =
+    String(
+      message ||
+      ""
+    ).trim();
+
+  /**
+   * 오후 2시 30분
+   * 오전 10시
+   */
+  const koreanMatch =
+    normalized.match(
+      /(오전|오후)\s*(\d{1,2})\s*시(?:\s*(\d{1,2})\s*분)?/
+    );
+
+  if (
+    koreanMatch
+  ) {
+    const hour12 =
+      Number(
+        koreanMatch[2]
+      );
+
+    const minute =
+      Number(
+        koreanMatch[3] ||
+        0
+      );
+
+    if (
+      hour12 >= 1 &&
+      hour12 <= 12 &&
+      minute >= 0 &&
+      minute <= 59
+    ) {
+      return {
+        meridiem:
+          koreanMatch[1] ===
+            "오후"
+            ? "PM"
+            : "AM",
+
+        hour12,
+
+        minute,
+      };
+    }
+  }
+
+  /**
+   * 14:30 / 09:00
+   */
+  const hour24Match =
+    normalized.match(
+      /(?:^|\s)([01]?\d|2[0-3]):([0-5]\d)(?:\s|$)/
+    );
+
+  if (
+    hour24Match
+  ) {
+    const hour24 =
+      Number(
+        hour24Match[1]
+      );
+
+    const minute =
+      Number(
+        hour24Match[2]
+      );
+
+    return {
+      meridiem:
+        hour24 >= 12
+          ? "PM"
+          : "AM",
+
+      hour12:
+        hour24 %
+          12 ||
+        12,
+
+      minute,
+    };
+  }
+
+  return null;
+}
+
+function extractScheduleTitleFromMessage(
+  message:
+    string
+): string {
+  const normalized =
+    String(
+      message ||
+      ""
+    )
+.replace(
+  /학생\s*(?:id|번호)?\s*[:#]?\s*\d+\s*번?/gi,
+  " "
+)
+      .replace(
+        /\d{4}\s*(?:년|[-./])\s*\d{1,2}\s*(?:월|[-./])\s*\d{1,2}\s*일?/g,
+        " "
+      )
+      .replace(
+        /\d{1,2}\s*월\s*\d{1,2}\s*일/g,
+        " "
+      )
+      .replace(
+        /(오전|오후)\s*\d{1,2}\s*시(?:\s*\d{1,2}\s*분)?/g,
+        " "
+      )
+      .replace(
+        /(?:^|\s)([01]?\d|2[0-3]):[0-5]\d(?:\s|$)/g,
+        " "
+      )
+      .replace(
+        /(일정|스케줄)\s*(등록|추가|생성|잡아|만들어)?\s*(해줘|해주세요|해|줘)?/g,
+        " "
+      )
+      .replace(
+        /(등록|추가|생성)\s*(해줘|해주세요|해|줘)?/g,
+        " "
+      )
+      .replace(
+        /\s+/g,
+        " "
+      )
+      .trim();
+
+  return normalized
+    .slice(
+      0,
+      255
+    ) ||
+    "학생 일정";
+}
+
+function extractStudentStatusUpdate(
+  message:
+    string
+): string | null {
+  const patterns = [
+    /학생\s*상태를?\s*(.+?)(?:으로|로)\s*(?:변경|수정)/,
+    /상태를?\s*(.+?)(?:으로|로)\s*(?:변경|수정)/,
+    /학생\s*상태\s*[:：]\s*(.+)$/,
+  ];
+
+  for (
+    const pattern of
+    patterns
+  ) {
+    const matched =
+      message.match(
+        pattern
+      );
+
+    const value =
+      String(
+        matched?.[1] ||
+        ""
+      )
+        .trim()
+        .slice(
+          0,
+          100
+        );
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function extractStudentCourseUpdate(
+  message:
+    string
+): string | null {
+  const patterns = [
+    /(?:진행\s*)?과정을?\s*(.+?)(?:으로|로)\s*(?:변경|수정)/,
+    /(?:진행\s*)?과정\s*[:：]\s*(.+)$/,
+  ];
+
+  for (
+    const pattern of
+    patterns
+  ) {
+    const matched =
+      message.match(
+        pattern
+      );
+
+    const value =
+      String(
+        matched?.[1] ||
+        ""
+      )
+        .trim()
+        .slice(
+          0,
+          255
+        );
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function extractStudentFinalEducationUpdate(
+  message:
+    string
+): string | null {
+  const patterns = [
+    /최종\s*학력을?\s*(.+?)(?:으로|로)\s*(?:변경|수정)/,
+    /최종\s*학력\s*[:：]\s*(.+)$/,
+  ];
+
+  for (
+    const pattern of
+    patterns
+  ) {
+    const matched =
+      message.match(
+        pattern
+      );
+
+    const value =
+      String(
+        matched?.[1] ||
+        ""
+      )
+        .trim()
+        .slice(
+          0,
+          100
+        );
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function extractStudentAddressUpdate(
+  message:
+    string
+): {
+  address:
+    string |
+    null;
+
+  detailAddress:
+    string |
+    null;
+} {
+  const addressMatch =
+    message.match(
+      /학생\s*주소를?\s*(.+?)(?:으로|로)\s*(?:변경|수정)/
+    ) ||
+    message.match(
+      /(?:^|\s)주소\s*[:：]\s*(.+)$/
+    );
+
+  const detailAddressMatch =
+    message.match(
+      /상세\s*주소를?\s*(.+?)(?:으로|로)\s*(?:변경|수정)/
+    ) ||
+    message.match(
+      /상세\s*주소\s*[:：]\s*(.+)$/
+    );
+
+  return {
+    address:
+      String(
+        addressMatch?.[1] ||
+        ""
+      )
+        .trim()
+        .slice(
+          0,
+          500
+        ) ||
+      null,
+
+    detailAddress:
+      String(
+        detailAddressMatch?.[1] ||
+        ""
+      )
+        .trim()
+        .slice(
+          0,
+          500
+        ) ||
+      null,
+  };
+}
+
+function isGreetingMessage(message: string) {
+  const normalized =
+    String(message || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[!?.~ㅋㅎ\s]+/g, "");
+
+  const greetingMessages = new Set([
+    "안녕",
+    "안녕하세요",
+    "안녕하십니까",
+    "하이",
+    "헬로",
+    "반가워",
+    "반갑습니다",
+    "좋은아침",
+    "좋은아침입니다",
+    "좋은오후",
+    "좋은저녁",
+    "오랜만",
+    "오랜만이야",
+    "오랜만입니다",
+  ]);
+
+  return greetingMessages.has(normalized);
+}
+
+function isSmallTalkMessage(message: string) {
+  const normalized =
+    String(message || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+
+  const exactMessages = new Set([
+    "오늘도 잘 부탁해",
+    "잘 부탁해",
+    "잘 부탁합니다",
+    "잘 부탁드립니다",
+    "오늘도 시작하자",
+    "시작하자",
+    "시작해보자",
+    "오늘 어때",
+    "잘 있었어",
+    "뭐해",
+    "고마워",
+    "감사해",
+    "감사합니다",
+    "수고했어",
+    "수고했어요",
+    "좋아",
+    "좋습니다",
+    "오케이",
+    "알겠어",
+  ]);
+
+  if (exactMessages.has(normalized)) {
+    return true;
+  }
+
+  const smallTalkPatterns = [
+    /오늘.*잘.*부탁/,
+    /뭐부터.*(하지|할까|하면)/,
+    /오늘.*뭐.*(하지|할까|해야)/,
+    /어떻게.*시작/,
+    /도와줄.*수.*있/,
+    /너.*뭐.*할.*수.*있/,
+    /기분.*어때/,
+    /잘.*있었/,
+  ];
+
+  return smallTalkPatterns.some(
+    (pattern) => pattern.test(normalized)
+  );
+}
+
 function detectPlanWithoutOpenAi(params: {
   message: string;
   selectedStudentId?: number | null;
 }): AiRunnerPlan | null {
-  const message = params.message;
+    const message = params.message;
   const lower = message.toLowerCase();
+
+  /**
+   * 단순 인사는 OpenAI 분류나 CRM Tool로 넘기지 않는다.
+   */
+    if (isGreetingMessage(message)) {
+    return {
+      intent: "greeting",
+
+      toolName: null,
+
+      input: {},
+
+      explanation:
+        "사용자의 인사말입니다.",
+
+      requiresRegistrationPreview:
+        false,
+    };
+  }
+
+  if (isSmallTalkMessage(message)) {
+    return {
+      intent: "small_talk",
+
+      toolName: null,
+
+      input: {
+        originalMessage: message,
+      },
+
+      explanation:
+        "CRM Tool이 필요하지 않은 자연스러운 대화입니다.",
+
+      requiresRegistrationPreview:
+        false,
+    };
+  }
 
   const studentId =
     extractStudentIdFromMessage(message) ||
@@ -161,6 +1035,16 @@ function detectPlanWithoutOpenAi(params: {
       params.selectedStudentId || 0
     ) ||
     null;
+
+const scheduleDate =
+  extractScheduleDateFromMessage(
+    message
+  );
+
+const scheduleTime =
+  extractScheduleTimeFromMessage(
+    message
+  );
 
   const consultationId =
     extractConsultationIdFromMessage(
@@ -182,6 +1066,23 @@ function detectPlanWithoutOpenAi(params: {
     "등록 초안",
     "등록 미리보기",
   ];
+
+const scheduleCreateKeywords = [
+  "일정 등록",
+  "일정등록",
+  "일정 추가",
+  "일정추가",
+  "일정 생성",
+  "일정생성",
+  "스케줄 등록",
+  "스케줄 추가",
+  "스케줄 잡아",
+  "일정 잡아",
+  "알림 일정",
+  "상담 일정",
+  "결제 안내 일정",
+  "연락 일정",
+];
 
   const missingKeywords = [
     "누락",
@@ -209,6 +1110,65 @@ function detectPlanWithoutOpenAi(params: {
     "현황",
     "정보 보여",
   ];
+
+const studentDashboardKeywords = [
+  "전체 정리",
+  "종합 정리",
+  "전체 현황",
+  "종합 현황",
+  "진행 상황",
+  "진행상황",
+  "현재 상황",
+  "현재상황",
+  "어디까지 진행",
+  "어디까지 했",
+  "앞으로 뭐",
+  "다음에 뭐",
+  "다음 업무",
+  "해야 할 일",
+  "해야할 일",
+  "할 일 정리",
+  "문제까지 정리",
+  "전체적으로 확인",
+  "종합적으로 확인",
+  "학생 전체 확인",
+  "학생 종합 확인",
+  "이 학생 정리",
+  "이 회원 정리",
+  "현재 상태 정리",
+  "실습까지 확인",
+  "결제까지 확인",
+  "과목까지 확인",
+];
+
+const studentUpdateKeywords = [
+  "학생 상태 변경",
+  "학생상태 변경",
+  "학생 상태 수정",
+  "학생상태 수정",
+
+  "과정 변경",
+  "과정 수정",
+  "진행 과정 변경",
+  "진행과정 변경",
+  "진행 과정 수정",
+  "진행과정 수정",
+
+  "최종학력 변경",
+  "최종 학력 변경",
+  "최종학력 수정",
+  "최종 학력 수정",
+
+  "학생 주소 변경",
+  "학생주소 변경",
+  "학생 주소 수정",
+  "학생주소 수정",
+
+  "상세주소 변경",
+  "상세 주소 변경",
+  "상세주소 수정",
+  "상세 주소 수정",
+];
 
   const studentSearchKeywords = [
     "학생 찾아",
@@ -277,6 +1237,91 @@ const studentRiskKeywords = [
   "학생 점검",
   "이수 점검",
 ];
+
+if (
+  scheduleCreateKeywords.some(
+    (
+      keyword
+    ) =>
+      lower.includes(
+        keyword
+      )
+  )
+) {
+  if (
+    !studentId
+  ) {
+    return {
+      intent:
+        "schedule_create",
+
+      toolName:
+        null,
+
+      input: {
+        originalMessage:
+          message,
+      },
+
+      explanation:
+        "일정을 연결할 학생을 먼저 선택해주세요.",
+
+      requiresRegistrationPreview:
+        false,
+    };
+  }
+
+  if (
+    !scheduleDate ||
+    !scheduleTime
+  ) {
+    /**
+     * 날짜 또는 시간이 불완전하면
+     * OpenAI Plan으로 넘겨 자연어를 다시 분석한다.
+     */
+    return null;
+  }
+
+  return {
+    intent:
+      "schedule_create",
+
+    toolName:
+      "schedule.create",
+
+    input: {
+      studentId,
+
+      title:
+        extractScheduleTitleFromMessage(
+          message
+        ),
+
+      description:
+        null,
+
+      scheduleDate,
+
+      meridiem:
+        scheduleTime.meridiem,
+
+      hour12:
+        scheduleTime.hour12,
+
+      minute:
+        scheduleTime.minute,
+
+      isGlobal:
+        false,
+    },
+
+    explanation:
+      "선택한 학생의 일정 등록 초안을 생성합니다.",
+
+    requiresRegistrationPreview:
+      false,
+  };
+}
 
   if (
     studentRegistrationKeywords.some(
@@ -395,6 +1440,160 @@ if (
   };
 }
 
+if (
+  studentUpdateKeywords.some(
+    (
+      keyword
+    ) =>
+      lower.includes(
+        keyword
+      )
+  )
+) {
+  if (
+    !studentId
+  ) {
+    return {
+      intent:
+        "student_update",
+
+      toolName:
+        null,
+
+      input: {
+        originalMessage:
+          message,
+      },
+
+      explanation:
+        "수정할 학생을 먼저 선택해주세요.",
+
+      requiresRegistrationPreview:
+        false,
+    };
+  }
+
+  const status =
+    extractStudentStatusUpdate(
+      message
+    );
+
+  const course =
+    extractStudentCourseUpdate(
+      message
+    );
+
+  const finalEducation =
+    extractStudentFinalEducationUpdate(
+      message
+    );
+
+  const {
+    address,
+    detailAddress,
+  } =
+    extractStudentAddressUpdate(
+      message
+    );
+
+  const hasUpdate =
+    status !==
+      null ||
+    course !==
+      null ||
+    finalEducation !==
+      null ||
+    address !==
+      null ||
+    detailAddress !==
+      null;
+
+  if (!hasUpdate) {
+    /**
+     * 학생은 확정됐지만 변경값을
+     * 정규식으로 정확히 추출하지 못한 경우
+     * OpenAI Plan으로 넘긴다.
+     */
+    return null;
+  }
+
+  return {
+    intent:
+      "student_update",
+
+    toolName:
+      "student.update",
+
+    input: {
+      studentId,
+
+      ...(status !== null
+        ? {
+            status,
+          }
+        : {}),
+
+      ...(course !== null
+        ? {
+            course,
+          }
+        : {}),
+
+      ...(finalEducation !== null
+        ? {
+            finalEducation,
+          }
+        : {}),
+
+      ...(address !== null
+        ? {
+            address,
+          }
+        : {}),
+
+      ...(detailAddress !== null
+        ? {
+            detailAddress,
+          }
+        : {}),
+    },
+
+    explanation:
+      "선택한 학생의 기본정보 수정 초안을 생성합니다.",
+
+    requiresRegistrationPreview:
+      false,
+  };
+}
+
+if (
+  studentId &&
+  studentDashboardKeywords.some(
+    (keyword) =>
+      lower.includes(
+        keyword
+      )
+  )
+) {
+  return {
+    intent:
+      "student_dashboard",
+
+    toolName:
+      "student.dashboard",
+
+    input: {
+      studentId,
+    },
+
+    explanation:
+      "선택한 학생의 기본정보, 학기, 과목, 학점, 결제, 실습, 위험요소와 다음 업무를 종합 조회합니다.",
+
+    requiresRegistrationPreview:
+      false,
+  };
+}
+
   if (
     missingKeywords.some((keyword) =>
       lower.includes(keyword)
@@ -497,27 +1696,61 @@ if (
 }
 
 async function createPlanWithOpenAi(params: {
-  context: AiUserContext;
-  message: string;
-  selectedStudentId?: number | null;
-  selectedStudentName?: string | null;
+  context:
+    AiUserContext;
+
+  message:
+    string;
+
+  selectedStudentId?:
+    number |
+    null;
+
+  selectedStudentName?:
+    string |
+    null;
+
+  conversationHistory?:
+    AiConversationHistoryMessage[];
 }): Promise<AiRunnerPlan> {
   const availableTools =
-    listRegisteredAiTools()
-      .filter((tool) =>
+  listRegisteredAiTools()
+    .filter(
+      (tool) =>
         tool.allowedRoles.includes(
           params.context.role
         )
-      )
-      .filter(
-        (tool) =>
-          tool.autoExecutable &&
-          tool.accessMode === "read"
-      )
-      .map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-      }));
+    )
+    .filter(
+      (tool) =>
+        (
+          tool.autoExecutable ===
+            true &&
+          tool.accessMode ===
+            "read"
+        ) ||
+        (
+          (
+            tool.name ===
+              "schedule.create" ||
+            tool.name ===
+              "consultation.update" ||
+            tool.name ===
+              "student.update"
+          ) &&
+          tool.accessMode ===
+            "draft"
+        )
+    )
+    .map(
+      (tool) => ({
+        name:
+          tool.name,
+
+        description:
+          tool.description,
+      })
+    );
 
   if (!process.env.OPENAI_API_KEY) {
     return {
@@ -548,15 +1781,38 @@ requiresRegistrationPreview:
               text: [
                 "너는 EduCanvas CRM의 안전한 AI 요청 분류기다.",
                "사용자 요청을 분석하여 허용된 조회 Tool 또는 등록 미리보기 intent를 선택한다.",
+"conversationHistory는 현재 사용자와 AI가 이전에 나눈 최근 대화이다.",
+"현재 요청이 짧거나 대상을 생략했다면 conversationHistory를 참고해 문맥을 이어간다.",
+"다만 이전 대화만으로 학생 ID나 상담DB ID를 추측하거나 새로 만들어서는 안 된다.",
+"이전 대화에 명확한 학생 ID가 없고 현재 선택 학생도 없으면 학생 이름 검색 또는 학생 선택 안내가 필요하다.",
+"현재 요청과 이전 대화가 충돌하면 현재 요청을 우선한다.",
 "조회 Tool은 자동 실행할 수 있지만 등록 요청은 절대로 자동 실행하지 않는다.",
 "학생 등록 요청은 student_registration_preview intent로만 분류하고 toolName은 null로 반환한다.",
+"학생 일정 등록 요청은 schedule_create intent와 schedule.create Tool을 사용한다.",
+"schedule.create는 실제 일정을 즉시 저장하지 않고 사용자 승인용 초안만 생성한다.",
+"일정 등록, 일정 추가, 일정 생성, 일정 잡아줘, 스케줄 등록처럼 학생 일정 생성을 요청하면 schedule_create를 선택한다.",
+"schedule_create는 studentId, title, scheduleDate, meridiem, hour12, minute가 모두 확실할 때만 사용한다.",
+"선택된 학생이 있으면 selectedStudent.id를 studentId로 사용한다.",
+"날짜나 시간이 명확하지 않으면 schedule.create를 호출하지 않고 general_help로 부족한 정보를 안내한다.",
+"'내일', '모레', '다음 주'처럼 상대 날짜만 말한 경우 서버 기준일을 추측하지 말고 정확한 날짜를 다시 요청한다.",
+"회사 전체 일정이라고 명확히 말하지 않으면 isGlobal은 false다.",
+"scheduleDate는 YYYY-MM-DD 형식이어야 한다.",
+"meridiem은 AM 또는 PM만 가능하다.",
+"hour12는 1부터 12 사이 정수다.",
+"minute은 0부터 59 사이 정수다.",
 "절대로 삭제, 직접 수정, 직접 입력, DB 직접 접근을 선택하지 않는다.",
                 "organizationId, teamId, assigneeId, userId는 만들거나 변경하지 않는다.",
                 "",
-               "허용 intent:",
+           "허용 intent:",
+"- greeting",
+"- small_talk",
+"- schedule_create",
 "- student_search",
 "- student_summary",
+"- student_dashboard",
+"- student_update",
 "- consultation_search",
+"- consultation_update",
 "- missing_data",
 "- student_detail_risk",
 "- student_list_risk",
@@ -564,18 +1820,44 @@ requiresRegistrationPreview:
 "- general_help",
                 "",
                "student.summary는 studentId가 확실할 때만 사용한다.",
+"student.dashboard는 선택 학생의 현재 진행상황을 종합적으로 확인할 때 사용한다.",
+"학생 기본정보뿐 아니라 학기, 과목, 학점, 결제, 실습, 위험요소, 다음 업무를 함께 요청하면 student.dashboard를 사용한다.",
+"'이 학생 전체 정리해줘', '현재 어디까지 진행됐어', '앞으로 뭐 해야 돼', '전체 현황 확인해줘' 같은 요청은 student.dashboard를 사용한다.",
+"student.dashboard는 studentId가 확실할 때만 사용한다.",
+"단순 기본정보만 요청하면 student.summary를 사용한다.",
+"위험요소나 결제·환불만 집중적으로 요청하면 risk.studentDetail을 사용한다.",
 "CRM 전체 점검, 전체 학생 점검, 위험 학생 찾기, 학점 부족 학생 찾기, 중복과목 학생 찾기처럼 여러 학생을 대상으로 하는 요청은 student_list_risk를 사용한다.",
 "student_list_risk는 studentId 없이 사용할 수 있다.",
 "선택 학생의 위험요소, 문제점, 학점 부족, 과목 부족, 중복과목, 실습 문제, 이수 점검, 결제 상태, 환불 상태, 실결제금액 확인 요청은 student_detail_risk를 사용한다.",
 "student_detail_risk는 studentId가 확실할 때만 사용한다.",
 "이름만 있으면 student.search를 사용한다.",
 "일반 질문이거나 실행할 Tool이 없으면 general_help를 선택한다.",
+"단순 인사, 반가움 표현, 대화 시작 표현은 greeting을 선택한다.",
+"감사, 격려, 가벼운 질문, 업무 시작 대화처럼 CRM 조회가 필요하지 않은 일반 대화는 small_talk을 선택한다.",
+"small_talk의 toolName은 반드시 null이다.",
 "학생 등록, 등록예정 전환, 과목설계, 학기표 생성, 플랜 생성 요청은 student_registration_preview를 선택한다.",
 "student_registration_preview는 실제 저장이 아니라 사용자 확인용 미리보기를 준비하는 intent다.",
 "student_registration_preview의 toolName은 반드시 null이다.",
 "등록 요청에 상담DB 번호가 있으면 consultationId에 넣는다.",
 "상담DB 번호가 확실하지 않으면 consultationId는 null로 반환한다.",
-"input에는 query, limit, studentId, riskLevel, consultationId만 넣을 수 있다.",
+"input에는 query, limit, studentId, status, course, finalEducation, address, detailAddress, notes, riskLevel, consultationId, title, description, scheduleDate, meridiem, hour12, minute, isGlobal만 넣을 수 있다.",
+"상담DB의 상태 또는 상담내용을 변경해달라는 요청은 consultation_update intent와 consultation.update Tool을 사용한다.",
+"consultation.update는 실제 상담DB를 즉시 수정하지 않고 사용자 승인용 초안만 생성한다.",
+"consultation.update는 consultationId가 확실할 때만 사용한다.",
+"현재 1차 상담 수정 허용 필드는 status와 notes뿐이다.",
+"사용자가 상담 상태를 변경하면 input.status에 새 상태를 넣는다.",
+"사용자가 상담내용을 추가하거나 변경하면 input.notes에 변경 후 전체 상담내용을 넣는다.",
+"담당자, 조직, 이름, 전화번호, 희망과정 변경은 consultation.update로 처리하지 않는다.",
+"상담DB 번호가 없거나 수정값이 불명확하면 general_help로 필요한 정보를 요청한다.",
+"학생 상태, 진행 과정, 최종학력, 주소, 상세주소 변경 요청은 student_update intent와 student.update Tool을 사용한다.",
+"student.update는 실제 학생정보를 즉시 수정하지 않고 사용자 승인용 초안만 생성한다.",
+"student.update는 studentId가 확실할 때만 사용한다.",
+"선택된 학생이 있으면 selectedStudent.id를 studentId로 사용한다.",
+"현재 학생 수정 허용 필드는 status, course, finalEducation, address, detailAddress뿐이다.",
+"학생 이름, 전화번호, 담당자, 조직, 승인상태, 결제금액, 결제일, 과목수, 학기수는 student.update로 수정하지 않는다.",
+"사용자가 변경을 요청한 필드만 input에 넣는다.",
+"변경하지 않는 학생 수정 필드는 null이 아니라 사용하지 않는 값으로 처리한다.",
+"학생 ID가 없거나 변경할 값이 불명확하면 general_help로 필요한 정보를 요청한다.",
 "사용하지 않는 input 필드는 null로 반환한다.",
               ].join("\n"),
             },
@@ -587,20 +1869,26 @@ requiresRegistrationPreview:
             {
               type: "input_text",
               text: JSON.stringify({
-                message: params.message,
+  currentMessage:
+    params.message,
 
-                selectedStudent: {
-                  id:
-                    params.selectedStudentId ??
-                    null,
+  selectedStudent: {
+    id:
+      params.selectedStudentId ??
+      null,
 
-                  name:
-                    params.selectedStudentName ??
-                    null,
-                },
+    name:
+      params.selectedStudentName ??
+      null,
+  },
 
-                availableTools,
-              }),
+  conversationHistory:
+    normalizeConversationHistory(
+      params.conversationHistory
+    ),
+
+  availableTools,
+}),
             },
           ],
         },
@@ -618,10 +1906,16 @@ requiresRegistrationPreview:
             properties: {
               intent: {
                 type: "string",
-              enum: [
+          enum: [
+  "greeting",
+  "small_talk",
+  "schedule_create",
   "student_search",
   "student_summary",
+  "student_dashboard",
+  "student_update",
   "consultation_search",
+  "consultation_update",
   "missing_data",
   "student_detail_risk",
   "student_list_risk",
@@ -636,9 +1930,13 @@ requiresRegistrationPreview:
                   "null",
                 ],
                 enum: [
+  "schedule.create",
   "student.search",
   "student.summary",
+  "student.dashboard",
+  "student.update",
   "consultation.search",
+  "consultation.update",
   "alert.missingData",
   "risk.studentDetail",
   "risk.studentList",
@@ -677,9 +1975,106 @@ riskLevel: {
       type: ["number", "null"],
     },
 
+status: {
+  type: [
+    "string",
+    "null",
+  ],
+},
+
+course: {
+  type: [
+    "string",
+    "null",
+  ],
+},
+
+finalEducation: {
+  type: [
+    "string",
+    "null",
+  ],
+},
+
+address: {
+  type: [
+    "string",
+    "null",
+  ],
+},
+
+detailAddress: {
+  type: [
+    "string",
+    "null",
+  ],
+},
+
+notes: {
+  type: [
+    "string",
+    "null",
+  ],
+},
+
 consultationId: {
   type: [
     "number",
+    "null",
+  ],
+},
+
+title: {
+  type: [
+    "string",
+    "null",
+  ],
+},
+
+description: {
+  type: [
+    "string",
+    "null",
+  ],
+},
+
+scheduleDate: {
+  type: [
+    "string",
+    "null",
+  ],
+},
+
+meridiem: {
+  type: [
+    "string",
+    "null",
+  ],
+
+  enum: [
+    "AM",
+    "PM",
+    null,
+  ],
+},
+
+hour12: {
+  type: [
+    "number",
+    "null",
+  ],
+},
+
+minute: {
+  type: [
+    "number",
+    "null",
+  ],
+},
+
+isGlobal: {
+  type: [
+    "boolean",
     "null",
   ],
 },
@@ -689,8 +2084,21 @@ required: [
   "query",
   "limit",
   "studentId",
+"status",
+"course",
+"finalEducation",
+"address",
+"detailAddress",
+"notes",
   "riskLevel",
   "consultationId",
+  "title",
+  "description",
+  "scheduleDate",
+  "meridiem",
+  "hour12",
+  "minute",
+  "isGlobal",
 ],
 },
 
@@ -757,11 +2165,11 @@ requiresRegistrationPreview:
     intent,
 
     toolName:
-      intent ===
-        "student_registration_preview"
-        ? null
-        : parsed.toolName ||
-          null,
+  intent === "greeting" ||
+  intent === "small_talk" ||
+  intent === "student_registration_preview"
+    ? null
+    : parsed.toolName || null,
 
     input:
       cleanInput,
@@ -794,6 +2202,94 @@ requiresRegistrationPreview:
 }
 }
 
+function buildSmallTalkReply(params: {
+  message: string;
+  context: AiUserContext;
+  selectedStudentName?: string | null;
+}) {
+  const message =
+    String(params.message || "")
+      .trim()
+      .toLowerCase();
+
+  const userHonorific =
+    params.context.userHonorific ||
+    (
+      params.context.userName
+        ? `${params.context.userName}님`
+        : "사용자님"
+    );
+
+  const selectedStudentName =
+    String(
+      params.selectedStudentName || ""
+    ).trim();
+
+  if (
+    message.includes("고마워") ||
+    message.includes("감사")
+  ) {
+    return "도움이 되었다니 다행입니다. 계속 말씀해주세요.";
+  }
+
+  if (
+    message.includes("잘 부탁") ||
+    message.includes("시작하자") ||
+    message.includes("시작해보자")
+  ) {
+    return [
+      `네, ${userHonorific}.`,
+      selectedStudentName
+        ? `${selectedStudentName} 학생 업무부터 이어서 확인하겠습니다.`
+        : "오늘도 필요한 CRM 업무를 차근차근 도와드리겠습니다.",
+    ].join("\n");
+  }
+
+  if (
+    message.includes("뭐부터") ||
+    (
+      message.includes("오늘") &&
+      (
+        message.includes("뭐 하지") ||
+        message.includes("뭐하지") ||
+        message.includes("뭐 해야") ||
+        message.includes("뭐해야")
+      )
+    )
+  ) {
+    return selectedStudentName
+      ? `${selectedStudentName} 학생의 누락정보와 위험요소부터 점검하는 것이 좋습니다.`
+      : "먼저 누락정보를 점검한 뒤 위험 학생과 결제 예정 업무를 확인하는 순서가 좋습니다.";
+  }
+
+  if (
+    message.includes("뭐 할 수") ||
+    message.includes("도와줄 수")
+  ) {
+    return [
+      "학생 및 상담DB 검색, 학생 정보 확인, 결제·환불 점검, 위험요소 분석, 전체 누락 점검을 도와드릴 수 있습니다.",
+      "학생을 선택하면 해당 학생을 기준으로 더 정확하게 확인합니다.",
+    ].join("\n");
+  }
+
+  if (
+    message.includes("수고") ||
+    message === "좋아" ||
+    message === "좋습니다" ||
+    message === "오케이" ||
+    message === "알겠어"
+  ) {
+    return "네, 확인했습니다. 다음 업무를 말씀해주세요.";
+  }
+
+  return [
+    `네, ${userHonorific}.`,
+    selectedStudentName
+      ? `현재 ${selectedStudentName} 학생이 선택되어 있습니다. 필요한 업무를 말씀해주세요.`
+      : "필요한 업무를 편하게 말씀해주세요.",
+  ].join("\n");
+}
+
 function buildToolReply(params: {
   plan: AiRunnerPlan;
   result: AiToolExecutionResult<any>;
@@ -807,6 +2303,124 @@ function buildToolReply(params: {
 
   const data = params.result.data;
 
+if (
+  params.plan.toolName ===
+    "schedule.create"
+) {
+  const studentLabel =
+    String(
+      data?.studentName ||
+      ""
+    ).trim() ||
+    (
+      data?.studentId
+        ? `학생 #${data.studentId}`
+        : "선택 학생"
+    );
+
+  const meridiemLabel =
+    data?.meridiem ===
+      "PM"
+      ? "오후"
+      : "오전";
+
+  return [
+    `**${studentLabel} 일정 등록 초안**`,
+    "",
+    `- 일정명: ${data?.title || "미입력"}`,
+    `- 날짜: ${data?.scheduleDate || "미입력"}`,
+    `- 시간: ${meridiemLabel} ${data?.hour12 ?? "-"}시 ${String(
+      data?.minute ??
+      0
+    ).padStart(
+      2,
+      "0"
+    )}분`,
+    `- 범위: ${
+      data?.isGlobal ===
+        true
+        ? "회사 전체 일정"
+        : "개인 일정"
+    }`,
+    "",
+    "내용을 확인한 후 등록 버튼을 눌러주세요.",
+  ].join(
+    "\n"
+  );
+}
+if (
+  params.plan.toolName ===
+    "student.update"
+) {
+  const changes =
+    Array.isArray(
+      data?.changes
+    )
+      ? data.changes
+      : [];
+
+  const changeLines =
+    changes.map(
+      (
+        change: any,
+        index: number
+      ) =>
+        `${index + 1}. ${change.label || change.field}: ${
+          change.before ??
+          "미입력"
+        } → ${
+          change.after ??
+          "비움"
+        }`
+    );
+
+  return [
+    `**${data?.studentName || `학생 #${data?.studentId || ""}`} 기본정보 수정 초안**`,
+    "",
+    ...changeLines,
+    "",
+    "변경 전·후 내용을 확인한 뒤 승인해주세요.",
+  ].join(
+    "\n"
+  );
+}
+
+if (
+  params.plan.toolName ===
+    "consultation.update"
+) {
+  const changes =
+    Array.isArray(
+      data?.changes
+    )
+      ? data.changes
+      : [];
+
+  const changeLines =
+    changes.map(
+      (
+        change: any,
+        index: number
+      ) =>
+        `${index + 1}. ${change.label || change.field}: ${
+          change.before ??
+          "미입력"
+        } → ${
+          change.after ??
+          "비움"
+        }`
+    );
+
+  return [
+    `**${data?.clientName || `상담DB #${data?.consultationId || ""}`} 수정 초안**`,
+    "",
+    ...changeLines,
+    "",
+    "변경 전·후 내용을 확인한 뒤 승인해주세요.",
+  ].join(
+    "\n"
+  );
+}
   if (
     params.plan.toolName ===
     "student.search"
@@ -852,6 +2466,190 @@ function buildToolReply(params: {
       `- 결제금액: ${student.paymentAmount || "미입력"}`,
     ].join("\n");
   }
+
+if (
+  params.plan.toolName ===
+  "student.dashboard"
+) {
+  const student =
+    data?.student ||
+    {};
+
+  const semesters =
+    Array.isArray(
+      data?.semesters
+    )
+      ? data.semesters
+      : [];
+
+  const subjects =
+    data?.subjects ||
+    {};
+
+  const creditSummary =
+    data?.creditSummary ||
+    {};
+
+  const paymentSummary =
+    data?.paymentSummary ||
+    {};
+
+  const practice =
+    data?.practice ||
+    {};
+
+  const risk =
+    data?.risk ||
+    {};
+
+  const missingFields =
+    Array.isArray(
+      data?.missingFields
+    )
+      ? data.missingFields
+      : [];
+
+  const nextActions =
+    Array.isArray(
+      data?.nextActions
+    )
+      ? data.nextActions
+      : [];
+
+  const semesterLines =
+    semesters
+      .slice(0, 10)
+      .map(
+        (
+          semester: any,
+          index: number
+        ) => {
+          const semesterLabel =
+            semester.semesterNo
+              ? `${semester.semesterNo}학기`
+              : `${index + 1}번째 학기`;
+
+          const institution =
+            semester.actualInstitution ||
+            semester.plannedInstitution ||
+            "교육원 미입력";
+
+          const startDate =
+            semester.actualStartDate ||
+            semester.plannedStartMonth ||
+            "일정 미입력";
+
+          return [
+            `${index + 1}. **${semesterLabel}**`,
+            `   - 교육원: ${institution}`,
+            `   - 시작일정: ${startDate}`,
+            `   - 예정 과목: ${semester.plannedSubjectCount ?? "미입력"}`,
+            `   - 결제일: ${semester.paymentDate || "미입력"}`,
+          ].join("\n");
+        }
+      );
+
+  const actionLines =
+    nextActions
+      .slice(0, 10)
+      .map(
+        (
+          action: any,
+          index: number
+        ) =>
+          `${index + 1}. **${action.title || "확인 필요"}**: ${action.message || ""}`
+      );
+
+  const riskItems =
+    Array.isArray(
+      risk.items
+    )
+      ? risk.items
+      : [];
+
+  const riskLines =
+    riskItems
+      .slice(0, 8)
+      .map(
+        (
+          issue: any,
+          index: number
+        ) =>
+          `${index + 1}. ${issue.title || "확인 필요"}: ${issue.message || ""}`
+      );
+
+  return [
+    `**${student.clientName || "학생"} 종합 현황**`,
+    "",
+    "**기본정보**",
+    `- 과정: ${student.course || "미입력"}`,
+    `- 상태: ${student.status || "미입력"}`,
+    `- 최종학력: ${student.finalEducation || "미입력"}`,
+    `- 교육원: ${student.institution || "미입력"}`,
+    `- 전체 학기: ${student.totalSemesters ?? semesters.length}개`,
+    "",
+    "**학점 및 과목**",
+    `- 등록 과목: ${creditSummary.registeredSubjectCount ?? 0}과목`,
+    `- 인정 과목: ${creditSummary.recognizedSubjectCount ?? 0}과목`,
+    `- 현재 인정학점: ${creditSummary.currentCredits ?? 0}학점`,
+    `- 필요학점: ${creditSummary.requiredCredits ?? "기준 미설정"}`,
+    `- 남은 학점: ${creditSummary.remainingCredits ?? "기준 미설정"}`,
+    `- 중복과목: ${creditSummary.duplicateSubjectCount ?? 0}건`,
+    `- 우리플랜: ${Array.isArray(subjects.plan) ? subjects.plan.length : 0}과목`,
+    `- 전적대: ${Array.isArray(subjects.transfer) ? subjects.transfer.length : 0}과목`,
+    "",
+    "**결제 현황**",
+    `- 예정금액: ${paymentSummary.plannedAmount ?? 0}원`,
+    `- 결제금액: ${paymentSummary.paidAmount ?? 0}원`,
+    `- 환불금액: ${paymentSummary.refundedAmount ?? 0}원`,
+    `- 실결제금액: ${paymentSummary.actualPaidAmount ?? 0}원`,
+    `- 결제상태: ${paymentSummary.paymentStatus || "미확인"}`,
+    `- 결제일: ${paymentSummary.paymentDate || "미입력"}`,
+    "",
+    "**실습 현황**",
+    `- 실습 필요 여부: ${
+      practice.required === true
+        ? "필요"
+        : practice.required === false
+          ? "불필요"
+          : "확인 필요"
+    }`,
+    `- 실습 요청: ${practice.requestCount ?? 0}건`,
+    `- 최근 요청 상태: ${practice.latestRequest?.status || "요청 없음"}`,
+    `- 섭외 상태: ${practice.latestRequest?.coordinationStatus || "미확인"}`,
+    "",
+    "**위험도**",
+    `- 위험등급: ${risk.riskLevel || "normal"}`,
+    `- 위험점수: ${risk.riskScore ?? 0}점`,
+    `- 확인 항목: ${risk.totalIssueCount ?? riskItems.length}건`,
+    "",
+    riskLines.length > 0
+      ? "**확인된 문제**"
+      : "**확인된 문제 없음**",
+    ...riskLines,
+    "",
+    missingFields.length > 0
+      ? `**누락정보:** ${missingFields.join(", ")}`
+      : "**누락정보 없음**",
+    "",
+    semesterLines.length > 0
+      ? "**학기 진행 현황**"
+      : "**등록된 학기 없음**",
+    ...semesterLines,
+    "",
+    actionLines.length > 0
+      ? "**다음 처리 업무**"
+      : "**현재 생성된 다음 업무 없음**",
+    ...actionLines,
+  ]
+    .filter(
+      (
+        line
+      ) =>
+        line !== ""
+    )
+    .join("\n");
+}
 
   if (
     params.plan.toolName ===
@@ -1006,7 +2804,14 @@ export async function runAiAssistant(
   input: RunAiAssistantInput
 ): Promise<RunAiAssistantOutput> {
   const message =
-    normalizeMessage(input.message);
+    normalizeMessage(
+      input.message
+    );
+
+  const conversationHistory =
+    normalizeConversationHistory(
+      input.conversationHistory
+    );
 
   if (!message) {
     return {
@@ -1045,10 +2850,13 @@ export async function runAiAssistant(
         input.selectedStudentId,
     });
 
-  const plan =
-    localPlan ||
-    (await createPlanWithOpenAi({
-      context: input.context,
+ const plan =
+  localPlan ||
+  (
+    await createPlanWithOpenAi({
+      context:
+        input.context,
+
       message,
 
       selectedStudentId:
@@ -1056,7 +2864,93 @@ export async function runAiAssistant(
 
       selectedStudentName:
         input.selectedStudentName,
-    }));
+
+      conversationHistory,
+    })
+  );
+
+  if (plan.intent === "greeting") {
+    const userHonorific =
+      input.context.userHonorific ||
+      (
+        input.context.userName
+          ? `${input.context.userName}님`
+          : "사용자님"
+      );
+
+    const selectedStudentName =
+      String(
+        input.selectedStudentName || ""
+      ).trim();
+
+    const reply =
+      selectedStudentName
+        ? [
+            `안녕하세요, ${userHonorific}.`,
+            `${selectedStudentName} 학생을 기준으로 어떤 업무를 확인할까요?`,
+          ].join("\n")
+        : [
+            `안녕하세요, ${userHonorific}.`,
+            "오늘 어떤 업무를 도와드릴까요?",
+          ].join("\n");
+
+    return {
+      success: true,
+
+      intent: "greeting",
+
+      reply,
+
+      toolName: null,
+
+      toolResult: null,
+
+      registrationPreview: null,
+
+      meta: {
+        scope:
+          input.context.scope,
+
+        organizationId:
+          input.context.organizationId,
+
+        userId:
+          input.context.userId,
+      },
+    };
+  }
+
+  if (plan.intent === "small_talk") {
+    return {
+      success: true,
+
+      intent: "small_talk",
+
+      reply: buildSmallTalkReply({
+        message,
+        context: input.context,
+        selectedStudentName:
+          input.selectedStudentName,
+      }),
+
+      toolName: null,
+
+      toolResult: null,
+
+      registrationPreview: null,
+
+      meta: {
+        scope:
+          input.context.scope,
+
+        organizationId:
+          input.context.organizationId,
+
+        userId:
+          input.context.userId,
+      },
+    };
+  }
 
   if (
     plan.intent ===
@@ -1119,27 +3013,56 @@ export async function runAiAssistant(
 
 if (
   (
-    plan.toolName === "student.summary" ||
-    plan.toolName === "risk.studentDetail"
+   plan.toolName ===
+  "student.summary" ||
+plan.toolName ===
+  "student.dashboard" ||
+plan.toolName ===
+  "student.update" ||
+plan.toolName ===
+  "risk.studentDetail" ||
+plan.toolName ===
+  "schedule.create"
   ) &&
-  !Number(plan.input.studentId || 0) &&
-  Number(input.selectedStudentId || 0) > 0
+  !Number(
+    plan.input.studentId ||
+    0
+  ) &&
+  Number(
+    input.selectedStudentId ||
+    0
+  ) > 0
 ) {
   plan.input.studentId =
-    Number(input.selectedStudentId);
+    Number(
+      input.selectedStudentId
+    );
 }
 
 if (
   (
-    plan.toolName === "student.summary" ||
-    plan.toolName === "risk.studentDetail"
+   plan.toolName ===
+  "student.summary" ||
+plan.toolName ===
+  "student.dashboard" ||
+plan.toolName ===
+  "student.update" ||
+plan.toolName ===
+  "risk.studentDetail" ||
+plan.toolName ===
+  "schedule.create"
   ) &&
-  !Number(plan.input.studentId || 0)
+  !Number(
+    plan.input.studentId ||
+    0
+  )
 ) {
   return {
-    success: false,
+    success:
+      false,
 
-    intent: plan.intent,
+    intent:
+      plan.intent,
 
     reply:
       "확인할 학생을 먼저 선택해주세요.",
@@ -1147,10 +3070,14 @@ if (
     toolName:
       plan.toolName,
 
-    toolResult: null,
+    toolResult:
+      null,
 
-registrationPreview:
-  null,
+    registrationPreview:
+      null,
+
+    scheduleCreateDraft:
+      null,
 
     meta: {
       scope:
@@ -1171,18 +3098,15 @@ registrationPreview:
 
       intent: plan.intent,
 
-      reply: [
-  "현재 사용 가능한 기능을 안내드립니다.",
-  "",
-  "- 학생 및 상담DB 검색",
-  "- 선택 학생 기본정보 조회",
-  "- 선택 학생 위험요소 점검",
-  "- 선택 학생 결제·환불 상태 점검",
-  "- 권한 범위 내 누락정보 점검",
-  "- 권한 범위 내 전체 학생 위험 점검",
-  "",
-  "학생을 먼저 선택하면 해당 학생을 기준으로 더 정확하게 확인할 수 있습니다.",
-].join("\n"),
+            reply: [
+        `${input.context.userHonorific}, 요청하신 내용을 아직 CRM 업무로 정확히 판단하지 못했습니다.`,
+        "",
+        "학생 검색, 상담DB 검색, 학생 정보 확인, 결제·환불 점검, 위험요소 분석 또는 전체 누락 점검처럼 말씀해주세요.",
+        "",
+        input.selectedStudentName
+          ? `현재 ${input.selectedStudentName} 학생이 선택되어 있습니다.`
+          : "특정 학생 업무라면 학생을 먼저 선택하거나 학생 이름을 말씀해주세요.",
+      ].join("\n"),
 
       toolName: null,
 
@@ -1205,15 +3129,133 @@ registrationPreview:
   }
 
   const toolResult =
-    await executeAiTool({
-      toolName: plan.toolName,
+  await executeAiTool({
+    toolName: plan.toolName,
 
-      context: input.context,
+    context: input.context,
 
-      input: plan.input,
-    });
+    input: plan.input,
+  });
+
+if (
+  plan.toolName ===
+    "student.update" &&
+  toolResult.success ===
+    true
+) {
+  const draft =
+    toolResult.data as
+      StudentUpdateToolOutput;
 
   return {
+    success:
+      true,
+
+    intent:
+      "student_update",
+
+    reply:
+      buildToolReply({
+        plan,
+        result:
+          toolResult,
+      }),
+
+    toolName:
+      "student.update",
+
+    toolResult,
+
+    data:
+      toolResult.data,
+
+    registrationPreview:
+      null,
+
+    scheduleCreateDraft:
+      null,
+
+    consultationUpdateDraft:
+      null,
+
+    studentUpdateDraft:
+      draft,
+
+    meta: {
+      scope:
+        input.context.scope,
+
+      organizationId:
+        input.context
+          .organizationId,
+
+      userId:
+        input.context.userId,
+    },
+  };
+}
+
+if (
+  plan.toolName ===
+    "consultation.update" &&
+  toolResult.success ===
+    true
+) {
+  const draft =
+    toolResult.data as
+      RunAiAssistantOutput[
+        "consultationUpdateDraft"
+      ];
+
+  return {
+    success:
+      true,
+
+    intent:
+      "consultation_update",
+
+    reply:
+      buildToolReply({
+        plan,
+        result:
+          toolResult,
+      }),
+
+    toolName:
+      "consultation.update",
+
+    toolResult,
+
+    data:
+      toolResult.data,
+
+    registrationPreview:
+      null,
+
+    scheduleCreateDraft:
+      null,
+
+    consultationUpdateDraft:
+      draft,
+
+    studentUpdateDraft:
+      null,
+
+    meta: {
+      scope:
+        input.context.scope,
+
+      organizationId:
+        input.context
+          .organizationId,
+
+      userId:
+        input.context.userId,
+    },
+  };
+}
+
+return {
     success:
       toolResult.success,
 
@@ -1234,6 +3276,15 @@ registrationPreview:
 
     registrationPreview:
       null,
+
+scheduleCreateDraft:
+  plan.toolName ===
+    "schedule.create" &&
+  toolResult.success ===
+    true &&
+  toolResult.data
+    ? toolResult.data
+    : null,
 
     meta: {
       scope:

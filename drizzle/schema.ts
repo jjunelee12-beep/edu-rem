@@ -2901,8 +2901,32 @@ export const schedules = mysqlTable(
   "schedules",
   {
     id: int("id").autoincrement().primaryKey(),
-    organizationId: int("organizationId").notNull().default(1),
-    title: varchar("title", { length: 255 }).notNull(),
+
+    organizationId:
+      int("organizationId")
+        .notNull()
+        .default(1),
+
+    /**
+     * 학생과 직접 연결된 일정일 때만 저장한다.
+     *
+     * null:
+     * 일반 개인 일정 또는 회사 전체 일정
+     *
+     * number:
+     * 특정 학생과 연결된 일정
+     */
+    studentId:
+      int("studentId"),
+
+    title:
+      varchar(
+        "title",
+        {
+          length:
+            255,
+        }
+      ).notNull(),
     description: text("description"),
     scheduleDate: date("scheduleDate").notNull(),
     meridiem: mysqlEnum("meridiem", ["AM", "PM"]).notNull(),
@@ -2925,22 +2949,48 @@ export const schedules = mysqlTable(
     createdAt: timestamp("createdAt").notNull().defaultNow(),
     updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
   },
-  (table) => ({
-    orgDateIdx: index("idx_schedules_org_date").on(
-      table.organizationId,
-      table.scheduleDate
-    ),
-    orgNotifyIdx: index("idx_schedules_org_notify").on(
-      table.organizationId,
-      table.isActive,
-      table.isNotified,
-      table.startAt
-    ),
-    orgOwnerDateIdx: index("idx_schedules_org_owner_date").on(
-      table.organizationId,
-      table.ownerUserId,
-      table.scheduleDate
-    ),
+    (
+    table
+  ) => ({
+    orgDateIdx:
+      index(
+        "idx_schedules_org_date"
+      ).on(
+        table.organizationId,
+        table.scheduleDate
+      ),
+
+    orgNotifyIdx:
+      index(
+        "idx_schedules_org_notify"
+      ).on(
+        table.organizationId,
+        table.isActive,
+        table.isNotified,
+        table.startAt
+      ),
+
+    orgOwnerDateIdx:
+      index(
+        "idx_schedules_org_owner_date"
+      ).on(
+        table.organizationId,
+        table.ownerUserId,
+        table.scheduleDate
+      ),
+
+    /**
+     * AI 학생 Dashboard와
+     * 학생별 일정 조회용 인덱스
+     */
+    orgStudentDateIdx:
+      index(
+        "idx_schedules_org_student_date"
+      ).on(
+        table.organizationId,
+        table.studentId,
+        table.scheduleDate
+      ),
   })
 );
 
@@ -3492,6 +3542,62 @@ export const aiPendingActions = mysqlTable(
     ),
   })
 );
+
+export const aiChatMessages = mysqlTable(
+  "ai_chat_messages",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull(),
+
+    userId: int("userId").notNull(),
+
+    role: mysqlEnum("role", [
+      "user",
+      "assistant",
+    ]).notNull(),
+
+    kind: varchar("kind", {
+      length: 50,
+    })
+      .notNull()
+      .default("text"),
+
+    content: text("content").notNull(),
+
+    messageDataJson: json("messageDataJson"),
+
+    selectedStudentId: int(
+      "selectedStudentId"
+    ),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    orgUserCreatedIdx: index(
+      "idx_ai_chat_org_user_created"
+    ).on(
+      table.organizationId,
+      table.userId,
+      table.createdAt
+    ),
+
+    orgStudentIdx: index(
+      "idx_ai_chat_student"
+    ).on(
+      table.organizationId,
+      table.selectedStudentId
+    ),
+  })
+);
+
+export type InsertAiChatMessage =
+  typeof aiChatMessages.$inferInsert;
+
+export type SelectAiChatMessage =
+  typeof aiChatMessages.$inferSelect;
 
 export type AiPendingAction =
   typeof aiPendingActions.$inferSelect;

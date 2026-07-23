@@ -12,8 +12,9 @@ import {
   ImagePlus,
   Loader2,
   Send,
-  Sparkles,
-  User,
+Sparkles,
+Trash2,
+User,
   UserCheck,
   X,
   XCircle,
@@ -79,6 +80,390 @@ export type DashboardAIStudentSummaryData = {
   riskLevel?: string | null;
 
   summary?: string | null;
+};
+
+export type DashboardAIStudentDashboardSemester = {
+  id?: number;
+
+  semesterNo?:
+    number |
+    null;
+
+  plannedStartMonth?:
+    string |
+    null;
+
+  plannedInstitution?:
+    string |
+    null;
+
+  actualStartDate?:
+    string |
+    Date |
+    null;
+
+  actualInstitution?:
+    string |
+    null;
+
+  plannedSubjectCount?:
+    number |
+    null;
+
+  plannedAmount?:
+    string |
+    number |
+    null;
+
+  actualPaymentAmount?:
+    string |
+    number |
+    null;
+
+  paymentDate?:
+    string |
+    Date |
+    null;
+};
+
+export type DashboardAIStudentDashboardSubject = {
+  id?:
+    number |
+    null;
+
+  source?:
+    "plan" |
+    "transfer" |
+    "extra" |
+    string;
+
+  sourceLabel?:
+    string |
+    null;
+
+  subjectName?:
+    string |
+    null;
+
+  requirementType?:
+    string |
+    null;
+
+  category?:
+    string |
+    null;
+
+  credits?:
+    number;
+
+  semesterNo?:
+    number |
+    null;
+
+  isConfirmed?:
+    boolean;
+};
+
+export type DashboardAIStudentDashboardPractice = {
+  id?: number;
+
+  status?:
+    string |
+    null;
+
+  coordinationStatus?:
+    string |
+    null;
+
+  paymentStatus?:
+    string |
+    null;
+
+  institutionName?:
+    string |
+    null;
+
+  institutionAddress?:
+    string |
+    null;
+
+  institutionPhone?:
+    string |
+    null;
+
+  plannedStartDate?:
+    string |
+    Date |
+    null;
+
+  plannedEndDate?:
+    string |
+    Date |
+    null;
+
+  feeAmount?:
+    string |
+    number |
+    null;
+
+  createdAt?:
+    string |
+    Date |
+    null;
+};
+
+export type DashboardAIStudentDashboardSchedule = {
+  id?:
+    number;
+
+  studentId?:
+    number |
+    null;
+
+  title?:
+    string |
+    null;
+
+  description?:
+    string |
+    null;
+
+  scheduleDate?:
+    string |
+    Date |
+    null;
+
+  startAt?:
+    string |
+    Date |
+    null;
+
+  meridiem?:
+    string |
+    null;
+
+  hour12?:
+    number |
+    null;
+
+  minute?:
+    number |
+    null;
+
+  scope?:
+    string |
+    null;
+
+  ownerUserId?:
+    number |
+    null;
+
+  ownerUserName?:
+    string |
+    null;
+
+  isNotified?:
+    boolean;
+};
+
+export type DashboardAIStudentDashboardNextAction = {
+  code?: string;
+
+  priority?:
+    "high" |
+    "medium" |
+    "low" |
+    string;
+
+  title?:
+    string;
+
+  message?:
+    string;
+
+  source?:
+    string;
+};
+
+export type DashboardAIStudentDashboardData = {
+  student?: {
+    id?: number;
+
+    organizationId?: number;
+
+    clientName?:
+      string |
+      null;
+
+    phone?:
+      string |
+      null;
+
+    course?:
+      string |
+      null;
+
+    status?:
+      string |
+      null;
+
+    finalEducation?:
+      string |
+      null;
+
+    startDate?:
+      string |
+      Date |
+      null;
+
+    paymentAmount?:
+      string |
+      number |
+      null;
+
+    paymentDate?:
+      string |
+      Date |
+      null;
+
+    subjectCount?:
+      number |
+      null;
+
+    institution?:
+      string |
+      null;
+
+    totalSemesters?:
+      number |
+      null;
+
+    approvalStatus?:
+      string |
+      null;
+
+    assigneeId?:
+      number |
+      null;
+
+    address?:
+      string |
+      null;
+
+    detailAddress?:
+      string |
+      null;
+  };
+
+  semesters?:
+    DashboardAIStudentDashboardSemester[];
+
+  subjects?: {
+    plan?:
+      DashboardAIStudentDashboardSubject[];
+
+    transfer?:
+      DashboardAIStudentDashboardSubject[];
+
+    extra?:
+      DashboardAIStudentDashboardSubject[];
+
+    recognized?:
+      DashboardAIStudentDashboardSubject[];
+
+    duplicates?:
+      DashboardAIStudentDashboardSubject[];
+  };
+
+  creditSummary?: {
+    registeredSubjectCount?:
+      number;
+
+    recognizedSubjectCount?:
+      number;
+
+    currentCredits?:
+      number;
+
+    requiredCredits?:
+      number |
+      null;
+
+    remainingCredits?:
+      number |
+      null;
+
+    duplicateSubjectCount?:
+      number;
+  };
+
+  paymentSummary?: {
+    plannedAmount?:
+      number;
+
+    paidAmount?:
+      number;
+
+    refundedAmount?:
+      number;
+
+    actualPaidAmount?:
+      number;
+
+    paymentStatus?:
+      string |
+      null;
+
+    paymentDate?:
+      string |
+      Date |
+      null;
+  };
+
+  practice?: {
+    required?:
+      boolean |
+      null;
+
+    requestCount?:
+      number;
+
+    latestRequest?:
+      DashboardAIStudentDashboardPractice |
+      null;
+
+    requests?:
+      DashboardAIStudentDashboardPractice[];
+  };
+
+  schedules?:
+  DashboardAIStudentDashboardSchedule[];
+
+  missingFields?:
+    string[];
+
+  risk?: {
+    riskLevel?:
+      "normal" |
+      "warning" |
+      "danger" |
+      string;
+
+    riskScore?:
+      number;
+
+    totalIssueCount?:
+      number;
+
+    items?:
+      DashboardAIStudentRiskIssue[];
+  };
+
+  nextActions?:
+    DashboardAIStudentDashboardNextAction[];
+
+  generatedAt?:
+    string;
 };
 
 export type DashboardAIStudentRiskIssue = {
@@ -303,8 +688,15 @@ export type DashboardAIPendingActionPreview = {
 export type DashboardAIRegistrationExecutionResult = {
   success?: boolean;
 
+consultationId?:
+  number |
+  null;
+
   studentId?:
     number | null;
+
+scheduleId?:
+  number | null;
 
   planId?:
     number | null;
@@ -530,6 +922,7 @@ export type DashboardAIMessageKind =
   | "warning"
   | "search_result"
   | "student_summary"
+  | "student_dashboard"
   | "student_risk"
   | "organization_risk"
   | "student_registration_preview"
@@ -539,6 +932,37 @@ export type DashboardAIMessageKind =
 export type DashboardAIMessageData = {
   students?: DashboardAIStudent[];
   consultations?: DashboardAIConsultation[];
+  studentDashboard?:
+    DashboardAIStudentDashboardData;
+  semesters?:
+    DashboardAIStudentDashboardSemester[];
+
+  subjects?:
+    DashboardAIStudentDashboardData["subjects"];
+
+  creditSummary?:
+    DashboardAIStudentDashboardData["creditSummary"];
+
+  paymentSummary?:
+    DashboardAIStudentDashboardData["paymentSummary"];
+
+  practice?:
+    DashboardAIStudentDashboardData["practice"];
+
+  schedules?:
+  DashboardAIStudentDashboardSchedule[];
+
+  missingFields?:
+    string[];
+
+  risk?:
+    DashboardAIStudentDashboardData["risk"];
+
+  nextActions?:
+    DashboardAIStudentDashboardNextAction[];
+
+  generatedAt?:
+    string;
 
   registrationPreview?: {
     required?: boolean;
@@ -571,8 +995,11 @@ studentSummary?:
   DashboardAIStudentSummaryData;
 
   student?:
-    | DashboardAIStudentRiskData
-    | DashboardAIStudentSummaryData;
+  | DashboardAIStudentRiskData
+  | DashboardAIStudentSummaryData
+  | NonNullable<
+      DashboardAIStudentDashboardData["student"]
+    >;
 
   result?:
     | DashboardAIStudentSummaryData
@@ -685,6 +1112,10 @@ onSelectStudent?: (
     pendingActionId: number,
     expectedVersion: number
   ) => void | Promise<void>;
+onClearChatHistory?:
+  () =>
+    void |
+    Promise<void>;
   onClearSelectedStudent?: () => void;
   onOpenStudent?: (studentId: number) => void;
   onOpenConsultation?: (consultationId: number) => void;
@@ -871,6 +1302,100 @@ function formatDateValue(
       day: "2-digit",
     }
   );
+}
+
+function formatScheduleDateTime(
+  schedule:
+    DashboardAIStudentDashboardSchedule
+) {
+  const startAt =
+    schedule.startAt;
+
+  if (
+    startAt !==
+      null &&
+    startAt !==
+      undefined &&
+    startAt !==
+      ""
+  ) {
+    const date =
+      new Date(
+        String(
+          startAt
+        )
+      );
+
+    if (
+      !Number.isNaN(
+        date.getTime()
+      )
+    ) {
+      return date.toLocaleString(
+        "ko-KR",
+        {
+          year:
+            "numeric",
+
+          month:
+            "2-digit",
+
+          day:
+            "2-digit",
+
+          hour:
+            "2-digit",
+
+          minute:
+            "2-digit",
+
+          hour12:
+            false,
+        }
+      );
+    }
+  }
+
+  const dateLabel =
+    formatDateValue(
+      schedule.scheduleDate
+    );
+
+  const meridiem =
+    String(
+      schedule.meridiem ||
+      ""
+    )
+      .trim()
+      .toUpperCase();
+
+  const hour12 =
+    toNumber(
+      schedule.hour12,
+      0
+    );
+
+  const minute =
+    toNumber(
+      schedule.minute,
+      0
+    );
+
+  if (
+    !hour12
+  ) {
+    return dateLabel;
+  }
+
+  const timeLabel =
+    `${meridiem === "PM" ? "오후" : "오전"} ${hour12}:${String(
+      minute
+    ).padStart(
+      2,
+      "0"
+    )}`;
+
+  return `${dateLabel} ${timeLabel}`;
 }
 
 function formatCurrency(
@@ -1282,6 +1807,393 @@ function getStudentSummaryData(
         : typeof source.message === "string"
         ? source.message
         : null,
+  };
+}
+
+function getStudentDashboardData(
+  message:
+    DashboardAIMessage
+): DashboardAIStudentDashboardData {
+  const data =
+    asRecord(
+      message.data
+    );
+
+  const wrappedDashboard =
+    asRecord(
+      data.studentDashboard
+    );
+
+  const root =
+    Object.keys(
+      wrappedDashboard
+    ).length > 0
+      ? wrappedDashboard
+      : data;
+
+  const student =
+    asRecord(
+      root.student
+    );
+
+  const subjects =
+    asRecord(
+      root.subjects
+    );
+
+  const creditSummary =
+    asRecord(
+      root.creditSummary
+    );
+
+  const paymentSummary =
+    asRecord(
+      root.paymentSummary
+    );
+
+  const practice =
+    asRecord(
+      root.practice
+    );
+
+  const risk =
+    asRecord(
+      root.risk
+    );
+
+  return {
+    student: {
+      id:
+        toNumber(
+          student.id ??
+          root.studentId,
+          0
+        ),
+
+      organizationId:
+        toNumber(
+          student.organizationId,
+          0
+        ),
+
+      clientName:
+        student.clientName ??
+        student.name ??
+        null,
+
+      phone:
+        student.phone ??
+        null,
+
+      course:
+        student.course ??
+        null,
+
+      status:
+        student.status ??
+        null,
+
+      finalEducation:
+        student.finalEducation ??
+        null,
+
+      startDate:
+        student.startDate ??
+        null,
+
+      paymentAmount:
+        student.paymentAmount ??
+        null,
+
+      paymentDate:
+        student.paymentDate ??
+        null,
+
+      subjectCount:
+        student.subjectCount ===
+          null ||
+        student.subjectCount ===
+          undefined
+          ? null
+          : toNumber(
+              student.subjectCount,
+              0
+            ),
+
+      institution:
+        student.institution ??
+        null,
+
+      totalSemesters:
+        student.totalSemesters ===
+          null ||
+        student.totalSemesters ===
+          undefined
+          ? null
+          : toNumber(
+              student.totalSemesters,
+              0
+            ),
+
+      approvalStatus:
+        student.approvalStatus ??
+        null,
+
+      assigneeId:
+        student.assigneeId ===
+          null ||
+        student.assigneeId ===
+          undefined
+          ? null
+          : toNumber(
+              student.assigneeId,
+              0
+            ),
+
+      address:
+        student.address ??
+        null,
+
+      detailAddress:
+        student.detailAddress ??
+        null,
+    },
+
+    semesters:
+      asArray<
+        DashboardAIStudentDashboardSemester
+      >(
+        root.semesters
+      ),
+
+    subjects: {
+      plan:
+        asArray<
+          DashboardAIStudentDashboardSubject
+        >(
+          subjects.plan
+        ),
+
+      transfer:
+        asArray<
+          DashboardAIStudentDashboardSubject
+        >(
+          subjects.transfer
+        ),
+
+      extra:
+        asArray<
+          DashboardAIStudentDashboardSubject
+        >(
+          subjects.extra
+        ),
+
+      recognized:
+        asArray<
+          DashboardAIStudentDashboardSubject
+        >(
+          subjects.recognized
+        ),
+
+      duplicates:
+        asArray<
+          DashboardAIStudentDashboardSubject
+        >(
+          subjects.duplicates
+        ),
+    },
+
+    creditSummary: {
+      registeredSubjectCount:
+        toNumber(
+          creditSummary
+            .registeredSubjectCount,
+          0
+        ),
+
+      recognizedSubjectCount:
+        toNumber(
+          creditSummary
+            .recognizedSubjectCount,
+          0
+        ),
+
+      currentCredits:
+        toNumber(
+          creditSummary
+            .currentCredits,
+          0
+        ),
+
+      requiredCredits:
+        creditSummary
+          .requiredCredits ===
+            null ||
+        creditSummary
+          .requiredCredits ===
+            undefined
+          ? null
+          : toNumber(
+              creditSummary
+                .requiredCredits,
+              0
+            ),
+
+      remainingCredits:
+        creditSummary
+          .remainingCredits ===
+            null ||
+        creditSummary
+          .remainingCredits ===
+            undefined
+          ? null
+          : toNumber(
+              creditSummary
+                .remainingCredits,
+              0
+            ),
+
+      duplicateSubjectCount:
+        toNumber(
+          creditSummary
+            .duplicateSubjectCount,
+          0
+        ),
+    },
+
+    paymentSummary: {
+      plannedAmount:
+        toNumber(
+          paymentSummary
+            .plannedAmount,
+          0
+        ),
+
+      paidAmount:
+        toNumber(
+          paymentSummary
+            .paidAmount,
+          0
+        ),
+
+      refundedAmount:
+        toNumber(
+          paymentSummary
+            .refundedAmount,
+          0
+        ),
+
+      actualPaidAmount:
+        toNumber(
+          paymentSummary
+            .actualPaidAmount,
+          0
+        ),
+
+      paymentStatus:
+        paymentSummary
+          .paymentStatus ??
+        null,
+
+      paymentDate:
+        paymentSummary
+          .paymentDate ??
+        null,
+    },
+
+    practice: {
+      required:
+        practice.required ===
+          true
+          ? true
+          : practice.required ===
+              false
+            ? false
+            : null,
+
+      requestCount:
+        toNumber(
+          practice.requestCount,
+          0
+        ),
+
+      latestRequest:
+        Object.keys(
+          asRecord(
+            practice.latestRequest
+          )
+        ).length > 0
+          ? practice.latestRequest
+          : null,
+
+      requests:
+        asArray<
+          DashboardAIStudentDashboardPractice
+        >(
+          practice.requests
+        ),
+    },
+
+    schedules:
+  asArray<
+    DashboardAIStudentDashboardSchedule
+  >(
+    root.schedules
+  ),
+
+    missingFields:
+      asArray<unknown>(
+        root.missingFields
+      )
+        .map(
+          (
+            item
+          ) =>
+            String(
+              item
+            ).trim()
+        )
+        .filter(
+          Boolean
+        ),
+
+    risk: {
+      riskLevel:
+        risk.riskLevel ??
+        "normal",
+
+      riskScore:
+        toNumber(
+          risk.riskScore,
+          0
+        ),
+
+      totalIssueCount:
+        toNumber(
+          risk.totalIssueCount,
+          0
+        ),
+
+      items:
+        asArray<
+          DashboardAIStudentRiskIssue
+        >(
+          risk.items
+        ),
+    },
+
+    nextActions:
+      asArray<
+        DashboardAIStudentDashboardNextAction
+      >(
+        root.nextActions
+      ),
+
+    generatedAt:
+      typeof root.generatedAt ===
+        "string"
+        ? root.generatedAt
+        : undefined,
   };
 }
 
@@ -1746,6 +2658,741 @@ const infoRows = [
             type="button"
             onClick={() => onOpenStudent?.(studentId)}
             className="flex h-9 w-full items-center justify-center rounded-xl bg-[#2F6B3B] text-xs font-bold text-white transition hover:bg-[#285d33]"
+          >
+            학생 상세보기
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StudentDashboardCard({
+  message,
+  onOpenStudent,
+}: {
+  message:
+    DashboardAIMessage;
+
+  onOpenStudent?:
+    (
+      studentId:
+        number
+    ) => void;
+}) {
+  const dashboard =
+    getStudentDashboardData(
+      message
+    );
+
+  const student =
+    dashboard.student ||
+    {};
+
+  const semesters =
+    dashboard.semesters ||
+    [];
+
+  const subjects =
+    dashboard.subjects ||
+    {};
+
+  const credit =
+    dashboard.creditSummary ||
+    {};
+
+  const payment =
+    dashboard.paymentSummary ||
+    {};
+
+  const practice =
+    dashboard.practice ||
+    {};
+
+const schedules =
+  dashboard.schedules ||
+  [];
+
+  const risk =
+    dashboard.risk ||
+    {};
+
+  const missingFields =
+    dashboard.missingFields ||
+    [];
+
+  const nextActions =
+    dashboard.nextActions ||
+    [];
+
+  const studentId =
+    toNumber(
+      student.id,
+      0
+    );
+
+  const riskLevel =
+    normalizeRiskLevel(
+      risk.riskLevel
+    );
+
+  const riskStyles =
+    getRiskLevelClass(
+      riskLevel
+    );
+
+  const latestPractice =
+    practice.latestRequest ||
+    null;
+
+  const requiredCreditsText =
+    credit.requiredCredits ===
+      null ||
+    credit.requiredCredits ===
+      undefined
+      ? "기준 미설정"
+      : `${toNumber(
+          credit.requiredCredits,
+          0
+        )}학점`;
+
+  const remainingCreditsText =
+    credit.remainingCredits ===
+      null ||
+    credit.remainingCredits ===
+      undefined
+      ? "기준 미설정"
+      : `${toNumber(
+          credit.remainingCredits,
+          0
+        )}학점`;
+
+  const practiceRequiredLabel =
+    practice.required ===
+      true
+      ? "필요"
+      : practice.required ===
+          false
+        ? "불필요"
+        : "확인 필요";
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      <div className="border-b border-slate-100 px-4 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">
+              학생 종합 업무 현황
+            </p>
+
+            <p className="mt-1 truncate text-lg font-extrabold text-slate-900">
+              {student.clientName ||
+                "학생 정보"}
+            </p>
+
+            <p className="mt-1 truncate text-xs text-slate-500">
+              {student.course ||
+                "과정 미지정"}
+
+              {student.finalEducation
+                ? ` · ${student.finalEducation}`
+                : ""}
+
+              {student.institution
+                ? ` · ${student.institution}`
+                : ""}
+            </p>
+          </div>
+
+          <div className="shrink-0 text-right">
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-bold",
+                riskStyles.badge
+              )}
+            >
+              {getRiskLevelLabel(
+                riskLevel
+              )}
+            </span>
+
+            <p
+              className={cn(
+                "mt-1 text-lg font-black",
+                riskStyles.score
+              )}
+            >
+              {toNumber(
+                risk.riskScore,
+                0
+              )}
+            </p>
+
+            <p className="text-[10px] font-bold text-slate-400">
+              위험 점수
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 px-4 py-4">
+        {[
+          {
+            label:
+              "학생 상태",
+
+            value:
+              student.status ||
+              "미지정",
+          },
+          {
+            label:
+              "승인 상태",
+
+            value:
+              student.approvalStatus ||
+              "확인 필요",
+          },
+          {
+            label:
+              "전체 학기",
+
+            value:
+              `${
+                student.totalSemesters ??
+                semesters.length
+              }학기`,
+          },
+          {
+            label:
+              "등록 과목",
+
+            value:
+              `${toNumber(
+                credit.registeredSubjectCount,
+                0
+              )}과목`,
+          },
+        ].map(
+          (
+            row
+          ) => (
+            <div
+              key={
+                row.label
+              }
+              className="rounded-xl bg-slate-50 px-3 py-3"
+            >
+              <p className="text-[10px] font-bold text-slate-400">
+                {row.label}
+              </p>
+
+              <p className="mt-1 truncate text-xs font-bold text-slate-800">
+                {row.value}
+              </p>
+            </div>
+          )
+        )}
+      </div>
+
+      <div className="border-t border-slate-100 px-4 py-4">
+        <p className="text-xs font-extrabold text-slate-800">
+          학점 및 과목
+        </p>
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {[
+            {
+              label:
+                "현재 인정학점",
+
+              value:
+                `${toNumber(
+                  credit.currentCredits,
+                  0
+                )}학점`,
+            },
+            {
+              label:
+                "필요학점",
+
+              value:
+                requiredCreditsText,
+            },
+            {
+              label:
+                "남은 학점",
+
+              value:
+                remainingCreditsText,
+            },
+            {
+              label:
+                "중복과목",
+
+              value:
+                `${toNumber(
+                  credit.duplicateSubjectCount,
+                  0
+                )}건`,
+            },
+            {
+              label:
+                "우리플랜",
+
+              value:
+                `${asArray(
+                  subjects.plan
+                ).length}과목`,
+            },
+            {
+              label:
+                "전적대",
+
+              value:
+                `${asArray(
+                  subjects.transfer
+                ).length}과목`,
+            },
+          ].map(
+            (
+              row
+            ) => (
+              <div
+                key={
+                  row.label
+                }
+                className="rounded-xl border border-slate-100 px-3 py-2.5"
+              >
+                <p className="text-[10px] font-bold text-slate-400">
+                  {row.label}
+                </p>
+
+                <p className="mt-1 text-xs font-bold text-slate-800">
+                  {row.value}
+                </p>
+              </div>
+            )
+          )}
+        </div>
+      </div>
+
+      <div className="border-t border-slate-100 px-4 py-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-extrabold text-slate-800">
+            결제 현황
+          </p>
+
+          <span
+            className={cn(
+              "inline-flex rounded-full border px-2.5 py-1 text-[11px] font-bold",
+              getPaymentStatusBadgeClass(
+                payment.paymentStatus
+              )
+            )}
+          >
+            {getPaymentStatusLabel(
+              payment.paymentStatus
+            )}
+          </span>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {[
+            {
+              label:
+                "예정금액",
+
+              value:
+                formatCurrency(
+                  payment.plannedAmount
+                ),
+            },
+            {
+              label:
+                "결제금액",
+
+              value:
+                formatCurrency(
+                  payment.paidAmount
+                ),
+            },
+            {
+              label:
+                "환불금액",
+
+              value:
+                formatCurrency(
+                  payment.refundedAmount
+                ),
+            },
+            {
+              label:
+                "실결제금액",
+
+              value:
+                formatCurrency(
+                  payment.actualPaidAmount
+                ),
+            },
+          ].map(
+            (
+              row
+            ) => (
+              <div
+                key={
+                  row.label
+                }
+                className="rounded-xl bg-slate-50 px-3 py-2.5"
+              >
+                <p className="text-[10px] font-bold text-slate-400">
+                  {row.label}
+                </p>
+
+                <p className="mt-1 text-xs font-bold text-slate-800">
+                  {row.value}
+                </p>
+              </div>
+            )
+          )}
+        </div>
+
+        <p className="mt-3 text-[11px] text-slate-500">
+          결제일 ·{" "}
+          {formatDateValue(
+            payment.paymentDate
+          )}
+        </p>
+      </div>
+
+      <div className="border-t border-slate-100 px-4 py-4">
+        <p className="text-xs font-extrabold text-slate-800">
+          실습 진행
+        </p>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          <span
+            className={cn(
+              "rounded-full border px-3 py-1.5 text-[11px] font-bold",
+              getStatusBadgeClass(
+                practiceRequiredLabel
+              )
+            )}
+          >
+            실습 ·{" "}
+            {practiceRequiredLabel}
+          </span>
+
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-600">
+            요청 ·{" "}
+            {toNumber(
+              practice.requestCount,
+              0
+            )}건
+          </span>
+
+          <span
+            className={cn(
+              "rounded-full border px-3 py-1.5 text-[11px] font-bold",
+              getStatusBadgeClass(
+                latestPractice
+                  ?.coordinationStatus ||
+                "확인 필요"
+              )
+            )}
+          >
+            섭외 ·{" "}
+            {latestPractice
+              ?.coordinationStatus ||
+              "확인 필요"}
+          </span>
+        </div>
+
+        {latestPractice && (
+          <div className="mt-3 rounded-xl bg-slate-50 px-3 py-3">
+            <p className="truncate text-xs font-bold text-slate-800">
+              {latestPractice
+                .institutionName ||
+                "실습기관 미지정"}
+            </p>
+
+            <p className="mt-1 text-[11px] leading-5 text-slate-500">
+              {latestPractice
+                .institutionAddress ||
+                "기관 주소 미입력"}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {semesters.length >
+        0 && (
+        <div className="border-t border-slate-100 px-4 py-4">
+          <p className="text-xs font-extrabold text-slate-800">
+            학기 진행 현황
+          </p>
+
+          <div className="mt-3 space-y-2">
+            {semesters
+              .slice(
+                0,
+                6
+              )
+              .map(
+                (
+                  semester,
+                  index
+                ) => {
+                  const institution =
+                    semester.actualInstitution ||
+                    semester.plannedInstitution ||
+                    "교육원 미입력";
+
+                  const startDate =
+                    semester.actualStartDate ||
+                    semester.plannedStartMonth ||
+                    null;
+
+                  return (
+                    <div
+                      key={
+                        semester.id ||
+                        `${semester.semesterNo}-${index}`
+                      }
+                      className="rounded-xl border border-slate-100 px-3 py-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-bold text-slate-800">
+                          {semester.semesterNo
+                            ? `${semester.semesterNo}학기`
+                            : `${index + 1}번째 학기`}
+                        </p>
+
+                        <span className="text-[10px] font-bold text-slate-400">
+                          {semester.plannedSubjectCount ??
+                            0}
+                          과목
+                        </span>
+                      </div>
+
+                      <p className="mt-1 truncate text-[11px] text-slate-500">
+                        {institution}
+                      </p>
+
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        {formatDateValue(
+                          startDate
+                        )}
+                      </p>
+                    </div>
+                  );
+                }
+              )}
+          </div>
+        </div>
+      )}
+
+      {missingFields.length >
+        0 && (
+        <div className="border-t border-red-100 bg-red-50/60 px-4 py-4">
+          <p className="text-xs font-extrabold text-red-800">
+            누락정보
+          </p>
+
+          <div className="mt-2 flex flex-wrap gap-2">
+            {missingFields.map(
+              (
+                field
+              ) => (
+                <span
+                  key={
+                    field
+                  }
+                  className="rounded-full border border-red-200 bg-white px-2.5 py-1 text-[11px] font-bold text-red-700"
+                >
+                  {field}
+                </span>
+              )
+            )}
+          </div>
+        </div>
+      )}
+
+<div className="border-t border-slate-100 px-4 py-4">
+  <div className="flex items-center justify-between gap-3">
+    <p className="text-xs font-bold text-slate-700">
+      예정 일정
+    </p>
+
+    <span className="text-[11px] font-bold text-slate-400">
+      {schedules.length}건
+    </span>
+  </div>
+
+  {schedules.length >
+  0 ? (
+    <div className="mt-3 space-y-2">
+      {schedules
+        .slice(
+          0,
+          5
+        )
+        .map(
+          (
+            schedule,
+            index
+          ) => (
+            <div
+              key={
+                schedule.id ||
+                `schedule-${index}`
+              }
+              className="rounded-xl border border-blue-100 bg-blue-50/50 px-3 py-3"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-bold text-slate-800">
+                    {schedule.title ||
+                      "일정"}
+                  </p>
+
+                  <p className="mt-1 text-[11px] font-medium text-blue-700">
+                    {formatScheduleDateTime(
+                      schedule
+                    )}
+                  </p>
+
+                  {schedule.description && (
+                    <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-slate-500">
+                      {schedule.description}
+                    </p>
+                  )}
+                </div>
+
+                {schedule.isNotified ===
+                  true && (
+                  <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">
+                    알림 완료
+                  </span>
+                )}
+              </div>
+
+              {schedule.ownerUserName && (
+                <p className="mt-2 text-[10px] text-slate-400">
+                  등록자 ·{" "}
+                  {schedule.ownerUserName}
+                </p>
+              )}
+            </div>
+          )
+        )}
+
+      {schedules.length >
+        5 && (
+        <p className="text-center text-[11px] font-medium text-slate-400">
+          외{" "}
+          {schedules.length -
+            5}
+          건의 일정이 있습니다.
+        </p>
+      )}
+    </div>
+  ) : (
+    <p className="mt-2 text-xs text-slate-500">
+      연결된 예정 일정이 없습니다.
+    </p>
+  )}
+</div>
+
+      <div className="border-t border-slate-100 px-4 py-4">
+        <p className="text-xs font-extrabold text-slate-800">
+          다음 처리 업무
+        </p>
+
+        {nextActions.length >
+        0 ? (
+          <div className="mt-3 space-y-2">
+            {nextActions
+              .slice(
+                0,
+                8
+              )
+              .map(
+                (
+                  action,
+                  index
+                ) => {
+                  const isHigh =
+                    action.priority ===
+                    "high";
+
+                  const isMedium =
+                    action.priority ===
+                    "medium";
+
+                  return (
+                    <div
+                      key={
+                        action.code ||
+                        `${action.title}-${index}`
+                      }
+                      className={cn(
+                        "rounded-xl border px-3 py-3",
+                        isHigh
+                          ? "border-red-200 bg-red-50/60"
+                          : isMedium
+                            ? "border-amber-200 bg-amber-50/60"
+                            : "border-slate-200 bg-slate-50"
+                      )}
+                    >
+                      <div className="flex items-start gap-2">
+                        <span
+                          className={cn(
+                            "mt-1.5 h-2 w-2 shrink-0 rounded-full",
+                            isHigh
+                              ? "bg-red-500"
+                              : isMedium
+                                ? "bg-amber-500"
+                                : "bg-slate-400"
+                          )}
+                        />
+
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-800">
+                            {action.title ||
+                              "확인 필요"}
+                          </p>
+
+                          {action.message && (
+                            <p className="mt-1 text-[11px] leading-5 text-slate-600">
+                              {action.message}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+              )}
+          </div>
+        ) : (
+          <p className="mt-2 text-xs text-slate-500">
+            현재 생성된 다음 업무가 없습니다.
+          </p>
+        )}
+      </div>
+
+      {studentId >
+        0 && (
+        <div className="border-t border-slate-100 px-4 py-3">
+          <button
+            type="button"
+            onClick={() =>
+              onOpenStudent?.(
+                studentId
+              )
+            }
+            className="flex h-10 w-full items-center justify-center rounded-xl bg-[#2F6B3B] text-xs font-bold text-white transition hover:bg-[#285d33]"
           >
             학생 상세보기
           </button>
@@ -2575,6 +4222,7 @@ function StudentRegistrationPreviewCard({
   onConfirmPendingAction,
   onCancelPendingAction,
   onOpenStudent,
+  onOpenConsultation,
 }: {
   message:
     DashboardAIMessage;
@@ -2595,19 +4243,25 @@ function StudentRegistrationPreviewCard({
   onOpenStudent?: (
     studentId: number
   ) => void;
+
+onOpenConsultation?: (
+  consultationId: number
+) => void;
 }) {
   const pendingAction =
     message.data
       ?.pendingAction ||
     null;
 
-  if (!pendingAction) {
-    return (
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-xs leading-5 text-amber-800">
-        학생 등록 미리보기 정보를 찾을 수 없습니다.
-      </div>
-    );
-  }
+if (
+  !pendingAction
+) {
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-xs leading-5 text-amber-800">
+      승인할 작업 정보를 찾을 수 없습니다.
+    </div>
+  );
+}
 
   const preview =
     pendingAction
@@ -2660,6 +4314,29 @@ const isDocumentImport =
   ).startsWith(
     "document_"
   );
+const isScheduleCreate =
+  String(
+    pendingAction
+      .actionType ||
+    ""
+  ) ===
+  "schedule_create";
+
+const isConsultationUpdate =
+  String(
+    pendingAction
+      .actionType ||
+    ""
+  ) ===
+  "consultation_update";
+
+const isStudentUpdate =
+  String(
+    pendingAction
+      .actionType ||
+    ""
+  ) ===
+  "student_update";
 
  const canConfirm =
   status ===
@@ -2681,6 +4358,10 @@ const isDocumentImport =
     status ===
     "failed";
 
+const isExpired =
+  status ===
+  "expired";
+
   const result =
     message.data
       ?.registrationResult ||
@@ -2695,20 +4376,47 @@ const isDocumentImport =
       0
     );
 
+const consultationId =
+  toNumber(
+    result?.consultationId ||
+    pendingAction
+      .executionResult
+      ?.consultationId ||
+    pendingAction
+      .consultationId,
+    0
+  );
+
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
       <div className="border-b border-slate-100 px-4 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">
-  {isDocumentImport
-    ? "AI 문서 CRM 반영"
-    : "AI 학생 통합등록"}
+{isStudentUpdate
+  ? "AI 학생정보 수정"
+  : isConsultationUpdate
+    ? "AI 상담DB 수정"
+    : isScheduleCreate
+      ? "AI 일정 등록"
+      : isDocumentImport
+        ? "AI 문서 CRM 반영"
+        : "AI 학생 통합등록"}
 </p>
 
             <p className="mt-1 text-base font-extrabold text-slate-900">
-              {preview.title ||
-                "등록예정 학생 생성 및 과목설계"}
+             {preview.title ||
+  (
+    isStudentUpdate
+      ? "학생 기본정보 수정"
+      : isConsultationUpdate
+        ? "상담DB 정보 수정"
+        : isScheduleCreate
+          ? "학생 일정 등록"
+          : isDocumentImport
+            ? "문서 CRM 반영"
+            : "등록예정 학생 생성 및 과목설계"
+  )}
             </p>
 
             {preview.summary && (
@@ -2723,25 +4431,28 @@ const isDocumentImport =
               "inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-bold",
 
               isExecuted
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : isCancelled
-                  ? "border-slate-200 bg-slate-50 text-slate-600"
-                  : isFailed
-                    ? "border-red-200 bg-red-50 text-red-700"
-                    : canConfirm
-                      ? "border-blue-200 bg-blue-50 text-blue-700"
-                      : "border-amber-200 bg-amber-50 text-amber-700"
+  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+  : isCancelled ||
+      isExpired
+    ? "border-slate-200 bg-slate-50 text-slate-600"
+    : isFailed
+      ? "border-red-200 bg-red-50 text-red-700"
+      : canConfirm
+        ? "border-blue-200 bg-blue-50 text-blue-700"
+        : "border-amber-200 bg-amber-50 text-amber-700"
             )}
           >
-            {isExecuted
-              ? "실행 완료"
-              : isCancelled
-                ? "취소됨"
-                : isFailed
-                  ? "실행 실패"
-                  : canConfirm
-                    ? "승인 가능"
-                    : "확인 필요"}
+           {isExecuted
+  ? "실행 완료"
+  : isCancelled
+    ? "취소됨"
+    : isExpired
+      ? "승인 만료"
+      : isFailed
+        ? "실행 실패"
+        : canConfirm
+          ? "승인 가능"
+          : "확인 필요"}
           </span>
         </div>
       </div>
@@ -2894,6 +4605,84 @@ const sectionTitle =
         </div>
       )}
 
+{(
+  isConsultationUpdate ||
+  isStudentUpdate
+) &&
+  asArray<DashboardAIPendingActionPreviewChange>(
+    preview.changes
+  ).length > 0 && (
+    <div className="border-t border-slate-100 px-4 py-4">
+      <p className="text-xs font-extrabold text-slate-800">
+        변경 예정 내용
+      </p>
+
+      <div className="mt-3 space-y-3">
+        {asArray<DashboardAIPendingActionPreviewChange>(
+          preview.changes
+        ).map(
+          (
+            change,
+            index
+          ) => {
+            const label =
+              String(
+                change.label ||
+                `변경 항목 ${index + 1}`
+              );
+
+            return (
+              <div
+                key={`${label}-${index}`}
+                className="overflow-hidden rounded-xl border border-slate-200"
+              >
+                <div className="border-b border-slate-100 bg-slate-50 px-3 py-2.5">
+                  <p className="text-xs font-bold text-slate-800">
+                    {label}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 divide-x divide-slate-100">
+                  <div className="min-w-0 px-3 py-3">
+                    <p className="text-[10px] font-bold text-slate-400">
+                      변경 전
+                    </p>
+
+                    <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-slate-600">
+                      {formatPreviewValue(
+                        change.before
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="min-w-0 bg-emerald-50/40 px-3 py-3">
+                    <p className="text-[10px] font-bold text-emerald-600">
+                      변경 후
+                    </p>
+
+                    <p className="mt-1 whitespace-pre-wrap break-words text-xs font-bold leading-5 text-slate-800">
+                      {formatPreviewValue(
+                        change.after
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {change.description && (
+                  <div className="border-t border-slate-100 px-3 py-2.5">
+                    <p className="text-[11px] leading-4 text-slate-500">
+                      {change.description}
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          }
+        )}
+      </div>
+    </div>
+  )}
+
       {executionSteps.length >
         0 && (
         <div className="border-t border-slate-100 px-4 py-4">
@@ -2934,20 +4723,60 @@ const sectionTitle =
           </div>
         )}
 
-      {isExecuted &&
-  result && (
+     {isExecuted &&
+  result &&
+  !isConsultationUpdate &&
+  !isStudentUpdate && (
     <div className="border-t border-emerald-100 bg-emerald-50/70 px-4 py-4">
       <div className="flex items-center gap-2 text-emerald-700">
         <CheckCircle2 className="h-4 w-4" />
 
         <p className="text-xs font-bold">
-          {isDocumentImport
-            ? "문서 CRM 반영 완료"
-            : "등록 저장 완료"}
-        </p>
+  {isScheduleCreate
+    ? "일정 등록 완료"
+    : isDocumentImport
+      ? "문서 CRM 반영 완료"
+      : "등록 저장 완료"}
+</p>
       </div>
 
-      {isDocumentImport ? (
+      {isScheduleCreate ? (
+  <div className="mt-3 grid grid-cols-2 gap-2">
+    <div className="rounded-xl bg-white px-3 py-2.5">
+      <p className="text-[10px] font-bold text-slate-400">
+        일정 번호
+      </p>
+
+      <p className="mt-1 text-xs font-black text-slate-800">
+        {result.scheduleId
+          ? `#${result.scheduleId}`
+          : "확인 필요"}
+      </p>
+    </div>
+
+    <div className="rounded-xl bg-white px-3 py-2.5">
+      <p className="text-[10px] font-bold text-slate-400">
+        등록 상태
+      </p>
+
+      <p className="mt-1 text-xs font-black text-emerald-700">
+        등록 완료
+      </p>
+    </div>
+
+    {result.message && (
+      <div className="col-span-2 rounded-xl bg-white px-3 py-2.5">
+        <p className="text-[10px] font-bold text-slate-400">
+          처리 결과
+        </p>
+
+        <p className="mt-1 text-xs leading-5 text-slate-700">
+          {result.message}
+        </p>
+      </div>
+    )}
+  </div>
+) : isDocumentImport ? (
         <div className="mt-3 grid grid-cols-2 gap-2">
           <div className="rounded-xl bg-white px-3 py-2.5">
             <p className="text-[10px] font-bold text-slate-400">
@@ -3052,6 +4881,52 @@ const sectionTitle =
     </div>
   )}
 
+{isConsultationUpdate &&
+  isExecuted && (
+    <div className="border-t border-emerald-100 bg-emerald-50/70 px-4 py-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+          <CheckCircle2 className="h-5 w-5" />
+        </div>
+
+        <div className="min-w-0">
+          <p className="text-xs font-extrabold text-emerald-800">
+            상담DB 수정 완료
+          </p>
+
+          <p className="mt-1 text-[11px] leading-5 text-emerald-700">
+            {result?.message ||
+              message.content ||
+              "상담DB 정보가 정상적으로 수정되었습니다."}
+          </p>
+        </div>
+      </div>
+    </div>
+  )}
+
+{isStudentUpdate &&
+  isExecuted && (
+    <div className="border-t border-emerald-100 bg-emerald-50/70 px-4 py-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+          <CheckCircle2 className="h-5 w-5" />
+        </div>
+
+        <div className="min-w-0">
+          <p className="text-xs font-extrabold text-emerald-800">
+            학생 기본정보 수정 완료
+          </p>
+
+          <p className="mt-1 text-[11px] leading-5 text-emerald-700">
+            {result?.message ||
+              message.content ||
+              "학생 기본정보가 정상적으로 수정되었습니다."}
+          </p>
+        </div>
+      </div>
+    </div>
+  )}
+
       {status ===
         "awaiting_confirmation" && (
         <div className="grid grid-cols-2 gap-2 border-t border-slate-100 px-4 py-3">
@@ -3095,15 +4970,23 @@ const sectionTitle =
             ) : (
               <ClipboardCheck className="h-4 w-4" />
             )}
-           {isDocumentImport
-  ? "확인 후 CRM 반영"
-  : "확인 후 등록"}
+           {isStudentUpdate
+  ? "확인 후 학생정보 수정"
+  : isConsultationUpdate
+    ? "확인 후 상담 수정"
+    : isScheduleCreate
+      ? "확인 후 일정 등록"
+      : isDocumentImport
+        ? "확인 후 CRM 반영"
+        : "확인 후 등록"}
           </button>
         </div>
       )}
 
       {isExecuted &&
-  studentId > 0 && (
+  studentId > 0 &&
+  !isScheduleCreate &&
+  !isConsultationUpdate && (
     <div className="border-t border-slate-100 px-4 py-3">
       <button
         type="button"
@@ -3114,9 +4997,27 @@ const sectionTitle =
         }
         className="flex h-10 w-full items-center justify-center rounded-xl bg-[#2F6B3B] text-xs font-bold text-white transition hover:bg-[#285d33]"
       >
-        {isDocumentImport
-          ? "학생 상세보기"
-          : "생성된 학생 상세보기"}
+       {isStudentUpdate ||
+isDocumentImport
+  ? "학생 상세보기"
+  : "생성된 학생 상세보기"}
+      </button>
+    </div>
+  )}
+{isExecuted &&
+  isConsultationUpdate &&
+  consultationId > 0 && (
+    <div className="border-t border-slate-100 px-4 py-3">
+      <button
+        type="button"
+        onClick={() =>
+          onOpenConsultation?.(
+            consultationId
+          )
+        }
+        className="flex h-10 w-full items-center justify-center rounded-xl bg-[#2F6B3B] text-xs font-bold text-white transition hover:bg-[#285d33]"
+      >
+        수정된 상담DB 보기
       </button>
     </div>
   )}
@@ -3869,6 +5770,8 @@ onRequestDocumentImport?: (
   message.kind ===
     "student_summary" ||
   message.kind ===
+    "student_dashboard" ||
+  message.kind ===
     "student_risk" ||
   message.kind ===
     "organization_risk" ||
@@ -3914,14 +5817,32 @@ return (
   />
 )}
 
-{message.kind === "student_summary" && (
+{message.kind ===
+  "student_summary" && (
   <StudentSummaryCard
-    message={message}
-    onOpenStudent={onOpenStudent}
+    message={
+      message
+    }
+    onOpenStudent={
+      onOpenStudent
+    }
   />
 )}
 
-    {message.kind === "student_risk" && (
+{message.kind ===
+  "student_dashboard" && (
+  <StudentDashboardCard
+    message={
+      message
+    }
+    onOpenStudent={
+      onOpenStudent
+    }
+  />
+)}
+
+{message.kind ===
+  "student_risk" && (
       <StudentRiskCard
         message={message}
         onOpenStudent={onOpenStudent}
@@ -3946,6 +5867,9 @@ return (
         onOpenStudent={
           onOpenStudent
         }
+onOpenConsultation={
+  onOpenConsultation
+}
       />
     )}
 
@@ -4055,6 +5979,7 @@ export default function DashboardAIChatBox({
   onSelectStudent,
   onConfirmPendingAction,
   onCancelPendingAction,
+  onClearChatHistory,
   onClearSelectedStudent,
   onOpenStudent,
   onOpenConsultation,
@@ -4208,14 +6133,47 @@ const handleImagePaste =
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#F7F9F8]">
       <div className="border-b border-slate-200 bg-white px-4 py-3">
-        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
-          현재 분석 범위
+  <div className="flex items-center justify-between gap-3">
+    <div className="min-w-0">
+      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+        현재 분석 범위
+      </p>
+
+      <div className="mt-1 flex min-w-0 items-center gap-2">
+        <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+
+        <p className="truncate text-sm font-bold text-slate-900">
+          {scopeLabel}
         </p>
-        <div className="mt-1 flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-emerald-500" />
-          <p className="truncate text-sm font-bold text-slate-900">{scopeLabel}</p>
-        </div>
       </div>
+    </div>
+
+    <button
+      type="button"
+      onClick={() => {
+        void onClearChatHistory?.();
+      }}
+      disabled={
+        isLoading ||
+        messages.length === 0 ||
+        !onClearChatHistory
+      }
+      title="AI 대화 전체 삭제"
+      aria-label="AI 대화 전체 삭제"
+      className={cn(
+        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-[11px] font-bold transition",
+        isLoading ||
+          messages.length === 0 ||
+          !onClearChatHistory
+          ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+          : "border-red-200 bg-white text-red-600 hover:bg-red-50"
+      )}
+    >
+      <Trash2 className="h-3.5 w-3.5" />
+      대화 삭제
+    </button>
+  </div>
+</div>
 
       {selectedStudent && (
         <div className="border-b border-emerald-100 bg-emerald-50/80 px-4 py-3">
@@ -4293,6 +6251,7 @@ const handleImagePaste =
                  <div
   className={cn(
         message.kind === "student_summary" ||
+message.kind === "student_dashboard" ||
 message.kind === "student_risk" ||
 message.kind === "organization_risk" ||
 message.kind === "student_registration_preview" ||
@@ -4313,14 +6272,15 @@ message.kind === "document_analysis"
                       <div
   className={cn(
     "text-sm leading-6",
-        message.kind === "student_summary" ||
-message.kind === "student_risk" ||
-message.kind === "organization_risk" ||
-message.kind === "student_registration_preview" ||
-message.kind === "student_registration_result" ||
-message.kind === "document_analysis"
-  ? "rounded-none border-0 bg-transparent p-0 shadow-none"
-  : "rounded-2xl rounded-bl-md border px-4 py-3 shadow-sm",
+    message.kind === "student_summary" ||
+    message.kind === "student_dashboard" ||
+    message.kind === "student_risk" ||
+    message.kind === "organization_risk" ||
+    message.kind === "student_registration_preview" ||
+    message.kind === "student_registration_result" ||
+    message.kind === "document_analysis"
+      ? "rounded-none border-0 bg-transparent p-0 shadow-none"
+      : "rounded-2xl rounded-bl-md border px-4 py-3 shadow-sm",
     isError
       ? "border-red-200 bg-red-50 text-red-800"
       : message.kind === "warning"

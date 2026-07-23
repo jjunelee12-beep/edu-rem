@@ -1,4 +1,8 @@
-import { useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
@@ -17,6 +21,46 @@ function nowLabel() {
   });
 }
 
+function formatChatTime(
+  value:
+    unknown
+) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return "";
+  }
+
+  const date =
+    new Date(
+      String(value)
+    );
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return "";
+  }
+
+  return date.toLocaleTimeString(
+    "ko-KR",
+    {
+      hour12:
+        false,
+
+      hour:
+        "2-digit",
+
+      minute:
+        "2-digit",
+    }
+  );
+}
+
 function getErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) return error.message;
   return "AI 요청을 처리하는 중 오류가 발생했습니다.";
@@ -31,17 +75,35 @@ function getMessageKind(response: any): DashboardAIMessageKind {
   );
 
   if (
-    response?.pendingAction ||
-    response?.registrationPreview
-  ) {
-    return "student_registration_preview";
-  }
+  response?.pendingAction
+) {
+  return "student_registration_preview";
+}
 
-  if (toolName === "student.summary") {
+if (
+  response?.registrationPreview
+) {
+  return "student_registration_preview";
+}
+
+    if (
+    toolName ===
+    "student.summary"
+  ) {
     return "student_summary";
   }
 
-  if (toolName === "risk.studentDetail") {
+  if (
+    toolName ===
+    "student.dashboard"
+  ) {
+    return "student_dashboard";
+  }
+
+  if (
+    toolName ===
+    "risk.studentDetail"
+  ) {
     return "student_risk";
   }
 
@@ -65,6 +127,143 @@ function getMessageKind(response: any): DashboardAIMessageKind {
   }
 
   return "text";
+}
+
+function toDashboardAIMessage(
+  row:
+    any
+): DashboardAIMessage {
+  const allowedKinds =
+    new Set<
+      DashboardAIMessageKind
+        >([
+      "text",
+      "error",
+      "warning",
+      "search_result",
+      "student_summary",
+      "student_dashboard",
+      "student_risk",
+      "organization_risk",
+      "student_registration_preview",
+      "student_registration_result",
+      "document_analysis",
+    ]);
+
+  const rawKind =
+    String(
+      row?.kind ||
+      "text"
+    );
+
+  const kind:
+    DashboardAIMessageKind =
+      allowedKinds.has(
+        rawKind as
+          DashboardAIMessageKind
+      )
+        ? rawKind as
+            DashboardAIMessageKind
+        : "text";
+
+  return {
+    id:
+      String(
+        row?.id ||
+        `history-${Date.now()}-${Math.random()}`
+      ),
+
+    role:
+      row?.role ===
+        "user"
+        ? "user"
+        : "assistant",
+
+    content:
+      String(
+        row?.content ||
+        ""
+      ),
+
+    createdAt:
+      formatChatTime(
+        row?.createdAt
+      ),
+
+    kind,
+
+    data:
+      row?.data &&
+      typeof row.data ===
+        "object"
+        ? row.data
+        : null,
+  };
+}
+
+function collapsePendingActionMessages(
+  messages:
+    DashboardAIMessage[]
+) {
+  const latestIndexByPendingActionId =
+    new Map<
+      number,
+      number
+    >();
+
+  messages.forEach(
+    (
+      message,
+      index
+    ) => {
+      const pendingActionId =
+        Number(
+          message.data
+            ?.pendingAction
+            ?.id ||
+          0
+        );
+
+      if (
+        pendingActionId >
+        0
+      ) {
+        latestIndexByPendingActionId.set(
+          pendingActionId,
+          index
+        );
+      }
+    }
+  );
+
+  return messages.filter(
+    (
+      message,
+      index
+    ) => {
+      const pendingActionId =
+        Number(
+          message.data
+            ?.pendingAction
+            ?.id ||
+          0
+        );
+
+      if (
+        pendingActionId <=
+        0
+      ) {
+        return true;
+      }
+
+      return (
+        latestIndexByPendingActionId.get(
+          pendingActionId
+        ) ===
+        index
+      );
+    }
+  );
 }
 
 function getOrganizationSlug(user: any) {
@@ -169,6 +368,12 @@ const documentImportPreviewMutation =
   const cancelPendingActionMutation =
     trpc.ai.pendingAction.cancel.useMutation();
 
+const saveChatMessageMutation =
+  trpc.ai.saveChatMessage.useMutation();
+
+const clearChatHistoryMutation =
+  trpc.ai.clearChatHistory.useMutation();
+
   const [messages, setMessages] = useState<DashboardAIMessage[]>([]);
   const [selectedStudent, setSelectedStudent] =
     useState<DashboardAISelectedStudent | null>(null);
@@ -180,6 +385,24 @@ const documentImportPreviewMutation =
   user?.role === "host" ||
   user?.role === "superhost";
 
+const chatHistoryQuery =
+  trpc.ai.chatHistory.useQuery(
+    {
+      limit:
+        500,
+    },
+    {
+      enabled:
+        canUseAI,
+
+      refetchOnWindowFocus:
+        false,
+
+      retry:
+        1,
+    }
+  );
+
   const scopeLabel = useMemo(() => {
   if (selectedStudent) return selectedStudent.clientName;
   if (user?.role === "staff") return "내 담당 학생";
@@ -188,6 +411,146 @@ const documentImportPreviewMutation =
   if (user?.role === "superhost") return "관리 대상 조직 전체";
   return "접근 가능한 CRM 데이터";
 }, [selectedStudent, user?.role]);
+
+useEffect(
+  () => {
+    if (
+      !chatHistoryQuery
+        .data
+        ?.success
+    ) {
+      return;
+    }
+
+    const historyMessages =
+      Array.isArray(
+        chatHistoryQuery
+          .data
+          .messages
+      )
+        ? chatHistoryQuery
+            .data
+            .messages
+            .map(
+              toDashboardAIMessage
+            )
+            .filter(
+              (
+                message
+              ) =>
+                message.content
+                  .trim()
+                  .length >
+                0
+            )
+        : [];
+
+    setMessages(
+  collapsePendingActionMessages(
+    historyMessages
+  )
+);
+  },
+  [
+    chatHistoryQuery
+      .data,
+  ]
+);
+
+useEffect(
+  () => {
+    if (
+      !chatHistoryQuery
+        .error
+    ) {
+      return;
+    }
+
+    setErrorMessage(
+      getErrorMessage(
+        chatHistoryQuery
+          .error
+      )
+    );
+  },
+  [
+    chatHistoryQuery
+      .error,
+  ]
+);
+
+const saveSpecialChatMessage =
+  async (
+    message:
+      DashboardAIMessage,
+
+    options?: {
+      selectedStudentId?:
+        number |
+        null;
+
+      throwOnError?:
+        boolean;
+    }
+  ) => {
+    const content =
+      String(
+        message.content ||
+        ""
+      ).trim();
+
+    if (
+      !content
+    ) {
+      return null;
+    }
+
+    try {
+      const response =
+        await saveChatMessageMutation
+          .mutateAsync({
+            role:
+              message.role,
+
+            kind:
+              message.kind ||
+              "text",
+
+            content,
+
+            data:
+              message.data &&
+              typeof message.data ===
+                "object"
+                ? message.data
+                : null,
+
+            selectedStudentId:
+              options
+                ?.selectedStudentId ??
+              selectedStudent
+                ?.id ??
+              null,
+          });
+
+      return response;
+    } catch (
+      error
+    ) {
+      console.error(
+        "[AI CHAT] 특수 메시지 저장 실패",
+        error
+      );
+
+      if (
+        options?.throwOnError
+      ) {
+        throw error;
+      }
+
+      return null;
+    }
+  };
 
   const withOrgPath = (path: string) => {
     const slug = getOrganizationSlug(user);
@@ -257,6 +620,18 @@ const documentImportPreviewMutation =
           "document_"
         );
 
+const isScheduleCreate =
+  actionType ===
+  "schedule_create";
+
+const isConsultationUpdate =
+  actionType ===
+  "consultation_update";
+
+const isStudentUpdate =
+  actionType ===
+  "student_update";
+
       const studentId =
         Number(
           response?.studentId ||
@@ -268,18 +643,138 @@ const documentImportPreviewMutation =
           0
         );
 
+const consultationId =
+  Number(
+    response?.consultationId ||
+    pendingAction
+      ?.consultationId ||
+    pendingAction
+      ?.executionResult
+      ?.consultationId ||
+    0
+  );
+
+const resultContent =
+  response?.message ||
+  (
+    isStudentUpdate
+      ? "학생 기본정보 수정이 완료되었습니다."
+      : isConsultationUpdate
+        ? "상담DB 정보 수정이 완료되었습니다."
+        : isScheduleCreate
+          ? "일정 등록이 완료되었습니다."
+          : isDocumentImport
+            ? "AI 문서 분석 결과의 CRM 반영이 완료되었습니다."
+            : "등록예정 학생 생성 및 과목설계 저장이 완료되었습니다."
+  );
+
+const registrationResult = {
+  success:
+    response?.success ===
+    true,
+
+consultationId:
+  consultationId > 0
+    ? consultationId
+    : null,
+
+  studentId:
+    studentId > 0
+      ? studentId
+      : null,
+
+scheduleId:
+  Number(
+    response?.scheduleId ||
+    pendingAction
+      ?.executionResult
+      ?.scheduleId ||
+    0
+  ) ||
+  null,
+
+  planId:
+    Number(
+      response?.planId ||
+      pendingAction
+        ?.executionResult
+        ?.planId ||
+      0
+    ) ||
+    null,
+
+  semesterIds:
+    Array.isArray(
+      response?.semesterIds
+    )
+      ? response.semesterIds
+      : Array.isArray(
+          pendingAction
+            ?.executionResult
+            ?.semesterIds
+        )
+        ? pendingAction
+            .executionResult
+            .semesterIds
+        : [],
+
+  planSubjectIds:
+    Array.isArray(
+      response?.planSubjectIds
+    )
+      ? response.planSubjectIds
+      : Array.isArray(
+          pendingAction
+            ?.executionResult
+            ?.planSubjectIds
+        )
+        ? pendingAction
+            .executionResult
+            .planSubjectIds
+        : [],
+
+  transferSubjectIds:
+    Array.isArray(
+      response?.transferSubjectIds
+    )
+      ? response.transferSubjectIds
+      : Array.isArray(
+          pendingAction
+            ?.executionResult
+            ?.transferSubjectIds
+        )
+        ? pendingAction
+            .executionResult
+            .transferSubjectIds
+        : [],
+
+  practiceSaved:
+    response?.practiceSaved ===
+      true ||
+    pendingAction
+      ?.executionResult
+      ?.practiceSaved ===
+      true,
+
+  paymentUpdated:
+    response?.paymentUpdated ===
+      true ||
+    pendingAction
+      ?.executionResult
+      ?.paymentUpdated ===
+      true,
+
+  message:
+    resultContent,
+};
+
       replacePendingActionMessage(
         pendingActionId,
         (message) => ({
           ...message,
 
           content:
-            response?.message ||
-            (
-              isDocumentImport
-                ? "AI 문서 분석 결과의 CRM 반영이 완료되었습니다."
-                : "등록예정 학생 생성 및 과목설계 저장이 완료되었습니다."
-            ),
+  resultContent,
 
           kind:
             "student_registration_result",
@@ -293,114 +788,52 @@ const documentImportPreviewMutation =
                 ?.pendingAction ||
               null,
 
-            registrationResult: {
-              success:
-                response?.success ===
-                true,
-
-              studentId:
-                studentId > 0
-                  ? studentId
-                  : null,
-
-              planId:
-                Number(
-                  response?.planId ||
-                  pendingAction
-                    ?.executionResult
-                    ?.planId ||
-                  0
-                ) ||
-                null,
-
-              semesterIds:
-                Array.isArray(
-                  response
-                    ?.semesterIds
-                )
-                  ? response
-                      .semesterIds
-                  : Array.isArray(
-                      pendingAction
-                        ?.executionResult
-                        ?.semesterIds
-                    )
-                    ? pendingAction
-                        .executionResult
-                        .semesterIds
-                    : [],
-
-              planSubjectIds:
-                Array.isArray(
-                  response
-                    ?.planSubjectIds
-                )
-                  ? response
-                      .planSubjectIds
-                  : Array.isArray(
-                      pendingAction
-                        ?.executionResult
-                        ?.planSubjectIds
-                    )
-                    ? pendingAction
-                        .executionResult
-                        .planSubjectIds
-                    : [],
-
-              transferSubjectIds:
-                Array.isArray(
-                  response
-                    ?.transferSubjectIds
-                )
-                  ? response
-                      .transferSubjectIds
-                  : Array.isArray(
-                      pendingAction
-                        ?.executionResult
-                        ?.transferSubjectIds
-                    )
-                    ? pendingAction
-                        .executionResult
-                        .transferSubjectIds
-                    : [],
-
-              practiceSaved:
-                response
-                  ?.practiceSaved ===
-                  true ||
-                pendingAction
-                  ?.executionResult
-                  ?.practiceSaved ===
-                  true,
-
-              paymentUpdated:
-                response
-                  ?.paymentUpdated ===
-                  true ||
-                pendingAction
-                  ?.executionResult
-                  ?.paymentUpdated ===
-                  true,
-
-              message:
-                response?.message ||
-                pendingAction
-                  ?.executionResult
-                  ?.message ||
-                (
-                  isDocumentImport
-                    ? "AI 문서 분석 결과의 CRM 반영이 완료되었습니다."
-                    : "등록예정 학생 생성 및 과목설계 저장이 완료되었습니다."
-                ),
+            registrationResult,
             },
           },
         })
       );
 
-      if (
-        studentId > 0 &&
-        !isDocumentImport
-      ) {
+await saveSpecialChatMessage(
+  {
+    id:
+      `assistant-registration-result-${Date.now()}`,
+
+    role:
+      "assistant",
+
+    content:
+      resultContent,
+
+    createdAt:
+      nowLabel(),
+
+    kind:
+      "student_registration_result",
+
+    data: {
+      pendingAction,
+
+      registrationResult,
+    },
+  },
+  {
+  selectedStudentId:
+    studentId > 0
+      ? studentId
+      : pendingAction?.studentId ??
+        selectedStudent?.id ??
+        null,
+}
+);
+
+    if (
+  studentId > 0 &&
+  !isDocumentImport &&
+  !isScheduleCreate &&
+  !isConsultationUpdate &&
+  !isStudentUpdate
+) {
         setSelectedStudent({
           id:
             studentId,
@@ -436,6 +869,41 @@ const documentImportPreviewMutation =
             "student_registration_preview",
         })
       );
+
+await saveSpecialChatMessage(
+  {
+    id:
+      `assistant-registration-error-${Date.now()}`,
+
+    role:
+      "assistant",
+
+    content:
+      message,
+
+    createdAt:
+      nowLabel(),
+
+    kind:
+      "error",
+
+    data: {
+      pendingAction: {
+        id:
+          pendingActionId,
+
+        version:
+          expectedVersion,
+      },
+    },
+  },
+  {
+    selectedStudentId:
+      selectedStudent
+        ?.id ??
+      null,
+  }
+);
     }
   };
 
@@ -471,35 +939,112 @@ const isDocumentImport =
     "document_"
   );
 
+const isScheduleCreate =
+  actionType ===
+  "schedule_create";
+
+const isConsultationUpdate =
+  actionType ===
+  "consultation_update";
+
+const isStudentUpdate =
+  actionType ===
+  "student_update";
+
+const cancelledContent =
+  response?.message ||
+  (
+    isStudentUpdate
+      ? "학생 기본정보 수정 초안이 취소되었습니다."
+      : isConsultationUpdate
+        ? "상담DB 수정 초안이 취소되었습니다."
+        : isScheduleCreate
+          ? "일정 등록 초안이 취소되었습니다."
+          : isDocumentImport
+            ? "문서 CRM 반영 초안이 취소되었습니다."
+            : "학생 등록 초안이 취소되었습니다."
+  );
+
+const cancelledPendingAction =
+  pendingAction
+    ? {
+        ...pendingAction,
+
+        status:
+          "cancelled",
+      }
+    : {
+        id:
+          pendingActionId,
+
+        version:
+          expectedVersion,
+
+        actionType:
+          actionType ||
+          null,
+
+        status:
+          "cancelled",
+      };
+
         replacePendingActionMessage(
           pendingActionId,
           (message) => ({
             ...message,
 
            content:
-  response?.message ||
-  (
-    isDocumentImport
-      ? "문서 CRM 반영 초안이 취소되었습니다."
-      : "학생 등록 초안이 취소되었습니다."
-  ),
+  cancelledContent,
 
             data: {
               ...message.data,
 
-              pendingAction:
-                pendingAction
-                  ? pendingAction
-                  : {
-                      ...message.data
-                        ?.pendingAction,
+              pendingAction: {
+  ...message.data
+    ?.pendingAction,
 
-                      status:
-                        "cancelled",
-                    },
+  ...cancelledPendingAction,
+
+  status:
+    "cancelled",
+},
             },
           })
         );
+
+await saveSpecialChatMessage(
+  {
+    id:
+      `assistant-registration-cancelled-${Date.now()}`,
+
+    role:
+      "assistant",
+
+    content:
+      cancelledContent,
+
+    createdAt:
+      nowLabel(),
+
+    kind:
+      "student_registration_preview",
+
+    data: {
+      pendingAction: {
+        ...cancelledPendingAction,
+
+        status:
+          "cancelled",
+      },
+    },
+  },
+  {
+    selectedStudentId:
+      cancelledPendingAction
+        ?.studentId ??
+      null,
+  }
+);
       } catch (error) {
         const message =
           getErrorMessage(error);
@@ -518,6 +1063,41 @@ const isDocumentImport =
               "student_registration_preview",
           })
         );
+
+await saveSpecialChatMessage(
+  {
+    id:
+      `assistant-registration-cancel-error-${Date.now()}`,
+
+    role:
+      "assistant",
+
+    content:
+      message,
+
+    createdAt:
+      nowLabel(),
+
+    kind:
+      "error",
+
+    data: {
+      pendingAction: {
+        id:
+          pendingActionId,
+
+        version:
+          expectedVersion,
+      },
+    },
+  },
+  {
+    selectedStudentId:
+      selectedStudent
+        ?.id ??
+      null,
+  }
+);
       }
     };
 
@@ -580,6 +1160,16 @@ const isDocumentImport =
             },
           };
 
+await saveSpecialChatMessage(
+  assistantMessage,
+  {
+    selectedStudentId:
+      selectedStudent
+        ?.id ??
+      null,
+  }
+);
+
           setMessages(
             (prev) => [
               ...prev,
@@ -633,6 +1223,17 @@ const isDocumentImport =
           },
         };
 
+await saveSpecialChatMessage(
+  assistantMessage,
+  {
+    selectedStudentId:
+      previewResponse
+        ?.pendingAction
+        ?.studentId ??
+      null,
+  }
+);
+
         setMessages(
           (prev) => [
             ...prev,
@@ -643,29 +1244,58 @@ const isDocumentImport =
         return;
       }
 
-      const assistantMessage:
-        DashboardAIMessage = {
-        id:
-          `assistant-${Date.now()}`,
+      const responseData =
+  response?.data &&
+  typeof response.data ===
+    "object"
+    ? response.data
+    : {};
 
-        role:
-          "assistant",
+const assistantMessage:
+  DashboardAIMessage = {
+  id:
+    `assistant-${Date.now()}`,
 
-        content:
-          response?.reply ||
-          response?.answer ||
-          "응답 결과가 없습니다.",
+  role:
+    "assistant",
 
-        createdAt:
-          nowLabel(),
+  content:
+    response?.reply ||
+    response?.answer ||
+    "응답 결과가 없습니다.",
 
-        kind:
-          getMessageKind(response),
+  createdAt:
+    nowLabel(),
 
-        data:
-          response?.data ??
-          null,
-      };
+  kind:
+    getMessageKind(
+      response
+    ),
+
+  data: {
+    ...responseData,
+
+    pendingAction:
+      response?.pendingAction ||
+      responseData
+        ?.pendingAction ||
+      null,
+
+    scheduleCreateDraft:
+      response
+        ?.scheduleCreateDraft ||
+      responseData
+        ?.scheduleCreateDraft ||
+      null,
+
+studentUpdateDraft:
+  response
+    ?.studentUpdateDraft ||
+  responseData
+    ?.studentUpdateDraft ||
+  null,
+  },
+};
 
       setMessages(
         (prev) => [
@@ -676,16 +1306,33 @@ const isDocumentImport =
     } catch (error) {
       const message = getErrorMessage(error);
       setErrorMessage(message);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `assistant-error-${Date.now()}`,
-          role: "assistant",
-          content: message,
-          createdAt: nowLabel(),
-          kind: "error",
-        },
-      ]);
+      const assistantMessage: DashboardAIMessage = {
+  id:
+    `assistant-error-${Date.now()}`,
+
+  role:
+    "assistant",
+
+  content:
+    message,
+
+  createdAt:
+    nowLabel(),
+
+  kind:
+    "error",
+};
+
+await saveSpecialChatMessage(
+  assistantMessage
+);
+
+setMessages(
+  (prev) => [
+    ...prev,
+    assistantMessage,
+  ]
+);
     }
   };
 
@@ -703,78 +1350,104 @@ const handleAnalyzeDocument =
       "image/webp",
     ];
 
-    if (
-      !allowedMimeTypes.includes(
-        file.type
-      )
-    ) {
-      const message =
-        "JPG, PNG, WEBP 이미지 파일만 분석할 수 있습니다.";
+   if (
+  !allowedMimeTypes.includes(
+    file.type
+  )
+) {
+  const message =
+    "JPG, PNG, WEBP 이미지 파일만 분석할 수 있습니다.";
 
-      setErrorMessage(
-        message
-      );
+  setErrorMessage(
+    message
+  );
 
-      setMessages(
-        (prev) => [
-          ...prev,
-          {
-            id:
-              `assistant-document-error-${Date.now()}`,
+  const assistantMessage:
+    DashboardAIMessage = {
+    id:
+      `assistant-document-error-${Date.now()}`,
 
-            role:
-              "assistant",
+    role:
+      "assistant",
 
-            content:
-              message,
+    content:
+      message,
 
-            createdAt:
-              nowLabel(),
+    createdAt:
+      nowLabel(),
 
-            kind:
-              "error",
-          },
-        ]
-      );
+    kind:
+      "error",
+  };
 
-      return;
+  await saveSpecialChatMessage(
+    assistantMessage,
+    {
+      selectedStudentId:
+        selectedStudent
+          ?.id ??
+        null,
     }
+  );
+
+  setMessages(
+    (prev) => [
+      ...prev,
+      assistantMessage,
+    ]
+  );
+
+  return;
+}
 
     if (
-      file.size >
-      10 * 1024 * 1024
-    ) {
-      const message =
-        "이미지 용량은 10MB 이하만 분석할 수 있습니다.";
+  file.size >
+  10 * 1024 * 1024
+) {
+  const message =
+    "이미지 용량은 10MB 이하만 분석할 수 있습니다.";
 
-      setErrorMessage(
-        message
-      );
+  setErrorMessage(
+    message
+  );
 
-      setMessages(
-        (prev) => [
-          ...prev,
-          {
-            id:
-              `assistant-document-error-${Date.now()}`,
+  const assistantMessage:
+    DashboardAIMessage = {
+    id:
+      `assistant-document-error-${Date.now()}`,
 
-            role:
-              "assistant",
+    role:
+      "assistant",
 
-            content:
-              message,
+    content:
+      message,
 
-            createdAt:
-              nowLabel(),
+    createdAt:
+      nowLabel(),
 
-            kind:
-              "error",
-          },
-        ]
-      );
+    kind:
+      "error",
+  };
 
-      return;
+  await saveSpecialChatMessage(
+    assistantMessage,
+    {
+      selectedStudentId:
+        selectedStudent
+          ?.id ??
+        null,
     }
+  );
+
+  setMessages(
+    (prev) => [
+      ...prev,
+      assistantMessage,
+    ]
+  );
+
+  return;
+}
 
     const userMessage:
       DashboardAIMessage = {
@@ -806,6 +1479,16 @@ const handleAnalyzeDocument =
           file.type,
       },
     };
+
+await saveSpecialChatMessage(
+  userMessage,
+  {
+    selectedStudentId:
+      selectedStudent
+        ?.id ??
+      null,
+  }
+);
 
     setMessages(
       (prev) => [
@@ -965,45 +1648,69 @@ const handleAnalyzeDocument =
         },
       };
 
+await saveSpecialChatMessage(
+  assistantMessage,
+  {
+    selectedStudentId:
+      selectedStudent
+        ?.id ??
+      null,
+  }
+);
+
       setMessages(
         (prev) => [
           ...prev,
           assistantMessage,
         ]
       );
-    } catch (error) {
-      const message =
-        getErrorMessage(
-          error
-        );
+   } catch (error) {
+  const message =
+    getErrorMessage(
+      error
+    );
 
-      setErrorMessage(
-        message
-      );
+  setErrorMessage(
+    message
+  );
 
-      setMessages(
-        (prev) => [
-          ...prev,
-          {
-            id:
-              `assistant-document-error-${Date.now()}`,
+  const assistantMessage:
+    DashboardAIMessage = {
+    id:
+      `assistant-document-error-${Date.now()}`,
 
-            role:
-              "assistant",
+    role:
+      "assistant",
 
-            content:
-              message,
+    content:
+      message,
 
-            createdAt:
-              nowLabel(),
+    createdAt:
+      nowLabel(),
 
-            kind:
-              "error",
-          },
-        ]
-      );
-    }
+    kind:
+      "error",
   };
+
+  await saveSpecialChatMessage(
+    assistantMessage,
+    {
+      selectedStudentId:
+        selectedStudent
+          ?.id ??
+        null,
+    }
+  );
+
+  setMessages(
+    (prev) => [
+      ...prev,
+      assistantMessage,
+    ]
+  );
+}
+};
+
 
 const handleRequestDocumentImport =
   async (
@@ -1032,7 +1739,9 @@ const handleRequestDocumentImport =
       return;
     }
 
-    if (!analysis) {
+    if (
+      !analysis
+    ) {
       const message =
         "문서 분석 결과를 찾을 수 없습니다.";
 
@@ -1045,35 +1754,82 @@ const handleRequestDocumentImport =
 
     try {
       const response =
-        await documentImportPreviewMutation.mutateAsync({
-          studentId:
-            selectedStudent.id,
+        await documentImportPreviewMutation
+          .mutateAsync({
+            studentId:
+              selectedStudent.id,
 
-          analysis,
+            analysis,
 
-          /**
-           * 현재는 AI 추천 위치를 사용한다.
-           *
-           * 추후 카드에서 반영 위치를 직접 바꾸는
-           * 선택 UI를 추가할 수 있다.
-           */
-          target:
-            null,
+            target:
+              null,
 
-          expiresInMinutes:
-            30,
-        });
+            expiresInMinutes:
+              30,
+          });
 
       const pendingAction =
         response
           ?.pendingAction ||
         null;
 
-      if (!pendingAction) {
+      if (
+        !pendingAction
+      ) {
         throw new Error(
           "문서 CRM 반영 초안을 생성하지 못했습니다."
         );
       }
+
+      const previewMessage =
+        messages.find(
+          (
+            message
+          ) =>
+            message.id ===
+            messageId
+        );
+
+      const updatedMessage:
+        DashboardAIMessage = {
+        ...(
+          previewMessage || {
+            id:
+              `assistant-document-preview-${Date.now()}`,
+
+            role:
+              "assistant" as const,
+
+            createdAt:
+              nowLabel(),
+          }
+        ),
+
+        content:
+          response?.message ||
+          "문서 CRM 반영 미리보기가 생성되었습니다.",
+
+        kind:
+          "student_registration_preview",
+
+        data: {
+          ...(
+            previewMessage
+              ?.data ||
+            {}
+          ),
+
+          pendingAction,
+        },
+      };
+
+      await saveSpecialChatMessage(
+        updatedMessage,
+        {
+          selectedStudentId:
+            selectedStudent.id,
+        }
+      );
 
       setMessages(
         (
@@ -1082,65 +1838,114 @@ const handleRequestDocumentImport =
           prev.map(
             (
               message
-            ) => {
-              if (
-                message.id !==
+            ) =>
+              message.id ===
                 messageId
-              ) {
-                return message;
-              }
-
-              return {
-                ...message,
-
-                content:
-                  response?.message ||
-                  "문서 CRM 반영 미리보기가 생성되었습니다.",
-
-                kind:
-                  "student_registration_preview",
-
-                data: {
-                  ...message.data,
-
-                  pendingAction,
-                },
-              };
-            }
+                ? updatedMessage
+                : message
           )
       );
-    } catch (error) {
-      const message =
-        getErrorMessage(
-          error
-        );
+   } catch (
+  error
+) {
+  const message =
+    getErrorMessage(
+      error
+    );
 
-      setErrorMessage(
-        message
+  setErrorMessage(
+    message
+  );
+
+  const assistantMessage:
+    DashboardAIMessage = {
+    id:
+      `assistant-document-preview-error-${Date.now()}`,
+
+    role:
+      "assistant",
+
+    content:
+      message,
+
+    createdAt:
+      nowLabel(),
+
+    kind:
+      "error",
+  };
+
+  await saveSpecialChatMessage(
+    assistantMessage,
+    {
+      selectedStudentId:
+        selectedStudent
+          ?.id ??
+        null,
+    }
+  );
+
+  setMessages(
+    (
+      prev
+    ) => [
+      ...prev,
+      assistantMessage,
+    ]
+  );
+}
+  };
+
+const handleClearChatHistory =
+  async () => {
+    if (
+      clearChatHistoryMutation
+        .isPending
+    ) {
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        [
+          "AI 대화 기록을 전체 삭제하시겠습니까?",
+          "",
+          "삭제된 대화는 복구할 수 없습니다.",
+          "학생·상담·CRM 데이터는 삭제되지 않습니다.",
+        ].join("\n")
       );
 
+    if (
+      !confirmed
+    ) {
+      return;
+    }
+
+    setErrorMessage(
+      null
+    );
+
+    try {
+      await clearChatHistoryMutation
+        .mutateAsync({});
+
       setMessages(
-        (
-          prev
-        ) => [
-          ...prev,
-          {
-            id:
-              `assistant-document-preview-error-${Date.now()}`,
+        []
+      );
 
-            role:
-              "assistant",
+      setSelectedStudent(
+        null
+      );
 
-            content:
-              message,
-
-            createdAt:
-              nowLabel(),
-
-            kind:
-              "error",
-          },
-        ]
+      await chatHistoryQuery
+        .refetch();
+    } catch (
+      error
+    ) {
+      setErrorMessage(
+        getErrorMessage(
+          error
+        )
       );
     }
   };
@@ -1175,13 +1980,16 @@ const handleRequestDocumentImport =
       scopeLabel={scopeLabel}
       messages={messages}
       selectedStudent={selectedStudent}
-           isLoading={
+          isLoading={
+  chatHistoryQuery.isLoading ||
   chatMutation.isPending ||
   analyzeDocumentMutation.isPending ||
   documentImportPreviewMutation.isPending ||
   studentRegistrationPreviewMutation.isPending ||
   confirmPendingActionMutation.isPending ||
-  cancelPendingActionMutation.isPending
+  cancelPendingActionMutation.isPending ||
+saveChatMessageMutation.isPending ||
+clearChatHistoryMutation.isPending
 }
       errorMessage={
   errorMessage
@@ -1215,13 +2023,19 @@ onSelectStudent={
       onCancelPendingAction={
         handleCancelPendingAction
       }
+onClearChatHistory={
+  handleClearChatHistory
+}
       onClearSelectedStudent={() => setSelectedStudent(null)}
       onOpenStudent={(studentId) => {
         window.location.href = withOrgPath(`/students/${studentId}`);
       }}
-      onOpenConsultation={() => {
-        window.location.href = withOrgPath("/consultations");
-      }}
+      onOpenConsultation={(consultationId) => {
+  window.location.href =
+    withOrgPath(
+      `/consultations?consultationId=${consultationId}`
+    );
+}}
     />
   );
 }

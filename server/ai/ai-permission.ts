@@ -205,6 +205,183 @@ export function assertCanAccessConsultation(
 }
 
 /**
+ * 학생 쓰기 권한 검사
+ *
+ * 조회 가능 여부와 수정 가능 여부는 분리한다.
+ *
+ * Staff:
+ * 본인 담당 학생만 수정 가능
+ *
+ * Admin:
+ * 팀 학생은 조회할 수 있지만
+ * 본인 담당 학생만 수정 가능
+ *
+ * Host:
+ * 회사 전체 학생을 조회할 수 있지만
+ * 본인 담당 학생만 수정 가능
+ *
+ * Superhost:
+ * 직접 수정 불가
+ */
+export function assertCanWriteStudent(params: {
+  context: AiUserContext;
+  student: any;
+}) {
+  const {
+    context,
+    student,
+  } = params;
+
+  if (!student) {
+    throw new AiPermissionError(
+      "학생 정보를 확인할 수 없습니다."
+    );
+  }
+
+  const studentOrganizationId =
+    normalizePositiveInteger(
+      student.organizationId
+    );
+
+  /**
+   * organizationId가 다르면
+   * 담당자 여부와 관계없이 무조건 차단한다.
+   */
+  if (
+    studentOrganizationId &&
+    studentOrganizationId !==
+      context.organizationId
+  ) {
+    throw new AiPermissionError(
+      "다른 회사의 학생 정보는 수정할 수 없습니다."
+    );
+  }
+
+  /**
+   * Superhost는 조회와 점검만 가능하고
+   * CRM 데이터를 직접 수정하지 않는다.
+   */
+  if (
+    context.role ===
+    "superhost"
+  ) {
+    throw new AiPermissionError(
+      "슈퍼호스트는 학생 정보를 직접 수정할 수 없습니다."
+    );
+  }
+
+  const studentAssigneeId =
+    normalizePositiveInteger(
+      student.assigneeId
+    );
+
+  const currentUserId =
+    normalizePositiveInteger(
+      context.userId
+    );
+
+  if (
+    !studentAssigneeId ||
+    !currentUserId ||
+    studentAssigneeId !==
+      currentUserId
+  ) {
+    throw new AiPermissionError(
+      "해당 학생의 담당자만 수정할 수 있습니다."
+    );
+  }
+}
+
+/**
+ * 상담DB 쓰기 권한 검사
+ *
+ * 조회 가능 여부와 수정 가능 여부는 분리한다.
+ *
+ * Staff:
+ * 본인 담당 상담만 수정 가능
+ *
+ * Admin:
+ * 팀 상담은 조회할 수 있지만
+ * 본인 담당 상담만 수정 가능
+ *
+ * Host:
+ * 회사 전체 상담을 조회할 수 있지만
+ * 본인 담당 상담만 수정 가능
+ *
+ * Superhost:
+ * 직접 수정 불가
+ */
+export function assertCanWriteConsultation(
+  params: {
+    context: AiUserContext;
+    consultation: any;
+  }
+) {
+  const {
+    context,
+    consultation,
+  } = params;
+
+  if (!consultation) {
+    throw new AiPermissionError(
+      "상담 정보를 확인할 수 없습니다."
+    );
+  }
+
+  const consultationOrganizationId =
+    normalizePositiveInteger(
+      consultation.organizationId
+    );
+
+  /**
+   * 다른 조직 데이터는
+   * 담당자 여부와 관계없이 차단한다.
+   */
+  if (
+    consultationOrganizationId &&
+    consultationOrganizationId !==
+      context.organizationId
+  ) {
+    throw new AiPermissionError(
+      "다른 회사의 상담 정보는 수정할 수 없습니다."
+    );
+  }
+
+  /**
+   * Superhost는 조회와 점검만 가능하다.
+   */
+  if (
+    context.role ===
+    "superhost"
+  ) {
+    throw new AiPermissionError(
+      "슈퍼호스트는 상담 정보를 직접 수정할 수 없습니다."
+    );
+  }
+
+  const consultationAssigneeId =
+    normalizePositiveInteger(
+      consultation.assigneeId
+    );
+
+  const currentUserId =
+    normalizePositiveInteger(
+      context.userId
+    );
+
+  if (
+    !consultationAssigneeId ||
+    !currentUserId ||
+    consultationAssigneeId !==
+      currentUserId
+  ) {
+    throw new AiPermissionError(
+      "해당 상담의 담당자만 수정할 수 있습니다."
+    );
+  }
+}
+
+/**
  * 프론트 입력에서 권한 관련 값을 제거한다.
  *
  * AI 요청자가 organizationId, teamId, assigneeId를

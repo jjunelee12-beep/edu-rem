@@ -466,6 +466,63 @@ export async function executeStudentRegistrationPendingAction(
       );
     }
 
+/**
+ * 학생 통합등록은 해당 상담의 담당자만 실행할 수 있다.
+ *
+ * Pending Action의 요청자와 실제 승인자가 모두
+ * 현재 상담 담당자와 일치해야 한다.
+ *
+ * 프론트에서 전달된 담당자 값은 사용하지 않고,
+ * DB에서 다시 조회한 consultation.assigneeId를 기준으로 검사한다.
+ */
+const consultationAssigneeId =
+  Number(
+    (consultation as any)
+      .assigneeId ||
+    0
+  );
+
+if (
+  !Number.isFinite(
+    consultationAssigneeId
+  ) ||
+  consultationAssigneeId <= 0
+) {
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    "상담DB 담당자 정보를 확인할 수 없습니다.",
+    409
+  );
+}
+
+if (
+  Math.floor(
+    consultationAssigneeId
+  ) !== requestedByUserId
+) {
+  throwAppError(
+    ERROR_CODES.FORBIDDEN,
+    "해당 상담의 담당자만 학생 통합등록을 요청할 수 있습니다.",
+    403
+  );
+}
+
+if (
+  Math.floor(
+    consultationAssigneeId
+  ) !== confirmedByUserId
+) {
+  throwAppError(
+    ERROR_CODES.FORBIDDEN,
+    "해당 상담의 담당자만 학생 통합등록을 승인할 수 있습니다.",
+    403
+  );
+}
+
+completedSteps.push(
+  "상담 담당자 등록권한 확인"
+);
+
     const sourceSnapshot =
       action.sourceSnapshotJson &&
       typeof action

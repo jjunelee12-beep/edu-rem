@@ -56,21 +56,61 @@ function formatPhone(value: string) {
 
 export default function WithOneLanding() {
 
-  const [clientName, setClientName] = useState("");
+  // 하단 고정 버튼을 눌렀을 때 나오는 팝업 상담폼
+const [clientName, setClientName] = useState("");
 const [phone, setPhone] = useState("");
 const [finalEducation, setFinalEducation] = useState("");
 const [consultationTime, setConsultationTime] = useState("");
 const [privacyAgreed, setPrivacyAgreed] = useState(false);
 
+// 랜딩 이미지 마지막에 항상 노출되는 인라인 상담폼
+const [inlineClientName, setInlineClientName] = useState("");
+const [inlinePhone, setInlinePhone] = useState("");
+const [inlineFinalEducation, setInlineFinalEducation] = useState("");
+const [inlineConsultationTime, setInlineConsultationTime] = useState("");
+const [inlinePrivacyAgreed, setInlinePrivacyAgreed] = useState(false);
+
 const [showConsultForm, setShowConsultForm] = useState(false);
 const [showComplete, setShowComplete] = useState(false);
+const [showInlineComplete, setShowInlineComplete] = useState(false);
+
+// 현재 어느 상담폼에서 전송했는지 구분
+const [submitSource, setSubmitSource] = useState<"modal" | "inline" | null>(
+  null
+);
 
   const submitMutation = trpc.withOneLanding.submit.useMutation({
   onSuccess: () => {
+    if (submitSource === "inline") {
+      setShowInlineComplete(true);
+
+      setInlineClientName("");
+      setInlinePhone("");
+      setInlineFinalEducation("");
+      setInlineConsultationTime("");
+      setInlinePrivacyAgreed(false);
+
+      window.setTimeout(() => {
+        document
+          .getElementById("withone-inline-consultation")
+          ?.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
+      }, 50);
+
+      return;
+    }
+
     setShowComplete(true);
   },
+
   onError: (error) => {
     toast.error(error.message || "상담 신청 중 오류가 발생했습니다.");
+  },
+
+  onSettled: () => {
+    setSubmitSource(null);
   },
 });
 
@@ -128,6 +168,8 @@ const closeConsultForm = () => {
       return;
     }
 
+setSubmitSource("modal");
+
     submitMutation.mutate({
       clientName: normalizedName,
       phone: normalizedPhone,
@@ -136,6 +178,45 @@ const closeConsultForm = () => {
       privacyAgreed: true,
     });
   };
+
+const handleInlineSubmit = (
+  event: React.FormEvent<HTMLFormElement>
+) => {
+  event.preventDefault();
+
+  const normalizedName = inlineClientName.trim();
+  const normalizedPhone = normalizePhone(inlinePhone);
+
+  if (!normalizedName) {
+    toast.error("이름을 입력해주세요.");
+    return;
+  }
+
+  if (normalizedPhone.length < 10 || normalizedPhone.length > 11) {
+    toast.error("올바른 연락처를 입력해주세요.");
+    return;
+  }
+
+  if (!inlinePrivacyAgreed) {
+    toast.error("개인정보 수집 및 이용에 동의해주세요.");
+    return;
+  }
+
+  if (submitMutation.isPending) {
+    return;
+  }
+
+  setShowInlineComplete(false);
+  setSubmitSource("inline");
+
+  submitMutation.mutate({
+    clientName: normalizedName,
+    phone: normalizedPhone,
+    finalEducation: inlineFinalEducation,
+    consultationTime: inlineConsultationTime,
+    privacyAgreed: true,
+  });
+};
 
   return (
     <div className="min-h-screen bg-[#eef1f5]">
@@ -161,6 +242,279 @@ const closeConsultForm = () => {
       draggable={false}
     />
   ))}
+</section>
+
+{/* 랜딩 이미지 마지막에 고정 노출되는 상담 신청 영역 */}
+<section
+  id="withone-inline-consultation"
+  className="relative overflow-hidden bg-[#030503] px-4 pb-16 pt-14 sm:px-6"
+>
+  {/* 네온 배경 장식 */}
+  <div className="pointer-events-none absolute -left-20 top-10 h-56 w-56 rounded-full bg-[#bfff00]/10 blur-[80px]" />
+  <div className="pointer-events-none absolute -right-24 bottom-24 h-64 w-64 rounded-full bg-[#7dff00]/10 blur-[90px]" />
+
+  <div className="pointer-events-none absolute left-1/2 top-0 h-px w-[88%] -translate-x-1/2 bg-gradient-to-r from-transparent via-[#baff00]/80 to-transparent shadow-[0_0_18px_rgba(186,255,0,0.8)]" />
+
+  <div className="relative mx-auto max-w-[460px]">
+    {/* 상담폼 제목 */}
+    <div className="text-center">
+      <span className="inline-flex items-center rounded-full border border-[#baff00]/35 bg-[#baff00]/10 px-4 py-2 text-[12px] font-black tracking-[-0.02em] text-[#c8ff35] shadow-[0_0_22px_rgba(186,255,0,0.12)]">
+        위드원교육 1:1 맞춤 상담
+      </span>
+
+      <h2 className="mt-5 break-keep text-[29px] font-black leading-[1.25] tracking-[-0.05em] text-white">
+        궁금한 점을 남겨주시면
+        <br />
+        <span className="text-[#c3ff24]">빠르게 안내해드립니다</span>
+      </h2>
+
+      <p className="mt-3 break-keep text-[14px] leading-6 text-white/55">
+        간단한 정보만 입력해 주세요.
+        <br />
+        담당자가 확인 후 순차적으로 연락드립니다.
+      </p>
+    </div>
+
+    {/* 상담 입력 카드 */}
+    <div className="relative mt-9 overflow-hidden rounded-[28px] border border-[#baff00]/25 bg-[#0a0d09]/95 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.5),0_0_35px_rgba(186,255,0,0.08)] sm:p-6">
+      <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-[#c7ff3a] to-transparent shadow-[0_0_14px_rgba(199,255,58,0.8)]" />
+
+      {showInlineComplete ? (
+        <div className="flex min-h-[520px] flex-col items-center justify-center px-2 text-center">
+          <div className="flex h-20 w-20 items-center justify-center rounded-full border border-[#c3ff24]/40 bg-[#c3ff24]/10 shadow-[0_0_35px_rgba(195,255,36,0.2)]">
+            <Check
+              className="h-10 w-10 text-[#c3ff24]"
+              strokeWidth={3}
+            />
+          </div>
+
+          <h3 className="mt-7 text-[25px] font-black tracking-[-0.04em] text-white">
+            상담 신청이 완료되었습니다
+          </h3>
+
+          <p className="mt-4 break-keep text-[15px] leading-7 text-white/60">
+            담당자가 신청 내용을 확인한 후
+            <br />
+            순차적으로 연락드리겠습니다.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => setShowInlineComplete(false)}
+            className="mt-8 h-[58px] w-full rounded-2xl border border-[#c3ff24]/40 bg-[#c3ff24]/10 text-[16px] font-black text-[#c3ff24] transition hover:bg-[#c3ff24]/15 active:scale-[0.99]"
+          >
+            추가 상담 신청하기
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={handleInlineSubmit}>
+          <div className="grid grid-cols-2 gap-3">
+            {/* 이름 */}
+            <div>
+              <label
+                htmlFor="withone-inline-client-name"
+                className="mb-2 block text-[13px] font-bold text-white/80"
+              >
+                이름 <span className="text-[#c3ff24]">*</span>
+              </label>
+
+              <div className="relative">
+                <UserRound className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-white/35" />
+
+                <input
+                  id="withone-inline-client-name"
+                  type="text"
+                  value={inlineClientName}
+                  onChange={(event) =>
+                    setInlineClientName(event.target.value)
+                  }
+                  placeholder="이름"
+                  autoComplete="name"
+                  maxLength={100}
+                  className="h-[56px] w-full rounded-2xl border border-white/10 bg-white/[0.055] pl-11 pr-3 text-[15px] font-medium text-white outline-none transition placeholder:text-white/25 focus:border-[#c3ff24]/70 focus:bg-white/[0.075] focus:ring-4 focus:ring-[#c3ff24]/10"
+                />
+              </div>
+            </div>
+
+            {/* 연락처 */}
+            <div>
+              <label
+                htmlFor="withone-inline-phone"
+                className="mb-2 block text-[13px] font-bold text-white/80"
+              >
+                연락처 <span className="text-[#c3ff24]">*</span>
+              </label>
+
+              <div className="relative">
+                <Phone className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-white/35" />
+
+                <input
+                  id="withone-inline-phone"
+                  type="tel"
+                  inputMode="numeric"
+                  value={formatPhone(inlinePhone)}
+                  onChange={(event) =>
+                    setInlinePhone(normalizePhone(event.target.value))
+                  }
+                  placeholder="010-0000-0000"
+                  autoComplete="tel"
+                  maxLength={13}
+                  className="h-[56px] w-full rounded-2xl border border-white/10 bg-white/[0.055] pl-11 pr-3 text-[15px] font-medium text-white outline-none transition placeholder:text-white/25 focus:border-[#c3ff24]/70 focus:bg-white/[0.075] focus:ring-4 focus:ring-[#c3ff24]/10"
+                />
+              </div>
+            </div>
+
+            {/* 최종학력 */}
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <label
+                  htmlFor="withone-inline-final-education"
+                  className="text-[13px] font-bold text-white/80"
+                >
+                  최종학력
+                </label>
+
+                <span className="text-[11px] text-white/30">
+                  선택
+                </span>
+              </div>
+
+              <div className="relative">
+                <select
+                  id="withone-inline-final-education"
+                  value={inlineFinalEducation}
+                  onChange={(event) =>
+                    setInlineFinalEducation(event.target.value)
+                  }
+                  className={`h-[56px] w-full appearance-none rounded-2xl border border-white/10 bg-[#11150f] px-3 pr-9 text-[14px] outline-none transition focus:border-[#c3ff24]/70 focus:ring-4 focus:ring-[#c3ff24]/10 ${
+                    inlineFinalEducation
+                      ? "text-white"
+                      : "text-white/30"
+                  }`}
+                >
+                  <option value="">최종학력 선택</option>
+
+                  {EDUCATION_OPTIONS.map((option) => (
+                    <option
+                      key={option}
+                      value={option}
+                      className="bg-[#11150f] text-white"
+                    >
+                      {option}
+                    </option>
+                  ))}
+                </select>
+
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-white/35" />
+              </div>
+            </div>
+
+            {/* 상담 가능 시간 */}
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <label
+                  htmlFor="withone-inline-consultation-time"
+                  className="text-[13px] font-bold text-white/80"
+                >
+                  상담 가능 시간
+                </label>
+
+                <span className="text-[11px] text-white/30">
+                  선택
+                </span>
+              </div>
+
+              <div className="relative">
+                <select
+                  id="withone-inline-consultation-time"
+                  value={inlineConsultationTime}
+                  onChange={(event) =>
+                    setInlineConsultationTime(event.target.value)
+                  }
+                  className={`h-[56px] w-full appearance-none rounded-2xl border border-white/10 bg-[#11150f] px-3 pr-9 text-[14px] outline-none transition focus:border-[#c3ff24]/70 focus:ring-4 focus:ring-[#c3ff24]/10 ${
+                    inlineConsultationTime
+                      ? "text-white"
+                      : "text-white/30"
+                  }`}
+                >
+                  <option value="">상담시간 선택</option>
+
+                  {CONSULTATION_TIME_OPTIONS.map((option) => (
+                    <option
+                      key={option}
+                      value={option}
+                      className="bg-[#11150f] text-white"
+                    >
+                      {option}
+                    </option>
+                  ))}
+                </select>
+
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-white/35" />
+              </div>
+            </div>
+          </div>
+
+          {/* 개인정보 동의 */}
+          <div className="mt-4 rounded-2xl border border-white/[0.07] bg-white/[0.035] p-4">
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={inlinePrivacyAgreed}
+                onChange={(event) =>
+                  setInlinePrivacyAgreed(event.target.checked)
+                }
+                className="peer sr-only"
+              />
+
+              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border-2 border-white/20 bg-black/20 transition peer-checked:border-[#c3ff24] peer-checked:bg-[#c3ff24] peer-checked:shadow-[0_0_15px_rgba(195,255,36,0.35)]">
+                {inlinePrivacyAgreed && (
+                  <Check
+                    className="h-4 w-4 text-[#071000]"
+                    strokeWidth={3.5}
+                  />
+                )}
+              </span>
+
+              <span className="flex-1">
+                <span className="block text-[13px] font-bold leading-5 text-white/80">
+                  개인정보 수집 및 이용에 동의합니다.
+                  <span className="ml-1 text-[#c3ff24]">
+                    (필수)
+                  </span>
+                </span>
+
+                <span className="mt-1 block break-keep text-[11px] leading-5 text-white/35">
+                  상담 안내를 위해 입력하신 정보를 수집합니다.
+                </span>
+              </span>
+            </label>
+          </div>
+
+          {/* 상담 신청 버튼 */}
+          <button
+            type="submit"
+            disabled={submitMutation.isPending}
+            className="mt-5 flex h-[64px] w-full items-center justify-center rounded-2xl bg-gradient-to-r from-[#aaff00] via-[#cfff27] to-[#aaff00] text-[19px] font-black tracking-[-0.03em] text-[#071000] shadow-[0_13px_32px_rgba(170,255,0,0.22),0_0_22px_rgba(195,255,36,0.16)] transition hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {submitMutation.isPending && submitSource === "inline" ? (
+              <>
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                신청 중입니다
+              </>
+            ) : (
+              "무료 상담 신청하기"
+            )}
+          </button>
+
+          <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-white/35">
+            <ShieldCheck className="h-4 w-4 text-[#c3ff24]/70" />
+            입력하신 정보는 상담 안내 목적으로만 사용됩니다.
+          </div>
+        </form>
+      )}
+    </div>
+  </div>
 </section>
       </main>
 
