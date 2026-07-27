@@ -186,14 +186,82 @@ export type AiToolHandlerParams<TInput = unknown> = {
   requestId: string;
 };
 
+/**
+ * OpenAI Function Tool에 전달할
+ * JSON Schema 공용 타입
+ *
+ * organizationId, userId, teamId, assigneeId 등
+ * 서버가 결정하는 보안 필드는 절대로 포함하지 않는다.
+ */
+export type AiToolInputSchema = {
+  type:
+    "object";
+
+  properties:
+    Record<
+      string,
+      {
+        type:
+          | "string"
+          | "number"
+          | "integer"
+          | "boolean"
+          | Array<
+              | "string"
+              | "number"
+              | "integer"
+              | "boolean"
+              | "null"
+            >;
+
+        description?:
+          string;
+
+        enum?:
+          Array<
+            string |
+            number |
+            boolean |
+            null
+          >;
+
+        minimum?:
+          number;
+
+        maximum?:
+          number;
+      }
+    >;
+
+  required:
+    string[];
+
+  additionalProperties:
+    false;
+};
+
 export type AiToolDefinition<
   TInput = unknown,
   TOutput = unknown
 > = {
-  name: AiToolName | string;
-  description: string;
+  name:
+    AiToolName |
+    string;
 
-  accessMode: AiToolAccessMode;
+  description:
+    string;
+
+  /**
+   * OpenAI Tool Calling 입력 구조
+   *
+   * AI가 생성해도 되는 값만 정의한다.
+   * 권한 및 조직 범위 필드는 포함하지 않는다.
+   */
+  inputSchema?:
+    AiToolInputSchema;
+
+  accessMode:
+    AiToolAccessMode;
 
   allowedRoles: AiRole[];
 
@@ -638,6 +706,344 @@ export type StudentUpdateToolOutput = {
     canConfirm:
       boolean;
   };
+};
+
+/**
+ * AI 실습배정지원 상태 조회 입력
+ *
+ * 학생 ID는 선택된 학생 또는
+ * student.search를 통해 확정된 값만 사용한다.
+ */
+export type PracticeSupportStatusToolInput = {
+  studentId:
+    number;
+};
+
+/**
+ * AI 실습기관 및 실습교육원 추천 입력
+ *
+ * 학생 주소에 저장된 위도·경도를 기준으로
+ * 가까운 기관을 추천한다.
+ *
+ * organizationId와 권한 범위는 서버 Context에서 결정한다.
+ */
+export type PracticeInstitutionSearchToolInput = {
+  studentId:
+    number;
+};
+
+/**
+ * 실습기관 또는 실습교육원 추천 항목
+ */
+export type PracticeInstitutionSearchResultItem = {
+  id:
+    number;
+
+  sourceType:
+    string |
+    null;
+
+  masterId:
+    number |
+    null;
+
+  name:
+    string |
+    null;
+
+  phone:
+    string |
+    null;
+
+  address:
+    string |
+    null;
+
+  detailAddress:
+    string |
+    null;
+
+  latitude:
+    string |
+    number |
+    null;
+
+  longitude:
+    string |
+    number |
+    null;
+
+  distanceKm:
+    number;
+
+  price:
+    string |
+    number |
+    null;
+
+  availableCourse:
+    string |
+    null;
+
+  selectionStatus:
+    string |
+    null;
+
+  selectionValidFrom:
+    string |
+    Date |
+    null;
+
+  selectionValidTo:
+    string |
+    Date |
+    null;
+
+  practiceAvailabilityType:
+    string |
+    null;
+
+  isInactive:
+    boolean;
+
+  inactiveReason:
+    string |
+    null;
+
+  memo:
+    string |
+    null;
+};
+
+/**
+ * AI 실습기관 및 실습교육원 추천 결과
+ */
+export type PracticeInstitutionSearchToolOutput = {
+  student: {
+    id:
+      number;
+
+    clientName:
+      string |
+      null;
+
+    course:
+      string |
+      null;
+
+    address:
+      string |
+      null;
+
+    detailAddress:
+      string |
+      null;
+
+    latitude:
+      number |
+      null;
+
+    longitude:
+      number |
+      null;
+
+    assigneeId:
+      number |
+      null;
+  };
+
+  institutions:
+    PracticeInstitutionSearchResultItem[];
+
+  educationCenters:
+    PracticeInstitutionSearchResultItem[];
+
+  summary: {
+    institutionCount:
+      number;
+
+    educationCenterCount:
+      number;
+
+    nearestInstitutionDistanceKm:
+      number |
+      null;
+
+    nearestEducationCenterDistanceKm:
+      number |
+      null;
+  };
+
+  generatedAt:
+    string;
+};
+
+/**
+ * 학생에게 등록된 개별 실습배정지원 요청
+ */
+export type PracticeSupportStatusRequestItem = {
+  id:
+    number;
+
+  studentId:
+    number;
+
+  semesterId:
+    number |
+    null;
+
+  semesterOrder:
+    number;
+
+  clientName:
+    string |
+    null;
+
+  course:
+    string |
+    null;
+
+  assigneeId:
+    number |
+    null;
+
+  assigneeName:
+    string |
+    null;
+
+  managerName:
+    string |
+    null;
+
+  practiceHours:
+    number |
+    null;
+
+  practiceDate:
+    string |
+    null;
+
+  coordinationStatus:
+    string;
+
+  paymentStatus:
+    string;
+
+  feeAmount:
+    string |
+    number;
+
+  selectedEducationCenter: {
+    id:
+      number |
+      null;
+
+    name:
+      string |
+      null;
+
+    address:
+      string |
+      null;
+
+    distanceKm:
+      string |
+      number |
+      null;
+  };
+
+  selectedPracticeInstitution: {
+    id:
+      number |
+      null;
+
+    name:
+      string |
+      null;
+
+    address:
+      string |
+      null;
+
+    distanceKm:
+      string |
+      number |
+      null;
+  };
+
+  note:
+    string |
+    null;
+
+  createdAt:
+    string |
+    Date |
+    null;
+
+  updatedAt:
+    string |
+    Date |
+    null;
+};
+
+/**
+ * AI 실습배정지원 상태 조회 결과
+ */
+export type PracticeSupportStatusToolOutput = {
+  student: {
+    id:
+      number;
+
+    clientName:
+      string |
+      null;
+
+    course:
+      string |
+      null;
+
+    assigneeId:
+      number |
+      null;
+  };
+
+  hasRequest:
+    boolean;
+
+  requestCount:
+    number;
+
+  latestRequest:
+    PracticeSupportStatusRequestItem |
+    null;
+
+  requests:
+    PracticeSupportStatusRequestItem[];
+
+  summary: {
+    coordinationStatus:
+      string;
+
+    paymentStatus:
+      string;
+
+    educationCenterSelected:
+      boolean;
+
+    practiceInstitutionSelected:
+      boolean;
+
+    practiceHours:
+      number |
+      null;
+
+    practiceDate:
+      string |
+      null;
+  };
+
+  generatedAt:
+    string;
 };
 
 /**

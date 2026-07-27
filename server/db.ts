@@ -27980,3 +27980,112 @@ export async function getAiChatMessages(
    */
   return rows.reverse();
 }
+
+export async function clearAiChatMessages(
+  params: {
+    organizationId?: number | null;
+    userId: number;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (!database) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userId =
+    Math.floor(
+      Number(
+        params.userId || 0
+      )
+    );
+
+  if (
+    !Number.isFinite(userId) ||
+    userId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 대화 사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  try {
+    console.info(
+      "[AI CHAT CLEAR] 삭제 시작",
+      {
+        organizationId,
+        userId,
+      }
+    );
+
+    const result =
+      await database
+        .delete(
+          aiChatMessages
+        )
+        .where(
+          and(
+            eq(
+              aiChatMessages.organizationId,
+              organizationId
+            ),
+            eq(
+              aiChatMessages.userId,
+              userId
+            )
+          )
+        );
+
+    console.info(
+      "[AI CHAT CLEAR] 삭제 완료",
+      {
+        organizationId,
+        userId,
+        result,
+      }
+    );
+
+    return {
+      success:
+        true,
+
+      organizationId,
+
+      userId,
+    };
+  } catch (error) {
+    console.error(
+      "[AI CHAT CLEAR] 삭제 실패",
+      {
+        organizationId,
+        userId,
+        error,
+      }
+    );
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : String(
+            error
+          );
+
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      `AI 대화 기록 삭제에 실패했습니다: ${message}`,
+      500
+    );
+  }
+}

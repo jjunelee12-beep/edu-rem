@@ -212,6 +212,303 @@ export type DashboardAIStudentDashboardPractice = {
     null;
 };
 
+export type DashboardAIPracticeInstitutionSearchItem = {
+  id?:
+    number;
+
+  sourceType?:
+    string |
+    null;
+
+  masterId?:
+    number |
+    null;
+
+  name?:
+    string |
+    null;
+
+  phone?:
+    string |
+    null;
+
+  address?:
+    string |
+    null;
+
+  detailAddress?:
+    string |
+    null;
+
+  latitude?:
+    string |
+    number |
+    null;
+
+  longitude?:
+    string |
+    number |
+    null;
+
+  distanceKm?:
+    string |
+    number |
+    null;
+
+  price?:
+    string |
+    number |
+    null;
+
+  availableCourse?:
+    string |
+    null;
+
+  selectionStatus?:
+    string |
+    null;
+
+  selectionValidFrom?:
+    string |
+    Date |
+    null;
+
+  selectionValidTo?:
+    string |
+    Date |
+    null;
+
+  practiceAvailabilityType?:
+    string |
+    null;
+
+  isInactive?:
+    boolean;
+
+  inactiveReason?:
+    string |
+    null;
+
+  memo?:
+    string |
+    null;
+};
+
+export type DashboardAIPracticeInstitutionSearchData = {
+  student?: {
+    id?:
+      number;
+
+    clientName?:
+      string |
+      null;
+
+    course?:
+      string |
+      null;
+
+    address?:
+      string |
+      null;
+
+    detailAddress?:
+      string |
+      null;
+
+    latitude?:
+      number |
+      null;
+
+    longitude?:
+      number |
+      null;
+
+    assigneeId?:
+      number |
+      null;
+  };
+
+  institutions?:
+    DashboardAIPracticeInstitutionSearchItem[];
+
+  educationCenters?:
+    DashboardAIPracticeInstitutionSearchItem[];
+
+  summary?: {
+    institutionCount?:
+      number;
+
+    educationCenterCount?:
+      number;
+
+    nearestInstitutionDistanceKm?:
+      number |
+      null;
+
+    nearestEducationCenterDistanceKm?:
+      number |
+      null;
+  };
+
+  generatedAt?:
+    string |
+    null;
+};
+
+export type DashboardAIPracticeSupportInstitution = {
+  id?:
+    number |
+    null;
+
+  name?:
+    string |
+    null;
+
+  address?:
+    string |
+    null;
+
+  distanceKm?:
+    string |
+    number |
+    null;
+};
+
+export type DashboardAIPracticeSupportRequest = {
+  id?:
+    number;
+
+  studentId?:
+    number;
+
+  semesterId?:
+    number |
+    null;
+
+  semesterOrder?:
+    number;
+
+  clientName?:
+    string |
+    null;
+
+  course?:
+    string |
+    null;
+
+  assigneeId?:
+    number |
+    null;
+
+  assigneeName?:
+    string |
+    null;
+
+  managerName?:
+    string |
+    null;
+
+  practiceHours?:
+    number |
+    null;
+
+  practiceDate?:
+    string |
+    null;
+
+  coordinationStatus?:
+    string |
+    null;
+
+  paymentStatus?:
+    string |
+    null;
+
+  feeAmount?:
+    string |
+    number |
+    null;
+
+  selectedEducationCenter?:
+    DashboardAIPracticeSupportInstitution;
+
+  selectedPracticeInstitution?:
+    DashboardAIPracticeSupportInstitution;
+
+  note?:
+    string |
+    null;
+
+  createdAt?:
+    string |
+    Date |
+    null;
+
+  updatedAt?:
+    string |
+    Date |
+    null;
+};
+
+export type DashboardAIPracticeSupportStatusData = {
+  student?: {
+    id?:
+      number;
+
+    clientName?:
+      string |
+      null;
+
+    course?:
+      string |
+      null;
+
+    assigneeId?:
+      number |
+      null;
+  };
+
+  hasRequest?:
+    boolean;
+
+  requestCount?:
+    number;
+
+  latestRequest?:
+    DashboardAIPracticeSupportRequest |
+    null;
+
+  requests?:
+    DashboardAIPracticeSupportRequest[];
+
+  summary?: {
+    coordinationStatus?:
+      string |
+      null;
+
+    paymentStatus?:
+      string |
+      null;
+
+    educationCenterSelected?:
+      boolean;
+
+    practiceInstitutionSelected?:
+      boolean;
+
+    practiceHours?:
+      number |
+      null;
+
+    practiceDate?:
+      string |
+      null;
+  };
+
+  generatedAt?:
+    string;
+};
+
 export type DashboardAIStudentDashboardSchedule = {
   id?:
     number;
@@ -923,6 +1220,8 @@ export type DashboardAIMessageKind =
   | "search_result"
   | "student_summary"
   | "student_dashboard"
+  | "practice_institution_search"
+  | "practice_support_status"
   | "student_risk"
   | "organization_risk"
   | "student_registration_preview"
@@ -933,9 +1232,16 @@ export type DashboardAIMessageData = {
   students?: DashboardAIStudent[];
   consultations?: DashboardAIConsultation[];
   studentDashboard?:
-    DashboardAIStudentDashboardData;
-  semesters?:
-    DashboardAIStudentDashboardSemester[];
+  DashboardAIStudentDashboardData;
+
+practiceInstitutionSearch?:
+  DashboardAIPracticeInstitutionSearchData;
+
+practiceSupportStatus?:
+  DashboardAIPracticeSupportStatusData;
+
+semesters?:
+  DashboardAIStudentDashboardSemester[];
 
   subjects?:
     DashboardAIStudentDashboardData["subjects"];
@@ -972,6 +1278,15 @@ export type DashboardAIMessageData = {
 
   pendingAction?:
     DashboardAIPendingAction | null;
+
+scheduleCreateDraft?:
+  unknown;
+
+consultationUpdateDraft?:
+  unknown;
+
+studentUpdateDraft?:
+  unknown;
 
   registrationResult?:
   DashboardAIRegistrationExecutionResult | null;
@@ -1405,6 +1720,97 @@ function formatCurrency(
     toNumber(value, 0),
     0
   ).toLocaleString("ko-KR")}원`;
+}
+
+function formatDistance(
+  value:
+    unknown
+) {
+  if (
+    value ===
+      null ||
+    value ===
+      undefined ||
+    value ===
+      ""
+  ) {
+    return "미확인";
+  }
+
+  const normalized =
+    String(
+      value
+    ).trim();
+
+  if (!normalized) {
+    return "미확인";
+  }
+
+  if (
+    normalized
+      .toLowerCase()
+      .includes(
+        "km"
+      )
+  ) {
+    return normalized;
+  }
+
+  const distance =
+    Number(
+      normalized
+    );
+
+  if (
+    !Number.isFinite(
+      distance
+    )
+  ) {
+    return normalized;
+  }
+
+  return `${distance.toLocaleString(
+    "ko-KR",
+    {
+      maximumFractionDigits:
+        2,
+    }
+  )}km`;
+}
+
+function formatFullAddress(
+  address:
+    unknown,
+
+  detailAddress?:
+    unknown
+) {
+  const baseAddress =
+    String(
+      address ||
+      ""
+    ).trim();
+
+  const detail =
+    String(
+      detailAddress ||
+      ""
+    ).trim();
+
+  const fullAddress =
+    [
+      baseAddress,
+      detail,
+    ]
+      .filter(
+        Boolean
+      )
+      .join(
+        " "
+      );
+
+  return fullAddress ||
+    "주소 미입력";
 }
 
 function getStatusBadgeClass(value: unknown) {
@@ -2197,6 +2603,344 @@ function getStudentDashboardData(
   };
 }
 
+function getPracticeInstitutionSearchData(
+  message:
+    DashboardAIMessage
+): DashboardAIPracticeInstitutionSearchData {
+  const data =
+    asRecord(
+      message.data
+    );
+
+  const wrappedSearch =
+    asRecord(
+      data.practiceInstitutionSearch
+    );
+
+  const root =
+    Object.keys(
+      wrappedSearch
+    ).length >
+    0
+      ? wrappedSearch
+      : data;
+
+  const student =
+    asRecord(
+      root.student
+    );
+
+  const summary =
+    asRecord(
+      root.summary
+    );
+
+  const institutions =
+    asArray<
+      DashboardAIPracticeInstitutionSearchItem
+    >(
+      root.institutions
+    );
+
+  const educationCenters =
+    asArray<
+      DashboardAIPracticeInstitutionSearchItem
+    >(
+      root.educationCenters
+    );
+
+  return {
+    student: {
+      id:
+        toNumber(
+          student.id ??
+          root.studentId,
+          0
+        ),
+
+      clientName:
+        student.clientName ??
+        student.name ??
+        root.clientName ??
+        null,
+
+      course:
+        student.course ??
+        root.course ??
+        null,
+
+      address:
+        student.address ??
+        root.address ??
+        null,
+
+      detailAddress:
+        student.detailAddress ??
+        root.detailAddress ??
+        null,
+
+      latitude:
+        student.latitude ===
+          null ||
+        student.latitude ===
+          undefined ||
+        student.latitude ===
+          ""
+          ? null
+          : toNumber(
+              student.latitude,
+              0
+            ),
+
+      longitude:
+        student.longitude ===
+          null ||
+        student.longitude ===
+          undefined ||
+        student.longitude ===
+          ""
+          ? null
+          : toNumber(
+              student.longitude,
+              0
+            ),
+
+      assigneeId:
+        student.assigneeId ===
+          null ||
+        student.assigneeId ===
+          undefined
+          ? null
+          : toNumber(
+              student.assigneeId,
+              0
+            ),
+    },
+
+    institutions,
+
+    educationCenters,
+
+    summary: {
+      institutionCount:
+        toNumber(
+          summary.institutionCount ??
+          institutions.length,
+          institutions.length
+        ),
+
+      educationCenterCount:
+        toNumber(
+          summary.educationCenterCount ??
+          educationCenters.length,
+          educationCenters.length
+        ),
+
+      nearestInstitutionDistanceKm:
+        summary
+          .nearestInstitutionDistanceKm ===
+            null ||
+        summary
+          .nearestInstitutionDistanceKm ===
+            undefined
+          ? institutions[0]
+              ?.distanceKm ===
+                null ||
+            institutions[0]
+              ?.distanceKm ===
+                undefined
+            ? null
+            : toNumber(
+                institutions[0]
+                  ?.distanceKm,
+                0
+              )
+          : toNumber(
+              summary
+                .nearestInstitutionDistanceKm,
+              0
+            ),
+
+      nearestEducationCenterDistanceKm:
+        summary
+          .nearestEducationCenterDistanceKm ===
+            null ||
+        summary
+          .nearestEducationCenterDistanceKm ===
+            undefined
+          ? educationCenters[0]
+              ?.distanceKm ===
+                null ||
+            educationCenters[0]
+              ?.distanceKm ===
+                undefined
+            ? null
+            : toNumber(
+                educationCenters[0]
+                  ?.distanceKm,
+                0
+              )
+          : toNumber(
+              summary
+                .nearestEducationCenterDistanceKm,
+              0
+            ),
+    },
+
+    generatedAt:
+      root.generatedAt ??
+      null,
+  };
+}
+
+function getPracticeSupportStatusData(
+  message:
+    DashboardAIMessage
+): DashboardAIPracticeSupportStatusData {
+  const data =
+    asRecord(
+      message.data
+    );
+
+  const wrappedStatus =
+    asRecord(
+      data.practiceSupportStatus
+    );
+
+  const root =
+    Object.keys(
+      wrappedStatus
+    ).length >
+    0
+      ? wrappedStatus
+      : data;
+
+  const student =
+    asRecord(
+      root.student
+    );
+
+  const summary =
+    asRecord(
+      root.summary
+    );
+
+  const latestRequestRecord =
+    asRecord(
+      root.latestRequest
+    );
+
+  const latestRequest =
+    Object.keys(
+      latestRequestRecord
+    ).length >
+    0
+      ? latestRequestRecord
+      : null;
+
+  return {
+    student: {
+      id:
+        toNumber(
+          student.id ??
+          root.studentId,
+          0
+        ),
+
+      clientName:
+        student.clientName ??
+        student.name ??
+        root.clientName ??
+        null,
+
+      course:
+        student.course ??
+        root.course ??
+        null,
+
+      assigneeId:
+        student.assigneeId ===
+          null ||
+        student.assigneeId ===
+          undefined
+          ? null
+          : toNumber(
+              student.assigneeId,
+              0
+            ),
+    },
+
+    hasRequest:
+      root.hasRequest ===
+      true,
+
+    requestCount:
+      toNumber(
+        root.requestCount,
+        0
+      ),
+
+    latestRequest:
+      latestRequest as
+        DashboardAIPracticeSupportRequest |
+        null,
+
+    requests:
+      asArray<
+        DashboardAIPracticeSupportRequest
+      >(
+        root.requests
+      ),
+
+    summary: {
+      coordinationStatus:
+        summary.coordinationStatus ??
+        latestRequest
+          ?.coordinationStatus ??
+        null,
+
+      paymentStatus:
+        summary.paymentStatus ??
+        latestRequest
+          ?.paymentStatus ??
+        null,
+
+      educationCenterSelected:
+        summary
+          .educationCenterSelected ===
+        true,
+
+      practiceInstitutionSelected:
+        summary
+          .practiceInstitutionSelected ===
+        true,
+
+      practiceHours:
+        summary.practiceHours ===
+          null ||
+        summary.practiceHours ===
+          undefined
+          ? latestRequest
+              ?.practiceHours ??
+            null
+          : toNumber(
+              summary.practiceHours,
+              0
+            ),
+
+      practiceDate:
+        summary.practiceDate ??
+        latestRequest
+          ?.practiceDate ??
+        null,
+    },
+
+    generatedAt:
+      root.generatedAt ??
+      null,
+  };
+}
+
 function getStudentRiskData(
   message: DashboardAIMessage
 ): DashboardAIStudentRiskData {
@@ -2657,6 +3401,817 @@ const infoRows = [
           <button
             type="button"
             onClick={() => onOpenStudent?.(studentId)}
+            className="flex h-9 w-full items-center justify-center rounded-xl bg-[#2F6B3B] text-xs font-bold text-white transition hover:bg-[#285d33]"
+          >
+            학생 상세보기
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PracticeInstitutionRecommendationItem({
+  item,
+  index,
+  typeLabel,
+}: {
+  item:
+    DashboardAIPracticeInstitutionSearchItem;
+
+  index:
+    number;
+
+  typeLabel:
+    string;
+}) {
+  const selectionStatus =
+    String(
+      item.selectionStatus ||
+      ""
+    ).trim();
+
+  const validTo =
+    item.selectionValidTo
+      ? formatDateValue(
+          item.selectionValidTo
+        )
+      : null;
+
+  const availableCourse =
+    String(
+      item.availableCourse ||
+      ""
+    ).trim();
+
+  const availabilityType =
+    String(
+      item.practiceAvailabilityType ||
+      ""
+    ).trim();
+
+  const phone =
+    String(
+      item.phone ||
+      ""
+    ).trim();
+
+  const price =
+    item.price ===
+      null ||
+    item.price ===
+      undefined ||
+    item.price ===
+      ""
+      ? null
+      : formatCurrency(
+          item.price
+        );
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#EAF4EC] text-[11px] font-extrabold text-[#2F6B3B]">
+            {index +
+              1}
+          </div>
+
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold text-slate-400">
+              {typeLabel}
+            </p>
+
+            <p className="mt-0.5 truncate text-sm font-extrabold text-slate-900">
+              {item.name ||
+                "기관명 미입력"}
+            </p>
+          </div>
+        </div>
+
+        <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-extrabold text-emerald-700">
+          {formatDistance(
+            item.distanceKm
+          )}
+        </span>
+      </div>
+
+      <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2.5">
+        <p className="text-[11px] leading-5 text-slate-600">
+          {formatFullAddress(
+            item.address,
+            item.detailAddress
+          )}
+        </p>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {selectionStatus && (
+          <span
+            className={cn(
+              "rounded-full border px-2 py-1 text-[10px] font-bold",
+              getStatusBadgeClass(
+                selectionStatus
+              )
+            )}
+          >
+            {selectionStatus}
+          </span>
+        )}
+
+        {validTo && (
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-600">
+            유효기간 {validTo}
+          </span>
+        )}
+
+        {availableCourse && (
+          <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700">
+            {availableCourse}
+          </span>
+        )}
+
+        {availabilityType && (
+          <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-1 text-[10px] font-bold text-violet-700">
+            {availabilityType}
+          </span>
+        )}
+
+        {price && (
+          <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">
+            실습비 {price}
+          </span>
+        )}
+      </div>
+
+      {(phone ||
+        item.memo) && (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          {phone && (
+            <p className="text-[11px] text-slate-500">
+              연락처 ·{" "}
+              <span className="font-bold text-slate-700">
+                {phone}
+              </span>
+            </p>
+          )}
+
+          {item.memo && (
+            <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-slate-500">
+              메모 ·{" "}
+              {item.memo}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PracticeInstitutionSearchCard({
+  message,
+  onOpenStudent,
+}: {
+  message:
+    DashboardAIMessage;
+
+  onOpenStudent?:
+    (
+      studentId:
+        number
+    ) => void;
+}) {
+  const recommendation =
+    getPracticeInstitutionSearchData(
+      message
+    );
+
+  const student =
+    recommendation.student ||
+    {};
+
+  const institutions =
+    recommendation.institutions ||
+    [];
+
+  const educationCenters =
+    recommendation.educationCenters ||
+    [];
+
+  const summary =
+    recommendation.summary ||
+    {};
+
+  const studentId =
+    toNumber(
+      student.id,
+      0
+    );
+
+  const totalCount =
+    institutions.length +
+    educationCenters.length;
+
+  const studentAddress =
+    formatFullAddress(
+      student.address,
+      student.detailAddress
+    );
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      <div className="border-b border-slate-100 bg-gradient-to-br from-[#F4FAF5] to-white px-4 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#4C7C57]">
+              실습기관 거리순 추천
+            </p>
+
+            <p className="mt-1 truncate text-lg font-extrabold text-slate-900">
+              {student.clientName ||
+                "학생 실습기관 추천"}
+            </p>
+
+            <p className="mt-1 truncate text-xs text-slate-500">
+              {student.course ||
+                "과정 미지정"}
+            </p>
+          </div>
+
+          <span className="shrink-0 rounded-full border border-[#CFE4D3] bg-white px-2.5 py-1 text-[11px] font-extrabold text-[#2F6B3B]">
+            총 {totalCount}곳
+          </span>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-[#DCEBDF] bg-white/80 px-3 py-3">
+          <p className="text-[10px] font-bold text-slate-400">
+            거리 계산 기준 주소
+          </p>
+
+          <p className="mt-1 text-xs font-bold leading-5 text-slate-700">
+            {studentAddress}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 px-4 py-4">
+        <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+          <p className="text-[10px] font-bold text-slate-400">
+            추천 실습기관
+          </p>
+
+          <p className="mt-1 text-lg font-extrabold text-slate-900">
+            {summary.institutionCount ??
+              institutions.length}
+            <span className="ml-0.5 text-xs font-bold text-slate-500">
+              곳
+            </span>
+          </p>
+
+          <p className="mt-1 text-[10px] text-slate-500">
+            최근 거리{" "}
+            {institutions.length >
+            0
+              ? formatDistance(
+                  summary.nearestInstitutionDistanceKm ??
+                  institutions[0]
+                    ?.distanceKm
+                )
+              : "없음"}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+          <p className="text-[10px] font-bold text-slate-400">
+            추천 실습교육원
+          </p>
+
+          <p className="mt-1 text-lg font-extrabold text-slate-900">
+            {summary.educationCenterCount ??
+              educationCenters.length}
+            <span className="ml-0.5 text-xs font-bold text-slate-500">
+              곳
+            </span>
+          </p>
+
+          <p className="mt-1 text-[10px] text-slate-500">
+            최근 거리{" "}
+            {educationCenters.length >
+            0
+              ? formatDistance(
+                  summary.nearestEducationCenterDistanceKm ??
+                  educationCenters[0]
+                    ?.distanceKm
+                )
+              : "없음"}
+          </p>
+        </div>
+      </div>
+
+      {totalCount ===
+        0 && (
+        <div className="border-t border-slate-100 px-4 py-4">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+
+              <div>
+                <p className="text-xs font-bold text-amber-800">
+                  추천 가능한 기관을 찾지 못했습니다.
+                </p>
+
+                <p className="mt-1 text-[11px] leading-5 text-amber-700">
+                  학생 주소 좌표와 활성 기관 데이터를 확인해주세요.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {institutions.length >
+        0 && (
+        <div className="border-t border-slate-100 px-4 py-4">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-extrabold text-slate-900">
+              가까운 실습기관
+            </p>
+
+            <span className="text-[10px] font-bold text-slate-400">
+              거리순
+            </span>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {institutions
+              .slice(
+                0,
+                5
+              )
+              .map(
+                (
+                  institution,
+                  index
+                ) => (
+                  <PracticeInstitutionRecommendationItem
+                    key={`practice-institution-${institution.id || index}-${index}`}
+                    item={
+                      institution
+                    }
+                    index={
+                      index
+                    }
+                    typeLabel="실습기관"
+                  />
+                )
+              )}
+          </div>
+        </div>
+      )}
+
+      {educationCenters.length >
+        0 && (
+        <div className="border-t border-slate-100 px-4 py-4">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-extrabold text-slate-900">
+              가까운 실습교육원
+            </p>
+
+            <span className="text-[10px] font-bold text-slate-400">
+              거리순
+            </span>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {educationCenters
+              .slice(
+                0,
+                5
+              )
+              .map(
+                (
+                  center,
+                  index
+                ) => (
+                  <PracticeInstitutionRecommendationItem
+                    key={`practice-education-center-${center.id || index}-${index}`}
+                    item={
+                      center
+                    }
+                    index={
+                      index
+                    }
+                    typeLabel="실습교육원"
+                  />
+                )
+              )}
+          </div>
+        </div>
+      )}
+
+      <div className="border-t border-slate-100 bg-slate-50 px-4 py-3">
+        <div className="flex items-start gap-2">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+
+          <p className="text-[11px] leading-5 text-slate-500">
+            이 결과는 학생 주소를 기준으로 한 거리순 추천입니다. 실제 실습 가능 여부와 일정은 기관에 별도로 확인해야 하며, 추천만으로 기관 배정이 완료되지는 않습니다.
+          </p>
+        </div>
+      </div>
+
+      {studentId >
+        0 && (
+        <div className="border-t border-slate-100 px-4 py-3">
+          <button
+            type="button"
+            onClick={() =>
+              onOpenStudent?.(
+                studentId
+              )
+            }
+            className="flex h-9 w-full items-center justify-center rounded-xl bg-[#2F6B3B] text-xs font-bold text-white transition hover:bg-[#285d33]"
+          >
+            학생 상세보기
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PracticeSupportStatusCard({
+  message,
+  onOpenStudent,
+}: {
+  message:
+    DashboardAIMessage;
+
+  onOpenStudent?:
+    (
+      studentId:
+        number
+    ) => void;
+}) {
+  const practiceStatus =
+    getPracticeSupportStatusData(
+      message
+    );
+
+  const student =
+    practiceStatus.student ||
+    {};
+
+  const summary =
+    practiceStatus.summary ||
+    {};
+
+  const requests =
+    practiceStatus.requests ||
+    [];
+
+  const latestRequest =
+    practiceStatus.latestRequest ||
+    null;
+
+  const studentId =
+    toNumber(
+      student.id,
+      0
+    );
+
+  const hasRequest =
+    practiceStatus.hasRequest ===
+      true &&
+    Boolean(
+      latestRequest
+    );
+
+  const educationCenter =
+    latestRequest
+      ?.selectedEducationCenter ||
+    {};
+
+  const practiceInstitution =
+    latestRequest
+      ?.selectedPracticeInstitution ||
+    {};
+
+  const practiceHours =
+    summary.practiceHours ===
+      null ||
+    summary.practiceHours ===
+      undefined
+      ? "미입력"
+      : `${toNumber(
+          summary.practiceHours,
+          0
+        )}시간`;
+
+  const practiceDate =
+    summary.practiceDate
+      ? formatDateValue(
+          summary.practiceDate
+        )
+      : "미입력";
+
+  const coordinationStatus =
+    hasRequest
+      ? summary
+          .coordinationStatus ||
+        latestRequest
+          ?.coordinationStatus ||
+        "미확인"
+      : "신청 없음";
+
+  const paymentStatus =
+    hasRequest
+      ? summary
+          .paymentStatus ||
+        latestRequest
+          ?.paymentStatus ||
+        "미확인"
+      : "신청 없음";
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      <div className="border-b border-slate-100 px-4 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">
+              실습배정지원센터
+            </p>
+
+            <p className="mt-1 truncate text-lg font-extrabold text-slate-900">
+              {student.clientName ||
+                "학생 실습 현황"}
+            </p>
+
+            <p className="mt-1 truncate text-xs text-slate-500">
+              {student.course ||
+                "과정 미지정"}
+            </p>
+          </div>
+
+          <div className="shrink-0 text-right">
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-bold",
+                hasRequest
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-slate-200 bg-slate-50 text-slate-600"
+              )}
+            >
+              {hasRequest
+                ? `신청 ${practiceStatus.requestCount ?? requests.length}건`
+                : "신청 없음"}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 px-4 py-4">
+        {[
+          {
+            label:
+              "섭외 상태",
+
+            value:
+              coordinationStatus,
+          },
+          {
+            label:
+              "결제 상태",
+
+            value:
+              paymentStatus,
+          },
+          {
+            label:
+              "실습시간",
+
+            value:
+              hasRequest
+                ? practiceHours
+                : "신청 없음",
+          },
+          {
+            label:
+              "실습일정",
+
+            value:
+              hasRequest
+                ? practiceDate
+                : "신청 없음",
+          },
+        ].map(
+          (
+            item
+          ) => (
+            <div
+              key={
+                item.label
+              }
+              className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3"
+            >
+              <p className="text-[10px] font-bold text-slate-400">
+                {item.label}
+              </p>
+
+              <p className="mt-1 truncate text-xs font-extrabold text-slate-800">
+                {item.value}
+              </p>
+            </div>
+          )
+        )}
+      </div>
+
+      {!hasRequest && (
+        <div className="border-t border-slate-100 px-4 py-4">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+
+              <div>
+                <p className="text-xs font-bold text-slate-700">
+                  등록된 실습배정지원 요청이 없습니다.
+                </p>
+
+                <p className="mt-1 text-[11px] leading-5 text-slate-500">
+                  실습 신청이 필요한 학생인지 확인한 후 실습배정지원센터에서 요청을 등록해주세요.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {hasRequest && (
+        <>
+          <div className="border-t border-slate-100 px-4 py-4">
+            <p className="text-xs font-extrabold text-slate-800">
+              선택 교육원
+            </p>
+
+            <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-bold text-slate-800">
+                    {educationCenter.name ||
+                      "미선택"}
+                  </p>
+
+                  <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-slate-500">
+                    {educationCenter.address ||
+                      "주소 미입력"}
+                  </p>
+                </div>
+
+                <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-500">
+                  {formatDistance(
+                    educationCenter.distanceKm
+                  )}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100 px-4 py-4">
+            <p className="text-xs font-extrabold text-slate-800">
+              선택 실습기관
+            </p>
+
+            <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-bold text-slate-800">
+                    {practiceInstitution.name ||
+                      "미선택"}
+                  </p>
+
+                  <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-slate-500">
+                    {practiceInstitution.address ||
+                      "주소 미입력"}
+                  </p>
+                </div>
+
+                <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-500">
+                  {formatDistance(
+                    practiceInstitution.distanceKm
+                  )}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {requests.length >
+            0 && (
+            <div className="border-t border-slate-100 px-4 py-4">
+              <p className="text-xs font-extrabold text-slate-800">
+                실습 요청 내역
+              </p>
+
+              <div className="mt-3 space-y-2">
+                {requests
+                  .slice(
+                    0,
+                    10
+                  )
+                  .map(
+                    (
+                      request,
+                      index
+                    ) => {
+                      const requestId =
+                        toNumber(
+                          request.id,
+                          index +
+                            1
+                        );
+
+                      const semesterOrder =
+                        toNumber(
+                          request.semesterOrder,
+                          0
+                        );
+
+                      return (
+                        <div
+                          key={`${requestId}-${index}`}
+                          className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs font-bold text-slate-800">
+                              {semesterOrder >
+                              0
+                                ? `${semesterOrder}학기 실습`
+                                : `실습 요청 ${index + 1}`}
+                            </p>
+
+                            <span
+                              className={cn(
+                                "rounded-full border px-2 py-1 text-[10px] font-bold",
+                                getStatusBadgeClass(
+                                  request.coordinationStatus
+                                )
+                              )}
+                            >
+                              {request.coordinationStatus ||
+                                "미확인"}
+                            </span>
+                          </div>
+
+                          <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                            <p>
+                              결제 ·{" "}
+                              <span className="font-bold text-slate-700">
+                                {request.paymentStatus ||
+                                  "미확인"}
+                              </span>
+                            </p>
+
+                            <p>
+                              시간 ·{" "}
+                              <span className="font-bold text-slate-700">
+                                {request.practiceHours ===
+                                  null ||
+                                request.practiceHours ===
+                                  undefined
+                                  ? "미입력"
+                                  : `${request.practiceHours}시간`}
+                              </span>
+                            </p>
+
+                            <p className="col-span-2">
+                              일정 ·{" "}
+                              <span className="font-bold text-slate-700">
+                                {request.practiceDate
+                                  ? formatDateValue(
+                                      request.practiceDate
+                                    )
+                                  : "미입력"}
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+                  )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {studentId >
+        0 && (
+        <div className="border-t border-slate-100 px-4 py-3">
+          <button
+            type="button"
+            onClick={() =>
+              onOpenStudent?.(
+                studentId
+              )
+            }
             className="flex h-9 w-full items-center justify-center rounded-xl bg-[#2F6B3B] text-xs font-bold text-white transition hover:bg-[#285d33]"
           >
             학생 상세보기
@@ -5772,6 +7327,10 @@ onRequestDocumentImport?: (
   message.kind ===
     "student_dashboard" ||
   message.kind ===
+    "practice_institution_search" ||
+  message.kind ===
+    "practice_support_status" ||
+  message.kind ===
     "student_risk" ||
   message.kind ===
     "organization_risk" ||
@@ -5832,6 +7391,30 @@ return (
 {message.kind ===
   "student_dashboard" && (
   <StudentDashboardCard
+    message={
+      message
+    }
+    onOpenStudent={
+      onOpenStudent
+    }
+  />
+)}
+
+{message.kind ===
+  "practice_institution_search" && (
+  <PracticeInstitutionSearchCard
+    message={
+      message
+    }
+    onOpenStudent={
+      onOpenStudent
+    }
+  />
+)}
+
+{message.kind ===
+  "practice_support_status" && (
+  <PracticeSupportStatusCard
     message={
       message
     }
@@ -5990,6 +7573,11 @@ export default function DashboardAIChatBox({
 const textareaRef =
   useRef<HTMLTextAreaElement>(
     null
+  );
+
+const enterPressedWhileComposingRef =
+  useRef(
+    false
   );
 
 const fileInputRef =
@@ -6397,28 +7985,57 @@ message.kind === "document_analysis"
     handleImagePaste
   }
   onKeyDown={
-    (
-      event
-    ) => {
-      if (
-        event
-          .nativeEvent
-          .isComposing
-      ) {
-        return;
-      }
-
-      if (
-        event.key ===
-          "Enter" &&
-        !event.shiftKey
-      ) {
-        event.preventDefault();
-
-        void submit();
-      }
+  (
+    event
+  ) => {
+    if (
+      event.key !==
+        "Enter" ||
+      event.shiftKey
+    ) {
+      return;
     }
+
+    if (
+      event
+        .nativeEvent
+        .isComposing
+    ) {
+      enterPressedWhileComposingRef
+        .current =
+        true;
+
+      return;
+    }
+
+    event.preventDefault();
+
+    void submit();
   }
+}
+onKeyUp={
+  (
+    event
+  ) => {
+    if (
+      event.key !==
+        "Enter" ||
+      event.shiftKey ||
+      !enterPressedWhileComposingRef
+        .current
+    ) {
+      return;
+    }
+
+    enterPressedWhileComposingRef
+      .current =
+      false;
+
+    event.preventDefault();
+
+    void submit();
+  }
+}
   placeholder={
     onAnalyzeDocument
       ? "CRM 업무를 질문하거나 스크린샷을 Ctrl+V로 붙여넣으세요."

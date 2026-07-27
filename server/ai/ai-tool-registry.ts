@@ -42,8 +42,14 @@ StudentUpdateToolOutput,
     StudentDashboardToolInput,
   StudentDashboardToolOutput,
 
-  ScheduleCreateToolInput,
+    ScheduleCreateToolInput,
   ScheduleCreateToolOutput,
+
+    PracticeInstitutionSearchToolInput,
+  PracticeInstitutionSearchToolOutput,
+
+  PracticeSupportStatusToolInput,
+  PracticeSupportStatusToolOutput,
 
   StudentDetailRiskToolInput,
   StudentDetailRiskToolOutput,
@@ -362,11 +368,50 @@ registerTool<
   StudentSearchToolInput,
   StudentSearchToolOutput
 >({
-  name: "student.search",
-  description:
-    "현재 사용자의 권한 범위 안에서 학생을 이름, 연락처, 과정, 상태, 교육원으로 검색합니다.",
+  name:
+  "student.search",
 
-  accessMode: "read",
+description:
+  "현재 사용자의 권한 범위 안에서 학생을 이름, 연락처, 과정, 상태, 교육원으로 검색합니다. 학생 이름만 알고 있거나 학생 ID를 찾기 전에 사용합니다.",
+
+inputSchema: {
+  type:
+    "object",
+
+  properties: {
+    query: {
+      type:
+        "string",
+
+      description:
+        "검색할 학생의 이름, 연락처 일부, 과정, 상태 또는 교육원",
+    },
+
+    limit: {
+      type:
+        "integer",
+
+      description:
+        "최대 검색 결과 수",
+
+      minimum:
+        1,
+
+      maximum:
+        50,
+    },
+  },
+
+  required: [
+    "query",
+  ],
+
+  additionalProperties:
+    false,
+},
+
+accessMode:
+  "read",
 
   allowedRoles: [
     "staff",
@@ -483,11 +528,39 @@ registerTool<
   StudentSummaryToolInput,
   StudentSummaryToolOutput
 >({
-  name: "student.summary",
-  description:
-    "현재 사용자가 접근 가능한 학생 한 명의 기본 정보를 조회합니다.",
+  name:
+    "student.summary",
 
-  accessMode: "read",
+  description:
+    "현재 사용자가 접근 가능한 학생 한 명의 기본 정보만 조회합니다. 학기, 과목, 결제, 실습, 위험요소까지 필요하면 student.dashboard를 사용합니다.",
+
+  inputSchema: {
+    type:
+      "object",
+
+    properties: {
+      studentId: {
+        type:
+          "integer",
+
+        description:
+          "기본정보를 조회할 확정된 학생 ID",
+
+        minimum:
+          1,
+      },
+    },
+
+    required: [
+      "studentId",
+    ],
+
+    additionalProperties:
+      false,
+  },
+
+  accessMode:
+    "read",
 
   allowedRoles: [
     "staff",
@@ -668,7 +741,82 @@ registerTool<
     "student.update",
 
   description:
-    "현재 사용자가 담당하는 학생의 상태, 과정, 최종학력, 주소 정보를 수정하기 위한 승인 초안을 생성합니다.",
+    "현재 사용자가 담당하는 학생의 상태, 과정, 최종학력, 주소 또는 상세주소를 수정하기 위한 승인 초안을 생성합니다. 실제 DB 수정은 사용자 승인 후 실행됩니다.",
+
+  inputSchema: {
+    type:
+      "object",
+
+    properties: {
+      studentId: {
+        type:
+          "integer",
+
+        description:
+          "수정할 확정된 학생 ID",
+
+        minimum:
+          1,
+      },
+
+      status: {
+        type: [
+          "string",
+          "null",
+        ],
+
+        description:
+          "변경할 학생 상태. 사용자가 상태 변경을 요청하지 않았다면 전달하지 않습니다.",
+      },
+
+      course: {
+        type: [
+          "string",
+          "null",
+        ],
+
+        description:
+          "변경할 진행 과정. 사용자가 과정 변경을 요청하지 않았다면 전달하지 않습니다.",
+      },
+
+      finalEducation: {
+        type: [
+          "string",
+          "null",
+        ],
+
+        description:
+          "변경할 최종학력. 사용자가 최종학력 변경을 요청하지 않았다면 전달하지 않습니다.",
+      },
+
+      address: {
+        type: [
+          "string",
+          "null",
+        ],
+
+        description:
+          "변경할 기본 주소. 사용자가 주소 변경을 요청하지 않았다면 전달하지 않습니다.",
+      },
+
+      detailAddress: {
+        type: [
+          "string",
+          "null",
+        ],
+
+        description:
+          "변경할 상세주소. 사용자가 상세주소 변경을 요청하지 않았다면 전달하지 않습니다.",
+      },
+    },
+
+    required: [
+      "studentId",
+    ],
+
+    additionalProperties:
+      false,
+  },
 
   accessMode:
     "draft",
@@ -1162,7 +1310,32 @@ registerTool<
     "student.dashboard",
 
   description:
-    "현재 사용자가 접근 가능한 학생 한 명의 기본정보, 학기, 과목, 학점, 결제, 실습, 위험요소와 다음 처리 업무를 종합 조회합니다.",
+    "현재 사용자가 접근 가능한 학생 한 명의 기본정보, 학기, 과목, 학점, 결제, 환불, 실습, 일정, 위험요소와 다음 처리 업무를 종합 조회합니다.",
+
+  inputSchema: {
+    type:
+      "object",
+
+    properties: {
+      studentId: {
+        type:
+          "integer",
+
+        description:
+          "종합 현황을 조회할 확정된 학생 ID",
+
+        minimum:
+          1,
+      },
+    },
+
+    required: [
+      "studentId",
+    ],
+
+    additionalProperties:
+      false,
+  },
 
   accessMode:
     "read",
@@ -1232,6 +1405,831 @@ registerTool<
 });
 
 /**
+ * 학생 주소 기준 실습기관 및 실습교육원 추천
+ *
+ * 조회 전용 Tool이다.
+ * 실제 실습기관 선택이나 배정은 실행하지 않는다.
+ */
+registerTool<
+  PracticeInstitutionSearchToolInput,
+  PracticeInstitutionSearchToolOutput
+>({
+  name:
+    "practice.institutionSearch",
+
+  description:
+    "현재 사용자가 접근 가능한 학생의 주소 좌표를 기준으로 가까운 실습기관과 실습교육원을 거리순으로 추천합니다. 선정 취소, 선정기간 만료, 비활성, 숨김 기관은 제외합니다. 실제 기관 선택이나 배정은 실행하지 않습니다.",
+
+  inputSchema: {
+    type:
+      "object",
+
+    properties: {
+      studentId: {
+        type:
+          "integer",
+
+        description:
+          "실습기관을 추천받을 확정된 학생 ID",
+
+        minimum:
+          1,
+      },
+    },
+
+    required: [
+      "studentId",
+    ],
+
+    additionalProperties:
+      false,
+  },
+
+  accessMode:
+    "read",
+
+  allowedRoles: [
+    "staff",
+    "admin",
+    "host",
+  ],
+
+  requiresOrganization:
+    true,
+
+  requiresConfirmation:
+    false,
+
+  autoExecutable:
+    true,
+
+  handler: async ({
+    context,
+    input,
+  }) => {
+    const safeInput =
+      stripUntrustedScopeFields(
+        (
+          input ||
+          {}
+        ) as Record<
+          string,
+          unknown
+        >
+      ) as PracticeInstitutionSearchToolInput;
+
+    const studentId =
+      normalizePositiveInteger(
+        safeInput.studentId
+      );
+
+    if (
+      studentId <=
+      0
+    ) {
+      throw new Error(
+        "실습기관을 추천할 학생 ID가 필요합니다."
+      );
+    }
+
+    /**
+     * 먼저 학생을 조직 범위 안에서 조회하고
+     * 현재 사용자가 접근 가능한 학생인지 확인한다.
+     */
+    const student =
+      await db.getStudentById(
+        studentId,
+        {
+          organizationId:
+            context.organizationId,
+        }
+      );
+
+    if (!student) {
+      throw new Error(
+        "학생 정보를 찾을 수 없습니다."
+      );
+    }
+
+    assertCanAccessStudent({
+      context,
+      student,
+    });
+
+    /**
+     * 기존 DB 추천 함수를 재사용한다.
+     *
+     * 이 함수가 처리하는 항목:
+     * - 학생 좌표 확인
+     * - 활성 실습기관 조회
+     * - 활성 실습교육원 조회
+     * - 거리 계산
+     * - 거리순 정렬
+     * - 각 종류별 가까운 5개 반환
+     */
+    const recommendation =
+      await db
+        .getPracticeRecommendationsForStudent(
+          studentId,
+          {
+            organizationId:
+              context.organizationId,
+          }
+        );
+
+    const rawInstitutions =
+      Array.isArray(
+        recommendation
+          ?.institutions
+      )
+        ? recommendation
+            .institutions
+        : [];
+
+    const rawEducationCenters =
+      Array.isArray(
+        recommendation
+          ?.educationCenters
+      )
+        ? recommendation
+            .educationCenters
+        : [];
+
+    const normalizeResultItem =
+      (
+        item:
+          any
+      ) => ({
+        id:
+          Number(
+            item?.id ||
+            0
+          ),
+
+        sourceType:
+          item?.sourceType ??
+          null,
+
+        masterId:
+          Number(
+            item?.masterId ||
+            0
+          ) ||
+          null,
+
+        name:
+          item?.name ??
+          null,
+
+        phone:
+          item?.phone ??
+          null,
+
+        address:
+          item?.address ??
+          null,
+
+        detailAddress:
+          item?.detailAddress ??
+          null,
+
+        latitude:
+          item?.latitude ??
+          null,
+
+        longitude:
+          item?.longitude ??
+          null,
+
+        distanceKm:
+          Number(
+            item?.distanceKm ||
+            0
+          ),
+
+        price:
+          item?.price ??
+          null,
+
+        availableCourse:
+          item?.availableCourse ??
+          null,
+
+        selectionStatus:
+          item?.selectionStatus ??
+          null,
+
+        selectionValidFrom:
+          item?.selectionValidFrom ??
+          null,
+
+        selectionValidTo:
+          item?.selectionValidTo ??
+          null,
+
+        practiceAvailabilityType:
+          item?.practiceAvailabilityType ??
+          null,
+
+        isInactive:
+          item?.isInactive ===
+          true,
+
+        inactiveReason:
+          item?.inactiveReason ??
+          null,
+
+        memo:
+          item?.memo ??
+          null,
+      });
+
+    const institutions =
+      rawInstitutions
+        .map(
+          normalizeResultItem
+        )
+        .filter(
+          (
+            item
+          ) =>
+            item.id !==
+              0 &&
+            item.distanceKm >=
+              0
+        );
+
+    const educationCenters =
+      rawEducationCenters
+        .map(
+          normalizeResultItem
+        )
+        .filter(
+          (
+            item
+          ) =>
+            item.id !==
+              0 &&
+            item.distanceKm >=
+              0
+        );
+
+    const recommendationStudent =
+      recommendation?.student ||
+      student;
+
+    return {
+      student: {
+        id:
+          Number(
+            (
+              recommendationStudent as
+                any
+            ).id ||
+            studentId
+          ),
+
+        clientName:
+          (
+            recommendationStudent as
+              any
+          ).clientName ??
+          (
+            student as
+              any
+          ).clientName ??
+          null,
+
+        course:
+          (
+            recommendationStudent as
+              any
+          ).course ??
+          (
+            student as
+              any
+          ).course ??
+          null,
+
+        address:
+          (
+            recommendationStudent as
+              any
+          ).address ??
+          (
+            student as
+              any
+          ).address ??
+          null,
+
+        detailAddress:
+          (
+            recommendationStudent as
+              any
+          ).detailAddress ??
+          (
+            student as
+              any
+          ).detailAddress ??
+          null,
+
+        latitude:
+          Number.isFinite(
+            Number(
+              (
+                recommendationStudent as
+                  any
+              ).latitude
+            )
+          )
+            ? Number(
+                (
+                  recommendationStudent as
+                    any
+                ).latitude
+              )
+            : null,
+
+        longitude:
+          Number.isFinite(
+            Number(
+              (
+                recommendationStudent as
+                  any
+              ).longitude
+            )
+          )
+            ? Number(
+                (
+                  recommendationStudent as
+                    any
+                ).longitude
+              )
+            : null,
+
+        assigneeId:
+          Number(
+            (
+              recommendationStudent as
+                any
+            ).assigneeId ||
+            (
+              student as
+                any
+            ).assigneeId ||
+            0
+          ) ||
+          null,
+      },
+
+      institutions,
+
+      educationCenters,
+
+      summary: {
+        institutionCount:
+          institutions.length,
+
+        educationCenterCount:
+          educationCenters.length,
+
+        nearestInstitutionDistanceKm:
+          institutions[0]
+            ?.distanceKm ??
+          null,
+
+        nearestEducationCenterDistanceKm:
+          educationCenters[0]
+            ?.distanceKm ??
+          null,
+      },
+
+      generatedAt:
+        new Date()
+          .toISOString(),
+    };
+  },
+});
+
+/**
+ * 실습배정지원센터 학생 상태 조회
+ *
+ * 학생에게 등록된 실습배정지원 요청,
+ * 섭외상태, 결제상태, 교육원 및 실습기관
+ * 선택 현황을 조회한다.
+ */
+registerTool<
+  PracticeSupportStatusToolInput,
+  PracticeSupportStatusToolOutput
+>({
+  name:
+    "practice.supportStatus",
+
+  description:
+    "현재 사용자가 접근 가능한 학생의 실습배정지원 신청 여부, 섭외상태, 결제상태, 실습시간, 실습일정, 선택된 교육원과 실습기관을 조회합니다.",
+
+  inputSchema: {
+    type:
+      "object",
+
+    properties: {
+      studentId: {
+        type:
+          "integer",
+
+        description:
+          "실습배정지원 상태를 조회할 확정된 학생 ID",
+
+        minimum:
+          1,
+      },
+    },
+
+    required: [
+      "studentId",
+    ],
+
+    additionalProperties:
+      false,
+  },
+
+  accessMode:
+    "read",
+
+  allowedRoles: [
+    "staff",
+    "admin",
+    "host",
+  ],
+
+  requiresOrganization:
+    true,
+
+  requiresConfirmation:
+    false,
+
+  autoExecutable:
+    true,
+
+  handler: async ({
+    context,
+    input,
+  }) => {
+    const safeInput =
+      stripUntrustedScopeFields(
+        (
+          input ||
+          {}
+        ) as Record<
+          string,
+          unknown
+        >
+      ) as PracticeSupportStatusToolInput;
+
+    const studentId =
+      normalizePositiveInteger(
+        safeInput.studentId
+      );
+
+    if (
+      studentId <=
+      0
+    ) {
+      throw new Error(
+        "실습 상태를 조회할 올바른 학생 ID가 필요합니다."
+      );
+    }
+
+    /**
+     * 먼저 학생의 조직 및 조회 권한을 확인한다.
+     */
+    const student =
+      await db.getStudentById(
+        studentId,
+        {
+          organizationId:
+            context.organizationId,
+        }
+      );
+
+    if (!student) {
+      throw new Error(
+        "실습 상태를 조회할 학생을 찾을 수 없습니다."
+      );
+    }
+
+    assertCanAccessStudent({
+      context,
+      student,
+    });
+
+    /**
+     * 기존 실습배정지원센터 조회 함수를 그대로 사용한다.
+     */
+    const requestRows =
+      await db.listPracticeSupportRequestsByStudent(
+        studentId,
+        {
+          organizationId:
+            context.organizationId,
+        }
+      );
+
+    const requests:
+      PracticeSupportStatusToolOutput["requests"] =
+      (
+        Array.isArray(
+          requestRows
+        )
+          ? requestRows
+          : []
+      ).map(
+        (
+          row:
+            any
+        ) => ({
+          id:
+            Number(
+              row.id ||
+              row.practiceSupportRequestId ||
+              0
+            ),
+
+          studentId:
+            Number(
+              row.studentId ||
+              studentId
+            ),
+
+          semesterId:
+            Number(
+              row.semesterId ||
+              0
+            ) ||
+            null,
+
+          semesterOrder:
+            Number(
+              row.semesterOrder ||
+              1
+            ),
+
+          clientName:
+            String(
+              row.clientName ||
+              (student as any)
+                .clientName ||
+              ""
+            ).trim() ||
+            null,
+
+          course:
+            String(
+              row.course ||
+              (student as any)
+                .course ||
+              ""
+            ).trim() ||
+            null,
+
+          assigneeId:
+            Number(
+              row.assigneeId ||
+              (student as any)
+                .assigneeId ||
+              0
+            ) ||
+            null,
+
+          assigneeName:
+            String(
+              row.assigneeName ||
+              ""
+            ).trim() ||
+            null,
+
+          managerName:
+            String(
+              row.managerName ||
+              ""
+            ).trim() ||
+            null,
+
+          practiceHours:
+            Number.isFinite(
+              Number(
+                row.practiceHours
+              )
+            )
+              ? Number(
+                  row.practiceHours
+                )
+              : null,
+
+          practiceDate:
+            String(
+              row.practiceDate ||
+              ""
+            ).trim() ||
+            null,
+
+          coordinationStatus:
+            String(
+              row.coordinationStatus ||
+              "미섭외"
+            ).trim() ||
+            "미섭외",
+
+          paymentStatus:
+            String(
+              row.paymentStatus ||
+              "미결제"
+            ).trim() ||
+            "미결제",
+
+          feeAmount:
+            row.feeAmount ??
+            "0",
+
+          selectedEducationCenter: {
+            id:
+              Number(
+                row.selectedEducationCenterId ||
+                0
+              ) ||
+              null,
+
+            name:
+              String(
+                row.selectedEducationCenterName ||
+                ""
+              ).trim() ||
+              null,
+
+            address:
+              String(
+                row.selectedEducationCenterAddress ||
+                ""
+              ).trim() ||
+              null,
+
+            distanceKm:
+              row.selectedEducationCenterDistanceKm ??
+              null,
+          },
+
+          selectedPracticeInstitution: {
+            id:
+              Number(
+                row.selectedPracticeInstitutionId ||
+                0
+              ) ||
+              null,
+
+            name:
+              String(
+                row.selectedPracticeInstitutionName ||
+                ""
+              ).trim() ||
+              null,
+
+            address:
+              String(
+                row.selectedPracticeInstitutionAddress ||
+                ""
+              ).trim() ||
+              null,
+
+            distanceKm:
+              row.selectedPracticeInstitutionDistanceKm ??
+              null,
+          },
+
+          note:
+            String(
+              row.note ||
+              ""
+            ).trim() ||
+            null,
+
+          createdAt:
+            row.createdAt ??
+            null,
+
+          updatedAt:
+            row.updatedAt ??
+            null,
+        })
+      )
+      .filter(
+        (
+          row
+        ) =>
+          row.id >
+          0
+      );
+
+    /**
+     * DB 함수가 오래된 순서로 반환하므로
+     * 마지막 항목을 최신 요청으로 사용한다.
+     */
+    const latestRequest =
+      requests.length >
+      0
+        ? requests[
+            requests.length -
+            1
+          ]
+        : null;
+
+    return {
+      student: {
+        id:
+          Number(
+            (student as any)
+              .id
+          ),
+
+        clientName:
+          (student as any)
+            .clientName ??
+          null,
+
+        course:
+          (student as any)
+            .course ??
+          null,
+
+        assigneeId:
+          Number(
+            (student as any)
+              .assigneeId ||
+            0
+          ) ||
+          null,
+      },
+
+      hasRequest:
+        requests.length >
+        0,
+
+      requestCount:
+        requests.length,
+
+      latestRequest,
+
+      requests,
+
+      summary: {
+        coordinationStatus:
+          latestRequest
+            ?.coordinationStatus ||
+          "신청없음",
+
+        paymentStatus:
+          latestRequest
+            ?.paymentStatus ||
+          "신청없음",
+
+        educationCenterSelected:
+          Boolean(
+            latestRequest
+              ?.selectedEducationCenter
+              .id ||
+            latestRequest
+              ?.selectedEducationCenter
+              .name
+          ),
+
+        practiceInstitutionSelected:
+          Boolean(
+            latestRequest
+              ?.selectedPracticeInstitution
+              .id ||
+            latestRequest
+              ?.selectedPracticeInstitution
+              .name
+          ),
+
+        practiceHours:
+          latestRequest
+            ?.practiceHours ??
+          null,
+
+        practiceDate:
+          latestRequest
+            ?.practiceDate ??
+          null,
+      },
+
+      generatedAt:
+        new Date()
+          .toISOString(),
+    };
+  },
+});
+
+/**
  * 학생 일정 등록 초안
  *
  * 이 Tool은 schedules 테이블을 직접 수정하지 않는다.
@@ -1247,6 +2245,121 @@ registerTool<
 
   description:
     "현재 사용자가 접근 가능한 학생에게 연결할 일정 등록 초안을 생성합니다. 실제 일정 등록은 사용자의 최종 승인 후 실행합니다.",
+
+  inputSchema: {
+    type:
+      "object",
+
+    properties: {
+      studentId: {
+        type:
+          "integer",
+
+        description:
+          "일정을 연결할 확정된 학생 ID",
+
+        minimum:
+          1,
+      },
+
+      studentName: {
+        type: [
+          "string",
+          "null",
+        ],
+
+        description:
+          "사용자 확인 화면에 표시할 학생명. 권한검사에는 사용하지 않습니다.",
+      },
+
+      title: {
+        type:
+          "string",
+
+        description:
+          "등록할 일정 제목",
+      },
+
+      description: {
+        type: [
+          "string",
+          "null",
+        ],
+
+        description:
+          "일정 상세내용. 별도 내용이 없으면 생략합니다.",
+      },
+
+      scheduleDate: {
+        type:
+          "string",
+
+        description:
+          "일정 날짜. YYYY-MM-DD 형식으로 전달합니다.",
+      },
+
+      meridiem: {
+        type:
+          "string",
+
+        description:
+          "오전 또는 오후 구분",
+
+        enum: [
+          "AM",
+          "PM",
+        ],
+      },
+
+      hour12: {
+        type:
+          "integer",
+
+        description:
+          "12시간제를 기준으로 한 시간",
+
+        minimum:
+          1,
+
+        maximum:
+          12,
+      },
+
+      minute: {
+        type:
+          "integer",
+
+        description:
+          "일정의 분",
+
+        minimum:
+          0,
+
+        maximum:
+          59,
+      },
+
+      isGlobal: {
+        type:
+          "boolean",
+
+        description:
+          "회사 전체 일정 여부. 일반적인 학생 개인 일정은 false입니다.",
+      },
+    },
+
+    required: [
+      "studentId",
+      "title",
+      "scheduleDate",
+      "meridiem",
+      "hour12",
+      "minute",
+    ],
+
+    additionalProperties:
+      false,
+  },
 
   accessMode:
     "draft",
@@ -1490,11 +2603,50 @@ registerTool<
   ConsultationSearchToolInput,
   ConsultationSearchToolOutput
 >({
-  name: "consultation.search",
-  description:
-    "현재 사용자의 권한 범위 안에서 상담DB를 이름, 연락처, 희망과정, 상태, 상담내용으로 검색합니다.",
+  name:
+    "consultation.search",
 
-  accessMode: "read",
+  description:
+    "현재 사용자의 권한 범위 안에서 상담DB를 이름, 연락처, 희망과정, 상태 또는 상담내용으로 검색합니다.",
+
+  inputSchema: {
+    type:
+      "object",
+
+    properties: {
+      query: {
+        type:
+          "string",
+
+        description:
+          "검색할 상담자의 이름, 연락처 일부, 희망과정, 상태 또는 상담내용",
+      },
+
+      limit: {
+        type:
+          "integer",
+
+        description:
+          "최대 검색 결과 수",
+
+        minimum:
+          1,
+
+        maximum:
+          50,
+      },
+    },
+
+    required: [
+      "query",
+    ],
+
+    additionalProperties:
+      false,
+  },
+
+  accessMode:
+    "read",
 
   allowedRoles: [
     "staff",
@@ -1634,7 +2786,52 @@ registerTool<
     "consultation.update",
 
   description:
-    "현재 사용자가 접근 가능한 상담DB의 상담 상태 또는 상담내용을 수정하기 위한 승인 초안을 생성합니다.",
+    "현재 사용자가 접근 가능한 상담DB의 상담 상태 또는 상담내용을 수정하기 위한 승인 초안을 생성합니다. 실제 DB 수정은 사용자 승인 후 실행됩니다.",
+
+  inputSchema: {
+    type:
+      "object",
+
+    properties: {
+      consultationId: {
+        type:
+          "integer",
+
+        description:
+          "수정할 확정된 상담DB ID",
+
+        minimum:
+          1,
+      },
+
+      status: {
+        type: [
+          "string",
+          "null",
+        ],
+
+        description:
+          "변경할 상담 상태. 상태 변경 요청이 없으면 전달하지 않습니다.",
+      },
+
+      notes: {
+        type: [
+          "string",
+          "null",
+        ],
+
+        description:
+          "변경 후 저장할 전체 상담내용. 상담내용 변경 요청이 없으면 전달하지 않습니다.",
+      },
+    },
+
+    required: [
+      "consultationId",
+    ],
+
+    additionalProperties:
+      false,
+  },
 
   accessMode:
     "draft",
@@ -1958,11 +3155,40 @@ registerTool<
   MissingDataAlertToolInput,
   MissingDataAlertToolOutput
 >({
-  name: "alert.missingData",
-  description:
-    "현재 사용자의 권한 범위 안에서 결제일, 결제금액, 담당자, 실습 배정 누락을 점검합니다.",
+  name:
+    "alert.missingData",
 
-  accessMode: "read",
+  description:
+    "현재 사용자의 권한 범위 안에서 결제일, 결제금액, 담당자 또는 실습 배정 누락을 점검합니다.",
+
+  inputSchema: {
+    type:
+      "object",
+
+    properties: {
+      limit: {
+        type:
+          "integer",
+
+        description:
+          "조회할 최대 누락 항목 수",
+
+        minimum:
+          1,
+
+        maximum:
+          300,
+      },
+    },
+
+    required: [],
+
+    additionalProperties:
+      false,
+  },
+
+  accessMode:
+    "read",
 
   allowedRoles: [
     "staff",
@@ -2169,6 +3395,31 @@ registerTool<
   description:
     "현재 사용자가 접근 가능한 학생 한 명의 플랜, 과목, 학점, 결제, 중복 과목, 실습 상태를 종합 점검합니다.",
 
+  inputSchema: {
+    type:
+      "object",
+
+    properties: {
+      studentId: {
+        type:
+          "integer",
+
+        description:
+          "위험요소를 분석할 확정된 학생 ID",
+
+        minimum:
+          1,
+      },
+    },
+
+    required: [
+      "studentId",
+    ],
+
+    additionalProperties:
+      false,
+  },
+
   accessMode: "read",
 
   allowedRoles: [
@@ -2228,6 +3479,46 @@ registerTool<
   description:
     "현재 사용자의 권한 범위 안에서 학생 전체의 플랜, 학점, 과목 중복, 결제, 실습 상태를 종합 점검합니다.",
 
+  inputSchema: {
+    type:
+      "object",
+
+    properties: {
+      limit: {
+        type:
+          "integer",
+
+        description:
+          "한 번에 점검할 최대 학생 수",
+
+        minimum:
+          1,
+
+        maximum:
+          100,
+      },
+
+      riskLevel: {
+        type:
+          "string",
+
+        description:
+          "결과에 포함할 위험등급",
+
+        enum: [
+          "all",
+          "danger",
+          "warning",
+        ],
+      },
+    },
+
+    required: [],
+
+    additionalProperties:
+      false,
+  },
+
   accessMode: "read",
 
   allowedRoles: [
@@ -2285,18 +3576,36 @@ registerTool<
 export function listRegisteredAiTools() {
   return Array.from(
     toolRegistry.values()
-  ).map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    accessMode: tool.accessMode,
-    allowedRoles: tool.allowedRoles,
-    requiresOrganization:
-      tool.requiresOrganization,
-    requiresConfirmation:
-      tool.requiresConfirmation,
-    autoExecutable:
-      tool.autoExecutable,
-  }));
+  ).map(
+    (
+      tool
+    ) => ({
+      name:
+        tool.name,
+
+      description:
+        tool.description,
+
+      inputSchema:
+        tool.inputSchema ??
+        null,
+
+      accessMode:
+        tool.accessMode,
+
+      allowedRoles:
+        tool.allowedRoles,
+
+      requiresOrganization:
+        tool.requiresOrganization,
+
+      requiresConfirmation:
+        tool.requiresConfirmation,
+
+      autoExecutable:
+        tool.autoExecutable,
+    })
+  );
 }
 
 export function getAiTool(

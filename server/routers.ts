@@ -9772,13 +9772,40 @@ tools: protectedProcedure
       });
 
     const tools =
-      listRegisteredAiTools()
-        .filter((tool) =>
-          tool.allowedRoles.includes(
-            aiContext.role
-          )
+  listRegisteredAiTools()
+    .filter(
+      (
+        tool
+      ) =>
+        tool.allowedRoles.includes(
+          aiContext.role
         )
-        .map((tool) => ({
+    )
+    .filter(
+      (
+        tool
+      ) => {
+        if (
+          aiContext.role ===
+          "superhost"
+        ) {
+          return false;
+        }
+
+        if (
+          tool.accessMode ===
+          "draft"
+        ) {
+          return (
+            aiContext.canWrite ===
+            true
+          );
+        }
+
+        return true;
+      }
+    )
+    .map((tool) => ({
           name: tool.name,
           description:
             tool.description,
@@ -11186,7 +11213,7 @@ if (
           (
             section
           ) => ({
-            title:
+            label:
               String(
                 section?.title ||
                 "수정 대상"

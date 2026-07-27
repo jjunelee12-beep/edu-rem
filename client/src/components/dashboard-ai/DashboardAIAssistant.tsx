@@ -74,8 +74,30 @@ function getMessageKind(response: any): DashboardAIMessageKind {
       ""
   );
 
-  if (
-  response?.pendingAction
+if (
+  response?.pendingAction ||
+  response?.data
+    ?.pendingAction
+) {
+  return "student_registration_preview";
+}
+
+if (
+  response
+    ?.scheduleCreateDraft ||
+  response
+    ?.consultationUpdateDraft ||
+  response
+    ?.studentUpdateDraft ||
+  response
+    ?.data
+    ?.scheduleCreateDraft ||
+  response
+    ?.data
+    ?.consultationUpdateDraft ||
+  response
+    ?.data
+    ?.studentUpdateDraft
 ) {
   return "student_registration_preview";
 }
@@ -94,18 +116,32 @@ if (
   }
 
   if (
-    toolName ===
-    "student.dashboard"
-  ) {
-    return "student_dashboard";
-  }
+  toolName ===
+  "student.dashboard"
+) {
+  return "student_dashboard";
+}
 
-  if (
-    toolName ===
-    "risk.studentDetail"
-  ) {
-    return "student_risk";
-  }
+if (
+  toolName ===
+  "practice.institutionSearch"
+) {
+  return "practice_institution_search";
+}
+
+if (
+  toolName ===
+  "practice.supportStatus"
+) {
+  return "practice_support_status";
+}
+
+if (
+  toolName ===
+  "risk.studentDetail"
+) {
+  return "student_risk";
+}
 
   if (toolName === "risk.studentList") {
     return "organization_risk";
@@ -134,21 +170,23 @@ function toDashboardAIMessage(
     any
 ): DashboardAIMessage {
   const allowedKinds =
-    new Set<
-      DashboardAIMessageKind
-        >([
-      "text",
-      "error",
-      "warning",
-      "search_result",
-      "student_summary",
-      "student_dashboard",
-      "student_risk",
-      "organization_risk",
-      "student_registration_preview",
-      "student_registration_result",
-      "document_analysis",
-    ]);
+  new Set<
+    DashboardAIMessageKind
+  >([
+    "text",
+    "error",
+    "warning",
+    "search_result",
+    "student_summary",
+    "student_dashboard",
+    "practice_institution_search",
+    "practice_support_status",
+    "student_risk",
+    "organization_risk",
+    "student_registration_preview",
+    "student_registration_result",
+    "document_analysis",
+  ]);
 
   const rawKind =
     String(
@@ -1281,11 +1319,18 @@ const assistantMessage:
       null,
 
     scheduleCreateDraft:
-      response
-        ?.scheduleCreateDraft ||
-      responseData
-        ?.scheduleCreateDraft ||
-      null,
+  response
+    ?.scheduleCreateDraft ||
+  responseData
+    ?.scheduleCreateDraft ||
+  null,
+
+consultationUpdateDraft:
+  response
+    ?.consultationUpdateDraft ||
+  responseData
+    ?.consultationUpdateDraft ||
+  null,
 
 studentUpdateDraft:
   response
@@ -2000,14 +2045,22 @@ onSend={
 
 onAnalyzeDocument={
   user?.role ===
-  "staff"
+    "staff" ||
+  user?.role ===
+    "admin" ||
+  user?.role ===
+    "host"
     ? handleAnalyzeDocument
     : undefined
 }
 
 onRequestDocumentImport={
   user?.role ===
-    "staff"
+    "staff" ||
+  user?.role ===
+    "admin" ||
+  user?.role ===
+    "host"
     ? handleRequestDocumentImport
     : undefined
 }
