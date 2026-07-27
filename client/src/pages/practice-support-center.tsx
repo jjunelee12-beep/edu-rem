@@ -35,6 +35,10 @@ import {
   Settings2,
   CalendarDays,
   AlertTriangle,
+  Plus,
+  Trash2,
+  UserCheck,
+  Loader2,
 } from "lucide-react";
 
 import KakaoMapBase from "@/components/KakaoMap";
@@ -43,6 +47,39 @@ const KakaoMap: any = KakaoMapBase;
 type PracticeCoordinationStatus = "미섭외" | "섭외중" | "섭외완료";
 type PaymentStatus = "미결제" | "결제";
 type FinderItemType = "education" | "institution";
+
+type ExternalPracticeSupportForm = {
+  assigneeId: number | null;
+  assigneeLoginId: string;
+  assigneeName: string;
+
+  clientName: string;
+  phone: string;
+  course: string;
+
+  inputAddress: string;
+  detailAddress: string;
+
+  practiceSemesterLabel: string;
+  practiceHours: string;
+  practiceDate: string;
+
+  includeEducationCenter: boolean;
+  includePracticeInstitution: boolean;
+
+  coordinationStatus:
+    | "미섭외"
+    | "섭외중"
+    | "섭외완료";
+
+  paymentStatus:
+    | "미결제"
+    | "결제";
+
+  feeAmount: string;
+  paidAt: string;
+  note: string;
+};
 
 type FinderItem = {
 categoryId?: number;
@@ -453,6 +490,36 @@ function normalizeBooleanText(value: string) {
   return String(value || "").trim().toLowerCase() === "true";
 }
 
+function createEmptyExternalPracticeSupportForm():
+  ExternalPracticeSupportForm {
+  return {
+    assigneeId: null,
+    assigneeLoginId: "",
+    assigneeName: "",
+
+    clientName: "",
+    phone: "",
+    course: "",
+
+    inputAddress: "",
+    detailAddress: "",
+
+    practiceSemesterLabel: "",
+    practiceHours: "160",
+    practiceDate: "",
+
+    includeEducationCenter: true,
+    includePracticeInstitution: true,
+
+    coordinationStatus: "미섭외",
+    paymentStatus: "미결제",
+
+    feeAmount: "0",
+    paidAt: "",
+    note: "",
+  };
+}
+
 export default function PracticeSupportCenter() {
   const { user } = useAuth();
   const utils = trpc.useUtils();
@@ -518,8 +585,23 @@ const isHostManager =
 const canManagePartnerPrice =
   user?.role === "host" || user?.role === "superhost";
 
+const canCreateExternal =
+  user?.role === "admin" ||
+  user?.role === "host";
+
 const canManageEducationPartner =
   user?.role === "host" || user?.role === "superhost";
+
+const [createExternalOpen, setCreateExternalOpen] =
+  useState(false);
+
+const [assigneeSearchText, setAssigneeSearchText] =
+  useState("");
+
+const [externalForm, setExternalForm] =
+  useState<ExternalPracticeSupportForm>(
+    createEmptyExternalPracticeSupportForm
+  );
 
 const [masterOpen, setMasterOpen] = useState(false);
 const [masterListType, setMasterListType] = useState<"education" | "institution">("education");
@@ -553,6 +635,31 @@ const [csvUploadSummary, setCsvUploadSummary] = useState<{
   failed: number;
   failedRows: Array<{ rowIndex: number; name?: string; address?: string; reason: string }>;
 } | null>(null);
+
+const normalizedAssigneeSearch =
+  assigneeSearchText.trim();
+
+const {
+  data: assigneeSearchResults = [],
+  isFetching: isAssigneeSearching,
+} = trpc.users.searchAssignable.useQuery(
+  {
+    username:
+      normalizedAssigneeSearch,
+  },
+  {
+    enabled:
+      createExternalOpen &&
+      canCreateExternal &&
+      normalizedAssigneeSearch.length >= 2,
+
+    staleTime:
+      1000 * 30,
+
+    refetchOnWindowFocus:
+      false,
+  }
+);
 
   const { data: practiceSupportMonthSource = [] } =
   trpc.practiceSupport.list.useQuery(
@@ -631,6 +738,51 @@ refetchOnWindowFocus: false,
   }
 );
 
+const createExternalPracticeSupportMut =
+  trpc.practiceSupport.createExternal.useMutation({
+    onSuccess: async () => {
+      await utils.practiceSupport.list.invalidate();
+
+      toast.success(
+        "실습배정지원 요청이 신규 등록되었습니다."
+      );
+
+      setCreateExternalOpen(false);
+      setAssigneeSearchText("");
+      setExternalForm(
+        createEmptyExternalPracticeSupportForm()
+      );
+    },
+
+    onError: (e) => {
+      toast.error(
+        e.message ||
+        "실습배정지원 요청 신규등록에 실패했습니다."
+      );
+    },
+  });
+
+const deletePracticeSupportMut =
+  trpc.practiceSupport.delete.useMutation({
+    onSuccess: async () => {
+      await utils.practiceSupport.list.invalidate();
+
+      toast.success(
+        "실습배정지원 요청이 삭제되었습니다."
+      );
+
+      setDetailOpen(false);
+      setSelectedRow(null);
+    },
+
+    onError: (e) => {
+      toast.error(
+        e.message ||
+        "실습배정지원 요청 삭제에 실패했습니다."
+      );
+    },
+  });
+
 
   const updatePracticeSupportMut = trpc.practiceSupport.update.useMutation({
   onSuccess: async () => {
@@ -655,17 +807,33 @@ const patchPracticeRow = async (row: any, patch: Record<string, any>) => {
   const requestId = Number(row?.practiceSupportRequestId || row?.id || 0);
   const hasRequest = requestId > 0;
 
-  if (hasRequest) {
-console.log("[practiceSupport.patch]", {
-  rowId: row?.id,
-  practiceSupportRequestId: row?.practiceSupportRequestId,
-  requestId,
-  patch,
-});
+    if (hasRequest) {
+    console.log("[practiceSupport.patch]", {
+      rowId:
+        row?.id,
+
+      practiceSupportRequestId:
+        row?.practiceSupportRequestId,
+
+      sourceType:
+        row?.sourceType,
+
+      requestId,
+      patch,
+    });
+
     await updatePracticeSupportMut.mutateAsync({
-      id: requestId,
+      id:
+        requestId,
+
+      sourceType:
+        row?.sourceType === "external"
+          ? "external"
+          : "student",
+
       ...patch,
     } as any);
+
     return;
   }
 
@@ -1003,6 +1171,37 @@ const stats = useMemo(() => {
 
   if (!selectedRow) return;
 
+if (
+  selectedRow.sourceType === "external"
+) {
+  const clientName =
+    String(
+      selectedRow.clientName || ""
+    ).trim();
+
+  const phone =
+    String(
+      selectedRow.phone || ""
+    ).replace(/\D/g, "");
+
+  if (!clientName) {
+    toast.error(
+      "이름을 입력해주세요."
+    );
+    return;
+  }
+
+  if (
+    phone.length < 10 ||
+    phone.length > 11
+  ) {
+    toast.error(
+      "올바른 연락처를 입력해주세요."
+    );
+    return;
+  }
+}
+
 if (!String(selectedRow.practiceSemesterLabel || "").trim()) {
   toast.error("학기구분을 선택해주세요.");
   return;
@@ -1010,27 +1209,120 @@ if (!String(selectedRow.practiceSemesterLabel || "").trim()) {
 
   try {
     await patchPracticeRow(selectedRow, {
-  inputAddress: selectedRow.inputAddress || null,
-  detailAddress: selectedRow.detailAddress || null,
-    managerName: selectedRow.managerName || null,
+  ...(selectedRow.sourceType === "external"
+    ? {
+        clientName:
+          String(
+            selectedRow.clientName || ""
+          ).trim(),
+
+        phone:
+          String(
+            selectedRow.phone || ""
+          ).replace(/\D/g, ""),
+
+        course:
+          String(
+            selectedRow.course || ""
+          ).trim() || null,
+      }
+    : {}),
+
+  inputAddress:
+    String(
+      selectedRow.inputAddress || ""
+    ).trim() || null,
+
+  detailAddress:
+    String(
+      selectedRow.detailAddress || ""
+    ).trim() || null,
+
+  managerName:
+    String(
+      selectedRow.managerName || ""
+    ).trim() || null,
 
   practiceSemesterLabel:
-    selectedRow.practiceSemesterLabel || null,
+    String(
+      selectedRow.practiceSemesterLabel || ""
+    ).trim() || null,
 
-  practiceHours: selectedRow.practiceHours
-    ? Number(selectedRow.practiceHours)
-    : null,
+  practiceHours:
+    String(
+      selectedRow.practiceHours || ""
+    ).trim()
+      ? Number(selectedRow.practiceHours)
+      : null,
 
   practiceDate:
     selectedRow.practiceDate || null,
+
   coordinationStatus:
     selectedRow.coordinationStatus as PracticeCoordinationStatus,
-  includeEducationCenter: !!selectedRow.includeEducationCenter,
-  includePracticeInstitution: !!selectedRow.includePracticeInstitution,
-  paymentStatus: selectedRow.paidAt
-    ? "결제"
-    : (selectedRow.paymentStatus || "미결제"),
-  paidAt: selectedRow.paidAt || null,
+
+  includeEducationCenter:
+    !!selectedRow.includeEducationCenter,
+
+  includePracticeInstitution:
+    !!selectedRow.includePracticeInstitution,
+
+  selectedEducationCenterId:
+    selectedRow.selectedEducationCenterId
+      ? Number(
+          selectedRow.selectedEducationCenterId
+        )
+      : null,
+
+  selectedEducationCenterName:
+    selectedRow.selectedEducationCenterName ||
+    null,
+
+  selectedEducationCenterAddress:
+    selectedRow.selectedEducationCenterAddress ||
+    null,
+
+  selectedEducationCenterDistanceKm:
+    selectedRow.selectedEducationCenterDistanceKm ||
+    null,
+
+  selectedPracticeInstitutionId:
+    selectedRow.selectedPracticeInstitutionId
+      ? Number(
+          selectedRow.selectedPracticeInstitutionId
+        )
+      : null,
+
+  selectedPracticeInstitutionName:
+    selectedRow.selectedPracticeInstitutionName ||
+    null,
+
+  selectedPracticeInstitutionAddress:
+    selectedRow.selectedPracticeInstitutionAddress ||
+    null,
+
+  selectedPracticeInstitutionDistanceKm:
+    selectedRow.selectedPracticeInstitutionDistanceKm ||
+    null,
+
+  feeAmount:
+    String(
+      selectedRow.feeAmount || "0"
+    ).replace(/[^0-9]/g, "") || "0",
+
+  paymentStatus:
+    selectedRow.paymentStatus || "미결제",
+
+  paidAt:
+    selectedRow.paymentStatus === "결제"
+      ? selectedRow.paidAt ||
+        getTodayDateString()
+      : null,
+
+  note:
+    String(
+      selectedRow.note || ""
+    ).trim() || null,
 });
 
     setDetailOpen(false);
@@ -1082,6 +1374,245 @@ if (!String(selectedRow.practiceSemesterLabel || "").trim()) {
   } catch (e: any) {
     toast.error(e.message || "결제 상태 저장 중 오류가 발생했습니다.");
   }
+};
+
+const openExternalCreateDialog = () => {
+  if (!canCreateExternal) {
+    toast.error(
+      "관리자 또는 호스트만 직접등록할 수 있습니다."
+    );
+    return;
+  }
+
+  setExternalForm(
+    createEmptyExternalPracticeSupportForm()
+  );
+
+  setAssigneeSearchText("");
+  setCreateExternalOpen(true);
+};
+
+const closeExternalCreateDialog = () => {
+  if (
+    createExternalPracticeSupportMut.isPending
+  ) {
+    return;
+  }
+
+  setCreateExternalOpen(false);
+  setAssigneeSearchText("");
+
+  setExternalForm(
+    createEmptyExternalPracticeSupportForm()
+  );
+};
+
+const selectExternalAssignee = (
+  row: any
+) => {
+  const assigneeId =
+    Number(row?.id || 0);
+
+  if (!assigneeId) {
+    toast.error(
+      "담당자 정보가 올바르지 않습니다."
+    );
+    return;
+  }
+
+  const loginId =
+    String(
+      row?.loginId ||
+      row?.username ||
+      ""
+    ).trim();
+
+  const name =
+    String(
+      row?.name ||
+      row?.userName ||
+      ""
+    ).trim();
+
+  setExternalForm((prev) => ({
+    ...prev,
+
+    assigneeId,
+
+    assigneeLoginId:
+      loginId,
+
+    assigneeName:
+      name,
+  }));
+};
+
+const submitExternalPracticeSupport =
+  async () => {
+    const clientName =
+      externalForm.clientName.trim();
+
+    const phone =
+      externalForm.phone.replace(
+        /\D/g,
+        ""
+      );
+
+    const course =
+      externalForm.course.trim();
+
+    if (!externalForm.assigneeId) {
+      toast.error(
+        "담당자를 검색하여 선택해주세요."
+      );
+      return;
+    }
+
+    if (!clientName) {
+      toast.error(
+        "이름을 입력해주세요."
+      );
+      return;
+    }
+
+    if (
+      phone.length < 10 ||
+      phone.length > 11
+    ) {
+      toast.error(
+        "올바른 연락처를 입력해주세요."
+      );
+      return;
+    }
+
+if (
+  !externalForm.practiceSemesterLabel
+    .trim()
+) {
+  toast.error(
+    "학기구분을 선택해주세요."
+  );
+  return;
+}
+
+    const practiceHours =
+      externalForm.practiceHours
+        ? Number(
+            externalForm.practiceHours
+          )
+        : null;
+
+    if (
+      practiceHours !== null &&
+      (
+        !Number.isFinite(
+          practiceHours
+        ) ||
+        practiceHours < 0
+      )
+    ) {
+      toast.error(
+        "실습시간을 올바르게 입력해주세요."
+      );
+      return;
+    }
+
+    const feeAmount =
+      String(
+        externalForm.feeAmount ||
+        "0"
+      ).replace(
+        /[^0-9]/g,
+        ""
+      ) || "0";
+
+    await createExternalPracticeSupportMut.mutateAsync({
+      assigneeId:
+        externalForm.assigneeId,
+
+      clientName,
+      phone,
+      course:
+  course || null,
+
+      inputAddress:
+        externalForm.inputAddress.trim() ||
+        null,
+
+      detailAddress:
+        externalForm.detailAddress.trim() ||
+        null,
+
+      practiceSemesterLabel:
+  externalForm.practiceSemesterLabel,
+
+      practiceHours,
+
+      practiceDate:
+        externalForm.practiceDate ||
+        null,
+
+      includeEducationCenter:
+        externalForm.includeEducationCenter,
+
+      includePracticeInstitution:
+        externalForm.includePracticeInstitution,
+
+      coordinationStatus:
+        externalForm.coordinationStatus,
+
+      paymentStatus:
+        externalForm.paymentStatus,
+
+      feeAmount,
+
+      paidAt:
+        externalForm.paymentStatus ===
+          "결제"
+          ? externalForm.paidAt ||
+            getTodayDateString()
+          : null,
+
+      note:
+        externalForm.note.trim() ||
+        null,
+    } as any);
+  };
+
+const deletePracticeSupportRow = (
+  row: any
+) => {
+  const id =
+    Number(
+      row?.practiceSupportRequestId ||
+      row?.id ||
+      0
+    );
+
+  if (!id) {
+    toast.error(
+      "삭제할 실습배정 요청 ID가 없습니다."
+    );
+    return;
+  }
+
+  const ok =
+    window.confirm(
+      "이 실습배정지원 요청을 삭제할까요?"
+    );
+
+  if (!ok) {
+    return;
+  }
+
+  deletePracticeSupportMut.mutate({
+    id,
+
+    sourceType:
+      row?.sourceType === "external"
+        ? "external"
+        : "student",
+  } as any);
 };
 
   const buildFinderBaseResults = (row?: any | null): FinderItem[] => {
@@ -1889,9 +2420,22 @@ practiceAvailabilityType:
     if (finderTargetRow?.id) {
       try {
         await updatePracticeSupportMut.mutateAsync({
-          id: finderTargetRow.id,
-          ...updatePayload,
-        } as any);
+  id:
+    Number(
+      finderTargetRow
+        ?.practiceSupportRequestId ||
+      finderTargetRow?.id ||
+      0
+    ),
+
+  sourceType:
+    finderTargetRow?.sourceType ===
+      "external"
+      ? "external"
+      : "student",
+
+  ...updatePayload,
+} as any);
         setFinderOpen(false);
         toast.success("선택한 기관 정보를 요청 리스트에 바로 반영했습니다.");
       } catch (e: any) {
@@ -2218,6 +2762,20 @@ useEffect(() => {
             </SelectContent>
           </Select>
 
+{canCreateExternal && (
+  <Button
+    type="button"
+    variant="outline"
+    className="gap-2"
+    onClick={
+      openExternalCreateDialog
+    }
+  >
+    <Plus className="h-4 w-4" />
+    직접등록
+  </Button>
+)}
+
           <Button onClick={() => openFinder(null)} className="gap-2">
   <Search className="h-4 w-4" />
   실습검색
@@ -2372,10 +2930,19 @@ useEffect(() => {
   const hasRequest = Number(row.id || row.practiceSupportRequestId || 0) > 0;
 
   return (
-    <tr
-      key={`${row.studentId}-${row.semesterId}-${row.id || "new"}`}
+   <tr
+  key={
+    row?.rowKey ||
+    `${
+      row?.sourceType === "external"
+        ? "external"
+        : "student"
+    }-${row?.practiceSupportRequestId || row?.id || idx}`
+  }
   className={`border-b last:border-0 hover:bg-muted/20 ${
-    row.coordinationStatus === "미섭외" ? "bg-amber-50/40" : ""
+    row.coordinationStatus === "미섭외"
+      ? "bg-amber-50/40"
+      : ""
   }`}
 >
                       <td className="px-3 py-3 text-sm text-muted-foreground">
@@ -2383,28 +2950,55 @@ useEffect(() => {
                       </td>
 
                       <td className="px-3 py-3">
-  <button
-    type="button"
-    onClick={() => {
-      const studentId = Number(row.studentId || 0);
+  {row.sourceType === "external" ? (
+    <button
+      type="button"
+      className="flex items-center gap-2 font-medium text-slate-900 hover:text-blue-600"
+      onClick={() => openDetail(row)}
+    >
+      <span>
+        {row.clientName || "-"}
+      </span>
 
-      if (!studentId) {
-        toast.error("연결된 학생 정보가 없습니다.");
-        return;
-      }
+      <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+        직접등록
+      </span>
+    </button>
+  ) : (
+    <button
+      type="button"
+      className="font-medium text-blue-600 hover:underline"
+      onClick={() => {
+        const studentId =
+          Number(row.studentId || 0);
 
-      const currentPath = window.location.pathname;
-      const orgSlug = currentPath.split("/").filter(Boolean)[0] || "";
-      const targetPath = orgSlug
-        ? `/${orgSlug}/students/${studentId}`
-        : `/students/${studentId}`;
+        if (!studentId) {
+          toast.error(
+            "연결된 학생 정보가 없습니다."
+          );
+          return;
+        }
 
-      window.location.href = targetPath;
-    }}
-    className="font-medium text-blue-600 hover:underline"
-  >
-    {row.clientName || "-"}
-  </button>
+        const currentPath =
+          window.location.pathname;
+
+        const orgSlug =
+          currentPath
+            .split("/")
+            .filter(Boolean)[0] || "";
+
+        const targetPath =
+          orgSlug
+            ? `/${orgSlug}/students/${studentId}`
+            : `/students/${studentId}`;
+
+        window.location.href =
+          targetPath;
+      }}
+    >
+      {row.clientName || "-"}
+    </button>
+  )}
 </td>
 
                       <td className="px-3 py-3">
@@ -2520,28 +3114,55 @@ useEffect(() => {
                       </td>
 
                       <td className="px-3 py-3">
-                        <div className="flex flex-col items-end gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-1 w-[96px]"
-                            onClick={() => openFinder(row)}
-                          >
-                            <Search className="h-3.5 w-3.5" />
-                            실습찾기
-                          </Button>
+  <div className="flex flex-col items-end gap-2">
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="w-[96px] gap-1"
+      onClick={() =>
+        openFinder(row)
+      }
+    >
+      <Search className="h-3.5 w-3.5" />
+      실습찾기
+    </Button>
 
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="gap-1 w-[96px]"
-                            onClick={() => openDetail(row)}
-                          >
-                            <School className="h-3.5 w-3.5" />
-                            상세수정
-                          </Button>
-                        </div>
-                      </td>
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="w-[96px] gap-1"
+      onClick={() =>
+        openDetail(row)
+      }
+    >
+      <School className="h-3.5 w-3.5" />
+      상세수정
+    </Button>
+
+    {row.sourceType === "external" &&
+      canCreateExternal && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="w-[96px] gap-1 text-red-600 hover:bg-red-50 hover:text-red-700"
+          disabled={
+            deletePracticeSupportMut.isPending
+          }
+          onClick={() =>
+            deletePracticeSupportRow(
+              row
+            )
+          }
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          삭제
+        </Button>
+      )}
+  </div>
+</td>
                                         </tr>
                   );
                 })}
@@ -2551,6 +3172,648 @@ useEffect(() => {
           )}
         </CardContent>
       </Card>
+
+<Dialog
+  open={createExternalOpen}
+  onOpenChange={(open) => {
+    if (open) {
+      setCreateExternalOpen(true);
+      return;
+    }
+
+    closeExternalCreateDialog();
+  }}
+>
+  <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+    <DialogHeader>
+      <DialogTitle>
+        실습배정지원 직접등록
+      </DialogTitle>
+
+      <DialogDescription>
+        학생관리와 연결되지 않은 실습배정 요청을 직접 등록합니다.
+      </DialogDescription>
+    </DialogHeader>
+
+    <div className="space-y-6 py-2">
+      <div className="space-y-3 rounded-xl border bg-slate-50 p-4">
+        <div>
+          <p className="text-sm font-semibold">
+            담당자 선택
+          </p>
+
+          <p className="mt-1 text-xs text-muted-foreground">
+            담당자의 로그인 아이디를 2자 이상 입력한 후 선택해주세요.
+          </p>
+        </div>
+
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+
+          <Input
+            className="pl-9"
+            value={
+              assigneeSearchText
+            }
+            placeholder="로그인 아이디 입력"
+            onChange={(e) =>
+              setAssigneeSearchText(
+                e.target.value
+              )
+            }
+          />
+        </div>
+
+        {normalizedAssigneeSearch.length >
+          0 &&
+          normalizedAssigneeSearch.length <
+            2 && (
+            <p className="text-xs text-muted-foreground">
+              두 글자 이상 입력해주세요.
+            </p>
+          )}
+
+        {isAssigneeSearching && (
+          <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            담당자를 검색하고 있습니다.
+          </div>
+        )}
+
+        {normalizedAssigneeSearch.length >=
+          2 &&
+          !isAssigneeSearching && (
+            <div className="max-h-48 space-y-2 overflow-y-auto">
+              {!assigneeSearchResults.length ? (
+                <div className="rounded-lg border border-dashed bg-white p-4 text-center text-sm text-muted-foreground">
+                  검색된 담당자가 없습니다.
+                </div>
+              ) : (
+                assigneeSearchResults.map(
+                  (assignee: any) => {
+                    const loginId =
+                      String(
+                        assignee.loginId ||
+                        assignee.username ||
+                        ""
+                      );
+
+                    const name =
+                      String(
+                        assignee.name ||
+                        assignee.userName ||
+                        ""
+                      );
+
+                    const selected =
+                      Number(
+                        externalForm.assigneeId ||
+                        0
+                      ) ===
+                      Number(
+                        assignee.id ||
+                        0
+                      );
+
+                    return (
+                      <button
+                        key={
+                          assignee.id
+                        }
+                        type="button"
+                        className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition ${
+                          selected
+                            ? "border-blue-400 bg-blue-50"
+                            : "bg-white hover:bg-slate-50"
+                        }`}
+                        onClick={() =>
+                          selectExternalAssignee(
+                            assignee
+                          )
+                        }
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold">
+                            {name
+                              ? `${name}(${loginId || "-"})`
+                              : loginId || "-"}
+                          </p>
+
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {assignee.role ===
+                            "staff"
+                              ? "담당자"
+                              : assignee.role ===
+                                  "admin"
+                                ? "관리자"
+                                : assignee.role ===
+                                    "host"
+                                  ? "호스트"
+                                  : assignee.role ||
+                                    "-"}
+                          </p>
+                        </div>
+
+                        <span className="ml-3 text-xs font-medium text-blue-700">
+                          {selected
+                            ? "선택됨"
+                            : "선택"}
+                        </span>
+                      </button>
+                    );
+                  }
+                )
+              )}
+            </div>
+          )}
+
+        {externalForm.assigneeId && (
+          <div className="flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+            <UserCheck className="h-5 w-5 text-emerald-700" />
+
+            <div>
+              <p className="text-sm font-semibold text-emerald-800">
+                {externalForm.assigneeName
+                  ? `${externalForm.assigneeName}(${externalForm.assigneeLoginId || "-"})`
+                  : externalForm.assigneeLoginId ||
+                    "담당자 선택 완료"}
+              </p>
+
+              <p className="text-xs text-emerald-700">
+                선택된 담당자
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-2">
+          <Label>
+            이름
+            <span className="ml-1 text-red-500">
+              *
+            </span>
+          </Label>
+
+          <Input
+            value={
+              externalForm.clientName
+            }
+            placeholder="회원 이름"
+            onChange={(e) =>
+              setExternalForm(
+                (prev) => ({
+                  ...prev,
+                  clientName:
+                    e.target.value,
+                })
+              )
+            }
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>
+            연락처
+            <span className="ml-1 text-red-500">
+              *
+            </span>
+          </Label>
+
+          <Input
+            value={
+              externalForm.phone
+            }
+            placeholder="010-0000-0000"
+            inputMode="numeric"
+            onChange={(e) =>
+              setExternalForm(
+                (prev) => ({
+                  ...prev,
+
+                  phone:
+                    e.target.value
+                      .replace(
+                        /[^0-9-]/g,
+                        ""
+                      )
+                      .slice(
+                        0,
+                        13
+                      ),
+                })
+              )
+            }
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>
+            희망과정
+            <span className="ml-1 text-red-500">
+              *
+            </span>
+          </Label>
+
+          <Input
+            value={
+              externalForm.course
+            }
+            placeholder="희망과정 입력"
+            onChange={(e) =>
+              setExternalForm(
+                (prev) => ({
+                  ...prev,
+                  course:
+                    e.target.value,
+                })
+              )
+            }
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>
+            학기구분
+            <span className="ml-1 text-red-500">
+              *
+            </span>
+          </Label>
+
+          <Select
+            value={
+              externalForm.practiceSemesterLabel
+            }
+            onValueChange={(
+              value
+            ) =>
+              setExternalForm(
+                (prev) => ({
+                  ...prev,
+                  practiceSemesterLabel:
+                    value,
+                })
+              )
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="학기 선택" />
+            </SelectTrigger>
+
+            <SelectContent>
+              {practiceSemesterLabelOptions.map(
+                (option) => (
+                  <SelectItem
+                    key={
+                      option
+                    }
+                    value={
+                      option
+                    }
+                  >
+                    {option}
+                  </SelectItem>
+                )
+              )}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label>
+            실습시간
+          </Label>
+
+          <Input
+            value={
+              externalForm.practiceHours
+            }
+            inputMode="numeric"
+            placeholder="160"
+            onChange={(e) =>
+              setExternalForm(
+                (prev) => ({
+                  ...prev,
+
+                  practiceHours:
+                    e.target.value.replace(
+                      /[^0-9]/g,
+                      ""
+                    ),
+                })
+              )
+            }
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>
+            실습예정일
+          </Label>
+
+          <Input
+            type="date"
+            value={
+              externalForm.practiceDate
+            }
+            onChange={(e) =>
+              setExternalForm(
+                (prev) => ({
+                  ...prev,
+                  practiceDate:
+                    e.target.value,
+                })
+              )
+            }
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>
+            주소
+          </Label>
+
+          <Input
+            value={
+              externalForm.inputAddress
+            }
+            placeholder="기본주소"
+            onChange={(e) =>
+              setExternalForm(
+                (prev) => ({
+                  ...prev,
+                  inputAddress:
+                    e.target.value,
+                })
+              )
+            }
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>
+            상세주소
+          </Label>
+
+          <Input
+            value={
+              externalForm.detailAddress
+            }
+            placeholder="상세주소"
+            onChange={(e) =>
+              setExternalForm(
+                (prev) => ({
+                  ...prev,
+                  detailAddress:
+                    e.target.value,
+                })
+              )
+            }
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>
+            실습섭외 상태
+          </Label>
+
+          <Select
+            value={
+              externalForm.coordinationStatus
+            }
+            onValueChange={(
+              value
+            ) =>
+              setExternalForm(
+                (prev) => ({
+                  ...prev,
+
+                  coordinationStatus:
+                    value as PracticeCoordinationStatus,
+                })
+              )
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+
+            <SelectContent>
+              <SelectItem value="미섭외">
+                미섭외
+              </SelectItem>
+
+              <SelectItem value="섭외중">
+                섭외중
+              </SelectItem>
+
+              <SelectItem value="섭외완료">
+                섭외완료
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label>
+            결제 상태
+          </Label>
+
+          <Select
+            value={
+              externalForm.paymentStatus
+            }
+            onValueChange={(
+              value
+            ) =>
+              setExternalForm(
+                (prev) => ({
+                  ...prev,
+
+                  paymentStatus:
+                    value as PaymentStatus,
+
+                  paidAt:
+                    value ===
+                    "결제"
+                      ? prev.paidAt ||
+                        getTodayDateString()
+                      : "",
+                })
+              )
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+
+            <SelectContent>
+              <SelectItem value="미결제">
+                미결제
+              </SelectItem>
+
+              <SelectItem value="결제">
+                결제
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label>
+            금액
+          </Label>
+
+          <Input
+            value={
+              externalForm.feeAmount
+            }
+            inputMode="numeric"
+            placeholder="0"
+            onChange={(e) =>
+              setExternalForm(
+                (prev) => ({
+                  ...prev,
+
+                  feeAmount:
+                    e.target.value.replace(
+                      /[^0-9]/g,
+                      ""
+                    ),
+                })
+              )
+            }
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>
+            입금확인일
+          </Label>
+
+          <Input
+            type="date"
+            disabled={
+              externalForm.paymentStatus !==
+              "결제"
+            }
+            value={
+              externalForm.paidAt
+            }
+            onChange={(e) =>
+              setExternalForm(
+                (prev) => ({
+                  ...prev,
+                  paidAt:
+                    e.target.value,
+                })
+              )
+            }
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="flex items-center gap-3 rounded-lg border p-3 text-sm">
+          <input
+            type="checkbox"
+            checked={
+              externalForm.includeEducationCenter
+            }
+            onChange={(e) =>
+              setExternalForm(
+                (prev) => ({
+                  ...prev,
+                  includeEducationCenter:
+                    e.target.checked,
+                })
+              )
+            }
+          />
+
+          실습교육원 배정 포함
+        </label>
+
+        <label className="flex items-center gap-3 rounded-lg border p-3 text-sm">
+          <input
+            type="checkbox"
+            checked={
+              externalForm.includePracticeInstitution
+            }
+            onChange={(e) =>
+              setExternalForm(
+                (prev) => ({
+                  ...prev,
+                  includePracticeInstitution:
+                    e.target.checked,
+                })
+              )
+            }
+          />
+
+          실습기관 배정 포함
+        </label>
+      </div>
+
+      <div className="space-y-2">
+        <Label>
+          메모
+        </Label>
+
+        <Textarea
+          value={
+            externalForm.note
+          }
+          placeholder="요청사항이나 참고내용"
+          onChange={(e) =>
+            setExternalForm(
+              (prev) => ({
+                ...prev,
+                note:
+                  e.target.value,
+              })
+            )
+          }
+        />
+      </div>
+    </div>
+
+    <DialogFooter>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={
+          createExternalPracticeSupportMut.isPending
+        }
+        onClick={
+          closeExternalCreateDialog
+        }
+      >
+        취소
+      </Button>
+
+      <Button
+        type="button"
+        disabled={
+          createExternalPracticeSupportMut.isPending
+        }
+        onClick={
+          submitExternalPracticeSupport
+        }
+      >
+        {createExternalPracticeSupportMut.isPending ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            등록 중
+          </>
+        ) : (
+          "등록"
+        )}
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="max-w-3xl">
@@ -2565,22 +3828,92 @@ useEffect(() => {
           {selectedRow && (
             <div className="max-h-[75vh] overflow-y-auto space-y-5 py-2 pr-1">
               <div className="rounded-xl border p-4 space-y-4">
-                <div className="font-semibold">학생 기본 정보</div>
+                <div className="flex items-center gap-2 font-semibold">
+  <span>
+    {selectedRow?.sourceType ===
+    "external"
+      ? "직접등록 기본 정보"
+      : "학생 기본 정보"}
+  </span>
+
+  {selectedRow?.sourceType ===
+    "external" && (
+    <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+      직접등록
+    </span>
+  )}
+</div>
 
                 <div className="space-y-3">
                   <div className="space-y-1">
                     <Label className="text-xs">이름</Label>
-                    <Input value={selectedRow.clientName || ""} disabled />
+                    <Input
+  value={
+    selectedRow.clientName || ""
+  }
+  disabled={
+    selectedRow.sourceType !== "external"
+  }
+  onChange={(e) =>
+    setSelectedRow((prev: any) => ({
+      ...prev,
+      clientName:
+        e.target.value,
+    }))
+  }
+/>
                   </div>
 
                   <div className="space-y-1">
                     <Label className="text-xs">연락처</Label>
-                    <Input value={formatPhone(selectedRow.phone || "")} disabled />
+                    <Input
+  value={
+    selectedRow.sourceType === "external"
+      ? selectedRow.phone || ""
+      : formatPhone(
+          selectedRow.phone || ""
+        )
+  }
+  disabled={
+    selectedRow.sourceType !== "external"
+  }
+  inputMode="numeric"
+  onChange={(e) =>
+    setSelectedRow((prev: any) => ({
+      ...prev,
+
+      phone:
+        e.target.value
+          .replace(
+            /[^0-9-]/g,
+            ""
+          )
+          .slice(
+            0,
+            13
+          ),
+    }))
+  }
+/>
                   </div>
 
                   <div className="space-y-1">
                     <Label className="text-xs">희망과정</Label>
-                    <Input value={selectedRow.course || ""} disabled />
+                    <Input
+  value={
+    selectedRow.course || ""
+  }
+  disabled={
+    selectedRow.sourceType !== "external"
+  }
+  onChange={(e) =>
+    setSelectedRow((prev: any) => ({
+      ...prev,
+      course:
+        e.target.value,
+    }))
+  }
+/>
                   </div>
 
                   <div className="space-y-1">
@@ -2606,7 +3939,7 @@ useEffect(() => {
                           inputAddress: e.target.value,
                         }))
                       }
-                      placeholder="예: 서울 도봉구 방학동 ..."
+                     placeholder="주소 입력"
                     />
                   </div>
 
@@ -2620,7 +3953,7 @@ useEffect(() => {
                           detailAddress: e.target.value,
                         }))
                       }
-                      placeholder="예: 401호"
+                      placeholder="상세주소 입력"
                     />
                   </div>
 
@@ -2660,7 +3993,7 @@ useEffect(() => {
         practiceDate: e.target.value,
       }))
     }
-    placeholder="예: 2026-09"
+    placeholder="실습예정일 입력"
   />
 </div>
 
@@ -2674,7 +4007,7 @@ useEffect(() => {
         practiceHours: e.target.value.replace(/[^0-9]/g, ""),
       }))
     }
-    placeholder="예: 160"
+    placeholder="실습시간 입력"
   />
 </div>
                 </div>

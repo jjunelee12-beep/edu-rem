@@ -102,6 +102,113 @@ function isAdmin(user: any) {
   return user?.role === "admin";
 }
 
+async function getExternalRequestAssignee(params: {
+  currentUser: any;
+  organizationId: number;
+  assigneeId: number;
+}) {
+  const {
+    currentUser,
+    organizationId,
+    assigneeId,
+  } = params;
+
+  if (!isAdminOrHost(currentUser)) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "관리자 또는 호스트만 신규 요청을 등록할 수 있습니다.",
+      403
+    );
+  }
+
+  const assignee =
+    await db.getAssignableUserById({
+      organizationId,
+      userId: Number(assigneeId),
+    });
+
+  if (!assignee) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "지정할 담당자를 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  /**
+   * Host는 같은 회사 전체 직원을 지정할 수 있다.
+   */
+  if (isHost(currentUser)) {
+    return assignee;
+  }
+
+  /**
+   * Admin은 자기 팀 구성원만 지정할 수 있다.
+   */
+  const currentUserId =
+    Number(currentUser?.id || 0);
+
+  const teamMemberIds =
+    await db.getUserTeamMemberIds(
+      currentUserId,
+      {
+        organizationId,
+      }
+    );
+
+  const allowedUserIds =
+    new Set(
+      [
+        currentUserId,
+        ...(teamMemberIds || []).map(Number),
+      ].filter(
+        (id) =>
+          Number.isFinite(id) &&
+          id > 0
+      )
+    );
+
+  if (
+    !allowedUserIds.has(
+      Number(assignee.id)
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "관리자는 자기 팀 소속 담당자만 지정할 수 있습니다.",
+      403
+    );
+  }
+
+  return assignee;
+}
+
+function assertExternalRequestEditable(params: {
+  currentUser: any;
+}) {
+  const {
+    currentUser,
+  } = params;
+
+  if (!currentUser) {
+    throwAppError(
+      ERROR_CODES.AUTH_REQUIRED,
+      "로그인이 필요합니다.",
+      401
+    );
+  }
+
+  if (isAdminOrHost(currentUser)) {
+    return;
+  }
+
+  throwAppError(
+    ERROR_CODES.PERMISSION_DENIED,
+    "관리자 또는 호스트만 단독 요청을 수정하거나 삭제할 수 있습니다.",
+    403
+  );
+}
+
 const WITHONE_ORGANIZATION_ID = 1;
 const WITHONE_ASSIGNEE_ID = 7;
 
@@ -3377,15 +3484,6 @@ return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
           attachmentUrl: input.attachmentUrl?.trim() || null,
         } as any);
 
-        if ((input.paymentStatus ?? "결제대기") === "결제") {
-          await db.syncPrivateCertificateSettlementItemByRequestId(
-  Number(id),
-  Number(ctx.user.id),
-  {
-    organizationId,
-  }
-);
-        }
 const createdRequest = await db.getPrivateCertificateRequest(Number(id), {
   organizationId,
 });
@@ -3404,163 +3502,811 @@ await writeStudentAuditLog({
         return { success: true, id };
       }),
 
-    update: protectedProcedure
+    createExternal: protectedProcedure
       .input(
         z.object({
-          id: z.number(),
-          assigneeId: z.number().optional(),
-          assigneeName: z.string().optional().nullable(),
-          privateCertificateMasterId: z.number().optional().nullable(),
-          certificateName: z.string().optional(),
-          inputAddress: z.string().optional().nullable(),
-          note: z.string().optional().nullable(),
-          requestStatus: z
-            .enum(["요청", "안내완료", "입금대기", "입금확인", "진행중", "완료", "취소"])
-            .optional(),
-          feeAmount: z.string().optional(),
-freelancerInputAmount: z.string().optional(),
-          paymentStatus: z.enum(["결제대기", "결제", "환불", "취소"]).optional(),
-          paidAt: z.string().optional().nullable(),
-          attachmentName: z.string().optional().nullable(),
-          attachmentUrl: z.string().optional().nullable(),
+          assigneeId:
+            z.number()
+              .int()
+              .positive(),
+
+          clientName:
+            z.string()
+              .trim()
+              .min(
+                1,
+                "이름을 입력해주세요."
+              )
+              .max(100),
+
+          phone:
+            z.string()
+              .trim()
+              .min(
+                1,
+                "연락처를 입력해주세요."
+              )
+              .max(30),
+
+          privateCertificateMasterId:
+            z.number()
+              .int()
+              .positive()
+              .optional()
+              .nullable(),
+
+          certificateName:
+            z.string()
+              .trim()
+              .max(255)
+              .optional()
+              .nullable(),
+
+          inputAddress:
+            z.string()
+              .trim()
+              .max(500)
+              .optional()
+              .nullable(),
+
+          detailAddress:
+            z.string()
+              .trim()
+              .max(500)
+              .optional()
+              .nullable(),
+
+          note:
+            z.string()
+              .max(5000)
+              .optional()
+              .nullable(),
+
+          requestStatus:
+            z.enum([
+              "요청",
+              "안내완료",
+              "입금대기",
+              "입금확인",
+              "진행중",
+              "완료",
+              "취소",
+            ])
+              .optional(),
+
+          feeAmount:
+            z.string()
+              .optional(),
+
+          freelancerInputAmount:
+            z.string()
+              .optional(),
+
+          paymentStatus:
+            z.enum([
+              "결제대기",
+              "결제",
+              "환불",
+              "취소",
+            ])
+              .optional(),
+
+          paidAt:
+            z.string()
+              .optional()
+              .nullable(),
+
+          attachmentName:
+            z.string()
+              .optional()
+              .nullable(),
+
+          attachmentUrl:
+            z.string()
+              .optional()
+              .nullable(),
         })
       )
       .mutation(async ({ ctx, input }) => {
-  const organizationId = getCtxOrganizationId(ctx);
+        const organizationId =
+          getCtxOrganizationId(ctx);
 
-  await assertOrganizationFeatureEnabled(
-    organizationId,
-    "allowPrivateCertificate",
-    "현재 회사는 민간자격증 기능을 사용할 수 없습니다."
-  );
+        await assertOrganizationFeatureEnabled(
+          organizationId,
+          "allowPrivateCertificate",
+          "현재 회사는 민간자격증 기능을 사용할 수 없습니다."
+        );
 
-const beforeRequest = await db.getPrivateCertificateRequest(input.id, {
-  organizationId,
-});
+        const assignee =
+          await getExternalRequestAssignee({
+            currentUser: ctx.user,
+            organizationId,
+            assigneeId:
+              input.assigneeId,
+          });
 
-if (!beforeRequest) {
-  throwAppError(
-  ERROR_CODES.DATA_NOT_FOUND,
-  "민간자격증 요청을 찾을 수 없습니다.",
-  404
-);
-}
+        const normalizedPhone =
+          input.phone.replace(
+            /\D/g,
+            ""
+          );
 
-const student = await db.getStudent(beforeRequest.studentId, {
-  organizationId,
-});
+        if (
+          normalizedPhone.length < 10 ||
+          normalizedPhone.length > 11
+        ) {
+          throwAppError(
+            ERROR_CODES.INVALID_REQUEST,
+            "올바른 연락처를 입력해주세요.",
+            400
+          );
+        }
 
-if (!student) {
-  throwAppError(
-  ERROR_CODES.DATA_NOT_FOUND,
-  "학생을 찾을 수 없습니다.",
-  404
-);
-}
+        const id =
+          await db.createPrivateCertificateExternalRequest({
+            organizationId,
 
-assertStudentEditable({
-  currentUser: ctx.user,
-  student,
-});
+            assigneeId:
+              Number(assignee.id),
 
-  const data: any = {};
+            createdBy:
+              Number(ctx.user.id),
 
-        if (input.assigneeId !== undefined) data.assigneeId = input.assigneeId;
-        if (input.assigneeName !== undefined) data.assigneeName = input.assigneeName?.trim() || null;
-        if (input.privateCertificateMasterId !== undefined)
-          data.privateCertificateMasterId = input.privateCertificateMasterId ?? null;
-        if (input.certificateName !== undefined) data.certificateName = input.certificateName.trim();
-        if (input.inputAddress !== undefined) data.inputAddress = input.inputAddress?.trim() || null;
-        if (input.note !== undefined) data.note = input.note ?? null;
-        if (input.requestStatus !== undefined) data.requestStatus = input.requestStatus;
-        if (input.feeAmount !== undefined) data.feeAmount = input.feeAmount;
-if (input.freelancerInputAmount !== undefined) {
-  data.freelancerInputAmount = input.freelancerInputAmount;
-}
-        if (input.paymentStatus !== undefined) data.paymentStatus = input.paymentStatus;
-        if (input.paidAt !== undefined) data.paidAt = input.paidAt ? new Date(input.paidAt) : null;
-        if (input.attachmentName !== undefined) data.attachmentName = input.attachmentName?.trim() || null;
-        if (input.attachmentUrl !== undefined) data.attachmentUrl = input.attachmentUrl?.trim() || null;
+            updatedBy:
+              Number(ctx.user.id),
 
-        await db.updatePrivateCertificateRequest(input.id, data, {
-  organizationId,
-});
+            clientName:
+              input.clientName.trim(),
 
-const afterRequest = await db.getPrivateCertificateRequest(input.id, {
-  organizationId,
-});
+            phone:
+              normalizedPhone,
 
-await writeStudentAuditLog({
-  ctx,
-  studentId: Number(student.id),
-  entityType: "private_certificate",
-  entityId: Number(input.id),
-  action: "update",
-  title: "민간자격증 요청 수정",
-  beforeJson: beforeRequest,
-  afterJson: afterRequest,
-});
+            assigneeName:
+              String(
+                assignee.name || ""
+              ).trim() || null,
 
-        return { success: true };
+            privateCertificateMasterId:
+              input.privateCertificateMasterId ??
+              null,
+
+            certificateName:
+              input.certificateName?.trim() ||
+              null,
+
+            inputAddress:
+              input.inputAddress?.trim() ||
+              null,
+
+            detailAddress:
+              input.detailAddress?.trim() ||
+              null,
+
+            note:
+              input.note?.trim() ||
+              null,
+
+            requestStatus:
+              input.requestStatus ??
+              "요청",
+
+            feeAmount:
+              input.feeAmount ??
+              "0",
+
+            freelancerInputAmount:
+              input.freelancerInputAmount ??
+              "0",
+
+            paymentStatus:
+              input.paymentStatus ??
+              "결제대기",
+
+            paidAt:
+              input.paidAt
+                ? new Date(
+                    input.paidAt
+                  )
+                : null,
+
+            refundStatus:
+              "없음",
+
+            refundAmount:
+              "0",
+
+            attachmentName:
+              input.attachmentName?.trim() ||
+              null,
+
+            attachmentUrl:
+              input.attachmentUrl?.trim() ||
+              null,
+          } as any);
+
+        return {
+          success: true,
+          id: Number(id),
+          sourceType:
+            "external" as const,
+        };
       }),
 
-    delete: protectedProcedure
-  .input(z.object({ id: z.number() }))
-  .mutation(async ({ input, ctx }) => {
-    const organizationId = getCtxOrganizationId(ctx);
+        update: protectedProcedure
+      .input(
+        z.object({
+          id:
+            z.number()
+              .int()
+              .positive(),
 
-    await assertOrganizationFeatureEnabled(
-      organizationId,
-      "allowPrivateCertificate",
-      "현재 회사는 민간자격증 기능을 사용할 수 없습니다."
-    );
+          sourceType:
+            z.enum([
+              "student",
+              "external",
+            ])
+              .optional()
+              .default("student"),
 
-    const beforeRequest = await db.getPrivateCertificateRequest(input.id, {
-      organizationId,
-    });
+          assigneeId:
+            z.number()
+              .int()
+              .positive()
+              .optional(),
 
-    if (!beforeRequest) {
-      throwAppError(
-  ERROR_CODES.DATA_NOT_FOUND,
-  "민간자격증 요청을 찾을 수 없습니다.",
-  404
-);
-    }
+          assigneeName:
+            z.string()
+              .optional()
+              .nullable(),
 
-    const student = await db.getStudent(beforeRequest.studentId, {
-      organizationId,
-    });
+          privateCertificateMasterId:
+            z.number()
+              .optional()
+              .nullable(),
 
-    if (!student) {
-      throwAppError(
-  ERROR_CODES.DATA_NOT_FOUND,
-  "학생을 찾을 수 없습니다.",
-  404
-);
-    }
+          certificateName:
+            z.string()
+              .optional()
+              .nullable(),
 
-    assertStudentEditable({
-      currentUser: ctx.user,
-      student,
-    });
+          inputAddress:
+            z.string()
+              .optional()
+              .nullable(),
 
-    await db.deletePrivateCertificateRequest(input.id, {
-      organizationId,
-    });
+          detailAddress:
+            z.string()
+              .optional()
+              .nullable(),
 
-    await writeStudentAuditLog({
-      ctx,
-      studentId: Number(student.id),
-      entityType: "private_certificate",
-      entityId: Number(input.id),
-      action: "delete",
-      title: "민간자격증 요청 삭제",
-      beforeJson: beforeRequest,
-      afterJson: null,
-    });
+          note:
+            z.string()
+              .optional()
+              .nullable(),
 
-    return { success: true };
-  }),
+          requestStatus:
+            z.enum([
+              "요청",
+              "안내완료",
+              "입금대기",
+              "입금확인",
+              "진행중",
+              "완료",
+              "취소",
+            ])
+              .optional(),
+
+          feeAmount:
+            z.string()
+              .optional(),
+
+          freelancerInputAmount:
+            z.string()
+              .optional(),
+
+          paymentStatus:
+            z.enum([
+              "결제대기",
+              "결제",
+              "환불",
+              "취소",
+            ])
+              .optional(),
+
+          paidAt:
+            z.string()
+              .optional()
+              .nullable(),
+
+          attachmentName:
+            z.string()
+              .optional()
+              .nullable(),
+
+          attachmentUrl:
+            z.string()
+              .optional()
+              .nullable(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const organizationId =
+          getCtxOrganizationId(ctx);
+
+        await assertOrganizationFeatureEnabled(
+          organizationId,
+          "allowPrivateCertificate",
+          "현재 회사는 민간자격증 기능을 사용할 수 없습니다."
+        );
+
+                const data: any = {};
+
+        if (
+          input.assigneeId !==
+          undefined
+        ) {
+          /**
+           * 단독 직접등록 건의 담당자 변경은
+           * Admin 또는 Host만 가능하며
+           * 서버에서 회사·팀 범위를 다시 검사한다.
+           */
+          if (
+            input.sourceType ===
+            "external"
+          ) {
+            const assignee =
+              await getExternalRequestAssignee({
+                currentUser:
+                  ctx.user,
+
+                organizationId,
+
+                assigneeId:
+                  input.assigneeId,
+              });
+
+            data.assigneeId =
+              Number(assignee.id);
+
+            data.assigneeName =
+              String(
+                assignee.name || ""
+              ).trim() || null;
+          } else {
+            /**
+             * 기존 학생 연동 요청은
+             * 기존 동작을 유지한다.
+             *
+             * 담당 Staff가 수정할 때 프론트에서
+             * 기존 assigneeId를 함께 보내더라도
+             * 신규등록 전용 권한검사를 적용하지 않는다.
+             */
+            data.assigneeId =
+              Number(
+                input.assigneeId
+              );
+          }
+        }
+
+        if (
+          input.assigneeName !==
+          undefined &&
+          !(
+            input.sourceType ===
+              "external" &&
+            input.assigneeId !==
+              undefined
+          )
+        ) {
+          data.assigneeName =
+            input.assigneeName?.trim() ||
+            null;
+        }
+
+        if (
+          input.privateCertificateMasterId !==
+          undefined
+        ) {
+          data.privateCertificateMasterId =
+            input.privateCertificateMasterId ??
+            null;
+        }
+
+        if (
+          input.certificateName !==
+          undefined
+        ) {
+          data.certificateName =
+            input.certificateName?.trim() ||
+            null;
+        }
+
+        if (
+          input.inputAddress !==
+          undefined
+        ) {
+          data.inputAddress =
+            input.inputAddress?.trim() ||
+            null;
+        }
+
+        if (
+          input.detailAddress !==
+          undefined
+        ) {
+          data.detailAddress =
+            input.detailAddress?.trim() ||
+            null;
+        }
+
+        if (
+          input.note !==
+          undefined
+        ) {
+          data.note =
+            input.note?.trim() ||
+            null;
+        }
+
+        if (
+          input.requestStatus !==
+          undefined
+        ) {
+          data.requestStatus =
+            input.requestStatus;
+        }
+
+        if (
+          input.feeAmount !==
+          undefined
+        ) {
+          data.feeAmount =
+            input.feeAmount;
+        }
+
+        if (
+          input.freelancerInputAmount !==
+          undefined
+        ) {
+          data.freelancerInputAmount =
+            input.freelancerInputAmount;
+        }
+
+        if (
+          input.paymentStatus !==
+          undefined
+        ) {
+          data.paymentStatus =
+            input.paymentStatus;
+        }
+
+        if (
+          input.paidAt !==
+          undefined
+        ) {
+          data.paidAt =
+            input.paidAt
+              ? new Date(
+                  input.paidAt
+                )
+              : null;
+        }
+
+        if (
+          input.attachmentName !==
+          undefined
+        ) {
+          data.attachmentName =
+            input.attachmentName?.trim() ||
+            null;
+        }
+
+        if (
+          input.attachmentUrl !==
+          undefined
+        ) {
+          data.attachmentUrl =
+            input.attachmentUrl?.trim() ||
+            null;
+        }
+
+        if (
+          Object.keys(data).length ===
+          0
+        ) {
+          throwAppError(
+            ERROR_CODES.INVALID_REQUEST,
+            "수정할 값이 없습니다.",
+            400
+          );
+        }
+
+        /**
+         * 단독 직접등록 데이터
+         */
+        if (
+          input.sourceType ===
+          "external"
+        ) {
+          const beforeRequest =
+            await db.getPrivateCertificateExternalRequest(
+              input.id,
+              {
+                organizationId,
+              }
+            );
+
+          if (!beforeRequest) {
+            throwAppError(
+              ERROR_CODES.DATA_NOT_FOUND,
+              "민간자격증 요청을 찾을 수 없습니다.",
+              404
+            );
+          }
+
+          assertExternalRequestEditable({
+  currentUser:
+    ctx.user,
+});
+
+          data.updatedBy =
+            Number(ctx.user.id);
+
+          await db.updatePrivateCertificateExternalRequest(
+            input.id,
+            data,
+            {
+              organizationId,
+            }
+          );
+
+          return {
+            success: true,
+            sourceType:
+              "external" as const,
+          };
+        }
+
+        /**
+         * 기존 학생 연동 데이터
+         */
+        const beforeRequest =
+          await db.getPrivateCertificateRequest(
+            input.id,
+            {
+              organizationId,
+            }
+          );
+
+        if (!beforeRequest) {
+          throwAppError(
+            ERROR_CODES.DATA_NOT_FOUND,
+            "민간자격증 요청을 찾을 수 없습니다.",
+            404
+          );
+        }
+
+        const student =
+          await db.getStudent(
+            beforeRequest.studentId,
+            {
+              organizationId,
+            }
+          );
+
+        if (!student) {
+          throwAppError(
+            ERROR_CODES.DATA_NOT_FOUND,
+            "학생을 찾을 수 없습니다.",
+            404
+          );
+        }
+
+        assertStudentEditable({
+          currentUser:
+            ctx.user,
+          student,
+        });
+
+        /**
+         * 기존 테이블에는 detailAddress가 없을 수 있으므로 제외
+         */
+        delete data.detailAddress;
+        delete data.updatedBy;
+
+        await db.updatePrivateCertificateRequest(
+          input.id,
+          data,
+          {
+            organizationId,
+          }
+        );
+
+        const afterRequest =
+          await db.getPrivateCertificateRequest(
+            input.id,
+            {
+              organizationId,
+            }
+          );
+
+        await writeStudentAuditLog({
+          ctx,
+
+          studentId:
+            Number(student.id),
+
+          entityType:
+            "private_certificate",
+
+          entityId:
+            Number(input.id),
+
+          action:
+            "update",
+
+          title:
+            "민간자격증 요청 수정",
+
+          beforeJson:
+            beforeRequest,
+
+          afterJson:
+            afterRequest,
+        });
+
+        return {
+          success: true,
+          sourceType:
+            "student" as const,
+        };
+      }),
+
+        delete: protectedProcedure
+      .input(
+        z.object({
+          id:
+            z.number()
+              .int()
+              .positive(),
+
+          sourceType:
+            z.enum([
+              "student",
+              "external",
+            ])
+              .optional()
+              .default("student"),
+        })
+      )
+      .mutation(async ({
+        input,
+        ctx,
+      }) => {
+        const organizationId =
+          getCtxOrganizationId(ctx);
+
+        await assertOrganizationFeatureEnabled(
+          organizationId,
+          "allowPrivateCertificate",
+          "현재 회사는 민간자격증 기능을 사용할 수 없습니다."
+        );
+
+        if (
+          input.sourceType ===
+          "external"
+        ) {
+          const beforeRequest =
+            await db.getPrivateCertificateExternalRequest(
+              input.id,
+              {
+                organizationId,
+              }
+            );
+
+          if (!beforeRequest) {
+            throwAppError(
+              ERROR_CODES.DATA_NOT_FOUND,
+              "민간자격증 요청을 찾을 수 없습니다.",
+              404
+            );
+          }
+
+          assertExternalRequestEditable({
+  currentUser:
+    ctx.user,
+});
+
+          await db.deletePrivateCertificateExternalRequest(
+            input.id,
+            {
+              organizationId,
+            }
+          );
+
+          return {
+            success: true,
+            sourceType:
+              "external" as const,
+          };
+        }
+
+        const beforeRequest =
+          await db.getPrivateCertificateRequest(
+            input.id,
+            {
+              organizationId,
+            }
+          );
+
+        if (!beforeRequest) {
+          throwAppError(
+            ERROR_CODES.DATA_NOT_FOUND,
+            "민간자격증 요청을 찾을 수 없습니다.",
+            404
+          );
+        }
+
+        const student =
+          await db.getStudent(
+            beforeRequest.studentId,
+            {
+              organizationId,
+            }
+          );
+
+        if (!student) {
+          throwAppError(
+            ERROR_CODES.DATA_NOT_FOUND,
+            "학생을 찾을 수 없습니다.",
+            404
+          );
+        }
+
+        assertStudentEditable({
+          currentUser:
+            ctx.user,
+          student,
+        });
+
+        await db.deletePrivateCertificateRequest(
+          input.id,
+          {
+            organizationId,
+          }
+        );
+
+        await writeStudentAuditLog({
+          ctx,
+
+          studentId:
+            Number(student.id),
+
+          entityType:
+            "private_certificate",
+
+          entityId:
+            Number(input.id),
+
+          action:
+            "delete",
+
+          title:
+            "민간자격증 요청 삭제",
+
+          beforeJson:
+            beforeRequest,
+
+          afterJson:
+            null,
+        });
+
+        return {
+          success: true,
+          sourceType:
+            "student" as const,
+        };
+      }),
 
 
     requestRefund: protectedProcedure
@@ -3685,23 +4431,59 @@ return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
 return isSuperhost(ctx.user) ? maskPersonalDataList(rows as any[]) : rows;
       }),
 
-    get: protectedProcedure
-      .input(z.object({ id: z.number() }))
-     .query(async ({ input, ctx }) => {
-  const organizationId = getCtxOrganizationId(ctx);
+        get: protectedProcedure
+      .input(
+        z.object({
+          id:
+            z.number()
+              .int()
+              .positive(),
 
-  await assertOrganizationFeatureEnabled(
-    organizationId,
-    "allowPracticeCenter",
-    "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
-  );
+          sourceType:
+            z.enum([
+              "student",
+              "external",
+            ])
+              .optional()
+              .default("student"),
+        })
+      )
+      .query(async ({
+        input,
+        ctx,
+      }) => {
+        const organizationId =
+          getCtxOrganizationId(ctx);
 
-  const row = await db.getPracticeSupportRequest(input.id, {
-  organizationId,
-});
+        await assertOrganizationFeatureEnabled(
+          organizationId,
+          "allowPracticeCenter",
+          "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
+        );
 
-return isSuperhost(ctx.user) && row ? maskPersonalData(row as any) : row;
-}),
+        const row =
+          input.sourceType ===
+          "external"
+            ? await db.getPracticeSupportExternalRequest(
+                input.id,
+                {
+                  organizationId,
+                }
+              )
+            : await db.getPracticeSupportRequest(
+                input.id,
+                {
+                  organizationId,
+                }
+              );
+
+        return isSuperhost(ctx.user) &&
+          row
+          ? maskPersonalData(
+              row as any
+            )
+          : row;
+      }),
 
     create: protectedProcedure
       .input(
@@ -3781,16 +4563,6 @@ includeEducationCenter: input.includeEducationCenter ?? true,
           attachmentUrl: input.attachmentUrl?.trim() || null,
         } as any);
 
-        if ((input.paymentStatus ?? "미결제") === "결제") {
-          await db.syncPracticeSupportSettlementItemByRequestId(
-  Number(id),
-  Number(ctx.user.id),
-  {
-    organizationId,
-  }
-);
-        }
-
 const createdRequest = await db.getPracticeSupportRequest(Number(id), {
   organizationId,
 });
@@ -3809,17 +4581,301 @@ await writeStudentAuditLog({
         return { success: true, id };
       }),
 
-    update: protectedProcedure
+    createExternal: protectedProcedure
       .input(
         z.object({
+          assigneeId:
+            z.number()
+              .int()
+              .positive(),
+
+          clientName:
+            z.string()
+              .trim()
+              .min(
+                1,
+                "이름을 입력해주세요."
+              )
+              .max(100),
+
+          phone:
+            z.string()
+              .trim()
+              .min(
+                1,
+                "연락처를 입력해주세요."
+              )
+              .max(30),
+
+          course:
+            z.string()
+              .trim()
+              .max(200)
+              .optional()
+              .nullable(),
+
+          inputAddress:
+            z.string()
+              .trim()
+              .max(500)
+              .optional()
+              .nullable(),
+
+          detailAddress:
+            z.string()
+              .trim()
+              .max(500)
+              .optional()
+              .nullable(),
+
+          practiceSemesterLabel:
+            z.string()
+              .trim()
+              .max(50)
+              .optional()
+              .nullable(),
+
+          practiceHours:
+            z.number()
+              .int()
+              .min(0)
+              .optional()
+              .nullable(),
+
+          practiceDate:
+            z.string()
+              .optional()
+              .nullable(),
+
+          includeEducationCenter:
+            z.boolean()
+              .optional(),
+
+          includePracticeInstitution:
+            z.boolean()
+              .optional(),
+
+          coordinationStatus:
+            z.enum([
+              "미섭외",
+              "섭외중",
+              "섭외완료",
+            ])
+              .optional(),
+
+          feeAmount:
+            z.string()
+              .optional(),
+
+          paymentStatus:
+            z.enum([
+              "미결제",
+              "결제",
+              "환불",
+            ])
+              .optional(),
+
+          paidAt:
+            z.string()
+              .optional()
+              .nullable(),
+
+          note:
+            z.string()
+              .max(5000)
+              .optional()
+              .nullable(),
+
+          attachmentName:
+            z.string()
+              .optional()
+              .nullable(),
+
+          attachmentUrl:
+            z.string()
+              .optional()
+              .nullable(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const organizationId =
+          getCtxOrganizationId(ctx);
+
+        await assertOrganizationFeatureEnabled(
+          organizationId,
+          "allowPracticeCenter",
+          "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
+        );
+
+        const assignee =
+          await getExternalRequestAssignee({
+            currentUser:
+              ctx.user,
+
+            organizationId,
+
+            assigneeId:
+              input.assigneeId,
+          });
+
+        const normalizedPhone =
+          input.phone.replace(
+            /\D/g,
+            ""
+          );
+
+        if (
+          normalizedPhone.length < 10 ||
+          normalizedPhone.length > 11
+        ) {
+          throwAppError(
+            ERROR_CODES.INVALID_REQUEST,
+            "올바른 연락처를 입력해주세요.",
+            400
+          );
+        }
+
+        const id =
+          await db.createPracticeSupportExternalRequest({
+            organizationId,
+
+            assigneeId:
+              Number(assignee.id),
+
+            createdBy:
+              Number(ctx.user.id),
+
+            updatedBy:
+              Number(ctx.user.id),
+
+            clientName:
+              input.clientName.trim(),
+
+            phone:
+              normalizedPhone,
+
+            assigneeName:
+              String(
+                assignee.name || ""
+              ).trim() || null,
+
+            managerName:
+              null,
+
+            course:
+              input.course?.trim() ||
+              null,
+
+            inputAddress:
+              input.inputAddress?.trim() ||
+              null,
+
+            detailAddress:
+              input.detailAddress?.trim() ||
+              null,
+
+            practiceSemesterLabel:
+              input.practiceSemesterLabel?.trim() ||
+              null,
+
+            practiceHours:
+              input.practiceHours ??
+              null,
+
+            practiceDate:
+              input.practiceDate?.trim() ||
+              null,
+
+            includeEducationCenter:
+              input.includeEducationCenter ??
+              true,
+
+            includePracticeInstitution:
+              input.includePracticeInstitution ??
+              true,
+
+            coordinationStatus:
+              input.coordinationStatus ??
+              "미섭외",
+
+            feeAmount:
+              input.feeAmount ??
+              "0",
+
+            paymentStatus:
+              input.paymentStatus ??
+              "미결제",
+
+            paidAt:
+              input.paidAt
+                ? new Date(
+                    input.paidAt
+                  )
+                : null,
+
+            refundStatus:
+              "없음",
+
+            refundAmount:
+              "0",
+
+            note:
+              input.note?.trim() ||
+              null,
+
+            attachmentName:
+              input.attachmentName?.trim() ||
+              null,
+
+            attachmentUrl:
+              input.attachmentUrl?.trim() ||
+              null,
+          } as any);
+
+        return {
+          success: true,
+          id: Number(id),
+          sourceType:
+            "external" as const,
+        };
+      }),
+
+    update: protectedProcedure
+      .input(
+                z.object({
           id: z.number(),
+
+          sourceType:
+            z.enum([
+              "student",
+              "external",
+            ])
+              .optional()
+              .default("student"),
+
           semesterId: z.number().optional().nullable(),
           assigneeId: z.number().optional(),
-          clientName: z.string().optional(),
-          phone: z.string().optional(),
+          clientName:
+  z.string()
+    .trim()
+    .min(1)
+    .max(100)
+    .optional(),
+
+phone:
+  z.string()
+    .trim()
+    .min(10)
+    .max(30)
+    .optional(),
           assigneeName: z.string().optional().nullable(),
           managerName: z.string().optional().nullable(),
-          course: z.string().optional(),
+          course:
+  z.string()
+    .trim()
+    .max(200)
+    .optional()
+    .nullable(),
          inputAddress: z.string().optional().nullable(),
 detailAddress: z.string().optional().nullable(),
 practiceSemesterLabel: z.string().max(50).optional().nullable(),
@@ -3855,44 +4911,107 @@ selectedPracticeInstitutionDistanceKm: z.string().optional().nullable(),
     "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
   );
 
-const beforeRequest = await db.getPracticeSupportRequest(input.id, {
-  organizationId,
-});
+const beforeRequest =
+  input.sourceType ===
+  "external"
+    ? await db.getPracticeSupportExternalRequest(
+        input.id,
+        {
+          organizationId,
+        }
+      )
+    : await db.getPracticeSupportRequest(
+        input.id,
+        {
+          organizationId,
+        }
+      );
 
 if (!beforeRequest) {
   throwAppError(
-  ERROR_CODES.DATA_NOT_FOUND,
-  "실습 요청을 찾을 수 없습니다.",
-  404
-);
+    ERROR_CODES.DATA_NOT_FOUND,
+    "실습 요청을 찾을 수 없습니다.",
+    404
+  );
 }
 
-const student = await db.getStudent(beforeRequest.studentId, {
-  organizationId,
-});
+let student: any = null;
 
-if (!student) {
-  throwAppError(
-  ERROR_CODES.DATA_NOT_FOUND,
-  "학생을 찾을 수 없습니다.",
-  404
-);
+if (
+  input.sourceType ===
+  "external"
+) {
+  assertExternalRequestEditable({
+  currentUser:
+    ctx.user,
+});
+} else {
+  student =
+    await db.getStudent(
+      (beforeRequest as any)
+        .studentId,
+      {
+        organizationId,
+      }
+    );
+
+  if (!student) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "학생을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  assertPracticeSupportEditable({
+    currentUser:
+      ctx.user,
+    student,
+  });
 }
 
-assertPracticeSupportEditable({
-  currentUser: ctx.user,
-  student,
-});
-
-  const data: any = {};
+const data: any = {};
 
         if (input.semesterId !== undefined) data.semesterId = input.semesterId ?? null;
         if (input.assigneeId !== undefined) data.assigneeId = input.assigneeId;
         if (input.clientName !== undefined) data.clientName = input.clientName.trim();
-        if (input.phone !== undefined) data.phone = input.phone.trim();
+        if (
+  input.phone !== undefined
+) {
+  const normalizedPhone =
+    input.phone.replace(/\D/g, "");
+
+  if (
+    normalizedPhone.length < 10 ||
+    normalizedPhone.length > 11
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "올바른 연락처를 입력해주세요.",
+      400
+    );
+  }
+
+  data.phone =
+    normalizedPhone;
+}
         if (input.assigneeName !== undefined) data.assigneeName = input.assigneeName?.trim() || null;
         if (input.managerName !== undefined) data.managerName = input.managerName?.trim() || null;
-        if (input.course !== undefined) data.course = input.course.trim();
+        if (input.course !== undefined) {
+  data.course =
+    input.course?.trim() ||
+    null;
+}
+if (
+  input.sourceType !== "external" &&
+  data.course === null
+) {
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    "학생 연동 실습 요청의 과정은 비워둘 수 없습니다.",
+    400
+  );
+}
         if (input.inputAddress !== undefined) data.inputAddress = input.inputAddress?.trim() || null;
         if (input.detailAddress !== undefined) data.detailAddress = input.detailAddress?.trim() || null;
 if (input.practiceSemesterLabel !== undefined) {
@@ -3954,94 +5073,226 @@ if (Object.keys(data).length === 0) {
 );
 }
 
-        await db.updatePracticeSupportRequest(input.id, data, {
- organizationId,
-});
+        if (
+  input.sourceType ===
+  "external"
+) {
+  /**
+   * 단독 테이블에는 semesterId가 없다.
+   */
+  delete data.semesterId;
 
-const afterRequest = await db.getPracticeSupportRequest(input.id, {
-  organizationId,
-});
+  data.updatedBy =
+    Number(ctx.user.id);
 
-await writeStudentAuditLog({
-  ctx,
-  studentId: Number(student.id),
-  entityType: "practice_support",
-  entityId: Number(input.id),
-  action: "update",
-  title: "실습 요청 수정",
-  beforeJson: beforeRequest,
-  afterJson: afterRequest,
-});
+  await db.updatePracticeSupportExternalRequest(
+    input.id,
+    data,
+    {
+      organizationId,
+    }
+  );
 
-       if (input.paymentStatus === "결제") {
-  await db.syncPracticeSupportSettlementItemByRequestId(
-  Number(input.id),
-  Number(ctx.user.id),
+  return {
+    success: true,
+    sourceType:
+      "external" as const,
+  };
+}
+
+await db.updatePracticeSupportRequest(
+  input.id,
+  data,
   {
     organizationId,
   }
 );
-}
-        return { success: true };
-      }),
 
-    delete: protectedProcedure
-  .input(z.object({ id: z.number() }))
-  .mutation(async ({ input, ctx }) => {
-    const organizationId = getCtxOrganizationId(ctx);
-
-    await assertOrganizationFeatureEnabled(
+const afterRequest =
+  await db.getPracticeSupportRequest(
+    input.id,
+    {
       organizationId,
-      "allowPracticeCenter",
-      "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
-    );
-
-    const beforeRequest = await db.getPracticeSupportRequest(input.id, {
-      organizationId,
-    });
-
-    if (!beforeRequest) {
-      throwAppError(
-  ERROR_CODES.DATA_NOT_FOUND,
-  "실습 요청을 찾을 수 없습니다.",
-  404
-);
     }
+  );
 
-    const student = await db.getStudent(beforeRequest.studentId, {
-      organizationId,
-    });
+await writeStudentAuditLog({
+  ctx,
 
-    if (!student) {
-      throwAppError(
-  ERROR_CODES.DATA_NOT_FOUND,
-  "학생을 찾을 수 없습니다.",
-  404
-);
-    }
+  studentId:
+    Number(student.id),
 
-  assertPracticeSupportEditable({
-  currentUser: ctx.user,
-  student,
+  entityType:
+    "practice_support",
+
+  entityId:
+    Number(input.id),
+
+  action:
+    "update",
+
+  title:
+    "실습 요청 수정",
+
+  beforeJson:
+    beforeRequest,
+
+  afterJson:
+    afterRequest,
 });
 
-    await db.deletePracticeSupportRequest(input.id, {
-      organizationId,
-    });
+return {
+  success: true,
+  sourceType:
+    "student" as const,
+};
+      }),
 
-    await writeStudentAuditLog({
-      ctx,
-      studentId: Number(student.id),
-      entityType: "practice_support",
-      entityId: Number(input.id),
-      action: "delete",
-      title: "실습 요청 삭제",
-      beforeJson: beforeRequest,
-      afterJson: null,
-    });
+        delete: protectedProcedure
+      .input(
+        z.object({
+          id:
+            z.number()
+              .int()
+              .positive(),
 
-    return { success: true };
-  }),
+          sourceType:
+            z.enum([
+              "student",
+              "external",
+            ])
+              .optional()
+              .default("student"),
+        })
+      )
+      .mutation(async ({
+        input,
+        ctx,
+      }) => {
+        const organizationId =
+          getCtxOrganizationId(ctx);
+
+        await assertOrganizationFeatureEnabled(
+          organizationId,
+          "allowPracticeCenter",
+          "현재 회사는 실습배정지원센터 기능을 사용할 수 없습니다."
+        );
+
+        if (
+          input.sourceType ===
+          "external"
+        ) {
+          const beforeRequest =
+            await db.getPracticeSupportExternalRequest(
+              input.id,
+              {
+                organizationId,
+              }
+            );
+
+          if (!beforeRequest) {
+            throwAppError(
+              ERROR_CODES.DATA_NOT_FOUND,
+              "실습 요청을 찾을 수 없습니다.",
+              404
+            );
+          }
+
+          assertExternalRequestEditable({
+  currentUser:
+    ctx.user,
+});
+
+          await db.deletePracticeSupportExternalRequest(
+            input.id,
+            {
+              organizationId,
+            }
+          );
+
+          return {
+            success: true,
+            sourceType:
+              "external" as const,
+          };
+        }
+
+        const beforeRequest =
+          await db.getPracticeSupportRequest(
+            input.id,
+            {
+              organizationId,
+            }
+          );
+
+        if (!beforeRequest) {
+          throwAppError(
+            ERROR_CODES.DATA_NOT_FOUND,
+            "실습 요청을 찾을 수 없습니다.",
+            404
+          );
+        }
+
+        const student =
+          await db.getStudent(
+            beforeRequest.studentId,
+            {
+              organizationId,
+            }
+          );
+
+        if (!student) {
+          throwAppError(
+            ERROR_CODES.DATA_NOT_FOUND,
+            "학생을 찾을 수 없습니다.",
+            404
+          );
+        }
+
+        assertPracticeSupportEditable({
+          currentUser:
+            ctx.user,
+          student,
+        });
+
+        await db.deletePracticeSupportRequest(
+          input.id,
+          {
+            organizationId,
+          }
+        );
+
+        await writeStudentAuditLog({
+          ctx,
+
+          studentId:
+            Number(student.id),
+
+          entityType:
+            "practice_support",
+
+          entityId:
+            Number(input.id),
+
+          action:
+            "delete",
+
+          title:
+            "실습 요청 삭제",
+
+          beforeJson:
+            beforeRequest,
+
+          afterJson:
+            null,
+        });
+
+        return {
+          success: true,
+          sourceType:
+            "student" as const,
+        };
+      }),
 
 
     requestRefund: protectedProcedure
@@ -4518,6 +5769,78 @@ if (samePassword) {
 }),
 
   users: router({
+
+  searchAssignable: protectedProcedure
+    .input(
+      z.object({
+        username: z
+          .string()
+          .trim()
+          .max(64),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const organizationId =
+        getCtxOrganizationId(ctx);
+
+      if (!isAdminOrHost(ctx.user)) {
+        throwAppError(
+          ERROR_CODES.PERMISSION_DENIED,
+          "관리자 또는 호스트만 담당자를 검색할 수 있습니다.",
+          403
+        );
+      }
+
+      const keyword =
+        input.username.trim();
+
+      if (keyword.length < 2) {
+        return [];
+      }
+
+      const rows =
+        await db.searchAssignableUsersByUsername({
+          organizationId,
+          username: keyword,
+          limit: 10,
+        });
+
+      /**
+       * Host는 회사 전체 검색 결과 반환
+       */
+      if (isHost(ctx.user)) {
+        return rows;
+      }
+
+      /**
+       * Admin은 자기 팀 검색 결과만 반환
+       */
+      const currentUserId =
+        Number(ctx.user.id || 0);
+
+      const teamMemberIds =
+        await db.getUserTeamMemberIds(
+          currentUserId,
+          {
+            organizationId,
+          }
+        );
+
+      const allowedUserIds =
+        new Set(
+          [
+            currentUserId,
+            ...(teamMemberIds || []).map(Number),
+          ]
+        );
+
+      return rows.filter(
+        (row: any) =>
+          allowedUserIds.has(
+            Number(row.id)
+          )
+      );
+    }),
   list: protectedProcedure.query(async ({ ctx }) => {
   const rows = await db.getAllUsersDetailed({
   organizationId: getCtxOrganizationId(ctx),
@@ -11737,7 +13060,8 @@ semesterLabel: z.string().optional().nullable(),
       actualInstitutionId: z.number().optional(),
       actualStartDate: z.string().optional(),
       actualInstitution: z.string().optional(),
-      actualSubjectCount: z.number().optional(),
+      actualSubjectCount:
+  z.number().optional(),
       actualAmount: z.string().optional(),
       actualPaymentDate: z.string().optional(),
       isCompleted: z.boolean().optional(),

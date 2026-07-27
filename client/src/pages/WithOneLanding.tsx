@@ -319,7 +319,7 @@ const handleInlineSubmit = (
               </label>
 
               <div className="relative">
-                <UserRound className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-white/35" />
+                <UserRound className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-[#6b7280]" />
 
                 <input
                   id="withone-inline-client-name"
@@ -331,7 +331,7 @@ const handleInlineSubmit = (
                   placeholder="이름"
                   autoComplete="name"
                   maxLength={100}
-                  className="h-[56px] w-full rounded-2xl border border-white/10 bg-white/[0.055] pl-11 pr-3 text-[15px] font-medium text-white outline-none transition placeholder:text-white/25 focus:border-[#c3ff24]/70 focus:bg-white/[0.075] focus:ring-4 focus:ring-[#c3ff24]/10"
+                  className="h-[56px] w-full rounded-2xl border border-white/20 bg-white pl-11 pr-3 text-[15px] font-semibold text-[#111827] outline-none transition placeholder:text-[#9ca3af] focus:border-[#c3ff24] focus:bg-white focus:ring-4 focus:ring-[#c3ff24]/15"
                 />
               </div>
             </div>
@@ -346,7 +346,7 @@ const handleInlineSubmit = (
               </label>
 
               <div className="relative">
-                <Phone className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-white/35" />
+                <Phone className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-[#6b7280]" />
 
                 <input
                   id="withone-inline-phone"
@@ -359,7 +359,7 @@ const handleInlineSubmit = (
                   placeholder="010-0000-0000"
                   autoComplete="tel"
                   maxLength={13}
-                  className="h-[56px] w-full rounded-2xl border border-white/10 bg-white/[0.055] pl-11 pr-3 text-[15px] font-medium text-white outline-none transition placeholder:text-white/25 focus:border-[#c3ff24]/70 focus:bg-white/[0.075] focus:ring-4 focus:ring-[#c3ff24]/10"
+                  className="h-[56px] w-full rounded-2xl border border-white/20 bg-white pl-11 pr-3 text-[15px] font-semibold text-[#111827] outline-none transition placeholder:text-[#9ca3af] focus:border-[#c3ff24] focus:bg-white focus:ring-4 focus:ring-[#c3ff24]/15"
                 />
               </div>
             </div>
@@ -386,11 +386,11 @@ const handleInlineSubmit = (
                   onChange={(event) =>
                     setInlineFinalEducation(event.target.value)
                   }
-                  className={`h-[56px] w-full appearance-none rounded-2xl border border-white/10 bg-[#11150f] px-3 pr-9 text-[14px] outline-none transition focus:border-[#c3ff24]/70 focus:ring-4 focus:ring-[#c3ff24]/10 ${
-                    inlineFinalEducation
-                      ? "text-white"
-                      : "text-white/30"
-                  }`}
+                  className={`h-[56px] w-full appearance-none rounded-2xl border border-white/20 bg-white px-3 pr-9 text-[14px] font-semibold outline-none transition focus:border-[#c3ff24] focus:ring-4 focus:ring-[#c3ff24]/15 ${
+  inlineFinalEducation
+    ? "text-[#111827]"
+    : "text-[#9ca3af]"
+}`}
                 >
                   <option value="">최종학력 선택</option>
 
@@ -398,14 +398,14 @@ const handleInlineSubmit = (
                     <option
                       key={option}
                       value={option}
-                      className="bg-[#11150f] text-white"
+                      className="bg-white text-[#111827]"
                     >
                       {option}
                     </option>
                   ))}
                 </select>
 
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-white/35" />
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-[#6b7280]" />
               </div>
             </div>
 
@@ -431,11 +431,11 @@ const handleInlineSubmit = (
                   onChange={(event) =>
                     setInlineConsultationTime(event.target.value)
                   }
-                  className={`h-[56px] w-full appearance-none rounded-2xl border border-white/10 bg-[#11150f] px-3 pr-9 text-[14px] outline-none transition focus:border-[#c3ff24]/70 focus:ring-4 focus:ring-[#c3ff24]/10 ${
-                    inlineConsultationTime
-                      ? "text-white"
-                      : "text-white/30"
-                  }`}
+                  className={`h-[56px] w-full appearance-none rounded-2xl border border-white/20 bg-white px-3 pr-9 text-[14px] font-semibold outline-none transition focus:border-[#c3ff24] focus:ring-4 focus:ring-[#c3ff24]/15 ${
+  inlineConsultationTime
+    ? "text-[#111827]"
+    : "text-[#9ca3af]"
+}`}
                 >
                   <option value="">상담시간 선택</option>
 
@@ -443,14 +443,14 @@ const handleInlineSubmit = (
                     <option
                       key={option}
                       value={option}
-                      className="bg-[#11150f] text-white"
+                      className="bg-white text-[#111827]"
                     >
                       {option}
                     </option>
                   ))}
                 </select>
 
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-white/35" />
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-[#6b7280]" />
               </div>
             </div>
           </div>
@@ -520,17 +520,17 @@ const handleInlineSubmit = (
 
       {/* 화면 하단 고정 상담 버튼 */}
       <div className="fixed inset-x-0 bottom-0 z-40">
-        <div className="mx-auto w-full max-w-[520px] border-t border-black/5 bg-white/95 px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_30px_rgba(15,32,61,0.16)] backdrop-blur-xl">
-          <button
-            type="button"
-            onClick={openConsultForm}
-            className="flex h-[60px] w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#245dbd] to-[#367be4] text-[18px] font-black text-white shadow-[0_10px_24px_rgba(42,105,206,0.3)] transition hover:brightness-105 active:scale-[0.99]"
-          >
-            <Phone className="h-5 w-5" />
-            무료 상담 신청하기
-          </button>
-        </div>
-      </div>
+  <div className="mx-auto w-full max-w-[520px] border-t border-[#baff00]/20 bg-[#030503]/95 px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-3 shadow-[0_-10px_35px_rgba(0,0,0,0.65),0_-2px_22px_rgba(186,255,0,0.08)] backdrop-blur-xl">
+    <button
+      type="button"
+      onClick={openConsultForm}
+      className="flex h-[60px] w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#aaff00] via-[#cfff27] to-[#aaff00] text-[18px] font-black tracking-[-0.03em] text-[#071000] shadow-[0_10px_26px_rgba(170,255,0,0.22),0_0_20px_rgba(195,255,36,0.14)] transition hover:brightness-110 active:scale-[0.99]"
+    >
+      <Phone className="h-5 w-5" />
+      무료 상담 신청하기
+    </button>
+  </div>
+</div>
 {/* 상담 신청 바텀시트 */}
 {showConsultForm && (
   <div

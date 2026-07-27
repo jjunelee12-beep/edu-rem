@@ -35,10 +35,17 @@ consultations,
   InsertSubjectCatalog,
   subjectCatalogItems,
   InsertSubjectCatalogItem,
-  privateCertificateRequests,
-  InsertPrivateCertificateRequest,
-  practiceSupportRequests,
-  InsertPracticeSupportRequest,
+privateCertificateRequests,
+InsertPrivateCertificateRequest,
+
+privateCertificateExternalRequests,
+type InsertPrivateCertificateExternalRequest,
+
+practiceSupportRequests,
+InsertPracticeSupportRequest,
+
+practiceSupportExternalRequests,
+type InsertPracticeSupportExternalRequest,
 settlementItems,
 settlementItemLogs,
 settlementGrades,
@@ -696,6 +703,10 @@ function preparePracticeSupportPersonalData<
     nextData.clientName = plainValue
       ? encryptPersonalData(plainValue)
       : null;
+
+    nextData.clientNameHash = plainValue
+      ? createNameHash(plainValue)
+      : null;
   }
 
   if (data.phone !== undefined) {
@@ -706,6 +717,14 @@ function preparePracticeSupportPersonalData<
 
     nextData.phone = plainValue
       ? encryptPersonalData(plainValue)
+      : null;
+
+    nextData.phoneHash = plainValue
+      ? createPhoneHash(plainValue)
+      : null;
+
+    nextData.phoneLast4 = plainValue
+      ? getPhoneLast4(plainValue)
       : null;
   }
 
@@ -1182,6 +1201,179 @@ function haversineDistanceKm(
 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+export async function searchAssignableUsersByUsername(params: {
+  organizationId?: number | null;
+  username: string;
+  limit?: number;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const keyword =
+    String(params.username || "")
+      .trim()
+      .toLowerCase();
+
+  if (keyword.length < 2) {
+    return [];
+  }
+
+  const limit = Math.min(
+    Math.max(
+      Number(params.limit || 10),
+      1
+    ),
+    10
+  );
+
+  const rows =
+    await db
+      .select({
+        id: users.id,
+        username: users.username,
+        name: users.name,
+        role: users.role,
+        organizationId: users.organizationId,
+        isActive: users.isActive,
+      })
+      .from(users)
+      .where(
+        and(
+          eq(
+            users.organizationId,
+            organizationId
+          ),
+          eq(
+            users.isActive,
+            true
+          ),
+          sql`LOWER(${users.username}) LIKE ${`${keyword}%`}`,
+          inArray(
+            users.role,
+            [
+              "staff",
+              "admin",
+              "host",
+            ]
+          )
+        )
+      )
+      .orderBy(
+        sql`
+          CASE
+            WHEN LOWER(${users.username}) = ${keyword}
+            THEN 0
+            ELSE 1
+          END
+        `,
+        asc(users.username)
+      )
+      .limit(limit);
+
+  return rows.map((row: any) => {
+    const decrypted =
+      decryptUserPersonalData(row) as any;
+
+    return {
+      id: Number(decrypted.id),
+      username:
+        String(decrypted.username || ""),
+      name:
+        String(decrypted.name || ""),
+      role:
+        String(decrypted.role || ""),
+    };
+  });
+}
+
+export async function getAssignableUserById(params: {
+  organizationId?: number | null;
+  userId: number;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const rows =
+    await db
+      .select({
+        id: users.id,
+        username: users.username,
+        name: users.name,
+        role: users.role,
+        organizationId: users.organizationId,
+        isActive: users.isActive,
+      })
+      .from(users)
+      .where(
+        and(
+          eq(
+            users.id,
+            Number(params.userId)
+          ),
+          eq(
+            users.organizationId,
+            organizationId
+          ),
+          eq(
+            users.isActive,
+            true
+          ),
+          inArray(
+            users.role,
+            [
+              "staff",
+              "admin",
+              "host",
+            ]
+          )
+        )
+      )
+      .limit(1);
+
+  if (!rows[0]) {
+    return undefined;
+  }
+
+  const row =
+    decryptUserPersonalData(
+      rows[0]
+    ) as any;
+
+  return {
+    id: Number(row.id),
+    username:
+      String(row.username || ""),
+    name:
+      String(row.name || ""),
+    role:
+      String(row.role || ""),
+  };
 }
 
 async function getNextUserDisplayNo() {
@@ -11720,10 +11912,23 @@ export async function createSettlementItemLog(params: {
 }
 
 export async function upsertSettlementItem(params: {
-organizationId?: number | null;
-  revenueType: "subject" | "practice_support" | "private_certificate" | "refund";
+  organizationId?: number | null;
+
+  revenueType:
+    | "subject"
+    | "practice_support"
+    | "private_certificate"
+    | "refund";
+
+  sourceType?:
+    | "student"
+    | "external";
+
   sourceId: number;
-  studentId: number;
+
+  studentId?:
+    number |
+    null;
   assigneeId?: number | null;
   freelancerUserId?: number | null;
   freelancerPositionId?: number | null;
@@ -11778,26 +11983,49 @@ const organizationId = requireOrganizationId(params.organizationId);
   const taxAmount = toNumber(params.taxAmount ?? 0);
   const finalPayoutAmount = toNumber(params.finalPayoutAmount ?? 0);
 
-  const exists = await db
-    .select()
-    .from(settlementItems)
-   .where(
-  and(
-    eq(settlementItems.organizationId, organizationId),
-    eq(settlementItems.revenueType, params.revenueType),
-    eq(settlementItems.sourceId, params.sourceId)
-  )
-)
-    .limit(1);
+    const sourceType =
+    params.sourceType ??
+    "student";
+
+  const exists =
+    await db
+      .select()
+      .from(settlementItems)
+      .where(
+        and(
+          eq(
+            settlementItems.organizationId,
+            organizationId
+          ),
+          eq(
+            settlementItems.revenueType,
+            params.revenueType
+          ),
+          eq(
+            settlementItems.sourceType,
+            sourceType
+          ),
+          eq(
+            settlementItems.sourceId,
+            params.sourceId
+          )
+        )
+      )
+      .limit(1);
 
   if (exists[0]) {
     const item = exists[0];
 
     await db
       .update(settlementItems)
-      .set({
-	organizationId,
-        studentId: params.studentId,
+           .set({
+        organizationId,
+
+        sourceType,
+
+        studentId:
+          params.studentId ??
+          null,
         assigneeId: params.assigneeId ?? null,
         freelancerUserId: params.freelancerUserId ?? null,
         freelancerPositionId: params.freelancerPositionId ?? null,
@@ -11844,11 +12072,23 @@ institutionName: params.institutionName ?? null,
     return { id: Number(item.id), mode: "update" as const };
   }
 
-  const result: any = await db.insert(settlementItems).values({
-organizationId,
-    revenueType: params.revenueType,
-    sourceId: params.sourceId,
-    studentId: params.studentId,
+   const result: any =
+    await db
+      .insert(settlementItems)
+      .values({
+        organizationId,
+
+        revenueType:
+          params.revenueType,
+
+        sourceType,
+
+        sourceId:
+          params.sourceId,
+
+        studentId:
+          params.studentId ??
+          null,
     assigneeId: params.assigneeId ?? null,
     freelancerUserId: params.freelancerUserId ?? null,
     freelancerPositionId: params.freelancerPositionId ?? null,
@@ -11891,385 +12131,515 @@ institutionName: params.institutionName ?? null,
   return { id: insertedId, mode: "insert" as const };
 }
 
+
+
 export async function cancelSettlementItemBySource(params: {
   organizationId?: number | null;
-  revenueType: "subject" | "practice_support" | "private_certificate";
+
+  revenueType:
+    | "subject"
+    | "practice_support"
+    | "private_certificate";
+
+  sourceType?:
+    | "student"
+    | "external";
+
   sourceId: number;
-  actorUserId?: number | null;
-  note?: string | null;
+
+  actorUserId?:
+    number |
+    null;
+
+  note?:
+    string |
+    null;
 }) {
-  const db = await getDb();
-  if (!db) throwAppError(
-  ERROR_CODES.INTERNAL_SERVER_ERROR,
-  "DB not available",
-  500
-);
+  const db =
+    await getDb();
 
-const organizationId = requireOrganizationId(params.organizationId);
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
 
-  const exists = await db
-    .select()
-    .from(settlementItems)
-    .where(
-      and(
-  eq(settlementItems.organizationId, organizationId),
-  eq(settlementItems.revenueType, params.revenueType),
-  eq(settlementItems.sourceId, params.sourceId)
-)
-    )
-    .limit(1);
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const sourceType =
+    params.sourceType ??
+    "student";
+
+  const exists =
+    await db
+      .select()
+      .from(settlementItems)
+      .where(
+        and(
+          eq(
+            settlementItems.organizationId,
+            organizationId
+          ),
+
+          eq(
+            settlementItems.revenueType,
+            params.revenueType
+          ),
+
+          eq(
+            settlementItems.sourceType,
+            sourceType
+          ),
+
+          eq(
+            settlementItems.sourceId,
+            params.sourceId
+          )
+        )
+      )
+      .limit(1);
 
   if (!exists[0]) {
     return null;
   }
 
-  const item = exists[0];
+  const item =
+    exists[0];
 
   await db
     .update(settlementItems)
     .set({
-      settlementStatus: "cancelled",
+      settlementStatus:
+        "cancelled",
     } as any)
     .where(
-  and(
-    eq(settlementItems.id, item.id),
-    eq(settlementItems.organizationId, organizationId)
-  )
-);
+      and(
+        eq(
+          settlementItems.id,
+          item.id
+        ),
+
+        eq(
+          settlementItems.organizationId,
+          organizationId
+        )
+      )
+    );
 
   await createSettlementItemLog({
-    settlementItemId: Number(item.id),
-    actionType: "cancel",
-    actorUserId: params.actorUserId ?? null,
-    note: params.note ?? "결제 취소 또는 요청 삭제로 정산 취소",
+    settlementItemId:
+      Number(item.id),
+
+    actionType:
+      "cancel",
+
+    actorUserId:
+      params.actorUserId ??
+      null,
+
+    note:
+      params.note ??
+      "결제 취소 또는 요청 삭제로 정산 취소",
   });
 
-  return Number(item.id);
-}
-
-export async function refundSettlementItemBySource(params: {
-  organizationId?: number | null;
-  revenueType: "subject" | "practice_support" | "private_certificate" | "refund";
-  sourceId: number;
-  refundAmount?: number | string | null;
-  refundDate?: string | Date | null;
-  actorUserId?: number | null;
-  note?: string | null;
-  payload?: any;
-}) {
-  const db = await getDb();
-  if (!db) throwAppError(
-  ERROR_CODES.INTERNAL_SERVER_ERROR,
-  "DB not available",
-  500
-);
-
-  const organizationId = requireOrganizationId(params.organizationId);
-
-  const exists = await db
-    .select()
-    .from(settlementItems)
-    .where(
-  and(
-    eq(settlementItems.organizationId, organizationId),
-    eq(settlementItems.revenueType, params.revenueType),
-    eq(settlementItems.sourceId, params.sourceId),
-    or(
-      eq(settlementItems.settlementStatus, "confirmed"),
-      eq(settlementItems.settlementStatus, "pending")
-    )
-  )
-)
-    .orderBy(desc(settlementItems.id))
-    .limit(1);
-
-  if (!exists[0]) {
-    return null;
-  }
-
-  const baseItem = exists[0];
-
-const baseGrossAmount = toNumber(baseItem.grossAmount);
-  const requestedRefundAmount = toNumber(params.refundAmount ?? 0);
- const refundAmount = Math.max(
-  0,
-  Math.min(requestedRefundAmount || baseGrossAmount, baseGrossAmount)
-);
-
-
-if (refundAmount <= 0) {
-  return null;
-}
-
-  const ratio =
-    baseGrossAmount > 0 ? Math.min(refundAmount / baseGrossAmount, 1) : 0;
-
-  const refundCompanyAmount = Math.round(toNumber(baseItem.companyAmount) * ratio);
-  const refundFreelancerAmount = Math.round(
-    toNumber(baseItem.freelancerAmount) * ratio
+  return Number(
+    item.id
   );
-  const refundTaxAmount = Math.round(toNumber(baseItem.taxAmount) * ratio);
-  const refundFinalPayoutAmount = Math.round(
-    toNumber(baseItem.finalPayoutAmount) * ratio
-  );
-  const refundCompanyProfit = Math.round(
-    toNumber(baseItem.companyProfit) * ratio
-  );
-
-  const refundOccurredAt =
-  params.refundDate instanceof Date
-    ? params.refundDate
-    : params.refundDate
-    ? new Date(params.refundDate)
-    : new Date();
-
-  const refundTitle =
-    params.revenueType === "subject"
-      ? `${baseItem.title || "일반과목"} 환불`
-      : params.revenueType === "practice_support"
-      ? `${baseItem.title || "실습배정"} 환불`
-      : `${baseItem.title || "민간자격증"} 환불`;
-
- const refundSettlement = await upsertSettlementItem({
-  organizationId,
-  revenueType: "refund" as any,
-  sourceId: Number((params.payload as any)?.refundId || params.sourceId),
-  studentId: Number(baseItem.studentId),
-  assigneeId: toNullableNumber(baseItem.assigneeId),
-  freelancerUserId: toNullableNumber(baseItem.freelancerUserId),
-  freelancerPositionId: toNullableNumber(baseItem.freelancerPositionId),
-
-  settlementGradeId:
-    toNullableNumber(baseItem.settlementGradeId) ??
-    1,
-
-  educationInstitutionId: toNullableNumber(baseItem.educationInstitutionId),
-  privateCertificateMasterId: toNullableNumber(baseItem.privateCertificateMasterId),
-  institutionName: String(baseItem.institutionName || "").trim() || null,
-
-  title: refundTitle,
-  quantity: 1,
-  subjectType: (baseItem.subjectType as any) ?? null,
-  subjectCount: toNullableNumber(baseItem.subjectCount) ?? 0,
-
-  actualCredits: toNullableNumber(baseItem.actualCredits),
-  settlementCredits: toNullableNumber(baseItem.settlementCredits),
-
-  actualUnitPrice: toNumber(baseItem.actualUnitPrice),
-  normalUnitPrice: toNumber(baseItem.normalUnitPrice),
-  institutionUnitCost: toNumber(baseItem.institutionUnitCost),
-  institutionCost: refundCompanyAmount + refundFreelancerAmount,
-  freelancerUnitAmount: toNumber(baseItem.freelancerUnitAmount),
-
-  grossAmount: -refundAmount,
-  companyAmount: -refundCompanyAmount,
-  freelancerAmount: -refundFreelancerAmount,
-  taxAmount: -refundTaxAmount,
-  finalPayoutAmount: -refundFinalPayoutAmount,
-  settlementStatus: "confirmed",
-  occurredAt: refundOccurredAt,
-  note: params.note ?? `${refundTitle} 승인 처리`,
-  actorUserId: params.actorUserId ?? null,
-  logNote: `${refundTitle} 정산 생성`,
-  payload: {
-    refundAmount,
-    refundRatio: ratio,
-    refundDate: refundOccurredAt,
-    originalSettlementItemId: Number(baseItem.id),
-    originalRevenueType: params.revenueType,
-    sourceId: params.sourceId,
-    ...(params.payload ?? {}),
-  },
-});
-
-const refundSettlementItemId = Number(refundSettlement.id);
-
-  await createSettlementItemLog({
-  settlementItemId: refundSettlementItemId,
-  actionType: "refund",
-  actorUserId: params.actorUserId ?? null,
-  note: params.note ?? "환불 정산 항목 생성",
-  payload: JSON.stringify({
-    refundAmount,
-    refundRatio: ratio,
-    refundDate: params.refundDate ?? null,
-    originalSettlementItemId: Number(baseItem.id),
-    originalRevenueType: params.revenueType,
-    sourceId: params.sourceId,
-    ...(params.payload ?? {}),
-  }),
-});
-
-  return refundSettlementItemId;
 }
 
 export async function syncPrivateCertificateSettlementItemByRequestId(
   requestId: number,
+
   actorUserId?: number,
-  params?: { organizationId?: number | null }
+
+  params?: {
+    organizationId?:
+      number |
+      null;
+
+    sourceType?:
+      "student" |
+      "external";
+  }
 ) {
-  const db = await getDb();
-  if (!db) throwAppError(
-  ERROR_CODES.INTERNAL_SERVER_ERROR,
-  "DB not available",
-  500
-);
+  const db =
+    await getDb();
 
-const organizationId = requireOrganizationId(params?.organizationId);
-
-  const rows = await db
-    .select({
-      request: privateCertificateRequests,
-      master: privateCertificateMasters,
-    })
-    .from(privateCertificateRequests)
-    .leftJoin(
-      privateCertificateMasters,
-      eq(privateCertificateRequests.privateCertificateMasterId, privateCertificateMasters.id)
-    )
-    .where(
-  and(
-    eq(privateCertificateRequests.id, requestId),
-    eq(privateCertificateRequests.organizationId, organizationId)
-  )
-)
-    .limit(1);
-
-  const row = rows[0];
-  if (!row?.request) {
+  if (!db) {
     throwAppError(
-  ERROR_CODES.DATA_NOT_FOUND,
-  "민간자격증 요청 데이터를 찾을 수 없습니다.",
-  404
-);
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
   }
 
-  const request = row.request;
-  const master = row.master;
+  const organizationId =
+    requireOrganizationId(
+      params?.organizationId
+    );
 
-  if (request.paymentStatus !== "결제") {
+  const sourceType =
+    params?.sourceType ??
+    "student";
+
+  let request: any =
+    null;
+
+  let master: any =
+    null;
+
+  if (
+    sourceType ===
+    "external"
+  ) {
+    const rows =
+      await db
+        .select({
+          request:
+            privateCertificateExternalRequests,
+
+          master:
+            privateCertificateMasters,
+        })
+        .from(
+          privateCertificateExternalRequests
+        )
+        .leftJoin(
+          privateCertificateMasters,
+          eq(
+            privateCertificateExternalRequests.privateCertificateMasterId,
+            privateCertificateMasters.id
+          )
+        )
+        .where(
+          and(
+            eq(
+              privateCertificateExternalRequests.id,
+              requestId
+            ),
+
+            eq(
+              privateCertificateExternalRequests.organizationId,
+              organizationId
+            )
+          )
+        )
+        .limit(1);
+
+    request =
+      rows[0]?.request ??
+      null;
+
+    master =
+      rows[0]?.master ??
+      null;
+  } else {
+    const rows =
+      await db
+        .select({
+          request:
+            privateCertificateRequests,
+
+          master:
+            privateCertificateMasters,
+        })
+        .from(
+          privateCertificateRequests
+        )
+        .leftJoin(
+          privateCertificateMasters,
+          eq(
+            privateCertificateRequests.privateCertificateMasterId,
+            privateCertificateMasters.id
+          )
+        )
+        .where(
+          and(
+            eq(
+              privateCertificateRequests.id,
+              requestId
+            ),
+
+            eq(
+              privateCertificateRequests.organizationId,
+              organizationId
+            )
+          )
+        )
+        .limit(1);
+
+    request =
+      rows[0]?.request ??
+      null;
+
+    master =
+      rows[0]?.master ??
+      null;
+  }
+
+  if (!request) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "민간자격증 요청 데이터를 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  if (
+    request.paymentStatus !==
+    "결제"
+  ) {
     await cancelSettlementItemBySource({
-  organizationId,
-  revenueType: "private_certificate",
-  sourceId: Number(request.id),
-  actorUserId,
-  note: "민간자격증 결제 상태가 결제가 아니어서 정산 취소",
-} as any);
+      organizationId,
+
+      revenueType:
+        "private_certificate",
+
+      sourceType,
+
+      sourceId:
+        Number(request.id),
+
+      actorUserId,
+
+      note:
+        "민간자격증 결제 상태가 결제가 아니어서 정산 취소",
+    });
+
     return null;
   }
 
-   const requestFeeAmount = toNumber((request as any).feeAmount ?? 0);
-const requestFreelancerInputAmount = toNumber(
-  (request as any).freelancerInputAmount ?? 0
-);
+  const requestFeeAmount =
+    toNumber(
+      request.feeAmount ??
+      0
+    );
 
-const masterDefaultFeeAmount = toNumber(
-  (master as any)?.defaultFeeAmount ?? 0
-);
+  const requestFreelancerInputAmount =
+    toNumber(
+      request.freelancerInputAmount ??
+      0
+    );
 
-const masterDefaultCompanyShareAmount = toNumber(
-  (master as any)?.defaultCompanyShareAmount ?? 0
-);
+  const masterDefaultFeeAmount =
+    toNumber(
+      master?.defaultFeeAmount ??
+      0
+    );
 
-const masterDefaultFreelancerAmount = toNumber(
-  (master as any)?.defaultFreelancerAmount ?? 0
-);
+  const masterDefaultCompanyShareAmount =
+    toNumber(
+      master?.defaultCompanyShareAmount ??
+      0
+    );
 
-const isSettlementEnabled =
-  (master as any)?.isSettlementEnabled === undefined
-    ? true
-    : Boolean((master as any)?.isSettlementEnabled);
+  const masterDefaultFreelancerAmount =
+    toNumber(
+      master?.defaultFreelancerAmount ??
+      0
+    );
 
-// 총매출: 고객 결제금액
-const feeAmount =
-  requestFeeAmount > 0 ? requestFeeAmount : masterDefaultFeeAmount;
+  const isSettlementEnabled =
+    master?.isSettlementEnabled ===
+    undefined
+      ? true
+      : Boolean(
+          master.isSettlementEnabled
+        );
 
-// 우리회사 몫 원금: 민간자격증 회사와 나눈 뒤 우리 회사로 들어오는 금액
-// 예: 고객 결제 88,000원 중 우리회사 몫 원금 38,000원
-const companyShareAmount =
-  masterDefaultCompanyShareAmount > 0
-    ? masterDefaultCompanyShareAmount
-    : feeAmount;
+  const feeAmount =
+    requestFeeAmount > 0
+      ? requestFeeAmount
+      : masterDefaultFeeAmount;
 
-// 우리회사 몫 실수령: 우리회사 몫 원금에서 3.3% 차감
-// 예: 38,000 - 1,254 = 36,746
-const companyShareTaxAmount = Math.floor(companyShareAmount * 0.033);
-const netCompanyShareAmount = Math.max(
-  0,
-  companyShareAmount - companyShareTaxAmount
-);
+  const companyShareAmount =
+    masterDefaultCompanyShareAmount > 0
+      ? masterDefaultCompanyShareAmount
+      : feeAmount;
 
-const resolvedFreelancerAmount =
-  requestFreelancerInputAmount > 0
-    ? requestFreelancerInputAmount
-    : masterDefaultFreelancerAmount;
+  const companyShareTaxAmount =
+    Math.floor(
+      companyShareAmount *
+      0.033
+    );
 
-// 프리랜서 지급액: 입력 단가 그대로
-const freelancerAmount = isSettlementEnabled
-  ? Math.max(0, Math.min(companyShareAmount, resolvedFreelancerAmount))
-  : 0;
+  const netCompanyShareAmount =
+    Math.max(
+      0,
+      companyShareAmount -
+      companyShareTaxAmount
+    );
 
-// 정산표에 표시되는 세금: 프리랜서 지급액 기준 3.3%
-// 예: 20,000 * 3.3% = 660
-const taxAmount = isSettlementEnabled
-  ? Math.floor(freelancerAmount * 0.033)
-  : 0;
+  const resolvedFreelancerAmount =
+    requestFreelancerInputAmount > 0
+      ? requestFreelancerInputAmount
+      : masterDefaultFreelancerAmount;
 
-const finalPayoutAmount = Math.max(0, freelancerAmount - taxAmount);
+  const freelancerAmount =
+    isSettlementEnabled
+      ? Math.max(
+          0,
+          Math.min(
+            companyShareAmount,
+            resolvedFreelancerAmount
+          )
+        )
+      : 0;
 
-const occurredAt = (request as any).paidAt ?? (request as any).updatedAt ?? new Date();
+  const taxAmount =
+    isSettlementEnabled
+      ? Math.floor(
+          freelancerAmount *
+          0.033
+        )
+      : 0;
 
-await assertSettlementMonthEditable({
-  organizationId,
-  date: occurredAt,
-});
+  const finalPayoutAmount =
+    Math.max(
+      0,
+      freelancerAmount -
+      taxAmount
+    );
 
-// 정산 원장의 우리회사 몫은 실수령 기준
-const companyAmount = netCompanyShareAmount;
+  const occurredAt =
+    request.paidAt ??
+    request.updatedAt ??
+    new Date();
 
-// 회사 순이익 = 우리회사 몫 실수령 - 프리랜서 지급액
-// 예: 36,746 - 20,000 = 16,746
-const companyProfit = Math.max(0, netCompanyShareAmount - freelancerAmount);
+  await assertSettlementMonthEditable({
+    organizationId,
 
-return await upsertSettlementItem({
-  organizationId,
-  revenueType: "private_certificate",
-    sourceId: Number(request.id),
-    studentId: Number(request.studentId),
-    assigneeId: Number((request as any).assigneeId ?? 0) || null,
-    privateCertificateMasterId: Number((request as any).privateCertificateMasterId ?? 0) || null,
-    title: `${master?.name || "민간자격증"} 결제`,
-    quantity: 1,
-        grossAmount: feeAmount,
-companyAmount,
-companyProfit,
-freelancerAmount,
-taxAmount,
-finalPayoutAmount,
-settlementStatus: "confirmed",
-        occurredAt,
-        note: "민간자격증 요청값 및 마스터 기본값 기준으로 자동 생성",
-    actorUserId: actorUserId ?? null,
-    logNote: "민간자격증 결제 완료 반영",
-        payload: {
-companyShareAmount,
-companyShareTaxAmount,
-netCompanyShareAmount,
-  requestId: request.id,
-  paymentStatus: request.paymentStatus,
-  requestFeeAmount,
-  requestFreelancerInputAmount,
-  feeAmount,
-  masterDefaultFeeAmount,
-  masterDefaultFreelancerAmount,
-  resolvedFreelancerAmount,
-  isSettlementEnabled,
-  freelancerAmount,
-  taxAmount,
-  finalPayoutAmount,
-  privateCertificateMasterId: (request as any).privateCertificateMasterId ?? null,
-companyProfitPreview: companyAmount - freelancerAmount,
-},
+    date:
+      occurredAt,
+  });
+
+  const companyAmount =
+    netCompanyShareAmount;
+
+  const companyProfit =
+    Math.max(
+      0,
+      netCompanyShareAmount -
+      freelancerAmount
+    );
+
+  return await upsertSettlementItem({
+    organizationId,
+
+    revenueType:
+      "private_certificate",
+
+    sourceType,
+
+    sourceId:
+      Number(request.id),
+
+    studentId:
+      sourceType ===
+      "student"
+        ? Number(
+            request.studentId
+          )
+        : null,
+
+    assigneeId:
+      Number(
+        request.assigneeId ??
+        0
+      ) || null,
+
+    privateCertificateMasterId:
+      Number(
+        request.privateCertificateMasterId ??
+        0
+      ) || null,
+
+    title:
+      `${
+        master?.name ||
+        request.certificateName ||
+        "민간자격증"
+      } 결제`,
+
+    quantity:
+      1,
+
+    grossAmount:
+      feeAmount,
+
+    companyAmount,
+
+    companyProfit,
+
+    freelancerAmount,
+
+    taxAmount,
+
+    finalPayoutAmount,
+
+    settlementStatus:
+      "confirmed",
+
+    occurredAt,
+
+    note:
+      "민간자격증 요청값 및 마스터 기본값 기준으로 자동 생성",
+
+    actorUserId:
+      actorUserId ??
+      null,
+
+    logNote:
+      "민간자격증 결제 완료 반영",
+
+    payload: {
+      sourceType,
+
+      companyShareAmount,
+
+      companyShareTaxAmount,
+
+      netCompanyShareAmount,
+
+      requestId:
+        request.id,
+
+      paymentStatus:
+        request.paymentStatus,
+
+      requestFeeAmount,
+
+      requestFreelancerInputAmount,
+
+      feeAmount,
+
+      masterDefaultFeeAmount,
+
+      masterDefaultFreelancerAmount,
+
+      resolvedFreelancerAmount,
+
+      isSettlementEnabled,
+
+      freelancerAmount,
+
+      taxAmount,
+
+      finalPayoutAmount,
+
+      privateCertificateMasterId:
+        request.privateCertificateMasterId ??
+        null,
+
+      companyProfitPreview:
+        companyAmount -
+        freelancerAmount,
+    },
   });
 }
 
@@ -12338,85 +12708,231 @@ async function resolvePracticeEducationCenterPartnerPrice(params: {
 
 export async function syncPracticeSupportSettlementItemByRequestId(
   requestId: number,
+
   actorUserId?: number,
+
   params?: {
-    organizationId?: number | null;
+    organizationId?:
+      number |
+      null;
+
+    sourceType?:
+      "student" |
+      "external";
   }
 ) {
-  const db = await getDb();
-  if (!db) throwAppError(
-  ERROR_CODES.INTERNAL_SERVER_ERROR,
-  "DB not available",
-  500
-);
+  const db =
+    await getDb();
 
-const organizationId = requireOrganizationId(params?.organizationId);
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
 
-  const rows = await db
-    .select()
-    .from(practiceSupportRequests)
-    .where(
-  and(
-    eq(practiceSupportRequests.id, requestId),
-    eq(practiceSupportRequests.organizationId, organizationId)
-  )
-)
-    .limit(1);
+  const organizationId =
+    requireOrganizationId(
+      params?.organizationId
+    );
 
-  const request = rows[0];
+  const sourceType =
+    params?.sourceType ??
+    "student";
+
+  let request: any =
+    null;
+
+  if (
+    sourceType ===
+    "external"
+  ) {
+    const rows =
+      await db
+        .select()
+        .from(
+          practiceSupportExternalRequests
+        )
+        .where(
+          and(
+            eq(
+              practiceSupportExternalRequests.id,
+              requestId
+            ),
+            eq(
+              practiceSupportExternalRequests.organizationId,
+              organizationId
+            )
+          )
+        )
+        .limit(1);
+
+    request =
+      rows[0] ??
+      null;
+  } else {
+    const rows =
+      await db
+        .select()
+        .from(
+          practiceSupportRequests
+        )
+        .where(
+          and(
+            eq(
+              practiceSupportRequests.id,
+              requestId
+            ),
+            eq(
+              practiceSupportRequests.organizationId,
+              organizationId
+            )
+          )
+        )
+        .limit(1);
+
+    request =
+      rows[0] ??
+      null;
+  }
+
   if (!request) {
     return null;
   }
 
-  if (request.paymentStatus !== "결제") {
+  if (
+    request.paymentStatus !==
+    "결제"
+  ) {
     await cancelSettlementItemBySource({
-  organizationId,
-  revenueType: "practice_support",
-      sourceId: Number(request.id),
+      organizationId,
+
+      revenueType:
+        "practice_support",
+
+      sourceType,
+
+      sourceId:
+        Number(request.id),
+
       actorUserId,
-      note: "실습배정지원 결제 상태가 결제가 아니어서 정산 취소",
+
+      note:
+        "실습배정지원 결제 상태가 결제가 아니어서 정산 취소",
     });
+
     return null;
   }
 
-  const feeAmount = toNumber((request as any).feeAmount ?? 0);
-const partnerPrice = await resolvePracticeEducationCenterPartnerPrice({
-  organizationId,
-  selectedEducationCenterId: (request as any).selectedEducationCenterId,
-});
-const settlementGrossAmount = feeAmount + partnerPrice;
-const occurredAt = (request as any).paidAt ?? (request as any).updatedAt ?? new Date();
+  const feeAmount =
+    toNumber(
+      request.feeAmount ??
+      0
+    );
+
+  const partnerPrice =
+    await resolvePracticeEducationCenterPartnerPrice({
+      organizationId,
+
+      selectedEducationCenterId:
+        request.selectedEducationCenterId,
+    });
+
+  const settlementGrossAmount =
+    feeAmount +
+    partnerPrice;
+
+  const occurredAt =
+    request.paidAt ??
+    request.updatedAt ??
+    new Date();
 
   await assertSettlementMonthEditable({
     organizationId,
-    date: occurredAt,
+
+    date:
+      occurredAt,
   });
 
   return await upsertSettlementItem({
-  organizationId,
-  revenueType: "practice_support",
-    sourceId: Number(request.id),
-    studentId: Number(request.studentId),
-    assigneeId: Number((request as any).assigneeId ?? 0) || null,
-    title: "실습배정지원 결제",
-    quantity: 1,
-   grossAmount: settlementGrossAmount,
-companyAmount: settlementGrossAmount,
-    freelancerAmount: 0,
-    settlementStatus: "confirmed",
-        occurredAt,
-    note: "실습배정지원 결제 완료로 자동 생성",
-    actorUserId: actorUserId ?? null,
-    logNote: "실습배정지원 결제 완료 반영",
-   payload: {
-  requestId: request.id,
-  paymentStatus: request.paymentStatus,
-  feeAmount,
-  partnerPrice,
-  settlementGrossAmount,
-  selectedEducationCenterId: (request as any).selectedEducationCenterId ?? null,
-  selectedEducationCenterName: (request as any).selectedEducationCenterName ?? null,
-},
+    organizationId,
+
+    revenueType:
+      "practice_support",
+
+    sourceType,
+
+    sourceId:
+      Number(request.id),
+
+    studentId:
+      sourceType ===
+      "student"
+        ? Number(
+            request.studentId
+          )
+        : null,
+
+    assigneeId:
+      Number(
+        request.assigneeId ??
+        0
+      ) || null,
+
+    title:
+      "실습배정지원 결제",
+
+    quantity:
+      1,
+
+    grossAmount:
+      settlementGrossAmount,
+
+    companyAmount:
+      settlementGrossAmount,
+
+    freelancerAmount:
+      0,
+
+    settlementStatus:
+      "confirmed",
+
+    occurredAt,
+
+    note:
+      "실습배정지원 결제 완료로 자동 생성",
+
+    actorUserId:
+      actorUserId ??
+      null,
+
+    logNote:
+      "실습배정지원 결제 완료 반영",
+
+    payload: {
+      sourceType,
+
+      requestId:
+        request.id,
+
+      paymentStatus:
+        request.paymentStatus,
+
+      feeAmount,
+
+      partnerPrice,
+
+      settlementGrossAmount,
+
+      selectedEducationCenterId:
+        request.selectedEducationCenterId ??
+        null,
+
+      selectedEducationCenterName:
+        request.selectedEducationCenterName ??
+        null,
+    },
   });
 }
 
@@ -12660,32 +13176,49 @@ if (!student) {
 );
 }
 
-    const grossAmount = toNumber((sem as any).actualAmount ?? 0);
-  const displaySubjectCount = Number((sem as any).actualSubjectCount ?? 0);
-  const educationInstitutionId = Number((sem as any).actualInstitutionId ?? 0) || null;
-  const occurredAt = (sem as any).actualPaymentDate ?? (sem as any).actualStartDate ?? null;
-
-  await assertSettlementMonthEditable({
-    organizationId,
-    date: occurredAt,
-  });
-
-  const planRows = await listPlanSemesters(studentId, {
-    organizationId,
-  });
-
-  const semesterPlanRows = (planRows || []).filter(
-    (row: any) => Number(row.semesterNo) === Number((sem as any).semesterOrder)
+  const grossAmount =
+  toNumber(
+    (sem as any)
+      .actualAmount ??
+    0
   );
 
-  const settlementIncludedSubjectCount = semesterPlanRows.filter(
-    (row: any) => row.settlementIncluded !== false
-  ).length;
+const actualSubjectCount =
+  Number(
+    (sem as any)
+      .actualSubjectCount ??
+    0
+  );
 
-  const subjectCount =
-  semesterPlanRows.length > 0
-    ? settlementIncludedSubjectCount
-    : displaySubjectCount;
+const subjectCount =
+  Number.isFinite(
+    actualSubjectCount
+  ) &&
+  actualSubjectCount > 0
+    ? Math.floor(
+        actualSubjectCount
+      )
+    : 0;
+
+const educationInstitutionId =
+  Number(
+    (sem as any)
+      .actualInstitutionId ??
+    0
+  ) || null;
+
+const occurredAt =
+  (sem as any)
+    .actualPaymentDate ??
+  (sem as any)
+    .actualStartDate ??
+  null;
+
+await assertSettlementMonthEditable({
+  organizationId,
+  date:
+    occurredAt,
+});
 
 if ((sem as any).approvalStatus !== "승인") {
   await cancelSettlementItemBySource({
@@ -12699,16 +13232,35 @@ if ((sem as any).approvalStatus !== "승인") {
 }
 
   // 실제 결제 완료 전이면 정산 원장 취소
-    if (!grossAmount || !subjectCount || !educationInstitutionId || !occurredAt) {
-    await cancelSettlementItemBySource({
-      organizationId,
-      revenueType: "subject",
-      sourceId: Number(sem.id),
-      actorUserId: actorUserId ?? null,
-      note: `학기 실제 결제정보 미완성 또는 정산포함 과목 없음으로 과목 정산 취소 (grossAmount=${grossAmount}, displaySubjectCount=${displaySubjectCount}, settlementSubjectCount=${subjectCount}, educationInstitutionId=${educationInstitutionId}, occurredAt=${occurredAt})`,
-    });
-    return null;
-  }
+   if (
+  !grossAmount ||
+  !subjectCount ||
+  !educationInstitutionId ||
+  !occurredAt
+) {
+  await cancelSettlementItemBySource({
+    organizationId,
+
+    revenueType:
+      "subject",
+
+    sourceId:
+      Number(sem.id),
+
+    actorUserId:
+      actorUserId ??
+      null,
+
+    note:
+      `학기 실제 결제정보 미완성으로 과목 정산 취소 ` +
+      `(grossAmount=${grossAmount}, ` +
+      `actualSubjectCount=${subjectCount}, ` +
+      `educationInstitutionId=${educationInstitutionId}, ` +
+      `occurredAt=${occurredAt})`,
+  });
+
+  return null;
+}
 
   const institution = await getEducationInstitutionById(educationInstitutionId, {
   organizationId,
@@ -12873,23 +13425,16 @@ institutionName: institution?.name || sem.actualInstitution || null,
   assigneeId: Number(student.assigneeId),
   positionId,
   educationInstitutionId,
-    grossAmount,
-  displaySubjectCount,
-  settlementSubjectCount: subjectCount,
-  settlementIncludedSubjectCount,
-  excludedSettlementSubjectCount: Math.max(
-    0,
-    displaySubjectCount - subjectCount
-  ),
+  grossAmount,
   subjectCount,
   actualUnitPrice,
   normalSubjectPrice,
   actualCredits,
   settlementCredits,
-subjectPriceCombination,
-institutionPriceRules: institutionCostResult.appliedRules,
-institutionUnitCost,
-institutionCost,
+  subjectPriceCombination,
+  institutionPriceRules: institutionCostResult.appliedRules,
+  institutionUnitCost,
+  institutionCost,
   companyAmount,
   positionUnitAmount,
   rawFreelancerAmount,
@@ -17878,7 +18423,7 @@ export async function getPrivateCertificateRequest(
   : undefined;
 }
 
-export async function listPrivateCertificateRequests(
+async function listStudentPrivateCertificateRequests(
   assigneeId?: number,
   params?: {
     organizationId?: number | null;
@@ -17964,6 +18509,189 @@ const organizationId = requireOrganizationId(params?.organizationId);
       null,
   };
 });
+}
+
+async function listExternalPrivateCertificateRequests(
+  assigneeId?: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
+  const db = await getDb();
+
+  if (!db) {
+    return [];
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params?.organizationId
+    );
+
+  const rows =
+    await db
+      .select({
+        request:
+          privateCertificateExternalRequests,
+
+        userName:
+          users.name,
+
+        username:
+          users.username,
+      })
+      .from(
+        privateCertificateExternalRequests
+      )
+      .leftJoin(
+        users,
+        and(
+          eq(
+            privateCertificateExternalRequests.assigneeId,
+            users.id
+          ),
+          eq(
+            users.organizationId,
+            organizationId
+          )
+        )
+      )
+      .where(
+        assigneeId
+          ? and(
+              eq(
+                privateCertificateExternalRequests.organizationId,
+                organizationId
+              ),
+              eq(
+                privateCertificateExternalRequests.assigneeId,
+                assigneeId
+              )
+            )
+          : eq(
+              privateCertificateExternalRequests.organizationId,
+              organizationId
+            )
+      )
+      .orderBy(
+        desc(
+          privateCertificateExternalRequests.id
+        )
+      );
+
+  return rows.map((rawRow: any) => {
+    const row =
+      decryptPrivateCertificatePersonalData({
+        ...rawRow.request,
+        userName:
+          rawRow.userName,
+      }) as any;
+
+    return {
+      ...row,
+
+      sourceType:
+        "external" as const,
+
+      rowKey:
+        `external-${Number(row.id)}`,
+
+      studentId:
+        null,
+
+      clientName:
+        String(
+          row.clientName || ""
+        ).trim() || null,
+
+      phone:
+        String(
+          row.phone || ""
+        ).trim() || null,
+
+      assigneeName:
+        String(
+          row.assigneeName || ""
+        ).trim() ||
+        String(
+          row.userName || ""
+        ).trim() ||
+        null,
+
+      inputAddress:
+        String(
+          row.inputAddress || ""
+        ).trim() || null,
+
+      assigneeUsername:
+        String(
+          rawRow.username || ""
+        ).trim() || null,
+    };
+  });
+}
+
+export async function listPrivateCertificateRequests(
+  assigneeId?: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
+  const [
+    studentRows,
+    externalRows,
+  ] = await Promise.all([
+    listStudentPrivateCertificateRequests(
+      assigneeId,
+      params
+    ),
+
+    listExternalPrivateCertificateRequests(
+      assigneeId,
+      params
+    ),
+  ]);
+
+  const normalizedStudentRows =
+    (studentRows || []).map(
+      (row: any) => ({
+        ...row,
+
+        sourceType:
+          "student" as const,
+
+        rowKey:
+          `student-${Number(row.id)}`,
+      })
+    );
+
+  return [
+    ...normalizedStudentRows,
+    ...externalRows,
+  ].sort((a: any, b: any) => {
+    const aTime =
+      new Date(
+        a.createdAt ||
+        a.updatedAt ||
+        0
+      ).getTime();
+
+    const bTime =
+      new Date(
+        b.createdAt ||
+        b.updatedAt ||
+        0
+      ).getTime();
+
+    if (aTime !== bTime) {
+      return bTime - aTime;
+    }
+
+    return (
+      Number(b.id || 0) -
+      Number(a.id || 0)
+    );
+  });
 }
 
 export async function listPrivateCertificateRequestsByStudent(
@@ -18130,6 +18858,255 @@ const result: any = await db
   return insertId;
 }
 
+export async function createPrivateCertificateExternalRequest(
+  data: InsertPrivateCertificateExternalRequest
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      (data as any).organizationId
+    );
+
+  const preparedData =
+    preparePrivateCertificatePersonalData(
+      data
+    );
+
+  const result: any =
+    await db
+      .insert(
+        privateCertificateExternalRequests
+      )
+      .values({
+        ...preparedData,
+
+        organizationId,
+
+        requestStatus:
+          data.requestStatus ??
+          "요청",
+
+        feeAmount:
+          data.feeAmount ??
+          "0",
+
+        freelancerInputAmount:
+          data.freelancerInputAmount ??
+          "0",
+
+        paymentStatus:
+          data.paymentStatus ??
+          "결제대기",
+
+        refundStatus:
+          data.refundStatus ??
+          "없음",
+
+        refundAmount:
+          data.refundAmount ??
+          "0",
+      } as any);
+
+  const insertId =
+    getInsertId(result);
+
+  if (insertId) {
+    await syncPrivateCertificateSettlementItemByRequestId(
+      Number(insertId),
+
+      Number(
+        data.createdBy ??
+        0
+      ) || undefined,
+
+      {
+        organizationId,
+
+        sourceType:
+          "external",
+      }
+    );
+  }
+
+  return insertId;
+}
+
+export async function getPrivateCertificateExternalRequest(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
+  const db = await getDb();
+
+  if (!db) {
+    return undefined;
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params?.organizationId
+    );
+
+  const rows =
+    await db
+      .select()
+      .from(
+        privateCertificateExternalRequests
+      )
+      .where(
+        and(
+          eq(
+            privateCertificateExternalRequests.id,
+            Number(id)
+          ),
+          eq(
+            privateCertificateExternalRequests.organizationId,
+            organizationId
+          )
+        )
+      )
+      .limit(1);
+
+  return rows[0]
+    ? decryptPrivateCertificatePersonalData(
+        rows[0]
+      )
+    : undefined;
+}
+
+export async function updatePrivateCertificateExternalRequest(
+  id: number,
+  data: Partial<InsertPrivateCertificateExternalRequest>,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params?.organizationId
+    );
+
+  const preparedData =
+    preparePrivateCertificatePersonalData(
+      data
+    );
+
+  await db
+    .update(
+      privateCertificateExternalRequests
+    )
+    .set(
+      preparedData as any
+    )
+    .where(
+      and(
+        eq(
+          privateCertificateExternalRequests.id,
+          Number(id)
+        ),
+        eq(
+          privateCertificateExternalRequests.organizationId,
+          organizationId
+        )
+      )
+    );
+
+  await syncPrivateCertificateSettlementItemByRequestId(
+    Number(id),
+
+    Number(
+      data.updatedBy ??
+      0
+    ) || undefined,
+
+    {
+      organizationId,
+
+      sourceType:
+        "external",
+    }
+  );
+
+  return true;
+}
+
+export async function deletePrivateCertificateExternalRequest(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params?.organizationId
+    );
+
+  await cancelSettlementItemBySource({
+    organizationId,
+
+    revenueType:
+      "private_certificate",
+
+    sourceType:
+      "external",
+
+    sourceId:
+      Number(id),
+
+    note:
+      "민간자격증 단독 요청 삭제로 정산 취소",
+  });
+
+  await db
+    .delete(
+      privateCertificateExternalRequests
+    )
+    .where(
+      and(
+        eq(
+          privateCertificateExternalRequests.id,
+          Number(id)
+        ),
+        eq(
+          privateCertificateExternalRequests.organizationId,
+          organizationId
+        )
+      )
+    );
+
+  return true;
+}
+
 export async function updatePrivateCertificateRequest(
   id: number,
   data: Partial<InsertPrivateCertificateRequest>,
@@ -18179,12 +19156,21 @@ export async function deletePrivateCertificateRequest(
 
 const organizationId = requireOrganizationId(params?.organizationId);
 
-  await cancelSettlementItemBySource({
+    await cancelSettlementItemBySource({
     organizationId,
-    revenueType: "private_certificate",
-    sourceId: id,
-    note: "민간자격증 요청 삭제로 정산 취소",
-  } as any);
+
+    revenueType:
+      "private_certificate",
+
+    sourceType:
+      "student",
+
+    sourceId:
+      id,
+
+    note:
+      "민간자격증 요청 삭제로 정산 취소",
+  });
 
   await db
     .delete(privateCertificateRequests)
@@ -18338,7 +19324,7 @@ const organizationId = requireOrganizationId(params.organizationId);
 
 
 // ─── Practice Support Requests (실습배정지원센터) ───────────────────
-export async function listPracticeSupportRequests(params?: {
+async function listStudentPracticeSupportRequests(params?: {
   organizationId?: number | null;
   assigneeId?: number;
   month?: string;
@@ -18595,6 +19581,288 @@ return mappedRows.filter((row: any) => {
 });
 }
 
+async function listExternalPracticeSupportRequests(params?: {
+  organizationId?: number | null;
+  assigneeId?: number;
+  month?: string;
+  status?:
+    | "전체"
+    | "미섭외"
+    | "섭외중"
+    | "섭외완료";
+  search?: string;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    return [];
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params?.organizationId
+    );
+
+  const conditions: any[] = [
+    eq(
+      practiceSupportExternalRequests.organizationId,
+      organizationId
+    ),
+  ];
+
+  if (params?.assigneeId) {
+    conditions.push(
+      eq(
+        practiceSupportExternalRequests.assigneeId,
+        params.assigneeId
+      )
+    );
+  }
+
+  if (
+    params?.month &&
+    params.month !== "전체"
+  ) {
+    conditions.push(
+      sql`
+        LEFT(
+          TRIM(
+            COALESCE(
+              ${practiceSupportExternalRequests.practiceDate},
+              ''
+            )
+          ),
+          7
+        ) = ${params.month}
+      `
+    );
+  }
+
+  if (
+    params?.status &&
+    params.status !== "전체"
+  ) {
+    conditions.push(
+      eq(
+        practiceSupportExternalRequests.coordinationStatus,
+        params.status
+      )
+    );
+  }
+
+  const rows =
+    await db
+      .select({
+        request:
+          practiceSupportExternalRequests,
+
+        userName:
+          users.name,
+
+        username:
+          users.username,
+      })
+      .from(
+        practiceSupportExternalRequests
+      )
+      .leftJoin(
+        users,
+        and(
+          eq(
+            practiceSupportExternalRequests.assigneeId,
+            users.id
+          ),
+          eq(
+            users.organizationId,
+            organizationId
+          )
+        )
+      )
+      .where(
+        and(...conditions)
+      )
+      .orderBy(
+        desc(
+          practiceSupportExternalRequests.id
+        )
+      );
+
+  const decryptedRows =
+    rows.map((rawRow: any) => {
+      const row =
+        decryptPracticeSupportPersonalData({
+          ...rawRow.request,
+
+          userName:
+            rawRow.userName,
+        }) as any;
+
+      return {
+        ...row,
+
+        sourceType:
+          "external" as const,
+
+        rowKey:
+          `external-${Number(row.id)}`,
+
+        studentId:
+          null,
+
+        semesterId:
+          null,
+
+        studentClientName:
+          null,
+
+        studentPhone:
+          null,
+
+        studentAddress:
+          null,
+
+        studentDetailAddress:
+          null,
+
+        studentCourse:
+          null,
+
+        planPracticeDate:
+          null,
+
+        planPracticeHours:
+          null,
+
+        planDesiredCourse:
+          null,
+
+        clientName:
+          String(
+            row.clientName || ""
+          ).trim() || null,
+
+        phone:
+          String(
+            row.phone || ""
+          ).trim() || null,
+
+        assigneeName:
+          String(
+            row.assigneeName || ""
+          ).trim() ||
+          String(
+            row.userName || ""
+          ).trim() ||
+          null,
+
+        assigneeUsername:
+          String(
+            rawRow.username || ""
+          ).trim() || null,
+      };
+    });
+
+  const keyword =
+    String(params?.search || "")
+      .trim()
+      .toLowerCase();
+
+  if (!keyword) {
+    return decryptedRows;
+  }
+
+  return decryptedRows.filter(
+    (row: any) => {
+      const searchable = [
+        row.clientName,
+        row.phone,
+        row.course,
+        row.inputAddress,
+        row.detailAddress,
+        row.assigneeName,
+        row.managerName,
+        row.practiceDate,
+        row.practiceSemesterLabel,
+      ]
+        .map((value) =>
+          String(value || "")
+            .toLowerCase()
+        )
+        .join(" ");
+
+      return searchable.includes(
+        keyword
+      );
+    }
+  );
+}
+
+export async function listPracticeSupportRequests(params?: {
+  organizationId?: number | null;
+  assigneeId?: number;
+  month?: string;
+  status?:
+    | "전체"
+    | "미섭외"
+    | "섭외중"
+    | "섭외완료";
+  search?: string;
+}) {
+  const [
+    studentRows,
+    externalRows,
+  ] = await Promise.all([
+    listStudentPracticeSupportRequests(
+      params
+    ),
+
+    listExternalPracticeSupportRequests(
+      params
+    ),
+  ]);
+
+  const normalizedStudentRows =
+    (studentRows || []).map(
+      (row: any) => ({
+        ...row,
+
+        sourceType:
+          "student" as const,
+
+        rowKey:
+          `student-${Number(row.id)}`,
+      })
+    );
+
+  return [
+    ...normalizedStudentRows,
+    ...externalRows,
+  ].sort((a: any, b: any) => {
+    const aTime =
+      new Date(
+        a.createdAt ||
+        a.updatedAt ||
+        0
+      ).getTime();
+
+    const bTime =
+      new Date(
+        b.createdAt ||
+        b.updatedAt ||
+        0
+      ).getTime();
+
+    if (aTime !== bTime) {
+      return bTime - aTime;
+    }
+
+    return (
+      Number(b.id || 0) -
+      Number(a.id || 0)
+    );
+  });
+}
+
 export async function listPracticeSupportRequestsByStudent(
   studentId: number,
   params?: { organizationId?: number | null }
@@ -18820,39 +20088,324 @@ return {
   };
 }
 
-export async function createPracticeSupportRequest(data: InsertPracticeSupportRequest) {
+export async function createPracticeSupportRequest(
+  data: InsertPracticeSupportRequest
+) {
   const db = await getDb();
-  if (!db) throwAppError(
-  ERROR_CODES.INTERNAL_SERVER_ERROR,
-  "DB not available",
-  500
-);
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      (data as any).organizationId
+    );
 
   const preparedData =
-  preparePracticeSupportPersonalData(data);
+    preparePracticeSupportPersonalData(
+      data
+    );
 
-const result: any = await db
-  .insert(practiceSupportRequests)
-  .values({
-    ...preparedData,
+  const result: any =
+    await db
+      .insert(
+        practiceSupportRequests
+      )
+      .values({
+        ...preparedData,
 
-    feeAmount:
-      data.feeAmount ?? "0",
+        organizationId,
 
-    paymentStatus:
-      data.paymentStatus ?? "미결제",
+        feeAmount:
+          data.feeAmount ??
+          "0",
 
-    coordinationStatus:
-      data.coordinationStatus ?? "미섭외",
-  } as any);
+        paymentStatus:
+          data.paymentStatus ??
+          "미결제",
 
-  const insertId = getInsertId(result);
+        coordinationStatus:
+          data.coordinationStatus ??
+          "미섭외",
+      } as any);
+
+  const insertId =
+    getInsertId(result);
 
   if (insertId) {
-    await syncPracticeSupportSettlementItemByRequestId(Number(insertId));
+    await syncPracticeSupportSettlementItemByRequestId(
+      Number(insertId),
+
+      undefined,
+
+      {
+        organizationId,
+
+        sourceType:
+          "student",
+      }
+    );
   }
 
   return insertId;
+}
+
+export async function createPracticeSupportExternalRequest(
+  data: InsertPracticeSupportExternalRequest
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      (data as any).organizationId
+    );
+
+  const preparedData =
+    preparePracticeSupportPersonalData(
+      data
+    );
+
+  const result: any =
+    await db
+      .insert(
+        practiceSupportExternalRequests
+      )
+      .values({
+        ...preparedData,
+
+        organizationId,
+
+        coordinationStatus:
+          data.coordinationStatus ??
+          "미섭외",
+
+        paymentStatus:
+          data.paymentStatus ??
+          "미결제",
+
+        feeAmount:
+          data.feeAmount ??
+          "0",
+
+        refundStatus:
+          data.refundStatus ??
+          "없음",
+
+        refundAmount:
+          data.refundAmount ??
+          "0",
+
+        includeEducationCenter:
+          data.includeEducationCenter ??
+          true,
+
+        includePracticeInstitution:
+          data.includePracticeInstitution ??
+          true,
+      } as any);
+
+    const insertId =
+    getInsertId(result);
+
+  if (insertId) {
+    await syncPracticeSupportSettlementItemByRequestId(
+      Number(insertId),
+
+      Number(
+        data.createdBy ??
+        0
+      ) || undefined,
+
+      {
+        organizationId,
+
+        sourceType:
+          "external",
+      }
+    );
+  }
+
+  return insertId;
+}
+
+export async function getPracticeSupportExternalRequest(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
+  const db = await getDb();
+
+  if (!db) {
+    return undefined;
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params?.organizationId
+    );
+
+  const rows =
+    await db
+      .select()
+      .from(
+        practiceSupportExternalRequests
+      )
+      .where(
+        and(
+          eq(
+            practiceSupportExternalRequests.id,
+            Number(id)
+          ),
+          eq(
+            practiceSupportExternalRequests.organizationId,
+            organizationId
+          )
+        )
+      )
+      .limit(1);
+
+  return rows[0]
+    ? decryptPracticeSupportPersonalData(
+        rows[0]
+      )
+    : undefined;
+}
+
+export async function updatePracticeSupportExternalRequest(
+  id: number,
+  data: Partial<InsertPracticeSupportExternalRequest>,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params?.organizationId
+    );
+
+  const preparedData =
+    preparePracticeSupportPersonalData(
+      data
+    );
+
+  await db
+    .update(
+      practiceSupportExternalRequests
+    )
+    .set(
+      preparedData as any
+    )
+    .where(
+      and(
+        eq(
+          practiceSupportExternalRequests.id,
+          Number(id)
+        ),
+        eq(
+          practiceSupportExternalRequests.organizationId,
+          organizationId
+        )
+      )
+    );
+
+  await syncPracticeSupportSettlementItemByRequestId(
+    Number(id),
+
+    Number(
+      data.updatedBy ??
+      0
+    ) || undefined,
+
+    {
+      organizationId,
+
+      sourceType:
+        "external",
+    }
+  );
+
+  return true;
+}
+
+export async function deletePracticeSupportExternalRequest(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params?.organizationId
+    );
+
+  await cancelSettlementItemBySource({
+    organizationId,
+
+    revenueType:
+      "practice_support",
+
+    sourceType:
+      "external",
+
+    sourceId:
+      Number(id),
+
+    note:
+      "실습배정 단독 요청 삭제로 정산 취소",
+  });
+
+  await db
+    .delete(
+      practiceSupportExternalRequests
+    )
+    .where(
+      and(
+        eq(
+          practiceSupportExternalRequests.id,
+          Number(id)
+        ),
+        eq(
+          practiceSupportExternalRequests.organizationId,
+          organizationId
+        )
+      )
+    );
+
+  return true;
 }
 
 export async function updatePracticeSupportRequest(

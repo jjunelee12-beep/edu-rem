@@ -1704,6 +1704,200 @@ export type PrivateCertificateRequest =
 export type InsertPrivateCertificateRequest =
   typeof privateCertificateRequests.$inferInsert;
 
+// ─── Private Certificate External Requests (민간자격증 단독 신청) ────
+export const privateCertificateExternalRequests = mysqlTable(
+  "private_certificate_external_requests",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId")
+      .notNull()
+      .default(1),
+
+    /**
+     * 별도 신청자는 students 테이블과 연결하지 않는다.
+     * 생성 시 관리자가 지정한 CRM 담당자 ID
+     */
+    assigneeId: int("assigneeId").notNull(),
+
+    /**
+     * 실제 등록 작업을 수행한 Admin 또는 Host
+     */
+    createdBy: int("createdBy").notNull(),
+    updatedBy: int("updatedBy"),
+
+    // 신청자 이름 암호문
+    clientName: text("clientName").notNull(),
+
+    // 이름 정확 검색용 HMAC
+    clientNameHash: varchar("clientNameHash", {
+      length: 64,
+    }),
+
+    // 신청자 연락처 암호문
+    phone: text("phone").notNull(),
+
+    // 연락처 정확 검색용 HMAC
+    phoneHash: varchar("phoneHash", {
+      length: 64,
+    }),
+
+    // 연락처 뒷자리 검색용
+    phoneLast4: varchar("phoneLast4", {
+      length: 4,
+    }),
+
+    /**
+     * 담당자 이름 스냅샷
+     * 개인정보 암호화 후 저장
+     */
+    assigneeName: text("assigneeName"),
+
+    /**
+     * 처음에는 이름·연락처·담당자만으로 생성할 수 있도록
+     * 자격증 관련 값은 nullable
+     */
+    privateCertificateMasterId: int(
+      "privateCertificateMasterId"
+    ),
+
+    certificateName: varchar("certificateName", {
+      length: 255,
+    }),
+
+    // 신청자 주소 암호문
+    inputAddress: text("inputAddress"),
+    detailAddress: text("detailAddress"),
+
+    note: text("note"),
+
+    requestStatus: mysqlEnum("requestStatus", [
+      "요청",
+      "안내완료",
+      "입금대기",
+      "입금확인",
+      "진행중",
+      "완료",
+      "취소",
+    ])
+      .notNull()
+      .default("요청"),
+
+    feeAmount: decimal("feeAmount", {
+      precision: 12,
+      scale: 0,
+    })
+      .notNull()
+      .default("0"),
+
+    freelancerInputAmount: decimal("freelancerInputAmount", {
+      precision: 12,
+      scale: 0,
+    })
+      .notNull()
+      .default("0"),
+
+    paymentStatus: mysqlEnum("paymentStatus", [
+      "결제대기",
+      "결제",
+      "환불",
+      "취소",
+    ])
+      .notNull()
+      .default("결제대기"),
+
+    paidAt: datetime("paidAt"),
+
+    refundStatus: mysqlEnum("refundStatus", [
+      "없음",
+      "환불요청",
+      "환불승인",
+      "환불거절",
+    ])
+      .notNull()
+      .default("없음"),
+
+    refundAmount: decimal("refundAmount", {
+      precision: 12,
+      scale: 0,
+    })
+      .notNull()
+      .default("0"),
+
+    refundReason: text("refundReason"),
+    refundRequestedAt: datetime("refundRequestedAt"),
+    refundApprovedAt: datetime("refundApprovedAt"),
+    refundApprovedBy: int("refundApprovedBy"),
+
+    attachmentName: varchar("attachmentName", {
+      length: 255,
+    }),
+
+    attachmentUrl: varchar("attachmentUrl", {
+      length: 1000,
+    }),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    orgCreatedIdx: index(
+      "idx_private_cert_external_org_created"
+    ).on(
+      table.organizationId,
+      table.createdAt
+    ),
+
+    orgAssigneeIdx: index(
+      "idx_private_cert_external_org_assignee"
+    ).on(
+      table.organizationId,
+      table.assigneeId
+    ),
+
+    orgStatusIdx: index(
+      "idx_private_cert_external_org_status"
+    ).on(
+      table.organizationId,
+      table.requestStatus,
+      table.paymentStatus
+    ),
+
+    orgPhoneHashIdx: index(
+      "idx_private_cert_external_org_phone_hash"
+    ).on(
+      table.organizationId,
+      table.phoneHash
+    ),
+
+    orgPhoneLast4Idx: index(
+      "idx_private_cert_external_org_phone_last4"
+    ).on(
+      table.organizationId,
+      table.phoneLast4
+    ),
+
+    orgClientNameHashIdx: index(
+      "idx_private_cert_external_org_name_hash"
+    ).on(
+      table.organizationId,
+      table.clientNameHash
+    ),
+  })
+);
+
+export type PrivateCertificateExternalRequest =
+  typeof privateCertificateExternalRequests.$inferSelect;
+
+export type InsertPrivateCertificateExternalRequest =
+  typeof privateCertificateExternalRequests.$inferInsert;
+
 // ─── Practice Support Requests (실습배정지원센터) ────────────────────
 export const practiceSupportRequests = mysqlTable(
   "practice_support_requests",
@@ -1888,6 +2082,261 @@ export type PracticeSupportRequest =
   typeof practiceSupportRequests.$inferSelect;
 export type InsertPracticeSupportRequest =
   typeof practiceSupportRequests.$inferInsert;
+
+// ─── Practice Support External Requests (실습배정 단독 신청) ────────
+export const practiceSupportExternalRequests = mysqlTable(
+  "practice_support_external_requests",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId")
+      .notNull()
+      .default(1),
+
+    /**
+     * students, semesters 테이블과 연결하지 않는
+     * 실습배정 단독 신청자
+     */
+    assigneeId: int("assigneeId").notNull(),
+
+    /**
+     * 신규 등록을 수행한 Admin 또는 Host
+     */
+    createdBy: int("createdBy").notNull(),
+    updatedBy: int("updatedBy"),
+
+    // 신청자 이름 암호문
+    clientName: text("clientName").notNull(),
+
+    // 이름 정확 검색용 HMAC
+    clientNameHash: varchar("clientNameHash", {
+      length: 64,
+    }),
+
+    // 신청자 연락처 암호문
+    phone: text("phone").notNull(),
+
+    // 연락처 정확 검색용 HMAC
+    phoneHash: varchar("phoneHash", {
+      length: 64,
+    }),
+
+    // 연락처 뒷자리 검색용
+    phoneLast4: varchar("phoneLast4", {
+      length: 4,
+    }),
+
+    // 지정된 담당자 이름 암호문
+    assigneeName: text("assigneeName"),
+
+    // 실습센터 내부 처리 담당자 이름 암호문
+    managerName: text("managerName"),
+
+    /**
+     * 처음에는 이름·연락처·담당자만으로 생성할 수 있도록
+     * 과정과 주소는 nullable
+     */
+    course: varchar("course", {
+      length: 200,
+    }),
+
+    inputAddress: text("inputAddress"),
+    detailAddress: text("detailAddress"),
+
+    practiceSemesterLabel: varchar("practiceSemesterLabel", {
+      length: 50,
+    }),
+
+    practiceHours: int("practiceHours"),
+
+    practiceDate: varchar("practiceDate", {
+      length: 50,
+    }),
+
+    includeEducationCenter: boolean("includeEducationCenter")
+      .notNull()
+      .default(true),
+
+    includePracticeInstitution: boolean(
+      "includePracticeInstitution"
+    )
+      .notNull()
+      .default(true),
+
+    coordinationStatus: mysqlEnum("coordinationStatus", [
+      "미섭외",
+      "섭외중",
+      "섭외완료",
+    ])
+      .notNull()
+      .default("미섭외"),
+
+    selectedEducationCenterId: int(
+      "selectedEducationCenterId"
+    ),
+
+    selectedEducationCenterName: varchar(
+      "selectedEducationCenterName",
+      {
+        length: 255,
+      }
+    ),
+
+    selectedEducationCenterAddress: varchar(
+      "selectedEducationCenterAddress",
+      {
+        length: 255,
+      }
+    ),
+
+    selectedEducationCenterDistanceKm: decimal(
+      "selectedEducationCenterDistanceKm",
+      {
+        precision: 8,
+        scale: 2,
+      }
+    ),
+
+    selectedPracticeInstitutionId: int(
+      "selectedPracticeInstitutionId"
+    ),
+
+    selectedPracticeInstitutionName: varchar(
+      "selectedPracticeInstitutionName",
+      {
+        length: 255,
+      }
+    ),
+
+    selectedPracticeInstitutionAddress: varchar(
+      "selectedPracticeInstitutionAddress",
+      {
+        length: 255,
+      }
+    ),
+
+    selectedPracticeInstitutionDistanceKm: decimal(
+      "selectedPracticeInstitutionDistanceKm",
+      {
+        precision: 8,
+        scale: 2,
+      }
+    ),
+
+    feeAmount: decimal("feeAmount", {
+      precision: 12,
+      scale: 0,
+    })
+      .notNull()
+      .default("0"),
+
+    paymentStatus: mysqlEnum("paymentStatus", [
+      "미결제",
+      "결제",
+      "환불",
+    ])
+      .notNull()
+      .default("미결제"),
+
+    paidAt: datetime("paidAt"),
+
+    refundStatus: mysqlEnum("refundStatus", [
+      "없음",
+      "환불요청",
+      "환불승인",
+      "환불거절",
+    ])
+      .notNull()
+      .default("없음"),
+
+    refundAmount: decimal("refundAmount", {
+      precision: 12,
+      scale: 0,
+    })
+      .notNull()
+      .default("0"),
+
+    refundReason: text("refundReason"),
+    refundRequestedAt: datetime("refundRequestedAt"),
+    refundApprovedAt: datetime("refundApprovedAt"),
+    refundApprovedBy: int("refundApprovedBy"),
+
+    note: text("note"),
+
+    attachmentName: varchar("attachmentName", {
+      length: 255,
+    }),
+
+    attachmentUrl: varchar("attachmentUrl", {
+      length: 1000,
+    }),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    orgCreatedIdx: index(
+      "idx_practice_external_org_created"
+    ).on(
+      table.organizationId,
+      table.createdAt
+    ),
+
+    orgAssigneeIdx: index(
+      "idx_practice_external_org_assignee"
+    ).on(
+      table.organizationId,
+      table.assigneeId
+    ),
+
+    orgCoordinationIdx: index(
+      "idx_practice_external_org_coord"
+    ).on(
+      table.organizationId,
+      table.coordinationStatus
+    ),
+
+    orgPaymentIdx: index(
+      "idx_practice_external_org_payment"
+    ).on(
+      table.organizationId,
+      table.paymentStatus
+    ),
+
+    orgPhoneHashIdx: index(
+      "idx_practice_external_org_phone_hash"
+    ).on(
+      table.organizationId,
+      table.phoneHash
+    ),
+
+    orgPhoneLast4Idx: index(
+      "idx_practice_external_org_phone_last4"
+    ).on(
+      table.organizationId,
+      table.phoneLast4
+    ),
+
+    orgClientNameHashIdx: index(
+      "idx_practice_external_org_name_hash"
+    ).on(
+      table.organizationId,
+      table.clientNameHash
+    ),
+  })
+);
+
+export type PracticeSupportExternalRequest =
+  typeof practiceSupportExternalRequests.$inferSelect;
+
+export type InsertPracticeSupportExternalRequest =
+  typeof practiceSupportExternalRequests.$inferInsert;
 
 // ─── Practice Institutions (실습기관/실습교육원 마스터) ──────────────
 export const practiceListCategories = mysqlTable("practice_list_categories", {
@@ -3656,14 +4105,23 @@ export const settlementGrades = mysqlTable("settlement_grades", {
 export const settlementItems = mysqlTable("settlement_items", {
   id: int("id").autoincrement().primaryKey(),
 organizationId: int("organizationId").notNull().default(1),
-  revenueType: mysqlEnum("revenueType", [
-  "subject",
-  "practice_support",
-  "private_certificate",
-  "refund",
-]).notNull(),
+   revenueType: mysqlEnum("revenueType", [
+    "subject",
+    "practice_support",
+    "private_certificate",
+    "refund",
+  ]).notNull(),
+
+  sourceType: mysqlEnum("sourceType", [
+    "student",
+    "external",
+  ])
+    .notNull()
+    .default("student"),
+
   sourceId: int("sourceId").notNull(),
-  studentId: int("studentId").notNull(),
+
+  studentId: int("studentId"),
   assigneeId: int("assigneeId"),
   freelancerUserId: int("freelancerUserId"),
   freelancerPositionId: int("freelancerPositionId"),
@@ -3710,8 +4168,19 @@ institutionName: varchar("institutionName", { length: 255 }),
   taxAmount: decimal("taxAmount", { precision: 12, scale: 0 }).notNull().default("0"),
   finalPayoutAmount: decimal("finalPayoutAmount", { precision: 12, scale: 0 }).notNull().default("0"),
 },
-  (table) => ({
-    orgOccurredIdx: index("idx_settlement_items_org_occurred").on(
+    (table) => ({
+    orgSourceUniqueIdx: uniqueIndex(
+  "uq_settlement_items_org_source"
+).on(
+  table.organizationId,
+  table.revenueType,
+  table.sourceType,
+  table.sourceId
+),
+
+    orgOccurredIdx: index(
+      "idx_settlement_items_org_occurred"
+    ).on(
       table.organizationId,
       table.occurredAt
     ),
