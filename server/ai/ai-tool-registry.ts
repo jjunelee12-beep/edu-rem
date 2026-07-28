@@ -655,8 +655,9 @@ status:
   null,
 
 finalEducation:
-  (student as any)
-    .finalEducation ?? null,
+  registrationSummary
+    .finalEducation ??
+  null,
 
 startDate:
   registrationSummary.startDate ??
@@ -741,7 +742,7 @@ registerTool<
     "student.update",
 
   description:
-    "현재 사용자가 담당하는 학생의 상태, 과정, 최종학력, 주소 또는 상세주소를 수정하기 위한 승인 초안을 생성합니다. 실제 DB 수정은 사용자 승인 후 실행됩니다.",
+  "현재 사용자가 담당하는 학생의 상태, 과정, 주소 또는 상세주소를 수정하기 위한 승인 초안을 생성합니다. 실제 DB 수정은 사용자 승인 후 실행됩니다.",
 
   inputSchema: {
     type:
@@ -759,15 +760,19 @@ registerTool<
           1,
       },
 
-      status: {
-        type: [
-          "string",
-          "null",
-        ],
+    status: {
+  type:
+    "string",
 
-        description:
-          "변경할 학생 상태. 사용자가 상태 변경을 요청하지 않았다면 전달하지 않습니다.",
-      },
+  enum: [
+    "등록",
+    "종료",
+    "등록 종료",
+  ],
+
+  description:
+    "변경할 학생 상태입니다. 등록, 종료, 등록 종료 중 하나만 사용할 수 있습니다. 사용자가 상태 변경을 요청하지 않았다면 이 필드를 전달하지 않습니다.",
+},
 
       course: {
         type: [
@@ -777,16 +782,6 @@ registerTool<
 
         description:
           "변경할 진행 과정. 사용자가 과정 변경을 요청하지 않았다면 전달하지 않습니다.",
-      },
-
-      finalEducation: {
-        type: [
-          "string",
-          "null",
-        ],
-
-        description:
-          "변경할 최종학력. 사용자가 최종학력 변경을 요청하지 않았다면 전달하지 않습니다.",
       },
 
       address: {
@@ -904,10 +899,6 @@ registerTool<
       safeInput.course !==
       undefined;
 
-    const hasFinalEducationUpdate =
-      safeInput.finalEducation !==
-      undefined;
-
     const hasAddressUpdate =
       safeInput.address !==
       undefined;
@@ -916,13 +907,12 @@ registerTool<
       safeInput.detailAddress !==
       undefined;
 
-    if (
-      !hasStatusUpdate &&
-      !hasCourseUpdate &&
-      !hasFinalEducationUpdate &&
-      !hasAddressUpdate &&
-      !hasDetailAddressUpdate
-    ) {
+   if (
+  !hasStatusUpdate &&
+  !hasCourseUpdate &&
+  !hasAddressUpdate &&
+  !hasDetailAddressUpdate
+) {
       throw new Error(
         "변경할 학생 정보가 필요합니다."
       );
@@ -942,12 +932,6 @@ registerTool<
         255
       );
 
-    const currentFinalEducation =
-      normalizeStudentUpdateText(
-        (student as any)
-          .finalEducation,
-        100
-      );
 
     const currentAddress =
       normalizeStudentUpdateText(
@@ -978,14 +962,6 @@ registerTool<
             255
           )
         : currentCourse;
-
-    const nextFinalEducation =
-      hasFinalEducationUpdate
-        ? normalizeStudentUpdateText(
-            safeInput.finalEducation,
-            100
-          )
-        : currentFinalEducation;
 
     const nextAddress =
       hasAddressUpdate
@@ -1044,26 +1020,6 @@ registerTool<
 
         after:
           nextCourse,
-      });
-    }
-
-    if (
-      hasFinalEducationUpdate &&
-      currentFinalEducation !==
-        nextFinalEducation
-    ) {
-      changes.push({
-        field:
-          "finalEducation",
-
-        label:
-          "최종학력",
-
-        before:
-          currentFinalEducation,
-
-        after:
-          nextFinalEducation,
       });
     }
 
@@ -1139,15 +1095,6 @@ registerTool<
     }
 
     if (
-      hasFinalEducationUpdate &&
-      currentFinalEducation !==
-        nextFinalEducation
-    ) {
-      updates.finalEducation =
-        nextFinalEducation;
-    }
-
-    if (
       hasAddressUpdate &&
       currentAddress !==
         nextAddress
@@ -1194,15 +1141,6 @@ registerTool<
       );
     }
 
-    if (
-      updates.finalEducation ===
-      null
-    ) {
-      warnings.push(
-        "학생 최종학력이 비어 있는 값으로 변경됩니다."
-      );
-    }
-
     const createdAt =
       new Date()
         .toISOString();
@@ -1228,9 +1166,6 @@ registerTool<
 
           course:
             currentCourse,
-
-          finalEducation:
-            currentFinalEducation,
 
           address:
             currentAddress,

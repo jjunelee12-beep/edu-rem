@@ -26,6 +26,321 @@ export type AiDataScope =
   | "organization"
   | "system";
 
+/**
+ * AI가 현재 어떤 종류의 CRM 데이터를
+ * 작업 대상으로 잡고 있는지 나타낸다.
+ *
+ * 예:
+ * 김민수 학생을 조회한 뒤 실습 수정,
+ * 민간자격증 요청, 일정 등록 등을 이어갈 때
+ * 동일한 학생을 계속 유지하기 위해 사용한다.
+ */
+export type AiActiveTargetType =
+  | "consultation"
+  | "student"
+  | "practice_request"
+  | "private_certificate_request";
+
+/**
+ * 현재 AI가 진행 중인 업무 종류
+ *
+ * Staff / Admin / Host 모두 동일한 업무 종류를 사용한다.
+ * 실제 접근 범위와 실행 권한만 서버 Context와
+ * Executor에서 별도로 검사한다.
+ */
+export type AiWorkflowType =
+  | "consultation_registration"
+  | "consultation_update"
+  | "student_detail_setup"
+  | "student_update"
+  | "semester_create"
+  | "semester_update"
+  | "plan_setup"
+  | "plan_update"
+  | "practice_create"
+  | "practice_update"
+  | "private_certificate_create"
+  | "schedule_create"
+  | "document_import";
+
+/**
+ * 현재 업무가 어느 단계까지 진행됐는지 나타낸다.
+ */
+export type AiWorkflowStep =
+  | "idle"
+  | "collecting_data"
+  | "awaiting_target_selection"
+  | "awaiting_document"
+  | "awaiting_confirmation"
+  | "executing"
+  | "completed"
+  | "failed";
+
+/**
+ * AI가 현재 작업 대상으로 선택한 CRM 데이터
+ *
+ * 학생을 한 번 선택하면 다른 학생이 명확하게
+ * 지정되기 전까지 이 값이 유지된다.
+ */
+export type AiActiveTarget = {
+  type:
+    AiActiveTargetType;
+
+  id:
+    number;
+
+  name:
+    string |
+    null;
+};
+
+/**
+ * 현재 작업 대상과 연결된 CRM 데이터 ID
+ *
+ * 상담DB에서 등록예정 학생이 생성되면
+ * consultationId와 studentId를 함께 유지할 수 있다.
+ */
+export type AiLinkedContext = {
+  consultationId:
+    number |
+    null;
+
+  studentId:
+    number |
+    null;
+
+  practiceRequestId:
+    number |
+    null;
+
+  privateCertificateRequestIds:
+    number[];
+};
+
+/**
+ * AI가 사용자에게 마지막으로 보여준
+ * 실행 예정 작업
+ *
+ * 사용자가 "ㅇㅇ", "그렇게 해줘", "진행해줘"라고
+ * 답했을 때 새로 내용을 추측하지 않고
+ * 이 작업을 기준으로 승인 처리한다.
+ */
+export type AiLastPresentedAction = {
+  actionId:
+    string;
+
+  actionType:
+    string;
+
+  targetType:
+    AiActiveTargetType;
+
+  targetId:
+    number;
+
+  payload:
+    Record<
+      string,
+      unknown
+    >;
+
+  expiresAt:
+    string;
+};
+
+/**
+ * AI가 진행 중인 업무 상태
+ */
+export type AiWorkflowState = {
+  type:
+    AiWorkflowType |
+    null;
+
+  step:
+    AiWorkflowStep;
+
+  /**
+   * 여러 대화에서 받은 값을 누적한다.
+   *
+   * 예:
+   * 첫 메시지에서 학기정보,
+   * 다음 메시지에서 결제정보,
+   * 다음 메시지에서 실습정보를 받는 경우
+   * 모두 이 draft에 누적한다.
+   */
+  draft:
+    Record<
+      string,
+      unknown
+    >;
+
+  /**
+   * 아직 사용자에게 받아야 하는 필드명
+   *
+   * 예:
+   * ["address", "practiceDate"]
+   */
+  waitingFor:
+    string[];
+};
+
+/**
+ * 사용자별 AI 업무 세션
+ *
+ * 대화 메시지와 별도로 서버 DB에 저장한다.
+ * 메시지 기록을 삭제해도 현재 작업 대상을
+ * 유지할 수 있도록 별도 구조로 관리한다.
+ */
+export type AiWorkSession = {
+  id:
+    number |
+    null;
+
+  organizationId:
+    number;
+
+  userId:
+    number;
+
+  activeTarget:
+    AiActiveTarget |
+    null;
+
+  linkedContext:
+    AiLinkedContext;
+
+  workflow:
+    AiWorkflowState;
+
+  lastPresentedAction:
+    AiLastPresentedAction |
+    null;
+
+  /**
+   * 동시에 여러 요청이 세션을 덮어쓰는 것을
+   * 방지하기 위한 버전 번호
+   */
+  version:
+    number;
+
+  createdAt:
+    string |
+    null;
+
+  updatedAt:
+    string |
+    null;
+};
+
+/**
+ * AI Runner가 처리 결과와 함께 반환할
+ * 업무 세션 일부 변경값
+ *
+ * 전체 세션을 매번 덮어쓰지 않고
+ * 변경된 값만 서버에서 합치기 위해 사용한다.
+ */
+export type AiWorkSessionPatch = {
+  activeTarget?:
+    AiActiveTarget |
+    null;
+
+  linkedContext?:
+    Partial<
+      AiLinkedContext
+    >;
+
+  workflow?: {
+    type?:
+      AiWorkflowType |
+      null;
+
+    step?:
+      AiWorkflowStep;
+
+    /**
+     * 기존 draft와 병합할 값
+     */
+    draftPatch?:
+      Record<
+        string,
+        unknown
+      >;
+
+    /**
+     * true이면 기존 draft를 전부 비운다.
+     */
+    clearDraft?:
+      boolean;
+
+    waitingFor?:
+      string[];
+  };
+
+  lastPresentedAction?:
+    AiLastPresentedAction |
+    null;
+};
+
+/**
+ * 사용자 메시지에서 새로운 작업 대상을
+ * 찾은 결과
+ */
+export type AiTargetResolution =
+  | {
+      type:
+        "keep_current";
+
+      target:
+        AiActiveTarget |
+        null;
+    }
+  | {
+      type:
+        "switch_target";
+
+      target:
+        AiActiveTarget;
+    }
+  | {
+      type:
+        "selection_required";
+
+      query:
+        string;
+
+      candidates:
+        Array<{
+          type:
+            AiActiveTargetType;
+
+          id:
+            number;
+
+          name:
+            string |
+            null;
+
+          phoneLast4?:
+            string |
+            null;
+
+          course?:
+            string |
+            null;
+
+          assigneeName?:
+            string |
+            null;
+        }>;
+    }
+  | {
+      type:
+        "target_not_found";
+
+      query:
+        string;
+    };
+
 export type AiToolName =
   | "student.search"
   | "student.summary"
@@ -539,10 +854,6 @@ export type StudentUpdateToolInput = {
     string |
     null;
 
-  finalEducation?:
-    string |
-    null;
-
   address?:
     string |
     null;
@@ -558,7 +869,6 @@ export type StudentUpdateToolInput = {
 export type StudentUpdateField =
   | "status"
   | "course"
-  | "finalEducation"
   | "address"
   | "detailAddress";
 
@@ -607,10 +917,6 @@ export type StudentUpdateDraft = {
       string |
       null;
 
-    finalEducation:
-      string |
-      null;
-
     address:
       string |
       null;
@@ -626,10 +932,6 @@ export type StudentUpdateDraft = {
       null;
 
     course?:
-      string |
-      null;
-
-    finalEducation?:
       string |
       null;
 

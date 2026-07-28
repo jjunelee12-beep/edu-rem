@@ -11,6 +11,9 @@ import type {
   AiToolInputSchema,
   AiToolName,
   AiUserContext,
+  AiWorkflowType,
+  AiWorkSession,
+  AiWorkSessionPatch,
   StudentUpdateToolOutput,
 } from "./ai.types";
 
@@ -175,6 +178,8 @@ function fromOpenAiToolName(
 }
 
 type AiRunnerIntent =
+  | "pending_action_confirm"
+  | "pending_action_cancel"
   | "student_search"
   | "student_summary"
   | "student_dashboard"
@@ -253,6 +258,39 @@ type AiRunnerPlan = {
     boolean;
 };
 
+type AiPendingActionDecision = {
+  decision:
+    | "confirm"
+    | "cancel"
+    | "revise"
+    | "new_request"
+    | "unclear";
+
+  confidence:
+    | "high"
+    | "medium"
+    | "low";
+
+  reason:
+    string;
+};
+
+
+export type AiPendingActionCommand = {
+  command:
+    | "confirm"
+    | "cancel";
+
+  pendingActionId:
+    number;
+
+  actionId:
+    string;
+
+  actionType:
+    string;
+};
+
 export type AiConversationHistoryMessage = {
   role:
     | "user"
@@ -268,6 +306,15 @@ export type RunAiAssistantInput = {
 
   message:
     string;
+
+  /**
+   * DB에서 서버가 직접 조회한
+   * 현재 사용자 AI 업무 세션이다.
+   *
+   * 프론트에서 전달받지 않는다.
+   */
+  workSession:
+    AiWorkSession;
 
   selectedStudentId?:
     number |
@@ -288,17 +335,52 @@ export type RunAiAssistantInput = {
 };
 
 export type RunAiAssistantOutput = {
-  success: boolean;
+  success:
+    boolean;
 
-  intent: AiRunnerIntent;
+  intent:
+    AiRunnerIntent;
 
-  reply: string;
+  reply:
+    string;
 
-  toolName: AiToolName | null;
+  toolName:
+    AiToolName |
+    null;
 
-  toolResult?: AiToolExecutionResult<any> | null;
+  toolResult?:
+    AiToolExecutionResult<any> |
+    null;
 
-  data?: unknown;
+  data?:
+    unknown;
+
+  /**
+   * Runner 처리 결과를 AI 업무 세션에
+   * 반영하기 위한 부분 변경값이다.
+   *
+   * Runner가 DB를 직접 수정하지 않고
+   * Router가 version 검사를 거쳐 저장한다.
+   */
+  workSessionPatch?:
+    AiWorkSessionPatch |
+    null;
+
+  pendingActionCommand?:
+    AiPendingActionCommand |
+    null;
+
+  /**
+   * 승인 대기 상태에서 현재 사용자 메시지가
+   * 기존 초안과 어떤 관계인지 AI가 판단한 결과다.
+   *
+   * 실제 승인·취소 실행에는 사용하지 않고,
+   * Router가 기존 Pending Action을 유지하거나
+   * 교체할지 결정할 때만 참고한다.
+   */
+  pendingActionDecision?:
+    AiPendingActionDecision |
+    null;
 
   registrationPreview?: {
     required: boolean;
@@ -492,6 +574,333 @@ studentUpdateDraft?:
     userId: number;
   };
 };
+
+function getWorkflowTypeFromIntent(
+  intent:
+    AiRunnerIntent
+): AiWorkflowType | null {
+  switch (
+    intent
+  ) {
+    case "student_update":
+      return "student_update";
+
+    case "consultation_update":
+      return "consultation_update";
+
+    case "student_registration_preview":
+      return "consultation_registration";
+
+    case "schedule_create":
+      return "schedule_create";
+
+    default:
+      return null;
+  }
+}
+
+function getWaitingForFromValidationMessage(params: {
+  toolName:
+    AiRunnerPlan["toolName"];
+
+  message:
+    string |
+    null;
+}): string[] {
+  const message =
+    String(
+      params.message ||
+      ""
+    );
+
+  if (
+    params.toolName ===
+    "student.update"
+  ) {
+    return [
+      "updates",
+    ];
+  }
+
+  if (
+    params.toolName ===
+    "consultation.update"
+  ) {
+    if (
+      message.includes(
+        "상담DB 번호"
+      )
+    ) {
+      return [
+        "consultationId",
+      ];
+    }
+
+    return [
+      "updates",
+    ];
+  }
+
+  if (
+    params.toolName ===
+    "schedule.create"
+  ) {
+    if (
+      message.includes(
+        "학생"
+      )
+    ) {
+      return [
+        "studentId",
+      ];
+    }
+
+    if (
+      message.includes(
+        "일정명"
+      )
+    ) {
+      return [
+        "title",
+      ];
+    }
+
+    if (
+      message.includes(
+        "날짜"
+      )
+    ) {
+      return [
+        "scheduleDate",
+      ];
+    }
+
+    if (
+      message.includes(
+        "오전 또는 오후"
+      )
+    ) {
+      return [
+        "meridiem",
+      ];
+    }
+
+    if (
+      message.includes(
+        "시간"
+      )
+    ) {
+      return [
+        "hour12",
+      ];
+    }
+
+    if (
+      message.includes(
+        "분"
+      )
+    ) {
+      return [
+        "minute",
+      ];
+    }
+
+    return [
+      "scheduleDate",
+      "meridiem",
+      "hour12",
+      "minute",
+    ];
+  }
+
+  return [];
+}
+
+function buildCollectingDataWorkSessionPatch(params: {
+  plan:
+    AiRunnerPlan;
+
+  validationMessage:
+    string |
+    null;
+}): AiWorkSessionPatch | null {
+  const workflowType =
+    getWorkflowTypeFromIntent(
+      params.plan.intent
+    );
+
+  if (
+    !workflowType
+  ) {
+    return null;
+  }
+
+  return {
+    workflow: {
+      type:
+        workflowType,
+
+      step:
+        "collecting_data",
+
+      draftPatch:
+        params.plan.input,
+
+      waitingFor:
+        getWaitingForFromValidationMessage({
+          toolName:
+            params.plan.toolName,
+
+          message:
+            params.validationMessage,
+        }),
+    },
+
+    lastPresentedAction:
+      null,
+  };
+}
+
+function buildAwaitingConfirmationWorkSessionPatch(params: {
+  plan:
+    AiRunnerPlan;
+
+  toolResultData:
+    unknown;
+}): AiWorkSessionPatch | null {
+  const workflowType =
+    getWorkflowTypeFromIntent(
+      params.plan.intent
+    );
+
+  if (
+    !workflowType
+  ) {
+    return null;
+  }
+
+  const resultData =
+    params.toolResultData &&
+    typeof params.toolResultData ===
+      "object" &&
+    !Array.isArray(
+      params.toolResultData
+    )
+      ? params.toolResultData as
+          Record<string, unknown>
+      : {};
+
+  const draft =
+    resultData.draft &&
+    typeof resultData.draft ===
+      "object" &&
+    !Array.isArray(
+      resultData.draft
+    )
+      ? resultData.draft as
+          Record<string, unknown>
+      : params.plan.input;
+
+  return {
+    workflow: {
+      type:
+        workflowType,
+
+      step:
+        "awaiting_confirmation",
+
+      clearDraft:
+        true,
+
+      draftPatch:
+        draft,
+
+      waitingFor:
+        [],
+    },
+  };
+}
+
+function buildRegistrationWorkSessionPatch(params: {
+  consultationId:
+    number;
+
+  originalMessage:
+    string;
+}): AiWorkSessionPatch {
+  if (
+    params.consultationId >
+    0
+  ) {
+    return {
+      activeTarget: {
+        type:
+          "consultation",
+
+        id:
+          Math.floor(
+            params.consultationId
+          ),
+
+        name:
+          null,
+      },
+
+      linkedContext: {
+        consultationId:
+          Math.floor(
+            params.consultationId
+          ),
+      },
+
+      workflow: {
+        type:
+          "consultation_registration",
+
+        step:
+          "awaiting_confirmation",
+
+        clearDraft:
+          true,
+
+        draftPatch: {
+          consultationId:
+            Math.floor(
+              params.consultationId
+            ),
+
+          originalMessage:
+            params.originalMessage,
+        },
+
+        waitingFor:
+          [],
+      },
+    };
+  }
+
+  return {
+    workflow: {
+      type:
+        "consultation_registration",
+
+      step:
+        "collecting_data",
+
+      draftPatch: {
+        originalMessage:
+          params.originalMessage,
+      },
+
+      waitingFor: [
+        "consultationId",
+      ],
+    },
+
+    lastPresentedAction:
+      null,
+  };
+}
 
 /**
  * 실제 DB를 즉시 변경하지는 않지만
@@ -1709,6 +2118,409 @@ function normalizeConversationHistory(
     .slice(-30);
 }
 
+async function classifyPendingActionDecisionWithOpenAi(
+  params: {
+    message:
+      string;
+
+    workSession:
+      AiWorkSession;
+
+    context:
+      AiUserContext;
+
+    conversationHistory?:
+      AiConversationHistoryMessage[];
+  }
+): Promise<AiPendingActionDecision | null> {
+  const action =
+    params.workSession
+      .lastPresentedAction;
+
+  const pendingActionId =
+    Number(
+      action
+        ?.payload
+        ?.pendingActionId ||
+      0
+    );
+
+  if (
+    params.workSession
+      .workflow
+      .step !==
+      "awaiting_confirmation" ||
+    !action ||
+    !Number.isFinite(
+      pendingActionId
+    ) ||
+    pendingActionId <=
+      0
+  ) {
+    return null;
+  }
+
+  const openai =
+    getOpenAiClient();
+
+  if (
+    !openai
+  ) {
+    return {
+      decision:
+        "unclear",
+
+      confidence:
+        "low",
+
+      reason:
+        "OpenAI Client를 사용할 수 없습니다.",
+    };
+  }
+
+  try {
+    const response =
+      await openai.responses.create({
+        model:
+          process.env.OPENAI_AI_MODEL ||
+          "gpt-5.4-mini",
+
+        input: [
+          {
+            role:
+              "system",
+
+            content: [
+              {
+                type:
+                  "input_text",
+
+                text: [
+                  "너는 EduCanvas CRM의 승인 대기 작업에 대한 사용자 의도 분류기다.",
+                  "사용자의 자연어, 오타, 줄임말, 비표준 표현과 최근 대화 문맥을 이해해서 의미를 판단한다.",
+                  "",
+                  "반드시 아래 decision 중 하나만 선택한다.",
+                  "",
+                  "confirm:",
+                  "- 현재 제시된 초안을 변경하지 않고 그대로 실행하려는 의미",
+                  "- 승인, 진행, 등록, 적용, 반영에 동의하는 의미",
+                  "",
+                  "cancel:",
+                  "- 현재 초안을 실행하지 않거나 폐기하려는 의미",
+                  "- 취소, 중단, 없던 일로 하기, 진행하지 않기의 의미",
+                  "",
+                  "revise:",
+                  "- 현재 초안의 날짜, 시간, 상태, 주소, 내용 등 일부를 변경하려는 의미",
+                  "- 수정 후 진행하라는 요청도 confirm이 아니라 revise",
+                  "",
+                  "new_request:",
+                  "- 현재 승인 초안과 별개의 새로운 조회, 검색, 수정 또는 다른 업무 요청",
+                  "",
+                  "unclear:",
+                  "- 사용자의 의도가 승인, 취소, 수정, 새 요청 중 무엇인지 확실하지 않은 경우",
+                  "",
+                  "중요 규칙:",
+                  "- 단어를 정확히 일치시키지 말고 문장 전체의 의미와 문맥으로 판단한다.",
+                  "- 타이핑 오류가 있어도 의미가 명확하면 올바른 decision을 선택한다.",
+                  "- '시간을 4시로 바꾸고 진행해줘'는 revise다.",
+                  "- '그 전에 다른 학생을 확인해줘'는 new_request다.",
+                  "- 단순히 '음', '잠깐', '모르겠어'는 unclear다.",
+                  "- 확신이 부족하면 반드시 unclear로 판단한다.",
+                  "- pendingActionId나 사용자 ID를 생성하거나 반환하지 않는다.",
+                  "",
+                  "반드시 JSON 객체만 반환한다.",
+                  "다른 문장이나 마크다운은 반환하지 않는다.",
+                  "",
+                  "반환 형식:",
+                  '{"decision":"confirm|cancel|revise|new_request|unclear","confidence":"high|medium|low","reason":"짧은 판단 이유"}',
+                ].join(
+                  "\n"
+                ),
+              },
+            ],
+          },
+
+          ...normalizeConversationHistory(
+            params.conversationHistory
+          )
+            .slice(
+              -10
+            )
+            .map(
+              (
+                history
+              ) => ({
+                role:
+                  history.role,
+
+                content: [
+                  {
+                    type:
+                      history.role ===
+                        "assistant"
+                        ? "output_text" as const
+                        : "input_text" as const,
+
+                    text:
+                      history.content,
+                  },
+                ],
+              })
+            ),
+
+          {
+            role:
+              "user",
+
+            content: [
+              {
+                type:
+                  "input_text",
+
+                text:
+                  JSON.stringify({
+                    currentMessage:
+                      params.message,
+
+                    pendingWorkflow: {
+                      type:
+                        params.workSession
+                          .workflow
+                          .type,
+
+                      step:
+                        params.workSession
+                          .workflow
+                          .step,
+
+                      waitingFor:
+                        params.workSession
+                          .workflow
+                          .waitingFor,
+
+                      actionType:
+                        action.actionType ||
+                        null,
+
+                      actionId:
+                        action.actionId ||
+                        null,
+                    },
+                  }),
+              },
+            ],
+          },
+        ],
+      });
+
+    const outputText =
+      String(
+        response.output_text ||
+        ""
+      ).trim();
+
+    let parsed:
+      Record<
+        string,
+        unknown
+      > =
+      {};
+
+    try {
+      parsed =
+        JSON.parse(
+          outputText
+        );
+    } catch {
+      return {
+        decision:
+          "unclear",
+
+        confidence:
+          "low",
+
+        reason:
+          "AI 판단 결과를 JSON으로 해석하지 못했습니다.",
+      };
+    }
+
+    const allowedDecisions =
+      new Set([
+        "confirm",
+        "cancel",
+        "revise",
+        "new_request",
+        "unclear",
+      ]);
+
+    const allowedConfidences =
+      new Set([
+        "high",
+        "medium",
+        "low",
+      ]);
+
+    const decision =
+      allowedDecisions.has(
+        String(
+          parsed.decision ||
+          ""
+        )
+      )
+        ? String(
+            parsed.decision
+          ) as
+            AiPendingActionDecision["decision"]
+        : "unclear";
+
+    const confidence =
+      allowedConfidences.has(
+        String(
+          parsed.confidence ||
+          ""
+        )
+      )
+        ? String(
+            parsed.confidence
+          ) as
+            AiPendingActionDecision["confidence"]
+        : "low";
+
+    const reason =
+      String(
+        parsed.reason ||
+        ""
+      )
+        .replace(
+          /\s+/g,
+          " "
+        )
+        .trim()
+        .slice(
+          0,
+          300
+        );
+
+    return {
+      decision,
+      confidence,
+      reason:
+        reason ||
+        "판단 이유가 제공되지 않았습니다.",
+    };
+  } catch (
+    error
+  ) {
+    console.error(
+      "[AI RUNNER] Pending Action 자연어 판단 실패",
+      normalizeErrorForLog(
+        error
+      )
+    );
+
+    return {
+      decision:
+        "unclear",
+
+      confidence:
+        "low",
+
+      reason:
+        "AI 자연어 판단 중 오류가 발생했습니다.",
+    };
+  }
+}
+
+function buildPendingActionCommandFromDecision(
+  params: {
+    decision:
+      AiPendingActionDecision;
+
+    workSession:
+      AiWorkSession;
+  }
+): AiPendingActionCommand | null {
+  if (
+    params.decision
+      .confidence !==
+      "high"
+  ) {
+    return null;
+  }
+
+  if (
+    params.decision
+      .decision !==
+      "confirm" &&
+    params.decision
+      .decision !==
+      "cancel"
+  ) {
+    return null;
+  }
+
+  if (
+    params.workSession
+      .workflow
+      .step !==
+      "awaiting_confirmation"
+  ) {
+    return null;
+  }
+
+  const action =
+    params.workSession
+      .lastPresentedAction;
+
+  if (
+    !action
+  ) {
+    return null;
+  }
+
+  const pendingActionId =
+    Number(
+      action.payload
+        ?.pendingActionId ||
+      0
+    );
+
+  if (
+    !Number.isFinite(
+      pendingActionId
+    ) ||
+    pendingActionId <=
+      0
+  ) {
+    return null;
+  }
+
+  return {
+    command:
+      params.decision
+        .decision,
+
+    pendingActionId:
+      Math.floor(
+        pendingActionId
+      ),
+
+    actionId:
+      String(
+        action.actionId ||
+        `pending-action-${Math.floor(
+          pendingActionId
+        )}`
+      ),
+
+    actionType:
+      String(
+        action.actionType ||
+        ""
+      ),
+  };
+}
+
 
 async function createPlanWithOpenAi(params: {
   context:
@@ -1716,6 +2528,9 @@ async function createPlanWithOpenAi(params: {
 
   message:
     string;
+
+  workSession:
+    AiWorkSession;
 
   selectedStudentId?:
     number |
@@ -1858,6 +2673,19 @@ params.context.role ===
                   "날짜가 확실하면 scheduleDate를 YYYY-MM-DD 형식으로 전달한다.",
                   "시간이 불명확하면 schedule_create를 호출하지 않는다.",
                   "",
+                                    "AI 업무 세션 원칙:",
+                  "- workSession.activeTarget은 서버에서 확정된 현재 작업 대상이다.",
+                  "- 현재 메시지에 다른 학생이나 상담 대상이 명확하게 지정되지 않았다면 activeTarget을 유지한다.",
+                  "- workSession.workflow.draft에는 이전 메시지에서 이미 받은 업무 정보가 저장되어 있다.",
+                  "- 현재 메시지에서 새로 받은 값은 기존 workflow.draft와 함께 사용한다.",
+                  "- workSession.workflow.waitingFor에 값이 있으면 해당 부족 정보를 현재 메시지에서 우선 확인한다.",
+                  "- 승인 대기 작업에 대한 승인·취소 의도는 앞선 AI 분류 단계에서 처리된다. 이 단계에서는 초안 수정 요청 또는 새로운 CRM 업무 요청만 Tool로 판단한다.",
+                  "- lastPresentedAction이 없으면 짧은 답변만으로 새로운 수정이나 등록 작업을 추측하지 않는다.",
+                  "- 현재 workflow와 무관한 새로운 요청이 명확하면 새로운 요청을 우선한다.",
+	     "- 현재 승인 초안의 일부 내용을 바꾸려는 요청이면 기존 workflow.draft와 현재 메시지의 수정값을 결합해 새로운 초안을 만든다.",
+                  "- 현재 승인 초안과 관계없는 새로운 조회나 업무 요청이면 해당 요청에 맞는 Tool을 선택한다.",
+                  "- workflow.draft에 없는 학생 ID나 상담DB ID를 추측해서 만들지 않는다.",
+                  "",
                   "현재 요청과 이전 대화가 충돌하면 현재 요청을 우선한다.",
                   "이전 대화는 문맥 참고용이며, 이전 대화에 없는 ID를 추측해서는 안 된다.",
                 ].join(
@@ -1905,7 +2733,7 @@ params.context.role ===
                     currentMessage:
                       params.message,
 
-                    selectedStudent: {
+                                        selectedStudent: {
                       id:
                         params.selectedStudentId ??
                         null,
@@ -1913,6 +2741,46 @@ params.context.role ===
                       name:
                         params.selectedStudentName ??
                         null,
+                    },
+
+                    workSession: {
+                      activeTarget:
+                        params.workSession
+                          .activeTarget,
+
+                      linkedContext:
+                        params.workSession
+                          .linkedContext,
+
+                      workflow: {
+                        type:
+                          params.workSession
+                            .workflow
+                            .type,
+
+                        step:
+                          params.workSession
+                            .workflow
+                            .step,
+
+                        draft:
+                          params.workSession
+                            .workflow
+                            .draft,
+
+                        waitingFor:
+                          params.workSession
+                            .workflow
+                            .waitingFor,
+                      },
+
+                      lastPresentedAction:
+                        params.workSession
+                          .lastPresentedAction,
+
+                      version:
+                        params.workSession
+                          .version,
                     },
 
                     currentUser: {
@@ -3458,21 +4326,216 @@ const requestTraceId =
     };
   }
 
-  const plan =
-  await createPlanWithOpenAi({
-    context:
-      input.context,
+  let pendingActionDecision:
+    AiPendingActionDecision |
+    null =
+    null;
 
-    message,
+  const presentedAction =
+    input.workSession
+      .lastPresentedAction;
 
-    selectedStudentId:
-      input.selectedStudentId,
+  const presentedPendingActionId =
+    Number(
+      presentedAction
+        ?.payload
+        ?.pendingActionId ||
+      0
+    );
 
-    selectedStudentName:
-      input.selectedStudentName,
+  const hasAwaitingPendingAction =
+    input.workSession
+      .workflow
+      .step ===
+      "awaiting_confirmation" &&
+    Boolean(
+      presentedAction
+    ) &&
+    Number.isFinite(
+      presentedPendingActionId
+    ) &&
+    presentedPendingActionId >
+      0;
 
-    conversationHistory,
-  });
+  if (
+    hasAwaitingPendingAction
+  ) {
+        pendingActionDecision =
+      await classifyPendingActionDecisionWithOpenAi({
+        message,
+
+        workSession:
+          input.workSession,
+
+        context:
+          input.context,
+
+        conversationHistory,
+      });
+
+    if (
+      pendingActionDecision
+    ) {
+      const pendingActionCommand =
+        buildPendingActionCommandFromDecision({
+          decision:
+            pendingActionDecision,
+
+          workSession:
+            input.workSession,
+        });
+
+      if (
+        pendingActionCommand
+      ) {
+        const isConfirm =
+          pendingActionCommand
+            .command ===
+          "confirm";
+
+        return {
+          success:
+            true,
+
+          intent:
+            isConfirm
+              ? "pending_action_confirm"
+              : "pending_action_cancel",
+
+          reply:
+            isConfirm
+              ? "현재 승인 초안을 그대로 진행하는 요청으로 확인했습니다."
+              : "현재 승인 초안을 취소하는 요청으로 확인했습니다.",
+
+          toolName:
+            null,
+
+          toolResult:
+            null,
+
+          data:
+            null,
+
+          workSessionPatch:
+            null,
+
+                    pendingActionCommand,
+
+          pendingActionDecision,
+
+          registrationPreview:
+            null,
+
+          scheduleCreateDraft:
+            null,
+
+          consultationUpdateDraft:
+            null,
+
+          studentUpdateDraft:
+            null,
+
+          meta: {
+            scope:
+              input.context.scope,
+
+            organizationId:
+              input.context
+                .organizationId,
+
+            userId:
+              input.context.userId,
+          },
+        };
+      }
+
+      if (
+        pendingActionDecision
+          .decision ===
+          "unclear" ||
+        pendingActionDecision
+          .confidence !==
+          "high"
+      ) {
+        return {
+          success:
+            true,
+
+          intent:
+            "general_help",
+
+          reply:
+            "현재 초안을 그대로 진행할까요, 내용을 수정할까요, 아니면 취소할까요?",
+
+          toolName:
+            null,
+
+          toolResult:
+            null,
+
+          data: {
+            pendingActionDecision,
+          },
+
+          workSessionPatch:
+            null,
+
+          pendingActionCommand:
+            null,
+
+          pendingActionDecision,
+
+          registrationPreview:
+            null,
+
+          scheduleCreateDraft:
+            null,
+
+          consultationUpdateDraft:
+            null,
+
+          studentUpdateDraft:
+            null,
+
+          meta: {
+            scope:
+              input.context.scope,
+
+            organizationId:
+              input.context
+                .organizationId,
+
+            userId:
+              input.context.userId,
+          },
+        };
+      }
+
+      /**
+       * revise 또는 new_request는
+       * 아래의 기존 createPlanWithOpenAi 흐름으로 진행한다.
+       */
+    }
+  }
+
+    const plan =
+    await createPlanWithOpenAi({
+      context:
+        input.context,
+
+      message,
+
+      workSession:
+        input.workSession,
+
+      selectedStudentId:
+        input.selectedStudentId,
+
+      selectedStudentName:
+        input.selectedStudentName,
+
+      conversationHistory,
+    });
 
 console.info(
   "[AI RUNNER] Plan 생성 완료",
@@ -3530,8 +4593,10 @@ if (
     toolName:
       null,
 
-    toolResult:
+        toolResult:
       null,
+
+    pendingActionDecision,
 
     registrationPreview:
       null,
@@ -3586,8 +4651,10 @@ if (
       toolName:
         null,
 
-      toolResult:
+            toolResult:
         null,
+
+      pendingActionDecision,
 
       registrationPreview: {
         required:
@@ -3603,6 +4670,14 @@ if (
         originalMessage:
           message,
       },
+
+      workSessionPatch:
+        buildRegistrationWorkSessionPatch({
+          consultationId,
+
+          originalMessage:
+            message,
+        }),
 
       meta: {
         scope:
@@ -3636,8 +4711,10 @@ if (
     toolName:
       null,
 
-    toolResult:
+        toolResult:
       null,
+
+    pendingActionDecision,
 
     registrationPreview:
       null,
@@ -3693,8 +4770,10 @@ if (
     toolName:
       plan.toolName,
 
-    toolResult:
+        toolResult:
       null,
+
+    pendingActionDecision,
 
     registrationPreview:
       null,
@@ -3707,6 +4786,14 @@ if (
 
     studentUpdateDraft:
       null,
+
+    workSessionPatch:
+      buildCollectingDataWorkSessionPatch({
+        plan,
+
+        validationMessage:
+          toolInputValidation.message,
+      }),
 
     meta: {
       scope:
@@ -3821,8 +4908,10 @@ try {
     toolName:
       plan.toolName,
 
-    toolResult:
+        toolResult:
       null,
+
+    pendingActionDecision,
 
     registrationPreview:
       null,
@@ -3904,8 +4993,10 @@ if (
 
     toolResult,
 
-    data:
+        data:
       toolResult.data,
+
+    pendingActionDecision,
 
     registrationPreview:
       null,
@@ -3916,8 +5007,16 @@ if (
     consultationUpdateDraft:
       null,
 
-    studentUpdateDraft:
+        studentUpdateDraft:
       draft,
+
+    workSessionPatch:
+      buildAwaitingConfirmationWorkSessionPatch({
+        plan,
+
+        toolResultData:
+          toolResult.data,
+      }),
 
     meta: {
       scope:
@@ -3964,8 +5063,10 @@ if (
 
     toolResult,
 
-    data:
+        data:
       toolResult.data,
+
+    pendingActionDecision,
 
     registrationPreview:
       null,
@@ -3976,8 +5077,16 @@ if (
     consultationUpdateDraft:
       draft,
 
-    studentUpdateDraft:
+       studentUpdateDraft:
       null,
+
+    workSessionPatch:
+      buildAwaitingConfirmationWorkSessionPatch({
+        plan,
+
+        toolResultData:
+          toolResult.data,
+      }),
 
     meta: {
       scope:
@@ -4042,8 +5151,10 @@ return {
 
     toolResult,
 
-        data:
+            data:
       toolResult.data,
+
+    pendingActionDecision,
 
     registrationPreview:
       null,
@@ -4055,6 +5166,19 @@ scheduleCreateDraft:
     true &&
   toolResult.data
     ? toolResult.data
+    : null,
+
+workSessionPatch:
+  plan.toolName ===
+    "schedule.create" &&
+  toolResult.success ===
+    true
+    ? buildAwaitingConfirmationWorkSessionPatch({
+        plan,
+
+        toolResultData:
+          toolResult.data,
+      })
     : null,
 
     meta: {

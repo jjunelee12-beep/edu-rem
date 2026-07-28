@@ -3795,18 +3795,29 @@ export const aiPendingActions = mysqlTable(
      * 삭제 작업은 절대로 추가하지 않는다.
      */
     actionType: mysqlEnum("actionType", [
-      "student_registration_create",
-      "student_update",
-      "semester_create",
-      "semester_update",
-      "plan_create",
-      "plan_update",
-      "plan_subjects_create",
-      "plan_subjects_update",
-      "payment_update",
-      "practice_request_create",
-      "consultation_update",
-    ]).notNull(),
+  "student_registration_create",
+  "student_update",
+
+  "semester_create",
+  "semester_update",
+
+  "plan_create",
+  "plan_update",
+
+  "plan_subjects_create",
+  "plan_subjects_update",
+
+  "payment_update",
+  "practice_request_create",
+
+  "consultation_update",
+  "schedule_create",
+
+  "document_transfer_import",
+  "document_plan_import",
+  "document_payment_import",
+  "document_plan_payment_import",
+]).notNull(),
 
     /**
      * 초안의 현재 상태
@@ -4053,6 +4064,240 @@ export type AiPendingAction =
 
 export type InsertAiPendingAction =
   typeof aiPendingActions.$inferInsert;
+
+// ==============================
+// AI WORK SESSIONS
+// 사용자별 현재 작업 대상·업무 진행 상태
+// ==============================
+
+export const aiWorkSessions = mysqlTable(
+  "ai_work_sessions",
+  {
+    id: int("id")
+      .autoincrement()
+      .primaryKey(),
+
+    /**
+     * 회사별 데이터 경계
+     *
+     * Staff / Admin / Host 모두
+     * 현재 로그인한 회사의 세션만 사용한다.
+     */
+    organizationId: int("organizationId")
+      .notNull(),
+
+    /**
+     * AI 업무 세션 소유 사용자
+     *
+     * 같은 회사라도 사용자별로
+     * 현재 작업 대상과 진행 업무를 따로 유지한다.
+     */
+    userId: int("userId")
+      .notNull(),
+
+    /**
+     * 현재 작업 대상 종류
+     *
+     * consultation
+     * student
+     * practice_request
+     * private_certificate_request
+     */
+    activeTargetType: varchar(
+      "activeTargetType",
+      {
+        length: 50,
+      }
+    ),
+
+    /**
+     * 현재 작업 대상의 실제 DB ID
+     */
+    activeTargetId: int(
+      "activeTargetId"
+    ),
+
+    /**
+     * 현재 대상 표시용 이름
+     *
+     * 이 값은 검색 기준으로 사용하지 않고
+     * AI 화면과 응답 표시용으로만 사용한다.
+     *
+     * 학생 이름 암호화 정책 때문에
+     * 추후 저장 전 암호화 여부를 검토해야 한다.
+     */
+    activeTargetName: text(
+      "activeTargetName"
+    ),
+
+    /**
+     * 현재 업무와 연결된 상담DB
+     */
+    consultationId: int(
+      "consultationId"
+    ),
+
+    /**
+     * 현재 업무와 연결된 학생
+     *
+     * 학생을 한 번 선택하면
+     * 다른 학생이 명확히 지정되기 전까지 유지한다.
+     */
+    studentId: int(
+      "studentId"
+    ),
+
+    /**
+     * 현재 업무와 연결된 실습 요청
+     */
+    practiceRequestId: int(
+      "practiceRequestId"
+    ),
+
+    /**
+     * 현재 연결된 민간자격증 요청 ID 목록
+     *
+     * 한 학생에게 여러 자격증 요청이
+     * 연결될 수 있으므로 JSON 배열로 저장한다.
+     */
+    privateCertificateRequestIdsJson: json(
+      "privateCertificateRequestIdsJson"
+    ),
+
+    /**
+     * 현재 진행 중인 업무 종류
+     *
+     * 예:
+     * student_update
+     * practice_update
+     * schedule_create
+     */
+    workflowType: varchar(
+      "workflowType",
+      {
+        length: 100,
+      }
+    ),
+
+    /**
+     * 현재 업무 진행 단계
+     *
+     * idle
+     * collecting_data
+     * awaiting_target_selection
+     * awaiting_document
+     * awaiting_confirmation
+     * executing
+     * completed
+     * failed
+     */
+    workflowStep: varchar(
+      "workflowStep",
+      {
+        length: 50,
+      }
+    )
+      .notNull()
+      .default("idle"),
+
+    /**
+     * 여러 메시지에서 받은 업무 입력값 누적
+     *
+     * 예:
+     * 주소, 학기, 실습 예정일, 결제정보 등
+     */
+    workflowDraftJson: json(
+      "workflowDraftJson"
+    ),
+
+    /**
+     * 아직 사용자에게 받아야 하는 필드 목록
+     *
+     * 예:
+     * ["address", "practiceDate"]
+     */
+    waitingForJson: json(
+      "waitingForJson"
+    ),
+
+    /**
+     * 마지막으로 사용자에게 확인시킨 작업
+     *
+     * 사용자가
+     * "ㅇㅇ", "그대로 해줘", "진행해줘"
+     * 라고 했을 때 이 작업을 기준으로 처리한다.
+     */
+    lastPresentedActionJson: json(
+      "lastPresentedActionJson"
+    ),
+
+    /**
+     * 동시에 들어온 요청이
+     * 이전 세션 상태를 덮어쓰는 것을 방지한다.
+     */
+    version: int("version")
+      .notNull()
+      .default(1),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    /**
+     * 한 회사에서 사용자 한 명당
+     * 하나의 활성 업무 세션만 유지한다.
+     */
+    orgUserUniqueIdx: uniqueIndex(
+      "uq_ai_work_session_org_user"
+    ).on(
+      table.organizationId,
+      table.userId
+    ),
+
+    /**
+     * 현재 선택된 학생 기준 세션 조회
+     */
+    orgStudentIdx: index(
+      "idx_ai_work_session_org_student"
+    ).on(
+      table.organizationId,
+      table.studentId
+    ),
+
+    /**
+     * 현재 작업 대상 기준 조회
+     */
+    orgTargetIdx: index(
+      "idx_ai_work_session_org_target"
+    ).on(
+      table.organizationId,
+      table.activeTargetType,
+      table.activeTargetId
+    ),
+
+    /**
+     * 진행 중인 업무 상태 확인
+     */
+    orgWorkflowIdx: index(
+      "idx_ai_work_session_org_workflow"
+    ).on(
+      table.organizationId,
+      table.workflowStep
+    ),
+  })
+);
+
+export type AiWorkSession =
+  typeof aiWorkSessions.$inferSelect;
+
+export type InsertAiWorkSession =
+  typeof aiWorkSessions.$inferInsert;
 
 export const aiLearningEntries = mysqlTable(
   "ai_learning_entries",

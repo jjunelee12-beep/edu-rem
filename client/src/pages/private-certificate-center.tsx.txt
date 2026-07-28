@@ -64,16 +64,30 @@ function toNumber(v: any) {
   return Number(String(v ?? "0").replace(/,/g, "").replace(/[^0-9.-]/g, "").trim()) || 0;
 }
 
+type ExternalPrivateCertificateItem = {
+  privateCertificateMasterId:
+    number |
+    null;
+
+  certificateName:
+    string;
+};
+
 type ExternalPrivateCertificateForm = {
   assigneeId: number | null;
   assigneeLoginId: string;
   assigneeName: string;
 
   clientName: string;
-  phone: string;
-  certificateName: string;
+phone: string;
 
-  inputAddress: string;
+privateCertificateMasterId:
+  number |
+  null;
+
+certificateName: string;
+
+inputAddress: string;
   detailAddress: string;
 
   requestStatus:
@@ -86,15 +100,15 @@ type ExternalPrivateCertificateForm = {
     | "취소";
 
   paymentStatus:
-    | "결제대기"
-    | "결제"
-    | "환불"
-    | "취소";
+  | "결제대기"
+  | "결제"
+  | "환불"
+  | "취소";
 
-  feeAmount: string;
-  freelancerInputAmount: string;
-  paidAt: string;
-  note: string;
+feeAmount: string;
+freelancerInputAmount: string;
+paidAt: string;
+note: string;
 };
 
 function createEmptyExternalPrivateCertificateForm():
@@ -105,19 +119,23 @@ function createEmptyExternalPrivateCertificateForm():
     assigneeName: "",
 
     clientName: "",
-    phone: "",
-    certificateName: "",
+phone: "",
 
-    inputAddress: "",
+privateCertificateMasterId:
+  null,
+
+certificateName: "",
+
+inputAddress: "",
     detailAddress: "",
 
     requestStatus: "요청",
-    paymentStatus: "결제대기",
+paymentStatus: "결제대기",
 
-    feeAmount: "0",
-    freelancerInputAmount: "0",
-    paidAt: "",
-    note: "",
+feeAmount: "0",
+freelancerInputAmount: "0",
+paidAt: "",
+note: "",
   };
 }
 
@@ -144,15 +162,50 @@ export default function PrivateCertificateCenterPage() {
   const [paymentFilter, setPaymentFilter] = useState<string>("전체");
 
   const [createOpen, setCreateOpen] =
-    useState(false);
+  useState(false);
 
-  const [assigneeSearchText, setAssigneeSearchText] =
-    useState("");
+const {
+  data:
+    privateCertificateMasters = [],
+
+  isLoading:
+    isPrivateCertificateMastersLoading,
+} =
+  trpc.privateCertificateMaster.list.useQuery(
+    undefined,
+    {
+      enabled:
+        createOpen &&
+        canCreateExternal,
+
+      refetchOnWindowFocus:
+        false,
+    }
+  );
+
+const [assigneeSearchText, setAssigneeSearchText] =
+  useState("");
 
   const [createForm, setCreateForm] =
     useState<ExternalPrivateCertificateForm>(
       createEmptyExternalPrivateCertificateForm
     );
+
+const [
+  createCertificateItems,
+  setCreateCertificateItems,
+] =
+  useState<
+    ExternalPrivateCertificateItem[]
+  >([
+   {
+  privateCertificateMasterId:
+    null,
+
+  certificateName:
+    "",
+},
+  ]);
 
   const normalizedAssigneeSearch =
     assigneeSearchText.trim();
@@ -181,19 +234,6 @@ export default function PrivateCertificateCenterPage() {
 
   const createExternalMut =
     trpc.privateCertificate.createExternal.useMutation({
-      onSuccess: async () => {
-        await utils.privateCertificate.list.invalidate();
-
-        toast.success(
-          "민간자격증 요청이 신규 등록되었습니다."
-        );
-
-        setCreateOpen(false);
-        setAssigneeSearchText("");
-        setCreateForm(
-          createEmptyExternalPrivateCertificateForm()
-        );
-      },
 
       onError: (e) => {
         toast.error(
@@ -262,7 +302,18 @@ const openCreateDialog = () => {
   );
 
   setAssigneeSearchText("");
-  setCreateOpen(true);
+
+setCreateCertificateItems([
+  {
+  privateCertificateMasterId:
+    null,
+
+  certificateName:
+    "",
+},
+]);
+
+setCreateOpen(true);
 };
 
 const closeCreateDialog = () => {
@@ -271,10 +322,21 @@ const closeCreateDialog = () => {
   }
 
   setCreateOpen(false);
-  setAssigneeSearchText("");
-  setCreateForm(
-    createEmptyExternalPrivateCertificateForm()
-  );
+setAssigneeSearchText("");
+
+setCreateCertificateItems([
+  {
+    privateCertificateMasterId:
+      null,
+
+    certificateName:
+      "",
+  },
+]);
+
+setCreateForm(
+  createEmptyExternalPrivateCertificateForm()
+);
 };
 
 const selectAssignee = (row: any) => {
@@ -313,6 +375,122 @@ const selectAssignee = (row: any) => {
   }));
 };
 
+const selectPrivateCertificateMaster = (
+  itemIndex:
+    number,
+
+  value:
+    string
+) => {
+  const privateCertificateMasterId =
+    Number(
+      value
+    );
+
+  const selectedMaster =
+    (
+      Array.isArray(
+        privateCertificateMasters
+      )
+        ? privateCertificateMasters
+        : []
+    ).find(
+      (
+        row:
+          any
+      ) =>
+        Number(
+          row?.id ||
+          0
+        ) ===
+        privateCertificateMasterId
+    );
+
+  if (
+    !selectedMaster
+  ) {
+    return;
+  }
+
+  const certificateName =
+    String(
+      selectedMaster
+        ?.certificateName ||
+      selectedMaster
+        ?.name ||
+      ""
+    ).trim();
+
+  setCreateCertificateItems(
+    (
+      prev
+    ) =>
+      prev.map(
+        (
+          item,
+          index
+        ) =>
+          index === itemIndex
+            ? {
+                ...item,
+
+                privateCertificateMasterId,
+
+                certificateName,
+              }
+            : item
+      )
+  );
+};
+
+const addCreateCertificateItem =
+  () => {
+    setCreateCertificateItems(
+      (
+        prev
+      ) => [
+        ...prev,
+
+        {
+          privateCertificateMasterId:
+            null,
+
+          certificateName:
+            "",
+        },
+      ]
+    );
+  };
+
+const removeCreateCertificateItem = (
+  itemIndex:
+    number
+) => {
+  setCreateCertificateItems(
+    (
+      prev
+    ) => {
+      if (
+        prev.length <= 1
+      ) {
+        toast.error(
+          "민간자격증 과정은 한 개 이상 필요합니다."
+        );
+
+        return prev;
+      }
+
+      return prev.filter(
+        (
+          _,
+          index
+        ) =>
+          index !== itemIndex
+      );
+    }
+  );
+};
+
 const submitExternalRequest = async () => {
   const clientName =
     createForm.clientName.trim();
@@ -322,9 +500,6 @@ const submitExternalRequest = async () => {
       /\D/g,
       ""
     );
-
-  const certificateName =
-    createForm.certificateName.trim();
 
   if (!createForm.assigneeId) {
     toast.error(
@@ -350,56 +525,138 @@ const submitExternalRequest = async () => {
     return;
   }
 
-  if (!certificateName) {
-    toast.error(
-      "자격증명을 입력해주세요."
-    );
-    return;
+if (
+  !createCertificateItems
+    .length
+) {
+  toast.error(
+    "민간자격증 과정을 추가해주세요."
+  );
+
+  return;
+}
+
+const invalidCertificateItem =
+  createCertificateItems.find(
+    (
+      item
+    ) =>
+      !item
+        .privateCertificateMasterId ||
+      !item
+        .certificateName
+        .trim()
+  );
+
+if (
+  invalidCertificateItem
+) {
+  toast.error(
+    "모든 민간자격증 과정을 선택해주세요."
+  );
+
+  return;
+}
+
+  try {
+  for (
+    const certificateItem
+    of createCertificateItems
+  ) {
+    await createExternalMut.mutateAsync({
+      assigneeId:
+        createForm.assigneeId,
+
+      clientName,
+      phone,
+
+      privateCertificateMasterId:
+        certificateItem
+          .privateCertificateMasterId!,
+
+      certificateName:
+        certificateItem
+          .certificateName
+          .trim(),
+
+      inputAddress:
+        createForm
+          .inputAddress
+          .trim() ||
+        null,
+
+      detailAddress:
+        createForm
+          .detailAddress
+          .trim() ||
+        null,
+
+      requestStatus:
+        createForm
+          .requestStatus,
+
+      paymentStatus:
+        createForm
+          .paymentStatus,
+
+      feeAmount:
+  normalizeAmountInput(
+    createForm
+      .feeAmount
+  ) ||
+  "0",
+
+      freelancerInputAmount:
+        normalizeAmountInput(
+          createForm
+            .freelancerInputAmount
+        ) ||
+        "0",
+
+      paidAt:
+        createForm
+          .paidAt ||
+        null,
+
+      note:
+        createForm
+          .note
+          .trim() ||
+        null,
+    });
   }
 
-  await createExternalMut.mutateAsync({
-    assigneeId:
-      createForm.assigneeId,
+  await utils
+    .privateCertificate
+    .list
+    .invalidate();
 
-    clientName,
-    phone,
-    certificateName,
+  toast.success(
+    `민간자격증 ${createCertificateItems.length}건이 신규 등록되었습니다.`
+  );
 
-    inputAddress:
-      createForm.inputAddress.trim() ||
-      null,
+  setCreateOpen(false);
+  setAssigneeSearchText("");
 
-    detailAddress:
-      createForm.detailAddress.trim() ||
-      null,
+  setCreateCertificateItems([
+    {
+      privateCertificateMasterId:
+        null,
 
-    requestStatus:
-      createForm.requestStatus,
+      certificateName:
+        "",
+    },
+  ]);
 
-    paymentStatus:
-      createForm.paymentStatus,
-
-    feeAmount:
-      normalizeAmountInput(
-        createForm.feeAmount
-      ) || "0",
-
-    freelancerInputAmount:
-      normalizeAmountInput(
-        createForm.freelancerInputAmount
-      ) || "0",
-
-    paidAt:
-      createForm.paidAt ||
-      null,
-
-    note:
-      createForm.note.trim() ||
-      null,
-  });
+  setCreateForm(
+    createEmptyExternalPrivateCertificateForm()
+  );
+} catch {
+  return;
+}
 };
 
-  const filteredRows = useMemo(() => {
+const filteredRows = useMemo(() => {
     const keyword = search.trim().toLowerCase();
 
     return (data || []).filter((row: any) => {
@@ -1017,26 +1274,151 @@ const submitExternalRequest = async () => {
                 />
               </div>
 
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-sm font-medium">
-                  자격증명
-                  <span className="ml-1 text-red-500">
-                    *
-                  </span>
-                </label>
+              <div className="space-y-3 md:col-span-2">
+  <div className="flex items-center justify-between gap-3">
+    <div>
+      <label className="text-sm font-medium">
+        자격증 과정
+        <span className="ml-1 text-red-500">
+          *
+        </span>
+      </label>
 
-                <Input
-                  value={createForm.certificateName}
-                  placeholder="민간자격증명"
-                  onChange={(e) =>
-                    setCreateForm((prev) => ({
-                      ...prev,
-                      certificateName:
-                        e.target.value,
-                    }))
+      <p className="mt-1 text-xs text-muted-foreground">
+  신청할 자격증 과정을 추가해주세요.
+</p>
+    </div>
+
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      onClick={
+        addCreateCertificateItem
+      }
+    >
+      <Plus className="mr-1 h-4 w-4" />
+      자격증 추가
+    </Button>
+  </div>
+
+  <div className="space-y-3">
+    {createCertificateItems.map(
+      (
+        certificateItem,
+        itemIndex
+      ) => (
+        <div
+          key={
+            itemIndex
+          }
+          className="grid gap-3 rounded-xl border bg-slate-50 p-3 md:grid-cols-[1fr_40px]"
+        >
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">
+              자격증명
+            </label>
+
+            <Select
+              value={
+                certificateItem
+                  .privateCertificateMasterId
+                  ? String(
+                      certificateItem
+                        .privateCertificateMasterId
+                    )
+                  : ""
+              }
+              onValueChange={
+                (
+                  value
+                ) =>
+                  selectPrivateCertificateMaster(
+                    itemIndex,
+                    value
+                  )
+              }
+              disabled={
+                isPrivateCertificateMastersLoading
+              }
+            >
+              <SelectTrigger className="bg-white">
+                <SelectValue
+                  placeholder={
+                    isPrivateCertificateMastersLoading
+                      ? "불러오는 중"
+                      : "민간자격증 과정 선택"
                   }
                 />
-              </div>
+              </SelectTrigger>
+
+              <SelectContent>
+                {(
+                  Array.isArray(
+                    privateCertificateMasters
+                  )
+                    ? privateCertificateMasters
+                    : []
+                ).map(
+                  (
+                    master:
+                      any
+                  ) => {
+                    const certificateName =
+                      String(
+                        master
+                          ?.certificateName ||
+                        master
+                          ?.name ||
+                        `민간자격증 #${master.id}`
+                      ).trim();
+
+                    return (
+                      <SelectItem
+                        key={
+                          Number(
+                            master.id
+                          )
+                        }
+                        value={
+                          String(
+                            master.id
+                          )
+                        }
+                      >
+                        {certificateName}
+                      </SelectItem>
+                    );
+                  }
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-end">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              disabled={
+                createCertificateItems
+                  .length <= 1
+              }
+              onClick={
+                () =>
+                  removeCreateCertificateItem(
+                    itemIndex
+                  )
+              }
+            >
+              <Trash2 className="h-4 w-4 text-red-500" />
+            </Button>
+          </div>
+        </div>
+      )
+    )}
+  </div>
+</div>
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">

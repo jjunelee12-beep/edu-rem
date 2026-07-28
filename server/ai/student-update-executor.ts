@@ -62,6 +62,34 @@ function normalizeNullableText(
     null;
 }
 
+function normalizeStudentStatus(
+  value:
+    unknown
+): "등록" |
+  "종료" |
+  "등록 종료" {
+  const normalized =
+    String(
+      value ??
+      ""
+    ).trim();
+
+  if (
+    normalized ===
+      "등록" ||
+    normalized ===
+      "종료" ||
+    normalized ===
+      "등록 종료"
+  ) {
+    return normalized;
+  }
+
+  throw new Error(
+    "학생 상태는 등록, 종료, 등록 종료 중 하나여야 합니다."
+  );
+}
+
 function parseJsonRecord(
   value:
     unknown
@@ -435,10 +463,9 @@ export async function executeStudentUpdatePendingAction(
     const allowedUpdateFields = [
       "status",
       "course",
-      "finalEducation",
       "address",
       "detailAddress",
-    ] as const;
+] as const;
 
     const requestedFields =
       allowedUpdateFields.filter(
@@ -469,24 +496,16 @@ export async function executeStudentUpdatePendingAction(
      */
     const currentValues = {
       status:
-        normalizeNullableText(
-          (student as any)
-            .status,
-          100
-        ),
+  normalizeStudentStatus(
+    (student as any)
+      .status
+  ),
 
       course:
         normalizeNullableText(
           (student as any)
             .course,
           255
-        ),
-
-      finalEducation:
-        normalizeNullableText(
-          (student as any)
-            .finalEducation,
-          100
         ),
 
       address:
@@ -506,24 +525,15 @@ export async function executeStudentUpdatePendingAction(
 
     const normalizedOriginalValues = {
       status:
-        normalizeNullableText(
-          originalValues
-            .status,
-          100
-        ),
+  normalizeStudentStatus(
+    originalValues.status
+  ),
 
       course:
         normalizeNullableText(
           originalValues
             .course,
           255
-        ),
-
-      finalEducation:
-        normalizeNullableText(
-          originalValues
-            .finalEducation,
-          100
         ),
 
       address:
@@ -572,9 +582,6 @@ export async function executeStudentUpdatePendingAction(
               : field ===
                   "course"
                 ? "진행 과정"
-                : field ===
-                    "finalEducation"
-                  ? "최종학력"
                   : field ===
                       "address"
                     ? "주소"
@@ -596,17 +603,16 @@ export async function executeStudentUpdatePendingAction(
       > = {};
 
     if (
-      hasOwnProperty(
-        updates,
-        "status"
-      )
-    ) {
-      updateData.status =
-        normalizeNullableText(
-          updates.status,
-          100
-        );
-    }
+  hasOwnProperty(
+    updates,
+    "status"
+  )
+) {
+  updateData.status =
+    normalizeStudentStatus(
+      updates.status
+    );
+}
 
     if (
       hasOwnProperty(
@@ -618,19 +624,6 @@ export async function executeStudentUpdatePendingAction(
         normalizeNullableText(
           updates.course,
           255
-        );
-    }
-
-    if (
-      hasOwnProperty(
-        updates,
-        "finalEducation"
-      )
-    ) {
-      updateData.finalEducation =
-        normalizeNullableText(
-          updates.finalEducation,
-          100
         );
     }
 
@@ -707,22 +700,124 @@ export async function executeStudentUpdatePendingAction(
     }
 
     /**
-     * db.updateStudent 내부에서
-     * 주소와 상세주소는 암호화 후 저장된다.
-     *
-     * organizationId 조건도 함께 적용된다.
-     */
-    await db.updateStudent(
-      studentId,
-      effectiveUpdates,
-      {
-        organizationId,
-      }
-    );
+ * 주소 또는 상세주소가 실제 변경되는지 확인한다.
+ *
+ * 주소가 바뀌면 기존 latitude, longitude,
+ * geocodedAt은 이전 주소 기준이므로 초기화해야 한다.
+ */
+const addressUpdated =
+  hasOwnProperty(
+    effectiveUpdates,
+    "address"
+  );
 
-    completedSteps.push(
-      "학생 기본정보 수정"
-    );
+const detailAddressUpdated =
+  hasOwnProperty(
+    effectiveUpdates,
+    "detailAddress"
+  );
+
+const addressFieldsChanged =
+  addressUpdated ||
+  detailAddressUpdated;
+
+/**
+ * 주소를 제외한 일반 학생정보만 분리한다.
+ */
+const basicUpdates:
+  Record<
+    string,
+    string |
+    null
+  > = {
+    ...effectiveUpdates,
+  };
+
+delete basicUpdates
+  .address;
+
+delete basicUpdates
+  .detailAddress;
+
+/**
+ * 상태 또는 과정 수정
+ */
+if (
+  Object.keys(
+    basicUpdates
+  ).length >
+  0
+) {
+  await db.updateStudent(
+    studentId,
+    basicUpdates,
+    {
+      organizationId,
+    }
+  );
+
+  completedSteps.push(
+    "학생 기본정보 수정"
+  );
+}
+
+/**
+ * 주소 또는 상세주소가 바뀐 경우
+ * 기존 좌표를 초기화한다.
+ *
+ * 변경하지 않은 주소 항목은 현재 값을 유지한다.
+ */
+if (
+  addressFieldsChanged
+) {
+  const nextAddress =
+    hasOwnProperty(
+      effectiveUpdates,
+      "address"
+    )
+      ? effectiveUpdates
+          .address
+      : currentValues
+          .address;
+
+  const nextDetailAddress =
+    hasOwnProperty(
+      effectiveUpdates,
+      "detailAddress"
+    )
+      ? effectiveUpdates
+          .detailAddress
+      : currentValues
+          .detailAddress;
+
+  await db.updateStudentAddressAndCoords({
+  organizationId,
+
+  studentId,
+
+  address:
+    nextAddress,
+
+  detailAddress:
+    nextDetailAddress,
+
+  latitude:
+    addressUpdated
+      ? null
+      : (student as any)
+          .latitude ?? null,
+
+  longitude:
+    addressUpdated
+      ? null
+      : (student as any)
+          .longitude ?? null,
+});
+
+  completedSteps.push(
+    "학생 주소 수정 및 위치 좌표 초기화"
+  );
+}
 
     const updatedStudent =
       await db.getStudentById(
@@ -741,6 +836,153 @@ export async function executeStudentUpdatePendingAction(
     completedSteps.push(
       "수정 결과 재조회"
     );
+
+/**
+ * 실제 변경된 필드만 학생 감사로그에 기록한다.
+ */
+const beforeJson:
+  Record<
+    string,
+    string |
+    null
+  > = {};
+
+const afterJson:
+  Record<
+    string,
+    string |
+    null
+  > = {};
+
+const diffJson:
+  Record<
+    string,
+    {
+      before:
+        string |
+        null;
+
+      after:
+        string |
+        null;
+    }
+  > = {};
+
+for (
+  const field of
+  Object.keys(
+    effectiveUpdates
+  )
+) {
+  const beforeValue =
+    currentValues[
+      field as
+        keyof typeof currentValues
+    ] ??
+    null;
+
+  const afterValue =
+    normalizeNullableText(
+      (
+        updatedStudent as
+          any
+      )[field],
+      field ===
+        "course"
+        ? 255
+        : field ===
+            "address" ||
+          field ===
+            "detailAddress"
+          ? 500
+          : 100
+    );
+
+  beforeJson[
+    field
+  ] =
+    beforeValue;
+
+  afterJson[
+    field
+  ] =
+    afterValue;
+
+  diffJson[
+    field
+  ] = {
+    before:
+      beforeValue,
+
+    after:
+      afterValue,
+  };
+}
+
+/**
+ * 학생 수정 감사로그 저장
+ *
+ * db.createStudentAuditLog 내부에서
+ * actorName과 JSON 데이터가 암호화된다.
+ */
+try {
+  await db.createStudentAuditLog({
+    organizationId,
+
+    studentId,
+
+    entityType:
+      "student",
+
+    entityId:
+      studentId,
+
+    action:
+      "update",
+
+    title:
+      "AI 학생 기본정보 수정",
+
+    beforeJson,
+
+    afterJson,
+
+    diffJson,
+
+    actorUserId:
+      requestedByUserId,
+
+    actorName:
+      context.userName ??
+      null,
+
+    actorRole:
+      context.role,
+
+    ipAddress:
+      null,
+
+    userAgent:
+      null,
+  });
+
+  completedSteps.push(
+    "학생 수정 감사로그 기록"
+  );
+} catch {
+  /**
+   * 학생 수정은 이미 완료됐으므로
+   * 감사로그 오류로 전체 작업을 실패 처리하지 않는다.
+   */
+  completedSteps.push(
+    "학생 수정 완료 - 감사로그 기록 실패"
+  );
+}
+
+const successMessage =
+  addressUpdated
+    ? "학생 기본정보가 수정되었으며, 주소 변경에 따라 기존 위치 좌표가 초기화되었습니다."
+    : "학생 기본정보가 수정되었습니다.";
 
     /**
      * claim 함수는 version을 증가시키지 않으므로
@@ -786,7 +1028,7 @@ export async function executeStudentUpdatePendingAction(
           [],
 
         message:
-          "학생 기본정보가 수정되었습니다.",
+  successMessage,
       });
 
     return {
@@ -813,7 +1055,7 @@ export async function executeStudentUpdatePendingAction(
         completed,
 
       message:
-        "학생 기본정보가 수정되었습니다.",
+  successMessage,
     };
   } catch (
     error

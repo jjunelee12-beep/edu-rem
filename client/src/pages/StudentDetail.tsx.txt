@@ -1435,6 +1435,8 @@ if (isReadOnly) {
       practiceDate: planForm.practiceDate || undefined,
       practiceArranged: planForm.practiceArranged,
       practiceStatus: (planForm.practiceStatus as any) || undefined,
+practiceSemesterLabel:
+  planForm.practiceSemesterLabel || undefined,
       specialNotes: planForm.specialNotes || undefined,
     });
 

@@ -75,6 +75,7 @@ aiPendingActions,
 type InsertAiPendingAction,
 aiChatMessages,
 type InsertAiChatMessage,
+aiWorkSessions,
 teams,
   type InsertTeam,
   positions,
@@ -135,6 +136,7 @@ type InsertStudentCreditSummaryItem,
 import { ENV } from "./_core/env";
 import bcrypt from "bcryptjs";
 import {
+  createHash,
   createHmac,
   randomUUID,
 } from "node:crypto";
@@ -143,8 +145,14 @@ import { getSocketStatus } from "./_core/socket-status";
 import { throwAppError } from "./_core/appError";
 import { ERROR_CODES } from "./_core/errorCodes";
 import type {
+  AiActiveTargetType,
   AiDocumentImportDraft,
+  AiLastPresentedAction,
   AiPendingActionType,
+  AiWorkSession,
+  AiWorkSessionPatch,
+  AiWorkflowStep,
+  AiWorkflowType,
   StudentRegistrationDraft,
 } from "./ai/ai.types";
 
@@ -350,6 +358,490 @@ export async function getStudentById(
 
 function getInsertId(result: any) {
   return result?.insertId ?? result?.[0]?.insertId ?? null;
+}
+
+function normalizeAiWorkSessionUserId(
+  value: unknown
+): number {
+  const userId =
+    Math.floor(
+      Number(
+        value ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(userId) ||
+    userId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 업무 세션 사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  return userId;
+}
+
+function normalizeAiWorkSessionVersion(
+  value: unknown
+): number {
+  const version =
+    Math.floor(
+      Number(
+        value ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(version) ||
+    version <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 업무 세션 버전 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  return version;
+}
+
+function normalizeNullablePositiveInteger(
+  value: unknown
+): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const number =
+    Math.floor(
+      Number(value)
+    );
+
+  if (
+    !Number.isFinite(number) ||
+    number <= 0
+  ) {
+    return null;
+  }
+
+  return number;
+}
+
+function normalizeAiWorkSessionTargetType(
+  value: unknown
+): AiActiveTargetType | null {
+  const normalized =
+    String(
+      value ||
+      ""
+    ).trim();
+
+  if (
+    normalized === "consultation" ||
+    normalized === "student" ||
+    normalized === "practice_request" ||
+    normalized === "private_certificate_request"
+  ) {
+    return normalized;
+  }
+
+  return null;
+}
+
+function normalizeAiWorkflowType(
+  value: unknown
+): AiWorkflowType | null {
+  const normalized =
+    String(
+      value ||
+      ""
+    ).trim();
+
+  const allowed =
+    new Set<AiWorkflowType>([
+      "consultation_registration",
+      "consultation_update",
+      "student_detail_setup",
+      "student_update",
+      "semester_create",
+      "semester_update",
+      "plan_setup",
+      "plan_update",
+      "practice_create",
+      "practice_update",
+      "private_certificate_create",
+      "schedule_create",
+      "document_import",
+    ]);
+
+  return allowed.has(
+    normalized as AiWorkflowType
+  )
+    ? normalized as AiWorkflowType
+    : null;
+}
+
+function normalizeAiWorkflowStep(
+  value: unknown
+): AiWorkflowStep {
+  const normalized =
+    String(
+      value ||
+      ""
+    ).trim();
+
+  const allowed =
+    new Set<AiWorkflowStep>([
+      "idle",
+      "collecting_data",
+      "awaiting_target_selection",
+      "awaiting_document",
+      "awaiting_confirmation",
+      "executing",
+      "completed",
+      "failed",
+    ]);
+
+  return allowed.has(
+    normalized as AiWorkflowStep
+  )
+    ? normalized as AiWorkflowStep
+    : "idle";
+}
+
+/**
+ * 개인정보가 포함될 수 있는 AI 업무 세션 JSON을
+ * 통째로 암호화해 JSON 문자열 값으로 저장한다.
+ */
+function encryptAiWorkSessionJson(
+  value: unknown
+): string {
+  return encryptPersonalData(
+    JSON.stringify(
+      value ??
+      null
+    )
+  );
+}
+
+/**
+ * 암호화 이전 데이터나 테스트 데이터도
+ * 안전하게 읽을 수 있도록 처리한다.
+ */
+function decryptAiWorkSessionJson<T>(
+  value: unknown,
+  fallback: T
+): T {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return fallback;
+  }
+
+  /**
+   * 기존에 평문 JSON 객체로 저장된 경우
+   */
+  if (
+    typeof value === "object"
+  ) {
+    return value as T;
+  }
+
+  const raw =
+    String(value);
+
+  try {
+    const decrypted =
+      decryptPersonalData(raw);
+
+    return JSON.parse(
+      decrypted
+    ) as T;
+  } catch {
+    try {
+      return JSON.parse(
+        raw
+      ) as T;
+    } catch {
+      return fallback;
+    }
+  }
+}
+
+function encryptAiWorkSessionTargetName(
+  value: string | null
+): string | null {
+  const normalized =
+    String(
+      value ||
+      ""
+    ).trim();
+
+  return normalized
+    ? encryptPersonalData(normalized)
+    : null;
+}
+
+function decryptAiWorkSessionTargetName(
+  value: unknown
+): string | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  try {
+    return decryptPersonalData(
+      String(value)
+    );
+  } catch {
+    /**
+     * 암호화 적용 전 평문 데이터 대응
+     */
+    return String(value);
+  }
+}
+
+function buildEmptyAiWorkSession(params: {
+  organizationId: number;
+  userId: number;
+}): AiWorkSession {
+  return {
+    id:
+      null,
+
+    organizationId:
+      params.organizationId,
+
+    userId:
+      params.userId,
+
+    activeTarget:
+      null,
+
+    linkedContext: {
+      consultationId:
+        null,
+
+      studentId:
+        null,
+
+      practiceRequestId:
+        null,
+
+      privateCertificateRequestIds:
+        [],
+    },
+
+    workflow: {
+      type:
+        null,
+
+      step:
+        "idle",
+
+      draft:
+        {},
+
+      waitingFor:
+        [],
+    },
+
+    lastPresentedAction:
+      null,
+
+    version:
+      1,
+
+    createdAt:
+      null,
+
+    updatedAt:
+      null,
+  };
+}
+
+function mapAiWorkSessionRow(
+  row: any
+): AiWorkSession {
+  const targetType =
+    normalizeAiWorkSessionTargetType(
+      row?.activeTargetType
+    );
+
+  const targetId =
+    normalizeNullablePositiveInteger(
+      row?.activeTargetId
+    );
+
+  const privateCertificateRequestIds =
+    decryptAiWorkSessionJson<number[]>(
+      row?.privateCertificateRequestIdsJson,
+      []
+    )
+      .map(
+        (
+          id
+        ) =>
+          normalizeNullablePositiveInteger(id)
+      )
+      .filter(
+        (
+          id
+        ): id is number =>
+          id !== null
+      );
+
+  const workflowDraft =
+    decryptAiWorkSessionJson<
+      Record<string, unknown>
+    >(
+      row?.workflowDraftJson,
+      {}
+    );
+
+  const waitingFor =
+    decryptAiWorkSessionJson<string[]>(
+      row?.waitingForJson,
+      []
+    )
+      .map(
+        (
+          item
+        ) =>
+          String(
+            item ||
+            ""
+          ).trim()
+      )
+      .filter(Boolean);
+
+  const lastPresentedAction =
+    decryptAiWorkSessionJson<
+      AiLastPresentedAction | null
+    >(
+      row?.lastPresentedActionJson,
+      null
+    );
+
+  return {
+    id:
+      normalizeNullablePositiveInteger(
+        row?.id
+      ),
+
+    organizationId:
+      Number(
+        row?.organizationId ||
+        0
+      ),
+
+    userId:
+      Number(
+        row?.userId ||
+        0
+      ),
+
+    activeTarget:
+      targetType &&
+      targetId
+        ? {
+            type:
+              targetType,
+
+            id:
+              targetId,
+
+            name:
+              decryptAiWorkSessionTargetName(
+                row?.activeTargetName
+              ),
+          }
+        : null,
+
+    linkedContext: {
+      consultationId:
+        normalizeNullablePositiveInteger(
+          row?.consultationId
+        ),
+
+      studentId:
+        normalizeNullablePositiveInteger(
+          row?.studentId
+        ),
+
+      practiceRequestId:
+        normalizeNullablePositiveInteger(
+          row?.practiceRequestId
+        ),
+
+      privateCertificateRequestIds,
+    },
+
+    workflow: {
+      type:
+        normalizeAiWorkflowType(
+          row?.workflowType
+        ),
+
+      step:
+        normalizeAiWorkflowStep(
+          row?.workflowStep
+        ),
+
+      draft:
+        workflowDraft &&
+        typeof workflowDraft === "object" &&
+        !Array.isArray(workflowDraft)
+          ? workflowDraft
+          : {},
+
+      waitingFor,
+    },
+
+    lastPresentedAction:
+      lastPresentedAction &&
+      typeof lastPresentedAction === "object"
+        ? lastPresentedAction
+        : null,
+
+    version:
+      Math.max(
+        Number(
+          row?.version ||
+          1
+        ),
+        1
+      ),
+
+    createdAt:
+      row?.createdAt
+        ? new Date(
+            row.createdAt
+          ).toISOString()
+        : null,
+
+    updatedAt:
+      row?.updatedAt
+        ? new Date(
+            row.updatedAt
+          ).toISOString()
+        : null,
+  };
 }
 
 function decryptUserPersonalData<T extends Record<string, any>>(
@@ -1897,6 +2389,238 @@ function decryptAiPendingActionRow<
   };
 }
 
+/**
+ * 객체 키 순서와 상관없이
+ * 동일한 데이터는 동일한 문자열이 되도록 변환한다.
+ *
+ * Pending Action 중복 방지 키 생성에 사용한다.
+ */
+function stableStringifyAiPendingValue(
+  value: unknown
+): string {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return "null";
+  }
+
+  if (
+    typeof value === "string"
+  ) {
+    return JSON.stringify(
+      value
+    );
+  }
+
+  if (
+    typeof value === "number"
+  ) {
+    return Number.isFinite(value)
+      ? String(value)
+      : "null";
+  }
+
+  if (
+    typeof value === "boolean"
+  ) {
+    return value
+      ? "true"
+      : "false";
+  }
+
+  if (
+    Array.isArray(value)
+  ) {
+    return [
+      "[",
+      value
+        .map(
+          (
+            item
+          ) =>
+            stableStringifyAiPendingValue(
+              item
+            )
+        )
+        .join(","),
+      "]",
+    ].join("");
+  }
+
+  if (
+    typeof value === "object"
+  ) {
+    const record =
+      value as
+        Record<
+          string,
+          unknown
+        >;
+
+    const keys =
+      Object.keys(record)
+        .sort();
+
+    return [
+      "{",
+      keys
+        .map(
+          (
+            key
+          ) =>
+            [
+              JSON.stringify(
+                key
+              ),
+              ":",
+              stableStringifyAiPendingValue(
+                record[key]
+              ),
+            ].join("")
+        )
+        .join(","),
+      "}",
+    ].join("");
+  }
+
+  return JSON.stringify(
+    String(value)
+  );
+}
+
+/**
+ * 같은 사용자·작업·대상·내용이면
+ * 항상 같은 Pending Action 중복 방지 키를 만든다.
+ *
+ * 개인정보가 키에 직접 노출되지 않도록
+ * 최종 결과는 SHA-256 해시로 저장한다.
+ */
+function buildAiPendingActionIdempotencyKey(
+  params: {
+    organizationId:
+      number;
+
+    requestedByUserId:
+      number;
+
+    actionType:
+      AiPendingActionType;
+
+    consultationId?:
+      number |
+      null;
+
+    studentId?:
+      number |
+      null;
+
+    semesterId?:
+      number |
+      null;
+
+    preview:
+      unknown;
+
+    payload:
+      unknown;
+
+    sourceSnapshot?:
+      unknown;
+  }
+): string {
+  const canonicalValue = {
+    version:
+      1,
+
+    organizationId:
+      Number(
+        params.organizationId
+      ),
+
+    requestedByUserId:
+      Number(
+        params.requestedByUserId
+      ),
+
+    actionType:
+      String(
+        params.actionType
+      ),
+
+    consultationId:
+      normalizeNullablePositiveInteger(
+        params.consultationId
+      ),
+
+    studentId:
+      normalizeNullablePositiveInteger(
+        params.studentId
+      ),
+
+    semesterId:
+      normalizeNullablePositiveInteger(
+        params.semesterId
+      ),
+
+    preview:
+      params.preview ??
+      null,
+
+    payload:
+      params.payload ??
+      null,
+
+    sourceSnapshot:
+      params.sourceSnapshot ??
+      null,
+  };
+
+  return createHash(
+    "sha256"
+  )
+    .update(
+      stableStringifyAiPendingValue(
+        canonicalValue
+      ),
+      "utf8"
+    )
+    .digest(
+      "hex"
+    );
+}
+
+/**
+ * 종료된 Pending Action이
+ * 기존 결정적 idempotencyKey를 계속 점유하지 않도록
+ * 종료 전용 고유키를 생성한다.
+ *
+ * varchar(100) 안에 들어가도록 짧게 구성한다.
+ */
+function buildReleasedAiPendingActionIdempotencyKey(
+  params: {
+    id:
+      number;
+
+    status:
+      | "cancelled"
+      | "expired"
+      | "executed"
+      | "failed";
+  }
+): string {
+  return [
+    params.status,
+    Math.floor(
+      Number(
+        params.id ||
+        0
+      )
+    ),
+    randomUUID(),
+  ].join(":");
+}
+
 type AiPendingActionRole =
   | "staff"
   | "admin"
@@ -2025,6 +2749,141 @@ function normalizeAiPendingActionVersion(
   }
 
   return Math.floor(version);
+}
+
+/**
+ * 같은 중복 방지 키를 가진
+ * 아직 사용 가능한 Pending Action을 조회한다.
+ *
+ * draft 또는 awaiting_confirmation 상태이며
+ * 만료되지 않은 초안만 재사용한다.
+ */
+export async function findReusableAiPendingAction(
+  params: {
+    organizationId?:
+      number |
+      null;
+
+    requestedByUserId:
+      number;
+
+    idempotencyKey:
+      string;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const requestedByUserId =
+    Math.floor(
+      Number(
+        params.requestedByUserId ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      requestedByUserId
+    ) ||
+    requestedByUserId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 초안 요청 사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const idempotencyKey =
+    String(
+      params.idempotencyKey ||
+      ""
+    ).trim();
+
+  if (
+    !idempotencyKey
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 초안 중복 방지 키가 필요합니다.",
+      400
+    );
+  }
+
+  const rows =
+    await db
+      .select()
+      .from(
+        aiPendingActions
+      )
+      .where(
+        and(
+          eq(
+            aiPendingActions
+              .organizationId,
+            organizationId
+          ),
+
+          eq(
+            aiPendingActions
+              .requestedByUserId,
+            requestedByUserId
+          ),
+
+          eq(
+            aiPendingActions
+              .idempotencyKey,
+            idempotencyKey
+          ),
+
+          or(
+            eq(
+              aiPendingActions
+                .status,
+              "draft"
+            ),
+
+            eq(
+              aiPendingActions
+                .status,
+              "awaiting_confirmation"
+            )
+          ),
+
+          sql`
+            ${aiPendingActions.expiresAt}
+            > NOW()
+          `
+        )
+      )
+      .orderBy(
+        desc(
+          aiPendingActions.id
+        )
+      )
+      .limit(1);
+
+  const row =
+    decryptAiPendingActionRow(
+      rows[0]
+    );
+
+  return row ??
+    null;
 }
 
 /**
@@ -2165,13 +3024,71 @@ export async function createAiPendingAction(
     );
 
   /**
-   * 프론트가 전달하는 키를 사용하지 않고
-   * 서버에서만 생성한다.
-   */
-  const idempotencyKey =
-    randomUUID();
+ * 프론트에서 중복 방지 키를 받지 않는다.
+ *
+ * 검증된 작업 내용과 서버 소유 ID를 기준으로
+ * 서버에서 결정적 중복 방지 키를 만든다.
+ */
+const idempotencyKey =
+  buildAiPendingActionIdempotencyKey({
+    organizationId,
 
-  const result: any =
+    requestedByUserId:
+      Math.floor(
+        requestedByUserId
+      ),
+
+    actionType:
+      input.actionType,
+
+    consultationId:
+      input.consultationId ??
+      null,
+
+    studentId:
+      input.studentId ??
+      null,
+
+    semesterId:
+      input.semesterId ??
+      null,
+
+    preview,
+
+    payload,
+
+    sourceSnapshot:
+      input.sourceSnapshot ??
+      null,
+  });
+
+/**
+ * 같은 내용의 살아 있는 초안이 있으면
+ * 새 행을 생성하지 않고 기존 초안을 반환한다.
+ */
+const reusablePendingAction =
+  await findReusableAiPendingAction({
+    organizationId,
+
+    requestedByUserId:
+      Math.floor(
+        requestedByUserId
+      ),
+
+    idempotencyKey,
+  });
+
+if (
+  reusablePendingAction
+) {
+  return reusablePendingAction;
+}
+
+let result:
+  any;
+
+try {
+  result =
     await db
       .insert(aiPendingActions)
       .values({
@@ -2205,38 +3122,39 @@ export async function createAiPendingAction(
           input.semesterId ??
           null,
 
-       previewJson:
-  encryptAiPendingJson(
-    preview
-  ),
+        previewJson:
+          encryptAiPendingJson(
+            preview
+          ),
 
-payloadJson:
-  encryptAiPendingJson(
-    payload
-  ),
+        payloadJson:
+          encryptAiPendingJson(
+            payload
+          ),
 
-sourceSnapshotJson:
-  encryptAiPendingJson(
-    input.sourceSnapshot ??
-    null
-  ),
+        sourceSnapshotJson:
+          encryptAiPendingJson(
+            input.sourceSnapshot ??
+            null
+          ),
 
-missingFieldsJson:
-  encryptAiPendingJson(
-    missingFields
-  ),
+        missingFieldsJson:
+          encryptAiPendingJson(
+            missingFields
+          ),
 
-warningsJson:
-  encryptAiPendingJson(
-    warnings
-  ),
+        warningsJson:
+          encryptAiPendingJson(
+            warnings
+          ),
 
-version: 1,
+        version:
+          1,
 
-idempotencyKey,
+        idempotencyKey,
 
-executionResultJson:
-  null,
+        executionResultJson:
+          null,
 
         errorMessage:
           null,
@@ -2260,6 +3178,61 @@ executionResultJson:
         "createdAt" |
         "updatedAt"
       >);
+} catch (
+  error:
+    any
+) {
+  /**
+   * 거의 동시에 같은 요청이 들어온 경우
+   * unique index에 의해 한 요청만 INSERT된다.
+   *
+   * 나머지 요청은 오류로 끝내지 않고
+   * 먼저 생성된 Pending Action을 다시 조회한다.
+   */
+  const errorCode =
+    String(
+      error?.code ||
+      error?.cause?.code ||
+      ""
+    );
+
+  const errorNumber =
+    Number(
+      error?.errno ??
+      error?.cause?.errno ??
+      0
+    );
+
+  const isDuplicateKey =
+    errorCode ===
+      "ER_DUP_ENTRY" ||
+    errorNumber ===
+      1062;
+
+  if (
+    isDuplicateKey
+  ) {
+    const concurrentPendingAction =
+      await findReusableAiPendingAction({
+        organizationId,
+
+        requestedByUserId:
+          Math.floor(
+            requestedByUserId
+          ),
+
+        idempotencyKey,
+      });
+
+    if (
+      concurrentPendingAction
+    ) {
+      return concurrentPendingAction;
+    }
+  }
+
+  throw error;
+}
 
   const pendingActionId =
     Number(getInsertId(result) || 0);
@@ -2406,8 +3379,17 @@ if (!row) {
     await db
       .update(aiPendingActions)
       .set({
-        status: "expired",
-      })
+  status:
+    "expired",
+
+  idempotencyKey:
+    buildReleasedAiPendingActionIdempotencyKey({
+      id,
+
+      status:
+        "expired",
+    }),
+})
       .where(
         and(
           eq(
@@ -2609,9 +3591,20 @@ export async function cancelAiPendingAction(
   await db
     .update(aiPendingActions)
     .set({
-      status: "cancelled",
-      cancelledAt: new Date(),
-    })
+  status:
+    "cancelled",
+
+  idempotencyKey:
+    buildReleasedAiPendingActionIdempotencyKey({
+      id,
+
+      status:
+        "cancelled",
+    }),
+
+  cancelledAt:
+    new Date(),
+})
     .where(
       and(
         eq(
@@ -2832,6 +3825,12 @@ export async function claimAiPendingActionForExecution(
  const executableActionTypes =
   new Set<AiPendingActionType>([
     "student_registration_create",
+
+    /**
+     * 학생 기본정보 수정
+     */
+    "student_update",
+
     "schedule_create",
     "consultation_update",
 
@@ -3405,6 +4404,18 @@ paymentUpdated:
   status:
     "executed",
 
+  /**
+   * 실행이 끝났으므로
+   * 결정적 요청 해시 점유를 해제한다.
+   */
+  idempotencyKey:
+    buildReleasedAiPendingActionIdempotencyKey({
+      id,
+
+      status:
+        "executed",
+    }),
+
   consultationId:
     normalizedConsultationId,
 
@@ -3412,16 +4423,16 @@ paymentUpdated:
     normalizedStudentId,
 
   executionResultJson:
-          encryptAiPendingJson(
-            executionResult
-          ),
+    encryptAiPendingJson(
+      executionResult
+    ),
 
-        errorMessage:
-          null,
+  errorMessage:
+    null,
 
-        executedAt:
-          new Date(),
-      })
+  executedAt:
+    new Date(),
+})
       .where(
         and(
           eq(
@@ -3594,20 +4605,32 @@ if (
     await db
       .update(aiPendingActions)
       .set({
-        status:
-          "failed",
+  status:
+    "failed",
 
-        executionResultJson:
-          encryptAiPendingJson(
-            executionResult
-          ),
+  /**
+   * 실패 작업도 종료된 작업이므로
+   * 동일 요청을 다시 생성할 수 있게 키를 해제한다.
+   */
+  idempotencyKey:
+    buildReleasedAiPendingActionIdempotencyKey({
+      id,
 
-        errorMessage:
-          safeErrorMessage,
+      status:
+        "failed",
+    }),
 
-        failedAt:
-          new Date(),
-      })
+  executionResultJson:
+    encryptAiPendingJson(
+      executionResult
+    ),
+
+  errorMessage:
+    safeErrorMessage,
+
+  failedAt:
+    new Date(),
+})
       .where(
         and(
           eq(
@@ -9620,7 +10643,9 @@ export async function getUserById(
     )
     .limit(1);
 
-  return result[0];
+    return result[0]
+    ? decryptUserPersonalData(result[0])
+    : undefined;
 }
 
 // ─── Consultations ───────────────────────────────────────────────────
@@ -14092,13 +15117,35 @@ if (params.customerType === "existing") {
       settlementStatus: settlementItems.settlementStatus,
       occurredAt: settlementItems.occurredAt,
       note: settlementItems.note,
-      clientName: students.clientName,
-phone: students.phone,
-course: students.course,
-studentLoginId: students.studentLoginId,
-assigneeName: users.name,
+      studentClientName:
+  students.clientName,
 
-semesterOrder: semesters.semesterOrder,
+studentPhone:
+  students.phone,
+
+course:
+  students.course,
+
+studentLoginId:
+  students.studentLoginId,
+
+assigneeName:
+  users.name,
+
+practiceExternalClientName:
+  practiceSupportExternalRequests.clientName,
+
+practiceExternalPhone:
+  practiceSupportExternalRequests.phone,
+
+privateCertificateExternalClientName:
+  privateCertificateExternalRequests.clientName,
+
+privateCertificateExternalPhone:
+  privateCertificateExternalRequests.phone,
+
+semesterOrder:
+  semesters.semesterOrder,
     })
    .from(settlementItems)
 .leftJoin(
@@ -14133,21 +15180,118 @@ semesterOrder: semesters.semesterOrder,
       )
     )
     .leftJoin(
-      users,
-      and(
-        eq(settlementItems.assigneeId, users.id),
-        eq(users.organizationId, organizationId)
-      )
+  users,
+  and(
+    eq(settlementItems.assigneeId, users.id),
+    eq(users.organizationId, organizationId)
+  )
+)
+.leftJoin(
+  practiceSupportExternalRequests,
+  and(
+    eq(
+      settlementItems.revenueType,
+      "practice_support"
+    ),
+    eq(
+      settlementItems.sourceType,
+      "external"
+    ),
+    eq(
+      settlementItems.sourceId,
+      practiceSupportExternalRequests.id
+    ),
+    eq(
+      practiceSupportExternalRequests.organizationId,
+      organizationId
     )
-    .where(and(...conditions))
-    .orderBy(desc(settlementItems.occurredAt), desc(settlementItems.id));
+  )
+)
+.leftJoin(
+  privateCertificateExternalRequests,
+  and(
+    eq(
+      settlementItems.revenueType,
+      "private_certificate"
+    ),
+    eq(
+      settlementItems.sourceType,
+      "external"
+    ),
+    eq(
+      settlementItems.sourceId,
+      privateCertificateExternalRequests.id
+    ),
+    eq(
+      privateCertificateExternalRequests.organizationId,
+      organizationId
+    )
+  )
+)
+.where(and(...conditions))
+.orderBy(
+  desc(settlementItems.occurredAt),
+  desc(settlementItems.id)
+);
 
   const entries = (rows || []).map((r: any) => {
-  const decryptedRow =
-    decryptStudentJoinedRow(r);
+  const decryptedStudentRow =
+    decryptStudentJoinedRow({
+      ...r,
+
+      clientName:
+        r.studentClientName,
+
+      phone:
+        r.studentPhone,
+    });
+
+  const practiceExternalClientName =
+    r.practiceExternalClientName === null ||
+    r.practiceExternalClientName === undefined
+      ? ""
+      : decryptPersonalData(
+          r.practiceExternalClientName
+        );
+
+  const practiceExternalPhone =
+    r.practiceExternalPhone === null ||
+    r.practiceExternalPhone === undefined
+      ? ""
+      : decryptPersonalData(
+          r.practiceExternalPhone
+        );
+
+  const privateCertificateExternalClientName =
+    r.privateCertificateExternalClientName === null ||
+    r.privateCertificateExternalClientName === undefined
+      ? ""
+      : decryptPersonalData(
+          r.privateCertificateExternalClientName
+        );
+
+  const privateCertificateExternalPhone =
+    r.privateCertificateExternalPhone === null ||
+    r.privateCertificateExternalPhone === undefined
+      ? ""
+      : decryptPersonalData(
+          r.privateCertificateExternalPhone
+        );
+
+  const resolvedClientName =
+    decryptedStudentRow.clientName ||
+    practiceExternalClientName ||
+    privateCertificateExternalClientName ||
+    "";
+
+  const resolvedPhone =
+    decryptedStudentRow.phone ||
+    practiceExternalPhone ||
+    privateCertificateExternalPhone ||
+    "";
 
   const isRefund =
-    decryptedRow.revenueType === "refund";
+    r.revenueType === "refund";
 
   return {
       id: Number(r.id),
@@ -14175,15 +15319,23 @@ customerTypeLabel:
     ? "신규"
     : "기존",
 
-assigneeName: decryptedRow.assigneeName || "",
+assigneeName:
+  decryptedStudentRow.assigneeName || "",
 occurredAt: r.occurredAt || null,
 
       title: r.title || "",
       institutionName: r.institutionName || "",
-clientName: decryptedRow.clientName || "",
-phone: decryptedRow.phone || "",
-course: r.course || "",
-studentLoginId: decryptedRow.studentLoginId || "",
+clientName:
+  resolvedClientName,
+
+phone:
+  resolvedPhone,
+
+course:
+  r.course || "",
+
+studentLoginId:
+  decryptedStudentRow.studentLoginId || "",
 subjectType: r.subjectType || null,
       subjectCount: Number(r.subjectCount || 0),
       quantity: Number(r.quantity || 0),
@@ -19375,9 +20527,10 @@ const organizationId = requireOrganizationId(params?.organizationId);
     psr.detailAddress,
     psr.assigneeName,
     psr.managerName,
-    psr.practiceHours,
-    psr.practiceDate,
-    psr.includeEducationCenter,
+   psr.practiceHours,
+psr.practiceSemesterLabel,
+psr.practiceDate,
+psr.includeEducationCenter,
     psr.includePracticeInstitution,
     psr.coordinationStatus,
     psr.selectedEducationCenterId,
@@ -19475,23 +20628,29 @@ LEFT JOIN users u
       null,
 
     managerName:
-      row.managerName ||
-      row.userName ||
-      "",
+  row.managerName ||
+  row.userName ||
+  "",
 
-    practiceHours:
-      row.practiceHours ??
-      row.planPracticeHours ??
-      null,
+practiceHours:
+  row.practiceHours ??
+  row.planPracticeHours ??
+  null,
 
-    practiceDate:
-      row.practiceDate ||
-      row.planPracticeDate ||
-      null,
+practiceSemesterLabel:
+  row.practiceSemesterLabel || null,
 
-    coordinationStatus:
-      row.coordinationStatus ||
-      "미섭외",
+practiceDate:
+  row.practiceDate ||
+  row.planPracticeDate ||
+  null,
+
+includeEducationCenter:
+  row.includeEducationCenter ?? true,
+
+coordinationStatus:
+  row.coordinationStatus ||
+  "미섭외",
 
     selectedEducationCenterId:
       row.selectedEducationCenterId || null,
@@ -19885,9 +21044,10 @@ export async function listPracticeSupportRequestsByStudent(
       psr.detailAddress,
       psr.assigneeName,
       psr.managerName,
-      psr.practiceHours,
-      psr.practiceDate,
-      psr.includeEducationCenter,
+psr.practiceHours,
+psr.practiceSemesterLabel,
+psr.practiceDate,
+psr.includeEducationCenter,
       psr.includePracticeInstitution,
       psr.coordinationStatus,
       psr.selectedEducationCenterId,
@@ -19952,9 +21112,21 @@ export async function listPracticeSupportRequestsByStudent(
     assigneeId: row.assigneeId ?? row.studentAssigneeId ?? null,
     assigneeName: row.assigneeName || row.userName || null,
     managerName: row.managerName || row.userName || "",
-    practiceHours: row.practiceHours ?? row.planPracticeHours ?? null,
-    practiceDate: row.practiceDate || row.planPracticeDate || null,
-    coordinationStatus: row.coordinationStatus || "미섭외",
+    practiceHours:
+  row.practiceHours ??
+  row.planPracticeHours ??
+  null,
+
+practiceSemesterLabel:
+  row.practiceSemesterLabel || null,
+
+practiceDate:
+  row.practiceDate ||
+  row.planPracticeDate ||
+  null,
+
+coordinationStatus:
+  row.coordinationStatus || "미섭외",
 
     selectedEducationCenterId: row.selectedEducationCenterId || null,
     selectedEducationCenterName: row.selectedEducationCenterName || "",
@@ -19997,8 +21169,9 @@ const organizationId = requireOrganizationId(params?.organizationId);
       psr.assigneeName,
       psr.managerName,
       psr.practiceHours,
-      psr.practiceDate,
-      psr.includeEducationCenter,
+psr.practiceSemesterLabel,
+psr.practiceDate,
+psr.includeEducationCenter,
       psr.includePracticeInstitution,
       psr.coordinationStatus,
       psr.selectedEducationCenterId,
@@ -20066,8 +21239,18 @@ return {
     assigneeId: row.assigneeId || row.studentAssigneeId || null,
     assigneeName: row.assigneeName || row.userName || "",
     managerName: row.managerName || row.userName || "",
-    practiceHours: row.practiceHours ?? row.planPracticeHours ?? null,
-    practiceDate: row.practiceDate || row.planPracticeDate || null,
+    practiceHours:
+  row.practiceHours ??
+  row.planPracticeHours ??
+  null,
+
+practiceSemesterLabel:
+  row.practiceSemesterLabel || null,
+
+practiceDate:
+  row.practiceDate ||
+  row.planPracticeDate ||
+  null,
     coordinationStatus: row.coordinationStatus || "미섭외",
 
     selectedEducationCenterId: row.selectedEducationCenterId || null,
@@ -27851,6 +29034,559 @@ export async function getRefundApprovalHistoryDetail(params: {
   `);
 
   return (rows as any[])?.[0] || null;
+}
+
+/**
+ * 사용자별 AI 업무 세션 조회
+ *
+ * 세션이 아직 없으면 기본 세션을 생성한 뒤 반환한다.
+ * organizationId + userId 조합당 한 행만 유지한다.
+ */
+export async function getAiWorkSession(
+  params: {
+    organizationId?: number | null;
+    userId: number;
+  }
+): Promise<AiWorkSession> {
+  const database =
+    await getDb();
+
+  if (!database) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userId =
+    normalizeAiWorkSessionUserId(
+      params.userId
+    );
+
+  let rows =
+    await database
+      .select()
+      .from(
+        aiWorkSessions
+      )
+      .where(
+        and(
+          eq(
+            aiWorkSessions.organizationId,
+            organizationId
+          ),
+          eq(
+            aiWorkSessions.userId,
+            userId
+          )
+        )
+      )
+      .limit(1);
+
+  /**
+   * 최초 AI 사용자는 아직 업무 세션 행이 없다.
+   *
+   * UNIQUE organizationId + userId를 사용하므로
+   * 동시에 두 요청이 들어와도 하나만 생성된다.
+   */
+  if (!rows[0]) {
+    await database
+      .insert(
+        aiWorkSessions
+      )
+      .values({
+        organizationId,
+        userId,
+
+        activeTargetType:
+          null,
+
+        activeTargetId:
+          null,
+
+        activeTargetName:
+          null,
+
+        consultationId:
+          null,
+
+        studentId:
+          null,
+
+        practiceRequestId:
+          null,
+
+        privateCertificateRequestIdsJson:
+          encryptAiWorkSessionJson([]),
+
+        workflowType:
+          null,
+
+        workflowStep:
+          "idle",
+
+        workflowDraftJson:
+          encryptAiWorkSessionJson({}),
+
+        waitingForJson:
+          encryptAiWorkSessionJson([]),
+
+        lastPresentedActionJson:
+          encryptAiWorkSessionJson(null),
+
+        version:
+          1,
+      })
+      .onDuplicateKeyUpdate({
+        set: {
+          userId:
+            sql`${aiWorkSessions.userId}`,
+        },
+      });
+
+    rows =
+      await database
+        .select()
+        .from(
+          aiWorkSessions
+        )
+        .where(
+          and(
+            eq(
+              aiWorkSessions.organizationId,
+              organizationId
+            ),
+            eq(
+              aiWorkSessions.userId,
+              userId
+            )
+          )
+        )
+        .limit(1);
+  }
+
+  if (!rows[0]) {
+    return buildEmptyAiWorkSession({
+      organizationId,
+      userId,
+    });
+  }
+
+  return mapAiWorkSessionRow(
+    rows[0]
+  );
+}
+
+/**
+ * AI 업무 세션 일부 수정
+ *
+ * expectedVersion을 사용해 이전 요청이
+ * 최신 상태를 덮어쓰는 것을 방지한다.
+ */
+export async function patchAiWorkSession(
+  params: {
+    organizationId?: number | null;
+    userId: number;
+    expectedVersion: number;
+    patch: AiWorkSessionPatch;
+  }
+): Promise<AiWorkSession> {
+  const database =
+    await getDb();
+
+  if (!database) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userId =
+    normalizeAiWorkSessionUserId(
+      params.userId
+    );
+
+  const expectedVersion =
+    normalizeAiWorkSessionVersion(
+      params.expectedVersion
+    );
+
+  const current =
+    await getAiWorkSession({
+      organizationId,
+      userId,
+    });
+
+  /**
+   * 현재 세션이 이미 다른 요청에서 변경됐다면
+   * 기존 응답이 최신 상태를 덮어쓰지 못하게 차단한다.
+   */
+  if (
+    current.version !==
+    expectedVersion
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 업무 상태가 다른 요청에서 변경되었습니다. 현재 상태를 다시 불러온 뒤 시도해주세요.",
+      409
+    );
+  }
+
+  const hasActiveTargetPatch =
+    Object.prototype.hasOwnProperty.call(
+      params.patch,
+      "activeTarget"
+    );
+
+  const hasLastPresentedActionPatch =
+    Object.prototype.hasOwnProperty.call(
+      params.patch,
+      "lastPresentedAction"
+    );
+
+  const nextActiveTarget =
+    hasActiveTargetPatch
+      ? params.patch.activeTarget ??
+        null
+      : current.activeTarget;
+
+  const nextLinkedContext = {
+    ...current.linkedContext,
+    ...(
+      params.patch.linkedContext ||
+      {}
+    ),
+  };
+
+  const clearDraft =
+    params.patch.workflow
+      ?.clearDraft ===
+    true;
+
+  const nextDraft =
+    clearDraft
+      ? {
+          ...(
+            params.patch.workflow
+              ?.draftPatch ||
+            {}
+          ),
+        }
+      : {
+          ...current.workflow.draft,
+          ...(
+            params.patch.workflow
+              ?.draftPatch ||
+            {}
+          ),
+        };
+
+  const nextWorkflow = {
+    type:
+      params.patch.workflow &&
+      Object.prototype.hasOwnProperty.call(
+        params.patch.workflow,
+        "type"
+      )
+        ? params.patch.workflow.type ??
+          null
+        : current.workflow.type,
+
+    step:
+      params.patch.workflow
+        ?.step ??
+      current.workflow.step,
+
+    draft:
+      nextDraft,
+
+    waitingFor:
+      params.patch.workflow
+        ?.waitingFor ??
+      current.workflow.waitingFor,
+  };
+
+  const nextLastPresentedAction =
+    hasLastPresentedActionPatch
+      ? params.patch
+          .lastPresentedAction ??
+        null
+      : current
+          .lastPresentedAction;
+
+  const updateResult: any =
+    await database
+      .update(
+        aiWorkSessions
+      )
+      .set({
+        activeTargetType:
+          nextActiveTarget?.type ??
+          null,
+
+        activeTargetId:
+          nextActiveTarget?.id ??
+          null,
+
+        activeTargetName:
+          encryptAiWorkSessionTargetName(
+            nextActiveTarget?.name ??
+            null
+          ),
+
+        consultationId:
+          nextLinkedContext
+            .consultationId ??
+          null,
+
+        studentId:
+          nextLinkedContext
+            .studentId ??
+          null,
+
+        practiceRequestId:
+          nextLinkedContext
+            .practiceRequestId ??
+          null,
+
+        privateCertificateRequestIdsJson:
+          encryptAiWorkSessionJson(
+            nextLinkedContext
+              .privateCertificateRequestIds ??
+            []
+          ),
+
+        workflowType:
+          nextWorkflow.type,
+
+        workflowStep:
+          nextWorkflow.step,
+
+        workflowDraftJson:
+          encryptAiWorkSessionJson(
+            nextWorkflow.draft
+          ),
+
+        waitingForJson:
+          encryptAiWorkSessionJson(
+            nextWorkflow.waitingFor
+          ),
+
+        lastPresentedActionJson:
+          encryptAiWorkSessionJson(
+            nextLastPresentedAction
+          ),
+
+        version:
+          sql`${aiWorkSessions.version} + 1`,
+      })
+      .where(
+        and(
+          eq(
+            aiWorkSessions.organizationId,
+            organizationId
+          ),
+          eq(
+            aiWorkSessions.userId,
+            userId
+          ),
+          eq(
+            aiWorkSessions.version,
+            expectedVersion
+          )
+        )
+      );
+
+  const affectedRows =
+    Number(
+      updateResult?.[0]
+        ?.affectedRows ??
+      updateResult?.affectedRows ??
+      0
+    );
+
+  if (
+    affectedRows <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 업무 상태가 이미 변경되었습니다. 다시 시도해주세요.",
+      409
+    );
+  }
+
+  const rows =
+    await database
+      .select()
+      .from(
+        aiWorkSessions
+      )
+      .where(
+        and(
+          eq(
+            aiWorkSessions.organizationId,
+            organizationId
+          ),
+          eq(
+            aiWorkSessions.userId,
+            userId
+          )
+        )
+      )
+      .limit(1);
+
+  if (!rows[0]) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "수정된 AI 업무 세션을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  return mapAiWorkSessionRow(
+    rows[0]
+  );
+}
+
+/**
+ * 현재 작업 대상 변경
+ *
+ * 학생이 한 번 선택되면 이 함수로 서버에 저장한다.
+ * 다른 학생이 명확히 선택됐을 때도 이 함수를 사용한다.
+ */
+export async function setAiActiveTarget(
+  params: {
+    organizationId?: number | null;
+    userId: number;
+    expectedVersion: number;
+
+    target: {
+      type: AiActiveTargetType;
+      id: number;
+      name: string | null;
+    } | null;
+
+    linkedContext?: {
+      consultationId?: number | null;
+      studentId?: number | null;
+      practiceRequestId?: number | null;
+      privateCertificateRequestIds?: number[];
+    };
+  }
+): Promise<AiWorkSession> {
+  return patchAiWorkSession({
+    organizationId:
+      params.organizationId,
+
+    userId:
+      params.userId,
+
+    expectedVersion:
+      params.expectedVersion,
+
+    patch: {
+      activeTarget:
+        params.target,
+
+      linkedContext:
+        params.linkedContext,
+    },
+  });
+}
+
+/**
+ * 현재 AI 업무 진행 상태 초기화
+ *
+ * preserveActiveTarget이 true면
+ * 현재 선택 학생은 유지하고 업무 단계만 비운다.
+ */
+export async function clearAiWorkSession(
+  params: {
+    organizationId?: number | null;
+    userId: number;
+    expectedVersion: number;
+    preserveActiveTarget?: boolean;
+  }
+): Promise<AiWorkSession> {
+  const current =
+    await getAiWorkSession({
+      organizationId:
+        params.organizationId,
+
+      userId:
+        params.userId,
+    });
+
+  const preserveActiveTarget =
+    params.preserveActiveTarget !==
+    false;
+
+  return patchAiWorkSession({
+    organizationId:
+      params.organizationId,
+
+    userId:
+      params.userId,
+
+    expectedVersion:
+      params.expectedVersion,
+
+    patch: {
+      activeTarget:
+        preserveActiveTarget
+          ? current.activeTarget
+          : null,
+
+      linkedContext:
+        preserveActiveTarget
+          ? current.linkedContext
+          : {
+              consultationId:
+                null,
+
+              studentId:
+                null,
+
+              practiceRequestId:
+                null,
+
+              privateCertificateRequestIds:
+                [],
+            },
+
+      workflow: {
+        type:
+          null,
+
+        step:
+          "idle",
+
+        clearDraft:
+          true,
+
+        draftPatch:
+          {},
+
+        waitingFor:
+          [],
+      },
+
+      lastPresentedAction:
+        null,
+    },
+  });
 }
 
 export async function saveAiChatMessage(
