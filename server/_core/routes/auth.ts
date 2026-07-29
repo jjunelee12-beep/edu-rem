@@ -7,7 +7,10 @@ import {
   clearSessionCookie,
   readUserIdFromCookie,
 } from "../auth/session";
-import { getDb } from "../../db";
+import {
+  getDb,
+  getUserById,
+} from "../../db";
 import { users, organizations } from "../../../drizzle/schema";
 import { getOrganizationById } from "../../saasdb";
 
@@ -132,14 +135,47 @@ if (organizationBlockMessage) {
    const organization =
   user.role === "superhost"
     ? null
-    : await getOrganizationById(Number(user.organizationId || 0));
+    : await getOrganizationById(
+        Number(
+          user.organizationId || 0
+        )
+      );
+
+/**
+ * 로그인 조회의 user는 users 테이블 원본이므로
+ * name, email, phone 등이 암호화 상태일 수 있다.
+ *
+ * 화면에 반환할 사용자 정보는 반드시
+ * getUserById()의 복호화된 결과를 사용한다.
+ */
+const decryptedUser =
+  await getUserById(
+    Number(user.id),
+    {
+      organizationId:
+        Number(
+          user.organizationId || 0
+        ) > 0
+          ? Number(
+              user.organizationId
+            )
+          : undefined,
+    }
+  );
+
+if (!decryptedUser) {
+  return res.status(401).json({
+    message:
+      "사용자 정보를 확인할 수 없습니다.",
+  });
+}
 
 return res.json({
   user: {
     id: user.id,
     username: user.username,
     role: user.role,
-    name: user.name,
+    name: decryptedUser.name,
     organizationId: user.organizationId,
     organizationSlug: organization?.slug ?? null,
     organizationName: organization?.name ?? null,
@@ -216,6 +252,39 @@ authRouter.get("/me", async (req, res) => {
       });
     }
 
+/**
+ * 위의 JOIN 조회 결과에는 users.name 원본이 들어 있으므로
+ * 로그인 사용자 이름이 암호문일 수 있다.
+ *
+ * 사용자 ID와 회사 ID로 다시 조회하여
+ * 개인정보가 복호화된 사용자 정보를 가져온다.
+ */
+const decryptedUser =
+  await getUserById(
+    Number(user.id),
+    {
+      organizationId:
+        Number(
+          user.organizationId || 0
+        ) > 0
+          ? Number(
+              user.organizationId
+            )
+          : undefined,
+    }
+  );
+
+if (!decryptedUser) {
+  res.setHeader(
+    "Set-Cookie",
+    clearSessionCookie()
+  );
+
+  return res.status(401).json({
+    message: "not logged in",
+  });
+}
+
     const organizationBlockMessage = await getUserOrganizationLoginBlockMessage(user);
 
 if (organizationBlockMessage) {
@@ -230,7 +299,7 @@ if (organizationBlockMessage) {
     id: user.id,
     username: user.username,
     role: user.role,
-    name: user.name,
+    name: decryptedUser.name,
     organizationId: user.organizationId,
     organizationSlug: user.organizationSlug,
     organizationName: user.organizationName,

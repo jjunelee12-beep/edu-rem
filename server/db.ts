@@ -876,7 +876,9 @@ function decryptUserPersonalData<T extends Record<string, any>>(
   };
 }
 
-function decryptConsultationPersonalData<T extends Record<string, any>>(
+function decryptConsultationPersonalData<
+  T extends Record<string, any>
+>(
   row: T | null | undefined
 ): T | null | undefined {
   if (!row) {
@@ -887,14 +889,28 @@ function decryptConsultationPersonalData<T extends Record<string, any>>(
     ...row,
 
     clientName:
-      row.clientName === null || row.clientName === undefined
+      row.clientName === null ||
+      row.clientName === undefined
         ? row.clientName
-        : decryptPersonalData(row.clientName),
+        : decryptPersonalData(
+            row.clientName
+          ),
 
     phone:
-      row.phone === null || row.phone === undefined
+      row.phone === null ||
+      row.phone === undefined
         ? row.phone
-        : decryptPersonalData(row.phone),
+        : decryptPersonalData(
+            row.phone
+          ),
+
+    assigneeName:
+      row.assigneeName === null ||
+      row.assigneeName === undefined
+        ? row.assigneeName
+        : decryptPersonalData(
+            row.assigneeName
+          ),
   };
 }
 
