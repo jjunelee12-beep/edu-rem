@@ -19690,22 +19690,32 @@ export async function getPrivateCertificateRequest(
   const db = await getDb();
   if (!db) return undefined;
 
-  const organizationId = requireOrganizationId(params?.organizationId);
+  const organizationId = requireOrganizationId(
+    params?.organizationId
+  );
 
   const rows = await db
     .select()
     .from(privateCertificateRequests)
     .where(
       and(
-        eq(privateCertificateRequests.id, Number(id)),
-        eq(privateCertificateRequests.organizationId, organizationId)
+        eq(
+          privateCertificateRequests.id,
+          Number(id)
+        ),
+        eq(
+          privateCertificateRequests.organizationId,
+          organizationId
+        )
       )
     )
     .limit(1);
 
   return rows[0]
-  ? decryptPrivateCertificatePersonalData(rows[0])
-  : undefined;
+    ? decryptPrivateCertificatePersonalData(
+        rows[0]
+      )
+    : undefined;
 }
 
 async function listStudentPrivateCertificateRequests(
@@ -20225,49 +20235,6 @@ export async function createPrivateCertificateExternalRequest(
   return insertId;
 }
 
-export async function getPrivateCertificateRequest(
-  id: number,
-  params?: {
-    organizationId?: number | null;
-  }
-) {
-  const db = await getDb();
-
-  if (!db) {
-    return undefined;
-  }
-
-  const organizationId =
-    requireOrganizationId(
-      params?.organizationId
-    );
-
-  const rows =
-    await db
-      .select()
-      .from(
-        privateCertificateRequests
-      )
-      .where(
-        and(
-          eq(
-            privateCertificateRequests.id,
-            Number(id)
-          ),
-          eq(
-            privateCertificateRequests.organizationId,
-            organizationId
-          )
-        )
-      )
-      .limit(1);
-
-  return rows[0]
-    ? decryptPrivateCertificatePersonalData(
-        rows[0]
-      )
-    : undefined;
-}
 
 export async function addPrivateCertificateToExistingRequest(
   params: {
