@@ -42,10 +42,13 @@ StudentUpdateToolOutput,
     StudentDashboardToolInput,
   StudentDashboardToolOutput,
 
-    ScheduleCreateToolInput,
+     SemesterCreateToolInput,
+  SemesterCreateToolOutput,
+
+  ScheduleCreateToolInput,
   ScheduleCreateToolOutput,
 
-    PracticeInstitutionSearchToolInput,
+  PracticeInstitutionSearchToolInput,
   PracticeInstitutionSearchToolOutput,
 
   PracticeSupportStatusToolInput,
@@ -143,6 +146,230 @@ function normalizeNullableText(
 
   return normalized ||
     null;
+}
+
+function normalizeNullableNonNegativeInteger(
+  value:
+    unknown,
+
+  fieldLabel:
+    string
+): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const normalized =
+    Number(value);
+
+  if (
+    !Number.isFinite(
+      normalized
+    )
+  ) {
+    throw new Error(
+      `${fieldLabel}는 숫자로 입력해야 합니다.`
+    );
+  }
+
+  if (
+    !Number.isInteger(
+      normalized
+    )
+  ) {
+    throw new Error(
+      `${fieldLabel}는 정수로 입력해야 합니다.`
+    );
+  }
+
+  if (
+    normalized <
+    0
+  ) {
+    throw new Error(
+      `${fieldLabel}는 0 이상이어야 합니다.`
+    );
+  }
+
+  return normalized;
+}
+
+function normalizeNullableNonNegativeAmount(
+  value:
+    unknown,
+
+  fieldLabel:
+    string
+): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const normalizedText =
+    String(value)
+      .replace(
+        /,/g,
+        ""
+      )
+      .trim();
+
+  if (
+    !normalizedText
+  ) {
+    return null;
+  }
+
+  const normalized =
+    Number(
+      normalizedText
+    );
+
+  if (
+    !Number.isFinite(
+      normalized
+    )
+  ) {
+    throw new Error(
+      `${fieldLabel}은 숫자로 입력해야 합니다.`
+    );
+  }
+
+  if (
+    normalized <
+    0
+  ) {
+    throw new Error(
+      `${fieldLabel}은 0원 이상이어야 합니다.`
+    );
+  }
+
+  return normalized;
+}
+
+function normalizeSemesterDate(
+  value:
+    unknown
+): string | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const normalized =
+    String(
+      value
+    ).trim();
+
+  const matched =
+    normalized.match(
+      /^(\d{4})-(\d{2})-(\d{2})$/
+    );
+
+  if (!matched) {
+    throw new Error(
+      "날짜는 YYYY-MM-DD 형식이어야 합니다."
+    );
+  }
+
+  const year =
+    Number(
+      matched[1]
+    );
+
+  const month =
+    Number(
+      matched[2]
+    );
+
+  const day =
+    Number(
+      matched[3]
+    );
+
+  const parsed =
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day
+      )
+    );
+
+  if (
+    parsed.getUTCFullYear() !==
+      year ||
+    parsed.getUTCMonth() !==
+      month - 1 ||
+    parsed.getUTCDate() !==
+      day
+  ) {
+    throw new Error(
+      "올바른 날짜를 입력해주세요."
+    );
+  }
+
+  return normalized;
+}
+
+function normalizeSemesterPlannedMonth(
+  value:
+    unknown
+): string | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
+
+  const normalized =
+    String(value)
+      .replace(
+        /[^0-9]/g,
+        ""
+      )
+      .trim();
+
+  if (
+    !/^\d{6}$/.test(
+      normalized
+    )
+  ) {
+    throw new Error(
+      "예정 개강월은 YYYYMM 형식이어야 합니다."
+    );
+  }
+
+  const month =
+    Number(
+      normalized.slice(
+        4,
+        6
+      )
+    );
+
+  if (
+    month < 1 ||
+    month > 12
+  ) {
+    throw new Error(
+      "예정 개강월의 월 값이 올바르지 않습니다."
+    );
+  }
+
+  return normalized;
 }
 
 function normalizeConsultationUpdateText(
@@ -2160,6 +2387,736 @@ registerTool<
       generatedAt:
         new Date()
           .toISOString(),
+    };
+  },
+});
+
+/**
+ * 기존 학생 학기 생성 승인 초안
+ *
+ * 이 Tool은 semesters 테이블을 직접 수정하지 않는다.
+ * 학생, 기존 학기 순서, 중복 여부를 확인한 뒤
+ * Pending Action 생성에 사용할 초안만 반환한다.
+ */
+registerTool<
+  SemesterCreateToolInput,
+  SemesterCreateToolOutput
+>({
+  name:
+    "semester.create",
+
+  description:
+    "현재 사용자가 접근 가능한 기존 학생에게 새 학기를 추가하기 위한 승인 초안을 생성합니다. 실제 학기 등록은 사용자의 최종 승인 후 실행합니다.",
+
+  inputSchema: {
+    type:
+      "object",
+
+    properties: {
+      studentId: {
+        type:
+          "integer",
+
+        description:
+          "학기를 생성할 확정된 학생 ID",
+
+        minimum:
+          1,
+      },
+
+      semesterOrder: {
+        type:
+          "integer",
+
+        description:
+          "생성할 학기 순서. 첫 학기는 1이며 기존 마지막 학기 다음 번호를 사용합니다.",
+
+        minimum:
+          1,
+
+        maximum:
+          20,
+      },
+
+      semesterLabel: {
+        type:
+          "string",
+
+        description:
+          "학기 구분. 예: 2026년 1학기, 2026년 2학기",
+      },
+
+      plannedMonth: {
+        type: [
+          "string",
+          "null",
+        ],
+
+        description:
+          "예정 개강월. YYYYMM 형식입니다. 예: 202608",
+      },
+
+      plannedInstitution: {
+        type: [
+          "string",
+          "null",
+        ],
+
+        description:
+          "예정 교육원 이름",
+      },
+
+      plannedSubjectCount: {
+        type: [
+          "integer",
+          "null",
+        ],
+
+        description:
+          "예정 과목 수",
+
+        minimum:
+          0,
+
+        maximum:
+          50,
+      },
+
+      plannedAmount: {
+        type: [
+          "number",
+          "null",
+        ],
+
+        description:
+          "예정 결제금액",
+
+        minimum:
+          0,
+      },
+
+      startDate: {
+        type: [
+          "string",
+          "null",
+        ],
+
+        description:
+          "실제 개강일. YYYY-MM-DD 형식",
+      },
+
+      institution: {
+        type: [
+          "string",
+          "null",
+        ],
+
+        description:
+          "실제 수강 교육원 이름",
+      },
+
+      subjectCount: {
+        type: [
+          "integer",
+          "null",
+        ],
+
+        description:
+          "실제 수강 과목 수",
+
+        minimum:
+          0,
+
+        maximum:
+          50,
+      },
+
+      paymentAmount: {
+        type: [
+          "number",
+          "null",
+        ],
+
+        description:
+          "실제 결제금액",
+
+        minimum:
+          0,
+      },
+
+      paymentDate: {
+        type: [
+          "string",
+          "null",
+        ],
+
+        description:
+          "실제 결제일. YYYY-MM-DD 형식",
+      },
+    },
+
+    required: [
+      "studentId",
+      "semesterOrder",
+      "semesterLabel",
+    ],
+
+    additionalProperties:
+      false,
+  },
+
+  accessMode:
+    "draft",
+
+  allowedRoles: [
+    "staff",
+    "admin",
+    "host",
+  ],
+
+  requiresOrganization:
+    true,
+
+  requiresConfirmation:
+    true,
+
+  autoExecutable:
+    false,
+
+  handler: async ({
+    context,
+    input,
+  }) => {
+    const safeInput =
+      stripUntrustedScopeFields(
+        (
+          input ||
+          {}
+        ) as Record<
+          string,
+          unknown
+        >
+      ) as SemesterCreateToolInput;
+
+    const studentId =
+      normalizePositiveInteger(
+        safeInput.studentId
+      );
+
+    if (
+      studentId <=
+      0
+    ) {
+      throw new Error(
+        "학기를 생성할 학생 ID가 필요합니다."
+      );
+    }
+
+    const semesterOrder =
+      normalizePositiveInteger(
+        safeInput.semesterOrder
+      );
+
+    if (
+      semesterOrder <=
+      0
+    ) {
+      throw new Error(
+        "학기 순서는 1 이상이어야 합니다."
+      );
+    }
+
+    if (
+      semesterOrder >
+      20
+    ) {
+      throw new Error(
+        "학기 순서는 20을 초과할 수 없습니다."
+      );
+    }
+
+    const semesterLabel =
+      normalizeNullableText(
+        safeInput.semesterLabel,
+        100
+      );
+
+    if (
+      !semesterLabel
+    ) {
+      throw new Error(
+        "학기 구분이 필요합니다."
+      );
+    }
+
+    const semesterLabelMatched =
+  semesterLabel.match(
+    /^(\d{4})년\s*([12])학기$/
+  );
+
+if (
+  !semesterLabelMatched
+) {
+  throw new Error(
+    "학기 구분은 2026년 1학기 형식이어야 합니다."
+  );
+}
+
+const normalizedInputSemesterLabel =
+  `${semesterLabelMatched[1]}년 ${semesterLabelMatched[2]}학기`;
+
+const student =
+  await db.getStudentById(
+        studentId,
+        {
+          organizationId:
+            context.organizationId,
+        }
+      );
+
+    if (
+      !student
+    ) {
+      throw new Error(
+        "학기를 생성할 학생 정보를 찾을 수 없습니다."
+      );
+    }
+
+    /**
+     * 초안 단계에서는 조회 범위를 확인한다.
+     *
+     * 실제 승인 실행 단계에서는
+     * 담당자 쓰기 권한을 다시 확인해야 한다.
+     */
+    assertCanAccessStudent({
+      context,
+      student,
+    });
+
+    const existingSemesters =
+      await db.listSemesters(
+        studentId,
+        {
+          organizationId:
+            context.organizationId,
+        }
+      );
+
+    const normalizedSemesters =
+      (
+        Array.isArray(
+          existingSemesters
+        )
+          ? existingSemesters
+          : []
+      )
+        .map(
+          (
+            semester:
+              any
+          ) => ({
+            ...semester,
+
+            semesterOrder:
+              normalizePositiveInteger(
+                semester
+                  ?.semesterOrder
+              ),
+
+            semesterLabel:
+              normalizeNullableText(
+                semester
+                  ?.semesterLabel,
+                100
+              ),
+          })
+        )
+        .filter(
+          (
+            semester:
+              any
+          ) =>
+            semester
+              .semesterOrder >
+            0
+        );
+
+    const originalLastSemesterOrder =
+      normalizedSemesters.reduce(
+        (
+          maxValue:
+            number,
+          semester:
+            any
+        ) =>
+          Math.max(
+            maxValue,
+            Number(
+              semester
+                .semesterOrder ||
+              0
+            )
+          ),
+        0
+      );
+
+    const expectedNextSemesterOrder =
+      originalLastSemesterOrder +
+      1;
+
+    if (
+      semesterOrder !==
+      expectedNextSemesterOrder
+    ) {
+      throw new Error(
+        `다음 학기 순서는 ${expectedNextSemesterOrder}이어야 합니다.`
+      );
+    }
+
+    const duplicateOrder =
+      normalizedSemesters.some(
+        (
+          semester:
+            any
+        ) =>
+          Number(
+            semester
+              .semesterOrder
+          ) ===
+          semesterOrder
+      );
+
+    if (
+      duplicateOrder
+    ) {
+      throw new Error(
+        `${semesterOrder}학기는 이미 등록되어 있습니다.`
+      );
+    }
+
+    const normalizedSemesterLabel =
+  normalizedInputSemesterLabel
+    .replace(
+      /\s+/g,
+      ""
+    )
+    .toLowerCase();
+
+const duplicateLabel =
+  normalizedSemesters.some(
+    (
+      semester:
+        any
+    ) =>
+      String(
+        semester
+          .semesterLabel ||
+        ""
+      )
+        .replace(
+          /\s+/g,
+          ""
+        )
+        .toLowerCase() ===
+      normalizedSemesterLabel
+  );
+
+    if (
+  duplicateLabel
+) {
+  throw new Error(
+    `${normalizedInputSemesterLabel}는 이미 등록되어 있습니다.`
+  );
+}
+
+    const plannedMonth =
+      normalizeSemesterPlannedMonth(
+        safeInput.plannedMonth
+      );
+
+    const plannedInstitution =
+      normalizeNullableText(
+        safeInput.plannedInstitution,
+        255
+      );
+
+    const plannedSubjectCount =
+  normalizeNullableNonNegativeInteger(
+    safeInput.plannedSubjectCount,
+    "예정 과목 수"
+  );
+
+if (
+  plannedSubjectCount !==
+    null &&
+  plannedSubjectCount >
+    50
+) {
+  throw new Error(
+    "예정 과목 수는 50개를 초과할 수 없습니다."
+  );
+}
+
+    const plannedAmount =
+  normalizeNullableNonNegativeAmount(
+    safeInput.plannedAmount,
+    "예정 결제금액"
+  );
+
+    const startDate =
+      normalizeSemesterDate(
+        safeInput.startDate
+      );
+
+    const institution =
+      normalizeNullableText(
+        safeInput.institution,
+        255
+      );
+
+    const subjectCount =
+  normalizeNullableNonNegativeInteger(
+    safeInput.subjectCount,
+    "실제 과목 수"
+  );
+
+if (
+  subjectCount !==
+    null &&
+  subjectCount >
+    50
+) {
+  throw new Error(
+    "실제 과목 수는 50개를 초과할 수 없습니다."
+  );
+}
+
+    const paymentAmount =
+  normalizeNullableNonNegativeAmount(
+    safeInput.paymentAmount,
+    "실제 결제금액"
+  );
+
+    const paymentDate =
+      normalizeSemesterDate(
+        safeInput.paymentDate
+      );
+
+    const studentName =
+      normalizeNullableText(
+        (
+          student as
+            any
+        ).clientName,
+        100
+      );
+
+    const assigneeId =
+      normalizePositiveInteger(
+        (
+          student as
+            any
+        ).assigneeId
+      );
+
+    if (
+      assigneeId <=
+      0
+    ) {
+      throw new Error(
+        "학생 담당자 정보가 없어 학기 생성 초안을 만들 수 없습니다."
+      );
+    }
+
+    const createdAt =
+      new Date()
+        .toISOString();
+
+    const warnings:
+      string[] =
+      [];
+
+    if (
+      !plannedMonth
+    ) {
+      warnings.push(
+        "예정 개강월이 입력되지 않았습니다."
+      );
+    }
+
+    if (
+      !plannedInstitution
+    ) {
+      warnings.push(
+        "예정 교육원이 입력되지 않았습니다."
+      );
+    }
+
+    if (
+      plannedSubjectCount ===
+      null
+    ) {
+      warnings.push(
+        "예정 과목 수가 입력되지 않았습니다."
+      );
+    }
+
+    const previewItems:
+      string[] = [
+        `학생 번호 · ${studentId}`,
+        `학생명 · ${studentName || "확인 필요"}`,
+        `학기 순서 · ${semesterOrder}학기`,
+        `학기 구분 · ${normalizedInputSemesterLabel}`,
+        `예정 개강월 · ${plannedMonth || "미입력"}`,
+        `예정 교육원 · ${plannedInstitution || "미입력"}`,
+        `예정 과목 수 · ${
+          plannedSubjectCount === null
+            ? "미입력"
+            : `${plannedSubjectCount}과목`
+        }`,
+        `예정 결제금액 · ${
+          plannedAmount === null
+            ? "미입력"
+            : `${plannedAmount.toLocaleString("ko-KR")}원`
+        }`,
+      ];
+
+    if (
+      startDate
+    ) {
+      previewItems.push(
+        `실제 개강일 · ${startDate}`
+      );
+    }
+
+    if (
+      institution
+    ) {
+      previewItems.push(
+        `실제 교육원 · ${institution}`
+      );
+    }
+
+    if (
+      subjectCount !==
+      null
+    ) {
+      previewItems.push(
+        `실제 과목 수 · ${subjectCount}과목`
+      );
+    }
+
+    if (
+      paymentAmount !==
+      null
+    ) {
+      previewItems.push(
+        `실제 결제금액 · ${paymentAmount.toLocaleString("ko-KR")}원`
+      );
+    }
+
+    if (
+      paymentDate
+    ) {
+      previewItems.push(
+        `결제일 · ${paymentDate}`
+      );
+    }
+
+    return {
+      pendingActionRequired:
+        true,
+
+      studentId,
+
+            studentName,
+
+      semesterOrder,
+
+      semesterLabel:
+        normalizedInputSemesterLabel,
+
+      draft: {
+        studentId,
+
+        studentName,
+
+                assigneeId,
+
+        semesterOrder,
+
+        semesterLabel:
+          normalizedInputSemesterLabel,
+
+        plannedMonth,
+
+        plannedInstitution,
+
+        plannedSubjectCount,
+
+        plannedAmount,
+
+        startDate,
+
+        institution,
+
+        subjectCount,
+
+        paymentAmount,
+
+        paymentDate,
+
+        originalLastSemesterOrder,
+
+        requestedByUserId:
+          context.userId,
+
+        requestedByRole:
+          context.role,
+
+        createdAt,
+      },
+
+      preview: {
+        title:
+          "학생 학기 생성",
+
+        summary:
+  `${
+    studentName ||
+    `학생 #${studentId}`
+  }에게 ${semesterOrder}학기 (${normalizedInputSemesterLabel})를 추가합니다.`,
+
+        sections: [
+          {
+            title:
+  "학기 생성 내용",
+
+            items:
+              previewItems,
+          },
+        ],
+
+        changes:
+          [],
+
+        executionSteps: [
+          "현재 학생 정보와 조직 범위를 다시 확인합니다.",
+          "현재 로그인 사용자가 학생을 수정할 수 있는 담당자인지 다시 확인합니다.",
+          "초안 생성 이후 다른 학기가 추가되지 않았는지 다시 확인합니다.",
+          "동일한 학기 순서와 학기 구분이 존재하지 않는지 다시 확인합니다.",
+          "승인된 내용으로 학생 학기를 생성합니다.",
+          "학기 생성 결과와 변경 내역을 기록합니다.",
+        ],
+
+        missingFields:
+          [],
+
+        warnings,
+
+        canConfirm:
+          true,
+      },
     };
   },
 });

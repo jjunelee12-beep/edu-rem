@@ -352,10 +352,11 @@ export type AiToolName =
   | "risk.studentList"
   | "practice.institutionSearch"
   | "practice.supportStatus"
-  | "error.recentList"
-| "error.detail"
-| "schedule.create"
-| "student.update";
+    | "error.recentList"
+  | "error.detail"
+  | "schedule.create"
+  | "student.update"
+  | "semester.create";
 
 export type AiToolStatus =
   | "started"
@@ -1595,6 +1596,231 @@ export type StudentDashboardToolOutput = {
   nextActions: StudentDashboardNextAction[];
 
   generatedAt: string;
+};
+
+/**
+ * 기존 학생의 학기 생성 승인 초안 입력
+ *
+ * 실제 semesters 테이블을 바로 수정하지 않는다.
+ * AI Tool에서는 사용자 요청을 검증하고
+ * Pending Action에 저장할 초안만 생성한다.
+ *
+ * organizationId, userId, assigneeId는
+ * 서버 AI Context와 학생 원본에서 결정한다.
+ */
+export type SemesterCreateToolInput = {
+  /**
+   * 학기를 생성할 확정된 학생 ID
+   */
+  studentId:
+    number;
+
+  /**
+   * 학생 상세페이지에서 표시되는 학기 순서
+   *
+   * 예:
+   * 첫 번째 학기 = 1
+   * 두 번째 학기 = 2
+   */
+  semesterOrder:
+    number;
+
+  /**
+   * 학기 구분
+   *
+   * 예:
+   * 2026년 1학기
+   * 2026년 2학기
+   */
+  semesterLabel:
+    string;
+
+  /**
+   * 예정 개강월
+   *
+   * YYYYMM 형식
+   *
+   * 예:
+   * 202608
+   */
+  plannedMonth?:
+    string |
+    null;
+
+  /**
+   * 예정 교육원
+   */
+  plannedInstitution?:
+    string |
+    null;
+
+  /**
+   * 예정 과목 수
+   */
+  plannedSubjectCount?:
+    number |
+    null;
+
+  /**
+   * 예정 결제금액
+   */
+  plannedAmount?:
+    number |
+    null;
+
+  /**
+   * 실제 개강일
+   *
+   * YYYY-MM-DD
+   */
+  startDate?:
+    string |
+    null;
+
+  /**
+   * 실제 교육원
+   */
+  institution?:
+    string |
+    null;
+
+  /**
+   * 실제 과목 수
+   */
+  subjectCount?:
+    number |
+    null;
+
+  /**
+   * 실제 결제금액
+   */
+  paymentAmount?:
+    number |
+    null;
+
+  /**
+   * 결제일
+   *
+   * YYYY-MM-DD
+   */
+  paymentDate?:
+    string |
+    null;
+};
+
+/**
+ * AI 학기 생성 승인 초안
+ *
+ * 초안 생성 당시 학생과 기존 학기 상태를 저장한다.
+ * 승인 실행 시 현재 DB 상태와 다시 비교하여
+ * 중복 학기 또는 동시 수정 여부를 검사한다.
+ */
+export type SemesterCreateDraft = {
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  /**
+   * 초안 생성 당시 학생 담당자
+   *
+   * 프론트 입력값이 아니라
+   * 서버에서 조회한 학생 원본 기준이다.
+   */
+  assigneeId:
+    number;
+
+  semesterOrder:
+    number;
+
+  semesterLabel:
+    string;
+
+  plannedMonth:
+    string |
+    null;
+
+  plannedInstitution:
+    string |
+    null;
+
+  plannedSubjectCount:
+    number |
+    null;
+
+  plannedAmount:
+    number |
+    null;
+
+  startDate:
+    string |
+    null;
+
+  institution:
+    string |
+    null;
+
+  subjectCount:
+    number |
+    null;
+
+  paymentAmount:
+    number |
+    null;
+
+  paymentDate:
+    string |
+    null;
+
+  /**
+   * 초안 생성 당시 해당 학생의 마지막 학기 순서
+   *
+   * 승인 실행 전에 다시 조회하여
+   * 다른 사용자가 먼저 학기를 추가했는지 확인한다.
+   */
+  originalLastSemesterOrder:
+    number;
+
+  requestedByUserId:
+    number;
+
+  requestedByRole:
+    AiRole;
+
+  createdAt:
+    string;
+};
+
+/**
+ * semester.create Tool 결과
+ *
+ * pendingActionRequired가 true여도
+ * 실제 학기는 아직 생성되지 않은 상태다.
+ */
+export type SemesterCreateToolOutput = {
+  pendingActionRequired:
+    true;
+
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  semesterOrder:
+    number;
+
+  semesterLabel:
+    string;
+
+  draft:
+    SemesterCreateDraft;
+
+  preview:
+    AiPendingActionPreview;
 };
 
 export type ScheduleCreateToolInput = {

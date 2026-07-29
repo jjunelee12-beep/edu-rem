@@ -995,7 +995,10 @@ consultationId?:
 scheduleId?:
   number | null;
 
-  planId?:
+    planId?:
+    number | null;
+
+  semesterId?:
     number | null;
 
   semesterIds?:
@@ -1280,6 +1283,9 @@ semesters?:
     DashboardAIPendingAction | null;
 
 scheduleCreateDraft?:
+  unknown;
+
+semesterCreateDraft?:
   unknown;
 
 consultationUpdateDraft?:
@@ -5877,6 +5883,14 @@ const isScheduleCreate =
   ) ===
   "schedule_create";
 
+const isSemesterCreate =
+  String(
+    pendingAction
+      .actionType ||
+    ""
+  ) ===
+  "semester_create";
+
 const isConsultationUpdate =
   String(
     pendingAction
@@ -5952,11 +5966,13 @@ const consultationId =
   ? "AI 학생정보 수정"
   : isConsultationUpdate
     ? "AI 상담DB 수정"
-    : isScheduleCreate
-      ? "AI 일정 등록"
-      : isDocumentImport
-        ? "AI 문서 CRM 반영"
-        : "AI 학생 통합등록"}
+    : isSemesterCreate
+      ? "AI 학기 생성"
+      : isScheduleCreate
+        ? "AI 일정 등록"
+        : isDocumentImport
+          ? "AI 문서 CRM 반영"
+          : "AI 학생 통합등록"}
 </p>
 
             <p className="mt-1 text-base font-extrabold text-slate-900">
@@ -5966,11 +5982,13 @@ const consultationId =
       ? "학생 기본정보 수정"
       : isConsultationUpdate
         ? "상담DB 정보 수정"
-        : isScheduleCreate
-          ? "학생 일정 등록"
-          : isDocumentImport
-            ? "문서 CRM 반영"
-            : "등록예정 학생 생성 및 과목설계"
+        : isSemesterCreate
+          ? "학생 학기 생성"
+          : isScheduleCreate
+            ? "학생 일정 등록"
+            : isDocumentImport
+              ? "문서 CRM 반영"
+              : "등록예정 학생 생성 및 과목설계"
   )}
             </p>
 
@@ -6281,7 +6299,8 @@ const sectionTitle =
      {isExecuted &&
   result &&
   !isConsultationUpdate &&
-  !isStudentUpdate && (
+  !isStudentUpdate &&
+  !isSemesterCreate && (
     <div className="border-t border-emerald-100 bg-emerald-50/70 px-4 py-4">
       <div className="flex items-center gap-2 text-emerald-700">
         <CheckCircle2 className="h-4 w-4" />
@@ -6436,6 +6455,59 @@ const sectionTitle =
     </div>
   )}
 
+{isSemesterCreate &&
+  isExecuted && (
+    <div className="border-t border-emerald-100 bg-emerald-50/70 px-4 py-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+          <CheckCircle2 className="h-5 w-5" />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-extrabold text-emerald-800">
+            학생 학기 생성 완료
+          </p>
+
+          <p className="mt-1 text-[11px] leading-5 text-emerald-700">
+            {result?.message ||
+              message.content ||
+              "학생 학기가 정상적으로 생성되었습니다."}
+          </p>
+
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="rounded-xl bg-white px-3 py-2.5">
+              <p className="text-[10px] font-bold text-slate-400">
+                생성 학기 번호
+              </p>
+
+              <p className="mt-1 text-xs font-black text-slate-800">
+                {result?.semesterId
+                  ? `#${result.semesterId}`
+                  : asArray<number>(
+                      result?.semesterIds
+                    )[0]
+                    ? `#${asArray<number>(
+                        result?.semesterIds
+                      )[0]}`
+                    : "확인 필요"}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-white px-3 py-2.5">
+              <p className="text-[10px] font-bold text-slate-400">
+                처리 상태
+              </p>
+
+              <p className="mt-1 text-xs font-black text-emerald-700">
+                생성 완료
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )}
+
 {isConsultationUpdate &&
   isExecuted && (
     <div className="border-t border-emerald-100 bg-emerald-50/70 px-4 py-4">
@@ -6529,11 +6601,13 @@ const sectionTitle =
   ? "확인 후 학생정보 수정"
   : isConsultationUpdate
     ? "확인 후 상담 수정"
-    : isScheduleCreate
-      ? "확인 후 일정 등록"
-      : isDocumentImport
-        ? "확인 후 CRM 반영"
-        : "확인 후 등록"}
+    : isSemesterCreate
+      ? "확인 후 학기 생성"
+      : isScheduleCreate
+        ? "확인 후 일정 등록"
+        : isDocumentImport
+          ? "확인 후 CRM 반영"
+          : "확인 후 등록"}
           </button>
         </div>
       )}
@@ -6552,10 +6626,11 @@ const sectionTitle =
         }
         className="flex h-10 w-full items-center justify-center rounded-xl bg-[#2F6B3B] text-xs font-bold text-white transition hover:bg-[#285d33]"
       >
-       {isStudentUpdate ||
-isDocumentImport
-  ? "학생 상세보기"
-  : "생성된 학생 상세보기"}
+        {isStudentUpdate ||
+        isSemesterCreate ||
+        isDocumentImport
+          ? "학생 상세보기"
+          : "생성된 학생 상세보기"}
       </button>
     </div>
   )}

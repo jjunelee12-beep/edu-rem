@@ -13,7 +13,8 @@ import type {
   AiUserContext,
   AiWorkflowType,
   AiWorkSession,
-  AiWorkSessionPatch,
+    AiWorkSessionPatch,
+  SemesterCreateToolOutput,
   StudentUpdateToolOutput,
 } from "./ai.types";
 
@@ -135,6 +136,25 @@ const MAX_FUNCTION_CALL_OUTPUT_LENGTH =
   50_000;
 
 /**
+ * 한 번의 사용자 요청에서 실행할 수 있는
+ * 최대 CRM 조회 Tool 횟수다.
+ *
+ * 최초 Tool 실행을 포함한 전체 횟수이며,
+ * 무한 Tool 호출을 방지한다.
+ */
+const MAX_AI_TOOL_CALL_STEPS =
+  4;
+
+/**
+ * 학생 종합조회에서 제시한 다음 업무를
+ * 사용자 후속 답변과 연결해 유지하는 시간이다.
+ */
+const DASHBOARD_NEXT_ACTION_EXPIRES_MS =
+  30 *
+  60 *
+  1000;
+
+/**
  * 서버 내부 Registry Tool 이름을
  * OpenAI Function Tool 이름으로 변환한다.
  */
@@ -182,8 +202,9 @@ type AiRunnerIntent =
   | "pending_action_cancel"
   | "student_search"
   | "student_summary"
-  | "student_dashboard"
+    | "student_dashboard"
   | "student_update"
+  | "semester_create"
   | "consultation_search"
   | "consultation_update"
   | "missing_data"
@@ -202,8 +223,9 @@ type AiRunnerPlan = {
     toolName:
     | "student.search"
     | "student.summary"
-    | "student.dashboard"
+        | "student.dashboard"
     | "student.update"
+    | "semester.create"
     | "consultation.search"
     | "consultation.update"
     | "alert.missingData"
@@ -568,6 +590,10 @@ studentUpdateDraft?:
   StudentUpdateToolOutput |
   null;
 
+semesterCreateDraft?:
+  SemesterCreateToolOutput |
+  null;
+
   meta: {
     scope: AiUserContext["scope"];
     organizationId: number;
@@ -582,8 +608,11 @@ function getWorkflowTypeFromIntent(
   switch (
     intent
   ) {
-    case "student_update":
+        case "student_update":
       return "student_update";
+
+    case "semester_create":
+      return "semester_create";
 
     case "consultation_update":
       return "consultation_update";
@@ -619,6 +648,46 @@ function getWaitingForFromValidationMessage(params: {
   ) {
     return [
       "updates",
+    ];
+  }
+
+  if (
+    params.toolName ===
+    "semester.create"
+  ) {
+    if (
+      message.includes(
+        "학생"
+      )
+    ) {
+      return [
+        "studentId",
+      ];
+    }
+
+    if (
+      message.includes(
+        "학기 순서"
+      )
+    ) {
+      return [
+        "semesterOrder",
+      ];
+    }
+
+    if (
+      message.includes(
+        "학기 구분"
+      )
+    ) {
+      return [
+        "semesterLabel",
+      ];
+    }
+
+    return [
+      "semesterOrder",
+      "semesterLabel",
     ];
   }
 
@@ -723,6 +792,9 @@ function buildCollectingDataWorkSessionPatch(params: {
   validationMessage:
     string |
     null;
+
+  workSession:
+    AiWorkSession;
 }): AiWorkSessionPatch | null {
   const workflowType =
     getWorkflowTypeFromIntent(
@@ -735,8 +807,136 @@ function buildCollectingDataWorkSessionPatch(params: {
     return null;
   }
 
-  return {
-    workflow: {
+const studentId =
+  Number(
+    params.plan.input
+      .studentId ??
+    0
+  );
+
+const consultationId =
+  Number(
+    params.plan.input
+      .consultationId ??
+    0
+  );
+
+const currentTarget =
+  params.workSession
+    .activeTarget;
+
+const existingStudentName =
+  currentTarget?.type ===
+    "student" &&
+  Number(
+    currentTarget.id
+  ) ===
+    Math.floor(
+      studentId
+    )
+    ? String(
+        currentTarget.name ||
+        ""
+      ).trim() ||
+      null
+    : null;
+
+const existingConsultationName =
+  currentTarget?.type ===
+    "consultation" &&
+  Number(
+    currentTarget.id
+  ) ===
+    Math.floor(
+      consultationId
+    )
+    ? String(
+        currentTarget.name ||
+        ""
+      ).trim() ||
+      null
+    : null;
+
+const studentTargetPatch:
+  AiWorkSessionPatch =
+  Number.isFinite(
+    studentId
+  ) &&
+  studentId > 0
+    ? {
+        activeTarget: {
+          type:
+            "student",
+
+          id:
+            Math.floor(
+              studentId
+            ),
+
+          name:
+  existingStudentName,
+        },
+
+        linkedContext: {
+          studentId:
+            Math.floor(
+              studentId
+            ),
+        },
+      }
+    : {};
+
+const consultationTargetPatch:
+  AiWorkSessionPatch =
+  Number.isFinite(
+    consultationId
+  ) &&
+  consultationId > 0
+    ? {
+        activeTarget: {
+          type:
+            "consultation",
+
+          id:
+            Math.floor(
+              consultationId
+            ),
+
+          name:
+  existingConsultationName,
+        },
+
+        linkedContext: {
+          consultationId:
+            Math.floor(
+              consultationId
+            ),
+        },
+      }
+    : {};
+
+return {
+  ...(
+        workflowType ===
+      "student_update" ||
+    workflowType ===
+      "semester_create" ||
+    workflowType ===
+      "schedule_create"
+      ? studentTargetPatch
+      : {}
+  ),
+
+  ...(
+    workflowType ===
+      "consultation_update" ||
+    workflowType ===
+      "consultation_registration"
+      ? consultationTargetPatch
+      : {}
+  ),
+
+  workflow: {
       type:
         workflowType,
 
@@ -767,6 +967,9 @@ function buildAwaitingConfirmationWorkSessionPatch(params: {
 
   toolResultData:
     unknown;
+
+  workSession:
+    AiWorkSession;
 }): AiWorkSessionPatch | null {
   const workflowType =
     getWorkflowTypeFromIntent(
@@ -801,24 +1004,171 @@ function buildAwaitingConfirmationWorkSessionPatch(params: {
           Record<string, unknown>
       : params.plan.input;
 
+const studentId =
+  Number(
+    draft.studentId ??
+    resultData.studentId ??
+    params.plan.input.studentId ??
+    0
+  );
+
+const consultationId =
+  Number(
+    draft.consultationId ??
+    resultData.consultationId ??
+    params.plan.input.consultationId ??
+    0
+  );
+
+const currentTarget =
+  params.workSession
+    .activeTarget;
+
+const existingStudentName =
+  currentTarget?.type ===
+    "student" &&
+  Number(
+    currentTarget.id
+  ) ===
+    Math.floor(
+      studentId
+    )
+    ? String(
+        currentTarget.name ||
+        ""
+      ).trim() ||
+      null
+    : null;
+
+const existingConsultationName =
+  currentTarget?.type ===
+    "consultation" &&
+  Number(
+    currentTarget.id
+  ) ===
+    Math.floor(
+      consultationId
+    )
+    ? String(
+        currentTarget.name ||
+        ""
+      ).trim() ||
+      null
+    : null;
+
+const studentName =
+  String(
+    resultData.studentName ??
+    resultData.clientName ??
+    draft.studentName ??
+    existingStudentName ??
+    ""
+  ).trim() ||
+  null;
+
+const consultationName =
+  String(
+    resultData.clientName ??
+    draft.clientName ??
+    existingConsultationName ??
+    ""
+  ).trim() ||
+  null;
+
+const studentTargetPatch:
+  AiWorkSessionPatch =
+  Number.isFinite(
+    studentId
+  ) &&
+  studentId > 0
+    ? {
+        activeTarget: {
+          type:
+            "student",
+
+          id:
+            Math.floor(
+              studentId
+            ),
+
+          name:
+            studentName,
+        },
+
+        linkedContext: {
+          studentId:
+            Math.floor(
+              studentId
+            ),
+        },
+      }
+    : {};
+
+const consultationTargetPatch:
+  AiWorkSessionPatch =
+  Number.isFinite(
+    consultationId
+  ) &&
+  consultationId > 0
+    ? {
+        activeTarget: {
+          type:
+            "consultation",
+
+          id:
+            Math.floor(
+              consultationId
+            ),
+
+          name:
+            consultationName,
+        },
+
+        linkedContext: {
+          consultationId:
+            Math.floor(
+              consultationId
+            ),
+        },
+      }
+    : {};
+
   return {
-    workflow: {
-      type:
-        workflowType,
+  ...(
+        workflowType ===
+      "student_update" ||
+    workflowType ===
+      "semester_create" ||
+    workflowType ===
+      "schedule_create"
+      ? studentTargetPatch
+      : {}
+  ),
 
-      step:
-        "awaiting_confirmation",
+  ...(
+    workflowType ===
+      "consultation_update"
+      ? consultationTargetPatch
+      : {}
+  ),
 
-      clearDraft:
-        true,
+  workflow: {
+    type:
+      workflowType,
 
-      draftPatch:
-        draft,
+    step:
+      "awaiting_confirmation",
 
-      waitingFor:
-        [],
-    },
-  };
+    clearDraft:
+      true,
+
+    draftPatch:
+      draft,
+
+    waitingFor:
+      [],
+  },
+};
 }
 
 function buildRegistrationWorkSessionPatch(params: {
@@ -827,9 +1177,40 @@ function buildRegistrationWorkSessionPatch(params: {
 
   originalMessage:
     string;
+
+  workSession:
+    AiWorkSession;
 }): AiWorkSessionPatch {
+  const normalizedConsultationId =
+    Number.isFinite(
+      params.consultationId
+    ) &&
+    params.consultationId > 0
+      ? Math.floor(
+          params.consultationId
+        )
+      : 0;
+
+  const currentTarget =
+    params.workSession
+      .activeTarget;
+
+  const existingConsultationName =
+    currentTarget?.type ===
+      "consultation" &&
+    Number(
+      currentTarget.id
+    ) ===
+      normalizedConsultationId
+      ? String(
+          currentTarget.name ||
+          ""
+        ).trim() ||
+        null
+      : null;
+
   if (
-    params.consultationId >
+    normalizedConsultationId >
     0
   ) {
     return {
@@ -838,19 +1219,15 @@ function buildRegistrationWorkSessionPatch(params: {
           "consultation",
 
         id:
-          Math.floor(
-            params.consultationId
-          ),
+          normalizedConsultationId,
 
         name:
-          null,
+          existingConsultationName,
       },
 
       linkedContext: {
         consultationId:
-          Math.floor(
-            params.consultationId
-          ),
+          normalizedConsultationId,
       },
 
       workflow: {
@@ -865,9 +1242,7 @@ function buildRegistrationWorkSessionPatch(params: {
 
         draftPatch: {
           consultationId:
-            Math.floor(
-              params.consultationId
-            ),
+            normalizedConsultationId,
 
           originalMessage:
             params.originalMessage,
@@ -903,6 +1278,816 @@ function buildRegistrationWorkSessionPatch(params: {
 }
 
 /**
+ * 학생 종합조회 nextActions 중
+ * 사용자에게 먼저 제시할 업무 하나를 선택한다.
+ *
+ * 동일 우선순위에서는 Tool 결과의 기존 순서를 유지한다.
+ */
+function selectPrimaryDashboardNextAction(
+  value:
+    unknown
+): Record<
+  string,
+  unknown
+> | null {
+  if (
+    !Array.isArray(
+      value
+    )
+  ) {
+    return null;
+  }
+
+  const actions =
+    value.filter(
+      (
+        item
+      ): item is
+        Record<
+          string,
+          unknown
+        > =>
+        Boolean(
+          item
+        ) &&
+        typeof item ===
+          "object" &&
+        !Array.isArray(
+          item
+        )
+    );
+
+  if (
+    actions.length ===
+      0
+  ) {
+    return null;
+  }
+
+  const priorityScore:
+    Record<
+      string,
+      number
+    > = {
+      high:
+        3,
+
+      medium:
+        2,
+
+      low:
+        1,
+    };
+
+  return actions
+    .map(
+      (
+        action,
+        index
+      ) => ({
+        action,
+
+        index,
+
+        score:
+          priorityScore[
+            String(
+              action.priority ||
+              ""
+            )
+          ] ||
+          0,
+      })
+    )
+    .sort(
+      (
+        left,
+        right
+      ) =>
+        right.score -
+          left.score ||
+        left.index -
+          right.index
+    )[0]
+    ?.action ||
+    null;
+}
+
+/**
+ * student.dashboard 결과에 포함된 다음 업무를
+ * AI 업무 세션의 lastPresentedAction에 저장한다.
+ *
+ * 실제 변경 작업이나 Pending Action을 생성하지 않고,
+ * 사용자의 다음 자연어 답변이 어떤 추천을 가리키는지
+ * 확인하기 위한 문맥만 저장한다.
+ */
+function buildDashboardNextActionWorkSessionPatch(params: {
+  toolInput:
+    Record<
+      string,
+      unknown
+    >;
+
+  toolResult:
+    AiToolExecutionResult<any>;
+
+  workSession:
+    AiWorkSession;
+}): AiWorkSessionPatch | null {
+  if (
+    params.toolResult.success !==
+      true
+  ) {
+    return null;
+  }
+
+  const data =
+    params.toolResult.data &&
+    typeof params.toolResult.data ===
+      "object" &&
+    !Array.isArray(
+      params.toolResult.data
+    )
+      ? params.toolResult.data as
+          Record<
+            string,
+            any
+          >
+      : {};
+
+  const student =
+    data.student &&
+    typeof data.student ===
+      "object" &&
+    !Array.isArray(
+      data.student
+    )
+      ? data.student as
+          Record<
+            string,
+            unknown
+          >
+      : {};
+
+  const studentId =
+    Number(
+      student.id ??
+      data.studentId ??
+      params.toolInput
+        .studentId ??
+      0
+    );
+
+  if (
+    !Number.isFinite(
+      studentId
+    ) ||
+    studentId <= 0
+  ) {
+    return null;
+  }
+
+const clearPreviousWorkflow =
+  shouldClearWorkflowForTargetChange({
+    workSession:
+      params.workSession,
+
+    targetType:
+      "student",
+
+    targetId:
+      studentId,
+  });
+
+  const studentName =
+    String(
+      student.clientName ??
+      data.studentName ??
+      ""
+    ).trim() ||
+    null;
+
+  const nextActions =
+  Array.isArray(
+    data.nextActions
+  )
+    ? data.nextActions
+    : [];
+
+/**
+ * 사용자 답변에 표시되는 실제 배열 순서를
+ * displayIndex와 함께 저장한다.
+ *
+ * "첫 번째", "두 번째" 같은 후속 요청은
+ * 이 번호를 기준으로 해석한다.
+ */
+const presentedNextActions =
+  nextActions
+    .filter(
+      (
+        action
+      ) =>
+        Boolean(
+          action
+        ) &&
+        typeof action ===
+          "object" &&
+        !Array.isArray(
+          action
+        )
+    )
+    .slice(
+      0,
+      10
+    )
+    .map(
+      (
+        action,
+        index
+      ) => ({
+        ...action,
+
+        displayIndex:
+          index + 1,
+      })
+    );
+
+const primaryAction =
+  selectPrimaryDashboardNextAction(
+    presentedNextActions
+  );
+
+  /**
+   * 추천할 다음 업무가 없으면
+   * 이전에 저장된 추천 업무가 남지 않도록 비운다.
+   */
+  if (
+    !primaryAction
+  ) {
+    return {
+      activeTarget: {
+        type:
+          "student",
+
+        id:
+          Math.floor(
+            studentId
+          ),
+
+        name:
+          studentName,
+      },
+
+      linkedContext: {
+        studentId:
+          Math.floor(
+            studentId
+          ),
+      },
+
+      lastPresentedAction:
+        null,
+
+...(
+  clearPreviousWorkflow
+    ? {
+        workflow:
+          buildClearedWorkflowPatch(),
+      }
+    : {}
+),
+    };
+  }
+
+  const actionCode =
+    String(
+      primaryAction.code ||
+      "next_action"
+    )
+      .trim()
+      .slice(
+        0,
+        100
+      ) ||
+    "next_action";
+
+  const expiresAt =
+    new Date(
+      Date.now() +
+      DASHBOARD_NEXT_ACTION_EXPIRES_MS
+    ).toISOString();
+
+  return {
+    activeTarget: {
+      type:
+        "student",
+
+      id:
+        Math.floor(
+          studentId
+        ),
+
+      name:
+        studentName,
+    },
+
+    linkedContext: {
+      studentId:
+        Math.floor(
+          studentId
+        ),
+    },
+
+    lastPresentedAction: {
+      actionId:
+        `student-dashboard-${Math.floor(
+          studentId
+        )}-${actionCode}`,
+
+      actionType:
+        "student_dashboard_next_action",
+
+      targetType:
+        "student",
+
+      targetId:
+        Math.floor(
+          studentId
+        ),
+
+      payload: {
+        studentId:
+          Math.floor(
+            studentId
+          ),
+
+        studentName,
+
+        recommendedAction: {
+  ...primaryAction,
+
+  isPrimaryRecommendation:
+    true,
+},
+
+        nextActions:
+  presentedNextActions,
+
+        sourceTool:
+          "student.dashboard",
+
+        generatedAt:
+          String(
+            data.generatedAt ||
+            new Date()
+              .toISOString()
+          ),
+      },
+
+      expiresAt,
+    },
+...(
+  clearPreviousWorkflow
+    ? {
+        workflow:
+          buildClearedWorkflowPatch(),
+      }
+    : {}
+),
+  };
+}
+
+/**
+ * 조회 Tool 실행 결과에서 확정된 학생 또는 상담 대상을
+ * AI 업무 세션의 현재 작업 대상으로 저장한다.
+ *
+ * 검색 결과가 여러 건이면 임의로 대상을 선택하지 않는다.
+ * 학생 단위 조회 Tool은 확정된 studentId를 기준으로 저장한다.
+ */
+function buildReadTargetWorkSessionPatch(params: {
+  toolName:
+    AiToolName;
+
+  toolInput:
+    Record<
+      string,
+      unknown
+    >;
+
+  toolResult:
+    AiToolExecutionResult<any>;
+
+  workSession:
+    AiWorkSession;
+}): AiWorkSessionPatch | null {
+  if (
+    params.toolResult.success !==
+      true
+  ) {
+    return null;
+  }
+
+  const data =
+    params.toolResult.data &&
+    typeof params.toolResult.data ===
+      "object" &&
+    !Array.isArray(
+      params.toolResult.data
+    )
+      ? params.toolResult.data as
+          Record<
+            string,
+            any
+          >
+      : {};
+
+/**
+ * 학생 종합조회는 현재 학생뿐 아니라
+ * 사용자에게 제시한 다음 업무까지 함께 저장한다.
+ */
+if (
+  params.toolName ===
+    "student.dashboard"
+) {
+  return buildDashboardNextActionWorkSessionPatch({
+  toolInput:
+    params.toolInput,
+
+  toolResult:
+    params.toolResult,
+
+  workSession:
+    params.workSession,
+});
+}
+
+  /**
+   * 학생 검색은 결과가 정확히 한 명일 때만
+   * 현재 학생으로 확정한다.
+   */
+  if (
+    params.toolName ===
+      "student.search"
+  ) {
+    const students =
+      Array.isArray(
+        data.students
+      )
+        ? data.students
+        : [];
+
+    const count =
+      Number(
+        data.count ??
+        students.length
+      );
+
+    if (
+      count !== 1 ||
+      students.length !==
+        1
+    ) {
+      return null;
+    }
+
+    const student =
+      students[0];
+
+    const studentId =
+      Number(
+        student?.id ||
+        0
+      );
+
+    if (
+      !Number.isFinite(
+        studentId
+      ) ||
+      studentId <= 0
+    ) {
+      return null;
+    }
+
+    const studentName =
+      String(
+        student?.clientName ||
+        ""
+      ).trim() ||
+      null;
+
+const clearPreviousDashboardAction =
+  shouldClearDashboardNextActionForTarget({
+    workSession:
+      params.workSession,
+
+    targetType:
+      "student",
+
+    targetId:
+      studentId,
+  });
+
+const clearPreviousWorkflow =
+  shouldClearWorkflowForTargetChange({
+    workSession:
+      params.workSession,
+
+    targetType:
+      "student",
+
+    targetId:
+      studentId,
+  });
+
+   return {
+  activeTarget: {
+    type:
+      "student",
+
+    id:
+      Math.floor(
+        studentId
+      ),
+
+    name:
+      studentName,
+  },
+
+  linkedContext: {
+  studentId:
+    Math.floor(
+      studentId
+    ),
+},
+
+...(
+  clearPreviousDashboardAction
+    ? {
+        lastPresentedAction:
+          null,
+      }
+    : {}
+),
+
+...(
+  clearPreviousWorkflow
+    ? {
+        workflow:
+          buildClearedWorkflowPatch(),
+      }
+    : {}
+),
+};
+  }
+
+  /**
+   * 상담 검색 역시 결과가 정확히 한 건일 때만
+   * 현재 상담 대상으로 확정한다.
+   */
+  if (
+    params.toolName ===
+      "consultation.search"
+  ) {
+    const consultations =
+      Array.isArray(
+        data.consultations
+      )
+        ? data.consultations
+        : [];
+
+    const count =
+      Number(
+        data.count ??
+        consultations.length
+      );
+
+    if (
+      count !== 1 ||
+      consultations.length !==
+        1
+    ) {
+      return null;
+    }
+
+    const consultation =
+      consultations[0];
+
+    const consultationId =
+      Number(
+        consultation?.id ||
+        0
+      );
+
+    if (
+      !Number.isFinite(
+        consultationId
+      ) ||
+      consultationId <= 0
+    ) {
+      return null;
+    }
+
+    const consultationName =
+      String(
+        consultation
+          ?.clientName ||
+        ""
+      ).trim() ||
+      null;
+
+const clearPreviousDashboardAction =
+  shouldClearDashboardNextActionForTarget({
+    workSession:
+      params.workSession,
+
+    targetType:
+      "consultation",
+
+    targetId:
+      consultationId,
+  });
+
+const clearPreviousWorkflow =
+  shouldClearWorkflowForTargetChange({
+    workSession:
+      params.workSession,
+
+    targetType:
+      "consultation",
+
+    targetId:
+      consultationId,
+  });
+
+    return {
+  activeTarget: {
+    type:
+      "consultation",
+
+    id:
+      Math.floor(
+        consultationId
+      ),
+
+    name:
+      consultationName,
+  },
+
+  linkedContext: {
+  consultationId:
+    Math.floor(
+      consultationId
+    ),
+},
+
+...(
+  clearPreviousDashboardAction
+    ? {
+        lastPresentedAction:
+          null,
+      }
+    : {}
+),
+
+...(
+  clearPreviousWorkflow
+    ? {
+        workflow:
+          buildClearedWorkflowPatch(),
+      }
+    : {}
+),
+};
+  }
+
+  /**
+   * 학생 단위 조회 Tool은 Tool 입력 또는 결과의
+   * 실제 studentId를 사용한다.
+   */
+  const studentTargetTools =
+    new Set([
+      "student.summary",
+      "student.dashboard",
+      "risk.studentDetail",
+      "practice.institutionSearch",
+      "practice.supportStatus",
+    ]);
+
+  if (
+    !studentTargetTools.has(
+      params.toolName
+    )
+  ) {
+    return null;
+  }
+
+  const resultStudent =
+    data.student &&
+    typeof data.student ===
+      "object" &&
+    !Array.isArray(
+      data.student
+    )
+      ? data.student as
+          Record<
+            string,
+            unknown
+          >
+      : {};
+
+  const studentId =
+    Number(
+      resultStudent.id ??
+      data.studentId ??
+      params.toolInput
+        .studentId ??
+      0
+    );
+
+  if (
+    !Number.isFinite(
+      studentId
+    ) ||
+    studentId <= 0
+  ) {
+    return null;
+  }
+
+  const studentName =
+    String(
+      resultStudent
+        .clientName ??
+      data.studentName ??
+      ""
+    ).trim() ||
+    null;
+
+const clearPreviousDashboardAction =
+  shouldClearDashboardNextActionForTarget({
+    workSession:
+      params.workSession,
+
+    targetType:
+      "student",
+
+    targetId:
+      studentId,
+  });
+
+const clearPreviousWorkflow =
+  shouldClearWorkflowForTargetChange({
+    workSession:
+      params.workSession,
+
+    targetType:
+      "student",
+
+    targetId:
+      studentId,
+  });
+
+  return {
+  activeTarget: {
+    type:
+      "student",
+
+    id:
+      Math.floor(
+        studentId
+      ),
+
+    name:
+      studentName,
+  },
+
+  linkedContext: {
+  studentId:
+    Math.floor(
+      studentId
+    ),
+},
+
+...(
+  clearPreviousDashboardAction
+    ? {
+        lastPresentedAction:
+          null,
+      }
+    : {}
+),
+
+...(
+  clearPreviousWorkflow
+    ? {
+        workflow:
+          buildClearedWorkflowPatch(),
+      }
+    : {}
+),
+};
+}
+
+/**
  * 실제 DB를 즉시 변경하지는 않지만
  * 사용자 승인용 변경 초안을 만드는 Tool인지 확인한다.
  */
@@ -912,6 +2097,7 @@ function isAiDraftTool(
 ): boolean {
   return [
     "student.update",
+    "semester.create",
     "consultation.update",
     "schedule.create",
   ].includes(
@@ -952,13 +2138,15 @@ function isOpenAiCallableTool(
     );
   }
 
-  if (
+   if (
     tool.accessMode ===
     "draft"
   ) {
     return (
       tool.name ===
         "schedule.create" ||
+      tool.name ===
+        "semester.create" ||
       tool.name ===
         "consultation.update" ||
       tool.name ===
@@ -1224,8 +2412,11 @@ function getIntentFromToolName(
     case "student.dashboard":
       return "student_dashboard";
 
-    case "student.update":
+        case "student.update":
       return "student_update";
+
+    case "semester.create":
+      return "semester_create";
 
     case "consultation.search":
       return "consultation_search";
@@ -1533,9 +2724,59 @@ function normalizeOpenAiToolInput(
         );
     }
 
-    normalized.isGlobal =
+        normalized.isGlobal =
       normalized.isGlobal ===
         true;
+  }
+
+  if (
+    toolName ===
+      "semester.create"
+  ) {
+    if (
+      "semesterOrder" in
+        normalized
+    ) {
+      const semesterOrder =
+        Number(
+          normalized.semesterOrder
+        );
+
+      if (
+        Number.isInteger(
+          semesterOrder
+        ) &&
+        semesterOrder >=
+          1 &&
+        semesterOrder <=
+          20
+      ) {
+        normalized.semesterOrder =
+          semesterOrder;
+      } else {
+        delete normalized.semesterOrder;
+      }
+    }
+
+    if (
+      "semesterLabel" in
+        normalized
+    ) {
+      const semesterLabel =
+        String(
+          normalized.semesterLabel ||
+          ""
+        ).trim();
+
+      if (
+        semesterLabel
+      ) {
+        normalized.semesterLabel =
+          semesterLabel;
+      } else {
+        delete normalized.semesterLabel;
+      }
+    }
   }
 
   return normalized;
@@ -1548,6 +2789,33 @@ type AiRunnerToolInputValidation = {
   message:
     string |
     null;
+};
+
+/**
+ * 조회 Tool을 연속 실행한 뒤
+ * 사용자 답변과 마지막 Tool 결과를 함께 반환한다.
+ *
+ * 마지막 Tool 결과를 반환해야 프론트에서도
+ * 실제 최종 조회 화면을 표시할 수 있다.
+ */
+type AiNaturalToolReplyResult = {
+  reply:
+    string;
+
+  toolName:
+    AiToolName;
+
+  toolInput:
+    Record<
+      string,
+      unknown
+    >;
+
+  toolResult:
+    AiToolExecutionResult<any>;
+
+  toolCallCount:
+    number;
 };
 
 /**
@@ -1626,6 +2894,66 @@ if (
 
         message:
           "확인할 학생을 먼저 선택해주세요.",
+      };
+    }
+  }
+
+    if (
+    toolName ===
+      "semester.create"
+  ) {
+    const semesterOrder =
+      Number(
+        input.semesterOrder
+      );
+
+    if (
+      !Number.isInteger(
+        semesterOrder
+      ) ||
+      semesterOrder <
+        1 ||
+      semesterOrder >
+        20
+    ) {
+      return {
+        valid:
+          false,
+
+        message:
+          "생성할 학기 순서를 1부터 20 사이의 정수로 말씀해주세요.",
+      };
+    }
+
+    const semesterLabel =
+      String(
+        input.semesterLabel ||
+        ""
+      ).trim();
+
+    if (
+      !semesterLabel
+    ) {
+      return {
+        valid:
+          false,
+
+        message:
+          "생성할 학기 구분이 필요합니다.",
+      };
+    }
+
+    if (
+      !/^(\d{4})년\s*([12])학기$/.test(
+        semesterLabel
+      )
+    ) {
+      return {
+        valid:
+          false,
+
+        message:
+          "학기 구분을 연도와 1학기 또는 2학기 형식으로 말씀해주세요.",
       };
     }
   }
@@ -1863,10 +3191,11 @@ function isStudentTargetTool(
     string |
     null
 ): boolean {
-    return [
+  return [
     "student.summary",
     "student.dashboard",
     "student.update",
+    "semester.create",
     "risk.studentDetail",
     "practice.institutionSearch",
     "practice.supportStatus",
@@ -1880,10 +3209,60 @@ function isStudentTargetTool(
 }
 
 /**
- * 학생 단위 Tool인데 OpenAI가 studentId를 생략한 경우
- * 현재 화면에서 선택된 학생 ID를 보완한다.
+ * consultationId가 필요한 상담 단위 Tool인지 확인한다.
+ */
+function isConsultationTargetTool(
+  toolName:
+    string |
+    null
+): boolean {
+  return [
+    "consultation.update",
+  ].includes(
+    String(
+      toolName ||
+      ""
+    )
+  );
+}
+
+/**
+ * 최초 Tool 실행 결과를 확인한 AI가
+ * 후속으로 자동 실행할 수 있는 조회 Tool인지 확인한다.
  *
- * 선택 학생이 없는 경우에는 임의 ID를 만들지 않는다.
+ * 수정·등록 초안 Tool은 Pending Action UI와
+ * 전용 반환 구조가 필요하므로 연속 자동 실행에서 제외한다.
+ */
+function isFollowUpReadTool(
+  toolName:
+    string
+): toolName is AiToolName {
+  return [
+    "student.search",
+    "student.summary",
+    "student.dashboard",
+    "consultation.search",
+    "alert.missingData",
+    "risk.studentDetail",
+    "risk.studentList",
+    "practice.institutionSearch",
+    "practice.supportStatus",
+  ].includes(
+    toolName
+  );
+}
+
+/**
+ * 학생 단위 Tool인데 OpenAI가 studentId를 생략한 경우
+ * 현재 화면 선택 학생 또는 AI 업무 세션의 학생 ID를 보완한다.
+ *
+ * 우선순위
+ * 1. OpenAI Tool 입력에 이미 포함된 studentId
+ * 2. 현재 화면에서 명시적으로 선택된 학생 ID
+ * 3. AI 업무 세션의 activeTarget 학생 ID
+ * 4. AI 업무 세션의 linkedContext.studentId
+ *
+ * 어떤 값도 확정되지 않으면 임의 ID를 생성하지 않는다.
  */
 function applySelectedStudentToToolInput(params: {
   toolName:
@@ -1898,15 +3277,22 @@ function applySelectedStudentToToolInput(params: {
   selectedStudentId?:
     number |
     null;
+
+  workSession:
+    AiWorkSession;
 }) {
   if (
-  !isStudentTargetTool(
-    params.toolName
-  )
-) {
-  return params.toolInput;
-}
+    !isStudentTargetTool(
+      params.toolName
+    )
+  ) {
+    return params.toolInput;
+  }
 
+  /**
+   * OpenAI가 실제 studentId를 명시했다면
+   * 해당 값을 그대로 우선 사용한다.
+   */
   const currentStudentId =
     Number(
       params.toolInput
@@ -1921,9 +3307,20 @@ function applySelectedStudentToToolInput(params: {
     currentStudentId >
       0
   ) {
-    return params.toolInput;
+    return {
+      ...params.toolInput,
+
+      studentId:
+        Math.floor(
+          currentStudentId
+        ),
+    };
   }
 
+  /**
+   * 사용자가 현재 화면에서 학생을 직접 선택했다면
+   * 기존 세션보다 화면 선택값을 우선한다.
+   */
   const selectedStudentId =
     Number(
       params.selectedStudentId ||
@@ -1943,6 +3340,196 @@ function applySelectedStudentToToolInput(params: {
       studentId:
         Math.floor(
           selectedStudentId
+        ),
+    };
+  }
+
+  /**
+   * 현재 AI 업무 대상이 학생이면
+   * activeTarget의 확정된 학생 ID를 사용한다.
+   */
+  const activeTargetStudentId =
+    params.workSession
+      .activeTarget
+      ?.type ===
+      "student"
+      ? Number(
+          params.workSession
+            .activeTarget
+            .id ||
+          0
+        )
+      : 0;
+
+  if (
+    Number.isFinite(
+      activeTargetStudentId
+    ) &&
+    activeTargetStudentId >
+      0
+  ) {
+    return {
+      ...params.toolInput,
+
+      studentId:
+        Math.floor(
+          activeTargetStudentId
+        ),
+    };
+  }
+
+  /**
+   * activeTarget이 학생이 아니더라도
+   * 상담DB에서 학생으로 연결된 이력이 있으면
+   * linkedContext.studentId를 사용할 수 있다.
+   */
+  const linkedStudentId =
+    Number(
+      params.workSession
+        .linkedContext
+        .studentId ||
+      0
+    );
+
+  if (
+    Number.isFinite(
+      linkedStudentId
+    ) &&
+    linkedStudentId >
+      0
+  ) {
+    return {
+      ...params.toolInput,
+
+      studentId:
+        Math.floor(
+          linkedStudentId
+        ),
+    };
+  }
+
+  return params.toolInput;
+}
+
+/**
+ * 상담 단위 Tool인데 OpenAI가 consultationId를 생략한 경우
+ * AI 업무 세션에 저장된 상담DB ID를 보완한다.
+ *
+ * 우선순위
+ * 1. OpenAI Tool 입력에 이미 포함된 consultationId
+ * 2. AI 업무 세션의 activeTarget 상담DB ID
+ * 3. AI 업무 세션의 linkedContext.consultationId
+ *
+ * 어떤 값도 확정되지 않으면 임의 ID를 생성하지 않는다.
+ */
+function applySelectedConsultationToToolInput(params: {
+  toolName:
+    string;
+
+  toolInput:
+    Record<
+      string,
+      unknown
+    >;
+
+  workSession:
+    AiWorkSession;
+}) {
+  if (
+    !isConsultationTargetTool(
+      params.toolName
+    )
+  ) {
+    return params.toolInput;
+  }
+
+  /**
+   * OpenAI가 consultationId를 직접 전달했다면
+   * 해당 값을 가장 먼저 사용한다.
+   */
+  const currentConsultationId =
+    Number(
+      params.toolInput
+        .consultationId ||
+      0
+    );
+
+  if (
+    Number.isFinite(
+      currentConsultationId
+    ) &&
+    currentConsultationId >
+      0
+  ) {
+    return {
+      ...params.toolInput,
+
+      consultationId:
+        Math.floor(
+          currentConsultationId
+        ),
+    };
+  }
+
+  /**
+   * 현재 업무 대상이 상담DB이면
+   * activeTarget의 확정된 상담DB ID를 사용한다.
+   */
+  const activeTargetConsultationId =
+    params.workSession
+      .activeTarget
+      ?.type ===
+      "consultation"
+      ? Number(
+          params.workSession
+            .activeTarget
+            .id ||
+          0
+        )
+      : 0;
+
+  if (
+    Number.isFinite(
+      activeTargetConsultationId
+    ) &&
+    activeTargetConsultationId >
+      0
+  ) {
+    return {
+      ...params.toolInput,
+
+      consultationId:
+        Math.floor(
+          activeTargetConsultationId
+        ),
+    };
+  }
+
+  /**
+   * activeTarget이 상담DB가 아니더라도
+   * linkedContext에 상담DB 연결값이 있으면 사용한다.
+   */
+  const linkedConsultationId =
+    Number(
+      params.workSession
+        .linkedContext
+        .consultationId ||
+      0
+    );
+
+  if (
+    Number.isFinite(
+      linkedConsultationId
+    ) &&
+    linkedConsultationId >
+      0
+  ) {
+    return {
+      ...params.toolInput,
+
+      consultationId:
+        Math.floor(
+          linkedConsultationId
         ),
     };
   }
@@ -2521,6 +4108,331 @@ function buildPendingActionCommandFromDecision(
   };
 }
 
+/**
+ * 학생 종합조회 추천 업무가 아직 사용할 수 있는
+ * 유효한 문맥인지 확인한다.
+ *
+ * Pending Action은 기존 승인 흐름에서 별도로 관리하므로
+ * student_dashboard_next_action만 여기에서 검사한다.
+ */
+function isDashboardNextActionAvailable(
+  action:
+    AiWorkSession["lastPresentedAction"]
+): boolean {
+  if (
+    !action ||
+    action.actionType !==
+      "student_dashboard_next_action"
+  ) {
+    return false;
+  }
+
+  const expiresAt =
+    String(
+      action.expiresAt ||
+      ""
+    ).trim();
+
+  if (
+    !expiresAt
+  ) {
+    return false;
+  }
+
+  const expiresAtTime =
+    new Date(
+      expiresAt
+    ).getTime();
+
+  if (
+    !Number.isFinite(
+      expiresAtTime
+    )
+  ) {
+    return false;
+  }
+
+  return (
+    expiresAtTime >
+    Date.now()
+  );
+}
+
+/**
+ * OpenAI 계획 생성에 전달할 최근 제시 업무를 정규화한다.
+ *
+ * 학생 종합조회 추천이 만료됐다면 OpenAI에는 전달하지 않는다.
+ * Pending Action 등 다른 actionType은 기존 흐름을 유지한다.
+ */
+function getAvailableLastPresentedAction(
+  workSession:
+    AiWorkSession
+): AiWorkSession["lastPresentedAction"] {
+  const action =
+    workSession
+      .lastPresentedAction;
+
+  if (
+    !action
+  ) {
+    return null;
+  }
+
+  if (
+    action.actionType !==
+      "student_dashboard_next_action"
+  ) {
+    return action;
+  }
+
+  return isDashboardNextActionAvailable(
+    action
+  )
+    ? action
+    : null;
+}
+
+/**
+ * 현재 확정된 조회 대상이 변경됐을 때
+ * 이전 학생 종합조회 추천을 제거해야 하는지 확인한다.
+ *
+ * Pending Action 등 다른 lastPresentedAction은
+ * 이 함수에서 제거하지 않는다.
+ */
+function shouldClearDashboardNextActionForTarget(params: {
+  workSession:
+    AiWorkSession;
+
+  targetType:
+    "student" |
+    "consultation";
+
+  targetId:
+    number;
+}): boolean {
+  const action =
+    params.workSession
+      .lastPresentedAction;
+
+  if (
+    !action ||
+    action.actionType !==
+      "student_dashboard_next_action"
+  ) {
+    return false;
+  }
+
+  const actionTargetType =
+    String(
+      action.targetType ||
+      ""
+    );
+
+  const actionTargetId =
+    Number(
+      action.targetId ||
+      action.payload
+        ?.studentId ||
+      0
+    );
+
+  if (
+    actionTargetType !==
+      params.targetType
+  ) {
+    return true;
+  }
+
+  if (
+    !Number.isFinite(
+      actionTargetId
+    ) ||
+    actionTargetId <= 0
+  ) {
+    return true;
+  }
+
+  return (
+    Math.floor(
+      actionTargetId
+    ) !==
+    Math.floor(
+      params.targetId
+    )
+  );
+}
+
+
+/**
+ * 현재 AI 업무 대상과 새로 확정된 조회 대상이
+ * 서로 다른지 확인한다.
+ *
+ * 현재 대상이 없으면 최초 대상 확정이므로
+ * 대상 변경으로 보지 않는다.
+ */
+function isAiWorkTargetChanged(params: {
+  workSession:
+    AiWorkSession;
+
+  targetType:
+    "student" |
+    "consultation";
+
+  targetId:
+    number;
+}): boolean {
+  const currentTarget =
+    params.workSession
+      .activeTarget;
+
+  if (
+    !currentTarget
+  ) {
+    return false;
+  }
+
+  const currentTargetId =
+    Number(
+      currentTarget.id ||
+      0
+    );
+
+  if (
+    currentTarget.type !==
+      params.targetType
+  ) {
+    return true;
+  }
+
+  if (
+    !Number.isFinite(
+      currentTargetId
+    ) ||
+    currentTargetId <= 0
+  ) {
+    return true;
+  }
+
+  return (
+    Math.floor(
+      currentTargetId
+    ) !==
+    Math.floor(
+      params.targetId
+    )
+  );
+}
+
+/**
+ * 새 대상이 확정됐을 때 기존 Workflow 초안을
+ * 초기화해야 하는지 확인한다.
+ *
+ * 승인 대기 또는 실행 중인 업무는
+ * 별도 Pending Action 흐름이 있으므로 여기서 제거하지 않는다.
+ */
+function shouldClearWorkflowForTargetChange(params: {
+  workSession:
+    AiWorkSession;
+
+  targetType:
+    "student" |
+    "consultation";
+
+  targetId:
+    number;
+}): boolean {
+  if (
+    !isAiWorkTargetChanged({
+      workSession:
+        params.workSession,
+
+      targetType:
+        params.targetType,
+
+      targetId:
+        params.targetId,
+    })
+  ) {
+    return false;
+  }
+
+  const workflowStep =
+    params.workSession
+      .workflow
+      .step;
+
+  if (
+    workflowStep ===
+      "awaiting_confirmation" ||
+    workflowStep ===
+      "executing"
+  ) {
+    return false;
+  }
+
+  const workflowType =
+    params.workSession
+      .workflow
+      .type;
+
+  const hasDraft =
+    Object.keys(
+      params.workSession
+        .workflow
+        .draft ||
+      {}
+    ).length >
+    0;
+
+  const hasWaitingFor =
+    Array.isArray(
+      params.workSession
+        .workflow
+        .waitingFor
+    ) &&
+    params.workSession
+      .workflow
+      .waitingFor
+      .length >
+      0;
+
+  return (
+    workflowType !==
+      null ||
+    workflowStep !==
+      "idle" ||
+    hasDraft ||
+    hasWaitingFor
+  );
+}
+
+/**
+ * 이전 대상에 묶여 있던 미완성 Workflow를
+ * 기본 idle 상태로 초기화한다.
+ */
+function buildClearedWorkflowPatch():
+  NonNullable<
+    AiWorkSessionPatch[
+      "workflow"
+    ]
+  > {
+  return {
+    type:
+      null,
+
+    step:
+      "idle",
+
+    clearDraft:
+      true,
+
+    draftPatch:
+      {},
+
+    waitingFor:
+      [],
+  };
+}
 
 async function createPlanWithOpenAi(params: {
   context:
@@ -2544,7 +4456,12 @@ async function createPlanWithOpenAi(params: {
     AiConversationHistoryMessage[];
 }): Promise<AiRunnerPlan> {
   const openai =
-  getOpenAiClient();
+    getOpenAiClient();
+
+  const availableLastPresentedAction =
+    getAvailableLastPresentedAction(
+      params.workSession
+    );
 
 if (
   !openai
@@ -2637,7 +4554,10 @@ params.context.role ===
     ? "현재 사용자는 Superhost다. 학생, 상담, 실습, 일정, 위험도 등 회사 운영 데이터의 조회·수정·등록 업무를 수행하거나 가능하다고 안내하지 않는다."
     : "현재 사용자는 Staff, Admin 또는 Host 권한 범위에서 제공된 CRM Tool만 사용할 수 있다.",
                   "",
-                  "사용자의 요청에 CRM 데이터 조회 또는 승인 초안 생성이 필요하면 제공된 Function Tool 중 정확히 하나를 선택한다.",
+                  "사용자의 요청에 CRM 데이터 조회 또는 승인 초안 생성이 필요하면 제공된 Function Tool 중 현재 단계에 가장 필요한 Tool 하나를 선택한다.",
+"조회 Tool 실행 결과만으로 요청을 완료할 수 없고 다른 조회가 추가로 필요하면, Tool 결과를 받은 다음 필요한 조회 Tool을 이어서 호출한다.",
+"이미 확인된 내용을 다시 조회하지 말고, 사용자 요청을 완료하는 데 필요한 조회만 추가로 실행한다.",
+"수정·등록 초안 Tool은 사용자 요청에 명확하게 포함된 경우에만 선택하고, 조회 결과만 보고 사용자가 요청하지 않은 변경 초안을 임의로 만들지 않는다.",
                   "CRM 데이터가 필요하지 않은 일반 질문, 인사, 잡담, 문구 작성, 상담 조언에는 Tool을 호출하지 않는다.",
                   "Tool이 필요하지 않으면 자연어로 간단히 응답한다.",
                   "",
@@ -2648,13 +4568,15 @@ params.context.role ===
                   "- 학생 ID와 상담DB ID를 추측하거나 만들어내지 않는다.",
                   "- 현재 선택 학생 ID가 제공되면 학생 단위 Tool에서 사용할 수 있다.",
                   "- 선택 학생이 없고 학생 ID도 확실하지 않으면 학생 이름으로 student_search를 사용한다.",
-"- 상담DB ID가 확실하지 않으면 consultation_update를 호출하지 않는다.",
+"- consultationId가 현재 메시지, workflow.draft, activeTarget 또는 linkedContext에 있으면 consultation_update에 사용할 수 있다.",
+"- 현재 메시지와 AI 업무 세션 어디에도 상담DB ID가 없으면 consultation_update를 호출하지 않고 consultation_search를 사용한다.",
                   "",
                   "Tool 선택 기준:",
 "- 학생 이름 또는 연락처로 학생을 찾는 요청: student_search",
 "- 학생 기본정보만 조회: student_summary",
 "- 학생의 학기, 과목, 학점, 결제, 환불, 실습, 일정, 위험요소와 다음 업무 종합조회: student_dashboard",
 "- 학생 상태, 과정, 최종학력, 주소, 상세주소 변경 초안: student_update",
+"- 기존 학생에게 새 학기를 추가하는 승인 초안: semester_create",
 "- 상담DB 검색: consultation_search",
 "- 상담 상태 또는 상담내용 수정 초안: consultation_update",
 "- 결제일, 결제금액, 담당자, 실습 배정 누락 점검: alert_missingData",
@@ -2664,8 +4586,16 @@ params.context.role ===
 "- 특정 학생의 실습 신청 여부, 섭외상태, 실습비 결제상태, 선택 교육원, 선택 실습기관, 실습시간과 실습일정 조회: practice_supportStatus",
 "- 선택 학생의 일정 등록 초안: schedule_create",
 "- 상담DB 회원의 학생 등록, 등록예정 전환, 학기 생성, 과목설계, 플랜 생성 미리보기: student_registration_preview",
+"",
+"학생 종합조회 추천 업무 처리 기준:",
+"- COMPLETE_STUDENT_INFORMATION은 학생 누락정보 확인 요청이다. 현재 값을 조회하는 요청이면 student_summary를 사용한다. 사용자가 새로운 상태, 과정, 최종학력, 주소 또는 상세주소 값을 명확하게 말한 경우에만 student_update를 사용한다.",
+"- CHECK_SUBJECT_PLAN, REVIEW_REMAINING_CREDITS 또는 RISK_로 시작하는 code를 확인하려는 요청이면 risk_studentDetail을 사용한다.",
+"- CHECK_PAYMENT 또는 CHECK_REFUND를 확인하려는 요청이면 student_dashboard 또는 risk_studentDetail 중 현재 요청을 더 정확히 충족하는 조회 Tool을 사용한다.",
+"- CHECK_PRACTICE를 확인하려는 요청이면 practice_supportStatus를 사용한다. 가까운 실습기관 추천을 명확히 요청한 경우에만 practice_institutionSearch를 사용한다.",
+"- CREATE_SEMESTER_PLAN 또는 사용자가 기존 학생의 새 학기 생성을 명확히 요청하면 semester_create를 사용한다.",
+"- 추천 code만으로 student_update, semester_create, consultation_update 또는 schedule_create에 필요한 변경값을 만들어내지 않는다.",
                   "",
-                  "student_update, consultation_update, schedule_create는 실제 DB를 즉시 변경하지 않고 사용자 승인용 초안만 생성한다.",
+                  "student_update, semester_create, consultation_update, schedule_create는 실제 DB를 즉시 변경하지 않고 사용자 승인용 초안만 생성한다.",
                   "사용자가 말하지 않은 수정 필드는 arguments에 넣지 않는다.",
                   "회사 전체 일정이라고 명확히 말하지 않으면 isGlobal은 false로 처리한다.",
                   "",
@@ -2675,12 +4605,20 @@ params.context.role ===
                   "",
                                     "AI 업무 세션 원칙:",
                   "- workSession.activeTarget은 서버에서 확정된 현재 작업 대상이다.",
+"- activeTarget.type이 student이면 해당 ID는 현재 대화에서 확정된 학생이므로, 다른 학생이 명확하게 지정되지 않은 학생 단위 요청에 사용한다.",
+"- activeTarget.type이 consultation이면 해당 ID는 현재 대화에서 확정된 상담DB이므로, 다른 상담 대상이 명확하게 지정되지 않은 상담 업무에 사용한다.",
                   "- 현재 메시지에 다른 학생이나 상담 대상이 명확하게 지정되지 않았다면 activeTarget을 유지한다.",
                   "- workSession.workflow.draft에는 이전 메시지에서 이미 받은 업무 정보가 저장되어 있다.",
                   "- 현재 메시지에서 새로 받은 값은 기존 workflow.draft와 함께 사용한다.",
                   "- workSession.workflow.waitingFor에 값이 있으면 해당 부족 정보를 현재 메시지에서 우선 확인한다.",
                   "- 승인 대기 작업에 대한 승인·취소 의도는 앞선 AI 분류 단계에서 처리된다. 이 단계에서는 초안 수정 요청 또는 새로운 CRM 업무 요청만 Tool로 판단한다.",
                   "- lastPresentedAction이 없으면 짧은 답변만으로 새로운 수정이나 등록 작업을 추측하지 않는다.",
+"- lastPresentedAction.actionType이 student_dashboard_next_action이면 직전 학생 종합조회에서 사용자에게 제시한 다음 처리 업무다.",
+"- 만료된 학생 종합조회 추천 업무는 서버에서 lastPresentedAction에 포함하지 않으므로, 존재하지 않는 추천 업무를 추측하지 않는다.",
+"- 사용자가 '가장 우선인 거', '추천한 거', '그 추천'이라고 하면 lastPresentedAction.payload.recommendedAction을 가리킨다.",
+"- 사용자가 '첫 번째', '두 번째', '3번'처럼 번호를 말하면 lastPresentedAction.payload.nextActions에서 displayIndex가 일치하는 업무를 가리킨다.",
+"- 사용자가 단순히 '그거', '방금 말한 거'라고만 하면 직전 답변 문맥과 recommendedAction을 함께 확인하고, 어느 업무인지 확실하지 않으면 임의로 Tool을 호출하지 않는다.",
+"- 추천 업무를 가리키더라도 실제 수정·등록 Tool은 사용자의 실행 의도가 명확하고 필수 입력값이 모두 있을 때만 선택한다.",
                   "- 현재 workflow와 무관한 새로운 요청이 명확하면 새로운 요청을 우선한다.",
 	     "- 현재 승인 초안의 일부 내용을 바꾸려는 요청이면 기존 workflow.draft와 현재 메시지의 수정값을 결합해 새로운 초안을 만든다.",
                   "- 현재 승인 초안과 관계없는 새로운 조회나 업무 요청이면 해당 요청에 맞는 Tool을 선택한다.",
@@ -2775,8 +4713,7 @@ params.context.role ===
                       },
 
                       lastPresentedAction:
-                        params.workSession
-                          .lastPresentedAction,
+  availableLastPresentedAction,
 
                       version:
                         params.workSession
@@ -2889,6 +4826,20 @@ failureMessage:
      * 등록 미리보기는 Registry Tool이 아니므로
      * 먼저 별도로 처리한다.
      */
+const registrationPreviewInput =
+  functionCall.name ===
+    STUDENT_REGISTRATION_PREVIEW_TOOL
+    ? applySelectedConsultationToToolInput({
+        toolName:
+          "consultation.update",
+
+        toolInput:
+          parsedInput,
+
+        workSession:
+          params.workSession,
+      })
+    : parsedInput;
 
 if (
   functionCall.name ===
@@ -2902,7 +4853,7 @@ if (
       null,
 
     input:
-      parsedInput,
+  registrationPreviewInput,
 
     explanation:
       "등록예정 학생 생성 및 과목설계 미리보기를 준비합니다.",
@@ -2967,17 +4918,32 @@ failureMessage:
   };
 }
 
-    const toolInput =
-      applySelectedStudentToToolInput({
-        toolName:
-          registryToolName,
+    const studentAppliedToolInput =
+  applySelectedStudentToToolInput({
+    toolName:
+      registryToolName,
 
-        toolInput:
-          parsedInput,
+    toolInput:
+      parsedInput,
 
-        selectedStudentId:
-          params.selectedStudentId,
-      });
+    selectedStudentId:
+      params.selectedStudentId,
+
+    workSession:
+      params.workSession,
+  });
+
+const toolInput =
+  applySelectedConsultationToToolInput({
+    toolName:
+      registryToolName,
+
+    toolInput:
+      studentAppliedToolInput,
+
+    workSession:
+      params.workSession,
+  });
 
     const intent =
       getIntentFromToolName(
@@ -3088,110 +5054,574 @@ failureMessage:
   }
 }
 
-/**
- * Responses API가 반환한 function_call에
- * 실제 CRM Tool 실행 결과를 연결하여
- * 모델의 최종 답변을 생성한다.
- */
 async function createFunctionCallOutputReply(params: {
+  context:
+    AiUserContext;
+
   plan:
     AiRunnerPlan;
+
+  toolName:
+    AiToolName;
+
+  toolInput:
+    Record<
+      string,
+      unknown
+    >;
 
   toolResult:
     AiToolExecutionResult<any>;
 
-  fallbackReply:
-    string;
-}): Promise<string> {
- const openai =
-  getOpenAiClient();
+  selectedStudentId?:
+  number |
+  null;
 
-if (
-  !openai ||
-  !params.plan.openAiResponseId ||
-  !params.plan.openAiCallId
-) {
-  return params.fallbackReply;
-}
+workSession:
+  AiWorkSession;
 
-  try {
-    const outputPayload =
-  JSON.stringify({
-    success:
-      params.toolResult.success,
+fallbackReply:
+  string;
 
-    data:
-      params.toolResult.data ??
-      null,
+}): Promise<AiNaturalToolReplyResult> {
+  const openai =
+    getOpenAiClient();
 
-    error:
-      params.toolResult.error ??
-      null,
-  });
+  /**
+   * 최초 Tool 결과를 기본 최종값으로 잡는다.
+   *
+   * OpenAI 연결이나 후속 호출에 실패하면
+   * 최초 결과를 그대로 반환한다.
+   */
+  let currentToolName =
+    params.toolName;
 
-if (
-  outputPayload.length >
-  MAX_FUNCTION_CALL_OUTPUT_LENGTH
-) {
-  console.warn(
-    "[AI RUNNER] function_call_output 크기 초과",
-    {
+  let currentToolInput =
+    params.toolInput;
+
+  let currentToolResult =
+    params.toolResult;
+
+  let currentResponseId =
+    params.plan
+      .openAiResponseId ||
+    null;
+
+  let currentCallId =
+    params.plan
+      .openAiCallId ||
+    null;
+
+  let currentFallbackReply =
+    params.fallbackReply;
+
+  let toolCallCount =
+    1;
+
+  if (
+    !openai ||
+    !currentResponseId ||
+    !currentCallId
+  ) {
+    return {
+      reply:
+        currentFallbackReply,
+
       toolName:
-        params.plan.toolName,
+        currentToolName,
 
-      outputLength:
-        outputPayload.length,
+      toolInput:
+        currentToolInput,
 
-      maxLength:
-        MAX_FUNCTION_CALL_OUTPUT_LENGTH,
+      toolResult:
+        currentToolResult,
+
+      toolCallCount,
+    };
+  }
+
+  /**
+   * 현재 사용자 권한으로 노출 가능한
+   * 실제 Registry Tool 목록이다.
+   *
+   * 후속 단계에서는 Registry 조회 Tool만 사용하며,
+   * 가상 student_registration_preview Tool은 포함하지 않는다.
+   */
+  const openAiTools =
+  buildOpenAiFunctionTools({
+    context:
+      params.context,
+  }).filter(
+    (
+      tool
+    ) => {
+      const registryToolName =
+        fromOpenAiToolName(
+          tool.name
+        );
+
+      return (
+        registryToolName !==
+          null &&
+        isFollowUpReadTool(
+          registryToolName
+        )
+      );
     }
   );
 
-  return params.fallbackReply;
-}
+  try {
+    while (
+      toolCallCount <=
+      MAX_AI_TOOL_CALL_STEPS
+    ) {
+      const outputPayload =
+        JSON.stringify({
+          success:
+            currentToolResult.success,
 
-    const response =
-      await openai.responses.create({
-        model:
-          process.env.OPENAI_AI_MODEL ||
-          "gpt-5.4-mini",
+          data:
+            currentToolResult.data ??
+            null,
 
-        previous_response_id:
-          params.plan.openAiResponseId,
+          error:
+            currentToolResult.error ??
+            null,
+        });
 
-        input: [
+      if (
+        outputPayload.length >
+        MAX_FUNCTION_CALL_OUTPUT_LENGTH
+      ) {
+        console.warn(
+          "[AI RUNNER] function_call_output 크기 초과",
           {
-            type:
-              "function_call_output",
+            toolName:
+              currentToolName,
 
-            call_id:
-              params.plan.openAiCallId,
+            outputLength:
+              outputPayload.length,
 
-            output:
-              outputPayload,
-          },
-        ],
+            maxLength:
+              MAX_FUNCTION_CALL_OUTPUT_LENGTH,
+          }
+        );
+
+        return {
+          reply:
+            currentFallbackReply,
+
+          toolName:
+            currentToolName,
+
+          toolInput:
+            currentToolInput,
+
+          toolResult:
+            currentToolResult,
+
+          toolCallCount,
+        };
+      }
+
+      const response =
+        await openai.responses.create({
+          model:
+            process.env.OPENAI_AI_MODEL ||
+            "gpt-5.4-mini",
+
+          previous_response_id:
+            currentResponseId,
+
+          parallel_tool_calls:
+            false,
+
+          tool_choice:
+            "auto",
+
+          tools:
+            openAiTools as any,
+
+          input: [
+            {
+              type:
+                "function_call_output",
+
+              call_id:
+                currentCallId,
+
+              output:
+                outputPayload,
+            },
+          ],
+        });
+
+      const functionCalls =
+        (
+          Array.isArray(
+            response.output
+          )
+            ? response.output
+            : []
+        ).filter(
+          (
+            item: any
+          ): item is
+            OpenAiFunctionCallOutput =>
+            item?.type ===
+              "function_call" &&
+            typeof item?.name ===
+              "string"
+        );
+
+      const nextFunctionCall =
+        functionCalls[0];
+
+      /**
+       * 추가 Tool 호출이 없으면
+       * 현재 응답을 최종 사용자 답변으로 사용한다.
+       */
+      if (
+        !nextFunctionCall
+      ) {
+        const reply =
+          String(
+            response.output_text ||
+            ""
+          ).trim();
+
+        return {
+          reply:
+            reply ||
+            currentFallbackReply,
+
+          toolName:
+            currentToolName,
+
+          toolInput:
+            currentToolInput,
+
+          toolResult:
+            currentToolResult,
+
+          toolCallCount,
+        };
+      }
+
+      /**
+       * 최대 호출 횟수에 도달했으면
+       * 추가 Tool을 실행하지 않는다.
+       */
+      if (
+        toolCallCount >=
+        MAX_AI_TOOL_CALL_STEPS
+      ) {
+        console.warn(
+          "[AI RUNNER] 최대 연속 Tool 호출 횟수 도달",
+          {
+            toolName:
+              currentToolName,
+
+            toolCallCount,
+
+            maxToolCallSteps:
+              MAX_AI_TOOL_CALL_STEPS,
+          }
+        );
+
+        return {
+          reply:
+            currentFallbackReply,
+
+          toolName:
+            currentToolName,
+
+          toolInput:
+            currentToolInput,
+
+          toolResult:
+            currentToolResult,
+
+          toolCallCount,
+        };
+      }
+
+      assertOpenAiToolWasProvided({
+        toolName:
+          nextFunctionCall.name,
+
+        tools:
+          openAiTools,
       });
 
-    const reply =
-      String(
-        response.output_text ||
-        ""
-      ).trim();
+      const nextRegistryToolName =
+        fromOpenAiToolName(
+          nextFunctionCall.name
+        );
 
-    return reply ||
-      params.fallbackReply;
+      if (
+        !nextRegistryToolName
+      ) {
+        console.warn(
+          "[AI RUNNER] 후속 Tool을 Registry에서 찾지 못함",
+          {
+            openAiToolName:
+              nextFunctionCall.name,
+          }
+        );
+
+        return {
+          reply:
+            currentFallbackReply,
+
+          toolName:
+            currentToolName,
+
+          toolInput:
+            currentToolInput,
+
+          toolResult:
+            currentToolResult,
+
+          toolCallCount,
+        };
+      }
+
+      /**
+       * 후속 단계에서는 조회 Tool만 자동 실행한다.
+       *
+       * 수정·등록 초안 Tool은 기존 Pending Action
+       * 흐름에서 별도로 처리해야 한다.
+       */
+      if (
+        !isFollowUpReadTool(
+          nextRegistryToolName
+        )
+      ) {
+        console.warn(
+          "[AI RUNNER] 후속 자동 실행이 허용되지 않은 Tool",
+          {
+            toolName:
+              nextRegistryToolName,
+          }
+        );
+
+        return {
+          reply:
+            currentFallbackReply,
+
+          toolName:
+            currentToolName,
+
+          toolInput:
+            currentToolInput,
+
+          toolResult:
+            currentToolResult,
+
+          toolCallCount,
+        };
+      }
+
+      const parsedNextInput =
+        normalizeOpenAiToolInput(
+          nextRegistryToolName,
+
+          removeForbiddenOpenAiToolFields(
+            parseOpenAiToolArguments(
+              nextFunctionCall.arguments
+            )
+          )
+        );
+
+      const nextToolInput =
+  applySelectedStudentToToolInput({
+    toolName:
+      nextRegistryToolName,
+
+    toolInput:
+      parsedNextInput,
+
+    selectedStudentId:
+      params.selectedStudentId,
+
+    workSession:
+      params.workSession,
+  });
+
+      const nextInputValidation =
+        validateRunnerToolInput({
+          context:
+            params.context,
+
+          toolName:
+            nextRegistryToolName as
+              AiRunnerPlan["toolName"],
+
+          input:
+            nextToolInput,
+        });
+
+      if (
+        !nextInputValidation.valid
+      ) {
+        console.warn(
+          "[AI RUNNER] 후속 Tool 입력값 검증 실패",
+          {
+            toolName:
+              nextRegistryToolName,
+
+            validationMessage:
+              nextInputValidation.message,
+          }
+        );
+
+        return {
+          reply:
+            nextInputValidation.message ||
+            currentFallbackReply,
+
+          toolName:
+            currentToolName,
+
+          toolInput:
+            currentToolInput,
+
+          toolResult:
+            currentToolResult,
+
+          toolCallCount,
+        };
+      }
+
+      const nextToolResult =
+        await executeAiTool({
+          toolName:
+            nextRegistryToolName,
+
+          context:
+            params.context,
+
+          input:
+            nextToolInput,
+        });
+
+      toolCallCount +=
+        1;
+
+      currentToolName =
+        nextRegistryToolName;
+
+      currentToolInput =
+        nextToolInput;
+
+      currentToolResult =
+        nextToolResult;
+
+      currentResponseId =
+        typeof response.id ===
+          "string"
+          ? response.id
+          : null;
+
+      currentCallId =
+        typeof nextFunctionCall.call_id ===
+          "string"
+          ? nextFunctionCall.call_id
+          : null;
+
+      /**
+       * 후속 Tool 결과에 맞는 안전 답변을
+       * 다음 단계 fallback으로 다시 만든다.
+       */
+      currentFallbackReply =
+        buildToolReply({
+          plan: {
+            intent:
+              getIntentFromToolName(
+                currentToolName
+              ),
+
+            toolName:
+              currentToolName as
+                AiRunnerPlan["toolName"],
+
+            input:
+              currentToolInput,
+
+            explanation:
+              "후속 Tool 실행 결과",
+
+            requiresRegistrationPreview:
+              false,
+          },
+
+          result:
+            currentToolResult,
+        });
+
+      if (
+        !currentResponseId ||
+        !currentCallId
+      ) {
+        return {
+          reply:
+            currentFallbackReply,
+
+          toolName:
+            currentToolName,
+
+          toolInput:
+            currentToolInput,
+
+          toolResult:
+            currentToolResult,
+
+          toolCallCount,
+        };
+      }
+    }
+
+    return {
+      reply:
+        currentFallbackReply,
+
+      toolName:
+        currentToolName,
+
+      toolInput:
+        currentToolInput,
+
+      toolResult:
+        currentToolResult,
+
+      toolCallCount,
+    };
   } catch (
     error
   ) {
     console.error(
-  "[AI RUNNER] function_call_output 답변 생성 실패",
-  normalizeErrorForLog(
-    error
-  )
-);
+      "[AI RUNNER] function_call_output 연속 처리 실패",
+      normalizeErrorForLog(
+        error
+      )
+    );
 
-    return params.fallbackReply;
+    return {
+      reply:
+        currentFallbackReply,
+
+      toolName:
+        currentToolName,
+
+      toolInput:
+        currentToolInput,
+
+      toolResult:
+        currentToolResult,
+
+      toolCallCount,
+    };
   }
 }
 
@@ -3228,13 +5658,16 @@ async function createToolResultReplyWithOpenAi(params: {
     number |
     null;
 
-  selectedStudentName?:
-    string |
-    null;
+ selectedStudentName?:
+  string |
+  null;
 
-  conversationHistory?:
-    AiConversationHistoryMessage[];
-}): Promise<string> {
+workSession:
+  AiWorkSession;
+
+conversationHistory?:
+  AiConversationHistoryMessage[];
+}): Promise<AiNaturalToolReplyResult> {
   /**
    * OpenAI 오류 또는 Tool 실패 시 사용할
    * 기존 안전 답변을 먼저 생성한다.
@@ -3270,15 +5703,30 @@ async function createToolResultReplyWithOpenAi(params: {
   params.plan.openAiResponseId &&
   params.plan.openAiCallId
 ) {
-  return createFunctionCallOutputReply({
-    plan:
-      params.plan,
+ return createFunctionCallOutputReply({
+  context:
+    params.context,
 
-    toolResult:
-      params.toolResult,
+  plan:
+    params.plan,
 
-    fallbackReply,
-  });
+  toolName:
+    params.toolName,
+
+  toolInput:
+    params.toolInput,
+
+  toolResult:
+    params.toolResult,
+
+  selectedStudentId:
+    params.selectedStudentId,
+
+  workSession:
+    params.workSession,
+
+  fallbackReply,
+});
 }
 
 const openai =
@@ -3288,7 +5736,22 @@ if (
   !params.toolResult.success ||
   !openai
 ) {
-  return fallbackReply;
+  return {
+    reply:
+      fallbackReply,
+
+    toolName:
+      params.toolName,
+
+    toolInput:
+      params.toolInput,
+
+    toolResult:
+      params.toolResult,
+
+    toolCallCount:
+      1,
+  };
 }
 
   try {
@@ -3418,8 +5881,23 @@ if (
         ""
       ).trim();
 
-    return reply ||
-      fallbackReply;
+    return {
+  reply:
+    reply ||
+    fallbackReply,
+
+  toolName:
+    params.toolName,
+
+  toolInput:
+    params.toolInput,
+
+  toolResult:
+    params.toolResult,
+
+  toolCallCount:
+    1,
+};
   } catch (
     error
   ) {
@@ -3430,7 +5908,22 @@ if (
   )
 );
 
-    return fallbackReply;
+    return {
+  reply:
+    fallbackReply,
+
+  toolName:
+    params.toolName,
+
+  toolInput:
+    params.toolInput,
+
+  toolResult:
+    params.toolResult,
+
+  toolCallCount:
+    1,
+};
   }
 }
 
@@ -4629,12 +7122,58 @@ if (
     plan.requiresRegistrationPreview ===
       true
   ) {
-    const consultationId =
-      Number(
-        plan.input
-          .consultationId ||
+
+const planConsultationId =
+  Number(
+    plan.input
+      .consultationId ||
+    0
+  );
+
+const activeTargetConsultationId =
+  input.workSession
+    .activeTarget
+    ?.type ===
+    "consultation"
+    ? Number(
+        input.workSession
+          .activeTarget
+          .id ||
         0
-      );
+      )
+    : 0;
+
+const linkedConsultationId =
+  Number(
+    input.workSession
+      .linkedContext
+      .consultationId ||
+    0
+  );
+
+const consultationIdSource =
+  Number.isFinite(
+    planConsultationId
+  ) &&
+  planConsultationId > 0
+    ? planConsultationId
+    : Number.isFinite(
+          activeTargetConsultationId
+        ) &&
+        activeTargetConsultationId > 0
+      ? activeTargetConsultationId
+      : linkedConsultationId;
+
+const consultationId =
+  Number.isFinite(
+    consultationIdSource
+  ) &&
+  consultationIdSource > 0
+    ? Math.floor(
+        consultationIdSource
+      )
+    : 0;
+    
 
     return {
       success:
@@ -4672,12 +7211,15 @@ if (
       },
 
       workSessionPatch:
-        buildRegistrationWorkSessionPatch({
-          consultationId,
+  buildRegistrationWorkSessionPatch({
+    consultationId,
 
-          originalMessage:
-            message,
-        }),
+    originalMessage:
+      message,
+
+    workSession:
+      input.workSession,
+  }),
 
       meta: {
         scope:
@@ -4788,12 +7330,15 @@ if (
       null,
 
     workSessionPatch:
-      buildCollectingDataWorkSessionPatch({
-        plan,
+  buildCollectingDataWorkSessionPatch({
+    plan,
 
-        validationMessage:
-          toolInputValidation.message,
-      }),
+    validationMessage:
+      toolInputValidation.message,
+
+    workSession:
+      input.workSession,
+  }),
 
     meta: {
       scope:
@@ -5012,10 +7557,87 @@ if (
 
     workSessionPatch:
       buildAwaitingConfirmationWorkSessionPatch({
+  plan,
+
+  toolResultData:
+    toolResult.data,
+
+  workSession:
+    input.workSession,
+}),
+
+    meta: {
+      scope:
+        input.context.scope,
+
+      organizationId:
+        input.context
+          .organizationId,
+
+      userId:
+        input.context.userId,
+    },
+  };
+}
+
+if (
+  plan.toolName ===
+    "semester.create" &&
+  toolResult.success ===
+    true
+) {
+  const draft =
+    toolResult.data as
+      SemesterCreateToolOutput;
+
+  return {
+    success:
+      true,
+
+    intent:
+      "semester_create",
+
+    reply:
+      buildToolReply({
+        plan,
+        result:
+          toolResult,
+      }),
+
+    toolName:
+      "semester.create",
+
+    toolResult,
+
+    data:
+      toolResult.data,
+
+    pendingActionDecision,
+
+    registrationPreview:
+      null,
+
+    scheduleCreateDraft:
+      null,
+
+    consultationUpdateDraft:
+      null,
+
+    studentUpdateDraft:
+      null,
+
+    semesterCreateDraft:
+      draft,
+
+    workSessionPatch:
+      buildAwaitingConfirmationWorkSessionPatch({
         plan,
 
         toolResultData:
           toolResult.data,
+
+        workSession:
+          input.workSession,
       }),
 
     meta: {
@@ -5082,11 +7704,14 @@ if (
 
     workSessionPatch:
       buildAwaitingConfirmationWorkSessionPatch({
-        plan,
+  plan,
 
-        toolResultData:
-          toolResult.data,
-      }),
+  toolResultData:
+    toolResult.data,
+
+  workSession:
+    input.workSession,
+}),
 
     meta: {
       scope:
@@ -5102,7 +7727,7 @@ if (
   };
 }
 
-const toolReply =
+const naturalToolReplyResult =
   shouldCreateNaturalToolReply(
     plan.toolName
   )
@@ -5112,7 +7737,7 @@ const toolReply =
 
         message,
 
-    plan,
+        plan,
 
         toolName:
           plan.toolName,
@@ -5125,34 +7750,76 @@ const toolReply =
         selectedStudentId:
           input.selectedStudentId,
 
-        selectedStudentName:
-          input.selectedStudentName,
+selectedStudentName:
+  input.selectedStudentName,
 
-        conversationHistory,
+workSession:
+  input.workSession,
+
+conversationHistory,
       })
-    : buildToolReply({
-        plan,
+    : null;
 
-        result:
-          toolResult,
-      });
+const finalToolName =
+  naturalToolReplyResult
+    ?.toolName ||
+  plan.toolName;
+
+const finalToolInput =
+  naturalToolReplyResult
+    ?.toolInput ||
+  plan.input;
+
+const finalToolResult =
+  naturalToolReplyResult
+    ?.toolResult ||
+  toolResult;
+
+const toolReply =
+  naturalToolReplyResult
+    ?.reply ||
+  buildToolReply({
+    plan,
+
+    result:
+      toolResult,
+  });
+
+const readTargetWorkSessionPatch =
+  buildReadTargetWorkSessionPatch({
+    toolName:
+      finalToolName,
+
+    toolInput:
+      finalToolInput,
+
+    toolResult:
+      finalToolResult,
+
+    workSession:
+      input.workSession,
+  });
 
 return {
-    success:
-      toolResult.success,
+  success:
+    finalToolResult.success,
 
-    intent: plan.intent,
+  intent:
+    getIntentFromToolName(
+      finalToolName
+    ),
 
-        reply:
-      toolReply,
+  reply:
+    toolReply,
 
-    toolName:
-      plan.toolName,
+  toolName:
+    finalToolName,
 
-    toolResult,
+  toolResult:
+    finalToolResult,
 
-            data:
-      toolResult.data,
+  data:
+    finalToolResult.data,
 
     pendingActionDecision,
 
@@ -5174,12 +7841,15 @@ workSessionPatch:
   toolResult.success ===
     true
     ? buildAwaitingConfirmationWorkSessionPatch({
-        plan,
+  plan,
 
-        toolResultData:
-          toolResult.data,
-      })
-    : null,
+  toolResultData:
+    toolResult.data,
+
+  workSession:
+    input.workSession,
+})
+    : readTargetWorkSessionPatch,
 
     meta: {
       scope:

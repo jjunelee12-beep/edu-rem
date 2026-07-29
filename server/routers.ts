@@ -75,6 +75,10 @@ import {
 } from "./ai/schedule-create-executor";
 
 import {
+  executeSemesterCreatePendingAction,
+} from "./ai/semester-create-executor";
+
+import {
   executeConsultationUpdatePendingAction,
 } from "./ai/consultation-update-executor";
 
@@ -572,6 +576,10 @@ consultationId?:
 
     planId?: number | null;
 
+    semesterId?:
+      number |
+      null;
+
       semesterIds?: number[];
 
       planSubjectIds?: number[];
@@ -720,6 +728,31 @@ scheduleId:
                   : Number(
                       executionResult
                         .planId
+                    ),
+
+              semesterId:
+                executionResult
+                  .semesterId ===
+                  null ||
+                executionResult
+                  .semesterId ===
+                  undefined
+                  ? Array.isArray(
+                      executionResult
+                        .semesterIds
+                    ) &&
+                    executionResult
+                      .semesterIds
+                      .length > 0
+                    ? Number(
+                        executionResult
+                          .semesterIds[0]
+                      ) ||
+                      null
+                    : null
+                  : Number(
+                      executionResult
+                        .semesterId
                     ),
 
               semesterIds:
@@ -2893,6 +2926,124 @@ async function confirmAiPendingActionForCurrentUser(
     };
   }
 
+/**
+ * 학생 학기 생성 실행
+ */
+if (
+  actionType ===
+  "semester_create"
+) {
+  const result =
+    await executeSemesterCreatePendingAction({
+      pendingActionId:
+        Math.floor(
+          pendingActionId
+        ),
+
+      expectedVersion,
+
+      context:
+        aiContext,
+    });
+
+  const publicPendingAction =
+    toAiPendingActionPublicResult(
+      result.pendingAction
+    );
+
+  const workSession =
+    await patchAiWorkSessionAfterPendingAction({
+      organizationId:
+        aiContext.organizationId,
+
+      userId:
+        aiContext.userId,
+
+      pendingActionId:
+        Math.floor(
+          pendingActionId
+        ),
+
+      success:
+        result.success,
+
+      alreadyExecuted:
+        result.alreadyExecuted,
+
+      executing:
+        result.executing,
+
+      consultationId:
+        null,
+
+      studentId:
+        result.studentId,
+
+      studentName:
+        null,
+    });
+
+  return {
+    success:
+      result.success,
+
+    alreadyExecuted:
+      result.alreadyExecuted,
+
+    executing:
+      result.executing,
+
+    actionType,
+
+    consultationId:
+      null,
+
+    studentId:
+      result.studentId,
+
+    scheduleId:
+      null,
+
+    planId:
+      null,
+
+    semesterId:
+      result.semesterId,
+
+    semesterIds:
+      result.semesterId
+        ? [
+            result.semesterId,
+          ]
+        : [],
+
+    planSubjectIds:
+      [],
+
+    transferSubjectIds:
+      [],
+
+    practiceSaved:
+      false,
+
+    paymentUpdated:
+      false,
+
+    action:
+      publicPendingAction,
+
+    pendingAction:
+      publicPendingAction,
+
+    workSession,
+
+    message:
+      result.message,
+
+    aiContext,
+  };
+}
+
   /**
    * 상담DB 정보 수정 실행
    */
@@ -5003,13 +5154,229 @@ await writeStudentAuditLog({
               null,
           } as any);
 
-        return {
+                return {
           success: true,
           id: Number(id),
           sourceType:
             "external" as const,
         };
       }),
+
+    addCertificate:
+      protectedProcedure
+        .input(
+          z.object({
+            id:
+              z.number()
+                .int()
+                .positive(),
+
+            sourceType:
+              z.enum([
+                "student",
+                "external",
+              ]),
+
+            privateCertificateMasterId:
+              z.number()
+                .int()
+                .positive(),
+
+            certificateName:
+              z.string()
+                .trim()
+                .min(
+                  1,
+                  "자격증명을 선택해주세요."
+                )
+                .max(255),
+          })
+        )
+        .mutation(
+          async ({
+            ctx,
+            input,
+          }) => {
+            const organizationId =
+              getCtxOrganizationId(
+                ctx
+              );
+
+            await assertOrganizationFeatureEnabled(
+              organizationId,
+              "allowPrivateCertificate",
+              "현재 회사는 민간자격증 기능을 사용할 수 없습니다."
+            );
+
+            if (
+              !isAdminOrHost(
+                ctx.user
+              )
+            ) {
+              throwAppError(
+                ERROR_CODES.PERMISSION_DENIED,
+                "관리자 또는 호스트만 민간자격증 과정을 추가할 수 있습니다.",
+                403
+              );
+            }
+
+            if (
+              input.sourceType ===
+              "external"
+            ) {
+              const beforeRequest =
+                await db.getPrivateCertificateExternalRequest(
+                  input.id,
+                  {
+                    organizationId,
+                  }
+                );
+
+              if (!beforeRequest) {
+                throwAppError(
+                  ERROR_CODES.DATA_NOT_FOUND,
+                  "기존 민간자격증 요청을 찾을 수 없습니다.",
+                  404
+                );
+              }
+
+              assertExternalRequestEditable({
+                currentUser:
+                  ctx.user,
+              });
+            } else {
+              const beforeRequest =
+                await db.getPrivateCertificateRequest(
+                  input.id,
+                  {
+                    organizationId,
+                  }
+                );
+
+              if (!beforeRequest) {
+                throwAppError(
+                  ERROR_CODES.DATA_NOT_FOUND,
+                  "기존 민간자격증 요청을 찾을 수 없습니다.",
+                  404
+                );
+              }
+
+              const student =
+                await db.getStudent(
+                  beforeRequest.studentId,
+                  {
+                    organizationId,
+                  }
+                );
+
+              if (!student) {
+                throwAppError(
+                  ERROR_CODES.DATA_NOT_FOUND,
+                  "학생을 찾을 수 없습니다.",
+                  404
+                );
+              }
+
+              assertStudentEditable({
+                currentUser:
+                  ctx.user,
+
+                student,
+              });
+            }
+
+            const result =
+              await db.addPrivateCertificateToExistingRequest({
+                organizationId,
+
+                requestId:
+                  input.id,
+
+                sourceType:
+                  input.sourceType,
+
+                privateCertificateMasterId:
+                  input.privateCertificateMasterId,
+
+                certificateName:
+                  input.certificateName,
+
+                actorUserId:
+                  Number(
+                    ctx.user.id
+                  ),
+              });
+
+            if (
+              input.sourceType ===
+              "student"
+            ) {
+              const createdRequest =
+                await db.getPrivateCertificateRequest(
+                  Number(
+                    result.id
+                  ),
+                  {
+                    organizationId,
+                  }
+                );
+
+              const originalRequest =
+                await db.getPrivateCertificateRequest(
+                  input.id,
+                  {
+                    organizationId,
+                  }
+                );
+
+              if (
+                originalRequest
+              ) {
+                await writeStudentAuditLog({
+                  ctx,
+
+                  studentId:
+                    Number(
+                      originalRequest.studentId
+                    ),
+
+                  entityType:
+                    "private_certificate",
+
+                  entityId:
+                    Number(
+                      result.id
+                    ),
+
+                  action:
+                    "create",
+
+                  title:
+                    "민간자격증 과정 추가",
+
+                  beforeJson:
+                    null,
+
+                  afterJson:
+                    createdRequest,
+                });
+              }
+            }
+
+            return {
+              success:
+                true,
+
+              id:
+                Number(
+                  result.id
+                ),
+
+              sourceType:
+                result.sourceType,
+            };
+          }
+        ),
 
         update: protectedProcedure
       .input(
@@ -13803,6 +14170,558 @@ const reply =
 
     consultationUpdateDraft:
       consultationDraft,
+
+    conversationHistoryCount:
+      conversationHistory.length,
+
+    workSession,
+  };
+}
+
+/**
+ * 학생 학기 생성 Tool은
+ * semesters 테이블을 즉시 변경하지 않는다.
+ *
+ * Runner에서 생성한 학기 생성 초안을
+ * AI Pending Action으로 저장하고
+ * 사용자의 최종 승인을 기다린다.
+ */
+if (
+  result.semesterCreateDraft &&
+  result.semesterCreateDraft
+    .pendingActionRequired ===
+    true
+) {
+  const semesterDraft =
+    result.semesterCreateDraft;
+
+  const studentId =
+    Number(
+      semesterDraft.studentId ||
+      0
+    );
+
+  const semesterOrder =
+    Number(
+      semesterDraft.semesterOrder ||
+      0
+    );
+
+  const semesterLabel =
+    String(
+      semesterDraft.semesterLabel ||
+      ""
+    ).trim();
+
+  /**
+   * Runner와 Tool에서 검증했더라도
+   * Pending Action 저장 직전에
+   * 핵심 식별값을 다시 검사한다.
+   */
+  if (
+    !Number.isFinite(
+      studentId
+    ) ||
+    studentId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학기를 생성할 학생 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+    if (
+    !Number.isInteger(
+      semesterOrder
+    ) ||
+    semesterOrder < 1 ||
+    semesterOrder > 20
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "생성할 학기 순서는 1부터 20 사이의 정수여야 합니다.",
+      400
+    );
+  }
+
+    if (
+    !semesterLabel
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "생성할 학기 구분이 없습니다.",
+      400
+    );
+  }
+
+  if (
+    !/^(\d{4})년\s([12])학기$/.test(
+      semesterLabel
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "생성할 학기 구분은 2026년 1학기 형식이어야 합니다.",
+      400
+    );
+  }
+
+  /**
+   * Tool 결과 안의 실제 승인 초안을 확인한다.
+   */
+  const draft =
+    semesterDraft.draft;
+
+  if (
+    !draft ||
+    typeof draft !==
+      "object" ||
+    Array.isArray(
+      draft
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학기 생성 승인 초안이 올바르지 않습니다.",
+      400
+    );
+  }
+
+  /**
+   * 바깥쪽 결과값과 실제 승인 초안의
+   * 학생 및 학기 값이 동일한지 검사한다.
+   */
+   if (
+    Number(
+      draft.studentId ||
+      0
+    ) !==
+      Math.floor(
+        studentId
+      ) ||
+    Number(
+      draft.semesterOrder ||
+      0
+    ) !==
+      semesterOrder ||
+    String(
+      draft.semesterLabel ||
+      ""
+    ).trim() !==
+      semesterLabel
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학기 생성 초안의 대상 정보가 일치하지 않습니다.",
+      400
+    );
+  }
+
+  const assigneeId =
+    Number(
+      draft.assigneeId ||
+      0
+    );
+
+  if (
+    !Number.isFinite(
+      assigneeId
+    ) ||
+    assigneeId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학생 담당자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const originalLastSemesterOrder =
+    Number(
+      draft.originalLastSemesterOrder ??
+      0
+    );
+
+    if (
+    !Number.isInteger(
+      originalLastSemesterOrder
+    ) ||
+    originalLastSemesterOrder < 0 ||
+    originalLastSemesterOrder > 19
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "기존 마지막 학기 순서 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  /**
+   * 학기 생성 초안을 Pending Action으로 저장한다.
+   *
+   * 이 시점에는 semesters 테이블을
+   * 실제로 변경하지 않는다.
+   */
+  const pendingAction =
+    await db.createAiPendingAction({
+      organizationId:
+        aiContext.organizationId,
+
+      requestedByUserId:
+        aiContext.userId,
+
+      requestedByRole:
+        aiContext.role,
+
+      actionType:
+        "semester_create",
+
+      consultationId:
+        null,
+
+      studentId:
+        Math.floor(
+          studentId
+        ),
+
+      /**
+       * 아직 실제 학기가 생성되지 않았으므로
+       * semesterId는 null로 저장한다.
+       */
+      semesterId:
+        null,
+
+      /**
+       * 다음 단계의 Executor가 사용할
+       * 학기 생성 승인 초안이다.
+       */
+      payload: {
+        draft,
+
+        originalMessage:
+          input.message,
+      },
+
+      /**
+       * 사용자 승인 카드에 표시할 데이터다.
+       */
+      preview: {
+        title:
+          semesterDraft.preview
+            .title ||
+          "학생 학기 생성",
+
+        summary:
+          semesterDraft.preview
+            .summary ||
+          "생성할 학기 내용을 확인해주세요.",
+
+        /**
+         * Runner/Registry에서는 title + items,
+         * Pending Action 공용 구조에서는
+         * label + items를 사용한다.
+         */
+        sections:
+          Array.isArray(
+            semesterDraft.preview
+              .sections
+          )
+            ? semesterDraft.preview
+                .sections
+                .map(
+                  (
+                    section
+                  ) => ({
+                    label:
+                      String(
+                        section?.title ||
+                        "학기 생성 내용"
+                      ),
+
+                    items:
+                      Array.isArray(
+                        section?.items
+                      )
+                        ? section.items
+                            .map(
+                              (
+                                item
+                              ) =>
+                                String(
+                                  item ||
+                                  ""
+                                ).trim()
+                            )
+                            .filter(
+                              Boolean
+                            )
+                        : [],
+                  })
+                )
+            : [],
+
+        /**
+         * 신규 생성이므로 기존 값과 변경값을
+         * 비교하는 changes는 비워둔다.
+         */
+        changes:
+          [],
+
+        executionSteps:
+          Array.isArray(
+            semesterDraft.preview
+              .executionSteps
+          )
+            ? semesterDraft.preview
+                .executionSteps
+            : [
+                "현재 학생과 조직 정보를 다시 확인합니다.",
+                "학생 학기 수정 권한을 다시 확인합니다.",
+                "초안 생성 이후 추가된 학기가 있는지 확인합니다.",
+                "동일한 학기 순서와 학기 구분이 있는지 확인합니다.",
+                "승인된 내용으로 새 학기를 생성합니다.",
+              ],
+
+        missingFields:
+          Array.isArray(
+            semesterDraft.preview
+              .missingFields
+          )
+            ? semesterDraft.preview
+                .missingFields
+            : [],
+
+        warnings:
+          Array.isArray(
+            semesterDraft.preview
+              .warnings
+          )
+            ? semesterDraft.preview
+                .warnings
+            : [],
+
+        canConfirm:
+          semesterDraft.preview
+            .canConfirm ===
+            true,
+      },
+
+      /**
+       * 초안이 만들어졌을 당시 학생 및
+       * 기존 마지막 학기 상태를 보존한다.
+       *
+       * Executor에서 현재 DB와 다시 비교하여
+       * 동시 수정이나 중복 등록을 차단한다.
+       */
+      sourceSnapshot: {
+        student: {
+          id:
+            Math.floor(
+              studentId
+            ),
+
+          clientName:
+            semesterDraft.studentName ??
+            null,
+
+          assigneeId:
+            Math.floor(
+              assigneeId
+            ),
+        },
+
+        semester: {
+          semesterOrder:
+            Math.floor(
+              semesterOrder
+            ),
+
+          semesterLabel,
+
+          originalLastSemesterOrder:
+            Math.floor(
+              originalLastSemesterOrder
+            ),
+        },
+
+        draftCreatedAt:
+          draft.createdAt,
+      },
+
+      expiresInMinutes:
+        30,
+    });
+
+  const publicPendingAction =
+    toAiPendingActionPublicResult(
+      pendingAction
+    );
+
+  /**
+   * 사용자가 이후 "ㅇㅇ", "진행해줘"라고
+   * 답했을 때 방금 생성한 Pending Action을
+   * 정확하게 승인할 수 있도록 업무 세션에 연결한다.
+   */
+  workSession =
+    await db.patchAiWorkSession({
+      organizationId:
+        aiContext.organizationId,
+
+      userId:
+        aiContext.userId,
+
+      expectedVersion:
+        workSession.version,
+
+      patch: {
+        lastPresentedAction: {
+          actionId:
+            `pending-action-${Number(
+              pendingAction.id
+            )}`,
+
+          actionType:
+            "semester_create",
+
+          targetType:
+            "student",
+
+          targetId:
+            Math.floor(
+              studentId
+            ),
+
+          payload: {
+            pendingActionId:
+              Number(
+                pendingAction.id
+              ),
+          },
+
+          expiresAt:
+            pendingAction.expiresAt
+              ? new Date(
+                  pendingAction.expiresAt
+                ).toISOString()
+              : new Date(
+                  Date.now() +
+                  30 * 60 * 1000
+                ).toISOString(),
+        },
+      },
+    });
+
+  /**
+   * 기존 학기 생성 승인 초안을 수정한 경우
+   * 새 초안 생성 성공 후 이전 초안을 취소한다.
+   */
+  if (
+    isPendingActionRevision &&
+    previousPendingActionType ===
+      "semester_create" &&
+    Number.isFinite(
+      previousPendingActionId
+    ) &&
+    previousPendingActionId > 0 &&
+    previousPendingActionId !==
+      Number(
+        pendingAction.id
+      )
+  ) {
+    await cancelAiPendingActionForCurrentUser({
+      ctx,
+
+      pendingActionId:
+        Math.floor(
+          previousPendingActionId
+        ),
+
+      expectedVersion:
+        null,
+
+      targetOrganizationId:
+        input.targetOrganizationId ??
+        null,
+    });
+  }
+
+  const reply =
+    String(
+      result.reply ||
+      `${
+        semesterDraft.studentName ||
+        `학생 ${studentId}번`
+      }의 ${semesterOrder}학기 생성 초안을 만들었습니다.`
+    ).trim();
+
+  /**
+   * 새로고침 후에도 학기 생성 승인 카드를
+   * 복원할 수 있도록 AI 대화 기록에 저장한다.
+   */
+  await db.saveAiChatMessage({
+    organizationId:
+      aiContext.organizationId,
+
+    userId:
+      aiContext.userId,
+
+    role:
+      "assistant",
+
+    /**
+     * 현재 프론트의 Pending Action 카드가
+     * student_registration_preview kind를
+     * 사용하므로 기존 종류를 재사용한다.
+     */
+    kind:
+      "student_registration_preview",
+
+    content:
+      reply,
+
+    messageDataJson: {
+      toolName:
+        "semester.create",
+
+      pendingActionDecision:
+        result.pendingActionDecision ??
+        null,
+
+      replacedPendingActionId:
+        isPendingActionRevision &&
+        previousPendingActionType ===
+          "semester_create" &&
+        previousPendingActionId > 0
+          ? Math.floor(
+              previousPendingActionId
+            )
+          : null,
+
+      semesterCreateDraft:
+        semesterDraft,
+
+      pendingAction:
+        publicPendingAction,
+    },
+
+    selectedStudentId:
+      Math.floor(
+        studentId
+      ),
+  });
+
+  assistantMessageSaved =
+    true;
+
+  return {
+    ...result,
+
+    pendingAction:
+      publicPendingAction,
+
+    semesterCreateDraft:
+      semesterDraft,
 
     conversationHistoryCount:
       conversationHistory.length,

@@ -164,6 +164,31 @@ export default function PrivateCertificateCenterPage() {
   const [createOpen, setCreateOpen] =
   useState(false);
 
+const [
+  addCertificateTarget,
+  setAddCertificateTarget,
+] = useState<any | null>(
+  null
+);
+
+const [
+  addCertificateSearchText,
+  setAddCertificateSearchText,
+] = useState("");
+
+const [
+  addCertificateSelected,
+  setAddCertificateSelected,
+] = useState<{
+  privateCertificateMasterId:
+    number;
+
+  certificateName:
+    string;
+} | null>(
+  null
+);
+
 const {
   data:
     privateCertificateMasters = [],
@@ -175,8 +200,11 @@ const {
     undefined,
     {
       enabled:
-        createOpen &&
-        canCreateExternal,
+  (
+    createOpen ||
+    !!addCertificateTarget
+  ) &&
+  canCreateExternal,
 
       refetchOnWindowFocus:
         false,
@@ -206,6 +234,11 @@ const [
     "",
 },
   ]);
+
+const [
+  certificateSearchTexts,
+  setCertificateSearchTexts,
+] = useState<string[]>([""]);
 
   const normalizedAssigneeSearch =
     assigneeSearchText.trim();
@@ -241,6 +274,43 @@ const [
           "민간자격증 신규등록에 실패했습니다."
         );
       },
+    });
+
+const addCertificateMut =
+  trpc.privateCertificate
+    .addCertificate
+    .useMutation({
+      onSuccess:
+        async () => {
+          await utils
+            .privateCertificate
+            .list
+            .invalidate();
+
+          toast.success(
+            "민간자격증 과정이 추가되었습니다."
+          );
+
+          setAddCertificateTarget(
+            null
+          );
+
+          setAddCertificateSearchText(
+            ""
+          );
+
+          setAddCertificateSelected(
+            null
+          );
+        },
+
+      onError:
+        (e) => {
+          toast.error(
+            e.message ||
+            "민간자격증 추가에 실패했습니다."
+          );
+        },
     });
 
 
@@ -302,6 +372,7 @@ const openCreateDialog = () => {
   );
 
   setAssigneeSearchText("");
+setCertificateSearchTexts([""]);
 
 setCreateCertificateItems([
   {
@@ -321,8 +392,9 @@ const closeCreateDialog = () => {
     return;
   }
 
-  setCreateOpen(false);
+setCreateOpen(false);
 setAssigneeSearchText("");
+setCertificateSearchTexts([""]);
 
 setCreateCertificateItems([
   {
@@ -376,16 +448,11 @@ const selectAssignee = (row: any) => {
 };
 
 const selectPrivateCertificateMaster = (
-  itemIndex:
-    number,
-
-  value:
-    string
+  itemIndex: number,
+  value: string
 ) => {
   const privateCertificateMasterId =
-    Number(
-      value
-    );
+    Number(value);
 
   const selectedMaster =
     (
@@ -395,99 +462,97 @@ const selectPrivateCertificateMaster = (
         ? privateCertificateMasters
         : []
     ).find(
-      (
-        row:
-          any
-      ) =>
+      (row: any) =>
         Number(
-          row?.id ||
-          0
+          row?.id || 0
         ) ===
         privateCertificateMasterId
     );
 
-  if (
-    !selectedMaster
-  ) {
+  if (!selectedMaster) {
+    toast.error(
+      "선택한 민간자격증 정보를 찾을 수 없습니다."
+    );
     return;
   }
 
   const certificateName =
     String(
-      selectedMaster
-        ?.certificateName ||
-      selectedMaster
-        ?.name ||
+      selectedMaster?.certificateName ||
+      selectedMaster?.name ||
       ""
     ).trim();
 
-  setCreateCertificateItems(
-    (
-      prev
-    ) =>
-      prev.map(
-        (
-          item,
-          index
-        ) =>
-          index === itemIndex
-            ? {
-                ...item,
+  if (!certificateName) {
+    toast.error(
+      "선택한 민간자격증명이 올바르지 않습니다."
+    );
+    return;
+  }
 
-                privateCertificateMasterId,
+  setCreateCertificateItems((prev) =>
+    prev.map((item, index) =>
+      index === itemIndex
+        ? {
+            ...item,
 
-                certificateName,
-              }
-            : item
-      )
+            privateCertificateMasterId,
+            certificateName,
+          }
+        : item
+    )
+  );
+
+  setCertificateSearchTexts((prev) =>
+    prev.map((text, index) =>
+      index === itemIndex
+        ? certificateName
+        : text
+    )
   );
 };
 
-const addCreateCertificateItem =
-  () => {
-    setCreateCertificateItems(
-      (
-        prev
-      ) => [
-        ...prev,
+const addCreateCertificateItem = () => {
+  setCreateCertificateItems((prev) => [
+    ...prev,
 
-        {
-          privateCertificateMasterId:
-            null,
+    {
+      privateCertificateMasterId:
+        null,
 
-          certificateName:
-            "",
-        },
-      ]
-    );
-  };
+      certificateName:
+        "",
+    },
+  ]);
+
+  setCertificateSearchTexts((prev) => [
+    ...prev,
+    "",
+  ]);
+};
 
 const removeCreateCertificateItem = (
-  itemIndex:
-    number
+  itemIndex: number
 ) => {
-  setCreateCertificateItems(
-    (
-      prev
-    ) => {
-      if (
-        prev.length <= 1
-      ) {
-        toast.error(
-          "민간자격증 과정은 한 개 이상 필요합니다."
-        );
+  if (createCertificateItems.length <= 1) {
+    toast.error(
+      "민간자격증 과정은 한 개 이상 필요합니다."
+    );
+    return;
+  }
 
-        return prev;
-      }
+  setCreateCertificateItems((prev) =>
+    prev.filter(
+      (_, index) =>
+        index !== itemIndex
+    )
+  );
 
-      return prev.filter(
-        (
-          _,
-          index
-        ) =>
-          index !== itemIndex
-      );
-    }
+  setCertificateSearchTexts((prev) =>
+    prev.filter(
+      (_, index) =>
+        index !== itemIndex
+    )
   );
 };
 
@@ -636,9 +701,10 @@ if (
   );
 
   setCreateOpen(false);
-  setAssigneeSearchText("");
+setAssigneeSearchText("");
+setCertificateSearchTexts([""]);
 
-  setCreateCertificateItems([
+setCreateCertificateItems([
     {
       privateCertificateMasterId:
         null,
@@ -876,7 +942,39 @@ const filteredRows = useMemo(() => {
 </td>
             <td className="px-3 py-3">{formatPhone(row.phone || "") || "-"}</td>
             <td className="px-3 py-3">{row.assigneeName || "-"}</td>
-            <td className="px-3 py-3">{row.certificateName || "-"}</td>
+            <td className="px-3 py-3 min-w-[190px]">
+  <div className="flex items-start justify-between gap-2">
+    <span className="break-words">
+      {row.certificateName ||
+        "-"}
+    </span>
+
+    {canCreateExternal && (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-7 shrink-0 px-2 text-xs"
+        onClick={() => {
+          setAddCertificateTarget(
+            row
+          );
+
+          setAddCertificateSearchText(
+            ""
+          );
+
+          setAddCertificateSelected(
+            null
+          );
+        }}
+      >
+        <Plus className="mr-1 h-3.5 w-3.5" />
+        추가
+      </Button>
+    )}
+  </div>
+</td>
 
             <td className="px-3 py-3 min-w-[220px]">
               <Input
@@ -1319,80 +1417,227 @@ const filteredRows = useMemo(() => {
               자격증명
             </label>
 
-            <Select
-              value={
-                certificateItem
-                  .privateCertificateMasterId
-                  ? String(
-                      certificateItem
-                        .privateCertificateMasterId
+            <div className="space-y-2">
+  <div className="relative">
+    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+
+    <Input
+      className="bg-white pl-9"
+      value={
+        certificateSearchTexts[itemIndex] ||
+        ""
+      }
+      placeholder={
+        isPrivateCertificateMastersLoading
+          ? "민간자격증 목록 불러오는 중"
+          : "자격증명을 입력해주세요"
+      }
+      disabled={
+        isPrivateCertificateMastersLoading
+      }
+      onChange={(e) => {
+        const nextValue =
+          e.target.value;
+
+        setCertificateSearchTexts(
+          (prev) =>
+            prev.map(
+              (text, index) =>
+                index === itemIndex
+                  ? nextValue
+                  : text
+            )
+        );
+
+        /**
+         * 이미 선택된 상태에서 검색어를 수정하면
+         * 기존 선택값을 해제한다.
+         */
+        if (
+          certificateItem
+            .privateCertificateMasterId
+        ) {
+          setCreateCertificateItems(
+            (prev) =>
+              prev.map(
+                (item, index) =>
+                  index === itemIndex
+                    ? {
+                        ...item,
+
+                        privateCertificateMasterId:
+                          null,
+
+                        certificateName:
+                          "",
+                      }
+                    : item
+              )
+          );
+        }
+      }}
+    />
+  </div>
+
+  {String(
+    certificateSearchTexts[itemIndex] ||
+    ""
+  ).trim().length > 0 &&
+    !certificateItem
+      .privateCertificateMasterId && (
+      <div className="max-h-48 overflow-y-auto rounded-lg border bg-white p-2">
+        {(() => {
+          const keyword =
+            String(
+              certificateSearchTexts[
+                itemIndex
+              ] || ""
+            )
+              .trim()
+              .toLowerCase();
+
+          const filteredMasters =
+            (
+              Array.isArray(
+                privateCertificateMasters
+              )
+                ? privateCertificateMasters
+                : []
+            )
+              .filter(
+                (master: any) => {
+                  const certificateName =
+                    String(
+                      master?.certificateName ||
+                      master?.name ||
+                      ""
                     )
-                  : ""
-              }
-              onValueChange={
-                (
-                  value
-                ) =>
-                  selectPrivateCertificateMaster(
-                    itemIndex,
-                    value
-                  )
-              }
-              disabled={
-                isPrivateCertificateMastersLoading
-              }
-            >
-              <SelectTrigger className="bg-white">
-                <SelectValue
-                  placeholder={
-                    isPrivateCertificateMastersLoading
-                      ? "불러오는 중"
-                      : "민간자격증 과정 선택"
-                  }
-                />
-              </SelectTrigger>
+                      .trim()
+                      .toLowerCase();
 
-              <SelectContent>
-                {(
-                  Array.isArray(
-                    privateCertificateMasters
-                  )
-                    ? privateCertificateMasters
-                    : []
-                ).map(
-                  (
-                    master:
-                      any
-                  ) => {
-                    const certificateName =
-                      String(
-                        master
-                          ?.certificateName ||
-                        master
-                          ?.name ||
-                        `민간자격증 #${master.id}`
-                      ).trim();
+                  return (
+                    certificateName.includes(
+                      keyword
+                    )
+                  );
+                }
+              )
+              .slice(0, 20);
 
-                    return (
-                      <SelectItem
-                        key={
-                          Number(
-                            master.id
-                          )
-                        }
-                        value={
+          if (
+            filteredMasters.length ===
+            0
+          ) {
+            return (
+              <div className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+                검색된 민간자격증이 없습니다.
+              </div>
+            );
+          }
+
+          return (
+            <div className="space-y-2">
+              {filteredMasters.map(
+                (master: any) => {
+                  const certificateName =
+                    String(
+                      master
+                        ?.certificateName ||
+                      master?.name ||
+                      `민간자격증 #${master.id}`
+                    ).trim();
+
+                  return (
+                    <button
+                      key={
+                        Number(
+                          master.id
+                        )
+                      }
+                      type="button"
+                      className="flex w-full items-center justify-between rounded-lg border p-3 text-left transition hover:bg-slate-50"
+                      onClick={() =>
+                        selectPrivateCertificateMaster(
+                          itemIndex,
                           String(
                             master.id
                           )
-                        }
-                      >
+                        )
+                      }
+                    >
+                      <span className="min-w-0 truncate text-sm font-semibold">
                         {certificateName}
-                      </SelectItem>
-                    );
-                  }
-                )}
-              </SelectContent>
-            </Select>
+                      </span>
+
+                      <span className="ml-3 shrink-0 text-xs font-medium text-blue-700">
+                        선택
+                      </span>
+                    </button>
+                  );
+                }
+              )}
+            </div>
+          );
+        })()}
+      </div>
+    )}
+
+  {certificateItem
+    .privateCertificateMasterId && (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold text-emerald-800">
+          {
+            certificateItem
+              .certificateName
+          }
+        </p>
+
+        <p className="mt-0.5 text-xs text-emerald-700">
+          선택된 민간자격증
+        </p>
+      </div>
+
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="shrink-0 text-emerald-800"
+        onClick={() => {
+          setCreateCertificateItems(
+            (prev) =>
+              prev.map(
+                (item, index) =>
+                  index === itemIndex
+                    ? {
+                        ...item,
+
+                        privateCertificateMasterId:
+                          null,
+
+                        certificateName:
+                          "",
+                      }
+                    : item
+              )
+          );
+
+          setCertificateSearchTexts(
+            (prev) =>
+              prev.map(
+                (text, index) =>
+                  index === itemIndex
+                    ? ""
+                    : text
+              )
+          );
+        }}
+      >
+        다시 선택
+      </Button>
+    </div>
+  )}
+</div>
           </div>
 
           <div className="flex items-end">
@@ -1619,6 +1864,504 @@ const filteredRows = useMemo(() => {
               )}
 
               신규 등록
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+            </Dialog>
+
+      <Dialog
+        open={!!addCertificateTarget}
+        onOpenChange={(open) => {
+          if (open) {
+            return;
+          }
+
+          if (
+            addCertificateMut.isPending
+          ) {
+            return;
+          }
+
+          setAddCertificateTarget(
+            null
+          );
+
+          setAddCertificateSearchText(
+            ""
+          );
+
+          setAddCertificateSelected(
+            null
+          );
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              민간자격증 과정 추가
+            </DialogTitle>
+
+            <DialogDescription>
+              기존 요청의 학생정보와 담당자를 유지하고 새로운 자격증 과정을 추가합니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          {addCertificateTarget && (
+            <div className="space-y-5 py-2">
+              <div className="rounded-xl border bg-slate-50 p-4">
+                <p className="text-xs font-medium text-muted-foreground">
+                  추가 대상
+                </p>
+
+                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <div>
+                    <span className="text-xs text-muted-foreground">
+                      이름
+                    </span>
+
+                    <p className="text-sm font-semibold">
+                      {addCertificateTarget.clientName ||
+                        "-"}
+                    </p>
+                  </div>
+
+                  <div>
+                    <span className="text-xs text-muted-foreground">
+                      연락처
+                    </span>
+
+                    <p className="text-sm font-semibold">
+                      {formatPhone(
+                        addCertificateTarget.phone ||
+                          ""
+                      ) || "-"}
+                    </p>
+                  </div>
+
+                  <div>
+                    <span className="text-xs text-muted-foreground">
+                      담당자
+                    </span>
+
+                    <p className="text-sm font-semibold">
+                      {addCertificateTarget.assigneeName ||
+                        "-"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3 border-t pt-3">
+                  <span className="text-xs text-muted-foreground">
+                    현재 자격증
+                  </span>
+
+                  <p className="mt-1 text-sm font-semibold text-blue-700">
+                    {addCertificateTarget.certificateName ||
+                      "-"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-sm font-medium">
+                    추가할 자격증명
+                    <span className="ml-1 text-red-500">
+                      *
+                    </span>
+                  </label>
+
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    자격증명을 입력한 후 검색 결과에서 선택해주세요.
+                  </p>
+                </div>
+
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+
+                  <Input
+                    className="pl-9"
+                    value={
+                      addCertificateSearchText
+                    }
+                    placeholder={
+                      isPrivateCertificateMastersLoading
+                        ? "민간자격증 목록 불러오는 중"
+                        : "자격증명 입력"
+                    }
+                    disabled={
+                      isPrivateCertificateMastersLoading ||
+                      addCertificateMut.isPending
+                    }
+                    onChange={(e) => {
+                      const nextValue =
+                        e.target.value;
+
+                      setAddCertificateSearchText(
+                        nextValue
+                      );
+
+                      /**
+                       * 선택 완료 후 검색어를 수정하면
+                       * 기존 선택을 해제한다.
+                       */
+                      if (
+                        addCertificateSelected
+                      ) {
+                        setAddCertificateSelected(
+                          null
+                        );
+                      }
+                    }}
+                  />
+                </div>
+
+                {isPrivateCertificateMastersLoading && (
+                  <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    민간자격증 목록을 불러오고 있습니다.
+                  </div>
+                )}
+
+                {!isPrivateCertificateMastersLoading &&
+                  addCertificateSearchText
+                    .trim()
+                    .length > 0 &&
+                  !addCertificateSelected && (
+                    <div className="max-h-56 overflow-y-auto rounded-xl border bg-white p-2">
+                      {(() => {
+                        const keyword =
+                          addCertificateSearchText
+                            .trim()
+                            .toLowerCase();
+
+                        const currentCertificateMasterId =
+                          Number(
+                            addCertificateTarget
+                              ?.privateCertificateMasterId ||
+                              0
+                          );
+
+                        const currentCertificateName =
+                          String(
+                            addCertificateTarget
+                              ?.certificateName ||
+                              ""
+                          )
+                            .trim()
+                            .toLowerCase();
+
+                        const filteredMasters =
+                          (
+                            Array.isArray(
+                              privateCertificateMasters
+                            )
+                              ? privateCertificateMasters
+                              : []
+                          )
+                            .filter(
+                              (
+                                master:
+                                  any
+                              ) => {
+                                const masterId =
+                                  Number(
+                                    master?.id ||
+                                      0
+                                  );
+
+                                const certificateName =
+                                  String(
+                                    master
+                                      ?.certificateName ||
+                                      master?.name ||
+                                      ""
+                                  )
+                                    .trim()
+                                    .toLowerCase();
+
+                                const matchesKeyword =
+                                  certificateName.includes(
+                                    keyword
+                                  );
+
+                                /**
+                                 * 현재 행에 이미 등록된
+                                 * 동일 자격증은 결과에서 제외한다.
+                                 */
+                                const isCurrentCertificate =
+                                  currentCertificateMasterId >
+                                    0 &&
+                                  masterId ===
+                                    currentCertificateMasterId;
+
+                                const isCurrentCertificateName =
+                                  currentCertificateName &&
+                                  certificateName ===
+                                    currentCertificateName;
+
+                                return (
+                                  matchesKeyword &&
+                                  !isCurrentCertificate &&
+                                  !isCurrentCertificateName
+                                );
+                              }
+                            )
+                            .slice(
+                              0,
+                              20
+                            );
+
+                        if (
+                          filteredMasters.length ===
+                          0
+                        ) {
+                          return (
+                            <div className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">
+                              추가할 수 있는 민간자격증 검색 결과가 없습니다.
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="space-y-2">
+                            {filteredMasters.map(
+                              (
+                                master:
+                                  any
+                              ) => {
+                                const privateCertificateMasterId =
+                                  Number(
+                                    master?.id ||
+                                      0
+                                  );
+
+                                const certificateName =
+                                  String(
+                                    master
+                                      ?.certificateName ||
+                                      master?.name ||
+                                      `민간자격증 #${master.id}`
+                                  ).trim();
+
+                                return (
+                                  <button
+                                    key={
+                                      privateCertificateMasterId
+                                    }
+                                    type="button"
+                                    className="flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left transition hover:border-blue-300 hover:bg-blue-50"
+                                    onClick={() => {
+                                      setAddCertificateSelected({
+                                        privateCertificateMasterId,
+
+                                        certificateName,
+                                      });
+
+                                      setAddCertificateSearchText(
+                                        certificateName
+                                      );
+                                    }}
+                                  >
+                                    <span className="min-w-0 truncate text-sm font-semibold">
+                                      {certificateName}
+                                    </span>
+
+                                    <span className="shrink-0 text-xs font-medium text-blue-700">
+                                      선택
+                                    </span>
+                                  </button>
+                                );
+                              }
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                {addCertificateSelected && (
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-emerald-800">
+                        {
+                          addCertificateSelected
+                            .certificateName
+                        }
+                      </p>
+
+                      <p className="mt-1 text-xs text-emerald-700">
+                        추가할 민간자격증으로 선택되었습니다.
+                      </p>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0 text-emerald-800"
+                      disabled={
+                        addCertificateMut.isPending
+                      }
+                      onClick={() => {
+                        setAddCertificateSelected(
+                          null
+                        );
+
+                        setAddCertificateSearchText(
+                          ""
+                        );
+                      }}
+                    >
+                      다시 선택
+                    </Button>
+                  </div>
+                )}
+
+                <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs leading-5 text-blue-800">
+                  추가된 자격증은 기존 요청과 별도의 목록으로 생성됩니다. 요청상태는 요청, 결제상태는 결제대기, 금액은 0원으로 시작합니다.
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={
+                addCertificateMut.isPending
+              }
+              onClick={() => {
+                setAddCertificateTarget(
+                  null
+                );
+
+                setAddCertificateSearchText(
+                  ""
+                );
+
+                setAddCertificateSelected(
+                  null
+                );
+              }}
+            >
+              취소
+            </Button>
+
+            <Button
+              type="button"
+              disabled={
+                !addCertificateTarget ||
+                !addCertificateSelected ||
+                addCertificateMut.isPending
+              }
+              onClick={() => {
+                if (
+                  !addCertificateTarget
+                ) {
+                  toast.error(
+                    "추가할 대상 요청을 찾을 수 없습니다."
+                  );
+                  return;
+                }
+
+                if (
+                  !addCertificateSelected
+                ) {
+                  toast.error(
+                    "추가할 민간자격증을 선택해주세요."
+                  );
+                  return;
+                }
+
+                const requestId =
+                  Number(
+                    addCertificateTarget.id ||
+                      0
+                  );
+
+                if (!requestId) {
+                  toast.error(
+                    "기존 민간자격증 요청 정보가 올바르지 않습니다."
+                  );
+                  return;
+                }
+
+                const sourceType =
+                  addCertificateTarget
+                    .sourceType ===
+                  "external"
+                    ? "external"
+                    : "student";
+
+                const currentCertificateMasterId =
+                  Number(
+                    addCertificateTarget
+                      .privateCertificateMasterId ||
+                      0
+                  );
+
+                const currentCertificateName =
+                  String(
+                    addCertificateTarget
+                      .certificateName ||
+                      ""
+                  )
+                    .trim()
+                    .toLowerCase();
+
+                const selectedCertificateName =
+                  addCertificateSelected
+                    .certificateName
+                    .trim()
+                    .toLowerCase();
+
+                if (
+                  currentCertificateMasterId >
+                    0 &&
+                  currentCertificateMasterId ===
+                    addCertificateSelected
+                      .privateCertificateMasterId
+                ) {
+                  toast.error(
+                    "현재 요청과 동일한 자격증은 다시 추가할 수 없습니다."
+                  );
+                  return;
+                }
+
+                if (
+                  currentCertificateName &&
+                  currentCertificateName ===
+                    selectedCertificateName
+                ) {
+                  toast.error(
+                    "현재 요청과 동일한 자격증은 다시 추가할 수 없습니다."
+                  );
+                  return;
+                }
+
+                addCertificateMut.mutate({
+                  id:
+                    requestId,
+
+                  sourceType,
+
+                  privateCertificateMasterId:
+                    addCertificateSelected
+                      .privateCertificateMasterId,
+
+                  certificateName:
+                    addCertificateSelected
+                      .certificateName,
+                });
+              }}
+            >
+              {addCertificateMut.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+
+              자격증 추가
             </Button>
           </DialogFooter>
         </DialogContent>

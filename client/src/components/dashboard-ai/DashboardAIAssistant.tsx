@@ -86,12 +86,17 @@ if (
   response
     ?.scheduleCreateDraft ||
   response
+    ?.semesterCreateDraft ||
+  response
     ?.consultationUpdateDraft ||
   response
     ?.studentUpdateDraft ||
   response
     ?.data
     ?.scheduleCreateDraft ||
+  response
+    ?.data
+    ?.semesterCreateDraft ||
   response
     ?.data
     ?.consultationUpdateDraft ||
@@ -662,6 +667,10 @@ const isScheduleCreate =
   actionType ===
   "schedule_create";
 
+const isSemesterCreate =
+  actionType ===
+  "semester_create";
+
 const isConsultationUpdate =
   actionType ===
   "consultation_update";
@@ -699,11 +708,13 @@ const resultContent =
       ? "학생 기본정보 수정이 완료되었습니다."
       : isConsultationUpdate
         ? "상담DB 정보 수정이 완료되었습니다."
-        : isScheduleCreate
-          ? "일정 등록이 완료되었습니다."
-          : isDocumentImport
-            ? "AI 문서 분석 결과의 CRM 반영이 완료되었습니다."
-            : "등록예정 학생 생성 및 과목설계 저장이 완료되었습니다."
+        : isSemesterCreate
+          ? "학생 학기 생성이 완료되었습니다."
+          : isScheduleCreate
+            ? "일정 등록이 완료되었습니다."
+            : isDocumentImport
+              ? "AI 문서 분석 결과의 CRM 반영이 완료되었습니다."
+              : "등록예정 학생 생성 및 과목설계 저장이 완료되었습니다."
   );
 
 const registrationResult = {
@@ -737,6 +748,32 @@ scheduleId:
       pendingAction
         ?.executionResult
         ?.planId ||
+      0
+    ) ||
+    null,
+
+  semesterId:
+    Number(
+      response?.semesterId ||
+      pendingAction
+        ?.executionResult
+        ?.semesterId ||
+      (
+        Array.isArray(
+          response?.semesterIds
+        )
+          ? response
+              .semesterIds[0]
+          : Array.isArray(
+              pendingAction
+                ?.executionResult
+                ?.semesterIds
+            )
+            ? pendingAction
+                .executionResult
+                .semesterIds[0]
+            : 0
+      ) ||
       0
     ) ||
     null,
@@ -867,6 +904,7 @@ await saveSpecialChatMessage(
     if (
   studentId > 0 &&
   !isDocumentImport &&
+  !isSemesterCreate &&
   !isScheduleCreate &&
   !isConsultationUpdate &&
   !isStudentUpdate
@@ -980,6 +1018,10 @@ const isScheduleCreate =
   actionType ===
   "schedule_create";
 
+const isSemesterCreate =
+  actionType ===
+  "semester_create";
+
 const isConsultationUpdate =
   actionType ===
   "consultation_update";
@@ -995,11 +1037,13 @@ const cancelledContent =
       ? "학생 기본정보 수정 초안이 취소되었습니다."
       : isConsultationUpdate
         ? "상담DB 수정 초안이 취소되었습니다."
-        : isScheduleCreate
-          ? "일정 등록 초안이 취소되었습니다."
-          : isDocumentImport
-            ? "문서 CRM 반영 초안이 취소되었습니다."
-            : "학생 등록 초안이 취소되었습니다."
+        : isSemesterCreate
+          ? "학생 학기 생성 초안이 취소되었습니다."
+          : isScheduleCreate
+            ? "일정 등록 초안이 취소되었습니다."
+            : isDocumentImport
+              ? "문서 CRM 반영 초안이 취소되었습니다."
+              : "학생 등록 초안이 취소되었습니다."
   );
 
 const cancelledPendingAction =
@@ -1323,6 +1367,13 @@ const assistantMessage:
     ?.scheduleCreateDraft ||
   responseData
     ?.scheduleCreateDraft ||
+  null,
+
+semesterCreateDraft:
+  response
+    ?.semesterCreateDraft ||
+  responseData
+    ?.semesterCreateDraft ||
   null,
 
 consultationUpdateDraft:

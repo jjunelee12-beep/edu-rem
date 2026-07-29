@@ -3822,23 +3822,28 @@ export async function claimAiPendingActionForExecution(
     );
   }
 
- const executableActionTypes =
-  new Set<AiPendingActionType>([
-    "student_registration_create",
+   const executableActionTypes =
+    new Set<AiPendingActionType>([
+      "student_registration_create",
 
-    /**
-     * 학생 기본정보 수정
-     */
-    "student_update",
+      /**
+       * 학생 기본정보 수정
+       */
+      "student_update",
 
-    "schedule_create",
-    "consultation_update",
+      /**
+       * 기존 학생 학기 생성
+       */
+      "semester_create",
 
-    "document_transfer_import",
-    "document_plan_import",
-    "document_payment_import",
-    "document_plan_payment_import",
-  ]);
+      "schedule_create",
+      "consultation_update",
+
+      "document_transfer_import",
+      "document_plan_import",
+      "document_payment_import",
+      "document_plan_payment_import",
+    ]);
 
 if (
   !executableActionTypes.has(
@@ -4226,6 +4231,10 @@ const normalizedSemesterIds =
     )
   );
 
+const primarySemesterId =
+  normalizedSemesterIds[0] ??
+  null;
+
 const normalizedPlanSubjectIds =
   Array.from(
     new Set(
@@ -4361,14 +4370,17 @@ if (
 studentId:
   normalizedStudentId,
 
-  scheduleId,
+    scheduleId,
 
   planId,
 
-    semesterIds:
-      normalizedSemesterIds,
+  semesterId:
+    primarySemesterId,
 
-    planSubjectIds:
+  semesterIds:
+    normalizedSemesterIds,
+
+  planSubjectIds:
       normalizedPlanSubjectIds,
 
     transferSubjectIds:
@@ -4416,11 +4428,14 @@ paymentUpdated:
         "executed",
     }),
 
-  consultationId:
+    consultationId:
     normalizedConsultationId,
 
   studentId:
     normalizedStudentId,
+
+  semesterId:
+    primarySemesterId,
 
   executionResultJson:
     encryptAiPendingJson(
@@ -14058,34 +14073,152 @@ const monthEnd = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
     }
   }
 
-  // 2) 민간자격증 백필
- const privateRows = await db
-  .select({ id: privateCertificateRequests.id })
-  .from(privateCertificateRequests)
-  .where(
-    and(
-      eq(privateCertificateRequests.organizationId, organizationId),
-      sql`COALESCE(${privateCertificateRequests.paidAt}, ${privateCertificateRequests.updatedAt}) >= ${monthStart}`,
-      sql`COALESCE(${privateCertificateRequests.paidAt}, ${privateCertificateRequests.updatedAt}) < ${monthEnd}`
-    )
-  )
-  .orderBy(asc(privateCertificateRequests.id));
+   // 2-1) 민간자격증 학생 연결 요청 백필
+  const privateRows =
+    await db
+      .select({
+        id:
+          privateCertificateRequests.id,
+      })
+      .from(
+        privateCertificateRequests
+      )
+      .where(
+        and(
+          eq(
+            privateCertificateRequests.organizationId,
+            organizationId
+          ),
 
-  for (const row of privateRows) {
-    privateProcessed += 1;
+          sql`COALESCE(
+            ${privateCertificateRequests.paidAt},
+            ${privateCertificateRequests.updatedAt}
+          ) >= ${monthStart}`,
+
+          sql`COALESCE(
+            ${privateCertificateRequests.paidAt},
+            ${privateCertificateRequests.updatedAt}
+          ) < ${monthEnd}`
+        )
+      )
+      .orderBy(
+        asc(
+          privateCertificateRequests.id
+        )
+      );
+
+  for (
+    const row
+    of privateRows
+  ) {
+    privateProcessed +=
+      1;
+
     try {
       await syncPrivateCertificateSettlementItemByRequestId(
-  Number(row.id),
-  actorUserId,
-  {
-    organizationId,
-  }
-);
-      privateSuccess += 1;
-    } catch (err: any) {
-      privateFailed += 1;
+        Number(
+          row.id
+        ),
+
+        actorUserId,
+
+        {
+          organizationId,
+
+          sourceType:
+            "student",
+        }
+      );
+
+      privateSuccess +=
+        1;
+    } catch (
+      err:
+        any
+    ) {
+      privateFailed +=
+        1;
+
       errors.push(
-        `[private_certificate][requestId=${row.id}] ${err?.message || String(err)}`
+        `[private_certificate][student][requestId=${row.id}] ${
+          err?.message ||
+          String(err)
+        }`
+      );
+    }
+  }
+
+  // 2-2) 민간자격증 직접등록 요청 백필
+  const privateExternalRows =
+    await db
+      .select({
+        id:
+          privateCertificateExternalRequests.id,
+      })
+      .from(
+        privateCertificateExternalRequests
+      )
+      .where(
+        and(
+          eq(
+            privateCertificateExternalRequests.organizationId,
+            organizationId
+          ),
+
+          sql`COALESCE(
+            ${privateCertificateExternalRequests.paidAt},
+            ${privateCertificateExternalRequests.updatedAt}
+          ) >= ${monthStart}`,
+
+          sql`COALESCE(
+            ${privateCertificateExternalRequests.paidAt},
+            ${privateCertificateExternalRequests.updatedAt}
+          ) < ${monthEnd}`
+        )
+      )
+      .orderBy(
+        asc(
+          privateCertificateExternalRequests.id
+        )
+      );
+
+  for (
+    const row
+    of privateExternalRows
+  ) {
+    privateProcessed +=
+      1;
+
+    try {
+      await syncPrivateCertificateSettlementItemByRequestId(
+        Number(
+          row.id
+        ),
+
+        actorUserId,
+
+        {
+          organizationId,
+
+          sourceType:
+            "external",
+        }
+      );
+
+      privateSuccess +=
+        1;
+    } catch (
+      err:
+        any
+    ) {
+      privateFailed +=
+        1;
+
+      errors.push(
+        `[private_certificate][external][requestId=${row.id}] ${
+          err?.message ||
+          String(err)
+        }`
       );
     }
   }
@@ -20090,6 +20223,326 @@ export async function createPrivateCertificateExternalRequest(
   }
 
   return insertId;
+}
+
+export async function getPrivateCertificateRequest(
+  id: number,
+  params?: {
+    organizationId?: number | null;
+  }
+) {
+  const db = await getDb();
+
+  if (!db) {
+    return undefined;
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params?.organizationId
+    );
+
+  const rows =
+    await db
+      .select()
+      .from(
+        privateCertificateRequests
+      )
+      .where(
+        and(
+          eq(
+            privateCertificateRequests.id,
+            Number(id)
+          ),
+          eq(
+            privateCertificateRequests.organizationId,
+            organizationId
+          )
+        )
+      )
+      .limit(1);
+
+  return rows[0]
+    ? decryptPrivateCertificatePersonalData(
+        rows[0]
+      )
+    : undefined;
+}
+
+export async function addPrivateCertificateToExistingRequest(
+  params: {
+    organizationId?: number | null;
+
+    requestId: number;
+
+    sourceType:
+      | "student"
+      | "external";
+
+    privateCertificateMasterId:
+      number;
+
+    certificateName:
+      string;
+
+    actorUserId:
+      number;
+  }
+) {
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const requestId =
+    Number(
+      params.requestId ||
+      0
+    );
+
+  const privateCertificateMasterId =
+    Number(
+      params.privateCertificateMasterId ||
+      0
+    );
+
+  const certificateName =
+    String(
+      params.certificateName ||
+      ""
+    ).trim();
+
+  if (
+    !requestId ||
+    !privateCertificateMasterId ||
+    !certificateName
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "추가할 민간자격증 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (
+    params.sourceType ===
+    "external"
+  ) {
+    const original =
+      await getPrivateCertificateExternalRequest(
+        requestId,
+        {
+          organizationId,
+        }
+      );
+
+    if (!original) {
+      throwAppError(
+        ERROR_CODES.DATA_NOT_FOUND,
+        "기존 민간자격증 요청을 찾을 수 없습니다.",
+        404
+      );
+    }
+
+    const newId =
+      await createPrivateCertificateExternalRequest({
+        organizationId,
+
+        assigneeId:
+          Number(
+            original.assigneeId
+          ),
+
+        createdBy:
+          Number(
+            params.actorUserId
+          ),
+
+        updatedBy:
+          null,
+
+        clientName:
+          String(
+            original.clientName ||
+            ""
+          ),
+
+        phone:
+          String(
+            original.phone ||
+            ""
+          ),
+
+        assigneeName:
+          original.assigneeName
+            ? String(
+                original.assigneeName
+              )
+            : null,
+
+        privateCertificateMasterId,
+
+        certificateName,
+
+        inputAddress:
+          original.inputAddress
+            ? String(
+                original.inputAddress
+              )
+            : null,
+
+        detailAddress:
+          original.detailAddress
+            ? String(
+                original.detailAddress
+              )
+            : null,
+
+        note:
+          original.note
+            ? String(
+                original.note
+              )
+            : null,
+
+        requestStatus:
+          "요청",
+
+        paymentStatus:
+          "결제대기",
+
+        feeAmount:
+          "0",
+
+        freelancerInputAmount:
+          "0",
+
+        paidAt:
+          null,
+
+        refundStatus:
+          "없음",
+
+        refundAmount:
+          "0",
+      } as any);
+
+    return {
+      id:
+        Number(
+          newId
+        ),
+
+      sourceType:
+        "external" as const,
+    };
+  }
+
+  const original =
+    await getPrivateCertificateRequest(
+      requestId,
+      {
+        organizationId,
+      }
+    );
+
+  if (!original) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "기존 학생 민간자격증 요청을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  const newId =
+    await createPrivateCertificateRequest({
+      organizationId,
+
+      studentId:
+        Number(
+          original.studentId
+        ),
+
+      assigneeId:
+        Number(
+          original.assigneeId
+        ),
+
+      clientName:
+        String(
+          original.clientName ||
+          ""
+        ),
+
+      phone:
+        String(
+          original.phone ||
+          ""
+        ),
+
+      assigneeName:
+        original.assigneeName
+          ? String(
+              original.assigneeName
+            )
+          : null,
+
+      privateCertificateMasterId,
+
+      certificateName,
+
+      inputAddress:
+        original.inputAddress
+          ? String(
+              original.inputAddress
+            )
+          : null,
+
+      detailAddress:
+        original.detailAddress
+          ? String(
+              original.detailAddress
+            )
+          : null,
+
+      note:
+        original.note
+          ? String(
+              original.note
+            )
+          : null,
+
+      requestStatus:
+        "요청",
+
+      paymentStatus:
+        "결제대기",
+
+      feeAmount:
+        "0",
+
+      freelancerInputAmount:
+        "0",
+
+      paidAt:
+        null,
+
+      refundStatus:
+        "없음",
+
+      refundAmount:
+        "0",
+    } as any);
+
+  return {
+    id:
+      Number(
+        newId
+      ),
+
+    sourceType:
+      "student" as const,
+  };
 }
 
 export async function getPrivateCertificateExternalRequest(
@@ -26763,7 +27216,12 @@ u.role,
     LIMIT 1
   `);
 
-  return ((rows as any[]) ?? [])[0] ?? null;
+  const profile =
+  ((rows as any[]) ?? [])[0] ?? null;
+
+return profile
+  ? decryptUserPersonalData(profile)
+  : null;
 }
 
 export async function updateMyProfilePhoto(params: {
