@@ -247,6 +247,20 @@ function normalizeText(
   ).trim();
 }
 
+function normalizeCourseMatchText(
+  value:
+    unknown
+): string {
+  return normalizeText(
+    value
+  )
+    .toLowerCase()
+    .replace(
+      /[\s\-_()[\]{}.,/\\]+/g,
+      ""
+    );
+}
+
 function normalizeNullableText(
   value:
     unknown
@@ -545,6 +559,9 @@ async function resolveLeadCourseCatalog(
 
     courseKey:
       QualificationRiskCourseKey;
+
+    requestedCourse:
+      string;
   }
 ): Promise<{
   catalog:
@@ -571,7 +588,12 @@ async function resolveLeadCourseCatalog(
         true,
     });
 
-  const matches =
+  /**
+   * 1.
+   * 먼저 공통 courseKey가 같은
+   * 활성 과정마스터만 후보로 만든다.
+   */
+  const courseKeyMatches =
     (
       catalogs ||
       []
@@ -587,46 +609,188 @@ async function resolveLeadCourseCatalog(
           params.courseKey
       );
 
-  /**
-   * 과정이 하나도 없거나
-   * 같은 courseKey 과정마스터가 여러 개면
-   * 임의 선택하지 않는다.
-   */
   if (
-    matches.length !==
-    1
+    courseKeyMatches.length ===
+    0
   ) {
     return {
       catalog:
         null,
 
       duplicate:
-        matches.length >
-        1,
+        false,
 
       matchedCount:
-        matches.length,
+        0,
     };
   }
 
-  return {
-    catalog: {
-      id:
-        Number(
-          matches[0].id
-        ),
+  /**
+   * courseKey 기준으로 이미 하나만 있으면
+   * 추가 추론 없이 그대로 사용한다.
+   */
+  if (
+    courseKeyMatches.length ===
+    1
+  ) {
+    return {
+      catalog: {
+        id:
+          Number(
+            courseKeyMatches[0].id
+          ),
 
-      name:
-        normalizeText(
-          matches[0].name
-        ),
-    },
+        name:
+          normalizeText(
+            courseKeyMatches[0].name
+          ),
+      },
+
+      duplicate:
+        false,
+
+      matchedCount:
+        1,
+    };
+  }
+
+  /**
+   * 2.
+   * 같은 courseKey 마스터가 여러 개라면
+   * 사용자가 실제로 말한 희망과정 문구를 이용해
+   * 가장 직접적으로 대응되는 마스터를 찾는다.
+   *
+   * 과정명을 새로 추측하거나 생성하지 않고
+   * DB에 존재하는 이름과 사용자의 실제 문구만 비교한다.
+   */
+  const normalizedRequestedCourse =
+    normalizeCourseMatchText(
+      params.requestedCourse
+    );
+
+  const directMatches =
+    courseKeyMatches.filter(
+      (
+        catalog:
+          any
+      ) => {
+        const normalizedCatalogName =
+          normalizeCourseMatchText(
+            catalog?.name
+          );
+
+        if (
+          !normalizedCatalogName ||
+          !normalizedRequestedCourse
+        ) {
+          return false;
+        }
+
+        return (
+          normalizedRequestedCourse.includes(
+            normalizedCatalogName
+          ) ||
+          normalizedCatalogName.includes(
+            normalizedRequestedCourse
+          )
+        );
+      }
+    );
+
+  if (
+    directMatches.length ===
+    1
+  ) {
+    return {
+      catalog: {
+        id:
+          Number(
+            directMatches[0].id
+          ),
+
+        name:
+          normalizeText(
+            directMatches[0].name
+          ),
+      },
+
+      duplicate:
+        false,
+
+      matchedCount:
+        courseKeyMatches.length,
+    };
+  }
+
+  /**
+   * 3.
+   * 사용자가 학위과정을 말하지 않았는데
+   * 동일 courseKey 안에 자격과정과 학사과정이 같이 있다면
+   * 학사 과정마스터를 자격과정 후보에서 제외한다.
+   *
+   * 반대로 사용자가 실제로 "학사"를 말했다면
+   * 이 필터를 적용하지 않는다.
+   */
+  const requestedDegreeTrack =
+    normalizedRequestedCourse.includes(
+      "학사"
+    );
+
+  if (
+    !requestedDegreeTrack
+  ) {
+    const nonDegreeMatches =
+      courseKeyMatches.filter(
+        (
+          catalog:
+            any
+        ) =>
+          !normalizeCourseMatchText(
+            catalog?.name
+          ).includes(
+            "학사"
+          )
+      );
+
+    if (
+      nonDegreeMatches.length ===
+      1
+    ) {
+      return {
+        catalog: {
+          id:
+            Number(
+              nonDegreeMatches[0].id
+            ),
+
+          name:
+            normalizeText(
+              nonDegreeMatches[0].name
+            ),
+        },
+
+        duplicate:
+          false,
+
+        matchedCount:
+          courseKeyMatches.length,
+      };
+    }
+  }
+
+  /**
+   * 여기까지 와도 하나로 확정되지 않는 경우에만
+   * 안전하게 중복으로 처리한다.
+   */
+  return {
+    catalog:
+      null,
 
     duplicate:
-      false,
+      true,
 
     matchedCount:
-      1,
+      courseKeyMatches.length,
   };
 }
 
@@ -806,11 +970,13 @@ export async function resolveKakaoAiLeadAcademicAnalysis(
    * 회사별 실제 과정마스터 확인.
    */
   const catalogResolution =
-    await resolveLeadCourseCatalog({
-      organizationId,
+  await resolveLeadCourseCatalog({
+    organizationId,
 
-      courseKey,
-    });
+    courseKey,
+
+    requestedCourse,
+  });
 
   if (
     !catalogResolution.catalog

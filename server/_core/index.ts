@@ -36,6 +36,9 @@ import {
   updateChatRoomType,
   getStudent,
   getKakaoAiSettings,
+getKakaoAiCallbackRecovery,
+claimKakaoAiCallbackDelivery,
+markKakaoAiCallbackDelivery,
 } from "../db";
 import {
   orchestrateKakaoAiIncomingMessage,
@@ -2118,6 +2121,171 @@ async function getR2PrefixUsageBytes(prefix: string) {
             ""
           ).trim();
 
+const sendKakaoCallback =
+  async (
+    text:
+      string
+  ): Promise<boolean> => {
+    const normalizedText =
+      String(
+        text ||
+        ""
+      ).trim();
+
+    if (
+      !callbackUrl ||
+      !normalizedText
+    ) {
+      return false;
+    }
+
+    try {
+      const callbackResponse =
+        await fetch(
+          callbackUrl,
+          {
+            method:
+              "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                version:
+                  "2.0",
+
+                template: {
+                  outputs: [
+                    {
+                      simpleText: {
+                        text:
+                          normalizedText,
+                      },
+                    },
+                  ],
+                },
+              }),
+          }
+        );
+
+      if (
+        !callbackResponse.ok
+      ) {
+        const errorText =
+          await callbackResponse
+            .text()
+            .catch(
+              () =>
+                ""
+            );
+
+        console.error(
+          "[KAKAO AI] Callback 전송 실패",
+          {
+            organizationId,
+
+            status:
+              callbackResponse.status,
+
+            error:
+              errorText.slice(
+                0,
+                500
+              ),
+          }
+        );
+
+        return false;
+      }
+
+      return true;
+    } catch (
+      error:
+        unknown
+    ) {
+      console.error(
+        "[KAKAO AI] Callback 요청 예외",
+        error instanceof
+          Error
+          ? {
+              name:
+                error.name,
+
+              message:
+                error.message,
+            }
+          : {
+              message:
+                String(
+                  error
+                ),
+            }
+      );
+
+      return false;
+    }
+  };
+
+const waitForKakaoCallbackRecovery =
+  async () => {
+    if (
+      !kakaoRequestId
+    ) {
+      return null;
+    }
+
+    /**
+     * 동일 webhook이 원본 AI 처리 도중
+     * 다시 들어온 경우 즉시 실패응답을 보내지 않고,
+     * 원본 처리가 response_ready 또는 sent 상태로
+     * 바뀌는지 잠시 확인한다.
+     */
+    for (
+      let attempt = 0;
+      attempt < 10;
+      attempt += 1
+    ) {
+      const recovery =
+        await getKakaoAiCallbackRecovery({
+          organizationId,
+
+          kakaoMessageId:
+            kakaoRequestId,
+        });
+
+      if (
+  !recovery ||
+  (
+    recovery.callbackStatus !==
+      "processing" &&
+    recovery.callbackStatus !==
+      "sending"
+  )
+) {
+  return recovery;
+}
+
+      await new Promise<void>(
+        resolve => {
+          setTimeout(
+            resolve,
+            1000
+          );
+        }
+      );
+    }
+
+    return await getKakaoAiCallbackRecovery({
+      organizationId,
+
+      kakaoMessageId:
+        kakaoRequestId,
+    });
+  };
+
         /**
          * ---------------------------------------------------------
          * Callback 사용 가능
@@ -2176,20 +2344,132 @@ async function getR2PrefixUsageBytes(prefix: string) {
                  * callback을 중복 전송하지 않는다.
                  */
                 if (
-                  result.duplicateMessage
-                ) {
-                  console.warn(
-                    "[KAKAO AI] Duplicate webhook skipped",
-                    {
-                      organizationId,
+  result.duplicateMessage
+) {
+  console.warn(
+    "[KAKAO AI] Duplicate webhook recovery",
+    {
+      organizationId,
 
-                      kakaoRequestId,
-                    }
-                  );
+      kakaoRequestId,
+    }
+  );
 
-                  return;
-                }
+  /**
+   * 외부 요청 ID가 없다면
+   * 기존 요청을 특정할 수 없으므로
+   * 중복 AI 실행은 하지 않는다.
+   */
+  if (
+    !kakaoRequestId
+  ) {
+    return;
+  }
 
+  const recovery =
+    await waitForKakaoCallbackRecovery();
+
+  /**
+   * 이미 실제 카카오 Callback 전달까지
+   * 성공한 요청이면 다시 보내지 않는다.
+   */
+  if (
+    recovery?.callbackStatus ===
+      "sent"
+  ) {
+    return;
+  }
+
+  const recoveredReplyText =
+    String(
+      recovery?.responseText ||
+      ""
+    ).trim();
+
+  /**
+   * 이전 AI 처리는 성공했고
+   * Callback만 전달되지 않았거나,
+   * 전달결과가 확정되지 않은 경우.
+   *
+   * OpenAI를 다시 호출하지 않고
+   * DB에 저장된 기존 assistant 답변을 재전송한다.
+   */
+  if (
+  recoveredReplyText
+) {
+  const claim =
+    await claimKakaoAiCallbackDelivery({
+      organizationId,
+
+      kakaoMessageId:
+        kakaoRequestId,
+    });
+
+  if (
+    !claim.claimed
+  ) {
+    return;
+  }
+
+  const recoveredCallbackSent =
+    await sendKakaoCallback(
+      recoveredReplyText
+    );
+
+  await markKakaoAiCallbackDelivery({
+    organizationId,
+
+    kakaoMessageId:
+      kakaoRequestId,
+
+    status:
+      recoveredCallbackSent
+        ? "sent"
+        : "failed",
+  });
+
+  return;
+}
+
+  /**
+   * 일정 시간 기다렸는데도
+   * 기존 처리결과가 만들어지지 않은 경우.
+   *
+   * 아무 응답도 하지 않고 종료하지 않는다.
+   */
+  const recoveryFallbackClaim =
+  await claimKakaoAiCallbackDelivery({
+    organizationId,
+
+    kakaoMessageId:
+      kakaoRequestId,
+  });
+
+if (
+  !recoveryFallbackClaim.claimed
+) {
+  return;
+}
+
+const recoveryFallbackSent =
+  await sendKakaoCallback(
+    "상담 요청은 확인했습니다. 처리 과정에서 응답이 완료되지 않아 같은 내용을 한 번만 다시 보내주시면 이어서 확인해드릴게요."
+  );
+
+await markKakaoAiCallbackDelivery({
+  organizationId,
+
+  kakaoMessageId:
+    kakaoRequestId,
+
+  status:
+    recoveryFallbackSent
+      ? "sent"
+      : "failed",
+});
+
+return;
+}
                 const replyText =
                   String(
                     result
@@ -2202,96 +2482,158 @@ async function getR2PrefixUsageBytes(prefix: string) {
                   ).trim();
 
                 if (
-                  !replyText
-                ) {
-                  throw new Error(
-                    "카카오 AI 최종 답변이 비어 있습니다."
-                  );
-                }
+  !replyText
+) {
+  throw new Error(
+    "카카오 AI 최종 답변이 비어 있습니다."
+  );
+}
 
-                const callbackResponse =
-                  await fetch(
-                    callbackUrl,
-                    {
-                      method:
-                        "POST",
+/**
+ * 중복 webhook 복구 경로에서
+ * 이미 Callback 전송이 성공했을 수 있다.
+ *
+ * 원본 AI 처리가 뒤늦게 끝났더라도
+ * 동일 사용자에게 답변을 한 번 더 보내지 않는다.
+ */
+if (
+  kakaoRequestId
+) {
+  const latestRecovery =
+    await getKakaoAiCallbackRecovery({
+      organizationId,
 
-                      headers: {
-                        "Content-Type":
-                          "application/json",
-                      },
+      kakaoMessageId:
+        kakaoRequestId,
+    });
 
-                      body:
-                        JSON.stringify({
-                          version:
-                            "2.0",
+  if (
+    latestRecovery?.callbackStatus ===
+      "sent"
+  ) {
+    return;
+  }
 
-                          template: {
-                            outputs: [
-                              {
-                                simpleText: {
-                                  text:
-                                    replyText,
-                                },
-                              },
-                            ],
-                          },
-                        }),
-                    }
-                  );
+  const claim =
+    await claimKakaoAiCallbackDelivery({
+      organizationId,
 
-                if (
-                  !callbackResponse.ok
-                ) {
-                  const errorText =
-                    await callbackResponse
-                      .text()
-                      .catch(
-                        () =>
-                          ""
-                      );
+      kakaoMessageId:
+        kakaoRequestId,
+    });
 
-                  console.error(
-                    "[KAKAO AI] Callback 전송 실패",
-                    {
-                      organizationId,
+  if (
+    !claim.claimed
+  ) {
+    return;
+  }
+}
 
-                      status:
-                        callbackResponse.status,
+const callbackSent =
+  await sendKakaoCallback(
+    replyText
+  );
 
-                      error:
-                        errorText.slice(
-                          0,
-                          500
-                        ),
-                    }
-                  );
+if (
+  kakaoRequestId
+) {
+  await markKakaoAiCallbackDelivery({
+    organizationId,
 
-                  return;
-                }
+    kakaoMessageId:
+      kakaoRequestId,
+
+    status:
+      callbackSent
+        ? "sent"
+        : "failed",
+  });
+}
+
+if (
+  !callbackSent
+) {
+  console.error(
+    "[KAKAO AI] 최종 답변 Callback 전달 실패",
+    {
+      organizationId,
+
+      kakaoRequestId,
+    }
+  );
+
+  return;
+}
               } catch (
-                error:
-                  unknown
-              ) {
-                console.error(
-                  "[KAKAO AI] 비동기 처리 실패",
-                  error instanceof
-                    Error
-                    ? {
-                        name:
-                          error.name,
+  error:
+    unknown
+) {
+  console.error(
+    "[KAKAO AI] 비동기 처리 실패",
+    error instanceof
+      Error
+      ? {
+          name:
+            error.name,
 
-                        message:
-                          error.message,
-                      }
-                    : {
-                        message:
-                          String(
-                            error
-                          ),
-                      }
-                );
-              }
+          message:
+            error.message,
+        }
+      : {
+          message:
+            String(
+              error
+            ),
+        }
+  );
+
+  /**
+   * useCallback=true를 이미 반환한 상태에서는
+   * 여기서 아무 응답 없이 종료하면
+   * 실제 카카오 사용자에게 읽씹처럼 보인다.
+   *
+   * 정상 AI 처리에 실패하더라도
+   * 최소한 안전한 안내문은 callback으로 보낸다.
+   */
+ if (
+  kakaoRequestId
+) {
+  const fallbackClaim =
+    await claimKakaoAiCallbackDelivery({
+      organizationId,
+
+      kakaoMessageId:
+        kakaoRequestId,
+    });
+
+  if (
+    !fallbackClaim.claimed
+  ) {
+    return;
+  }
+}
+
+const fallbackCallbackSent =
+  await sendKakaoCallback(
+    "상담 내용을 처리하는 중 문제가 발생했습니다. 같은 내용을 한 번만 다시 보내주시면 이어서 확인해드릴게요."
+  );
+
+if (
+  kakaoRequestId
+) {
+  await markKakaoAiCallbackDelivery({
+    organizationId,
+
+    kakaoMessageId:
+      kakaoRequestId,
+
+    status:
+      fallbackCallbackSent
+        ? "sent"
+        : "failed",
+  });
+}
+}
             }
           )();
 

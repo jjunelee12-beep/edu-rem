@@ -541,26 +541,40 @@ export async function orchestrateKakaoAiIncomingMessage(
    * 동일 webhook 재수신을 차단한다.
    */
   const insertedMessage =
-    await db.insertKakaoAiMessage({
-      organizationId,
+  await db.insertKakaoAiMessage({
+    organizationId,
 
-      conversationId,
+    conversationId,
 
-      role:
-        "user",
+    role:
+      "user",
 
-      messageType,
+    messageType,
 
-      content:
-        message,
+    content:
+      message,
 
-      kakaoMessageId:
-        params.kakaoMessageId ??
-        null,
+    kakaoMessageId:
+      params.kakaoMessageId ??
+      null,
 
-      attachmentData:
-        params.attachmentData,
-    });
+    attachmentData:
+      params.attachmentData,
+
+    callbackStatus:
+      params.kakaoMessageId
+        ? "processing"
+        : null,
+  });
+
+const userMessageId =
+  insertedMessage.inserted ===
+    true
+    ? Number(
+        insertedMessage.id ||
+        0
+      )
+    : 0;
 
   /**
    * 이미 저장된 외부 메시지라면
@@ -654,29 +668,52 @@ export async function orchestrateKakaoAiIncomingMessage(
       ).trim();
 
     if (
-      verificationReply
-    ) {
-      await db.insertKakaoAiMessage({
-        organizationId,
+  verificationReply
+) {
+  const assistantMessage =
+    await db.insertKakaoAiMessage({
+      organizationId,
 
-        conversationId,
+      conversationId,
 
-        role:
-          "assistant",
+      role:
+        "assistant",
 
-        messageType:
-          "text",
+      messageType:
+        "text",
 
-        content:
-          verificationReply,
+      content:
+        verificationReply,
 
-        kakaoMessageId:
-          null,
+      kakaoMessageId:
+        null,
 
-        attachmentData:
-          undefined,
-      });
-    }
+      attachmentData:
+        undefined,
+    });
+
+  const responseMessageId =
+    Number(
+      assistantMessage.id ||
+      0
+    );
+
+  if (
+    userMessageId >
+      0 &&
+    responseMessageId >
+      0 &&
+    params.kakaoMessageId
+  ) {
+    await db.markKakaoAiResponseReady({
+      organizationId,
+
+      userMessageId,
+
+      responseMessageId,
+    });
+  }
+}
 
     /**
      * 인증 성공 시 Handler 내부에서
@@ -928,8 +965,9 @@ console.log("[KAKAO AI TRACE] Response", {
    * 의미일 수 있다.
    */
   if (
-    replyText
-  ) {
+  replyText
+) {
+  const assistantMessage =
     await db.insertKakaoAiMessage({
       organizationId,
 
@@ -944,18 +982,35 @@ console.log("[KAKAO AI TRACE] Response", {
       content:
         replyText,
 
-      /**
-       * assistant 메시지는 카카오에서 들어온
-       * 외부 webhook 메시지가 아니므로
-       * 외부 kakaoMessageId를 붙이지 않는다.
-       */
       kakaoMessageId:
         null,
 
       attachmentData:
         undefined,
     });
+
+  const responseMessageId =
+    Number(
+      assistantMessage.id ||
+      0
+    );
+
+  if (
+    userMessageId >
+      0 &&
+    responseMessageId >
+      0 &&
+    params.kakaoMessageId
+  ) {
+    await db.markKakaoAiResponseReady({
+      organizationId,
+
+      userMessageId,
+
+      responseMessageId,
+    });
   }
+}
 
   return {
     organizationId,

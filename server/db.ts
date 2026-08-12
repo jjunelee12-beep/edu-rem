@@ -41289,6 +41289,23 @@ export async function insertKakaoAiMessage(
 
     attachmentData?:
       unknown;
+
+callbackStatus?:
+  "processing" |
+  "response_ready" |
+  "sending" |
+  "sent" |
+  "failed" |
+  null;
+
+responseMessageId?:
+  number | null;
+
+callbackSentAt?:
+  Date | null;
+
+callbackFailedAt?:
+  Date | null;
   }
 ) {
   const database =
@@ -41376,6 +41393,22 @@ export async function insertKakaoAiMessage(
           kakaoMessageId,
 
           attachmentData,
+
+callbackStatus:
+  params.callbackStatus ??
+  null,
+
+responseMessageId:
+  params.responseMessageId ??
+  null,
+
+callbackSentAt:
+  params.callbackSentAt ??
+  null,
+
+callbackFailedAt:
+  params.callbackFailedAt ??
+  null,
         });
 
     await database
@@ -41448,6 +41481,522 @@ export async function insertKakaoAiMessage(
 
     throw error;
   }
+}
+
+/**
+ * 카카오 사용자 요청에 대해
+ * 최종 assistant 답변 생성까지 완료됐음을 기록한다.
+ *
+ * userMessageId:
+ * 카카오에서 들어온 원본 user 메시지 ID
+ *
+ * responseMessageId:
+ * 해당 요청에 대응해서 생성된 assistant 메시지 ID
+ */
+export async function markKakaoAiResponseReady(
+  params: {
+    organizationId:
+      number;
+
+    userMessageId:
+      number;
+
+    responseMessageId:
+      number;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userMessageId =
+    Math.floor(
+      Number(
+        params.userMessageId ||
+        0
+      )
+    );
+
+  const responseMessageId =
+    Math.floor(
+      Number(
+        params.responseMessageId ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      userMessageId
+    ) ||
+    userMessageId <=
+      0 ||
+    !Number.isFinite(
+      responseMessageId
+    ) ||
+    responseMessageId <=
+      0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "카카오 AI 응답 연결정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  await database
+    .update(
+      kakaoAiMessages
+    )
+    .set({
+      callbackStatus:
+        "response_ready",
+
+      responseMessageId,
+
+      callbackSentAt:
+        null,
+
+      callbackFailedAt:
+        null,
+    })
+    .where(
+  and(
+    eq(
+      kakaoAiMessages.organizationId,
+      organizationId
+    ),
+
+    eq(
+      kakaoAiMessages.id,
+      userMessageId
+    ),
+
+    eq(
+      kakaoAiMessages.role,
+      "user"
+    ),
+
+    or(
+      sql`${kakaoAiMessages.callbackStatus} IS NULL`,
+
+      sql`${kakaoAiMessages.callbackStatus} IN ('processing', 'response_ready', 'failed')`
+    )
+  )
+);
+
+  return {
+    success:
+      true,
+
+    userMessageId,
+
+    responseMessageId,
+  };
+}
+
+
+/**
+ * 외부 X-Request-Id를 기준으로
+ * 현재 Callback 전달상태와
+ * 이미 생성된 답변을 복원한다.
+ *
+ * 중복 webhook 재수신 시 사용한다.
+ */
+export async function getKakaoAiCallbackRecovery(
+  params: {
+    organizationId:
+      number;
+
+    kakaoMessageId:
+      string;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const kakaoMessageId =
+    String(
+      params.kakaoMessageId ||
+      ""
+    ).trim();
+
+  if (
+    !kakaoMessageId
+  ) {
+    return null;
+  }
+
+  const requestRows =
+    await database
+      .select()
+      .from(
+        kakaoAiMessages
+      )
+      .where(
+        and(
+          eq(
+            kakaoAiMessages.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiMessages.kakaoMessageId,
+            kakaoMessageId
+          ),
+
+          eq(
+            kakaoAiMessages.role,
+            "user"
+          )
+        )
+      )
+      .limit(
+        1
+      );
+
+  const requestMessage =
+    requestRows[0];
+
+  if (
+    !requestMessage
+  ) {
+    return null;
+  }
+
+  const responseMessageId =
+    Number(
+      requestMessage.responseMessageId ||
+      0
+    ) ||
+    null;
+
+  let responseText:
+    string | null =
+    null;
+
+  if (
+    responseMessageId
+  ) {
+    const responseRows =
+      await database
+        .select()
+        .from(
+          kakaoAiMessages
+        )
+        .where(
+          and(
+            eq(
+              kakaoAiMessages.organizationId,
+              organizationId
+            ),
+
+            eq(
+              kakaoAiMessages.id,
+              responseMessageId
+            ),
+
+            eq(
+              kakaoAiMessages.conversationId,
+              Number(
+                requestMessage.conversationId
+              )
+            ),
+
+            eq(
+              kakaoAiMessages.role,
+              "assistant"
+            )
+          )
+        )
+        .limit(
+          1
+        );
+
+    const responseMessage =
+      responseRows[0];
+
+    if (
+      responseMessage
+    ) {
+      responseText =
+        decryptKakaoAiNullableText(
+          responseMessage.content
+        );
+    }
+  }
+
+  return {
+    userMessageId:
+      Number(
+        requestMessage.id
+      ),
+
+    conversationId:
+      Number(
+        requestMessage.conversationId
+      ),
+
+    callbackStatus:
+      requestMessage.callbackStatus ??
+      null,
+
+    responseMessageId,
+
+    responseText:
+      responseText?.trim() ||
+      null,
+
+    callbackSentAt:
+      requestMessage.callbackSentAt ??
+      null,
+
+    callbackFailedAt:
+      requestMessage.callbackFailedAt ??
+      null,
+
+    createdAt:
+      requestMessage.createdAt ??
+      null,
+  };
+}
+
+/**
+ * 실제 Callback 전송 직전에
+ * 해당 요청의 전송권한을 원자적으로 선점한다.
+ *
+ * processing / response_ready / failed 상태에서만
+ * sending 상태로 변경할 수 있다.
+ *
+ * 동시에 여러 webhook이 들어와도
+ * affectedRows === 1인 요청 하나만
+ * 실제 Callback을 전송한다.
+ */
+export async function claimKakaoAiCallbackDelivery(
+  params: {
+    organizationId:
+      number;
+
+    kakaoMessageId:
+      string;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const kakaoMessageId =
+    String(
+      params.kakaoMessageId ||
+      ""
+    ).trim();
+
+  if (
+    !kakaoMessageId
+  ) {
+    return {
+      claimed:
+        false,
+    };
+  }
+
+  const result =
+    await database
+      .update(
+        kakaoAiMessages
+      )
+      .set({
+        callbackStatus:
+          "sending",
+      })
+      .where(
+        and(
+          eq(
+            kakaoAiMessages.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiMessages.kakaoMessageId,
+            kakaoMessageId
+          ),
+
+          eq(
+            kakaoAiMessages.role,
+            "user"
+          ),
+
+          sql`${kakaoAiMessages.callbackStatus} IN ('processing', 'response_ready', 'failed')`
+        )
+      );
+
+  const affectedRows =
+    Number(
+      (result as any)?.affectedRows ??
+      (result as any)?.[0]?.affectedRows ??
+      0
+    );
+
+  return {
+    claimed:
+      affectedRows ===
+      1,
+  };
+}
+
+
+/**
+ * 실제 카카오 Callback 전송 결과를
+ * 원본 user 메시지에 기록한다.
+ */
+export async function markKakaoAiCallbackDelivery(
+  params: {
+    organizationId:
+      number;
+
+    kakaoMessageId:
+      string;
+
+    status:
+      "sent" |
+      "failed";
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const kakaoMessageId =
+    String(
+      params.kakaoMessageId ||
+      ""
+    ).trim();
+
+  if (
+    !kakaoMessageId
+  ) {
+    return {
+      success:
+        false,
+    };
+  }
+
+  const now =
+    new Date();
+
+  await database
+    .update(
+      kakaoAiMessages
+    )
+    .set(
+      params.status ===
+        "sent"
+        ? {
+            callbackStatus:
+              "sent",
+
+            callbackSentAt:
+              now,
+
+            callbackFailedAt:
+              null,
+          }
+        : {
+            callbackStatus:
+              "failed",
+
+            callbackFailedAt:
+              now,
+          }
+    )
+    .where(
+  and(
+    eq(
+      kakaoAiMessages.organizationId,
+      organizationId
+    ),
+
+    eq(
+      kakaoAiMessages.kakaoMessageId,
+      kakaoMessageId
+    ),
+
+    eq(
+      kakaoAiMessages.role,
+      "user"
+    ),
+
+    eq(
+      kakaoAiMessages.callbackStatus,
+      "sending"
+    )
+  )
+);
+
+  return {
+    success:
+      true,
+
+    status:
+      params.status,
+  };
 }
 
 /**

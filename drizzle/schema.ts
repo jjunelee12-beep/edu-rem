@@ -670,6 +670,60 @@ export const kakaoAiMessages = mysqlTable(
       }
     ),
 
+/**
+ * 카카오 Callback 전달 상태.
+ *
+ * null:
+ * assistant 메시지 또는 callback 추적 대상이 아닌 기존 데이터
+ *
+ * processing:
+ * 사용자 요청을 정상 수신했고 AI 처리 중
+ *
+ * response_ready:
+ * AI 답변 생성까지 완료됐지만 callback 전송 전
+ *
+ * sent:
+ * 카카오 callback 전송 성공
+ *
+ * failed:
+ * callback 전송 실패
+ */
+callbackStatus: mysqlEnum(
+  "callbackStatus",
+  [
+    "processing",
+    "response_ready",
+    "sending",
+    "sent",
+    "failed",
+  ]
+),
+
+/**
+ * 해당 사용자 요청에 대응해 생성된
+ * assistant 메시지 ID.
+ *
+ * 중복 webhook이 다시 들어왔을 때
+ * 기존 답변을 찾아 재전송하는 데 사용한다.
+ */
+responseMessageId: int(
+  "responseMessageId"
+),
+
+/**
+ * 마지막 callback 전송 시각.
+ */
+callbackSentAt: datetime(
+  "callbackSentAt"
+),
+
+/**
+ * 마지막 callback 실패 시각.
+ */
+callbackFailedAt: datetime(
+  "callbackFailedAt"
+),
+
     /**
      * 이미지/문서 등 첨부자료 관련 내부정보.
      *
