@@ -10242,18 +10242,6 @@ const toolInput =
       params.workSession,
   });
 
-const toolInput =
-  mergeSemesterCompleteWorkflowInput({
-    toolName:
-      registryToolName,
-
-    toolInput:
-      semesterUpdateAppliedToolInput,
-
-    workSession:
-      params.workSession,
-  });
-
     const intent =
       getIntentFromToolName(
         registryToolName

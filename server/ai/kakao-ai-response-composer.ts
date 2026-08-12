@@ -214,8 +214,7 @@ function normalizeStringArray(
  */
 function buildSafeCompanyContext(
   context:
-    KakaoAiResolvedContext
-      ["companyContext"]
+    KakaoAiResolvedContext["companyContext"]
 ) {
   if (
     !context
@@ -338,8 +337,7 @@ function buildSafeCompanyContext(
  */
 function buildSafeLeadAcademicContext(
   context:
-    KakaoAiResolvedContext
-      ["leadAcademicAnalysis"]
+    KakaoAiResolvedContext["leadAcademicAnalysis"]
 ) {
   if (
     !context
@@ -460,8 +458,7 @@ function buildSafeLeadAcademicContext(
  */
 function buildSafeRegisteredStudentContext(
   context:
-    KakaoAiResolvedContext
-      ["registeredStudentAnalysis"]
+    KakaoAiResolvedContext["registeredStudentAnalysis"]
 ) {
   if (
     !context
@@ -649,8 +646,7 @@ function buildSafeRegisteredStudentContext(
  */
 function buildSafePracticeContext(
   context:
-    KakaoAiResolvedContext
-      ["practiceCenter"]
+    KakaoAiResolvedContext["practiceCenter"]
 ) {
   if (
     !context

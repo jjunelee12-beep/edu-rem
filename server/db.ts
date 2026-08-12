@@ -25313,8 +25313,9 @@ newStudentIds:
 
 existingStudentIds:
   new Set<number>(),
+};
 
-      assigneeMap.set(
+assigneeMap.set(
         assigneeId,
         created
       );
