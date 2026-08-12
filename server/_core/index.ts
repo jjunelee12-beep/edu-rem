@@ -1901,6 +1901,18 @@ async function getR2PrefixUsageBytes(prefix: string) {
             "hex"
           );
 
+console.log("[KAKAO AI] Webhook Token DEBUG", {
+  organizationId,
+  webhookToken,
+  incomingTokenHash,
+  storedTokenHash,
+  incomingHashLength: incomingHashBuffer.length,
+  storedHashLength: storedHashBuffer.length,
+  matched:
+    storedHashBuffer.length === incomingHashBuffer.length &&
+    crypto.timingSafeEqual(storedHashBuffer, incomingHashBuffer),
+});
+
         if (
           storedHashBuffer.length !==
             incomingHashBuffer.length ||
