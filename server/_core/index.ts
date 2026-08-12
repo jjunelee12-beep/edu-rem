@@ -1946,10 +1946,12 @@ async function getR2PrefixUsageBytes(prefix: string) {
          * 카카오 Skill Payload의 실제 bot.id.
          */
         const requestBotId =
-          String(
-            payload?.bot?.id ||
-            ""
-          ).trim();
+  String(
+    payload?.bot?.id ||
+    ""
+  )
+    .trim()
+    .replace(/!+$/, "");
 
         const configuredBotId =
           String(
