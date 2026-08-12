@@ -664,21 +664,24 @@ export function normalizeKakaoAiIntentDecision(
     null;
 
   /**
-   * domain 자체가 unclear거나
-   * 모델 신뢰도가 매우 낮으면
-   * clarification을 강제한다.
-   */
+ * clarification 여부는
+ * 모델이 전체 대화 문맥을 보고 판단한다.
+ *
+ * 서버는 domain 자체가 unclear인 경우에만
+ * 안전하게 clarification을 강제한다.
+ *
+ * confidence는 품질 측정용으로 보존하지만
+ * 단순 점수만으로 합리적인 의도 추론을 차단하지 않는다.
+ */
   const confidence =
     normalizeConfidence(
       source.confidence
     );
 
   const needsClarification =
-    rawNeedsClarification ||
-    domain ===
-      "unclear" ||
-    confidence <
-      0.45;
+  rawNeedsClarification ||
+  domain ===
+    "unclear";
 
   let normalizedClarificationQuestion =
     clarificationQuestion;
@@ -884,13 +887,61 @@ structuredMemory.finalEducation = "전문대 졸업"
 "그럼 실습은?", "그건 얼마나 걸려?"
 같은 짧은 후속질문의 문맥 판단에 참고한다.
 
-4. 필요한 정보가 없으면 사실을 추측하지 않는다.
-needsClarification=true로 하고
-정말 필요한 질문만 clarificationQuestion에 작성한다.
+4. "사용자의 의도 추론"과 "사실 추측"을 명확하게 구분한다.
 
-5. 서로 충돌하는 정보가 있으면
-임의로 하나를 선택하지 않는다.
-needsClarification=true로 한다.
+사용자의 의도는 적극적으로 추론한다.
+
+사용자가 정확한 메뉴명, 기능명, 자격증 정식명칭,
+행정절차 명칭을 말하지 않아도
+현재 메시지 + 이전 대화 + structuredMemory를 이용하여
+가장 가능성이 높은 의미를 판단한다.
+
+예를 들어:
+- 짧은 표현
+- 구어체
+- 줄임말
+- 일부 오타
+- 목적만 말한 문장
+- 앞 대화를 생략한 후속질문
+
+등도 전체 문맥에서 의미를 합리적으로 알 수 있다면
+needsClarification=false로 처리한다.
+
+중요:
+"사용자가 정확한 표현을 사용하지 않았다"는 이유만으로
+unclear 또는 clarification으로 보내지 않는다.
+
+반대로 다음과 같은 "사실값"은 절대로 추측하지 않는다.
+
+- 사용자의 최종학력
+- 실제 전적대 이수과목
+- 실제 인정학점
+- 실제 남은 과목
+- 실제 적용 법령/구법·신법
+- 실제 등록학생 정보
+- 실제 결제정보
+- 실제 일정
+- 실제 행정처리 상태
+- 실제 실습기관
+- 서버에서 계산되어야 하는 학점/기간/과목수
+
+이러한 사실이 현재 요청을 처리하는 데 반드시 필요한데
+현재 Context에 없다면 그때만 needsClarification=true로 한다.
+
+즉:
+"무엇을 원하는가?"는 적극적으로 추론하고,
+"실제 사실이 무엇인가?"는 근거 없이 추측하지 않는다.
+
+5. 여러 해석이 가능한 경우에도
+대화 문맥상 하나의 해석이 충분히 우세하다면
+가장 자연스러운 의도로 진행한다.
+
+서로 다른 해석이 모두 현실적으로 가능하고
+잘못 선택했을 때 답변 내용이나 시스템 실행이
+크게 달라지는 경우에만 needsClarification=true로 한다.
+
+서로 충돌하는 확정 사실이 있으면
+임의로 하나를 선택하지 않고 clarification을 요청한다.
 
 6. 자격증 취득조건, 학점, 부족과목,
 학기 수, 최단기간 계산을 요청하면
@@ -936,32 +987,194 @@ domain="mixed"로 판단할 수 있다.
 15. 지칭 대상을 충분히 알 수 없으면
 억지로 해석하지 말고 clarification을 요청한다.
 
-사용 가능한 capability:
+사용 가능한 capability와 판단 기준:
 
 education_general_conversation
+- 학점은행제, 자격증, 교육과정 범위의 일반적인 대화
+- 인사, AI가 무엇을 하는지 묻는 질문, 상담 가능한 범위를 묻는 질문
+- 다른 더 구체적인 capability에 해당하지 않을 때 사용
+
 off_topic_conversation
+- 학점은행제, 자격증, 학습관리, 관련 실습, 관련 취업지원과 무관한 요청
+
 qualification_general_guide
+- 자격증을 취득하고 싶다는 의사
+- 자격증 취득방법, 취득조건, 기본 진행방식에 대한 일반 질문
+- 특정 사용자의 학력을 적용한 개별 설계가 아니라 일반적인 자격요건 설명
+- 예:
+  "사회복지사 2급 취득하고 싶어요"
+  "사회복지사 2급은 어떻게 따나요?"
+  "보육교사 2급 취득조건이 뭐예요?"
+  "한국어교원 자격증 취득하려고요"
+
 qualification_consultation_analysis
+- 사용자의 학력, 전적대, 기존 이수과목 등을 반영하여
+  개인별 필요과목, 학점, 학기수, 기간 등을 분석하려는 요청
+- 예:
+  "저는 전문대 졸업인데 사회복지사 얼마나 걸려요?"
+  "제가 들어야 할 과목이 몇 개예요?"
+  "내 학력 기준으로 설계해줘"
+
 transfer_document_analysis
+- 전적대 성적증명서, 기존 이수과목, 첨부문서 분석이 필요한 요청
+
 theory_class_general_guide
+- 온라인 이론수업 방식, 출석, 시험, 과제, 수업 진행방법 등 일반적인 수업 안내
+
 practice_general_guide
+- 실습의 일반적인 진행방법, 실습시간, 실습과정, 실습을 어떻게 시작하는지에 대한 질문
+- 실제 기관목록이나 개인 위치기반 조회를 요구하지 않는 일반 실습상담
+- 예:
+  "사회복지사 실습은 어떻게 해요?"
+  "실습하는 방법 알려줘"
+  "보육실습은 어떻게 진행돼요?"
+
 practice_support_promotion
+- 회사의 실습배정지원, 실습지원 서비스, 지원범위나 장점을 묻는 질문
+- 회사별 정보가 필요하면 requiresCompanyContext=true
+
 practice_institution_lookup
+- 실제 실습기관 목록, 주소, 거리, 가까운 기관, 배정 가능한 기관 조회
+- 반드시 requiresPracticeCenterLookup=true
+
 company_introduction
+- 회사가 어떤 곳인지, 어떤 서비스를 제공하는지 묻는 질문
+
 company_benefits
+- 회사의 혜택, 관리방식, 지원내용을 묻는 질문
+
 sales_points
+- 다른 곳과의 차이, 장점, 선택 이유 등 상담/영업 강점을 묻는 질문
+
 registered_benefits_guide
+- 등록회원에게 제공되는 AI나 관리 혜택에 대한 일반 안내
+
 administrative_general_guide
+- 학습자등록, 학점인정신청, 학위신청 등 행정절차의 일반적인 의미나 흐름
+
 administrative_detailed_guide
+- 실제 화면에서 어디를 누르는지 등 구체적인 행정절차 지원
+
 administrative_document_support
+- 실제 서류를 확인하거나 작성/제출 방법을 구체적으로 지원하는 요청
+
 administrative_status_lookup
+- 등록학생 본인의 실제 학습자등록, 학점인정, 학위신청 등의 현재 처리상태 조회
+
 certificate_application_general_guide
+- 자격증 수료 이후 자격증 신청이 필요하다는 사실과 일반적인 신청 흐름
+
 certificate_application_detailed_guide
+- 실제 자격증 신청 화면, 제출서류, 신청방법에 대한 상세지원
+
 student_private_data_lookup
+- 등록학생 본인의 실제 학생 기본정보 조회
+
 academic_private_data_lookup
+- 등록학생 본인의 실제 과목, 학점, 학기, 일정 등 CRM 학업정보 조회
+
 registered_risk_analysis
+- 등록학생 본인의 실제 학점부족, 중복과목, 설계오류 등 위험도 분석
+
 career_consulting
+- 등록학생 개인상황을 반영한 취업상담
+
 career_document_support
+- 이력서, 자기소개서, 면접 등 개인 취업문서 지원
+
+자연어 추론 및 Routing 원칙:
+
+- 사용자의 표현 자체를 정해진 문장 패턴과 비교하지 않는다.
+  사용자가 궁극적으로 무엇을 하려는지를 의미 중심으로 판단한다.
+
+- 사용자가 기능명이나 전문용어를 몰라도 된다.
+  자연어를 내부 capability와 Context로 번역하는 것이 너의 역할이다.
+
+- 현재 메시지만 떼어서 판단하지 않는다.
+  conversationHistory,
+  structuredMemory.desiredCourse,
+  structuredMemory.finalEducation,
+  structuredMemory.verifiedFacts,
+  structuredMemory.currentTopic
+  을 함께 사용한다.
+
+- 사용자의 표현이 짧더라도 목적이 합리적으로 추론되면
+  clarification을 요구하지 않는다.
+
+- 예시는 패턴 매칭 규칙이 아니다.
+  표현이 완전히 달라도 같은 의미라면 동일한 capability로 판단한다.
+
+예:
+
+"사복 해보려고"
+"사회복지 쪽 자격증 하고 싶은데"
+"그거 따려면?"
+"나도 사회복지사 가능해?"
+"사회복지사 준비하려고"
+
+이 문장들은 표현은 서로 다르지만
+문맥에 따라 "자격 취득 상담"이라는 동일한 의미로
+추론할 수 있다.
+
+반대로 사용자가 자격증 이름을 정확히 말하지 않았더라도
+이전 대화에서 desiredCourse나 currentTopic으로
+대상을 충분히 알 수 있다면 다시 묻지 않는다.
+
+Capability 선택 원칙:
+
+- 단순 상담이나 자격취득 의사/일반 취득방법
+  → qualification_general_guide
+
+- 사용자 개인의 학력, 이수과목 등을 반영한
+  개인별 설계/기간/필요과목 분석
+  → qualification_consultation_analysis
+
+- 일반적인 이론수업 방법
+  → theory_class_general_guide
+
+- 일반적인 실습 진행방법
+  → practice_general_guide
+
+- 회사의 실습지원 서비스에 대한 설명
+  → practice_support_promotion
+
+- 실제 기관목록/거리/주소/배정가능 기관 조회
+  → practice_institution_lookup
+
+- 일반 행정절차 설명
+  → administrative_general_guide
+
+- 실제 화면/서류/개인 처리상태 확인
+  → 각각의 상세/등록회원 capability
+
+필요한 시스템 선택 원칙:
+
+사용자의 질문을 답하는 데 필요한 최소한의 Context만 선택한다.
+
+예를 들어 일반 자격상담인데
+등록학생 CRM 데이터가 필요하지 않으면
+requiresRegisteredStudentData=false다.
+
+자격조건, 학점, 과목수, 학기수, 최단기간처럼
+서버 계산이 필요한 질문이면
+requiresCommonRuleEngine=true로 한다.
+
+실제 전적대 자료 분석이 필요하면
+transfer_document 또는 attachment_analysis를 선택한다.
+
+실제 등록학생의 개인 데이터가 필요하면
+registered_student / academic_summary 등을 선택한다.
+
+실제 실습기관 조회가 필요하면
+requiresPracticeCenterLookup=true로 한다.
+
+회사 서비스, 지원범위, 혜택 등의 정보가 필요하면
+requiresCompanyContext=true로 한다.
+
+중요:
+시스템이나 Context 선택을 사용자에게 시키지 않는다.
+사용자의 자연어 의도를 분석한 뒤
+어떤 내부 시스템이 필요한지는 네가 판단한다.
 
 requiredContexts에서 사용할 수 있는 값:
 

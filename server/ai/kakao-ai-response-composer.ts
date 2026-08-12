@@ -803,6 +803,57 @@ unresolvedReasons가 있으면
 9. 신규 고객도 학점은행제/자격증 상담 범위에서는
 자연어로 자유롭게 상담할 수 있다.
 
+9-1. 사용자의 질문이 학점은행제, 자격증, 수업, 실습,
+행정절차 등 허용된 상담 범위에 속한다면
+가능한 범위 안에서 반드시 실제 질문에 답한다.
+
+단순히 Context가 일부 부족하다는 이유만으로
+다음과 같은 거절성 표현을 사용하지 않는다:
+
+- "제가 할 수 있는 일이 아니에요"
+- "제가 할 수 없어요"
+- "무엇을 원하는지 잘 모르겠어요"
+- "이해하기 어려워요"
+- "도와드릴 수 없어요"
+
+위 표현은 실제 off_topic 또는
+Access Policy상 명확히 차단된 요청이 아닌 한 사용하지 않는다.
+
+9-2. 사용자의 의도가 이미 Intent에서 충분히 해석되어 있고
+needsClarification=false라면,
+최종 답변 단계에서 임의로 다시 "무엇을 원하는지 모르겠다"고 판단하지 않는다.
+
+Intent의 userGoal과 primaryCapability를
+현재 질문의 의미 해석 결과로 신뢰한다.
+
+9-3. 서버 Context가 충분하지 않은 경우에도
+Context가 제공한 범위 안에서 설명 가능한 내용은 먼저 설명하고,
+정말 필요한 추가 정보만 자연스럽게 질문한다.
+
+예:
+사용자가 자격증 취득을 원하지만 개인 학력정보가 없다면
+"안내할 수 없다"고 하지 말고
+일반적인 진행 방향을 설명한 뒤
+개인 설계를 위해 필요한 학력을 물어볼 수 있다.
+
+9-4. 일반적인 상담과 개인별 확정 계산을 구분한다.
+
+일반적인 의미, 진행 흐름, 어떤 정보가 필요한지,
+어떤 절차로 진행되는지는
+현재 Context와 Intent 범위 안에서 자연스럽게 설명할 수 있다.
+
+반대로 정확한 학점, 과목 수, 기간, 법 적용,
+등록학생 실제 정보 등은
+서버 계산값이나 실제 Context가 없으면 확정하지 않는다.
+
+9-5. 답변 목표는 "거절"이 아니라
+사용자가 다음 단계로 자연스럽게 진행하도록 돕는 것이다.
+
+사용자의 요청 일부만 확정할 수 있다면
+확정 가능한 부분부터 답하고
+부족한 부분만 질문한다.
+전체 요청을 한꺼번에 거절하지 않는다.
+
 10. 신규 고객이 등록회원 전용 기능을 요청하면
 단순히 "권한이 없습니다"라고 말하지 않는다.
 
@@ -849,9 +900,20 @@ Access Policy가 차단한 정보를 제공하지 않는다.
 실제 상세 신청지원은 구분한다.
 
 16. off_topic 요청은
-억지로 일반대화를 이어가지 않는다.
+intent.domain="off_topic" 또는
+accessContext의 reasonCode="OFF_TOPIC"인 경우에만 적용한다.
+
+학점은행제, 자격증, 수업, 실습, 행정절차,
+학습관리, 관련 취업지원과 연결되는 요청에는
+off_topic 거절문을 사용하지 않는다.
+
+사용자 표현이 짧거나 구어체이거나
+정확한 전문용어를 사용하지 않았다는 이유만으로
+off_topic처럼 답하지 않는다.
+
+실제 off_topic이면
 학점은행제/자격증/학습관리 관련 상담만
-도와드릴 수 있다는 취지로 짧고 자연스럽게 말한다.
+도와드릴 수 있다는 취지로 짧고 자연스럽게 안내한다.
 
 17. 한 메시지에 허용된 요청과
 제한된 요청이 같이 있으면
@@ -1241,7 +1303,7 @@ function buildFallbackReply(
     };
   }
 
-  /**
+    /**
    * 신규 학업분석이 실행됐지만
    * 추가 확인이 필요한 경우.
    */
@@ -1272,15 +1334,174 @@ function buildFallbackReply(
     };
   }
 
+  /**
+   * Intent는 정상적으로 판단됐지만
+   * OpenAI 최종 답변 생성에 실패한 경우.
+   *
+   * 무조건 "다시 말씀해주세요"로 보내지 않고
+   * 이미 분석된 primaryCapability를 기준으로
+   * 안전하게 다음 대화 흐름을 이어간다.
+   */
+  const primaryCapability =
+    intent.primaryCapability;
+
+  if (
+    primaryCapability ===
+      "qualification_general_guide"
+  ) {
+    return {
+      replyText:
+        "자격증 취득 상담은 안내해드릴 수 있어요. 현재 확인된 내용 기준으로 일반적인 진행 흐름부터 안내하고, 개인별 설계가 필요하면 필요한 정보만 추가로 확인해드릴게요.",
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        false,
+    };
+  }
+
+  if (
+    primaryCapability ===
+      "qualification_consultation_analysis"
+  ) {
+    return {
+      replyText:
+        "개인별 취득과정을 확인하려면 현재 학력이나 기존에 이수한 과목 등 설계에 필요한 정보부터 확인해야 해요. 이미 말씀해주신 내용은 다시 묻지 않고 필요한 부분만 이어서 확인할게요.",
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        true,
+    };
+  }
+
+  if (
+    primaryCapability ===
+      "theory_class_general_guide"
+  ) {
+    return {
+      replyText:
+        "수업 진행방식에 대한 상담은 안내해드릴 수 있어요. 온라인 수업이나 출석, 시험, 과제 등 궁금한 부분을 이어서 말씀해 주세요.",
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        false,
+    };
+  }
+
+  if (
+    primaryCapability ===
+      "practice_general_guide"
+  ) {
+    return {
+      replyText:
+        "실습 진행방법은 안내해드릴 수 있어요. 현재 진행하려는 과정과 대화 내용을 기준으로 필요한 실습 절차를 이어서 확인해드릴게요.",
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        false,
+    };
+  }
+
+  if (
+    primaryCapability ===
+      "practice_support_promotion"
+  ) {
+    return {
+      replyText:
+        "실습지원 관련해서는 회사에서 제공하는 지원범위와 진행방식을 기준으로 안내해드릴 수 있어요.",
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        false,
+    };
+  }
+
+  if (
+    primaryCapability ===
+      "company_introduction" ||
+    primaryCapability ===
+      "company_benefits" ||
+    primaryCapability ===
+      "sales_points"
+  ) {
+    return {
+      replyText:
+        "회사에서 제공하는 상담과 관리서비스에 대해 안내해드릴 수 있어요. 궁금한 부분을 말씀해주시면 확인된 회사정보 기준으로 설명드릴게요.",
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        false,
+    };
+  }
+
+  if (
+    primaryCapability ===
+      "administrative_general_guide"
+  ) {
+    return {
+      replyText:
+        "학습자등록, 학점인정신청, 학위신청 같은 행정절차의 일반적인 진행방법은 안내해드릴 수 있어요.",
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        false,
+    };
+  }
+
+  if (
+    primaryCapability ===
+      "certificate_application_general_guide"
+  ) {
+    return {
+      replyText:
+        "과정 이수 후 자격증 신청에 필요한 일반적인 절차는 안내해드릴 수 있어요.",
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        false,
+    };
+  }
+
+  if (
+    primaryCapability ===
+      "education_general_conversation"
+  ) {
+    return {
+      replyText:
+        "학점은행제나 자격증 과정, 수업, 실습, 행정절차 관련해서 편하게 말씀해 주세요. 대화 내용을 보고 필요한 방향으로 이어서 안내해드릴게요.",
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        false,
+    };
+  }
+
   return {
     replyText:
-      "문의하신 내용을 확인하고 있어요. 정확하게 안내하려면 내용을 조금만 더 구체적으로 말씀해주세요.",
+      "문의하신 내용은 상담 범위 안에서 확인해서 안내해드릴게요. 현재 대화 내용을 기준으로 필요한 부분부터 이어서 말씀해 주세요.",
 
     mentionedRestriction:
       false,
 
     askedClarification:
-      true,
+      false,
   };
 }
 

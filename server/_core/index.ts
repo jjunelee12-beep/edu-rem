@@ -1901,18 +1901,6 @@ async function getR2PrefixUsageBytes(prefix: string) {
             "hex"
           );
 
-console.log("[KAKAO AI] Webhook Token DEBUG", {
-  organizationId,
-  webhookToken,
-  incomingTokenHash,
-  storedTokenHash,
-  incomingHashLength: incomingHashBuffer.length,
-  storedHashLength: storedHashBuffer.length,
-  matched:
-    storedHashBuffer.length === incomingHashBuffer.length &&
-    crypto.timingSafeEqual(storedHashBuffer, incomingHashBuffer),
-});
-
         if (
           storedHashBuffer.length !==
             incomingHashBuffer.length ||
@@ -2036,12 +2024,6 @@ console.log("[KAKAO AI] Webhook Token DEBUG", {
             });
         }
 
-console.log("[KAKAO AI] Bot ID 검증 통과", {
-  organizationId,
-  requestBotId,
-  configuredBotId,
-});
-
         /**
          * userRequest.user.id는
          * 특정 봇 안에서 사용자를 식별하는
@@ -2136,14 +2118,6 @@ console.log("[KAKAO AI] Bot ID 검증 통과", {
             ""
           ).trim();
 
-console.log("[KAKAO AI] Payload 정상 진입", {
-  organizationId,
-  hasChannelUserKey: !!channelUserKey,
-  utterance,
-  kakaoRequestId,
-  hasCallbackUrl: !!callbackUrl,
-});
-
         /**
          * ---------------------------------------------------------
          * Callback 사용 가능
@@ -2168,11 +2142,6 @@ console.log("[KAKAO AI] Payload 정상 진입", {
               true,
           });
 
-console.log("[KAKAO AI] Callback 모드 진입", {
-  organizationId,
-  utterance,
-  kakaoRequestId,
-});
 
           /**
            * HTTP 응답 이후 실제 AI 처리.
@@ -2183,11 +2152,6 @@ console.log("[KAKAO AI] Callback 모드 진입", {
           void (
             async () => {
               try {
-
-console.log("[KAKAO AI] Orchestrator 호출 시작", {
-  organizationId,
-  utterance,
-});
                 const result =
                   await orchestrateKakaoAiIncomingMessage({
                     organizationId,
@@ -2203,16 +2167,6 @@ console.log("[KAKAO AI] Orchestrator 호출 시작", {
                     message:
                       utterance,
                   });
-
-console.log("[KAKAO AI] Orchestrator 호출 완료", {
-  organizationId,
-  duplicateMessage: !!result.duplicateMessage,
-  conversationId: result.conversationId ?? null,
-  hasResponseComposition:
-    !!result.responseComposition,
-  hasRegistrationVerification:
-    !!result.registrationVerification,
-});
 
                 /**
                  * 동일 X-Request-Id 재수신이면
@@ -2315,17 +2269,6 @@ console.log("[KAKAO AI] Orchestrator 호출 완료", {
 
                   return;
                 }
-
-                console.log(
-                  "[KAKAO AI] Callback 전송 완료",
-                  {
-                    organizationId,
-
-                    conversationId:
-                      result
-                        .conversationId,
-                  }
-                );
               } catch (
                 error:
                   unknown
