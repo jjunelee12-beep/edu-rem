@@ -762,6 +762,17 @@ export async function orchestrateKakaoAiIncomingMessage(
   const currentMemory =
     memoryWrite.memory;
 
+console.log("[KAKAO AI TRACE] Memory", {
+  desiredCourse:
+    currentMemory.desiredCourse ?? null,
+  finalEducation:
+    currentMemory.finalEducation ?? null,
+  currentTopic:
+    currentMemory.currentTopic ?? null,
+  hasTransferCollege:
+    currentMemory.hasTransferCollege ?? null,
+});
+
   /**
    * 7.
    * 현재 메시지 Intent 분석.
@@ -799,6 +810,21 @@ export async function orchestrateKakaoAiIncomingMessage(
       attachmentContext,
     });
 
+console.log("[KAKAO AI TRACE] Intent", {
+  domain:
+    intentClassification.intent.domain,
+  userGoal:
+    intentClassification.intent.userGoal,
+  primaryCapability:
+    intentClassification.intent.primaryCapability,
+  capabilities:
+    intentClassification.intent.capabilities,
+  needsClarification:
+    intentClassification.intent.needsClarification,
+  requiredContexts:
+    intentClassification.routed.requiredContexts,
+});
+
   /**
    * 8.
    * 중앙 Access Policy가 적용된 Intent를 기준으로
@@ -821,6 +847,25 @@ export async function orchestrateKakaoAiIncomingMessage(
       structuredMemory:
         currentMemory,
     });
+
+console.log("[KAKAO AI TRACE] Context", {
+  hasCompanyContext:
+    !!resolvedContext.companyContext,
+  hasLeadAcademicAnalysis:
+    !!resolvedContext.leadAcademicAnalysis,
+  hasRegisteredStudentAnalysis:
+    !!resolvedContext.registeredStudentAnalysis,
+  hasPracticeCenter:
+    !!resolvedContext.practiceCenter,
+  leadCanExplain:
+    resolvedContext.leadAcademicAnalysis?.canExplain ?? null,
+  leadStatus:
+    resolvedContext.leadAcademicAnalysis?.status ?? null,
+  leadRequestedCourse:
+    resolvedContext.leadAcademicAnalysis?.requestedCourse ?? null,
+  leadUnresolvedReasons:
+    resolvedContext.leadAcademicAnalysis?.unresolvedReasons ?? [],
+});
 
   /**
    * 9.
@@ -852,6 +897,19 @@ export async function orchestrateKakaoAiIncomingMessage(
 
       resolvedContext,
     });
+
+console.log("[KAKAO AI TRACE] Response", {
+  success:
+    responseComposition.success,
+  fallbackUsed:
+    responseComposition.fallbackUsed,
+  askedClarification:
+    responseComposition.askedClarification,
+  usedContextTypes:
+    responseComposition.usedContextTypes,
+  errorMessage:
+    responseComposition.errorMessage,
+});
 
   const replyText =
     String(
