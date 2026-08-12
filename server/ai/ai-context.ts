@@ -228,11 +228,36 @@ async function resolveAllowedAssigneeIds(params: {
     return normalizedIds;
   }
 
-  /**
-   * Host / Superhost
-   * null은 선택 회사 전체 담당자를 의미한다.
+    /**
+   * Host는 같은 회사 전체 데이터를 조회할 수 있다.
+   *
+   * allowedAssigneeIds가 null인 경우는
+   * 회사 내 전체 담당자 범위를 의미한다.
+   *
+   * 실제 수정은 별도로
+   * assertCanWriteStudent(),
+   * assertCanWriteConsultation()
+   * 에서 본인 담당 여부를 다시 검사한다.
    */
-  return null;
+  if (params.role === "host") {
+    return null;
+  }
+
+  /**
+   * Superhost는 AI 정책·설정·오류 점검만 담당한다.
+   *
+   * 학생·상담 등 회사 운영 데이터에 대한
+   * 담당자 조회 범위를 부여하지 않는다.
+   */
+  if (params.role === "superhost") {
+    return [];
+  }
+
+  /**
+   * 정상적인 AiRole은 위 분기에서 모두 처리되지만,
+   * 알 수 없는 상태에서는 가장 제한적인 범위를 반환한다.
+   */
+  return [];
 }
 
 export async function buildAiContext(

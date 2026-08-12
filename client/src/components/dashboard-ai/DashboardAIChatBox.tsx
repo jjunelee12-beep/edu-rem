@@ -998,11 +998,20 @@ scheduleId?:
     planId?:
     number | null;
 
-  semesterId?:
+    semesterId?:
     number | null;
 
   semesterIds?:
     number[];
+
+  semesterOrder?:
+    number | null;
+
+  isCompleted?:
+    boolean;
+
+  approvalStatus?:
+    string | null;
 
   planSubjectIds?:
     number[];
@@ -1282,10 +1291,28 @@ semesters?:
   pendingAction?:
     DashboardAIPendingAction | null;
 
+  /**
+   * false이면 승인 카드에서
+   * 초안 취소 버튼을 표시하지 않는다.
+   */
+  pendingActionCanCancel?:
+    boolean;
+
+  /**
+   * Pending Action 카드가 생성된 출처
+   */
+  pendingActionSource?:
+    | "student_pending_document"
+    | "chat"
+    | string;
+
 scheduleCreateDraft?:
   unknown;
 
 semesterCreateDraft?:
+  unknown;
+
+semesterCompleteDraft?:
   unknown;
 
 consultationUpdateDraft?:
@@ -5809,6 +5836,40 @@ onOpenConsultation?: (
   consultationId: number
 ) => void;
 }) {
+
+  /**
+   * 승인 초안의 expiresAt이 지난 순간
+   * 서버 재요청 없이도 카드 상태를
+   * 만료로 전환하기 위한 현재 시각이다.
+   */
+  const [
+    currentTime,
+    setCurrentTime,
+  ] = useState(
+    () =>
+      Date.now()
+  );
+
+  useEffect(
+    () => {
+      const timer =
+        window.setInterval(
+          () => {
+            setCurrentTime(
+              Date.now()
+            );
+          },
+          30_000
+        );
+
+      return () => {
+        window.clearInterval(
+          timer
+        );
+      };
+    },
+    []
+  );
   const pendingAction =
     message.data
       ?.pendingAction ||
@@ -5834,6 +5895,28 @@ if (
       pendingAction.status ||
       ""
     );
+
+  const expiresAtTime =
+    pendingAction.expiresAt
+      ? new Date(
+          pendingAction.expiresAt
+        ).getTime()
+      : 0;
+
+  /**
+   * 잘못된 날짜는 만료로 취급하지 않는다.
+   *
+   * 유효한 expiresAt이 있고
+   * 현재 시간이 만료시간 이상일 때만
+   * 클라이언트 만료로 판단한다.
+   */
+  const isExpiredByTime =
+    Number.isFinite(
+      expiresAtTime
+    ) &&
+    expiresAtTime > 0 &&
+    currentTime >=
+      expiresAtTime;
 
   const pendingActionId =
     toNumber(
@@ -5891,6 +5974,14 @@ const isSemesterCreate =
   ) ===
   "semester_create";
 
+const isSemesterComplete =
+  String(
+    pendingAction
+      .actionType ||
+    ""
+  ) ===
+  "semester_complete";
+
 const isConsultationUpdate =
   String(
     pendingAction
@@ -5907,13 +5998,27 @@ const isStudentUpdate =
   ) ===
   "student_update";
 
- const canConfirm =
-  status ===
-    "awaiting_confirmation" &&
-  preview.canConfirm ===
-    true &&
-  missingFields.length ===
-    0;
+/**
+ * 학생 담당자 조회 API로 불러온 OCR 초안은
+ * 초안 생성자가 아닐 수 있으므로 취소할 수 없다.
+ *
+ * 값이 명시적으로 false인 경우에만
+ * 취소 버튼을 숨긴다.
+ */
+const canCancelPendingAction =
+  message.data
+    ?.pendingActionCanCancel !==
+  false;
+
+   const canConfirm =
+    status ===
+      "awaiting_confirmation" &&
+    isExpiredByTime ===
+      false &&
+    preview.canConfirm ===
+      true &&
+    missingFields.length ===
+      0;
 
   const isCancelled =
     status ===
@@ -5927,9 +6032,19 @@ const isStudentUpdate =
     status ===
     "failed";
 
-const isExpired =
-  status ===
-  "expired";
+  /**
+   * 서버가 expired 상태로 반환했거나
+   * 프론트에서 expiresAt이 지난 것을 확인하면
+   * 모두 만료된 승인 초안으로 처리한다.
+   */
+  const isExpired =
+    status ===
+      "expired" ||
+    (
+      status ===
+        "awaiting_confirmation" &&
+      isExpiredByTime
+    );
 
   const result =
     message.data
@@ -5966,13 +6081,15 @@ const consultationId =
   ? "AI 학생정보 수정"
   : isConsultationUpdate
     ? "AI 상담DB 수정"
-    : isSemesterCreate
-      ? "AI 학기 생성"
-      : isScheduleCreate
-        ? "AI 일정 등록"
-        : isDocumentImport
-          ? "AI 문서 CRM 반영"
-          : "AI 학생 통합등록"}
+    : isSemesterComplete
+      ? "AI 학기 입력완료"
+      : isSemesterCreate
+        ? "AI 학기 생성"
+        : isScheduleCreate
+          ? "AI 일정 등록"
+          : isDocumentImport
+            ? "AI 문서 CRM 반영"
+            : "AI 학생 통합등록"}
 </p>
 
             <p className="mt-1 text-base font-extrabold text-slate-900">
@@ -5982,13 +6099,15 @@ const consultationId =
       ? "학생 기본정보 수정"
       : isConsultationUpdate
         ? "상담DB 정보 수정"
-        : isSemesterCreate
-          ? "학생 학기 생성"
-          : isScheduleCreate
-            ? "학생 일정 등록"
-            : isDocumentImport
-              ? "문서 CRM 반영"
-              : "등록예정 학생 생성 및 과목설계"
+        : isSemesterComplete
+          ? "학생 학기 입력완료"
+          : isSemesterCreate
+            ? "학생 학기 생성"
+            : isScheduleCreate
+              ? "학생 일정 등록"
+              : isDocumentImport
+                ? "문서 CRM 반영"
+                : "등록예정 학생 생성 및 과목설계"
   )}
             </p>
 
@@ -6029,6 +6148,19 @@ const consultationId =
           </span>
         </div>
       </div>
+
+      {isExpired && (
+        <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+          <div className="flex items-start gap-2 text-xs leading-5 text-slate-600">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+
+            <p>
+              이 승인 초안은 유효시간이 지나 만료되었습니다.
+              문서를 다시 분석하거나 새로운 승인 초안을 생성해주세요.
+            </p>
+          </div>
+        </div>
+      )}
 
       {sections.length > 0 && (
         <div className="space-y-3 px-4 py-4">
@@ -6180,7 +6312,8 @@ const sectionTitle =
 
 {(
   isConsultationUpdate ||
-  isStudentUpdate
+  isStudentUpdate ||
+  isSemesterComplete
 ) &&
   asArray<DashboardAIPendingActionPreviewChange>(
     preview.changes
@@ -6300,7 +6433,8 @@ const sectionTitle =
   result &&
   !isConsultationUpdate &&
   !isStudentUpdate &&
-  !isSemesterCreate && (
+  !isSemesterCreate &&
+  !isSemesterComplete && (
     <div className="border-t border-emerald-100 bg-emerald-50/70 px-4 py-4">
       <div className="flex items-center gap-2 text-emerald-700">
         <CheckCircle2 className="h-4 w-4" />
@@ -6508,6 +6642,99 @@ const sectionTitle =
     </div>
   )}
 
+{isSemesterComplete &&
+  isExecuted && (
+    <div className="border-t border-emerald-100 bg-emerald-50/70 px-4 py-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+          <CheckCircle2 className="h-5 w-5" />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-extrabold text-emerald-800">
+            학생 학기 입력완료
+          </p>
+
+          <p className="mt-1 text-[11px] leading-5 text-emerald-700">
+            {result?.message ||
+              message.content ||
+              "학기가 입력완료 처리되어 승인 대기 상태로 이동했습니다."}
+          </p>
+
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="rounded-xl bg-white px-3 py-2.5">
+              <p className="text-[10px] font-bold text-slate-400">
+                학기 순서
+              </p>
+
+              <p className="mt-1 text-xs font-black text-slate-800">
+                {Number(
+                  result?.semesterOrder ||
+                  0
+                ) > 0
+                  ? `${Number(
+                      result?.semesterOrder
+                    )}학기`
+                  : "확인 필요"}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-white px-3 py-2.5">
+              <p className="text-[10px] font-bold text-slate-400">
+                입력 상태
+              </p>
+
+              <p className="mt-1 text-xs font-black text-emerald-700">
+                {result?.isCompleted ===
+                true
+                  ? "입력완료"
+                  : "확인 필요"}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-white px-3 py-2.5">
+              <p className="text-[10px] font-bold text-slate-400">
+                승인 상태
+              </p>
+
+              <p
+                className={cn(
+                  "mt-1 text-xs font-black",
+
+                  String(
+                    result?.approvalStatus ||
+                    ""
+                  ).trim() ===
+                  "대기"
+                    ? "text-amber-700"
+                    : "text-slate-800"
+                )}
+              >
+                {String(
+                  result?.approvalStatus ||
+                  ""
+                ).trim() ||
+                  "확인 필요"}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-white px-3 py-2.5">
+              <p className="text-[10px] font-bold text-slate-400">
+                대상 학기 번호
+              </p>
+
+              <p className="mt-1 text-xs font-black text-slate-800">
+                {result?.semesterId
+                  ? `#${result.semesterId}`
+                  : "확인 필요"}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )}
+
 {isConsultationUpdate &&
   isExecuted && (
     <div className="border-t border-emerald-100 bg-emerald-50/70 px-4 py-4">
@@ -6554,63 +6781,82 @@ const sectionTitle =
     </div>
   )}
 
-      {status ===
-        "awaiting_confirmation" && (
-        <div className="grid grid-cols-2 gap-2 border-t border-slate-100 px-4 py-3">
-          <button
-            type="button"
-            disabled={
-              isLoading ||
-              pendingActionId <=
-                0
-            }
-            onClick={() =>
-              void onCancelPendingAction?.(
-                pendingActionId,
-                version
-              )
-            }
-            className="flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <XCircle className="h-4 w-4" />
-            초안 취소
-          </button>
+            {status ===
+        "awaiting_confirmation" &&
+        !isExpired && (
+  <div
+    className={cn(
+      "gap-2 border-t border-slate-100 px-4 py-3",
 
-          <button
-            type="button"
-            disabled={
-              isLoading ||
-              !canConfirm ||
-              pendingActionId <=
-                0
-            }
-            onClick={() =>
-              void onConfirmPendingAction?.(
-                pendingActionId,
-                version
-              )
-            }
-            className="flex h-10 items-center justify-center gap-2 rounded-xl bg-[#2F6B3B] text-xs font-bold text-white transition hover:bg-[#285d33] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
-          >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <ClipboardCheck className="h-4 w-4" />
-            )}
-           {isStudentUpdate
+      canCancelPendingAction
+        ? "grid grid-cols-2"
+        : "flex"
+    )}
+  >
+    {canCancelPendingAction && (
+      <button
+        type="button"
+        disabled={
+          isLoading ||
+          pendingActionId <=
+            0
+        }
+        onClick={() =>
+          void onCancelPendingAction?.(
+            pendingActionId,
+            version
+          )
+        }
+        className="flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <XCircle className="h-4 w-4" />
+        초안 취소
+      </button>
+    )}
+
+    <button
+      type="button"
+      disabled={
+        isLoading ||
+        !canConfirm ||
+        pendingActionId <=
+          0
+      }
+      onClick={() =>
+        void onConfirmPendingAction?.(
+          pendingActionId,
+          version
+        )
+      }
+      className={cn(
+        "flex h-10 items-center justify-center gap-2 rounded-xl bg-[#2F6B3B] text-xs font-bold text-white transition hover:bg-[#285d33] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400",
+
+        !canCancelPendingAction &&
+          "w-full"
+      )}
+    >
+      {isLoading ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <ClipboardCheck className="h-4 w-4" />
+      )}
+
+      {isStudentUpdate
   ? "확인 후 학생정보 수정"
   : isConsultationUpdate
     ? "확인 후 상담 수정"
-    : isSemesterCreate
-      ? "확인 후 학기 생성"
-      : isScheduleCreate
-        ? "확인 후 일정 등록"
-        : isDocumentImport
-          ? "확인 후 CRM 반영"
-          : "확인 후 등록"}
-          </button>
-        </div>
-      )}
+    : isSemesterComplete
+      ? "확인 후 입력완료"
+      : isSemesterCreate
+        ? "확인 후 학기 생성"
+        : isScheduleCreate
+          ? "확인 후 일정 등록"
+          : isDocumentImport
+            ? "확인 후 CRM 반영"
+            : "확인 후 등록"}
+    </button>
+  </div>
+)}
 
       {isExecuted &&
   studentId > 0 &&
@@ -6627,10 +6873,11 @@ const sectionTitle =
         className="flex h-10 w-full items-center justify-center rounded-xl bg-[#2F6B3B] text-xs font-bold text-white transition hover:bg-[#285d33]"
       >
         {isStudentUpdate ||
-        isSemesterCreate ||
-        isDocumentImport
-          ? "학생 상세보기"
-          : "생성된 학생 상세보기"}
+isSemesterCreate ||
+isSemesterComplete ||
+isDocumentImport
+  ? "학생 상세보기"
+  : "생성된 학생 상세보기"}
       </button>
     </div>
   )}

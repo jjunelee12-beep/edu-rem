@@ -1,4 +1,24 @@
- /**
+import type {
+  UnifiedQualificationRequirements,
+} from "./risk-rules/qualification-requirement-merger"; 
+
+import type {
+  QualificationSubjectPlannerResult,
+} from "./risk-rules/qualification-subject-planner";
+
+import type {
+  QualificationSemesterPlannerResult,
+} from "./risk-rules/qualification-semester-planner";
+
+import type {
+  AdministrativeTimelinePlannerResult,
+} from "./risk-rules/administrative-timeline-planner";
+
+import type {
+  StudentAcademicSummaryResult,
+} from "./risk-rules/student-academic-summary-resolver";
+
+/**
  * EduCanvas CRM AI 공용 타입
  *
  * 원칙
@@ -55,6 +75,7 @@ export type AiWorkflowType =
   | "student_update"
   | "semester_create"
   | "semester_update"
+  | "semester_complete"
   | "plan_setup"
   | "plan_update"
   | "practice_create"
@@ -346,17 +367,26 @@ export type AiToolName =
   | "student.summary"
   | "student.dashboard"
   | "consultation.search"
+  | "consultation.create"
   | "consultation.update"
   | "alert.missingData"
   | "risk.studentDetail"
   | "risk.studentList"
   | "practice.institutionSearch"
   | "practice.supportStatus"
-    | "error.recentList"
+  | "error.recentList"
   | "error.detail"
-  | "schedule.create"
+    | "schedule.create"
   | "student.update"
-  | "semester.create";
+    | "semester.create"
+  | "semester.update"
+    | "semester.complete"
+  | "plan.create"
+| "plan.update"
+| "plan.subjects.create"
+| "plan.subjects.update"
+| "document.analysis"
+| "settlement.summary";
 
 export type AiToolStatus =
   | "started"
@@ -503,11 +533,83 @@ export type AiToolHandlerParams<TInput = unknown> = {
 };
 
 /**
+ * OpenAI Function Tool에서 사용하는
+ * 개별 JSON Schema Property
+ *
+ * 기존 string / number / integer / boolean뿐 아니라
+ * plan.subjects.create처럼 배열 안에 객체가 필요한
+ * Tool도 안전하게 표현할 수 있도록 재귀 구조로 정의한다.
+ */
+export type AiToolJsonSchemaProperty = {
+  type:
+    | "string"
+    | "number"
+    | "integer"
+    | "boolean"
+    | "array"
+    | "object"
+    | Array<
+        | "string"
+        | "number"
+        | "integer"
+        | "boolean"
+        | "array"
+        | "object"
+        | "null"
+      >;
+
+  description?:
+    string;
+
+  enum?:
+    Array<
+      string |
+      number |
+      boolean |
+      null
+    >;
+
+  minimum?:
+    number;
+
+  maximum?:
+    number;
+
+  /**
+   * 배열 타입일 때 배열 안 요소 구조
+   */
+  items?:
+    AiToolJsonSchemaProperty;
+
+  /**
+   * 객체 타입일 때 내부 Property 구조
+   */
+  properties?:
+    Record<
+      string,
+      AiToolJsonSchemaProperty
+    >;
+
+  /**
+   * 객체 내부 필수값
+   */
+  required?:
+    string[];
+
+  /**
+   * 객체 내부에서도 정의되지 않은
+   * 임의 필드를 허용하지 않는다.
+   */
+  additionalProperties?:
+    false;
+};
+
+/**
  * OpenAI Function Tool에 전달할
- * JSON Schema 공용 타입
+ * 최상위 JSON Schema
  *
  * organizationId, userId, teamId, assigneeId 등
- * 서버가 결정하는 보안 필드는 절대로 포함하지 않는다.
+ * 서버 권한값은 Tool Schema에 절대로 넣지 않는다.
  */
 export type AiToolInputSchema = {
   type:
@@ -516,37 +618,7 @@ export type AiToolInputSchema = {
   properties:
     Record<
       string,
-      {
-        type:
-          | "string"
-          | "number"
-          | "integer"
-          | "boolean"
-          | Array<
-              | "string"
-              | "number"
-              | "integer"
-              | "boolean"
-              | "null"
-            >;
-
-        description?:
-          string;
-
-        enum?:
-          Array<
-            string |
-            number |
-            boolean |
-            null
-          >;
-
-        minimum?:
-          number;
-
-        maximum?:
-          number;
-      }
+      AiToolJsonSchemaProperty
     >;
 
   required:
@@ -643,6 +715,202 @@ export type ConsultationSearchToolOutput = {
   query: string;
   count: number;
   consultations: ConsultationSearchResultItem[];
+};
+
+/**
+ * AI 상담DB 신규등록 초안 입력
+ *
+ * 실제 consultations 테이블을 바로 생성하지 않는다.
+ * 사용자에게 받은 신규 상담 정보를 검증하고
+ * Pending Action에 저장할 초안만 생성한다.
+ *
+ * organizationId, assigneeId, requestedByUserId는
+ * 서버 AI Context에서 결정한다.
+ */
+export type ConsultationCreateToolInput = {
+  /**
+   * 상담일
+   *
+   * YYYY-MM-DD 형식이다.
+   * 생략하면 Tool 실행 시점의 날짜를 사용한다.
+   */
+  consultDate?:
+    string |
+    null;
+
+  /**
+   * 상담 유입 경로
+   *
+   * 생략하면 "AI 상담 등록"을 사용한다.
+   */
+  channel?:
+    string |
+    null;
+
+  /**
+   * 상담자 이름
+   */
+  clientName:
+    string;
+
+  /**
+   * 상담자 연락처
+   *
+   * 하이픈 포함 여부와 관계없이
+   * 숫자 10~11자리로 정규화한다.
+   */
+  phone:
+    string;
+
+  /**
+   * 최종학력
+   */
+  finalEducation?:
+    string |
+    null;
+
+  /**
+   * 희망과정
+   */
+  desiredCourse?:
+    string |
+    null;
+
+  /**
+   * 상담내용
+   */
+  notes?:
+    string |
+    null;
+
+  /**
+   * 상담 상태
+   *
+   * 생략하면 상담중으로 생성한다.
+   */
+  status?:
+    string |
+    null;
+};
+
+/**
+ * 상담DB 신규등록 Pending Action에 저장할 초안
+ *
+ * 담당자와 회사 정보는 포함하지 않는다.
+ * 실제 실행 단계에서 로그인 사용자와
+ * 서버 조직 정보를 기준으로 결정한다.
+ */
+export type ConsultationCreateDraft = {
+  consultDate:
+    string;
+
+  channel:
+    string;
+
+  clientName:
+    string;
+
+  phone:
+    string;
+
+  finalEducation:
+    string |
+    null;
+
+  desiredCourse:
+    string |
+    null;
+
+  notes:
+    string |
+    null;
+
+  status:
+    string;
+
+  requestedByUserId:
+    number;
+
+  requestedByRole:
+    AiRole;
+
+  createdAt:
+    string;
+
+  canConfirm:
+    boolean;
+
+  missingFields:
+    string[];
+
+  warnings:
+    string[];
+};
+
+/**
+ * consultation.create Tool 결과
+ *
+ * 이 결과가 반환돼도 상담DB는 아직 생성되지 않는다.
+ * Pending Action 승인 후
+ * consultation-create-executor에서 실제 생성한다.
+ */
+export type ConsultationCreateToolOutput = {
+  pendingActionRequired:
+    true;
+
+  clientName:
+    string;
+
+  phone:
+    string;
+
+  draft:
+    ConsultationCreateDraft;
+
+  preview: {
+    title:
+      string;
+
+    summary:
+      string;
+
+    sections:
+      Array<{
+        title:
+          string;
+
+        items:
+          string[];
+      }>;
+
+    changes:
+      Array<{
+        field:
+          string;
+
+        label:
+          string;
+
+        before:
+          null;
+
+        after:
+          string |
+          null;
+      }>;
+
+    executionSteps:
+      string[];
+
+    missingFields:
+      string[];
+
+    warnings:
+      string[];
+
+    canConfirm:
+      boolean;
+  };
 };
 
 /**
@@ -1031,8 +1299,31 @@ export type PracticeSupportStatusToolInput = {
  * organizationId와 권한 범위는 서버 Context에서 결정한다.
  */
 export type PracticeInstitutionSearchToolInput = {
-  studentId:
-    number;
+  /**
+   * 선택된 학생 기준으로 검색할 경우 사용한다.
+   *
+   * 학생을 선택하지 않고 주소 기준으로
+   * 검색하는 경우 null 또는 생략할 수 있다.
+   */
+  studentId?:
+    number |
+    null;
+
+  /**
+   * 학생을 선택하지 않은 상태에서
+   * 직접 검색할 위치 주소다.
+   */
+  address?:
+    string |
+    null;
+
+  /**
+   * 실습기관 / 실습교육원 각각의
+   * 최대 추천 개수다.
+   */
+  limit?:
+    number |
+    null;
 };
 
 /**
@@ -1122,38 +1413,72 @@ export type PracticeInstitutionSearchResultItem = {
  * AI 실습기관 및 실습교육원 추천 결과
  */
 export type PracticeInstitutionSearchToolOutput = {
-  student: {
-    id:
-      number;
+  /**
+   * 학생 기준 검색이면 학생 정보가 들어가고,
+   * 직접 주소 검색이면 null이다.
+   */
+  student:
+    | {
+        id:
+          number;
 
-    clientName:
-      string |
-      null;
+        clientName:
+          string |
+          null;
 
-    course:
-      string |
-      null;
+        course:
+          string |
+          null;
 
-    address:
-      string |
-      null;
+        address:
+          string |
+          null;
 
-    detailAddress:
-      string |
-      null;
+        detailAddress:
+          string |
+          null;
 
-    latitude:
-      number |
-      null;
+        latitude:
+          number |
+          null;
 
-    longitude:
-      number |
-      null;
+        longitude:
+          number |
+          null;
 
-    assigneeId:
-      number |
-      null;
-  };
+        assigneeId:
+          number |
+          null;
+      }
+    | null;
+
+  /**
+   * 직접 입력 주소 기준 검색일 때
+   * 실제 좌표 변환된 검색 위치다.
+   *
+   * 학생 기준 검색에서는 null이다.
+   */
+  searchLocation:
+    | {
+        address:
+          string;
+
+        latitude:
+          number |
+          null;
+
+        longitude:
+          number |
+          null;
+      }
+    | null;
+
+  /**
+   * 어떤 기준으로 추천했는지 표시한다.
+   */
+  searchMode:
+    | "student"
+    | "address";
 
   institutions:
     PracticeInstitutionSearchResultItem[];
@@ -1615,25 +1940,38 @@ export type SemesterCreateToolInput = {
   studentId:
     number;
 
-  /**
+   /**
    * 학생 상세페이지에서 표시되는 학기 순서
    *
+   * 생략하면 서버에서 기존 마지막 학기 다음 순서로
+   * 자동 계산한다.
+   *
+   * 사용자가 명시한 경우에도 서버 계산 결과와
+   * 일치하는지 다시 검증한다.
+   *
    * 예:
-   * 첫 번째 학기 = 1
-   * 두 번째 학기 = 2
+   * 기존 마지막 학기 = 2
+   * 신규 학기 순서 = 3
    */
-  semesterOrder:
+  semesterOrder?:
     number;
 
-  /**
+      /**
    * 학기 구분
+   *
+   * 기존 학기가 있으면 마지막 학기 구분을 기준으로
+   * 다음 학기를 서버에서 자동 계산한다.
+   *
+   * 기존 학기가 하나도 없는 첫 학기 생성 시에는
+   * 자동 계산 기준이 없으므로 반드시 입력해야 한다.
    *
    * 예:
    * 2026년 1학기
    * 2026년 2학기
    */
-  semesterLabel:
-    string;
+  semesterLabel?:
+    string |
+    null;
 
   /**
    * 예정 개강월
@@ -1774,7 +2112,7 @@ export type SemesterCreateDraft = {
     string |
     null;
 
-  /**
+    /**
    * 초안 생성 당시 해당 학생의 마지막 학기 순서
    *
    * 승인 실행 전에 다시 조회하여
@@ -1782,6 +2120,18 @@ export type SemesterCreateDraft = {
    */
   originalLastSemesterOrder:
     number;
+
+  /**
+   * 초안 생성 당시 해당 학생의 마지막 학기 구분
+   *
+   * 기존 학기가 없는 첫 학기 생성 초안은 null이다.
+   *
+   * 승인 실행 시 현재 마지막 학기 구분과 다시 비교하여
+   * 학기 구분이 변경된 오래된 초안의 실행을 차단한다.
+   */
+  originalLastSemesterLabel:
+    string |
+    null;
 
   requestedByUserId:
     number;
@@ -1818,6 +2168,447 @@ export type SemesterCreateToolOutput = {
 
   draft:
     SemesterCreateDraft;
+
+  preview:
+    AiPendingActionPreview;
+};
+
+/**
+ * 기존 학생 학기 수정 요청
+ *
+ * 실제 semesters 테이블을 바로 수정하지 않는다.
+ * Pending Action 승인 후 Executor가 수정한다.
+ */
+export type SemesterUpdateToolInput = {
+  studentId:
+    number;
+
+  semesterOrder:
+    number;
+
+  semesterLabel?:
+    string |
+    null;
+
+  plannedMonth?:
+    string |
+    null;
+
+  plannedInstitution?:
+    string |
+    null;
+
+  plannedSubjectCount?:
+    number |
+    null;
+
+  plannedAmount?:
+    number |
+    null;
+
+  actualStartDate?:
+    string |
+    null;
+
+  actualInstitution?:
+    string |
+    null;
+
+  actualSubjectCount?:
+    number |
+    null;
+
+  actualAmount?:
+    number |
+    null;
+
+  actualPaymentDate?:
+    string |
+    null;
+};
+
+export type SemesterUpdateOriginalValues = {
+  updatedAt:
+    string |
+    Date |
+    null;
+
+  semesterLabel:
+    string |
+    null;
+
+  plannedMonth:
+    string |
+    null;
+
+  plannedInstitution:
+    string |
+    null;
+
+  plannedSubjectCount:
+    number |
+    null;
+
+  plannedAmount:
+    string |
+    number |
+    null;
+
+  actualStartDate:
+    string |
+    Date |
+    null;
+
+  actualInstitution:
+    string |
+    null;
+
+  actualInstitutionId:
+    number |
+    null;
+
+  actualSubjectCount:
+    number |
+    null;
+
+  actualAmount:
+    string |
+    number |
+    null;
+
+  actualPaymentDate:
+    string |
+    Date |
+    null;
+
+  isCompleted:
+    boolean;
+
+  approvalStatus:
+    string |
+    null;
+};
+
+export type SemesterUpdateValues = {
+  semesterLabel?:
+    string |
+    null;
+
+  plannedMonth?:
+    string |
+    null;
+
+  plannedInstitution?:
+    string |
+    null;
+
+  plannedSubjectCount?:
+    number |
+    null;
+
+  plannedAmount?:
+    number |
+    null;
+
+  actualStartDate?:
+    string |
+    null;
+
+  actualInstitution?:
+    string |
+    null;
+
+  actualSubjectCount?:
+    number |
+    null;
+
+  actualAmount?:
+    number |
+    null;
+
+  actualPaymentDate?:
+    string |
+    null;
+};
+
+export type SemesterUpdateChange = {
+  field:
+    keyof SemesterUpdateValues;
+
+  label:
+    string;
+
+  before:
+    string |
+    number |
+    null;
+
+  after:
+    string |
+    number |
+    null;
+};
+
+export type SemesterUpdateDraft = {
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  assigneeId:
+    number;
+
+  semesterId:
+    number;
+
+  semesterOrder:
+    number;
+
+  originalValues:
+    SemesterUpdateOriginalValues;
+
+  updates:
+    SemesterUpdateValues;
+
+  requestedByUserId:
+    number;
+
+  requestedByRole:
+    AiRole;
+
+  createdAt:
+    string;
+};
+
+export type SemesterUpdateToolOutput = {
+  pendingActionRequired:
+    true;
+
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  semesterId:
+    number;
+
+  semesterOrder:
+    number;
+
+  semesterLabel:
+    string |
+    null;
+
+  changes:
+    SemesterUpdateChange[];
+
+  draft:
+    SemesterUpdateDraft;
+
+  preview:
+    AiPendingActionPreview;
+};
+
+/**
+ * 기존 학생 학기의 입력완료 요청
+ *
+ * 실제 semesters 테이블을 바로 수정하지 않는다.
+ * 서버에서 대상 학생과 학기를 조회한 뒤
+ * 승인 가능한 초안만 생성한다.
+ *
+ * organizationId, userId, assigneeId는
+ * 서버 AI Context와 DB 원본에서 결정한다.
+ */
+export type SemesterCompleteToolInput = {
+  /**
+   * 입력완료 처리할 학생 ID
+   */
+  studentId:
+    number;
+
+  /**
+   * 입력완료 처리할 학기 순서
+   *
+   * 예:
+   * 1학기 = 1
+   * 2학기 = 2
+   */
+  semesterOrder:
+    number;
+};
+
+/**
+ * 학기 입력완료 초안 생성 당시의 원본값
+ *
+ * 승인 실행 시 현재 DB값과 다시 비교하여
+ * 다른 사용자가 먼저 수정하거나 승인 요청을
+ * 처리한 오래된 초안의 실행을 차단한다.
+ */
+export type SemesterCompleteOriginalValues = {
+  /**
+   * 초안 생성 당시 학기 수정 시각
+   *
+   * DB에서 updatedAt을 제공하지 않는 경우
+   * null로 저장하고 개별 필드를 비교한다.
+   */
+  updatedAt:
+    string |
+    Date |
+    null;
+
+  isCompleted:
+    boolean;
+
+  approvalStatus:
+    string |
+    null;
+
+  semesterLabel:
+    string |
+    null;
+
+  actualStartDate:
+    string |
+    Date |
+    null;
+
+  actualInstitution:
+    string |
+    null;
+
+  actualInstitutionId:
+    number |
+    null;
+
+  actualSubjectCount:
+    number |
+    null;
+
+  actualAmount:
+    string |
+    number |
+    null;
+
+  actualPaymentDate:
+    string |
+    Date |
+    null;
+};
+
+/**
+ * 학기 입력완료 Pending Action에 저장할 초안
+ *
+ * 실제 승인 시 Executor가 학생, 학기, 플랜,
+ * 과목 및 담당자 권한을 모두 다시 검사한다.
+ */
+export type SemesterCompleteDraft = {
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  /**
+   * 초안 생성 당시 학생 담당자
+   */
+  assigneeId:
+    number;
+
+  semesterId:
+    number;
+
+  semesterOrder:
+    number;
+
+  semesterLabel:
+    string |
+    null;
+
+  /**
+   * 해당 학기의 실제 과목 수
+   */
+  actualSubjectCount:
+    number;
+
+  /**
+   * 해당 학기에 등록된 우리플랜 과목 수
+   */
+  planSubjectCount:
+    number;
+
+  actualStartDate:
+    string;
+
+  actualInstitution:
+    string;
+
+  actualAmount:
+    number;
+
+  actualPaymentDate:
+    string;
+
+  /**
+   * 입력완료 처리 후 적용할 값
+   */
+  updates: {
+    isCompleted:
+      true;
+
+    approvalStatus:
+      "대기";
+  };
+
+  /**
+   * 승인 시 동시 수정 여부 확인에 사용한다.
+   */
+  originalValues:
+    SemesterCompleteOriginalValues;
+
+  requestedByUserId:
+    number;
+
+  requestedByRole:
+    AiRole;
+
+  createdAt:
+    string;
+};
+
+/**
+ * semester.complete Tool 결과
+ *
+ * 이 결과가 반환돼도 아직 입력완료 처리는
+ * 실행되지 않은 상태다.
+ */
+export type SemesterCompleteToolOutput = {
+  pendingActionRequired:
+    true;
+
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  semesterId:
+    number;
+
+  semesterOrder:
+    number;
+
+  semesterLabel:
+    string |
+    null;
+
+  draft:
+    SemesterCompleteDraft;
 
   preview:
     AiPendingActionPreview;
@@ -1879,6 +2670,892 @@ export type ScheduleCreateToolInput = {
 isGlobal?:
   boolean;
 };
+
+/**
+ * AI 학생 플랜 요약 생성 초안 입력
+ *
+ * 실제 plans 테이블을 바로 생성하지 않는다.
+ * 확정된 학생 ID와 사용자가 명확하게 제공한
+ * 플랜 요약값만 전달한다.
+ *
+ * organizationId, userId, assigneeId는
+ * 서버 Context와 학생 원본에서 결정한다.
+ */
+export type PlanCreateToolInput = {
+  /**
+   * 플랜을 생성할 확정된 학생 ID
+   */
+  studentId:
+    number;
+
+  /**
+   * 희망 과정
+   *
+   * 사용자가 명확하게 말하지 않았다면
+   * AI가 임의로 생성하지 않는다.
+   */
+  desiredCourse?:
+    string |
+    null;
+
+  /**
+   * 최종학력
+   */
+    finalEducation?:
+    string |
+    null;
+
+  /**
+   * 실습 필요 여부
+   *
+   * true:
+   * 실습이 필요한 과정
+   *
+   * false:
+   * 실습이 필요하지 않은 과정
+   *
+   * 사용자 또는 기존 확정 데이터에서
+   * 명확하게 확인된 경우에만 전달한다.
+   */
+  hasPractice?:
+    boolean |
+    null;
+
+  /**
+   * 플랜 전체 이론 과목 수
+   */
+  totalTheorySubjects?:
+    number |
+    null;
+
+  /**
+   * 전공필수 과목 수
+   */
+  requiredMajorCount?:
+    number |
+    null;
+
+  /**
+   * 전공선택 과목 수
+   */
+  electiveMajorCount?:
+    number |
+    null;
+
+  /**
+   * 교양 과목 수
+   */
+  liberalCount?:
+    number |
+    null;
+
+  /**
+   * 일반 과목 수
+   */
+  generalCount?:
+    number |
+    null;
+};
+
+/**
+ * plan.create Pending Action에 저장할
+ * 플랜 생성 초안
+ *
+ * 실제 plans 테이블에는 아직 반영되지 않는다.
+ */
+export type PlanCreateDraft = {
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  /**
+   * 초안 생성 당시 학생 담당자
+   *
+   * 승인 실행 시 담당자가 바뀌었는지
+   * 다시 확인하기 위해 저장한다.
+   */
+  assigneeId:
+    number;
+
+  desiredCourse:
+    string |
+    null;
+
+    finalEducation:
+    string |
+    null;
+
+  hasPractice:
+    boolean;
+
+  totalTheorySubjects:
+    number;
+
+  requiredMajorCount:
+    number;
+
+  electiveMajorCount:
+    number;
+
+  liberalCount:
+    number;
+
+  generalCount:
+    number;
+
+  /**
+   * 플랜 생성 초안 당시
+   * 기존 플랜이 없었다는 사실을
+   * 승인 실행 단계에서 다시 검증한다.
+   */
+  originalPlanExists:
+    false;
+
+  requestedByUserId:
+    number;
+
+  requestedByRole:
+    AiRole;
+
+  createdAt:
+    string;
+};
+
+/**
+ * plan.create Tool 결과
+ *
+ * pendingActionRequired가 true여도
+ * 실제 plans 테이블은 아직 생성되지 않는다.
+ */
+export type PlanCreateToolOutput = {
+  pendingActionRequired:
+    true;
+
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  draft:
+    PlanCreateDraft;
+
+  preview:
+    AiPendingActionPreview;
+};
+
+/**
+ * AI 기존 학생 플랜 요약 수정 입력
+ *
+ * 실제 plans 테이블을 바로 수정하지 않는다.
+ * 사용자가 변경하려고 명확하게 지정한 값만 전달한다.
+ *
+ * organizationId / userId / assigneeId / planId는
+ * 서버 Context와 현재 DB에서 결정한다.
+ */
+export type PlanUpdateToolInput = {
+  /**
+   * 수정할 플랜의 확정된 학생 ID
+   */
+  studentId:
+    number;
+
+  /**
+   * 희망 과정 수정
+   */
+  desiredCourse?:
+    string |
+    null;
+
+  /**
+   * 최종학력 수정
+   */
+  finalEducation?:
+    string |
+    null;
+
+  /**
+   * 실습 필요 여부 수정
+   *
+   * 실습 세부정보 자체는
+   * 별도 실습 Workflow에서 관리한다.
+   */
+  hasPractice?:
+    boolean;
+
+  /**
+   * 전체 이론 과목 수 수정
+   */
+  totalTheorySubjects?:
+    number;
+
+  /**
+   * 전공필수 과목 수 수정
+   */
+  requiredMajorCount?:
+    number;
+
+  /**
+   * 전공선택 과목 수 수정
+   */
+  electiveMajorCount?:
+    number;
+
+  /**
+   * 교양 과목 수 수정
+   */
+  liberalCount?:
+    number;
+
+  /**
+   * 일반 과목 수 수정
+   */
+  generalCount?:
+    number;
+};
+
+/**
+ * AI가 수정할 수 있는
+ * 플랜 요약 필드
+ */
+export type PlanUpdateField =
+  | "desiredCourse"
+  | "finalEducation"
+  | "hasPractice"
+  | "totalTheorySubjects"
+  | "requiredMajorCount"
+  | "electiveMajorCount"
+  | "liberalCount"
+  | "generalCount";
+
+/**
+ * 사용자 승인 화면에 표시할
+ * 플랜 변경 전 / 후 값
+ */
+export type PlanUpdateChange = {
+  field:
+    PlanUpdateField;
+
+  label:
+    string;
+
+  before:
+    | string
+    | number
+    | boolean
+    | null;
+
+  after:
+    | string
+    | number
+    | boolean
+    | null;
+};
+
+/**
+ * 플랜 수정 초안 생성 당시
+ * DB 원본값
+ *
+ * 승인 실행 시 현재 DB와 다시 비교하여
+ * 다른 사용자가 먼저 플랜을 수정했는지 검사한다.
+ */
+export type PlanUpdateOriginalValues = {
+  planId:
+    number;
+
+  desiredCourse:
+    string |
+    null;
+
+  finalEducation:
+    string |
+    null;
+
+  hasPractice:
+    boolean;
+
+  totalTheorySubjects:
+    number;
+
+  requiredMajorCount:
+    number;
+
+  electiveMajorCount:
+    number;
+
+  liberalCount:
+    number;
+
+  generalCount:
+    number;
+};
+
+/**
+ * 실제 승인 후 적용할 플랜 수정값
+ *
+ * 사용자가 요청한 필드만 존재한다.
+ */
+export type PlanUpdateValues = {
+  desiredCourse?:
+    string |
+    null;
+
+  finalEducation?:
+    string |
+    null;
+
+  hasPractice?:
+    boolean;
+
+  totalTheorySubjects?:
+    number;
+
+  requiredMajorCount?:
+    number;
+
+  electiveMajorCount?:
+    number;
+
+  liberalCount?:
+    number;
+
+  generalCount?:
+    number;
+};
+
+/**
+ * plan_update Pending Action에 저장할
+ * 플랜 수정 승인 초안
+ */
+export type PlanUpdateDraft = {
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  /**
+   * 현재 plans 테이블의 플랜 ID
+   */
+  planId:
+    number;
+
+  /**
+   * 초안 생성 당시 학생 담당자
+   *
+   * 승인 실행 시 현재 담당자와
+   * 다시 비교한다.
+   */
+  assigneeId:
+    number;
+
+  /**
+   * 초안 생성 당시 플랜 원본
+   */
+  originalValues:
+    PlanUpdateOriginalValues;
+
+  /**
+   * 승인 시 실제 적용할 변경값
+   */
+  updates:
+    PlanUpdateValues;
+
+  requestedByUserId:
+    number;
+
+  requestedByRole:
+    AiRole;
+
+  createdAt:
+    string;
+};
+
+/**
+ * plan.update Tool 결과
+ *
+ * pendingActionRequired = true여도
+ * plans 테이블은 아직 변경되지 않는다.
+ */
+export type PlanUpdateToolOutput = {
+  pendingActionRequired:
+    true;
+
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  planId:
+    number;
+
+  changes:
+    PlanUpdateChange[];
+
+  draft:
+    PlanUpdateDraft;
+
+  preview:
+    AiPendingActionPreview;
+};
+
+/**
+ * AI 우리플랜 과목 생성 입력
+ *
+ * 한 번의 승인 초안에서
+ * 여러 학기 / 여러 과목을 함께 등록할 수 있다.
+ *
+ * 실제 planSemesters 테이블에는
+ * Tool 실행 시점에 바로 저장하지 않는다.
+ */
+export type PlanSubjectsCreateToolInput = {
+  /**
+   * 과목을 등록할 확정된 학생 ID
+   */
+  studentId:
+    number;
+
+  /**
+   * 등록할 우리플랜 과목 목록
+   */
+  subjects:
+    Array<{
+      /**
+       * 몇 번째 학기에 배치할지
+       *
+       * 예:
+       * 1학기 -> 1
+       * 2학기 -> 2
+       */
+      semesterNo:
+        number;
+
+      /**
+       * 실제 과목명
+       */
+      subjectName:
+        string;
+
+      /**
+       * 플랜 화면의 큰 분류
+       *
+       * 전공필수/전공선택은
+       * planCategory = "전공"
+       */
+      planCategory:
+        "전공" |
+        "교양" |
+        "일반";
+
+      /**
+       * 플랜 요구구분
+       */
+      planRequirementType:
+        "전공필수" |
+        "전공선택" |
+        "교양" |
+        "일반";
+
+      /**
+       * 과목 학점
+       *
+       * 일반적인 이론 과목은 3학점이지만
+       * AI가 임의 고정하지 않는다.
+       */
+      credits:
+        number;
+
+      /**
+       * 정산 포함 여부
+       *
+       * 생략하면 DB 정책에서
+       * 실습/이벤트/무료 과목을 기준으로 결정한다.
+       */
+      settlementIncluded?:
+        boolean |
+        null;
+    }>;
+};
+
+/**
+ * 승인 초안에 저장하는
+ * 개별 우리플랜 과목
+ */
+export type PlanSubjectCreateDraftItem = {
+  semesterNo:
+    number;
+
+  subjectName:
+    string;
+
+  planCategory:
+    "전공" |
+    "교양" |
+    "일반";
+
+  planRequirementType:
+    "전공필수" |
+    "전공선택" |
+    "교양" |
+    "일반";
+
+  credits:
+    number;
+
+  /**
+   * 해당 학기 내 표시 순서
+   *
+   * 서버가 현재 DB 상태를 기준으로 계산한다.
+   */
+  sortOrder:
+    number;
+
+  settlementIncluded:
+    boolean;
+};
+
+/**
+ * plan_subjects_create Pending Action에 저장할
+ * 전체 과목 생성 초안
+ */
+export type PlanSubjectsCreateDraft = {
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  /**
+   * 초안 생성 당시 담당자
+   *
+   * 승인 시 현재 담당자와 다시 비교한다.
+   */
+  assigneeId:
+    number;
+
+  /**
+   * 초안 생성 당시 플랜 ID
+   *
+   * 승인 시 동일한 플랜인지 다시 확인한다.
+   */
+  planId:
+    number;
+
+  /**
+   * 초안 생성 당시 이미 존재하던
+   * 우리플랜 과목 ID 목록
+   *
+   * 승인 사이에 과목이 추가/변경됐는지
+   * 충돌 검사를 하기 위한 Snapshot이다.
+   */
+  originalPlanSubjectIds:
+    number[];
+
+  subjects:
+    PlanSubjectCreateDraftItem[];
+
+  requestedByUserId:
+    number;
+
+  requestedByRole:
+    AiRole;
+
+  createdAt:
+    string;
+};
+
+/**
+ * plan.subjects.create Tool 결과
+ *
+ * 이 결과가 반환되어도
+ * planSemesters 테이블은 아직 변경되지 않는다.
+ */
+export type PlanSubjectsCreateToolOutput = {
+  pendingActionRequired:
+    true;
+
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  planId:
+    number;
+
+  draft:
+    PlanSubjectsCreateDraft;
+
+  preview:
+    AiPendingActionPreview;
+};
+
+/**
+ * AI 기존 우리플랜 과목 수정 입력
+ *
+ * 과목 삭제는 지원하지 않는다.
+ * 수정할 과목 ID와 사용자가 명확하게 변경 요청한 값만 전달한다.
+ */
+export type PlanSubjectsUpdateToolInput = {
+  /**
+   * 수정 대상 학생 ID
+   */
+  studentId:
+    number;
+
+  /**
+   * 수정 대상 planSemesters ID
+   */
+  planSubjectId:
+    number;
+
+  /**
+   * 변경할 학기
+   */
+  semesterNo?:
+    number;
+
+  /**
+   * 변경할 과목명
+   */
+  subjectName?:
+    string;
+
+  /**
+   * 변경할 플랜 대분류
+   */
+  planCategory?:
+    "전공" |
+    "교양" |
+    "일반";
+
+  /**
+   * 변경할 요구구분
+   */
+  planRequirementType?:
+    "전공필수" |
+    "전공선택" |
+    "교양" |
+    "일반";
+
+  /**
+   * 변경할 학점
+   */
+  credits?:
+    number;
+
+  /**
+   * 변경할 정렬 순서
+   */
+  sortOrder?:
+    number;
+
+  /**
+   * 변경할 정산 포함 여부
+   */
+  settlementIncluded?:
+    boolean;
+};
+
+/**
+ * AI가 수정할 수 있는
+ * 플랜 과목 필드
+ */
+export type PlanSubjectUpdateField =
+  | "semesterNo"
+  | "subjectName"
+  | "planCategory"
+  | "planRequirementType"
+  | "credits"
+  | "sortOrder"
+  | "settlementIncluded";
+
+/**
+ * 승인 화면에 표시할
+ * 플랜 과목 변경 전 / 후
+ */
+export type PlanSubjectUpdateChange = {
+  field:
+    PlanSubjectUpdateField;
+
+  label:
+    string;
+
+  before:
+    | string
+    | number
+    | boolean
+    | null;
+
+  after:
+    | string
+    | number
+    | boolean
+    | null;
+};
+
+/**
+ * 수정 초안 생성 당시
+ * planSemesters 원본 Snapshot
+ */
+export type PlanSubjectUpdateOriginalValues = {
+  id:
+    number;
+
+  studentId:
+    number;
+
+  semesterNo:
+    number;
+
+  subjectName:
+    string;
+
+  planCategory:
+    "전공" |
+    "교양" |
+    "일반";
+
+  planRequirementType:
+    "전공필수" |
+    "전공선택" |
+    "교양" |
+    "일반";
+
+  credits:
+    number;
+
+  sortOrder:
+    number;
+
+  settlementIncluded:
+    boolean;
+};
+
+/**
+ * 승인 후 실제 적용할
+ * 플랜 과목 부분 수정값
+ */
+export type PlanSubjectUpdateValues = {
+  semesterNo?:
+    number;
+
+  subjectName?:
+    string;
+
+  planCategory?:
+    "전공" |
+    "교양" |
+    "일반";
+
+  planRequirementType?:
+    "전공필수" |
+    "전공선택" |
+    "교양" |
+    "일반";
+
+  credits?:
+    number;
+
+  sortOrder?:
+    number;
+
+  settlementIncluded?:
+    boolean;
+};
+
+/**
+ * plan_subjects_update Pending Action 승인 초안
+ */
+export type PlanSubjectsUpdateDraft = {
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  /**
+   * 학생 현재 플랜 ID
+   */
+  planId:
+    number;
+
+  /**
+   * 수정할 planSemesters ID
+   */
+  planSubjectId:
+    number;
+
+  /**
+   * 초안 생성 당시 학생 담당자
+   */
+  assigneeId:
+    number;
+
+  /**
+   * 수정 대상 과목 원본 Snapshot
+   */
+  originalValues:
+    PlanSubjectUpdateOriginalValues;
+
+  /**
+   * 승인 시 적용할 수정값
+   */
+  updates:
+    PlanSubjectUpdateValues;
+
+  requestedByUserId:
+    number;
+
+  requestedByRole:
+    AiRole;
+
+  createdAt:
+    string;
+};
+
+/**
+ * plan.subjects.update Tool 결과
+ *
+ * 실제 planSemesters 수정은 아직 수행되지 않는다.
+ */
+export type PlanSubjectsUpdateToolOutput = {
+  pendingActionRequired:
+    true;
+
+  studentId:
+    number;
+
+  studentName:
+    string |
+    null;
+
+  planId:
+    number;
+
+  planSubjectId:
+    number;
+
+  changes:
+    PlanSubjectUpdateChange[];
+
+  draft:
+    PlanSubjectsUpdateDraft;
+
+  preview:
+    AiPendingActionPreview;
+};
+
 export type ScheduleCreateToolOutput = {
   /**
    * 일정이 바로 생성된 것이 아니라
@@ -2063,7 +3740,8 @@ export type StudentRiskCategory =
   | "plan"
   | "credit"
   | "subject"
-  | "practice";
+  | "practice"
+  | "qualification";
 
 export type StudentRiskItem = {
   code: string;
@@ -2220,6 +3898,59 @@ payment: {
       remainingCredits: number | null;
     };
   };
+
+  /**
+   * 학위조건 + 자격조건 통합 결과.
+   *
+   * 향후
+   * - AI 업무비서
+   * - 학생 상세
+   * - 카카오 AI
+   * - 최단기간 Planner
+   *
+   * 가 동일한 기준을 사용한다.
+   */
+  requirements:
+    UnifiedQualificationRequirements;
+
+  /**
+   * 법적 자격/학위 Requirements를 기준으로
+   * 실제 선택된 추가과목 계획.
+   *
+   * 아직 학기배치는 하지 않는다.
+   */
+  subjectPlan:
+    QualificationSubjectPlannerResult;
+
+  /**
+   * 실제 추가과목을
+   * 학기당 8과목 / 연간 14과목 기준으로
+   * 자동 배치한 결과.
+   *
+   * 아직 교육원 실제 개강일은 확정하지 않는다.
+   */
+  semesterPlan:
+    QualificationSemesterPlannerResult;
+
+  /**
+   * 최종 수업학기 이후
+   * 학습자등록 / 학점인정 /
+   * 학위신청 / 학위수여 /
+   * 자격증 신청 예상 일정.
+   */
+  administrativeTimeline:
+    AdministrativeTimelinePlannerResult;
+
+/**
+ * AI가 학생 학업상태를 자연어로 설명할 때
+ * 우선 사용해야 하는 공통 학업요약.
+ *
+ * 법규/학점/학기/행정일정을
+ * AI가 다시 계산하지 않고
+ * 서버 계산결과를 그대로 설명한다.
+ */
+academicSummary:
+  StudentAcademicSummaryResult;
 
   issues: StudentRiskItem[];
 
@@ -2526,6 +4257,37 @@ export type AiDocumentExtractedSubject = {
     AiDocumentExtractedField<number>;
 
   /**
+   * 전적대 과목 실제 이수연도
+   *
+   * 예:
+   * 2018
+   * 2019
+   * 2020
+   *
+   * 성적증명서에 연도가 확인되지 않으면 null.
+   *
+   * semesterNo와는 다른 값이다.
+   * semesterNo는 CRM 학기 순번이고,
+   * completionYear는 실제 성적증명서 이수연도다.
+   */
+  completionYear:
+    AiDocumentExtractedField<number>;
+
+  /**
+   * 전적대 과목 실제 이수학기
+   *
+   * 예:
+   * 1학기
+   * 2학기
+   * 여름계절학기
+   * 겨울계절학기
+   *
+   * 확인되지 않으면 null.
+   */
+  completionSemester:
+    AiDocumentExtractedField<string>;
+
+  /**
    * 문서 원문에서 추출된 행
    *
    * 담당자가 AI 결과와 원본을 비교할 때 사용한다.
@@ -2536,6 +4298,317 @@ export type AiDocumentExtractedSubject = {
    * 과목 단위 경고
    */
   warnings: string[];
+};
+
+/**
+ * AI 정산 조회
+ *
+ * 권한 범위:
+ * - staff: 본인
+ * - admin: 본인 팀
+ * - host: 회사 전체
+ * - superhost: 사용하지 않음
+ *
+ * organizationId / teamId / assigneeId 권한값은
+ * 프론트나 OpenAI 입력값을 신뢰하지 않고
+ * 서버 AiUserContext에서 최종 결정한다.
+ */
+export type SettlementSummaryToolInput = {
+  /**
+   * 조회 단위
+   *
+   * day:
+   * 특정 날짜
+   *
+   * month:
+   * 특정 월
+   *
+   * year:
+   * 특정 연도
+   *
+   * range:
+   * 시작일 ~ 종료일
+   */
+  periodType:
+    | "day"
+    | "month"
+    | "year"
+    | "range";
+
+  /**
+   * 조회 연도
+   *
+   * month / year 조회 시 사용
+   */
+  year?:
+    number |
+    null;
+
+  /**
+   * 조회 월
+   *
+   * month 조회 시 사용
+   */
+  month?:
+    number |
+    null;
+
+  /**
+   * YYYY-MM-DD
+   *
+   * day 조회 시 사용
+   */
+  date?:
+    string |
+    null;
+
+  /**
+   * YYYY-MM-DD
+   *
+   * range 조회 시작일
+   */
+  startDate?:
+    string |
+    null;
+
+  /**
+   * YYYY-MM-DD
+   *
+   * range 조회 종료일
+   */
+  endDate?:
+    string |
+    null;
+
+  /**
+   * 특정 담당자를 이름으로 요청한 경우에만 사용한다.
+   *
+   * 예:
+   * "이재준 5월 매출"
+   *
+   * AI가 assigneeId를 직접 만들지 않도록
+   * 이름만 전달하고 서버가 권한 범위 안에서 찾는다.
+   */
+  assigneeName?:
+    string |
+    null;
+
+  /**
+   * Host가 특정 팀을 요청한 경우
+   *
+   * 예:
+   * "1팀 5월 매출"
+   *
+   * teamId를 OpenAI가 직접 만들지 않고
+   * 팀 이름만 전달한다.
+   */
+  teamName?:
+    string |
+    null;
+
+  /**
+   * 신규 / 기존 구분
+   *
+   * all:
+   * 전체
+   *
+   * new:
+   * 1학기 신규
+   *
+   * existing:
+   * 2학기 이상 기존
+   */
+  customerType?:
+    | "all"
+    | "new"
+    | "existing";
+
+  /**
+   * 직원별 순위까지 필요한지
+   *
+   * 예:
+   * "이번달 팀원 매출 순위 보여줘"
+   */
+  includeRanking?:
+    boolean;
+};
+
+export type SettlementSummaryAssigneeItem = {
+  assigneeId:
+    number;
+
+  assigneeName:
+    string;
+
+  teamId:
+    number |
+    null;
+
+  teamName:
+    string |
+    null;
+
+  grossSales:
+    number;
+
+  refundAmount:
+    number;
+
+  netSales:
+    number;
+
+  newSales:
+    number;
+
+  existingSales:
+    number;
+
+  entryCount:
+    number;
+
+  studentCount:
+    number;
+};
+
+export type SettlementSummaryTeamItem = {
+  teamId:
+    number;
+
+  teamName:
+    string;
+
+  grossSales:
+    number;
+
+  refundAmount:
+    number;
+
+  netSales:
+    number;
+
+  newSales:
+    number;
+
+  existingSales:
+    number;
+
+  assigneeCount:
+    number;
+};
+
+export type SettlementSummaryToolOutput = {
+  /**
+   * 서버에서 실제 적용한 조회 범위
+   */
+  period: {
+    periodType:
+      | "day"
+      | "month"
+      | "year"
+      | "range";
+
+    startDate:
+      string;
+
+    endDate:
+      string;
+
+    label:
+      string;
+  };
+
+  /**
+   * 서버 AI Context에서 확정한 권한 범위
+   */
+  scope: {
+    role:
+      AiRole;
+
+    scope:
+      AiDataScope;
+
+    organizationId:
+      number;
+
+    teamId:
+      number |
+      null;
+
+    assigneeIds:
+      number[] |
+      null;
+  };
+
+  filter: {
+    assigneeName:
+      string |
+      null;
+
+    teamName:
+      string |
+      null;
+
+    customerType:
+      | "all"
+      | "new"
+      | "existing";
+  };
+
+  summary: {
+    grossSales:
+      number;
+
+    refundAmount:
+      number;
+
+    netSales:
+      number;
+
+    newSales:
+      number;
+
+    existingSales:
+      number;
+
+    entryCount:
+      number;
+
+    studentCount:
+      number;
+  };
+
+  assignees:
+    SettlementSummaryAssigneeItem[];
+
+  teams:
+    SettlementSummaryTeamItem[];
+
+  /**
+   * 매출 순위
+   *
+   * includeRanking=false인 경우 빈 배열
+   */
+  ranking:
+    Array<{
+      rank:
+        number;
+
+      assigneeId:
+        number;
+
+      assigneeName:
+        string;
+
+      teamName:
+        string |
+        null;
+
+      netSales:
+        number;
+    }>;
+
+  generatedAt:
+    string;
 };
 
 /**
@@ -2752,8 +4825,24 @@ export type AiDocumentImportDraft = {
         | "교양"
         | "일반";
 
-      semesterNo:
+            semesterNo:
         number | null;
+
+      /**
+       * 전적대 성적증명서 기준 실제 이수연도.
+       *
+       * 전적대 반영 시 transfer_subjects.completionYear로 저장한다.
+       */
+      completionYear:
+        number | null;
+
+      /**
+       * 전적대 성적증명서 기준 실제 이수학기.
+       *
+       * 전적대 반영 시 transfer_subjects.completionSemester로 저장한다.
+       */
+      completionSemester:
+        string | null;
 
       isConfirmed:
         boolean;
@@ -2794,12 +4883,14 @@ export type AiPendingActionType =
   | "student_update"
   | "semester_create"
   | "semester_update"
+  | "semester_complete"
   | "plan_create"
   | "plan_update"
   | "plan_subjects_create"
   | "plan_subjects_update"
   | "payment_update"
   | "practice_request_create"
+  | "consultation_create"
   | "consultation_update"
   | "schedule_create"
   | "document_transfer_import"
@@ -2937,33 +5028,67 @@ export type AiPendingActionCancelInput = {
 };
 
 export type AiPendingActionExecutionOutput = {
-  pendingActionId: number;
+  pendingActionId:
+    number;
 
   status:
     | "executed"
     | "failed";
 
   /**
-   * 학생 통합등록 완료 후 생성된 학생 ID
+   * 대상 또는 생성된 학생 ID
    */
-  studentId: number | null;
+  studentId:
+    number |
+    null;
+
+  /**
+   * 단일 학기 작업에서 변경된 학기 ID
+   */
+  semesterId?:
+    number |
+    null;
+
+  /**
+   * 단일 학기 작업에서 변경된 학기 순서
+   */
+  semesterOrder?:
+    number |
+    null;
+
+  /**
+   * 입력완료 처리 결과
+   */
+  isCompleted?:
+    boolean;
+
+  /**
+   * 승인관리 상태
+   */
+  approvalStatus?:
+    string |
+    null;
 
   /**
    * 생성된 학기 ID 목록
    */
-  semesterIds: number[];
+  semesterIds:
+    number[];
 
   /**
    * 실행 결과를 사용자에게 나열
    */
-  completedSteps: string[];
+  completedSteps:
+    string[];
 
   /**
    * 실패 또는 건너뛴 작업
    */
-  failedSteps: string[];
+  failedSteps:
+    string[];
 
-  message: string;
+  message:
+    string;
 };
 
 /**
@@ -3046,6 +5171,17 @@ export type StudentRegistrationDraftSemester = {
    */
   semesterNo: number;
 
+/**
+ * 실제 연도별 학기 구분
+ *
+ * 예:
+ * 2026년 2학기
+ * 2027년 1학기
+ */
+semesterLabel:
+  string |
+  null;
+
   /**
    * 예정 시작 월
    *
@@ -3106,11 +5242,14 @@ actualSubjectCount: number | null;
  * 과정이 종료됐다는 의미가 아니다.
  * true가 되면 승인관리 대상에 노출된다.
  *
- * AI 등록 초안에서는 false로 생성하고,
- * 모든 필수 데이터 검증 및 저장이 끝난 마지막 단계에서
- * 서버 트랜잭션이 true로 변경한다.
+ * 학생 통합등록 생성 단계에서는 항상 false로 저장한다.
+ * 이후 담당자가 실제 개강일, 교육원, 과목 수,
+ * 결제금액 및 결제일을 확인한 뒤
+ * 별도의 semester_complete Pending Action을 승인하면
+ * true로 변경한다.
  */
-isCompleted: boolean;
+isCompleted:
+  boolean;
 };
 
 /**

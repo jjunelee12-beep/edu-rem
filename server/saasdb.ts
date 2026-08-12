@@ -193,12 +193,14 @@ billingExemptReason: organizations.billingExemptReason,
       maxStorageMb: organizations.maxStorageMb,
 
       allowBackup: organizations.allowBackup,
-      allowAutoBackup: organizations.allowAutoBackup,
-      allowAuditLog: organizations.allowAuditLog,
-      allowMessenger: organizations.allowMessenger,
-      allowPracticeCenter: organizations.allowPracticeCenter,
-      allowSettlementReport: organizations.allowSettlementReport,
-      allowPrivateCertificate: organizations.allowPrivateCertificate,
+allowAutoBackup: organizations.allowAutoBackup,
+allowAuditLog: organizations.allowAuditLog,
+allowMessenger: organizations.allowMessenger,
+allowPracticeCenter: organizations.allowPracticeCenter,
+allowSettlementReport: organizations.allowSettlementReport,
+allowPrivateCertificate: organizations.allowPrivateCertificate,
+allowAiAssistant: organizations.allowAiAssistant,
+allowKakaoAi: organizations.allowKakaoAi,
 
       memo: organizations.memo,
       createdBy: organizations.createdBy,
@@ -325,7 +327,9 @@ allowMessenger?: boolean;
 allowPracticeCenter?: boolean;
 allowSettlementReport?: boolean;
 allowPrivateCertificate?: boolean;
-  maxSmsPerMonth?: number;
+allowAiAssistant?: boolean;
+allowKakaoAi?: boolean;
+maxSmsPerMonth?: number;
 maxStorageMb?: number;
   memo?: string | null;
   createdBy?: number | null;
@@ -357,6 +361,8 @@ allowMessenger: input.allowMessenger ?? true,
 allowPracticeCenter: input.allowPracticeCenter ?? true,
 allowSettlementReport: input.allowSettlementReport ?? true,
 allowPrivateCertificate: input.allowPrivateCertificate ?? true,
+allowAiAssistant: input.allowAiAssistant ?? false,
+allowKakaoAi: input.allowKakaoAi ?? false,
     memo: input.memo?.trim() || null,
     createdBy: input.createdBy ?? null,
     updatedBy: input.createdBy ?? null,
@@ -389,7 +395,9 @@ allowMessenger?: boolean;
 allowPracticeCenter?: boolean;
 allowSettlementReport?: boolean;
 allowPrivateCertificate?: boolean;
-  maxSmsPerMonth?: number;
+allowAiAssistant?: boolean;
+allowKakaoAi?: boolean;
+maxSmsPerMonth?: number;
 maxStorageMb?: number;
   memo?: string | null;
   updatedBy?: number | null;
@@ -435,6 +443,8 @@ allowMessenger: input.allowMessenger,
 allowPracticeCenter: input.allowPracticeCenter,
 allowSettlementReport: input.allowSettlementReport,
 allowPrivateCertificate: input.allowPrivateCertificate,
+allowAiAssistant: input.allowAiAssistant,
+allowKakaoAi: input.allowKakaoAi,
       memo:
         input.memo === undefined
           ? undefined
@@ -728,11 +738,14 @@ export async function getOrganizationFeatureFlags(
 
   return {
   allowBackup: Boolean(org.allowBackup),
+  allowAutoBackup: Boolean(org.allowAutoBackup),
   allowAuditLog: Boolean(org.allowAuditLog),
   allowMessenger: Boolean(org.allowMessenger),
   allowPracticeCenter: Boolean(org.allowPracticeCenter),
   allowSettlementReport: Boolean(org.allowSettlementReport),
   allowPrivateCertificate: Boolean(org.allowPrivateCertificate),
+  allowAiAssistant: Boolean(org.allowAiAssistant),
+  allowKakaoAi: Boolean(org.allowKakaoAi),
 
   organization: {
     id: org.id,
@@ -1029,6 +1042,8 @@ export async function createTenantSignup(input: {
     allowPracticeCenter: true,
     allowSettlementReport: true,
     allowPrivateCertificate: true,
+allowAiAssistant: false,
+allowKakaoAi: false,
     memo: "자동가입 trial",
     createdBy: null,
 billingAmount: getPlanBillingAmount(input.planCode),

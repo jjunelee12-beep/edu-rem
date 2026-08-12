@@ -97,26 +97,92 @@ export function canAccessAssignee(params: {
   context: AiUserContext;
   assigneeId: unknown;
 }) {
+  const {
+    context,
+  } = params;
+
   const assigneeId =
     normalizePositiveInteger(
       params.assigneeId
     );
 
-  if (!assigneeId) return false;
+  const currentUserId =
+    normalizePositiveInteger(
+      context.userId
+    );
+
+  if (
+    !assigneeId ||
+    !currentUserId
+  ) {
+    return false;
+  }
 
   /**
-   * Host / 선택 회사 범위 Superhost
+   * Superhost는 AI 운영 설정·오류 점검만 담당한다.
+   * 회사 내부 학생·상담 운영 데이터에는 접근하지 않는다.
    */
   if (
-    params.context.allowedAssigneeIds ===
-    null
+    context.role ===
+    "superhost"
+  ) {
+    return false;
+  }
+
+  /**
+   * Staff는 반드시 본인 담당 데이터만 조회한다.
+   *
+   * allowedAssigneeIds 값이 잘못 생성되더라도
+   * Staff는 로그인 사용자 본인 ID만 허용한다.
+   */
+  if (
+    context.role ===
+    "staff"
+  ) {
+    return (
+      assigneeId ===
+      currentUserId
+    );
+  }
+
+  /**
+   * Admin은 본인 소속 팀 담당자 데이터까지 조회한다.
+   *
+   * 팀 구성원 목록은 서버에서 생성한
+   * allowedAssigneeIds만 신뢰한다.
+   */
+  if (
+    context.role ===
+    "admin"
+  ) {
+    if (
+      !Array.isArray(
+        context.allowedAssigneeIds
+      )
+    ) {
+      return false;
+    }
+
+    return context.allowedAssigneeIds.includes(
+      assigneeId
+    );
+  }
+
+  /**
+   * Host는 같은 회사 전체 담당자의 데이터를 조회한다.
+   *
+   * 조직 일치 여부는
+   * assertCanAccessStudent 또는
+   * assertCanAccessConsultation에서 먼저 검사한다.
+   */
+  if (
+    context.role ===
+    "host"
   ) {
     return true;
   }
 
-  return params.context.allowedAssigneeIds.includes(
-    assigneeId
-  );
+  return false;
 }
 
 export function assertCanAccessAssignee(params: {
@@ -137,34 +203,77 @@ export function assertCanAccessStudent(params: {
   context: AiUserContext;
   student: any;
 }) {
-  if (!params.student) {
+  const {
+    context,
+    student,
+  } = params;
+
+  if (!student) {
     throw new AiPermissionError(
       "학생 정보를 확인할 수 없습니다."
     );
   }
 
+  /**
+   * Superhost는 회사 운영 데이터에 접근하지 않는다.
+   */
+  if (
+    context.role ===
+    "superhost"
+  ) {
+    throw new AiPermissionError(
+      "슈퍼호스트는 학생 운영 정보를 조회할 수 없습니다."
+    );
+  }
+
+  const contextOrganizationId =
+    normalizePositiveInteger(
+      context.organizationId
+    );
+
   const studentOrganizationId =
     normalizePositiveInteger(
-      params.student.organizationId
+      student.organizationId
     );
 
   /**
-   * 조직 ID가 다르면 무조건 차단
+   * 조직 정보가 하나라도 없으면 통과시키지 않는다.
+   *
+   * 기존 코드는 studentOrganizationId가 없으면
+   * 조직 검사가 생략될 수 있었다.
    */
   if (
-    studentOrganizationId &&
+    !contextOrganizationId ||
+    !studentOrganizationId
+  ) {
+    throw new AiPermissionError(
+      "학생의 회사 범위를 확인할 수 없습니다."
+    );
+  }
+
+  /**
+   * 다른 회사 학생은 모든 권한에서 차단한다.
+   */
+  if (
     studentOrganizationId !==
-      params.context.organizationId
+    contextOrganizationId
   ) {
     throw new AiPermissionError(
       "다른 회사의 학생 정보에는 접근할 수 없습니다."
     );
   }
 
+  /**
+   * 역할별 담당자 조회 범위 검사
+   *
+   * Staff: 본인
+   * Admin: 팀
+   * Host: 회사 전체
+   */
   assertCanAccessAssignee({
-    context: params.context,
+    context,
     assigneeId:
-      params.student.assigneeId,
+      student.assigneeId,
     resourceName: "해당 학생",
   });
 }
@@ -175,31 +284,74 @@ export function assertCanAccessConsultation(
     consultation: any;
   }
 ) {
-  if (!params.consultation) {
+  const {
+    context,
+    consultation,
+  } = params;
+
+  if (!consultation) {
     throw new AiPermissionError(
       "상담 정보를 확인할 수 없습니다."
     );
   }
 
-  const consultationOrganizationId =
+  /**
+   * Superhost는 회사 운영 상담정보에 접근하지 않는다.
+   */
+  if (
+    context.role ===
+    "superhost"
+  ) {
+    throw new AiPermissionError(
+      "슈퍼호스트는 상담 운영 정보를 조회할 수 없습니다."
+    );
+  }
+
+  const contextOrganizationId =
     normalizePositiveInteger(
-      params.consultation.organizationId
+      context.organizationId
     );
 
+  const consultationOrganizationId =
+    normalizePositiveInteger(
+      consultation.organizationId
+    );
+
+  /**
+   * 조직 범위를 확인할 수 없으면 무조건 차단한다.
+   */
   if (
-    consultationOrganizationId &&
+    !contextOrganizationId ||
+    !consultationOrganizationId
+  ) {
+    throw new AiPermissionError(
+      "상담의 회사 범위를 확인할 수 없습니다."
+    );
+  }
+
+  /**
+   * 다른 회사 상담정보는 무조건 차단한다.
+   */
+  if (
     consultationOrganizationId !==
-      params.context.organizationId
+    contextOrganizationId
   ) {
     throw new AiPermissionError(
       "다른 회사의 상담 정보에는 접근할 수 없습니다."
     );
   }
 
+  /**
+   * 역할별 담당자 조회 범위 검사
+   *
+   * Staff: 본인
+   * Admin: 팀
+   * Host: 회사 전체
+   */
   assertCanAccessAssignee({
-    context: params.context,
+    context,
     assigneeId:
-      params.consultation.assigneeId,
+      consultation.assigneeId,
     resourceName: "해당 상담",
   });
 }
@@ -232,41 +384,25 @@ export function assertCanWriteStudent(params: {
     student,
   } = params;
 
-  if (!student) {
-    throw new AiPermissionError(
-      "학생 정보를 확인할 수 없습니다."
-    );
-  }
-
-  const studentOrganizationId =
-    normalizePositiveInteger(
-      student.organizationId
-    );
+  /**
+   * 수정 전에 먼저 조회 가능한 대상인지 검사한다.
+   *
+   * Staff: 본인
+   * Admin: 팀
+   * Host: 회사 전체
+   * Superhost: 차단
+   */
+  assertCanAccessStudent({
+    context,
+    student,
+  });
 
   /**
-   * organizationId가 다르면
-   * 담당자 여부와 관계없이 무조건 차단한다.
+   * AI Context 자체가 조회 전용이면 수정 불가
    */
-  if (
-    studentOrganizationId &&
-    studentOrganizationId !==
-      context.organizationId
-  ) {
+  if (!context.canWrite) {
     throw new AiPermissionError(
-      "다른 회사의 학생 정보는 수정할 수 없습니다."
-    );
-  }
-
-  /**
-   * Superhost는 조회와 점검만 가능하고
-   * CRM 데이터를 직접 수정하지 않는다.
-   */
-  if (
-    context.role ===
-    "superhost"
-  ) {
-    throw new AiPermissionError(
-      "슈퍼호스트는 학생 정보를 직접 수정할 수 없습니다."
+      "현재 AI는 조회 전용 모드입니다. 학생 정보를 수정할 수 없습니다."
     );
   }
 
@@ -280,6 +416,13 @@ export function assertCanWriteStudent(params: {
       context.userId
     );
 
+  /**
+   * 실제 DB에 저장된 학생 담당자와
+   * 현재 로그인 사용자가 같아야 한다.
+   *
+   * Admin과 Host도 다른 담당자의 학생은
+   * 조회만 가능하고 수정할 수 없다.
+   */
   if (
     !studentAssigneeId ||
     !currentUserId ||
@@ -287,7 +430,7 @@ export function assertCanWriteStudent(params: {
       currentUserId
   ) {
     throw new AiPermissionError(
-      "해당 학생의 담당자만 수정할 수 있습니다."
+      "해당 학생의 실제 담당자만 수정하거나 CRM에 적용할 수 있습니다."
     );
   }
 }
@@ -322,40 +465,20 @@ export function assertCanWriteConsultation(
     consultation,
   } = params;
 
-  if (!consultation) {
-    throw new AiPermissionError(
-      "상담 정보를 확인할 수 없습니다."
-    );
-  }
-
-  const consultationOrganizationId =
-    normalizePositiveInteger(
-      consultation.organizationId
-    );
+  /**
+   * 먼저 역할별 상담 조회 범위를 검사한다.
+   */
+  assertCanAccessConsultation({
+    context,
+    consultation,
+  });
 
   /**
-   * 다른 조직 데이터는
-   * 담당자 여부와 관계없이 차단한다.
+   * 조회 전용 AI Context에서는 수정할 수 없다.
    */
-  if (
-    consultationOrganizationId &&
-    consultationOrganizationId !==
-      context.organizationId
-  ) {
+  if (!context.canWrite) {
     throw new AiPermissionError(
-      "다른 회사의 상담 정보는 수정할 수 없습니다."
-    );
-  }
-
-  /**
-   * Superhost는 조회와 점검만 가능하다.
-   */
-  if (
-    context.role ===
-    "superhost"
-  ) {
-    throw new AiPermissionError(
-      "슈퍼호스트는 상담 정보를 직접 수정할 수 없습니다."
+      "현재 AI는 조회 전용 모드입니다. 상담 정보를 수정할 수 없습니다."
     );
   }
 
@@ -369,6 +492,12 @@ export function assertCanWriteConsultation(
       context.userId
     );
 
+  /**
+   * 실제 상담DB 담당자만 수정 가능하다.
+   *
+   * Admin과 Host도 다른 담당자의 상담은
+   * 조회만 가능하고 변경할 수 없다.
+   */
   if (
     !consultationAssigneeId ||
     !currentUserId ||
@@ -376,7 +505,7 @@ export function assertCanWriteConsultation(
       currentUserId
   ) {
     throw new AiPermissionError(
-      "해당 상담의 담당자만 수정할 수 있습니다."
+      "해당 상담의 실제 담당자만 수정할 수 있습니다."
     );
   }
 }
@@ -394,18 +523,57 @@ export function stripUntrustedScopeFields<
   | "organizationId"
   | "teamId"
   | "assigneeId"
+  | "managerId"
+  | "staffId"
+  | "ownerId"
+  | "assignedUserId"
+  | "requestedByUserId"
+  | "confirmedByUserId"
   | "userId"
   | "role"
   | "allowedAssigneeIds"
+  | "scope"
 > {
   const {
-    organizationId: _organizationId,
-    teamId: _teamId,
-    assigneeId: _assigneeId,
-    userId: _userId,
-    role: _role,
+    organizationId:
+      _organizationId,
+
+    teamId:
+      _teamId,
+
+    assigneeId:
+      _assigneeId,
+
+    managerId:
+      _managerId,
+
+    staffId:
+      _staffId,
+
+    ownerId:
+      _ownerId,
+
+    assignedUserId:
+      _assignedUserId,
+
+    requestedByUserId:
+      _requestedByUserId,
+
+    confirmedByUserId:
+      _confirmedByUserId,
+
+    userId:
+      _userId,
+
+    role:
+      _role,
+
     allowedAssigneeIds:
       _allowedAssigneeIds,
+
+    scope:
+      _scope,
+
     ...safeInput
   } = input;
 

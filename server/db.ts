@@ -110,6 +110,19 @@ type InsertApprovalSetting,
 approvalLogs,
 brandingSettings,
 type InsertBrandingSetting,
+
+kakaoAiSettings,
+type InsertKakaoAiSetting,
+
+kakaoAiConversations,
+type InsertKakaoAiConversation,
+
+kakaoAiMessages,
+type InsertKakaoAiMessage,
+
+kakaoAiMemories,
+type InsertKakaoAiMemory,
+
 smsSettings,
 type InsertSmsSetting,
 smsLogs,
@@ -153,7 +166,9 @@ import type {
   AiWorkSessionPatch,
   AiWorkflowStep,
   AiWorkflowType,
+  SemesterUpdateValues,
   StudentRegistrationDraft,
+  SettlementSummaryToolOutput,
 } from "./ai/ai.types";
 
 import { FEATURE_FLAGS } from "./_core/featureFlags";
@@ -328,6 +343,190 @@ function requireOrganizationId(value: any) {
   return organizationId;
 }
 
+function requireStudentRegistrationText(
+  value:
+    unknown,
+
+  fieldLabel:
+    string
+): string {
+  const normalized =
+    String(
+      value ??
+      ""
+    ).trim();
+
+  if (
+    !normalized
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      `${fieldLabel} 정보가 필요합니다.`,
+      409
+    );
+  }
+
+  return normalized;
+}
+
+function requireStudentRegistrationPositiveInteger(
+  value:
+    unknown,
+
+  fieldLabel:
+    string
+): number {
+  const numberValue =
+    Math.floor(
+      Number(
+        value
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      numberValue
+    ) ||
+    numberValue <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      `${fieldLabel} 정보가 올바르지 않습니다.`,
+      409
+    );
+  }
+
+  return numberValue;
+}
+
+function requireStudentRegistrationNonNegativeNumber(
+  value:
+    unknown,
+
+  fieldLabel:
+    string
+): number {
+  if (
+    value ===
+      null ||
+    value ===
+      undefined ||
+    value ===
+      ""
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      `${fieldLabel} 정보가 필요합니다.`,
+      409
+    );
+  }
+
+  const numberValue =
+    Number(
+      value
+    );
+
+  if (
+    !Number.isFinite(
+      numberValue
+    ) ||
+    numberValue < 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      `${fieldLabel} 정보가 올바르지 않습니다.`,
+      409
+    );
+  }
+
+  return numberValue;
+}
+
+function requireStudentRegistrationMonth(
+  value:
+    unknown,
+
+  fieldLabel:
+    string
+): string {
+  const normalized =
+    requireStudentRegistrationText(
+      value,
+      fieldLabel
+    );
+
+  const match =
+    normalized.match(
+      /^(20\d{2})-(\d{2})$/
+    );
+
+  if (
+    !match
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      `${fieldLabel} 형식이 올바르지 않습니다.`,
+      409
+    );
+  }
+
+  const year =
+    Number(
+      match[1]
+    );
+
+  const month =
+    Number(
+      match[2]
+    );
+
+  if (
+    year < 2000 ||
+    year > 2100 ||
+    month < 1 ||
+    month > 12
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      `${fieldLabel} 형식이 올바르지 않습니다.`,
+      409
+    );
+  }
+
+  return normalized;
+}
+
+function requireStudentRegistrationSemesterLabel(
+  value:
+    unknown,
+
+  fieldLabel:
+    string
+): string {
+  const normalized =
+    requireStudentRegistrationText(
+      value,
+      fieldLabel
+    );
+
+  const match =
+    normalized.match(
+      /^(20\d{2})년\s*([12])학기$/
+    );
+
+  if (
+    !match
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      `${fieldLabel} 형식이 올바르지 않습니다.`,
+      409
+    );
+  }
+
+  return `${match[1]}년 ${match[2]}학기`;
+}
+
 export async function getStudentById(
   studentId: number,
   params?: {
@@ -354,6 +553,229 @@ export async function getStudentById(
   return result[0]
   ? decryptStudentPersonalData(result[0])
   : undefined;
+}
+
+/**
+ * 카카오 AI 등록회원 최초 인증용 학생 조회.
+ *
+ * 중요:
+ * - organizationId
+ * - 이름 Hash
+ * - 연락처 Hash
+ *
+ * 3가지를 모두 일치시킨다.
+ *
+ * 카카오 사용자가 입력한 studentId를
+ * 직접 신뢰하지 않는다.
+ */
+export async function findStudentForKakaoVerification(
+  params: {
+    organizationId:
+      number;
+
+    clientName:
+      string;
+
+    phone:
+      string;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (
+    !db
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const clientName =
+    String(
+      params.clientName ||
+      ""
+    ).trim();
+
+  const phone =
+    String(
+      params.phone ||
+      ""
+    )
+      .replace(
+        /\D/g,
+        ""
+      )
+      .trim();
+
+  if (
+    !clientName
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "이름 정보가 필요합니다.",
+      400
+    );
+  }
+
+  if (
+    phone.length <
+      10 ||
+    phone.length >
+      11
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "올바른 연락처 정보가 필요합니다.",
+      400
+    );
+  }
+
+  const clientNameHash =
+    createNameHash(
+      clientName
+    );
+
+  const phoneHash =
+    createPhoneHash(
+      phone
+    );
+
+  const rows =
+  await db
+    .select()
+    .from(
+      students
+    )
+    .where(
+      and(
+        eq(
+          students.organizationId,
+          organizationId
+        ),
+
+        eq(
+          students.clientNameHash,
+          clientNameHash
+        ),
+
+        eq(
+          students.phoneHash,
+          phoneHash
+        ),
+
+        eq(
+          students.approvalStatus,
+          "승인"
+        ),
+
+        sql`${students.deletedAt} IS NULL`
+      )
+    )
+    .limit(
+      2
+    );
+
+  /**
+   * 0명:
+   * 등록회원으로 확인되지 않음.
+   *
+   * 2명 이상:
+   * 중복 데이터이므로 자동으로
+   * 한 학생을 선택하면 안 된다.
+   */
+  if (
+    rows.length !==
+    1
+  ) {
+    return {
+      matched:
+        false as const,
+
+      reason:
+        rows.length >
+        1
+          ? "duplicate"
+          : "not_found",
+
+      student:
+        null,
+    };
+  }
+
+  const student =
+    decryptStudentPersonalData(
+      rows[0]
+    );
+
+  if (
+    !student
+  ) {
+    return {
+      matched:
+        false as const,
+
+      reason:
+        "not_found" as const,
+
+      student:
+        null,
+    };
+  }
+
+  return {
+    matched:
+      true as const,
+
+    reason:
+      "matched" as const,
+
+    student: {
+      id:
+        Number(
+          student.id
+        ),
+
+      clientName:
+        student.clientName ??
+        null,
+
+      phone:
+        student.phone ??
+        null,
+
+      course:
+        student.course ??
+        null,
+
+      finalEducation:
+        student.finalEducation ??
+        null,
+
+      status:
+        student.status ??
+        null,
+
+      assigneeId:
+        Number(
+          student.assigneeId ||
+          0
+        ) ||
+        null,
+
+      organizationId:
+        Number(
+          student.organizationId
+        ),
+    },
+  };
 }
 
 function getInsertId(result: any) {
@@ -467,21 +889,22 @@ function normalizeAiWorkflowType(
     ).trim();
 
   const allowed =
-    new Set<AiWorkflowType>([
-      "consultation_registration",
-      "consultation_update",
-      "student_detail_setup",
-      "student_update",
-      "semester_create",
-      "semester_update",
-      "plan_setup",
-      "plan_update",
-      "practice_create",
-      "practice_update",
-      "private_certificate_create",
-      "schedule_create",
-      "document_import",
-    ]);
+  new Set<AiWorkflowType>([
+    "consultation_registration",
+    "consultation_update",
+    "student_detail_setup",
+    "student_update",
+    "semester_create",
+    "semester_update",
+    "semester_complete",
+    "plan_setup",
+    "plan_update",
+    "practice_create",
+    "practice_update",
+    "private_certificate_create",
+    "schedule_create",
+    "document_import",
+  ]);
 
   return allowed.has(
     normalized as AiWorkflowType
@@ -2706,13 +3129,15 @@ const AI_PENDING_ACTION_TYPES =
     "student_update",
     "semester_create",
     "semester_update",
+    "semester_complete",
     "plan_create",
     "plan_update",
     "plan_subjects_create",
     "plan_subjects_update",
-    "payment_update",
+        "payment_update",
     "practice_request_create",
-        "consultation_update",
+    "consultation_create",
+    "consultation_update",
     "schedule_create",
 
     "document_transfer_import",
@@ -3470,6 +3895,354 @@ if (!row) {
   }
 
   return row;
+}
+
+/**
+ * AI 승인 실행용 Pending Action 조회
+ *
+ * 기존 getAiPendingActionForConfirmation()은
+ * 초안을 생성한 본인만 조회할 때 사용한다.
+ *
+ * 이 함수는 문서 OCR 승인처럼
+ * 초안 생성자와 실제 승인자가 다를 수 있는 경우에만
+ * Router 내부에서 제한적으로 사용한다.
+ *
+ * 이 함수는 ID와 회사 범위만 확인한다.
+ *
+ * 실제 데이터 접근 및 수정 권한은
+ * Router와 Executor에서 반드시 다시 검사해야 한다.
+ */
+export async function getAiPendingActionByIdForExecution(
+  params: {
+    id:
+      number;
+
+    organizationId?:
+      number |
+      null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const id =
+    normalizeAiPendingActionId(
+      params.id
+    );
+
+  /**
+   * 요청자 ID는 조건에 넣지 않는다.
+   *
+   * 단, 같은 회사의 Pending Action만
+   * 조회할 수 있도록 organizationId는 반드시 검사한다.
+   */
+  const rows =
+    await db
+      .select()
+      .from(
+        aiPendingActions
+      )
+      .where(
+        and(
+          eq(
+            aiPendingActions.id,
+            id
+          ),
+
+          eq(
+            aiPendingActions.organizationId,
+            organizationId
+          )
+        )
+      )
+      .limit(1);
+
+  const rawRow =
+    rows[0];
+
+  if (!rawRow) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "AI 승인 초안을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  const row =
+    decryptAiPendingActionRow(
+      rawRow
+    );
+
+  if (!row) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "AI 승인 초안을 복호화하지 못했습니다.",
+      404
+    );
+  }
+
+  /**
+   * 아직 처리되지 않은 Pending Action만
+   * 만료 시각을 검사한다.
+   */
+  const isPendingStatus =
+    row.status ===
+      "draft" ||
+    row.status ===
+      "awaiting_confirmation";
+
+  const expiresAt =
+    row.expiresAt
+      ? new Date(
+          row.expiresAt
+        )
+      : null;
+
+  if (
+    isPendingStatus &&
+    expiresAt &&
+    expiresAt.getTime() <=
+      Date.now()
+  ) {
+    /**
+     * 문서 승인용 조회에서는
+     * 요청자 ID를 조건으로 사용하지 않는다.
+     *
+     * ID와 회사가 이미 일치한 row만
+     * 만료 상태로 변경한다.
+     */
+    await db
+      .update(
+        aiPendingActions
+      )
+      .set({
+        status:
+          "expired",
+
+        idempotencyKey:
+          buildReleasedAiPendingActionIdempotencyKey({
+            id,
+
+            status:
+              "expired",
+          }),
+      })
+      .where(
+        and(
+          eq(
+            aiPendingActions.id,
+            id
+          ),
+
+          eq(
+            aiPendingActions.organizationId,
+            organizationId
+          ),
+
+          or(
+            eq(
+              aiPendingActions.status,
+              "draft"
+            ),
+
+            eq(
+              aiPendingActions.status,
+              "awaiting_confirmation"
+            )
+          )
+        )
+      );
+
+    const expiredRows =
+      await db
+        .select()
+        .from(
+          aiPendingActions
+        )
+        .where(
+          and(
+            eq(
+              aiPendingActions.id,
+              id
+            ),
+
+            eq(
+              aiPendingActions.organizationId,
+              organizationId
+            )
+          )
+        )
+        .limit(1);
+
+    return (
+      decryptAiPendingActionRow(
+        expiredRows[0]
+      ) ||
+      null
+    );
+  }
+
+  return row;
+}
+
+/**
+ * 현재 사용자가 직접 생성한
+ * 학생별 최신 문서 OCR 승인 초안을 조회한다.
+ *
+ * organizationId, studentId, requestedByUserId가
+ * 모두 일치하는 승인 대기 초안만 반환한다.
+ *
+ * 학생의 현재 담당자 쓰기 권한은
+ * Router에서 assertCanWriteStudent()로 별도 검사한다.
+ */
+export async function getLatestPendingDocumentActionByStudentId(
+  params: {
+    organizationId?:
+      number |
+      null;
+
+    studentId:
+      number;
+
+    requestedByUserId:
+      number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    Math.floor(
+      Number(
+        params.studentId ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      studentId
+    ) ||
+    studentId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "문서 승인 초안을 조회할 학생 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const requestedByUserId =
+    Math.floor(
+      Number(
+        params.requestedByUserId ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      requestedByUserId
+    ) ||
+    requestedByUserId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "문서 승인 초안을 조회할 사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  /**
+   * 문서 반영 Action Type만 조회한다.
+   *
+   * 일반 학생 수정, 학기 생성, 일정 등록 등의
+   * Pending Action은 이 함수에서 반환하지 않는다.
+   */
+  const rows =
+    await db
+      .select()
+      .from(
+        aiPendingActions
+      )
+      .where(
+        and(
+          eq(
+            aiPendingActions.organizationId,
+            organizationId
+          ),
+
+          eq(
+            aiPendingActions.studentId,
+            studentId
+          ),
+
+          eq(
+            aiPendingActions.requestedByUserId,
+            requestedByUserId
+          ),
+
+          inArray(
+            aiPendingActions.actionType,
+            [
+              "document_transfer_import",
+              "document_plan_import",
+              "document_payment_import",
+              "document_plan_payment_import",
+            ]
+          ),
+
+          eq(
+            aiPendingActions.status,
+            "awaiting_confirmation"
+          ),
+
+          sql`
+            ${aiPendingActions.expiresAt}
+            > NOW()
+          `
+        )
+      )
+      .orderBy(
+        desc(
+          aiPendingActions.id
+        )
+      )
+      .limit(1);
+
+  const row =
+    decryptAiPendingActionRow(
+      rows[0]
+    );
+
+  return row ??
+    null;
 }
 
 /**
@@ -4741,6 +5514,18 @@ export type ExecuteStudentRegistrationTransactionInput = {
   actorUserId: number;
   actorName?: string | null;
   actorRole?: string | null;
+
+  /**
+   * 학생 등록과 Pending Action 완료 처리를
+   * 같은 트랜잭션으로 묶기 위한 서버 확정값
+   */
+  pendingActionId: number;
+
+  requestedByUserId: number;
+
+  confirmedByUserId: number;
+
+  expectedVersion: number;
 };
 
 /**
@@ -4788,6 +5573,69 @@ export async function executeStudentRegistrationTransaction(
     );
   }
 
+  const pendingActionId =
+    normalizeAiPendingActionId(
+      input.pendingActionId
+    );
+
+  const requestedByUserId =
+    Math.floor(
+      Number(
+        input.requestedByUserId ||
+        0
+      )
+    );
+
+  const confirmedByUserId =
+    Math.floor(
+      Number(
+        input.confirmedByUserId ||
+        0
+      )
+    );
+
+  const expectedVersion =
+    normalizeAiPendingActionVersion(
+      input.expectedVersion
+    );
+
+  if (
+    !Number.isFinite(
+      requestedByUserId
+    ) ||
+    requestedByUserId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 초안 요청 사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (
+    !Number.isFinite(
+      confirmedByUserId
+    ) ||
+    confirmedByUserId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 초안 승인 사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (
+    actorUserId !==
+    confirmedByUserId
+  ) {
+    throwAppError(
+      ERROR_CODES.FORBIDDEN,
+      "학생 등록 실행 사용자와 AI 초안 승인 사용자가 일치하지 않습니다.",
+      403
+    );
+  }
+
   const draft =
     input.draft;
 
@@ -4814,6 +5662,24 @@ export async function executeStudentRegistrationTransaction(
     throwAppError(
       ERROR_CODES.INVALID_REQUEST,
       "필수 정보가 누락된 학생 등록 초안입니다.",
+      409
+    );
+  }
+
+  /**
+   * DB 실행 함수가 다른 경로에서 직접 호출되더라도
+   * 등록예정 초안만 저장할 수 있도록 재검증한다.
+   */
+  if (
+    String(
+      draft.student?.status ||
+      ""
+    ).trim() !==
+      "등록예정"
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학생 상태가 등록예정인 통합등록 초안만 저장할 수 있습니다.",
       409
     );
   }
@@ -4929,6 +5795,47 @@ export async function executeStudentRegistrationTransaction(
       ? draft.practice
       : null;
 
+if (
+  !practiceDraft
+) {
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    "실습 필요 여부가 확정되지 않은 학생 등록 초안입니다.",
+    409
+  );
+}
+
+if (
+  typeof practiceDraft.required !==
+    "boolean"
+) {
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    "실습 필요 여부 정보가 올바르지 않습니다.",
+    409
+  );
+}
+
+if (
+  practiceDraft.required ===
+    true
+) {
+  requireStudentRegistrationText(
+    practiceDraft.courseName,
+    "실습 과정"
+  );
+
+  requireStudentRegistrationPositiveInteger(
+    practiceDraft.semesterNo,
+    "실습 예정 학기"
+  );
+
+  requireStudentRegistrationPositiveInteger(
+    practiceDraft.requiredHours,
+    "실습 시간"
+  );
+}
+
   if (
     duplicateSubjectDrafts.length > 0
   ) {
@@ -4975,66 +5882,306 @@ export async function executeStudentRegistrationTransaction(
   }
 
   const semesterDraftNoSet =
-    new Set(
-      semesterDrafts.map(
-        (semester) =>
-          Number(
-            semester.semesterNo
-          )
-      )
-    );
+  new Set<number>();
 
-  const invalidPlanSubject =
-    planSubjectDrafts.find(
-      (subject) => {
-        const semesterNo =
-          Number(
-            subject.semesterNo ||
-            0
-          );
-
-        return (
-          !Number.isFinite(
-            semesterNo
-          ) ||
-          semesterNo <= 0 ||
-          !semesterDraftNoSet.has(
-            semesterNo
-          )
-        );
-      }
+for (
+  const semester of
+  semesterDrafts
+) {
+  const semesterNo =
+    requireStudentRegistrationPositiveInteger(
+      semester.semesterNo,
+      "학기 번호"
     );
 
   if (
-    invalidPlanSubject
+    semesterDraftNoSet.has(
+      semesterNo
+    )
   ) {
     throwAppError(
       ERROR_CODES.INVALID_REQUEST,
-      `우리플랜 과목 '${String(
-        invalidPlanSubject
-          .subjectName ||
-        ""
-      )}'에 해당하는 예정 학기가 없습니다.`,
+      `${semesterNo}학기차 정보가 중복되어 있습니다.`,
       409
     );
   }
 
+  semesterDraftNoSet.add(
+    semesterNo
+  );
+}
+
+for (
+  const semester of
+  semesterDrafts
+) {
+  const semesterNo =
+    Number(
+      semester.semesterNo
+    );
+
+  requireStudentRegistrationSemesterLabel(
+    semester.semesterLabel,
+    `${semesterNo}학기차 학기 구분`
+  );
+
+  requireStudentRegistrationMonth(
+    semester.plannedStartMonth,
+    `${semesterNo}학기차 예정 개강월`
+  );
+
+  requireStudentRegistrationText(
+    semester.plannedInstitution,
+    `${semesterNo}학기차 예정 교육원`
+  );
+
+  const plannedSubjectCount =
+    requireStudentRegistrationPositiveInteger(
+      semester.plannedSubjectCount,
+      `${semesterNo}학기차 예정 과목 수`
+    );
+
+  requireStudentRegistrationNonNegativeNumber(
+    semester.plannedAmount,
+    `${semesterNo}학기차 예정금액`
+  );
+
+  const semesterPlanSubjectCount =
+    planSubjectDrafts.filter(
+      (
+        subject
+      ) =>
+        Number(
+          subject.semesterNo
+        ) ===
+        semesterNo
+    ).length;
+
+  if (
+    semesterPlanSubjectCount ===
+    0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      `${semesterNo}학기차에 저장할 우리플랜 과목이 없습니다.`,
+      409
+    );
+  }
+
+  if (
+    plannedSubjectCount !==
+    semesterPlanSubjectCount
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      `${semesterNo}학기차 예정 과목 수와 실제 설계 과목 수가 일치하지 않습니다.`,
+      409
+    );
+  }
+
+  if (
+    semester.actualPaymentAmount !==
+      null &&
+    semester.actualPaymentAmount !==
+      undefined
+  ) {
+    requireStudentRegistrationNonNegativeNumber(
+      semester.actualPaymentAmount,
+      `${semesterNo}학기차 실제 결제금액`
+    );
+
+    requireStudentRegistrationText(
+      semester.paymentDate,
+      `${semesterNo}학기차 결제일`
+    );
+  }
+}
+
+if (
+  practiceDraft.required ===
+    true &&
+  !semesterDraftNoSet.has(
+    Number(
+      practiceDraft.semesterNo
+    )
+  )
+) {
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    "실습 예정 학기에 해당하는 학기 정보가 없습니다.",
+    409
+  );
+}
+
+for (
+  const subject of
+  planSubjectDrafts
+) {
+  const subjectName =
+    requireStudentRegistrationText(
+      subject.subjectName,
+      "우리플랜 과목명"
+    );
+
+  const semesterNo =
+    requireStudentRegistrationPositiveInteger(
+      subject.semesterNo,
+      `우리플랜 과목 '${subjectName}'의 학기`
+    );
+
+  if (
+    !semesterDraftNoSet.has(
+      semesterNo
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      `우리플랜 과목 '${subjectName}'에 해당하는 예정 학기가 없습니다.`,
+      409
+    );
+  }
+
+  requireStudentRegistrationPositiveInteger(
+    subject.credits,
+    `우리플랜 과목 '${subjectName}'의 학점`
+  );
+}
+
+for (
+  const subject of
+  transferSubjectDrafts
+) {
+  const subjectName =
+    requireStudentRegistrationText(
+      subject.subjectName,
+      "전적대 과목명"
+    );
+
+  requireStudentRegistrationPositiveInteger(
+    subject.credits,
+    `전적대 과목 '${subjectName}'의 학점`
+  );
+}
+
   return db.transaction(
     async (tx: any) => {
-      /**
-       * 1. 상담 원본 잠금 및 재검증
+/**
+     * 0. 실행 중인 Pending Action 잠금 및 재검증
+     */
+    const [
+      lockedPendingActionRows,
+    ] =
+      await tx.execute(sql`
+        SELECT
+          id,
+          status,
+          actionType,
+          requestedByUserId,
+          confirmedByUserId,
+          version,
+          consultationId
+        FROM ai_pending_actions
+        WHERE id = ${pendingActionId}
+          AND organizationId = ${organizationId}
+          AND requestedByUserId = ${requestedByUserId}
+          AND version = ${expectedVersion}
+        LIMIT 1
+        FOR UPDATE
+      `);
+
+    const lockedPendingAction =
+      Array.isArray(
+        lockedPendingActionRows
+      )
+        ? (
+            lockedPendingActionRows as any[]
+          )[0]
+        : null;
+
+    if (
+      !lockedPendingAction
+    ) {
+      throwAppError(
+        ERROR_CODES.DATA_NOT_FOUND,
+        "실행 중인 AI 승인 요청을 찾을 수 없습니다.",
+        404
+      );
+    }
+
+    if (
+      String(
+        lockedPendingAction
+          .actionType ||
+        ""
+      ) !==
+        "student_registration_create"
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "학생 통합등록 승인 요청이 아닙니다.",
+        409
+      );
+    }
+
+    if (
+      String(
+        lockedPendingAction
+          .status ||
+        ""
+      ) !==
+        "executing"
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "실행 중 상태의 AI 승인 요청만 처리할 수 있습니다.",
+        409
+      );
+    }
+
+    if (
+      Number(
+        lockedPendingAction
+          .confirmedByUserId ||
+        0
+      ) !==
+        confirmedByUserId
+    ) {
+      throwAppError(
+        ERROR_CODES.FORBIDDEN,
+        "AI 초안 승인 사용자 정보가 일치하지 않습니다.",
+        403
+      );
+    }
+
+    if (
+      Number(
+        lockedPendingAction
+          .consultationId ||
+        0
+      ) !==
+        consultationId
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "AI 승인 요청과 상담DB 정보가 일치하지 않습니다.",
+        409
+      );
+    }
+     
+       /**
+       * 1. 상담 원본 행 잠금 및 재검증
+       *
+       * 동일 consultationId를 대상으로 서로 다른
+       * AI 승인 초안이 동시에 실행되는 경우를 방지한다.
        */
-      /**
- * 1. 상담 원본 행 잠금 및 재검증
- *
- * 동일 consultationId를 대상으로 서로 다른
- * AI 승인 초안이 동시에 실행되는 경우를 방지한다.
- */
 const [
   lockedConsultationRows,
 ] =
   await tx.execute(sql`
-    SELECT id
+    SELECT
+  id,
+  assigneeId,
+  status
     FROM consultations
     WHERE id = ${consultationId}
       AND organizationId = ${organizationId}
@@ -5057,6 +6204,116 @@ if (!lockedConsultation) {
     ERROR_CODES.DATA_NOT_FOUND,
     "상담DB 정보를 찾을 수 없습니다.",
     404
+  );
+}
+
+      const lockedConsultationAssigneeId =
+        Number(
+          lockedConsultation
+            .assigneeId ||
+          0
+        );
+
+      if (
+        !Number.isFinite(
+          lockedConsultationAssigneeId
+        ) ||
+        lockedConsultationAssigneeId <= 0
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          "상담DB 담당자 정보를 확인할 수 없습니다.",
+          409
+        );
+      }
+
+const normalizedLockedAssigneeId =
+  Math.floor(
+    lockedConsultationAssigneeId
+  );
+
+if (
+  normalizedLockedAssigneeId !==
+  requestedByUserId
+) {
+  throwAppError(
+    ERROR_CODES.FORBIDDEN,
+    "해당 상담의 담당자만 학생 통합등록을 요청할 수 있습니다.",
+    403
+  );
+}
+
+if (
+  normalizedLockedAssigneeId !==
+  confirmedByUserId
+) {
+  throwAppError(
+    ERROR_CODES.FORBIDDEN,
+    "해당 상담의 담당자만 학생 통합등록을 승인할 수 있습니다.",
+    403
+  );
+}
+
+if (
+  normalizedLockedAssigneeId !==
+  Math.floor(
+    actorUserId
+  )
+) {
+  throwAppError(
+    ERROR_CODES.FORBIDDEN,
+    "해당 상담의 담당자만 학생 통합등록을 실행할 수 있습니다.",
+    403
+  );
+}
+
+      /**
+       * 미리보기 생성 이후 담당자가 변경된 경우
+       * 이전 담당자로 학생이 생성되지 않도록 차단한다.
+       */
+      if (
+  normalizedLockedAssigneeId !==
+  Math.floor(
+    assigneeId
+  )
+) {
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    "상담DB 담당자가 변경되었습니다. 최신 상담정보로 다시 미리보기를 생성해주세요.",
+    409
+  );
+}
+
+const lockedConsultationStatus =
+  String(
+    lockedConsultation
+      .status ||
+    ""
+  ).trim();
+
+if (
+  lockedConsultationStatus ===
+    "등록"
+) {
+  throwAppError(
+    ERROR_CODES.DUPLICATE_RESOURCE,
+    "이미 등록 처리된 상담DB입니다.",
+    409
+  );
+}
+
+if (
+  ![
+    "상담중",
+    "등록예정",
+  ].includes(
+    lockedConsultationStatus
+  )
+) {
+  throwAppError(
+    ERROR_CODES.INVALID_REQUEST,
+    `현재 상담 상태가 '${lockedConsultationStatus || "미입력"}'이므로 학생 통합등록을 진행할 수 없습니다.`,
+    409
   );
 }
 
@@ -5118,7 +6375,7 @@ if (!lockedConsultation) {
             desiredCourse,
 
                     status:
-            "등록",
+  "등록예정",
 
           approvalStatus:
             "대기",
@@ -5264,109 +6521,134 @@ if (!lockedConsultation) {
         number[] = [];
 
       for (
-        const semester of
-        semesterDrafts
-      ) {
-        const semesterNo =
-          Number(
-            semester.semesterNo ||
-            0
-          );
+  const semester of
+  semesterDrafts
+) {
+  const semesterNo =
+    Number(
+      semester.semesterNo ||
+      0
+    );
 
-        if (
-          !Number.isFinite(
-            semesterNo
-          ) ||
-          semesterNo <= 0
-        ) {
-          throwAppError(
-            ERROR_CODES.INVALID_REQUEST,
-            "학기 번호가 올바르지 않습니다.",
-            400
-          );
-        }
+  if (
+    !Number.isFinite(
+      semesterNo
+    ) ||
+    semesterNo <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학기 번호가 올바르지 않습니다.",
+      400
+    );
+  }
 
-        const semesterResult:
-          any =
-          await tx
-            .insert(semesters)
-            .values({
-              organizationId,
+    const semesterLabel =
+  requireStudentRegistrationSemesterLabel(
+    semester.semesterLabel,
+    `${semesterNo}학기차 학기 구분`
+  );
 
-              studentId,
+  const normalizedPlannedMonth =
+  requireStudentRegistrationMonth(
+    semester.plannedStartMonth,
+    `${semesterNo}학기차 예정 개강월`
+  );
 
-              semesterOrder:
-                semesterNo,
+const plannedMonth =
+  normalizedPlannedMonth.replace(
+    "-",
+    ""
+  );
 
-              semesterLabel:
-                `${semesterNo}학기`,
+  const semesterResult:
+    any =
+    await tx
+      .insert(
+        semesters
+      )
+      .values({
+        organizationId,
 
-              plannedMonth:
-                semester
-                  .plannedStartMonth ||
-                null,
+        studentId,
 
-              plannedInstitution:
-                semester
-                  .plannedInstitution ||
-                null,
+        semesterOrder:
+          semesterNo,
 
-                            plannedSubjectCount:
-                semester
-                  .plannedSubjectCount ??
-                planSubjectDrafts.filter(
-                  (subject) =>
-                    Number(
-                      subject.semesterNo
-                    ) ===
-                    semesterNo
-                ).length,
+        semesterLabel,
 
-              plannedAmount:
-                semester
-                  .plannedAmount ===
-                  null
-                  ? "0"
-                  : String(
-                      semester
-                        .plannedAmount
-                    ),
+        plannedMonth,
 
-                          actualStartDate:
-                null,
+        plannedInstitution:
+  requireStudentRegistrationText(
+    semester.plannedInstitution,
+    `${semesterNo}학기차 예정 교육원`
+  ),
 
-              actualInstitution:
-                null,
+        plannedSubjectCount:
+  requireStudentRegistrationPositiveInteger(
+    semester.plannedSubjectCount,
+    `${semesterNo}학기차 예정 과목 수`
+  ),
 
-              actualSubjectCount:
-                null,
+        plannedAmount:
+  String(
+    requireStudentRegistrationNonNegativeNumber(
+      semester.plannedAmount,
+      `${semesterNo}학기차 예정금액`
+    )
+  ),
 
-              actualAmount:
-                null,
+        actualStartDate:
+          semester
+            .actualStartDate ||
+          null,
 
-              actualPaymentDate:
-                null,
+        actualInstitution:
+          semester
+            .actualInstitution ||
+          null,
 
-                            status:
-                "등록",
+                actualSubjectCount:
+          semester
+            .actualSubjectCount ??
+          null,
 
-              approvalStatus:
-                "요청전",
+        actualAmount:
+  semester
+    .actualPaymentAmount ==
+    null
+    ? null
+    : String(
+        semester
+          .actualPaymentAmount
+      ),
 
-              isCompleted:
-                false,
+        actualPaymentDate:
+          semester
+            .paymentDate ||
+          null,
 
-              practiceStatus:
-                "미섭외",
+        status:
+          "등록",
 
-              primaryCourse:
-                desiredCourse,
+        approvalStatus:
+          "요청전",
 
-              registeredCoursesJson:
-                JSON.stringify([
-                  desiredCourse,
-                ]),
-            } as any);
+        isCompleted:
+          false,
+
+        practiceStatus:
+          "미섭외",
+
+        primaryCourse:
+          desiredCourse,
+
+        registeredCoursesJson:
+          JSON.stringify([
+            desiredCourse,
+          ]),
+      } as any);
 
         const semesterId =
           Number(
@@ -5407,22 +6689,16 @@ if (!lockedConsultation) {
           planSubjectDrafts[index];
 
         const subjectName =
-          String(
-            subject.subjectName ||
-            ""
-          ).trim();
+  requireStudentRegistrationText(
+    subject.subjectName,
+    "우리플랜 과목명"
+  );
 
         const semesterNo =
           Number(
             subject.semesterNo ||
             0
           );
-
-        if (
-          !subjectName
-        ) {
-          continue;
-        }
 
         if (
           !Number.isFinite(
@@ -5472,10 +6748,10 @@ if (!lockedConsultation) {
                 "전공선택",
 
               credits:
-                Number(
-                  subject.credits ||
-                  3
-                ),
+  requireStudentRegistrationPositiveInteger(
+    subject.credits,
+    `우리플랜 과목 '${subjectName}'의 학점`
+  ),
 
                             sortOrder:
                 semesterSortOrder,
@@ -5524,16 +6800,10 @@ if (!lockedConsultation) {
           transferSubjectDrafts[index];
 
         const subjectName =
-          String(
-            subject.subjectName ||
-            ""
-          ).trim();
-
-        if (
-          !subjectName
-        ) {
-          continue;
-        }
+  requireStudentRegistrationText(
+    subject.subjectName,
+    "전적대 과목명"
+  );
 
         const transferSubjectResult:
           any =
@@ -5552,6 +6822,37 @@ if (!lockedConsultation) {
 
               subjectName,
 
+              completionYear:
+                Number.isFinite(
+                  Number(
+                    subject
+                      .completionYear
+                  )
+                ) &&
+                Number(
+                  subject
+                    .completionYear
+                ) >= 1900 &&
+                Number(
+                  subject
+                    .completionYear
+                ) <= 2200
+                  ? Math.floor(
+                      Number(
+                        subject
+                          .completionYear
+                      )
+                    )
+                  : null,
+
+              completionSemester:
+                String(
+                  subject
+                    .completionSemester ||
+                  ""
+                ).trim() ||
+                null,
+
               transferCategory:
                 subject.category ||
                 "전공",
@@ -5562,10 +6863,10 @@ if (!lockedConsultation) {
                 "전공선택",
 
               credits:
-                Number(
-                  subject.credits ||
-                  3
-                ),
+  requireStudentRegistrationPositiveInteger(
+    subject.credits,
+    `전적대 과목 '${subjectName}'의 학점`
+  ),
 
               sortOrder:
                 index,
@@ -5605,9 +6906,9 @@ if (!lockedConsultation) {
        * 실제 등록·승인·정산 처리는 수행하지 않는다.
        * 이름과 연락처는 변경하지 않는다.
        */
-      await tx
-        .update(consultations)
-        .set({
+     await tx
+  .update(consultations)
+  .set({
                   status:
             "등록예정",
 
@@ -5618,20 +6919,91 @@ if (!lockedConsultation) {
           assigneeId,
         } as any)
         .where(
-          and(
-            eq(
-              consultations.id,
-              consultationId
-            ),
+  and(
+    eq(
+      consultations.id,
+      consultationId
+    ),
 
-            eq(
-              consultations.organizationId,
-              organizationId
-            )
-          )
-        );
+    eq(
+      consultations.organizationId,
+      organizationId
+    ),
 
-            return {
+    eq(
+      consultations.assigneeId,
+      normalizedLockedAssigneeId
+    )
+  )
+);
+
+const [
+  updatedConsultationRows,
+] =
+  await tx.execute(sql`
+    SELECT
+      id,
+      assigneeId,
+      status
+    FROM consultations
+    WHERE id = ${consultationId}
+      AND organizationId = ${organizationId}
+      AND deletedAt IS NULL
+    LIMIT 1
+  `);
+
+const updatedConsultation =
+  Array.isArray(
+    updatedConsultationRows
+  )
+    ? (
+        updatedConsultationRows as any[]
+      )[0]
+    : null;
+
+if (
+  !updatedConsultation ||
+  String(
+    updatedConsultation
+      .status ||
+    ""
+  ).trim() !==
+    "등록예정" ||
+  Number(
+    updatedConsultation
+      .assigneeId ||
+    0
+  ) !==
+    normalizedLockedAssigneeId
+) {
+  throwAppError(
+    ERROR_CODES.INTERNAL_SERVER_ERROR,
+    "상담DB 등록예정 상태 변경 결과를 확인하지 못했습니다.",
+    500
+  );
+}
+
+                  const practiceSaved =
+        practiceDraft !== null;
+
+      const completedSteps = [
+        "상담DB 원본 재검증",
+        "등록예정 학생 생성",
+        "학생 플랜 생성",
+        `${semesterIds.length}개 예정 학기 생성`,
+        `${planSubjectIds.length}개 우리플랜 과목 생성`,
+        `${transferSubjectIds.length}개 전적대 과목 생성`,
+        practiceSaved
+          ? "실습 설계정보 저장"
+          : "실습 설계정보 미확정",
+        "상담DB 상태를 등록예정으로 변경",
+        "AI 승인 요청 실행완료 처리",
+      ];
+
+      const executionMessage =
+        "등록예정 학생 생성 및 과목설계 저장이 완료되었습니다.";
+
+      const executionResult = {
         studentId,
 
         planId,
@@ -5642,26 +7014,5437 @@ if (!lockedConsultation) {
 
         transferSubjectIds,
 
-        practiceSaved:
-          practiceDraft !== null,
+        practiceSaved,
 
         consultationId,
 
-        completedSteps: [
-          "상담DB 원본 재검증",
-          "등록예정 학생 생성",
-          "학생 플랜 생성",
-          `${semesterIds.length}개 예정 학기 생성`,
-          `${planSubjectIds.length}개 우리플랜 과목 생성`,
-          `${transferSubjectIds.length}개 전적대 과목 생성`,
-          practiceDraft !== null
-            ? "실습 설계정보 저장"
-            : "실습 설계정보 미확정",
-          "상담DB 상태를 등록예정으로 변경",
-        ],
+        completedSteps,
+
+        failedSteps:
+          [],
+
+        message:
+          executionMessage,
+      };
+
+      /**
+       * 학생·플랜·학기·과목 생성과
+       * Pending Action 완료 처리를 동일 트랜잭션에서 처리한다.
+       */
+      const pendingActionUpdateResult:
+        any =
+        await tx
+          .update(
+            aiPendingActions
+          )
+          .set({
+            status:
+              "executed",
+
+            idempotencyKey:
+              buildReleasedAiPendingActionIdempotencyKey({
+                id:
+                  pendingActionId,
+
+                status:
+                  "executed",
+              }),
+
+            consultationId,
+
+            studentId,
+
+            semesterId:
+              semesterIds[0] ??
+              null,
+
+            executionResultJson:
+              encryptAiPendingJson(
+                executionResult
+              ),
+
+            errorMessage:
+              null,
+
+            executedAt:
+              new Date(),
+          })
+          .where(
+            and(
+              eq(
+                aiPendingActions.id,
+                pendingActionId
+              ),
+
+              eq(
+                aiPendingActions.organizationId,
+                organizationId
+              ),
+
+              eq(
+                aiPendingActions.requestedByUserId,
+                requestedByUserId
+              ),
+
+              eq(
+                aiPendingActions.confirmedByUserId,
+                confirmedByUserId
+              ),
+
+              eq(
+                aiPendingActions.version,
+                expectedVersion
+              ),
+
+              eq(
+                aiPendingActions.status,
+                "executing"
+              )
+            )
+          );
+
+      const pendingActionAffectedRows =
+        Number(
+          pendingActionUpdateResult
+            ?.rowsAffected ??
+          pendingActionUpdateResult
+            ?.affectedRows ??
+          pendingActionUpdateResult
+            ?.[0]
+            ?.affectedRows ??
+          0
+        );
+
+      if (
+        pendingActionAffectedRows <= 0
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          "학생 등록 결과와 AI 실행 완료 상태를 함께 저장하지 못했습니다.",
+          409
+        );
+      }
+
+      /**
+       * 업데이트된 Pending Action을 같은 트랜잭션에서 조회한다.
+       */
+      const executedPendingActionRows =
+        await tx
+          .select()
+          .from(
+            aiPendingActions
+          )
+          .where(
+            and(
+              eq(
+                aiPendingActions.id,
+                pendingActionId
+              ),
+
+              eq(
+                aiPendingActions.organizationId,
+                organizationId
+              ),
+
+              eq(
+                aiPendingActions.requestedByUserId,
+                requestedByUserId
+              )
+            )
+          )
+          .limit(1);
+
+      const executedPendingAction =
+        decryptAiPendingActionRow(
+          executedPendingActionRows[0]
+        );
+
+      if (
+        !executedPendingAction
+      ) {
+        throwAppError(
+          ERROR_CODES.INTERNAL_SERVER_ERROR,
+          "완료된 AI 승인 요청을 확인하지 못했습니다.",
+          500
+        );
+      }
+
+      return {
+        studentId,
+
+        planId,
+
+        semesterIds,
+
+        planSubjectIds,
+
+        transferSubjectIds,
+
+        practiceSaved,
+
+        consultationId,
+
+        completedSteps,
+
+        message:
+          executionMessage,
+
+        pendingAction:
+          executedPendingAction,
       };
     }
   );
+}
+
+export type ExecuteSemesterCreateTransactionInput = {
+  organizationId?:
+    number |
+    null;
+
+  pendingActionId:
+    number;
+
+  requestedByUserId:
+    number;
+
+  confirmedByUserId:
+    number;
+
+  expectedVersion:
+    number;
+
+  studentId:
+    number;
+
+  /**
+   * 초안 생성 당시 학생 담당자다.
+   *
+   * 승인 실행 시점의 실제 담당자와
+   * 다시 비교한다.
+   */
+  expectedAssigneeId:
+    number;
+
+  /**
+   * 초안 생성 당시 마지막 학기 순서다.
+   *
+   * 다른 요청이 먼저 학기를 추가했는지
+   * 트랜잭션 안에서 다시 확인한다.
+   */
+    originalLastSemesterOrder:
+    number;
+
+  /**
+   * 초안 생성 당시 마지막 학기 구분이다.
+   *
+   * 기존 학기가 없는 첫 학기 생성 초안은 null이다.
+   */
+  originalLastSemesterLabel:
+    string |
+    null;
+
+  semesterOrder:
+    number;
+
+  semesterLabel:
+    string;
+
+  plannedMonth?:
+    string |
+    null;
+
+  plannedInstitution?:
+    string |
+    null;
+
+  plannedSubjectCount?:
+    number |
+    null;
+
+  plannedAmount?:
+    number |
+    string |
+    null;
+
+  actualStartDate?:
+    Date |
+    null;
+
+  actualInstitution?:
+    string |
+    null;
+
+  actualSubjectCount?:
+    number |
+    null;
+
+  actualAmount?:
+    number |
+    string |
+    null;
+
+  actualPaymentDate?:
+    Date |
+    null;
+
+  actorUserId:
+    number;
+
+  actorName?:
+    string |
+    null;
+
+  actorRole?:
+    string |
+    null;
+};
+
+export type ExecuteSemesterCreateTransactionResult = {
+  studentId:
+    number;
+
+  semesterId:
+    number;
+
+  planSubjectIds:
+    number[];
+
+  completedSteps:
+    string[];
+
+  message:
+    string;
+
+  pendingAction:
+    any;
+};
+
+/**
+ * AI 학생 학기 생성 실제 실행
+ *
+ * 아래 작업을 하나의 트랜잭션으로 처리한다.
+ *
+ * 1. Pending Action 잠금 및 재검증
+ * 2. 학생 잠금 및 담당자 재검증
+ * 3. 현재 마지막 학기 재검증
+ * 4. 학기 순서 및 학기 구분 중복 검사
+ * 5. 학기 생성
+ * 6. 예정 과목 자리 생성
+ * 7. Pending Action executed 처리
+ *
+ * 하나라도 실패하면 학기와 예정 과목 생성까지
+ * 모두 롤백된다.
+ */
+export async function executeSemesterCreateTransaction(
+  input:
+    ExecuteSemesterCreateTransactionInput
+): Promise<
+  ExecuteSemesterCreateTransactionResult
+> {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      input.organizationId
+    );
+
+  const pendingActionId =
+    normalizeAiPendingActionId(
+      input.pendingActionId
+    );
+
+  const expectedVersion =
+    normalizeAiPendingActionVersion(
+      input.expectedVersion
+    );
+
+  const requestedByUserId =
+    Math.floor(
+      Number(
+        input.requestedByUserId ||
+        0
+      )
+    );
+
+  const confirmedByUserId =
+    Math.floor(
+      Number(
+        input.confirmedByUserId ||
+        0
+      )
+    );
+
+  const actorUserId =
+    Math.floor(
+      Number(
+        input.actorUserId ||
+        0
+      )
+    );
+
+  const studentId =
+    Math.floor(
+      Number(
+        input.studentId ||
+        0
+      )
+    );
+
+  const expectedAssigneeId =
+    Math.floor(
+      Number(
+        input.expectedAssigneeId ||
+        0
+      )
+    );
+
+  const originalLastSemesterOrder =
+    Math.floor(
+      Number(
+        input.originalLastSemesterOrder ??
+        0
+      )
+    );
+
+  const originalLastSemesterLabel =
+    String(
+      input.originalLastSemesterLabel ??
+      ""
+    ).trim() ||
+    null;
+
+  const semesterOrder =
+    Math.floor(
+      Number(
+        input.semesterOrder ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      requestedByUserId
+    ) ||
+    requestedByUserId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학기 생성 요청 사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (
+    !Number.isFinite(
+      confirmedByUserId
+    ) ||
+    confirmedByUserId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학기 생성 승인 사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (
+    !Number.isFinite(
+      actorUserId
+    ) ||
+    actorUserId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학기 생성 실행 사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (
+    !Number.isFinite(
+      studentId
+    ) ||
+    studentId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학기를 생성할 학생 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (
+    !Number.isFinite(
+      expectedAssigneeId
+    ) ||
+    expectedAssigneeId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학기 생성 초안의 담당자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (
+    !Number.isFinite(
+      originalLastSemesterOrder
+    ) ||
+    originalLastSemesterOrder < 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학기 생성 초안의 기존 마지막 학기 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (
+    originalLastSemesterOrder ===
+      0 &&
+    originalLastSemesterLabel !==
+      null
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "첫 학기 생성 초안의 기존 마지막 학기 구분이 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (
+    originalLastSemesterOrder >
+      0 &&
+    !originalLastSemesterLabel
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학기 생성 초안의 기존 마지막 학기 구분이 없습니다.",
+      400
+    );
+  }
+
+  if (
+    originalLastSemesterLabel &&
+    !/^(20\d{2})년\s*([12])학기$/.test(
+      originalLastSemesterLabel
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학기 생성 초안의 기존 마지막 학기 구분 형식이 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (
+    !Number.isFinite(
+      semesterOrder
+    ) ||
+    semesterOrder <= 0 ||
+    semesterOrder > 20
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "생성할 학기 순서가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const semesterLabelMatch =
+    String(
+      input.semesterLabel ||
+      ""
+    )
+      .trim()
+      .match(
+        /^(20\d{2})년\s*([12])학기$/
+      );
+
+  if (
+    !semesterLabelMatch
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학기 구분은 '2026년 2학기' 형식이어야 합니다.",
+      409
+    );
+  }
+
+  const semesterLabel =
+    `${semesterLabelMatch[1]}년 ${semesterLabelMatch[2]}학기`;
+
+  const plannedMonthText =
+    String(
+      input.plannedMonth ||
+      ""
+    )
+      .replace(
+        /[^0-9]/g,
+        ""
+      )
+      .trim();
+
+  const plannedMonth =
+    plannedMonthText ||
+    null;
+
+  if (
+    plannedMonth !== null
+  ) {
+    if (
+      !/^\d{6}$/.test(
+        plannedMonth
+      )
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "예정 개강월은 YYYYMM 형식이어야 합니다.",
+        400
+      );
+    }
+
+    const plannedMonthNumber =
+      Number(
+        plannedMonth.slice(
+          4,
+          6
+        )
+      );
+
+    if (
+      plannedMonthNumber < 1 ||
+      plannedMonthNumber > 12
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "예정 개강월의 월 값이 올바르지 않습니다.",
+        400
+      );
+    }
+  }
+
+  const plannedInstitution =
+    String(
+      input.plannedInstitution ||
+      ""
+    )
+      .trim()
+      .slice(
+        0,
+        255
+      ) ||
+    null;
+
+  const actualInstitution =
+    String(
+      input.actualInstitution ||
+      ""
+    )
+      .trim()
+      .slice(
+        0,
+        255
+      ) ||
+    null;
+
+  const plannedSubjectCount =
+    input.plannedSubjectCount ===
+      null ||
+    input.plannedSubjectCount ===
+      undefined
+      ? null
+      : Math.floor(
+          Number(
+            input.plannedSubjectCount
+          )
+        );
+
+  if (
+    plannedSubjectCount !== null &&
+    (
+      !Number.isFinite(
+        plannedSubjectCount
+      ) ||
+      plannedSubjectCount < 0 ||
+      plannedSubjectCount > 50
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "예정 과목 수는 0개 이상 50개 이하여야 합니다.",
+      400
+    );
+  }
+
+  const actualSubjectCount =
+    input.actualSubjectCount ===
+      null ||
+    input.actualSubjectCount ===
+      undefined
+      ? null
+      : Math.floor(
+          Number(
+            input.actualSubjectCount
+          )
+        );
+
+  if (
+    actualSubjectCount !== null &&
+    (
+      !Number.isFinite(
+        actualSubjectCount
+      ) ||
+      actualSubjectCount < 0 ||
+      actualSubjectCount > 50
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "실제 과목 수는 0개 이상 50개 이하여야 합니다.",
+      400
+    );
+  }
+
+  /**
+   * 학기 생성 핵심 예정정보는
+   * 승인 실행 시점에도 반드시 존재해야 한다.
+   *
+   * 초안 Preview의 canConfirm만 신뢰하지 않고
+   * DB 트랜잭션에서 다시 검증한다.
+   */
+  if (
+    !plannedMonth
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "예정 개강월이 입력되지 않았습니다.",
+      409
+    );
+  }
+
+  if (
+    !plannedInstitution
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "예정 교육원이 입력되지 않았습니다.",
+      409
+    );
+  }
+
+  if (
+    plannedSubjectCount ===
+      null
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "예정 과목 수가 입력되지 않았습니다.",
+      409
+    );
+  }
+
+  /**
+   * 한 학기 최대 수강 과목 수는 8과목이다.
+   */
+  if (
+    plannedSubjectCount >
+    8
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      `한 학기에는 최대 8과목까지만 등록할 수 있습니다. 현재 ${plannedSubjectCount}과목입니다.`,
+      409
+    );
+  }
+
+  const semesterLabelYear =
+    Number(
+      semesterLabelMatch[1]
+    );
+
+  const plannedMonthYear =
+    Number(
+      plannedMonth.slice(
+        0,
+        4
+      )
+    );
+
+  /**
+   * 학기 구분 연도와 예정 개강월 연도는
+   * 반드시 일치해야 한다.
+   */
+  if (
+    plannedMonthYear !==
+    semesterLabelYear
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      `학기 구분은 ${semesterLabelYear}년이지만 예정 개강월은 ${plannedMonthYear}년입니다.`,
+      409
+    );
+  }
+
+  const normalizeTransactionAmount = (
+    value:
+      unknown,
+
+    fieldLabel:
+      string
+  ): string | null => {
+    if (
+      value === null ||
+      value === undefined ||
+      value === ""
+    ) {
+      return null;
+    }
+
+    const normalized =
+      Number(
+        String(
+          value
+        )
+          .replace(
+            /,/g,
+            ""
+          )
+          .trim()
+      );
+
+    if (
+      !Number.isFinite(
+        normalized
+      ) ||
+      normalized < 0
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        `${fieldLabel}은 0원 이상이어야 합니다.`,
+        400
+      );
+    }
+
+    return String(
+      normalized
+    );
+  };
+
+  const plannedAmount =
+    normalizeTransactionAmount(
+      input.plannedAmount,
+      "예정금액"
+    );
+
+  const actualAmount =
+    normalizeTransactionAmount(
+      input.actualAmount,
+      "실제 결제금액"
+    );
+
+  const completedSteps:
+    string[] = [];
+
+  return db.transaction(
+    async (
+      tx
+    ) => {
+      /**
+       * 0. Pending Action 잠금 및 재검증
+       */
+      const [
+        lockedPendingActionRows,
+      ] =
+        await tx.execute(sql`
+          SELECT
+            id,
+            organizationId,
+            requestedByUserId,
+            confirmedByUserId,
+            actionType,
+            status,
+            version,
+            studentId
+          FROM ai_pending_actions
+          WHERE id = ${pendingActionId}
+            AND organizationId = ${organizationId}
+            AND requestedByUserId = ${requestedByUserId}
+          LIMIT 1
+          FOR UPDATE
+        `);
+
+      const lockedPendingAction =
+        Array.isArray(
+          lockedPendingActionRows
+        )
+          ? (
+              lockedPendingActionRows as any[]
+            )[0]
+          : null;
+
+      if (
+        !lockedPendingAction
+      ) {
+        throwAppError(
+          ERROR_CODES.DATA_NOT_FOUND,
+          "학기 생성 AI 승인 요청을 찾을 수 없습니다.",
+          404
+        );
+      }
+
+      if (
+        String(
+          lockedPendingAction
+            .actionType ||
+          ""
+        ) !==
+        "semester_create"
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          "학기 생성 승인 요청이 아닙니다.",
+          409
+        );
+      }
+
+      if (
+        Number(
+          lockedPendingAction
+            .version ||
+          0
+        ) !==
+        expectedVersion
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          "학기 생성 승인 초안이 변경되었습니다. 최신 내용을 다시 확인해주세요.",
+          409
+        );
+      }
+
+      if (
+        String(
+          lockedPendingAction
+            .status ||
+          ""
+        ) !==
+        "executing"
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          "실행 중 상태의 학기 생성 요청만 처리할 수 있습니다.",
+          409
+        );
+      }
+
+      if (
+        Number(
+          lockedPendingAction
+            .confirmedByUserId ||
+          0
+        ) !==
+        confirmedByUserId
+      ) {
+        throwAppError(
+          ERROR_CODES.FORBIDDEN,
+          "학기 생성 승인 사용자 정보가 일치하지 않습니다.",
+          403
+        );
+      }
+
+      if (
+        Number(
+          lockedPendingAction
+            .studentId ||
+          0
+        ) !==
+        studentId
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          "AI 승인 요청과 대상 학생 정보가 일치하지 않습니다.",
+          409
+        );
+      }
+
+      completedSteps.push(
+        "AI 학기 생성 승인 요청 잠금 및 재검증"
+      );
+
+      /**
+       * 1. 학생 잠금 및 담당자 재검증
+       */
+      const [
+        lockedStudentRows,
+      ] =
+        await tx.execute(sql`
+          SELECT
+            id,
+            assigneeId,
+            course
+          FROM students
+          WHERE id = ${studentId}
+            AND organizationId = ${organizationId}
+            AND deletedAt IS NULL
+          LIMIT 1
+          FOR UPDATE
+        `);
+
+      const lockedStudent =
+        Array.isArray(
+          lockedStudentRows
+        )
+          ? (
+              lockedStudentRows as any[]
+            )[0]
+          : null;
+
+      if (
+        !lockedStudent
+      ) {
+        throwAppError(
+          ERROR_CODES.DATA_NOT_FOUND,
+          "학기를 생성할 학생을 찾을 수 없습니다.",
+          404
+        );
+      }
+
+      const currentAssigneeId =
+        Math.floor(
+          Number(
+            lockedStudent
+              .assigneeId ||
+            0
+          )
+        );
+
+      if (
+        !currentAssigneeId
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          "학생 담당자 정보를 확인할 수 없습니다.",
+          409
+        );
+      }
+
+      if (
+        currentAssigneeId !==
+        expectedAssigneeId
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          "학기 생성 초안 이후 학생 담당자가 변경되었습니다. 최신 학생 정보로 다시 진행해주세요.",
+          409
+        );
+      }
+
+      /**
+       * AI 실제 쓰기는 현재 담당자 본인만 허용한다.
+       */
+      if (
+        currentAssigneeId !==
+        requestedByUserId ||
+        requestedByUserId !==
+        confirmedByUserId
+      ) {
+        throwAppError(
+          ERROR_CODES.PERMISSION_DENIED,
+          "학생 담당자 본인만 AI로 학기를 생성할 수 있습니다.",
+          403
+        );
+      }
+
+      completedSteps.push(
+        "학생 잠금 및 담당자 권한 재검증"
+      );
+
+      /**
+       * 2. 학생의 기존 학기를 잠근다.
+       *
+       * 같은 학생에게 학기 생성 요청이 동시에
+       * 들어오더라도 순서를 안전하게 확인한다.
+       */
+      const [
+  lockedSemesterRows,
+] =
+  await tx.execute(sql`
+    SELECT
+      id,
+      semesterOrder,
+      semesterLabel,
+      plannedSubjectCount,
+      actualSubjectCount
+    FROM semesters
+    WHERE studentId = ${studentId}
+      AND organizationId = ${organizationId}
+    ORDER BY semesterOrder ASC, id ASC
+    FOR UPDATE
+  `);
+
+      const currentSemesters =
+        Array.isArray(
+          lockedSemesterRows
+        )
+          ? lockedSemesterRows as any[]
+          : [];
+
+      const currentLastSemester =
+        currentSemesters.length >
+          0
+          ? currentSemesters[
+              currentSemesters.length -
+              1
+            ]
+          : null;
+
+      const currentLastSemesterOrder =
+        currentLastSemester
+          ? Math.floor(
+              Number(
+                currentLastSemester
+                  .semesterOrder ||
+                0
+              )
+            )
+          : 0;
+
+      const currentLastSemesterLabel =
+        currentLastSemester
+          ? String(
+              currentLastSemester
+                .semesterLabel ||
+              ""
+            ).trim() ||
+            null
+          : null;
+
+           if (
+        currentLastSemesterOrder !==
+        originalLastSemesterOrder
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          "학기 생성 초안 이후 학생의 학기 순서가 변경되었습니다. 최신 학기 정보를 다시 확인해주세요.",
+          409
+        );
+      }
+
+      if (
+        currentLastSemesterLabel !==
+        originalLastSemesterLabel
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          "학기 생성 초안 이후 학생의 마지막 학기 구분이 변경되었습니다. 최신 학기 정보를 다시 확인해주세요.",
+          409
+        );
+      }
+
+      const expectedNextSemesterOrder =
+        currentLastSemesterOrder +
+        1;
+
+      if (
+        semesterOrder !==
+        expectedNextSemesterOrder
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          `다음 학기 순서는 ${expectedNextSemesterOrder}학기여야 합니다.`,
+          409
+        );
+      }
+
+      let expectedNextSemesterLabel:
+        string |
+        null =
+        null;
+
+      if (
+        currentLastSemesterLabel
+      ) {
+        const currentLastSemesterLabelMatch =
+          currentLastSemesterLabel.match(
+            /^(20\d{2})년\s*([12])학기$/
+          );
+
+        if (
+          !currentLastSemesterLabelMatch
+        ) {
+          throwAppError(
+            ERROR_CODES.INVALID_REQUEST,
+            "현재 마지막 학기 구분을 해석할 수 없습니다. 기존 학기 정보를 먼저 확인해주세요.",
+            409
+          );
+        }
+
+        const currentLastSemesterYear =
+          Number(
+            currentLastSemesterLabelMatch[1]
+          );
+
+        const currentLastSemesterHalf =
+          Number(
+            currentLastSemesterLabelMatch[2]
+          );
+
+        expectedNextSemesterLabel =
+          currentLastSemesterHalf ===
+            1
+            ? `${currentLastSemesterYear}년 2학기`
+            : `${currentLastSemesterYear + 1}년 1학기`;
+      }
+
+      if (
+        expectedNextSemesterLabel &&
+        semesterLabel !==
+          expectedNextSemesterLabel
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          `현재 마지막 학기 기준 다음 학기 구분은 ${expectedNextSemesterLabel}여야 합니다.`,
+          409
+        );
+      }
+
+      if (
+        !currentLastSemester &&
+        originalLastSemesterLabel !==
+          null
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          "첫 학기 생성 초안의 기존 마지막 학기 구분이 올바르지 않습니다.",
+          409
+        );
+      }
+
+      const normalizedSemesterLabel =
+        semesterLabel
+          .replace(
+            /\s+/g,
+            ""
+          )
+          .toLowerCase();
+
+      const duplicatedOrder =
+        currentSemesters.some(
+          (
+            semester:
+              any
+          ) =>
+            Number(
+              semester
+                .semesterOrder ||
+              0
+            ) ===
+            semesterOrder
+        );
+
+      if (
+        duplicatedOrder
+      ) {
+        throwAppError(
+          ERROR_CODES.DUPLICATE_RESOURCE,
+          `${semesterOrder}학기가 이미 등록되어 있습니다.`,
+          409
+        );
+      }
+
+      const duplicatedLabel =
+        currentSemesters.some(
+          (
+            semester:
+              any
+          ) =>
+            String(
+              semester
+                .semesterLabel ||
+              ""
+            )
+              .replace(
+                /\s+/g,
+                ""
+              )
+              .toLowerCase() ===
+            normalizedSemesterLabel
+        );
+
+      if (
+        duplicatedLabel
+      ) {
+        throwAppError(
+          ERROR_CODES.DUPLICATE_RESOURCE,
+          `${semesterLabel} 학기가 이미 등록되어 있습니다.`,
+          409
+        );
+      }
+
+      /**
+       * 동일 연도의 기존 학기 과목 수를 계산한다.
+       *
+       * 실제 과목 수가 있으면 실제 과목 수를 우선하고,
+       * 실제 과목 수가 없으면 예정 과목 수를 사용한다.
+       */
+      const sameYearExistingSubjectCount =
+        currentSemesters
+          .filter(
+            (
+              semester:
+                any
+            ) => {
+              const existingLabel =
+                String(
+                  semester
+                    .semesterLabel ||
+                  ""
+                ).trim();
+
+              const existingLabelMatch =
+                existingLabel.match(
+                  /^(\d{4})년\s*([12])학기$/
+                );
+
+              return (
+                existingLabelMatch !==
+                  null &&
+                Number(
+                  existingLabelMatch[1]
+                ) ===
+                  semesterLabelYear
+              );
+            }
+          )
+          .reduce(
+            (
+              total:
+                number,
+              semester:
+                any
+            ) => {
+              const actualCount =
+                semester
+                  .actualSubjectCount;
+
+              const existingPlannedCount =
+                semester
+                  .plannedSubjectCount;
+
+              const resolvedCount =
+                actualCount !==
+                  null &&
+                actualCount !==
+                  undefined
+                  ? Number(
+                      actualCount
+                    )
+                  : existingPlannedCount !==
+                      null &&
+                    existingPlannedCount !==
+                      undefined
+                    ? Number(
+                        existingPlannedCount
+                      )
+                    : 0;
+
+              if (
+                !Number.isFinite(
+                  resolvedCount
+                ) ||
+                resolvedCount <=
+                  0
+              ) {
+                return total;
+              }
+
+              return (
+                total +
+                Math.floor(
+                  resolvedCount
+                )
+              );
+            },
+            0
+          );
+
+      const nextAnnualSubjectCount =
+        sameYearExistingSubjectCount +
+        plannedSubjectCount;
+
+      /**
+       * 학점은행제 연간 최대 수강 과목 수는 14과목이다.
+       */
+      if (
+        nextAnnualSubjectCount >
+        14
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          `${semesterLabelYear}년 기존 ${sameYearExistingSubjectCount}과목에 이번 ${plannedSubjectCount}과목을 추가하면 연간 총 ${nextAnnualSubjectCount}과목으로 14과목 제한을 초과합니다.`,
+          409
+        );
+      }
+
+            completedSteps.push(
+        "기존 학기 잠금 및 순서·학기구분·중복·수강제한 검사"
+      );
+
+      /**
+       * 3. 동일 학기차에 이미 존재하는
+       * 플랜 과목 자리도 잠그고 재검증한다.
+       *
+       * 신규 학기 생성인데 기존 과목 자리가 있으면
+       * 오래되거나 비정상적인 데이터일 수 있으므로
+       * 임의 삭제하지 않고 실행을 중단한다.
+       */
+      const existingPlanSubjectRows =
+        await tx
+          .select({
+            id:
+              planSemesters.id,
+          })
+          .from(
+            planSemesters
+          )
+          .where(
+            and(
+              eq(
+                planSemesters
+                  .organizationId,
+                organizationId
+              ),
+
+              eq(
+                planSemesters
+                  .studentId,
+                studentId
+              ),
+
+              eq(
+                planSemesters
+                  .semesterNo,
+                semesterOrder
+              )
+            )
+          )
+          .limit(1);
+
+      if (
+        existingPlanSubjectRows[0]
+      ) {
+        throwAppError(
+          ERROR_CODES.DUPLICATE_RESOURCE,
+          `${semesterOrder}학기 플랜 과목 정보가 이미 존재합니다. 기존 데이터를 먼저 확인해주세요.`,
+          409
+        );
+      }
+
+      /**
+       * 4. 학기 생성
+       */
+      const defaultCourse =
+        String(
+          lockedStudent
+            .course ||
+          ""
+        )
+          .trim() ||
+        null;
+
+      const semesterInsertResult:
+        any =
+        await tx
+          .insert(
+            semesters
+          )
+          .values({
+            organizationId,
+
+            studentId,
+
+            semesterOrder,
+
+            semesterLabel,
+
+            plannedMonth,
+
+            plannedInstitution,
+
+            plannedSubjectCount,
+
+            plannedAmount:
+              plannedAmount ??
+              "0",
+
+            actualStartDate:
+              input.actualStartDate ??
+              null,
+
+            actualInstitution,
+
+            actualSubjectCount,
+
+            actualAmount,
+
+            actualPaymentDate:
+              input.actualPaymentDate ??
+              null,
+
+            status:
+              "등록",
+
+            approvalStatus:
+              "요청전",
+
+            isCompleted:
+              false,
+
+            practiceStatus:
+              "미섭외",
+
+            primaryCourse:
+              defaultCourse,
+
+            registeredCoursesJson:
+              defaultCourse
+                ? JSON.stringify([
+                    defaultCourse,
+                  ])
+                : JSON.stringify([]),
+          } as any);
+
+      const semesterId =
+        Number(
+          getInsertId(
+            semesterInsertResult
+          ) ||
+          0
+        );
+
+      if (
+        !semesterId
+      ) {
+        throwAppError(
+          ERROR_CODES.INTERNAL_SERVER_ERROR,
+          "학생 학기를 생성하지 못했습니다.",
+          500
+        );
+      }
+
+      completedSteps.push(
+        "학생 학기 생성"
+      );
+
+      /**
+       * 5. 예정 과목 자리 생성
+       *
+       * 새 학기이므로 기존 행을 줄이거나 삭제하지 않고
+       * 필요한 수만큼만 생성한다.
+       */
+      const planSubjectIds:
+        number[] = [];
+
+      if (
+        plannedSubjectCount !==
+          null &&
+        plannedSubjectCount >
+          0
+      ) {
+        for (
+          let index = 0;
+          index <
+          plannedSubjectCount;
+          index += 1
+        ) {
+          const planSubjectInsertResult:
+            any =
+            await tx
+              .insert(
+                planSemesters
+              )
+              .values({
+                organizationId,
+
+                studentId,
+
+                semesterNo:
+                  semesterOrder,
+
+                subjectName:
+                  `새 과목${index + 1}`,
+
+                planCategory:
+                  "전공",
+
+                planRequirementType:
+                  "전공선택",
+
+                credits:
+                  3,
+
+                sortOrder:
+                  index,
+
+                settlementIncluded:
+                  true,
+              } as any);
+
+          const planSubjectId =
+            Number(
+              getInsertId(
+                planSubjectInsertResult
+              ) ||
+              0
+            );
+
+          if (
+            !planSubjectId
+          ) {
+            throwAppError(
+              ERROR_CODES.INTERNAL_SERVER_ERROR,
+              "학기 예정 과목 자리를 생성하지 못했습니다.",
+              500
+            );
+          }
+
+          planSubjectIds.push(
+            planSubjectId
+          );
+        }
+
+        completedSteps.push(
+          "예정 과목 수 플랜 동기화"
+        );
+      }
+
+      const successMessage =
+        `${semesterLabel} 학기가 생성되었습니다.`;
+
+      /**
+       * 6. Pending Action executed 처리
+       *
+       * 학기 생성과 같은 트랜잭션 안에서 처리한다.
+       * 이 업데이트가 실패하면 학기와 과목 생성도
+       * 모두 롤백된다.
+       */
+      const executionResult = {
+        pendingActionId,
+
+        status:
+          "executed",
+
+        consultationId:
+          null,
+
+        studentId,
+
+        scheduleId:
+          null,
+
+        planId:
+          null,
+
+        semesterId,
+
+        semesterIds: [
+          semesterId,
+        ],
+
+        planSubjectIds,
+
+        transferSubjectIds:
+          [],
+
+        practiceSaved:
+          false,
+
+        paymentUpdated:
+          false,
+
+        completedSteps: [
+          ...completedSteps,
+          "AI 승인 요청 실행완료 처리",
+        ],
+
+        failedSteps:
+          [],
+
+        message:
+          successMessage,
+      };
+
+      const pendingActionUpdateResult:
+        any =
+        await tx
+          .update(
+            aiPendingActions
+          )
+          .set({
+            status:
+              "executed",
+
+            studentId,
+
+            semesterId,
+
+            executionResultJson:
+              encryptAiPendingJson(
+                executionResult
+              ),
+
+            idempotencyKey:
+              buildReleasedAiPendingActionIdempotencyKey({
+                id:
+                  pendingActionId,
+
+                status:
+                  "executed",
+              }),
+
+            errorMessage:
+              null,
+
+            executedAt:
+              new Date(),
+
+            failedAt:
+              null,
+          })
+          .where(
+            and(
+              eq(
+                aiPendingActions.id,
+                pendingActionId
+              ),
+
+              eq(
+                aiPendingActions
+                  .organizationId,
+                organizationId
+              ),
+
+              eq(
+                aiPendingActions
+                  .requestedByUserId,
+                requestedByUserId
+              ),
+
+              eq(
+                aiPendingActions
+                  .confirmedByUserId,
+                confirmedByUserId
+              ),
+
+              eq(
+                aiPendingActions
+                  .version,
+                expectedVersion
+              ),
+
+              eq(
+                aiPendingActions
+                  .status,
+                "executing"
+              ),
+
+              eq(
+                aiPendingActions
+                  .actionType,
+                "semester_create"
+              )
+            )
+          );
+
+      const affectedRows =
+        Number(
+          pendingActionUpdateResult
+            ?.rowsAffected ??
+          pendingActionUpdateResult
+            ?.affectedRows ??
+          pendingActionUpdateResult?.[0]
+            ?.affectedRows ??
+          0
+        );
+
+      if (
+        affectedRows <= 0
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          "학기는 생성되었지만 AI 승인 완료 상태를 저장하지 못했습니다.",
+          409
+        );
+      }
+
+      completedSteps.push(
+        "AI 승인 요청 실행완료 처리"
+      );
+
+      /**
+       * 7. 실행 완료된 Pending Action 재조회
+       */
+      const executedPendingRows =
+        await tx
+          .select()
+          .from(
+            aiPendingActions
+          )
+          .where(
+            and(
+              eq(
+                aiPendingActions.id,
+                pendingActionId
+              ),
+
+              eq(
+                aiPendingActions
+                  .organizationId,
+                organizationId
+              ),
+
+              eq(
+                aiPendingActions
+                  .requestedByUserId,
+                requestedByUserId
+              )
+            )
+          )
+          .limit(1);
+
+      const executedPendingAction =
+        decryptAiPendingActionRow(
+          executedPendingRows[0]
+        );
+
+      if (
+        !executedPendingAction
+      ) {
+        throwAppError(
+          ERROR_CODES.INTERNAL_SERVER_ERROR,
+          "실행 완료된 학기 생성 승인 요청을 다시 확인하지 못했습니다.",
+          500
+        );
+      }
+
+      return {
+        studentId,
+
+        semesterId,
+
+        planSubjectIds,
+
+        completedSteps,
+
+        message:
+          successMessage,
+
+        pendingAction:
+          executedPendingAction,
+      };
+    }
+  );
+}
+
+/**
+ * AI 기존 학기 수정 트랜잭션
+ *
+ * 처리 내용:
+ * 1. Pending Action 잠금 및 상태 재검사
+ * 2. 학생 잠금 및 담당자 재검사
+ * 3. 대상 학기 잠금
+ * 4. 초안 생성 당시 학기 원본값과 현재값 비교
+ * 5. 승인 대기·승인 완료 상태 수정 차단
+ * 6. 학기 구분 중복 검사
+ * 7. 한 학기 8과목 및 연간 14과목 제한 검사
+ * 8. 승인된 변경 필드만 학기에 반영
+ * 9. Pending Action executed 처리
+ */
+export async function executeSemesterUpdateTransaction(
+  params: {
+    organizationId:
+      number;
+
+    pendingActionId:
+      number;
+
+    requestedByUserId:
+      number;
+
+    confirmedByUserId:
+      number;
+
+    expectedVersion:
+      number;
+
+    studentId:
+      number;
+
+    expectedAssigneeId:
+      number;
+
+    semesterId:
+      number;
+
+    semesterOrder:
+      number;
+
+    originalValues: {
+      updatedAt:
+        string |
+        Date |
+        null;
+
+      semesterLabel:
+        string |
+        null;
+
+      plannedMonth:
+        string |
+        null;
+
+      plannedInstitution:
+        string |
+        null;
+
+      plannedSubjectCount:
+        number |
+        null;
+
+      plannedAmount:
+        string |
+        number |
+        null;
+
+      actualStartDate:
+        string |
+        Date |
+        null;
+
+      actualInstitution:
+        string |
+        null;
+
+      actualInstitutionId:
+        number |
+        null;
+
+      actualSubjectCount:
+        number |
+        null;
+
+      actualAmount:
+        string |
+        number |
+        null;
+
+      actualPaymentDate:
+        string |
+        Date |
+        null;
+
+      isCompleted:
+        boolean;
+
+      approvalStatus:
+        string |
+        null;
+    };
+
+    updates:
+      SemesterUpdateValues;
+
+    actorUserId:
+      number;
+
+    actorName:
+      string |
+      null;
+
+    actorRole:
+      string;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (
+    !db
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const pendingActionId =
+    requireStudentRegistrationPositiveInteger(
+      params.pendingActionId,
+      "AI 승인 요청 ID"
+    );
+
+  const requestedByUserId =
+    requireStudentRegistrationPositiveInteger(
+      params.requestedByUserId,
+      "AI 요청 사용자"
+    );
+
+  const confirmedByUserId =
+    requireStudentRegistrationPositiveInteger(
+      params.confirmedByUserId,
+      "AI 승인 사용자"
+    );
+
+  const expectedVersion =
+    requireStudentRegistrationPositiveInteger(
+      params.expectedVersion,
+      "AI 승인 요청 버전"
+    );
+
+  const studentId =
+    requireStudentRegistrationPositiveInteger(
+      params.studentId,
+      "학생 ID"
+    );
+
+  const expectedAssigneeId =
+    requireStudentRegistrationPositiveInteger(
+      params.expectedAssigneeId,
+      "학생 담당자"
+    );
+
+  const semesterId =
+    requireStudentRegistrationPositiveInteger(
+      params.semesterId,
+      "학기 ID"
+    );
+
+  const semesterOrder =
+    requireStudentRegistrationPositiveInteger(
+      params.semesterOrder,
+      "학기 순서"
+    );
+
+  if (
+    semesterOrder >
+    20
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학기 순서는 20을 초과할 수 없습니다.",
+      409
+    );
+  }
+
+  const updates =
+    params.updates &&
+    typeof params.updates ===
+      "object" &&
+    !Array.isArray(
+      params.updates
+    )
+      ? params.updates
+      : {};
+
+  const allowedUpdateFields =
+    new Set<
+      keyof SemesterUpdateValues
+    >([
+      "semesterLabel",
+      "plannedMonth",
+      "plannedInstitution",
+      "plannedSubjectCount",
+      "plannedAmount",
+      "actualStartDate",
+      "actualInstitution",
+      "actualSubjectCount",
+      "actualAmount",
+      "actualPaymentDate",
+    ]);
+
+  const updateKeys =
+    Object.keys(
+      updates
+    ).filter(
+      (
+        key
+      ): key is keyof SemesterUpdateValues =>
+        allowedUpdateFields.has(
+          key as keyof SemesterUpdateValues
+        )
+    );
+
+  if (
+    updateKeys.length <=
+    0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "변경할 학기 정보가 없습니다.",
+      409
+    );
+  }
+
+  if (
+    Object.keys(
+      updates
+    ).length !==
+    updateKeys.length
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "허용되지 않은 학기 수정 항목이 포함되어 있습니다.",
+      409
+    );
+  }
+
+  const normalizeNullableTextValue =
+    (
+      value:
+        unknown
+    ): string | null => {
+      if (
+        value ===
+          null ||
+        value ===
+          undefined ||
+        value ===
+          ""
+      ) {
+        return null;
+      }
+
+      const normalized =
+        String(
+          value
+        ).trim();
+
+      return normalized ||
+        null;
+    };
+
+  const normalizeNullableNumberValue =
+    (
+      value:
+        unknown
+    ): number | null => {
+      if (
+        value ===
+          null ||
+        value ===
+          undefined ||
+        value ===
+          ""
+      ) {
+        return null;
+      }
+
+      const normalized =
+        Number(
+          String(
+            value
+          )
+            .replace(
+              /,/g,
+              ""
+            )
+            .trim()
+        );
+
+      if (
+        !Number.isFinite(
+          normalized
+        )
+      ) {
+        return null;
+      }
+
+      return normalized;
+    };
+
+  const normalizeNullableIntegerValue =
+    (
+      value:
+        unknown
+    ): number | null => {
+      const normalized =
+        normalizeNullableNumberValue(
+          value
+        );
+
+      if (
+        normalized ===
+        null
+      ) {
+        return null;
+      }
+
+      if (
+        !Number.isInteger(
+          normalized
+        )
+      ) {
+        return null;
+      }
+
+      return normalized;
+    };
+
+  const normalizeBooleanValue =
+    (
+      value:
+        unknown
+    ): boolean =>
+      value ===
+        true ||
+      value ===
+        1 ||
+      value ===
+        "1" ||
+      value ===
+        "true";
+
+  const normalizeDateValue =
+    (
+      value:
+        unknown
+    ): string | null => {
+      if (
+        value ===
+          null ||
+        value ===
+          undefined ||
+        value ===
+          ""
+      ) {
+        return null;
+      }
+
+      if (
+        value instanceof
+        Date
+      ) {
+        if (
+          Number.isNaN(
+            value.getTime()
+          )
+        ) {
+          return null;
+        }
+
+        const year =
+          value.getFullYear();
+
+        const month =
+          String(
+            value.getMonth() +
+            1
+          ).padStart(
+            2,
+            "0"
+          );
+
+        const day =
+          String(
+            value.getDate()
+          ).padStart(
+            2,
+            "0"
+          );
+
+        return `${year}-${month}-${day}`;
+      }
+
+      const normalized =
+        String(
+          value
+        )
+          .trim()
+          .slice(
+            0,
+            10
+          );
+
+      const matched =
+        normalized.match(
+          /^(\d{4})-(\d{2})-(\d{2})$/
+        );
+
+      if (
+        !matched
+      ) {
+        return null;
+      }
+
+      const year =
+        Number(
+          matched[1]
+        );
+
+      const month =
+        Number(
+          matched[2]
+        );
+
+      const day =
+        Number(
+          matched[3]
+        );
+
+      const parsed =
+        new Date(
+          Date.UTC(
+            year,
+            month -
+              1,
+            day
+          )
+        );
+
+      if (
+        parsed.getUTCFullYear() !==
+          year ||
+        parsed.getUTCMonth() !==
+          month -
+            1 ||
+        parsed.getUTCDate() !==
+          day
+      ) {
+        return null;
+      }
+
+      return normalized;
+    };
+
+  const normalizePlannedMonthValue =
+    (
+      value:
+        unknown
+    ): string | null => {
+      if (
+        value ===
+          null ||
+        value ===
+          undefined ||
+        value ===
+          ""
+      ) {
+        return null;
+      }
+
+      const normalized =
+        String(
+          value
+        )
+          .replace(
+            /[^0-9]/g,
+            ""
+          )
+          .trim();
+
+      if (
+        !/^\d{6}$/.test(
+          normalized
+        )
+      ) {
+        return null;
+      }
+
+      const month =
+        Number(
+          normalized.slice(
+            4,
+            6
+          )
+        );
+
+      if (
+        month <
+          1 ||
+        month >
+          12
+      ) {
+        return null;
+      }
+
+      return normalized;
+    };
+
+  const normalizeSemesterLabelValue =
+    (
+      value:
+        unknown
+    ): string | null => {
+      if (
+        value ===
+          null ||
+        value ===
+          undefined ||
+        value ===
+          ""
+      ) {
+        return null;
+      }
+
+      const normalized =
+        String(
+          value
+        ).trim();
+
+      const matched =
+        normalized.match(
+          /^(\d{4})년\s*([12])학기$/
+        );
+
+      if (
+        !matched
+      ) {
+        return null;
+      }
+
+      const year =
+        Number(
+          matched[1]
+        );
+
+      if (
+        year <
+          2000 ||
+        year >
+          2100
+      ) {
+        return null;
+      }
+
+      return `${matched[1]}년 ${matched[2]}학기`;
+    };
+
+  const normalizeDateTimeValue =
+    (
+      value:
+        unknown
+    ): number | null => {
+      if (
+        value ===
+          null ||
+        value ===
+          undefined ||
+        value ===
+          ""
+      ) {
+        return null;
+      }
+
+      const parsed =
+        value instanceof
+        Date
+          ? value
+          : new Date(
+              String(
+                value
+              )
+            );
+
+      const timestamp =
+        parsed.getTime();
+
+      return Number.isFinite(
+        timestamp
+      )
+        ? timestamp
+        : null;
+    };
+
+  const originalValues =
+    params.originalValues ||
+    ({} as any);
+
+  const connection =
+    await (
+      db as any
+    ).$client.getConnection();
+
+  const completedSteps:
+    string[] =
+    [];
+
+  try {
+    await connection.beginTransaction();
+
+    /**
+     * Pending Action 잠금
+     */
+    const [
+      pendingRows,
+    ] =
+      await connection.query(
+        `
+          SELECT
+            id,
+            organizationId,
+            requestedByUserId,
+            confirmedByUserId,
+            actionType,
+            status,
+            version,
+            studentId,
+            semesterId,
+            executionResultJson
+          FROM ai_pending_actions
+          WHERE
+            id = ?
+            AND organizationId = ?
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [
+          pendingActionId,
+          organizationId,
+        ]
+      );
+
+    const pendingAction =
+      Array.isArray(
+        pendingRows
+      )
+        ? pendingRows[0]
+        : null;
+
+    if (
+      !pendingAction
+    ) {
+      throwAppError(
+        ERROR_CODES.DATA_NOT_FOUND,
+        "학기 수정 승인 요청을 찾을 수 없습니다.",
+        404
+      );
+    }
+
+    if (
+      Number(
+        pendingAction
+          .requestedByUserId ||
+        0
+      ) !==
+      requestedByUserId
+    ) {
+      throwAppError(
+        ERROR_CODES.FORBIDDEN,
+        "다른 사용자의 승인 요청은 실행할 수 없습니다.",
+        403
+      );
+    }
+
+    if (
+      String(
+        pendingAction
+          .actionType ||
+        ""
+      ) !==
+      "semester_update"
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "학기 수정 승인 요청이 아닙니다.",
+        409
+      );
+    }
+
+    if (
+      String(
+        pendingAction
+          .status ||
+        ""
+      ) !==
+      "executing"
+    ) {
+      if (
+        String(
+          pendingAction
+            .status ||
+          ""
+        ) ===
+        "executed"
+      ) {
+        await connection.commit();
+
+        return {
+          studentId,
+
+          semesterId,
+
+          semesterOrder,
+
+          completedSteps: [
+            "이미 실행된 학기 수정 요청 확인",
+          ],
+
+          pendingAction,
+
+          message:
+            "이미 실행된 학기 수정 요청입니다.",
+        };
+      }
+
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "현재 상태에서는 학기 수정 요청을 실행할 수 없습니다.",
+        409
+      );
+    }
+
+    if (
+      Number(
+        pendingAction
+          .version ||
+        0
+      ) !==
+      expectedVersion
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "학기 수정 승인 요청 버전이 변경되었습니다.",
+        409
+      );
+    }
+
+    if (
+      Number(
+        pendingAction
+          .confirmedByUserId ||
+        0
+      ) !==
+      confirmedByUserId
+    ) {
+      throwAppError(
+        ERROR_CODES.FORBIDDEN,
+        "학기 수정 승인 사용자가 일치하지 않습니다.",
+        403
+      );
+    }
+
+    if (
+      Number(
+        pendingAction
+          .studentId ||
+        0
+      ) !==
+      studentId
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "학기 수정 승인 요청의 학생 정보가 일치하지 않습니다.",
+        409
+      );
+    }
+
+    if (
+      Number(
+        pendingAction
+          .semesterId ||
+        0
+      ) !==
+      semesterId
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "학기 수정 승인 요청의 학기 정보가 일치하지 않습니다.",
+        409
+      );
+    }
+
+    completedSteps.push(
+      "승인 요청 잠금 및 상태 확인"
+    );
+
+    /**
+     * 학생 잠금 및 담당자 검사
+     */
+    const [
+      studentRows,
+    ] =
+      await connection.query(
+        `
+          SELECT
+            id,
+            organizationId,
+            assigneeId,
+            deletedAt
+          FROM students
+          WHERE
+            id = ?
+            AND organizationId = ?
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [
+          studentId,
+          organizationId,
+        ]
+      );
+
+    const student =
+      Array.isArray(
+        studentRows
+      )
+        ? studentRows[0]
+        : null;
+
+    if (
+      !student ||
+      student.deletedAt
+    ) {
+      throwAppError(
+        ERROR_CODES.DATA_NOT_FOUND,
+        "학기를 수정할 학생을 찾을 수 없습니다.",
+        404
+      );
+    }
+
+    if (
+      Number(
+        student.assigneeId ||
+        0
+      ) !==
+      expectedAssigneeId
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "학기 수정 초안 이후 학생 담당자가 변경되었습니다.",
+        409
+      );
+    }
+
+    if (
+      expectedAssigneeId !==
+      confirmedByUserId
+    ) {
+      throwAppError(
+        ERROR_CODES.FORBIDDEN,
+        "해당 학생의 담당자만 학기 정보를 수정할 수 있습니다.",
+        403
+      );
+    }
+
+    completedSteps.push(
+      "학생 조직 및 담당자 확인"
+    );
+
+    /**
+     * 대상 학기 잠금
+     */
+    const [
+      semesterRows,
+    ] =
+      await connection.query(
+        `
+          SELECT
+            id,
+            studentId,
+            organizationId,
+            semesterOrder,
+            semesterLabel,
+            plannedMonth,
+            plannedInstitution,
+            plannedSubjectCount,
+            plannedAmount,
+            actualStartDate,
+            actualInstitution,
+            actualInstitutionId,
+            actualSubjectCount,
+            actualAmount,
+            actualPaymentDate,
+            isCompleted,
+            approvalStatus,
+            updatedAt
+          FROM semesters
+          WHERE
+            id = ?
+            AND studentId = ?
+            AND organizationId = ?
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [
+          semesterId,
+          studentId,
+          organizationId,
+        ]
+      );
+
+    const semester =
+      Array.isArray(
+        semesterRows
+      )
+        ? semesterRows[0]
+        : null;
+
+    if (
+      !semester
+    ) {
+      throwAppError(
+        ERROR_CODES.DATA_NOT_FOUND,
+        "수정할 학기를 찾을 수 없습니다.",
+        404
+      );
+    }
+
+    if (
+      Number(
+        semester
+          .semesterOrder ||
+        0
+      ) !==
+      semesterOrder
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "학기 수정 초안 이후 대상 학기 순서가 변경되었습니다.",
+        409
+      );
+    }
+
+    const currentValues = {
+      updatedAt:
+        semester.updatedAt ??
+        null,
+
+      semesterLabel:
+        normalizeSemesterLabelValue(
+          semester.semesterLabel
+        ),
+
+      plannedMonth:
+        normalizePlannedMonthValue(
+          semester.plannedMonth
+        ),
+
+      plannedInstitution:
+        normalizeNullableTextValue(
+          semester.plannedInstitution
+        ),
+
+      plannedSubjectCount:
+        normalizeNullableIntegerValue(
+          semester.plannedSubjectCount
+        ),
+
+      plannedAmount:
+        normalizeNullableNumberValue(
+          semester.plannedAmount
+        ),
+
+      actualStartDate:
+        normalizeDateValue(
+          semester.actualStartDate
+        ),
+
+      actualInstitution:
+        normalizeNullableTextValue(
+          semester.actualInstitution
+        ),
+
+      actualInstitutionId:
+        normalizeNullablePositiveInteger(
+          semester.actualInstitutionId
+        ),
+
+      actualSubjectCount:
+        normalizeNullableIntegerValue(
+          semester.actualSubjectCount
+        ),
+
+      actualAmount:
+        normalizeNullableNumberValue(
+          semester.actualAmount
+        ),
+
+      actualPaymentDate:
+        normalizeDateValue(
+          semester.actualPaymentDate
+        ),
+
+      isCompleted:
+        normalizeBooleanValue(
+          semester.isCompleted
+        ),
+
+      approvalStatus:
+        normalizeNullableTextValue(
+          semester.approvalStatus
+        ) ||
+        "요청전",
+    };
+
+    const normalizedOriginalValues = {
+      updatedAt:
+        originalValues.updatedAt ??
+        null,
+
+      semesterLabel:
+        normalizeSemesterLabelValue(
+          originalValues
+            .semesterLabel
+        ),
+
+      plannedMonth:
+        normalizePlannedMonthValue(
+          originalValues
+            .plannedMonth
+        ),
+
+      plannedInstitution:
+        normalizeNullableTextValue(
+          originalValues
+            .plannedInstitution
+        ),
+
+      plannedSubjectCount:
+        normalizeNullableIntegerValue(
+          originalValues
+            .plannedSubjectCount
+        ),
+
+      plannedAmount:
+        normalizeNullableNumberValue(
+          originalValues
+            .plannedAmount
+        ),
+
+      actualStartDate:
+        normalizeDateValue(
+          originalValues
+            .actualStartDate
+        ),
+
+      actualInstitution:
+        normalizeNullableTextValue(
+          originalValues
+            .actualInstitution
+        ),
+
+      actualInstitutionId:
+        normalizeNullablePositiveInteger(
+          originalValues
+            .actualInstitutionId
+        ),
+
+      actualSubjectCount:
+        normalizeNullableIntegerValue(
+          originalValues
+            .actualSubjectCount
+        ),
+
+      actualAmount:
+        normalizeNullableNumberValue(
+          originalValues
+            .actualAmount
+        ),
+
+      actualPaymentDate:
+        normalizeDateValue(
+          originalValues
+            .actualPaymentDate
+        ),
+
+      isCompleted:
+        normalizeBooleanValue(
+          originalValues
+            .isCompleted
+        ),
+
+      approvalStatus:
+        normalizeNullableTextValue(
+          originalValues
+            .approvalStatus
+        ) ||
+        "요청전",
+    };
+
+    const currentUpdatedAt =
+      normalizeDateTimeValue(
+        currentValues.updatedAt
+      );
+
+    const originalUpdatedAt =
+      normalizeDateTimeValue(
+        normalizedOriginalValues
+          .updatedAt
+      );
+
+    if (
+      currentUpdatedAt !==
+        null &&
+      originalUpdatedAt !==
+        null &&
+      currentUpdatedAt !==
+        originalUpdatedAt
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "학기 수정 초안 이후 학기 정보가 변경되었습니다.",
+        409
+      );
+    }
+
+    const originalValueChecks: Array<{
+      label:
+        string;
+
+      current:
+        unknown;
+
+      original:
+        unknown;
+    }> = [
+      {
+        label:
+          "학기 구분",
+
+        current:
+          currentValues.semesterLabel,
+
+        original:
+          normalizedOriginalValues.semesterLabel,
+      },
+      {
+        label:
+          "예정 개강월",
+
+        current:
+          currentValues.plannedMonth,
+
+        original:
+          normalizedOriginalValues.plannedMonth,
+      },
+      {
+        label:
+          "예정 교육원",
+
+        current:
+          currentValues.plannedInstitution,
+
+        original:
+          normalizedOriginalValues.plannedInstitution,
+      },
+      {
+        label:
+          "예정 과목 수",
+
+        current:
+          currentValues.plannedSubjectCount,
+
+        original:
+          normalizedOriginalValues.plannedSubjectCount,
+      },
+      {
+        label:
+          "예정 결제금액",
+
+        current:
+          currentValues.plannedAmount,
+
+        original:
+          normalizedOriginalValues.plannedAmount,
+      },
+      {
+        label:
+          "실제 개강일",
+
+        current:
+          currentValues.actualStartDate,
+
+        original:
+          normalizedOriginalValues.actualStartDate,
+      },
+      {
+        label:
+          "실제 교육원",
+
+        current:
+          currentValues.actualInstitution,
+
+        original:
+          normalizedOriginalValues.actualInstitution,
+      },
+      {
+        label:
+          "실제 교육원 ID",
+
+        current:
+          currentValues.actualInstitutionId,
+
+        original:
+          normalizedOriginalValues.actualInstitutionId,
+      },
+      {
+        label:
+          "실제 과목 수",
+
+        current:
+          currentValues.actualSubjectCount,
+
+        original:
+          normalizedOriginalValues.actualSubjectCount,
+      },
+      {
+        label:
+          "실제 결제금액",
+
+        current:
+          currentValues.actualAmount,
+
+        original:
+          normalizedOriginalValues.actualAmount,
+      },
+      {
+        label:
+          "실제 결제일",
+
+        current:
+          currentValues.actualPaymentDate,
+
+        original:
+          normalizedOriginalValues.actualPaymentDate,
+      },
+      {
+        label:
+          "입력완료 상태",
+
+        current:
+          currentValues.isCompleted,
+
+        original:
+          normalizedOriginalValues.isCompleted,
+      },
+      {
+        label:
+          "승인상태",
+
+        current:
+          currentValues.approvalStatus,
+
+        original:
+          normalizedOriginalValues.approvalStatus,
+      },
+    ];
+
+    for (
+      const check of
+      originalValueChecks
+    ) {
+      if (
+        check.current !==
+        check.original
+      ) {
+        throwAppError(
+          ERROR_CODES.CONFLICT,
+          `학기 수정 초안 이후 ${check.label} 정보가 변경되었습니다.`,
+          409
+        );
+      }
+    }
+
+    completedSteps.push(
+      "학기 원본값 변경 충돌 검사"
+    );
+
+    if (
+      currentValues
+        .approvalStatus ===
+      "대기"
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "승인 대기 중인 학기는 수정할 수 없습니다.",
+        409
+      );
+    }
+
+    if (
+      currentValues
+        .approvalStatus ===
+      "승인"
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "이미 승인된 학기는 수정할 수 없습니다.",
+        409
+      );
+    }
+
+    if (
+      currentValues
+        .approvalStatus !==
+        "요청전" &&
+      currentValues
+        .approvalStatus !==
+        "불승인"
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        `현재 승인상태(${currentValues.approvalStatus})에서는 학기를 수정할 수 없습니다.`,
+        409
+      );
+    }
+
+    const nextValues = {
+      semesterLabel:
+        Object.prototype
+          .hasOwnProperty.call(
+            updates,
+            "semesterLabel"
+          )
+          ? normalizeSemesterLabelValue(
+              updates.semesterLabel
+            )
+          : currentValues.semesterLabel,
+
+      plannedMonth:
+        Object.prototype
+          .hasOwnProperty.call(
+            updates,
+            "plannedMonth"
+          )
+          ? normalizePlannedMonthValue(
+              updates.plannedMonth
+            )
+          : currentValues.plannedMonth,
+
+      plannedInstitution:
+        Object.prototype
+          .hasOwnProperty.call(
+            updates,
+            "plannedInstitution"
+          )
+          ? normalizeNullableTextValue(
+              updates.plannedInstitution
+            )
+          : currentValues.plannedInstitution,
+
+      plannedSubjectCount:
+        Object.prototype
+          .hasOwnProperty.call(
+            updates,
+            "plannedSubjectCount"
+          )
+          ? normalizeNullableIntegerValue(
+              updates.plannedSubjectCount
+            )
+          : currentValues.plannedSubjectCount,
+
+      plannedAmount:
+        Object.prototype
+          .hasOwnProperty.call(
+            updates,
+            "plannedAmount"
+          )
+          ? normalizeNullableNumberValue(
+              updates.plannedAmount
+            )
+          : currentValues.plannedAmount,
+
+      actualStartDate:
+        Object.prototype
+          .hasOwnProperty.call(
+            updates,
+            "actualStartDate"
+          )
+          ? normalizeDateValue(
+              updates.actualStartDate
+            )
+          : currentValues.actualStartDate,
+
+      actualInstitution:
+        Object.prototype
+          .hasOwnProperty.call(
+            updates,
+            "actualInstitution"
+          )
+          ? normalizeNullableTextValue(
+              updates.actualInstitution
+            )
+          : currentValues.actualInstitution,
+
+      actualSubjectCount:
+        Object.prototype
+          .hasOwnProperty.call(
+            updates,
+            "actualSubjectCount"
+          )
+          ? normalizeNullableIntegerValue(
+              updates.actualSubjectCount
+            )
+          : currentValues.actualSubjectCount,
+
+      actualAmount:
+        Object.prototype
+          .hasOwnProperty.call(
+            updates,
+            "actualAmount"
+          )
+          ? normalizeNullableNumberValue(
+              updates.actualAmount
+            )
+          : currentValues.actualAmount,
+
+      actualPaymentDate:
+        Object.prototype
+          .hasOwnProperty.call(
+            updates,
+            "actualPaymentDate"
+          )
+          ? normalizeDateValue(
+              updates.actualPaymentDate
+            )
+          : currentValues.actualPaymentDate,
+    };
+
+    if (
+      Object.prototype
+        .hasOwnProperty.call(
+          updates,
+          "semesterLabel"
+        ) &&
+      updates.semesterLabel !==
+        null &&
+      nextValues.semesterLabel ===
+        null
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "학기 구분 형식이 올바르지 않습니다.",
+        409
+      );
+    }
+
+    if (
+      Object.prototype
+        .hasOwnProperty.call(
+          updates,
+          "plannedMonth"
+        ) &&
+      updates.plannedMonth !==
+        null &&
+      nextValues.plannedMonth ===
+        null
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "예정 개강월 형식이 올바르지 않습니다.",
+        409
+      );
+    }
+
+    if (
+      Object.prototype
+        .hasOwnProperty.call(
+          updates,
+          "actualStartDate"
+        ) &&
+      updates.actualStartDate !==
+        null &&
+      nextValues.actualStartDate ===
+        null
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "실제 개강일 형식이 올바르지 않습니다.",
+        409
+      );
+    }
+
+    if (
+      Object.prototype
+        .hasOwnProperty.call(
+          updates,
+          "actualPaymentDate"
+        ) &&
+      updates.actualPaymentDate !==
+        null &&
+      nextValues.actualPaymentDate ===
+        null
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "실제 결제일 형식이 올바르지 않습니다.",
+        409
+      );
+    }
+
+    if (
+      nextValues
+        .plannedSubjectCount !==
+        null &&
+      (
+        nextValues
+          .plannedSubjectCount <
+          0 ||
+        nextValues
+          .plannedSubjectCount >
+          8
+      )
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "한 학기 예정 과목 수는 0개부터 8개까지 입력할 수 있습니다.",
+        409
+      );
+    }
+
+    if (
+      nextValues
+        .actualSubjectCount !==
+        null &&
+      (
+        nextValues
+          .actualSubjectCount <
+          0 ||
+        nextValues
+          .actualSubjectCount >
+          8
+      )
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "한 학기 실제 과목 수는 0개부터 8개까지 입력할 수 있습니다.",
+        409
+      );
+    }
+
+    if (
+      nextValues
+        .plannedAmount !==
+        null &&
+      nextValues
+        .plannedAmount <
+        0
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "예정 결제금액은 0원 이상이어야 합니다.",
+        409
+      );
+    }
+
+    if (
+      nextValues
+        .actualAmount !==
+        null &&
+      nextValues
+        .actualAmount <
+        0
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "실제 결제금액은 0원 이상이어야 합니다.",
+        409
+      );
+    }
+
+    if (
+      nextValues
+        .semesterLabel &&
+      nextValues
+        .plannedMonth
+    ) {
+      const semesterYear =
+        Number(
+          nextValues
+            .semesterLabel
+            .slice(
+              0,
+              4
+            )
+        );
+
+      const plannedYear =
+        Number(
+          nextValues
+            .plannedMonth
+            .slice(
+              0,
+              4
+            )
+        );
+
+      if (
+        semesterYear !==
+        plannedYear
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          `학기 구분은 ${semesterYear}년이지만 예정 개강월은 ${plannedYear}년입니다.`,
+          409
+        );
+      }
+    }
+
+    if (
+      nextValues
+        .semesterLabel
+    ) {
+      const [
+        duplicateRows,
+      ] =
+        await connection.query(
+          `
+            SELECT
+              id
+            FROM semesters
+            WHERE
+              organizationId = ?
+              AND studentId = ?
+              AND id <> ?
+              AND REPLACE(
+                LOWER(
+                  COALESCE(
+                    semesterLabel,
+                    ''
+                  )
+                ),
+                ' ',
+                ''
+              ) = REPLACE(
+                LOWER(?),
+                ' ',
+                ''
+              )
+            LIMIT 1
+            FOR UPDATE
+          `,
+          [
+            organizationId,
+            studentId,
+            semesterId,
+            nextValues
+              .semesterLabel,
+          ]
+        );
+
+      const duplicateSemester =
+        Array.isArray(
+          duplicateRows
+        )
+          ? duplicateRows[0]
+          : null;
+
+      if (
+        duplicateSemester
+      ) {
+        throwAppError(
+          ERROR_CODES.CONFLICT,
+          `${nextValues.semesterLabel}는 이미 등록된 학기 구분입니다.`,
+          409
+        );
+      }
+
+      const semesterYear =
+        Number(
+          nextValues
+            .semesterLabel
+            .slice(
+              0,
+              4
+            )
+        );
+
+      const [
+        sameYearRows,
+      ] =
+        await connection.query(
+          `
+            SELECT
+              id,
+              semesterLabel,
+              plannedSubjectCount,
+              actualSubjectCount
+            FROM semesters
+            WHERE
+              organizationId = ?
+              AND studentId = ?
+              AND id <> ?
+            FOR UPDATE
+          `,
+          [
+            organizationId,
+            studentId,
+            semesterId,
+          ]
+        );
+
+      const otherSemesters =
+        Array.isArray(
+          sameYearRows
+        )
+          ? sameYearRows
+          : [];
+
+      const otherYearSubjectCount =
+        otherSemesters
+          .filter(
+            (
+              row:
+                any
+            ) => {
+              const matched =
+                String(
+                  row
+                    ?.semesterLabel ||
+                  ""
+                ).match(
+                  /^(\d{4})년\s*([12])학기$/
+                );
+
+              return (
+                matched !==
+                  null &&
+                Number(
+                  matched[1]
+                ) ===
+                  semesterYear
+              );
+            }
+          )
+          .reduce(
+            (
+              total:
+                number,
+              row:
+                any
+            ) => {
+              const actualCount =
+                normalizeNullableIntegerValue(
+                  row
+                    ?.actualSubjectCount
+                );
+
+              const plannedCount =
+                normalizeNullableIntegerValue(
+                  row
+                    ?.plannedSubjectCount
+                );
+
+              return total +
+                (
+                  actualCount ??
+                  plannedCount ??
+                  0
+                );
+            },
+            0
+          );
+
+      const targetSubjectCount =
+        nextValues
+          .actualSubjectCount ??
+        nextValues
+          .plannedSubjectCount ??
+        0;
+
+      const annualSubjectCount =
+        otherYearSubjectCount +
+        targetSubjectCount;
+
+      if (
+        annualSubjectCount >
+        14
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          `${semesterYear}년 전체 과목 수가 ${annualSubjectCount}과목으로 연간 14과목 제한을 초과합니다.`,
+          409
+        );
+      }
+    }
+
+    completedSteps.push(
+      "학기 중복 및 과목 수 제한 확인"
+    );
+
+    const setClauses:
+      string[] =
+      [];
+
+    const setValues:
+      unknown[] =
+      [];
+
+    const addUpdateValue =
+      (
+        column:
+          string,
+
+        value:
+          unknown
+      ) => {
+        setClauses.push(
+          `${column} = ?`
+        );
+
+        setValues.push(
+          value
+        );
+      };
+
+    for (
+      const key of
+      updateKeys
+    ) {
+      switch (
+        key
+      ) {
+        case "semesterLabel":
+          addUpdateValue(
+            "semesterLabel",
+            nextValues.semesterLabel
+          );
+          break;
+
+        case "plannedMonth":
+          addUpdateValue(
+            "plannedMonth",
+            nextValues.plannedMonth
+          );
+          break;
+
+        case "plannedInstitution":
+          addUpdateValue(
+            "plannedInstitution",
+            nextValues.plannedInstitution
+          );
+          break;
+
+        case "plannedSubjectCount":
+          addUpdateValue(
+            "plannedSubjectCount",
+            nextValues.plannedSubjectCount
+          );
+          break;
+
+        case "plannedAmount":
+          addUpdateValue(
+            "plannedAmount",
+            nextValues.plannedAmount
+          );
+          break;
+
+        case "actualStartDate":
+          addUpdateValue(
+            "actualStartDate",
+            nextValues.actualStartDate
+          );
+          break;
+
+        case "actualInstitution":
+          addUpdateValue(
+            "actualInstitution",
+            nextValues.actualInstitution
+          );
+
+          /**
+           * 실제 교육원명을 직접 변경하면
+           * 기존 교육원 ID와 이름이 불일치할 수 있으므로
+           * 연결된 ID를 함께 해제한다.
+           */
+          setClauses.push(
+            "actualInstitutionId = NULL"
+          );
+          break;
+
+        case "actualSubjectCount":
+          addUpdateValue(
+            "actualSubjectCount",
+            nextValues.actualSubjectCount
+          );
+          break;
+
+        case "actualAmount":
+          addUpdateValue(
+            "actualAmount",
+            nextValues.actualAmount
+          );
+          break;
+
+        case "actualPaymentDate":
+          addUpdateValue(
+            "actualPaymentDate",
+            nextValues.actualPaymentDate
+          );
+          break;
+      }
+    }
+
+    if (
+      setClauses.length <=
+      0
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "실제로 반영할 학기 변경 항목이 없습니다.",
+        409
+      );
+    }
+
+    setClauses.push(
+      "updatedAt = NOW()"
+    );
+
+    const [
+      semesterUpdateResult,
+    ] =
+      await connection.query(
+        `
+          UPDATE semesters
+          SET
+            ${setClauses.join(
+              ",\n            "
+            )}
+          WHERE
+            id = ?
+            AND studentId = ?
+            AND organizationId = ?
+        `,
+        [
+          ...setValues,
+          semesterId,
+          studentId,
+          organizationId,
+        ]
+      );
+
+    const semesterAffectedRows =
+      Number(
+        (
+          semesterUpdateResult as
+            any
+        )?.affectedRows ??
+        (
+          semesterUpdateResult as
+            any
+        )?.rowsAffected ??
+        (
+          semesterUpdateResult as
+            any
+        )?.[0]?.affectedRows ??
+        0
+      );
+
+    if (
+      semesterAffectedRows !==
+      1
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "학기 정보를 수정하지 못했습니다.",
+        409
+      );
+    }
+
+    completedSteps.push(
+      "승인된 학기 변경사항 반영"
+    );
+
+    const executionResult = {
+      pendingActionId,
+
+      status:
+        "executed",
+
+      studentId,
+
+      semesterId,
+
+      semesterOrder,
+
+      semesterIds: [
+        semesterId,
+      ],
+
+      completedSteps,
+
+      failedSteps:
+        [],
+
+      message:
+        `${semesterOrder}학기 정보 수정이 완료되었습니다.`,
+    };
+
+    const releasedIdempotencyKey =
+      buildReleasedAiPendingActionIdempotencyKey({
+        id:
+          pendingActionId,
+
+        status:
+          "executed",
+      });
+
+    const [
+      pendingActionUpdateResult,
+    ] =
+      await connection.query(
+        `
+          UPDATE ai_pending_actions
+          SET
+            status = 'executed',
+            idempotencyKey = ?,
+            executedAt = NOW(),
+            executionResultJson = ?,
+            errorMessage = NULL,
+            updatedAt = NOW()
+          WHERE
+            id = ?
+            AND organizationId = ?
+            AND requestedByUserId = ?
+            AND confirmedByUserId = ?
+            AND actionType = 'semester_update'
+            AND status = 'executing'
+            AND version = ?
+        `,
+        [
+          releasedIdempotencyKey,
+
+          encryptAiPendingJson(
+            executionResult
+          ),
+
+          pendingActionId,
+          organizationId,
+          requestedByUserId,
+          confirmedByUserId,
+          expectedVersion,
+        ]
+      );
+
+    const pendingActionAffectedRows =
+      Number(
+        (
+          pendingActionUpdateResult as
+            any
+        )?.affectedRows ??
+        (
+          pendingActionUpdateResult as
+            any
+        )?.rowsAffected ??
+        (
+          pendingActionUpdateResult as
+            any
+        )?.[0]?.affectedRows ??
+        0
+      );
+
+    if (
+      pendingActionAffectedRows !==
+      1
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "학기 수정 승인 요청 상태가 변경되어 실행 결과를 저장하지 못했습니다.",
+        409
+      );
+    }
+
+    completedSteps.push(
+      "AI 승인 요청 실행완료 처리"
+    );
+
+    const [
+      executedActionRows,
+    ] =
+      await connection.query(
+        `
+          SELECT *
+          FROM ai_pending_actions
+          WHERE
+            id = ?
+            AND organizationId = ?
+          LIMIT 1
+        `,
+        [
+          pendingActionId,
+          organizationId,
+        ]
+      );
+
+    const executedPendingAction =
+      Array.isArray(
+        executedActionRows
+      )
+        ? executedActionRows[0]
+        : null;
+
+    if (
+      !executedPendingAction ||
+      String(
+        executedPendingAction
+          .status ||
+        ""
+      ) !==
+      "executed"
+    ) {
+      throwAppError(
+        ERROR_CODES.INTERNAL_SERVER_ERROR,
+        "학기 수정 승인 요청 완료 상태를 확인하지 못했습니다.",
+        500
+      );
+    }
+
+    await connection.commit();
+
+    return {
+      ...executionResult,
+
+      pendingAction:
+        executedPendingAction,
+    };
+  } catch (
+    error
+  ) {
+    try {
+      await connection.rollback();
+    } catch {
+      // rollback 실패 시 최초 오류 유지
+    }
+
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+/**
+ * AI 학기 입력완료 트랜잭션
+ *
+ * 처리 내용:
+ * 1. Pending Action 잠금 및 재검사
+ * 2. 학생 잠금 및 담당자 재검사
+ * 3. 대상 학기 잠금
+ * 4. 초안 생성 당시 원본값과 현재값 비교
+ * 5. 플랜요약 필수정보 재검사
+ * 6. 대상 학기 실제 등록정보 재검사
+ * 7. 해당 학기 우리플랜 과목 수 재검사
+ * 8. semesters.isCompleted = true
+ * 9. semesters.approvalStatus = "대기"
+ * 10. Pending Action executed 처리
+ */
+export async function executeSemesterCompleteTransaction(
+  params: {
+    organizationId:
+      number;
+
+    pendingActionId:
+      number;
+
+    requestedByUserId:
+      number;
+
+    confirmedByUserId:
+      number;
+
+    expectedVersion:
+      number;
+
+    studentId:
+      number;
+
+    expectedAssigneeId:
+      number;
+
+    semesterId:
+      number;
+
+    semesterOrder:
+      number;
+
+    originalValues: {
+      updatedAt:
+        string |
+        Date |
+        null;
+
+      isCompleted:
+        boolean;
+
+      approvalStatus:
+        string |
+        null;
+
+      semesterLabel:
+        string |
+        null;
+
+      actualStartDate:
+        string |
+        Date |
+        null;
+
+      actualInstitution:
+        string |
+        null;
+
+      actualInstitutionId:
+        number |
+        null;
+
+      actualSubjectCount:
+        number |
+        null;
+
+      actualAmount:
+        string |
+        number |
+        null;
+
+      actualPaymentDate:
+        string |
+        Date |
+        null;
+    };
+
+    actorUserId:
+      number;
+
+    actorName:
+      string |
+      null;
+
+    actorRole:
+      string;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (
+    !db
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const pendingActionId =
+    requireStudentRegistrationPositiveInteger(
+      params.pendingActionId,
+      "AI 승인 요청 ID"
+    );
+
+  const requestedByUserId =
+    requireStudentRegistrationPositiveInteger(
+      params.requestedByUserId,
+      "AI 요청 사용자"
+    );
+
+  const confirmedByUserId =
+    requireStudentRegistrationPositiveInteger(
+      params.confirmedByUserId,
+      "AI 승인 사용자"
+    );
+
+  const expectedVersion =
+    requireStudentRegistrationPositiveInteger(
+      params.expectedVersion,
+      "AI 승인 요청 버전"
+    );
+
+  const studentId =
+    requireStudentRegistrationPositiveInteger(
+      params.studentId,
+      "학생 ID"
+    );
+
+  const expectedAssigneeId =
+    requireStudentRegistrationPositiveInteger(
+      params.expectedAssigneeId,
+      "학생 담당자"
+    );
+
+  const semesterId =
+    requireStudentRegistrationPositiveInteger(
+      params.semesterId,
+      "학기 ID"
+    );
+
+  const semesterOrder =
+    requireStudentRegistrationPositiveInteger(
+      params.semesterOrder,
+      "학기 순서"
+    );
+
+  if (
+    semesterOrder >
+    20
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학기 순서는 20을 초과할 수 없습니다.",
+      409
+    );
+  }
+
+  const normalizeNullableTextValue =
+    (
+      value:
+        unknown
+    ) => {
+      const normalized =
+        String(
+          value ??
+          ""
+        ).trim();
+
+      return normalized ||
+        null;
+    };
+
+  const normalizeBooleanValue =
+    (
+      value:
+        unknown
+    ) =>
+      value ===
+        true ||
+      value ===
+        1 ||
+      value ===
+        "1" ||
+      value ===
+        "true";
+
+  const normalizeNullableNumberValue =
+    (
+      value:
+        unknown
+    ): number | null => {
+      if (
+        value ===
+          null ||
+        value ===
+          undefined ||
+        value ===
+          ""
+      ) {
+        return null;
+      }
+
+      const normalized =
+        Number(
+          String(
+            value
+          ).replace(
+            /,/g,
+            ""
+          )
+        );
+
+      return Number.isFinite(
+        normalized
+      )
+        ? normalized
+        : null;
+    };
+
+  const normalizeDateValue =
+    (
+      value:
+        unknown
+    ): string | null => {
+      if (
+        value ===
+          null ||
+        value ===
+          undefined ||
+        value ===
+          ""
+      ) {
+        return null;
+      }
+
+      if (
+        value instanceof
+        Date
+      ) {
+        if (
+          Number.isNaN(
+            value.getTime()
+          )
+        ) {
+          return null;
+        }
+
+        const year =
+          value.getFullYear();
+
+        const month =
+          String(
+            value.getMonth() +
+            1
+          ).padStart(
+            2,
+            "0"
+          );
+
+        const day =
+          String(
+            value.getDate()
+          ).padStart(
+            2,
+            "0"
+          );
+
+        return `${year}-${month}-${day}`;
+      }
+
+      const raw =
+        String(
+          value
+        ).trim();
+
+      const matched =
+        raw.match(
+          /^(\d{4}-\d{2}-\d{2})/
+        );
+
+      return matched
+        ? matched[1]
+        : null;
+    };
+
+  const originalValues =
+    params.originalValues ||
+    ({} as any);
+
+  const connection =
+    await (
+      db as any
+    ).$client.getConnection();
+
+  const completedSteps:
+    string[] =
+    [];
+
+  try {
+    await connection.beginTransaction();
+
+    /**
+     * Pending Action 잠금
+     */
+    const [
+      pendingRows,
+    ] =
+      await connection.query(
+        `
+          SELECT
+            id,
+            organizationId,
+            requestedByUserId,
+            confirmedByUserId,
+            actionType,
+            status,
+            version,
+            studentId,
+            semesterId,
+            executionResultJson
+          FROM ai_pending_actions
+          WHERE
+            id = ?
+            AND organizationId = ?
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [
+          pendingActionId,
+          organizationId,
+        ]
+      );
+
+    const pendingAction =
+      Array.isArray(
+        pendingRows
+      )
+        ? pendingRows[0]
+        : null;
+
+    if (
+      !pendingAction
+    ) {
+      throwAppError(
+        ERROR_CODES.DATA_NOT_FOUND,
+        "학기 입력완료 승인 요청을 찾을 수 없습니다.",
+        404
+      );
+    }
+
+    if (
+      Number(
+        pendingAction
+          .requestedByUserId ||
+        0
+      ) !==
+      requestedByUserId
+    ) {
+      throwAppError(
+        ERROR_CODES.FORBIDDEN,
+        "다른 사용자의 승인 요청은 실행할 수 없습니다.",
+        403
+      );
+    }
+
+    if (
+      String(
+        pendingAction
+          .actionType ||
+        ""
+      ) !==
+      "semester_complete"
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "학기 입력완료 승인 요청이 아닙니다.",
+        409
+      );
+    }
+
+    /**
+     * Executor claim 이후에는
+     * status가 executing이어야 한다.
+     */
+    if (
+      String(
+        pendingAction
+          .status ||
+        ""
+      ) !==
+      "executing"
+    ) {
+      if (
+        String(
+          pendingAction
+            .status ||
+          ""
+        ) ===
+        "executed"
+      ) {
+        await connection.commit();
+
+        return {
+          studentId,
+          semesterId,
+          semesterOrder,
+
+          isCompleted:
+            true,
+
+          approvalStatus:
+            "대기",
+
+          completedSteps: [
+            "이미 실행된 학기 입력완료 요청 확인",
+          ],
+
+          pendingAction,
+
+          message:
+            "이미 입력완료 처리된 학기입니다.",
+        };
+      }
+
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "현재 상태에서는 학기 입력완료 요청을 실행할 수 없습니다.",
+        409
+      );
+    }
+
+    if (
+      Number(
+        pendingAction
+          .version ||
+        0
+      ) !==
+      expectedVersion
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "학기 입력완료 승인 요청 버전이 변경되었습니다.",
+        409
+      );
+    }
+
+    if (
+      Number(
+        pendingAction
+          .confirmedByUserId ||
+        0
+      ) !==
+      confirmedByUserId
+    ) {
+      throwAppError(
+        ERROR_CODES.FORBIDDEN,
+        "학기 입력완료 승인 사용자가 일치하지 않습니다.",
+        403
+      );
+    }
+
+    completedSteps.push(
+      "승인 요청 잠금 및 상태 확인"
+    );
+
+    /**
+     * 학생 잠금
+     */
+    const [
+      studentRows,
+    ] =
+      await connection.query(
+        `
+          SELECT
+            id,
+            organizationId,
+            assigneeId,
+            deletedAt
+          FROM students
+          WHERE
+            id = ?
+            AND organizationId = ?
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [
+          studentId,
+          organizationId,
+        ]
+      );
+
+    const student =
+      Array.isArray(
+        studentRows
+      )
+        ? studentRows[0]
+        : null;
+
+    if (
+      !student ||
+      student.deletedAt
+    ) {
+      throwAppError(
+        ERROR_CODES.DATA_NOT_FOUND,
+        "입력완료 처리할 학생을 찾을 수 없습니다.",
+        404
+      );
+    }
+
+    if (
+      Number(
+        student.assigneeId ||
+        0
+      ) !==
+      expectedAssigneeId
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "입력완료 초안 이후 학생 담당자가 변경되었습니다.",
+        409
+      );
+    }
+
+    if (
+      expectedAssigneeId !==
+      confirmedByUserId
+    ) {
+      throwAppError(
+        ERROR_CODES.FORBIDDEN,
+        "해당 학생의 담당자만 입력완료 처리할 수 있습니다.",
+        403
+      );
+    }
+
+    completedSteps.push(
+      "학생 조직 및 담당자 확인"
+    );
+
+    /**
+     * 대상 학기 잠금
+     */
+    const [
+      semesterRows,
+    ] =
+      await connection.query(
+        `
+          SELECT
+            id,
+            studentId,
+            semesterOrder,
+            semesterLabel,
+            actualStartDate,
+            actualInstitution,
+            actualInstitutionId,
+            actualSubjectCount,
+            actualAmount,
+            actualPaymentDate,
+            isCompleted,
+            approvalStatus,
+            updatedAt
+          FROM semesters
+          WHERE
+            id = ?
+            AND studentId = ?
+            AND organizationId = ?
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [
+          semesterId,
+          studentId,
+          organizationId,
+        ]
+      );
+
+    const semester =
+      Array.isArray(
+        semesterRows
+      )
+        ? semesterRows[0]
+        : null;
+
+    if (
+      !semester
+    ) {
+      throwAppError(
+        ERROR_CODES.DATA_NOT_FOUND,
+        "입력완료 처리할 학기를 찾을 수 없습니다.",
+        404
+      );
+    }
+
+    if (
+      Number(
+        semester
+          .semesterOrder ||
+        0
+      ) !==
+      semesterOrder
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "입력완료 초안 이후 대상 학기 순서가 변경되었습니다.",
+        409
+      );
+    }
+
+    /**
+     * 초안 원본값과 현재 학기값 비교
+     */
+    const currentIsCompleted =
+      normalizeBooleanValue(
+        semester.isCompleted
+      );
+
+    const currentApprovalStatus =
+      normalizeNullableTextValue(
+        semester.approvalStatus
+      ) ||
+      "요청전";
+
+    const originalIsCompleted =
+      normalizeBooleanValue(
+        originalValues
+          .isCompleted
+      );
+
+    const originalApprovalStatus =
+      normalizeNullableTextValue(
+        originalValues
+          .approvalStatus
+      ) ||
+      "요청전";
+
+    if (
+      currentIsCompleted !==
+      originalIsCompleted
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "입력완료 초안 이후 학기의 입력완료 상태가 변경되었습니다.",
+        409
+      );
+    }
+
+    if (
+      currentApprovalStatus !==
+      originalApprovalStatus
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "입력완료 초안 이후 학기의 승인상태가 변경되었습니다.",
+        409
+      );
+    }
+
+    const compareTextFields =
+      [
+        {
+          label:
+            "학기구분",
+
+          current:
+            normalizeNullableTextValue(
+              semester
+                .semesterLabel
+            ),
+
+          original:
+            normalizeNullableTextValue(
+              originalValues
+                .semesterLabel
+            ),
+        },
+
+        {
+          label:
+            "실제 교육원",
+
+          current:
+            normalizeNullableTextValue(
+              semester
+                .actualInstitution
+            ),
+
+          original:
+            normalizeNullableTextValue(
+              originalValues
+                .actualInstitution
+            ),
+        },
+      ];
+
+    for (
+      const field of
+      compareTextFields
+    ) {
+      if (
+        field.current !==
+        field.original
+      ) {
+        throwAppError(
+          ERROR_CODES.CONFLICT,
+          `입력완료 초안 이후 ${field.label} 정보가 변경되었습니다.`,
+          409
+        );
+      }
+    }
+
+    const compareDateFields =
+      [
+        {
+          label:
+            "실제 개강일",
+
+          current:
+            normalizeDateValue(
+              semester
+                .actualStartDate
+            ),
+
+          original:
+            normalizeDateValue(
+              originalValues
+                .actualStartDate
+            ),
+        },
+
+        {
+          label:
+            "실제 결제일",
+
+          current:
+            normalizeDateValue(
+              semester
+                .actualPaymentDate
+            ),
+
+          original:
+            normalizeDateValue(
+              originalValues
+                .actualPaymentDate
+            ),
+        },
+      ];
+
+    for (
+      const field of
+      compareDateFields
+    ) {
+      if (
+        field.current !==
+        field.original
+      ) {
+        throwAppError(
+          ERROR_CODES.CONFLICT,
+          `입력완료 초안 이후 ${field.label} 정보가 변경되었습니다.`,
+          409
+        );
+      }
+    }
+
+    const currentActualInstitutionId =
+      normalizeNullablePositiveInteger(
+        semester
+          .actualInstitutionId
+      );
+
+    const originalActualInstitutionId =
+      normalizeNullablePositiveInteger(
+        originalValues
+          .actualInstitutionId
+      );
+
+    if (
+      currentActualInstitutionId !==
+      originalActualInstitutionId
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "입력완료 초안 이후 실제 교육원 정보가 변경되었습니다.",
+        409
+      );
+    }
+
+    const currentActualSubjectCount =
+      normalizeNullableNumberValue(
+        semester
+          .actualSubjectCount
+      );
+
+    const originalActualSubjectCount =
+      normalizeNullableNumberValue(
+        originalValues
+          .actualSubjectCount
+      );
+
+    if (
+      currentActualSubjectCount !==
+      originalActualSubjectCount
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "입력완료 초안 이후 실제 과목 수가 변경되었습니다.",
+        409
+      );
+    }
+
+    const currentActualAmount =
+      normalizeNullableNumberValue(
+        semester
+          .actualAmount
+      );
+
+    const originalActualAmount =
+      normalizeNullableNumberValue(
+        originalValues
+          .actualAmount
+      );
+
+    if (
+      currentActualAmount !==
+      originalActualAmount
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "입력완료 초안 이후 실제 결제금액이 변경되었습니다.",
+        409
+      );
+    }
+
+    completedSteps.push(
+      "학기 원본값 변경 충돌 검사"
+    );
+
+    if (
+      currentApprovalStatus ===
+      "대기"
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "해당 학기는 이미 승인 대기 중입니다.",
+        409
+      );
+    }
+
+    if (
+      currentApprovalStatus ===
+      "승인"
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "해당 학기는 이미 승인 완료되었습니다.",
+        409
+      );
+    }
+
+    if (
+      currentApprovalStatus !==
+        "요청전" &&
+      currentApprovalStatus !==
+        "불승인"
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        `현재 승인상태(${currentApprovalStatus})에서는 입력완료 요청을 실행할 수 없습니다.`,
+        409
+      );
+    }
+
+    if (
+      currentIsCompleted &&
+      currentApprovalStatus !==
+        "불승인"
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "해당 학기는 이미 입력완료 처리되었습니다.",
+        409
+      );
+    }
+
+    /**
+     * 플랜요약 잠금 및 검사
+     */
+    const [
+      planRows,
+    ] =
+      await connection.query(
+        `
+          SELECT
+            id,
+            desiredCourse,
+            finalEducation,
+            totalTheorySubjects,
+            hasPractice
+          FROM plans
+          WHERE
+            studentId = ?
+            AND organizationId = ?
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [
+          studentId,
+          organizationId,
+        ]
+      );
+
+    const plan =
+      Array.isArray(
+        planRows
+      )
+        ? planRows[0]
+        : null;
+
+    if (
+      !plan
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "학생 플랜요약이 등록되지 않았습니다.",
+        409
+      );
+    }
+
+    const desiredCourse =
+      normalizeNullableTextValue(
+        plan.desiredCourse
+      );
+
+    const finalEducation =
+      normalizeNullableTextValue(
+        plan.finalEducation
+      );
+
+    const totalTheorySubjects =
+      normalizeNullableNumberValue(
+        plan.totalTheorySubjects
+      );
+
+    const rawHasPractice =
+      plan.hasPractice;
+
+    const hasPracticeSelection =
+      rawHasPractice ===
+        true ||
+      rawHasPractice ===
+        false ||
+      rawHasPractice ===
+        1 ||
+      rawHasPractice ===
+        0 ||
+      rawHasPractice ===
+        "1" ||
+      rawHasPractice ===
+        "0" ||
+      rawHasPractice ===
+        "true" ||
+      rawHasPractice ===
+        "false";
+
+    if (
+      !desiredCourse
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "희망과정 정보가 필요합니다.",
+        409
+      );
+    }
+
+    if (
+      !finalEducation
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "최종학력 정보가 필요합니다.",
+        409
+      );
+    }
+
+    if (
+      totalTheorySubjects ===
+        null ||
+      totalTheorySubjects <=
+        0
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "총 이론 과목 수 정보가 필요합니다.",
+        409
+      );
+    }
+
+    if (
+      !hasPracticeSelection
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "실습 필요 여부 정보가 필요합니다.",
+        409
+      );
+    }
+
+    completedSteps.push(
+      "플랜요약 필수정보 확인"
+    );
+
+    /**
+     * 실제 학기정보 검사
+     */
+    const actualStartDate =
+      normalizeDateValue(
+        semester
+          .actualStartDate
+      );
+
+    const actualInstitution =
+      normalizeNullableTextValue(
+        semester
+          .actualInstitution
+      );
+
+    const actualInstitutionId =
+      normalizeNullablePositiveInteger(
+        semester
+          .actualInstitutionId
+      );
+
+    const actualSubjectCount =
+      normalizeNullableNumberValue(
+        semester
+          .actualSubjectCount
+      );
+
+    const actualAmount =
+      normalizeNullableNumberValue(
+        semester
+          .actualAmount
+      );
+
+    const actualPaymentDate =
+      normalizeDateValue(
+        semester
+          .actualPaymentDate
+      );
+
+    if (
+      !normalizeNullableTextValue(
+        semester
+          .semesterLabel
+      )
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "학기구분 정보가 필요합니다.",
+        409
+      );
+    }
+
+    if (
+      !actualStartDate
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "실제 개강일 정보가 필요합니다.",
+        409
+      );
+    }
+
+    if (
+      !actualInstitution &&
+      !actualInstitutionId
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "실제 교육원 정보가 필요합니다.",
+        409
+      );
+    }
+
+    if (
+      actualSubjectCount ===
+        null ||
+      actualSubjectCount <=
+        0
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "실제 과목 수 정보가 필요합니다.",
+        409
+      );
+    }
+
+    if (
+      actualAmount ===
+        null ||
+      actualAmount <=
+        0
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "실제 결제금액 정보가 필요합니다.",
+        409
+      );
+    }
+
+    if (
+      !actualPaymentDate
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "실제 결제일 정보가 필요합니다.",
+        409
+      );
+    }
+
+    /**
+     * 대상 학기 우리플랜 과목 잠금
+     */
+    const [
+      planSubjectRows,
+    ] =
+      await connection.query(
+        `
+          SELECT
+            id,
+            subjectName
+          FROM plan_semesters
+          WHERE
+            studentId = ?
+            AND organizationId = ?
+            AND semesterNo = ?
+          FOR UPDATE
+        `,
+        [
+          studentId,
+          organizationId,
+          semesterOrder,
+        ]
+      );
+
+    const planSubjects =
+      Array.isArray(
+        planSubjectRows
+      )
+        ? planSubjectRows
+        : [];
+
+    if (
+      planSubjects.length <=
+      0
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        `${semesterOrder}학기 우리플랜 과목이 없습니다.`,
+        409
+      );
+    }
+
+    const invalidSubjectCount =
+      planSubjects.filter(
+        (
+          row:
+            any
+        ) =>
+          !String(
+            row
+              ?.subjectName ||
+            ""
+          ).trim()
+      ).length;
+
+    if (
+      invalidSubjectCount >
+      0
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        `${semesterOrder}학기 우리플랜에 과목명이 없는 항목 ${invalidSubjectCount}개가 있습니다.`,
+        409
+      );
+    }
+
+    if (
+      planSubjects.length !==
+      actualSubjectCount
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        `실제 과목 수는 ${actualSubjectCount}개이지만 ${semesterOrder}학기 우리플랜 과목은 ${planSubjects.length}개입니다.`,
+        409
+      );
+    }
+
+    completedSteps.push(
+      "실제 등록정보 및 우리플랜 과목 확인"
+    );
+
+    /**
+     * 학기 입력완료 처리
+     */
+    await connection.query(
+      `
+        UPDATE semesters
+        SET
+          isCompleted = 1,
+          approvalStatus = '대기',
+          updatedAt = NOW()
+        WHERE
+          id = ?
+          AND studentId = ?
+          AND organizationId = ?
+      `,
+      [
+        semesterId,
+        studentId,
+        organizationId,
+      ]
+    );
+
+    completedSteps.push(
+      "학기 입력완료 및 승인대기 처리"
+    );
+
+    const executionResult = {
+      pendingActionId,
+
+      status:
+        "executed",
+
+      studentId,
+
+      semesterId,
+
+      semesterOrder,
+
+      semesterIds: [
+        semesterId,
+      ],
+
+      isCompleted:
+        true,
+
+      approvalStatus:
+        "대기",
+
+      completedSteps,
+
+      failedSteps:
+        [],
+
+      message:
+        `${semesterOrder}학기 입력완료 처리가 완료되어 승인관리로 이동했습니다.`,
+    };
+
+const releasedIdempotencyKey =
+  buildReleasedAiPendingActionIdempotencyKey({
+    id:
+      pendingActionId,
+
+    status:
+      "executed",
+  });
+
+    const [
+  pendingActionUpdateResult,
+] =
+  await connection.query(
+    `
+      UPDATE ai_pending_actions
+      SET
+        status = 'executed',
+        idempotencyKey = ?,
+        executedAt = NOW(),
+        executionResultJson = ?,
+        errorMessage = NULL,
+        updatedAt = NOW()
+      WHERE
+        id = ?
+        AND organizationId = ?
+        AND requestedByUserId = ?
+        AND confirmedByUserId = ?
+        AND actionType = 'semester_complete'
+        AND status = 'executing'
+        AND version = ?
+    `,
+    [
+      releasedIdempotencyKey,
+
+      encryptAiPendingJson(
+        executionResult
+      ),
+
+      pendingActionId,
+      organizationId,
+      requestedByUserId,
+      confirmedByUserId,
+      expectedVersion,
+    ]
+  );
+
+const pendingActionAffectedRows =
+  Number(
+    (
+      pendingActionUpdateResult as
+        any
+    )?.affectedRows ??
+    (
+      pendingActionUpdateResult as
+        any
+    )?.rowsAffected ??
+    (
+      pendingActionUpdateResult as
+        any
+    )?.[0]?.affectedRows ??
+    0
+  );
+
+if (
+  pendingActionAffectedRows !==
+  1
+) {
+  throwAppError(
+    ERROR_CODES.CONFLICT,
+    "학기 입력완료 승인 요청 상태가 변경되어 실행 결과를 저장하지 못했습니다.",
+    409
+  );
+}
+
+completedSteps.push(
+  "AI 승인 요청 실행완료 처리"
+);
+
+    const [
+      executedActionRows,
+    ] =
+      await connection.query(
+        `
+          SELECT *
+          FROM ai_pending_actions
+          WHERE
+            id = ?
+            AND organizationId = ?
+          LIMIT 1
+        `,
+        [
+          pendingActionId,
+          organizationId,
+        ]
+      );
+
+    const executedPendingAction =
+      Array.isArray(
+        executedActionRows
+      )
+        ? executedActionRows[0]
+        : null;
+
+    if (
+      !executedPendingAction ||
+      String(
+        executedPendingAction
+          .status ||
+        ""
+      ) !==
+      "executed"
+    ) {
+      throwAppError(
+        ERROR_CODES.INTERNAL_SERVER_ERROR,
+        "학기 입력완료 승인 요청 완료 상태를 확인하지 못했습니다.",
+        500
+      );
+    }
+
+    await connection.commit();
+
+    return {
+      ...executionResult,
+
+      pendingAction:
+        executedPendingAction,
+    };
+  } catch (
+    error
+  ) {
+    try {
+      await connection.rollback();
+    } catch {
+      // rollback 실패 시 최초 오류 유지
+    }
+
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
 /**
@@ -7724,6 +14507,146 @@ export async function getPracticeRecommendationsForStudent(
     student,
     institutions: calc(institutions),
     educationCenters: calc(centers),
+  };
+}
+
+export async function getPracticeRecommendationsForAddress(
+  address: string,
+  params?: {
+    organizationId?: number | null;
+    limit?: number;
+  }
+) {
+  const organizationId =
+    requireOrganizationId(
+      params?.organizationId
+    );
+
+  const normalizedAddress =
+    String(
+      address ||
+      ""
+    ).trim();
+
+  if (!normalizedAddress) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "검색할 주소가 필요합니다.",
+      400
+    );
+  }
+
+  const geo =
+    await geocodeAddressServer(
+      normalizedAddress
+    );
+
+  const latitude =
+    Number(geo.lat);
+
+  const longitude =
+    Number(geo.lng);
+
+  if (
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude)
+  ) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "주소 좌표를 확인할 수 없습니다.",
+      404
+    );
+  }
+
+  const institutions =
+    await listActivePracticeInstitutions({
+      organizationId,
+    });
+
+  const centers =
+    await listActivePracticeEducationCenters({
+      organizationId,
+    });
+
+  const limit =
+    Math.min(
+      Math.max(
+        Number(params?.limit || 5),
+        1
+      ),
+      30
+    );
+
+  const calc = (
+    list: any[]
+  ) =>
+    list
+      .map(
+        (item) => {
+          const itemLatitude =
+            toNullableNumber(
+              item.latitude
+            );
+
+          const itemLongitude =
+            toNullableNumber(
+              item.longitude
+            );
+
+          if (
+            itemLatitude === null ||
+            itemLongitude === null
+          ) {
+            return null;
+          }
+
+          const distanceKm =
+            haversineDistanceKm(
+              latitude,
+              longitude,
+              itemLatitude,
+              itemLongitude
+            );
+
+          return {
+            ...item,
+
+            distanceKm:
+              Number(
+                distanceKm.toFixed(2)
+              ),
+          };
+        }
+      )
+      .filter(Boolean)
+      .sort(
+        (
+          a: any,
+          b: any
+        ) =>
+          a.distanceKm -
+          b.distanceKm
+      )
+      .slice(
+        0,
+        limit
+      );
+
+  return {
+    searchLocation: {
+      address:
+        normalizedAddress,
+
+      latitude,
+
+      longitude,
+    },
+
+    institutions:
+      calc(institutions),
+
+    educationCenters:
+      calc(centers),
   };
 }
 
@@ -9898,6 +16821,594 @@ export async function saveBrandingSettings(
   return getInsertId(result);
 }
 
+// ─── Kakao AI Settings ─────────────────────────────────────────────
+
+function buildDefaultKakaoAiSettings(
+  organizationId: number
+) {
+  return {
+    id: null,
+
+    organizationId,
+
+    enabled: false,
+
+    newConsultationEnabled: true,
+
+    registeredStudentEnabled: true,
+
+    ocrEnabled: true,
+
+    practiceSupportEnabled: true,
+
+    assigneeRecommendationEnabled: true,
+
+    aiDisplayName: "EduCanvas AI",
+
+    welcomeMessage: null,
+
+defaultGuideMessage: null,
+
+consultationHoursMessage: null,
+
+companyIntroduction: null,
+
+companyBenefits: null,
+
+salesPoints: null,
+
+registeredAiBenefits: null,
+
+classManagementPolicy: null,
+
+practicePolicy: null,
+
+administrativeSupportPolicy: null,
+
+consultationPolicy: null,
+
+priceDisclosureEnabled: false,
+
+kakaoBotId: null,
+
+webhookTokenHash: null,
+
+    createdBy: null,
+
+    updatedBy: null,
+
+    createdAt: null,
+
+    updatedAt: null,
+  };
+}
+
+export async function getKakaoAiSettings(params?: {
+  organizationId?: number | null;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params?.organizationId
+    );
+
+  const rows = await db
+    .select()
+    .from(kakaoAiSettings)
+    .where(
+      eq(
+        kakaoAiSettings.organizationId,
+        organizationId
+      )
+    )
+    .limit(1);
+
+  if (!rows[0]) {
+    return buildDefaultKakaoAiSettings(
+      organizationId
+    );
+  }
+
+  return rows[0];
+}
+
+export async function ensureKakaoAiSettings(params: {
+  organizationId?: number | null;
+  userId?: number | null;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const existingRows = await db
+    .select()
+    .from(kakaoAiSettings)
+    .where(
+      eq(
+        kakaoAiSettings.organizationId,
+        organizationId
+      )
+    )
+    .limit(1);
+
+  if (existingRows[0]) {
+    return existingRows[0];
+  }
+
+  const userId =
+    params.userId === null ||
+    params.userId === undefined
+      ? null
+      : Number(params.userId);
+
+  await db
+    .insert(kakaoAiSettings)
+    .values({
+      organizationId,
+
+      enabled: false,
+
+      newConsultationEnabled: true,
+
+      registeredStudentEnabled: true,
+
+      ocrEnabled: true,
+
+      practiceSupportEnabled: true,
+
+      assigneeRecommendationEnabled: true,
+
+      aiDisplayName: "EduCanvas AI",
+
+      welcomeMessage: null,
+
+defaultGuideMessage: null,
+
+consultationHoursMessage: null,
+
+companyIntroduction: null,
+
+companyBenefits: null,
+
+salesPoints: null,
+
+registeredAiBenefits: null,
+
+classManagementPolicy: null,
+
+practicePolicy: null,
+
+administrativeSupportPolicy: null,
+
+consultationPolicy: null,
+
+priceDisclosureEnabled: false,
+
+kakaoBotId: null,
+
+webhookTokenHash: null,
+
+      createdBy:
+        Number.isFinite(userId) &&
+        Number(userId) > 0
+          ? Number(userId)
+          : null,
+
+      updatedBy:
+        Number.isFinite(userId) &&
+        Number(userId) > 0
+          ? Number(userId)
+          : null,
+    } as InsertKakaoAiSetting);
+
+  const createdRows = await db
+    .select()
+    .from(kakaoAiSettings)
+    .where(
+      eq(
+        kakaoAiSettings.organizationId,
+        organizationId
+      )
+    )
+    .limit(1);
+
+  if (!createdRows[0]) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "카카오 AI 기본 설정 생성에 실패했습니다.",
+      500
+    );
+  }
+
+  return createdRows[0];
+}
+
+export async function updateKakaoAiSettings(params: {
+  organizationId?: number | null;
+
+  userId?: number | null;
+
+  enabled?: boolean;
+
+  newConsultationEnabled?: boolean;
+
+  registeredStudentEnabled?: boolean;
+
+  ocrEnabled?: boolean;
+
+  practiceSupportEnabled?: boolean;
+
+  assigneeRecommendationEnabled?: boolean;
+
+  aiDisplayName?: string;
+
+  welcomeMessage?: string | null;
+
+defaultGuideMessage?: string | null;
+
+consultationHoursMessage?: string | null;
+
+companyIntroduction?: string | null;
+
+companyBenefits?: string | null;
+
+salesPoints?: string | null;
+
+registeredAiBenefits?: string | null;
+
+classManagementPolicy?: string | null;
+
+practicePolicy?: string | null;
+
+administrativeSupportPolicy?: string | null;
+
+consultationPolicy?: string | null;
+
+priceDisclosureEnabled?: boolean;
+
+kakaoBotId?: string | null;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userId =
+    params.userId === null ||
+    params.userId === undefined
+      ? null
+      : Number(params.userId);
+
+  const existing =
+    await ensureKakaoAiSettings({
+      organizationId,
+      userId,
+    });
+
+  const nextAiDisplayName =
+    params.aiDisplayName === undefined
+      ? undefined
+      : String(
+          params.aiDisplayName || ""
+        ).trim();
+
+  if (
+    nextAiDisplayName !== undefined &&
+    !nextAiDisplayName
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 표시 이름을 입력해주세요.",
+      400
+    );
+  }
+
+  if (
+    nextAiDisplayName !== undefined &&
+    nextAiDisplayName.length > 100
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 표시 이름은 100자를 초과할 수 없습니다.",
+      400
+    );
+  }
+
+  const updateValues: Partial<
+    InsertKakaoAiSetting
+  > = {
+    updatedBy:
+      Number.isFinite(userId) &&
+      Number(userId) > 0
+        ? Number(userId)
+        : null,
+  };
+
+  if (params.enabled !== undefined) {
+    updateValues.enabled =
+      params.enabled;
+  }
+
+  if (
+    params.newConsultationEnabled !==
+    undefined
+  ) {
+    updateValues.newConsultationEnabled =
+      params.newConsultationEnabled;
+  }
+
+  if (
+    params.registeredStudentEnabled !==
+    undefined
+  ) {
+    updateValues.registeredStudentEnabled =
+      params.registeredStudentEnabled;
+  }
+
+  if (params.ocrEnabled !== undefined) {
+    updateValues.ocrEnabled =
+      params.ocrEnabled;
+  }
+
+  if (
+    params.practiceSupportEnabled !==
+    undefined
+  ) {
+    updateValues.practiceSupportEnabled =
+      params.practiceSupportEnabled;
+  }
+
+  if (
+    params.assigneeRecommendationEnabled !==
+    undefined
+  ) {
+    updateValues.assigneeRecommendationEnabled =
+      params.assigneeRecommendationEnabled;
+  }
+
+  if (
+    nextAiDisplayName !== undefined
+  ) {
+    updateValues.aiDisplayName =
+      nextAiDisplayName;
+  }
+
+  if (
+    params.welcomeMessage !== undefined
+  ) {
+    updateValues.welcomeMessage =
+      params.welcomeMessage === null
+        ? null
+        : String(
+            params.welcomeMessage
+          ).trim() || null;
+  }
+
+  if (
+    params.defaultGuideMessage !== undefined
+  ) {
+    updateValues.defaultGuideMessage =
+      params.defaultGuideMessage === null
+        ? null
+        : String(
+            params.defaultGuideMessage
+          ).trim() || null;
+  }
+
+  if (
+    params.consultationHoursMessage !==
+    undefined
+  ) {
+    updateValues.consultationHoursMessage =
+      params.consultationHoursMessage ===
+      null
+        ? null
+        : String(
+            params.consultationHoursMessage
+          ).trim() || null;
+  }
+
+if (
+  params.companyIntroduction !==
+  undefined
+) {
+  updateValues.companyIntroduction =
+    params.companyIntroduction === null
+      ? null
+      : String(
+          params.companyIntroduction
+        ).trim() || null;
+}
+
+if (
+  params.companyBenefits !==
+  undefined
+) {
+  updateValues.companyBenefits =
+    params.companyBenefits === null
+      ? null
+      : String(
+          params.companyBenefits
+        ).trim() || null;
+}
+
+if (
+  params.salesPoints !==
+  undefined
+) {
+  updateValues.salesPoints =
+    params.salesPoints === null
+      ? null
+      : String(
+          params.salesPoints
+        ).trim() || null;
+}
+
+if (
+  params.registeredAiBenefits !==
+  undefined
+) {
+  updateValues.registeredAiBenefits =
+    params.registeredAiBenefits === null
+      ? null
+      : String(
+          params.registeredAiBenefits
+        ).trim() || null;
+}
+
+if (
+  params.classManagementPolicy !==
+  undefined
+) {
+  updateValues.classManagementPolicy =
+    params.classManagementPolicy === null
+      ? null
+      : String(
+          params.classManagementPolicy
+        ).trim() || null;
+}
+
+if (
+  params.practicePolicy !==
+  undefined
+) {
+  updateValues.practicePolicy =
+    params.practicePolicy === null
+      ? null
+      : String(
+          params.practicePolicy
+        ).trim() || null;
+}
+
+if (
+  params.administrativeSupportPolicy !==
+  undefined
+) {
+  updateValues.administrativeSupportPolicy =
+    params.administrativeSupportPolicy === null
+      ? null
+      : String(
+          params.administrativeSupportPolicy
+        ).trim() || null;
+}
+
+if (
+  params.consultationPolicy !==
+  undefined
+) {
+  updateValues.consultationPolicy =
+    params.consultationPolicy === null
+      ? null
+      : String(
+          params.consultationPolicy
+        ).trim() || null;
+}
+
+  if (
+    params.priceDisclosureEnabled !==
+    undefined
+  ) {
+    updateValues.priceDisclosureEnabled =
+      params.priceDisclosureEnabled;
+  }
+
+  if (
+    params.kakaoBotId !==
+    undefined
+  ) {
+    const kakaoBotId =
+      params.kakaoBotId ===
+        null
+        ? null
+        : String(
+            params.kakaoBotId
+          ).trim() ||
+          null;
+
+    if (
+      kakaoBotId &&
+      kakaoBotId.length >
+        191
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "카카오 Bot ID가 너무 깁니다.",
+        400
+      );
+    }
+
+    updateValues.kakaoBotId =
+      kakaoBotId;
+  }
+
+  await db
+    .update(kakaoAiSettings)
+    .set(updateValues as any)
+    .where(
+      and(
+        eq(
+          kakaoAiSettings.id,
+          Number(existing.id)
+        ),
+        eq(
+          kakaoAiSettings.organizationId,
+          organizationId
+        )
+      )
+    );
+
+  const rows = await db
+    .select()
+    .from(kakaoAiSettings)
+    .where(
+      eq(
+        kakaoAiSettings.organizationId,
+        organizationId
+      )
+    )
+    .limit(1);
+
+  if (!rows[0]) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "카카오 AI 설정 저장 결과를 확인할 수 없습니다.",
+      500
+    );
+  }
+
+  return rows[0];
+}
+
 export async function getSmsSettings(params?: {
   organizationId?: number | null;
 }) {
@@ -9914,6 +17425,97 @@ export async function getSmsSettings(params?: {
     .limit(1);
 
   return rows[0] || null;
+}
+
+export async function updateKakaoAiWebhookTokenHash(
+  params: {
+    organizationId?: number | null;
+    userId?: number | null;
+    webhookTokenHash: string;
+  }
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const webhookTokenHash =
+    String(
+      params.webhookTokenHash || ""
+    ).trim();
+
+  if (
+    !/^[a-f0-9]{64}$/i.test(
+      webhookTokenHash
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "카카오 Webhook Token Hash가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const userId =
+    params.userId === null ||
+    params.userId === undefined
+      ? null
+      : Number(params.userId);
+
+  await ensureKakaoAiSettings({
+    organizationId,
+    userId,
+  });
+
+  await db
+    .update(kakaoAiSettings)
+    .set({
+      webhookTokenHash:
+        webhookTokenHash.toLowerCase(),
+
+      updatedBy:
+        Number.isFinite(userId) &&
+        Number(userId) > 0
+          ? Number(userId)
+          : null,
+    } as Partial<InsertKakaoAiSetting>)
+    .where(
+      eq(
+        kakaoAiSettings.organizationId,
+        organizationId
+      )
+    );
+
+  const rows = await db
+    .select()
+    .from(kakaoAiSettings)
+    .where(
+      eq(
+        kakaoAiSettings.organizationId,
+        organizationId
+      )
+    )
+    .limit(1);
+
+  if (!rows[0]) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "카카오 AI 설정 저장 후 조회에 실패했습니다.",
+      500
+    );
+  }
+
+  return rows[0];
 }
 
 // ==============================
@@ -12620,6 +20222,374 @@ const organizationId = requireOrganizationId(params?.organizationId);
     .limit(1);
 
   return result[0] ?? null;
+}
+
+/**
+ * 신규 플랜 전용 생성 함수
+ *
+ * 기존 플랜이 존재하면 절대로 수정하지 않는다.
+ * AI plan_create 승인 실행처럼
+ * "신규 생성" 의미가 명확한 작업에서 사용한다.
+ */
+export async function createPlanOnly(
+  data: InsertPlan
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      (data as any)
+        .organizationId
+    );
+
+  const studentId =
+    Math.floor(
+      Number(
+        (data as any)
+          .studentId ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      studentId
+    ) ||
+    studentId <=
+    0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "플랜을 생성할 학생 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  /**
+   * 기존 플랜 요약 검증을 그대로 사용한다.
+   */
+  validatePlanSummaryCounts(
+    data
+  );
+
+  /**
+   * 신규 생성 전용이므로
+   * 기존 플랜이 있으면 수정하지 않고 차단한다.
+   */
+  const existing =
+    await getPlan(
+      studentId,
+      {
+        organizationId,
+      }
+    );
+
+  if (existing) {
+    throwAppError(
+      ERROR_CODES.DUPLICATE_RESOURCE,
+      "이미 등록된 학생 플랜이 있습니다.",
+      409
+    );
+  }
+
+  const result:
+    any =
+    await db
+      .insert(
+        plans
+      )
+      .values({
+        ...data,
+
+        organizationId,
+
+        studentId,
+      });
+
+  const planId =
+    Number(
+      getInsertId(
+        result
+      ) ||
+      0
+    );
+
+  if (
+    !Number.isFinite(
+      planId
+    ) ||
+    planId <=
+    0
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "학생 플랜 생성 후 플랜 ID를 확인하지 못했습니다.",
+      500
+    );
+  }
+
+  return planId;
+}
+
+/**
+ * AI plan_update 전용
+ * 기존 플랜 수정 함수
+ *
+ * 기존 플랜이 없으면 새로 생성하지 않는다.
+ * 초안 생성 당시 planId와 현재 planId가
+ * 동일한 경우에만 수정한다.
+ */
+export async function updatePlanOnly(params: {
+  organizationId:
+    number;
+
+  studentId:
+    number;
+
+  planId:
+    number;
+
+  updates:
+    Partial<
+      InsertPlan
+    >;
+}) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    Math.floor(
+      Number(
+        params.studentId ||
+        0
+      )
+    );
+
+  const planId =
+    Math.floor(
+      Number(
+        params.planId ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      studentId
+    ) ||
+    studentId <=
+      0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "플랜을 수정할 학생 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (
+    !Number.isFinite(
+      planId
+    ) ||
+    planId <=
+      0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "수정할 플랜 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const updates =
+    params.updates &&
+    typeof params.updates ===
+      "object" &&
+    !Array.isArray(
+      params.updates
+    )
+      ? params.updates
+      : {};
+
+  const updateKeys =
+    Object.keys(
+      updates
+    );
+
+  if (
+    updateKeys.length ===
+      0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "수정할 플랜 정보가 없습니다.",
+      400
+    );
+  }
+
+  /**
+   * 현재 플랜 조회
+   */
+  const current =
+    await getPlan(
+      studentId,
+      {
+        organizationId,
+      }
+    );
+
+  if (
+    !current
+  ) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "수정할 학생 플랜을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  const currentPlanId =
+    Math.floor(
+      Number(
+        (current as any)
+          .id ||
+        0
+      )
+    );
+
+  /**
+   * 초안 생성 당시 플랜과
+   * 현재 플랜이 달라졌다면 수정하지 않는다.
+   */
+  if (
+    !currentPlanId ||
+    currentPlanId !==
+      planId
+  ) {
+    throwAppError(
+      ERROR_CODES.CONFLICT,
+      "플랜 수정 초안 이후 학생 플랜이 변경되었습니다. 최신 정보를 다시 확인해주세요.",
+      409
+    );
+  }
+
+  /**
+   * 부분 업데이트값만 validate하면
+   * 전달되지 않은 과목수가 0으로 계산될 수 있으므로
+   * 현재 플랜과 수정값을 합친 최종 상태를 검증한다.
+   */
+  const mergedPlan = {
+    ...current,
+    ...updates,
+
+    organizationId,
+
+    studentId,
+  } as InsertPlan;
+
+  validatePlanSummaryCounts(
+    mergedPlan
+  );
+
+  /**
+   * 실제 update에는 서버 식별값을 넣지 않는다.
+   */
+  const safeUpdates: any = {
+    ...updates,
+  };
+
+  delete safeUpdates.id;
+  delete safeUpdates.organizationId;
+  delete safeUpdates.studentId;
+  delete safeUpdates.createdAt;
+
+  if (
+    Object.keys(
+      safeUpdates
+    ).length ===
+    0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "수정할 플랜 정보가 없습니다.",
+      400
+    );
+  }
+
+  await db
+    .update(
+      plans
+    )
+    .set(
+      safeUpdates
+    )
+    .where(
+      and(
+        eq(
+          plans.id,
+          planId
+        ),
+        eq(
+          plans.studentId,
+          studentId
+        ),
+        eq(
+          plans.organizationId,
+          organizationId
+        )
+      )
+    );
+
+  /**
+   * update 이후에도 동일 플랜이 존재하는지 확인한다.
+   */
+  const updated =
+    await getPlan(
+      studentId,
+      {
+        organizationId,
+      }
+    );
+
+  if (
+    !updated ||
+    Number(
+      (updated as any)
+        .id ||
+      0
+    ) !==
+      planId
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "플랜 수정 결과를 확인하지 못했습니다.",
+      500
+    );
+  }
+
+  return updated;
 }
 
 export async function upsertPlan(data: InsertPlan) {
@@ -16457,6 +24427,1518 @@ async function assertSettlementMonthEditable(params: {
   }
 }
 
+/**
+ * AI 정산 조회 전용
+ *
+ * 중요:
+ * - settlementItems 원장을 조회만 한다.
+ * - 기존 정산 데이터를 생성/수정하지 않는다.
+ * - organizationId / allowedAssigneeIds는
+ *   반드시 서버 AiUserContext에서 전달된 값만 사용한다.
+ * - Staff / Admin / Host의 실제 조회 범위는
+ *   호출부에서 확정한 allowedAssigneeIds로 제한한다.
+ */
+export async function getAiSettlementSummary(params: {
+  organizationId?: number | null;
+
+  role:
+    | "staff"
+    | "admin"
+    | "host";
+
+  scope:
+    | "self"
+    | "team"
+    | "organization";
+
+  contextTeamId?:
+    number |
+    null;
+
+  /**
+   * Staff:
+   * [본인 ID]
+   *
+   * Admin:
+   * [본인 + 같은 팀 직원 ID]
+   *
+   * Host:
+   * null = 회사 전체
+   */
+  allowedAssigneeIds:
+    number[] |
+    null;
+
+  periodType:
+    | "day"
+    | "month"
+    | "year"
+    | "range";
+
+  startDate:
+    string;
+
+  /**
+   * SQL 조회에서는 종료일 미만(<)으로 사용한다.
+   *
+   * 예:
+   * 2026-05 전체 조회
+   * startDate = 2026-05-01
+   * endDateExclusive = 2026-06-01
+   */
+  endDateExclusive:
+    string;
+
+  /**
+   * 사용자에게 보여줄 실제 종료일
+   */
+  displayEndDate:
+    string;
+
+  periodLabel:
+    string;
+
+  assigneeName?:
+    string |
+    null;
+
+  teamName?:
+    string |
+    null;
+
+  customerType:
+    | "all"
+    | "new"
+    | "existing";
+
+  includeRanking:
+    boolean;
+}): Promise<SettlementSummaryToolOutput> {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const allowedAssigneeIds =
+    params.allowedAssigneeIds ===
+      null
+      ? null
+      : Array.from(
+          new Set(
+            (
+              params.allowedAssigneeIds ||
+              []
+            )
+              .map(Number)
+              .filter(
+                (id) =>
+                  Number.isFinite(
+                    id
+                  ) &&
+                  id > 0
+              )
+          )
+        );
+
+  /**
+   * Staff/Admin인데 허용 담당자가 한 명도 없다면
+   * 회사 전체 조회로 확장하지 않고 빈 결과를 반환한다.
+   */
+  if (
+    params.role !==
+      "host" &&
+    (
+      !allowedAssigneeIds ||
+      allowedAssigneeIds.length ===
+        0
+    )
+  ) {
+    return {
+      period: {
+        periodType:
+          params.periodType,
+
+        startDate:
+          params.startDate,
+
+        endDate:
+          params.displayEndDate,
+
+        label:
+          params.periodLabel,
+      },
+
+      scope: {
+        role:
+          params.role,
+
+        scope:
+          params.scope,
+
+        organizationId,
+
+        teamId:
+          params.contextTeamId ??
+          null,
+
+        assigneeIds:
+          [],
+      },
+
+      filter: {
+        assigneeName:
+          params.assigneeName ??
+          null,
+
+        teamName:
+          params.teamName ??
+          null,
+
+        customerType:
+          params.customerType,
+      },
+
+      summary: {
+        grossSales:
+          0,
+
+        refundAmount:
+          0,
+
+        netSales:
+          0,
+
+        newSales:
+          0,
+
+        existingSales:
+          0,
+
+        entryCount:
+          0,
+
+        studentCount:
+          0,
+      },
+
+      assignees:
+        [],
+
+      teams:
+        [],
+
+      ranking:
+        [],
+
+      generatedAt:
+        new Date()
+          .toISOString(),
+    };
+  }
+
+  /**
+   * 회사 직원 + 조직도 정보를 먼저 읽는다.
+   *
+   * 사용자 이름 / 팀 이름으로 요청한 경우
+   * 반드시 이 서버 조회 결과에서 실제 ID를 확정한다.
+   */
+  const userRows =
+    await db
+      .select({
+        id:
+          users.id,
+
+        name:
+          users.name,
+
+        teamId:
+          userOrgMappings.teamId,
+
+        teamName:
+          teams.name,
+
+        isActive:
+          users.isActive,
+      })
+      .from(users)
+      .leftJoin(
+        userOrgMappings,
+        and(
+          eq(
+            userOrgMappings.userId,
+            users.id
+          ),
+          eq(
+            userOrgMappings.organizationId,
+            organizationId
+          )
+        )
+      )
+      .leftJoin(
+        teams,
+        and(
+          eq(
+            teams.id,
+            userOrgMappings.teamId
+          ),
+          eq(
+            teams.organizationId,
+            organizationId
+          )
+        )
+      )
+      .where(
+        eq(
+          users.organizationId,
+          organizationId
+        )
+      );
+
+  /**
+   * 서버 Context가 허용한 직원만 남긴다.
+   */
+  let scopedUsers =
+  (userRows || [])
+    .map(
+      (
+        rawRow:
+          any
+      ) => {
+        /**
+         * users.name은 개인정보 암호화 대상이므로
+         * 기존 사용자 복호화 함수를 반드시 거친다.
+         */
+        const row =
+          decryptUserPersonalData(
+            rawRow
+          ) as any;
+
+        return {
+          id:
+            Number(
+              row?.id ||
+              0
+            ),
+
+          name:
+            String(
+              row?.name ||
+              ""
+            ).trim(),
+
+          teamId:
+            row?.teamId ===
+              null ||
+            row?.teamId ===
+              undefined
+              ? null
+              : Number(
+                  row.teamId
+                ),
+
+          teamName:
+            row?.teamName
+              ? String(
+                  row.teamName
+                ).trim()
+              : null,
+
+          isActive:
+            row?.isActive !==
+              false,
+        };
+      }
+    )
+      .filter(
+        (row) =>
+          row.id > 0
+      );
+
+  if (
+    allowedAssigneeIds !==
+    null
+  ) {
+    const allowedSet =
+      new Set(
+        allowedAssigneeIds
+      );
+
+    scopedUsers =
+      scopedUsers.filter(
+        (row) =>
+          allowedSet.has(
+            row.id
+          )
+      );
+  }
+
+  /**
+   * 특정 팀 요청
+   *
+   * Host:
+   * 회사 전체 직원 중 해당 팀
+   *
+   * Admin:
+   * 이미 자기 팀 allowedAssigneeIds로 제한된 상태에서
+   * 다시 팀명을 검사하므로 다른 팀으로 확장될 수 없다.
+   *
+   * Staff:
+   * 본인 범위 밖으로 확장되지 않는다.
+   */
+  const requestedTeamName =
+    String(
+      params.teamName ||
+      ""
+    ).trim();
+
+  if (
+    requestedTeamName
+  ) {
+    const matchedTeamUsers =
+      scopedUsers.filter(
+        (row) =>
+          String(
+            row.teamName ||
+            ""
+          ).trim() ===
+          requestedTeamName
+      );
+
+    if (
+      matchedTeamUsers.length ===
+      0
+    ) {
+      throwAppError(
+        ERROR_CODES.DATA_NOT_FOUND,
+        `조회 권한 범위에서 '${requestedTeamName}' 팀을 찾을 수 없습니다.`,
+        404
+      );
+    }
+
+    scopedUsers =
+      matchedTeamUsers;
+  }
+
+  /**
+   * 특정 담당자 요청
+   *
+   * AI가 assigneeId를 생성하지 않고
+   * 서버가 이름으로 ID를 확정한다.
+   */
+  const requestedAssigneeName =
+    String(
+      params.assigneeName ||
+      ""
+    ).trim();
+
+  if (
+    requestedAssigneeName
+  ) {
+    const matchedUsers =
+      scopedUsers.filter(
+        (row) =>
+          row.name ===
+          requestedAssigneeName
+      );
+
+    if (
+      matchedUsers.length ===
+      0
+    ) {
+      throwAppError(
+        ERROR_CODES.DATA_NOT_FOUND,
+        `조회 권한 범위에서 '${requestedAssigneeName}' 담당자를 찾을 수 없습니다.`,
+        404
+      );
+    }
+
+    if (
+      matchedUsers.length >
+      1
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        `'${requestedAssigneeName}' 이름의 담당자가 여러 명입니다. 담당자를 더 정확하게 지정해주세요.`,
+        400
+      );
+    }
+
+    scopedUsers =
+      matchedUsers;
+  }
+
+  const scopedAssigneeIds =
+    scopedUsers
+      .map(
+        (row) =>
+          Number(
+            row.id
+          )
+      )
+      .filter(
+        (id) =>
+          Number.isFinite(
+            id
+          ) &&
+          id > 0
+      );
+
+  /**
+   * 최종 대상 직원이 없다면
+   * SQL에서 회사 전체로 풀리지 않도록 빈 결과 반환
+   */
+  if (
+    scopedAssigneeIds.length ===
+    0
+  ) {
+    return {
+      period: {
+        periodType:
+          params.periodType,
+
+        startDate:
+          params.startDate,
+
+        endDate:
+          params.displayEndDate,
+
+        label:
+          params.periodLabel,
+      },
+
+      scope: {
+        role:
+          params.role,
+
+        scope:
+          params.scope,
+
+        organizationId,
+
+        teamId:
+          params.contextTeamId ??
+          null,
+
+        assigneeIds:
+          [],
+      },
+
+      filter: {
+        assigneeName:
+          requestedAssigneeName ||
+          null,
+
+        teamName:
+          requestedTeamName ||
+          null,
+
+        customerType:
+          params.customerType,
+      },
+
+      summary: {
+        grossSales:
+          0,
+
+        refundAmount:
+          0,
+
+        netSales:
+          0,
+
+        newSales:
+          0,
+
+        existingSales:
+          0,
+
+        entryCount:
+          0,
+
+        studentCount:
+          0,
+      },
+
+      assignees:
+        [],
+
+      teams:
+        [],
+
+      ranking:
+        [],
+
+      generatedAt:
+        new Date()
+          .toISOString(),
+    };
+  }
+
+  /**
+   * 정산 원장 조회 조건
+   *
+   * 기존 정산 리포트와 동일:
+   * - 같은 회사
+   * - 지정 날짜범위
+   * - confirmed
+   * - 일반과목은 승인 학기만
+   */
+  const conditions:
+    any[] = [
+      eq(
+        settlementItems.organizationId,
+        organizationId
+      ),
+
+      sql`${settlementItems.occurredAt} >= ${params.startDate}`,
+
+      sql`${settlementItems.occurredAt} < ${params.endDateExclusive}`,
+
+      eq(
+        settlementItems.settlementStatus,
+        "confirmed"
+      ),
+
+      inArray(
+        settlementItems.assigneeId,
+        scopedAssigneeIds
+      ),
+    ];
+
+  const subjectApprovedCondition =
+    or(
+      sql`${settlementItems.revenueType} <> 'subject'`,
+
+      and(
+        eq(
+          settlementItems.revenueType,
+          "subject"
+        ),
+
+        eq(
+          semesters.id,
+          settlementItems.sourceId
+        ),
+
+        eq(
+          semesters.organizationId,
+          organizationId
+        ),
+
+        eq(
+          semesters.approvalStatus,
+          "승인"
+        )
+      )
+    );
+
+  conditions.push(
+    subjectApprovedCondition
+  );
+
+  /**
+   * 환불의 신규/기존 구분을 위해
+   * refunds → semester를 별도로 연결한다.
+   *
+   * 일반과목:
+   * settlementItems.sourceId = semester.id
+   *
+   * 환불:
+   * settlementItems.sourceId = refund.id
+   * refund.semesterId = semester.id
+   */
+  const rows =
+    await db
+      .select({
+        id:
+          settlementItems.id,
+
+        assigneeId:
+          settlementItems.assigneeId,
+
+        studentId:
+          settlementItems.studentId,
+
+        revenueType:
+          settlementItems.revenueType,
+
+        grossAmount:
+          settlementItems.grossAmount,
+
+        semesterOrder:
+          semesters.semesterOrder,
+
+        refundSemesterId:
+          refunds.semesterId,
+
+        occurredAt:
+          settlementItems.occurredAt,
+      })
+      .from(
+        settlementItems
+      )
+      .leftJoin(
+        refunds,
+        and(
+          eq(
+            settlementItems.revenueType,
+            "refund"
+          ),
+          eq(
+            refunds.id,
+            settlementItems.sourceId
+          ),
+          eq(
+            refunds.organizationId,
+            organizationId
+          )
+        )
+      )
+      .leftJoin(
+        semesters,
+        and(
+          eq(
+            semesters.organizationId,
+            organizationId
+          ),
+
+          or(
+            and(
+              eq(
+                settlementItems.revenueType,
+                "subject"
+              ),
+              eq(
+                semesters.id,
+                settlementItems.sourceId
+              )
+            ),
+
+            and(
+              eq(
+                settlementItems.revenueType,
+                "refund"
+              ),
+              eq(
+                semesters.id,
+                refunds.semesterId
+              )
+            )
+          )
+        )
+      )
+      .where(
+        and(
+          ...conditions
+        )
+      )
+      .orderBy(
+        desc(
+          settlementItems.occurredAt
+        ),
+        desc(
+          settlementItems.id
+        )
+      );
+
+  const userMetaMap =
+    new Map(
+      scopedUsers.map(
+        (row) => [
+          row.id,
+          row,
+        ]
+      )
+    );
+
+  type Aggregate = {
+  assigneeId:
+    number;
+
+  assigneeName:
+    string;
+
+  teamId:
+    number |
+    null;
+
+  teamName:
+    string |
+    null;
+
+  /**
+   * 전체
+   */
+  grossSales:
+    number;
+
+  refundAmount:
+    number;
+
+  /**
+   * 신규
+   */
+  newGrossSales:
+    number;
+
+  newRefundAmount:
+    number;
+
+  newSales:
+    number;
+
+  /**
+   * 기존
+   */
+  existingGrossSales:
+    number;
+
+  existingRefundAmount:
+    number;
+
+  existingSales:
+    number;
+
+  allEntryCount:
+    number;
+
+  newEntryCount:
+    number;
+
+  existingEntryCount:
+    number;
+
+  allStudentIds:
+    Set<number>;
+
+  newStudentIds:
+    Set<number>;
+
+  existingStudentIds:
+    Set<number>;
+};
+
+  const assigneeMap =
+    new Map<
+      number,
+      Aggregate
+    >();
+
+  const ensureAssignee =
+    (
+      assigneeId:
+        number
+    ) => {
+      const existing =
+        assigneeMap.get(
+          assigneeId
+        );
+
+      if (
+        existing
+      ) {
+        return existing;
+      }
+
+      const meta =
+        userMetaMap.get(
+          assigneeId
+        );
+
+      const created:
+        Aggregate = {
+        assigneeId,
+
+        assigneeName:
+          meta?.name ||
+          "이름없음",
+
+        teamId:
+          meta?.teamId ??
+          null,
+
+        teamName:
+          meta?.teamName ??
+          null,
+
+        grossSales:
+  0,
+
+refundAmount:
+  0,
+
+newGrossSales:
+  0,
+
+newRefundAmount:
+  0,
+
+newSales:
+  0,
+
+existingGrossSales:
+  0,
+
+existingRefundAmount:
+  0,
+
+existingSales:
+  0,
+
+allEntryCount:
+  0,
+
+newEntryCount:
+  0,
+
+existingEntryCount:
+  0,
+
+allStudentIds:
+  new Set<number>(),
+
+newStudentIds:
+  new Set<number>(),
+
+existingStudentIds:
+  new Set<number>(),
+
+      assigneeMap.set(
+        assigneeId,
+        created
+      );
+
+      return created;
+    };
+
+  for (
+    const rawRow of
+    rows as any[]
+  ) {
+    const assigneeId =
+      Number(
+        rawRow.assigneeId ||
+        0
+      );
+
+    if (
+      !assigneeId
+    ) {
+      continue;
+    }
+
+    const aggregate =
+      ensureAssignee(
+        assigneeId
+      );
+
+    const grossAmount =
+      toNumber(
+        rawRow.grossAmount
+      );
+
+    const isRefund =
+      String(
+        rawRow.revenueType ||
+        ""
+      ) ===
+      "refund";
+
+    /**
+     * 환불 원장의 grossAmount가
+     * 양수/음수 어느 형태로 들어와도
+     * refundAmount는 화면 표시용 양수로 통일한다.
+     */
+    const refundAmount =
+      isRefund
+        ? Math.abs(
+            grossAmount
+          )
+        : 0;
+
+    if (
+      isRefund
+    ) {
+      aggregate.refundAmount +=
+        refundAmount;
+    } else {
+      aggregate.grossSales +=
+        grossAmount;
+    }
+
+    /**
+     * 기존 정산 기준:
+     * semesterOrder = 1 → 신규
+     * 나머지(2 이상/null) → 기존
+     *
+     * 환불도 연결된 refund.semesterId를 통해
+     * 같은 기준으로 구분한다.
+     */
+    const semesterOrder =
+      Number(
+        rawRow.semesterOrder ||
+        0
+      );
+
+    const customerType =
+      semesterOrder ===
+        1
+        ? "new"
+        : "existing";
+
+    const netRowAmount =
+  isRefund
+    ? -refundAmount
+    : grossAmount;
+
+/**
+ * 전체 건수
+ */
+aggregate.allEntryCount +=
+  1;
+
+const studentId =
+  Number(
+    rawRow.studentId ||
+    0
+  );
+
+if (
+  studentId > 0
+) {
+  aggregate.allStudentIds.add(
+    studentId
+  );
+}
+
+/**
+ * 신규/기존 각각
+ * 총매출 / 환불 / 순매출 / 건수 / 학생수를
+ * 따로 보존한다.
+ */
+if (
+  customerType ===
+  "new"
+) {
+  if (
+    isRefund
+  ) {
+    aggregate.newRefundAmount +=
+      refundAmount;
+  } else {
+    aggregate.newGrossSales +=
+      grossAmount;
+  }
+
+  aggregate.newSales +=
+    netRowAmount;
+
+  aggregate.newEntryCount +=
+    1;
+
+  if (
+    studentId > 0
+  ) {
+    aggregate.newStudentIds.add(
+      studentId
+    );
+  }
+} else {
+  if (
+    isRefund
+  ) {
+    aggregate.existingRefundAmount +=
+      refundAmount;
+  } else {
+    aggregate.existingGrossSales +=
+      grossAmount;
+  }
+
+  aggregate.existingSales +=
+    netRowAmount;
+
+  aggregate.existingEntryCount +=
+    1;
+
+  if (
+    studentId > 0
+  ) {
+    aggregate.existingStudentIds.add(
+      studentId
+    );
+  }
+}
+  }
+
+  /**
+   * 신규 / 기존 필터는
+   * 요청 결과 자체에도 적용한다.
+   */
+  const customerType =
+    params.customerType ||
+    "all";
+
+  const assignees =
+  Array.from(
+    assigneeMap.values()
+  )
+    .map(
+      (row) => {
+        const grossSales =
+          customerType ===
+            "new"
+            ? row.newGrossSales
+            : customerType ===
+                "existing"
+              ? row.existingGrossSales
+              : row.grossSales;
+
+        const refundAmount =
+          customerType ===
+            "new"
+            ? row.newRefundAmount
+            : customerType ===
+                "existing"
+              ? row.existingRefundAmount
+              : row.refundAmount;
+
+        const netSales =
+          customerType ===
+            "new"
+            ? row.newSales
+            : customerType ===
+                "existing"
+              ? row.existingSales
+              : row.grossSales -
+                row.refundAmount;
+
+        const entryCount =
+          customerType ===
+            "new"
+            ? row.newEntryCount
+            : customerType ===
+                "existing"
+              ? row.existingEntryCount
+              : row.allEntryCount;
+
+        const studentCount =
+          customerType ===
+            "new"
+            ? row.newStudentIds
+                .size
+            : customerType ===
+                "existing"
+              ? row.existingStudentIds
+                  .size
+              : row.allStudentIds
+                  .size;
+
+        return {
+          assigneeId:
+            row.assigneeId,
+
+          assigneeName:
+            row.assigneeName,
+
+          teamId:
+            row.teamId,
+
+          teamName:
+            row.teamName,
+
+          grossSales,
+
+          refundAmount,
+
+          netSales,
+
+          /**
+           * 이 두 값은 항상
+           * 신규/기존 순매출 원본을 제공한다.
+           */
+          newSales:
+            row.newSales,
+
+          existingSales:
+            row.existingSales,
+
+          entryCount,
+
+          studentCount,
+        };
+      }
+    )
+    .sort(
+      (
+        a,
+        b
+      ) =>
+        b.netSales -
+        a.netSales
+    );
+
+  /**
+   * 팀별 집계
+   */
+  const teamMap =
+    new Map<
+      number,
+      {
+        teamId:
+          number;
+
+        teamName:
+          string;
+
+        grossSales:
+          number;
+
+        refundAmount:
+          number;
+
+        netSales:
+          number;
+
+        newSales:
+          number;
+
+        existingSales:
+          number;
+
+        assigneeIds:
+          Set<number>;
+      }
+    >();
+
+  for (
+    const row of
+    assignees
+  ) {
+    if (
+      !row.teamId
+    ) {
+      continue;
+    }
+
+    const current =
+      teamMap.get(
+        row.teamId
+      ) || {
+        teamId:
+          row.teamId,
+
+        teamName:
+          row.teamName ||
+          "미지정 팀",
+
+        grossSales:
+          0,
+
+        refundAmount:
+          0,
+
+        netSales:
+          0,
+
+        newSales:
+          0,
+
+        existingSales:
+          0,
+
+        assigneeIds:
+          new Set<number>(),
+      };
+
+    current.grossSales +=
+      row.grossSales;
+
+    current.refundAmount +=
+      row.refundAmount;
+
+    current.netSales +=
+      row.netSales;
+
+    current.newSales +=
+      row.newSales;
+
+    current.existingSales +=
+      row.existingSales;
+
+    current.assigneeIds.add(
+      row.assigneeId
+    );
+
+    teamMap.set(
+      row.teamId,
+      current
+    );
+  }
+
+  const teamsResult =
+    Array.from(
+      teamMap.values()
+    )
+      .map(
+        (row) => ({
+          teamId:
+            row.teamId,
+
+          teamName:
+            row.teamName,
+
+          grossSales:
+            row.grossSales,
+
+          refundAmount:
+            row.refundAmount,
+
+          netSales:
+            row.netSales,
+
+          newSales:
+            row.newSales,
+
+          existingSales:
+            row.existingSales,
+
+          assigneeCount:
+            row.assigneeIds
+              .size,
+        })
+      )
+      .sort(
+        (
+          a,
+          b
+        ) =>
+          b.netSales -
+          a.netSales
+      );
+
+  const grossSales =
+    assignees.reduce(
+      (
+        sum,
+        row
+      ) =>
+        sum +
+        row.grossSales,
+      0
+    );
+
+  const refundAmount =
+    assignees.reduce(
+      (
+        sum,
+        row
+      ) =>
+        sum +
+        row.refundAmount,
+      0
+    );
+
+  const netSales =
+    assignees.reduce(
+      (
+        sum,
+        row
+      ) =>
+        sum +
+        row.netSales,
+      0
+    );
+
+  const newSales =
+    assignees.reduce(
+      (
+        sum,
+        row
+      ) =>
+        sum +
+        row.newSales,
+      0
+    );
+
+  const existingSales =
+    assignees.reduce(
+      (
+        sum,
+        row
+      ) =>
+        sum +
+        row.existingSales,
+      0
+    );
+
+  return {
+    period: {
+      periodType:
+        params.periodType,
+
+      startDate:
+        params.startDate,
+
+      endDate:
+        params.displayEndDate,
+
+      label:
+        params.periodLabel,
+    },
+
+    scope: {
+      role:
+        params.role,
+
+      scope:
+        params.scope,
+
+      organizationId,
+
+      teamId:
+        params.contextTeamId ??
+        null,
+
+      assigneeIds:
+        scopedAssigneeIds,
+    },
+
+    filter: {
+      assigneeName:
+        requestedAssigneeName ||
+        null,
+
+      teamName:
+        requestedTeamName ||
+        null,
+
+      customerType,
+    },
+
+    summary: {
+      grossSales,
+
+      refundAmount,
+
+      netSales,
+
+      newSales,
+
+      existingSales,
+
+     entryCount:
+  assignees.reduce(
+    (
+      sum,
+      row
+    ) =>
+      sum +
+      row.entryCount,
+    0
+  ),
+
+studentCount:
+  (() => {
+    /**
+     * 담당자별 studentCount를 단순 합산하면
+     * 담당자 이동 등으로 중복 가능성이 있으므로
+     * 원장 기준 학생 ID를 다시 Set으로 계산한다.
+     */
+    const ids =
+      new Set<number>();
+
+    for (
+      const rawRow of
+      rows as any[]
+    ) {
+      const semesterOrder =
+        Number(
+          rawRow.semesterOrder ||
+          0
+        );
+
+      const rowCustomerType =
+        semesterOrder ===
+          1
+          ? "new"
+          : "existing";
+
+      if (
+        customerType !==
+          "all" &&
+        customerType !==
+          rowCustomerType
+      ) {
+        continue;
+      }
+
+      const studentId =
+        Number(
+          rawRow.studentId ||
+          0
+        );
+
+      if (
+        studentId > 0
+      ) {
+        ids.add(
+          studentId
+        );
+      }
+    }
+
+    return ids.size;
+  })(),
+    },
+
+    assignees,
+
+    teams:
+      teamsResult,
+
+    ranking:
+      params.includeRanking
+        ? assignees.map(
+            (
+              row,
+              index
+            ) => ({
+              rank:
+                index +
+                1,
+
+              assigneeId:
+                row.assigneeId,
+
+              assigneeName:
+                row.assigneeName,
+
+              teamName:
+                row.teamName,
+
+              netSales:
+                row.netSales,
+            })
+          )
+        : [],
+
+    generatedAt:
+      new Date()
+        .toISOString(),
+  };
+}
+
 export async function getSettlementReport(
   year: number,
   month: number,
@@ -17157,6 +26639,995 @@ export async function createPlanSemester(data: InsertPlanSemester) {
 } as any);
 
   return getInsertId(result);
+}
+
+/**
+ * AI plan_subjects_create 전용
+ * 우리플랜 과목 일괄 생성
+ *
+ * 여러 과목 중 하나라도 실패하면
+ * transaction 전체를 rollback한다.
+ *
+ * 일반 createPlanSemester()와 달리
+ * AI 승인 초안의 Snapshot까지 다시 검증한다.
+ */
+export async function createPlanSubjectsAtomic(params: {
+  organizationId:
+    number;
+
+  studentId:
+    number;
+
+  planId:
+    number;
+
+  /**
+   * Tool 초안 생성 당시 존재하던
+   * planSemesters ID 목록
+   */
+  originalPlanSubjectIds:
+    number[];
+
+  subjects:
+    Array<{
+      semesterNo:
+        number;
+
+      subjectName:
+        string;
+
+      planCategory:
+        "전공" |
+        "교양" |
+        "일반";
+
+      planRequirementType:
+        "전공필수" |
+        "전공선택" |
+        "교양" |
+        "일반";
+
+      credits:
+        number;
+
+      sortOrder:
+        number;
+
+      settlementIncluded:
+        boolean;
+    }>;
+}) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    Math.floor(
+      Number(
+        params.studentId ||
+        0
+      )
+    );
+
+  const planId =
+    Math.floor(
+      Number(
+        params.planId ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      studentId
+    ) ||
+    studentId <=
+      0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "플랜 과목을 등록할 학생 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  if (
+    !Number.isFinite(
+      planId
+    ) ||
+    planId <=
+      0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "플랜 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const subjects =
+    Array.isArray(
+      params.subjects
+    )
+      ? params.subjects
+      : [];
+
+  if (
+    subjects.length ===
+    0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "등록할 플랜 과목이 없습니다.",
+      400
+    );
+  }
+
+  if (
+    subjects.length >
+    100
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "한 번에 등록할 수 있는 플랜 과목은 최대 100개입니다.",
+      400
+    );
+  }
+
+  const originalPlanSubjectIds =
+    (
+      Array.isArray(
+        params.originalPlanSubjectIds
+      )
+        ? params.originalPlanSubjectIds
+        : []
+    )
+      .map(
+        (
+          value
+        ) =>
+          Math.floor(
+            Number(
+              value ||
+              0
+            )
+          )
+      )
+      .filter(
+        (
+          value
+        ) =>
+          Number.isFinite(
+            value
+          ) &&
+          value >
+            0
+      )
+      .sort(
+        (
+          a,
+          b
+        ) =>
+          a -
+          b
+      );
+
+  /**
+   * 입력 내부 과목명 중복 검증
+   */
+  const requestedNameSet =
+    new Set<
+      string
+    >();
+
+  for (
+    let index =
+      0;
+    index <
+      subjects.length;
+    index +=
+      1
+  ) {
+    const subject =
+      subjects[index];
+
+    const semesterNo =
+      Math.floor(
+        Number(
+          subject
+            ?.semesterNo ||
+          0
+        )
+      );
+
+    if (
+      semesterNo <
+        1 ||
+      semesterNo >
+        20
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        `${index + 1}번째 과목의 학기 번호가 올바르지 않습니다.`,
+        400
+      );
+    }
+
+    const subjectName =
+      String(
+        subject
+          ?.subjectName ||
+        ""
+      )
+        .trim()
+        .replace(
+          /\s+/g,
+          " "
+        );
+
+    if (
+      !subjectName
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        `${index + 1}번째 과목명이 없습니다.`,
+        400
+      );
+    }
+
+    const nameKey =
+      subjectName
+        .toLowerCase();
+
+    if (
+      requestedNameSet.has(
+        nameKey
+      )
+    ) {
+      throwAppError(
+        ERROR_CODES.DUPLICATE_RESOURCE,
+        `등록 요청 안에 중복 과목이 있습니다: ${subjectName}`,
+        409
+      );
+    }
+
+    requestedNameSet.add(
+      nameKey
+    );
+
+    const category =
+      String(
+        subject
+          ?.planCategory ||
+        ""
+      );
+
+    const requirementType =
+      String(
+        subject
+          ?.planRequirementType ||
+        ""
+      );
+
+    if (
+      category !==
+        "전공" &&
+      category !==
+        "교양" &&
+      category !==
+        "일반"
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        `${subjectName}의 플랜 분류가 올바르지 않습니다.`,
+        400
+      );
+    }
+
+    if (
+      requirementType !==
+        "전공필수" &&
+      requirementType !==
+        "전공선택" &&
+      requirementType !==
+        "교양" &&
+      requirementType !==
+        "일반"
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        `${subjectName}의 요구구분이 올바르지 않습니다.`,
+        400
+      );
+    }
+
+    if (
+      (
+        requirementType ===
+          "전공필수" ||
+        requirementType ===
+          "전공선택"
+      ) &&
+      category !==
+        "전공"
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        `${subjectName}의 요구구분과 플랜 분류가 일치하지 않습니다.`,
+        400
+      );
+    }
+
+    if (
+      requirementType ===
+        "교양" &&
+      category !==
+        "교양"
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        `${subjectName}의 요구구분과 플랜 분류가 일치하지 않습니다.`,
+        400
+      );
+    }
+
+    if (
+      requirementType ===
+        "일반" &&
+      category !==
+        "일반"
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        `${subjectName}의 요구구분과 플랜 분류가 일치하지 않습니다.`,
+        400
+      );
+    }
+
+    const credits =
+      Number(
+        subject
+          ?.credits
+      );
+
+    if (
+      !Number.isInteger(
+        credits
+      ) ||
+      credits <
+        1 ||
+      credits >
+        10
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        `${subjectName}의 학점 정보가 올바르지 않습니다.`,
+        400
+      );
+    }
+
+    const sortOrder =
+      Number(
+        subject
+          ?.sortOrder
+      );
+
+    if (
+      !Number.isInteger(
+        sortOrder
+      ) ||
+      sortOrder <
+        0
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        `${subjectName}의 정렬 순서가 올바르지 않습니다.`,
+        400
+      );
+    }
+
+    if (
+      typeof subject
+        ?.settlementIncluded !==
+      "boolean"
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        `${subjectName}의 정산 포함 여부가 올바르지 않습니다.`,
+        400
+      );
+    }
+  }
+
+  /**
+   * 여기부터 실제 DB 작업.
+   *
+   * 한 과목이라도 실패하면
+   * 이 transaction 전체가 rollback된다.
+   */
+  return db.transaction(
+    async (
+      tx:
+        any
+    ) => {
+      /**
+       * 1. 플랜 존재 및 동일성 재확인
+       */
+      const planRows =
+        await tx
+          .select()
+          .from(
+            plans
+          )
+          .where(
+            and(
+              eq(
+                plans.id,
+                planId
+              ),
+              eq(
+                plans.studentId,
+                studentId
+              ),
+              eq(
+                plans.organizationId,
+                organizationId
+              )
+            )
+          )
+          .limit(
+            1
+          );
+
+      const plan =
+        planRows[0];
+
+      if (
+        !plan
+      ) {
+        throwAppError(
+          ERROR_CODES.DATA_NOT_FOUND,
+          "플랜 과목 생성 초안의 학생 플랜을 찾을 수 없습니다.",
+          404
+        );
+      }
+
+      /**
+       * 2. 현재 플랜과목 전체 조회
+       */
+      const currentRows =
+        await tx
+          .select()
+          .from(
+            planSemesters
+          )
+          .where(
+            and(
+              eq(
+                planSemesters
+                  .studentId,
+                studentId
+              ),
+              eq(
+                planSemesters
+                  .organizationId,
+                organizationId
+              )
+            )
+          )
+          .orderBy(
+            planSemesters
+              .semesterNo,
+            planSemesters
+              .sortOrder,
+            planSemesters
+              .id
+          );
+
+      /**
+       * 3. 초안 생성 당시 Snapshot과
+       * 현재 플랜과목 ID가 동일한지 확인
+       */
+      const currentIds =
+        currentRows
+          .map(
+            (
+              row:
+                any
+            ) =>
+              Math.floor(
+                Number(
+                  row.id ||
+                  0
+                )
+              )
+          )
+          .filter(
+            (
+              value:
+                number
+            ) =>
+              value >
+              0
+          )
+          .sort(
+            (
+              a:
+                number,
+              b:
+                number
+            ) =>
+              a -
+              b
+          );
+
+      const snapshotMatched =
+        currentIds.length ===
+          originalPlanSubjectIds.length &&
+        currentIds.every(
+          (
+            value:
+              number,
+            index:
+              number
+          ) =>
+            value ===
+            originalPlanSubjectIds[
+              index
+            ]
+        );
+
+      if (
+        !snapshotMatched
+      ) {
+        throwAppError(
+          ERROR_CODES.CONFLICT,
+          "플랜 과목 상태가 승인 초안 생성 이후 변경되었습니다. 최신 정보를 다시 확인해주세요.",
+          409
+        );
+      }
+
+      /**
+       * 4. 기존 과목명 중복 재검사
+       */
+      const existingNameSet =
+        new Set(
+          currentRows
+            .map(
+              (
+                row:
+                  any
+              ) =>
+                String(
+                  row.subjectName ||
+                  ""
+                )
+                  .trim()
+                  .replace(
+                    /\s+/g,
+                    " "
+                  )
+                  .toLowerCase()
+            )
+            .filter(
+              Boolean
+            )
+        );
+
+      for (
+        const subject of
+        subjects
+      ) {
+        const subjectName =
+          String(
+            subject.subjectName
+          )
+            .trim()
+            .replace(
+              /\s+/g,
+              " "
+            );
+
+        if (
+          existingNameSet.has(
+            subjectName
+              .toLowerCase()
+          )
+        ) {
+          throwAppError(
+            ERROR_CODES.DUPLICATE_RESOURCE,
+            `이미 학생 플랜에 등록된 과목입니다: ${subjectName}`,
+            409
+          );
+        }
+      }
+
+      /**
+       * 5. 현재 요구구분별 과목 수 계산
+       */
+      const currentCounts = {
+        전공필수:
+          0,
+
+        전공선택:
+          0,
+
+        교양:
+          0,
+
+        일반:
+          0,
+      };
+
+      for (
+        const row of
+        currentRows
+      ) {
+        const requirementType =
+          String(
+            (
+              row as any
+            )
+              .planRequirementType ||
+            ""
+          );
+
+        if (
+          requirementType ===
+          "전공필수"
+        ) {
+          currentCounts
+            .전공필수 +=
+            1;
+        } else if (
+          requirementType ===
+          "전공선택"
+        ) {
+          currentCounts
+            .전공선택 +=
+            1;
+        } else if (
+          requirementType ===
+          "교양"
+        ) {
+          currentCounts
+            .교양 +=
+            1;
+        } else if (
+          requirementType ===
+          "일반"
+        ) {
+          currentCounts
+            .일반 +=
+            1;
+        }
+      }
+
+      const addCounts = {
+        전공필수:
+          0,
+
+        전공선택:
+          0,
+
+        교양:
+          0,
+
+        일반:
+          0,
+      };
+
+      for (
+        const subject of
+        subjects
+      ) {
+        if (
+          subject
+            .planRequirementType ===
+          "전공필수"
+        ) {
+          addCounts
+            .전공필수 +=
+            1;
+        } else if (
+          subject
+            .planRequirementType ===
+          "전공선택"
+        ) {
+          addCounts
+            .전공선택 +=
+            1;
+        } else if (
+          subject
+            .planRequirementType ===
+          "교양"
+        ) {
+          addCounts
+            .교양 +=
+            1;
+        } else {
+          addCounts
+            .일반 +=
+            1;
+        }
+      }
+
+      const requiredMajorLimit =
+        Number(
+          (
+            plan as any
+          )
+            .requiredMajorCount ??
+          0
+        );
+
+      const electiveMajorLimit =
+        Number(
+          (
+            plan as any
+          )
+            .electiveMajorCount ??
+          0
+        );
+
+      const liberalLimit =
+        Number(
+          (
+            plan as any
+          )
+            .liberalCount ??
+          0
+        );
+
+      const generalLimit =
+        Number(
+          (
+            plan as any
+          )
+            .generalCount ??
+          0
+        );
+
+      const totalTheoryLimit =
+        Number(
+          (
+            plan as any
+          )
+            .totalTheorySubjects ??
+          0
+        );
+
+      if (
+        currentCounts
+          .전공필수 +
+          addCounts
+            .전공필수 >
+        requiredMajorLimit
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          `전공필수 허용 개수(${requiredMajorLimit}개)를 초과할 수 없습니다.`,
+          400
+        );
+      }
+
+            const currentTotal =
+        currentCounts
+          .전공필수 +
+        currentCounts
+          .전공선택 +
+        currentCounts
+          .교양 +
+        currentCounts
+          .일반;
+
+      const addTotal =
+        addCounts
+          .전공필수 +
+        addCounts
+          .전공선택 +
+        addCounts
+          .교양 +
+        addCounts
+          .일반;
+
+      /**
+       * 기존 createPlanSemester()와 동일하게
+       * PLAN_REQUIREMENT_ENFORCE가 활성화된 경우에만
+       * 요구구분별 허용 개수를 강제한다.
+       */
+      if (
+        FEATURE_FLAGS
+          .PLAN_REQUIREMENT_ENFORCE
+      ) {
+        if (
+          currentCounts
+            .전공필수 +
+            addCounts
+              .전공필수 >
+          requiredMajorLimit
+        ) {
+          throwAppError(
+            ERROR_CODES.INVALID_INPUT,
+            `전공필수 허용 개수(${requiredMajorLimit}개)를 초과할 수 없습니다.`,
+            400
+          );
+        }
+
+        if (
+          currentCounts
+            .전공선택 +
+            addCounts
+              .전공선택 >
+          electiveMajorLimit
+        ) {
+          throwAppError(
+            ERROR_CODES.INVALID_INPUT,
+            `전공선택 허용 개수(${electiveMajorLimit}개)를 초과할 수 없습니다.`,
+            400
+          );
+        }
+
+        if (
+          currentCounts
+            .교양 +
+            addCounts
+              .교양 >
+          liberalLimit
+        ) {
+          throwAppError(
+            ERROR_CODES.INVALID_INPUT,
+            `교양 허용 개수(${liberalLimit}개)를 초과할 수 없습니다.`,
+            400
+          );
+        }
+
+        if (
+          currentCounts
+            .일반 +
+            addCounts
+              .일반 >
+          generalLimit
+        ) {
+          throwAppError(
+            ERROR_CODES.INVALID_INPUT,
+            `일반 허용 개수(${generalLimit}개)를 초과할 수 없습니다.`,
+            400
+          );
+        }
+
+        if (
+          currentTotal +
+            addTotal >
+          totalTheoryLimit
+        ) {
+          throwAppError(
+            ERROR_CODES.INVALID_INPUT,
+            `전체 이론 과목 허용 개수(${totalTheoryLimit}개)를 초과할 수 없습니다.`,
+            400
+          );
+        }
+      }
+
+      /**
+       * 6. 승인된 모든 과목 생성
+       *
+       * transaction 안이므로
+       * 중간 하나라도 실패하면 전부 rollback.
+       */
+      const insertedIds:
+        number[] =
+        [];
+
+      for (
+        const subject of
+        subjects
+      ) {
+        const result:
+          any =
+          await tx
+            .insert(
+              planSemesters
+            )
+            .values({
+              organizationId,
+
+              studentId,
+
+              semesterNo:
+                Math.floor(
+                  Number(
+                    subject
+                      .semesterNo
+                  )
+                ),
+
+              subjectName:
+                String(
+                  subject
+                    .subjectName
+                )
+                  .trim()
+                  .replace(
+                    /\s+/g,
+                    " "
+                  ),
+
+              planCategory:
+                subject
+                  .planCategory,
+
+              planRequirementType:
+                subject
+                  .planRequirementType,
+
+              credits:
+                Number(
+                  subject
+                    .credits
+                ),
+
+              sortOrder:
+                Math.floor(
+                  Number(
+                    subject
+                      .sortOrder
+                  )
+                ),
+
+              settlementIncluded:
+                subject
+                  .settlementIncluded,
+            } as any);
+
+        const insertedId =
+          Number(
+            getInsertId(
+              result
+            ) ||
+            0
+          );
+
+        if (
+          !Number.isFinite(
+            insertedId
+          ) ||
+          insertedId <=
+            0
+        ) {
+          throwAppError(
+            ERROR_CODES.INTERNAL_SERVER_ERROR,
+            `플랜 과목을 저장하지 못했습니다: ${subject.subjectName}`,
+            500
+          );
+        }
+
+        insertedIds.push(
+          insertedId
+        );
+      }
+
+      return {
+        count:
+          insertedIds.length,
+
+        planSubjectIds:
+          insertedIds,
+      };
+    }
+  );
 }
 
 export async function updatePlanSemester(
@@ -28970,86 +39441,6 @@ export async function rejectApprovalDocument(params: {
   return true;
 }
 
-// ===============================
-// 학점은행제 템플릿 → subjectCatalog 이관 (1회용)
-// ===============================
-export async function migrateCourseTemplatesToSubjectCatalogs(db: any) {
-
-  // 1. 기존 템플릿 가져오기
-  const templates = await db
-    .select()
-    .from(courseTemplate); // 기존 테이블명
-
-  if (!templates.length) {
-    return;
-  }
-
-  // 2. courseKey 기준 그룹핑
-  const map = new Map<string, any[]>();
-
-  for (const row of templates) {
-    const key = row.courseKey || "기타";
-
-    if (!map.has(key)) {
-      map.set(key, []);
-    }
-
-    map.get(key)!.push(row);
-  }
-
-  // 3. catalog 생성 + item 넣기
-  for (const [courseKey, items] of map.entries()) {
- 
-
-    // catalog 존재 체크
-    let [catalog] = await db
-      .select()
-      .from(subjectCatalogs)
-      .where(eq(subjectCatalogs.name, courseKey))
-      .limit(1);
-
-    // 없으면 생성
-    if (!catalog) {
-      const [created] = await db
-        .insert(subjectCatalogs)
-        .values({
-          name: courseKey,
-        })
-        .returning();
-
-      catalog = created;
-    }
-
-    // 4. item 삽입
-    for (const item of items) {
-      // 중복 체크
-      const exists = await db
-        .select()
-        .from(subjectCatalogItems)
-        .where(
-          and(
-            eq(subjectCatalogItems.catalogId, catalog.id),
-            eq(subjectCatalogItems.subjectName, item.subjectName),
-            eq(
-              subjectCatalogItems.requirementType,
-              item.requirementType || "선택"
-            )
-          )
-        )
-        .limit(1);
-
-      if (exists.length > 0) continue;
-
-      await db.insert(subjectCatalogItems).values({
-        catalogId: catalog.id,
-        subjectName: item.subjectName,
-        requirementType: item.requirementType || "선택",
-        category: item.category || null,
-        sortOrder: item.sortOrder || 0,
-      });
-    }
-  }
-}
 
 export async function getOrganizationMonitoringSummary() {
   const db = await getDb();
@@ -30265,4 +40656,1354 @@ export async function clearAiChatMessages(
       500
     );
   }
+}
+
+// ============================================================================
+// Kakao AI Conversation / Message / Memory
+// ============================================================================
+
+export type KakaoAiConversationMemory = {
+  desiredCourse:
+    string | null;
+
+  finalEducation:
+    string | null;
+
+  hasTransferCollege:
+    boolean | null;
+
+  socialWorkerLawVersion:
+    "old" |
+    "current" |
+    null;
+
+  verifiedFacts:
+    string[];
+
+  unresolvedQuestions:
+    string[];
+
+  currentTopic:
+    string | null;
+};
+
+function createKakaoAiChannelUserKeyHash(
+  value:
+    unknown
+): string {
+  const normalized =
+    String(
+      value ??
+      ""
+    ).trim();
+
+  if (
+    !normalized
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "카카오 사용자 식별정보가 필요합니다.",
+      400
+    );
+  }
+
+  return createHash(
+    "sha256"
+  )
+    .update(
+      normalized,
+      "utf8"
+    )
+    .digest(
+      "hex"
+    );
+}
+
+function encryptKakaoAiNullableText(
+  value:
+    unknown
+): string | null {
+  const normalized =
+    String(
+      value ??
+      ""
+    ).trim();
+
+  if (
+    !normalized
+  ) {
+    return null;
+  }
+
+  return encryptPersonalData(
+    normalized
+  );
+}
+
+function decryptKakaoAiNullableText(
+  value:
+    unknown
+): string | null {
+  if (
+    value ===
+      null ||
+    value ===
+      undefined ||
+    value ===
+      ""
+  ) {
+    return null;
+  }
+
+  try {
+    return decryptPersonalData(
+      String(
+        value
+      )
+    );
+  } catch {
+    /**
+     * 개발/마이그레이션 과정의
+     * 기존 평문 데이터 대응.
+     */
+    return String(
+      value
+    );
+  }
+}
+
+function encryptKakaoAiJson(
+  value:
+    unknown
+): string {
+  return encryptPersonalData(
+    JSON.stringify(
+      value ??
+      null
+    )
+  );
+}
+
+function decryptKakaoAiJson<T>(
+  value:
+    unknown,
+
+  fallback:
+    T
+): T {
+  if (
+    value ===
+      null ||
+    value ===
+      undefined ||
+    value ===
+      ""
+  ) {
+    return fallback;
+  }
+
+  const raw =
+    String(
+      value
+    );
+
+  try {
+    const decrypted =
+      decryptPersonalData(
+        raw
+      );
+
+    return JSON.parse(
+      decrypted
+    ) as T;
+  } catch {
+    /**
+     * 이전 평문 JSON 대응.
+     */
+    try {
+      return JSON.parse(
+        raw
+      ) as T;
+    } catch {
+      return fallback;
+    }
+  }
+}
+
+function normalizeKakaoAiConversationId(
+  value:
+    unknown
+): number {
+  const id =
+    Math.floor(
+      Number(
+        value ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      id
+    ) ||
+    id <=
+      0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "카카오 AI 대화 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  return id;
+}
+
+/**
+ * 카카오 사용자별 대화방을 조회하고,
+ * 없으면 신규 lead 대화방을 생성한다.
+ */
+export async function getOrCreateKakaoAiConversation(
+  params: {
+    organizationId:
+      number;
+
+    channelUserKey:
+      string;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const channelUserKeyHash =
+    createKakaoAiChannelUserKeyHash(
+      params.channelUserKey
+    );
+
+  const existingRows =
+    await database
+      .select()
+      .from(
+        kakaoAiConversations
+      )
+      .where(
+        and(
+          eq(
+            kakaoAiConversations.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiConversations.channelUserKeyHash,
+            channelUserKeyHash
+          )
+        )
+      )
+      .limit(
+        1
+      );
+
+  if (
+    existingRows[0]
+  ) {
+    return existingRows[0];
+  }
+
+  /**
+   * 동시에 같은 사용자의 최초 webhook이
+   * 여러 개 들어올 수 있으므로
+   * unique index가 최종 중복을 방지한다.
+   */
+  try {
+    await database
+      .insert(
+        kakaoAiConversations
+      )
+      .values({
+        organizationId,
+
+        channelUserKeyHash,
+
+        customerType:
+          "lead",
+
+        studentId:
+          null,
+
+        status:
+          "active",
+
+        lastMessageAt:
+          new Date(),
+      });
+  } catch (
+    error:
+      unknown
+  ) {
+    /**
+     * 동시 생성 경쟁에서 unique 충돌이 난 경우
+     * 아래 재조회로 정상 회수한다.
+     */
+  }
+
+  const createdRows =
+    await database
+      .select()
+      .from(
+        kakaoAiConversations
+      )
+      .where(
+        and(
+          eq(
+            kakaoAiConversations.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiConversations.channelUserKeyHash,
+            channelUserKeyHash
+          )
+        )
+      )
+      .limit(
+        1
+      );
+
+  if (
+    !createdRows[0]
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "카카오 AI 대화 세션을 생성할 수 없습니다.",
+      500
+    );
+  }
+
+  return createdRows[0];
+}
+
+/**
+ * 카카오 AI 대화방의 현재 서버 인증상태 조회.
+ *
+ * organizationId + conversationId를
+ * 반드시 함께 검사한다.
+ */
+export async function getKakaoAiConversationById(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  const rows =
+    await database
+      .select()
+      .from(
+        kakaoAiConversations
+      )
+      .where(
+        and(
+          eq(
+            kakaoAiConversations.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiConversations.id,
+            conversationId
+          )
+        )
+      )
+      .limit(
+        1
+      );
+
+  return rows[0] ||
+    null;
+}
+
+/**
+ * 등록회원 인증 완료 후
+ * 카카오 대화방을 본인 studentId와 연결한다.
+ */
+export async function bindKakaoAiConversationStudent(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+
+    studentId:
+      number;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  const studentId =
+    Math.floor(
+      Number(
+        params.studentId ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      studentId
+    ) ||
+    studentId <=
+      0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "등록회원 학생 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  /**
+   * 반드시 같은 회사의 승인된 실제 학생인지
+   * 다시 검증한다.
+   */
+  const student =
+    await getStudentById(
+      studentId,
+      {
+        organizationId,
+      }
+    );
+
+  if (
+    !student ||
+    String(
+      (student as any)
+        .approvalStatus ||
+      ""
+    ).trim() !==
+      "승인"
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "등록회원으로 확인되지 않습니다.",
+      403
+    );
+  }
+
+  await database
+    .update(
+      kakaoAiConversations
+    )
+    .set({
+      customerType:
+        "registered",
+
+      studentId,
+
+      updatedAt:
+        new Date(),
+    })
+    .where(
+      and(
+        eq(
+          kakaoAiConversations.organizationId,
+          organizationId
+        ),
+
+        eq(
+          kakaoAiConversations.id,
+          conversationId
+        )
+      )
+    );
+
+  return {
+    success:
+      true,
+
+    conversationId,
+
+    studentId,
+  };
+}
+
+/**
+ * 대화방의 현재 인증상태를 lead로 초기화한다.
+ *
+ * 학생정보 변경이나 인증해제 시 사용.
+ */
+export async function clearKakaoAiConversationStudent(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  await database
+    .update(
+      kakaoAiConversations
+    )
+    .set({
+      customerType:
+        "lead",
+
+      studentId:
+        null,
+
+      updatedAt:
+        new Date(),
+    })
+    .where(
+      and(
+        eq(
+          kakaoAiConversations.organizationId,
+          organizationId
+        ),
+
+        eq(
+          kakaoAiConversations.id,
+          conversationId
+        )
+      )
+    );
+
+  return {
+    success:
+      true,
+  };
+}
+
+/**
+ * 카카오 사용자 / AI 메시지 저장.
+ */
+export async function insertKakaoAiMessage(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+
+    role:
+      "user" |
+      "assistant";
+
+    messageType?:
+      "text" |
+      "image" |
+      "document" |
+      "system";
+
+    content:
+      string;
+
+    kakaoMessageId?:
+      string | null;
+
+    attachmentData?:
+      unknown;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  const content =
+    String(
+      params.content ??
+      ""
+    );
+
+  if (
+    !content.trim() &&
+    params.attachmentData ===
+      undefined
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "카카오 AI 메시지 내용이 없습니다.",
+      400
+    );
+  }
+
+  const encryptedContent =
+    encryptPersonalData(
+      content
+    );
+
+  const attachmentData =
+    params.attachmentData ===
+      undefined
+      ? null
+      : encryptKakaoAiJson(
+          params.attachmentData
+        );
+
+  const kakaoMessageId =
+    String(
+      params.kakaoMessageId ??
+      ""
+    ).trim() ||
+    null;
+
+  try {
+    const result: any =
+      await database
+        .insert(
+          kakaoAiMessages
+        )
+        .values({
+          organizationId,
+
+          conversationId,
+
+          role:
+            params.role,
+
+          messageType:
+            params.messageType ||
+            "text",
+
+          content:
+            encryptedContent,
+
+          kakaoMessageId,
+
+          attachmentData,
+        });
+
+    await database
+      .update(
+        kakaoAiConversations
+      )
+      .set({
+        lastMessageAt:
+          new Date(),
+
+        updatedAt:
+          new Date(),
+      })
+      .where(
+        and(
+          eq(
+            kakaoAiConversations.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiConversations.id,
+            conversationId
+          )
+        )
+      );
+
+    return {
+      inserted:
+        true as const,
+
+      id:
+        Number(
+          getInsertId(
+            result
+          ) ||
+          0
+        ),
+    };
+  } catch (
+    error:
+      any
+  ) {
+    /**
+     * 외부 kakaoMessageId가 동일해서
+     * webhook이 중복 수신된 경우는
+     * 다시 AI 응답을 생성하지 않도록
+     * inserted=false로 처리할 수 있다.
+     */
+    if (
+      kakaoMessageId &&
+      (
+        error?.code ===
+          "ER_DUP_ENTRY" ||
+        Number(
+          error?.errno ||
+          0
+        ) ===
+          1062
+      )
+    ) {
+      return {
+        inserted:
+          false as const,
+
+        id:
+          null,
+      };
+    }
+
+    throw error;
+  }
+}
+
+/**
+ * Intent Classifier와 최종 Response AI에 전달할
+ * 최근 대화목록.
+ *
+ * DB에서는 최신순으로 제한 조회 후
+ * 과거 → 최신 순서로 반환한다.
+ */
+export async function getKakaoAiRecentMessages(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+
+    limit?:
+      number;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  const limit =
+    Math.min(
+      Math.max(
+        Math.floor(
+          Number(
+            params.limit ||
+            20
+          )
+        ),
+        1
+      ),
+      50
+    );
+
+  const rows =
+    await database
+      .select()
+      .from(
+        kakaoAiMessages
+      )
+      .where(
+        and(
+          eq(
+            kakaoAiMessages.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiMessages.conversationId,
+            conversationId
+          )
+        )
+      )
+      .orderBy(
+        desc(
+          kakaoAiMessages.createdAt
+        ),
+
+        desc(
+          kakaoAiMessages.id
+        )
+      )
+      .limit(
+        limit
+      );
+
+  return rows
+    .reverse()
+    .map(
+      (
+        row:
+          any
+      ) => ({
+        id:
+          Number(
+            row.id
+          ),
+
+        role:
+          row.role as
+            "user" |
+            "assistant",
+
+        messageType:
+          String(
+            row.messageType ||
+            "text"
+          ),
+
+        content:
+          decryptKakaoAiNullableText(
+            row.content
+          ) ||
+          "",
+
+        attachmentData:
+          decryptKakaoAiJson<
+            unknown | null
+          >(
+            row.attachmentData,
+            null
+          ),
+
+        createdAt:
+          row.createdAt,
+      })
+    );
+}
+
+/**
+ * 현재 Conversation Memory 조회.
+ *
+ * 아직 Memory가 없으면 빈 구조를 반환한다.
+ */
+export async function getKakaoAiConversationMemory(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+  }
+): Promise<KakaoAiConversationMemory> {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  const rows =
+    await database
+      .select()
+      .from(
+        kakaoAiMemories
+      )
+      .where(
+        and(
+          eq(
+            kakaoAiMemories.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiMemories.conversationId,
+            conversationId
+          )
+        )
+      )
+      .limit(
+        1
+      );
+
+  const row =
+    rows[0];
+
+  if (
+    !row
+  ) {
+    return {
+      desiredCourse:
+        null,
+
+      finalEducation:
+        null,
+
+      hasTransferCollege:
+        null,
+
+  socialWorkerLawVersion:
+    null,
+
+      verifiedFacts:
+        [],
+
+      unresolvedQuestions:
+        [],
+
+      currentTopic:
+        null,
+    };
+  }
+
+  return {
+    desiredCourse:
+      decryptKakaoAiNullableText(
+        row.desiredCourse
+      ),
+
+    finalEducation:
+      decryptKakaoAiNullableText(
+        row.finalEducation
+      ),
+
+    hasTransferCollege:
+      row.hasTransferCollege ===
+        null ||
+      row.hasTransferCollege ===
+        undefined
+        ? null
+        : row.hasTransferCollege ===
+          true,
+
+socialWorkerLawVersion:
+  row.socialWorkerLawVersion ===
+    "old" ||
+  row.socialWorkerLawVersion ===
+    "current"
+    ? row.socialWorkerLawVersion
+    : null,
+
+    verifiedFacts:
+      decryptKakaoAiJson<
+        string[]
+      >(
+        row.verifiedFactsData,
+        []
+      ),
+
+    unresolvedQuestions:
+      decryptKakaoAiJson<
+        string[]
+      >(
+        row.unresolvedQuestionsData,
+        []
+      ),
+
+    currentTopic:
+      decryptKakaoAiNullableText(
+        row.currentTopic
+      ),
+  };
+}
+
+/**
+ * Memory 부분 업데이트.
+ *
+ * undefined:
+ * 기존값 유지
+ *
+ * null:
+ * 해당 값 삭제/초기화
+ */
+export async function updateKakaoAiConversationMemory(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+
+    patch: {
+      desiredCourse?:
+        string | null;
+
+      finalEducation?:
+        string | null;
+
+      hasTransferCollege?:
+        boolean | null;
+
+socialWorkerLawVersion?:
+  "old" |
+  "current" |
+  null;
+
+      verifiedFacts?:
+        string[];
+
+      unresolvedQuestions?:
+        string[];
+
+      currentTopic?:
+        string | null;
+    };
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  const existingRows =
+    await database
+      .select()
+      .from(
+        kakaoAiMemories
+      )
+      .where(
+        and(
+          eq(
+            kakaoAiMemories.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiMemories.conversationId,
+            conversationId
+          )
+        )
+      )
+      .limit(
+        1
+      );
+
+  const existing =
+    existingRows[0];
+
+  const patch =
+    params.patch;
+
+  const values:
+    Record<
+      string,
+      unknown
+    > = {};
+
+  if (
+    patch.desiredCourse !==
+    undefined
+  ) {
+    values.desiredCourse =
+      encryptKakaoAiNullableText(
+        patch.desiredCourse
+      );
+  }
+
+  if (
+    patch.finalEducation !==
+    undefined
+  ) {
+    values.finalEducation =
+      encryptKakaoAiNullableText(
+        patch.finalEducation
+      );
+  }
+
+  if (
+    patch.hasTransferCollege !==
+    undefined
+  ) {
+    values.hasTransferCollege =
+      patch.hasTransferCollege;
+  }
+
+if (
+  patch.socialWorkerLawVersion !==
+  undefined
+) {
+  values.socialWorkerLawVersion =
+    patch.socialWorkerLawVersion ===
+      "old" ||
+    patch.socialWorkerLawVersion ===
+      "current"
+      ? patch.socialWorkerLawVersion
+      : null;
+}
+
+  if (
+    patch.verifiedFacts !==
+    undefined
+  ) {
+    values.verifiedFactsData =
+      encryptKakaoAiJson(
+        patch.verifiedFacts
+          .map(
+            (
+              item
+            ) =>
+              String(
+                item ||
+                ""
+              ).trim()
+          )
+          .filter(
+            Boolean
+          )
+          .slice(
+            0,
+            100
+          )
+      );
+  }
+
+  if (
+    patch.unresolvedQuestions !==
+    undefined
+  ) {
+    values.unresolvedQuestionsData =
+      encryptKakaoAiJson(
+        patch.unresolvedQuestions
+          .map(
+            (
+              item
+            ) =>
+              String(
+                item ||
+                ""
+              ).trim()
+          )
+          .filter(
+            Boolean
+          )
+          .slice(
+            0,
+            50
+          )
+      );
+  }
+
+  if (
+    patch.currentTopic !==
+    undefined
+  ) {
+    values.currentTopic =
+      encryptKakaoAiNullableText(
+        patch.currentTopic
+      );
+  }
+
+  if (
+    Object.keys(
+      values
+    ).length ===
+      0
+  ) {
+    return {
+      success:
+        true,
+    };
+  }
+
+  if (
+    existing
+  ) {
+    await database
+      .update(
+        kakaoAiMemories
+      )
+      .set({
+        ...values,
+
+        updatedAt:
+          new Date(),
+      })
+      .where(
+        and(
+          eq(
+            kakaoAiMemories.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiMemories.conversationId,
+            conversationId
+          )
+        )
+      );
+  } else {
+    await database
+      .insert(
+        kakaoAiMemories
+      )
+      .values({
+        organizationId,
+
+        conversationId,
+
+        desiredCourse:
+          null,
+
+        finalEducation:
+          null,
+
+        hasTransferCollege:
+          null,
+
+socialWorkerLawVersion:
+  null,
+
+        verifiedFactsData:
+          encryptKakaoAiJson(
+            []
+          ),
+
+        unresolvedQuestionsData:
+          encryptKakaoAiJson(
+            []
+          ),
+
+        currentTopic:
+          null,
+
+        ...values,
+      });
+  }
+
+  return {
+    success:
+      true,
+  };
 }

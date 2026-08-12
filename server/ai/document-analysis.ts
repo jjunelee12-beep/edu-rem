@@ -53,7 +53,7 @@ type RawDocumentSubject = {
       | "일반"
     >;
 
-  requirementType:
+    requirementType:
     RawDocumentField<
       | "전공필수"
       | "전공선택"
@@ -61,8 +61,25 @@ type RawDocumentSubject = {
       | "일반"
     >;
 
+  /**
+   * CRM 학기 순번.
+   *
+   * 전적대 실제 이수연도/학기와는 별개다.
+   */
   semesterNo:
     RawDocumentField<number>;
+
+  /**
+   * 성적증명서 실제 이수연도.
+   */
+  completionYear:
+    RawDocumentField<number>;
+
+  /**
+   * 성적증명서 실제 이수학기.
+   */
+  completionSemester:
+    RawDocumentField<string>;
 
   rawText:
     string | null;
@@ -758,6 +775,31 @@ function normalizeSubjects(
               }
             ),
 
+          /**
+           * 성적증명서 실제 이수연도.
+           *
+           * semesterNo와 혼용하지 않는다.
+           */
+          completionYear:
+            buildNumberField(
+              source.completionYear,
+              {
+                positiveInteger:
+                  true,
+
+                max:
+                  2200,
+              }
+            ),
+
+          /**
+           * 성적증명서 실제 이수학기.
+           */
+          completionSemester:
+            buildStringField(
+              source.completionSemester
+            ),
+
           rawText:
             normalizeText(
               source.rawText,
@@ -1172,6 +1214,11 @@ export async function analyzeAiDocument(
                 "8. 잘린 행이나 일부만 보이는 과목은 warning에 표시한다.",
                 "9. 저장 위치는 추천만 하고 실제 저장은 수행하지 않는다.",
                 "10. 개인정보는 이미지에 표시된 범위 안에서만 추출한다.",
+"11. 대학 성적증명서에서는 각 과목이 어느 연도와 학기에 이수되었는지 표의 학년도/학기 구조를 따라 연결한다.",
+"12. 예를 들어 '2019년도 2학기' 아래에 있는 과목은 completionYear=2019, completionSemester='2학기'로 반환한다.",
+"13. 계절학기는 문서에 표시된 그대로 '여름계절학기', '겨울계절학기' 등으로 반환한다.",
+"14. 과목별 이수연도 또는 학기를 문서에서 확인할 수 없으면 절대로 추측하지 말고 null로 반환한다.",
+"15. semesterNo와 completionYear를 혼동하지 않는다. semesterNo는 CRM 학기 순번이고 completionYear는 성적증명서 실제 이수연도다.",
                 "",
                 "문서 분류 규칙:",
                 "- 대학 성적증명서: university_transcript",
@@ -1518,6 +1565,16 @@ export async function analyzeAiDocument(
                         "number"
                       ),
 
+                    completionYear:
+                      buildJsonFieldSchema(
+                        "number"
+                      ),
+
+                    completionSemester:
+                      buildJsonFieldSchema(
+                        "string"
+                      ),
+
                     rawText: {
                       type: [
                         "string",
@@ -1536,13 +1593,15 @@ export async function analyzeAiDocument(
                     },
                   },
 
-                  required: [
+                                    required: [
                     "subjectName",
                     "credits",
                     "grade",
                     "category",
                     "requirementType",
                     "semesterNo",
+                    "completionYear",
+                    "completionSemester",
                     "rawText",
                     "warnings",
                   ],

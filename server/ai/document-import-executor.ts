@@ -3,6 +3,7 @@ import * as db from "../db";
 import type {
   AiDocumentImportDraft,
   AiPendingActionType,
+  AiUserContext,
 } from "./ai.types";
 
 import {
@@ -13,27 +14,47 @@ import {
   ERROR_CODES,
 } from "../_core/errorCodes";
 
+import {
+  assertCanWriteStudent,
+} from "./ai-permission";
+
 export type ExecuteDocumentImportPendingActionInput = {
+  /**
+   * 실행할 Pending Action ID
+   */
   pendingActionId:
     number;
 
-  organizationId:
-    number;
-
+  /**
+   * Pending Action을 처음 생성한 사용자 ID
+   *
+   * OCR 분석자와 실제 적용자는 다를 수 있으므로
+   * 이 값은 Pending Action 선점 확인에만 사용한다.
+   */
   requestedByUserId:
     number;
 
-  confirmedByUserId:
-    number;
+  /**
+   * 현재 로그인 사용자의 서버 AI Context
+   *
+   * organizationId, 승인 사용자 ID, 역할과
+   * 실제 적용 권한은 이 Context를 기준으로 판단한다.
+   */
+  context:
+    AiUserContext;
 
+  /**
+   * Pending Action 낙관적 잠금 버전
+   */
   expectedVersion:
     number;
 
+  /**
+   * 실행 로그에 사용할 이름
+   *
+   * 전달되지 않으면 context.userName을 사용한다.
+   */
   actorName?:
-    string |
-    null;
-
-  actorRole?:
     string |
     null;
 };
@@ -352,28 +373,42 @@ export async function executeDocumentImportPendingAction(
 ): Promise<
   ExecuteDocumentImportPendingActionResult
 > {
-  const pendingActionId =
+    const pendingActionId =
     normalizePositiveInteger(
       input.pendingActionId,
       "올바른 AI 승인 요청 ID가 필요합니다."
     );
 
+  /**
+   * 회사 범위는 요청 파라미터가 아니라
+   * 서버에서 생성한 AI Context를 사용한다.
+   */
   const organizationId =
     normalizePositiveInteger(
-      input.organizationId,
-      "올바른 회사 정보가 필요합니다."
+      input.context.organizationId,
+      "현재 로그인 사용자의 회사 정보를 확인할 수 없습니다."
     );
 
+  /**
+   * Pending Action 최초 생성 사용자
+   *
+   * OCR 분석자와 실제 적용자가 다를 수 있으므로
+   * 이 값은 학생 담당자 검사에 사용하지 않는다.
+   */
   const requestedByUserId =
     normalizePositiveInteger(
       input.requestedByUserId,
       "AI 초안 요청 사용자 정보가 올바르지 않습니다."
     );
 
+  /**
+   * 실제 CRM 적용을 승인한 사용자는
+   * 현재 서버 AI Context의 사용자이다.
+   */
   const confirmedByUserId =
     normalizePositiveInteger(
-      input.confirmedByUserId,
-      "AI 초안 승인 사용자 정보가 올바르지 않습니다."
+      input.context.userId,
+      "현재 AI 승인 사용자 정보를 확인할 수 없습니다."
     );
 
   const expectedVersion =
@@ -524,19 +559,25 @@ export async function executeDocumentImportPendingAction(
       );
     }
 
-    if (
-      Number(
-        student.assigneeId ||
-        0
-      ) !==
-      requestedByUserId
-    ) {
-      throwAppError(
-        ERROR_CODES.PERMISSION_DENIED,
-        "본인 담당 학생의 문서만 CRM에 반영할 수 있습니다.",
-        403
-      );
-    }
+    /**
+     * OCR 결과의 실제 CRM 반영 권한을
+     * 실행 직전에 다시 검사한다.
+     *
+     * 조회 범위:
+     * Staff → 본인 담당 학생
+     * Admin → 같은 팀 학생
+     * Host → 같은 회사 전체 학생
+     *
+     * 실제 적용:
+     * 역할과 무관하게 현재 로그인 사용자가
+     * 해당 학생의 실제 담당자인 경우만 가능
+     */
+    assertCanWriteStudent({
+      context:
+        input.context,
+
+      student,
+    });
 
     /**
      * Preview 생성 후 학생 원본이 변경됐는지 검사한다.
@@ -616,8 +657,8 @@ export async function executeDocumentImportPendingAction(
       );
     }
 
-    completedSteps.push(
-      "학생 원본 및 담당자 재검증"
+        completedSteps.push(
+      "학생 원본·조회 범위·실제 담당자 권한 재검증"
     );
 
     const transactionResult =
@@ -628,16 +669,16 @@ export async function executeDocumentImportPendingAction(
 
         draft,
 
-        actorUserId:
+                actorUserId:
           confirmedByUserId,
 
         actorName:
           input.actorName ??
+          input.context.userName ??
           null,
 
         actorRole:
-          input.actorRole ??
-          null,
+          input.context.role,
       });
 
     completedSteps.push(
@@ -711,11 +752,12 @@ paymentUpdated:
       await db.createAiActionLog({
         organizationId,
 
-        userId:
+                userId:
           confirmedByUserId,
 
         userName:
           input.actorName ||
+          input.context.userName ||
           `사용자 ${confirmedByUserId}`,
 
         action:

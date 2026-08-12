@@ -1,0 +1,545 @@
+import * as db from "../db";
+
+import type {
+  KakaoAiStructuredMemory,
+} from "./kakao-ai-memory-resolver";
+
+/**
+ * Memory에 저장되는 사실의 출처.
+ *
+ * user:
+ * 사용자가 직접 명확하게 말한 사실
+ *
+ * ocr:
+ * 성적증명서 등 첨부자료 분석으로 확인된 사실
+ *
+ * crm:
+ * 등록회원 CRM에서 확인된 사실
+ *
+ * rule_engine:
+ * 공통 규칙엔진이 계산/확정한 사실
+ */
+export type KakaoAiMemoryFactSource =
+  | "user"
+  | "ocr"
+  | "crm"
+  | "rule_engine";
+
+/**
+ * Memory에 반영 가능한
+ * 검증된 하나의 사실.
+ */
+export type KakaoAiVerifiedMemoryFact = {
+  source:
+    KakaoAiMemoryFactSource;
+
+  key:
+    string;
+
+  value:
+    string;
+
+  /**
+   * 사람이 읽을 수 있는 사실 설명.
+   *
+   * verifiedFacts에 저장할 때 사용한다.
+   */
+  description:
+    string;
+};
+
+/**
+ * 한 번의 대화 처리 후
+ * Memory에 반영할 안전한 Patch.
+ *
+ * 이 객체 자체를 OpenAI가 직접 DB에 쓰지 않는다.
+ * 서버가 검증한 뒤 db.ts를 호출한다.
+ */
+export type KakaoAiMemoryWritePatch = {
+  desiredCourse?:
+    string | null;
+
+  finalEducation?:
+    string | null;
+
+  hasTransferCollege?:
+    boolean | null;
+
+socialWorkerLawVersion?:
+  "old" |
+  "current" |
+  null;
+
+  /**
+   * 새로 확정된 사실만.
+   */
+  verifiedFactsToAdd?:
+    KakaoAiVerifiedMemoryFact[];
+
+  /**
+   * 더 이상 미확인이 아닌 질문.
+   */
+  resolvedQuestionKeys?:
+    string[];
+
+  /**
+   * 새로 확인이 필요한 내용.
+   */
+  unresolvedQuestionKeys?:
+    string[];
+
+  /**
+   * 현재 대화 중심주제.
+   */
+  currentTopic?:
+    string | null;
+};
+
+export type KakaoAiMemoryWriteResult = {
+  success:
+    boolean;
+
+  changed:
+    boolean;
+
+  memory:
+    KakaoAiStructuredMemory;
+};
+
+function normalizeNullableText(
+  value:
+    unknown
+): string | null {
+  const normalized =
+    String(
+      value ??
+      ""
+    ).trim();
+
+  return normalized ||
+    null;
+}
+
+function normalizeStringArray(
+  value:
+    unknown,
+
+  limit:
+    number
+): string[] {
+  if (
+    !Array.isArray(
+      value
+    )
+  ) {
+    return [];
+  }
+
+  const result:
+    string[] =
+    [];
+
+  const seen =
+    new Set<string>();
+
+  for (
+    const item of
+    value
+  ) {
+    const normalized =
+      String(
+        item ??
+        ""
+      ).trim();
+
+    if (
+      !normalized ||
+      seen.has(
+        normalized
+      )
+    ) {
+      continue;
+    }
+
+    seen.add(
+      normalized
+    );
+
+    result.push(
+      normalized
+    );
+
+    if (
+      result.length >=
+      limit
+    ) {
+      break;
+    }
+  }
+
+  return result;
+}
+
+function normalizeFactDescription(
+  fact:
+    KakaoAiVerifiedMemoryFact
+): string | null {
+  const source =
+    String(
+      fact.source ||
+      ""
+    ).trim();
+
+  if (
+    source !==
+      "user" &&
+    source !==
+      "ocr" &&
+    source !==
+      "crm" &&
+    source !==
+      "rule_engine"
+  ) {
+    return null;
+  }
+
+  const description =
+    normalizeNullableText(
+      fact.description
+    );
+
+  if (
+    !description
+  ) {
+    return null;
+  }
+
+  return description;
+}
+
+/**
+ * 기존 사실과 신규 사실을 합친다.
+ *
+ * 완전히 동일한 문장은 중복 저장하지 않는다.
+ */
+function mergeVerifiedFacts(
+  existing:
+    string[],
+
+  factsToAdd:
+    KakaoAiVerifiedMemoryFact[]
+): string[] {
+  const result =
+    normalizeStringArray(
+      existing,
+      100
+    );
+
+  const seen =
+    new Set(
+      result
+    );
+
+  for (
+    const fact of
+    factsToAdd
+  ) {
+    const description =
+      normalizeFactDescription(
+        fact
+      );
+
+    if (
+      !description ||
+      seen.has(
+        description
+      )
+    ) {
+      continue;
+    }
+
+    seen.add(
+      description
+    );
+
+    result.push(
+      description
+    );
+
+    if (
+      result.length >=
+      100
+    ) {
+      break;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * 미확인 질문을 추가/해결한다.
+ */
+function mergeUnresolvedQuestions(
+  existing:
+    string[],
+
+  add:
+    string[],
+
+  resolve:
+    string[]
+): string[] {
+  const resolvedSet =
+    new Set(
+      normalizeStringArray(
+        resolve,
+        50
+      )
+    );
+
+  const result:
+    string[] =
+    [];
+
+  const seen =
+    new Set<string>();
+
+  const candidates = [
+    ...normalizeStringArray(
+      existing,
+      50
+    ),
+
+    ...normalizeStringArray(
+      add,
+      50
+    ),
+  ];
+
+  for (
+    const item of
+    candidates
+  ) {
+    if (
+      resolvedSet.has(
+        item
+      ) ||
+      seen.has(
+        item
+      )
+    ) {
+      continue;
+    }
+
+    seen.add(
+      item
+    );
+
+    result.push(
+      item
+    );
+
+    if (
+      result.length >=
+      50
+    ) {
+      break;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * 서버가 검증한 Memory Patch를 실제 DB에 반영한다.
+ *
+ * 중요:
+ * 이 함수에는 AI의 추측값을 직접 넘기면 안 된다.
+ *
+ * caller는 반드시:
+ * - 사용자 직접 발언
+ * - OCR 확정
+ * - CRM 확정
+ * - 공통엔진 확정
+ *
+ * 중 하나로 검증된 값만 전달한다.
+ */
+export async function applyKakaoAiVerifiedMemoryPatch(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+
+    currentMemory:
+      KakaoAiStructuredMemory;
+
+    patch:
+      KakaoAiMemoryWritePatch;
+  }
+): Promise<KakaoAiMemoryWriteResult> {
+  const current =
+    params.currentMemory;
+
+  const patch =
+    params.patch;
+
+  const desiredCourse =
+    patch.desiredCourse ===
+      undefined
+      ? current.desiredCourse
+      : normalizeNullableText(
+          patch.desiredCourse
+        );
+
+  const finalEducation =
+    patch.finalEducation ===
+      undefined
+      ? current.finalEducation
+      : normalizeNullableText(
+          patch.finalEducation
+        );
+
+  const hasTransferCollege =
+    patch.hasTransferCollege ===
+      undefined
+      ? current.hasTransferCollege
+      : patch.hasTransferCollege ===
+          true
+        ? true
+        : patch.hasTransferCollege ===
+            false
+          ? false
+          : null;
+
+const socialWorkerLawVersion =
+  patch.socialWorkerLawVersion ===
+    undefined
+    ? current.socialWorkerLawVersion
+    : patch.socialWorkerLawVersion ===
+        "old" ||
+      patch.socialWorkerLawVersion ===
+        "current"
+      ? patch.socialWorkerLawVersion
+      : null;
+
+  const verifiedFacts =
+    mergeVerifiedFacts(
+      current.verifiedFacts,
+
+      Array.isArray(
+        patch.verifiedFactsToAdd
+      )
+        ? patch.verifiedFactsToAdd
+        : []
+    );
+
+  const unresolvedQuestions =
+    mergeUnresolvedQuestions(
+      current.unresolvedQuestions,
+
+      Array.isArray(
+        patch.unresolvedQuestionKeys
+      )
+        ? patch.unresolvedQuestionKeys
+        : [],
+
+      Array.isArray(
+        patch.resolvedQuestionKeys
+      )
+        ? patch.resolvedQuestionKeys
+        : []
+    );
+
+  const currentTopic =
+    patch.currentTopic ===
+      undefined
+      ? current.currentTopic
+      : normalizeNullableText(
+          patch.currentTopic
+        );
+
+  const nextMemory:
+    KakaoAiStructuredMemory = {
+      desiredCourse,
+
+      finalEducation,
+
+      hasTransferCollege,
+
+    socialWorkerLawVersion,
+
+      verifiedFacts,
+
+      unresolvedQuestions,
+
+      currentTopic,
+    };
+
+  const changed =
+    JSON.stringify(
+      current
+    ) !==
+    JSON.stringify(
+      nextMemory
+    );
+
+  if (
+    !changed
+  ) {
+    return {
+      success:
+        true,
+
+      changed:
+        false,
+
+      memory:
+        current,
+    };
+  }
+
+  await db.updateKakaoAiConversationMemory({
+    organizationId:
+      params.organizationId,
+
+    conversationId:
+      params.conversationId,
+
+    patch: {
+      desiredCourse:
+        nextMemory.desiredCourse,
+
+      finalEducation:
+        nextMemory.finalEducation,
+
+      hasTransferCollege:
+        nextMemory.hasTransferCollege,
+
+socialWorkerLawVersion:
+  nextMemory.socialWorkerLawVersion,
+
+      verifiedFacts:
+        nextMemory.verifiedFacts,
+
+      unresolvedQuestions:
+        nextMemory.unresolvedQuestions,
+
+      currentTopic:
+        nextMemory.currentTopic,
+    },
+  });
+
+  return {
+    success:
+      true,
+
+    changed:
+      true,
+
+    memory:
+      nextMemory,
+  };
+}

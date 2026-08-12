@@ -4,6 +4,51 @@ import {
   assertCanAccessStudent,
 } from "./ai-permission";
 
+import {
+  getConfirmedSubjectEquivalenceKey,
+} from "./risk-rules/subject-equivalence-resolver";
+
+import {
+  buildRiskSubjectRecommendations,
+} from "./risk-rules/risk-subject-recommendation";
+
+import {
+  analyzeQualificationRisk,
+  resolveQualificationRiskCourseKey,
+} from "./risk-rules/qualification-risk-analyzer";
+
+import {
+  resolveDegreeRequirement,
+} from "./risk-rules/degree-requirement-resolver";
+
+import {
+  analyzeDegreeCredits,
+} from "./risk-rules/degree-credit-analyzer";
+
+import {
+  resolveSocialWorkerLaw,
+} from "./risk-rules/social-worker-law-resolver";
+
+import {
+  mergeQualificationRequirements,
+} from "./risk-rules/qualification-requirement-merger";
+
+import {
+  planQualificationSubjects,
+} from "./risk-rules/qualification-subject-planner";
+
+import {
+  planQualificationSemesters,
+} from "./risk-rules/qualification-semester-planner";
+
+import {
+  planAdministrativeTimeline,
+} from "./risk-rules/administrative-timeline-planner";
+
+import {
+  resolveStudentAcademicSummary,
+} from "./risk-rules/student-academic-summary-resolver";
+
 import type {
   AiUserContext,
   StudentDetailRiskToolOutput,
@@ -11,6 +56,30 @@ import type {
   StudentRiskItem,
   StudentRiskSubjectItem,
 } from "./ai.types";
+
+/**
+ * 학생 상세 위험도 분석 진입 방식.
+ *
+ * crm:
+ * 기존 EduCanvas 업무비서 직원 권한
+ *
+ * verified_student:
+ * 카카오 AI에서 이름 + 연락처 인증을 거쳐
+ * 서버가 확정한 "본인 학생 ID" 접근
+ *
+ * 중요:
+ * 카카오 학생을 가짜 staff / host로 만들지 않는다.
+ */
+type StudentDetailRiskAccess =
+  | {
+      type: "crm";
+      context: AiUserContext;
+    }
+  | {
+      type: "verified_student";
+      organizationId: number;
+      verifiedStudentId: number;
+    };
 
 type RequirementKey =
   | "majorRequired"
@@ -37,6 +106,26 @@ function normalizeSubjectName(
   return String(value ?? "")
     .trim()
     .replace(/\s+/g, "")
+    .toLowerCase();
+}
+
+function normalizeSubjectCatalogName(
+  value:
+    unknown
+) {
+  return String(
+    value ??
+    ""
+  )
+    .trim()
+    .replace(
+      /\s+/g,
+      ""
+    )
+    .replace(
+      /[()（）[\]·ㆍ.,_-]/g,
+      ""
+    )
     .toLowerCase();
 }
 
@@ -184,11 +273,11 @@ function createRecognizedSubjects(
   sortedSubjects.forEach(
     (subject, index) => {
       const normalizedName =
-        normalizeSubjectName(
-          subject.subjectName
-        );
+  getConfirmedSubjectEquivalenceKey(
+    subject.subjectName
+  );
 
-      if (!normalizedName) {
+if (!normalizedName) {
         recognizedMap.set(
           `unknown:${subject.source}:${subject.id ?? index}`,
           subject
@@ -421,40 +510,103 @@ function applyRuleToCategory(params: {
 function buildRiskScore(
   issues: StudentRiskItem[]
 ) {
-  return issues.reduce(
-    (score, issue) => {
-      if (
-        issue.severity ===
+  const categoryCounts =
+    new Map<
+      string,
+      number
+    >();
+
+  let score =
+    0;
+
+  for (
+    const issue
+    of issues
+  ) {
+    const category =
+      String(
+        issue.category ||
+        "unknown"
+      );
+
+    const previousCount =
+      categoryCounts.get(
+        category
+      ) || 0;
+
+    categoryCounts.set(
+      category,
+      previousCount + 1
+    );
+
+    let baseScore =
+      issue.severity ===
         "danger"
-      ) {
-        return score + 20;
-      }
+        ? 20
+        : issue.severity ===
+            "warning"
+          ? 10
+          : 2;
 
-      if (
-        issue.severity ===
-        "warning"
-      ) {
-        return score + 10;
-      }
+    /**
+     * 같은 카테고리에서 여러 문제가 연속 발생하면
+     * 첫 번째 문제는 전체 가중치,
+     * 두 번째부터는 절반만 반영한다.
+     *
+     * 예:
+     * credit danger 3건
+     * 기존 60점
+     * 변경 20 + 10 + 10 = 40점
+     */
+    if (
+      previousCount >
+      0
+    ) {
+      baseScore =
+        Math.ceil(
+          baseScore *
+          0.5
+        );
+    }
 
-      return score + 2;
-    },
-    0
+    score +=
+      baseScore;
+  }
+
+  /**
+   * 위험도 점수는
+   * UI 및 AI 설명을 위해
+   * 0~100 범위로 제한한다.
+   */
+  return Math.min(
+    Math.max(
+      score,
+      0
+    ),
+    100
   );
 }
 
-export async function analyzeStudentDetailRisk(
+async function analyzeStudentDetailRiskInternal(
   params: {
-    context: AiUserContext;
-    studentId: number;
+    access:
+      StudentDetailRiskAccess;
+
+    studentId:
+      number;
   }
 ): Promise<StudentDetailRiskToolOutput> {
   const studentId =
-    Number(params.studentId);
+    Number(
+      params.studentId
+    );
 
   if (
-    !Number.isFinite(studentId) ||
-    studentId <= 0
+    !Number.isFinite(
+      studentId
+    ) ||
+    studentId <=
+      0
   ) {
     throw new Error(
       "올바른 학생 ID가 필요합니다."
@@ -462,11 +614,56 @@ export async function analyzeStudentDetailRisk(
   }
 
   const organizationId =
-    params.context.organizationId;
+    params.access.type ===
+    "crm"
+      ? Number(
+          params.access
+            .context
+            .organizationId
+        )
+      : Number(
+          params.access
+            .organizationId
+        );
+
+  if (
+    !Number.isFinite(
+      organizationId
+    ) ||
+    organizationId <=
+      0
+  ) {
+    throw new Error(
+      "학생 회사 정보가 올바르지 않습니다."
+    );
+  }
 
   /**
-   * 학생을 가장 먼저 조회하고
-   * 담당자·팀·회사 권한을 검사한다.
+   * 카카오 등록회원 접근은
+   * 최초 인증에서 서버가 확정한
+   * studentId와 현재 분석 대상 studentId가
+   * 반드시 동일해야 한다.
+   *
+   * 사용자 메시지나 모델이 제시한
+   * 다른 studentId는 절대 허용하지 않는다.
+   */
+  if (
+    params.access.type ===
+      "verified_student" &&
+    Number(
+      params.access
+        .verifiedStudentId
+    ) !==
+      studentId
+  ) {
+    throw new Error(
+      "인증된 본인의 학생 정보만 조회할 수 있습니다."
+    );
+  }
+
+  /**
+   * 항상 studentId + organizationId로
+   * 학생을 다시 조회한다.
    */
   const student =
     await db.getStudentById(
@@ -476,20 +673,72 @@ export async function analyzeStudentDetailRisk(
       }
     );
 
-  if (!student) {
+  if (
+    !student
+  ) {
     throw new Error(
       "학생 정보를 찾을 수 없습니다."
     );
   }
 
-  assertCanAccessStudent({
-    context: params.context,
-    student,
-  });
+  /**
+   * CRM 업무비서는 기존 직원 권한체계를
+   * 그대로 사용한다.
+   */
+  if (
+    params.access.type ===
+    "crm"
+  ) {
+    assertCanAccessStudent({
+      context:
+        params.access.context,
+
+      student,
+    });
+  }
+
+  /**
+   * 카카오 등록회원은
+   * 직원 권한을 흉내내지 않는다.
+   *
+   * 이름 + 연락처 인증으로 서버에서 확정된
+   * 본인의 studentId와 organizationId만 사용한다.
+   */
+  if (
+    params.access.type ===
+    "verified_student"
+  ) {
+    if (
+      Number(
+        (student as any)
+          .organizationId ||
+        0
+      ) !==
+      organizationId
+    ) {
+      throw new Error(
+        "등록회원 회사정보가 일치하지 않습니다."
+      );
+    }
+
+    if (
+      String(
+        (student as any)
+          .approvalStatus ||
+        ""
+      ).trim() !==
+      "승인"
+    ) {
+      throw new Error(
+        "등록회원 승인 상태를 확인할 수 없습니다."
+      );
+    }
+  }
 
   const [
   plan,
   planSemesters,
+  studentSemesters,
   transferSubjects,
   creditRule,
   extraItems,
@@ -504,6 +753,19 @@ export async function analyzeStudentDetailRisk(
   ),
 
   db.listPlanSemesters(
+    studentId,
+    {
+      organizationId,
+    }
+  ),
+
+  /**
+   * 실제 학생 학기 데이터.
+   *
+   * semesterLabel과 기존 연간 과목 수를
+   * 자동 학기배치 계산에 사용한다.
+   */
+  db.listSemesters(
     studentId,
     {
       organizationId,
@@ -966,17 +1228,19 @@ if (isRefundWithoutPayment) {
 const recognizedSubject =
   recognizedSubjects.find(
     (subject) =>
-      normalizeSubjectName(
+      getConfirmedSubjectEquivalenceKey(
         subject.subjectName
       ) ===
-      normalizeSubjectName(
+      getConfirmedSubjectEquivalenceKey(
         rows[0].subjectName
       )
   );
 
     pushIssue(issues, {
       code:
-        `DUPLICATE_SUBJECT_${normalizeSubjectName(rows[0].subjectName)}`,
+  `DUPLICATE_SUBJECT_${getConfirmedSubjectEquivalenceKey(
+    rows[0].subjectName
+  )}`,
 
       severity: "danger",
       category: "subject",
@@ -984,7 +1248,14 @@ const recognizedSubject =
       title: "중복 과목 확인",
 
       message:
-  `'${rows[0].subjectName}' 과목이 ${rows.length}건 등록되어 있습니다. ${recognizedSubject?.sourceLabel || "첫 번째 항목"} 1건만 학점으로 인정하고 나머지는 중복에서 제외했습니다. 등록 위치: ${sourceLabels}`,
+  `'${rows
+    .map(
+      (row) =>
+        row.subjectName
+    )
+    .join(
+      "', '"
+    )}' 과목이 동일 또는 공식 동일교과목으로 확인되었습니다. ${recognizedSubject?.sourceLabel || "첫 번째 항목"} 1건만 인정하고 나머지는 중복에서 제외했습니다. 등록 위치: ${sourceLabels}`,
 
      details: {
   subjectName:
@@ -1167,6 +1438,1000 @@ for (
       general: "일반",
     };
 
+const categoryRequirementTypes:
+  Record<
+    RequirementKey,
+    "전공필수" |
+    "전공선택" |
+    "교양" |
+    "일반"
+  > = {
+  majorRequired:
+    "전공필수",
+
+  majorElective:
+    "전공선택",
+
+  liberal:
+    "교양",
+
+  general:
+    "일반",
+};
+
+const riskCourseName =
+  String(
+    (student as any).course ||
+    (plan as any)?.desiredCourse ||
+    ""
+  ).trim();
+
+const normalizedRiskCourseName =
+  normalizeSubjectCatalogName(
+    riskCourseName
+  );
+
+let riskMasterItems:
+  any[] = [];
+
+let riskMatchedCatalog:
+  any =
+    null;
+
+if (
+  normalizedRiskCourseName
+) {
+  const riskCatalogs =
+    await db.listSubjectCatalogs({
+      organizationId,
+      activeOnly:
+        true,
+    });
+
+  riskMatchedCatalog =
+    (
+      riskCatalogs ||
+      []
+    ).find(
+      (
+        catalog:
+          any
+      ) =>
+        normalizeSubjectCatalogName(
+          catalog?.name
+        ) ===
+        normalizedRiskCourseName
+    ) ||
+    null;
+
+  if (
+    riskMatchedCatalog
+  ) {
+    riskMasterItems =
+      await db.listSubjectCatalogItems({
+        organizationId,
+
+        catalogId:
+          Number(
+            riskMatchedCatalog.id
+          ),
+
+        activeOnly:
+          true,
+      });
+  }
+}
+
+const qualificationAnalysisCourseKey =
+  resolveQualificationRiskCourseKey(
+    riskCourseName
+  );
+
+/**
+ * 학위 부족학점 채움용 실제 과정 템플릿.
+ *
+ * 회사별 course_subject_templates만 사용한다.
+ */
+const degreeSubjectTemplates =
+  qualificationAnalysisCourseKey !==
+    "unknown"
+    ? await db.listCourseSubjectTemplates(
+        qualificationAnalysisCourseKey,
+        {
+          organizationId,
+        }
+      )
+    : [];
+
+const degreeRequirement =
+  resolveDegreeRequirement({
+    courseKey:
+      qualificationAnalysisCourseKey,
+
+    finalEducation:
+      (student as any)
+        .finalEducation ??
+      (plan as any)
+        ?.finalEducation ??
+      null,
+  });
+
+const degreeCreditAnalysis =
+  analyzeDegreeCredits({
+    degreeRequirement,
+
+    recognizedSubjects:
+      validRecognizedSubjects.map(
+        (
+          subject
+        ) => ({
+          subjectName:
+            subject.subjectName,
+
+          requirementType:
+            subject.requirementType ??
+            null,
+
+          category:
+            subject.category ??
+            null,
+
+          credits:
+            subject.credits,
+
+          source:
+            subject.source,
+        })
+      ),
+  });
+
+const degreeMajorRecommendationItems =
+  riskMasterItems.filter(
+    (
+      item:
+        any
+    ) =>
+      String(
+        item?.requirementType ||
+        ""
+      ).trim() ===
+        "전공필수" ||
+      String(
+        item?.requirementType ||
+        ""
+      ).trim() ===
+        "전공선택"
+  );
+
+const degreeLiberalRecommendationItems =
+  riskMasterItems.filter(
+    (
+      item:
+        any
+    ) =>
+      String(
+        item?.requirementType ||
+        ""
+      ).trim() ===
+        "교양" ||
+      String(
+        item?.category ||
+        ""
+      ).trim() ===
+        "교양"
+  );
+
+const degreeMajorRecommendations =
+  buildRiskSubjectRecommendations({
+    masterItems:
+      degreeMajorRecommendationItems,
+
+    existingSubjects:
+      validRecognizedSubjects.map(
+        (
+          subject
+        ) => ({
+          subjectName:
+            subject.subjectName,
+
+          credits:
+            subject.credits,
+
+          source:
+            subject.source,
+        })
+      ),
+
+    requiredCredits:
+      Number(
+        degreeCreditAnalysis
+          .summary
+          .remainingMajorCredits ||
+        0
+      ),
+
+    limit:
+      10,
+  });
+
+const degreeLiberalRecommendations =
+  buildRiskSubjectRecommendations({
+    masterItems:
+      degreeLiberalRecommendationItems,
+
+    existingSubjects:
+      validRecognizedSubjects.map(
+        (
+          subject
+        ) => ({
+          subjectName:
+            subject.subjectName,
+
+          credits:
+            subject.credits,
+
+          source:
+            subject.source,
+        })
+      ),
+
+    requiredCredits:
+      Number(
+        degreeCreditAnalysis
+          .summary
+          .remainingLiberalCredits ||
+        0
+      ),
+
+    limit:
+      10,
+  });
+
+const degreeRequiredMajorCredits =
+  Number(
+    degreeCreditAnalysis
+      .summary
+      .remainingMajorCredits ||
+    0
+  );
+
+const degreeRequiredLiberalCredits =
+  Number(
+    degreeCreditAnalysis
+      .summary
+      .remainingLiberalCredits ||
+    0
+  );
+
+const degreeRequiredTotalCredits =
+  Number(
+    degreeCreditAnalysis
+      .summary
+      .remainingTotalCredits ||
+    0
+  );
+
+/**
+ * 총학점 부족분에서
+ * 전공/교양 최소요건을 먼저 채우고도
+ * 남는 학점만 잔여 추천 대상으로 본다.
+ */
+const degreeResidualTotalCredits =
+  Math.max(
+    degreeRequiredTotalCredits -
+      degreeRequiredMajorCredits -
+      degreeRequiredLiberalCredits,
+    0
+  );
+
+const degreeResidualRecommendationItems =
+  riskMasterItems.filter(
+    (
+      item:
+        any
+    ) => {
+      const requirementType =
+        String(
+          item?.requirementType ||
+          ""
+        ).trim();
+
+      const category =
+        String(
+          item?.category ||
+          ""
+        ).trim();
+
+      return (
+        requirementType ===
+          "일반" ||
+        category ===
+          "일반" ||
+        requirementType ===
+          "전공필수" ||
+        requirementType ===
+          "전공선택" ||
+        requirementType ===
+          "교양" ||
+        category ===
+          "교양"
+      );
+    }
+  );
+
+const degreeResidualRecommendations =
+  buildRiskSubjectRecommendations({
+    masterItems:
+      degreeResidualRecommendationItems,
+
+    existingSubjects: [
+      ...validRecognizedSubjects.map(
+        (
+          subject
+        ) => ({
+          subjectName:
+            subject.subjectName,
+
+          credits:
+            subject.credits,
+
+          source:
+            subject.source,
+        })
+      ),
+
+      ...degreeMajorRecommendations.map(
+        (
+          subject
+        ) => ({
+          subjectName:
+            subject.subjectName,
+
+          credits:
+            subject.credits,
+
+          source:
+            "plan" as const,
+        })
+      ),
+
+      ...degreeLiberalRecommendations.map(
+        (
+          subject
+        ) => ({
+          subjectName:
+            subject.subjectName,
+
+          credits:
+            subject.credits,
+
+          source:
+            "plan" as const,
+        })
+      ),
+    ],
+
+    requiredCredits:
+      degreeResidualTotalCredits,
+
+    limit:
+      10,
+  });
+
+/**
+ * ─────────────────────────────
+ * 사회복지사 2급 구법/신법 자동 판정
+ * ─────────────────────────────
+ *
+ * 우선순위:
+ *
+ * 1. 담당자가 수동으로 확정한 값
+ * 2. 전적대 사회복지 인정과목의 이수연도
+ * 3. 불명확하면 review_required
+ *
+ * 사회복지 과정이 아니면 null.
+ */
+const socialWorkerLawResolution =
+  qualificationAnalysisCourseKey ===
+    "social_worker_2"
+    ? resolveSocialWorkerLaw({
+        masterItems:
+          riskMasterItems,
+
+        transferSubjects:
+          transferSubjects ||
+          [],
+
+        manualLawVersion:
+          (student as any)
+            .socialWorkerLawVersion ??
+          undefined,
+      })
+    : null;
+
+const qualificationAnalysis =
+  analyzeQualificationRisk({
+    courseName:
+      riskCourseName,
+
+    masterItems:
+      riskMasterItems,
+
+    recognizedSubjects:
+      validRecognizedSubjects.map(
+        (
+          subject
+        ) => ({
+          subjectName:
+            subject.subjectName,
+
+          requirementType:
+            subject.requirementType ??
+            null,
+
+          category:
+            subject.category ??
+            null,
+
+          credits:
+            subject.credits,
+
+          source:
+            subject.source,
+        })
+      ),
+
+        /**
+     * 사회복지사 2급 적용기준.
+     *
+     * 1. 담당자가 직접 확정한 값이 있으면 우선
+     * 2. 없으면 전적대 사회복지 인정과목의
+     *    실제 이수연도로 자동 판정
+     * 3. 연도 불명확 시 undefined를 전달하여
+     *    자격요건을 임의 확정하지 않는다.
+     */
+    socialWorkerLawVersion:
+      socialWorkerLawResolution
+        ?.effectiveLawVersion ??
+      undefined,
+  });
+
+/**
+ * 사회복지 법규 자동판정 근거를
+ * qualification summary에 포함한다.
+ *
+ * 학생 상세 / AI 업무비서 / 향후 카카오 AI가
+ * 동일한 근거를 사용할 수 있다.
+ */
+if (
+  qualificationAnalysisCourseKey ===
+    "social_worker_2" &&
+  socialWorkerLawResolution
+) {
+  qualificationAnalysis.summary = {
+    ...qualificationAnalysis.summary,
+
+    lawResolution: {
+      lawVersion:
+        socialWorkerLawResolution
+          .lawVersion,
+
+      effectiveLawVersion:
+        socialWorkerLawResolution
+          .effectiveLawVersion,
+
+      source:
+        socialWorkerLawResolution
+          .source,
+
+      isConfirmed:
+        socialWorkerLawResolution
+          .isConfirmed,
+
+      requiresReview:
+        socialWorkerLawResolution
+          .requiresReview,
+
+      message:
+        socialWorkerLawResolution
+          .message,
+
+      evidenceSubjects:
+        socialWorkerLawResolution
+          .evidenceSubjects,
+
+      unknownYearSubjects:
+        socialWorkerLawResolution
+          .unknownYearSubjects,
+    },
+  };
+}
+
+/**
+ * ─────────────────────────────
+ * 학위요건 + 자격요건 통합
+ * ─────────────────────────────
+ *
+ * 여기서는 과목을 직접 설계하지 않는다.
+ *
+ * 학생에게 현재 남아 있는
+ * 법적 자격조건과 학위조건을
+ * 하나의 공통 결과로 정리한다.
+ */
+const unifiedRequirements =
+  mergeQualificationRequirements({
+    degreeRequirement,
+
+    degreeCreditAnalysis,
+
+    qualificationAnalysis,
+  });
+
+/**
+ * ─────────────────────────────
+ * 자격/학위 공통 Requirements 기반
+ * 실제 필수과목 선택
+ * ─────────────────────────────
+ *
+ * 현재 단계에서는
+ * 과정 마스터 안에서 법적으로 필요한
+ * 자격과목/영역/전공필수를 선택한다.
+ *
+ * 교양/일반 학점 채움용 과목은
+ * 데이터 근거가 확보될 때까지 생성하지 않는다.
+ */
+const qualificationSubjectPlan =
+  planQualificationSubjects({
+    requirements:
+      unifiedRequirements,
+
+    masterItems:
+      riskMasterItems,
+
+    recognizedSubjects:
+      validRecognizedSubjects.map(
+        (
+          subject
+        ) => ({
+          subjectName:
+            subject.subjectName,
+
+          requirementType:
+            subject.requirementType ??
+            null,
+
+          category:
+            subject.category ??
+            null,
+
+          credits:
+            subject.credits,
+
+          source:
+            subject.source,
+        })
+      ),
+
+    degreeTemplates:
+      degreeSubjectTemplates.map(
+        (
+          item:
+            any
+        ) => ({
+          id:
+            Number(
+              item.id ||
+              0
+            ),
+
+          courseKey:
+            String(
+              item.courseKey ||
+              ""
+            ),
+
+          subjectName:
+            String(
+              item.subjectName ||
+              ""
+            ).trim(),
+
+          category:
+            item.category,
+
+          requirementType:
+            item.requirementType ??
+            null,
+
+          sortOrder:
+            Number(
+              item.sortOrder ||
+              0
+            ),
+        })
+      ),
+  });
+
+/**
+ * ─────────────────────────────
+ * 실제 과목계획 → 학기 자동배치
+ * ─────────────────────────────
+ *
+ * 한 학기 최대 8과목,
+ * 동일 귀속연도 최대 14과목 기준으로
+ * 실제 추가과목을 학기별 배치한다.
+ *
+ * 기존 학생 학기가 있으면
+ * 마지막 학기의 다음 학기부터 시작하고,
+ *
+ * 기존 학기가 없으면
+ * 현재 한국 날짜 기준 귀속학기를
+ * 첫 학기로 추정한다.
+ */
+const qualificationSemesterPlan =
+  planQualificationSemesters({
+    subjectPlan:
+      qualificationSubjectPlan,
+
+    existingSemesters:
+      (
+        studentSemesters ||
+        []
+      ).map(
+        (
+          semester:
+            any
+        ) => ({
+          semesterOrder:
+            Number(
+              semester
+                ?.semesterOrder ||
+              0
+            ),
+
+          semesterLabel:
+            semester
+              ?.semesterLabel ??
+            null,
+
+          plannedSubjectCount:
+            semester
+              ?.plannedSubjectCount ??
+            null,
+
+          actualSubjectCount:
+            semester
+              ?.actualSubjectCount ??
+            null,
+        })
+      ),
+  });
+
+/**
+ * ─────────────────────────────
+ * 학기 자동배치 → 행정절차 최단 일정
+ * ─────────────────────────────
+ *
+ * 최종 수업 귀속학기를 기준으로
+ *
+ * - 학습자등록
+ * - 학점인정신청
+ * - 학위신청
+ * - 학위수여
+ * - 자격증 신청
+ *
+ * 예상 일정을 공통 계산한다.
+ */
+const administrativeTimeline =
+  planAdministrativeTimeline({
+    requirements:
+      unifiedRequirements,
+
+    semesterPlan:
+      qualificationSemesterPlan,
+
+    existingSemesters:
+      (
+        studentSemesters ||
+        []
+      ).map(
+        (
+          semester:
+            any
+        ) => ({
+          semesterOrder:
+            Number(
+              semester
+                ?.semesterOrder ||
+              0
+            ),
+
+          semesterLabel:
+            semester
+              ?.semesterLabel ??
+            null,
+        })
+      ),
+  });
+
+/**
+ * ─────────────────────────────
+ * 학위/자격/과목/학기/행정절차
+ * 공통 학업요약
+ * ─────────────────────────────
+ *
+ * AI가 각각의 Rule 결과를
+ * 다시 계산하지 않도록
+ * 서버 계산결과를 설명용 데이터로 통합한다.
+ */
+const academicSummary =
+  resolveStudentAcademicSummary({
+    requirements:
+      unifiedRequirements,
+
+    subjectPlan:
+      qualificationSubjectPlan,
+
+    semesterPlan:
+      qualificationSemesterPlan,
+
+    administrativeTimeline,
+  });
+
+
+/**
+ * 사회복지사 인정과목은 존재하지만
+ * 이수연도를 확인할 수 없어
+ * 법규 적용을 자동 확정할 수 없는 경우.
+ */
+if (
+  qualificationAnalysisCourseKey ===
+    "social_worker_2" &&
+  socialWorkerLawResolution
+    ?.requiresReview
+) {
+  pushIssue(
+    issues,
+    {
+      code:
+        "SOCIAL_WORKER_LAW_REVIEW_REQUIRED",
+
+      severity:
+        "danger",
+
+      category:
+        "qualification",
+
+      title:
+        "사회복지 구법/신법 확인 필요",
+
+      message:
+        socialWorkerLawResolution
+          .message,
+
+      details: {
+  lawVersion:
+    socialWorkerLawResolution
+      .lawVersion,
+
+  source:
+    socialWorkerLawResolution
+      .source,
+
+  unknownYearSubjectCount:
+    socialWorkerLawResolution
+      .unknownYearSubjects
+      .length,
+
+  evidenceSubjectCount:
+    socialWorkerLawResolution
+      .evidenceSubjects
+      .length,
+},
+    }
+  );
+}
+
+if (
+  degreeRequirement
+    .finalEducationGroup ===
+  "unknown"
+) {
+  pushIssue(issues, {
+    code:
+      "DEGREE_FINAL_EDUCATION_UNKNOWN",
+
+    severity:
+      "warning",
+
+    category:
+      "student",
+
+    title:
+      "최종학력 확인 필요",
+
+    message:
+      degreeRequirement.reason,
+
+    details: {
+      courseKey:
+        degreeRequirement.courseKey,
+
+      finalEducation:
+        (student as any)
+          .finalEducation ??
+        (plan as any)
+          ?.finalEducation ??
+        null,
+    },
+  });
+} else if (
+  degreeRequirement
+    .requiresNewDegreeTrack
+) {
+  pushIssue(issues, {
+    code:
+      `DEGREE_TRACK_REQUIRED_${degreeRequirement.courseKey}`,
+
+    severity:
+      "info",
+
+    category:
+      "credit",
+
+    title:
+      "학위과정 확인",
+
+    message:
+      degreeRequirement.reason,
+
+    details: {
+      finalEducationGroup:
+        degreeRequirement
+          .finalEducationGroup,
+
+      minimumDegreeLevel:
+        degreeRequirement
+          .minimumDegreeLevel,
+
+      requiresDegree:
+        degreeRequirement
+          .requiresDegree,
+
+      requiresNewDegreeTrack:
+        degreeRequirement
+          .requiresNewDegreeTrack,
+
+      degreeType:
+        degreeRequirement
+          .defaultDegreeRule
+          ?.degreeType ??
+        null,
+
+      totalCredits:
+        degreeRequirement
+          .defaultDegreeRule
+          ?.totalCredits ??
+        null,
+
+      majorCredits:
+        degreeRequirement
+          .defaultDegreeRule
+          ?.majorCredits ??
+        null,
+
+      liberalCredits:
+        degreeRequirement
+          .defaultDegreeRule
+          ?.liberalCredits ??
+        null,
+    },
+  });
+}
+
+for (
+  const degreeIssue
+  of degreeCreditAnalysis.issues
+) {
+  const recommendedSubjects =
+  degreeIssue.code ===
+    "DEGREE_MAJOR_CREDIT_SHORTAGE"
+    ? degreeMajorRecommendations
+    : degreeIssue.code ===
+        "DEGREE_LIBERAL_CREDIT_SHORTAGE"
+      ? degreeLiberalRecommendations
+      : degreeIssue.code ===
+          "DEGREE_TOTAL_CREDIT_SHORTAGE"
+        ? degreeResidualRecommendations
+        : [];
+
+  pushIssue(issues, {
+    code:
+      degreeIssue.code,
+
+    severity:
+      degreeIssue.severity,
+
+    category:
+      "credit",
+
+    title:
+      degreeIssue.title,
+
+    message:
+      degreeIssue.message,
+
+    details: {
+      ...(
+        degreeIssue.details ||
+        {}
+      ),
+
+residualRequiredCredits:
+  degreeIssue.code ===
+    "DEGREE_TOTAL_CREDIT_SHORTAGE"
+    ? degreeResidualTotalCredits
+    : null,
+
+      recommendedSubjects:
+        recommendedSubjects.map(
+          (
+            subject
+          ) => ({
+            masterSubjectId:
+              subject.masterSubjectId,
+
+            subjectName:
+              subject.subjectName,
+
+            category:
+              subject.category,
+
+            requirementType:
+              subject.requirementType,
+
+            credits:
+              subject.credits,
+
+            semesterNo:
+              subject.semesterNo,
+
+            isFaceToFace:
+              subject.isFaceToFace,
+
+            reason:
+              subject.reason,
+          })
+        ),
+    },
+  });
+}
+
+for (
+  const qualificationIssue
+  of qualificationAnalysis.issues
+) {
+  pushIssue(issues, {
+    code:
+      qualificationIssue.code,
+
+    severity:
+      qualificationIssue.severity,
+
+    category:
+      "subject",
+
+    title:
+      qualificationIssue.title,
+
+    message:
+      qualificationIssue.message,
+
+    details:
+      qualificationIssue.details,
+  });
+}
+
     for (
       const key of Object.keys(
         categories
@@ -1185,6 +2450,49 @@ for (
           0
         ) > 0
       ) {
+
+const recommendedSubjects =
+  buildRiskSubjectRecommendations({
+    masterItems:
+      riskMasterItems,
+
+    existingSubjects:
+      validRecognizedSubjects.map(
+        (
+          subject
+        ) => ({
+          subjectName:
+            subject.subjectName,
+
+          credits:
+            subject.credits,
+
+          source:
+            subject.source,
+        })
+      ),
+
+    requirementType:
+      categoryRequirementTypes[
+        key
+      ],
+
+    requiredSubjects:
+      Number(
+        category.remainingSubjects ||
+        0
+      ),
+
+    requiredCredits:
+      Number(
+        category.remainingCredits ||
+        0
+      ),
+
+    limit:
+      10,
+  });
+
         pushIssue(issues, {
           code:
             `CATEGORY_SHORTAGE_${key}`,
@@ -1199,18 +2507,64 @@ for (
             `${categoryLabels[key]} 기준이 부족합니다. 현재 ${category.currentSubjects}과목/${category.currentCredits}학점, 부족 ${category.remainingSubjects ?? 0}과목/${category.remainingCredits ?? 0}학점입니다.`,
 
           details: {
-            currentSubjects:
-              category.currentSubjects,
+  currentSubjects:
+    category.currentSubjects,
 
-            currentCredits:
-              category.currentCredits,
+  currentCredits:
+    category.currentCredits,
 
-            remainingSubjects:
-              category.remainingSubjects,
+  remainingSubjects:
+    category.remainingSubjects,
 
-            remainingCredits:
-              category.remainingCredits,
-          },
+  remainingCredits:
+    category.remainingCredits,
+
+  matchedCatalogId:
+    riskMatchedCatalog
+      ? Number(
+          riskMatchedCatalog.id
+        )
+      : null,
+
+  matchedCatalogName:
+    riskMatchedCatalog
+      ? String(
+          riskMatchedCatalog.name ||
+          ""
+        )
+      : null,
+
+  recommendedSubjects:
+    recommendedSubjects.map(
+      (
+        subject
+      ) => ({
+        masterSubjectId:
+          subject.masterSubjectId,
+
+        subjectName:
+          subject.subjectName,
+
+        category:
+          subject.category,
+
+        requirementType:
+          subject.requirementType,
+
+        credits:
+          subject.credits,
+
+        semesterNo:
+          subject.semesterNo,
+
+        isFaceToFace:
+          subject.isFaceToFace,
+
+        reason:
+          subject.reason,
+      })
+    ),
+},
         });
       }
     }
@@ -1243,10 +2597,70 @@ for (
     (practiceRequests ||
       []) as any[];
 
+const actualPracticeRequestRows =
+  practiceRows.filter(
+    (
+      row:
+        any
+    ) =>
+      row
+        ?.hasPracticeSupportRequest ===
+        true ||
+      Number(
+        row
+          ?.practiceSupportRequestId ||
+        row?.id ||
+        0
+      ) > 0
+  );
+
+const registeredPracticeHours =
+  actualPracticeRequestRows.reduce(
+    (
+      maxHours,
+      row:
+        any
+    ) =>
+      Math.max(
+        maxHours,
+        toNumber(
+          row
+            ?.practiceHours
+        )
+      ),
+    0
+  );
+
+const expectedSocialWorkerPracticeHours =
+  qualificationAnalysisCourseKey ===
+    "social_worker_2"
+    ? socialWorkerLawResolution
+        ?.effectiveLawVersion ===
+        "old"
+      ? 120
+      : socialWorkerLawResolution
+            ?.effectiveLawVersion ===
+          "current"
+        ? 160
+        : 0
+    : 0;
+
+const hasSocialWorkerPracticeHourMismatch =
+  qualificationAnalysisCourseKey ===
+    "social_worker_2" &&
+  expectedSocialWorkerPracticeHours > 0 &&
+  registeredPracticeHours > 0 &&
+  expectedSocialWorkerPracticeHours !==
+    registeredPracticeHours;
+
+const hasActualPracticeRequest =
+  actualPracticeRequestRows.length >
+  0;
+
   if (
-    requiresPractice &&
-    practiceRows.length === 0
-  ) {
+  requiresPractice &&
+  !hasActualPracticeRequest
+) {
     pushIssue(issues, {
       code:
         "PRACTICE_REQUEST_MISSING",
@@ -1260,12 +2674,53 @@ for (
     });
   }
 
+if (
+  hasSocialWorkerPracticeHourMismatch
+) {
+  pushIssue(issues, {
+    code:
+      "SOCIAL_WORKER_PRACTICE_HOURS_MISMATCH",
+
+    severity:
+      "danger",
+
+    category:
+      "practice",
+
+    title:
+      "사회복지 실습시간 불일치",
+
+   message:
+  `사회복지사 2급 ${
+    socialWorkerLawResolution
+      ?.effectiveLawVersion ===
+    "old"
+      ? "구법"
+      : "신법"
+  } 기준 실습은 ${expectedSocialWorkerPracticeHours}시간이지만 실습배정지원센터 요청에는 ${registeredPracticeHours}시간으로 등록되어 있습니다.`,
+
+    details: {
+  expectedPracticeHours:
+    expectedSocialWorkerPracticeHours,
+
+  practiceRequestHours:
+    registeredPracticeHours,
+
+  lawVersion:
+    socialWorkerLawResolution
+      ?.effectiveLawVersion ??
+    null,
+},
+  });
+}
+
+
   if (
-    requiresPractice &&
-    practiceRows.length > 0
-  ) {
+  requiresPractice &&
+  hasActualPracticeRequest
+) {
     const completed =
-      practiceRows.some(
+  actualPracticeRequestRows.some(
         (row: any) =>
           String(
             row.coordinationStatus ||
@@ -1288,7 +2743,7 @@ for (
 
         details: {
           practiceRequestCount:
-            practiceRows.length,
+  actualPracticeRequestRows.length,
         },
       });
     }
@@ -1375,7 +2830,7 @@ registeredSubjectCount:
       duplicateSubjectCount,
 
       practiceRequestCount:
-        practiceRows.length,
+  actualPracticeRequestRows.length,
     },
 
 payment: {
@@ -1401,9 +2856,23 @@ payment: {
     effectivePaymentDate,
 },
 
-    categories,
-    issues,
-    subjects,
+        categories,
+
+requirements:
+  unifiedRequirements,
+
+subjectPlan:
+  qualificationSubjectPlan,
+
+semesterPlan:
+  qualificationSemesterPlan,
+
+administrativeTimeline,
+
+academicSummary,
+
+issues,
+subjects,
 
     sourceStatus: {
       hasPlan:
@@ -1423,9 +2892,109 @@ payment: {
         ),
 
       hasPracticeRequest:
-        practiceRows.length > 0,
+  hasActualPracticeRequest,
     },
   };
+}
+
+/**
+ * 기존 EduCanvas CRM AI용 학생 상세 위험도 분석.
+ *
+ * 기존 호출부 호환성을 유지한다.
+ */
+export async function analyzeStudentDetailRisk(
+  params: {
+    context:
+      AiUserContext;
+
+    studentId:
+      number;
+  }
+): Promise<StudentDetailRiskToolOutput> {
+  return analyzeStudentDetailRiskInternal({
+    access: {
+      type:
+        "crm",
+
+      context:
+        params.context,
+    },
+
+    studentId:
+      params.studentId,
+  });
+}
+
+/**
+ * 카카오 AI 등록회원 본인용 위험도 / 학습분석.
+ *
+ * 반드시 이름 + 연락처 인증을 통해
+ * 서버가 확정한 studentId만 전달해야 한다.
+ *
+ * CRM 직원 role을 생성하지 않는다.
+ */
+export async function analyzeVerifiedStudentDetailRisk(
+  params: {
+    organizationId:
+      number;
+
+    verifiedStudentId:
+      number;
+  }
+): Promise<StudentDetailRiskToolOutput> {
+  const organizationId =
+    Math.floor(
+      Number(
+        params.organizationId ||
+        0
+      )
+    );
+
+  const verifiedStudentId =
+    Math.floor(
+      Number(
+        params.verifiedStudentId ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      organizationId
+    ) ||
+    organizationId <=
+      0
+  ) {
+    throw new Error(
+      "카카오 등록회원 회사 정보가 올바르지 않습니다."
+    );
+  }
+
+  if (
+    !Number.isFinite(
+      verifiedStudentId
+    ) ||
+    verifiedStudentId <=
+      0
+  ) {
+    throw new Error(
+      "카카오 등록회원 학생 정보가 올바르지 않습니다."
+    );
+  }
+
+  return analyzeStudentDetailRiskInternal({
+    access: {
+      type:
+        "verified_student",
+
+      organizationId,
+
+      verifiedStudentId,
+    },
+
+    studentId:
+      verifiedStudentId,
+  });
 }
 
 function normalizeStudentRiskScanLimit(
@@ -1869,18 +3438,66 @@ netPaymentAmount:
     );
 
   const creditShortageStudentCount =
-    results.filter(
-      (student) =>
-        hasIssueCode(
-          student.issues,
-          (code) =>
-            code ===
-              "TOTAL_CREDIT_SHORTAGE" ||
+  results.filter(
+    (student) =>
+      hasIssueCode(
+        student.issues,
+        (code) =>
+          code ===
+            "TOTAL_CREDIT_SHORTAGE" ||
+          code.startsWith(
+            "CATEGORY_SHORTAGE_"
+          ) ||
+          (
             code.startsWith(
-              "CATEGORY_SHORTAGE_"
+              "DEGREE_"
+            ) &&
+            code.endsWith(
+              "_SHORTAGE"
             )
-        )
-    ).length;
+          ) ||
+          (
+            code.startsWith(
+              "SOCIAL_WORKER_"
+            ) &&
+            code.endsWith(
+              "_SHORTAGE"
+            )
+          ) ||
+          (
+            code.startsWith(
+              "CHILDCARE_"
+            ) &&
+            code.endsWith(
+              "_SHORTAGE"
+            )
+          ) ||
+          (
+            code.startsWith(
+              "CHILD_STUDY_"
+            ) &&
+            code.endsWith(
+              "_SHORTAGE"
+            )
+          ) ||
+          (
+            code.startsWith(
+              "KOREAN_TEACHER_"
+            ) &&
+            code.endsWith(
+              "_SHORTAGE"
+            )
+          ) ||
+          (
+            code.startsWith(
+              "LIFELONG_EDUCATOR_"
+            ) &&
+            code.endsWith(
+              "_SHORTAGE"
+            )
+          )
+      )
+  ).length;
 
   const duplicateSubjectStudentCount =
     results.filter(

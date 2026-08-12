@@ -88,6 +88,8 @@ if (
   response
     ?.semesterCreateDraft ||
   response
+    ?.semesterCompleteDraft ||
+  response
     ?.consultationUpdateDraft ||
   response
     ?.studentUpdateDraft ||
@@ -97,6 +99,9 @@ if (
   response
     ?.data
     ?.semesterCreateDraft ||
+  response
+    ?.data
+    ?.semesterCompleteDraft ||
   response
     ?.data
     ?.consultationUpdateDraft ||
@@ -399,9 +404,6 @@ export default function DashboardAIAssistant() {
   const studentRegistrationPreviewMutation =
     trpc.ai.studentRegistrationPreview.useMutation();
 
-const analyzeDocumentMutation =
-  trpc.ai.analyzeDocument.useMutation();
-
 const documentImportPreviewMutation =
   trpc.ai.documentImportPreview.useMutation();
 
@@ -445,6 +447,57 @@ const chatHistoryQuery =
         1,
     }
   );
+
+/**
+ * 현재 선택한 학생에게 승인 대기 중인
+ * 문서 OCR Pending Action이 있는지 조회한다.
+ *
+ * Admin 또는 Host가 만든 OCR 초안을
+ * 실제 학생 담당자가 자기 AI 화면에서
+ * 불러오기 위해 사용하는 Query다.
+ */
+const pendingDocumentByStudentQuery =
+  trpc.ai.pendingAction
+    .getPendingDocumentByStudent
+    .useQuery(
+      {
+        studentId:
+          selectedStudent?.id ||
+          1,
+      },
+            {
+        enabled:
+          canUseAI &&
+          user?.role !==
+            "superhost" &&
+          Number(
+            selectedStudent?.id ||
+            0
+          ) > 0,
+
+        /**
+         * 다른 관리자가 현재 학생의 OCR 초안을
+         * 생성한 경우 담당자 화면에 자동으로 표시한다.
+         *
+         * 학생이 선택된 동안에만 15초 간격으로 조회한다.
+         */
+        refetchInterval:
+          15_000,
+
+        /**
+         * 브라우저 탭이 비활성화된 동안에는
+         * 불필요한 반복 조회를 하지 않는다.
+         */
+        refetchIntervalInBackground:
+          false,
+
+        refetchOnWindowFocus:
+          true,
+
+        retry:
+          false,
+      }
+    );
 
   const scopeLabel = useMemo(() => {
   if (selectedStudent) return selectedStudent.clientName;
@@ -518,6 +571,309 @@ useEffect(
   },
   [
     chatHistoryQuery
+      .error,
+  ]
+);
+
+/**
+ * 선택한 학생의 OCR 승인 초안을
+ * 기존 AI 메시지 카드 형식으로 화면에 표시한다.
+ *
+ * 이 메시지는 채팅 기록에 새로 저장하지 않는다.
+ * DB의 Pending Action을 화면에 표시하기 위한
+ * 임시 메시지다.
+ */
+useEffect(
+  () => {
+    const selectedStudentId =
+      Number(
+        selectedStudent?.id ||
+        0
+      );
+
+    /**
+     * 학생 선택이 해제되면
+     * 서버 조회로 추가했던 임시 카드만 제거한다.
+     */
+    if (
+      selectedStudentId <=
+      0
+    ) {
+      setMessages(
+        (
+          previousMessages
+        ) =>
+          previousMessages.filter(
+            (
+              message
+            ) =>
+              !String(
+                message.id ||
+                ""
+              ).startsWith(
+                "pending-document-student-"
+              )
+          )
+      );
+
+      return;
+    }
+
+    /**
+     * Query가 아직 로딩 중이면
+     * 기존 카드를 먼저 지우지 않는다.
+     */
+        if (
+      pendingDocumentByStudentQuery
+        .isLoading ||
+      pendingDocumentByStudentQuery
+        .isFetching
+    ) {
+      return;
+    }
+
+    /**
+     * 현재 사용자가 해당 학생의 실제 담당자가 아니면
+     * 서버에서 조회 권한이 차단될 수 있다.
+     *
+     * 이 경우 이전 학생의 임시 승인 카드만 제거하고
+     * AI 전체 오류 메시지는 표시하지 않는다.
+     */
+    if (
+      pendingDocumentByStudentQuery
+        .error
+    ) {
+      setMessages(
+        (
+          previousMessages
+        ) =>
+          previousMessages.filter(
+            (
+              message
+            ) =>
+              !String(
+                message.id ||
+                ""
+              ).startsWith(
+                "pending-document-student-"
+              )
+          )
+      );
+
+      return;
+    }
+
+    const pendingAction =
+      pendingDocumentByStudentQuery
+        .data
+        ?.action ||
+      null;
+
+    setMessages(
+      (
+        previousMessages
+      ) => {
+        /**
+         * 이전 학생에서 조회했던 임시 OCR 카드는 제거한다.
+         *
+         * 단, 이미 승인 결과 카드로 바뀐 메시지는
+         * 삭제하지 않는다.
+         */
+        const withoutPreviousTemporaryCard =
+          previousMessages.filter(
+            (
+              message
+            ) => {
+              const isTemporaryDocumentCard =
+                String(
+                  message.id ||
+                  ""
+                ).startsWith(
+                  "pending-document-student-"
+                );
+
+              const isStillPendingPreview =
+                message.kind ===
+                  "student_registration_preview" &&
+                String(
+                  message.data
+                    ?.pendingAction
+                    ?.status ||
+                  ""
+                ) ===
+                  "awaiting_confirmation";
+
+              return !(
+                isTemporaryDocumentCard &&
+                isStillPendingPreview
+              );
+            }
+          );
+
+        if (
+          !pendingAction
+        ) {
+          return withoutPreviousTemporaryCard;
+        }
+
+        const pendingActionId =
+          Number(
+            pendingAction.id ||
+            0
+          );
+
+        if (
+          pendingActionId <=
+          0
+        ) {
+          return withoutPreviousTemporaryCard;
+        }
+
+        /**
+         * 같은 Pending Action이 기존 채팅 기록이나
+         * 현재 메시지에 이미 있으면 중복 추가하지 않는다.
+         */
+                const alreadyExists =
+          withoutPreviousTemporaryCard.some(
+            (
+              message
+            ) =>
+              Number(
+                message.data
+                  ?.pendingAction
+                  ?.id ||
+                0
+              ) ===
+              pendingActionId
+          );
+
+        /**
+         * 같은 Pending Action 카드가 채팅 기록에 이미 있으면
+         * 카드를 새로 추가하지 않는다.
+         *
+         * 다만 서버에서 받은 최신 Action 상태와
+         * 취소 가능 권한은 기존 카드에 다시 반영한다.
+         */
+        if (
+          alreadyExists
+        ) {
+          return withoutPreviousTemporaryCard.map(
+            (
+              message
+            ) => {
+              const messagePendingActionId =
+                Number(
+                  message.data
+                    ?.pendingAction
+                    ?.id ||
+                  0
+                );
+
+              if (
+                messagePendingActionId !==
+                pendingActionId
+              ) {
+                return message;
+              }
+
+              /**
+               * 이미 실행·취소·실패 결과 카드로 변경된 경우에는
+               * 다시 승인 대기 카드로 되돌리지 않는다.
+               */
+              const isPendingPreview =
+                message.kind ===
+                  "student_registration_preview" &&
+                String(
+                  message.data
+                    ?.pendingAction
+                    ?.status ||
+                  ""
+                ) ===
+                  "awaiting_confirmation";
+
+              if (
+                !isPendingPreview
+              ) {
+                return message;
+              }
+
+              return {
+                ...message,
+
+                data: {
+                  ...message.data,
+
+                  pendingAction,
+
+                  pendingActionCanCancel:
+                    pendingDocumentByStudentQuery
+                      .data
+                      ?.canCancel ===
+                    true,
+
+                  pendingActionSource:
+                    message.data
+                      ?.pendingActionSource ||
+                    "student_pending_document",
+                },
+              };
+            }
+          );
+        }
+
+        const temporaryMessage:
+          DashboardAIMessage = {
+          id:
+            `pending-document-student-${selectedStudentId}-${pendingActionId}`,
+
+          role:
+            "assistant",
+
+          content:
+            `${selectedStudent?.clientName || "선택한 학생"} 학생에게 승인 대기 중인 문서 CRM 반영 초안이 있습니다.`,
+
+          createdAt:
+            nowLabel(),
+
+          kind:
+            "student_registration_preview",
+
+                    data: {
+            pendingAction,
+
+            /**
+             * 취소 가능 여부는 서버가
+             * Pending Action 최초 생성자 ID와
+             * 현재 로그인 사용자 ID를 비교해서 반환한다.
+             */
+            pendingActionCanCancel:
+              pendingDocumentByStudentQuery
+                .data
+                ?.canCancel ===
+              true,
+
+            pendingActionSource:
+              "student_pending_document",
+          },
+        };
+
+        return collapsePendingActionMessages([
+          ...withoutPreviousTemporaryCard,
+          temporaryMessage,
+        ]);
+      }
+    );
+  },
+  [
+    selectedStudent?.id,
+    selectedStudent?.clientName,
+    pendingDocumentByStudentQuery
+      .data,
+    pendingDocumentByStudentQuery
+      .isLoading,
+        pendingDocumentByStudentQuery
+      .isFetching,
+    pendingDocumentByStudentQuery
       .error,
   ]
 );
@@ -671,6 +1027,10 @@ const isSemesterCreate =
   actionType ===
   "semester_create";
 
+const isSemesterComplete =
+  actionType ===
+  "semester_complete";
+
 const isConsultationUpdate =
   actionType ===
   "consultation_update";
@@ -708,13 +1068,15 @@ const resultContent =
       ? "학생 기본정보 수정이 완료되었습니다."
       : isConsultationUpdate
         ? "상담DB 정보 수정이 완료되었습니다."
-        : isSemesterCreate
-          ? "학생 학기 생성이 완료되었습니다."
-          : isScheduleCreate
-            ? "일정 등록이 완료되었습니다."
-            : isDocumentImport
-              ? "AI 문서 분석 결과의 CRM 반영이 완료되었습니다."
-              : "등록예정 학생 생성 및 과목설계 저장이 완료되었습니다."
+        : isSemesterComplete
+          ? "학생 학기 입력완료 처리가 완료되었습니다."
+          : isSemesterCreate
+            ? "학생 학기 생성이 완료되었습니다."
+            : isScheduleCreate
+              ? "일정 등록이 완료되었습니다."
+              : isDocumentImport
+                ? "AI 문서 분석 결과의 CRM 반영이 완료되었습니다."
+                : "등록예정 학생 생성 및 과목설계 저장이 완료되었습니다."
   );
 
 const registrationResult = {
@@ -792,6 +1154,34 @@ scheduleId:
             .executionResult
             .semesterIds
         : [],
+
+  semesterOrder:
+    Number(
+      response?.semesterOrder ||
+      pendingAction
+        ?.executionResult
+        ?.semesterOrder ||
+      0
+    ) ||
+    null,
+
+  isCompleted:
+    response?.isCompleted ===
+      true ||
+    pendingAction
+      ?.executionResult
+      ?.isCompleted ===
+      true,
+
+  approvalStatus:
+    String(
+      response?.approvalStatus ||
+      pendingAction
+        ?.executionResult
+        ?.approvalStatus ||
+      ""
+    ).trim() ||
+    null,
 
   planSubjectIds:
     Array.isArray(
@@ -905,6 +1295,7 @@ await saveSpecialChatMessage(
   studentId > 0 &&
   !isDocumentImport &&
   !isSemesterCreate &&
+  !isSemesterComplete &&
   !isScheduleCreate &&
   !isConsultationUpdate &&
   !isStudentUpdate
@@ -925,6 +1316,20 @@ await saveSpecialChatMessage(
           finalEducation:
             null,
         });
+      }
+
+      /**
+       * 문서 OCR 반영이 끝나면
+       * 해당 학생의 승인 대기 초안을 다시 조회한다.
+       *
+       * 실행 완료된 Action은 서버 조회 조건에서 제외되므로
+       * 승인 대기 카드는 자동으로 사라진다.
+       */
+      if (
+        isDocumentImport
+      ) {
+        await pendingDocumentByStudentQuery
+          .refetch();
       }
     } catch (error) {
       const message =
@@ -1022,6 +1427,10 @@ const isSemesterCreate =
   actionType ===
   "semester_create";
 
+const isSemesterComplete =
+  actionType ===
+  "semester_complete";
+
 const isConsultationUpdate =
   actionType ===
   "consultation_update";
@@ -1037,13 +1446,15 @@ const cancelledContent =
       ? "학생 기본정보 수정 초안이 취소되었습니다."
       : isConsultationUpdate
         ? "상담DB 수정 초안이 취소되었습니다."
-        : isSemesterCreate
-          ? "학생 학기 생성 초안이 취소되었습니다."
-          : isScheduleCreate
-            ? "일정 등록 초안이 취소되었습니다."
-            : isDocumentImport
-              ? "문서 CRM 반영 초안이 취소되었습니다."
-              : "학생 등록 초안이 취소되었습니다."
+        : isSemesterComplete
+          ? "학생 학기 입력완료 초안이 취소되었습니다."
+          : isSemesterCreate
+            ? "학생 학기 생성 초안이 취소되었습니다."
+            : isScheduleCreate
+              ? "일정 등록 초안이 취소되었습니다."
+              : isDocumentImport
+                ? "문서 CRM 반영 초안이 취소되었습니다."
+                : "학생 등록 초안이 취소되었습니다."
   );
 
 const cancelledPendingAction =
@@ -1126,6 +1537,20 @@ await saveSpecialChatMessage(
       null,
   }
 );
+
+        /**
+         * 문서 OCR 초안이 취소된 경우
+         * 현재 선택된 학생의 Pending Action을 다시 조회한다.
+         *
+         * 취소된 Action은 서버의
+         * awaiting_confirmation 조회 조건에서 제외된다.
+         */
+        if (
+          isDocumentImport
+        ) {
+          await pendingDocumentByStudentQuery
+            .refetch();
+        }
       } catch (error) {
         const message =
           getErrorMessage(error);
@@ -1241,16 +1666,6 @@ await saveSpecialChatMessage(
             },
           };
 
-await saveSpecialChatMessage(
-  assistantMessage,
-  {
-    selectedStudentId:
-      selectedStudent
-        ?.id ??
-      null,
-  }
-);
-
           setMessages(
             (prev) => [
               ...prev,
@@ -1274,43 +1689,67 @@ await saveSpecialChatMessage(
               [],
           });
 
-        const assistantMessage:
-          DashboardAIMessage = {
-          id:
-            `assistant-${Date.now()}`,
+        const registrationPendingAction =
+  previewResponse
+    ?.pendingAction ||
+  null;
 
-          role:
-            "assistant",
+const hasRegistrationPendingAction =
+  Number(
+    registrationPendingAction
+      ?.id ||
+    0
+  ) > 0;
 
-          content:
-            previewResponse
-              ?.message ||
-            response?.reply ||
-            "학생 통합등록 미리보기가 생성되었습니다.",
+const assistantMessage:
+  DashboardAIMessage = {
+  id:
+    `assistant-${Date.now()}`,
 
-          createdAt:
-            nowLabel(),
+  role:
+    "assistant",
 
-          kind:
-            "student_registration_preview",
+  content:
+    previewResponse
+      ?.message ||
+    response?.reply ||
+    (
+      hasRegistrationPendingAction
+        ? "학생 통합등록 미리보기가 생성되었습니다."
+        : "학생 통합등록에 필요한 정보를 추가로 입력해주세요."
+    ),
 
-          data: {
-            registrationPreview,
+  createdAt:
+    nowLabel(),
 
-            pendingAction:
-              previewResponse
-                ?.pendingAction ||
-              null,
-          },
-        };
+  /**
+   * 실제 승인 초안이 있을 때만
+   * 승인 카드 형태로 표시한다.
+   *
+   * 누락정보 수집 단계에서는
+   * 일반 안내문으로 표시한다.
+   */
+  kind:
+    hasRegistrationPendingAction
+      ? "student_registration_preview"
+      : "warning",
+
+  data: {
+    registrationPreview,
+
+    pendingAction:
+      registrationPendingAction,
+  },
+};
 
 await saveSpecialChatMessage(
   assistantMessage,
   {
     selectedStudentId:
-      previewResponse
-        ?.pendingAction
+      registrationPendingAction
         ?.studentId ??
+      selectedStudent
+        ?.id ??
       null,
   }
 );
@@ -1374,6 +1813,13 @@ semesterCreateDraft:
     ?.semesterCreateDraft ||
   responseData
     ?.semesterCreateDraft ||
+  null,
+
+semesterCompleteDraft:
+  response
+    ?.semesterCompleteDraft ||
+  responseData
+    ?.semesterCompleteDraft ||
   null,
 
 consultationUpdateDraft:
@@ -1475,16 +1921,6 @@ const handleAnalyzeDocument =
       "error",
   };
 
-  await saveSpecialChatMessage(
-    assistantMessage,
-    {
-      selectedStudentId:
-        selectedStudent
-          ?.id ??
-        null,
-    }
-  );
-
   setMessages(
     (prev) => [
       ...prev,
@@ -1523,16 +1959,6 @@ const handleAnalyzeDocument =
     kind:
       "error",
   };
-
-  await saveSpecialChatMessage(
-    assistantMessage,
-    {
-      selectedStudentId:
-        selectedStudent
-          ?.id ??
-        null,
-    }
-  );
 
   setMessages(
     (prev) => [
@@ -1575,16 +2001,6 @@ const handleAnalyzeDocument =
       },
     };
 
-await saveSpecialChatMessage(
-  userMessage,
-  {
-    selectedStudentId:
-      selectedStudent
-        ?.id ??
-      null,
-  }
-);
-
     setMessages(
       (prev) => [
         ...prev,
@@ -1599,26 +2015,44 @@ await saveSpecialChatMessage(
         );
 
       const response =
-        await analyzeDocumentMutation.mutateAsync({
-          studentId:
-            selectedStudent
-              ?.id ??
-            null,
+  await chatMutation.mutateAsync({
+    message:
+      selectedStudent
+        ? `${selectedStudent.clientName} 학생의 첨부 이미지를 분석해줘.`
+        : "첨부된 이미지를 분석해줘.",
 
-          mimeType:
-            file.type as
-              | "image/jpeg"
-              | "image/png"
-              | "image/webp",
+    imageAttachment: {
+      fileName:
+        file.name,
 
-          fileName:
-            file.name,
+      mimeType:
+        file.type as
+          | "image/jpeg"
+          | "image/png"
+          | "image/webp",
 
-          imageBase64,
-        });
+      imageBase64,
+    },
 
-      const analysis =
-        response?.analysis;
+    selectedStudentId:
+      selectedStudent
+        ?.id ??
+      undefined,
+
+    selectedStudentName:
+      selectedStudent
+        ?.clientName ??
+      undefined,
+  });
+
+const analysis =
+  response?.toolResult
+    ?.data ??
+  response?.data
+    ?.documentAnalysis ??
+  response?.data
+    ?.analysis ??
+  null;
 
       if (
         !analysis
@@ -1742,16 +2176,6 @@ await saveSpecialChatMessage(
             true,
         },
       };
-
-await saveSpecialChatMessage(
-  assistantMessage,
-  {
-    selectedStudentId:
-      selectedStudent
-        ?.id ??
-      null,
-  }
-);
 
       setMessages(
         (prev) => [
@@ -1907,7 +2331,7 @@ const handleRequestDocumentImport =
         kind:
           "student_registration_preview",
 
-        data: {
+                data: {
           ...(
             previewMessage
               ?.data ||
@@ -1915,6 +2339,23 @@ const handleRequestDocumentImport =
           ),
 
           pendingAction,
+
+          /**
+           * 이번 요청에서 새로 생성한 초안이면
+           * 현재 사용자가 취소할 수 있다.
+           *
+           * 서버가 기존 초안을 재사용한 경우에는
+           * 생성자가 다를 수 있으므로 승인만 허용한다.
+           */
+                    pendingActionCanCancel:
+            response?.canCancel ===
+            true,
+
+          pendingActionSource:
+            response?.reused ===
+              true
+              ? "student_pending_document"
+              : "chat",
         },
       };
 
@@ -2045,15 +2486,64 @@ const handleClearChatHistory =
     }
   };
 
-  const handleSelectStudent = (student: DashboardAIStudent) => {
-    setSelectedStudent({
-      id: student.id,
-      clientName: student.clientName || `학생 #${student.id}`,
-      phone: student.phone || null,
-      course: student.course || null,
-      finalEducation: student.finalEducation || null,
-    });
-  };
+  const handleSelectStudent = (
+  student:
+    DashboardAIStudent
+) => {
+  /**
+   * 다른 학생을 선택할 때
+   * 이전 학생에게서 조회한 임시 OCR 승인 카드를
+   * 즉시 화면에서 제거한다.
+   */
+  setMessages(
+    (
+      previousMessages
+    ) =>
+      previousMessages.filter(
+        (
+          message
+        ) =>
+          !(
+            String(
+              message.id ||
+              ""
+            ).startsWith(
+              "pending-document-student-"
+            ) &&
+            message.kind ===
+              "student_registration_preview" &&
+            String(
+              message.data
+                ?.pendingAction
+                ?.status ||
+              ""
+            ) ===
+              "awaiting_confirmation"
+          )
+      )
+  );
+
+  setSelectedStudent({
+    id:
+      student.id,
+
+    clientName:
+      student.clientName ||
+      `학생 #${student.id}`,
+
+    phone:
+      student.phone ||
+      null,
+
+    course:
+      student.course ||
+      null,
+
+    finalEducation:
+      student.finalEducation ||
+      null,
+  });
+};
 
   if (!canUseAI) {
     return (
@@ -2078,13 +2568,12 @@ const handleClearChatHistory =
           isLoading={
   chatHistoryQuery.isLoading ||
   chatMutation.isPending ||
-  analyzeDocumentMutation.isPending ||
   documentImportPreviewMutation.isPending ||
   studentRegistrationPreviewMutation.isPending ||
   confirmPendingActionMutation.isPending ||
   cancelPendingActionMutation.isPending ||
-saveChatMessageMutation.isPending ||
-clearChatHistoryMutation.isPending
+  saveChatMessageMutation.isPending ||
+  clearChatHistoryMutation.isPending
 }
       errorMessage={
   errorMessage
@@ -2129,7 +2618,39 @@ onSelectStudent={
 onClearChatHistory={
   handleClearChatHistory
 }
-      onClearSelectedStudent={() => setSelectedStudent(null)}
+      onClearSelectedStudent={() => {
+  setSelectedStudent(
+    null
+  );
+
+  setMessages(
+    (
+      previousMessages
+    ) =>
+      previousMessages.filter(
+        (
+          message
+        ) =>
+          !(
+            String(
+              message.id ||
+              ""
+            ).startsWith(
+              "pending-document-student-"
+            ) &&
+            message.kind ===
+              "student_registration_preview" &&
+            String(
+              message.data
+                ?.pendingAction
+                ?.status ||
+              ""
+            ) ===
+              "awaiting_confirmation"
+          )
+      )
+  );
+}}
       onOpenStudent={(studentId) => {
         window.location.href = withOrgPath(`/students/${studentId}`);
       }}

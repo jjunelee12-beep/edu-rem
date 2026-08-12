@@ -97,15 +97,52 @@ export type BuildStudentRegistrationDraftOutput = {
 
 type ParsedSemesterSeed = {
   semesterNo: number;
+semesterLabel:
+  string |
+  null;
   plannedStartMonth: string | null;
   plannedInstitution: string | null;
   plannedSubjectCount: number | null;
   plannedAmount: number | null;
   actualStartDate: string | null;
   actualInstitution: string | null;
+actualSubjectCount:
+  number |
+  null;
   actualPaymentAmount: number | null;
   paymentDate: string | null;
 };
+
+type ParsedNaturalLanguagePlanSubject = {
+  semesterNo:
+    number;
+
+  subjectName:
+    string;
+
+  category:
+    "전공" |
+    "교양" |
+    "일반";
+
+  requirementType:
+    "전공필수" |
+    "전공선택" |
+    "교양" |
+    "일반";
+
+  credits:
+    number;
+
+  isConfirmed:
+    boolean;
+};
+
+type NaturalLanguageSubjectOperation =
+  | "set"
+  | "add"
+  | "replace"
+  | "remove";
 
 const EDUCATION_KEYWORDS = [
   "고졸",
@@ -392,35 +429,90 @@ function parseKoreanMonth(
 function parseMoneyFromText(
   text: string
 ): number | null {
-  const manWonMatch =
-    text.match(
-      /(\d+(?:\.\d+)?)\s*만\s*원?/
+  const normalized =
+    normalizeText(
+      text
     );
 
-  if (manWonMatch) {
-    return Math.round(
-      Number(manWonMatch[1]) *
-        10000
+  /**
+   * 예:
+   * 52만 5천원
+   * 52만5천원
+   * 120만 3천 500원
+   */
+  const koreanUnitMatch =
+    normalized.match(
+      /(\d+(?:\.\d+)?)\s*만(?:\s*(\d+(?:\.\d+)?)\s*천)?(?:\s*(\d{1,3}))?\s*원?/
     );
+
+  if (
+    koreanUnitMatch
+  ) {
+    const manWon =
+      Number(
+        koreanUnitMatch[1] ||
+        0
+      ) *
+      10_000;
+
+    const thousandWon =
+      Number(
+        koreanUnitMatch[2] ||
+        0
+      ) *
+      1_000;
+
+    const remainderWon =
+      Number(
+        koreanUnitMatch[3] ||
+        0
+      );
+
+    const total =
+      Math.round(
+        manWon +
+        thousandWon +
+        remainderWon
+      );
+
+    return Number.isFinite(
+      total
+    )
+      ? total
+      : null;
   }
 
+  /**
+   * 예:
+   * 525,000원
+   * 525000원
+   */
   const wonMatch =
-    text.match(
+    normalized.match(
       /([\d,]+)\s*원/
     );
 
-  if (wonMatch) {
+  if (
+    wonMatch
+  ) {
     return normalizeNonNegativeNumber(
       wonMatch[1]
     );
   }
 
+  /**
+   * 예:
+   * 예정금액 525000
+   * 결제금액: 525,000
+   */
   const amountKeywordMatch =
-    text.match(
+    normalized.match(
       /(?:결제금액|실결제|예정금액|금액)\s*[:：]?\s*([\d,]+)/
     );
 
-  if (amountKeywordMatch) {
+  if (
+    amountKeywordMatch
+  ) {
     return normalizeNonNegativeNumber(
       amountKeywordMatch[1]
     );
@@ -444,19 +536,166 @@ function parseSubjectCountFromText(
     : null;
 }
 
-function parseSemesterNo(
-  text: string
+/**
+ * 담당자가 자연스럽게 사용하는
+ * 학기별 입력 제목에서 과정상 학기 순서를 추출한다.
+ *
+ * 허용 예:
+ * 1학기:
+ * 2학기 -
+ * 3학기 2027년 1학기
+ * 과정 2학기: 2027년 1학기
+ *
+ * "2026년 2학기"는 연도별 학기 구분이므로
+ * 과정상 2학기차로 해석하지 않는다.
+ */
+function parseSemesterHeadingNo(
+  text:
+    string
 ): number | null {
-  const match =
-    text.match(
-      /(\d{1,2})\s*학기/
+  const normalized =
+    normalizeText(
+      text
     );
 
-  return match
-    ? normalizePositiveInteger(
-        match[1]
-      )
-    : null;
+  if (
+    !normalized
+  ) {
+    return null;
+  }
+
+  const headingMatch =
+  normalized.match(
+    /^(?:과정\s*)?(\d{1,2})\s*학기(?:차)?(?=\s*(?:[:：-]|20\d{2}\s*년|(?:예정\s*)?(?:과목(?:명|목록)?|개강월|개강일|시작월|시작일|교육원|기관|수강처|예정금액|결제금액|실결제금액|결제일|입금일|납부일|과목수|과목\s*수)(?:\s*(?:추가|교체|변경|수정|정정|재설정|제외|삭제|제거|빼기))?\s*[:：]|$))/
+  );
+
+  if (
+    !headingMatch
+  ) {
+    return null;
+  }
+
+  return normalizePositiveInteger(
+    headingMatch[1]
+  );
+}
+
+/**
+ * 과정상 학기 순서를 추출한다.
+ *
+ * "1학기차", "두 번째 학기", "과정 2학기"처럼
+ * 명확하게 순서를 뜻하는 표현만 인정한다.
+ *
+ * "2026년 2학기"의 2는 실제 학기 구분이므로
+ * 과정 순서로 사용하지 않는다.
+ */
+function parseSemesterNo(
+  text:
+    string
+): number | null {
+  const normalized =
+    normalizeText(
+      text
+    );
+
+  const headingSemesterNo =
+    parseSemesterHeadingNo(
+      normalized
+    );
+
+  if (
+    headingSemesterNo
+  ) {
+    return headingSemesterNo;
+  }
+
+  const semesterOrderMatch =
+    normalized.match(
+      /(?:과정\s*)?(\d{1,2})\s*학기차/
+    ) ||
+    normalized.match(
+      /(?:과정\s*순서|학기\s*순서|순서)\s*[:：]?\s*(\d{1,2})/
+    ) ||
+    normalized.match(
+      /(?:첫\s*번째|첫째)\s*학기/
+    ) ||
+    normalized.match(
+      /(?:두\s*번째|둘째)\s*학기/
+    ) ||
+    normalized.match(
+      /(?:세\s*번째|셋째)\s*학기/
+    ) ||
+    normalized.match(
+      /(?:네\s*번째|넷째)\s*학기/
+    );
+
+  if (
+    !semesterOrderMatch
+  ) {
+    return null;
+  }
+
+  if (
+    /첫\s*번째|첫째/.test(
+      semesterOrderMatch[0]
+    )
+  ) {
+    return 1;
+  }
+
+  if (
+    /두\s*번째|둘째/.test(
+      semesterOrderMatch[0]
+    )
+  ) {
+    return 2;
+  }
+
+  if (
+    /세\s*번째|셋째/.test(
+      semesterOrderMatch[0]
+    )
+  ) {
+    return 3;
+  }
+
+  if (
+    /네\s*번째|넷째/.test(
+      semesterOrderMatch[0]
+    )
+  ) {
+    return 4;
+  }
+
+  return normalizePositiveInteger(
+    semesterOrderMatch[1]
+  );
+}
+
+/**
+ * 실제 연도별 학기 구분을 추출한다.
+ *
+ * 예:
+ * 2026년 2학기
+ * 2027년 1학기
+ */
+function parseSemesterLabel(
+  text: string
+): string | null {
+  const match =
+    normalizeText(
+      text
+    ).match(
+      /(20\d{2})\s*년\s*([12])\s*학기/
+    );
+
+  if (
+    !match
+  ) {
+    return null;
+  }
+
+  return `${match[1]}년 ${match[2]}학기`;
 }
 
 function extractFinalEducation(
@@ -535,11 +774,45 @@ function extractCourseName(
 }
 
 function extractInstitution(
-  text: string
+  text:
+    string
 ): string | null {
+  const normalized =
+    normalizeText(
+      text
+    );
+
+  /**
+   * 라벨 뒤에 수정 명령이 붙는 형식을 먼저 처리한다.
+   *
+   * 예:
+   * 교육원 변경: 해밀원격평생교육원
+   * 기관 수정: 서울사이버에듀
+   * 수강처 재설정: 드림원격평생교육원
+   */
+  const correctionLabeledMatch =
+    normalized.match(
+      /(?:교육원|기관|수강처|진행처)\s*(?:변경|수정|교체|정정|재설정|다시\s*설정)\s*[:：]\s*([가-힣A-Za-z0-9()·._\-\s]{2,60})/
+    );
+
+  if (
+    correctionLabeledMatch?.[1]
+  ) {
+    return normalizeText(
+      correctionLabeledMatch[1]
+    );
+  }
+
+  /**
+   * 일반 라벨 형식
+   *
+   * 예:
+   * 교육원: 해밀원격평생교육원
+   * 기관: 서울사이버에듀
+   */
   const labeledMatch =
-    text.match(
-      /(?:교육원|기관|수강처|진행처)\s*[:：]?\s*([가-힣A-Za-z0-9()·._-]{2,40})/
+    normalized.match(
+      /(?:교육원|기관|수강처|진행처)\s*[:：]\s*([가-힣A-Za-z0-9()·._\-\s]{2,60})/
     );
 
   if (
@@ -550,9 +823,28 @@ function extractInstitution(
     );
   }
 
+  /**
+   * 콜론 없이 입력한 일반 형식
+   *
+   * 수정 명령어를 교육원명으로 잘못 인식하지 않도록
+   * 변경·수정·교체 등의 단어는 제외한다.
+   */
+  const unlabeledMatch =
+    normalized.match(
+      /(?:교육원|기관|수강처|진행처)\s+(?!(?:변경|수정|교체|정정|재설정|다시\s*설정)\b)([가-힣A-Za-z0-9()·._-]{2,60})/
+    );
+
+  if (
+    unlabeledMatch?.[1]
+  ) {
+    return normalizeText(
+      unlabeledMatch[1]
+    );
+  }
+
   const commonInstitutionMatch =
-    text.match(
-      /([가-힣A-Za-z0-9()·._-]{2,30}(?:원격평생교육원|평생교육원|사이버평생교육원|사이버에듀|원격|교육원))/
+    normalized.match(
+      /([가-힣A-Za-z0-9()·._-]{2,40}(?:원격평생교육원|사이버평생교육원|평생교육원|사이버에듀|원격|교육원))/
     );
 
   return commonInstitutionMatch?.[1]
@@ -560,6 +852,17 @@ function extractInstitution(
         commonInstitutionMatch[1]
       )
     : null;
+}
+
+function isSemesterCorrectionSegment(
+  text:
+    string
+): boolean {
+  return /수정|변경|교체|정정|다시\s*설정|재설정/i.test(
+    normalizeText(
+      text
+    )
+  );
 }
 
 function splitIntoSegments(
@@ -597,6 +900,11 @@ function collectSemesterSeeds(
 
   let activeSemesterNo = 1;
 
+let activeSemesterLabel:
+  string |
+  null =
+  null;
+
   const ensureSeed = (
     semesterNo: number
   ): ParsedSemesterSeed => {
@@ -610,12 +918,16 @@ function collectSemesterSeeds(
     const created:
       ParsedSemesterSeed = {
         semesterNo,
+semesterLabel:
+  activeSemesterLabel,
         plannedStartMonth: null,
         plannedInstitution: null,
         plannedSubjectCount: null,
         plannedAmount: null,
         actualStartDate: null,
         actualInstitution: null,
+actualSubjectCount:
+  null,
         actualPaymentAmount: null,
         paymentDate: null,
       };
@@ -634,17 +946,61 @@ function collectSemesterSeeds(
     const segment of segments
   ) {
     const segmentSemesterNo =
-      parseSemesterNo(segment);
+  parseSemesterNo(
+    segment
+  );
 
-    if (segmentSemesterNo) {
-      activeSemesterNo =
-        segmentSemesterNo;
-    }
+const segmentSemesterLabel =
+  parseSemesterLabel(
+    segment
+  );
 
-    const seed =
-      ensureSeed(
-        activeSemesterNo
-      );
+if (
+  segmentSemesterNo
+) {
+  const semesterChanged =
+    activeSemesterNo !==
+    segmentSemesterNo;
+
+  activeSemesterNo =
+    segmentSemesterNo;
+
+  /**
+   * 새로운 과정 학기로 이동했는데
+   * 현재 문장에 학기 구분이 없다면
+   * 이전 학기의 연도·학기 값을 복사하지 않는다.
+   */
+  if (
+    semesterChanged &&
+    !segmentSemesterLabel
+  ) {
+    activeSemesterLabel =
+      null;
+  }
+}
+
+if (
+  segmentSemesterLabel
+) {
+  activeSemesterLabel =
+    segmentSemesterLabel;
+}
+
+const seed =
+  ensureSeed(
+    activeSemesterNo
+  );
+
+/**
+ * 먼저 학기 예정표가 생성된 뒤
+ * 같은 문장에서 학기 구분이 확인된 경우에도 반영한다.
+ */
+if (
+  segmentSemesterLabel
+) {
+  seed.semesterLabel =
+    segmentSemesterLabel;
+}
 
     const date =
       parseKoreanDate(
@@ -673,25 +1029,36 @@ function collectSemesterSeeds(
         segment
       );
 
-    if (
-      /결제일|입금일|납부일/i.test(
-        segment
-      ) &&
-      date
-    ) {
-      seed.paymentDate =
-        date;
-    }
+const isCorrectionSegment =
+  isSemesterCorrectionSegment(
+    segment
+  );
 
-    if (
-      /개강일|시작일|실제\s*시작|수업\s*시작/i.test(
-        segment
-      ) &&
-      date
-    ) {
-      seed.actualStartDate =
-        date;
-    }
+    const isPaymentDateSegment =
+  /결제일|입금일|납부일/i.test(
+    segment
+  );
+
+const isStartDateSegment =
+  /개강일|시작일|실제\s*시작|수업\s*시작/i.test(
+    segment
+  );
+
+if (
+  isPaymentDateSegment &&
+  date
+) {
+  seed.paymentDate =
+    date;
+}
+
+if (
+  isStartDateSegment &&
+  date
+) {
+  seed.actualStartDate =
+    date;
+}
 
     if (
       !seed.actualStartDate &&
@@ -734,54 +1101,74 @@ function collectSemesterSeeds(
       }
     } else {
       if (
-        month &&
-        !seed.plannedStartMonth
-      ) {
-        seed.plannedStartMonth =
-          month;
-      }
+  month &&
+  !isPaymentDateSegment &&
+  !isStartDateSegment &&
+  (
+    !seed.plannedStartMonth ||
+    isCorrectionSegment
+  )
+) {
+  seed.plannedStartMonth =
+    month;
+}
 
       if (
-        amount !== null
-      ) {
-        if (
-          /결제|입금|납부|실결제/i.test(
-            segment
-          )
-        ) {
-          seed.actualPaymentAmount =
-            amount;
-        } else if (
-          seed.plannedAmount ===
-          null
-        ) {
-          seed.plannedAmount =
-            amount;
-        }
-      }
+  amount !==
+    null
+) {
+  if (
+    /결제|입금|납부|실결제/i.test(
+      segment
+    )
+  ) {
+    seed.actualPaymentAmount =
+      amount;
+  } else if (
+    seed.plannedAmount ===
+      null ||
+    isCorrectionSegment
+  ) {
+    seed.plannedAmount =
+      amount;
+  }
+}
 
       if (
-        subjectCount !== null
-      ) {
-        seed.plannedSubjectCount =
-          subjectCount;
-      }
+  subjectCount !==
+    null
+) {
+  if (
+    /실제|확정|등록|수강|이수/i.test(
+      segment
+    )
+  ) {
+    seed.actualSubjectCount =
+      subjectCount;
+  } else {
+    seed.plannedSubjectCount =
+      subjectCount;
+  }
+}
 
-      if (institution) {
-        if (
-          /실제|확정|등록|수강/i.test(
-            segment
-          )
-        ) {
-          seed.actualInstitution =
-            institution;
-        } else if (
-          !seed.plannedInstitution
-        ) {
-          seed.plannedInstitution =
-            institution;
-        }
-      }
+      if (
+  institution
+) {
+  if (
+    /실제|확정|등록|수강/i.test(
+      segment
+    )
+  ) {
+    seed.actualInstitution =
+      institution;
+  } else if (
+    !seed.plannedInstitution ||
+    isCorrectionSegment
+  ) {
+    seed.plannedInstitution =
+      institution;
+  }
+}
     }
   }
 
@@ -797,23 +1184,27 @@ function collectSemesterSeeds(
         }
 
         return (
-          seed.plannedStartMonth !==
-            null ||
-          seed.plannedInstitution !==
-            null ||
-          seed.plannedSubjectCount !==
-            null ||
-          seed.plannedAmount !==
-            null ||
-          seed.actualStartDate !==
-            null ||
-          seed.actualInstitution !==
-            null ||
-          seed.actualPaymentAmount !==
-            null ||
-          seed.paymentDate !==
-            null
-        );
+  seed.semesterLabel !==
+    null ||
+  seed.plannedStartMonth !==
+    null ||
+  seed.plannedInstitution !==
+    null ||
+  seed.plannedSubjectCount !==
+    null ||
+  seed.plannedAmount !==
+    null ||
+  seed.actualStartDate !==
+    null ||
+  seed.actualInstitution !==
+    null ||
+  seed.actualSubjectCount !==
+    null ||
+  seed.actualPaymentAmount !==
+    null ||
+  seed.paymentDate !==
+    null
+);
       })
       .sort(
         (a, b) =>
@@ -825,16 +1216,39 @@ function collectSemesterSeeds(
     ? result
     : [
         {
-          semesterNo: 1,
-          plannedStartMonth: null,
-          plannedInstitution: null,
-          plannedSubjectCount: null,
-          plannedAmount: null,
-          actualStartDate: null,
-          actualInstitution: null,
-          actualPaymentAmount: null,
-          paymentDate: null,
-        },
+  semesterNo:
+    1,
+
+  semesterLabel:
+    null,
+
+  plannedStartMonth:
+    null,
+
+  plannedInstitution:
+    null,
+
+  plannedSubjectCount:
+    null,
+
+  plannedAmount:
+    null,
+
+  actualStartDate:
+    null,
+
+  actualInstitution:
+    null,
+
+actualSubjectCount:
+  null,
+
+  actualPaymentAmount:
+    null,
+
+  paymentDate:
+    null,
+},
       ];
 }
 
@@ -894,11 +1308,707 @@ function normalizeRequirementType(
   return "전공선택";
 }
 
+function cleanNaturalLanguageSubjectName(
+  value:
+    unknown
+): string | null {
+  const normalized =
+    normalizeText(
+      value
+    )
+      .replace(
+        /^[\d]+[.)]\s*/,
+        ""
+      )
+      .replace(
+        /^(?:과목|과목명)\s*[:：]\s*/,
+        ""
+      )
+      .replace(
+        /\s*(?:과목)?\s*$/,
+        ""
+      )
+      .trim();
+
+  if (
+    normalized.length <
+      2 ||
+    normalized.length >
+      100
+  ) {
+    return null;
+  }
+
+  /**
+   * 학기 예정정보가 과목명으로 잘못 들어가는 것을 막는다.
+   */
+  if (
+    /^(?:예정금액|결제금액|결제일|개강월|개강일|교육원|기관|수강처|학기구분|학기\s*구분|과목수|과목\s*수|실습시간|실습\s*시간)$/i.test(
+      normalized
+    )
+  ) {
+    return null;
+  }
+
+  /**
+   * 금액, 날짜, 과목 수만 있는 값은
+   * 과목명으로 인정하지 않는다.
+   */
+  if (
+    /^\d[\d,]*(?:원|만원|천원|과목|월|일|시간)?$/.test(
+      normalized
+    )
+  ) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function resolveNaturalLanguageSubjectClassification(
+  value:
+    string
+): {
+  category:
+    "전공" |
+    "교양" |
+    "일반";
+
+  requirementType:
+    "전공필수" |
+    "전공선택" |
+    "교양" |
+    "일반";
+
+  subjectName:
+    string;
+} {
+  const normalized =
+    normalizeText(
+      value
+    );
+
+  if (
+    /^(?:전공필수|전필)\s*[:：-]?\s*/.test(
+      normalized
+    )
+  ) {
+    return {
+      category:
+        "전공",
+
+      requirementType:
+        "전공필수",
+
+      subjectName:
+        normalized.replace(
+          /^(?:전공필수|전필)\s*[:：-]?\s*/,
+          ""
+        ),
+    };
+  }
+
+  if (
+    /^(?:전공선택|전선)\s*[:：-]?\s*/.test(
+      normalized
+    )
+  ) {
+    return {
+      category:
+        "전공",
+
+      requirementType:
+        "전공선택",
+
+      subjectName:
+        normalized.replace(
+          /^(?:전공선택|전선)\s*[:：-]?\s*/,
+          ""
+        ),
+    };
+  }
+
+  if (
+    /^교양\s*[:：-]?\s*/.test(
+      normalized
+    )
+  ) {
+    return {
+      category:
+        "교양",
+
+      requirementType:
+        "교양",
+
+      subjectName:
+        normalized.replace(
+          /^교양\s*[:：-]?\s*/,
+          ""
+        ),
+    };
+  }
+
+  if (
+    /^일반\s*[:：-]?\s*/.test(
+      normalized
+    )
+  ) {
+    return {
+      category:
+        "일반",
+
+      requirementType:
+        "일반",
+
+      subjectName:
+        normalized.replace(
+          /^일반\s*[:：-]?\s*/,
+          ""
+        ),
+    };
+  }
+
+  return {
+    category:
+      "전공",
+
+    requirementType:
+      "전공선택",
+
+    subjectName:
+      normalized,
+  };
+}
+
+function splitNaturalLanguageSubjectList(
+  value:
+    string
+): string[] {
+  return normalizeText(
+    value
+  )
+    .split(
+      /[,，、·ㆍ|/]+|\s*;\s*/
+    )
+    .map(
+      (
+        item
+      ) =>
+        normalizeText(
+          item
+        )
+    )
+    .filter(
+      Boolean
+    );
+}
+
+function parseNaturalLanguageSubjectOperation(
+  line:
+    string
+): {
+  operation:
+    NaturalLanguageSubjectOperation;
+
+  subjectText:
+    string;
+} | null {
+  const normalized =
+    normalizeText(
+      line
+    );
+
+  if (
+    !normalized
+  ) {
+    return null;
+  }
+
+  /**
+   * 교체 명령
+   *
+   * 예:
+   * 과목 교체: 사회복지학개론, 인간행동과사회환경
+   * 과목 변경: 사회복지정책론
+   * 우리플랜 과목 수정: 사회복지행정론
+   */
+  const replaceMatch =
+    normalized.match(
+      /(?:우리\s*플랜\s*)?과목(?:명|목록)?\s*(?:전체\s*)?(?:교체|변경|수정|재설정)\s*[:：]\s*(.+)$/i
+    );
+
+  if (
+    replaceMatch?.[1]
+  ) {
+    return {
+      operation:
+        "replace",
+
+      subjectText:
+        replaceMatch[1],
+    };
+  }
+
+  /**
+   * 제외 명령
+   *
+   * 예:
+   * 과목 제외: 사회복지학개론
+   * 과목 삭제: 인간행동과사회환경
+   * 우리플랜 과목 빼기: 사회복지정책론
+   */
+  const removeMatch =
+    normalized.match(
+      /(?:우리\s*플랜\s*)?과목(?:명|목록)?\s*(?:제외|삭제|제거|빼기)\s*[:：]\s*(.+)$/i
+    );
+
+  if (
+    removeMatch?.[1]
+  ) {
+    return {
+      operation:
+        "remove",
+
+      subjectText:
+        removeMatch[1],
+    };
+  }
+
+  /**
+   * 추가 명령
+   *
+   * 예:
+   * 과목 추가: 사회복지법제와실천
+   * 우리플랜 과목 추가: 사회복지조사론
+   */
+  const addMatch =
+    normalized.match(
+      /(?:우리\s*플랜\s*)?과목(?:명|목록)?\s*추가\s*[:：]\s*(.+)$/i
+    );
+
+  if (
+    addMatch?.[1]
+  ) {
+    return {
+      operation:
+        "add",
+
+      subjectText:
+        addMatch[1],
+    };
+  }
+
+  /**
+ * 기본 과목 입력
+ *
+ * 해당 학기의 서버 기본 과목을
+ * 사용자가 입력한 목록으로 확정한다.
+ *
+ * 예:
+ * 과목: 사회복지학개론
+ * 과목목록: 사회복지학개론, 인간행동과사회환경
+ */
+  const defaultMatch =
+    normalized.match(
+      /(?:우리\s*플랜\s*)?과목(?:명|목록)?\s*[:：]\s*(.+)$/i
+    );
+
+  if (
+  defaultMatch?.[1]
+) {
+  return {
+    operation:
+      "set",
+
+    subjectText:
+      defaultMatch[1],
+  };
+}
+
+  return null;
+}
+
+function getNaturalLanguageSubjectKey(
+  subject: {
+    semesterNo:
+      number;
+
+    subjectName:
+      string;
+  }
+): string {
+  return [
+    Number(
+      subject.semesterNo ||
+      1
+    ),
+
+    normalizeRegistrationSubjectName(
+      subject.subjectName
+    ),
+  ].join(
+    ":"
+  );
+}
+
+function buildBaseNaturalLanguageSubjectMap(
+  rows:
+    BuildStudentRegistrationDraftInput["planSubjects"]
+): Map<
+  string,
+  ParsedNaturalLanguagePlanSubject
+> {
+  const subjectMap =
+    new Map<
+      string,
+      ParsedNaturalLanguagePlanSubject
+    >();
+
+  for (
+    const row of
+    rows ||
+    []
+  ) {
+    const subjectName =
+      cleanNaturalLanguageSubjectName(
+        row.subjectName
+      );
+
+    if (
+      !subjectName
+    ) {
+      continue;
+    }
+
+    const category =
+      normalizeSubjectCategory(
+        row.category,
+        row.requirementType
+      );
+
+    const subject:
+      ParsedNaturalLanguagePlanSubject = {
+      semesterNo:
+        normalizePositiveInteger(
+          row.semesterNo
+        ) ||
+        1,
+
+      subjectName,
+
+      category,
+
+      requirementType:
+        normalizeRequirementType(
+          row.requirementType,
+          category
+        ),
+
+      credits:
+        normalizePositiveInteger(
+          row.credits
+        ) ||
+        3,
+
+      isConfirmed:
+        row.isConfirmed !==
+        false,
+    };
+
+    subjectMap.set(
+      getNaturalLanguageSubjectKey(
+        subject
+      ),
+      subject
+    );
+  }
+
+  return subjectMap;
+}
+
+function extractNaturalLanguagePlanSubjects(
+  params: {
+    message:
+      string;
+
+    baseSubjects:
+      BuildStudentRegistrationDraftInput["planSubjects"];
+  }
+): ParsedNaturalLanguagePlanSubject[] {
+  const normalizedMessage =
+  String(
+    params.message ||
+    ""
+  )
+      .replace(
+        /\r\n/g,
+        "\n"
+      )
+      .replace(
+        /\r/g,
+        "\n"
+      );
+
+  const lines =
+    normalizedMessage
+      .split(
+        /\n+/
+      )
+      .map(
+        (
+          line
+        ) =>
+          normalizeText(
+            line
+          )
+      )
+      .filter(
+        Boolean
+      );
+
+  /**
+   * 누적 대화의 입력 순서대로 과목 변경을 반영한다.
+   *
+   * Map을 사용하는 이유:
+   * 같은 학기·같은 과목이 반복 입력되어도
+   * 한 번만 유지하기 위함이다.
+   */
+  const subjectMap =
+  buildBaseNaturalLanguageSubjectMap(
+    params.baseSubjects
+  );
+
+  let activeSemesterNo =
+    1;
+
+  for (
+    const line of
+    lines
+  ) {
+    const lineSemesterNo =
+      parseSemesterNo(
+        line
+      );
+
+    if (
+      lineSemesterNo
+    ) {
+      activeSemesterNo =
+        lineSemesterNo;
+    }
+
+    const parsedOperation =
+      parseNaturalLanguageSubjectOperation(
+        line
+      );
+
+    if (
+      !parsedOperation
+    ) {
+      continue;
+    }
+
+    const subjectValues =
+      splitNaturalLanguageSubjectList(
+        parsedOperation
+          .subjectText
+      );
+
+    const parsedSubjects =
+      subjectValues
+        .map(
+          (
+            subjectValue
+          ): ParsedNaturalLanguagePlanSubject | null => {
+            const classification =
+              resolveNaturalLanguageSubjectClassification(
+                subjectValue
+              );
+
+            const subjectName =
+              cleanNaturalLanguageSubjectName(
+                classification
+                  .subjectName
+              );
+
+            if (
+              !subjectName
+            ) {
+              return null;
+            }
+
+            return {
+              semesterNo:
+                activeSemesterNo,
+
+              subjectName,
+
+              category:
+                classification
+                  .category,
+
+              requirementType:
+                classification
+                  .requirementType,
+
+              credits:
+                3,
+
+              isConfirmed:
+                true,
+            };
+          }
+        )
+        .filter(
+          (
+            subject
+          ): subject is ParsedNaturalLanguagePlanSubject =>
+            subject !==
+            null
+        );
+
+if (
+  parsedOperation.operation ===
+  "set"
+) {
+  /**
+   * "1학기 과목:"처럼 명시된 기본 목록은
+   * 해당 학기의 서버 기본 과목을 제거한 뒤
+   * 사용자가 입력한 목록으로 확정한다.
+   */
+  for (
+    const [
+      key,
+      subject,
+    ] of subjectMap.entries()
+  ) {
+    if (
+      subject.semesterNo ===
+      activeSemesterNo
+    ) {
+      subjectMap.delete(
+        key
+      );
+    }
+  }
+
+  for (
+    const subject of
+    parsedSubjects
+  ) {
+    subjectMap.set(
+      getNaturalLanguageSubjectKey(
+        subject
+      ),
+      subject
+    );
+  }
+
+  continue;
+}
+
+    if (
+      parsedOperation.operation ===
+      "replace"
+    ) {
+      /**
+       * 현재 활성 학기의 기존 자연어 과목만 모두 제거하고
+       * 새 목록으로 다시 구성한다.
+       */
+      for (
+        const [
+          key,
+          subject,
+        ] of subjectMap.entries()
+      ) {
+        if (
+          subject.semesterNo ===
+          activeSemesterNo
+        ) {
+          subjectMap.delete(
+            key
+          );
+        }
+      }
+
+      for (
+        const subject of
+        parsedSubjects
+      ) {
+        subjectMap.set(
+          getNaturalLanguageSubjectKey(
+            subject
+          ),
+          subject
+        );
+      }
+
+      continue;
+    }
+
+    if (
+      parsedOperation.operation ===
+      "remove"
+    ) {
+      for (
+        const subject of
+        parsedSubjects
+      ) {
+        subjectMap.delete(
+          getNaturalLanguageSubjectKey(
+            subject
+          )
+        );
+      }
+
+      continue;
+    }
+
+    /**
+     * add
+     */
+    for (
+      const subject of
+      parsedSubjects
+    ) {
+      subjectMap.set(
+        getNaturalLanguageSubjectKey(
+          subject
+        ),
+        subject
+      );
+    }
+  }
+
+  return Array.from(
+    subjectMap.values()
+  )
+    .sort(
+      (
+        left,
+        right
+      ) =>
+        left.semesterNo -
+          right.semesterNo
+    );
+}
+
 function buildPlanSubjects(
-  input: BuildStudentRegistrationDraftInput
+  input:
+    BuildStudentRegistrationDraftInput
 ): StudentRegistrationDraftPlanSubject[] {
+  /**
+   * 서버 카탈로그 과목을 기본값으로 만든 뒤
+   * 누적된 자연어 명령을 입력 순서대로 적용한다.
+   */
   const rows =
-    input.planSubjects || [];
+    extractNaturalLanguagePlanSubjects({
+      message:
+        input.message,
+
+      baseSubjects:
+        input.planSubjects,
+    });
 
   return rows
     .map(
@@ -911,7 +2021,8 @@ function buildPlanSubjects(
           );
 
         if (
-          subjectName.length < 2
+          subjectName.length <
+            2
         ) {
           return null;
         }
@@ -926,7 +2037,8 @@ function buildPlanSubjects(
           semesterNo:
             normalizePositiveInteger(
               row.semesterNo
-            ) || 1,
+            ) ||
+            1,
 
           subjectName,
 
@@ -941,13 +2053,15 @@ function buildPlanSubjects(
           credits:
             normalizePositiveInteger(
               row.credits
-            ) || 3,
+            ) ||
+            3,
 
           source:
             "server",
 
           isConfirmed:
-            row.isConfirmed !== false,
+            row.isConfirmed !==
+            false,
         };
       }
     )
@@ -955,7 +2069,8 @@ function buildPlanSubjects(
       (
         row
       ): row is StudentRegistrationDraftPlanSubject =>
-        row !== null
+        row !==
+        null
     );
 }
 
@@ -1153,53 +2268,311 @@ function findDuplicateRegistrationSubjects(params: {
 }
 
 function extractExplicitPracticeRequirement(
-  message: string
+  message:
+    string
 ): boolean | null {
-  if (
-    /실습\s*(?:없음|불필요|안\s*함|제외)|실습을?\s*하지\s*않/i.test(
-      message
+  const normalized =
+    String(
+      message ||
+      ""
+    )
+      .replace(
+        /\r\n/g,
+        "\n"
+      )
+      .replace(
+        /\r/g,
+        "\n"
+      );
+
+  const matches:
+  Array<{
+    index:
+      number;
+
+    required:
+      boolean;
+
+    priority:
+      number;
+  }> = [];
+
+  const notRequiredPattern =
+  /실습\s*(?:없음|불필요|안\s*함|안함|제외|미진행|필요\s*없음|필요\s*없다|필요\s*없습니다)|실습을?\s*하지\s*않(?:음|습니다|기로|아요|겠습니다)|실습\s*진행하지\s*않(?:음|습니다|기로|아요|겠습니다)/gi;
+
+  for (
+    const match of
+    normalized.matchAll(
+      notRequiredPattern
     )
   ) {
-    return false;
+    matches.push({
+  index:
+    Number(
+      match.index ||
+      0
+    ),
+
+  required:
+    false,
+
+  priority:
+    2,
+});
+  }
+
+  const requiredPattern =
+  /실습\s*(?:필요(?!\s*(?:없음|없다|없습니다|하지\s*않))|있음|진행(?!하지\s*않)|포함|해야\s*함|해야함)|실습도\s*(?:진행(?!하지\s*않)|포함|필요)|현장실습(?:\s*(?:필요(?!\s*(?:없음|없다|없습니다))|진행(?!하지\s*않)|포함))?/gi;
+
+  for (
+    const match of
+    normalized.matchAll(
+      requiredPattern
+    )
+  ) {
+    matches.push({
+  index:
+    Number(
+      match.index ||
+      0
+    ),
+
+  required:
+    true,
+
+  priority:
+    1,
+});
   }
 
   if (
-    /실습\s*(?:필요|있음|진행|포함)|실습도|현장실습/i.test(
-      message
-    )
+    matches.length ===
+    0
   ) {
-    return true;
+    return null;
   }
 
-  return null;
+  matches.sort(
+  (
+    left,
+    right
+  ) => {
+    if (
+      left.index !==
+      right.index
+    ) {
+      return (
+        left.index -
+        right.index
+      );
+    }
+
+    return (
+      left.priority -
+      right.priority
+    );
+  }
+);
+
+  return matches[
+    matches.length -
+      1
+  ].required;
 }
 
 function extractPracticeHours(
-  message: string
+  message:
+    string
 ): number | null {
-  const match =
-    message.match(
-      /실습\s*(\d{2,3})\s*시간|(\d{2,3})\s*시간\s*실습/i
-    );
+  const normalized =
+    String(
+      message ||
+      ""
+    )
+      .replace(
+        /\r\n/g,
+        "\n"
+      )
+      .replace(
+        /\r/g,
+        "\n"
+      );
 
-  return normalizePositiveInteger(
-    match?.[1] ||
-    match?.[2]
+  const matches:
+    Array<{
+      index:
+        number;
+
+      hours:
+        number;
+    }> = [];
+
+  const practiceHoursPattern =
+    /실습\s*(?:시간\s*)?[:：]?\s*(\d{2,3})\s*시간|(\d{2,3})\s*시간\s*(?:의\s*)?실습/gi;
+
+  for (
+    const match of
+    normalized.matchAll(
+      practiceHoursPattern
+    )
+  ) {
+    const hours =
+      normalizePositiveInteger(
+        match[1] ||
+        match[2]
+      );
+
+    if (
+      hours ===
+      null
+    ) {
+      continue;
+    }
+
+    matches.push({
+      index:
+        Number(
+          match.index ||
+          0
+        ),
+
+      hours,
+    });
+  }
+
+  if (
+    matches.length ===
+    0
+  ) {
+    return null;
+  }
+
+  matches.sort(
+    (
+      left,
+      right
+    ) =>
+      left.index -
+      right.index
   );
+
+  return matches[
+    matches.length -
+      1
+  ].hours;
 }
 
 function extractPracticeSemesterNo(
-  message: string
+  message:
+    string
 ): number | null {
-  const match =
-    message.match(
-      /(\d{1,2})\s*학기[^.\n]*실습|실습[^.\n]*(\d{1,2})\s*학기/i
-    );
+  const normalized =
+    String(
+      message ||
+      ""
+    )
+      .replace(
+        /\r\n/g,
+        "\n"
+      )
+      .replace(
+        /\r/g,
+        "\n"
+      );
 
-  return normalizePositiveInteger(
-    match?.[1] ||
-    match?.[2]
+  const matches:
+    Array<{
+      index:
+        number;
+
+      semesterNo:
+        number;
+    }> = [];
+
+  const semesterBeforePracticePattern =
+    /(\d{1,2})\s*학기(?:차)?[^\n.]*실습/gi;
+
+  for (
+    const match of
+    normalized.matchAll(
+      semesterBeforePracticePattern
+    )
+  ) {
+    const semesterNo =
+      normalizePositiveInteger(
+        match[1]
+      );
+
+    if (
+      semesterNo ===
+      null
+    ) {
+      continue;
+    }
+
+    matches.push({
+      index:
+        Number(
+          match.index ||
+          0
+        ),
+
+      semesterNo,
+    });
+  }
+
+  const practiceBeforeSemesterPattern =
+    /실습[^\n.]*(\d{1,2})\s*학기(?:차)?/gi;
+
+  for (
+    const match of
+    normalized.matchAll(
+      practiceBeforeSemesterPattern
+    )
+  ) {
+    const semesterNo =
+      normalizePositiveInteger(
+        match[1]
+      );
+
+    if (
+      semesterNo ===
+      null
+    ) {
+      continue;
+    }
+
+    matches.push({
+      index:
+        Number(
+          match.index ||
+          0
+        ),
+
+      semesterNo,
+    });
+  }
+
+  if (
+    matches.length ===
+    0
+  ) {
+    return null;
+  }
+
+  matches.sort(
+    (
+      left,
+      right
+    ) =>
+      left.index -
+      right.index
   );
+
+  return matches[
+    matches.length -
+      1
+  ].semesterNo;
 }
 
 function buildPracticeDraft(params: {
@@ -1362,13 +2735,32 @@ function buildPlanSummary(params: {
 }
 
 function buildMissingFields(params: {
-  clientName: string;
-  phone: string;
-  assigneeId: number;
-  courseName: string | null;
-  finalEducation: string | null;
-  planSubjects:
-    StudentRegistrationDraftPlanSubject[];
+  clientName:
+    string;
+
+  phone:
+    string;
+
+  assigneeId:
+    number;
+
+  courseName:
+    string |
+    null;
+
+  finalEducation:
+    string |
+    null;
+
+  semesters:
+  StudentRegistrationDraftSemester[];
+
+planSubjects:
+  StudentRegistrationDraftPlanSubject[];
+
+practice:
+  StudentRegistrationDraftPractice |
+  null;
 }): string[] {
   const missing: string[] = [];
 
@@ -1412,17 +2804,213 @@ function buildMissingFields(params: {
     );
   }
 
+if (
+  params.practice ===
+  null
+) {
+  missing.push(
+    "실습 필요 여부"
+  );
+}
+
+if (
+  params.practice?.required ===
+    true &&
+  (
+    params.practice.requiredHours ===
+      null ||
+    params.practice.requiredHours ===
+      undefined ||
+    Number(
+      params.practice.requiredHours
+    ) <= 0
+  )
+) {
+  missing.push(
+    "실습 시간"
+  );
+}
+
+if (
+  params.practice?.required ===
+    true &&
+  (
+    params.practice.semesterNo ===
+      null ||
+    params.practice.semesterNo ===
+      undefined ||
+    Number(
+      params.practice.semesterNo
+    ) <= 0
+  )
+) {
+  missing.push(
+    "실습 예정 학기"
+  );
+}
+
+if (
+  params.practice?.required ===
+    true &&
+  params.practice.semesterNo !==
+    null &&
+  params.practice.semesterNo !==
+    undefined &&
+  !params.semesters.some(
+    (
+      semester
+    ) =>
+      Number(
+        semester.semesterNo
+      ) ===
+      Number(
+        params.practice
+          ?.semesterNo
+      )
+  )
+) {
+  missing.push(
+    "실습 예정 학기 정보"
+  );
+}
+
   if (
-    params.planSubjects.length === 0
+  params.planSubjects.length ===
+  0
+) {
+  missing.push(
+    "우리플랜 과목"
+  );
+}
+
+if (
+  params.semesters.length ===
+  0
+) {
+  missing.push(
+    "학기 정보"
+  );
+}
+
+for (
+  const semester of
+  params.semesters
+) {
+  const semesterNo =
+    Number(
+      semester.semesterNo ||
+      0
+    );
+
+  const semesterPrefix =
+    semesterNo > 0
+      ? `${semesterNo}학기차`
+      : "학기";
+
+  if (
+    !String(
+      semester.semesterLabel ||
+      ""
+    ).trim()
   ) {
     missing.push(
-      "우리플랜 과목"
+      `${semesterPrefix} 학기 구분`
     );
   }
 
-  return uniqueStrings(
-    missing
-  );
+  if (
+    !String(
+      semester.plannedStartMonth ||
+      ""
+    ).trim()
+  ) {
+    missing.push(
+      `${semesterPrefix} 예정 개강월`
+    );
+  }
+
+  if (
+    !String(
+      semester.plannedInstitution ||
+      ""
+    ).trim()
+  ) {
+    missing.push(
+      `${semesterPrefix} 예정 교육원`
+    );
+  }
+
+  if (
+    semester.plannedSubjectCount ===
+      null ||
+    semester.plannedSubjectCount ===
+      undefined ||
+    Number(
+      semester.plannedSubjectCount
+    ) <= 0
+  ) {
+    missing.push(
+      `${semesterPrefix} 예정 과목 수`
+    );
+  }
+
+  if (
+    semester.plannedAmount ===
+      null ||
+    semester.plannedAmount ===
+      undefined ||
+    Number(
+      semester.plannedAmount
+    ) < 0
+  ) {
+    missing.push(
+      `${semesterPrefix} 예정금액`
+    );
+  }
+
+  const semesterSubjectCount =
+    params.planSubjects.filter(
+      (
+        subject
+      ) =>
+        Number(
+          subject.semesterNo
+        ) ===
+        semesterNo
+    ).length;
+
+  if (
+    semesterNo > 0 &&
+    semesterSubjectCount ===
+      0
+  ) {
+    missing.push(
+      `${semesterPrefix} 우리플랜 과목`
+    );
+  }
+
+  const hasActualPayment =
+    semester.actualPaymentAmount !==
+      null &&
+    semester.actualPaymentAmount !==
+      undefined;
+
+  if (
+    hasActualPayment &&
+    !String(
+      semester.paymentDate ||
+      ""
+    ).trim()
+  ) {
+    missing.push(
+      `${semesterPrefix} 결제일`
+    );
+  }
+}
+
+return uniqueStrings(
+  missing
+);
 }
 
 function buildWarnings(params: {
@@ -1445,6 +3033,91 @@ function buildWarnings(params: {
 }): string[] {
   const warnings: string[] = [];
 
+const semesterNos =
+  Array.from(
+    new Set(
+      params.semesters
+        .map(
+          (
+            semester
+          ) =>
+            Number(
+              semester.semesterNo ||
+              0
+            )
+        )
+        .filter(
+          (
+            semesterNo
+          ) =>
+            Number.isFinite(
+              semesterNo
+            ) &&
+            semesterNo >
+              0
+        )
+    )
+  )
+    .sort(
+      (
+        left,
+        right
+      ) =>
+        left -
+        right
+    );
+
+if (
+  semesterNos.length >
+    1
+) {
+  const maximumSemesterNo =
+    semesterNos[
+      semesterNos.length -
+        1
+    ];
+
+  const missingSemesterNos:
+    number[] = [];
+
+  for (
+    let semesterNo =
+      1;
+    semesterNo <=
+      maximumSemesterNo;
+    semesterNo +=
+      1
+  ) {
+    if (
+      !semesterNos.includes(
+        semesterNo
+      )
+    ) {
+      missingSemesterNos.push(
+        semesterNo
+      );
+    }
+  }
+
+  if (
+    missingSemesterNos.length >
+      0
+  ) {
+    warnings.push(
+      `과정 학기 순서 중 ${missingSemesterNos
+        .map(
+          (
+            semesterNo
+          ) =>
+            `${semesterNo}학기차`
+        )
+        .join(
+          ", "
+        )} 정보가 빠져 있습니다. 학기 순서를 확인해주세요.`
+    );
+  }
+}
+
   if (
     params.consultationStatus &&
     ![
@@ -1460,17 +3133,19 @@ function buildWarnings(params: {
     );
   }
 
-  const semesterNos =
+    const duplicateCheckSemesterNos =
     params.semesters.map(
-      (semester) =>
+      (
+        semester
+      ) =>
         semester.semesterNo
     );
 
   if (
     new Set(
-      semesterNos
+      duplicateCheckSemesterNos
     ).size !==
-    semesterNos.length
+    duplicateCheckSemesterNos.length
   ) {
     warnings.push(
       "동일한 학기 번호가 중복되어 있습니다."
@@ -1548,32 +3223,18 @@ function buildWarnings(params: {
     );
   }
 
-  if (
-    params.practice === null
-  ) {
-    warnings.push(
-      "실습 필요 여부가 확정되지 않았습니다."
-    );
-  } else if (
-    params.practice.required &&
-    params.practice.requiredHours ===
-      null
-  ) {
-    warnings.push(
-      "실습이 필요하지만 실습 시간이 입력되지 않았습니다."
-    );
-  }
-
   return uniqueStrings(
     warnings
   );
 }
 
 function semesterToPreviewItems(
-  semester: StudentRegistrationDraftSemester
+  semester:
+    StudentRegistrationDraftSemester
 ): string[] {
   return [
-    `학기: ${semester.semesterNo}학기`,
+    `과정 순서: ${semester.semesterNo}학기차`,
+    `학기 구분: ${semester.semesterLabel || "미입력"}`,
     `예정 시작 월: ${semester.plannedStartMonth || "미입력"}`,
     `예정 교육원: ${semester.plannedInstitution || "미입력"}`,
     `예정 과목 수: ${
@@ -1588,11 +3249,17 @@ function semesterToPreviewItems(
     }`,
     `실제 개강일: ${semester.actualStartDate || "미입력"}`,
     `실제 교육원: ${semester.actualInstitution || "미입력"}`,
-    `실제 결제금액: ${
-      semester.actualPaymentAmount !== null
-        ? `${semester.actualPaymentAmount.toLocaleString()}원`
-        : "미입력"
-    }`,
+`실제 과목 수: ${
+  semester.actualSubjectCount !== null &&
+  semester.actualSubjectCount !== undefined
+    ? `${semester.actualSubjectCount}과목`
+    : "미입력"
+}`,
+`실제 결제금액: ${
+  semester.actualPaymentAmount !== null
+    ? `${semester.actualPaymentAmount.toLocaleString()}원`
+    : "미입력"
+}`,
     `결제일: ${semester.paymentDate || "미입력"}`,
   ];
 }
@@ -1648,7 +3315,7 @@ function buildPreview(
           .map(
             (semesterNo) => ({
               label:
-                `${semesterNo}학기 우리플랜 과목`,
+  `${semesterNo}학기차 저장 예정 우리플랜 과목`,
 
               items:
                 draft.planSubjects
@@ -1682,8 +3349,8 @@ function buildPreview(
         ];
 
   const transferSubjectSection = {
-    label:
-      "전적대 및 기존 이수 과목",
+  label:
+    "저장 예정 전적대 및 기존 이수 과목",
 
     items:
       draft.transferSubjects.length > 0
@@ -1708,8 +3375,8 @@ function buildPreview(
   };
 
   const practiceSection = {
-    label:
-      "실습 설계",
+  label:
+    "저장 예정 실습 설계",
 
     items:
       draft.practice === null
@@ -1738,8 +3405,8 @@ function buildPreview(
   };
 
   const duplicateSection = {
-    label:
-      "중복과목 검사",
+  label:
+    "저장 전 중복과목 검사",
 
     items:
       draft.duplicateSubjects.length > 0
@@ -1755,38 +3422,51 @@ function buildPreview(
           ],
   };
 
+const finalConfirmationSection = {
+  label:
+    "최종 확인",
+
+  items: [
+    "아래 표시된 회원정보, 학기정보, 교육원, 예정금액, 결제정보, 과목설계, 전적대 과목, 실습정보를 확인해주세요.",
+    "승인하면 상담DB 상태를 등록예정으로 변경하고 등록예정 학생과 과목설계 정보를 실제 CRM에 저장합니다.",
+    "표시된 내용이 다르면 승인하지 말고 수정할 내용을 AI에게 입력해주세요.",
+  ],
+};
+
   return {
         title:
-      "학생 과목설계 저장 확인",
+  "등록예정 학생 생성 및 과목설계 최종 확인",
 
         summary:
-      `${draft.student.clientName || "회원"}의 상담DB와 전적대 정보를 기준으로 등록예정 학생 및 과목설계 초안을 만들었습니다.`,
+  `${draft.student.clientName || "회원"}의 등록예정 학생 생성 및 과목설계 저장 전 최종 확인입니다. 아래 항목을 모두 확인한 뒤 승인해주세요.`,
 
     sections: [
-      {
-        label:
-          "학생 기본정보",
-        items:
-          studentItems,
-      },
+  finalConfirmationSection,
 
-      {
-        label:
-          "플랜 정보",
-        items:
-          planItems,
-      },
+  {
+    label:
+      "학생 기본정보",
+    items:
+      studentItems,
+  },
+
+  {
+    label:
+      "플랜 정보",
+    items:
+      planItems,
+  },
 
       ...draft.semesters.map(
-        (semester) => ({
-          label:
-            `${semester.semesterNo}학기 예정표`,
-          items:
-            semesterToPreviewItems(
-              semester
-            ),
-        })
+  (semester) => ({
+    label:
+      `${semester.semesterNo}학기차 학기정보`,
+    items:
+      semesterToPreviewItems(
+        semester
       ),
+  })
+),
 
       ...planSubjectSections,
 
@@ -1800,17 +3480,19 @@ function buildPreview(
     changes: [],
 
         executionSteps: [
-      "상담DB 원본과 현재 권한을 다시 확인합니다.",
-      "상담 상태를 등록예정으로 변경합니다.",
-      "등록예정 학생 기본정보를 생성합니다.",
-      "학생 플랜 요약을 저장합니다.",
-      "학기별 과목설계를 저장합니다.",
-      "전적대 및 기존 이수 과목을 저장합니다.",
-      "우리플랜과 전적대 과목의 중복을 다시 검사합니다.",
-      "실습 설계정보를 저장합니다.",
-      "학생 감사로그와 AI 실행로그를 기록합니다.",
-      "승인 요청·정산·입력완료 처리는 실행하지 않습니다.",
-    ],
+  "승인된 미리보기 버전과 현재 Pending Action 버전을 확인합니다.",
+  "현재 로그인 사용자와 상담DB 담당자 권한을 다시 확인합니다.",
+  "미리보기 생성 이후 상담DB 원본이 변경되지 않았는지 확인합니다.",
+  "기존 학생으로 이미 전환된 상담DB인지 다시 확인합니다.",
+  "필수값, 중복과목, 확인되지 않은 과목이 없는지 다시 검사합니다.",
+  "상담DB 상태를 등록예정으로 변경합니다.",
+  "등록예정 학생 기본정보와 플랜 요약을 저장합니다.",
+  "학기정보와 학기별 우리플랜 과목을 저장합니다.",
+  "전적대 및 기존 이수 과목을 저장합니다.",
+  "실습 설계정보를 저장합니다.",
+  "학생 감사로그와 AI 실행로그를 기록합니다.",
+  "정산 반영, 승인관리 이동, 입력완료 처리는 실행하지 않습니다.",
+],
 
     missingFields:
       draft.missingFields,
@@ -1911,6 +3593,9 @@ export function buildStudentRegistrationDraft(
         semesterNo:
           seed.semesterNo,
 
+semesterLabel:
+  seed.semesterLabel,
+
         plannedStartMonth:
           seed.plannedStartMonth,
 
@@ -1928,6 +3613,9 @@ export function buildStudentRegistrationDraft(
 
         actualInstitution:
           seed.actualInstitution,
+
+actualSubjectCount:
+  seed.actualSubjectCount,
 
         actualPaymentAmount:
           seed.actualPaymentAmount,
@@ -2011,6 +3699,9 @@ export function buildStudentRegistrationDraft(
     semesters.push({
       semesterNo,
 
+semesterLabel:
+  null,
+
       plannedStartMonth:
         null,
 
@@ -2028,6 +3719,9 @@ export function buildStudentRegistrationDraft(
 
       actualInstitution:
         null,
+
+actualSubjectCount:
+  null,
 
       actualPaymentAmount:
         null,
@@ -2118,14 +3812,19 @@ export function buildStudentRegistrationDraft(
       : practice.required;
 
     const missingFields =
-    buildMissingFields({
-      clientName,
-      phone,
-      assigneeId,
-      courseName,
-      finalEducation,
-      planSubjects,
-    });
+  buildMissingFields({
+    clientName,
+    phone,
+    assigneeId,
+    courseName,
+    finalEducation,
+
+    semesters,
+
+    planSubjects,
+
+    practice,
+  });
 
    const warnings =
     buildWarnings({
@@ -2174,7 +3873,7 @@ export function buildStudentRegistrationDraft(
           courseName,
         finalEducation,
                 status:
-          "등록",
+          "등록예정",
       },
 
       plan: {

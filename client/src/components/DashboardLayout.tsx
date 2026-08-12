@@ -114,6 +114,7 @@ const hostMenuItems: MenuItem[] = [
   path: "/private-certificate-master",
  },
  { icon: PhoneCall, label: "문자 발송", path: "/sms" },
+{ icon: MessageSquare, label: "카카오 AI", path: "/kakao-ai" },
 ];
 
 const superhostMenuItems: MenuItem[] = [
@@ -486,9 +487,17 @@ useEffect(() => {
  const isSuperhost = user?.role === "superhost";
 
 const canUseAI =
-  isStaff ||
-  isAdmin ||
-  isHost;
+  (isStaff ||
+    isAdmin ||
+    isHost) &&
+  organizationFeatures?.allowAiAssistant ===
+    true;
+
+useEffect(() => {
+  if (!canUseAI && isAiOpen) {
+    setIsAiOpen(false);
+  }
+}, [canUseAI, isAiOpen]);
 
 const openAiPanel = () => {
   if (!canUseAI) return;
@@ -701,6 +710,10 @@ const featureFilteredHostMenuItems = hostMenuItems.filter((item) => {
 
   if (item.path === "/private-certificate-master") {
     return organizationFeatures.allowPrivateCertificate;
+  }
+
+  if (item.path === "/kakao-ai") {
+    return organizationFeatures.allowKakaoAi === true;
   }
 
   return true;

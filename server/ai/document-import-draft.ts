@@ -293,6 +293,22 @@ function buildSubjectRows(
             )
           );
 
+        const completionYearValue =
+          normalizeNullableNumber(
+            getFieldValue(
+              subject
+                .completionYear
+            )
+          );
+
+        const completionSemester =
+          normalizeNullableString(
+            getFieldValue(
+              subject
+                .completionSemester
+            )
+          );
+
         const grade =
           normalizeNullableString(
             getFieldValue(
@@ -359,6 +375,14 @@ function buildSubjectRows(
             subject
               .semesterNo
               .warning,
+
+            subject
+              .completionYear
+              .warning,
+
+            subject
+              .completionSemester
+              .warning,
           ]);
 
         return {
@@ -397,6 +421,18 @@ function buildSubjectRows(
                   semesterNoValue
                 )
               : null,
+
+          completionYear:
+            completionYearValue &&
+            completionYearValue >= 1900 &&
+            completionYearValue <= 2200
+              ? Math.floor(
+                  completionYearValue
+                )
+              : null,
+
+          completionSemester:
+            completionSemester,
 
           /**
            * 현재 분석 직후 필드 상태는 extracted다.

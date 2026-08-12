@@ -64,6 +64,7 @@ import ApprovalPreviewPage from "./pages/ApprovalPreviewPage";
 import ApprovalHistoryDetailPage from "./pages/ApprovalHistoryDetailPage";
 import PrivateCertificateMasterPage from "./pages/PrivateCertificateMasterPage";
 import SubjectCatalogMasterPage from "./pages/SubjectCatalogMasterPage";
+import KakaoAISettings from "./pages/KakaoAISettings";
 
 // ✅ 추가
 import AppToastHost from "@/components/notifications/AppToastHost";
@@ -117,9 +118,10 @@ function FeatureGate({
   children,
 }: {
   feature:
-    | "allowSettlementReport"
-    | "allowPrivateCertificate"
-    | "allowPracticeCenter";
+  | "allowSettlementReport"
+  | "allowPrivateCertificate"
+  | "allowPracticeCenter"
+  | "allowKakaoAi";
   children: React.ReactNode;
 }) {
   const { data: features, isLoading } =
@@ -238,6 +240,12 @@ function PrivateRouter() {
       <Route path="/practice-support-center" component={() => <RedirectToMyOrg path="/practice-support-center" />} />
       <Route path="/job-support-center" component={() => <RedirectToMyOrg path="/job-support-center" />} />
       <Route path="/system" component={() => <RedirectToMyOrg path="/system" />} />
+<Route
+  path="/kakao-ai"
+  component={() => (
+    <RedirectToMyOrg path="/kakao-ai" />
+  )}
+/>
 
       <Route path="/attendance/view" component={() => <RedirectToMyOrg path="/attendance/view" />} />
       <Route path="/attendance" component={() => <RedirectToMyOrg path="/attendance" />} />
@@ -350,6 +358,16 @@ function PrivateRouter() {
 />
       <Route path="/:organizationSlug/job-support-center" component={JobSupportCenterPage} />
       <Route path="/:organizationSlug/system" component={System} />
+<Route
+  path="/:organizationSlug/kakao-ai"
+  component={() => (
+    <FeatureGate feature="allowKakaoAi">
+      <HostOnly>
+        <KakaoAISettings />
+      </HostOnly>
+    </FeatureGate>
+  )}
+/>
 
       <Route path="/:organizationSlug/attendance/view" component={AttendanceViewPage} />
       <Route path="/:organizationSlug/attendance" component={AttendancePage} />

@@ -130,8 +130,6 @@ if (organizationBlockMessage) {
 
     const secret = process.env.SESSION_SECRET || "dev-secret";
 
-    res.append("Set-Cookie", makeSessionCookie(user.id, secret));
-
    const organization =
   user.role === "superhost"
     ? null
@@ -169,6 +167,8 @@ if (!decryptedUser) {
       "사용자 정보를 확인할 수 없습니다.",
   });
 }
+
+res.append("Set-Cookie", makeSessionCookie(user.id, secret));
 
 return res.json({
   user: {

@@ -35,7 +35,11 @@ import {
   updateChatRoomTitle,
   updateChatRoomType,
   getStudent,
+  getKakaoAiSettings,
 } from "../db";
+import {
+  orchestrateKakaoAiIncomingMessage,
+} from "../ai/kakao-ai-conversation-orchestrator";
 import { 
 getOrganizationById,
 getOrganizationLimitStatus,
@@ -1652,6 +1656,781 @@ async function getR2PrefixUsageBytes(prefix: string) {
 
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+  /**
+   * ─────────────────────────────────────────────────────────────
+   * Kakao AI Skill Webhook
+   * ─────────────────────────────────────────────────────────────
+   *
+   * 카카오 챗봇 관리자센터
+   * ↓
+   * 이 Endpoint
+   * ↓
+   * EduCanvas Kakao AI Orchestrator
+   * ↓
+   * Kakao Callback API
+   *
+   * URL:
+   *
+   * POST
+   * /api/kakao-ai/skill/:organizationId/:webhookToken
+   *
+   * 보안:
+   *
+   * 1. organizationId
+   * 2. 회사 활성상태
+   * 3. organizations.allowKakaoAi
+   * 4. kakao_ai_settings.enabled
+   * 5. webhook token SHA-256
+   * 6. bot.id
+   *
+   * 모두 서버에서 재검사한다.
+   */
+  app.post(
+    "/api/kakao-ai/skill/:organizationId/:webhookToken",
+    async (
+      req,
+      res
+    ) => {
+      try {
+        const organizationId =
+          Math.floor(
+            Number(
+              req.params.organizationId ||
+              0
+            )
+          );
+
+        if (
+          !Number.isFinite(
+            organizationId
+          ) ||
+          organizationId <=
+            0
+        ) {
+          return res
+            .status(400)
+            .json({
+              version:
+                "2.0",
+
+              template: {
+                outputs: [
+                  {
+                    simpleText: {
+                      text:
+                        "잘못된 요청입니다.",
+                    },
+                  },
+                ],
+              },
+            });
+        }
+
+        const webhookToken =
+          String(
+            req.params.webhookToken ||
+            ""
+          ).trim();
+
+        /**
+         * regenerateWebhookToken에서
+         * randomBytes(32).toString("hex")으로
+         * 정확히 64자리 hex를 만든다.
+         */
+        if (
+          !/^[a-f0-9]{64}$/i.test(
+            webhookToken
+          )
+        ) {
+          return res
+            .status(404)
+            .json({
+              version:
+                "2.0",
+
+              template: {
+                outputs: [
+                  {
+                    simpleText: {
+                      text:
+                        "사용할 수 없는 요청입니다.",
+                    },
+                  },
+                ],
+              },
+            });
+        }
+
+        /**
+         * 회사 자체가 실제 활성상태인지 확인.
+         */
+        const organization =
+          await getOrganizationById(
+            organizationId
+          );
+
+        if (
+          !organization ||
+          organization.status !==
+            "active" ||
+          organization.allowKakaoAi !==
+            true
+        ) {
+          return res
+            .status(403)
+            .json({
+              version:
+                "2.0",
+
+              template: {
+                outputs: [
+                  {
+                    simpleText: {
+                      text:
+                        "현재 카카오 AI 상담을 이용할 수 없습니다.",
+                    },
+                  },
+                ],
+              },
+            });
+        }
+
+        /**
+         * 회사 Host가 실제 AI 운영을
+         * 켜놓았는지도 별도 확인.
+         */
+        const kakaoSettings =
+          await getKakaoAiSettings({
+            organizationId,
+          });
+
+        if (
+          kakaoSettings.enabled !==
+          true
+        ) {
+          return res
+            .status(403)
+            .json({
+              version:
+                "2.0",
+
+              template: {
+                outputs: [
+                  {
+                    simpleText: {
+                      text:
+                        "현재 카카오 AI 상담이 운영 중이 아닙니다.",
+                    },
+                  },
+                ],
+              },
+            });
+        }
+
+        /**
+         * DB에는 원본 Token이 아니라
+         * SHA-256 Hash만 저장돼 있다.
+         */
+        const storedTokenHash =
+          String(
+            kakaoSettings
+              .webhookTokenHash ||
+            ""
+          )
+            .trim()
+            .toLowerCase();
+
+        if (
+          !/^[a-f0-9]{64}$/.test(
+            storedTokenHash
+          )
+        ) {
+          console.error(
+            "[KAKAO AI] Webhook Token 미설정",
+            {
+              organizationId,
+            }
+          );
+
+          return res
+            .status(403)
+            .json({
+              version:
+                "2.0",
+
+              template: {
+                outputs: [
+                  {
+                    simpleText: {
+                      text:
+                        "현재 카카오 AI 연결정보가 설정되지 않았습니다.",
+                    },
+                  },
+                ],
+              },
+            });
+        }
+
+        const incomingTokenHash =
+          crypto
+            .createHash(
+              "sha256"
+            )
+            .update(
+              webhookToken,
+              "utf8"
+            )
+            .digest(
+              "hex"
+            );
+
+        /**
+         * 일반 문자열 === 비교 대신
+         * timingSafeEqual 사용.
+         */
+        const storedHashBuffer =
+          Buffer.from(
+            storedTokenHash,
+            "hex"
+          );
+
+        const incomingHashBuffer =
+          Buffer.from(
+            incomingTokenHash,
+            "hex"
+          );
+
+        if (
+          storedHashBuffer.length !==
+            incomingHashBuffer.length ||
+          !crypto.timingSafeEqual(
+            storedHashBuffer,
+            incomingHashBuffer
+          )
+        ) {
+          console.warn(
+            "[KAKAO AI] Webhook Token 불일치",
+            {
+              organizationId,
+            }
+          );
+
+          return res
+            .status(404)
+            .json({
+              version:
+                "2.0",
+
+              template: {
+                outputs: [
+                  {
+                    simpleText: {
+                      text:
+                        "사용할 수 없는 요청입니다.",
+                    },
+                  },
+                ],
+              },
+            });
+        }
+
+        const payload =
+          req.body &&
+          typeof req.body ===
+            "object"
+            ? req.body
+            : {};
+
+        /**
+         * 카카오 Skill Payload의 실제 bot.id.
+         */
+        const requestBotId =
+          String(
+            payload?.bot?.id ||
+            ""
+          ).trim();
+
+        const configuredBotId =
+          String(
+            kakaoSettings
+              .kakaoBotId ||
+            ""
+          ).trim();
+
+        if (
+          !configuredBotId
+        ) {
+          console.error(
+            "[KAKAO AI] Bot ID 미설정",
+            {
+              organizationId,
+            }
+          );
+
+          return res
+            .status(403)
+            .json({
+              version:
+                "2.0",
+
+              template: {
+                outputs: [
+                  {
+                    simpleText: {
+                      text:
+                        "현재 카카오 챗봇 연결정보가 설정되지 않았습니다.",
+                    },
+                  },
+                ],
+              },
+            });
+        }
+
+        if (
+          !requestBotId ||
+          requestBotId !==
+            configuredBotId
+        ) {
+          console.warn(
+            "[KAKAO AI] Bot ID 불일치",
+            {
+              organizationId,
+
+              requestBotId:
+                requestBotId ||
+                null,
+            }
+          );
+
+          return res
+            .status(403)
+            .json({
+              version:
+                "2.0",
+
+              template: {
+                outputs: [
+                  {
+                    simpleText: {
+                      text:
+                        "허용되지 않은 카카오 챗봇 요청입니다.",
+                    },
+                  },
+                ],
+              },
+            });
+        }
+
+        /**
+         * userRequest.user.id는
+         * 특정 봇 안에서 사용자를 식별하는
+         * botUserKey다.
+         *
+         * 원문은 DB에 저장하지 않고
+         * Conversation 함수 내부에서 Hash 처리된다.
+         */
+        const channelUserKey =
+          String(
+            payload
+              ?.userRequest
+              ?.user
+              ?.id ||
+            ""
+          ).trim();
+
+        if (
+          !channelUserKey
+        ) {
+          return res
+            .status(400)
+            .json({
+              version:
+                "2.0",
+
+              template: {
+                outputs: [
+                  {
+                    simpleText: {
+                      text:
+                        "사용자 정보를 확인할 수 없습니다.",
+                    },
+                  },
+                ],
+              },
+            });
+        }
+
+        const utterance =
+          String(
+            payload
+              ?.userRequest
+              ?.utterance ||
+            ""
+          ).trim();
+
+        if (
+          !utterance
+        ) {
+          return res
+            .status(200)
+            .json({
+              version:
+                "2.0",
+
+              template: {
+                outputs: [
+                  {
+                    simpleText: {
+                      text:
+                        "메시지 내용을 확인할 수 없습니다. 텍스트로 다시 보내주세요.",
+                    },
+                  },
+                ],
+              },
+            });
+        }
+
+        /**
+         * 카카오가 HTTP Header로 제공하는
+         * 요청 식별값.
+         *
+         * 동일 webhook 재수신 시
+         * kakao_ai_messages의 external id
+         * 중복방지에 사용한다.
+         */
+        const kakaoRequestId =
+          String(
+            req.get(
+              "X-Request-Id"
+            ) ||
+            ""
+          ).trim() ||
+          null;
+
+        const callbackUrl =
+          String(
+            payload
+              ?.userRequest
+              ?.callbackUrl ||
+            ""
+          ).trim();
+
+        /**
+         * ---------------------------------------------------------
+         * Callback 사용 가능
+         * ---------------------------------------------------------
+         *
+         * 지금 카카오 AI는
+         * Memory + Intent + Context + Composer까지
+         * OpenAI를 여러 번 호출할 수 있으므로
+         * 5초 안에 동기 완료를 전제로 하면 안 된다.
+         *
+         * 먼저 useCallback=true를 반환하고
+         * AI 작업은 비동기로 진행한다.
+         */
+        if (
+          callbackUrl
+        ) {
+          res.status(200).json({
+            version:
+              "2.0",
+
+            useCallback:
+              true,
+          });
+
+          /**
+           * HTTP 응답 이후 실제 AI 처리.
+           *
+           * callbackUrl은 카카오가 발급한
+           * 1회성 URL이므로 로그에 출력하지 않는다.
+           */
+          void (
+            async () => {
+              try {
+                const result =
+                  await orchestrateKakaoAiIncomingMessage({
+                    organizationId,
+
+                    channelUserKey,
+
+                    kakaoMessageId:
+                      kakaoRequestId,
+
+                    messageType:
+                      "text",
+
+                    message:
+                      utterance,
+                  });
+
+                /**
+                 * 동일 X-Request-Id 재수신이면
+                 * Orchestrator가 중복처리를 막는다.
+                 *
+                 * 이미 이전 요청에서 응답했으므로
+                 * callback을 중복 전송하지 않는다.
+                 */
+                if (
+                  result.duplicateMessage
+                ) {
+                  console.warn(
+                    "[KAKAO AI] Duplicate webhook skipped",
+                    {
+                      organizationId,
+
+                      kakaoRequestId,
+                    }
+                  );
+
+                  return;
+                }
+
+                const replyText =
+                  String(
+                    result
+                      .responseComposition
+                      ?.replyText ||
+                    result
+                      .registrationVerification
+                      ?.replyText ||
+                    ""
+                  ).trim();
+
+                if (
+                  !replyText
+                ) {
+                  throw new Error(
+                    "카카오 AI 최종 답변이 비어 있습니다."
+                  );
+                }
+
+                const callbackResponse =
+                  await fetch(
+                    callbackUrl,
+                    {
+                      method:
+                        "POST",
+
+                      headers: {
+                        "Content-Type":
+                          "application/json",
+                      },
+
+                      body:
+                        JSON.stringify({
+                          version:
+                            "2.0",
+
+                          template: {
+                            outputs: [
+                              {
+                                simpleText: {
+                                  text:
+                                    replyText,
+                                },
+                              },
+                            ],
+                          },
+                        }),
+                    }
+                  );
+
+                if (
+                  !callbackResponse.ok
+                ) {
+                  const errorText =
+                    await callbackResponse
+                      .text()
+                      .catch(
+                        () =>
+                          ""
+                      );
+
+                  console.error(
+                    "[KAKAO AI] Callback 전송 실패",
+                    {
+                      organizationId,
+
+                      status:
+                        callbackResponse.status,
+
+                      error:
+                        errorText.slice(
+                          0,
+                          500
+                        ),
+                    }
+                  );
+
+                  return;
+                }
+
+                console.log(
+                  "[KAKAO AI] Callback 전송 완료",
+                  {
+                    organizationId,
+
+                    conversationId:
+                      result
+                        .conversationId,
+                  }
+                );
+              } catch (
+                error:
+                  unknown
+              ) {
+                console.error(
+                  "[KAKAO AI] 비동기 처리 실패",
+                  error instanceof
+                    Error
+                    ? {
+                        name:
+                          error.name,
+
+                        message:
+                          error.message,
+                      }
+                    : {
+                        message:
+                          String(
+                            error
+                          ),
+                      }
+                );
+              }
+            }
+          )();
+
+          return;
+        }
+
+        /**
+         * ---------------------------------------------------------
+         * Callback URL이 없는 경우
+         * ---------------------------------------------------------
+         *
+         * 관리자센터 테스트 등에서
+         * Callback URL이 없는 요청을 받을 수 있으므로
+         * 일반 SkillResponse 방식으로도 동작시킨다.
+         *
+         * 운영에서는 Callback 사용을 권장한다.
+         */
+        const result =
+          await orchestrateKakaoAiIncomingMessage({
+            organizationId,
+
+            channelUserKey,
+
+            kakaoMessageId:
+              kakaoRequestId,
+
+            messageType:
+              "text",
+
+            message:
+              utterance,
+          });
+
+        if (
+          result.duplicateMessage
+        ) {
+          return res
+            .status(200)
+            .json({
+              version:
+                "2.0",
+
+              template: {
+                outputs: [
+                  {
+                    simpleText: {
+                      text:
+                        "이미 처리된 요청입니다.",
+                    },
+                  },
+                ],
+              },
+            });
+        }
+
+        const replyText =
+          String(
+            result
+              .responseComposition
+              ?.replyText ||
+            result
+              .registrationVerification
+              ?.replyText ||
+            ""
+          ).trim();
+
+        return res
+          .status(200)
+          .json({
+            version:
+              "2.0",
+
+            template: {
+              outputs: [
+                {
+                  simpleText: {
+                    text:
+                      replyText ||
+                      "문의 내용을 처리하지 못했습니다. 잠시 후 다시 말씀해주세요.",
+                  },
+                },
+              ],
+            },
+          });
+      } catch (
+        error:
+          unknown
+      ) {
+        console.error(
+          "[KAKAO AI] Skill Webhook 실패",
+          error instanceof
+            Error
+            ? {
+                name:
+                  error.name,
+
+                message:
+                  error.message,
+              }
+            : {
+                message:
+                  String(
+                    error
+                  ),
+              }
+        );
+
+        /**
+         * 카카오 스킬 서버에는
+         * 가능한 한 JSON SkillResponse를 반환한다.
+         */
+        return res
+          .status(500)
+          .json({
+            version:
+              "2.0",
+
+            template: {
+              outputs: [
+                {
+                  simpleText: {
+                    text:
+                      "상담 처리 중 오류가 발생했습니다. 잠시 후 다시 말씀해주세요.",
+                  },
+                },
+              ],
+            },
+          });
+      }
+    }
+  );
 
   app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 

@@ -337,6 +337,113 @@ function normalizeSemesterLabel(
   return normalized;
 }
 
+function isPlannedMonthCompatibleWithSemesterLabel(
+  semesterLabel:
+    unknown,
+
+  plannedMonth:
+    unknown
+): boolean {
+  const semesterMatched =
+    String(
+      semesterLabel ??
+      ""
+    )
+      .trim()
+      .match(
+        /^(\d{4})년\s*([12])학기$/
+      );
+
+  const plannedMonthNormalized =
+    String(
+      plannedMonth ??
+      ""
+    )
+      .replace(
+        /[^0-9]/g,
+        ""
+      )
+      .trim();
+
+  if (
+    !semesterMatched ||
+    !/^\d{6}$/.test(
+      plannedMonthNormalized
+    )
+  ) {
+    return false;
+  }
+
+  const semesterYear =
+    Number(
+      semesterMatched[1]
+    );
+
+  const semesterHalf =
+    Number(
+      semesterMatched[2]
+    );
+
+  const plannedYear =
+    Number(
+      plannedMonthNormalized.slice(
+        0,
+        4
+      )
+    );
+
+  const month =
+    Number(
+      plannedMonthNormalized.slice(
+        4,
+        6
+      )
+    );
+
+  if (
+    semesterHalf ===
+    1
+  ) {
+    return (
+      (
+        plannedYear ===
+          semesterYear -
+            1 &&
+        (
+          month ===
+            11 ||
+          month ===
+            12
+        )
+      ) ||
+      (
+        plannedYear ===
+          semesterYear &&
+        month >=
+          1 &&
+        month <=
+          5
+      )
+    );
+  }
+
+  if (
+    semesterHalf ===
+    2
+  ) {
+    return (
+      plannedYear ===
+        semesterYear &&
+      month >=
+        5 &&
+      month <=
+        11
+    );
+  }
+
+  return false;
+}
+
 export async function executeSemesterCreatePendingAction(
   params: {
     pendingActionId:
@@ -491,6 +598,21 @@ export async function executeSemesterCreatePendingAction(
 
       semesterId,
 
+planSubjectIds:
+  Array.isArray(
+    executionResult
+      .planSubjectIds
+  )
+    ? executionResult
+        .planSubjectIds
+        .map(
+          normalizePositiveInteger
+        )
+        .filter(
+          Boolean
+        )
+    : [],
+
       pendingAction,
 
       message:
@@ -532,6 +654,9 @@ export async function executeSemesterCreatePendingAction(
             .semesterId
         ) ||
         null,
+
+planSubjectIds:
+  [],
 
       pendingAction,
 
@@ -706,6 +831,12 @@ export async function executeSemesterCreatePendingAction(
         originalLastSemesterOrder
       );
 
+    const originalLastSemesterLabel =
+      normalizeNullableText(
+        draft.originalLastSemesterLabel,
+        100
+      );
+
     /**
      * 승인 실행 시점에 학생의 전체 학기를 다시 조회한다.
      */
@@ -759,21 +890,37 @@ export async function executeSemesterCreatePendingAction(
       ) ||
       0;
 
+    const currentLastSemesterLabel =
+      normalizeNullableText(
+        currentLastSemester
+          ?.semesterLabel,
+        100
+      );
+
     /**
      * 초안 생성 이후 다른 사용자가 학기를 추가했다면
      * 오래된 초안을 실행하지 않는다.
      */
-    if (
+        if (
       currentLastSemesterOrder !==
       normalizedOriginalLastSemesterOrder
     ) {
       throw new Error(
-        "학기 생성 초안 이후 학생의 학기 정보가 변경되었습니다. 최신 학기 정보를 다시 확인해주세요."
+        "학기 생성 초안 이후 학생의 학기 순서가 변경되었습니다. 최신 학기 정보를 다시 확인해주세요."
+      );
+    }
+
+    if (
+      currentLastSemesterLabel !==
+      originalLastSemesterLabel
+    ) {
+      throw new Error(
+        "학기 생성 초안 이후 학생의 마지막 학기 구분이 변경되었습니다. 최신 학기 정보를 다시 확인해주세요."
       );
     }
 
     completedSteps.push(
-      "기존 학기 변경 충돌 검사"
+      "기존 학기 순서 및 학기 구분 변경 충돌 검사"
     );
 
     const expectedNextSemesterOrder =
@@ -786,6 +933,64 @@ export async function executeSemesterCreatePendingAction(
     ) {
       throw new Error(
         `다음 학기 순서는 ${expectedNextSemesterOrder}이어야 합니다.`
+      );
+    }
+
+    let expectedNextSemesterLabel:
+      string |
+      null =
+      null;
+
+    if (
+      currentLastSemesterLabel
+    ) {
+      const currentLastSemesterLabelMatched =
+        currentLastSemesterLabel.match(
+          /^(\d{4})년\s*([12])학기$/
+        );
+
+      if (
+        !currentLastSemesterLabelMatched
+      ) {
+        throw new Error(
+          "현재 마지막 학기 구분을 해석할 수 없습니다. 기존 학기 정보를 먼저 확인해주세요."
+        );
+      }
+
+      const currentLastSemesterYear =
+        Number(
+          currentLastSemesterLabelMatched[1]
+        );
+
+      const currentLastSemesterHalf =
+        Number(
+          currentLastSemesterLabelMatched[2]
+        );
+
+      expectedNextSemesterLabel =
+        currentLastSemesterHalf ===
+          1
+          ? `${currentLastSemesterYear}년 2학기`
+          : `${currentLastSemesterYear + 1}년 1학기`;
+    }
+
+    if (
+      expectedNextSemesterLabel &&
+      semesterLabel !==
+        expectedNextSemesterLabel
+    ) {
+      throw new Error(
+        `현재 마지막 학기 기준 다음 학기 구분은 ${expectedNextSemesterLabel}이어야 합니다.`
+      );
+    }
+
+    if (
+      !currentLastSemester &&
+      originalLastSemesterLabel !==
+        null
+    ) {
+      throw new Error(
+        "첫 학기 생성 초안의 기존 마지막 학기 정보가 올바르지 않습니다."
       );
     }
 
@@ -856,6 +1061,29 @@ export async function executeSemesterCreatePendingAction(
         draft.plannedMonth
       );
 
+if (
+  !plannedMonth
+) {
+  throw new Error(
+    "예정 개강월이 없어 학기 생성을 실행할 수 없습니다."
+  );
+}
+
+if (
+  !isPlannedMonthCompatibleWithSemesterLabel(
+    semesterLabel,
+    plannedMonth
+  )
+) {
+  throw new Error(
+    `${semesterLabel} 귀속과 예정 개강월 ${plannedMonth}의 학기 구성이 맞지 않습니다. 최신 개강일정을 다시 확인해주세요.`
+  );
+}
+
+completedSteps.push(
+  "학기 귀속 및 예정 개강월 재검증"
+);
+
     const plannedInstitution =
       normalizeNullableText(
         draft.plannedInstitution,
@@ -876,6 +1104,188 @@ export async function executeSemesterCreatePendingAction(
         "예정 과목 수는 50개를 초과할 수 없습니다."
       );
     }
+
+if (
+  plannedSubjectCount ===
+  null
+) {
+  throw new Error(
+    "예정 과목 수가 없어 학기 생성을 실행할 수 없습니다."
+  );
+}
+
+if (
+  plannedSubjectCount >
+  8
+) {
+  throw new Error(
+    `한 학기에는 최대 8과목까지만 등록할 수 있습니다. 현재 ${plannedSubjectCount}과목입니다.`
+  );
+}
+
+    /**
+     * ─────────────────────────────
+     * 연간 최대 14과목 재검증
+     * ─────────────────────────────
+     *
+     * 초안 생성 시점이 아니라
+     * 실제 승인 실행 시점의 현재 학기 데이터를
+     * 다시 조회하여 계산한다.
+     *
+     * 동일 연도의 1학기 + 2학기를 합쳐
+     * 최대 14과목까지만 허용한다.
+     *
+     * 예:
+     *
+     * 2027년 1학기 8과목
+     * +
+     * 2027년 2학기 6과목
+     * =
+     * 14과목 가능
+     *
+     * 2027년 1학기 8과목
+     * +
+     * 2027년 2학기 7과목
+     * =
+     * 15과목 → 차단
+     */
+    const semesterLabelMatched =
+      semesterLabel.match(
+        /^(\d{4})년\s*([12])학기$/
+      );
+
+    if (
+      !semesterLabelMatched
+    ) {
+      throw new Error(
+        "학기 구분을 해석할 수 없어 연간 과목 수를 검증할 수 없습니다."
+      );
+    }
+
+    const semesterYear =
+      Number(
+        semesterLabelMatched[1]
+      );
+
+    if (
+      !Number.isFinite(
+        semesterYear
+      ) ||
+      semesterYear <
+        2000 ||
+      semesterYear >
+        2100
+    ) {
+      throw new Error(
+        "학기 구분의 연도 정보가 올바르지 않습니다."
+      );
+    }
+
+    /**
+     * 현재 학생에게 이미 등록되어 있는
+     * 동일 귀속연도 학기의 과목 수를 합산한다.
+     *
+     * 실제 과목 수가 있으면 실제 과목 수를 우선하고,
+     * 없으면 예정 과목 수를 사용한다.
+     */
+    const sameYearExistingSubjectCount =
+      sortedCurrentSemesters
+        .filter(
+          (
+            semester:
+              any
+          ) => {
+            const currentSemesterLabel =
+              String(
+                semester
+                  ?.semesterLabel ||
+                ""
+              ).trim();
+
+            const currentSemesterMatched =
+              currentSemesterLabel.match(
+                /^(\d{4})년\s*([12])학기$/
+              );
+
+            return (
+              currentSemesterMatched !==
+                null &&
+              Number(
+                currentSemesterMatched[1]
+              ) ===
+                semesterYear
+            );
+          }
+        )
+        .reduce(
+          (
+            total:
+              number,
+
+            semester:
+              any
+          ) => {
+            const actualSubjectCount =
+              semester
+                ?.actualSubjectCount;
+
+            const existingPlannedSubjectCount =
+              semester
+                ?.plannedSubjectCount;
+
+            const resolvedSubjectCount =
+              actualSubjectCount !==
+                null &&
+              actualSubjectCount !==
+                undefined
+                ? Number(
+                    actualSubjectCount
+                  )
+                : existingPlannedSubjectCount !==
+                    null &&
+                  existingPlannedSubjectCount !==
+                    undefined
+                  ? Number(
+                      existingPlannedSubjectCount
+                    )
+                  : 0;
+
+            if (
+              !Number.isFinite(
+                resolvedSubjectCount
+              ) ||
+              resolvedSubjectCount <=
+                0
+            ) {
+              return total;
+            }
+
+            return (
+              total +
+              Math.floor(
+                resolvedSubjectCount
+              )
+            );
+          },
+          0
+        );
+
+    const nextAnnualSubjectCount =
+      sameYearExistingSubjectCount +
+      plannedSubjectCount;
+
+    if (
+      nextAnnualSubjectCount >
+      14
+    ) {
+      throw new Error(
+        `${semesterYear}년 기존 ${sameYearExistingSubjectCount}과목에 이번 ${plannedSubjectCount}과목을 추가하면 연간 총 ${nextAnnualSubjectCount}과목으로 14과목 제한을 초과합니다.`
+      );
+    }
+
+    completedSteps.push(
+      "한 학기 8과목 및 연간 14과목 제한 재검증"
+    );
 
     const plannedAmount =
       normalizeNonNegativeAmount(
@@ -917,151 +1327,172 @@ export async function executeSemesterCreatePendingAction(
         draft.paymentDate
       );
 
-    /**
-     * 기존 학기 Router의 컬럼 이름을 그대로 사용한다.
-     *
-     * 실제 개강·결제 관련 컬럼은
-     * actualStartDate, actualInstitution,
-     * actualSubjectCount, actualAmount,
-     * actualPaymentDate다.
+        /**
+     * 학기 생성, 예정 과목 자리 생성,
+     * Pending Action executed 처리를
+     * 하나의 DB 트랜잭션으로 실행한다.
      */
-    const semesterIdRaw =
-      await db.createSemester({
+    const transactionResult =
+      await db.executeSemesterCreateTransaction({
         organizationId,
 
+        pendingActionId,
+
+        requestedByUserId,
+
+        confirmedByUserId,
+
+        expectedVersion,
+
         studentId,
+
+        expectedAssigneeId:
+          draftAssigneeId,
+
+                originalLastSemesterOrder:
+          normalizedOriginalLastSemesterOrder,
+
+        originalLastSemesterLabel,
 
         semesterOrder,
 
         semesterLabel,
 
-        plannedMonth:
-          plannedMonth ??
-          undefined,
+        plannedMonth,
 
-        plannedInstitution:
-          plannedInstitution ??
-          undefined,
+        plannedInstitution,
 
-        plannedSubjectCount:
-          plannedSubjectCount ??
-          undefined,
+        plannedSubjectCount,
 
-        plannedAmount:
-          plannedAmount ===
-          null
-            ? undefined
-            : String(
-                plannedAmount
-              ),
+        plannedAmount,
 
         actualStartDate:
           startDate
             ? new Date(
                 `${startDate}T00:00:00`
               )
-            : undefined,
+            : null,
 
         actualInstitution:
-          institution ??
-          undefined,
+          institution,
 
         actualSubjectCount:
-          subjectCount ??
-          undefined,
+          subjectCount,
 
         actualAmount:
-          paymentAmount ===
-          null
-            ? undefined
-            : String(
-                paymentAmount
-              ),
+          paymentAmount,
 
         actualPaymentDate:
           paymentDate
             ? new Date(
                 `${paymentDate}T00:00:00`
               )
-            : undefined,
+            : null,
 
-        status:
-          "등록",
+        actorUserId:
+          confirmedByUserId,
 
-        practiceStatus:
-          "미섭외",
+        actorName:
+          context.userName ??
+          null,
 
-        primaryCourse:
-          String(
-            (student as any)
-              .course ||
-            ""
-          ).trim() ||
-          undefined,
-      } as any);
+        actorRole:
+          context.role,
+      });
+
+    completedSteps.push(
+      ...transactionResult
+        .completedSteps
+    );
 
     const semesterId =
       normalizePositiveInteger(
-        semesterIdRaw
+        transactionResult
+          .semesterId
       );
 
-    if (!semesterId) {
-      throw new Error(
-        "학기 생성 후 학기 ID를 확인하지 못했습니다."
-      );
-    }
-
-    completedSteps.push(
-      "학생 학기 생성"
-    );
-
-    /**
-     * 예정 과목 수가 입력됐다면
-     * 기존 일반 학기 생성 Router와 동일하게
-     * 플랜 학기 과목 자리 수를 동기화한다.
-     */
     if (
-      plannedSubjectCount !==
-        null &&
-      plannedSubjectCount > 0
+      !semesterId
     ) {
-      await db.syncPlanSemestersByCount(
-        studentId,
-        semesterOrder,
-        plannedSubjectCount,
-        {
-          organizationId,
-        }
-      );
-
-      completedSteps.push(
-        "예정 과목 수 플랜 동기화"
-      );
-    }
-
-    const createdSemester =
-      await db.getSemester(
-        semesterId,
-        {
-          organizationId,
-        }
-      );
-
-    if (!createdSemester) {
       throw new Error(
-        "생성된 학기 정보를 다시 확인할 수 없습니다."
+        "학기 생성 트랜잭션 결과에서 학기 ID를 확인하지 못했습니다."
       );
     }
 
-    completedSteps.push(
-      "생성 결과 재조회"
-    );
+    const executedPendingAction =
+      transactionResult
+        .pendingAction;
+
+    if (
+      !executedPendingAction
+    ) {
+      throw new Error(
+        "실행 완료된 학기 생성 승인 요청을 확인하지 못했습니다."
+      );
+    }
 
     /**
-     * 학기 생성 감사로그를 저장한다.
+     * 실제 생성된 학기를 다시 조회한다.
      *
-     * 실제 학기 생성이 성공한 뒤 감사로그만 실패해도
-     * 학기를 되돌리지 않고 작업은 성공 처리한다.
+     * 이 조회는 화면 반환용이며,
+     * 실패해도 학기와 Pending Action 저장은
+     * 이미 트랜잭션으로 완료된 상태다.
+     */
+    let createdSemester:
+      any =
+      null;
+
+    try {
+      createdSemester =
+        await db.getSemester(
+          semesterId,
+          {
+            organizationId,
+          }
+        );
+    } catch (
+      semesterReadError
+    ) {
+      console.error(
+        "[AI SEMESTER CREATE] 생성 학기 재조회 실패",
+        {
+          pendingActionId,
+
+          organizationId,
+
+          studentId,
+
+          semesterId,
+
+          message:
+            semesterReadError instanceof
+              Error
+              ? String(
+                  semesterReadError.message ||
+                  "알 수 없는 오류"
+                )
+                  .replace(
+                    /\s+/g,
+                    " "
+                  )
+                  .trim()
+                  .slice(
+                    0,
+                    300
+                  )
+              : "알 수 없는 오류",
+        }
+      );
+    }
+
+    /**
+     * 학기 생성 감사로그
+     *
+     * 학기 생성과 Pending Action 완료는
+     * 이미 트랜잭션에서 성공했다.
+     *
+     * 감사로그 실패가 실제 학기 생성 결과를
+     * 실패로 변경하지 않도록 별도 처리한다.
      */
     try {
       await db.createStudentAuditLog({
@@ -1118,8 +1549,15 @@ export async function executeSemesterCreatePendingAction(
           status:
             "등록",
 
+          approvalStatus:
+            "요청전",
+
           practiceStatus:
             "미섭외",
+
+          planSubjectIds:
+            transactionResult
+              .planSubjectIds,
         },
 
         diffJson: {
@@ -1139,7 +1577,7 @@ export async function executeSemesterCreatePendingAction(
         },
 
         actorUserId:
-          requestedByUserId,
+          confirmedByUserId,
 
         actorName:
           context.userName ??
@@ -1158,62 +1596,44 @@ export async function executeSemesterCreatePendingAction(
       completedSteps.push(
         "학기 생성 감사로그 기록"
       );
-    } catch {
+    } catch (
+      auditLogError
+    ) {
       completedSteps.push(
         "학기 생성 완료 - 감사로그 기록 실패"
       );
-    }
 
-    const successMessage =
-      `${semesterLabel} 학기가 생성되었습니다.`;
-
-    /**
-     * claim 함수는 version을 증가시키지 않으므로
-     * 기존 expectedVersion을 그대로 사용한다.
-     */
-    const completed =
-      await db.markAiPendingActionExecuted({
-        id:
+      console.error(
+        "[AI SEMESTER CREATE] 감사로그 저장 실패",
+        {
           pendingActionId,
 
-        organizationId,
+          organizationId,
 
-        requestedByUserId,
+          studentId,
 
-        expectedVersion,
-
-        studentId,
-
-        scheduleId:
-          null,
-
-        planId:
-          null,
-
-        semesterIds: [
           semesterId,
-        ],
 
-        planSubjectIds:
-          [],
-
-        transferSubjectIds:
-          [],
-
-        practiceSaved:
-          false,
-
-        paymentUpdated:
-          false,
-
-        completedSteps,
-
-        failedSteps:
-          [],
-
-        message:
-          successMessage,
-      });
+          message:
+            auditLogError instanceof
+              Error
+              ? String(
+                  auditLogError.message ||
+                  "알 수 없는 오류"
+                )
+                  .replace(
+                    /\s+/g,
+                    " "
+                  )
+                  .trim()
+                  .slice(
+                    0,
+                    300
+                  )
+              : "알 수 없는 오류",
+        }
+      );
+    }
 
     return {
       success:
@@ -1232,12 +1652,18 @@ export async function executeSemesterCreatePendingAction(
       semester:
         createdSemester,
 
+      planSubjectIds:
+        transactionResult
+          .planSubjectIds,
+
       pendingAction:
-        completed,
+        executedPendingAction,
 
       message:
-        successMessage,
+        transactionResult
+          .message,
     };
+    
   } catch (
     error
   ) {
@@ -1247,30 +1673,50 @@ export async function executeSemesterCreatePendingAction(
         ? error.message
         : "학생 학기 생성에 실패했습니다.";
 
-    try {
-      await db.markAiPendingActionFailed({
-        id:
-          pendingActionId,
+        try {
+      const latestPendingAction =
+        await db.getAiPendingActionForConfirmation({
+          id:
+            pendingActionId,
 
-        organizationId,
+          organizationId,
 
-        requestedByUserId,
+          requestedByUserId,
+        });
 
-        expectedVersion,
+      /**
+       * 트랜잭션에서 이미 executed 처리가 끝났다면
+       * 후속 조회나 감사로그 오류로 인해
+       * failed 상태로 되돌리지 않는다.
+       */
+      if (
+        latestPendingAction?.status !==
+          "executed"
+      ) {
+        await db.markAiPendingActionFailed({
+          id:
+            pendingActionId,
 
-        errorMessage:
-          message,
+          organizationId,
 
-        completedSteps,
+          requestedByUserId,
 
-        failedSteps: [
-          message,
-        ],
-      });
+          expectedVersion,
+
+          errorMessage:
+            message,
+
+          completedSteps,
+
+          failedSteps: [
+            message,
+          ],
+        });
+      }
     } catch {
       /**
        * 실패 상태 저장 오류가 발생해도
-       * 실제 학기 생성 오류를 유지한다.
+       * 최초 학기 생성 오류를 유지한다.
        */
     }
 

@@ -141,7 +141,16 @@ allowSettlementReport: boolean("allowSettlementReport").notNull().default(true),
 allowPrivateCertificate: boolean("allowPrivateCertificate")
   .notNull()
   .default(true),
-  maxSmsPerMonth: int("maxSmsPerMonth").notNull().default(1000),
+
+allowAiAssistant: boolean("allowAiAssistant")
+  .notNull()
+  .default(false),
+
+allowKakaoAi: boolean("allowKakaoAi")
+  .notNull()
+  .default(false),
+
+maxSmsPerMonth: int("maxSmsPerMonth").notNull().default(1000),
 maxStorageMb: int("maxStorageMb").notNull().default(1024),
   memo: text("memo"),
 
@@ -154,6 +163,699 @@ maxStorageMb: int("maxStorageMb").notNull().default(1024),
 
 export type Organization = typeof organizations.$inferSelect;
 export type InsertOrganization = typeof organizations.$inferInsert;
+
+// ─── Kakao AI Settings (회사별 카카오 AI 기본 설정) ───────────────────
+export const kakaoAiSettings = mysqlTable(
+  "kakao_ai_settings",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    /**
+     * 회사당 설정 1개만 존재한다.
+     *
+     * organizations.allowKakaoAi:
+     * Superhost가 해당 회사에 카카오 AI 상품 사용권을 허용했는지 여부
+     *
+     * kakaoAiSettings.enabled:
+     * 상품 사용권이 있는 회사의 Host가 실제 운영을 켰는지 여부
+     */
+    organizationId: int("organizationId").notNull(),
+
+    /**
+     * 카카오 AI 실제 운영 여부
+     *
+     * 최종 실행 조건:
+     * organizations.allowKakaoAi === true
+     * &&
+     * kakao_ai_settings.enabled === true
+     */
+    enabled: boolean("enabled")
+      .notNull()
+      .default(false),
+
+    /**
+     * 신규 고객 상담 기능
+     *
+     * 상담DB에 아직 등록되지 않은 고객의
+     * 신규 문의 대응에 사용한다.
+     */
+    newConsultationEnabled: boolean("newConsultationEnabled")
+      .notNull()
+      .default(true),
+
+    /**
+     * 기존 등록자 상담 기능
+     *
+     * 인증된 기존 학생의
+     * 학기 / 플랜 / 일정 / 행정 안내 등에 사용한다.
+     */
+    registeredStudentEnabled: boolean("registeredStudentEnabled")
+      .notNull()
+      .default(true),
+
+    /**
+     * 고객이 카카오톡으로 보낸 이미지의
+     * 문서 분석/OCR 기능 사용 여부
+     */
+    ocrEnabled: boolean("ocrEnabled")
+      .notNull()
+      .default(true),
+
+    /**
+     * 실습배정지원센터 관련
+     * 조회 / 추천 / 안내 기능 사용 여부
+     */
+    practiceSupportEnabled: boolean("practiceSupportEnabled")
+      .notNull()
+      .default(true),
+
+    /**
+     * 신규 상담 시 회사 소속 담당자
+     * 선택 / 추천 기능 사용 여부
+     */
+    assigneeRecommendationEnabled: boolean(
+      "assigneeRecommendationEnabled"
+    )
+      .notNull()
+      .default(true),
+
+    /**
+     * 카카오 고객에게 표시할 AI 이름
+     *
+     * 회사별로 원하는 명칭을 사용할 수 있다.
+     */
+    aiDisplayName: varchar("aiDisplayName", {
+      length: 100,
+    })
+      .notNull()
+      .default("EduCanvas AI"),
+
+    /**
+     * 신규 대화 시작 시 사용할 기본 인사말
+     */
+    welcomeMessage: text("welcomeMessage"),
+
+    /**
+     * 회사의 기본 상담 안내문
+     *
+     * 과정별 세부 설명과는 별도이며
+     * 전체 상담에 공통으로 적용되는 설명이다.
+     */
+    defaultGuideMessage: text("defaultGuideMessage"),
+
+    /**
+     * 상담 가능 시간 / 담당자 운영시간 등의
+     * 회사 공통 안내 문구
+     */
+    consultationHoursMessage: text(
+      "consultationHoursMessage"
+    ),
+
+/**
+ * 회사 소개
+ *
+ * AI가 신규 고객에게 회사/교육서비스를
+ * 소개할 때 사용하는 회사 공통 설명이다.
+ */
+companyIntroduction: text(
+  "companyIntroduction"
+),
+
+/**
+ * 회사 공통 혜택
+ *
+ * 특정 과정이 아닌 전체 고객에게
+ * 공통 적용되는 관리/서비스 혜택이다.
+ */
+companyBenefits: text(
+  "companyBenefits"
+),
+
+/**
+ * 상담 강조 포인트
+ *
+ * 신규 상담 중 고객의 관심사와 질문에 맞춰
+ * AI가 자연스럽게 활용할 회사별 영업 포인트다.
+ *
+ * 고정 답변 문구가 아니며,
+ * 등록을 과도하게 반복 유도하는 용도로
+ * 사용하지 않는다.
+ */
+salesPoints: text(
+  "salesPoints"
+),
+
+/**
+ * 등록회원 AI / 학습관리 혜택
+ *
+ * 신규 고객에게 "등록하면 무엇이 달라지는지"
+ * 설명할 때 사용하는 회사별 사실 정보다.
+ *
+ * 예:
+ * - 개인 학점/과목 조회
+ * - 위험도 분석
+ * - 행정절차 상세지원
+ * - 실습배정지원센터 조회
+ * - 자격증 신청 지원
+ * - 취업컨설팅
+ */
+registeredAiBenefits: text(
+  "registeredAiBenefits"
+),
+
+/**
+ * 수업 진행 공통 정책
+ *
+ * 온라인 수업, 모바일/PC 가능 여부,
+ * 출석/시험/과제/토론 등
+ * 회사가 고객에게 안내할 공통 기준이다.
+ */
+classManagementPolicy: text(
+  "classManagementPolicy"
+),
+
+/**
+ * 실습 지원 공통 정책
+ *
+ * 실습기관 배정/추천/지원 범위와
+ * 회사의 실습 관리 방식을 설명한다.
+ */
+practicePolicy: text(
+  "practicePolicy"
+),
+
+/**
+ * 행정절차 지원 정책
+ *
+ * 학습자등록, 학점인정,
+ * 학위신청, 자격증 신청 등
+ * 회사가 지원하는 범위를 설명한다.
+ */
+administrativeSupportPolicy: text(
+  "administrativeSupportPolicy"
+),
+
+/**
+ * 상담 시 반드시 지켜야 하는
+ * 회사 내부 상담 정책
+ *
+ * AI가 확정적으로 말하면 안 되는 내용,
+ * 담당자에게 넘겨야 하는 상황 등을
+ * 회사별로 지정한다.
+ */
+consultationPolicy: text(
+  "consultationPolicy"
+),
+
+    /**
+     * 카카오 AI가 비용/수강료 관련 내용을
+     * 직접 안내할 수 있는지 여부
+     *
+     * 기본 false:
+     * 회사 Host가 명시적으로 허용하기 전에는
+     * AI가 비용을 확정적으로 안내하지 않는다.
+     */
+    priceDisclosureEnabled: boolean(
+      "priceDisclosureEnabled"
+    )
+      .notNull()
+      .default(false),
+
+    /**
+     * 카카오 챗봇 관리자센터의 Bot ID.
+     *
+     * Skill Payload의 bot.id와 비교하여
+     * 요청이 이 회사에 연결된 실제 봇에서
+     * 들어온 것인지 서버에서 재검증한다.
+     */
+    kakaoBotId: varchar(
+      "kakaoBotId",
+      {
+        length: 191,
+      }
+    ),
+
+    /**
+     * 회사별 카카오 Skill Webhook 인증 토큰.
+     *
+     * 공개 organizationId만으로
+     * 외부에서 AI endpoint를 호출하지 못하도록
+     * 회사별 랜덤 토큰을 사용한다.
+     *
+     * DB에는 원문이 아닌 SHA-256 hash를 저장한다.
+     */
+    webhookTokenHash: varchar(
+      "webhookTokenHash",
+      {
+        length: 64,
+      }
+    ),
+
+    /**
+     * 설정 변경 작업자
+     */
+    createdBy: int("createdBy"),
+    updatedBy: int("updatedBy"),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    /**
+     * 회사당 카카오 AI 설정은 정확히 1개만 존재
+     */
+    organizationUniqueIdx: uniqueIndex(
+      "uq_kakao_ai_settings_organization"
+    ).on(
+      table.organizationId
+    ),
+  })
+);
+
+export type KakaoAiSetting =
+  typeof kakaoAiSettings.$inferSelect;
+
+export type InsertKakaoAiSetting =
+  typeof kakaoAiSettings.$inferInsert;
+
+// ─── Kakao AI Conversations ──────────────────────────────────────────
+
+/**
+ * 카카오 사용자별 AI 대화 세션.
+ *
+ * CRM 직원용 ai_chat_messages / ai_work_sessions와
+ * 완전히 분리한다.
+ */
+export const kakaoAiConversations = mysqlTable(
+  "kakao_ai_conversations",
+  {
+    id: int("id")
+      .autoincrement()
+      .primaryKey(),
+
+    /**
+     * SaaS 회사 경계.
+     */
+    organizationId: int(
+      "organizationId"
+    ).notNull(),
+
+    /**
+     * 카카오에서 전달되는 사용자 식별키 원문은
+     * 저장하지 않는다.
+     *
+     * SHA-256 결과만 저장하여
+     * 동일 카카오 사용자를 다시 찾는다.
+     */
+    channelUserKeyHash: varchar(
+      "channelUserKeyHash",
+      {
+        length: 64,
+      }
+    ).notNull(),
+
+    /**
+     * 현재 서버에서 확정된 고객 유형.
+     *
+     * lead:
+     * 신규 상담 고객
+     *
+     * registered:
+     * 이름 + 연락처 인증이 끝난 등록회원
+     */
+    customerType: mysqlEnum(
+      "customerType",
+      [
+        "lead",
+        "registered",
+      ]
+    )
+      .notNull()
+      .default("lead"),
+
+    /**
+     * 등록회원 인증 완료 시에만 연결.
+     *
+     * 신규 고객에서는 null.
+     */
+    studentId: int(
+      "studentId"
+    ),
+
+    /**
+     * 대화 상태.
+     *
+     * active:
+     * 정상 상담 중
+     *
+     * closed:
+     * 상담 종료
+     *
+     * blocked:
+     * 운영상 차단
+     */
+    status: mysqlEnum(
+      "status",
+      [
+        "active",
+        "closed",
+        "blocked",
+      ]
+    )
+      .notNull()
+      .default("active"),
+
+    /**
+     * 마지막 메시지가 발생한 시간.
+     *
+     * 최근 대화 정렬 및
+     * 추후 장기간 미사용 세션 정리에 사용.
+     */
+    lastMessageAt: datetime(
+      "lastMessageAt"
+    ),
+
+    createdAt: timestamp(
+      "createdAt"
+    )
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp(
+      "updatedAt"
+    )
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    /**
+     * 동일 회사 + 동일 카카오 사용자는
+     * 하나의 대화 세션만 사용한다.
+     */
+    orgChannelUserUniqueIdx:
+      uniqueIndex(
+        "uq_kakao_ai_conversation_org_user"
+      ).on(
+        table.organizationId,
+        table.channelUserKeyHash
+      ),
+
+    orgStudentIdx:
+      index(
+        "idx_kakao_ai_conversation_student"
+      ).on(
+        table.organizationId,
+        table.studentId
+      ),
+
+    orgLastMessageIdx:
+      index(
+        "idx_kakao_ai_conversation_last_message"
+      ).on(
+        table.organizationId,
+        table.lastMessageAt
+      ),
+  })
+);
+
+export type KakaoAiConversation =
+  typeof kakaoAiConversations.$inferSelect;
+
+export type InsertKakaoAiConversation =
+  typeof kakaoAiConversations.$inferInsert;
+
+
+// ─── Kakao AI Messages ───────────────────────────────────────────────
+
+/**
+ * 카카오 고객과 AI의 실제 원본 대화.
+ *
+ * content에는 개인정보가 포함될 수 있으므로
+ * DB 저장 시 암호화한다.
+ */
+export const kakaoAiMessages = mysqlTable(
+  "kakao_ai_messages",
+  {
+    id: int("id")
+      .autoincrement()
+      .primaryKey(),
+
+    organizationId: int(
+      "organizationId"
+    ).notNull(),
+
+    conversationId: int(
+      "conversationId"
+    ).notNull(),
+
+    role: mysqlEnum(
+      "role",
+      [
+        "user",
+        "assistant",
+      ]
+    ).notNull(),
+
+    /**
+     * text:
+     * 일반 카카오 텍스트
+     *
+     * image:
+     * 이미지 메시지
+     *
+     * document:
+     * 문서 / 파일
+     *
+     * system:
+     * AI 내부에서 필요한 대화 이벤트
+     */
+    messageType: mysqlEnum(
+      "messageType",
+      [
+        "text",
+        "image",
+        "document",
+        "system",
+      ]
+    )
+      .notNull()
+      .default("text"),
+
+    /**
+     * 실제 메시지 내용.
+     *
+     * 서버에서 encryptPersonalData() 처리 후 저장.
+     */
+    content: text(
+      "content"
+    ).notNull(),
+
+    /**
+     * 카카오에서 제공되는 외부 메시지 ID.
+     *
+     * 동일 webhook 재수신 시
+     * 중복처리를 막는 용도.
+     */
+    kakaoMessageId: varchar(
+      "kakaoMessageId",
+      {
+        length: 191,
+      }
+    ),
+
+    /**
+     * 이미지/문서 등 첨부자료 관련 내부정보.
+     *
+     * 개인정보가 포함될 가능성이 있으므로
+     * JSON 문자열 자체를 암호화하여 저장한다.
+     */
+    attachmentData: text(
+      "attachmentData"
+    ),
+
+    createdAt: timestamp(
+      "createdAt"
+    )
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    conversationCreatedIdx:
+      index(
+        "idx_kakao_ai_message_conversation_created"
+      ).on(
+        table.organizationId,
+        table.conversationId,
+        table.createdAt
+      ),
+
+    /**
+     * 카카오가 동일 이벤트를
+     * 재전송했을 때 중복 저장 방지.
+     *
+     * null은 여러 건 허용된다.
+     */
+    orgKakaoMessageUniqueIdx:
+      uniqueIndex(
+        "uq_kakao_ai_message_external"
+      ).on(
+        table.organizationId,
+        table.kakaoMessageId
+      ),
+  })
+);
+
+export type KakaoAiMessage =
+  typeof kakaoAiMessages.$inferSelect;
+
+export type InsertKakaoAiMessage =
+  typeof kakaoAiMessages.$inferInsert;
+
+
+// ─── Kakao AI Memory ─────────────────────────────────────────────────
+
+/**
+ * 자연어 대화에서 확인된 핵심 사실을
+ * 구조화해서 보관하는 장기 Memory.
+ *
+ * 원본 채팅 전체를 매번 모델에 전달하지 않기 위해
+ * 최근 메시지 + 구조화 Memory를 함께 사용한다.
+ */
+export const kakaoAiMemories = mysqlTable(
+  "kakao_ai_memories",
+  {
+    id: int("id")
+      .autoincrement()
+      .primaryKey(),
+
+    organizationId: int(
+      "organizationId"
+    ).notNull(),
+
+    /**
+     * 대화당 Memory 하나.
+     */
+    conversationId: int(
+      "conversationId"
+    ).notNull(),
+
+    /**
+     * 사용자가 명확히 밝힌 희망과정.
+     *
+     * 예:
+     * 사회복지사2급
+     * 보육교사2급
+     * 한국어교원2급
+     * 아동학사
+     *
+     * 암호화해서 저장한다.
+     */
+    desiredCourse: text(
+      "desiredCourse"
+    ),
+
+    /**
+     * 확인된 최종학력.
+     *
+     * 개인정보 Context이므로 암호화.
+     */
+    finalEducation: text(
+      "finalEducation"
+    ),
+
+    /**
+     * 전적대 존재여부.
+     *
+     * null:
+     * 아직 확인되지 않음
+     */
+    hasTransferCollege: boolean(
+      "hasTransferCollege"
+    ),
+
+socialWorkerLawVersion: mysqlEnum(
+  "socialWorkerLawVersion",
+  [
+    "old",
+    "current",
+  ]
+),
+
+    /**
+     * 대화에서 확정된 사실.
+     *
+     * 예:
+     * - 2020년 이전 사회복지 과목 이수
+     * - 성적증명서 OCR 완료
+     * - 전문대 졸업 확인
+     * - 특정 과목 이수 확인
+     *
+     * 전체 JSON을 암호화하여 저장한다.
+     */
+    verifiedFactsData: text(
+      "verifiedFactsData"
+    ),
+
+    /**
+     * 아직 확인되지 않은 내용.
+     *
+     * AI가 같은 내용을 반복 질문하지 않고
+     * 정말 필요한 시점에만 질문하기 위한 값.
+     *
+     * 전체 JSON 암호화.
+     */
+    unresolvedQuestionsData: text(
+      "unresolvedQuestionsData"
+    ),
+
+    /**
+     * 최근 대화 주제 / 사용자의 현재 관심사항.
+     *
+     * "그럼 실습은?"
+     * 같은 짧은 후속질문 해석에 사용한다.
+     *
+     * 암호화.
+     */
+    currentTopic: text(
+      "currentTopic"
+    ),
+
+    createdAt: timestamp(
+      "createdAt"
+    )
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp(
+      "updatedAt"
+    )
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    conversationUniqueIdx:
+      uniqueIndex(
+        "uq_kakao_ai_memory_conversation"
+      ).on(
+        table.organizationId,
+        table.conversationId
+      ),
+  })
+);
+
+export type KakaoAiMemory =
+  typeof kakaoAiMemories.$inferSelect;
+
+export type InsertKakaoAiMemory =
+  typeof kakaoAiMemories.$inferInsert;
 
 // ─── Organization Backups (회사별 백업/복구 메타) ─────────────────────
 export const organizationBackups = mysqlTable(
@@ -1013,6 +1715,37 @@ organizationId: int("organizationId").notNull().default(1),
   studentId: int("studentId").notNull(),
   schoolName: varchar("schoolName", { length: 255 }),
   subjectName: varchar("subjectName", { length: 255 }).notNull(),
+
+  /**
+   * 전적대 과목 실제 이수연도
+   *
+   * 예:
+   * 2018
+   * 2019
+   * 2020
+   *
+   * 성적증명서/OCR에서
+   * 확인할 수 없는 경우 null.
+   */
+  completionYear: int("completionYear"),
+
+  /**
+   * 전적대 과목 실제 이수학기
+   *
+   * 예:
+   * 1학기
+   * 2학기
+   * 여름계절학기
+   * 겨울계절학기
+   *
+   * 확인할 수 없는 경우 null.
+   */
+  completionSemester: varchar(
+    "completionSemester",
+    {
+      length: 50,
+    }
+  ),
 
   transferCategory: mysqlEnum("transferCategory", ["전공", "교양", "일반"])
     .notNull(),
