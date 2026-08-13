@@ -2171,6 +2171,24 @@ console.log(
             payload.userRequest
           )
         : [],
+
+    requestBlockId:
+      String(
+        payload?.userRequest
+          ?.block
+          ?.id ||
+        ""
+      ).trim() ||
+      null,
+
+    requestBlockName:
+      String(
+        payload?.userRequest
+          ?.block
+          ?.name ||
+        ""
+      ).trim() ||
+      null,
   }
 );
 /**
