@@ -699,21 +699,60 @@ const userMessageId =
     );
 
   if (
-    userMessageId >
-      0 &&
-    responseMessageId >
-      0 &&
-    params.kakaoMessageId
-  ) {
-    await db.markKakaoAiResponseReady({
+  userMessageId > 0 &&
+  responseMessageId > 0 &&
+  params.kakaoMessageId
+) {
+  console.log(
+    "[KAKAO AI TRACE] PostResponse",
+    {
+      stage:
+        "response_ready_start",
+
       organizationId,
+      conversationId,
 
       userMessageId,
-
       responseMessageId,
-    });
-  }
+    }
+  );
+
+  await db.markKakaoAiResponseReady({
+    organizationId,
+
+    userMessageId,
+
+    responseMessageId,
+  });
+
+  console.log(
+    "[KAKAO AI TRACE] PostResponse",
+    {
+      stage:
+        "response_ready_done",
+
+      organizationId,
+      conversationId,
+
+      userMessageId,
+      responseMessageId,
+    }
+  );
 }
+}
+
+console.log(
+  "[KAKAO AI TRACE] PostResponse",
+  {
+    stage:
+      "orchestrator_return",
+
+    organizationId,
+    conversationId,
+
+    userMessageId,
+  }
+);
 
     /**
      * 인증 성공 시 Handler 내부에서
@@ -954,6 +993,27 @@ console.log("[KAKAO AI TRACE] Response", {
       ""
     ).trim();
 
+console.log(
+  "[KAKAO AI TRACE] PostResponse",
+  {
+    stage:
+      "reply_text_ready",
+
+    organizationId,
+    conversationId,
+
+    userMessageId,
+
+    hasKakaoMessageId:
+      Boolean(
+        params.kakaoMessageId
+      ),
+
+    replyTextLength:
+      replyText.length,
+  }
+);
+
   /**
    * Composer가 fallback을 사용했더라도
    * 실제 고객에게 전송 가능한 replyText가 존재하면
@@ -967,6 +1027,18 @@ console.log("[KAKAO AI TRACE] Response", {
   if (
   replyText
 ) {
+
+console.log(
+  "[KAKAO AI TRACE] PostResponse",
+  {
+    stage:
+      "assistant_insert_start",
+
+    organizationId,
+    conversationId,
+    userMessageId,
+  }
+);
   const assistantMessage =
     await db.insertKakaoAiMessage({
       organizationId,
@@ -989,28 +1061,87 @@ console.log("[KAKAO AI TRACE] Response", {
         undefined,
     });
 
+console.log(
+  "[KAKAO AI TRACE] PostResponse",
+  {
+    stage:
+      "assistant_insert_done",
+
+    organizationId,
+    conversationId,
+    userMessageId,
+
+    assistantMessageId:
+      Number(
+        assistantMessage.id ||
+        0
+      ),
+  }
+);
+
   const responseMessageId =
     Number(
       assistantMessage.id ||
       0
     );
 
-  if (
-    userMessageId >
-      0 &&
-    responseMessageId >
-      0 &&
-    params.kakaoMessageId
-  ) {
-    await db.markKakaoAiResponseReady({
+ if (
+  userMessageId >
+    0 &&
+  responseMessageId >
+    0 &&
+  params.kakaoMessageId
+) {
+  console.log(
+    "[KAKAO AI TRACE] PostResponse",
+    {
+      stage:
+        "response_ready_start",
+
       organizationId,
+      conversationId,
 
       userMessageId,
-
       responseMessageId,
-    });
-  }
+    }
+  );
+
+  await db.markKakaoAiResponseReady({
+    organizationId,
+
+    userMessageId,
+
+    responseMessageId,
+  });
+
+  console.log(
+    "[KAKAO AI TRACE] PostResponse",
+    {
+      stage:
+        "response_ready_done",
+
+      organizationId,
+      conversationId,
+
+      userMessageId,
+      responseMessageId,
+    }
+  );
 }
+  }
+
+console.log(
+  "[KAKAO AI TRACE] PostResponse",
+  {
+    stage:
+      "orchestrator_return",
+
+    organizationId,
+    conversationId,
+
+    userMessageId,
+  }
+);
 
   return {
     organizationId,

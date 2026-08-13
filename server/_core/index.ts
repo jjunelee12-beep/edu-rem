@@ -2476,6 +2476,32 @@ const waitForKakaoCallbackRecovery =
                       utterance,
                   });
 
+console.log(
+  "[KAKAO AI CALLBACK] orchestrator returned",
+  {
+    organizationId,
+    kakaoRequestId,
+
+    duplicateMessage:
+      result.duplicateMessage,
+
+    hasResponseComposition:
+      Boolean(
+        result.responseComposition
+      ),
+
+    hasReplyText:
+      Boolean(
+        result
+          .responseComposition
+          ?.replyText ||
+        result
+          .registrationVerification
+          ?.replyText
+      ),
+  }
+);
+
                 /**
                  * 동일 X-Request-Id 재수신이면
                  * Orchestrator가 중복처리를 막는다.
