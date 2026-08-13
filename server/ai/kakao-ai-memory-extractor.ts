@@ -878,6 +878,76 @@ isExplicitCorrection:
   };
 }
 
+/**
+ * Memory 추출 OpenAI 호출이 필요 없는
+ * 명백한 일반 대화인지 서버에서 빠르게 판정한다.
+ *
+ * 주의:
+ * - 짧다는 이유만으로 skip하지 않는다.
+ * - 학력 / 희망과정 / 전적대 등 상담 사실이
+ *   포함될 가능성이 있는 문장은 기존 AI 분석을 유지한다.
+ * - 정말 명확한 인사 / 감사 / 단순 확인 표현만 허용한다.
+ */
+function isMemoryExtractionFastPathMessage(
+  value: unknown
+): boolean {
+  const message =
+    normalizeText(value)
+      .replace(/\s+/g, " ")
+      .trim();
+
+  if (!message) {
+    return true;
+  }
+
+  const normalized =
+    message
+      .replace(/[.!?~ㅋㅎㅠㅜ]+$/g, "")
+      .trim()
+      .toLowerCase();
+
+  const exactMessages =
+    new Set([
+      "안녕",
+      "안녕하세요",
+      "안녕하세여",
+      "안녕하세용",
+      "반갑습니다",
+      "반가워요",
+
+      "네",
+      "넵",
+      "넹",
+      "예",
+      "옙",
+      "ㅇㅇ",
+      "ㅇㅋ",
+      "오케이",
+      "알겠습니다",
+      "알겠어요",
+      "알겠어",
+      "확인했습니다",
+      "확인했어요",
+
+      "감사합니다",
+      "감사해요",
+      "고맙습니다",
+      "고마워요",
+      "고마워",
+
+      "아",
+      "아하",
+      "오",
+      "오호",
+      "그렇군요",
+      "그렇구나",
+    ]);
+
+  return exactMessages.has(
+    normalized
+  );
+}
+
 function normalizeStringCandidate(
   value:
     any
@@ -1314,36 +1384,74 @@ export async function extractKakaoAiUserMemory(
     );
 
   if (
-    !message
-  ) {
-    const extraction =
-      buildEmptyExtraction();
+  !message
+) {
+  const extraction =
+    buildEmptyExtraction();
 
-    return {
-      success:
-        true,
+  return {
+    success:
+      true,
 
-      extraction,
+    extraction,
 
-      safePatch:
-        {},
+    safePatch:
+      {},
 
-      openAiResponseId:
-        null,
+    openAiResponseId:
+      null,
 
-      model:
-        null,
+    model:
+      null,
 
-      fallbackUsed:
-        false,
+    fallbackUsed:
+      false,
 
-      errorMessage:
-        null,
-    };
-  }
+    errorMessage:
+      null,
+  };
+}
 
-  const openai =
-    getKakaoMemoryOpenAiClient();
+/**
+ * 명백한 인사 / 감사 / 단순 확인은
+ * Memory에 새로 저장할 사용자 사실이 없다.
+ *
+ * 이 경우 OpenAI Memory Extractor를 호출하지 않고
+ * 즉시 빈 결과를 반환한다.
+ */
+if (
+  isMemoryExtractionFastPathMessage(
+    message
+  )
+) {
+  const extraction =
+    buildEmptyExtraction();
+
+  return {
+    success:
+      true,
+
+    extraction,
+
+    safePatch:
+      {},
+
+    openAiResponseId:
+      null,
+
+    model:
+      null,
+
+    fallbackUsed:
+      false,
+
+    errorMessage:
+      null,
+  };
+}
+
+const openai =
+  getKakaoMemoryOpenAiClient();
 
   if (
     !openai
