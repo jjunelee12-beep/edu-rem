@@ -1,7 +1,11 @@
 import * as db from "../db";
 
-import type {
-  KakaoAiStructuredMemory,
+import {
+  encodeKakaoAiPriorSubjectFact,
+  decodeKakaoAiPriorSubjectFact,
+
+  type KakaoAiStructuredMemory,
+  type KakaoAiPriorSubjectCandidate,
 } from "./kakao-ai-memory-resolver";
 
 /**
@@ -76,6 +80,17 @@ socialWorkerLawVersion?:
   verifiedFactsToAdd?:
     KakaoAiVerifiedMemoryFact[];
 
+/**
+ * 사용자가 직접 말했거나
+ * OCR / CRM에서 확인된
+ * 전적대 기이수과목.
+ *
+ * 같은 과목명은 새 행을 계속 추가하지 않고
+ * 기존 후보를 갱신한다.
+ */
+priorSubjectCandidatesToUpsert?:
+  KakaoAiPriorSubjectCandidate[];
+
   /**
    * 더 이상 미확인이 아닌 질문.
    */
@@ -118,6 +133,105 @@ function normalizeNullableText(
 
   return normalized ||
     null;
+}
+
+function normalizeFinalEducation(
+  value:
+    unknown
+): string | null {
+  const raw =
+    String(
+      value ??
+      ""
+    ).trim();
+
+  if (
+    !raw
+  ) {
+    return null;
+  }
+
+  const normalized =
+    raw
+      .replace(
+        /\s+/g,
+        ""
+      )
+      .toLowerCase();
+
+if (
+  normalized ===
+    "초졸" ||
+  normalized.includes(
+    "초등학교졸업"
+  )
+) {
+  return "초졸";
+}
+
+  if (
+    normalized ===
+      "중졸" ||
+    normalized.includes(
+      "중학교졸업"
+    )
+  ) {
+    return "중졸";
+  }
+
+  if (
+    normalized ===
+      "고졸" ||
+    normalized.includes(
+      "고등학교졸업"
+    ) ||
+    normalized.includes(
+      "고등학교검정고시"
+    ) ||
+    normalized.includes(
+      "고졸검정고시"
+    )
+  ) {
+    return "고졸";
+  }
+
+  if (
+    normalized ===
+      "전문대졸" ||
+    normalized.includes(
+      "전문대졸업"
+    ) ||
+    normalized.includes(
+      "전문학사"
+    ) ||
+    normalized.includes(
+      "2년제졸업"
+    ) ||
+    normalized.includes(
+      "3년제졸업"
+    )
+  ) {
+    return "전문대졸";
+  }
+
+  if (
+    normalized ===
+      "대졸" ||
+    normalized ===
+      "4년제졸" ||
+    normalized.includes(
+      "4년제졸업"
+    ) ||
+    normalized.includes(
+      "대학교졸업"
+    ) ||
+    normalized ===
+      "학사"
+  ) {
+    return "대졸";
+  }
+
+  return raw;
 }
 
 function normalizeStringArray(
@@ -277,6 +391,155 @@ function mergeVerifiedFacts(
   return result;
 }
 
+function normalizePriorSubjectName(
+  value:
+    unknown
+): string {
+  return String(
+    value ??
+    ""
+  )
+    .trim()
+    .replace(
+      /\s+/g,
+      ""
+    )
+    .toLowerCase();
+}
+
+function mergePriorSubjectCandidates(
+  existingFacts:
+    string[],
+
+  subjectsToUpsert:
+    KakaoAiPriorSubjectCandidate[]
+): string[] {
+  const normalFacts:
+    string[] =
+    [];
+
+  const subjectMap =
+    new Map<
+      string,
+      KakaoAiPriorSubjectCandidate
+    >();
+
+  for (
+    const fact of
+    normalizeStringArray(
+      existingFacts,
+      100
+    )
+  ) {
+    const priorSubject =
+      decodeKakaoAiPriorSubjectFact(
+        fact
+      );
+
+    if (
+      !priorSubject
+    ) {
+      normalFacts.push(
+        fact
+      );
+
+      continue;
+    }
+
+    const key =
+      normalizePriorSubjectName(
+        priorSubject
+          .subjectName
+      );
+
+    if (
+      key
+    ) {
+      subjectMap.set(
+        key,
+        priorSubject
+      );
+    }
+  }
+
+  for (
+    const incoming of
+    subjectsToUpsert
+  ) {
+    const subjectName =
+      String(
+        incoming.subjectName ||
+        ""
+      ).trim();
+
+    if (
+      !subjectName
+    ) {
+      continue;
+    }
+
+    const key =
+      normalizePriorSubjectName(
+        subjectName
+      );
+
+    const existing =
+      subjectMap.get(
+        key
+      );
+
+    const next:
+      KakaoAiPriorSubjectCandidate = {
+      subjectName,
+
+      completedYear:
+        incoming.completedYear ??
+        existing?.completedYear ??
+        null,
+
+      credits:
+        incoming.credits ??
+        existing?.credits ??
+        null,
+
+      source:
+        incoming.source ||
+        existing?.source ||
+        "user",
+
+      verificationStatus:
+        incoming.verificationStatus ||
+        existing
+          ?.verificationStatus ||
+        "user_reported",
+    };
+
+    subjectMap.set(
+      key,
+      next
+    );
+  }
+
+  const encodedSubjects =
+    Array.from(
+      subjectMap.values()
+    )
+      .map(
+        encodeKakaoAiPriorSubjectFact
+      )
+      .filter(
+        Boolean
+      );
+
+  return [
+    ...normalFacts,
+    ...encodedSubjects,
+  ].slice(
+    0,
+    100
+  );
+}
+
 /**
  * 미확인 질문을 추가/해결한다.
  */
@@ -395,12 +658,14 @@ export async function applyKakaoAiVerifiedMemoryPatch(
         );
 
   const finalEducation =
-    patch.finalEducation ===
-      undefined
-      ? current.finalEducation
-      : normalizeNullableText(
-          patch.finalEducation
-        );
+  patch.finalEducation ===
+    undefined
+    ? normalizeFinalEducation(
+        current.finalEducation
+      )
+    : normalizeFinalEducation(
+        patch.finalEducation
+      );
 
   const hasTransferCollege =
     patch.hasTransferCollege ===
@@ -435,6 +700,19 @@ const socialWorkerLawVersion =
         ? patch.verifiedFactsToAdd
         : []
     );
+
+const verifiedFactsWithPriorSubjects =
+  mergePriorSubjectCandidates(
+    verifiedFacts,
+
+    Array.isArray(
+      patch
+        .priorSubjectCandidatesToUpsert
+    )
+      ? patch
+          .priorSubjectCandidatesToUpsert
+      : []
+  );
 
   const unresolvedQuestions =
     mergeUnresolvedQuestions(
@@ -471,7 +749,23 @@ const socialWorkerLawVersion =
 
     socialWorkerLawVersion,
 
-      verifiedFacts,
+     verifiedFacts:
+  verifiedFactsWithPriorSubjects,
+
+priorSubjectCandidates:
+  verifiedFactsWithPriorSubjects
+    .map(
+      decodeKakaoAiPriorSubjectFact
+    )
+    .filter(
+      (
+        subject
+      ): subject is
+        KakaoAiPriorSubjectCandidate =>
+        Boolean(
+          subject
+        )
+    ),
 
       unresolvedQuestions,
 

@@ -1,5 +1,4 @@
 import * as db from "../db";
-
 import {
   analyzeQualificationRisk,
   resolveQualificationRiskCourseKey,
@@ -48,6 +47,10 @@ import {
 import type {
   KakaoAiStructuredMemory,
 } from "./kakao-ai-memory-resolver";
+
+import {
+  getConfirmedSubjectEquivalenceKey,
+} from "./risk-rules/subject-equivalence-resolver";
 
 /**
  * 카카오 AI 신규상담용 공통 학습설계 Adapter.
@@ -384,6 +387,197 @@ function normalizeRecognizedSubjects(
           subject.subjectName
         )
     );
+}
+
+function resolveLeadConsultationRecognizedSubjects(
+  params: {
+    memory:
+      KakaoAiStructuredMemory;
+
+    masterItems:
+      QualificationRiskMasterItem[];
+
+    verifiedSubjects:
+      KakaoAiLeadRecognizedSubject[];
+  }
+): {
+  recognizedSubjects:
+    KakaoAiLeadRecognizedSubject[];
+
+  provisionalSubjects:
+    KakaoAiLeadRecognizedSubject[];
+
+  warnings:
+    string[];
+} {
+  const verifiedSubjects =
+    normalizeRecognizedSubjects(
+      params.verifiedSubjects
+    );
+
+  const priorSubjectCandidates =
+    Array.isArray(
+      params.memory
+        .priorSubjectCandidates
+    )
+      ? params.memory
+          .priorSubjectCandidates
+      : [];
+
+  const verifiedKeySet =
+    new Set(
+      verifiedSubjects
+        .map(
+          subject =>
+            getConfirmedSubjectEquivalenceKey(
+              subject.subjectName
+            )
+        )
+        .filter(
+          Boolean
+        )
+    );
+
+  const masterByKey =
+    new Map<
+      string,
+      QualificationRiskMasterItem
+    >();
+
+  for (
+    const masterItem
+    of params.masterItems
+  ) {
+    const key =
+      getConfirmedSubjectEquivalenceKey(
+        masterItem.subjectName
+      );
+
+    if (
+      key &&
+      !masterByKey.has(
+        key
+      )
+    ) {
+      masterByKey.set(
+        key,
+        masterItem
+      );
+    }
+  }
+
+  const provisionalSubjects:
+    KakaoAiLeadRecognizedSubject[] =
+    [];
+
+  const warnings:
+    string[] =
+    [];
+
+  for (
+    const candidate
+    of priorSubjectCandidates
+  ) {
+    /**
+     * 이미 공식 verified이면
+     * 위 verifiedSubjects에 포함되어 있으므로
+     * 여기서 다시 추가하지 않는다.
+     */
+    if (
+      candidate.verificationStatus ===
+        "verified" ||
+      candidate.verificationStatus ===
+        "rejected"
+    ) {
+      continue;
+    }
+
+    const candidateKey =
+      getConfirmedSubjectEquivalenceKey(
+        candidate.subjectName
+      );
+
+    if (
+      !candidateKey ||
+      verifiedKeySet.has(
+        candidateKey
+      )
+    ) {
+      continue;
+    }
+
+    const matchedMaster =
+      masterByKey.get(
+        candidateKey
+      );
+
+    /**
+     * 회사의 실제 과정 과목마스터와
+     * 대응되지 않는 과목은
+     * 상담용 계산에도 사용하지 않는다.
+     */
+    if (
+      !matchedMaster
+    ) {
+      continue;
+    }
+
+    provisionalSubjects.push({
+      subjectName:
+        matchedMaster.subjectName,
+
+      requirementType:
+        matchedMaster.requirementType,
+
+      category:
+        matchedMaster.category,
+
+      credits:
+        candidate.credits ??
+        matchedMaster.credits ??
+        0,
+
+      source:
+        "transfer",
+    });
+
+    warnings.push(
+      `${candidate.subjectName}은 사용자가 직접 이수했다고 밝힌 과목으로 상담용 예상 계산에 반영했습니다. 최종 인정 여부는 성적증명서 확인이 필요합니다.`
+    );
+  }
+
+const uniqueProvisionalSubjects =
+  Array.from(
+    new Map(
+      provisionalSubjects.map(
+        subject => [
+          getConfirmedSubjectEquivalenceKey(
+            subject.subjectName
+          ) ||
+          subject.subjectName,
+
+          subject,
+        ]
+      )
+    ).values()
+  );
+
+  return {
+    recognizedSubjects: [
+  ...verifiedSubjects,
+  ...uniqueProvisionalSubjects,
+],
+
+provisionalSubjects:
+  uniqueProvisionalSubjects,
+
+    warnings:
+      Array.from(
+        new Set(
+          warnings
+        )
+      ),
+  };
 }
 
 /**
@@ -1041,11 +1235,109 @@ export async function resolveKakaoAiLeadAcademicAnalysis(
       degreeTemplateRows
     );
 
-  const recognizedSubjects =
-    normalizeRecognizedSubjects(
-      params.recognizedSubjects ||
-      []
-    );
+  const officialRecognizedSubjects =
+  normalizeRecognizedSubjects(
+    params.recognizedSubjects ||
+    []
+  );
+
+const consultationRecognition =
+  resolveLeadConsultationRecognizedSubjects({
+    memory,
+
+    masterItems,
+
+    verifiedSubjects:
+      officialRecognizedSubjects,
+  });
+
+const recognizedSubjects =
+  consultationRecognition
+    .recognizedSubjects;
+
+/**
+ * 신규상담 사회복지사 상담용 적용기준.
+ *
+ * 중요:
+ *
+ * - 서버에서 이미 old가 확정되어 있으면 old 우선
+ * - 사용자가 말한 전적대 과목이 실제 회사 마스터와
+ *   대응되고 2019년 이전 이수라고 명확하게 말한 경우
+ *   상담용 예상 계산에서는 old를 사용할 수 있다.
+ *
+ * - 단 이 값은 공식 확정값이 아니다.
+ *   user_reported 과목을 이용한 경우
+ *   warnings를 통해 성적증명서 확인 필요를 반드시 남긴다.
+ */
+const hasProvisionalOldLawEvidence =
+  courseKey ===
+    "social_worker_2" &&
+  Array.isArray(
+    memory.priorSubjectCandidates
+  ) &&
+  memory.priorSubjectCandidates.some(
+    candidate => {
+      if (
+        candidate.verificationStatus ===
+        "rejected"
+      ) {
+        return false;
+      }
+
+      const completedYear =
+        Number(
+          candidate.completedYear ||
+          0
+        );
+
+      if (
+        !Number.isFinite(
+          completedYear
+        ) ||
+        completedYear <= 0 ||
+        completedYear > 2019
+      ) {
+        return false;
+      }
+
+      const candidateKey =
+        getConfirmedSubjectEquivalenceKey(
+          candidate.subjectName
+        );
+
+      if (
+        !candidateKey
+      ) {
+        return false;
+      }
+
+      return consultationRecognition
+        .provisionalSubjects
+        .some(
+          recognized =>
+            getConfirmedSubjectEquivalenceKey(
+              recognized.subjectName
+            ) ===
+            candidateKey
+        );
+    }
+  );
+
+const consultationSocialWorkerLawVersion =
+  courseKey ===
+    "social_worker_2"
+    ? (
+        memory.socialWorkerLawVersion ===
+          "old"
+          ? "old"
+          : hasProvisionalOldLawEvidence
+            ? "old"
+            : memory.socialWorkerLawVersion ===
+                "current"
+              ? "current"
+              : "current"
+      )
+    : undefined;
 
   /**
    * 1.
@@ -1089,8 +1381,12 @@ export async function resolveKakaoAiLeadAcademicAnalysis(
  *   Memory의 socialWorkerLawVersion = "old"가
  *   전달되므로 그 값을 우선 사용한다.
  *
- * 이 Adapter에서 인정과목만 보고
- * 구법 여부를 새로 추측하지 않는다.
+  * 단, 사용자가 직접 밝힌 2019년 이전 기이수과목이
+ * 실제 회사 과목마스터와 대응되는 경우에는
+ * 상담용 예상 계산에 한해 구법을 적용할 수 있다.
+ *
+ * 이 경우 공식 확정값으로 취급하지 않고
+ * 성적증명서 확인 필요 경고를 반드시 함께 반환한다.
  */
   const qualificationAnalysis =
     analyzeQualificationRisk({
@@ -1104,12 +1400,11 @@ export async function resolveKakaoAiLeadAcademicAnalysis(
       socialWorkerLawVersion:
   courseKey ===
     "social_worker_2"
-    ? (
-        memory
-          .socialWorkerLawVersion ??
-        "current"
-      )
-    : undefined,
+      ? (
+          consultationSocialWorkerLawVersion ??
+          "current"
+        )
+      : undefined,
     });
 
   /**
@@ -1238,6 +1533,13 @@ export async function resolveKakaoAiLeadAcademicAnalysis(
 
   const warnings =
     uniqueStrings([
+...consultationRecognition
+  .warnings,
+
+hasProvisionalOldLawEvidence
+  ? "2019년 이전 사회복지 관련 기이수과목에 대한 사용자 진술을 기준으로 상담용 구법 예상 계산을 적용했습니다. 최종 구법 적용 여부와 과목 인정 여부는 성적증명서 확인이 필요합니다."
+  : null,
+
       ...(
         subjectPlan
           .warnings ||

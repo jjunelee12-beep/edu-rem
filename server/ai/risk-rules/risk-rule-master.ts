@@ -6,6 +6,7 @@ export type RiskCourseKey =
   | "lifelong_educator_2";
 
 export type FinalEducationGroup =
+  | "below_high_school"
   | "high_school"
   | "associate"
   | "bachelor"

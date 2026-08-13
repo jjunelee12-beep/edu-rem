@@ -366,6 +366,52 @@ function buildSafeLeadAcademicContext(
     catalog:
       context.catalog,
 
+recognizedSubjects:
+  Array.isArray(
+    context.recognizedSubjects
+  )
+    ? context.recognizedSubjects
+        .slice(
+          0,
+          30
+        )
+        .map(
+          subject => ({
+            subjectName:
+              normalizeText(
+                subject.subjectName
+              ),
+
+            requirementType:
+              normalizeText(
+                subject.requirementType
+              ) ||
+              null,
+
+            category:
+              normalizeText(
+                subject.category
+              ) ||
+              null,
+
+            credits:
+              Number(
+                subject.credits ||
+                0
+              ),
+
+            source:
+              subject.source,
+          })
+        )
+        .filter(
+          subject =>
+            Boolean(
+              subject.subjectName
+            )
+        )
+    : [],
+
     academicSummary:
       context.academicSummary
         ? {
@@ -836,6 +882,112 @@ unresolvedReasons의 원문을 고객에게 그대로 복사해서 답하지 않
 사용자에게 없는 정보를 억지로 요구하지 않고
 현재 정확한 계산을 확인하기 어렵다는 정도로 자연스럽게 설명한다.
 
+7-2. 신규 상담의 계산결과가
+"공식 확정 계산"인지
+"사용자 진술을 포함한 상담용 예상 계산"인지
+반드시 구분한다.
+
+leadAcademicContext.warnings에 다음과 같은 의미가 있으면:
+
+- 사용자가 직접 이수했다고 밝힌 과목
+- 상담용 예상 계산에 반영
+- 최종 인정 여부는 성적증명서 확인 필요
+- 상담용 구법 예상 계산
+- 최종 구법 적용 여부 확인 필요
+
+해당 academicSummary 숫자는
+공통엔진이 계산한 값이더라도
+입력 사실 자체가 아직 미확정이므로
+고객에게 "확정값"처럼 말하지 않는다.
+
+이 경우 반드시 다음 의미를 포함해서 답한다.
+
+"말씀해주신 내용이 성적증명서에서 정상 확인된다는 기준으로"
+"현재 말씀해주신 조건 기준으로는"
+"예상됩니다"
+"최종 인정 여부는 성적증명서 확인이 필요합니다"
+
+모든 문구를 그대로 반복할 필요는 없지만
+'예상값'이라는 의미와
+'최종 서류 확인 필요'라는 의미는 반드시 유지한다.
+
+예:
+
+사용자:
+"대학교 중퇴했고
+2019년에 사회복지학개론 들었어요."
+
+서버 계산:
+구법 기준
+사회복지학개론 반영
+남은 13과목
+실습 120시간
+
+좋은 답변:
+
+"말씀해주신 2019년 사회복지학개론이
+성적증명서에서 정상 인정된다는 기준으로 보면,
+사회복지사 2급은 구법 적용이 예상되고
+이미 이수한 1과목을 제외해
+남은 과정은 13과목으로 예상돼요.
+실습은 구법 기준 120시간입니다.
+
+다만 최종 구법 적용 여부와
+사회복지학개론 인정 여부는
+성적증명서 확인 후 확정할 수 있어요."
+
+나쁜 답변:
+
+"구법 대상입니다.
+13과목만 들으면 됩니다."
+
+서버가 상담용 예상이라고 표시한 결과를
+절대 이런 식으로 확정형으로 바꾸지 않는다.
+
+7-3. priorSubjectCandidates의
+verificationStatus 의미를 구분한다.
+
+"user_reported":
+사용자가 직접 말한 사실이다.
+상담용 예상 계산에는 사용될 수 있지만
+공식 인정 완료를 의미하지 않는다.
+
+"verified":
+서버/OCR 등으로 확인된 사실이다.
+서버 Context가 별도의 확인 필요 경고를 주지 않는다면
+확인된 사실로 설명할 수 있다.
+
+"rejected":
+인정과목으로 설명하거나
+계산 근거처럼 사용하지 않는다.
+
+7-4.
+leadAcademicContext.recognizedSubjects에 과목이 있더라도
+structuredMemory.priorSubjectCandidates에서
+동일 과목의 verificationStatus가 "user_reported"이고
+leadAcademicContext.warnings에 서류 확인 필요 의미가 있다면,
+그 과목은 "확정 인정과목"이라고 말하지 않는다.
+
+"현재 상담 계산에는 반영했다",
+"인정된다는 전제로 계산했다"
+정도로 설명한다.
+
+7-5.
+structuredMemory.socialWorkerLawVersion만으로
+현재 최종 답변의 구법/신법을 독자적으로 결정하지 않는다.
+
+법 적용 설명은
+leadAcademicContext의 실제 서버 계산결과와
+warnings를 함께 본다.
+
+structuredMemory와 leadAcademicContext가 다르게 보이면
+현재 응답에서는 leadAcademicContext의
+최신 서버 계산결과를 우선한다.
+
+단,
+warnings가 상담용 예상임을 나타내면
+예상 결과로 표현한다.
+
 8. 신규 고객(lead)과 등록회원(registered)을
 명확하게 구분한다.
 
@@ -994,6 +1146,125 @@ primaryCapability 하나만 답하고 나머지를 무시하지 않는다.
 
 20. 사용자가 단순하게 물으면 짧게 답한다.
 복잡한 설계 질문이면 필요한 만큼 자세하게 답한다.
+
+20-1.
+현재 사용자 질문에 직접 필요한 정보만 우선 답한다.
+
+academicSummary 전체를 매 응답마다 반복해서 설명하지 않는다.
+
+예를 들어 이전 답변에서 이미:
+
+- 총 필요과목
+- 필요학점
+- 실습시간
+- 학기배치
+
+를 설명했다면,
+
+사용자가:
+"실습진행방식은요?"
+라고 물었을 때
+
+필요과목 / 학점 / 학기배치를 다시 반복하지 않는다.
+
+현재 질문인 실습진행방식만 답한다.
+
+20-2.
+사용자가:
+
+"행정절차 알려줘"
+"자격증 언제 신청해?"
+"전체 기간은?"
+"실습은 언제 해?"
+"최단기간으로 하면?"
+
+처럼 특정 항목 하나를 물으면
+그 질문에 해당하는 Context만 우선 사용한다.
+
+다른 academicSummary 정보는
+현재 질문을 설명하는 데 꼭 필요한 경우에만
+1문장 정도로 짧게 참조한다.
+
+20-3.
+이전 Conversation History에서
+이미 AI가 같은 숫자와 사실을 설명했다면
+같은 내용을 다시 장문으로 반복하지 않는다.
+
+특히 다음 값의 무의미한 반복을 피한다.
+
+- 총 과목 수
+- 총 학점
+- 실습시간
+- 학기별 과목 수
+- 학위 필요 여부
+
+사용자가 다시 물어보거나
+새 조건 때문에 값이 바뀐 경우에만 다시 설명한다.
+
+20-4.
+사용자가 새로운 사실을 제공해서
+structuredMemory 또는 서버 계산결과가 변경되었다면
+이전 답변을 그대로 반복하지 않는다.
+
+먼저 변경된 점을 설명한다.
+
+예:
+
+이전:
+finalEducation = 전문대졸
+
+현재:
+finalEducation = 고졸
+
+→
+
+"아, 그러면 앞서 안내드린 내용이 달라집니다.
+고졸 기준으로 다시 계산해서 안내드릴게요."
+
+처럼 변경 사실을 먼저 알려준다.
+
+특히 새로운 기이수과목,
+이수연도,
+최종학력,
+전적대 여부 때문에
+과목 수 / 법 적용 / 실습시간 / 학기 수가 변경되었다면
+기존 숫자를 반복하지 않고
+새 서버 계산결과를 우선한다.
+
+예:
+
+이전:
+신법 17과목 / 실습 160시간
+
+새 사실:
+2019년 사회복지학개론 이수
+
+새 서버 예상 계산:
+구법 / 남은 13과목 / 실습 120시간
+
+→
+
+"그 내용까지 반영하면 앞서 안내드린 기준이 달라집니다."
+
+처럼 변경 사실을 먼저 짚고
+새 결과를 설명한다.
+
+20-5.
+사용자가 현재 질문에서 요구하지 않은
+"원하시면 제가 이어서..."
+형태의 선택지 제안을 매 답변마다 붙이지 않는다.
+
+정말 다음 단계 안내가 자연스러운 경우에만
+짧게 한 번 제안할 수 있다.
+
+같은 대화에서 연속해서
+매 응답마다 2~3개의 선택지를 제안하지 않는다.
+
+20-6.
+사용자의 질문이 충분히 명확하면
+답변 마지막에 불필요한 추가 질문이나 메뉴를 붙이지 않는다.
+
+현재 질문에 답하고 자연스럽게 끝낸다.
 
 21. 불필요하게 번호 목록을 남발하지 않는다.
 카카오톡에서 사람이 말하듯 읽기 편하게 작성한다.
@@ -1194,6 +1465,38 @@ function buildKakaoAiResponseInput(
       hasTransferCollege:
         params.memory
           .hasTransferCollege,
+
+priorSubjectCandidates:
+  Array.isArray(
+    params.memory
+      .priorSubjectCandidates
+  )
+    ? params.memory
+        .priorSubjectCandidates
+        .slice(
+          0,
+          20
+        )
+        .map(
+          subject => ({
+            subjectName:
+              subject.subjectName,
+
+            completedYear:
+              subject.completedYear,
+
+            credits:
+              subject.credits,
+
+            source:
+              subject.source,
+
+            verificationStatus:
+              subject
+                .verificationStatus,
+          })
+        )
+    : [],
 
       socialWorkerLawVersion:
         params.memory

@@ -13,6 +13,10 @@ import {
   type KakaoAiLeadAcademicAnalysis,
 } from "./kakao-ai-lead-academic-adapter";
 
+import {
+  resolveKakaoAiLeadPriorAcademic,
+} from "./kakao-ai-lead-prior-academic-resolver";
+
 import type {
   KakaoAiStructuredMemory,
 } from "./kakao-ai-memory-resolver";
@@ -941,28 +945,82 @@ export async function resolveKakaoAiContext(
    * Registered Student Adapter가 담당한다.
    */
   if (
-    fetchPlan.commonRuleEngine &&
-    customer.customerType ===
-      "lead"
-  ) {
-    leadAcademicAnalysis =
-      await resolveKakaoAiLeadAcademicAnalysis({
-        organizationId,
+  fetchPlan.commonRuleEngine &&
+  customer.customerType ===
+    "lead"
+) {
+  const priorAcademic =
+    resolveKakaoAiLeadPriorAcademic({
+      memory:
+        params.structuredMemory,
+    });
 
-        memory:
-          params.structuredMemory,
+  const leadMemory:
+    KakaoAiStructuredMemory = {
+    ...params.structuredMemory,
 
-        /**
-         * 아직 카카오 OCR의 전적대 인정과목
-         * 연결 전이므로 빈 배열.
-         *
-         * 추후 Attachment/OCR Adapter가
-         * 확정한 과목만 여기에 들어간다.
-         */
-        recognizedSubjects:
-          [],
-      });
-  }
+    /**
+     * 사회복지사 과정이면
+     * Prior Academic Resolver가 판정한
+     * 구법/신법 결과를 이번 계산에 사용한다.
+     *
+     * 다른 과정이면 기존 Memory 유지.
+     */
+    socialWorkerLawVersion:
+  priorAcademic.courseKey ===
+    "social_worker_2" &&
+  priorAcademic
+    .socialWorkerLawVersion ===
+    "old"
+    ? "old"
+    : params
+        .structuredMemory
+        .socialWorkerLawVersion,
+  };
+
+  leadAcademicAnalysis =
+    await resolveKakaoAiLeadAcademicAnalysis({
+      organizationId,
+
+      memory:
+        leadMemory,
+
+      recognizedSubjects:
+        priorAcademic
+          .recognizedSubjects,
+    });
+
+  /**
+   * 기이수과목 Resolver에서 나온
+   * 확인 필요 사유 / 경고도
+   * 최종 Academic Analysis에 합친다.
+   */
+  leadAcademicAnalysis = {
+    ...leadAcademicAnalysis,
+
+    unresolvedReasons:
+      Array.from(
+        new Set([
+          ...leadAcademicAnalysis
+            .unresolvedReasons,
+
+          ...priorAcademic
+            .unresolvedReasons,
+        ])
+      ),
+
+    warnings:
+      Array.from(
+        new Set([
+          ...leadAcademicAnalysis
+            .warnings,
+
+          ...priorAcademic
+            .warnings,
+        ])
+      ),
+  };
+}
 
   let registeredStudentAnalysis:
     KakaoAiRegisteredStudentAnalysis | null =

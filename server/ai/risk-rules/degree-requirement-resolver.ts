@@ -77,6 +77,27 @@ export function resolveFinalEducationGroup(
   }
 
 /**
+ * 초졸 / 중졸
+ *
+ * 학점은행제 학위과정 진행을 위해서는
+ * 먼저 고등학교 졸업 이상의 학력이 필요하다.
+ *
+ * 절대 high_school 그룹으로 올리지 않는다.
+ */
+if (
+  normalized === "초졸" ||
+  normalized.includes(
+    "초등학교졸업"
+  ) ||
+  normalized === "중졸" ||
+  normalized.includes(
+    "중학교졸업"
+  )
+) {
+  return "below_high_school";
+}
+
+/**
  * 대학원 중퇴
  *
  * 대학원 진학 전 학사학위가 존재하므로
@@ -198,6 +219,42 @@ export function resolveDegreeRequirement(
 
   const courseKey =
     params.courseKey;
+
+/**
+ * 초졸 / 중졸 공통 선행학력 차단
+ *
+ * 과정 종류와 관계없이
+ * 학점은행제 학위과정을 진행하기 전에
+ * 먼저 고등학교 졸업 이상의 학력이 필요하다.
+ */
+if (
+  finalEducationGroup ===
+  "below_high_school"
+) {
+  return {
+    finalEducationGroup,
+
+    courseKey,
+
+    requiresDegree:
+      true,
+
+    minimumDegreeLevel:
+      "none",
+
+    existingDegreeSatisfiesRequirement:
+      false,
+
+    requiresNewDegreeTrack:
+      false,
+
+    defaultDegreeRule:
+      null,
+
+   reason:
+  "현재 최종학력이 초졸 또는 중졸인 경우 바로 학점은행제 과정을 진행할 수 없습니다. 먼저 고등학교 졸업 또는 고졸 검정고시 등을 통해 고졸 이상의 학력을 충족해야 하며, 이후 희망 과정에 맞춰 학습설계를 진행할 수 있습니다.",
+  };
+}
 
   /**
    * 최종학력 자체를 모르면

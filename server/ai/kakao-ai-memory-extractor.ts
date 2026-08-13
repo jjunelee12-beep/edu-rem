@@ -9,6 +9,26 @@ import type {
   KakaoAiVerifiedMemoryFact,
 } from "./kakao-ai-memory-writer";
 
+export type KakaoAiUserPriorSubjectCandidate = {
+  subjectName:
+    string;
+
+  completedYear:
+    number | null;
+
+  credits:
+    number | null;
+
+  evidence:
+    string;
+
+  confidence:
+    number;
+
+  isExplicitCorrection:
+    boolean;
+};
+
 /**
  * Memory Extractor
  *
@@ -141,6 +161,16 @@ export type KakaoAiUserMemoryExtraction = {
    */
   hasTransferCollege:
     KakaoAiUserMemoryCandidate<boolean>;
+
+/**
+ * 사용자가 직접 밝힌
+ * 대학 / 전적대 기이수 과목 후보.
+ *
+ * 사용자 진술만으로는
+ * 실제 인정과목으로 확정하지 않는다.
+ */
+priorSubjectCandidates:
+  KakaoAiUserPriorSubjectCandidate[];
 
   /**
    * 위 세 필드 외에
@@ -431,6 +461,91 @@ const KAKAO_AI_MEMORY_EXTRACTION_SCHEMA = {
     hasTransferCollege:
       BOOLEAN_CANDIDATE_SCHEMA,
 
+priorSubjectCandidates: {
+  type:
+    "array",
+
+  items: {
+    type:
+      "object",
+
+    additionalProperties:
+      false,
+
+    properties: {
+      subjectName: {
+        type:
+          "string",
+      },
+
+      completedYear: {
+        anyOf: [
+          {
+            type:
+              "integer",
+
+            minimum:
+              1900,
+
+            maximum:
+              2100,
+          },
+          {
+            type:
+              "null",
+          },
+        ],
+      },
+
+      credits: {
+        anyOf: [
+          {
+            type:
+              "number",
+
+            minimum:
+              0,
+          },
+          {
+            type:
+              "null",
+          },
+        ],
+      },
+
+      evidence: {
+        type:
+          "string",
+      },
+
+      confidence: {
+        type:
+          "number",
+
+        minimum:
+          0,
+
+        maximum:
+          1,
+      },
+
+      isExplicitCorrection: {
+        type:
+          "boolean",
+      },
+    },
+
+    required: [
+      "subjectName",
+      "completedYear",
+      "credits",
+      "evidence",
+      "confidence",
+      "isExplicitCorrection",
+    ],
+  },
+},
+
     verifiedFacts: {
       type:
         "array",
@@ -551,9 +666,10 @@ isExplicitCorrection: {
 
   required: [
     "desiredCourse",
-    "finalEducation",
-    "hasTransferCollege",
-    "verifiedFacts",
+"finalEducation",
+"hasTransferCollege",
+"priorSubjectCandidates",
+"verifiedFacts",
     "resolvedQuestionKeys",
     "unresolvedQuestionKeys",
     "currentTopic",
@@ -640,6 +756,48 @@ currentMemory.finalEducation = "전문대졸"
 - "제가 아까 잘못 말했는데"
 - 이전값을 부정하면서 새로운 값을 확정적으로 말함
 
+특히 finalEducation은 아래와 같이
+사용자가 현재 자신의 최종학력을 직접 다시 확정해서 말하면,
+반드시 명시적 정정으로 취급한다.
+
+예:
+
+currentMemory.finalEducation = "전문대졸"
+
+사용자:
+"아 저 고졸이에요 최종학력"
+→ finalEducation.value = "고졸"
+→ shouldWrite = true
+→ conflictsWithMemory = true
+→ isExplicitCorrection = true
+
+사용자:
+"최종학력은 고졸이에요"
+→ finalEducation.value = "고졸"
+→ shouldWrite = true
+→ conflictsWithMemory = true
+→ isExplicitCorrection = true
+
+사용자:
+"저 고졸입니다"
+→ 현재 Memory와 다른 학력이 저장되어 있다면
+  현재 사용자가 자신의 학력을 직접 확정해서 말한 것이므로
+  finalEducation 변경 후보로 본다.
+→ conflictsWithMemory = true
+→ isExplicitCorrection = true
+
+즉 finalEducation은
+현재 사용자가 자기 학력을 확정적으로 다시 말했고
+그 값이 기존 Memory와 다르면,
+반드시 "아니라", "정정" 같은 단어가 없어도
+사용자의 최신 직접발언을 우선하는 명시적 정정으로 본다.
+
+단,
+"전문대도 다녔어요"
+"대학교 중퇴했어요"
+같은 말은 최종학력 변경 자체를 뜻하지 않을 수 있으므로
+finalEducation을 임의 변경하지 않는다.
+
 단, 단순히 새로운 값이 등장했다는 이유만으로
 isExplicitCorrection=true로 하지 않는다.
 
@@ -675,6 +833,101 @@ needsClarification=true로 한다.
 너의 모든 신규 fact source는 오직 사용자 직접 발언이다.
 
 11. 사용자가 현재 메시지에서 여러 사실을 동시에 말하면 모두 추출할 수 있다.
+
+11-1. 사용자가 대학교, 전문대, 전적대 등에서
+이미 이수한 과목을 직접 명확하게 말하면
+priorSubjectCandidates에 넣는다.
+
+예:
+
+사용자:
+"대학교에서 사회복지학개론 들었어요"
+
+→ priorSubjectCandidates:
+[
+  {
+    "subjectName": "사회복지학개론",
+    "completedYear": null,
+    "credits": null,
+    "evidence": "사회복지학개론 들었어요",
+    "confidence": 0.99,
+    "isExplicitCorrection": false
+  }
+]
+
+11-2. 사용자가 이수했다고 말한 것만으로
+verificationStatus를 verified로 판단하지 않는다.
+
+사용자의 직접 발언은 항상
+"user_reported" 후보일 뿐이다.
+
+실제 자격과목 인정 여부,
+학점 인정 여부,
+동일과목 여부는
+OCR / CRM / 공통엔진이 나중에 판단한다.
+
+11-3. 직전 Memory에 이수과목 후보가 하나 있고
+사용자가 다음 메시지에서 연도만 명확하게 답한 경우,
+그 연도를 기존 과목과 연결할 수 있다.
+
+예:
+
+currentMemory.priorSubjectCandidates:
+[
+  {
+    "subjectName": "사회복지학개론",
+    "completedYear": null
+  }
+]
+
+currentMessage:
+"2019년에 들었어요"
+
+→ priorSubjectCandidates:
+[
+  {
+    "subjectName": "사회복지학개론",
+    "completedYear": 2019,
+    "credits": null,
+    "evidence": "2019년에 들었어요",
+    "confidence": 0.99,
+    "isExplicitCorrection": false
+  }
+]
+
+이 경우 subjectName 자체는 기존 Memory에서 가져올 수 있다.
+단 새로 추가되는 사실인 completedYear의 직접 근거는
+반드시 currentMessage에 있어야 한다.
+
+11-4. 기존 과목의 연도를 사용자가 명확하게 정정하면
+isExplicitCorrection=true로 한다.
+
+예:
+
+기존:
+사회복지학개론 2019년
+
+사용자:
+"아 2019년 아니고 2018년에 들었어요"
+
+→ subjectName = "사회복지학개론"
+→ completedYear = 2018
+→ isExplicitCorrection = true
+
+11-5. 직전 Memory에 과목 후보가 여러 개인데
+사용자가 단순히 "2019년에요"라고만 하면
+어느 과목인지 임의로 연결하지 않는다.
+
+이 경우 priorSubjectCandidates에는 쓰지 않고
+needsClarification=true로 한다.
+
+11-6. 사용자가
+"대학교 중퇴했어요"
+라고 말하면
+hasTransferCollege=true로 볼 수 있다.
+
+그러나 finalEducation을
+"대졸" 또는 "전문대졸"로 변경하지 않는다.
 
 12. verifiedFacts에는 학점은행제 상담에 앞으로 의미가 있는
 명확한 사실만 넣는다.
@@ -857,6 +1110,9 @@ isExplicitCorrection:
 isExplicitCorrection:
   false,
     },
+
+priorSubjectCandidates:
+  [],
 
     verifiedFacts:
       [],
@@ -1041,6 +1297,105 @@ function normalizeExtraction(
           >
       : {};
 
+const priorSubjectCandidates =
+  Array.isArray(
+    source.priorSubjectCandidates
+  )
+    ? source
+        .priorSubjectCandidates
+        .map(
+          (
+            subject:
+              any
+          ) => {
+            const completedYearRaw =
+              subject
+                ?.completedYear;
+
+            const completedYear =
+              Number.isFinite(
+                Number(
+                  completedYearRaw
+                )
+              )
+                ? Math.floor(
+                    Number(
+                      completedYearRaw
+                    )
+                  )
+                : null;
+
+            const creditsRaw =
+              subject
+                ?.credits;
+
+            const credits =
+              Number.isFinite(
+                Number(
+                  creditsRaw
+                )
+              ) &&
+              Number(
+                creditsRaw
+              ) >
+                0
+                ? Number(
+                    creditsRaw
+                  )
+                : null;
+
+            return {
+              subjectName:
+                normalizeText(
+                  subject
+                    ?.subjectName
+                ),
+
+              completedYear:
+                completedYear &&
+                completedYear >=
+                  1900 &&
+                completedYear <=
+                  2100
+                  ? completedYear
+                  : null,
+
+              credits,
+
+              evidence:
+                normalizeText(
+                  subject
+                    ?.evidence
+                ),
+
+              confidence:
+                normalizeConfidence(
+                  subject
+                    ?.confidence
+                ),
+
+              isExplicitCorrection:
+                subject
+                  ?.isExplicitCorrection ===
+                true,
+            };
+          }
+        )
+        .filter(
+          (
+            subject
+          ) =>
+            Boolean(
+              subject.subjectName &&
+              subject.evidence
+            )
+        )
+        .slice(
+          0,
+          20
+        )
+    : [];
+
   const verifiedFacts =
     Array.isArray(
       source.verifiedFacts
@@ -1117,6 +1472,8 @@ isExplicitCorrection:
       normalizeBooleanCandidate(
         source.hasTransferCollege
       ),
+
+priorSubjectCandidates,
 
     verifiedFacts,
 
@@ -1282,6 +1639,52 @@ function buildSafeMemoryPatch(
         .value;
   }
 
+const priorSubjectCandidatesToUpsert =
+  extraction
+    .priorSubjectCandidates
+    .filter(
+      (
+        subject
+      ) =>
+        subject.confidence >=
+          0.9 &&
+        Boolean(
+          subject.subjectName
+        ) &&
+        isEvidenceInsideMessage(
+          message,
+          subject.evidence
+        )
+    )
+    .map(
+      (
+        subject
+      ) => ({
+        subjectName:
+          subject.subjectName,
+
+        completedYear:
+          subject.completedYear,
+
+        credits:
+          subject.credits,
+
+        source:
+          "user" as const,
+
+        verificationStatus:
+          "user_reported" as const,
+      })
+    );
+
+if (
+  priorSubjectCandidatesToUpsert.length >
+  0
+) {
+  patch.priorSubjectCandidatesToUpsert =
+    priorSubjectCandidatesToUpsert;
+}
+
   const verifiedFactsToAdd:
     KakaoAiVerifiedMemoryFact[] =
     extraction.verifiedFacts
@@ -1289,7 +1692,10 @@ function buildSafeMemoryPatch(
     (
       fact
     ) =>
-      !fact.conflictsWithMemory &&
+      (
+  !fact.conflictsWithMemory ||
+  fact.isExplicitCorrection
+) &&
       fact.confidence >=
         0.9 &&
       isEvidenceInsideMessage(

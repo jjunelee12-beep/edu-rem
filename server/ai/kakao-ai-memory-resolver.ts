@@ -4,6 +4,37 @@ import type {
   KakaoAiConversationMessage,
 } from "./kakao-ai-intent-router";
 
+
+export type KakaoAiPriorSubjectVerificationStatus =
+  | "user_reported"
+  | "verified"
+  | "rejected";
+
+export type KakaoAiPriorSubjectSource =
+  | "user"
+  | "ocr"
+  | "crm";
+
+export type KakaoAiPriorSubjectCandidate = {
+  subjectName:
+    string;
+
+  completedYear:
+    number | null;
+
+  credits:
+    number | null;
+
+  source:
+    KakaoAiPriorSubjectSource;
+
+  verificationStatus:
+    KakaoAiPriorSubjectVerificationStatus;
+};
+
+export const KAKAO_AI_PRIOR_SUBJECT_FACT_PREFIX =
+  "[KAKAO_PRIOR_SUBJECT]";
+
 /**
  * 카카오 AI가 대화를 이해할 때 사용하는
  * 구조화 Memory.
@@ -40,10 +71,21 @@ export type KakaoAiStructuredMemory = {
     null;
 
   verifiedFacts:
-    string[];
+  string[];
 
-  unresolvedQuestions:
-    string[];
+/**
+ * 사용자가 말했거나
+ * OCR / CRM으로 확인된
+ * 이전 이수과목.
+ *
+ * user_reported 상태는
+ * 실제 인정과목 계산에 바로 넣지 않는다.
+ */
+priorSubjectCandidates:
+  KakaoAiPriorSubjectCandidate[];
+
+unresolvedQuestions:
+  string[];
 
   currentTopic:
     string | null;
@@ -125,6 +167,129 @@ function normalizeNullableText(
     null;
 }
 
+function normalizeFinalEducation(
+  value:
+    unknown
+): string | null {
+  const raw =
+    String(
+      value ??
+      ""
+    )
+      .trim();
+
+  if (
+    !raw
+  ) {
+    return null;
+  }
+
+  const normalized =
+    raw
+      .replace(
+        /\s+/g,
+        ""
+      )
+      .toLowerCase();
+
+/**
+ * 초등학교 졸업
+ */
+if (
+  normalized ===
+    "초졸" ||
+  normalized.includes(
+    "초등학교졸업"
+  )
+) {
+  return "초졸";
+}
+
+  /**
+   * 중학교 졸업
+   */
+  if (
+    normalized ===
+      "중졸" ||
+    normalized.includes(
+      "중학교졸업"
+    )
+  ) {
+    return "중졸";
+  }
+
+  /**
+   * 고등학교 졸업 / 검정고시
+   */
+  if (
+    normalized ===
+      "고졸" ||
+    normalized.includes(
+      "고등학교졸업"
+    ) ||
+    normalized.includes(
+      "고등학교검정고시"
+    ) ||
+    normalized.includes(
+      "고졸검정고시"
+    )
+  ) {
+    return "고졸";
+  }
+
+  /**
+   * 전문대 졸업
+   */
+  if (
+    normalized ===
+      "전문대졸" ||
+    normalized.includes(
+      "전문대졸업"
+    ) ||
+    normalized.includes(
+      "전문학사"
+    ) ||
+    normalized.includes(
+      "2년제졸업"
+    ) ||
+    normalized.includes(
+      "3년제졸업"
+    )
+  ) {
+    return "전문대졸";
+  }
+
+  /**
+   * 4년제 대학교 졸업
+   */
+  if (
+    normalized ===
+      "대졸" ||
+    normalized ===
+      "4년제졸" ||
+    normalized.includes(
+      "4년제졸업"
+    ) ||
+    normalized.includes(
+      "대학교졸업"
+    ) ||
+    normalized ===
+      "학사"
+  ) {
+    return "대졸";
+  }
+
+  /**
+   * 중퇴 / 재학 / 휴학은
+   * 최종학력을 임의로 대학 졸업으로 올리지 않는다.
+   *
+   * Extractor에서 이미 finalEducation 여부를
+   * 판단한 결과만 여기 들어오므로
+   * 알 수 없는 값은 원문을 보존한다.
+   */
+  return raw;
+}
+
 function normalizeStringArray(
   value:
     unknown
@@ -175,6 +340,195 @@ function normalizeStringArray(
   return result;
 }
 
+export function encodeKakaoAiPriorSubjectFact(
+  subject:
+    KakaoAiPriorSubjectCandidate
+): string {
+  const subjectName =
+    String(
+      subject.subjectName ||
+      ""
+    ).trim();
+
+  if (
+    !subjectName
+  ) {
+    return "";
+  }
+
+  const completedYear =
+    Number.isFinite(
+      Number(
+        subject.completedYear
+      )
+    ) &&
+    Number(
+      subject.completedYear
+    ) >=
+      1900 &&
+    Number(
+      subject.completedYear
+    ) <=
+      2100
+      ? Math.floor(
+          Number(
+            subject.completedYear
+          )
+        )
+      : null;
+
+  const credits =
+    Number.isFinite(
+      Number(
+        subject.credits
+      )
+    ) &&
+    Number(
+      subject.credits
+    ) >
+      0
+      ? Number(
+          subject.credits
+        )
+      : null;
+
+  const source:
+    KakaoAiPriorSubjectSource =
+    subject.source ===
+      "ocr" ||
+    subject.source ===
+      "crm"
+      ? subject.source
+      : "user";
+
+  const verificationStatus:
+    KakaoAiPriorSubjectVerificationStatus =
+    subject.verificationStatus ===
+      "verified" ||
+    subject.verificationStatus ===
+      "rejected"
+      ? subject.verificationStatus
+      : "user_reported";
+
+  return (
+    KAKAO_AI_PRIOR_SUBJECT_FACT_PREFIX +
+    JSON.stringify({
+      subjectName,
+      completedYear,
+      credits,
+      source,
+      verificationStatus,
+    })
+  );
+}
+
+export function decodeKakaoAiPriorSubjectFact(
+  value:
+    unknown
+): KakaoAiPriorSubjectCandidate | null {
+  const raw =
+    String(
+      value ??
+      ""
+    ).trim();
+
+  if (
+    !raw.startsWith(
+      KAKAO_AI_PRIOR_SUBJECT_FACT_PREFIX
+    )
+  ) {
+    return null;
+  }
+
+  const jsonText =
+    raw.slice(
+      KAKAO_AI_PRIOR_SUBJECT_FACT_PREFIX.length
+    );
+
+  try {
+    const parsed =
+      JSON.parse(
+        jsonText
+      ) as
+        Record<
+          string,
+          unknown
+        >;
+
+    const subjectName =
+      String(
+        parsed.subjectName ??
+        ""
+      ).trim();
+
+    if (
+      !subjectName
+    ) {
+      return null;
+    }
+
+    const completedYearRaw =
+      Number(
+        parsed.completedYear
+      );
+
+    const completedYear =
+      Number.isFinite(
+        completedYearRaw
+      ) &&
+      completedYearRaw >=
+        1900 &&
+      completedYearRaw <=
+        2100
+        ? Math.floor(
+            completedYearRaw
+          )
+        : null;
+
+    const creditsRaw =
+      Number(
+        parsed.credits
+      );
+
+    const credits =
+      Number.isFinite(
+        creditsRaw
+      ) &&
+      creditsRaw >
+        0
+        ? creditsRaw
+        : null;
+
+    const source:
+      KakaoAiPriorSubjectSource =
+      parsed.source ===
+        "ocr" ||
+      parsed.source ===
+        "crm"
+        ? parsed.source
+        : "user";
+
+    const verificationStatus:
+      KakaoAiPriorSubjectVerificationStatus =
+      parsed.verificationStatus ===
+        "verified" ||
+      parsed.verificationStatus ===
+        "rejected"
+        ? parsed.verificationStatus
+        : "user_reported";
+
+    return {
+      subjectName,
+      completedYear,
+      credits,
+      source,
+      verificationStatus,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * DB Memory 결과를
  * AI가 사용하기 쉬운 형태로 정규화한다.
@@ -183,6 +537,31 @@ function normalizeStructuredMemory(
   memory:
     db.KakaoAiConversationMemory
 ): KakaoAiStructuredMemory {
+  const verifiedFacts =
+    normalizeStringArray(
+      memory.verifiedFacts
+    );
+
+  const priorSubjectCandidates =
+    verifiedFacts
+      .map(
+        (
+          fact
+        ) =>
+          decodeKakaoAiPriorSubjectFact(
+            fact
+          )
+      )
+      .filter(
+        (
+          subject
+        ): subject is
+          KakaoAiPriorSubjectCandidate =>
+          Boolean(
+            subject
+          )
+      );
+
   return {
     desiredCourse:
       normalizeNullableText(
@@ -190,9 +569,9 @@ function normalizeStructuredMemory(
       ),
 
     finalEducation:
-      normalizeNullableText(
-        memory.finalEducation
-      ),
+  normalizeFinalEducation(
+    memory.finalEducation
+  ),
 
     hasTransferCollege:
       memory.hasTransferCollege ===
@@ -211,10 +590,9 @@ socialWorkerLawVersion:
     ? memory.socialWorkerLawVersion
     : null,
 
-    verifiedFacts:
-      normalizeStringArray(
-        memory.verifiedFacts
-      ),
+    verifiedFacts,
+
+priorSubjectCandidates,
 
     unresolvedQuestions:
       normalizeStringArray(
@@ -448,6 +826,11 @@ socialWorkerLawVersion:
         memoryContext
           .structuredMemory
           .verifiedFacts,
+
+priorSubjectCandidates:
+  memoryContext
+    .structuredMemory
+    .priorSubjectCandidates,
 
       unresolvedQuestions:
         memoryContext
