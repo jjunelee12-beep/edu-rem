@@ -2332,20 +2332,6 @@ console.log(
 );
 
 return true;
-      }
-
-      console.log(
-        "[KAKAO AI CALLBACK] send success",
-        {
-          organizationId,
-          kakaoRequestId,
-
-          status:
-            callbackResponse.status,
-        }
-      );
-
-      return true;
     } catch (
       error:
         unknown
