@@ -134,19 +134,36 @@ export type KakaoAiIntentDecision = {
    * 아직 최종 고객문구는 아니다.
    */
   clarificationQuestion:
-    string | null;
+  string | null;
 
-  /**
-   * 부족한 정보의 내부 키.
-   *
-   * 예:
-   * finalEducation
-   * desiredCourse
-   * transferTranscript
-   * lawVersionEvidence
-   */
-  missingInformation:
-    string[];
+/**
+ * 사용자의 의도가 실제로 여러 가지로
+ * 해석될 수 있을 때 보여줄 자연어 선택 후보.
+ *
+ * 예:
+ * [
+ *   "학습자등록",
+ *   "학점인정신청",
+ *   "학위신청",
+ *   "자격증 신청"
+ * ]
+ *
+ * 내부 capability 이름은 넣지 않는다.
+ */
+clarificationOptions:
+  string[];
+
+/**
+ * 부족한 정보의 내부 키.
+ *
+ * 예:
+ * finalEducation
+ * desiredCourse
+ * transferTranscript
+ * lawVersionEvidence
+ */
+missingInformation:
+  string[];
 
   /**
    * 어떤 데이터 소스가 필요한지.
@@ -663,6 +680,15 @@ export function normalizeKakaoAiIntentDecision(
     ) ||
     null;
 
+const clarificationOptions =
+  normalizeMissingInformation(
+    source.clarificationOptions
+  )
+    .slice(
+      0,
+      5
+    );
+
   /**
  * clarification 여부는
  * 모델이 전체 대화 문맥을 보고 판단한다.
@@ -686,13 +712,15 @@ export function normalizeKakaoAiIntentDecision(
   let normalizedClarificationQuestion =
     clarificationQuestion;
 
-  if (
-    needsClarification &&
-    !normalizedClarificationQuestion
-  ) {
-    normalizedClarificationQuestion =
-      "정확하게 안내하려면 어떤 내용을 확인하고 싶으신지 조금만 더 말씀해주세요.";
-  }
+ if (
+  needsClarification &&
+  !normalizedClarificationQuestion
+) {
+  normalizedClarificationQuestion =
+    clarificationOptions.length > 0
+      ? "말씀하신 내용을 정확하게 이해했는지 한 번만 확인할게요. 어떤 내용을 말씀하신 걸까요?"
+      : "말씀하신 내용을 정확하게 이해했는지 한 번만 확인할게요. 궁금하신 내용을 조금만 더 설명해주시겠어요?";
+}
 
   const requiredContexts =
     normalizeRequiredContexts(
@@ -720,11 +748,13 @@ export function normalizeKakaoAiIntentDecision(
     needsClarification,
 
     clarificationQuestion:
-      normalizedClarificationQuestion,
+  normalizedClarificationQuestion,
 
-    missingInformation,
+clarificationOptions,
 
-    requiredContexts,
+missingInformation,
+
+requiredContexts,
 
     requiresAttachmentAnalysis:
       normalizeBoolean(
@@ -856,11 +886,71 @@ export const KAKAO_AI_INTENT_CLASSIFIER_INSTRUCTIONS = `
 
 중요 원칙:
 
+0. 이 시스템은 메뉴형 챗봇이 아니다.
+
+사용자는 정해진 질문 순서나 메뉴를 따르지 않는다.
+
+사용자는 예를 들어:
+
+- 자격증 상담
+- 기간
+- 회사 소개
+- 실습
+- 수업방식
+- 행정절차
+- 다시 기간
+- 등록 후 관리
+- 다시 자격증 상담
+
+처럼 주제를 자유롭게 오갈 수 있다.
+
+너의 역할은 사용자를 정해진 상담 시나리오에 맞추는 것이 아니라
+현재 메시지 + 이전 Conversation History + Structured Memory를 이용해서
+현재 사용자가 원하는 것을 ChatGPT처럼 이해하는 것이다.
+
+Capability는 사용자에게 보여주는 메뉴나
+정해진 답변 시나리오가 아니다.
+
+Capability는 현재 요청을 처리하기 위해
+서버가 어떤 권한 / Context / Rule Engine / CRM 데이터를
+사용해야 하는지 결정하기 위한 내부 분류다.
+
+따라서 사용자의 자연어를 capability에 억지로 맞추지 말고,
+먼저 사용자가 실제로 무엇을 원하는지 이해한 뒤
+필요한 capability를 하나 이상 선택한다.
+
+하나의 질문에 여러 capability가 필요한 경우
+절대로 하나만 억지로 선택하지 않는다.
+
 1. 키워드 하나만 보고 판단하지 않는다.
 현재 메시지 전체 의미와 이전 대화를 함께 본다.
 
 2. 사용자가 한 메시지에서 여러 요청을 할 수 있다.
 그 경우 primaryCapability 하나와 capabilities 전체를 함께 반환한다.
+
+primaryCapability는 현재 사용자의 가장 중심적인 목적일 뿐이며
+나머지 질문을 버린다는 의미가 아니다.
+
+예:
+
+"사회복지사 기간도 궁금하고 실습은 어떻게 하는지,
+등록하면 뭐까지 관리해줘요?"
+
+라면 하나만 선택하지 않는다.
+
+예시:
+
+primaryCapability:
+qualification_consultation_analysis
+
+capabilities:
+[
+  "qualification_consultation_analysis",
+  "practice_general_guide",
+  "registered_benefits_guide"
+]
+
+처럼 실제 필요한 의도를 모두 보존한다.
 
 3. 이전 대화에서 이미 확인된 정보는
 missingInformation으로 다시 요구하지 않는다.
@@ -886,6 +976,33 @@ structuredMemory.finalEducation = "전문대 졸업"
 3-4. structuredMemory.currentTopic은
 "그럼 실습은?", "그건 얼마나 걸려?"
 같은 짧은 후속질문의 문맥 판단에 참고한다.
+
+그러나 currentTopic은 현재 대화의 중심주제일 뿐이다.
+
+currentTopic이 변경되었다고 해서
+structuredMemory.desiredCourse,
+structuredMemory.finalEducation,
+structuredMemory.hasTransferCollege,
+structuredMemory.socialWorkerLawVersion,
+structuredMemory.verifiedFacts
+
+등 이미 확인된 상담 사실을 무시하지 않는다.
+
+예:
+
+desiredCourse = "사회복지사 2급"
+finalEducation = "전문대졸"
+
+상태에서 사용자가 회사소개를 물었다가
+실습을 물어보고,
+행정절차를 물어본 뒤,
+
+"그래서 저는 얼마나 걸려요?"
+
+라고 하면 이전의
+"사회복지사 2급 + 전문대졸"
+정보를 그대로 이용하여
+qualification_consultation_analysis로 해석해야 한다.
 
 4. "사용자의 의도 추론"과 "사실 추측"을 명확하게 구분한다.
 
@@ -942,6 +1059,49 @@ unclear 또는 clarification으로 보내지 않는다.
 
 서로 충돌하는 확정 사실이 있으면
 임의로 하나를 선택하지 않고 clarification을 요청한다.
+
+5-1. needsClarification=true인 경우에도
+단순히 "무엇을 원하시나요?"라고 묻지 않는다.
+
+Conversation History와 Structured Memory를 이용하여
+현재 발화가 어떤 의미일 가능성이 있는지 먼저 판단한다.
+
+현실적인 후보가 2개 이상 존재하면
+clarificationOptions에 사용자가 이해할 수 있는
+짧은 자연어 후보를 2~5개 넣는다.
+
+예:
+
+사용자:
+"그 신청은 어떻게 해요?"
+
+이전 대화상 다음 네 가지가 실제 후보라면:
+
+clarificationQuestion:
+"말씀하신 신청이 어떤 절차인지 한 번만 확인할게요."
+
+clarificationOptions:
+[
+  "학습자등록",
+  "학점인정신청",
+  "학위신청",
+  "자격증 신청"
+]
+
+중요:
+
+clarificationOptions에는
+
+"administrative_general_guide"
+"qualification_consultation_analysis"
+
+같은 capability 이름이나 내부 시스템명을 절대 넣지 않는다.
+
+실제 사용자가 이해할 수 있는 표현만 넣는다.
+
+반대로 합리적인 후보를 만들 근거조차 없다면
+clarificationOptions=[]로 두고
+clarificationQuestion으로 짧게 다시 물어본다.
 
 6. 자격증 취득조건, 학점, 부족과목,
 학기 수, 최단기간 계산을 요청하면
@@ -1015,8 +1175,37 @@ qualification_consultation_analysis
   "제가 들어야 할 과목이 몇 개예요?"
   "내 학력 기준으로 설계해줘"
 
+- 현재 메시지에 학력이 직접 적혀 있지 않더라도
+  structuredMemory.finalEducation이 이미 존재하고,
+  structuredMemory.desiredCourse가 존재하며,
+  사용자가 본인의 기간, 과목수, 필요학점, 학기수,
+  최단기간, 본인 기준 진행방법 등을 묻는 경우
+  qualification_consultation_analysis로 판단한다.
+
+- 이전 대화에서 개인 상담정보가 이미 확보되어 있으면
+  현재 문장만 보고 qualification_general_guide로 되돌리지 않는다.
+
+- qualification_general_guide는
+  특정 개인의 학력이나 기존 이수내역을 적용하지 않는
+  순수 일반 설명일 때 사용한다.
+
 transfer_document_analysis
-- 전적대 성적증명서, 기존 이수과목, 첨부문서 분석이 필요한 요청
+- 전적대 성적증명서 또는 기존 이수과목 자료를 OCR / 문서분석해야 하는 요청
+- 신규 상담자도 상담용 학습설계를 위해 사용할 수 있다.
+- 단순 OCR 결과만 원하는 것이 아니라
+  전적대 결과를 이용해 희망 자격증 / 학위의
+  남은 과목, 필요학점, 학기수, 기간 등을 알고 싶어 한다면
+  transfer_document_analysis와
+  qualification_consultation_analysis를 함께 선택한다.
+- 이 경우 requiresAttachmentAnalysis=true,
+  requiresCommonRuleEngine=true로 한다.
+- requiredContexts에는
+  transfer_document,
+  attachment_analysis,
+  common_rule_engine
+  을 필요한 범위에서 포함한다.
+- OCR이 법규나 인정과목을 최종 판정하는 것으로 간주하지 않는다.
+  OCR은 사실을 추출하고 최종 판정은 서버 Rule Engine이 수행한다.
 
 theory_class_general_guide
 - 온라인 이론수업 방식, 출석, 시험, 과제, 수업 진행방법 등 일반적인 수업 안내
@@ -1198,8 +1387,9 @@ attachment_analysis
   "capabilities": ["관련 capability"],
   "userGoal": "사용자가 원하는 것을 짧게 요약",
   "needsClarification": false,
-  "clarificationQuestion": null,
-  "missingInformation": [],
+"clarificationQuestion": null,
+"clarificationOptions": [],
+"missingInformation": [],
   "requiredContexts": [],
   "requiresAttachmentAnalysis": false,
   "requiresCommonRuleEngine": false,
@@ -1227,25 +1417,30 @@ export function buildKakaoAiIntentClassifierInput(
       KakaoAiConversationMessage[];
 
     structuredMemory?:
-      {
-        desiredCourse?:
-          string | null;
+  {
+    desiredCourse?:
+      string | null;
 
-        finalEducation?:
-          string | null;
+    finalEducation?:
+      string | null;
 
-        hasTransferCollege?:
-          boolean | null;
+    hasTransferCollege?:
+      boolean | null;
 
-        verifiedFacts?:
-          string[];
+    socialWorkerLawVersion?:
+      "old" |
+      "current" |
+      null;
 
-        unresolvedQuestions?:
-          string[];
+    verifiedFacts?:
+      string[];
 
-        currentTopic?:
-          string | null;
-      } | null;
+    unresolvedQuestions?:
+      string[];
+
+    currentTopic?:
+      string | null;
+  } | null;
 
     attachmentContext?:
       KakaoAiAttachmentContext | null;
@@ -1360,6 +1555,19 @@ export function buildKakaoAiIntentClassifierInput(
                 ? false
                 : null,
 
+socialWorkerLawVersion:
+  params
+    .structuredMemory
+    .socialWorkerLawVersion ===
+    "old"
+    ? "old"
+    : params
+          .structuredMemory
+          .socialWorkerLawVersion ===
+        "current"
+      ? "current"
+      : null,
+
           verifiedFacts:
             Array.isArray(
               params
@@ -1419,6 +1627,9 @@ export function buildKakaoAiIntentClassifierInput(
 
           hasTransferCollege:
             null,
+
+socialWorkerLawVersion:
+  null,
 
           verifiedFacts:
             [],
@@ -1521,9 +1732,13 @@ export function parseKakaoAiIntentClassifierOutput(
         true,
 
       clarificationQuestion:
-        "문의하신 내용을 정확하게 확인하려면 어떤 부분을 알고 싶으신지 조금만 더 말씀해주세요.",
+  "말씀하신 내용을 정확하게 이해했는지 한 번만 확인할게요. 궁금하신 내용을 조금만 더 설명해주시겠어요?",
 
-      missingInformation: [],
+clarificationOptions:
+  [],
+
+missingInformation:
+  [],
 
       requiredContexts: [
         "conversation_memory",

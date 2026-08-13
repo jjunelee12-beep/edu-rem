@@ -41887,6 +41887,119 @@ export async function claimKakaoAiCallbackDelivery(
   };
 }
 
+/**
+ * 중복 webhook 복구 과정에서
+ * 일정 시간 이상 "sending" 상태가 유지된 요청을
+ * 다시 전송 가능한 상태로 회수한다.
+ *
+ * 중요:
+ *
+ * 이 함수는 정상 Callback 전송 직후에는 호출하지 않는다.
+ *
+ * index.ts에서 기존 sending 작업이
+ * 충분한 시간 동안 완료되지 않았음을 확인한 뒤에만 호출한다.
+ *
+ * sending -> failed
+ *
+ * 로 원자적으로 변경하고,
+ * 이후 claimKakaoAiCallbackDelivery()가
+ * 다시 전송권한을 얻을 수 있게 한다.
+ */
+export async function releaseKakaoAiCallbackSendingForRetry(
+  params: {
+    organizationId:
+      number;
+
+    kakaoMessageId:
+      string;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const kakaoMessageId =
+    String(
+      params.kakaoMessageId ||
+      ""
+    ).trim();
+
+  if (
+    !kakaoMessageId
+  ) {
+    return {
+      released:
+        false,
+    };
+  }
+
+  const now =
+    new Date();
+
+  const result =
+    await database
+      .update(
+        kakaoAiMessages
+      )
+      .set({
+        callbackStatus:
+          "failed",
+
+        callbackFailedAt:
+          now,
+      })
+      .where(
+        and(
+          eq(
+            kakaoAiMessages.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiMessages.kakaoMessageId,
+            kakaoMessageId
+          ),
+
+          eq(
+            kakaoAiMessages.role,
+            "user"
+          ),
+
+          eq(
+            kakaoAiMessages.callbackStatus,
+            "sending"
+          )
+        )
+      );
+
+  const affectedRows =
+    Number(
+      (result as any)?.affectedRows ??
+      (result as any)?.[0]?.affectedRows ??
+      0
+    );
+
+  return {
+    released:
+      affectedRows ===
+      1,
+  };
+}
+
 
 /**
  * 실제 카카오 Callback 전송 결과를

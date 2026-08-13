@@ -180,10 +180,19 @@ export type KakaoAiResolvedContext = {
    * 민감하거나 불필요한 조회를 최대한 하지 않는다.
    */
   needsClarification:
-    boolean;
+  boolean;
 
-  clarificationQuestion:
-    string | null;
+clarificationQuestion:
+  string | null;
+
+/**
+ * Intent가 여러 의미로 해석될 수 있을 때
+ * 사용자에게 보여줄 자연어 재확인 후보.
+ *
+ * 내부 capability 이름은 포함하지 않는다.
+ */
+clarificationOptions:
+  string[];
 };
 
 function hasCapability(
@@ -221,32 +230,46 @@ function requiresCompanyContextByCapability(
   capabilities:
     KakaoAiCapability[]
 ): boolean {
-  return (
-    hasCapability(
-      capabilities,
-      "company_introduction"
-    ) ||
-    hasCapability(
-      capabilities,
-      "company_benefits"
-    ) ||
-    hasCapability(
-      capabilities,
-      "sales_points"
-    ) ||
-    hasCapability(
-      capabilities,
-      "registered_benefits_guide"
-    ) ||
-    hasCapability(
-      capabilities,
-      "theory_class_general_guide"
-    ) ||
-    hasCapability(
-      capabilities,
-      "practice_support_promotion"
-    )
-  );
+  /**
+   * 카카오 AI는 회사별 상담 AI다.
+   *
+   * 회사 Context에는 단순 회사소개뿐 아니라:
+   *
+   * - AI 표시 이름
+   * - 첫 인사말
+   * - 기본 상담 안내
+   * - 상담 가능시간
+   * - 회사 혜택
+   * - 상담 강조포인트
+   * - 등록회원 혜택
+   * - 이론수업 안내
+   * - 실습지원 안내
+   * - 행정지원 범위
+   * - 회사 내부 상담정책
+   *
+   * 등이 포함된다.
+   *
+   * 따라서 학점은행제 상담 범위의 정상 대화에서는
+   * 특정 capability 하나에 종속시키지 않는다.
+   *
+   * off_topic만 회사 Context가 없어도 된다.
+   */
+
+  if (
+    capabilities.length ===
+    0
+  ) {
+    return false;
+  }
+
+  const hasEducationConversation =
+    capabilities.some(
+      capability =>
+        capability !==
+        "off_topic_conversation"
+    );
+
+  return hasEducationConversation;
 }
 
 /**
@@ -269,6 +292,83 @@ function requiresCommonRuleEngineByCapability(
     hasCapability(
       capabilities,
       "qualification_consultation_analysis"
+    )
+  );
+}
+
+/**
+ * 신규 상담자의 Structured Memory만으로도
+ * 개인별 학습설계가 가능한 상태인지 확인한다.
+ *
+ * 중요:
+ *
+ * Intent 모델이 순간적으로
+ * qualification_consultation_analysis를
+ * capabilities에서 누락하더라도,
+ *
+ * 이미
+ * - 희망과정
+ * - 최종학력
+ *
+ * 이 확인되어 있고
+ * 현재 질문이 개인 상담분석과 연결되어 있다면
+ * 서버가 공통 Rule Engine 사용을 보강할 수 있다.
+ *
+ * 단, 단순 인사 / 회사소개 / 실습 일반안내처럼
+ * 숫자 계산이 전혀 필요하지 않은 모든 메시지마다
+ * Rule Engine을 실행하기 위한 함수는 아니다.
+ */
+function hasLeadAcademicMemory(
+  memory:
+    KakaoAiStructuredMemory
+): boolean {
+  const desiredCourse =
+    String(
+      memory.desiredCourse ||
+      ""
+    ).trim();
+
+  const finalEducation =
+    String(
+      memory.finalEducation ||
+      ""
+    ).trim();
+
+  return Boolean(
+    desiredCourse &&
+    finalEducation
+  );
+}
+
+/**
+ * 현재 허용 capability 중
+ * 개인별 자격 / 학위 계산과 연결될 가능성이 있는
+ * 상담 요청인지 서버에서 판단한다.
+ */
+function isLeadAcademicConversation(
+  capabilities:
+    KakaoAiCapability[]
+): boolean {
+  return (
+    hasCapability(
+      capabilities,
+      "qualification_general_guide"
+    ) ||
+    hasCapability(
+      capabilities,
+      "qualification_consultation_analysis"
+    ) ||
+    hasCapability(
+      capabilities,
+      "transfer_document_analysis"
+    ) ||
+    hasCapability(
+      capabilities,
+      "administrative_general_guide"
+    ) ||
+    hasCapability(
+      capabilities,
+      "certificate_application_general_guide"
     )
   );
 }
@@ -427,6 +527,17 @@ export function buildKakaoAiContextFetchPlan(
   params: {
     routedIntent:
       KakaoAiRoutedIntent;
+
+    /**
+     * 현재 메시지까지 반영된
+     * 서버 Structured Memory.
+     *
+     * Intent가 일부 Context를 누락하더라도
+     * 이미 확인된 상담사실을 이용해
+     * 필요한 Context를 안전하게 보강한다.
+     */
+    structuredMemory:
+      KakaoAiStructuredMemory;
   }
 ): KakaoAiContextFetchPlan {
   const routedIntent =
@@ -434,6 +545,9 @@ export function buildKakaoAiContextFetchPlan(
 
   const intent =
     routedIntent.intent;
+
+const structuredMemory =
+  params.structuredMemory;
 
   /**
    * 여기서는 전체 capability가 아니라
@@ -460,16 +574,24 @@ export function buildKakaoAiContextFetchPlan(
     intent.needsClarification ===
     true;
 
-  const companyContext =
-    intent.requiresCompanyContext ===
-      true ||
-    hasRequiredContext(
-      intent.requiredContexts,
-      "company_context"
-    ) ||
-    requiresCompanyContextByCapability(
-      allowedCapabilities
-    );
+  /**
+ * 회사 Context는 특정 회사소개 질문에서만
+ * 사용하는 부가정보가 아니다.
+ *
+ * 카카오 AI의 말투 / 첫 인사 / 상담정책 /
+ * 서비스 범위를 결정하는 기본 Context이므로
+ * 학점은행제 상담 범위에서는 기본적으로 준비한다.
+ */
+const companyContext =
+  intent.requiresCompanyContext ===
+    true ||
+  hasRequiredContext(
+    intent.requiredContexts,
+    "company_context"
+  ) ||
+  requiresCompanyContextByCapability(
+    allowedCapabilities
+  );
 
   const conversationMemory =
     hasRequiredContext(
@@ -478,19 +600,45 @@ export function buildKakaoAiContextFetchPlan(
     ) ||
     true;
 
-  const commonRuleEngine =
-    !needsClarification &&
-    (
-      intent.requiresCommonRuleEngine ===
-        true ||
-      hasRequiredContext(
-        intent.requiredContexts,
-        "common_rule_engine"
-      ) ||
-      requiresCommonRuleEngineByCapability(
-        allowedCapabilities
-      )
-    );
+  /**
+ * 신규 상담 개인 학습설계 Context 보강.
+ *
+ * Intent가 common_rule_engine을 명시하면 당연히 사용한다.
+ *
+ * 추가로:
+ * - 신규 고객
+ * - 희망과정 확인됨
+ * - 최종학력 확인됨
+ * - 현재 capability가 개인 자격/학위 분석과 연관됨
+ *
+ * 상태라면 Intent 모델이
+ * qualification_consultation_analysis를 일부 누락했더라도
+ * 서버가 공통 Rule Engine 사용을 보강한다.
+ */
+const shouldSupplementLeadAcademicAnalysis =
+  customerType ===
+    "lead" &&
+  hasLeadAcademicMemory(
+    structuredMemory
+  ) &&
+  isLeadAcademicConversation(
+    allowedCapabilities
+  );
+
+const commonRuleEngine =
+  !needsClarification &&
+  (
+    intent.requiresCommonRuleEngine ===
+      true ||
+    hasRequiredContext(
+      intent.requiredContexts,
+      "common_rule_engine"
+    ) ||
+    requiresCommonRuleEngineByCapability(
+      allowedCapabilities
+    ) ||
+    shouldSupplementLeadAcademicAnalysis
+  );
 
   const transferDocument =
     !needsClarification &&
@@ -757,9 +905,12 @@ export async function resolveKakaoAiContext(
   }
 
   const fetchPlan =
-    buildKakaoAiContextFetchPlan({
-      routedIntent,
-    });
+  buildKakaoAiContextFetchPlan({
+    routedIntent,
+
+    structuredMemory:
+      params.structuredMemory,
+  });
 
   let companyContext:
     KakaoAiCompanyContext | null =
@@ -924,5 +1075,18 @@ export async function resolveKakaoAiContext(
       routedIntent.intent
         .clarificationQuestion ||
       null,
+
+clarificationOptions:
+  Array.isArray(
+    routedIntent.intent
+      .clarificationOptions
+  )
+    ? routedIntent.intent
+        .clarificationOptions
+        .slice(
+          0,
+          5
+        )
+    : [],
   };
 }

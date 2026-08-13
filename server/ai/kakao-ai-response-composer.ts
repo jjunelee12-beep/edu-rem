@@ -266,16 +266,21 @@ function buildSafeCompanyContext(
     },
 
     conversation: {
-      defaultGuideMessage:
-        context
-          .conversation
-          .defaultGuideMessage,
+  welcomeMessage:
+    context
+      .conversation
+      .welcomeMessage,
 
-      consultationHoursMessage:
-        context
-          .conversation
-          .consultationHoursMessage,
-    },
+  defaultGuideMessage:
+    context
+      .conversation
+      .defaultGuideMessage,
+
+  consultationHoursMessage:
+    context
+      .conversation
+      .consultationHoursMessage,
+},
 
     companyKnowledge: {
       companyIntroduction:
@@ -770,6 +775,18 @@ const KAKAO_AI_RESPONSE_COMPOSER_INSTRUCTIONS = `
 사용자의 말투와 질문의 깊이에 맞춰 답한다.
 매번 똑같은 인사말이나 메뉴판 형식으로 답하지 않는다.
 
+1-1. 사용자가 첫 인사나 단순 인사를 보냈고
+companyContext.conversation.welcomeMessage가 존재하면
+해당 내용을 사실과 상담방향의 근거로 사용할 수 있다.
+
+단, welcomeMessage를 항상 그대로 복사하지 않는다.
+
+대화가 이미 진행 중인데 사용자가 다시 "안녕하세요"라고 했다는 이유로
+매번 전체 첫 인사말을 반복하지 않는다.
+
+이전 Conversation History가 거의 없는 초기 인사일 때만
+자연스럽게 첫 상담 인사로 활용한다.
+
 2. 회사소개, 회사혜택, 수업방식, 실습지원 등은
 companyContext의 내용을 사실 근거로 사용하되
 저장된 문구를 기계적으로 복사하지 않는다.
@@ -796,6 +813,28 @@ registeredStudentContext.academicSummary에 존재하는
 unresolvedReasons가 있으면
 확정되지 않은 내용을 확정적으로 말하지 않는다.
 필요한 정보만 자연스럽게 추가로 물어본다.
+
+7-1. unresolvedReasons는 서버 내부의 확인 필요 사유다.
+
+unresolvedReasons의 원문을 고객에게 그대로 복사해서 답하지 않는다.
+
+예를 들어:
+"과목계획이 확정되지 않아 학기 자동배치를 진행할 수 없습니다."
+"과정마스터를 찾을 수 없습니다."
+"적용기준을 판정할 수 없습니다."
+
+같은 서버/개발 표현이 들어 있어도
+그 문장을 그대로 출력하지 않는다.
+
+현재 대화와 Memory를 이용해서
+사용자가 이해할 수 있는 자연어로 의미만 바꿔 설명한다.
+
+실제로 사용자에게 추가로 물어봐야 하는 정보가 명확하면
+그 정보만 질문한다.
+
+사용자가 제공할 수 없는 서버 내부 문제라면
+사용자에게 없는 정보를 억지로 요구하지 않고
+현재 정확한 계산을 확인하기 어렵다는 정도로 자연스럽게 설명한다.
 
 8. 신규 고객(lead)과 등록회원(registered)을
 명확하게 구분한다.
@@ -921,6 +960,30 @@ off_topic처럼 답하지 않는다.
 허용된 내용은 답하고
 제한된 부분만 따로 자연스럽게 안내한다.
 
+17-1. intent.capabilities에 허용된 capability가 여러 개 있으면
+primaryCapability 하나만 답하고 나머지를 무시하지 않는다.
+
+현재 사용자 메시지에 포함된 여러 질문을 먼저 파악하고,
+각 질문에 필요한 서버 Context가 존재하는 범위에서
+하나의 자연스러운 답변 안에 모두 답한다.
+
+예:
+
+사용자가
+"사회복지사 기간은 얼마나 걸리고 실습은 어떻게 하고
+등록하면 뭐까지 관리해줘요?"
+
+라고 물었다면
+
+- 개인별 기간
+- 실습 일반 진행방식
+- 등록 후 관리혜택
+
+중 실제 Context로 답할 수 있는 내용을 모두 답한다.
+
+단, 질문하지 않은 회사혜택이나 다른 정보를
+무관하게 끼워 넣지는 않는다.
+
 18. practiceContext가 존재하면
 실제 서버에서 조회된 기관만 언급한다.
 없는 기관, 거리, 비용을 만들어내지 않는다.
@@ -940,6 +1003,26 @@ off_topic처럼 답하지 않는다.
 
 23. 현재 질문에 답하려면 정말 필요한 정보가
 부족한 경우에만 질문한다.
+
+23-1. intent.needsClarification=true인 경우
+intent.clarificationQuestion을 확인질문의 기본 의미로 사용한다.
+
+intent.clarificationOptions가 2개 이상 존재하면
+단순히 "조금 더 말씀해주세요"라고 묻지 말고,
+사용자가 바로 선택하거나 다시 설명할 수 있도록
+해당 후보를 짧고 읽기 쉽게 함께 보여준다.
+
+예:
+
+"말씀하신 신청이 어떤 절차인지 한 번만 확인할게요.
+
+학습자등록 / 학점인정신청 / 학위신청 / 자격증 신청 중
+어떤 걸 말씀하신 걸까요?"
+
+후보가 많더라도 내부 capability나 시스템 명칭은 보여주지 않는다.
+
+clarificationOptions가 비어 있으면
+clarificationQuestion만 자연스럽게 사용한다.
 
 24. 가격은 companyContext.features.priceDisclosureEnabled=true이고
 서버 Context에 실제 가격정보가 있을 때만 말한다.
@@ -1165,6 +1248,15 @@ function buildKakaoAiResponseInput(
           .intentClassification
           .intent
           .clarificationQuestion,
+
+clarificationOptions:
+  normalizeStringArray(
+    params
+      .intentClassification
+      .intent
+      .clarificationOptions,
+    5
+  ),
     },
 
     accessContext:
@@ -1198,6 +1290,49 @@ function buildKakaoAiResponseInput(
   });
 }
 
+function buildClarificationReply(
+  question:
+    string | null,
+
+  options:
+    string[]
+): string {
+  const normalizedQuestion =
+    normalizeText(
+      question
+    ) ||
+    "말씀하신 내용을 정확하게 이해했는지 한 번만 확인할게요.";
+
+  const normalizedOptions =
+    normalizeStringArray(
+      options,
+      5
+    );
+
+  if (
+    normalizedOptions.length ===
+    0
+  ) {
+    return normalizedQuestion;
+  }
+
+  return [
+    normalizedQuestion,
+    "",
+    normalizedOptions
+      .map(
+        (
+          option,
+          index
+        ) =>
+          `${index + 1}. ${option}`
+      )
+      .join("\n"),
+  ]
+    .join("\n")
+    .trim();
+}
+
 function buildFallbackReply(
   params: {
     intentClassification:
@@ -1225,20 +1360,22 @@ function buildFallbackReply(
    * OpenAI 장애 상황에서도 그 질문을 사용한다.
    */
   if (
-    intent.needsClarification &&
-    intent.clarificationQuestion
-  ) {
-    return {
-      replyText:
+  intent.needsClarification
+) {
+  return {
+    replyText:
+      buildClarificationReply(
         intent.clarificationQuestion,
+        intent.clarificationOptions
+      ),
 
-      mentionedRestriction:
-        false,
+    mentionedRestriction:
+      false,
 
-      askedClarification:
-        true,
-    };
-  }
+    askedClarification:
+      true,
+  };
+}
 
   const restrictedDecisions =
     params
@@ -1313,26 +1450,25 @@ function buildFallbackReply(
       .leadAcademicAnalysis;
 
   if (
-    leadAcademic &&
-    leadAcademic.canExplain !==
-      true &&
-    leadAcademic
-      .unresolvedReasons
-      .length >
-      0
-  ) {
-    return {
-      replyText:
-        leadAcademic
-          .unresolvedReasons[0],
+  leadAcademic &&
+  leadAcademic.canExplain !==
+    true &&
+  leadAcademic
+    .unresolvedReasons
+    .length >
+  0
+) {
+  return {
+    replyText:
+      "현재 말씀해주신 내용만으로는 개인별 과정을 정확하게 확정하기 어려운 부분이 있어요. 확인이 필요한 정보가 있으면 그 부분만 이어서 여쭤볼게요.",
 
-      mentionedRestriction:
-        false,
+    mentionedRestriction:
+      false,
 
-      askedClarification:
-        true,
-    };
-  }
+    askedClarification:
+      true,
+  };
+}
 
   /**
    * Intent는 정상적으로 판단됐지만

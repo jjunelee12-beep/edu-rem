@@ -38,6 +38,7 @@ import {
   getKakaoAiSettings,
 getKakaoAiCallbackRecovery,
 claimKakaoAiCallbackDelivery,
+releaseKakaoAiCallbackSendingForRetry,
 markKakaoAiCallbackDelivery,
 } from "../db";
 import {
@@ -2133,13 +2134,59 @@ const sendKakaoCallback =
       ).trim();
 
     if (
-      !callbackUrl ||
-      !normalizedText
+      !callbackUrl
     ) {
+      console.error(
+        "[KAKAO AI CALLBACK] callbackUrl 없음",
+        {
+          organizationId,
+          kakaoRequestId,
+        }
+      );
+
       return false;
     }
 
+    if (
+      !normalizedText
+    ) {
+      console.error(
+        "[KAKAO AI CALLBACK] 전송할 답변 없음",
+        {
+          organizationId,
+          kakaoRequestId,
+        }
+      );
+
+      return false;
+    }
+
+    const controller =
+      new AbortController();
+
+    /**
+     * sending 상태가 무한정 유지되지 않도록
+     * Callback HTTP 요청 자체에 제한시간을 둔다.
+     */
+    const timeout =
+      setTimeout(
+        () => {
+          controller.abort();
+        },
+        8000
+      );
+
     try {
+      console.log(
+        "[KAKAO AI CALLBACK] send start",
+        {
+          organizationId,
+          kakaoRequestId,
+          textLength:
+            normalizedText.length,
+        }
+      );
+
       const callbackResponse =
         await fetch(
           callbackUrl,
@@ -2151,6 +2198,9 @@ const sendKakaoCallback =
               "Content-Type":
                 "application/json",
             },
+
+            signal:
+              controller.signal,
 
             body:
               JSON.stringify({
@@ -2183,9 +2233,10 @@ const sendKakaoCallback =
             );
 
         console.error(
-          "[KAKAO AI] Callback 전송 실패",
+          "[KAKAO AI CALLBACK] send failed",
           {
             organizationId,
+            kakaoRequestId,
 
             status:
               callbackResponse.status,
@@ -2201,16 +2252,30 @@ const sendKakaoCallback =
         return false;
       }
 
+      console.log(
+        "[KAKAO AI CALLBACK] send success",
+        {
+          organizationId,
+          kakaoRequestId,
+
+          status:
+            callbackResponse.status,
+        }
+      );
+
       return true;
     } catch (
       error:
         unknown
     ) {
       console.error(
-        "[KAKAO AI] Callback 요청 예외",
+        "[KAKAO AI CALLBACK] send exception",
         error instanceof
           Error
           ? {
+              organizationId,
+              kakaoRequestId,
+
               name:
                 error.name,
 
@@ -2218,6 +2283,9 @@ const sendKakaoCallback =
                 error.message,
             }
           : {
+              organizationId,
+              kakaoRequestId,
+
               message:
                 String(
                   error
@@ -2226,6 +2294,10 @@ const sendKakaoCallback =
       );
 
       return false;
+    } finally {
+      clearTimeout(
+        timeout
+      );
     }
   };
 
@@ -2245,7 +2317,7 @@ const waitForKakaoCallbackRecovery =
      */
     for (
       let attempt = 0;
-      attempt < 10;
+      attempt < 12;
       attempt += 1
     ) {
       const recovery =
@@ -2366,8 +2438,54 @@ const waitForKakaoCallbackRecovery =
     return;
   }
 
-  const recovery =
-    await waitForKakaoCallbackRecovery();
+  let recovery =
+  await waitForKakaoCallbackRecovery();
+
+/**
+ * 정상 Callback 요청은 최대 8초 안에
+ * 성공 또는 실패로 끝나도록 제한되어 있다.
+ *
+ * 그런데 12초 이상 기다렸는데도
+ * 여전히 sending이라면
+ *
+ * - 서버 프로세스 종료
+ * - 런타임 중단
+ * - 이전 요청 비정상 종료
+ *
+ * 등으로 전송권한이 고착된 것으로 보고
+ * failed 상태로 회수한다.
+ */
+if (
+  recovery?.callbackStatus ===
+    "sending"
+) {
+  const released =
+    await releaseKakaoAiCallbackSendingForRetry({
+      organizationId,
+
+      kakaoMessageId:
+        kakaoRequestId,
+    });
+
+  console.warn(
+    "[KAKAO AI CALLBACK] stale sending recovery",
+    {
+      organizationId,
+      kakaoRequestId,
+
+      released:
+        released.released,
+    }
+  );
+
+  recovery =
+    await getKakaoAiCallbackRecovery({
+      organizationId,
+
+      kakaoMessageId:
+        kakaoRequestId,
+    });
+}
 
   /**
    * 이미 실제 카카오 Callback 전달까지
@@ -2406,10 +2524,37 @@ const waitForKakaoCallbackRecovery =
     });
 
   if (
-    !claim.claimed
-  ) {
-    return;
-  }
+  !claim.claimed
+) {
+  const claimRecovery =
+    await getKakaoAiCallbackRecovery({
+      organizationId,
+
+      kakaoMessageId:
+        kakaoRequestId,
+    });
+
+  console.warn(
+    "[KAKAO AI CALLBACK] recovered reply claim 실패",
+    {
+      organizationId,
+      kakaoRequestId,
+
+      callbackStatus:
+        claimRecovery
+          ?.callbackStatus ??
+        null,
+
+      hasResponse:
+        Boolean(
+          claimRecovery
+            ?.responseText
+        ),
+    }
+  );
+
+  return;
+}
 
   const recoveredCallbackSent =
     await sendKakaoCallback(
@@ -2514,19 +2659,46 @@ if (
     return;
   }
 
-  const claim =
-    await claimKakaoAiCallbackDelivery({
+const claim =
+  await claimKakaoAiCallbackDelivery({
+    organizationId,
+
+    kakaoMessageId:
+      kakaoRequestId,
+  });
+
+  if (
+  !claim.claimed
+) {
+  const claimRecovery =
+    await getKakaoAiCallbackRecovery({
       organizationId,
 
       kakaoMessageId:
         kakaoRequestId,
     });
 
-  if (
-    !claim.claimed
-  ) {
-    return;
-  }
+  console.warn(
+    "[KAKAO AI CALLBACK] normal reply claim 실패",
+    {
+      organizationId,
+      kakaoRequestId,
+
+      callbackStatus:
+        claimRecovery
+          ?.callbackStatus ??
+        null,
+
+      hasResponse:
+        Boolean(
+          claimRecovery
+            ?.responseText
+        ),
+    }
+  );
+
+  return;
+}
 }
 
 const callbackSent =

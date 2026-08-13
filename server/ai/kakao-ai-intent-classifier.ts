@@ -278,6 +278,19 @@ const KAKAO_AI_INTENT_JSON_SCHEMA = {
       ],
     },
 
+clarificationOptions: {
+  type:
+    "array",
+
+  items: {
+    type:
+      "string",
+  },
+
+  maxItems:
+    5,
+},
+
     missingInformation: {
       type:
         "array",
@@ -345,6 +358,7 @@ const KAKAO_AI_INTENT_JSON_SCHEMA = {
     "userGoal",
     "needsClarification",
     "clarificationQuestion",
+"clarificationOptions",
     "missingInformation",
     "requiredContexts",
     "requiresAttachmentAnalysis",
@@ -379,13 +393,16 @@ function buildFallbackIntent():
         "",
 
       needsClarification:
-        true,
+  true,
 
-      clarificationQuestion:
-        "문의하신 내용을 정확하게 확인하려면 어떤 부분을 알고 싶으신지 조금만 더 말씀해주세요.",
+clarificationQuestion:
+  "말씀하신 내용을 정확하게 이해했는지 한 번만 확인할게요. 궁금하신 내용을 조금만 더 설명해주시겠어요?",
 
-      missingInformation:
-        [],
+clarificationOptions:
+  [],
+
+missingInformation:
+  [],
 
       requiredContexts: [
         "conversation_memory",
@@ -452,6 +469,11 @@ export async function classifyKakaoAiIntent(
 
         hasTransferCollege?:
           boolean | null;
+
+socialWorkerLawVersion?:
+  "old" |
+  "current" |
+  null;
 
         verifiedFacts?:
           string[];

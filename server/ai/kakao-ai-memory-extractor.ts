@@ -70,6 +70,20 @@ export type KakaoAiUserMemoryCandidate<T> = {
    */
   conflictsWithMemory:
     boolean;
+
+/**
+ * 기존 Memory와 값이 다르지만
+ * 사용자가 현재 메시지에서 기존 정보를
+ * 명확하게 정정했는지.
+ *
+ * 예:
+ * "아 전문대가 아니라 4년제 졸업했어요."
+ *
+ * 단순히 다른 값을 언급한 것과
+ * 명시적인 정정을 구분하기 위한 값이다.
+ */
+isExplicitCorrection:
+  boolean;
 };
 
 export type KakaoAiUserVerifiedFactCandidate = {
@@ -90,11 +104,17 @@ export type KakaoAiUserVerifiedFactCandidate = {
 
   /**
    * 기존 Memory의 같은 사실과
-   * 충돌한다고 판단되면 true.
-   *
-   * true인 사실은 자동 저장하지 않는다.
+   * 값이 다른지.
    */
   conflictsWithMemory:
+    boolean;
+
+  /**
+   * 기존 사실과 값은 다르지만
+   * 사용자가 현재 메시지에서
+   * 명확하게 기존 사실을 정정했는지.
+   */
+  isExplicitCorrection:
     boolean;
 };
 
@@ -306,15 +326,21 @@ const STRING_CANDIDATE_SCHEMA = {
       type:
         "boolean",
     },
+
+isExplicitCorrection: {
+  type:
+    "boolean",
+},
   },
 
   required: [
-    "shouldWrite",
-    "value",
-    "evidence",
-    "confidence",
-    "conflictsWithMemory",
-  ],
+  "shouldWrite",
+  "value",
+  "evidence",
+  "confidence",
+  "conflictsWithMemory",
+  "isExplicitCorrection",
+],
 } as const;
 
 const BOOLEAN_CANDIDATE_SCHEMA = {
@@ -371,15 +397,21 @@ const BOOLEAN_CANDIDATE_SCHEMA = {
       type:
         "boolean",
     },
+
+isExplicitCorrection: {
+  type:
+    "boolean",
+},
   },
 
   required: [
-    "shouldWrite",
-    "value",
-    "evidence",
-    "confidence",
-    "conflictsWithMemory",
-  ],
+  "shouldWrite",
+  "value",
+  "evidence",
+  "confidence",
+  "conflictsWithMemory",
+  "isExplicitCorrection",
+],
 } as const;
 
 const KAKAO_AI_MEMORY_EXTRACTION_SCHEMA = {
@@ -446,6 +478,11 @@ conflictsWithMemory: {
   type:
     "boolean",
 },
+
+isExplicitCorrection: {
+  type:
+    "boolean",
+},
         },
 
         required: [
@@ -455,6 +492,7 @@ conflictsWithMemory: {
   "evidence",
   "confidence",
   "conflictsWithMemory",
+  "isExplicitCorrection",
 ],
       },
     },
@@ -569,16 +607,68 @@ currentMemory 자체에서 새로운 사실을 만들어내지 않는다.
 8. hasTransferCollege는 사용자가 이전 대학/전적대 이력의 존재 또는 부재를
 명확히 말한 경우에만 저장한다.
 
-9. 기존 Memory와 새로운 명확한 사용자 발언이 서로 다르면
-conflictsWithMemory=true로 한다.
-자동으로 기존 값을 덮어쓴다고 판단하지 않는다.
+9. 기존 Memory와 현재 사용자의 명확한 발언이 서로 다르면
+기본적으로 conflictsWithMemory=true로 한다.
 
-9-1. 이 충돌검사는 desiredCourse, finalEducation,
-hasTransferCollege뿐 아니라 verifiedFacts에도 동일하게 적용한다.
+그러나 "값이 다르다"와 "사용자가 명시적으로 기존 정보를 정정했다"는
+서로 다른 상태다.
 
-같은 key에 대해 currentMemory의 기존 사실과
-현재 사용자 발언의 값이 서로 다르면
-해당 verifiedFact의 conflictsWithMemory=true로 한다.
+예:
+
+currentMemory.finalEducation = "전문대졸"
+
+사용자:
+"저 4년제도 나왔는데요?"
+→ 어떤 학력이 최종학력인지 불명확할 수 있으므로
+  conflictsWithMemory=true
+  isExplicitCorrection=false
+
+사용자:
+"아 제가 잘못 말했어요. 전문대가 아니라 4년제 졸업이에요."
+→ 기존 정보를 직접 정정한 발언이므로
+  conflictsWithMemory=true
+  isExplicitCorrection=true
+
+명시적인 정정 표현의 예:
+
+- "아니고"
+- "아니라"
+- "잘못 말했어요"
+- "정정할게요"
+- "바꿀게요"
+- "말고"
+- "제가 아까 잘못 말했는데"
+- 이전값을 부정하면서 새로운 값을 확정적으로 말함
+
+단, 단순히 새로운 값이 등장했다는 이유만으로
+isExplicitCorrection=true로 하지 않는다.
+
+9-1. desiredCourse, finalEducation, hasTransferCollege는
+기존값과 다른 경우 위 원칙을 동일하게 적용한다.
+
+예:
+
+currentMemory.desiredCourse = "보육교사 2급"
+
+"사회복지사도 궁금해요"
+→ 비교/추가 관심일 수 있으므로 자동 변경하지 않는다.
+
+"보육교사 말고 사회복지사 2급으로 할게요"
+→ conflictsWithMemory=true
+→ isExplicitCorrection=true
+→ desiredCourse를 사회복지사 2급으로 변경 가능한 후보다.
+
+9-2. verifiedFacts도 같은 원칙을 사용한다.
+
+기존 사실과 다른 내용이 나왔다면 conflictsWithMemory=true로 하되,
+사용자가 기존 사실을 명시적으로 정정한 경우에만
+isExplicitCorrection=true로 한다.
+
+9-3. 애매한 충돌은 절대로 임의로 덮어쓰지 않는다.
+
+conflictsWithMemory=true이고
+isExplicitCorrection=false이면
+needsClarification=true로 한다.
 
 10. OCR, 성적증명서 이미지, CRM, 공통엔진에서 확인됐다고
 네가 임의로 판단하지 않는다.
@@ -723,6 +813,9 @@ function buildEmptyExtraction():
 
       conflictsWithMemory:
         false,
+
+isExplicitCorrection:
+  false,
     },
 
     finalEducation: {
@@ -740,6 +833,9 @@ function buildEmptyExtraction():
 
       conflictsWithMemory:
         false,
+
+isExplicitCorrection:
+  false,
     },
 
     hasTransferCollege: {
@@ -757,6 +853,9 @@ function buildEmptyExtraction():
 
       conflictsWithMemory:
         false,
+
+isExplicitCorrection:
+  false,
     },
 
     verifiedFacts:
@@ -808,6 +907,10 @@ function normalizeStringCandidate(
     conflictsWithMemory:
       value?.conflictsWithMemory ===
       true,
+
+    isExplicitCorrection:
+      value?.isExplicitCorrection ===
+      true,
   };
 }
 
@@ -846,6 +949,10 @@ function normalizeBooleanCandidate(
     conflictsWithMemory:
       value?.conflictsWithMemory ===
       true,
+
+isExplicitCorrection:
+  value?.isExplicitCorrection ===
+  true,
   };
 }
 
@@ -901,6 +1008,10 @@ function normalizeExtraction(
 
 conflictsWithMemory:
   fact?.conflictsWithMemory ===
+  true,
+
+isExplicitCorrection:
+  fact?.isExplicitCorrection ===
   true,
             })
           )
@@ -1008,9 +1119,14 @@ function buildSafeMemoryPatch(
     extraction
       .desiredCourse
       .shouldWrite &&
-    !extraction
-      .desiredCourse
-      .conflictsWithMemory &&
+    (
+  !extraction
+    .desiredCourse
+    .conflictsWithMemory ||
+  extraction
+    .desiredCourse
+    .isExplicitCorrection
+) &&
     extraction
       .desiredCourse
       .confidence >=
@@ -1035,9 +1151,14 @@ function buildSafeMemoryPatch(
     extraction
       .finalEducation
       .shouldWrite &&
-    !extraction
-      .finalEducation
-      .conflictsWithMemory &&
+    (
+  !extraction
+    .finalEducation
+    .conflictsWithMemory ||
+  extraction
+    .finalEducation
+    .isExplicitCorrection
+) &&
     extraction
       .finalEducation
       .confidence >=
@@ -1062,9 +1183,14 @@ function buildSafeMemoryPatch(
     extraction
       .hasTransferCollege
       .shouldWrite &&
-    !extraction
-      .hasTransferCollege
-      .conflictsWithMemory &&
+    (
+  !extraction
+    .hasTransferCollege
+    .conflictsWithMemory ||
+  extraction
+    .hasTransferCollege
+    .isExplicitCorrection
+) &&
     extraction
       .hasTransferCollege
       .confidence >=

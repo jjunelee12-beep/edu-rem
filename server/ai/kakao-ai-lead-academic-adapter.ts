@@ -1073,16 +1073,25 @@ export async function resolveKakaoAiLeadAcademicAnalysis(
     });
 
   /**
-   * 3.
-   * 자격과정 조건 분석.
-   *
-   * 사회복지사는
-   * Memory에서 서버가 확정한
-   * old/current만 전달한다.
-   *
-   * null이면 기존 공통엔진이
-   * canAnalyze=false로 안전하게 처리한다.
-   */
+ * 3.
+ * 자격과정 조건 분석.
+ *
+ * 사회복지사 신규상담 정책:
+ *
+ * - Memory에 서버가 확정한 old/current가 있으면
+ *   해당 값을 그대로 사용한다.
+ *
+ * - 아직 적용기준이 확정되지 않은 신규 상담자는
+ *   current(신법)를 기본값으로 사용한다.
+ *
+ * - 이후 OCR / 전적대 인정과목 분석 등에서
+ *   구법 적용이 서버에서 확정되면
+ *   Memory의 socialWorkerLawVersion = "old"가
+ *   전달되므로 그 값을 우선 사용한다.
+ *
+ * 이 Adapter에서 인정과목만 보고
+ * 구법 여부를 새로 추측하지 않는다.
+ */
   const qualificationAnalysis =
     analyzeQualificationRisk({
       courseName:
@@ -1093,11 +1102,14 @@ export async function resolveKakaoAiLeadAcademicAnalysis(
       recognizedSubjects,
 
       socialWorkerLawVersion:
-        courseKey ===
-          "social_worker_2"
-          ? memory
-              .socialWorkerLawVersion
-          : undefined,
+  courseKey ===
+    "social_worker_2"
+    ? (
+        memory
+          .socialWorkerLawVersion ??
+        "current"
+      )
+    : undefined,
     });
 
   /**
