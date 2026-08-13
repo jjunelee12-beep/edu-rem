@@ -426,6 +426,37 @@ export async function orchestrateKakaoAiIncomingMessage(
       unknown;
   }
 ): Promise<KakaoAiConversationOrchestratorResult> {
+
+const perfStartedAt = Date.now();
+let perfCheckpointAt = perfStartedAt;
+
+const tracePerf = (
+  stage: string,
+  extra?: Record<string, unknown>
+) => {
+  const now = Date.now();
+
+  console.log(
+    "[KAKAO AI PERF]",
+    {
+      stage,
+
+      stepMs:
+        now - perfCheckpointAt,
+
+      totalMs:
+        now - perfStartedAt,
+
+      organizationId:
+        params.organizationId,
+
+      ...(extra || {}),
+    }
+  );
+
+  perfCheckpointAt = now;
+};
+
   const organizationId =
     normalizePositiveInteger(
       params.organizationId,
@@ -470,13 +501,17 @@ export async function orchestrateKakaoAiIncomingMessage(
    * 사용자별 Conversation 조회 / 생성.
    */
   const conversation =
-    await db.getOrCreateKakaoAiConversation({
-      organizationId,
+  await db.getOrCreateKakaoAiConversation({
+    organizationId,
 
-      channelUserKey,
-    });
+    channelUserKey,
+  });
 
-  const conversationId =
+tracePerf(
+  "conversation_ready"
+);
+
+const conversationId =
     normalizePositiveInteger(
       conversation.id,
       "카카오 AI 대화"
@@ -502,14 +537,18 @@ export async function orchestrateKakaoAiIncomingMessage(
    * 현재 서버 인증 고객상태 복원.
    */
   const customer =
-    await restoreKakaoAiCustomerContext({
-      organizationId,
+  await restoreKakaoAiCustomerContext({
+    organizationId,
 
-      conversationId,
-    });
+    conversationId,
+  });
 
-  /**
-   * 3.
+tracePerf(
+  "customer_restored"
+);
+
+/**
+ * 3.
    * 현재 사용자 메시지를 넣기 전에
    * 이전 최근 대화 + Memory를 읽는다.
    *
@@ -524,17 +563,21 @@ export async function orchestrateKakaoAiIncomingMessage(
    * 가 중복되지 않는다.
    */
   const previousMemoryContext =
-    await resolveKakaoAiMemoryContext({
-      organizationId,
+  await resolveKakaoAiMemoryContext({
+    organizationId,
 
-      conversationId,
+    conversationId,
 
-      recentMessageLimit:
-        20,
-    });
+    recentMessageLimit:
+      20,
+  });
 
-  /**
-   * 4.
+tracePerf(
+  "memory_context_loaded"
+);
+
+/**
+ * 4.
    * 사용자 원본 메시지 저장.
    *
    * kakaoMessageId UNIQUE를 이용해서
@@ -562,10 +605,19 @@ export async function orchestrateKakaoAiIncomingMessage(
       params.attachmentData,
 
     callbackStatus:
-      params.kakaoMessageId
-        ? "processing"
-        : null,
-  });
+  params.kakaoMessageId
+    ? "processing"
+    : null,
+});
+
+tracePerf(
+  "user_message_inserted",
+  {
+    inserted:
+      insertedMessage.inserted ===
+      true,
+  }
+);
 
 const userMessageId =
   insertedMessage.inserted ===
@@ -634,24 +686,32 @@ const userMessageId =
    * 서버 신원확인 절차이기 때문이다.
    */
   const registrationVerification =
-    await handleKakaoAiRegistrationVerification({
-      organizationId,
+  await handleKakaoAiRegistrationVerification({
+    organizationId,
 
-      conversationId,
+    conversationId,
 
-      currentCustomer:
-        customer,
+    currentCustomer:
+      customer,
 
-      message,
+    message,
 
-      conversationHistory:
-        previousMemoryContext
-          .recentConversation
-          .messages,
-    });
+    conversationHistory:
+      previousMemoryContext
+        .recentConversation
+        .messages,
+  });
 
-  /**
-   * 인증 Handler가 이번 메시지를 처리했다면
+tracePerf(
+  "registration_verification_done",
+  {
+    handled:
+      registrationVerification.handled,
+  }
+);
+
+/**
+ * 인증 Handler가 이번 메시지를 처리했다면
    * 일반 Memory / Intent / Context / Composer 흐름으로
    * 다시 보내지 않는다.
    *
@@ -808,34 +868,42 @@ console.log(
    * 여기서 추출하지 않는다.
    */
   const memoryExtraction =
-    await extractKakaoAiUserMemory({
-      message,
+  await extractKakaoAiUserMemory({
+    message,
 
-      currentMemory:
-        previousMemoryContext
-          .structuredMemory,
-    });
+    currentMemory:
+      previousMemoryContext
+        .structuredMemory,
+  });
 
-  /**
-   * 6.
+tracePerf(
+  "memory_extraction_done"
+);
+
+/**
+ * 6.
    * 서버 검증을 통과한 safePatch만
    * 실제 Memory DB에 반영.
    */
   const memoryWrite =
-    await applyKakaoAiVerifiedMemoryPatch({
-      organizationId,
+  await applyKakaoAiVerifiedMemoryPatch({
+    organizationId,
 
-      conversationId,
+    conversationId,
 
-      currentMemory:
-        previousMemoryContext
-          .structuredMemory,
+    currentMemory:
+      previousMemoryContext
+        .structuredMemory,
 
-      patch:
-        memoryExtraction.safePatch,
-    });
+    patch:
+      memoryExtraction.safePatch,
+  });
 
-  const currentMemory =
+tracePerf(
+  "memory_write_done"
+);
+
+const currentMemory =
     memoryWrite.memory;
 
 console.log("[KAKAO AI TRACE] Memory", {
@@ -869,22 +937,32 @@ console.log("[KAKAO AI TRACE] Memory", {
     });
 
   const intentClassification =
-    await classifyKakaoAiIntent({
-      customerType:
-        customer.customerType,
+  await classifyKakaoAiIntent({
+    customerType:
+      customer.customerType,
 
-      message,
+    message,
 
-      conversationHistory:
-        previousMemoryContext
-          .recentConversation
-          .messages,
+    conversationHistory:
+      previousMemoryContext
+        .recentConversation
+        .messages,
 
-      structuredMemory:
-        currentMemory,
+    structuredMemory:
+      currentMemory,
 
-      attachmentContext,
-    });
+    attachmentContext,
+  });
+
+tracePerf(
+  "intent_done",
+  {
+    primaryCapability:
+      intentClassification
+        .intent
+        .primaryCapability,
+  }
+);
 
 console.log("[KAKAO AI TRACE] Intent", {
   domain:
@@ -907,22 +985,21 @@ console.log("[KAKAO AI TRACE] Intent", {
    * 실제 필요한 Context를 해결한다.
    */
     const resolvedContext =
-    await resolveKakaoAiContext({
-      organizationId,
+  await resolveKakaoAiContext({
+    organizationId,
 
-      routedIntent:
-        intentClassification.routed,
+    routedIntent:
+      intentClassification.routed,
 
-      customer,
+    customer,
 
-      /**
-       * 현재 메시지에서 새로 확인된
-       * 학력 / 희망과정 등의 Memory까지
-       * 이미 반영된 값.
-       */
-      structuredMemory:
-        currentMemory,
-    });
+    structuredMemory:
+      currentMemory,
+  });
+
+tracePerf(
+  "context_done"
+);
 
 console.log("[KAKAO AI TRACE] Context", {
   hasCompanyContext:
@@ -956,23 +1033,34 @@ console.log("[KAKAO AI TRACE] Context", {
    * 이미 확정된 Context를 설명만 한다.
    */
   const responseComposition =
-    await composeKakaoAiResponse({
-      message,
+  await composeKakaoAiResponse({
+    message,
 
-      customer,
+    customer,
 
-      memory:
-        currentMemory,
+    memory:
+      currentMemory,
 
-      conversationHistory:
-        previousMemoryContext
-          .recentConversation
-          .messages,
+    conversationHistory:
+      previousMemoryContext
+        .recentConversation
+        .messages,
 
-      intentClassification,
+    intentClassification,
 
-      resolvedContext,
-    });
+    resolvedContext,
+  });
+
+tracePerf(
+  "composer_done",
+  {
+    success:
+      responseComposition.success,
+
+    fallbackUsed:
+      responseComposition.fallbackUsed,
+  }
+);
 
 console.log("[KAKAO AI TRACE] Response", {
   success:
@@ -1040,26 +1128,30 @@ console.log(
   }
 );
   const assistantMessage =
-    await db.insertKakaoAiMessage({
-      organizationId,
+  await db.insertKakaoAiMessage({
+    organizationId,
 
-      conversationId,
+    conversationId,
 
-      role:
-        "assistant",
+    role:
+      "assistant",
 
-      messageType:
-        "text",
+    messageType:
+      "text",
 
-      content:
-        replyText,
+    content:
+      replyText,
 
-      kakaoMessageId:
-        null,
+    kakaoMessageId:
+      null,
 
-      attachmentData:
-        undefined,
-    });
+    attachmentData:
+      undefined,
+  });
+
+tracePerf(
+  "assistant_message_inserted"
+);
 
 console.log(
   "[KAKAO AI TRACE] PostResponse",
@@ -1107,43 +1199,41 @@ console.log(
   );
 
   await db.markKakaoAiResponseReady({
-    organizationId,
+  organizationId,
 
-    userMessageId,
+  userMessageId,
 
-    responseMessageId,
-  });
+  responseMessageId,
+});
 
-  console.log(
-    "[KAKAO AI TRACE] PostResponse",
-    {
-      stage:
-        "response_ready_done",
-
-      organizationId,
-      conversationId,
-
-      userMessageId,
-      responseMessageId,
-    }
-  );
-}
-  }
+tracePerf(
+  "response_ready_db_done"
+);
 
 console.log(
   "[KAKAO AI TRACE] PostResponse",
   {
     stage:
-      "orchestrator_return",
+      "response_ready_done",
 
     organizationId,
     conversationId,
 
     userMessageId,
+    responseMessageId,
+  }
+);
+}
+
+tracePerf(
+  "orchestrator_complete",
+  {
+    replyTextLength:
+      replyText.length,
   }
 );
 
-  return {
+return {
     organizationId,
 
     conversationId,
