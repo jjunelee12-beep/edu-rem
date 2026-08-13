@@ -2130,6 +2130,32 @@ async function getR2PrefixUsageBytes(prefix: string) {
             ""
           ).trim();
 
+console.log(
+  "[KAKAO AI CALLBACK] request callback check",
+  {
+    build:
+      KAKAO_AI_BUILD_VERSION,
+
+    organizationId,
+
+    kakaoRequestId,
+
+    hasCallbackUrl:
+      Boolean(
+        callbackUrl
+      ),
+
+    userRequestKeys:
+      payload?.userRequest &&
+      typeof payload.userRequest ===
+        "object"
+        ? Object.keys(
+            payload.userRequest
+          )
+        : [],
+  }
+);
+
 const sendKakaoCallback =
   async (
     text:
