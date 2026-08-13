@@ -54,6 +54,14 @@ import { setLiveNotificationIO } from "./live-notifications";
 import { setSocketServer } from "./socket-status";
 import { startAutoBackupScheduler } from "./auto-backup-scheduler";
 
+const KAKAO_AI_BUILD_VERSION =
+  "20260813-0825-callback-debug-v1";
+
+console.log(
+  "[KAKAO AI BUILD]",
+  KAKAO_AI_BUILD_VERSION
+);
+
 type LiveAppNotificationPayload = {
   id: number;
   userId: number;
@@ -2460,6 +2468,23 @@ const waitForKakaoCallbackRecovery =
           void (
             async () => {
               try {
+
+console.log(
+  "[KAKAO AI CALLBACK] worker start",
+  {
+    build:
+      KAKAO_AI_BUILD_VERSION,
+
+    organizationId,
+
+    kakaoRequestId,
+
+    hasCallbackUrl:
+      Boolean(
+        callbackUrl
+      ),
+  }
+);
                 const result =
                   await orchestrateKakaoAiIncomingMessage({
                     organizationId,
@@ -2479,6 +2504,9 @@ const waitForKakaoCallbackRecovery =
 console.log(
   "[KAKAO AI CALLBACK] orchestrator returned",
   {
+    build:
+      KAKAO_AI_BUILD_VERSION,
+
     organizationId,
     kakaoRequestId,
 
@@ -2917,6 +2945,17 @@ if (
         : "failed",
   });
 }
+} finally {
+  console.log(
+    "[KAKAO AI CALLBACK] worker finished",
+    {
+      build:
+        KAKAO_AI_BUILD_VERSION,
+
+      organizationId,
+      kakaoRequestId,
+    }
+  );
 }
             }
           )();
