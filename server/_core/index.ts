@@ -2465,41 +2465,48 @@ const waitForKakaoCallbackRecovery =
            * callbackUrl은 카카오가 발급한
            * 1회성 URL이므로 로그에 출력하지 않는다.
            */
-          void (
-            async () => {
-              try {
+          /**
+ * HTTP 응답은 이미 useCallback=true로 전송했다.
+ *
+ * 하지만 실제 AI + Callback 처리는
+ * request handler 내부에서 끝까지 await한다.
+ *
+ * 이렇게 해야 런타임이
+ * fire-and-forget Promise를 중간에 유실하지 않는다.
+ */
+try {
+  console.log(
+    "[KAKAO AI CALLBACK] worker start",
+    {
+      build:
+        KAKAO_AI_BUILD_VERSION,
 
-console.log(
-  "[KAKAO AI CALLBACK] worker start",
-  {
-    build:
-      KAKAO_AI_BUILD_VERSION,
+      organizationId,
 
-    organizationId,
+      kakaoRequestId,
 
-    kakaoRequestId,
+      hasCallbackUrl:
+        Boolean(
+          callbackUrl
+        ),
+    }
+  );
 
-    hasCallbackUrl:
-      Boolean(
-        callbackUrl
-      ),
-  }
-);
-                const result =
-                  await orchestrateKakaoAiIncomingMessage({
-                    organizationId,
+  const result =
+    await orchestrateKakaoAiIncomingMessage({
+      organizationId,
 
-                    channelUserKey,
+      channelUserKey,
 
-                    kakaoMessageId:
-                      kakaoRequestId,
+      kakaoMessageId:
+        kakaoRequestId,
 
-                    messageType:
-                      "text",
+      messageType:
+        "text",
 
-                    message:
-                      utterance,
-                  });
+      message:
+        utterance,
+    });
 
 console.log(
   "[KAKAO AI CALLBACK] orchestrator returned",
@@ -2957,10 +2964,8 @@ if (
     }
   );
 }
-            }
-          )();
 
-          return;
+return;
         }
 
         /**
