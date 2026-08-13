@@ -44,8 +44,26 @@ markKakaoAiCallbackDelivery,
 import {
   orchestrateKakaoAiIncomingMessage,
 } from "../ai/kakao-ai-conversation-orchestrator";
+
+import {
+  routeKakaoAiPreMessage,
+} from "../ai/kakao-ai-pre-router";
+
+import {
+  respondKakaoAiImmediate,
+} from "../ai/kakao-ai-immediate-responder";
+
+import {
+  buildKakaoAiAnalysisWaitingResponse,
+} from "../ai/kakao-ai-analysis-waiting";
+
+import {
+  beginKakaoAiImmediateHistory,
+  finishKakaoAiImmediateHistory,
+} from "../ai/kakao-ai-immediate-history";
+
 import { 
-getOrganizationById,
+  getOrganizationById,
 getOrganizationLimitStatus,
 processTrialEndedOrganizations,
 deactivateExpiredOverdueOrganizations,
@@ -2155,6 +2173,334 @@ console.log(
         : [],
   }
 );
+/**
+ * ---------------------------------------------------------
+ * 1차 Pre-Router
+ * ---------------------------------------------------------
+ *
+ * 실제 Memory / Intent / CRM / 공통엔진을 실행하기 전에
+ *
+ * immediate
+ * vs
+ * analysis
+ *
+ * 만 빠르게 결정한다.
+ */
+const preRoute =
+  await routeKakaoAiPreMessage({
+    message:
+      utterance,
+
+    hasImage:
+      false,
+
+    hasDocument:
+      false,
+  });
+
+console.log(
+  "[KAKAO AI PRE ROUTER]",
+  {
+    organizationId,
+    kakaoRequestId,
+
+    mode:
+      preRoute
+        .decision
+        .mode,
+
+    immediateKind:
+      preRoute
+        .decision
+        .immediateKind,
+
+    reason:
+      preRoute
+        .decision
+        .reason,
+
+    confidence:
+      preRoute
+        .decision
+        .confidence,
+
+    fallbackUsed:
+      preRoute
+        .fallbackUsed,
+  }
+);
+
+/**
+ * ---------------------------------------------------------
+ * 즉시대화형
+ * ---------------------------------------------------------
+ *
+ * 인사 / 감사 / 단순확인 / 회사소개 등은
+ * 무거운 공용엔진에 진입하지 않는다.
+ */
+if (
+  preRoute.decision.mode ===
+    "immediate" &&
+  preRoute
+    .decision
+    .immediateKind
+) {
+  /**
+   * ---------------------------------------------------------
+   * Immediate History 시작
+   * ---------------------------------------------------------
+   *
+   * 무거운 Orchestrator는 실행하지 않지만
+   * 실제 사용자 메시지는 기존 카카오 AI History에 남긴다.
+   *
+   * 여기서:
+   *
+   * - Conversation 생성/조회
+   * - blocked 검사
+   * - 중복 webhook 검사
+   * - user 메시지 저장
+   *
+   * 만 수행한다.
+   */
+  const immediateHistory =
+    await beginKakaoAiImmediateHistory({
+      organizationId,
+
+      channelUserKey,
+
+      kakaoMessageId:
+        kakaoRequestId,
+
+      message:
+        utterance,
+    });
+
+  console.log(
+    "[KAKAO AI IMMEDIATE HISTORY]",
+    {
+      stage:
+        "begin",
+
+      organizationId,
+
+      kakaoRequestId,
+
+      conversationId:
+        immediateHistory
+          .conversationId,
+
+      duplicateMessage:
+        immediateHistory
+          .duplicateMessage,
+
+      blocked:
+        immediateHistory
+          .blocked,
+    }
+  );
+
+  /**
+   * 운영상 차단된 대화는
+   * Immediate 경로라고 해서 우회하면 안 된다.
+   */
+  if (
+    immediateHistory.blocked
+  ) {
+    return res
+      .status(200)
+      .json({
+        version:
+          "2.0",
+
+        template: {
+          outputs: [
+            {
+              simpleText: {
+                text:
+                  "현재 카카오 AI 상담을 이용할 수 없습니다.",
+              },
+            },
+          ],
+        },
+      });
+  }
+
+  /**
+   * 동일 X-Request-Id가 이미 처리된 경우
+   * AI를 다시 호출하지 않는다.
+   */
+  if (
+    immediateHistory
+      .duplicateMessage
+  ) {
+    console.warn(
+      "[KAKAO AI IMMEDIATE] duplicate webhook",
+      {
+        organizationId,
+        kakaoRequestId,
+      }
+    );
+
+    return res
+      .status(200)
+      .json({
+        version:
+          "2.0",
+
+        template: {
+          outputs: [
+            {
+              simpleText: {
+                text:
+                  "이미 처리된 요청입니다.",
+              },
+            },
+          ],
+        },
+      });
+  }
+
+  /**
+   * ---------------------------------------------------------
+   * 실제 Immediate 자연어 답변
+   * ---------------------------------------------------------
+   */
+  const immediateResponse =
+    await respondKakaoAiImmediate({
+      organizationId,
+
+      message:
+        utterance,
+
+      immediateKind:
+        preRoute
+          .decision
+          .immediateKind,
+    });
+
+  const immediateReplyText =
+    String(
+      immediateResponse.replyText ||
+      ""
+    ).trim() ||
+    "안녕하세요 😊 무엇을 도와드릴까요?";
+
+  console.log(
+    "[KAKAO AI IMMEDIATE]",
+    {
+      organizationId,
+      kakaoRequestId,
+
+      immediateKind:
+        preRoute
+          .decision
+          .immediateKind,
+
+      success:
+        immediateResponse.success,
+
+      fallbackUsed:
+        immediateResponse
+          .fallbackUsed,
+
+      replyTextLength:
+        immediateReplyText.length,
+    }
+  );
+
+  /**
+   * AI가 실제로 생성한 답변도
+   * 같은 Conversation에 저장한다.
+   */
+  if (
+    immediateHistory
+      .conversationId
+  ) {
+    const immediateHistoryFinish =
+      await finishKakaoAiImmediateHistory({
+        organizationId,
+
+        conversationId:
+          immediateHistory
+            .conversationId,
+
+        replyText:
+          immediateReplyText,
+      });
+
+    console.log(
+      "[KAKAO AI IMMEDIATE HISTORY]",
+      {
+        stage:
+          "finish",
+
+        organizationId,
+
+        kakaoRequestId,
+
+        conversationId:
+          immediateHistory
+            .conversationId,
+
+        success:
+          immediateHistoryFinish
+            .success,
+
+        assistantMessageId:
+          immediateHistoryFinish
+            .assistantMessageId,
+      }
+    );
+  }
+
+  /**
+   * Immediate는 Callback 없이
+   * 일반 SkillResponse로 즉시 반환한다.
+   */
+  return res
+    .status(200)
+    .json({
+      version:
+        "2.0",
+
+      template: {
+        outputs: [
+          {
+            simpleText: {
+              text:
+                immediateReplyText,
+            },
+          },
+        ],
+      },
+    });
+}
+
+/**
+ * 여기까지 왔다는 것은
+ * 분석형 요청이다.
+ */
+const waitingResponse =
+  buildKakaoAiAnalysisWaitingResponse({
+    message:
+      utterance,
+  });
+
+console.log(
+  "[KAKAO AI ANALYSIS]",
+  {
+    organizationId,
+    kakaoRequestId,
+
+    waitingKind:
+      waitingResponse.waitingKind,
+
+    hasCallbackUrl:
+      Boolean(
+        callbackUrl
+      ),
+  }
+);
 
 const sendKakaoCallback =
   async (
@@ -2474,15 +2820,29 @@ const waitForKakaoCallbackRecovery =
          * AI 작업은 비동기로 진행한다.
          */
         if (
-          callbackUrl
-        ) {
-          res.status(200).json({
-            version:
-              "2.0",
+  callbackUrl
+) {
+  res.status(200).json({
+    version:
+      "2.0",
 
-            useCallback:
-              true,
-          });
+    useCallback:
+      true,
+
+    /**
+     * 카카오 Callback 블록의
+     * 기본 응답 말풍선에서
+     *
+     * {{#webhook.text}}
+     *
+     * 로 사용할 대기안내 문구.
+     */
+    data: {
+      text:
+        waitingResponse
+          .replyText,
+    },
+  });
 
 
           /**
