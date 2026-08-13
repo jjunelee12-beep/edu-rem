@@ -2221,35 +2221,117 @@ const sendKakaoCallback =
           }
         );
 
-      if (
-        !callbackResponse.ok
-      ) {
-        const errorText =
-          await callbackResponse
-            .text()
-            .catch(
-              () =>
-                ""
-            );
+      const callbackResponseText =
+  await callbackResponse
+    .text()
+    .catch(
+      () =>
+        ""
+    );
 
-        console.error(
-          "[KAKAO AI CALLBACK] send failed",
-          {
-            organizationId,
-            kakaoRequestId,
+let callbackResult:
+  {
+    taskId?:
+      string;
 
-            status:
-              callbackResponse.status,
+    status?:
+      string;
 
-            error:
-              errorText.slice(
-                0,
-                500
-              ),
-          }
-        );
+    message?:
+      string;
 
-        return false;
+    timestamp?:
+      number;
+  } | null =
+  null;
+
+if (
+  callbackResponseText
+) {
+  try {
+    callbackResult =
+      JSON.parse(
+        callbackResponseText
+      );
+  } catch {
+    callbackResult =
+      null;
+  }
+}
+
+/**
+ * 카카오 Callback API는
+ * HTTP 2xx뿐 아니라 응답 body의
+ * status === "SUCCESS"까지 확인해야
+ * 실제 전송 성공으로 간주한다.
+ */
+const kakaoCallbackStatus =
+  String(
+    callbackResult?.status ||
+    ""
+  )
+    .trim()
+    .toUpperCase();
+
+if (
+  !callbackResponse.ok ||
+  kakaoCallbackStatus !==
+    "SUCCESS"
+) {
+  console.error(
+    "[KAKAO AI CALLBACK] send failed",
+    {
+      organizationId,
+      kakaoRequestId,
+
+      httpStatus:
+        callbackResponse.status,
+
+      kakaoStatus:
+        kakaoCallbackStatus ||
+        null,
+
+      taskId:
+        callbackResult?.taskId ||
+        null,
+
+      message:
+        callbackResult?.message ||
+        callbackResponseText
+          .slice(
+            0,
+            500
+          ) ||
+        null,
+    }
+  );
+
+  return false;
+}
+
+console.log(
+  "[KAKAO AI CALLBACK] send success",
+  {
+    organizationId,
+    kakaoRequestId,
+
+    httpStatus:
+      callbackResponse.status,
+
+    kakaoStatus:
+      kakaoCallbackStatus,
+
+    taskId:
+      callbackResult?.taskId ||
+      null,
+
+    message:
+      callbackResult?.message ||
+      null,
+  }
+);
+
+return true;
       }
 
       console.log(
@@ -2652,12 +2734,30 @@ if (
         kakaoRequestId,
     });
 
-  if (
-    latestRecovery?.callbackStatus ===
-      "sent"
-  ) {
-    return;
-  }
+ if (
+  latestRecovery?.callbackStatus ===
+    "sent"
+) {
+  console.warn(
+    "[KAKAO AI CALLBACK] 이미 sent 상태라 전송 생략",
+    {
+      organizationId,
+      kakaoRequestId,
+
+      responseMessageId:
+        latestRecovery
+          ?.responseMessageId ??
+        null,
+
+      callbackSentAt:
+        latestRecovery
+          ?.callbackSentAt ??
+        null,
+    }
+  );
+
+  return;
+}
 
 const claim =
   await claimKakaoAiCallbackDelivery({
