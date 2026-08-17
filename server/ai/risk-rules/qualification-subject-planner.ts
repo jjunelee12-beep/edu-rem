@@ -138,6 +138,19 @@ export type DegreeFillTemplateItem = {
     number;
 };
 
+export type DegreeSubjectClassification = {
+  category:
+    | "전공"
+    | "교양"
+    | "일반";
+
+  requirementType:
+    | "전공필수"
+    | "전공선택"
+    | "교양"
+    | "일반";
+};
+
 export type QualificationSubjectPlannerResult = {
   canPlan:
     boolean;
@@ -1936,6 +1949,12 @@ function planDegreeFillSubjects(
         string,
         QualificationPlannedSubject
       >;
+
+degreeClassificationBySubjectKey:
+  Map<
+    string,
+    DegreeSubjectClassification
+  >;
   }
 ) {
   let remainingTotal =
@@ -1973,48 +1992,93 @@ function planDegreeFillSubjects(
    * 학위요건도 얼마나 채우는지 차감한다.
    */
   for (
-    const subject
-    of params.selectedMap.values()
-  ) {
-    remainingTotal =
+  const subject
+  of params.selectedMap.values()
+) {
+  remainingTotal =
+    Math.max(
+      remainingTotal -
+        subject.credits,
+      0
+    );
+
+  /**
+   * 자격증 마스터의 requirementType/category와
+   * 학위 표준교육과정의 학습구분은 서로 다를 수 있다.
+   *
+   * 자격 과목 선택 자체는 기존 Qualification Master를
+   * 그대로 사용하되,
+   *
+   * 해당 과목이 목표 학위에서 전공/교양/일반 중
+   * 어디에 들어가는지는 NILE 공식 분류를 우선한다.
+   */
+  const subjectKey =
+    getConfirmedSubjectEquivalenceKey(
+      subject.subjectName
+    );
+
+  const degreeClassification =
+    subjectKey
+      ? params
+          .degreeClassificationBySubjectKey
+          .get(
+            subjectKey
+          ) ??
+        null
+      : null;
+
+  const degreeRequirementType =
+    degreeClassification
+      ?.requirementType ??
+    subject.requirementType;
+
+  const degreeCategory =
+    degreeClassification
+      ?.category ??
+    subject.category;
+
+  const isMajor =
+    degreeRequirementType ===
+      "전공필수" ||
+    degreeRequirementType ===
+      "전공선택" ||
+    degreeCategory ===
+      "전공";
+
+  /**
+   * QualificationPlannedSubject의
+   * 자격 분류 자체는 바꾸지 않는다.
+   *
+   * 학위에서 전공으로 인정되는지 여부만
+   * NILE 공식 판정 결과로 기록한다.
+   */
+  subject.satisfies.degreeMajor =
+    isMajor;
+
+  if (isMajor) {
+    remainingMajor =
       Math.max(
-        remainingTotal -
+        remainingMajor -
           subject.credits,
         0
       );
-
-    const isMajor =
-      subject.requirementType ===
-        "전공필수" ||
-      subject.requirementType ===
-        "전공선택" ||
-      subject.category ===
-        "전공";
-
-    if (isMajor) {
-      remainingMajor =
-        Math.max(
-          remainingMajor -
-            subject.credits,
-          0
-        );
-    }
-
-    const isLiberal =
-      subject.requirementType ===
-        "교양" ||
-      subject.category ===
-        "교양";
-
-    if (isLiberal) {
-      remainingLiberal =
-        Math.max(
-          remainingLiberal -
-            subject.credits,
-          0
-        );
-    }
   }
+
+  const isLiberal =
+    degreeRequirementType ===
+      "교양" ||
+    degreeCategory ===
+      "교양";
+
+  if (isLiberal) {
+    remainingLiberal =
+      Math.max(
+        remainingLiberal -
+          subject.credits,
+        0
+      );
+  }
+}
 
   const available =
     (params.templates || [])
@@ -2260,6 +2324,12 @@ export function planQualificationSubjects(
      */
     degreeTemplates:
       DegreeFillTemplateItem[];
+
+degreeClassificationBySubjectKey:
+  Map<
+    string,
+    DegreeSubjectClassification
+  >;
   }
 ): QualificationSubjectPlannerResult {
   const {
@@ -2469,6 +2539,9 @@ export function planQualificationSubjects(
           recognizedKeys,
 
           selectedMap,
+
+degreeClassificationBySubjectKey:
+  params.degreeClassificationBySubjectKey,
         })
       : {
           remainingTotalCredits:
@@ -2549,17 +2622,25 @@ export function planQualificationSubjects(
     );
 
   if (
-    degreeFillTotal >
-      0 ||
-    degreeFillMajor >
-      0 ||
-    degreeFillLiberal >
-      0
-  ) {
-    warnings.push(
-      "자격 필수과목 선택 후에도 학위 부족학점이 남아 있습니다. 교양·전공·일반 학점 충족용 과목은 별도 학위과목 마스터 연결 후 확정해야 합니다."
-    );
-  }
+  degreeFillTotal >
+    0 ||
+  degreeFillMajor >
+    0 ||
+  degreeFillLiberal >
+    0
+) {
+  warnings.push(
+    "자격 필수과목 선택 후에도 학위 부족학점이 남아 있습니다. 현재 등록된 학위과목 템플릿만으로는 전체 학위과정을 완성할 수 없습니다."
+  );
+
+  unresolvedRequirements.push({
+    code:
+      "DEGREE_FILL_TEMPLATE_SHORTAGE",
+
+    message:
+      `현재 학위과목 템플릿으로 학위요건을 모두 채우지 못했습니다. 남은 총학점 ${degreeFillTotal}학점, 전공 ${degreeFillMajor}학점, 교양 ${degreeFillLiberal}학점이 추가로 필요합니다.`,
+  });
+}
 
   /**
    * Analyzer가 부족조건을 냈지만

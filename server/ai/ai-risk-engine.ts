@@ -49,6 +49,10 @@ import {
   resolveStudentAcademicSummary,
 } from "./risk-rules/student-academic-summary-resolver";
 
+import {
+  resolveNileRecognizedSubjects,
+} from "../nile/nile-recognized-subject-resolver";
+
 import type {
   AiUserContext,
   StudentDetailRiskToolOutput,
@@ -1556,11 +1560,30 @@ const degreeRequirement =
       null,
   });
 
-const degreeCreditAnalysis =
-  analyzeDegreeCredits({
+/**
+ * 학위학점 계산용 인정과목.
+ *
+ * 자격증 인정과목 판정과 학위 학점영역 판정을 분리한다.
+ *
+ * - 자격증 분석:
+ *   기존 validRecognizedSubjects 사용
+ *
+ * - 학위 분석:
+ *   NILE 공식 표준교육과정 기준으로
+ *   전공 / 교양 / 일반 영역을 다시 판정한 결과 사용
+ *
+ * NILE Master가 없거나 현재 과정에서
+ * 공식 재분류를 수행할 수 없는 경우에는
+ * 기존 인정과목을 그대로 사용한다.
+ */
+const nileRecognition =
+  await resolveNileRecognizedSubjects({
+    courseKey:
+      qualificationAnalysisCourseKey,
+
     degreeRequirement,
 
-    recognizedSubjects:
+    subjects:
       validRecognizedSubjects.map(
         (
           subject
@@ -1585,22 +1608,263 @@ const degreeCreditAnalysis =
       ),
   });
 
+const degreeRecognizedSubjects =
+  nileRecognition.canResolve
+    ? nileRecognition.subjects
+    : validRecognizedSubjects.map(
+        (
+          subject
+        ) => ({
+          subjectName:
+            subject.subjectName,
+
+          requirementType:
+            subject.requirementType ??
+            null,
+
+          category:
+            subject.category ??
+            null,
+
+          credits:
+            subject.credits,
+
+          source:
+            subject.source,
+        })
+      );
+
+/**
+ * 학위 추가과목 추천 및 Planner에서 사용할
+ * NILE 공식 학위영역 분류 Map.
+ *
+ * 중요:
+ *
+ * riskMasterItems의 기존 requirementType/category는
+ * 자격증 판정을 위한 회사 Qualification Master이므로
+ * 절대로 직접 덮어쓰지 않는다.
+ *
+ * degreeSubjectTemplates 역시 DB 원본을 변경하지 않고
+ * 학위계산용 복사본만 NILE 기준으로 재분류한다.
+ */
+const degreePlanningCandidateMap =
+  new Map<
+    string,
+    {
+      subjectName:
+        string;
+
+      requirementType:
+        string | null;
+
+      category:
+        string | null;
+
+      credits:
+        number;
+
+      source:
+        "plan";
+    }
+  >();
+
+for (
+  const item
+  of [
+    ...(
+      riskMasterItems ||
+      []
+    ),
+
+    ...(
+      degreeSubjectTemplates ||
+      []
+    ),
+  ]
+) {
+  const subjectName =
+    String(
+      item?.subjectName ||
+      ""
+    ).trim();
+
+  if (!subjectName) {
+    continue;
+  }
+
+  const key =
+    getConfirmedSubjectEquivalenceKey(
+      subjectName
+    );
+
+  if (
+    !key ||
+    degreePlanningCandidateMap.has(
+      key
+    )
+  ) {
+    continue;
+  }
+
+  degreePlanningCandidateMap.set(
+    key,
+    {
+      subjectName,
+
+      requirementType:
+        item?.requirementType ??
+        null,
+
+      category:
+        item?.category ??
+        null,
+
+      /**
+       * 현재 CRM 과목마스터 및
+       * course_subject_templates는
+       * 이론과목을 3학점 단위로 운용한다.
+       *
+       * 이 값은 NILE 학습구분 판정 입력용이며
+       * 실제 기존 이수학점 계산에는 사용하지 않는다.
+       */
+      credits:
+        3,
+
+      source:
+        "plan",
+    }
+  );
+}
+
+const nileDegreePlanningRecognition =
+  await resolveNileRecognizedSubjects({
+    courseKey:
+      qualificationAnalysisCourseKey,
+
+    degreeRequirement,
+
+    subjects:
+      Array.from(
+        degreePlanningCandidateMap
+          .values()
+      ),
+  });
+
+const degreeClassificationBySubjectKey =
+  new Map<
+    string,
+    {
+      category:
+        | "전공"
+        | "교양"
+        | "일반";
+
+      requirementType:
+        | "전공필수"
+        | "전공선택"
+        | "교양"
+        | "일반";
+    }
+  >();
+
+if (
+  nileDegreePlanningRecognition
+    .canResolve
+) {
+  for (
+    const subject
+    of nileDegreePlanningRecognition
+      .subjects
+  ) {
+    const key =
+      getConfirmedSubjectEquivalenceKey(
+        subject.subjectName
+      );
+
+    if (!key) {
+      continue;
+    }
+
+    if (
+      subject.category !==
+        "전공" &&
+      subject.category !==
+        "교양" &&
+      subject.category !==
+        "일반"
+    ) {
+      continue;
+    }
+
+    if (
+      subject.requirementType !==
+        "전공필수" &&
+      subject.requirementType !==
+        "전공선택" &&
+      subject.requirementType !==
+        "교양" &&
+      subject.requirementType !==
+        "일반"
+    ) {
+      continue;
+    }
+
+    degreeClassificationBySubjectKey.set(
+      key,
+      {
+        category:
+          subject.category,
+
+        requirementType:
+          subject.requirementType,
+      }
+    );
+  }
+}
+
+const degreeCreditAnalysis =
+  analyzeDegreeCredits({
+    degreeRequirement,
+
+    recognizedSubjects:
+      degreeRecognizedSubjects,
+  });
+
 const degreeMajorRecommendationItems =
   riskMasterItems.filter(
     (
       item:
         any
-    ) =>
-      String(
-        item?.requirementType ||
-        ""
-      ).trim() ===
-        "전공필수" ||
-      String(
-        item?.requirementType ||
-        ""
-      ).trim() ===
-        "전공선택"
+    ) => {
+      const subjectKey =
+        getConfirmedSubjectEquivalenceKey(
+          String(
+            item?.subjectName ||
+            ""
+          ).trim()
+        );
+
+      const classification =
+        subjectKey
+          ? degreeClassificationBySubjectKey
+              .get(
+                subjectKey
+              ) ??
+            null
+          : null;
+
+      return (
+        classification
+          ?.requirementType ===
+          "전공필수" ||
+        classification
+          ?.requirementType ===
+          "전공선택" ||
+        classification
+          ?.category ===
+          "전공"
+      );
+    }
   );
 
 const degreeLiberalRecommendationItems =
@@ -1608,17 +1872,33 @@ const degreeLiberalRecommendationItems =
     (
       item:
         any
-    ) =>
-      String(
-        item?.requirementType ||
-        ""
-      ).trim() ===
-        "교양" ||
-      String(
-        item?.category ||
-        ""
-      ).trim() ===
-        "교양"
+    ) => {
+      const subjectKey =
+        getConfirmedSubjectEquivalenceKey(
+          String(
+            item?.subjectName ||
+            ""
+          ).trim()
+        );
+
+      const classification =
+        subjectKey
+          ? degreeClassificationBySubjectKey
+              .get(
+                subjectKey
+              ) ??
+            null
+          : null;
+
+      return (
+        classification
+          ?.requirementType ===
+          "교양" ||
+        classification
+          ?.category ===
+          "교양"
+      );
+    }
   );
 
 const degreeMajorRecommendations =
@@ -1654,6 +1934,7 @@ const degreeMajorRecommendations =
       10,
   });
 
+
 const degreeLiberalRecommendations =
   buildRiskSubjectRecommendations({
     masterItems:
@@ -1687,6 +1968,7 @@ const degreeLiberalRecommendations =
       10,
   });
 
+
 const degreeRequiredMajorCredits =
   Number(
     degreeCreditAnalysis
@@ -1694,6 +1976,7 @@ const degreeRequiredMajorCredits =
       .remainingMajorCredits ||
     0
   );
+
 
 const degreeRequiredLiberalCredits =
   Number(
@@ -1703,6 +1986,7 @@ const degreeRequiredLiberalCredits =
     0
   );
 
+
 const degreeRequiredTotalCredits =
   Number(
     degreeCreditAnalysis
@@ -1710,6 +1994,7 @@ const degreeRequiredTotalCredits =
       .remainingTotalCredits ||
     0
   );
+
 
 /**
  * 총학점 부족분에서
@@ -1724,40 +2009,44 @@ const degreeResidualTotalCredits =
     0
   );
 
+
+/**
+ * 전공/교양 최소요건을 충족한 뒤
+ * 총학점만 추가로 필요한 경우 사용할 후보.
+ *
+ * NILE에서 실제 학위영역 판정이 완료된
+ * 과목만 후보로 사용할 수 있다.
+ *
+ * 전공 / 교양 / 일반 모두
+ * 총학점 채움에는 사용할 수 있다.
+ */
 const degreeResidualRecommendationItems =
   riskMasterItems.filter(
     (
       item:
         any
     ) => {
-      const requirementType =
-        String(
-          item?.requirementType ||
-          ""
-        ).trim();
+      const subjectKey =
+        getConfirmedSubjectEquivalenceKey(
+          String(
+            item?.subjectName ||
+            ""
+          ).trim()
+        );
 
-      const category =
-        String(
-          item?.category ||
-          ""
-        ).trim();
+      if (!subjectKey) {
+        return false;
+      }
 
       return (
-        requirementType ===
-          "일반" ||
-        category ===
-          "일반" ||
-        requirementType ===
-          "전공필수" ||
-        requirementType ===
-          "전공선택" ||
-        requirementType ===
-          "교양" ||
-        category ===
-          "교양"
+        degreeClassificationBySubjectKey
+          .has(
+            subjectKey
+          )
       );
     }
   );
+
 
 const degreeResidualRecommendations =
   buildRiskSubjectRecommendations({
@@ -2013,43 +2302,72 @@ const qualificationSubjectPlan =
       ),
 
     degreeTemplates:
-      degreeSubjectTemplates.map(
-        (
-          item:
-            any
-        ) => ({
-          id:
-            Number(
-              item.id ||
-              0
-            ),
+  degreeSubjectTemplates.map(
+    (
+      item:
+        any
+    ) => {
+      const subjectName =
+        String(
+          item.subjectName ||
+          ""
+        ).trim();
 
-          courseKey:
-            String(
-              item.courseKey ||
-              ""
-            ),
+      const subjectKey =
+        getConfirmedSubjectEquivalenceKey(
+          subjectName
+        );
 
-          subjectName:
-            String(
-              item.subjectName ||
-              ""
-            ).trim(),
+      const nileClassification =
+        subjectKey
+          ? degreeClassificationBySubjectKey
+              .get(
+                subjectKey
+              ) ??
+            null
+          : null;
 
-          category:
-            item.category,
+      return {
+        id:
+          Number(
+            item.id ||
+            0
+          ),
 
-          requirementType:
-            item.requirementType ??
-            null,
+        courseKey:
+          String(
+            item.courseKey ||
+            ""
+          ),
 
-          sortOrder:
-            Number(
-              item.sortOrder ||
-              0
-            ),
-        })
-      ),
+        subjectName,
+
+        /**
+         * 새 학위과정에서는
+         * course_subject_templates에 저장된
+         * 기존 회사 분류보다 NILE 공식 분류를 우선한다.
+         */
+        category:
+          nileClassification
+            ?.category ??
+          item.category,
+
+        requirementType:
+          nileClassification
+            ?.requirementType ??
+          item.requirementType ??
+          null,
+
+        sortOrder:
+          Number(
+            item.sortOrder ||
+            0
+          ),
+      };
+    }
+  ),
+
+degreeClassificationBySubjectKey,
   });
 
 /**

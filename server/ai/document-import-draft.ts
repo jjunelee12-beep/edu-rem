@@ -318,35 +318,28 @@ function buildSubjectRows(
           );
 
         const category:
-          | "전공"
-          | "교양"
-          | "일반" =
-          categoryValue ===
-            "교양" ||
-          categoryValue ===
-            "일반"
-            ? categoryValue
-            : "전공";
+  | "전공"
+  | "교양"
+  | "일반"
+  | null =
+  categoryValue === "전공" ||
+  categoryValue === "교양" ||
+  categoryValue === "일반"
+    ? categoryValue
+    : null;
 
-        const requirementType:
-          | "전공필수"
-          | "전공선택"
-          | "교양"
-          | "일반" =
-          requirementTypeValue ===
-            "전공필수" ||
-          requirementTypeValue ===
-            "교양" ||
-          requirementTypeValue ===
-            "일반"
-            ? requirementTypeValue
-            : category ===
-                "교양"
-              ? "교양"
-              : category ===
-                  "일반"
-                ? "일반"
-                : "전공선택";
+const requirementType:
+  | "전공필수"
+  | "전공선택"
+  | "교양"
+  | "일반"
+  | null =
+  requirementTypeValue === "전공필수" ||
+  requirementTypeValue === "전공선택" ||
+  requirementTypeValue === "교양" ||
+  requirementTypeValue === "일반"
+    ? requirementTypeValue
+    : null;
 
         const warnings =
           normalizeStringArray([
@@ -401,12 +394,12 @@ function buildSubjectRows(
             "",
 
           credits:
-            credits &&
-            credits > 0
-              ? Math.floor(
-                  credits
-                )
-              : 3,
+  credits !== null &&
+  credits > 0
+    ? Math.floor(
+        credits
+      )
+    : null,
 
           grade,
 
@@ -522,6 +515,49 @@ function buildMissingFields(
       "반영할 과목"
     );
   }
+
+if (
+  targetNeedsSubjects(
+    params.target
+  ) &&
+  params.subjects.some(
+    subject =>
+      subject.credits === null ||
+      subject.credits <= 0
+  )
+) {
+  missingFields.push(
+    "과목 학점 판정"
+  );
+}
+
+if (
+  targetNeedsSubjects(
+    params.target
+  ) &&
+  params.subjects.some(
+    subject =>
+      subject.category === null
+  )
+) {
+  missingFields.push(
+    "과목 전공·교양·일반 판정"
+  );
+}
+
+if (
+  targetNeedsSubjects(
+    params.target
+  ) &&
+  params.subjects.some(
+    subject =>
+      subject.requirementType === null
+  )
+) {
+  missingFields.push(
+    "과목 전공필수·전공선택 판정"
+  );
+}
 
  if (
   targetNeedsPayment(
@@ -687,9 +723,15 @@ function buildPreviewSections(
             index
           ) => {
             const meta = [
-              `${subject.credits}학점`,
-              subject.category,
-              subject.requirementType,
+              subject.credits !== null
+  ? `${subject.credits}학점`
+  : "학점 판정 필요",
+
+subject.category ||
+  "학습구분 판정 필요",
+
+subject.requirementType ||
+  "전필·전선 판정 필요",
               subject.semesterNo
                 ? `${subject.semesterNo}학기`
                 : null,

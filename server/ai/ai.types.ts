@@ -4809,21 +4809,42 @@ export type AiDocumentImportDraft = {
         string;
 
       credits:
-        number;
+  number |
+  null;
 
-      grade:
-        string | null;
+grade:
+  string |
+  null;
 
-      category:
-        | "전공"
-        | "교양"
-        | "일반";
+/**
+ * 목표 학점은행제 학위 기준 학습구분.
+ *
+ * 대학 성적증명서 OCR 단계에서는
+ * 원래 대학의 학습구분을 그대로 사용하지 않는다.
+ *
+ * NILE 공식 표준교육과정 판정 전에는
+ * null일 수 있다.
+ */
+category:
+  | "전공"
+  | "교양"
+  | "일반"
+  | null;
 
-      requirementType:
-        | "전공필수"
-        | "전공선택"
-        | "교양"
-        | "일반";
+/**
+ * 목표 학점은행제 전공 기준 세부 학습구분.
+ *
+ * 대학 성적증명서 OCR 결과를 직접 신뢰하지 않고
+ * NILE 공식 표준교육과정 판정 결과로 확정한다.
+ *
+ * 판정 전에는 null일 수 있다.
+ */
+requirementType:
+  | "전공필수"
+  | "전공선택"
+  | "교양"
+  | "일반"
+  | null;
 
             semesterNo:
         number | null;

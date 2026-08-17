@@ -127,6 +127,432 @@ import {
   buildDocumentImportDraft,
 } from "./ai/document-import-draft";
 
+import {
+  resolveQualificationRiskCourseKey,
+} from "./ai/risk-rules/qualification-risk-analyzer";
+
+import {
+  resolveDegreeRequirement,
+} from "./ai/risk-rules/degree-requirement-resolver";
+
+import {
+  resolveNileRecognizedSubjects,
+} from "./nile/nile-recognized-subject-resolver";
+
+async function applyNileClassificationToUniversityTranscript(
+  params: {
+    student:
+      any;
+
+    analysis:
+      AiDocumentAnalysisResult;
+  }
+): Promise<AiDocumentAnalysisResult> {
+  const {
+    student,
+    analysis,
+  } = params;
+
+
+  /**
+   * 대학·전문대 성적증명서만
+   * NILE 공식 학위영역 판정을 수행한다.
+   *
+   * 교육원 수강내역 / 결제문서는
+   * 기존 OCR 분류를 그대로 유지한다.
+   */
+  if (
+    analysis.documentType !==
+    "university_transcript"
+  ) {
+    return analysis;
+  }
+
+
+  const courseName =
+    String(
+      student?.course ||
+      ""
+    ).trim();
+
+
+  const finalEducation =
+    String(
+      student?.finalEducation ||
+      ""
+    ).trim();
+
+
+  const courseKey =
+    resolveQualificationRiskCourseKey(
+      courseName
+    );
+
+
+  if (
+    courseKey ===
+    "unknown"
+  ) {
+    return {
+      ...analysis,
+
+      warnings:
+        Array.from(
+          new Set([
+            ...(
+              analysis.warnings ||
+              []
+            ),
+
+            "학생의 희망과정을 NILE 공식 전공과 연결하지 못해 전적대 과목의 전공·교양·일반 판정을 보류했습니다.",
+          ])
+        ),
+    };
+  }
+
+
+  if (
+    !finalEducation
+  ) {
+    return {
+      ...analysis,
+
+      warnings:
+        Array.from(
+          new Set([
+            ...(
+              analysis.warnings ||
+              []
+            ),
+
+            "학생의 최종학력이 없어 목표 학위경로를 확정할 수 없으므로 전적대 과목의 NILE 판정을 보류했습니다.",
+          ])
+        ),
+    };
+  }
+
+
+  const degreeRequirement =
+    resolveDegreeRequirement({
+      courseKey,
+
+      finalEducation,
+    });
+
+
+  /**
+   * 원본 OCR 배열 위치를 반드시 보존한다.
+   *
+   * 동일한 과목명이 여러 번 존재할 수 있으므로
+   * 과목명 Map으로 합치지 않는다.
+   */
+  const candidates =
+    (
+      analysis.subjects ||
+      []
+    )
+      .map(
+        (
+          subject,
+          index
+        ) => {
+          const subjectName =
+            String(
+              subject
+                .subjectName
+                ?.value ||
+              ""
+            ).trim();
+
+
+          const credits =
+            Number(
+              subject
+                .credits
+                ?.value ||
+              0
+            );
+
+
+          return {
+            originalIndex:
+              index,
+
+            subject: {
+              subjectName,
+
+              credits:
+                Number.isFinite(
+                  credits
+                ) &&
+                credits > 0
+                  ? credits
+                  : 0,
+
+              /**
+               * 대학 원래 학습구분은
+               * 목표 학점은행제 전공 판정에 사용하지 않는다.
+               */
+              category:
+                null,
+
+              requirementType:
+                null,
+            },
+          };
+        }
+      )
+      .filter(
+        item =>
+          item
+            .subject
+            .subjectName
+            .length >= 2
+      );
+
+
+  if (
+    candidates.length ===
+    0
+  ) {
+    return analysis;
+  }
+
+
+  try {
+    const nileRecognition =
+      await resolveNileRecognizedSubjects({
+        courseKey,
+
+        degreeRequirement,
+
+        subjects:
+          candidates.map(
+            item =>
+              item.subject
+          ),
+      });
+
+
+    if (
+      !nileRecognition.canResolve
+    ) {
+      return {
+        ...analysis,
+
+        warnings:
+          Array.from(
+            new Set([
+              ...(
+                analysis.warnings ||
+                []
+              ),
+
+              ...(
+                nileRecognition
+                  .warnings ||
+                []
+              ),
+            ])
+          ),
+      };
+    }
+
+
+    const nextSubjects =
+      [
+        ...(
+          analysis.subjects ||
+          []
+        ),
+      ];
+
+
+    nileRecognition
+      .subjects
+      .forEach(
+        (
+          resolvedSubject,
+          resolvedIndex
+        ) => {
+          const candidate =
+            candidates[
+              resolvedIndex
+            ];
+
+
+          if (
+            !candidate
+          ) {
+            return;
+          }
+
+
+          const originalSubject =
+            nextSubjects[
+              candidate.originalIndex
+            ];
+
+
+          if (
+            !originalSubject
+          ) {
+            return;
+          }
+
+
+          const category =
+            resolvedSubject.category;
+
+
+          const requirementType =
+            resolvedSubject
+              .requirementType;
+
+
+          if (
+            category !== "전공" &&
+            category !== "교양" &&
+            category !== "일반"
+          ) {
+            return;
+          }
+
+
+          if (
+            requirementType !==
+              "전공필수" &&
+            requirementType !==
+              "전공선택" &&
+            requirementType !==
+              "교양" &&
+            requirementType !==
+              "일반"
+          ) {
+            return;
+          }
+
+
+          nextSubjects[
+            candidate.originalIndex
+          ] = {
+            ...originalSubject,
+
+            category: {
+              ...originalSubject
+                .category,
+
+              value:
+                category,
+
+              confidence:
+                1,
+
+              confidenceLevel:
+                "high",
+
+              status:
+                "confirmed",
+
+              warning:
+                resolvedSubject
+                  .classificationReason,
+            },
+
+            requirementType: {
+              ...originalSubject
+                .requirementType,
+
+              value:
+                requirementType,
+
+              confidence:
+                1,
+
+              confidenceLevel:
+                "high",
+
+              status:
+                "confirmed",
+
+              warning:
+                resolvedSubject
+                  .classificationReason,
+            },
+
+            warnings:
+              Array.from(
+                new Set([
+                  ...(
+                    originalSubject
+                      .warnings ||
+                    []
+                  ),
+
+                  resolvedSubject
+                    .classificationReason,
+                ])
+              ),
+          };
+        }
+      );
+
+
+    return {
+      ...analysis,
+
+      subjects:
+        nextSubjects,
+
+      warnings:
+        Array.from(
+          new Set([
+            ...(
+              analysis.warnings ||
+              []
+            ),
+
+            ...(
+              nileRecognition
+                .warnings ||
+              []
+            ),
+          ])
+        ),
+    };
+  } catch (
+    error
+  ) {
+    /**
+     * NILE DB가 일시적으로 없거나
+     * 공식 Master 동기화 전이어도
+     * OCR 결과 자체를 잃어버리면 안 된다.
+     *
+     * 분류값은 null 상태로 남아서
+     * document-import-draft의 canConfirm=false
+     * 방어 로직이 작동한다.
+     */
+    return {
+      ...analysis,
+
+      warnings:
+        Array.from(
+          new Set([
+            ...(
+              analysis.warnings ||
+              []
+            ),
+
+            error instanceof
+              Error
+              ? `NILE 공식 과목 판정을 완료하지 못했습니다: ${error.message}`
+              : "NILE 공식 과목 판정을 완료하지 못했습니다.",
+          ])
+        ),
+    };
+  }
+}
+
 function isAdminOrHost(user: any) {
   return (
     user?.role === "admin" ||
@@ -12629,6 +13055,14 @@ const previousDocumentPendingActionId =
             ),
         };
 
+const nileClassifiedAnalysis =
+  await applyNileClassificationToUniversityTranscript({
+    student,
+
+    analysis:
+      normalizedAnalysis,
+  });
+
         let built:
           ReturnType<
             typeof buildDocumentImportDraft
@@ -12643,7 +13077,7 @@ const previousDocumentPendingActionId =
                 ),
 
               analysis:
-                normalizedAnalysis,
+  nileClassifiedAnalysis,
 
               target:
                 input.target ??
@@ -16776,6 +17210,14 @@ if (
       ),
   };
 
+const nileClassifiedAnalysis =
+  await applyNileClassificationToUniversityTranscript({
+    student,
+
+    analysis:
+      normalizedAnalysis,
+  });
+
   /**
    * 기존 document-import-draft 엔진을 그대로 사용한다.
    *
@@ -16797,7 +17239,7 @@ if (
           ),
 
         analysis:
-          normalizedAnalysis,
+  nileClassifiedAnalysis,
 
         /**
          * 자연어에서 별도 위치를 지정하지 않았으므로

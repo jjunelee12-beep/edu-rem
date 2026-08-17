@@ -817,6 +817,88 @@ function normalizeSubjects(
     );
 }
 
+/**
+ * 대학 성적증명서의 전공/교양/일반 및
+ * 전공필수/전공선택 분류는 OCR 결과를
+ * 학점은행제 목표 학위 분류로 사용하지 않는다.
+ *
+ * 이유:
+ *
+ * 성적증명서에 표시된 학습구분은
+ * 원래 대학의 전공 기준일 수 있으며,
+ * 사용자가 새로 취득하려는 학점은행제 전공의
+ * 전공/교양/일반 인정구분과 동일하지 않다.
+ *
+ * 따라서 대학 성적증명서에서는
+ * 과목명/학점/성적/이수연도/이수학기만 보존하고,
+ * 학위영역 분류는 후단 NILE Resolver가 수행한다.
+ */
+function clearUniversityTranscriptSubjectClassification(
+  subjects:
+    AiDocumentExtractedSubject[]
+): AiDocumentExtractedSubject[] {
+  return subjects.map(
+    subject => {
+      const warnings =
+        Array.from(
+          new Set([
+            ...(
+              subject.warnings ||
+              []
+            ),
+
+            "대학교·전문대학교 성적증명서의 학습구분은 목표 학점은행제 전공 기준으로 다시 판정해야 하므로 OCR 분류값을 사용하지 않습니다.",
+          ])
+        );
+
+
+      return {
+        ...subject,
+
+        category: {
+          ...subject.category,
+
+          value:
+            null,
+
+          confidence:
+            0,
+
+          confidenceLevel:
+            "low",
+
+          status:
+            "extracted",
+
+          warning:
+            "목표 학위의 전공·교양·일반 구분은 NILE 공식 표준교육과정 기준으로 별도 판정합니다.",
+        },
+
+        requirementType: {
+          ...subject.requirementType,
+
+          value:
+            null,
+
+          confidence:
+            0,
+
+          confidenceLevel:
+            "low",
+
+          status:
+            "extracted",
+
+          warning:
+            "목표 학위의 전공필수·전공선택 여부는 NILE 공식 표준교육과정 기준으로 별도 판정합니다.",
+        },
+
+        warnings,
+      };
+    }
+  );
+}
+
 function buildRequiredConfirmations(
   params: {
     raw:
@@ -1052,10 +1134,19 @@ function normalizeAnalysisResult(
       raw.paidAt
     );
 
-  const subjects =
-    normalizeSubjects(
-      raw.subjects
-    );
+  const extractedSubjects =
+  normalizeSubjects(
+    raw.subjects
+  );
+
+
+const subjects =
+  documentType ===
+    "university_transcript"
+    ? clearUniversityTranscriptSubjectClassification(
+        extractedSubjects
+      )
+    : extractedSubjects;
 
   const warnings =
     normalizeStringArray(
@@ -1209,6 +1300,10 @@ export async function analyzeAiDocument(
                 "3. 불확실한 값은 null로 반환하거나 낮은 confidence를 부여한다.",
                 "4. 과목 학점이 보이지 않으면 임의로 3학점을 넣지 않는다.",
                 "5. 과목 분류가 보이지 않으면 전공선택으로 추측하지 않는다.",
+"5-1. 대학·전문대학교 성적증명서의 전공/교양 표시는 원래 대학의 학습구분일 뿐 목표 학점은행제 전공의 인정구분으로 판단하지 않는다.",
+"5-2. 대학 성적증명서의 과목을 현재 사용자가 취득하려는 학점은행제 전공의 전공필수·전공선택·교양·일반으로 추론하지 않는다.",
+"5-3. 대학 성적증명서에서는 과목명, 학점, 성적, 이수연도, 이수학기를 정확히 추출하는 것을 우선한다.",
+"5-4. 목표 학위 기준 학습구분 판정은 서버의 국가평생교육진흥원 표준교육과정 판정 로직이 별도로 수행한다.",
                 "6. 숫자 0과 영문 O, 숫자 1과 영문 I를 주의한다.",
                 "7. 표의 행과 열 관계를 유지하여 과목별 값을 연결한다.",
                 "8. 잘린 행이나 일부만 보이는 과목은 warning에 표시한다.",

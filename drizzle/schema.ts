@@ -2232,6 +2232,920 @@ organizationId: int("organizationId").notNull().default(1),
 export type CourseSubjectTemplate = typeof courseSubjectTemplates.$inferSelect;
 export type InsertCourseSubjectTemplate = typeof courseSubjectTemplates.$inferInsert;
 
+// ─── NILE Standard Curriculums (국평원 공식 표준교육과정) ─────────────
+//
+// 국가평생교육진흥원 학점은행제 공식 기준 데이터.
+// 회사별 운영 데이터가 아니므로 organizationId를 사용하지 않는다.
+//
+// 예:
+// - 사회복지 전문학사
+// - 사회복지학 학사
+// - 외국어로서의한국어학 학사
+// - 아동학 학사
+// - 아동·가족 전문학사
+//
+export const nileStandardCurriculums = mysqlTable(
+  "nile_standard_curriculums",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    /**
+     * EduCanvas 내부에서 사용하는 고정 식별키.
+     *
+     * 예:
+     * associate_social_welfare
+     * bachelor_social_welfare
+     * bachelor_korean_language
+     * bachelor_child_studies
+     * associate_child_family
+     */
+    curriculumKey: varchar("curriculumKey", {
+      length: 100,
+    }).notNull(),
+
+    /**
+     * 학위 수준.
+     */
+    degreeLevel: mysqlEnum("degreeLevel", [
+      "associate",
+      "bachelor",
+    ]).notNull(),
+
+/**
+ * 전문학사 수업연한.
+ *
+ * bachelor = null
+ * associate 2년제 = 2
+ * associate 3년제 = 3
+ */
+associateDurationYears: int(
+  "associateDurationYears"
+),
+
+    /**
+     * 공식 학위명.
+     */
+    degreeName: varchar("degreeName", {
+      length: 150,
+    }).notNull(),
+
+    /**
+     * 공식 전공명.
+     */
+    majorName: varchar("majorName", {
+      length: 200,
+    }).notNull(),
+
+/**
+ * 국가평생교육진흥원 공식 전공 ID.
+ *
+ * 예:
+ * AGAE
+ * AACG
+ *
+ * 전체 표준교육과정 자동 동기화 시
+ * 공식 상세페이지를 다시 찾는 기준으로 사용한다.
+ */
+officialMajorId: varchar(
+  "officialMajorId",
+  {
+    length: 50,
+  }
+),
+
+    /**
+     * 학위 취득에 필요한 총 학점.
+     *
+     * 전문학사 2년제: 일반적으로 80
+     * 학사: 일반적으로 140
+     *
+     * 실제 계산은 이 DB 값을 기준으로 한다.
+     */
+    requiredTotalCredits: int("requiredTotalCredits").notNull(),
+
+    /**
+     * 최소 전공학점.
+     */
+    requiredMajorCredits: int("requiredMajorCredits").notNull(),
+
+    /**
+     * 최소 교양학점.
+     */
+    requiredLiberalCredits: int("requiredLiberalCredits").notNull(),
+
+    /**
+     * 전공필수 핵심제 등 특수 기준 존재 여부.
+     */
+    hasCoreRequirement: boolean("hasCoreRequirement")
+      .notNull()
+      .default(false),
+
+/**
+ * 전공필수 핵심제 최소 이수 과목 수.
+ *
+ * null:
+ * 핵심제 미적용
+ *
+ * 예:
+ * 아동학 전공 = 5
+ * 아동·가족 전공 = 5
+ */
+requiredCoreSubjectCount: int(
+  "requiredCoreSubjectCount"
+),
+
+    /**
+     * 공식 기준 버전.
+     *
+     * 특정 연도/개정 기준을 보존하기 위해 사용한다.
+     */
+    standardVersion: varchar("standardVersion", {
+      length: 100,
+    }).notNull(),
+
+    /**
+     * 해당 기준 적용 시작일.
+     */
+    effectiveFrom: date("effectiveFrom"),
+
+    /**
+     * null이면 현재 적용 중.
+     */
+    effectiveTo: date("effectiveTo"),
+
+    /**
+     * 공식 출처.
+     */
+    sourceAuthority: varchar("sourceAuthority", {
+      length: 100,
+    })
+      .notNull()
+      .default("NILE"),
+
+    /**
+     * 공식 원본 페이지.
+     */
+    sourceUrl: varchar("sourceUrl", {
+      length: 1000,
+    }),
+
+    /**
+     * 마지막 공식자료 확인일.
+     */
+    sourceCheckedAt: datetime("sourceCheckedAt"),
+
+/**
+ * 자동 수집기가 마지막으로
+ * 해당 전공 데이터를 DB와 동기화한 시간.
+ */
+lastSyncedAt: datetime(
+  "lastSyncedAt"
+),
+
+    isActive: boolean("isActive")
+      .notNull()
+      .default(true),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    curriculumVersionUniqueIdx: uniqueIndex(
+      "uq_nile_curriculum_key_version"
+    ).on(
+      table.curriculumKey,
+      table.standardVersion
+    ),
+
+    activeIdx: index(
+      "idx_nile_curriculum_active"
+    ).on(
+      table.curriculumKey,
+      table.isActive
+    ),
+
+officialMajorIdx: index(
+  "idx_nile_curriculum_official_major"
+).on(
+  table.degreeLevel,
+  table.officialMajorId
+),
+  })
+);
+
+export type NileStandardCurriculum =
+  typeof nileStandardCurriculums.$inferSelect;
+
+export type InsertNileStandardCurriculum =
+  typeof nileStandardCurriculums.$inferInsert;
+
+
+// ─── NILE Standard Subjects (국평원 공식 표준교육과정 과목) ───────────
+//
+// 특정 전공에서 각 과목이
+// 전공필수 / 전공선택인지 저장한다.
+//
+export const nileStandardSubjects = mysqlTable(
+  "nile_standard_subjects",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    curriculumId: int("curriculumId").notNull(),
+
+    /**
+     * 국평원 공식 과목명.
+     */
+    subjectName: varchar("subjectName", {
+      length: 255,
+    }).notNull(),
+
+/**
+ * 국가평생교육진흥원 공식 과목 ID.
+ *
+ * 예:
+ * 사회복지학개론 = 19981300
+ * 사회복지실천론 = 19990445
+ */
+officialSubjectId: varchar(
+  "officialSubjectId",
+  {
+    length: 50,
+  }
+),
+
+    /**
+     * 검색/매칭용 정규화 이름.
+     *
+     * 예:
+     * "사회복지학개론"
+     * → "사회복지학개론"
+     *
+     * 공백/특수문자 등의 표기 차이를 제거한 값.
+     */
+    normalizedSubjectName: varchar(
+      "normalizedSubjectName",
+      {
+        length: 255,
+      }
+    ).notNull(),
+
+    /**
+     * 해당 전공에서의 공식 학습구분.
+     */
+    requirementType: mysqlEnum(
+      "requirementType",
+      [
+        "전공필수",
+        "전공선택",
+      ]
+    ).notNull(),
+
+    credits: int("credits")
+      .notNull()
+      .default(3),
+
+/**
+ * 국평원 공식 세부교육과정표의 강의시간.
+ *
+ * 예:
+ * 사회복지학개론 = 3
+ * 사회복지현장실습 = 1
+ */
+lectureHours: int(
+  "lectureHours"
+)
+  .notNull()
+  .default(0),
+
+/**
+ * 국평원 공식 세부교육과정표의 실습시간.
+ *
+ * 예:
+ * 일반 이론과목 = 0
+ * 사회복지현장실습 = 4
+ * 케어실습 = 6
+ */
+practiceHours: int(
+  "practiceHours"
+)
+  .notNull()
+  .default(0),
+
+    /**
+     * 전공필수 핵심제 적용 대상 여부.
+     */
+    isCoreRequired: boolean("isCoreRequired")
+      .notNull()
+      .default(false),
+
+/**
+ * 해당 과목의 국평원 공식 상세/교수요목 출처.
+ */
+sourceUrl: varchar(
+  "sourceUrl",
+  {
+    length: 1000,
+  }
+),
+
+/**
+ * 해당 과목 데이터를 마지막으로
+ * 공식 원본에서 확인한 시간.
+ */
+sourceCheckedAt: datetime(
+  "sourceCheckedAt"
+),
+
+    /**
+     * 공식표 출력 순서.
+     */
+    sortOrder: int("sortOrder")
+      .notNull()
+      .default(0),
+
+    isActive: boolean("isActive")
+      .notNull()
+      .default(true),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    curriculumSubjectUniqueIdx: uniqueIndex(
+      "uq_nile_curriculum_subject"
+    ).on(
+      table.curriculumId,
+      table.normalizedSubjectName
+    ),
+
+    subjectLookupIdx: index(
+      "idx_nile_subject_lookup"
+    ).on(
+      table.normalizedSubjectName
+    ),
+
+officialSubjectIdx: index(
+  "idx_nile_subject_official_id"
+).on(
+  table.officialSubjectId
+),
+
+    curriculumRequirementIdx: index(
+      "idx_nile_subject_curriculum_requirement"
+    ).on(
+      table.curriculumId,
+      table.requirementType
+    ),
+  })
+);
+
+export type NileStandardSubject =
+  typeof nileStandardSubjects.$inferSelect;
+
+export type InsertNileStandardSubject =
+  typeof nileStandardSubjects.$inferInsert;
+
+
+// ─── NILE Liberal Arts Subjects (국평원 공식 교양 과목) ───────────────
+//
+// 특정 회사/전공에 종속되지 않는 공통 교양 기준.
+//
+export const nileLiberalSubjects = mysqlTable(
+  "nile_liberal_subjects",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    subjectName: varchar("subjectName", {
+      length: 255,
+    }).notNull(),
+
+/**
+ * 국가평생교육진흥원 공식 과목 ID.
+ */
+officialSubjectId: varchar(
+  "officialSubjectId",
+  {
+    length: 50,
+  }
+),
+
+    normalizedSubjectName: varchar(
+      "normalizedSubjectName",
+      {
+        length: 255,
+      }
+    ).notNull(),
+
+    credits: int("credits")
+      .notNull()
+      .default(3),
+
+lectureHours: int(
+  "lectureHours"
+)
+  .notNull()
+  .default(0),
+
+practiceHours: int(
+  "practiceHours"
+)
+  .notNull()
+  .default(0),
+
+    standardVersion: varchar("standardVersion", {
+      length: 100,
+    }).notNull(),
+
+    sourceUrl: varchar("sourceUrl", {
+      length: 1000,
+    }),
+
+    sourceCheckedAt: datetime("sourceCheckedAt"),
+
+    isActive: boolean("isActive")
+      .notNull()
+      .default(true),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    subjectVersionUniqueIdx: uniqueIndex(
+      "uq_nile_liberal_subject_version"
+    ).on(
+      table.normalizedSubjectName,
+      table.standardVersion
+    ),
+
+    lookupIdx: index(
+      "idx_nile_liberal_subject_lookup"
+    ).on(
+      table.normalizedSubjectName,
+      table.isActive
+    ),
+
+officialSubjectIdx: index(
+  "idx_nile_liberal_official_id"
+).on(
+  table.officialSubjectId
+),
+  })
+);
+
+export type NileLiberalSubject =
+  typeof nileLiberalSubjects.$inferSelect;
+
+export type InsertNileLiberalSubject =
+  typeof nileLiberalSubjects.$inferInsert;
+
+
+// ─── NILE Major/Liberal Compatible Subjects ──────────────────────────
+//
+// 국평원 전공교양호환과목.
+// 해당되는 경우 전공 또는 교양으로 인정 가능한 공식 기준을 저장한다.
+//
+export const nileMajorLiberalCompatibleSubjects =
+  mysqlTable(
+    "nile_major_liberal_compatible_subjects",
+    {
+      id: int("id")
+        .autoincrement()
+        .primaryKey(),
+
+      curriculumId: int("curriculumId").notNull(),
+
+      subjectName: varchar("subjectName", {
+        length: 255,
+      }).notNull(),
+
+/**
+ * 국가평생교육진흥원 공식 과목 ID.
+ */
+officialSubjectId: varchar(
+  "officialSubjectId",
+  {
+    length: 50,
+  }
+),
+
+      normalizedSubjectName: varchar(
+        "normalizedSubjectName",
+        {
+          length: 255,
+        }
+      ).notNull(),
+
+      /**
+       * 전공으로 사용할 경우의 학습구분.
+       */
+      majorRequirementType: mysqlEnum(
+        "majorRequirementType",
+        [
+          "전공필수",
+          "전공선택",
+        ]
+      ).notNull(),
+
+      credits: int("credits")
+        .notNull()
+        .default(3),
+
+lectureHours: int(
+  "lectureHours"
+)
+  .notNull()
+  .default(0),
+
+practiceHours: int(
+  "practiceHours"
+)
+  .notNull()
+  .default(0),
+
+      standardVersion: varchar(
+        "standardVersion",
+        {
+          length: 100,
+        }
+      ).notNull(),
+
+      sourceUrl: varchar("sourceUrl", {
+        length: 1000,
+      }),
+
+      sourceCheckedAt: datetime(
+        "sourceCheckedAt"
+      ),
+
+      isActive: boolean("isActive")
+        .notNull()
+        .default(true),
+
+      createdAt: timestamp("createdAt")
+        .defaultNow()
+        .notNull(),
+
+      updatedAt: timestamp("updatedAt")
+        .defaultNow()
+        .onUpdateNow()
+        .notNull(),
+    },
+    (table) => ({
+      curriculumSubjectVersionUniqueIdx:
+        uniqueIndex(
+          "uq_nile_major_liberal_subject"
+        ).on(
+          table.curriculumId,
+          table.normalizedSubjectName,
+          table.standardVersion
+        ),
+
+      lookupIdx: index(
+        "idx_nile_major_liberal_lookup"
+      ).on(
+        table.curriculumId,
+        table.normalizedSubjectName,
+        table.isActive
+      ),
+
+officialSubjectIdx: index(
+  "idx_nile_major_liberal_official_id"
+).on(
+  table.officialSubjectId
+),
+    })
+  );
+
+export type NileMajorLiberalCompatibleSubject =
+  typeof nileMajorLiberalCompatibleSubjects.$inferSelect;
+
+export type InsertNileMajorLiberalCompatibleSubject =
+  typeof nileMajorLiberalCompatibleSubjects.$inferInsert;
+
+
+// ─── NILE Subject Aliases / Equivalence ──────────────────────────────
+//
+// OCR 표기차이, 구 과목명, 공식 동등과목 등을
+// 공식 과목명과 연결하기 위한 별도 테이블.
+//
+// AI가 임의로 동일과목을 확정하지 않도록
+// alias의 근거도 함께 저장한다.
+//
+export const nileSubjectAliases = mysqlTable(
+  "nile_subject_aliases",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    /**
+     * 특정 전공에만 적용되는 alias면 curriculumId 사용.
+     * 전 전공 공통이면 null.
+     */
+    curriculumId: int("curriculumId"),
+
+    canonicalSubjectName: varchar(
+      "canonicalSubjectName",
+      {
+        length: 255,
+      }
+    ).notNull(),
+
+/**
+ * canonicalSubjectName이 연결되는
+ * 국가평생교육진흥원 공식 과목 ID.
+ *
+ * 구과목명/명칭변경 추적 시
+ * 이름보다 우선적인 연결 기준으로 사용한다.
+ */
+canonicalOfficialSubjectId: varchar(
+  "canonicalOfficialSubjectId",
+  {
+    length: 50,
+  }
+),
+
+    aliasSubjectName: varchar(
+      "aliasSubjectName",
+      {
+        length: 255,
+      }
+    ).notNull(),
+
+    normalizedAliasSubjectName: varchar(
+      "normalizedAliasSubjectName",
+      {
+        length: 255,
+      }
+    ).notNull(),
+
+    /**
+     * official_equivalent:
+     * 공식적으로 확인된 동일/대체 과목
+     *
+     * legacy_name:
+     * 구 과목명
+     *
+     * normalization:
+     * 공백/기호 등 단순 표기차이
+     *
+     * manual_verified:
+     * 관리자 검증 후 등록
+     */
+    aliasType: mysqlEnum(
+      "aliasType",
+      [
+        "official_equivalent",
+        "legacy_name",
+        "normalization",
+        "manual_verified",
+      ]
+    ).notNull(),
+
+    standardVersion: varchar("standardVersion", {
+      length: 100,
+    }),
+
+    sourceUrl: varchar("sourceUrl", {
+      length: 1000,
+    }),
+
+    verifiedAt: datetime("verifiedAt"),
+
+    isActive: boolean("isActive")
+      .notNull()
+      .default(true),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    aliasLookupIdx: index(
+      "idx_nile_subject_alias_lookup"
+    ).on(
+      table.normalizedAliasSubjectName,
+      table.isActive
+    ),
+
+    curriculumAliasIdx: index(
+      "idx_nile_subject_alias_curriculum"
+    ).on(
+      table.curriculumId,
+      table.normalizedAliasSubjectName
+    ),
+  })
+);
+
+export type NileSubjectAlias =
+  typeof nileSubjectAliases.$inferSelect;
+
+export type InsertNileSubjectAlias =
+  typeof nileSubjectAliases.$inferInsert;
+
+// ─── NILE Standard Sync Runs ─────────────────────────────────────────
+//
+// 국가평생교육진흥원 전체 표준교육과정
+// 자동 수집/동기화 실행 이력.
+//
+// 회사별 데이터가 아니므로 organizationId를 사용하지 않는다.
+//
+export const nileStandardSyncRuns = mysqlTable(
+  "nile_standard_sync_runs",
+  {
+    id: int("id")
+      .autoincrement()
+      .primaryKey(),
+
+    /**
+     * 실행 종류.
+     *
+     * full:
+     * 전체 학사 + 전문학사 + 교양 + 호환과목
+     *
+     * curriculum:
+     * 특정 전공만 갱신
+     */
+    syncType: mysqlEnum(
+      "syncType",
+      [
+        "full",
+        "curriculum",
+      ]
+    )
+      .notNull()
+      .default("full"),
+
+    /**
+     * 실행 상태.
+     */
+    status: mysqlEnum(
+      "status",
+      [
+        "running",
+        "success",
+        "failed",
+      ]
+    )
+      .notNull()
+      .default("running"),
+
+    /**
+     * 특정 curriculum 동기화인 경우 사용.
+     * 전체 동기화면 null.
+     */
+    curriculumKey: varchar(
+      "curriculumKey",
+      {
+        length: 100,
+      }
+    ),
+
+    /**
+     * 실행 당시 공식 기준 버전.
+     */
+    standardVersion: varchar(
+      "standardVersion",
+      {
+        length: 100,
+      }
+    ),
+
+    /**
+     * 수집된 학사/전문학사 전공 수.
+     */
+    curriculumCount: int(
+      "curriculumCount"
+    )
+      .notNull()
+      .default(0),
+
+    /**
+     * 전공과목 수.
+     */
+    subjectCount: int(
+      "subjectCount"
+    )
+      .notNull()
+      .default(0),
+
+    /**
+     * 교양과목 수.
+     */
+    liberalSubjectCount: int(
+      "liberalSubjectCount"
+    )
+      .notNull()
+      .default(0),
+
+    /**
+     * 전공교양 호환과목 수.
+     */
+    compatibleSubjectCount: int(
+      "compatibleSubjectCount"
+    )
+      .notNull()
+      .default(0),
+
+    /**
+     * 신규 추가된 행 수.
+     */
+    insertedCount: int(
+      "insertedCount"
+    )
+      .notNull()
+      .default(0),
+
+    /**
+     * 기존 데이터 중 업데이트된 행 수.
+     */
+    updatedCount: int(
+      "updatedCount"
+    )
+      .notNull()
+      .default(0),
+
+    /**
+     * 비활성화된 과거 데이터 수.
+     */
+    deactivatedCount: int(
+      "deactivatedCount"
+    )
+      .notNull()
+      .default(0),
+
+    /**
+     * 실패 원인.
+     */
+    errorMessage: text(
+      "errorMessage"
+    ),
+
+    /**
+     * 실제 동기화 시작.
+     */
+    startedAt: datetime(
+      "startedAt"
+    )
+      .notNull(),
+
+    /**
+     * 종료 시점.
+     */
+    finishedAt: datetime(
+      "finishedAt"
+    ),
+
+    createdAt: timestamp(
+      "createdAt"
+    )
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    statusStartedIdx: index(
+      "idx_nile_sync_status_started"
+    ).on(
+      table.status,
+      table.startedAt
+    ),
+
+    curriculumStartedIdx: index(
+      "idx_nile_sync_curriculum_started"
+    ).on(
+      table.curriculumKey,
+      table.startedAt
+    ),
+  })
+);
+
+export type NileStandardSyncRun =
+  typeof nileStandardSyncRuns.$inferSelect;
+
+export type InsertNileStandardSyncRun =
+  typeof nileStandardSyncRuns.$inferInsert;
+
 // ─── Private Certificate Masters (민간자격증 마스터) ────────────────
 export const privateCertificateMasters = mysqlTable(
   "private_certificate_masters",

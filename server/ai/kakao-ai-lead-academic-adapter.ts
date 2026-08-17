@@ -52,6 +52,10 @@ import {
   getConfirmedSubjectEquivalenceKey,
 } from "./risk-rules/subject-equivalence-resolver";
 
+import {
+  resolveNileRecognizedSubjects,
+} from "../nile/nile-recognized-subject-resolver";
+
 /**
  * 카카오 AI 신규상담용 공통 학습설계 Adapter.
  *
@@ -1345,24 +1349,218 @@ const consultationSocialWorkerLawVersion =
    * 학위 필요 여부 판정.
    */
   const degreeRequirement =
-    resolveDegreeRequirement({
-      courseKey,
+  resolveDegreeRequirement({
+    courseKey,
 
-      finalEducation:
-        memory.finalEducation,
-    });
+    finalEducation:
+      memory.finalEducation,
+  });
 
-  /**
-   * 2.
-   * 현재 인정과목을 기반으로
-   * 학위학점 분석.
-   */
-  const degreeCreditAnalysis =
-    analyzeDegreeCredits({
-      degreeRequirement,
 
+/**
+ * 1-1.
+ * 새 학위설계가 필요한 경우
+ * 전적대/기존 이수과목을 NILE 공식 표준교육과정 기준으로
+ * 전공 / 교양 / 일반 영역에 다시 분류한다.
+ *
+ * 중요:
+ *
+ * - OCR/AI가 추측한 category / requirementType을
+ *   학위학점 계산에 그대로 사용하지 않는다.
+ *
+ * - 과목명과 학점을 기준으로
+ *   NILE 공식 Master가 최종 학위영역을 결정한다.
+ *
+ * - 자격증 과목 인정은 아래 qualificationAnalysis에서
+ *   기존 recognizedSubjects를 그대로 사용한다.
+ */
+const nileRecognition =
+  await resolveNileRecognizedSubjects({
+    courseKey,
+
+    degreeRequirement,
+
+    subjects:
       recognizedSubjects,
-    });
+  });
+
+
+/**
+ * NILE 공식 전공 Master가 정상 확인된 경우:
+ *
+ * 학위학점 계산 → NILE 재분류 결과
+ *
+ * NILE Master가 아직 없거나
+ * 해당 과정에 학위트랙이 필요하지 않은 경우:
+ *
+ * 기존 recognizedSubjects 유지
+ */
+const degreeRecognizedSubjects =
+  nileRecognition.canResolve
+    ? nileRecognition.subjects
+    : recognizedSubjects;
+
+/**
+ * 1-2.
+ * 학위 채움용 신규 추천후보도
+ * NILE 공식 표준교육과정 기준으로 다시 분류한다.
+ *
+ * 중요:
+ *
+ * - 기존 이수과목만 NILE 분류하면
+ *   앞으로 추천할 과목의 전공 / 교양 판정은
+ *   course_subject_templates 값에 의존하게 된다.
+ *
+ * - 따라서 실제 과정마스터 + 학위 채움 템플릿을
+ *   하나의 후보군으로 만든 뒤
+ *   NILE 공식 Master로 다시 판정한다.
+ *
+ * - 자격요건용 requirementType/category는 변경하지 않고
+ *   학위학점 충족 여부를 계산할 때만 사용한다.
+ */
+const degreePlanningCandidateMap =
+  new Map<
+    string,
+    KakaoAiLeadRecognizedSubject
+  >();
+
+for (
+  const item
+  of [
+    ...masterItems,
+    ...degreeTemplates,
+  ]
+) {
+  const subjectName =
+    normalizeText(
+      item.subjectName
+    );
+
+  const subjectKey =
+    getConfirmedSubjectEquivalenceKey(
+      subjectName
+    );
+
+  if (
+    !subjectName ||
+    !subjectKey ||
+    degreePlanningCandidateMap.has(
+      subjectKey
+    )
+  ) {
+    continue;
+  }
+
+  degreePlanningCandidateMap.set(
+    subjectKey,
+    {
+      subjectName,
+
+      requirementType:
+        item.requirementType ??
+        null,
+
+      category:
+        item.category ??
+        null,
+
+      credits:
+        3,
+
+      source:
+        "plan",
+    }
+  );
+}
+
+const nileDegreePlanningRecognition =
+  await resolveNileRecognizedSubjects({
+    courseKey,
+
+    degreeRequirement,
+
+    subjects:
+      Array.from(
+        degreePlanningCandidateMap.values()
+      ),
+  });
+
+const degreeClassificationBySubjectKey =
+  new Map<
+    string,
+    {
+      category:
+        "전공" |
+        "교양" |
+        "일반";
+
+      requirementType:
+        "전공필수" |
+        "전공선택" |
+        "교양" |
+        "일반";
+    }
+  >();
+
+if (
+  nileDegreePlanningRecognition.canResolve
+) {
+  for (
+    const subject
+    of nileDegreePlanningRecognition.subjects
+  ) {
+    const subjectKey =
+      getConfirmedSubjectEquivalenceKey(
+        subject.subjectName
+      );
+
+    const category =
+      subject.category;
+
+    const requirementType =
+      subject.requirementType;
+
+    if (
+      !subjectKey ||
+      (
+        category !== "전공" &&
+        category !== "교양" &&
+        category !== "일반"
+      ) ||
+      (
+        requirementType !== "전공필수" &&
+        requirementType !== "전공선택" &&
+        requirementType !== "교양" &&
+        requirementType !== "일반"
+      )
+    ) {
+      continue;
+    }
+
+    degreeClassificationBySubjectKey.set(
+      subjectKey,
+      {
+        category,
+
+        requirementType,
+      }
+    );
+  }
+}
+
+
+/**
+ * 2.
+ * NILE 공식 분류가 반영된 인정과목을 기반으로
+ * 학위학점 분석.
+ */
+const degreeCreditAnalysis =
+  analyzeDegreeCredits({
+    degreeRequirement,
+
+    recognizedSubjects:
+      degreeRecognizedSubjects,
+  });
 
   /**
  * 3.
@@ -1437,7 +1635,37 @@ const consultationSocialWorkerLawVersion =
 
       recognizedSubjects,
 
-      degreeTemplates,
+      degreeTemplates:
+  degreeTemplates.map(
+    item => {
+      const subjectKey =
+        getConfirmedSubjectEquivalenceKey(
+          item.subjectName
+        );
+
+      const nileClassification =
+        subjectKey
+          ? degreeClassificationBySubjectKey.get(
+              subjectKey
+            )
+          : undefined;
+
+      return {
+        ...item,
+
+        category:
+          nileClassification?.category ??
+          item.category,
+
+        requirementType:
+          nileClassification?.requirementType ??
+          item.requirementType ??
+          null,
+      };
+    }
+  ),
+
+degreeClassificationBySubjectKey,
     });
 
   /**
@@ -1535,6 +1763,19 @@ const consultationSocialWorkerLawVersion =
     uniqueStrings([
 ...consultationRecognition
   .warnings,
+
+...(
+  nileRecognition
+    .warnings ||
+  []
+),
+
+...(
+  nileDegreePlanningRecognition
+    .warnings ||
+  []
+),
+
 
 hasProvisionalOldLawEvidence
   ? "2019년 이전 사회복지 관련 기이수과목에 대한 사용자 진술을 기준으로 상담용 구법 예상 계산을 적용했습니다. 최종 구법 적용 여부와 과목 인정 여부는 성적증명서 확인이 필요합니다."
