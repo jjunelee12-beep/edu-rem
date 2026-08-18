@@ -147,11 +147,12 @@ export type UnifiedQualificationRequirements = {
     QualificationRiskCourseKey;
 
   finalEducationGroup:
-    "high_school"
-    | "associate"
-    | "bachelor"
-    | "graduate"
-    | "unknown";
+  "below_high_school"
+  | "high_school"
+  | "associate"
+  | "bachelor"
+  | "graduate"
+  | "unknown";
 
   status:
     UnifiedRequirementStatus;
@@ -630,6 +631,24 @@ export function mergeQualificationRequirements(
    * 2. 최종학력 확인
    * ─────────────────────────────
    */
+
+/**
+ * 초졸 / 중졸
+ *
+ * 학점은행제 대학과정 진행 전
+ * 고졸 이상의 선행학력이 필요하므로
+ * 이후 Subject / Semester Planner를 실행하지 않는다.
+ */
+if (
+  degreeRequirement
+    .finalEducationGroup ===
+  "below_high_school"
+) {
+  blockingReasons.push(
+    degreeRequirement.reason ||
+    "현재 최종학력이 초졸 또는 중졸인 경우 바로 학점은행제 과정을 진행할 수 없습니다. 먼저 고졸 이상의 학력을 충족해야 합니다."
+  );
+}
   if (
     degreeRequirement
       .finalEducationGroup ===

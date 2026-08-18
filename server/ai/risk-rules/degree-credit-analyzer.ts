@@ -2,6 +2,10 @@ import type {
   DegreeRequirementResolution,
 } from "./degree-requirement-resolver";
 
+import {
+  getConfirmedSubjectEquivalenceKey,
+} from "./subject-equivalence-resolver";
+
 export type DegreeCreditRecognizedSubject = {
   subjectName:
     string;
@@ -174,6 +178,53 @@ function normalizeRequirementType(
   }
 
   return "unknown";
+}
+
+/**
+ * 동일교과목 중복 학점 계산 방지.
+ *
+ * 전적대 / 추가입력 / 플랜에서
+ * 동일한 공식 동일교과목이 중복으로 들어와도
+ * 학위학점은 한 번만 계산한다.
+ */
+function dedupeDegreeCreditSubjects(
+  subjects:
+    DegreeCreditRecognizedSubject[]
+) {
+  const map =
+    new Map<
+      string,
+      DegreeCreditRecognizedSubject
+    >();
+
+  for (
+    const subject
+    of subjects || []
+  ) {
+    const key =
+      getConfirmedSubjectEquivalenceKey(
+        subject.subjectName
+      );
+
+    if (!key) {
+      continue;
+    }
+
+    if (
+      !map.has(
+        key
+      )
+    ) {
+      map.set(
+        key,
+        subject
+      );
+    }
+  }
+
+  return Array.from(
+    map.values()
+  );
 }
 
 export function analyzeDegreeCredits(
@@ -357,6 +408,11 @@ export function analyzeDegreeCredits(
         )
     );
 
+const uniqueEligibleSubjects =
+  dedupeDegreeCreditSubjects(
+    eligibleSubjects
+  );
+
   const excludedTransferSubjects =
     isSecondMajor
       ? (
@@ -397,9 +453,9 @@ export function analyzeDegreeCredits(
     0;
 
   for (
-    const subject
-    of eligibleSubjects
-  ) {
+  const subject
+  of uniqueEligibleSubjects
+) {
     const credits =
       Math.max(
         0,

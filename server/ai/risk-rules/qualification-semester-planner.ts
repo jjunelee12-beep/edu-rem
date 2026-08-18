@@ -36,6 +36,21 @@ export type QualificationSemesterPlannedItem = {
    */
   annualSubjectCountAfterPlacement:
     number;
+
+  /**
+   * 해당 학기의 예상 학습 시작일.
+   *
+   * 실제 교육원 개강일이 없는 자동설계에서는
+   * 공통엔진이 계산한 최단 시작일을 사용한다.
+   */
+  estimatedStartDate:
+    string;
+
+  /**
+   * 한 학기 4개월 기준 예상 종료일.
+   */
+  estimatedEndDate:
+    string;
 };
 
 export type QualificationSemesterPlannerResult = {
@@ -57,11 +72,44 @@ export type QualificationSemesterPlannerResult = {
   referenceDate:
     string;
 
+  /**
+   * 실제 계산에 사용한 기준일.
+   *
+   * 신규상담에서는 질문한 오늘,
+   * 테스트에서는 명시적으로 전달한 날짜.
+   */
+  calculationBaseDate:
+    string;
+
   firstSemesterLabel:
     string | null;
 
   semesterCount:
     number;
+
+  /**
+   * 고객에게 안내하는 표준 학습기간.
+   *
+   * 1학기 = 4개월 기준.
+   */
+  nominalDurationMonths:
+    number;
+
+  /**
+   * 첫 추가학기 예상 시작일.
+   */
+  estimatedStudyStartDate:
+    string | null;
+
+  /**
+   * 마지막 추가학기 예상 종료일.
+   *
+   * 추후 행정절차 Planner가
+   * 이 날짜를 받아 학점인정/학위신청/
+   * 자격증 신청 가능시점을 계산한다.
+   */
+  estimatedStudyEndDate:
+    string | null;
 
   semesters:
     QualificationSemesterPlannedItem[];
@@ -237,6 +285,59 @@ function getNextSemesterLabel(
 }
 
 /**
+ * 두 귀속학기의 시간순서를 비교한다.
+ *
+ * 반환값:
+ *
+ * left < right
+ * → 음수
+ *
+ * left === right
+ * → 0
+ *
+ * left > right
+ * → 양수
+ */
+function compareSemesterLabels(
+  left:
+    unknown,
+  right:
+    unknown
+): number | null {
+  const leftParsed =
+    parseSemesterLabel(
+      left
+    );
+
+  const rightParsed =
+    parseSemesterLabel(
+      right
+    );
+
+  if (
+    !leftParsed ||
+    !rightParsed
+  ) {
+    return null;
+  }
+
+  const leftValue =
+    leftParsed.year *
+      2 +
+    leftParsed.semesterHalf;
+
+  const rightValue =
+    rightParsed.year *
+      2 +
+    rightParsed.semesterHalf;
+
+  return (
+    leftValue -
+    rightValue
+  );
+}
+
+/**
  * 현재 서버 시간이 UTC여도
  * 한국 날짜로 기준일을 계산한다.
  */
@@ -286,6 +387,303 @@ function getTodayKst() {
         "0"
       )}`,
   };
+}
+
+function parseBaseDate(
+  value:
+    string | null | undefined
+) {
+  const normalized =
+    String(
+      value ??
+      ""
+    ).trim();
+
+  const matched =
+    normalized.match(
+      /^(\d{4})-(\d{2})-(\d{2})$/
+    );
+
+  if (!matched) {
+    return getTodayKst();
+  }
+
+  const year =
+    Number(
+      matched[1]
+    );
+
+  const month =
+    Number(
+      matched[2]
+    );
+
+  const day =
+    Number(
+      matched[3]
+    );
+
+  const date =
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day
+      )
+    );
+
+  if (
+    date.getUTCFullYear() !==
+      year ||
+    date.getUTCMonth() + 1 !==
+      month ||
+    date.getUTCDate() !==
+      day
+  ) {
+    return getTodayKst();
+  }
+
+  return {
+    year,
+    month,
+    day,
+
+    date:
+      `${String(
+        year
+      ).padStart(
+        4,
+        "0"
+      )}-${String(
+        month
+      ).padStart(
+        2,
+        "0"
+      )}-${String(
+        day
+      ).padStart(
+        2,
+        "0"
+      )}`,
+  };
+}
+
+
+function addMonthsToDate(
+  dateValue:
+    string,
+  months:
+    number
+): string {
+  const matched =
+    String(
+      dateValue
+    ).match(
+      /^(\d{4})-(\d{2})-(\d{2})$/
+    );
+
+  if (!matched) {
+    return dateValue;
+  }
+
+  const date =
+    new Date(
+      Date.UTC(
+        Number(
+          matched[1]
+        ),
+        Number(
+          matched[2]
+        ) - 1,
+        Number(
+          matched[3]
+        )
+      )
+    );
+
+  /**
+   * 날짜 overflow 방지를 위해
+   * 월 계산은 1일 기준으로 이동한다.
+   */
+  const originalDay =
+    date.getUTCDate();
+
+  date.setUTCDate(
+    1
+  );
+
+  date.setUTCMonth(
+    date.getUTCMonth() +
+      months
+  );
+
+  const lastDayOfTargetMonth =
+    new Date(
+      Date.UTC(
+        date.getUTCFullYear(),
+        date.getUTCMonth() + 1,
+        0
+      )
+    ).getUTCDate();
+
+  date.setUTCDate(
+    Math.min(
+      originalDay,
+      lastDayOfTargetMonth
+    )
+  );
+
+  return `${String(
+    date.getUTCFullYear()
+  ).padStart(
+    4,
+    "0"
+  )}-${String(
+    date.getUTCMonth() + 1
+  ).padStart(
+    2,
+    "0"
+  )}-${String(
+    date.getUTCDate()
+  ).padStart(
+    2,
+    "0"
+  )}`;
+}
+
+function addDaysToDate(
+  dateValue:
+    string,
+  days:
+    number
+): string {
+  const matched =
+    String(
+      dateValue
+    ).match(
+      /^(\d{4})-(\d{2})-(\d{2})$/
+    );
+
+  if (!matched) {
+    return dateValue;
+  }
+
+  const date =
+    new Date(
+      Date.UTC(
+        Number(
+          matched[1]
+        ),
+        Number(
+          matched[2]
+        ) - 1,
+        Number(
+          matched[3]
+        )
+      )
+    );
+
+  date.setUTCDate(
+    date.getUTCDate() +
+      days
+  );
+
+  return `${String(
+    date.getUTCFullYear()
+  ).padStart(
+    4,
+    "0"
+  )}-${String(
+    date.getUTCMonth() + 1
+  ).padStart(
+    2,
+    "0"
+  )}-${String(
+    date.getUTCDate()
+  ).padStart(
+    2,
+    "0"
+  )}`;
+}
+
+/**
+ * 현재 학기가 종료된 뒤
+ * 목표 귀속학기에 들어갈 수 있는
+ * 가장 빠른 시작일을 계산한다.
+ *
+ * 기본적으로 이전 학기 다음날부터
+ * 바로 시작할 수 있으면 그 날짜를 사용한다.
+ *
+ * 다만 해당 날짜가 아직 이전 귀속학기에
+ * 포함되는 경우에는 다음 귀속학기 시작구간까지
+ * 이동한다.
+ */
+function resolveEarliestStartDateForSemester(
+  params: {
+    candidateDate:
+      string;
+
+    semesterLabel:
+      string;
+  }
+): string | null {
+  const candidate =
+    parseBaseDate(
+      params.candidateDate
+    );
+
+  const targetSemester =
+    parseSemesterLabel(
+      params.semesterLabel
+    );
+
+  if (!targetSemester) {
+    return null;
+  }
+
+  const candidateSemesterLabel =
+    resolveSemesterLabelFromDate({
+      year:
+        candidate.year,
+
+      month:
+        candidate.month,
+
+      day:
+        candidate.day,
+    });
+
+  /**
+   * 다음날부터 이미 목표 귀속학기로
+   * 인정된다면 그대로 시작한다.
+   */
+  if (
+    candidateSemesterLabel ===
+    params.semesterLabel
+  ) {
+    return candidate.date;
+  }
+
+  /**
+   * 자동 최단설계 운영기준:
+   *
+   * 1학기 신규 시작구간
+   * → 전년도 12월 1일
+   *
+   * 2학기 신규 시작구간
+   * → 해당연도 6월 1일
+   *
+   * 실제 교육원 개강일 데이터가 연결되면
+   * 추후 이 값을 실제 개강일 기준으로 교체한다.
+   */
+  if (
+    targetSemester.semesterHalf ===
+    1
+  ) {
+    return `${targetSemester.year - 1}-12-01`;
+  }
+
+  return `${targetSemester.year}-06-01`;
 }
 
 /**
@@ -624,10 +1022,47 @@ export function planQualificationSemesters(
 
     existingSemesters:
       QualificationSemesterExistingItem[];
+
+    /**
+ * 최단기간 계산을 시작할 실제 기준일.
+ *
+ * 신규상담에서:
+ *
+ * - 사용자가 시작시점을 말하지 않으면
+ *   호출부에서 오늘 날짜를 사용한다.
+ *
+ * - "10월부터 시작"
+ *   → 해당 연도 10월 1일
+ *
+ * - "내년 3월부터 시작"
+ *   → 다음 연도 3월 1일
+ *
+ * - 정확한 날짜를 말하면
+ *   → 해당 날짜
+ *
+ * 즉 이 값은 단순 조회일이 아니라
+ * 실제 학습설계를 시작할 기준일이다.
+ */
+baseDate?:
+  string | null;
   }
 ): QualificationSemesterPlannerResult {
-  const today =
-    getTodayKst();
+ const today =
+  parseBaseDate(
+    params.baseDate
+  );
+
+const baseDateSemesterLabel =
+  resolveSemesterLabelFromDate({
+    year:
+      today.year,
+
+    month:
+      today.month,
+
+    day:
+      today.day,
+  });
 
   const warnings:
     string[] =
@@ -653,16 +1088,28 @@ export function planQualificationSemesters(
         "unresolved",
 
       referenceDate:
-        today.date,
+  today.date,
 
-      firstSemesterLabel:
-        null,
+calculationBaseDate:
+  today.date,
 
-      semesterCount:
-        0,
+firstSemesterLabel:
+  null,
 
-      semesters:
-        [],
+semesterCount:
+  0,
+
+nominalDurationMonths:
+  0,
+
+estimatedStudyStartDate:
+  null,
+
+estimatedStudyEndDate:
+  null,
+
+semesters:
+  [],
 
       lastSemesterLabel:
         null,
@@ -697,16 +1144,28 @@ export function planQualificationSemesters(
         "current_date",
 
       referenceDate:
-        today.date,
+  today.date,
 
-      firstSemesterLabel:
-        null,
+calculationBaseDate:
+  today.date,
 
-      semesterCount:
-        0,
+firstSemesterLabel:
+  null,
 
-      semesters:
-        [],
+semesterCount:
+  0,
+
+nominalDurationMonths:
+  0,
+
+estimatedStudyStartDate:
+  null,
+
+estimatedStudyEndDate:
+  null,
+
+semesters:
+  [],
 
       lastSemesterLabel:
         null,
@@ -802,16 +1261,28 @@ export function planQualificationSemesters(
           "unresolved",
 
         referenceDate:
-          today.date,
+  today.date,
 
-        firstSemesterLabel:
-          null,
+calculationBaseDate:
+  today.date,
 
-        semesterCount:
-          0,
+firstSemesterLabel:
+  null,
 
-        semesters:
-          [],
+semesterCount:
+  0,
+
+nominalDurationMonths:
+  0,
+
+estimatedStudyStartDate:
+  null,
+
+estimatedStudyEndDate:
+  null,
+
+semesters:
+  [],
 
         lastSemesterLabel:
           null,
@@ -822,18 +1293,130 @@ export function planQualificationSemesters(
       };
     }
 
-    firstSemesterLabel =
-      getNextSemesterLabel(
-        lastLabel
-      );
+    const nextExistingSemesterLabel =
+  getNextSemesterLabel(
+    lastLabel
+  );
 
-    nextSemesterOrder =
-      lastExistingSemester
-        .semesterOrder +
-      1;
+if (
+  !nextExistingSemesterLabel
+) {
+  unresolvedReasons.push(
+    `${lastLabel} 다음 학기를 계산할 수 없습니다.`
+  );
 
-    startBasis =
-      "after_existing_semester";
+  return {
+    canPlan:
+      false,
+
+    startBasis:
+      "unresolved",
+
+    referenceDate:
+      today.date,
+
+    calculationBaseDate:
+      today.date,
+
+    firstSemesterLabel:
+      null,
+
+    semesterCount:
+      0,
+
+    nominalDurationMonths:
+      0,
+
+    estimatedStudyStartDate:
+      null,
+
+    estimatedStudyEndDate:
+      null,
+
+    semesters:
+      [],
+
+    lastSemesterLabel:
+      null,
+
+    unresolvedReasons,
+
+    warnings,
+  };
+}
+
+const semesterComparison =
+  compareSemesterLabels(
+    baseDateSemesterLabel,
+    nextExistingSemesterLabel
+  );
+
+if (
+  semesterComparison ===
+  null
+) {
+  unresolvedReasons.push(
+    "기존 학기 이후 귀속학기와 시작 희망일의 귀속학기를 비교할 수 없습니다."
+  );
+
+  return {
+    canPlan:
+      false,
+
+    startBasis:
+      "unresolved",
+
+    referenceDate:
+      today.date,
+
+    calculationBaseDate:
+      today.date,
+
+    firstSemesterLabel:
+      null,
+
+    semesterCount:
+      0,
+
+    nominalDurationMonths:
+      0,
+
+    estimatedStudyStartDate:
+      null,
+
+    estimatedStudyEndDate:
+      null,
+
+    semesters:
+      [],
+
+    lastSemesterLabel:
+      null,
+
+    unresolvedReasons,
+
+    warnings,
+  };
+}
+
+/**
+ * 기존학기의 다음학기와
+ * 사용자가 희망한 시작일의 귀속학기 중
+ * 더 늦은 학기를 실제 첫 추가학기로 사용한다.
+ */
+firstSemesterLabel =
+  semesterComparison >
+    0
+    ? baseDateSemesterLabel
+    : nextExistingSemesterLabel;
+
+nextSemesterOrder =
+  lastExistingSemester
+    .semesterOrder +
+  1;
+
+startBasis =
+  "after_existing_semester";
   } else {
     /**
      * 등록된 학기가 하나도 없으면
@@ -864,37 +1447,49 @@ export function planQualificationSemesters(
   }
 
   if (
-    !firstSemesterLabel
-  ) {
-    return {
-      canPlan:
-        false,
+  !firstSemesterLabel
+) {
+  return {
+    canPlan:
+      false,
 
-      startBasis:
-        "unresolved",
+    startBasis:
+      "unresolved",
 
-      referenceDate:
-        today.date,
+    referenceDate:
+      today.date,
 
-      firstSemesterLabel:
-        null,
+    calculationBaseDate:
+      today.date,
 
-      semesterCount:
-        0,
+    firstSemesterLabel:
+      null,
 
-      semesters:
-        [],
+    semesterCount:
+      0,
 
-      lastSemesterLabel:
-        null,
+    nominalDurationMonths:
+      0,
 
-      unresolvedReasons: [
-        "첫 귀속학기를 결정하지 못했습니다.",
-      ],
+    estimatedStudyStartDate:
+      null,
 
-      warnings,
-    };
-  }
+    estimatedStudyEndDate:
+      null,
+
+    semesters:
+      [],
+
+    lastSemesterLabel:
+      null,
+
+    unresolvedReasons: [
+      "첫 귀속학기를 결정하지 못했습니다.",
+    ],
+
+    warnings,
+  };
+}
 
   /**
    * 기존 연도별 수강과목 수.
@@ -913,6 +1508,77 @@ export function planQualificationSemesters(
 
   let currentSemesterLabel =
     firstSemesterLabel;
+
+/**
+ * 신규상담에서는 실제 계산 기준일을
+ * 첫 학기 시작일로 사용한다.
+ *
+ * 예:
+ *
+ * 오늘 시작
+ * → 오늘
+ *
+ * "10월부터 시작"
+ * → 호출부에서 baseDate=2026-10-01
+ * → 2026-10-01
+ */
+const resolvedFirstSemesterStartDate =
+  resolveEarliestStartDateForSemester({
+    candidateDate:
+      today.date,
+
+    semesterLabel:
+      firstSemesterLabel,
+  });
+
+if (
+  !resolvedFirstSemesterStartDate
+) {
+  return {
+    canPlan:
+      false,
+
+    startBasis:
+      "unresolved",
+
+    referenceDate:
+      today.date,
+
+    calculationBaseDate:
+      today.date,
+
+    firstSemesterLabel:
+      null,
+
+    semesterCount:
+      0,
+
+    nominalDurationMonths:
+      0,
+
+    estimatedStudyStartDate:
+      null,
+
+    estimatedStudyEndDate:
+      null,
+
+    semesters:
+      [],
+
+    lastSemesterLabel:
+      null,
+
+    unresolvedReasons: [
+      ...unresolvedReasons,
+      `${firstSemesterLabel} 첫 학기 시작일을 계산할 수 없습니다.`,
+    ],
+
+    warnings,
+  };
+}
+
+let currentSemesterStartDate =
+  resolvedFirstSemesterStartDate;
 
   /**
    * 무한루프 방지.
@@ -979,27 +1645,49 @@ export function planQualificationSemesters(
      * 현재 학기는 건너뛰고 다음 귀속학기로 이동한다.
      */
     if (
-      availableCount <=
-      0
-    ) {
-      const nextLabel =
-        getNextSemesterLabel(
-          currentSemesterLabel
-        );
+  availableCount <=
+    0
+) {
+  const nextLabel =
+    getNextSemesterLabel(
+      currentSemesterLabel
+    );
 
-      if (!nextLabel) {
-        unresolvedReasons.push(
-          `${currentSemesterLabel} 다음 학기를 계산할 수 없습니다.`
-        );
+  if (!nextLabel) {
+    unresolvedReasons.push(
+      `${currentSemesterLabel} 다음 학기를 계산할 수 없습니다.`
+    );
 
-        break;
-      }
+    break;
+  }
 
-      currentSemesterLabel =
-        nextLabel;
+  const skippedSemesterStartDate =
+    resolveEarliestStartDateForSemester({
+      candidateDate:
+        currentSemesterStartDate,
 
-      continue;
-    }
+      semesterLabel:
+        nextLabel,
+    });
+
+  if (
+    !skippedSemesterStartDate
+  ) {
+    unresolvedReasons.push(
+      `${nextLabel} 예상 시작일을 계산할 수 없습니다.`
+    );
+
+    break;
+  }
+
+  currentSemesterStartDate =
+    skippedSemesterStartDate;
+
+  currentSemesterLabel =
+    nextLabel;
+
+  continue;
+}
 
     const remainingSubjectCount =
       subjects.length -
@@ -1030,6 +1718,26 @@ export function planQualificationSemesters(
       nextAnnualCount
     );
 
+/**
+ * 한 학기 = 4개월.
+ *
+ * 예:
+ * 2026-10-01 시작
+ * → 다음 학기 기준일 2027-02-01
+ * → 현재 학기 종료일 2027-01-31
+ */
+const nextSemesterCandidateDate =
+  addMonthsToDate(
+    currentSemesterStartDate,
+    4
+  );
+
+const currentSemesterEndDate =
+  addDaysToDate(
+    nextSemesterCandidateDate,
+    -1
+  );
+
     plannedSemesters.push({
       semesterOrder:
         nextSemesterOrder,
@@ -1045,6 +1753,12 @@ export function planQualificationSemesters(
 
       annualSubjectCountAfterPlacement:
         nextAnnualCount,
+
+estimatedStartDate:
+  currentSemesterStartDate,
+
+estimatedEndDate:
+  currentSemesterEndDate,
     });
 
     nextSemesterOrder +=
@@ -1062,6 +1776,28 @@ export function planQualificationSemesters(
 
       break;
     }
+
+const nextSemesterStartDate =
+  resolveEarliestStartDateForSemester({
+    candidateDate:
+      nextSemesterCandidateDate,
+
+    semesterLabel:
+      nextLabel,
+  });
+
+if (
+  !nextSemesterStartDate
+) {
+  unresolvedReasons.push(
+    `${nextLabel} 예상 시작일을 계산할 수 없습니다.`
+  );
+
+  break;
+}
+
+currentSemesterStartDate =
+  nextSemesterStartDate;
 
     currentSemesterLabel =
       nextLabel;
@@ -1086,6 +1822,29 @@ export function planQualificationSemesters(
           .semesterLabel
       : null;
 
+const semesterCount =
+  plannedSemesters.length;
+
+const nominalDurationMonths =
+  semesterCount *
+  4;
+
+const estimatedStudyStartDate =
+  plannedSemesters.length >
+    0
+    ? plannedSemesters[0]
+        .estimatedStartDate
+    : null;
+
+const estimatedStudyEndDate =
+  plannedSemesters.length >
+    0
+    ? plannedSemesters[
+        plannedSemesters.length -
+          1
+      ].estimatedEndDate
+    : null;
+
   return {
     canPlan:
       unresolvedReasons.length ===
@@ -1094,17 +1853,25 @@ export function planQualificationSemesters(
     startBasis,
 
     referenceDate:
-      today.date,
+  today.date,
 
-    firstSemesterLabel,
+calculationBaseDate:
+  today.date,
 
-    semesterCount:
-      plannedSemesters.length,
+firstSemesterLabel,
 
-    semesters:
-      plannedSemesters,
+semesterCount,
 
-    lastSemesterLabel,
+nominalDurationMonths,
+
+estimatedStudyStartDate,
+
+estimatedStudyEndDate,
+
+semesters:
+  plannedSemesters,
+
+lastSemesterLabel,
 
     unresolvedReasons,
 

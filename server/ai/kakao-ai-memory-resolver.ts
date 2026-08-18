@@ -35,6 +35,37 @@ export type KakaoAiPriorSubjectCandidate = {
 export const KAKAO_AI_PRIOR_SUBJECT_FACT_PREFIX =
   "[KAKAO_PRIOR_SUBJECT]";
 
+
+export type KakaoAiPriorCreditBankSemester = {
+  year:
+    number;
+
+  semesterHalf:
+    1 | 2;
+
+  subjectCount:
+    number;
+
+  source:
+    KakaoAiPriorSubjectSource;
+
+  verificationStatus:
+    KakaoAiPriorSubjectVerificationStatus;
+};
+
+export const KAKAO_AI_PRIOR_CREDIT_BANK_SEMESTER_FACT_PREFIX =
+  "[KAKAO_PRIOR_CREDIT_BANK_SEMESTER]";
+
+export const KAKAO_AI_DESIRED_STUDY_START_DATE_FACT_PREFIX =
+  "[KAKAO_STUDY_START_DATE]";
+
+export type KakaoAiDesiredStudyStartDateFact = {
+  date:
+    string;
+
+  source:
+    KakaoAiPriorSubjectSource;
+};
 /**
  * 카카오 AI가 대화를 이해할 때 사용하는
  * 구조화 Memory.
@@ -83,6 +114,21 @@ export type KakaoAiStructuredMemory = {
  */
 priorSubjectCandidates:
   KakaoAiPriorSubjectCandidate[];
+
+priorCreditBankSemesters:
+  KakaoAiPriorCreditBankSemester[];
+
+/**
+ * 신규상담자가 실제로 희망한다고 밝힌
+ * 학습 시작 기준일.
+ *
+ * YYYY-MM-DD.
+ *
+ * null이면 별도 시작시점을 말하지 않은 것이므로
+ * 공통 Semester Planner가 오늘 KST를 사용한다.
+ */
+desiredStudyStartDate:
+  string | null;
 
 unresolvedQuestions:
   string[];
@@ -165,6 +211,78 @@ function normalizeNullableText(
 
   return normalized ||
     null;
+}
+
+function normalizeIsoDate(
+  value:
+    unknown
+): string | null {
+  const normalized =
+    String(
+      value ??
+      ""
+    ).trim();
+
+  const matched =
+    normalized.match(
+      /^(\d{4})-(\d{2})-(\d{2})$/
+    );
+
+  if (!matched) {
+    return null;
+  }
+
+  const year =
+    Number(
+      matched[1]
+    );
+
+  const month =
+    Number(
+      matched[2]
+    );
+
+  const day =
+    Number(
+      matched[3]
+    );
+
+  const date =
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day
+      )
+    );
+
+  if (
+    date.getUTCFullYear() !==
+      year ||
+    date.getUTCMonth() + 1 !==
+      month ||
+    date.getUTCDate() !==
+      day
+  ) {
+    return null;
+  }
+
+  return `${String(
+    year
+  ).padStart(
+    4,
+    "0"
+  )}-${String(
+    month
+  ).padStart(
+    2,
+    "0"
+  )}-${String(
+    day
+  ).padStart(
+    2,
+    "0"
+  )}`;
 }
 
 function normalizeFinalEducation(
@@ -529,6 +647,271 @@ export function decodeKakaoAiPriorSubjectFact(
   }
 }
 
+export function encodeKakaoAiPriorCreditBankSemesterFact(
+  semester:
+    KakaoAiPriorCreditBankSemester
+): string {
+  const year =
+    Math.floor(
+      Number(
+        semester.year
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      year
+    ) ||
+    year < 1900 ||
+    year > 2100
+  ) {
+    return "";
+  }
+
+  const semesterHalf:
+    1 | 2 =
+    semester.semesterHalf === 2
+      ? 2
+      : 1;
+
+  const subjectCount =
+    Math.floor(
+      Number(
+        semester.subjectCount
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      subjectCount
+    ) ||
+    subjectCount <= 0 ||
+subjectCount > 8
+  ) {
+    return "";
+  }
+
+  const source:
+    KakaoAiPriorSubjectSource =
+    semester.source === "ocr" ||
+    semester.source === "crm"
+      ? semester.source
+      : "user";
+
+  const verificationStatus:
+    KakaoAiPriorSubjectVerificationStatus =
+    semester.verificationStatus === "verified" ||
+    semester.verificationStatus === "rejected"
+      ? semester.verificationStatus
+      : "user_reported";
+
+  return (
+    KAKAO_AI_PRIOR_CREDIT_BANK_SEMESTER_FACT_PREFIX +
+    JSON.stringify({
+      year,
+      semesterHalf,
+      subjectCount,
+      source,
+      verificationStatus,
+    })
+  );
+}
+
+export function decodeKakaoAiPriorCreditBankSemesterFact(
+  value:
+    unknown
+): KakaoAiPriorCreditBankSemester | null {
+  const raw =
+    String(
+      value ??
+      ""
+    ).trim();
+
+  if (
+    !raw.startsWith(
+      KAKAO_AI_PRIOR_CREDIT_BANK_SEMESTER_FACT_PREFIX
+    )
+  ) {
+    return null;
+  }
+
+  const jsonText =
+    raw.slice(
+      KAKAO_AI_PRIOR_CREDIT_BANK_SEMESTER_FACT_PREFIX.length
+    );
+
+  try {
+    const parsed =
+      JSON.parse(
+        jsonText
+      ) as Record<
+        string,
+        unknown
+      >;
+
+    const year =
+      Math.floor(
+        Number(
+          parsed.year
+        )
+      );
+
+    if (
+      !Number.isFinite(
+        year
+      ) ||
+      year < 1900 ||
+      year > 2100
+    ) {
+      return null;
+    }
+
+    const semesterHalfRaw =
+      Number(
+        parsed.semesterHalf
+      );
+
+    if (
+      semesterHalfRaw !== 1 &&
+      semesterHalfRaw !== 2
+    ) {
+      return null;
+    }
+
+    const semesterHalf:
+      1 | 2 =
+      semesterHalfRaw;
+
+    const subjectCount =
+      Math.floor(
+        Number(
+          parsed.subjectCount
+        )
+      );
+
+    if (
+      !Number.isFinite(
+        subjectCount
+      ) ||
+      subjectCount <= 0 ||
+subjectCount > 8
+    ) {
+      return null;
+    }
+
+    const source:
+      KakaoAiPriorSubjectSource =
+      parsed.source === "ocr" ||
+      parsed.source === "crm"
+        ? parsed.source
+        : "user";
+
+    const verificationStatus:
+      KakaoAiPriorSubjectVerificationStatus =
+      parsed.verificationStatus === "verified" ||
+      parsed.verificationStatus === "rejected"
+        ? parsed.verificationStatus
+        : "user_reported";
+
+    return {
+      year,
+      semesterHalf,
+      subjectCount,
+      source,
+      verificationStatus,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function encodeKakaoAiDesiredStudyStartDateFact(
+  fact:
+    KakaoAiDesiredStudyStartDateFact
+): string {
+  const date =
+    normalizeIsoDate(
+      fact.date
+    );
+
+  if (!date) {
+    return "";
+  }
+
+  const source:
+    KakaoAiPriorSubjectSource =
+    fact.source === "ocr" ||
+    fact.source === "crm"
+      ? fact.source
+      : "user";
+
+  return (
+    KAKAO_AI_DESIRED_STUDY_START_DATE_FACT_PREFIX +
+    JSON.stringify({
+      date,
+      source,
+    })
+  );
+}
+
+
+export function decodeKakaoAiDesiredStudyStartDateFact(
+  value:
+    unknown
+): KakaoAiDesiredStudyStartDateFact | null {
+  const raw =
+    String(
+      value ??
+      ""
+    ).trim();
+
+  if (
+    !raw.startsWith(
+      KAKAO_AI_DESIRED_STUDY_START_DATE_FACT_PREFIX
+    )
+  ) {
+    return null;
+  }
+
+  const jsonText =
+    raw.slice(
+      KAKAO_AI_DESIRED_STUDY_START_DATE_FACT_PREFIX.length
+    );
+
+  try {
+    const parsed =
+      JSON.parse(
+        jsonText
+      ) as Record<
+        string,
+        unknown
+      >;
+
+    const date =
+      normalizeIsoDate(
+        parsed.date
+      );
+
+    if (!date) {
+      return null;
+    }
+
+    const source:
+      KakaoAiPriorSubjectSource =
+      parsed.source === "ocr" ||
+      parsed.source === "crm"
+        ? parsed.source
+        : "user";
+
+    return {
+      date,
+      source,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * DB Memory 결과를
  * AI가 사용하기 쉬운 형태로 정규화한다.
@@ -562,6 +945,49 @@ function normalizeStructuredMemory(
           )
       );
 
+const priorCreditBankSemesters =
+  verifiedFacts
+    .map(
+      (
+        fact
+      ) =>
+        decodeKakaoAiPriorCreditBankSemesterFact(
+          fact
+        )
+    )
+    .filter(
+      (
+        semester
+      ): semester is
+        KakaoAiPriorCreditBankSemester =>
+        Boolean(
+          semester
+        )
+    );
+
+const desiredStudyStartDate =
+  verifiedFacts
+    .map(
+      fact =>
+        decodeKakaoAiDesiredStudyStartDateFact(
+          fact
+        )
+    )
+    .filter(
+      (
+        fact
+      ): fact is
+        KakaoAiDesiredStudyStartDateFact =>
+        Boolean(
+          fact
+        )
+    )
+    .at(
+      -1
+    )
+    ?.date ??
+  null;
+
   return {
     desiredCourse:
       normalizeNullableText(
@@ -593,6 +1019,10 @@ socialWorkerLawVersion:
     verifiedFacts,
 
 priorSubjectCandidates,
+
+priorCreditBankSemesters,
+
+desiredStudyStartDate,
 
     unresolvedQuestions:
       normalizeStringArray(
@@ -831,6 +1261,16 @@ priorSubjectCandidates:
   memoryContext
     .structuredMemory
     .priorSubjectCandidates,
+
+priorCreditBankSemesters:
+  memoryContext
+    .structuredMemory
+    .priorCreditBankSemesters,
+
+desiredStudyStartDate:
+  memoryContext
+    .structuredMemory
+    .desiredStudyStartDate,
 
       unresolvedQuestions:
         memoryContext

@@ -4,8 +4,15 @@ import {
   encodeKakaoAiPriorSubjectFact,
   decodeKakaoAiPriorSubjectFact,
 
+  encodeKakaoAiPriorCreditBankSemesterFact,
+  decodeKakaoAiPriorCreditBankSemesterFact,
+
+  encodeKakaoAiDesiredStudyStartDateFact,
+  decodeKakaoAiDesiredStudyStartDateFact,
+
   type KakaoAiStructuredMemory,
   type KakaoAiPriorSubjectCandidate,
+  type KakaoAiPriorCreditBankSemester,
 } from "./kakao-ai-memory-resolver";
 
 /**
@@ -74,6 +81,21 @@ socialWorkerLawVersion?:
   "current" |
   null;
 
+/**
+ * 사용자가 희망한다고 직접 밝힌
+ * 실제 학습 시작 기준일.
+ *
+ * YYYY-MM-DD.
+ *
+ * undefined:
+ * 이번 대화에서 변경 없음
+ *
+ * null:
+ * 사용자가 기존 시작희망일을 명확하게 취소/초기화
+ */
+desiredStudyStartDate?:
+  string | null;
+
   /**
    * 새로 확정된 사실만.
    */
@@ -90,6 +112,16 @@ socialWorkerLawVersion?:
  */
 priorSubjectCandidatesToUpsert?:
   KakaoAiPriorSubjectCandidate[];
+
+/**
+ * 다른 교육원 / 기존 학점은행제
+ * 수강학기 이력.
+ *
+ * 같은 연도 + 같은 학기는
+ * 새 행을 계속 추가하지 않고 갱신한다.
+ */
+priorCreditBankSemestersToUpsert?:
+  KakaoAiPriorCreditBankSemester[];
 
   /**
    * 더 이상 미확인이 아닌 질문.
@@ -540,6 +572,147 @@ function mergePriorSubjectCandidates(
   );
 }
 
+function mergePriorCreditBankSemesters(
+  existingFacts:
+    string[],
+
+  semestersToUpsert:
+    KakaoAiPriorCreditBankSemester[]
+): string[] {
+  const normalFacts:
+    string[] =
+    [];
+
+  const semesterMap =
+    new Map<
+      string,
+      KakaoAiPriorCreditBankSemester
+    >();
+
+  for (
+    const fact of
+    normalizeStringArray(
+      existingFacts,
+      100
+    )
+  ) {
+    const semester =
+      decodeKakaoAiPriorCreditBankSemesterFact(
+        fact
+      );
+
+    if (
+      !semester
+    ) {
+      normalFacts.push(
+        fact
+      );
+
+      continue;
+    }
+
+    const key =
+      `${semester.year}-${semester.semesterHalf}`;
+
+    semesterMap.set(
+      key,
+      semester
+    );
+  }
+
+  for (
+    const incoming of
+    semestersToUpsert
+  ) {
+    const year =
+      Math.floor(
+        Number(
+          incoming.year
+        )
+      );
+
+    const semesterHalf =
+      incoming.semesterHalf ===
+        2
+        ? 2
+        : 1;
+
+    const subjectCount =
+      Math.floor(
+        Number(
+          incoming.subjectCount
+        )
+      );
+
+    if (
+      !Number.isFinite(
+        year
+      ) ||
+      year < 1900 ||
+      year > 2100 ||
+      !Number.isFinite(
+        subjectCount
+      ) ||
+      subjectCount <= 0 ||
+subjectCount > 8
+    ) {
+      continue;
+    }
+
+    const key =
+      `${year}-${semesterHalf}`;
+
+    const existing =
+      semesterMap.get(
+        key
+      );
+
+    const next:
+      KakaoAiPriorCreditBankSemester = {
+      year,
+
+      semesterHalf,
+
+      subjectCount,
+
+      source:
+        incoming.source ||
+        existing?.source ||
+        "user",
+
+      verificationStatus:
+        incoming.verificationStatus ||
+        existing
+          ?.verificationStatus ||
+        "user_reported",
+    };
+
+    semesterMap.set(
+      key,
+      next
+    );
+  }
+
+  const encodedSemesters =
+    Array.from(
+      semesterMap.values()
+    )
+      .map(
+        encodeKakaoAiPriorCreditBankSemesterFact
+      )
+      .filter(
+        Boolean
+      );
+
+  return [
+    ...normalFacts,
+    ...encodedSemesters,
+  ].slice(
+    0,
+    100
+  );
+}
+
 /**
  * 미확인 질문을 추가/해결한다.
  */
@@ -612,6 +785,74 @@ function mergeUnresolvedQuestions(
   }
 
   return result;
+}
+
+function mergeDesiredStudyStartDate(
+  existingFacts:
+    string[],
+
+  desiredStudyStartDate:
+    string | null | undefined
+): string[] {
+  const normalFacts =
+    normalizeStringArray(
+      existingFacts,
+      100
+    ).filter(
+      fact =>
+        !decodeKakaoAiDesiredStudyStartDateFact(
+          fact
+        )
+    );
+
+  /**
+   * undefined:
+   * 현재 시작일 Memory 유지.
+   */
+  if (
+    desiredStudyStartDate ===
+      undefined
+  ) {
+    return normalizeStringArray(
+      existingFacts,
+      100
+    );
+  }
+
+  /**
+   * null:
+   * 기존 시작희망일 삭제.
+   */
+  if (
+    desiredStudyStartDate ===
+      null
+  ) {
+    return normalFacts;
+  }
+
+  const encoded =
+    encodeKakaoAiDesiredStudyStartDateFact({
+      date:
+        desiredStudyStartDate,
+
+      source:
+        "user",
+    });
+
+  if (!encoded) {
+    return normalizeStringArray(
+      existingFacts,
+      100
+    );
+  }
+
+  return [
+    ...normalFacts,
+    encoded,
+  ].slice(
+    0,
+    100
+  );
 }
 
 /**
@@ -714,6 +955,25 @@ const verifiedFactsWithPriorSubjects =
       : []
   );
 
+const verifiedFactsWithPriorSemesters =
+  mergePriorCreditBankSemesters(
+    verifiedFactsWithPriorSubjects,
+
+    Array.isArray(
+      patch
+        .priorCreditBankSemestersToUpsert
+    )
+      ? patch
+          .priorCreditBankSemestersToUpsert
+      : []
+  );
+
+const verifiedFactsWithStudyStartDate =
+  mergeDesiredStudyStartDate(
+    verifiedFactsWithPriorSemesters,
+    patch.desiredStudyStartDate
+  );
+
   const unresolvedQuestions =
     mergeUnresolvedQuestions(
       current.unresolvedQuestions,
@@ -750,10 +1010,10 @@ const verifiedFactsWithPriorSubjects =
     socialWorkerLawVersion,
 
      verifiedFacts:
-  verifiedFactsWithPriorSubjects,
+  verifiedFactsWithStudyStartDate,
 
 priorSubjectCandidates:
-  verifiedFactsWithPriorSubjects
+  verifiedFactsWithStudyStartDate
     .map(
       decodeKakaoAiPriorSubjectFact
     )
@@ -766,6 +1026,35 @@ priorSubjectCandidates:
           subject
         )
     ),
+
+priorCreditBankSemesters:
+  verifiedFactsWithStudyStartDate
+    .map(
+      decodeKakaoAiPriorCreditBankSemesterFact
+    )
+    .filter(
+      (
+        semester
+      ): semester is
+        KakaoAiPriorCreditBankSemester =>
+        Boolean(
+          semester
+        )
+    ),
+
+desiredStudyStartDate:
+  verifiedFactsWithStudyStartDate
+    .map(
+      decodeKakaoAiDesiredStudyStartDateFact
+    )
+    .filter(
+      Boolean
+    )
+    .at(
+      -1
+    )
+    ?.date ??
+  null,
 
       unresolvedQuestions,
 

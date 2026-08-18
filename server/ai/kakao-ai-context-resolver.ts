@@ -969,13 +969,22 @@ export async function resolveKakaoAiContext(
     socialWorkerLawVersion:
   priorAcademic.courseKey ===
     "social_worker_2" &&
-  priorAcademic
-    .socialWorkerLawVersion ===
-    "old"
-    ? "old"
-    : params
-        .structuredMemory
-        .socialWorkerLawVersion,
+  (
+    priorAcademic
+      .socialWorkerLawVersion ===
+      "old" ||
+    priorAcademic
+      .socialWorkerLawVersion ===
+      "current"
+  )
+    ? priorAcademic
+        .socialWorkerLawVersion
+    : priorAcademic.courseKey ===
+        "social_worker_2"
+      ? null
+      : params
+          .structuredMemory
+          .socialWorkerLawVersion,
   };
 
   leadAcademicAnalysis =
@@ -995,31 +1004,61 @@ export async function resolveKakaoAiContext(
    * 확인 필요 사유 / 경고도
    * 최종 Academic Analysis에 합친다.
    */
-  leadAcademicAnalysis = {
-    ...leadAcademicAnalysis,
+  const mergedLeadUnresolvedReasons =
+  Array.from(
+    new Set([
+      ...leadAcademicAnalysis
+        .unresolvedReasons,
 
-    unresolvedReasons:
-      Array.from(
-        new Set([
-          ...leadAcademicAnalysis
-            .unresolvedReasons,
+      ...priorAcademic
+        .unresolvedReasons,
+    ])
+  );
 
-          ...priorAcademic
-            .unresolvedReasons,
-        ])
-      ),
+const mergedLeadWarnings =
+  Array.from(
+    new Set([
+      ...leadAcademicAnalysis
+        .warnings,
 
-    warnings:
-      Array.from(
-        new Set([
-          ...leadAcademicAnalysis
-            .warnings,
+      ...priorAcademic
+        .warnings,
+    ])
+  );
 
-          ...priorAcademic
-            .warnings,
-        ])
-      ),
-  };
+const hasPriorAcademicBlockingReason =
+  priorAcademic.courseKey ===
+    "social_worker_2" &&
+  (
+    priorAcademic
+      .socialWorkerLawResolved ===
+      false ||
+    priorAcademic
+      .unresolvedReasons
+      .length > 0
+  );
+
+leadAcademicAnalysis = {
+  ...leadAcademicAnalysis,
+
+  status:
+    hasPriorAcademicBlockingReason
+      ? "review_required"
+      : leadAcademicAnalysis
+          .status,
+
+  canExplain:
+    hasPriorAcademicBlockingReason
+      ? false
+      : leadAcademicAnalysis
+          .canExplain,
+
+  unresolvedReasons:
+    mergedLeadUnresolvedReasons,
+
+  warnings:
+    mergedLeadWarnings,
+};
 }
 
   let registeredStudentAnalysis:

@@ -49,6 +49,26 @@ export type KakaoAiUserPriorSubjectCandidate = {
  * 각각의 서버 Adapter가 직접 Memory Writer에 넣는다.
  */
 
+export type KakaoAiUserPriorCreditBankSemesterCandidate = {
+  year:
+    number;
+
+  semesterHalf:
+    1 | 2;
+
+  subjectCount:
+    number;
+
+  evidence:
+    string;
+
+  confidence:
+    number;
+
+  isExplicitCorrection:
+    boolean;
+};
+
 export type KakaoAiUserMemoryCandidate<T> = {
   /**
    * 현재 사용자 메시지에서
@@ -162,6 +182,19 @@ export type KakaoAiUserMemoryExtraction = {
   hasTransferCollege:
     KakaoAiUserMemoryCandidate<boolean>;
 
+  /**
+   * 사용자가 현재 메시지에서 직접 밝힌
+   * 희망 학습 시작 기준일.
+   *
+   * YYYY-MM-DD.
+   *
+   * "10월부터", "다음 달부터"처럼
+   * 상대적인 표현은 currentKstDate를 기준으로
+   * 실제 날짜로 정규화한다.
+   */
+  desiredStudyStartDate:
+    KakaoAiUserMemoryCandidate<string>;
+
 /**
  * 사용자가 직접 밝힌
  * 대학 / 전적대 기이수 과목 후보.
@@ -172,6 +205,15 @@ export type KakaoAiUserMemoryExtraction = {
 priorSubjectCandidates:
   KakaoAiUserPriorSubjectCandidate[];
 
+
+/**
+ * 사용자가 직접 밝힌
+ * 다른 교육원 / 기존 학점은행제 수강학기.
+ *
+ * 전적대 대학수업과 구분한다.
+ */
+priorCreditBankSemesters:
+  KakaoAiUserPriorCreditBankSemesterCandidate[];
   /**
    * 위 세 필드 외에
    * 사용자가 현재 메시지에서 명확히 밝힌
@@ -461,6 +503,9 @@ const KAKAO_AI_MEMORY_EXTRACTION_SCHEMA = {
     hasTransferCollege:
       BOOLEAN_CANDIDATE_SCHEMA,
 
+    desiredStudyStartDate:
+      STRING_CANDIDATE_SCHEMA,
+
 priorSubjectCandidates: {
   type:
     "array",
@@ -539,6 +584,83 @@ priorSubjectCandidates: {
       "subjectName",
       "completedYear",
       "credits",
+      "evidence",
+      "confidence",
+      "isExplicitCorrection",
+    ],
+  },
+},
+
+priorCreditBankSemesters: {
+  type:
+    "array",
+
+  items: {
+    type:
+      "object",
+
+    additionalProperties:
+      false,
+
+    properties: {
+      year: {
+        type:
+          "integer",
+
+        minimum:
+          1900,
+
+        maximum:
+          2100,
+      },
+
+      semesterHalf: {
+        type:
+          "integer",
+
+        enum: [
+          1,
+          2,
+        ],
+      },
+
+      subjectCount: {
+        type:
+          "integer",
+
+        minimum:
+          1,
+
+        maximum:
+          8,
+      },
+
+      evidence: {
+        type:
+          "string",
+      },
+
+      confidence: {
+        type:
+          "number",
+
+        minimum:
+          0,
+
+        maximum:
+          1,
+      },
+
+      isExplicitCorrection: {
+        type:
+          "boolean",
+      },
+    },
+
+    required: [
+      "year",
+      "semesterHalf",
+      "subjectCount",
       "evidence",
       "confidence",
       "isExplicitCorrection",
@@ -668,7 +790,9 @@ isExplicitCorrection: {
     "desiredCourse",
 "finalEducation",
 "hasTransferCollege",
+    "desiredStudyStartDate",
 "priorSubjectCandidates",
+"priorCreditBankSemesters",
 "verifiedFacts",
     "resolvedQuestionKeys",
     "unresolvedQuestionKeys",
@@ -929,6 +1053,66 @@ hasTransferCollege=true로 볼 수 있다.
 그러나 finalEducation을
 "대졸" 또는 "전문대졸"로 변경하지 않는다.
 
+11-7. 사용자가 다른 교육원 또는 기존 학점은행제에서
+특정 연도/학기에 몇 과목을 수강했다고 명확하게 말하면
+priorCreditBankSemesters에 넣는다.
+
+이 값은 대학교/전문대 전적대 수업과 다르다.
+
+예:
+
+사용자:
+"2026년 1학기에 다른 교육원에서 8과목 들었어요"
+
+→ priorCreditBankSemesters:
+[
+  {
+    "year": 2026,
+    "semesterHalf": 1,
+    "subjectCount": 8,
+    "evidence": "2026년 1학기에 다른 교육원에서 8과목 들었어요",
+    "confidence": 0.99,
+    "isExplicitCorrection": false
+  }
+]
+
+사용자:
+"올해 1학기에 8과목 들었어요"
+
+→ 현재 기준연도를 확실하게 계산할 수 있는 경우
+  해당 연도를 year로 사용 가능하다.
+
+단, 어느 연도인지 판단할 수 없으면 추측하지 않는다.
+
+11-8. "대학교에서 8과목 들었어요",
+"전문대에서 8과목 이수했어요"처럼
+전적대 대학수업을 말하는 것은
+priorCreditBankSemesters에 넣지 않는다.
+
+그것은 priorSubjectCandidates / 전적대 인정 영역이다.
+
+11-9. 사용자가 기존 학점은행제 학기 과목 수를
+명확하게 정정한 경우 isExplicitCorrection=true다.
+
+예:
+
+기존:
+2026년 1학기 8과목
+
+사용자:
+"아 8과목 아니고 7과목 들었어요"
+
+→ year = 2026
+→ semesterHalf = 1
+→ subjectCount = 7
+→ isExplicitCorrection = true
+
+11-10. 학점은행제 기존 학기 수강내역은
+사용자 직접 발언 단계에서는 user_reported 예상정보다.
+
+최종 증명자료 확인 전이라도
+상담용 최단기간 및 연간 14과목 예상 계산에는 사용할 수 있다.
+
 12. verifiedFacts에는 학점은행제 상담에 앞으로 의미가 있는
 명확한 사실만 넣는다.
 일상적인 잡담은 저장하지 않는다.
@@ -946,6 +1130,71 @@ hasTransferCollege=true로 볼 수 있다.
 needsClarification=true로 한다.
 
 JSON 외의 설명은 출력하지 않는다.
+
+희망 학습 시작일 규칙:
+
+- currentKstDate는 서버가 제공한 현재 한국 날짜다.
+- desiredStudyStartDate는 사용자가 자신의 실제 학습 시작 희망시점을
+  현재 메시지에서 직접 명확하게 말한 경우에만 추출한다.
+- 결과 value는 반드시 YYYY-MM-DD 형식으로 반환한다.
+- 연/월만 말한 경우 해당 월의 1일을 기준일로 사용한다.
+- "지금부터", "오늘부터", "바로 시작"처럼 현재 시작 의사가 명확하면
+  currentKstDate를 사용한다.
+- "다음 달부터"는 currentKstDate 기준 다음 달 1일이다.
+- "내년 N월부터"는 currentKstDate의 다음 연도 N월 1일이다.
+- 연도 없이 "N월부터"라고 말한 경우,
+  currentKstDate를 기준으로 아직 오지 않은 가장 가까운 N월을 사용한다.
+- 단순히 날짜나 월이 등장했다는 이유만으로 저장하지 않는다.
+- 학점인정신청, 학위신청, 실습, 시험, 개강일 문의 등에 등장한 날짜는
+  desiredStudyStartDate가 아니다.
+- 과거에 실제로 공부를 시작했던 날짜도
+  현재 희망 시작일로 저장하지 않는다.
+- 사용자가 시작시점을 질문 형태로 말하더라도
+  자신의 계획 기준을 명확히 제시했다면 저장할 수 있다.
+
+예:
+
+currentKstDate = "2026-08-18"
+
+"10월부터 시작하려고 해요"
+→ value = "2026-10-01"
+→ shouldWrite = true
+
+"10월부터 시작하면 언제 취득해요?"
+→ value = "2026-10-01"
+→ shouldWrite = true
+
+"다음 달부터 할게요"
+→ value = "2026-09-01"
+→ shouldWrite = true
+
+"내년 3월부터 시작할게요"
+→ value = "2027-03-01"
+→ shouldWrite = true
+
+"지금부터 시작할게요"
+→ value = "2026-08-18"
+→ shouldWrite = true
+
+"10월에 학점인정신청 하나요?"
+→ shouldWrite = false
+
+"작년 10월에 시작했어요"
+→ shouldWrite = false
+
+기존 currentMemory.desiredStudyStartDate와 다른 시작시점을
+사용자가 현재 자신의 시작계획으로 명확하게 다시 말한 경우에는
+최신 직접발언을 우선하는 정정으로 본다.
+
+예:
+
+currentMemory.desiredStudyStartDate = "2026-10-01"
+
+"아 그냥 지금부터 시작할게요"
+→ value = currentKstDate
+→ conflictsWithMemory = true
+→ isExplicitCorrection = true
+
 `.trim();
 
 function normalizeText(
@@ -1111,7 +1360,30 @@ isExplicitCorrection:
   false,
     },
 
+    desiredStudyStartDate: {
+      shouldWrite:
+        false,
+
+      value:
+        null,
+
+      evidence:
+        null,
+
+      confidence:
+        0,
+
+      conflictsWithMemory:
+        false,
+
+      isExplicitCorrection:
+        false,
+    },
+
 priorSubjectCandidates:
+  [],
+
+priorCreditBankSemesters:
   [],
 
     verifiedFacts:
@@ -1396,6 +1668,85 @@ const priorSubjectCandidates =
         )
     : [];
 
+const priorCreditBankSemesters =
+  Array.isArray(
+    source.priorCreditBankSemesters
+  )
+    ? source.priorCreditBankSemesters
+        .map(
+          (
+            semester:
+              any
+          ) => ({
+            year:
+              Math.floor(
+                Number(
+                  semester?.year ||
+                  0
+                )
+              ),
+
+            semesterHalf:
+              Number(
+                semester?.semesterHalf
+              ) === 2
+                ? 2 as const
+                : 1 as const,
+
+            subjectCount:
+              Math.floor(
+                Number(
+                  semester?.subjectCount ||
+                  0
+                )
+              ),
+
+            evidence:
+              normalizeText(
+                semester?.evidence
+              ),
+
+            confidence:
+              normalizeConfidence(
+                semester?.confidence
+              ),
+
+            isExplicitCorrection:
+              semester
+                ?.isExplicitCorrection ===
+              true,
+          })
+        )
+        .filter(
+          (
+            semester
+          ) =>
+            semester.year >=
+              1900 &&
+            semester.year <=
+              2100 &&
+            (
+              semester
+                .semesterHalf ===
+                1 ||
+              semester
+                .semesterHalf ===
+                2
+            ) &&
+            semester.subjectCount >
+              0 &&
+            semester.subjectCount <=
+              8 &&
+            Boolean(
+              semester.evidence
+            )
+        )
+        .slice(
+          0,
+          20
+        )
+    : [];
+
   const verifiedFacts =
     Array.isArray(
       source.verifiedFacts
@@ -1473,7 +1824,15 @@ isExplicitCorrection:
         source.hasTransferCollege
       ),
 
+    desiredStudyStartDate:
+      normalizeStringCandidate(
+        source.desiredStudyStartDate
+      ),
+
+
 priorSubjectCandidates,
+
+priorCreditBankSemesters,
 
     verifiedFacts,
 
@@ -1639,6 +1998,75 @@ function buildSafeMemoryPatch(
         .value;
   }
 
+  const desiredStudyStartDate =
+    extraction.desiredStudyStartDate;
+
+  if (
+    desiredStudyStartDate.shouldWrite &&
+    desiredStudyStartDate.value &&
+    desiredStudyStartDate.confidence >=
+      0.9 &&
+    (
+      !desiredStudyStartDate
+        .conflictsWithMemory ||
+      desiredStudyStartDate
+        .isExplicitCorrection
+    ) &&
+    desiredStudyStartDate.evidence &&
+    isEvidenceInsideMessage(
+      message,
+      desiredStudyStartDate.evidence
+    ) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(
+      desiredStudyStartDate.value
+    )
+  ) {
+    const [
+      yearText,
+      monthText,
+      dayText,
+    ] =
+      desiredStudyStartDate.value.split(
+        "-"
+      );
+
+    const year =
+      Number(
+        yearText
+      );
+
+    const month =
+      Number(
+        monthText
+      );
+
+    const day =
+      Number(
+        dayText
+      );
+
+    const date =
+      new Date(
+        Date.UTC(
+          year,
+          month - 1,
+          day
+        )
+      );
+
+    if (
+      date.getUTCFullYear() ===
+        year &&
+      date.getUTCMonth() + 1 ===
+        month &&
+      date.getUTCDate() ===
+        day
+    ) {
+      patch.desiredStudyStartDate =
+        desiredStudyStartDate.value;
+    }
+  }
+
 const priorSubjectCandidatesToUpsert =
   extraction
     .priorSubjectCandidates
@@ -1683,6 +2111,65 @@ if (
 ) {
   patch.priorSubjectCandidatesToUpsert =
     priorSubjectCandidatesToUpsert;
+}
+
+const priorCreditBankSemestersToUpsert =
+  extraction
+    .priorCreditBankSemesters
+    .filter(
+      (
+        semester
+      ) =>
+        semester.confidence >=
+          0.9 &&
+        semester.year >=
+          1900 &&
+        semester.year <=
+          2100 &&
+        (
+          semester
+            .semesterHalf ===
+            1 ||
+          semester
+            .semesterHalf ===
+            2
+        ) &&
+        semester.subjectCount >
+          0 &&
+        semester.subjectCount <=
+          8 &&
+        isEvidenceInsideMessage(
+          message,
+          semester.evidence
+        )
+    )
+    .map(
+      (
+        semester
+      ) => ({
+        year:
+          semester.year,
+
+        semesterHalf:
+          semester.semesterHalf,
+
+        subjectCount:
+          semester.subjectCount,
+
+        source:
+          "user" as const,
+
+        verificationStatus:
+          "user_reported" as const,
+      })
+    );
+
+if (
+  priorCreditBankSemestersToUpsert.length >
+    0
+) {
+  patch.priorCreditBankSemestersToUpsert =
+    priorCreditBankSemestersToUpsert;
 }
 
   const verifiedFactsToAdd:
@@ -1891,8 +2378,30 @@ const openai =
   const model =
     getKakaoMemoryModel();
 
+    const currentKstDate =
+    new Intl.DateTimeFormat(
+      "en-CA",
+      {
+        timeZone:
+          "Asia/Seoul",
+
+        year:
+          "numeric",
+
+        month:
+          "2-digit",
+
+        day:
+          "2-digit",
+      }
+    ).format(
+      new Date()
+    );
+
   const input =
     JSON.stringify({
+      currentKstDate,
+
       currentMessage:
         message,
 

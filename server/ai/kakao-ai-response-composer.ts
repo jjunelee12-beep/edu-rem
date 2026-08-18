@@ -413,78 +413,73 @@ recognizedSubjects:
     : [],
 
     academicSummary:
-      context.academicSummary
-        ? {
-            status:
-              context
-                .academicSummary
-                .status,
+  context.academicSummary
+    ? {
+        status:
+          context
+            .academicSummary
+            .status,
 
-            canExplain:
-              context
-                .academicSummary
-                .canExplain,
+        canExplain:
+          context
+            .academicSummary
+            .canExplain,
 
-            course:
-              context
-                .academicSummary
-                .course,
+        course:
+          context
+            .academicSummary
+            .course,
 
-            qualification:
-              context
-                .academicSummary
-                .qualification,
+        qualification:
+          context
+            .academicSummary
+            .qualification,
 
-            degree:
-              (
-                context
-                  .academicSummary as any
-              ).degree ??
-              null,
+        masterIntegrity:
+          context
+            .academicSummary
+            .masterIntegrity,
 
-            semester:
-              (
-                context
-                  .academicSummary as any
-              ).semester ??
-              null,
+        degree:
+          context
+            .academicSummary
+            .degree,
 
-            administrativeTimeline:
-              (
-                context
-                  .academicSummary as any
-              )
-                .administrativeTimeline ??
-              null,
+        studyPlan:
+          context
+            .academicSummary
+            .studyPlan,
 
-            summaryLines:
-              normalizeStringArray(
-                (
-                  context
-                    .academicSummary as any
-                ).summaryLines,
-                30
-              ),
+        timeline:
+          context
+            .academicSummary
+            .timeline,
 
-            unresolvedReasons:
-              normalizeStringArray(
-                (
-                  context
-                    .academicSummary as any
-                ).unresolvedReasons,
-                20
-              ),
+        summaryLines:
+          normalizeStringArray(
+            context
+              .academicSummary
+              .summaryLines,
+            30
+          ),
 
-            warnings:
-              normalizeStringArray(
-                (
-                  context
-                    .academicSummary as any
-                ).warnings,
-                20
-              ),
-          }
-        : null,
+        unresolvedReasons:
+          normalizeStringArray(
+            context
+              .academicSummary
+              .unresolvedReasons,
+            20
+          ),
+
+        warnings:
+          normalizeStringArray(
+            context
+              .academicSummary
+              .warnings,
+            20
+          ),
+      }
+    : null,
 
     unresolvedReasons:
       normalizeStringArray(
@@ -595,56 +590,60 @@ function buildSafeRegisteredStudentContext(
     },
 
     academicSummary:
-      academicSummary
-        ? {
-            status:
-              academicSummary.status,
+  academicSummary
+    ? {
+        status:
+          academicSummary.status,
 
-            canExplain:
-              academicSummary.canExplain,
+        canExplain:
+          academicSummary.canExplain,
 
-            course:
-              academicSummary.course,
+        course:
+          academicSummary.course,
 
-            qualification:
-              academicSummary
-                .qualification,
+        qualification:
+          academicSummary
+            .qualification,
 
-            degree:
-              academicSummary.degree ??
-              null,
+        masterIntegrity:
+          academicSummary
+            .masterIntegrity ??
+          [],
 
-            semester:
-              academicSummary.semester ??
-              null,
+        degree:
+          academicSummary.degree ??
+          null,
 
-            administrativeTimeline:
-              academicSummary
-                .administrativeTimeline ??
-              null,
+        studyPlan:
+          academicSummary.studyPlan ??
+          null,
 
-            summaryLines:
-              normalizeStringArray(
-                academicSummary
-                  .summaryLines,
-                30
-              ),
+        timeline:
+          academicSummary.timeline ??
+          null,
 
-            unresolvedReasons:
-              normalizeStringArray(
-                academicSummary
-                  .unresolvedReasons,
-                20
-              ),
+        summaryLines:
+          normalizeStringArray(
+            academicSummary
+              .summaryLines,
+            30
+          ),
 
-            warnings:
-              normalizeStringArray(
-                academicSummary
-                  .warnings,
-                20
-              ),
-          }
-        : null,
+        unresolvedReasons:
+          normalizeStringArray(
+            academicSummary
+              .unresolvedReasons,
+            20
+          ),
+
+        warnings:
+          normalizeStringArray(
+            academicSummary
+              .warnings,
+            20
+          ),
+      }
+    : null,
 
     issues:
       issues
@@ -852,13 +851,28 @@ registeredStudentContext.academicSummary에 존재하는
 
 5. 서버 계산결과에 없는 숫자를 만들지 않는다.
 
-6. academicSummary.summaryLines가 존재하면
-학업 관련 답변의 가장 중요한 사실근거로 사용한다.
+6. 신규 고객이면 leadAcademicContext.academicSummary,
+등록회원이면 registeredStudentContext.academicSummary를
+학업·자격·기간 답변의 최우선 서버 근거로 사용한다.
 
-7. academicSummary.canExplain=false이거나
-unresolvedReasons가 있으면
+해당 academicSummary.summaryLines가 존재하면
+서버가 계산한 순서와 내용을 우선하여 자연스럽게 설명한다.
+
+academicSummary.studyPlan에는
+실제 추가과목 수, 학기 수, 예상 개월 수,
+예상 시작일·종료일 및 학기별 배치가 들어 있다.
+
+academicSummary.timeline에는
+최종 학습 종료일, 학점인정 예상시점,
+학위신청·학위수여 및 자격증 신청 예상시점이 들어 있다.
+
+이 값이 존재하면 절대로 별도로 기간이나 날짜를 다시 계산하지 않는다.
+
+7. 해당 academicSummary.canExplain=false이거나
+academicSummary.unresolvedReasons가 있으면
 확정되지 않은 내용을 확정적으로 말하지 않는다.
-필요한 정보만 자연스럽게 추가로 물어본다.
+확인된 서버 계산값까지 먼저 설명하고
+실제로 필요한 추가 정보만 자연스럽게 질문한다.
 
 7-1. unresolvedReasons는 서버 내부의 확인 필요 사유다.
 

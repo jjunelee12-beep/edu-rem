@@ -60,6 +60,9 @@ export type AdministrativeTimelinePlannerResult = {
   academicCompletionSemesterLabel:
     string | null;
 
+academicCompletionDate:
+  string | null;
+
   /**
    * 학습자등록
    *
@@ -424,6 +427,66 @@ function normalizeReferenceDate(
   };
 }
 
+function toDateKey(
+  value:
+    string
+): number | null {
+  const matched =
+    String(
+      value ??
+      ""
+    ).trim().match(
+      /^(\d{4})-(\d{2})-(\d{2})$/
+    );
+
+  if (!matched) {
+    return null;
+  }
+
+  const year =
+    Number(
+      matched[1]
+    );
+
+  const month =
+    Number(
+      matched[2]
+    );
+
+  const day =
+    Number(
+      matched[3]
+    );
+
+  const date =
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day
+      )
+    );
+
+  if (
+    date.getUTCFullYear() !==
+      year ||
+    date.getUTCMonth() + 1 !==
+      month ||
+    date.getUTCDate() !==
+      day
+  ) {
+    return null;
+  }
+
+  return (
+    year *
+      10000 +
+    month *
+      100 +
+    day
+  );
+}
+
 /**
  * 학습자등록 / 학점인정신청
  *
@@ -552,21 +615,31 @@ function resolveLastExistingSemesterLabel(
 }
 
 /**
- * 최종 수업학기 기준
- * 학위신청 가능기간과 학위수여시점을 계산한다.
+ * 실제 최종 학습 종료일을 기준으로
+ * 가장 빠르게 들어갈 수 있는
+ * 학위신청 회차와 학위수여시점을 계산한다.
  *
  * 운영기준:
  *
- * Y년 1학기 최종
- * → Y년 6/15 ~ 7/15 학위신청
- * → Y년 8월 중순 학위수여
+ * 6/15 ~ 7/15 신청
+ * → 8월 중순 학위수여
  *
- * Y년 2학기 최종
- * → Y년 12/15 ~ Y+1년 1/15 학위신청
- * → Y+1년 2월 중순 학위수여
+ * 12/15 ~ 다음해 1/15 신청
+ * → 다음해 2월 중순 학위수여
+ *
+ * 중요:
+ *
+ * - 신청기간 시작 전 수업이 끝났으면
+ *   다가오는 해당 회차 사용
+ *
+ * - 신청기간 도중 수업이 끝났으면
+ *   해당 회차 사용
+ *
+ * - 신청 마감일보다 늦게 끝났으면
+ *   다음 회차로 이동
  */
 function resolveDegreeTimeline(
-  semesterLabel:
+  academicCompletionDate:
     string
 ): {
   applicationWindow:
@@ -578,99 +651,125 @@ function resolveDegreeTimeline(
   estimatedAwardLabel:
     string;
 } | null {
-  const parsed =
-    parseSemesterLabel(
-      semesterLabel
+  const completion =
+    normalizeReferenceDate(
+      academicCompletionDate
     );
 
-  if (!parsed) {
+  const completionKey =
+    toDateKey(
+      completion.date
+    );
+
+  if (
+    completionKey ===
+      null
+  ) {
     return null;
   }
 
-  if (
-    parsed.semesterHalf ===
-    1
-  ) {
-    return {
+    const candidateWindows = [
+    {
       applicationWindow: {
         startDate:
-          `${parsed.year}-06-15`,
+          `${completion.year - 1}-12-15`,
 
         endDate:
-          `${parsed.year}-07-15`,
+          `${completion.year}-01-15`,
 
         label:
-          `${parsed.year}년 6월 15일 ~ 7월 15일`,
+          `${completion.year - 1}년 12월 15일 ~ ${completion.year}년 1월 15일`,
       },
 
       estimatedAwardDate:
-        `${parsed.year}-08-15`,
+        `${completion.year}-02-15`,
 
       estimatedAwardLabel:
-        `${parsed.year}년 8월 중순`,
-    };
-  }
-
-  return {
-    applicationWindow: {
-      startDate:
-        `${parsed.year}-12-15`,
-
-      endDate:
-        `${parsed.year + 1}-01-15`,
-
-      label:
-        `${parsed.year}년 12월 15일 ~ ${parsed.year + 1}년 1월 15일`,
+        `${completion.year}년 2월 중순`,
     },
 
-    estimatedAwardDate:
-      `${parsed.year + 1}-02-15`,
+    {
+      applicationWindow: {
+        startDate:
+          `${completion.year}-06-15`,
 
-    estimatedAwardLabel:
-      `${parsed.year + 1}년 2월 중순`,
-  };
-}
+        endDate:
+          `${completion.year}-07-15`,
 
-/**
- * 새 학위가 없는 학생의 경우
- * 정확한 수업 종료일 데이터가 아직 없으므로
- * 마지막 귀속학기 기준의 "예상 완료시점"만 만든다.
- *
- * 정확한 교육원 종강일이 연결되면
- * 이 값을 실제 날짜로 교체하면 된다.
- */
-function resolveEstimatedCourseCompletionDate(
-  semesterLabel:
-    string
-): string | null {
-  const parsed =
-    parseSemesterLabel(
-      semesterLabel
-    );
+        label:
+          `${completion.year}년 6월 15일 ~ 7월 15일`,
+      },
 
-  if (!parsed) {
-    return null;
-  }
+      estimatedAwardDate:
+        `${completion.year}-08-15`,
 
-  /**
-   * 1학기 귀속:
-   * 상반기 종료 추정
-   *
-   * 2학기 귀속:
-   * 하반기 종료 추정
-   *
-   * 자격증 실제 신청일 확정값이 아니라
-   * UI/AI 예상 일정 표시용이다.
-   */
-  if (
-    parsed.semesterHalf ===
-    1
+      estimatedAwardLabel:
+        `${completion.year}년 8월 중순`,
+    },
+
+    {
+      applicationWindow: {
+        startDate:
+          `${completion.year}-12-15`,
+
+        endDate:
+          `${completion.year + 1}-01-15`,
+
+        label:
+          `${completion.year}년 12월 15일 ~ ${completion.year + 1}년 1월 15일`,
+      },
+
+      estimatedAwardDate:
+        `${completion.year + 1}-02-15`,
+
+      estimatedAwardLabel:
+        `${completion.year + 1}년 2월 중순`,
+    },
+
+    {
+      applicationWindow: {
+        startDate:
+          `${completion.year + 1}-06-15`,
+
+        endDate:
+          `${completion.year + 1}-07-15`,
+
+        label:
+          `${completion.year + 1}년 6월 15일 ~ 7월 15일`,
+      },
+
+      estimatedAwardDate:
+        `${completion.year + 1}-08-15`,
+
+      estimatedAwardLabel:
+        `${completion.year + 1}년 8월 중순`,
+    },
+  ];
+
+  for (
+    const candidate
+    of candidateWindows
   ) {
-    return `${parsed.year}-06-30`;
+    const applicationEndKey =
+      toDateKey(
+        candidate
+          .applicationWindow
+          .endDate
+      );
+
+    if (
+      applicationEndKey !==
+        null &&
+      completionKey <=
+        applicationEndKey
+    ) {
+      return candidate;
+    }
   }
 
-  return `${parsed.year}-12-31`;
+  return null;
 }
+
 
 export function planAdministrativeTimeline(
   params: {
@@ -732,6 +831,48 @@ export function planAdministrativeTimeline(
       []
     );
 
+  /**
+   * Semester Planner가 계산한
+   * 실제 예상 최종 학습 종료일.
+   *
+   * 신규상담에서는 귀속학기 추정일보다
+   * 이 값을 우선 사용한다.
+   */
+  const academicCompletionDate =
+    params.semesterPlan
+      .estimatedStudyEndDate ??
+    null;
+
+  const academicCompletionDateParts =
+    academicCompletionDate
+      ? normalizeReferenceDate(
+          academicCompletionDate
+        )
+      : null;
+
+  /**
+   * 학점인정신청은
+   * 최종 학습 종료월 이후 가장 가까운
+   * 1/4/7/10월을 사용한다.
+   *
+   * 종료월과 신청월이 같으면
+   * 같은 분기를 사용한다.
+   *
+   * 예:
+   * 2026-10 종료
+   * → 2026년 10월
+   */
+  const creditRecognitionWindow =
+    academicCompletionDateParts
+      ? resolveNextQuarterWindow({
+          year:
+            academicCompletionDateParts.year,
+
+          month:
+            academicCompletionDateParts.month,
+        })
+      : nextQuarterWindow;
+
   if (
     !params.requirements
       .canPlan
@@ -771,21 +912,30 @@ export function planAdministrativeTimeline(
     > =
     null;
 
-  if (
-    requiresNewDegreeTrack &&
-    academicCompletionSemesterLabel
-  ) {
-    degreeTimeline =
-      resolveDegreeTimeline(
-        academicCompletionSemesterLabel
-      );
+if (
+  requiresNewDegreeTrack &&
+  !academicCompletionDate
+) {
+  unresolvedReasons.push(
+    "새 학위 취득이 필요하지만 최종 학습 종료일을 확인할 수 없어 학위신청 일정을 계산할 수 없습니다."
+  );
+}
 
-    if (!degreeTimeline) {
-      unresolvedReasons.push(
-        "최종 수업학기의 학위신청 일정을 계산하지 못했습니다."
-      );
-    }
+  if (
+  requiresNewDegreeTrack &&
+  academicCompletionDate
+) {
+  degreeTimeline =
+    resolveDegreeTimeline(
+      academicCompletionDate
+    );
+
+  if (!degreeTimeline) {
+    unresolvedReasons.push(
+      "최종 학습 종료일 기준 학위신청 일정을 계산하지 못했습니다."
+    );
   }
+}
 
   const qualificationApplicable =
     params.requirements
@@ -833,23 +983,32 @@ export function planAdministrativeTimeline(
       qualificationMessage =
         "새 학위가 필요한 과정이지만 학위수여 예상시점을 확정하지 못했습니다.";
     }
-  } else if (
+   } else if (
     academicCompletionSemesterLabel
   ) {
     qualificationApplicationBasis =
       "after_course_completion";
 
-    earliestQualificationDate =
-      resolveEstimatedCourseCompletionDate(
-        academicCompletionSemesterLabel
-      );
+        earliestQualificationDate =
+      `${creditRecognitionWindow.year}-${String(
+        creditRecognitionWindow.month
+      ).padStart(
+        2,
+        "0"
+      )}-01`;
 
     qualificationMessage =
-      `${academicCompletionSemesterLabel} 필수 수업 및 실습 완료 후 자격증 신청 단계로 진행합니다. 정확한 신청일은 실제 종강일과 실습 완료일을 확인해야 합니다.`;
+  academicCompletionDate
+    ? `${academicCompletionSemesterLabel} 필수 수업 및 실습 완료 예상일은 ${academicCompletionDate}이며, 이후 가장 빠른 학점인정신청 예상시점은 ${creditRecognitionWindow.label}입니다. 따라서 현재 기준 최단 자격증 신청 예상시점은 ${creditRecognitionWindow.label}입니다.`
+    : `${academicCompletionSemesterLabel} 필수 수업 및 실습 완료 후 자격증 신청 단계로 진행합니다. 정확한 신청일은 실제 종강일과 실습 완료일을 확인해야 합니다.`;
 
-    warnings.push(
-      "새 학위가 필요 없는 과정의 자격증 신청일은 실제 교육원 종강일·실습 완료일 데이터가 없어 귀속학기 기준 예상값으로 표시합니다."
-    );
+    if (
+      !academicCompletionDate
+    ) {
+      warnings.push(
+        "Semester Planner의 최종 학습 종료일이 없어 자격증 신청 가능일을 확정하지 못했습니다."
+      );
+    }
   }
 
   const milestones:
@@ -892,7 +1051,7 @@ export function planAdministrativeTimeline(
       "credit_recognition",
 
     label:
-      `학점인정신청 확인 / 다음 신청 가능 ${nextQuarterWindow.label}`,
+  `학점인정신청 확인 / 최종 학습 종료 후 신청 가능 ${creditRecognitionWindow.label}`,
 
     date:
       null,
@@ -977,9 +1136,9 @@ export function planAdministrativeTimeline(
         "qualification_application",
 
       label:
-        requiresNewDegreeTrack
-          ? "학위수여 확인 후 자격증 신청"
-          : "필수 수업 및 실습 완료 후 자격증 신청",
+  requiresNewDegreeTrack
+    ? "학위수여 확인 후 자격증 신청"
+    : "학점인정신청 후 자격증 신청",
 
       date:
         earliestQualificationDate,
@@ -1021,6 +1180,8 @@ export function planAdministrativeTimeline(
 
     academicCompletionSemesterLabel,
 
+academicCompletionDate,
+
     learnerRegistration: {
       applicationMonths: [
         1,
@@ -1056,12 +1217,11 @@ export function planAdministrativeTimeline(
         true,
 
       nextAvailableWindow:
-        nextQuarterWindow,
+  creditRecognitionWindow,
 
-      message:
-        `학점인정신청은 1월·4월·7월·10월 신청 가능 기준으로 관리합니다. 현재 완료여부는 별도 확인이 필요하며 다음 신청 가능월은 ${nextQuarterWindow.label}입니다.`,
-    },
-
+message:
+  `학점인정신청은 1월·4월·7월·10월 신청 가능 기준으로 관리합니다. 최종 학습 종료 예상일 기준 다음 신청 가능월은 ${creditRecognitionWindow.label}입니다.`,
+},
     degree: {
       required:
         requiresNewDegreeTrack,
@@ -1085,7 +1245,7 @@ export function planAdministrativeTimeline(
         !requiresNewDegreeTrack
           ? "현재 학력 기준으로 새 학위 취득과정이 필요하지 않습니다."
           : degreeTimeline
-            ? `최종 수업학기 ${academicCompletionSemesterLabel} 기준 학위신청은 ${degreeTimeline.applicationWindow.label}, 학위수여는 ${degreeTimeline.estimatedAwardLabel}로 계산됩니다.`
+            ? `최종 학습 종료 예상일 ${academicCompletionDate} 기준 학위신청은 ${degreeTimeline.applicationWindow.label}, 학위수여는 ${degreeTimeline.estimatedAwardLabel}로 계산됩니다.`
             : "새 학위 취득이 필요하지만 학위신청 일정을 계산하지 못했습니다.",
     },
 

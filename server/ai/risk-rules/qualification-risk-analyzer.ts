@@ -323,6 +323,61 @@ function createRecognizedKeySet(
   );
 }
 
+/**
+ * 동일교과목 key 기준으로
+ * 과목 마스터 중복을 제거한다.
+ *
+ * 예:
+ *
+ * 사회복지학개론
+ * 사회복지개론
+ *
+ * 두 행이 마스터에 동시에 있어도
+ * 공식 동일교과목이면 한 과목으로만 계산한다.
+ *
+ * 동일 key가 여러 번 존재하면
+ * 최초 등록된 마스터 행을 대표값으로 사용한다.
+ */
+function dedupeMasterItemsByEquivalenceKey(
+  masterItems:
+    QualificationRiskMasterItem[]
+) {
+  const map =
+    new Map<
+      string,
+      QualificationRiskMasterItem
+    >();
+
+  for (
+    const item
+    of masterItems || []
+  ) {
+    const key =
+      getConfirmedSubjectEquivalenceKey(
+        item.subjectName
+      );
+
+    if (!key) {
+      continue;
+    }
+
+    if (
+      !map.has(
+        key
+      )
+    ) {
+      map.set(
+        key,
+        item
+      );
+    }
+  }
+
+  return Array.from(
+    map.values()
+  );
+}
+
 function getCompletedMasterItems(
   params: {
     masterItems:
@@ -337,7 +392,12 @@ function getCompletedMasterItems(
       params.recognizedSubjects
     );
 
-  return params.masterItems.filter(
+  const uniqueMasterItems =
+    dedupeMasterItemsByEquivalenceKey(
+      params.masterItems
+    );
+
+  return uniqueMasterItems.filter(
     (
       masterItem
     ) => {
@@ -374,7 +434,12 @@ function getMissingMasterItems(
       params.recognizedSubjects
     );
 
-  return params.masterItems.filter(
+const uniqueMasterItems =
+  dedupeMasterItemsByEquivalenceKey(
+    params.masterItems
+  );
+
+  return uniqueMasterItems.filter(
     (
       masterItem
     ) => {

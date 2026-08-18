@@ -1339,7 +1339,7 @@ const consultationSocialWorkerLawVersion =
             : memory.socialWorkerLawVersion ===
                 "current"
               ? "current"
-              : "current"
+              : undefined
       )
     : undefined;
 
@@ -1668,36 +1668,135 @@ const degreeCreditAnalysis =
 degreeClassificationBySubjectKey,
     });
 
-  /**
-   * 6.
-   * 신규 상담자는 아직
-   * CRM 실제 등록학기가 없으므로
-   * existingSemesters=[].
-   *
-   * 현재 한국 날짜 기준으로
-   * 공통 학기 Planner가 배치한다.
-   */
-  const semesterPlan =
-    planQualificationSemesters({
-      subjectPlan,
+/**
+ * 신규상담자가 다른 교육원 / 기존 학점은행제에서
+ * 이미 진행한 학기를 공통 Semester Planner 입력으로 변환한다.
+ *
+ * 중요:
+ *
+ * - 대학/전문대 전적대 과목은 여기에 넣지 않는다.
+ * - 학점은행제 기존 수강학기만 넣는다.
+ * - user_reported도 상담용 예상기간 계산에는 반영한다.
+ */
+const existingSemesters =
+  (
+    Array.isArray(
+      memory.priorCreditBankSemesters
+    )
+      ? memory.priorCreditBankSemesters
+      : []
+  )
+    .filter(
+      semester =>
+        semester.verificationStatus !==
+          "rejected" &&
+        Number.isFinite(
+          Number(
+            semester.year
+          )
+        ) &&
+        (
+          semester.semesterHalf === 1 ||
+          semester.semesterHalf === 2
+        ) &&
+        Number.isFinite(
+          Number(
+            semester.subjectCount
+          )
+        ) &&
+        Number(
+  semester.subjectCount
+) > 0 &&
+Number(
+  semester.subjectCount
+) <= 8
+    )
+    .sort(
+      (
+        left,
+        right
+      ) => {
+        if (
+          left.year !==
+          right.year
+        ) {
+          return (
+            left.year -
+            right.year
+          );
+        }
 
-      existingSemesters:
-        [],
-    });
+        return (
+          left.semesterHalf -
+          right.semesterHalf
+        );
+      }
+    )
+    .map(
+      (
+        semester,
+        index
+      ) => ({
+        semesterOrder:
+          index + 1,
+
+        semesterLabel:
+          `${semester.year}년 ${semester.semesterHalf}학기`,
+
+        plannedSubjectCount:
+          semester.subjectCount,
+
+        actualSubjectCount:
+          semester.subjectCount,
+      })
+    );
+
+ /**
+ * 6.
+ * 신규상담 최단 학기 배치.
+ *
+ * - 기존 학점은행제 수강이력이 있으면
+ *   existingSemesters를 반영한다.
+ *
+ * - 사용자가 희망 시작시점을 말했으면
+ *   desiredStudyStartDate를 baseDate로 사용한다.
+ *
+ * - 희망 시작시점이 없으면
+ *   Semester Planner가 오늘 KST를 사용한다.
+ *
+ * 즉:
+ *
+ * 기존 이수학기
+ * + 학기당 8과목
+ * + 연간 14과목
+ * + 사용자 희망 시작일
+ *
+ * 을 모두 함께 반영해서
+ * 실제 남은 과목의 최단 학기를 계산한다.
+ */
+  const semesterPlan =
+  planQualificationSemesters({
+    subjectPlan,
+
+    existingSemesters,
+
+    baseDate:
+      memory.desiredStudyStartDate ??
+      undefined,
+  });
 
   /**
    * 7.
    * 학위신청 / 자격증 예상일정 계산.
    */
   const administrativeTimeline =
-    planAdministrativeTimeline({
-      requirements,
+  planAdministrativeTimeline({
+    requirements,
 
-      semesterPlan,
+    semesterPlan,
 
-      existingSemesters:
-        [],
-    });
+    existingSemesters,
+  });
 
   /**
    * 8.

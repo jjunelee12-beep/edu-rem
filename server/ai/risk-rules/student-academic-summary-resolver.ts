@@ -146,13 +146,22 @@ export type StudentAcademicSummaryResult = {
       number;
 
     semesterCount:
-      number;
+  number;
 
-    firstSemesterLabel:
-      string | null;
+nominalDurationMonths:
+  number;
 
-    lastSemesterLabel:
-      string | null;
+estimatedStudyStartDate:
+  string | null;
+
+estimatedStudyEndDate:
+  string | null;
+
+firstSemesterLabel:
+  string | null;
+
+lastSemesterLabel:
+  string | null;
 
     semesters:
       Array<{
@@ -164,6 +173,12 @@ export type StudentAcademicSummaryResult = {
 
         subjectCount:
           number;
+
+estimatedStartDate:
+  string;
+
+estimatedEndDate:
+  string;
 
         subjectNames:
           string[];
@@ -179,6 +194,18 @@ export type StudentAcademicSummaryResult = {
   timeline: {
     academicCompletionSemesterLabel:
       string | null;
+
+academicCompletionDate:
+  string | null;
+
+creditRecognitionLabel:
+  string | null;
+
+creditRecognitionYear:
+  number | null;
+
+creditRecognitionMonth:
+  1 | 4 | 7 | 10 | null;
 
     degreeApplicationLabel:
       string | null;
@@ -516,22 +543,25 @@ function buildSemesterSummaryLine(
   }
 
   const semesterLabels =
-    semesterPlan
-      .semesters
-      .map(
-        (
-          semester
-        ) =>
-          `${semester.semesterLabel} ${semester.subjectCount}과목`
-      )
-      .join(
-        " → "
-      );
+  semesterPlan
+    .semesters
+    .map(
+      (
+        semester
+      ) =>
+        `${semester.semesterLabel} ${semester.subjectCount}과목 ` +
+        `(${semester.estimatedStartDate} ~ ${semester.estimatedEndDate})`
+    )
+    .join(
+      " → "
+    );
 
   return (
-    `추가과목은 총 ${semesterPlan.semesterCount}개 학기로 배치되며 ` +
-    `${semesterLabels} 순서입니다.`
-  );
+  `추가과목은 총 ${semesterPlan.semesterCount}개 학기로 배치되며 ` +
+  `학기당 4개월 기준 총 ${semesterPlan.nominalDurationMonths}개월 과정입니다. ` +
+  `${semesterLabels} 순서이며 ` +
+  `최종 학습 종료 예상일은 ${semesterPlan.estimatedStudyEndDate || "확인 필요"}입니다.`
+);
 }
 
 export function resolveStudentAcademicSummary(
@@ -849,6 +879,25 @@ export function resolveStudentAcademicSummary(
     );
   }
 
+if (
+  administrativeTimeline
+    .academicCompletionDate
+) {
+  summaryLines.push(
+    `최종 학습 종료 예상일은 ${administrativeTimeline.academicCompletionDate}입니다.`
+  );
+}
+
+if (
+  administrativeTimeline
+    .creditRecognition
+    .nextAvailableWindow
+) {
+  summaryLines.push(
+    `최종 학습 종료 후 가장 빠른 학점인정신청 예상시점은 ${administrativeTimeline.creditRecognition.nextAvailableWindow.label}입니다.`
+  );
+}
+
   if (
     administrativeTimeline
       .degree
@@ -1035,6 +1084,18 @@ masterIntegrity,
         semesterPlan
           .semesterCount,
 
+      nominalDurationMonths:
+        semesterPlan
+          .nominalDurationMonths,
+
+      estimatedStudyStartDate:
+        semesterPlan
+          .estimatedStudyStartDate,
+
+      estimatedStudyEndDate:
+        semesterPlan
+          .estimatedStudyEndDate,
+
       firstSemesterLabel:
         semesterPlan
           .firstSemesterLabel,
@@ -1061,6 +1122,14 @@ masterIntegrity,
               subjectCount:
                 semester
                   .subjectCount,
+
+estimatedStartDate:
+  semester
+    .estimatedStartDate,
+
+estimatedEndDate:
+  semester
+    .estimatedEndDate,
 
               subjectNames:
                 semester
@@ -1095,6 +1164,31 @@ masterIntegrity,
       academicCompletionSemesterLabel:
         administrativeTimeline
           .academicCompletionSemesterLabel,
+
+academicCompletionDate:
+  administrativeTimeline
+    .academicCompletionDate,
+
+creditRecognitionLabel:
+  administrativeTimeline
+    .creditRecognition
+    .nextAvailableWindow
+    ?.label ??
+  null,
+
+creditRecognitionYear:
+  administrativeTimeline
+    .creditRecognition
+    .nextAvailableWindow
+    ?.year ??
+  null,
+
+creditRecognitionMonth:
+  administrativeTimeline
+    .creditRecognition
+    .nextAvailableWindow
+    ?.month ??
+  null,
 
       degreeApplicationLabel:
         administrativeTimeline
