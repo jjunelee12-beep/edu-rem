@@ -43,6 +43,10 @@ import AttendancePage from "@/pages/AttendancePage";
 import AttendanceViewPage from "@/pages/AttendanceViewPage";
 import MyPage from "@/pages/MyPage";
 
+import StaffProfileSettings from "@/pages/StaffProfileSettings";
+import PublicStaffProfilePage from "@/pages/PublicStaffProfilePage";
+import PublicStaffTeamPage from "@/pages/PublicStaffTeamPage";
+
 import NoticesPage from "@/pages/NoticesPage";
 import NoticeDetailPage from "@/pages/NoticeDetailPage";
 import NoticeWritePage from "@/pages/NoticeWritePage";
@@ -196,6 +200,14 @@ function PublicRouter() {
       <Route path="/login" component={Login} />
       <Route path="/form/:token" component={PublicLeadFormPage} />
       <Route path="/ad-form/:token" component={AdFormPage} />
+<Route
+  path="/staff/:token"
+  component={PublicStaffProfilePage}
+/>
+<Route
+  path="/team/:organizationId"
+  component={PublicStaffTeamPage}
+/>
 <Route path="/withone" component={WithOneLanding} />
 <Route
   path="/billing/register/:token"
@@ -250,6 +262,13 @@ function PrivateRouter() {
       <Route path="/attendance/view" component={() => <RedirectToMyOrg path="/attendance/view" />} />
       <Route path="/attendance" component={() => <RedirectToMyOrg path="/attendance" />} />
       <Route path="/my" component={() => <RedirectToMyOrg path="/my" />} />
+
+<Route
+  path="/staff-profile"
+  component={() => (
+    <RedirectToMyOrg path="/staff-profile" />
+  )}
+/>
 
       <Route path="/notices/write" component={() => <RedirectToMyOrg path="/notices/write" />} />
       <Route path="/notices/preview" component={() => <RedirectToMyOrg path="/notices/preview" />} />
@@ -373,6 +392,11 @@ function PrivateRouter() {
       <Route path="/:organizationSlug/attendance" component={AttendancePage} />
       <Route path="/:organizationSlug/my" component={MyPage} />
 
+<Route
+  path="/:organizationSlug/staff-profile"
+  component={StaffProfileSettings}
+/>
+
       <Route path="/:organizationSlug/notices/write" component={NoticeWritePage} />
       <Route path="/:organizationSlug/notices/preview" component={NoticePreviewPage} />
       <Route path="/:organizationSlug/notices/:id/edit" component={NoticeEditPage} />
@@ -418,11 +442,13 @@ function AppContent() {
   const [location] = useLocation();
 
   const isPublicPage =
-    location === "/login" ||
-    location === "/withone" ||
-    location.startsWith("/form/") ||
-    location.startsWith("/ad-form/") ||
-    location.startsWith("/billing/register/");
+  location === "/login" ||
+  location === "/withone" ||
+  location.startsWith("/form/") ||
+  location.startsWith("/ad-form/") ||
+  location.startsWith("/staff/") ||
+location.startsWith("/team/") ||
+  location.startsWith("/billing/register/");
 
   if (isPublicPage) {
     return <PublicRouter />;

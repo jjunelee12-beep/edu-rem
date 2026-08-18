@@ -32,6 +32,16 @@ import {
 } from "./kakao-ai-context-resolver";
 
 import {
+  executeKakaoAiStaffAction,
+  type KakaoAiStaffActionResult,
+} from "./kakao-ai-staff-action";
+
+import {
+  executeKakaoAiLeadRegistrationAction,
+  type KakaoAiLeadRegistrationActionResult,
+} from "./kakao-ai-lead-registration-action";
+
+import {
   composeKakaoAiResponse,
   type KakaoAiResponseCompositionResult,
 } from "./kakao-ai-response-composer";
@@ -134,6 +144,22 @@ export type KakaoAiConversationOrchestratorResult = {
    */
   resolvedContext:
     KakaoAiResolvedContext | null;
+
+/**
+ * 담당자 목록 / 추천 / 선택 / 변경 /
+ * 현재 선택 확인 Action 결과.
+ *
+ * 담당자 관련 요청이 아니면 null이다.
+ */
+staffAction:
+  KakaoAiStaffActionResult | null;
+
+/**
+ * 신규 카카오 상담자의
+ * 상담DB 자동접수 결과.
+ */
+leadRegistration:
+  KakaoAiLeadRegistrationActionResult | null;
 
   /**
    * 이번 메시지에서 수행된
@@ -662,10 +688,16 @@ const userMessageId =
         null,
 
       resolvedContext:
-        null,
+  null,
 
-      registrationVerification:
-        null,
+staffAction:
+  null,
+
+leadRegistration:
+  null,
+
+registrationVerification:
+  null,
 
       responseComposition:
         null,
@@ -850,12 +882,18 @@ console.log(
         null,
 
       resolvedContext:
-        null,
+  null,
 
-      registrationVerification,
+staffAction:
+  null,
 
-      responseComposition:
-        null,
+leadRegistration:
+  null,
+
+registrationVerification,
+
+responseComposition:
+  null,
     };
   }
 
@@ -903,8 +941,8 @@ tracePerf(
   "memory_write_done"
 );
 
-const currentMemory =
-    memoryWrite.memory;
+let currentMemory =
+  memoryWrite.memory;
 
 console.log("[KAKAO AI TRACE] Memory", {
   desiredCourse:
@@ -988,6 +1026,8 @@ console.log("[KAKAO AI TRACE] Intent", {
   await resolveKakaoAiContext({
     organizationId,
 
+    conversationId,
+
     routedIntent:
       intentClassification.routed,
 
@@ -1004,21 +1044,444 @@ tracePerf(
 console.log("[KAKAO AI TRACE] Context", {
   hasCompanyContext:
     !!resolvedContext.companyContext,
+
   hasLeadAcademicAnalysis:
     !!resolvedContext.leadAcademicAnalysis,
+
   hasRegisteredStudentAnalysis:
     !!resolvedContext.registeredStudentAnalysis,
+
   hasPracticeCenter:
     !!resolvedContext.practiceCenter,
+
+  hasStaffContext:
+    !!resolvedContext.staffContext,
+
+  staffCandidateCount:
+    resolvedContext.staffContext
+      ?.candidates
+      .length ?? 0,
+
+  recommendedStaffUserId:
+    resolvedContext.staffContext
+      ?.recommendedStaff
+      ?.userId ?? null,
+
+  selectedStaffUserId:
+    resolvedContext.staffContext
+      ?.selectedStaff
+      ?.userId ?? null,
+
+  staffSelectionStatus:
+    resolvedContext.staffContext
+      ?.status ?? null,
+
   leadCanExplain:
-    resolvedContext.leadAcademicAnalysis?.canExplain ?? null,
+    resolvedContext.leadAcademicAnalysis
+      ?.canExplain ?? null,
+
   leadStatus:
-    resolvedContext.leadAcademicAnalysis?.status ?? null,
+    resolvedContext.leadAcademicAnalysis
+      ?.status ?? null,
+
   leadRequestedCourse:
-    resolvedContext.leadAcademicAnalysis?.requestedCourse ?? null,
+    resolvedContext.leadAcademicAnalysis
+      ?.requestedCourse ?? null,
+
   leadUnresolvedReasons:
-    resolvedContext.leadAcademicAnalysis?.unresolvedReasons ?? [],
+    resolvedContext.leadAcademicAnalysis
+      ?.unresolvedReasons ?? [],
 });
+
+/**
+ * 9.
+ * 담당자 관련 Action 실행.
+ *
+ * 중요:
+ *
+ * - Intent Classifier
+ * - 중앙 Access Policy
+ * - Context Resolver
+ *
+ * 를 모두 통과한 뒤에만 실행한다.
+ *
+ * Intent 자체가 아직 clarification 상태이면
+ * 실제 추천/선택/변경 Action은 수행하지 않는다.
+ */
+let staffAction:
+  KakaoAiStaffActionResult | null =
+  null;
+
+if (
+  intentClassification.intent
+    .needsClarification !==
+  true
+) {
+  const actionResult =
+    await executeKakaoAiStaffAction({
+      organizationId,
+
+      conversationId,
+
+      message,
+
+      primaryCapability:
+        intentClassification.intent
+          .primaryCapability,
+
+      allowedCapabilities:
+        intentClassification.routed
+          .allowedCapabilities,
+
+      memory:
+        currentMemory,
+
+      staffContext:
+        resolvedContext.staffContext,
+    });
+
+  if (
+    actionResult.handled
+  ) {
+    staffAction =
+      actionResult;
+  }
+}
+
+tracePerf(
+  "staff_action_done",
+  {
+    handled:
+      staffAction?.handled ??
+      false,
+
+    action:
+      staffAction?.action ??
+      "none",
+
+    success:
+      staffAction?.success ??
+      null,
+
+    reason:
+      staffAction?.reason ??
+      null,
+
+    needsClarification:
+      staffAction
+        ?.needsClarification ??
+      false,
+  }
+);
+
+console.log(
+  "[KAKAO AI TRACE] StaffAction",
+  {
+    handled:
+      staffAction?.handled ??
+      false,
+
+    action:
+      staffAction?.action ??
+      null,
+
+    success:
+      staffAction?.success ??
+      null,
+
+    reason:
+      staffAction?.reason ??
+      null,
+
+    recommendedStaffUserId:
+      Number(
+        staffAction
+          ?.recommendedStaff
+          ?.userId ||
+        0
+      ) ||
+      null,
+
+    selectedStaffUserId:
+      Number(
+        staffAction
+          ?.selectedStaff
+          ?.userId ||
+        0
+      ) ||
+      null,
+
+    candidateCount:
+      staffAction
+        ?.candidates
+        ?.length ??
+      0,
+
+    needsClarification:
+      staffAction
+        ?.needsClarification ??
+      false,
+  }
+);
+
+/**
+ * 담당자 Action이 DB Memory를 변경했을 수 있으므로
+ * Action 이후 최신 Conversation Memory를 다시 읽는다.
+ *
+ * 예:
+ * - 담당자 목록 → lastStaffCandidates 변경
+ * - 담당자 추천 → recommendedStaffUserId 변경
+ * - 담당자 선택 → selectedStaffUserId 변경
+ */
+let finalResolvedContext =
+  resolvedContext;
+
+if (
+  staffAction?.handled
+) {
+  const refreshedMemoryContext =
+    await resolveKakaoAiMemoryContext({
+      organizationId,
+
+      conversationId,
+
+      recentMessageLimit:
+        20,
+    });
+
+  currentMemory =
+    refreshedMemoryContext
+      .structuredMemory;
+
+  /**
+   * 담당자 추천/선택 후 상태까지 반영된
+   * 최신 staffContext를 Composer에 넘기기 위해
+   * Context를 한 번 다시 해결한다.
+   *
+   * 이 재조회는 담당자 Action이 실제 처리된 경우에만 한다.
+   */
+  const refreshedResolvedContext =
+    await resolveKakaoAiContext({
+      organizationId,
+
+      conversationId,
+
+      routedIntent:
+        intentClassification.routed,
+
+      customer,
+
+      structuredMemory:
+        currentMemory,
+    });
+
+  /**
+   * Staff Action 자체에서
+   * "대상을 더 골라야 한다"는 결과가 나온 경우
+   * 그 clarification을 최종 Context에 반영한다.
+   *
+   * 예:
+   * "담당자 바꿔주세요"
+   * → 누구로 바꿀지 없음
+   */
+  finalResolvedContext = {
+    ...refreshedResolvedContext,
+
+    needsClarification:
+      staffAction
+        .needsClarification
+        ? true
+        : refreshedResolvedContext
+            .needsClarification,
+
+    clarificationQuestion:
+      staffAction
+        .needsClarification
+        ? staffAction
+            .clarificationQuestion
+        : refreshedResolvedContext
+            .clarificationQuestion,
+
+    clarificationOptions:
+      staffAction
+        .needsClarification
+        ? staffAction
+            .clarificationOptions
+        : refreshedResolvedContext
+            .clarificationOptions,
+  };
+
+  tracePerf(
+    "staff_context_refreshed",
+    {
+      recommendedStaffUserId:
+        currentMemory
+          .recommendedStaffUserId,
+
+      selectedStaffUserId:
+        currentMemory
+          .selectedStaffUserId,
+
+      staffSelectionStatus:
+        currentMemory
+          .staffSelectionStatus,
+
+      candidateCount:
+        currentMemory
+          .lastStaffCandidates
+          .length,
+    }
+  );
+}
+
+/**
+ * 10.
+ * 신규 카카오 상담자 → 상담DB 자동접수.
+ *
+ * 담당자 Action 이후 실행한다.
+ *
+ * 이유:
+ * 이번 메시지에서 담당자를 선택했다면
+ * selectedStaffUserId가 최신 Memory에 반영된 뒤여야 한다.
+ */
+let leadRegistration:
+  KakaoAiLeadRegistrationActionResult | null =
+  null;
+
+const leadRegistrationResult =
+  await executeKakaoAiLeadRegistrationAction({
+    organizationId,
+
+    conversationId,
+
+    customerType:
+      customer.customerType,
+
+    message,
+
+    memory:
+      currentMemory,
+
+    conversationHistory:
+      previousMemoryContext
+        .recentConversation
+        .messages,
+  });
+
+if (
+  leadRegistrationResult.handled
+) {
+  leadRegistration =
+    leadRegistrationResult;
+}
+
+tracePerf(
+  "lead_registration_done",
+  {
+    handled:
+      leadRegistrationResult.handled,
+
+    created:
+      leadRegistrationResult.created,
+
+    consultationId:
+      leadRegistrationResult
+        .consultationId,
+
+    reason:
+      leadRegistrationResult.reason,
+  }
+);
+
+if (
+  leadRegistration?.handled
+) {
+  const replyText =
+    String(
+      leadRegistration.replyText ||
+      ""
+    ).trim();
+
+  if (
+    replyText
+  ) {
+    const assistantMessage =
+      await db.insertKakaoAiMessage({
+        organizationId,
+
+        conversationId,
+
+        role:
+          "assistant",
+
+        messageType:
+          "text",
+
+        content:
+          replyText,
+
+        kakaoMessageId:
+          null,
+
+        attachmentData:
+          undefined,
+      });
+
+    const responseMessageId =
+      Number(
+        assistantMessage.id ||
+        0
+      );
+
+    if (
+      userMessageId > 0 &&
+      responseMessageId > 0 &&
+      params.kakaoMessageId
+    ) {
+      await db.markKakaoAiResponseReady({
+        organizationId,
+
+        userMessageId,
+
+        responseMessageId,
+      });
+    }
+  }
+
+  return {
+    organizationId,
+
+    conversationId,
+
+    duplicateMessage:
+      false,
+
+    customer,
+
+    previousMemoryContext,
+
+    memoryExtraction,
+
+    memoryWrite,
+
+    currentMemory,
+
+    intentClassification,
+
+    resolvedContext:
+      finalResolvedContext,
+
+    staffAction,
+
+    leadRegistration,
+
+    registrationVerification:
+      null,
+
+    responseComposition:
+      null,
+  };
+}
 
   /**
    * 9.
@@ -1048,7 +1511,8 @@ console.log("[KAKAO AI TRACE] Context", {
 
     intentClassification,
 
-    resolvedContext,
+    resolvedContext:
+      finalResolvedContext,
   });
 
 tracePerf(
@@ -1239,29 +1703,32 @@ tracePerf(
 );
 
 return {
-    organizationId,
+  organizationId,
+  conversationId,
+  duplicateMessage:
+    false,
 
-    conversationId,
+  customer,
 
-    duplicateMessage:
-      false,
+  previousMemoryContext,
 
-    customer,
+  memoryExtraction,
 
-    previousMemoryContext,
+  memoryWrite,
 
-    memoryExtraction,
+  currentMemory,
 
-    memoryWrite,
+  intentClassification,
 
-    currentMemory,
+  resolvedContext:
+    finalResolvedContext,
 
-        intentClassification,
+  staffAction,
 
-    resolvedContext,
+  leadRegistration,
 
-    registrationVerification,
+  registrationVerification,
 
-    responseComposition,
-  };
+  responseComposition,
+};
 }

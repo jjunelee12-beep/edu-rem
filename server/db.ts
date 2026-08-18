@@ -140,10 +140,16 @@ emailVerificationCodes,
 type InsertEmailVerificationCode,
 apiErrorLogs,
 type InsertApiErrorLog,
-creditSummaryRules,
-type InsertCreditSummaryRule,
-studentCreditSummaryItems,
-type InsertStudentCreditSummaryItem,
+  creditSummaryRules,
+  type InsertCreditSummaryRule,
+  studentCreditSummaryItems,
+  type InsertStudentCreditSummaryItem,
+
+  staffPublicProfiles,
+  type InsertStaffPublicProfile,
+
+  staffTeamPageSettings,
+  type InsertStaffTeamPageSetting,
 } from "../drizzle/schema";
 
 import { ENV } from "./_core/env";
@@ -14095,6 +14101,9 @@ const ORGANIZATION_BACKUP_TABLES = [
 "credit_summary_rules",
 "student_credit_summary_items",
 
+"staff_public_profiles",
+"staff_team_page_settings",
+
   "chat_rooms",
   "chat_room_members",
   "chat_messages",
@@ -16759,13 +16768,13 @@ export async function getBrandingSettings(params?: {
     .limit(1);
 
   if (!result[0]) {
-    return {
-      organizationId,
-      companyName: "위드원 교육",
-      companyLogoUrl: null,
-      messengerSubtitle: "사내 메신저",
-    };
-  }
+  return {
+    organizationId,
+    companyName: null,
+    companyLogoUrl: null,
+    messengerSubtitle: "사내 메신저",
+  };
+}
 
   return result[0];
 }
@@ -40663,6 +40672,20 @@ export async function clearAiChatMessages(
 // Kakao AI Conversation / Message / Memory
 // ============================================================================
 
+export type KakaoAiStaffCandidateMemory = {
+  userId:
+    number;
+
+  displayName:
+    string | null;
+
+  publicToken:
+    string | null;
+
+  publicPositionName:
+    string | null;
+};
+
 export type KakaoAiConversationMemory = {
   desiredCourse:
     string | null;
@@ -40685,6 +40708,23 @@ export type KakaoAiConversationMemory = {
     string[];
 
   currentTopic:
+    string | null;
+
+  recommendedStaffUserId:
+    number | null;
+
+  selectedStaffUserId:
+    number | null;
+
+  lastStaffCandidates:
+    KakaoAiStaffCandidateMemory[];
+
+  staffSelectionStatus:
+    "none" |
+    "recommended" |
+    "selected";
+
+  lastIntent:
     string | null;
 };
 
@@ -40943,6 +40983,9 @@ export async function getOrCreateKakaoAiConversation(
         customerType:
           "lead",
 
+consultationId:
+  null,
+
         studentId:
           null,
 
@@ -41061,6 +41104,183 @@ export async function getKakaoAiConversationById(
 
   return rows[0] ||
     null;
+}
+
+/**
+ * 신규상담 고객이 상담DB에 등록된 뒤
+ * 현재 카카오 AI 대화방을 consultationId와 연결한다.
+ *
+ * 중요:
+ * - conversation과 consultation 모두 같은 organizationId여야 한다.
+ * - 삭제된 상담DB는 연결하지 않는다.
+ * - 클라이언트가 전달한 consultationId를 그대로 신뢰하지 않는다.
+ */
+export async function bindKakaoAiConversationConsultation(
+  params: {
+    organizationId: number;
+    conversationId: number;
+    consultationId: number;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  const consultationId =
+    Math.floor(
+      Number(
+        params.consultationId ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      consultationId
+    ) ||
+    consultationId <=
+      0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "상담DB 연결정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  /**
+   * 연결하려는 상담DB가
+   * 현재 회사 소속인지 서버에서 다시 검증한다.
+   */
+  const consultationRows =
+    await database
+      .select({
+        id:
+          consultations.id,
+
+        organizationId:
+          consultations.organizationId,
+      })
+      .from(
+        consultations
+      )
+      .where(
+        and(
+          eq(
+            consultations.id,
+            consultationId
+          ),
+
+          eq(
+            consultations.organizationId,
+            organizationId
+          ),
+
+          sql`${consultations.deletedAt} IS NULL`
+        )
+      )
+      .limit(
+        1
+      );
+
+  if (
+    !consultationRows[0]
+  ) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "연결할 상담DB를 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  /**
+   * 대화방 역시 현재 회사 소속인지 확인한다.
+   */
+  const conversationRows =
+    await database
+      .select({
+        id:
+          kakaoAiConversations.id,
+      })
+      .from(
+        kakaoAiConversations
+      )
+      .where(
+        and(
+          eq(
+            kakaoAiConversations.id,
+            conversationId
+          ),
+
+          eq(
+            kakaoAiConversations.organizationId,
+            organizationId
+          )
+        )
+      )
+      .limit(
+        1
+      );
+
+  if (
+    !conversationRows[0]
+  ) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "카카오 AI 대화방을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  await database
+    .update(
+      kakaoAiConversations
+    )
+    .set({
+      consultationId,
+
+      updatedAt:
+        new Date(),
+    })
+    .where(
+      and(
+        eq(
+          kakaoAiConversations.id,
+          conversationId
+        ),
+
+        eq(
+          kakaoAiConversations.organizationId,
+          organizationId
+        )
+      )
+    );
+
+  return {
+    success:
+      true as const,
+
+    consultationId,
+  };
 }
 
 /**
@@ -42310,27 +42530,42 @@ export async function getKakaoAiConversationMemory(
     !row
   ) {
     return {
-      desiredCourse:
-        null,
+  desiredCourse:
+    null,
 
-      finalEducation:
-        null,
+  finalEducation:
+    null,
 
-      hasTransferCollege:
-        null,
+  hasTransferCollege:
+    null,
 
   socialWorkerLawVersion:
     null,
 
-      verifiedFacts:
-        [],
+  verifiedFacts:
+    [],
 
-      unresolvedQuestions:
-        [],
+  unresolvedQuestions:
+    [],
 
-      currentTopic:
-        null,
-    };
+  currentTopic:
+    null,
+
+  recommendedStaffUserId:
+    null,
+
+  selectedStaffUserId:
+    null,
+
+  lastStaffCandidates:
+    [],
+
+  staffSelectionStatus:
+    "none",
+
+  lastIntent:
+    null,
+};
   }
 
   return {
@@ -42381,6 +42616,86 @@ socialWorkerLawVersion:
       decryptKakaoAiNullableText(
         row.currentTopic
       ),
+
+recommendedStaffUserId:
+  normalizeNullablePositiveInteger(
+    row.recommendedStaffUserId
+  ),
+
+selectedStaffUserId:
+  normalizeNullablePositiveInteger(
+    row.selectedStaffUserId
+  ),
+
+lastStaffCandidates:
+  decryptKakaoAiJson<
+    KakaoAiStaffCandidateMemory[]
+  >(
+    row.lastStaffCandidatesData,
+    []
+  )
+    .map(
+      (
+        item:
+          any
+      ) => ({
+        userId:
+          Number(
+            item?.userId ||
+            0
+          ),
+
+        displayName:
+          item?.displayName
+            ? String(
+                item.displayName
+              )
+            : null,
+
+        publicToken:
+          item?.publicToken
+            ? String(
+                item.publicToken
+              )
+            : null,
+
+        publicPositionName:
+          item?.publicPositionName
+            ? String(
+                item.publicPositionName
+              )
+            : null,
+      })
+    )
+    .filter(
+      (
+        item
+      ) =>
+        Number.isFinite(
+          item.userId
+        ) &&
+        item.userId >
+          0
+    )
+    .slice(
+      0,
+      20
+    ),
+
+staffSelectionStatus:
+  row.staffSelectionStatus ===
+    "recommended" ||
+  row.staffSelectionStatus ===
+    "selected"
+    ? row.staffSelectionStatus
+    : "none",
+
+lastIntent:
+  row.lastIntent
+    ? String(
+        row.lastIntent
+      )
+    : null,
   };
 }
 
@@ -42424,6 +42739,23 @@ socialWorkerLawVersion?:
 
       currentTopic?:
         string | null;
+
+recommendedStaffUserId?:
+  number | null;
+
+selectedStaffUserId?:
+  number | null;
+
+lastStaffCandidates?:
+  KakaoAiStaffCandidateMemory[];
+
+staffSelectionStatus?:
+  "none" |
+  "recommended" |
+  "selected";
+
+lastIntent?:
+  string | null;
     };
   }
 ) {
@@ -42588,6 +42920,115 @@ if (
       );
   }
 
+if (
+  patch.recommendedStaffUserId !==
+  undefined
+) {
+  values.recommendedStaffUserId =
+    normalizeNullablePositiveInteger(
+      patch.recommendedStaffUserId
+    );
+}
+
+if (
+  patch.selectedStaffUserId !==
+  undefined
+) {
+  values.selectedStaffUserId =
+    normalizeNullablePositiveInteger(
+      patch.selectedStaffUserId
+    );
+}
+
+if (
+  patch.lastStaffCandidates !==
+  undefined
+) {
+  values.lastStaffCandidatesData =
+    encryptKakaoAiJson(
+      patch.lastStaffCandidates
+        .map(
+          (
+            item
+          ) => ({
+            userId:
+              Number(
+                item.userId ||
+                0
+              ),
+
+            displayName:
+              item.displayName
+                ? String(
+                    item.displayName
+                  ).trim()
+                : null,
+
+            publicToken:
+              item.publicToken
+                ? String(
+                    item.publicToken
+                  ).trim()
+                : null,
+
+            publicPositionName:
+              item.publicPositionName
+                ? String(
+                    item.publicPositionName
+                  ).trim()
+                : null,
+          })
+        )
+        .filter(
+          (
+            item
+          ) =>
+            Number.isFinite(
+              item.userId
+            ) &&
+            item.userId >
+              0
+        )
+        .slice(
+          0,
+          20
+        )
+    );
+}
+
+if (
+  patch.staffSelectionStatus !==
+  undefined
+) {
+  values.staffSelectionStatus =
+    patch.staffSelectionStatus ===
+      "recommended" ||
+    patch.staffSelectionStatus ===
+      "selected"
+      ? patch.staffSelectionStatus
+      : "none";
+}
+
+if (
+  patch.lastIntent !==
+  undefined
+) {
+  const normalizedIntent =
+    String(
+      patch.lastIntent ||
+      ""
+    )
+      .trim()
+      .slice(
+        0,
+        100
+      );
+
+  values.lastIntent =
+    normalizedIntent ||
+    null;
+}
+
   if (
     Object.keys(
       values
@@ -42659,9 +43100,26 @@ socialWorkerLawVersion:
           ),
 
         currentTopic:
-          null,
+  null,
 
-        ...values,
+recommendedStaffUserId:
+  null,
+
+selectedStaffUserId:
+  null,
+
+lastStaffCandidatesData:
+  encryptKakaoAiJson(
+    []
+  ),
+
+staffSelectionStatus:
+  "none",
+
+lastIntent:
+  null,
+
+...values,
       });
   }
 
@@ -42669,4 +43127,3038 @@ socialWorkerLawVersion:
     success:
       true,
   };
+}
+
+// ============================================================================
+// Staff Public Profile / Team Public Page
+// ============================================================================
+
+function normalizeStaffPublicProfileText(
+  value: unknown,
+  maxLength?: number
+): string | null {
+  const normalized = String(value ?? "").trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (
+    maxLength &&
+    normalized.length > maxLength
+  ) {
+    return normalized.slice(0, maxLength);
+  }
+
+  return normalized;
+}
+
+function normalizeStaffSpecialties(
+  value: unknown
+): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      value
+        .map((item) =>
+          String(item ?? "").trim()
+        )
+        .filter(Boolean)
+        .slice(0, 30)
+    )
+  );
+}
+
+function parseStaffSpecialtiesJson(
+  value: unknown
+): string[] {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed =
+      typeof value === "string"
+        ? JSON.parse(value)
+        : value;
+
+    return normalizeStaffSpecialties(parsed);
+  } catch {
+    return [];
+  }
+}
+
+function createStaffPublicToken() {
+  return randomUUID().replace(/-/g, "");
+}
+
+function mapStaffPublicProfileRow(
+  row: any
+) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    ...row,
+
+    id:
+      Number(row.id),
+
+    organizationId:
+      Number(row.organizationId),
+
+    userId:
+      Number(row.userId),
+
+    isActive:
+      Boolean(row.isActive),
+
+    showOnTeamPage:
+      Boolean(row.showOnTeamPage),
+
+    recommendationEnabled:
+      Boolean(row.recommendationEnabled),
+
+    acceptingNewConsultations:
+      Boolean(row.acceptingNewConsultations),
+
+    showPhone:
+      Boolean(row.showPhone),
+
+    showConsultationButton:
+      Boolean(row.showConsultationButton),
+
+    recommendationPriority:
+  Number(
+    row.recommendationPriority ||
+    0
+  ),
+
+recommendationCount:
+  Number(
+    row.recommendationCount ||
+    0
+  ),
+
+lastRecommendedAt:
+  row.lastRecommendedAt
+    ? new Date(
+        row.lastRecommendedAt
+      )
+    : null,
+
+sortOrder:
+  Number(
+    row.sortOrder ||
+    0
+  ),
+
+    specialties:
+      parseStaffSpecialtiesJson(
+        row.specialtiesJson
+      ),
+  };
+}
+
+/**
+ * 외부 고객에게 실제로 공개해도 되는
+ * 담당자 프로필 필드만 반환한다.
+ *
+ * 내부 userId / organizationId /
+ * 추천 우선순위 / 작업자 정보 등은
+ * 절대 외부에 노출하지 않는다.
+ */
+function mapExternalStaffPublicProfile(
+  row: any
+) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    publicToken:
+      String(
+        row.publicToken ||
+        ""
+      ),
+
+    profileImageUrl:
+      row.profileImageUrl ??
+      null,
+
+    displayName:
+      row.displayName ??
+      null,
+
+    publicPositionName:
+      row.publicPositionName ??
+      null,
+
+    headline:
+      row.headline ??
+      null,
+
+    introduction:
+      row.introduction ??
+      null,
+
+    careerText:
+      row.careerText ??
+      null,
+
+    awardText:
+      row.awardText ??
+      null,
+
+    qualificationText:
+      row.qualificationText ??
+      null,
+
+    consultationStyle:
+      row.consultationStyle ??
+      null,
+
+    specialties:
+      parseStaffSpecialtiesJson(
+        row.specialtiesJson
+      ),
+
+    publicPhone:
+      Boolean(
+        row.showPhone
+      )
+        ? (
+            row.publicPhone ??
+            null
+          )
+        : null,
+
+    showPhone:
+      Boolean(
+        row.showPhone
+      ),
+
+    consultationUrl:
+      Boolean(
+        row.showConsultationButton
+      )
+        ? (
+            row.consultationUrl ??
+            null
+          )
+        : null,
+
+    showConsultationButton:
+      Boolean(
+        row.showConsultationButton
+      ),
+  };
+}
+
+/**
+ * 담당자 공개 프로필 조회
+ *
+ * 본인 프로필 관리 화면에서 사용.
+ * organizationId + userId를 반드시 함께 확인한다.
+ */
+export async function getStaffPublicProfile(
+  params: {
+    organizationId?: number | null;
+    userId: number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userId =
+    Math.floor(
+      Number(
+        params.userId ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(userId) ||
+    userId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const rows =
+    await db
+      .select()
+      .from(
+        staffPublicProfiles
+      )
+      .where(
+        and(
+          eq(
+            staffPublicProfiles.organizationId,
+            organizationId
+          ),
+
+          eq(
+            staffPublicProfiles.userId,
+            userId
+          )
+        )
+      )
+      .limit(1);
+
+  return mapStaffPublicProfileRow(
+    rows[0]
+  );
+}
+
+/**
+ * 담당자가 현재 회사에 실제 존재하고
+ * 활성 상태인지 확인한다.
+ */
+async function requireActiveStaffUser(
+  params: {
+    organizationId: number;
+    userId: number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const rows =
+    await db
+      .select({
+        id:
+          users.id,
+
+        organizationId:
+          users.organizationId,
+
+        name:
+          users.name,
+
+        username:
+          users.username,
+
+        role:
+          users.role,
+
+        isActive:
+          users.isActive,
+      })
+      .from(
+        users
+      )
+      .where(
+        and(
+          eq(
+            users.id,
+            params.userId
+          ),
+
+          eq(
+            users.organizationId,
+            params.organizationId
+          ),
+
+          eq(
+            users.isActive,
+            true
+          ),
+
+          inArray(
+            users.role,
+            [
+              "staff",
+              "admin",
+              "host",
+            ]
+          )
+        )
+      )
+      .limit(1);
+
+  if (!rows[0]) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "사용자 정보를 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  return decryptUserPersonalData(
+    rows[0]
+  ) as any;
+}
+
+/**
+ * 담당자 공개 프로필 최초 생성
+ *
+ * 동일 organizationId + userId 프로필은
+ * DB UNIQUE KEY로도 중복 방지된다.
+ */
+export async function createStaffPublicProfile(
+  params: {
+    organizationId?: number | null;
+    userId: number;
+    createdBy?: number | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userId =
+    Math.floor(
+      Number(
+        params.userId ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(userId) ||
+    userId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const user =
+    await requireActiveStaffUser({
+      organizationId,
+      userId,
+    });
+
+  const existing =
+    await getStaffPublicProfile({
+      organizationId,
+      userId,
+    });
+
+  if (existing) {
+    return existing;
+  }
+
+  const publicToken =
+    createStaffPublicToken();
+
+  await db
+    .insert(
+      staffPublicProfiles
+    )
+    .values({
+      organizationId,
+      userId,
+
+      publicToken,
+
+      isActive:
+        false,
+
+      showOnTeamPage:
+        false,
+
+      recommendationEnabled:
+        false,
+
+      acceptingNewConsultations:
+        true,
+
+      displayName:
+        normalizeStaffPublicProfileText(
+          user?.name,
+          100
+        ),
+
+      publicPositionName:
+        null,
+
+      headline:
+        null,
+
+      introduction:
+        null,
+
+      careerText:
+        null,
+
+      awardText:
+        null,
+
+      qualificationText:
+        null,
+
+      consultationStyle:
+        null,
+
+      specialtiesJson:
+        JSON.stringify([]),
+
+      publicPhone:
+        null,
+
+      showPhone:
+        false,
+
+      consultationUrl:
+        null,
+
+      showConsultationButton:
+        true,
+
+      recommendationPriority:
+        0,
+
+      sortOrder:
+        0,
+
+      createdBy:
+        params.createdBy
+          ? Number(params.createdBy)
+          : userId,
+
+      updatedBy:
+        params.createdBy
+          ? Number(params.createdBy)
+          : userId,
+    } as any);
+
+  return await getStaffPublicProfile({
+    organizationId,
+    userId,
+  });
+}
+
+/**
+ * 프로필이 없으면 자동 생성 후 반환한다.
+ *
+ * 프로필 관리 화면 진입 시 사용하면
+ * 별도의 "프로필 생성" 버튼이 필요 없다.
+ */
+export async function ensureStaffPublicProfile(
+  params: {
+    organizationId?: number | null;
+    userId: number;
+    createdBy?: number | null;
+  }
+) {
+  const existing =
+    await getStaffPublicProfile({
+      organizationId:
+        params.organizationId,
+
+      userId:
+        params.userId,
+    });
+
+  if (existing) {
+    return existing;
+  }
+
+  return await createStaffPublicProfile(
+    params
+  );
+}
+
+/**
+ * 담당자 공개 프로필 수정
+ */
+export async function updateStaffPublicProfile(
+  params: {
+    organizationId?: number | null;
+    userId: number;
+    updatedBy: number;
+
+    values: {
+      isActive?: boolean;
+
+      showOnTeamPage?: boolean;
+
+      recommendationEnabled?: boolean;
+
+      acceptingNewConsultations?: boolean;
+
+      profileImageUrl?:
+        string | null;
+
+      displayName?:
+        string | null;
+
+      publicPositionName?:
+        string | null;
+
+      headline?:
+        string | null;
+
+      introduction?:
+        string | null;
+
+      careerText?:
+        string | null;
+
+      awardText?:
+        string | null;
+
+      qualificationText?:
+        string | null;
+
+      consultationStyle?:
+        string | null;
+
+      specialties?:
+        string[];
+
+      publicPhone?:
+        string | null;
+
+      showPhone?:
+        boolean;
+
+      consultationUrl?:
+        string | null;
+
+      showConsultationButton?:
+        boolean;
+
+      recommendationPriority?:
+        number;
+
+      sortOrder?:
+        number;
+    };
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userId =
+    Math.floor(
+      Number(
+        params.userId ||
+        0
+      )
+    );
+
+  await requireActiveStaffUser({
+    organizationId,
+    userId,
+  });
+
+  await ensureStaffPublicProfile({
+    organizationId,
+    userId,
+    createdBy:
+      params.updatedBy,
+  });
+
+  const input =
+    params.values ||
+    {};
+
+  const values:
+    Record<string, any> = {
+      updatedBy:
+        Number(
+          params.updatedBy
+        ),
+    };
+
+  if (
+    input.isActive !==
+    undefined
+  ) {
+    values.isActive =
+      Boolean(
+        input.isActive
+      );
+  }
+
+  if (
+    input.showOnTeamPage !==
+    undefined
+  ) {
+    values.showOnTeamPage =
+      Boolean(
+        input.showOnTeamPage
+      );
+  }
+
+  if (
+    input.recommendationEnabled !==
+    undefined
+  ) {
+    values.recommendationEnabled =
+      Boolean(
+        input.recommendationEnabled
+      );
+  }
+
+  if (
+    input.acceptingNewConsultations !==
+    undefined
+  ) {
+    values.acceptingNewConsultations =
+      Boolean(
+        input.acceptingNewConsultations
+      );
+  }
+
+  if (
+    input.profileImageUrl !==
+    undefined
+  ) {
+    values.profileImageUrl =
+      normalizeStaffPublicProfileText(
+        input.profileImageUrl,
+        1000
+      );
+  }
+
+  if (
+    input.displayName !==
+    undefined
+  ) {
+    values.displayName =
+      normalizeStaffPublicProfileText(
+        input.displayName,
+        100
+      );
+  }
+
+  if (
+    input.publicPositionName !==
+    undefined
+  ) {
+    values.publicPositionName =
+      normalizeStaffPublicProfileText(
+        input.publicPositionName,
+        100
+      );
+  }
+
+  if (
+    input.headline !==
+    undefined
+  ) {
+    values.headline =
+      normalizeStaffPublicProfileText(
+        input.headline,
+        255
+      );
+  }
+
+  if (
+    input.introduction !==
+    undefined
+  ) {
+    values.introduction =
+      normalizeStaffPublicProfileText(
+        input.introduction
+      );
+  }
+
+  if (
+    input.careerText !==
+    undefined
+  ) {
+    values.careerText =
+      normalizeStaffPublicProfileText(
+        input.careerText
+      );
+  }
+
+  if (
+    input.awardText !==
+    undefined
+  ) {
+    values.awardText =
+      normalizeStaffPublicProfileText(
+        input.awardText
+      );
+  }
+
+  if (
+    input.qualificationText !==
+    undefined
+  ) {
+    values.qualificationText =
+      normalizeStaffPublicProfileText(
+        input.qualificationText
+      );
+  }
+
+  if (
+    input.consultationStyle !==
+    undefined
+  ) {
+    values.consultationStyle =
+      normalizeStaffPublicProfileText(
+        input.consultationStyle
+      );
+  }
+
+  if (
+    input.specialties !==
+    undefined
+  ) {
+    values.specialtiesJson =
+      JSON.stringify(
+        normalizeStaffSpecialties(
+          input.specialties
+        )
+      );
+  }
+
+  if (
+    input.publicPhone !==
+    undefined
+  ) {
+    values.publicPhone =
+      normalizeStaffPublicProfileText(
+        input.publicPhone,
+        50
+      );
+  }
+
+  if (
+    input.showPhone !==
+    undefined
+  ) {
+    values.showPhone =
+      Boolean(
+        input.showPhone
+      );
+  }
+
+  if (
+    input.consultationUrl !==
+    undefined
+  ) {
+    values.consultationUrl =
+      normalizeStaffPublicProfileText(
+        input.consultationUrl,
+        1000
+      );
+  }
+
+  if (
+    input.showConsultationButton !==
+    undefined
+  ) {
+    values.showConsultationButton =
+      Boolean(
+        input.showConsultationButton
+      );
+  }
+
+  if (
+    input.recommendationPriority !==
+    undefined
+  ) {
+    values.recommendationPriority =
+      Math.max(
+        0,
+        Math.floor(
+          Number(
+            input.recommendationPriority ||
+            0
+          )
+        )
+      );
+  }
+
+  if (
+    input.sortOrder !==
+    undefined
+  ) {
+    values.sortOrder =
+      Math.max(
+        0,
+        Math.floor(
+          Number(
+            input.sortOrder ||
+            0
+          )
+        )
+      );
+  }
+
+  await db
+    .update(
+      staffPublicProfiles
+    )
+    .set(
+      values
+    )
+    .where(
+      and(
+        eq(
+          staffPublicProfiles.organizationId,
+          organizationId
+        ),
+
+        eq(
+          staffPublicProfiles.userId,
+          userId
+        )
+      )
+    );
+
+  return await getStaffPublicProfile({
+    organizationId,
+    userId,
+  });
+}
+
+/**
+ * 공개 프로필 URL Token 재발급
+ *
+ * 재발급 즉시 기존 URL은 사용할 수 없게 된다.
+ */
+export async function regenerateStaffPublicProfileToken(
+  params: {
+    organizationId?: number | null;
+    userId: number;
+    updatedBy: number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  await ensureStaffPublicProfile({
+    organizationId,
+    userId:
+      params.userId,
+
+    createdBy:
+      params.updatedBy,
+  });
+
+  const publicToken =
+    createStaffPublicToken();
+
+  await db
+    .update(
+      staffPublicProfiles
+    )
+    .set({
+      publicToken,
+
+      updatedBy:
+        Number(
+          params.updatedBy
+        ),
+    } as any)
+    .where(
+      and(
+        eq(
+          staffPublicProfiles.organizationId,
+          organizationId
+        ),
+
+        eq(
+          staffPublicProfiles.userId,
+          Number(
+            params.userId
+          )
+        )
+      )
+    );
+
+  return await getStaffPublicProfile({
+    organizationId,
+    userId:
+      params.userId,
+  });
+}
+
+/**
+ * 공개 URL용 프로필 조회
+ *
+ * 로그인하지 않은 사용자가 접근할 수 있으므로
+ * publicToken + isActive 조건만 사용한다.
+ */
+export async function getStaffPublicProfileByToken(
+  publicToken: string
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const token =
+    String(
+      publicToken ||
+      ""
+    ).trim();
+
+  if (!token) {
+    return null;
+  }
+
+  const rows =
+    await db
+      .select()
+      .from(
+        staffPublicProfiles
+      )
+      .where(
+        and(
+          eq(
+            staffPublicProfiles.publicToken,
+            token
+          ),
+
+          eq(
+            staffPublicProfiles.isActive,
+            true
+          )
+        )
+      )
+      .limit(1);
+
+  return mapExternalStaffPublicProfile(
+  rows[0]
+);
+}
+
+/**
+ * 공개 담당자 Token으로
+ * 프로필이 속한 회사 ID를 서버 내부에서만 조회한다.
+ *
+ * organizationId는 외부 응답으로 직접 노출하지 않는다.
+ */
+export async function getStaffPublicProfileOrganizationIdByToken(
+  publicToken: string
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const token =
+    String(
+      publicToken ||
+      ""
+    ).trim();
+
+  if (!token) {
+    return null;
+  }
+
+  const rows =
+    await db
+      .select({
+        organizationId:
+          staffPublicProfiles.organizationId,
+      })
+      .from(
+        staffPublicProfiles
+      )
+      .where(
+        and(
+          eq(
+            staffPublicProfiles.publicToken,
+            token
+          ),
+
+          eq(
+            staffPublicProfiles.isActive,
+            true
+          )
+        )
+      )
+      .limit(1);
+
+  const organizationId =
+    Number(
+      rows[0]?.organizationId ||
+      0
+    );
+
+  if (
+    !Number.isFinite(
+      organizationId
+    ) ||
+    organizationId <= 0
+  ) {
+    return null;
+  }
+
+  return organizationId;
+}
+
+/**
+ * 회사 공개 담당자 전체 목록
+ *
+ * 팀 소개 페이지에서 사용.
+ */
+export async function listPublicStaffProfiles(
+  params: {
+    organizationId?: number | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const rows =
+    await db
+      .select()
+      .from(
+        staffPublicProfiles
+      )
+      .where(
+        and(
+          eq(
+            staffPublicProfiles.organizationId,
+            organizationId
+          ),
+
+          eq(
+            staffPublicProfiles.isActive,
+            true
+          ),
+
+          eq(
+            staffPublicProfiles.showOnTeamPage,
+            true
+          )
+        )
+      )
+      .orderBy(
+        asc(
+          staffPublicProfiles.sortOrder
+        ),
+
+        desc(
+          staffPublicProfiles.recommendationPriority
+        ),
+
+        asc(
+          staffPublicProfiles.id
+        )
+      );
+
+  return rows
+  .map(
+    mapExternalStaffPublicProfile
+  )
+  .filter(Boolean);
+}
+
+/**
+ * 카카오 AI 담당자 추천 대상
+ *
+ * 프로필 공개 활성
+ * + 추천 활성
+ * + 신규상담 접수 가능
+ * 조건을 모두 만족하는 담당자만 반환한다.
+ */
+export async function listRecommendedStaffProfiles(
+  params: {
+    organizationId?: number | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const rows =
+    await db
+      .select()
+      .from(
+        staffPublicProfiles
+      )
+      .where(
+        and(
+          eq(
+            staffPublicProfiles.organizationId,
+            organizationId
+          ),
+
+          eq(
+            staffPublicProfiles.isActive,
+            true
+          ),
+
+          eq(
+            staffPublicProfiles.recommendationEnabled,
+            true
+          ),
+
+          eq(
+            staffPublicProfiles.acceptingNewConsultations,
+            true
+          )
+        )
+      )
+      .orderBy(
+  desc(
+    staffPublicProfiles.recommendationPriority
+  ),
+
+  asc(
+    staffPublicProfiles.recommendationCount
+  ),
+
+  sql`
+    CASE
+      WHEN ${staffPublicProfiles.lastRecommendedAt} IS NULL
+      THEN 0
+      ELSE 1
+    END
+  `,
+
+  asc(
+    staffPublicProfiles.lastRecommendedAt
+  ),
+
+  asc(
+    staffPublicProfiles.sortOrder
+  ),
+
+  asc(
+    staffPublicProfiles.id
+  )
+);
+
+  return rows.map(
+    mapStaffPublicProfileRow
+  );
+}
+
+/**
+ * 카카오 AI 신규 고객 담당자 자동 추천
+ *
+ * 1. 추천 가능한 담당자만 조회
+ * 2. 희망 과정과 specialties를 비교
+ * 3. 상담 내용과 consultationStyle / specialties를 비교
+ * 4. recommendationPriority 반영
+ * 5. 동점이면 recommendationCount가 적은 담당자 우선
+ * 6. 그래도 동점이면 가장 오래 추천되지 않은 담당자 우선
+ * 7. 최종 선택된 담당자의 추천 횟수와 추천 시각 갱신
+ */
+export async function recommendStaffProfile(
+  params: {
+    organizationId?: number | null;
+
+    desiredCourse?:
+      string | null;
+
+    consultationText?:
+      string | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const desiredCourse =
+    String(
+      params.desiredCourse ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  const consultationText =
+    String(
+      params.consultationText ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  const candidates =
+    await listRecommendedStaffProfiles({
+      organizationId,
+    });
+
+  if (
+    candidates.length ===
+    0
+  ) {
+    return null;
+  }
+
+  const scored =
+    candidates.map(
+      (candidate: any) => {
+        let matchScore =
+          Number(
+            candidate.recommendationPriority ||
+            0
+          ) * 100;
+
+        const specialties =
+          Array.isArray(
+            candidate.specialties
+          )
+            ? candidate.specialties
+                .map(
+                  (value: any) =>
+                    String(
+                      value ||
+                      ""
+                    )
+                      .trim()
+                      .toLowerCase()
+                )
+                .filter(Boolean)
+            : [];
+
+        const consultationStyle =
+          String(
+            candidate.consultationStyle ||
+            ""
+          )
+            .trim()
+            .toLowerCase();
+
+        /**
+         * 희망 과정 ↔ 담당자 전문분야
+         */
+        if (desiredCourse) {
+          for (
+            const specialty of
+            specialties
+          ) {
+            if (
+              desiredCourse.includes(
+                specialty
+              ) ||
+              specialty.includes(
+                desiredCourse
+              )
+            ) {
+              matchScore +=
+                1000;
+            }
+          }
+        }
+
+        /**
+         * 고객 상담 내용 ↔ 전문분야
+         */
+        if (consultationText) {
+          for (
+            const specialty of
+            specialties
+          ) {
+            if (
+              consultationText.includes(
+                specialty
+              )
+            ) {
+              matchScore +=
+                300;
+            }
+          }
+        }
+
+        /**
+         * 고객 상담 내용 ↔ 상담 스타일
+         *
+         * consultationStyle 전체 문장을
+         * 그대로 비교하면 매칭률이 낮기 때문에
+         * 공백 기준 키워드로 분리한다.
+         */
+        if (
+          consultationText &&
+          consultationStyle
+        ) {
+          const styleKeywords =
+            consultationStyle
+              .split(
+                /[\s,./|·]+/
+              )
+              .map(
+                (value) =>
+                  value.trim()
+              )
+              .filter(
+                (value) =>
+                  value.length >=
+                  2
+              );
+
+          for (
+            const keyword of
+            styleKeywords
+          ) {
+            if (
+              consultationText.includes(
+                keyword
+              )
+            ) {
+              matchScore +=
+                20;
+            }
+          }
+        }
+
+        return {
+          candidate,
+          matchScore,
+        };
+      }
+    );
+
+  scored.sort(
+    (
+      a: any,
+      b: any
+    ) => {
+      /**
+       * 1순위:
+       * 전문분야 / 상담스타일 /
+       * 운영 우선순위를 합친 점수
+       */
+      if (
+        b.matchScore !==
+        a.matchScore
+      ) {
+        return (
+          b.matchScore -
+          a.matchScore
+        );
+      }
+
+      /**
+       * 2순위:
+       * 누적 추천 횟수가 적은 사람
+       */
+      const countA =
+        Number(
+          a.candidate
+            .recommendationCount ||
+          0
+        );
+
+      const countB =
+        Number(
+          b.candidate
+            .recommendationCount ||
+          0
+        );
+
+      if (
+        countA !==
+        countB
+      ) {
+        return (
+          countA -
+          countB
+        );
+      }
+
+      /**
+       * 3순위:
+       * 추천된 적 없는 담당자를 먼저 선택
+       */
+      const timeA =
+        a.candidate
+          .lastRecommendedAt
+          ? new Date(
+              a.candidate
+                .lastRecommendedAt
+            ).getTime()
+          : 0;
+
+      const timeB =
+        b.candidate
+          .lastRecommendedAt
+          ? new Date(
+              b.candidate
+                .lastRecommendedAt
+            ).getTime()
+          : 0;
+
+      if (
+        timeA !==
+        timeB
+      ) {
+        return (
+          timeA -
+          timeB
+        );
+      }
+
+      /**
+       * 최종 안정 정렬
+       */
+      return (
+        Number(
+          a.candidate.id ||
+          0
+        ) -
+        Number(
+          b.candidate.id ||
+          0
+        )
+      );
+    }
+  );
+
+  const selected =
+    scored[0]
+      ?.candidate;
+
+  if (!selected) {
+    return null;
+  }
+
+  /**
+   * 추천 횟수 증가 + 마지막 추천 시각 기록
+   *
+   * SQL 증가식을 사용해서
+   * 기존 값을 읽고 다시 저장하는 방식보다
+   * 동시 요청에 안전하게 처리한다.
+   */
+  await db
+    .update(
+      staffPublicProfiles
+    )
+    .set({
+      recommendationCount:
+        sql`
+          ${staffPublicProfiles.recommendationCount} + 1
+        `,
+
+      lastRecommendedAt:
+        new Date(),
+    } as any)
+    .where(
+      and(
+        eq(
+          staffPublicProfiles.id,
+          Number(
+            selected.id
+          )
+        ),
+
+        eq(
+          staffPublicProfiles.organizationId,
+          organizationId
+        ),
+
+        eq(
+          staffPublicProfiles.isActive,
+          true
+        ),
+
+        eq(
+          staffPublicProfiles.recommendationEnabled,
+          true
+        ),
+
+        eq(
+          staffPublicProfiles.acceptingNewConsultations,
+          true
+        )
+      )
+    );
+
+  return {
+    ...selected,
+
+    recommendationCount:
+      Number(
+        selected.recommendationCount ||
+        0
+      ) + 1,
+
+    lastRecommendedAt:
+      new Date(),
+  };
+}
+
+/**
+ * 카카오 고객이 실제로 선택할 수 있는
+ * 담당자 프로필 1명 조회.
+ *
+ * 추천 ON 여부와는 별개로
+ * 고객이 전체 담당자 목록에서 직접 선택할 수 있다.
+ *
+ * 단:
+ * - 같은 회사
+ * - 프로필 활성
+ * - 신규상담 가능
+ * - 회사페이지 노출 또는 AI 추천 대상
+ *
+ * 조건은 반드시 서버에서 다시 검증한다.
+ */
+async function getSelectableStaffProfileForKakao(
+  params: {
+    organizationId:
+      number;
+
+    userId:
+      number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userId =
+    normalizeNullablePositiveInteger(
+      params.userId
+    );
+
+  if (!userId) {
+    return null;
+  }
+
+  const rows =
+    await db
+      .select()
+      .from(
+        staffPublicProfiles
+      )
+      .where(
+        and(
+          eq(
+            staffPublicProfiles.organizationId,
+            organizationId
+          ),
+
+          eq(
+            staffPublicProfiles.userId,
+            userId
+          ),
+
+          eq(
+            staffPublicProfiles.isActive,
+            true
+          ),
+
+          eq(
+            staffPublicProfiles.acceptingNewConsultations,
+            true
+          ),
+
+          or(
+            eq(
+              staffPublicProfiles.showOnTeamPage,
+              true
+            ),
+
+            eq(
+              staffPublicProfiles.recommendationEnabled,
+              true
+            )
+          )
+        )
+      )
+      .limit(
+        1
+      );
+
+  return rows[0]
+    ? mapStaffPublicProfileRow(
+        rows[0]
+      )
+    : null;
+}
+
+/**
+ * 카카오 Memory에 넣을 담당자 후보를
+ * 최소 데이터로 변환한다.
+ *
+ * 전체 프로필 내용을 Memory에 복제하지 않는다.
+ */
+function mapKakaoStaffCandidateMemory(
+  staff:
+    any
+): KakaoAiStaffCandidateMemory {
+  return {
+    userId:
+      Number(
+        staff?.userId ||
+        0
+      ),
+
+    displayName:
+      staff?.displayName
+        ? String(
+            staff.displayName
+          )
+        : null,
+
+    publicToken:
+      staff?.publicToken
+        ? String(
+            staff.publicToken
+          )
+        : null,
+
+    publicPositionName:
+      staff?.publicPositionName
+        ? String(
+            staff.publicPositionName
+          )
+        : null,
+  };
+}
+
+/**
+ * 카카오 고객에게 보여줄 수 있는
+ * 회사 담당자 전체 후보 목록.
+ *
+ * showOnTeamPage = true인 담당자를 기본 대상으로 한다.
+ *
+ * 추천 여부와는 별개이므로
+ * recommendationEnabled는 요구하지 않는다.
+ */
+export async function listStaffForKakaoConversation(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  const rows =
+    await db
+      .select()
+      .from(
+        staffPublicProfiles
+      )
+      .where(
+        and(
+          eq(
+            staffPublicProfiles.organizationId,
+            organizationId
+          ),
+
+          eq(
+            staffPublicProfiles.isActive,
+            true
+          ),
+
+          eq(
+            staffPublicProfiles.showOnTeamPage,
+            true
+          ),
+
+          eq(
+            staffPublicProfiles.acceptingNewConsultations,
+            true
+          )
+        )
+      )
+      .orderBy(
+        asc(
+          staffPublicProfiles.sortOrder
+        ),
+
+        desc(
+          staffPublicProfiles.recommendationPriority
+        ),
+
+        asc(
+          staffPublicProfiles.id
+        )
+      );
+
+  const staffList =
+    rows
+      .map(
+        mapStaffPublicProfileRow
+      )
+      .filter(
+        Boolean
+      );
+
+  const memoryCandidates =
+    staffList
+      .map(
+        mapKakaoStaffCandidateMemory
+      )
+      .filter(
+        (
+          item
+        ) =>
+          Number.isFinite(
+            item.userId
+          ) &&
+          item.userId >
+            0
+      )
+      .slice(
+        0,
+        20
+      );
+
+  /**
+   * "두 번째 분"
+   * "아까 마지막 분"
+   * 같은 후속질문에 사용한다.
+   */
+  await updateKakaoAiConversationMemory({
+    organizationId,
+    conversationId,
+
+    patch: {
+      lastStaffCandidates:
+        memoryCandidates,
+
+      lastIntent:
+        "staff_list",
+    },
+  });
+
+  /**
+   * 내부 userId는 향후 Tool 선택용으로 필요하다.
+   * 실제 카카오 응답 생성 단계에서는
+   * public 필드만 골라서 노출한다.
+   */
+  return staffList;
+}
+
+/**
+ * 카카오 Conversation 단위 담당자 추천.
+ *
+ * 기존 recommendStaffProfile()을 실행한 후
+ * 추천 결과를 Conversation Memory에 기록한다.
+ */
+export async function recommendStaffForKakaoConversation(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+
+    desiredCourse?:
+      string | null;
+
+    consultationText?:
+      string | null;
+  }
+) {
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  const memory =
+    await getKakaoAiConversationMemory({
+      organizationId,
+      conversationId,
+    });
+
+  /**
+   * 이번 요청에서 과정이 없으면
+   * 기존 Conversation Memory의 희망과정을 사용한다.
+   */
+  const desiredCourse =
+    String(
+      params.desiredCourse ??
+      memory.desiredCourse ??
+      ""
+    ).trim() ||
+    null;
+
+  const recommended =
+    await recommendStaffProfile({
+      organizationId,
+
+      desiredCourse,
+
+      consultationText:
+        params.consultationText ??
+        null,
+    });
+
+  if (!recommended) {
+    await updateKakaoAiConversationMemory({
+      organizationId,
+      conversationId,
+
+      patch: {
+        recommendedStaffUserId:
+          null,
+
+        staffSelectionStatus:
+          memory.selectedStaffUserId
+            ? "selected"
+            : "none",
+
+        lastIntent:
+          "staff_recommend",
+      },
+    });
+
+    return {
+      success:
+        false as const,
+
+      reason:
+        "NO_AVAILABLE_STAFF" as const,
+
+      recommended:
+        null,
+    };
+  }
+
+  /**
+   * 고객에게 리스트도 함께 보여줄 수 있도록
+   * 회사페이지 공개 담당자 목록을 가져온다.
+   */
+  const staffList =
+    await listStaffForKakaoConversation({
+      organizationId,
+      conversationId,
+    });
+
+  const candidateMemory =
+    staffList
+      .map(
+        mapKakaoStaffCandidateMemory
+      )
+      .filter(
+        (
+          item
+        ) =>
+          item.userId >
+            0
+      )
+      .slice(
+        0,
+        20
+      );
+
+  /**
+   * 추천된 사람이 회사페이지에는 숨겨져 있어도
+   * AI 추천 대상일 수 있으므로 후보 Memory에는 넣는다.
+   */
+  const recommendedMemory =
+    mapKakaoStaffCandidateMemory(
+      recommended
+    );
+
+  const alreadyIncluded =
+    candidateMemory.some(
+      (
+        item
+      ) =>
+        item.userId ===
+        recommendedMemory.userId
+    );
+
+  const finalCandidates =
+    alreadyIncluded
+      ? candidateMemory
+      : [
+          recommendedMemory,
+          ...candidateMemory,
+        ].slice(
+          0,
+          20
+        );
+
+  await updateKakaoAiConversationMemory({
+    organizationId,
+    conversationId,
+
+    patch: {
+      desiredCourse:
+        desiredCourse ??
+        undefined,
+
+      recommendedStaffUserId:
+        Number(
+          recommended.userId
+        ),
+
+      lastStaffCandidates:
+        finalCandidates,
+
+      staffSelectionStatus:
+        memory.selectedStaffUserId
+          ? "selected"
+          : "recommended",
+
+      lastIntent:
+        "staff_recommend",
+    },
+  });
+
+  return {
+    success:
+      true as const,
+
+    reason:
+      null,
+
+    recommended,
+
+    candidates:
+      staffList,
+  };
+}
+
+/**
+ * 특정 담당자 직접 선택.
+ *
+ * 최초 선택과 담당자 변경을
+ * 동일 함수에서 처리한다.
+ *
+ * AI가 전달한 userId를 그대로 신뢰하지 않고
+ * 회사 / 프로필 / 상담가능 상태를 재검증한다.
+ */
+export async function selectStaffForKakaoConversation(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+
+    userId:
+      number;
+
+    intent?:
+      "staff_select" |
+      "staff_change";
+  }
+) {
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  const staff =
+    await getSelectableStaffProfileForKakao({
+      organizationId,
+
+      userId:
+        params.userId,
+    });
+
+  if (!staff) {
+    return {
+      success:
+        false as const,
+
+      reason:
+        "STAFF_NOT_SELECTABLE" as const,
+
+      selected:
+        null,
+    };
+  }
+
+  await updateKakaoAiConversationMemory({
+    organizationId,
+    conversationId,
+
+    patch: {
+      selectedStaffUserId:
+        Number(
+          staff.userId
+        ),
+
+      staffSelectionStatus:
+        "selected",
+
+      lastIntent:
+        params.intent ===
+          "staff_change"
+          ? "staff_change"
+          : "staff_select",
+    },
+  });
+
+  return {
+    success:
+      true as const,
+
+    reason:
+      null,
+
+    selected:
+      staff,
+  };
+}
+
+/**
+ * "추천해준 담당자로 할게요"
+ * "이분으로 할게요"
+ *
+ * 마지막 추천 담당자를 실제 선택 상태로 변경한다.
+ */
+export async function selectRecommendedStaffForKakaoConversation(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+  }
+) {
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  const memory =
+    await getKakaoAiConversationMemory({
+      organizationId,
+      conversationId,
+    });
+
+  if (
+    !memory.recommendedStaffUserId
+  ) {
+    return {
+      success:
+        false as const,
+
+      reason:
+        "NO_RECOMMENDED_STAFF" as const,
+
+      selected:
+        null,
+    };
+  }
+
+  return await selectStaffForKakaoConversation({
+    organizationId,
+    conversationId,
+
+    userId:
+      memory.recommendedStaffUserId,
+
+    intent:
+      "staff_select",
+  });
+}
+
+/**
+ * 직전에 보여준 담당자 목록의
+ * 순번으로 담당자를 선택한다.
+ *
+ * candidateIndex는 사람 기준 1부터 시작한다.
+ *
+ * 예:
+ * "두 번째 분"
+ * → candidateIndex = 2
+ */
+export async function selectStaffCandidateForKakaoConversation(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+
+    candidateIndex:
+      number;
+  }
+) {
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  const memory =
+    await getKakaoAiConversationMemory({
+      organizationId,
+      conversationId,
+    });
+
+  const candidateIndex =
+    Math.floor(
+      Number(
+        params.candidateIndex
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      candidateIndex
+    ) ||
+    candidateIndex <=
+      0
+  ) {
+    return {
+      success:
+        false as const,
+
+      reason:
+        "INVALID_CANDIDATE_INDEX" as const,
+
+      selected:
+        null,
+    };
+  }
+
+  const candidate =
+    memory.lastStaffCandidates[
+      candidateIndex -
+        1
+    ];
+
+  if (!candidate) {
+    return {
+      success:
+        false as const,
+
+      reason:
+        "CANDIDATE_NOT_FOUND" as const,
+
+      selected:
+        null,
+    };
+  }
+
+  return await selectStaffForKakaoConversation({
+    organizationId,
+    conversationId,
+
+    userId:
+      candidate.userId,
+
+    intent:
+      memory.selectedStaffUserId
+        ? "staff_change"
+        : "staff_select",
+  });
+}
+
+/**
+ * 현재 카카오 Conversation의
+ * 담당자 추천 / 선택 상태 조회.
+ */
+export async function getKakaoStaffSelectionState(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+  }
+) {
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  const memory =
+    await getKakaoAiConversationMemory({
+      organizationId,
+      conversationId,
+    });
+
+  const recommendedStaff =
+    memory.recommendedStaffUserId
+      ? await getSelectableStaffProfileForKakao({
+          organizationId,
+
+          userId:
+            memory.recommendedStaffUserId,
+        })
+      : null;
+
+  const selectedStaff =
+    memory.selectedStaffUserId
+      ? await getSelectableStaffProfileForKakao({
+          organizationId,
+
+          userId:
+            memory.selectedStaffUserId,
+        })
+      : null;
+
+  return {
+    recommendedStaff,
+
+    selectedStaff,
+
+    candidates:
+      memory.lastStaffCandidates,
+
+    status:
+      selectedStaff
+        ? "selected" as const
+        : recommendedStaff
+          ? "recommended" as const
+          : "none" as const,
+
+    lastIntent:
+      memory.lastIntent,
+  };
+}
+
+/**
+ * 회사 팀페이지 설정 조회
+ */
+export async function getStaffTeamPageSettings(
+  params: {
+    organizationId?: number | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const rows =
+    await db
+      .select()
+      .from(
+        staffTeamPageSettings
+      )
+      .where(
+        eq(
+          staffTeamPageSettings.organizationId,
+          organizationId
+        )
+      )
+      .limit(1);
+
+  if (!rows[0]) {
+    return {
+      organizationId,
+
+      enabled:
+        false,
+
+      title:
+        null,
+
+      description:
+        null,
+
+      staffSectionTitle:
+        null,
+
+      staffSectionDescription:
+        null,
+
+      footerIntroduction:
+        null,
+    };
+  }
+
+  return {
+    ...rows[0],
+
+    organizationId:
+      Number(
+        rows[0].organizationId
+      ),
+
+    enabled:
+      Boolean(
+        rows[0].enabled
+      ),
+  };
+}
+
+/**
+ * 회사 팀페이지 설정 저장
+ *
+ * organizationId UNIQUE KEY를 이용해
+ * insert / update를 한 번에 처리한다.
+ */
+export async function saveStaffTeamPageSettings(
+  params: {
+    organizationId?: number | null;
+
+    updatedBy: number;
+
+    values: {
+      enabled?: boolean;
+
+      title?:
+        string | null;
+
+      description?:
+        string | null;
+
+      staffSectionTitle?:
+        string | null;
+
+      staffSectionDescription?:
+        string | null;
+
+      footerIntroduction?:
+        string | null;
+    };
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const input =
+    params.values ||
+    {};
+
+  const existing =
+    await getStaffTeamPageSettings({
+      organizationId,
+    });
+
+  const values:
+    Record<string, any> = {
+      organizationId,
+
+      enabled:
+        input.enabled !== undefined
+          ? Boolean(input.enabled)
+          : Boolean(existing.enabled),
+
+      title:
+        input.title !== undefined
+          ? normalizeStaffPublicProfileText(
+              input.title,
+              200
+            )
+          : existing.title,
+
+      description:
+        input.description !== undefined
+          ? normalizeStaffPublicProfileText(
+              input.description
+            )
+          : existing.description,
+
+      staffSectionTitle:
+        input.staffSectionTitle !== undefined
+          ? normalizeStaffPublicProfileText(
+              input.staffSectionTitle,
+              150
+            )
+          : existing.staffSectionTitle,
+
+      staffSectionDescription:
+        input.staffSectionDescription !== undefined
+          ? normalizeStaffPublicProfileText(
+              input.staffSectionDescription
+            )
+          : existing.staffSectionDescription,
+
+      footerIntroduction:
+        input.footerIntroduction !== undefined
+          ? normalizeStaffPublicProfileText(
+              input.footerIntroduction
+            )
+          : existing.footerIntroduction,
+
+      updatedBy:
+        Number(
+          params.updatedBy
+        ),
+    };
+
+  const rows =
+    await db
+      .select({
+        id:
+          staffTeamPageSettings.id,
+      })
+      .from(
+        staffTeamPageSettings
+      )
+      .where(
+        eq(
+          staffTeamPageSettings.organizationId,
+          organizationId
+        )
+      )
+      .limit(1);
+
+  if (rows[0]) {
+    await db
+      .update(
+        staffTeamPageSettings
+      )
+      .set(
+        values
+      )
+      .where(
+        and(
+          eq(
+            staffTeamPageSettings.id,
+            Number(
+              rows[0].id
+            )
+          ),
+
+          eq(
+            staffTeamPageSettings.organizationId,
+            organizationId
+          )
+        )
+      );
+  } else {
+    await db
+      .insert(
+        staffTeamPageSettings
+      )
+      .values({
+        ...values,
+
+        createdBy:
+          Number(
+            params.updatedBy
+          ),
+      } as any);
+  }
+
+  return await getStaffTeamPageSettings({
+    organizationId,
+  });
+}
+
+/**
+ * Host 담당자 추천 관리 화면용 목록
+ *
+ * 회사의 활성 Host / Admin / Staff를 모두 조회하고
+ * 공개 프로필 설정을 함께 반환한다.
+ *
+ * 공개 프로필을 아직 만들지 않은 직원도
+ * 목록에는 표시한다.
+ */
+export async function listStaffRecommendationManagement(
+  params: {
+    organizationId?: number | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const organizationUsers =
+    await getAllUsersDetailed({
+      organizationId,
+    });
+
+  const staffUsers =
+    organizationUsers.filter(
+      (user: any) => {
+        const role =
+          String(
+            user?.role ||
+            ""
+          ).toLowerCase();
+
+        return (
+          user?.isActive !== false &&
+          (
+            role === "host" ||
+            role === "admin" ||
+            role === "staff"
+          )
+        );
+      }
+    );
+
+  const profileRows =
+    await db
+      .select()
+      .from(
+        staffPublicProfiles
+      )
+      .where(
+        eq(
+          staffPublicProfiles.organizationId,
+          organizationId
+        )
+      );
+
+  const profileMap =
+    new Map<
+      number,
+      ReturnType<
+        typeof mapStaffPublicProfileRow
+      >
+    >();
+
+  for (
+    const row of profileRows
+  ) {
+    const mapped =
+      mapStaffPublicProfileRow(
+        row
+      );
+
+    if (!mapped) {
+      continue;
+    }
+
+    profileMap.set(
+      Number(
+        row.userId
+      ),
+      mapped
+    );
+  }
+
+  return staffUsers.map(
+    (user: any) => {
+      const userId =
+        Number(
+          user.id
+        );
+
+      const profile =
+        profileMap.get(
+          userId
+        ) || null;
+
+      return {
+        userId,
+
+        name:
+          String(
+            user.name ||
+            user.username ||
+            "이름없음"
+          ),
+
+        username:
+          String(
+            user.username ||
+            ""
+          ),
+
+        role:
+          String(
+            user.role ||
+            ""
+          ),
+
+        profileImageUrl:
+          user.profileImageUrl ??
+          null,
+
+        teamName:
+          user.teamName ??
+          null,
+
+        positionName:
+          user.positionName ??
+          null,
+
+        profileCreated:
+          Boolean(profile),
+
+        publicToken:
+          profile?.publicToken ??
+          null,
+
+        isActive:
+          profile?.isActive ===
+          true,
+
+        showOnTeamPage:
+          profile?.showOnTeamPage ===
+          true,
+
+        recommendationEnabled:
+          profile
+            ?.recommendationEnabled ===
+          true,
+
+        acceptingNewConsultations:
+          profile
+            ?.acceptingNewConsultations !==
+          false,
+
+        recommendationPriority:
+          Number(
+            profile
+              ?.recommendationPriority ||
+            0
+          ),
+
+        sortOrder:
+          Number(
+            profile?.sortOrder ||
+            0
+          ),
+
+        displayName:
+          profile?.displayName ??
+          null,
+
+        publicPositionName:
+          profile
+            ?.publicPositionName ??
+          null,
+
+        headline:
+          profile?.headline ??
+          null,
+
+        specialties:
+          Array.isArray(
+            profile?.specialties
+          )
+            ? profile.specialties
+            : [],
+      };
+    }
+  );
+}
+
+/**
+ * Host 담당자 추천 운영 설정 변경
+ *
+ * 담당자의 자기소개 / 경력 / 연락처 등은
+ * 건드리지 않는다.
+ *
+ * 회사 운영에 해당하는 값만 Host가 변경한다.
+ */
+export async function updateStaffRecommendationManagement(
+  params: {
+    organizationId?: number | null;
+
+    userId: number;
+    updatedBy: number;
+
+    values: {
+      recommendationEnabled?:
+        boolean;
+
+      recommendationPriority?:
+        number;
+
+      sortOrder?:
+        number;
+
+      showOnTeamPage?:
+        boolean;
+    };
+  }
+) {
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userId =
+    Math.floor(
+      Number(
+        params.userId ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(userId) ||
+    userId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "담당자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  /**
+   * 관리 대상 프로필이 아직 없으면
+   * 기본 프로필을 자동 생성한다.
+   */
+  await ensureStaffPublicProfile({
+    organizationId,
+    userId,
+
+    createdBy:
+      params.updatedBy,
+  });
+
+  const values:
+    Record<string, any> = {};
+
+  if (
+    params.values
+      .recommendationEnabled !==
+    undefined
+  ) {
+    values.recommendationEnabled =
+      Boolean(
+        params.values
+          .recommendationEnabled
+      );
+  }
+
+  if (
+    params.values
+      .showOnTeamPage !==
+    undefined
+  ) {
+    values.showOnTeamPage =
+      Boolean(
+        params.values
+          .showOnTeamPage
+      );
+  }
+
+  if (
+    params.values
+      .recommendationPriority !==
+    undefined
+  ) {
+    values.recommendationPriority =
+      Math.max(
+        0,
+        Math.min(
+          20,
+          Math.floor(
+            Number(
+              params.values
+                .recommendationPriority ||
+              0
+            )
+          )
+        )
+      );
+  }
+
+  if (
+    params.values.sortOrder !==
+    undefined
+  ) {
+    values.sortOrder =
+      Math.max(
+        0,
+        Math.floor(
+          Number(
+            params.values
+              .sortOrder ||
+            0
+          )
+        )
+      );
+  }
+
+  return await updateStaffPublicProfile({
+    organizationId,
+    userId,
+
+    updatedBy:
+      params.updatedBy,
+
+    values,
+  });
 }

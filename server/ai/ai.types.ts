@@ -386,7 +386,11 @@ export type AiToolName =
 | "plan.subjects.create"
 | "plan.subjects.update"
 | "document.analysis"
-| "settlement.summary";
+| "settlement.summary"
+| "staff.list"
+| "staff.recommend"
+| "staff.select_candidate";
+
 
 export type AiToolStatus =
   | "started"
@@ -674,6 +678,193 @@ export type AiToolDefinition<
   handler: (
     params: AiToolHandlerParams<TInput>
   ) => Promise<TOutput>;
+};
+
+/**
+ * AI 상담 담당자 조회 / 추천 공용 타입
+ *
+ * 신규 상담에서 사용자가 상담 가능한 담당자를
+ * 확인하거나 과정에 맞는 담당자를 추천받을 때 사용한다.
+ *
+ * organizationId, userId 등의 서버 권한값은
+ * Tool 입력으로 받지 않는다.
+ */
+
+export type StaffConsultationStatus =
+  | "available"
+  | "busy"
+  | "unavailable";
+
+/**
+ * AI에서 사용자에게 노출할 담당자 기본정보
+ *
+ * 내부 권한정보나 민감정보는 포함하지 않는다.
+ */
+export type StaffConsultationItem = {
+  userId:
+    number;
+
+  name:
+    string;
+
+  positionName:
+    string |
+    null;
+
+  teamName:
+    string |
+    null;
+
+  profileImageUrl:
+    string |
+    null;
+
+  introduction:
+    string |
+    null;
+
+  specialties:
+    string[];
+
+  consultationStatus:
+    StaffConsultationStatus;
+};
+
+/**
+ * 상담 가능한 담당자 목록 조회
+ */
+export type StaffListToolInput = {
+  /**
+   * 한 번에 반환할 최대 담당자 수
+   */
+  limit?:
+    number;
+};
+
+export type StaffListToolOutput = {
+  count:
+    number;
+
+  staff:
+    StaffConsultationItem[];
+
+  generatedAt:
+    string;
+};
+
+/**
+ * 과정 또는 상담 조건에 따른 담당자 추천
+ */
+export type StaffRecommendToolInput = {
+  /**
+   * 상담 희망 과정
+   *
+   * 예:
+   * 사회복지사 2급
+   * 보육교사 2급
+   * 한국어교원 2급
+   */
+  desiredCourse?:
+    string |
+    null;
+
+  /**
+   * 사용자가 담당자를 추천받으면서
+   * 추가로 말한 상담 조건
+   *
+   * 예:
+   * 실습 상담 잘하는 분
+   * 보육교사 전문 담당자
+   */
+  query?:
+    string |
+    null;
+
+  /**
+   * 최대 추천 인원
+   */
+  limit?:
+    number;
+};
+
+export type StaffRecommendationItem = {
+  staff:
+    StaffConsultationItem;
+
+  /**
+   * 추천 순위.
+   * 1부터 시작한다.
+   */
+  rank:
+    number;
+
+  /**
+   * 추천 근거.
+   *
+   * 서버에서 확인 가능한 담당자 정보만 사용한다.
+   */
+  reasons:
+    string[];
+};
+
+export type StaffRecommendToolOutput = {
+  desiredCourse:
+    string |
+    null;
+
+  query:
+    string |
+    null;
+
+  count:
+    number;
+
+  recommendations:
+    StaffRecommendationItem[];
+
+  generatedAt:
+    string;
+};
+
+/**
+ * 사용자가 이름 등으로 특정 담당자를 지목했을 때
+ * 실제 담당자 후보를 찾기 위한 입력
+ *
+ * userId를 AI가 임의 생성하지 않고
+ * 이름 또는 사용자 발화 기준으로 서버에서 후보를 찾는다.
+ */
+export type StaffSelectCandidateToolInput = {
+  query:
+    string;
+
+  limit?:
+    number;
+};
+
+export type StaffSelectCandidateToolOutput = {
+  query:
+    string;
+
+  count:
+    number;
+
+  /**
+   * 정확히 한 명으로 확정할 수 있는 경우 true
+   */
+  resolved:
+    boolean;
+
+  /**
+   * resolved=true인 경우 확정된 후보.
+   *
+   * 동명이인 등으로 여러 명이면 null이다.
+   */
+  selectedCandidate:
+    StaffConsultationItem |
+    null;
+
+  candidates:
+    StaffConsultationItem[];
 };
 
 export type StudentSearchToolInput = {

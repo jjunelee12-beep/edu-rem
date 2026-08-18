@@ -6423,6 +6423,719 @@ kakaoBotId:
           };
         }
       ),
+    }),
+}),
+
+staffProfile: router({
+  /**
+   * 내 담당자 공개 프로필
+   *
+   * 프로필이 아직 없으면
+   * 최초 접근 시 자동 생성한다.
+   */
+  my: router({
+    get: protectedProcedure.query(
+      async ({ ctx }) => {
+        const organizationId =
+          getCtxOrganizationId(ctx);
+
+        const userId =
+          Number(
+            (ctx.user as any)?.id ||
+            0
+          );
+
+        if (
+          !Number.isFinite(userId) ||
+          userId <= 0
+        ) {
+          throwAppError(
+            ERROR_CODES.AUTH_REQUIRED,
+            "로그인이 필요합니다.",
+            401
+          );
+        }
+
+        return db.ensureStaffPublicProfile({
+          organizationId,
+          userId,
+          createdBy:
+            userId,
+        });
+      }
+    ),
+
+    update: protectedProcedure
+      .input(
+        z.object({
+          isActive:
+            z.boolean().optional(),
+
+          showOnTeamPage:
+            z.boolean().optional(),
+
+          recommendationEnabled:
+            z.boolean().optional(),
+
+          acceptingNewConsultations:
+            z.boolean().optional(),
+
+          profileImageUrl:
+            z
+              .string()
+              .trim()
+              .max(1000)
+              .nullable()
+              .optional(),
+
+          displayName:
+            z
+              .string()
+              .trim()
+              .max(100)
+              .nullable()
+              .optional(),
+
+          publicPositionName:
+            z
+              .string()
+              .trim()
+              .max(100)
+              .nullable()
+              .optional(),
+
+          headline:
+            z
+              .string()
+              .trim()
+              .max(255)
+              .nullable()
+              .optional(),
+
+          introduction:
+            z
+              .string()
+              .trim()
+              .max(10000)
+              .nullable()
+              .optional(),
+
+          careerText:
+            z
+              .string()
+              .trim()
+              .max(10000)
+              .nullable()
+              .optional(),
+
+          awardText:
+            z
+              .string()
+              .trim()
+              .max(10000)
+              .nullable()
+              .optional(),
+
+          qualificationText:
+            z
+              .string()
+              .trim()
+              .max(10000)
+              .nullable()
+              .optional(),
+
+          consultationStyle:
+            z
+              .string()
+              .trim()
+              .max(10000)
+              .nullable()
+              .optional(),
+
+          specialties:
+            z
+              .array(
+                z
+                  .string()
+                  .trim()
+                  .min(1)
+                  .max(100)
+              )
+              .max(30)
+              .optional(),
+
+          publicPhone:
+            z
+              .string()
+              .trim()
+              .max(50)
+              .nullable()
+              .optional(),
+
+          showPhone:
+            z.boolean().optional(),
+
+          consultationUrl:
+            z
+              .string()
+              .trim()
+              .max(1000)
+              .nullable()
+              .optional(),
+
+          showConsultationButton:
+            z.boolean().optional(),
+
+          recommendationPriority:
+            z
+              .number()
+              .int()
+              .min(0)
+              .max(100000)
+              .optional(),
+
+          sortOrder:
+            z
+              .number()
+              .int()
+              .min(0)
+              .max(100000)
+              .optional(),
+        })
+      )
+      .mutation(
+        async ({
+          ctx,
+          input,
+        }) => {
+          const organizationId =
+            getCtxOrganizationId(ctx);
+
+          const userId =
+            Number(
+              (ctx.user as any)?.id ||
+              0
+            );
+
+          if (
+            !Number.isFinite(userId) ||
+            userId <= 0
+          ) {
+            throwAppError(
+              ERROR_CODES.AUTH_REQUIRED,
+              "로그인이 필요합니다.",
+              401
+            );
+          }
+
+          return db.updateStaffPublicProfile({
+            organizationId,
+            userId,
+            updatedBy:
+              userId,
+            values:
+              input,
+          });
+        }
+      ),
+
+    /**
+     * 개인 공개 URL 재발급
+     *
+     * 실행 즉시 기존 URL Token은
+     * 더 이상 사용할 수 없다.
+     */
+    regenerateToken:
+      protectedProcedure.mutation(
+        async ({ ctx }) => {
+          const organizationId =
+            getCtxOrganizationId(ctx);
+
+          const userId =
+            Number(
+              (ctx.user as any)?.id ||
+              0
+            );
+
+          if (
+            !Number.isFinite(userId) ||
+            userId <= 0
+          ) {
+            throwAppError(
+              ERROR_CODES.AUTH_REQUIRED,
+              "로그인이 필요합니다.",
+              401
+            );
+          }
+
+          return db.regenerateStaffPublicProfileToken({
+            organizationId,
+            userId,
+            updatedBy:
+              userId,
+          });
+        }
+      ),
+  }),
+
+  /**
+   * 회사 담당자 소개 페이지 설정
+   *
+   * 조회:
+   * 로그인한 회사 구성원
+   *
+   * 수정:
+   * Host만 가능
+   */
+  teamPage: router({
+    get: protectedProcedure.query(
+      async ({ ctx }) => {
+        const organizationId =
+          getCtxOrganizationId(ctx);
+
+        return db.getStaffTeamPageSettings({
+          organizationId,
+        });
+      }
+    ),
+
+    update: hostProcedure
+      .input(
+        z.object({
+          enabled:
+            z.boolean().optional(),
+
+          title:
+            z
+              .string()
+              .trim()
+              .max(255)
+              .nullable()
+              .optional(),
+
+          description:
+            z
+              .string()
+              .trim()
+              .max(10000)
+              .nullable()
+              .optional(),
+
+          staffSectionTitle:
+            z
+              .string()
+              .trim()
+              .max(255)
+              .nullable()
+              .optional(),
+
+          staffSectionDescription:
+            z
+              .string()
+              .trim()
+              .max(10000)
+              .nullable()
+              .optional(),
+
+footerIntroduction:
+  z
+    .string()
+    .trim()
+    .max(10000)
+    .nullable()
+    .optional(),
+        })
+      )
+      .mutation(
+        async ({
+          ctx,
+          input,
+        }) => {
+          const organizationId =
+            getCtxOrganizationId(ctx);
+
+          const userId =
+            Number(
+              (ctx.user as any)?.id ||
+              0
+            );
+
+          if (
+            !Number.isFinite(userId) ||
+            userId <= 0
+          ) {
+            throwAppError(
+              ERROR_CODES.AUTH_REQUIRED,
+              "로그인이 필요합니다.",
+              401
+            );
+          }
+
+          return db.saveStaffTeamPageSettings({
+            organizationId,
+            updatedBy:
+              userId,
+            values:
+              input,
+          });
+        }
+      ),
+  }),
+
+  /**
+   * 카카오 AI가 사용할
+   * 담당자 추천 후보 목록
+   *
+   * 외부 공개 API가 아니다.
+   */
+    recommendation: router({
+    /**
+     * 카카오 AI 담당자 추천 후보 목록
+     *
+     * 실제 추천을 발생시키지 않으며
+     * 추천 횟수도 증가시키지 않는다.
+     */
+    candidates:
+      protectedProcedure.query(
+        async ({ ctx }) => {
+          const organizationId =
+            getCtxOrganizationId(ctx);
+
+          await assertKakaoAiEnabled(
+            organizationId
+          );
+
+          return db.listRecommendedStaffProfiles({
+            organizationId,
+          });
+        }
+      ),
+
+    /**
+     * 카카오 AI 신규 고객 담당자 자동 추천
+     *
+     * 고객 희망과정 / 상담내용을 기준으로
+     * 실제 담당자 1명을 선택한다.
+     *
+     * 추천이 확정되면 DB 내부에서
+     * recommendationCount + 1
+     * lastRecommendedAt 갱신까지 처리한다.
+     */
+    recommend:
+      protectedProcedure
+        .input(
+          z.object({
+            desiredCourse:
+              z
+                .string()
+                .trim()
+                .max(300)
+                .optional()
+                .nullable(),
+
+            consultationText:
+              z
+                .string()
+                .trim()
+                .max(10000)
+                .optional()
+                .nullable(),
+          })
+        )
+        .mutation(
+          async ({
+            ctx,
+            input,
+          }) => {
+            const organizationId =
+              getCtxOrganizationId(ctx);
+
+            /**
+             * 카카오 AI 기능이 활성화된
+             * 회사에서만 추천 엔진을 사용할 수 있다.
+             */
+            await assertKakaoAiEnabled(
+              organizationId
+            );
+
+            const recommended =
+              await db.recommendStaffProfile({
+                organizationId,
+
+                desiredCourse:
+                  input.desiredCourse ??
+                  null,
+
+                consultationText:
+                  input.consultationText ??
+                  null,
+              });
+
+            if (!recommended) {
+              return {
+                success: false as const,
+
+                reason:
+                  "NO_AVAILABLE_STAFF" as const,
+
+                profile:
+                  null,
+              };
+            }
+
+            return {
+              success: true as const,
+
+              reason:
+                null,
+
+              profile:
+                recommended,
+            };
+          }
+        ),
+  }),
+
+/**
+ * Host 담당자 추천 관리
+ *
+ * 담당자 공개 프로필의
+ * 회사 운영값만 관리한다.
+ *
+ * 자기소개 / 경력 / 연락처 등
+ * 담당자 개인 작성 영역은 수정하지 않는다.
+ */
+management: router({
+  /**
+   * 회사 소속 담당자 전체 목록
+   *
+   * 프로필 미등록 직원도 포함한다.
+   */
+  list:
+    hostProcedure.query(
+      async ({ ctx }) => {
+        const organizationId =
+          getCtxOrganizationId(ctx);
+
+        return db.listStaffRecommendationManagement({
+          organizationId,
+        });
+      }
+    ),
+
+  /**
+   * 담당자 추천 운영 설정 변경
+   */
+  update:
+    hostProcedure
+      .input(
+        z.object({
+          userId:
+            z
+              .number()
+              .int()
+              .positive(),
+
+          recommendationEnabled:
+            z
+              .boolean()
+              .optional(),
+
+          showOnTeamPage:
+            z
+              .boolean()
+              .optional(),
+
+          recommendationPriority:
+            z
+              .number()
+              .int()
+              .min(0)
+              .max(20)
+              .optional(),
+
+          sortOrder:
+            z
+              .number()
+              .int()
+              .min(0)
+              .max(100000)
+              .optional(),
+        })
+      )
+      .mutation(
+        async ({
+          ctx,
+          input,
+        }) => {
+          const organizationId =
+            getCtxOrganizationId(ctx);
+
+          const userId =
+            Number(
+              (ctx.user as any)?.id ||
+              0
+            );
+
+          if (
+            !Number.isFinite(userId) ||
+            userId <= 0
+          ) {
+            throwAppError(
+              ERROR_CODES.AUTH_REQUIRED,
+              "로그인이 필요합니다.",
+              401
+            );
+          }
+
+          return db.updateStaffRecommendationManagement({
+            organizationId,
+
+            userId:
+              input.userId,
+
+            updatedBy:
+              userId,
+
+            values: {
+              recommendationEnabled:
+                input.recommendationEnabled,
+
+              showOnTeamPage:
+                input.showOnTeamPage,
+
+              recommendationPriority:
+                input.recommendationPriority,
+
+              sortOrder:
+                input.sortOrder,
+            },
+          });
+        }
+      ),
+}),
+
+  /**
+   * 로그인 없이 접근하는 공개 API
+   */
+  public: router({
+    /**
+     * 담당자 개인 공개 URL
+     */
+    getByToken:
+      publicProcedure
+        .input(
+          z.object({
+            token:
+              z
+                .string()
+                .trim()
+                .min(1)
+                .max(191),
+          })
+        )
+        .query(
+  async ({ input }) => {
+    const profile =
+      await db.getStaffPublicProfileByToken(
+        input.token
+      );
+
+    if (!profile) {
+      return null;
+    }
+
+    const organizationId =
+      await db.getStaffPublicProfileOrganizationIdByToken(
+        input.token
+      );
+
+    if (!organizationId) {
+      return null;
+    }
+
+    const branding =
+      await db.getBrandingSettings({
+        organizationId,
+      });
+
+    return {
+      branding: {
+        companyName:
+          branding?.companyName ??
+          null,
+
+        companyLogoUrl:
+          branding?.companyLogoUrl ??
+          null,
+      },
+
+      profile,
+    };
+  }
+),
+
+    /**
+     * 회사 담당자 소개 페이지.
+     *
+     * 현재 단계에서는 organizationId로 조회한다.
+     * 이후 회사 slug가 확정되면
+     * slug 기반 URL로 교체할 수 있다.
+     */
+    companyTeamPage:
+      publicProcedure
+        .input(
+          z.object({
+            organizationId:
+              z
+                .number()
+                .int()
+                .positive(),
+          })
+        )
+        .query(
+          async ({ input }) => {
+            const settings =
+              await db.getStaffTeamPageSettings({
+                organizationId:
+                  input.organizationId,
+              });
+
+            if (
+              !settings ||
+              settings.enabled !== true
+            ) {
+              return null;
+            }
+
+            const profiles =
+  await db.listPublicStaffProfiles({
+    organizationId:
+      input.organizationId,
+  });
+
+const branding =
+  await db.getBrandingSettings({
+    organizationId:
+      input.organizationId,
+  });
+
+return {
+  branding: {
+    companyName:
+      branding?.companyName ??
+      null,
+
+    companyLogoUrl:
+      branding?.companyLogoUrl ??
+      null,
+  },
+
+  settings,
+  profiles,
+};
+          }
+        ),
   }),
 }),
 

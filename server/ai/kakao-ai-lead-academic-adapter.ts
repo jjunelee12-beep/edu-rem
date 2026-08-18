@@ -1587,23 +1587,20 @@ const degreeCreditAnalysis =
  * 성적증명서 확인 필요 경고를 반드시 함께 반환한다.
  */
   const qualificationAnalysis =
-    analyzeQualificationRisk({
-      courseName:
-        catalog.name,
+  analyzeQualificationRisk({
+    courseName:
+      catalog.name,
 
-      masterItems,
+    masterItems,
 
-      recognizedSubjects,
+    recognizedSubjects,
 
-      socialWorkerLawVersion:
-  courseKey ===
-    "social_worker_2"
-      ? (
-          consultationSocialWorkerLawVersion ??
-          "current"
-        )
-      : undefined,
-    });
+    socialWorkerLawVersion:
+      courseKey ===
+        "social_worker_2"
+        ? consultationSocialWorkerLawVersion
+        : undefined,
+  });
 
   /**
    * 4.

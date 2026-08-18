@@ -724,6 +724,125 @@ function buildSafePracticeContext(
 }
 
 /**
+ * 담당자 Context도 모델에 필요한
+ * 공개 정보만 전달한다.
+ *
+ * 내부 추천횟수 / DB 상태값 등은
+ * 최종 답변 AI에 그대로 노출하지 않는다.
+ */
+function buildSafeStaffContext(
+  context:
+    KakaoAiResolvedContext["staffContext"]
+) {
+  if (
+    !context
+  ) {
+    return null;
+  }
+
+  const mapCandidate =
+    (
+      staff:
+        any
+    ) => {
+      const userId =
+        Math.floor(
+          Number(
+            staff?.userId ||
+            0
+          )
+        );
+
+      if (
+        !Number.isFinite(
+          userId
+        ) ||
+        userId <=
+          0
+      ) {
+        return null;
+      }
+
+      return {
+        /**
+         * userId는 모델 내부에서
+         * 동일 담당자 비교용으로만 사용한다.
+         *
+         * 고객에게 숫자 ID를 말하면 안 된다.
+         */
+        userId,
+
+        displayName:
+          normalizeText(
+            staff?.displayName
+          ) ||
+          null,
+
+        publicPositionName:
+          normalizeText(
+            staff?.publicPositionName
+          ) ||
+          null,
+
+        /**
+         * 담당자 소개페이지 연결용 토큰.
+         *
+         * 모델이 임의 URL을 조합하지 않도록
+         * 토큰값만 제공한다.
+         *
+         * 실제 URL 생성은 이후 카카오 응답
+         * 템플릿 단계에서 처리할 수 있다.
+         */
+        publicToken:
+          normalizeText(
+            staff?.publicToken
+          ) ||
+          null,
+      };
+    };
+
+  const candidates =
+    Array.isArray(
+      context.candidates
+    )
+      ? context.candidates
+          .map(
+            mapCandidate
+          )
+          .filter(
+            Boolean
+          )
+          .slice(
+            0,
+            20
+          )
+      : [];
+
+  return {
+    status:
+      context.status,
+
+    recommendedStaff:
+      mapCandidate(
+        context.recommendedStaff
+      ),
+
+    selectedStaff:
+      mapCandidate(
+        context.selectedStaff
+      ),
+
+    candidates,
+
+    lastIntent:
+      normalizeText(
+        context.lastIntent
+      ) ||
+      null,
+  };
+}
+
+/**
  * Access Policy 결과를
  * Composer가 이해할 수 있는 최소구조로 만든다.
  */
@@ -1309,6 +1428,78 @@ intent.clarificationOptions가 2개 이상 존재하면
 clarificationOptions가 비어 있으면
 clarificationQuestion만 자연스럽게 사용한다.
 
+23-2.
+resolvedContext에서 만들어진 clarificationContext도
+서버가 확정한 확인질문이다.
+
+clarificationContext.needsClarification=true이면
+intent.needsClarification=false이더라도
+해당 clarificationQuestion과 clarificationOptions를 우선 사용한다.
+
+특히 담당자 선택/변경 과정에서:
+
+- 어느 담당자를 말하는지 특정되지 않음
+- 순번이 존재하지 않음
+- 같은 이름 또는 조건의 담당자가 여러 명임
+
+같은 경우에는 임의로 담당자를 선택하거나 변경했다고 말하지 않는다.
+
+서버가 제공한 후보만 자연스럽게 다시 보여주고
+사용자가 선택할 수 있도록 질문한다.
+
+23-3.
+staffContext는 현재 회사의 실제 상담 담당자 Context다.
+
+staff_list:
+- staffContext.candidates에 있는 담당자만 안내한다.
+- 존재하지 않는 담당자 이름, 직급을 만들지 않는다.
+- 후보가 여러 명이면 카카오톡에서 읽기 좋게 간단히 소개한다.
+- 필요 이상으로 장황한 번호 목록을 만들지 않는다.
+- 사용자가 선택할 수 있다는 의미를 자연스럽게 알려줄 수 있다.
+
+staff_recommend:
+- staffContext.recommendedStaff가 존재하면 그 담당자를 추천한다.
+- 추천은 고객의 최종 선택과 동일하지 않다.
+- "추천드려요", "현재 상담내용 기준으로는 이분이 잘 맞아요"
+  같은 의미로 설명한다.
+- recommendedStaff가 없는데 임의로 후보 중 한 명을 추천하지 않는다.
+
+staff_select:
+- staffContext.selectedStaff가 존재하면
+  실제 선택이 완료된 담당자로 설명한다.
+- 예:
+  "네, 이재준 팀장님으로 선택해드렸어요."
+- 서버 Context에 선택 완료 사실이 없는데
+  "배정됐습니다", "연결했습니다"라고 말하지 않는다.
+
+staff_change:
+- 변경 후 staffContext.selectedStaff가 존재하면
+  새로 선택된 담당자를 기준으로 변경 완료를 설명한다.
+- 기존 담당자를 임의 추측하지 않는다.
+
+staff_current:
+- staffContext.selectedStaff가 존재하면
+  현재 선택된 담당자를 알려준다.
+- selectedStaff는 없고 recommendedStaff만 있다면
+  추천은 되어 있지만 아직 최종 선택된 담당자는 없다는 의미를 구분한다.
+
+23-4.
+staffContext의 userId, publicToken 같은 내부 식별값을
+고객에게 그대로 말하지 않는다.
+
+publicToken을 이용해 URL을 임의로 만들어내지도 않는다.
+
+소개 링크나 버튼은 이후 카카오 응답 렌더링 계층에서
+실제 서버 URL로 생성한다.
+
+23-5.
+담당자 추천/선택 기능은
+등록학생 CRM의 기존 assigneeId 변경과 다른 기능이다.
+
+카카오 상담에서 선택한 담당자를
+등록학생의 CRM 담당자가 자동으로 변경된 것처럼
+설명하지 않는다.
+
 24. 가격은 companyContext.features.priceDisclosureEnabled=true이고
 서버 Context에 실제 가격정보가 있을 때만 말한다.
 가격을 추측하거나 임의 할인율을 만들지 않는다.
@@ -1524,9 +1715,55 @@ priorSubjectCandidates:
         params.memory
           .unresolvedQuestions,
 
-      currentTopic:
+            currentTopic:
         params.memory
           .currentTopic,
+
+      recommendedStaffUserId:
+        params.memory
+          .recommendedStaffUserId,
+
+      selectedStaffUserId:
+        params.memory
+          .selectedStaffUserId,
+
+      lastStaffCandidates:
+        Array.isArray(
+          params.memory
+            .lastStaffCandidates
+        )
+          ? params.memory
+              .lastStaffCandidates
+              .slice(
+                0,
+                20
+              )
+              .map(
+                candidate => ({
+                  userId:
+                    candidate.userId,
+
+                  displayName:
+                    candidate.displayName,
+
+                  publicPositionName:
+                    candidate
+                      .publicPositionName,
+
+                  publicToken:
+                    candidate
+                      .publicToken,
+                })
+              )
+          : [],
+
+      staffSelectionStatus:
+        params.memory
+          .staffSelectionStatus,
+
+      lastIntent:
+        params.memory
+          .lastIntent,
     },
 
     intent: {
@@ -1600,10 +1837,33 @@ clarificationOptions:
       ),
 
     practiceContext:
-      buildSafePracticeContext(
-        resolvedContext
-          .practiceCenter
-      ),
+  buildSafePracticeContext(
+    resolvedContext
+      .practiceCenter
+  ),
+
+staffContext:
+  buildSafeStaffContext(
+    resolvedContext
+      .staffContext
+  ),
+
+clarificationContext: {
+  needsClarification:
+    resolvedContext
+      .needsClarification,
+
+  clarificationQuestion:
+    resolvedContext
+      .clarificationQuestion,
+
+  clarificationOptions:
+    normalizeStringArray(
+      resolvedContext
+        .clarificationOptions,
+      5
+    ),
+},
   });
 }
 
@@ -1672,27 +1932,51 @@ function buildFallbackReply(
     params.intentClassification
       .intent;
 
+    const resolvedContext =
+    params.resolvedContext;
+
   /**
-   * 명확한 확인질문이 이미 있으면
-   * OpenAI 장애 상황에서도 그 질문을 사용한다.
+   * Intent 단계 또는
+   * 이후 서버 Action 단계에서
+   * 확인질문이 만들어졌다면
+   * OpenAI 장애 상황에서도
+   * 서버가 확정한 질문을 우선 사용한다.
    */
   if (
-  intent.needsClarification
-) {
-  return {
-    replyText:
-      buildClarificationReply(
-        intent.clarificationQuestion,
-        intent.clarificationOptions
-      ),
+    resolvedContext
+      .needsClarification ||
+    intent.needsClarification
+  ) {
+    const clarificationQuestion =
+      resolvedContext
+        .needsClarification
+        ? resolvedContext
+            .clarificationQuestion
+        : intent
+            .clarificationQuestion;
 
-    mentionedRestriction:
-      false,
+    const clarificationOptions =
+      resolvedContext
+        .needsClarification
+        ? resolvedContext
+            .clarificationOptions
+        : intent
+            .clarificationOptions;
 
-    askedClarification:
-      true,
-  };
-}
+    return {
+      replyText:
+        buildClarificationReply(
+          clarificationQuestion,
+          clarificationOptions
+        ),
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        true,
+    };
+  }
 
   const restrictedDecisions =
     params
@@ -1921,6 +2205,248 @@ function buildFallbackReply(
     return {
       replyText:
         "과정 이수 후 자격증 신청에 필요한 일반적인 절차는 안내해드릴 수 있어요.",
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        false,
+    };
+  }
+
+  if (
+    primaryCapability ===
+      "staff_list"
+  ) {
+    const candidates =
+      params.resolvedContext
+        .staffContext
+        ?.candidates ||
+      [];
+
+    if (
+      candidates.length >
+      0
+    ) {
+      const names =
+        candidates
+          .slice(
+            0,
+            5
+          )
+          .map(
+            staff =>
+              [
+                normalizeText(
+                  staff.displayName
+                ),
+                normalizeText(
+                  staff
+                    .publicPositionName
+                ),
+              ]
+                .filter(
+                  Boolean
+                )
+                .join(
+                  " "
+                )
+          )
+          .filter(
+            Boolean
+          );
+
+      return {
+        replyText:
+          names.length >
+          0
+            ? `현재 상담 가능한 담당자는 ${names.join(", ")}입니다. 원하시는 담당자를 말씀해주시면 선택하실 수 있어요.`
+            : "현재 상담 가능한 담당자를 확인하고 있어요.",
+
+        mentionedRestriction:
+          false,
+
+        askedClarification:
+          false,
+      };
+    }
+
+    return {
+      replyText:
+        "현재 바로 안내드릴 수 있는 상담 담당자가 확인되지 않아요.",
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        false,
+    };
+  }
+
+  if (
+    primaryCapability ===
+      "staff_recommend"
+  ) {
+    const staff =
+      params.resolvedContext
+        .staffContext
+        ?.recommendedStaff;
+
+    const name =
+      normalizeText(
+        staff?.displayName
+      );
+
+    const position =
+      normalizeText(
+        staff?.publicPositionName
+      );
+
+    const displayName =
+      [
+        name,
+        position,
+      ]
+        .filter(
+          Boolean
+        )
+        .join(
+          " "
+        );
+
+    return {
+      replyText:
+        displayName
+          ? `현재 상담내용 기준으로는 ${displayName}을 추천드려요. 추천이 마음에 드시면 이 담당자로 선택하실 수도 있어요.`
+          : "현재 상담 가능한 담당자 중에서 적합한 분을 확인하기 어려워요.",
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        false,
+    };
+  }
+
+  if (
+    primaryCapability ===
+      "staff_select" ||
+    primaryCapability ===
+      "staff_change"
+  ) {
+    const staff =
+      params.resolvedContext
+        .staffContext
+        ?.selectedStaff;
+
+    const name =
+      normalizeText(
+        staff?.displayName
+      );
+
+    const position =
+      normalizeText(
+        staff?.publicPositionName
+      );
+
+    const displayName =
+      [
+        name,
+        position,
+      ]
+        .filter(
+          Boolean
+        )
+        .join(
+          " "
+        );
+
+    return {
+      replyText:
+        displayName
+          ? primaryCapability ===
+              "staff_change"
+            ? `${displayName}으로 변경해드렸어요.`
+            : `${displayName}으로 선택해드렸어요.`
+          : "원하시는 담당자를 다시 말씀해주시면 확인해서 선택해드릴게요.",
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        !displayName,
+    };
+  }
+
+  if (
+    primaryCapability ===
+      "staff_current"
+  ) {
+    const selected =
+      params.resolvedContext
+        .staffContext
+        ?.selectedStaff;
+
+    const recommended =
+      params.resolvedContext
+        .staffContext
+        ?.recommendedStaff;
+
+    const selectedName =
+      [
+        normalizeText(
+          selected?.displayName
+        ),
+        normalizeText(
+          selected
+            ?.publicPositionName
+        ),
+      ]
+        .filter(
+          Boolean
+        )
+        .join(
+          " "
+        );
+
+    if (
+      selectedName
+    ) {
+      return {
+        replyText:
+          `현재 선택하신 담당자는 ${selectedName}입니다.`,
+
+        mentionedRestriction:
+          false,
+
+        askedClarification:
+          false,
+      };
+    }
+
+    const recommendedName =
+      [
+        normalizeText(
+          recommended
+            ?.displayName
+        ),
+        normalizeText(
+          recommended
+            ?.publicPositionName
+        ),
+      ]
+        .filter(
+          Boolean
+        )
+        .join(
+          " "
+        );
+
+    return {
+      replyText:
+        recommendedName
+          ? `${recommendedName}을 추천드린 상태이고, 아직 최종 선택된 담당자는 없어요.`
+          : "아직 선택된 담당자가 없어요.",
 
       mentionedRestriction:
         false,

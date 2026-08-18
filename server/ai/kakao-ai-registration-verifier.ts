@@ -353,12 +353,11 @@ function shouldRunRegistrationVerification(
     );
 
   const verificationRequestSignals = [
-    "등록회원 확인",
-    "성함과 등록하신 연락처",
-    "성함과 연락처",
-    "등록하신 연락처",
-    "회원 확인을 위해",
-  ];
+  "등록회원 확인",
+  "성함과 등록하신 연락처",
+  "등록하신 연락처",
+  "회원 확인을 위해",
+];
 
   return verificationRequestSignals.some(
     (

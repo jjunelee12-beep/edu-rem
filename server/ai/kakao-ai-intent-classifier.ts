@@ -179,9 +179,19 @@ const KAKAO_AI_CAPABILITY_ENUM = [
 
   "registered_risk_analysis",
 
-  "career_consulting",
+    "career_consulting",
 
   "career_document_support",
+
+  "staff_list",
+
+  "staff_recommend",
+
+  "staff_select",
+
+  "staff_change",
+
+  "staff_current",
 ] as const;
 
 const KAKAO_AI_REQUIRED_CONTEXT_ENUM = [
@@ -201,11 +211,13 @@ const KAKAO_AI_REQUIRED_CONTEXT_ENUM = [
 
   "administrative_status",
 
-  "practice_center",
+    "practice_center",
 
   "career_context",
 
-  "attachment_analysis",
+  "staff_context",
+
+  "attachment_analysis"
 ] as const;
 
 /**
@@ -478,10 +490,39 @@ socialWorkerLawVersion?:
         verifiedFacts?:
           string[];
 
-        unresolvedQuestions?:
+                unresolvedQuestions?:
           string[];
 
         currentTopic?:
+          string | null;
+
+        recommendedStaffUserId?:
+          number | null;
+
+        selectedStaffUserId?:
+          number | null;
+
+        lastStaffCandidates?:
+          Array<{
+            userId:
+              number;
+
+            displayName:
+              string | null;
+
+            publicToken:
+              string | null;
+
+            publicPositionName:
+              string | null;
+          }>;
+
+        staffSelectionStatus?:
+          | "none"
+          | "recommended"
+          | "selected";
+
+        lastIntent?:
           string | null;
       } | null;
 

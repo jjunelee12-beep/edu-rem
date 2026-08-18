@@ -87,6 +87,7 @@ export type KakaoAiRequiredContext =
   | "administrative_status"
   | "practice_center"
   | "career_context"
+  | "staff_context"
   | "attachment_analysis";
 
 /**
@@ -306,9 +307,19 @@ const ALL_KAKAO_AI_CAPABILITIES:
 
     "registered_risk_analysis",
 
-    "career_consulting",
+        "career_consulting",
 
     "career_document_support",
+
+    "staff_list",
+
+    "staff_recommend",
+
+    "staff_select",
+
+    "staff_change",
+
+    "staff_current",
   ] as const;
 
 const ALL_REQUIRED_CONTEXTS:
@@ -329,9 +340,11 @@ const ALL_REQUIRED_CONTEXTS:
 
     "administrative_status",
 
-    "practice_center",
+        "practice_center",
 
     "career_context",
+
+    "staff_context",
 
     "attachment_analysis",
   ] as const;
@@ -1125,6 +1138,21 @@ requiresPracticeCenterLookup=true로 한다.
 등록혜택 등을 답변하는 데 회사별 정보가 필요하면
 requiresCompanyContext=true로 한다.
 
+10-1. 상담 가능한 담당자 목록 확인,
+담당자 추천, 담당자 선택, 담당자 변경,
+현재 선택된 담당자 확인이 필요한 경우
+requiredContexts에 staff_context를 포함한다.
+
+담당자 관련 요청이라고 해서
+requiresRegisteredStudentData=true로 하지 않는다.
+
+담당자 선택은 신규 상담 단계에서도 사용할 수 있는
+상담 연결 기능이며 등록학생 CRM 조회와는 별개다.
+
+다만 등록회원의 CRM에 이미 배정되어 있는
+실제 담당자 정보를 조회하는 의미가 명확한 경우에는
+등록학생 개인 데이터 조회가 함께 필요할 수 있다.
+
 11. 고객이 신규인지 등록회원인지는
 절대로 네가 추측하거나 판단하지 않는다.
 그 판단은 별도의 서버 권한정책이 수행한다.
@@ -1271,6 +1299,68 @@ career_consulting
 career_document_support
 - 이력서, 자기소개서, 면접 등 개인 취업문서 지원
 
+staff_list
+- 현재 회사에서 상담 가능한 담당자 목록을 보고 싶어 하는 요청
+- 예:
+  "상담 가능한 담당자 누구 있어요?"
+  "담당자 목록 보여주세요"
+  "상담사분들 볼 수 있어요?"
+  "누구한테 상담받을 수 있어요?"
+- requiredContexts에 staff_context를 포함한다.
+
+staff_recommend
+- 현재 상담내용을 바탕으로 적합한 담당자를 추천받고 싶은 요청
+- 예:
+  "저한테 맞는 담당자 추천해주세요"
+  "누구한테 상담받는 게 좋아요?"
+  "사회복지사 상담 잘하는 분 추천해주세요"
+  "담당자 추천해줘"
+- 단순 목록 요청과 구분한다.
+- 추천은 담당자 확정 선택이 아니다.
+- requiredContexts에 staff_context를 포함한다.
+
+staff_select
+- 사용자가 특정 담당자를 명시적으로 선택하는 요청
+- 이름을 직접 말하는 경우뿐 아니라
+  직전에 제시된 담당자 후보를 기준으로
+  "첫 번째 분으로 할게요",
+  "두 번째 분이요",
+  "그분으로 할게요",
+  "아까 추천한 분으로 해주세요"
+  와 같이 문맥상 선택 대상이 충분히 특정되는 경우도 포함한다.
+- 선택 대상이 Conversation History나 Structured Memory로
+  충분히 특정되지 않으면 임의로 선택하지 않고 clarification을 요청한다.
+- requiredContexts에 staff_context와 conversation_memory를
+  필요한 범위에서 포함한다.
+
+staff_change
+- 이미 선택한 담당자가 있는 상태에서
+  다른 담당자로 변경하려는 요청
+- 예:
+  "담당자 바꿀 수 있어요?"
+  "다른 분으로 바꿔주세요"
+  "아까 선택한 분 말고 두 번째 분으로 할게요"
+- 기존 선택 담당자와 변경 대상 확인에 필요한
+  Conversation History / Structured Memory를 활용한다.
+- 변경할 담당자가 특정되지 않은 경우에는
+  가능한 담당자를 확인할 수 있도록 staff_context를 사용한다.
+- requiredContexts에 staff_context와 conversation_memory를
+  필요한 범위에서 포함한다.
+
+staff_current
+- 현재 사용자가 선택한 담당자가 누구인지 확인하는 요청
+- 예:
+  "제가 누구 선택했죠?"
+  "아까 담당자 누구로 했어요?"
+  "현재 제 담당자 누구예요?"
+- 현재 상담에서 사용자가 직접 선택한 담당자를 묻는 경우
+  Conversation History / Structured Memory를 우선 사용한다.
+- 등록회원의 CRM에 실제 배정된 담당자를 조회하려는 의미와
+  신규 상담 중 선택한 상담 담당자를 확인하려는 의미를
+  대화문맥으로 구분한다.
+- requiredContexts에 conversation_memory를 포함하고,
+  실제 담당자 정보 확인이 필요한 경우 staff_context도 포함한다.
+
 자연어 추론 및 Routing 원칙:
 
 - 사용자의 표현 자체를 정해진 문장 패턴과 비교하지 않는다.
@@ -1336,6 +1426,21 @@ Capability 선택 원칙:
 - 실제 화면/서류/개인 처리상태 확인
   → 각각의 상세/등록회원 capability
 
+- 상담 가능한 담당자 목록 확인
+  → staff_list
+
+- 상담내용에 맞는 담당자 추천
+  → staff_recommend
+
+- 특정 담당자 선택
+  → staff_select
+
+- 기존 선택 담당자 변경
+  → staff_change
+
+- 현재 선택된 담당자 확인
+  → staff_current
+
 필요한 시스템 선택 원칙:
 
 사용자의 질문을 답하는 데 필요한 최소한의 Context만 선택한다.
@@ -1360,6 +1465,14 @@ requiresPracticeCenterLookup=true로 한다.
 회사 서비스, 지원범위, 혜택 등의 정보가 필요하면
 requiresCompanyContext=true로 한다.
 
+상담 가능한 담당자 목록, 담당자 프로필,
+담당자 추천 후보, 담당자 선택 또는 변경 대상 확인처럼
+회사 담당자 데이터가 필요하면
+requiredContexts에 staff_context를 포함한다.
+
+staff_context는 회사 담당자 정보용 Context이며
+등록학생 개인 CRM 데이터와 동일하게 취급하지 않는다.
+
 중요:
 시스템이나 Context 선택을 사용자에게 시키지 않는다.
 사용자의 자연어 의도를 분석한 뒤
@@ -1377,6 +1490,7 @@ risk_analysis
 administrative_status
 practice_center
 career_context
+staff_context
 attachment_analysis
 
 반환 JSON 구조:
@@ -1438,7 +1552,36 @@ export function buildKakaoAiIntentClassifierInput(
     unresolvedQuestions?:
       string[];
 
-    currentTopic?:
+        currentTopic?:
+      string | null;
+
+    recommendedStaffUserId?:
+      number | null;
+
+    selectedStaffUserId?:
+      number | null;
+
+    lastStaffCandidates?:
+      Array<{
+        userId:
+          number;
+
+        displayName:
+          string | null;
+
+        publicToken:
+          string | null;
+
+        publicPositionName:
+          string | null;
+      }>;
+
+    staffSelectionStatus?:
+      | "none"
+      | "recommended"
+      | "selected";
+
+    lastIntent?:
       string | null;
   } | null;
 
@@ -1617,6 +1760,125 @@ socialWorkerLawVersion:
                 .currentTopic
             ) ||
             null,
+
+          recommendedStaffUserId:
+            Number.isFinite(
+              Number(
+                params
+                  .structuredMemory
+                  .recommendedStaffUserId
+              )
+            ) &&
+            Number(
+              params
+                .structuredMemory
+                .recommendedStaffUserId
+            ) > 0
+              ? Math.floor(
+                  Number(
+                    params
+                      .structuredMemory
+                      .recommendedStaffUserId
+                  )
+                )
+              : null,
+
+          selectedStaffUserId:
+            Number.isFinite(
+              Number(
+                params
+                  .structuredMemory
+                  .selectedStaffUserId
+              )
+            ) &&
+            Number(
+              params
+                .structuredMemory
+                .selectedStaffUserId
+            ) > 0
+              ? Math.floor(
+                  Number(
+                    params
+                      .structuredMemory
+                      .selectedStaffUserId
+                  )
+                )
+              : null,
+
+          lastStaffCandidates:
+            Array.isArray(
+              params
+                .structuredMemory
+                .lastStaffCandidates
+            )
+              ? params
+                  .structuredMemory
+                  .lastStaffCandidates
+                  .slice(
+                    0,
+                    20
+                  )
+                  .map(
+                    (
+                      candidate
+                    ) => ({
+                      userId:
+                        Math.floor(
+                          Number(
+                            candidate.userId ||
+                            0
+                          )
+                        ),
+
+                      displayName:
+                        normalizeText(
+                          candidate.displayName
+                        ) ||
+                        null,
+
+                      publicToken:
+                        normalizeText(
+                          candidate.publicToken
+                        ) ||
+                        null,
+
+                      publicPositionName:
+                        normalizeText(
+                          candidate.publicPositionName
+                        ) ||
+                        null,
+                    })
+                  )
+                  .filter(
+                    (
+                      candidate
+                    ) =>
+                      candidate.userId >
+                      0
+                  )
+              : [],
+
+          staffSelectionStatus:
+            params
+              .structuredMemory
+              .staffSelectionStatus ===
+              "recommended" ||
+            params
+              .structuredMemory
+              .staffSelectionStatus ===
+              "selected"
+              ? params
+                  .structuredMemory
+                  .staffSelectionStatus
+              : "none",
+
+          lastIntent:
+            normalizeText(
+              params
+                .structuredMemory
+                .lastIntent
+            ) ||
+            null,
         }
       : {
           desiredCourse:
@@ -1637,7 +1899,22 @@ socialWorkerLawVersion:
           unresolvedQuestions:
             [],
 
-          currentTopic:
+                    currentTopic:
+            null,
+
+          recommendedStaffUserId:
+            null,
+
+          selectedStaffUserId:
+            null,
+
+          lastStaffCandidates:
+            [],
+
+          staffSelectionStatus:
+            "none",
+
+          lastIntent:
             null,
         };
 

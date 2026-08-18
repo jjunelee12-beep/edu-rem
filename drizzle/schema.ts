@@ -499,6 +499,22 @@ export const kakaoAiConversations = mysqlTable(
       .notNull()
       .default("lead"),
 
+/**
+ * 신규 카카오 상담자가
+ * CRM 상담DB에 접수된 경우 연결되는 상담 ID.
+ *
+ * lead 상태에서도 사용할 수 있다.
+ *
+ * 흐름:
+ *
+ * organizationId + channelUserKeyHash
+ * → consultationId
+ * → 이후 등록 승인/인증 완료 시 studentId 연결
+ */
+consultationId: int(
+  "consultationId"
+),
+
     /**
      * 등록회원 인증 완료 시에만 연결.
      *
@@ -566,6 +582,14 @@ export const kakaoAiConversations = mysqlTable(
         table.organizationId,
         table.channelUserKeyHash
       ),
+
+orgConsultationIdx:
+  index(
+    "idx_kakao_ai_conversation_consultation"
+  ).on(
+    table.organizationId,
+    table.consultationId
+  ),
 
     orgStudentIdx:
       index(
@@ -881,6 +905,97 @@ socialWorkerLawVersion: mysqlEnum(
       "currentTopic"
     ),
 
+/**
+ * AI가 현재 추천한 담당자.
+ *
+ * 추천만 된 상태이며
+ * 고객의 최종 선택과는 별개다.
+ */
+recommendedStaffUserId: int(
+  "recommendedStaffUserId"
+),
+
+/**
+ * 고객이 실제로 선택한 담당자.
+ *
+ * "이 담당자로 할게요"
+ * "OOO 담당자로 바꿔주세요"
+ * 등의 자연어 선택 결과를 저장한다.
+ *
+ * 이후 상담DB 생성 시
+ * 최종 assigneeId 후보로 사용한다.
+ */
+selectedStaffUserId: int(
+  "selectedStaffUserId"
+),
+
+/**
+ * 고객에게 마지막으로 보여준
+ * 담당자 후보 목록.
+ *
+ * 예:
+ * [
+ *   {
+ *     "userId": 7,
+ *     "displayName": "이재준",
+ *     "publicToken": "pf_xxx"
+ *   }
+ * ]
+ *
+ * "두 번째 분으로 할게요"
+ * "아까 보여준 분 중 마지막 분"
+ * 같은 후속 자연어를 해석하기 위해 사용한다.
+ *
+ * 개인정보/내부정보가 포함될 수 있으므로
+ * JSON 전체를 암호화해서 저장한다.
+ */
+lastStaffCandidatesData: text(
+  "lastStaffCandidatesData"
+),
+
+/**
+ * 담당자 선택 진행 상태.
+ *
+ * none:
+ * 추천/선택 없음
+ *
+ * recommended:
+ * AI 추천은 했지만 고객 선택 전
+ *
+ * selected:
+ * 고객이 담당자를 명확히 선택함
+ */
+staffSelectionStatus: mysqlEnum(
+  "staffSelectionStatus",
+  [
+    "none",
+    "recommended",
+    "selected",
+  ]
+)
+  .notNull()
+  .default("none"),
+
+/**
+ * AI가 마지막으로 판정한 주요 Intent.
+ *
+ * 예:
+ * staff_recommend
+ * staff_list
+ * staff_select
+ * staff_change
+ * course_question
+ *
+ * 자연어 AI가 다음 메시지의 문맥을
+ * 이어서 판단할 때 보조 Context로 사용한다.
+ */
+lastIntent: varchar(
+  "lastIntent",
+  {
+    length: 100,
+  }
+),
+
     createdAt: timestamp(
       "createdAt"
     )
@@ -1089,6 +1204,400 @@ organizationId: int("organizationId").notNull().default(1),
 
 export type BrandingSetting = typeof brandingSettings.$inferSelect;
 export type InsertBrandingSetting = typeof brandingSettings.$inferInsert;
+
+// ─── Staff Public Profiles (담당자 공개 프로필) ──────────────────────
+export const staffPublicProfiles = mysqlTable(
+  "staff_public_profiles",
+  {
+    id: int("id")
+      .autoincrement()
+      .primaryKey(),
+
+    /**
+     * SaaS 회사 경계.
+     */
+    organizationId: int("organizationId")
+      .notNull(),
+
+    /**
+     * 실제 CRM 사용자.
+     *
+     * 외부 공개 URL에는 이 값을 절대 사용하지 않는다.
+     */
+    userId: int("userId")
+      .notNull(),
+
+    /**
+     * 외부 공개 프로필용 랜덤 Token.
+     *
+     * 예:
+     * /with-one/team/pf_xxxxxxxxx
+     *
+     * 공개 식별자이므로 users.id를 외부에 노출하지 않는다.
+     */
+    publicToken: varchar("publicToken", {
+      length: 100,
+    })
+      .notNull(),
+
+    /**
+     * 프로필 자체 활성화 여부.
+     *
+     * false이면 개별 Token URL 접근도 차단한다.
+     */
+    isActive: boolean("isActive")
+      .notNull()
+      .default(false),
+
+    /**
+     * 회사 전체 담당자 소개 페이지에
+     * 이 담당자를 표시할지 여부.
+     *
+     * false여도 isActive=true라면
+     * 개별 Token URL은 사용할 수 있다.
+     */
+    showOnTeamPage: boolean("showOnTeamPage")
+      .notNull()
+      .default(false),
+
+    /**
+     * 카카오 AI 담당자 추천 후보에
+     * 포함할지 여부.
+     */
+    recommendationEnabled: boolean(
+      "recommendationEnabled"
+    )
+      .notNull()
+      .default(false),
+
+    /**
+     * 현재 신규상담을 받을 수 있는 상태인지.
+     *
+     * 추천엔진에서 별도 점수/필터로 사용한다.
+     */
+    acceptingNewConsultations: boolean(
+      "acceptingNewConsultations"
+    )
+      .notNull()
+      .default(true),
+
+    /**
+     * 공개 프로필 사진.
+     *
+     * null이면 이후 화면에서
+     * users.profileImageUrl을 fallback으로 사용할 수 있다.
+     */
+    profileImageUrl: varchar(
+      "profileImageUrl",
+      {
+        length: 1000,
+      }
+    ),
+
+    /**
+     * 고객에게 공개할 담당자명.
+     *
+     * users.name은 암호화 개인정보이므로
+     * 외부 공개페이지에서 직접 사용하지 않는다.
+     */
+    displayName: varchar("displayName", {
+      length: 100,
+    }),
+
+    /**
+     * 공개 직함.
+     *
+     * 기본값이 없으면 positions.name을
+     * 화면에서 fallback으로 사용할 수 있다.
+     */
+    publicPositionName: varchar(
+      "publicPositionName",
+      {
+        length: 100,
+      }
+    ),
+
+    /**
+     * 카드에 표시할 짧은 한 줄 소개.
+     *
+     * 예:
+     * "사회복지사 전문 학습담당자"
+     */
+    headline: varchar("headline", {
+      length: 255,
+    }),
+
+    /**
+     * 상세 페이지 자기소개.
+     */
+    introduction: text("introduction"),
+
+    /**
+     * 주요 경력.
+     */
+    careerText: text("careerText"),
+
+    /**
+     * 수상 / 표창 이력.
+     */
+    awardText: text("awardText"),
+
+    /**
+     * 자격 / 교육 / 전문 이력.
+     */
+    qualificationText: text(
+      "qualificationText"
+    ),
+
+    /**
+     * 담당자의 상담 스타일 / 강점.
+     */
+    consultationStyle: text(
+      "consultationStyle"
+    ),
+
+    /**
+     * 담당 가능 과정.
+     *
+     * JSON 문자열 배열로 저장한다.
+     *
+     * 예:
+     * ["사회복지사 2급", "보육교사 2급"]
+     */
+    specialtiesJson: text(
+      "specialtiesJson"
+    ),
+
+    /**
+     * 공개용 연락처.
+     *
+     * users.phone을 직접 공개하지 않고
+     * 담당자가 직접 공개할 번호만 별도 입력한다.
+     */
+    publicPhone: varchar("publicPhone", {
+      length: 50,
+    }),
+
+    showPhone: boolean("showPhone")
+      .notNull()
+      .default(false),
+
+    /**
+     * 향후 카카오 채널 / 상담링크 등을
+     * 연결할 수 있는 공개 상담 URL.
+     */
+    consultationUrl: varchar(
+      "consultationUrl",
+      {
+        length: 1000,
+      }
+    ),
+
+    showConsultationButton: boolean(
+      "showConsultationButton"
+    )
+      .notNull()
+      .default(true),
+
+    /**
+     * 회사가 직접 정하는 추천 우선순위.
+     *
+     * 숫자가 높을수록 추천엔진 가산점에 사용.
+     */
+    recommendationPriority: int(
+  "recommendationPriority"
+)
+  .notNull()
+  .default(0),
+
+/**
+ * AI 추천 누적 횟수.
+ *
+ * 전문분야 / 상담스타일 / 회사 우선도가
+ * 비슷한 담당자끼리 순차적으로 추천하기 위한
+ * 공정 분배 보조값이다.
+ */
+recommendationCount: int(
+  "recommendationCount"
+)
+  .notNull()
+  .default(0),
+
+/**
+ * 마지막으로 AI 추천이 확정된 시각.
+ *
+ * 동일하거나 비슷한 적합도의 담당자가
+ * 여러 명이면 오래 추천되지 않은 담당자를
+ * 우선할 수 있도록 사용한다.
+ */
+lastRecommendedAt: timestamp(
+  "lastRecommendedAt"
+),
+
+/**
+ * 전체 담당자 소개 페이지 정렬순서.
+ */
+sortOrder: int("sortOrder")
+  .notNull()
+  .default(0),
+
+    createdBy: int("createdBy"),
+    updatedBy: int("updatedBy"),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    /**
+     * 한 회사에서 한 CRM 사용자는
+     * 공개 프로필 1개만 가질 수 있다.
+     */
+    organizationUserUniqueIdx:
+      uniqueIndex(
+        "uq_staff_public_profiles_org_user"
+      ).on(
+        table.organizationId,
+        table.userId
+      ),
+
+    /**
+     * 외부 공개 Token은 전체 시스템에서
+     * 중복될 수 없다.
+     */
+    publicTokenUniqueIdx:
+      uniqueIndex(
+        "uq_staff_public_profiles_token"
+      ).on(
+        table.publicToken
+      ),
+
+    organizationActiveIdx:
+      index(
+        "idx_staff_public_profiles_org_active"
+      ).on(
+        table.organizationId,
+        table.isActive
+      ),
+
+    organizationTeamPageIdx:
+      index(
+        "idx_staff_public_profiles_org_team_page"
+      ).on(
+        table.organizationId,
+        table.showOnTeamPage
+      ),
+
+    organizationRecommendationIdx:
+      index(
+        "idx_staff_public_profiles_org_recommendation"
+      ).on(
+        table.organizationId,
+        table.recommendationEnabled
+      ),
+  })
+);
+
+export type StaffPublicProfile =
+  typeof staffPublicProfiles.$inferSelect;
+
+export type InsertStaffPublicProfile =
+  typeof staffPublicProfiles.$inferInsert;
+
+
+// ─── Staff Team Page Settings (회사 담당자 소개 페이지) ──────────────
+export const staffTeamPageSettings =
+  mysqlTable(
+    "staff_team_page_settings",
+    {
+      id: int("id")
+        .autoincrement()
+        .primaryKey(),
+
+      /**
+       * 회사별 전체 담당자 소개 페이지는
+       * 하나만 존재한다.
+       */
+      organizationId: int(
+        "organizationId"
+      )
+        .notNull(),
+
+      /**
+       * 회사 전체 담당자 소개 페이지 공개 여부.
+       */
+      enabled: boolean("enabled")
+        .notNull()
+        .default(false),
+
+      /**
+       * 기본값이 없으면
+       * brandingSettings.companyName을 이용하여
+       * "{회사명}과 함께하세요"로 표시한다.
+       */
+      title: varchar("title", {
+        length: 200,
+      }),
+
+      /**
+       * 메인 타이틀 아래 설명.
+       */
+      description: text("description"),
+
+      /**
+       * 담당자 목록 위에 표시할 안내문.
+       */
+      staffSectionTitle: varchar(
+        "staffSectionTitle",
+        {
+          length: 150,
+        }
+      ),
+
+      staffSectionDescription: text(
+        "staffSectionDescription"
+      ),
+
+      /**
+       * 회사 소개/상담 철학 등
+       * 하단 브랜딩 영역.
+       */
+      footerIntroduction: text(
+        "footerIntroduction"
+      ),
+
+      createdBy: int("createdBy"),
+      updatedBy: int("updatedBy"),
+
+      createdAt: timestamp("createdAt")
+        .defaultNow()
+        .notNull(),
+
+      updatedAt: timestamp("updatedAt")
+        .defaultNow()
+        .onUpdateNow()
+        .notNull(),
+    },
+    (table) => ({
+      organizationUniqueIdx:
+        uniqueIndex(
+          "uq_staff_team_page_settings_org"
+        ).on(
+          table.organizationId
+        ),
+    })
+  );
+
+export type StaffTeamPageSetting =
+  typeof staffTeamPageSettings.$inferSelect;
+
+export type InsertStaffTeamPageSetting =
+  typeof staffTeamPageSettings.$inferInsert;
 
 // ─── SMS Settings ───────────────────────────────────────────────────
 export const smsSettings = mysqlTable("sms_settings", {

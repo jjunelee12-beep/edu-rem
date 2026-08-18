@@ -86,6 +86,15 @@ StudentUpdateToolOutput,
 
   SettlementSummaryToolInput,
   SettlementSummaryToolOutput,
+
+  StaffListToolInput,
+  StaffListToolOutput,
+
+  StaffRecommendToolInput,
+  StaffRecommendToolOutput,
+
+  StaffSelectCandidateToolInput,
+  StaffSelectCandidateToolOutput,
 } from "./ai.types";
 
 import {
@@ -1445,6 +1454,113 @@ function isTextMatched(params: {
     );
 
   return textMatched || phoneMatched;
+}
+
+/**
+ * 담당자 공개 프로필을
+ * AI Tool 공용 출력 형식으로 변환한다.
+ *
+ * 내부 추천 횟수 / 조직정보 / 작업자정보 등은
+ * AI 출력에 직접 노출하지 않는다.
+ */
+function mapStaffConsultationItem(
+  profile:
+    any
+) {
+  const userId =
+    normalizePositiveInteger(
+      profile?.userId
+    );
+
+  if (
+    userId <=
+    0
+  ) {
+    return null;
+  }
+
+  const name =
+    normalizeNullableText(
+      profile?.displayName,
+      100
+    ) ||
+    "담당자";
+
+  const positionName =
+    normalizeNullableText(
+      profile?.publicPositionName,
+      100
+    );
+
+  const introduction =
+    normalizeNullableText(
+      profile?.introduction ||
+        profile?.headline,
+      2000
+    );
+
+  const specialties =
+    Array.isArray(
+      profile?.specialties
+    )
+      ? Array.from(
+          new Set(
+            profile.specialties
+              .map(
+                (
+                  item:
+                    unknown
+                ) =>
+                  String(
+                    item ??
+                    ""
+                  ).trim()
+              )
+              .filter(
+                Boolean
+              )
+              .slice(
+                0,
+                30
+              )
+          )
+        )
+      : [];
+
+  return {
+    userId,
+
+    name,
+
+    positionName,
+
+    /**
+     * 현재 추천 프로필 테이블에는
+     * teamName이 직접 저장되지 않는다.
+     *
+     * 없는 값을 추측하지 않고 null 처리한다.
+     */
+    teamName:
+      null,
+
+    profileImageUrl:
+      normalizeNullableText(
+        profile?.profileImageUrl,
+        1000
+      ),
+
+    introduction,
+
+    specialties,
+
+    /**
+     * listRecommendedStaffProfiles() 자체가
+     * acceptingNewConsultations=true만 반환하므로
+     * 이 Tool에 들어온 담당자는 상담 가능 상태다.
+     */
+    consultationStatus:
+      "available" as const,
+  };
 }
 
 /**
@@ -12961,6 +13077,884 @@ registerTool<
       limit,
       riskLevel,
     });
+  },
+});
+
+/**
+ * 상담 가능한 담당자 목록 조회
+ *
+ * AI 추천 활성 + 신규상담 가능 상태의
+ * 담당자 공개 프로필만 반환한다.
+ *
+ * 조회만 수행하며 추천 횟수는 증가시키지 않는다.
+ */
+registerTool<
+  StaffListToolInput,
+  StaffListToolOutput
+>({
+  name:
+    "staff.list",
+
+  description:
+    "현재 회사에서 AI 담당자 추천이 활성화되어 있고 신규 상담을 받을 수 있는 담당자 목록을 조회합니다. 담당자의 공개 이름, 직급, 소개, 전문분야를 확인할 때 사용합니다. 실제 담당자 선택이나 추천 횟수 증가는 수행하지 않습니다.",
+
+  inputSchema: {
+    type:
+      "object",
+
+    properties: {
+      limit: {
+        type:
+          "integer",
+
+        minimum:
+          1,
+
+        maximum:
+          20,
+
+        description:
+          "조회할 최대 담당자 수. 생략하면 최대 20명까지 조회합니다.",
+      },
+    },
+
+    required:
+      [],
+
+    additionalProperties:
+      false,
+  },
+
+  accessMode:
+    "read",
+
+  allowedRoles: [
+    "staff",
+    "admin",
+    "host",
+  ],
+
+  requiresOrganization:
+    true,
+
+  requiresConfirmation:
+    false,
+
+  autoExecutable:
+    true,
+
+  handler: async ({
+    context,
+    input,
+  }) => {
+    const safeInput =
+      stripUntrustedScopeFields(
+        (
+          input ||
+          {}
+        ) as Record<
+          string,
+          unknown
+        >
+      ) as StaffListToolInput;
+
+    const limit =
+      normalizeLimit(
+        safeInput.limit,
+        20,
+        20
+      );
+
+    const profiles =
+      await db.listRecommendedStaffProfiles({
+        organizationId:
+          context.organizationId,
+      });
+
+    const staff =
+      (
+        profiles ||
+        []
+      )
+        .map(
+          (
+            profile:
+              any
+          ) =>
+            mapStaffConsultationItem(
+              profile
+            )
+        )
+        .filter(
+          (
+            item
+          ): item is NonNullable<
+            ReturnType<
+              typeof mapStaffConsultationItem
+            >
+          > =>
+            Boolean(
+              item
+            )
+        )
+        .slice(
+          0,
+          limit
+        );
+
+    return {
+      count:
+        staff.length,
+
+      staff,
+
+      generatedAt:
+        new Date()
+          .toISOString(),
+    };
+  },
+});
+
+/**
+ * 담당자 추천 후보 계산
+ *
+ * 중요:
+ * 이 Tool은 추천 결과를 계산만 한다.
+ *
+ * recommendationCount /
+ * lastRecommendedAt은 변경하지 않는다.
+ *
+ * 실제 고객에게 추천을 확정하는 단계는
+ * 카카오 AI Conversation Tool에서 별도로 처리한다.
+ */
+registerTool<
+  StaffRecommendToolInput,
+  StaffRecommendToolOutput
+>({
+  name:
+    "staff.recommend",
+
+  description:
+    "고객의 희망과정과 상담 요구사항을 바탕으로 현재 회사의 상담 가능한 담당자 후보를 추천 순서대로 조회합니다. 담당자 전문분야와 상담스타일, 회사 추천 우선순위를 참고합니다. 조회 단계이므로 실제 추천 횟수는 증가시키지 않습니다.",
+
+  inputSchema: {
+    type:
+      "object",
+
+    properties: {
+      desiredCourse: {
+        type: [
+          "string",
+          "null",
+        ],
+
+        description:
+          "고객의 희망 과정. 예: 사회복지사 2급, 보육교사 2급, 한국어교원 2급",
+      },
+
+      query: {
+        type: [
+          "string",
+          "null",
+        ],
+
+        description:
+          "담당자에게 원하는 상담 조건이나 고객 상담 내용. 예: 처음이라 자세하게 설명해주는 분, 실습 상담 경험이 많은 분",
+      },
+
+      limit: {
+        type:
+          "integer",
+
+        minimum:
+          1,
+
+        maximum:
+          5,
+
+        description:
+          "추천 후보 최대 인원. 생략하면 최대 3명입니다.",
+      },
+    },
+
+    required:
+      [],
+
+    additionalProperties:
+      false,
+  },
+
+  accessMode:
+    "read",
+
+  allowedRoles: [
+    "staff",
+    "admin",
+    "host",
+  ],
+
+  requiresOrganization:
+    true,
+
+  requiresConfirmation:
+    false,
+
+  autoExecutable:
+    true,
+
+  handler: async ({
+    context,
+    input,
+  }) => {
+    const safeInput =
+      stripUntrustedScopeFields(
+        (
+          input ||
+          {}
+        ) as Record<
+          string,
+          unknown
+        >
+      ) as StaffRecommendToolInput;
+
+    const desiredCourse =
+      normalizeNullableText(
+        safeInput.desiredCourse,
+        300
+      );
+
+    const query =
+      normalizeNullableText(
+        safeInput.query,
+        2000
+      );
+
+    const limit =
+      normalizeLimit(
+        safeInput.limit,
+        3,
+        5
+      );
+
+    const desiredCourseLower =
+      String(
+        desiredCourse ||
+        ""
+      ).toLowerCase();
+
+    const queryLower =
+      String(
+        query ||
+        ""
+      ).toLowerCase();
+
+    const profiles =
+      await db.listRecommendedStaffProfiles({
+        organizationId:
+          context.organizationId,
+      });
+
+    const scored =
+      (
+        profiles ||
+        []
+      )
+        .map(
+          (
+            profile:
+              any
+          ) => {
+            const item =
+              mapStaffConsultationItem(
+                profile
+              );
+
+            if (!item) {
+              return null;
+            }
+
+            let score =
+              Number(
+                profile
+                  ?.recommendationPriority ||
+                0
+              ) *
+              100;
+
+            const reasons:
+              string[] =
+              [];
+
+            const specialties =
+              Array.isArray(
+                profile
+                  ?.specialties
+              )
+                ? profile.specialties
+                    .map(
+                      (
+                        value:
+                          unknown
+                      ) =>
+                        String(
+                          value ??
+                          ""
+                        )
+                          .trim()
+                          .toLowerCase()
+                    )
+                    .filter(
+                      Boolean
+                    )
+                : [];
+
+            /**
+             * 희망과정 ↔ 전문분야
+             */
+            if (
+              desiredCourseLower
+            ) {
+              const courseMatched =
+                specialties.some(
+                  (
+                    specialty:
+                      string
+                  ) =>
+                    desiredCourseLower.includes(
+                      specialty
+                    ) ||
+                    specialty.includes(
+                      desiredCourseLower
+                    )
+                );
+
+              if (
+                courseMatched
+              ) {
+                score +=
+                  1000;
+
+                reasons.push(
+                  "희망과정과 담당자의 전문분야가 일치합니다."
+                );
+              }
+            }
+
+            /**
+             * 상담 요구사항 ↔ 전문분야
+             */
+            if (
+              queryLower
+            ) {
+              const specialtyMatched =
+                specialties.some(
+                  (
+                    specialty:
+                      string
+                  ) =>
+                    queryLower.includes(
+                      specialty
+                    )
+                );
+
+              if (
+                specialtyMatched
+              ) {
+                score +=
+                  300;
+
+                reasons.push(
+                  "상담 요청 내용과 담당자의 전문분야가 연관됩니다."
+                );
+              }
+            }
+
+            /**
+             * 상담 요구사항 ↔ 상담스타일
+             */
+            const consultationStyle =
+              String(
+                profile
+                  ?.consultationStyle ||
+                ""
+              )
+                .trim()
+                .toLowerCase();
+
+            if (
+              queryLower &&
+              consultationStyle
+            ) {
+              const styleKeywords =
+                consultationStyle
+                  .split(
+                    /[\s,./|·]+/
+                  )
+                  .map(
+                    (
+                      value:
+                        string
+                    ) =>
+                      value.trim()
+                  )
+                  .filter(
+                    (
+                      value:
+                        string
+                    ) =>
+                      value.length >=
+                      2
+                  );
+
+              let styleMatchCount =
+                0;
+
+              for (
+                const keyword of
+                styleKeywords
+              ) {
+                if (
+                  queryLower.includes(
+                    keyword
+                  )
+                ) {
+                  styleMatchCount +=
+                    1;
+
+                  score +=
+                    20;
+                }
+              }
+
+              if (
+                styleMatchCount >
+                0
+              ) {
+                reasons.push(
+                  "요청하신 상담 방식과 담당자의 상담스타일이 연관됩니다."
+                );
+              }
+            }
+
+            /**
+             * 아무 조건도 일치하지 않았더라도
+             * 운영상 추천 가능한 담당자임을 설명한다.
+             */
+            if (
+              reasons.length ===
+              0
+            ) {
+              reasons.push(
+                "현재 신규 상담이 가능한 추천 담당자입니다."
+              );
+            }
+
+            return {
+              profile,
+              item,
+              score,
+              reasons,
+            };
+          }
+        )
+        .filter(
+          Boolean
+        ) as Array<{
+          profile:
+            any;
+
+          item:
+            NonNullable<
+              ReturnType<
+                typeof mapStaffConsultationItem
+              >
+            >;
+
+          score:
+            number;
+
+          reasons:
+            string[];
+        }>;
+
+    scored.sort(
+      (
+        a,
+        b
+      ) => {
+        if (
+          b.score !==
+          a.score
+        ) {
+          return (
+            b.score -
+            a.score
+          );
+        }
+
+        const countA =
+          Number(
+            a.profile
+              ?.recommendationCount ||
+            0
+          );
+
+        const countB =
+          Number(
+            b.profile
+              ?.recommendationCount ||
+            0
+          );
+
+        if (
+          countA !==
+          countB
+        ) {
+          return (
+            countA -
+            countB
+          );
+        }
+
+        const timeA =
+          a.profile
+            ?.lastRecommendedAt
+            ? new Date(
+                a.profile
+                  .lastRecommendedAt
+              ).getTime()
+            : 0;
+
+        const timeB =
+          b.profile
+            ?.lastRecommendedAt
+            ? new Date(
+                b.profile
+                  .lastRecommendedAt
+              ).getTime()
+            : 0;
+
+        if (
+          timeA !==
+          timeB
+        ) {
+          return (
+            timeA -
+            timeB
+          );
+        }
+
+        return (
+          a.item.userId -
+          b.item.userId
+        );
+      }
+    );
+
+    const recommendations =
+      scored
+        .slice(
+          0,
+          limit
+        )
+        .map(
+          (
+            result,
+            index
+          ) => ({
+            staff:
+              result.item,
+
+            rank:
+              index +
+              1,
+
+            reasons:
+              result.reasons,
+          })
+        );
+
+    return {
+      desiredCourse,
+
+      query,
+
+      count:
+        recommendations.length,
+
+      recommendations,
+
+      generatedAt:
+        new Date()
+          .toISOString(),
+    };
+  },
+});
+
+/**
+ * 담당자 이름 / 직급 / 전문분야로
+ * 실제 선택 후보를 조회한다.
+ *
+ * 이 단계에서는 고객의 담당자를
+ * 실제로 저장하거나 변경하지 않는다.
+ */
+registerTool<
+  StaffSelectCandidateToolInput,
+  StaffSelectCandidateToolOutput
+>({
+  name:
+    "staff.select_candidate",
+
+  description:
+    "사용자가 특정 담당자를 이름이나 직급 등으로 지목했을 때 현재 회사의 상담 가능한 실제 담당자 후보를 찾습니다. 사용자가 말한 이름을 사용자 ID로 임의 변환하지 않고 서버의 실제 담당자 목록에서 검색합니다. 담당자 선택 상태를 변경하지는 않습니다.",
+
+  inputSchema: {
+    type:
+      "object",
+
+    properties: {
+      query: {
+        type:
+          "string",
+
+        minLength:
+          1,
+
+        description:
+          "사용자가 지목한 담당자 이름 또는 담당자를 특정할 수 있는 표현. 예: 이재준, 이재준 팀장, 사회복지 담당자",
+      },
+
+      limit: {
+        type:
+          "integer",
+
+        minimum:
+          1,
+
+        maximum:
+          10,
+
+        description:
+          "최대 후보 수. 생략하면 5명입니다.",
+      },
+    },
+
+    required: [
+      "query",
+    ],
+
+    additionalProperties:
+      false,
+  },
+
+  accessMode:
+    "read",
+
+  allowedRoles: [
+    "staff",
+    "admin",
+    "host",
+  ],
+
+  requiresOrganization:
+    true,
+
+  requiresConfirmation:
+    false,
+
+  autoExecutable:
+    true,
+
+  handler: async ({
+    context,
+    input,
+  }) => {
+    const safeInput =
+      stripUntrustedScopeFields(
+        (
+          input ||
+          {}
+        ) as Record<
+          string,
+          unknown
+        >
+      ) as StaffSelectCandidateToolInput;
+
+    const query =
+      normalizeSearchQuery(
+        safeInput.query
+      );
+
+    if (!query) {
+      throw new Error(
+        "담당자를 찾기 위한 이름 또는 검색어가 필요합니다."
+      );
+    }
+
+    const limit =
+      normalizeLimit(
+        safeInput.limit,
+        5,
+        10
+      );
+
+    const profiles =
+      await db.listRecommendedStaffProfiles({
+        organizationId:
+          context.organizationId,
+      });
+
+    const queryLower =
+      query.toLowerCase();
+
+    const candidates =
+      (
+        profiles ||
+        []
+      )
+        .map(
+          (
+            profile:
+              any
+          ) => {
+            const item =
+              mapStaffConsultationItem(
+                profile
+              );
+
+            if (!item) {
+              return null;
+            }
+
+            const searchableValues =
+              [
+                item.name,
+
+                item.positionName,
+
+                profile?.headline,
+
+                profile?.consultationStyle,
+
+                ...(
+                  Array.isArray(
+                    item.specialties
+                  )
+                    ? item.specialties
+                    : []
+                ),
+              ]
+                .map(
+                  (
+                    value:
+                      unknown
+                  ) =>
+                    String(
+                      value ??
+                      ""
+                    )
+                      .trim()
+                      .toLowerCase()
+                )
+                .filter(
+                  Boolean
+                );
+
+            const exactNameMatched =
+              item.name
+                .toLowerCase() ===
+              queryLower;
+
+            const partialMatched =
+              searchableValues.some(
+                (
+                  value:
+                    string
+                ) =>
+                  value.includes(
+                    queryLower
+                  ) ||
+                  queryLower.includes(
+                    value
+                  )
+              );
+
+            if (
+              !exactNameMatched &&
+              !partialMatched
+            ) {
+              return null;
+            }
+
+            return {
+              item,
+
+              exactNameMatched,
+            };
+          }
+        )
+        .filter(
+          Boolean
+        )
+        .sort(
+          (
+            a:
+              any,
+            b:
+              any
+          ) => {
+            if (
+              a.exactNameMatched !==
+              b.exactNameMatched
+            ) {
+              return a.exactNameMatched
+                ? -1
+                : 1;
+            }
+
+            return (
+              a.item.userId -
+              b.item.userId
+            );
+          }
+        )
+        .slice(
+          0,
+          limit
+        )
+        .map(
+          (
+            result:
+              any
+          ) =>
+            result.item
+        );
+
+    /**
+     * 정확히 한 명만 검색된 경우에만
+     * resolved=true.
+     *
+     * 여러 명이면 AI가 추가 질문해야 한다.
+     */
+    const resolved =
+      candidates.length ===
+      1;
+
+    return {
+      query,
+
+      count:
+        candidates.length,
+
+      resolved,
+
+      selectedCandidate:
+        resolved
+          ? candidates[0]
+          : null,
+
+      candidates,
+    };
   },
 });
 

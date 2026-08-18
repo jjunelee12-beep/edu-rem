@@ -130,10 +130,53 @@ priorCreditBankSemesters:
 desiredStudyStartDate:
   string | null;
 
-unresolvedQuestions:
-  string[];
+  unresolvedQuestions:
+    string[];
 
   currentTopic:
+    string | null;
+
+  /**
+   * AI가 현재 대화에서 마지막으로
+   * 추천한 담당자의 userId.
+   *
+   * 추천 상태일 뿐
+   * 고객의 최종 선택과는 별개다.
+   */
+  recommendedStaffUserId:
+    number | null;
+
+  /**
+   * 고객이 현재 상담에서
+   * 실제로 선택한 담당자의 userId.
+   */
+  selectedStaffUserId:
+    number | null;
+
+  /**
+   * 직전에 고객에게 보여준 담당자 후보.
+   *
+   * "두 번째 분",
+   * "아까 마지막 분"
+   * 같은 후속발화 해석에 사용한다.
+   */
+  lastStaffCandidates:
+    db.KakaoAiStaffCandidateMemory[];
+
+  /**
+   * 담당자 선택 진행상태.
+   */
+  staffSelectionStatus:
+    | "none"
+    | "recommended"
+    | "selected";
+
+  /**
+   * 직전 담당자/상담 Intent.
+   *
+   * 후속발화 문맥 판단을 보조한다.
+   */
+  lastIntent:
     string | null;
 };
 
@@ -1033,6 +1076,112 @@ desiredStudyStartDate,
       normalizeNullableText(
         memory.currentTopic
       ),
+
+    recommendedStaffUserId:
+      Number.isFinite(
+        Number(
+          memory.recommendedStaffUserId
+        )
+      ) &&
+      Number(
+        memory.recommendedStaffUserId
+      ) > 0
+        ? Math.floor(
+            Number(
+              memory.recommendedStaffUserId
+            )
+          )
+        : null,
+
+    selectedStaffUserId:
+      Number.isFinite(
+        Number(
+          memory.selectedStaffUserId
+        )
+      ) &&
+      Number(
+        memory.selectedStaffUserId
+      ) > 0
+        ? Math.floor(
+            Number(
+              memory.selectedStaffUserId
+            )
+          )
+        : null,
+
+    lastStaffCandidates:
+      Array.isArray(
+        memory.lastStaffCandidates
+      )
+        ? memory.lastStaffCandidates
+            .map(
+              (
+                candidate
+              ) => {
+                const userId =
+                  Math.floor(
+                    Number(
+                      candidate?.userId ||
+                      0
+                    )
+                  );
+
+                if (
+                  !Number.isFinite(
+                    userId
+                  ) ||
+                  userId <= 0
+                ) {
+                  return null;
+                }
+
+                return {
+                  userId,
+
+                  displayName:
+                    normalizeNullableText(
+                      candidate?.displayName
+                    ),
+
+                  publicToken:
+                    normalizeNullableText(
+                      candidate?.publicToken
+                    ),
+
+                  publicPositionName:
+                    normalizeNullableText(
+                      candidate?.publicPositionName
+                    ),
+                };
+              }
+            )
+            .filter(
+              (
+                candidate
+              ): candidate is
+                db.KakaoAiStaffCandidateMemory =>
+                Boolean(
+                  candidate
+                )
+            )
+            .slice(
+              0,
+              20
+            )
+        : [],
+
+    staffSelectionStatus:
+      memory.staffSelectionStatus ===
+        "recommended" ||
+      memory.staffSelectionStatus ===
+        "selected"
+        ? memory.staffSelectionStatus
+        : "none",
+
+    lastIntent:
+      normalizeNullableText(
+        memory.lastIntent
+      ),
   };
 }
 
@@ -1281,6 +1430,31 @@ desiredStudyStartDate:
         memoryContext
           .structuredMemory
           .currentTopic,
+
+      recommendedStaffUserId:
+        memoryContext
+          .structuredMemory
+          .recommendedStaffUserId,
+
+      selectedStaffUserId:
+        memoryContext
+          .structuredMemory
+          .selectedStaffUserId,
+
+      lastStaffCandidates:
+        memoryContext
+          .structuredMemory
+          .lastStaffCandidates,
+
+      staffSelectionStatus:
+        memoryContext
+          .structuredMemory
+          .staffSelectionStatus,
+
+      lastIntent:
+        memoryContext
+          .structuredMemory
+          .lastIntent,
     }
   );
 }

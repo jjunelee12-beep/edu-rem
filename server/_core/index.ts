@@ -58,6 +58,11 @@ import {
 } from "../ai/kakao-ai-analysis-waiting";
 
 import {
+  renderKakaoAiResponse,
+  type KakaoAiRenderedResponse,
+} from "../ai/kakao-ai-response-renderer";
+
+import {
   beginKakaoAiImmediateHistory,
   finishKakaoAiImmediateHistory,
 } from "../ai/kakao-ai-immediate-history";
@@ -74,6 +79,61 @@ import { startAutoBackupScheduler } from "./auto-backup-scheduler";
 
 const KAKAO_AI_BUILD_VERSION =
   "20260813-0825-callback-debug-v1";
+
+function getKakaoAiPublicOrigin(
+  req:
+    express.Request
+): string {
+  const configuredOrigin =
+    String(
+      process.env.FRONTEND_URL ||
+      ""
+    )
+      .trim()
+      .replace(
+        /\/+$/,
+        ""
+      );
+
+  if (
+    configuredOrigin
+  ) {
+    return configuredOrigin;
+  }
+
+  const forwardedProto =
+    String(
+      req.headers[
+        "x-forwarded-proto"
+      ] ||
+      ""
+    )
+      .split(
+        ","
+      )[0]
+      .trim();
+
+  const protocol =
+    forwardedProto ||
+    req.protocol ||
+    "https";
+
+  const host =
+    String(
+      req.get(
+        "host"
+      ) ||
+      ""
+    ).trim();
+
+  if (
+    !host
+  ) {
+    return "https://edu-crm.kr";
+  }
+
+  return `${protocol}://${host}`;
+}
 
 console.log(
   "[KAKAO AI BUILD]",
@@ -1972,6 +2032,34 @@ async function getR2PrefixUsageBytes(prefix: string) {
             ? req.body
             : {};
 
+console.log(
+  "[KAKAO AI PAYLOAD STRUCTURE]",
+  {
+    topLevelKeys:
+      payload && typeof payload === "object"
+        ? Object.keys(payload)
+        : [],
+
+    userRequestKeys:
+      payload?.userRequest &&
+      typeof payload.userRequest === "object"
+        ? Object.keys(payload.userRequest)
+        : [],
+
+    actionKeys:
+      payload?.action &&
+      typeof payload.action === "object"
+        ? Object.keys(payload.action)
+        : [],
+
+    actionParams:
+      payload?.action?.params ?? null,
+
+    actionDetailParams:
+      payload?.action?.detailParams ?? null,
+  }
+);
+
         /**
          * 카카오 Skill Payload의 실제 bot.id.
          */
@@ -2522,14 +2610,24 @@ console.log(
 
 const sendKakaoCallback =
   async (
-    text:
-      string
+    response:
+      string |
+      KakaoAiRenderedResponse
   ): Promise<boolean> => {
     const normalizedText =
-      String(
-        text ||
+  typeof response ===
+    "string"
+    ? String(
+        response ||
         ""
-      ).trim();
+      ).trim()
+    : "";
+
+const renderedResponse =
+  typeof response ===
+    "string"
+    ? null
+    : response;
 
     if (
       !callbackUrl
@@ -2546,8 +2644,9 @@ const sendKakaoCallback =
     }
 
     if (
-      !normalizedText
-    ) {
+  !normalizedText &&
+  !renderedResponse
+) {
       console.error(
         "[KAKAO AI CALLBACK] 전송할 답변 없음",
         {
@@ -2600,22 +2699,25 @@ const sendKakaoCallback =
             signal:
               controller.signal,
 
-            body:
-              JSON.stringify({
-                version:
-                  "2.0",
+           body:
+  JSON.stringify(
+    renderedResponse ||
+    {
+      version:
+        "2.0",
 
-                template: {
-                  outputs: [
-                    {
-                      simpleText: {
-                        text:
-                          normalizedText,
-                      },
-                    },
-                  ],
-                },
-              }),
+      template: {
+        outputs: [
+          {
+            simpleText: {
+              text:
+                normalizedText,
+            },
+          },
+        ],
+      },
+    }
+  ),
           }
         );
 
@@ -3149,23 +3251,36 @@ await markKakaoAiCallbackDelivery({
 return;
 }
                 const replyText =
-                  String(
-                    result
-                      .responseComposition
-                      ?.replyText ||
-                    result
-                      .registrationVerification
-                      ?.replyText ||
-                    ""
-                  ).trim();
+  String(
+    result
+      .responseComposition
+      ?.replyText ||
+    result
+      .registrationVerification
+      ?.replyText ||
+    ""
+  ).trim();
 
-                if (
+if (
   !replyText
 ) {
   throw new Error(
     "카카오 AI 최종 답변이 비어 있습니다."
   );
 }
+
+const renderedResponse =
+  await renderKakaoAiResponse({
+    result,
+
+    origin:
+      getKakaoAiPublicOrigin(
+        req
+      ),
+
+    fallbackText:
+      replyText,
+  });
 
 /**
  * 중복 webhook 복구 경로에서
@@ -3254,7 +3369,7 @@ const claim =
 
 const callbackSent =
   await sendKakaoCallback(
-    replyText
+    renderedResponse
   );
 
 if (
@@ -3422,34 +3537,35 @@ return;
         }
 
         const replyText =
-          String(
-            result
-              .responseComposition
-              ?.replyText ||
-            result
-              .registrationVerification
-              ?.replyText ||
-            ""
-          ).trim();
+  String(
+    result
+      .responseComposition
+      ?.replyText ||
+    result
+      .registrationVerification
+      ?.replyText ||
+    ""
+  ).trim();
 
-        return res
-          .status(200)
-          .json({
-            version:
-              "2.0",
+const renderedResponse =
+  await renderKakaoAiResponse({
+    result,
 
-            template: {
-              outputs: [
-                {
-                  simpleText: {
-                    text:
-                      replyText ||
-                      "문의 내용을 처리하지 못했습니다. 잠시 후 다시 말씀해주세요.",
-                  },
-                },
-              ],
-            },
-          });
+    origin:
+      getKakaoAiPublicOrigin(
+        req
+      ),
+
+    fallbackText:
+      replyText ||
+      "문의 내용을 처리하지 못했습니다. 잠시 후 다시 말씀해주세요.",
+  });
+
+return res
+  .status(200)
+  .json(
+    renderedResponse
+  );
       } catch (
         error:
           unknown

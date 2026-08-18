@@ -1,3 +1,5 @@
+import * as db from "../db";
+
 import {
   buildKakaoAiCompanyContext,
   type KakaoAiCompanyContext,
@@ -61,6 +63,56 @@ import type {
  */
 
 /**
+ * 카카오 AI 담당자 Context.
+ *
+ * 담당자 추천 / 목록 / 선택 / 변경 /
+ * 현재 선택상태 판단에 사용하는
+ * 서버 확정 Context다.
+ *
+ * 실제 선택 변경은 여기서 수행하지 않는다.
+ * Context Resolver는 조회만 담당한다.
+ */
+export type KakaoAiStaffContext = {
+  /**
+   * 현재 회사에서
+   * 고객에게 보여줄 수 있는 담당자 후보.
+   */
+  candidates:
+    db.KakaoAiStaffCandidateMemory[];
+
+  /**
+   * 현재 Conversation에서
+   * 마지막으로 추천된 담당자.
+   */
+  recommendedStaff:
+    db.KakaoAiStaffCandidateMemory |
+    null;
+
+  /**
+   * 고객이 현재 Conversation에서
+   * 실제 선택한 담당자.
+   */
+  selectedStaff:
+    db.KakaoAiStaffCandidateMemory |
+    null;
+
+  /**
+   * 담당자 선택 진행상태.
+   */
+  status:
+    | "none"
+    | "recommended"
+    | "selected";
+
+  /**
+   * 직전 담당자 관련 Intent.
+   */
+  lastIntent:
+    string |
+    null;
+};
+
+/**
  * 실제 Context를 가져오기 전에 만드는
  * 서버 확정 Fetch Plan.
  *
@@ -94,7 +146,15 @@ export type KakaoAiContextFetchPlan = {
   practiceCenter:
     boolean;
 
-  careerContext:
+    careerContext:
+    boolean;
+
+  /**
+   * 담당자 목록 / 추천 / 선택 /
+   * 변경 / 현재 선택상태 확인에 필요한
+   * 담당자 Context.
+   */
+  staffContext:
     boolean;
 
   attachmentAnalysis:
@@ -178,6 +238,18 @@ export type KakaoAiResolvedContext = {
    */
   practiceCenter:
     KakaoAiPracticeCenterResult | null;
+
+  /**
+   * 현재 카카오 상담의 담당자 Context.
+   *
+   * 신규 / 등록회원 모두 사용할 수 있다.
+   *
+   * 등록학생 CRM의 기존 담당자 변경 기능과는
+   * 별개의 "카카오 상담 담당자 선택" Context다.
+   */
+  staffContext:
+    KakaoAiStaffContext |
+    null;
 
   /**
    * 추가 확인이 필요한 상태에서는
@@ -501,6 +573,42 @@ function requiresCareerContextByCapability(
 }
 
 /**
+ * 회사 담당자 Context가 필요한 capability.
+ *
+ * 모델이 requiredContexts에서
+ * staff_context를 누락하더라도
+ * 담당자 capability 자체가 허용되었다면
+ * 서버에서 Context 사용을 보강한다.
+ */
+function requiresStaffContextByCapability(
+  capabilities:
+    KakaoAiCapability[]
+): boolean {
+  return (
+    hasCapability(
+      capabilities,
+      "staff_list"
+    ) ||
+    hasCapability(
+      capabilities,
+      "staff_recommend"
+    ) ||
+    hasCapability(
+      capabilities,
+      "staff_select"
+    ) ||
+    hasCapability(
+      capabilities,
+      "staff_change"
+    ) ||
+    hasCapability(
+      capabilities,
+      "staff_current"
+    )
+  );
+}
+
+/**
  * 첨부자료 분석이 필요한 capability.
  */
 function requiresAttachmentByCapability(
@@ -746,6 +854,28 @@ const commonRuleEngine =
       )
     );
 
+  /**
+   * 담당자 Context는 신규 / 등록회원
+   * 모두 사용할 수 있다.
+   *
+   * registeredStudent 조건을 걸면 안 된다.
+   *
+   * 다만 Intent가 아직 애매해서
+   * clarification이 필요한 경우에는
+   * 불필요한 담당자 DB 조회를 보류한다.
+   */
+  const staffContext =
+    !needsClarification &&
+    (
+      hasRequiredContext(
+        intent.requiredContexts,
+        "staff_context"
+      ) ||
+      requiresStaffContextByCapability(
+        allowedCapabilities
+      )
+    );
+
   const attachmentAnalysis =
     !needsClarification &&
     (
@@ -777,9 +907,11 @@ const commonRuleEngine =
 
     administrativeStatus,
 
-    practiceCenter,
+        practiceCenter,
 
     careerContext,
+
+    staffContext,
 
     attachmentAnalysis,
   };
@@ -797,6 +929,16 @@ const commonRuleEngine =
 export async function resolveKakaoAiContext(
   params: {
     organizationId:
+      number;
+
+    /**
+     * 현재 카카오 Conversation ID.
+     *
+     * 담당자 추천 / 선택 상태는
+     * Conversation 단위 Memory에 저장되므로
+     * 서버에서 명시적으로 전달받는다.
+     */
+    conversationId:
       number;
 
     routedIntent:
@@ -1143,6 +1285,150 @@ leadAcademicAnalysis = {
       });
   }
 
+  let staffContext:
+    KakaoAiStaffContext |
+    null =
+    null;
+
+  /**
+   * 담당자 Context 조회.
+   *
+   * 중요:
+   * 여기서는 추천 확정 / 선택 / 변경을
+   * 절대로 수행하지 않는다.
+   *
+   * Context Resolver는 현재 상태와
+   * 선택 가능한 후보를 읽기만 한다.
+   */
+  if (
+    fetchPlan.staffContext
+  ) {
+    const selectionState =
+      await db.getKakaoStaffSelectionState({
+        organizationId,
+
+        conversationId:
+  params.conversationId,
+      });
+
+    /**
+     * DB Selection State의 전체 공개 프로필을
+     * Intent / Composer에 필요한
+     * 최소 담당자 Memory 형식으로 축소한다.
+     */
+    const toCandidate =
+      (
+        staff:
+          any
+      ):
+        db.KakaoAiStaffCandidateMemory |
+        null => {
+        const userId =
+          Math.floor(
+            Number(
+              staff?.userId ||
+              0
+            )
+          );
+
+        if (
+          !Number.isFinite(
+            userId
+          ) ||
+          userId <=
+          0
+        ) {
+          return null;
+        }
+
+        return {
+          userId,
+
+          displayName:
+            staff?.displayName
+              ? String(
+                  staff.displayName
+                )
+              : null,
+
+          publicToken:
+            staff?.publicToken
+              ? String(
+                  staff.publicToken
+                )
+              : null,
+
+          publicPositionName:
+            staff?.publicPositionName
+              ? String(
+                  staff.publicPositionName
+                )
+              : null,
+        };
+      };
+
+    const recommendedStaff =
+      toCandidate(
+        selectionState
+          .recommendedStaff
+      );
+
+    const selectedStaff =
+      toCandidate(
+        selectionState
+          .selectedStaff
+      );
+
+    const candidates =
+      Array.isArray(
+        selectionState
+          .candidates
+      )
+        ? selectionState
+            .candidates
+            .filter(
+              (
+                candidate
+              ) =>
+                Number(
+                  candidate
+                    ?.userId ||
+                  0
+                ) >
+                0
+            )
+            .slice(
+              0,
+              20
+            )
+        : [];
+
+    staffContext = {
+      candidates,
+
+      recommendedStaff,
+
+      selectedStaff,
+
+      status:
+        selectionState.status ===
+          "selected"
+          ? "selected"
+          : selectionState.status ===
+              "recommended"
+            ? "recommended"
+            : "none",
+
+      lastIntent:
+        selectionState.lastIntent
+          ? String(
+              selectionState
+                .lastIntent
+            )
+          : null,
+    };
+  }
+
   return {
     customerType:
       routedIntent.customerType,
@@ -1159,9 +1445,11 @@ leadAcademicAnalysis = {
 
     leadAcademicAnalysis,
 
-    registeredStudentAnalysis,
+        registeredStudentAnalysis,
 
     practiceCenter,
+
+    staffContext,
 
     needsClarification:
       routedIntent.intent
