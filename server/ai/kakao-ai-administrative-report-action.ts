@@ -10,6 +10,10 @@ import type {
   KakaoAiCustomerContext,
 } from "./kakao-ai-customer-resolver";
 
+import type {
+  DocumentIntelligenceResult,
+} from "./document-intelligence.types";
+
 export type KakaoAiAdministrativeReportActionResult = {
   handled: boolean;
 
@@ -21,9 +25,10 @@ export type KakaoAiAdministrativeReportActionResult = {
     | null;
 
   status:
-    | "in_progress"
-    | "review_required"
-    | null;
+  | "in_progress"
+  | "completed"
+  | "review_required"
+  | null;
 
   changed: boolean;
 
@@ -233,10 +238,21 @@ export async function executeKakaoAiAdministrativeReportAction(
       string;
 
     kakaoMessageId?:
-      string | null;
+  string | null;
 
-    hasAttachment:
-      boolean;
+hasAttachment:
+  boolean;
+
+/**
+ * 현재 카카오 첨부파일을
+ * 공통 Document Intelligence에서
+ * 이미 한 번 분석한 결과.
+ *
+ * 여기서 Vision을 다시 호출하지 않는다.
+ */
+documentIntelligence?:
+  DocumentIntelligenceResult |
+  null;
   }
 ): Promise<KakaoAiAdministrativeReportActionResult> {
   const customer =
@@ -311,14 +327,37 @@ export async function executeKakaoAiAdministrativeReportAction(
       params.message
     );
 
-  const procedureType =
-    resolveProcedureType(
-      message
-    );
+  const messageProcedureType =
+  resolveProcedureType(
+    message
+  );
 
-  if (
-    !procedureType
-  ) {
+const documentProcedureType =
+  params
+    .documentIntelligence
+    ?.administrative
+    .procedureType ??
+  null;
+
+/**
+ * 사용자가 텍스트로 절차명을 말하지 않아도
+ * 첨부된 실제 화면에서
+ *
+ * 학습자등록
+ * 학점인정
+ * 학위신청
+ * 자격증신청
+ *
+ * 이 명확하게 판독되면
+ * Document Intelligence 결과를 사용할 수 있다.
+ */
+const procedureType =
+  messageProcedureType ||
+  documentProcedureType;
+
+if (
+  !procedureType
+) {
     return {
       handled:
         false,
@@ -351,10 +390,92 @@ export async function executeKakaoAiAdministrativeReportAction(
       message
     );
 
+const documentIntelligence =
+  params.documentIntelligence ??
+  null;
+
+const documentAdministrative =
+  documentIntelligence
+    ?.administrative ??
+  null;
+
+/**
+ * 텍스트에서 말한 행정절차와
+ * 이미지에서 확인된 행정절차가 다르면
+ * 자동 완료처리 금지.
+ *
+ * 예:
+ * 사용자는 "학습자등록 완료"라고 했는데
+ * 첨부 이미지는 학점인정 화면인 경우.
+ */
+const procedureMismatch =
+  Boolean(
+    messageProcedureType &&
+    documentProcedureType &&
+    messageProcedureType !==
+      documentProcedureType
+  );
+
+/**
+ * 공통 Document Intelligence가
+ * 실제 증빙을 충분한 신뢰도로 확인한 경우에만
+ * 자동 completed 후보로 본다.
+ */
+const documentCompletionVerified =
+  Boolean(
+    documentIntelligence &&
+    documentAdministrative &&
+    !procedureMismatch &&
+    documentAdministrative
+      .procedureType ===
+      procedureType &&
+    documentAdministrative
+      .detectedStatus ===
+      "completed" &&
+    documentIntelligence
+      .decision ===
+      "accepted" &&
+    documentIntelligence
+      .confidence >=
+      0.85 &&
+    documentIntelligence
+      .canUseAdministrativeEngine ===
+      true
+  );
+
+/**
+ * 이미지 자체에서 진행중 상태가
+ * 확인된 경우.
+ */
+const documentProgressVerified =
+  Boolean(
+    documentIntelligence &&
+    documentAdministrative &&
+    !procedureMismatch &&
+    documentAdministrative
+      .procedureType ===
+      procedureType &&
+    documentAdministrative
+      .detectedStatus ===
+      "in_progress" &&
+    documentIntelligence
+      .decision !==
+      "rejected" &&
+    documentIntelligence
+      .confidence >=
+      0.7 &&
+    documentIntelligence
+      .canUseAdministrativeEngine ===
+      true
+  );
+
   if (
-    !completionReport &&
-    !progressReport
-  ) {
+  !completionReport &&
+  !progressReport &&
+  !documentCompletionVerified &&
+  !documentProgressVerified &&
+  !procedureMismatch
+) {
     /**
      * "학습자등록 언제 해요?"
      *
@@ -382,23 +503,105 @@ export async function executeKakaoAiAdministrativeReportAction(
   }
 
   const status:
-    | "in_progress"
-    | "review_required" =
-    completionReport
-      ? "review_required"
-      : "in_progress";
+  | "in_progress"
+  | "completed"
+  | "review_required" =
+  procedureMismatch
+    ? "review_required"
+    : documentCompletionVerified
+      ? "completed"
+      : (
+          completionReport
+            ? "review_required"
+            : "in_progress"
+        );
 
   const procedureLabel =
     getProcedureLabel(
       procedureType
     );
 
-  const evidenceSummary =
-    completionReport
-      ? params.hasAttachment
-        ? `${procedureLabel} 완료 보고와 첨부자료가 제출되었으나 아직 증빙 검증 전입니다.`
-        : `${procedureLabel} 완료 보고가 있었으나 증빙 확인이 필요합니다.`
-      : `${procedureLabel} 진행 중이라고 등록회원이 카카오 AI를 통해 보고했습니다.`;
+  const documentEvidenceText =
+  documentIntelligence
+    ?.evidence
+    ?.slice(
+      0,
+      10
+    )
+    .map(
+      evidence =>
+        `${evidence.key}: ${evidence.value}`
+    )
+    .filter(
+      Boolean
+    )
+    .join(
+      " / "
+    ) ||
+  null;
+
+const evidenceSummary =
+  procedureMismatch
+    ? [
+        `${procedureLabel} 관련 보고와 첨부자료의 행정절차 종류가 일치하지 않습니다.`,
+
+        documentEvidenceText,
+      ]
+        .filter(
+          Boolean
+        )
+        .join(
+          " "
+        )
+    : documentCompletionVerified
+      ? [
+          `${procedureLabel} 완료 증빙을 카카오 AI Document Intelligence에서 확인했습니다.`,
+
+          documentIntelligence
+            ?.summary ||
+            null,
+
+          documentEvidenceText,
+        ]
+          .filter(
+            Boolean
+          )
+          .join(
+            " "
+          )
+      : completionReport
+        ? params.hasAttachment
+          ? [
+              `${procedureLabel} 완료 보고와 첨부자료가 제출되었으나 자동 완료 기준을 충족하지 못해 확인이 필요합니다.`,
+
+              documentIntelligence
+                ?.summary ||
+                null,
+
+              documentEvidenceText,
+            ]
+              .filter(
+                Boolean
+              )
+              .join(
+                " "
+              )
+          : `${procedureLabel} 완료 보고가 있었으나 증빙 확인이 필요합니다.`
+        : documentProgressVerified
+          ? [
+              `${procedureLabel} 진행중 상태를 첨부자료에서 확인했습니다.`,
+
+              documentIntelligence
+                ?.summary ||
+                null,
+            ]
+              .filter(
+                Boolean
+              )
+              .join(
+                " "
+              )
+          : `${procedureLabel} 진행 중이라고 등록회원이 카카오 AI를 통해 보고했습니다.`;
 
   const result =
     await updateAdministrativeProcedure({
@@ -436,9 +639,13 @@ export async function executeKakaoAiAdministrativeReportAction(
         null,
 
       memo:
-        completionReport
-          ? "등록회원 완료 보고 - 증빙 확인 전"
-          : "등록회원 진행상황 보고",
+  status ===
+    "completed"
+    ? "카카오 AI 증빙 검증 완료"
+    : status ===
+        "review_required"
+      ? "등록회원 완료 보고 - 증빙 확인 필요"
+      : "등록회원 진행상황 보고",
     });
 
   /**
@@ -464,9 +671,10 @@ export async function executeKakaoAiAdministrativeReportAction(
         "administrative",
 
       noteStatus:
-        completionReport
-          ? "action_required"
-          : "info",
+  status ===
+    "review_required"
+    ? "action_required"
+    : "info",
 
       inquirySummary:
         message.slice(
@@ -477,10 +685,14 @@ export async function executeKakaoAiAdministrativeReportAction(
       aiSummary:
         evidenceSummary,
 
-      actionSummary:
-        completionReport
-          ? `${procedureLabel} 완료 여부 확인이 필요합니다.`
-          : null,
+     actionSummary:
+  status ===
+    "review_required"
+    ? `${procedureLabel} 완료 여부 확인이 필요합니다.`
+    : status ===
+        "completed"
+      ? `${procedureLabel} 완료 증빙이 AI에 의해 확인되어 완료 처리되었습니다.`
+      : null,
 
       referenceType:
         params.kakaoMessageId
@@ -501,27 +713,44 @@ export async function executeKakaoAiAdministrativeReportAction(
        * 완료 주장처럼 확인이 필요한 경우만 +1.
        */
       notifyStaff:
-        completionReport,
+  status ===
+    "review_required" ||
+  status ===
+    "completed",
 
       eventType:
-        completionReport
-          ? "administrative_status_changed"
-          : undefined,
+  status ===
+    "review_required" ||
+  status ===
+    "completed"
+    ? "administrative_status_changed"
+    : undefined,
 
       eventSeverity:
-        completionReport
-          ? "important"
-          : undefined,
+  status ===
+    "review_required"
+    ? "important"
+    : status ===
+        "completed"
+      ? "normal"
+      : undefined,
 
       eventTitle:
-        completionReport
-          ? `${procedureLabel} 완료 확인 필요`
-          : null,
+  status ===
+    "review_required"
+    ? `${procedureLabel} 완료 확인 필요`
+    : status ===
+        "completed"
+      ? `${procedureLabel} 완료`
+      : null,
 
       eventMessage:
-        completionReport
-          ? evidenceSummary
-          : null,
+  status ===
+    "review_required" ||
+  status ===
+    "completed"
+    ? evidenceSummary
+    : null,
     });
   }
 
@@ -537,11 +766,17 @@ export async function executeKakaoAiAdministrativeReportAction(
       result.changed,
 
     replyText:
-      completionReport
-        ? params.hasAttachment
-          ? `${procedureLabel} 완료 자료 제출 내용은 기록해두었습니다. 현재는 증빙 확인이 필요한 상태로 등록되어 있으며, 확인 후 완료 여부가 반영됩니다.`
+  status ===
+    "completed"
+    ? `${procedureLabel} 완료 자료를 확인했습니다. 제출해주신 자료에서 완료 상태가 확인되어 학습관리에도 완료로 반영했습니다.`
+    : status ===
+        "review_required"
+      ? procedureMismatch
+        ? `${procedureLabel} 관련 말씀과 첨부자료의 내용이 서로 달라 자동으로 완료 처리하지 않았습니다. 확인이 필요한 상태로 기록해두었습니다.`
+        : params.hasAttachment
+          ? `${procedureLabel} 완료 자료는 확인했습니다. 다만 현재 자료만으로는 완료를 확정하기 어려워 확인필요 상태로 기록해두었습니다.`
           : `${procedureLabel} 완료하셨다는 내용은 기록해두었습니다. 정확한 완료 확인이 필요해 현재는 확인필요 상태로 반영했습니다.`
-        : `${procedureLabel} 진행 중인 것으로 기록해두었습니다.`,
+      : `${procedureLabel} 진행 중인 것으로 기록해두었습니다.`,
 
     reason:
       "UPDATED",

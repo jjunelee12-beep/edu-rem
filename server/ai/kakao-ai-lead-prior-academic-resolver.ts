@@ -3,6 +3,10 @@ import type {
 } from "./kakao-ai-memory-resolver";
 
 import type {
+  DocumentIntelligenceResult,
+} from "./document-intelligence.types";
+
+import type {
   QualificationRecognizedSubject,
 } from "./risk-rules/qualification-risk-analyzer";
 
@@ -438,6 +442,128 @@ function mergeDuplicateCandidates(
   );
 }
 
+/**
+ * ---------------------------------------------------------
+ * Document Intelligence → 신규상담 전적대 과목 Candidate
+ * ---------------------------------------------------------
+ *
+ * 공통 Document Intelligence가 읽은 성적증명서를
+ * 기존 Prior Academic Resolver 계약으로 변환한다.
+ *
+ * 중요:
+ *
+ * 1. transcript만 사용한다.
+ * 2. accepted 결과만 공식 verified 후보로 사용한다.
+ * 3. canUseAcademicEngine=true여야 한다.
+ * 4. OCR이 읽은 대학 자체 category/requirementType을
+ *    학점은행제 분류로 신뢰하지 않는다.
+ * 5. 실제 자격과목 동등성 / 학위영역은
+ *    이후 공통엔진에서 다시 판정한다.
+ */
+function getDocumentIntelligenceCandidates(
+  documentIntelligence:
+    DocumentIntelligenceResult |
+    null |
+    undefined
+): KakaoAiPriorSubjectCandidate[] {
+  if (
+    !documentIntelligence ||
+    documentIntelligence.documentType !==
+      "transcript" ||
+    documentIntelligence.decision !==
+      "accepted" ||
+    documentIntelligence.canUseAcademicEngine !==
+      true ||
+    documentIntelligence.confidence <
+      0.85
+  ) {
+    return [];
+  }
+
+  const subjects =
+    Array.isArray(
+      documentIntelligence
+        .academic
+        .subjects
+    )
+      ? documentIntelligence
+          .academic
+          .subjects
+      : [];
+
+  return subjects
+    .map(
+      subject => {
+        const subjectName =
+          normalizeText(
+            subject.name
+          );
+
+        if (
+          !subjectName
+        ) {
+          return null;
+        }
+
+        const completedYear =
+          normalizePositiveYear(
+            subject.year
+          );
+
+        const credits =
+          normalizeCredits(
+            subject.credits
+          );
+
+        return {
+          subjectName,
+
+          completedYear,
+
+          credits,
+
+          /**
+           * 사람이 말한 값이 아니라
+           * 실제 제출된 성적증명서를
+           * Document Intelligence가 판독한 결과.
+           */
+          source:
+            "document_intelligence",
+
+          /**
+           * 여기서 verified의 의미는
+           * "문서에서 해당 과목의 이수 사실이
+           * 충분한 신뢰도로 확인됨"이다.
+           *
+           * 자격증 인정과목 확정은
+           * 이후 qualification-risk-analyzer가 한다.
+           */
+          verificationStatus:
+            "verified",
+
+          /**
+           * 대학 성적증명서의 자체 전공/교양 구분을
+           * 목표 학점은행제 분류로 사용하지 않는다.
+           */
+          requirementType:
+            null,
+
+          category:
+            null,
+        } satisfies
+          KakaoAiPriorSubjectCandidate;
+      }
+    )
+    .filter(
+      (
+        candidate
+      ): candidate is
+        KakaoAiPriorSubjectCandidate =>
+        candidate !==
+        null
+    );
+}
+
 
 /**
  * 공통엔진 recognizedSubjects 형태로 변환.
@@ -810,6 +936,17 @@ export function resolveKakaoAiLeadPriorAcademic(
   params: {
     memory:
       KakaoAiStructuredMemory;
+
+    /**
+     * 현재 카카오 메시지에서
+     * 공통 Document Intelligence가
+     * 이미 한 번 분석한 결과.
+     *
+     * 여기서는 Vision을 다시 호출하지 않는다.
+     */
+    documentIntelligence?:
+      DocumentIntelligenceResult |
+      null;
   }
 ): KakaoAiLeadPriorAcademicResolution {
   const memory =
@@ -825,15 +962,42 @@ export function resolveKakaoAiLeadPriorAcademic(
       requestedCourse
     );
 
-  const rawCandidates =
-    getPriorSubjectCandidates(
-      memory
-    );
+  const memoryCandidates =
+  getPriorSubjectCandidates(
+    memory
+  );
 
-  const candidates =
-    mergeDuplicateCandidates(
-      rawCandidates
-    );
+const documentCandidates =
+  getDocumentIntelligenceCandidates(
+    params.documentIntelligence
+  );
+
+/**
+ * Memory에 사용자가 말한 과목과
+ * 성적증명서에서 실제 확인된 과목을
+ * 같은 후보군으로 합친다.
+ *
+ * 같은 과목이면 mergeDuplicateCandidates()가
+ * 하나로 합치며 verified 상태를 우선한다.
+ *
+ * 따라서:
+ *
+ * 사용자:
+ * "사회복지학개론 들었어요"
+ * → user_reported / pending
+ *
+ * 이후 성적증명서:
+ * 사회복지학개론 확인
+ * → document_intelligence / verified
+ *
+ * 최종:
+ * 같은 과목 하나만 recognizedSubjects에 들어간다.
+ */
+const candidates =
+  mergeDuplicateCandidates([
+    ...memoryCandidates,
+    ...documentCandidates,
+  ]);
 
   /**
    * 서버 검증 완료 과목.
@@ -868,6 +1032,28 @@ export function resolveKakaoAiLeadPriorAcademic(
   const warnings:
     string[] =
       [];
+
+if (
+  documentCandidates.length >
+  0
+) {
+  warnings.push(
+    `제출된 성적증명서에서 ${documentCandidates.length}개 이수과목을 확인하여 전적대 학습설계에 반영했습니다.`
+  );
+}
+
+if (
+  params.documentIntelligence &&
+  params.documentIntelligence
+    .documentType ===
+    "transcript" &&
+  documentCandidates.length ===
+    0
+) {
+  warnings.push(
+    "성적증명서는 확인했지만 문서 판독 신뢰도 또는 증빙 기준이 충분하지 않아 인정과목 계산에는 자동 반영하지 않았습니다."
+  );
+}
 
   /**
    * 사용자가 기이수과목을 말했지만

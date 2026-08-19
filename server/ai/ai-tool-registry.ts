@@ -107,8 +107,12 @@ import {
 } from "./student-dashboard";
 
 import {
-  analyzeAiDocument,
-} from "./document-analysis";
+  analyzeDocumentIntelligence,
+} from "./document-intelligence.service";
+
+import {
+  mapDocumentIntelligenceToLegacyAnalysis,
+} from "./document-intelligence-legacy-mapper";
 
 const toolRegistry = new Map<
   string,
@@ -1715,29 +1719,83 @@ registerTool<
     true,
 
   handler: async ({
-    input,
-  }) => {
-    const safeInput =
-      stripUntrustedScopeFields(
-        (
-          input ||
-          {}
-        ) as Record<
-          string,
-          unknown
-        >
-      ) as AiDocumentAnalysisInput;
+  context,
+  input,
+}) => {
+  const safeInput =
+    stripUntrustedScopeFields(
+      (
+        input ||
+        {}
+      ) as Record<
+        string,
+        unknown
+      >
+    ) as AiDocumentAnalysisInput;
 
-    /**
-     * MIME Type / 파일명 / Base64는
-     * Runner가 서버에서 검증된 첨부파일로 주입한다.
-     *
-     * 여기에서는 document-analysis.ts의
-     * 기존 입력 검증을 최종 기준으로 사용한다.
-     */
-    return analyzeAiDocument(
-      safeInput
+  /**
+   * organizationId는 AI 입력값을 절대 신뢰하지 않는다.
+   *
+   * 현재 로그인 사용자의 서버 권한 Context에서
+   * 확정된 organizationId만 사용한다.
+   */
+  const organizationId =
+    Number(
+      context.organizationId
     );
+
+  if (
+    !Number.isFinite(
+      organizationId
+    ) ||
+    organizationId <= 0
+  ) {
+    throw new Error(
+      "문서 분석에 필요한 회사 정보를 확인할 수 없습니다."
+    );
+  }
+
+  /**
+   * MIME Type / 파일명 / Base64는
+   * Runner가 서버에서 검증된 첨부파일로 주입한다.
+   *
+   * 공통 Document Intelligence가
+   * 실제 Vision 분석을 담당한다.
+   */
+  const result =
+    await analyzeDocumentIntelligence({
+      organizationId,
+
+      sourceType:
+        "CRM_AI",
+
+      inputType:
+        "image",
+
+      studentId:
+        safeInput.studentId ??
+        null,
+
+      imageBase64:
+        safeInput.imageBase64,
+
+      mimeType:
+        safeInput.mimeType,
+
+      fileName:
+        safeInput.fileName,
+    });
+
+  /**
+   * 기존 업무비서 / Pending Action 계약은
+   * 당장 변경하지 않는다.
+   *
+   * 공통 분석 결과를 기존
+   * AiDocumentAnalysisResult 형식으로 변환한다.
+   */
+  return mapDocumentIntelligenceToLegacyAnalysis(
+  result
+);
   },
 });
 

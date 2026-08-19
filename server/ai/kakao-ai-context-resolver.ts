@@ -33,6 +33,10 @@ import type {
 } from "./kakao-ai-customer-resolver";
 
 import type {
+  DocumentIntelligenceResult,
+} from "./document-intelligence.types";
+
+import type {
   KakaoAiCapability,
   KakaoAiCustomerType,
 } from "./kakao-ai-access-policy";
@@ -198,6 +202,21 @@ export type KakaoAiResolvedContext = {
   companyContext:
     KakaoAiCompanyContext | null;
 
+
+/**
+ * 현재 메시지에 첨부된 문서의
+ * 공통 Document Intelligence 분석결과.
+ *
+ * 신규자 / 등록자 모두 동일한 결과를 사용한다.
+ *
+ * null이면:
+ * - 첨부가 없었거나
+ * - 분석 실패했거나
+ * - 현재 메시지에서 분석하지 않은 상태
+ */
+documentIntelligence:
+  DocumentIntelligenceResult |
+  null;
   /**
    * 신규 상담자의 실제 공통 규칙엔진 분석결과.
    *
@@ -963,6 +982,18 @@ export async function resolveKakaoAiContext(
      */
     structuredMemory:
       KakaoAiStructuredMemory;
+
+/**
+ * 현재 메시지의 첨부파일을
+ * 공통 Document Intelligence에서
+ * 이미 한 번 분석한 결과.
+ *
+ * Context Resolver에서는
+ * Vision을 다시 호출하지 않는다.
+ */
+documentIntelligence?:
+  DocumentIntelligenceResult |
+  null;
   }
 ): Promise<KakaoAiResolvedContext> {
   const organizationId =
@@ -1092,10 +1123,14 @@ export async function resolveKakaoAiContext(
     "lead"
 ) {
   const priorAcademic =
-    resolveKakaoAiLeadPriorAcademic({
-      memory:
-        params.structuredMemory,
-    });
+  resolveKakaoAiLeadPriorAcademic({
+    memory:
+      params.structuredMemory,
+
+    documentIntelligence:
+      params.documentIntelligence ??
+      null,
+  });
 
   const leadMemory:
     KakaoAiStructuredMemory = {
@@ -1451,6 +1486,10 @@ leadAcademicAnalysis = {
     fetchPlan,
 
     companyContext,
+
+documentIntelligence:
+  params.documentIntelligence ??
+  null,
 
     leadAcademicAnalysis,
 

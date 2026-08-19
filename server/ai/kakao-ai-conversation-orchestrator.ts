@@ -69,6 +69,14 @@ import type {
   KakaoAiAttachmentContext,
 } from "./kakao-ai-intent-router";
 
+import {
+  analyzeDocumentIntelligence,
+} from "./document-intelligence.service";
+
+import type {
+  DocumentIntelligenceResult,
+} from "./document-intelligence.types";
+
 /**
  * 카카오 AI의 한 사용자 메시지를 처리하는
  * 중앙 Orchestrator의 첫 단계.
@@ -423,6 +431,62 @@ function buildAttachmentContext(
         ? 1
         : 0,
   };
+}
+
+function getDocumentIntelligenceFileUrl(
+  attachmentData:
+    unknown
+): string | null {
+  if (
+    !attachmentData ||
+    typeof attachmentData !==
+      "object"
+  ) {
+    return null;
+  }
+
+  const rawUrl =
+    (
+      attachmentData as {
+        url?: unknown;
+      }
+    ).url;
+
+  if (
+    typeof rawUrl !==
+      "string"
+  ) {
+    return null;
+  }
+
+  const fileUrl =
+    rawUrl.trim();
+
+  if (
+    !fileUrl
+  ) {
+    return null;
+  }
+
+  try {
+    const parsedUrl =
+      new URL(
+        fileUrl
+      );
+
+    if (
+      parsedUrl.protocol !==
+        "https:" &&
+      parsedUrl.protocol !==
+        "http:"
+    ) {
+      return null;
+    }
+
+    return fileUrl;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -1001,6 +1065,207 @@ console.log("[KAKAO AI TRACE] Memory", {
         params.attachmentData,
     });
 
+/**
+ * ---------------------------------------------------------
+ * 공통 Document Intelligence
+ * ---------------------------------------------------------
+ *
+ * 카카오에서 첨부된 이미지 / 문서는
+ * 신규자 / 등록자 구분 없이 동일한 공통 엔진에서
+ * 한 번만 분석한다.
+ *
+ * 신규자:
+ * studentId = null
+ *
+ * 등록자:
+ * 서버에서 인증된 customer.studentId 사용
+ *
+ * 중요:
+ * - 카카오 메시지 내용으로 studentId를 결정하지 않는다.
+ * - 이미지 하나당 Vision 분석은 한 번만 실행한다.
+ * - 여기서는 분석만 수행하고 CRM을 직접 수정하지 않는다.
+ */
+const documentFileUrl =
+  getDocumentIntelligenceFileUrl(
+    params.attachmentData
+  );
+
+let documentIntelligence:
+  DocumentIntelligenceResult |
+  null =
+  null;
+
+if (
+  documentFileUrl &&
+  (
+    attachmentContext.hasImage ||
+    attachmentContext.hasDocument
+  )
+) {
+  try {
+    const documentStudentId =
+      customer.customerType ===
+        "registered" &&
+      customer.verified ===
+        true &&
+      Number(
+        customer.studentId ||
+        0
+      ) > 0
+        ? Number(
+            customer.studentId
+          )
+        : null;
+
+    documentIntelligence =
+      await analyzeDocumentIntelligence({
+        organizationId,
+
+        sourceType:
+          "KAKAO_AI",
+
+        inputType:
+          attachmentContext.hasDocument
+            ? "document"
+            : "image",
+
+        fileUrl:
+          documentFileUrl,
+
+        studentId:
+          documentStudentId,
+
+        /**
+         * 현재 카카오 이미지 메시지는
+         * userRequest.utterance가 이미지 URL 자체이므로
+         * Orchestrator의 message는
+         * "이미지를 첨부했습니다." 형태일 수 있다.
+         *
+         * 그래도 향후 캡션/텍스트가 같이 들어오는 경우를 위해
+         * 문맥정보로 전달한다.
+         */
+        userMessage:
+          message ||
+          null,
+
+        expectedDocumentType:
+          null,
+      });
+
+    tracePerf(
+      "document_intelligence_done",
+      {
+        analyzed:
+          true,
+
+        documentType:
+          documentIntelligence
+            .documentType,
+
+        confidence:
+          documentIntelligence
+            .confidence,
+
+        decision:
+          documentIntelligence
+            .decision,
+
+        studentId:
+          documentStudentId,
+
+        canUseAcademicEngine:
+          documentIntelligence
+            .canUseAcademicEngine,
+
+        canUseAdministrativeEngine:
+          documentIntelligence
+            .canUseAdministrativeEngine,
+      }
+    );
+
+    console.log(
+      "[KAKAO AI DOCUMENT INTELLIGENCE]",
+      {
+        organizationId,
+
+        conversationId,
+
+        customerType:
+          customer.customerType,
+
+        studentId:
+          documentStudentId,
+
+        documentType:
+          documentIntelligence
+            .documentType,
+
+        confidence:
+          documentIntelligence
+            .confidence,
+
+        decision:
+          documentIntelligence
+            .decision,
+
+        summary:
+          documentIntelligence
+            .summary,
+
+        warnings:
+          documentIntelligence
+            .warnings,
+
+        missingEvidence:
+          documentIntelligence
+            .missingEvidence,
+      }
+    );
+  } catch (
+    error:
+      unknown
+  ) {
+    /**
+     * 문서 분석 실패 때문에
+     * 카카오 전체 상담이 죽으면 안 된다.
+     *
+     * 일반 상담 흐름은 계속 진행하고,
+     * 이후 Composer가 첨부자료 재전송을 안내할 수 있게
+     * null 상태로 유지한다.
+     */
+    console.error(
+      "[KAKAO AI DOCUMENT INTELLIGENCE] 분석 실패",
+      error instanceof
+        Error
+        ? {
+            organizationId,
+
+            conversationId,
+
+            message:
+              error.message,
+          }
+        : {
+            organizationId,
+
+            conversationId,
+
+            message:
+              String(
+                error
+              ),
+          }
+    );
+
+    documentIntelligence =
+      null;
+
+    tracePerf(
+      "document_intelligence_failed"
+    );
+  }
+}
+
   const intentClassification =
   await classifyKakaoAiIntent({
     customerType:
@@ -1062,6 +1327,8 @@ console.log("[KAKAO AI TRACE] Intent", {
 
     structuredMemory:
       currentMemory,
+
+    documentIntelligence,
   });
 
 tracePerf(
@@ -1113,6 +1380,8 @@ if (
         hasAttachment:
           attachmentContext.hasImage ||
           attachmentContext.hasDocument,
+
+documentIntelligence,
       });
 
     tracePerf(
@@ -1379,19 +1648,21 @@ if (
    * 이 재조회는 담당자 Action이 실제 처리된 경우에만 한다.
    */
   const refreshedResolvedContext =
-    await resolveKakaoAiContext({
-      organizationId,
+  await resolveKakaoAiContext({
+    organizationId,
 
-      conversationId,
+    conversationId,
 
-      routedIntent:
-        intentClassification.routed,
+    routedIntent:
+      intentClassification.routed,
 
-      customer,
+    customer,
 
-      structuredMemory:
-        currentMemory,
-    });
+    structuredMemory:
+      currentMemory,
+
+    documentIntelligence,
+  });
 
   /**
    * Staff Action 자체에서
@@ -1851,6 +2122,182 @@ if (
       null,
   };
 }
+
+/**
+ * ---------------------------------------------------------
+ * Document Intelligence → Academic Engine 통합 추적
+ * ---------------------------------------------------------
+ *
+ * 실제 카카오 첨부파일이
+ *
+ * Vision
+ * → Prior Academic
+ * → Academic Engine
+ * → Composer
+ *
+ * 까지 정상 전달됐는지
+ * 한 로그에서 확인하기 위한 테스트 Trace.
+ *
+ * 개인정보 원문 / Base64 / 파일 URL은 출력하지 않는다.
+ */
+const integrationDocument =
+  finalResolvedContext
+    .documentIntelligence;
+
+const integrationLeadAcademic =
+  finalResolvedContext
+    .leadAcademicAnalysis;
+
+console.log(
+  "[KAKAO AI INTEGRATION TRACE]",
+  {
+    organizationId,
+
+    conversationId,
+
+    customerType:
+      customer.customerType,
+
+    messageType,
+
+    /**
+     * 1. Attachment
+     */
+    hasAttachment:
+      attachmentContext.hasImage ||
+      attachmentContext.hasDocument,
+
+    attachmentKind:
+      attachmentContext.hasDocument
+        ? "document"
+        : attachmentContext.hasImage
+          ? "image"
+          : null,
+
+    /**
+     * 2. Document Intelligence
+     */
+    documentAnalyzed:
+      Boolean(
+        integrationDocument
+      ),
+
+    documentType:
+      integrationDocument
+        ?.documentType ??
+      null,
+
+    documentDecision:
+      integrationDocument
+        ?.decision ??
+      null,
+
+    documentConfidence:
+      integrationDocument
+        ?.confidence ??
+      null,
+
+    extractedSubjectCount:
+      integrationDocument
+        ?.academic
+        ?.subjects
+        ?.length ??
+      0,
+
+    canUseAcademicEngine:
+      integrationDocument
+        ?.canUseAcademicEngine ??
+      false,
+
+    canUseAdministrativeEngine:
+      integrationDocument
+        ?.canUseAdministrativeEngine ??
+      false,
+
+    /**
+     * 3. Intent
+     */
+    primaryCapability:
+      intentClassification
+        .intent
+        .primaryCapability,
+
+    capabilities:
+      intentClassification
+        .intent
+        .capabilities,
+
+    /**
+     * 4. Prior Academic → Academic Engine
+     */
+    hasLeadAcademicAnalysis:
+      Boolean(
+        integrationLeadAcademic
+      ),
+
+    leadStatus:
+      integrationLeadAcademic
+        ?.status ??
+      null,
+
+    leadCanExplain:
+      integrationLeadAcademic
+        ?.canExplain ??
+      null,
+
+    recognizedSubjectCount:
+      integrationLeadAcademic
+        ?.recognizedSubjects
+        ?.length ??
+      0,
+
+    recognizedSubjectNames:
+      integrationLeadAcademic
+        ?.recognizedSubjects
+        ?.slice(
+          0,
+          20
+        )
+        .map(
+          subject =>
+            subject.subjectName
+        ) ??
+      [],
+
+    /**
+     * 5. 최종 공통엔진 계산결과 존재 여부
+     */
+    hasAcademicSummary:
+      Boolean(
+        integrationLeadAcademic
+          ?.academicSummary
+      ),
+
+    academicSummaryStatus:
+      integrationLeadAcademic
+        ?.academicSummary
+        ?.status ??
+      null,
+
+    academicCanExplain:
+      integrationLeadAcademic
+        ?.academicSummary
+        ?.canExplain ??
+      null,
+
+    academicUnresolvedReasons:
+      integrationLeadAcademic
+        ?.academicSummary
+        ?.unresolvedReasons ??
+      [],
+
+    academicWarnings:
+      integrationLeadAcademic
+        ?.academicSummary
+        ?.warnings ??
+      [],
+  }
+);
 
   /**
    * 9.

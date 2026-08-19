@@ -600,6 +600,59 @@ recognizedSubjects:
 }
 
 /**
+ * Document Intelligence 결과 중
+ * 최종 상담 답변에 필요한 정보만 전달한다.
+ *
+ * 중요:
+ * - Composer는 OCR/Vision을 다시 실행하지 않는다.
+ * - 문서에서 확인된 사실만 설명한다.
+ * - 학점/과목/기간 계산은 여기서 하지 않는다.
+ * - 실제 학습설계 숫자는 Academic Context를 우선한다.
+ */
+function buildSafeDocumentIntelligenceContext(
+  context:
+    KakaoAiResolvedContext["documentIntelligence"]
+) {
+  if (
+    !context
+  ) {
+    return null;
+  }
+
+  return {
+    documentType:
+      context.documentType,
+
+    confidence:
+      context.confidence,
+
+    decision:
+      context.decision,
+
+    summary:
+      context.summary,
+
+    warnings:
+      normalizeStringArray(
+        context.warnings,
+        20
+      ),
+
+    missingEvidence:
+      normalizeStringArray(
+        context.missingEvidence,
+        20
+      ),
+
+    canUseAcademicEngine:
+      context.canUseAcademicEngine,
+
+    canUseAdministrativeEngine:
+      context.canUseAdministrativeEngine,
+  };
+}
+
+/**
  * 등록학생 분석도 개인정보/내부데이터 전체를
  * 그대로 모델에 전달하지 않는다.
  *
@@ -1286,6 +1339,58 @@ structuredMemory와 leadAcademicContext가 다르게 보이면
 단,
 warnings가 상담용 예상임을 나타내면
 예상 결과로 표현한다.
+
+7-6.
+documentIntelligenceContext가 존재하면
+현재 사용자 메시지에 첨부된 문서를
+서버의 Document Intelligence가 실제 분석한 결과다.
+
+문서 종류, 분석 성공 여부, 요약,
+확인 필요사항을 설명할 때는
+documentIntelligenceContext를 사실 근거로 사용할 수 있다.
+
+단,
+Document Intelligence는 문서에서 사실을 추출하고
+분류하는 역할이며
+최종 학점, 필요과목 수, 남은 기간,
+법 적용 결과를 독자적으로 계산하는 엔진이 아니다.
+
+따라서 학업 설계와 관련된 최종 숫자는 반드시:
+
+신규 고객:
+leadAcademicContext.academicSummary
+
+등록회원:
+registeredStudentContext.academicSummary
+
+의 서버 계산결과를 우선한다.
+
+documentIntelligenceContext와 academicSummary를
+서로 다른 역할로 구분한다.
+
+예:
+
+성적증명서에서
+사회복지학개론이 확인됨
+→ documentIntelligenceContext의 문서 확인 사실
+
+그 과목을 반영했을 때
+남은 과목이 몇 개인지
+→ leadAcademicContext.academicSummary의 계산결과
+
+절대로 Document Intelligence 결과만 보고
+남은 학점, 남은 과목 수,
+학기 수, 실습시간 등을 직접 계산하지 않는다.
+
+documentIntelligenceContext.decision이나
+warnings, missingEvidence에
+추가 확인이 필요하다는 의미가 있으면
+문서를 완전히 확인했다고 단정하지 않는다.
+
+사용자에게 설명할 때는
+내부 decision 코드나
+개발용 상태값을 그대로 읽지 말고
+자연스러운 상담 문장으로 바꿔 설명한다.
 
 8. 신규 고객(lead)과 등록회원(registered)을
 명확하게 구분한다.
@@ -2244,16 +2349,22 @@ clarificationOptions:
       ),
 
     companyContext:
-      buildSafeCompanyContext(
-        resolvedContext
-          .companyContext
-      ),
+  buildSafeCompanyContext(
+    resolvedContext
+      .companyContext
+  ),
 
-    leadAcademicContext:
-      buildSafeLeadAcademicContext(
-        resolvedContext
-          .leadAcademicAnalysis
-      ),
+documentIntelligenceContext:
+  buildSafeDocumentIntelligenceContext(
+    resolvedContext
+      .documentIntelligence
+  ),
+
+leadAcademicContext:
+  buildSafeLeadAcademicContext(
+    resolvedContext
+      .leadAcademicAnalysis
+  ),
 
     registeredStudentContext:
       buildSafeRegisteredStudentContext(
@@ -2465,6 +2576,244 @@ function buildFallbackReply(
         false,
     };
   }
+
+/**
+ * ---------------------------------------------------------
+ * Document Intelligence Fallback
+ * ---------------------------------------------------------
+ *
+ * Vision 분석은 이미 성공했는데
+ * 최종 자연어 Composer 호출만 실패한 경우에도
+ * 사용자가 제출한 문서 분석결과를 잃지 않는다.
+ *
+ * 여기서는:
+ * - 문서 사실 설명 O
+ * - 새 학점 계산 X
+ * - 새 법규 판단 X
+ */
+const documentIntelligence =
+  resolvedContext
+    .documentIntelligence;
+
+if (
+  documentIntelligence
+) {
+  const documentSummary =
+    normalizeText(
+      documentIntelligence.summary
+    );
+
+  const documentType =
+    documentIntelligence.documentType;
+
+  const documentAccepted =
+    documentIntelligence.decision ===
+      "accepted";
+
+  const warnings =
+    normalizeStringArray(
+      documentIntelligence.warnings,
+      10
+    );
+
+  const missingEvidence =
+    normalizeStringArray(
+      documentIntelligence.missingEvidence,
+      10
+    );
+
+  /**
+   * 성적증명서 + 공통 Academic Engine 계산까지
+   * 정상 완료된 신규상담.
+   */
+  if (
+    documentType ===
+      "transcript" &&
+    resolvedContext
+      .leadAcademicAnalysis
+      ?.academicSummary
+  ) {
+    const academicSummary =
+      resolvedContext
+        .leadAcademicAnalysis
+        .academicSummary;
+
+    const summaryLines =
+      normalizeStringArray(
+        academicSummary.summaryLines,
+        10
+      );
+
+    if (
+      documentAccepted &&
+      summaryLines.length >
+        0
+    ) {
+      return {
+        replyText:
+          [
+            documentSummary
+              ? `성적증명서는 확인했습니다. ${documentSummary}`
+              : "성적증명서는 확인했습니다.",
+
+            summaryLines
+              .slice(
+                0,
+                5
+              )
+              .join(
+                " "
+              ),
+          ]
+            .filter(
+              Boolean
+            )
+            .join(
+              "\n\n"
+            ),
+
+        mentionedRestriction:
+          false,
+
+        askedClarification:
+          false,
+      };
+    }
+
+    return {
+      replyText:
+        [
+          "성적증명서는 확인했습니다.",
+
+          documentSummary ||
+            null,
+
+          missingEvidence.length >
+            0 ||
+          warnings.length >
+            0
+            ? "다만 일부 내용은 추가 확인이 필요해 현재 자료만으로 확정해서 안내하지는 않겠습니다."
+            : null,
+        ]
+          .filter(
+            Boolean
+          )
+          .join(
+            "\n\n"
+          ),
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        missingEvidence.length >
+        0,
+    };
+  }
+
+  /**
+   * 등록회원 행정절차 서류.
+   *
+   * 실제 completed 반영 여부는
+   * Administrative Action이 이미 서버에서 처리한다.
+   *
+   * Fallback에서는 상태를 새로 계산하지 않는다.
+   */
+  if (
+    documentIntelligence
+      .canUseAdministrativeEngine
+  ) {
+    if (
+      documentAccepted &&
+      documentIntelligence
+        .administrative
+        .detectedStatus ===
+        "completed"
+    ) {
+      return {
+        replyText:
+          documentSummary
+            ? `보내주신 자료는 확인했습니다. ${documentSummary}`
+            : "보내주신 자료는 확인했습니다.",
+
+        mentionedRestriction:
+          false,
+
+        askedClarification:
+          false,
+      };
+    }
+
+    return {
+      replyText:
+        [
+          "보내주신 행정절차 자료는 확인했습니다.",
+
+          documentSummary ||
+            null,
+
+          "다만 현재 자료만으로 완료 여부를 확정하기 어려운 부분은 확인이 필요한 상태로 처리하겠습니다.",
+        ]
+          .filter(
+            Boolean
+          )
+          .join(
+            "\n\n"
+          ),
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        false,
+    };
+  }
+
+  /**
+   * 기타 문서.
+   */
+  if (
+    documentAccepted
+  ) {
+    return {
+      replyText:
+        documentSummary
+          ? `보내주신 자료를 확인했습니다. ${documentSummary}`
+          : "보내주신 자료는 정상적으로 확인했습니다.",
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        false,
+    };
+  }
+
+  return {
+    replyText:
+      [
+        "보내주신 자료는 확인했습니다.",
+
+        documentSummary ||
+          null,
+
+        "다만 일부 내용이 명확하지 않아 현재 자료만으로 확정해서 안내하지는 않겠습니다.",
+      ]
+        .filter(
+          Boolean
+        )
+        .join(
+          "\n\n"
+        ),
+
+    mentionedRestriction:
+      false,
+
+    askedClarification:
+      missingEvidence.length >
+      0,
+  };
+}
 
     /**
    * 신규 학업분석이 실행됐지만
