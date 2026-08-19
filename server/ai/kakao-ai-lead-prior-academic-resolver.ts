@@ -467,18 +467,18 @@ function getDocumentIntelligenceCandidates(
     undefined
 ): KakaoAiPriorSubjectCandidate[] {
   if (
-    !documentIntelligence ||
-    documentIntelligence.documentType !==
-      "transcript" ||
-    documentIntelligence.decision !==
-      "accepted" ||
-    documentIntelligence.canUseAcademicEngine !==
-      true ||
-    documentIntelligence.confidence <
-      0.85
-  ) {
-    return [];
-  }
+  !documentIntelligence ||
+  documentIntelligence.documentType !==
+    "transcript" ||
+  documentIntelligence.decision ===
+    "rejected" ||
+  documentIntelligence.canUseAcademicEngine !==
+    true ||
+  documentIntelligence.confidence <
+    0.85
+) {
+  return [];
+}
 
   const subjects =
     Array.isArray(
