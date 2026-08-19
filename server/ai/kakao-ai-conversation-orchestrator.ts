@@ -18,6 +18,7 @@ import {
 
 import {
   applyKakaoAiVerifiedMemoryPatch,
+  updateKakaoAiConsultationFlow,
   type KakaoAiMemoryWriteResult,
 } from "./kakao-ai-memory-writer";
 
@@ -42,6 +43,11 @@ import {
 } from "./kakao-ai-lead-registration-action";
 
 import {
+  executeKakaoAiCallbackRequestAction,
+  type KakaoAiCallbackRequestActionResult,
+} from "./kakao-ai-callback-request-action";
+
+import {
   composeKakaoAiResponse,
   type KakaoAiResponseCompositionResult,
 } from "./kakao-ai-response-composer";
@@ -50,6 +56,14 @@ import {
   handleKakaoAiRegistrationVerification,
   type KakaoAiRegistrationVerificationResult,
 } from "./kakao-ai-registration-verifier";
+
+import {
+  recordKakaoAiStudentManagement,
+} from "./kakao-ai-student-management-recorder";
+
+import {
+  executeKakaoAiAdministrativeReportAction,
+} from "./kakao-ai-administrative-report-action";
 
 import type {
   KakaoAiAttachmentContext,
@@ -160,6 +174,13 @@ staffAction:
  */
 leadRegistration:
   KakaoAiLeadRegistrationActionResult | null;
+
+/**
+ * 신규 상담자의
+ * 담당자 전화상담 / 콜백 희망 기록 결과.
+ */
+callbackRequest:
+  KakaoAiCallbackRequestActionResult | null;
 
   /**
    * 이번 메시지에서 수행된
@@ -696,6 +717,9 @@ staffAction:
 leadRegistration:
   null,
 
+callbackRequest:
+  null,
+
 registrationVerification:
   null,
 
@@ -890,6 +914,9 @@ staffAction:
 leadRegistration:
   null,
 
+callbackRequest:
+  null,
+
 registrationVerification,
 
 responseComposition:
@@ -1040,6 +1067,97 @@ console.log("[KAKAO AI TRACE] Intent", {
 tracePerf(
   "context_done"
 );
+
+/**
+ * ---------------------------------------------------------
+ * 등록회원 행정절차 진행보고 Action
+ * ---------------------------------------------------------
+ *
+ * "학습자등록 하는 중"
+ * "학점인정 신청했어요"
+ *
+ * 같은 사용자의 직접 보고를
+ * AI 학점요약 실제 행정상태에 반영한다.
+ *
+ * OCR 검증 전에는 completed 처리하지 않는다.
+ */
+let administrativeReportAction =
+  null as Awaited<
+    ReturnType<
+      typeof executeKakaoAiAdministrativeReportAction
+    >
+  > | null;
+
+if (
+  customer.customerType ===
+    "registered" &&
+  customer.verified ===
+    true &&
+  intentClassification.intent
+    .needsClarification !==
+    true
+) {
+  try {
+    administrativeReportAction =
+      await executeKakaoAiAdministrativeReportAction({
+        organizationId,
+
+        customer,
+
+        message,
+
+        kakaoMessageId:
+          params.kakaoMessageId ??
+          null,
+
+        hasAttachment:
+          attachmentContext.hasImage ||
+          attachmentContext.hasDocument,
+      });
+
+    tracePerf(
+      "administrative_report_action_done",
+      {
+        handled:
+          administrativeReportAction.handled,
+
+        procedureType:
+          administrativeReportAction.procedureType,
+
+        status:
+          administrativeReportAction.status,
+
+        changed:
+          administrativeReportAction.changed,
+
+        reason:
+          administrativeReportAction.reason,
+      }
+    );
+  } catch (
+    error:
+      unknown
+  ) {
+    console.error(
+      "[KAKAO AI ADMIN REPORT] 처리 실패",
+      error instanceof Error
+        ? {
+            organizationId,
+            conversationId,
+            message:
+              error.message,
+          }
+        : {
+            organizationId,
+            conversationId,
+            message:
+              String(
+                error
+              ),
+          }
+    );
+  }
+}
 
 console.log("[KAKAO AI TRACE] Context", {
   hasCompanyContext:
@@ -1359,6 +1477,10 @@ const leadRegistrationResult =
 
     message,
 
+    allowedCapabilities:
+      intentClassification.routed
+        .allowedCapabilities,
+
     memory:
       currentMemory,
 
@@ -1393,12 +1515,257 @@ tracePerf(
   }
 );
 
+/**
+ * 11.
+ * 담당자 전화상담 / Callback 희망 처리.
+ *
+ * 반드시 Lead Registration 이후 실행한다.
+ *
+ * 이유:
+ *
+ * 같은 메시지에서
+ * 성함 + 연락처 + 통화 희망시간을 보냈다면
+ * Lead Registration이 먼저 상담DB를 생성하고
+ * 그 consultationId에 Callback 내용을 기록해야 한다.
+ */
+let callbackRequest:
+  KakaoAiCallbackRequestActionResult | null =
+  null;
+
+const callbackRequestResult =
+  await executeKakaoAiCallbackRequestAction({
+    organizationId,
+
+    conversationId,
+
+    customerType:
+      customer.customerType,
+
+    message,
+
+    allowedCapabilities:
+      intentClassification.routed
+        .allowedCapabilities,
+
+    conversationHistory:
+      previousMemoryContext
+        .recentConversation
+        .messages,
+
+    consultationId:
+      leadRegistrationResult
+        .consultationId,
+  });
+
 if (
-  leadRegistration?.handled
+  callbackRequestResult.handled
 ) {
+  callbackRequest =
+    callbackRequestResult;
+}
+
+tracePerf(
+  "callback_request_done",
+  {
+    handled:
+      callbackRequestResult.handled,
+
+    saved:
+      callbackRequestResult.saved,
+
+    consultationId:
+      callbackRequestResult
+        .consultationId,
+
+    reason:
+      callbackRequestResult.reason,
+  }
+);
+
+/**
+ * Composer를 거치지 않고 서버 Action이 직접 응답하는 경우에도
+ * 실제 발생한 상담 진행상태를 consultationFlow에 기록한다.
+ *
+ * 중요:
+ * AI의 추측이 아니라 실제 서버 Action 결과만 사용한다.
+ */
+const serverActionConsultationFlowPatch:
+  Partial<
+    KakaoAiStructuredMemory[
+      "consultationFlow"
+    ]
+  > = {};
+
+/**
+ * 담당자 추천 Action이 실제 실행되었다면
+ * 담당자 추천 단계는 진행된 것으로 확정한다.
+ */
+if (
+  staffAction?.handled ===
+    true &&
+  staffAction.action ===
+    "recommend" &&
+  staffAction.success ===
+    true
+) {
+  serverActionConsultationFlowPatch
+    .staffRecommendationOffered =
+    true;
+}
+
+/**
+ * 사용자가 상담접수/연결을 요청했지만
+ * 아직 담당자를 선택하지 않은 경우,
+ *
+ * Lead Registration Action이
+ * "담당자 추천해드릴게요"
+ * 흐름을 직접 안내하므로
+ * 담당자 추천 제안 상태를 기록한다.
+ */
+if (
+  leadRegistration?.handled ===
+    true &&
+  leadRegistration.reason ===
+    "STAFF_NOT_SELECTED"
+) {
+  serverActionConsultationFlowPatch
+    .staffRecommendationOffered =
+    true;
+}
+
+/**
+ * 상담 접수 양식을 실제로 안내한 경우.
+ *
+ * CONTACT_NOT_DETECTED:
+ * 성함/연락처 전체 양식을 안내
+ *
+ * INVALID_NAME / INVALID_PHONE:
+ * 누락된 개인정보를 다시 요청
+ *
+ * created=true:
+ * 이미 양식을 받아 실제 상담DB 생성까지 완료
+ */
+if (
+  leadRegistration?.handled ===
+    true &&
+  (
+    leadRegistration.created ===
+      true ||
+    leadRegistration.reason ===
+      "CONTACT_NOT_DETECTED" ||
+    leadRegistration.reason ===
+      "INVALID_NAME" ||
+    leadRegistration.reason ===
+      "INVALID_PHONE"
+  )
+) {
+  serverActionConsultationFlowPatch
+    .consultationFormOffered =
+    true;
+}
+
+/**
+ * 전화상담 요청에서 상담DB 연결이 아직 없어
+ * 성함/연락처를 다시 요구한 경우에도
+ * 접수정보 요청 단계까지 진행된 것으로 기록한다.
+ */
+if (
+  callbackRequest?.handled ===
+    true &&
+  callbackRequest.reason ===
+    "CONSULTATION_NOT_LINKED"
+) {
+  serverActionConsultationFlowPatch
+    .consultationFormOffered =
+    true;
+}
+
+/**
+ * 변경된 값이 있을 때만 DB를 갱신한다.
+ */
+if (
+  Object.keys(
+    serverActionConsultationFlowPatch
+  ).length >
+  0
+) {
+  currentMemory =
+    await updateKakaoAiConsultationFlow({
+      organizationId,
+
+      conversationId,
+
+      currentMemory,
+
+      patch:
+        serverActionConsultationFlowPatch,
+    });
+}
+
+tracePerf(
+  "server_action_consultation_flow_updated",
+  {
+    staffRecommendationOffered:
+      currentMemory
+        .consultationFlow
+        .staffRecommendationOffered,
+
+    consultationFormOffered:
+      currentMemory
+        .consultationFlow
+        .consultationFormOffered,
+
+    leadRegistrationHandled:
+      leadRegistration
+        ?.handled ??
+      false,
+
+    leadRegistrationCreated:
+      leadRegistration
+        ?.created ??
+      false,
+
+    leadRegistrationReason:
+      leadRegistration
+        ?.reason ??
+      null,
+
+    callbackHandled:
+      callbackRequest
+        ?.handled ??
+      false,
+
+    callbackSaved:
+      callbackRequest
+        ?.saved ??
+      false,
+
+    callbackReason:
+      callbackRequest
+        ?.reason ??
+      null,
+  }
+);
+
+if (
+  leadRegistration?.handled ||
+  callbackRequest?.handled
+) {
+  /**
+   * Callback까지 실제 저장되었다면
+   * Callback 결과가 더 최종적인 실행결과이므로
+   * 해당 응답을 우선 사용한다.
+   *
+   * Callback이 저장되지 않았거나
+   * Callback 요청 자체가 아니었다면
+   * Lead Registration 응답을 사용한다.
+   */
   const replyText =
     String(
-      leadRegistration.replyText ||
+      callbackRequest
+        ?.replyText ||
+      leadRegistration
+        ?.replyText ||
       ""
     ).trim();
 
@@ -1475,6 +1842,8 @@ if (
 
     leadRegistration,
 
+    callbackRequest,
+
     registrationVerification:
       null,
 
@@ -1515,6 +1884,171 @@ if (
       finalResolvedContext,
   });
 
+/**
+ * Composer가 이번 답변에서 실제로 설명하거나
+ * 제안한 신규 상담 진행상태를 Memory에 누적한다.
+ *
+ * consultationFlowPatch의 false는
+ * 기존 완료상태를 false로 되돌린다는 뜻이 아니다.
+ *
+ * 이번 응답에서 새롭게 완료된 true 값만
+ * 기존 consultationFlow에 누적한다.
+ */
+const consultationFlowPatch =
+  responseComposition
+    .consultationFlowPatch;
+
+const consultationFlowTruePatch:
+  Partial<
+    KakaoAiStructuredMemory[
+      "consultationFlow"
+    ]
+  > = {};
+
+if (
+  consultationFlowPatch
+    .qualificationExplained ===
+  true
+) {
+  consultationFlowTruePatch
+    .qualificationExplained =
+    true;
+}
+
+if (
+  consultationFlowPatch
+    .durationExplained ===
+  true
+) {
+  consultationFlowTruePatch
+    .durationExplained =
+    true;
+}
+
+if (
+  consultationFlowPatch
+    .theoryExplained ===
+  true
+) {
+  consultationFlowTruePatch
+    .theoryExplained =
+    true;
+}
+
+if (
+  consultationFlowPatch
+    .practicumExplained ===
+  true
+) {
+  consultationFlowTruePatch
+    .practicumExplained =
+    true;
+}
+
+if (
+  consultationFlowPatch
+    .administrationExplained ===
+  true
+) {
+  consultationFlowTruePatch
+    .administrationExplained =
+    true;
+}
+
+if (
+  consultationFlowPatch
+    .companyBenefitsExplained ===
+  true
+) {
+  consultationFlowTruePatch
+    .companyBenefitsExplained =
+    true;
+}
+
+if (
+  consultationFlowPatch
+    .staffRecommendationOffered ===
+  true
+) {
+  consultationFlowTruePatch
+    .staffRecommendationOffered =
+    true;
+}
+
+if (
+  consultationFlowPatch
+    .consultationFormOffered ===
+  true
+) {
+  consultationFlowTruePatch
+    .consultationFormOffered =
+    true;
+}
+
+if (
+  Object.keys(
+    consultationFlowTruePatch
+  ).length >
+  0
+) {
+  currentMemory =
+    await updateKakaoAiConsultationFlow({
+      organizationId,
+
+      conversationId,
+
+      currentMemory,
+
+      patch:
+        consultationFlowTruePatch,
+    });
+}
+
+tracePerf(
+  "consultation_flow_updated",
+  {
+    qualificationExplained:
+      currentMemory
+        .consultationFlow
+        .qualificationExplained,
+
+    durationExplained:
+      currentMemory
+        .consultationFlow
+        .durationExplained,
+
+    theoryExplained:
+      currentMemory
+        .consultationFlow
+        .theoryExplained,
+
+    practicumExplained:
+      currentMemory
+        .consultationFlow
+        .practicumExplained,
+
+    administrationExplained:
+      currentMemory
+        .consultationFlow
+        .administrationExplained,
+
+    companyBenefitsExplained:
+      currentMemory
+        .consultationFlow
+        .companyBenefitsExplained,
+
+    staffRecommendationOffered:
+      currentMemory
+        .consultationFlow
+        .staffRecommendationOffered,
+
+    consultationFormOffered:
+      currentMemory
+        .consultationFlow
+        .consultationFormOffered,
+  }
+);
+
 tracePerf(
   "composer_done",
   {
@@ -1529,12 +2063,24 @@ tracePerf(
 console.log("[KAKAO AI TRACE] Response", {
   success:
     responseComposition.success,
+
   fallbackUsed:
     responseComposition.fallbackUsed,
+
   askedClarification:
     responseComposition.askedClarification,
+
   usedContextTypes:
     responseComposition.usedContextTypes,
+
+  consultationFlowPatch:
+    responseComposition
+      .consultationFlowPatch,
+
+  consultationFlow:
+    currentMemory
+      .consultationFlow,
+
   errorMessage:
     responseComposition.errorMessage,
 });
@@ -1544,6 +2090,106 @@ console.log("[KAKAO AI TRACE] Response", {
       responseComposition.replyText ||
       ""
     ).trim();
+
+/**
+ * ---------------------------------------------------------
+ * 등록회원 AI 학습관리 후처리
+ * ---------------------------------------------------------
+ *
+ * 최종 Context + Intent + 답변까지 모두 확정된 뒤
+ * 학점요약에 남길 가치가 있는 문의만 기록한다.
+ *
+ * 중요:
+ *
+ * - 상세페이지 수정 X
+ * - 행정절차 완료처리 X
+ * - 단순 카카오 메시지마다 이벤트 생성 X
+ *
+ * 이번 단계에서는
+ * AI 중요메모 / 담당자 확인 이벤트만 생성한다.
+ */
+if (
+  customer.customerType ===
+    "registered" &&
+  customer.verified ===
+    true &&
+  administrativeReportAction?.handled !==
+    true
+) {
+  try {
+    const managementRecord =
+      await recordKakaoAiStudentManagement({
+        organizationId,
+
+        customer,
+
+        message,
+
+        kakaoMessageId:
+          params.kakaoMessageId ??
+          null,
+
+        intentClassification,
+
+        resolvedContext:
+          finalResolvedContext,
+
+        replyText,
+      });
+
+    tracePerf(
+      "registered_management_recorded",
+      {
+        handled:
+          managementRecord.handled,
+
+        noteCreated:
+          managementRecord.noteCreated,
+
+        eventCreated:
+          managementRecord.eventCreated,
+
+        unreadCount:
+          managementRecord.unreadCount,
+
+        reason:
+          managementRecord.reason,
+      }
+    );
+  } catch (
+    error:
+      unknown
+  ) {
+    /**
+     * 관리메모 기록 실패 때문에
+     * 사용자 카카오 답변 자체가 실패하면 안 된다.
+     *
+     * 실제 업무데이터 수정과 달리
+     * 이 단계는 보조 관리기록이므로
+     * 답변 파이프라인과 장애격리한다.
+     */
+    console.error(
+      "[KAKAO AI STUDENT MANAGEMENT] 기록 실패",
+      error instanceof Error
+        ? {
+            organizationId,
+            conversationId,
+
+            message:
+              error.message,
+          }
+        : {
+            organizationId,
+            conversationId,
+
+            message:
+              String(
+                error
+              ),
+          }
+    );
+  }
+}
 
 console.log(
   "[KAKAO AI TRACE] PostResponse",
@@ -1725,10 +2371,13 @@ return {
 
   staffAction,
 
-  leadRegistration,
+leadRegistration,
 
-  registrationVerification,
+callbackRequest,
 
-  responseComposition,
+registrationVerification:
+  null,
+
+responseComposition,
 };
 }

@@ -43,6 +43,14 @@ import { sendVerificationEmail } from "./_core/mail";
 import { throwAppError } from "./_core/appError";
 import { ERROR_CODES } from "./_core/errorCodes";
 
+import {
+  updateAdministrativeProcedure,
+} from "./administrative-procedure.service";
+
+import {
+  createStudentAiManagementRecord,
+} from "./student-ai-management.service";
+
 import { buildAiContext } from "./ai/ai-context";
 import {
   assertCanAccessStudent,
@@ -130,6 +138,10 @@ import {
 import {
   resolveQualificationRiskCourseKey,
 } from "./ai/risk-rules/qualification-risk-analyzer";
+
+import {
+  analyzeStudentDetailRisk,
+} from "./ai/ai-risk-engine";
 
 import {
   resolveDegreeRequirement,
@@ -8085,6 +8097,715 @@ if (input.courseName !== undefined)
       }),
   }),
 
+administrativeProcedures: router({
+  list: protectedProcedure
+    .input(
+      z.object({
+        studentId: z.number(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const organizationId =
+        getCtxOrganizationId(ctx);
+
+      const student =
+        await db.getStudent(
+          input.studentId,
+          {
+            organizationId,
+          }
+        );
+
+      if (!student) {
+        throwAppError(
+          ERROR_CODES.DATA_NOT_FOUND,
+          "학생을 찾을 수 없습니다.",
+          404
+        );
+      }
+
+      if (
+        !isAdminOrHost(ctx.user) &&
+        Number(student.assigneeId) !==
+          Number(ctx.user.id)
+      ) {
+        throwAppError(
+          ERROR_CODES.PERMISSION_DENIED,
+          "권한이 없습니다.",
+          403
+        );
+      }
+
+      return db.getStudentAdministrativeProcedures({
+        organizationId,
+        studentId:
+          input.studentId,
+      });
+    }),
+
+  upsert: protectedProcedure
+    .input(
+      z.object({
+        studentId:
+          z.number(),
+
+        procedureType:
+          z.enum([
+            "learner_registration",
+            "credit_recognition",
+            "degree_application",
+            "qualification_application",
+          ]),
+
+        status:
+          z.enum([
+            "not_started",
+            "in_progress",
+            "completed",
+            "review_required",
+          ]),
+
+        reportedDate:
+          z.string()
+            .optional()
+            .nullable(),
+
+        evidenceSummary:
+          z.string()
+            .optional()
+            .nullable(),
+
+        referenceType:
+          z.string()
+            .optional()
+            .nullable(),
+
+        referenceId:
+          z.string()
+            .optional()
+            .nullable(),
+
+        memo:
+          z.string()
+            .optional()
+            .nullable(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const organizationId =
+        getCtxOrganizationId(ctx);
+
+      const student =
+        await db.getStudent(
+          input.studentId,
+          {
+            organizationId,
+          }
+        );
+
+      if (!student) {
+        throwAppError(
+          ERROR_CODES.DATA_NOT_FOUND,
+          "학생을 찾을 수 없습니다.",
+          404
+        );
+      }
+
+      assertStudentEditable({
+        currentUser:
+          ctx.user,
+
+        student,
+      });
+
+      const result =
+  await updateAdministrativeProcedure({
+    organizationId,
+
+    studentId:
+      input.studentId,
+
+    procedureType:
+      input.procedureType,
+
+    status:
+      input.status,
+
+    /**
+     * 이 API는 CRM 담당자 전용 경로.
+     */
+    sourceType:
+      "STAFF",
+
+    actorUserId:
+      Number(
+        ctx.user.id
+      ),
+
+    reportedDate:
+      input.reportedDate ??
+      null,
+
+    evidenceSummary:
+      input.evidenceSummary ??
+      null,
+
+    referenceType:
+      input.referenceType ??
+      null,
+
+    referenceId:
+      input.referenceId ??
+      null,
+
+    memo:
+      input.memo ??
+      null,
+  });
+
+const before =
+  result.before;
+
+const updated =
+  result.data;
+
+      /**
+       * 실제 학생 정보 변경이므로
+       * 기존 studentAuditLogs에 기록한다.
+       */
+      if (
+  result.changed
+) {
+  await writeStudentAuditLog({
+    ctx,
+
+    studentId:
+      input.studentId,
+
+    entityType:
+      "administrative_procedure",
+
+    entityId:
+      Number(
+        (updated as any)?.id ||
+        (before as any)?.id ||
+        0
+      ) || null,
+
+    action:
+      before
+        ? "update"
+        : "create",
+
+    title:
+      "행정절차 상태 변경",
+
+    beforeJson:
+      before,
+
+    afterJson:
+      updated,
+  });
+}
+
+      return {
+        success:
+          true,
+
+        data:
+          updated,
+      };
+    }),
+}),
+
+aiManagement: router({
+  notes: protectedProcedure
+    .input(
+      z.object({
+        studentId: z.number(),
+        status: z
+          .enum([
+            "info",
+            "action_required",
+            "in_progress",
+            "resolved",
+            "dismissed",
+          ])
+          .optional()
+          .nullable(),
+        limit: z.number().min(1).max(200).optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const organizationId =
+        getCtxOrganizationId(ctx);
+
+      const student =
+        await db.getStudent(
+          input.studentId,
+          {
+            organizationId,
+          }
+        );
+
+      if (!student) {
+        throwAppError(
+          ERROR_CODES.DATA_NOT_FOUND,
+          "학생을 찾을 수 없습니다.",
+          404
+        );
+      }
+
+      if (
+        !isAdminOrHost(ctx.user) &&
+        Number(student.assigneeId) !==
+          Number(ctx.user.id)
+      ) {
+        throwAppError(
+          ERROR_CODES.PERMISSION_DENIED,
+          "권한이 없습니다.",
+          403
+        );
+      }
+
+      return db.listStudentAiNotes({
+        organizationId,
+        studentId:
+          input.studentId,
+        status:
+          input.status ??
+          null,
+        limit:
+          input.limit ??
+          50,
+      });
+    }),
+
+  events: protectedProcedure
+    .input(
+      z.object({
+        studentId:
+          z.number(),
+
+        unreadOnly:
+          z.boolean()
+            .optional(),
+
+        limit:
+          z.number()
+            .min(1)
+            .max(200)
+            .optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const organizationId =
+        getCtxOrganizationId(ctx);
+
+      const student =
+        await db.getStudent(
+          input.studentId,
+          {
+            organizationId,
+          }
+        );
+
+      if (!student) {
+        throwAppError(
+          ERROR_CODES.DATA_NOT_FOUND,
+          "학생을 찾을 수 없습니다.",
+          404
+        );
+      }
+
+      if (
+        !isAdminOrHost(ctx.user) &&
+        Number(student.assigneeId) !==
+          Number(ctx.user.id)
+      ) {
+        throwAppError(
+          ERROR_CODES.PERMISSION_DENIED,
+          "권한이 없습니다.",
+          403
+        );
+      }
+
+      const events =
+        await db.listStudentAiEvents({
+          organizationId,
+          studentId:
+            input.studentId,
+          unreadOnly:
+            input.unreadOnly ??
+            false,
+          limit:
+            input.limit ??
+            50,
+        });
+
+      const unreadCount =
+        await db.countUnreadStudentAiEvents({
+          organizationId,
+          studentId:
+            input.studentId,
+        });
+
+      return {
+        events,
+        unreadCount,
+      };
+    }),
+
+  updateNoteStatus: protectedProcedure
+    .input(
+      z.object({
+        studentId:
+          z.number(),
+
+        noteId:
+          z.number(),
+
+        status:
+          z.enum([
+            "info",
+            "action_required",
+            "in_progress",
+            "resolved",
+            "dismissed",
+          ]),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const organizationId =
+        getCtxOrganizationId(ctx);
+
+      const student =
+        await db.getStudent(
+          input.studentId,
+          {
+            organizationId,
+          }
+        );
+
+      if (!student) {
+        throwAppError(
+          ERROR_CODES.DATA_NOT_FOUND,
+          "학생을 찾을 수 없습니다.",
+          404
+        );
+      }
+
+      assertStudentEditable({
+        currentUser:
+          ctx.user,
+        student,
+      });
+
+      const updated =
+        await db.updateStudentAiNoteStatus({
+          organizationId,
+          studentId:
+            input.studentId,
+          noteId:
+            input.noteId,
+          status:
+            input.status,
+          updatedBy:
+            Number(ctx.user.id),
+        });
+
+      if (!updated) {
+        throwAppError(
+          ERROR_CODES.DATA_NOT_FOUND,
+          "AI 관리 메모를 찾을 수 없습니다.",
+          404
+        );
+      }
+
+      return {
+        success:
+          true,
+        data:
+          updated,
+      };
+    }),
+
+  markEventRead: protectedProcedure
+    .input(
+      z.object({
+        studentId:
+          z.number(),
+
+        eventId:
+          z.number(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const organizationId =
+        getCtxOrganizationId(ctx);
+
+      const student =
+        await db.getStudent(
+          input.studentId,
+          {
+            organizationId,
+          }
+        );
+
+      if (!student) {
+        throwAppError(
+          ERROR_CODES.DATA_NOT_FOUND,
+          "학생을 찾을 수 없습니다.",
+          404
+        );
+      }
+
+      if (
+        !isAdminOrHost(ctx.user) &&
+        Number(student.assigneeId) !==
+          Number(ctx.user.id)
+      ) {
+        throwAppError(
+          ERROR_CODES.PERMISSION_DENIED,
+          "권한이 없습니다.",
+          403
+        );
+      }
+
+      const updated =
+        await db.markStudentAiEventRead({
+          organizationId,
+          studentId:
+            input.studentId,
+          eventId:
+            input.eventId,
+          readBy:
+            Number(ctx.user.id),
+        });
+
+      if (!updated) {
+        throwAppError(
+          ERROR_CODES.DATA_NOT_FOUND,
+          "AI 업데이트 이벤트를 찾을 수 없습니다.",
+          404
+        );
+      }
+
+      const unreadCount =
+        await db.countUnreadStudentAiEvents({
+          organizationId,
+          studentId:
+            input.studentId,
+        });
+
+      return {
+        success:
+          true,
+        data:
+          updated,
+        unreadCount,
+      };
+    }),
+
+  markAllEventsRead: protectedProcedure
+    .input(
+      z.object({
+        studentId:
+          z.number(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const organizationId =
+        getCtxOrganizationId(ctx);
+
+      const student =
+        await db.getStudent(
+          input.studentId,
+          {
+            organizationId,
+          }
+        );
+
+      if (!student) {
+        throwAppError(
+          ERROR_CODES.DATA_NOT_FOUND,
+          "학생을 찾을 수 없습니다.",
+          404
+        );
+      }
+
+      if (
+        !isAdminOrHost(ctx.user) &&
+        Number(student.assigneeId) !==
+          Number(ctx.user.id)
+      ) {
+        throwAppError(
+          ERROR_CODES.PERMISSION_DENIED,
+          "권한이 없습니다.",
+          403
+        );
+      }
+
+      return db.markAllStudentAiEventsRead({
+        organizationId,
+        studentId:
+          input.studentId,
+        readBy:
+          Number(ctx.user.id),
+      });
+    }),
+
+  /**
+   * CRM 담당자가 직접 AI 관리 메모를 만드는 경로.
+   *
+   * 카카오 AI / SYSTEM_AI는 이 mutation을 사용하지 않는다.
+   * 각각 서버 내부 Service에서 sourceType을 고정하여 호출한다.
+   */
+  createStaffNote: protectedProcedure
+    .input(
+      z.object({
+        studentId:
+          z.number(),
+
+        noteType:
+          z.enum([
+            "administrative",
+            "practice",
+            "schedule",
+            "subject",
+            "degree",
+            "qualification",
+            "document",
+            "risk",
+            "learning_plan",
+            "general",
+          ]),
+
+        aiSummary:
+          z.string()
+            .min(1),
+
+        inquirySummary:
+          z.string()
+            .optional()
+            .nullable(),
+
+        actionSummary:
+          z.string()
+            .optional()
+            .nullable(),
+
+        notifyStaff:
+          z.boolean()
+            .optional(),
+
+        eventType:
+          z.enum([
+            "administrative_status_changed",
+            "document_submitted",
+            "practice_condition_changed",
+            "schedule_changed",
+            "risk_changed",
+            "important_note_created",
+            "learning_plan_changed",
+            "other",
+          ])
+            .optional(),
+
+        eventSeverity:
+          z.enum([
+            "info",
+            "warning",
+            "important",
+          ])
+            .optional(),
+
+        eventTitle:
+          z.string()
+            .optional()
+            .nullable(),
+
+        eventMessage:
+          z.string()
+            .optional()
+            .nullable(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const organizationId =
+        getCtxOrganizationId(ctx);
+
+      const student =
+        await db.getStudent(
+          input.studentId,
+          {
+            organizationId,
+          }
+        );
+
+      if (!student) {
+        throwAppError(
+          ERROR_CODES.DATA_NOT_FOUND,
+          "학생을 찾을 수 없습니다.",
+          404
+        );
+      }
+
+      assertStudentEditable({
+        currentUser:
+          ctx.user,
+        student,
+      });
+
+      return createStudentAiManagementRecord({
+        organizationId,
+        studentId:
+          input.studentId,
+
+        /**
+         * 외부 입력으로 sourceType을 받지 않는다.
+         */
+        sourceType:
+          "STAFF",
+
+        noteType:
+          input.noteType,
+
+        aiSummary:
+          input.aiSummary,
+
+        inquirySummary:
+          input.inquirySummary ??
+          null,
+
+        actionSummary:
+          input.actionSummary ??
+          null,
+
+        actorUserId:
+          Number(ctx.user.id),
+
+        notifyStaff:
+          input.notifyStaff ??
+          false,
+
+        eventType:
+          input.eventType,
+
+        eventSeverity:
+          input.eventSeverity,
+
+        eventTitle:
+          input.eventTitle ??
+          null,
+
+        eventMessage:
+          input.eventMessage ??
+          null,
+      });
+    }),
+}),
+
   student: router({
     getSummary: protectedProcedure
       .input(
@@ -8133,7 +8854,39 @@ if (input.courseName !== undefined)
           studentId: input.studentId,
         });
 
-        let rule: any = null;
+const administrativeProcedures =
+  await db.getStudentAdministrativeProcedures({
+    organizationId,
+    studentId:
+      input.studentId,
+  });
+
+const aiNotes =
+  await db.listStudentAiNotes({
+    organizationId,
+    studentId:
+      input.studentId,
+    limit:
+      50,
+  });
+
+const aiEvents =
+  await db.listStudentAiEvents({
+    organizationId,
+    studentId:
+      input.studentId,
+    limit:
+      50,
+  });
+
+const unreadAiEventCount =
+  await db.countUnreadStudentAiEvents({
+    organizationId,
+    studentId:
+      input.studentId,
+  });
+
+let rule: any = null;
 
         if (input.ruleId) {
           rule = await db.getCreditSummaryRuleById({
@@ -8149,24 +8902,160 @@ if (input.courseName !== undefined)
 });
         }
 
-        const summary = buildCreditSummaryResult({
-          student,
-          plan,
-          rule,
-          planSemesters,
-          transferSubjects,
-          extraItems,
-        });
+        /**
+ * 기존 학점요약 계산결과.
+ *
+ * 현재 StudentCreditSummaryPage가 아직
+ * 기존 summary.categories / alerts 구조를 사용하고 있으므로
+ * 공통엔진 화면 전환이 끝날 때까지 유지한다.
+ *
+ * 이후 AI 학점요약 UI가 공통엔진 결과로 완전히 전환되면
+ * buildCreditSummaryResult 및 수동 Rule 구조를 단계적으로 제거한다.
+ */
+const legacySummary =
+  buildCreditSummaryResult({
+    student,
+    plan,
+    rule,
+    planSemesters,
+    transferSubjects,
+    extraItems,
+  });
 
-        return {
-          student,
-          plan,
-          rule,
-          planSemesters,
-          transferSubjects,
-          extraItems,
-          summary,
-        };
+/**
+ * ─────────────────────────────
+ * AI 학점요약 공통엔진
+ * ─────────────────────────────
+ *
+ * 학생 상세페이지의 원본 데이터를 기준으로
+ *
+ * - 학점
+ * - 인정과목
+ * - 자격요건
+ * - 학위요건
+ * - 남은과목
+ * - 학기계획
+ * - 행정절차
+ * - 실습
+ * - 위험도
+ * - 종합 학업요약
+ *
+ * 을 공통엔진에서 다시 계산한다.
+ *
+ * 중요한 원칙:
+ *
+ * 상세페이지 = 사람이 관리하는 원본
+ * AI 학점요약 = 원본을 읽어 자동 분석하는 영역
+ *
+ * 여기서는 상세페이지 원본을 수정하지 않는다.
+ */
+const aiContext =
+  await buildAiContext({
+    user:
+      ctx.user,
+
+    /**
+     * 일반 직원은 buildAiContext 내부에서
+     * 자신의 organizationId로 고정된다.
+     *
+     * Superhost인 경우 현재 CRM에서 선택된
+     * organizationId를 분석 대상으로 사용한다.
+     */
+    targetOrganizationId:
+      organizationId,
+  });
+
+const engine =
+  await analyzeStudentDetailRisk({
+    context:
+      aiContext,
+
+    studentId:
+      input.studentId,
+  });
+
+return {
+  /**
+   * 기존 화면 호환용 데이터.
+   */
+  student,
+  plan,
+  rule,
+  planSemesters,
+  transferSubjects,
+  extraItems,
+
+  /**
+   * 기존 StudentCreditSummaryPage가 사용하는 값.
+   *
+   * 프론트 전환 완료 전까지 유지한다.
+   */
+  summary:
+    legacySummary,
+
+  /**
+   * 신규 AI 학점요약 공통엔진 결과.
+   *
+   * 이후 학점요약 페이지 / 등록자 AI /
+   * 담당자 AI 모두 이 결과를 공통으로 사용한다.
+   */
+  engine,
+
+  /**
+   * 프론트와 다른 AI Tool에서 자주 사용하는 값을
+   * 최상위에서도 바로 접근할 수 있도록 제공한다.
+   */
+  academicSummary:
+    engine.academicSummary,
+
+  requirements:
+    engine.requirements,
+
+  subjectPlan:
+    engine.subjectPlan,
+
+  semesterPlan:
+    engine.semesterPlan,
+
+  administrativeTimeline:
+    engine.administrativeTimeline,
+
+/**
+ * 실제 행정절차 진행상태.
+ *
+ * administrativeTimeline:
+ * 공통엔진이 계산한 예상 일정
+ *
+ * administrativeProcedures:
+ * 담당자 / 카카오 AI / 시스템 AI가
+ * 확인한 실제 진행상태
+ */
+administrativeProcedures,
+
+/**
+ * AI 학습관리 기록.
+ *
+ * aiNotes:
+ * 의미 있는 학생 관리 메모
+ *
+ * aiEvents:
+ * 담당자 확인용 업데이트 이벤트
+ *
+ * unreadAiEventCount:
+ * "AI 업데이트 N" 배지 숫자
+ */
+aiNotes,
+
+aiEvents,
+
+unreadAiEventCount,
+
+  issues:
+    engine.issues,
+
+  riskSummary:
+    engine.summary,
+};
       }),
 
     createItem: protectedProcedure

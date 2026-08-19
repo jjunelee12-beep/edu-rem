@@ -1056,9 +1056,34 @@ desiredStudyStartDate:
     ?.date ??
   null,
 
-      unresolvedQuestions,
+            unresolvedQuestions,
 
       currentTopic,
+
+      /**
+       * 이 Writer는 사용자 사실 / 학업 Memory만 수정한다.
+       *
+       * 담당자 선택 상태와 상담 진행상태는
+       * 각각 Staff Action / Consultation Flow Writer가 관리하므로
+       * 기존값을 그대로 유지한다.
+       */
+      recommendedStaffUserId:
+        current.recommendedStaffUserId,
+
+      selectedStaffUserId:
+        current.selectedStaffUserId,
+
+      lastStaffCandidates:
+        current.lastStaffCandidates,
+
+      staffSelectionStatus:
+        current.staffSelectionStatus,
+
+      lastIntent:
+        current.lastIntent,
+
+      consultationFlow:
+        current.consultationFlow,
     };
 
   const changed =
@@ -1124,5 +1149,79 @@ socialWorkerLawVersion:
 
     memory:
       nextMemory,
+  };
+}
+
+export async function updateKakaoAiConsultationFlow(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+
+    currentMemory:
+      KakaoAiStructuredMemory;
+
+    patch:
+      Partial<
+        KakaoAiStructuredMemory[
+          "consultationFlow"
+        ]
+      >;
+  }
+): Promise<KakaoAiStructuredMemory> {
+  const currentFlow =
+    params.currentMemory
+      .consultationFlow;
+
+  const nextFlow = {
+    ...currentFlow,
+
+    ...Object.fromEntries(
+      Object.entries(
+        params.patch
+      ).filter(
+        (
+          [, value]
+        ) =>
+          typeof value ===
+          "boolean"
+      )
+    ),
+  } as
+    KakaoAiStructuredMemory[
+      "consultationFlow"
+    ];
+
+  if (
+    JSON.stringify(
+      currentFlow
+    ) ===
+    JSON.stringify(
+      nextFlow
+    )
+  ) {
+    return params.currentMemory;
+  }
+
+  await db.updateKakaoAiConversationMemory({
+    organizationId:
+      params.organizationId,
+
+    conversationId:
+      params.conversationId,
+
+    patch: {
+      consultationFlowData:
+        nextFlow,
+    },
+  });
+
+  return {
+    ...params.currentMemory,
+
+    consultationFlow:
+      nextFlow,
   };
 }

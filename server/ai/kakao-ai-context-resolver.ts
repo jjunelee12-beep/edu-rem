@@ -1221,8 +1221,17 @@ leadAcademicAnalysis = {
    * 실행할 필요는 없다.
    */
   const shouldResolveRegisteredStudentAnalysis =
+  fetchPlan.registeredStudent &&
+  (
     fetchPlan.academicSummary ||
-    fetchPlan.riskAnalysis;
+    fetchPlan.riskAnalysis ||
+    fetchPlan.administrativeStatus ||
+    fetchPlan.careerContext ||
+    hasCapability(
+      routedIntent.allowedCapabilities,
+      "student_private_data_lookup"
+    )
+  );
 
   if (
     shouldResolveRegisteredStudentAnalysis

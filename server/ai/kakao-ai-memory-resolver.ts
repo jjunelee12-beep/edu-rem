@@ -66,6 +66,47 @@ export type KakaoAiDesiredStudyStartDateFact = {
   source:
     KakaoAiPriorSubjectSource;
 };
+
+export type KakaoAiConsultationFlowMemory = {
+  qualificationExplained:
+    boolean;
+
+  durationExplained:
+    boolean;
+
+  theoryExplained:
+    boolean;
+
+  practicumExplained:
+    boolean;
+
+  administrationExplained:
+    boolean;
+
+  companyBenefitsExplained:
+    boolean;
+
+  staffRecommendationOffered:
+    boolean;
+
+  consultationFormOffered:
+    boolean;
+
+  /**
+   * 상담DB 실제 생성 직전
+   * 고객의 최종 승인을 기다리는 상태.
+   *
+   * true:
+   * 이름 / 연락처 / 최종학력 /
+   * 희망과정 / 담당자가 모두 확보되어
+   * 최종 접수목록을 고객에게 보여준 상태.
+   *
+   * 개인정보 자체는 여기에 저장하지 않는다.
+   */
+  registrationConfirmationPending:
+    boolean;
+};
+
 /**
  * 카카오 AI가 대화를 이해할 때 사용하는
  * 구조화 Memory.
@@ -176,8 +217,11 @@ desiredStudyStartDate:
    *
    * 후속발화 문맥 판단을 보조한다.
    */
-  lastIntent:
+    lastIntent:
     string | null;
+
+  consultationFlow:
+    KakaoAiConsultationFlowMemory;
 };
 
 /**
@@ -955,6 +999,63 @@ export function decodeKakaoAiDesiredStudyStartDateFact(
   }
 }
 
+function normalizeConsultationFlowMemory(
+  value:
+    unknown
+): KakaoAiConsultationFlowMemory {
+  const source =
+    value &&
+    typeof value ===
+      "object" &&
+    !Array.isArray(
+      value
+    )
+      ? value as
+          Record<
+            string,
+            unknown
+          >
+      : {};
+
+  return {
+    qualificationExplained:
+      source.qualificationExplained ===
+      true,
+
+    durationExplained:
+      source.durationExplained ===
+      true,
+
+    theoryExplained:
+      source.theoryExplained ===
+      true,
+
+    practicumExplained:
+      source.practicumExplained ===
+      true,
+
+    administrationExplained:
+      source.administrationExplained ===
+      true,
+
+    companyBenefitsExplained:
+      source.companyBenefitsExplained ===
+      true,
+
+        staffRecommendationOffered:
+      source.staffRecommendationOffered ===
+      true,
+
+    consultationFormOffered:
+      source.consultationFormOffered ===
+      true,
+
+    registrationConfirmationPending:
+      source.registrationConfirmationPending ===
+      true,
+  };
+}
+
 /**
  * DB Memory 결과를
  * AI가 사용하기 쉬운 형태로 정규화한다.
@@ -1178,9 +1279,14 @@ desiredStudyStartDate,
         ? memory.staffSelectionStatus
         : "none",
 
-    lastIntent:
+        lastIntent:
       normalizeNullableText(
         memory.lastIntent
+      ),
+
+    consultationFlow:
+      normalizeConsultationFlowMemory(
+        memory.consultationFlowData
       ),
   };
 }
@@ -1455,6 +1561,11 @@ desiredStudyStartDate:
         memoryContext
           .structuredMemory
           .lastIntent,
+
+      consultationFlow:
+        memoryContext
+          .structuredMemory
+          .consultationFlow,
     }
   );
 }

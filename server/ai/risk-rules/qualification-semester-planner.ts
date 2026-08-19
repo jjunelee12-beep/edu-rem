@@ -10,10 +10,34 @@ export type QualificationSemesterExistingItem = {
   semesterLabel:
     string | null;
 
+  /**
+   * 기존 CRM 호환용 과목 수.
+   *
+   * 신규 법규 계산에서는 학점값을 우선하고,
+   * 학점값이 없는 레거시 데이터에서만
+   * 과목 수를 보조값으로 사용한다.
+   */
   plannedSubjectCount:
     number | null;
 
   actualSubjectCount:
+    number | null;
+
+  /**
+   * 해당 학기의 예정 수강학점.
+   *
+   * 가능하면 호출부에서 실제 과목 credits 합계를
+   * 계산해서 전달해야 한다.
+   */
+  plannedCredits?:
+    number | null;
+
+  /**
+   * 해당 학기의 실제 수강학점.
+   *
+   * 실제값이 있으면 plannedCredits보다 우선한다.
+   */
+  actualCredits?:
     number | null;
 };
 
@@ -24,17 +48,33 @@ export type QualificationSemesterPlannedItem = {
   semesterLabel:
     string;
 
-  subjectCount:
+    subjectCount:
+    number;
+
+  /**
+   * 이번 학기에 실제 배치된 총 학점.
+   */
+  semesterCredits:
     number;
 
   subjects:
     QualificationPlannedSubject[];
 
   /**
-   * 해당 귀속연도에
-   * 이번 배치까지 포함한 총 과목 수.
+   * 화면/기존 코드 호환용 과목 수.
+   *
+   * 법적 연간 제한 판정에는 사용하지 않는다.
    */
   annualSubjectCountAfterPlacement:
+    number;
+
+  /**
+   * 해당 귀속연도에 이번 배치까지 포함하여
+   * 수업으로 이수하게 되는 누적 학점.
+   *
+   * 연간 42학점 제한 판정의 실제 기준값.
+   */
+  annualCreditsAfterPlacement:
     number;
 
   /**
@@ -155,6 +195,28 @@ function normalizePositiveInteger(
     0
     ? normalized
     : 0;
+}
+
+function normalizeCredits(
+  value:
+    unknown
+) {
+  const credits =
+    toNumber(
+      value
+    );
+
+  if (
+    !Number.isFinite(
+      credits
+    ) ||
+    credits <=
+      0
+  ) {
+    return 0;
+  }
+
+  return credits;
 }
 
 function normalizeSemesterLabel(
@@ -831,6 +893,80 @@ function getExistingSemesterSubjectCount(
   );
 }
 
+function getExistingSemesterCredits(
+  semester:
+    QualificationSemesterExistingItem
+): {
+  credits:
+    number;
+
+  inferredFromSubjectCount:
+    boolean;
+} {
+  const actualCredits =
+    normalizeCredits(
+      semester.actualCredits
+    );
+
+  if (
+    actualCredits >
+    0
+  ) {
+    return {
+      credits:
+        actualCredits,
+
+      inferredFromSubjectCount:
+        false,
+    };
+  }
+
+  const plannedCredits =
+    normalizeCredits(
+      semester.plannedCredits
+    );
+
+  if (
+    plannedCredits >
+    0
+  ) {
+    return {
+      credits:
+        plannedCredits,
+
+      inferredFromSubjectCount:
+        false,
+    };
+  }
+
+  /**
+   * 레거시 데이터 호환.
+   *
+   * 기존 CRM에는 과목 수만 저장되어 있으므로
+   * 임시로 3학점 과목 기준으로 환산한다.
+   *
+   * 이 값은 법적 확정값이 아니라
+   * 과거 데이터 호환용 추정값이다.
+   *
+   * 추후 호출부에서 actualCredits /
+   * plannedCredits를 반드시 전달하도록 변경한다.
+   */
+  const subjectCount =
+    getExistingSemesterSubjectCount(
+      semester
+    );
+
+  return {
+    credits:
+      subjectCount *
+      3,
+
+    inferredFromSubjectCount:
+      subjectCount >
+      0,
+  };
+}
+
 /**
  * 기존 학기 중
  * 가장 마지막 순번 학기를 찾는다.
@@ -931,6 +1067,88 @@ function buildExistingAnnualCountMap(
   }
 
   return map;
+}
+
+function buildExistingAnnualCreditMap(
+  semesters:
+    QualificationSemesterExistingItem[]
+): {
+  creditMap:
+    Map<
+      number,
+      number
+    >;
+
+  inferredSemesterLabels:
+    string[];
+} {
+  const creditMap =
+    new Map<
+      number,
+      number
+    >();
+
+  const inferredSemesterLabels:
+    string[] =
+    [];
+
+  for (
+    const semester
+    of semesters ||
+    []
+  ) {
+    const parsed =
+      parseSemesterLabel(
+        semester
+          .semesterLabel
+      );
+
+    if (!parsed) {
+      continue;
+    }
+
+    const creditResult =
+      getExistingSemesterCredits(
+        semester
+      );
+
+    creditMap.set(
+      parsed.year,
+      (
+        creditMap.get(
+          parsed.year
+        ) ||
+        0
+      ) +
+        creditResult
+          .credits
+    );
+
+    if (
+      creditResult
+        .inferredFromSubjectCount
+    ) {
+      const semesterLabel =
+        normalizeSemesterLabel(
+          semester
+            .semesterLabel
+        );
+
+      if (
+        semesterLabel
+      ) {
+        inferredSemesterLabels.push(
+          semesterLabel
+        );
+      }
+    }
+  }
+
+  return {
+    creditMap,
+
+    inferredSemesterLabels,
+  };
 }
 
 /**
@@ -1208,6 +1426,16 @@ semesters:
           actualSubjectCount:
             semester
               .actualSubjectCount,
+
+          plannedCredits:
+            semester
+              .plannedCredits ??
+            null,
+
+          actualCredits:
+            semester
+              .actualCredits ??
+            null,
         })
       )
       .filter(
@@ -1491,13 +1719,43 @@ startBasis =
   };
 }
 
-  /**
+    /**
    * 기존 연도별 수강과목 수.
+   *
+   * 화면/호환용으로 유지한다.
    */
   const annualCountMap =
     buildExistingAnnualCountMap(
       existingSemesters
     );
+
+  /**
+   * 실제 법적 연간 제한 계산은
+   * 과목 수가 아니라 학점으로 한다.
+   *
+   * 수업을 통한 학점:
+   * - 1학기 최대 24학점
+   * - 연간 최대 42학점
+   */
+  const {
+    creditMap:
+      annualCreditMap,
+
+    inferredSemesterLabels,
+  } =
+    buildExistingAnnualCreditMap(
+      existingSemesters
+    );
+
+  if (
+    inferredSemesterLabels
+      .length >
+    0
+  ) {
+    warnings.push(
+      `기존 학기 ${inferredSemesterLabels.join(", ")}의 실제 수강학점이 없어 과목당 3학점 기준으로 임시 환산했습니다. 실제 학점 데이터가 연결되면 다시 검증해야 합니다.`
+    );
+  }
 
   const plannedSemesters:
     QualificationSemesterPlannedItem[] =
@@ -1612,110 +1870,225 @@ let currentSemesterStartDate =
       break;
     }
 
-    const existingAnnualCount =
+        const existingAnnualCount =
       annualCountMap.get(
         parsed.year
       ) ||
       0;
 
-    /**
-     * 한 학기 최대 8과목.
-     */
-    const semesterMaximum =
-      8;
+    const existingAnnualCredits =
+      annualCreditMap.get(
+        parsed.year
+      ) ||
+      0;
 
     /**
-     * 한 학년도 최대 14과목.
+     * 학점은행제 수업 학점 법정 제한.
+     *
+     * 과목 수가 아닌 학점 기준이다.
      */
-    const annualRemaining =
+    const semesterMaximumCredits =
+      24;
+
+    const annualMaximumCredits =
+      42;
+
+    const annualRemainingCredits =
       Math.max(
-        14 -
-          existingAnnualCount,
+        annualMaximumCredits -
+          existingAnnualCredits,
         0
       );
 
-    const availableCount =
-      Math.min(
-        semesterMaximum,
-        annualRemaining
-      );
-
     /**
-     * 해당 연도에 이미 14과목을 모두 채웠으면
-     * 현재 학기는 건너뛰고 다음 귀속학기로 이동한다.
+     * 해당 연도에 이미 42학점을 모두 사용했다면
+     * 현재 귀속학기는 건너뛰고 다음 학기로 이동한다.
      */
     if (
-  availableCount <=
-    0
-) {
-  const nextLabel =
-    getNextSemesterLabel(
-      currentSemesterLabel
-    );
+      annualRemainingCredits <=
+      0
+    ) {
+      const nextLabel =
+        getNextSemesterLabel(
+          currentSemesterLabel
+        );
 
-  if (!nextLabel) {
-    unresolvedReasons.push(
-      `${currentSemesterLabel} 다음 학기를 계산할 수 없습니다.`
-    );
+      if (!nextLabel) {
+        unresolvedReasons.push(
+          `${currentSemesterLabel} 다음 학기를 계산할 수 없습니다.`
+        );
 
-    break;
-  }
+        break;
+      }
 
-  const skippedSemesterStartDate =
-    resolveEarliestStartDateForSemester({
-      candidateDate:
-        currentSemesterStartDate,
+      const skippedSemesterStartDate =
+        resolveEarliestStartDateForSemester({
+          candidateDate:
+            currentSemesterStartDate,
 
-      semesterLabel:
-        nextLabel,
-    });
+          semesterLabel:
+            nextLabel,
+        });
 
-  if (
-    !skippedSemesterStartDate
-  ) {
-    unresolvedReasons.push(
-      `${nextLabel} 예상 시작일을 계산할 수 없습니다.`
-    );
+      if (
+        !skippedSemesterStartDate
+      ) {
+        unresolvedReasons.push(
+          `${nextLabel} 예상 시작일을 계산할 수 없습니다.`
+        );
 
-    break;
-  }
+        break;
+      }
 
-  currentSemesterStartDate =
-    skippedSemesterStartDate;
+      currentSemesterStartDate =
+        skippedSemesterStartDate;
 
-  currentSemesterLabel =
-    nextLabel;
+      currentSemesterLabel =
+        nextLabel;
 
-  continue;
-}
+      continue;
+    }
 
-    const remainingSubjectCount =
-      subjects.length -
-      subjectIndex;
+    /**
+     * 이번 학기에 실제로 들어갈 과목을
+     * 각 과목의 credits를 기준으로 순차 배치한다.
+     */
+    const semesterSubjects:
+      QualificationPlannedSubject[] =
+      [];
+
+    let semesterCredits =
+      0;
+
+    while (
+      subjectIndex <
+        subjects.length
+    ) {
+      const subject =
+        subjects[
+          subjectIndex
+        ];
+
+      const subjectCredits =
+        normalizeCredits(
+          subject.credits
+        );
+
+      if (
+        subjectCredits <=
+        0
+      ) {
+        unresolvedReasons.push(
+          `${subject.subjectName} 과목의 학점을 확인할 수 없습니다.`
+        );
+
+        break;
+      }
+
+      const nextSemesterCredits =
+        semesterCredits +
+        subjectCredits;
+
+      const nextAnnualCredits =
+        existingAnnualCredits +
+        nextSemesterCredits;
+
+      /**
+       * 이번 과목을 넣으면
+       * 학기 24학점 또는 연간 42학점을 초과하는 경우
+       * 다음 학기로 넘긴다.
+       */
+      if (
+        nextSemesterCredits >
+          semesterMaximumCredits ||
+        nextAnnualCredits >
+          annualMaximumCredits
+      ) {
+        break;
+      }
+
+      semesterSubjects.push(
+        subject
+      );
+
+      semesterCredits =
+        nextSemesterCredits;
+
+      subjectIndex +=
+        1;
+    }
+
+    /**
+     * 남은 과목은 있는데 현재 학기에
+     * 단 한 과목도 넣을 수 없다면
+     * 다음 귀속학기로 이동한다.
+     */
+    if (
+      semesterSubjects.length ===
+        0 &&
+      subjectIndex <
+        subjects.length
+    ) {
+      const nextLabel =
+        getNextSemesterLabel(
+          currentSemesterLabel
+        );
+
+      if (!nextLabel) {
+        unresolvedReasons.push(
+          `${currentSemesterLabel} 다음 학기를 계산할 수 없습니다.`
+        );
+
+        break;
+      }
+
+      const nextSemesterStartDate =
+        resolveEarliestStartDateForSemester({
+          candidateDate:
+            currentSemesterStartDate,
+
+          semesterLabel:
+            nextLabel,
+        });
+
+      if (
+        !nextSemesterStartDate
+      ) {
+        unresolvedReasons.push(
+          `${nextLabel} 예상 시작일을 계산할 수 없습니다.`
+        );
+
+        break;
+      }
+
+      currentSemesterStartDate =
+        nextSemesterStartDate;
+
+      currentSemesterLabel =
+        nextLabel;
+
+      continue;
+    }
 
     const placementCount =
-      Math.min(
-        availableCount,
-        remainingSubjectCount
-      );
-
-    const semesterSubjects =
-      subjects.slice(
-        subjectIndex,
-        subjectIndex +
-          placementCount
-      );
-
-    subjectIndex +=
-      placementCount;
+      semesterSubjects.length;
 
     const nextAnnualCount =
       existingAnnualCount +
       placementCount;
 
+    const nextAnnualCredits =
+      existingAnnualCredits +
+      semesterCredits;
+
     annualCountMap.set(
       parsed.year,
       nextAnnualCount
+    );
+
+    annualCreditMap.set(
+      parsed.year,
+      nextAnnualCredits
     );
 
 /**
@@ -1738,7 +2111,7 @@ const currentSemesterEndDate =
     -1
   );
 
-    plannedSemesters.push({
+        plannedSemesters.push({
       semesterOrder:
         nextSemesterOrder,
 
@@ -1748,11 +2121,16 @@ const currentSemesterEndDate =
       subjectCount:
         semesterSubjects.length,
 
+      semesterCredits,
+
       subjects:
         semesterSubjects,
 
       annualSubjectCountAfterPlacement:
         nextAnnualCount,
+
+      annualCreditsAfterPlacement:
+        nextAnnualCredits,
 
 estimatedStartDate:
   currentSemesterStartDate,

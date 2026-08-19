@@ -996,6 +996,31 @@ lastIntent: varchar(
   }
 ),
 
+/**
+ * 신규 상담 진행 상태.
+ *
+ * AI가 이미 설명하거나 제안한 상담 단계를 기억하여
+ * 같은 내용을 반복하지 않고 다음 단계로 자연스럽게
+ * 상담을 이어가기 위해 사용한다.
+ *
+ * 저장 예:
+ * {
+ *   "qualificationExplained": true,
+ *   "durationExplained": true,
+ *   "theoryExplained": false,
+ *   "practicumExplained": false,
+ *   "administrationExplained": false,
+ *   "companyBenefitsExplained": false,
+ *   "staffRecommendationOffered": false,
+ *   "consultationFormOffered": false
+ * }
+ *
+ * JSON 전체를 암호화해서 저장한다.
+ */
+consultationFlowData: text(
+  "consultationFlowData"
+),
+
     createdAt: timestamp(
       "createdAt"
     )
@@ -2478,6 +2503,383 @@ export type StudentCreditSummaryItem =
   typeof studentCreditSummaryItems.$inferSelect;
 export type InsertStudentCreditSummaryItem =
   typeof studentCreditSummaryItems.$inferInsert;
+
+// ─── Student Administrative Procedures ───────────────────────────────
+// AI 학점요약에서 사용하는 학생별 실제 행정절차 상태.
+//
+// 공통엔진의 administrativeTimeline은 "예상 일정"을 계산하고,
+// 이 테이블은 실제 진행 여부를 저장한다.
+//
+// 예:
+// - 학습자등록
+// - 학점인정신청
+// - 학위신청
+// - 자격증신청
+//
+// 상세페이지 원본/공통엔진 계산값과 분리하여
+// STAFF / KAKAO_AI / SYSTEM_AI 등이 실제 상태를 갱신할 수 있다.
+export const studentAdministrativeProcedures = mysqlTable(
+  "student_administrative_procedures",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull(),
+    studentId: int("studentId").notNull(),
+
+    procedureType: mysqlEnum("procedureType", [
+      "learner_registration",
+      "credit_recognition",
+      "degree_application",
+      "qualification_application",
+    ]).notNull(),
+
+    status: mysqlEnum("status", [
+      "not_started",
+      "in_progress",
+      "completed",
+      "review_required",
+    ])
+      .notNull()
+      .default("not_started"),
+
+    sourceType: mysqlEnum("sourceType", [
+      "STAFF",
+      "KAKAO_AI",
+      "SYSTEM_AI",
+      "SYSTEM",
+    ])
+      .notNull()
+      .default("STAFF"),
+
+    completedAt: datetime("completedAt"),
+
+    /**
+     * 사용자가 직접 말한 날짜 등
+     * 서버가 확정할 수 없는 외부 기준일.
+     */
+    reportedDate: date("reportedDate"),
+
+    /**
+     * 카카오 이미지/OCR, 담당자 확인 등
+     * 상태를 판단한 근거를 짧게 저장한다.
+     */
+    evidenceSummary: text("evidenceSummary"),
+
+    /**
+     * 추후 이미지/문서/메시지와 연결하기 위한
+     * 원본 참조 종류 및 ID.
+     */
+    referenceType: varchar("referenceType", {
+      length: 100,
+    }),
+
+    referenceId: varchar("referenceId", {
+      length: 191,
+    }),
+
+    memo: text("memo"),
+
+    createdBy: int("createdBy"),
+    updatedBy: int("updatedBy"),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    orgStudentIdx: index(
+      "idx_student_admin_procedure_org_student"
+    ).on(
+      table.organizationId,
+      table.studentId
+    ),
+
+    orgStudentProcedureUniqueIdx: uniqueIndex(
+      "uq_student_admin_procedure_org_student_type"
+    ).on(
+      table.organizationId,
+      table.studentId,
+      table.procedureType
+    ),
+
+    orgStatusIdx: index(
+      "idx_student_admin_procedure_org_status"
+    ).on(
+      table.organizationId,
+      table.status
+    ),
+  })
+);
+
+export type StudentAdministrativeProcedure =
+  typeof studentAdministrativeProcedures.$inferSelect;
+
+export type InsertStudentAdministrativeProcedure =
+  typeof studentAdministrativeProcedures.$inferInsert;
+
+// ─── Student AI Notes ────────────────────────────────────────────────
+// 카카오 AI / SYSTEM_AI가 학생 관리상 의미 있는 문의만 요약하여 저장.
+//
+// 전체 채팅 로그를 저장하는 테이블이 아니다.
+// 학습관리상 중요한 이벤트만 요약해서 남긴다.
+//
+// 예:
+// 유형: 실습
+// 문의: 주말 실습 가능한 기관 문의
+// AI 요약: 직장 근무로 평일 실습이 어려워 주말 실습 희망
+// 상태: 확인필요
+export const studentAiNotes = mysqlTable(
+  "student_ai_notes",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull(),
+    studentId: int("studentId").notNull(),
+
+    noteType: mysqlEnum("noteType", [
+      "administrative",
+      "practice",
+      "schedule",
+      "subject",
+      "degree",
+      "qualification",
+      "document",
+      "risk",
+      "learning_plan",
+      "general",
+    ]).notNull(),
+
+    status: mysqlEnum("status", [
+      "info",
+      "action_required",
+      "in_progress",
+      "resolved",
+      "dismissed",
+    ])
+      .notNull()
+      .default("info"),
+
+    sourceType: mysqlEnum("sourceType", [
+      "KAKAO_AI",
+      "SYSTEM_AI",
+      "STAFF",
+      "SYSTEM",
+    ]).notNull(),
+
+    /**
+     * 사용자의 핵심 문의를 짧게 정리.
+     *
+     * 전체 원문 대화를 저장하지 않는다.
+     */
+    inquirySummary: text("inquirySummary"),
+
+    /**
+     * 학습관리 관점의 AI 요약.
+     */
+    aiSummary: text("aiSummary").notNull(),
+
+    /**
+     * 담당자가 확인해야 할 내용.
+     *
+     * 예:
+     * "주말 실습기관 확인 필요"
+     */
+    actionSummary: text("actionSummary"),
+
+    /**
+     * 원본 카카오 메시지 / 이미지 / OCR / 시스템 이벤트 연결용.
+     */
+    referenceType: varchar("referenceType", {
+      length: 100,
+    }),
+
+    referenceId: varchar("referenceId", {
+      length: 191,
+    }),
+
+    /**
+     * 사람이 직접 생성하거나 수정한 경우 사용자 ID.
+     * AI/System 생성이면 null 가능.
+     */
+    createdBy: int("createdBy"),
+    updatedBy: int("updatedBy"),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    orgStudentIdx: index(
+      "idx_student_ai_notes_org_student"
+    ).on(
+      table.organizationId,
+      table.studentId
+    ),
+
+    orgStudentStatusIdx: index(
+      "idx_student_ai_notes_org_student_status"
+    ).on(
+      table.organizationId,
+      table.studentId,
+      table.status
+    ),
+
+    orgCreatedAtIdx: index(
+      "idx_student_ai_notes_org_created"
+    ).on(
+      table.organizationId,
+      table.createdAt
+    ),
+  })
+);
+
+export type StudentAiNote =
+  typeof studentAiNotes.$inferSelect;
+
+export type InsertStudentAiNote =
+  typeof studentAiNotes.$inferInsert;
+
+
+// ─── Student AI Events ───────────────────────────────────────────────
+// 담당자가 확인해야 하는 "AI 업데이트" 이벤트.
+//
+// 메시지마다 생성하지 않는다.
+// 실제 CRM 관리상 의미 있는 변화에 대해서만 생성.
+//
+// 예:
+// - 행정절차 상태 변경
+// - 증빙자료 제출
+// - 실습 희망조건 변경
+// - 예정일 변경
+// - 위험도 변경
+// - 중요 AI 메모 생성
+// - 학습설계 변경
+export const studentAiEvents = mysqlTable(
+  "student_ai_events",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull(),
+    studentId: int("studentId").notNull(),
+
+    eventType: mysqlEnum("eventType", [
+      "administrative_status_changed",
+      "document_submitted",
+      "practice_condition_changed",
+      "schedule_changed",
+      "risk_changed",
+      "important_note_created",
+      "learning_plan_changed",
+      "other",
+    ]).notNull(),
+
+    sourceType: mysqlEnum("sourceType", [
+      "KAKAO_AI",
+      "SYSTEM_AI",
+      "STAFF",
+      "SYSTEM",
+    ]).notNull(),
+
+    severity: mysqlEnum("severity", [
+      "info",
+      "warning",
+      "important",
+    ])
+      .notNull()
+      .default("info"),
+
+    title: varchar("title", {
+      length: 255,
+    }).notNull(),
+
+    message: text("message"),
+
+    /**
+     * 이벤트와 연결된 실제 데이터.
+     *
+     * 예:
+     * administrative_procedure
+     * ai_note
+     * practice_request
+     */
+    entityType: varchar("entityType", {
+      length: 100,
+    }),
+
+    entityId: int("entityId"),
+
+    referenceType: varchar("referenceType", {
+      length: 100,
+    }),
+
+    referenceId: varchar("referenceId", {
+      length: 191,
+    }),
+
+    /**
+     * 담당자 확인 여부.
+     *
+     * false = AI 업데이트 숫자에 포함
+     * true  = 확인 완료
+     */
+    isRead: boolean("isRead")
+      .notNull()
+      .default(false),
+
+    readAt: datetime("readAt"),
+    readBy: int("readBy"),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    orgStudentIdx: index(
+      "idx_student_ai_events_org_student"
+    ).on(
+      table.organizationId,
+      table.studentId
+    ),
+
+    orgStudentUnreadIdx: index(
+      "idx_student_ai_events_org_student_unread"
+    ).on(
+      table.organizationId,
+      table.studentId,
+      table.isRead
+    ),
+
+    orgUnreadIdx: index(
+      "idx_student_ai_events_org_unread"
+    ).on(
+      table.organizationId,
+      table.isRead
+    ),
+
+    orgCreatedAtIdx: index(
+      "idx_student_ai_events_org_created"
+    ).on(
+      table.organizationId,
+      table.createdAt
+    ),
+  })
+);
+
+export type StudentAiEvent =
+  typeof studentAiEvents.$inferSelect;
+
+export type InsertStudentAiEvent =
+  typeof studentAiEvents.$inferInsert;
 
 // ─── Refunds (환불 기록) ─────────────────────────────────────────────
 export const refunds = mysqlTable("refunds", {

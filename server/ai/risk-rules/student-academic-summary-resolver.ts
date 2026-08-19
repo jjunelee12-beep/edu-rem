@@ -128,7 +128,7 @@ export type StudentAcademicSummaryResult = {
     remainingMajorCredits:
       number | null;
 
-    requiredLiberalCredits:
+        requiredLiberalCredits:
       number | null;
 
     currentLiberalCredits:
@@ -136,6 +136,9 @@ export type StudentAcademicSummaryResult = {
 
     remainingLiberalCredits:
       number | null;
+
+    currentGeneralCredits:
+      number;
   };
 
   studyPlan: {
@@ -1069,6 +1072,11 @@ masterIntegrity,
         requirements
           .degree
           .remainingLiberalCredits,
+
+      currentGeneralCredits:
+        requirements
+          .degree
+          .currentGeneralCredits,
     },
 
     studyPlan: {

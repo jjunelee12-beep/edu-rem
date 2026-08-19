@@ -524,6 +524,32 @@ socialWorkerLawVersion?:
 
         lastIntent?:
           string | null;
+
+        consultationFlow?: {
+          qualificationExplained?:
+            boolean;
+
+          durationExplained?:
+            boolean;
+
+          theoryExplained?:
+            boolean;
+
+          practicumExplained?:
+            boolean;
+
+          administrationExplained?:
+            boolean;
+
+          companyBenefitsExplained?:
+            boolean;
+
+          staffRecommendationOffered?:
+            boolean;
+
+          consultationFormOffered?:
+            boolean;
+        };
       } | null;
 
     attachmentContext?:

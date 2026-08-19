@@ -317,9 +317,13 @@ const ALL_KAKAO_AI_CAPABILITIES:
 
     "staff_select",
 
-    "staff_change",
+        "staff_change",
 
     "staff_current",
+
+    "lead_registration",
+
+    "callback_request",
   ] as const;
 
 const ALL_REQUIRED_CONTEXTS:
@@ -992,6 +996,104 @@ structuredMemory.finalEducation = "전문대 졸업"
 
 그러나 currentTopic은 현재 대화의 중심주제일 뿐이다.
 
+3-5. structuredMemory.consultationFlow는
+신규 상담에서 지금까지 실제로 설명했거나
+제안한 상담 단계의 누적 상태다.
+
+각 값이 true라면 해당 내용을
+이미 설명했거나 제안한 것으로 판단한다.
+
+예:
+
+qualificationExplained=true
+→ 자격요건은 이미 설명함
+
+durationExplained=true
+→ 기간은 이미 설명함
+
+theoryExplained=true
+→ 이론수업은 이미 설명함
+
+practicumExplained=true
+→ 실습은 이미 설명함
+
+administrationExplained=true
+→ 행정절차는 이미 설명함
+
+companyBenefitsExplained=true
+→ 회사 혜택은 이미 설명함
+
+staffRecommendationOffered=true
+→ 담당자 추천을 이미 제안함
+
+consultationFormOffered=true
+→ 상담접수 양식을 이미 제안함
+
+중요:
+
+consultationFlow는 사용자를 정해진 순서로 강제하는
+메뉴형 시나리오가 아니다.
+
+사용자는 언제든지 다른 내용을 먼저 물어볼 수 있으며
+현재 질문에 가장 먼저 답해야 한다.
+
+다만 사용자가 짧게
+
+"네"
+"응"
+"그래요"
+"좋아요"
+"해주세요"
+"설명해주세요"
+"알려주세요"
+"그렇게 해주세요"
+
+처럼 직전 AI 제안에 동의하는 후속발화를 하면
+현재 메시지만 독립적으로 해석하지 않는다.
+
+반드시 직전 assistant 메시지와
+Conversation History,
+structuredMemory.currentTopic,
+structuredMemory.consultationFlow를 함께 보고
+사용자가 무엇에 동의했는지 복원한다.
+
+예를 들어 직전 assistant가
+"이론수업 진행방법도 안내드릴까요?"
+라고 물었고 사용자가 "네"라고 하면
+새로운 일반대화가 아니라
+theory_class_general_guide 요청으로 해석한다.
+
+직전 assistant가
+"행정절차도 안내드릴까요?"
+라고 물었고 사용자가 "네"라고 하면
+administrative_general_guide 요청으로 해석한다.
+
+직전 assistant가
+"담당자 추천드릴까요?"
+라고 물었고 사용자가 "네"라고 하면
+staff_recommend 요청으로 해석한다.
+
+직전 assistant가
+상담 접수 또는 담당자 연결을 제안했고
+사용자가 동의하면
+대화 전체 의미에 따라 lead_registration으로 해석한다.
+
+위 표현들은 키워드 패턴이 아니라
+후속발화의 의미를 설명하기 위한 예시다.
+
+같은 "네"라도 직전 대화에 따라
+서로 다른 의도가 될 수 있다.
+
+따라서 짧은 동의 표현 자체를 특정 capability로
+고정해서는 안 된다.
+
+직전 제안의 의미가 충분히 명확하다면
+needsClarification=false로 처리한다.
+
+반대로 직전 대화에서도 사용자가 무엇에 동의했는지
+합리적으로 특정할 수 없는 경우에만
+clarification을 요청한다.
+
 currentTopic이 변경되었다고 해서
 structuredMemory.desiredCourse,
 structuredMemory.finalEducation,
@@ -1361,6 +1463,62 @@ staff_current
 - requiredContexts에 conversation_memory를 포함하고,
   실제 담당자 정보 확인이 필요한 경우 staff_context도 포함한다.
 
+lead_registration
+- 신규 상담자가 단순히 담당자를 알아보는 것을 넘어
+  실제 상담 접수 또는 담당자 연결을 진행하려는 의도
+- 특정 고정 문구나 키워드로 판단하지 않는다.
+- 현재 메시지, Conversation History, Structured Memory를 함께 보고
+  사용자가 실제 상담 접수를 진행하려는지를 의미 중심으로 판단한다.
+- 예:
+  "상담 받아볼게요"
+  "그분한테 연결해주세요"
+  "이분으로 진행하고 싶어요"
+  "상담 신청할게요"
+  "담당자분이랑 얘기하고 싶어요"
+- 위 문장들은 예시일 뿐 패턴 매칭 규칙이 아니다.
+- 담당자를 아직 단순 추천받거나 살펴보는 단계라면
+  lead_registration으로 판단하지 않는다.
+- 실제 상담접수를 원하는 것이 명확할 때 사용한다.
+- 담당자 정보가 필요한 경우 requiredContexts에 staff_context를 포함한다.
+- 실제 상담DB 생성 가능 여부는 Intent AI가 판단하지 않는다.
+  서버 Action이 담당자 선택상태, 이름, 연락처 등 필요한 조건을 검증한다.
+
+callback_request
+- 사용자가 담당자에게 전화상담, 연락 또는 콜백을 받고 싶어 하는 의도
+- 정확히 "전화예약"이라는 표현을 사용하지 않아도
+  전체 대화문맥에서 연락을 원하는 의미가 충분하면 판단한다.
+- 예:
+  "전화 좀 주세요"
+  "오늘 연락 가능해요?"
+  "3시쯤 통화하고 싶어요"
+  "담당자분이 전화주실 수 있나요?"
+  "아까 그분이랑 통화하고 싶어요"
+- 위 문장들은 예시일 뿐 패턴 매칭 규칙이 아니다.
+- 사용자가 날짜나 시간을 함께 말하면 userGoal에 그 의도를 보존한다.
+- 실제 예약이 완료되었다고 판단하거나 만들어내지 않는다.
+- 실제 저장/예약/전달 여부는 서버 Action 실행결과가 결정한다.
+- 담당자 확인이 필요한 경우 requiredContexts에 staff_context를 포함한다.
+- 이전 담당자 선택을 참조하는 경우 conversation_memory도 포함한다.
+
+복합 의도:
+- 한 메시지에서 담당자 선택, 상담접수, 전화요청이 동시에 발생할 수 있다.
+- 이런 경우 하나만 선택하지 않고 capabilities에 필요한 의도를 모두 포함한다.
+
+예:
+"아까 추천한 이재준 팀장님으로 하고 오늘 오후 3시에 전화 받고 싶어요"
+
+가능한 해석:
+primaryCapability = lead_registration
+
+capabilities = [
+  "staff_select",
+  "lead_registration",
+  "callback_request"
+]
+
+단, 실제 담당자 선택과 상담DB 생성, 통화 희망정보 저장은
+각 서버 Action의 실행결과를 기준으로 처리한다.
+
 자연어 추론 및 Routing 원칙:
 
 - 사용자의 표현 자체를 정해진 문장 패턴과 비교하지 않는다.
@@ -1440,6 +1598,16 @@ Capability 선택 원칙:
 
 - 현재 선택된 담당자 확인
   → staff_current
+
+- 실제 상담 접수 / 담당자 연결 진행
+  → lead_registration
+
+- 전화상담 / 연락 / 콜백 희망
+  → callback_request
+
+- 담당자 선택과 상담접수 또는 전화요청이 함께 있으면
+  → staff_select + lead_registration + callback_request 중
+    실제 의미에 필요한 capability를 모두 선택
 
 필요한 시스템 선택 원칙:
 
@@ -1583,6 +1751,32 @@ export function buildKakaoAiIntentClassifierInput(
 
     lastIntent?:
       string | null;
+
+    consultationFlow?: {
+      qualificationExplained?:
+        boolean;
+
+      durationExplained?:
+        boolean;
+
+      theoryExplained?:
+        boolean;
+
+      practicumExplained?:
+        boolean;
+
+      administrationExplained?:
+        boolean;
+
+      companyBenefitsExplained?:
+        boolean;
+
+      staffRecommendationOffered?:
+        boolean;
+
+      consultationFormOffered?:
+        boolean;
+    };
   } | null;
 
     attachmentContext?:
@@ -1879,6 +2073,64 @@ socialWorkerLawVersion:
                 .lastIntent
             ) ||
             null,
+
+          consultationFlow: {
+            qualificationExplained:
+              params
+                .structuredMemory
+                .consultationFlow
+                ?.qualificationExplained ===
+              true,
+
+            durationExplained:
+              params
+                .structuredMemory
+                .consultationFlow
+                ?.durationExplained ===
+              true,
+
+            theoryExplained:
+              params
+                .structuredMemory
+                .consultationFlow
+                ?.theoryExplained ===
+              true,
+
+            practicumExplained:
+              params
+                .structuredMemory
+                .consultationFlow
+                ?.practicumExplained ===
+              true,
+
+            administrationExplained:
+              params
+                .structuredMemory
+                .consultationFlow
+                ?.administrationExplained ===
+              true,
+
+            companyBenefitsExplained:
+              params
+                .structuredMemory
+                .consultationFlow
+                ?.companyBenefitsExplained ===
+              true,
+
+            staffRecommendationOffered:
+              params
+                .structuredMemory
+                .consultationFlow
+                ?.staffRecommendationOffered ===
+              true,
+
+            consultationFormOffered:
+              params
+                .structuredMemory
+                .consultationFlow
+                ?.consultationFormOffered ===
+              true,
+          },
         }
       : {
           desiredCourse:
@@ -1916,6 +2168,32 @@ socialWorkerLawVersion:
 
           lastIntent:
             null,
+
+          consultationFlow: {
+            qualificationExplained:
+              false,
+
+            durationExplained:
+              false,
+
+            theoryExplained:
+              false,
+
+            practicumExplained:
+              false,
+
+            administrationExplained:
+              false,
+
+            companyBenefitsExplained:
+              false,
+
+            staffRecommendationOffered:
+              false,
+
+            consultationFormOffered:
+              false,
+          },
         };
 
   return JSON.stringify(

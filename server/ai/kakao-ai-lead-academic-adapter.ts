@@ -1384,7 +1384,33 @@ const nileRecognition =
       recognizedSubjects,
   });
 
+/**
+ * NILE 공식 학위영역 분류가 반드시 필요한데
+ * Master를 확인하지 못한 경우에는
+ * 기존 OCR / 사용자 입력 category를 이용해
+ * 학위학점을 임의 계산하지 않는다.
+ *
+ * 새 학위과정이 필요하지 않은 학생은
+ * NILE 재분류 자체가 필요 없으므로 제외한다.
+ */
+if (
+  degreeRequirement.requiresNewDegreeTrack &&
+  !nileRecognition.canResolve
+) {
+  return buildUnresolvedResult({
+    organizationId,
 
+    requestedCourse,
+
+    courseKey,
+
+    reason:
+      "새 학위과정의 전공·교양·일반 학점을 계산하기 위한 NILE 공식 표준교육과정 Master를 확인할 수 없습니다.",
+
+    warnings:
+      nileRecognition.warnings || [],
+  });
+}
 /**
  * NILE 공식 전공 Master가 정상 확인된 경우:
  *
@@ -1761,15 +1787,23 @@ Number(
  * - 희망 시작시점이 없으면
  *   Semester Planner가 오늘 KST를 사용한다.
  *
- * 즉:
+  * 즉:
  *
  * 기존 이수학기
- * + 학기당 8과목
- * + 연간 14과목
+ * + 학기당 최대 24학점
+ * + 연간 최대 42학점
  * + 사용자 희망 시작일
  *
  * 을 모두 함께 반영해서
  * 실제 남은 과목의 최단 학기를 계산한다.
+ *
+ * 단, 신규상담 Memory의 기존 학기에
+ * 아직 실제 총학점 필드가 없으면
+ * Semester Planner가 과목당 3학점 기준으로
+ * 임시 환산하고 warning을 남긴다.
+ *
+ * 추후 priorCreditBankSemesters에
+ * 실제 총학점을 저장하도록 확장해야 한다.
  */
   const semesterPlan =
   planQualificationSemesters({

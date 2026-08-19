@@ -20,6 +20,18 @@ import type {
   KakaoAiConversationMessage,
 } from "./kakao-ai-intent-router";
 
+
+
+export type KakaoAiConsultationFlowPatch = {
+  qualificationExplained: boolean;
+  durationExplained: boolean;
+  theoryExplained: boolean;
+  practicumExplained: boolean;
+  administrationExplained: boolean;
+  companyBenefitsExplained: boolean;
+  staffRecommendationOffered: boolean;
+  consultationFormOffered: boolean;
+};
 /**
  * 카카오 AI 최종 자연어 답변 Composer.
  *
@@ -85,6 +97,9 @@ export type KakaoAiResponseCompositionResult = {
    */
   askedClarification:
     boolean;
+
+  consultationFlowPatch:
+    KakaoAiConsultationFlowPatch;
 
   openAiResponseId:
     string | null;
@@ -202,6 +217,95 @@ function normalizeStringArray(
     0,
     limit
   );
+}
+
+function createEmptyConsultationFlowPatch():
+  KakaoAiConsultationFlowPatch {
+  return {
+    qualificationExplained:
+      false,
+
+    durationExplained:
+      false,
+
+    theoryExplained:
+      false,
+
+    practicumExplained:
+      false,
+
+    administrationExplained:
+      false,
+
+    companyBenefitsExplained:
+      false,
+
+    staffRecommendationOffered:
+      false,
+
+    consultationFormOffered:
+      false,
+  };
+}
+
+function normalizeConsultationFlowPatch(
+  value:
+    unknown
+): KakaoAiConsultationFlowPatch {
+  const patch =
+    value &&
+    typeof value ===
+      "object" &&
+    !Array.isArray(
+      value
+    )
+      ? value as Record<
+          string,
+          unknown
+        >
+      : {};
+
+  return {
+    qualificationExplained:
+      patch
+        .qualificationExplained ===
+      true,
+
+    durationExplained:
+      patch
+        .durationExplained ===
+      true,
+
+    theoryExplained:
+      patch
+        .theoryExplained ===
+      true,
+
+    practicumExplained:
+      patch
+        .practicumExplained ===
+      true,
+
+    administrationExplained:
+      patch
+        .administrationExplained ===
+      true,
+
+    companyBenefitsExplained:
+      patch
+        .companyBenefitsExplained ===
+      true,
+
+    staffRecommendationOffered:
+      patch
+        .staffRecommendationOffered ===
+      true,
+
+    consultationFormOffered:
+      patch
+        .consultationFormOffered ===
+      true,
+  };
 }
 
 /**
@@ -908,13 +1012,75 @@ const KAKAO_AI_RESPONSE_SCHEMA = {
       type:
         "boolean",
     },
+
+    consultationFlowPatch: {
+      type:
+        "object",
+
+      additionalProperties:
+        false,
+
+      properties: {
+        qualificationExplained: {
+          type:
+            "boolean",
+        },
+
+        durationExplained: {
+          type:
+            "boolean",
+        },
+
+        theoryExplained: {
+          type:
+            "boolean",
+        },
+
+        practicumExplained: {
+          type:
+            "boolean",
+        },
+
+        administrationExplained: {
+          type:
+            "boolean",
+        },
+
+        companyBenefitsExplained: {
+          type:
+            "boolean",
+        },
+
+        staffRecommendationOffered: {
+          type:
+            "boolean",
+        },
+
+        consultationFormOffered: {
+          type:
+            "boolean",
+        },
+      },
+
+      required: [
+        "qualificationExplained",
+        "durationExplained",
+        "theoryExplained",
+        "practicumExplained",
+        "administrationExplained",
+        "companyBenefitsExplained",
+        "staffRecommendationOffered",
+        "consultationFormOffered",
+      ],
+    },
   },
 
-  required: [
+    required: [
     "replyText",
     "usedContextTypes",
     "mentionedRestriction",
     "askedClarification",
+    "consultationFlowPatch",
   ],
 } as const;
 
@@ -1399,6 +1565,177 @@ finalEducation = 고졸
 
 현재 질문에 답하고 자연스럽게 끝낸다.
 
+20-7. 신규 상담에서는 단순 질의응답만 하지 말고
+현재 상담의 전체 진행상태를 보고 다음에 가장 자연스러운
+하나의 상담주제를 이어갈 수 있다.
+
+structuredMemory.consultationFlow는
+현재 대화에서 이미 충분히 안내한 상담영역을 나타낸다.
+
+각 값의 의미:
+
+qualificationExplained:
+자격조건 또는 개인별 취득조건 안내를 충분히 진행함.
+
+durationExplained:
+현재 고객 조건에 따른 전체 기간,
+학기 수 또는 예상 학습기간 안내를 충분히 진행함.
+
+theoryExplained:
+이론수업 진행방법을 충분히 안내함.
+
+practicumExplained:
+실습 진행방법을 충분히 안내함.
+
+administrationExplained:
+학습자등록, 학점인정신청, 학위신청,
+과정 종료 후 필요한 자격증 신청 등
+주요 행정절차 안내를 충분히 진행함.
+
+companyBenefitsExplained:
+현재 회사에서 등록할 경우 받을 수 있는
+관리서비스나 혜택을 충분히 안내함.
+
+staffRecommendationOffered:
+담당자 추천 또는 담당자 상담 연결을 제안함.
+
+consultationFormOffered:
+상담 접수에 필요한 정보 또는 접수양식을 안내함.
+
+신규 상담에서 현재 질문에 먼저 정확하게 답한 뒤,
+아직 false인 영역 중 현재 문맥에서 가장 자연스러운
+다음 단계 하나를 선택해서 짧게 이어갈 수 있다.
+
+대표적인 자연스러운 상담 흐름은:
+
+자격조건/개인설계
+→ 전체 기간/학기
+→ 이론수업
+→ 실습
+→ 행정절차 및 자격증 신청
+→ 회사 관리혜택
+→ 담당자 추천
+→ 상담 접수
+
+이 순서는 강제 메뉴 순서가 아니다.
+
+사용자가 중간부터 물어보거나 순서를 바꾸면
+현재 질문을 최우선으로 답하고,
+consultationFlow를 확인하여 이미 설명한 내용은 건너뛰고
+아직 설명하지 않은 영역 중 자연스러운 다음 주제를 찾는다.
+
+예를 들어:
+
+사용자가 먼저 실습을 물었고
+practicumExplained=true,
+theoryExplained=false라면
+
+실습 답변을 끝낸 뒤
+"이론수업 진행방법도 같이 안내드릴까요?"
+처럼 자연스럽게 연결할 수 있다.
+
+이후 사용자가 "네", "응", "그래요", "설명해주세요",
+"알려주세요", "ㅇㅇ"처럼 동의하면
+Conversation History와 consultationFlow를 이용해서
+직전에 AI가 제안했던 주제를 이어서 실제로 설명한다.
+
+이때
+"어떤 내용을 말씀하시는 걸까요?"
+"원하시는 내용을 말씀해주세요."
+처럼 직전 제안을 잊어버린 답변을 하지 않는다.
+
+예:
+
+AI:
+"이론수업 진행방법도 같이 안내드릴까요?"
+
+사용자:
+"네"
+
+좋은 답변:
+"네, 이론수업은 ..."
+
+나쁜 답변:
+"네, 편하게 말씀해주세요."
+
+나쁜 답변:
+"어떤 내용이 궁금하신가요?"
+
+단, consultationFlow에서 이미 true인 내용을
+단순 영업목적으로 반복하지 않는다.
+
+20-8. 신규 상담의 목표는
+모든 항목을 기계적으로 순서대로 읽는 것이 아니라
+고객의 질문에 답하면서 필요한 상담정보가 자연스럽게
+완성되도록 대화를 진행하는 것이다.
+
+고객이 질문을 뒤죽박죽 하더라도
+Conversation History + structuredMemory +
+consultationFlow를 함께 보고
+이미 무엇을 설명했고 무엇이 남았는지 판단한다.
+
+현재 질문과 관계없는 내용을 한 답변에 여러 개 붙이지 않는다.
+현재 질문에 답한 후 다음 단계가 자연스러울 때
+하나의 주제만 연결한다.
+
+20-9. 회사혜택과 영업안내는
+companyContext.companyKnowledge.companyBenefits,
+salesPoints 및 관련 회사 Context를 근거로 한다.
+
+없는 혜택을 만들거나 과장해서는 안 된다.
+
+다만 신규상담이 어느 정도 진행되어
+고객의 과정, 수업, 실습 또는 행정절차에 대한 설명이
+충분히 이루어진 상태라면,
+회사의 실제 혜택을 상담 흐름에 자연스럽게 연결할 수 있다.
+
+예:
+
+"참고로 저희 쪽으로 등록해서 진행하시면
+수업만 안내드리고 끝나는 방식이 아니라
+현재 회사에서 제공하는 관리범위에 따라
+진행 중 일정이나 행정절차도 함께 관리받으실 수 있어요."
+
+실제 표현은 companyContext의 내용을 이용해
+현재 대화에 맞게 자연스럽게 작성한다.
+
+회사혜택을 매 답변마다 반복하지 않는다.
+
+20-10. 회사혜택까지 충분히 안내되었고
+담당자 추천 기능이 활성화되어 있으며
+아직 담당자 추천을 제안하지 않았다면,
+현재 상담 흐름이 자연스러운 경우
+담당자 추천을 다음 단계로 제안할 수 있다.
+
+예:
+
+"진행 생각 있으시면 지금 상담내용 기준으로
+담당자도 추천드릴까요?"
+
+사용자가 동의하면 실제 staffContext의 서버 결과만 이용한다.
+임의의 담당자를 만들어 추천하지 않는다.
+
+20-11. 담당자 추천 또는 선택 이후
+실제 상담 접수를 진행할 수 있는 상황이라면
+고객에게 필요한 정보를 자연스럽게 요청한다.
+
+접수에 필요한 서버 Action이나 양식이 별도로 제공되어 있다면
+그 서버 결과를 우선한다.
+
+실제 접수 Action이 성공하지 않았는데
+"접수되었습니다",
+"등록했습니다",
+"예약되었습니다",
+"연결했습니다"
+라고 확정해서 말하지 않는다.
+
+접수에 이름, 연락처 등 필수정보가 필요한 경우
+누락된 정보만 요청한다.
+
+사용자가 필요한 정보를 모두 제공했고
+서버에서 실제 접수 성공 결과가 확인된 경우에만
+접수 완료로 안내한다.
+
 21. 불필요하게 번호 목록을 남발하지 않는다.
 카카오톡에서 사람이 말하듯 읽기 편하게 작성한다.
 
@@ -1534,6 +1871,90 @@ reasonCode
 한국어 자연어 문장이어야 한다.
 
 반환은 지정된 JSON 구조만 사용한다.
+
+31. consultationFlowPatch는
+이번 replyText에서 실제로 새롭게 충분히 설명하거나
+실제로 제안한 상담 진행상태만 기록한다.
+
+각 필드의 의미는 다음과 같다.
+
+qualificationExplained:
+이번 답변에서 자격조건 또는 개인별 취득조건을
+고객이 이해할 수 있을 정도로 충분히 설명했으면 true.
+
+durationExplained:
+이번 답변에서 현재 고객 기준 전체 기간,
+학기 수 또는 예상 학습기간을 충분히 설명했으면 true.
+
+theoryExplained:
+이번 답변에서 이론수업의 실제 진행방법을
+충분히 설명했으면 true.
+
+practicumExplained:
+이번 답변에서 실습 진행방법을
+충분히 설명했으면 true.
+
+administrationExplained:
+이번 답변에서 학습자등록, 학점인정신청,
+학위신청, 과정 종료 후 자격증 신청 등
+주요 행정절차를 충분히 설명했으면 true.
+
+companyBenefitsExplained:
+이번 답변에서 현재 회사의 실제 관리서비스나
+등록 혜택을 충분히 설명했으면 true.
+
+staffRecommendationOffered:
+이번 답변에서 고객에게 담당자 추천 또는
+담당자 상담 연결을 실제로 제안했으면 true.
+
+consultationFormOffered:
+이번 답변에서 상담 접수를 위해 필요한 정보나
+접수 진행을 실제로 안내했으면 true.
+
+31-1. 단순히 해당 단어를 언급했다는 이유만으로 true로 만들지 않는다.
+
+예를 들어:
+
+"실습도 진행하셔야 해요."
+→ practicumExplained=false
+
+"실습은 총 160시간입니다."
+→ 실습시간만 말한 것이므로
+practicumExplained=false
+
+실습을 언제 진행하는지,
+어떤 방식으로 진행하는지 등
+실제 실습 진행방법을 충분히 설명한 경우
+→ practicumExplained=true
+
+31-2. 다음 상담주제를 물어보기만 한 경우에는
+그 영역을 설명 완료로 처리하지 않는다.
+
+예:
+
+"이론수업 진행방법도 안내드릴까요?"
+→ theoryExplained=false
+
+"담당자도 추천드릴까요?"
+→ staffRecommendationOffered=true
+
+담당자 추천은 실제 추천 연결을 제안한 것이므로
+staffRecommendationOffered는 true로 처리한다.
+
+31-3. consultationFlowPatch는
+기존 structuredMemory.consultationFlow 전체 상태를
+다시 반환하는 값이 아니다.
+
+오직 이번 replyText 때문에 새롭게 완료되거나
+새롭게 제안된 항목만 true로 반환한다.
+
+이전부터 true였지만
+이번 답변에서 다시 설명하지 않은 항목은 false로 반환한다.
+
+31-4. 판단이 애매하면 false로 반환한다.
+
+31-5. consultationFlowPatch의 모든 필드는
+반드시 boolean으로 반환한다.
 `.trim();
 
 /**
@@ -1764,6 +2185,10 @@ priorSubjectCandidates:
       lastIntent:
         params.memory
           .lastIntent,
+
+      consultationFlow:
+        params.memory
+          .consultationFlow,
     },
 
     intent: {
@@ -2549,6 +2974,9 @@ export async function composeKakaoAiResponse(
         fallback
           .askedClarification,
 
+      consultationFlowPatch:
+        createEmptyConsultationFlowPatch(),
+
       openAiResponseId:
         null,
 
@@ -2595,6 +3023,9 @@ export async function composeKakaoAiResponse(
       askedClarification:
         fallback
           .askedClarification,
+
+      consultationFlowPatch:
+        createEmptyConsultationFlowPatch(),
 
       openAiResponseId:
         null,
@@ -2705,6 +3136,9 @@ export async function composeKakaoAiResponse(
           fallback
             .askedClarification,
 
+      consultationFlowPatch:
+        createEmptyConsultationFlowPatch(),
+
         openAiResponseId:
           typeof response.id ===
             "string"
@@ -2759,6 +3193,9 @@ export async function composeKakaoAiResponse(
           fallback
             .askedClarification,
 
+      consultationFlowPatch:
+        createEmptyConsultationFlowPatch(),
+
         openAiResponseId:
           typeof response.id ===
             "string"
@@ -2812,6 +3249,9 @@ export async function composeKakaoAiResponse(
           fallback
             .askedClarification,
 
+      consultationFlowPatch:
+        createEmptyConsultationFlowPatch(),
+
         openAiResponseId:
           typeof response.id ===
             "string"
@@ -2850,6 +3290,12 @@ export async function composeKakaoAiResponse(
         parsed
           ?.askedClarification ===
         true,
+
+      consultationFlowPatch:
+        normalizeConsultationFlowPatch(
+          parsed
+            ?.consultationFlowPatch
+        ),
 
       openAiResponseId:
         typeof response.id ===
@@ -2911,9 +3357,12 @@ export async function composeKakaoAiResponse(
         fallback
           .mentionedRestriction,
 
-      askedClarification:
+            askedClarification:
         fallback
           .askedClarification,
+
+      consultationFlowPatch:
+        createEmptyConsultationFlowPatch(),
 
       openAiResponseId:
         null,

@@ -619,13 +619,17 @@ function resolveLastExistingSemesterLabel(
  * 가장 빠르게 들어갈 수 있는
  * 학위신청 회차와 학위수여시점을 계산한다.
  *
- * 운영기준:
+  * 공통엔진 예상기준:
  *
  * 6/15 ~ 7/15 신청
  * → 8월 중순 학위수여
  *
  * 12/15 ~ 다음해 1/15 신청
  * → 다음해 2월 중순 학위수여
+ *
+ * 실제 연도별 국가평생교육진흥원
+ * 세부 접수기간 Master가 아직 연결되어 있지 않으므로
+ * 아래 날짜는 행정일정 예상값으로만 사용한다.
  *
  * 중요:
  *
@@ -832,12 +836,24 @@ export function planAdministrativeTimeline(
     );
 
   /**
-   * Semester Planner가 계산한
-   * 실제 예상 최종 학습 종료일.
-   *
-   * 신규상담에서는 귀속학기 추정일보다
-   * 이 값을 우선 사용한다.
-   */
+ * Semester Planner가 계산한
+ * 최종 학습 완료 예상일.
+ *
+ * 현재 공통엔진에서는 이 날짜를
+ * 최종 과목의 학점보고가 가능한 기준일로 사용한다.
+ *
+ * 따라서 해당 날짜가
+ * 1월 / 4월 / 7월 / 10월에 속하면
+ * 같은 분기의 학점인정신청을 허용한다.
+ *
+ * 예:
+ * 2026-10-31 학점보고 가능
+ * → 2026년 10월 학점인정신청 가능
+ *
+ * 추후 실제 교육원 학점보고일이 별도로 연결되면
+ * estimatedStudyEndDate보다 실제 학점보고일을
+ * 우선 사용하도록 확장한다.
+ */
   const academicCompletionDate =
     params.semesterPlan
       .estimatedStudyEndDate ??
@@ -851,17 +867,30 @@ export function planAdministrativeTimeline(
       : null;
 
   /**
-   * 학점인정신청은
-   * 최종 학습 종료월 이후 가장 가까운
-   * 1/4/7/10월을 사용한다.
-   *
-   * 종료월과 신청월이 같으면
-   * 같은 분기를 사용한다.
-   *
-   * 예:
-   * 2026-10 종료
-   * → 2026년 10월
-   */
+ * 학점인정신청 예상 회차.
+ *
+ * 현재 공통엔진에서는
+ * academicCompletionDate를
+ * 최종 학점보고 가능 기준일로 사용한다.
+ *
+ * 학점인정신청 운영월:
+ * 1월 / 4월 / 7월 / 10월
+ *
+ * 중요:
+ * 학점보고 가능월과 신청월이 같으면
+ * 같은 분기의 학점인정신청이 가능하다고 계산한다.
+ *
+ * 예:
+ *
+ * 2026-09-30 학점보고 가능
+ * → 2026년 10월
+ *
+ * 2026-10-31 학점보고 가능
+ * → 2026년 10월
+ *
+ * 2026-11-01 학점보고 가능
+ * → 2027년 1월
+ */
   const creditRecognitionWindow =
     academicCompletionDateParts
       ? resolveNextQuarterWindow({
@@ -1094,7 +1123,7 @@ if (
           .endDate,
 
       estimated:
-        false,
+        true,
     });
 
     milestones.push({
@@ -1245,7 +1274,7 @@ message:
         !requiresNewDegreeTrack
           ? "현재 학력 기준으로 새 학위 취득과정이 필요하지 않습니다."
           : degreeTimeline
-            ? `최종 학습 종료 예상일 ${academicCompletionDate} 기준 학위신청은 ${degreeTimeline.applicationWindow.label}, 학위수여는 ${degreeTimeline.estimatedAwardLabel}로 계산됩니다.`
+            ? `최종 학습 종료 예상일 ${academicCompletionDate} 기준 학위신청은 ${degreeTimeline.applicationWindow.label}, 학위수여는 ${degreeTimeline.estimatedAwardLabel}로 예상됩니다. 실제 접수기간은 해당 연도 국가평생교육진흥원 공지를 기준으로 최종 확인해야 합니다.`
             : "새 학위 취득이 필요하지만 학위신청 일정을 계산하지 못했습니다.",
     },
 

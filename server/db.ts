@@ -141,11 +141,21 @@ type InsertEmailVerificationCode,
 apiErrorLogs,
 type InsertApiErrorLog,
   creditSummaryRules,
-  type InsertCreditSummaryRule,
-  studentCreditSummaryItems,
-  type InsertStudentCreditSummaryItem,
+type InsertCreditSummaryRule,
 
-  staffPublicProfiles,
+studentCreditSummaryItems,
+type InsertStudentCreditSummaryItem,
+
+studentAdministrativeProcedures,
+type InsertStudentAdministrativeProcedure,
+
+studentAiNotes,
+type InsertStudentAiNote,
+
+studentAiEvents,
+type InsertStudentAiEvent,
+
+staffPublicProfiles,
   type InsertStaffPublicProfile,
 
   staffTeamPageSettings,
@@ -28206,6 +28216,1282 @@ export async function deleteStudentCreditSummaryItem(params: {
   return { ok: true };
 }
 
+// ─── AI 학점요약 실제 행정절차 상태 ──────────────────────────────────
+
+export type StudentAdministrativeProcedureType =
+  | "learner_registration"
+  | "credit_recognition"
+  | "degree_application"
+  | "qualification_application";
+
+export type StudentAdministrativeProcedureStatus =
+  | "not_started"
+  | "in_progress"
+  | "completed"
+  | "review_required";
+
+export type StudentAdministrativeProcedureSource =
+  | "STAFF"
+  | "KAKAO_AI"
+  | "SYSTEM_AI"
+  | "SYSTEM";
+
+
+/**
+ * 학생의 실제 행정절차 상태 전체 조회.
+ *
+ * 공통엔진 administrativeTimeline:
+ * 예상 일정
+ *
+ * studentAdministrativeProcedures:
+ * 실제 진행상태
+ *
+ * 두 영역을 분리한다.
+ */
+export async function getStudentAdministrativeProcedures(params: {
+  organizationId?: number | null;
+  studentId: number;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    Number(
+      params.studentId
+    );
+
+  if (
+    !Number.isFinite(studentId) ||
+    studentId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "studentId가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  return db
+    .select()
+    .from(
+      studentAdministrativeProcedures
+    )
+    .where(
+      and(
+        eq(
+          studentAdministrativeProcedures.organizationId,
+          organizationId
+        ),
+        eq(
+          studentAdministrativeProcedures.studentId,
+          studentId
+        )
+      )
+    )
+    .orderBy(
+      studentAdministrativeProcedures.id
+    );
+}
+
+
+/**
+ * 학생의 특정 행정절차 상태 1건 조회.
+ */
+export async function getStudentAdministrativeProcedure(params: {
+  organizationId?: number | null;
+  studentId: number;
+  procedureType: StudentAdministrativeProcedureType;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    Number(
+      params.studentId
+    );
+
+  if (
+    !Number.isFinite(studentId) ||
+    studentId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "studentId가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const rows =
+    await db
+      .select()
+      .from(
+        studentAdministrativeProcedures
+      )
+      .where(
+        and(
+          eq(
+            studentAdministrativeProcedures.organizationId,
+            organizationId
+          ),
+
+          eq(
+            studentAdministrativeProcedures.studentId,
+            studentId
+          ),
+
+          eq(
+            studentAdministrativeProcedures.procedureType,
+            params.procedureType
+          )
+        )
+      )
+      .limit(1);
+
+  return rows[0] || null;
+}
+
+
+/**
+ * 학생 행정절차 상태 생성 / 갱신.
+ *
+ * DB UNIQUE:
+ *
+ * organizationId
+ * + studentId
+ * + procedureType
+ *
+ * 같은 행정절차는 한 학생당 한 행만 유지한다.
+ *
+ * 예:
+ *
+ * learner_registration
+ * not_started
+ *
+ *     ↓
+ *
+ * learner_registration
+ * completed
+ *
+ * 기존 행을 갱신한다.
+ */
+export async function upsertStudentAdministrativeProcedure(
+  data: InsertStudentAdministrativeProcedure
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      (data as any).organizationId
+    );
+
+  const studentId =
+    Number(
+      (data as any).studentId
+    );
+
+  if (
+    !Number.isFinite(studentId) ||
+    studentId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "studentId가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const procedureType =
+    String(
+      (data as any).procedureType ||
+      ""
+    ).trim() as StudentAdministrativeProcedureType;
+
+  const allowedProcedureTypes =
+    new Set<StudentAdministrativeProcedureType>([
+      "learner_registration",
+      "credit_recognition",
+      "degree_application",
+      "qualification_application",
+    ]);
+
+  if (
+    !allowedProcedureTypes.has(
+      procedureType
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "행정절차 종류가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const status =
+    String(
+      (data as any).status ||
+      "not_started"
+    ).trim() as StudentAdministrativeProcedureStatus;
+
+  const allowedStatuses =
+    new Set<StudentAdministrativeProcedureStatus>([
+      "not_started",
+      "in_progress",
+      "completed",
+      "review_required",
+    ]);
+
+  if (
+    !allowedStatuses.has(
+      status
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "행정절차 상태가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const sourceType =
+    String(
+      (data as any).sourceType ||
+      "STAFF"
+    ).trim() as StudentAdministrativeProcedureSource;
+
+  const allowedSourceTypes =
+    new Set<StudentAdministrativeProcedureSource>([
+      "STAFF",
+      "KAKAO_AI",
+      "SYSTEM_AI",
+      "SYSTEM",
+    ]);
+
+  if (
+    !allowedSourceTypes.has(
+      sourceType
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "행정절차 출처가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  /**
+   * completed가 아니면 completedAt을
+   * 과거 값 그대로 남기지 않는다.
+   *
+   * completed인데 호출자가 완료시간을 주지 않았다면
+   * 서버 현재시간을 기록한다.
+   */
+  const completedAt =
+    status === "completed"
+      ? (
+          (data as any).completedAt
+            ? new Date(
+                (data as any).completedAt
+              )
+            : new Date()
+        )
+      : null;
+
+  const values = {
+    ...data,
+
+    organizationId,
+    studentId,
+    procedureType,
+    status,
+    sourceType,
+    completedAt,
+  } as InsertStudentAdministrativeProcedure;
+
+  await db
+    .insert(
+      studentAdministrativeProcedures
+    )
+    .values(
+      values
+    )
+    .onDuplicateKeyUpdate({
+      set: {
+        status,
+
+        sourceType,
+
+        completedAt,
+
+        reportedDate:
+          (data as any).reportedDate ??
+          null,
+
+        evidenceSummary:
+          (data as any).evidenceSummary ??
+          null,
+
+        referenceType:
+          (data as any).referenceType ??
+          null,
+
+        referenceId:
+          (data as any).referenceId ??
+          null,
+
+        memo:
+          (data as any).memo ??
+          null,
+
+        updatedBy:
+          (data as any).updatedBy ??
+          null,
+      },
+    });
+
+  return getStudentAdministrativeProcedure({
+    organizationId,
+    studentId,
+    procedureType,
+  });
+}
+
+// ─── AI 학점요약 중요 메모 / 업데이트 이벤트 ──────────────────────────
+
+export type StudentAiNoteStatus =
+  | "info"
+  | "action_required"
+  | "in_progress"
+  | "resolved"
+  | "dismissed";
+
+export type StudentAiNoteType =
+  | "administrative"
+  | "practice"
+  | "schedule"
+  | "subject"
+  | "degree"
+  | "qualification"
+  | "document"
+  | "risk"
+  | "learning_plan"
+  | "general";
+
+export type StudentAiSourceType =
+  | "KAKAO_AI"
+  | "SYSTEM_AI"
+  | "STAFF"
+  | "SYSTEM";
+
+export type StudentAiEventType =
+  | "administrative_status_changed"
+  | "document_submitted"
+  | "practice_condition_changed"
+  | "schedule_changed"
+  | "risk_changed"
+  | "important_note_created"
+  | "learning_plan_changed"
+  | "other";
+
+export type StudentAiEventSeverity =
+  | "info"
+  | "warning"
+  | "important";
+
+
+function requireStudentAiStudentId(
+  value: unknown
+): number {
+  const studentId =
+    Math.floor(
+      Number(value)
+    );
+
+  if (
+    !Number.isFinite(studentId) ||
+    studentId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "studentId가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  return studentId;
+}
+
+
+/**
+ * 학생별 AI 중요 메모 조회.
+ *
+ * 전체 카카오 채팅을 반환하는 것이 아니라
+ * 학습관리상 의미 있는 요약 기록만 반환한다.
+ */
+export async function listStudentAiNotes(params: {
+  organizationId?: number | null;
+  studentId: number;
+  status?: StudentAiNoteStatus | null;
+  limit?: number;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireStudentAiStudentId(
+      params.studentId
+    );
+
+  const limit =
+    Math.min(
+      Math.max(
+        Number(params.limit || 50),
+        1
+      ),
+      200
+    );
+
+  const conditions = [
+    eq(
+      studentAiNotes.organizationId,
+      organizationId
+    ),
+
+    eq(
+      studentAiNotes.studentId,
+      studentId
+    ),
+  ];
+
+  if (params.status) {
+    conditions.push(
+      eq(
+        studentAiNotes.status,
+        params.status
+      )
+    );
+  }
+
+  return db
+    .select()
+    .from(
+      studentAiNotes
+    )
+    .where(
+      and(...conditions)
+    )
+    .orderBy(
+      desc(
+        studentAiNotes.createdAt
+      ),
+      desc(
+        studentAiNotes.id
+      )
+    )
+    .limit(limit);
+}
+
+
+/**
+ * AI 중요 메모 생성.
+ */
+export async function createStudentAiNote(
+  data: InsertStudentAiNote
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      (data as any).organizationId
+    );
+
+  const studentId =
+    requireStudentAiStudentId(
+      (data as any).studentId
+    );
+
+  const aiSummary =
+    String(
+      (data as any).aiSummary ||
+      ""
+    ).trim();
+
+  if (!aiSummary) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 메모 요약 내용이 필요합니다.",
+      400
+    );
+  }
+
+  const values = {
+    ...data,
+
+    organizationId,
+    studentId,
+
+    aiSummary,
+
+    inquirySummary:
+      (data as any).inquirySummary
+        ? String(
+            (data as any).inquirySummary
+          ).trim()
+        : null,
+
+    actionSummary:
+      (data as any).actionSummary
+        ? String(
+            (data as any).actionSummary
+          ).trim()
+        : null,
+
+    referenceType:
+      (data as any).referenceType
+        ? String(
+            (data as any).referenceType
+          ).trim()
+        : null,
+
+    referenceId:
+      (data as any).referenceId
+        ? String(
+            (data as any).referenceId
+          ).trim()
+        : null,
+  } as InsertStudentAiNote;
+
+  const result =
+    await db
+      .insert(
+        studentAiNotes
+      )
+      .values(
+        values
+      );
+
+  const id =
+    Number(
+      getInsertId(result) ||
+      0
+    );
+
+  if (!id) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "AI 메모 저장 결과를 확인할 수 없습니다.",
+      500
+    );
+  }
+
+  const rows =
+    await db
+      .select()
+      .from(
+        studentAiNotes
+      )
+      .where(
+        and(
+          eq(
+            studentAiNotes.id,
+            id
+          ),
+          eq(
+            studentAiNotes.organizationId,
+            organizationId
+          ),
+          eq(
+            studentAiNotes.studentId,
+            studentId
+          )
+        )
+      )
+      .limit(1);
+
+  return rows[0] || null;
+}
+
+
+/**
+ * AI 중요 메모의 관리상태 변경.
+ *
+ * 내용 자체를 다시 작성하는 함수와 분리한다.
+ *
+ * 예:
+ * action_required
+ * → in_progress
+ * → resolved
+ *
+ * 또는
+ * → dismissed
+ */
+export async function updateStudentAiNoteStatus(params: {
+  organizationId?: number | null;
+  studentId: number;
+  noteId: number;
+  status: StudentAiNoteStatus;
+  updatedBy?: number | null;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireStudentAiStudentId(
+      params.studentId
+    );
+
+  const noteId =
+    Math.floor(
+      Number(params.noteId)
+    );
+
+  if (
+    !Number.isFinite(noteId) ||
+    noteId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 메모 ID가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const allowedStatuses =
+    new Set<StudentAiNoteStatus>([
+      "info",
+      "action_required",
+      "in_progress",
+      "resolved",
+      "dismissed",
+    ]);
+
+  if (
+    !allowedStatuses.has(
+      params.status
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 메모 상태가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  await db
+    .update(
+      studentAiNotes
+    )
+    .set({
+      status:
+        params.status,
+
+      updatedBy:
+        params.updatedBy ??
+        null,
+    })
+    .where(
+      and(
+        eq(
+          studentAiNotes.id,
+          noteId
+        ),
+        eq(
+          studentAiNotes.organizationId,
+          organizationId
+        ),
+        eq(
+          studentAiNotes.studentId,
+          studentId
+        )
+      )
+    );
+
+  const rows =
+    await db
+      .select()
+      .from(
+        studentAiNotes
+      )
+      .where(
+        and(
+          eq(
+            studentAiNotes.id,
+            noteId
+          ),
+          eq(
+            studentAiNotes.organizationId,
+            organizationId
+          ),
+          eq(
+            studentAiNotes.studentId,
+            studentId
+          )
+        )
+      )
+      .limit(1);
+
+  return rows[0] || null;
+}
+
+
+/**
+ * 학생 AI 업데이트 이벤트 목록.
+ *
+ * 기본적으로 최신순.
+ */
+export async function listStudentAiEvents(params: {
+  organizationId?: number | null;
+  studentId: number;
+  unreadOnly?: boolean;
+  limit?: number;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireStudentAiStudentId(
+      params.studentId
+    );
+
+  const limit =
+    Math.min(
+      Math.max(
+        Number(params.limit || 50),
+        1
+      ),
+      200
+    );
+
+  const conditions = [
+    eq(
+      studentAiEvents.organizationId,
+      organizationId
+    ),
+
+    eq(
+      studentAiEvents.studentId,
+      studentId
+    ),
+  ];
+
+  if (params.unreadOnly) {
+    conditions.push(
+      eq(
+        studentAiEvents.isRead,
+        false
+      )
+    );
+  }
+
+  return db
+    .select()
+    .from(
+      studentAiEvents
+    )
+    .where(
+      and(...conditions)
+    )
+    .orderBy(
+      desc(
+        studentAiEvents.createdAt
+      ),
+      desc(
+        studentAiEvents.id
+      )
+    )
+    .limit(limit);
+}
+
+
+/**
+ * 특정 학생의 미확인 AI 업데이트 숫자.
+ *
+ * 학생 목록의:
+ *
+ * AI 업데이트 3
+ *
+ * 배지에 사용할 값.
+ */
+export async function countUnreadStudentAiEvents(params: {
+  organizationId?: number | null;
+  studentId: number;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireStudentAiStudentId(
+      params.studentId
+    );
+
+  const rows =
+    await db
+      .select({
+        count:
+          sql<number>`COUNT(*)`,
+      })
+      .from(
+        studentAiEvents
+      )
+      .where(
+        and(
+          eq(
+            studentAiEvents.organizationId,
+            organizationId
+          ),
+
+          eq(
+            studentAiEvents.studentId,
+            studentId
+          ),
+
+          eq(
+            studentAiEvents.isRead,
+            false
+          )
+        )
+      );
+
+  return Number(
+    rows[0]?.count ||
+    0
+  );
+}
+
+
+/**
+ * 담당자 확인이 필요한 AI 이벤트 생성.
+ *
+ * 단순 카카오 메시지마다 생성하지 않는다.
+ * Service/AI 계층에서 의미 있는 변경이라고
+ * 판단된 경우에만 이 함수를 호출한다.
+ */
+export async function createStudentAiEvent(
+  data: InsertStudentAiEvent
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      (data as any).organizationId
+    );
+
+  const studentId =
+    requireStudentAiStudentId(
+      (data as any).studentId
+    );
+
+  const title =
+    String(
+      (data as any).title ||
+      ""
+    ).trim();
+
+  if (!title) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 업데이트 제목이 필요합니다.",
+      400
+    );
+  }
+
+  const values = {
+    ...data,
+
+    organizationId,
+    studentId,
+    title,
+
+    message:
+      (data as any).message
+        ? String(
+            (data as any).message
+          ).trim()
+        : null,
+
+    entityType:
+      (data as any).entityType
+        ? String(
+            (data as any).entityType
+          ).trim()
+        : null,
+
+    referenceType:
+      (data as any).referenceType
+        ? String(
+            (data as any).referenceType
+          ).trim()
+        : null,
+
+    referenceId:
+      (data as any).referenceId
+        ? String(
+            (data as any).referenceId
+          ).trim()
+        : null,
+
+    isRead:
+      false,
+
+    readAt:
+      null,
+
+    readBy:
+      null,
+  } as InsertStudentAiEvent;
+
+  const result =
+    await db
+      .insert(
+        studentAiEvents
+      )
+      .values(
+        values
+      );
+
+  const id =
+    Number(
+      getInsertId(result) ||
+      0
+    );
+
+  if (!id) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "AI 업데이트 이벤트 저장 결과를 확인할 수 없습니다.",
+      500
+    );
+  }
+
+  const rows =
+    await db
+      .select()
+      .from(
+        studentAiEvents
+      )
+      .where(
+        and(
+          eq(
+            studentAiEvents.id,
+            id
+          ),
+          eq(
+            studentAiEvents.organizationId,
+            organizationId
+          ),
+          eq(
+            studentAiEvents.studentId,
+            studentId
+          )
+        )
+      )
+      .limit(1);
+
+  return rows[0] || null;
+}
+
+
+/**
+ * AI 업데이트 1건 읽음 처리.
+ *
+ * readAt은 호출자 시간이 아니라
+ * 서버시간을 사용한다.
+ */
+export async function markStudentAiEventRead(params: {
+  organizationId?: number | null;
+  studentId: number;
+  eventId: number;
+  readBy: number;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireStudentAiStudentId(
+      params.studentId
+    );
+
+  const eventId =
+    Math.floor(
+      Number(params.eventId)
+    );
+
+  const readBy =
+    Math.floor(
+      Number(params.readBy)
+    );
+
+  if (
+    !Number.isFinite(eventId) ||
+    eventId <= 0 ||
+    !Number.isFinite(readBy) ||
+    readBy <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "AI 업데이트 확인 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  await db
+    .update(
+      studentAiEvents
+    )
+    .set({
+      isRead:
+        true,
+
+      readAt:
+        new Date(),
+
+      readBy,
+    })
+    .where(
+      and(
+        eq(
+          studentAiEvents.id,
+          eventId
+        ),
+
+        eq(
+          studentAiEvents.organizationId,
+          organizationId
+        ),
+
+        eq(
+          studentAiEvents.studentId,
+          studentId
+        )
+      )
+    );
+
+  const rows =
+    await db
+      .select()
+      .from(
+        studentAiEvents
+      )
+      .where(
+        and(
+          eq(
+            studentAiEvents.id,
+            eventId
+          ),
+          eq(
+            studentAiEvents.organizationId,
+            organizationId
+          ),
+          eq(
+            studentAiEvents.studentId,
+            studentId
+          )
+        )
+      )
+      .limit(1);
+
+  return rows[0] || null;
+}
+
+
+/**
+ * 한 학생의 미확인 AI 업데이트 전체 읽음 처리.
+ *
+ * 학생 학점요약의 AI 업데이트 영역을
+ * 담당자가 전부 확인했을 때 사용한다.
+ */
+export async function markAllStudentAiEventsRead(params: {
+  organizationId?: number | null;
+  studentId: number;
+  readBy: number;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireStudentAiStudentId(
+      params.studentId
+    );
+
+  const readBy =
+    Math.floor(
+      Number(params.readBy)
+    );
+
+  if (
+    !Number.isFinite(readBy) ||
+    readBy <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "확인 사용자 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  await db
+    .update(
+      studentAiEvents
+    )
+    .set({
+      isRead:
+        true,
+
+      readAt:
+        new Date(),
+
+      readBy,
+    })
+    .where(
+      and(
+        eq(
+          studentAiEvents.organizationId,
+          organizationId
+        ),
+
+        eq(
+          studentAiEvents.studentId,
+          studentId
+        ),
+
+        eq(
+          studentAiEvents.isRead,
+          false
+        )
+      )
+    );
+
+  return {
+    success:
+      true,
+
+    unreadCount:
+      await countUnreadStudentAiEvents({
+        organizationId,
+        studentId,
+      }),
+  };
+}
+
 // ─── 학기 완료 시 자동 종료 체크 ─────────────────────────────────────
 export async function checkAndAutoComplete(
   studentId: number,
@@ -40724,8 +42010,11 @@ export type KakaoAiConversationMemory = {
     "recommended" |
     "selected";
 
-  lastIntent:
+   lastIntent:
     string | null;
+
+  consultationFlowData:
+    Record<string, unknown> | null;
 };
 
 function createKakaoAiChannelUserKeyHash(
@@ -42563,7 +43852,10 @@ export async function getKakaoAiConversationMemory(
   staffSelectionStatus:
     "none",
 
-  lastIntent:
+   lastIntent:
+    null,
+
+  consultationFlowData:
     null,
 };
   }
@@ -42696,6 +43988,14 @@ lastIntent:
         row.lastIntent
       )
     : null,
+
+consultationFlowData:
+  decryptKakaoAiJson<
+    Record<string, unknown> | null
+  >(
+    row.consultationFlowData,
+    null
+  ),
   };
 }
 
@@ -42756,6 +44056,9 @@ staffSelectionStatus?:
 
 lastIntent?:
   string | null;
+
+consultationFlowData?:
+  Record<string, unknown> | null;
     };
   }
 ) {
@@ -43029,6 +44332,19 @@ if (
     null;
 }
 
+if (
+  patch.consultationFlowData !==
+  undefined
+) {
+  values.consultationFlowData =
+    patch.consultationFlowData ===
+      null
+      ? null
+      : encryptKakaoAiJson(
+          patch.consultationFlowData
+        );
+}
+
   if (
     Object.keys(
       values
@@ -43117,6 +44433,9 @@ staffSelectionStatus:
   "none",
 
 lastIntent:
+  null,
+
+consultationFlowData:
   null,
 
 ...values,

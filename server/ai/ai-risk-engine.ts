@@ -2371,16 +2371,101 @@ degreeClassificationBySubjectKey,
   });
 
 /**
+ * 기존 CRM 학기별 실제 계획과목 학점 합계.
+ *
+ * planSemesters는 과목 단위 Row이고:
+ *
+ * - semesterNo
+ * - credits
+ *
+ * 를 가지고 있으므로,
+ * 학기 순번별 과목 수 / 학점합계를 만든다.
+ *
+ * 이 값은 Semester Planner의
+ * plannedCredits / actualCredits 계산에 사용한다.
+ */
+const existingSemesterCreditsByOrder =
+  new Map<
+    number,
+    {
+      subjectCount:
+        number;
+
+      credits:
+        number;
+    }
+  >();
+
+for (
+  const row
+  of (
+    planSemesters ||
+    []
+  ) as any[]
+) {
+  const semesterOrder =
+    Math.floor(
+      Number(
+        row?.semesterNo ||
+        0
+      )
+    );
+
+  const credits =
+    toNumber(
+      row?.credits
+    );
+
+  if (
+    semesterOrder <=
+      0 ||
+    credits <=
+      0
+  ) {
+    continue;
+  }
+
+  const previous =
+    existingSemesterCreditsByOrder.get(
+      semesterOrder
+    ) || {
+      subjectCount:
+        0,
+
+      credits:
+        0,
+    };
+
+  existingSemesterCreditsByOrder.set(
+    semesterOrder,
+    {
+      subjectCount:
+        previous.subjectCount +
+        1,
+
+      credits:
+        previous.credits +
+        credits,
+    }
+  );
+}
+
+/**
  * ─────────────────────────────
  * 실제 과목계획 → 학기 자동배치
  * ─────────────────────────────
  *
- * 한 학기 최대 8과목,
- * 동일 귀속연도 최대 14과목 기준으로
- * 실제 추가과목을 학기별 배치한다.
+ * 수업을 통한 학점은:
+ *
+ * - 한 학기 최대 24학점
+ * - 동일 귀속연도 최대 42학점
+ *
+ * 기준으로 실제 추가과목을 학기별 배치한다.
  *
  * 기존 학생 학기가 있으면
- * 마지막 학기의 다음 학기부터 시작하고,
+ * studentSemesters의 학기정보와
+ * planSemesters의 실제 과목 credits를 결합해서
+ * 기존 수강학점을 계산한다.
  *
  * 기존 학기가 없으면
  * 현재 한국 날짜 기준 귀속학기를
@@ -2391,7 +2476,7 @@ const qualificationSemesterPlan =
     subjectPlan:
       qualificationSubjectPlan,
 
-    existingSemesters:
+        existingSemesters:
       (
         studentSemesters ||
         []
@@ -2399,29 +2484,82 @@ const qualificationSemesterPlan =
         (
           semester:
             any
-        ) => ({
-          semesterOrder:
+        ) => {
+          const semesterOrder =
             Number(
               semester
                 ?.semesterOrder ||
               0
-            ),
+            );
 
-          semesterLabel:
-            semester
-              ?.semesterLabel ??
-            null,
-
-          plannedSubjectCount:
+          const plannedSubjectCount =
             semester
               ?.plannedSubjectCount ??
-            null,
+            null;
 
-          actualSubjectCount:
+          const actualSubjectCount =
             semester
               ?.actualSubjectCount ??
-            null,
-        })
+            null;
+
+          const creditSummary =
+            existingSemesterCreditsByOrder.get(
+              semesterOrder
+            );
+
+          /**
+           * planSemesters에서 과목이 확인되면
+           * 실제 credits 합계를 plannedCredits로 사용한다.
+           */
+          const plannedCredits =
+            creditSummary
+              ? creditSummary
+                  .credits
+              : null;
+
+          /**
+           * actualSubjectCount와
+           * 실제 과목 Row 개수가 정확히 같을 때만
+           * 해당 학점합계를 actualCredits로 확정한다.
+           *
+           * 개수가 다르면 실제 이수학점이라고
+           * 단정하지 않고 null로 둔다.
+           *
+           * 그 경우 Semester Planner가
+           * plannedCredits를 사용한다.
+           */
+          const actualCredits =
+            actualSubjectCount !==
+              null &&
+            actualSubjectCount !==
+              undefined &&
+            creditSummary &&
+            Number(
+              actualSubjectCount
+            ) ===
+              creditSummary
+                .subjectCount
+              ? creditSummary
+                  .credits
+              : null;
+
+          return {
+            semesterOrder,
+
+            semesterLabel:
+              semester
+                ?.semesterLabel ??
+              null,
+
+            plannedSubjectCount,
+
+            actualSubjectCount,
+
+            plannedCredits,
+
+            actualCredits,
+          };
+        }
       ),
   });
 

@@ -135,6 +135,220 @@ function getKakaoAiPublicOrigin(
   return `${protocol}://${host}`;
 }
 
+type KakaoAiWebhookAttachment = {
+  url: string;
+  source: "kakao_utterance";
+  originalUtterance: string;
+};
+
+function parseKakaoAiWebhookAttachment(
+  utterance: string
+): {
+  messageType:
+    | "text"
+    | "image"
+    | "document";
+
+  message: string;
+
+  hasImage: boolean;
+
+  hasDocument: boolean;
+
+  attachmentData:
+    KakaoAiWebhookAttachment |
+    undefined;
+} {
+  const normalized =
+    String(
+      utterance ||
+      ""
+    ).trim();
+
+  if (!normalized) {
+    return {
+      messageType:
+        "text",
+
+      message:
+        "",
+
+      hasImage:
+        false,
+
+      hasDocument:
+        false,
+
+      attachmentData:
+        undefined,
+    };
+  }
+
+  /**
+   * 카카오 이미지 메시지는 현재 확인된 Payload에서
+   * userRequest.utterance 자체가 URL로 전달된다.
+   *
+   * 일반 텍스트 안에 URL이 포함된 경우까지
+   * 이미지로 오인하지 않기 위해
+   * "전체 문자열 자체가 URL"인 경우만 검사한다.
+   */
+  let parsedUrl:
+    URL |
+    null =
+    null;
+
+  try {
+    parsedUrl =
+      new URL(
+        normalized
+      );
+  } catch {
+    parsedUrl =
+      null;
+  }
+
+  if (
+    !parsedUrl ||
+    (
+      parsedUrl.protocol !==
+        "https:" &&
+      parsedUrl.protocol !==
+        "http:"
+    )
+  ) {
+    return {
+      messageType:
+        "text",
+
+      message:
+        normalized,
+
+      hasImage:
+        false,
+
+      hasDocument:
+        false,
+
+      attachmentData:
+        undefined,
+    };
+  }
+
+  const hostname =
+    parsedUrl.hostname
+      .toLowerCase();
+
+  const pathname =
+    parsedUrl.pathname
+      .toLowerCase();
+
+  const imageExtension =
+    /\.(jpg|jpeg|png|gif|webp|bmp|heic|heif)$/i.test(
+      pathname
+    );
+
+  const documentExtension =
+    /\.(pdf|doc|docx|xls|xlsx|hwp)$/i.test(
+      pathname
+    );
+
+  /**
+   * 카카오 CDN은 이미지 URL에
+   * 확장자가 항상 노출된다고 가정하지 않는다.
+   */
+  const isKakaoCdn =
+    hostname.includes(
+      "kakao"
+    ) ||
+    hostname.includes(
+      "kakaocdn"
+    );
+
+  if (
+    documentExtension
+  ) {
+    return {
+      messageType:
+        "document",
+
+      /**
+       * Intent 모델에 긴 signed URL 자체를
+       * 사용자 문장으로 넣지 않는다.
+       */
+      message:
+        "문서를 첨부했습니다.",
+
+      hasImage:
+        false,
+
+      hasDocument:
+        true,
+
+      attachmentData: {
+        url:
+          normalized,
+
+        source:
+          "kakao_utterance",
+
+        originalUtterance:
+          normalized,
+      },
+    };
+  }
+
+  if (
+    imageExtension ||
+    isKakaoCdn
+  ) {
+    return {
+      messageType:
+        "image",
+
+      message:
+        "이미지를 첨부했습니다.",
+
+      hasImage:
+        true,
+
+      hasDocument:
+        false,
+
+      attachmentData: {
+        url:
+          normalized,
+
+        source:
+          "kakao_utterance",
+
+        originalUtterance:
+          normalized,
+      },
+    };
+  }
+
+  /**
+   * 일반 홈페이지 URL은
+   * 기존 텍스트 메시지로 유지.
+   */
+  return {
+    messageType:
+      "text",
+
+    message:
+      normalized,
+
+    hasImage:
+      false,
+
+    hasDocument:
+      false,
+
+    attachmentData:
+      undefined,
+  };
+}
+
 console.log(
   "[KAKAO AI BUILD]",
   KAKAO_AI_BUILD_VERSION
@@ -2189,6 +2403,23 @@ console.log(
             ""
           ).trim();
 
+const incomingAttachment =
+  parseKakaoAiWebhookAttachment(
+    utterance
+  );
+
+const incomingMessageType =
+  incomingAttachment
+    .messageType;
+
+const incomingMessage =
+  incomingAttachment
+    .message;
+
+const incomingAttachmentData =
+  incomingAttachment
+    .attachmentData;
+
         if (
           !utterance
         ) {
@@ -2295,13 +2526,15 @@ console.log(
 const preRoute =
   await routeKakaoAiPreMessage({
     message:
-      utterance,
+      incomingMessage,
 
     hasImage:
-      false,
+      incomingAttachment
+        .hasImage,
 
     hasDocument:
-      false,
+      incomingAttachment
+        .hasDocument,
   });
 
 console.log(
@@ -2999,20 +3232,23 @@ try {
   );
 
   const result =
-    await orchestrateKakaoAiIncomingMessage({
-      organizationId,
+  await orchestrateKakaoAiIncomingMessage({
+    organizationId,
 
-      channelUserKey,
+    channelUserKey,
 
-      kakaoMessageId:
-        kakaoRequestId,
+    kakaoMessageId:
+      kakaoRequestId,
 
-      messageType:
-        "text",
+    messageType:
+      incomingMessageType,
 
-      message:
-        utterance,
-    });
+    message:
+      incomingMessage,
+
+    attachmentData:
+      incomingAttachmentData,
+  });
 
 console.log(
   "[KAKAO AI CALLBACK] orchestrator returned",
@@ -3499,20 +3735,23 @@ return;
          * 운영에서는 Callback 사용을 권장한다.
          */
         const result =
-          await orchestrateKakaoAiIncomingMessage({
-            organizationId,
+  await orchestrateKakaoAiIncomingMessage({
+    organizationId,
 
-            channelUserKey,
+    channelUserKey,
 
-            kakaoMessageId:
-              kakaoRequestId,
+    kakaoMessageId:
+      kakaoRequestId,
 
-            messageType:
-              "text",
+    messageType:
+      incomingMessageType,
 
-            message:
-              utterance,
-          });
+    message:
+      incomingMessage,
+
+    attachmentData:
+      incomingAttachmentData,
+  });
 
         if (
           result.duplicateMessage
