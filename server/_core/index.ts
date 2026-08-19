@@ -2420,6 +2420,40 @@ const incomingAttachmentData =
   incomingAttachment
     .attachmentData;
 
+console.log(
+  "[KAKAO AI ATTACHMENT]",
+  {
+    organizationId,
+
+    messageType:
+      incomingMessageType,
+
+    hasImage:
+      incomingAttachment.hasImage,
+
+    hasDocument:
+      incomingAttachment.hasDocument,
+
+    hasAttachment:
+      Boolean(
+        incomingAttachmentData
+      ),
+
+    attachmentHost:
+      incomingAttachmentData
+        ? (() => {
+            try {
+              return new URL(
+                incomingAttachmentData.url
+              ).hostname;
+            } catch {
+              return null;
+            }
+          })()
+        : null,
+  }
+);
+
         if (
           !utterance
         ) {
