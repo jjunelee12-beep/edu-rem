@@ -69,6 +69,7 @@ import ApprovalHistoryDetailPage from "./pages/ApprovalHistoryDetailPage";
 import PrivateCertificateMasterPage from "./pages/PrivateCertificateMasterPage";
 import SubjectCatalogMasterPage from "./pages/SubjectCatalogMasterPage";
 import KakaoAISettings from "./pages/KakaoAISettings";
+import KakaoAiStaffAuthPage from "@/pages/KakaoAiStaffAuthPage";
 
 // ✅ 추가
 import AppToastHost from "@/components/notifications/AppToastHost";
@@ -200,6 +201,10 @@ function PublicRouter() {
       <Route path="/login" component={Login} />
       <Route path="/form/:token" component={PublicLeadFormPage} />
       <Route path="/ad-form/:token" component={AdFormPage} />
+<Route
+  path="/kakao-ai/staff-auth/:token"
+  component={KakaoAiStaffAuthPage}
+/>
 <Route
   path="/staff/:token"
   component={PublicStaffProfilePage}
@@ -446,6 +451,7 @@ function AppContent() {
   location === "/withone" ||
   location.startsWith("/form/") ||
   location.startsWith("/ad-form/") ||
+location.startsWith("/kakao-ai/staff-auth/") ||
   location.startsWith("/staff/") ||
 location.startsWith("/team/") ||
   location.startsWith("/billing/register/");

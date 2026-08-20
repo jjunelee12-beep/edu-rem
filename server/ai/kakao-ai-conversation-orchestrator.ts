@@ -58,6 +58,18 @@ import {
 } from "./kakao-ai-registration-verifier";
 
 import {
+  routeKakaoAiCommand,
+} from "./kakao-ai-command-router";
+
+import {
+  checkKakaoAiDeveloperAccess,
+} from "./kakao-ai-developer-gate";
+
+import {
+  executeKakaoAiDeveloperTestAction,
+} from "./kakao-ai-developer-test-action";
+
+import {
   recordKakaoAiStudentManagement,
 } from "./kakao-ai-student-management-recorder";
 
@@ -76,6 +88,14 @@ import {
 import type {
   DocumentIntelligenceResult,
 } from "./document-intelligence.types";
+
+import {
+  analyzeDocumentAssistance,
+} from "./document-assistance.service";
+
+import type {
+  DocumentAssistanceResult,
+} from "./document-assistance.types";
 
 /**
  * 카카오 AI의 한 사용자 메시지를 처리하는
@@ -248,18 +268,21 @@ function normalizeText(
   ).trim();
 }
 
+
 /**
  * DB Conversation Row를 기준으로
  * 현재 카카오 고객상태를 서버에서 복원한다.
  *
+ * 우선순위:
+ *
+ * 1. Developer Test Override
+ * 2. 실제 등록회원 인증 상태
+ * 3. 신규 상담자
+ *
  * 중요:
  *
- * 카카오 메시지 내용이나 AI 모델이
- * "나는 등록자다"라고 말하는 것은 신뢰하지 않는다.
- *
- * DB에 등록회원으로 연결되어 있더라도
- * 실제 학생이 사라졌거나 승인상태가 변경됐으면
- * 다시 lead로 초기화한다.
+ * Developer Test Override는
+ * 실제 customerType / studentId를 변경하지 않는다.
  */
 async function restoreKakaoAiCustomerContext(
   params: {
@@ -298,6 +321,189 @@ async function restoreKakaoAiCustomerContext(
   }
 
   /**
+   * =========================================================
+   * Developer Test Override
+   * =========================================================
+   *
+   * 개발자 테스트 모드가 존재하면
+   * 실제 customerType / studentId보다 우선한다.
+   *
+   * 이 값은 일반 사용자에게는 설정될 수 없고
+   * Developer Gate를 통과한 명령에서만 저장된다.
+   */
+  const developerTestMode =
+    String(
+      (conversation as any)
+        .developerTestMode ||
+      ""
+    ).trim();
+
+  /**
+   * ---------------------------------------------------------
+   * Developer Lead Test
+   * ---------------------------------------------------------
+   *
+   * 실제 카카오 계정이 등록회원으로 묶여 있더라도
+   * 테스트 중에는 신규 상담자로 동작한다.
+   *
+   * 실제 등록회원 바인딩은 삭제하지 않는다.
+   */
+  if (
+    developerTestMode ===
+      "lead"
+  ) {
+    return createLeadKakaoAiCustomerContext({
+      organizationId,
+    });
+  }
+
+  /**
+   * ---------------------------------------------------------
+   * Developer Registered Student Test
+   * ---------------------------------------------------------
+   */
+  if (
+    developerTestMode ===
+      "registered"
+  ) {
+    const developerTestStudentId =
+      Math.floor(
+        Number(
+          (conversation as any)
+            .developerTestStudentId ||
+          0
+        )
+      );
+
+    /**
+     * 잘못된 테스트 상태가 DB에 남아 있다면
+     * 운영 studentId에는 손대지 않고
+     * Developer Test Session만 제거한다.
+     */
+    if (
+      !Number.isFinite(
+        developerTestStudentId
+      ) ||
+      developerTestStudentId <=
+        0
+    ) {
+      await db.clearKakaoAiDeveloperTestSession({
+        organizationId,
+
+        conversationId,
+      });
+
+      return createLeadKakaoAiCustomerContext({
+        organizationId,
+      });
+    }
+
+    /**
+     * 테스트 대상 학생도 매 요청마다
+     * 실제 같은 organization에서 다시 조회한다.
+     */
+    const developerStudent =
+      await db.getStudentById(
+        developerTestStudentId,
+        {
+          organizationId,
+        }
+      );
+
+    /**
+     * 학생 삭제 / 승인 해제 등이 발생하면
+     * 테스트 Session만 자동 해제한다.
+     *
+     * 실제 카카오 등록회원 연결은 절대 건드리지 않는다.
+     */
+    if (
+      !developerStudent ||
+      String(
+        (developerStudent as any)
+          .approvalStatus ||
+        ""
+      ).trim() !==
+        "승인"
+    ) {
+      await db.clearKakaoAiDeveloperTestSession({
+        organizationId,
+
+        conversationId,
+      });
+
+      return createLeadKakaoAiCustomerContext({
+        organizationId,
+      });
+    }
+
+    return {
+      customerType:
+        "registered",
+
+      verified:
+        true,
+
+      organizationId,
+
+      studentId:
+        Number(
+          developerStudent.id
+        ),
+
+      studentName:
+        developerStudent.clientName ??
+        null,
+
+      course:
+        developerStudent.course ??
+        null,
+
+      finalEducation:
+        developerStudent.finalEducation ??
+        null,
+
+      assigneeId:
+        Number(
+          developerStudent.assigneeId ||
+          0
+        ) ||
+        null,
+
+      verificationStatus:
+        "registered",
+
+      verificationMessage:
+        null,
+    };
+  }
+
+  /**
+   * ---------------------------------------------------------
+   * Developer Staff Test
+   * ---------------------------------------------------------
+   *
+   * 담당자용 customer/context는 등록회원 Context와
+   * 구조가 다르므로 여기서 가짜 registered 상태를 만들지 않는다.
+   *
+   * /staff-test의 실제 CRM 업무비서 연결은
+   * 별도 Staff Session 단계에서 구현한다.
+   */
+  if (
+    developerTestMode ===
+      "staff"
+  ) {
+    return createLeadKakaoAiCustomerContext({
+      organizationId,
+    });
+  }
+
+  /**
+   * =========================================================
+   * 일반 운영 인증 상태
+   * =========================================================
+   */
+
+  /**
    * 아직 등록회원으로 인증되지 않은 경우.
    */
   if (
@@ -332,8 +538,9 @@ async function restoreKakaoAiCustomerContext(
     );
 
   /**
-   * 학생이 없어졌거나 승인상태가 변경된 경우
-   * 기존 카카오 등록회원 연결을 신뢰하지 않는다.
+   * 실제 등록회원 연결의 경우
+   * 학생이 없어졌거나 승인상태가 변경되면
+   * 기존 영구 바인딩을 해제한다.
    */
   if (
     !student ||
@@ -792,6 +999,596 @@ registrationVerification:
     };
   }
 
+/**
+   * ---------------------------------------------------------
+   * Kakao AI Command Router
+   * ---------------------------------------------------------
+   *
+   * 시스템 명령어는 일반 자연어 Intent보다 먼저 판별한다.
+   *
+   * 현재 단계:
+   *
+   * /member
+   * → 기존 등록회원 인증 흐름 시작
+   *
+   * /staff
+   * /member-test
+   * /reset
+   * → 명령어 자체는 인식하지만
+   *   실제 전용 Action 연결은 다음 단계에서 수행한다.
+   *
+   * 중요:
+   * Command Router 자체는
+   * 인증 / 권한부여 / DB변경을 하지 않는다.
+   */
+  const commandRoute =
+    routeKakaoAiCommand(
+      message
+    );
+
+  /**
+   * ---------------------------------------------------------
+   * Developer Command Gate
+   * ---------------------------------------------------------
+   *
+   * 아래 명령은 일반 사용자 명령이 아니다.
+   *
+   * /lead
+   * /member-test <studentId>
+   * /staff-test
+   * /test-reset
+   *
+   * organizationId = 1
+   * +
+   * 현재 Kakao channelUserKey SHA-256
+   *
+   * 두 조건을 모두 만족한 개발자 계정에서만
+   * 실행 가능하다.
+   *
+   * 중요:
+   * 명령어 문자열 자체를 아는 것만으로는
+   * 테스트 권한을 얻을 수 없다.
+   */
+  const isDeveloperCommand =
+    commandRoute.handled ===
+      true &&
+    (
+      commandRoute.command ===
+        "member_test" ||
+      commandRoute.command ===
+        "developer_lead" ||
+      commandRoute.command ===
+        "developer_staff" ||
+      commandRoute.command ===
+        "developer_reset"
+    );
+
+  const developerAccess =
+    isDeveloperCommand
+      ? checkKakaoAiDeveloperAccess({
+          organizationId,
+
+          channelUserKey,
+        })
+      : null;
+
+  const developerCommandAllowed =
+    isDeveloperCommand &&
+    developerAccess?.allowed ===
+      true;
+
+  if (
+    isDeveloperCommand
+  ) {
+    console.log(
+      "[KAKAO AI DEVELOPER COMMAND]",
+      {
+        organizationId,
+
+        conversationId,
+
+        command:
+          commandRoute.command,
+
+        allowed:
+          developerCommandAllowed,
+
+        reason:
+          developerAccess
+            ?.reason ??
+          null,
+
+        memberTestStudentId:
+          commandRoute
+            .memberTestStudentId,
+      }
+    );
+  }
+
+    tracePerf(
+    "command_routed",
+    {
+      handled:
+        commandRoute.handled,
+
+      command:
+        commandRoute.command,
+
+      hasError:
+        Boolean(
+          commandRoute.errorCode
+        ),
+
+      memberTestStudentId:
+        commandRoute
+          .memberTestStudentId,
+
+      isDeveloperCommand,
+
+      developerCommandAllowed:
+        isDeveloperCommand
+          ? developerCommandAllowed
+          : null,
+    }
+  );
+
+  console.log(
+    "[KAKAO AI COMMAND]",
+    {
+      organizationId,
+
+      conversationId,
+
+      handled:
+        commandRoute.handled,
+
+      command:
+        commandRoute.command,
+
+      errorCode:
+        commandRoute.errorCode,
+
+      memberTestStudentId:
+        commandRoute
+          .memberTestStudentId,
+    }
+  );
+
+  /**
+   * ---------------------------------------------------------
+   * Developer Test Command Action
+   * ---------------------------------------------------------
+   *
+   * 개발자 전용 명령은 일반 Registration / Memory /
+   * Intent / Context / Composer로 내려보내지 않는다.
+   *
+   * 명령 처리 후 즉시 응답하고 종료한다.
+   */
+  if (
+    isDeveloperCommand
+  ) {
+    const developerTestAction =
+      await executeKakaoAiDeveloperTestAction({
+        organizationId,
+
+        conversationId,
+
+        command:
+          commandRoute.command as
+            | "member_test"
+            | "developer_lead"
+            | "developer_staff"
+            | "developer_reset",
+
+        allowed:
+          developerCommandAllowed,
+
+        memberTestStudentId:
+          commandRoute
+            .memberTestStudentId,
+      });
+
+    const developerReplyText =
+      String(
+        developerTestAction
+          .replyText ||
+        ""
+      ).trim();
+
+    console.log(
+      "[KAKAO AI DEVELOPER TEST ACTION]",
+      {
+        organizationId,
+
+        conversationId,
+
+        command:
+          developerTestAction
+            .command,
+
+        success:
+          developerTestAction
+            .success,
+
+        mode:
+          developerTestAction
+            .mode,
+
+        studentId:
+          developerTestAction
+            .studentId,
+
+        staffUserId:
+          developerTestAction
+            .staffUserId,
+
+        errorMessage:
+          developerTestAction
+            .errorMessage,
+      }
+    );
+
+    if (
+      developerReplyText
+    ) {
+      const assistantMessage =
+        await db.insertKakaoAiMessage({
+          organizationId,
+
+          conversationId,
+
+          role:
+            "assistant",
+
+          messageType:
+            "text",
+
+          content:
+            developerReplyText,
+
+          kakaoMessageId:
+            null,
+
+          attachmentData:
+            undefined,
+        });
+
+      const responseMessageId =
+        Number(
+          assistantMessage.id ||
+          0
+        );
+
+      if (
+        userMessageId >
+          0 &&
+        responseMessageId >
+          0 &&
+        params.kakaoMessageId
+      ) {
+        await db.markKakaoAiResponseReady({
+          organizationId,
+
+          userMessageId,
+
+          responseMessageId,
+        });
+      }
+    }
+
+    /**
+     * 명령 실행 후 Conversation을 다시 읽는다.
+     *
+     * 실제 customer 상태는 아직 건드리지 않았으므로
+     * 현재 return에서는 기존 customer를 그대로 반환한다.
+     *
+     * 다음 단계에서 일반 메시지 진입 시
+     * developerTestMode를 effectiveCustomer로 적용한다.
+     */
+    return {
+      organizationId,
+
+      conversationId,
+
+      duplicateMessage:
+        false,
+
+      customer,
+
+      previousMemoryContext,
+
+      memoryExtraction:
+        null,
+
+      memoryWrite:
+        null,
+
+      currentMemory:
+        previousMemoryContext
+          .structuredMemory,
+
+      intentClassification:
+        null,
+
+      resolvedContext:
+        null,
+
+      staffAction:
+        null,
+
+      leadRegistration:
+        null,
+
+      callbackRequest:
+        null,
+
+      registrationVerification:
+        null,
+
+      responseComposition:
+        null,
+    };
+  }
+
+  /**
+   * ---------------------------------------------------------
+   * /staff
+   * ---------------------------------------------------------
+   *
+   * 모든 회사 공통 담당자 업무비서 인증 진입점.
+   *
+   * 흐름:
+   *
+   * /staff
+   * ↓
+   * 현재 24시간 Staff Session 확인
+   * ↓
+   * 존재하면 재로그인 없이 안내
+   * ↓
+   * 없으면 10분짜리 1회용 로그인 Token 생성
+   * ↓
+   * EduCanvas 담당자 인증 페이지 URL 반환
+   *
+   * 중요:
+   *
+   * organizationId를 URL에 넣지 않는다.
+   *
+   * 로그인 페이지에서는:
+   *
+   * token
+   * → DB Staff Auth Session
+   * → organizationId
+   * → CRM User
+   *
+   * 순서로 회사를 서버가 확정한다.
+   */
+  if (
+    commandRoute.handled ===
+      true &&
+    commandRoute.command ===
+      "staff"
+  ) {
+    const activeStaffSession =
+      await db.getActiveKakaoAiStaffAuthSession({
+        organizationId,
+
+        conversationId,
+      });
+
+    let staffReplyText =
+      "";
+
+    /**
+     * 이미 24시간 담당자 세션이 살아있는 경우.
+     *
+     * 새로운 Token을 만들지 않는다.
+     */
+    if (
+      activeStaffSession
+    ) {
+      const staffName =
+        String(
+          activeStaffSession.name ||
+          activeStaffSession.username ||
+          ""
+        ).trim();
+
+      const staffRole =
+        String(
+          activeStaffSession.role ||
+          ""
+        ).trim();
+
+      const roleLabel =
+        staffRole ===
+          "host"
+          ? "Host"
+          : staffRole ===
+              "admin"
+            ? "Admin"
+            : "Staff";
+
+      staffReplyText =
+        staffName
+          ? `${staffName}님은 현재 담당자 인증이 유지되고 있습니다.\n\n권한: ${roleLabel}\n\n카카오 AI 업무비서를 바로 이용하실 수 있습니다.`
+          : `현재 담당자 인증이 유지되고 있습니다.\n\n권한: ${roleLabel}\n\n카카오 AI 업무비서를 바로 이용하실 수 있습니다.`;
+    } else {
+      /**
+       * 활성 담당자 세션이 없는 경우에만
+       * 새로운 10분짜리 1회용 Token을 발급한다.
+       */
+      const staffAuth =
+        await db.createKakaoAiStaffAuthSession({
+          organizationId,
+
+          conversationId,
+        });
+
+      const publicOrigin =
+        String(
+          process.env.FRONTEND_URL ||
+          "https://edu-crm.kr"
+        )
+          .trim()
+          .replace(
+            /\/+$/,
+            ""
+          );
+
+      const staffAuthUrl =
+        `${publicOrigin}/kakao-ai/staff-auth/${encodeURIComponent(
+          staffAuth.token
+        )}`;
+
+      staffReplyText =
+        [
+          "담당자 업무비서 이용을 위해 CRM 계정 인증이 필요합니다.",
+          "",
+          "아래 링크에서 CRM 아이디와 비밀번호로 인증해주세요.",
+          "",
+          staffAuthUrl,
+          "",
+          "인증 링크는 10분 동안 유효하며, 인증 완료 후 담당자 세션은 24시간 유지됩니다.",
+        ].join(
+          "\n"
+        );
+    }
+
+    /**
+     * 일반 AI / OpenAI Intent로 내려보내지 않고
+     * 시스템 명령 응답을 직접 저장한다.
+     */
+    const assistantMessage =
+      await db.insertKakaoAiMessage({
+        organizationId,
+
+        conversationId,
+
+        role:
+          "assistant",
+
+        messageType:
+          "text",
+
+        content:
+          staffReplyText,
+
+        kakaoMessageId:
+          null,
+
+        attachmentData:
+          undefined,
+      });
+
+    const responseMessageId =
+      Number(
+        assistantMessage.id ||
+        0
+      );
+
+    if (
+      userMessageId >
+        0 &&
+      responseMessageId >
+        0 &&
+      params.kakaoMessageId
+    ) {
+      await db.markKakaoAiResponseReady({
+        organizationId,
+
+        userMessageId,
+
+        responseMessageId,
+      });
+    }
+
+    console.log(
+      "[KAKAO AI STAFF AUTH COMMAND]",
+      {
+        organizationId,
+
+        conversationId,
+
+        alreadyAuthenticated:
+          Boolean(
+            activeStaffSession
+          ),
+
+        staffUserId:
+          activeStaffSession
+            ?.userId ??
+          null,
+
+        role:
+          activeStaffSession
+            ?.role ??
+          null,
+
+        responseMessageId,
+      }
+    );
+
+    return {
+      organizationId,
+
+      conversationId,
+
+      duplicateMessage:
+        false,
+
+      customer,
+
+      previousMemoryContext,
+
+      memoryExtraction:
+        null,
+
+      memoryWrite:
+        null,
+
+      currentMemory:
+        previousMemoryContext
+          .structuredMemory,
+
+      intentClassification:
+        null,
+
+      resolvedContext:
+        null,
+
+      staffAction:
+        null,
+
+      leadRegistration:
+        null,
+
+      callbackRequest:
+        null,
+
+      registrationVerification:
+        null,
+
+      responseComposition:
+        null,
+    };
+  }
+
+  /**
+   * /member는 사용자가 명령어만 입력해도
+   * 기존 Registration Verifier의
+   * "등록회원 인증 시작" 자연어 트리거와 동일하게 처리한다.
+   *
+   * 원본 message 자체는 변경하지 않는다.
+   * DB에도 사용자가 실제 입력한 "/member"가 그대로 남는다.
+   */
+  const registrationVerificationMessage =
+    commandRoute.handled ===
+        true &&
+      commandRoute.command ===
+        "member"
+      ? "등록회원입니다"
+      : message;
+
   /**
    * 5.
    * 등록회원 최초 1회 인증 흐름을 먼저 확인한다.
@@ -805,22 +1602,23 @@ registrationVerification:
    * 같은 메시지는 일반 학점은행제 상담질문이 아니라
    * 서버 신원확인 절차이기 때문이다.
    */
-  const registrationVerification =
-  await handleKakaoAiRegistrationVerification({
-    organizationId,
+    const registrationVerification =
+    await handleKakaoAiRegistrationVerification({
+      organizationId,
 
-    conversationId,
+      conversationId,
 
-    currentCustomer:
-      customer,
+      currentCustomer:
+        customer,
 
-    message,
+      message:
+        registrationVerificationMessage,
 
-    conversationHistory:
-      previousMemoryContext
-        .recentConversation
-        .messages,
-  });
+      conversationHistory:
+        previousMemoryContext
+          .recentConversation
+          .messages,
+    });
 
 tracePerf(
   "registration_verification_done",
@@ -1095,6 +1893,11 @@ let documentIntelligence:
   null =
   null;
 
+let documentAssistance:
+  DocumentAssistanceResult |
+  null =
+  null;
+
 if (
   documentFileUrl &&
   (
@@ -1309,6 +2112,184 @@ console.log("[KAKAO AI TRACE] Intent", {
     intentClassification.routed.requiredContexts,
 });
 
+/**
+ * ---------------------------------------------------------
+ * 공통 Document Assistance
+ * ---------------------------------------------------------
+ *
+ * Document Intelligence가 문서를 읽은 뒤
+ * "그래서 사용자가 무엇을 해야 하는지"를 분석한다.
+ *
+ * 신규자 / 등록자 / 향후 CRM 업무비서가
+ * 동일한 공통 Assistance 엔진을 사용한다.
+ *
+ * 중요:
+ * - Vision을 다시 호출하지 않는다.
+ * - DB를 직접 수정하지 않는다.
+ * - 작성방법 / 누락 / 오류 / 다음단계만 분석한다.
+ */
+if (
+  documentIntelligence &&
+  (
+    attachmentContext.hasImage ||
+    attachmentContext.hasDocument
+  )
+) {
+  try {
+    const assistanceStudentId =
+      customer.customerType ===
+        "registered" &&
+      customer.verified ===
+        true &&
+      Number(
+        customer.studentId ||
+        0
+      ) > 0
+        ? Number(
+            customer.studentId
+          )
+        : null;
+
+    documentAssistance =
+      await analyzeDocumentAssistance({
+        organizationId,
+
+        documentIntelligence,
+
+        studentId:
+          assistanceStudentId,
+
+        userMessage:
+          message ||
+          null,
+      });
+
+    tracePerf(
+      "document_assistance_done",
+      {
+        documentType:
+          documentAssistance
+            .documentType,
+
+        category:
+          documentAssistance
+            .category,
+
+        canAssist:
+          documentAssistance
+            .canAssist,
+
+        requiresStaffReview:
+          documentAssistance
+            .requiresStaffReview,
+
+        fieldCount:
+          documentAssistance
+            .fields
+            .length,
+
+        issueCount:
+          documentAssistance
+            .issues
+            .length,
+
+        nextStepCount:
+          documentAssistance
+            .nextSteps
+            .length,
+      }
+    );
+
+    console.log(
+      "[KAKAO AI DOCUMENT ASSISTANCE]",
+      {
+        organizationId,
+
+        conversationId,
+
+        customerType:
+          customer.customerType,
+
+        studentId:
+          assistanceStudentId,
+
+        documentType:
+          documentAssistance
+            .documentType,
+
+        category:
+          documentAssistance
+            .category,
+
+        tasks:
+          documentAssistance
+            .tasks,
+
+        canAssist:
+          documentAssistance
+            .canAssist,
+
+        requiresStaffReview:
+          documentAssistance
+            .requiresStaffReview,
+
+        fieldCount:
+          documentAssistance
+            .fields
+            .length,
+
+        issueCount:
+          documentAssistance
+            .issues
+            .length,
+
+        nextStepCount:
+          documentAssistance
+            .nextSteps
+            .length,
+
+        guidanceSummary:
+          documentAssistance
+            .guidanceSummary,
+      }
+    );
+  } catch (
+    error:
+      unknown
+  ) {
+    console.error(
+      "[KAKAO AI DOCUMENT ASSISTANCE] 분석 실패",
+      error instanceof
+        Error
+        ? {
+            organizationId,
+
+            conversationId,
+
+            message:
+              error.message,
+          }
+        : {
+            organizationId,
+
+            conversationId,
+
+            message:
+              String(
+                error
+              ),
+          }
+    );
+
+    documentAssistance =
+      null;
+
+    tracePerf(
+      "document_assistance_failed"
+    );
+  }
+}
+
   /**
    * 8.
    * 중앙 Access Policy가 적용된 Intent를 기준으로
@@ -1328,7 +2309,9 @@ console.log("[KAKAO AI TRACE] Intent", {
     structuredMemory:
       currentMemory,
 
-    documentIntelligence,
+        documentIntelligence,
+
+    documentAssistance,
   });
 
 tracePerf(
@@ -1661,7 +2644,9 @@ if (
     structuredMemory:
       currentMemory,
 
-    documentIntelligence,
+        documentIntelligence,
+
+    documentAssistance,
   });
 
   /**

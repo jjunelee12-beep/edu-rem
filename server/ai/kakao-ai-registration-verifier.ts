@@ -3,6 +3,14 @@ import OpenAI from "openai";
 import * as db from "../db";
 
 import {
+  AppError,
+} from "../_core/appError";
+
+import {
+  ERROR_CODES,
+} from "../_core/errorCodes";
+
+import {
   verifyKakaoAiRegisteredCustomer,
   type KakaoAiCustomerContext,
 } from "./kakao-ai-customer-resolver";
@@ -1027,22 +1035,71 @@ export async function handleKakaoAiRegistrationVerification(
     };
   }
 
-  /**
+    /**
    * 인증 성공.
    *
    * 카카오 대화방에
    * 서버가 확정한 studentId만 연결한다.
+   *
+   * 중요:
+   * 같은 학생이 이미 다른 카카오 계정에
+   * 연결되어 있으면 서버 오류로 끝내지 않고
+   * 사용자에게 정상 안내 메시지를 반환한다.
    */
-  await db.bindKakaoAiConversationStudent({
-    organizationId:
-      params.organizationId,
+  try {
+    await db.bindKakaoAiConversationStudent({
+      organizationId:
+        params.organizationId,
 
-    conversationId:
-      params.conversationId,
+      conversationId:
+        params.conversationId,
 
-    studentId:
-      verifiedCustomer.studentId,
-  });
+      studentId:
+        verifiedCustomer.studentId,
+    });
+  } catch (
+    error:
+      unknown
+  ) {
+    if (
+      error instanceof
+        AppError &&
+      (
+        error.code ===
+          ERROR_CODES.CONFLICT ||
+        error.status ===
+          409
+      )
+    ) {
+      return {
+        status:
+          "duplicate",
+
+        handled:
+          true,
+
+        customer:
+          params.currentCustomer,
+
+        replyText:
+          "해당 회원정보는 이미 다른 카카오 계정에 연결되어 있습니다. 계정 변경이 필요한 경우 담당자에게 문의해주세요.",
+
+        openAiResponseId:
+          extracted.openAiResponseId,
+
+        model:
+          extracted.model,
+
+        fallbackUsed:
+          extracted.fallbackUsed,
+
+        errorMessage:
+          null,
+      };
+    }
+
+    throw error;
+  }
 
   return {
     status:

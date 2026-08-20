@@ -525,6 +525,56 @@ consultationId: int(
     ),
 
     /**
+     * ---------------------------------------------------------
+     * Developer Test Session
+     * ---------------------------------------------------------
+     *
+     * 위드원교육 개발자 테스트 계정 전용.
+     *
+     * 실제 customerType / studentId / 담당자 세션과
+     * 절대로 혼용하지 않는다.
+     *
+     * null:
+     * 일반 운영 상태.
+     *
+     * lead:
+     * 신규 상담자 테스트.
+     *
+     * registered:
+     * 특정 등록회원 테스트.
+     *
+     * staff:
+     * CRM 업무비서 담당자 테스트.
+     */
+    developerTestMode: mysqlEnum(
+      "developerTestMode",
+      [
+        "lead",
+        "registered",
+        "staff",
+      ]
+    ),
+
+    /**
+     * developerTestMode = registered일 때만 사용.
+     *
+     * 실제 kakaoAiConversations.studentId와는
+     * 완전히 별개의 임시 테스트 대상이다.
+     */
+    developerTestStudentId: int(
+      "developerTestStudentId"
+    ),
+
+    /**
+     * developerTestMode = staff일 때만 사용.
+     *
+     * 추후 실제 CRM userId를 검증한 뒤 저장한다.
+     */
+    developerTestStaffUserId: int(
+      "developerTestStaffUserId"
+    ),
+
+    /**
      * 대화 상태.
      *
      * active:
@@ -591,9 +641,9 @@ orgConsultationIdx:
     table.consultationId
   ),
 
-    orgStudentIdx:
-      index(
-        "idx_kakao_ai_conversation_student"
+        orgStudentUniqueIdx:
+      uniqueIndex(
+        "uq_kakao_ai_conversation_org_student"
       ).on(
         table.organizationId,
         table.studentId
@@ -615,6 +665,176 @@ export type KakaoAiConversation =
 export type InsertKakaoAiConversation =
   typeof kakaoAiConversations.$inferInsert;
 
+
+// ─── Kakao AI Staff Auth Sessions ───────────────────────────
+
+/**
+ * 카카오 AI 담당자 웹 인증 세션.
+ *
+ * 흐름:
+ *
+ * /staff
+ * → 1회용 token 발급
+ * → 웹 로그인
+ * → CRM 계정 검증
+ * → authenticated
+ * → 24시간 동안 Kakao AI 업무비서 사용
+ *
+ * token 원문은 저장하지 않고 SHA-256 hash만 저장한다.
+ */
+export const kakaoAiStaffAuthSessions =
+  mysqlTable(
+    "kakao_ai_staff_auth_sessions",
+    {
+      id:
+        int("id")
+          .autoincrement()
+          .primaryKey(),
+
+      organizationId:
+        int("organizationId")
+          .notNull(),
+
+      conversationId:
+        int("conversationId")
+          .notNull(),
+
+      /**
+       * 웹 URL에 전달되는 원본 token의 SHA-256.
+       */
+      tokenHash:
+        varchar(
+          "tokenHash",
+          {
+            length:
+              64,
+          }
+        )
+          .notNull(),
+
+      /**
+       * 인증 성공 전에는 null.
+       */
+      userId:
+        int("userId"),
+
+      /**
+       * pending:
+       * 아직 웹 로그인 전.
+       *
+       * authenticated:
+       * 로그인 성공.
+       *
+       * expired:
+       * 만료.
+       *
+       * revoked:
+       * 강제 로그아웃.
+       */
+      status:
+        mysqlEnum(
+          "status",
+          [
+            "pending",
+            "authenticated",
+            "expired",
+            "revoked",
+          ]
+        )
+          .notNull()
+          .default(
+            "pending"
+          ),
+
+      /**
+       * 1회용 로그인 링크 만료.
+       * 권장: 생성 후 10분.
+       */
+      tokenExpiresAt:
+        datetime(
+          "tokenExpiresAt"
+        )
+          .notNull(),
+
+      /**
+       * 인증 성공 시각.
+       */
+      authenticatedAt:
+        datetime(
+          "authenticatedAt"
+        ),
+
+      /**
+       * 실제 Staff AI 사용 만료.
+       * 인증 완료 후 24시간.
+       */
+      sessionExpiresAt:
+        datetime(
+          "sessionExpiresAt"
+        ),
+
+      revokedAt:
+        datetime(
+          "revokedAt"
+        ),
+
+      createdAt:
+        timestamp(
+          "createdAt"
+        )
+          .defaultNow()
+          .notNull(),
+
+      updatedAt:
+        timestamp(
+          "updatedAt"
+        )
+          .defaultNow()
+          .onUpdateNow()
+          .notNull(),
+    },
+    (
+      table
+    ) => ({
+      tokenUniqueIdx:
+        uniqueIndex(
+          "uq_kakao_ai_staff_auth_token"
+        ).on(
+          table.tokenHash
+        ),
+
+      conversationIdx:
+        index(
+          "idx_kakao_ai_staff_auth_conversation"
+        ).on(
+          table.organizationId,
+          table.conversationId,
+          table.status
+        ),
+
+      userIdx:
+        index(
+          "idx_kakao_ai_staff_auth_user"
+        ).on(
+          table.organizationId,
+          table.userId,
+          table.status
+        ),
+
+      expiryIdx:
+        index(
+          "idx_kakao_ai_staff_auth_expiry"
+        ).on(
+          table.sessionExpiresAt
+        ),
+    })
+  );
+
+export type KakaoAiStaffAuthSession =
+  typeof kakaoAiStaffAuthSessions.$inferSelect;
+
+export type InsertKakaoAiStaffAuthSession =
+  typeof kakaoAiStaffAuthSessions.$inferInsert;
 
 // ─── Kakao AI Messages ───────────────────────────────────────────────
 

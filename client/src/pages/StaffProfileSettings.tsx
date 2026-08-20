@@ -345,11 +345,13 @@ export default function StaffProfileSettings() {
         false,
 
       profileImageUrl:
-        String(
-          (profile as any)
-            ?.profileImageUrl ||
-          ""
-        ),
+  String(
+    (profile as any)
+      ?.profileImageUrl ||
+    (myProfile as any)
+      ?.profileImageUrl ||
+    ""
+  ),
 
       displayName:
         String(
@@ -510,14 +512,10 @@ export default function StaffProfileSettings() {
     );
 
   const currentImage =
-    imagePreview ||
-    normalizeImageUrl(
-      form.profileImageUrl
-    ) ||
-    normalizeImageUrl(
-      (myProfile as any)
-        ?.profileImageUrl
-    );
+  imagePreview ||
+  normalizeImageUrl(
+    form.profileImageUrl
+  );
 
   const publicToken =
     String(

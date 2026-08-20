@@ -30,16 +30,20 @@ import {
   setChatRoomMuted,
   leaveChatRoom,
   createScheduleNotifications,
-    createNotification,
+  createNotification,
   createAuditLog,
   updateChatRoomTitle,
   updateChatRoomType,
   getStudent,
+
   getKakaoAiSettings,
-getKakaoAiCallbackRecovery,
-claimKakaoAiCallbackDelivery,
-releaseKakaoAiCallbackSendingForRetry,
-markKakaoAiCallbackDelivery,
+  getKakaoAiCallbackRecovery,
+  claimKakaoAiCallbackDelivery,
+  releaseKakaoAiCallbackSendingForRetry,
+  markKakaoAiCallbackDelivery,
+
+  getKakaoAiStaffAuthSessionByToken,
+  authenticateKakaoAiStaffAuthSession,
 } from "../db";
 import {
   orchestrateKakaoAiIncomingMessage,
@@ -1960,6 +1964,369 @@ async function getR2PrefixUsageBytes(prefix: string) {
 
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+  /**
+   * ============================================================
+   * Kakao AI Staff Auth
+   * ============================================================
+   *
+   * 카카오 /staff 명령으로 발급된 1회용 로그인 Token의
+   * 상태를 웹 로그인 페이지에서 확인한다.
+   *
+   * 중요:
+   * organizationId를 브라우저에서 받지 않는다.
+   *
+   * token
+   * → DB staff auth session
+   * → organizationId
+   * → conversationId
+   *
+   * 순서로 서버가 직접 확정한다.
+   */
+
+  app.get(
+    "/api/kakao-ai/staff-auth/:token",
+    async (
+      req,
+      res
+    ) => {
+      try {
+        const token =
+          String(
+            req.params.token ||
+            ""
+          ).trim();
+
+        if (
+          !token
+        ) {
+          return res
+            .status(400)
+            .json({
+              success:
+                false,
+
+              code:
+                "INVALID_TOKEN",
+
+              message:
+                "담당자 인증 토큰이 필요합니다.",
+            });
+        }
+
+        const session =
+          await getKakaoAiStaffAuthSessionByToken({
+            token,
+          });
+
+        if (
+          !session
+        ) {
+          return res
+            .status(404)
+            .json({
+              success:
+                false,
+
+              code:
+                "AUTH_SESSION_NOT_FOUND",
+
+              message:
+                "유효하지 않은 담당자 인증 링크입니다.",
+            });
+        }
+
+        /**
+         * pending이 아니거나
+         * 만료/폐기된 링크는 로그인할 수 없다.
+         */
+        if (
+          session.usable !==
+            true
+        ) {
+          const status =
+            String(
+              session.status ||
+              ""
+            );
+
+          const expired =
+            status ===
+              "expired";
+
+          return res
+            .status(
+              expired
+                ? 410
+                : 409
+            )
+            .json({
+              success:
+                false,
+
+              code:
+                expired
+                  ? "AUTH_TOKEN_EXPIRED"
+                  : "AUTH_TOKEN_UNAVAILABLE",
+
+              status,
+
+              message:
+                expired
+                  ? "담당자 인증 링크가 만료되었습니다. 카카오톡에서 /staff를 다시 입력해주세요."
+                  : "이미 사용되었거나 더 이상 사용할 수 없는 담당자 인증 링크입니다.",
+            });
+        }
+
+        /**
+         * 로그인 페이지에 필요한 최소정보만 반환한다.
+         *
+         * userId / 내부 권한 / DB 식별정보 등은
+         * 인증 전에는 반환하지 않는다.
+         */
+        return res
+          .status(200)
+          .json({
+            success:
+              true,
+
+            status:
+              "pending",
+
+            usable:
+              true,
+
+            tokenExpiresAt:
+              session.tokenExpiresAt,
+          });
+      } catch (
+        error:
+          any
+      ) {
+        console.error(
+          "[KAKAO AI STAFF AUTH GET ERROR]",
+          {
+            name:
+              error?.name ||
+              null,
+
+            code:
+              error?.code ||
+              null,
+
+            status:
+              error?.status ||
+              null,
+
+            message:
+              error?.message ||
+              String(
+                error
+              ),
+          }
+        );
+
+        const status =
+          Number(
+            error?.status ||
+            500
+          );
+
+        return res
+          .status(
+            Number.isFinite(
+              status
+            )
+              ? status
+              : 500
+          )
+          .json({
+            success:
+              false,
+
+            code:
+              error?.code ||
+              "INTERNAL_SERVER_ERROR",
+
+            message:
+              error?.message ||
+              "담당자 인증 상태를 확인하는 중 오류가 발생했습니다.",
+          });
+      }
+    }
+  );
+
+  /**
+   * 담당자 카카오 AI 웹 로그인.
+   *
+   * body:
+   *
+   * {
+   *   username,
+   *   password
+   * }
+   *
+   * organizationId는 절대 받지 않는다.
+   */
+  app.post(
+    "/api/kakao-ai/staff-auth/:token/login",
+    async (
+      req,
+      res
+    ) => {
+      try {
+        const token =
+          String(
+            req.params.token ||
+            ""
+          ).trim();
+
+        const username =
+          String(
+            req.body
+              ?.username ||
+            ""
+          ).trim();
+
+        const password =
+          String(
+            req.body
+              ?.password ||
+            ""
+          );
+
+        if (
+          !token
+        ) {
+          return res
+            .status(400)
+            .json({
+              success:
+                false,
+
+              code:
+                "INVALID_TOKEN",
+
+              message:
+                "담당자 인증 토큰이 필요합니다.",
+            });
+        }
+
+        if (
+          !username ||
+          !password
+        ) {
+          return res
+            .status(400)
+            .json({
+              success:
+                false,
+
+              code:
+                "LOGIN_REQUIRED",
+
+              message:
+                "아이디와 비밀번호를 입력해주세요.",
+            });
+        }
+
+        const authenticated =
+          await authenticateKakaoAiStaffAuthSession({
+            token,
+
+            username,
+
+            password,
+          });
+
+        /**
+         * 여기서 기존 CRM 로그인 쿠키는 만들지 않는다.
+         *
+         * 이 로그인은 CRM 웹사이트 세션이 아니라
+         * 카카오 AI 담당자 세션만 인증하는 목적이다.
+         */
+        return res
+          .status(200)
+          .json({
+            success:
+              true,
+
+            authenticated:
+              true,
+
+            user: {
+              name:
+                authenticated.name,
+
+              username:
+                authenticated.username,
+
+              role:
+                authenticated.role,
+            },
+
+            sessionExpiresAt:
+              authenticated.sessionExpiresAt,
+
+            message:
+              "담당자 인증이 완료되었습니다. 카카오톡으로 돌아가 업무비서를 이용해주세요.",
+          });
+      } catch (
+        error:
+          any
+      ) {
+        console.error(
+          "[KAKAO AI STAFF AUTH LOGIN ERROR]",
+          {
+            name:
+              error?.name ||
+              null,
+
+            code:
+              error?.code ||
+              null,
+
+            status:
+              error?.status ||
+              null,
+
+            message:
+              error?.message ||
+              String(
+                error
+              ),
+          }
+        );
+
+        const status =
+          Number(
+            error?.status ||
+            500
+          );
+
+        return res
+          .status(
+            Number.isFinite(
+              status
+            )
+              ? status
+              : 500
+          )
+          .json({
+            success:
+              false,
+
+            code:
+              error?.code ||
+              "INTERNAL_SERVER_ERROR",
+
+            message:
+              error?.message ||
+              "담당자 인증 중 오류가 발생했습니다.",
+          });
+      }
+    }
+  );
 
   /**
    * ─────────────────────────────────────────────────────────────

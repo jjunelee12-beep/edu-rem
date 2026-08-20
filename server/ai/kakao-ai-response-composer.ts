@@ -653,6 +653,30 @@ function buildSafeDocumentIntelligenceContext(
 }
 
 /**
+ * Document Assistance 결과 중
+ * 최종 고객 답변에 사용할 수 있는
+ * 문서 기반 안내정보만 전달한다.
+ *
+ * 중요:
+ * - Document Intelligence = 문서에서 확인된 사실
+ * - Document Assistance = 그 사실을 바탕으로 한 안내/다음 행동
+ * - Composer가 문서를 다시 해석하거나 절차를 새로 만들지 않는다.
+ * - 실제 서버 Assistance 결과만 자연어 답변 근거로 사용한다.
+ */
+function buildSafeDocumentAssistanceContext(
+  context:
+    KakaoAiResolvedContext["documentAssistance"]
+) {
+  if (
+    !context
+  ) {
+    return null;
+  }
+
+  return context;
+}
+
+/**
  * 등록학생 분석도 개인정보/내부데이터 전체를
  * 그대로 모델에 전달하지 않는다.
  *
@@ -1391,6 +1415,252 @@ warnings, missingEvidence에
 내부 decision 코드나
 개발용 상태값을 그대로 읽지 말고
 자연스러운 상담 문장으로 바꿔 설명한다.
+
+7-7.
+documentAssistanceContext가 존재하면
+현재 첨부문서를 기준으로 서버의 Document Assistance가
+작성항목, 누락사항, 오류 가능성,
+사용자의 다음 행동을 이미 분석한 결과다.
+
+사용자가 다음과 같이 묻는 경우에는
+documentAssistanceContext를 최우선 안내 근거로 사용한다.
+
+- "여기 뭐 써요?"
+- "이거 어떻게 작성해요?"
+- "빠진 거 있어요?"
+- "잘못 쓴 데 있어요?"
+- "이대로 제출하면 돼요?"
+- "다음에 뭐 해야 돼요?"
+- "이 서류 어떻게 처리해요?"
+- "실습서류 작성 좀 봐줘요."
+- "자격증 신청서 이거 맞아요?"
+
+documentAssistanceContext의 역할은 다음과 같다.
+
+fields:
+현재 문서에서 확인된 개별 작성/확인 항목이다.
+
+status 의미:
+
+filled:
+현재 값이 확인된 항목이다.
+
+missing:
+필수 항목인데 현재 자료에서 값이 확인되지 않은 상태다.
+사용자가 작성하거나 추가 확인해야 하는 항목으로 안내할 수 있다.
+
+uncertain:
+값은 보이지만 정확하지 않거나 추가 확인이 필요한 상태다.
+확정값처럼 말하지 않는다.
+
+mismatch:
+문서 또는 다른 서버 근거 사이에 값이 서로 맞지 않는 상태다.
+어느 값이 맞는지 임의로 결정하지 않는다.
+사용자 또는 담당자 확인이 필요하다고 안내한다.
+
+not_applicable:
+현재 문서에 적용되지 않는 항목이다.
+사용자에게 굳이 작성하도록 요구하지 않는다.
+
+fields.source 의미:
+
+document:
+첨부문서에서 확인된 값.
+
+crm:
+서버 CRM에서 확인된 값.
+
+document_and_crm:
+문서와 CRM 값이 모두 확인되고 일치한 값.
+
+user:
+사용자가 직접 말한 값.
+
+unknown:
+확정 근거가 없는 값.
+
+source가 unknown이거나
+status가 uncertain / mismatch인 값을
+AI가 임의로 채워 넣지 않는다.
+
+issues:
+Document Assistance가 발견한
+누락, 불일치, 제출 전 확인사항이다.
+
+severity가 danger이면
+잘못 제출하거나 잘못 반영될 가능성이 큰 문제이므로
+현재 질문과 관련된 경우 우선 안내한다.
+
+warning이면
+제출 전에 확인해야 할 사항으로 설명한다.
+
+info이면
+사용자가 알아두면 되는 참고사항으로 자연스럽게 설명한다.
+
+issues의 code,
+autoFixable 같은 내부 필드명은
+고객에게 그대로 읽지 않는다.
+
+autoFixable=true는
+실제 파일이나 CRM을 이미 수정했다는 뜻이 아니다.
+
+"제가 수정했습니다",
+"자동으로 작성해두었습니다",
+"반영했습니다"
+라고 말하지 않는다.
+
+실제 수정/저장 Action 결과가 별도로 존재하지 않는 한
+어떻게 수정하거나 작성하면 되는지만 안내한다.
+
+nextSteps:
+현재 문서를 기준으로
+사용자가 다음으로 해야 할 서버 분석 순서다.
+
+사용자가 "뭐부터 하면 돼요?",
+"다음은 뭐예요?"라고 물으면
+nextSteps의 order 순서를 우선해서 설명한다.
+
+모든 nextSteps를 기계적으로 길게 읽지 않는다.
+현재 질문에 필요한 단계부터 자연스럽게 안내한다.
+
+requiresUserAction=true이면
+사용자가 실제로 작성, 확인, 서명, 제출 등의 행동을 해야 한다는 의미다.
+
+requiresStaffReview=true이면
+현재 자료만으로 AI가 확정해서 안내하면 안 된다.
+담당자 확인이 필요한 부분이라고 자연스럽게 설명한다.
+
+documentAssistanceContext.canAssist=false이거나
+requiresStaffReview=true이면
+확정되지 않은 내용을 억지로 완료형으로 안내하지 않는다.
+
+확인 가능한 부분은 먼저 안내하고,
+검토가 필요한 부분만 따로 구분해서 설명한다.
+
+guidanceSummary가 존재하면
+현재 문서 전체에 대한 Assistance의 핵심 안내이므로
+사용자 질문과 관련된 경우 우선 참고한다.
+
+단,
+guidanceSummary를 그대로 복사하는 것이 아니라
+현재 대화와 질문에 맞게 자연스럽게 재구성한다.
+
+documentIntelligenceContext와
+documentAssistanceContext의 역할을 반드시 구분한다.
+
+documentIntelligenceContext:
+"이 문서에서 무엇이 확인되었는가"
+
+documentAssistanceContext:
+"그래서 이 문서를 어떻게 작성/보완/제출해야 하는가"
+
+예:
+
+Document Intelligence:
+실습기관명 확인됨
+실습기간 확인 안 됨
+기관 날인 확인 안 됨
+
+Document Assistance:
+실습기관명 = filled
+실습기간 = missing
+기관 날인 = missing
+다음 단계 = 실습기간 작성 → 기관 날인 확인
+
+사용자가:
+"이거 그대로 제출하면 돼요?"
+
+좋은 답변:
+
+"기관명은 확인되는데 실습기간이 비어 있고
+기관 날인도 아직 확인되지 않아서
+지금 그대로 제출하기보다는
+실습기간을 먼저 작성하고 날인 여부까지 확인하시는 게 좋아요."
+
+나쁜 답변:
+
+"서류가 확인되었습니다."
+
+나쁜 답변:
+
+"제출하시면 됩니다."
+
+누락이나 확인 필요사항이 있는데
+단순히 문서가 인식됐다는 이유로
+제출 가능하다고 확정하지 않는다.
+
+Document Assistance는
+학점, 남은 과목 수, 법 적용,
+전체 학기 수나 학위일정을 새로 계산하는 엔진이 아니다.
+
+학업 숫자가 필요한 경우에는 반드시 기존 원칙대로:
+
+신규 고객:
+leadAcademicContext.academicSummary
+
+등록회원:
+registeredStudentContext.academicSummary
+
+의 서버 계산값만 사용한다.
+
+Document Assistance 결과와
+Academic Summary가 서로 다른 역할을 담당한다는 점을 유지한다.
+
+7-8.
+사용자가 서류 전체 설명이 아니라
+특정 한 항목만 묻는 경우에는
+documentAssistanceContext 전체를 장황하게 설명하지 않는다.
+
+예:
+
+"실습기간 어디 써요?"
+→ 실습기간 관련 field와 guidance 중심으로 답한다.
+
+"빠진 거 있어요?"
+→ missing / uncertain / mismatch field와
+관련 issues만 우선 답한다.
+
+"다음에 뭐 해요?"
+→ nextSteps 중심으로 답한다.
+
+"이대로 제출돼요?"
+→ danger/warning issues,
+missing 필수항목,
+requiresStaffReview 여부를 우선 확인해서 답한다.
+
+현재 질문과 관계없는 모든 field를
+체크리스트처럼 매번 나열하지 않는다.
+
+7-9.
+서명, 날인, 기관확인, 외부기관 제출완료,
+자격증 실제 발급,
+학점인정 실제 처리완료 등은
+Document Assistance만으로 완료되었다고 말하지 않는다.
+
+문서에서 완료증빙이 확인되거나
+별도의 서버 Action / 행정상태 결과가 있을 때만
+완료 사실로 설명한다.
+
+그 외에는:
+
+"서명이 필요해 보여요."
+"날인 여부를 확인해주세요."
+"제출 전 이 항목을 확인해주세요."
+
+처럼 안내 수준으로 표현한다.
+
+7-10.
+등록회원의 서류지원에서
+documentAssistanceContext와
+registeredStudentContext가 함께 존재하면
+서류에 적힌 값과 실제 CRM 정보를 구분해서 사용한다.
+
+두 값이 일치한다고 서버가 명확히 확인하지 않았다면
+AI가 스스로 같다고 가정하지 않는다.
+
+불일치가 발견되면
+어느 쪽을 임의로 덮어쓰지 않고
+확인이 필요하다고 안내한다.
 
 8. 신규 고객(lead)과 등록회원(registered)을
 명확하게 구분한다.
@@ -2360,6 +2630,12 @@ documentIntelligenceContext:
       .documentIntelligence
   ),
 
+documentAssistanceContext:
+  buildSafeDocumentAssistanceContext(
+    resolvedContext
+      .documentAssistance
+  ),
+
 leadAcademicContext:
   buildSafeLeadAcademicContext(
     resolvedContext
@@ -2576,6 +2852,384 @@ function buildFallbackReply(
         false,
     };
   }
+
+  /**
+   * ---------------------------------------------------------
+   * Document Assistance Fallback
+   * ---------------------------------------------------------
+   *
+   * Document Intelligence 이후
+   * Document Assistance까지 정상 생성됐지만
+   * 최종 OpenAI Composer 호출이 실패한 경우에도
+   * 작성항목 / 누락 / 오류 / 다음단계 안내를 보존한다.
+   *
+   * 중요:
+   * - 신규/등록자 Access Policy는 위에서 이미 처리됨
+   * - 문서나 CRM을 실제 수정했다고 말하지 않음
+   * - 학점/과목/기간을 여기서 새로 계산하지 않음
+   * - transcript 등 학업문서는 아래 Academic fallback을 우선함
+   */
+  const documentAssistance =
+    resolvedContext
+      .documentAssistance;
+
+  if (
+    documentAssistance &&
+    documentAssistance.category !==
+      "academic"
+  ) {
+    const assistanceSummary =
+      normalizeText(
+        documentAssistance
+          .guidanceSummary
+      );
+
+    const fields =
+      Array.isArray(
+        documentAssistance.fields
+      )
+        ? documentAssistance.fields
+        : [];
+
+    const issues =
+      Array.isArray(
+        documentAssistance.issues
+      )
+        ? documentAssistance.issues
+        : [];
+
+    const nextSteps =
+      Array.isArray(
+        documentAssistance.nextSteps
+      )
+        ? documentAssistance.nextSteps
+        : [];
+
+    /**
+     * 필수 누락항목.
+     */
+    const missingFields =
+      fields
+        .filter(
+          field =>
+            field.required ===
+              true &&
+            field.status ===
+              "missing"
+        )
+        .slice(
+          0,
+          5
+        );
+
+    /**
+     * 값은 있으나 확정할 수 없거나
+     * 다른 근거와 충돌하는 항목.
+     */
+    const reviewFields =
+      fields
+        .filter(
+          field =>
+            field.status ===
+              "uncertain" ||
+            field.status ===
+              "mismatch"
+        )
+        .slice(
+          0,
+          5
+        );
+
+    /**
+     * danger → warning 순서로
+     * 제출 전에 중요한 문제만 추린다.
+     */
+    const importantIssues =
+      issues
+        .filter(
+          issue =>
+            issue.severity ===
+              "danger" ||
+            issue.severity ===
+              "warning"
+        )
+        .sort(
+          (
+            a,
+            b
+          ) => {
+            const severityRank = {
+              danger:
+                0,
+              warning:
+                1,
+              info:
+                2,
+            } as const;
+
+            return (
+              severityRank[
+                a.severity
+              ] -
+              severityRank[
+                b.severity
+              ]
+            );
+          }
+        )
+        .slice(
+          0,
+          4
+        );
+
+    /**
+     * 서버 Assistance가 계산한
+     * 다음 행동 순서.
+     */
+    const orderedNextSteps =
+      nextSteps
+        .slice()
+        .sort(
+          (
+            a,
+            b
+          ) =>
+            Number(
+              a.order ||
+              0
+            ) -
+            Number(
+              b.order ||
+              0
+            )
+        )
+        .slice(
+          0,
+          3
+        );
+
+    const fallbackParts:
+      string[] =
+      [];
+
+    /**
+     * Assistance 전체 핵심요약.
+     */
+    if (
+      assistanceSummary
+    ) {
+      fallbackParts.push(
+        assistanceSummary
+      );
+    }
+
+    /**
+     * 누락항목 안내.
+     */
+    if (
+      missingFields.length >
+      0
+    ) {
+      const labels =
+        missingFields
+          .map(
+            field =>
+              normalizeText(
+                field.label
+              )
+          )
+          .filter(
+            Boolean
+          );
+
+      if (
+        labels.length >
+        0
+      ) {
+        fallbackParts.push(
+          `현재 확인되는 필수 누락항목은 ${labels.join(
+            ", "
+          )}입니다.`
+        );
+      }
+    }
+
+    /**
+     * 불확실 / 불일치 항목.
+     */
+    if (
+      reviewFields.length >
+      0
+    ) {
+      const labels =
+        reviewFields
+          .map(
+            field =>
+              normalizeText(
+                field.label
+              )
+          )
+          .filter(
+            Boolean
+          );
+
+      if (
+        labels.length >
+        0
+      ) {
+        fallbackParts.push(
+          `${labels.join(
+            ", "
+          )} 항목은 현재 자료만으로 확정하기 어려워 추가 확인이 필요합니다.`
+        );
+      }
+    }
+
+    /**
+     * 위험/경고 이슈.
+     *
+     * 내부 code나 autoFixable은
+     * 고객에게 노출하지 않는다.
+     */
+    if (
+      importantIssues.length >
+      0
+    ) {
+      const issueMessages =
+        importantIssues
+          .map(
+            issue =>
+              normalizeText(
+                issue.message
+              ) ||
+              normalizeText(
+                issue.title
+              )
+          )
+          .filter(
+            Boolean
+          );
+
+      if (
+        issueMessages.length >
+        0
+      ) {
+        fallbackParts.push(
+          issueMessages
+            .join(
+              " "
+            )
+        );
+      }
+    }
+
+    /**
+     * 다음 행동.
+     */
+    if (
+      orderedNextSteps.length >
+      0
+    ) {
+      const stepMessages =
+        orderedNextSteps
+          .map(
+            (
+              step,
+              index
+            ) => {
+              const description =
+                normalizeText(
+                  step.description
+                );
+
+              const title =
+                normalizeText(
+                  step.title
+                );
+
+              const text =
+                description ||
+                title;
+
+              return text
+                ? `${index + 1}. ${text}`
+                : "";
+            }
+          )
+          .filter(
+            Boolean
+          );
+
+      if (
+        stepMessages.length >
+        0
+      ) {
+        fallbackParts.push(
+          `다음 순서로 확인해주세요.\n${stepMessages.join(
+            "\n"
+          )}`
+        );
+      }
+    }
+
+    /**
+     * 사람이 확인해야 하는 문서라면
+     * 완료형/확정형으로 끝내지 않는다.
+     */
+    if (
+      documentAssistance
+        .requiresStaffReview
+    ) {
+      fallbackParts.push(
+        "일부 내용은 담당자 확인이 필요한 상태라 현재 자료만으로 최종 확정해서 안내하지는 않겠습니다."
+      );
+    }
+
+    /**
+     * Assistance 결과는 존재하지만
+     * 구체적으로 출력할 내용이 없는 경우.
+     */
+    if (
+      fallbackParts.length ===
+      0
+    ) {
+      fallbackParts.push(
+        documentAssistance
+          .canAssist
+          ? "보내주신 자료는 확인했습니다. 현재 문서를 기준으로 작성 및 다음 진행사항을 확인할 수 있습니다."
+          : "보내주신 자료는 확인했지만 현재 자료만으로는 정확한 작성 또는 제출 안내를 확정하기 어렵습니다."
+      );
+    }
+
+    return {
+      replyText:
+        Array.from(
+          new Set(
+            fallbackParts
+              .map(
+                part =>
+                  normalizeText(
+                    part
+                  )
+              )
+              .filter(
+                Boolean
+              )
+          )
+        )
+          .join(
+            "\n\n"
+          )
+          .trim(),
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        false,
+    };
+  }
+
 
 /**
  * ---------------------------------------------------------

@@ -37,6 +37,10 @@ import type {
 } from "./document-intelligence.types";
 
 import type {
+  DocumentAssistanceResult,
+} from "./document-assistance.types";
+
+import type {
   KakaoAiCapability,
   KakaoAiCustomerType,
 } from "./kakao-ai-access-policy";
@@ -217,6 +221,24 @@ export type KakaoAiResolvedContext = {
 documentIntelligence:
   DocumentIntelligenceResult |
   null;
+
+/**
+ * Document Intelligence 결과를 기반으로
+ * 실제 상담에서 어떻게 활용할지 정리한
+ * 공통 Document Assistance 결과.
+ *
+ * 신규자 / 등록자 모두 사용할 수 있다.
+ *
+ * null이면:
+ * - 첨부가 없었거나
+ * - Document Intelligence 분석이 없었거나
+ * - Assistance 생성에 실패했거나
+ * - 현재 메시지에서 Assistance를 실행하지 않은 상태
+ */
+documentAssistance:
+  DocumentAssistanceResult |
+  null;
+
   /**
    * 신규 상담자의 실제 공통 규칙엔진 분석결과.
    *
@@ -994,6 +1016,17 @@ export async function resolveKakaoAiContext(
 documentIntelligence?:
   DocumentIntelligenceResult |
   null;
+
+/**
+ * Orchestrator에서 Document Intelligence 이후
+ * 이미 생성한 Document Assistance 결과.
+ *
+ * Context Resolver에서는 다시 분석하지 않고
+ * 전달받은 서버 확정 결과만 Context에 포함한다.
+ */
+documentAssistance?:
+  DocumentAssistanceResult |
+  null;
   }
 ): Promise<KakaoAiResolvedContext> {
   const organizationId =
@@ -1485,11 +1518,15 @@ leadAcademicAnalysis = {
 
     fetchPlan,
 
-    companyContext,
+        companyContext,
 
-documentIntelligence:
-  params.documentIntelligence ??
-  null,
+    documentIntelligence:
+      params.documentIntelligence ??
+      null,
+
+    documentAssistance:
+      params.documentAssistance ??
+      null,
 
     leadAcademicAnalysis,
 

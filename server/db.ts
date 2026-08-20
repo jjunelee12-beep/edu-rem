@@ -123,6 +123,9 @@ type InsertKakaoAiMessage,
 kakaoAiMemories,
 type InsertKakaoAiMemory,
 
+kakaoAiStaffAuthSessions,
+type InsertKakaoAiStaffAuthSession,
+
 smsSettings,
 type InsertSmsSetting,
 smsLogs,
@@ -22353,7 +22356,52 @@ const actualSubjectCount =
     0
   );
 
-const subjectCount =
+/**
+ * 정산 과목 수는 학기의 실제 수강 과목 수를 기준으로 하되,
+ * 우리플랜에서 settlementIncluded=false로 지정된 과목은 제외한다.
+ *
+ * 예:
+ * - 실제 과목 수 7
+ * - 이론 6과목
+ * - 사회복지현장실습 1과목 settlementIncluded=false
+ * → 정산 과목 수 6
+ *
+ * 실제 학점/수강 과목 수 자체는 변경하지 않고
+ * 정산 계산에서만 제외한다.
+ */
+const semesterPlanSubjects =
+  await listPlanSemesters(
+    studentId,
+    {
+      organizationId,
+    }
+  );
+
+const excludedSettlementSubjectCount =
+  semesterPlanSubjects.filter(
+    (row: any) => {
+      const sameSemester =
+        Number(
+          row.semesterNo
+        ) ===
+        Number(
+          (sem as any)
+            .semesterOrder
+        );
+
+      const settlementExcluded =
+        row.settlementIncluded === false ||
+        row.settlementIncluded === 0 ||
+        row.settlementIncluded === "0";
+
+      return (
+        sameSemester &&
+        settlementExcluded
+      );
+    }
+  ).length;
+
+const normalizedActualSubjectCount =
   Number.isFinite(
     actualSubjectCount
   ) &&
@@ -22362,6 +22410,13 @@ const subjectCount =
         actualSubjectCount
       )
     : 0;
+
+const subjectCount =
+  Math.max(
+    0,
+    normalizedActualSubjectCount -
+      excludedSettlementSubjectCount
+  );
 
 const educationInstitutionId =
   Number(
@@ -23282,6 +23337,12 @@ privateCertificateExternalClientName:
 privateCertificateExternalPhone:
   privateCertificateExternalRequests.phone,
 
+privateCertificateClientName:
+  privateCertificateRequests.clientName,
+
+privateCertificatePhone:
+  privateCertificateRequests.phone,
+
 semesterOrder:
   semesters.semesterOrder,
     })
@@ -23366,6 +23427,27 @@ semesterOrder:
     )
   )
 )
+.leftJoin(
+  privateCertificateRequests,
+  and(
+    eq(
+      settlementItems.revenueType,
+      "private_certificate"
+    ),
+    eq(
+      settlementItems.sourceType,
+      "student"
+    ),
+    eq(
+      settlementItems.sourceId,
+      privateCertificateRequests.id
+    ),
+    eq(
+      privateCertificateRequests.organizationId,
+      organizationId
+    )
+  )
+)
 .where(and(...conditions))
 .orderBy(
   desc(settlementItems.occurredAt),
@@ -23401,32 +23483,50 @@ semesterOrder:
         );
 
   const privateCertificateExternalClientName =
-    r.privateCertificateExternalClientName === null ||
-    r.privateCertificateExternalClientName === undefined
-      ? ""
-      : decryptPersonalData(
-          r.privateCertificateExternalClientName
-        );
+  r.privateCertificateExternalClientName === null ||
+  r.privateCertificateExternalClientName === undefined
+    ? ""
+    : decryptPersonalData(
+        r.privateCertificateExternalClientName
+      );
 
-  const privateCertificateExternalPhone =
-    r.privateCertificateExternalPhone === null ||
-    r.privateCertificateExternalPhone === undefined
-      ? ""
-      : decryptPersonalData(
-          r.privateCertificateExternalPhone
-        );
+const privateCertificateExternalPhone =
+  r.privateCertificateExternalPhone === null ||
+  r.privateCertificateExternalPhone === undefined
+    ? ""
+    : decryptPersonalData(
+        r.privateCertificateExternalPhone
+      );
 
-  const resolvedClientName =
-    decryptedStudentRow.clientName ||
-    practiceExternalClientName ||
-    privateCertificateExternalClientName ||
-    "";
+const privateCertificateClientName =
+  r.privateCertificateClientName === null ||
+  r.privateCertificateClientName === undefined
+    ? ""
+    : decryptPersonalData(
+        r.privateCertificateClientName
+      );
 
-  const resolvedPhone =
-    decryptedStudentRow.phone ||
-    practiceExternalPhone ||
-    privateCertificateExternalPhone ||
-    "";
+const privateCertificatePhone =
+  r.privateCertificatePhone === null ||
+  r.privateCertificatePhone === undefined
+    ? ""
+    : decryptPersonalData(
+        r.privateCertificatePhone
+      );
+
+const resolvedClientName =
+  decryptedStudentRow.clientName ||
+  privateCertificateClientName ||
+  practiceExternalClientName ||
+  privateCertificateExternalClientName ||
+  "";
+
+const resolvedPhone =
+  decryptedStudentRow.phone ||
+  privateCertificatePhone ||
+  practiceExternalPhone ||
+  privateCertificateExternalPhone ||
+  "";
 
   const isRefund =
     r.revenueType === "refund";
@@ -23855,23 +23955,86 @@ export async function getSettlementInstitutionEntries(params: {
 )
     .orderBy(desc(settlementItems.occurredAt), desc(settlementItems.id));
 
-  const entries = (rows as any[]).map((row) => ({
-    id: Number(row.id),
-    occurredAt: row.occurredAt,
-    revenueType: row.revenueType,
-    settlementStatus: row.settlementStatus,
-    assigneeName: row.assigneeName || "",
-    clientName: row.clientName || "",
-    title: row.title || "",
-    institutionName: row.institutionName || "",
-    grossAmount: toNumber(row.grossAmount),
-    companyAmount: toNumber(row.companyAmount),
-    freelancerAmount: toNumber(row.freelancerAmount),
-    taxAmount: toNumber(row.taxAmount),
-    finalPayoutAmount: toNumber(row.finalPayoutAmount),
-    companyProfit: toNumber(row.companyProfit),
-    studentId: Number(row.studentId || 0),
-  }));
+  const entries =
+  (rows as any[]).map(
+    (row: any) => {
+      const decryptedRow =
+        decryptStudentJoinedRow({
+          ...row,
+
+          clientName:
+            row.clientName,
+
+          assigneeName:
+            row.assigneeName,
+        });
+
+      return {
+        id:
+          Number(row.id),
+
+        occurredAt:
+          row.occurredAt,
+
+        revenueType:
+          row.revenueType,
+
+        settlementStatus:
+          row.settlementStatus,
+
+        assigneeName:
+          decryptedRow.assigneeName ||
+          "",
+
+        clientName:
+          decryptedRow.clientName ||
+          "",
+
+        title:
+          row.title || "",
+
+        institutionName:
+          row.institutionName ||
+          "",
+
+        grossAmount:
+          toNumber(
+            row.grossAmount
+          ),
+
+        companyAmount:
+          toNumber(
+            row.companyAmount
+          ),
+
+        freelancerAmount:
+          toNumber(
+            row.freelancerAmount
+          ),
+
+        taxAmount:
+          toNumber(
+            row.taxAmount
+          ),
+
+        finalPayoutAmount:
+          toNumber(
+            row.finalPayoutAmount
+          ),
+
+        companyProfit:
+          toNumber(
+            row.companyProfit
+          ),
+
+        studentId:
+          Number(
+            row.studentId ||
+            0
+          ),
+      };
+    }
+  );
 
   return {
     entries,
@@ -26153,15 +26316,49 @@ totalRefundCompanyProfit: sql<string>`
     .where(and(...conditions))
     .groupBy(settlementItems.assigneeId);
 
-  const allUserRows = await db
+  const allUserRows =
+  await db
     .select({
-      id: users.id,
-      name: users.name,
-    })
-    .from(users);
+      id:
+        users.id,
 
-  const userMap = new Map(
-    allUserRows.map((u) => [Number(u.id), u.name || "이름없음"])
+      name:
+        users.name,
+
+      email:
+        users.email,
+
+      phone:
+        users.phone,
+
+      bankAccount:
+        users.bankAccount,
+    })
+    .from(users)
+    .where(
+      eq(
+        users.organizationId,
+        organizationId
+      )
+    );
+
+const userMap =
+  new Map(
+    allUserRows.map(
+      (row: any) => {
+        const decryptedUser =
+          decryptUserPersonalData(
+            row
+          );
+
+        return [
+          Number(row.id),
+
+          decryptedUser?.name ||
+            "이름없음",
+        ];
+      }
+    )
   );
 
   return rows.map((row: any) => {
@@ -26346,7 +26543,15 @@ const [profileRows] = await db.execute(sql`
   LIMIT 1
 `);
 
-  const profile = (profileRows as any[])?.[0];
+  const profileRaw =
+  (profileRows as any[])?.[0];
+
+const profile =
+  profileRaw
+    ? decryptUserPersonalData(
+        profileRaw
+      )
+    : null;
   if (!profile) {
     throwAppError(
   ERROR_CODES.DATA_NOT_FOUND,
@@ -26399,15 +26604,51 @@ WHERE s.organizationId = ${requireOrganizationId(params.organizationId)}
     ORDER BY s.occurredAt ASC, s.id ASC
   `);
 
-  const entries = ((entryRows as any[]) ?? []).map((row: any) => ({
-    ...row,
-    grossAmount: toNumber(row.grossAmount),
-    companyAmount: toNumber(row.companyAmount),
-    companyProfit: toNumber(row.companyProfit),
-    freelancerAmount: toNumber(row.freelancerAmount),
-    taxAmount: toNumber(row.taxAmount),
-    finalPayoutAmount: toNumber(row.finalPayoutAmount),
-  }));
+  const entries =
+  ((entryRows as any[]) ?? []).map(
+    (row: any) => {
+      const decryptedRow =
+        decryptStudentJoinedRow({
+          ...row,
+          clientName:
+            row.clientName,
+        });
+
+      return {
+        ...decryptedRow,
+
+        grossAmount:
+          toNumber(
+            row.grossAmount
+          ),
+
+        companyAmount:
+          toNumber(
+            row.companyAmount
+          ),
+
+        companyProfit:
+          toNumber(
+            row.companyProfit
+          ),
+
+        freelancerAmount:
+          toNumber(
+            row.freelancerAmount
+          ),
+
+        taxAmount:
+          toNumber(
+            row.taxAmount
+          ),
+
+        finalPayoutAmount:
+          toNumber(
+            row.finalPayoutAmount
+          ),
+      };
+    }
+  );
 
   let educationSupportAmount = 0;
   let subjectAllowanceAmount = 0;
@@ -42574,7 +42815,15 @@ export async function bindKakaoAiConversationConsultation(
 
 /**
  * 등록회원 인증 완료 후
- * 카카오 대화방을 본인 studentId와 연결한다.
+ * 카카오 대화방을 본인 studentId와 1:1 연결한다.
+ *
+ * 보안 규칙:
+ *
+ * 1. 같은 카카오 Conversation은 다른 학생으로 변경할 수 없다.
+ * 2. 같은 학생은 다른 카카오 Conversation에 중복 연결할 수 없다.
+ * 3. organizationId 경계를 반드시 다시 검증한다.
+ * 4. 실제 승인된 학생만 연결할 수 있다.
+ * 5. DB UNIQUE 제약은 최종 동시성 방어선으로 사용한다.
  */
 export async function bindKakaoAiConversationStudent(
   params: {
@@ -42634,8 +42883,115 @@ export async function bindKakaoAiConversationStudent(
   }
 
   /**
+   * ---------------------------------------------------------
+   * 1. 현재 Conversation 확인
+   * ---------------------------------------------------------
+   *
+   * 카카오 사용자 식별키는
+   * organizationId + channelUserKeyHash UNIQUE로
+   * Conversation 하나에 고정되어 있다.
+   *
+   * 따라서 이 Conversation이 이미 다른 studentId에
+   * 연결되어 있다면 다른 회원으로 바꾸지 못하게 한다.
+   */
+  const currentConversationRows =
+    await database
+      .select({
+        id:
+          kakaoAiConversations.id,
+
+        customerType:
+          kakaoAiConversations.customerType,
+
+        studentId:
+          kakaoAiConversations.studentId,
+
+        status:
+          kakaoAiConversations.status,
+      })
+      .from(
+        kakaoAiConversations
+      )
+      .where(
+        and(
+          eq(
+            kakaoAiConversations.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiConversations.id,
+            conversationId
+          )
+        )
+      )
+      .limit(
+        1
+      );
+
+  const currentConversation =
+    currentConversationRows[0];
+
+  if (
+    !currentConversation
+  ) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "카카오 AI 대화방을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  if (
+    String(
+      currentConversation.status ||
+      ""
+    ).trim() ===
+      "blocked"
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "현재 카카오 AI를 이용할 수 없는 대화입니다.",
+      403
+    );
+  }
+
+  const currentStudentId =
+    Math.floor(
+      Number(
+        currentConversation.studentId ||
+        0
+      )
+    );
+
+  /**
+   * 현재 카카오 계정이 이미 다른 학생에 연결된 경우.
+   *
+   * 예:
+   * 현재 Kakao A → student 100
+   * 다시 student 200 인증 시도
+   * → 차단
+   */
+  if (
+    currentStudentId >
+      0 &&
+    currentStudentId !==
+      studentId
+  ) {
+    throwAppError(
+      ERROR_CODES.CONFLICT,
+      "현재 카카오 계정은 이미 다른 등록회원 정보에 연결되어 있습니다. 계정 변경이 필요한 경우 담당자에게 문의해주세요.",
+      409
+    );
+  }
+
+  /**
+   * ---------------------------------------------------------
+   * 2. 실제 학생 재검증
+   * ---------------------------------------------------------
+   *
    * 반드시 같은 회사의 승인된 실제 학생인지
-   * 다시 검증한다.
+   * 서버에서 다시 확인한다.
    */
   const student =
     await getStudentById(
@@ -42661,32 +43017,182 @@ export async function bindKakaoAiConversationStudent(
     );
   }
 
-  await database
-    .update(
-      kakaoAiConversations
-    )
-    .set({
-      customerType:
-        "registered",
+  /**
+   * ---------------------------------------------------------
+   * 3. 해당 학생의 기존 카카오 연결 검사
+   * ---------------------------------------------------------
+   *
+   * 같은 organization에서
+   * 동일 studentId가 다른 Conversation에 이미 연결되어 있으면
+   * 다른 카카오 계정에서 접근한 것으로 판단한다.
+   */
+  const existingStudentBindingRows =
+    await database
+      .select({
+        id:
+          kakaoAiConversations.id,
+
+        studentId:
+          kakaoAiConversations.studentId,
+
+        customerType:
+          kakaoAiConversations.customerType,
+
+        status:
+          kakaoAiConversations.status,
+      })
+      .from(
+        kakaoAiConversations
+      )
+      .where(
+        and(
+          eq(
+            kakaoAiConversations.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiConversations.studentId,
+            studentId
+          )
+        )
+      )
+      .limit(
+        1
+      );
+
+  const existingStudentBinding =
+    existingStudentBindingRows[0];
+
+  if (
+    existingStudentBinding &&
+    Number(
+      existingStudentBinding.id
+    ) !==
+      conversationId
+  ) {
+    throwAppError(
+      ERROR_CODES.CONFLICT,
+      "해당 회원정보는 이미 다른 카카오 계정에 연결되어 있습니다. 계정 변경이 필요한 경우 담당자에게 문의해주세요.",
+      409
+    );
+  }
+
+  /**
+   * 이미 같은 Conversation ↔ 같은 studentId로
+   * 연결되어 있다면 재인증은 성공으로 처리한다.
+   *
+   * 불필요한 UPDATE를 하지 않는다.
+   */
+  if (
+    currentStudentId ===
+      studentId &&
+    String(
+      currentConversation.customerType ||
+      ""
+    ).trim() ===
+      "registered"
+  ) {
+    return {
+      success:
+        true,
+
+      conversationId,
 
       studentId,
 
-      updatedAt:
-        new Date(),
-    })
-    .where(
-      and(
-        eq(
-          kakaoAiConversations.organizationId,
-          organizationId
-        ),
+      alreadyBound:
+        true,
+    };
+  }
 
-        eq(
-          kakaoAiConversations.id,
-          conversationId
-        )
+  /**
+   * ---------------------------------------------------------
+   * 4. 최종 1:1 바인딩
+   * ---------------------------------------------------------
+   *
+   * DB에도:
+   *
+   * UNIQUE(
+   *   organizationId,
+   *   channelUserKeyHash
+   * )
+   *
+   * UNIQUE(
+   *   organizationId,
+   *   studentId
+   * )
+   *
+   * 가 있으므로 동시에 두 인증이 들어와도
+   * DB가 마지막으로 중복을 차단한다.
+   */
+  try {
+    await database
+      .update(
+        kakaoAiConversations
       )
-    );
+      .set({
+        customerType:
+          "registered",
+
+        studentId,
+
+        updatedAt:
+          new Date(),
+      })
+      .where(
+        and(
+          eq(
+            kakaoAiConversations.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiConversations.id,
+            conversationId
+          )
+        )
+      );
+  } catch (
+    error:
+      unknown
+  ) {
+    /**
+     * 선제 검사 직후 다른 요청이 같은 학생을
+     * 먼저 바인딩하는 race condition까지
+     * DB UNIQUE가 막는다.
+     *
+     * DB 내부 오류문구는 외부에 노출하지 않는다.
+     */
+    const errorCode =
+      Number(
+        (error as any)
+          ?.errno ||
+        0
+      );
+
+    const sqlState =
+      String(
+        (error as any)
+          ?.sqlState ||
+        ""
+      ).trim();
+
+    if (
+      errorCode ===
+        1062 ||
+      sqlState ===
+        "23000"
+    ) {
+      throwAppError(
+        ERROR_CODES.CONFLICT,
+        "해당 회원정보는 이미 다른 카카오 계정에 연결되어 있습니다. 계정 변경이 필요한 경우 담당자에게 문의해주세요.",
+        409
+      );
+    }
+
+    throw error;
+  }
 
   return {
     success:
@@ -42695,6 +43201,9 @@ export async function bindKakaoAiConversationStudent(
     conversationId,
 
     studentId,
+
+    alreadyBound:
+      false,
   };
 }
 
@@ -42766,6 +43275,1736 @@ export async function clearKakaoAiConversationStudent(
   return {
     success:
       true,
+  };
+}
+
+/**
+ * ---------------------------------------------------------
+ * Kakao AI Developer Test Session
+ * ---------------------------------------------------------
+ *
+ * 개발자 테스트 계정의 임시 테스트 모드를 저장한다.
+ *
+ * 중요:
+ * 실제 customerType / studentId는 절대 변경하지 않는다.
+ */
+export async function setKakaoAiDeveloperTestSession(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+
+    mode:
+      "lead" |
+      "registered" |
+      "staff";
+
+    studentId?:
+      number | null;
+
+    staffUserId?:
+      number | null;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  /**
+   * 반드시 현재 회사의 실제 Conversation인지 확인한다.
+   */
+  const conversation =
+    await getKakaoAiConversationById({
+      organizationId,
+
+      conversationId,
+    });
+
+  if (
+    !conversation
+  ) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "카카오 AI 대화정보를 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  let developerTestStudentId:
+    number | null =
+    null;
+
+  let developerTestStaffUserId:
+    number | null =
+    null;
+
+  /**
+   * ---------------------------------------------------------
+   * 등록회원 테스트
+   * ---------------------------------------------------------
+   */
+  if (
+    params.mode ===
+      "registered"
+  ) {
+    developerTestStudentId =
+      Math.floor(
+        Number(
+          params.studentId ||
+          0
+        )
+      );
+
+    if (
+      !Number.isFinite(
+        developerTestStudentId
+      ) ||
+      developerTestStudentId <=
+        0
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "테스트할 등록회원 정보가 올바르지 않습니다.",
+        400
+      );
+    }
+
+    /**
+     * 테스트라고 해도 존재하지 않는 학생이나
+     * 다른 회사 학생을 사용할 수 없다.
+     */
+    const student =
+      await getStudentById(
+        developerTestStudentId,
+        {
+          organizationId,
+        }
+      );
+
+    if (
+      !student
+    ) {
+      throwAppError(
+        ERROR_CODES.DATA_NOT_FOUND,
+        "테스트할 등록회원을 찾을 수 없습니다.",
+        404
+      );
+    }
+
+    if (
+      String(
+        (student as any)
+          .approvalStatus ||
+        ""
+      ).trim() !==
+        "승인"
+    ) {
+      throwAppError(
+        ERROR_CODES.PERMISSION_DENIED,
+        "승인된 등록회원만 테스트할 수 있습니다.",
+        403
+      );
+    }
+  }
+
+  /**
+   * ---------------------------------------------------------
+   * 담당자 테스트
+   * ---------------------------------------------------------
+   *
+   * 실제 CRM userId 검증은
+   * /staff-test 연결 단계에서 추가한다.
+   *
+   * 현재는 저장 구조만 준비한다.
+   */
+  if (
+    params.mode ===
+      "staff"
+  ) {
+    developerTestStaffUserId =
+      Math.floor(
+        Number(
+          params.staffUserId ||
+          0
+        )
+      );
+
+    if (
+      !Number.isFinite(
+        developerTestStaffUserId
+      ) ||
+      developerTestStaffUserId <=
+        0
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "테스트할 담당자 정보가 올바르지 않습니다.",
+        400
+      );
+    }
+  }
+
+  await database
+    .update(
+      kakaoAiConversations
+    )
+    .set({
+      developerTestMode:
+        params.mode,
+
+      developerTestStudentId,
+
+      developerTestStaffUserId,
+
+      updatedAt:
+        new Date(),
+    })
+    .where(
+      and(
+        eq(
+          kakaoAiConversations.organizationId,
+          organizationId
+        ),
+
+        eq(
+          kakaoAiConversations.id,
+          conversationId
+        )
+      )
+    );
+
+  return {
+    success:
+      true,
+
+    mode:
+      params.mode,
+
+    studentId:
+      developerTestStudentId,
+
+    staffUserId:
+      developerTestStaffUserId,
+  };
+}
+
+/**
+ * 개발자 테스트 모드를 완전히 해제한다.
+ *
+ * 실제 등록회원 바인딩이나 CRM 정보는 건드리지 않는다.
+ */
+export async function clearKakaoAiDeveloperTestSession(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  await database
+    .update(
+      kakaoAiConversations
+    )
+    .set({
+      developerTestMode:
+        null,
+
+      developerTestStudentId:
+        null,
+
+      developerTestStaffUserId:
+        null,
+
+      updatedAt:
+        new Date(),
+    })
+    .where(
+      and(
+        eq(
+          kakaoAiConversations.organizationId,
+          organizationId
+        ),
+
+        eq(
+          kakaoAiConversations.id,
+          conversationId
+        )
+      )
+    );
+
+  return {
+    success:
+      true,
+  };
+}
+
+/**
+ * =========================================================
+ * Kakao AI Staff Authentication
+ * =========================================================
+ *
+ * 담당자가 카카오 AI에서 /staff를 입력했을 때 사용하는
+ * 웹 로그인 인증 세션.
+ *
+ * 회사별 멀티테넌트 규칙:
+ *
+ * - Conversation의 organizationId를 서버에서 재검증한다.
+ * - 로그인 계정도 동일 organizationId만 허용한다.
+ * - staff / admin / host만 허용한다.
+ * - superhost는 허용하지 않는다.
+ *
+ * 보안:
+ *
+ * - 원본 로그인 Token은 DB에 저장하지 않는다.
+ * - SHA-256 tokenHash만 저장한다.
+ * - 로그인 링크는 10분 동안만 유효하다.
+ * - 인증 완료된 Staff AI Session은 24시간 유효하다.
+ */
+
+function createKakaoAiStaffAuthTokenHash(
+  value:
+    unknown
+): string {
+  const normalized =
+    String(
+      value ??
+      ""
+    ).trim();
+
+  if (
+    !normalized
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "담당자 인증 토큰이 필요합니다.",
+      400
+    );
+  }
+
+  return createHash(
+    "sha256"
+  )
+    .update(
+      normalized,
+      "utf8"
+    )
+    .digest(
+      "hex"
+    );
+}
+
+function createKakaoAiStaffAuthRawToken(): string {
+  /**
+   * randomUUID 2개를 결합한다.
+   *
+   * URL에 그대로 사용 가능하고
+   * 충분히 긴 랜덤 토큰을 만든다.
+   */
+  return [
+    randomUUID()
+      .replace(
+        /-/g,
+        ""
+      ),
+
+    randomUUID()
+      .replace(
+        /-/g,
+        ""
+      ),
+  ].join("");
+}
+
+/**
+ * /staff 입력 시 10분짜리 1회용 로그인 Token을 생성한다.
+ *
+ * 실제 DB에는 tokenHash만 저장하고
+ * 원본 token은 이 함수 반환값으로 딱 한 번 전달한다.
+ */
+export async function createKakaoAiStaffAuthSession(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  /**
+   * 전달받은 conversationId를 신뢰하지 않는다.
+   *
+   * 반드시 같은 organization의 실제
+   * Kakao Conversation인지 서버에서 다시 확인한다.
+   */
+  const conversation =
+    await getKakaoAiConversationById({
+      organizationId,
+
+      conversationId,
+    });
+
+  if (
+    !conversation
+  ) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "카카오 AI 대화정보를 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  if (
+    String(
+      conversation.status ||
+      ""
+    ).trim() ===
+      "blocked"
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "현재 카카오 AI를 사용할 수 없는 대화입니다.",
+      403
+    );
+  }
+
+  const now =
+    new Date();
+
+  /**
+   * 같은 회사 + 같은 카카오 대화방에서
+   * 기존에 발급만 받고 사용하지 않은 pending Token은
+   * 모두 폐기한다.
+   *
+   * authenticated 세션은 여기서 건드리지 않는다.
+   */
+  await database
+    .update(
+      kakaoAiStaffAuthSessions
+    )
+    .set({
+      status:
+        "revoked",
+
+      revokedAt:
+        now,
+
+      updatedAt:
+        now,
+    })
+    .where(
+      and(
+        eq(
+          kakaoAiStaffAuthSessions.organizationId,
+          organizationId
+        ),
+
+        eq(
+          kakaoAiStaffAuthSessions.conversationId,
+          conversationId
+        ),
+
+        eq(
+          kakaoAiStaffAuthSessions.status,
+          "pending"
+        )
+      )
+    );
+
+  const token =
+    createKakaoAiStaffAuthRawToken();
+
+  const tokenHash =
+    createKakaoAiStaffAuthTokenHash(
+      token
+    );
+
+  /**
+   * 로그인 링크 유효시간:
+   * 10분.
+   */
+  const tokenExpiresAt =
+    new Date(
+      now.getTime() +
+      10 * 60 * 1000
+    );
+
+  const insertData:
+    InsertKakaoAiStaffAuthSession = {
+      organizationId,
+
+      conversationId,
+
+      tokenHash,
+
+      userId:
+        null,
+
+      status:
+        "pending",
+
+      tokenExpiresAt,
+
+      authenticatedAt:
+        null,
+
+      sessionExpiresAt:
+        null,
+
+      revokedAt:
+        null,
+    };
+
+  const result:
+    any =
+    await database
+      .insert(
+        kakaoAiStaffAuthSessions
+      )
+      .values(
+        insertData
+      );
+
+  const sessionId =
+    Number(
+      getInsertId(
+        result
+      ) ||
+      0
+    );
+
+  if (
+    sessionId <=
+      0
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "담당자 인증 세션을 생성하지 못했습니다.",
+      500
+    );
+  }
+
+  return {
+    success:
+      true as const,
+
+    sessionId,
+
+    organizationId,
+
+    conversationId,
+
+    /**
+     * 원본 token은 여기서만 반환한다.
+     *
+     * DB에는 tokenHash만 존재한다.
+     */
+    token,
+
+    tokenExpiresAt,
+  };
+}
+
+/**
+ * 웹 로그인 페이지가 Token 상태를 확인할 때 사용한다.
+ *
+ * organizationId를 브라우저에서 전달받지 않는다.
+ * Token 자체가 어느 회사의 인증요청인지 서버 DB에서 결정한다.
+ *
+ * 따라서 사용자가 organizationId를 조작해서
+ * 다른 회사 로그인 화면으로 넘어갈 수 없다.
+ */
+export async function getKakaoAiStaffAuthSessionByToken(
+  params: {
+    token:
+      string;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const tokenHash =
+    createKakaoAiStaffAuthTokenHash(
+      params.token
+    );
+
+  const rows =
+    await database
+      .select()
+      .from(
+        kakaoAiStaffAuthSessions
+      )
+      .where(
+        eq(
+          kakaoAiStaffAuthSessions.tokenHash,
+          tokenHash
+        )
+      )
+      .limit(
+        1
+      );
+
+  const session =
+    rows[0];
+
+  if (
+    !session
+  ) {
+    return null;
+  }
+
+  /**
+   * 회사 ID는 클라이언트 입력값이 아니라
+   * 세션 Row 자체에서 확정한다.
+   */
+  const organizationId =
+    requireOrganizationId(
+      session.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      session.conversationId
+    );
+
+  if (
+    String(
+      session.status ||
+      ""
+    ) !==
+      "pending"
+  ) {
+    return {
+      id:
+        Number(
+          session.id
+        ),
+
+      organizationId,
+
+      conversationId,
+
+      status:
+        session.status,
+
+      expired:
+        session.status ===
+          "expired",
+
+      usable:
+        false,
+    };
+  }
+
+  const now =
+    new Date();
+
+  const tokenExpiresAt =
+    new Date(
+      session.tokenExpiresAt
+    );
+
+  if (
+    tokenExpiresAt.getTime() <=
+      now.getTime()
+  ) {
+    await database
+      .update(
+        kakaoAiStaffAuthSessions
+      )
+      .set({
+        status:
+          "expired",
+
+        updatedAt:
+          now,
+      })
+      .where(
+        and(
+          eq(
+            kakaoAiStaffAuthSessions.id,
+            Number(
+              session.id
+            )
+          ),
+
+          eq(
+            kakaoAiStaffAuthSessions.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiStaffAuthSessions.status,
+            "pending"
+          )
+        )
+      );
+
+    return {
+      id:
+        Number(
+          session.id
+        ),
+
+      organizationId,
+
+      conversationId,
+
+      status:
+        "expired" as const,
+
+      expired:
+        true,
+
+      usable:
+        false,
+    };
+  }
+
+  /**
+   * 연결된 Kakao Conversation도
+   * 여전히 같은 회사에 존재하는지 다시 검증한다.
+   */
+  const conversation =
+    await getKakaoAiConversationById({
+      organizationId,
+
+      conversationId,
+    });
+
+  if (
+    !conversation ||
+    String(
+      conversation.status ||
+      ""
+    ).trim() ===
+      "blocked"
+  ) {
+    await database
+      .update(
+        kakaoAiStaffAuthSessions
+      )
+      .set({
+        status:
+          "revoked",
+
+        revokedAt:
+          now,
+
+        updatedAt:
+          now,
+      })
+      .where(
+        and(
+          eq(
+            kakaoAiStaffAuthSessions.id,
+            Number(
+              session.id
+            )
+          ),
+
+          eq(
+            kakaoAiStaffAuthSessions.organizationId,
+            organizationId
+          )
+        )
+      );
+
+    return {
+      id:
+        Number(
+          session.id
+        ),
+
+      organizationId,
+
+      conversationId,
+
+      status:
+        "revoked" as const,
+
+      expired:
+        false,
+
+      usable:
+        false,
+    };
+  }
+
+  return {
+    id:
+      Number(
+        session.id
+      ),
+
+    organizationId,
+
+    conversationId,
+
+    status:
+      "pending" as const,
+
+    expired:
+      false,
+
+    usable:
+      true,
+
+    tokenExpiresAt,
+  };
+}
+
+/**
+ * 담당자 웹 로그인 처리.
+ *
+ * 중요한 회사별 검증 순서:
+ *
+ * token
+ * → Staff Auth Session
+ * → session.organizationId
+ * → users.organizationId
+ *
+ * organizationId를 웹 폼에서 직접 받지 않는다.
+ */
+export async function authenticateKakaoAiStaffAuthSession(
+  params: {
+    token:
+      string;
+
+    username:
+      string;
+
+    password:
+      string;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const token =
+    String(
+      params.token ||
+      ""
+    ).trim();
+
+  const username =
+    String(
+      params.username ||
+      ""
+    ).trim();
+
+  const password =
+    String(
+      params.password ||
+      ""
+    );
+
+  if (
+    !token
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "담당자 인증 토큰이 필요합니다.",
+      400
+    );
+  }
+
+  if (
+    !username ||
+    !password
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_LOGIN,
+      "아이디 또는 비밀번호가 올바르지 않습니다.",
+      401
+    );
+  }
+
+  const tokenHash =
+    createKakaoAiStaffAuthTokenHash(
+      token
+    );
+
+  const sessionRows =
+    await database
+      .select()
+      .from(
+        kakaoAiStaffAuthSessions
+      )
+      .where(
+        and(
+          eq(
+            kakaoAiStaffAuthSessions.tokenHash,
+            tokenHash
+          ),
+
+          eq(
+            kakaoAiStaffAuthSessions.status,
+            "pending"
+          )
+        )
+      )
+      .limit(
+        1
+      );
+
+  const session =
+    sessionRows[0];
+
+  if (
+    !session
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "담당자 인증 링크가 유효하지 않거나 이미 사용되었습니다.",
+      410
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      session.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      session.conversationId
+    );
+
+  const now =
+    new Date();
+
+  const tokenExpiresAt =
+    new Date(
+      session.tokenExpiresAt
+    );
+
+  /**
+   * 10분 만료 검사.
+   */
+  if (
+    tokenExpiresAt.getTime() <=
+      now.getTime()
+  ) {
+    await database
+      .update(
+        kakaoAiStaffAuthSessions
+      )
+      .set({
+        status:
+          "expired",
+
+        updatedAt:
+          now,
+      })
+      .where(
+        and(
+          eq(
+            kakaoAiStaffAuthSessions.id,
+            Number(
+              session.id
+            )
+          ),
+
+          eq(
+            kakaoAiStaffAuthSessions.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiStaffAuthSessions.status,
+            "pending"
+          )
+        )
+      );
+
+    throwAppError(
+      ERROR_CODES.SESSION_EXPIRED,
+      "담당자 인증 링크가 만료되었습니다. 카카오톡에서 /staff를 다시 입력해주세요.",
+      410
+    );
+  }
+
+  /**
+   * Conversation 역시 서버에서 재검증.
+   */
+  const conversation =
+    await getKakaoAiConversationById({
+      organizationId,
+
+      conversationId,
+    });
+
+  if (
+    !conversation ||
+    String(
+      conversation.status ||
+      ""
+    ).trim() ===
+      "blocked"
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "현재 카카오 AI 담당자 인증을 사용할 수 없습니다.",
+      403
+    );
+  }
+
+  /**
+   * =========================================================
+   * 핵심 멀티테넌트 검증
+   * =========================================================
+   *
+   * username만 조회하지 않는다.
+   *
+   * 반드시:
+   *
+   * users.organizationId === session.organizationId
+   *
+   * 를 SQL 단계에서 강제한다.
+   */
+  const userRows =
+    await database
+      .select({
+        id:
+          users.id,
+
+        organizationId:
+          users.organizationId,
+
+        username:
+          users.username,
+
+        passwordHash:
+          users.passwordHash,
+
+        role:
+          users.role,
+
+        isActive:
+          users.isActive,
+
+        name:
+          users.name,
+      })
+      .from(
+        users
+      )
+      .where(
+        and(
+          eq(
+            users.organizationId,
+            organizationId
+          ),
+
+          eq(
+            users.username,
+            username
+          ),
+
+          eq(
+            users.isActive,
+            true
+          ),
+
+          inArray(
+            users.role,
+            [
+              "staff",
+              "admin",
+              "host",
+            ]
+          )
+        )
+      )
+      .limit(
+        1
+      );
+
+  const user =
+    userRows[0];
+
+  /**
+   * 계정 존재 여부와 비밀번호 오류를
+   * 외부에 다르게 알려주지 않는다.
+   */
+  if (
+    !user ||
+    !user.passwordHash
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_LOGIN,
+      "아이디 또는 비밀번호가 올바르지 않습니다.",
+      401
+    );
+  }
+
+  const passwordMatched =
+    await bcrypt.compare(
+      password,
+      String(
+        user.passwordHash
+      )
+    );
+
+  if (
+    !passwordMatched
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_LOGIN,
+      "아이디 또는 비밀번호가 올바르지 않습니다.",
+      401
+    );
+  }
+
+  const userId =
+    Math.floor(
+      Number(
+        user.id ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      userId
+    ) ||
+    userId <=
+      0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_LOGIN,
+      "담당자 계정정보가 올바르지 않습니다.",
+      401
+    );
+  }
+
+  /**
+   * 최종 방어:
+   * 같은 회사의 활성 staff/admin/host인지
+   * 기존 공통 함수로 한 번 더 검증한다.
+   */
+  const assignableUser =
+    await getAssignableUserById({
+      organizationId,
+
+      userId,
+    });
+
+  if (
+    !assignableUser
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "카카오 AI 업무비서를 사용할 수 없는 계정입니다.",
+      403
+    );
+  }
+
+  /**
+   * 같은 카카오 Conversation에 기존 Staff 세션이 있다면
+   * 새 인증 성공 시 기존 인증은 폐기한다.
+   *
+   * 한 대화방에는 동시에 Staff Session 하나만 유지한다.
+   */
+  await database
+    .update(
+      kakaoAiStaffAuthSessions
+    )
+    .set({
+      status:
+        "revoked",
+
+      revokedAt:
+        now,
+
+      updatedAt:
+        now,
+    })
+    .where(
+      and(
+        eq(
+          kakaoAiStaffAuthSessions.organizationId,
+          organizationId
+        ),
+
+        eq(
+          kakaoAiStaffAuthSessions.conversationId,
+          conversationId
+        ),
+
+        eq(
+          kakaoAiStaffAuthSessions.status,
+          "authenticated"
+        )
+      )
+    );
+
+  /**
+   * 담당자 AI 로그인 유지:
+   * 정확히 24시간.
+   */
+  const sessionExpiresAt =
+    new Date(
+      now.getTime() +
+      24 * 60 * 60 * 1000
+    );
+
+  /**
+   * 현재 pending 인증 요청을
+   * authenticated로 변경.
+   *
+   * status=pending 조건을 함께 걸어서
+   * 같은 Token이 동시에 두 번 사용되는 것을 방지한다.
+   */
+  const updateResult:
+    any =
+    await database
+      .update(
+        kakaoAiStaffAuthSessions
+      )
+      .set({
+        userId,
+
+        status:
+          "authenticated",
+
+        authenticatedAt:
+          now,
+
+        sessionExpiresAt,
+
+        revokedAt:
+          null,
+
+        updatedAt:
+          now,
+      })
+      .where(
+        and(
+          eq(
+            kakaoAiStaffAuthSessions.id,
+            Number(
+              session.id
+            )
+          ),
+
+          eq(
+            kakaoAiStaffAuthSessions.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiStaffAuthSessions.status,
+            "pending"
+          )
+        )
+      );
+
+  const affectedRows =
+    Number(
+      updateResult?.affectedRows ??
+      updateResult?.[0]?.affectedRows ??
+      0
+    );
+
+  if (
+    affectedRows !==
+      1
+  ) {
+    throwAppError(
+      ERROR_CODES.CONFLICT,
+      "담당자 인증이 이미 처리되었습니다. 카카오톡에서 상태를 다시 확인해주세요.",
+      409
+    );
+  }
+
+  const decryptedUser =
+    decryptUserPersonalData(
+      user
+    ) as any;
+
+  return {
+    success:
+      true as const,
+
+    organizationId,
+
+    conversationId,
+
+    userId,
+
+    username:
+      String(
+        user.username ||
+        ""
+      ),
+
+    name:
+      String(
+        decryptedUser?.name ||
+        ""
+      ),
+
+    role:
+      assignableUser.role,
+
+    authenticatedAt:
+      now,
+
+    sessionExpiresAt,
+  };
+}
+
+/**
+ * 카카오 업무비서를 사용할 때마다 호출한다.
+ *
+ * 단순히 세션이 존재하는지만 보지 않고:
+ *
+ * - organizationId
+ * - conversationId
+ * - authenticated
+ * - sessionExpiresAt
+ * - 실제 CRM 사용자 활성 여부
+ * - 실제 CRM 역할
+ *
+ * 을 매 요청마다 재검증한다.
+ */
+export async function getActiveKakaoAiStaffAuthSession(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  const rows =
+    await database
+      .select()
+      .from(
+        kakaoAiStaffAuthSessions
+      )
+      .where(
+        and(
+          eq(
+            kakaoAiStaffAuthSessions.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiStaffAuthSessions.conversationId,
+            conversationId
+          ),
+
+          eq(
+            kakaoAiStaffAuthSessions.status,
+            "authenticated"
+          )
+        )
+      )
+      .orderBy(
+        desc(
+          kakaoAiStaffAuthSessions.id
+        )
+      )
+      .limit(
+        1
+      );
+
+  const session =
+    rows[0];
+
+  if (
+    !session
+  ) {
+    return null;
+  }
+
+  const now =
+    new Date();
+
+  const sessionExpiresAt =
+    session.sessionExpiresAt
+      ? new Date(
+          session.sessionExpiresAt
+        )
+      : null;
+
+  if (
+    !sessionExpiresAt ||
+    sessionExpiresAt.getTime() <=
+      now.getTime()
+  ) {
+    await database
+      .update(
+        kakaoAiStaffAuthSessions
+      )
+      .set({
+        status:
+          "expired",
+
+        updatedAt:
+          now,
+      })
+      .where(
+        and(
+          eq(
+            kakaoAiStaffAuthSessions.id,
+            Number(
+              session.id
+            )
+          ),
+
+          eq(
+            kakaoAiStaffAuthSessions.organizationId,
+            organizationId
+          ),
+
+          eq(
+            kakaoAiStaffAuthSessions.status,
+            "authenticated"
+          )
+        )
+      );
+
+    return null;
+  }
+
+  const userId =
+    Math.floor(
+      Number(
+        session.userId ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      userId
+    ) ||
+    userId <=
+      0
+  ) {
+    await database
+      .update(
+        kakaoAiStaffAuthSessions
+      )
+      .set({
+        status:
+          "revoked",
+
+        revokedAt:
+          now,
+
+        updatedAt:
+          now,
+      })
+      .where(
+        and(
+          eq(
+            kakaoAiStaffAuthSessions.id,
+            Number(
+              session.id
+            )
+          ),
+
+          eq(
+            kakaoAiStaffAuthSessions.organizationId,
+            organizationId
+          )
+        )
+      );
+
+    return null;
+  }
+
+  /**
+   * 담당자가 삭제/비활성화되었거나
+   * 다른 권한으로 변경된 경우에도
+   * 기존 24시간 세션을 계속 신뢰하지 않는다.
+   */
+  const user =
+    await getAssignableUserById({
+      organizationId,
+
+      userId,
+    });
+
+  if (
+    !user
+  ) {
+    await database
+      .update(
+        kakaoAiStaffAuthSessions
+      )
+      .set({
+        status:
+          "revoked",
+
+        revokedAt:
+          now,
+
+        updatedAt:
+          now,
+      })
+      .where(
+        and(
+          eq(
+            kakaoAiStaffAuthSessions.id,
+            Number(
+              session.id
+            )
+          ),
+
+          eq(
+            kakaoAiStaffAuthSessions.organizationId,
+            organizationId
+          )
+        )
+      );
+
+    return null;
+  }
+
+  return {
+    id:
+      Number(
+        session.id
+      ),
+
+    organizationId,
+
+    conversationId,
+
+    userId,
+
+    username:
+      user.username,
+
+    name:
+      user.name,
+
+    role:
+      user.role,
+
+    authenticatedAt:
+      session.authenticatedAt,
+
+    sessionExpiresAt,
+  };
+}
+
+/**
+ * 담당자 카카오 AI 세션을 강제 종료한다.
+ *
+ * /staff-logout 등의 명령에 사용한다.
+ *
+ * 동일 회사 + 동일 Conversation의
+ * pending / authenticated 세션만 폐기한다.
+ */
+export async function revokeKakaoAiStaffAuthSession(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  /**
+   * Conversation 소유회사도 다시 확인한다.
+   */
+  const conversation =
+    await getKakaoAiConversationById({
+      organizationId,
+
+      conversationId,
+    });
+
+  if (
+    !conversation
+  ) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "카카오 AI 대화정보를 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  const now =
+    new Date();
+
+  await database
+    .update(
+      kakaoAiStaffAuthSessions
+    )
+    .set({
+      status:
+        "revoked",
+
+      revokedAt:
+        now,
+
+      updatedAt:
+        now,
+    })
+    .where(
+      and(
+        eq(
+          kakaoAiStaffAuthSessions.organizationId,
+          organizationId
+        ),
+
+        eq(
+          kakaoAiStaffAuthSessions.conversationId,
+          conversationId
+        ),
+
+        sql`${kakaoAiStaffAuthSessions.status} IN ('pending', 'authenticated')`
+      )
+    );
+
+  return {
+    success:
+      true as const,
+
+    organizationId,
+
+    conversationId,
   };
 }
 
@@ -44784,6 +47023,9 @@ async function requireActiveStaffUser(
         name:
           users.name,
 
+profileImageUrl:
+  users.profileImageUrl,
+
         username:
           users.username,
 
@@ -44926,6 +47168,12 @@ export async function createStaffPublicProfile(
 
       acceptingNewConsultations:
         true,
+
+profileImageUrl:
+  normalizeStaffPublicProfileText(
+    (user as any)?.profileImageUrl,
+    1000
+  ),
 
       displayName:
         normalizeStaffPublicProfileText(

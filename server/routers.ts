@@ -72,60 +72,20 @@ import {
   runAiAssistant,
 } from "./ai/ai-runner";
 import {
+  cancelAiPendingAction,
+} from "./ai/ai-pending-action-cancel-service";
+
+import {
+  prepareAiPendingActionForConfirmation,
+} from "./ai/ai-pending-action-confirm-guard";
+
+import {
+  dispatchAiPendingActionConfirmation,
+} from "./ai/ai-pending-action-confirm-dispatcher";
+
+import {
   buildStudentRegistrationDraft,
 } from "./ai/student-registration-draft";
-
-import {
-  executeStudentRegistrationPendingAction,
-} from "./ai/student-registration-executor";
-
-import {
-  executeConsultationCreatePendingAction,
-} from "./ai/consultation-create-executor";
-
-import {
-  executeDocumentImportPendingAction,
-} from "./ai/document-import-executor";
-
-import {
-  executeScheduleCreatePendingAction,
-} from "./ai/schedule-create-executor";
-
-import {
-  executeSemesterCreatePendingAction,
-} from "./ai/semester-create-executor";
-
-import {
-  executePlanCreatePendingAction,
-} from "./ai/plan-create-executor";
-
-import {
-  executePlanUpdatePendingAction,
-} from "./ai/plan-update-executor";
-
-import {
-  executePlanSubjectsCreatePendingAction,
-} from "./ai/plan-subjects-create-executor";
-
-import {
-  executePlanSubjectsUpdatePendingAction,
-} from "./ai/plan-subjects-update-executor";
-
-import {
-  executeSemesterUpdatePendingAction,
-} from "./ai/semester-update-executor";
-
-import {
-  executeSemesterCompletePendingAction,
-} from "./ai/semester-complete-executor";
-
-import {
-  executeConsultationUpdatePendingAction,
-} from "./ai/consultation-update-executor";
-
-import {
-  executeStudentUpdatePendingAction,
-} from "./ai/student-update-executor";
 
 import {
   analyzeAiDocument,
@@ -1064,30 +1024,6 @@ function throwAiToolError(result: {
   );
 }
 
-function parseAiPendingJson<T>(
-  value: unknown,
-  fallback: T
-): T {
-  if (
-    value === null ||
-    value === undefined
-  ) {
-    return fallback;
-  }
-
-  if (typeof value === "object") {
-    return value as T;
-  }
-
-  try {
-    return JSON.parse(
-      String(value)
-    ) as T;
-  } catch {
-    return fallback;
-  }
-}
-
 function getStudentRegistrationMissingFieldPriority(
   field:
     string
@@ -1380,406 +1316,6 @@ function buildStudentRegistrationMissingMessage(params: {
   return lines.join(
     "\n"
   );
-}
-
-function toAiPendingActionPublicResult(
-  row: any
-) {
-  if (!row) {
-    return null;
-  }
-
-  const preview =
-    parseAiPendingJson(
-      row.previewJson,
-      {
-        title: "",
-        summary: "",
-        sections: [],
-        changes: [],
-        executionSteps: [],
-        missingFields: [],
-        warnings: [],
-        canConfirm: false,
-      }
-    );
-
-  const missingFields =
-    parseAiPendingJson<string[]>(
-      row.missingFieldsJson,
-      []
-    );
-
-  const warnings =
-    parseAiPendingJson<string[]>(
-      row.warningsJson,
-      []
-    );
-
-  const executionResult =
-  parseAiPendingJson<{
-    pendingActionId?: number;
-
-    status?: string;
-
-consultationId?:
-  number |
-  null;
-
-    studentId?: number | null;
-
-studentDetailPath?:
-  string |
-  null;
-
-    scheduleId?: number | null;
-
-    planId?: number | null;
-
-        semesterId?:
-      number |
-      null;
-
-    semesterIds?:
-      number[];
-
-    semesterOrder?:
-      number |
-      null;
-
-    isCompleted?:
-      boolean;
-
-    approvalStatus?:
-      string |
-      null;
-
-    planSubjectIds?:
-      number[];
-
-      transferSubjectIds?: number[];
-
-      practiceSaved?: boolean;
-
-paymentUpdated?: boolean;
-
-      completedSteps?: string[];
-
-      failedSteps?: string[];
-
-      message?: string;
-    } | null>(
-      row.executionResultJson,
-      null
-    );
-
-  return {
-    id: Number(row.id),
-
-    actionType:
-      row.actionType,
-
-    status:
-      row.status,
-
-    consultationId:
-      row.consultationId === null ||
-      row.consultationId === undefined
-        ? null
-        : Number(
-            row.consultationId
-          ),
-
-    studentId:
-      row.studentId === null ||
-      row.studentId === undefined
-        ? null
-        : Number(row.studentId),
-
-    semesterId:
-      row.semesterId === null ||
-      row.semesterId === undefined
-        ? null
-        : Number(row.semesterId),
-
-    preview: {
-      ...preview,
-
-      /**
-       * 별도 컬럼을 최종 기준으로 사용한다.
-       */
-      missingFields,
-      warnings,
-
-      canConfirm:
-        row.status ===
-          "awaiting_confirmation" &&
-        missingFields.length === 0 &&
-        preview?.canConfirm === true,
-    },
-
-    version:
-      Number(row.version || 1),
-
-    expiresAt:
-      row.expiresAt ?? null,
-
-    confirmedAt:
-      row.confirmedAt ?? null,
-
-    executedAt:
-      row.executedAt ?? null,
-
-    cancelledAt:
-      row.cancelledAt ?? null,
-
-    failedAt:
-      row.failedAt ?? null,
-
-    errorMessage:
-      row.status === "failed"
-        ? row.errorMessage ?? null
-        : null,
-
-    executionResult:
-      row.status ===
-        "executed" ||
-      row.status ===
-        "failed"
-        ? executionResult
-          ? {
-              ...executionResult,
-
-consultationId:
-  executionResult
-    .consultationId ===
-    null ||
-  executionResult
-    .consultationId ===
-    undefined
-    ? null
-    : Number(
-        executionResult
-          .consultationId
-      ),
-
-
-              studentId:
-                executionResult
-                  .studentId ===
-                  null ||
-                executionResult
-                  .studentId ===
-                  undefined
-                  ? null
-                  : Number(
-                      executionResult
-                        .studentId
-                    ),
-
-studentDetailPath:
-  typeof executionResult
-    .studentDetailPath ===
-    "string" &&
-  executionResult
-    .studentDetailPath
-    .trim()
-    ? executionResult
-        .studentDetailPath
-        .trim()
-    : executionResult
-        .studentId !==
-        null &&
-      executionResult
-        .studentId !==
-        undefined &&
-      Number(
-        executionResult
-          .studentId
-      ) > 0
-      ? `/students/${Number(
-          executionResult
-            .studentId
-        )}`
-      : null,
-
-scheduleId:
-  executionResult
-    .scheduleId ===
-    null ||
-  executionResult
-    .scheduleId ===
-    undefined
-    ? null
-    : Number(
-        executionResult
-          .scheduleId
-      ),
-
-              planId:
-                executionResult
-                  .planId ===
-                  null ||
-                executionResult
-                  .planId ===
-                  undefined
-                  ? null
-                  : Number(
-                      executionResult
-                        .planId
-                    ),
-
-              semesterId:
-                executionResult
-                  .semesterId ===
-                  null ||
-                executionResult
-                  .semesterId ===
-                  undefined
-                  ? Array.isArray(
-                      executionResult
-                        .semesterIds
-                    ) &&
-                    executionResult
-                      .semesterIds
-                      .length > 0
-                    ? Number(
-                        executionResult
-                          .semesterIds[0]
-                      ) ||
-                      null
-                    : null
-                  : Number(
-                      executionResult
-                        .semesterId
-                    ),
-
-              semesterIds:
-                Array.isArray(
-                  executionResult
-                    .semesterIds
-                )
-                  ? Array.from(
-                      new Set(
-                        executionResult
-                          .semesterIds
-                          .map(Number)
-                          .filter(
-                            (id) =>
-                              Number.isFinite(
-                                id
-                              ) &&
-                              id > 0
-                          )
-                      )
-                    )
-                  : [],
-
-              semesterOrder:
-                executionResult
-                  .semesterOrder ===
-                  null ||
-                executionResult
-                  .semesterOrder ===
-                  undefined
-                  ? null
-                  : Number.isFinite(
-                      Number(
-                        executionResult
-                          .semesterOrder
-                      )
-                    ) &&
-                    Number(
-                      executionResult
-                        .semesterOrder
-                    ) >
-                      0
-                    ? Math.floor(
-                        Number(
-                          executionResult
-                            .semesterOrder
-                        )
-                      )
-                    : null,
-
-              isCompleted:
-                executionResult
-                  .isCompleted ===
-                true,
-
-              approvalStatus:
-                typeof executionResult
-                  .approvalStatus ===
-                  "string" &&
-                executionResult
-                  .approvalStatus
-                  .trim()
-                  ? executionResult
-                      .approvalStatus
-                      .trim()
-                  : null,
-
-              planSubjectIds:
-                Array.isArray(
-                  executionResult
-                    .planSubjectIds
-                )
-                  ? Array.from(
-                      new Set(
-                        executionResult
-                          .planSubjectIds
-                          .map(Number)
-                          .filter(
-                            (id) =>
-                              Number.isFinite(
-                                id
-                              ) &&
-                              id > 0
-                          )
-                      )
-                    )
-                  : [],
-
-              transferSubjectIds:
-                Array.isArray(
-                  executionResult
-                    .transferSubjectIds
-                )
-                  ? Array.from(
-                      new Set(
-                        executionResult
-                          .transferSubjectIds
-                          .map(Number)
-                          .filter(
-                            (id) =>
-                              Number.isFinite(
-                                id
-                              ) &&
-                              id > 0
-                          )
-                      )
-                    )
-                  : [],
-
-              practiceSaved:
-                executionResult
-                  .practiceSaved ===
-                true,
-
-paymentUpdated:
-  executionResult
-    .paymentUpdated ===
-  true,
-            }
-          : null
-        : null,
-
-    createdAt:
-      row.createdAt ?? null,
-
-    updatedAt:
-      row.updatedAt ?? null,
-  };
 }
 
 function cleanTransferRows(rows: any[]) {
@@ -2972,314 +2508,6 @@ function buildCreditSummaryResult(params: {
   };
 }
 
-async function patchAiWorkSessionAfterPendingAction(
-  params: {
-    organizationId:
-      number;
-
-    userId:
-      number;
-
-    pendingActionId:
-      number;
-
-    success:
-      boolean;
-
-    alreadyExecuted:
-      boolean;
-
-    executing:
-      boolean;
-
-    consultationId?:
-      number |
-      null;
-
-    studentId?:
-      number |
-      null;
-
-    studentName?:
-      string |
-      null;
-  }
-) {
-  let workSession =
-    await db.getAiWorkSession({
-      organizationId:
-        params.organizationId,
-
-      userId:
-        params.userId,
-    });
-
-  const currentPendingActionId =
-    Number(
-      workSession
-        .lastPresentedAction
-        ?.payload
-        ?.pendingActionId ||
-      0
-    );
-
-  if (
-    currentPendingActionId !==
-    Number(
-      params.pendingActionId
-    )
-  ) {
-    return workSession;
-  }
-
-  if (
-    params.executing ===
-    true
-  ) {
-    workSession =
-      await db.patchAiWorkSession({
-        organizationId:
-          params.organizationId,
-
-        userId:
-          params.userId,
-
-        expectedVersion:
-          workSession.version,
-
-        patch: {
-          workflow: {
-            step:
-              "executing",
-
-            waitingFor:
-              [],
-          },
-        },
-      });
-
-    return workSession;
-  }
-
-  if (
-    params.success ===
-      true ||
-    params.alreadyExecuted ===
-      true
-  ) {
-    const studentId =
-      Number(
-        params.studentId ||
-        0
-      );
-
-    const consultationId =
-      Number(
-        params.consultationId ||
-        0
-      );
-
-    workSession =
-      await db.patchAiWorkSession({
-        organizationId:
-          params.organizationId,
-
-        userId:
-          params.userId,
-
-        expectedVersion:
-          workSession.version,
-
-        patch: {
-          activeTarget:
-            studentId > 0
-              ? {
-                  type:
-                    "student",
-
-                  id:
-                    studentId,
-
-                  name:
-                    params.studentName ??
-                    null,
-                }
-              : undefined,
-
-          linkedContext: {
-            ...(consultationId > 0
-              ? {
-                  consultationId,
-                }
-              : {}),
-
-            ...(studentId > 0
-              ? {
-                  studentId,
-                }
-              : {}),
-          },
-
-                    workflow: {
-            type:
-              null,
-
-            step:
-              "idle",
-
-            clearDraft:
-              true,
-
-            draftPatch:
-              {},
-
-            waitingFor:
-              [],
-          },
-
-          lastPresentedAction:
-            null,
-        },
-      });
-
-    return workSession;
-  }
-
-  workSession =
-    await db.patchAiWorkSession({
-      organizationId:
-        params.organizationId,
-
-      userId:
-        params.userId,
-
-      expectedVersion:
-        workSession.version,
-
-      patch: {
-        workflow: {
-          step:
-            "failed",
-
-          waitingFor:
-            [],
-        },
-      },
-    });
-
-  return workSession;
-}
-
-/**
- * Pending Action 실행 결과가 이미 확정된 뒤에는
- * Work Session 갱신 실패가 실제 CRM 실행 결과를
- * 실패로 변경하지 않도록 별도 처리한다.
- */
-async function safePatchAiWorkSessionAfterPendingAction(
-  params: Parameters<
-    typeof patchAiWorkSessionAfterPendingAction
-  >[0]
-) {
-  try {
-    return await patchAiWorkSessionAfterPendingAction(
-      params
-    );
-  } catch (
-    workSessionError
-  ) {
-    console.error(
-      "[AI PENDING ACTION] Work Session 후처리 실패",
-      {
-        organizationId:
-          params.organizationId,
-
-        userId:
-          params.userId,
-
-        pendingActionId:
-          params.pendingActionId,
-
-        success:
-          params.success,
-
-        alreadyExecuted:
-          params.alreadyExecuted,
-
-        executing:
-          params.executing,
-
-        message:
-          workSessionError instanceof
-            Error
-            ? String(
-                workSessionError.message ||
-                "알 수 없는 오류"
-              )
-                .replace(
-                  /\s+/g,
-                  " "
-                )
-                .trim()
-                .slice(
-                  0,
-                  300
-                )
-            : "알 수 없는 오류",
-      }
-    );
-
-    /**
-     * 갱신은 실패했지만 기존 Work Session이라도
-     * 반환해 승인 API 전체가 실패하지 않게 한다.
-     */
-    try {
-      return await db.getAiWorkSession({
-        organizationId:
-          params.organizationId,
-
-        userId:
-          params.userId,
-      });
-    } catch (
-      readError
-    ) {
-      console.error(
-        "[AI PENDING ACTION] Work Session 재조회 실패",
-        {
-          organizationId:
-            params.organizationId,
-
-          userId:
-            params.userId,
-
-          pendingActionId:
-            params.pendingActionId,
-
-          message:
-            readError instanceof
-              Error
-              ? String(
-                  readError.message ||
-                  "알 수 없는 오류"
-                )
-                  .replace(
-                    /\s+/g,
-                    " "
-                  )
-                  .trim()
-                  .slice(
-                    0,
-                    300
-                  )
-              : "알 수 없는 오류",
-        }
-      );
-
-      return null;
-    }
-  }
-}
-
 async function cancelAiPendingActionForCurrentUser(
   params: {
     ctx:
@@ -3304,26 +2532,15 @@ async function cancelAiPendingActionForCurrentUser(
       null;
   }
 ) {
-  const pendingActionId =
-    Number(
-      params.pendingActionId ||
-      0
-    );
-
-  if (
-    !Number.isFinite(
-      pendingActionId
-    ) ||
-    pendingActionId <=
-      0
-  ) {
-    throwAppError(
-      ERROR_CODES.INVALID_REQUEST,
-      "올바른 AI 승인 요청 ID가 필요합니다.",
-      400
-    );
-  }
-
+  /**
+   * 웹 CRM Session
+   * → 기존 공통 AiUserContext 생성.
+   *
+   * 이 부분만 웹 전용이다.
+   *
+   * 이후 실제 Pending Action 취소는
+   * 채널 독립적인 공통 서비스를 사용한다.
+   */
   const aiContext =
     await createRequestAiContext({
       ctx:
@@ -3334,375 +2551,99 @@ async function cancelAiPendingActionForCurrentUser(
         null,
     });
 
-  /**
-   * 서버에서 현재 Pending Action을 다시 조회한다.
-   *
-   * AI가 전달한 actionType이나 version을
-   * 신뢰하지 않는다.
-   */
-  const currentPendingAction =
-    await db.getAiPendingActionForConfirmation({
-      id:
-        Math.floor(
-          pendingActionId
-        ),
+  const cancelled =
+    await cancelAiPendingAction({
+      context:
+        aiContext,
 
-      organizationId:
-        aiContext.organizationId,
+      pendingActionId:
+        params.pendingActionId,
 
-      requestedByUserId:
-        aiContext.userId,
-    });
-
-  if (
-    !currentPendingAction
-  ) {
-    throwAppError(
-      ERROR_CODES.DATA_NOT_FOUND,
-      "AI 승인 초안을 찾을 수 없습니다.",
-      404
-    );
-  }
-
-  const currentVersion =
-    Number(
-      currentPendingAction.version ||
-      0
-    );
-
-  if (
-    !Number.isFinite(
-      currentVersion
-    ) ||
-    currentVersion <=
-      0
-  ) {
-    throwAppError(
-      ERROR_CODES.INVALID_REQUEST,
-      "AI 승인 초안 버전 정보가 올바르지 않습니다.",
-      409
-    );
-  }
-
-  /**
-   * 승인 카드 버튼에서 전달한 버전이 있으면
-   * 서버의 현재 버전과 먼저 비교한다.
-   */
-  const requestedVersion =
-    Number(
-      params.expectedVersion ||
-      0
-    );
-
-  if (
-    requestedVersion > 0 &&
-    requestedVersion !==
-      currentVersion
-  ) {
-    throwAppError(
-      ERROR_CODES.INVALID_REQUEST,
-      "AI 승인 초안이 변경되었습니다. 최신 내용을 다시 확인해주세요.",
-      409
-    );
-  }
-
-  let workSession =
-    await db.getAiWorkSession({
-      organizationId:
-        aiContext.organizationId,
-
-      userId:
-        aiContext.userId,
-    });
-
-  const row =
-    await db.cancelAiPendingAction({
-      id:
-        Math.floor(
-          pendingActionId
-        ),
-
-      organizationId:
-        aiContext.organizationId,
-
-      requestedByUserId:
-        aiContext.userId,
-
-      /**
-       * 자연어 취소에서도 서버가 직접 조회한
-       * 현재 버전을 사용한다.
-       */
       expectedVersion:
-        currentVersion,
-    });
-
-  /**
-   * AI 초안 취소 감사로그
-   *
-   * 내부 payload 원문은 저장하지 않는다.
-   */
-    try {
-    await db.createAiActionLog({
-      organizationId:
-        aiContext.organizationId,
-
-      userId:
-        aiContext.userId,
-
-      userName:
-        aiContext.userName ||
-        String(
-          (params.ctx.user as any)
-            ?.name ||
-          (params.ctx.user as any)
-            ?.username ||
-          ""
-        ).trim(),
-
-      action:
-        "ai_pending_action_cancel",
-
-      targetStudentId:
-        row?.studentId
-          ? Number(
-              row.studentId
-            )
-          : null,
-
-      targetStudentName:
+        params.expectedVersion ??
         null,
-
-      payload: {
-        pendingActionId:
-          Number(
-            row?.id ||
-            pendingActionId
-          ),
-
-        actionType:
-          row?.actionType ||
-          null,
-
-        version:
-          Number(
-            row?.version ||
-            currentVersion
-          ),
-
-        status:
-          row?.status ||
-          "cancelled",
-
-        source:
-          params.expectedVersion
-            ? "pending_action_button"
-            : "ai_natural_language",
-      },
     });
-  } catch (
-    auditLogError
-  ) {
-    console.error(
-      "[AI PENDING ACTION CANCEL] 감사로그 저장 실패",
-      {
-        organizationId:
-          aiContext.organizationId,
-
-        userId:
-          aiContext.userId,
-
-        pendingActionId:
-          Number(
-            row?.id ||
-            pendingActionId
-          ),
-
-        actionType:
-          row?.actionType ||
-          null,
-
-        message:
-          auditLogError instanceof
-            Error
-            ? String(
-                auditLogError.message ||
-                "알 수 없는 오류"
-              )
-                .replace(
-                  /\s+/g,
-                  " "
-                )
-                .trim()
-                .slice(
-                  0,
-                  300
-                )
-            : "알 수 없는 오류",
-      }
-    );
-  }
-
-  const cancelledPendingActionId =
-    Number(
-      row?.id ||
-      pendingActionId
-    );
-
-  const lastPresentedPendingActionId =
-    Number(
-      workSession
-        .lastPresentedAction
-        ?.payload
-        ?.pendingActionId ||
-      0
-    );
-
-  /**
-   * 현재 화면에서 제시한 Pending Action과
-   * 실제 취소한 작업이 같은 경우에만
-   * Work Session을 초기화한다.
-   */
-    if (
-    lastPresentedPendingActionId ===
-    cancelledPendingActionId
-  ) {
-    try {
-      workSession =
-        await db.patchAiWorkSession({
-          organizationId:
-            aiContext.organizationId,
-
-          userId:
-            aiContext.userId,
-
-          expectedVersion:
-            workSession.version,
-
-          patch: {
-            workflow: {
-              type:
-                null,
-
-              step:
-                "idle",
-
-              clearDraft:
-                true,
-
-              draftPatch:
-                {},
-
-              waitingFor:
-                [],
-            },
-
-            lastPresentedAction:
-              null,
-          },
-        });
-    } catch (
-      workSessionError
-    ) {
-      console.error(
-        "[AI PENDING ACTION CANCEL] Work Session 초기화 실패",
-        {
-          organizationId:
-            aiContext.organizationId,
-
-          userId:
-            aiContext.userId,
-
-          pendingActionId:
-            cancelledPendingActionId,
-
-          message:
-            workSessionError instanceof
-              Error
-              ? String(
-                  workSessionError.message ||
-                  "알 수 없는 오류"
-                )
-                  .replace(
-                    /\s+/g,
-                    " "
-                  )
-                  .trim()
-                  .slice(
-                    0,
-                    300
-                  )
-              : "알 수 없는 오류",
-        }
-      );
-
-      try {
-        workSession =
-          await db.getAiWorkSession({
-            organizationId:
-              aiContext.organizationId,
-
-            userId:
-              aiContext.userId,
-          });
-      } catch (
-        readWorkSessionError
-      ) {
-        console.error(
-          "[AI PENDING ACTION CANCEL] Work Session 재조회 실패",
-          {
-            organizationId:
-              aiContext.organizationId,
-
-            userId:
-              aiContext.userId,
-
-            pendingActionId:
-              cancelledPendingActionId,
-
-            message:
-              readWorkSessionError instanceof
-                Error
-                ? String(
-                    readWorkSessionError.message ||
-                    "알 수 없는 오류"
-                  )
-                    .replace(
-                      /\s+/g,
-                      " "
-                    )
-                    .trim()
-                    .slice(
-                      0,
-                      300
-                    )
-                : "알 수 없는 오류",
-          }
-        );
-
-        workSession =
-          null;
-      }
-    }
-  }
 
   return {
     success:
-      true,
+      cancelled.success,
 
+    /**
+     * 기존 웹 프론트는 Public DTO를 사용하므로
+     * Router 경계에서만 변환한다.
+     */
     action:
       toAiPendingActionPublicResult(
-        row
+        cancelled.pendingAction
       ),
 
     message:
-      "AI 승인 초안이 취소되었습니다.",
+      cancelled.message,
 
-    workSession,
+    workSession:
+      cancelled.workSession,
 
-    aiContext,
+    aiContext:
+      cancelled.aiContext,
   };
 }
 
+async function replacePreviousAiPendingActionIfNeeded(
+  params: {
+    ctx: any;
+
+    isPendingActionRevision:
+      boolean;
+
+    previousPendingActionId:
+      number;
+
+    previousPendingActionType:
+      string;
+
+    expectedActionType:
+      string;
+
+    newPendingActionId:
+      number;
+
+    targetOrganizationId?:
+      number |
+      null;
+  }
+) {
+  if (
+    !params.isPendingActionRevision ||
+    params.previousPendingActionType !==
+      params.expectedActionType ||
+    !Number.isFinite(
+      params.previousPendingActionId
+    ) ||
+    params.previousPendingActionId <=
+      0 ||
+    params.previousPendingActionId ===
+      params.newPendingActionId
+  ) {
+    return null;
+  }
+
+  return cancelAiPendingActionForCurrentUser({
+    ctx:
+      params.ctx,
+
+    pendingActionId:
+      Math.floor(
+        params.previousPendingActionId
+      ),
+
+    expectedVersion:
+      null,
+
+    targetOrganizationId:
+      params.targetOrganizationId ??
+      null,
+  });
+}
 
 async function confirmAiPendingActionForCurrentUser(
   params: {
@@ -3713,41 +2654,35 @@ async function confirmAiPendingActionForCurrentUser(
       number;
 
     /**
-     * 승인 카드 버튼은 프론트가 알고 있는
-     * Pending Action 버전을 전달한다.
+     * 승인 카드에서는 현재 클라이언트가 알고 있는
+     * Pending Action version을 전달한다.
      *
-     * 자연어 승인에서는 생략하고
-     * 서버가 현재 DB 버전을 다시 조회한다.
+     * 자연어 승인에서는 null이어도 되며
+     * 서버 Guard가 실제 DB 상태를 다시 확인한다.
      */
     expectedVersion?:
       number |
       null;
 
+    /**
+     * Superhost의 회사 전환 실행에만 사용한다.
+     *
+     * 일반 사용자는 세션의 organizationId가
+     * 최종 기준이 된다.
+     */
     targetOrganizationId?:
       number |
       null;
   }
 ) {
-  const pendingActionId =
-    Number(
-      params.pendingActionId ||
-      0
-    );
-
-  if (
-    !Number.isFinite(
-      pendingActionId
-    ) ||
-    pendingActionId <=
-      0
-  ) {
-    throwAppError(
-      ERROR_CODES.INVALID_REQUEST,
-      "올바른 AI 승인 요청 ID가 필요합니다.",
-      400
-    );
-  }
-
+  /**
+   * 1.
+   * 현재 HTTP 요청의 실제 AI Context를
+   * 서버 로그인 세션 기준으로 생성한다.
+   *
+   * 프론트에서 organizationId / userId / role을
+   * 직접 전달받아 신뢰하지 않는다.
+   */
   const aiContext =
     await createRequestAiContext({
       ctx:
@@ -3758,2189 +2693,59 @@ async function confirmAiPendingActionForCurrentUser(
         null,
     });
 
-  if (
-    aiContext.canWrite !==
-      true
-  ) {
-    throwAppError(
-      ERROR_CODES.PERMISSION_DENIED,
-      "현재 계정은 AI 승인 작업을 실행할 수 없습니다.",
-      403
-    );
-  }
-
-      /**
-   * 승인 실행용 조회에서는 먼저
-   * Pending Action ID와 회사 범위만 확인한다.
+  /**
+   * 2.
+   * 실제 Action을 실행하기 전에
+   * Pending Action 공통 보안 검사를 수행한다.
    *
-   * 조회 후 모든 Action에 대해
-   * 초안 생성자 본인 여부를 검사한다.
+   * 여기서 검사되는 항목:
    *
-   * 문서 OCR Action은 추가로
-   * 대상 학생의 현재 담당자인지도 검사한다.
+   * - Pending Action ID
+   * - 회사 범위
+   * - AI 쓰기 권한
+   * - 최초 요청자
+   * - OCR 대상 학생 권한
+   * - Pending Action 상태
+   * - expectedVersion 충돌
+   *
+   * 이 검사를 통과한 결과만
+   * Dispatcher로 전달한다.
    */
-  const pendingAction =
-    await db.getAiPendingActionByIdForExecution({
-      id:
-        Math.floor(
-          pendingActionId
-        ),
+  const confirmation =
+    await prepareAiPendingActionForConfirmation({
+      pendingActionId:
+        params.pendingActionId,
 
-      organizationId:
-        aiContext.organizationId,
+      expectedVersion:
+        params.expectedVersion ??
+        null,
+
+      aiContext,
+
+      actorName:
+        aiContext.userName ||
+        String(
+          (params.ctx.user as any)
+            ?.name ||
+          (params.ctx.user as any)
+            ?.username ||
+          ""
+        ).trim() ||
+        null,
     });
 
-  if (
-    !pendingAction
-  ) {
-    throwAppError(
-      ERROR_CODES.DATA_NOT_FOUND,
-      "AI 승인 초안을 찾을 수 없습니다.",
-      404
-    );
-  }
-
   /**
-   * 서버 DB에서 조회한 Action Type만 신뢰한다.
-   */
-  const pendingActionType =
-    String(
-      pendingAction.actionType ||
-      ""
-    );
-
-  const documentPendingActionTypes =
-    new Set([
-      "document_transfer_import",
-      "document_plan_import",
-      "document_payment_import",
-      "document_plan_payment_import",
-    ]);
-
-  const isDocumentPendingAction =
-    documentPendingActionTypes.has(
-      pendingActionType
-    );
-
-   /**
-   * 모든 Pending Action은
-   * 초안을 최초 생성한 사용자 본인만
-   * 승인하고 실행할 수 있다.
+   * 3.
+   * 공통 보안 검사가 끝난 Pending Action을
+   * Action별 Confirm Service로 분배한다.
    *
-   * 프론트에서 전달한 사용자 정보는 신뢰하지 않고
-   * Pending Action DB 원본의 requestedByUserId와
-   * 현재 서버 세션의 aiContext.userId를 비교한다.
+   * Router는 이제 실행 세부사항을 알 필요가 없다.
    */
-  const pendingRequestedByUserId =
-    Number(
-      pendingAction
-        .requestedByUserId ||
-      0
-    );
+  return dispatchAiPendingActionConfirmation({
+    aiContext,
 
-  if (
-    !Number.isFinite(
-      pendingRequestedByUserId
-    ) ||
-    pendingRequestedByUserId <=
-      0
-  ) {
-    throwAppError(
-      ERROR_CODES.INVALID_REQUEST,
-      "AI 승인 초안의 최초 요청자 정보를 확인할 수 없습니다.",
-      400
-    );
-  }
-
-  if (
-    Math.floor(
-      pendingRequestedByUserId
-    ) !==
-      aiContext.userId
-  ) {
-    throwAppError(
-      ERROR_CODES.PERMISSION_DENIED,
-      "본인이 생성한 AI 승인 초안만 실행할 수 있습니다.",
-      403
-    );
-  }
-
-    /**
-   * 문서 OCR Pending Action은
-   * 생성자 본인 검사에 더해
-   * 대상 학생의 현재 담당자 여부도 검사한다.
-   *
-   * 초안을 생성한 뒤 학생 담당자가 변경되었거나
-   * 권한 범위가 변경된 경우에는 실행을 차단한다.
-   */
-  if (
-    isDocumentPendingAction
-  ) {
-    const documentStudentId =
-      Number(
-        pendingAction
-          .studentId ||
-        0
-      );
-
-    if (
-      !Number.isFinite(
-        documentStudentId
-      ) ||
-      documentStudentId <= 0
-    ) {
-      throwAppError(
-        ERROR_CODES.INVALID_REQUEST,
-        "문서 승인 초안의 대상 학생 정보를 확인할 수 없습니다.",
-        400
-      );
-    }
-
-    const documentStudent =
-      await db.getStudentById(
-        Math.floor(
-          documentStudentId
-        ),
-        {
-          organizationId:
-            aiContext.organizationId,
-        }
-      );
-
-    if (!documentStudent) {
-      throwAppError(
-        ERROR_CODES.DATA_NOT_FOUND,
-        "문서 반영 대상 학생을 찾을 수 없습니다.",
-        404
-      );
-    }
-
-    /**
-     * 조회 범위와 실제 담당자 여부를
-     * 승인 실행 전에 미리 검사한다.
-     *
-     * Executor에서도 같은 검사를 다시 수행한다.
-     */
-    assertCanWriteStudent({
-      context:
-        aiContext,
-
-      student:
-        documentStudent,
-    });
-  }
-
-  const currentVersion =
-    Number(
-      pendingAction.version ||
-      0
-    );
-
-  if (
-    !Number.isFinite(
-      currentVersion
-    ) ||
-    currentVersion <=
-      0
-  ) {
-    throwAppError(
-      ERROR_CODES.INVALID_REQUEST,
-      "AI 승인 초안 버전 정보가 올바르지 않습니다.",
-      409
-    );
-  }
-
-  const requestedVersion =
-    Number(
-      params.expectedVersion ||
-      0
-    );
-
-  /**
-   * 기존 승인 버튼에서 전달된 버전은
-   * 현재 DB 버전과 반드시 일치해야 한다.
-   */
-  if (
-    requestedVersion > 0 &&
-    requestedVersion !==
-      currentVersion
-  ) {
-    throwAppError(
-      ERROR_CODES.INVALID_REQUEST,
-      "AI 승인 초안이 변경되었습니다. 최신 내용을 다시 확인해주세요.",
-      409
-    );
-  }
-
-  /**
-   * 자연어 승인에서는 서버에서 조회한
-   * 현재 DB 버전을 Executor에 전달한다.
-   */
-  const expectedVersion =
-    currentVersion;
-
-   const actionType =
-    pendingActionType;
-
-  const actorName =
-    aiContext.userName ||
-    String(
-      (params.ctx.user as any)
-        ?.name ||
-      (params.ctx.user as any)
-        ?.username ||
-      ""
-    ).trim() ||
-    null;
-
-  /**
-   * 상담DB 신규등록 실행
-   *
-   * 학생 또는 상담DB가 선택되지 않은 상태에서
-   * 사용자가 이름, 연락처, 최종학력, 희망과정 등의
-   * 신규 상담 정보를 입력한 경우 실행한다.
-   */
-  if (
-    actionType ===
-    "consultation_create"
-  ) {
-    const result =
-      await executeConsultationCreatePendingAction({
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        organizationId:
-          aiContext.organizationId,
-
-        requestedByUserId:
-          aiContext.userId,
-
-        confirmedByUserId:
-          aiContext.userId,
-
-        expectedVersion,
-
-        actorName,
-
-        actorRole:
-          aiContext.role,
-      });
-
-    const publicPendingAction =
-      toAiPendingActionPublicResult(
-        result.pendingAction
-      );
-
-    /**
-     * 상담DB 생성 완료 후 생성된 consultationId를
-     * AI Work Session에 연결한다.
-     *
-     * 학생은 아직 생성되지 않았으므로
-     * studentId는 null로 유지한다.
-     */
-    let workSession =
-  await safePatchAiWorkSessionAfterPendingAction({
-    organizationId:
-      aiContext.organizationId,
-
-    userId:
-      aiContext.userId,
-
-    pendingActionId:
-      Math.floor(
-        pendingActionId
-      ),
-
-    success:
-      result.success,
-
-    alreadyExecuted:
-      result.alreadyExecuted,
-
-    executing:
-      result.executing,
-
-    consultationId:
-      result.consultationId,
-
-    studentId:
-      null,
-
-    studentName:
-      null,
+    confirmation,
   });
-
-/**
- * 상담DB 신규등록이 완료되면
- * 해당 상담을 현재 AI 대상으로 고정하고,
- * 등록예정 학생 통합등록으로 이어갈 수 있는
- * 후속 작업을 WorkSession에 저장한다.
- *
- * 실행 중이거나 실패한 경우에는
- * 후속 등록 작업을 만들지 않는다.
- */
-if (
-  (
-    result.success ===
-      true ||
-    result.alreadyExecuted ===
-      true
-  ) &&
-  result.executing !==
-    true &&
-  Number.isFinite(
-    Number(
-      result.consultationId
-    )
-  ) &&
-  Number(
-    result.consultationId
-  ) >
-    0 &&
-  workSession
-) {
-  const consultationId =
-    Math.floor(
-      Number(
-        result.consultationId
-      )
-    );
-
-    try {
-    workSession =
-      await db.patchAiWorkSession({
-        organizationId:
-          aiContext.organizationId,
-
-        userId:
-          aiContext.userId,
-
-        expectedVersion:
-          workSession.version,
-
-        patch: {
-          activeTarget: {
-            type:
-              "consultation",
-
-            id:
-              consultationId,
-
-            name:
-              null,
-          },
-
-          linkedContext: {
-            consultationId,
-
-            studentId:
-              null,
-          },
-
-          workflow: {
-            type:
-              "consultation_registration",
-
-            step:
-              "collecting_data",
-
-            clearDraft:
-              true,
-
-            draftPatch: {
-              consultationId,
-
-              originalMessage:
-                "",
-            },
-
-            waitingFor: [
-              "registrationPlan",
-            ],
-          },
-
-          lastPresentedAction: {
-            actionId:
-              `consultation-registration-followup-${consultationId}`,
-
-            actionType:
-              "student_registration_followup",
-
-            targetType:
-              "consultation",
-
-            targetId:
-              consultationId,
-
-            payload: {
-              consultationId,
-
-              sourceActionType:
-                "consultation_create",
-
-              nextTool:
-                "student_registration_preview",
-            },
-
-            expiresAt:
-              new Date(
-                Date.now() +
-                30 * 60 * 1000
-              ).toISOString(),
-          },
-        },
-      });
-  } catch (
-    followupWorkSessionError
-  ) {
-    console.error(
-      "[AI CONSULTATION CREATE] 후속 등록 Work Session 저장 실패",
-      {
-        organizationId:
-          aiContext.organizationId,
-
-        userId:
-          aiContext.userId,
-
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        consultationId,
-
-        message:
-          followupWorkSessionError instanceof
-            Error
-            ? String(
-                followupWorkSessionError.message ||
-                "알 수 없는 오류"
-              )
-                .replace(
-                  /\s+/g,
-                  " "
-                )
-                .trim()
-                .slice(
-                  0,
-                  300
-                )
-            : "알 수 없는 오류",
-      }
-    );
-
-    try {
-      workSession =
-        await db.getAiWorkSession({
-          organizationId:
-            aiContext.organizationId,
-
-          userId:
-            aiContext.userId,
-        });
-    } catch (
-      readWorkSessionError
-    ) {
-      console.error(
-        "[AI CONSULTATION CREATE] Work Session 재조회 실패",
-        {
-          organizationId:
-            aiContext.organizationId,
-
-          userId:
-            aiContext.userId,
-
-          consultationId,
-
-          message:
-            readWorkSessionError instanceof
-              Error
-              ? String(
-                  readWorkSessionError.message ||
-                  "알 수 없는 오류"
-                )
-                  .replace(
-                    /\s+/g,
-                    " "
-                  )
-                  .trim()
-                  .slice(
-                    0,
-                    300
-                  )
-              : "알 수 없는 오류",
-        }
-      );
-
-      workSession =
-        null;
-    }
-  }
-}
-
-    return {
-      success:
-        result.success,
-
-      alreadyExecuted:
-        result.alreadyExecuted,
-
-      executing:
-        result.executing,
-
-      actionType,
-
-      consultationId:
-        result.consultationId,
-
-      studentId:
-        null,
-
-      scheduleId:
-        null,
-
-      planId:
-        null,
-
-      semesterId:
-        null,
-
-      semesterIds:
-        [],
-
-      planSubjectIds:
-        [],
-
-      transferSubjectIds:
-        [],
-
-      practiceSaved:
-        false,
-
-      paymentUpdated:
-        false,
-
-      action:
-        publicPendingAction,
-
-      pendingAction:
-        publicPendingAction,
-
-      workSession,
-
-      message:
-  (
-    (
-      result.success ===
-        true ||
-      result.alreadyExecuted ===
-        true
-    ) &&
-    result.executing !==
-      true &&
-    Number(
-      result.consultationId ||
-      0
-    ) >
-      0
-  )
-    ? [
-        "상담DB 신규등록이 완료되었습니다.",
-        "",
-        "이어서 등록예정 학생 전환과 학기·과목설계를 진행할까요?",
-      ].join(
-        "\n"
-      )
-    : result.message,
-
-      aiContext,
-    };
-  }
-
-  /**
-   * 등록예정 학생 통합등록 실행
-   */
-  if (
-    actionType ===
-    "student_registration_create"
-  ) {
-    const result =
-      await executeStudentRegistrationPendingAction({
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        organizationId:
-          aiContext.organizationId,
-
-        requestedByUserId:
-          aiContext.userId,
-
-        confirmedByUserId:
-          aiContext.userId,
-
-        expectedVersion,
-
-        actorName,
-
-        actorRole:
-          aiContext.role,
-      });
-
-    const publicPendingAction =
-      toAiPendingActionPublicResult(
-        result.pendingAction
-      );
-
-    const workSession =
-  await safePatchAiWorkSessionAfterPendingAction({
-        organizationId:
-          aiContext.organizationId,
-
-        userId:
-          aiContext.userId,
-
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        success:
-          result.success,
-
-        alreadyExecuted:
-          result.alreadyExecuted,
-
-        executing:
-          result.executing,
-
-        consultationId:
-          pendingAction.consultationId ===
-            null ||
-          pendingAction.consultationId ===
-            undefined
-            ? null
-            : Number(
-                pendingAction
-                  .consultationId
-              ),
-
-        studentId:
-          result.studentId,
-
-        studentName:
-          null,
-      });
-
-const studentDetailPath =
-  result.studentId &&
-  Number(
-    result.studentId
-  ) > 0
-    ? `/students/${Number(
-        result.studentId
-      )}`
-    : null;
-
-const completionMessage =
-  result.success ===
-      true ||
-  result.alreadyExecuted ===
-      true
-    ? [
-        result.message,
-        "",
-        studentDetailPath
-          ? "생성된 학생 상세페이지에서 학기와 과목설계를 확인해주세요."
-          : null,
-      ]
-        .filter(
-          Boolean
-        )
-        .join(
-          "\n"
-        )
-    : result.message;
-
-    return {
-      success:
-        result.success,
-
-      alreadyExecuted:
-        result.alreadyExecuted,
-
-      executing:
-        result.executing,
-
-      actionType,
-
-      consultationId:
-        pendingAction.consultationId ===
-          null ||
-        pendingAction.consultationId ===
-          undefined
-          ? null
-          : Number(
-              pendingAction
-                .consultationId
-            ),
-
-      studentId:
-        result.studentId,
-
-studentDetailPath,
-
-      scheduleId:
-        null,
-
-      planId:
-        result.planId,
-
-      semesterId:
-        result.semesterIds[0] ??
-        null,
-
-      semesterIds:
-        result.semesterIds,
-
-      planSubjectIds:
-        result.planSubjectIds,
-
-      transferSubjectIds:
-        result.transferSubjectIds,
-
-      practiceSaved:
-        result.practiceSaved,
-
-      paymentUpdated:
-        false,
-
-      action:
-        publicPendingAction,
-
-      pendingAction:
-        publicPendingAction,
-
-      workSession,
-
-      message:
-  completionMessage,
-
-      aiContext,
-    };
-  }
-
-  /**
-   * 학생 일정 등록 실행
-   */
-  if (
-    actionType ===
-    "schedule_create"
-  ) {
-    const result =
-      await executeScheduleCreatePendingAction({
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        expectedVersion,
-
-        context:
-          aiContext,
-      });
-
-    const publicPendingAction =
-      toAiPendingActionPublicResult(
-        result.pendingAction
-      );
-
-       const workSession =
-      await safePatchAiWorkSessionAfterPendingAction({
-        organizationId:
-          aiContext.organizationId,
-
-        userId:
-          aiContext.userId,
-
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        success:
-          result.success,
-
-        alreadyExecuted:
-          result.alreadyExecuted,
-
-        executing:
-          result.executing,
-
-        consultationId:
-          null,
-
-        studentId:
-          result.studentId,
-
-        studentName:
-          null,
-      });
-
-    return {
-      success:
-        result.success,
-
-      alreadyExecuted:
-        result.alreadyExecuted,
-
-      executing:
-        result.executing,
-
-      actionType,
-
-      consultationId:
-        null,
-
-      studentId:
-        result.studentId,
-
-      scheduleId:
-        result.scheduleId,
-
-      planId:
-        null,
-
-      semesterId:
-        null,
-
-      semesterIds:
-        [],
-
-      planSubjectIds:
-        [],
-
-      transferSubjectIds:
-        [],
-
-      practiceSaved:
-        false,
-
-      paymentUpdated:
-        false,
-
-      action:
-        publicPendingAction,
-
-      pendingAction:
-        publicPendingAction,
-
-      workSession,
-
-      message:
-        result.message,
-
-      aiContext,
-    };
-  }
-
-  /**
-   * 학생 플랜 생성 실행
-   */
-  if (
-    actionType ===
-    "plan_create"
-  ) {
-    const result =
-      await executePlanCreatePendingAction({
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        expectedVersion,
-
-        context:
-          aiContext,
-      });
-
-    const publicPendingAction =
-      toAiPendingActionPublicResult(
-        result.pendingAction
-      );
-
-    /**
-     * 플랜과 Pending Action 실행은
-     * Executor에서 이미 완료된다.
-     *
-     * Work Session 후처리 오류 때문에
-     * 실제 플랜 생성 결과가 실패로 바뀌지 않도록
-     * 기존 안전 함수를 그대로 사용한다.
-     */
-    const workSession =
-      await safePatchAiWorkSessionAfterPendingAction({
-        organizationId:
-          aiContext.organizationId,
-
-        userId:
-          aiContext.userId,
-
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        success:
-          result.success,
-
-        alreadyExecuted:
-          result.alreadyExecuted,
-
-        executing:
-          result.executing,
-
-        consultationId:
-          null,
-
-        studentId:
-          result.studentId,
-
-        studentName:
-          null,
-      });
-
-    return {
-      success:
-        result.success,
-
-      alreadyExecuted:
-        result.alreadyExecuted,
-
-      executing:
-        result.executing,
-
-      actionType,
-
-      consultationId:
-        null,
-
-      studentId:
-        result.studentId,
-
-      scheduleId:
-        null,
-
-      planId:
-        result.planId,
-
-      semesterId:
-        null,
-
-      semesterIds:
-        [],
-
-      planSubjectIds:
-        [],
-
-      transferSubjectIds:
-        [],
-
-      practiceSaved:
-        false,
-
-      paymentUpdated:
-        false,
-
-      action:
-        publicPendingAction,
-
-      pendingAction:
-        publicPendingAction,
-
-      workSession,
-
-      message:
-        result.message,
-
-      aiContext,
-    };
-    }
-
-  /**
-   * 학생 플랜 수정 실행
-   */
-  if (
-    actionType ===
-    "plan_update"
-  ) {
-    const result =
-      await executePlanUpdatePendingAction({
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        expectedVersion,
-
-        context:
-          aiContext,
-      });
-
-    const publicPendingAction =
-      toAiPendingActionPublicResult(
-        result.pendingAction
-      );
-
-    /**
-     * 실제 plans 수정과 Pending Action 처리는
-     * Executor에서 이미 완료된다.
-     *
-     * Work Session 후처리 오류가
-     * 실제 플랜 수정 결과를 실패로 바꾸지 않도록
-     * 기존 안전 함수를 사용한다.
-     */
-    const workSession =
-      await safePatchAiWorkSessionAfterPendingAction({
-        organizationId:
-          aiContext.organizationId,
-
-        userId:
-          aiContext.userId,
-
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        success:
-          result.success,
-
-        alreadyExecuted:
-          result.alreadyExecuted,
-
-        executing:
-          result.executing,
-
-        consultationId:
-          null,
-
-        studentId:
-          result.studentId,
-
-        studentName:
-          null,
-      });
-
-    return {
-      success:
-        result.success,
-
-      alreadyExecuted:
-        result.alreadyExecuted,
-
-      executing:
-        result.executing,
-
-      actionType,
-
-      consultationId:
-        null,
-
-      studentId:
-        result.studentId,
-
-      scheduleId:
-        null,
-
-      planId:
-        result.planId,
-
-      semesterId:
-        null,
-
-      semesterIds:
-        [],
-
-      planSubjectIds:
-        [],
-
-      transferSubjectIds:
-        [],
-
-      practiceSaved:
-        false,
-
-      paymentUpdated:
-        false,
-
-      updatedFields:
-        result.updatedFields,
-
-      action:
-        publicPendingAction,
-
-      pendingAction:
-        publicPendingAction,
-
-      workSession,
-
-      message:
-        result.message,
-
-      aiContext,
-    };
-  }
-
-
-  /**
-   * 학생 플랜 과목 생성 실행
-   */
-  if (
-    actionType ===
-    "plan_subjects_create"
-  ) {
-    const result =
-      await executePlanSubjectsCreatePendingAction({
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        expectedVersion,
-
-        context:
-          aiContext,
-      });
-
-    const publicPendingAction =
-      toAiPendingActionPublicResult(
-        result.pendingAction
-      );
-
-    /**
-     * 실제 플랜 과목 생성과 Pending Action 처리는
-     * Executor에서 이미 완료된다.
-     *
-     * Work Session 후처리 실패가
-     * 실제 생성 결과를 실패로 바꾸지 않도록
-     * 기존 안전 함수를 사용한다.
-     */
-    const workSession =
-      await safePatchAiWorkSessionAfterPendingAction({
-        organizationId:
-          aiContext.organizationId,
-
-        userId:
-          aiContext.userId,
-
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        success:
-          result.success,
-
-        alreadyExecuted:
-          result.alreadyExecuted,
-
-        executing:
-          result.executing,
-
-        consultationId:
-          null,
-
-        studentId:
-          result.studentId,
-
-        studentName:
-          null,
-      });
-
-    return {
-      success:
-        result.success,
-
-      alreadyExecuted:
-        result.alreadyExecuted,
-
-      executing:
-        result.executing,
-
-      actionType,
-
-      consultationId:
-        null,
-
-      studentId:
-        result.studentId,
-
-      scheduleId:
-        null,
-
-      planId:
-        result.planId,
-
-      semesterId:
-        null,
-
-      semesterIds:
-        [],
-
-      planSubjectIds:
-        result.planSubjectIds,
-
-      transferSubjectIds:
-        [],
-
-      practiceSaved:
-        false,
-
-      paymentUpdated:
-        false,
-
-      action:
-        publicPendingAction,
-
-      pendingAction:
-        publicPendingAction,
-
-      workSession,
-
-      message:
-        result.message,
-
-      aiContext,
-    };
-  }
-
-  /**
-   * 학생 플랜 과목 수정 실행
-   */
-  if (
-    actionType ===
-    "plan_subjects_update"
-  ) {
-    const result =
-      await executePlanSubjectsUpdatePendingAction({
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        expectedVersion,
-
-        context:
-          aiContext,
-      });
-
-    const publicPendingAction =
-      toAiPendingActionPublicResult(
-        result.pendingAction
-      );
-
-    /**
-     * 실제 planSemesters 수정과
-     * Pending Action 완료 처리는
-     * Executor에서 이미 수행된다.
-     */
-    const workSession =
-      await safePatchAiWorkSessionAfterPendingAction({
-        organizationId:
-          aiContext.organizationId,
-
-        userId:
-          aiContext.userId,
-
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        success:
-          result.success,
-
-        alreadyExecuted:
-          result.alreadyExecuted,
-
-        executing:
-          result.executing,
-
-        consultationId:
-          null,
-
-        studentId:
-          result.studentId,
-
-        studentName:
-          null,
-      });
-
-    return {
-      success:
-        result.success,
-
-      alreadyExecuted:
-        result.alreadyExecuted,
-
-      executing:
-        result.executing,
-
-      actionType,
-
-      consultationId:
-        null,
-
-      studentId:
-        result.studentId,
-
-      scheduleId:
-        null,
-
-      planId:
-        result.planId,
-
-      semesterId:
-        null,
-
-      semesterIds:
-        [],
-
-      planSubjectIds:
-        result.planSubjectId
-          ? [
-              result.planSubjectId,
-            ]
-          : [],
-
-      transferSubjectIds:
-        [],
-
-      practiceSaved:
-        false,
-
-      paymentUpdated:
-        false,
-
-      updatedFields:
-        result.updatedFields,
-
-      action:
-        publicPendingAction,
-
-      pendingAction:
-        publicPendingAction,
-
-      workSession,
-
-      message:
-        result.message,
-
-      aiContext,
-    };
-  }
-
-
-
-
-  /**
-   * 학생 학기 생성 실행
-   */
-  if (
-    actionType ===
-    "semester_create"
-  ) {
-    const result =
-      await executeSemesterCreatePendingAction({
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        expectedVersion,
-
-        context:
-          aiContext,
-      });
-
-    const publicPendingAction =
-      toAiPendingActionPublicResult(
-        result.pendingAction
-      );
-
-    /**
-     * 학기와 Pending Action 실행은 이미
-     * Executor의 DB 트랜잭션에서 완료된다.
-     *
-     * Work Session 후처리 오류가 실제 학기 생성
-     * 결과를 실패로 변경하지 않도록 안전 함수를 사용한다.
-     */
-    const workSession =
-      await safePatchAiWorkSessionAfterPendingAction({
-        organizationId:
-          aiContext.organizationId,
-
-        userId:
-          aiContext.userId,
-
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        success:
-          result.success,
-
-        alreadyExecuted:
-          result.alreadyExecuted,
-
-        executing:
-          result.executing,
-
-        consultationId:
-          null,
-
-        studentId:
-          result.studentId,
-
-        studentName:
-          null,
-      });
-
-    return {
-      success:
-        result.success,
-
-      alreadyExecuted:
-        result.alreadyExecuted,
-
-      executing:
-        result.executing,
-
-      actionType,
-
-      consultationId:
-        null,
-
-      studentId:
-        result.studentId,
-
-      scheduleId:
-        null,
-
-      planId:
-        null,
-
-      semesterId:
-        result.semesterId,
-
-      semesterIds:
-        result.semesterId
-          ? [
-              result.semesterId,
-            ]
-          : [],
-
-      planSubjectIds:
-        Array.isArray(
-          result.planSubjectIds
-        )
-          ? result.planSubjectIds
-          : [],
-
-      transferSubjectIds:
-        [],
-
-      practiceSaved:
-        false,
-
-      paymentUpdated:
-        false,
-
-      action:
-        publicPendingAction,
-
-      pendingAction:
-        publicPendingAction,
-
-      workSession,
-
-      message:
-        result.message,
-
-      aiContext,
-    };
-  }
-
-  /**
-   * 학생 학기 수정 실행
-   */
-  if (
-    actionType ===
-    "semester_update"
-  ) {
-    const result =
-      await executeSemesterUpdatePendingAction({
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        expectedVersion,
-
-        context:
-          aiContext,
-      });
-
-    const publicPendingAction =
-      toAiPendingActionPublicResult(
-        result.pendingAction
-      );
-
-    /**
-     * 학기 수정과 Pending Action 완료는
-     * Executor의 DB 트랜잭션에서 이미 처리된다.
-     *
-     * Work Session 후처리 실패가 실제 학기 수정
-     * 결과를 실패로 변경하지 않도록 안전 함수를 사용한다.
-     */
-    const workSession =
-      await safePatchAiWorkSessionAfterPendingAction({
-        organizationId:
-          aiContext.organizationId,
-
-        userId:
-          aiContext.userId,
-
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        success:
-          result.success,
-
-        alreadyExecuted:
-          result.alreadyExecuted,
-
-        executing:
-          result.executing,
-
-        consultationId:
-          null,
-
-        studentId:
-          result.studentId,
-
-        studentName:
-          null,
-      });
-
-    return {
-      success:
-        result.success,
-
-      alreadyExecuted:
-        result.alreadyExecuted,
-
-      executing:
-        result.executing,
-
-      actionType,
-
-      consultationId:
-        null,
-
-      studentId:
-        result.studentId,
-
-      scheduleId:
-        null,
-
-      planId:
-        null,
-
-      semesterId:
-        result.semesterId,
-
-      semesterIds:
-        result.semesterId
-          ? [
-              result.semesterId,
-            ]
-          : [],
-
-      semesterOrder:
-        result.semesterOrder,
-
-      semester:
-        result.semester,
-
-      planSubjectIds:
-        [],
-
-      transferSubjectIds:
-        [],
-
-      practiceSaved:
-        false,
-
-      paymentUpdated:
-        false,
-
-      action:
-        publicPendingAction,
-
-      pendingAction:
-        publicPendingAction,
-
-      workSession,
-
-      message:
-        result.message,
-
-      aiContext,
-    };
-  }
-
-  /**
-   * 학생 학기 입력완료 실행
-   */
-  if (
-    actionType ===
-    "semester_complete"
-  ) {
-    const result =
-      await executeSemesterCompletePendingAction({
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        expectedVersion,
-
-        context:
-          aiContext,
-      });
-
-    const publicPendingAction =
-      toAiPendingActionPublicResult(
-        result.pendingAction
-      );
-
-    /**
-     * 학기 상태 변경과 Pending Action 완료는
-     * Executor의 DB 트랜잭션에서 이미 처리된다.
-     *
-     * Work Session 후처리 오류가
-     * 실제 학기 입력완료 결과를 실패로
-     * 변경하지 않도록 안전 함수를 사용한다.
-     */
-    const workSession =
-      await safePatchAiWorkSessionAfterPendingAction({
-        organizationId:
-          aiContext.organizationId,
-
-        userId:
-          aiContext.userId,
-
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        success:
-          result.success,
-
-        alreadyExecuted:
-          result.alreadyExecuted,
-
-        executing:
-          result.executing,
-
-        consultationId:
-          null,
-
-        studentId:
-          result.studentId,
-
-        studentName:
-          null,
-      });
-
-    return {
-      success:
-        result.success,
-
-      alreadyExecuted:
-        result.alreadyExecuted,
-
-      executing:
-        result.executing,
-
-      actionType,
-
-      consultationId:
-        null,
-
-      studentId:
-        result.studentId,
-
-      scheduleId:
-        null,
-
-      planId:
-        null,
-
-      semesterId:
-        result.semesterId,
-
-      semesterIds:
-        result.semesterId
-          ? [
-              result.semesterId,
-            ]
-          : [],
-
-      planSubjectIds:
-        [],
-
-      transferSubjectIds:
-        [],
-
-      practiceSaved:
-        false,
-
-      paymentUpdated:
-        false,
-
-      isCompleted:
-        result.isCompleted,
-
-      approvalStatus:
-        result.approvalStatus,
-
-      semesterOrder:
-        result.semesterOrder,
-
-      semester:
-        "semester" in result
-          ? result.semester
-          : null,
-
-      action:
-        publicPendingAction,
-
-      pendingAction:
-        publicPendingAction,
-
-      workSession,
-
-      message:
-        result.message,
-
-      aiContext,
-    };
-  }
-
-  /**
-   * 상담DB 정보 수정 실행
-   */
-  if (
-    actionType ===
-    "consultation_update"
-  ) {
-    const result =
-      await executeConsultationUpdatePendingAction({
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        expectedVersion,
-
-        context:
-          aiContext,
-      });
-
-    const publicPendingAction =
-      toAiPendingActionPublicResult(
-        result.pendingAction
-      );
-
-        const workSession =
-      await safePatchAiWorkSessionAfterPendingAction({
-        organizationId:
-          aiContext.organizationId,
-
-        userId:
-          aiContext.userId,
-
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        success:
-          result.success,
-
-        alreadyExecuted:
-          result.alreadyExecuted,
-
-        executing:
-          result.executing,
-
-        consultationId:
-          result.consultationId,
-
-        studentId:
-          null,
-
-        studentName:
-          null,
-      });
-
-    return {
-      success:
-        result.success,
-
-      alreadyExecuted:
-        result.alreadyExecuted,
-
-      executing:
-        result.executing,
-
-      actionType,
-
-      consultationId:
-        result.consultationId,
-
-      studentId:
-        null,
-
-      scheduleId:
-        null,
-
-      planId:
-        null,
-
-      semesterId:
-        null,
-
-      semesterIds:
-        [],
-
-      planSubjectIds:
-        [],
-
-      transferSubjectIds:
-        [],
-
-      practiceSaved:
-        false,
-
-      paymentUpdated:
-        false,
-
-      action:
-        publicPendingAction,
-
-      pendingAction:
-        publicPendingAction,
-
-      workSession,
-
-      message:
-        result.message,
-
-      aiContext,
-    };
-  }
-
-  /**
-   * 학생 기본정보 수정 실행
-   */
-  if (
-    actionType ===
-    "student_update"
-  ) {
-    const result =
-      await executeStudentUpdatePendingAction({
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        expectedVersion,
-
-        context:
-          aiContext,
-      });
-
-    const publicPendingAction =
-      toAiPendingActionPublicResult(
-        result.pendingAction
-      );
-
-        const workSession =
-      await safePatchAiWorkSessionAfterPendingAction({
-        organizationId:
-          aiContext.organizationId,
-
-        userId:
-          aiContext.userId,
-
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        success:
-          result.success,
-
-        alreadyExecuted:
-          result.alreadyExecuted,
-
-        executing:
-          result.executing,
-
-        consultationId:
-          null,
-
-        studentId:
-          result.studentId,
-
-        studentName:
-          null,
-      });
-
-    return {
-      success:
-        result.success,
-
-      alreadyExecuted:
-        result.alreadyExecuted,
-
-      executing:
-        result.executing,
-
-      actionType,
-
-      consultationId:
-        null,
-
-      studentId:
-        result.studentId,
-
-      scheduleId:
-        null,
-
-      planId:
-        null,
-
-      semesterId:
-        null,
-
-      semesterIds:
-        [],
-
-      planSubjectIds:
-        [],
-
-      transferSubjectIds:
-        [],
-
-      practiceSaved:
-        false,
-
-      paymentUpdated:
-        false,
-
-      action:
-        publicPendingAction,
-
-      pendingAction:
-        publicPendingAction,
-
-      workSession,
-
-      message:
-        result.message,
-
-      aiContext,
-    };
-  }
-
-  /**
-   * 문서 분석 결과 CRM 반영 실행
-   */
-    if (
-    isDocumentPendingAction
-  ) {
-
-    const documentRequestedByUserId =
-      Number(
-        pendingAction
-          .requestedByUserId ||
-        0
-      );
-
-    if (
-      !Number.isFinite(
-        documentRequestedByUserId
-      ) ||
-      documentRequestedByUserId <= 0
-    ) {
-      throwAppError(
-        ERROR_CODES.INVALID_REQUEST,
-        "문서 분석 승인 요청의 최초 요청자 정보를 확인할 수 없습니다.",
-        400
-      );
-    }
-
-        const result =
-      await executeDocumentImportPendingAction({
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        /**
-         * OCR 초안을 처음 생성한 사용자 ID
-         *
-         * 현재 승인 사용자가 아니라
-         * Pending Action DB 원본의 요청자 ID를 사용한다.
-         */
-        requestedByUserId:
-  Math.floor(
-    documentRequestedByUserId
-  ),
-
-        /**
-         * 서버에서 생성한 실제 AI Context
-         *
-         * organizationId
-         * 현재 승인자 userId
-         * role
-         * 조회 범위
-         * 쓰기 가능 여부
-         *
-         * 모두 Executor가 이 값을 기준으로 검사한다.
-         */
-        context:
-          aiContext,
-
-        expectedVersion,
-
-        actorName,
-      });
-
-    const publicPendingAction =
-      toAiPendingActionPublicResult(
-        result.pendingAction
-      );
-
-        const workSession =
-      await safePatchAiWorkSessionAfterPendingAction({
-        organizationId:
-          aiContext.organizationId,
-
-        userId:
-          aiContext.userId,
-
-        pendingActionId:
-          Math.floor(
-            pendingActionId
-          ),
-
-        success:
-          result.success,
-
-        alreadyExecuted:
-          result.alreadyExecuted,
-
-        executing:
-          result.executing,
-
-        consultationId:
-          null,
-
-        studentId:
-          result.studentId,
-
-        studentName:
-          null,
-      });
-
-    return {
-      success:
-        result.success,
-
-      alreadyExecuted:
-        result.alreadyExecuted,
-
-      executing:
-        result.executing,
-
-      actionType,
-
-      consultationId:
-        null,
-
-      studentId:
-        result.studentId,
-
-      scheduleId:
-        null,
-
-      planId:
-        null,
-
-      semesterId:
-        result.semesterId,
-
-      semesterIds:
-        result.semesterId
-          ? [
-              result.semesterId,
-            ]
-          : [],
-
-      planSubjectIds:
-        result.planSubjectIds,
-
-      transferSubjectIds:
-        result.transferSubjectIds,
-
-      practiceSaved:
-        false,
-
-      paymentUpdated:
-        result.paymentUpdated,
-
-      action:
-        publicPendingAction,
-
-      pendingAction:
-        publicPendingAction,
-
-      workSession,
-
-      message:
-        result.message,
-
-      aiContext,
-    };
-  }
-
-  throwAppError(
-    ERROR_CODES.INVALID_REQUEST,
-    "현재 승인 실행을 지원하지 않는 AI 작업입니다.",
-    400
-  );
 }
 
 export const appRouter = router({
@@ -19807,35 +16612,27 @@ workSession =
  * 새 초안을 Work Session에 연결한 뒤 취소하므로
  * 이전 초안 취소가 새 Work Session을 초기화하지 않는다.
  */
-if (
-  isPendingActionRevision &&
-  previousPendingActionType ===
-    "schedule_create" &&
-  Number.isFinite(
-    previousPendingActionId
-  ) &&
-  previousPendingActionId > 0 &&
-  previousPendingActionId !==
+await replacePreviousAiPendingActionIfNeeded({
+  ctx,
+
+  isPendingActionRevision,
+
+  previousPendingActionId,
+
+  previousPendingActionType,
+
+  expectedActionType:
+    "schedule_create",
+
+  newPendingActionId:
     Number(
       pendingAction.id
-    )
-) {
-  await cancelAiPendingActionForCurrentUser({
-    ctx,
+    ),
 
-    pendingActionId:
-      Math.floor(
-        previousPendingActionId
-      ),
-
-    expectedVersion:
-      null,
-
-    targetOrganizationId:
-      input.targetOrganizationId ??
-      null,
-  });
-}
+  targetOrganizationId:
+    input.targetOrganizationId ??
+    null,
+});
 
 const reply =
     String(
@@ -20347,36 +17144,27 @@ if (
    * 사용자가 기존 상담 신규등록 초안을 수정한 경우
    * 새 Pending Action 생성 후 이전 초안을 취소한다.
    */
-  if (
-    isPendingActionRevision &&
-    previousPendingActionType ===
-      "consultation_create" &&
-    Number.isFinite(
-      previousPendingActionId
-    ) &&
-    previousPendingActionId >
-      0 &&
-    previousPendingActionId !==
-      Number(
-        pendingAction.id
-      )
-  ) {
-    await cancelAiPendingActionForCurrentUser({
-      ctx,
+  await replacePreviousAiPendingActionIfNeeded({
+  ctx,
 
-      pendingActionId:
-        Math.floor(
-          previousPendingActionId
-        ),
+  isPendingActionRevision,
 
-      expectedVersion:
-        null,
+  previousPendingActionId,
 
-      targetOrganizationId:
-        input.targetOrganizationId ??
-        null,
-    });
-  }
+  previousPendingActionType,
+
+  expectedActionType:
+    "consultation_create",
+
+  newPendingActionId:
+    Number(
+      pendingAction.id
+    ),
+
+  targetOrganizationId:
+    input.targetOrganizationId ??
+    null,
+});
 
   const reply =
     String(
@@ -20774,35 +17562,27 @@ workSession =
  * 기존 상담DB 수정 승인 초안을 변경한 경우
  * 새 초안 생성 성공 후 이전 초안을 취소한다.
  */
-if (
-  isPendingActionRevision &&
-  previousPendingActionType ===
-    "consultation_update" &&
-  Number.isFinite(
-    previousPendingActionId
-  ) &&
-  previousPendingActionId > 0 &&
-  previousPendingActionId !==
+await replacePreviousAiPendingActionIfNeeded({
+  ctx,
+
+  isPendingActionRevision,
+
+  previousPendingActionId,
+
+  previousPendingActionType,
+
+  expectedActionType:
+    "consultation_update",
+
+  newPendingActionId:
     Number(
       pendingAction.id
-    )
-) {
-  await cancelAiPendingActionForCurrentUser({
-    ctx,
+    ),
 
-    pendingActionId:
-      Math.floor(
-        previousPendingActionId
-      ),
-
-    expectedVersion:
-      null,
-
-    targetOrganizationId:
-      input.targetOrganizationId ??
-      null,
-  });
-}
+  targetOrganizationId:
+    input.targetOrganizationId ??
+    null,
+});
 
 const reply =
     String(
@@ -21366,35 +18146,27 @@ if (
    * 수정해서 새 초안이 만들어진 경우
    * 새 초안 생성 성공 후 이전 초안을 취소한다.
    */
-  if (
-    isPendingActionRevision &&
-    previousPendingActionType ===
-      "plan_create" &&
-    Number.isFinite(
-      previousPendingActionId
-    ) &&
-    previousPendingActionId > 0 &&
-    previousPendingActionId !==
+  await replacePreviousAiPendingActionIfNeeded({
+    ctx,
+
+    isPendingActionRevision,
+
+    previousPendingActionId,
+
+    previousPendingActionType,
+
+    expectedActionType:
+      "plan_create",
+
+    newPendingActionId:
       Number(
         pendingAction.id
-      )
-  ) {
-    await cancelAiPendingActionForCurrentUser({
-      ctx,
+      ),
 
-      pendingActionId:
-        Math.floor(
-          previousPendingActionId
-        ),
-
-      expectedVersion:
-        null,
-
-      targetOrganizationId:
-        input.targetOrganizationId ??
-        null,
-    });
-  }
+    targetOrganizationId:
+      input.targetOrganizationId ??
+      null,
+  });
 
   const reply =
     String(
@@ -22011,36 +18783,27 @@ if (
    * 기존 plan_update 초안을 수정하여
    * 새 초안을 만든 경우 이전 초안을 취소한다.
    */
-  if (
-    isPendingActionRevision &&
-    previousPendingActionType ===
-      "plan_update" &&
-    Number.isFinite(
-      previousPendingActionId
-    ) &&
-    previousPendingActionId >
-      0 &&
-    previousPendingActionId !==
+  await replacePreviousAiPendingActionIfNeeded({
+    ctx,
+
+    isPendingActionRevision,
+
+    previousPendingActionId,
+
+    previousPendingActionType,
+
+    expectedActionType:
+      "plan_update",
+
+    newPendingActionId:
       Number(
         pendingAction.id
-      )
-  ) {
-    await cancelAiPendingActionForCurrentUser({
-      ctx,
+      ),
 
-      pendingActionId:
-        Math.floor(
-          previousPendingActionId
-        ),
-
-      expectedVersion:
-        null,
-
-      targetOrganizationId:
-        input.targetOrganizationId ??
-        null,
-    });
-  }
+    targetOrganizationId:
+      input.targetOrganizationId ??
+      null,
+  });
 
   const reply =
     String(
@@ -22757,36 +19520,27 @@ if (
    * 기존 플랜과목 생성 초안을 수정해서
    * 새 초안이 만들어진 경우 이전 것을 취소한다.
    */
-  if (
-    isPendingActionRevision &&
-    previousPendingActionType ===
-      "plan_subjects_create" &&
-    Number.isFinite(
-      previousPendingActionId
-    ) &&
-    previousPendingActionId >
-      0 &&
-    previousPendingActionId !==
+  await replacePreviousAiPendingActionIfNeeded({
+    ctx,
+
+    isPendingActionRevision,
+
+    previousPendingActionId,
+
+    previousPendingActionType,
+
+    expectedActionType:
+      "plan_subjects_create",
+
+    newPendingActionId:
       Number(
         pendingAction.id
-      )
-  ) {
-    await cancelAiPendingActionForCurrentUser({
-      ctx,
+      ),
 
-      pendingActionId:
-        Math.floor(
-          previousPendingActionId
-        ),
-
-      expectedVersion:
-        null,
-
-      targetOrganizationId:
-        input.targetOrganizationId ??
-        null,
-    });
-  }
+    targetOrganizationId:
+      input.targetOrganizationId ??
+      null,
+  });
 
   const reply =
     String(
@@ -23598,36 +20352,27 @@ if (
    * 기존 플랜 과목 수정 초안을
    * 다시 수정한 경우 이전 초안을 취소한다.
    */
-  if (
-    isPendingActionRevision &&
-    previousPendingActionType ===
-      "plan_subjects_update" &&
-    Number.isFinite(
-      previousPendingActionId
-    ) &&
-    previousPendingActionId >
-      0 &&
-    previousPendingActionId !==
+  await replacePreviousAiPendingActionIfNeeded({
+    ctx,
+
+    isPendingActionRevision,
+
+    previousPendingActionId,
+
+    previousPendingActionType,
+
+    expectedActionType:
+      "plan_subjects_update",
+
+    newPendingActionId:
       Number(
         pendingAction.id
-      )
-  ) {
-    await cancelAiPendingActionForCurrentUser({
-      ctx,
+      ),
 
-      pendingActionId:
-        Math.floor(
-          previousPendingActionId
-        ),
-
-      expectedVersion:
-        null,
-
-      targetOrganizationId:
-        input.targetOrganizationId ??
-        null,
-    });
-  }
+    targetOrganizationId:
+      input.targetOrganizationId ??
+      null,
+  });
 
   const reply =
     String(
@@ -24146,35 +20891,27 @@ if (
    * 기존 학기 생성 승인 초안을 수정한 경우
    * 새 초안 생성 성공 후 이전 초안을 취소한다.
    */
-  if (
-    isPendingActionRevision &&
-    previousPendingActionType ===
-      "semester_create" &&
-    Number.isFinite(
-      previousPendingActionId
-    ) &&
-    previousPendingActionId > 0 &&
-    previousPendingActionId !==
+ await replacePreviousAiPendingActionIfNeeded({
+    ctx,
+
+    isPendingActionRevision,
+
+    previousPendingActionId,
+
+    previousPendingActionType,
+
+    expectedActionType:
+      "semester_create",
+
+    newPendingActionId:
       Number(
         pendingAction.id
-      )
-  ) {
-    await cancelAiPendingActionForCurrentUser({
-      ctx,
+      ),
 
-      pendingActionId:
-        Math.floor(
-          previousPendingActionId
-        ),
-
-      expectedVersion:
-        null,
-
-      targetOrganizationId:
-        input.targetOrganizationId ??
-        null,
-    });
-  }
+    targetOrganizationId:
+      input.targetOrganizationId ??
+      null,
+  });
 
   const reply =
     String(
@@ -24771,35 +21508,27 @@ if (
       },
     });
 
-  if (
-    isPendingActionRevision &&
-    previousPendingActionType ===
-      "semester_update" &&
-    Number.isFinite(
-      previousPendingActionId
-    ) &&
-    previousPendingActionId > 0 &&
-    previousPendingActionId !==
+  await replacePreviousAiPendingActionIfNeeded({
+    ctx,
+
+    isPendingActionRevision,
+
+    previousPendingActionId,
+
+    previousPendingActionType,
+
+    expectedActionType:
+      "semester_update",
+
+    newPendingActionId:
       Number(
         pendingAction.id
-      )
-  ) {
-    await cancelAiPendingActionForCurrentUser({
-      ctx,
+      ),
 
-      pendingActionId:
-        Math.floor(
-          previousPendingActionId
-        ),
-
-      expectedVersion:
-        null,
-
-      targetOrganizationId:
-        input.targetOrganizationId ??
-        null,
-    });
-  }
+    targetOrganizationId:
+      input.targetOrganizationId ??
+      null,
+  });
 
   const reply =
     String(
@@ -25441,35 +22170,27 @@ if (
    * 다시 생성한 경우 새 초안 생성 이후
    * 이전 초안을 취소한다.
    */
-  if (
-    isPendingActionRevision &&
-    previousPendingActionType ===
-      "semester_complete" &&
-    Number.isFinite(
-      previousPendingActionId
-    ) &&
-    previousPendingActionId > 0 &&
-    previousPendingActionId !==
+  await replacePreviousAiPendingActionIfNeeded({
+    ctx,
+
+    isPendingActionRevision,
+
+    previousPendingActionId,
+
+    previousPendingActionType,
+
+    expectedActionType:
+      "semester_complete",
+
+    newPendingActionId:
       Number(
         pendingAction.id
-      )
-  ) {
-    await cancelAiPendingActionForCurrentUser({
-      ctx,
+      ),
 
-      pendingActionId:
-        Math.floor(
-          previousPendingActionId
-        ),
-
-      expectedVersion:
-        null,
-
-      targetOrganizationId:
-        input.targetOrganizationId ??
-        null,
-    });
-  }
+    targetOrganizationId:
+      input.targetOrganizationId ??
+      null,
+  });
 
   const reply =
     String(
@@ -25880,35 +22601,27 @@ workSession =
  * 기존 학생 수정 승인 초안을 변경한 경우
  * 새 초안 생성 성공 후 이전 초안을 취소한다.
  */
-if (
-  isPendingActionRevision &&
-  previousPendingActionType ===
-    "student_update" &&
-  Number.isFinite(
-    previousPendingActionId
-  ) &&
-  previousPendingActionId > 0 &&
-  previousPendingActionId !==
+await replacePreviousAiPendingActionIfNeeded({
+  ctx,
+
+  isPendingActionRevision,
+
+  previousPendingActionId,
+
+  previousPendingActionType,
+
+  expectedActionType:
+    "student_update",
+
+  newPendingActionId:
     Number(
       pendingAction.id
-    )
-) {
-  await cancelAiPendingActionForCurrentUser({
-    ctx,
+    ),
 
-    pendingActionId:
-      Math.floor(
-        previousPendingActionId
-      ),
-
-    expectedVersion:
-      null,
-
-    targetOrganizationId:
-      input.targetOrganizationId ??
-      null,
-  });
-}
+  targetOrganizationId:
+    input.targetOrganizationId ??
+    null,
+});
 
 const reply =
     String(

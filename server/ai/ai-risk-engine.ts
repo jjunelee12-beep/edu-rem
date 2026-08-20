@@ -1408,30 +1408,39 @@ for (
     });
 
     if (
-      requiredCredits > 0 &&
-      remainingCredits > 0
-    ) {
-      pushIssue(issues, {
-        code:
-          "TOTAL_CREDIT_SHORTAGE",
+  requiredCredits > 0 &&
+  remainingCredits > 0
+) {
+  pushIssue(issues, {
+    code:
+      "TOTAL_CREDIT_SHORTAGE",
 
-        severity: "danger",
-        category: "credit",
+    severity: "danger",
+    category: "credit",
 
-        title: "총 학점 부족",
+    title: "총 학점 부족",
 
-        message:
-          `필요 학점 ${requiredCredits}학점 중 현재 ${currentCredits}학점으로 ${remainingCredits}학점 부족합니다.`,
+    message:
+      `필요 학점 ${requiredCredits}학점 중 현재 ${currentCredits}학점으로 ${remainingCredits}학점 부족합니다.`,
 
-        details: {
-          requiredCredits,
-          currentCredits,
-          remainingCredits,
-        },
-      });
-    }
+    details: {
+      requiredCredits,
+      currentCredits,
+      remainingCredits,
+    },
+  });
+}
 
-    const categoryLabels:
+/**
+ * 여기서 creditRule 전용 else 블록을 종료한다.
+ *
+ * 이후 자격요건 / 학위요건 / 과목설계 /
+ * 학기설계 / 행정절차 / 실습 위험도 분석은
+ * creditRule 존재 여부와 관계없이 실행되어야 한다.
+ */
+}
+
+const categoryLabels:
       Record<
         RequirementKey,
         string
@@ -3021,10 +3030,9 @@ const recommendedSubjects =
       })
     ),
 },
-        });
+               });
       }
     }
-  }
 
   /**
    * 실습 점검

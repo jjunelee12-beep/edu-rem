@@ -566,12 +566,29 @@ const { data: attendanceRows = [] } = trpc.attendance.list.useQuery(undefined, {
                     </p>
                   </button>
 
-                  <div className="rounded-2xl bg-slate-50 p-4 text-center">
-                    <p className="text-xs text-slate-500">오늘 일정</p>
-                    <p className="mt-1 text-lg font-bold text-slate-900">
-                      {todaySchedules.length}
-                    </p>
-                  </div>
+                  <button
+  type="button"
+  onClick={() =>
+    setLocation(
+      withOrgPath("/staff-profile")
+    )
+  }
+  className="rounded-2xl bg-slate-50 p-4 text-center transition hover:bg-slate-100"
+>
+  <div className="flex items-center justify-center">
+    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)]">
+      <UserCheck className="h-5 w-5 text-slate-900" />
+    </div>
+  </div>
+
+  <p className="mt-3 text-xs text-slate-500">
+    AI 상담사 프로필
+  </p>
+
+  <p className="mt-1 text-sm font-semibold text-slate-900">
+    수정
+  </p>
+</button>
                 </div>
               </CardContent>
             </Card>
