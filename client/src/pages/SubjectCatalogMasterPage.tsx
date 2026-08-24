@@ -24,6 +24,49 @@ type SemesterNo =
   | 5
   | 6;
 
+type AcademicCanonicalKey =
+  | "social_worker_2"
+  | "childcare_teacher_2"
+  | "child_study_degree"
+  | "korean_teacher_2"
+  | "lifelong_educator_2";
+
+const ACADEMIC_CANONICAL_KEY_OPTIONS: Array<{
+  value: AcademicCanonicalKey;
+  label: string;
+}> = [
+  {
+    value:
+      "social_worker_2",
+    label:
+      "사회복지사 2급",
+  },
+  {
+    value:
+      "childcare_teacher_2",
+    label:
+      "보육교사 2급",
+  },
+  {
+    value:
+      "child_study_degree",
+    label:
+      "아동학",
+  },
+  {
+    value:
+      "korean_teacher_2",
+    label:
+      "한국어교원 2급",
+  },
+  {
+    value:
+      "lifelong_educator_2",
+    label:
+      "평생교육사 2급",
+  },
+];
+
 export default function SubjectCatalogMasterPage() {
   const { user } = useAuth();
   const utils = trpc.useUtils();
@@ -35,6 +78,14 @@ export default function SubjectCatalogMasterPage() {
 
   const [openCatalogDialog, setOpenCatalogDialog] = useState(false);
   const [newCatalogName, setNewCatalogName] = useState("");
+const [
+  newCatalogCanonicalKey,
+  setNewCatalogCanonicalKey,
+] =
+  useState<
+    AcademicCanonicalKey |
+    ""
+  >("");
 
   const [openItemDialog, setOpenItemDialog] = useState(false);
 const [openBulkItemDialog, setOpenBulkItemDialog] = useState(false);
@@ -110,6 +161,7 @@ const [
       await utils.subjectCatalog.list.invalidate();
       toast.success("과정이 추가되었습니다.");
       setNewCatalogName("");
+setNewCatalogCanonicalKey("");
       setOpenCatalogDialog(false);
     },
     onError: (e) => toast.error(e.message),
@@ -183,17 +235,25 @@ const bulkCreateItemMut = trpc.subjectCatalog.itemBulkCreate.useMutation({
     return map;
   }, [itemList]);
 
-  const handleCreateCatalog = () => {
-    const name = newCatalogName.trim();
-    if (!name) {
-      toast.error("과정명을 입력해주세요.");
-      return;
-    }
+ const handleCreateCatalog = () => {
+  const name =
+    newCatalogName.trim();
 
-    createCatalogMut.mutate({
-      name,
-    } as any);
-  };
+  if (!name) {
+    toast.error(
+      "과정명을 입력해주세요."
+    );
+    return;
+  }
+
+  createCatalogMut.mutate({
+    name,
+
+    canonicalKey:
+      newCatalogCanonicalKey ||
+      null,
+  } as any);
+};
 
   const handleCreateItem = () => {
     if (!selectedCatalogId) {
@@ -288,6 +348,7 @@ const handleBulkCreateItems = () => {
             size="sm"
             onClick={() => {
               setNewCatalogName("");
+setNewCatalogCanonicalKey("");
               setOpenCatalogDialog(true);
             }}
             className="gap-1"
@@ -325,17 +386,28 @@ const handleBulkCreateItems = () => {
                       <div className="font-medium text-black">
                         {catalog.name}
                       </div>
-                      <div className="mt-1">
-                        <Badge
-                          className={
-                            catalog.isActive
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-gray-100 text-gray-600"
-                          }
-                        >
-                          {catalog.isActive ? "사용중" : "비활성"}
-                        </Badge>
-                      </div>
+                      <div className="mt-1 flex flex-wrap gap-1">
+  <Badge
+    className={
+      catalog.isActive
+        ? "bg-emerald-100 text-emerald-700"
+        : "bg-gray-100 text-gray-600"
+    }
+  >
+    {catalog.isActive
+      ? "사용중"
+      : "비활성"}
+  </Badge>
+
+  {catalog.canonicalKey ? (
+    <Badge
+      variant="outline"
+      className="text-xs"
+    >
+      AI 연결
+    </Badge>
+  ) : null}
+</div>
                     </div>
 
                     <Button
@@ -521,6 +593,53 @@ const handleBulkCreateItems = () => {
               }}
             />
           </div>
+
+<div className="space-y-2">
+  <label className="text-sm font-medium">
+    AI 공통엔진 연결
+  </label>
+
+  <select
+    className="w-full h-10 px-3 text-sm border rounded-md bg-white"
+    value={
+      newCatalogCanonicalKey
+    }
+    onChange={(e) =>
+      setNewCatalogCanonicalKey(
+        e.target
+          .value as
+          AcademicCanonicalKey |
+          ""
+      )
+    }
+  >
+    <option value="">
+      연결 안 함
+    </option>
+
+    {ACADEMIC_CANONICAL_KEY_OPTIONS.map(
+      (
+        option
+      ) => (
+        <option
+          key={
+            option.value
+          }
+          value={
+            option.value
+          }
+        >
+          {option.label}
+        </option>
+      )
+    )}
+  </select>
+
+  <p className="text-xs text-muted-foreground">
+    NILE·자격·학위 공통엔진과
+    연결할 과정만 선택하세요.
+  </p>
+</div>
 
           <DialogFooter>
             <Button

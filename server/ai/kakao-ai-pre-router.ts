@@ -296,6 +296,97 @@ immediate에서도
 - 사용자의 의도가 애매하여
   추가 분석이 필요한 메시지
 
+매우 중요한 후속발화 문맥 규칙:
+
+현재 메시지가 짧은 동의 또는 후속 표현이라고 해서
+무조건 immediate / acknowledgement로 처리하지 않는다.
+
+예:
+
+- "네"
+- "응"
+- "ㅇㅇ"
+- "그래"
+- "그래요"
+- "좋아요"
+- "해주세요"
+- "해줘"
+- "알려주세요"
+- "설명해주세요"
+- "그렇게 해주세요"
+- "이어가"
+- "이어서"
+- "ㄱㄱ"
+
+이런 표현은 반드시 previousAssistantMessage를 함께 확인한다.
+
+previousAssistantMessage에서 직전 AI가
+아래와 같은 상담 행동을 제안한 상태라면
+현재 짧은 후속발화는 반드시 analysis다.
+
+예:
+
+- 과정 설명을 더 해주겠다는 제안
+- 필요한 과목을 알려주겠다는 제안
+- 인정과목 / 남은과목을 알려주겠다는 제안
+- 취득기간 / 예상일을 계산하겠다는 제안
+- 이론수업을 설명하겠다는 제안
+- 실습을 설명하겠다는 제안
+- 행정절차를 설명하겠다는 제안
+- 성적증명서 / 서류를 분석하겠다는 제안
+- 부족한 정보를 확인하겠다는 제안
+- 등록 혜택을 설명하겠다는 제안
+- 담당자를 추천 / 선택 / 연결하겠다는 제안
+- 상담접수를 진행하겠다는 제안
+- 콜백 / 전화상담을 연결하겠다는 제안
+
+예시:
+
+previousAssistantMessage:
+"실습 진행방법도 안내드릴까요?"
+
+currentMessage:
+"네"
+
+→ analysis
+
+
+previousAssistantMessage:
+"남은 과목도 이어서 정리해드릴까요?"
+
+currentMessage:
+"ㅇㅇ"
+
+→ analysis
+
+
+previousAssistantMessage:
+"담당자 추천도 도와드릴까요?"
+
+currentMessage:
+"좋아요"
+
+→ analysis
+
+
+previousAssistantMessage:
+"상담 접수까지 진행해드릴까요?"
+
+currentMessage:
+"ㄱㄱ"
+
+→ analysis
+
+
+반대로 previousAssistantMessage에
+이어갈 상담 행동이나 제안이 전혀 없고,
+현재 메시지도 정말 단순한 확인/감사/인사로만
+해석 가능한 경우에만 acknowledgement immediate를 허용한다.
+
+previousAssistantMessage가 존재하는데
+현재 짧은 후속발화가 직전 문맥과 이어질 가능성이 있다면
+애매하게 immediate로 보내지 말고 analysis로 보낸다.
+
 중요한 안전 원칙:
 
 애매하면 반드시 analysis로 분류한다.
@@ -398,14 +489,13 @@ const KAKAO_AI_PRE_ROUTER_SCHEMA = {
 
 export async function routeKakaoAiPreMessage(
   params: {
-    message:
-      string;
+    message: string;
 
-    hasImage?:
-      boolean;
+    hasImage?: boolean;
 
-    hasDocument?:
-      boolean;
+    hasDocument?: boolean;
+
+    previousAssistantMessage?: string | null;
   }
 ): Promise<KakaoAiPreRouteResult> {
   const message =
@@ -526,20 +616,23 @@ export async function routeKakaoAiPreMessage(
           KAKAO_AI_PRE_ROUTER_INSTRUCTIONS,
 
         input:
-          JSON.stringify({
-            currentMessage:
-              message,
+  JSON.stringify({
+    currentMessage:
+      message,
 
-            attachment: {
-              hasImage:
-                params.hasImage ===
-                true,
+    previousAssistantMessage:
+      normalizeText(
+        params.previousAssistantMessage
+      ) || null,
 
-              hasDocument:
-                params.hasDocument ===
-                true,
-            },
-          }),
+    attachment: {
+      hasImage:
+        params.hasImage === true,
+
+      hasDocument:
+        params.hasDocument === true,
+    },
+  }),
 
         text: {
           format: {

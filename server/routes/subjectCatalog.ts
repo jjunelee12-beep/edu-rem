@@ -35,24 +35,56 @@ export const subjectCatalogRouter = router({
     }),
 
   create: hostProcedure
-    .input(
-      z.object({
-        name: z.string().min(1),
-        sortOrder: z.number().optional(),
-        isActive: z.boolean().optional(),
-      })
-    )
+  .input(
+    z.object({
+      name:
+        z.string().min(1),
+
+      canonicalKey:
+        z.enum([
+          "social_worker_2",
+          "childcare_teacher_2",
+          "korean_teacher_2",
+          "lifelong_educator_2",
+          "child_study_degree",
+        ])
+          .nullable()
+          .optional(),
+
+      sortOrder:
+        z.number().optional(),
+
+      isActive:
+        z.boolean().optional(),
+    })
+  )
     .mutation(async ({ ctx, input }) => {
       const organizationId = getCtxOrganizationId(ctx);
 
       const id = await db.createSubjectCatalog({
-        organizationId,
-        name: input.name.trim(),
-        sortOrder: input.sortOrder ?? 0,
-        isActive: input.isActive ?? true,
-        createdBy: Number(ctx.user.id),
-        updatedBy: Number(ctx.user.id),
-      } as any);
+  organizationId,
+
+  name:
+    input.name.trim(),
+
+  canonicalKey:
+    input.canonicalKey ??
+    null,
+
+  sortOrder:
+    input.sortOrder ??
+    0,
+
+  isActive:
+    input.isActive ??
+    true,
+
+  createdBy:
+    Number(ctx.user.id),
+
+  updatedBy:
+    Number(ctx.user.id),
+} as any);
 
       return { success: true, id };
     }),

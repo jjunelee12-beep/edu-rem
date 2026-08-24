@@ -69,6 +69,7 @@ import {
 import {
   beginKakaoAiImmediateHistory,
   finishKakaoAiImmediateHistory,
+  getKakaoAiPreRouteConversationContext,
 } from "../ai/kakao-ai-immediate-history";
 
 import { 
@@ -2924,6 +2925,14 @@ console.log(
  *
  * 만 빠르게 결정한다.
  */
+
+const preRouteConversationContext =
+  await getKakaoAiPreRouteConversationContext({
+    organizationId,
+
+    channelUserKey,
+  });
+
 const preRoute =
   await routeKakaoAiPreMessage({
     message:
@@ -2936,6 +2945,10 @@ const preRoute =
     hasDocument:
       incomingAttachment
         .hasDocument,
+
+    previousAssistantMessage:
+      preRouteConversationContext
+        .previousAssistantMessage,
   });
 
 console.log(
@@ -2943,6 +2956,12 @@ console.log(
   {
     organizationId,
     kakaoRequestId,
+
+hasPreviousAssistantMessage:
+  Boolean(
+    preRouteConversationContext
+      .previousAssistantMessage
+  ),
 
     mode:
       preRoute

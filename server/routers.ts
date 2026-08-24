@@ -3079,6 +3079,16 @@ consultationPolicy: z
             .boolean()
             .optional(),
 
+priceGuide: z
+  .string()
+  .trim()
+  .max(
+    10000,
+    "비용 안내 기준은 10000자를 초과할 수 없습니다."
+  )
+  .nullable()
+  .optional(),
+
           kakaoBotId: z
             .string()
             .trim()
@@ -3166,6 +3176,9 @@ consultationPolicy:
 
             priceDisclosureEnabled:
               input.priceDisclosureEnabled,
+
+priceGuide:
+  input.priceGuide,
 
 kakaoBotId:
   input.kakaoBotId,
@@ -25455,6 +25468,7 @@ const student = await db.getStudent(input.studentId, {
           requirementType: z.enum(["전공필수", "전공선택", "교양", "일반"]).optional(),
           sortOrder: z.number().optional(),
 settlementIncluded: z.boolean().optional(),
+retakeRequired: z.boolean().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -25502,6 +25516,9 @@ organizationId: getCtxOrganizationId(ctx),
           credits: 3,
           sortOrder: input.sortOrder ?? 0,
 settlementIncluded: input.settlementIncluded,
+retakeRequired:
+  input.retakeRequired ??
+  false,
         } as any);
 
         return { id, success: true };
@@ -25517,6 +25534,7 @@ settlementIncluded: input.settlementIncluded,
           semesterNo: z.number().optional(),
           sortOrder: z.number().optional(),
 settlementIncluded: z.boolean().optional(),
+retakeRequired: z.boolean().optional(),
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -25529,6 +25547,13 @@ settlementIncluded: z.boolean().optional(),
         if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder;
 if (input.settlementIncluded !== undefined) {
   data.settlementIncluded = input.settlementIncluded;
+}
+if (
+  input.retakeRequired !==
+  undefined
+) {
+  data.retakeRequired =
+    input.retakeRequired;
 }
 
         await db.updatePlanSemester(input.id, data, {
@@ -25826,12 +25851,19 @@ organizationId,
 courseTemplate: router({
   list: protectedProcedure
     .input(
-      z
-        .object({
-          courseKey: z.string().optional(),
-        })
-        .optional()
-    )
+  z
+    .object({
+      courseKey:
+        z.string().optional(),
+
+      catalogId:
+        z.number()
+          .int()
+          .positive()
+          .optional(),
+    })
+    .optional()
+)
     .query(async ({ ctx, input }) => {
       const organizationId = getCtxOrganizationId(ctx);
 
@@ -25843,23 +25875,54 @@ courseTemplate: router({
 );
       }
 
-      return db.listCourseSubjectTemplates(input?.courseKey, {
-        organizationId,
-      });
+      return db.listCourseSubjectTemplates(
+  input?.courseKey,
+  {
+    organizationId,
+
+    catalogId:
+      input?.catalogId ??
+      null,
+  }
+);
     }),
 
   create: hostProcedure
     .input(
-      z.object({
-        courseKey: z.string().min(1),
-        subjectName: z.string().min(1),
-        category: z.enum(["전공", "교양", "일반"]),
-        requirementType: z
-          .enum(["전공필수", "전공선택", "교양", "일반"])
-          .optional(),
-        sortOrder: z.number().optional(),
-      })
-    )
+  z.object({
+    courseKey:
+      z.string().min(1),
+
+    catalogId:
+      z.number()
+        .int()
+        .positive()
+        .optional(),
+
+    subjectName:
+      z.string().min(1),
+
+    category:
+      z.enum([
+        "전공",
+        "교양",
+        "일반",
+      ]),
+
+    requirementType:
+      z
+        .enum([
+          "전공필수",
+          "전공선택",
+          "교양",
+          "일반",
+        ])
+        .optional(),
+
+    sortOrder:
+      z.number().optional(),
+  })
+)
     .mutation(async ({ ctx, input }) => {
       const organizationId = getCtxOrganizationId(ctx);
 
@@ -25871,15 +25934,34 @@ courseTemplate: router({
 );
       }
 
-      const id = await db.createCourseSubjectTemplate({
-        organizationId,
-        courseKey: input.courseKey.trim(),
-        subjectName: input.subjectName.trim(),
-        category: input.category,
-        requirementType: input.requirementType ?? null,
-        sortOrder: input.sortOrder ?? 0,
-        isActive: true,
-      } as any);
+      const id =
+  await db.createCourseSubjectTemplate({
+    organizationId,
+
+    courseKey:
+      input.courseKey.trim(),
+
+    catalogId:
+      input.catalogId ??
+      null,
+
+    subjectName:
+      input.subjectName.trim(),
+
+    category:
+      input.category,
+
+    requirementType:
+      input.requirementType ??
+      null,
+
+    sortOrder:
+      input.sortOrder ??
+      0,
+
+    isActive:
+      true,
+  } as any);
 
       return { id, success: true };
     }),

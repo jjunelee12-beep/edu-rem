@@ -796,15 +796,42 @@ const wantsCallbackRequest =
       phoneLast4:
         null,
 
-      replyText:
-        [
-          "네, 상담 연결 도와드릴게요 :)",
-          "",
-          "먼저 상담 담당자를 선택해주시면 됩니다.",
-          "원하시면 지금 상담하신 내용을 기준으로 담당자를 추천해드릴게요.",
-        ].join(
-          "\n"
-        ),
+     replyText:
+  [
+    "네, 상담 접수를 위해 필요한 정보만 확인할게요 :)",
+    "",
+    `아직 필요한 정보: ${missingRequiredFields.join(", ")}`,
+    "",
+    !contact.clientName
+      ? "성함:"
+      : null,
+
+    !contact.phone
+      ? "연락처:"
+      : null,
+
+    !finalEducation
+      ? "최종학력: (고졸 / 전문대졸 / 4년제졸 등)"
+      : null,
+
+    !desiredCourse
+      ? "희망과정: (예: 사회복지사 2급)"
+      : null,
+
+    "",
+    "위 항목만 작성해서 보내주시면 이어서 접수 도와드릴게요.",
+  ]
+    .filter(
+      (
+        line
+      ): line is string =>
+        Boolean(
+          line
+        )
+    )
+    .join(
+      "\n"
+    ),
     };
   }
 
@@ -876,158 +903,6 @@ const wantsCallbackRequest =
  * 여기서는 "연결", "신청", "예약" 같은
  * 문자열 키워드를 직접 검사하지 않는다.
  */
-if (
-  !contact.phone &&
-  !contact.clientName
-) {
-  if (
-    wantsLeadRegistration ||
-    wantsCallbackRequest
-  ) {
-    return {
-      handled:
-        true,
-
-      created:
-        false,
-
-      consultationId:
-        null,
-
-      reason:
-        "CONTACT_NOT_DETECTED",
-
-      clientName:
-        null,
-
-      phoneLast4:
-        null,
-
-      replyText:
-        wantsCallbackRequest
-          ? [
-              "네, 담당자 전화상담 요청 도와드릴게요 :)",
-              "",
-              "아래 내용만 보내주세요.",
-              "",
-              "성함:",
-              "연락처:",
-              "통화 희망일:",
-              "통화 희망시간:",
-              "",
-              "예)",
-              "성함: 홍길동",
-              "연락처: 010-1234-5678",
-              "통화 희망일: 오늘",
-              "통화 희망시간: 오후 3시",
-            ].join(
-              "\n"
-            )
-          : [
-              "네, 상담 접수 도와드릴게요 :)",
-              "",
-              "아래 내용만 보내주세요.",
-              "",
-              "성함:",
-              "연락처:",
-              "",
-              "전화상담도 원하시면",
-              "통화 희망일과 희망시간을 함께 말씀해주셔도 됩니다.",
-              "",
-              "예)",
-              "성함: 홍길동",
-              "연락처: 010-1234-5678",
-            ].join(
-              "\n"
-            ),
-    };
-  }
-
-  /**
-   * 접수 의도가 아닌 일반 대화인데
-   * 개인정보도 없는 경우에는
-   * 이 Action이 가로채지 않는다.
-   */
-
-  return {
-    handled:
-      false,
-
-    created:
-      false,
-
-    consultationId:
-      null,
-
-    reason:
-      "CONTACT_NOT_DETECTED",
-
-    clientName:
-      null,
-
-    phoneLast4:
-      null,
-
-    replyText:
-      null,
-  };
-}
-
-  if (
-    !contact.phone
-  ) {
-    return {
-      handled:
-        true,
-
-      created:
-        false,
-
-      consultationId:
-        null,
-
-      reason:
-        "INVALID_PHONE",
-
-      clientName:
-        contact.clientName,
-
-      phoneLast4:
-        null,
-
-      replyText:
-        "연락 가능한 휴대폰 번호를 함께 보내주세요 :) 예) 홍길동 010-1234-5678",
-    };
-  }
-
-  if (
-    !contact.clientName
-  ) {
-    return {
-      handled:
-        true,
-
-      created:
-        false,
-
-      consultationId:
-        null,
-
-      reason:
-        "INVALID_NAME",
-
-      clientName:
-        null,
-
-      phoneLast4:
-        maskPhone(
-          contact.phone
-        ),
-
-      replyText:
-        "성함과 연락처를 함께 보내주세요 :) 예) 홍길동 010-1234-5678",
-    };
-  }
 
   /**
    * 선택 담당자가 실제 같은 회사의

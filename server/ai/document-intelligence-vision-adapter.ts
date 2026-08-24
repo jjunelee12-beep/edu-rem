@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import sharp from "sharp";
 
 import type {
   DocumentIntelligenceAdministrativeStatus,
@@ -431,10 +432,308 @@ return {
     );
 }
 
-function buildInputContent(
+async function loadVisionImageBuffer(
+  fileUrl:
+    string
+): Promise<Buffer> {
+  const normalizedUrl =
+    String(
+      fileUrl ||
+      ""
+    ).trim();
+
+  if (
+    normalizedUrl.startsWith(
+      "data:image/"
+    )
+  ) {
+    const commaIndex =
+      normalizedUrl.indexOf(
+        ","
+      );
+
+    if (
+      commaIndex <
+      0
+    ) {
+      throw new Error(
+        "이미지 data URL 형식이 올바르지 않습니다."
+      );
+    }
+
+    const metadataPart =
+      normalizedUrl.slice(
+        0,
+        commaIndex
+      );
+
+    const dataPart =
+      normalizedUrl.slice(
+        commaIndex + 1
+      );
+
+    if (
+      !metadataPart.includes(
+        ";base64"
+      )
+    ) {
+      throw new Error(
+        "Base64 이미지 형식이 아닙니다."
+      );
+    }
+
+    return Buffer.from(
+      dataPart,
+      "base64"
+    );
+  }
+
+  const response =
+    await fetch(
+      normalizedUrl
+    );
+
+  if (
+    !response.ok
+  ) {
+    throw new Error(
+      `이미지를 불러올 수 없습니다. (${response.status})`
+    );
+  }
+
+  const arrayBuffer =
+    await response.arrayBuffer();
+
+  return Buffer.from(
+    arrayBuffer
+  );
+}
+
+async function buildEnhancedVisionImages(
+  fileUrl:
+    string
+): Promise<string[]> {
+  const sourceBuffer =
+    await loadVisionImageBuffer(
+      fileUrl
+    );
+
+  const sourceMetadata =
+    await sharp(
+      sourceBuffer
+    )
+      .metadata();
+
+  const sourceWidth =
+    Number(
+      sourceMetadata.width ||
+      0
+    );
+
+  if (
+    !Number.isFinite(
+      sourceWidth
+    ) ||
+    sourceWidth <=
+      0
+  ) {
+    throw new Error(
+      "이미지 크기를 확인할 수 없습니다."
+    );
+  }
+
+  /**
+   * 작은 성적증명서 글씨를 Vision이 충분히 볼 수 있도록
+   * 원본 폭보다 작아지지 않는 범위에서 확대한다.
+   *
+   * 지나치게 큰 이미지는 다시 줄여
+   * 입력비용과 처리량이 폭증하지 않도록 제한한다.
+   */
+  const targetWidth =
+    Math.min(
+      Math.max(
+        sourceWidth,
+        3200
+      ),
+      4200
+    );
+
+  const enhancedFullBuffer =
+    await sharp(
+      sourceBuffer
+    )
+      .rotate()
+      .resize({
+        width:
+          targetWidth,
+
+        withoutEnlargement:
+          false,
+
+        fit:
+          "inside",
+      })
+      .sharpen()
+      .png({
+        compressionLevel:
+          6,
+      })
+      .toBuffer();
+
+  const enhancedMetadata =
+    await sharp(
+      enhancedFullBuffer
+    )
+      .metadata();
+
+  const enhancedWidth =
+    Number(
+      enhancedMetadata.width ||
+      0
+    );
+
+  const enhancedHeight =
+    Number(
+      enhancedMetadata.height ||
+      0
+    );
+
+  if (
+    !enhancedWidth ||
+    !enhancedHeight
+  ) {
+    throw new Error(
+      "확대 이미지 크기를 확인할 수 없습니다."
+    );
+  }
+
+  const result:
+    string[] =
+    [
+      `data:image/png;base64,${enhancedFullBuffer.toString(
+        "base64"
+      )}`,
+    ];
+
+  /**
+   * 문서 전체를 위 / 중간 / 아래 영역으로 나눠
+   * 작은 과목명을 각각 더 큰 비율로 Vision에 전달한다.
+   *
+   * 영역 경계의 글자가 잘리지 않도록
+   * 각 분할 영역을 일부 겹치게 만든다.
+   */
+  const segmentCount =
+    3;
+
+  const overlap =
+    Math.max(
+      Math.floor(
+        enhancedHeight *
+          0.08
+      ),
+      1
+    );
+
+  const baseSegmentHeight =
+    Math.ceil(
+      enhancedHeight /
+        segmentCount
+    );
+
+  for (
+    let index =
+      0;
+    index <
+      segmentCount;
+    index +=
+      1
+  ) {
+    const nominalTop =
+      index *
+      baseSegmentHeight;
+
+    const nominalBottom =
+      Math.min(
+        (
+          index +
+          1
+        ) *
+          baseSegmentHeight,
+        enhancedHeight
+      );
+
+    const top =
+      Math.max(
+        nominalTop -
+          (
+            index >
+            0
+              ? overlap
+              : 0
+          ),
+        0
+      );
+
+    const bottom =
+      Math.min(
+        nominalBottom +
+          (
+            index <
+            segmentCount -
+              1
+              ? overlap
+              : 0
+          ),
+        enhancedHeight
+      );
+
+    const height =
+      bottom -
+      top;
+
+    if (
+      height <=
+      0
+    ) {
+      continue;
+    }
+
+    const segmentBuffer =
+      await sharp(
+        enhancedFullBuffer
+      )
+        .extract({
+          left:
+            0,
+
+          top,
+
+          width:
+            enhancedWidth,
+
+          height,
+        })
+        .sharpen()
+        .png({
+          compressionLevel:
+            6,
+        })
+        .toBuffer();
+
+    result.push(
+      `data:image/png;base64,${segmentBuffer.toString(
+        "base64"
+      )}`
+    );
+  }
+
+  return result;
+}
+
+async function buildInputContent(
   input:
     AnalyzeDocumentVisionInput
-): any[] {
+): Promise<any[]> {
   const contextText =
     JSON.stringify({
       studentId:
@@ -457,6 +756,11 @@ function buildInputContent(
     input.inputType ===
       "image"
   ) {
+    const enhancedImages =
+      await buildEnhancedVisionImages(
+        input.fileUrl
+      );
+
     return [
       {
         type:
@@ -466,6 +770,9 @@ function buildInputContent(
           contextText,
       },
 
+      /**
+       * 원본은 문서 전체 배치와 구조 판단용으로 유지한다.
+       */
       {
         type:
           "input_image",
@@ -476,12 +783,29 @@ function buildInputContent(
         detail:
           "high",
       },
+
+      /**
+       * 확대/선명화된 전체 이미지와
+       * 세로 분할 이미지를 추가로 제공한다.
+       */
+      ...enhancedImages.map(
+        imageUrl => ({
+          type:
+            "input_image",
+
+          image_url:
+            imageUrl,
+
+          detail:
+            "high",
+        })
+      ),
     ];
   }
 
   /**
    * PDF / 일반 문서는
-   * Responses API file input을 사용한다.
+   * Responses API file input을 그대로 사용한다.
    */
   return [
     {
@@ -859,6 +1183,11 @@ export async function analyzeDocumentWithVision(
     );
   }
 
+const inputContent =
+  await buildInputContent(
+    input
+  );
+
   const response =
     await openai.responses.create({
       model:
@@ -884,6 +1213,11 @@ export async function analyzeDocumentWithVision(
                 "신규자 AI, 등록자 AI, CRM 업무비서가 모두 같은 분석 결과를 사용한다.",
                 "",
                 "첨부 문서를 OCR처럼 글자만 읽지 말고 문서 전체의 시각적 구조와 의미를 함께 이해한다.",
+"이미지 입력에는 동일한 원본 문서의 전체 이미지와 확대·분할 이미지가 함께 제공될 수 있다.",
+"이 이미지들을 서로 다른 문서로 취급하지 말고 하나의 동일한 문서에 대한 보조 시야로 통합해서 분석한다.",
+"전체 이미지에서 문서 구조를 파악하고, 확대·분할 이미지에서는 작은 글씨와 표의 과목명·학점·연도 등을 정밀하게 확인한다.",
+"같은 과목이 여러 이미지에서 반복되어 보여도 academic.subjects에는 중복해서 넣지 않는다.",
+"확대 이미지에서도 확실히 읽히지 않는 글자는 추측하지 말고 warnings 또는 missingEvidence에 기록한다.",
                 "",
                 "분석 가능한 주요 문서:",
                 "- 대학교·전문대학교 성적증명서",
@@ -927,9 +1261,7 @@ export async function analyzeDocumentWithVision(
             "user",
 
           content:
-            buildInputContent(
-              input
-            ) as any,
+  inputContent as any,
         },
       ],
 

@@ -2319,6 +2319,16 @@ export function planQualificationSubjects(
     recognizedSubjects:
       QualificationRecognizedSubject[];
 
+/**
+ * 아직 취득 완료는 아니지만
+ * 이미 수강예정/수강중인 과목.
+ *
+ * 취득학점에는 포함하지 않지만
+ * 신규 추천에서는 중복 선택하지 않는다.
+ */
+occupiedSubjects?:
+  QualificationRecognizedSubject[];
+
     /**
      * 실제 학위 학점 채움용 과목 템플릿.
      */
@@ -2444,13 +2454,26 @@ degreeClassificationBySubjectKey:
   }
 
   const recognizedKeys =
-    createRecognizedKeySet(
-      params
-        .recognizedSubjects
-    );
+  createRecognizedKeySet(
+    params
+      .recognizedSubjects
+  );
 
-  const selectedMap =
-    getSelectedMap();
+const occupiedKeys =
+  createRecognizedKeySet(
+    params
+      .occupiedSubjects ||
+      []
+  );
+
+const unavailableKeys =
+  new Set([
+    ...recognizedKeys,
+    ...occupiedKeys,
+  ]);
+
+const selectedMap =
+  getSelectedMap();
 
   switch (
     requirements.courseKey
@@ -2462,7 +2485,8 @@ degreeClassificationBySubjectKey:
         masterItems:
           params.masterItems,
 
-        recognizedKeys,
+       recognizedKeys:
+  unavailableKeys,
 
         selectedMap,
       });
@@ -2476,7 +2500,8 @@ degreeClassificationBySubjectKey:
         masterItems:
           params.masterItems,
 
-        recognizedKeys,
+       recognizedKeys:
+  unavailableKeys,
 
         selectedMap,
       });
@@ -2490,7 +2515,8 @@ degreeClassificationBySubjectKey:
         masterItems:
           params.masterItems,
 
-        recognizedKeys,
+        recognizedKeys:
+  unavailableKeys,
 
         selectedMap,
       });
@@ -2504,7 +2530,8 @@ degreeClassificationBySubjectKey:
         masterItems:
           params.masterItems,
 
-        recognizedKeys,
+       recognizedKeys:
+  unavailableKeys,
 
         selectedMap,
       });
@@ -2536,7 +2563,8 @@ degreeClassificationBySubjectKey:
           templates:
             params.degreeTemplates,
 
-          recognizedKeys,
+          recognizedKeys:
+  unavailableKeys,
 
           selectedMap,
 

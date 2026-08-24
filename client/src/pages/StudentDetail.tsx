@@ -913,8 +913,20 @@ const planAnnualSubjectWarnings = useMemo(() => {
     const year = yearMatch[1];
     const term = termMatch ? `${termMatch[1]}학기` : `${group.semesterNo}학기`;
 
-    if (!yearMap[year]) yearMap[year] = {};
-    yearMap[year][term] = (yearMap[year][term] || 0) + Number(group.rows?.length || 0);
+   if (!yearMap[year]) {
+  yearMap[year] = {};
+}
+
+const validRows =
+  (group.rows || []).filter(
+    (row: any) =>
+      row.retakeRequired !==
+      true
+  );
+
+yearMap[year][term] =
+  (yearMap[year][term] || 0) +
+  validRows.length;
   });
 
   return Object.entries(yearMap)
@@ -947,13 +959,35 @@ const planRequirementCounts = useMemo(() => {
   };
 
   (planSemesterList || []).forEach((row: any) => {
-    const type = String(row.planRequirementType || "").trim();
+  if (
+    row.retakeRequired ===
+    true
+  ) {
+    return;
+  }
 
-    if (type === "전공필수") counts.requiredMajor += 1;
-    if (type === "전공선택") counts.electiveMajor += 1;
-    if (type === "교양") counts.liberal += 1;
-    if (type === "일반") counts.general += 1;
-  });
+  const type =
+    String(
+      row.planRequirementType ||
+      ""
+    ).trim();
+
+  if (type === "전공필수") {
+    counts.requiredMajor += 1;
+  }
+
+  if (type === "전공선택") {
+    counts.electiveMajor += 1;
+  }
+
+  if (type === "교양") {
+    counts.liberal += 1;
+  }
+
+  if (type === "일반") {
+    counts.general += 1;
+  }
+});
 
   counts.total =
     counts.requiredMajor +
@@ -1700,8 +1734,16 @@ if (isReadOnly) {
     }
 
 if (ENABLE_PLAN_REQUIREMENT) {
-  const currentRequired = (planSemesterList || []).filter(
-    (x: any) => String(x.planRequirementType || "") === "전공선택"
+  const currentRequired =
+  (planSemesterList || []).filter(
+    (x: any) =>
+      x.retakeRequired !==
+        true &&
+      String(
+        x.planRequirementType ||
+        ""
+      ) ===
+        "전공선택"
   ).length;
 
   const targetRequired = Number((plan as any)?.electiveMajorCount ?? 0);
@@ -1776,6 +1818,44 @@ const handlePlanSettlementIncludedChange = (row: any, checked: boolean) => {
   );
 };
 
+const handlePlanRetakeRequiredChange = (
+  row: any,
+  checked: boolean
+) => {
+  if (isReadOnly) {
+    toast.error(
+      "담당자 또는 호스트만 수정할 수 있습니다."
+    );
+    return;
+  }
+
+  updatePlanSemesterMut.mutate(
+    {
+      id:
+        Number(
+          row.id
+        ),
+
+      retakeRequired:
+        checked,
+    } as any,
+    {
+      onSuccess:
+        async () => {
+          await utils.planSemester.list.invalidate({
+            studentId,
+          });
+
+          toast.success(
+            checked
+              ? "재수강 필요 과목으로 변경되었습니다."
+              : "재수강 상태가 해제되었습니다."
+          );
+        },
+    }
+  );
+};
+
   const handleAddTransferSubjects = async () => {
 if (isReadOnly) {
   toast.error("담당자 또는 호스트만 수정할 수 있습니다.");
@@ -1799,8 +1879,13 @@ if (isReadOnly) {
 const canChangeRequirementType = (nextType: string, rowId: number) => {
   if (!ENABLE_PLAN_REQUIREMENT) return true;
 
-  const rows = (planSemesterList || []).filter(
-    (row: any) => Number(row.id) !== Number(rowId)
+  const rows =
+  (planSemesterList || []).filter(
+    (row: any) =>
+      Number(row.id) !==
+        Number(rowId) &&
+      row.retakeRequired !==
+        true
   );
 
   const currentCount = rows.filter(
@@ -2007,13 +2092,37 @@ const existingPlanSubjectMap = useMemo(() => {
   const map = new Map<string, number>();
 
   (planSemesterList || []).forEach((row: any) => {
-    const key = String(row.subjectName || "").trim().replace(/\s+/g, " ");
-    if (!key) return;
+  if (
+    row.retakeRequired ===
+    true
+  ) {
+    return;
+  }
 
-    if (!map.has(key)) {
-      map.set(key, Number(row.semesterNo));
-    }
-  });
+  const key =
+    String(
+      row.subjectName ||
+      ""
+    )
+      .trim()
+      .replace(
+        /\s+/g,
+        " "
+      );
+
+  if (!key) {
+    return;
+  }
+
+  if (!map.has(key)) {
+    map.set(
+      key,
+      Number(
+        row.semesterNo
+      )
+    );
+  }
+});
 
   return map;
 }, [planSemesterList]);
@@ -3501,6 +3610,39 @@ disabled={isReadOnly}
     </span>
   </label>
 )}
+<label className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+  <input
+    type="checkbox"
+    disabled={
+      isReadOnly ||
+      updatePlanSemesterMut.isPending
+    }
+    checked={
+      row.retakeRequired ===
+      true
+    }
+    onChange={(e) =>
+      handlePlanRetakeRequiredChange(
+        row,
+        e.target.checked
+      )
+    }
+  />
+
+  <span
+    className={
+      row.retakeRequired ===
+      true
+        ? "text-orange-600 font-medium"
+        : "text-muted-foreground"
+    }
+  >
+    {row.retakeRequired ===
+    true
+      ? "재수강 필요"
+      : "재수강"}
+  </span>
+</label>
 </td>
 
                               <td className="px-2 py-1">

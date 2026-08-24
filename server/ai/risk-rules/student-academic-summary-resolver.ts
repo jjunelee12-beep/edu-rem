@@ -68,6 +68,32 @@ export type StudentAcademicSummaryResult = {
       number | null;
   };
 
+retake: {
+  count:
+    number;
+
+  subjects:
+    Array<{
+      id:
+        number | null;
+
+      semesterNo:
+        number | null;
+
+      subjectName:
+        string;
+
+      requirementType:
+        string | null;
+
+      category:
+        string | null;
+
+      credits:
+        number;
+    }>;
+};
+
   /**
    * 법규 계산에 사용되는
    * 자격/학위 과목마스터 무결성 점검 결과.
@@ -580,15 +606,37 @@ export function resolveStudentAcademicSummary(
 
     administrativeTimeline:
       AdministrativeTimelinePlannerResult;
+
+retakeSubjects:
+  Array<{
+    id:
+      number | null;
+
+    semesterNo:
+      number | null;
+
+    subjectName:
+      string;
+
+    requirementType:
+      string | null;
+
+    category:
+      string | null;
+
+    credits:
+      number;
+  }>;
   }
 ): StudentAcademicSummaryResult {
   const {
-    requirements,
-    subjectPlan,
-    semesterPlan,
-    administrativeTimeline,
-  } =
-    params;
+  requirements,
+  subjectPlan,
+  semesterPlan,
+  administrativeTimeline,
+  retakeSubjects,
+} =
+  params;
 
   const courseLabel =
     resolveCourseLabel(
@@ -838,6 +886,15 @@ export function resolveStudentAcademicSummary(
     );
   }
 
+if (
+  retakeSubjects.length >
+  0
+) {
+  summaryLines.push(
+    `재수강이 필요한 과목은 ${retakeSubjects.length}과목이며 기존 인정 계산에서는 제외되어 다시 이수해야 합니다.`
+  );
+}
+
   const degreeLine =
     buildDegreeSummaryLine(
       requirements
@@ -1013,7 +1070,15 @@ if (
           .practiceHours,
     },
 
-masterIntegrity,
+    retake: {
+      count:
+        retakeSubjects.length,
+
+      subjects:
+        retakeSubjects,
+    },
+
+    masterIntegrity,
 
     degree: {
       requiresNewDegreeTrack:

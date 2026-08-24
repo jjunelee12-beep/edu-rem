@@ -25,6 +25,17 @@ import * as db from "../db";
  * - Composer
  */
 
+export type KakaoAiPreRouteConversationContext = {
+  conversationId:
+    number | null;
+
+  previousAssistantMessage:
+    string | null;
+
+  blocked:
+    boolean;
+};
+
 export type KakaoAiImmediateHistoryStartResult = {
   conversationId:
     number | null;
@@ -80,6 +91,187 @@ function normalizeText(
     value ??
     ""
   ).trim();
+}
+
+/**
+ * Pre-Router가 현재 발화를 문맥에 맞게 판단할 수 있도록
+ * 기존 Conversation의 직전 assistant 메시지를 조회한다.
+ *
+ * 중요:
+ * - 사용자 메시지를 저장하지 않는다.
+ * - Memory를 수정하지 않는다.
+ * - Intent를 판단하지 않는다.
+ * - 단순히 기존 대화 문맥만 읽는다.
+ */
+export async function getKakaoAiPreRouteConversationContext(
+  params: {
+    organizationId:
+      number;
+
+    channelUserKey:
+      string;
+  }
+): Promise<KakaoAiPreRouteConversationContext> {
+  const organizationId =
+    normalizePositiveInteger(
+      params.organizationId
+    );
+
+  if (
+    !organizationId
+  ) {
+    return {
+      conversationId:
+        null,
+
+      previousAssistantMessage:
+        null,
+
+      blocked:
+        false,
+    };
+  }
+
+  const channelUserKey =
+    normalizeText(
+      params.channelUserKey
+    );
+
+  if (
+    !channelUserKey
+  ) {
+    return {
+      conversationId:
+        null,
+
+      previousAssistantMessage:
+        null,
+
+      blocked:
+        false,
+    };
+  }
+
+  /**
+   * 기존 Orchestrator / Immediate History와
+   * 동일한 Conversation 저장소를 사용한다.
+   *
+   * Conversation이 처음인 사용자는 새 Conversation만 생성되고
+   * 메시지는 여기서 저장하지 않는다.
+   */
+  const conversation =
+    await db.getOrCreateKakaoAiConversation({
+      organizationId,
+
+      channelUserKey,
+    });
+
+  const conversationId =
+    normalizePositiveInteger(
+      conversation?.id
+    );
+
+  if (
+    !conversationId
+  ) {
+    return {
+      conversationId:
+        null,
+
+      previousAssistantMessage:
+        null,
+
+      blocked:
+        false,
+    };
+  }
+
+  const blocked =
+    String(
+      conversation?.status ||
+      ""
+    ) ===
+      "blocked";
+
+  if (
+    blocked
+  ) {
+    return {
+      conversationId,
+
+      previousAssistantMessage:
+        null,
+
+      blocked:
+        true,
+    };
+  }
+
+  /**
+   * 최근 대화 일부를 읽는다.
+   *
+   * 특정 문구를 하드코딩하여 판단하지 않고
+   * 가장 최근 assistant 자연어 답변 자체를
+   * Pre-Router AI에 전달하기 위한 용도다.
+   */
+  const recentMessages =
+    await db.getKakaoAiRecentMessages({
+      organizationId,
+
+      conversationId,
+
+      limit:
+        20,
+    });
+
+  let previousAssistantMessage:
+    string | null =
+    null;
+
+  for (
+    let index =
+      recentMessages.length - 1;
+    index >= 0;
+    index -= 1
+  ) {
+    const row =
+      recentMessages[index];
+
+    if (
+      String(
+        row?.role ||
+        ""
+      ).trim() !==
+        "assistant"
+    ) {
+      continue;
+    }
+
+    const content =
+      normalizeText(
+        row?.content
+      );
+
+    if (
+      !content
+    ) {
+      continue;
+    }
+
+    previousAssistantMessage =
+      content;
+
+    break;
+  }
+
+  return {
+    conversationId,
+
+    previousAssistantMessage,
+
+    blocked:
+      false,
+  };
 }
 
 /**

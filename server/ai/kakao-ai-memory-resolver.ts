@@ -7,6 +7,7 @@ import type {
 
 export type KakaoAiPriorSubjectVerificationStatus =
   | "user_reported"
+  | "ocr_observed"
   | "verified"
   | "rejected";
 
@@ -609,6 +610,8 @@ export function encodeKakaoAiPriorSubjectFact(
   const verificationStatus:
     KakaoAiPriorSubjectVerificationStatus =
     subject.verificationStatus ===
+      "ocr_observed" ||
+    subject.verificationStatus ===
       "verified" ||
     subject.verificationStatus ===
       "rejected"
@@ -715,6 +718,8 @@ export function decodeKakaoAiPriorSubjectFact(
 
     const verificationStatus:
       KakaoAiPriorSubjectVerificationStatus =
+      parsed.verificationStatus ===
+        "ocr_observed" ||
       parsed.verificationStatus ===
         "verified" ||
       parsed.verificationStatus ===

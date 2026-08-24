@@ -59,7 +59,7 @@ administrativeSupportPolicy: string;
   consultationPolicy: string;
 
   priceDisclosureEnabled: boolean;
-
+priceGuide: string;
   kakaoBotId: string;
 };
 
@@ -113,7 +113,7 @@ administrativeSupportPolicy: "",
 consultationPolicy: "",
 
   priceDisclosureEnabled: false,
-
+priceGuide: "",
   kakaoBotId: "",
 };
 
@@ -382,6 +382,11 @@ consultationPolicy:
             priceDisclosureEnabled:
         data.priceDisclosureEnabled === true,
 
+priceGuide:
+  String(
+    data.priceGuide || ""
+  ),
+
       kakaoBotId:
         String(
           data.kakaoBotId || ""
@@ -571,6 +576,10 @@ consultationPolicy:
 
             priceDisclosureEnabled:
         form.priceDisclosureEnabled,
+
+priceGuide:
+  form.priceGuide.trim() ||
+  null,
 
       kakaoBotId:
         kakaoBotId ||
@@ -1171,6 +1180,43 @@ const staffRecommendationRows =
                 )
               }
             />
+
+{form.priceDisclosureEnabled && (
+  <div className="space-y-2 rounded-lg border p-4">
+    <Label htmlFor="priceGuide">
+      비용 및 할인 안내 기준
+    </Label>
+
+    <Textarea
+      id="priceGuide"
+      value={form.priceGuide}
+      maxLength={10000}
+      rows={8}
+      placeholder={
+        "카카오 AI가 고객에게 안내할 실제 비용 및 할인 기준을 입력하세요.\n\n예: 정확한 수강료는 과정, 개강반, 과목 구성 및 적용 가능한 할인에 따라 달라질 수 있습니다. 공개 가능한 기본 비용이나 할인 기준이 있다면 함께 입력해주세요."
+      }
+      onChange={(event) =>
+        setForm((prev) => ({
+          ...prev,
+          priceGuide:
+            event.target.value,
+        }))
+      }
+    />
+
+    <div className="text-right text-xs text-muted-foreground">
+      {form.priceGuide.length}
+      /10000
+    </div>
+
+    <p className="text-xs text-muted-foreground">
+      AI는 이곳에 입력된 가격 및 할인 정보를
+      기준으로만 비용을 안내합니다.
+      입력되지 않은 금액이나 할인율은 임의로
+      생성하지 않습니다.
+    </p>
+  </div>
+)}
           </CardContent>
         </Card>
       </div>

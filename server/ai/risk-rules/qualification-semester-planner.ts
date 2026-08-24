@@ -39,6 +39,23 @@ export type QualificationSemesterExistingItem = {
    */
   actualCredits?:
     number | null;
+
+  /**
+   * 상세페이지에 저장된 실제 교육원 개강일.
+   *
+   * 존재하면 예상 시작일보다 항상 우선한다.
+   */
+  actualStartDate?:
+    string | null;
+
+  /**
+   * CRM에서 실제 학기 이수완료가 확정되었는지.
+   *
+   * 날짜가 지났다는 이유만으로
+   * 이수완료 처리하지 않는다.
+   */
+  isCompleted?:
+    boolean | null;
 };
 
 export type QualificationSemesterPlannedItem = {
@@ -1436,6 +1453,19 @@ semesters:
             semester
               .actualCredits ??
             null,
+
+          actualStartDate:
+            String(
+              semester
+                .actualStartDate ??
+              ""
+            ).trim() ||
+            null,
+
+          isCompleted:
+            semester
+              .isCompleted ===
+            true,
         })
       )
       .filter(
@@ -2106,10 +2136,7 @@ const nextSemesterCandidateDate =
   );
 
 const currentSemesterEndDate =
-  addDaysToDate(
-    nextSemesterCandidateDate,
-    -1
-  );
+  nextSemesterCandidateDate;
 
         plannedSemesters.push({
       semesterOrder:

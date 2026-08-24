@@ -191,12 +191,15 @@ export function resolveQualificationRiskCourseKey(
   }
 
   if (
-    /사회복지/.test(
-      normalized
-    )
-  ) {
-    return "social_worker_2";
-  }
+  /사회복지/.test(
+    normalized
+  ) ||
+  /^사회(?:2급)?$/.test(
+    normalized
+  )
+) {
+  return "social_worker_2";
+}
 
   if (
     /보육교사/.test(

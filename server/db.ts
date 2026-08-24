@@ -16891,6 +16891,8 @@ consultationPolicy: null,
 
 priceDisclosureEnabled: false,
 
+priceGuide: null,
+
 kakaoBotId: null,
 
 webhookTokenHash: null,
@@ -17026,6 +17028,8 @@ consultationPolicy: null,
 
 priceDisclosureEnabled: false,
 
+priceGuide: null,
+
 kakaoBotId: null,
 
 webhookTokenHash: null,
@@ -17107,6 +17111,8 @@ administrativeSupportPolicy?: string | null;
 consultationPolicy?: string | null;
 
 priceDisclosureEnabled?: boolean;
+
+priceGuide?: string | null;
 
 kakaoBotId?: string | null;
 }) {
@@ -17363,6 +17369,18 @@ if (
     updateValues.priceDisclosureEnabled =
       params.priceDisclosureEnabled;
   }
+
+if (
+  params.priceGuide !==
+  undefined
+) {
+  updateValues.priceGuide =
+    params.priceGuide === null
+      ? null
+      : String(
+          params.priceGuide
+        ).trim() || null;
+}
 
   if (
     params.kakaoBotId !==
@@ -26779,8 +26797,17 @@ export async function findDuplicatePlanSubject(params: {
       ) {
         return false;
       }
+if (
+  row.retakeRequired ===
+    true
+) {
+  return false;
+}
 
-      return normalizeSubjectName(row.subjectName) === target;
+return normalizeSubjectName(
+  row.subjectName
+) ===
+  target;
     }) || null
   );
 }
@@ -26805,15 +26832,23 @@ organizationId?: number | null;
   organizationId: requireOrganizationId((params as any)?.organizationId),
 });
 
-  const filteredRows = rows.filter((row: any) => {
-    if (
-      params.excludePlanSemesterId &&
-      Number(row.id) === Number(params.excludePlanSemesterId)
-    ) {
-      return false;
-    }
-    return true;
-  });
+ const filteredRows = rows.filter((row: any) => {
+  if (
+    params.excludePlanSemesterId &&
+    Number(row.id) === Number(params.excludePlanSemesterId)
+  ) {
+    return false;
+  }
+
+  if (
+    row.retakeRequired ===
+    true
+  ) {
+    return false;
+  }
+
+  return true;
+});
 
   const currentCount = filteredRows.filter(
     (row: any) => String(row.planRequirementType || "") === String(requirementType)
@@ -27464,28 +27499,36 @@ export async function createPlanSubjectsAtomic(params: {
        * 4. 기존 과목명 중복 재검사
        */
       const existingNameSet =
-        new Set(
-          currentRows
-            .map(
-              (
-                row:
-                  any
-              ) =>
-                String(
-                  row.subjectName ||
-                  ""
-                )
-                  .trim()
-                  .replace(
-                    /\s+/g,
-                    " "
-                  )
-                  .toLowerCase()
+  new Set(
+    currentRows
+      .filter(
+        (
+          row:
+            any
+        ) =>
+          row.retakeRequired !==
+          true
+      )
+      .map(
+        (
+          row:
+            any
+        ) =>
+          String(
+            row.subjectName ||
+            ""
+          )
+            .trim()
+            .replace(
+              /\s+/g,
+              " "
             )
-            .filter(
-              Boolean
-            )
-        );
+            .toLowerCase()
+      )
+      .filter(
+        Boolean
+      )
+  );
 
       for (
         const subject of
@@ -27536,6 +27579,13 @@ export async function createPlanSubjectsAtomic(params: {
         const row of
         currentRows
       ) {
+if (
+  (row as any)
+    .retakeRequired ===
+  true
+) {
+  continue;
+}
         const requirementType =
           String(
             (
@@ -30894,7 +30944,13 @@ const organizationId = requireOrganizationId(params?.organizationId);
 // ─── Course Templates ────────────────────────────────────────────────
 export async function listCourseSubjectTemplates(
   courseKey?: string,
-  params?: { organizationId?: number | null }
+  params?: {
+    organizationId?:
+      number | null;
+
+    catalogId?:
+      number | null;
+  }
 ) {
   const db = await getDb();
   if (!db) return [];
@@ -30906,9 +30962,45 @@ export async function listCourseSubjectTemplates(
     eq(courseSubjectTemplates.isActive, true),
   ];
 
-  if (courseKey) {
-    conditions.push(eq(courseSubjectTemplates.courseKey, courseKey));
-  }
+  const catalogId =
+  Math.floor(
+    Number(
+      params?.catalogId ||
+      0
+    )
+  );
+
+if (
+  Number.isFinite(
+    catalogId
+  ) &&
+  catalogId >
+    0
+) {
+  /**
+   * 신규 공통엔진:
+   * 과정마스터 ID를 우선한다.
+   */
+  conditions.push(
+    eq(
+      courseSubjectTemplates.catalogId,
+      catalogId
+    )
+  );
+} else if (
+  courseKey
+) {
+  /**
+   * 기존 화면/기능 호환:
+   * catalogId가 없으면 기존 courseKey 조회.
+   */
+  conditions.push(
+    eq(
+      courseSubjectTemplates.courseKey,
+      courseKey
+    )
+  );
+}
 
   return db
     .select()
@@ -31250,6 +31342,13 @@ export async function createSubjectCatalog(
   const organizationId = requireOrganizationId((data as any).organizationId);
 
   const name = String(data.name || "").trim();
+const canonicalKey =
+  String(
+    (data as any)
+      .canonicalKey ??
+    ""
+  ).trim() ||
+  null;
   if (!name) {
     throwAppError(
   ERROR_CODES.INVALID_INPUT,
@@ -31277,6 +31376,44 @@ export async function createSubjectCatalog(
 );
   }
 
+if (
+  canonicalKey
+) {
+  const existingCanonical =
+    await db
+      .select({
+        id:
+          subjectCatalogs.id,
+      })
+      .from(
+        subjectCatalogs
+      )
+      .where(
+        and(
+          eq(
+            subjectCatalogs.organizationId,
+            organizationId
+          ),
+
+          eq(
+            subjectCatalogs.canonicalKey,
+            canonicalKey
+          )
+        )
+      )
+      .limit(1);
+
+  if (
+    existingCanonical[0]
+  ) {
+    throwAppError(
+      ERROR_CODES.DUPLICATE_RESOURCE,
+      "이미 동일한 AI 공통엔진 과정에 연결된 과정마스터가 있습니다.",
+      409
+    );
+  }
+}
+
   const [maxRows] = await db.execute(sql`
     SELECT COALESCE(MAX(sortOrder), 0) as maxSortOrder
     FROM subject_catalogs
@@ -31285,14 +31422,38 @@ export async function createSubjectCatalog(
 
   const nextSortOrder = Number((maxRows as any)?.[0]?.maxSortOrder || 0) + 1;
 
-  const result: any = await db.insert(subjectCatalogs).values({
-    organizationId,
-    name,
-    sortOrder: (data as any).sortOrder ?? nextSortOrder,
-    isActive: (data as any).isActive ?? true,
-    createdBy: (data as any).createdBy ?? null,
-    updatedBy: (data as any).updatedBy ?? null,
-  } as any);
+  const result: any =
+  await db
+    .insert(
+      subjectCatalogs
+    )
+    .values({
+      organizationId,
+
+      name,
+
+      canonicalKey,
+
+      sortOrder:
+        (data as any)
+          .sortOrder ??
+        nextSortOrder,
+
+      isActive:
+        (data as any)
+          .isActive ??
+        true,
+
+      createdBy:
+        (data as any)
+          .createdBy ??
+        null,
+
+      updatedBy:
+        (data as any)
+          .updatedBy ??
+        null,
+    } as any);
 
   return getInsertId(result);
 }
@@ -45989,6 +46150,98 @@ export async function getKakaoAiRecentMessages(
           row.createdAt,
       })
     );
+}
+
+/**
+ * /reset 전용.
+ *
+ * 현재 reset 명령 메시지는 남겨두고
+ * 그 이전 Conversation History만 제거한다.
+ *
+ * CRM 학생정보 / 등록정보 /
+ * 카카오 회원 바인딩은 건드리지 않는다.
+ */
+export async function clearKakaoAiConversationHistoryBeforeMessage(
+  params: {
+    organizationId:
+      number;
+
+    conversationId:
+      number;
+
+    beforeMessageId:
+      number;
+  }
+) {
+  const database =
+    await getDb();
+
+  if (
+    !database
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const conversationId =
+    normalizeKakaoAiConversationId(
+      params.conversationId
+    );
+
+  const beforeMessageId =
+    Math.floor(
+      Number(
+        params.beforeMessageId ||
+        0
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      beforeMessageId
+    ) ||
+    beforeMessageId <=
+      0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "초기화 기준 메시지 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  await database
+    .delete(
+      kakaoAiMessages
+    )
+    .where(
+      and(
+        eq(
+          kakaoAiMessages.organizationId,
+          organizationId
+        ),
+
+        eq(
+          kakaoAiMessages.conversationId,
+          conversationId
+        ),
+
+        sql`${kakaoAiMessages.id} < ${beforeMessageId}`
+      )
+    );
+
+  return {
+    success:
+      true,
+  };
 }
 
 /**

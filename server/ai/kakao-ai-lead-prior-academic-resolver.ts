@@ -470,8 +470,8 @@ function getDocumentIntelligenceCandidates(
   !documentIntelligence ||
   documentIntelligence.documentType !==
     "transcript" ||
-  documentIntelligence.decision ===
-    "rejected" ||
+  documentIntelligence.decision !==
+    "accepted" ||
   documentIntelligence.canUseAcademicEngine !==
     true ||
   documentIntelligence.confidence <

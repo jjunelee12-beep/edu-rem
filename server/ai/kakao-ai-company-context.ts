@@ -50,6 +50,8 @@ salesPoints: string | null;
 
 registeredAiBenefits: string | null;
 
+priceGuide: string | null;
+
     /**
      * DB 컬럼명은 classManagementPolicy지만
      * 실제 의미는 "이론수업 안내"다.
@@ -241,6 +243,12 @@ registeredAiBenefits:
   normalizeOptionalText(
     settings
       ?.registeredAiBenefits
+  ),
+
+priceGuide:
+  normalizeOptionalText(
+    settings
+      ?.priceGuide
   ),
 
       theoryClassGuide:

@@ -9,6 +9,7 @@ import {
   resolveKakaoAiMemoryContext,
   type KakaoAiMemoryContext,
   type KakaoAiStructuredMemory,
+  type KakaoAiPriorSubjectCandidate,
 } from "./kakao-ai-memory-resolver";
 
 import {
@@ -1332,6 +1333,210 @@ registrationVerification:
 
   /**
    * ---------------------------------------------------------
+   * /reset
+   * ---------------------------------------------------------
+   *
+   * 현재 카카오 AI 대화상태만 초기화한다.
+   *
+   * 초기화:
+   * - Conversation History
+   * - 상담 Memory
+   * - 현재 상담주제
+   * - 과목/OCR 기반 Memory
+   * - 상담 진행단계
+   * - 담당자 추천/선택상태
+   *
+   * 유지:
+   * - 실제 CRM 데이터
+   * - 등록학생 정보
+   * - Kakao ↔ Student 영구 바인딩
+   * - Staff 인증/계정 연결
+   * - Developer Test Mode
+   */
+  if (
+    commandRoute.handled ===
+      true &&
+    commandRoute.command ===
+      "reset"
+  ) {
+    /**
+     * 먼저 구조화 Memory를 완전히 빈 상담상태로 되돌린다.
+     */
+    await db.updateKakaoAiConversationMemory({
+      organizationId,
+
+      conversationId,
+
+      patch: {
+        desiredCourse:
+          null,
+
+        finalEducation:
+          null,
+
+        hasTransferCollege:
+          null,
+
+        socialWorkerLawVersion:
+          null,
+
+        verifiedFacts:
+          [],
+
+        unresolvedQuestions:
+          [],
+
+        currentTopic:
+          null,
+
+        recommendedStaffUserId:
+          null,
+
+        selectedStaffUserId:
+          null,
+
+        lastStaffCandidates:
+          [],
+
+        staffSelectionStatus:
+          "none",
+
+        lastIntent:
+          null,
+
+        consultationFlowData:
+          null,
+      },
+    });
+
+    /**
+     * 현재 /reset 메시지 이전의
+     * 실제 Conversation History도 제거한다.
+     *
+     * Memory만 초기화하고 메시지를 남겨두면
+     * Composer / Intent가 이전 대화를 다시 읽어
+     * 초기화 효과가 없어질 수 있다.
+     */
+    if (
+      userMessageId >
+        0
+    ) {
+      await db.clearKakaoAiConversationHistoryBeforeMessage({
+        organizationId,
+
+        conversationId,
+
+        beforeMessageId:
+          userMessageId,
+      });
+    }
+
+    const resetMemoryContext =
+  await resolveKakaoAiMemoryContext({
+    organizationId,
+
+    conversationId,
+
+    recentMessageLimit:
+      20,
+  });
+
+    const resetReplyText =
+      "대화 내용을 초기화했습니다. 새 상담처럼 다시 말씀해주세요.";
+
+    const assistantMessage =
+      await db.insertKakaoAiMessage({
+        organizationId,
+
+        conversationId,
+
+        role:
+          "assistant",
+
+        messageType:
+          "text",
+
+        content:
+          resetReplyText,
+
+        kakaoMessageId:
+          null,
+
+        attachmentData:
+          undefined,
+      });
+
+    const responseMessageId =
+      Number(
+        assistantMessage.id ||
+        0
+      );
+
+    if (
+      userMessageId >
+        0 &&
+      responseMessageId >
+        0 &&
+      params.kakaoMessageId
+    ) {
+      await db.markKakaoAiResponseReady({
+        organizationId,
+
+        userMessageId,
+
+        responseMessageId,
+      });
+    }
+
+    return {
+      organizationId,
+
+      conversationId,
+
+      duplicateMessage:
+        false,
+
+      customer,
+
+      previousMemoryContext:
+
+        resetMemoryContext,
+
+      memoryExtraction:
+        null,
+
+      memoryWrite:
+        null,
+
+      currentMemory:
+        resetMemoryContext
+          .structuredMemory,
+
+      intentClassification:
+        null,
+
+      resolvedContext:
+        null,
+
+      staffAction:
+        null,
+
+      leadRegistration:
+        null,
+
+      callbackRequest:
+        null,
+
+      registrationVerification:
+        null,
+
+      responseComposition:
+        null,
+    };
+  }
+
+  /**
+   * ---------------------------------------------------------
    * /staff
    * ---------------------------------------------------------
    *
@@ -2065,6 +2270,162 @@ if (
 
     tracePerf(
       "document_intelligence_failed"
+    );
+  }
+}
+
+/**
+ * ---------------------------------------------------------
+ * 성적증명서 기이수과목 Memory 반영
+ * ---------------------------------------------------------
+ *
+ * Document Intelligence가 실제 성적증명서에서
+ * 확인한 과목 사실만 Memory에 보존한다.
+ *
+ * 여기서는 자격 인정여부를 계산하지 않는다.
+ * 실제 동일교과목 / 자격요건 판정은
+ * 기존 Academic / Rules Engine이 담당한다.
+ */
+if (
+  documentIntelligence &&
+  documentIntelligence.documentType ===
+    "transcript" &&
+  (
+    documentIntelligence.decision ===
+      "accepted" ||
+    documentIntelligence.decision ===
+      "review_required"
+  ) &&
+  documentIntelligence.canUseAcademicEngine ===
+    true &&
+  documentIntelligence.confidence >=
+    0.85 &&
+  Array.isArray(
+    documentIntelligence.academic.subjects
+  ) &&
+  documentIntelligence.academic.subjects.length >
+    0
+) {
+  const priorSubjectCandidatesToUpsert =
+    documentIntelligence.academic.subjects
+      .map(
+        (
+          subject
+        ): KakaoAiPriorSubjectCandidate | null => {
+          const subjectName =
+            String(
+              subject.name ||
+              ""
+            ).trim();
+
+          if (
+            !subjectName
+          ) {
+            return null;
+          }
+
+          const completedYearValue =
+            Math.floor(
+              Number(
+                subject.year ||
+                0
+              )
+            );
+
+          const completedYear =
+            Number.isFinite(
+              completedYearValue
+            ) &&
+            completedYearValue >=
+              1900 &&
+            completedYearValue <=
+              2100
+              ? completedYearValue
+              : null;
+
+          const creditsValue =
+            Number(
+              subject.credits ||
+              0
+            );
+
+          const credits =
+            Number.isFinite(
+              creditsValue
+            ) &&
+            creditsValue >
+              0
+              ? creditsValue
+              : null;
+
+          return {
+            subjectName,
+
+            completedYear,
+
+            credits,
+
+            source:
+  "ocr",
+
+verificationStatus:
+  documentIntelligence.decision ===
+    "accepted"
+    ? "verified"
+    : "ocr_observed",
+          };
+        }
+      )
+      .filter(
+        (
+          subject
+        ): subject is KakaoAiPriorSubjectCandidate =>
+          subject !==
+          null
+      );
+
+  if (
+    priorSubjectCandidatesToUpsert.length >
+    0
+  ) {
+    const documentMemoryWrite =
+      await applyKakaoAiVerifiedMemoryPatch({
+        organizationId,
+
+        conversationId,
+
+        currentMemory,
+
+        patch: {
+          priorSubjectCandidatesToUpsert,
+        },
+      });
+
+    currentMemory =
+      documentMemoryWrite.memory;
+
+    tracePerf(
+      "document_subject_memory_saved",
+      {
+        subjectCount:
+          priorSubjectCandidatesToUpsert.length,
+
+        changed:
+          documentMemoryWrite.changed,
+      }
+    );
+
+    console.log(
+      "[KAKAO AI TRACE] DocumentSubjectMemory",
+      {
+        conversationId,
+
+        subjectCount:
+          priorSubjectCandidatesToUpsert.length,
+
+        changed:
+          documentMemoryWrite.changed,
+      }
     );
   }
 }

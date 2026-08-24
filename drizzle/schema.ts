@@ -381,6 +381,17 @@ consultationPolicy: text(
       .notNull()
       .default(false),
 
+/**
+ * 카카오 AI 비용/수강료 안내 기준.
+ *
+ * 회사 Host가 입력한 실제 가격/할인 안내정보만 저장한다.
+ * AI는 이 내용을 사실 근거로 자연어 상담에 사용하며
+ * 여기에 없는 금액이나 할인율은 임의로 만들지 않는다.
+ */
+priceGuide: text(
+  "priceGuide"
+),
+
     /**
      * 카카오 챗봇 관리자센터의 Bot ID.
      *
@@ -2505,10 +2516,28 @@ organizationId: int("organizationId").notNull().default(1),
   ]),
 
   credits: int("credits").notNull().default(3),
-  sortOrder: int("sortOrder").notNull().default(0),
-settlementIncluded: boolean("settlementIncluded").notNull().default(true),
+sortOrder: int("sortOrder").notNull().default(0),
 
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
+settlementIncluded:
+  boolean("settlementIncluded")
+    .notNull()
+    .default(true),
+
+/**
+ * 재수강이 필요한 과목 여부.
+ *
+ * 중요:
+ * - 기존 정산 데이터에는 영향 없음
+ * - 학점요약/자격요건/동일교과목 계산에서만
+ *   기존 이수 인정 대상에서 제외
+ * - 과목 이력은 상세페이지에 그대로 유지
+ */
+retakeRequired:
+  boolean("retakeRequired")
+    .notNull()
+    .default(false),
+
+createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
@@ -3346,6 +3375,16 @@ export const courseSubjectTemplates = mysqlTable("course_subject_templates", {
   id: int("id").autoincrement().primaryKey(),
 organizationId: int("organizationId").notNull().default(1),
   courseKey: varchar("courseKey", { length: 100 }).notNull(),
+
+  /**
+   * 학점은행제 과정마스터(subject_catalogs) 연결 ID.
+   *
+   * AI 공통엔진에서는 문자열 courseKey보다
+   * 이 값을 우선하여 과정별 추가과목 템플릿을 조회한다.
+   *
+   * 기존 courseKey는 레거시/관리화면 호환을 위해 유지한다.
+   */
+  catalogId: int("catalogId"),
   subjectName: varchar("subjectName", { length: 255 }).notNull(),
   category: mysqlEnum("category", ["전공", "교양", "일반"]).notNull(),
   requirementType: mysqlEnum("requirementType", [
@@ -4331,6 +4370,19 @@ export const subjectCatalogs = mysqlTable("subject_catalogs", {
   id: int("id").autoincrement().primaryKey(),
 organizationId: int("organizationId").notNull().default(1),
   name: varchar("name", { length: 255 }).notNull(),
+
+  /**
+   * AI 공통엔진 과정 식별키.
+   *
+   * 과정마스터의 화면 표시명과
+   * NILE/자격 공통엔진의 canonical key를 연결한다.
+   *
+   * null이면 아직 공통엔진 미연결 과정.
+   */
+  canonicalKey:
+    varchar("canonicalKey", {
+      length: 100,
+    }),
 
   sortOrder: int("sortOrder").notNull().default(0),
   isActive: boolean("isActive").notNull().default(true),

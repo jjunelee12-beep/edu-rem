@@ -545,11 +545,19 @@ function resolveLeadConsultationRecognizedSubjects(
         "transfer",
     });
 
-    warnings.push(
-      `${candidate.subjectName}은 사용자가 직접 이수했다고 밝힌 과목으로 상담용 예상 계산에 반영했습니다. 최종 인정 여부는 성적증명서 확인이 필요합니다.`
-    );
-  }
-
+    if (
+  candidate.verificationStatus ===
+    "ocr_observed"
+) {
+  warnings.push(
+    `${candidate.subjectName}은 첨부된 성적증명서에서 확인된 과목으로 상담용 예상 계산에 반영했습니다. 다만 문서 전체 확인이 필요한 상태이므로 최종 인정과목으로 확정하지 않습니다.`
+  );
+} else {
+  warnings.push(
+    `${candidate.subjectName}은 사용자가 직접 이수했다고 밝힌 과목으로 상담용 예상 계산에 반영했습니다. 최종 인정 여부는 성적증명서 확인이 필요합니다.`
+  );
+}
+}
 const uniqueProvisionalSubjects =
   Array.from(
     new Map(
@@ -743,12 +751,17 @@ function mapDegreeTemplates(
 
 /**
  * 회사 과정마스터에서
- * 현재 희망과정과 같은 courseKey를 가진
+ * 공통 학업엔진 canonicalKey가 동일한
  * Catalog를 찾는다.
  *
- * subject_catalogs에는 courseKey 컬럼이 없으므로
- * 기존 resolveQualificationRiskCourseKey()를
- * 과정명에 적용한다.
+ * 화면용 과정명 자체는 비교하지 않는다.
+ *
+ * 사용자 입력 과정명
+ * → resolveQualificationRiskCourseKey()
+ * → canonical key
+ * → subject_catalogs.canonicalKey
+ *
+ * 순서로 연결한다.
  */
 async function resolveLeadCourseCatalog(
   params: {
@@ -792,20 +805,22 @@ async function resolveLeadCourseCatalog(
    * 활성 과정마스터만 후보로 만든다.
    */
   const courseKeyMatches =
-    (
-      catalogs ||
-      []
-    )
-      .filter(
-        (
-          catalog:
-            any
-        ) =>
-          resolveQualificationRiskCourseKey(
-            catalog?.name
-          ) ===
-          params.courseKey
-      );
+  (
+    catalogs ||
+    []
+  )
+    .filter(
+      (
+        catalog:
+          any
+      ) =>
+        String(
+          catalog
+            ?.canonicalKey ||
+          ""
+        ).trim() ===
+        params.courseKey
+    );
 
   if (
     courseKeyMatches.length ===
@@ -1222,11 +1237,14 @@ export async function resolveKakaoAiLeadAcademicAnalysis(
     }),
 
     db.listCourseSubjectTemplates(
-      courseKey,
-      {
-        organizationId,
-      }
-    ),
+  undefined,
+  {
+    organizationId,
+
+    catalogId:
+      catalog.id,
+  }
+),
   ]);
 
   const masterItems =
@@ -1273,58 +1291,79 @@ const recognizedSubjects =
  *   user_reported 과목을 이용한 경우
  *   warnings를 통해 성적증명서 확인 필요를 반드시 남긴다.
  */
-const hasProvisionalOldLawEvidence =
+const provisionalOldLawEvidence =
   courseKey ===
     "social_worker_2" &&
   Array.isArray(
     memory.priorSubjectCandidates
-  ) &&
-  memory.priorSubjectCandidates.some(
-    candidate => {
-      if (
-        candidate.verificationStatus ===
-        "rejected"
-      ) {
-        return false;
-      }
+  )
+    ? memory.priorSubjectCandidates.filter(
+        candidate => {
+          if (
+            candidate.verificationStatus ===
+            "rejected"
+          ) {
+            return false;
+          }
 
-      const completedYear =
-        Number(
-          candidate.completedYear ||
-          0
-        );
+          const completedYear =
+            Number(
+              candidate.completedYear ||
+              0
+            );
 
-      if (
-        !Number.isFinite(
-          completedYear
-        ) ||
-        completedYear <= 0 ||
-        completedYear > 2019
-      ) {
-        return false;
-      }
+          if (
+            !Number.isFinite(
+              completedYear
+            ) ||
+            completedYear <= 0 ||
+            completedYear > 2019
+          ) {
+            return false;
+          }
 
-      const candidateKey =
-        getConfirmedSubjectEquivalenceKey(
-          candidate.subjectName
-        );
-
-      if (
-        !candidateKey
-      ) {
-        return false;
-      }
-
-      return consultationRecognition
-        .provisionalSubjects
-        .some(
-          recognized =>
+          const candidateKey =
             getConfirmedSubjectEquivalenceKey(
-              recognized.subjectName
-            ) ===
-            candidateKey
-        );
-    }
+              candidate.subjectName
+            );
+
+          if (
+            !candidateKey
+          ) {
+            return false;
+          }
+
+          return consultationRecognition
+            .provisionalSubjects
+            .some(
+              recognized =>
+                getConfirmedSubjectEquivalenceKey(
+                  recognized.subjectName
+                ) ===
+                candidateKey
+            );
+        }
+      )
+    : [];
+
+const hasProvisionalOldLawEvidence =
+  provisionalOldLawEvidence.length >
+  0;
+
+const hasOcrObservedOldLawEvidence =
+  provisionalOldLawEvidence.some(
+    candidate =>
+      candidate.verificationStatus ===
+      "ocr_observed"
+  );
+
+const hasUserReportedOldLawEvidence =
+  provisionalOldLawEvidence.some(
+    candidate =>
+      candidate.verificationStatus !==
+        "ocr_observed" &&
+      candidate.verificationStatus !==
+        "verified"
   );
 
 const consultationSocialWorkerLawVersion =
@@ -1907,9 +1946,14 @@ Number(
 ),
 
 
-hasProvisionalOldLawEvidence
-  ? "2019년 이전 사회복지 관련 기이수과목에 대한 사용자 진술을 기준으로 상담용 구법 예상 계산을 적용했습니다. 최종 구법 적용 여부와 과목 인정 여부는 성적증명서 확인이 필요합니다."
-  : null,
+hasOcrObservedOldLawEvidence &&
+hasUserReportedOldLawEvidence
+  ? "2019년 이전 사회복지 관련 기이수과목이 첨부된 성적증명서와 사용자 진술에서 확인되어 상담용 구법 예상 계산에 반영했습니다. 문서 전체 확인 전까지 최종 구법 적용 여부와 과목 인정 여부는 확정하지 않습니다."
+  : hasOcrObservedOldLawEvidence
+    ? "2019년 이전 사회복지 관련 기이수과목이 첨부된 성적증명서에서 확인되어 상담용 구법 예상 계산에 반영했습니다. 문서 전체 확인 전까지 최종 구법 적용 여부와 과목 인정 여부는 확정하지 않습니다."
+    : hasUserReportedOldLawEvidence
+      ? "2019년 이전 사회복지 관련 기이수과목에 대한 사용자 진술을 기준으로 상담용 구법 예상 계산을 적용했습니다. 최종 구법 적용 여부와 과목 인정 여부는 성적증명서 확인이 필요합니다."
+      : null,
 
       ...(
         subjectPlan

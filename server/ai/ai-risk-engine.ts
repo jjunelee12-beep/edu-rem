@@ -113,6 +113,234 @@ function normalizeSubjectName(
     .toLowerCase();
 }
 
+/**
+ * 상세페이지에서 과목 수만 먼저 잡아둘 때 생성되는
+ * "새 과목1", "새 과목2", "새과목 1234567" 등의
+ * 빈 과목 자리 여부를 판정한다.
+ *
+ * 실제 과정 과목이 아니므로:
+ * - 자격요건 인정과목
+ * - 동일교과목 비교
+ * - 학위학점
+ * - 학기 과목 수
+ * - 학기 예정학점
+ *
+ * 모든 학업 계산에서 제외한다.
+ */
+function isPlaceholderPlanSubject(
+  value: unknown
+): boolean {
+  const subjectName =
+    String(
+      value ??
+      ""
+    ).trim();
+
+  if (!subjectName) {
+    return false;
+  }
+
+  return /^새\s*과목\s*\d+$/i.test(
+    subjectName
+  );
+}
+
+/**
+ * CRM 우리플랜 과목의 현재 학업 진행상태.
+ *
+ * scheduled:
+ * 실제 개강일 전
+ *
+ * in_progress:
+ * 실제 개강일부터 4개월 이내
+ *
+ * completed:
+ * 실제 개강일부터 4개월 이상 경과
+ *
+ * retake_required:
+ * 재수강 대상으로 지정된 과목
+ *
+ * review_required:
+ * 실제 개강일을 확인할 수 없어
+ * 자동 상태판정이 불가능한 과목
+ */
+type AcademicSubjectProgressStatus =
+  | "scheduled"
+  | "in_progress"
+  | "completed"
+  | "retake_required"
+  | "review_required";
+
+
+function parseAcademicDate(
+  value: unknown
+): Date | null {
+  const normalized =
+    String(
+      value ??
+      ""
+    ).trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  const match =
+    normalized.match(
+      /^(\d{4})-(\d{2})-(\d{2})/
+    );
+
+  if (!match) {
+    return null;
+  }
+
+  const year =
+    Number(match[1]);
+
+  const month =
+    Number(match[2]);
+
+  const day =
+    Number(match[3]);
+
+  const date =
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        day
+      )
+    );
+
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !==
+      month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+
+function addAcademicMonths(
+  date: Date,
+  months: number
+): Date {
+  const year =
+    date.getUTCFullYear();
+
+  const month =
+    date.getUTCMonth();
+
+  const day =
+    date.getUTCDate();
+
+  const targetMonthStart =
+    new Date(
+      Date.UTC(
+        year,
+        month + months,
+        1
+      )
+    );
+
+  const targetYear =
+    targetMonthStart
+      .getUTCFullYear();
+
+  const targetMonth =
+    targetMonthStart
+      .getUTCMonth();
+
+  const lastDay =
+    new Date(
+      Date.UTC(
+        targetYear,
+        targetMonth + 1,
+        0
+      )
+    ).getUTCDate();
+
+  return new Date(
+    Date.UTC(
+      targetYear,
+      targetMonth,
+      Math.min(
+        day,
+        lastDay
+      )
+    )
+  );
+}
+
+
+function resolveAcademicSubjectProgress(
+  params: {
+    actualStartDate:
+      unknown;
+
+    retakeRequired:
+      unknown;
+
+    now?:
+      Date;
+  }
+): AcademicSubjectProgressStatus {
+  if (
+    params.retakeRequired ===
+    true
+  ) {
+    return "retake_required";
+  }
+
+  const startDate =
+    parseAcademicDate(
+      params.actualStartDate
+    );
+
+  if (!startDate) {
+    return "review_required";
+  }
+
+  const current =
+    params.now ??
+    new Date();
+
+  const today =
+    new Date(
+      Date.UTC(
+        current.getUTCFullYear(),
+        current.getUTCMonth(),
+        current.getUTCDate()
+      )
+    );
+
+  if (
+    today.getTime() <
+    startDate.getTime()
+  ) {
+    return "scheduled";
+  }
+
+  const completionDate =
+    addAcademicMonths(
+      startDate,
+      4
+    );
+
+  if (
+    today.getTime() <
+    completionDate.getTime()
+  ) {
+    return "in_progress";
+  }
+
+  return "completed";
+}
+
 function normalizeSubjectCatalogName(
   value:
     unknown
@@ -276,6 +504,20 @@ function createRecognizedSubjects(
 
   sortedSubjects.forEach(
     (subject, index) => {
+    if (
+      subject.source ===
+        "plan" &&
+      (
+        subject as
+          StudentRiskSubjectItem & {
+            progressStatus?:
+              AcademicSubjectProgressStatus;
+          }
+      ).progressStatus ===
+        "retake_required"
+    ) {
+      return;
+    }
       const normalizedName =
   getConfirmedSubjectEquivalenceKey(
     subject.subjectName
@@ -371,22 +613,101 @@ function pushIssue(
 
 function createSubjectRows(params: {
   planSemesters: any[];
+  studentSemesters: any[];
   transferSubjects: any[];
   extraItems: any[];
 }): StudentRiskSubjectItem[] {
+  const studentSemesterByOrder =
+    new Map<
+      number,
+      any
+    >();
+
+  for (
+    const semester
+    of (
+      params.studentSemesters ||
+      []
+    )
+  ) {
+    const semesterOrder =
+      Math.floor(
+        Number(
+          semester?.semesterOrder ||
+          0
+        )
+      );
+
+    if (
+      semesterOrder <=
+      0
+    ) {
+      continue;
+    }
+
+    studentSemesterByOrder.set(
+      semesterOrder,
+      semester
+    );
+  }
+
   const planRows =
-    (params.planSemesters || [])
-      .map((row: any) => ({
-        source: "plan" as const,
-        sourceLabel: "우리플랜",
+  (params.planSemesters || [])
+    .filter(
+      (row: any) =>
+        !isPlaceholderPlanSubject(
+          row?.subjectName
+        )
+    )
+    .map((row: any) => {
+  const semesterNo =
+    Math.floor(
+      Number(
+        row?.semesterNo ||
+        0
+      )
+    );
+
+  const studentSemester =
+    semesterNo >
+    0
+      ? studentSemesterByOrder.get(
+          semesterNo
+        ) ??
+        null
+      : null;
+
+  const actualStartDate =
+    studentSemester
+      ?.actualStartDate ??
+    null;
+
+  const progressStatus =
+    resolveAcademicSubjectProgress({
+      actualStartDate,
+
+      retakeRequired:
+        row?.retakeRequired,
+    });
+
+      return {
+        source:
+          "plan" as const,
+
+        sourceLabel:
+          "우리플랜",
 
         id:
-          Number(row.id || 0) ||
+          Number(
+            row.id ||
+            0
+          ) ||
           null,
 
         subjectName:
           String(
-            row.subjectName || ""
+            row.subjectName ||
+            ""
           ).trim(),
 
         requirementType:
@@ -398,13 +719,19 @@ function createSubjectRows(params: {
           null,
 
         credits:
-          toNumber(row.credits),
+          toNumber(
+            row.credits
+          ),
 
         semesterNo:
-          Number(
-            row.semesterNo || 0
-          ) || null,
-      }));
+  semesterNo ||
+  null,
+
+progressStatus,
+
+actualStartDate,
+      };
+    });
 
   const transferRows =
     (params.transferSubjects || [])
@@ -434,12 +761,16 @@ function createSubjectRows(params: {
       }));
 
   const extraRows =
-    (params.extraItems || [])
-      .filter(
-        (row: any) =>
-          !Boolean(row.isExcluded)
-      )
-      .map((row: any) => ({
+  (params.extraItems || [])
+    .filter(
+      (row: any) =>
+        !Boolean(
+          row.isExcluded
+        ) &&
+        row.isCompleted ===
+          true
+    )
+    .map((row: any) => ({
         source: "extra" as const,
         sourceLabel: "추가입력",
 
@@ -888,16 +1219,19 @@ const paymentStatus:
     [];
 
   const subjects =
-    createSubjectRows({
-      planSemesters:
-        planSemesters as any[],
+  createSubjectRows({
+    planSemesters:
+      planSemesters as any[],
 
-      transferSubjects:
-        transferSubjects as any[],
+    studentSemesters:
+      studentSemesters as any[],
 
-      extraItems:
-        extraItems as any[],
-    });
+    transferSubjects:
+      transferSubjects as any[],
+
+    extraItems:
+      extraItems as any[],
+  });
 
 const {
   recognizedSubjects,
@@ -907,14 +1241,114 @@ const {
 );
 
 /**
- * 중복을 제거한 과목 중에서도
- * 과목명, 학점, 이수구분이 정상인 과목만
- * 실제 인정 과목으로 계산한다.
+ * 실제 취득/인정학점 계산에 사용할 과목.
+ *
+ * 전적대 / 추가입력:
+ * 이미 취득한 학점으로 입력된 데이터이므로
+ * 기존 방식대로 인정한다.
+ *
+ * 우리플랜:
+ * 실제 개강일 기준 4개월이 경과하여
+ * completed 상태인 과목만 인정한다.
+ *
+ * scheduled / in_progress /
+ * retake_required / review_required는
+ * 현재 취득학점에서 제외한다.
  */
 const validRecognizedSubjects =
   recognizedSubjects.filter(
-    isValidRecognizedSubject
+    (
+      subject:
+        StudentRiskSubjectItem &
+        {
+          progressStatus?:
+            AcademicSubjectProgressStatus;
+        }
+    ) => {
+      if (
+        !isValidRecognizedSubject(
+          subject
+        )
+      ) {
+        return false;
+      }
+
+      if (
+        subject.source !==
+        "plan"
+      ) {
+        return true;
+      }
+
+      return (
+        subject.progressStatus ===
+        "completed"
+      );
+    }
   );
+
+/**
+ * 아직 취득 완료는 아니지만
+ * 이미 실제 우리플랜에 배치되어 있는 과목.
+ *
+ * 현재 취득학점에는 포함하지 않는다.
+ *
+ * 다만 신규 과목 자동설계에서는
+ * 같은 과목을 다시 선택하지 않도록
+ * occupiedSubjects로 별도 관리한다.
+ *
+ * retake_required:
+ * 다시 수강해야 하므로 occupied에서 제외한다.
+ */
+const occupiedSubjects =
+  recognizedSubjects.filter(
+    (
+      subject:
+        StudentRiskSubjectItem & {
+          progressStatus?:
+            AcademicSubjectProgressStatus;
+        }
+    ) => {
+      if (
+        subject.source !==
+        "plan"
+      ) {
+        return false;
+      }
+
+      return (
+        subject.progressStatus ===
+          "scheduled" ||
+        subject.progressStatus ===
+          "in_progress" ||
+        subject.progressStatus ===
+          "review_required"
+      );
+    }
+  );
+
+/**
+ * 현재 등록되어 있는 학습계획이
+ * 정상적으로 모두 완료된다고 가정했을 때의
+ * 예상 인정과목.
+ *
+ * Current:
+ * validRecognizedSubjects
+ *
+ * Projected:
+ * validRecognizedSubjects
+ * + scheduled
+ * + in_progress
+ * + review_required
+ *
+ * retake_required는
+ * recognizedSubjects 생성 단계에서 이미 제외되므로
+ * 여기에도 포함되지 않는다.
+ */
+const projectedRecognizedSubjects = [
+  ...validRecognizedSubjects,
+  ...occupiedSubjects,
+];
 
 const categories = {
     majorRequired:
@@ -1479,8 +1913,18 @@ const riskCourseName =
     ""
   ).trim();
 
-const normalizedRiskCourseName =
-  normalizeSubjectCatalogName(
+/**
+ * 학생/플랜에 저장된 레거시 과정명은
+ * 공통 자격엔진 Resolver에서 canonical key로 먼저 변환한다.
+ *
+ * 예:
+ * "사회복지사 2급"
+ * "사회 2급"
+ * 등의 표현이 동일 과정으로 판정되면
+ * social_worker_2로 통일된다.
+ */
+const qualificationAnalysisCourseKey =
+  resolveQualificationRiskCourseKey(
     riskCourseName
   );
 
@@ -1491,12 +1935,25 @@ let riskMatchedCatalog:
   any =
     null;
 
+/**
+ * 과정마스터는 화면 표시명이 아니라
+ * canonicalKey로 공통엔진과 연결한다.
+ *
+ * NILE/자격엔진:
+ * 무엇이 필요한지 판정
+ *
+ * subject_catalogs /
+ * course_subject_templates:
+ * 회사가 실제 배정 가능한 과목 후보
+ */
 if (
-  normalizedRiskCourseName
+  qualificationAnalysisCourseKey !==
+    "unknown"
 ) {
   const riskCatalogs =
     await db.listSubjectCatalogs({
       organizationId,
+
       activeOnly:
         true,
     });
@@ -1510,10 +1967,11 @@ if (
         catalog:
           any
       ) =>
-        normalizeSubjectCatalogName(
-          catalog?.name
-        ) ===
-        normalizedRiskCourseName
+        String(
+          catalog?.canonicalKey ||
+          ""
+        ).trim() ===
+        qualificationAnalysisCourseKey
     ) ||
     null;
 
@@ -1535,11 +1993,6 @@ if (
   }
 }
 
-const qualificationAnalysisCourseKey =
-  resolveQualificationRiskCourseKey(
-    riskCourseName
-  );
-
 /**
  * 학위 부족학점 채움용 실제 과정 템플릿.
  *
@@ -1547,14 +2000,73 @@ const qualificationAnalysisCourseKey =
  */
 const degreeSubjectTemplates =
   qualificationAnalysisCourseKey !==
-    "unknown"
+      "unknown" &&
+    riskMatchedCatalog
     ? await db.listCourseSubjectTemplates(
-        qualificationAnalysisCourseKey,
+        undefined,
         {
           organizationId,
+
+          catalogId:
+            Number(
+              riskMatchedCatalog.id
+            ),
         }
       )
     : [];
+
+console.log(
+  "[ACADEMIC_ENGINE_CATALOG_DEBUG]",
+  {
+    studentId,
+
+    riskCourseName,
+
+    qualificationAnalysisCourseKey,
+
+    matchedCatalog: riskMatchedCatalog
+      ? {
+          id: Number(
+            riskMatchedCatalog.id
+          ),
+
+          name: String(
+            riskMatchedCatalog.name ||
+            ""
+          ),
+
+          canonicalKey: String(
+            riskMatchedCatalog.canonicalKey ||
+            ""
+          ),
+        }
+      : null,
+
+    riskMasterItemCount:
+      riskMasterItems.length,
+
+    riskMasterItemNames:
+      riskMasterItems.map(
+        (item: any) =>
+          String(
+            item.subjectName ||
+            ""
+          )
+      ),
+
+    degreeSubjectTemplateCount:
+      degreeSubjectTemplates.length,
+
+    degreeSubjectTemplateNames:
+      degreeSubjectTemplates.map(
+        (item: any) =>
+          String(
+            item.subjectName ||
+            ""
+          )
+      ),
+  }
+);
 
 const degreeRequirement =
   resolveDegreeRequirement({
@@ -1621,6 +2133,71 @@ const degreeRecognizedSubjects =
   nileRecognition.canResolve
     ? nileRecognition.subjects
     : validRecognizedSubjects.map(
+        (
+          subject
+        ) => ({
+          subjectName:
+            subject.subjectName,
+
+          requirementType:
+            subject.requirementType ??
+            null,
+
+          category:
+            subject.category ??
+            null,
+
+          credits:
+            subject.credits,
+
+          source:
+            subject.source,
+        })
+      );
+
+/**
+ * 현재 등록되어 있는 예정/진행 과목까지
+ * 모두 정상 완료되었을 때의
+ * 학위학점 예상 계산용 NILE 재분류.
+ *
+ * Current NILE과 Projected NILE을 분리한다.
+ */
+const projectedNileRecognition =
+  await resolveNileRecognizedSubjects({
+    courseKey:
+      qualificationAnalysisCourseKey,
+
+    degreeRequirement,
+
+    subjects:
+      projectedRecognizedSubjects.map(
+        (
+          subject
+        ) => ({
+          subjectName:
+            subject.subjectName,
+
+          requirementType:
+            subject.requirementType ??
+            null,
+
+          category:
+            subject.category ??
+            null,
+
+          credits:
+            subject.credits,
+
+          source:
+            subject.source,
+        })
+      ),
+  });
+
+const projectedDegreeRecognizedSubjects =
+  projectedNileRecognition.canResolve
+    ? projectedNileRecognition.subjects
+    : projectedRecognizedSubjects.map(
         (
           subject
         ) => ({
@@ -1839,6 +2416,21 @@ const degreeCreditAnalysis =
       degreeRecognizedSubjects,
   });
 
+/**
+ * 현재 등록된 예정/진행 과목까지
+ * 정상 완료된 이후의 예상 학위 충족상태.
+ *
+ * degreeCreditAnalysis는
+ * 현재 실제 취득학점으로 유지한다.
+ */
+const projectedDegreeCreditAnalysis =
+  analyzeDegreeCredits({
+    degreeRequirement,
+
+    recognizedSubjects:
+      projectedDegreeRecognizedSubjects,
+  });
+
 const degreeMajorRecommendationItems =
   riskMasterItems.filter(
     (
@@ -1916,7 +2508,7 @@ const degreeMajorRecommendations =
       degreeMajorRecommendationItems,
 
     existingSubjects:
-      validRecognizedSubjects.map(
+  projectedRecognizedSubjects.map(
         (
           subject
         ) => ({
@@ -1932,12 +2524,12 @@ const degreeMajorRecommendations =
       ),
 
     requiredCredits:
-      Number(
-        degreeCreditAnalysis
-          .summary
-          .remainingMajorCredits ||
-        0
-      ),
+  Number(
+    projectedDegreeCreditAnalysis
+      .summary
+      .remainingMajorCredits ||
+    0
+  ),
 
     limit:
       10,
@@ -1950,7 +2542,7 @@ const degreeLiberalRecommendations =
       degreeLiberalRecommendationItems,
 
     existingSubjects:
-      validRecognizedSubjects.map(
+  projectedRecognizedSubjects.map(
         (
           subject
         ) => ({
@@ -1966,12 +2558,12 @@ const degreeLiberalRecommendations =
       ),
 
     requiredCredits:
-      Number(
-        degreeCreditAnalysis
-          .summary
-          .remainingLiberalCredits ||
-        0
-      ),
+  Number(
+    projectedDegreeCreditAnalysis
+      .summary
+      .remainingLiberalCredits ||
+    0
+  ),
 
     limit:
       10,
@@ -1980,25 +2572,23 @@ const degreeLiberalRecommendations =
 
 const degreeRequiredMajorCredits =
   Number(
-    degreeCreditAnalysis
+    projectedDegreeCreditAnalysis
       .summary
       .remainingMajorCredits ||
     0
   );
 
-
 const degreeRequiredLiberalCredits =
   Number(
-    degreeCreditAnalysis
+    projectedDegreeCreditAnalysis
       .summary
       .remainingLiberalCredits ||
     0
   );
 
-
 const degreeRequiredTotalCredits =
   Number(
-    degreeCreditAnalysis
+    projectedDegreeCreditAnalysis
       .summary
       .remainingTotalCredits ||
     0
@@ -2063,22 +2653,22 @@ const degreeResidualRecommendations =
       degreeResidualRecommendationItems,
 
     existingSubjects: [
-      ...validRecognizedSubjects.map(
-        (
-          subject
-        ) => ({
-          subjectName:
-            subject.subjectName,
+  ...projectedRecognizedSubjects.map(
+    (
+      subject
+    ) => ({
+      subjectName:
+        subject.subjectName,
 
-          credits:
-            subject.credits,
+      credits:
+        subject.credits,
 
-          source:
-            subject.source,
-        })
-      ),
+      source:
+        subject.source,
+    })
+  ),
 
-      ...degreeMajorRecommendations.map(
+  ...degreeMajorRecommendations.map(
         (
           subject
         ) => ({
@@ -2195,6 +2785,52 @@ const qualificationAnalysis =
   });
 
 /**
+ * 현재 우리플랜의 시작전/진행중 과목까지
+ * 모두 정상 완료되었을 때의
+ * 예상 자격요건 충족상태.
+ *
+ * qualificationAnalysis는
+ * 현재 실제 완료상태로 유지한다.
+ */
+const projectedQualificationAnalysis =
+  analyzeQualificationRisk({
+    courseName:
+      riskCourseName,
+
+    masterItems:
+      riskMasterItems,
+
+    recognizedSubjects:
+      projectedRecognizedSubjects.map(
+        (
+          subject
+        ) => ({
+          subjectName:
+            subject.subjectName,
+
+          requirementType:
+            subject.requirementType ??
+            null,
+
+          category:
+            subject.category ??
+            null,
+
+          credits:
+            subject.credits,
+
+          source:
+            subject.source,
+        })
+      ),
+
+    socialWorkerLawVersion:
+      socialWorkerLawResolution
+        ?.effectiveLawVersion ??
+      undefined,
+  });
+
+/**
  * 사회복지 법규 자동판정 근거를
  * qualification summary에 포함한다.
  *
@@ -2243,6 +2879,44 @@ if (
           .unknownYearSubjects,
     },
   };
+
+projectedQualificationAnalysis.summary = {
+  ...projectedQualificationAnalysis.summary,
+
+  lawResolution: {
+    lawVersion:
+      socialWorkerLawResolution
+        .lawVersion,
+
+    effectiveLawVersion:
+      socialWorkerLawResolution
+        .effectiveLawVersion,
+
+    source:
+      socialWorkerLawResolution
+        .source,
+
+    isConfirmed:
+      socialWorkerLawResolution
+        .isConfirmed,
+
+    requiresReview:
+      socialWorkerLawResolution
+        .requiresReview,
+
+    message:
+      socialWorkerLawResolution
+        .message,
+
+    evidenceSubjects:
+      socialWorkerLawResolution
+        .evidenceSubjects,
+
+    unknownYearSubjects:
+      socialWorkerLawResolution
+        .unknownYearSubjects,
+  },
+};
 }
 
 /**
@@ -2266,6 +2940,29 @@ const unifiedRequirements =
   });
 
 /**
+ * 현재 실제 취득상태가 아닌,
+ * 이미 등록되어 있는 예정/진행과목까지
+ * 모두 정상 완료된 이후를 기준으로 한
+ * 미래 학습설계용 Requirements.
+ *
+ * unifiedRequirements:
+ * 현재 상태 설명/위험도용
+ *
+ * projectedRequirements:
+ * 추가 필요과목 자동설계용
+ */
+const projectedRequirements =
+  mergeQualificationRequirements({
+    degreeRequirement,
+
+    degreeCreditAnalysis:
+      projectedDegreeCreditAnalysis,
+
+    qualificationAnalysis:
+      projectedQualificationAnalysis,
+  });
+
+/**
  * ─────────────────────────────
  * 자격/학위 공통 Requirements 기반
  * 실제 필수과목 선택
@@ -2281,7 +2978,7 @@ const unifiedRequirements =
 const qualificationSubjectPlan =
   planQualificationSubjects({
     requirements:
-      unifiedRequirements,
+      projectedRequirements,
 
     masterItems:
       riskMasterItems,
@@ -2309,6 +3006,30 @@ const qualificationSubjectPlan =
             subject.source,
         })
       ),
+
+occupiedSubjects:
+  occupiedSubjects.map(
+    (
+      subject
+    ) => ({
+      subjectName:
+        subject.subjectName,
+
+      requirementType:
+        subject.requirementType ??
+        null,
+
+      category:
+        subject.category ??
+        null,
+
+      credits:
+        subject.credits,
+
+      source:
+        subject.source,
+    })
+  ),
 
     degreeTemplates:
   degreeSubjectTemplates.map(
@@ -2412,6 +3133,16 @@ for (
     []
   ) as any[]
 ) {
+
+  if (
+  isPlaceholderPlanSubject(
+    row?.subjectName
+  ) ||
+  row?.retakeRequired ===
+    true
+) {
+  continue;
+}
   const semesterOrder =
     Math.floor(
       Number(
@@ -2619,6 +3350,70 @@ const administrativeTimeline =
       ),
   });
 
+const retakeSubjects =
+  (
+    planSemesters ||
+    []
+  )
+    .filter(
+      (
+        row:
+          any
+      ) =>
+        row?.retakeRequired ===
+          true &&
+        !isPlaceholderPlanSubject(
+          row?.subjectName
+        )
+    )
+    .map(
+      (
+        row:
+          any
+      ) => ({
+        id:
+          Number(
+            row?.id ||
+            0
+          ) ||
+          null,
+
+        semesterNo:
+          Number(
+            row?.semesterNo ||
+            0
+          ) ||
+          null,
+
+        subjectName:
+          String(
+            row?.subjectName ||
+            ""
+          ).trim(),
+
+        requirementType:
+          row?.planRequirementType ??
+          null,
+
+        category:
+          row?.planCategory ??
+          null,
+
+        credits:
+          toNumber(
+            row?.credits
+          ),
+      })
+    )
+    .filter(
+      (
+        row
+      ) =>
+        Boolean(
+          row.subjectName
+        )
+    );
+
 /**
  * ─────────────────────────────
  * 학위/자격/과목/학기/행정절차
@@ -2641,6 +3436,8 @@ const academicSummary =
       qualificationSemesterPlan,
 
     administrativeTimeline,
+
+    retakeSubjects,
   });
 
 
