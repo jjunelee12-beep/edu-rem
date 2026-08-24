@@ -526,6 +526,11 @@ const academicSummaryLines =
 const plannedSubjects =
   subjectPlan?.selectedSubjects ?? [];
 
+const existingAcademicSemesters =
+  studyPlanSummary?.existingSemesters ??
+  semesterPlan?.existingSemesters ??
+  [];
+
 const plannedSemesters =
   studyPlanSummary?.semesters ??
   semesterPlan?.semesters ??
@@ -1500,52 +1505,106 @@ const academicCanExplain =
       </div>
     </div>
 
-    <div className="space-y-3">
-      {plannedSemesters.map(
-        (
-          semester: any,
-          index: number
-        ) => (
-          <div
-            key={`${semester.semesterLabel}-${index}`}
-            className="rounded-xl border p-4"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <p className="font-bold">
-                {semester.semesterLabel}
-              </p>
-
-              <Badge variant="outline">
-                {semester.subjectCount}과목
-              </Badge>
-            </div>
-
-            <p className="text-xs text-muted-foreground mt-1">
-              {semester.estimatedStartDate || "-"}
-              {" ~ "}
-              {semester.estimatedEndDate || "-"}
+<div className="space-y-3">
+  {existingAcademicSemesters.map(
+    (
+      semester: any,
+      index: number
+    ) => (
+      <div
+        key={`existing-${semester.semesterOrder}-${index}`}
+        className="rounded-xl border p-4 bg-blue-50/30"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <p className="font-bold">
+              {semester.semesterLabel ||
+                `${semester.semesterOrder}학기`}
             </p>
 
-            <div className="flex flex-wrap gap-2 mt-3">
-              {(semester.subjectNames || []).map(
-                (
-                  subjectName: string,
-                  subjectIndex: number
-                ) => (
-                  <Badge
-                    key={`${subjectName}-${subjectIndex}`}
-                    variant="outline"
-                    className="bg-slate-50"
-                  >
-                    {subjectName}
-                  </Badge>
-                )
-              )}
-            </div>
+            <Badge
+              variant="outline"
+              className="bg-white"
+            >
+              상세페이지
+            </Badge>
           </div>
-        )
-      )}
-    </div>
+
+          <Badge variant="outline">
+            {semester.subjectCount || 0}과목
+          </Badge>
+        </div>
+
+        <p className="text-xs text-muted-foreground mt-1">
+          실제 개강일 :{" "}
+          {semester.actualStartDate || "-"}
+        </p>
+
+        <div className="flex flex-wrap gap-2 mt-3">
+          {(semester.subjectNames || []).map(
+            (
+              subjectName: string,
+              subjectIndex: number
+            ) => (
+              <Badge
+                key={`${subjectName}-${subjectIndex}`}
+                variant="outline"
+                className="bg-white"
+              >
+                {subjectName}
+              </Badge>
+            )
+          )}
+        </div>
+      </div>
+    )
+  )}
+
+  {plannedSemesters.map(
+    (
+      semester: any,
+      index: number
+    ) => (
+      <div
+        key={`${semester.semesterLabel}-${index}`}
+        className="rounded-xl border p-4"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <p className="font-bold">
+            {semester.semesterLabel}
+          </p>
+
+          <Badge variant="outline">
+            {semester.subjectCount}과목
+          </Badge>
+        </div>
+
+        <p className="text-xs text-muted-foreground mt-1">
+          {semester.estimatedStartDate || "-"}
+          {" ~ "}
+          {semester.estimatedEndDate || "-"}
+        </p>
+
+        <div className="flex flex-wrap gap-2 mt-3">
+          {(semester.subjectNames || []).map(
+            (
+              subjectName: string,
+              subjectIndex: number
+            ) => (
+              <Badge
+                key={`${subjectName}-${subjectIndex}`}
+                variant="outline"
+                className="bg-slate-50"
+              >
+                {subjectName}
+              </Badge>
+            )
+          )}
+        </div>
+      </div>
+    )
+  )}
+</div>
   </CardContent>
 </Card>
 

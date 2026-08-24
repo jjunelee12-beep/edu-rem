@@ -192,8 +192,26 @@ firstSemesterLabel:
 lastSemesterLabel:
   string | null;
 
-    semesters:
-      Array<{
+existingSemesters:
+  Array<{
+    semesterOrder:
+      number;
+
+    semesterLabel:
+      string | null;
+
+    actualStartDate:
+      string | null;
+
+    subjectCount:
+      number;
+
+    subjectNames:
+      string[];
+  }>;
+
+semesters:
+  Array<{
         semesterOrder:
           number;
 
@@ -634,9 +652,15 @@ retakeSubjects:
   subjectPlan,
   semesterPlan,
   administrativeTimeline,
-  retakeSubjects,
 } =
   params;
+
+const retakeSubjects =
+  Array.isArray(
+    params.retakeSubjects
+  )
+    ? params.retakeSubjects
+    : [];
 
   const courseLabel =
     resolveCourseLabel(
@@ -1176,6 +1200,41 @@ if (
       lastSemesterLabel:
         semesterPlan
           .lastSemesterLabel,
+
+existingSemesters:
+  (
+    semesterPlan
+      .existingSemesters ||
+    []
+  ).map(
+    (
+      semester
+    ) => ({
+      semesterOrder:
+        semester.semesterOrder,
+
+      semesterLabel:
+        semester.semesterLabel,
+
+      actualStartDate:
+        semester.actualStartDate,
+
+      subjectCount:
+        semester.subjectCount,
+
+      subjectNames:
+        (
+          semester.subjects ||
+          []
+        ).map(
+          (
+            subject
+          ) =>
+            subject.subjectName
+        ),
+    })
+  ),
+
 
       semesters:
         semesterPlan

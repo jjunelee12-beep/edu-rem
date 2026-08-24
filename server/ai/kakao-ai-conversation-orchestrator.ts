@@ -1767,14 +1767,66 @@ registrationVerification:
       leadRegistration:
         null,
 
-      callbackRequest:
+            callbackRequest:
         null,
 
       registrationVerification:
         null,
 
-      responseComposition:
-        null,
+      responseComposition: {
+        success:
+          true,
+
+        replyText:
+          staffReplyText,
+
+        usedContextTypes:
+          [],
+
+        mentionedRestriction:
+          false,
+
+        askedClarification:
+          false,
+
+        consultationFlowPatch: {
+          qualificationExplained:
+            false,
+
+          durationExplained:
+            false,
+
+          theoryExplained:
+            false,
+
+          practicumExplained:
+            false,
+
+          administrationExplained:
+            false,
+
+          companyBenefitsExplained:
+            false,
+
+          staffRecommendationOffered:
+            false,
+
+          consultationFormOffered:
+            false,
+        },
+
+        openAiResponseId:
+          null,
+
+        model:
+          null,
+
+        fallbackUsed:
+          false,
+
+        errorMessage:
+          null,
+      },
     };
   }
 

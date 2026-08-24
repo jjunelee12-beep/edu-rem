@@ -1875,15 +1875,25 @@ Number(
    * 여기까지 계산된 서버 결과만 이용한다.
    */
   const academicSummary =
-    resolveStudentAcademicSummary({
-      requirements,
+  resolveStudentAcademicSummary({
+    requirements,
 
-      subjectPlan,
+    subjectPlan,
 
-      semesterPlan,
+    semesterPlan,
 
-      administrativeTimeline,
-    });
+    administrativeTimeline,
+
+    /**
+     * 신규 상담자는 아직 CRM 등록학생의
+     * 우리플랜 재수강 이력이 존재하지 않는다.
+     *
+     * 등록회원 학점요약과 동일 Resolver를
+     * 사용하므로 빈 배열을 명시적으로 전달한다.
+     */
+    retakeSubjects:
+      [],
+  });
 
   /**
    * Adapter가 새로운 판정문을 만들지 않고

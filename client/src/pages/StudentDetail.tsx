@@ -570,7 +570,7 @@ const overwrittenRows = currentRows.slice(0, sharedCount).map((current: any, i: 
     requirementType: next.normalizedRequirementType,
     semesterNo: Number(templateDialogSemesterNo),
     sortOrder: i,
-settlementIncluded: !/실습|이벤트|무료/.test(String(next.subjectName || "")),
+settlementIncluded: !/실습|무료/.test(String(next.subjectName || "")),
   };
 });
 
@@ -587,7 +587,7 @@ const createdRows = normalizedRows.slice(sharedCount).map((next: any, i: number)
   requirementType: next.normalizedRequirementType,
   sortOrder: sharedCount + i,
   credits: 3,
-settlementIncluded: !/실습|이벤트|무료/.test(String(next.subjectName || "")),
+settlementIncluded: !/실습|무료/.test(String(next.subjectName || "")),
 }));
 
 const optimisticRows = [
@@ -617,7 +617,7 @@ const optimisticRows = [
       requirementType: next.normalizedRequirementType,
       semesterNo: Number(templateDialogSemesterNo),
       sortOrder: i,
-settlementIncluded: !/실습|이벤트|무료/.test(String(next.subjectName || "")),
+settlementIncluded: !/실습|무료/.test(String(next.subjectName || "")),
     } as any);
   });
 
@@ -629,7 +629,7 @@ settlementIncluded: !/실습|이벤트|무료/.test(String(next.subjectName || "
       category: next.normalizedCategory,
       requirementType: next.normalizedRequirementType,
       sortOrder: sharedCount + i,
-settlementIncluded: !/실습|이벤트|무료/.test(String(next.subjectName || "")),
+settlementIncluded: !/실습|무료/.test(String(next.subjectName || "")),
     } as any)
   );
 
@@ -3589,7 +3589,7 @@ disabled={isReadOnly}
     onKeyDown={(e) => handlePlanNameKeyDown(e, group.semesterNo, rowIndex, group.rows)}
   />
 
-  {/실습|이벤트|무료/.test(String(row.subjectName || "")) && (
+  {/실습|무료/.test(String(row.subjectName || "")) && (
   <label className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
     <input
       type="checkbox"
@@ -3610,39 +3610,43 @@ disabled={isReadOnly}
     </span>
   </label>
 )}
-<label className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-  <input
-    type="checkbox"
-    disabled={
-      isReadOnly ||
-      updatePlanSemesterMut.isPending
-    }
-    checked={
-      row.retakeRequired ===
-      true
-    }
-    onChange={(e) =>
-      handlePlanRetakeRequiredChange(
-        row,
-        e.target.checked
-      )
-    }
-  />
+{/재수강/.test(
+  String(row.subjectName || "")
+) && (
+  <label className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+    <input
+      type="checkbox"
+      disabled={
+        isReadOnly ||
+        updatePlanSemesterMut.isPending
+      }
+      checked={
+        row.retakeRequired ===
+        true
+      }
+      onChange={(e) =>
+        handlePlanRetakeRequiredChange(
+          row,
+          e.target.checked
+        )
+      }
+    />
 
-  <span
-    className={
-      row.retakeRequired ===
+    <span
+      className={
+        row.retakeRequired ===
+        true
+          ? "text-orange-600 font-medium"
+          : "text-muted-foreground"
+      }
+    >
+      {row.retakeRequired ===
       true
-        ? "text-orange-600 font-medium"
-        : "text-muted-foreground"
-    }
-  >
-    {row.retakeRequired ===
-    true
-      ? "재수강 필요"
-      : "재수강"}
-  </span>
-</label>
+        ? "재수강 적용"
+        : "재수강"}
+    </span>
+  </label>
+)}
 </td>
 
                               <td className="px-2 py-1">

@@ -48,12 +48,36 @@ export type QualificationSemesterExistingItem = {
   actualStartDate?:
     string | null;
 
+
+  /**
+   * CRM 상세페이지 우리플랜에
+   * 실제 저장된 해당 학기 과목.
+   */
+  subjects?: {
+    id:
+      number | null;
+
+    subjectName:
+      string;
+
+    requirementType:
+      string | null;
+
+    category:
+      string | null;
+
+    credits:
+      number;
+  }[];
+
   /**
    * CRM에서 실제 학기 이수완료가 확정되었는지.
    *
    * 날짜가 지났다는 이유만으로
    * 이수완료 처리하지 않는다.
    */
+
+
   isCompleted?:
     boolean | null;
 };
@@ -167,6 +191,39 @@ export type QualificationSemesterPlannerResult = {
    */
   estimatedStudyEndDate:
     string | null;
+
+  existingSemesters:
+    {
+      semesterOrder:
+        number;
+
+      semesterLabel:
+        string | null;
+
+      actualStartDate:
+        string | null;
+
+      subjectCount:
+        number;
+
+      subjects:
+        {
+          id:
+            number | null;
+
+          subjectName:
+            string;
+
+          requirementType:
+            string | null;
+
+          category:
+            string | null;
+
+          credits:
+            number;
+        }[];
+    }[];
 
   semesters:
     QualificationSemesterPlannedItem[];
@@ -1462,6 +1519,52 @@ semesters:
             ).trim() ||
             null,
 
+subjects:
+  Array.isArray(
+    semester.subjects
+  )
+    ? semester.subjects
+        .map(
+          (
+            subject
+          ) => ({
+            id:
+              Number(
+                subject?.id ||
+                0
+              ) ||
+              null,
+
+            subjectName:
+              String(
+                subject?.subjectName ||
+                ""
+              ).trim(),
+
+            requirementType:
+              subject?.requirementType ??
+              null,
+
+            category:
+              subject?.category ??
+              null,
+
+            credits:
+              normalizeCredits(
+                subject?.credits
+              ),
+          })
+        )
+        .filter(
+          (
+            subject
+          ) =>
+            Boolean(
+              subject.subjectName
+            )
+        )
+    : [],
+
           isCompleted:
             semester
               .isCompleted ===
@@ -2335,12 +2438,40 @@ const nominalDurationMonths =
   semesterCount *
   4;
 
+const existingActualStartDates =
+  existingSemesters
+    .map(
+      (
+        semester
+      ) =>
+        String(
+          semester.actualStartDate ||
+          ""
+        ).trim()
+    )
+    .filter(
+      (
+        date
+      ) =>
+        /^\d{4}-\d{2}-\d{2}$/.test(
+          date
+        )
+    )
+    .sort();
+
+const firstExistingActualStartDate =
+  existingActualStartDates[0] ??
+  null;
+
 const estimatedStudyStartDate =
-  plannedSemesters.length >
-    0
-    ? plannedSemesters[0]
-        .estimatedStartDate
-    : null;
+  firstExistingActualStartDate ??
+  (
+    plannedSemesters.length >
+      0
+      ? plannedSemesters[0]
+          .estimatedStartDate
+      : null
+  );
 
 const estimatedStudyEndDate =
   plannedSemesters.length >
@@ -2373,6 +2504,34 @@ nominalDurationMonths,
 estimatedStudyStartDate,
 
 estimatedStudyEndDate,
+
+existingSemesters:
+  existingSemesters.map(
+    (
+      semester
+    ) => ({
+      semesterOrder:
+        semester.semesterOrder,
+
+      semesterLabel:
+        semester.semesterLabel,
+
+      actualStartDate:
+        semester.actualStartDate,
+
+      subjectCount:
+        Array.isArray(
+          semester.subjects
+        )
+          ? semester.subjects.length
+          : getExistingSemesterSubjectCount(
+              semester
+            ),
+
+      subjects:
+        semester.subjects || [],
+    })
+  ),
 
 semesters:
   plannedSemesters,

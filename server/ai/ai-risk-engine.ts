@@ -3123,6 +3123,24 @@ const existingSemesterCreditsByOrder =
 
       credits:
         number;
+
+      subjects:
+        {
+          id:
+            number | null;
+
+          subjectName:
+            string;
+
+          requirementType:
+            string | null;
+
+          category:
+            string | null;
+
+          credits:
+            number;
+        }[];
     }
   >();
 
@@ -3166,28 +3184,60 @@ for (
   }
 
   const previous =
-    existingSemesterCreditsByOrder.get(
-      semesterOrder
-    ) || {
-      subjectCount:
-        0,
+  existingSemesterCreditsByOrder.get(
+    semesterOrder
+  ) || {
+    subjectCount:
+      0,
 
-      credits:
-        0,
-    };
+    credits:
+      0,
 
-  existingSemesterCreditsByOrder.set(
-    semesterOrder,
-    {
-      subjectCount:
-        previous.subjectCount +
-        1,
+    subjects:
+      [],
+  };
 
-      credits:
-        previous.credits +
+existingSemesterCreditsByOrder.set(
+  semesterOrder,
+  {
+    subjectCount:
+      previous.subjectCount +
+      1,
+
+    credits:
+      previous.credits +
+      credits,
+
+    subjects: [
+      ...previous.subjects,
+
+      {
+        id:
+          Number(
+            row?.id ||
+            0
+          ) ||
+          null,
+
+        subjectName:
+          String(
+            row?.subjectName ||
+            ""
+          ).trim(),
+
+        requirementType:
+          row?.planRequirementType ??
+          null,
+
+        category:
+          row?.planCategory ??
+          null,
+
         credits,
-    }
-  );
+      },
+    ],
+  }
+);
 }
 
 /**
@@ -3303,6 +3353,11 @@ const qualificationSemesterPlan =
   plannedCredits,
 
   actualCredits,
+
+  subjects:
+    creditSummary
+      ?.subjects ??
+    [],
 };
         }
       ),
