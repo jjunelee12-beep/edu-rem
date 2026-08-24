@@ -3284,21 +3284,26 @@ const qualificationSemesterPlan =
               : null;
 
           return {
-            semesterOrder,
+  semesterOrder,
 
-            semesterLabel:
-              semester
-                ?.semesterLabel ??
-              null,
+  semesterLabel:
+    semester
+      ?.semesterLabel ??
+    null,
 
-            plannedSubjectCount,
+  actualStartDate:
+    semester
+      ?.actualStartDate ??
+    null,
 
-            actualSubjectCount,
+  plannedSubjectCount,
 
-            plannedCredits,
+  actualSubjectCount,
 
-            actualCredits,
-          };
+  plannedCredits,
+
+  actualCredits,
+};
         }
       ),
   });

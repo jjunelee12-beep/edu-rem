@@ -1469,13 +1469,72 @@ semesters:
         })
       )
       .filter(
-        (
+  (
+    semester
+  ) => {
+    if (
+      semester
+        .semesterOrder <=
+      0
+    ) {
+      return false;
+    }
+
+    /**
+     * DB에 학기 Row만 미리 만들어진 경우
+     * 실제 학습이 존재하는 기존 학기로 보지 않는다.
+     *
+     * 아래 중 하나라도 있으면
+     * 실제/예정 학습이 존재하는 학기로 인정한다.
+     */
+    const hasActualStartDate =
+      Boolean(
+        String(
           semester
-        ) =>
-          semester
-            .semesterOrder >
-          0
+            .actualStartDate ||
+          ""
+        ).trim()
       );
+
+    const plannedSubjectCount =
+      normalizePositiveInteger(
+        semester
+          .plannedSubjectCount
+      );
+
+    const actualSubjectCount =
+      normalizePositiveInteger(
+        semester
+          .actualSubjectCount
+      );
+
+    const plannedCredits =
+      normalizeCredits(
+        semester
+          .plannedCredits
+      );
+
+    const actualCredits =
+      normalizeCredits(
+        semester
+          .actualCredits
+      );
+
+    return (
+      hasActualStartDate ||
+      plannedSubjectCount >
+        0 ||
+      actualSubjectCount >
+        0 ||
+      plannedCredits >
+        0 ||
+      actualCredits >
+        0 ||
+      semester.isCompleted ===
+        true
+    );
+  }
+);
 
   const lastExistingSemester =
     getLastExistingSemester(
@@ -1798,6 +1857,48 @@ startBasis =
     firstSemesterLabel;
 
 /**
+ * 기존 실제/예정 학기가 있다면
+ * 마지막 기존 학기의 실제 개강일을 기준으로
+ * 다음 학기 시작 가능일을 계산한다.
+ *
+ * 실제 개강일이 없으면
+ * 현재/baseDate 기준 계산으로 fallback 한다.
+ */
+let firstSemesterCandidateDate =
+  today.date;
+
+if (
+  lastExistingSemester
+) {
+  const lastActualStartDate =
+    String(
+      lastExistingSemester
+        .actualStartDate ||
+      ""
+    ).trim();
+
+  if (
+    /^\d{4}-\d{2}-\d{2}$/.test(
+      lastActualStartDate
+    )
+  ) {
+    /**
+     * 기존 학기는 실제 개강일부터
+     * 4개월 과정으로 계산한다.
+     *
+     * 예:
+     * 2026-06-25
+     * → 다음 과정 기준일 2026-10-25
+     */
+    firstSemesterCandidateDate =
+      addMonthsToDate(
+        lastActualStartDate,
+        4
+      );
+  }
+}
+
+/**
  * 신규상담에서는 실제 계산 기준일을
  * 첫 학기 시작일로 사용한다.
  *
@@ -1813,7 +1914,7 @@ startBasis =
 const resolvedFirstSemesterStartDate =
   resolveEarliestStartDateForSemester({
     candidateDate:
-      today.date,
+  firstSemesterCandidateDate,
 
     semesterLabel:
       firstSemesterLabel,

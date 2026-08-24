@@ -3635,21 +3635,25 @@ const waitForKakaoCallbackRecovery =
  */
 try {
   console.log(
-    "[KAKAO AI CALLBACK] worker start",
-    {
-      build:
-        KAKAO_AI_BUILD_VERSION,
+  "[KAKAO AI CALLBACK] worker start",
+  {
+    build:
+      KAKAO_AI_BUILD_VERSION,
 
-      organizationId,
+    organizationId,
 
-      kakaoRequestId,
+    kakaoRequestId,
 
-      hasCallbackUrl:
-        Boolean(
-          callbackUrl
-        ),
-    }
-  );
+    incomingMessage,
+
+    incomingMessageType,
+
+    hasCallbackUrl:
+      Boolean(
+        callbackUrl
+      ),
+  }
+);
 
   const result =
   await orchestrateKakaoAiIncomingMessage({
@@ -4063,23 +4067,31 @@ if (
     unknown
 ) {
   console.error(
-    "[KAKAO AI] 비동기 처리 실패",
-    error instanceof
-      Error
-      ? {
-          name:
-            error.name,
+  "[KAKAO AI] 비동기 처리 실패",
+  {
+    organizationId,
+    kakaoRequestId,
 
-          message:
-            error.message,
-        }
-      : {
-          message:
-            String(
-              error
-            ),
-        }
-  );
+    error:
+      error instanceof Error
+        ? {
+            name:
+              error.name,
+
+            message:
+              error.message,
+
+            stack:
+              error.stack,
+          }
+        : {
+            message:
+              String(
+                error
+              ),
+          },
+  }
+);
 
   /**
    * useCallback=true를 이미 반환한 상태에서는

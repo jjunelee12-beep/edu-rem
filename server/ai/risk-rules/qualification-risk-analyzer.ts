@@ -196,6 +196,9 @@ export function resolveQualificationRiskCourseKey(
   ) ||
   /^사회(?:2급)?$/.test(
     normalized
+  ) ||
+  /^사복(?:2급)?$/.test(
+    normalized
   )
 ) {
   return "social_worker_2";
