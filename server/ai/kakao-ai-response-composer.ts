@@ -20,7 +20,9 @@ import type {
   KakaoAiConversationMessage,
 } from "./kakao-ai-intent-router";
 
-
+import type {
+  KakaoAiLeadFlowEvaluationResult,
+} from "./kakao-ai-lead-flow-engine";
 
 export type KakaoAiConsultationFlowPatch = {
   qualificationExplained: boolean;
@@ -1117,6 +1119,123 @@ function buildAccessContext(
     );
 }
 
+/**
+ * =========================================================
+ * Lead Flow Composer Context
+ * =========================================================
+ *
+ * Flow Engine이 이미 결정한 현재 상담상태와
+ * 다음 행동을 Composer가 자연어로 표현하기 위한 Context.
+ *
+ * 중요:
+ * - Composer는 Stage를 결정하지 않는다.
+ * - Composer는 Action을 결정하지 않는다.
+ * - Composer는 transition 조건을 평가하지 않는다.
+ * - DB Flow Config / Flow Engine 결과를 설명만 한다.
+ */
+function buildLeadFlowComposerContext(
+  evaluation:
+    KakaoAiLeadFlowEvaluationResult |
+    null |
+    undefined
+) {
+  if (
+    !evaluation
+  ) {
+    return null;
+  }
+
+  const currentStage =
+    evaluation.currentStage ??
+    null;
+
+  const nextStage =
+    evaluation.nextStage ??
+    null;
+
+  return {
+    reason:
+      normalizeText(
+        evaluation.reason
+      ) ||
+      null,
+
+    currentStageId:
+      normalizeText(
+        evaluation.currentStageId
+      ) ||
+      null,
+
+    nextStageId:
+      normalizeText(
+        evaluation.nextStageId
+      ) ||
+      null,
+
+    actionId:
+      normalizeText(
+        evaluation.actionId
+      ) ||
+      null,
+
+    currentStage:
+      currentStage
+        ? {
+            id:
+              normalizeText(
+                currentStage.id
+              ) ||
+              null,
+
+            contentKeys:
+              normalizeStringArray(
+                currentStage.contentKeys,
+                30
+              ),
+          }
+        : null,
+
+    nextStage:
+      nextStage
+        ? {
+            id:
+              normalizeText(
+                nextStage.id
+              ) ||
+              null,
+
+            contentKeys:
+              normalizeStringArray(
+                nextStage.contentKeys,
+                30
+              ),
+
+            availableActions:
+              Array.from(
+                new Set(
+                  (
+                    nextStage.transitions ??
+                    []
+                  )
+                    .map(
+                      transition =>
+                        normalizeText(
+                          transition.actionId
+                        )
+                    )
+                    .filter(
+                      Boolean
+                    )
+                )
+              ).slice(
+                0,
+                30
+              ),
+          }
+        : null,
+  };
+}
+
 const KAKAO_AI_RESPONSE_SCHEMA = {
   type:
     "object",
@@ -1235,6 +1354,76 @@ const KAKAO_AI_RESPONSE_COMPOSER_INSTRUCTIONS = `
 실제 상담사가 고객의 말을 이해하고 자연스럽게 답하는 것이다.
 
 반드시 제공된 서버 Context만 사실 근거로 사용한다.
+
+[상담 Flow Engine 최우선 원칙]
+
+신규 고객이고 leadFlowContext가 존재하는 경우,
+현재 상담의 단계와 다음 행동은 서버 Flow Engine이 이미 결정했다.
+
+leadFlowContext는 현재 회사의 DB Lead Flow Config를
+Flow Engine이 평가한 결과다.
+
+Composer는 이 결과를 변경하거나
+독자적으로 새로운 상담순서를 만들지 않는다.
+
+반드시 다음 원칙을 따른다.
+
+1. 사용자의 현재 질문에는 먼저 정확하게 답한다.
+
+Flow Engine이 특정 Stage를 지정했다는 이유로
+사용자가 직접 물어본 질문을 무시하거나
+다른 상담주제로 강제로 이동하지 않는다.
+
+2. 현재 질문에 답한 이후 상담을 이어갈 필요가 있다면
+leadFlowContext의 현재/다음 Stage와 actionId를 우선한다.
+
+3. leadFlowContext.currentStage 또는
+leadFlowContext.nextStage의 contentKeys는
+해당 상담단계에서 어떤 종류의 서버 Context를
+우선 활용해야 하는지를 나타낸다.
+
+contentKeys에 없는 사실을 임의로 만들지 않는다.
+
+4. Stage ID 자체의 문자열 의미를 추측하지 않는다.
+
+예를 들어 Stage ID가 특정 이름처럼 보인다는 이유만으로
+Composer가 그 이름에 해당하는 고정 상담내용을 만들어서는 안 된다.
+
+Stage의 실제 설명 근거는
+contentKeys와 제공된 서버 Context다.
+
+5. actionId는 Flow Engine이 결정한
+현재 상담의 다음 행동이다.
+
+Composer는 actionId를 다른 Action으로 변경하거나
+새로운 Action ID를 만들지 않는다.
+
+6. transitions 또는 availableActions는
+가능한 Flow 이동 정보를 나타낼 뿐이다.
+
+Composer가 transition 조건을 평가하거나
+어느 transition으로 이동할지 결정하지 않는다.
+
+7. leadFlowContext가 존재하는 경우
+structuredMemory.consultationFlow의 기존 boolean 필드를 이용하여
+독자적인 상담순서를 결정하지 않는다.
+
+기존 consultationFlow 값은 과거 호환 및 대화 참고정보일 뿐이며,
+현재 상담진행 결정권은 leadFlowContext에 있다.
+
+8. 다음 상담주제를 정하기 위해
+자격조건 → 기간 → 이론 → 실습 → 행정절차 → 회사혜택
+같은 고정 순서를 적용하지 않는다.
+
+상담순서는 회사별 DB Flow Config에 따라 달라질 수 있다.
+
+9. leadFlowContext가 null인 경우에만
+기존 Conversation History, structuredMemory,
+Intent 및 서버 Context를 이용한 일반 상담방식을 fallback으로 사용할 수 있다.
+
+10. Flow Engine 결과와 현재 사용자의 직접 질문이 충돌하는 것처럼 보이면
+현재 질문에는 정상적으로 답하되,
+상담의 다음 Stage 자체를 Composer가 변경하지 않는다.
 
 가장 중요한 원칙:
 
@@ -2134,6 +2323,13 @@ finalEducation = 고졸
 
 현재 질문에 답하고 자연스럽게 끝낸다.
 
+20-7부터 20-11까지의 기존 consultationFlow 기반 상담진행 규칙은
+leadFlowContext가 존재하지 않는 경우에만 fallback으로 적용한다.
+
+leadFlowContext가 존재하는 신규상담에서는
+20-7부터 20-11까지의 고정 상담진행 판단보다
+leadFlowContext를 항상 우선한다.
+
 20-7. 신규 상담에서는 단순 질의응답만 하지 말고
 현재 상담의 전체 진행상태를 보고 다음에 가장 자연스러운
 하나의 상담주제를 이어갈 수 있다.
@@ -2688,6 +2884,24 @@ staffRecommendationOffered는 true로 처리한다.
 
 31-5. consultationFlowPatch의 모든 필드는
 반드시 boolean으로 반환한다.
+
+31-6.
+
+leadFlowContext가 존재하는 경우
+consultationFlowPatch는 현재 상담의 다음 Stage나 Action을
+결정하기 위한 값이 아니다.
+
+이 값은 기존 시스템과의 호환을 위한
+보조적인 대화기록 Patch다.
+
+leadFlowContext와 consultationFlowPatch가 충돌하면
+항상 leadFlowContext를 우선한다.
+
+consultationFlowPatch를 근거로
+Flow Engine이 결정하지 않은 Stage 이동이나
+새로운 Action을 만들지 않는다.
+
+
 `.trim();
 
 /**
@@ -2760,6 +2974,10 @@ function buildKakaoAiResponseInput(
 
     resolvedContext:
       KakaoAiResolvedContext;
+
+leadFlowEvaluation:
+  KakaoAiLeadFlowEvaluationResult |
+  null;
   }
 ): string {
   const resolvedContext =
@@ -2811,6 +3029,11 @@ function buildKakaoAiResponseInput(
       normalizeConversationHistory(
         params.conversationHistory
       ),
+
+leadFlowContext:
+  buildLeadFlowComposerContext(
+    params.leadFlowEvaluation
+  ),
 
     structuredMemory: {
       desiredCourse:
@@ -4298,6 +4521,10 @@ export async function composeKakaoAiResponse(
 
     resolvedContext:
       KakaoAiResolvedContext;
+
+leadFlowEvaluation:
+  KakaoAiLeadFlowEvaluationResult |
+  null;
   }
 ): Promise<KakaoAiResponseCompositionResult> {
   const message =
@@ -4422,7 +4649,10 @@ export async function composeKakaoAiResponse(
         params.intentClassification,
 
       resolvedContext:
-        params.resolvedContext,
+  params.resolvedContext,
+
+leadFlowEvaluation:
+  params.leadFlowEvaluation,
     });
 
   try {

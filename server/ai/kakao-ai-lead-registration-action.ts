@@ -754,111 +754,6 @@ const wantsCallbackRequest =
     };
   }
 
-  /**
-   * 고객이 실제 선택한 담당자만 사용.
-   *
-   * recommendedStaffUserId를 대신 사용하지 않는다.
-   */
-  const selectedStaffUserId =
-    normalizePositiveInteger(
-      params.memory
-        .selectedStaffUserId
-    );
-
-  if (
-  !selectedStaffUserId
-) {
-  /**
-   * 실제 상담접수/전화상담 의도라면
-   * 일반 Composer로 흘리지 않고
-   * 필요한 다음 행동을 명확하게 안내한다.
-   */
-  if (
-    wantsLeadRegistration ||
-    wantsCallbackRequest
-  ) {
-    return {
-      handled:
-        true,
-
-      created:
-        false,
-
-      consultationId:
-        null,
-
-      reason:
-        "STAFF_NOT_SELECTED",
-
-      clientName:
-        null,
-
-      phoneLast4:
-        null,
-
-     replyText:
-  [
-    "네, 상담 접수를 위해 필요한 정보만 확인할게요 :)",
-    "",
-    `아직 필요한 정보: ${missingRequiredFields.join(", ")}`,
-    "",
-    !contact.clientName
-      ? "성함:"
-      : null,
-
-    !contact.phone
-      ? "연락처:"
-      : null,
-
-    !finalEducation
-      ? "최종학력: (고졸 / 전문대졸 / 4년제졸 등)"
-      : null,
-
-    !desiredCourse
-      ? "희망과정: (예: 사회복지사 2급)"
-      : null,
-
-    "",
-    "위 항목만 작성해서 보내주시면 이어서 접수 도와드릴게요.",
-  ]
-    .filter(
-      (
-        line
-      ): line is string =>
-        Boolean(
-          line
-        )
-    )
-    .join(
-      "\n"
-    ),
-    };
-  }
-
-  return {
-    handled:
-      false,
-
-    created:
-      false,
-
-    consultationId:
-      null,
-
-    reason:
-      "STAFF_NOT_SELECTED",
-
-    clientName:
-      null,
-
-    phoneLast4:
-      null,
-
-    replyText:
-      null,
-  };
-}
-
     /**
    * 현재 메시지에서 우선 개인정보를 찾는다.
    *
@@ -889,62 +784,6 @@ const wantsCallbackRequest =
       historicalContact.phone,
   };
 
-  /**
- * 이름/전화번호가 아직 없는 상태에서
- * 고객이 담당자 연결 / 상담신청 / 전화예약을 요청한 경우
- * 일반 Composer에 맡기지 않고
- * 서버가 직접 상담접수 양식을 안내한다.
- */
-/**
- * 개인정보가 없는 상태에서
- * Intent AI가 실제 상담접수 또는 전화상담 의도를 판단했다면
- * 접수에 필요한 정보 양식을 안내한다.
- *
- * 여기서는 "연결", "신청", "예약" 같은
- * 문자열 키워드를 직접 검사하지 않는다.
- */
-
-  /**
-   * 선택 담당자가 실제 같은 회사의
-   * 활성 Host/Admin/Staff인지 다시 확인한다.
-   */
-  const selectedStaff =
-    await db.getAssignableUserById({
-      organizationId,
-
-      userId:
-        selectedStaffUserId,
-    });
-
-  if (
-    !selectedStaff
-  ) {
-    return {
-      handled:
-        true,
-
-      created:
-        false,
-
-      consultationId:
-        null,
-
-      reason:
-        "INVALID_STAFF",
-
-      clientName:
-        contact.clientName,
-
-      phoneLast4:
-        maskPhone(
-          contact.phone
-        ),
-
-      replyText:
-        "선택하신 담당자 정보를 다시 확인해야 합니다. 담당자를 다시 선택해주세요.",
-    };
-  }
-
   const desiredCourse =
     normalizeText(
       params.memory
@@ -955,6 +794,17 @@ const wantsCallbackRequest =
     normalizeText(
       params.memory
         .finalEducation
+    );
+
+  /**
+   * 고객이 실제 선택한 담당자만 사용.
+   *
+   * recommendedStaffUserId를 대신 사용하지 않는다.
+   */
+  const selectedStaffUserId =
+    normalizePositiveInteger(
+      params.memory
+        .selectedStaffUserId
     );
 
   /**
@@ -1010,6 +860,150 @@ const wantsCallbackRequest =
   }
 
   if (
+    !selectedStaffUserId
+  ) {
+    /**
+     * 실제 상담접수/전화상담 의도라면
+     * 일반 Composer로 흘리지 않고
+     * 필요한 다음 행동을 명확하게 안내한다.
+     */
+    if (
+      wantsLeadRegistration ||
+      wantsCallbackRequest
+    ) {
+      return {
+        handled:
+          true,
+
+        created:
+          false,
+
+        consultationId:
+          null,
+
+        reason:
+          "STAFF_NOT_SELECTED",
+
+        clientName:
+          contact.clientName,
+
+        phoneLast4:
+          contact.phone
+            ? maskPhone(
+                contact.phone
+              )
+            : null,
+
+        replyText:
+          [
+            "네, 상담 접수를 위해 필요한 정보만 확인할게요 :)",
+            "",
+            `아직 필요한 정보: ${missingRequiredFields.join(", ")}`,
+            "",
+            !contact.clientName
+              ? "성함:"
+              : null,
+
+            !contact.phone
+              ? "연락처:"
+              : null,
+
+            !finalEducation
+              ? "최종학력: (고졸 / 전문대졸 / 4년제졸 등)"
+              : null,
+
+            !desiredCourse
+              ? "희망과정: (예: 사회복지사 2급)"
+              : null,
+
+            "상담 담당자를 아직 선택하지 않으셨다면 원하시는 담당자를 선택해주세요.",
+          ]
+            .filter(
+              (
+                line
+              ): line is string =>
+                Boolean(
+                  line
+                )
+            )
+            .join(
+              "\n"
+            ),
+      };
+    }
+
+    return {
+      handled:
+        false,
+
+      created:
+        false,
+
+      consultationId:
+        null,
+
+      reason:
+        "STAFF_NOT_SELECTED",
+
+      clientName:
+        contact.clientName,
+
+      phoneLast4:
+        contact.phone
+          ? maskPhone(
+              contact.phone
+            )
+          : null,
+
+      replyText:
+        null,
+    };
+  }
+
+  /**
+   * 선택 담당자가 실제 같은 회사의
+   * 활성 Host/Admin/Staff인지 다시 확인한다.
+   */
+  const selectedStaff =
+    await db.getAssignableUserById({
+      organizationId,
+
+      userId:
+        selectedStaffUserId,
+    });
+
+  if (
+    !selectedStaff
+  ) {
+    return {
+      handled:
+        true,
+
+      created:
+        false,
+
+      consultationId:
+        null,
+
+      reason:
+        "INVALID_STAFF",
+
+      clientName:
+        contact.clientName,
+
+      phoneLast4:
+        contact.phone
+          ? maskPhone(
+              contact.phone
+            )
+          : null,
+
+      replyText:
+        "선택하신 담당자 정보를 다시 확인해야 합니다. 담당자를 다시 선택해주세요.",
+    };
+  }
+
+  if (
     missingRequiredFields.length >
     0
   ) {
@@ -1042,16 +1036,20 @@ const wantsCallbackRequest =
           "",
           `확인이 필요한 정보: ${missingRequiredFields.join(", ")}`,
           "",
+          !contact.clientName
+            ? "성함:"
+            : null,
+
+          !contact.phone
+            ? "연락처:"
+            : null,
+
           !finalEducation
             ? "최종학력은 고졸 / 전문대졸 / 4년제졸 등으로 말씀해주세요."
             : null,
 
           !desiredCourse
             ? "희망하시는 과정도 함께 말씀해주세요. 예) 사회복지사 2급"
-            : null,
-
-          !selectedStaffUserId
-            ? "상담 담당자를 아직 선택하지 않으셨다면 원하시는 담당자를 선택해주세요."
             : null,
         ]
           .filter(

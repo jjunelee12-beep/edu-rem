@@ -842,6 +842,75 @@ function applyRuleToCategory(params: {
     );
 }
 
+function isActualAcademicRiskIssue(
+  issue:
+    StudentRiskItem
+): boolean {
+  const code =
+    String(
+      issue.code ||
+      ""
+    ).trim();
+
+  if (!code) {
+    return false;
+  }
+
+  /**
+   * ---------------------------------------------------------
+   * 정상적인 학습 진행 중 발생하는
+   * "아직 부족함 / 아직 미완료" 상태는 위험도가 아니다.
+   * ---------------------------------------------------------
+   */
+
+  if (
+    code ===
+      "CREDIT_RULE_MISSING" ||
+    code ===
+      "TOTAL_CREDIT_SHORTAGE" ||
+    code.startsWith(
+      "CATEGORY_SHORTAGE_"
+    ) ||
+    code.startsWith(
+      "DEGREE_"
+    ) &&
+      code.endsWith(
+        "_SHORTAGE"
+      ) ||
+    code ===
+      "PRACTICE_NOT_COMPLETED"
+  ) {
+    return false;
+  }
+
+  /**
+   * 결제 / 환불 / 학생 기본정보 / 플랜 미입력은
+   * 학업 설계 위험도와 별개다.
+   *
+   * 운영관리 이슈로는 유지하되
+   * 학점요약의 학업 위험도에는 반영하지 않는다.
+   */
+  if (
+    code.startsWith(
+      "PAYMENT_"
+    ) ||
+    code ===
+      "STUDENT_COURSE_MISSING" ||
+    code ===
+      "PLAN_MISSING" ||
+    code ===
+      "PLAN_SUBJECTS_MISSING"
+  ) {
+    return false;
+  }
+
+  /**
+   * 그 외 현재 엔진이 생성하는 문제는
+   * 실제 데이터/설계 검증 대상으로 본다.
+   */
+  return true;
+}
+
 function buildRiskScore(
   issues: StudentRiskItem[]
 ) {
@@ -1233,6 +1302,21 @@ const paymentStatus:
       extraItems as any[],
   });
 
+for (
+  const subject of subjects
+) {
+  subject.validation = {
+    status:
+      "normal",
+
+    codes:
+      [],
+
+    messages:
+      [],
+  };
+}
+
 const {
   recognizedSubjects,
   duplicateMap,
@@ -1568,45 +1652,109 @@ if (isRefundWithoutPayment) {
    */
   for (const subject of subjects) {
     if (!subject.subjectName) {
-      pushIssue(issues, {
-        code:
-          `SUBJECT_NAME_MISSING_${subject.source}_${subject.id ?? "unknown"}`,
+  const code =
+    `SUBJECT_NAME_MISSING_${subject.source}_${subject.id ?? "unknown"}`;
 
-        severity: "warning",
-        category: "subject",
+  const message =
+    `${subject.sourceLabel} 항목에 과목명이 입력되지 않았습니다.`;
 
-        title: "과목명 누락",
-        message:
-          `${subject.sourceLabel} 항목에 과목명이 입력되지 않았습니다.`,
-      });
+  pushIssue(issues, {
+    code,
 
-      continue;
-    }
+    severity:
+      "warning",
 
-    if (subject.credits <= 0) {
-      pushIssue(issues, {
-        code:
-          `SUBJECT_CREDIT_INVALID_${subject.source}_${subject.id ?? "unknown"}`,
+    category:
+      "subject",
 
-        severity: "warning",
-        category: "credit",
+    title:
+      "과목명 누락",
 
-        title: "과목 학점 확인",
-        message:
-          `${subject.sourceLabel}의 '${subject.subjectName}' 과목 학점이 0이거나 입력되지 않았습니다.`,
+    message,
+  });
 
-        details: {
-          source:
-            subject.sourceLabel,
+  subject.validation = {
+    status:
+      "warning",
 
-          subjectName:
-            subject.subjectName,
+    codes: [
+      ...(
+        subject.validation
+          ?.codes ??
+        []
+      ),
+      code,
+    ],
 
-          credits:
-            subject.credits,
-        },
-      });
-    }
+    messages: [
+      ...(
+        subject.validation
+          ?.messages ??
+        []
+      ),
+      message,
+    ],
+  };
+
+  continue;
+}
+
+   if (subject.credits <= 0) {
+  const code =
+    `SUBJECT_CREDIT_INVALID_${subject.source}_${subject.id ?? "unknown"}`;
+
+  const message =
+    `${subject.sourceLabel}의 '${subject.subjectName}' 과목 학점이 0이거나 입력되지 않았습니다.`;
+
+  pushIssue(issues, {
+    code,
+
+    severity:
+      "warning",
+
+    category:
+      "credit",
+
+    title:
+      "과목 학점 확인",
+
+    message,
+
+    details: {
+      source:
+        subject.sourceLabel,
+
+      subjectName:
+        subject.subjectName,
+
+      credits:
+        subject.credits,
+    },
+  });
+
+  subject.validation = {
+    status:
+      "warning",
+
+    codes: [
+      ...(
+        subject.validation
+          ?.codes ??
+        []
+      ),
+      code,
+    ],
+
+    messages: [
+      ...(
+        subject.validation
+          ?.messages ??
+        []
+      ),
+      message,
+    ],
+  };
+}
 
     const requirementKey =
       resolveRequirementKey(
@@ -1615,28 +1763,60 @@ if (isRefundWithoutPayment) {
       );
 
     if (!requirementKey) {
-      pushIssue(issues, {
-        code:
-          `SUBJECT_REQUIREMENT_MISSING_${subject.source}_${subject.id ?? "unknown"}`,
+  const code =
+    `SUBJECT_REQUIREMENT_MISSING_${subject.source}_${subject.id ?? "unknown"}`;
 
-        severity: "warning",
-        category: "subject",
+  const message =
+    `${subject.sourceLabel}의 '${subject.subjectName}' 과목에 전공필수·전공선택·교양·일반 구분이 없습니다.`;
 
-        title: "과목 구분 확인",
-        message:
-          `${subject.sourceLabel}의 '${subject.subjectName}' 과목에 전공필수·전공선택·교양·일반 구분이 없습니다.`,
+  pushIssue(issues, {
+    code,
 
-        details: {
-          source:
-            subject.sourceLabel,
+    severity:
+      "warning",
 
-          subjectName:
-            subject.subjectName,
-        },
-      });
+    category:
+      "subject",
 
-      continue;
-    }
+    title:
+      "과목 구분 확인",
+
+    message,
+
+    details: {
+      source:
+        subject.sourceLabel,
+
+      subjectName:
+        subject.subjectName,
+    },
+  });
+
+  subject.validation = {
+    status:
+      "warning",
+
+    codes: [
+      ...(
+        subject.validation
+          ?.codes ??
+        []
+      ),
+      code,
+    ],
+
+    messages: [
+      ...(
+        subject.validation
+          ?.messages ??
+        []
+      ),
+      message,
+    ],
+  };
+
+  continue;
+}
   }
 
   /**
@@ -1674,18 +1854,12 @@ const recognizedSubject =
       )
   );
 
-    pushIssue(issues, {
-      code:
+    const duplicateCode =
   `DUPLICATE_SUBJECT_${getConfirmedSubjectEquivalenceKey(
     rows[0].subjectName
-  )}`,
+  )}`;
 
-      severity: "danger",
-      category: "subject",
-
-      title: "중복 과목 확인",
-
-      message:
+const duplicateMessage =
   `'${rows
     .map(
       (row) =>
@@ -1693,29 +1867,71 @@ const recognizedSubject =
     )
     .join(
       "', '"
-    )}' 과목이 동일 또는 공식 동일교과목으로 확인되었습니다. ${recognizedSubject?.sourceLabel || "첫 번째 항목"} 1건만 인정하고 나머지는 중복에서 제외했습니다. 등록 위치: ${sourceLabels}`,
+    )}' 과목이 동일 또는 공식 동일교과목으로 확인되었습니다. ${recognizedSubject?.sourceLabel || "첫 번째 항목"} 1건만 인정하고 나머지는 중복에서 제외했습니다. 등록 위치: ${sourceLabels}`;
 
-     details: {
-  subjectName:
-    rows[0].subjectName,
+pushIssue(issues, {
+  code:
+    duplicateCode,
 
-  count:
-    rows.length,
+  severity:
+    "danger",
 
-  sources:
-    sourceLabels,
+  category:
+    "subject",
 
-  recognizedSource:
-    recognizedSubject?.sourceLabel ??
-    null,
+  title:
+    "중복 과목 확인",
 
-  recognizedCredits:
-    recognizedSubject?.credits ??
-    0,
-},
-    });
-  }
+  message:
+    duplicateMessage,
 
+  details: {
+    subjectName:
+      rows[0].subjectName,
+
+    count:
+      rows.length,
+
+    sources:
+      sourceLabels,
+
+    recognizedSource:
+      recognizedSubject?.sourceLabel ??
+      null,
+
+    recognizedCredits:
+      recognizedSubject?.credits ??
+      0,
+  },
+});
+
+for (
+  const row of rows
+) {
+  row.validation = {
+    status:
+      "danger",
+
+    codes: [
+      ...(
+        row.validation
+          ?.codes ??
+        []
+      ),
+      duplicateCode,
+    ],
+
+    messages: [
+      ...(
+        row.validation
+          ?.messages ??
+        []
+      ),
+      duplicateMessage,
+    ],
+  };
+}
+}
 /**
  * 실제 학점 및 과목 수는
  * 중복 제거 후 유효한 인정 과목만 계산한다.
@@ -3754,142 +3970,7 @@ for (
   });
 }
 
-    for (
-      const key of Object.keys(
-        categories
-      ) as RequirementKey[]
-    ) {
-      const category =
-        categories[key];
-
-      if (
-        Number(
-          category.remainingSubjects ||
-          0
-        ) > 0 ||
-        Number(
-          category.remainingCredits ||
-          0
-        ) > 0
-      ) {
-
-const recommendedSubjects =
-  buildRiskSubjectRecommendations({
-    masterItems:
-      riskMasterItems,
-
-    existingSubjects:
-      validRecognizedSubjects.map(
-        (
-          subject
-        ) => ({
-          subjectName:
-            subject.subjectName,
-
-          credits:
-            subject.credits,
-
-          source:
-            subject.source,
-        })
-      ),
-
-    requirementType:
-      categoryRequirementTypes[
-        key
-      ],
-
-    requiredSubjects:
-      Number(
-        category.remainingSubjects ||
-        0
-      ),
-
-    requiredCredits:
-      Number(
-        category.remainingCredits ||
-        0
-      ),
-
-    limit:
-      10,
-  });
-
-        pushIssue(issues, {
-          code:
-            `CATEGORY_SHORTAGE_${key}`,
-
-          severity: "danger",
-          category: "credit",
-
-          title:
-            `${categoryLabels[key]} 부족`,
-
-          message:
-            `${categoryLabels[key]} 기준이 부족합니다. 현재 ${category.currentSubjects}과목/${category.currentCredits}학점, 부족 ${category.remainingSubjects ?? 0}과목/${category.remainingCredits ?? 0}학점입니다.`,
-
-          details: {
-  currentSubjects:
-    category.currentSubjects,
-
-  currentCredits:
-    category.currentCredits,
-
-  remainingSubjects:
-    category.remainingSubjects,
-
-  remainingCredits:
-    category.remainingCredits,
-
-  matchedCatalogId:
-    riskMatchedCatalog
-      ? Number(
-          riskMatchedCatalog.id
-        )
-      : null,
-
-  matchedCatalogName:
-    riskMatchedCatalog
-      ? String(
-          riskMatchedCatalog.name ||
-          ""
-        )
-      : null,
-
-  recommendedSubjects:
-    recommendedSubjects.map(
-      (
-        subject
-      ) => ({
-        masterSubjectId:
-          subject.masterSubjectId,
-
-        subjectName:
-          subject.subjectName,
-
-        category:
-          subject.category,
-
-        requirementType:
-          subject.requirementType,
-
-        credits:
-          subject.credits,
-
-        semesterNo:
-          subject.semesterNo,
-
-        isFaceToFace:
-          subject.isFaceToFace,
-
-        reason:
-          subject.reason,
-      })
-    ),
-},
-               });
-      }
-    }
+    
 
   /**
    * 실습 점검
@@ -3978,23 +4059,6 @@ const hasActualPracticeRequest =
   actualPracticeRequestRows.length >
   0;
 
-  if (
-  requiresPractice &&
-  !hasActualPracticeRequest
-) {
-    pushIssue(issues, {
-      code:
-        "PRACTICE_REQUEST_MISSING",
-
-      severity: "warning",
-      category: "practice",
-
-      title: "실습 요청 미등록",
-      message:
-        "실습이 필요한 과정이지만 실습배정지원센터 요청이 없습니다.",
-    });
-  }
-
 if (
   hasSocialWorkerPracticeHourMismatch
 ) {
@@ -4035,64 +4099,349 @@ if (
   });
 }
 
+/**
+ * ---------------------------------------------------------
+ * 실제 학습 진행현황
+ * ---------------------------------------------------------
+ *
+ * 우리플랜에 실제 배치된 과목만 대상으로
+ * 개강일 기준 현재 진행상태를 집계한다.
+ *
+ * 전적대 / 추가학점은 이미 취득한 학점이므로
+ * 학기별 수강 진행상태 집계에서는 제외한다.
+ */
+const planProgressSubjects =
+  subjects.filter(
+    (
+      subject:
+        StudentRiskSubjectItem & {
+          progressStatus?:
+            AcademicSubjectProgressStatus;
+        }
+    ) =>
+      subject.source ===
+      "plan"
+  );
+
+const completedSubjectCount =
+  planProgressSubjects.filter(
+    (
+      subject:
+        StudentRiskSubjectItem & {
+          progressStatus?:
+            AcademicSubjectProgressStatus;
+        }
+    ) =>
+      subject.progressStatus ===
+      "completed"
+  ).length;
+
+const inProgressSubjectCount =
+  planProgressSubjects.filter(
+    (
+      subject:
+        StudentRiskSubjectItem & {
+          progressStatus?:
+            AcademicSubjectProgressStatus;
+        }
+    ) =>
+      subject.progressStatus ===
+      "in_progress"
+  ).length;
+
+const scheduledSubjectCount =
+  planProgressSubjects.filter(
+    (
+      subject:
+        StudentRiskSubjectItem & {
+          progressStatus?:
+            AcademicSubjectProgressStatus;
+        }
+    ) =>
+      subject.progressStatus ===
+      "scheduled"
+  ).length;
+
+const retakeRequiredSubjectCount =
+  planProgressSubjects.filter(
+    (
+      subject:
+        StudentRiskSubjectItem & {
+          progressStatus?:
+            AcademicSubjectProgressStatus;
+        }
+    ) =>
+      subject.progressStatus ===
+      "retake_required"
+  ).length;
+
+const reviewRequiredSubjectCount =
+  planProgressSubjects.filter(
+    (
+      subject:
+        StudentRiskSubjectItem & {
+          progressStatus?:
+            AcademicSubjectProgressStatus;
+        }
+    ) =>
+      subject.progressStatus ===
+      "review_required"
+  ).length;
+
+/**
+ * ---------------------------------------------------------
+ * 전체 학습과정 진행률
+ * ---------------------------------------------------------
+ *
+ * 새 학위과정이 필요하지 않은 경우:
+ * 자격요건의 전체 필요과목 수를 기준으로 한다.
+ *
+ * 새 학위과정이 필요한 경우:
+ * 이미 정상적으로 인정되거나 실제 학기에 배치된 과목 +
+ * 공통 Subject Planner가 추가로 선택한 과목을 기준으로 한다.
+ *
+ * 중요:
+ * 사회복지 17과목, 고졸 27과목 등의 숫자를
+ * 이 코드에 직접 하드코딩하지 않는다.
+ */
+let requiredSubjectCount:
+  number | null =
+  null;
+
+let unassignedSubjectCount:
+  number | null =
+  null;
+
+let completionProgressPercent:
+  number | null =
+  null;
+
+let plannedProgressPercent:
+  number | null =
+  null;
+
+/**
+ * 기존 학위로 자격요건을 충족할 수 있는 학생.
+ *
+ * 예:
+ * 전문대졸 / 대졸 등의 경우
+ * 자격과정 자체의 법적 필요과목 수가
+ * 전체 학습과정 기준이 된다.
+ */
+if (
+  !unifiedRequirements
+    .degree
+    .requiresNewDegreeTrack
+) {
+  const qualificationRequiredSubjects =
+    unifiedRequirements
+      .qualification
+      .requiredSubjects;
+
+  const qualificationCompletedSubjects =
+    unifiedRequirements
+      .qualification
+      .completedSubjects;
 
   if (
-  requiresPractice &&
-  hasActualPracticeRequest
-) {
-    const completed =
-  actualPracticeRequestRows.some(
-        (row: any) =>
-          String(
-            row.coordinationStatus ||
-            ""
-          ).trim() ===
-          "섭외완료"
+    qualificationRequiredSubjects !==
+      null &&
+    qualificationRequiredSubjects >
+      0
+  ) {
+    requiredSubjectCount =
+      qualificationRequiredSubjects;
+
+    /**
+     * 현재 실제 학기에 배치되어 있는 과목 중
+     * 완료 / 진행 / 예정 / 확인필요를
+     * 이미 계획된 과목으로 본다.
+     *
+     * 재수강 필요 과목은 정상 배치로 보지 않는다.
+     */
+    const assignedPlanSubjectCount =
+      completedSubjectCount +
+      inProgressSubjectCount +
+      scheduledSubjectCount +
+      reviewRequiredSubjectCount;
+
+    unassignedSubjectCount =
+      Math.max(
+        requiredSubjectCount -
+          Math.min(
+            assignedPlanSubjectCount,
+            requiredSubjectCount
+          ),
+        0
       );
 
-    if (!completed) {
-      pushIssue(issues, {
-        code:
-          "PRACTICE_NOT_COMPLETED",
+    const completedForProgress =
+      Math.min(
+        Math.max(
+          qualificationCompletedSubjects ??
+            completedSubjectCount,
+          0
+        ),
+        requiredSubjectCount
+      );
 
-        severity: "warning",
-        category: "practice",
+    completionProgressPercent =
+      Math.round(
+        (
+          completedForProgress /
+          requiredSubjectCount
+        ) *
+          100
+      );
 
-        title: "실습 미섭외",
-        message:
-          "실습 요청은 등록되어 있지만 섭외완료 상태가 아닙니다.",
+    plannedProgressPercent =
+      Math.round(
+        (
+          Math.min(
+            assignedPlanSubjectCount,
+            requiredSubjectCount
+          ) /
+          requiredSubjectCount
+        ) *
+          100
+      );
+  }
+}
 
-        details: {
-          practiceRequestCount:
-  actualPracticeRequestRows.length,
-        },
-      });
+/**
+ * 고졸 등 새 학위과정까지 함께 진행해야 하는 학생.
+ *
+ * 자격과목 + 학위과목을 단순 합산하지 않는다.
+ *
+ * projectedRecognizedSubjects:
+ * 이미 취득했거나 실제 학기에
+ * 정상적으로 배치된 중복제거 과목.
+ *
+ * qualificationSubjectPlan:
+ * 그 상태 이후에도 실제로 더 필요한 과목을
+ * 공통 Planner가 자격/학위 중복을 고려해 선택한 결과.
+ */
+if (
+  unifiedRequirements
+    .degree
+    .requiresNewDegreeTrack
+) {
+  const plannerCanResolveWholePlan =
+    qualificationSubjectPlan.canPlan &&
+    !qualificationSubjectPlan
+      .degreeFillRemaining
+      .requiresAdditionalDegreeSubjects;
+
+  if (
+    plannerCanResolveWholePlan
+  ) {
+    requiredSubjectCount =
+      projectedRecognizedSubjects
+        .length +
+      qualificationSubjectPlan
+        .selectedSubjectCount;
+
+    /**
+     * Planner가 현재 실제 학기계획 이후에도
+     * 추가로 선택한 과목 = 아직 미배치 과목.
+     */
+    unassignedSubjectCount =
+      qualificationSubjectPlan
+        .selectedSubjectCount;
+
+    if (
+      requiredSubjectCount >
+      0
+    ) {
+      /**
+       * 실제 취득완료.
+       *
+       * 전적대 / 추가 인정과목 +
+       * 완료된 우리플랜 과목이 포함된
+       * 중복제거 인정과목 기준이다.
+       */
+      const completedForProgress =
+        Math.min(
+          validRecognizedSubjects
+            .length,
+          requiredSubjectCount
+        );
+
+      /**
+       * 취득완료 +
+       * 현재 진행중/예정/확인필요로
+       * 실제 배치된 과목.
+       */
+      const assignedForProgress =
+        Math.min(
+          projectedRecognizedSubjects
+            .length,
+          requiredSubjectCount
+        );
+
+      completionProgressPercent =
+        Math.round(
+          (
+            completedForProgress /
+            requiredSubjectCount
+          ) *
+            100
+        );
+
+      plannedProgressPercent =
+        Math.round(
+          (
+            assignedForProgress /
+            requiredSubjectCount
+          ) *
+            100
+        );
     }
   }
+}
 
-  const dangerCount =
-    issues.filter(
-      (issue) =>
-        issue.severity ===
-        "danger"
-    ).length;
+  /**
+ * ---------------------------------------------------------
+ * 실제 학업 설계 위험도
+ * ---------------------------------------------------------
+ *
+ * 부족 / 미진행 / 예정 상태는
+ * 현재 학습 진행률의 일부이며 위험으로 보지 않는다.
+ *
+ * 실제 잘못된 입력 / 중복 / 초과 / 불일치만
+ * 위험도 점수와 위험/주의 개수에 반영한다.
+ */
+const riskIssues =
+  issues.filter(
+    isActualAcademicRiskIssue
+  );
 
-  const warningCount =
-    issues.filter(
-      (issue) =>
-        issue.severity ===
-        "warning"
-    ).length;
+const dangerCount =
+  riskIssues.filter(
+    (issue) =>
+      issue.severity ===
+      "danger"
+  ).length;
 
-  const infoCount =
-    issues.filter(
-      (issue) =>
-        issue.severity ===
-        "info"
-    ).length;
+const warningCount =
+  riskIssues.filter(
+    (issue) =>
+      issue.severity ===
+      "warning"
+  ).length;
 
-  const riskScore =
-    buildRiskScore(issues);
+const infoCount =
+  riskIssues.filter(
+    (issue) =>
+      issue.severity ===
+      "info"
+  ).length;
+
+const riskScore =
+  buildRiskScore(
+    riskIssues
+  );
+
 
   const riskLevel =
     dangerCount > 0
@@ -4144,7 +4493,18 @@ if (
 registeredSubjectCount:
   subjects.length,
 
-      currentCredits,
+completedSubjectCount,
+inProgressSubjectCount,
+scheduledSubjectCount,
+retakeRequiredSubjectCount,
+reviewRequiredSubjectCount,
+
+requiredSubjectCount,
+unassignedSubjectCount,
+completionProgressPercent,
+plannedProgressPercent,
+
+currentCredits,
       requiredCredits,
       remainingCredits,
 

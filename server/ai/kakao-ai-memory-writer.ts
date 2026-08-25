@@ -1175,24 +1175,137 @@ export async function updateKakaoAiConsultationFlow(
     params.currentMemory
       .consultationFlow;
 
-  const nextFlow = {
-    ...currentFlow,
-
-    ...Object.fromEntries(
-      Object.entries(
-        params.patch
-      ).filter(
-        (
-          [, value]
-        ) =>
-          typeof value ===
-          "boolean"
-      )
-    ),
-  } as
+  const nextFlow:
     KakaoAiStructuredMemory[
       "consultationFlow"
-    ];
+    ] = {
+      ...currentFlow,
+    };
+
+  /**
+   * 기존 상담 진행상태와의
+   * 하위호환을 위한 legacy boolean.
+   *
+   * 신규 Flow Engine은 이 목록으로
+   * Stage 순서를 결정하지 않는다.
+   */
+  const booleanKeys = [
+    "qualificationExplained",
+    "durationExplained",
+    "theoryExplained",
+    "practicumExplained",
+    "administrationExplained",
+    "companyBenefitsExplained",
+    "staffRecommendationOffered",
+    "consultationFormOffered",
+    "registrationConfirmationPending",
+  ] as const;
+
+  for (
+    const key of
+    booleanKeys
+  ) {
+    const value =
+      params.patch[
+        key
+      ];
+
+    if (
+      typeof value ===
+      "boolean"
+    ) {
+      nextFlow[
+        key
+      ] =
+        value;
+    }
+  }
+
+  /**
+   * 회사별 Flow ID는 동적값이다.
+   *
+   * 특정 Stage / Action 목록을
+   * 코드에 하드코딩하지 않고
+   * 문자열 형식만 검증한다.
+   */
+  const normalizeFlowId = (
+    value:
+      unknown
+  ): string | null => {
+    const normalized =
+      String(
+        value ??
+        ""
+      )
+        .trim()
+        .slice(
+          0,
+          191
+        );
+
+    return normalized ||
+      null;
+  };
+
+  if (
+    params.patch.salesStage !==
+    undefined
+  ) {
+    nextFlow.salesStage =
+      params.patch.salesStage ===
+        null
+        ? null
+        : normalizeFlowId(
+            params.patch.salesStage
+          );
+  }
+
+  if (
+    params.patch.pendingNextAction !==
+    undefined
+  ) {
+    nextFlow.pendingNextAction =
+      params.patch.pendingNextAction ===
+        null
+        ? null
+        : normalizeFlowId(
+            params.patch
+              .pendingNextAction
+          );
+  }
+
+  if (
+    params.patch.nextOptions !==
+    undefined
+  ) {
+    nextFlow.nextOptions =
+      Array.isArray(
+        params.patch.nextOptions
+      )
+        ? Array.from(
+            new Set(
+              params.patch.nextOptions
+                .map(
+                  option =>
+                    normalizeFlowId(
+                      option
+                    )
+                )
+                .filter(
+                  (
+                    option
+                  ): option is string =>
+                    Boolean(
+                      option
+                    )
+                )
+            )
+          ).slice(
+            0,
+            20
+          )
+        : [];
+  }
 
   if (
     JSON.stringify(

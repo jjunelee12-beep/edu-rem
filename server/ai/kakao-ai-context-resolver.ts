@@ -6,6 +6,14 @@ import {
 } from "./kakao-ai-company-context";
 
 import {
+  normalizeKakaoAiLeadFlowConfig,
+} from "./kakao-ai-lead-flow-config";
+
+import type {
+  KakaoAiLeadFlowConfig,
+} from "./kakao-ai-lead-flow-engine";
+
+import {
   resolveKakaoAiRegisteredStudentAnalysis,
   type KakaoAiRegisteredStudentAnalysis,
 } from "./kakao-ai-registered-student-adapter";
@@ -205,6 +213,21 @@ export type KakaoAiResolvedContext = {
    */
   companyContext:
     KakaoAiCompanyContext | null;
+
+  /**
+   * 회사별 신규상담 Flow 설정.
+   *
+   * DB 원본 JSON을 그대로 노출하지 않고
+   * 공통 Validator / Normalizer를 통과한
+   * 설정만 이후 Flow Engine에 전달한다.
+   *
+   * null이면:
+   * - 회사 Context를 조회하지 않았거나
+   * - Flow 설정이 없거나
+   * - Flow 설정 구조가 유효하지 않은 상태다.
+   */
+  leadFlowConfig:
+    KakaoAiLeadFlowConfig | null;
 
 
 /**
@@ -1135,6 +1158,13 @@ documentAssistance?:
       });
   }
 
+  const leadFlowConfig =
+    normalizeKakaoAiLeadFlowConfig(
+      companyContext
+        ?.leadFlowConfig ??
+      null
+    );
+
   let leadAcademicAnalysis:
     KakaoAiLeadAcademicAnalysis | null =
     null;
@@ -1519,6 +1549,8 @@ leadAcademicAnalysis = {
     fetchPlan,
 
         companyContext,
+
+    leadFlowConfig,
 
     documentIntelligence:
       params.documentIntelligence ??

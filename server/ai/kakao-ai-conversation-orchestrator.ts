@@ -34,9 +34,18 @@ import {
 } from "./kakao-ai-context-resolver";
 
 import {
+  evaluateKakaoAiLeadFlow,
+  type KakaoAiLeadFlowEvaluationResult,
+} from "./kakao-ai-lead-flow-engine";
+
+import {
   executeKakaoAiStaffAction,
   type KakaoAiStaffActionResult,
 } from "./kakao-ai-staff-action";
+
+import {
+  runKakaoAiStaffAssistant,
+} from "./kakao-ai-staff-assistant-runner";
 
 import {
   executeKakaoAiLeadRegistrationAction,
@@ -267,6 +276,106 @@ function normalizeText(
     value ??
     ""
   ).trim();
+}
+
+/**
+ * =========================================================
+ * Lead Flow 공통 Facts Builder
+ * =========================================================
+ *
+ * Flow Config의 condition.path가 조회할 수 있는
+ * 서버 확정 사실 묶음을 만든다.
+ *
+ * 중요:
+ * - 특정 상담단계 모름
+ * - 특정 과정 모름
+ * - 특정 Action 모름
+ * - Flow 순서 모름
+ *
+ * 회사별 leadFlowConfig가
+ * 아래 facts 경로를 조합해 완료조건을 정의한다.
+ */
+function buildKakaoAiLeadFlowFacts(
+  params: {
+    memory:
+      KakaoAiStructuredMemory;
+
+    customer:
+      KakaoAiCustomerContext;
+
+    intentClassification:
+      KakaoAiIntentClassificationResult;
+
+    resolvedContext:
+      KakaoAiResolvedContext;
+
+    staffAction?:
+      KakaoAiStaffActionResult |
+      null;
+
+    leadRegistration?:
+      KakaoAiLeadRegistrationActionResult |
+      null;
+
+    callbackRequest?:
+      KakaoAiCallbackRequestActionResult |
+      null;
+  }
+): Record<
+  string,
+  unknown
+> {
+  return {
+    memory:
+      params.memory,
+
+    customer:
+      params.customer,
+
+    intent: {
+      domain:
+        params.intentClassification
+          .intent
+          .domain,
+
+      userGoal:
+        params.intentClassification
+          .intent
+          .userGoal,
+
+      primaryCapability:
+        params.intentClassification
+          .intent
+          .primaryCapability,
+
+      capabilities:
+        params.intentClassification
+          .intent
+          .capabilities,
+
+      needsClarification:
+        params.intentClassification
+          .intent
+          .needsClarification,
+    },
+
+    context:
+      params.resolvedContext,
+
+    actions: {
+      staff:
+        params.staffAction ??
+        null,
+
+      registration:
+        params.leadRegistration ??
+        null,
+
+      callback:
+        params.callbackRequest ??
+        null,
+    },
+  };
 }
 
 
@@ -1831,6 +1940,251 @@ registrationVerification:
   }
 
   /**
+   * ---------------------------------------------------------
+   * Staff Assistant
+   * ---------------------------------------------------------
+   *
+   * /staff 인증이 완료된 담당자의 일반 메시지는
+   * 신규상담 / 등록회원 AI보다 먼저
+   * 기존 EduCanvas CRM 업무비서 Runner로 전달한다.
+   *
+   * Staff Session이 없으면 handled=false이므로
+   * 기존 신규상담 / 등록회원 흐름을 그대로 계속 진행한다.
+   */
+  try {
+    const staffAssistant =
+      await runKakaoAiStaffAssistant({
+        organizationId,
+
+        conversationId,
+
+        message,
+      });
+
+    if (
+      staffAssistant.handled ===
+        true &&
+      staffAssistant.result
+    ) {
+      const staffAssistantReplyText =
+        String(
+          staffAssistant.result.reply ||
+          ""
+        ).trim();
+
+      console.log(
+        "[KAKAO AI STAFF ASSISTANT]",
+        {
+          organizationId,
+
+          conversationId,
+
+          handled:
+            staffAssistant.handled,
+
+          success:
+            staffAssistant.result.success,
+
+          intent:
+            staffAssistant.result.intent,
+
+          toolName:
+            staffAssistant.result.toolName,
+
+                    staffUserId:
+            staffAssistant.staffContext
+              ?.userId ??
+            null,
+
+          role:
+            staffAssistant.staffContext
+              ?.role ??
+            null,
+        }
+      );
+
+      if (
+        staffAssistantReplyText
+      ) {
+        const assistantMessage =
+          await db.insertKakaoAiMessage({
+            organizationId,
+
+            conversationId,
+
+            role:
+              "assistant",
+
+            messageType:
+              "text",
+
+            content:
+              staffAssistantReplyText,
+
+            kakaoMessageId:
+              null,
+
+            attachmentData:
+              undefined,
+          });
+
+        const responseMessageId =
+          Number(
+            assistantMessage.id ||
+            0
+          );
+
+        if (
+          userMessageId >
+            0 &&
+          responseMessageId >
+            0 &&
+          params.kakaoMessageId
+        ) {
+          await db.markKakaoAiResponseReady({
+            organizationId,
+
+            userMessageId,
+
+            responseMessageId,
+          });
+        }
+      }
+
+      return {
+        organizationId,
+
+        conversationId,
+
+        duplicateMessage:
+          false,
+
+        customer,
+
+        previousMemoryContext,
+
+        memoryExtraction:
+          null,
+
+        memoryWrite:
+          null,
+
+        currentMemory:
+          previousMemoryContext
+            .structuredMemory,
+
+        intentClassification:
+          null,
+
+        resolvedContext:
+          null,
+
+        staffAction:
+          null,
+
+        leadRegistration:
+          null,
+
+        callbackRequest:
+          null,
+
+        registrationVerification:
+          null,
+
+        responseComposition: {
+          success:
+            staffAssistant.result.success,
+
+          replyText:
+            staffAssistantReplyText,
+
+          usedContextTypes:
+            [],
+
+          mentionedRestriction:
+            false,
+
+          askedClarification:
+            false,
+
+          consultationFlowPatch: {
+            qualificationExplained:
+              false,
+
+            durationExplained:
+              false,
+
+            theoryExplained:
+              false,
+
+            practicumExplained:
+              false,
+
+            administrationExplained:
+              false,
+
+            companyBenefitsExplained:
+              false,
+
+            staffRecommendationOffered:
+              false,
+
+            consultationFormOffered:
+              false,
+          },
+
+          openAiResponseId:
+            null,
+
+          model:
+            null,
+
+          fallbackUsed:
+            false,
+
+          errorMessage:
+            staffAssistant.result.success
+              ? null
+              : staffAssistantReplyText ||
+                "담당자 업무비서 처리에 실패했습니다.",
+        },
+      };
+    }
+  } catch (
+    error:
+      unknown
+  ) {
+    console.error(
+      "[KAKAO AI ERROR] StaffAssistantFailed",
+      {
+        organizationId,
+
+        conversationId,
+
+        error:
+          error instanceof
+            Error
+            ? {
+                name:
+                  error.name,
+
+                message:
+                  error.message,
+
+                stack:
+                  error.stack,
+              }
+            : {
+                message:
+                  String(
+                    error
+                  ),
+              },
+      }
+    );
+  }
+
+  /**
    * /member는 사용자가 명령어만 입력해도
    * 기존 Registration Verifier의
    * "등록회원 인증 시작" 자연어 트리거와 동일하게 처리한다.
@@ -2727,6 +3081,192 @@ if (
     documentAssistance,
   });
 
+/**
+ * =========================================================
+ * Lead Flow - 1차 평가
+ * =========================================================
+ *
+ * 회사 Context에서 검증 완료된 leadFlowConfig가 있고
+ * 현재 사용자가 신규상담자일 때만 실행한다.
+ *
+ * 여기서 특정 Stage / Action을 코드가 결정하지 않는다.
+ */
+let leadFlowEvaluation:
+  KakaoAiLeadFlowEvaluationResult |
+  null =
+  null;
+
+if (
+  customer.customerType ===
+    "lead" &&
+  resolvedContext.leadFlowConfig
+) {
+  const leadFlowFacts =
+    buildKakaoAiLeadFlowFacts({
+      memory:
+        currentMemory,
+
+      customer,
+
+      intentClassification,
+
+      resolvedContext,
+    });
+
+  leadFlowEvaluation =
+    evaluateKakaoAiLeadFlow({
+      config:
+        resolvedContext
+          .leadFlowConfig,
+
+      facts:
+        leadFlowFacts,
+
+      currentStageId:
+        currentMemory
+          .consultationFlow
+          .salesStage,
+
+      /**
+       * 현재는 Intent Classifier의 서버 결과를
+       * semantic ID로 사용한다.
+       *
+       * Flow Engine 자체는 이 값의 의미를 모른다.
+       * DB Flow Config가 whenSemantic 값과 연결한다.
+       */
+      semanticDecision:
+        normalizeText(
+          intentClassification
+            .intent
+            .primaryCapability
+        ) ||
+        null,
+    });
+
+  console.log(
+    "[KAKAO AI LEAD FLOW]",
+    {
+      conversationId,
+
+      reason:
+        leadFlowEvaluation.reason,
+
+      currentStageId:
+        leadFlowEvaluation
+          .currentStageId,
+
+      nextStageId:
+        leadFlowEvaluation
+          .nextStageId,
+
+      actionId:
+        leadFlowEvaluation
+          .actionId,
+    }
+  );
+}
+
+if (
+  leadFlowEvaluation
+) {
+  const flowMemoryPatch:
+    Partial<
+      KakaoAiStructuredMemory[
+        "consultationFlow"
+      ]
+    > = {};
+
+  const evaluatedStageId =
+    leadFlowEvaluation
+      .nextStageId ??
+    leadFlowEvaluation
+      .currentStageId ??
+    null;
+
+  if (
+    currentMemory
+      .consultationFlow
+      .salesStage !==
+    evaluatedStageId
+  ) {
+    flowMemoryPatch.salesStage =
+      evaluatedStageId;
+  }
+
+  if (
+    currentMemory
+      .consultationFlow
+      .pendingNextAction !==
+    leadFlowEvaluation
+      .actionId
+  ) {
+    flowMemoryPatch
+      .pendingNextAction =
+      leadFlowEvaluation
+        .actionId;
+  }
+
+  const evaluatedOptions =
+    leadFlowEvaluation
+      .nextStage
+      ?.transitions
+      ?.map(
+        transition =>
+          normalizeText(
+            transition.actionId
+          )
+      )
+      .filter(
+        (
+          actionId
+        ): actionId is string =>
+          Boolean(
+            actionId
+          )
+      ) ??
+    [];
+
+  const uniqueEvaluatedOptions =
+    Array.from(
+      new Set(
+        evaluatedOptions
+      )
+    );
+
+  if (
+    JSON.stringify(
+      currentMemory
+        .consultationFlow
+        .nextOptions
+    ) !==
+    JSON.stringify(
+      uniqueEvaluatedOptions
+    )
+  ) {
+    flowMemoryPatch.nextOptions =
+      uniqueEvaluatedOptions;
+  }
+
+  if (
+    Object.keys(
+      flowMemoryPatch
+    ).length >
+    0
+  ) {
+    currentMemory =
+      await updateKakaoAiConsultationFlow({
+        organizationId,
+
+        conversationId,
+
+        currentMemory,
+
+        patch:
+          flowMemoryPatch,
+      });
+  }
+}
+
 tracePerf(
   "context_done"
 );
@@ -2900,34 +3440,79 @@ if (
     .needsClarification !==
   true
 ) {
-  const actionResult =
-    await executeKakaoAiStaffAction({
-      organizationId,
+  try {
+    const actionResult =
+      await executeKakaoAiStaffAction({
+        organizationId,
 
-      conversationId,
+        conversationId,
 
-      message,
+        message,
 
-      primaryCapability:
-        intentClassification.intent
-          .primaryCapability,
+        primaryCapability:
+          intentClassification.intent
+            .primaryCapability,
 
-      allowedCapabilities:
-        intentClassification.routed
-          .allowedCapabilities,
+        allowedCapabilities:
+          intentClassification.routed
+            .allowedCapabilities,
 
-      memory:
-        currentMemory,
+        memory:
+          currentMemory,
 
-      staffContext:
-        resolvedContext.staffContext,
-    });
+        staffContext:
+          resolvedContext.staffContext,
+      });
 
-  if (
-    actionResult.handled
+    if (
+      actionResult.handled
+    ) {
+      staffAction =
+        actionResult;
+    }
+  } catch (
+    error:
+      unknown
   ) {
+    console.error(
+      "[KAKAO AI ERROR] StaffActionFailed",
+      {
+        organizationId,
+
+        conversationId,
+
+        primaryCapability:
+          intentClassification.intent
+            .primaryCapability,
+
+        allowedCapabilities:
+          intentClassification.routed
+            .allowedCapabilities,
+
+        error:
+          error instanceof
+            Error
+            ? {
+                name:
+                  error.name,
+
+                message:
+                  error.message,
+
+                stack:
+                  error.stack,
+              }
+            : {
+                message:
+                  String(
+                    error
+                  ),
+              },
+      }
+    );
+
     staffAction =
-      actionResult;
+      null;
   }
 }
 
@@ -3131,58 +3716,119 @@ if (
  * 이번 메시지에서 담당자를 선택했다면
  * selectedStaffUserId가 최신 Memory에 반영된 뒤여야 한다.
  */
-let leadRegistration:
+let leadRegistrationResult:
   KakaoAiLeadRegistrationActionResult | null =
   null;
 
-const leadRegistrationResult =
-  await executeKakaoAiLeadRegistrationAction({
-    organizationId,
+try {
+  leadRegistrationResult =
+    await executeKakaoAiLeadRegistrationAction({
+      organizationId,
 
-    conversationId,
+      conversationId,
 
-    customerType:
-      customer.customerType,
+      customerType:
+        customer.customerType,
 
-    message,
+      message,
 
-    allowedCapabilities:
-      intentClassification.routed
-        .allowedCapabilities,
+      allowedCapabilities:
+        intentClassification.routed
+          .allowedCapabilities,
 
-    memory:
-      currentMemory,
+      memory:
+        currentMemory,
 
-    conversationHistory:
-      previousMemoryContext
-        .recentConversation
-        .messages,
-  });
+      conversationHistory:
+        previousMemoryContext
+          .recentConversation
+          .messages,
+    });
 
-if (
-  leadRegistrationResult.handled
+  if (
+    leadRegistrationResult.handled
+  ) {
+    leadRegistration =
+      leadRegistrationResult;
+  }
+} catch (
+  error:
+    unknown
 ) {
+  console.error(
+    "[KAKAO AI ERROR] LeadRegistrationActionFailed",
+    {
+      organizationId,
+
+      conversationId,
+
+      customerType:
+        customer.customerType,
+
+      allowedCapabilities:
+        intentClassification.routed
+          .allowedCapabilities,
+
+      selectedStaffUserId:
+        currentMemory
+          .selectedStaffUserId ??
+        null,
+
+      error:
+        error instanceof
+          Error
+          ? {
+              name:
+                error.name,
+
+              message:
+                error.message,
+
+              stack:
+                error.stack,
+            }
+          : {
+              message:
+                String(
+                  error
+                ),
+            },
+    }
+  );
+
+  leadRegistrationResult =
+    null;
+
   leadRegistration =
-    leadRegistrationResult;
+    null;
 }
 
 tracePerf(
   "lead_registration_done",
   {
     handled:
-      leadRegistrationResult.handled,
+      leadRegistrationResult
+        ?.handled ??
+      false,
 
     created:
-      leadRegistrationResult.created,
+      leadRegistrationResult
+        ?.created ??
+      false,
 
     consultationId:
       leadRegistrationResult
-        .consultationId,
+        ?.consultationId ??
+      null,
 
     reason:
-      leadRegistrationResult.reason,
+      leadRegistrationResult
+        ?.reason ??
+      null,
   }
 );
+
+
 
 /**
  * 11.
@@ -3197,57 +3843,117 @@ tracePerf(
  * Lead Registration이 먼저 상담DB를 생성하고
  * 그 consultationId에 Callback 내용을 기록해야 한다.
  */
-let callbackRequest:
+let callbackRequestResult:
   KakaoAiCallbackRequestActionResult | null =
   null;
 
-const callbackRequestResult =
-  await executeKakaoAiCallbackRequestAction({
-    organizationId,
+try {
+  callbackRequestResult =
+    await executeKakaoAiCallbackRequestAction({
+      organizationId,
 
-    conversationId,
+      conversationId,
 
-    customerType:
-      customer.customerType,
+      customerType:
+        customer.customerType,
 
-    message,
+      message,
 
-    allowedCapabilities:
-      intentClassification.routed
-        .allowedCapabilities,
+      allowedCapabilities:
+        intentClassification.routed
+          .allowedCapabilities,
 
-    conversationHistory:
-      previousMemoryContext
-        .recentConversation
-        .messages,
+      conversationHistory:
+        previousMemoryContext
+          .recentConversation
+          .messages,
 
-    consultationId:
-      leadRegistrationResult
-        .consultationId,
-  });
+      consultationId:
+        leadRegistrationResult
+          ?.consultationId ??
+        null,
+    });
 
-if (
-  callbackRequestResult.handled
+  if (
+    callbackRequestResult.handled
+  ) {
+    callbackRequest =
+      callbackRequestResult;
+  }
+} catch (
+  error:
+    unknown
 ) {
+  console.error(
+    "[KAKAO AI ERROR] CallbackRequestActionFailed",
+    {
+      organizationId,
+
+      conversationId,
+
+      customerType:
+        customer.customerType,
+
+      allowedCapabilities:
+        intentClassification.routed
+          .allowedCapabilities,
+
+      consultationId:
+        leadRegistrationResult
+          ?.consultationId ??
+        null,
+
+      error:
+        error instanceof
+          Error
+          ? {
+              name:
+                error.name,
+
+              message:
+                error.message,
+
+              stack:
+                error.stack,
+            }
+          : {
+              message:
+                String(
+                  error
+                ),
+            },
+    }
+  );
+
+  callbackRequestResult =
+    null;
+
   callbackRequest =
-    callbackRequestResult;
+    null;
 }
 
 tracePerf(
   "callback_request_done",
   {
     handled:
-      callbackRequestResult.handled,
+      callbackRequestResult
+        ?.handled ??
+      false,
 
     saved:
-      callbackRequestResult.saved,
+      callbackRequestResult
+        ?.saved ??
+      false,
 
     consultationId:
       callbackRequestResult
-        .consultationId,
+        ?.consultationId ??
+      null,
 
     reason:
-      callbackRequestResult.reason,
+      callbackRequestResult
+        ?.reason ??
+      null,
   }
 );
 
@@ -3371,6 +4077,160 @@ if (
     });
 }
 
+/**
+ * =========================================================
+ * Lead Flow - 서버 Action 이후 2차 평가
+ * =========================================================
+ *
+ * 담당자 선택 / 상담접수 / 콜백 등의 실제 결과를
+ * facts에 포함하여 Flow를 다시 계산한다.
+ */
+if (
+  customer.customerType ===
+    "lead" &&
+  resolvedContext.leadFlowConfig
+) {
+  const postActionFacts =
+    buildKakaoAiLeadFlowFacts({
+      memory:
+        currentMemory,
+
+      customer,
+
+      intentClassification,
+
+      resolvedContext,
+
+      staffAction,
+
+      leadRegistration,
+
+      callbackRequest,
+    });
+
+  const postActionFlowEvaluation =
+    evaluateKakaoAiLeadFlow({
+      config:
+        resolvedContext
+          .leadFlowConfig,
+
+      facts:
+        postActionFacts,
+
+      currentStageId:
+        currentMemory
+          .consultationFlow
+          .salesStage,
+
+      semanticDecision:
+        normalizeText(
+          intentClassification
+            .intent
+            .primaryCapability
+        ) ||
+        null,
+    });
+
+  const postActionStageId =
+    postActionFlowEvaluation
+      .nextStageId ??
+    postActionFlowEvaluation
+      .currentStageId ??
+    null;
+
+  const postActionOptions =
+    Array.from(
+      new Set(
+        (
+          postActionFlowEvaluation
+            .nextStage
+            ?.transitions ??
+          []
+        )
+          .map(
+            transition =>
+              normalizeText(
+                transition.actionId
+              )
+          )
+          .filter(
+            (
+              actionId
+            ): actionId is string =>
+              Boolean(
+                actionId
+              )
+          )
+      )
+    );
+
+  const postActionFlowPatch:
+    Partial<
+      KakaoAiStructuredMemory[
+        "consultationFlow"
+      ]
+    > = {};
+
+  if (
+    currentMemory
+      .consultationFlow
+      .salesStage !==
+    postActionStageId
+  ) {
+    postActionFlowPatch.salesStage =
+      postActionStageId;
+  }
+
+  if (
+    currentMemory
+      .consultationFlow
+      .pendingNextAction !==
+    postActionFlowEvaluation
+      .actionId
+  ) {
+    postActionFlowPatch
+      .pendingNextAction =
+      postActionFlowEvaluation
+        .actionId;
+  }
+
+  if (
+    JSON.stringify(
+      currentMemory
+        .consultationFlow
+        .nextOptions
+    ) !==
+    JSON.stringify(
+      postActionOptions
+    )
+  ) {
+    postActionFlowPatch.nextOptions =
+      postActionOptions;
+  }
+
+  if (
+    Object.keys(
+      postActionFlowPatch
+    ).length >
+    0
+  ) {
+    currentMemory =
+      await updateKakaoAiConsultationFlow({
+        organizationId,
+
+        conversationId,
+
+        currentMemory,
+
+        patch:
+          postActionFlowPatch,
+      });
+  }
+
+  leadFlowEvaluation =
+    postActionFlowEvaluation;
+}
+
 tracePerf(
   "server_action_consultation_flow_updated",
   {
@@ -3415,6 +4275,8 @@ tracePerf(
       null,
   }
 );
+
+
 
 if (
   leadRegistration?.handled ||
@@ -3725,8 +4587,10 @@ console.log(
 
     intentClassification,
 
-    resolvedContext:
+        resolvedContext:
       finalResolvedContext,
+
+    leadFlowEvaluation,
   });
 
 /**

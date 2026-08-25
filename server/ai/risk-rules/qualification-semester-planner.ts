@@ -1087,6 +1087,77 @@ function getLastExistingSemester(
 }
 
 /**
+ * 추가 과목을 배치할 수 있는
+ * 기존 미완료 학기를 시간순으로 반환한다.
+ *
+ * 완료된 학기는 절대 재배치 대상으로 사용하지 않는다.
+ */
+function getWritableExistingSemesters(
+  semesters:
+    QualificationSemesterExistingItem[]
+) {
+  return (
+    semesters ||
+    []
+  )
+    .filter(
+      (
+        semester
+      ) => {
+        if (
+          semester.isCompleted ===
+          true
+        ) {
+          return false;
+        }
+
+        if (
+          normalizePositiveInteger(
+            semester.semesterOrder
+          ) <=
+          0
+        ) {
+          return false;
+        }
+
+        if (
+          !normalizeSemesterLabel(
+            semester.semesterLabel
+          )
+        ) {
+          return false;
+        }
+
+        const existingCredits =
+          getExistingSemesterCredits(
+            semester
+          ).credits;
+
+        /**
+         * 이미 학기 최대 24학점을
+         * 사용한 학기는 추가 배치 불가.
+         */
+        return (
+          existingCredits <
+          24
+        );
+      }
+    )
+    .sort(
+      (
+        left,
+        right
+      ) =>
+        normalizePositiveInteger(
+          left.semesterOrder
+        ) -
+        normalizePositiveInteger(
+          right.semesterOrder
+        )
+    );
+}
+
+/**
  * 연도별 기존 등록 과목 수를 만든다.
  *
  * 예:
@@ -1644,6 +1715,17 @@ subjects:
       existingSemesters
     );
 
+const writableExistingSemesters =
+  getWritableExistingSemesters(
+    existingSemesters
+  );
+
+const firstWritableExistingSemester =
+  writableExistingSemesters.length >
+  0
+    ? writableExistingSemesters[0]
+    : null;
+
   let firstSemesterLabel:
     string | null =
     null;
@@ -1655,13 +1737,84 @@ subjects:
     QualificationSemesterPlannerResult["startBasis"] =
     "current_date";
 
-  /**
-   * 기존 학기가 있으면
-   * 반드시 마지막 학기의 다음 귀속학기부터 시작.
-   */
-  if (
-    lastExistingSemester
-  ) {
+ /**
+ * 아직 완료되지 않았고
+ * 학기 24학점 한도에 여유가 있는 기존 학기가 있으면
+ * 해당 학기부터 추가과목 배치를 시작한다.
+ *
+ * 기존 학기에 빈자리가 하나도 없을 때만
+ * 마지막 기존 학기의 다음 학기부터 시작한다.
+ */
+if (
+  firstWritableExistingSemester
+) {
+  const writableLabel =
+    normalizeSemesterLabel(
+      firstWritableExistingSemester
+        .semesterLabel
+    );
+
+  if (!writableLabel) {
+    unresolvedReasons.push(
+      "추가 과목을 배치할 기존 학기의 학기 구분을 해석할 수 없습니다."
+    );
+
+    return {
+      canPlan:
+        false,
+
+      startBasis:
+        "unresolved",
+
+      referenceDate:
+        today.date,
+
+      calculationBaseDate:
+        today.date,
+
+      firstSemesterLabel:
+        null,
+
+      semesterCount:
+        0,
+
+      nominalDurationMonths:
+        0,
+
+      estimatedStudyStartDate:
+        null,
+
+      estimatedStudyEndDate:
+        null,
+
+      semesters:
+        [],
+
+      lastSemesterLabel:
+        null,
+
+      unresolvedReasons,
+
+      warnings,
+    };
+  }
+
+  firstSemesterLabel =
+    writableLabel;
+
+  nextSemesterOrder =
+    firstWritableExistingSemester
+      .semesterOrder;
+
+  startBasis =
+    "after_existing_semester";
+
+  warnings.push(
+    `${writableLabel} 기존 미완료 학기에 수강 가능 학점이 남아 있어 해당 학기부터 추가과목을 배치합니다.`
+  );
+} else if (
+  lastExistingSemester
+) {
     const lastLabel =
       normalizeSemesterLabel(
         lastExistingSemester
@@ -1970,9 +2123,36 @@ startBasis =
 let firstSemesterCandidateDate =
   today.date;
 
+/**
+ * 기존 미완료 학기 빈자리를 사용하는 경우
+ * 그 학기의 실제 개강일을 그대로 사용한다.
+ */
 if (
+  firstWritableExistingSemester
+) {
+  const writableActualStartDate =
+    String(
+      firstWritableExistingSemester
+        .actualStartDate ||
+      ""
+    ).trim();
+
+  if (
+    /^\d{4}-\d{2}-\d{2}$/.test(
+      writableActualStartDate
+    )
+  ) {
+    firstSemesterCandidateDate =
+      writableActualStartDate;
+  }
+} else if (
   lastExistingSemester
 ) {
+  /**
+   * 기존 학기에 더 이상 추가할 공간이 없다면
+   * 마지막 기존 학기 종료 이후부터
+   * 신규 학기를 시작한다.
+   */
   const lastActualStartDate =
     String(
       lastExistingSemester
@@ -1985,14 +2165,6 @@ if (
       lastActualStartDate
     )
   ) {
-    /**
-     * 기존 학기는 실제 개강일부터
-     * 4개월 과정으로 계산한다.
-     *
-     * 예:
-     * 2026-06-25
-     * → 다음 과정 기준일 2026-10-25
-     */
     firstSemesterCandidateDate =
       addMonthsToDate(
         lastActualStartDate,
@@ -2174,25 +2346,80 @@ let currentSemesterStartDate =
         break;
       }
 
+            const skippedExistingSemester =
+        existingSemesters.find(
+          (
+            semester
+          ) =>
+            normalizeSemesterLabel(
+              semester.semesterLabel
+            ) ===
+            nextLabel
+        ) ??
+        null;
+
+const skippedExistingActualStartDate =
+  String(
+    skippedExistingSemester
+      ?.actualStartDate ||
+    ""
+  ).trim();
+
+const resolvedSkippedSemesterStartDate =
+  /^\d{4}-\d{2}-\d{2}$/.test(
+    skippedExistingActualStartDate
+  )
+    ? skippedExistingActualStartDate
+    : skippedSemesterStartDate;
+
+      if (
+        skippedExistingSemester
+      ) {
+        nextSemesterOrder =
+          skippedExistingSemester
+            .semesterOrder;
+      } else {
+        nextSemesterOrder +=
+          1;
+      }
+
       currentSemesterStartDate =
-        skippedSemesterStartDate;
+  resolvedSkippedSemesterStartDate;
 
       currentSemesterLabel =
         nextLabel;
 
       continue;
-    }
-
+}
     /**
      * 이번 학기에 실제로 들어갈 과목을
      * 각 과목의 credits를 기준으로 순차 배치한다.
      */
     const semesterSubjects:
-      QualificationPlannedSubject[] =
-      [];
+  QualificationPlannedSubject[] =
+  [];
 
-    let semesterCredits =
-      0;
+const matchingExistingSemester =
+  existingSemesters.find(
+    (
+      semester
+    ) =>
+      normalizeSemesterLabel(
+        semester.semesterLabel
+      ) ===
+      currentSemesterLabel
+  ) ??
+  null;
+
+const existingSemesterCredits =
+  matchingExistingSemester
+    ? getExistingSemesterCredits(
+        matchingExistingSemester
+      ).credits
+    : 0;
+
+let semesterCredits =
+  0;
 
     while (
       subjectIndex <
@@ -2219,13 +2446,17 @@ let currentSemesterStartDate =
         break;
       }
 
-      const nextSemesterCredits =
-        semesterCredits +
-        subjectCredits;
+      const nextPlacementCredits =
+  semesterCredits +
+  subjectCredits;
 
-      const nextAnnualCredits =
-        existingAnnualCredits +
-        nextSemesterCredits;
+const nextSemesterTotalCredits =
+  existingSemesterCredits +
+  nextPlacementCredits;
+
+const nextAnnualCredits =
+  existingAnnualCredits +
+  nextPlacementCredits;
 
       /**
        * 이번 과목을 넣으면
@@ -2233,20 +2464,20 @@ let currentSemesterStartDate =
        * 다음 학기로 넘긴다.
        */
       if (
-        nextSemesterCredits >
-          semesterMaximumCredits ||
-        nextAnnualCredits >
-          annualMaximumCredits
-      ) {
-        break;
-      }
+  nextSemesterTotalCredits >
+    semesterMaximumCredits ||
+  nextAnnualCredits >
+    annualMaximumCredits
+) {
+  break;
+}
 
       semesterSubjects.push(
         subject
       );
 
-      semesterCredits =
-        nextSemesterCredits;
+     semesterCredits =
+  nextPlacementCredits;
 
       subjectIndex +=
         1;
@@ -2276,32 +2507,69 @@ let currentSemesterStartDate =
         break;
       }
 
-      const nextSemesterStartDate =
-        resolveEarliestStartDateForSemester({
-          candidateDate:
-            currentSemesterStartDate,
+      const nextExistingSemester =
+  existingSemesters.find(
+    (
+      semester
+    ) =>
+      normalizeSemesterLabel(
+        semester.semesterLabel
+      ) ===
+      nextLabel
+  ) ??
+  null;
 
-          semesterLabel:
-            nextLabel,
-        });
+const nextExistingActualStartDate =
+  String(
+    nextExistingSemester
+      ?.actualStartDate ||
+    ""
+  ).trim();
 
-      if (
-        !nextSemesterStartDate
-      ) {
-        unresolvedReasons.push(
-          `${nextLabel} 예상 시작일을 계산할 수 없습니다.`
-        );
+const calculatedNextSemesterStartDate =
+  resolveEarliestStartDateForSemester({
+    candidateDate:
+      currentSemesterStartDate,
 
-        break;
-      }
+    semesterLabel:
+      nextLabel,
+  });
 
-      currentSemesterStartDate =
-        nextSemesterStartDate;
+const nextSemesterStartDate =
+  /^\d{4}-\d{2}-\d{2}$/.test(
+    nextExistingActualStartDate
+  )
+    ? nextExistingActualStartDate
+    : calculatedNextSemesterStartDate;
 
-      currentSemesterLabel =
-        nextLabel;
+if (
+  !nextSemesterStartDate
+) {
+  unresolvedReasons.push(
+    `${nextLabel} 예상 시작일을 계산할 수 없습니다.`
+  );
 
-      continue;
+  break;
+}
+
+if (
+  nextExistingSemester
+) {
+  nextSemesterOrder =
+    nextExistingSemester
+      .semesterOrder;
+} else {
+  nextSemesterOrder +=
+    1;
+}
+
+currentSemesterStartDate =
+  nextSemesterStartDate;
+
+currentSemesterLabel =
+  nextLabel;
+
+continue;
     }
 
     const placementCount =
@@ -2340,7 +2608,10 @@ const nextSemesterCandidateDate =
   );
 
 const currentSemesterEndDate =
-  nextSemesterCandidateDate;
+  addDaysToDate(
+    nextSemesterCandidateDate,
+    -1
+  );
 
         plannedSemesters.push({
       semesterOrder:
@@ -2370,9 +2641,6 @@ estimatedEndDate:
   currentSemesterEndDate,
     });
 
-    nextSemesterOrder +=
-      1;
-
     const nextLabel =
       getNextSemesterLabel(
         currentSemesterLabel
@@ -2386,7 +2654,44 @@ estimatedEndDate:
       break;
     }
 
-const nextSemesterStartDate =
+/**
+ * 다음 귀속학기가 이미 상세페이지에 존재하면
+ * 기존 semesterOrder를 그대로 사용한다.
+ *
+ * 존재하지 않는 신규 학기일 때만
+ * 현재 순번 다음 번호를 사용한다.
+ */
+const nextExistingSemester =
+  existingSemesters.find(
+    (
+      semester
+    ) =>
+      normalizeSemesterLabel(
+        semester.semesterLabel
+      ) ===
+      nextLabel
+  ) ??
+  null;
+
+if (
+  nextExistingSemester
+) {
+  nextSemesterOrder =
+    nextExistingSemester
+      .semesterOrder;
+} else {
+  nextSemesterOrder +=
+    1;
+}
+
+const nextExistingActualStartDate =
+  String(
+    nextExistingSemester
+      ?.actualStartDate ||
+    ""
+  ).trim();
+
+const calculatedNextSemesterStartDate =
   resolveEarliestStartDateForSemester({
     candidateDate:
       nextSemesterCandidateDate,
@@ -2394,6 +2699,13 @@ const nextSemesterStartDate =
     semesterLabel:
       nextLabel,
   });
+
+const nextSemesterStartDate =
+  /^\d{4}-\d{2}-\d{2}$/.test(
+    nextExistingActualStartDate
+  )
+    ? nextExistingActualStartDate
+    : calculatedNextSemesterStartDate;
 
 if (
   !nextSemesterStartDate
@@ -2434,8 +2746,77 @@ currentSemesterStartDate =
 const semesterCount =
   plannedSemesters.length;
 
+/**
+ * 전체 학습기간 계산용 학기 범위.
+ *
+ * 기존 학기가 존재하는 등록자는
+ * 최초 기존 학기부터 마지막 자동배치 학기까지를
+ * 실제 전체 학습기간으로 본다.
+ *
+ * 신규상담은 plannedSemesters 자체가
+ * 전체 학습기간이므로 기존 방식과 동일하다.
+ */
+const allSemesterLabelsForDuration =
+  [
+    ...existingSemesters
+      .map(
+        (
+          semester
+        ) =>
+          normalizeSemesterLabel(
+            semester.semesterLabel
+          )
+      )
+      .filter(
+        (
+          label
+        ): label is string =>
+          Boolean(
+            label
+          )
+      ),
+
+    ...plannedSemesters
+      .map(
+        (
+          semester
+        ) =>
+          normalizeSemesterLabel(
+            semester.semesterLabel
+          )
+      )
+      .filter(
+        (
+          label
+        ): label is string =>
+          Boolean(
+            label
+          )
+      ),
+  ];
+
+const uniqueSemesterLabelsForDuration =
+  Array.from(
+    new Set(
+      allSemesterLabelsForDuration
+    )
+  ).sort(
+    (
+      left,
+      right
+    ) =>
+      compareSemesterLabels(
+        left,
+        right
+      ) ??
+      0
+  );
+
+const totalStudySemesterCount =
+  uniqueSemesterLabelsForDuration.length;
+
 const nominalDurationMonths =
-  semesterCount *
+  totalStudySemesterCount *
   4;
 
 const existingActualStartDates =
@@ -2473,13 +2854,87 @@ const estimatedStudyStartDate =
       : null
   );
 
+/**
+ * 전체 학습 종료일 후보.
+ *
+ * 기존 상세페이지 학기와
+ * AI 자동배치 학기를 모두 확인한 뒤
+ * 가장 늦은 종료일을 최종 학습 종료일로 사용한다.
+ */
+const existingSemesterEndDates =
+  existingSemesters
+    .map(
+      (
+        semester
+      ) => {
+        const actualStartDate =
+          String(
+            semester.actualStartDate ||
+            ""
+          ).trim();
+
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(
+            actualStartDate
+          )
+        ) {
+          return null;
+        }
+
+        const nextSemesterDate =
+          addMonthsToDate(
+            actualStartDate,
+            4
+          );
+
+        return addDaysToDate(
+          nextSemesterDate,
+          -1
+        );
+      }
+    )
+    .filter(
+      (
+        date
+      ): date is string =>
+        Boolean(
+          date
+        )
+    );
+
+const plannedSemesterEndDates =
+  plannedSemesters
+    .map(
+      (
+        semester
+      ) =>
+        String(
+          semester.estimatedEndDate ||
+          ""
+        ).trim()
+    )
+    .filter(
+      (
+        date
+      ): date is string =>
+        /^\d{4}-\d{2}-\d{2}$/.test(
+          date
+        )
+    );
+
+const allStudyEndDates =
+  [
+    ...existingSemesterEndDates,
+    ...plannedSemesterEndDates,
+  ].sort();
+
 const estimatedStudyEndDate =
-  plannedSemesters.length >
-    0
-    ? plannedSemesters[
-        plannedSemesters.length -
+  allStudyEndDates.length >
+  0
+    ? allStudyEndDates[
+        allStudyEndDates.length -
           1
-      ].estimatedEndDate
+      ]
     : null;
 
   return {

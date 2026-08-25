@@ -93,19 +93,39 @@ export type KakaoAiConsultationFlowMemory = {
   consultationFormOffered:
     boolean;
 
-  /**
-   * 상담DB 실제 생성 직전
-   * 고객의 최종 승인을 기다리는 상태.
-   *
-   * true:
-   * 이름 / 연락처 / 최종학력 /
-   * 희망과정 / 담당자가 모두 확보되어
-   * 최종 접수목록을 고객에게 보여준 상태.
-   *
-   * 개인정보 자체는 여기에 저장하지 않는다.
-   */
   registrationConfirmationPending:
     boolean;
+
+  /**
+   * 신규상담 영업 흐름의 현재 서버 단계.
+   *
+   * Composer가 임의로 결정하는 값이 아니라
+   * 서버가 현재 상담 진행상태를 기억하기 위한 값이다.
+   */
+  /**
+ * 회사 Flow Config의 현재 Stage ID.
+ *
+ * 값의 의미는 코드가 결정하지 않는다.
+ * leadFlowConfig.stages[].id 값을 그대로 저장한다.
+ */
+salesStage:
+  string | null;
+
+/**
+ * 현재 Flow Engine이 선택한 Action ID.
+ *
+ * 특정 Action 이름을 서버 Memory 타입에
+ * 하드코딩하지 않는다.
+ */
+pendingNextAction:
+  string | null;
+
+/**
+ * 현재 Flow에서 선택 가능한
+ * Action / Transition 식별자 목록.
+ */
+nextOptions:
+  string[];
 };
 
 /**
@@ -1022,42 +1042,130 @@ function normalizeConsultationFlowMemory(
           >
       : {};
 
+  const qualificationExplained =
+    source.qualificationExplained ===
+    true;
+
+  const durationExplained =
+    source.durationExplained ===
+    true;
+
+  const theoryExplained =
+    source.theoryExplained ===
+    true;
+
+  const practicumExplained =
+    source.practicumExplained ===
+    true;
+
+  const administrationExplained =
+    source.administrationExplained ===
+    true;
+
+  const companyBenefitsExplained =
+    source.companyBenefitsExplained ===
+    true;
+
+  const staffRecommendationOffered =
+    source.staffRecommendationOffered ===
+    true;
+
+  const consultationFormOffered =
+    source.consultationFormOffered ===
+    true;
+
+  const registrationConfirmationPending =
+    source.registrationConfirmationPending ===
+    true;
+
+  /**
+   * Flow ID는 회사 설정에서 만들어지는
+   * 동적 식별자이므로 특정 후보목록을
+   * 코드에서 검사하지 않는다.
+   *
+   * 문자열 형식 / 길이만 안전하게 정규화한다.
+   */
+  const normalizeFlowId = (
+    rawValue:
+      unknown
+  ): string | null => {
+    const normalized =
+      String(
+        rawValue ??
+        ""
+      )
+        .trim()
+        .slice(
+          0,
+          191
+        );
+
+    return normalized ||
+      null;
+  };
+
+  const salesStage =
+    normalizeFlowId(
+      source.salesStage
+    );
+
+  const pendingNextAction =
+    normalizeFlowId(
+      source.pendingNextAction
+    );
+
+  const nextOptions =
+    Array.isArray(
+      source.nextOptions
+    )
+      ? Array.from(
+          new Set(
+            source.nextOptions
+              .map(
+                option =>
+                  normalizeFlowId(
+                    option
+                  )
+              )
+              .filter(
+                (
+                  option
+                ): option is string =>
+                  Boolean(
+                    option
+                  )
+              )
+          )
+        ).slice(
+          0,
+          20
+        )
+      : [];
+
   return {
-    qualificationExplained:
-      source.qualificationExplained ===
-      true,
+    qualificationExplained,
 
-    durationExplained:
-      source.durationExplained ===
-      true,
+    durationExplained,
 
-    theoryExplained:
-      source.theoryExplained ===
-      true,
+    theoryExplained,
 
-    practicumExplained:
-      source.practicumExplained ===
-      true,
+    practicumExplained,
 
-    administrationExplained:
-      source.administrationExplained ===
-      true,
+    administrationExplained,
 
-    companyBenefitsExplained:
-      source.companyBenefitsExplained ===
-      true,
+    companyBenefitsExplained,
 
-        staffRecommendationOffered:
-      source.staffRecommendationOffered ===
-      true,
+    staffRecommendationOffered,
 
-    consultationFormOffered:
-      source.consultationFormOffered ===
-      true,
+    consultationFormOffered,
 
-    registrationConfirmationPending:
-      source.registrationConfirmationPending ===
-      true,
+    registrationConfirmationPending,
+
+    salesStage,
+
+    pendingNextAction,
+
+    nextOptions,
   };
 }
 

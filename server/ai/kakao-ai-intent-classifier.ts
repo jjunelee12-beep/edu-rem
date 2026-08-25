@@ -191,7 +191,11 @@ const KAKAO_AI_CAPABILITY_ENUM = [
 
   "staff_change",
 
-  "staff_current",
+    "staff_current",
+
+  "lead_registration",
+
+  "callback_request",
 ] as const;
 
 const KAKAO_AI_REQUIRED_CONTEXT_ENUM = [

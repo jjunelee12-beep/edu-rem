@@ -16889,6 +16889,8 @@ administrativeSupportPolicy: null,
 
 consultationPolicy: null,
 
+leadFlowConfig: null,
+
 priceDisclosureEnabled: false,
 
 priceGuide: null,
@@ -17026,6 +17028,8 @@ administrativeSupportPolicy: null,
 
 consultationPolicy: null,
 
+leadFlowConfig: null,
+
 priceDisclosureEnabled: false,
 
 priceGuide: null,
@@ -17109,6 +17113,8 @@ practicePolicy?: string | null;
 administrativeSupportPolicy?: string | null;
 
 consultationPolicy?: string | null;
+
+leadFlowConfig?: unknown | null;
 
 priceDisclosureEnabled?: boolean;
 
@@ -17360,6 +17366,16 @@ if (
       : String(
           params.consultationPolicy
         ).trim() || null;
+}
+
+if (
+  params.leadFlowConfig !==
+  undefined
+) {
+  updateValues.leadFlowConfig =
+    params.leadFlowConfig === null
+      ? null
+      : params.leadFlowConfig;
 }
 
   if (

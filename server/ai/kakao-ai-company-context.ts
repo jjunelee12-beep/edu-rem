@@ -78,9 +78,21 @@ priceGuide: string | null;
    * 고객에게 그대로 공개하는 문구가 아니라
    * AI가 상담할 때 지켜야 하는 회사별 내부정책.
    */
-  internalPolicy: {
+    internalPolicy: {
     consultationPolicy: string | null;
   };
+
+  /**
+   * 신규상담 Lead Flow 회사별 설정.
+   *
+   * 실제 단계명 / 순서 / 완료조건 /
+   * Action / 분기 규칙은 DB 설정에서 관리한다.
+   *
+   * Company Context는 내용을 해석하지 않고
+   * Flow Engine에 전달할 원본 설정만 보관한다.
+   */
+  leadFlowConfig:
+    unknown | null;
 };
 
 function normalizeOptionalText(
@@ -270,12 +282,17 @@ priceGuide:
         ),
     },
 
-    internalPolicy: {
+        internalPolicy: {
       consultationPolicy:
         normalizeOptionalText(
           settings
             ?.consultationPolicy
         ),
     },
+
+    leadFlowConfig:
+      settings
+        ?.leadFlowConfig ??
+      null,
   };
 }

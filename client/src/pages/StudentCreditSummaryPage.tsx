@@ -68,6 +68,10 @@ const unreadAiEventCount =
  */
 const engine = data?.engine;
 
+const requirements =
+  data?.requirements ??
+  engine?.requirements;
+
 const riskSummary =
   data?.riskSummary ??
   engine?.summary;
@@ -466,11 +470,128 @@ const aiInfoCount =
     0
   );
 
+const requiredSubjectCount =
+  riskSummary?.requiredSubjectCount ??
+  null;
+
+const completedSubjectCount =
+  Number(
+    riskSummary?.completedSubjectCount ??
+    0
+  );
+
+const inProgressSubjectCount =
+  Number(
+    riskSummary?.inProgressSubjectCount ??
+    0
+  );
+
+const scheduledSubjectCount =
+  Number(
+    riskSummary?.scheduledSubjectCount ??
+    0
+  );
+
+const retakeRequiredSubjectCount =
+  Number(
+    riskSummary?.retakeRequiredSubjectCount ??
+    0
+  );
+
+const reviewRequiredSubjectCount =
+  Number(
+    riskSummary?.reviewRequiredSubjectCount ??
+    0
+  );
+
+const unassignedSubjectCount =
+  riskSummary?.unassignedSubjectCount ??
+  null;
+
+const completionProgressPercent =
+  riskSummary?.completionProgressPercent ??
+  null;
+
+const plannedProgressPercent =
+  riskSummary?.plannedProgressPercent ??
+  null;
+
 const qualificationSummary =
   academicSummary?.qualification;
 
 const degreeSummary =
   academicSummary?.degree;
+
+/**
+ * ─────────────────────────────
+ * 공통엔진 필요요건 표시 데이터
+ * ─────────────────────────────
+ *
+ * 과정별 자격요건은 서버 공통엔진의
+ * displayRequirements를 그대로 사용한다.
+ *
+ * 프론트에서는 사회복지 / 보육 / 한국어 등
+ * 과정명을 직접 판별하지 않는다.
+ */
+/**
+ * ─────────────────────────────
+ * 공통엔진 통합 필요요건 표시 데이터
+ * ─────────────────────────────
+ *
+ * 학위 / 자격요건 모두 서버 공통엔진에서
+ * 계산 완료된 displayRequirements만 사용한다.
+ *
+ * 프론트에서는
+ * - 최종학력
+ * - 과정명
+ * - 필요학점
+ * - 필요과목
+ * 을 다시 계산하지 않는다.
+ */
+const combinedRequirements =
+  requirements?.combined ??
+  null;
+
+const requirementDisplayMode =
+  combinedRequirements
+    ?.displayMode ??
+  "qualification_only";
+
+const degreeDisplayRequirements =
+  combinedRequirements
+    ?.displayRequirements
+    ?.degree ??
+  [];
+
+const qualificationDisplayRequirements =
+  combinedRequirements
+    ?.displayRequirements
+    ?.qualification ??
+  [];
+
+const unifiedDisplayRequirements = [
+  ...qualificationDisplayRequirements.map(
+    (
+      requirement: any
+    ) => ({
+      ...requirement,
+
+      sourceType:
+        "qualification" as const,
+    })
+  ),
+
+  ...degreeDisplayRequirements.map(
+    (
+      requirement: any
+    ) => ({
+      ...requirement,
+
+      sourceType:
+        "degree" as const,
+    })
+  ),
+];
 
 const studyPlanSummary =
   academicSummary?.studyPlan;
@@ -526,15 +647,407 @@ const academicSummaryLines =
 const plannedSubjects =
   subjectPlan?.selectedSubjects ?? [];
 
-const existingAcademicSemesters =
-  studyPlanSummary?.existingSemesters ??
-  semesterPlan?.existingSemesters ??
+/**
+ * 공통엔진이 앞으로 추가 배치한 예상 학기.
+ *
+ * semesterPlan.semesters:
+ * Planner 원본 결과라 subjects 전체 정보가 존재할 수 있으므로 우선 사용.
+ *
+ * studyPlanSummary.semesters:
+ * academicSummary를 거친 화면용 결과.
+ * 원본 subjects가 없을 경우 fallback으로 사용.
+ */
+const plannedAcademicSemesters =
+  semesterPlan?.semesters ??
+  studyPlanSummary?.semesters ??
   [];
 
-const plannedSemesters =
-  studyPlanSummary?.semesters ??
-  semesterPlan?.semesters ??
+/**
+ * ─────────────────────────────
+ * AI 추가 학습계획 화면용 데이터
+ * ─────────────────────────────
+ *
+ * 실제 상세페이지 과목과 AI 예상과목을
+ * 절대 같은 데이터로 합치지 않는다.
+ *
+ * semesterPlan 원본에 subjects가 있으면 그대로 사용하고,
+ * academicSummary를 거쳐 subjectNames만 남은 경우에는
+ * subjectPlan.selectedSubjects에서 동일 과목명을 찾아 복원한다.
+ */
+const aiPlannedSemesterRows =
+  (
+    plannedAcademicSemesters ||
+    []
+  )
+    .map(
+      (
+        semester: any
+      ) => {
+        const rawSubjects =
+          Array.isArray(
+            semester?.subjects
+          )
+            ? semester.subjects
+            : [];
+
+        const rawSubjectNames =
+          Array.isArray(
+            semester?.subjectNames
+          )
+            ? semester.subjectNames
+            : [];
+
+        const resolvedSubjects =
+          rawSubjects.length >
+          0
+            ? rawSubjects
+            : rawSubjectNames
+                .map(
+                  (
+                    subjectName: string
+                  ) => {
+                    const matched =
+                      plannedSubjects.find(
+                        (
+                          subject: any
+                        ) =>
+                          String(
+                            subject
+                              ?.subjectName ||
+                            ""
+                          ).trim() ===
+                          String(
+                            subjectName ||
+                            ""
+                          ).trim()
+                      );
+
+                    if (
+                      matched
+                    ) {
+                      return matched;
+                    }
+
+                    /**
+                     * 화면 표시용 최소 fallback.
+                     * 엔진 계산을 다시 하지 않는다.
+                     */
+                    return {
+                      subjectName:
+                        String(
+                          subjectName ||
+                          ""
+                        ).trim(),
+
+                      credits:
+                        0,
+
+                      requirementType:
+                        null,
+
+                      category:
+                        null,
+
+                      reasons:
+                        [],
+                    };
+                  }
+                )
+                .filter(
+                  (
+                    subject: any
+                  ) =>
+                    Boolean(
+                      String(
+                        subject
+                          ?.subjectName ||
+                        ""
+                      ).trim()
+                    )
+                );
+
+        return {
+          semesterOrder:
+            Number(
+              semester
+                ?.semesterOrder ||
+              0
+            ),
+
+          semesterLabel:
+            String(
+              semester
+                ?.semesterLabel ||
+              ""
+            ).trim(),
+
+          estimatedStartDate:
+            String(
+              semester
+                ?.estimatedStartDate ||
+              ""
+            ).trim() ||
+            null,
+
+          estimatedEndDate:
+            String(
+              semester
+                ?.estimatedEndDate ||
+              ""
+            ).trim() ||
+            null,
+
+          subjects:
+            resolvedSubjects,
+        };
+      }
+    )
+    .filter(
+      (
+        semester: any
+      ) =>
+        Boolean(
+          semester.semesterLabel
+        ) ||
+        semester.subjects.length >
+          0
+    )
+    .sort(
+      (
+        left: any,
+        right: any
+      ) =>
+        Number(
+          left.semesterOrder ||
+          0
+        ) -
+        Number(
+          right.semesterOrder ||
+          0
+        )
+    );
+
+const aiPlannedSubjectCount =
+  aiPlannedSemesterRows.reduce(
+    (
+      total: number,
+      semester: any
+    ) =>
+      total +
+      (
+        semester
+          ?.subjects
+          ?.length ??
+        0
+      ),
+    0
+  );
+
+const academicSubjects =
+  engine?.subjects ??
   [];
+
+const actualPlanSubjects =
+  academicSubjects.filter(
+    (subject: any) =>
+      subject?.source ===
+      "plan"
+  );
+
+const actualSemesterNumbers =
+  Array.from(
+    new Set(
+      actualPlanSubjects
+        .map(
+          (subject: any) =>
+            Number(
+              subject?.semesterNo ||
+              0
+            )
+        )
+        .filter(
+          (semesterNo: number) =>
+            Number.isFinite(
+              semesterNo
+            ) &&
+            semesterNo > 0
+        )
+    )
+  ).sort(
+    (
+      left,
+      right
+    ) =>
+      left - right
+  );
+
+const getExistingSemester =
+  (
+    semesterNo: number
+  ) =>
+    existingAcademicSemesters.find(
+      (semester: any) =>
+        Number(
+          semester?.semesterOrder ||
+          0
+        ) ===
+        semesterNo
+    ) ??
+    null;
+
+const getSemesterSubjects =
+  (
+    semesterNo: number
+  ) =>
+    actualPlanSubjects.filter(
+      (subject: any) =>
+        Number(
+          subject?.semesterNo ||
+          0
+        ) ===
+        semesterNo
+    );
+
+const getProgressLabel =
+  (
+    progressStatus:
+      string | null | undefined
+  ) => {
+    switch (
+      progressStatus
+    ) {
+      case "completed":
+        return "수강완료";
+
+      case "in_progress":
+        return "진행중";
+
+      case "scheduled":
+        return "예정";
+
+      case "retake_required":
+        return "재수강 필요";
+
+      case "review_required":
+        return "확인 필요";
+
+      default:
+        return "확인 필요";
+    }
+  };
+
+const getProgressBadgeClass =
+  (
+    progressStatus:
+      string | null | undefined
+  ) => {
+    switch (
+      progressStatus
+    ) {
+      case "completed":
+        return "bg-emerald-50 text-emerald-700 border-emerald-200";
+
+      case "in_progress":
+        return "bg-blue-50 text-blue-700 border-blue-200";
+
+      case "scheduled":
+        return "bg-slate-50 text-slate-700 border-slate-200";
+
+      case "retake_required":
+        return "bg-red-50 text-red-700 border-red-200";
+
+      case "review_required":
+        return "bg-amber-50 text-amber-700 border-amber-200";
+
+      default:
+        return "bg-slate-50 text-slate-700 border-slate-200";
+    }
+  };
+
+const getSubjectValidationLabel = (
+  status:
+    | "normal"
+    | "warning"
+    | "danger"
+    | string
+    | null
+    | undefined
+) => {
+  switch (status) {
+    case "danger":
+      return "설계 오류";
+
+    case "warning":
+      return "확인 필요";
+
+    case "normal":
+    default:
+      return "정상";
+  }
+};
+
+const getSubjectValidationBadgeClass = (
+  status:
+    | "normal"
+    | "warning"
+    | "danger"
+    | string
+    | null
+    | undefined
+) => {
+  switch (status) {
+    case "danger":
+      return "bg-red-50 text-red-700 border-red-200";
+
+    case "warning":
+      return "bg-amber-50 text-amber-700 border-amber-200";
+
+    case "normal":
+    default:
+      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  }
+};
+
+const getSubjectValidationContainerClass = (
+  status:
+    | "normal"
+    | "warning"
+    | "danger"
+    | string
+    | null
+    | undefined
+) => {
+  switch (status) {
+    case "danger":
+      return "border-red-200 bg-red-50/40";
+
+    case "warning":
+      return "border-amber-200 bg-amber-50/40";
+
+    case "normal":
+    default:
+      return "border-slate-200 bg-white";
+  }
+};
+
+const actualStudyStartDate =
+  existingAcademicSemesters
+    .map(
+      (semester: any) =>
+        String(
+          semester?.actualStartDate ||
+          ""
+        ).trim()
+    )
+    .filter(Boolean)
+    .sort()[0] ||
+  null;
+
+const displayStudyStartDate =
+  actualStudyStartDate ??
+  studyPlanSummary
+    ?.estimatedStudyStartDate ??
+  null;
 
 const qualificationRequiredSubjects =
   qualificationSummary?.requiredSubjects ?? null;
@@ -604,8 +1117,21 @@ const plannedSemesterCount =
 const nominalDurationMonths =
   studyPlanSummary?.nominalDurationMonths ?? 0;
 
-const estimatedStudyStartDate =
-  studyPlanSummary?.estimatedStudyStartDate ?? null;
+/**
+ * 화면에 표시하는 전체 학습 학기 수.
+ *
+ * semesterCount는 AI가 추가과목을 배치한 학기 수이고,
+ * nominalDurationMonths는 기존 상세페이지 학기까지 포함한
+ * 전체 학습기간이므로 학습기간 카드에서는 전체 기준을 사용한다.
+ */
+const totalStudySemesterCount =
+  nominalDurationMonths >
+  0
+    ? Math.ceil(
+        nominalDurationMonths /
+          4
+      )
+    : plannedSemesterCount;
 
 const estimatedStudyEndDate =
   studyPlanSummary?.estimatedStudyEndDate ?? null;
@@ -680,19 +1206,197 @@ const academicCanExplain =
       </div>
 
 {/* ─────────────────────────────
-    공통엔진 AI 분석 상태
+    공통엔진 학습 진행현황 + 설계검사
 ───────────────────────────── */}
 <Card className="border-blue-100 bg-gradient-to-r from-blue-50/60 to-white shadow-sm">
   <CardContent className="p-5">
-    <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-5">
-      <div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2">
-            <BrainCircuit className="h-5 w-5 text-blue-600" />
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2">
+              <BrainCircuit className="h-5 w-5 text-blue-600" />
 
-            <h2 className="font-bold">
-              AI 공통엔진 분석
-            </h2>
+              <h2 className="font-bold">
+                학습 진행현황
+              </h2>
+            </div>
+
+            <Badge
+              variant="outline"
+              className={aiRiskBadgeClass}
+            >
+              설계검사 {aiRiskLabel}
+            </Badge>
+          </div>
+
+          <p className="text-sm text-muted-foreground mt-2">
+            상세페이지의 실제 학기·과목과 공통엔진 기준을 비교한 현재 학습 진행상태입니다.
+            아직 이수하지 않은 과목은 위험으로 처리하지 않으며,
+            중복·잘못된 과목·설계 오류만 위험도로 표시합니다.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Badge
+            variant="outline"
+            className="bg-white"
+          >
+            설계 오류 {aiDangerCount + aiWarningCount}건
+          </Badge>
+
+          {retakeRequiredSubjectCount > 0 && (
+            <Badge
+              variant="outline"
+              className="bg-red-50 text-red-700 border-red-200"
+            >
+              재수강 필요 {retakeRequiredSubjectCount}과목
+            </Badge>
+          )}
+
+          {reviewRequiredSubjectCount > 0 && (
+            <Badge
+              variant="outline"
+              className="bg-amber-50 text-amber-700 border-amber-200"
+            >
+              확인 필요 {reviewRequiredSubjectCount}과목
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="rounded-xl border bg-white p-4">
+          <p className="text-xs text-muted-foreground">
+            전체 필요
+          </p>
+
+          <p className="text-2xl font-bold mt-1">
+            {requiredSubjectCount !== null
+              ? `${requiredSubjectCount}과목`
+              : "-"}
+          </p>
+        </div>
+
+        <div className="rounded-xl border bg-white p-4">
+          <p className="text-xs text-muted-foreground">
+            수강완료
+          </p>
+
+          <p className="text-2xl font-bold mt-1">
+            {completedSubjectCount}과목
+          </p>
+        </div>
+
+        <div className="rounded-xl border bg-white p-4">
+          <p className="text-xs text-muted-foreground">
+            진행중
+          </p>
+
+          <p className="text-2xl font-bold text-blue-600 mt-1">
+            {inProgressSubjectCount}과목
+          </p>
+        </div>
+
+        <div className="rounded-xl border bg-white p-4">
+          <p className="text-xs text-muted-foreground">
+            예정
+          </p>
+
+          <p className="text-2xl font-bold mt-1">
+            {scheduledSubjectCount}과목
+          </p>
+        </div>
+
+        <div className="rounded-xl border bg-white p-4">
+          <p className="text-xs text-muted-foreground">
+            미배치
+          </p>
+
+          <p className="text-2xl font-bold mt-1">
+            {unassignedSubjectCount !== null
+              ? `${unassignedSubjectCount}과목`
+              : "-"}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="rounded-xl border bg-white p-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium">
+              수강완료 진행률
+            </p>
+
+            <p className="text-sm font-bold">
+              {completionProgressPercent !== null
+                ? `${completionProgressPercent}%`
+                : "-"}
+            </p>
+          </div>
+
+          <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden mt-3">
+            <div
+              className="h-full rounded-full bg-emerald-500 transition-all"
+              style={{
+                width: `${Math.max(
+                  0,
+                  Math.min(
+                    Number(
+                      completionProgressPercent ??
+                      0
+                    ),
+                    100
+                  )
+                )}%`,
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-white p-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium">
+              학습계획 진행률
+            </p>
+
+            <p className="text-sm font-bold">
+              {plannedProgressPercent !== null
+                ? `${plannedProgressPercent}%`
+                : "-"}
+            </p>
+          </div>
+
+          <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden mt-3">
+            <div
+              className="h-full rounded-full bg-blue-500 transition-all"
+              style={{
+                width: `${Math.max(
+                  0,
+                  Math.min(
+                    Number(
+                      plannedProgressPercent ??
+                      0
+                    ),
+                    100
+                  )
+                )}%`,
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border bg-white p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold">
+              설계 오류 검사
+            </p>
+
+            <p className="text-xs text-muted-foreground mt-1">
+              현재 등록된 과목과 학기계획에서 실제 문제가 있는 항목만 집계합니다.
+            </p>
           </div>
 
           <Badge
@@ -701,47 +1405,38 @@ const academicCanExplain =
           >
             {aiRiskLabel}
           </Badge>
-
-          <Badge
-            variant="outline"
-            className="bg-white"
-          >
-            위험점수 {aiRiskScore}
-          </Badge>
         </div>
 
-        <p className="text-sm text-muted-foreground mt-2">
-          CRM 상세페이지의 확정 데이터를 읽어 공통 규칙엔진이 자동 계산한 결과입니다.
-          담당자는 아래 내용을 확인하고 필요한 경우 원본 상세페이지 또는 담당자 보정값을 수정할 수 있습니다.
-        </p>
-      </div>
+        <div className="grid grid-cols-3 gap-2 mt-4">
+          <div className="rounded-lg border bg-slate-50 p-3 text-center">
+            <p className="text-xs text-muted-foreground">
+              위험
+            </p>
 
-      <div className="grid grid-cols-3 gap-2 min-w-[300px]">
-        <div className="rounded-lg border bg-white p-3 text-center">
-          <p className="text-xs text-muted-foreground">
-            위험
-          </p>
-          <p className="text-xl font-bold text-red-600 mt-1">
-            {aiDangerCount}
-          </p>
-        </div>
+            <p className="text-lg font-bold text-red-600 mt-1">
+              {aiDangerCount}
+            </p>
+          </div>
 
-        <div className="rounded-lg border bg-white p-3 text-center">
-          <p className="text-xs text-muted-foreground">
-            주의
-          </p>
-          <p className="text-xl font-bold text-amber-600 mt-1">
-            {aiWarningCount}
-          </p>
-        </div>
+          <div className="rounded-lg border bg-slate-50 p-3 text-center">
+            <p className="text-xs text-muted-foreground">
+              주의
+            </p>
 
-        <div className="rounded-lg border bg-white p-3 text-center">
-          <p className="text-xs text-muted-foreground">
-            참고
-          </p>
-          <p className="text-xl font-bold text-blue-600 mt-1">
-            {aiInfoCount}
-          </p>
+            <p className="text-lg font-bold text-amber-600 mt-1">
+              {aiWarningCount}
+            </p>
+          </div>
+
+          <div className="rounded-lg border bg-slate-50 p-3 text-center">
+            <p className="text-xs text-muted-foreground">
+              참고
+            </p>
+
+            <p className="text-lg font-bold text-blue-600 mt-1">
+              {aiInfoCount}
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -797,30 +1492,134 @@ const academicCanExplain =
               </CardContent>
             </Card>
 
-            <SummaryMiniCard
-  title="자격 필요과목"
-  value={qualificationRequiredSubjects ?? "-"}
-  suffix={qualificationRequiredSubjects !== null ? "과목" : ""}
-/>
+            <Card className="border shadow-sm lg:col-span-4">
+  <CardContent className="p-5">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <GraduationCap className="h-5 w-5 text-blue-600" />
 
-<SummaryMiniCard
-  title="자격 인정과목"
-  value={qualificationCompletedSubjects ?? "-"}
-  suffix={qualificationCompletedSubjects !== null ? "과목" : ""}
-/>
+            <h2 className="text-base font-bold">
+              전체 과정 요약
+            </h2>
+          </div>
 
-<SummaryMiniCard
-  title="추가 필요과목"
-  value={additionalSubjectCount}
-  suffix="과목"
-  danger={additionalSubjectCount > 0}
-/>
+          <p className="text-xs text-muted-foreground mt-1">
+            현재 학력과 인정내역을 기준으로 공통엔진이 계산한 최종 학습과정입니다.
+          </p>
+        </div>
 
-<SummaryMiniCard
-  title="예상 학습기간"
-  value={nominalDurationMonths}
-  suffix="개월"
-/>
+        <Badge
+          variant="outline"
+          className={
+            academicStatus === "ready"
+              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+              : "bg-amber-50 text-amber-700 border-amber-200"
+          }
+        >
+          {academicStatus === "ready"
+            ? "설계 완료"
+            : "확인 필요"}
+        </Badge>
+      </div>
+
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        <div className="rounded-xl border bg-slate-50 p-4">
+          <p className="text-xs text-muted-foreground">
+            자격 필요과목
+          </p>
+
+          <div className="flex items-end gap-1 mt-2">
+            <span className="text-2xl font-bold">
+              {qualificationRequiredSubjects ?? "-"}
+            </span>
+
+            {qualificationRequiredSubjects !== null && (
+              <span className="text-sm text-muted-foreground mb-0.5">
+                과목
+              </span>
+            )}
+          </div>
+
+          <p className="text-xs text-muted-foreground mt-2">
+            인정 {qualificationCompletedSubjects ?? "-"}과목
+          </p>
+        </div>
+
+        <div className="rounded-xl border bg-slate-50 p-4">
+          <p className="text-xs text-muted-foreground">
+            앞으로 필요한 과목
+          </p>
+
+          <div className="flex items-end gap-1 mt-2">
+            <span
+              className={`text-2xl font-bold ${
+                additionalSubjectCount > 0
+                  ? "text-blue-600"
+                  : "text-emerald-600"
+              }`}
+            >
+              {additionalSubjectCount}
+            </span>
+
+            <span className="text-sm text-muted-foreground mb-0.5">
+              과목
+            </span>
+          </div>
+
+          <p className="text-xs text-muted-foreground mt-2">
+            총 {additionalCredits}학점
+          </p>
+        </div>
+
+        <div className="rounded-xl border bg-slate-50 p-4">
+          <p className="text-xs text-muted-foreground">
+            예상 학습기간
+          </p>
+
+          <div className="flex items-end gap-1 mt-2">
+            <span className="text-2xl font-bold">
+  {totalStudySemesterCount}
+</span>
+
+            <span className="text-sm text-muted-foreground mb-0.5">
+              학기
+            </span>
+          </div>
+
+          <p className="text-xs text-muted-foreground mt-2">
+            약 {nominalDurationMonths}개월
+          </p>
+        </div>
+
+        <div className="rounded-xl border bg-slate-50 p-4">
+          <p className="text-xs text-muted-foreground">
+            학위과정
+          </p>
+
+          <p
+            className={`text-lg font-bold mt-2 ${
+              requiresNewDegreeTrack
+                ? "text-amber-600"
+                : "text-emerald-600"
+            }`}
+          >
+            {requiresNewDegreeTrack
+              ? "추가 학위 필요"
+              : "추가 학위 없음"}
+          </p>
+
+          <p className="text-xs text-muted-foreground mt-2">
+            {requiresNewDegreeTrack
+              ? `총 ${degreeRequiredTotalCredits ?? "-"}학점 기준`
+              : "현재 최종학력 기준"}
+          </p>
+        </div>
+      </div>
+    </div>
+  </CardContent>
+</Card>
           </div>
 
 {settingOpen && (
@@ -941,523 +1740,630 @@ const academicCanExplain =
   </Card>
 )}
 
-          <div className="grid grid-cols-1 xl:grid-cols-[1.35fr_1fr] gap-5">
-  {/* AI 통합 학점현황 */}
-  <Card className="border border-blue-100 shadow-sm">
-    <CardContent className="p-5">
-      <div className="flex items-center justify-between gap-3 mb-4">
+          {/* ─────────────────────────────
+    공통엔진 필요과정
+───────────────────────────── */}
+<Card className="border border-blue-100 shadow-sm">
+  <CardContent className="p-5">
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <GraduationCap className="h-5 w-5 text-blue-600" />
+            <ClipboardCheck className="h-5 w-5 text-blue-600" />
 
             <h2 className="text-base font-bold">
-              AI 통합 학점현황
+              필요과정
             </h2>
           </div>
 
           <p className="text-xs text-muted-foreground mt-1">
-            상세페이지 원본 데이터를 공통엔진이 계산한 최종 학점현황입니다.
+            현재 학력과 인정내역을 기준으로
+            공통엔진이 계산한 전체 충족조건입니다.
           </p>
         </div>
 
-        <Badge
-          variant="outline"
-          className="bg-blue-50 text-blue-700 border-blue-200"
-        >
-          공통엔진
-        </Badge>
-      </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge
+            variant="outline"
+            className={
+              academicStatus ===
+              "ready"
+                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                : "bg-amber-50 text-amber-700 border-amber-200"
+            }
+          >
+            {academicStatus ===
+            "ready"
+              ? "분석 완료"
+              : "확인 필요"}
+          </Badge>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <div className="rounded-xl border bg-slate-50 p-4">
-          <p className="text-xs text-muted-foreground">
-            총학점
-          </p>
-
-          <div className="flex items-end gap-1 mt-2">
-            <span className="text-2xl font-bold">
-              {degreeCurrentTotalCredits}
-            </span>
-
-            <span className="text-sm text-muted-foreground mb-0.5">
-              / {degreeRequiredTotalCredits ?? "-"}학점
-            </span>
-          </div>
-
-          {degreeRemainingTotalCredits !== null && (
-            <p
-              className={`text-xs mt-2 ${
-                degreeRemainingTotalCredits > 0
-                  ? "text-red-600"
-                  : "text-emerald-600"
-              }`}
-            >
-              {degreeRemainingTotalCredits > 0
-                ? `${degreeRemainingTotalCredits}학점 부족`
-                : "기준 충족"}
-            </p>
-          )}
-        </div>
-
-        <div className="rounded-xl border bg-slate-50 p-4">
-          <p className="text-xs text-muted-foreground">
-            전공
-          </p>
-
-          <div className="flex items-end gap-1 mt-2">
-            <span className="text-2xl font-bold">
-              {degreeCurrentMajorCredits}
-            </span>
-
-            <span className="text-sm text-muted-foreground mb-0.5">
-              / {degreeRequiredMajorCredits ?? "-"}학점
-            </span>
-          </div>
-
-          {degreeRemainingMajorCredits !== null && (
-            <p
-              className={`text-xs mt-2 ${
-                degreeRemainingMajorCredits > 0
-                  ? "text-red-600"
-                  : "text-emerald-600"
-              }`}
-            >
-              {degreeRemainingMajorCredits > 0
-                ? `${degreeRemainingMajorCredits}학점 부족`
-                : "기준 충족"}
-            </p>
-          )}
-        </div>
-
-        <div className="rounded-xl border bg-slate-50 p-4">
-          <p className="text-xs text-muted-foreground">
-            교양
-          </p>
-
-          <div className="flex items-end gap-1 mt-2">
-            <span className="text-2xl font-bold">
-              {degreeCurrentLiberalCredits}
-            </span>
-
-            <span className="text-sm text-muted-foreground mb-0.5">
-              / {degreeRequiredLiberalCredits ?? "-"}학점
-            </span>
-          </div>
-
-          {degreeRemainingLiberalCredits !== null && (
-            <p
-              className={`text-xs mt-2 ${
-                degreeRemainingLiberalCredits > 0
-                  ? "text-red-600"
-                  : "text-emerald-600"
-              }`}
-            >
-              {degreeRemainingLiberalCredits > 0
-                ? `${degreeRemainingLiberalCredits}학점 부족`
-                : "기준 충족"}
-            </p>
-          )}
-        </div>
-
-        <div className="rounded-xl border bg-slate-50 p-4">
-          <p className="text-xs text-muted-foreground">
-            일반
-          </p>
-
-          <div className="flex items-end gap-1 mt-2">
-            <span className="text-2xl font-bold">
-              {degreeCurrentGeneralCredits}
-            </span>
-
-            <span className="text-sm text-muted-foreground mb-0.5">
-              학점
-            </span>
-          </div>
-
-          <p className="text-xs text-muted-foreground mt-2">
-            현재 인정 일반학점
-          </p>
+          <Badge
+            variant="outline"
+            className="bg-white"
+          >
+            {requirementDisplayMode ===
+            "degree_and_qualification"
+              ? "학위 + 자격 통합과정"
+              : "자격과정"}
+          </Badge>
         </div>
       </div>
 
-      {!requiresNewDegreeTrack && (
-        <div className="mt-4 rounded-lg border border-emerald-100 bg-emerald-50 p-3">
+      {unifiedDisplayRequirements.length ===
+      0 ? (
+        <div className="rounded-lg border bg-slate-50 p-4">
+          <p className="text-sm text-muted-foreground">
+            표시 가능한 필요조건이 없습니다.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {unifiedDisplayRequirements.map(
+            (
+              requirement: any
+            ) => {
+              const hasRequired =
+                requirement
+                  ?.required !==
+                  null &&
+                requirement
+                  ?.required !==
+                  undefined;
+
+              const hasCurrent =
+                requirement
+                  ?.current !==
+                  null &&
+                requirement
+                  ?.current !==
+                  undefined;
+
+              const hasRemaining =
+                requirement
+                  ?.remaining !==
+                  null &&
+                requirement
+                  ?.remaining !==
+                  undefined;
+
+              const isCompleted =
+                requirement
+                  ?.status ===
+                "completed";
+
+              const isReviewRequired =
+                requirement
+                  ?.status ===
+                "review_required";
+
+              const isDegreeRequirement =
+                requirement
+                  ?.sourceType ===
+                "degree";
+
+              return (
+                <div
+                  key={`${requirement.sourceType}-${requirement.key}`}
+                  className="rounded-xl border bg-slate-50 p-4"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold">
+                          {requirement
+                            ?.label ||
+                            "-"}
+                        </p>
+
+                        <Badge
+                          variant="outline"
+                          className={
+                            isDegreeRequirement
+                              ? "bg-violet-50 text-violet-700 border-violet-200"
+                              : "bg-blue-50 text-blue-700 border-blue-200"
+                          }
+                        >
+                          {isDegreeRequirement
+                            ? "학위"
+                            : "자격"}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <Badge
+                      variant="outline"
+                      className={
+                        isCompleted
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : isReviewRequired
+                            ? "bg-amber-50 text-amber-700 border-amber-200"
+                            : "bg-blue-50 text-blue-700 border-blue-200"
+                      }
+                    >
+                      {isCompleted
+                        ? "충족"
+                        : isReviewRequired
+                          ? "확인 필요"
+                          : "진행중"}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 mt-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        필요
+                      </p>
+
+                      <p className="font-bold mt-1">
+                        {hasRequired
+                          ? `${requirement.required}${requirement.unit || ""}`
+                          : "-"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        현재
+                      </p>
+
+                      <p className="font-bold mt-1">
+                        {hasCurrent
+                          ? `${requirement.current}${requirement.unit || ""}`
+                          : "-"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        남음
+                      </p>
+
+                      <p
+                        className={`font-bold mt-1 ${
+                          hasRemaining &&
+                          Number(
+                            requirement
+                              .remaining
+                          ) >
+                            0
+                            ? "text-blue-600"
+                            : hasRemaining
+                              ? "text-emerald-600"
+                              : ""
+                        }`}
+                      >
+                        {hasRemaining
+                          ? `${requirement.remaining}${requirement.unit || ""}`
+                          : "-"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+          )}
+        </div>
+      )}
+
+      {requirementDisplayMode ===
+        "qualification_only" && (
+        <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700">
             <CheckCircle2 className="h-4 w-4" />
+
             현재 최종학력 기준으로 추가 학위과정이 필요하지 않습니다.
           </div>
         </div>
       )}
-    </CardContent>
-  </Card>
 
-  {/* AI 자격 / 추가설계 요약 */}
-  <Card className="border shadow-sm">
-    <CardContent className="p-5">
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-2">
-          <BrainCircuit className="h-5 w-5 text-violet-600" />
-
-          <h2 className="text-base font-bold">
-            AI 학습설계 요약
-          </h2>
-        </div>
-
-        <Badge
-          variant="outline"
-          className={
-            academicStatus === "ready"
-              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-              : "bg-amber-50 text-amber-700 border-amber-200"
-          }
-        >
-          {academicStatus === "ready"
-            ? "분석완료"
-            : "확인필요"}
-        </Badge>
-      </div>
-
-      <div className="space-y-3">
-        <div className="rounded-xl border p-4">
-          <p className="text-xs text-muted-foreground">
-            자격요건
-          </p>
-
-          <div className="flex items-center justify-between mt-2">
-            <span className="font-semibold">
-              필요 {qualificationRequiredSubjects ?? "-"}과목
-            </span>
-
-            <span className="text-sm text-muted-foreground">
-              인정 {qualificationCompletedSubjects ?? "-"}과목
-            </span>
-          </div>
-
-          <div className="flex items-center justify-between mt-2">
-            <span className="text-sm">
-              남은 과목
-            </span>
-
-            <span
-              className={`font-bold ${
-                Number(qualificationRemainingSubjects ?? 0) > 0
-                  ? "text-red-600"
-                  : "text-emerald-600"
-              }`}
-            >
-              {qualificationRemainingSubjects ?? "-"}과목
-            </span>
-          </div>
-        </div>
-
-        <div className="rounded-xl border p-4">
-          <p className="text-xs text-muted-foreground">
-            AI 추가 설계
-          </p>
-
-          <div className="flex items-end gap-2 mt-2">
-            <span
-              className={`text-2xl font-bold ${
-                additionalSubjectCount > 0
-                  ? "text-blue-600"
-                  : "text-emerald-600"
-              }`}
-            >
-              {additionalSubjectCount}과목
-            </span>
-
-            <span className="text-sm text-muted-foreground mb-0.5">
-              / {additionalCredits}학점
-            </span>
-          </div>
-
-          <p className="text-xs text-muted-foreground mt-2">
-            공통 과목설계 엔진에서 계산된 추가 수강계획
+      {requirementDisplayMode ===
+        "degree_and_qualification" && (
+        <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-3">
+          <p className="text-xs text-blue-700">
+            학위와 자격조건은 별도로 합산하지 않습니다.
+            동일 과목으로 동시에 충족 가능한 부분은
+            공통 과목설계 엔진에서 중복 없이 계산합니다.
           </p>
         </div>
-
-        <div className="rounded-xl border p-4">
-          <p className="text-xs text-muted-foreground">
-            예상 학습기간
-          </p>
-
-          <div className="flex items-end gap-2 mt-2">
-            <span className="text-2xl font-bold">
-              {plannedSemesterCount}
-            </span>
-
-            <span className="text-sm text-muted-foreground mb-0.5">
-              학기 · 약 {nominalDurationMonths}개월
-            </span>
-          </div>
-
-          {estimatedStudyEndDate && (
-            <p className="text-xs text-muted-foreground mt-2">
-              예상 종료일 {estimatedStudyEndDate}
-            </p>
-          )}
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-</div>
+      )}
+    </div>
+  </CardContent>
+</Card>
 
 {/* ─────────────────────────────
     AI 자격 / 학위 / 학습설계
 ───────────────────────────── */}
 <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-
-  {/* 자격요건 */}
-  <Card className="border shadow-sm">
-    <CardContent className="p-5">
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-2">
-          <ClipboardCheck className="h-5 w-5 text-blue-600" />
-          <h2 className="text-base font-bold">
-            자격요건
-          </h2>
-        </div>
-
-        <Badge variant="outline">
-          공통엔진
-        </Badge>
-      </div>
-
-      <div className="grid grid-cols-3 gap-3">
-        <SummaryValue
-          label="필요 과목"
-          value={qualificationRequiredSubjects}
-          suffix="과목"
-        />
-
-        <SummaryValue
-          label="인정 과목"
-          value={qualificationCompletedSubjects}
-          suffix="과목"
-        />
-
-        <SummaryValue
-          label="남은 과목"
-          value={qualificationRemainingSubjects}
-          suffix="과목"
-          danger={
-            Number(
-              qualificationRemainingSubjects ?? 0
-            ) > 0
-          }
-        />
-      </div>
-
-      <div className="grid grid-cols-3 gap-3 mt-3">
-        <SummaryValue
-          label="필요 학점"
-          value={qualificationRequiredCredits}
-          suffix="학점"
-        />
-
-        <SummaryValue
-          label="인정 학점"
-          value={qualificationCompletedCredits}
-          suffix="학점"
-        />
-
-        <SummaryValue
-          label="남은 학점"
-          value={qualificationRemainingCredits}
-          suffix="학점"
-          danger={
-            Number(
-              qualificationRemainingCredits ?? 0
-            ) > 0
-          }
-        />
-      </div>
-
-      {qualificationPracticeHours !== null && (
-        <div className="mt-3 rounded-lg border bg-slate-50 p-3">
-          <p className="text-xs text-muted-foreground">
-            필요 실습시간
-          </p>
-
-          <p className="font-bold mt-1">
-            {qualificationPracticeHours}시간
-          </p>
-        </div>
-      )}
-    </CardContent>
-  </Card>
-
-  {/* 학위요건 */}
-  <Card className="border shadow-sm">
-    <CardContent className="p-5">
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-2">
-          <GraduationCap className="h-5 w-5 text-violet-600" />
-
-          <h2 className="text-base font-bold">
-            학위요건
-          </h2>
-        </div>
-
-        <Badge
-          variant="outline"
-          className={
-            requiresNewDegreeTrack
-              ? "bg-amber-50 text-amber-700 border-amber-200"
-              : "bg-emerald-50 text-emerald-700 border-emerald-200"
-          }
-        >
-          {requiresNewDegreeTrack
-            ? "학위과정 필요"
-            : "추가 학위과정 없음"}
-        </Badge>
-      </div>
-
-      <div className="grid grid-cols-3 gap-3">
-        <SummaryValue
-          label="총 필요"
-          value={degreeRequiredTotalCredits}
-          suffix="학점"
-        />
-
-        <SummaryValue
-          label="현재"
-          value={degreeCurrentTotalCredits}
-          suffix="학점"
-        />
-
-        <SummaryValue
-          label="부족"
-          value={degreeRemainingTotalCredits}
-          suffix="학점"
-          danger={
-            Number(
-              degreeRemainingTotalCredits ?? 0
-            ) > 0
-          }
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 mt-3">
-        <div className="rounded-lg border p-3">
-          <p className="text-xs text-muted-foreground">
-            전공
-          </p>
-
-          <p className="font-semibold mt-1">
-            {degreeCurrentMajorCredits}
-            {" / "}
-            {degreeRequiredMajorCredits ?? "-"}학점
-          </p>
-
-          <p className="text-xs text-muted-foreground mt-1">
-            부족 {degreeRemainingMajorCredits ?? "-"}학점
-          </p>
-        </div>
-
-        <div className="rounded-lg border p-3">
-          <p className="text-xs text-muted-foreground">
-            교양
-          </p>
-
-          <p className="font-semibold mt-1">
-            {degreeCurrentLiberalCredits}
-            {" / "}
-            {degreeRequiredLiberalCredits ?? "-"}학점
-          </p>
-
-          <p className="text-xs text-muted-foreground mt-1">
-            부족 {degreeRemainingLiberalCredits ?? "-"}학점
-          </p>
-        </div>
-      </div>
-    </CardContent>
-  </Card>
 </div>
 
 {/* ─────────────────────────────
-    AI 추가 필요과목
+    실제 학기별 수강현황
 ───────────────────────────── */}
 <Card className="border shadow-sm">
   <CardContent className="p-5">
-    <div className="flex items-center justify-between gap-3 mb-4">
-      <div className="flex items-center gap-2">
-        <BookOpen className="h-5 w-5 text-blue-600" />
+    <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+      <div>
+        <div className="flex items-center gap-2">
+          <BookOpen className="h-5 w-5 text-blue-600" />
 
-        <h2 className="text-base font-bold">
-          AI 추가 필요과목
-        </h2>
+          <h2 className="text-base font-bold">
+            학기별 수강현황
+          </h2>
+        </div>
+
+        <p className="text-xs text-muted-foreground mt-1">
+          상세페이지에 실제 등록된 학기와 과목을 기준으로 표시합니다.
+        </p>
       </div>
 
-      <div className="flex items-center gap-2">
-        <Badge variant="outline">
-          {additionalSubjectCount}과목
-        </Badge>
-
-        <Badge variant="outline">
-          {additionalCredits}학점
-        </Badge>
-      </div>
+      <Badge
+        variant="outline"
+        className="bg-blue-50 text-blue-700 border-blue-200"
+      >
+        실제 등록과목 {actualPlanSubjects.length}과목
+      </Badge>
     </div>
 
-    {plannedSubjects.length === 0 ? (
-      <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-700">
-        현재 공통엔진에서 추가로 설계된 과목이 없습니다.
+    {actualSemesterNumbers.length ===
+    0 ? (
+      <div className="rounded-lg border bg-slate-50 p-4 text-sm text-muted-foreground">
+        상세페이지에 등록된 학기별 과목이 없습니다.
       </div>
     ) : (
-      <div className="space-y-2">
-        {plannedSubjects.map(
+      <div className="space-y-4">
+        {actualSemesterNumbers.map(
           (
-            subject: any,
-            index: number
-          ) => (
-            <div
-              key={`${subject.subjectName}-${index}`}
-              className="rounded-lg border p-3"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="font-semibold text-sm">
-                    {subject.subjectName}
-                  </p>
+            semesterNo
+          ) => {
+            const semester =
+              getExistingSemester(
+                semesterNo
+              );
 
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {subject.requirementType || "구분 없음"}
-                    {" · "}
-                    {subject.category || "분류 없음"}
-                    {" · "}
-                    {subject.credits}학점
-                  </p>
+            const semesterSubjects =
+              getSemesterSubjects(
+                semesterNo
+              );
+
+            const majorRequiredSubjects =
+              semesterSubjects.filter(
+                (
+                  subject: any
+                ) =>
+                  subject
+                    ?.requirementType ===
+                  "전공필수"
+              );
+
+            const majorElectiveSubjects =
+              semesterSubjects.filter(
+                (
+                  subject: any
+                ) =>
+                  subject
+                    ?.requirementType ===
+                  "전공선택"
+              );
+
+            const liberalSubjects =
+              semesterSubjects.filter(
+                (
+                  subject: any
+                ) =>
+                  subject
+                    ?.requirementType ===
+                  "교양"
+              );
+
+            const generalSubjects =
+              semesterSubjects.filter(
+                (
+                  subject: any
+                ) =>
+                  subject
+                    ?.requirementType ===
+                  "일반"
+              );
+
+            const otherSubjects =
+              semesterSubjects.filter(
+                (
+                  subject: any
+                ) =>
+                  ![
+                    "전공필수",
+                    "전공선택",
+                    "교양",
+                    "일반",
+                  ].includes(
+                    String(
+                      subject
+                        ?.requirementType ||
+                      ""
+                    )
+                  )
+              );
+
+            const semesterStatus =
+              semesterSubjects.some(
+                (
+                  subject: any
+                ) =>
+                  subject
+                    ?.progressStatus ===
+                  "retake_required"
+              )
+                ? "retake_required"
+                : semesterSubjects.some(
+                      (
+                        subject: any
+                      ) =>
+                        subject
+                          ?.progressStatus ===
+                        "review_required"
+                    )
+                  ? "review_required"
+                  : semesterSubjects.some(
+                        (
+                          subject: any
+                        ) =>
+                          subject
+                            ?.progressStatus ===
+                          "in_progress"
+                      )
+                    ? "in_progress"
+                    : semesterSubjects.every(
+                          (
+                            subject: any
+                          ) =>
+                            subject
+                              ?.progressStatus ===
+                            "completed"
+                        )
+                      ? "completed"
+                      : "scheduled";
+
+            const renderSubjectGroup =
+              (
+                title: string,
+                rows: any[]
+              ) => {
+                if (
+                  rows.length ===
+                  0
+                ) {
+                  return null;
+                }
+
+                return (
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <p className="text-xs font-semibold text-muted-foreground">
+                        {title}
+                      </p>
+
+                      <span className="text-xs text-muted-foreground">
+                        {rows.length}과목
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+  {rows.map(
+    (
+      subject:
+        any,
+      subjectIndex:
+        number
+    ) => {
+      const validationStatus =
+        subject?.validation
+          ?.status ??
+        "normal";
+
+      const validationCodes =
+        subject?.validation
+          ?.codes ??
+        [];
+
+      const validationMessages =
+        subject?.validation
+          ?.messages ??
+        [];
+
+      return (
+        <div
+          key={`${semesterNo}-${subject.id ?? subject.subjectName}-${subjectIndex}`}
+          className={`flex flex-col gap-3 rounded-lg border p-3 ${getSubjectValidationContainerClass(
+            validationStatus
+          )}`}
+        >
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold">
+                {subject.subjectName ||
+                  "-"}
+              </p>
+
+              <p className="text-xs text-muted-foreground mt-1">
+                {subject.credits ||
+                  0}
+                학점
+                {" · "}
+                {subject.category ||
+                  subject.requirementType ||
+                  "구분 확인 필요"}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {validationStatus !==
+                "normal" && (
+                <Badge
+                  variant="outline"
+                  className={
+                    getSubjectValidationBadgeClass(
+                      validationStatus
+                    )
+                  }
+                >
+                  {getSubjectValidationLabel(
+                    validationStatus
+                  )}
+                </Badge>
+              )}
+
+              <Badge
+                variant="outline"
+                className={
+                  getProgressBadgeClass(
+                    subject.progressStatus
+                  )
+                }
+              >
+                {getProgressLabel(
+                  subject.progressStatus
+                )}
+              </Badge>
+            </div>
+          </div>
+
+          {validationStatus !==
+            "normal" &&
+            validationMessages.length >
+              0 && (
+              <div className="rounded-lg border bg-white/70 p-3">
+                <div className="space-y-1">
+                  {validationMessages.map(
+                    (
+                      message:
+                        string,
+                      messageIndex:
+                        number
+                    ) => (
+                      <p
+                        key={`${semesterNo}-${subject.id ?? subject.subjectName}-validation-${messageIndex}`}
+                        className={
+                          validationStatus ===
+                          "danger"
+                            ? "text-xs text-red-700"
+                            : "text-xs text-amber-700"
+                        }
+                      >
+                        {message}
+                      </p>
+                    )
+                  )}
                 </div>
 
-                <div className="flex flex-wrap gap-1">
-                  {subject.satisfies?.qualification && (
-                    <Badge variant="outline">
-                      자격
-                    </Badge>
+                {validationCodes.length >
+                  0 && (
+                  <p className="text-[11px] text-muted-foreground mt-2">
+                    검사코드{" "}
+                    {
+                      validationCodes.length
+                    }
+                    건
+                  </p>
+                )}
+              </div>
+            )}
+        </div>
+      );
+    }
+  )}
+</div>
+                  </div>
+                );
+              };
+
+            return (
+              <div
+                key={`actual-semester-${semesterNo}`}
+                className="rounded-xl border bg-slate-50/50 p-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-bold">
+                        {semester
+                          ?.semesterLabel ||
+                          `${semesterNo}학기`}
+                      </p>
+
+                      <Badge
+                        variant="outline"
+                        className={
+                          getProgressBadgeClass(
+                            semesterStatus
+                          )
+                        }
+                      >
+                        {getProgressLabel(
+                          semesterStatus
+                        )}
+                      </Badge>
+
+                      <Badge
+                        variant="outline"
+                        className="bg-white"
+                      >
+                        상세페이지
+                      </Badge>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground mt-2">
+                      개강일{" "}
+                      {semester
+                        ?.actualStartDate ||
+                        semesterSubjects[
+                          0
+                        ]
+                          ?.actualStartDate ||
+                        "-"}
+                    </p>
+                  </div>
+
+                  <Badge
+                    variant="outline"
+                    className="bg-white"
+                  >
+                    {
+                      semesterSubjects.length
+                    }
+                    과목
+                  </Badge>
+                </div>
+
+                <div className="space-y-4 mt-4">
+                  {renderSubjectGroup(
+                    "전공필수",
+                    majorRequiredSubjects
                   )}
 
-                  {subject.satisfies?.degreeMajor && (
-                    <Badge variant="outline">
-                      학위전공
-                    </Badge>
+                  {renderSubjectGroup(
+                    "전공선택",
+                    majorElectiveSubjects
                   )}
 
-                  {subject.satisfies?.faceToFace && (
-                    <Badge variant="outline">
-                      대면
-                    </Badge>
+                  {renderSubjectGroup(
+                    "교양",
+                    liberalSubjects
                   )}
 
-                  {subject.satisfies?.practice && (
-                    <Badge variant="outline">
-                      실습
-                    </Badge>
+                  {renderSubjectGroup(
+                    "일반",
+                    generalSubjects
+                  )}
+
+                  {renderSubjectGroup(
+                    "기타 / 확인 필요",
+                    otherSubjects
                   )}
                 </div>
               </div>
-            </div>
-          )
+            );
+          }
         )}
       </div>
     )}
@@ -1465,146 +2371,352 @@ const academicCanExplain =
 </Card>
 
 {/* ─────────────────────────────
-    AI 학기설계
+    AI 추가 학습계획
+───────────────────────────── */}
+<Card className="border border-violet-100 shadow-sm">
+  <CardContent className="p-5">
+    <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+      <div>
+        <div className="flex items-center gap-2">
+          <BrainCircuit className="h-5 w-5 text-violet-600" />
+
+          <h2 className="text-base font-bold">
+            AI 추가 학습계획
+          </h2>
+        </div>
+
+        <p className="text-xs text-muted-foreground mt-1">
+          현재 상세페이지의 실제 등록과목과 인정내역을 기준으로
+          공통엔진이 앞으로 추가로 필요한 과목을 학기별로 자동 배치한 예상 계획입니다.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge
+          variant="outline"
+          className="bg-violet-50 text-violet-700 border-violet-200"
+        >
+          AI 예상
+        </Badge>
+
+        <Badge
+          variant="outline"
+          className="bg-white"
+        >
+          추가 {aiPlannedSubjectCount}과목
+        </Badge>
+      </div>
+    </div>
+
+    {aiPlannedSemesterRows.length ===
+    0 ? (
+      <div className="rounded-lg border bg-emerald-50/50 p-4">
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+
+          <p className="text-sm font-semibold text-emerald-700">
+            추가로 배치할 학습계획이 없습니다.
+          </p>
+        </div>
+
+        <p className="text-xs text-muted-foreground mt-2">
+          현재 공통엔진 분석 기준으로 별도의 추가 학기 배치가 필요하지 않습니다.
+        </p>
+      </div>
+    ) : (
+      <div className="space-y-4">
+        {aiPlannedSemesterRows.map(
+          (
+            semester: any,
+            semesterIndex: number
+          ) => {
+            const semesterSubjects =
+              semester.subjects ??
+              [];
+
+            const semesterCredits =
+              semesterSubjects.reduce(
+                (
+                  total: number,
+                  subject: any
+                ) =>
+                  total +
+                  Number(
+                    subject
+                      ?.credits ||
+                    0
+                  ),
+                0
+              );
+
+            const existingSemester =
+              existingAcademicSemesters.find(
+                (
+                  existing: any
+                ) =>
+                  String(
+                    existing
+                      ?.semesterLabel ||
+                    ""
+                  ).trim() ===
+                  String(
+                    semester
+                      ?.semesterLabel ||
+                    ""
+                  ).trim()
+              ) ??
+              null;
+
+            const isExistingSemesterPlacement =
+              Boolean(
+                existingSemester
+              );
+
+            return (
+              <div
+                key={`ai-planned-semester-${semester.semesterOrder}-${semesterIndex}`}
+                className="rounded-xl border border-violet-100 bg-violet-50/30 p-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-bold">
+                        {semester
+                          .semesterLabel ||
+                          `${semester.semesterOrder}학기`}
+                      </p>
+
+                      <Badge
+                        variant="outline"
+                        className="bg-violet-50 text-violet-700 border-violet-200"
+                      >
+                        AI 추가배치
+                      </Badge>
+
+                      {isExistingSemesterPlacement && (
+                        <Badge
+                          variant="outline"
+                          className="bg-blue-50 text-blue-700 border-blue-200"
+                        >
+                          기존 학기 빈자리 활용
+                        </Badge>
+                      )}
+
+                      {!isExistingSemesterPlacement && (
+                        <Badge
+                          variant="outline"
+                          className="bg-white"
+                        >
+                          신규 예상학기
+                        </Badge>
+                      )}
+                    </div>
+
+                    <p className="text-xs text-muted-foreground mt-2">
+                      예상 일정{" "}
+                      {semester
+                        .estimatedStartDate ||
+                        "-"}
+                      {" ~ "}
+                      {semester
+                        .estimatedEndDate ||
+                        "-"}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Badge
+                      variant="outline"
+                      className="bg-white"
+                    >
+                      {semesterSubjects.length}과목
+                    </Badge>
+
+                    <Badge
+                      variant="outline"
+                      className="bg-white"
+                    >
+                      {semesterCredits}학점
+                    </Badge>
+                  </div>
+                </div>
+
+                <div className="space-y-2 mt-4">
+                  {semesterSubjects.map(
+                    (
+                      subject: any,
+                      subjectIndex: number
+                    ) => {
+                      const requirementLabel =
+                        subject
+                          ?.requirementType ||
+                        subject
+                          ?.category ||
+                        "구분 확인 필요";
+
+                      const reasons =
+                        Array.isArray(
+                          subject?.reasons
+                        )
+                          ? subject.reasons
+                          : [];
+
+                      return (
+                        <div
+                          key={`ai-planned-subject-${semester.semesterOrder}-${subject.subjectName}-${subjectIndex}`}
+                          className="rounded-lg border bg-white p-3"
+                        >
+                          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-semibold">
+                                {subject
+                                  ?.subjectName ||
+                                  "-"}
+                              </p>
+
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {Number(
+                                  subject
+                                    ?.credits ||
+                                  0
+                                )}
+                                학점
+                                {" · "}
+                                {
+                                  requirementLabel
+                                }
+                              </p>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              {subject
+                                ?.isFaceToFace ===
+                                true && (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-amber-50 text-amber-700 border-amber-200"
+                                >
+                                  대면
+                                </Badge>
+                              )}
+
+                              {subject
+                                ?.satisfies
+                                ?.practice ===
+                                true && (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-blue-50 text-blue-700 border-blue-200"
+                                >
+                                  실습
+                                </Badge>
+                              )}
+
+                              <Badge
+                                variant="outline"
+                                className="bg-violet-50 text-violet-700 border-violet-200"
+                              >
+                                추가 예정
+                              </Badge>
+                            </div>
+                          </div>
+
+                          {reasons.length >
+                            0 && (
+                            <p className="text-[11px] text-muted-foreground mt-2">
+                              공통엔진 충족조건{" "}
+                              {reasons.length}
+                              개 반영
+                            </p>
+                          )}
+                        </div>
+                      );
+                    }
+                  )}
+                </div>
+              </div>
+            );
+          }
+        )}
+      </div>
+    )}
+  </CardContent>
+</Card>
+
+{/* ─────────────────────────────
+    실제 학습기간
 ───────────────────────────── */}
 <Card className="border shadow-sm">
   <CardContent className="p-5">
-    <div className="flex items-center justify-between gap-3 mb-4">
-      <div className="flex items-center gap-2">
-        <CalendarDays className="h-5 w-5 text-blue-600" />
+    <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+      <div>
+        <div className="flex items-center gap-2">
+          <CalendarDays className="h-5 w-5 text-blue-600" />
 
-        <h2 className="text-base font-bold">
-          AI 학기계획
-        </h2>
+          <h2 className="text-base font-bold">
+            학습기간
+          </h2>
+        </div>
+
+        <p className="text-xs text-muted-foreground mt-1">
+          상세페이지 실제 개강일을 기준으로 시작일을 표시하고,
+          종료일만 공통엔진이 현재 학습계획을 기준으로 예상합니다.
+        </p>
       </div>
 
-      <Badge variant="outline">
-        {plannedSemesterCount}학기 · 약 {nominalDurationMonths}개월
+      <Badge
+        variant="outline"
+        className="bg-blue-50 text-blue-700 border-blue-200"
+      >
+        실제 일정 기준
       </Badge>
     </div>
 
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-      <div className="rounded-lg border bg-slate-50 p-3">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="rounded-xl border bg-slate-50 p-4">
         <p className="text-xs text-muted-foreground">
-          예상 시작일
+          학습 시작일
         </p>
 
-        <p className="font-semibold mt-1">
-          {estimatedStudyStartDate || "-"}
+        <p className="text-lg font-bold mt-2">
+          {displayStudyStartDate || "-"}
         </p>
+
+        <p className="text-xs text-muted-foreground mt-2">
+  {actualStudyStartDate
+    ? "상세페이지 실제 최초 개강일"
+    : "공통엔진 예상 최초 개강일"}
+</p>
       </div>
 
-      <div className="rounded-lg border bg-slate-50 p-3">
+      <div className="rounded-xl border bg-slate-50 p-4">
         <p className="text-xs text-muted-foreground">
           예상 학습 종료일
         </p>
 
-        <p className="font-semibold mt-1">
+        <p className="text-lg font-bold mt-2">
           {estimatedStudyEndDate || "-"}
+        </p>
+
+        <p className="text-xs text-muted-foreground mt-2">
+          현재 등록된 학기와 남은 학습계획 기준
         </p>
       </div>
     </div>
 
-<div className="space-y-3">
-  {existingAcademicSemesters.map(
-    (
-      semester: any,
-      index: number
-    ) => (
-      <div
-        key={`existing-${semester.semesterOrder}-${index}`}
-        className="rounded-xl border p-4 bg-blue-50/30"
-      >
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <p className="font-bold">
-              {semester.semesterLabel ||
-                `${semester.semesterOrder}학기`}
-            </p>
-
-            <Badge
-              variant="outline"
-              className="bg-white"
-            >
-              상세페이지
-            </Badge>
-          </div>
-
-          <Badge variant="outline">
-            {semester.subjectCount || 0}과목
-          </Badge>
-        </div>
-
-        <p className="text-xs text-muted-foreground mt-1">
-          실제 개강일 :{" "}
-          {semester.actualStartDate || "-"}
-        </p>
-
-        <div className="flex flex-wrap gap-2 mt-3">
-          {(semester.subjectNames || []).map(
-            (
-              subjectName: string,
-              subjectIndex: number
-            ) => (
-              <Badge
-                key={`${subjectName}-${subjectIndex}`}
-                variant="outline"
-                className="bg-white"
-              >
-                {subjectName}
-              </Badge>
-            )
-          )}
-        </div>
-      </div>
-    )
-  )}
-
-  {plannedSemesters.map(
-    (
-      semester: any,
-      index: number
-    ) => (
-      <div
-        key={`${semester.semesterLabel}-${index}`}
-        className="rounded-xl border p-4"
-      >
-        <div className="flex items-center justify-between gap-3">
-          <p className="font-bold">
-            {semester.semesterLabel}
+    {academicCompletionDate && (
+      <div className="mt-3 rounded-lg border bg-white p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-muted-foreground">
+            학업 완료 예상일
           </p>
 
-          <Badge variant="outline">
-            {semester.subjectCount}과목
-          </Badge>
-        </div>
-
-        <p className="text-xs text-muted-foreground mt-1">
-          {semester.estimatedStartDate || "-"}
-          {" ~ "}
-          {semester.estimatedEndDate || "-"}
-        </p>
-
-        <div className="flex flex-wrap gap-2 mt-3">
-          {(semester.subjectNames || []).map(
-            (
-              subjectName: string,
-              subjectIndex: number
-            ) => (
-              <Badge
-                key={`${subjectName}-${subjectIndex}`}
-                variant="outline"
-                className="bg-slate-50"
-              >
-                {subjectName}
-              </Badge>
-            )
-          )}
+          <p className="text-sm font-semibold">
+            {academicCompletionDate}
+          </p>
         </div>
       </div>
-    )
-  )}
-</div>
+    )}
   </CardContent>
 </Card>
 

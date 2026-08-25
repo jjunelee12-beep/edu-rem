@@ -367,6 +367,28 @@ consultationPolicy: text(
   "consultationPolicy"
 ),
 
+/**
+ * 신규상담 Lead Flow 동적 설정.
+ *
+ * 상담 단계명 / 단계 순서 / 완료조건 /
+ * 다음 Action / 사용자 의미분기 등을
+ * 회사별 JSON으로 저장한다.
+ *
+ * 서버 Flow Engine은 이 설정만 해석하며
+ * 특정 과정명 / 상담단계 / 회사 정책을
+ * 코드에 하드코딩하지 않는다.
+ *
+ * null:
+ * 아직 회사별 Flow가 설정되지 않은 상태.
+ *
+ * 실제 구조는
+ * kakao-ai-lead-flow-engine.ts의
+ * KakaoAiLeadFlowConfig 규격을 따른다.
+ */
+leadFlowConfig: json(
+  "leadFlowConfig"
+),
+
     /**
      * 카카오 AI가 비용/수강료 관련 내용을
      * 직접 안내할 수 있는지 여부

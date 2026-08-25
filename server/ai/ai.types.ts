@@ -3970,6 +3970,29 @@ export type StudentRiskSubjectItem = {
   credits: number;
 
   semesterNo?: number | null;
+
+  progressStatus?:
+    | "scheduled"
+    | "in_progress"
+    | "completed"
+    | "retake_required"
+    | "review_required";
+
+  actualStartDate?:
+    string | null;
+
+validation?: {
+  status:
+    | "normal"
+    | "warning"
+    | "danger";
+
+  codes:
+    string[];
+
+  messages:
+    string[];
+};
 };
 
 export type StudentDetailRiskToolOutput = {
@@ -4003,6 +4026,76 @@ totalSubjectCount: number;
  * 중복 포함 DB에 등록된 전체 과목 건수
  */
 registeredSubjectCount: number;
+
+/**
+ * 상세페이지 우리플랜 기준
+ * 수강완료 상태인 과목 수.
+ */
+completedSubjectCount: number;
+
+/**
+ * 상세페이지 우리플랜 기준
+ * 현재 수강 진행중인 과목 수.
+ */
+inProgressSubjectCount: number;
+
+/**
+ * 상세페이지 우리플랜 기준
+ * 아직 개강하지 않은 예정 과목 수.
+ */
+scheduledSubjectCount: number;
+
+/**
+ * 상세페이지 우리플랜 기준
+ * 재수강이 필요한 과목 수.
+ */
+retakeRequiredSubjectCount: number;
+
+/**
+ * 실제 개강일 등이 없어
+ * 자동 상태판정이 불가능한 과목 수.
+ */
+reviewRequiredSubjectCount: number;
+
+/**
+ * 현재 공통엔진이 확정할 수 있는
+ * 전체 학습과정 기준 필요과목 수.
+ *
+ * null인 경우에는 학위 추가과목 등을
+ * 현재 데이터만으로 확정할 수 없는 상태다.
+ */
+requiredSubjectCount:
+  number | null;
+
+/**
+ * 전체 필요과목 중 아직
+ * 상세페이지 학기계획에 배치되지 않은 과목 수.
+ *
+ * 전체 필요과목을 확정할 수 없는 경우 null.
+ */
+unassignedSubjectCount:
+  number | null;
+
+/**
+ * 전체 필요과목 대비
+ * 실제 수강완료 과목 비율.
+ *
+ * 0 ~ 100
+ * 전체 필요과목을 확정할 수 없는 경우 null.
+ */
+completionProgressPercent:
+  number | null;
+
+/**
+ * 전체 필요과목 대비
+ * 완료 + 진행중 + 예정으로
+ * 실제 학습계획에 배치된 비율.
+ *
+ * 0 ~ 100
+ * 전체 필요과목을 확정할 수 없는 경우 null.
+ */
+plannedProgressPercent:
+  number | null;
 
 currentCredits: number;
     requiredCredits: number | null;

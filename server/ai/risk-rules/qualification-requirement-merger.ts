@@ -11,6 +11,11 @@ import type {
   QualificationRiskCourseKey,
 } from "./qualification-risk-analyzer";
 
+import {
+  buildQualificationDisplayRequirements,
+  type QualificationDisplayRequirement,
+} from "./qualification-display-requirement-builder";
+
 export type UnifiedRequirementStatus =
   | "ready"
   | "review_required"
@@ -140,6 +145,9 @@ export type UnifiedQualificationRequirement = {
    */
   requirementIssues:
     QualificationRuleAnalysis["issues"];
+
+displayRequirements:
+  QualificationDisplayRequirement[];
 };
 
 export type UnifiedQualificationRequirements = {
@@ -178,6 +186,18 @@ export type UnifiedQualificationRequirements = {
 
     hasRemainingQualificationRequirement:
       boolean;
+
+displayMode:
+  | "qualification_only"
+  | "degree_and_qualification";
+
+displayRequirements: {
+  degree:
+    QualificationDisplayRequirement[];
+
+  qualification:
+    QualificationDisplayRequirement[];
+};
 
     /**
      * 중요:
@@ -832,6 +852,173 @@ if (
     status ===
     "ready";
 
+const degreeDisplayRequirements:
+  QualificationDisplayRequirement[] =
+  [];
+
+if (
+  degreeRequirement
+    .requiresNewDegreeTrack
+) {
+  const pushDegreeRequirement = (
+    requirement:
+      QualificationDisplayRequirement
+  ) => {
+    degreeDisplayRequirements.push(
+      requirement
+    );
+  };
+
+  const createDegreeCreditRequirement = (
+    key: string,
+    label: string,
+    required: number | null,
+    current: number,
+    remaining: number | null
+  ): QualificationDisplayRequirement | null => {
+    if (
+      required === null &&
+      remaining === null
+    ) {
+      return null;
+    }
+
+    return {
+      key,
+      label,
+      type:
+        "credits",
+
+      required,
+      current,
+      remaining,
+
+      unit:
+        "학점",
+
+      status:
+        remaining === null
+          ? "review_required"
+          : remaining <= 0
+            ? "completed"
+            : "remaining",
+    };
+  };
+
+  const totalRequirement =
+    createDegreeCreditRequirement(
+      "degree_total_credits",
+      "총 학점",
+      degreeSummary
+        .requiredTotalCredits,
+      degreeSummary
+        .currentTotalCredits,
+      degreeSummary
+        .remainingTotalCredits
+    );
+
+  if (totalRequirement) {
+    pushDegreeRequirement(
+      totalRequirement
+    );
+  }
+
+  const majorRequirement =
+    createDegreeCreditRequirement(
+      "degree_major_credits",
+      "전공",
+      degreeSummary
+        .requiredMajorCredits,
+      degreeSummary
+        .currentMajorCredits,
+      degreeSummary
+        .remainingMajorCredits
+    );
+
+  if (majorRequirement) {
+    pushDegreeRequirement(
+      majorRequirement
+    );
+  }
+
+  const liberalRequirement =
+    createDegreeCreditRequirement(
+      "degree_liberal_credits",
+      "교양",
+      degreeSummary
+        .requiredLiberalCredits,
+      degreeSummary
+        .currentLiberalCredits,
+      degreeSummary
+        .remainingLiberalCredits
+    );
+
+  if (liberalRequirement) {
+    pushDegreeRequirement(
+      liberalRequirement
+    );
+  }
+
+  if (
+    degreeSummary
+      .requiredAccreditedCredits !==
+    null
+  ) {
+    const accreditedRemaining =
+      Math.max(
+        0,
+        degreeSummary
+          .requiredAccreditedCredits -
+          degreeSummary
+            .currentTotalCredits
+      );
+
+    pushDegreeRequirement({
+      key:
+        "degree_accredited_credits",
+
+      label:
+        "평가인정 학점",
+
+      type:
+        "credits",
+
+      required:
+        degreeSummary
+          .requiredAccreditedCredits,
+
+      current:
+        degreeSummary
+          .currentTotalCredits,
+
+      remaining:
+        accreditedRemaining,
+
+      unit:
+        "학점",
+
+      status:
+        accreditedRemaining <= 0
+          ? "completed"
+          : "remaining",
+    });
+  }
+}
+
+const qualificationDisplayRequirements =
+  buildQualificationDisplayRequirements(
+    qualificationAnalysis
+  );
+
+const combinedDisplayMode:
+  UnifiedQualificationRequirements[
+    "combined"
+  ]["displayMode"] =
+  degreeRequirement
+    .requiresNewDegreeTrack
+    ? "degree_and_qualification"
+    : "qualification_only";
+
   return {
     courseKey:
       qualificationAnalysis
@@ -935,27 +1122,41 @@ if (
       ...qualificationCommon,
 
       details: {
-        ...qualificationAnalysis
-          .summary,
-      },
+  ...qualificationAnalysis
+    .summary,
+},
 
-      requirementIssues:
-        qualificationAnalysis
-          .issues,
+displayRequirements:
+  qualificationDisplayRequirements,
+
+requirementIssues:
+  qualificationAnalysis
+    .issues,
     },
 
     combined: {
-      hasRemainingDegreeRequirement,
+  hasRemainingDegreeRequirement,
 
-      hasRemainingQualificationRequirement,
+  hasRemainingQualificationRequirement,
 
-      /**
-       * 하나라도 남아 있다면
-       * 다음 단계에서 실제 과목 조합을 계산해야 한다.
-       */
-      requiresSubjectOptimization:
-        hasRemainingDegreeRequirement ||
-        hasRemainingQualificationRequirement,
-    },
+  displayMode:
+    combinedDisplayMode,
+
+  displayRequirements: {
+    degree:
+      degreeDisplayRequirements,
+
+    qualification:
+      qualificationDisplayRequirements,
+  },
+
+  /**
+   * 하나라도 남아 있다면
+   * 다음 단계에서 실제 과목 조합을 계산해야 한다.
+   */
+  requiresSubjectOptimization:
+    hasRemainingDegreeRequirement ||
+    hasRemainingQualificationRequirement,
+},
   };
 }
