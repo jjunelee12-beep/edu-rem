@@ -1065,12 +1065,14 @@ export function evaluateKakaoAiLeadFlow(
         transitionStage,
 
       nextStageId:
-        transitionStage?.id ??
-        normalizeId(
-          matchedTransition
-            .toStageId
-        ) ||
-        null,
+  transitionStage?.id ??
+  (
+    normalizeId(
+      matchedTransition
+        .toStageId
+    ) ||
+    null
+  ),
 
       actionId:
         normalizeId(
