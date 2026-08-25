@@ -663,6 +663,17 @@ const plannedAcademicSemesters =
   [];
 
 /**
+ * 상세페이지에 실제 등록되어 있는 기존 학기.
+ *
+ * academicSummary.studyPlan을 우선 사용하고,
+ * 없을 경우 Semester Planner 원본 결과를 사용한다.
+ */
+const existingAcademicSemesters =
+  studyPlanSummary?.existingSemesters ??
+  semesterPlan?.existingSemesters ??
+  [];
+
+/**
  * ─────────────────────────────
  * AI 추가 학습계획 화면용 데이터
  * ─────────────────────────────
