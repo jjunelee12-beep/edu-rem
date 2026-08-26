@@ -1107,6 +1107,25 @@ const degreeAwardLabel =
 const qualificationEstimatedDate =
   timelineSummary?.qualificationEstimatedDate ?? null;
 
+/**
+ * 최종 학습 종료 기준.
+ *
+ * 자격과정:
+ * 자격증 신청 예상시점까지를 학습 종료로 본다.
+ *
+ * 학위과정:
+ * 학위수여가 필요한 경우 학위수여 예상시점까지 본다.
+ *
+ * 둘 다 없는 경우에만
+ * 마지막 수업 종료일을 fallback으로 사용한다.
+ */
+const finalStudyCompletionLabel =
+  qualificationEstimatedDate ??
+  degreeAwardLabel ??
+  creditRecognitionLabel ??
+  estimatedStudyEndDate ??
+  null;
+
 const qualificationMessage =
   timelineSummary?.qualificationMessage ?? "";
 
@@ -2371,33 +2390,33 @@ const academicCanExplain =
       </div>
 
       <div className="rounded-xl border bg-slate-50 p-4">
-        <p className="text-xs text-muted-foreground">
-          예상 학습 종료일
-        </p>
+  <p className="text-xs text-muted-foreground">
+    예상 학습 종료일
+  </p>
 
-        <p className="text-lg font-bold mt-2">
-          {estimatedStudyEndDate || "-"}
-        </p>
+  <p className="text-lg font-bold mt-2">
+    {finalStudyCompletionLabel || "-"}
+  </p>
 
-        <p className="text-xs text-muted-foreground mt-2">
-          현재 등록된 학기와 남은 학습계획 기준
-        </p>
-      </div>
+  <p className="text-xs text-muted-foreground mt-2">
+    최종 수업 및 행정절차 완료 기준
+  </p>
+</div>
     </div>
 
     {academicCompletionDate && (
-      <div className="mt-3 rounded-lg border bg-white p-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-muted-foreground">
-            학업 완료 예상일
-          </p>
+  <div className="mt-3 rounded-lg border bg-white p-3">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <p className="text-sm text-muted-foreground">
+        수업 완료 예상일
+      </p>
 
-          <p className="text-sm font-semibold">
-            {academicCompletionDate}
-          </p>
-        </div>
-      </div>
-    )}
+      <p className="text-sm font-semibold">
+        {academicCompletionDate}
+      </p>
+    </div>
+  </div>
+)}
   </CardContent>
 </Card>
 
@@ -2504,14 +2523,14 @@ const academicCanExplain =
 
     <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
       <div className="rounded-xl border bg-slate-50 p-4">
-        <p className="text-xs text-muted-foreground">
-          예상 학습 종료
-        </p>
+  <p className="text-xs text-muted-foreground">
+    예상 학습 종료
+  </p>
 
-        <p className="font-semibold mt-1">
-          {academicCompletionDate || "-"}
-        </p>
-      </div>
+  <p className="font-semibold mt-1">
+    {finalStudyCompletionLabel || "-"}
+  </p>
+</div>
 
       <div className="rounded-xl border bg-slate-50 p-4">
         <p className="text-xs text-muted-foreground">

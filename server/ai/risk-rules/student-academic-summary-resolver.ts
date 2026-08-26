@@ -945,12 +945,26 @@ if (
     );
   }
 
-if (
+const finalStudyCompletionLabel =
   administrativeTimeline
-    .academicCompletionDate
+    .qualification
+    .earliestEstimatedDate ??
+  administrativeTimeline
+    .degree
+    .estimatedAwardLabel ??
+  administrativeTimeline
+    .creditRecognition
+    .nextAvailableWindow
+    ?.label ??
+  administrativeTimeline
+    .academicCompletionDate ??
+  null;
+
+if (
+  finalStudyCompletionLabel
 ) {
   summaryLines.push(
-    `최종 학습 종료 예상일은 ${administrativeTimeline.academicCompletionDate}입니다.`
+    `최종 학습 종료 예상시점은 ${finalStudyCompletionLabel}입니다.`
   );
 }
 
