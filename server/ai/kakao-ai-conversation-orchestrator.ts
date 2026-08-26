@@ -3814,6 +3814,10 @@ if (
   );
 }
 
+
+let leadRegistration:
+  KakaoAiLeadRegistrationActionResult | null =
+  null;
 /**
  * 10.
  * 신규 카카오 상담자 → 상담DB 자동접수.
@@ -3937,6 +3941,10 @@ tracePerf(
 );
 
 
+
+let callbackRequest:
+  KakaoAiCallbackRequestActionResult | null =
+  null;
 
 /**
  * 11.
