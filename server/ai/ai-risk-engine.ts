@@ -122,10 +122,11 @@ function normalizeSubjectName(
  * - 자격요건 인정과목
  * - 동일교과목 비교
  * - 학위학점
- * - 학기 과목 수
- * - 학기 예정학점
+ * 단, 상세페이지에 실제 만들어진 학습 슬롯이므로
+ * 학기 과목 수와 학습 진행현황에는 포함한다.
  *
- * 모든 학업 계산에서 제외한다.
+ * 과목명이 확정되기 전까지는
+ * 자격/학위 인정 계산에서만 제외한다.
  */
 function isPlaceholderPlanSubject(
   value: unknown
@@ -451,6 +452,23 @@ function isValidRecognizedSubject(
     return false;
   }
 
+  /**
+   * "새 과목1", "새 과목2" 등은
+   * 상세페이지에 미리 확보해둔 학습 슬롯이다.
+   *
+   * 학습 진행현황에는 포함하지만,
+   * 과목명이 확정되기 전까지는
+   * 자격/학위 인정과목으로 계산하지 않는다.
+   */
+  if (
+    subject.source === "plan" &&
+    isPlaceholderPlanSubject(
+      subject.subjectName
+    )
+  ) {
+    return false;
+  }
+
   if (subject.credits <= 0) {
     return false;
   }
@@ -699,12 +717,6 @@ function createSubjectRows(params: {
 
   const planRows =
   (params.planSemesters || [])
-    .filter(
-      (row: any) =>
-        !isPlaceholderPlanSubject(
-          row?.subjectName
-        )
-    )
     .map((row: any) => {
   const semesterNo =
     Math.floor(
@@ -3756,24 +3768,81 @@ let configuredStudyEndDate:
 if (
   lastConfiguredStartDate
 ) {
+  /**
+   * 마지막 설계학기에 실제 개강일이 있으면
+   * 실제 개강일 + 4개월을 수업 종료일로 사용한다.
+   */
   configuredStudyEndDate =
     addAcademicMonths(
       lastConfiguredStartDate,
       4
     );
 } else if (
-  firstConfiguredStartDate &&
-  configuredAcademicSemesters
-    .length >
-    0
+  lastConfiguredSemester
+    ?.semesterLabel
 ) {
-  configuredStudyEndDate =
-    addAcademicMonths(
-      firstConfiguredStartDate,
-      configuredAcademicSemesters
-        .length *
-        4
-    );
+  /**
+   * 마지막 설계학기에 실제 개강일이 아직 없다면
+   * 최초 개강일 + 학기수 계산을 사용하지 않는다.
+   *
+   * 학점은행제 학기는 중간 공백이 있으므로
+   * "3학기 = 정확히 12개월" 방식은 잘못될 수 있다.
+   *
+   * 대신 상세페이지 마지막 귀속학기를 기준으로
+   * 예상 수업 종료일을 잡는다.
+   *
+   * 1학기 → 3월 말
+   * 2학기 → 9월 말
+   */
+  const semesterMatch =
+    String(
+      lastConfiguredSemester
+        .semesterLabel
+    )
+      .trim()
+      .match(
+        /^(\d{4})년\s*([12])학기$/
+      );
+
+  if (
+    semesterMatch
+  ) {
+    const semesterYear =
+      Number(
+        semesterMatch[1]
+      );
+
+    const semesterHalf =
+      Number(
+        semesterMatch[2]
+      );
+
+    if (
+      semesterHalf ===
+      1
+    ) {
+      configuredStudyEndDate =
+        new Date(
+          Date.UTC(
+            semesterYear,
+            2,
+            31
+          )
+        );
+    } else if (
+      semesterHalf ===
+      2
+    ) {
+      configuredStudyEndDate =
+        new Date(
+          Date.UTC(
+            semesterYear,
+            8,
+            30
+          )
+        );
+    }
+  }
 }
 
 const configuredStudyStartDate =
@@ -4692,77 +4761,119 @@ if (
     .degree
     .requiresNewDegreeTrack
 ) {
-  const plannerCanResolveWholePlan =
-    qualificationSubjectPlan.canPlan &&
-    !qualificationSubjectPlan
-      .degreeFillRemaining
-      .requiresAdditionalDegreeSubjects;
+  /**
+   * 고졸 등 자격 + 새 학위과정을 함께 진행하는 경우.
+   *
+   * 자동 과목 추천 Planner의 성공 여부와
+   * 전체 학습과정 진행률을 연결하지 않는다.
+   *
+   * 사회복지사 과목은 학위학점에도 동시에 포함되므로
+   * 자격과목 + 학위과목을 단순 합산하지 않는다.
+   */
+
+  const qualificationRequiredSubjects =
+    Number(
+      unifiedRequirements
+        .qualification
+        .requiredSubjects ??
+      0
+    );
+
+  /**
+   * 새 학위과정에서 필요한 총 학점.
+   * 현재 고졸 전문학사 과정이면 80학점.
+   */
+  const degreeRequiredTotalCredits =
+    Number(
+      degreeCreditAnalysis
+        ?.summary
+        ?.requiredTotalCredits ??
+      requiredCredits ??
+      0
+    );
+
+  /**
+   * 학점은행제 일반 과목은 기본 3학점 기준.
+   *
+   * 80학점이면:
+   * ceil(80 / 3) = 27과목.
+   *
+   * 자격과목 수가 이보다 더 큰 과정이 있을 수 있으므로
+   * 둘 중 큰 값을 전체 최소 필요과목으로 사용한다.
+   */
+  const degreeMinimumSubjectCount =
+    degreeRequiredTotalCredits >
+    0
+      ? Math.ceil(
+          degreeRequiredTotalCredits /
+            3
+        )
+      : 0;
+
+  requiredSubjectCount =
+    Math.max(
+      qualificationRequiredSubjects,
+      degreeMinimumSubjectCount
+    );
+
+  /**
+   * 상세페이지에 실제 배치된 슬롯.
+   *
+   * 새 과목도 과목명이 미확정일 뿐
+   * 실제 설계 슬롯이므로 포함한다.
+   */
+  const assignedPlanSubjectCount =
+    completedSubjectCount +
+    inProgressSubjectCount +
+    scheduledSubjectCount +
+    reviewRequiredSubjectCount;
+
+  unassignedSubjectCount =
+    requiredSubjectCount >
+    0
+      ? Math.max(
+          requiredSubjectCount -
+            Math.min(
+              assignedPlanSubjectCount,
+              requiredSubjectCount
+            ),
+          0
+        )
+      : null;
 
   if (
-    plannerCanResolveWholePlan
+    requiredSubjectCount >
+    0
   ) {
-    requiredSubjectCount =
-      projectedRecognizedSubjects
-        .length +
-      qualificationSubjectPlan
-        .selectedSubjectCount;
+    const completedForProgress =
+      Math.min(
+        completedSubjectCount,
+        requiredSubjectCount
+      );
 
-    /**
-     * Planner가 현재 실제 학기계획 이후에도
-     * 추가로 선택한 과목 = 아직 미배치 과목.
-     */
-    unassignedSubjectCount =
-      qualificationSubjectPlan
-        .selectedSubjectCount;
+    const assignedForProgress =
+      Math.min(
+        assignedPlanSubjectCount,
+        requiredSubjectCount
+      );
 
-    if (
-      requiredSubjectCount >
-      0
-    ) {
-      /**
-       * 실제 취득완료.
-       *
-       * 전적대 / 추가 인정과목 +
-       * 완료된 우리플랜 과목이 포함된
-       * 중복제거 인정과목 기준이다.
-       */
-      const completedForProgress =
-        Math.min(
-          validRecognizedSubjects
-            .length,
+    completionProgressPercent =
+      Math.round(
+        (
+          completedForProgress /
           requiredSubjectCount
-        );
+        ) *
+          100
+      );
 
-      /**
-       * 취득완료 +
-       * 현재 진행중/예정/확인필요로
-       * 실제 배치된 과목.
-       */
-      const assignedForProgress =
-        Math.min(
-          projectedRecognizedSubjects
-            .length,
+    plannedProgressPercent =
+      Math.round(
+        (
+          assignedForProgress /
           requiredSubjectCount
-        );
-
-      completionProgressPercent =
-        Math.round(
-          (
-            completedForProgress /
-            requiredSubjectCount
-          ) *
-            100
-        );
-
-      plannedProgressPercent =
-        Math.round(
-          (
-            assignedForProgress /
-            requiredSubjectCount
-          ) *
-            100
-        );
-    }
+        ) *
+          100
+      );
   }
 }
 

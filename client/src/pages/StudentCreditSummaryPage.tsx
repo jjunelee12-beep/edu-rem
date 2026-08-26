@@ -1065,19 +1065,15 @@ const degreeRemainingLiberalCredits =
 const degreeCurrentGeneralCredits =
   degreeSummary?.currentGeneralCredits ?? 0;
 
+/**
+ * 학위 + 자격 통합 기준 앞으로 필요한 과목.
+ *
+ * 프론트에서 자격과목 수를 기준으로 다시 계산하지 않고,
+ * 공통엔진이 학위/자격 중복을 제거하여 계산한
+ * 미배치 과목 수를 그대로 사용한다.
+ */
 const additionalSubjectCount =
-  Math.max(
-    Number(
-      qualificationRequiredSubjects ||
-      0
-    ) -
-      (
-        completedSubjectCount +
-        inProgressSubjectCount +
-        scheduledSubjectCount
-      ),
-    0
-  );
+  unassignedSubjectCount;
 
 const additionalCredits =
   studyPlanSummary?.additionalCredits ?? 0;
@@ -1502,24 +1498,24 @@ const academicCanExplain =
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
         <div className="rounded-xl border bg-slate-50 p-4">
           <p className="text-xs text-muted-foreground">
-            자격 필요과목
-          </p>
+  전체 필요과목
+</p>
 
           <div className="flex items-end gap-1 mt-2">
             <span className="text-2xl font-bold">
-              {qualificationRequiredSubjects ?? "-"}
-            </span>
+  {requiredSubjectCount ?? "-"}
+</span>
 
-            {qualificationRequiredSubjects !== null && (
-              <span className="text-sm text-muted-foreground mb-0.5">
-                과목
-              </span>
-            )}
+{requiredSubjectCount !== null && (
+  <span className="text-sm text-muted-foreground mb-0.5">
+    과목
+  </span>
+)}
           </div>
 
           <p className="text-xs text-muted-foreground mt-2">
-            인정 {qualificationCompletedSubjects ?? "-"}과목
-          </p>
+  학위·자격 통합 기준
+</p>
         </div>
 
         <div className="rounded-xl border bg-slate-50 p-4">
@@ -1530,12 +1526,12 @@ const academicCanExplain =
           <div className="flex items-end gap-1 mt-2">
             <span
               className={`text-2xl font-bold ${
-                additionalSubjectCount > 0
+                Number(additionalSubjectCount ?? 0) > 0
                   ? "text-blue-600"
                   : "text-emerald-600"
               }`}
             >
-              {additionalSubjectCount}
+              {additionalSubjectCount ?? "-"}
             </span>
 
             <span className="text-sm text-muted-foreground mb-0.5">
