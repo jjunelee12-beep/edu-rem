@@ -58,6 +58,8 @@ practicePolicy: string;
 administrativeSupportPolicy: string;
   consultationPolicy: string;
 
+leadFlowConfigText: string;
+
   priceDisclosureEnabled: boolean;
 priceGuide: string;
   kakaoBotId: string;
@@ -111,6 +113,7 @@ classManagementPolicy: "",
 practicePolicy: "",
 administrativeSupportPolicy: "",
 consultationPolicy: "",
+leadFlowConfigText: "",
 
   priceDisclosureEnabled: false,
 priceGuide: "",
@@ -379,6 +382,15 @@ consultationPolicy:
     data.consultationPolicy || ""
   ),
 
+leadFlowConfigText:
+  data.leadFlowConfig
+    ? JSON.stringify(
+        data.leadFlowConfig,
+        null,
+        2
+      )
+    : "",
+
             priceDisclosureEnabled:
         data.priceDisclosureEnabled === true,
 
@@ -496,6 +508,46 @@ const staffTeamPageUrl =
       return;
     }
 
+let leadFlowConfig:
+  unknown |
+  null =
+  null;
+
+const leadFlowConfigText =
+  form.leadFlowConfigText.trim();
+
+if (
+  leadFlowConfigText
+) {
+  try {
+    leadFlowConfig =
+      JSON.parse(
+        leadFlowConfigText
+      );
+  } catch {
+    toast.error(
+      "신규상담 Flow 설정 JSON 형식이 올바르지 않습니다."
+    );
+
+    return;
+  }
+
+  if (
+    !leadFlowConfig ||
+    typeof leadFlowConfig !==
+      "object" ||
+    Array.isArray(
+      leadFlowConfig
+    )
+  ) {
+    toast.error(
+      "신규상담 Flow 설정은 JSON 객체 형식이어야 합니다."
+    );
+
+    return;
+  }
+}
+
     const kakaoBotId =
       form.kakaoBotId.trim();
 
@@ -573,6 +625,8 @@ administrativeSupportPolicy:
 consultationPolicy:
   form.consultationPolicy.trim() ||
   null,
+
+leadFlowConfig,
 
             priceDisclosureEnabled:
         form.priceDisclosureEnabled,
@@ -1568,6 +1622,38 @@ const staffRecommendationRows =
         {form.consultationPolicy.length}/10000
       </div>
     </div>
+
+<div className="space-y-2 border-t pt-6">
+  <Label htmlFor="leadFlowConfigText">
+    신규상담 Flow 설정
+  </Label>
+
+  <Textarea
+    id="leadFlowConfigText"
+    value={
+      form.leadFlowConfigText
+    }
+    rows={18}
+    className="font-mono text-xs"
+    placeholder="회사별 신규상담 Flow JSON을 입력하세요."
+    onChange={(event) =>
+      setForm((prev) => ({
+        ...prev,
+
+        leadFlowConfigText:
+          event.target.value,
+      }))
+    }
+  />
+
+  <p className="text-xs leading-5 text-muted-foreground">
+    신규상담의 단계, 전환조건,
+    다음 행동을 회사별로 설정합니다.
+    서버 코드는 특정 상담 순서를
+    하드코딩하지 않고 이 설정을
+    기준으로 동작합니다.
+  </p>
+</div>
   </CardContent>
 </Card>
 

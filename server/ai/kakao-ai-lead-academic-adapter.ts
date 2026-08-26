@@ -1868,6 +1868,69 @@ Number(
     existingSemesters,
   });
 
+console.log(
+  "[KAKAO AI LEAD ACADEMIC DEBUG]",
+  JSON.stringify(
+    {
+      requestedCourse,
+      courseKey,
+
+      degreeRequirement,
+
+      requirements,
+
+      degreeTemplatesCount:
+        degreeTemplates.length,
+
+      subjectPlan: {
+        selectedSubjectCount:
+          subjectPlan.selectedSubjects.length,
+
+        selectedSubjects:
+          subjectPlan.selectedSubjects.map(
+            subject => ({
+              subjectName:
+                subject.subjectName,
+
+              category:
+                subject.category,
+
+              requirementType:
+                subject.requirementType,
+
+              credits:
+                subject.credits,
+            })
+          ),
+
+        unresolvedRequirements:
+          subjectPlan.unresolvedRequirements,
+
+        warnings:
+          subjectPlan.warnings,
+      },
+
+      semesterPlan: {
+        semesters:
+          semesterPlan.semesters,
+
+        estimatedStudyEndDate:
+          semesterPlan.estimatedStudyEndDate,
+
+        unresolvedReasons:
+          semesterPlan.unresolvedReasons,
+
+        warnings:
+          semesterPlan.warnings,
+      },
+
+      administrativeTimeline,
+    },
+    null,
+    2
+  )
+);
+
   /**
    * 8.
    * AI가 직접 설명할 최종 공통 Summary.

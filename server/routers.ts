@@ -3075,6 +3075,11 @@ consultationPolicy: z
   .nullable()
   .optional(),
 
+leadFlowConfig: z
+  .unknown()
+  .nullable()
+  .optional(),
+
           priceDisclosureEnabled: z
             .boolean()
             .optional(),
@@ -3173,6 +3178,9 @@ administrativeSupportPolicy:
 
 consultationPolicy:
   input.consultationPolicy,
+
+leadFlowConfig:
+  input.leadFlowConfig,
 
             priceDisclosureEnabled:
               input.priceDisclosureEnabled,
