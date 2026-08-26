@@ -100,6 +100,22 @@ export async function executeKakaoAiDeveloperTestAction(
     params.command ===
       "developer_lead"
   ) {
+
+/**
+ * /lead 테스트는 현재 담당자 인증이 남아 있더라도
+ * 완전히 신규상담자로 전환해야 한다.
+ *
+ * Staff Auth Session이 남아 있으면
+ * 다음 일반 메시지를 Staff Assistant가 먼저 처리하기 때문에
+ * 반드시 담당자 인증을 해제한다.
+ */
+await db.revokeKakaoAiStaffAuthSession({
+  organizationId:
+    params.organizationId,
+
+  conversationId:
+    params.conversationId,
+});
     await db.setKakaoAiDeveloperTestSession({
       organizationId:
         params.organizationId,

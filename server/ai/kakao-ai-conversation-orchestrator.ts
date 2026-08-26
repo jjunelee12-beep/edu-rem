@@ -1433,10 +1433,66 @@ registrationVerification:
         null,
 
       registrationVerification:
-        null,
+  null,
 
-      responseComposition:
-        null,
+responseComposition: {
+  success:
+    developerTestAction.success,
+
+  replyText:
+    developerReplyText,
+
+  usedContextTypes:
+    [],
+
+  mentionedRestriction:
+    false,
+
+  askedClarification:
+    false,
+
+  consultationFlowPatch: {
+    qualificationExplained:
+      false,
+
+    durationExplained:
+      false,
+
+    theoryExplained:
+      false,
+
+    practicumExplained:
+      false,
+
+    administrationExplained:
+      false,
+
+    companyBenefitsExplained:
+      false,
+
+    staffRecommendationOffered:
+      false,
+
+    consultationFormOffered:
+      false,
+  },
+
+  openAiResponseId:
+    null,
+
+  model:
+    null,
+
+  fallbackUsed:
+    false,
+
+  errorMessage:
+    developerTestAction.success
+      ? null
+      : developerTestAction.errorMessage ||
+        developerReplyText ||
+        "개발자 테스트 명령 처리에 실패했습니다.",
+},
     };
   }
 
