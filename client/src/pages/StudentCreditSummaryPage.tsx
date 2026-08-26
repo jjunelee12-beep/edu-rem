@@ -80,10 +80,6 @@ const academicSummary =
   data?.academicSummary ??
   engine?.academicSummary;
 
-const subjectPlan =
-  data?.subjectPlan ??
-  engine?.subjectPlan;
-
 const semesterPlan =
   data?.semesterPlan ??
   engine?.semesterPlan;
@@ -92,6 +88,73 @@ const aiIssues =
   data?.issues ??
   engine?.issues ??
   [];
+
+const academicRiskIssues =
+  aiIssues.filter(
+    (
+      issue: any
+    ) => {
+      const code =
+        String(
+          issue?.code ||
+          ""
+        ).trim();
+
+      if (!code) {
+        return false;
+      }
+
+      /**
+       * 아직 이수하지 않았다는 의미일 뿐
+       * 실제 설계오류가 아닌 항목은
+       * AI 위험도 검사에서 제외한다.
+       */
+      if (
+        code ===
+          "CREDIT_RULE_MISSING" ||
+        code ===
+          "TOTAL_CREDIT_SHORTAGE" ||
+        code ===
+          "PRACTICE_NOT_COMPLETED" ||
+        code.startsWith(
+          "CATEGORY_SHORTAGE_"
+        ) ||
+        code.endsWith(
+          "_SUBJECT_SHORTAGE"
+        ) ||
+        (
+          code.startsWith(
+            "DEGREE_"
+          ) &&
+          code.endsWith(
+            "_SHORTAGE"
+          )
+        )
+      ) {
+        return false;
+      }
+
+      /**
+       * 결제/학생정보/플랜 유무는
+       * 학업 설계 위험도와 별개다.
+       */
+      if (
+        code.startsWith(
+          "PAYMENT_"
+        ) ||
+        code ===
+          "STUDENT_COURSE_MISSING" ||
+        code ===
+          "PLAN_MISSING" ||
+        code ===
+          "PLAN_SUBJECTS_MISSING"
+      ) {
+        return false;
+      }
+
+      return true;
+    }
+  );
 
 const [settingOpen, setSettingOpen] = useState(false);
 
@@ -644,24 +707,6 @@ const academicUnresolvedReasons =
 const academicSummaryLines =
   academicSummary?.summaryLines ?? [];
 
-const plannedSubjects =
-  subjectPlan?.selectedSubjects ?? [];
-
-/**
- * 공통엔진이 앞으로 추가 배치한 예상 학기.
- *
- * semesterPlan.semesters:
- * Planner 원본 결과라 subjects 전체 정보가 존재할 수 있으므로 우선 사용.
- *
- * studyPlanSummary.semesters:
- * academicSummary를 거친 화면용 결과.
- * 원본 subjects가 없을 경우 fallback으로 사용.
- */
-const plannedAcademicSemesters =
-  semesterPlan?.semesters ??
-  studyPlanSummary?.semesters ??
-  [];
-
 /**
  * 상세페이지에 실제 등록되어 있는 기존 학기.
  *
@@ -673,186 +718,20 @@ const existingAcademicSemesters =
   semesterPlan?.existingSemesters ??
   [];
 
-/**
- * ─────────────────────────────
- * AI 추가 학습계획 화면용 데이터
- * ─────────────────────────────
- *
- * 실제 상세페이지 과목과 AI 예상과목을
- * 절대 같은 데이터로 합치지 않는다.
- *
- * semesterPlan 원본에 subjects가 있으면 그대로 사용하고,
- * academicSummary를 거쳐 subjectNames만 남은 경우에는
- * subjectPlan.selectedSubjects에서 동일 과목명을 찾아 복원한다.
- */
-const aiPlannedSemesterRows =
-  (
-    plannedAcademicSemesters ||
-    []
-  )
-    .map(
-      (
-        semester: any
-      ) => {
-        const rawSubjects =
-          Array.isArray(
-            semester?.subjects
-          )
-            ? semester.subjects
-            : [];
-
-        const rawSubjectNames =
-          Array.isArray(
-            semester?.subjectNames
-          )
-            ? semester.subjectNames
-            : [];
-
-        const resolvedSubjects =
-          rawSubjects.length >
-          0
-            ? rawSubjects
-            : rawSubjectNames
-                .map(
-                  (
-                    subjectName: string
-                  ) => {
-                    const matched =
-                      plannedSubjects.find(
-                        (
-                          subject: any
-                        ) =>
-                          String(
-                            subject
-                              ?.subjectName ||
-                            ""
-                          ).trim() ===
-                          String(
-                            subjectName ||
-                            ""
-                          ).trim()
-                      );
-
-                    if (
-                      matched
-                    ) {
-                      return matched;
-                    }
-
-                    /**
-                     * 화면 표시용 최소 fallback.
-                     * 엔진 계산을 다시 하지 않는다.
-                     */
-                    return {
-                      subjectName:
-                        String(
-                          subjectName ||
-                          ""
-                        ).trim(),
-
-                      credits:
-                        0,
-
-                      requirementType:
-                        null,
-
-                      category:
-                        null,
-
-                      reasons:
-                        [],
-                    };
-                  }
-                )
-                .filter(
-                  (
-                    subject: any
-                  ) =>
-                    Boolean(
-                      String(
-                        subject
-                          ?.subjectName ||
-                        ""
-                      ).trim()
-                    )
-                );
-
-        return {
-          semesterOrder:
-            Number(
-              semester
-                ?.semesterOrder ||
-              0
-            ),
-
-          semesterLabel:
-            String(
-              semester
-                ?.semesterLabel ||
-              ""
-            ).trim(),
-
-          estimatedStartDate:
-            String(
-              semester
-                ?.estimatedStartDate ||
-              ""
-            ).trim() ||
-            null,
-
-          estimatedEndDate:
-            String(
-              semester
-                ?.estimatedEndDate ||
-              ""
-            ).trim() ||
-            null,
-
-          subjects:
-            resolvedSubjects,
-        };
-      }
-    )
+const actualSemesterCount =
+  existingAcademicSemesters
     .filter(
       (
         semester: any
       ) =>
-        Boolean(
-          semester.semesterLabel
-        ) ||
-        semester.subjects.length >
-          0
-    )
-    .sort(
-      (
-        left: any,
-        right: any
-      ) =>
         Number(
-          left.semesterOrder ||
+          semester
+            ?.semesterOrder ||
           0
-        ) -
-        Number(
-          right.semesterOrder ||
-          0
-        )
-    );
-
-const aiPlannedSubjectCount =
-  aiPlannedSemesterRows.reduce(
-    (
-      total: number,
-      semester: any
-    ) =>
-      total +
-      (
-        semester
-          ?.subjects
-          ?.length ??
+        ) >
         0
-      ),
-    0
-  );
+    )
+    .length;
 
 const academicSubjects =
   engine?.subjects ??
@@ -1041,24 +920,94 @@ const getSubjectValidationContainerClass = (
   }
 };
 
+const normalizeDisplayDate = (
+  value: unknown
+): string | null => {
+  const raw =
+    String(
+      value ??
+      ""
+    ).trim();
+
+  if (!raw) {
+    return null;
+  }
+
+  /**
+   * 이미 YYYY-MM-DD 형태라면 그대로 사용
+   */
+  const directMatch =
+    raw.match(
+      /^(\d{4}-\d{2}-\d{2})/
+    );
+
+  if (directMatch) {
+    return directMatch[1];
+  }
+
+  /**
+   * DB Date 문자열 처리
+   *
+   * 예:
+   * Fri Aug 28 2026 00:00:00 GMT+0000
+   */
+  const parsed =
+    new Date(raw);
+
+  if (
+    Number.isNaN(
+      parsed.getTime()
+    )
+  ) {
+    return null;
+  }
+
+  const year =
+    parsed.getUTCFullYear();
+
+  const month =
+    String(
+      parsed.getUTCMonth() +
+      1
+    ).padStart(
+      2,
+      "0"
+    );
+
+  const day =
+    String(
+      parsed.getUTCDate()
+    ).padStart(
+      2,
+      "0"
+    );
+
+  return `${year}-${month}-${day}`;
+};
+
 const actualStudyStartDate =
   existingAcademicSemesters
     .map(
-      (semester: any) =>
-        String(
-          semester?.actualStartDate ||
-          ""
-        ).trim()
+      (
+        semester: any
+      ) =>
+        normalizeDisplayDate(
+          semester
+            ?.actualStartDate
+        )
     )
-    .filter(Boolean)
-    .sort()[0] ||
+    .filter(
+      (
+        value:
+          string | null
+      ): value is string =>
+        Boolean(value)
+    )
+    .sort()[0] ??
   null;
 
 const displayStudyStartDate =
-  actualStudyStartDate ??
-  studyPlanSummary
-    ?.estimatedStudyStartDate ??
-  null;
+  actualStudyStartDate;
 
 const qualificationRequiredSubjects =
   qualificationSummary?.requiredSubjects ?? null;
@@ -1117,32 +1066,28 @@ const degreeCurrentGeneralCredits =
   degreeSummary?.currentGeneralCredits ?? 0;
 
 const additionalSubjectCount =
-  studyPlanSummary?.additionalSubjectCount ?? 0;
+  Math.max(
+    Number(
+      qualificationRequiredSubjects ||
+      0
+    ) -
+      (
+        completedSubjectCount +
+        inProgressSubjectCount +
+        scheduledSubjectCount
+      ),
+    0
+  );
 
 const additionalCredits =
   studyPlanSummary?.additionalCredits ?? 0;
 
-const plannedSemesterCount =
-  studyPlanSummary?.semesterCount ?? 0;
+const totalStudySemesterCount =
+  actualSemesterCount;
 
 const nominalDurationMonths =
-  studyPlanSummary?.nominalDurationMonths ?? 0;
-
-/**
- * 화면에 표시하는 전체 학습 학기 수.
- *
- * semesterCount는 AI가 추가과목을 배치한 학기 수이고,
- * nominalDurationMonths는 기존 상세페이지 학기까지 포함한
- * 전체 학습기간이므로 학습기간 카드에서는 전체 기준을 사용한다.
- */
-const totalStudySemesterCount =
-  nominalDurationMonths >
-  0
-    ? Math.ceil(
-        nominalDurationMonths /
-          4
-      )
-    : plannedSemesterCount;
+  actualSemesterCount *
+  4;
 
 const estimatedStudyEndDate =
   studyPlanSummary?.estimatedStudyEndDate ?? null;
@@ -2382,279 +2327,6 @@ const academicCanExplain =
 </Card>
 
 {/* ─────────────────────────────
-    AI 추가 학습계획
-───────────────────────────── */}
-<Card className="border border-violet-100 shadow-sm">
-  <CardContent className="p-5">
-    <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
-      <div>
-        <div className="flex items-center gap-2">
-          <BrainCircuit className="h-5 w-5 text-violet-600" />
-
-          <h2 className="text-base font-bold">
-            AI 추가 학습계획
-          </h2>
-        </div>
-
-        <p className="text-xs text-muted-foreground mt-1">
-          현재 상세페이지의 실제 등록과목과 인정내역을 기준으로
-          공통엔진이 앞으로 추가로 필요한 과목을 학기별로 자동 배치한 예상 계획입니다.
-        </p>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge
-          variant="outline"
-          className="bg-violet-50 text-violet-700 border-violet-200"
-        >
-          AI 예상
-        </Badge>
-
-        <Badge
-          variant="outline"
-          className="bg-white"
-        >
-          추가 {aiPlannedSubjectCount}과목
-        </Badge>
-      </div>
-    </div>
-
-    {aiPlannedSemesterRows.length ===
-    0 ? (
-      <div className="rounded-lg border bg-emerald-50/50 p-4">
-        <div className="flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-
-          <p className="text-sm font-semibold text-emerald-700">
-            추가로 배치할 학습계획이 없습니다.
-          </p>
-        </div>
-
-        <p className="text-xs text-muted-foreground mt-2">
-          현재 공통엔진 분석 기준으로 별도의 추가 학기 배치가 필요하지 않습니다.
-        </p>
-      </div>
-    ) : (
-      <div className="space-y-4">
-        {aiPlannedSemesterRows.map(
-          (
-            semester: any,
-            semesterIndex: number
-          ) => {
-            const semesterSubjects =
-              semester.subjects ??
-              [];
-
-            const semesterCredits =
-              semesterSubjects.reduce(
-                (
-                  total: number,
-                  subject: any
-                ) =>
-                  total +
-                  Number(
-                    subject
-                      ?.credits ||
-                    0
-                  ),
-                0
-              );
-
-            const existingSemester =
-              existingAcademicSemesters.find(
-                (
-                  existing: any
-                ) =>
-                  String(
-                    existing
-                      ?.semesterLabel ||
-                    ""
-                  ).trim() ===
-                  String(
-                    semester
-                      ?.semesterLabel ||
-                    ""
-                  ).trim()
-              ) ??
-              null;
-
-            const isExistingSemesterPlacement =
-              Boolean(
-                existingSemester
-              );
-
-            return (
-              <div
-                key={`ai-planned-semester-${semester.semesterOrder}-${semesterIndex}`}
-                className="rounded-xl border border-violet-100 bg-violet-50/30 p-4"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-bold">
-                        {semester
-                          .semesterLabel ||
-                          `${semester.semesterOrder}학기`}
-                      </p>
-
-                      <Badge
-                        variant="outline"
-                        className="bg-violet-50 text-violet-700 border-violet-200"
-                      >
-                        AI 추가배치
-                      </Badge>
-
-                      {isExistingSemesterPlacement && (
-                        <Badge
-                          variant="outline"
-                          className="bg-blue-50 text-blue-700 border-blue-200"
-                        >
-                          기존 학기 빈자리 활용
-                        </Badge>
-                      )}
-
-                      {!isExistingSemesterPlacement && (
-                        <Badge
-                          variant="outline"
-                          className="bg-white"
-                        >
-                          신규 예상학기
-                        </Badge>
-                      )}
-                    </div>
-
-                    <p className="text-xs text-muted-foreground mt-2">
-                      예상 일정{" "}
-                      {semester
-                        .estimatedStartDate ||
-                        "-"}
-                      {" ~ "}
-                      {semester
-                        .estimatedEndDate ||
-                        "-"}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <Badge
-                      variant="outline"
-                      className="bg-white"
-                    >
-                      {semesterSubjects.length}과목
-                    </Badge>
-
-                    <Badge
-                      variant="outline"
-                      className="bg-white"
-                    >
-                      {semesterCredits}학점
-                    </Badge>
-                  </div>
-                </div>
-
-                <div className="space-y-2 mt-4">
-                  {semesterSubjects.map(
-                    (
-                      subject: any,
-                      subjectIndex: number
-                    ) => {
-                      const requirementLabel =
-                        subject
-                          ?.requirementType ||
-                        subject
-                          ?.category ||
-                        "구분 확인 필요";
-
-                      const reasons =
-                        Array.isArray(
-                          subject?.reasons
-                        )
-                          ? subject.reasons
-                          : [];
-
-                      return (
-                        <div
-                          key={`ai-planned-subject-${semester.semesterOrder}-${subject.subjectName}-${subjectIndex}`}
-                          className="rounded-lg border bg-white p-3"
-                        >
-                          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-                            <div>
-                              <p className="text-sm font-semibold">
-                                {subject
-                                  ?.subjectName ||
-                                  "-"}
-                              </p>
-
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {Number(
-                                  subject
-                                    ?.credits ||
-                                  0
-                                )}
-                                학점
-                                {" · "}
-                                {
-                                  requirementLabel
-                                }
-                              </p>
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-2">
-                              {subject
-                                ?.isFaceToFace ===
-                                true && (
-                                <Badge
-                                  variant="outline"
-                                  className="bg-amber-50 text-amber-700 border-amber-200"
-                                >
-                                  대면
-                                </Badge>
-                              )}
-
-                              {subject
-                                ?.satisfies
-                                ?.practice ===
-                                true && (
-                                <Badge
-                                  variant="outline"
-                                  className="bg-blue-50 text-blue-700 border-blue-200"
-                                >
-                                  실습
-                                </Badge>
-                              )}
-
-                              <Badge
-                                variant="outline"
-                                className="bg-violet-50 text-violet-700 border-violet-200"
-                              >
-                                추가 예정
-                              </Badge>
-                            </div>
-                          </div>
-
-                          {reasons.length >
-                            0 && (
-                            <p className="text-[11px] text-muted-foreground mt-2">
-                              공통엔진 충족조건{" "}
-                              {reasons.length}
-                              개 반영
-                            </p>
-                          )}
-                        </div>
-                      );
-                    }
-                  )}
-                </div>
-              </div>
-            );
-          }
-        )}
-      </div>
-    )}
-  </CardContent>
-</Card>
-
-{/* ─────────────────────────────
     실제 학습기간
 ───────────────────────────── */}
 <Card className="border shadow-sm">
@@ -2694,9 +2366,7 @@ const academicCanExplain =
         </p>
 
         <p className="text-xs text-muted-foreground mt-2">
-  {actualStudyStartDate
-    ? "상세페이지 실제 최초 개강일"
-    : "공통엔진 예상 최초 개강일"}
+  상세페이지 실제 최초 개강일
 </p>
       </div>
 
@@ -3000,7 +2670,7 @@ const academicCanExplain =
     </div>
 
     <div className="space-y-2">
-      {aiIssues.length === 0 ? (
+      {academicRiskIssues.length === 0 ? (
         <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700">
             <CheckCircle2 className="h-4 w-4" />
@@ -3008,7 +2678,7 @@ const academicCanExplain =
           </div>
         </div>
       ) : (
-        aiIssues.map(
+        academicRiskIssues.map(
           (
             issue: any,
             index: number

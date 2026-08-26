@@ -37,8 +37,8 @@ import {
   planQualificationSubjects,
 } from "./risk-rules/qualification-subject-planner";
 
-import {
-  planQualificationSemesters,
+import type {
+  QualificationSemesterPlannerResult,
 } from "./risk-rules/qualification-semester-planner";
 
 import {
@@ -175,6 +175,21 @@ type AcademicSubjectProgressStatus =
 function parseAcademicDate(
   value: unknown
 ): Date | null {
+  if (
+    value instanceof Date &&
+    !Number.isNaN(
+      value.getTime()
+    )
+  ) {
+    return new Date(
+      Date.UTC(
+        value.getUTCFullYear(),
+        value.getUTCMonth(),
+        value.getUTCDate()
+      )
+    );
+  }
+
   const normalized =
     String(
       value ??
@@ -185,45 +200,76 @@ function parseAcademicDate(
     return null;
   }
 
+  /**
+   * 1순위:
+   * YYYY-MM-DD
+   */
   const match =
     normalized.match(
       /^(\d{4})-(\d{2})-(\d{2})/
     );
 
-  if (!match) {
-    return null;
+  if (match) {
+    const year =
+      Number(match[1]);
+
+    const month =
+      Number(match[2]);
+
+    const day =
+      Number(match[3]);
+
+    const date =
+      new Date(
+        Date.UTC(
+          year,
+          month - 1,
+          day
+        )
+      );
+
+    if (
+      date.getUTCFullYear() !==
+        year ||
+      date.getUTCMonth() !==
+        month - 1 ||
+      date.getUTCDate() !==
+        day
+    ) {
+      return null;
+    }
+
+    return date;
   }
 
-  const year =
-    Number(match[1]);
-
-  const month =
-    Number(match[2]);
-
-  const day =
-    Number(match[3]);
-
-  const date =
+  /**
+   * 2순위:
+   *
+   * Fri Aug 28 2026 00:00:00 GMT+0000
+   * ISO DateTime
+   * DB Date 문자열
+   */
+  const parsed =
     new Date(
-      Date.UTC(
-        year,
-        month - 1,
-        day
-      )
+      normalized
     );
 
   if (
-    date.getUTCFullYear() !== year ||
-    date.getUTCMonth() !==
-      month - 1 ||
-    date.getUTCDate() !== day
+    Number.isNaN(
+      parsed.getTime()
+    )
   ) {
     return null;
   }
 
-  return date;
+  return new Date(
+    Date.UTC(
+      parsed.getUTCFullYear(),
+      parsed.getUTCMonth(),
+      parsed.getUTCDate()
+    )
+  );
 }
-
 
 function addAcademicMonths(
   date: Date,
@@ -863,25 +909,69 @@ function isActualAcademicRiskIssue(
    * ---------------------------------------------------------
    */
 
-  if (
-    code ===
-      "CREDIT_RULE_MISSING" ||
-    code ===
-      "TOTAL_CREDIT_SHORTAGE" ||
-    code.startsWith(
-      "CATEGORY_SHORTAGE_"
-    ) ||
+ if (
+  code ===
+    "CREDIT_RULE_MISSING" ||
+  code ===
+    "TOTAL_CREDIT_SHORTAGE" ||
+  code ===
+    "PRACTICE_NOT_COMPLETED" ||
+
+  code.startsWith(
+    "CATEGORY_SHORTAGE_"
+  ) ||
+
+  code.endsWith(
+    "_SUBJECT_SHORTAGE"
+  ) ||
+
+  (
     code.startsWith(
       "DEGREE_"
     ) &&
-      code.endsWith(
-        "_SHORTAGE"
-      ) ||
-    code ===
-      "PRACTICE_NOT_COMPLETED"
-  ) {
-    return false;
-  }
+    code.endsWith(
+      "_SHORTAGE"
+    )
+  ) ||
+
+  (
+    code.startsWith(
+      "SOCIAL_WORKER_"
+    ) &&
+    code.endsWith(
+      "_SHORTAGE"
+    )
+  ) ||
+
+  (
+    code.startsWith(
+      "CHILDCARE_"
+    ) &&
+    code.endsWith(
+      "_SHORTAGE"
+    )
+  ) ||
+
+  (
+    code.startsWith(
+      "KOREAN_TEACHER_"
+    ) &&
+    code.endsWith(
+      "_SHORTAGE"
+    )
+  ) ||
+
+  (
+    code.startsWith(
+      "LIFELONG_EDUCATOR_"
+    ) &&
+    code.endsWith(
+      "_SHORTAGE"
+    )
+  )
+) {
+  return false;
+}
 
   /**
    * 결제 / 환불 / 학생 기본정보 / 플랜 미입력은
@@ -3458,126 +3548,382 @@ existingSemesterCreditsByOrder.set(
 
 /**
  * ─────────────────────────────
- * 실제 과목계획 → 학기 자동배치
+ * 상세페이지 실제 설계 → 학기계획
  * ─────────────────────────────
  *
- * 수업을 통한 학점은:
+ * 중요:
  *
- * - 한 학기 최대 24학점
- * - 동일 귀속연도 최대 42학점
+ * 이 단계에서는 AI가 새로운 과목이나
+ * 새로운 학기를 자동 생성하지 않는다.
  *
- * 기준으로 실제 추가과목을 학기별 배치한다.
+ * studentSemesters에 실제로 존재하는 학기만
+ * 학생의 설계 루트로 인정한다.
  *
- * 기존 학생 학기가 있으면
- * studentSemesters의 학기정보와
- * planSemesters의 실제 과목 credits를 결합해서
- * 기존 수강학점을 계산한다.
- *
- * 기존 학기가 없으면
- * 현재 한국 날짜 기준 귀속학기를
- * 첫 학기로 추정한다.
+ * "새과목"은 자격요건 인정과목에서는 제외되지만,
+ * 해당 학기 자체는 담당자가 미리 만들어둔
+ * 설계 슬롯이므로 학기 존재판정에는 사용한다.
  */
-const qualificationSemesterPlan =
-  planQualificationSemesters({
-    subjectPlan:
-      qualificationSubjectPlan,
-
-        existingSemesters:
+const configuredAcademicSemesters =
+  (
+    studentSemesters ||
+    []
+  )
+    .map(
       (
-        studentSemesters ||
-        []
-      ).map(
-        (
-          semester:
-            any
-        ) => {
-          const semesterOrder =
+        semester:
+          any
+      ) => {
+        const semesterOrder =
+          Math.floor(
             Number(
               semester
                 ?.semesterOrder ||
               0
-            );
+            )
+          );
 
-          const plannedSubjectCount =
+        const semesterLabel =
+          String(
             semester
-              ?.plannedSubjectCount ??
-            null;
+              ?.semesterLabel ||
+            ""
+          ).trim() ||
+          null;
 
-          const actualSubjectCount =
-            semester
-              ?.actualSubjectCount ??
-            null;
+        const creditSummary =
+          existingSemesterCreditsByOrder.get(
+            semesterOrder
+          );
 
-          const creditSummary =
-            existingSemesterCreditsByOrder.get(
-              semesterOrder
-            );
+        /**
+         * 실제 과목명은 Placeholder를 제외한
+         * planSemesters 기준 과목만 담는다.
+         *
+         * 학기 존재 자체는 studentSemesters가 책임지고,
+         * 과목 인정 여부와 분리한다.
+         */
+        const actualSubjects =
+          creditSummary
+            ?.subjects ??
+          [];
 
-          /**
-           * planSemesters에서 과목이 확인되면
-           * 실제 credits 합계를 plannedCredits로 사용한다.
-           */
-          const plannedCredits =
-            creditSummary
-              ? creditSummary
-                  .credits
-              : null;
-
-          /**
-           * actualSubjectCount와
-           * 실제 과목 Row 개수가 정확히 같을 때만
-           * 해당 학점합계를 actualCredits로 확정한다.
-           *
-           * 개수가 다르면 실제 이수학점이라고
-           * 단정하지 않고 null로 둔다.
-           *
-           * 그 경우 Semester Planner가
-           * plannedCredits를 사용한다.
-           */
-          const actualCredits =
-            actualSubjectCount !==
-              null &&
-            actualSubjectCount !==
-              undefined &&
-            creditSummary &&
+        /**
+         * plannedSubjectCount에는
+         * 상세페이지에서 미리 잡아둔
+         * "새과목" 자리까지 포함될 수 있다.
+         *
+         * 학기 설계 규모 판단에는 그대로 사용한다.
+         */
+        const subjectCount =
+          Math.max(
             Number(
-              actualSubjectCount
-            ) ===
+              semester
+                ?.plannedSubjectCount ||
+              0
+            ),
+            Number(
+              semester
+                ?.actualSubjectCount ||
+              0
+            ),
+            Number(
               creditSummary
-                .subjectCount
-              ? creditSummary
-                  .credits
-              : null;
+                ?.subjectCount ||
+              0
+            )
+          );
 
-          return {
-  semesterOrder,
+        const parsedStartDate =
+          parseAcademicDate(
+            semester
+              ?.actualStartDate
+          );
 
-  semesterLabel:
-    semester
+        const actualStartDate =
+          parsedStartDate
+            ? parsedStartDate
+                .toISOString()
+                .slice(
+                  0,
+                  10
+                )
+            : null;
+
+        return {
+          semesterOrder,
+          semesterLabel,
+          actualStartDate,
+          subjectCount,
+          subjects:
+            actualSubjects,
+        };
+      }
+    )
+    .filter(
+      (
+        semester
+      ) =>
+        semester.semesterOrder >
+        0
+    )
+    .sort(
+      (
+        left,
+        right
+      ) =>
+        left.semesterOrder -
+        right.semesterOrder
+    );
+
+/**
+ * 상세페이지 첫 실제 개강일.
+ */
+const firstConfiguredSemester =
+  configuredAcademicSemesters[
+    0
+  ] ??
+  null;
+
+const lastConfiguredSemester =
+  configuredAcademicSemesters[
+    configuredAcademicSemesters
+      .length -
+      1
+  ] ??
+  null;
+
+const firstConfiguredStartDate =
+  configuredAcademicSemesters
+    .map(
+      (
+        semester
+      ) =>
+        semester
+          .actualStartDate
+          ? parseAcademicDate(
+              semester
+                .actualStartDate
+            )
+          : null
+    )
+    .filter(
+      (
+        date
+      ): date is Date =>
+        date !==
+        null
+    )
+    .sort(
+      (
+        left,
+        right
+      ) =>
+        left.getTime() -
+        right.getTime()
+    )[0] ??
+  null;
+
+/**
+ * 마지막 학기의 실제 개강일이 있다면
+ * 해당 날짜 + 4개월을 종료일로 사용한다.
+ *
+ * 미래 설계학기의 개강일이 아직 없다면
+ * 최초 실제 개강일부터
+ * 상세페이지에 만들어진 학기 수 × 4개월로 계산한다.
+ *
+ * 예:
+ *
+ * 2026-08-28 시작
+ * 상세페이지 학기 3개
+ *
+ * → 12개월 과정
+ * → 2027-08-28 학습 종료 예상
+ * → 2027년 10월 학점인정신청 가능
+ */
+const lastConfiguredStartDate =
+  lastConfiguredSemester
+    ?.actualStartDate
+    ? parseAcademicDate(
+        lastConfiguredSemester
+          .actualStartDate
+      )
+    : null;
+
+let configuredStudyEndDate:
+  Date | null =
+  null;
+
+if (
+  lastConfiguredStartDate
+) {
+  configuredStudyEndDate =
+    addAcademicMonths(
+      lastConfiguredStartDate,
+      4
+    );
+} else if (
+  firstConfiguredStartDate &&
+  configuredAcademicSemesters
+    .length >
+    0
+) {
+  configuredStudyEndDate =
+    addAcademicMonths(
+      firstConfiguredStartDate,
+      configuredAcademicSemesters
+        .length *
+        4
+    );
+}
+
+const configuredStudyStartDate =
+  firstConfiguredStartDate
+    ? firstConfiguredStartDate
+        .toISOString()
+        .slice(
+          0,
+          10
+        )
+    : null;
+
+const configuredStudyEndDateString =
+  configuredStudyEndDate
+    ? configuredStudyEndDate
+        .toISOString()
+        .slice(
+          0,
+          10
+        )
+    : null;
+
+/**
+ * Planner 타입은 기존 API 호환을 위해 유지한다.
+ *
+ * 하지만 semesters는 빈 배열이다.
+ *
+ * 즉:
+ * AI가 새 학기를 생성한 결과는 존재하지 않는다.
+ */
+const qualificationSemesterPlan:
+  QualificationSemesterPlannerResult =
+{
+  canPlan:
+    configuredAcademicSemesters
+      .length >
+    0,
+
+  startBasis:
+    configuredAcademicSemesters
+      .length >
+    0
+      ? "after_existing_semester"
+      : "unresolved",
+
+  referenceDate:
+    new Date(
+      Date.now() +
+        9 *
+          60 *
+          60 *
+          1000
+    )
+      .toISOString()
+      .slice(
+        0,
+        10
+      ),
+
+  calculationBaseDate:
+    new Date(
+      Date.now() +
+        9 *
+          60 *
+          60 *
+          1000
+    )
+      .toISOString()
+      .slice(
+        0,
+        10
+      ),
+
+  /**
+   * 추가로 AI가 생성한 학기는 없다.
+   */
+  firstSemesterLabel:
+    null,
+
+  semesterCount:
+    0,
+
+  /**
+   * 화면/행정계산용 전체 실제 설계기간.
+   */
+  nominalDurationMonths:
+    configuredAcademicSemesters
+      .length *
+    4,
+
+  estimatedStudyStartDate:
+    configuredStudyStartDate,
+
+  estimatedStudyEndDate:
+    configuredStudyEndDateString,
+
+  /**
+   * 상세페이지에 실제 존재하는 학기는
+   * 그대로 보존한다.
+   */
+  existingSemesters:
+    configuredAcademicSemesters,
+
+  /**
+   * AI 자동 학기배치 제거.
+   */
+  semesters:
+    [],
+
+  /**
+   * 행정절차 Planner는
+   * 이 값을 최종 설계학기로 사용한다.
+   */
+  lastSemesterLabel:
+    lastConfiguredSemester
       ?.semesterLabel ??
     null,
 
-  actualStartDate:
-    semester
-      ?.actualStartDate ??
-    null,
+  unresolvedReasons: [
+    ...(
+      configuredAcademicSemesters
+        .length ===
+      0
+        ? [
+            "상세페이지에 등록된 학기가 없습니다.",
+          ]
+        : []
+    ),
 
-  plannedSubjectCount,
+    ...(
+      !configuredStudyStartDate
+        ? [
+            "상세페이지 실제 최초 개강일을 확인할 수 없습니다.",
+          ]
+        : []
+    ),
 
-  actualSubjectCount,
+    ...(
+      !lastConfiguredSemester
+        ?.semesterLabel
+        ? [
+            "상세페이지 마지막 학기명을 확인할 수 없습니다.",
+          ]
+        : []
+    ),
+  ],
 
-  plannedCredits,
-
-  actualCredits,
-
-  subjects:
-    creditSummary
-      ?.subjects ??
+  warnings:
     [],
 };
-        }
-      ),
-  });
 
 /**
  * ─────────────────────────────
@@ -3690,6 +4036,26 @@ const retakeSubjects =
         )
     );
 
+
+const academicSummarySubjectPlan = {
+  ...qualificationSubjectPlan,
+
+  /**
+   * 학점요약/AI 설명에서는
+   * 자동 추천과목을 사용하지 않는다.
+   *
+   * 담당자가 상세페이지에 입력한
+   * 실제 설계만 검증한다.
+   */
+  selectedSubjects:
+    [],
+
+  selectedSubjectCount:
+    0,
+
+  selectedCredits:
+    0,
+};
 /**
  * ─────────────────────────────
  * 학위/자격/과목/학기/행정절차
@@ -3706,7 +4072,7 @@ const academicSummary =
       unifiedRequirements,
 
     subjectPlan:
-      qualificationSubjectPlan,
+  academicSummarySubjectPlan,
 
     semesterPlan:
       qualificationSemesterPlan,
@@ -4543,7 +4909,7 @@ requirements:
   unifiedRequirements,
 
 subjectPlan:
-  qualificationSubjectPlan,
+  academicSummarySubjectPlan,
 
 semesterPlan:
   qualificationSemesterPlan,

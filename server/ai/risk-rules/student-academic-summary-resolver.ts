@@ -932,24 +932,6 @@ if (
     );
   }
 
-  if (
-    subjectPlan.canPlan
-  ) {
-    if (
-      subjectPlan
-        .selectedSubjectCount >
-      0
-    ) {
-      summaryLines.push(
-        `현재 인정내역과 학위·자격조건을 함께 반영하면 추가 수강계획은 ${subjectPlan.selectedSubjectCount}과목, ${subjectPlan.selectedCredits}학점입니다.`
-      );
-    } else {
-      summaryLines.push(
-        "현재 계산상 추가로 선택해야 할 수강과목은 없습니다."
-      );
-    }
-  }
-
   const semesterLine =
     buildSemesterSummaryLine(
       semesterPlan
