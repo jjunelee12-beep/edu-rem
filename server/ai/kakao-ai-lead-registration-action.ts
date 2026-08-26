@@ -1311,17 +1311,95 @@ console.log(
     error
   ) {
     console.error(
-      "[KAKAO AI ERROR] LeadRegistrationCreateFailed",
-      {
-        organizationId,
+  "[KAKAO AI ERROR] LeadRegistrationCreateFailed",
+  {
+    organizationId,
+    conversationId,
+    selectedStaffUserId,
 
-        conversationId,
+    input: {
+      consultDate:
+        new Date().toISOString(),
 
-        selectedStaffUserId,
+      channel:
+        "카카오 AI",
 
-        error,
-      }
-    );
+      hasClientName:
+        Boolean(
+          contact.clientName
+        ),
+
+      phoneLast4:
+        contact.phone
+          ? maskPhone(
+              contact.phone
+            )
+          : null,
+
+      finalEducation:
+        finalEducation ||
+        null,
+
+      desiredCourse:
+        desiredCourse ||
+        null,
+
+      hasNotes:
+        Boolean(
+          notes
+        ),
+    },
+
+    error:
+      error instanceof Error
+        ? {
+            name:
+              error.name,
+
+            message:
+              error.message,
+
+            stack:
+              error.stack,
+
+            cause:
+              (error as any)
+                .cause ??
+              null,
+
+            code:
+              (error as any)
+                .code ??
+              null,
+
+            errno:
+              (error as any)
+                .errno ??
+              null,
+
+            sqlState:
+              (error as any)
+                .sqlState ??
+              null,
+
+            sqlMessage:
+              (error as any)
+                .sqlMessage ??
+              null,
+
+            sql:
+              (error as any)
+                .sql ??
+              null,
+          }
+        : {
+            message:
+              String(
+                error
+              ),
+          },
+  }
+);
 
     return {
       handled:

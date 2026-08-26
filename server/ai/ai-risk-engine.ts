@@ -567,7 +567,7 @@ function createRecognizedSubjects(
     >();
 
   sortedSubjects.forEach(
-    (subject, index) => {
+  (subject, index) => {
     if (
       subject.source ===
         "plan" &&
@@ -582,19 +582,37 @@ function createRecognizedSubjects(
     ) {
       return;
     }
-      const normalizedName =
-  getConfirmedSubjectEquivalenceKey(
-    subject.subjectName
-  );
 
-if (!normalizedName) {
-        recognizedMap.set(
-          `unknown:${subject.source}:${subject.id ?? index}`,
-          subject
-        );
+    /**
+     * "새 과목1", "새 과목2" 등은
+     * 상세페이지에 확보된 임시 학습 슬롯이다.
+     *
+     * 학습 진행현황에는 포함하지만
+     * 실제 과목명이 확정되기 전까지는
+     * 인정과목 / 동일교과목 / 중복검사 대상에서 제외한다.
+     */
+    if (
+      subject.source === "plan" &&
+      isPlaceholderPlanSubject(
+        subject.subjectName
+      )
+    ) {
+      return;
+    }
 
-        return;
-      }
+    const normalizedName =
+      getConfirmedSubjectEquivalenceKey(
+        subject.subjectName
+      );
+
+    if (!normalizedName) {
+      recognizedMap.set(
+        `unknown:${subject.source}:${subject.id ?? index}`,
+        subject
+      );
+
+      return;
+    }
 
       const existing =
         recognizedMap.get(
@@ -1753,6 +1771,22 @@ if (isRefundWithoutPayment) {
    * 과목 데이터 점검
    */
   for (const subject of subjects) {
+
+/**
+ * 임시 "새 과목" 슬롯은 아직 실제 과목명이 확정되지 않았다.
+ *
+ * 학기 배치와 진행현황에는 사용하지만
+ * 과목명/학점/전공구분 등의 설계오류 검사에서는 제외한다.
+ */
+if (
+  subject.source === "plan" &&
+  isPlaceholderPlanSubject(
+    subject.subjectName
+  )
+) {
+  continue;
+}
+
     if (!subject.subjectName) {
   const code =
     `SUBJECT_NAME_MISSING_${subject.source}_${subject.id ?? "unknown"}`;
