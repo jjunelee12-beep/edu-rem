@@ -505,6 +505,23 @@ function normalizeTransition(
       whenSemantic;
   }
 
+const semanticDescription =
+  value.semanticDescription ===
+    null
+    ? null
+    : normalizeNullableString(
+        value.semanticDescription,
+        MAX_STRING_VALUE_LENGTH
+      );
+
+if (
+  value.semanticDescription !==
+    undefined
+) {
+  normalized.semanticDescription =
+    semanticDescription;
+}
+
   const when =
     normalizeConditionGroup(
       value.when

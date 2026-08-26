@@ -25,6 +25,7 @@ import {
 
 import {
   classifyKakaoAiIntent,
+  resolveKakaoAiLeadSemanticDecision,
   type KakaoAiIntentClassificationResult,
 } from "./kakao-ai-intent-classifier";
 
@@ -3204,6 +3205,70 @@ let leadFlowEvaluation:
   null =
   null;
 
+let leadFlowSemanticDecision:
+  string |
+  null =
+  null;
+
+if (
+  customer.customerType ===
+    "lead" &&
+  resolvedContext.leadFlowConfig
+) {
+  const leadSemanticResolution =
+    await resolveKakaoAiLeadSemanticDecision({
+      message,
+
+      conversationHistory:
+        previousMemoryContext
+          .recentConversation
+          .messages,
+
+      structuredMemory:
+        currentMemory,
+
+      flowConfig:
+        resolvedContext
+          .leadFlowConfig,
+
+      currentStageId:
+        currentMemory
+          .consultationFlow
+          .salesStage,
+    });
+
+  leadFlowSemanticDecision =
+    leadSemanticResolution
+      .semanticDecision;
+
+  console.log(
+    "[KAKAO AI LEAD SEMANTIC]",
+    {
+      conversationId,
+
+      currentStageId:
+        currentMemory
+          .consultationFlow
+          .salesStage,
+
+      semanticDecision:
+        leadFlowSemanticDecision,
+
+      success:
+        leadSemanticResolution
+          .success,
+
+      fallbackUsed:
+        leadSemanticResolution
+          .fallbackUsed,
+
+      errorMessage:
+        leadSemanticResolution
+          .errorMessage,
+    }
+  );
+}
+
 if (
   customer.customerType ===
     "lead" &&
@@ -3243,12 +3308,7 @@ if (
        * DB Flow Config가 whenSemantic 값과 연결한다.
        */
       semanticDecision:
-        normalizeText(
-          intentClassification
-            .intent
-            .primaryCapability
-        ) ||
-        null,
+  leadFlowSemanticDecision,
     });
 
   console.log(
@@ -4239,12 +4299,7 @@ if (
           .salesStage,
 
       semanticDecision:
-        normalizeText(
-          intentClassification
-            .intent
-            .primaryCapability
-        ) ||
-        null,
+  leadFlowSemanticDecision,
     });
 
   const postActionStageId =

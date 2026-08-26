@@ -58,14 +58,29 @@ export type KakaoAiLeadFlowConditionGroup = {
 
 export type KakaoAiLeadFlowTransition = {
   /**
-   * Intent / semantic classifier가 반환한 의미 ID.
+   * Semantic Resolver가 반환하는
+   * 회사별 동적 의미 ID.
    *
-   * 예:
-   * 회사 설정이 어떤 값을 쓰든 엔진은 모른다.
+   * 엔진은 이 문자열의 의미를 해석하지 않는다.
    */
   whenSemantic?:
     string |
     string[];
+
+  /**
+   * Semantic Resolver가 현재 사용자 발화를
+   * 어떤 transition으로 연결할지 판단할 때 사용하는
+   * 회사별 동적 자연어 설명.
+   *
+   * 업무단계 / 과정 / 회사 / 사용자 발화를
+   * 서버 코드에 하드코딩하지 않는다.
+   *
+   * null 또는 미설정이면
+   * Semantic Resolver는 다른 Flow Context만 사용한다.
+   */
+  semanticDescription?:
+    string |
+    null;
 
   /**
    * 현재 facts 조건.

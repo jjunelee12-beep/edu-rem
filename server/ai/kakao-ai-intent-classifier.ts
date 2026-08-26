@@ -16,6 +16,11 @@ import type {
   KakaoAiCustomerType,
 } from "./kakao-ai-access-policy";
 
+import type {
+  KakaoAiLeadFlowConfig,
+  KakaoAiLeadFlowStage,
+} from "./kakao-ai-lead-flow-engine";
+
 /**
  * 실제 OpenAI Intent 분석 결과.
  *
@@ -126,6 +131,624 @@ function getKakaoAiIntentModel():
     ).trim() ||
     "gpt-5.4-mini"
   );
+}
+
+export type KakaoAiLeadSemanticResolutionResult = {
+  success:
+    boolean;
+
+  semanticDecision:
+    string | null;
+
+  openAiResponseId:
+    string | null;
+
+  model:
+    string | null;
+
+  fallbackUsed:
+    boolean;
+
+  errorMessage:
+    string | null;
+};
+
+function normalizeLeadSemanticText(
+  value:
+    unknown
+): string {
+  return String(
+    value ??
+    ""
+  ).trim();
+}
+
+function findLeadFlowStage(
+  config:
+    KakaoAiLeadFlowConfig,
+
+  stageId:
+    string | null | undefined
+): KakaoAiLeadFlowStage |
+  null {
+  const normalizedStageId =
+    normalizeLeadSemanticText(
+      stageId
+    );
+
+  if (
+    normalizedStageId
+  ) {
+    const matchedStage =
+      config.stages.find(
+        stage =>
+          normalizeLeadSemanticText(
+            stage.id
+          ) ===
+          normalizedStageId
+      );
+
+    if (
+      matchedStage
+    ) {
+      return matchedStage;
+    }
+  }
+
+  const startStageId =
+    normalizeLeadSemanticText(
+      config.startStageId
+    );
+
+  if (
+    startStageId
+  ) {
+    const startStage =
+      config.stages.find(
+        stage =>
+          normalizeLeadSemanticText(
+            stage.id
+          ) ===
+          startStageId
+      );
+
+    if (
+      startStage
+    ) {
+      return startStage;
+    }
+  }
+
+  return (
+    [...config.stages]
+      .filter(
+        stage =>
+          stage.enabled !==
+            false
+      )
+      .sort(
+        (
+          left,
+          right
+        ) =>
+          Number(
+            left.order ||
+            0
+          ) -
+          Number(
+            right.order ||
+            0
+          )
+      )[0] ??
+    null
+  );
+}
+
+function buildLeadSemanticCandidates(
+  config:
+    KakaoAiLeadFlowConfig,
+
+  stage:
+    KakaoAiLeadFlowStage
+) {
+  const stageById =
+    new Map(
+      config.stages.map(
+        item => [
+          normalizeLeadSemanticText(
+            item.id
+          ),
+          item,
+        ]
+      )
+    );
+
+  const candidates =
+    (
+      stage.transitions ||
+      []
+    )
+      .flatMap(
+        transition => {
+          const rawSemantics =
+            Array.isArray(
+              transition.whenSemantic
+            )
+              ? transition.whenSemantic
+              : transition.whenSemantic
+                ? [
+                    transition.whenSemantic,
+                  ]
+                : [];
+
+          const targetStage =
+            stageById.get(
+              normalizeLeadSemanticText(
+                transition.toStageId
+              )
+            ) ??
+            null;
+
+          return rawSemantics
+            .map(
+              semanticId =>
+                normalizeLeadSemanticText(
+                  semanticId
+                )
+            )
+            .filter(
+              Boolean
+            )
+            .map(
+              semanticId => ({
+                semanticId,
+
+                description:
+                  normalizeLeadSemanticText(
+                    transition
+                      .semanticDescription
+                  ) ||
+                  null,
+
+                actionId:
+                  normalizeLeadSemanticText(
+                    transition.actionId
+                  ) ||
+                  null,
+
+                targetStageId:
+                  normalizeLeadSemanticText(
+                    transition.toStageId
+                  ) ||
+                  null,
+
+                targetContentKeys:
+                  Array.isArray(
+                    targetStage
+                      ?.contentKeys
+                  )
+                    ? targetStage!
+                        .contentKeys!
+                        .map(
+                          value =>
+                            normalizeLeadSemanticText(
+                              value
+                            )
+                        )
+                        .filter(
+                          Boolean
+                        )
+                    : [],
+
+                targetMetadata:
+                  targetStage
+                    ?.metadata ??
+                  null,
+
+                transitionMetadata:
+                  null,
+              }))
+        }
+      );
+
+  const uniqueCandidates =
+    new Map<
+      string,
+      (
+        typeof candidates
+      )[number]
+    >();
+
+  for (
+    const candidate of
+    candidates
+  ) {
+    if (
+      !uniqueCandidates.has(
+        candidate.semanticId
+      )
+    ) {
+      uniqueCandidates.set(
+        candidate.semanticId,
+        candidate
+      );
+    }
+  }
+
+  return Array.from(
+    uniqueCandidates.values()
+  );
+}
+
+export async function resolveKakaoAiLeadSemanticDecision(
+  params: {
+    message:
+      string;
+
+    conversationHistory?:
+      KakaoAiConversationMessage[];
+
+    structuredMemory?:
+      unknown;
+
+    flowConfig:
+      KakaoAiLeadFlowConfig;
+
+    currentStageId?:
+      string |
+      null;
+  }
+): Promise<
+  KakaoAiLeadSemanticResolutionResult
+> {
+  const message =
+    normalizeLeadSemanticText(
+      params.message
+    );
+
+  const currentStage =
+    findLeadFlowStage(
+      params.flowConfig,
+      params.currentStageId
+    );
+
+  if (
+    !message ||
+    !currentStage
+  ) {
+    return {
+      success:
+        true,
+
+      semanticDecision:
+        null,
+
+      openAiResponseId:
+        null,
+
+      model:
+        null,
+
+      fallbackUsed:
+        false,
+
+      errorMessage:
+        null,
+    };
+  }
+
+  const candidates =
+    buildLeadSemanticCandidates(
+      params.flowConfig,
+      currentStage
+    );
+
+  if (
+    candidates.length ===
+      0
+  ) {
+    return {
+      success:
+        true,
+
+      semanticDecision:
+        null,
+
+      openAiResponseId:
+        null,
+
+      model:
+        null,
+
+      fallbackUsed:
+        false,
+
+      errorMessage:
+        null,
+    };
+  }
+
+  const openai =
+    getKakaoAiOpenAiClient();
+
+  if (
+    !openai
+  ) {
+    return {
+      success:
+        false,
+
+      semanticDecision:
+        null,
+
+      openAiResponseId:
+        null,
+
+      model:
+        null,
+
+      fallbackUsed:
+        true,
+
+      errorMessage:
+        "OPENAI_API_KEY가 설정되지 않았습니다.",
+    };
+  }
+
+  const model =
+    getKakaoAiIntentModel();
+
+  const recentConversation =
+    (
+      params
+        .conversationHistory ||
+      []
+    )
+      .slice(
+        -12
+      )
+      .map(
+        item => ({
+          role:
+            item.role,
+
+          content:
+            normalizeLeadSemanticText(
+              item.content
+            ),
+        })
+      )
+      .filter(
+        item =>
+          Boolean(
+            item.content
+          )
+      );
+
+  const allowedSemanticIds =
+    candidates.map(
+      candidate =>
+        candidate.semanticId
+    );
+
+  const input =
+    JSON.stringify({
+      currentMessage:
+        message,
+
+      recentConversation,
+
+      currentStage: {
+        id:
+          currentStage.id,
+
+        contentKeys:
+          currentStage
+            .contentKeys ??
+          [],
+
+        metadata:
+          currentStage
+            .metadata ??
+          null,
+
+        defaultActionId:
+          currentStage
+            .defaultActionId ??
+          null,
+      },
+
+      conversationState:
+        params
+          .structuredMemory ??
+        null,
+
+      allowedTransitions:
+        candidates,
+    });
+
+  try {
+    const response =
+      await openai.responses.create({
+        model,
+
+        store:
+          false,
+
+        instructions: `
+너는 카카오 신규상담 Flow의 의미 전이 판단기다.
+
+현재 사용자의 발화를 보고
+현재 Flow Stage에서 허용된 transition 중
+어느 semantic ID가 가장 적절한지만 판단한다.
+
+중요 규칙:
+
+- 업무 단계, 과정명, 회사명, 사용자 표현을 코드 고정 규칙처럼 가정하지 않는다.
+- allowedTransitions에 제공된 현재 회사 Flow Config만 판단 기준으로 사용한다.
+- semantic ID 문자열 자체의 이름만 보고 의미를 추측하지 않는다.
+- transition의 description, targetContentKeys, targetMetadata, actionId,
+  현재 Stage 정보, 최근 대화, conversationState를 함께 본다.
+- 직전 AI 발화에 대한 짧은 후속 응답도 최근 대화 문맥과
+  현재 Flow 상태를 기준으로 해석한다.
+- 현재 발화가 어떤 transition에도 충분히 해당하지 않으면 null을 반환한다.
+- 반드시 allowedTransitions에 실제 존재하는 semantic ID만 반환한다.
+- 새로운 semantic ID를 생성하지 않는다.
+`,
+
+        input,
+
+        text: {
+          format: {
+            type:
+              "json_schema",
+
+            name:
+              "kakao_ai_lead_semantic",
+
+            strict:
+              true,
+
+            schema: {
+              type:
+                "object",
+
+              additionalProperties:
+                false,
+
+              properties: {
+                semanticDecision: {
+                  anyOf: [
+                    {
+                      type:
+                        "string",
+                    },
+                    {
+                      type:
+                        "null",
+                    },
+                  ],
+                },
+              },
+
+              required: [
+                "semanticDecision",
+              ],
+            },
+          },
+        },
+      });
+
+    const outputText =
+      normalizeLeadSemanticText(
+        response.output_text
+      );
+
+    if (
+      !outputText
+    ) {
+      return {
+        success:
+          false,
+
+        semanticDecision:
+          null,
+
+        openAiResponseId:
+          typeof response.id ===
+            "string"
+            ? response.id
+            : null,
+
+        model,
+
+        fallbackUsed:
+          true,
+
+        errorMessage:
+          "Lead Semantic 응답이 비어 있습니다.",
+      };
+    }
+
+    const parsed =
+      JSON.parse(
+        outputText
+      ) as {
+        semanticDecision?:
+          unknown;
+      };
+
+    const semanticDecision =
+      parsed
+        .semanticDecision ===
+        null
+        ? null
+        : normalizeLeadSemanticText(
+            parsed
+              .semanticDecision
+          ) ||
+          null;
+
+    /**
+     * 모델이 잘못된 ID를 생성하더라도
+     * 실제 Flow Config에 없는 값은 절대 통과시키지 않는다.
+     */
+    const safeSemanticDecision =
+      semanticDecision &&
+      allowedSemanticIds.includes(
+        semanticDecision
+      )
+        ? semanticDecision
+        : null;
+
+    return {
+      success:
+        true,
+
+      semanticDecision:
+        safeSemanticDecision,
+
+      openAiResponseId:
+        typeof response.id ===
+          "string"
+          ? response.id
+          : null,
+
+      model,
+
+      fallbackUsed:
+        false,
+
+      errorMessage:
+        null,
+    };
+  } catch (
+    error:
+      unknown
+  ) {
+    return {
+      success:
+        false,
+
+      semanticDecision:
+        null,
+
+      openAiResponseId:
+        null,
+
+      model,
+
+      fallbackUsed:
+        true,
+
+      errorMessage:
+        error instanceof Error
+          ? error.message
+          : String(
+              error
+            ),
+    };
+  }
 }
 
 /**
