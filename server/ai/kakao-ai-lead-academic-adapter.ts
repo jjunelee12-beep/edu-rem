@@ -1877,6 +1877,37 @@ console.log(
     degreeTemplatesCount:
       degreeTemplates.length,
 
+degreeTemplatesRawLiberalCount:
+  degreeTemplates.filter(
+    item =>
+      item.category === "교양" ||
+      item.requirementType === "교양"
+  ).length,
+
+nileDegreePlanningCanResolve:
+  nileDegreePlanningRecognition.canResolve,
+
+nileClassificationCount:
+  degreeClassificationBySubjectKey.size,
+
+nileLiberalSubjects:
+  Array.from(
+    degreeClassificationBySubjectKey.entries()
+  )
+    .filter(
+      ([, classification]) =>
+        classification.category === "교양" ||
+        classification.requirementType === "교양"
+    )
+    .map(
+      ([subjectKey, classification]) => ({
+        subjectKey,
+        category: classification.category,
+        requirementType:
+          classification.requirementType,
+      })
+    ),
+
     requirementsCanPlan:
       requirements.canPlan,
 
