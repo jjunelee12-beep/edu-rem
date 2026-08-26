@@ -1695,8 +1695,60 @@ responseComposition: {
       registrationVerification:
         null,
 
-      responseComposition:
-        null,
+      responseComposition: {
+  success:
+    true,
+
+  replyText:
+    resetReplyText,
+
+  usedContextTypes:
+    [],
+
+  mentionedRestriction:
+    false,
+
+  askedClarification:
+    false,
+
+  consultationFlowPatch: {
+    qualificationExplained:
+      false,
+
+    durationExplained:
+      false,
+
+    theoryExplained:
+      false,
+
+    practicumExplained:
+      false,
+
+    administrationExplained:
+      false,
+
+    companyBenefitsExplained:
+      false,
+
+    staffRecommendationOffered:
+      false,
+
+    consultationFormOffered:
+      false,
+  },
+
+  openAiResponseId:
+    null,
+
+  model:
+    null,
+
+  fallbackUsed:
+    false,
+
+  errorMessage:
+    null,
+},
     };
   }
 

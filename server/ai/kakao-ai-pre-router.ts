@@ -566,6 +566,66 @@ export async function routeKakaoAiPreMessage(
     };
   }
 
+/**
+ * ---------------------------------------------------------
+ * 시스템 명령어는 Pre-Router AI가 해석하지 않는다.
+ * ---------------------------------------------------------
+ *
+ * /lead, /reset, /staff 등의 명령을
+ * OpenAI에게 보내면 greeting / acknowledgement 등으로
+ * 잘못 분류될 수 있다.
+ *
+ * 명령어는 반드시 기존 Kakao AI Command Router까지
+ * 그대로 내려보낸다.
+ *
+ * waiting 메시지도 보내지 않는다.
+ */
+const isSystemCommand =
+  /^\/(?:lead|reset|logout|member|staff|member-test|staff-test|test-reset)(?:\s|$)/i.test(
+    message
+  );
+
+if (
+  isSystemCommand
+) {
+  return {
+    success:
+      true,
+
+    decision: {
+      mode:
+        "analysis",
+
+      immediateKind:
+        null,
+
+      reason:
+        "카카오 AI 시스템 명령어이므로 Pre-Router 자연어 분류를 건너뜁니다.",
+
+      requiresCompanyContext:
+        false,
+
+      shouldShowWaitingMessage:
+        false,
+
+      confidence:
+        1,
+    },
+
+    openAiResponseId:
+      null,
+
+    model:
+      null,
+
+    fallbackUsed:
+      false,
+
+    errorMessage:
+      null,
+  };
+}
+
   const openai =
     getKakaoAiPreRouterOpenAiClient();
 
