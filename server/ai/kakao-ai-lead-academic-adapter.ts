@@ -1870,65 +1870,49 @@ Number(
 
 console.log(
   "[KAKAO AI LEAD ACADEMIC DEBUG]",
-  JSON.stringify(
-    {
-      requestedCourse,
-      courseKey,
+  {
+    requestedCourse,
+    courseKey,
 
-      degreeRequirement,
+    degreeTemplatesCount:
+      degreeTemplates.length,
 
-      requirements,
+    requirementsCanPlan:
+      requirements.canPlan,
 
-      degreeTemplatesCount:
-        degreeTemplates.length,
+    requirementsBlockingReasons:
+      requirements.blockingReasons,
 
-      subjectPlan: {
-        selectedSubjectCount:
-          subjectPlan.selectedSubjects.length,
+    subjectPlanCanPlan:
+      subjectPlan.canPlan,
 
-        selectedSubjects:
-          subjectPlan.selectedSubjects.map(
-            subject => ({
-              subjectName:
-                subject.subjectName,
+    selectedSubjectCount:
+      subjectPlan.selectedSubjectCount,
 
-              category:
-                subject.category,
+    selectedCredits:
+      subjectPlan.selectedCredits,
 
-              requirementType:
-                subject.requirementType,
+    degreeFillRemaining:
+      subjectPlan.degreeFillRemaining,
 
-              credits:
-                subject.credits,
-            })
-          ),
+    subjectPlanUnresolved:
+      subjectPlan.unresolvedRequirements,
 
-        unresolvedRequirements:
-          subjectPlan.unresolvedRequirements,
+    semesterPlanCanPlan:
+      semesterPlan.canPlan,
 
-        warnings:
-          subjectPlan.warnings,
-      },
+    semesterCount:
+      semesterPlan.semesterCount,
 
-      semesterPlan: {
-        semesters:
-          semesterPlan.semesters,
+    lastSemesterLabel:
+      semesterPlan.lastSemesterLabel,
 
-        estimatedStudyEndDate:
-          semesterPlan.estimatedStudyEndDate,
+    estimatedStudyEndDate:
+      semesterPlan.estimatedStudyEndDate,
 
-        unresolvedReasons:
-          semesterPlan.unresolvedReasons,
-
-        warnings:
-          semesterPlan.warnings,
-      },
-
-      administrativeTimeline,
-    },
-    null,
-    2
-  )
+    semesterUnresolved:
+      semesterPlan.unresolvedReasons,
+  }
 );
 
   /**
