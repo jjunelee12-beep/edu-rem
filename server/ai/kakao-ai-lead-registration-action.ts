@@ -851,90 +851,23 @@ const wantsCallbackRequest =
     );
   }
 
+ if (
+  !selectedStaffUserId
+) {
+  /**
+   * 상담접수 의사가 있더라도
+   * 담당자가 아직 선택되지 않았다면
+   * 개인정보 입력보다 담당자 추천을 먼저 진행한다.
+   *
+   * 고객에게 담당자 이름을 직접 입력하게 하지 않는다.
+   */
   if (
-    !selectedStaffUserId
+    wantsLeadRegistration ||
+    wantsCallbackRequest
   ) {
-    missingRequiredFields.push(
-      "담당자"
-    );
-  }
-
-  if (
-    !selectedStaffUserId
-  ) {
-    /**
-     * 실제 상담접수/전화상담 의도라면
-     * 일반 Composer로 흘리지 않고
-     * 필요한 다음 행동을 명확하게 안내한다.
-     */
-    if (
-      wantsLeadRegistration ||
-      wantsCallbackRequest
-    ) {
-      return {
-        handled:
-          true,
-
-        created:
-          false,
-
-        consultationId:
-          null,
-
-        reason:
-          "STAFF_NOT_SELECTED",
-
-        clientName:
-          contact.clientName,
-
-        phoneLast4:
-          contact.phone
-            ? maskPhone(
-                contact.phone
-              )
-            : null,
-
-        replyText:
-          [
-            "네, 상담 접수를 위해 필요한 정보만 확인할게요 :)",
-            "",
-            `아직 필요한 정보: ${missingRequiredFields.join(", ")}`,
-            "",
-            !contact.clientName
-              ? "성함:"
-              : null,
-
-            !contact.phone
-              ? "연락처:"
-              : null,
-
-            !finalEducation
-              ? "최종학력: (고졸 / 전문대졸 / 4년제졸 등)"
-              : null,
-
-            !desiredCourse
-              ? "희망과정: (예: 사회복지사 2급)"
-              : null,
-
-            "상담 담당자를 아직 선택하지 않으셨다면 원하시는 담당자를 선택해주세요.",
-          ]
-            .filter(
-              (
-                line
-              ): line is string =>
-                Boolean(
-                  line
-                )
-            )
-            .join(
-              "\n"
-            ),
-      };
-    }
-
     return {
       handled:
-        false,
+        true,
 
       created:
         false,
@@ -956,9 +889,43 @@ const wantsCallbackRequest =
           : null,
 
       replyText:
-        null,
+        [
+          "네, 상담 접수 도와드릴게요.",
+          "",
+          "아직 담당자가 정해지지 않아 현재 상담 내용에 맞는 담당자를 먼저 추천해드리겠습니다.",
+        ].join(
+          "\n"
+        ),
     };
   }
+
+  return {
+    handled:
+      false,
+
+    created:
+      false,
+
+    consultationId:
+      null,
+
+    reason:
+      "STAFF_NOT_SELECTED",
+
+    clientName:
+      contact.clientName,
+
+    phoneLast4:
+      contact.phone
+        ? maskPhone(
+            contact.phone
+          )
+        : null,
+
+    replyText:
+      null,
+  };
+}
 
   /**
    * 선택 담당자가 실제 같은 회사의

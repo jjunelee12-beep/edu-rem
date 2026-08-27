@@ -4273,26 +4273,6 @@ if (
 }
 
 /**
- * 사용자가 상담접수/연결을 요청했지만
- * 아직 담당자를 선택하지 않은 경우,
- *
- * Lead Registration Action이
- * "담당자 추천해드릴게요"
- * 흐름을 직접 안내하므로
- * 담당자 추천 제안 상태를 기록한다.
- */
-if (
-  leadRegistration?.handled ===
-    true &&
-  leadRegistration.reason ===
-    "STAFF_NOT_SELECTED"
-) {
-  serverActionConsultationFlowPatch
-    .staffRecommendationOffered =
-    true;
-}
-
-/**
  * 상담 접수 양식을 실제로 안내한 경우.
  *
  * CONTACT_NOT_DETECTED:
@@ -4392,23 +4372,71 @@ if (
       callbackRequest,
     });
 
-  const postActionFlowEvaluation =
-    evaluateKakaoAiLeadFlow({
-      config:
-        resolvedContext
-          .leadFlowConfig,
+  const shouldForceStaffRecommendation =
+  leadRegistration?.handled ===
+    true &&
+  leadRegistration.reason ===
+    "STAFF_NOT_SELECTED";
 
-      facts:
-        postActionFacts,
+const availableStaffStage =
+  resolvedContext
+    .leadFlowConfig
+    .stages
+    ?.find(
+      stage =>
+        stage.enabled !==
+          false &&
+        normalizeText(
+          stage.id
+        ) ===
+          "STAFF"
+    ) ??
+  null;
 
-      currentStageId:
-        currentMemory
-          .consultationFlow
-          .salesStage,
+/**
+ * 상담접수 의사가 있지만 담당자가 아직 선택되지 않았다면
+ * 기존 CONSULTATION 흐름을 계속 진행하지 않는다.
+ *
+ * 실제 STAFF Stage가 활성화된 경우
+ * 해당 Stage를 현재 단계로 강제하여
+ * 담당자 추천부터 먼저 실행한다.
+ *
+ * 이전 semanticDecision을 그대로 사용하면
+ * "네" / 상담접수 동의가 STAFF → CONSULTATION 전이로
+ * 다시 소비될 수 있으므로 강제 STAFF 진입 시에는
+ * semanticDecision을 null로 초기화한다.
+ */
+const postActionCurrentStageId =
+  shouldForceStaffRecommendation &&
+  availableStaffStage
+    ? normalizeText(
+        availableStaffStage.id
+      )
+    : currentMemory
+        .consultationFlow
+        .salesStage;
 
-      semanticDecision:
-  leadFlowSemanticDecision,
-    });
+const postActionSemanticDecision =
+  shouldForceStaffRecommendation &&
+  availableStaffStage
+    ? null
+    : leadFlowSemanticDecision;
+
+const postActionFlowEvaluation =
+  evaluateKakaoAiLeadFlow({
+    config:
+      resolvedContext
+        .leadFlowConfig,
+
+    facts:
+      postActionFacts,
+
+    currentStageId:
+      postActionCurrentStageId,
+
+    semanticDecision:
+      postActionSemanticDecision,
+  });
 
   const postActionStageId =
     postActionFlowEvaluation
