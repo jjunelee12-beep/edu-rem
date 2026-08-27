@@ -48206,6 +48206,43 @@ export async function listRecommendedStaffProfiles(
       params.organizationId
     );
 
+const debugStaffRows =
+  await db
+    .select({
+      userId:
+        staffPublicProfiles.userId,
+
+      isActive:
+        staffPublicProfiles.isActive,
+
+      recommendationEnabled:
+        staffPublicProfiles.recommendationEnabled,
+
+      acceptingNewConsultations:
+        staffPublicProfiles.acceptingNewConsultations,
+
+      showOnTeamPage:
+        staffPublicProfiles.showOnTeamPage,
+    })
+    .from(
+      staffPublicProfiles
+    )
+    .where(
+      eq(
+        staffPublicProfiles.organizationId,
+        organizationId
+      )
+    );
+
+console.log(
+  "[KAKAO AI STAFF DEBUG]",
+  {
+    organizationId,
+    profiles:
+      debugStaffRows,
+  }
+);
+
   const rows =
     await db
       .select()
