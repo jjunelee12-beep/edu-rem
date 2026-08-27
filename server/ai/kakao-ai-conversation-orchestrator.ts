@@ -1476,6 +1476,33 @@ responseComposition: {
 
     consultationFormOffered:
       false,
+
+    trustExplained:
+      false,
+
+    courseOverviewExplained:
+      false,
+
+    theoryDetailExplained:
+      false,
+
+    practicumDetailExplained:
+      false,
+
+    administrationDetailExplained:
+      false,
+
+    certificateExplained:
+      false,
+
+    certificateDetailExplained:
+      false,
+
+    companyBenefitsDetailExplained:
+      false,
+
+    staffDetailExplained:
+      false,
   },
 
   openAiResponseId:
@@ -1735,6 +1762,33 @@ responseComposition: {
       false,
 
     consultationFormOffered:
+      false,
+
+    trustExplained:
+      false,
+
+    courseOverviewExplained:
+      false,
+
+    theoryDetailExplained:
+      false,
+
+    practicumDetailExplained:
+      false,
+
+    administrationDetailExplained:
+      false,
+
+    certificateExplained:
+      false,
+
+    certificateDetailExplained:
+      false,
+
+    companyBenefitsDetailExplained:
+      false,
+
+    staffDetailExplained:
       false,
   },
 
@@ -2031,6 +2085,33 @@ responseComposition: {
 
           consultationFormOffered:
             false,
+
+    trustExplained:
+      false,
+
+    courseOverviewExplained:
+      false,
+
+    theoryDetailExplained:
+      false,
+
+    practicumDetailExplained:
+      false,
+
+    administrationDetailExplained:
+      false,
+
+    certificateExplained:
+      false,
+
+    certificateDetailExplained:
+      false,
+
+    companyBenefitsDetailExplained:
+      false,
+
+    staffDetailExplained:
+      false,
         },
 
         openAiResponseId:
@@ -2240,6 +2321,33 @@ responseComposition: {
 
             consultationFormOffered:
               false,
+
+    trustExplained:
+      false,
+
+    courseOverviewExplained:
+      false,
+
+    theoryDetailExplained:
+      false,
+
+    practicumDetailExplained:
+      false,
+
+    administrationDetailExplained:
+      false,
+
+    certificateExplained:
+      false,
+
+    certificateDetailExplained:
+      false,
+
+    companyBenefitsDetailExplained:
+      false,
+
+    staffDetailExplained:
+      false,
           },
 
           openAiResponseId:
@@ -4862,6 +4970,96 @@ if (
 ) {
   consultationFlowTruePatch
     .consultationFormOffered =
+    true;
+}
+
+if (
+  consultationFlowPatch
+    .trustExplained ===
+  true
+) {
+  consultationFlowTruePatch
+    .trustExplained =
+    true;
+}
+
+if (
+  consultationFlowPatch
+    .courseOverviewExplained ===
+  true
+) {
+  consultationFlowTruePatch
+    .courseOverviewExplained =
+    true;
+}
+
+if (
+  consultationFlowPatch
+    .theoryDetailExplained ===
+  true
+) {
+  consultationFlowTruePatch
+    .theoryDetailExplained =
+    true;
+}
+
+if (
+  consultationFlowPatch
+    .practicumDetailExplained ===
+  true
+) {
+  consultationFlowTruePatch
+    .practicumDetailExplained =
+    true;
+}
+
+if (
+  consultationFlowPatch
+    .administrationDetailExplained ===
+  true
+) {
+  consultationFlowTruePatch
+    .administrationDetailExplained =
+    true;
+}
+
+if (
+  consultationFlowPatch
+    .certificateExplained ===
+  true
+) {
+  consultationFlowTruePatch
+    .certificateExplained =
+    true;
+}
+
+if (
+  consultationFlowPatch
+    .certificateDetailExplained ===
+  true
+) {
+  consultationFlowTruePatch
+    .certificateDetailExplained =
+    true;
+}
+
+if (
+  consultationFlowPatch
+    .companyBenefitsDetailExplained ===
+  true
+) {
+  consultationFlowTruePatch
+    .companyBenefitsDetailExplained =
+    true;
+}
+
+if (
+  consultationFlowPatch
+    .staffDetailExplained ===
+  true
+) {
+  consultationFlowTruePatch
+    .staffDetailExplained =
     true;
 }
 

@@ -58,8 +58,6 @@ practicePolicy: string;
 administrativeSupportPolicy: string;
   consultationPolicy: string;
 
-leadFlowConfigText: string;
-
   priceDisclosureEnabled: boolean;
 priceGuide: string;
   kakaoBotId: string;
@@ -113,12 +111,1240 @@ classManagementPolicy: "",
 practicePolicy: "",
 administrativeSupportPolicy: "",
 consultationPolicy: "",
-leadFlowConfigText: "",
 
   priceDisclosureEnabled: false,
 priceGuide: "",
   kakaoBotId: "",
 };
+
+type LeadFlowBuilderStageId =
+  | "TRUST"
+  | "OVERVIEW"
+  | "THEORY"
+  | "PRACTICUM"
+  | "ADMINISTRATION"
+  | "CERTIFICATE"
+  | "BENEFITS"
+  | "STAFF"
+  | "CONSULTATION";
+
+type LeadFlowBuilderStage = {
+  id: LeadFlowBuilderStageId;
+  enabled: boolean;
+  order: number;
+  detailEnabled: boolean;
+};
+
+type LeadFlowStageDefinition = {
+  label: string;
+  description: string;
+
+  summaryMemoryPath: string;
+  detailMemoryPath: string | null;
+
+  summaryActionId: string;
+  detailActionId: string | null;
+  detailFollowupActionId: string | null;
+
+  choiceActionId: string | null;
+  choiceAfterDetailActionId: string | null;
+
+  detailLabel: string | null;
+  detailSemanticDescription: string | null;
+
+  contentKeys: string[];
+
+  purpose: string;
+
+  summaryGuidance: string;
+  detailGuidance: string | null;
+  detailFollowupGuidance: string | null;
+  choiceGuidance: string | null;
+  choiceAfterDetailGuidance: string | null;
+};
+
+const LEAD_FLOW_STAGE_DEFINITIONS:
+  Record<
+    LeadFlowBuilderStageId,
+    LeadFlowStageDefinition
+  > = {
+  TRUST: {
+    label:
+      "상담 신뢰 안내",
+
+    description:
+      "AI가 어떤 기준과 시스템을 바탕으로 상담하는지 먼저 안내합니다.",
+
+    summaryMemoryPath:
+      "memory.consultationFlow.trustExplained",
+
+    detailMemoryPath:
+      null,
+
+    summaryActionId:
+      "explain_trust_summary",
+
+    detailActionId:
+      null,
+
+    detailFollowupActionId:
+      null,
+
+    choiceActionId:
+      "offer_trust_next",
+
+    choiceAfterDetailActionId:
+      null,
+
+    detailLabel:
+      null,
+
+    detailSemanticDescription:
+      null,
+
+    contentKeys: [
+      "leadAcademicContext",
+      "companyContext",
+    ],
+
+    purpose:
+      "신규상담 시작 시 상담 근거와 서버 기반 안내방식을 짧게 설명한다.",
+
+    summaryGuidance:
+      "현재 고객의 직접 질문이 있으면 먼저 답한다. 그 다음 제공된 서버 학습설계 및 회사 Context를 근거로 상담이 진행된다는 점을 짧고 자연스럽게 설명한다. 서버에 없는 인증, 실적, 보장내용은 만들지 않는다.",
+
+    detailGuidance:
+      null,
+
+    detailFollowupGuidance:
+      null,
+
+    choiceGuidance:
+      "이미 상담 근거를 설명했다. 같은 설명을 반복하지 않고 현재 질문에 답한 뒤 다음 상담단계로 자연스럽게 연결한다.",
+
+    choiceAfterDetailGuidance:
+      null,
+  },
+
+  OVERVIEW: {
+    label:
+      "전체 과정 안내",
+
+    description:
+      "고객 조건에 맞는 전체 취득과정을 먼저 간단히 설명합니다.",
+
+    summaryMemoryPath:
+      "memory.consultationFlow.courseOverviewExplained",
+
+    detailMemoryPath:
+      null,
+
+    summaryActionId:
+      "explain_course_overview_summary",
+
+    detailActionId:
+      null,
+
+    detailFollowupActionId:
+      null,
+
+    choiceActionId:
+      "offer_overview_next",
+
+    choiceAfterDetailActionId:
+      null,
+
+    detailLabel:
+      null,
+
+    detailSemanticDescription:
+      null,
+
+    contentKeys: [
+      "leadAcademicContext",
+    ],
+
+    purpose:
+      "고객 개인조건에 맞는 전체 학습흐름을 이해시키고 세부 진행단계로 연결한다.",
+
+    summaryGuidance:
+      "Academic Context에서 확인된 고객의 전체 진행흐름을 핵심만 간단히 설명한다. 이론수업, 실습, 행정절차, 자격증 신청 등 서버가 확정한 범위만 사용하고 세부내용을 한 번에 모두 풀어놓지 않는다.",
+
+    detailGuidance:
+      null,
+
+    detailFollowupGuidance:
+      null,
+
+    choiceGuidance:
+      "전체 과정 안내를 이미 완료했다. 같은 내용을 반복하지 않고 현재 질문에 답한 뒤 다음 상담단계로 자연스럽게 연결한다.",
+
+    choiceAfterDetailGuidance:
+      null,
+  },
+
+  THEORY: {
+    label:
+      "이론수업 안내",
+
+    description:
+      "온라인 이론수업 진행방식을 안내합니다.",
+
+    summaryMemoryPath:
+      "memory.consultationFlow.theoryExplained",
+
+    detailMemoryPath:
+      "memory.consultationFlow.theoryDetailExplained",
+
+    summaryActionId:
+      "explain_theory_summary",
+
+    detailActionId:
+      "explain_theory_detail",
+
+    detailFollowupActionId:
+      "answer_theory_detail_followup",
+
+    choiceActionId:
+      "offer_theory_choices",
+
+    choiceAfterDetailActionId:
+      "offer_theory_choices_after_detail",
+
+    detailLabel:
+      "상세 이론수업 안내 허용",
+
+    detailSemanticDescription:
+      "고객이 이론수업 진행방법을 더 자세하게 설명해 달라고 요청한다.",
+
+    contentKeys: [
+      "leadAcademicContext",
+      "companyContext",
+    ],
+
+    purpose:
+      "이론수업을 간단히 안내하고 필요할 때 상세설명 또는 다음 상담단계로 연결한다.",
+
+    summaryGuidance:
+      "현재 고객의 질문에 먼저 답한 뒤 서버 Context에 있는 이론수업 진행방식을 핵심만 간단하게 설명한다. 설명을 지나치게 길게 하지 않는다.",
+
+    detailGuidance:
+      "기본설명을 반복하지 않고 서버 Context가 지원하는 범위에서 수강방식, 학기진행, 출석, 시험, 과제, 학사일정 관리 등을 구체적으로 설명한다.",
+
+    detailFollowupGuidance:
+      "이론수업 상세안내는 이미 완료됐다. 기존 상세설명을 처음부터 반복하지 않고 고객이 새롭게 묻는 내용만 보충한다.",
+
+    choiceGuidance:
+      "이론수업 기본설명을 이미 완료했다. 같은 설명을 반복하지 않고 현재 질문 후 상세확인 또는 다음 상담단계로 자연스럽게 연결한다.",
+
+    choiceAfterDetailGuidance:
+      "이론수업 상세안내까지 완료했다. 동일한 상세설명을 반복하지 않고 현재 질문 후 다음 상담단계로 자연스럽게 연결한다.",
+  },
+
+  PRACTICUM: {
+    label:
+      "실습 안내",
+
+    description:
+      "실습 진행방식과 회사의 실습 지원범위를 안내합니다.",
+
+    summaryMemoryPath:
+      "memory.consultationFlow.practicumExplained",
+
+    detailMemoryPath:
+      "memory.consultationFlow.practicumDetailExplained",
+
+    summaryActionId:
+      "explain_practicum_summary",
+
+    detailActionId:
+      "explain_practicum_detail",
+
+    detailFollowupActionId:
+      "answer_practicum_detail_followup",
+
+    choiceActionId:
+      "offer_practicum_choices",
+
+    choiceAfterDetailActionId:
+      "offer_practicum_choices_after_detail",
+
+    detailLabel:
+      "상세 실습 안내 허용",
+
+    detailSemanticDescription:
+      "고객이 실습 진행방법, 일정, 기관 또는 실습지원에 대해 더 자세한 설명을 원한다.",
+
+    contentKeys: [
+      "leadAcademicContext",
+      "practiceContext",
+      "companyContext",
+    ],
+
+    purpose:
+      "실습 기본 진행방식과 지원범위를 설명하고 다음 상담단계로 연결한다.",
+
+    summaryGuidance:
+      "현재 과정에 적용되는 실습 여부와 기본 진행방식을 서버 Context 범위에서 핵심만 설명한다.",
+
+    detailGuidance:
+      "기본 실습설명을 반복하지 않고 실습기관, 일정, 진행방식, 실습지원 범위 등 서버 Context에 존재하는 내용을 구체적으로 설명한다.",
+
+    detailFollowupGuidance:
+      "실습 상세안내가 이미 완료됐다. 기존 내용을 처음부터 반복하지 않고 새롭게 질문한 실습내용만 답한다.",
+
+    choiceGuidance:
+      "실습 기본안내는 이미 완료됐다. 같은 설명을 반복하지 않고 현재 질문 후 상세확인 또는 다음 상담단계로 연결한다.",
+
+    choiceAfterDetailGuidance:
+      "실습 상세안내까지 완료됐다. 같은 설명을 반복하지 않고 다음 상담단계로 자연스럽게 연결한다.",
+  },
+
+  ADMINISTRATION: {
+    label:
+      "행정절차 안내",
+
+    description:
+      "학습자등록, 학점인정, 학위신청 등 필요한 행정절차를 안내합니다.",
+
+    summaryMemoryPath:
+      "memory.consultationFlow.administrationExplained",
+
+    detailMemoryPath:
+      "memory.consultationFlow.administrationDetailExplained",
+
+    summaryActionId:
+      "explain_administration_summary",
+
+    detailActionId:
+      "explain_administration_detail",
+
+    detailFollowupActionId:
+      "answer_administration_detail_followup",
+
+    choiceActionId:
+      "offer_administration_choices",
+
+    choiceAfterDetailActionId:
+      "offer_administration_choices_after_detail",
+
+    detailLabel:
+      "상세 행정절차 안내 허용",
+
+    detailSemanticDescription:
+      "고객이 학습자등록, 학점인정, 학위신청 등의 행정절차를 더 자세하게 확인하고 싶어 한다.",
+
+    contentKeys: [
+      "leadAcademicContext",
+      "companyContext",
+    ],
+
+    purpose:
+      "현재 과정에 필요한 행정절차를 안내하고 다음 상담단계로 연결한다.",
+
+    summaryGuidance:
+      "현재 고객에게 실제 필요한 주요 행정절차를 서버 Context 기준으로 간단히 설명한다.",
+
+    detailGuidance:
+      "기본설명을 반복하지 않고 서버 Context가 제공하는 행정절차의 순서, 준비사항, 진행방법을 구체적으로 설명한다. 확정되지 않은 날짜는 만들지 않는다.",
+
+    detailFollowupGuidance:
+      "행정절차 상세안내가 이미 완료됐다. 고객이 추가로 묻는 절차만 답하고 전체 설명을 반복하지 않는다.",
+
+    choiceGuidance:
+      "행정절차 기본안내는 이미 완료됐다. 현재 질문 후 상세확인 또는 다음 상담단계로 연결한다.",
+
+    choiceAfterDetailGuidance:
+      "행정절차 상세안내까지 완료됐다. 동일한 내용을 반복하지 않고 다음 상담단계로 연결한다.",
+  },
+
+  CERTIFICATE: {
+    label:
+      "자격증 신청 안내",
+
+    description:
+      "과정 완료 후 자격증 신청 흐름을 안내합니다.",
+
+    summaryMemoryPath:
+      "memory.consultationFlow.certificateExplained",
+
+    detailMemoryPath:
+      "memory.consultationFlow.certificateDetailExplained",
+
+    summaryActionId:
+      "explain_certificate_summary",
+
+    detailActionId:
+      "explain_certificate_detail",
+
+    detailFollowupActionId:
+      "answer_certificate_detail_followup",
+
+    choiceActionId:
+      "offer_certificate_choices",
+
+    choiceAfterDetailActionId:
+      "offer_certificate_choices_after_detail",
+
+    detailLabel:
+      "상세 자격증 신청 안내 허용",
+
+    detailSemanticDescription:
+      "고객이 자격증 신청시기, 절차 또는 준비서류를 더 자세하게 알고 싶어 한다.",
+
+    contentKeys: [
+      "leadAcademicContext",
+      "companyContext",
+    ],
+
+    purpose:
+      "과정 완료 후 자격증 신청흐름을 설명하고 다음 상담단계로 연결한다.",
+
+    summaryGuidance:
+      "서버 Context를 기준으로 과정 이수 후 자격증 신청단계와 기본 흐름을 간단히 설명한다.",
+
+    detailGuidance:
+      "기본설명을 반복하지 않고 신청 가능한 시점, 절차, 준비사항 등 서버 Context가 지원하는 범위에서 자세히 설명한다.",
+
+    detailFollowupGuidance:
+      "자격증 신청 상세안내를 이미 완료했다. 현재 추가질문에 필요한 부분만 답하고 이전 설명 전체를 반복하지 않는다.",
+
+    choiceGuidance:
+      "자격증 기본안내는 이미 완료됐다. 현재 질문 후 상세확인 또는 다음 상담단계로 연결한다.",
+
+    choiceAfterDetailGuidance:
+      "자격증 상세안내까지 완료됐다. 같은 내용을 반복하지 않고 다음 상담단계로 연결한다.",
+  },
+
+  BENEFITS: {
+    label:
+      "회사 관리혜택 안내",
+
+    description:
+      "회사가 실제 제공하는 학습관리 및 지원서비스를 안내합니다.",
+
+    summaryMemoryPath:
+      "memory.consultationFlow.companyBenefitsExplained",
+
+    detailMemoryPath:
+      "memory.consultationFlow.companyBenefitsDetailExplained",
+
+    summaryActionId:
+      "explain_company_benefits_summary",
+
+    detailActionId:
+      "explain_company_benefits_detail",
+
+    detailFollowupActionId:
+      "answer_company_benefits_detail_followup",
+
+    choiceActionId:
+      "offer_company_benefits_choices",
+
+    choiceAfterDetailActionId:
+      "offer_company_benefits_choices_after_detail",
+
+    detailLabel:
+      "상세 관리혜택 안내 허용",
+
+    detailSemanticDescription:
+      "고객이 회사의 관리서비스와 지원내용을 더 자세하게 알고 싶어 한다.",
+
+    contentKeys: [
+      "companyContext",
+    ],
+
+    purpose:
+      "회사에서 실제 제공하는 관리서비스를 설명하고 다음 상담단계로 연결한다.",
+
+    summaryGuidance:
+      "companyContext에 실제 존재하는 관리서비스와 혜택만 핵심적으로 설명한다. 존재하지 않는 서비스를 만들지 않는다.",
+
+    detailGuidance:
+      "기본 혜택설명을 반복하지 않고 현재 고객의 관심사와 연결해 실제 제공 가능한 관리서비스를 구체적으로 설명한다.",
+
+    detailFollowupGuidance:
+      "회사 관리서비스 상세설명이 이미 완료됐다. 고객의 추가질문에 필요한 내용만 답한다.",
+
+    choiceGuidance:
+      "회사 관리서비스 기본안내는 이미 완료됐다. 현재 질문 후 상세확인 또는 다음 상담단계로 연결한다.",
+
+    choiceAfterDetailGuidance:
+      "관리서비스 상세안내까지 완료됐다. 같은 설명을 반복하지 않고 다음 상담단계로 연결한다.",
+  },
+
+  STAFF: {
+    label:
+      "담당자 안내",
+
+    description:
+      "회사 소속 담당자를 추천하거나 연결합니다.",
+
+    summaryMemoryPath:
+      "memory.consultationFlow.staffRecommendationOffered",
+
+    detailMemoryPath:
+      "memory.consultationFlow.staffDetailExplained",
+
+    summaryActionId:
+      "introduce_staff_summary",
+
+    detailActionId:
+      "explain_staff_detail",
+
+    detailFollowupActionId:
+      "answer_staff_detail_followup",
+
+    choiceActionId:
+      "offer_staff_choices",
+
+    choiceAfterDetailActionId:
+      "offer_staff_choices_after_detail",
+
+    detailLabel:
+      "상세 담당자 정보 안내 허용",
+
+    detailSemanticDescription:
+      "고객이 추천 담당자의 경력, 관리방식 또는 공개정보를 더 자세히 확인하고 싶어 한다.",
+
+    contentKeys: [
+      "staffContext",
+    ],
+
+    purpose:
+      "실제 회사 담당자를 소개하고 상담접수 단계로 연결한다.",
+
+    summaryGuidance:
+      "staffContext에 실제 담당자 후보가 있을 때만 공개 가능한 담당자 정보를 이용해 소개한다. 내부 userId나 서버에 없는 경력은 고객에게 말하지 않는다.",
+
+    detailGuidance:
+      "staffContext에 실제 존재하는 공개 가능한 담당자 정보만 구체적으로 설명한다.",
+
+    detailFollowupGuidance:
+      "담당자 상세안내가 이미 완료됐다. 현재 새롭게 묻는 공개정보만 답하고 기존 소개를 반복하지 않는다.",
+
+    choiceGuidance:
+      "담당자 추천안내가 이미 진행됐다. 현재 질문 후 상세확인 또는 상담접수 단계로 연결한다.",
+
+    choiceAfterDetailGuidance:
+      "담당자 상세안내까지 완료됐다. 동일한 소개를 반복하지 않고 상담접수 단계로 연결한다.",
+  },
+
+  CONSULTATION: {
+    label:
+      "상담 접수 안내",
+
+    description:
+      "고객을 실제 상담 또는 접수 단계로 연결합니다.",
+
+    summaryMemoryPath:
+      "memory.consultationFlow.consultationFormOffered",
+
+    detailMemoryPath:
+      null,
+
+    summaryActionId:
+      "offer_consultation_form",
+
+    detailActionId:
+      null,
+
+    detailFollowupActionId:
+      null,
+
+    choiceActionId:
+      null,
+
+    choiceAfterDetailActionId:
+      null,
+
+    detailLabel:
+      null,
+
+    detailSemanticDescription:
+      null,
+
+    contentKeys: [
+      "companyContext",
+      "staffContext",
+    ],
+
+    purpose:
+      "상담 또는 접수를 진행할 수 있도록 실제 다음 행동을 안내한다.",
+
+    summaryGuidance:
+      "현재 질문에 먼저 답한 뒤 상담 또는 접수를 진행할 수 있도록 서버가 실제 요구하는 정보와 가능한 절차만 안내한다. 이미 확보된 정보를 불필요하게 다시 요구하지 않는다.",
+
+    detailGuidance:
+      null,
+
+    detailFollowupGuidance:
+      null,
+
+    choiceGuidance:
+      null,
+
+    choiceAfterDetailGuidance:
+      null,
+  },
+};
+
+const DEFAULT_LEAD_FLOW_STAGES:
+  LeadFlowBuilderStage[] = [
+  {
+    id: "TRUST",
+    enabled: true,
+    order: 10,
+    detailEnabled: false,
+  },
+  {
+    id: "OVERVIEW",
+    enabled: true,
+    order: 20,
+    detailEnabled: false,
+  },
+  {
+    id: "THEORY",
+    enabled: true,
+    order: 30,
+    detailEnabled: true,
+  },
+  {
+    id: "PRACTICUM",
+    enabled: true,
+    order: 40,
+    detailEnabled: true,
+  },
+  {
+    id: "ADMINISTRATION",
+    enabled: true,
+    order: 50,
+    detailEnabled: true,
+  },
+  {
+    id: "CERTIFICATE",
+    enabled: true,
+    order: 60,
+    detailEnabled: true,
+  },
+  {
+    id: "BENEFITS",
+    enabled: true,
+    order: 70,
+    detailEnabled: true,
+  },
+  {
+    id: "STAFF",
+    enabled: true,
+    order: 80,
+    detailEnabled: true,
+  },
+  {
+    id: "CONSULTATION",
+    enabled: true,
+    order: 90,
+    detailEnabled: false,
+  },
+];
+
+function createDefaultLeadFlowStages():
+  LeadFlowBuilderStage[] {
+  return DEFAULT_LEAD_FLOW_STAGES.map(
+    stage => ({
+      ...stage,
+    })
+  );
+}
+
+function normalizeLeadFlowBuilderStages(
+  value:
+    unknown
+): LeadFlowBuilderStage[] {
+  const source =
+    value &&
+    typeof value ===
+      "object" &&
+    !Array.isArray(
+      value
+    )
+      ? value as Record<
+          string,
+          unknown
+        >
+      : null;
+
+  const sourceStages =
+    Array.isArray(
+      source?.stages
+    )
+      ? source?.stages as Array<
+          Record<
+            string,
+            unknown
+          >
+        >
+      : [];
+
+  const sourceById =
+    new Map<
+      string,
+      Record<
+        string,
+        unknown
+      >
+    >();
+
+  for (
+    const sourceStage of
+    sourceStages
+  ) {
+    const id =
+      String(
+        sourceStage?.id ||
+        ""
+      ).trim();
+
+    if (id) {
+      sourceById.set(
+        id,
+        sourceStage
+      );
+    }
+  }
+
+  return createDefaultLeadFlowStages()
+    .map(
+      defaultStage => {
+        const saved =
+          sourceById.get(
+            defaultStage.id
+          );
+
+        if (!saved) {
+          return defaultStage;
+        }
+
+        const metadata =
+          saved.metadata &&
+          typeof saved.metadata ===
+            "object" &&
+          !Array.isArray(
+            saved.metadata
+          )
+            ? saved.metadata as Record<
+                string,
+                unknown
+              >
+            : {};
+
+        const savedOrder =
+          Number(
+            saved.order
+          );
+
+        return {
+          ...defaultStage,
+
+          enabled:
+            saved.enabled !==
+            false,
+
+          order:
+            Number.isFinite(
+              savedOrder
+            )
+              ? savedOrder
+              : defaultStage.order,
+
+          detailEnabled:
+            LEAD_FLOW_STAGE_DEFINITIONS[
+              defaultStage.id
+            ].detailMemoryPath
+              ? metadata
+                  .detailEnabled !==
+                false
+              : false,
+        };
+      }
+    )
+    .sort(
+      (
+        left,
+        right
+      ) =>
+        left.order -
+        right.order
+    )
+    .map(
+      (
+        stage,
+        index
+      ) => ({
+        ...stage,
+
+        order:
+          (
+            index +
+            1
+          ) *
+          10,
+      })
+    );
+}
+
+function buildLeadFlowConfig(
+  stages:
+    LeadFlowBuilderStage[]
+) {
+  const orderedStages =
+    [
+      ...stages,
+    ].sort(
+      (
+        left,
+        right
+      ) =>
+        left.order -
+        right.order
+    );
+
+  const activeStages =
+    orderedStages.filter(
+      stage =>
+        stage.enabled
+    );
+
+  const activeStageIds =
+    activeStages.map(
+      stage =>
+        stage.id
+    );
+
+  const getNextActiveStageId =
+    (
+      stageId:
+        LeadFlowBuilderStageId
+    ):
+      LeadFlowBuilderStageId |
+      null => {
+      const currentIndex =
+        activeStageIds.indexOf(
+          stageId
+        );
+
+      if (
+        currentIndex <
+          0 ||
+        currentIndex >=
+          activeStageIds.length -
+            1
+      ) {
+        return null;
+      }
+
+      return (
+        activeStageIds[
+          currentIndex +
+            1
+        ] ||
+        null
+      );
+    };
+
+  const builtStages =
+    orderedStages.map(
+      stage => {
+        const definition =
+          LEAD_FLOW_STAGE_DEFINITIONS[
+            stage.id
+          ];
+
+        const nextStageId =
+          stage.enabled
+            ? getNextActiveStageId(
+                stage.id
+              )
+            : null;
+
+        const transitions:
+          Array<
+            Record<
+              string,
+              unknown
+            >
+          > = [];
+
+        if (
+          stage.detailEnabled &&
+          definition.detailMemoryPath &&
+          definition.detailActionId &&
+          definition
+            .detailFollowupActionId &&
+          definition
+            .detailSemanticDescription
+        ) {
+          transitions.push(
+            {
+              whenSemantic:
+                "request_detail",
+
+              semanticDescription:
+                definition
+                  .detailSemanticDescription,
+
+              when: {
+                mode:
+                  "all",
+
+                conditions: [
+                  {
+                    path:
+                      definition
+                        .detailMemoryPath,
+
+                    operator:
+                      "truthy",
+                  },
+                ],
+              },
+
+              toStageId:
+                stage.id,
+
+              actionId:
+                definition
+                  .detailFollowupActionId,
+
+              priority:
+                300,
+            },
+            {
+              whenSemantic:
+                "request_detail",
+
+              semanticDescription:
+                definition
+                  .detailSemanticDescription,
+
+              toStageId:
+                stage.id,
+
+              actionId:
+                definition
+                  .detailActionId,
+
+              priority:
+                250,
+            }
+          );
+        }
+
+        if (
+          nextStageId
+        ) {
+          transitions.push({
+            whenSemantic:
+              "continue_next",
+
+            semanticDescription:
+              "고객이 현재 안내를 확인했고 다음 상담단계로 진행하려고 한다.",
+
+            toStageId:
+              nextStageId,
+
+            priority:
+              200,
+          });
+        }
+
+        if (
+          nextStageId &&
+          stage.detailEnabled &&
+          definition.detailMemoryPath &&
+          definition
+            .choiceAfterDetailActionId
+        ) {
+          transitions.push({
+            when: {
+              mode:
+                "all",
+
+              conditions: [
+                {
+                  path:
+                    definition
+                      .detailMemoryPath,
+
+                  operator:
+                    "truthy",
+                },
+              ],
+            },
+
+            toStageId:
+              stage.id,
+
+            actionId:
+              definition
+                .choiceAfterDetailActionId,
+
+            priority:
+              20,
+          });
+        }
+
+        if (
+          nextStageId &&
+          definition
+            .choiceActionId
+        ) {
+          transitions.push({
+            when: {
+              mode:
+                "all",
+
+              conditions: [
+                {
+                  path:
+                    definition
+                      .summaryMemoryPath,
+
+                  operator:
+                    "truthy",
+                },
+              ],
+            },
+
+            toStageId:
+              stage.id,
+
+            actionId:
+              definition
+                .choiceActionId,
+
+            priority:
+              10,
+          });
+        }
+
+        const actionGuidance:
+          Record<
+            string,
+            string
+          > = {
+          [definition
+            .summaryActionId]:
+            definition
+              .summaryGuidance,
+        };
+
+        if (
+          stage.detailEnabled &&
+          definition.detailActionId &&
+          definition.detailGuidance
+        ) {
+          actionGuidance[
+            definition
+              .detailActionId
+          ] =
+            definition
+              .detailGuidance;
+        }
+
+        if (
+          stage.detailEnabled &&
+          definition
+            .detailFollowupActionId &&
+          definition
+            .detailFollowupGuidance
+        ) {
+          actionGuidance[
+            definition
+              .detailFollowupActionId
+          ] =
+            definition
+              .detailFollowupGuidance;
+        }
+
+        if (
+          definition
+            .choiceActionId &&
+          definition
+            .choiceGuidance
+        ) {
+          actionGuidance[
+            definition
+              .choiceActionId
+          ] =
+            definition
+              .choiceGuidance;
+        }
+
+        if (
+          stage.detailEnabled &&
+          definition
+            .choiceAfterDetailActionId &&
+          definition
+            .choiceAfterDetailGuidance
+        ) {
+          actionGuidance[
+            definition
+              .choiceAfterDetailActionId
+          ] =
+            definition
+              .choiceAfterDetailGuidance;
+        }
+
+        const choiceGuidance =
+          [
+            stage.detailEnabled &&
+            definition.detailLabel
+              ? definition.detailLabel
+              : null,
+
+            nextStageId
+              ? `다음 단계: ${
+                  LEAD_FLOW_STAGE_DEFINITIONS[
+                    nextStageId
+                  ].label
+                }`
+              : null,
+          ].filter(
+            (
+              value
+            ): value is string =>
+              Boolean(
+                value
+              )
+          );
+
+        const builtStage:
+          Record<
+            string,
+            unknown
+          > = {
+          id:
+            stage.id,
+
+          enabled:
+            stage.enabled,
+
+          order:
+            stage.order,
+
+          defaultActionId:
+            definition
+              .summaryActionId,
+
+          transitions,
+
+          contentKeys:
+            definition
+              .contentKeys,
+
+          metadata: {
+            label:
+              definition.label,
+
+            purpose:
+              definition.purpose,
+
+            detailEnabled:
+              stage.detailEnabled,
+
+            actionGuidance,
+
+            choiceGuidance,
+          },
+        };
+
+        if (
+          stage.enabled &&
+          !nextStageId
+        ) {
+          builtStage.completeWhen = {
+            mode:
+              "all",
+
+            conditions: [
+              {
+                path:
+                  definition
+                    .summaryMemoryPath,
+
+                operator:
+                  "truthy",
+              },
+            ],
+          };
+        }
+
+        return builtStage;
+      }
+    );
+
+  builtStages.push({
+    id:
+      "COMPLETED",
+
+    enabled:
+      true,
+
+    order:
+      10000,
+
+    defaultActionId:
+      null,
+
+    transitions:
+      [],
+
+    contentKeys:
+      [],
+
+    metadata: {
+      label:
+        "상담 기본 흐름 완료",
+
+      purpose:
+        "신규상담 기본 Flow가 완료된 상태다.",
+    },
+  });
+
+  return {
+    version:
+      2,
+
+    enabled:
+      activeStages.length >
+      0,
+
+    startStageId:
+      activeStages[0]
+        ?.id ??
+      null,
+
+    completedStageId:
+      "COMPLETED",
+
+    stages:
+      builtStages,
+
+    metadata: {
+      flowName:
+        "EduCanvas Lead Consultation V2",
+
+      builderVersion:
+        1,
+
+      behavior:
+        "question_first_then_flow",
+
+      repeatPrevention:
+        true,
+    },
+  };
+}
 
 export default function KakaoAISettings() {
   const utils = trpc.useUtils();
@@ -130,6 +1356,15 @@ export default function KakaoAISettings() {
 
   const [initialized, setInitialized] =
     useState(false);
+
+const [
+  leadFlowStages,
+  setLeadFlowStages,
+] = useState<
+  LeadFlowBuilderStage[]
+>(
+  createDefaultLeadFlowStages()
+);
 
 const [
   activeManagementTab,
@@ -301,6 +1536,12 @@ const staffRecommendationUpdateMutation =
 
     const data = settingsQuery.data;
 
+setLeadFlowStages(
+  normalizeLeadFlowBuilderStages(
+    data.leadFlowConfig
+  )
+);
+
     setForm({
       enabled:
         data.enabled === true,
@@ -381,15 +1622,6 @@ consultationPolicy:
   String(
     data.consultationPolicy || ""
   ),
-
-leadFlowConfigText:
-  data.leadFlowConfig
-    ? JSON.stringify(
-        data.leadFlowConfig,
-        null,
-        2
-      )
-    : "",
 
             priceDisclosureEnabled:
         data.priceDisclosureEnabled === true,
@@ -490,6 +1722,161 @@ const staffTeamPageUrl =
     }));
   };
 
+const handleLeadFlowEnabledChange =
+  (
+    stageId:
+      LeadFlowBuilderStageId,
+
+    enabled:
+      boolean
+  ) => {
+    setLeadFlowStages(
+      previous =>
+        previous.map(
+          stage =>
+            stage.id ===
+            stageId
+              ? {
+                  ...stage,
+                  enabled,
+                }
+              : stage
+        )
+    );
+  };
+
+const handleLeadFlowDetailChange =
+  (
+    stageId:
+      LeadFlowBuilderStageId,
+
+    detailEnabled:
+      boolean
+  ) => {
+    if (
+      !LEAD_FLOW_STAGE_DEFINITIONS[
+        stageId
+      ].detailMemoryPath
+    ) {
+      return;
+    }
+
+    setLeadFlowStages(
+      previous =>
+        previous.map(
+          stage =>
+            stage.id ===
+            stageId
+              ? {
+                  ...stage,
+                  detailEnabled,
+                }
+              : stage
+        )
+    );
+  };
+
+const handleMoveLeadFlowStage =
+  (
+    stageId:
+      LeadFlowBuilderStageId,
+
+    direction:
+      "up" |
+      "down"
+  ) => {
+    setLeadFlowStages(
+      previous => {
+        const ordered =
+          [
+            ...previous,
+          ].sort(
+            (
+              left,
+              right
+            ) =>
+              left.order -
+              right.order
+          );
+
+        const currentIndex =
+          ordered.findIndex(
+            stage =>
+              stage.id ===
+              stageId
+          );
+
+        if (
+          currentIndex <
+          0
+        ) {
+          return previous;
+        }
+
+        const targetIndex =
+          direction ===
+          "up"
+            ? currentIndex -
+              1
+            : currentIndex +
+              1;
+
+        if (
+          targetIndex <
+            0 ||
+          targetIndex >=
+            ordered.length
+        ) {
+          return previous;
+        }
+
+        const current =
+          ordered[
+            currentIndex
+          ];
+
+        ordered[
+          currentIndex
+        ] =
+          ordered[
+            targetIndex
+          ];
+
+        ordered[
+          targetIndex
+        ] =
+          current;
+
+        return ordered.map(
+          (
+            stage,
+            index
+          ) => ({
+            ...stage,
+
+            order:
+              (
+                index +
+                1
+              ) *
+              10,
+          })
+        );
+      }
+    );
+  };
+
+const handleResetLeadFlow =
+  () => {
+    setLeadFlowStages(
+      createDefaultLeadFlowStages()
+    );
+
+    toast.success(
+      "신규상담 기본 흐름으로 초기화했습니다. 설정 저장을 눌러야 실제 반영됩니다."
+    );
+  };
+
   const handleSave = () => {
     const aiDisplayName =
       form.aiDisplayName.trim();
@@ -508,45 +1895,10 @@ const staffTeamPageUrl =
       return;
     }
 
-let leadFlowConfig:
-  unknown |
-  null =
-  null;
-
-const leadFlowConfigText =
-  form.leadFlowConfigText.trim();
-
-if (
-  leadFlowConfigText
-) {
-  try {
-    leadFlowConfig =
-      JSON.parse(
-        leadFlowConfigText
-      );
-  } catch {
-    toast.error(
-      "신규상담 Flow 설정 JSON 형식이 올바르지 않습니다."
-    );
-
-    return;
-  }
-
-  if (
-    !leadFlowConfig ||
-    typeof leadFlowConfig !==
-      "object" ||
-    Array.isArray(
-      leadFlowConfig
-    )
-  ) {
-    toast.error(
-      "신규상담 Flow 설정은 JSON 객체 형식이어야 합니다."
-    );
-
-    return;
-  }
-}
+const leadFlowConfig =
+  buildLeadFlowConfig(
+    leadFlowStages
+  );
 
     const kakaoBotId =
       form.kakaoBotId.trim();
@@ -1623,36 +2975,193 @@ const staffRecommendationRows =
       </div>
     </div>
 
-<div className="space-y-2 border-t pt-6">
-  <Label htmlFor="leadFlowConfigText">
-    신규상담 Flow 설정
-  </Label>
+<div className="space-y-4 border-t pt-6">
+  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <p className="text-sm font-medium">
+        신규상담 AI 흐름
+      </p>
 
-  <Textarea
-    id="leadFlowConfigText"
-    value={
-      form.leadFlowConfigText
-    }
-    rows={18}
-    className="font-mono text-xs"
-    placeholder="회사별 신규상담 Flow JSON을 입력하세요."
-    onChange={(event) =>
-      setForm((prev) => ({
-        ...prev,
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+        회사에서 사용할 상담단계를 켜거나 끄고
+        진행 순서를 변경할 수 있습니다.
+        내부 Flow 코드와 JSON은 자동으로 생성됩니다.
+      </p>
+    </div>
 
-        leadFlowConfigText:
-          event.target.value,
-      }))
-    }
-  />
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      onClick={
+        handleResetLeadFlow
+      }
+    >
+      <RefreshCw className="mr-2 h-4 w-4" />
+      기본 흐름으로 초기화
+    </Button>
+  </div>
 
-  <p className="text-xs leading-5 text-muted-foreground">
-    신규상담의 단계, 전환조건,
-    다음 행동을 회사별로 설정합니다.
-    서버 코드는 특정 상담 순서를
-    하드코딩하지 않고 이 설정을
-    기준으로 동작합니다.
-  </p>
+  <div className="space-y-3">
+    {leadFlowStages.map(
+      (
+        stage,
+        index
+      ) => {
+        const definition =
+          LEAD_FLOW_STAGE_DEFINITIONS[
+            stage.id
+          ];
+
+        const supportsDetail =
+          Boolean(
+            definition
+              .detailMemoryPath
+          );
+
+        return (
+          <div
+            key={stage.id}
+            className="rounded-xl border bg-muted/10 p-4"
+          >
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex min-w-0 flex-1 items-start gap-3">
+                <Switch
+                  checked={
+                    stage.enabled
+                  }
+                  onCheckedChange={(
+                    value
+                  ) => {
+                    handleLeadFlowEnabledChange(
+                      stage.id,
+                      value
+                    );
+                  }}
+                />
+
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold">
+                      {
+                        definition.label
+                      }
+                    </p>
+
+                    <span className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground">
+                      {index + 1}단계
+                    </span>
+
+                    {!stage.enabled && (
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                        사용 안 함
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {
+                      definition.description
+                    }
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex shrink-0 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={
+                    index ===
+                    0
+                  }
+                  onClick={() => {
+                    handleMoveLeadFlowStage(
+                      stage.id,
+                      "up"
+                    );
+                  }}
+                >
+                  위로
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={
+                    index ===
+                    leadFlowStages.length -
+                      1
+                  }
+                  onClick={() => {
+                    handleMoveLeadFlowStage(
+                      stage.id,
+                      "down"
+                    );
+                  }}
+                >
+                  아래로
+                </Button>
+              </div>
+            </div>
+
+            {supportsDetail && (
+              <div className="mt-4 flex items-center justify-between gap-4 border-t pt-4">
+                <div>
+                  <p className="text-xs font-medium">
+                    {
+                      definition
+                        .detailLabel
+                    }
+                  </p>
+
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    고객이 자세한 설명을 요청하면
+                    현재 단계에서 상세 안내 후
+                    기존 상담흐름을 이어갑니다.
+                  </p>
+                </div>
+
+                <Switch
+                  checked={
+                    stage.detailEnabled
+                  }
+                  disabled={
+                    !stage.enabled
+                  }
+                  onCheckedChange={(
+                    value
+                  ) => {
+                    handleLeadFlowDetailChange(
+                      stage.id,
+                      value
+                    );
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        );
+      }
+    )}
+  </div>
+
+  <div className="rounded-lg border bg-muted/20 p-4">
+    <p className="text-xs font-medium">
+      상담 흐름 동작 방식
+    </p>
+
+    <p className="mt-2 text-xs leading-5 text-muted-foreground">
+      고객의 현재 질문이 있으면 먼저 답변하고,
+      이후 현재 상담단계로 복귀합니다.
+      상세 안내가 활성화된 단계에서는
+      고객이 자세히 요청할 경우 같은 단계에서
+      추가 설명한 뒤 다음 단계로 이어집니다.
+      사용하지 않는 단계는 자동으로 건너뜁니다.
+    </p>
+  </div>
 </div>
   </CardContent>
 </Card>

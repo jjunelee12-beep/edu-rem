@@ -25,14 +25,56 @@ import type {
 } from "./kakao-ai-lead-flow-engine";
 
 export type KakaoAiConsultationFlowPatch = {
-  qualificationExplained: boolean;
-  durationExplained: boolean;
-  theoryExplained: boolean;
-  practicumExplained: boolean;
-  administrationExplained: boolean;
-  companyBenefitsExplained: boolean;
-  staffRecommendationOffered: boolean;
-  consultationFormOffered: boolean;
+  qualificationExplained:
+    boolean;
+
+  durationExplained:
+    boolean;
+
+  theoryExplained:
+    boolean;
+
+  practicumExplained:
+    boolean;
+
+  administrationExplained:
+    boolean;
+
+  companyBenefitsExplained:
+    boolean;
+
+  staffRecommendationOffered:
+    boolean;
+
+  consultationFormOffered:
+    boolean;
+
+  trustExplained:
+    boolean;
+
+  courseOverviewExplained:
+    boolean;
+
+  theoryDetailExplained:
+    boolean;
+
+  practicumDetailExplained:
+    boolean;
+
+  administrationDetailExplained:
+    boolean;
+
+  certificateExplained:
+    boolean;
+
+  certificateDetailExplained:
+    boolean;
+
+  companyBenefitsDetailExplained:
+    boolean;
+
+  staffDetailExplained:
+    boolean;
 };
 /**
  * 카카오 AI 최종 자연어 답변 Composer.
@@ -247,6 +289,33 @@ function createEmptyConsultationFlowPatch():
 
     consultationFormOffered:
       false,
+
+    trustExplained:
+      false,
+
+    courseOverviewExplained:
+      false,
+
+    theoryDetailExplained:
+      false,
+
+    practicumDetailExplained:
+      false,
+
+    administrationDetailExplained:
+      false,
+
+    certificateExplained:
+      false,
+
+    certificateDetailExplained:
+      false,
+
+    companyBenefitsDetailExplained:
+      false,
+
+    staffDetailExplained:
+      false,
   };
 }
 
@@ -267,7 +336,7 @@ function normalizeConsultationFlowPatch(
         >
       : {};
 
-  return {
+    return {
     qualificationExplained:
       patch
         .qualificationExplained ===
@@ -306,6 +375,51 @@ function normalizeConsultationFlowPatch(
     consultationFormOffered:
       patch
         .consultationFormOffered ===
+      true,
+
+    trustExplained:
+      patch
+        .trustExplained ===
+      true,
+
+    courseOverviewExplained:
+      patch
+        .courseOverviewExplained ===
+      true,
+
+    theoryDetailExplained:
+      patch
+        .theoryDetailExplained ===
+      true,
+
+    practicumDetailExplained:
+      patch
+        .practicumDetailExplained ===
+      true,
+
+    administrationDetailExplained:
+      patch
+        .administrationDetailExplained ===
+      true,
+
+    certificateExplained:
+      patch
+        .certificateExplained ===
+      true,
+
+    certificateDetailExplained:
+      patch
+        .certificateDetailExplained ===
+      true,
+
+    companyBenefitsDetailExplained:
+      patch
+        .companyBenefitsDetailExplained ===
+      true,
+
+    staffDetailExplained:
+      patch
+        .staffDetailExplained ===
       true,
   };
 }
@@ -1324,9 +1438,54 @@ const KAKAO_AI_RESPONSE_SCHEMA = {
           type:
             "boolean",
         },
+
+        trustExplained: {
+          type:
+            "boolean",
+        },
+
+        courseOverviewExplained: {
+          type:
+            "boolean",
+        },
+
+        theoryDetailExplained: {
+          type:
+            "boolean",
+        },
+
+        practicumDetailExplained: {
+          type:
+            "boolean",
+        },
+
+        administrationDetailExplained: {
+          type:
+            "boolean",
+        },
+
+        certificateExplained: {
+          type:
+            "boolean",
+        },
+
+        certificateDetailExplained: {
+          type:
+            "boolean",
+        },
+
+        companyBenefitsDetailExplained: {
+          type:
+            "boolean",
+        },
+
+        staffDetailExplained: {
+          type:
+            "boolean",
+        },
       },
 
-      required: [
+            required: [
         "qualificationExplained",
         "durationExplained",
         "theoryExplained",
@@ -1335,6 +1494,15 @@ const KAKAO_AI_RESPONSE_SCHEMA = {
         "companyBenefitsExplained",
         "staffRecommendationOffered",
         "consultationFormOffered",
+        "trustExplained",
+        "courseOverviewExplained",
+        "theoryDetailExplained",
+        "practicumDetailExplained",
+        "administrationDetailExplained",
+        "certificateExplained",
+        "certificateDetailExplained",
+        "companyBenefitsDetailExplained",
+        "staffDetailExplained",
       ],
     },
   },
@@ -1411,6 +1579,49 @@ Composer는 actionId를 다른 Action으로 변경하거나
 
 Composer가 transition 조건을 평가하거나
 어느 transition으로 이동할지 결정하지 않는다.
+
+6-1. leadFlowContext.actionId가 존재하고
+currentStage 또는 nextStage의 metadata.actionGuidance에
+동일한 actionId 키가 존재하면
+해당 값을 이번 답변의 행동 지침으로 사용한다.
+
+metadata.actionGuidance는
+"무슨 사실을 말해야 하는가"를 결정하는 사실 데이터가 아니다.
+
+답변의 순서, 설명 깊이, 반복 방지,
+고객에게 다음 선택을 어떻게 제안할지를 정하는
+상담 행동 지침으로만 사용한다.
+
+실제 제도, 기간, 과목, 실습, 행정절차,
+회사 서비스, 담당자 정보 등 사실 내용은
+반드시 contentKeys가 지정한 서버 Context에서만 가져온다.
+
+6-2. metadata.choiceGuidance가 존재하는 경우
+현재 사용자의 질문에 대한 답변이 끝난 뒤
+필요할 때만 해당 선택방향을 자연스럽게 제안한다.
+
+선택지를 메뉴판처럼 매번 나열하지 않는다.
+
+직전 답변에서 이미 같은 선택방향을 제안했고
+현재 사용자가 별도의 질문을 했다면
+현재 질문을 먼저 충분히 답한 뒤
+필요한 경우에만 짧게 상담 흐름으로 복귀한다.
+
+6-3. actionGuidance가
+이미 설명한 내용을 반복하지 말라고 지정한 경우
+structuredMemory.consultationFlow와 Conversation History를 참고하여
+직전 설명을 다시 처음부터 반복하지 않는다.
+
+사용자가 동일한 내용을 다시 자세히 요청한 경우에도
+이미 안내한 문장을 그대로 반복하지 말고
+현재 질문에서 새롭게 필요한 부분만 보충한다.
+
+6-4. actionId가 null인 경우
+Composer가 임의의 새로운 Flow Action을 만들어서는 안 된다.
+
+사용자의 현재 질문에 서버 Context 범위 안에서 답변하고
+Flow Engine이 다음 Action을 제공할 때까지
+현재 상담진행 상태를 임의로 변경하지 않는다.
 
 7. leadFlowContext가 존재하는 경우
 structuredMemory.consultationFlow의 기존 boolean 필드를 이용하여
@@ -1558,9 +1769,12 @@ academicSummary.studyPlan의 estimatedStudyStartDate가
 정확한 시작 날짜 자체는 굳이 말하지 않는다.
 
 반대로 최종 기간 계산에 사용된
-학기 수, 예상 소요기간, 학습 종료 예상시점,
-학위신청·학위수여·자격증 신청 가능시점은
+학기 수, 예상 소요기간,
+학위수여 및 자격증 신청 가능시점은
 서버 계산값이 존재하면 안내한다.
+
+단, 신규 고객의 일반적인 자격증 취득 상담에서는
+학습 종료 예상일을 중간 날짜로 별도 노출하지 않는다.
 
 "서버에서 계산된",
 "상담용 예상 계산",
@@ -1642,6 +1856,48 @@ estimatedStudyStartDate와 estimatedStudyEndDate는
 
 날짜와 기간은 반드시 서버 Context의 계산값만 사용하며
 Composer가 임의로 계산하지 않는다.
+
+6-2-2. 신규 자격증 상담에서 중간 학습 종료일은 기본 노출하지 않는다.
+
+신규 고객이 자격증 취득을 목적으로 상담하고 있고
+academicSummary.timeline에 최종 자격증 신청 가능 예상시점이 존재하면,
+estimatedStudyEndDate 또는 academicCompletionDate와 같은
+중간 학습 종료 날짜를 별도로 설명하지 않는다.
+
+예를 들어 다음처럼 답하지 않는다.
+
+"2028년 3월 말에 학습이 마무리되고
+2028년 8월 중순에 자격증 신청이 가능합니다."
+
+대신 다음처럼 최종 상담에 필요한 값만 간결하게 안내한다.
+
+"지금 시작하시면 현재 기준 최단 4학기,
+약 16개월 과정으로 진행되며,
+2028년 8월 중순부터 자격증 신청이 가능한 일정입니다."
+
+신규 고객의 일반적인 최단기간 상담에서는
+다음 정보만 우선 안내한다.
+
+1. 자격과목 수와 실습시간
+2. 새 학위과정 필요 여부
+3. 최단 학기 수
+4. 예상 소요기간
+5. 최종 자격증 신청 가능 예상시점
+
+중간 학습 종료일,
+학점인정 예상일,
+학위신청 세부 기간은
+사용자가 해당 일정을 직접 물어본 경우에만 설명한다.
+
+또한
+"개강일이 정해지면 학기 배치를 다시 확인한다",
+"학기 배치는 한 번 더 확인된다"
+같은 내부 계획 표현은 고객에게 말하지 않는다.
+
+실제 개강일 확정으로 최종 자격증 신청 예상시점이
+달라질 가능성을 꼭 알려야 하는 경우에만
+"실제 시작 일정에 따라 최종 일정은 달라질 수 있습니다."
+정도로 짧게 표현한다.
 
 7. 해당 academicSummary.canExplain=false이거나
 academicSummary.unresolvedReasons가 있더라도
@@ -3009,6 +3265,58 @@ staffRecommendationOffered:
 consultationFormOffered:
 이번 답변에서 상담 접수를 위해 필요한 정보나
 접수 진행을 실제로 안내했으면 true.
+
+trustExplained:
+이번 답변에서 국가평생교육진흥원 기준을 반영한
+자체 학습설계 엔진을 기반으로 안내한다는
+상담 신뢰 근거를 고객에게 실제로 설명했으면 true.
+
+courseOverviewExplained:
+이번 답변에서 고객이 전체 진행흐름을 이해할 수 있도록
+이론수업, 실습, 행정절차, 자격증 신청까지의
+전체 과정 구조를 실제로 설명했으면 true.
+
+theoryDetailExplained:
+이번 답변에서 이론수업의 기본 안내를 넘어
+수강방식, 학기 진행, 출석, 시험, 과제,
+학사일정 관리 등 서버 Context가 지원하는
+구체적인 진행방법을 실제로 상세 설명했으면 true.
+
+practicumDetailExplained:
+이번 답변에서 실습 기본 안내를 넘어
+실습기관, 진행방식, 일정, 실습지원 범위 등
+서버 Context가 지원하는 구체적인 실습 진행방법을
+실제로 상세 설명했으면 true.
+
+administrationDetailExplained:
+이번 답변에서 행정절차 기본 안내를 넘어
+학습자등록, 학점인정신청, 학위신청 등의
+시기, 순서, 준비사항 또는 진행방법을
+서버 Context 범위 안에서 실제로 상세 설명했으면 true.
+
+certificateExplained:
+이번 답변에서 모든 이수요건 충족 후
+자격증 신청 단계가 존재한다는 점과
+기본 신청 흐름을 고객이 이해할 수 있을 정도로
+실제로 설명했으면 true.
+
+certificateDetailExplained:
+이번 답변에서 자격증 신청 기본 안내를 넘어
+신청 가능한 시점, 필요한 절차, 준비서류 등
+서버 Context가 지원하는 실제 신청방법을
+상세 설명했으면 true.
+
+companyBenefitsDetailExplained:
+이번 답변에서 회사 관리혜택의 단순 요약을 넘어
+현재 고객의 걱정이나 관심사와 연결하여
+실제 제공 가능한 관리서비스를 구체적으로
+상세 설명했으면 true.
+
+staffDetailExplained:
+이번 답변에서 담당자 추천만 한 것이 아니라
+서버 staffContext에 존재하는 담당자의 경력,
+관리방식 또는 공개 가능한 상세정보를
+실제로 설명했으면 true.
 
 31-1. 단순히 해당 단어를 언급했다는 이유만으로 true로 만들지 않는다.
 

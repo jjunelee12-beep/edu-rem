@@ -1190,16 +1190,35 @@ export async function updateKakaoAiConsultationFlow(
    * Stage 순서를 결정하지 않는다.
    */
   const booleanKeys = [
-    "qualificationExplained",
-    "durationExplained",
-    "theoryExplained",
-    "practicumExplained",
-    "administrationExplained",
-    "companyBenefitsExplained",
-    "staffRecommendationOffered",
-    "consultationFormOffered",
-    "registrationConfirmationPending",
-  ] as const;
+  /**
+   * Legacy consultation state.
+   */
+  "qualificationExplained",
+  "durationExplained",
+  "theoryExplained",
+  "practicumExplained",
+  "administrationExplained",
+  "companyBenefitsExplained",
+  "staffRecommendationOffered",
+  "consultationFormOffered",
+  "registrationConfirmationPending",
+
+  /**
+   * Lead Flow v2 state.
+   */
+  "trustExplained",
+  "courseOverviewExplained",
+
+  "theoryDetailExplained",
+  "practicumDetailExplained",
+  "administrationDetailExplained",
+
+  "certificateExplained",
+  "certificateDetailExplained",
+
+  "companyBenefitsDetailExplained",
+  "staffDetailExplained",
+] as const;
 
   for (
     const key of

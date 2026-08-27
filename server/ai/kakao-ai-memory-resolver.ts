@@ -97,6 +97,39 @@ export type KakaoAiConsultationFlowMemory = {
     boolean;
 
   /**
+   * 신규상담 Flow 반복 방지 / 상세 안내 상태.
+   *
+   * 기존 boolean은 legacy 호환용으로 유지하고,
+   * 아래 값은 신규 Lead Flow에서 세부 진행상태를 기억한다.
+   */
+  trustExplained:
+    boolean;
+
+  courseOverviewExplained:
+    boolean;
+
+  theoryDetailExplained:
+    boolean;
+
+  practicumDetailExplained:
+    boolean;
+
+  administrationDetailExplained:
+    boolean;
+
+  certificateExplained:
+    boolean;
+
+  certificateDetailExplained:
+    boolean;
+
+  companyBenefitsDetailExplained:
+    boolean;
+
+  staffDetailExplained:
+    boolean;
+
+  /**
    * 신규상담 영업 흐름의 현재 서버 단계.
    *
    * Composer가 임의로 결정하는 값이 아니라
@@ -1104,6 +1137,42 @@ function normalizeConsultationFlowMemory(
       null;
   };
 
+const trustExplained =
+  source.trustExplained ===
+  true;
+
+const courseOverviewExplained =
+  source.courseOverviewExplained ===
+  true;
+
+const theoryDetailExplained =
+  source.theoryDetailExplained ===
+  true;
+
+const practicumDetailExplained =
+  source.practicumDetailExplained ===
+  true;
+
+const administrationDetailExplained =
+  source.administrationDetailExplained ===
+  true;
+
+const certificateExplained =
+  source.certificateExplained ===
+  true;
+
+const certificateDetailExplained =
+  source.certificateDetailExplained ===
+  true;
+
+const companyBenefitsDetailExplained =
+  source.companyBenefitsDetailExplained ===
+  true;
+
+const staffDetailExplained =
+  source.staffDetailExplained ===
+  true;
+
   const salesStage =
     normalizeFlowId(
       source.salesStage
@@ -1142,7 +1211,7 @@ function normalizeConsultationFlowMemory(
         )
       : [];
 
-  return {
+    return {
     qualificationExplained,
 
     durationExplained,
@@ -1160,6 +1229,24 @@ function normalizeConsultationFlowMemory(
     consultationFormOffered,
 
     registrationConfirmationPending,
+
+    trustExplained,
+
+    courseOverviewExplained,
+
+    theoryDetailExplained,
+
+    practicumDetailExplained,
+
+    administrationDetailExplained,
+
+    certificateExplained,
+
+    certificateDetailExplained,
+
+    companyBenefitsDetailExplained,
+
+    staffDetailExplained,
 
     salesStage,
 
