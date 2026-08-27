@@ -1259,6 +1259,12 @@ function buildLeadFlowComposerContext(
     return null;
   }
 
+  const actionId =
+    normalizeText(
+      evaluation.actionId
+    ) ||
+    null;
+
   const currentStage =
     evaluation.currentStage ??
     null;
@@ -1267,6 +1273,131 @@ function buildLeadFlowComposerContext(
     evaluation.nextStage ??
     null;
 
+  /**
+   * 특정 Stage 안에 현재 actionId에 해당하는
+   * actionGuidance가 실제 존재하는지 확인한다.
+   */
+  const getActionGuidance =
+    (
+      stage:
+        KakaoAiLeadFlowEvaluationResult[
+          "currentStage"
+        ]
+    ): string | null => {
+      if (
+        !stage ||
+        !actionId
+      ) {
+        return null;
+      }
+
+      const metadata =
+        stage.metadata &&
+        typeof stage.metadata ===
+          "object" &&
+        !Array.isArray(
+          stage.metadata
+        )
+          ? stage.metadata as Record<
+              string,
+              unknown
+            >
+          : null;
+
+      const actionGuidance =
+        metadata?.actionGuidance &&
+        typeof metadata.actionGuidance ===
+          "object" &&
+        !Array.isArray(
+          metadata.actionGuidance
+        )
+          ? metadata.actionGuidance as Record<
+              string,
+              unknown
+            >
+          : null;
+
+      return (
+        normalizeText(
+          actionGuidance?.[
+            actionId
+          ]
+        ) ||
+        null
+      );
+    };
+
+  /**
+   * Flow Engine이 이번 턴에 실제 실행하라고
+   * 결정한 Stage 하나만 확정한다.
+   *
+   * TRANSITION_MATCHED / STAGE_COMPLETED:
+   * 일반적으로 다음 Stage의 Action을 실행한다.
+   *
+   * STAGE_WAITING:
+   * 현재 Stage의 default Action을 실행한다.
+   *
+   * 단, 실제 actionGuidance가 존재하는 Stage를
+   * 최우선으로 사용한다.
+   */
+  const currentActionGuidance =
+    getActionGuidance(
+      currentStage
+    );
+
+  const nextActionGuidance =
+    getActionGuidance(
+      nextStage
+    );
+
+  let executionStage =
+    currentStage;
+
+  let executionActionGuidance =
+    currentActionGuidance;
+
+  if (
+    nextStage &&
+    nextActionGuidance
+  ) {
+    executionStage =
+      nextStage;
+
+    executionActionGuidance =
+      nextActionGuidance;
+  } else if (
+    currentStage &&
+    currentActionGuidance
+  ) {
+    executionStage =
+      currentStage;
+
+    executionActionGuidance =
+      currentActionGuidance;
+  } else if (
+    evaluation.reason ===
+      "TRANSITION_MATCHED" ||
+    evaluation.reason ===
+      "STAGE_COMPLETED"
+  ) {
+    executionStage =
+      nextStage ??
+      currentStage;
+  }
+
+  const executionMetadata =
+    executionStage?.metadata &&
+    typeof executionStage.metadata ===
+      "object" &&
+    !Array.isArray(
+      executionStage.metadata
+    )
+      ? executionStage.metadata as Record<
+          string,
+          unknown
+        >
+      : null;
+
   return {
     reason:
       normalizeText(
@@ -1274,6 +1405,10 @@ function buildLeadFlowComposerContext(
       ) ||
       null,
 
+    /**
+     * 아래 둘은 디버깅/상태 참고용이다.
+     * Composer가 실행대상을 다시 고르기 위한 값이 아니다.
+     */
     currentStageId:
       normalizeText(
         evaluation.currentStageId
@@ -1286,75 +1421,35 @@ function buildLeadFlowComposerContext(
       ) ||
       null,
 
-    actionId:
+    /**
+     * 이번 답변에서 반드시 수행해야 할
+     * 단 하나의 실행명령.
+     */
+    executionStageId:
       normalizeText(
-        evaluation.actionId
+        executionStage?.id
       ) ||
       null,
 
-    currentStage:
-      currentStage
-        ? {
-            id:
-              normalizeText(
-                currentStage.id
-              ) ||
-              null,
+    executionActionId:
+      actionId,
 
-            contentKeys:
-              normalizeStringArray(
-                currentStage.contentKeys,
-                30
-              ),
+    executionContentKeys:
+      normalizeStringArray(
+        executionStage
+          ?.contentKeys,
+        30
+      ),
 
-metadata:
-  currentStage.metadata ??
-  null,
-          }
-        : null,
+    executionActionGuidance:
+      executionActionGuidance,
 
-    nextStage:
-      nextStage
-        ? {
-            id:
-              normalizeText(
-                nextStage.id
-              ) ||
-              null,
-
-            contentKeys:
-              normalizeStringArray(
-                nextStage.contentKeys,
-                30
-              ),
-
-metadata:
-  nextStage.metadata ??
-  null,
-
-            availableActions:
-              Array.from(
-                new Set(
-                  (
-                    nextStage.transitions ??
-                    []
-                  )
-                    .map(
-                      transition =>
-                        normalizeText(
-                          transition.actionId
-                        )
-                    )
-                    .filter(
-                      Boolean
-                    )
-                )
-              ).slice(
-                0,
-                30
-              ),
-          }
-        : null,
+    choiceGuidance:
+      normalizeText(
+        executionMetadata
+          ?.choiceGuidance
+      ) ||
+      null,
   };
 }
 
@@ -1534,115 +1629,109 @@ const KAKAO_AI_RESPONSE_COMPOSER_INSTRUCTIONS = `
 [상담 Flow Engine 최우선 원칙]
 
 신규 고객이고 leadFlowContext가 존재하는 경우,
-현재 상담의 단계와 다음 행동은 서버 Flow Engine이 이미 결정했다.
+현재 상담의 진행상태와 이번 응답에서 수행해야 할 행동은
+서버 Flow Engine이 이미 결정했다.
 
-leadFlowContext는 현재 회사의 DB Lead Flow Config를
-Flow Engine이 평가한 결과다.
+Composer는 상담 Stage를 선택하지 않는다.
+Composer는 다음 Stage를 추측하지 않는다.
+Composer는 transition을 판단하지 않는다.
 
-Composer는 이 결과를 변경하거나
-독자적으로 새로운 상담순서를 만들지 않는다.
+leadFlowContext.executionStageId는
+이번 응답에서 실제로 수행해야 하는 상담단계다.
 
-반드시 다음 원칙을 따른다.
+leadFlowContext.executionActionId는
+이번 응답에서 반드시 수행해야 하는 단 하나의 행동이다.
 
-1. 사용자의 현재 질문에는 먼저 정확하게 답한다.
+leadFlowContext.executionActionGuidance가 존재하면
+그 지침은 이번 답변에서 반드시 수행해야 한다.
 
-Flow Engine이 특정 Stage를 지정했다는 이유로
-사용자가 직접 물어본 질문을 무시하거나
-다른 상담주제로 강제로 이동하지 않는다.
+중요:
 
-2. 현재 질문에 답한 이후 상담을 이어갈 필요가 있다면
-leadFlowContext의 현재/다음 Stage와 actionId를 우선한다.
+1. 사용자가 직접 질문한 내용이 있다면
+서버 Context 범위에서 먼저 자연스럽고 간단하게 답할 수 있다.
 
-3. leadFlowContext.currentStage 또는
-leadFlowContext.nextStage의 contentKeys는
-해당 상담단계에서 어떤 종류의 서버 Context를
-우선 활용해야 하는지를 나타낸다.
+그러나 직접 질문에 답했다는 이유로
+executionActionId를 생략해서는 안 된다.
 
-contentKeys에 없는 사실을 임의로 만들지 않는다.
+사용자 질문에 대한 답변과
+Flow Engine이 결정한 executionAction은
+한 답변 안에서 자연스럽게 연결한다.
 
-4. Stage ID 자체의 문자열 의미를 추측하지 않는다.
+2. 사용자가 구체적인 숫자,
+예를 들어 남은 과목 수, 학점, 기간, 실습시간,
+예상 종료일 등을 직접 물어본 경우에는
+Academic Context의 서버 계산값으로 직접 답한다.
 
-예를 들어 Stage ID가 특정 이름처럼 보인다는 이유만으로
-Composer가 그 이름에 해당하는 고정 상담내용을 만들어서는 안 된다.
+반대로 사용자가
+"사회복지사 2급 취득하려고 하는데요",
+"과정 문의드려요",
+"상담받고 싶어요"
+처럼 넓은 상담의사를 표현했을 뿐이라면
+Academic Context에 숫자가 존재한다는 이유만으로
+17과목, 51학점, 실습시간, 종료일 등을
+처음부터 한꺼번에 나열하지 않는다.
 
-Stage의 실제 설명 근거는
-contentKeys와 제공된 서버 Context다.
+이 경우 executionActionGuidance가 요구하는
+현재 상담단계를 먼저 자연스럽게 수행한다.
 
-5. actionId는 Flow Engine이 결정한
-현재 상담의 다음 행동이다.
+3. executionContentKeys는
+이번 Action에서 우선 사용할 수 있는
+서버 사실 Context의 종류다.
 
-Composer는 actionId를 다른 Action으로 변경하거나
-새로운 Action ID를 만들지 않는다.
+해당 Context에 존재하지 않는 사실을 만들지 않는다.
 
-6. transitions 또는 availableActions는
-가능한 Flow 이동 정보를 나타낼 뿐이다.
+4. executionActionGuidance는
+단순 참고사항이 아니다.
 
-Composer가 transition 조건을 평가하거나
-어느 transition으로 이동할지 결정하지 않는다.
+executionActionId가 존재하는 경우
+이번 답변에서 반드시 이 Action을 수행한다.
 
-6-1. leadFlowContext.actionId가 존재하고
-currentStage 또는 nextStage의 metadata.actionGuidance에
-동일한 actionId 키가 존재하면
-해당 값을 이번 답변의 행동 지침으로 사용한다.
+다른 Action으로 교체하거나
+다른 상담단계를 임의로 먼저 제안하지 않는다.
 
-metadata.actionGuidance는
-"무슨 사실을 말해야 하는가"를 결정하는 사실 데이터가 아니다.
+5. executionActionId가
+explain 계열의 기본안내 Action이라면
+해당 내용을 핵심만 간략하게 설명한다.
 
-답변의 순서, 설명 깊이, 반복 방지,
-고객에게 다음 선택을 어떻게 제안할지를 정하는
-상담 행동 지침으로만 사용한다.
+고객이 자세한 설명을 직접 요청하지 않았다면
+처음부터 세부 기능, 준비사항, 절차를 길게 나열하지 않는다.
 
-실제 제도, 기간, 과목, 실습, 행정절차,
-회사 서비스, 담당자 정보 등 사실 내용은
-반드시 contentKeys가 지정한 서버 Context에서만 가져온다.
+6. choiceGuidance가 존재하는 경우
+현재 Action을 완료한 뒤에만
+필요한 다음 선택방향을 짧게 안내한다.
 
-6-2. metadata.choiceGuidance가 존재하는 경우
-현재 사용자의 질문에 대한 답변이 끝난 뒤
-필요할 때만 해당 선택방향을 자연스럽게 제안한다.
+Flow Engine이 결정하지 않은
+별도의 상담주제를 임의로 제안하지 않는다.
 
-선택지를 메뉴판처럼 매번 나열하지 않는다.
+7. Conversation History에 이미 상담이 진행된 기록이 있고
+leadFlowContext가 존재한다면
+사용자가 중간에 "안녕하세요"라고 말하더라도
+새 상담으로 초기화하지 않는다.
 
-직전 답변에서 이미 같은 선택방향을 제안했고
-현재 사용자가 별도의 질문을 했다면
-현재 질문을 먼저 충분히 답한 뒤
-필요한 경우에만 짧게 상담 흐름으로 복귀한다.
+짧게 인사만 받아주고
+현재 executionAction을 유지한다.
 
-6-3. actionGuidance가
-이미 설명한 내용을 반복하지 말라고 지정한 경우
-structuredMemory.consultationFlow와 Conversation History를 참고하여
-직전 설명을 다시 처음부터 반복하지 않는다.
+welcomeMessage나 전체 첫 상담 소개를
+다시 처음부터 반복하지 않는다.
 
-사용자가 동일한 내용을 다시 자세히 요청한 경우에도
-이미 안내한 문장을 그대로 반복하지 말고
-현재 질문에서 새롭게 필요한 부분만 보충한다.
+8. 이전 답변에서 이미 설명한 내용을
+현재 executionAction이 요구하지 않는다면 반복하지 않는다.
 
-6-4. actionId가 null인 경우
-Composer가 임의의 새로운 Flow Action을 만들어서는 안 된다.
+현재 Stage의 새로운 내용만 이어서 설명한다.
 
-사용자의 현재 질문에 서버 Context 범위 안에서 답변하고
-Flow Engine이 다음 Action을 제공할 때까지
-현재 상담진행 상태를 임의로 변경하지 않는다.
+9. leadFlowContext.currentStageId와
+leadFlowContext.nextStageId는 상태 확인용이다.
 
-7. leadFlowContext가 존재하는 경우
-structuredMemory.consultationFlow의 기존 boolean 필드를 이용하여
-독자적인 상담순서를 결정하지 않는다.
+Composer는 이 두 값을 비교하여
+어느 Stage를 수행할지 다시 판단하지 않는다.
 
-기존 consultationFlow 값은 과거 호환 및 대화 참고정보일 뿐이며,
-현재 상담진행 결정권은 leadFlowContext에 있다.
+실제 실행대상은 반드시
+leadFlowContext.executionStageId만 사용한다.
 
-8. 다음 상담주제를 정하기 위해
-자격조건 → 기간 → 이론 → 실습 → 행정절차 → 회사혜택
-같은 고정 순서를 적용하지 않는다.
-
-상담순서는 회사별 DB Flow Config에 따라 달라질 수 있다.
-
-9. leadFlowContext가 null인 경우에만
-기존 Conversation History, structuredMemory,
-Intent 및 서버 Context를 이용한 일반 상담방식을 fallback으로 사용할 수 있다.
-
-10. Flow Engine 결과와 현재 사용자의 직접 질문이 충돌하는 것처럼 보이면
-현재 질문에는 정상적으로 답하되,
-상담의 다음 Stage 자체를 Composer가 변경하지 않는다.
+10. leadFlowContext가 null인 경우에만
+기존 Conversation History,
+structuredMemory, Intent와 서버 Context를 이용한
+일반 상담방식을 fallback으로 사용할 수 있다.
 
 가장 중요한 원칙:
 

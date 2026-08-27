@@ -281,6 +281,144 @@ function normalizeText(
 
 /**
  * =========================================================
+ * Lead Flow - Composer Action 완료 상태 서버 확정
+ * =========================================================
+ *
+ * 신규상담 Flow가 활성화된 경우
+ * Composer가 consultationFlowPatch를 임의 판단하여
+ * 상담단계 완료상태를 결정하지 않게 한다.
+ *
+ * Flow Engine이 이번 턴에 실행하라고 결정한 actionId와
+ * Composer의 실제 성공 여부를 기준으로
+ * 서버가 완료 Memory를 확정한다.
+ *
+ * STAFF / CONSULTATION은 여기서 처리하지 않는다.
+ * 해당 단계는 실제 StaffAction / LeadRegistrationAction
+ * 결과를 기준으로 별도 서버 Action 구간에서 확정한다.
+ */
+function buildServerConfirmedLeadFlowPatch(
+  actionId:
+    string |
+    null |
+    undefined
+): Partial<
+  KakaoAiStructuredMemory[
+    "consultationFlow"
+  ]
+> {
+  const normalizedActionId =
+    normalizeText(
+      actionId
+    );
+
+  switch (
+    normalizedActionId
+  ) {
+    /**
+     * TRUST
+     */
+    case "explain_trust_summary":
+      return {
+        trustExplained:
+          true,
+      };
+
+    /**
+     * OVERVIEW
+     */
+    case "explain_course_overview_summary":
+      return {
+        courseOverviewExplained:
+          true,
+      };
+
+    /**
+     * THEORY
+     */
+    case "explain_theory_summary":
+      return {
+        theoryExplained:
+          true,
+      };
+
+    case "explain_theory_detail":
+    case "answer_theory_detail_followup":
+      return {
+        theoryDetailExplained:
+          true,
+      };
+
+    /**
+     * PRACTICUM
+     */
+    case "explain_practicum_summary":
+      return {
+        practicumExplained:
+          true,
+      };
+
+    case "explain_practicum_detail":
+    case "answer_practicum_detail_followup":
+      return {
+        practicumDetailExplained:
+          true,
+      };
+
+    /**
+     * ADMINISTRATION
+     */
+    case "explain_administrative_summary":
+      return {
+        administrationExplained:
+          true,
+      };
+
+    case "explain_administrative_detail":
+    case "answer_administrative_detail_followup":
+      return {
+        administrationDetailExplained:
+          true,
+      };
+
+    /**
+     * CERTIFICATE
+     */
+    case "explain_certificate_summary":
+      return {
+        certificateExplained:
+          true,
+      };
+
+    case "explain_certificate_detail":
+    case "answer_certificate_detail_followup":
+      return {
+        certificateDetailExplained:
+          true,
+      };
+
+    /**
+     * BENEFITS
+     */
+    case "explain_benefits_summary":
+      return {
+        companyBenefitsExplained:
+          true,
+      };
+
+    case "explain_benefits_detail":
+    case "answer_benefits_detail_followup":
+      return {
+        companyBenefitsDetailExplained:
+          true,
+      };
+
+    default:
+      return {};
+  }
+}
+
+/**
+ * =========================================================
  * Lead Flow 공통 Facts Builder
  * =========================================================
  *
@@ -4993,9 +5131,153 @@ console.log(
  * 이번 응답에서 새롭게 완료된 true 값만
  * 기존 consultationFlow에 누적한다.
  */
-const consultationFlowPatch =
+/**
+ * =========================================================
+ * Lead Flow - 답변 완료 상태 확정
+ * =========================================================
+ *
+ * 신규 Lead Flow가 활성화된 경우:
+ *
+ * Composer가 반환한 consultationFlowPatch를
+ * Flow 진행 판단에 사용하지 않는다.
+ *
+ * 이번 턴에 Flow Engine이 실제 실행하도록 결정한
+ * actionId + Composer 성공 여부를 기준으로
+ * 서버가 완료상태를 확정한다.
+ *
+ * 기존 Flow가 없는 상담 / 등록회원 / fallback 흐름은
+ * 기존 Composer Patch를 그대로 유지한다.
+ */
+const hasActiveLeadFlow =
+  customer.customerType ===
+    "lead" &&
+  Boolean(
+    resolvedContext
+      .leadFlowConfig
+  ) &&
+  Boolean(
+    leadFlowEvaluation
+  );
+
+const composerSucceeded =
   responseComposition
-    .consultationFlowPatch;
+    .success ===
+      true &&
+  Boolean(
+    normalizeText(
+      responseComposition
+        .replyText
+    )
+  );
+
+const serverConfirmedLeadFlowPatch =
+  hasActiveLeadFlow &&
+  composerSucceeded
+    ? buildServerConfirmedLeadFlowPatch(
+        leadFlowEvaluation
+          ?.actionId
+      )
+    : {};
+
+const consultationFlowPatch =
+  hasActiveLeadFlow
+    ? {
+        /**
+         * 신규 Lead Flow에서는
+         * 모델이 Flow 상태를 임의 변경하지 못하게 한다.
+         *
+         * 서버에서 확정한 값만 아래 true Patch 처리부로 전달한다.
+         */
+        qualificationExplained:
+          false,
+
+        durationExplained:
+          false,
+
+        theoryExplained:
+          false,
+
+        practicumExplained:
+          false,
+
+        administrationExplained:
+          false,
+
+        companyBenefitsExplained:
+          false,
+
+        staffRecommendationOffered:
+          false,
+
+        consultationFormOffered:
+          false,
+
+        trustExplained:
+          false,
+
+        courseOverviewExplained:
+          false,
+
+        theoryDetailExplained:
+          false,
+
+        practicumDetailExplained:
+          false,
+
+        administrationDetailExplained:
+          false,
+
+        certificateExplained:
+          false,
+
+        certificateDetailExplained:
+          false,
+
+        companyBenefitsDetailExplained:
+          false,
+
+        staffDetailExplained:
+          false,
+
+        ...serverConfirmedLeadFlowPatch,
+      }
+    : responseComposition
+        .consultationFlowPatch;
+
+console.log(
+  "[KAKAO AI LEAD FLOW COMPLETION]",
+  {
+    organizationId,
+
+    conversationId,
+
+    hasActiveLeadFlow,
+
+    composerSucceeded,
+
+    flowReason:
+      leadFlowEvaluation
+        ?.reason ??
+      null,
+
+    currentStageId:
+      leadFlowEvaluation
+        ?.currentStageId ??
+      null,
+
+    nextStageId:
+      leadFlowEvaluation
+        ?.nextStageId ??
+      null,
+
+    actionId:
+      leadFlowEvaluation
+        ?.actionId ??
+      null,
+
+    serverConfirmedLeadFlowPatch,
+  }
+);
 
 const consultationFlowTruePatch:
   Partial<
