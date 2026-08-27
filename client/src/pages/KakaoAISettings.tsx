@@ -168,12 +168,12 @@ const LEAD_FLOW_STAGE_DEFINITIONS:
     LeadFlowBuilderStageId,
     LeadFlowStageDefinition
   > = {
-  TRUST: {
+    TRUST: {
     label:
-      "상담 신뢰 안내",
+      "상담 방식 안내",
 
     description:
-      "AI가 어떤 기준과 시스템을 바탕으로 상담하는지 먼저 안내합니다.",
+      "상담 근거와 회사의 관리방식을 처음에 짧게 안내합니다.",
 
     summaryMemoryPath:
       "memory.consultationFlow.trustExplained",
@@ -208,10 +208,10 @@ const LEAD_FLOW_STAGE_DEFINITIONS:
     ],
 
     purpose:
-      "신규상담 시작 시 상담 근거와 서버 기반 안내방식을 짧게 설명한다.",
+      "신규상담 초기에 상담 근거와 사람 담당자 중심의 관리방식을 짧게 설명하고 개인별 과정 안내로 연결한다.",
 
     summaryGuidance:
-      "현재 고객의 직접 질문이 있으면 먼저 답한다. 그 다음 제공된 서버 학습설계 및 회사 Context를 근거로 상담이 진행된다는 점을 짧고 자연스럽게 설명한다. 서버에 없는 인증, 실적, 보장내용은 만들지 않는다.",
+      "현재 질문에 먼저 답한다. 이후 이 상담은 국가평생교육진흥원 학점은행제 기준과 서버 학습설계 결과를 바탕으로 진행된다는 취지를 짧게 설명한다. 회사 소개, 관리방식, 차별점은 companyContext의 companyIntroduction, companyBenefits, salesPoints에 실제 저장된 내용만 사용한다. 처음부터 세부 기능을 길게 나열하지 말고 2~4문장 안에서 '개인별 조건을 계산해 안내하고 진행 중 놓치기 쉬운 부분은 회사와 담당자가 계속 확인해준다'는 안심을 주는 정도로 끝낸다. AI가 혼자 고객 전체를 관리한다고 표현하지 않는다.",
 
     detailGuidance:
       null,
@@ -220,7 +220,7 @@ const LEAD_FLOW_STAGE_DEFINITIONS:
       null,
 
     choiceGuidance:
-      "이미 상담 근거를 설명했다. 같은 설명을 반복하지 않고 현재 질문에 답한 뒤 다음 상담단계로 자연스럽게 연결한다.",
+      "상담방식 안내는 이미 완료됐다. 같은 소개를 반복하지 않고 고객의 최종학력과 희망과정 등 필요한 조건을 확인하여 개인별 과정 안내로 진행한다.",
 
     choiceAfterDetailGuidance:
       null,
@@ -325,20 +325,20 @@ const LEAD_FLOW_STAGE_DEFINITIONS:
     purpose:
       "이론수업을 간단히 안내하고 필요할 때 상세설명 또는 다음 상담단계로 연결한다.",
 
-    summaryGuidance:
-      "현재 고객의 질문에 먼저 답한 뒤 서버 Context에 있는 이론수업 진행방식을 핵심만 간단하게 설명한다. 설명을 지나치게 길게 하지 않는다.",
+        summaryGuidance:
+      "현재 질문에 먼저 답하고 이론수업 진행방식은 핵심만 2~4문장으로 안내한다. 수강방식, 출석, 시험 등 무엇이 있는지만 이해할 정도로 설명하고 처음부터 세부 규칙을 모두 풀어놓지 않는다. 회사가 관리하는 부분은 companyContext에 실제 있는 내용만 짧게 덧붙여 안심을 준다.",
 
     detailGuidance:
-      "기본설명을 반복하지 않고 서버 Context가 지원하는 범위에서 수강방식, 학기진행, 출석, 시험, 과제, 학사일정 관리 등을 구체적으로 설명한다.",
+      "고객이 이론수업을 더 자세히 요청한 경우에만 서버 Context 범위에서 수강방식, 출석, 시험, 과제, 토론, 퀴즈, 학사일정 관리 등을 자세히 설명한다. 이미 설명한 기본내용을 다시 반복하지 않는다.",
 
     detailFollowupGuidance:
-      "이론수업 상세안내는 이미 완료됐다. 기존 상세설명을 처음부터 반복하지 않고 고객이 새롭게 묻는 내용만 보충한다.",
+      "이론수업 상세안내가 이미 완료됐다. 새롭게 질문한 부분만 답하고 전체 이론수업 설명을 다시 반복하지 않는다. 답변 후 다음 상담단계로 연결한다.",
 
     choiceGuidance:
-      "이론수업 기본설명을 이미 완료했다. 같은 설명을 반복하지 않고 현재 질문 후 상세확인 또는 다음 상담단계로 자연스럽게 연결한다.",
+      "이론수업 기본안내는 끝났다. 이전 내용을 다시 설명하지 않는다. 고객에게 '이론수업을 더 자세히 확인할지' 또는 '실습 안내로 넘어갈지' 두 방향을 짧고 명확하게 제시한다.",
 
     choiceAfterDetailGuidance:
-      "이론수업 상세안내까지 완료했다. 동일한 상세설명을 반복하지 않고 현재 질문 후 다음 상담단계로 자연스럽게 연결한다.",
+      "이론수업 상세안내까지 끝났다. 기존 설명을 반복하지 말고 실습 안내로 넘어갈 수 있도록 짧게 제안한다.",
   },
 
   PRACTICUM: {
@@ -384,20 +384,20 @@ const LEAD_FLOW_STAGE_DEFINITIONS:
     purpose:
       "실습 기본 진행방식과 지원범위를 설명하고 다음 상담단계로 연결한다.",
 
-    summaryGuidance:
-      "현재 과정에 적용되는 실습 여부와 기본 진행방식을 서버 Context 범위에서 핵심만 설명한다.",
+        summaryGuidance:
+      "현재 과정에 필요한 실습 여부와 기본 진행방식만 핵심적으로 안내한다. 실습시간, 기관에서 진행한다는 점, 회사가 지원하는 범위 등 서버 Context에 확인된 내용 중 필요한 것만 2~4문장으로 설명한다. 고객이 안심할 수 있도록 회사에서 준비과정과 일정 등을 확인해준다는 취지는 짧게 안내하되 세부절차를 한꺼번에 설명하지 않는다.",
 
     detailGuidance:
-      "기본 실습설명을 반복하지 않고 실습기관, 일정, 진행방식, 실습지원 범위 등 서버 Context에 존재하는 내용을 구체적으로 설명한다.",
+      "고객이 실습을 더 자세히 요청한 경우에만 실습기관, 일정, 진행방식, 준비서류, 회사 지원범위를 서버 Context 기준으로 자세히 설명한다. 기본 실습설명을 처음부터 다시 반복하지 않는다.",
 
     detailFollowupGuidance:
-      "실습 상세안내가 이미 완료됐다. 기존 내용을 처음부터 반복하지 않고 새롭게 질문한 실습내용만 답한다.",
+      "실습 상세안내는 이미 완료됐다. 고객이 새롭게 묻는 내용만 답하고 실습 기본내용을 다시 반복하지 않는다. 답변 후 행정절차로 연결한다.",
 
     choiceGuidance:
-      "실습 기본안내는 이미 완료됐다. 같은 설명을 반복하지 않고 현재 질문 후 상세확인 또는 다음 상담단계로 연결한다.",
+      "실습 기본안내는 끝났다. 실습 내용을 다시 설명하지 않는다. 고객에게 '실습 일정·기관·준비사항을 더 자세히 볼지' 또는 '행정절차 안내로 넘어갈지' 두 방향만 짧게 제시한다.",
 
     choiceAfterDetailGuidance:
-      "실습 상세안내까지 완료됐다. 같은 설명을 반복하지 않고 다음 상담단계로 자연스럽게 연결한다.",
+      "실습 상세안내까지 끝났다. 같은 실습내용을 반복하지 말고 행정절차 안내로 넘어가도록 짧게 제안한다.",
   },
 
   ADMINISTRATION: {
@@ -442,20 +442,20 @@ const LEAD_FLOW_STAGE_DEFINITIONS:
     purpose:
       "현재 과정에 필요한 행정절차를 안내하고 다음 상담단계로 연결한다.",
 
-    summaryGuidance:
-      "현재 고객에게 실제 필요한 주요 행정절차를 서버 Context 기준으로 간단히 설명한다.",
+        summaryGuidance:
+      "현재 고객에게 필요한 행정절차가 무엇인지 서버 Context 기준으로 핵심만 안내한다. 학습자등록, 학점인정신청, 학위신청 등 필요한 절차가 있다는 정도와 회사에서 신청시기 및 누락 여부를 같이 확인해준다는 점을 2~4문장으로 설명한다. 처음부터 각 신청방법과 서류를 모두 설명하지 않는다.",
 
     detailGuidance:
-      "기본설명을 반복하지 않고 서버 Context가 제공하는 행정절차의 순서, 준비사항, 진행방법을 구체적으로 설명한다. 확정되지 않은 날짜는 만들지 않는다.",
+      "고객이 행정절차를 더 자세히 요청한 경우에만 서버 Context가 제공하는 순서, 신청시기, 준비사항, 진행방법을 자세히 설명한다. 확정되지 않은 날짜를 만들지 않고 기본설명을 반복하지 않는다.",
 
     detailFollowupGuidance:
-      "행정절차 상세안내가 이미 완료됐다. 고객이 추가로 묻는 절차만 답하고 전체 설명을 반복하지 않는다.",
+      "행정절차 상세안내가 이미 완료됐다. 새롭게 물어본 절차만 답하고 전체 행정절차를 반복하지 않는다. 답변 후 등록회원 관리혜택 단계로 연결한다.",
 
     choiceGuidance:
-      "행정절차 기본안내는 이미 완료됐다. 현재 질문 후 상세확인 또는 다음 상담단계로 연결한다.",
+      "행정절차 기본안내는 끝났다. 이전 행정설명을 반복하지 않는다. 고객에게 '행정절차를 더 자세히 확인할지' 또는 '등록 후 어떤 관리와 AI 기능을 이용할 수 있는지 볼지' 두 방향을 짧게 제시한다.",
 
     choiceAfterDetailGuidance:
-      "행정절차 상세안내까지 완료됐다. 동일한 내용을 반복하지 않고 다음 상담단계로 연결한다.",
+      "행정절차 상세안내까지 끝났다. 같은 설명을 반복하지 말고 등록 후 관리 및 등록회원 AI 혜택 단계로 넘어가도록 짧게 제안한다.",
   },
 
   CERTIFICATE: {
@@ -518,59 +518,60 @@ const LEAD_FLOW_STAGE_DEFINITIONS:
 
   BENEFITS: {
     label:
-      "회사 관리혜택 안내",
+      "등록 후 관리혜택",
 
     description:
-      "회사가 실제 제공하는 학습관리 및 지원서비스를 안내합니다.",
+      "등록 후 담당자 관리와 등록회원 전용 AI 이용혜택을 안내합니다.",
 
     summaryMemoryPath:
-      "memory.consultationFlow.companyBenefitsExplained",
+  "memory.consultationFlow.companyBenefitsExplained",
 
-    detailMemoryPath:
-      "memory.consultationFlow.companyBenefitsDetailExplained",
+detailMemoryPath:
+  "memory.consultationFlow.companyBenefitsDetailExplained",
 
     summaryActionId:
-      "explain_company_benefits_summary",
+      "explain_benefits_summary",
 
     detailActionId:
-      "explain_company_benefits_detail",
+      "explain_benefits_detail",
 
     detailFollowupActionId:
-      "answer_company_benefits_detail_followup",
+      "answer_benefits_detail_followup",
 
     choiceActionId:
-      "offer_company_benefits_choices",
+      "offer_benefits_choices",
 
     choiceAfterDetailActionId:
-      "offer_company_benefits_choices_after_detail",
+      "offer_benefits_choices_after_detail",
 
     detailLabel:
-      "상세 관리혜택 안내 허용",
+      "등록 후 혜택 상세안내",
 
     detailSemanticDescription:
-      "고객이 회사의 관리서비스와 지원내용을 더 자세하게 알고 싶어 한다.",
+      "고객이 등록 후 관리방식, 등록회원 전용 AI, 카카오톡 인증, 조회기능, 서류지원 또는 등록혜택을 더 자세히 알고 싶어 한다.",
 
     contentKeys: [
       "companyContext",
+      "leadAcademicContext",
     ],
 
     purpose:
-      "회사에서 실제 제공하는 관리서비스를 설명하고 다음 상담단계로 연결한다.",
+      "등록 후 사람이 담당자로서 계속 관리하면서 AI가 누락·위험요소 확인과 조회·서류업무를 보조하는 구조를 짧게 안내하고 담당자 추천 단계로 연결한다.",
 
     summaryGuidance:
-      "companyContext에 실제 존재하는 관리서비스와 혜택만 핵심적으로 설명한다. 존재하지 않는 서비스를 만들지 않는다.",
+      "등록 후 받을 수 있는 관리혜택을 핵심만 2~4문장으로 안내한다. companyContext의 companyBenefits, registeredAiBenefits, salesPoints 및 서버 Context에 실제 저장된 내용만 사용한다. 등록 후 카카오톡에서 1회 인증하면 등록회원 전용 AI를 이용할 수 있다는 점과, 진행상태 조회·학점 부족 확인·행정 신청시기 확인·실습 관련 안내·필요 서류 지원 등 실제 제공 가능한 기능이 있다는 정도만 간단히 설명한다. AI가 고객을 혼자 관리한다고 표현하지 말고, 실제 담당자가 계속 관리하며 AI는 담당자가 놓칠 수 있는 부분의 확인, 위험요소 점검, 조회 및 서류업무를 보조하는 구조라고 설명한다. 처음부터 기능을 하나씩 길게 설명하지 않는다.",
 
     detailGuidance:
-      "기본 혜택설명을 반복하지 않고 현재 고객의 관심사와 연결해 실제 제공 가능한 관리서비스를 구체적으로 설명한다.",
+      "고객이 등록 후 혜택이나 등록회원 전용 AI를 더 자세히 요청한 경우에만 companyContext와 서버 Context에 실제 존재하는 기능을 자세히 설명한다. 카카오톡 1회 인증 후 등록회원 모드에서 가능한 조회, 학점 부족 및 진행상태 확인, 행정 신청시기 확인, 실습 관련 안내, 서류 지원, 피해사례 또는 진행상 위험요소 방지 기능 등 실제 제공되는 범위만 설명한다. 'AI가 관리하는 것이냐'는 취지의 질문에는 AI가 전체 관리를 대신하는 것이 아니라 실제 담당자가 관리하고 AI가 누락·위험요소 확인과 반복 조회·서류업무를 보조한다고 명확히 설명한다. 기본 혜택 설명을 처음부터 반복하지 않는다.",
 
     detailFollowupGuidance:
-      "회사 관리서비스 상세설명이 이미 완료됐다. 고객의 추가질문에 필요한 내용만 답한다.",
+      "등록 후 관리혜택과 등록회원 전용 AI 상세안내가 이미 완료됐다. 고객이 새롭게 물어본 기능이나 관리항목만 답하고 전체 혜택을 반복하지 않는다. 답변 후 담당자 추천 단계로 연결한다.",
 
     choiceGuidance:
-      "회사 관리서비스 기본안내는 이미 완료됐다. 현재 질문 후 상세확인 또는 다음 상담단계로 연결한다.",
+      "등록 후 관리혜택 기본안내는 끝났다. 같은 혜택설명을 반복하지 않는다. 고객에게 '등록회원 전용 AI와 관리혜택을 더 자세히 확인할지' 또는 '상담을 담당할 담당자를 추천받을지' 두 방향만 짧고 명확하게 제시한다.",
 
     choiceAfterDetailGuidance:
-      "관리서비스 상세안내까지 완료됐다. 같은 설명을 반복하지 않고 다음 상담단계로 연결한다.",
+      "등록 후 관리혜택 상세안내까지 끝났다. 같은 내용을 반복하지 말고 담당자 추천 단계로 넘어가도록 짧게 제안한다.",
   },
 
   STAFF: {
@@ -722,28 +723,28 @@ const DEFAULT_LEAD_FLOW_STAGES:
     detailEnabled: true,
   },
   {
-    id: "CERTIFICATE",
+    id: "BENEFITS",
     enabled: true,
     order: 60,
     detailEnabled: true,
   },
   {
-    id: "BENEFITS",
+    id: "STAFF",
     enabled: true,
     order: 70,
     detailEnabled: true,
   },
   {
-    id: "STAFF",
-    enabled: true,
-    order: 80,
-    detailEnabled: true,
-  },
-  {
     id: "CONSULTATION",
     enabled: true,
-    order: 90,
+    order: 80,
     detailEnabled: false,
+  },
+  {
+    id: "CERTIFICATE",
+    enabled: false,
+    order: 90,
+    detailEnabled: true,
   },
 ];
 
@@ -1047,7 +1048,7 @@ function buildLeadFlowConfig(
               "continue_next",
 
             semanticDescription:
-              "고객이 현재 안내를 확인했고 다음 상담단계로 진행하려고 한다.",
+  "고객이 현재 단계의 기본안내를 확인했고 다음 상담단계로 진행하려고 한다. 직전 assistant가 기본안내 후 상세설명 또는 다음 단계 진행을 제안한 상태에서 사용자가 별도의 상세질문 없이 '네', '예', '좋아요', '계속해주세요', '그다음요'처럼 긍정하거나 계속 진행 의사를 보이는 경우도 포함한다.",
 
             toStageId:
               nextStageId,
