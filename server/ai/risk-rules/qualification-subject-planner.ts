@@ -2123,17 +2123,42 @@ degreeClassificationBySubjectKey:
       break;
     }
 
-    const isMajor =
-      item.requirementType ===
-        "전공필수" ||
-      item.requirementType ===
-        "전공선택" ||
-      item.category ===
-        "전공";
+    const itemSubjectKey =
+  getConfirmedSubjectEquivalenceKey(
+    item.subjectName
+  );
 
-    if (!isMajor) {
-      continue;
-    }
+const degreeClassification =
+  itemSubjectKey
+    ? params
+        .degreeClassificationBySubjectKey
+        .get(
+          itemSubjectKey
+        ) ??
+      null
+    : null;
+
+const degreeRequirementType =
+  degreeClassification
+    ?.requirementType ??
+  item.requirementType;
+
+const degreeCategory =
+  degreeClassification
+    ?.category ??
+  item.category;
+
+const isMajor =
+  degreeRequirementType ===
+    "전공필수" ||
+  degreeRequirementType ===
+    "전공선택" ||
+  degreeCategory ===
+    "전공";
+
+if (!isMajor) {
+  continue;
+}
 
     const key =
       getTemplateKey(
@@ -2191,15 +2216,40 @@ degreeClassificationBySubjectKey:
       break;
     }
 
-    const isLiberal =
-      item.requirementType ===
-        "교양" ||
-      item.category ===
-        "교양";
+    const itemSubjectKey =
+  getConfirmedSubjectEquivalenceKey(
+    item.subjectName
+  );
 
-    if (!isLiberal) {
-      continue;
-    }
+const degreeClassification =
+  itemSubjectKey
+    ? params
+        .degreeClassificationBySubjectKey
+        .get(
+          itemSubjectKey
+        ) ??
+      null
+    : null;
+
+const degreeRequirementType =
+  degreeClassification
+    ?.requirementType ??
+  item.requirementType;
+
+const degreeCategory =
+  degreeClassification
+    ?.category ??
+  item.category;
+
+const isLiberal =
+  degreeRequirementType ===
+    "교양" ||
+  degreeCategory ===
+    "교양";
+
+if (!isLiberal) {
+  continue;
+}
 
     const key =
       getTemplateKey(
