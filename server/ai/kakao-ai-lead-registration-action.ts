@@ -1030,11 +1030,9 @@ const wantsCallbackRequest =
             )
           : null,
 
-      replyText:
+            replyText:
         [
-          "상담 접수를 진행하려면 아래 정보가 조금 더 필요합니다.",
-          "",
-          `확인이 필요한 정보: ${missingRequiredFields.join(", ")}`,
+          "네, 상담 연결을 위해 아래 정보만 작성해주세요 :)",
           "",
           !contact.clientName
             ? "성함:"
@@ -1045,20 +1043,21 @@ const wantsCallbackRequest =
             : null,
 
           !finalEducation
-            ? "최종학력은 고졸 / 전문대졸 / 4년제졸 등으로 말씀해주세요."
+            ? "최종학력: (고졸 / 전문대졸 / 4년제졸 등)"
             : null,
 
           !desiredCourse
-            ? "희망하시는 과정도 함께 말씀해주세요. 예) 사회복지사 2급"
+            ? "희망과정:"
             : null,
+
+          "",
+          "확인된 정보는 다시 작성하지 않으셔도 됩니다.",
         ]
           .filter(
             (
               line
             ): line is string =>
-              Boolean(
-                line
-              )
+              line !== null
           )
           .join(
             "\n"
@@ -1135,20 +1134,21 @@ const wantsCallbackRequest =
           contact.phone
         ),
 
-      replyText:
-        [
-          "네, 접수 전 입력하신 내용을 한번 확인해주세요 :)",
-          "",
-          `성함: ${contact.clientName}`,
-          `연락처: ${formatPhoneForReply(contact.phone)}`,
-          `최종학력: ${finalEducation}`,
-          `희망과정: ${desiredCourse}`,
-          `담당자: ${selectedStaff.name}`,
-          "",
-          "위 내용으로 상담 접수해드릴까요?",
-        ].join(
-          "\n"
-        ),
+     replyText:
+  [
+    "네, 입력하신 내용을 확인해주세요 :)",
+    "",
+    `성함: ${contact.clientName}`,
+    `연락처: ${formatPhoneForReply(contact.phone)}`,
+    `최종학력: ${finalEducation}`,
+    `희망과정: ${desiredCourse}`,
+    `담당자: ${selectedStaff.name}`,
+    "",
+    "위 내용으로 담당자 상담 연결을 도와드리겠습니다.",
+    "입력하신 내용이 맞으실까요?",
+  ].join(
+    "\n"
+  ),
     };
   }
 

@@ -1071,12 +1071,58 @@ administrative_general_guide 요청으로 해석한다.
 직전 assistant가
 "담당자 추천드릴까요?"
 라고 물었고 사용자가 "네"라고 하면
+아직 특정 담당자가 추천되기 전 단계이므로
 staff_recommend 요청으로 해석한다.
 
-직전 assistant가
-상담 접수 또는 담당자 연결을 제안했고
-사용자가 동의하면
-대화 전체 의미에 따라 lead_registration으로 해석한다.
+반대로 structuredMemory.staffSelectionStatus = "recommended" 이고
+structuredMemory.recommendedStaffUserId가 존재하며,
+직전 assistant가 이미 특정 담당자를 실제로 추천한 뒤
+
+"이 담당자로 상담 연결 도와드릴까요?"
+"이분으로 진행해드릴까요?"
+"추천드린 담당자로 연결해드릴까요?"
+
+처럼 추천된 담당자를 기준으로
+선택 또는 상담 연결을 제안했고
+사용자가
+
+"네"
+"좋아요"
+"그렇게 해주세요"
+"연결해주세요"
+"진행해주세요"
+
+처럼 동의한다면,
+이것은 새로운 담당자 추천 요청이 아니다.
+
+이미 추천된 담당자를 실제 선택하면서
+상담 접수를 진행하려는 의도다.
+
+이 경우:
+
+primaryCapability = "lead_registration"
+
+capabilities에는 반드시
+"staff_select",
+"lead_registration"
+을 모두 포함한다.
+
+requiredContexts에는
+"staff_context",
+"conversation_memory"
+를 포함한다.
+
+needsClarification=false로 처리한다.
+
+직전 assistant가 상담 접수 또는 담당자 연결을 제안했지만
+추천된 담당자가 존재하지 않거나
+어느 담당자를 선택하는지 문맥상 특정되지 않는 경우에는
+임의로 staff_select를 실행하지 않는다.
+
+단순 상담 접수 의도만 명확하다면
+lead_registration으로 해석하고,
+담당자 선택이 반드시 필요한데 대상을 특정할 수 없다면
+clarification을 요청한다.
 
 위 표현들은 키워드 패턴이 아니라
 후속발화의 의미를 설명하기 위한 예시다.

@@ -751,76 +751,94 @@ async function executeStaffSelection(
   }
 
   /**
-   * 3. "추천한 분 / 이분 / 그분".
-   */
-  if (
+ * 3. 기존에 추천된 담당자 선택.
+ *
+ * 사용자가
+ * "추천한 분", "이분", "그분"처럼
+ * 추천 담당자를 직접 가리키는 경우뿐 아니라,
+ *
+ * 이미 추천 담당자가 존재하는 상태에서
+ * "담당자 연결해주세요"
+ * "담당자로 진행해주세요"
+ * 같은 staff_select 요청을 한 경우에도
+ * 기존 추천 담당자를 그대로 선택한다.
+ *
+ * 단,
+ * staff_change에서는 기존 추천 담당자를
+ * 자동으로 다시 선택하지 않는다.
+ */
+if (
+  params.memory
+    .recommendedStaffUserId &&
+  (
     refersToRecommendedStaff(
       params.message
-    ) &&
-    params.memory
-      .recommendedStaffUserId
-  ) {
-    const selected =
-      await db.selectRecommendedStaffForKakaoConversation({
-        organizationId:
-          params.organizationId,
+    ) ||
+    params.intent ===
+      "staff_select"
+  )
+) {
+  const selected =
+    await db.selectRecommendedStaffForKakaoConversation({
+      organizationId:
+        params.organizationId,
 
-        conversationId:
-          params.conversationId,
-      });
+      conversationId:
+        params.conversationId,
+    });
 
-    const selectionState =
-      await db.getKakaoStaffSelectionState({
-        organizationId:
-          params.organizationId,
+  const selectionState =
+    await db.getKakaoStaffSelectionState({
+      organizationId:
+        params.organizationId,
 
-        conversationId:
-          params.conversationId,
-      });
+      conversationId:
+        params.conversationId,
+    });
 
-    return {
-      handled:
-        true,
+  return {
+    handled:
+      true,
 
-      action:
-        params.intent ===
-          "staff_change"
-          ? "change"
-          : "select",
+    action:
+      params.intent ===
+        "staff_change"
+        ? "change"
+        : "select",
 
-      success:
-        selected.success ===
-        true,
+    success:
+      selected.success ===
+      true,
 
-      reason:
-        selected.success
-          ? null
-          : String(
-              selected.reason ||
-              "STAFF_SELECTION_FAILED"
-            ),
+    reason:
+      selected.success
+        ? null
+        : String(
+            selected.reason ||
+            "STAFF_SELECTION_FAILED"
+          ),
 
-      recommendedStaff:
-        selectionState
-          .recommendedStaff,
+    recommendedStaff:
+      selectionState
+        .recommendedStaff,
 
-      selectedStaff:
-        selected.selected,
+    selectedStaff:
+      selected.selected,
 
-      candidates,
+    candidates,
 
-      selectionState,
+    selectionState,
 
-      needsClarification:
-        false,
+    needsClarification:
+      false,
 
-      clarificationQuestion:
-        null,
+    clarificationQuestion:
+      null,
 
-      clarificationOptions:
-        [],
-    };
-  }
+    clarificationOptions:
+      [],
+  };
+}
 
   /**
    * 어떤 담당자인지 특정할 근거가 없다.

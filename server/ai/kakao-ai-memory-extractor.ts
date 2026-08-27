@@ -826,14 +826,57 @@ currentMemory 자체에서 새로운 사실을 만들어내지 않는다.
 5. "아마", "같아요", "기억이 잘 안 나요", "인 것 같은데",
 "잘 모르겠어요" 등 불확실한 표현은 확정 사실로 저장하지 않는다.
 
-6. 질문에 등장했다는 이유만으로 희망과정을 저장하지 않는다.
+6. desiredCourse는 사용자가 단순히 과정명을 언급한 경우가 아니라,
+현재 자신이 상담·진행·담당자 연결을 원하는 특정 과정을
+명확하게 지정한 경우 저장할 수 있다.
+
+단순 비교/정보 질문은 저장하지 않는다.
 
 예:
+
 "사회복지사랑 보육교사 중 뭐가 좋아요?"
 → desiredCourse shouldWrite=false
 
+"사회복지사 2급이 뭔가요?"
+→ desiredCourse shouldWrite=false
+
+"사회복지사 2급 비용이 얼마예요?"
+→ 단순 정보 문의일 수 있으므로 desiredCourse shouldWrite=false
+
 "사회복지사2급 하려고요"
-→ desiredCourse 저장 가능
+→ desiredCourse.value = "사회복지사 2급"
+→ shouldWrite=true
+
+"사회복지사 2급 진행하고 싶어요"
+→ desiredCourse.value = "사회복지사 2급"
+→ shouldWrite=true
+
+"사회복지사 2급 상담받고 싶어요"
+→ desiredCourse.value = "사회복지사 2급"
+→ shouldWrite=true
+
+"사회복지사 2급 담당자 추천해주세요"
+→ 특정 과정의 담당자 추천을 직접 요청한 것이므로
+  해당 과정을 자신의 현재 상담 희망과정으로 본다.
+→ desiredCourse.value = "사회복지사 2급"
+→ shouldWrite=true
+
+"사회복지사 2급 담당자 연결해주세요"
+→ 특정 과정의 담당자 연결을 직접 요청한 것이므로
+  해당 과정을 자신의 현재 상담 희망과정으로 본다.
+→ desiredCourse.value = "사회복지사 2급"
+→ shouldWrite=true
+
+"보육교사 2급 담당자 추천해주세요"
+→ desiredCourse.value = "보육교사 2급"
+→ shouldWrite=true
+
+즉,
+특정 과정 + 담당자 추천/연결/상담 요청은
+단순 정보 질문이 아니라 해당 과정에 대한 상담 진행 의사로 판단한다.
+
+단, 여러 과정을 동시에 언급하거나 비교하는 경우에는
+어느 과정이 실제 희망과정인지 임의로 확정하지 않는다.
 
 7. 최종학력도 사용자가 자신의 학력을 직접 명확하게 밝힌 경우만 저장한다.
 
