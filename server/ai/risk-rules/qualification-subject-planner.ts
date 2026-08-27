@@ -2091,80 +2091,60 @@ console.log("[DEGREE FILL ENTER]", {
 }
 
 console.log(
-  "[DEGREE FILL CANDIDATE DEBUG]",
-  {
-    remainingTotal,
-    remainingMajor,
-    remainingLiberal,
+  "[DEGREE FILL LIBERAL DEBUG]",
+  params.templates
+    .map(item => {
+      const key =
+        getConfirmedSubjectEquivalenceKey(
+          item.subjectName
+        );
 
-    templateCount:
-      params.templates.length,
+      const nile =
+        key
+          ? params
+              .degreeClassificationBySubjectKey
+              .get(key) ?? null
+          : null;
 
-    templates:
-      params.templates.map(
-        item => {
-          const key =
-            getConfirmedSubjectEquivalenceKey(
-              item.subjectName
-            );
+      const category =
+        nile?.category ??
+        item.category;
 
-          const nile =
-            key
-              ? params
-                  .degreeClassificationBySubjectKey
-                  .get(
-                    key
-                  ) ??
-                null
-              : null;
+      const requirementType =
+        nile?.requirementType ??
+        item.requirementType;
 
-          return {
-            id:
-              item.id,
+      return {
+        subjectName:
+          item.subjectName,
 
-            subjectName:
-              item.subjectName,
+        category,
 
-            key,
+        requirementType,
 
-            rawCategory:
-              item.category,
+        recognized:
+          key
+            ? params.recognizedKeys.has(key)
+            : false,
 
-            rawRequirementType:
-              item.requirementType,
+        selected:
+          key
+            ? params.selectedMap.has(key)
+            : false,
 
-            nileCategory:
-              nile?.category ??
-              null,
-
-            nileRequirementType:
-              nile?.requirementType ??
-              null,
-
-            recognized:
-              key
-                ? params.recognizedKeys.has(
-                    key
-                  )
-                : false,
-
-            selected:
-              key
-                ? params.selectedMap.has(
-                    key
-                  )
-                : false,
-
-            available:
-              !isTemplateAlreadyUsed(
-                item,
-                params.recognizedKeys,
-                params.selectedMap
-              ),
-          };
-        }
-      ),
-  }
+        available:
+          !isTemplateAlreadyUsed(
+            item,
+            params.recognizedKeys,
+            params.selectedMap
+          ),
+      };
+    })
+    .filter(
+      item =>
+        item.category === "교양" ||
+        item.requirementType === "교양"
+    )
 );
 
   const available =
