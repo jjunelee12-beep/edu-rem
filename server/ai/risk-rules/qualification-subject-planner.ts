@@ -2080,6 +2080,83 @@ degreeClassificationBySubjectKey:
   }
 }
 
+console.log(
+  "[DEGREE FILL CANDIDATE DEBUG]",
+  {
+    remainingTotal,
+    remainingMajor,
+    remainingLiberal,
+
+    templateCount:
+      params.templates.length,
+
+    templates:
+      params.templates.map(
+        item => {
+          const key =
+            getConfirmedSubjectEquivalenceKey(
+              item.subjectName
+            );
+
+          const nile =
+            key
+              ? params
+                  .degreeClassificationBySubjectKey
+                  .get(
+                    key
+                  ) ??
+                null
+              : null;
+
+          return {
+            id:
+              item.id,
+
+            subjectName:
+              item.subjectName,
+
+            key,
+
+            rawCategory:
+              item.category,
+
+            rawRequirementType:
+              item.requirementType,
+
+            nileCategory:
+              nile?.category ??
+              null,
+
+            nileRequirementType:
+              nile?.requirementType ??
+              null,
+
+            recognized:
+              key
+                ? params.recognizedKeys.has(
+                    key
+                  )
+                : false,
+
+            selected:
+              key
+                ? params.selectedMap.has(
+                    key
+                  )
+                : false,
+
+            available:
+              !isTemplateAlreadyUsed(
+                item,
+                params.recognizedKeys,
+                params.selectedMap
+              ),
+          };
+        }
+      ),
+  }
+);
+
   const available =
     (params.templates || [])
       .filter(
