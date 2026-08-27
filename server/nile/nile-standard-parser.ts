@@ -822,103 +822,205 @@ function buildSubjectDetailUrl(
 function parseSubjectsFromAnchors(
   $: cheerio.CheerioAPI
 ): NileCollectedSubject[] {
-  const anchors =
-    collectSubjectAnchors(
-      $
-    );
-
   const result:
     NileCollectedSubject[] =
     [];
 
-  const seen =
-    new Set<string>();
+  /**
+   * 현재 국평원 표준교육과정 상세페이지는
+   * 과목 하나를 li 단위로 구성한다.
+   *
+   * 각 li 내부에:
+   * - badgeWrap > em : 전공필수 / 전공선택
+   * - nameBlock dt a : 과목명 / 공식 과목 ID
+   * - nameBlock dd   : 학점 / 강의시간 / 실습시간
+   *
+   * 따라서 상위 DOM을 탐색해서 구분을 추측하지 않고
+   * 과목 li 자체에서 필요한 정보를 읽는다.
+   */
+  $(
+    ".listDateR01 > li"
+  ).each(
+    (
+      _index,
+      element
+    ) => {
+      const row =
+        $(element);
 
-  for (
-    const anchor
-    of anchors
-  ) {
-    const requirementType =
-      findRequirementTypeNearElement(
-        $,
-        anchor.element
-      );
+      const requirementText =
+        cleanText(
+          row
+            .find(
+              ".badgeWrap em"
+            )
+            .first()
+            .text()
+        );
 
-    if (
-      !requirementType
-    ) {
-      continue;
+      const requirementType =
+        normalizeRequirementType(
+          requirementText
+        );
+
+      if (
+        !requirementType
+      ) {
+        return;
+      }
+
+      const subjectAnchor =
+        row
+          .find(
+            ".nameBlock dt a"
+          )
+          .first();
+
+      if (
+        subjectAnchor.length ===
+        0
+      ) {
+        return;
+      }
+
+      const subjectName =
+        cleanText(
+          subjectAnchor.text()
+        );
+
+      if (
+        !subjectName
+      ) {
+        return;
+      }
+
+      const href =
+        subjectAnchor.attr(
+          "href"
+        ) || "";
+
+      const officialSubjectId =
+        extractOfficialSubjectId(
+          href
+        );
+
+      /**
+       * 과목 메타정보는 동일 li 내부의
+       * nameBlock dd에서만 읽는다.
+       */
+      const metaText =
+        cleanText(
+          row
+            .find(
+              ".nameBlock dd"
+            )
+            .first()
+            .text()
+        );
+
+      const creditMatch =
+        metaText.match(
+          /학점\s*:\s*(\d+)/i
+        );
+
+      const lectureMatch =
+        metaText.match(
+          /강의시간\s*:\s*(\d+)/i
+        );
+
+      const practiceMatch =
+        metaText.match(
+          /실습시간\s*:\s*(\d+)/i
+        );
+
+      const credits =
+        creditMatch
+          ? Number(
+              creditMatch[1]
+            )
+          : 0;
+
+      const lectureHours =
+        lectureMatch
+          ? Number(
+              lectureMatch[1]
+            )
+          : 0;
+
+      const practiceHours =
+        practiceMatch
+          ? Number(
+              practiceMatch[1]
+            )
+          : 0;
+
+      if (
+        !Number.isFinite(
+          credits
+        ) ||
+        credits <= 0
+      ) {
+        return;
+      }
+
+      const normalizedName =
+        normalizeNileSubjectName(
+          subjectName
+        );
+
+      if (
+        !normalizedName
+      ) {
+        return;
+      }
+
+      /**
+ * 동일한 과목명이 공식 페이지에 여러 행으로 존재할 수 있다.
+ *
+ * 공식 과목 ID가 있으면 ID 기준으로 중복 제거하고,
+ * ID가 없으면 실제 DOM 행(index)을 기준으로 구분한다.
+ *
+ * 과목명만으로 중복 제거하면 AQAC의 '해상척후조'처럼
+ * 공식 페이지에 동일명 과목이 2행 존재하는 경우
+ * 정상 과목 하나가 유실된다.
+ */
+
+      result.push({
+        officialSubjectId,
+
+        subjectName,
+
+        requirementType,
+
+        credits,
+
+        lectureHours:
+          Number.isFinite(
+            lectureHours
+          )
+            ? lectureHours
+            : 0,
+
+        practiceHours:
+          Number.isFinite(
+            practiceHours
+          )
+            ? practiceHours
+            : 0,
+
+        isCoreRequired:
+          false,
+
+        sortOrder:
+          result.length + 1,
+
+        sourceUrl:
+          buildSubjectDetailUrl(
+            officialSubjectId
+          ),
+      });
     }
-
-    const meta =
-      findSubjectMetaNearElement(
-        $,
-        anchor.element
-      );
-
-    if (
-      !meta.credits ||
-      meta.credits <= 0
-    ) {
-      continue;
-    }
-
-    const normalizedName =
-      normalizeNileSubjectName(
-        anchor.subjectName
-      );
-
-    if (
-      !normalizedName
-    ) {
-      continue;
-    }
-
-    const duplicateKey =
-      `${requirementType}:${normalizedName}`;
-
-    if (
-      seen.has(
-        duplicateKey
-      )
-    ) {
-      continue;
-    }
-
-    seen.add(
-      duplicateKey
-    );
-
-    result.push({
-      officialSubjectId:
-        anchor.officialSubjectId,
-
-      subjectName:
-        anchor.subjectName,
-
-      requirementType,
-
-      credits:
-        meta.credits,
-
-      lectureHours:
-        meta.lectureHours,
-
-      practiceHours:
-        meta.practiceHours,
-
-      isCoreRequired:
-        false,
-
-      sortOrder:
-        result.length + 1,
-
-      sourceUrl:
-        buildSubjectDetailUrl(
-          anchor.officialSubjectId
-        ),
-    });
-  }
+  );
 
   return result;
 }
@@ -1149,7 +1251,9 @@ function deduplicateSubjects(
     }
 
     const key =
-      `${subject.requirementType}:${normalizedName}`;
+  subject.officialSubjectId
+    ? `${subject.requirementType}:id:${subject.officialSubjectId}`
+    : `${subject.requirementType}:name:${normalizedName}:row:${subject.sortOrder}`;
 
     const existing =
       map.get(key);
@@ -1328,11 +1432,6 @@ associateDurationYears?:
   }
 
   subjects =
-    deduplicateSubjects(
-      subjects
-    );
-
-  subjects =
     markCoreRequiredSubjects(
       subjects,
       {
@@ -1472,15 +1571,15 @@ export function parseNileCurriculumList(
     );
 
   const results:
-    NileCollectedCurriculumSummary[] =
-    [];
+  NileCollectedCurriculumSummary[] =
+  [];
 
-  const seen =
-    new Set<string>();
+const seen =
+  new Set<string>();
 
-  $(
-    "a[href], [onclick]"
-  ).each(
+$(
+  "a[href], [onclick]"
+).each(
     (_, element) => {
       const node =
         $(element);
@@ -1507,20 +1606,48 @@ export function parseNileCurriculumList(
         );
 
       if (
-        !officialMajorId
-      ) {
-        const match =
-          combined.match(
-            /m_szMajorId[=,'"\s(]+([A-Za-z0-9_-]+)/i
-          );
+  !officialMajorId
+) {
+  /**
+   * 현재 국평원 전공목록은
+   *
+   * javascript:fnMajorYomokList('AGAE')
+   *
+   * 형태로 전공 ID를 전달한다.
+   */
+  const functionMatch =
+    combined.match(
+      /fnMajorYomokList\s*\(\s*['"]([^'"]+)['"]\s*\)/i
+    );
 
-        officialMajorId =
-          match?.[1]
-            ? cleanText(
-                match[1]
-              )
-            : null;
-      }
+  if (
+    functionMatch?.[1]
+  ) {
+    officialMajorId =
+      cleanText(
+        functionMatch[1]
+      );
+  }
+}
+
+if (
+  !officialMajorId
+) {
+  /**
+   * 과거/다른 페이지 형식 호환.
+   */
+  const parameterMatch =
+    combined.match(
+      /m_szMajorId[=,'"\s(]+([A-Za-z0-9_-]+)/i
+    );
+
+  officialMajorId =
+    parameterMatch?.[1]
+      ? cleanText(
+          parameterMatch[1]
+        )
+      : null;
+}
 
       if (
         !officialMajorId

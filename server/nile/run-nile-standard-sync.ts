@@ -1,5 +1,7 @@
 // server/nile/run-nile-standard-sync.ts
 
+import "dotenv/config";
+
 import {
   eq,
 } from "drizzle-orm";

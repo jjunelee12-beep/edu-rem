@@ -1,5 +1,7 @@
 // server/nile/nile-standard-collector.ts
 
+import * as cheerio from "cheerio";
+
 import {
   assertNileCurriculumParseComplete,
   parseNileCurriculumDetail,
@@ -360,6 +362,145 @@ async function fetchNilePage(
   );
 }
 
+async function fetchNilePostPageOnce(
+  params: {
+    url: string;
+    timeoutMs: number;
+    body: URLSearchParams;
+  }
+): Promise<NileHttpResponse> {
+  const abort =
+    createAbortSignal(
+      params.timeoutMs
+    );
+
+  try {
+    const response =
+      await fetch(
+        params.url,
+        {
+          method:
+            "POST",
+
+          headers: {
+            "User-Agent":
+              "EduCanvas-NILE-Sync/1.0",
+
+            Accept:
+              "text/html,application/xhtml+xml",
+
+            "Accept-Language":
+              "ko-KR,ko;q=0.9,en;q=0.5",
+
+            "Cache-Control":
+              "no-cache",
+
+            "Content-Type":
+              "application/x-www-form-urlencoded",
+          },
+
+          body:
+            params.body.toString(),
+
+          signal:
+            abort.signal,
+
+          redirect:
+            "follow",
+        }
+      );
+
+    const text =
+      await response.text();
+
+    return {
+      url:
+        response.url ||
+        params.url,
+
+      status:
+        response.status,
+
+      ok:
+        response.ok,
+
+      text,
+    };
+  } finally {
+    abort.clear();
+  }
+}
+
+
+async function fetchNilePostPage(
+  params: {
+    url: string;
+    timeoutMs: number;
+    retryCount: number;
+    body: URLSearchParams;
+  }
+): Promise<NileHttpResponse> {
+  let lastError:
+    unknown = null;
+
+  for (
+    let attempt = 1;
+    attempt <= params.retryCount;
+    attempt += 1
+  ) {
+    try {
+      const response =
+        await fetchNilePostPageOnce({
+          url:
+            params.url,
+
+          timeoutMs:
+            params.timeoutMs,
+
+          body:
+            params.body,
+        });
+
+      if (
+        response.ok &&
+        response.text.trim()
+      ) {
+        return response;
+      }
+
+      lastError =
+        new Error(
+          `HTTP ${response.status}`
+        );
+    } catch (error) {
+      lastError =
+        error;
+    }
+
+    if (
+      attempt <
+      params.retryCount
+    ) {
+      await sleep(
+        DEFAULT_RETRY_DELAY_MS *
+        attempt
+      );
+    }
+  }
+
+  const message =
+    lastError instanceof Error
+      ? lastError.message
+      : String(
+          lastError ||
+          "unknown error"
+        );
+
+  throw new Error(
+    `NILE POST 요청 실패: ${params.url} / ${message}`
+  );
+}
+
 
 /* =========================================================
  * Concurrency helper
@@ -476,6 +617,45 @@ async function collectCurriculumSummaries(
       retryCount:
         params.retryCount,
     });
+
+console.log(
+  "[NILE CURRICULUM RAW DEBUG]",
+  {
+    requestedUrl:
+      params.listUrl,
+
+    finalUrl:
+      response.url,
+
+    status:
+      response.status,
+
+    htmlLength:
+      response.text.length,
+
+    hasMajorId:
+      response.text.includes(
+        "m_szMajorId"
+      ),
+
+    hasMajorText:
+      response.text.includes(
+        "전공"
+      ),
+
+    title:
+      response.text.match(
+        /<title[^>]*>([\s\S]*?)<\/title>/i
+      )?.[1]?.trim() ??
+      null,
+
+    htmlHead:
+      response.text.slice(
+        0,
+        3000
+      ),
+  }
+);
 
   const summaries =
     parseNileCurriculumList({
@@ -828,40 +1008,159 @@ async function collectLiberalSubjects(
 ): Promise<
   NileCollectedLiberalSubject[]
 > {
-  console.log(
-    "[NILE COLLECTOR] liberal fetch",
-    {
-      url:
-        LIBERAL_LIST_URL,
+  const liberalSearchUrl =
+    `${NILE_BASE_URL}/creditbank/stdPro/nStdPro1_1_5.do`;
+
+  const fields =
+    [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+    ];
+
+  const allSubjects:
+    NileCollectedLiberalSubject[] =
+    [];
+
+  for (
+    const field
+    of fields
+  ) {
+    console.log(
+      "[NILE COLLECTOR] liberal field fetch",
+      {
+        field,
+        url:
+          liberalSearchUrl,
+      }
+    );
+
+    const body =
+      new URLSearchParams({
+        majorType:
+          "C",
+
+        m_szYomokId:
+          "",
+
+        m_szYomokName:
+          "",
+
+        m_szMajorId:
+          "",
+
+        indexSearchYn:
+          "",
+
+        indexWord:
+          "",
+
+        m_szField:
+          field,
+
+        m_szType:
+          "C",
+      });
+
+    const response =
+      await fetchNilePostPage({
+        url:
+          liberalSearchUrl,
+
+        timeoutMs:
+          params.timeoutMs,
+
+        retryCount:
+          params.retryCount,
+
+        body,
+      });
+
+    const subjects =
+      parseNileLiberalSubjects({
+        html:
+          response.text,
+
+        sourceUrl:
+          response.url,
+
+        standardVersion:
+          params.standardVersion,
+
+        sourceCheckedAt:
+          new Date(),
+      });
+
+    console.log(
+      "[NILE COLLECTOR] liberal field done",
+      {
+        field,
+        count:
+          subjects.length,
+      }
+    );
+
+    allSubjects.push(
+      ...subjects
+    );
+  }
+
+  /**
+   * 분야 A~F 사이에 같은 교양과목이 존재할 가능성에 대비한다.
+   *
+   * 공식 과목 ID가 있으면 ID를 우선 사용하고,
+   * ID가 없는 경우 정규화된 과목명을 사용한다.
+   */
+  const deduplicated =
+    new Map<
+      string,
+      NileCollectedLiberalSubject
+    >();
+
+  for (
+    const subject
+    of allSubjects
+  ) {
+    const normalizedName =
+      normalizeNileSubjectName(
+        subject.subjectName
+      );
+
+    const officialSubjectId =
+      cleanText(
+        subject.officialSubjectId
+      );
+
+    const key =
+      officialSubjectId
+        ? `id:${officialSubjectId}`
+        : `name:${normalizedName}`;
+
+    if (
+      !normalizedName
+    ) {
+      continue;
     }
-  );
 
-  const response =
-    await fetchNilePage({
-      url:
-        LIBERAL_LIST_URL,
-
-      timeoutMs:
-        params.timeoutMs,
-
-      retryCount:
-        params.retryCount,
-    });
+    if (
+      !deduplicated.has(
+        key
+      )
+    ) {
+      deduplicated.set(
+        key,
+        subject
+      );
+    }
+  }
 
   const subjects =
-    parseNileLiberalSubjects({
-      html:
-        response.text,
-
-      sourceUrl:
-        response.url,
-
-      standardVersion:
-        params.standardVersion,
-
-      sourceCheckedAt:
-        new Date(),
-    });
+    Array.from(
+      deduplicated.values()
+    );
 
   if (
     subjects.length === 0
@@ -874,6 +1173,9 @@ async function collectLiberalSubjects(
   console.log(
     "[NILE COLLECTOR] liberal done",
     {
+      rawCount:
+        allSubjects.length,
+
       count:
         subjects.length,
     }
@@ -1002,6 +1304,125 @@ async function collectCompatibleSubjectsDirect(
  * Compatible subjects - derive fallback
  * ========================================================= */
 
+type CompatibleBaseSubject = {
+  officialSubjectId:
+    | string
+    | null;
+
+  subjectName:
+    string;
+};
+
+
+function parseCompatibleBasePage(
+  html: string
+): CompatibleBaseSubject[] {
+  const $ =
+    cheerio.load(
+      String(
+        html ||
+        ""
+      )
+    );
+
+  const results:
+    CompatibleBaseSubject[] =
+    [];
+
+  $(
+    ".listDateR01 > li"
+  ).each(
+    (_, element) => {
+      const row =
+        $(element);
+
+      const anchor =
+        row
+          .find(
+            "a.nameBlock"
+          )
+          .first();
+
+      const subjectName =
+        cleanText(
+          anchor.text()
+        );
+
+      if (
+        !subjectName
+      ) {
+        return;
+      }
+
+      const href =
+        cleanText(
+          anchor.attr(
+            "href"
+          )
+        );
+
+      const idMatch =
+        href.match(
+          /fnStd1_2_YomokInfo\s*\(\s*['"]([^'"]+)['"]\s*\)/i
+        );
+
+      const officialSubjectId =
+        cleanText(
+          idMatch?.[1]
+        ) ||
+        null;
+
+      results.push({
+        officialSubjectId,
+        subjectName,
+      });
+    }
+  );
+
+  return results;
+}
+
+
+function parseCompatibleLastPage(
+  html: string
+): number {
+  const matches =
+    Array.from(
+      String(
+        html ||
+        ""
+      ).matchAll(
+        /fnLinkPage\s*\(\s*(\d+)\s*\)/gi
+      )
+    );
+
+  let lastPage =
+    1;
+
+  for (
+    const match
+    of matches
+  ) {
+    const page =
+      Number(
+        match[1]
+      );
+
+    if (
+      Number.isFinite(
+        page
+      ) &&
+      page >
+        lastPage
+    ) {
+      lastPage =
+        page;
+    }
+  }
+
+  return lastPage;
+}
+
 /**
  * 국평원 전공교양 호환 페이지는 전공명 없이
  * 과목명 중심으로 내려오는 경우가 있으므로,
@@ -1025,8 +1446,24 @@ async function deriveCompatibleSubjects(
 ): Promise<
   NileCollectedMajorLiberalCompatibleSubject[]
 > {
-  const response =
-    await fetchNilePage({
+  /**
+   * ---------------------------------------------------------
+   * 1. 호환과목 첫 페이지 수집
+   * ---------------------------------------------------------
+   *
+   * 현재 국평원 페이지:
+   *
+   * POST /creditbank/stdPro/nStdPro4_1.do
+   *
+   * pageIndex
+   * majorType=B
+   * m_szType=D
+   *
+   * 구조이며 한 페이지당 10개씩 내려온다.
+   */
+
+  const firstResponse =
+    await fetchNilePostPage({
       url:
         COMPATIBLE_LIST_URL,
 
@@ -1035,55 +1472,246 @@ async function deriveCompatibleSubjects(
 
       retryCount:
         params.retryCount,
+
+      body:
+        new URLSearchParams({
+          pageIndex:
+            "1",
+
+          majorType:
+            "B",
+
+          m_szYomokId:
+            "",
+
+          m_szYomokName:
+            "",
+
+          m_szType:
+            "D",
+
+          searchKeyword:
+            "",
+        }),
     });
+
+  const lastPage =
+    parseCompatibleLastPage(
+      firstResponse.text
+    );
+
+  console.log(
+    "[NILE COLLECTOR] compatible paging",
+    {
+      lastPage,
+    }
+  );
+
+  const allBaseSubjects:
+    CompatibleBaseSubject[] =
+    [];
+
+  const firstPageSubjects =
+    parseCompatibleBasePage(
+      firstResponse.text
+    );
+
+  console.log(
+    "[NILE COLLECTOR] compatible page done",
+    {
+      page:
+        1,
+
+      count:
+        firstPageSubjects.length,
+    }
+  );
+
+  allBaseSubjects.push(
+    ...firstPageSubjects
+  );
 
   /**
-   * 호환페이지의 과목 표현은
-   * 교양 페이지와 유사한 과목 리스트이므로
-   * 공통 과목 parser를 fallback으로 활용한다.
+   * ---------------------------------------------------------
+   * 2. 2페이지 ~ 마지막 페이지 자동 순회
+   * ---------------------------------------------------------
    */
-  const compatibleBase =
-    parseNileLiberalSubjects({
-      html:
-        response.text,
 
-      sourceUrl:
-        response.url,
-
-      standardVersion:
-        params.standardVersion,
-
-      sourceCheckedAt:
-        new Date(),
-    });
-
-  if (
-    compatibleBase.length === 0
+  for (
+    let page = 2;
+    page <= lastPage;
+    page += 1
   ) {
-    return [];
+    const response =
+      await fetchNilePostPage({
+        url:
+          COMPATIBLE_LIST_URL,
+
+        timeoutMs:
+          params.timeoutMs,
+
+        retryCount:
+          params.retryCount,
+
+        body:
+          new URLSearchParams({
+            pageIndex:
+              String(
+                page
+              ),
+
+            majorType:
+              "B",
+
+            m_szYomokId:
+              "",
+
+            m_szYomokName:
+              "",
+
+            m_szType:
+              "D",
+
+            searchKeyword:
+              "",
+          }),
+      });
+
+    const pageSubjects =
+      parseCompatibleBasePage(
+        response.text
+      );
+
+    console.log(
+      "[NILE COLLECTOR] compatible page done",
+      {
+        page,
+
+        count:
+          pageSubjects.length,
+      }
+    );
+
+    allBaseSubjects.push(
+      ...pageSubjects
+    );
   }
+
+  /**
+   * ---------------------------------------------------------
+   * 3. 공식 호환과목 목록 중복 제거
+   * ---------------------------------------------------------
+   */
 
   const compatibleMap =
     new Map<
       string,
-      NileCollectedLiberalSubject
+      CompatibleBaseSubject
     >();
 
   for (
     const subject
-    of compatibleBase
+    of allBaseSubjects
   ) {
-    compatibleMap.set(
+    const normalized =
       normalizeNileSubjectName(
         subject.subjectName
-      ),
-      subject
-    );
+      );
+
+    if (
+      !normalized
+    ) {
+      continue;
+    }
+
+    const id =
+      cleanText(
+        subject.officialSubjectId
+      );
+
+    /**
+     * matching 자체는 과목명으로 진행하지만
+     * 여기서는 동일 목록 행의 중복 수집 방지를 위해
+     * 공식 ID가 있으면 우선 key로 쓴다.
+     */
+    const dedupeKey =
+      id
+        ? `id:${id}`
+        : `name:${normalized}`;
+
+    if (
+      !compatibleMap.has(
+        dedupeKey
+      )
+    ) {
+      compatibleMap.set(
+        dedupeKey,
+        subject
+      );
+    }
   }
 
-  const results:
-    NileCollectedMajorLiberalCompatibleSubject[] =
-    [];
+  const uniqueCompatibleSubjects =
+    Array.from(
+      compatibleMap.values()
+    );
+
+  /**
+   * 전공 Master 대조용 이름 Map.
+   */
+  const compatibleByName =
+    new Map<
+      string,
+      CompatibleBaseSubject
+    >();
+
+  for (
+    const subject
+    of uniqueCompatibleSubjects
+  ) {
+    const normalized =
+      normalizeNileSubjectName(
+        subject.subjectName
+      );
+
+    if (
+      normalized &&
+      !compatibleByName.has(
+        normalized
+      )
+    ) {
+      compatibleByName.set(
+        normalized,
+        subject
+      );
+    }
+  }
+
+  console.log(
+    "[NILE COLLECTOR] compatible base done",
+    {
+      rawCount:
+        allBaseSubjects.length,
+
+      count:
+        uniqueCompatibleSubjects.length,
+    }
+  );
+
+  /**
+   * ---------------------------------------------------------
+   * 4. 전체 전공 Master와 교집합
+   * ---------------------------------------------------------
+   *
+   * 국평원 호환 페이지에는 전공/전필/전선/학점 정보가
+   * 없으므로 실제 전공 Master의 값을 사용한다.
+   */
+
+  const resultMap =
+    new Map<
+      string,
+      NileCollectedMajorLiberalCompatibleSubject
+    >();
 
   for (
     const curriculum
@@ -1098,8 +1726,14 @@ async function deriveCompatibleSubjects(
           subject.subjectName
         );
 
+      if (
+        !normalized
+      ) {
+        continue;
+      }
+
       const compatible =
-        compatibleMap.get(
+        compatibleByName.get(
           normalized
         );
 
@@ -1109,42 +1743,82 @@ async function deriveCompatibleSubjects(
         continue;
       }
 
-      results.push({
-        curriculumKey:
-          curriculum.curriculumKey,
+      const officialSubjectId =
+        cleanText(
+          subject.officialSubjectId
+        ) ||
+        cleanText(
+          compatible.officialSubjectId
+        ) ||
+        null;
 
-        officialSubjectId:
-          subject.officialSubjectId ||
-          compatible.officialSubjectId,
+      /**
+       * 같은 전공에 국평원 원본 중복행이 있더라도
+       * 호환 관계는 한 번만 저장한다.
+       */
+      const resultKey =
+        [
+          curriculum
+            .curriculumKey,
 
-        subjectName:
-          subject.subjectName,
+          officialSubjectId
+            ? `id:${officialSubjectId}`
+            : `name:${normalized}`,
 
-        majorRequirementType:
-          subject.requirementType,
+          subject
+            .requirementType,
+        ].join(
+          ":"
+        );
 
-        credits:
-          subject.credits,
+      if (
+        resultMap.has(
+          resultKey
+        )
+      ) {
+        continue;
+      }
 
-        lectureHours:
-          subject.lectureHours,
+      resultMap.set(
+        resultKey,
+        {
+          curriculumKey:
+            curriculum
+              .curriculumKey,
 
-        practiceHours:
-          subject.practiceHours,
+          officialSubjectId,
 
-        standardVersion:
-          params.standardVersion,
+          subjectName:
+            subject.subjectName,
 
-        sourceUrl:
-          response.url,
+          majorRequirementType:
+            subject.requirementType,
 
-        sourceCheckedAt:
-          new Date(),
-      });
+          credits:
+            subject.credits,
+
+          lectureHours:
+            subject.lectureHours,
+
+          practiceHours:
+            subject.practiceHours,
+
+          standardVersion:
+            params.standardVersion,
+
+          sourceUrl:
+            COMPATIBLE_LIST_URL,
+
+          sourceCheckedAt:
+            new Date(),
+        }
+      );
     }
   }
 
-  return results;
+  return Array.from(
+    resultMap.values()
+  );
 }
 
 
@@ -1300,9 +1974,6 @@ function validateCurriculumDataset(
       );
     }
 
-    const subjectNames =
-      new Set<string>();
-
     for (
       const subject
       of curriculum.subjects
@@ -1321,20 +1992,6 @@ function validateCurriculumDataset(
 
         continue;
       }
-
-      if (
-        subjectNames.has(
-          normalized
-        )
-      ) {
-        errors.push(
-          `전공 내 중복과목: ${curriculum.curriculumKey} / ${subject.subjectName}`
-        );
-      }
-
-      subjectNames.add(
-        normalized
-      );
 
       if (
         subject.credits <= 0

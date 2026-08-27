@@ -1,0 +1,1395 @@
+<!DOCTYPE html>
+
+
+
+<html lang="ko">
+<head>
+	<title>표준교육과정 조회 | 표준교육과정 | 학점은행</title>
+	
+
+
+
+
+
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="author" content="국가평생교육진흥원" >
+<meta name="keywords" content="국가평생교육진흥원,학점은행,평생교육" >
+<meta name="description" content="국가평생교육진흥원 학점은행입니다" >
+<meta name="autocomplete" content="off" >
+
+<link rel="shortcut icon" href="/nrsc/images/bi/favicon.ico">
+
+<!-- bsh -->
+<!-- <link rel="stylesheet" href="/mobile/css/cb_base.css?ver=2026082705241716"> -->
+<link rel="stylesheet" href="/mobile/css/cb_layout.css?ver=2026082705241716">
+<!-- <link rel="stylesheet" href="/mobile/css/cb_global.css?ver=2026082705241716">
+<link rel="stylesheet" href="/mobile/css/cb_contents.css?ver=2026082705241716"> -->
+<!-- end -->
+
+<link rel="stylesheet" type="text/css" href="/nrsc/css/n_common.css" >
+<link rel="stylesheet" type="text/css" href="/nrsc/css/n_layout.css?ver=2026082705241716" >
+<link rel="stylesheet" type="text/css" href="/nrsc/css/n_content.css?ver=2026082705241716" >
+<link rel="stylesheet" type="text/css" href="/nrsc/css/n_mobile.css?ver=2026082705241716" >
+
+<script type="text/javascript" charset="utf-8" src="/nrsc/jquery371/js/jquery-3.7.1.min.js"></script>
+<!-- <script type="text/javascript" charset="utf-8" src="/nrsc/jquery371/js/jquery-migrate-3.4.1.js"></script> -->
+<script type="text/javascript" charset="utf-8" src="/nrsc/jquery371/js/jquery-ui-1.14.2.min.js"></script>
+
+<script type="text/javascript" charset="utf-8" src="/nrsc/jquery371/js/jquery.form.min.js"></script>
+
+<link rel="stylesheet" href="/nrsc/jquery371/css/jquery-ui.min.css" type="text/css"/>
+
+
+<link rel="stylesheet" type="text/css" href="/nrsc/css/jquery.bxslider.css">
+<link rel="stylesheet" type="text/css" href="/nrsc/css/jquery-ui-1.9.1.custom.min.css" >
+
+<!-- <script src="/nrsc/js/jquery-1.11.3.min.js"></script> -->
+<script src="/nrsc/js/jquery-nrsc.js"></script>
+
+<!-- <script src="/nrsc/js/jquery-1.7.2.min.js"></script> -->
+<script src="/nrsc/js/jquery.atooltip.min.js"></script>
+<script src="/nrsc/js/common.js"></script>
+<script src="/nrsc/js/activex.js"></script>
+<script src="/nrsc/js/deployJava.js"></script>
+<!-- <script src="/nrsc/js/jquery-ui-1.9.1.custom.min.js"></script> -->
+
+<!-- <script src="/nrsc/js/jquery.form.js"></script> -->
+<script src="/nrsc/js/jquery.jsonSuggest-2.js"></script>
+<script src="/nrsc/js/GFunction.js"></script>
+<script src="/nrsc/js/FormCheck.js"></script>
+<script src="/nrsc/js/NeisProcess3.js"></script>
+<script src="/nrsc/js/gotoURL.js"></script>
+
+
+
+<script src="https://pgweb.tosspayments.com/WEB_SERVER/js/receipt_link.js"></script>
+
+
+
+</head>
+<body>
+	<div class="wrap">
+		<ul id ="skipNavi">
+			<li><a href="#contents">본문으로 바로가기</a></li>
+			
+				<li><a href="#lnb">하위메뉴로 바로가기</a></li>
+			
+			<li><a href="#footer">하단정보로 바로가기</a></li>
+		</ul>
+		
+		
+		<!-- header -->
+		<div id="header">
+			
+
+
+
+
+
+
+
+
+
+
+
+<!-- 2015.05.21 Naver analytics 추가-->
+<script src="https://wcs.naver.net/wcslog.js"></script>
+<script>
+	if(!wcs_add) var wcs_add = {}; wcs_add["wa"] = "bccd77e775a1f4"; wcs_do();
+	if(!wcs_add) var wcs_add = {}; wcs_add["wa"] = "b5b27c178715e4"; wcs_do();
+</script>
+
+<!-- 2023.12.12 Google analytics 추가-->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-B5EYPRT12R"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-B5EYPRT12R');
+</script>
+
+<script>
+	// 2020.10.13 추가 - Chrome browser samesite정책 설정 추가(타 사이트 방문 시 세션 삭제되어 로그인으로 회귀하는 현상 방지)
+	document.cookie = "crossCookie=bar; SameSite=None; Secure";
+
+	//2020.08.04 수정 - 203.235.44.23 -> cert.cb.or.kr
+	// 2022.09.30 수정 - http://cert.cb.or.kr/servlet/EDUVERI?COMMAND=VERIFY -> https://cert.cb.or.kr/servlet/EDUVERI?COMMAND=VERIFY
+	function fnEduVeriPop() {
+		window.open("https://cert.cb.or.kr/servlet/EDUVERI?COMMAND=VERIFY", "pop", "top=20, left=20, toolbar=no, scrollbars=yes, width=733, height=590");
+	}
+
+	var nowZoom = 100;
+
+	function zoomOut() {   // 화면크기축소
+	   nowZoom = nowZoom - 10;
+	   if(nowZoom <= 70) nowZoom = 70;   // 화면크기 최대 축소율 70%
+	   zooms();
+	}
+
+	function zoomIn() {   // 화면크기확대
+	   nowZoom = nowZoom + 10;
+	   if(nowZoom >= 200) nowZoom = 200;   // 화면크기 최대 확대율 200%
+	   zooms();
+	}
+
+	function zoomReset() {
+	   nowZoom = 100;   // 원래 화면크기로 되돌아가기
+	   zooms();
+	}
+
+	function zooms() {
+	   document.body.style.zoom = nowZoom + "%";
+	   if(nowZoom == 70) {
+		  alert("더 이상 축소할 수 없습니다.");   // 화면 축소율이 70% 이하일 경우 경고창
+	   }
+	   if(nowZoom == 200) {
+		  alert("더 이상 확대할 수 없습니다.");   // 화면 확대율이 200% 이상일 경우 경고창
+	   }
+	}
+
+	function fnTotalSearch(){
+		var searchKeyword = $("#m_szTotalSearchKeyword").val();
+		searchKeyword = Trim(searchKeyword);
+
+		if (searchKeyword == "") {
+			alert('검색어를 입력해주세요!');
+			$("#m_szTotalSearchKeyword").val("");
+			$("#m_szTotalSearchKeyword").focus();
+			return;
+		}
+
+		if (searchKeyword.includes("!") || searchKeyword.includes("@") ||
+	            //searchKeyword.includes("#") ||
+	            searchKeyword.includes("$") ||
+	            searchKeyword.includes("%") || searchKeyword.includes("^") ||
+	            searchKeyword.includes("&") || searchKeyword.includes("*")
+	                ) {
+	            alert('검색어에 [!,@,$,%,^,&,*] 문자를 포함할 수 없습니다. \n다시 입력해주세요!');
+	            $("#m_szTotalSearchKeyword").val("");
+	            $("#m_szTotalSearchKeyword").focus();
+	            return;
+	        }
+
+		$form = $('<form></form>');
+	    $form.attr("action", "/search/nSearch.do");
+	    $form.attr("method", "post");
+	    $form.attr("target", "_self");
+	    $form.append("<input type='hidden' name='m_szSearchKeyword' value='"+$("#m_szTotalSearchKeyword").val()+"'>");
+	    $form.appendTo("body");
+	    $form.submit();
+	}
+
+	function goDegreeApply() {
+		if("" == "") {
+ 			document.location = "/creditbank/member/nMember3_0.do";
+ //         document.location = "/creditbank/member/nMember3_1.do";
+			return;
+		}
+
+        $.ajax({
+			type: "POST",
+			url : '/pers/degree/nDegreeApplyQualificationChk.do',
+			data: {},
+			dataType: "json",
+			error: function (xhr, status, error) {
+				document.location = "/pers/mainInfo/nMainInfo.do";
+            },
+			success: function (data) {
+				if (data.m_szMessage != "") {
+			        alert(data.m_szMessage);
+				} else {
+					document.location = data.forwordURL;
+				}
+			}
+		});
+	}
+
+	// 2023.02.21 수정 - 공통으로 사용하기 위해 RnbQuick.jsp 있던 함수 이동(퀵메뉴,아이디찾기,비밀번호찾기)
+    function setWebAccessLog(m_szReqUrl, m_szReqUrlTitle, m_szFlag, m_szSiteGb) {
+        $.ajax({
+            type: "POST",
+            url: "/logger/log/nWebAccessLogJson.do",
+            data: { 'm_szReqUrl': m_szReqUrl, 'm_szReqUrlTitle': m_szReqUrlTitle, 'm_szSiteGb': m_szSiteGb },
+            dataType: "json",
+            success: function (data) {
+            	if(m_szFlag == 'popup') {	// 새창열기
+            		window.open(m_szReqUrl, "_blank");
+            	} else {
+            		window.location = m_szReqUrl;
+            	}
+            }
+        });
+    }
+</script>
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <script>
+        var anyidAdaptor = anyidAdaptor || {};
+
+
+
+
+        /*이용기관 수정 영역 Start*/
+        anyidAdaptor.orgLogin = function(data){
+            //정부 통합인증SDK_연계가이드 4.4.1.3 이용기관 로그인(토글 off) 참조
+            //제공되는 라이브러리 메소드로 인증데이터 decrypt 이후 자체 로그인 로직 개발
+
+            const params = new URLSearchParams(location.search);
+            var obj ={
+                ssob : data.ssob
+                , loginForwardUrl : data.loginForwardUrl
+                , tag : params.get("tx")
+            }
+
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", "/creditbank/base/nCdIdLoginAnyIdOrgId.do", true);
+            xhr.setRequestHeader("Content-Type", "application/json");
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4 && xhr.status === 200) {
+                    //debugger;
+                    var response = JSON.parse(xhr.responseText);
+                    if (response.status == "success") {
+                        window.location.href = response.redirectUrl; // 여기서 직접 리다이렉트
+                    } else {
+
+                    }
+                }
+            };
+            xhr.send(JSON.stringify(obj));
+
+
+        }
+        /*이용기관 수정 영역 End*/
+
+
+        /*이용기관 문구수정 영역 Start*/
+        anyidAdaptor.JoinConfirm = function(portalJoinUri, memberData){
+            if(!confirm('Any-ID 사용자등록 하시겠습니까?')) {
+                anyidAdaptor.orgLogin();
+                return;
+            }else{
+                anyidAdaptor.receiveAnyIdJoin(portalJoinUri, memberData);
+            }
+        }
+        /*이용기관 문구수정 영역 End*/
+
+
+
+
+        anyidAdaptor.portalJoinUri = "null";
+        anyidAdaptor.certData = null;
+        anyidAdaptor.ssoByPass = "1";
+        anyidAdaptor.niRegYn = "null";
+        anyidAdaptor.agencyContextPath = "";
+
+
+        anyidAdaptor.success = function(data){
+            if(anyidAdaptor.ssoByPass != 0 || !data.useSso) {
+                anyidAdaptor.orgLogin(data);
+            } else {
+                anyidAdaptor.certData = data;
+                anyidAdaptor.userCheck();
+            }
+        }
+
+        anyidAdaptor.userCheck = function(){
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", anyidAdaptor.agencyContextPath + "/oidc/userCheck", true);
+            xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4 && xhr.status === 200) {
+                    var response = JSON.parse(xhr.responseText);
+                    if (response.success) {
+                    	console.log("anyidAdaptor.userCheck response.success ");
+                        anyidAdaptor.ssoLogin();
+                    } else {
+                        setTimeout(function() {
+                            anyidAdaptor.receiveAnyIdJoin(response.uri, response.data);
+                        }, 100);
+                    }
+                }
+            };
+
+            let jsonObject = new Object();
+            jsonObject.txId = anyidAdaptor.certData.txId;
+            jsonObject.ssob = anyidAdaptor.certData.ssob;
+            jsonObject.userSeCd = anyidAdaptor.certData.userSeCd;
+
+            let jsonStr = JSON.stringify(jsonObject);
+            let encodedString = btoa(jsonStr);
+
+
+
+            var data = "data=" + encodedString + "&txId=" + anyidAdaptor.certData.txId;
+            //console.log("data ===>  ", data);
+            xhr.send(data);
+
+        }
+
+        //anyid가입
+        anyidAdaptor.receiveAnyIdJoin = function(portalJoinUri, memberData){
+
+            var url = portalJoinUri+encodeURIComponent(memberData);
+            anyidAdaptor.popup(url,"openAnyIdRegistUserIdv",700,740);
+
+            window.addEventListener("message", function(event) {
+                var result;
+                try {
+                    result = JSON.parse(event.data);
+                } catch (error) {
+                    console.error("Received message is not valid JSON:", error);
+                    return;
+                }
+
+                if(!result.funcName || (result.funcName !== "trmsAgreComplete" && result.funcName !== "registUserComplete")) {
+                    return;
+                }
+                if(result.status === "success") {
+                    if(result.trmsAgreYn == "Y"){
+                        anyidAdaptor.ssoLogin();
+                    }else{
+                        anyidAdaptor.orgLogin();
+                    }
+                }else{
+
+                    anyidAdaptor.orgLogin();
+                }
+
+            }, false);
+        }
+
+        // 팝업 호출
+        anyidAdaptor.popup = function(url, name, width, height){
+            let left = (screen.width) ? (screen.width-width)/2 : 0;
+            let top = (screen.height) ? (screen.height-height)/2 : 0;
+            let popup=window.open(url, name ,"resizable=yes,toolbar=no,scrollbars=yes,location=no,top="+top+"px,left="+left+"px,width="+width+"px,height="+height+"px");
+            if(popup){
+                popup.focus();
+            }
+        }
+
+        anyidAdaptor.ssoLogin = function(){
+            let jsonObject = new Object();
+            jsonObject.txId = anyidAdaptor.certData.txId;
+            jsonObject.ssob = anyidAdaptor.certData.ssob;
+            jsonObject.userSeCd = anyidAdaptor.certData.userSeCd;
+            let jsonStr = JSON.stringify(jsonObject);
+            let encodedString = btoa(jsonStr);
+            var baseUrl = window.location.origin + anyidAdaptor.agencyContextPath + "/oidc/ssoLogin";
+            var urlWithParams = baseUrl + "?data=" + encodedString;
+            window.location.href = urlWithParams;
+
+        }
+
+        anyidAdaptor.ssoLoginPageSub = function(baseUrl, endPoint, acrValues){
+            var subUrl = "";
+
+            if (endPoint && endPoint.trim() !== "") {
+                subUrl = "?endPoint=" + encodeURIComponent(endPoint);
+            }
+
+            if (!acrValues && acrValues.trim() == "") {
+                acrValues = "3"
+            }
+
+            if (acrValues && acrValues.trim() !== "") {
+                if(subUrl == ""){
+                    subUrl = "?";
+                }else{
+                    subUrl = subUrl + "&";
+                }
+                subUrl = subUrl + "acrValues=" + acrValues;
+            }
+
+            window.location.replace(baseUrl+subUrl);
+        }
+
+        /**/
+        anyidAdaptor.ssoLogout = function(endPoint) {
+            endPoint = typeof endPoint !== 'undefined' ? endPoint : "/";
+            var baseUrl = window.location.origin + anyidAdaptor.agencyContextPath + "/oidc/ssoLogout";
+            baseUrl = baseUrl + "?endPoint=" + encodeURIComponent(endPoint);
+            window.location.replace(baseUrl);
+        }
+        /**/
+        anyidAdaptor.reAuthLevel = function(endPoint, acrValues){
+            endPoint = typeof endPoint !== 'undefined' ? endPoint : "/";
+            var baseUrl = window.location.origin + anyidAdaptor.agencyContextPath + "/oidc/reAuthLevel";
+            anyidAdaptor.ssoLoginPageSub(baseUrl, endPoint, acrValues)
+
+        }
+        /**/
+        anyidAdaptor.ssoLoginPage = function(endPoint, acrValues){
+            endPoint = typeof endPoint !== 'undefined' ? endPoint : "/";
+            var baseUrl = window.location.origin + anyidAdaptor.agencyContextPath + "/oidc/auth";
+            anyidAdaptor.ssoLoginPageSub(baseUrl, endPoint, acrValues)
+        }
+
+        /**/
+        anyidAdaptor.ssoSvcToSvc = function(url, endPoint){
+            var baseUrl = url + "/oidc/svcToSvc?endPoint=" + encodeURIComponent(endPoint);;
+            window.open(baseUrl, "_blank");
+        }
+
+
+    </script>
+</head>
+<body>
+
+</body>
+</html>
+
+
+
+
+
+<!-- hgroup -->
+
+<div class="hgroup header nor">
+    <h1 class="logo"><a href="/creditbank/base/nMain.do">국가평생교육진흥원 학점은행</a></h1>
+    <div class="header-utilities">
+      <a class="header-utility-link header-utility-search" href="/search/nSearch.do">
+        <span class="sr-only">통합검색 바로 가기</span>
+      </a>
+      <a class="header-utility-link header-utility-eng" href="/creditbank/info/nInfo7_1.do">ENG</a>
+      <a class="header-utility-link header-utility-gnb" href="#cb-gnb">
+        <span class="sr-only">주메뉴 보기</span>
+        <span class="ico-gnb"></span>
+      </a>
+    </div>
+    <!-- 검색 -->
+    <div class="searchBox">
+        <div class="searchBar">
+            <fieldset>
+                <legend>검색</legend>
+                <input type="text" title="검색어 입력" name="m_szSearchKeyword" id="m_szTotalSearchKeyword" class="intxt" placeholder="검색어를 입력해주세요." onkeypress="if( event.keyCode==13 ){ fnTotalSearch(); }">
+                <label for="m_szTotalSearchKeyword"><a href="javascript:fnTotalSearch();" class="btn"><img src="/nrsc/images/common/btn_search.png" alt="검색" ></a></label>
+            </fieldset>
+        </div>
+    </div>
+    <!-- //검색 -->
+
+    <!-- headUtil -->
+    <div class="headerF">
+        <div class="util">
+            <!-- util -->
+            
+            	<a href="/creditbank/member/nMember1_1_1.do">회원가입</a>
+            	<a href="javascript:anyidAdaptor.ssoLoginPage('','2');">로그인</a>
+<!--                 <a href="/creditbank/member/nMember3_1.do">로그인</a> -->
+            
+            
+            <a href="/creditbank/info/nInfo5_1.do">사이트맵</a>
+            <a href="/creditbank/info/nInfo7_1.do" target="_blank" title="새창 열림">ENGLISH</a>
+            <!-- util -->
+        </div>
+        <!-- 글자 선택 -->
+        <div class="control" id="control">
+            <a href="#control" onClick="zoomOut()" title="글씨 작게" class="small">글씨 작게</a>
+			<a href="#control" onClick="zoomReset()"  title="글씨 보통" class="normal">글씨 보통</a>
+			<a href="#control" onClick="zoomIn()" title="글씨 크게" class="big">글씨 크게</a>
+        </div>
+        <!-- 글자 선택 -->
+    </div>
+</div>
+<!-- //hgroup -->
+<!-- gnb -->
+<div class="gnbArea">
+    <div class="gnbInner">
+        <div id="gnb">
+            <h2 class="blind">주메뉴</h2>
+            <ul class="gnbDep1">
+                <li>
+                    <a href="/creditbank/eduIntro/nEduIntro1_1_1.do">학점은행제 소개</a>
+                    <ul>
+						<li><a href="/creditbank/eduIntro/nEduIntro1_1_1.do">학점은행제란</a></li>
+                        <li><a href="/creditbank/eduIntro/nEduIntro1_2.do">학점은행제 신청절차</a></li>
+                        <li><a href="/creditbank/eduIntro/nEduIntro2.do">학점인정 대상</a></li>
+                        <li><a href="/creditbank/eduIntro/nEduIntro3_1.do">제도이용 주의사항</a></li>
+                        <li><a href="/creditbank/impartion/nImpartion3_1.do">제도활용 안내</a></li>
+                        <li><a href="/creditbank/eduIntro/nEduIntro1_3_4.do">연혁</a></li>
+                        <li><a href="/creditbank/eduIntro/nEduIntro1_5.do">관련법규정</a></li>
+                        <li><a href="/creditbank/eduIntro/nEduIntro1_4_1.do">현황통계</a></li>
+                        <li><a href="/creditbank/eduIntro/nEduIntro5_1.do">교육훈련기관 평가인정</a></li>
+                    </ul>
+                </li>
+                <li>
+                    <a href="/creditbank/stdPro/nStdPro1_1.do">표준교육과정</a>
+                    <ul>
+                        <li><a href="/creditbank/stdPro/nStdPro1_1.do">표준교육과정 조회</a></li>
+                        <li><a href="/creditbank/eduOrg/nEduOrg1_1_List.do">교육훈련기관 조회</a></li>
+                        <li><a href="/creditbank/eduOrg/nEduOrg2_1.do">개설 예정과목</a></li>
+                        <li><a href="/creditbank/eduOrg/nEduOrg5_List.do">일시중단 학습과정</a></li>
+                    </ul>
+                </li>
+                <li>
+                    <a href="/creditbank/persInfo/nPersInfo.do">학점인정 신청</a>
+                    <ul>
+                        <li><a href="/creditbank/persInfo/nPersInfo.do">신청안내</a></li>
+                        <li><a href="/creditbank/persInfo/nDocMenReg.do">제출서류 안내</a></li>
+                        <li><a href="/creditbank/persInfo/nMenRegInfo.do">학습자등록</a></li>
+                        <li><a href="/creditbank/persInfo/nCreditRegInfo.do">학점인정 신청</a></li>
+                        <li><a href="/creditbank/persInfo/nMajChgReqInfo.do">학위 및 전공변경 신청</a></li>
+                        <li><a href="/creditbank/persInfo/nMajChgReqView.do">학위연계 신청</a></li>
+                        <li><a href="/creditbank/persInfo/nRetrialReqInfo.do">재심신청</a></li>
+                        <li class="mt10"><a href="/creditbank/persInfo/nCdtCancelReqChkInfo.do">학습자등록 및 학점인정<br>취소 신청</a></li>
+                        <li class="mt10"><a href="/creditbank/persInfo/nCdtTypeChgChkInfo.do">전공교양호환과목<br>학습구분 변경신청</a></li>
+                    </ul>
+                </li>
+                <li>
+                    <a href="/creditbank/eduIntro/nEduIntro4_1.do">학위 신청</a>
+                    <ul>
+                        <li><a href="/creditbank/eduIntro/nEduIntro4_1.do">학위신청 안내</a></li>
+                        <li><a href="/creditbank/eduIntro/nEduIntro4_2.do">학위수여 요건</a></li>
+                        <li><a href="javascript:goDegreeApply();">학위신청 및 취소</a></li>
+                    </ul>
+                </li>
+                <li>
+                    <a href="/creditbank/myPage/nMyPage5_1.do">증명서 신청</a>
+                    <ul>
+                    	<li><a href="/creditbank/myPage/nMyPage5_1.do">온라인 증명서 발급</a></li>
+                        <li><a href="/creditbank/stuHelp/nStuHelp2_1.do">증명서 종류</a></li>
+                        <li><a href="javascript:fnEduVeriPop();">증명서 원본대조</a></li>
+                        <li><a href="/creditbank/myPage/nMyPage4_1.do">학위증 우편신청</a></li>
+                        <li><a href="/creditbank/myPage/nMyPage18_1.do">외국기관 제출용 <br/>증명서 발급신청</a></li>
+                    </ul>
+                </li>
+                <li>
+                    <a href="/creditbank/stuHelp/nStuHelp4_1_List.do">학습지원</a>
+                    <ul>
+                        <li><a href="/plan/planList/nPlanInfo.do">온라인 학습설계</a></li>
+						<li><a href="/creditbank/stuHelp/nStuHelp4_1_List.do">온라인 일반상담</a></li>
+						<li><a href="/creditbank/stuHelp/nStuHelp4_3.do">전화상담</a></li>
+						<!-- 2023.05.25 요구사항에 의해 삭제 <li><a href="/creditbank/stuHelp/nStuHelp4_4.do">방문상담</a></li> -->
+						<li><a href="/creditbank/stuHelp/nStuHelp7_1.do">학점인정 표준DB</a></li>
+                    </ul>
+                </li>
+                <li>
+                    <a href="/creditbank/impartion/nImpartion1_List.do">알림마당</a>
+                    <ul>
+                        <li><a href="/creditbank/impartion/nImpartion1_List.do">공지사항</a></li>
+                        <li><a href="/creditbank/impartion/nImpartion2_List.do">자료실</a></li>
+                        <li><a href="/creditbank/impartion/nImpartion5_List.do">슬기로운 학점생활</a></li>
+                        <li><a href="/creditbank/stuHelp/nStuHelp3_1.do?m_szTopChk=CHK">자주하는 질문</a></li>
+                        <li><a href="/creditbank/impartion/nImpartion4_List.do">신문고</a></li>
+                    </ul>
+                </li>
+            </ul>
+        </div>
+    </div>
+</div>
+<div id="cb-gnb" class="gnb-scope ">
+  <div class="login">
+    <p class="text-login">로그인 해주세요</p>
+    <a class="btn-login" href="javascript:anyidAdaptor.ssoLoginPage('','2');">로그인</a>
+<!--     <a class="btn-login" href="/creditbank/member/nMember3_1.do">로그인</a> -->
+  </div>
+  <div class="user-login">
+    <p class="text-login"> &nbsp;님</p>
+    <div class="btn-area">
+    
+
+<a class="btn-login" href="/creditbank/myPage/nMyPage2_1.do">학적부조회</a>
+
+<!--       <a class="btn-login" href="javascript:anyidAdaptor.ssoLogout('/creditbank/base/nMain.do');">로그아웃</a> -->
+      <a class="btn-login" href="/creditbank/base/nLogOut.do">로그아웃</a>
+    </div>
+  </div>
+  <div class="quick-link">
+    <a class="quick-link-items quick-link-item-cb" href="/creditbank/eduIntro/nEduIntro1_1_1.do">학점은행소개</a>
+    <!-- 2022.03.08 모바일 학점인정신청 개선사항 -->
+    <!-- <a class="quick-link-items quick-link-item-apply" href="javascript:notMobile();">학습자등록</a> -->
+    <a class="quick-link-items quick-link-item-apply" href="/pers/mainInfo/nMainInfo.do">학습자등록</a>
+    <!-- 2022.01.12 모바일 학점인정신청 개선사항 -->
+    <!-- <a class="quick-link-items quick-link-item-notice" href="javascript:notMobile();">학점인정신청</a> -->
+    <a class="quick-link-items quick-link-item-notice" href="/pers/mainInfo/nMainInfo.do">학점인정신청</a>
+    <a class="quick-link-items quick-link-item-degree" href="javascript:goDegreeApply();">학위 신청</a>
+  </div>
+  <nav class="gnb">
+    <ul class="gnb-list">
+      <li class="gnb-items active">
+        <a href="#gnb-item-1" class="gnb-btn-items">학점은행제 소개</a>
+        <div id="gnb-item-1" class="gnb-sub-list-scope">
+          <strong class="gnb-sub-list-title">학점은행제 소개</strong>
+          <ul class="gnb-sub-list">
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/eduIntro/nEduIntro1_1_1.do">학점은행제란</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/eduIntro/nEduIntro1_2.do">학점은행제 신청절차</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/eduIntro/nEduIntro2.do">학점인정 대상</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/eduIntro/nEduIntro3_1.do">제도이용 주의사항</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/impartion/nImpartion3_1.do">제도활용 안내</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/eduIntro/nEduIntro1_3_4.do">연혁</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/eduIntro/nEduIntro1_5.do">관련법규정</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/eduIntro/nEduIntro1_4_1.do">현황통계</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/eduIntro/nEduIntro5_1.do">교육훈련기관 평가인정</a>
+            </li>
+          </ul>
+        </div>
+      </li>
+      <li class="gnb-items">
+        <a href="#gnb-item-2" class="gnb-btn-items">표준교육과정</a>
+        <div id="gnb-item-2" class="gnb-sub-list-scope">
+          <strong class="gnb-sub-list-title">표준교육과정</strong>
+          <ul class="gnb-sub-list">
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/stdPro/nStdPro1_1.do">표준교육과정 조회</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/eduOrg/nEduOrg1_1_List.do">교육훈련기관 조회</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/eduOrg/nEduOrg2_1.do">개설 예정과목</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/eduOrg/nEduOrg5_List.do">일시중단 학습과정</a>
+            </li>
+          </ul>
+        </div>
+      </li>
+      <li class="gnb-items">
+        <a href="#gnb-item-3" class="gnb-btn-items">학점인정 신청</a>
+        <div id="gnb-item-3" class="gnb-sub-list-scope">
+          <strong class="gnb-sub-list-title">학점인정 신청</strong>
+          <ul class="gnb-sub-list">
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/persInfo/nPersInfo.do">신청안내</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/persInfo/nDocMenReg.do">제출서류 안내</a>
+            </li>
+            <li class="gnb-sub-items">
+              <!-- 2022.03.08 모바일 학점인정신청 개선사항 -->
+              <!-- <a class="gnb-link-items" href="javascript:notMobile();">학습자등록</a> -->
+              <a class="gnb-link-items" href="/pers/mainInfo/nMainInfo.do">학습자등록</a>
+            </li>
+            <li class="gnb-sub-items">
+              <!-- 2022.01.12 모바일 학점인정신청 개선사항 -->
+              <!-- <a class="gnb-link-items" href="javascript:notMobile();">학점인정 신청</a> -->
+              <a class="gnb-link-items" href="/pers/mainInfo/nMainInfo.do">학점인정 신청</a>
+            </li>
+            <li class="gnb-sub-items">
+              <!-- 2022.03.08 모바일 학점인정신청 개선사항 -->
+              <!-- <a class="gnb-link-items" href="javascript:notMobile();">학위 및 전공변경 신청</a> -->
+              <a class="gnb-link-items" href="/creditbank/persInfo/nMajChgReqInfo.do">학위 및 전공변경 신청</a>
+            </li>
+            <li class="gnb-sub-items">
+              <!-- 2022.03.08 모바일 학점인정신청 개선사항 -->
+              <!-- <a class="gnb-link-items" href="javascript:notMobile();">학위연계 신청</a> -->
+              <a class="gnb-link-items" href="/creditbank/persInfo/nMajChgReqView.do">학위연계 신청</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/persInfo/nRetrialReqInfo.do">재심신청</a>
+            </li>
+            <li class="gnb-sub-items">
+              <!-- 2022.03.08 모바일 학점인정신청 개선사항 -->
+              <!-- <a class="gnb-link-items" href="javascript:notMobile();">학습자등록 및 학점인정<br>취소 신청</a> -->
+              <a class="gnb-link-items" href="/creditbank/persInfo/nCdtCancelReqChkInfo.do">학습자등록 및 학점인정<br>취소 신청</a>
+            </li>
+            <li class="gnb-sub-items">
+              <!-- 2022.03.08 모바일 학점인정신청 개선사항 -->
+              <!-- <a class="gnb-link-items" href="javascript:notMobile();">전공교양호환과목<br>학습구분 변경신청</a> -->
+              <a class="gnb-link-items" href="/creditbank/persInfo/nCdtTypeChgChkInfo.do">전공교양호환과목<br>학습구분 변경신청</a>
+            </li>
+          </ul>
+        </div>
+      </li>
+      <li class="gnb-items">
+        <a href="#gnb-item-4" class="gnb-btn-items">학위 신청</a>
+        <div id="gnb-item-4" class="gnb-sub-list-scope">
+          <strong class="gnb-sub-list-title">학위 신청</strong>
+          <ul class="gnb-sub-list">
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/eduIntro/nEduIntro4_1.do">학위신청 안내</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/eduIntro/nEduIntro4_2.do">학위수여 요건</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="javascript:goDegreeApply();">학위신청 및 취소</a>
+            </li>
+          </ul>
+        </div>
+      </li>
+      <li class="gnb-items">
+        <a href="#gnb-item-6" class="gnb-btn-items">학습지원</a>
+        <div id="gnb-item-6" class="gnb-sub-list-scope">
+          <strong class="gnb-sub-list-title">학습지원</strong>
+          <ul class="gnb-sub-list">
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/stuHelp/nStuHelp4_1_List.do">온라인 일반상담</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/stuHelp/nStuHelp4_3.do">전화상담</a>
+            </li>
+            <!-- 2023.05.25 요구사항에 의해 삭제 <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/stuHelp/nStuHelp4_4.do">방문상담</a>
+            </li> -->
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/stuHelp/nStuHelp7_1.do">학점인정 표준DB</a>
+            </li>
+          </ul>
+        </div>
+      </li>
+      <li class="gnb-items">
+        <a href="#gnb-item-7" class="gnb-btn-items">알림마당</a>
+        <div id="gnb-item-7" class="gnb-sub-list-scope">
+          <strong class="gnb-sub-list-title">알림마당</strong>
+          <ul class="gnb-sub-list">
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/impartion/nImpartion1_List.do">공지사항</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/impartion/nImpartion2_List.do">자료실</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/impartion/nImpartion5_List.do">슬기로운 학점생활</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/stuHelp/nStuHelp3_1.do">자주하는 질문</a>
+            </li>
+            <li class="gnb-sub-items">
+              <a class="gnb-link-items" href="/creditbank/impartion/nImpartion4_List.do">신문고</a>
+            </li>
+          </ul>
+        </div>
+      </li>
+      <li class="gnb-items">
+        <a href="#gnb-item-8" class="gnb-btn-items">마이페이지</a>
+        <div id="gnb-item-8" class="gnb-sub-list-scope">
+          <strong class="gnb-sub-list-title">마이페이지</strong>
+          <ul class="gnb-sub-list">
+            <li class="gnb-sub-items"><a class="gnb-link-items" href="/creditbank/myPage/nMyPage1_1.do">개인정보 수정</a></li>
+        
+            <li class="gnb-sub-items"><a class="gnb-link-items" href="/creditbank/myPage/nMyPage3.do">나의 접수현황</a></li>
+            <li class="gnb-sub-items"><a class="gnb-link-items" href="/creditbank/myPage/nMyPage14.do">학적사실 확인 신청</a></li>
+            <li class="gnb-sub-items"><a class="gnb-link-items" href="/creditbank/myPage/nMyPage8_1.do">온라인 상담현황</a></li>
+            <li class="gnb-sub-items"><a class="gnb-link-items" href="/creditbank/myPage/nMyPage7_1.do">방문상담 대장</a></li>
+            
+            <li class="gnb-sub-items"><a class="gnb-link-items" href="/creditbank/myPage/nMyPage9_1.do">회원탈퇴</a></li>
+          </ul>
+        </div>
+      </li>
+    </ul>
+  </nav>
+</div>
+<!-- //gnb -->
+
+
+
+
+
+		</div>
+
+		<!-- container -->
+		<div id="container" class="container responCont">
+
+			<div class="leftWrap" id="lnb">
+				
+
+
+
+
+
+
+
+<h2 class="ltit">표준교육과정</h2>
+<div class="lnbArea">
+	<ul>
+		<li><a href="/creditbank/stdPro/nStdPro1_1.do">표준교육과정 조회</a></li>
+		<li><a href="/creditbank/eduOrg/nEduOrg1_1_List.do">교육훈련기관 조회</a></li>
+		<li><a href="/creditbank/eduOrg/nEduOrg2_1.do">개설 예정과목</a></li>
+		<li><a href="/creditbank/eduOrg/nEduOrg5_List.do">일시중단 학습과정</a></li>
+	</ul>
+</div>
+
+			</div>
+			<!--  -->
+				<!-- LNB -->
+			<!--  -->
+
+			<!-- contents -->
+	   		
+
+
+
+
+
+
+
+
+	
+	
+	
+		
+		
+	
+	
+	
+	
+
+
+<script type="text/javaScript" >
+	var nowPageURL = "/creditbank/stdPro/nStdPro1_1_5.do;jsessionid=ZHfGITMo28LX1KLS1S7zqpuj0Eotr8f9e8rpuqoWaMCQ7rksT5M02L8Z69Ec29AQ.newcbwas2_servlet_engine1";
+	var frm;
+
+	var m_szType = "C";
+	var idx1 = 0;
+
+	if(m_szType == 'A'){
+		idx1 = 0;
+	}else if(m_szType == 'B'){
+		idx1 = 1;
+	}else if(m_szType == 'C'){
+		idx1 = 2;
+	}else if(m_szType == 'D'){
+		idx1 = 3;
+	}else if(m_szType == 'E'){
+		idx1 = 4;
+	}
+
+	// getForm
+	function getForm(){
+	    return document.getElementById("frm");
+	}
+
+	$(document).ready(function(){
+		leIdx1 = idx1, leIdx2 = 0;
+	});
+
+	function fnSearch() {
+	    frm = getForm();
+	    frm.pageIndex.value = 1;
+	    frm.action = "/creditbank/stdPro/nStdPro1_1_5.do";
+	    frm.submit();
+	}
+
+	function fnStd1_2_YomokInfo(m_szYomokId){
+	    frm = getForm();
+		frm.m_szYomokId.value = m_szYomokId;
+	    frm.action = "/creditbank/stdPro/nStdPro1_1_2.do";
+	    frm.submit();
+	}
+
+	function fnStd1_3_OrgList(m_szYomokId, m_szYomokName){
+	    $('input[name="m_szYomokId"]').val(m_szYomokId);
+	    $('input[name="m_szYomokName"]').val(m_szYomokName);
+	    $('input[name="m_szPageYN"]').val("Y");
+	    $("#frm").attr("action", "/creditbank/stdPro/nStdPro1_1_3.do");
+	    $("#frm").submit();
+	}
+
+    //페이징
+    function fnLinkPage(pageIndex){
+        $('input[name="pageIndex"]').val(pageIndex);
+        $("#frm").attr("action", nowPageURL);
+        $("#frm").submit();
+    }
+</script>
+
+<!-- contents -->
+<div id="contents" class="stdProCont">
+
+<form id="frm" name="frm" method="post" action="/creditbank/stdPro/nStdPro1_1_5.do">
+	<input type="hidden" name="pageIndex" value="1" />
+	<input type="hidden" name="m_szYomokId" value="" />
+	<input type="hidden" name="m_szYomokName" value="" />
+	<input type="hidden" name="m_szType" value="C" />
+	<input type="hidden" name="m_szField" value="A" />
+	<input type="hidden" name="majorType" value="C" />
+	<input type="hidden" name="indexSearchYn" value="" />
+	<input type="hidden" name="indexWord" value="" />
+	<input type="hidden" name="m_szPageYN" value="" />
+
+	<!-- location -->
+	<div class="location">
+		<span class="home" title="홈">홈으로 이동</span>
+		<span>표준교육과정</span>
+		<span class="on">표준교육과정 조회</span>
+	</div>
+	<!-- //location -->
+
+	<h3 class="pgTit"><a href="javascript:history.go(-1);" class="prev">이전</a>표준교육과정 조회</h3>
+
+	<!-- 학사 > 과목명검색  -->
+	<div class="innerContView">
+
+		<p class="descTxt mb40">표준교육과정은 <span class="point">평가인정과 학점인정의 기준에 관한 사항을 학습자와 교육훈련기관에<br class="webOnly"> 안내</span>하기 위해 교육부장관이 고시하는 학점은행제 교육과정입니다.</p>
+
+		<!-- tab -->
+		<div class="tabWrap">
+			<ul class="tab">
+                <li >
+                    <a href="/creditbank/stdPro/nStdPro1_1.do"
+                       title="학사">학사</a>
+                </li>
+                <li >
+                    <a href="/creditbank/stdPro/nStdPro2_1.do"
+                       title="전문학사">전문학사</a>
+                </li>
+                <li class="active">
+                    <a href="/creditbank/stdPro/nStdPro3_1.do"
+                       title="교양(선택됨)">교양</a>
+                </li>
+                <li >
+                    <a href="/creditbank/stdPro/nStdPro4_1.do"
+                       title="전공교양 호환과목">전공교양 호환과목</a>
+                </li>
+                <li >
+                    <a href="/creditbank/stdPro/nStdPro5_1.do"
+                       title="국가무형유산">국가무형유산</a>
+                </li>
+            </ul>
+		</div>
+		<!--//tab -->
+
+		<h3 class="disn">교양</h3>
+
+		<!-- sub tab -->
+		<div class="subTabWrap">
+			<ul class="tab">
+				<li><a href="/creditbank/stdPro/nStdPro3_1.do" title="전공별" >전공별</a>
+				<li class="active"><a href="javascript:fnSearch();" title="과목명 (선택됨)">과목명</a></li>
+			</ul>
+			<!-- 과목명검색 검색 -->
+			<div class="subTabCon">
+				<h4 class="subTabTit">과목명</h4>
+				<fieldset>
+					<legend>과목명검색</legend>
+					<div class="searchCon">
+						<label class="disn" for="searchKeyword">과목명</label>
+						<input type="text" class="inTxt rs-w80" style="ime-mode:active;width:300px;" id="searchKeyword" name="searchKeyword" value="" onkeypress="if(event.keyCode == 13 ) {fnSearch(); return false; }" title="과목명 입력" placeholder="과목명 입력"/>
+						<a href="javascript:fnSearch();" class="sBtns02 sbtnSt03">
+							<span>검색</span>
+						</a>
+					</div>
+				</fieldset>
+			</div>
+			<!-- //과목명검색 검색 -->
+		</div>
+		<!-- //sub tab -->
+
+		<!-- listDateWrap01 -->
+		<div class="listDateWrap01">
+			<ul class="listDateR01 listDateHr">
+				
+					<li>
+						<div class="badgeWrap">
+							
+						</div>
+						<div class="nameBlock">
+							<dl>
+								<dt><a href="javascript:fnStd1_2_YomokInfo('19990025')">가정관리학의이해</a></dt>
+								<dd><span class="line">학점 : 3</span><span class="line">강의시간 : 3</span><span class="line">실습시간 : 0</span></dd>
+							</dl>
+						</div>
+						<div class="btnWrap">
+							<a href="javascript:fnStd1_2_YomokInfo('19990025')"><span class="tbtns"><span>교수<br />요목</span></span></a>
+							
+								<a href="javascript:fnStd1_3_OrgList('19990025','가정관리학의이해')"><span class="tbtns"><span>개설교육<br />훈련기관</span></span></a>
+							
+						</div>
+					</li>
+				
+					<li>
+						<div class="badgeWrap">
+							
+						</div>
+						<div class="nameBlock">
+							<dl>
+								<dt><a href="javascript:fnStd1_2_YomokInfo('19980058')">가족관계론</a></dt>
+								<dd><span class="line">학점 : 3</span><span class="line">강의시간 : 3</span><span class="line">실습시간 : 0</span></dd>
+							</dl>
+						</div>
+						<div class="btnWrap">
+							<a href="javascript:fnStd1_2_YomokInfo('19980058')"><span class="tbtns"><span>교수<br />요목</span></span></a>
+							
+								<a href="javascript:fnStd1_3_OrgList('19980058','가족관계론')"><span class="tbtns"><span>개설교육<br />훈련기관</span></span></a>
+							
+						</div>
+					</li>
+				
+					<li>
+						<div class="badgeWrap">
+							
+						</div>
+						<div class="nameBlock">
+							<dl>
+								<dt><a href="javascript:fnStd1_2_YomokInfo('19980151')">결혼과가족</a></dt>
+								<dd><span class="line">학점 : 3</span><span class="line">강의시간 : 3</span><span class="line">실습시간 : 0</span></dd>
+							</dl>
+						</div>
+						<div class="btnWrap">
+							<a href="javascript:fnStd1_2_YomokInfo('19980151')"><span class="tbtns"><span>교수<br />요목</span></span></a>
+							
+								<a href="javascript:fnStd1_3_OrgList('19980151','결혼과가족')"><span class="tbtns"><span>개설교육<br />훈련기관</span></span></a>
+							
+						</div>
+					</li>
+				
+					<li>
+						<div class="badgeWrap">
+							
+						</div>
+						<div class="nameBlock">
+							<dl>
+								<dt><a href="javascript:fnStd1_2_YomokInfo('19980171')">경영학개론</a></dt>
+								<dd><span class="line">학점 : 3</span><span class="line">강의시간 : 3</span><span class="line">실습시간 : 0</span></dd>
+							</dl>
+						</div>
+						<div class="btnWrap">
+							<a href="javascript:fnStd1_2_YomokInfo('19980171')"><span class="tbtns"><span>교수<br />요목</span></span></a>
+							
+								<a href="javascript:fnStd1_3_OrgList('19980171','경영학개론')"><span class="tbtns"><span>개설교육<br />훈련기관</span></span></a>
+							
+						</div>
+					</li>
+				
+					<li>
+						<div class="badgeWrap">
+							
+						</div>
+						<div class="nameBlock">
+							<dl>
+								<dt><a href="javascript:fnStd1_2_YomokInfo('19990510')">경제성공학</a></dt>
+								<dd><span class="line">학점 : 3</span><span class="line">강의시간 : 3</span><span class="line">실습시간 : 0</span></dd>
+							</dl>
+						</div>
+						<div class="btnWrap">
+							<a href="javascript:fnStd1_2_YomokInfo('19990510')"><span class="tbtns"><span>교수<br />요목</span></span></a>
+							
+								<a href="javascript:fnStd1_3_OrgList('19990510','경제성공학')"><span class="tbtns"><span>개설교육<br />훈련기관</span></span></a>
+							
+						</div>
+					</li>
+				
+					<li>
+						<div class="badgeWrap">
+							
+						</div>
+						<div class="nameBlock">
+							<dl>
+								<dt><a href="javascript:fnStd1_2_YomokInfo('19980174')">경제학개론</a></dt>
+								<dd><span class="line">학점 : 3</span><span class="line">강의시간 : 3</span><span class="line">실습시간 : 0</span></dd>
+							</dl>
+						</div>
+						<div class="btnWrap">
+							<a href="javascript:fnStd1_2_YomokInfo('19980174')"><span class="tbtns"><span>교수<br />요목</span></span></a>
+							
+								<a href="javascript:fnStd1_3_OrgList('19980174','경제학개론')"><span class="tbtns"><span>개설교육<br />훈련기관</span></span></a>
+							
+						</div>
+					</li>
+				
+					<li>
+						<div class="badgeWrap">
+							
+						</div>
+						<div class="nameBlock">
+							<dl>
+								<dt><a href="javascript:fnStd1_2_YomokInfo('19990035')">관광학개론</a></dt>
+								<dd><span class="line">학점 : 3</span><span class="line">강의시간 : 3</span><span class="line">실습시간 : 0</span></dd>
+							</dl>
+						</div>
+						<div class="btnWrap">
+							<a href="javascript:fnStd1_2_YomokInfo('19990035')"><span class="tbtns"><span>교수<br />요목</span></span></a>
+							
+								<a href="javascript:fnStd1_3_OrgList('19990035','관광학개론')"><span class="tbtns"><span>개설교육<br />훈련기관</span></span></a>
+							
+						</div>
+					</li>
+				
+					<li>
+						<div class="badgeWrap">
+							
+						</div>
+						<div class="nameBlock">
+							<dl>
+								<dt><a href="javascript:fnStd1_2_YomokInfo('19980318')">광고학</a></dt>
+								<dd><span class="line">학점 : 3</span><span class="line">강의시간 : 3</span><span class="line">실습시간 : 0</span></dd>
+							</dl>
+						</div>
+						<div class="btnWrap">
+							<a href="javascript:fnStd1_2_YomokInfo('19980318')"><span class="tbtns"><span>교수<br />요목</span></span></a>
+							
+								<a href="javascript:fnStd1_3_OrgList('19980318','광고학')"><span class="tbtns"><span>개설교육<br />훈련기관</span></span></a>
+							
+						</div>
+					</li>
+				
+					<li>
+						<div class="badgeWrap">
+							
+						</div>
+						<div class="nameBlock">
+							<dl>
+								<dt><a href="javascript:fnStd1_2_YomokInfo('19980337')">교육과정의이해</a></dt>
+								<dd><span class="line">학점 : 3</span><span class="line">강의시간 : 3</span><span class="line">실습시간 : 0</span></dd>
+							</dl>
+						</div>
+						<div class="btnWrap">
+							<a href="javascript:fnStd1_2_YomokInfo('19980337')"><span class="tbtns"><span>교수<br />요목</span></span></a>
+							
+								<a href="javascript:fnStd1_3_OrgList('19980337','교육과정의이해')"><span class="tbtns"><span>개설교육<br />훈련기관</span></span></a>
+							
+						</div>
+					</li>
+				
+					<li>
+						<div class="badgeWrap">
+							
+						</div>
+						<div class="nameBlock">
+							<dl>
+								<dt><a href="javascript:fnStd1_2_YomokInfo('19980336')">교육사회학</a></dt>
+								<dd><span class="line">학점 : 3</span><span class="line">강의시간 : 3</span><span class="line">실습시간 : 0</span></dd>
+							</dl>
+						</div>
+						<div class="btnWrap">
+							<a href="javascript:fnStd1_2_YomokInfo('19980336')"><span class="tbtns"><span>교수<br />요목</span></span></a>
+							
+								<a href="javascript:fnStd1_3_OrgList('19980336','교육사회학')"><span class="tbtns"><span>개설교육<br />훈련기관</span></span></a>
+							
+						</div>
+					</li>
+				
+			</ul>
+		</div>
+		<!-- //listDateWrap01 -->
+
+		<!-- Paging PC -->
+		<div class="pagingArea webOnly">
+			<div class="paging">
+				<a href="#" onclick="fnLinkPage(1); return false;" class="btnFirst">첫 페이지로 이동</a>&#160;<a href="#" onclick="fnLinkPage(1); return false;" class="btnPrev">이전 페이지 이동</a>&#160;<span class="current">1</span>&#160;<a href="#" onclick="fnLinkPage(2); return false;" class="num">2</a>&#160;<a href="#" onclick="fnLinkPage(3); return false;" class="num">3</a>&#160;<a href="#" onclick="fnLinkPage(4); return false;" class="num">4</a>&#160;<a href="#" onclick="fnLinkPage(5); return false;" class="num">5</a>&#160;<a href="#" onclick="fnLinkPage(6); return false;" class="num">6</a>&#160;<a href="#" onclick="fnLinkPage(7); return false;" class="num">7</a>&#160;<a href="#" onclick="fnLinkPage(8); return false;" class="num">8</a>&#160;<a href="#" onclick="fnLinkPage(9); return false;" class="num">9</a>&#160;<a href="#" onclick="fnLinkPage(10); return false;" class="num">10</a>&#160;<a href="#" onclick="fnLinkPage(11); return false;" class="btnNext">다음 페이지로 이동</a>&#160;<a href="#" onclick="fnLinkPage(12); return false;" class="btnLast">마지막 페이지로 이동</a>&#160;
+
+			</div>
+		</div>
+		<!-- //Paging PC -->
+
+		<!-- Paging Mobile -->
+		<div class="pagingArea onlyMobile">
+			<div class="paging">
+				<a href="#" onclick="fnLinkPage(1); return false;" class="btnFirst">첫 페이지로 이동</a>&#160;<a href="#" onclick="fnLinkPage(1); return false;" class="btnPrev">이전 페이지 이동</a>&#160;<span class="current">1</span>&#160;<a href="#" onclick="fnLinkPage(2); return false;" class="num">2</a>&#160;<a href="#" onclick="fnLinkPage(3); return false;" class="num">3</a>&#160;<a href="#" onclick="fnLinkPage(4); return false;" class="btnNext">다음 페이지로 이동</a>&#160;<a href="#" onclick="fnLinkPage(12); return false;" class="btnLast">마지막 페이지로 이동</a>&#160;
+
+			</div>
+		</div>
+		<!-- //Paging Mobile -->
+
+	</div>
+	<!--//학사 > 과목명검색  -->
+
+</form>
+</div>
+<!-- //contents -->
+
+			
+				<!-- RNB -->
+		   		
+
+
+
+
+
+
+
+<!-- 2022.07.04 추가 -->
+<script>
+	$(document).ready(function() { //초기실행
+		$('.quickArea2').css('display', 'block');
+	});
+</script>
+
+<!-- 퀵메뉴 -->
+<div class="quickArea2">
+	<div class="quickMenu2">
+		<h4 class="tit">Quick Menu</h4>
+		<ul>
+			<li>
+				<a href="javascript:setWebAccessLog('/creditbank/info/nInfo5_1.do', '사이트맵|이용안내|학점은행', '', '4');">
+					<img src="/nrsc/images/common/ico_quickmenu_all.png" alt="전체 메뉴" ><br>
+					<span class="name">전체 메뉴</span>
+				</a>
+			</li>
+			<li>
+				<a href="javascript:setWebAccessLog('/creditbank/stdPro/nStdPro1_1.do', '학사|표준교육과정 조회|표준교육과정|학점은행', '', '4');">
+					<img src="/nrsc/images/common/ico_quickmenu_major.png" alt="전공 검색" ><br>
+					<span class="name">전공 검색</span>
+				</a>
+			</li>
+			<!-- li>
+				<a href="/creditbank/impartion/nImpartion2_List.do?m_szType=6">
+					<img src="/nrsc/images/common/ico_quickmenu_chatbot.svg" title="자격학점기준" /><br/>
+					<span class="name">자격<br/>학점기준</span>
+				</a>
+			</li -->
+			<li>
+				<a href="javascript:setWebAccessLog('/creditbank/myPage/nMyPage2_1.do', '학적부 조회|마이페이지|학점은행', '', '4');">
+					<img src="/nrsc/images/common/ico_quickmenu_mypage.png" alt="마이페이지" ><br>
+					<span class="name">마이페이지</span>
+				</a>
+			</li>
+			<li>
+				<a href="javascript:setWebAccessLog('https://www.youtube.com/playlist?list=PLjtQcRUOl5cJ8yJ96exvaqbXQqGMu6B0y', '안내영상|학점은행', 'popup', '4');" title="새창 열림">
+					<img src="/nrsc/images/common/ico_quickmenu_play.png" alt="영상가이드" ><br>
+					<span class="name">영상가이드</span>
+				</a>
+			</li>
+			<li>
+				<a href="javascript:setWebAccessLog('/creditbank/impartion/nImpartion2_List.do?m_szType=1', '자료실|알림마당|학점은행', '', '4');">
+					<img src="/nrsc/images/common/ico_quickmenu_form.png" alt="각종신청양식" ><br>
+					<span class="name">신청양식</span>
+				</a>
+			</li>
+			<!-- li>
+				<a href="/creditbank/member/nMember3_1.do">
+					<img src="/nrsc/images/common/ico_quickmenu_chatbot.svg" title="로그인" /><br/>
+					<span class="name">로그인</span>
+				</a>
+			</li -->
+			<li>
+				<a href="javascript:setWebAccessLog('https://pf.kakao.com/_GGbxlxb', '챗봇 상담|학점은행', 'popup', '4');" title="새창 열림">
+					<img src="/nrsc/images/common/ico_quickmenu_chatbot.png" alt="챗봇 상담" ><br>
+					<span class="name">챗봇 상담</span>
+				</a>
+			</li>
+			<li>
+				<a href="javascript:setWebAccessLog('/apl/lecture/lecturerMain.do', '교강사 교육기관 및 학습과정 확인 절차 | 학점은행', 'popup', '4');" title="새창 열림">
+					<img src="/nrsc/images/common/ico_quickmenu_teacher.png" alt="교강사 교육기관 및 학습과정 확인 절차" ><br>
+					<span class="name">교·강사<br/>정보 확인</span>
+				</a>
+			</li>
+			<li>
+				<a href="javascript:setWebAccessLog('https://www.privacy.go.kr', '정보주체 권리행사|학점은행', 'popup', '4');" title="새창 열림">
+					<img src="/nrsc/images/common/ico_quickmenu_privacy.jpg" alt="정보주체 권리행사" ><br>
+					<span class="name">정보주체<br/>권리행사</span>
+				</a>
+			</li>
+		</ul>
+	</div>
+</div>
+<!-- //퀵메뉴 -->
+
+			
+
+	   		<a href="#" class="btnTop">상단으로 이동</a>
+	   	</div>
+	   	<!-- container -->
+
+		
+
+<script>
+	function goLink(idx){
+		var obj;
+		if(idx == 0) {				// 패밀리 사이트
+			obj = "#family";
+		} else if(idx == 1) {		// 관련 사이트
+			obj = "#related";
+		} else {
+			return;
+		}
+
+		linkUrl = jQuery(obj).find('option:selected').val();
+		if(!linkUrl){
+			alert("이동하고자 하는 주소를 선택하세요");
+		}else{
+			window.open (linkUrl, "","toolbar=1,location=1,status=1,menubar=1,scrollbars=1,resizable=1");
+		};
+	};
+</script>
+
+
+<!-- footer -->
+
+<div id="footer">
+    <hr>
+    <!-- footerArea -->
+    <div class="footerArea">
+        <div class="footerUtil">
+            <a href="/creditbank/info/nInfo1_1.do">구성 및 연락처</a>
+            <a href="/creditbank/info/nInfo2_1.do">시도교육청</a>
+            <a href="/creditbank/info/nInfo3_1.do">이용약관</a><br>
+            <a href="/creditbank/info/nInfo4_1.do" class="privacy">개인정보처리방침</a>
+            <a href="/creditbank/info/nInfo6_1.do">오시는 길</a>
+        </div>
+        <p class="callCenter">학습자 콜센터 <a href="tel:1600-0400"><strong>1600-0400</strong></a></p>
+        <!-- 관련사이트 -->
+        <div class="siteLinkArea">
+            <span class="selectboxWrap">
+                <label for="family" class="disn">패밀리사이트 선택</label>
+                <select class="select selectBg" id="family" title="패밀리사이트 선택">
+                    <option value="" selected="selected">패밀리사이트</option>
+                    <option value="https://www.nile.or.kr/">NILE 홈페이지</option>
+                    <option value="http://www.kmooc.kr">K-MOOC</option>
+                    <option value="http://le.or.kr">국가문해교육센터</option>
+<!--                     <option value="http://www.lifelongedu.go.kr">국가평생학습포털(늘배움)</option> -->
+                    <option value="http://univ.nile.or.kr">대학의 평생교육체제지원</option>
+                    <option value="https://bdes.nile.or.kr/">독학학위제</option>
+                    <option value="http://www.matchup.kr">매치업(Match業)</option>
+                    <option value="https://www.parents.go.kr/">전국학부모지원센터</option>
+                    <option value="https://www.edu4mc.or.kr">중앙다문화교육센터</option>
+                    <option value="https://lllcard.kr">평생교육바우처</option>
+                    <option value="https://lledu.nile.or.kr">평생교육사 자격관리</option>
+                    <option value="https://www.all.go.kr">온국민평생배움터</option>
+                </select>
+            </span>
+            <a href="javascript:goLink(0);" class="sBtns sbtnSt01 ml5" title="새 창으로 열림" ><span>이동</span></a>
+            <span class="selectboxWrap">
+                <label for="related" class="disn">관련사이트 선택</label>
+                <select class="select selectBg" id="related" title="관련사이트 선택">
+                    <option value="" selected="selected">관련사이트</option>
+                    <option value="http://www.moe.go.kr/">교육부</option>
+                    
+                    <option value="http://www.acrc.go.kr/">국민권익위원회 부패신고상담</option>
+                </select>
+            </span>
+            <a href="javascript:goLink(1);" class="sBtns sbtnSt01 ml5" title="새 창으로 열림" ><span>이동</span></a>
+        </div>
+        <!-- //관련사이트 -->
+        <!-- copyright -->
+        <p class="copyright">
+            국가평생교육진흥원 / 사업자등록번호 : 107-82-12593 / <span class="center">고객센터 : 1600-0400</span><br>
+            (07800) 서울시 강서구 마곡중앙로 105-7(K스퀘어 마곡 타워1)<br>
+            Copyright(C)NILE. All rights reserved.<br>
+        </p>
+        <!-- //copyright -->
+        <a href="http://www.webwatch.or.kr/Situation/WA_Situation.html?MenuCD=110" target="_blank" title="새창 열림" class="webMark">
+        <img src="/nrsc/images/common/WA_mark.png" alt="과학기술정보통신부 WA(WEB접근성) 품질인증 마크,웹와치(WebWatch) 2026.3.8 ~ 2027.3.7"
+        title="WA 품질인증 마크, 웹와치(WebWatch) 2026.3.8 ~ 2027.3.7">
+        </a>
+    </div>
+    <!-- //footerArea -->
+</div>
+
+
+<!-- //footer -->
+	</div>
+</body>
+</html>

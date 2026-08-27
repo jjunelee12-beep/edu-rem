@@ -532,11 +532,8 @@ function validateCurriculumSubjects(
   }
 
 
-  const normalizedNames =
-    new Set<string>();
-
   const sortOrders =
-    new Set<number>();
+  new Set<number>();
 
 
   for (
@@ -597,38 +594,6 @@ function validateCurriculumSubjects(
         }
       );
     }
-
-
-    if (
-      normalizedNames.has(
-        normalized
-      )
-    ) {
-      pushIssue(
-        issues,
-        {
-          level:
-            "error",
-
-          code:
-            "DUPLICATE_SUBJECT_NAME_IN_CURRICULUM",
-
-          message:
-            `동일 전공 내 중복 과목입니다: ${name}`,
-
-          curriculumKey:
-            key,
-
-          subjectName:
-            name,
-        }
-      );
-    }
-
-    normalizedNames.add(
-      normalized
-    );
-
 
     if (
       subject
