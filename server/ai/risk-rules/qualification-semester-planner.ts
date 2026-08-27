@@ -1431,17 +1431,42 @@ const baseDateSemesterLabel =
     string[] =
     [];
 
-  const unresolvedReasons:
+    const unresolvedReasons:
     string[] =
     [];
+
+  /**
+   * 과목계획 전체가 확정되지 않았더라도
+   * 학위 채움용 과목만 부족한 경우에는
+   * 학기/예상기간 계산을 계속 진행할 수 있다.
+   *
+   * 예:
+   * DEGREE_FILL_TEMPLATE_SHORTAGE
+   * → 자격 필수과목은 확정
+   * → 학위 교양 3학점의 실제 과목명만 미정
+   */
+  const subjectPlanUnresolved =
+    params.subjectPlan
+      .unresolvedRequirements ||
+    [];
+
+  const canEstimateWithDegreeFillPlaceholder =
+    !params.subjectPlan.canPlan &&
+    subjectPlanUnresolved.length >
+      0 &&
+    subjectPlanUnresolved.every(
+      issue =>
+        issue.code ===
+        "DEGREE_FILL_TEMPLATE_SHORTAGE"
+    );
 
   /**
    * 과목 Planner 자체가 확정되지 않았다면
    * 학기배치를 진행하지 않는다.
    */
-  if (
-    !params.subjectPlan
-      .canPlan
+    if (
+    !params.subjectPlan.canPlan &&
+    !canEstimateWithDegreeFillPlaceholder
   ) {
     return {
       canPlan:
@@ -1485,11 +1510,231 @@ semesters:
     };
   }
 
-  const subjects =
-    sortSubjectsForSemesterPlanning(
+  /**
+ * 실제 과목계획은 그대로 보존하고,
+ * 학기/기간 계산에서만 학위 부족학점을
+ * 가상 과목으로 보완한다.
+ *
+ * 중요:
+ * 이 placeholder는 subjectPlan.selectedSubjects에는
+ * 저장하지 않는다.
+ *
+ * 따라서 실제 추천과목/DB에는 영향을 주지 않고
+ * 학기 수와 예상 종료일 계산에만 사용된다.
+ */
+const semesterPlanningSubjects:
+  QualificationPlannedSubject[] =
+  [
+    ...(
       params.subjectPlan
-        .selectedSubjects
+        .selectedSubjects ||
+      []
+    ),
+  ];
+
+if (
+  canEstimateWithDegreeFillPlaceholder
+) {
+  const degreeFillRemaining =
+    params.subjectPlan
+      .degreeFillRemaining;
+
+  const remainingMajorCredits =
+    Math.max(
+      toNumber(
+        degreeFillRemaining
+          .majorCredits
+      ),
+      0
     );
+
+  const remainingLiberalCredits =
+    Math.max(
+      toNumber(
+        degreeFillRemaining
+          .liberalCredits
+      ),
+      0
+    );
+
+  const remainingTotalCredits =
+    Math.max(
+      toNumber(
+        degreeFillRemaining
+          .totalCredits
+      ),
+      0
+    );
+
+  /**
+   * 전공/교양 부족학점은 동시에
+   * 총학점도 충족하므로 중복 계산하지 않는다.
+   *
+   * 예:
+   * 총학점 6 / 교양 3 부족
+   * → 교양 3 + 일반 3
+   *
+   * 총학점 0 / 교양 3 부족
+   * → 교양 3만 추가
+   */
+  const categoryRequiredCredits =
+    remainingMajorCredits +
+    remainingLiberalCredits;
+
+  const remainingGeneralCredits =
+    Math.max(
+      remainingTotalCredits -
+        categoryRequiredCredits,
+      0
+    );
+
+  let placeholderSequence =
+    1;
+
+  const appendPlaceholderSubjects =
+    (
+      credits:
+        number,
+
+      category:
+        "전공" |
+        "교양" |
+        "일반",
+
+      requirementType:
+        "전공선택" |
+        "교양" |
+        "일반",
+
+      reason:
+        QualificationPlannedSubject[
+          "reasons"
+        ][number],
+
+      degreeMajor:
+        boolean
+    ) => {
+      let remainingCredits =
+        Math.max(
+          credits,
+          0
+        );
+
+      while (
+        remainingCredits >
+        0
+      ) {
+        const subjectCredits =
+          Math.min(
+            3,
+            remainingCredits
+          );
+
+        semesterPlanningSubjects.push({
+          source:
+            "degree_template",
+
+          masterItemId:
+            null,
+
+          catalogId:
+            null,
+
+          templateId:
+            null,
+
+          subjectName:
+            `학위 ${category} 미정(기간계산용 ${placeholderSequence})`,
+
+          requirementType,
+
+          category,
+
+          credits:
+            subjectCredits,
+
+          isFaceToFace:
+            false,
+
+          reasons: [
+            reason,
+          ],
+
+          satisfies: {
+            qualification:
+              false,
+
+            degreeMajor,
+
+            faceToFace:
+              false,
+
+            practice:
+              false,
+
+            slot:
+              null,
+
+            area:
+              null,
+          },
+        });
+
+        placeholderSequence +=
+          1;
+
+        remainingCredits =
+          Math.max(
+            remainingCredits -
+              subjectCredits,
+            0
+          );
+      }
+    };
+
+  appendPlaceholderSubjects(
+    remainingMajorCredits,
+    "전공",
+    "전공선택",
+    "degree_major_credit",
+    true
+  );
+
+  appendPlaceholderSubjects(
+    remainingLiberalCredits,
+    "교양",
+    "교양",
+    "degree_liberal_credit",
+    false
+  );
+
+  appendPlaceholderSubjects(
+    remainingGeneralCredits,
+    "일반",
+    "일반",
+    "degree_total_credit",
+    false
+  );
+
+  const placeholderCredits =
+    remainingMajorCredits +
+    remainingLiberalCredits +
+    remainingGeneralCredits;
+
+  if (
+    placeholderCredits >
+    0
+  ) {
+    warnings.push(
+      `학위과목명이 아직 확정되지 않은 ${placeholderCredits}학점은 학습기간 계산용 임시 과목으로 반영했습니다. 실제 수강과목 확정 시 다시 검증해야 합니다.`
+    );
+  }
+}
+
+const subjects =
+  sortSubjectsForSemesterPlanning(
+    semesterPlanningSubjects
+  );
 
   /**
    * 추가로 들어야 할 과목이 없다면
