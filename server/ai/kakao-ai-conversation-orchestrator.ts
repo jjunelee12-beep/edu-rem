@@ -4653,11 +4653,95 @@ if (
 
     callbackRequest,
 
-    registrationVerification:
-      null,
+        responseComposition: {
+      success:
+        true,
 
-    responseComposition:
-      null,
+      replyText:
+        serverActionReplyText,
+
+      usedContextTypes:
+        [],
+
+      mentionedRestriction:
+        false,
+
+      askedClarification:
+        false,
+
+      consultationFlowPatch: {
+        qualificationExplained:
+          false,
+
+        durationExplained:
+          false,
+
+        theoryExplained:
+          false,
+
+        practicumExplained:
+          false,
+
+        administrationExplained:
+          false,
+
+        companyBenefitsExplained:
+          false,
+
+        staffRecommendationOffered:
+          staffAction?.action ===
+            "recommend" &&
+          staffAction.success ===
+            true,
+
+        consultationFormOffered:
+          leadRegistration?.reason ===
+            "REQUIRED_INFORMATION_MISSING" ||
+          leadRegistration?.reason ===
+            "CONFIRMATION_REQUIRED" ||
+          leadRegistration?.created ===
+            true,
+
+        trustExplained:
+          false,
+
+        courseOverviewExplained:
+          false,
+
+        theoryDetailExplained:
+          false,
+
+        practicumDetailExplained:
+          false,
+
+        administrationDetailExplained:
+          false,
+
+        certificateExplained:
+          false,
+
+        certificateDetailExplained:
+          false,
+
+        companyBenefitsDetailExplained:
+          false,
+
+        staffDetailExplained:
+          false,
+      },
+
+      openAiResponseId:
+        null,
+
+      model:
+        null,
+
+      fallbackUsed:
+        false,
+
+      errorMessage:
+        null,
+    },
   };
 }
 
