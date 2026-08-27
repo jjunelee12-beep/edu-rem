@@ -1957,6 +1957,16 @@ degreeClassificationBySubjectKey:
   >;
   }
 ) {
+console.log("[DEGREE FILL ENTER]", {
+  templateCount: params.templates?.length ?? 0,
+  remainingTotal:
+    params.requirements.degree.remainingTotalCredits,
+  remainingMajor:
+    params.requirements.degree.remainingMajorCredits,
+  remainingLiberal:
+    params.requirements.degree.remainingLiberalCredits,
+});
+
   let remainingTotal =
     Math.max(
       toNumber(
