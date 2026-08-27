@@ -3518,7 +3518,8 @@ if (
 if (
   customer.customerType ===
     "lead" &&
-  resolvedContext.leadFlowConfig
+  resolvedContext.leadFlowConfig &&
+  hasServerActionStateChange
 ) {
   const leadFlowFacts =
     buildKakaoAiLeadFlowFacts({
@@ -4480,17 +4481,52 @@ if (
 }
 
 /**
+ * 상담접수 의사가 있지만
+ * 아직 담당자가 선택되지 않은 경우.
+ *
+ * 이 경우에만 다음 턴을 STAFF 단계로
+ * 준비할 필요가 있다.
+ */
+const shouldForceStaffRecommendation =
+  leadRegistration?.handled ===
+    true &&
+  leadRegistration.reason ===
+    "STAFF_NOT_SELECTED";
+
+/**
+ * 상담 Flow를 다시 계산해야 할
+ * 실제 서버 Action 결과가 있었는지 확인한다.
+ *
+ * 일반적인 TRUST / OVERVIEW / THEORY /
+ * PRACTICUM / ADMINISTRATION / BENEFITS
+ * 설명 턴에는 2차 평가를 실행하지 않는다.
+ *
+ * 이유:
+ * 한 사용자 메시지는 상담단계 하나만 진행해야 한다.
+ */
+const hasServerActionStateChange =
+  Object.keys(
+    serverActionConsultationFlowPatch
+  ).length >
+    0 ||
+  shouldForceStaffRecommendation;
+
+/**
  * =========================================================
  * Lead Flow - 서버 Action 이후 2차 평가
  * =========================================================
  *
- * 담당자 선택 / 상담접수 / 콜백 등의 실제 결과를
- * facts에 포함하여 Flow를 다시 계산한다.
+ * 이 평가는 현재 사용자 메시지를 다시 소비하는 용도가 아니다.
+ *
+ * 실제 Staff / Consultation / Callback Action으로
+ * 서버 상태가 바뀐 경우에만
+ * "다음 사용자 메시지에서 시작할 상태"를 준비한다.
  */
 if (
   customer.customerType ===
     "lead" &&
-  resolvedContext.leadFlowConfig
+  resolvedContext.leadFlowConfig &&
+  hasServerActionStateChange
 ) {
   const postActionFacts =
     buildKakaoAiLeadFlowFacts({
@@ -4509,12 +4545,6 @@ if (
 
       callbackRequest,
     });
-
-  const shouldForceStaffRecommendation =
-  leadRegistration?.handled ===
-    true &&
-  leadRegistration.reason ===
-    "STAFF_NOT_SELECTED";
 
 const availableStaffStage =
   resolvedContext
@@ -4555,10 +4585,7 @@ const postActionCurrentStageId =
         .salesStage;
 
 const postActionSemanticDecision =
-  shouldForceStaffRecommendation &&
-  availableStaffStage
-    ? null
-    : leadFlowSemanticDecision;
+  null;
 
 const postActionFlowEvaluation =
   evaluateKakaoAiLeadFlow({
@@ -4671,9 +4698,6 @@ const postActionFlowEvaluation =
           postActionFlowPatch,
       });
   }
-
-  leadFlowEvaluation =
-    postActionFlowEvaluation;
 }
 
 tracePerf(
