@@ -4557,28 +4557,105 @@ tracePerf(
 
 
 
+const serverActionReplyText =
+  String(
+    callbackRequest
+      ?.replyText ||
+    leadRegistration
+      ?.replyText ||
+    ""
+  ).trim();
+
+/**
+ * Lead Registration / Callback이 실제 사용자 응답문을
+ * 반환한 경우에만 Composer를 건너뛴다.
+ *
+ * handled=true라도 replyText가 비어 있으면
+ * 여기서 return하지 않고 아래 Response Composer로 진행한다.
+ */
 if (
-  leadRegistration?.handled ||
-  callbackRequest?.handled
+  (
+    leadRegistration?.handled ||
+    callbackRequest?.handled
+  ) &&
+  serverActionReplyText
 ) {
-  const replyText =
-    String(
-      callbackRequest
-        ?.replyText ||
-      leadRegistration
-        ?.replyText ||
-      ""
-    ).trim();
+  const assistantMessage =
+    await db.insertKakaoAiMessage({
+      organizationId,
+
+      conversationId,
+
+      role:
+        "assistant",
+
+      messageType:
+        "text",
+
+      content:
+        serverActionReplyText,
+
+      kakaoMessageId:
+        null,
+
+      attachmentData:
+        undefined,
+    });
+
+  const responseMessageId =
+    Number(
+      assistantMessage.id ||
+      0
+    );
 
   if (
-    replyText
+    userMessageId >
+      0 &&
+    responseMessageId >
+      0 &&
+    params.kakaoMessageId
   ) {
-    // 메시지 저장
+    await db.markKakaoAiResponseReady({
+      organizationId,
+
+      userMessageId,
+
+      responseMessageId,
+    });
   }
 
-  // ← replyText 없어도 여기서 무조건 return
   return {
-    ...
+    organizationId,
+
+    conversationId,
+
+    duplicateMessage:
+      false,
+
+    customer,
+
+    previousMemoryContext,
+
+    memoryExtraction,
+
+    memoryWrite,
+
+    currentMemory,
+
+    intentClassification,
+
+    resolvedContext:
+      finalResolvedContext,
+
+    staffAction,
+
+    leadRegistration,
+
+    callbackRequest,
+
+    registrationVerification:
+      null,
+
     responseComposition:
       null,
   };
