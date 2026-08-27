@@ -49924,7 +49924,28 @@ export async function updateStaffRecommendationManagement(
   });
 
   const values:
-    Record<string, any> = {};
+  Record<string, any> = {};
+
+/**
+ * Host가 담당자를 AI 추천 대상으로 활성화하면
+ * 공개 프로필도 함께 활성화한다.
+ *
+ * 추천 엔진은
+ * isActive = true
+ * recommendationEnabled = true
+ * acceptingNewConsultations = true
+ * 조건을 모두 요구하므로,
+ * recommendationEnabled만 true로 저장하면
+ * 신규 생성 프로필(isActive=false)은 추천 후보에 들어갈 수 없다.
+ */
+if (
+  params.values
+    .recommendationEnabled ===
+  true
+) {
+  values.isActive =
+    true;
+}
 
   if (
     params.values
