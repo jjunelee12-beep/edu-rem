@@ -4561,15 +4561,6 @@ if (
   leadRegistration?.handled ||
   callbackRequest?.handled
 ) {
-  /**
-   * Callback까지 실제 저장되었다면
-   * Callback 결과가 더 최종적인 실행결과이므로
-   * 해당 응답을 우선 사용한다.
-   *
-   * Callback이 저장되지 않았거나
-   * Callback 요청 자체가 아니었다면
-   * Lead Registration 응답을 사용한다.
-   */
   const replyText =
     String(
       callbackRequest
@@ -4582,81 +4573,12 @@ if (
   if (
     replyText
   ) {
-    const assistantMessage =
-      await db.insertKakaoAiMessage({
-        organizationId,
-
-        conversationId,
-
-        role:
-          "assistant",
-
-        messageType:
-          "text",
-
-        content:
-          replyText,
-
-        kakaoMessageId:
-          null,
-
-        attachmentData:
-          undefined,
-      });
-
-    const responseMessageId =
-      Number(
-        assistantMessage.id ||
-        0
-      );
-
-    if (
-      userMessageId > 0 &&
-      responseMessageId > 0 &&
-      params.kakaoMessageId
-    ) {
-      await db.markKakaoAiResponseReady({
-        organizationId,
-
-        userMessageId,
-
-        responseMessageId,
-      });
-    }
+    // 메시지 저장
   }
 
+  // ← replyText 없어도 여기서 무조건 return
   return {
-    organizationId,
-
-    conversationId,
-
-    duplicateMessage:
-      false,
-
-    customer,
-
-    previousMemoryContext,
-
-    memoryExtraction,
-
-    memoryWrite,
-
-    currentMemory,
-
-    intentClassification,
-
-    resolvedContext:
-      finalResolvedContext,
-
-    staffAction,
-
-    leadRegistration,
-
-    callbackRequest,
-
-    registrationVerification:
-      null,
-
+    ...
     responseComposition:
       null,
   };
