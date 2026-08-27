@@ -48259,12 +48259,7 @@ console.log(
           eq(
             staffPublicProfiles.isActive,
             true
-          ),
-
-          eq(
-            staffPublicProfiles.recommendationEnabled,
-            true
-          ),
+          ), 
 
           eq(
             staffPublicProfiles.acceptingNewConsultations,
