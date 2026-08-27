@@ -3518,8 +3518,7 @@ if (
 if (
   customer.customerType ===
     "lead" &&
-  resolvedContext.leadFlowConfig &&
-  hasServerActionStateChange
+  resolvedContext.leadFlowConfig
 ) {
   const leadFlowFacts =
     buildKakaoAiLeadFlowFacts({
