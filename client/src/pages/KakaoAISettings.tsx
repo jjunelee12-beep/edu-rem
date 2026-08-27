@@ -208,10 +208,10 @@ const LEAD_FLOW_STAGE_DEFINITIONS:
     ],
 
     purpose:
-      "신규상담 초기에 상담 근거와 사람 담당자 중심의 관리방식을 짧게 설명하고 개인별 과정 안내로 연결한다.",
+  "신규상담 초기에 고객의 희망과정에 맞는 개인별 학습설계를 위해 최종학력 등 필요한 기본조건을 먼저 확인하고, 조건이 확인된 뒤 전체 과정 안내로 연결한다.",
 
-           summaryGuidance:
-      "현재 고객의 질문에 먼저 짧게 답한다. 신규상담의 첫 기본안내에서는 이 상담이 국가평생교육진흥원 학점은행제 기준을 반영한 서버 학습설계 엔진과 실제 확인된 고객정보를 바탕으로 진행된다는 점을 자연스럽게 안내한다. AI가 고객을 혼자 관리한다고 표현하지 말고, 실제 담당자가 상담과 학습진행을 관리하며 AI가 학습설계 결과 확인, 일정 누락 및 위험요소 점검, 조회와 서류업무를 보조하는 구조라고 설명한다. 첫 안내에서는 과목 수, 총 학점, 실습시간, 예상 종료일 같은 세부 숫자를 먼저 나열하지 않는다. 특히 최종학력이 아직 확인되지 않았다면 개인별 학위경로와 기간을 확정해서 설명하지 말고, 반드시 답변 마지막에 '정확한 진행과정을 확인하기 위해 최종학력이 어떻게 되실까요? 고졸 / 전문대졸 / 4년제졸 중 말씀해주세요.'라는 취지로 최종학력을 먼저 질문한다. 첫 안내는 2~4문장 정도로 간략하게 하고 같은 신뢰문구를 이후 답변마다 반복하지 않는다.",
+       summaryGuidance:
+  "현재 고객의 질문에 먼저 짧게 답한다. 아직 memory.finalEducation이 확인되지 않았다면 개인별 기간, 학기 수, 과목 수, 필요학점, 실습시간, 예상 종료일, 자격증 신청 예상시점을 먼저 설명하지 않는다. 국가평생교육진흥원 기준엔진이나 담당자·AI 관리방식에 대한 신뢰설명도 이 단계에서는 길게 설명하지 않는다. 정확한 개인별 학습설계를 위해 최종학력을 먼저 확인한다. 최종학력이 없다면 답변 마지막에 '정확한 진행기간을 확인하기 위해 최종학력이 어떻게 되실까요? 고졸 / 전문대졸 / 4년제졸 중 말씀해주세요.'라는 취지로 질문하고 이번 답변은 여기서 끝낸다. 이미 최종학력이 확인되어 있다면 같은 질문을 반복하지 않고 개인별 전체 과정 안내로 연결한다.",
 
     detailGuidance:
       null,
@@ -219,8 +219,8 @@ const LEAD_FLOW_STAGE_DEFINITIONS:
     detailFollowupGuidance:
       null,
 
-    choiceGuidance:
-      "상담방식 안내는 이미 완료됐다. 같은 소개를 반복하지 않고 고객의 최종학력과 희망과정 등 필요한 조건을 확인하여 개인별 과정 안내로 진행한다.",
+   choiceGuidance:
+  "최종학력이 아직 확인되지 않았다면 다른 상담단계로 넘어가지 않고 최종학력 확인을 우선한다. 최종학력이 확인된 상태라면 같은 질문을 반복하지 않고 개인별 전체 과정 안내로 연결한다.",
 
     choiceAfterDetailGuidance:
       null,
@@ -261,14 +261,15 @@ const LEAD_FLOW_STAGE_DEFINITIONS:
       null,
 
     contentKeys: [
-      "leadAcademicContext",
-    ],
+  "leadAcademicContext",
+  "companyContext",
+],
 
     purpose:
       "고객 개인조건에 맞는 전체 학습흐름을 이해시키고 세부 진행단계로 연결한다.",
 
     summaryGuidance:
-  "Academic Context에서 확인된 고객의 최종학력과 개인조건을 기준으로 전체 진행흐름을 핵심만 간단히 설명한다. 고객에게 필요한 학기 수, 대략적인 진행기간, 이론수업과 실습이 포함된다는 정도를 우선 안내한다. 총 51학점처럼 고객 상담에 불필요한 학점 합계는 먼저 말하지 않는다. 과목 수나 실습시간도 현재 질문에 꼭 필요한 경우 또는 고객이 직접 물어본 경우에만 설명한다. 서버가 확정하지 못한 학위경로, 종료일, 행정일정은 추측하지 않는다. 안내 후에는 다음 세부 단계로 자연스럽게 이어간다.",
+  "최종학력이 확인된 고객에게 개인별 전체 과정 결과를 간단히 안내한다. leadAcademicContext.academicSummary의 서버 계산값만 사용한다. 학기 수는 studyPlan.semesterCount, 예상 소요기간은 studyPlan.nominalDurationMonths, 자격증 신청 예상시점은 timeline.qualificationEstimatedDate 또는 qualificationMessage에서 확인한다. 기본 안내는 '[최종학력] 기준으로 확인해보면 국가평생교육진흥원 학점은행제 기준엔진으로 현재 설계상 [학기 수]학기, 약 [개월 수]개월 정도 소요될 것으로 예상됩니다. 자격증 신청 예상 시점은 [서버 계산 자격증 신청시점]입니다.'라는 취지로 자연스럽게 안내한다. 새로운 학위과정이 필요한 경우에는 전문학사 또는 학사과정을 함께 진행한다는 사실을 필요한 범위에서 짧게 덧붙인다. 일반적인 첫 개인설계 안내에서는 총 51학점, 총 과목 수, 실습시간, 학습 종료일, 학점인정 신청일 같은 세부 숫자와 중간 행정일정을 먼저 나열하지 않는다. 해당 정보는 고객이 직접 물어본 경우에만 설명한다. 회사 Context에 실제 관리내용이 존재하면 실제 담당자가 전체 진행을 관리하고 AI가 일정·누락·위험요소 등을 함께 확인하는 방식이라는 점을 한 문장 정도로 안내한다. 마지막에는 다음 세부 단계인 이론수업 진행방식을 간단히 안내할지 자연스럽게 묻는다.",
 
     detailGuidance:
       null,
@@ -1076,24 +1077,46 @@ function buildLeadFlowConfig(
    * 학력 미확정 상태의 잘못된 과정계산을 방지한다.
    */
   if (
-    stage.id ===
-      "TRUST"
-  ) {
-    continueNextConditions.push({
+  stage.id ===
+    "TRUST"
+) {
+  continueNextConditions.push(
+    {
       path:
         "memory.finalEducation",
 
       operator:
         "truthy",
-    });
-  }
+    },
+    {
+      path:
+        "memory.desiredCourse",
+
+      operator:
+        "truthy",
+    }
+  );
+}
+
+if (
+  stage.id ===
+    "STAFF"
+) {
+  continueNextConditions.push({
+    path:
+      "memory.selectedStaffUserId",
+
+    operator:
+      "truthy",
+  });
+}
 
   transitions.push({
     whenSemantic:
       "continue_next",
 
     semanticDescription:
-      "고객이 현재 단계의 기본안내를 실제로 확인했고 다음 상담단계로 진행하려고 한다. 직전 assistant가 현재 단계 안내를 완료한 뒤 다음 진행을 제안했고, 사용자가 별도의 상세질문 없이 '네', '예', '좋아요', '계속해주세요', '그다음요'처럼 긍정하거나 계속 진행 의사를 보이는 경우를 포함한다.",
+  "고객이 현재 단계의 안내를 확인하고 다음 상담단계로 진행할 수 있는 상태가 되었다. 직전 assistant가 다음 단계 진행을 위해 필요한 정보를 직접 질문했고 사용자가 그 정보를 명확하게 제공한 경우도 포함한다. 또한 직전 assistant가 현재 단계 안내 후 다음 진행을 제안했고 사용자가 별도의 상세질문 없이 '네', '예', '좋아요', '계속해주세요', '그다음요'처럼 긍정하거나 계속 진행 의사를 보이는 경우도 포함한다. 단 실제 다음 단계 이동에 필요한 정보가 충족되었는지는 transition의 when 조건을 기준으로 한다.",
 
     when: {
       mode:
@@ -1389,7 +1412,7 @@ function buildLeadFlowConfig(
         "EduCanvas Lead Consultation V2",
 
       builderVersion:
-        1,
+  2,
 
       behavior:
         "question_first_then_flow",

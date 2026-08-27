@@ -93,6 +93,11 @@ import type {
 } from "./kakao-ai-intent-router";
 
 import {
+  decideKakaoAiAccess,
+  type KakaoAiCapability,
+} from "./kakao-ai-access-policy";
+
+import {
   analyzeDocumentIntelligence,
 } from "./document-intelligence.service";
 
@@ -348,7 +353,7 @@ function buildServerConfirmedLeadFlowPatch(
           true,
       };
 
-    /**
+       /**
      * PRACTICUM
      */
     case "explain_practicum_summary":
@@ -367,14 +372,14 @@ function buildServerConfirmedLeadFlowPatch(
     /**
      * ADMINISTRATION
      */
-    case "explain_administrative_summary":
+    case "explain_administration_summary":
       return {
         administrationExplained:
           true,
       };
 
-    case "explain_administrative_detail":
-    case "answer_administrative_detail_followup":
+    case "explain_administration_detail":
+    case "answer_administration_detail_followup":
       return {
         administrationDetailExplained:
           true,
@@ -3831,6 +3836,137 @@ console.log("[KAKAO AI TRACE] Context", {
 });
 
 /**
+ * Lead Flow가 STAFF 단계의 실제 행동을 결정한 경우
+ * 짧은 "네" 응답을 Intent Classifier 결과에만 의존하지 않는다.
+ *
+ * 단 실제 Staff Action 실행 전에는
+ * 중앙 Access Policy를 반드시 다시 통과한다.
+ */
+const currentLeadStageId =
+  normalizeText(
+    currentMemory
+      .consultationFlow
+      .salesStage
+  );
+
+const currentLeadFlowActionId =
+  normalizeText(
+    leadFlowEvaluation
+      ?.actionId
+  );
+
+const staffRecommendationEnabled =
+  resolvedContext
+    .companyContext
+    ?.features
+    ?.assigneeRecommendationEnabled ===
+  true;
+
+let flowDrivenStaffCapability:
+  KakaoAiCapability |
+  null =
+  null;
+
+let staffActionMessage =
+  message;
+
+/**
+ * Flow가 STAFF 기본안내를 실행하려는 시점이고
+ * 아직 추천/선택 담당자가 없다면
+ * 실제 담당자 추천 Action을 실행한다.
+ */
+if (
+  customer.customerType ===
+    "lead" &&
+  staffRecommendationEnabled &&
+  currentLeadFlowActionId ===
+    "introduce_staff_summary" &&
+  !currentMemory
+    .recommendedStaffUserId &&
+  !currentMemory
+    .selectedStaffUserId
+) {
+  flowDrivenStaffCapability =
+    "staff_recommend";
+}
+
+/**
+ * 이미 추천된 담당자가 있고
+ * STAFF 단계에서 사용자가 "네" 등으로
+ * 진행에 동의한 경우에는
+ * 추천 담당자를 실제 선택한다.
+ */
+if (
+  customer.customerType ===
+    "lead" &&
+  staffRecommendationEnabled &&
+  currentLeadStageId ===
+    "STAFF" &&
+  leadFlowSemanticDecision ===
+    "continue_next" &&
+  currentMemory
+    .recommendedStaffUserId &&
+  !currentMemory
+    .selectedStaffUserId
+) {
+  flowDrivenStaffCapability =
+    "staff_select";
+
+  /**
+   * Staff Selection Action은
+   * "추천한 분 / 이분 / 그분" 표현을
+   * 추천 담당자 선택으로 안전하게 처리한다.
+   *
+   * 단순 "네"를 임의의 후보선택으로 사용하지 않는다.
+   */
+  staffActionMessage =
+    "추천한 분";
+}
+
+const flowDrivenStaffAccess =
+  flowDrivenStaffCapability
+    ? decideKakaoAiAccess({
+        customerType:
+          customer.customerType,
+
+        capability:
+          flowDrivenStaffCapability,
+      })
+    : null;
+
+const authorizedFlowDrivenStaffCapability =
+  flowDrivenStaffAccess
+    ?.allowed ===
+  true
+    ? flowDrivenStaffCapability
+    : null;
+
+const effectiveStaffAllowedCapabilities:
+  KakaoAiCapability[] =
+  Array.from(
+    new Set([
+      ...intentClassification
+        .routed
+        .allowedCapabilities,
+
+      ...(
+        authorizedFlowDrivenStaffCapability
+          ? [
+              authorizedFlowDrivenStaffCapability,
+            ]
+          : []
+      ),
+    ])
+  );
+
+const effectiveStaffPrimaryCapability:
+  KakaoAiCapability =
+  authorizedFlowDrivenStaffCapability ??
+  intentClassification
+    .intent
+    .primaryCapability;
+
+/**
  * 9.
  * 담당자 관련 Action 실행.
  *
@@ -3852,7 +3988,9 @@ let staffAction:
 if (
   intentClassification.intent
     .needsClarification !==
-  true
+    true ||
+  authorizedFlowDrivenStaffCapability !==
+    null
 ) {
   try {
     const actionResult =
@@ -3861,15 +3999,16 @@ if (
 
         conversationId,
 
-        message,
+        message:
+  authorizedFlowDrivenStaffCapability
+    ? staffActionMessage
+    : message,
 
-        primaryCapability:
-          intentClassification.intent
-            .primaryCapability,
+primaryCapability:
+  effectiveStaffPrimaryCapability,
 
-        allowedCapabilities:
-          intentClassification.routed
-            .allowedCapabilities,
+allowedCapabilities:
+  effectiveStaffAllowedCapabilities,
 
         memory:
           currentMemory,
@@ -4120,6 +4259,58 @@ if (
   );
 }
 
+/**
+ * STAFF 단계에서 추천 담당자를 실제 선택했다면
+ * 같은 사용자 턴 안에서 상담접수 단계까지 이어간다.
+ *
+ * 단 lead_registration 역시 중앙 Access Policy를
+ * 다시 통과한 경우에만 강제 허용한다.
+ */
+const shouldStartLeadRegistrationAfterStaffSelection =
+  customer.customerType ===
+    "lead" &&
+  staffAction?.handled ===
+    true &&
+  staffAction.action ===
+    "select" &&
+  staffAction.success ===
+    true &&
+  Boolean(
+    currentMemory
+      .selectedStaffUserId
+  );
+
+const flowLeadRegistrationAccess =
+  shouldStartLeadRegistrationAfterStaffSelection
+    ? decideKakaoAiAccess({
+        customerType:
+          customer.customerType,
+
+        capability:
+          "lead_registration",
+      })
+    : null;
+
+const effectiveLeadRegistrationAllowedCapabilities:
+  KakaoAiCapability[] =
+  Array.from(
+    new Set([
+      ...intentClassification
+        .routed
+        .allowedCapabilities,
+
+      ...(
+        flowLeadRegistrationAccess
+          ?.allowed ===
+        true
+          ? [
+              "lead_registration" as KakaoAiCapability,
+            ]
+          : []
+      ),
+    ])
+  );
+
 
 let leadRegistration:
   KakaoAiLeadRegistrationActionResult | null =
@@ -4151,8 +4342,7 @@ try {
       message,
 
       allowedCapabilities:
-        intentClassification.routed
-          .allowedCapabilities,
+  effectiveLeadRegistrationAllowedCapabilities,
 
       memory:
         currentMemory,
@@ -4427,13 +4617,17 @@ if (
     true &&
   (
     leadRegistration.created ===
-      true ||
-    leadRegistration.reason ===
-      "CONTACT_NOT_DETECTED" ||
-    leadRegistration.reason ===
-      "INVALID_NAME" ||
-    leadRegistration.reason ===
-      "INVALID_PHONE"
+  true ||
+leadRegistration.reason ===
+  "CONTACT_NOT_DETECTED" ||
+leadRegistration.reason ===
+  "INVALID_NAME" ||
+leadRegistration.reason ===
+  "INVALID_PHONE" ||
+leadRegistration.reason ===
+  "REQUIRED_INFORMATION_MISSING" ||
+leadRegistration.reason ===
+  "CONFIRMATION_REQUIRED"
   )
 ) {
   serverActionConsultationFlowPatch
@@ -4492,6 +4686,18 @@ const shouldForceStaffRecommendation =
   leadRegistration.reason ===
     "STAFF_NOT_SELECTED";
 
+const shouldForceConsultationAfterStaffSelection =
+  staffAction?.handled ===
+    true &&
+  staffAction.action ===
+    "select" &&
+  staffAction.success ===
+    true &&
+  Boolean(
+    currentMemory
+      .selectedStaffUserId
+  );
+
 /**
  * 상담 Flow를 다시 계산해야 할
  * 실제 서버 Action 결과가 있었는지 확인한다.
@@ -4508,7 +4714,8 @@ const hasServerActionStateChange =
     serverActionConsultationFlowPatch
   ).length >
     0 ||
-  shouldForceStaffRecommendation;
+  shouldForceStaffRecommendation ||
+  shouldForceConsultationAfterStaffSelection;
 
 /**
  * =========================================================
@@ -4560,6 +4767,21 @@ const availableStaffStage =
     ) ??
   null;
 
+const availableConsultationStage =
+  resolvedContext
+    .leadFlowConfig
+    .stages
+    ?.find(
+      stage =>
+        stage.enabled !==
+          false &&
+        normalizeText(
+          stage.id
+        ) ===
+          "CONSULTATION"
+    ) ??
+  null;
+
 /**
  * 상담접수 의사가 있지만 담당자가 아직 선택되지 않았다면
  * 기존 CONSULTATION 흐름을 계속 진행하지 않는다.
@@ -4579,9 +4801,14 @@ const postActionCurrentStageId =
     ? normalizeText(
         availableStaffStage.id
       )
-    : currentMemory
-        .consultationFlow
-        .salesStage;
+    : shouldForceConsultationAfterStaffSelection &&
+      availableConsultationStage
+      ? normalizeText(
+          availableConsultationStage.id
+        )
+      : currentMemory
+          .consultationFlow
+          .salesStage;
 
 const postActionSemanticDecision =
   null;
