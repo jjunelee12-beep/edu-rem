@@ -1973,6 +1973,66 @@ nileLiberalSubjects:
       [],
   });
 
+/**
+ * 신규상담 고객에게 노출하지 않을
+ * 내부 계산용 메시지.
+ *
+ * 학기 계산 정확도를 위해 내부에서는 유지하지만,
+ * 고객에게 placeholder / template shortage 등의
+ * 구현상태를 설명하지 않는다.
+ */
+const isInternalDegreeFillMessage =
+  (
+    value:
+      unknown
+  ) => {
+    const message =
+      String(
+        value ??
+        ""
+      ).trim();
+
+    return (
+      message.includes(
+        "학습기간 계산용 임시 과목"
+      ) ||
+      message.includes(
+        "학위과목명이 아직 확정되지 않은"
+      ) ||
+      message.includes(
+        "현재 학위과목 템플릿으로 학위요건을 모두 채우지 못했습니다"
+      )
+    );
+  };
+
+const customerAcademicSummary = {
+  ...academicSummary,
+
+  unresolvedReasons:
+    (
+      academicSummary
+        .unresolvedReasons ||
+      []
+    ).filter(
+      message =>
+        !isInternalDegreeFillMessage(
+          message
+        )
+    ),
+
+  warnings:
+    (
+      academicSummary
+        .warnings ||
+      []
+    ).filter(
+      message =>
+        !isInternalDegreeFillMessage(
+          message
+        )
+    ),
+};
+
   /**
    * Adapter가 새로운 판정문을 만들지 않고
    * 기존 엔진에서 이미 나온 확인 필요 사유만
@@ -1987,15 +2047,19 @@ nileLiberalSubjects:
       ),
 
       ...(
-        subjectPlan
-          .unresolvedRequirements ||
-        []
-      ).map(
-        (
-          item
-        ) =>
-          item.message
-      ),
+  subjectPlan
+    .unresolvedRequirements ||
+  []
+)
+  .filter(
+    item =>
+      item.code !==
+      "DEGREE_FILL_TEMPLATE_SHORTAGE"
+  )
+  .map(
+    item =>
+      item.message
+  ),
 
       ...(
         semesterPlan
@@ -2010,10 +2074,10 @@ nileLiberalSubjects:
       ),
 
       ...(
-        academicSummary
-          .unresolvedReasons ||
-        []
-      ),
+  customerAcademicSummary
+    .unresolvedReasons ||
+  []
+),
     ]);
 
   const warnings =
@@ -2050,10 +2114,15 @@ hasUserReportedOldLawEvidence
       ),
 
       ...(
-        semesterPlan
-          .warnings ||
-        []
-      ),
+  semesterPlan
+    .warnings ||
+  []
+).filter(
+  message =>
+    !isInternalDegreeFillMessage(
+      message
+    )
+),
 
       ...(
         administrativeTimeline
@@ -2062,10 +2131,10 @@ hasUserReportedOldLawEvidence
       ),
 
       ...(
-        academicSummary
-          .warnings ||
-        []
-      ),
+  customerAcademicSummary
+    .warnings ||
+  []
+),
     ]);
 
   return {
@@ -2099,7 +2168,8 @@ hasUserReportedOldLawEvidence
 
     administrativeTimeline,
 
-    academicSummary,
+    academicSummary:
+  customerAcademicSummary,
 
     unresolvedReasons,
 
