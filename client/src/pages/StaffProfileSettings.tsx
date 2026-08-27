@@ -1464,25 +1464,25 @@ export default function StaffProfileSettings() {
                 <div className="space-y-3">
                   <div>
                     <label className="text-sm font-semibold text-slate-800">
-                      상담 연결 URL
-                    </label>
+  상담 연결 URL
+</label>
 
-                    <Input
-                      className="mt-2 h-11"
-                      value={
-                        form.consultationUrl
-                      }
-                      onChange={
-                        event =>
-                          setField(
-                            "consultationUrl",
-                            event
-                              .target
-                              .value
-                          )
-                      }
-                      placeholder="카카오 상담 링크 또는 상담 신청 URL"
-                    />
+<Input
+  className="mt-2 h-11"
+  value={
+    form.consultationUrl
+  }
+  onChange={
+    event =>
+      setField(
+        "consultationUrl",
+        event
+          .target
+          .value
+      )
+  }
+  placeholder="카카오 상담 링크 또는 상담 신청 URL"
+/>
                   </div>
 
                   <ToggleRow

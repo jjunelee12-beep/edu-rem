@@ -715,44 +715,143 @@ const wantsCallbackRequest =
         .channelUserKeyHash
     );
 
-  const isRepeatRegistrationTestUser =
-    channelUserKeyHash ===
-    KAKAO_AI_REPEAT_REGISTRATION_TEST_USER_HASH;
+/**
+ * 이미 상담 접수가 완료된 대화에서
+ * 일반 후속질문을 Lead Registration이 가로채지 않는다.
+ *
+ * 예:
+ * - 비용은요?
+ * - 실습은 주말에도 되나요?
+ * - 언제 시작할 수 있어요?
+ *
+ * 이런 질문은 Composer가 정상적으로 답해야 한다.
+ *
+ * 반복접수 테스트 계정도 /reset 후에는 다시 테스트할 수 있지만,
+ * 접수 완료 직후 일반 질문까지 재접수 흐름으로 보내면 안 된다.
+ */
+const registrationAlreadyCompleted =
+  normalizeText(
+    params.memory
+      .lastIntent
+  ) ===
+    "lead_registration_completed";
 
-  if (
-    existingConsultationId &&
-    !isRepeatRegistrationTestUser
-  ) {
-    return {
-      handled:
-        true,
+if (
+  registrationAlreadyCompleted &&
+  existingConsultationId
+) {
+  return {
+    handled:
+      false,
 
-      created:
-        false,
+    created:
+      false,
 
-      consultationId:
-        existingConsultationId,
+    consultationId:
+      existingConsultationId,
 
-      reason:
-        "ALREADY_LINKED",
+    reason:
+      "ALREADY_LINKED",
 
-      clientName:
-        null,
+    clientName:
+      null,
 
-      phoneLast4:
-        null,
+    phoneLast4:
+      null,
 
-      replyText:
-        [
-          "이미 상담 접수가 완료되어 있습니다 :)",
-          "",
-          "기존 상담 내용과 담당자 정보가 정상적으로 접수되어 있어요.",
-          "추가로 궁금하신 내용이 있으시면 이어서 말씀해주세요.",
-        ].join(
-          "\n"
-        ),
-    };
-  }
+    replyText:
+      null,
+  };
+}
+
+ const isRepeatRegistrationTestUser =
+  channelUserKeyHash ===
+  KAKAO_AI_REPEAT_REGISTRATION_TEST_USER_HASH;
+
+/**
+ * 일반 운영 고객이 이미 상담DB와 연결되어 있고
+ * 다시 접수/콜백을 요청한 경우에는
+ * 중복 상담DB를 생성하지 않는다.
+ */
+if (
+  existingConsultationId &&
+  !isRepeatRegistrationTestUser &&
+  (
+    wantsLeadRegistration ||
+    wantsCallbackRequest
+  )
+) {
+  return {
+    handled:
+      true,
+
+    created:
+      false,
+
+    consultationId:
+      existingConsultationId,
+
+    reason:
+      "ALREADY_LINKED",
+
+    clientName:
+      null,
+
+    phoneLast4:
+      null,
+
+    replyText:
+      [
+        "이미 상담 접수가 완료되어 있습니다 :)",
+        "",
+        "기존 상담 내용과 담당자 정보가 정상적으로 접수되어 있어요.",
+        "추가로 궁금하신 내용이 있으시면 이어서 말씀해주세요.",
+      ].join(
+        "\n"
+      ),
+  };
+}
+
+/**
+ * 이미 상담DB가 존재하는 상태에서
+ * 고객이 일반 후속질문을 한 경우에는
+ * Lead Registration Action이 응답을 가로채지 않는다.
+ *
+ * 예:
+ * - 비용은요?
+ * - 실습은 주말에도 되나요?
+ * - 언제 시작할 수 있어요?
+ *
+ * Composer가 정상적으로 질문에 답하도록 통과시킨다.
+ */
+if (
+  existingConsultationId &&
+  !wantsLeadRegistration &&
+  !wantsCallbackRequest
+) {
+  return {
+    handled:
+      false,
+
+    created:
+      false,
+
+    consultationId:
+      existingConsultationId,
+
+    reason:
+      "ALREADY_LINKED",
+
+    clientName:
+      null,
+
+    phoneLast4:
+      null,
+
+    replyText:
+      null,
+  };
+}
 
     /**
    * 현재 메시지에서 우선 개인정보를 찾는다.
