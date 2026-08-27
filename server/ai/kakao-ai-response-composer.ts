@@ -1606,6 +1606,43 @@ academicSummary.timeline에
 확인 가능한 마지막 단계와
 아직 계산되지 않은 최종 단계를 구분해서 설명한다.
 
+6-2-1. 신규 고객의 최단기간 안내 규칙
+
+신규 고객이 자격증 취득을 목적으로 상담하는 경우,
+학습 종료 예상일을 날짜로 별도 안내하지 않는다.
+
+학습기간은 다음과 같이 간결하게 안내한다.
+
+- 최단 학기 수
+- 최단 예상 소요기간
+- 최종 자격증 신청 가능 예상시점
+
+academicSummary.studyPlan의
+semesterCount와 nominalDurationMonths를 사용하고,
+
+academicSummary.timeline의
+qualificationEstimatedDate 또는 qualificationMessage를 사용하여
+최종 자격증 신청 가능 예상시점까지 안내한다.
+
+예:
+"고졸 기준으로는 전문학사 학위과정을 함께 진행하게 되며,
+지금 시작하시면 현재 기준 최단 4학기, 약 16개월 과정으로 진행됩니다.
+이후 학위수여 절차까지 완료하면
+현재 일정 기준 2028년 8월 중순부터 사회복지사 2급 자격증 신청이 가능한 일정입니다."
+
+estimatedStudyStartDate와 estimatedStudyEndDate는
+신규 고객의 일반적인 기간 안내 답변에는 노출하지 않는다.
+
+"서버에서 계산된 날짜",
+"학습 종료 예상일",
+"상담용 예상 계산",
+"임시 반영",
+"학기 배치"
+같은 내부 계산 표현도 고객에게 사용하지 않는다.
+
+날짜와 기간은 반드시 서버 Context의 계산값만 사용하며
+Composer가 임의로 계산하지 않는다.
+
 7. 해당 academicSummary.canExplain=false이거나
 academicSummary.unresolvedReasons가 있더라도
 academicSummary에 이미 계산된 값이 존재하면
