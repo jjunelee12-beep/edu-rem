@@ -258,99 +258,188 @@ const resetRecoveryPassword = async () => {
 
   return (
     <div className="min-h-screen bg-[#eef2f7]">
-      <div className="grid min-h-screen w-full overflow-hidden bg-white lg:grid-cols-[1.05fr_0.95fr]">
+      <div className="grid min-h-screen w-full overflow-hidden lg:grid-cols-[1.05fr_0.95fr]">
+        {/* LEFT VISUAL */}
         <section className="relative hidden overflow-hidden bg-[#020a22] lg:block">
           <img
-  src="/images/login/login-crm-visual.png"
-  alt="EduCanvas CRM"
-  className="absolute inset-0 h-full w-full scale-[1.04] object-contain object-center"
- />
-          <div className="absolute bottom-[3%] right-[1%] w-[54%] max-w-[500px]">
-            <div className="absolute inset-[18%] rounded-full bg-blue-500/20 blur-3xl" />
-            <img src="/images/login/login-ai-visual.png" alt="EduCanvas AI" className="relative z-10 w-full object-contain drop-shadow-[0_22px_45px_rgba(37,99,235,.32)]" />
+            src="/images/login/login-crm-visual.png"
+            alt="EduCanvas CRM"
+            className="absolute inset-0 h-full w-full object-cover object-center"
+          />
+
+          <div className="absolute bottom-[2.5%] right-[1.5%] w-[50%] max-w-[470px]">
+            <div className="absolute inset-[16%] rounded-full bg-blue-500/20 blur-3xl" />
+            <img
+              src="/images/login/login-ai-visual.png"
+              alt="EduCanvas AI"
+              className="relative z-10 w-full object-contain drop-shadow-[0_22px_45px_rgba(37,99,235,.32)]"
+            />
           </div>
         </section>
 
-        <section className="flex items-center justify-center bg-white px-6 py-8 sm:px-10 lg:px-12 xl:px-16">
-          <div className="w-full max-w-[620px]">
-            <div className="mb-9 text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#eef4ff] text-blue-600">
+        {/* RIGHT LOGIN */}
+        <section className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[linear-gradient(145deg,#eef3ff_0%,#f8f9ff_38%,#e8e4ff_100%)] px-6 py-8 sm:px-10 lg:px-12 xl:px-16">
+          <div className="pointer-events-none absolute -right-28 -top-24 h-80 w-80 rounded-full bg-white/70 blur-2xl" />
+          <div className="pointer-events-none absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-[#8ea7ff]/25 blur-3xl" />
+          <div className="pointer-events-none absolute left-[2%] top-[48%] h-36 w-36 opacity-30 [background-image:radial-gradient(circle,#7c8cff_1.4px,transparent_1.4px)] [background-size:14px_14px]" />
+          <div className="pointer-events-none absolute right-[2%] top-[18%] h-40 w-40 opacity-25 [background-image:radial-gradient(circle,#8b7dff_1.4px,transparent_1.4px)] [background-size:14px_14px]" />
+
+          <div className="relative w-full max-w-[610px] rounded-[30px] border border-white/90 bg-white/92 px-8 py-9 shadow-[0_28px_80px_rgba(58,73,150,0.16)] backdrop-blur-xl sm:px-10 sm:py-10">
+            <div className="mb-8 text-center">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[18px] border border-blue-100 bg-[linear-gradient(145deg,#f1f5ff,#e8e5ff)] text-blue-600 shadow-[0_8px_24px_rgba(66,96,255,0.12)]">
                 <LockKeyhole className="h-7 w-7" strokeWidth={1.8} />
               </div>
-              <h1 className="mt-6 text-[34px] font-black tracking-[-0.04em] text-[#101828]">로그인</h1>
-              <p className="mt-2 text-sm font-medium text-slate-400">{companyName}에 오신 것을 환영합니다.</p>
+
+              <h1 className="mt-5 text-[34px] font-black tracking-[-0.04em] text-[#101828]">
+                로그인
+              </h1>
+
+              <p className="mt-2 text-sm font-medium text-slate-400">
+                {companyName}에 오신 것을 환영합니다.
+              </p>
             </div>
 
             <div className="space-y-5">
               <label className="block">
-                <span className="mb-2 block text-sm font-bold text-slate-700">아이디</span>
+                <span className="mb-2 block text-sm font-bold text-slate-700">
+                  아이디
+                </span>
                 <div className="relative">
                   <UserRound className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                  <input placeholder="아이디를 입력해주세요" value={username} onChange={(e) => setUsername(e.target.value)}
+                  <input
+                    placeholder="아이디를 입력해주세요"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
                     className="h-14 w-full rounded-xl border border-slate-200 bg-white pl-12 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                    autoFocus disabled={pending} />
+                    autoFocus
+                    disabled={pending}
+                  />
                 </div>
               </label>
 
               <label className="block">
-                <span className="mb-2 block text-sm font-bold text-slate-700">비밀번호</span>
+                <span className="mb-2 block text-sm font-bold text-slate-700">
+                  비밀번호
+                </span>
                 <div className="relative">
                   <LockKeyhole className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                  <input placeholder="비밀번호를 입력해주세요" type={showPassword ? "text" : "password"} value={password}
+                  <input
+                    placeholder="비밀번호를 입력해주세요"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="h-14 w-full rounded-xl border border-slate-200 bg-white pl-12 pr-12 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-                    disabled={pending} onKeyDown={(e) => { if (e.key === "Enter") onLogin(); }} />
-                  <button type="button" onClick={() => setShowPassword((v) => !v)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
-                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                    disabled={pending}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") onLogin();
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
+                    aria-label={showPassword ? "비밀번호 숨기기" : "비밀번호 보기"}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-5 w-5" />
+                    ) : (
+                      <Eye className="h-5 w-5" />
+                    )}
                   </button>
                 </div>
               </label>
 
               <label className="flex w-fit cursor-pointer items-center gap-2 text-sm font-medium text-slate-500">
-                <input type="checkbox" className="h-4 w-4 rounded border-slate-300 accent-blue-600" />
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300 accent-blue-600"
+                />
                 아이디 저장
               </label>
 
-              <button onClick={onLogin}
-                className="h-14 w-full rounded-xl bg-gradient-to-r from-[#1f78ff] to-[#7138f5] text-sm font-black text-white shadow-[0_12px_30px_rgba(79,70,229,.20)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={pending}>
+              <button
+                onClick={onLogin}
+                className="h-14 w-full rounded-xl bg-gradient-to-r from-[#2d7cff] via-[#5368ff] to-[#7b35f5] text-sm font-black text-white shadow-[0_14px_30px_rgba(89,72,255,.24)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={pending}
+              >
                 {pending ? "로그인 중..." : "로그인"}
               </button>
             </div>
 
             <div className="mt-5 flex items-center justify-center gap-4 text-sm font-semibold">
-              <button type="button" className="text-blue-600 hover:text-blue-800" onClick={() => {
-                setMode("find_id"); setError(""); setRecoveryMessage(""); setRecoveryName(""); setRecoveryPhone("");
-                setRecoveryEmail(""); setVerificationCode(""); setCodeSent(false); setFoundUsernames([]);
-              }}>아이디 찾기</button>
+              <button
+                type="button"
+                className="text-blue-600 transition hover:text-blue-800"
+                onClick={() => {
+                  setMode("find_id");
+                  setError("");
+                  setRecoveryMessage("");
+                  setRecoveryName("");
+                  setRecoveryPhone("");
+                  setRecoveryEmail("");
+                  setVerificationCode("");
+                  setCodeSent(false);
+                  setFoundUsernames([]);
+                }}
+              >
+                아이디 찾기
+              </button>
+
               <span className="h-3 w-px bg-slate-200" />
-              <button type="button" className="text-blue-600 hover:text-blue-800" onClick={() => {
-                setMode("find_password"); setError(""); setRecoveryMessage(""); setRecoveryName(""); setRecoveryUsername("");
-                setRecoveryEmail(""); setVerificationCode(""); setNewPassword(""); setNewPasswordConfirm(""); setCodeSent(false);
-              }}>비밀번호 찾기</button>
+
+              <button
+                type="button"
+                className="text-blue-600 transition hover:text-blue-800"
+                onClick={() => {
+                  setMode("find_password");
+                  setError("");
+                  setRecoveryMessage("");
+                  setRecoveryName("");
+                  setRecoveryUsername("");
+                  setRecoveryEmail("");
+                  setVerificationCode("");
+                  setNewPassword("");
+                  setNewPasswordConfirm("");
+                  setCodeSent(false);
+                }}
+              >
+                비밀번호 찾기
+              </button>
             </div>
 
             {mode === "login" && error ? (
-              <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>
+              <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                {error}
+              </div>
             ) : null}
 
-            <div className="mt-9 rounded-xl border border-slate-200 bg-[#f8fafc] px-5 py-4">
+            <div className="mt-8 rounded-2xl border border-slate-200 bg-white/80 px-5 py-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
               <div className="flex items-center gap-4">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef4ff] text-blue-600">
                   <Headphones className="h-5 w-5" />
                 </div>
+
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-black text-slate-800">로그인에 문제가 있으신가요?</p>
-                  <p className="mt-1 text-[11px] text-slate-400">EduCanvas 고객센터로 문의해 주세요.</p>
+                  <p className="text-xs font-black text-slate-800">
+                    로그인에 문제가 있으신가요?
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    EduCanvas 고객센터로 문의해 주세요.
+                  </p>
                 </div>
-                <a href="https://edu-crm.kr" className="shrink-0 text-xs font-black text-blue-600 hover:text-blue-800">
+
+                <a
+                  href="https://edu-crm.kr"
+                  className="shrink-0 text-xs font-black text-blue-600 transition hover:text-blue-800"
+                >
                   고객센터 바로가기 →
                 </a>
               </div>
             </div>
 
-            <div className="mt-8 text-center text-[11px] text-slate-400">Powered by EduCanvas SaaS Platform</div>
+            <div className="mt-8 text-center text-[11px] text-slate-400">
+              Powered by EduCanvas SaaS Platform
+            </div>
           </div>
         </section>
       </div>
@@ -482,6 +571,7 @@ const resetRecoveryPassword = async () => {
           </div>
         </div>
       ) : null}
+
 
     </div>
   );
