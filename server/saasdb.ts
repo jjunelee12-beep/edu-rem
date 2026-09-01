@@ -1363,11 +1363,15 @@ export async function markSubscriptionPaymentFailed(input: {
   await db
     .update(organizations)
     .set({
-      subscriptionStatus: nextStatus,
-      paymentFailureCount: failureCount,
-      paymentFailedAt: new Date(),
-      graceUntilAt,
-    } as any)
+  subscriptionStatus: nextStatus,
+  status:
+    failureCount >= 3
+      ? "inactive"
+      : "active",
+  paymentFailureCount: failureCount,
+  paymentFailedAt: new Date(),
+  graceUntilAt,
+} as any)
     .where(eq(organizations.id, input.organizationId));
 
   await recordSubscriptionPaymentEvent({
@@ -1792,17 +1796,37 @@ export async function listDueSubscriptionOrganizations() {
       nextBillingAt,
       billingKey,
       customerKey,
-      paymentFailureCount
+      paymentFailureCount,
+      paymentFailedAt
     FROM organizations
     WHERE isBillingExempt = false
       AND status = 'active'
-      AND subscriptionStatus IN ('trial', 'active', 'overdue')
-      AND nextBillingAt IS NOT NULL
-      AND nextBillingAt <= NOW()
+
+      AND (
+        (
+          subscriptionStatus IN ('trial', 'active')
+          AND nextBillingAt IS NOT NULL
+          AND nextBillingAt <= NOW()
+        )
+
+        OR
+
+        (
+          subscriptionStatus = 'overdue'
+          AND nextBillingAt IS NOT NULL
+          AND nextBillingAt <= NOW()
+          AND (
+            paymentFailedAt IS NULL
+            OR paymentFailedAt <= DATE_SUB(NOW(), INTERVAL 1 DAY)
+          )
+        )
+      )
+
       AND billingKey IS NOT NULL
       AND billingKey <> ''
       AND customerKey IS NOT NULL
       AND customerKey <> ''
+
     ORDER BY nextBillingAt ASC
   `);
 
@@ -1845,47 +1869,96 @@ export async function createAutomaticSubscriptionPayment(input: {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
-  const existing =
-    await findExistingSubscriptionPaymentForCycle({
-      organizationId: input.organizationId,
-      billingCycleStart: input.billingCycleStart,
-    });
+  return db.transaction(async (tx) => {
+    // 같은 회사의 자동결제가 동시에 실행되지 않도록 잠금
+    const [organizationRows] = await tx.execute(sql`
+      SELECT id
+      FROM organizations
+      WHERE id = ${input.organizationId}
+      LIMIT 1
+      FOR UPDATE
+    `);
 
-  if (existing) {
+    const organization =
+      ((organizationRows as any[]) || [])[0];
+
+    if (!organization) {
+      throw new Error("자동결제 대상 회사를 찾을 수 없습니다.");
+    }
+
+    // 잠금을 잡은 상태에서 같은 결제주기의
+    // pending / paid 결제가 존재하는지 다시 확인
+    const [existingRows] = await tx.execute(sql`
+      SELECT
+        id,
+        paymentStatus,
+        tossOrderId,
+        createdAt
+      FROM subscription_payments
+      WHERE organizationId = ${input.organizationId}
+        AND billingCycleStart = ${input.billingCycleStart}
+        AND paymentStatus IN ('pending', 'paid')
+      ORDER BY id DESC
+      LIMIT 1
+    `);
+
+    const existing =
+      ((existingRows as any[]) || [])[0];
+
+    if (existing) {
+      return {
+        created: false,
+        paymentId: Number(existing.id),
+        payment: existing,
+      };
+    }
+
+    // 원장 + Toss 주문번호를 한 번에 생성
+    const result: any = await tx
+      .insert(subscriptionPayments)
+      .values({
+        organizationId: input.organizationId,
+        planCode: input.planCode,
+        customPlanName:
+          input.customPlanName ?? null,
+        billingAmount: input.billingAmount,
+        paymentStatus: "pending",
+        billingCycleStart:
+          input.billingCycleStart,
+        billingCycleEnd:
+          input.billingCycleEnd,
+        tossOrderId: input.tossOrderId,
+      } as any);
+
+    const paymentId = Number(
+      result?.insertId ??
+        result?.[0]?.insertId ??
+        0
+    );
+
+    if (!paymentId) {
+      throw new Error(
+        "자동결제 원장 생성에 실패했습니다."
+      );
+    }
+
+    // payment.created 이벤트도 같은 트랜잭션에 포함
+    await tx
+      .insert(subscriptionPaymentEvents)
+      .values({
+        organizationId: input.organizationId,
+        paymentId,
+        eventType: "payment.created",
+        message: "자동 구독 결제 원장 생성",
+        rawJson: null,
+      } as any);
+
     return {
-      created: false,
-      paymentId: Number((existing as any).id),
-      payment: existing,
-    };
-  }
-
-  const payment = await createSubscriptionPayment({
-    organizationId: input.organizationId,
-    planCode: input.planCode,
-    customPlanName: input.customPlanName ?? null,
-    billingAmount: input.billingAmount,
-    billingCycleStart: input.billingCycleStart,
-    billingCycleEnd: input.billingCycleEnd,
-  });
-
-  const paymentId = Number(payment?.paymentId || 0);
-
-  if (!paymentId) {
-    throw new Error("자동결제 원장 생성에 실패했습니다.");
-  }
-
-  await db
-    .update(subscriptionPayments)
-    .set({
+      created: true,
+      paymentId,
       tossOrderId: input.tossOrderId,
-    } as any)
-    .where(eq(subscriptionPayments.id, paymentId));
-
-  return {
-    created: true,
-    paymentId,
-    tossOrderId: input.tossOrderId,
-  };
+    };
+  });
 }
 
 export async function processTrialEndedOrganizations() {

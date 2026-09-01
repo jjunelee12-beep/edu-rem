@@ -90,6 +90,7 @@ export async function chargeTossBilling(input: {
   amount: number;
   orderId: string;
   orderName: string;
+  idempotencyKey?: string;
 }): Promise<TossBillingPaymentResponse> {
   if (!input.billingKey?.trim()) {
     throw new Error("billingKey가 없습니다.");
@@ -114,9 +115,15 @@ export async function chargeTossBilling(input: {
     {
       method: "POST",
       headers: {
-        Authorization: getAuthorizationHeader(),
-        "Content-Type": "application/json",
-      },
+  Authorization: getAuthorizationHeader(),
+  "Content-Type": "application/json",
+  ...(input.idempotencyKey
+    ? {
+        "Idempotency-Key":
+          input.idempotencyKey,
+      }
+    : {}),
+},
       body: JSON.stringify({
         customerKey: input.customerKey.trim(),
         amount: input.amount,

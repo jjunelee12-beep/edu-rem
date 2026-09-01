@@ -83,7 +83,11 @@ function createBillingOrderId(
   organizationId: number,
   billingCycleStart: Date
 ) {
-  return `educanvas-${organizationId}-${billingCycleStart.getTime()}`;
+  const attemptId =
+    Date.now().toString(36) +
+    Math.random().toString(36).slice(2, 8);
+
+  return `educanvas-${organizationId}-${billingCycleStart.getTime()}-${attemptId}`;
 }
 
 async function processDueSubscriptionPayments() {
@@ -157,16 +161,17 @@ async function processDueSubscriptionPayments() {
 
       try {
         const payment = await chargeTossBilling({
-          billingKey: String(row.billingKey),
-          customerKey: String(row.customerKey),
-          amount: billingAmount,
-          orderId,
-          orderName: `EduCanvas CRM ${String(
-            row.customPlanName ||
-            row.planCode ||
-            "구독"
-          )}`,
-        });
+  billingKey: String(row.billingKey),
+  customerKey: String(row.customerKey),
+  amount: billingAmount,
+  orderId,
+  orderName: `EduCanvas CRM ${String(
+    row.customPlanName ||
+    row.planCode ||
+    "구독"
+  )}`,
+  idempotencyKey: orderId,
+});
 
         await markSubscriptionPaymentPaid({
           organizationId,
@@ -1342,6 +1347,41 @@ runDueSubscriptionPayments: protectedProcedure.mutation(
     return processDueSubscriptionPayments();
   }
 ),
+
+runDueSubscriptionPaymentsCron: publicProcedure
+  .input(
+    z.object({
+      secret: z.string().min(20),
+    })
+  )
+  .mutation(async ({ input }) => {
+    const expectedSecret =
+      process.env.BILLING_CRON_SECRET?.trim();
+
+    if (!expectedSecret) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "BILLING_CRON_SECRET 환경변수가 설정되어 있지 않습니다.",
+        500
+      );
+    }
+
+    if (input.secret !== expectedSecret) {
+      throwAppError(
+        ERROR_CODES.PERMISSION_DENIED,
+        "자동결제 스케줄러 인증에 실패했습니다.",
+        403
+      );
+    }
+
+    const result =
+      await processDueSubscriptionPayments();
+
+    return {
+      ...result,
+      executedAt: new Date().toISOString(),
+    };
+  }),
 
 deactivateExpiredOverdueOrganizations: protectedProcedure.mutation(
   async ({ ctx }) => {
