@@ -31,6 +31,9 @@ getOrganizationOnboardingStatus,
   createSubscriptionPayment,
   markSubscriptionPaymentPaid,
   markSubscriptionPaymentFailed,
+listDueSubscriptionOrganizations,
+findExistingSubscriptionPaymentForCycle,
+createAutomaticSubscriptionPayment,
   listSubscriptionPayments,
   listSubscriptionPaymentEvents,
 deactivateExpiredOverdueOrganizations,
@@ -52,7 +55,169 @@ clearCompletedPracticeMasterSyncPayloads,
 } from "./saasdb";
 import bcrypt from "bcryptjs";
 import * as db from "./db";
-import { issueTossBillingKey } from "./tossBilling";
+import {
+  issueTossBillingKey,
+  chargeTossBilling,
+} from "./tossBilling";
+
+function addOneBillingMonth(date: Date) {
+  const result = new Date(date);
+
+  const originalDay = result.getDate();
+
+  result.setDate(1);
+  result.setMonth(result.getMonth() + 1);
+
+  const lastDayOfTargetMonth = new Date(
+    result.getFullYear(),
+    result.getMonth() + 1,
+    0
+  ).getDate();
+
+  result.setDate(Math.min(originalDay, lastDayOfTargetMonth));
+
+  return result;
+}
+
+function createBillingOrderId(
+  organizationId: number,
+  billingCycleStart: Date
+) {
+  return `educanvas-${organizationId}-${billingCycleStart.getTime()}`;
+}
+
+async function processDueSubscriptionPayments() {
+  const targets = await listDueSubscriptionOrganizations();
+
+  const results: any[] = [];
+
+  for (const row of targets as any[]) {
+    const organizationId = Number(row.id);
+
+    try {
+      const billingCycleStart = new Date(row.nextBillingAt);
+
+      if (Number.isNaN(billingCycleStart.getTime())) {
+        throw new Error("nextBillingAt 값이 올바르지 않습니다.");
+      }
+
+      const billingCycleEnd = addOneBillingMonth(billingCycleStart);
+
+      const billingAmount =
+        Number(row.nextBillingAmount || 0) ||
+        Number(row.billingAmount || 0);
+
+      if (billingAmount <= 0) {
+        throw new Error("결제 금액이 0원입니다.");
+      }
+
+      const orderId = createBillingOrderId(
+        organizationId,
+        billingCycleStart
+      );
+
+      const existing =
+        await findExistingSubscriptionPaymentForCycle({
+          organizationId,
+          billingCycleStart,
+        });
+
+      if (existing) {
+        results.push({
+          organizationId,
+          status: "skipped",
+          reason: "existing_payment",
+          paymentId: Number((existing as any).id),
+        });
+
+        continue;
+      }
+
+      const ledger =
+        await createAutomaticSubscriptionPayment({
+          organizationId,
+          planCode: String(row.planCode || "basic"),
+          customPlanName: row.customPlanName || null,
+          billingAmount,
+          billingCycleStart,
+          billingCycleEnd,
+          tossOrderId: orderId,
+        });
+
+      if (!ledger.created) {
+        results.push({
+          organizationId,
+          status: "skipped",
+          reason: "existing_payment",
+          paymentId: ledger.paymentId,
+        });
+
+        continue;
+      }
+
+      try {
+        const payment = await chargeTossBilling({
+          billingKey: String(row.billingKey),
+          customerKey: String(row.customerKey),
+          amount: billingAmount,
+          orderId,
+          orderName: `EduCanvas CRM ${String(
+            row.customPlanName ||
+            row.planCode ||
+            "구독"
+          )}`,
+        });
+
+        await markSubscriptionPaymentPaid({
+          organizationId,
+          paymentId: ledger.paymentId,
+          tossPaymentKey: payment.paymentKey,
+          tossOrderId: payment.orderId,
+        });
+
+        results.push({
+          organizationId,
+          paymentId: ledger.paymentId,
+          status: "paid",
+          amount: billingAmount,
+          orderId,
+        });
+      } catch (error: any) {
+        await markSubscriptionPaymentFailed({
+          organizationId,
+          paymentId: ledger.paymentId,
+          failureReason:
+            error?.message || "Toss 자동결제 실패",
+          rawJson: error?.tossResponse || {
+            code: error?.code || null,
+            message: error?.message || null,
+          },
+        });
+
+        results.push({
+          organizationId,
+          paymentId: ledger.paymentId,
+          status: "failed",
+          code: error?.code || null,
+          message: error?.message || "자동결제 실패",
+        });
+      }
+    } catch (error: any) {
+      results.push({
+        organizationId,
+        status: "error",
+        message:
+          error?.message || "자동결제 처리 중 오류",
+      });
+    }
+  }
+
+  return {
+    ok: true,
+    targetCount: targets.length,
+    results,
+  };
+}
 
 function assertSuperhost(ctx: any) {
   if (ctx.user?.role !== "superhost") {
