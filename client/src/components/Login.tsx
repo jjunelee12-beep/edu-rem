@@ -258,16 +258,16 @@ const resetRecoveryPassword = async () => {
 
   return (
     <div className="min-h-screen bg-[#eef2f7]">
-      <div className="grid min-h-screen w-full overflow-hidden lg:grid-cols-[1.05fr_0.95fr]">
+      <div className="grid min-h-screen w-full overflow-hidden lg:grid-cols-[1.22fr_0.78fr]">
         {/* LEFT VISUAL */}
         <section className="relative hidden overflow-hidden bg-[#020a22] lg:block">
           <img
             src="/images/login/login-crm-visual.png"
             alt="EduCanvas CRM"
-            className="absolute inset-0 h-full w-full object-cover object-center"
+            className="absolute inset-0 h-full w-full object-contain object-center"
           />
 
-          <div className="absolute bottom-[2.5%] right-[1.5%] w-[50%] max-w-[470px]">
+          <div className="absolute bottom-[1.5%] right-[2%] w-[42%] max-w-[440px]">
             <div className="absolute inset-[16%] rounded-full bg-blue-500/20 blur-3xl" />
             <img
               src="/images/login/login-ai-visual.png"
@@ -278,13 +278,19 @@ const resetRecoveryPassword = async () => {
         </section>
 
         {/* RIGHT LOGIN */}
-        <section className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[linear-gradient(145deg,#eef3ff_0%,#f8f9ff_38%,#e8e4ff_100%)] px-6 py-8 sm:px-10 lg:px-12 xl:px-16">
-          <div className="pointer-events-none absolute -right-28 -top-24 h-80 w-80 rounded-full bg-white/70 blur-2xl" />
-          <div className="pointer-events-none absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-[#8ea7ff]/25 blur-3xl" />
+        <section
+          className="relative flex min-h-screen items-center justify-center overflow-hidden px-5 py-7 sm:px-7 lg:px-8 xl:px-10"
+          style={{
+            background:
+              "radial-gradient(circle at 84% 12%, rgba(255,255,255,0.90) 0%, rgba(255,255,255,0) 28%), radial-gradient(circle at 8% 86%, rgba(95,121,255,0.24) 0%, rgba(95,121,255,0) 34%), linear-gradient(145deg, #dfe8ff 0%, #f4f4ff 46%, #d9d1ff 100%)",
+          }}
+        >
+          <div className="pointer-events-none absolute -right-24 -top-20 h-72 w-72 rounded-full bg-white/35 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-28 -left-20 h-96 w-96 rounded-full bg-[#6f7cff]/30 blur-3xl" />
           <div className="pointer-events-none absolute left-[2%] top-[48%] h-36 w-36 opacity-30 [background-image:radial-gradient(circle,#7c8cff_1.4px,transparent_1.4px)] [background-size:14px_14px]" />
           <div className="pointer-events-none absolute right-[2%] top-[18%] h-40 w-40 opacity-25 [background-image:radial-gradient(circle,#8b7dff_1.4px,transparent_1.4px)] [background-size:14px_14px]" />
 
-          <div className="relative w-full max-w-[610px] rounded-[30px] border border-white/90 bg-white/92 px-8 py-9 shadow-[0_28px_80px_rgba(58,73,150,0.16)] backdrop-blur-xl sm:px-10 sm:py-10">
+          <div className="relative w-full max-w-[520px] rounded-[30px] border border-white/90 bg-white/90 px-7 py-8 shadow-[0_28px_80px_rgba(58,73,150,0.18)] backdrop-blur-xl sm:px-9 sm:py-9">
             <div className="mb-8 text-center">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[18px] border border-blue-100 bg-[linear-gradient(145deg,#f1f5ff,#e8e5ff)] text-blue-600 shadow-[0_8px_24px_rgba(66,96,255,0.12)]">
                 <LockKeyhole className="h-7 w-7" strokeWidth={1.8} />
