@@ -1330,6 +1330,19 @@ username: normalizedUsername,
       id,
     };
   }),
+
+runDueSubscriptionPayments: protectedProcedure.mutation(
+  async ({ ctx }) => {
+    assertSuperhost(ctx);
+
+    await requireSaasAdminUnlocked(
+      Number(ctx.user.id)
+    );
+
+    return processDueSubscriptionPayments();
+  }
+),
+
 deactivateExpiredOverdueOrganizations: protectedProcedure.mutation(
   async ({ ctx }) => {
     assertSuperhost(ctx);
