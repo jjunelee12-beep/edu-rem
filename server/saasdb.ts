@@ -1775,6 +1775,119 @@ export async function deactivateExpiredOverdueOrganizations() {
   };
 }
 
+export async function listDueSubscriptionOrganizations() {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      id,
+      name,
+      slug,
+      planCode,
+      customPlanName,
+      subscriptionStatus,
+      billingAmount,
+      nextBillingAmount,
+      nextBillingAt,
+      billingKey,
+      customerKey,
+      paymentFailureCount
+    FROM organizations
+    WHERE isBillingExempt = false
+      AND status = 'active'
+      AND subscriptionStatus IN ('trial', 'active', 'overdue')
+      AND nextBillingAt IS NOT NULL
+      AND nextBillingAt <= NOW()
+      AND billingKey IS NOT NULL
+      AND billingKey <> ''
+      AND customerKey IS NOT NULL
+      AND customerKey <> ''
+    ORDER BY nextBillingAt ASC
+  `);
+
+  return (rows as any[]) || [];
+}
+
+export async function findExistingSubscriptionPaymentForCycle(input: {
+  organizationId: number;
+  billingCycleStart: Date;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      id,
+      paymentStatus,
+      tossOrderId,
+      createdAt
+    FROM subscription_payments
+    WHERE organizationId = ${input.organizationId}
+      AND billingCycleStart = ${input.billingCycleStart}
+      AND paymentStatus IN ('pending', 'paid')
+    ORDER BY id DESC
+    LIMIT 1
+  `);
+
+  return ((rows as any[]) || [])[0] || null;
+}
+
+export async function createAutomaticSubscriptionPayment(input: {
+  organizationId: number;
+  planCode: string;
+  customPlanName?: string | null;
+  billingAmount: number;
+  billingCycleStart: Date;
+  billingCycleEnd: Date;
+  tossOrderId: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const existing =
+    await findExistingSubscriptionPaymentForCycle({
+      organizationId: input.organizationId,
+      billingCycleStart: input.billingCycleStart,
+    });
+
+  if (existing) {
+    return {
+      created: false,
+      paymentId: Number((existing as any).id),
+      payment: existing,
+    };
+  }
+
+  const payment = await createSubscriptionPayment({
+    organizationId: input.organizationId,
+    planCode: input.planCode,
+    customPlanName: input.customPlanName ?? null,
+    billingAmount: input.billingAmount,
+    billingCycleStart: input.billingCycleStart,
+    billingCycleEnd: input.billingCycleEnd,
+  });
+
+  const paymentId = Number(payment?.paymentId || 0);
+
+  if (!paymentId) {
+    throw new Error("자동결제 원장 생성에 실패했습니다.");
+  }
+
+  await db
+    .update(subscriptionPayments)
+    .set({
+      tossOrderId: input.tossOrderId,
+    } as any)
+    .where(eq(subscriptionPayments.id, paymentId));
+
+  return {
+    created: true,
+    paymentId,
+    tossOrderId: input.tossOrderId,
+  };
+}
+
 export async function processTrialEndedOrganizations() {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
