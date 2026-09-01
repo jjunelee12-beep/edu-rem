@@ -7304,7 +7304,13 @@ await writeStudentAuditLog({
       .object({
         assigneeId: z.number().optional(),
         month: z.string().optional(),
-        status: z.enum(["전체", "미섭외", "섭외중", "섭외완료"]).optional(),
+        status: z.enum([
+  "전체",
+  "미섭외",
+  "섭외중",
+  "보류",
+  "섭외완료",
+]).optional(),
         search: z.string().optional(),
       })
       .optional()
@@ -7431,8 +7437,14 @@ practiceHours: z.number().optional().nullable(),
 practiceDate: z.string().optional().nullable(),
 includeEducationCenter: z.boolean().optional(),
           includePracticeInstitution: z.boolean().optional(),
-          coordinationStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
-          feeAmount: z.string().optional(),
+          coordinationStatus: z.enum([
+  "미섭외",
+  "섭외중",
+  "보류",
+  "섭외완료",
+]).optional(),
+
+feeAmount: z.string().optional(),
           paymentStatus: z.enum(["미결제", "결제", "환불"]).optional(),
           paidAt: z.string().optional().nullable(),
           note: z.string().optional().nullable(),
@@ -7583,17 +7595,16 @@ await writeStudentAuditLog({
             z.boolean()
               .optional(),
 
-          coordinationStatus:
-            z.enum([
-              "미섭외",
-              "섭외중",
-              "섭외완료",
-            ])
-              .optional(),
+          coordinationStatus: z.enum([
+  "미섭외",
+  "섭외중",
+  "보류",
+  "섭외완료",
+]).optional(),
 
-          feeAmount:
-            z.string()
-              .optional(),
+feeAmount:
+  z.string()
+    .optional(),
 
           paymentStatus:
             z.enum([
@@ -7811,7 +7822,12 @@ practiceHours: z.number().optional().nullable(),
 practiceDate: z.string().optional().nullable(),
 includeEducationCenter: z.boolean().optional(),
           includePracticeInstitution: z.boolean().optional(),
-          coordinationStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
+          coordinationStatus: z.enum([
+  "미섭외",
+  "섭외중",
+  "보류",
+  "섭외완료",
+]).optional(),
           feeAmount: z.string().optional(),
           paymentStatus: z.enum(["미결제", "결제", "환불"]).optional(),
           paidAt: z.string().optional().nullable(),
@@ -8300,7 +8316,12 @@ practiceHours: z.number().optional().nullable(),
 practiceDate: z.string().optional().nullable(),
 includeEducationCenter: z.boolean().optional(),
       includePracticeInstitution: z.boolean().optional(),
-      coordinationStatus: z.enum(["미섭외","섭외중","섭외완료"]).optional(),
+      coordinationStatus: z.enum([
+  "미섭외",
+  "섭외중",
+  "보류",
+  "섭외완료",
+]).optional(),
     })
   )
   .mutation(async ({ ctx, input }) => {
@@ -24211,7 +24232,12 @@ if (rest.studentLoginId !== undefined) {
     practiceHours: z.number().optional(),
     practiceDate: z.string().optional(),
     practiceArranged: z.boolean().optional(),
-    practiceStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
+    practiceStatus: z.enum([
+  "미섭외",
+  "섭외중",
+  "보류",
+  "섭외완료",
+]).optional(),
     specialNotes: z.string().optional(),
   }).superRefine((val, ctx) => {
     if (!FEATURE_FLAGS.PLAN_REQUIREMENT_ENFORCE) return;
@@ -24362,7 +24388,12 @@ semesterLabel: z.string().optional().nullable(),
   plannedInstitutionId: z.number().optional(),
   plannedSubjectCount: z.number().optional(),
   plannedAmount: z.string().optional(),
-  practiceStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
+  practiceStatus: z.enum([
+  "미섭외",
+  "섭외중",
+  "보류",
+  "섭외완료",
+]).optional(),
   primaryCourse: z.string().optional(),
   registeredCourses: z.array(z.string()).optional(),
 })
@@ -24438,7 +24469,12 @@ semesterLabel: z.string().optional().nullable(),
       isCompleted: z.boolean().optional(),
       approvalStatus: z.enum(["요청전", "대기", "승인", "불승인"]).optional(),
       status: z.enum(["등록", "종료", "등록 종료"]).optional(),
-      practiceStatus: z.enum(["미섭외", "섭외중", "섭외완료"]).optional(),
+      practiceStatus: z.enum([
+  "미섭외",
+  "섭외중",
+  "보류",
+  "섭외완료",
+]).optional(),
       practiceSupportRequestId: z.number().optional(),
       primaryCourse: z.string().optional(),
       registeredCourses: z.array(z.string()).optional(),

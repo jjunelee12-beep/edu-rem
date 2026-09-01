@@ -52,6 +52,7 @@ clearCompletedPracticeMasterSyncPayloads,
 } from "./saasdb";
 import bcrypt from "bcryptjs";
 import * as db from "./db";
+import { issueTossBillingKey } from "./tossBilling";
 
 function assertSuperhost(ctx: any) {
   if (ctx.user?.role !== "superhost") {
@@ -315,22 +316,44 @@ createSignupAfterBilling: publicProcedure
   .input(
     z.object({
       companyName: z.string().min(1),
+
       slug: z
         .string()
-        .regex(/^[a-z0-9-]{3,30}$/, "회사 URL은 영문 소문자, 숫자, 하이픈 3~30자만 가능합니다."),
+        .regex(
+          /^[a-z0-9-]{3,30}$/,
+          "회사 URL은 영문 소문자, 숫자, 하이픈 3~30자만 가능합니다."
+        ),
+
       businessName: z.string().optional().nullable(),
       businessNumber: z.string().optional().nullable(),
+
       managerName: z.string().min(1),
       phone: z.string().min(1),
+
       birthDate: z.string().optional().nullable(),
+
       username: z
         .string()
-        .regex(/^[a-z0-9]{4,20}$/, "아이디는 영문 소문자+숫자 4~20자만 가능합니다."),
+        .regex(
+          /^[a-z0-9]{4,20}$/,
+          "아이디는 영문 소문자+숫자 4~20자만 가능합니다."
+        ),
+
       password: z.string().min(4),
       passwordConfirm: z.string().min(4),
-      planCode: z.enum(["starter", "business", "enterprise"]),
-      billingKey: z.string().min(10),
-      customerKey: z.string().min(5),
+
+      planCode: z.enum([
+        "starter",
+        "business",
+        "enterprise",
+      ]),
+
+      authKey: z.string().min(1).max(300),
+
+      customerKey: z
+        .string()
+        .min(2)
+        .max(300),
     })
   )
   .mutation(async ({ input }) => {
@@ -342,10 +365,15 @@ createSignupAfterBilling: publicProcedure
       );
     }
 
-    const username = input.username.trim().toLowerCase();
-    const slug = assertValidOrganizationSlug(input.slug);
+    const username =
+      input.username.trim().toLowerCase();
 
-    const usernameAvailable = await checkUsernameAvailable(username);
+    const slug =
+      assertValidOrganizationSlug(input.slug);
+
+    const usernameAvailable =
+      await checkUsernameAvailable(username);
+
     if (!usernameAvailable.available) {
       throwAppError(
         ERROR_CODES.DUPLICATE_RESOURCE,
@@ -354,7 +382,9 @@ createSignupAfterBilling: publicProcedure
       );
     }
 
-    const slugAvailable = await checkOrganizationSlugAvailable(slug);
+    const slugAvailable =
+      await checkOrganizationSlugAvailable(slug);
+
     if (!slugAvailable.available) {
       throwAppError(
         ERROR_CODES.DUPLICATE_RESOURCE,
@@ -363,26 +393,66 @@ createSignupAfterBilling: publicProcedure
       );
     }
 
-    const passwordHash = await bcrypt.hash(input.password, 10);
+    let tossBilling;
+
+    try {
+      tossBilling = await issueTossBillingKey({
+        authKey: input.authKey.trim(),
+        customerKey: input.customerKey.trim(),
+      });
+    } catch (error: any) {
+      console.error(
+        "[TOSS BILLING] billing key issue failed",
+        error
+      );
+
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        error?.message ||
+          "카드 등록 처리에 실패했습니다.",
+        400
+      );
+    }
+
+    const passwordHash =
+      await bcrypt.hash(input.password, 10);
 
     return createTenantSignup({
       companyName: input.companyName.trim(),
+
       slug,
-      businessName: input.businessName?.trim() || null,
-      businessNumber: input.businessNumber?.trim() || null,
-      managerName: input.managerName.trim(),
-      phone: input.phone.trim(),
-      birthDate: input.birthDate?.trim() || null,
+
+      businessName:
+        input.businessName?.trim() || null,
+
+      businessNumber:
+        input.businessNumber?.trim() || null,
+
+      managerName:
+        input.managerName.trim(),
+
+      phone:
+        input.phone.trim(),
+
+      birthDate:
+        input.birthDate?.trim() || null,
+
       username,
+
       passwordHash,
+
       planCode:
         input.planCode === "starter"
           ? "basic"
           : input.planCode === "business"
             ? "pro"
             : "enterprise",
-      billingKey: input.billingKey.trim(),
-      customerKey: input.customerKey.trim(),
+
+      billingKey:
+        tossBilling.billingKey,
+
+      customerKey:
+        tossBilling.customerKey,
     });
   }),
 

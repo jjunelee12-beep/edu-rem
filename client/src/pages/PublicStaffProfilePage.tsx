@@ -416,11 +416,11 @@ const companyLogoUrl =
                       index: number
                     ) => (
                       <span
-                        key={`${specialty}-${index}`}
-                        className="rounded-full border border-white/10 bg-white/[0.07] px-3 py-1.5 text-xs font-medium text-slate-200"
-                      >
-                        {specialty}
-                      </span>
+  key={`${specialty}-${index}`}
+  className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm"
+>
+  {specialty}
+</span>
                     )
                   )}
                 </div>
@@ -445,14 +445,12 @@ const companyLogoUrl =
 
                   {showPhone ? (
                     <Button
-                      type="button"
-                      size="lg"
-                      variant="outline"
-                      onClick={
-                        callPhone
-                      }
-                      className="h-12 rounded-xl border-white/20 bg-white/[0.05] px-6 font-semibold text-white hover:bg-white/10 hover:text-white"
-                    >
+  type="button"
+  size="lg"
+  variant="outline"
+  onClick={callPhone}
+  className="h-12 rounded-xl border-slate-700 bg-slate-900 px-6 font-semibold text-white hover:bg-slate-800 hover:text-white"
+>
                       <Phone className="mr-2 h-4 w-4" />
                       {publicPhone}
                     </Button>

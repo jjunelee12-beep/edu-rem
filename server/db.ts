@@ -33101,7 +33101,10 @@ async function listStudentPracticeSupportRequests(params?: {
   organizationId?: number | null;
   assigneeId?: number;
   month?: string;
-  status?: "전체" | "미섭외" | "섭외중" | "섭외완료";
+  status?: "전체" | "미섭외"
+| "섭외중"
+| "보류"
+| "섭외완료";
   search?: string;
 }) {
   const db = await getDb();
@@ -33368,8 +33371,9 @@ async function listExternalPracticeSupportRequests(params?: {
   status?:
     | "전체"
     | "미섭외"
-    | "섭외중"
-    | "섭외완료";
+| "섭외중"
+| "보류"
+| "섭외완료";
   search?: string;
 }) {
   const db = await getDb();
@@ -33584,8 +33588,9 @@ export async function listPracticeSupportRequests(params?: {
   status?:
     | "전체"
     | "미섭외"
-    | "섭외중"
-    | "섭외완료";
+| "섭외중"
+| "보류"
+| "섭외완료";
   search?: string;
 }) {
   const [
@@ -34454,7 +34459,11 @@ practiceHours?: number | null;
 practiceDate?: string | null;
 includeEducationCenter?: boolean;
   includePracticeInstitution?: boolean;
-  coordinationStatus?: "미섭외" | "섭외중" | "섭외완료";
+  coordinationStatus?:
+  | "미섭외"
+  | "섭외중"
+  | "보류"
+  | "섭외완료";
 }) {
   const db = await getDb();
   if (!db) throwAppError(
@@ -34599,7 +34608,10 @@ const preparedPayload =
 export async function updatePracticeSupportStatusAndSyncSemester(params: {
   organizationId?: number | null;
   practiceSupportRequestId: number;
-  coordinationStatus: "미섭외" | "섭외중" | "섭외완료";
+  coordinationStatus: | "미섭외"
+  | "섭외중"
+  | "보류"
+  | "섭외완료";
 }) {
   const db = await getDb();
   if (!db) throwAppError(

@@ -44,7 +44,11 @@ import {
 import KakaoMapBase from "@/components/KakaoMap";
 const KakaoMap: any = KakaoMapBase;
 
-type PracticeCoordinationStatus = "미섭외" | "섭외중" | "섭외완료";
+type PracticeCoordinationStatus =
+  | "미섭외"
+  | "섭외중"
+  | "보류"
+  | "섭외완료";
 type PaymentStatus = "미결제" | "결제";
 type FinderItemType = "education" | "institution";
 
@@ -68,9 +72,10 @@ type ExternalPracticeSupportForm = {
   includePracticeInstitution: boolean;
 
   coordinationStatus:
-    | "미섭외"
-    | "섭외중"
-    | "섭외완료";
+  | "미섭외"
+  | "섭외중"
+  | "보류"
+  | "섭외완료";
 
   paymentStatus:
     | "미결제"
@@ -1098,7 +1103,12 @@ const filteredList = useMemo(() => {
 }, [practiceSupportList, statusFilter, showCompletedPractice]);
 
 const handleStatCardClick = (
-  nextStatus: "전체" | "미섭외" | "섭외중" | "섭외완료"
+  nextStatus:
+    | "전체"
+    | "미섭외"
+    | "섭외중"
+    | "보류"
+    | "섭외완료"
 ) => {
   setStatusFilter(nextStatus);
 };
@@ -1111,16 +1121,24 @@ const stats = useMemo(() => {
   const progressing = filteredList.filter(
     (row: any) => String(row.coordinationStatus || "") === "섭외중"
   ).length;
+
+const onHold = filteredList.filter(
+  (row: any) =>
+    String(row.coordinationStatus || "") ===
+    "보류"
+).length;
+
   const completed = filteredList.filter(
     (row: any) => String(row.coordinationStatus || "") === "섭외완료"
   ).length;
 
   return {
-    total,
-    pending,
-    progressing,
-    completed,
-  };
+  total,
+  pending,
+  progressing,
+  onHold,
+  completed,
+};
 }, [filteredList]);
 
   const openDetail = (row: any) => {
@@ -2755,10 +2773,11 @@ useEffect(() => {
               <SelectValue placeholder="실습섭외 전체" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="전체">전체 상태</SelectItem>
-              <SelectItem value="미섭외">미섭외</SelectItem>
-              <SelectItem value="섭외중">섭외중</SelectItem>
-              <SelectItem value="섭외완료">섭외완료</SelectItem>
+             <SelectItem value="전체">전체 상태</SelectItem>
+<SelectItem value="미섭외">미섭외</SelectItem>
+<SelectItem value="섭외중">섭외중</SelectItem>
+<SelectItem value="보류">보류</SelectItem>
+<SelectItem value="섭외완료">섭외완료</SelectItem>
             </SelectContent>
           </Select>
 
@@ -2829,6 +2848,27 @@ useEffect(() => {
     </CardContent>
   </Card>
 
+<Card
+  className={`border-0 shadow-sm cursor-pointer transition hover:shadow-md ${
+    statusFilter === "보류"
+      ? "ring-2 ring-slate-300"
+      : ""
+  }`}
+  onClick={() =>
+    handleStatCardClick("보류")
+  }
+>
+  <CardContent className="p-4">
+    <div className="text-xs text-muted-foreground">
+      보류
+    </div>
+
+    <div className="mt-2 text-2xl font-bold text-slate-600">
+      {stats.onHold}
+    </div>
+  </CardContent>
+</Card>
+
   <Card
   className={`border-0 shadow-sm cursor-pointer transition hover:shadow-md ${
     statusFilter === "섭외완료" ? "ring-2 ring-emerald-300" : ""
@@ -2887,11 +2927,15 @@ useEffect(() => {
                     <th className="px-3 py-3 text-left font-medium text-muted-foreground">
                       희망과정
                     </th>
-                    <th className="min-w-[220px] px-3 py-3 text-left font-medium text-muted-foreground">
+                    <th className="min-w-[180px] px-3 py-3 text-left font-medium text-muted-foreground">
   주소
 </th>
 
-<th className="min-w-[120px] px-3 py-3 text-left font-medium text-muted-foreground">
+<th className="min-w-[220px] px-3 py-3 text-left font-medium text-muted-foreground">
+  메모
+</th>
+
+<th className="min-w-[145px] px-3 py-3 text-left font-medium text-muted-foreground">
   학기구분
 </th>
 
@@ -3014,12 +3058,80 @@ useEffect(() => {
   {row.inputAddress || row.studentAddress || "-"}
 </td>
 
-<td className="px-3 py-3 whitespace-nowrap">
-  {row.practiceSemesterLabel || "-"}
+<td className="px-3 py-3">
+  <Input
+    className="h-9 min-w-[200px]"
+    defaultValue={String(row.note || "")}
+    placeholder="인수인계 메모"
+    onBlur={(e) => {
+      const next = e.target.value.trim();
+      const current = String(row.note || "").trim();
+
+      if (next === current) return;
+
+      void patchPracticeRow(row, {
+        note: next || null,
+      });
+    }}
+  />
 </td>
 
-<td className="px-3 py-3 whitespace-nowrap">
-  {row.practiceDate || row.planPracticeDate || "-"}
+<td className="px-3 py-3">
+  <Select
+    value={row.practiceSemesterLabel || undefined}
+    onValueChange={(value) => {
+      void patchPracticeRow(row, {
+        practiceSemesterLabel: value,
+      });
+    }}
+  >
+    <SelectTrigger className="h-9 min-w-[135px]">
+      <SelectValue placeholder="학기 선택" />
+    </SelectTrigger>
+
+    <SelectContent>
+      {practiceSemesterLabelOptions.map(
+        (option) => (
+          <SelectItem
+            key={option}
+            value={option}
+          >
+            {option}
+          </SelectItem>
+        )
+      )}
+    </SelectContent>
+  </Select>
+</td>
+
+<td className="px-3 py-3">
+  <Input
+    type="month"
+    className="h-9 min-w-[135px]"
+    defaultValue={String(
+      row.practiceDate ||
+      row.planPracticeDate ||
+      ""
+    ).slice(0, 7)}
+    onBlur={(e) => {
+      const next =
+        e.target.value || null;
+
+      const current = String(
+        row.practiceDate ||
+        row.planPracticeDate ||
+        ""
+      ).slice(0, 7);
+
+      if ((next || "") === current) {
+        return;
+      }
+
+      void patchPracticeRow(row, {
+        practiceDate: next,
+      });
+    }}
+  />
 </td>
 <td className="px-3 py-3">
   <div className="space-y-1">
@@ -3061,10 +3173,22 @@ useEffect(() => {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="미섭외">미섭외</SelectItem>
-                            <SelectItem value="섭외중">섭외중</SelectItem>
-                            <SelectItem value="섭외완료">섭외완료</SelectItem>
-                          </SelectContent>
+  <SelectItem value="미섭외">
+    미섭외
+  </SelectItem>
+
+  <SelectItem value="섭외중">
+    섭외중
+  </SelectItem>
+
+  <SelectItem value="보류">
+    보류
+  </SelectItem>
+
+  <SelectItem value="섭외완료">
+    섭외완료
+  </SelectItem>
+</SelectContent>
                         </Select>
                       </td>
 
@@ -3608,6 +3732,10 @@ useEffect(() => {
                 섭외중
               </SelectItem>
 
+<SelectItem value="보류">
+  보류
+</SelectItem>
+
               <SelectItem value="섭외완료">
                 섭외완료
               </SelectItem>
@@ -4112,8 +4240,9 @@ useEffect(() => {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="미섭외">미섭외</SelectItem>
-                        <SelectItem value="섭외중">섭외중</SelectItem>
-                        <SelectItem value="섭외완료">섭외완료</SelectItem>
+<SelectItem value="섭외중">섭외중</SelectItem>
+<SelectItem value="보류">보류</SelectItem>
+<SelectItem value="섭외완료">섭외완료</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
