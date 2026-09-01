@@ -417,7 +417,7 @@ const companyLogoUrl =
                     ) => (
                       <span
   key={`${specialty}-${index}`}
-  className="rounded-full border border-white/10 bg-white/[0.08] px-3 py-1.5 text-xs font-semibold text-slate-200 shadow-sm backdrop-blur"
+  className="rounded-full border border-white/20 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 shadow-sm"
 >
   {specialty}
 </span>
@@ -449,7 +449,7 @@ const companyLogoUrl =
   size="lg"
   variant="outline"
   onClick={callPhone}
-  className="h-12 rounded-xl border border-white/15 bg-white/10 px-6 font-semibold text-white shadow-sm backdrop-blur hover:bg-white/15 hover:text-white"
+  className="h-12 rounded-xl border border-white/20 bg-white px-6 font-semibold text-slate-900 shadow-sm hover:bg-slate-100 hover:text-slate-950"
 >
                       <Phone className="mr-2 h-4 w-4" />
                       {publicPhone}

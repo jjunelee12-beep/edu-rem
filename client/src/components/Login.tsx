@@ -3,7 +3,6 @@ import { Eye, EyeOff, Headphones, LockKeyhole, UserRound } from "lucide-react";
 
 export default function Login() {
   const companyName = "EduCanvas CRM";
-const companySubtitle = "교육기관 통합 운영 SaaS 플랫폼";
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -258,18 +257,22 @@ const resetRecoveryPassword = async () => {
 };
 
   return (
-    <div className="min-h-screen bg-[#eef2f7] p-3 sm:p-5 lg:p-7">
-      <div className="mx-auto grid min-h-[calc(100vh-24px)] w-full max-w-[1500px] overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.14)] sm:min-h-[calc(100vh-40px)] lg:min-h-[calc(100vh-56px)] lg:grid-cols-[1.05fr_0.95fr]">
+    <div className="min-h-screen bg-[#eef2f7]">
+      <div className="grid min-h-screen w-full overflow-hidden bg-white lg:grid-cols-[1.05fr_0.95fr]">
         <section className="relative hidden overflow-hidden bg-[#020a22] lg:block">
-          <img src="/images/login/login-crm-visual.png" alt="EduCanvas CRM" className="absolute inset-0 h-full w-full object-cover object-center" />
-          <div className="absolute bottom-[5%] right-[3%] w-[48%] max-w-[430px]">
+          <img
+  src="/images/login/login-crm-visual.png"
+  alt="EduCanvas CRM"
+  className="absolute inset-0 h-full w-full scale-[1.04] object-contain object-center"
+ />
+          <div className="absolute bottom-[3%] right-[1%] w-[54%] max-w-[500px]">
             <div className="absolute inset-[18%] rounded-full bg-blue-500/20 blur-3xl" />
             <img src="/images/login/login-ai-visual.png" alt="EduCanvas AI" className="relative z-10 w-full object-contain drop-shadow-[0_22px_45px_rgba(37,99,235,.32)]" />
           </div>
         </section>
 
-        <section className="flex items-center justify-center bg-white px-6 py-10 sm:px-10 lg:px-12 xl:px-16">
-          <div className="w-full max-w-[540px]">
+        <section className="flex items-center justify-center bg-white px-6 py-8 sm:px-10 lg:px-12 xl:px-16">
+          <div className="w-full max-w-[620px]">
             <div className="mb-9 text-center">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#eef4ff] text-blue-600">
                 <LockKeyhole className="h-7 w-7" strokeWidth={1.8} />
