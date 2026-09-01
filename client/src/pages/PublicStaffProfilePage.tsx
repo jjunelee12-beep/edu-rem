@@ -417,7 +417,7 @@ const companyLogoUrl =
                     ) => (
                       <span
   key={`${specialty}-${index}`}
-  className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm"
+  className="rounded-full border border-white/10 bg-white/[0.08] px-3 py-1.5 text-xs font-semibold text-slate-200 shadow-sm backdrop-blur"
 >
   {specialty}
 </span>
@@ -449,7 +449,7 @@ const companyLogoUrl =
   size="lg"
   variant="outline"
   onClick={callPhone}
-  className="h-12 rounded-xl border-slate-700 bg-slate-900 px-6 font-semibold text-white hover:bg-slate-800 hover:text-white"
+  className="h-12 rounded-xl border border-white/15 bg-white/10 px-6 font-semibold text-white shadow-sm backdrop-blur hover:bg-white/15 hover:text-white"
 >
                       <Phone className="mr-2 h-4 w-4" />
                       {publicPhone}
@@ -631,12 +631,12 @@ const companyLogoUrl =
                             index: number
                           ) => (
                             <Badge
-                              key={`${specialty}-${index}`}
-                              variant="secondary"
-                              className="rounded-full text-[11px]"
-                            >
-                              {specialty}
-                            </Badge>
+  key={`${specialty}-${index}`}
+  variant="outline"
+  className="rounded-full border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700"
+>
+  {specialty}
+</Badge>
                           )
                         )}
                     </div>
@@ -661,16 +661,14 @@ const companyLogoUrl =
 
                       {showPhone ? (
                         <Button
-                          type="button"
-                          variant="outline"
-                          className="h-11 w-full rounded-xl"
-                          onClick={
-                            callPhone
-                          }
-                        >
-                          <Phone className="mr-2 h-4 w-4" />
-                          전화 상담
-                        </Button>
+  type="button"
+  variant="outline"
+  className="h-11 w-full rounded-xl border-slate-300 bg-white font-semibold text-slate-800 hover:bg-slate-50"
+  onClick={callPhone}
+>
+  <Phone className="mr-2 h-4 w-4" />
+  전화 상담
+</Button>
                       ) : null}
                     </div>
                   ) : null}
