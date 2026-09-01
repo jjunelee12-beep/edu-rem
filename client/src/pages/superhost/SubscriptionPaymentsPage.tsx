@@ -27,6 +27,44 @@ export default function SubscriptionPaymentsPage() {
     enabled: user?.role === "superhost",
   });
 
+const runDuePaymentsMutation =
+  trpc.saas.runDueSubscriptionPayments.useMutation({
+    onSuccess: async (result: any) => {
+      await paymentsQuery.refetch();
+
+      const paidCount =
+        result?.results?.filter(
+          (item: any) => item.status === "paid"
+        ).length || 0;
+
+      const failedCount =
+        result?.results?.filter(
+          (item: any) => item.status === "failed"
+        ).length || 0;
+
+      const skippedCount =
+        result?.results?.filter(
+          (item: any) => item.status === "skipped"
+        ).length || 0;
+
+      toast.success(
+        `자동결제 처리 완료 · 성공 ${paidCount}건 / 실패 ${failedCount}건 / 제외 ${skippedCount}건`
+      );
+
+      console.log(
+        "[SaaS Billing] manual run result",
+        result
+      );
+    },
+
+    onError: (error: any) => {
+      toast.error(
+        error?.message ||
+          "자동결제 실행 중 오류가 발생했습니다."
+      );
+    },
+  });
+
   const eventsQuery = trpc.saas.listSubscriptionPaymentEvents.useQuery(
     {
       paymentId: selectedPaymentId,
@@ -118,19 +156,42 @@ export default function SubscriptionPaymentsPage() {
             </p>
           </div>
 
-          <Button
-            variant="outline"
-            onClick={() => paymentsQuery.refetch()}
-            disabled={paymentsQuery.isFetching}
-          >
-            <RefreshCw
-              className={`mr-2 h-4 w-4 ${
-                paymentsQuery.isFetching ? "animate-spin" : ""
-              }`}
-            />
-            새로고침
-          </Button>
-        </div>
+          <div className="flex items-center gap-2">
+  <Button
+    variant="destructive"
+    onClick={() => {
+      const confirmed = window.confirm(
+        "결제 예정일이 지난 SaaS 구독에 대해 Toss 자동결제를 실행합니다.\n\n실행하시겠습니까?"
+      );
+
+      if (!confirmed) return;
+
+      runDuePaymentsMutation.mutate();
+    }}
+    disabled={runDuePaymentsMutation.isPending}
+  >
+    <CreditCard className="mr-2 h-4 w-4" />
+
+    {runDuePaymentsMutation.isPending
+      ? "자동결제 처리 중..."
+      : "자동결제 실행"}
+  </Button>
+
+  <Button
+    variant="outline"
+    onClick={() => paymentsQuery.refetch()}
+    disabled={paymentsQuery.isFetching}
+  >
+    <RefreshCw
+      className={`mr-2 h-4 w-4 ${
+        paymentsQuery.isFetching
+          ? "animate-spin"
+          : ""
+      }`}
+    />
+    새로고침
+  </Button>
+</div>
 
         <div className="grid gap-4 md:grid-cols-4">
           <Card className="rounded-2xl">
