@@ -40232,11 +40232,11 @@ export async function listWorkPosts(params: {
       p.updatedAt,
 
       CASE
-        WHEN reads.userId IS NULL THEN 0
-        ELSE 1
-      END AS isRead,
+  WHEN postRead.userId IS NULL THEN 0
+  ELSE 1
+END AS isRead,
 
-      reads.acknowledgedAt,
+postRead.acknowledgedAt,
 
       (
         SELECT COUNT(*)
@@ -40258,10 +40258,10 @@ export async function listWorkPosts(params: {
       ON category.id = p.categoryId
       AND category.organizationId = p.organizationId
 
-    LEFT JOIN work_post_reads reads
-      ON reads.organizationId = p.organizationId
-      AND reads.postId = p.id
-      AND reads.userId = ${params.userId}
+    LEFT JOIN work_post_reads postRead
+      ON postRead.organizationId = p.organizationId
+      AND postRead.postId = p.id
+      AND postRead.userId = ${params.userId}
 
     WHERE p.organizationId = ${organizationId}
       AND p.isActive = 1
@@ -40357,9 +40357,9 @@ export async function getWorkPost(params: {
       p.createdAt,
       p.updatedAt,
 
-      reads.firstReadAt,
-      reads.lastReadAt,
-      reads.acknowledgedAt
+      postRead.firstReadAt,
+      postRead.lastReadAt,
+      postRead.acknowledgedAt
 
     FROM work_posts p
 
@@ -40367,10 +40367,10 @@ export async function getWorkPost(params: {
       ON category.id = p.categoryId
       AND category.organizationId = p.organizationId
 
-    LEFT JOIN work_post_reads reads
-      ON reads.organizationId = p.organizationId
-      AND reads.postId = p.id
-      AND reads.userId = ${params.userId}
+    LEFT JOIN work_post_reads postRead
+      ON postRead.organizationId = p.organizationId
+      AND postRead.postId = p.id
+      AND postRead.userId = ${params.userId}
 
     WHERE p.id = ${params.postId}
       AND p.organizationId = ${organizationId}
@@ -41579,14 +41579,14 @@ export async function getWorkPostTargetStatus(params: {
   const [rows] = await db.execute(sql`
     SELECT
       target.userId,
-      reads.firstReadAt,
-      reads.lastReadAt,
-      reads.acknowledgedAt
+      postRead.firstReadAt,
+      postRead.lastReadAt,
+      postRead.acknowledgedAt
     FROM work_post_targets target
-    LEFT JOIN work_post_reads reads
-      ON reads.organizationId = target.organizationId
-      AND reads.postId = target.postId
-      AND reads.userId = target.userId
+    LEFT JOIN work_post_reads postRead
+      ON postRead.organizationId = target.organizationId
+      AND postRead.postId = target.postId
+      AND postRead.userId = target.userId
     WHERE target.organizationId = ${organizationId}
       AND target.postId = ${params.postId}
     ORDER BY target.id ASC
