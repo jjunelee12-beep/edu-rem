@@ -12,7 +12,8 @@ import {
   ChevronRight,
   Megaphone,
   CalendarRange,
-  MessageSquare,
+    MessageSquare,
+  FolderKanban,
   Clock3,
   CheckCircle2,
   XCircle,
@@ -57,8 +58,12 @@ function getNotificationIcon(item: NotificationItem) {
       return <Megaphone className="h-4 w-4 text-blue-600" />;
     case "schedule":
       return <CalendarRange className="h-4 w-4 text-emerald-600" />;
-    case "messenger":
+       case "messenger":
       return <MessageSquare className="h-4 w-4 text-violet-600" />;
+
+    case "work_community":
+      return <FolderKanban className="h-4 w-4 text-cyan-700" />;
+
     case "attendance":
       return <Clock3 className="h-4 w-4 text-amber-600" />;
     case "approval":
@@ -154,7 +159,8 @@ function getNotificationTitle(item: NotificationItem) {
     return "일정 알림";
   }
 
-  if (item.type === "messenger") return "메신저 알림";
+    if (item.type === "messenger") return "메신저 알림";
+  if (item.type === "work_community") return "업무 커뮤니티";
   if (item.type === "attendance") return "근태 알림";
   if (item.type === "lead") return "상담 DB 알림";
 
@@ -201,6 +207,19 @@ function getNotificationTypeBadge(item: NotificationItem) {
     return {
       label: "메신저",
       className: "bg-violet-50 text-violet-600",
+    };
+  }
+
+  if (item.type === "work_community") {
+    return {
+      label:
+        item.level === "important"
+          ? "업무 확인"
+          : "업무 공유",
+      className:
+        item.level === "important"
+          ? "bg-orange-50 text-orange-700"
+          : "bg-cyan-50 text-cyan-700",
     };
   }
 
@@ -286,8 +305,14 @@ export default function Notifications() {
     },
   });
 
-  const [filter, setFilter] = useState<
-    "all" | "unread" | "approval" | "messenger" | "notice" | "schedule"
+    const [filter, setFilter] = useState<
+    | "all"
+    | "unread"
+    | "approval"
+    | "messenger"
+    | "notice"
+    | "work_community"
+    | "schedule"
   >("all");
 
   const notifications = useMemo(() => {
@@ -375,14 +400,47 @@ if (item.type === "payment" && item.relatedId) {
   return;
 }
 
-    switch (item.type) {
-      case "notice":
-        if (item.relatedId) {
-          setLocation(`/notices/${item.relatedId}`);
-          return;
-        }
-        setLocation("/notices");
-        return;
+   switch (item.type) {
+  case "work_community":
+    if (item.relatedId) {
+      const firstSegment =
+        window.location.pathname
+          .split("/")
+          .filter(Boolean)[0] || "";
+
+      const path =
+        `/work-community/${item.relatedId}`;
+
+      const shouldPrefix =
+        firstSegment &&
+        ![
+          "login",
+          "form",
+          "ad-form",
+          "saas",
+          "superhost",
+        ].includes(firstSegment);
+
+      setLocation(
+        shouldPrefix
+          ? `/${firstSegment}${path}`
+          : path
+      );
+
+      return;
+    }
+
+    setLocation("/work-community");
+    return;
+
+  case "notice":
+    if (item.relatedId) {
+      setLocation(`/notices/${item.relatedId}`);
+      return;
+    }
+
+    setLocation("/notices");
+    return;
 
             case "schedule":
         if (item.relatedId) {
@@ -433,7 +491,7 @@ if (item.type === "payment" && item.relatedId) {
                 <h1 className="text-2xl font-bold">알림</h1>
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
-                공지사항, 일정, 메신저, 전자결재 등 주요 알림을 확인할 수 있습니다.
+                공지사항, 업무 커뮤니티, 일정, 메신저, 전자결재 알림을 확인할 수 있습니다.
               </p>
             </div>
 
@@ -466,13 +524,17 @@ if (item.type === "payment" && item.relatedId) {
         <CardContent className="p-4">
           <div className="flex flex-wrap gap-2">
             {[
-              { key: "all", label: "전체" },
-              { key: "unread", label: "안읽음" },
-              { key: "approval", label: "전자결재" },
-              { key: "messenger", label: "메신저" },
-              { key: "notice", label: "공지" },
-              { key: "schedule", label: "일정" },
-            ].map((tab) => (
+  { key: "all", label: "전체" },
+  { key: "unread", label: "안읽음" },
+  { key: "approval", label: "전자결재" },
+  { key: "messenger", label: "메신저" },
+  { key: "notice", label: "공지" },
+  {
+    key: "work_community",
+    label: "업무 커뮤니티",
+  },
+  { key: "schedule", label: "일정" },
+].map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setFilter(tab.key as any)}

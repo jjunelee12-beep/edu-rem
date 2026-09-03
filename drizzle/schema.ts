@@ -5,6 +5,7 @@ import {
   mysqlEnum,
   mysqlTable,
   text,
+mediumtext,
   timestamp,
   varchar,
   decimal,
@@ -6251,6 +6252,342 @@ importance: mysqlEnum("importance", ["normal", "important", "urgent"])
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
 });
+
+// ─── Work Community (업무 커뮤니티) ────────────────────────────────
+// categoryId는 업무 분류용이며 열람 권한과 분리한다.
+// visibility이 targeted인 게시글의 열람 대상은
+// work_post_targets 테이블에서 관리한다.
+
+export const workCategories = mysqlTable(
+  "work_categories",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull(),
+
+    name: varchar("name", { length: 80 }).notNull(),
+
+    color: varchar("color", { length: 20 })
+      .notNull()
+      .default("slate"),
+
+    sortOrder: int("sortOrder")
+      .notNull()
+      .default(0),
+
+    isActive: boolean("isActive")
+      .notNull()
+      .default(true),
+
+    createdBy: int("createdBy").notNull(),
+
+    createdAt: timestamp("createdAt")
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp("updatedAt")
+      .notNull()
+      .defaultNow()
+      .onUpdateNow(),
+  },
+  (table) => ({
+    organizationNameUnique: uniqueIndex(
+      "uq_work_categories_organization_name"
+    ).on(
+      table.organizationId,
+      table.name
+    ),
+
+    organizationActiveOrderIdx: index(
+      "idx_work_categories_organization_active_order"
+    ).on(
+      table.organizationId,
+      table.isActive,
+      table.sortOrder
+    ),
+  })
+);
+
+export const workPosts = mysqlTable(
+  "work_posts",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull(),
+
+    categoryId: int("categoryId").notNull(),
+
+    authorId: int("authorId").notNull(),
+
+    authorName: varchar("authorName", {
+      length: 100,
+    }),
+
+    title: varchar("title", {
+      length: 255,
+    }).notNull(),
+
+    content: mediumtext("content").notNull(),
+
+    visibility: mysqlEnum("visibility", [
+      "all",
+      "targeted",
+    ])
+      .notNull()
+      .default("all"),
+
+    requiresAcknowledgement: boolean(
+      "requiresAcknowledgement"
+    )
+      .notNull()
+      .default(false),
+
+    isPinned: boolean("isPinned")
+      .notNull()
+      .default(false),
+
+    isActive: boolean("isActive")
+      .notNull()
+      .default(true),
+
+    viewCount: int("viewCount")
+      .notNull()
+      .default(0),
+
+    commentCount: int("commentCount")
+      .notNull()
+      .default(0),
+
+    createdAt: timestamp("createdAt")
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp("updatedAt")
+      .notNull()
+      .defaultNow()
+      .onUpdateNow(),
+  },
+  (table) => ({
+    organizationCreatedIdx: index(
+      "idx_work_posts_organization_created"
+    ).on(
+      table.organizationId,
+      table.createdAt
+    ),
+
+    organizationCategoryIdx: index(
+      "idx_work_posts_organization_category"
+    ).on(
+      table.organizationId,
+      table.categoryId
+    ),
+
+    organizationAuthorIdx: index(
+      "idx_work_posts_organization_author"
+    ).on(
+      table.organizationId,
+      table.authorId
+    ),
+  })
+);
+
+export const workPostTargets = mysqlTable(
+  "work_post_targets",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull(),
+
+    postId: int("postId").notNull(),
+
+    userId: int("userId").notNull(),
+
+    createdAt: timestamp("createdAt")
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    postUserUnique: uniqueIndex(
+      "uq_work_post_targets_post_user"
+    ).on(
+      table.postId,
+      table.userId
+    ),
+
+    organizationUserIdx: index(
+      "idx_work_post_targets_organization_user"
+    ).on(
+      table.organizationId,
+      table.userId
+    ),
+  })
+);
+
+export const workPostAttachments = mysqlTable(
+  "work_post_attachments",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull(),
+
+    postId: int("postId").notNull(),
+
+    originalName: varchar("originalName", {
+      length: 255,
+    }).notNull(),
+
+    storedName: varchar("storedName", {
+      length: 255,
+    }).notNull(),
+
+    url: varchar("url", {
+      length: 1000,
+    }).notNull(),
+
+    mimeType: varchar("mimeType", {
+      length: 150,
+    }),
+
+    sizeBytes: int("sizeBytes")
+      .notNull()
+      .default(0),
+
+    uploadedBy: int("uploadedBy").notNull(),
+
+    createdAt: timestamp("createdAt")
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    organizationPostIdx: index(
+      "idx_work_post_attachments_organization_post"
+    ).on(
+      table.organizationId,
+      table.postId
+    ),
+  })
+);
+
+export const workPostReads = mysqlTable(
+  "work_post_reads",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull(),
+
+    postId: int("postId").notNull(),
+
+    userId: int("userId").notNull(),
+
+    firstReadAt: timestamp("firstReadAt")
+      .notNull()
+      .defaultNow(),
+
+    lastReadAt: timestamp("lastReadAt")
+      .notNull()
+      .defaultNow(),
+
+    acknowledgedAt: timestamp("acknowledgedAt"),
+  },
+  (table) => ({
+    postUserUnique: uniqueIndex(
+      "uq_work_post_reads_post_user"
+    ).on(
+      table.postId,
+      table.userId
+    ),
+
+    organizationUserIdx: index(
+      "idx_work_post_reads_organization_user"
+    ).on(
+      table.organizationId,
+      table.userId
+    ),
+  })
+);
+
+export const workPostComments = mysqlTable(
+  "work_post_comments",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull(),
+
+    postId: int("postId").notNull(),
+
+    parentCommentId: int("parentCommentId"),
+
+    authorId: int("authorId").notNull(),
+
+    authorName: varchar("authorName", {
+      length: 100,
+    }),
+
+    content: text("content").notNull(),
+
+    isActive: boolean("isActive")
+      .notNull()
+      .default(true),
+
+    createdAt: timestamp("createdAt")
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp("updatedAt")
+      .notNull()
+      .defaultNow()
+      .onUpdateNow(),
+  },
+  (table) => ({
+    organizationPostCreatedIdx: index(
+      "idx_work_post_comments_organization_post_created"
+    ).on(
+      table.organizationId,
+      table.postId,
+      table.createdAt
+    ),
+
+    parentCommentIdx: index(
+      "idx_work_post_comments_parent"
+    ).on(table.parentCommentId),
+  })
+);
+
+export type InsertWorkCategory =
+  typeof workCategories.$inferInsert;
+
+export type SelectWorkCategory =
+  typeof workCategories.$inferSelect;
+
+export type InsertWorkPost =
+  typeof workPosts.$inferInsert;
+
+export type SelectWorkPost =
+  typeof workPosts.$inferSelect;
+
+export type InsertWorkPostTarget =
+  typeof workPostTargets.$inferInsert;
+
+export type SelectWorkPostTarget =
+  typeof workPostTargets.$inferSelect;
+
+export type InsertWorkPostAttachment =
+  typeof workPostAttachments.$inferInsert;
+
+export type SelectWorkPostAttachment =
+  typeof workPostAttachments.$inferSelect;
+
+export type InsertWorkPostRead =
+  typeof workPostReads.$inferInsert;
+
+export type SelectWorkPostRead =
+  typeof workPostReads.$inferSelect;
+
+export type InsertWorkPostComment =
+  typeof workPostComments.$inferInsert;
+
+export type SelectWorkPostComment =
+  typeof workPostComments.$inferSelect;
 
 export const schedules = mysqlTable(
   "schedules",

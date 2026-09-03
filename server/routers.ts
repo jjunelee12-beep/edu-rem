@@ -27,6 +27,7 @@ import {
 } from "node:crypto";
 import { attendanceRouter } from "./attendance.router";
 import { noticeRouter } from "./routes/notice.router";
+import { workCommunityRouter } from "./routes/work-community.router";
 import { scheduleRouter } from "./routes/schedule.router";
 import { approvalRouter } from "./routes/approval.router";
 import { privateCertificateMasterRouter } from "./routes/privateCertificateMaster";
@@ -4691,6 +4692,7 @@ approvalHistory: router({
 
 attendance: attendanceRouter,
 notice: noticeRouter,
+workCommunity: workCommunityRouter,
 schedule: scheduleRouter,
   approval: approvalRouter,
 privateCertificateMaster: privateCertificateMasterRouter,

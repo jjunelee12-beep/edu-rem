@@ -60,8 +60,9 @@ import {
  Palette,
  BarChart3,
  MessageSquare,
- Megaphone,
- User,
+Megaphone,
+FolderKanban,
+User,
  X,
  ChevronRight,
  ChevronDown,
@@ -85,6 +86,11 @@ const staffMenuItems: MenuItem[] = [
  { icon: GraduationCap, label: "학생 관리", path: "/students" },
  { icon: CalendarDays, label: "학기별 예정표", path: "/semesters" },
  { icon: Megaphone, label: "공지사항", path: "/notices" },
+{
+  icon: FolderKanban,
+  label: "업무 커뮤니티",
+  path: "/work-community",
+},
  { icon: CalendarRange, label: "일정 / 캘린더", path: "/schedules" },
 ];
 
@@ -731,8 +737,13 @@ const primaryMenuItems = [
   { icon: PhoneCall, label: "상담 DB", path: "/consultations" },
   { icon: GraduationCap, label: "학생 관리", path: "/students" },
   { icon: CalendarDays, label: "학기별 예정표", path: "/semesters" },
-  { icon: Megaphone, label: "공지사항", path: "/notices" },
-  { icon: CalendarRange, label: "일정 / 캘린더", path: "/schedules" },
+{ icon: Megaphone, label: "공지사항", path: "/notices" },
+{
+  icon: FolderKanban,
+  label: "업무 커뮤니티",
+  path: "/work-community",
+},
+{ icon: CalendarRange, label: "일정 / 캘린더", path: "/schedules" },
 ];
 
  const allMenuItems = [
@@ -794,6 +805,19 @@ const primaryMenuItems = [
  };
  }
 
+if (
+  item.type === "work_community" &&
+  item.relatedId
+) {
+  return {
+    kind: "route" as const,
+    payload: {
+      path:
+        `/work-community/${item.relatedId}`,
+    },
+  };
+}
+
  if (item.type === "schedule" && item.relatedId) {
  return {
  kind: "schedule-detail" as const,
@@ -833,9 +857,18 @@ const primaryMenuItems = [
  .length,
  approval: notifications.filter((item) => item.type === "approval")
  .length,
- notice: notifications.filter((item) => item.type === "notice").length,
- schedule: notifications.filter((item) => item.type === "schedule")
- .length,
+ notice: notifications.filter(
+  (item) => item.type === "notice"
+).length,
+
+workCommunity: notifications.filter(
+  (item) =>
+    item.type === "work_community"
+).length,
+
+schedule: notifications.filter(
+  (item) => item.type === "schedule"
+).length,
  };
 
  return summary;
@@ -894,14 +927,14 @@ const primaryMenuItems = [
 
  shownToastIdsRef.current.add(item.id);
 
- const category =
- item.type === "notice"
- ? "notice"
- : item.type === "schedule"
- ? "schedule"
- : item.type === "approval"
- ? "approval"
- : "system";
+const category =
+  item.type === "notice"
+    ? "notice"
+    : item.type === "schedule"
+      ? "schedule"
+      : item.type === "approval"
+        ? "approval"
+        : "system";
 
  const level = (item.level as any) || "normal";
 	const title = getNotificationTitle(item);
@@ -1122,6 +1155,18 @@ if (item.type === "semester_approval") {
  return;
  }
 
+if (
+  item.type === "work_community" &&
+  item.relatedId
+) {
+  setLocation(
+    withOrgPath(
+      `/work-community/${item.relatedId}`
+    )
+  );
+  return;
+}
+
  if (item.type === "schedule" && item.relatedId) {
  setLocation(withOrgPath("/schedules"));
  return;
@@ -1146,6 +1191,13 @@ if (item.type === "messenger") {
  setLocation(withOrgPath("/notices"));
  return;
  }
+
+if (item.type === "work_community") {
+  setLocation(
+    withOrgPath("/work-community")
+  );
+  return;
+}
 
  if (item.type === "schedule") {
  setLocation(withOrgPath("/schedules"));
@@ -1526,6 +1578,10 @@ const saasAnnouncementTypeLabel: Record<string, string> = {
  <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700">
  공지 {notificationSummary.notice}
  </span>
+
+<span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700">
+  업무 {notificationSummary.workCommunity}
+</span>
 
  <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-medium text-violet-700">
  일정 {notificationSummary.schedule}
@@ -1925,6 +1981,25 @@ function getNotificationBadge(
    };
  }
 
+if (item.type === "work_community") {
+  if (
+    level === "important" ||
+    level === "urgent"
+  ) {
+    return {
+      label: "업무 확인",
+      className:
+        "border-orange-200 bg-orange-50 text-orange-700",
+    };
+  }
+
+  return {
+    label: "업무 공유",
+    className:
+      "border-cyan-200 bg-cyan-50 text-cyan-700",
+  };
+}
+
  if (item.type === "schedule") {
    if (level === "important" || level === "urgent") {
      return {
@@ -2010,8 +2085,17 @@ function getNotificationTitle(item: NotificationItem) {
    return "일정 알림";
  }
 
- if (item.type === "messenger") return "메신저 알림";
- if (item.type === "lead") return "상담 DB 알림";
+if (item.type === "messenger") {
+  return "메신저 알림";
+}
+
+if (item.type === "work_community") {
+  return "업무 커뮤니티";
+}
+
+if (item.type === "lead") {
+  return "상담 DB 알림";
+}
 
  return "새 알림";
 }

@@ -15,6 +15,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { authRouter } from "./routes/auth";
 import noticeUploadRouter from "../routes/notice-upload";
+import workCommunityUploadRouter from "../routes/work-community-upload";
 import holidayRouter from "../routes/holiday.router";
 import { registerSaasInquiryRoutes } from "../routes/saas-inquiry";
 import {
@@ -4290,6 +4291,7 @@ return res
   app.use("/api/auth", authRouter);
   app.use("/api/holidays", holidayRouter);
   app.use(noticeUploadRouter);
+app.use(workCommunityUploadRouter);
   registerSaasInquiryRoutes(app);
 
   app.post("/api/upload", upload.single("file"), async (req, res) => {

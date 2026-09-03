@@ -18842,6 +18842,287 @@ organizationId,
   };
 }
 
+/**
+ * 업무 커뮤니티 신규 게시글 알림
+ *
+ * 전체 공개:
+ * 같은 회사의 활성 사용자 전체에게 전송
+ *
+ * 지정 공개:
+ * work_post_targets에 지정된 사용자에게만 전송
+ *
+ * 작성자 본인에게는 전송하지 않는다.
+ */
+export async function createWorkPostNotifications(params: {
+  organizationId: number;
+  postId: number;
+  actorUserId: number;
+  title: string;
+  visibility: "all" | "targeted";
+  requiresAcknowledgement?: boolean;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  let targetUserIds: number[] = [];
+
+  if (params.visibility === "all") {
+    const allUsers = await getAllUsersDetailed({
+      organizationId,
+    });
+
+    targetUserIds = (allUsers as any[])
+      .filter(
+        (user) =>
+          !!user.isActive &&
+          Number(user.id) !==
+            Number(params.actorUserId)
+      )
+      .map((user) => Number(user.id));
+  } else {
+    const [targetRows] = await db.execute(sql`
+      SELECT target.userId
+      FROM work_post_targets target
+      INNER JOIN users user
+        ON user.id = target.userId
+        AND user.organizationId =
+          target.organizationId
+      WHERE target.organizationId =
+        ${organizationId}
+        AND target.postId =
+          ${params.postId}
+        AND user.isActive = 1
+        AND target.userId !=
+          ${params.actorUserId}
+    `);
+
+    targetUserIds = (
+      (targetRows as any[]) ?? []
+    ).map((row) => Number(row.userId));
+  }
+
+  targetUserIds = Array.from(
+    new Set(
+      targetUserIds.filter(
+        (userId) =>
+          Number.isFinite(userId) &&
+          userId > 0 &&
+          userId !==
+            Number(params.actorUserId)
+      )
+    )
+  );
+
+  const notificationTitle =
+    params.requiresAcknowledgement
+      ? "확인이 필요한 업무"
+      : "새 업무 게시글";
+
+  const messagePrefix =
+    params.requiresAcknowledgement
+      ? "[확인 요청]"
+      : params.visibility === "targeted"
+        ? "[지정 업무]"
+        : "[업무 공유]";
+
+  for (const userId of targetUserIds) {
+    await createNotification({
+      organizationId,
+      userId,
+      type: "work_community",
+      title: notificationTitle,
+      level:
+        params.requiresAcknowledgement
+          ? "important"
+          : "normal",
+      message:
+        `${messagePrefix} ${params.title}`,
+      relatedId: Number(params.postId),
+      targetType: "work_post",
+      targetId: Number(params.postId),
+      linkUrl:
+        `/work-community/${params.postId}`,
+      metadataJson: JSON.stringify({
+        postId: Number(params.postId),
+        visibility: params.visibility,
+        requiresAcknowledgement:
+          !!params.requiresAcknowledgement,
+      }),
+      isRead: false,
+    } as any);
+  }
+
+  return {
+    count: targetUserIds.length,
+  };
+}
+
+/**
+ * 업무 커뮤니티 댓글·답글 알림
+ */
+export async function createWorkPostCommentNotifications(
+  params: {
+    organizationId: number;
+    postId: number;
+    commentId: number;
+    actorUserId: number;
+    actorName?: string | null;
+    parentCommentId?: number | null;
+  }
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const [postRows] = await db.execute(sql`
+    SELECT
+      id,
+      authorId,
+      title
+    FROM work_posts
+    WHERE id = ${params.postId}
+      AND organizationId =
+        ${organizationId}
+      AND isActive = 1
+    LIMIT 1
+  `);
+
+  const post =
+    ((postRows as any[]) ?? [])[0] ??
+    null;
+
+  if (!post) {
+    return {
+      count: 0,
+    };
+  }
+
+  const targetMap = new Map<
+    number,
+    "comment" | "reply"
+  >();
+
+  const postAuthorId = Number(
+    post.authorId
+  );
+
+  if (
+    postAuthorId > 0 &&
+    postAuthorId !==
+      Number(params.actorUserId)
+  ) {
+    targetMap.set(
+      postAuthorId,
+      "comment"
+    );
+  }
+
+  if (params.parentCommentId) {
+    const [parentRows] = await db.execute(sql`
+      SELECT authorId
+      FROM work_post_comments
+      WHERE id =
+        ${params.parentCommentId}
+        AND organizationId =
+          ${organizationId}
+        AND postId =
+          ${params.postId}
+        AND isActive = 1
+      LIMIT 1
+    `);
+
+    const parent =
+      ((parentRows as any[]) ?? [])[0] ??
+      null;
+
+    const parentAuthorId = Number(
+      parent?.authorId || 0
+    );
+
+    if (
+      parentAuthorId > 0 &&
+      parentAuthorId !==
+        Number(params.actorUserId)
+    ) {
+      targetMap.set(
+        parentAuthorId,
+        "reply"
+      );
+    }
+  }
+
+  const actorName =
+    String(
+      params.actorName || "직원"
+    ).trim() || "직원";
+
+  for (const [
+    userId,
+    notificationKind,
+  ] of targetMap.entries()) {
+    const isReply =
+      notificationKind === "reply";
+
+    await createNotification({
+      organizationId,
+      userId,
+      type: "work_community",
+      title: isReply
+        ? "내 댓글에 새 답글"
+        : "내 업무 글에 새 댓글",
+      level: "normal",
+      message: isReply
+        ? `${actorName}님이 답글을 남겼습니다: ${post.title}`
+        : `${actorName}님이 댓글을 남겼습니다: ${post.title}`,
+      relatedId: Number(params.postId),
+      targetType:
+        "work_post_comment",
+      targetId:
+        Number(params.commentId),
+      linkUrl:
+        `/work-community/${params.postId}`,
+      metadataJson: JSON.stringify({
+        postId: Number(params.postId),
+        commentId:
+          Number(params.commentId),
+        parentCommentId:
+          params.parentCommentId
+            ? Number(
+                params.parentCommentId
+              )
+            : null,
+        notificationKind,
+      }),
+      isRead: false,
+    } as any);
+  }
+
+  return {
+    count: targetMap.size,
+  };
+}
+
 export async function markNotificationRead(
   id: number,
   userId: number,
@@ -39642,6 +39923,1707 @@ const organizationId = requireOrganizationId(params?.organizationId);
       AND organizationId = ${organizationId}
       AND isActive = 1
   `);
+}
+
+// ─── Work Community (업무 커뮤니티) ──────────────────────
+
+export type WorkCommunityUserRole =
+  | "staff"
+  | "admin"
+  | "host"
+  | "superhost"
+  | string;
+
+type WorkCommunityAccessParams = {
+  organizationId: number;
+  userId: number;
+  role: WorkCommunityUserRole;
+};
+
+function isWorkCommunityHost(role?: string | null) {
+  return role === "host" || role === "superhost";
+}
+
+/**
+ * 해당 사용자가 게시글을 열람할 수 있는지 검사한다.
+ *
+ * 허용 조건:
+ * 1. Host 또는 Superhost
+ * 2. 전체 공개 게시글
+ * 3. 게시글 작성자
+ * 4. work_post_targets에 지정된 사용자
+ */
+export async function canAccessWorkPost(
+  postId: number,
+  params: WorkCommunityAccessParams
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      p.id,
+      p.authorId,
+      p.visibility
+    FROM work_posts p
+    WHERE p.id = ${postId}
+      AND p.organizationId = ${organizationId}
+      AND p.isActive = 1
+      AND (
+        ${isWorkCommunityHost(params.role) ? 1 : 0} = 1
+        OR p.visibility = 'all'
+        OR p.authorId = ${params.userId}
+        OR EXISTS (
+          SELECT 1
+          FROM work_post_targets target
+          WHERE target.organizationId = p.organizationId
+            AND target.postId = p.id
+            AND target.userId = ${params.userId}
+        )
+      )
+    LIMIT 1
+  `);
+
+  return ((rows as any[]) ?? []).length > 0;
+}
+
+/**
+ * 게시글 수정·삭제 권한
+ *
+ * 작성자 본인 또는 Host/Superhost만 가능하다.
+ */
+export async function canManageWorkPost(
+  postId: number,
+  params: WorkCommunityAccessParams
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const [rows] = await db.execute(sql`
+    SELECT p.id
+    FROM work_posts p
+    WHERE p.id = ${postId}
+      AND p.organizationId = ${organizationId}
+      AND p.isActive = 1
+      AND (
+        ${isWorkCommunityHost(params.role) ? 1 : 0} = 1
+        OR p.authorId = ${params.userId}
+      )
+    LIMIT 1
+  `);
+
+  return ((rows as any[]) ?? []).length > 0;
+}
+
+export async function listWorkCategories(params: {
+  organizationId: number;
+  includeInactive?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      id,
+      organizationId,
+      name,
+      color,
+      sortOrder,
+      isActive,
+      createdBy,
+      createdAt,
+      updatedAt
+    FROM work_categories
+    WHERE organizationId = ${organizationId}
+      AND (
+        ${params.includeInactive ? 1 : 0} = 1
+        OR isActive = 1
+      )
+    ORDER BY sortOrder ASC, id ASC
+  `);
+
+  return (rows as any[]) ?? [];
+}
+
+export async function createWorkCategory(params: {
+  organizationId: number;
+  name: string;
+  color?: string;
+  sortOrder?: number;
+  createdBy: number;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const result: any = await db.execute(sql`
+    INSERT INTO work_categories (
+      organizationId,
+      name,
+      color,
+      sortOrder,
+      isActive,
+      createdBy
+    )
+    VALUES (
+      ${organizationId},
+      ${params.name.trim()},
+      ${params.color ?? "slate"},
+      ${params.sortOrder ?? 0},
+      1,
+      ${params.createdBy}
+    )
+  `);
+
+  return getInsertId(result);
+}
+
+export async function updateWorkCategory(params: {
+  organizationId: number;
+  id: number;
+  name?: string;
+  color?: string;
+  sortOrder?: number;
+  isActive?: boolean;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  await db.execute(sql`
+    UPDATE work_categories
+    SET
+      name = COALESCE(${params.name?.trim() ?? null}, name),
+      color = COALESCE(${params.color ?? null}, color),
+      sortOrder = COALESCE(${params.sortOrder ?? null}, sortOrder),
+      isActive = COALESCE(
+        ${
+          params.isActive === undefined
+            ? null
+            : params.isActive
+              ? 1
+              : 0
+        },
+        isActive
+      )
+    WHERE id = ${params.id}
+      AND organizationId = ${organizationId}
+  `);
+
+  return { success: true };
+}
+
+export async function listWorkCommunityMembers(params: {
+  organizationId: number;
+}) {
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const rows = await getAllUsersDetailed({
+    organizationId,
+  });
+
+  return (rows as any[])
+    .filter((row) => row.isActive !== false)
+    .map((row) => ({
+      id: Number(row.id),
+      displayNo: Number(row.displayNo ?? 0),
+      name: row.name ?? "",
+      username: row.username ?? "",
+      role: row.role,
+      profileImageUrl: row.profileImageUrl ?? null,
+      teamId: row.teamId ?? null,
+      teamName: row.teamName ?? null,
+      positionId: row.positionId ?? null,
+      positionName: row.positionName ?? null,
+    }))
+    .sort((a, b) => {
+      if (a.displayNo !== b.displayNo) {
+        return a.displayNo - b.displayNo;
+      }
+
+      return a.id - b.id;
+    });
+}
+
+export async function listWorkPosts(params: {
+  organizationId: number;
+  userId: number;
+  role: WorkCommunityUserRole;
+  categoryId?: number | null;
+  search?: string | null;
+  onlyMine?: boolean;
+  onlyTargetedToMe?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const search = String(params.search ?? "").trim();
+  const searchPattern = `%${search}%`;
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      p.id,
+      p.organizationId,
+      p.categoryId,
+      category.name AS categoryName,
+      category.color AS categoryColor,
+      p.authorId,
+      p.authorName,
+      p.title,
+      p.content,
+      p.visibility,
+      p.requiresAcknowledgement,
+      p.isPinned,
+      p.viewCount,
+      p.commentCount,
+      p.createdAt,
+      p.updatedAt,
+
+      CASE
+        WHEN reads.userId IS NULL THEN 0
+        ELSE 1
+      END AS isRead,
+
+      reads.acknowledgedAt,
+
+      (
+        SELECT COUNT(*)
+        FROM work_post_attachments attachment
+        WHERE attachment.organizationId = p.organizationId
+          AND attachment.postId = p.id
+      ) AS attachmentCount,
+
+      (
+        SELECT COUNT(*)
+        FROM work_post_targets targetCount
+        WHERE targetCount.organizationId = p.organizationId
+          AND targetCount.postId = p.id
+      ) AS targetCount
+
+    FROM work_posts p
+
+    INNER JOIN work_categories category
+      ON category.id = p.categoryId
+      AND category.organizationId = p.organizationId
+
+    LEFT JOIN work_post_reads reads
+      ON reads.organizationId = p.organizationId
+      AND reads.postId = p.id
+      AND reads.userId = ${params.userId}
+
+    WHERE p.organizationId = ${organizationId}
+      AND p.isActive = 1
+
+      AND (
+        ${isWorkCommunityHost(params.role) ? 1 : 0} = 1
+        OR p.visibility = 'all'
+        OR p.authorId = ${params.userId}
+        OR EXISTS (
+          SELECT 1
+          FROM work_post_targets target
+          WHERE target.organizationId = p.organizationId
+            AND target.postId = p.id
+            AND target.userId = ${params.userId}
+        )
+      )
+
+      AND (
+        ${params.categoryId ?? 0} = 0
+        OR p.categoryId = ${params.categoryId ?? 0}
+      )
+
+      AND (
+        ${params.onlyMine ? 1 : 0} = 0
+        OR p.authorId = ${params.userId}
+      )
+
+      AND (
+        ${params.onlyTargetedToMe ? 1 : 0} = 0
+        OR EXISTS (
+          SELECT 1
+          FROM work_post_targets myTarget
+          WHERE myTarget.organizationId = p.organizationId
+            AND myTarget.postId = p.id
+            AND myTarget.userId = ${params.userId}
+        )
+      )
+
+      AND (
+        ${search.length ? 1 : 0} = 0
+        OR p.title LIKE ${searchPattern}
+        OR p.content LIKE ${searchPattern}
+        OR p.authorName LIKE ${searchPattern}
+      )
+
+    ORDER BY
+      p.isPinned DESC,
+      p.createdAt DESC,
+      p.id DESC
+  `);
+
+  return (rows as any[]) ?? [];
+}
+
+export async function getWorkPost(params: {
+  organizationId: number;
+  postId: number;
+  userId: number;
+  role: WorkCommunityUserRole;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const allowed = await canAccessWorkPost(
+    params.postId,
+    params
+  );
+
+  if (!allowed) {
+    return null;
+  }
+
+  const [postRows] = await db.execute(sql`
+    SELECT
+      p.id,
+      p.organizationId,
+      p.categoryId,
+      category.name AS categoryName,
+      category.color AS categoryColor,
+      p.authorId,
+      p.authorName,
+      p.title,
+      p.content,
+      p.visibility,
+      p.requiresAcknowledgement,
+      p.isPinned,
+      p.viewCount,
+      p.commentCount,
+      p.createdAt,
+      p.updatedAt,
+
+      reads.firstReadAt,
+      reads.lastReadAt,
+      reads.acknowledgedAt
+
+    FROM work_posts p
+
+    INNER JOIN work_categories category
+      ON category.id = p.categoryId
+      AND category.organizationId = p.organizationId
+
+    LEFT JOIN work_post_reads reads
+      ON reads.organizationId = p.organizationId
+      AND reads.postId = p.id
+      AND reads.userId = ${params.userId}
+
+    WHERE p.id = ${params.postId}
+      AND p.organizationId = ${organizationId}
+      AND p.isActive = 1
+
+    LIMIT 1
+  `);
+
+  const post = ((postRows as any[]) ?? [])[0] ?? null;
+
+  if (!post) return null;
+
+  const [targetRows] = await db.execute(sql`
+    SELECT userId
+    FROM work_post_targets
+    WHERE organizationId = ${organizationId}
+      AND postId = ${params.postId}
+    ORDER BY id ASC
+  `);
+
+  const [attachmentRows] = await db.execute(sql`
+    SELECT
+      id,
+      originalName,
+      storedName,
+      url,
+      mimeType,
+      sizeBytes,
+      uploadedBy,
+      createdAt
+    FROM work_post_attachments
+    WHERE organizationId = ${organizationId}
+      AND postId = ${params.postId}
+    ORDER BY id ASC
+  `);
+
+  const members = await listWorkCommunityMembers({
+    organizationId,
+  });
+
+  const memberMap = new Map(
+    members.map((member: any) => [
+      Number(member.id),
+      member,
+    ])
+  );
+
+  const targets = ((targetRows as any[]) ?? []).map(
+    (target) => {
+      const userId = Number(target.userId);
+      const member = memberMap.get(userId) as any;
+
+      return {
+        userId,
+        name: member?.name ?? "",
+        username: member?.username ?? "",
+        role: member?.role ?? null,
+        profileImageUrl:
+          member?.profileImageUrl ?? null,
+      };
+    }
+  );
+
+  return {
+    ...post,
+    targets,
+    attachments: (attachmentRows as any[]) ?? [],
+    canManage:
+      isWorkCommunityHost(params.role) ||
+      Number(post.authorId) === Number(params.userId),
+  };
+}
+
+export async function createWorkPost(params: {
+  organizationId: number;
+  categoryId: number;
+  authorId: number;
+  authorName?: string | null;
+  title: string;
+  content: string;
+  visibility: "all" | "targeted";
+  targetUserIds?: number[];
+  requiresAcknowledgement?: boolean;
+  isPinned?: boolean;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const targetUserIds = Array.from(
+    new Set(
+      (params.targetUserIds ?? [])
+        .map(Number)
+        .filter((id) => Number.isFinite(id) && id > 0)
+    )
+  );
+
+  if (
+    params.visibility === "targeted" &&
+    targetUserIds.length === 0
+  ) {
+    throw new Error(
+      "지정 사용자 공개 글은 대상자를 한 명 이상 선택해야 합니다."
+    );
+  }
+
+  const [categoryRows] = await db.execute(sql`
+    SELECT id
+    FROM work_categories
+    WHERE id = ${params.categoryId}
+      AND organizationId = ${organizationId}
+      AND isActive = 1
+    LIMIT 1
+  `);
+
+  if (!((categoryRows as any[]) ?? []).length) {
+    throw new Error("유효하지 않은 업무 카테고리입니다.");
+  }
+
+  if (targetUserIds.length > 0) {
+    const [userRows] = await db.execute(sql`
+      SELECT id
+      FROM users
+      WHERE organizationId = ${organizationId}
+        AND isActive = 1
+        AND id IN (
+          ${sql.join(
+            targetUserIds.map((id) => sql`${id}`),
+            sql`, `
+          )}
+        )
+    `);
+
+    const validUserIds = new Set(
+      ((userRows as any[]) ?? []).map((row) =>
+        Number(row.id)
+      )
+    );
+
+    const invalidUserIds = targetUserIds.filter(
+      (id) => !validUserIds.has(id)
+    );
+
+    if (invalidUserIds.length > 0) {
+      throw new Error(
+        "다른 회사 사용자 또는 비활성 사용자가 포함되어 있습니다."
+      );
+    }
+  }
+
+  const result: any = await db.execute(sql`
+    INSERT INTO work_posts (
+      organizationId,
+      categoryId,
+      authorId,
+      authorName,
+      title,
+      content,
+      visibility,
+      requiresAcknowledgement,
+      isPinned,
+      isActive,
+      viewCount,
+      commentCount
+    )
+    VALUES (
+      ${organizationId},
+      ${params.categoryId},
+      ${params.authorId},
+      ${params.authorName ?? null},
+      ${params.title.trim()},
+      ${params.content.trim()},
+      ${params.visibility},
+      ${params.requiresAcknowledgement ? 1 : 0},
+      ${params.isPinned ? 1 : 0},
+      1,
+      0,
+      0
+    )
+  `);
+
+  const postId = Number(getInsertId(result));
+
+  if (
+    params.visibility === "targeted" &&
+    targetUserIds.length > 0
+  ) {
+    for (const targetUserId of targetUserIds) {
+      await db.execute(sql`
+        INSERT IGNORE INTO work_post_targets (
+          organizationId,
+          postId,
+          userId
+        )
+        VALUES (
+          ${organizationId},
+          ${postId},
+          ${targetUserId}
+        )
+      `);
+    }
+  }
+
+  return postId;
+}
+
+export async function updateWorkPost(params: {
+  organizationId: number;
+  postId: number;
+  userId: number;
+  role: WorkCommunityUserRole;
+  categoryId: number;
+  title: string;
+  content: string;
+  visibility: "all" | "targeted";
+  targetUserIds?: number[];
+  requiresAcknowledgement?: boolean;
+  isPinned?: boolean;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const canManage = await canManageWorkPost(
+    params.postId,
+    params
+  );
+
+  if (!canManage) {
+    throw new Error("게시글 수정 권한이 없습니다.");
+  }
+
+  const targetUserIds = Array.from(
+    new Set(
+      (params.targetUserIds ?? [])
+        .map(Number)
+        .filter((id) => Number.isFinite(id) && id > 0)
+    )
+  );
+
+  if (
+    params.visibility === "targeted" &&
+    targetUserIds.length === 0
+  ) {
+    throw new Error(
+      "지정 사용자 공개 글은 대상자를 한 명 이상 선택해야 합니다."
+    );
+  }
+
+  const [categoryRows] = await db.execute(sql`
+    SELECT id
+    FROM work_categories
+    WHERE id = ${params.categoryId}
+      AND organizationId = ${organizationId}
+      AND isActive = 1
+    LIMIT 1
+  `);
+
+  if (!((categoryRows as any[]) ?? []).length) {
+    throw new Error("유효하지 않은 업무 카테고리입니다.");
+  }
+
+  if (targetUserIds.length > 0) {
+    const [userRows] = await db.execute(sql`
+      SELECT id
+      FROM users
+      WHERE organizationId = ${organizationId}
+        AND isActive = 1
+        AND id IN (
+          ${sql.join(
+            targetUserIds.map((id) => sql`${id}`),
+            sql`, `
+          )}
+        )
+    `);
+
+    const validUserIds = new Set(
+      ((userRows as any[]) ?? []).map((row) =>
+        Number(row.id)
+      )
+    );
+
+    if (validUserIds.size !== targetUserIds.length) {
+      throw new Error(
+        "다른 회사 사용자 또는 비활성 사용자가 포함되어 있습니다."
+      );
+    }
+  }
+
+  await db.execute(sql`
+    UPDATE work_posts
+    SET
+      categoryId = ${params.categoryId},
+      title = ${params.title.trim()},
+      content = ${params.content.trim()},
+      visibility = ${params.visibility},
+      requiresAcknowledgement =
+        ${params.requiresAcknowledgement ? 1 : 0},
+      isPinned = ${params.isPinned ? 1 : 0}
+    WHERE id = ${params.postId}
+      AND organizationId = ${organizationId}
+      AND isActive = 1
+  `);
+
+  await db.execute(sql`
+    DELETE FROM work_post_targets
+    WHERE organizationId = ${organizationId}
+      AND postId = ${params.postId}
+  `);
+
+  if (params.visibility === "targeted") {
+    for (const targetUserId of targetUserIds) {
+      await db.execute(sql`
+        INSERT IGNORE INTO work_post_targets (
+          organizationId,
+          postId,
+          userId
+        )
+        VALUES (
+          ${organizationId},
+          ${params.postId},
+          ${targetUserId}
+        )
+      `);
+    }
+  }
+
+  return { success: true };
+}
+
+export async function deleteWorkPost(params: {
+  organizationId: number;
+  postId: number;
+  userId: number;
+  role: WorkCommunityUserRole;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const canManage = await canManageWorkPost(
+    params.postId,
+    params
+  );
+
+  if (!canManage) {
+    throw new Error("게시글 삭제 권한이 없습니다.");
+  }
+
+  await db.execute(sql`
+    UPDATE work_posts
+    SET isActive = 0
+    WHERE id = ${params.postId}
+      AND organizationId = ${organizationId}
+      AND isActive = 1
+  `);
+
+  return { success: true };
+}
+
+export async function markWorkPostRead(params: {
+  organizationId: number;
+  postId: number;
+  userId: number;
+  role: WorkCommunityUserRole;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const allowed = await canAccessWorkPost(
+    params.postId,
+    params
+  );
+
+  if (!allowed) {
+    throw new Error("게시글을 열람할 권한이 없습니다.");
+  }
+
+  await db.execute(sql`
+    INSERT INTO work_post_reads (
+      organizationId,
+      postId,
+      userId,
+      firstReadAt,
+      lastReadAt
+    )
+    VALUES (
+      ${organizationId},
+      ${params.postId},
+      ${params.userId},
+      NOW(),
+      NOW()
+    )
+    ON DUPLICATE KEY UPDATE
+      lastReadAt = NOW()
+  `);
+
+  await db.execute(sql`
+    UPDATE work_posts
+    SET viewCount = (
+      SELECT COUNT(*)
+      FROM work_post_reads
+      WHERE organizationId = ${organizationId}
+        AND postId = ${params.postId}
+    )
+    WHERE id = ${params.postId}
+      AND organizationId = ${organizationId}
+  `);
+
+  return { success: true };
+}
+
+export async function acknowledgeWorkPost(params: {
+  organizationId: number;
+  postId: number;
+  userId: number;
+  role: WorkCommunityUserRole;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const allowed = await canAccessWorkPost(
+    params.postId,
+    params
+  );
+
+  if (!allowed) {
+    throw new Error("게시글을 확인할 권한이 없습니다.");
+  }
+
+  await db.execute(sql`
+    INSERT INTO work_post_reads (
+      organizationId,
+      postId,
+      userId,
+      firstReadAt,
+      lastReadAt,
+      acknowledgedAt
+    )
+    VALUES (
+      ${organizationId},
+      ${params.postId},
+      ${params.userId},
+      NOW(),
+      NOW(),
+      NOW()
+    )
+    ON DUPLICATE KEY UPDATE
+      lastReadAt = NOW(),
+      acknowledgedAt = NOW()
+  `);
+
+  return { success: true };
+}
+
+/**
+ * 게시글을 읽거나 확인 완료한 사용자 목록
+ *
+ * 작성자 또는 Host/Superhost만 확인할 수 있다.
+ */
+export async function listWorkPostReaders(params: {
+  organizationId: number;
+  postId: number;
+  userId: number;
+  role: WorkCommunityUserRole;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const canManage = await canManageWorkPost(
+    params.postId,
+    params
+  );
+
+  if (!canManage) {
+    throw new Error(
+      "게시글 확인 현황을 조회할 권한이 없습니다."
+    );
+  }
+
+  const [readRows] = await db.execute(sql`
+    SELECT
+      userId,
+      firstReadAt,
+      lastReadAt,
+      acknowledgedAt
+    FROM work_post_reads
+    WHERE organizationId = ${organizationId}
+      AND postId = ${params.postId}
+    ORDER BY
+      acknowledgedAt IS NULL ASC,
+      acknowledgedAt DESC,
+      lastReadAt DESC
+  `);
+
+  const members = await listWorkCommunityMembers({
+    organizationId,
+  });
+
+  const memberMap = new Map(
+    members.map((member: any) => [
+      Number(member.id),
+      member,
+    ])
+  );
+
+  return ((readRows as any[]) ?? []).map((row) => {
+    const readerUserId = Number(row.userId);
+    const member = memberMap.get(readerUserId) as any;
+
+    return {
+      userId: readerUserId,
+      name: member?.name ?? "",
+      username: member?.username ?? "",
+      role: member?.role ?? null,
+      profileImageUrl:
+        member?.profileImageUrl ?? null,
+      firstReadAt: row.firstReadAt,
+      lastReadAt: row.lastReadAt,
+      acknowledgedAt: row.acknowledgedAt,
+    };
+  });
+}
+
+/**
+ * 해당 게시글 댓글 목록
+ *
+ * 게시글 열람 권한이 있는 사용자만 조회할 수 있다.
+ */
+export async function listWorkPostComments(params: {
+  organizationId: number;
+  postId: number;
+  userId: number;
+  role: WorkCommunityUserRole;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const allowed = await canAccessWorkPost(
+    params.postId,
+    params
+  );
+
+  if (!allowed) {
+    throw new Error("댓글을 조회할 권한이 없습니다.");
+  }
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      id,
+      organizationId,
+      postId,
+      parentCommentId,
+      authorId,
+      authorName,
+      content,
+      createdAt,
+      updatedAt
+    FROM work_post_comments
+    WHERE organizationId = ${organizationId}
+      AND postId = ${params.postId}
+      AND isActive = 1
+    ORDER BY
+      COALESCE(parentCommentId, id) ASC,
+      CASE
+        WHEN parentCommentId IS NULL THEN 0
+        ELSE 1
+      END ASC,
+      createdAt ASC,
+      id ASC
+  `);
+
+  return ((rows as any[]) ?? []).map((row) => ({
+    ...row,
+
+    canManage:
+      isWorkCommunityHost(params.role) ||
+      Number(row.authorId) === Number(params.userId),
+  }));
+}
+
+/**
+ * 댓글 또는 1단계 답글 작성
+ *
+ * parentCommentId가 없으면 일반 댓글
+ * parentCommentId가 있으면 답글
+ */
+export async function createWorkPostComment(params: {
+  organizationId: number;
+  postId: number;
+  userId: number;
+  userName?: string | null;
+  role: WorkCommunityUserRole;
+  content: string;
+  parentCommentId?: number | null;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const allowed = await canAccessWorkPost(
+    params.postId,
+    params
+  );
+
+  if (!allowed) {
+    throw new Error("댓글을 작성할 권한이 없습니다.");
+  }
+
+  const content = String(params.content ?? "").trim();
+
+  if (!content) {
+    throw new Error("댓글 내용을 입력해주세요.");
+  }
+
+  if (content.length > 5000) {
+    throw new Error(
+      "댓글은 5,000자 이하로 입력해주세요."
+    );
+  }
+
+  let parentCommentId: number | null = null;
+
+  if (params.parentCommentId) {
+    const [parentRows] = await db.execute(sql`
+      SELECT
+        id,
+        parentCommentId
+      FROM work_post_comments
+      WHERE id = ${params.parentCommentId}
+        AND organizationId = ${organizationId}
+        AND postId = ${params.postId}
+        AND isActive = 1
+      LIMIT 1
+    `);
+
+    const parent =
+      ((parentRows as any[]) ?? [])[0] ?? null;
+
+    if (!parent) {
+      throw new Error(
+        "답글을 작성할 원본 댓글을 찾을 수 없습니다."
+      );
+    }
+
+    if (parent.parentCommentId !== null) {
+      throw new Error(
+        "답글에는 추가 답글을 작성할 수 없습니다."
+      );
+    }
+
+    parentCommentId = Number(parent.id);
+  }
+
+  const result: any = await db.execute(sql`
+    INSERT INTO work_post_comments (
+      organizationId,
+      postId,
+      parentCommentId,
+      authorId,
+      authorName,
+      content,
+      isActive
+    )
+    VALUES (
+      ${organizationId},
+      ${params.postId},
+      ${parentCommentId},
+      ${params.userId},
+      ${params.userName ?? null},
+      ${content},
+      1
+    )
+  `);
+
+  await db.execute(sql`
+    UPDATE work_posts
+    SET commentCount = (
+      SELECT COUNT(*)
+      FROM work_post_comments
+      WHERE organizationId = ${organizationId}
+        AND postId = ${params.postId}
+        AND isActive = 1
+    )
+    WHERE id = ${params.postId}
+      AND organizationId = ${organizationId}
+      AND isActive = 1
+  `);
+
+  return Number(getInsertId(result));
+}
+
+/**
+ * 댓글 수정
+ *
+ * 댓글 작성자 본인만 수정할 수 있다.
+ * Host는 삭제할 수 있지만 다른 직원의 내용을
+ * 임의로 수정할 수는 없다.
+ */
+export async function updateWorkPostComment(params: {
+  organizationId: number;
+  commentId: number;
+  userId: number;
+  content: string;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const content = String(params.content ?? "").trim();
+
+  if (!content) {
+    throw new Error("댓글 내용을 입력해주세요.");
+  }
+
+  if (content.length > 5000) {
+    throw new Error(
+      "댓글은 5,000자 이하로 입력해주세요."
+    );
+  }
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      comment.id,
+      comment.postId
+    FROM work_post_comments comment
+    INNER JOIN work_posts post
+      ON post.id = comment.postId
+      AND post.organizationId = comment.organizationId
+    WHERE comment.id = ${params.commentId}
+      AND comment.organizationId = ${organizationId}
+      AND comment.authorId = ${params.userId}
+      AND comment.isActive = 1
+      AND post.isActive = 1
+    LIMIT 1
+  `);
+
+  const comment =
+    ((rows as any[]) ?? [])[0] ?? null;
+
+  if (!comment) {
+    throw new Error("댓글 수정 권한이 없습니다.");
+  }
+
+  await db.execute(sql`
+    UPDATE work_post_comments
+    SET content = ${content}
+    WHERE id = ${params.commentId}
+      AND organizationId = ${organizationId}
+      AND authorId = ${params.userId}
+      AND isActive = 1
+  `);
+
+  return {
+    success: true,
+    postId: Number(comment.postId),
+  };
+}
+
+/**
+ * 댓글 삭제
+ *
+ * 댓글 작성자 또는 Host/Superhost만 가능하다.
+ * 실제 행 삭제 대신 isActive = 0으로 처리한다.
+ */
+export async function deleteWorkPostComment(params: {
+  organizationId: number;
+  commentId: number;
+  userId: number;
+  role: WorkCommunityUserRole;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      comment.id,
+      comment.postId,
+      comment.authorId
+    FROM work_post_comments comment
+    INNER JOIN work_posts post
+      ON post.id = comment.postId
+      AND post.organizationId = comment.organizationId
+    WHERE comment.id = ${params.commentId}
+      AND comment.organizationId = ${organizationId}
+      AND comment.isActive = 1
+      AND post.isActive = 1
+    LIMIT 1
+  `);
+
+  const comment =
+    ((rows as any[]) ?? [])[0] ?? null;
+
+  if (!comment) {
+    throw new Error("댓글을 찾을 수 없습니다.");
+  }
+
+  const canDelete =
+    isWorkCommunityHost(params.role) ||
+    Number(comment.authorId) === Number(params.userId);
+
+  if (!canDelete) {
+    throw new Error("댓글 삭제 권한이 없습니다.");
+  }
+
+  await db.execute(sql`
+    UPDATE work_post_comments
+    SET isActive = 0
+    WHERE organizationId = ${organizationId}
+      AND (
+        id = ${params.commentId}
+        OR parentCommentId = ${params.commentId}
+      )
+  `);
+
+  await db.execute(sql`
+    UPDATE work_posts
+    SET commentCount = (
+      SELECT COUNT(*)
+      FROM work_post_comments
+      WHERE organizationId = ${organizationId}
+        AND postId = ${comment.postId}
+        AND isActive = 1
+    )
+    WHERE id = ${comment.postId}
+      AND organizationId = ${organizationId}
+  `);
+
+  return {
+    success: true,
+    postId: Number(comment.postId),
+  };
+}
+
+export async function createWorkPostAttachment(params: {
+  organizationId: number;
+  postId: number;
+  userId: number;
+  role: WorkCommunityUserRole;
+  originalName: string;
+  storedName: string;
+  url: string;
+  mimeType?: string | null;
+  sizeBytes?: number;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const canManage = await canManageWorkPost(
+    params.postId,
+    params
+  );
+
+  if (!canManage) {
+    throw new Error(
+      "이 게시글에 파일을 첨부할 권한이 없습니다."
+    );
+  }
+
+  const result: any = await db.execute(sql`
+    INSERT INTO work_post_attachments (
+      organizationId,
+      postId,
+      originalName,
+      storedName,
+      url,
+      mimeType,
+      sizeBytes,
+      uploadedBy
+    )
+    VALUES (
+      ${organizationId},
+      ${params.postId},
+      ${params.originalName},
+      ${params.storedName},
+      ${params.url},
+      ${params.mimeType ?? null},
+      ${Math.max(0, Number(params.sizeBytes ?? 0))},
+      ${params.userId}
+    )
+  `);
+
+  return Number(getInsertId(result));
+}
+
+/**
+ * 업무 커뮤니티 첨부파일 다운로드 정보 조회
+ *
+ * 게시글을 열람할 수 있는 사용자만 첨부파일 정보를 반환한다.
+ */
+export async function getWorkPostAttachmentForDownload(
+  params: {
+    organizationId: number;
+    attachmentId: number;
+    userId: number;
+    role: WorkCommunityUserRole;
+  }
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      attachment.id,
+      attachment.postId,
+      attachment.originalName,
+      attachment.storedName,
+      attachment.mimeType,
+      attachment.sizeBytes
+    FROM work_post_attachments attachment
+    INNER JOIN work_posts post
+      ON post.id = attachment.postId
+      AND post.organizationId =
+        attachment.organizationId
+    WHERE attachment.id =
+        ${params.attachmentId}
+      AND attachment.organizationId =
+        ${organizationId}
+      AND post.isActive = 1
+    LIMIT 1
+  `);
+
+  const attachment =
+    ((rows as any[]) ?? [])[0] ??
+    null;
+
+  if (!attachment) {
+    return null;
+  }
+
+  const canAccess =
+    await canAccessWorkPost(
+      Number(attachment.postId),
+      {
+        organizationId,
+        userId: params.userId,
+        role: params.role,
+      }
+    );
+
+  if (!canAccess) {
+    return null;
+  }
+
+  return attachment;
+}
+
+export async function getWorkPostAttachmentForDelete(params: {
+  organizationId: number;
+  attachmentId: number;
+  userId: number;
+  role: WorkCommunityUserRole;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      attachment.id,
+      attachment.postId,
+      attachment.originalName,
+      attachment.storedName,
+      attachment.url,
+      attachment.mimeType,
+      attachment.sizeBytes,
+      attachment.uploadedBy
+    FROM work_post_attachments attachment
+    INNER JOIN work_posts post
+      ON post.id = attachment.postId
+      AND post.organizationId = attachment.organizationId
+    WHERE attachment.id = ${params.attachmentId}
+      AND attachment.organizationId = ${organizationId}
+      AND post.isActive = 1
+    LIMIT 1
+  `);
+
+  const attachment =
+    ((rows as any[]) ?? [])[0] ?? null;
+
+  if (!attachment) {
+    return null;
+  }
+
+  const canManage = await canManageWorkPost(
+    Number(attachment.postId),
+    params
+  );
+
+  if (!canManage) {
+    throw new Error("첨부파일 삭제 권한이 없습니다.");
+  }
+
+  return attachment;
+}
+
+export async function deleteWorkPostAttachmentRecord(params: {
+  organizationId: number;
+  attachmentId: number;
+  userId: number;
+  role: WorkCommunityUserRole;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const attachment =
+    await getWorkPostAttachmentForDelete(params);
+
+  if (!attachment) {
+    throw new Error("첨부파일을 찾을 수 없습니다.");
+  }
+
+  await db.execute(sql`
+    DELETE FROM work_post_attachments
+    WHERE id = ${params.attachmentId}
+      AND organizationId = ${organizationId}
+      AND postId = ${Number(attachment.postId)}
+  `);
+
+  return {
+    success: true,
+    attachment,
+  };
+}
+
+export async function getWorkPostTargetStatus(params: {
+  organizationId: number;
+  postId: number;
+  userId: number;
+  role: WorkCommunityUserRole;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId = requireOrganizationId(
+    params.organizationId
+  );
+
+  const canManage = await canManageWorkPost(
+    params.postId,
+    params
+  );
+
+  if (!canManage) {
+    throw new Error(
+      "대상자 확인 현황을 조회할 권한이 없습니다."
+    );
+  }
+
+  const [rows] = await db.execute(sql`
+    SELECT
+      target.userId,
+      reads.firstReadAt,
+      reads.lastReadAt,
+      reads.acknowledgedAt
+    FROM work_post_targets target
+    LEFT JOIN work_post_reads reads
+      ON reads.organizationId = target.organizationId
+      AND reads.postId = target.postId
+      AND reads.userId = target.userId
+    WHERE target.organizationId = ${organizationId}
+      AND target.postId = ${params.postId}
+    ORDER BY target.id ASC
+  `);
+
+  const members = await listWorkCommunityMembers({
+    organizationId,
+  });
+
+  const memberMap = new Map(
+    members.map((member: any) => [
+      Number(member.id),
+      member,
+    ])
+  );
+
+  return ((rows as any[]) ?? []).map((row) => {
+    const targetUserId = Number(row.userId);
+    const member = memberMap.get(targetUserId) as any;
+
+    return {
+      userId: targetUserId,
+      name: member?.name ?? "",
+      username: member?.username ?? "",
+      role: member?.role ?? null,
+      profileImageUrl:
+        member?.profileImageUrl ?? null,
+
+      isRead: !!row.firstReadAt,
+      isAcknowledged: !!row.acknowledgedAt,
+
+      firstReadAt: row.firstReadAt ?? null,
+      lastReadAt: row.lastReadAt ?? null,
+      acknowledgedAt:
+        row.acknowledgedAt ?? null,
+    };
+  });
 }
 
 // ─── Schedules (일정/캘린더) ─────────────────────────────

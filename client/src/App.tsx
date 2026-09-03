@@ -52,6 +52,12 @@ import NoticeDetailPage from "@/pages/NoticeDetailPage";
 import NoticeWritePage from "@/pages/NoticeWritePage";
 import NoticeEditPage from "@/pages/NoticeEditPage";
 import NoticePreviewPage from "@/pages/NoticePreviewPage";
+
+import WorkCommunityPage from "@/pages/WorkCommunityPage";
+import WorkCommunityWritePage from "@/pages/WorkCommunityWritePage";
+import WorkCommunityDetailPage from "@/pages/WorkCommunityDetailPage";
+import WorkCommunityEditPage from "@/pages/WorkCommunityEditPage";
+
 import SchedulePage from "@/pages/SchedulePage";
 import Notifications from "@/pages/Notifications";
 
@@ -285,6 +291,37 @@ function PrivateRouter() {
       </Route>
       <Route path="/notices" component={() => <RedirectToMyOrg path="/notices" />} />
 
+<Route
+  path="/work-community/write"
+  component={() => (
+    <RedirectToMyOrg path="/work-community/write" />
+  )}
+/>
+
+<Route path="/work-community/:id/edit">
+  {(params) => (
+    <RedirectToMyOrg
+      path={`/work-community/${params.id}/edit`}
+    />
+  )}
+</Route>
+
+<Route path="/work-community/:id">
+  {(params) => (
+    <RedirectToMyOrg
+      path={`/work-community/${params.id}`}
+    />
+  )}
+</Route>
+
+<Route
+  path="/work-community"
+  component={() => (
+    <RedirectToMyOrg path="/work-community" />
+  )}
+/>
+
+
       <Route path="/schedules" component={() => <RedirectToMyOrg path="/schedules" />} />
       <Route path="/notifications" component={() => <RedirectToMyOrg path="/notifications" />} />
 
@@ -407,6 +444,26 @@ function PrivateRouter() {
       <Route path="/:organizationSlug/notices/:id/edit" component={NoticeEditPage} />
       <Route path="/:organizationSlug/notices/:id" component={NoticeDetailPage} />
       <Route path="/:organizationSlug/notices" component={NoticesPage} />
+
+<Route
+  path="/:organizationSlug/work-community/write"
+  component={WorkCommunityWritePage}
+/>
+
+<Route
+  path="/:organizationSlug/work-community/:id/edit"
+  component={WorkCommunityEditPage}
+/>
+
+<Route
+  path="/:organizationSlug/work-community/:id"
+  component={WorkCommunityDetailPage}
+/>
+
+<Route
+  path="/:organizationSlug/work-community"
+  component={WorkCommunityPage}
+/>
 
       <Route path="/:organizationSlug/schedules" component={SchedulePage} />
       <Route path="/:organizationSlug/notifications" component={Notifications} />
