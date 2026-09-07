@@ -1,8 +1,65 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Eye, EyeOff, Headphones, LockKeyhole, UserRound } from "lucide-react";
 
 export default function Login() {
-  const companyName = "EduCanvas CRM";
+  /**
+   * 현재 URL 첫 번째 경로를 회사 slug로 사용한다.
+   *
+   * 예:
+   * /with-one
+   * → with-one
+   */
+  const pathSegments = window.location.pathname
+    .split("/")
+    .filter(Boolean);
+
+  const currentSlug =
+    pathSegments[0] &&
+    pathSegments[0] !== "login"
+      ? pathSegments[0].toLowerCase()
+      : null;
+
+  /**
+   * 회사별 공개 로그인 브랜딩
+   */
+  const [branding, setBranding] = useState<any>(null);
+  const [brandingLoading, setBrandingLoading] = useState(
+    Boolean(currentSlug)
+  );
+
+  /**
+   * slug가 없으면 기존 EduCanvas CRM 로그인.
+   * slug가 있으면 해당 회사 브랜딩을 서버에서 조회한다.
+   */
+  const companyName =
+    branding?.companyName ||
+    "EduCanvas CRM";
+
+  const organizationId =
+    branding?.organizationId
+      ? Number(branding.organizationId)
+      : null;
+
+const configuredPrimaryColor =
+  typeof branding?.primaryColor === "string" &&
+  /^#[0-9a-fA-F]{6}$/.test(
+    branding.primaryColor.trim()
+  )
+    ? branding.primaryColor.trim()
+    : null;
+
+const brandPrimaryColor =
+  configuredPrimaryColor ||
+  "#5368ff";
+
+const brandSoftColor =
+  configuredPrimaryColor
+    ? `${configuredPrimaryColor}1A`
+    : "#eef4ff";
+
+const showPoweredByEduCanvas =
+  !currentSlug ||
+  branding?.showPoweredByEduCanvas !== false;
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -27,6 +84,97 @@ const [recoveryPhone, setRecoveryPhone] = useState("");
 const [codeSent, setCodeSent] = useState(false);
 const [foundUsernames, setFoundUsernames] = useState<string[]>([]);
 
+  useEffect(() => {
+    /**
+     * /login 또는 / 처럼 회사 slug가 없는 경우에는
+     * EduCanvas 기본 로그인 화면을 그대로 사용한다.
+     */
+    if (!currentSlug) {
+      setBranding(null);
+      setBrandingLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadBranding = async () => {
+      setBrandingLoading(true);
+
+      try {
+        const input = encodeURIComponent(
+          JSON.stringify({
+            json: {
+              slug: currentSlug,
+            },
+          })
+        );
+
+        const res = await fetch(
+          `/api/trpc/branding.getPublicBySlug?input=${input}`,
+          {
+            method: "GET",
+            credentials: "include",
+          }
+        );
+
+        const data = await res.json().catch(() => null);
+
+        if (!res.ok) {
+          throw new Error(
+            data?.error?.json?.message ||
+            "회사 정보를 불러오지 못했습니다."
+          );
+        }
+
+        const result =
+          data?.result?.data?.json ??
+          data?.result?.data ??
+          null;
+
+        if (cancelled) {
+          return;
+        }
+
+        /**
+         * 존재하지 않거나 비활성화된 slug
+         */
+        if (!result) {
+          setBranding(null);
+          setError(
+            "사용할 수 없는 회사 로그인 주소입니다."
+          );
+          return;
+        }
+
+        setBranding(result);
+      } catch (e) {
+        if (cancelled) {
+          return;
+        }
+
+        console.error(
+          "[Login] branding load failed",
+          e
+        );
+
+        setBranding(null);
+        setError(
+          "회사 로그인 정보를 불러오지 못했습니다."
+        );
+      } finally {
+        if (!cancelled) {
+          setBrandingLoading(false);
+        }
+      }
+    };
+
+    loadBranding();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSlug]);
+
   const onLogin = async () => {
     if (pending) return;
 
@@ -45,9 +193,10 @@ const [foundUsernames, setFoundUsernames] = useState<string[]>([]);
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          username: username.trim(),
-          password,
-        }),
+  username: username.trim(),
+  password,
+  expectedSlug: currentSlug,
+}),
       });
 
       const data = await res.json().catch(() => null);
@@ -123,8 +272,8 @@ const sendRecoveryCode = async () => {
       body: JSON.stringify({
         "0": {
           json: {
-            organizationId: 1,
-            purpose: mode === "find_id" ? "find_id" : "reset_password",
+            organizationId: organizationId,
+purpose: mode === "find_id" ? "find_id" : "reset_password",
             name: recoveryName.trim(),
             phone: recoveryPhone.trim(),
             username: recoveryUsername.trim(),
@@ -172,8 +321,8 @@ const verifyFindId = async () => {
       body: JSON.stringify({
         "0": {
           json: {
-            organizationId: 1,
-            email: recoveryEmail.trim(),
+            organizationId: organizationId,
+email: recoveryEmail.trim(),
             code: verificationCode.trim(),
           },
         },
@@ -225,8 +374,8 @@ const resetRecoveryPassword = async () => {
       body: JSON.stringify({
         "0": {
           json: {
-            organizationId: 1,
-            name: recoveryName.trim(),
+            organizationId: organizationId,
+name: recoveryName.trim(),
             username: recoveryUsername.trim(),
             email: recoveryEmail.trim(),
             code: verificationCode.trim(),
@@ -262,10 +411,13 @@ const resetRecoveryPassword = async () => {
         {/* LEFT VISUAL */}
         <section className="relative hidden overflow-hidden bg-[#020a22] lg:block">
           <img
-            src="/images/login/login-crm-visual.png"
-            alt="EduCanvas CRM"
-            className="absolute inset-0 h-full w-full object-contain object-center"
-          />
+  src={
+    branding?.loginHeroImageUrl ||
+    "/images/login/login-crm-visual.png"
+  }
+  alt={companyName}
+  className="absolute inset-0 h-full w-full object-contain object-center"
+/>
 
           <div className="absolute bottom-[1.5%] right-[2%] w-[42%] max-w-[440px]">
             <div className="absolute inset-[16%] rounded-full bg-blue-500/20 blur-3xl" />
@@ -292,17 +444,36 @@ const resetRecoveryPassword = async () => {
 
           <div className="relative w-full max-w-[520px] rounded-[30px] border border-white/90 bg-white/90 px-7 py-8 shadow-[0_28px_80px_rgba(58,73,150,0.18)] backdrop-blur-xl sm:px-9 sm:py-9">
             <div className="mb-8 text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[18px] border border-blue-100 bg-[linear-gradient(145deg,#f1f5ff,#e8e5ff)] text-blue-600 shadow-[0_8px_24px_rgba(66,96,255,0.12)]">
-                <LockKeyhole className="h-7 w-7" strokeWidth={1.8} />
-              </div>
+              <div
+  className="mx-auto flex h-16 w-16 items-center justify-center rounded-[18px] border shadow-[0_8px_24px_rgba(66,96,255,0.12)]"
+  style={
+    configuredPrimaryColor
+      ? {
+          color: brandPrimaryColor,
+          borderColor: `${brandPrimaryColor}33`,
+          background: brandSoftColor,
+        }
+      : undefined
+  }
+>
+  <LockKeyhole
+    className={
+      configuredPrimaryColor
+        ? "h-7 w-7"
+        : "h-7 w-7 text-blue-600"
+    }
+    strokeWidth={1.8}
+  />
+</div>
 
               <h1 className="mt-5 text-[34px] font-black tracking-[-0.04em] text-[#101828]">
-                로그인
-              </h1>
+  {branding?.loginTitle || "로그인"}
+</h1>
 
-              <p className="mt-2 text-sm font-medium text-slate-400">
-                {companyName}에 오신 것을 환영합니다.
-              </p>
+<p className="mt-2 text-sm font-medium text-slate-400">
+  {branding?.loginDescription ||
+    `${companyName}에 오신 것을 환영합니다.`}
+</p>
             </div>
 
             <div className="space-y-5">
@@ -316,7 +487,21 @@ const resetRecoveryPassword = async () => {
                     placeholder="아이디를 입력해주세요"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    className="h-14 w-full rounded-xl border border-slate-200 bg-white pl-12 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                    className="h-14 w-full rounded-xl border border-slate-200 bg-white pl-12 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:ring-4"
+onFocus={(e) => {
+  e.currentTarget.style.borderColor =
+    brandPrimaryColor;
+
+  e.currentTarget.style.boxShadow =
+    `0 0 0 4px ${brandPrimaryColor}1A`;
+}}
+onBlur={(e) => {
+  e.currentTarget.style.borderColor =
+    "";
+
+  e.currentTarget.style.boxShadow =
+    "";
+}}
                     autoFocus
                     disabled={pending}
                   />
@@ -334,7 +519,21 @@ const resetRecoveryPassword = async () => {
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="h-14 w-full rounded-xl border border-slate-200 bg-white pl-12 pr-12 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                    className="h-14 w-full rounded-xl border border-slate-200 bg-white pl-12 pr-12 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:ring-4"
+onFocus={(e) => {
+  e.currentTarget.style.borderColor =
+    brandPrimaryColor;
+
+  e.currentTarget.style.boxShadow =
+    `0 0 0 4px ${brandPrimaryColor}1A`;
+}}
+onBlur={(e) => {
+  e.currentTarget.style.borderColor =
+    "";
+
+  e.currentTarget.style.boxShadow =
+    "";
+}}
                     disabled={pending}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") onLogin();
@@ -357,25 +556,52 @@ const resetRecoveryPassword = async () => {
 
               <label className="flex w-fit cursor-pointer items-center gap-2 text-sm font-medium text-slate-500">
                 <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300 accent-blue-600"
-                />
+  type="checkbox"
+  className="h-4 w-4 rounded border-slate-300"
+  style={{
+    accentColor:
+      configuredPrimaryColor
+        ? brandPrimaryColor
+        : "#2563eb",
+  }}
+/>
                 아이디 저장
               </label>
 
               <button
-                onClick={onLogin}
-                className="h-14 w-full rounded-xl bg-gradient-to-r from-[#2d7cff] via-[#5368ff] to-[#7b35f5] text-sm font-black text-white shadow-[0_14px_30px_rgba(89,72,255,.24)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={pending}
-              >
-                {pending ? "로그인 중..." : "로그인"}
+  onClick={onLogin}
+  className={
+    configuredPrimaryColor
+      ? "h-14 w-full rounded-xl text-sm font-black text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+      : "h-14 w-full rounded-xl bg-gradient-to-r from-[#2d7cff] via-[#5368ff] to-[#7b35f5] text-sm font-black text-white shadow-[0_14px_30px_rgba(89,72,255,.24)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+  }
+  style={
+    configuredPrimaryColor
+      ? {
+          background: brandPrimaryColor,
+          boxShadow: `0 14px 30px ${brandPrimaryColor}33`,
+        }
+      : undefined
+  }
+  disabled={pending || brandingLoading}
+>
+                {brandingLoading
+  ? "회사 정보 확인 중..."
+  : pending
+    ? "로그인 중..."
+    : "로그인"}
               </button>
             </div>
 
             <div className="mt-5 flex items-center justify-center gap-4 text-sm font-semibold">
               <button
                 type="button"
-                className="text-blue-600 transition hover:text-blue-800"
+                className="transition hover:opacity-75"
+style={{
+  color: configuredPrimaryColor
+    ? brandPrimaryColor
+    : "#2563eb",
+}}
                 onClick={() => {
                   setMode("find_id");
                   setError("");
@@ -395,7 +621,12 @@ const resetRecoveryPassword = async () => {
 
               <button
                 type="button"
-                className="text-blue-600 transition hover:text-blue-800"
+                className="transition hover:opacity-75"
+style={{
+  color: configuredPrimaryColor
+    ? brandPrimaryColor
+    : "#2563eb",
+}}
                 onClick={() => {
                   setMode("find_password");
                   setError("");
@@ -443,9 +674,11 @@ const resetRecoveryPassword = async () => {
               </div>
             </div>
 
-            <div className="mt-8 text-center text-[11px] text-slate-400">
-              Powered by EduCanvas SaaS Platform
-            </div>
+            {showPoweredByEduCanvas ? (
+  <div className="mt-8 text-center text-[11px] text-slate-400">
+    Powered by EduCanvas SaaS Platform
+  </div>
+) : null}
           </div>
         </section>
       </div>

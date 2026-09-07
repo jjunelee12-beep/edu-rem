@@ -1460,26 +1460,80 @@ export type InsertUser = typeof users.$inferInsert;
 export type SelectUser = typeof users.$inferSelect;
 
 // ─── Branding Settings (회사 브랜딩 설정) ───────────────────────────
-export const brandingSettings = mysqlTable("branding_settings", {
-  id: int("id").autoincrement().primaryKey(),
-organizationId: int("organizationId").notNull().default(1),
+export const brandingSettings = mysqlTable(
+  "branding_settings",
+  {
+    id: int("id").autoincrement().primaryKey(),
 
-  companyName: varchar("companyName", { length: 150 })
-    .notNull()
-    .default("위드원 교육"),
+    organizationId: int("organizationId")
+      .notNull()
+      .default(1),
 
-  companyLogoUrl: varchar("companyLogoUrl", { length: 1000 }),
+    companyName: varchar("companyName", { length: 150 })
+      .notNull()
+      .default("위드원 교육"),
 
-  messengerSubtitle: varchar("messengerSubtitle", { length: 150 })
-    .notNull()
-    .default("사내 메신저"),
+    companyLogoUrl: varchar("companyLogoUrl", {
+      length: 1000,
+    }),
 
-  createdBy: int("createdBy"),
-  updatedBy: int("updatedBy"),
+    messengerSubtitle: varchar("messengerSubtitle", {
+      length: 150,
+    })
+      .notNull()
+      .default("사내 메신저"),
 
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+    // 로그인 페이지 메인 이미지
+    loginHeroImageUrl: varchar("loginHeroImageUrl", {
+      length: 1000,
+    }),
+
+    // 로그인 페이지 제목
+    loginTitle: varchar("loginTitle", {
+      length: 150,
+    }),
+
+    // 로그인 페이지 설명
+    loginDescription: text("loginDescription"),
+
+    // 회사 대표색
+    primaryColor: varchar("primaryColor", {
+      length: 20,
+    }),
+
+    // 로그인 하단 고객센터 안내문
+    supportText: varchar("supportText", {
+      length: 255,
+    }),
+
+    // 고객센터 링크
+    supportUrl: varchar("supportUrl", {
+      length: 1000,
+    }),
+
+    // Powered by EduCanvas 표시 여부
+    showPoweredByEduCanvas: boolean("showPoweredByEduCanvas")
+      .notNull()
+      .default(true),
+
+    createdBy: int("createdBy"),
+    updatedBy: int("updatedBy"),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    organizationUniqueIdx: uniqueIndex(
+      "uq_branding_settings_organization"
+    ).on(table.organizationId),
+  })
+);
 
 export type BrandingSetting = typeof brandingSettings.$inferSelect;
 export type InsertBrandingSetting = typeof brandingSettings.$inferInsert;
@@ -2100,7 +2154,25 @@ export const consultations = mysqlTable(
       .default(""),
 
     desiredCourse: varchar("desiredCourse", { length: 200 }),
-    notes: text("notes"),
+
+/**
+ * 고객이 상담 신청 시 선택한
+ * 연락/상담 희망 시간대.
+ *
+ * 특정 선택지를 DB enum으로 고정하지 않는다.
+ * 회사별/서비스별 선택지 확장을 위해 문자열로 저장한다.
+ *
+ * 예:
+ * - 언제든지
+ * - 오전
+ * - 오후
+ * - 저녁
+ */
+preferredContactTime: varchar("preferredContactTime", {
+  length: 100,
+}),
+
+notes: text("notes"),
 
     status: varchar("status", { length: 50 })
       .default("상담중")

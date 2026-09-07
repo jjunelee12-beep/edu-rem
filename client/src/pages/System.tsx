@@ -4089,10 +4089,7 @@ const canUseAuditLog =
     toast.success("브랜딩 설정이 저장되었습니다.");
     
 
-await Promise.all([
-  utils.branding.get.invalidate(),
-  utils.branding.getPublic.invalidate(),
-]);
+await utils.branding.get.invalidate();
 
     window.dispatchEvent(
       new CustomEvent("branding:updated", {
@@ -4112,6 +4109,20 @@ await Promise.all([
   const [companyName, setCompanyName] = useState("");
   const [companyLogoUrl, setCompanyLogoUrl] = useState("");
   const [messengerSubtitle, setMessengerSubtitle] = useState("");
+const [loginHeroImageUrl, setLoginHeroImageUrl] = useState("");
+const [loginTitle, setLoginTitle] = useState("");
+const [loginDescription, setLoginDescription] = useState("");
+const [primaryColor, setPrimaryColor] = useState("");
+const [supportText, setSupportText] = useState("");
+const [supportUrl, setSupportUrl] = useState("");
+const [showPoweredByEduCanvas, setShowPoweredByEduCanvas] =
+  useState(true);
+
+const loginHeroInputRef =
+  useRef<HTMLInputElement | null>(null);
+
+const [isUploadingLoginHero, setIsUploadingLoginHero] =
+  useState(false);
 const fileInputRef = useRef<HTMLInputElement | null>(null);
 const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 const previewLogoUrl = normalizeAssetUrl(companyLogoUrl || "");
@@ -4185,11 +4196,42 @@ const updateNotificationSetting = (
 };
 
   useEffect(() => {
-    if (!data) return;
-    setCompanyName(data.companyName || "");
-    setCompanyLogoUrl(data.companyLogoUrl || "");
-    setMessengerSubtitle(data.messengerSubtitle || "사내 메신저");
-  }, [data]);
+  if (!data) return;
+
+  setCompanyName(data.companyName || "");
+  setCompanyLogoUrl(data.companyLogoUrl || "");
+  setMessengerSubtitle(
+    data.messengerSubtitle || "사내 메신저"
+  );
+
+  setLoginHeroImageUrl(
+    data.loginHeroImageUrl || ""
+  );
+
+  setLoginTitle(
+    data.loginTitle || ""
+  );
+
+  setLoginDescription(
+    data.loginDescription || ""
+  );
+
+  setPrimaryColor(
+    data.primaryColor || ""
+  );
+
+  setSupportText(
+    data.supportText || ""
+  );
+
+  setSupportUrl(
+    data.supportUrl || ""
+  );
+
+  setShowPoweredByEduCanvas(
+    data.showPoweredByEduCanvas !== false
+  );
+}, [data]);
 
 useEffect(() => {
   const syncNotificationSettings = () => {
@@ -4237,14 +4279,7 @@ const handleUploadLogo = async (e: ChangeEvent<HTMLInputElement>) => {
       throw new Error("업로드 URL을 찾을 수 없습니다.");
     }
 
-    setCompanyLogoUrl(uploadedUrl);
-
-saveMutation.mutate({
-  companyName: companyName.trim() || "위드원 교육",
-  companyLogoUrl: uploadedUrl,
-  messengerSubtitle: messengerSubtitle.trim() || "사내 메신저",
-});
-
+setCompanyLogoUrl(uploadedUrl);
 toast.success("로고 업로드 완료");
   } catch (err: any) {
     toast.error(err?.message || "로고 업로드 중 오류가 발생했습니다.");
@@ -4254,23 +4289,178 @@ toast.success("로고 업로드 완료");
   }
 };
 
+const validateLoginHeroImage = (
+  file: File
+): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+
+      const width = image.naturalWidth;
+      const height = image.naturalHeight;
+
+      if (width < 1200 || height < 900) {
+        reject(
+          new Error(
+            "로그인 이미지는 최소 1200×900px 이상이어야 합니다."
+          )
+        );
+        return;
+      }
+
+      const ratio = width / height;
+      const targetRatio = 4 / 3;
+
+      if (Math.abs(ratio - targetRatio) > 0.03) {
+        reject(
+          new Error(
+            "로그인 이미지는 4:3 비율을 사용해주세요. 권장 크기는 1600×1200px입니다."
+          )
+        );
+        return;
+      }
+
+      resolve();
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+
+      reject(
+        new Error(
+          "이미지 크기를 확인할 수 없습니다."
+        )
+      );
+    };
+
+    image.src = objectUrl;
+  });
+};
+
+const handleUploadLoginHero = async (
+  e: ChangeEvent<HTMLInputElement>
+) => {
+  const file = e.target.files?.[0];
+
+  if (!file) return;
+
+  try {
+    setIsUploadingLoginHero(true);
+
+    if (file.size > 2 * 1024 * 1024) {
+      throw new Error(
+        "로그인 이미지는 2MB 이하로 업로드해주세요."
+      );
+    }
+
+    await validateLoginHeroImage(file);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const uploadRes = await fetch(
+      "/api/upload",
+      {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      }
+    );
+
+    if (!uploadRes.ok) {
+      throw new Error(
+        "로그인 이미지 업로드에 실패했습니다."
+      );
+    }
+
+    const uploaded = await uploadRes.json();
+
+    const uploadedUrl =
+      uploaded?.fileUrl ||
+      uploaded?.url ||
+      "";
+
+    if (!uploadedUrl) {
+      throw new Error(
+        "업로드 URL을 찾을 수 없습니다."
+      );
+    }
+
+    setLoginHeroImageUrl(uploadedUrl);
+
+    toast.success(
+      "로그인 이미지 업로드 완료"
+    );
+  } catch (err: any) {
+    toast.error(
+      err?.message ||
+      "로그인 이미지 업로드 중 오류가 발생했습니다."
+    );
+  } finally {
+    setIsUploadingLoginHero(false);
+
+    if (e.target) {
+      e.target.value = "";
+    }
+  }
+};
+
   const handleSave = () => {
-    if (!companyName.trim()) {
-      toast.error("회사명을 입력해주세요.");
-      return;
-    }
+  if (!companyName.trim()) {
+    toast.error(
+      "회사명을 입력해주세요."
+    );
+    return;
+  }
 
-    if (!messengerSubtitle.trim()) {
-      toast.error("메신저 부제목을 입력해주세요.");
-      return;
-    }
+  if (!messengerSubtitle.trim()) {
+    toast.error(
+      "메신저 부제목을 입력해주세요."
+    );
+    return;
+  }
 
-    saveMutation.mutate({
-      companyName: companyName.trim(),
-      companyLogoUrl: companyLogoUrl.trim() || null,
-      messengerSubtitle: messengerSubtitle.trim(),
-    });
-  };
+  saveMutation.mutate({
+    companyName:
+      companyName.trim(),
+
+    companyLogoUrl:
+      companyLogoUrl.trim() ||
+      null,
+
+    messengerSubtitle:
+      messengerSubtitle.trim(),
+
+    loginHeroImageUrl:
+      loginHeroImageUrl.trim() ||
+      null,
+
+    loginTitle:
+      loginTitle.trim() ||
+      null,
+
+    loginDescription:
+      loginDescription.trim() ||
+      null,
+
+    primaryColor:
+      primaryColor.trim() ||
+      null,
+
+    supportText:
+      supportText.trim() ||
+      null,
+
+    supportUrl:
+      supportUrl.trim() ||
+      null,
+
+    showPoweredByEduCanvas,
+  });
+};
 
 const handleExportExcelBackup = async () => {
   const ok = window.confirm(
@@ -4455,7 +4645,7 @@ const getAuditMemoLabel = (memo: string | null | undefined) => {
   </div>
 
   <p className="text-xs text-muted-foreground">
-    이미지 업로드 또는 URL 직접 입력 둘 다 가능합니다.
+    권장 512×512px · 1:1 정사각형 · PNG/JPG/WebP · 2MB 이하
   </p>
 </div>
 
@@ -4487,6 +4677,170 @@ const getAuditMemoLabel = (memo: string | null | undefined) => {
                   </div>
                 </div>
               </div>
+
+<div className="border-t pt-6">
+  <div className="mb-4">
+    <p className="text-base font-semibold">
+      로그인 페이지 설정
+    </p>
+    <p className="mt-1 text-xs text-muted-foreground">
+      회사 전용 slug 로그인 페이지에 적용됩니다.
+    </p>
+  </div>
+
+  <div className="space-y-3">
+    <p className="text-sm font-medium">
+      로그인 메인 이미지
+    </p>
+
+    <div className="flex flex-wrap items-center gap-2">
+      <Input
+        value={loginHeroImageUrl}
+        onChange={(e) =>
+          setLoginHeroImageUrl(e.target.value)
+        }
+        placeholder="로그인 이미지 URL"
+        className="max-w-[420px]"
+      />
+
+      <input
+        ref={loginHeroInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={handleUploadLoginHero}
+      />
+
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() =>
+          loginHeroInputRef.current?.click()
+        }
+        disabled={isUploadingLoginHero}
+      >
+        {isUploadingLoginHero
+          ? "업로드 중..."
+          : "로그인 이미지 업로드"}
+      </Button>
+    </div>
+
+    <p className="text-xs text-muted-foreground">
+      권장 1600×1200px · 4:3 비율 · 최소 1200×900px · 2MB 이하
+    </p>
+
+    {loginHeroImageUrl ? (
+      <div className="max-w-[520px] overflow-hidden rounded-xl border bg-slate-950">
+        <img
+          src={normalizeAssetUrl(loginHeroImageUrl)}
+          alt="로그인 이미지 미리보기"
+          className="aspect-[4/3] w-full object-contain"
+        />
+      </div>
+    ) : null}
+  </div>
+
+  <div className="mt-5 grid gap-4 md:grid-cols-2">
+    <div className="space-y-2">
+      <p className="text-sm font-medium">
+        로그인 제목
+      </p>
+      <Input
+        value={loginTitle}
+        onChange={(e) =>
+          setLoginTitle(e.target.value)
+        }
+        placeholder="예: 로그인"
+      />
+    </div>
+
+    <div className="space-y-2">
+      <p className="text-sm font-medium">
+        대표 색상
+      </p>
+      <Input
+        value={primaryColor}
+        onChange={(e) =>
+          setPrimaryColor(e.target.value)
+        }
+        placeholder="예: #2563eb"
+      />
+    </div>
+  </div>
+
+  <div className="mt-4 space-y-2">
+    <p className="text-sm font-medium">
+      로그인 설명
+    </p>
+    <Input
+      value={loginDescription}
+      onChange={(e) =>
+        setLoginDescription(e.target.value)
+      }
+      placeholder="예: 위드원교육에 오신 것을 환영합니다."
+    />
+  </div>
+</div>
+
+<div className="border-t pt-6">
+  <div className="mb-4">
+    <p className="text-base font-semibold">
+      고객지원 설정
+    </p>
+  </div>
+
+  <div className="grid gap-4 md:grid-cols-2">
+    <div className="space-y-2">
+      <p className="text-sm font-medium">
+        고객센터 안내문
+      </p>
+      <Input
+        value={supportText}
+        onChange={(e) =>
+          setSupportText(e.target.value)
+        }
+        placeholder="예: 로그인에 문제가 있으시면 문의해주세요."
+      />
+    </div>
+
+    <div className="space-y-2">
+      <p className="text-sm font-medium">
+        고객센터 링크
+      </p>
+      <Input
+        value={supportUrl}
+        onChange={(e) =>
+          setSupportUrl(e.target.value)
+        }
+        placeholder="예: https://..."
+      />
+    </div>
+  </div>
+</div>
+
+<div className="border-t pt-6">
+  <label className="flex cursor-pointer items-center gap-3">
+    <input
+      type="checkbox"
+      checked={showPoweredByEduCanvas}
+      onChange={(e) =>
+        setShowPoweredByEduCanvas(
+          e.target.checked
+        )
+      }
+      className="h-4 w-4"
+    />
+
+    <div>
+      <p className="text-sm font-medium">
+        Powered by EduCanvas 표시
+      </p>
+      <p className="text-xs text-muted-foreground">
+        회사 로그인 페이지 하단의 EduCanvas 플랫폼 문구 표시 여부입니다.
+      </p>
+    </div>
+  </label>
+</div>
 
               <div>
                 <Button

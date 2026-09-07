@@ -77,7 +77,17 @@ async function getUserOrganizationLoginBlockMessage(user: any) {
 
 authRouter.post("/login", async (req, res) => {
   try {
-    const { username, password } = req.body ?? {};
+    const {
+  username,
+  password,
+  expectedSlug,
+} = req.body ?? {};
+
+const normalizedExpectedSlug =
+  typeof expectedSlug === "string" &&
+  expectedSlug.trim()
+    ? expectedSlug.trim().toLowerCase()
+    : null;
 
     if (!username || !password) {
       return res.status(400).json({
@@ -120,7 +130,8 @@ authRouter.post("/login", async (req, res) => {
       });
     }
 
-const organizationBlockMessage = await getUserOrganizationLoginBlockMessage(user);
+const organizationBlockMessage =
+  await getUserOrganizationLoginBlockMessage(user);
 
 if (organizationBlockMessage) {
   return res.status(403).json({
@@ -128,16 +139,38 @@ if (organizationBlockMessage) {
   });
 }
 
-    const secret = process.env.SESSION_SECRET || "dev-secret";
-
-   const organization =
+const organization =
   user.role === "superhost"
     ? null
     : await getOrganizationById(
-        Number(
-          user.organizationId || 0
-        )
+        Number(user.organizationId || 0)
       );
+
+if (
+  normalizedExpectedSlug &&
+  user.role !== "superhost"
+) {
+  const actualOrganizationSlug =
+    String(
+      organization?.slug || ""
+    )
+      .trim()
+      .toLowerCase();
+
+  if (
+    !actualOrganizationSlug ||
+    actualOrganizationSlug !== normalizedExpectedSlug
+  ) {
+    return res.status(403).json({
+      message:
+        "해당 회사 로그인 페이지에서 사용할 수 없는 계정입니다.",
+    });
+  }
+}
+
+const secret =
+  process.env.SESSION_SECRET ||
+  "dev-secret";
 
 /**
  * 로그인 조회의 user는 users 테이블 원본이므로

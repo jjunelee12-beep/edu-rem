@@ -1769,17 +1769,21 @@ useEffect(() => {
   staffTeamPageInitialized,
 ]);
 
-const staffTeamPageOrganizationId =
-  Number(
+const staffTeamPageSlug =
+  String(
     staffTeamPageQuery.data
-      ?.organizationId ||
-      0
-  );
+      ?.organizationSlug ||
+    ""
+  )
+    .trim()
+    .toLowerCase();
 
 const staffTeamPageUrl =
-  staffTeamPageOrganizationId > 0 &&
+  staffTeamPageSlug &&
   typeof window !== "undefined"
-    ? `${window.location.origin}/team/${staffTeamPageOrganizationId}`
+    ? `${window.location.origin}/team/${encodeURIComponent(
+        staffTeamPageSlug
+      )}`
     : "";
 
   const setBooleanField = (
@@ -3304,32 +3308,72 @@ const staffRecommendationRows =
           </CardDescription>
         </div>
 
-        <div className="flex items-center gap-3 rounded-lg border bg-muted/20 px-4 py-3">
-          <div>
-            <p className="text-sm font-medium">
-              페이지 공개
-            </p>
+        <button
+  type="button"
+  onClick={() => {
+    setStaffTeamPageForm((prev) => ({
+      ...prev,
+      enabled: !prev.enabled,
+    }));
+  }}
+  className={`w-full rounded-xl border p-4 text-left transition md:w-[360px] ${
+    staffTeamPageForm.enabled
+      ? "border-emerald-200 bg-emerald-50/70 hover:bg-emerald-50"
+      : "border-slate-200 bg-slate-50 hover:bg-slate-100"
+  }`}
+>
+  <div className="flex items-start gap-3">
+    <div
+      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition ${
+        staffTeamPageForm.enabled
+          ? "border-emerald-600 bg-emerald-600 text-white"
+          : "border-slate-300 bg-white"
+      }`}
+    >
+      {staffTeamPageForm.enabled && (
+        <CheckCircle2 className="h-4 w-4" />
+      )}
+    </div>
 
-            <p className="text-xs text-muted-foreground">
-              외부 고객이 페이지를 열람할 수 있습니다.
-            </p>
-          </div>
+    <div className="min-w-0 flex-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-sm font-semibold text-slate-900">
+          담당자 소개 페이지 공개
+        </p>
 
-          <Switch
-            checked={
-              staffTeamPageForm.enabled
-            }
-            onCheckedChange={(value) => {
-              setStaffTeamPageForm(
-                (prev) => ({
-                  ...prev,
-                  enabled:
-                    value,
-                })
-              );
-            }}
-          />
-        </div>
+        <span
+          className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+            staffTeamPageForm.enabled
+              ? "bg-emerald-100 text-emerald-700"
+              : "bg-slate-200 text-slate-600"
+          }`}
+        >
+          {staffTeamPageForm.enabled
+            ? "공개 중"
+            : "비공개"}
+        </span>
+      </div>
+
+      <p className="mt-1 text-xs leading-5 text-slate-500">
+        {staffTeamPageForm.enabled
+          ? "외부 고객이 회사 담당자 목록 페이지를 열람할 수 있습니다."
+          : "현재 외부에서는 담당자 목록 페이지를 열람할 수 없습니다."}
+      </p>
+
+      <p
+        className={`mt-2 text-xs font-medium ${
+          staffTeamPageForm.enabled
+            ? "text-emerald-700"
+            : "text-slate-500"
+        }`}
+      >
+        {staffTeamPageForm.enabled
+          ? "✓ 페이지가 공개됩니다."
+          : "클릭하여 페이지를 공개하세요."}
+      </p>
+    </div>
+  </div>
+</button>
       </div>
     </CardHeader>
 

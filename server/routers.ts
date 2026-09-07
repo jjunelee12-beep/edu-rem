@@ -11,7 +11,11 @@ superHostProcedure,
 } from "./_core/trpc";
 import { z } from "zod";
 import * as db from "./db";
-import { getOrganizationLimitStatus, getOrganizationFeatureFlags } from "./saasdb";
+import {
+  getOrganizationById,
+  getOrganizationLimitStatus,
+  getOrganizationFeatureFlags,
+} from "./saasdb";
 import { buildSettlementPayslipExcel } from "./_core/settlement-payslip-excel";
 import { buildSettlementSalesSummaryExcel } from "./_core/settlement-sales-summary-excel";
 import { buildOrganizationExcelExport } from "./_core/organization-excel-export";
@@ -3528,15 +3532,35 @@ staffProfile: router({
    */
   teamPage: router({
     get: protectedProcedure.query(
-      async ({ ctx }) => {
-        const organizationId =
-          getCtxOrganizationId(ctx);
+  async ({ ctx }) => {
+    const organizationId =
+      getCtxOrganizationId(ctx);
 
-        return db.getStaffTeamPageSettings({
-          organizationId,
-        });
-      }
-    ),
+    const settings =
+      await db.getStaffTeamPageSettings({
+        organizationId,
+      });
+
+    const organization =
+      await getOrganizationById(
+        organizationId
+      );
+
+    return {
+      ...settings,
+
+      organizationId,
+
+      organizationSlug:
+        String(
+          organization?.slug || ""
+        )
+          .trim()
+          .toLowerCase() ||
+        null,
+    };
+  }
+),
 
     update: hostProcedure
       .input(
@@ -3893,71 +3917,37 @@ management: router({
       return null;
     }
 
-    const branding =
-      await db.getBrandingSettings({
-        organizationId,
-      });
+    const [
+  branding,
+  organization,
+  teamPageSettings,
+] =
+  await Promise.all([
+    db.getBrandingSettings({
+      organizationId,
+    }),
 
-    return {
-      branding: {
-        companyName:
-          branding?.companyName ??
-          null,
+    getOrganizationById(
+      organizationId
+    ),
 
-        companyLogoUrl:
-          branding?.companyLogoUrl ??
-          null,
-      },
+    db.getStaffTeamPageSettings({
+      organizationId,
+    }),
+  ]);
 
-      profile,
-    };
-  }
-),
+const organizationSlug =
+  String(
+    organization?.slug ||
+    ""
+  )
+    .trim()
+    .toLowerCase() ||
+  null;
 
-    /**
-     * 회사 담당자 소개 페이지.
-     *
-     * 현재 단계에서는 organizationId로 조회한다.
-     * 이후 회사 slug가 확정되면
-     * slug 기반 URL로 교체할 수 있다.
-     */
-    companyTeamPage:
-      publicProcedure
-        .input(
-          z.object({
-            organizationId:
-              z
-                .number()
-                .int()
-                .positive(),
-          })
-        )
-        .query(
-          async ({ input }) => {
-            const settings =
-              await db.getStaffTeamPageSettings({
-                organizationId:
-                  input.organizationId,
-              });
-
-            if (
-              !settings ||
-              settings.enabled !== true
-            ) {
-              return null;
-            }
-
-            const profiles =
-  await db.listPublicStaffProfiles({
-    organizationId:
-      input.organizationId,
-  });
-
-const branding =
-  await db.getBrandingSettings({
-    organizationId:
-      input.organizationId,
-  });
+const teamPageEnabled =
+  teamPageSettings?.enabled ===
+  true;
 
 return {
   branding: {
@@ -3970,11 +3960,249 @@ return {
       null,
   },
 
-  settings,
-  profiles,
+  organization: {
+    slug:
+      organizationSlug,
+
+    teamPageEnabled,
+  },
+
+  profile,
 };
+  }
+),
+
+    /**
+     * 공개 담당자 프로필 상담 신청.
+     *
+     * 로그인 없이 사용할 수 있다.
+     *
+     * 클라이언트는 publicToken과
+     * 상담 신청 내용만 전달한다.
+     *
+     * organizationId / assigneeId는
+     * DB 함수가 publicToken 기준으로
+     * 서버에서 직접 결정한다.
+     */
+    submitConsultation:
+      publicProcedure
+        .input(
+          z.object({
+            publicToken:
+              z
+                .string()
+                .trim()
+                .min(
+                  1,
+                  "담당자 정보가 필요합니다."
+                )
+                .max(
+                  191
+                ),
+
+            clientName:
+              z
+                .string()
+                .trim()
+                .min(
+                  1,
+                  "이름을 입력해주세요."
+                )
+                .max(
+                  100,
+                  "이름이 너무 깁니다."
+                ),
+
+            phone:
+              z
+                .string()
+                .trim()
+                .min(
+                  10,
+                  "연락처를 입력해주세요."
+                )
+                .max(
+                  30,
+                  "연락처 형식이 올바르지 않습니다."
+                ),
+
+            finalEducation:
+              z
+                .string()
+                .trim()
+                .min(
+                  1,
+                  "최종학력을 선택해주세요."
+                )
+                .max(
+                  100
+                ),
+
+            desiredCourse:
+              z
+                .string()
+                .trim()
+                .min(
+                  1,
+                  "희망과정을 선택해주세요."
+                )
+                .max(
+                  200
+                ),
+
+            preferredContactTime:
+              z
+                .string()
+                .trim()
+                .max(
+                  100
+                )
+                .nullable()
+                .optional(),
+
+            notes:
+              z
+                .string()
+                .trim()
+                .max(
+                  500,
+                  "문의내용은 500자 이내로 입력해주세요."
+                )
+                .nullable()
+                .optional(),
+          })
+        )
+        .mutation(
+          async ({ input }) => {
+            return db.createPublicStaffConsultation({
+              publicToken:
+                input.publicToken,
+
+              clientName:
+                input.clientName,
+
+              phone:
+                input.phone,
+
+              finalEducation:
+                input.finalEducation,
+
+              desiredCourse:
+                input.desiredCourse,
+
+              preferredContactTime:
+                input.preferredContactTime ??
+                null,
+
+              notes:
+                input.notes ??
+                null,
+            });
           }
         ),
+
+    /**
+     * 회사 담당자 소개 페이지.
+     *
+     * 현재 단계에서는 organizationId로 조회한다.
+     * 이후 회사 slug가 확정되면
+     * slug 기반 URL로 교체할 수 있다.
+     */
+    companyTeamPage:
+  publicProcedure
+    .input(
+      z.object({
+        slug:
+          z
+            .string()
+            .trim()
+            .min(1)
+            .max(100),
+      })
+    )
+    .query(
+      async ({ input }) => {
+        const slug =
+          String(
+            input.slug || ""
+          )
+            .trim()
+            .toLowerCase();
+
+        /**
+         * 공개 URL에서는 organizationId를 받지 않는다.
+         *
+         * slug
+         * → organizations
+         * → 실제 organizationId
+         *
+         * 회사 경계는 서버가 직접 결정한다.
+         */
+        const publicBranding =
+          await db.getPublicBrandingBySlug(
+            slug
+          );
+
+        if (!publicBranding) {
+          return null;
+        }
+
+        const organizationId =
+          Number(
+            publicBranding.organizationId ||
+            0
+          );
+
+        if (
+          !Number.isFinite(
+            organizationId
+          ) ||
+          organizationId <= 0
+        ) {
+          return null;
+        }
+
+        const settings =
+          await db.getStaffTeamPageSettings({
+            organizationId,
+          });
+
+        if (
+          !settings ||
+          settings.enabled !== true
+        ) {
+          return null;
+        }
+
+        const profiles =
+          await db.listPublicStaffProfiles({
+            organizationId,
+          });
+
+        return {
+          organization: {
+            id:
+              organizationId,
+
+            slug:
+              publicBranding.slug,
+          },
+
+          branding: {
+            companyName:
+              publicBranding.companyName ??
+              null,
+
+            companyLogoUrl:
+              publicBranding.companyLogoUrl ??
+              null,
+          },
+
+          settings,
+          profiles,
+        };
+      }
+    ),
   }),
 }),
 
@@ -9978,40 +10206,162 @@ markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
 }),
 
 branding: router({
-  getPublic: publicProcedure.query(async () => {
-    return {
-      organizationId: null,
-      companyName: "위드원 교육",
-      companyLogoUrl: null,
-      messengerSubtitle: "사내 메신저",
-    };
-  }),
+  /**
+   * 공개 로그인 페이지용 회사 브랜딩 조회
+   *
+   * 예:
+   * /with-one
+   * → slug = "with-one"
+   * → organizations 조회
+   * → branding_settings 조회
+   */
+  getPublicBySlug: publicProcedure
+    .input(
+      z.object({
+        slug: z.string().trim().min(1).max(100),
+      })
+    )
+    .query(async ({ input }) => {
+      return db.getPublicBrandingBySlug(
+        input.slug
+      );
+    }),
 
+  /**
+   * 로그인한 사용자의 회사 브랜딩 설정 조회
+   */
   get: protectedProcedure.query(async ({ ctx }) => {
     return db.getBrandingSettings({
       organizationId: getCtxOrganizationId(ctx),
     });
   }),
 
-  save: hostProcedure
+  /**
+   * Host 전용 회사 브랜딩 설정 저장
+   */
+    save: hostProcedure
     .input(
       z.object({
-        companyName: z.string().min(1),
-        companyLogoUrl: z.string().optional().nullable(),
-        messengerSubtitle: z.string().min(1),
+        companyName:
+          z.string()
+            .trim()
+            .min(1)
+            .max(150),
+
+        companyLogoUrl:
+          z.string()
+            .trim()
+            .max(1000)
+            .optional()
+            .nullable(),
+
+        messengerSubtitle:
+          z.string()
+            .trim()
+            .min(1)
+            .max(150),
+
+        loginHeroImageUrl:
+          z.string()
+            .trim()
+            .max(1000)
+            .optional()
+            .nullable(),
+
+        loginTitle:
+          z.string()
+            .trim()
+            .max(150)
+            .optional()
+            .nullable(),
+
+        loginDescription:
+          z.string()
+            .trim()
+            .max(2000)
+            .optional()
+            .nullable(),
+
+        primaryColor:
+          z.string()
+            .trim()
+            .max(20)
+            .optional()
+            .nullable(),
+
+        supportText:
+          z.string()
+            .trim()
+            .max(255)
+            .optional()
+            .nullable(),
+
+        supportUrl:
+          z.string()
+            .trim()
+            .max(1000)
+            .optional()
+            .nullable(),
+
+        showPoweredByEduCanvas:
+          z.boolean()
+            .optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const id = await db.saveBrandingSettings({
-  organizationId: getCtxOrganizationId(ctx),
-  companyName: input.companyName.trim(),
-        companyLogoUrl: input.companyLogoUrl?.trim() || null,
-        messengerSubtitle: input.messengerSubtitle.trim(),
-        createdBy: Number(ctx.user.id),
-        updatedBy: Number(ctx.user.id),
-      } as any);
+      const id =
+        await db.saveBrandingSettings({
+          organizationId:
+            getCtxOrganizationId(ctx),
 
-      return { success: true, id };
+          companyName:
+            input.companyName.trim(),
+
+          companyLogoUrl:
+            input.companyLogoUrl?.trim() ||
+            null,
+
+          messengerSubtitle:
+            input.messengerSubtitle.trim(),
+
+          loginHeroImageUrl:
+            input.loginHeroImageUrl?.trim() ||
+            null,
+
+          loginTitle:
+            input.loginTitle?.trim() ||
+            null,
+
+          loginDescription:
+            input.loginDescription?.trim() ||
+            null,
+
+          primaryColor:
+            input.primaryColor?.trim() ||
+            null,
+
+          supportText:
+            input.supportText?.trim() ||
+            null,
+
+          supportUrl:
+            input.supportUrl?.trim() ||
+            null,
+
+          showPoweredByEduCanvas:
+            input.showPoweredByEduCanvas ?? true,
+
+          createdBy:
+            Number(ctx.user.id),
+
+          updatedBy:
+            Number(ctx.user.id),
+        } as any);
+
+      return {
+        success: true,
+        id,
+      };
     }),
 }),
 

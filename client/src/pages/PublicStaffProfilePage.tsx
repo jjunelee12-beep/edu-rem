@@ -12,12 +12,17 @@ import {
   UserRound,
 } from "lucide-react";
 
+import {
+  useState,
+} from "react";
+
 import { useRoute } from "wouter";
 
 import { trpc } from "@/lib/trpc";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import PublicStaffConsultationModal from "@/components/public/PublicStaffConsultationModal";
 
 function normalizeImageUrl(
   raw?: string | null
@@ -53,25 +58,7 @@ function normalizeImageUrl(
     : `${API_BASE_URL}/${raw}`;
 }
 
-function normalizeExternalUrl(
-  value?: string | null
-) {
-  const raw =
-    String(value || "").trim();
 
-  if (!raw) {
-    return "";
-  }
-
-  if (
-    raw.startsWith("http://") ||
-    raw.startsWith("https://")
-  ) {
-    return raw;
-  }
-
-  return `https://${raw}`;
-}
 
 function ProfileSection({
   icon,
@@ -102,6 +89,14 @@ function ProfileSection({
 }
 
 export default function PublicStaffProfilePage() {
+const [
+  consultationOpen,
+  setConsultationOpen,
+] =
+  useState(
+    false
+  );
+
   const [, params] =
     useRoute(
       "/staff/:token"
@@ -175,6 +170,32 @@ const branding =
   (publicData as any)
     .branding || {};
 
+const organization =
+  (publicData as any)
+    .organization || {};
+
+const organizationSlug =
+  String(
+    organization.slug ||
+    ""
+  )
+    .trim()
+    .toLowerCase();
+
+const teamPageEnabled =
+  organization.teamPageEnabled ===
+  true;
+
+const teamPageUrl =
+  organizationSlug &&
+  teamPageEnabled &&
+  typeof window !==
+    "undefined"
+    ? `${window.location.origin}/team/${encodeURIComponent(
+        organizationSlug
+      )}`
+    : "";
+
 const companyName =
   String(
     branding.companyName ||
@@ -240,11 +261,6 @@ const companyLogoUrl =
       ""
     ).trim();
 
-  const consultationUrl =
-    normalizeExternalUrl(
-      data.consultationUrl
-    );
-
   const profileImageUrl =
     normalizeImageUrl(
       data.profileImageUrl
@@ -275,11 +291,8 @@ const companyLogoUrl =
     Boolean(publicPhone);
 
   const showConsultationButton =
-    data.showConsultationButton !==
-      false &&
-    Boolean(
-      consultationUrl
-    );
+  data.showConsultationButton !==
+  false;
 
   const hasDetailedProfile =
     Boolean(
@@ -303,19 +316,20 @@ const companyLogoUrl =
   };
 
   const openConsultation =
-    () => {
-      if (!consultationUrl) {
-        return;
-      }
+  () => {
+    if (
+      !acceptingNewConsultations
+    ) {
+      return;
+    }
 
-      window.open(
-        consultationUrl,
-        "_blank",
-        "noopener,noreferrer"
-      );
-    };
+    setConsultationOpen(
+      true
+    );
+  };
 
   return (
+  <>
     <div className="min-h-screen bg-[#f6f7f9] text-slate-950">
       {/* 상단 */}
       <header className="border-b border-slate-200/80 bg-white/95 backdrop-blur">
@@ -431,13 +445,16 @@ const companyLogoUrl =
                 <div className="mt-8 flex flex-col gap-2.5 sm:flex-row">
                   {showConsultationButton ? (
                     <Button
-                      type="button"
-                      size="lg"
-                      onClick={
-                        openConsultation
-                      }
-                      className="h-12 rounded-xl bg-white px-6 font-bold text-slate-950 hover:bg-slate-100"
-                    >
+  type="button"
+  size="lg"
+  disabled={
+    !acceptingNewConsultations
+  }
+  onClick={
+    openConsultation
+  }
+  className="h-12 rounded-xl bg-white px-6 font-bold text-slate-950 hover:bg-slate-100"
+>
                       <MessageCircle className="mr-2 h-4 w-4" />
                       상담 문의하기
                     </Button>
@@ -648,12 +665,15 @@ const companyLogoUrl =
                     <div className="mt-6 grid gap-2">
                       {showConsultationButton ? (
                         <Button
-                          type="button"
-                          className="h-11 w-full rounded-xl"
-                          onClick={
-                            openConsultation
-                          }
-                        >
+  type="button"
+  className="h-11 w-full rounded-xl"
+  disabled={
+    !acceptingNewConsultations
+  }
+  onClick={
+    openConsultation
+  }
+>
                           <MessageCircle className="mr-2 h-4 w-4" />
                           상담 문의하기
                         </Button>
@@ -694,7 +714,26 @@ const companyLogoUrl =
             안전한 담당자 공개 프로필
           </div>
         </footer>
-      </main>
+            </main>
     </div>
-  );
+
+    <PublicStaffConsultationModal
+  open={
+    consultationOpen
+  }
+  onClose={() => {
+    setConsultationOpen(
+      false
+    );
+  }}
+  profile={
+    data
+  }
+  teamPageUrl={
+    teamPageUrl ||
+    null
+  }
+/>
+  </>
+);
 }

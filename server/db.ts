@@ -16766,81 +16766,402 @@ const decryptedProfile = decryptUserPersonalData(profile);
 }
 
 // ─── Branding Settings ──────────────────────────────────────────────
+
+/**
+ * 로그인된 사용자의 회사 브랜딩 설정 조회.
+ *
+ * organizationId는 서버에서 확정된 회사 ID를 사용한다.
+ */
 export async function getBrandingSettings(params?: {
   organizationId?: number | null;
 }) {
   const db = await getDb();
-  if (!db) return null;
 
-  const organizationId = requireOrganizationId(params?.organizationId);
+  if (!db) {
+    return null;
+  }
 
-  const result = await db
-    .select()
-    .from(brandingSettings)
-    .where(eq(brandingSettings.organizationId, organizationId))
-    .limit(1);
+  const organizationId =
+    requireOrganizationId(
+      params?.organizationId
+    );
 
+  const result =
+    await db
+      .select()
+      .from(
+        brandingSettings
+      )
+      .where(
+        eq(
+          brandingSettings.organizationId,
+          organizationId
+        )
+      )
+      .limit(1);
+
+  /**
+   * 아직 해당 회사의 branding_settings 행이 없더라도
+   * 프론트가 안전하게 기본값을 받을 수 있도록 한다.
+   */
   if (!result[0]) {
-  return {
-    organizationId,
-    companyName: null,
-    companyLogoUrl: null,
-    messengerSubtitle: "사내 메신저",
-  };
-}
+    return {
+      organizationId,
+
+      companyName:
+        null,
+
+      companyLogoUrl:
+        null,
+
+      messengerSubtitle:
+        "사내 메신저",
+
+      loginHeroImageUrl:
+        null,
+
+      loginTitle:
+        null,
+
+      loginDescription:
+        null,
+
+      primaryColor:
+        null,
+
+      supportText:
+        null,
+
+      supportUrl:
+        null,
+
+      showPoweredByEduCanvas:
+        true,
+    };
+  }
 
   return result[0];
 }
 
-export async function saveBrandingSettings(
-  data: InsertBrandingSetting & {
-    organizationId?: number | null;
-  }
+
+/**
+ * 회사 slug로 공개 로그인 페이지용 브랜딩 조회.
+ *
+ * 공개 로그인 화면에서 사용하는 함수이므로
+ * 내부 결제정보 / 사업자번호 / 사용자정보 등은 반환하지 않는다.
+ *
+ * 흐름:
+ *
+ * slug
+ * → organizations
+ * → organizationId
+ * → branding_settings
+ */
+export async function getPublicBrandingBySlug(
+  slugValue: string
 ) {
   const db = await getDb();
-  if (!db) throwAppError(
-  ERROR_CODES.INTERNAL_SERVER_ERROR,
-  "DB not available",
-  500
-);
 
-  const organizationId = requireOrganizationId((data as any).organizationId);
+  if (!db) {
+    return null;
+  }
 
-  const existing = await db
-    .select()
-    .from(brandingSettings)
-    .where(eq(brandingSettings.organizationId, organizationId))
-    .limit(1);
+  const slug =
+    String(
+      slugValue || ""
+    )
+      .trim()
+      .toLowerCase();
 
-  if (existing[0]) {
+  if (!slug) {
+    return null;
+  }
+
+  /**
+   * slug는 organizations 테이블을 기준으로 찾는다.
+   */
+  const organizationRows =
     await db
-      .update(brandingSettings)
+      .select({
+        id:
+          organizations.id,
+
+        name:
+          organizations.name,
+
+        slug:
+          organizations.slug,
+
+        status:
+          organizations.status,
+
+        subscriptionStatus:
+          organizations.subscriptionStatus,
+      })
+      .from(
+        organizations
+      )
+      .where(
+        eq(
+          organizations.slug,
+          slug
+        )
+      )
+      .limit(1);
+
+  const organization =
+    organizationRows[0];
+
+  if (!organization) {
+    return null;
+  }
+
+  /**
+   * 비활성 / 정지 회사는 공개 로그인 페이지를 제공하지 않는다.
+   */
+  if (
+    organization.status !==
+    "active"
+  ) {
+    return null;
+  }
+
+  const branding =
+    await getBrandingSettings({
+      organizationId:
+        Number(
+          organization.id
+        ),
+    });
+
+  /**
+   * 로그인 페이지에 필요한 공개 정보만 반환한다.
+   */
+  return {
+    organizationId:
+      Number(
+        organization.id
+      ),
+
+    slug:
+      String(
+        organization.slug
+      ),
+
+    companyName:
+      String(
+        branding?.companyName ||
+        organization.name ||
+        ""
+      ).trim() ||
+      null,
+
+    companyLogoUrl:
+      branding?.companyLogoUrl ??
+      null,
+
+    loginHeroImageUrl:
+      branding?.loginHeroImageUrl ??
+      null,
+
+    loginTitle:
+      branding?.loginTitle ??
+      null,
+
+    loginDescription:
+      branding?.loginDescription ??
+      null,
+
+    primaryColor:
+      branding?.primaryColor ??
+      null,
+
+    supportText:
+      branding?.supportText ??
+      null,
+
+    supportUrl:
+      branding?.supportUrl ??
+      null,
+
+    showPoweredByEduCanvas:
+      branding?.showPoweredByEduCanvas !==
+      false,
+  };
+}
+
+
+/**
+ * Host 회사 브랜딩 설정 저장.
+ *
+ * branding_settings는 organizationId 기준 UNIQUE이므로
+ * 회사별 설정은 한 행만 존재한다.
+ */
+export async function saveBrandingSettings(
+  data:
+    InsertBrandingSetting & {
+      organizationId?:
+        number |
+        null;
+    }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      (data as any)
+        .organizationId
+    );
+
+  const existing =
+    await db
+      .select()
+      .from(
+        brandingSettings
+      )
+      .where(
+        eq(
+          brandingSettings.organizationId,
+          organizationId
+        )
+      )
+      .limit(1);
+
+  if (
+    existing[0]
+  ) {
+    await db
+      .update(
+        brandingSettings
+      )
       .set({
-        companyName: data.companyName,
-        companyLogoUrl: data.companyLogoUrl ?? null,
-        messengerSubtitle: data.messengerSubtitle,
-        updatedBy: data.updatedBy ?? null,
+        companyName:
+          data.companyName,
+
+        companyLogoUrl:
+          data.companyLogoUrl ??
+          null,
+
+        messengerSubtitle:
+          data.messengerSubtitle,
+
+        loginHeroImageUrl:
+          data.loginHeroImageUrl ??
+          null,
+
+        loginTitle:
+          data.loginTitle ??
+          null,
+
+        loginDescription:
+          data.loginDescription ??
+          null,
+
+        primaryColor:
+          data.primaryColor ??
+          null,
+
+        supportText:
+          data.supportText ??
+          null,
+
+        supportUrl:
+          data.supportUrl ??
+          null,
+
+        showPoweredByEduCanvas:
+          data.showPoweredByEduCanvas ??
+          true,
+
+        updatedBy:
+          data.updatedBy ??
+          null,
       } as any)
       .where(
         and(
-          eq(brandingSettings.id, existing[0].id),
-          eq(brandingSettings.organizationId, organizationId)
+          eq(
+            brandingSettings.id,
+            existing[0].id
+          ),
+
+          eq(
+            brandingSettings.organizationId,
+            organizationId
+          )
         )
       );
 
     return existing[0].id;
   }
 
-  const result: any = await db.insert(brandingSettings).values({
-    organizationId,
-    companyName: data.companyName,
-    companyLogoUrl: data.companyLogoUrl ?? null,
-    messengerSubtitle: data.messengerSubtitle,
-    createdBy: data.createdBy ?? null,
-    updatedBy: data.updatedBy ?? null,
-  } as any);
+  const result:
+    any =
+    await db
+      .insert(
+        brandingSettings
+      )
+      .values({
+        organizationId,
 
-  return getInsertId(result);
+        companyName:
+          data.companyName,
+
+        companyLogoUrl:
+          data.companyLogoUrl ??
+          null,
+
+        messengerSubtitle:
+          data.messengerSubtitle,
+
+        loginHeroImageUrl:
+          data.loginHeroImageUrl ??
+          null,
+
+        loginTitle:
+          data.loginTitle ??
+          null,
+
+        loginDescription:
+          data.loginDescription ??
+          null,
+
+        primaryColor:
+          data.primaryColor ??
+          null,
+
+        supportText:
+          data.supportText ??
+          null,
+
+        supportUrl:
+          data.supportUrl ??
+          null,
+
+        showPoweredByEduCanvas:
+          data.showPoweredByEduCanvas ??
+          true,
+
+        createdBy:
+          data.createdBy ??
+          null,
+
+        updatedBy:
+          data.updatedBy ??
+          null,
+      } as any);
+
+  return getInsertId(
+    result
+  );
 }
 
 // ─── Kakao AI Settings ─────────────────────────────────────────────
@@ -50098,6 +50419,324 @@ export async function getStaffPublicProfileOrganizationIdByToken(
   }
 
   return organizationId;
+}
+
+/**
+ * 공개 담당자 프로필을 통한 상담 신청 접수.
+ *
+ * 중요:
+ * 외부 클라이언트가 organizationId / assigneeId를
+ * 직접 지정할 수 없도록 publicToken으로만
+ * 실제 회사와 담당자를 서버에서 결정한다.
+ *
+ * 흐름:
+ * publicToken
+ * → staff_public_profiles
+ * → organizationId + userId
+ * → consultations
+ */
+export async function createPublicStaffConsultation(
+  params: {
+    publicToken: string;
+
+    clientName: string;
+    phone: string;
+
+    finalEducation: string;
+    desiredCourse: string;
+
+    preferredContactTime?: string | null;
+    notes?: string | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const publicToken =
+    String(
+      params.publicToken ||
+      ""
+    ).trim();
+
+  if (!publicToken) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "담당자 프로필 정보가 필요합니다.",
+      400
+    );
+  }
+
+  /**
+   * 고객이 보내는 userId / organizationId를
+   * 절대 사용하지 않는다.
+   *
+   * 공개 Token에 연결된 DB 값만 신뢰한다.
+   */
+  const profileRows =
+    await db
+      .select({
+        organizationId:
+          staffPublicProfiles.organizationId,
+
+        userId:
+          staffPublicProfiles.userId,
+
+        displayName:
+          staffPublicProfiles.displayName,
+
+        publicPositionName:
+          staffPublicProfiles.publicPositionName,
+
+        acceptingNewConsultations:
+          staffPublicProfiles.acceptingNewConsultations,
+      })
+      .from(
+        staffPublicProfiles
+      )
+      .where(
+        and(
+          eq(
+            staffPublicProfiles.publicToken,
+            publicToken
+          ),
+
+          eq(
+            staffPublicProfiles.isActive,
+            true
+          ),
+
+          eq(
+            staffPublicProfiles.acceptingNewConsultations,
+            true
+          )
+        )
+      )
+      .limit(1);
+
+  const profile =
+    profileRows[0];
+
+  if (!profile) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "현재 상담 신청이 가능한 담당자 프로필이 아닙니다.",
+      404
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      profile.organizationId
+    );
+
+  const assigneeId =
+    Number(
+      profile.userId ||
+      0
+    );
+
+  if (
+    !Number.isFinite(
+      assigneeId
+    ) ||
+    assigneeId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "담당자 정보를 확인할 수 없습니다.",
+      404
+    );
+  }
+
+  const clientName =
+    String(
+      params.clientName ||
+      ""
+    ).trim();
+
+  const phone =
+    String(
+      params.phone ||
+      ""
+    )
+      .replace(
+        /\D/g,
+        ""
+      )
+      .trim();
+
+  const finalEducation =
+    String(
+      params.finalEducation ||
+      ""
+    ).trim();
+
+  const desiredCourse =
+    String(
+      params.desiredCourse ||
+      ""
+    ).trim();
+
+  const preferredContactTime =
+    String(
+      params.preferredContactTime ||
+      ""
+    ).trim() ||
+    null;
+
+  const notes =
+    String(
+      params.notes ||
+      ""
+    ).trim() ||
+    null;
+
+  if (!clientName) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "이름을 입력해주세요.",
+      400
+    );
+  }
+
+  if (
+    phone.length < 10 ||
+    phone.length > 11
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "올바른 연락처를 입력해주세요.",
+      400
+    );
+  }
+
+  if (!finalEducation) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "최종학력을 선택해주세요.",
+      400
+    );
+  }
+
+  if (!desiredCourse) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "희망과정을 선택해주세요.",
+      400
+    );
+  }
+
+  /**
+   * consultDate는 고객이 보내는 값을 사용하지 않고
+   * 서버 접수일 기준으로 생성한다.
+   */
+  const now =
+    new Date();
+
+  const consultDate =
+    [
+      now.getFullYear(),
+      String(
+        now.getMonth() + 1
+      ).padStart(
+        2,
+        "0"
+      ),
+      String(
+        now.getDate()
+      ).padStart(
+        2,
+        "0"
+      ),
+    ].join("-");
+
+  /**
+   * 기존 상담DB의 개인정보 암호화 / Hash 생성 로직을
+   * 반드시 그대로 사용한다.
+   */
+  const preparedData =
+    prepareConsultationPersonalData({
+      organizationId,
+
+      consultDate,
+
+      /**
+       * 회사명이나 특정 담당자명을 박지 않는다.
+       * 시스템 유입경로 식별용 공통 Key.
+       */
+      channel:
+        "public_profile",
+
+      clientName,
+      phone,
+
+      finalEducation,
+      desiredCourse,
+
+      preferredContactTime,
+
+      notes,
+
+      status:
+        "상담중",
+
+      assigneeId,
+    });
+
+  const result: any =
+    await db
+      .insert(
+        consultations
+      )
+      .values(
+        preparedData as any
+      );
+
+  const consultationId =
+    Number(
+      getInsertId(
+        result
+      ) ||
+      0
+    );
+
+  if (
+    !consultationId
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "상담 신청을 저장하지 못했습니다.",
+      500
+    );
+  }
+
+  return {
+    consultationId,
+
+    /**
+     * 성공 화면 표시용 공개 정보만 반환.
+     *
+     * organizationId / userId는
+     * 공개 응답으로 내보내지 않는다.
+     */
+    staff: {
+      displayName:
+        profile.displayName ??
+        null,
+
+      publicPositionName:
+        profile.publicPositionName ??
+        null,
+    },
+  };
 }
 
 /**
