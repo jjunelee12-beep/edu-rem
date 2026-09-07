@@ -572,27 +572,25 @@ const companyLogoUrl =
                 </div>
               ) : null}
 
-              {(showConsultationButton ||
-                showPhone) ? (
-                <div className="mt-8 flex flex-col gap-2.5 sm:flex-row">
-                  {showConsultationButton ? (
-                    <Button
-  type="button"
-  size="lg"
-  disabled={
-    !acceptingNewConsultations
-  }
-  onClick={
-    openConsultation
-  }
-  className="h-12 rounded-xl bg-white px-6 font-bold text-slate-950 hover:bg-slate-100"
->
-                      <MessageCircle className="mr-2 h-4 w-4" />
-                      상담 문의하기
-                    </Button>
-                  ) : null}    
-            </div>
-
+              {showConsultationButton ? (
+  <div className="mt-8 flex flex-col gap-2.5 sm:flex-row">
+    <Button
+      type="button"
+      size="lg"
+      disabled={
+        !acceptingNewConsultations
+      }
+      onClick={
+        openConsultation
+      }
+      className="h-12 rounded-xl bg-white px-6 font-bold text-slate-950 hover:bg-slate-100"
+    >
+      <MessageCircle className="mr-2 h-4 w-4" />
+      상담 문의하기
+    </Button>
+  </div>
+) : null}
+</div>
             {/* 프로필 사진 */}
             <div className="order-1 flex justify-center lg:order-2 lg:justify-end">
               <div className="relative">
