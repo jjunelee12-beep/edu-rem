@@ -419,14 +419,16 @@ name: recoveryName.trim(),
   className="absolute inset-0 h-full w-full object-contain object-center"
 />
 
-          <div className="absolute bottom-[1.5%] right-[2%] w-[42%] max-w-[440px]">
-            <div className="absolute inset-[16%] rounded-full bg-blue-500/20 blur-3xl" />
-            <img
-              src="/images/login/login-ai-visual.png"
-              alt="EduCanvas AI"
-              className="relative z-10 w-full object-contain drop-shadow-[0_22px_45px_rgba(37,99,235,.32)]"
-            />
-          </div>
+          {!currentSlug ? (
+  <div className="absolute bottom-[1.5%] right-[2%] w-[42%] max-w-[440px]">
+    <div className="absolute inset-[16%] rounded-full bg-blue-500/20 blur-3xl" />
+    <img
+      src="/images/login/login-ai-visual.png"
+      alt="EduCanvas AI"
+      className="relative z-10 w-full object-contain drop-shadow-[0_22px_45px_rgba(37,99,235,.32)]"
+    />
+  </div>
+) : null}
         </section>
 
         {/* RIGHT LOGIN */}

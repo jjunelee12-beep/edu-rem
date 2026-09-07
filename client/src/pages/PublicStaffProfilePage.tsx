@@ -60,29 +60,161 @@ function normalizeImageUrl(
 
 
 
+type ProfileSectionTone =
+  | "blue"
+  | "green"
+  | "violet"
+  | "cyan";
+
 function ProfileSection({
   icon,
   title,
+  subtitle,
+  label,
+  number,
+  tone = "blue",
   children,
 }: {
   icon: React.ReactNode;
   title: string;
+  subtitle?: string;
+  label?: string;
+  number?: string;
+  tone?: ProfileSectionTone;
   children: React.ReactNode;
 }) {
+  const toneStyles = {
+    blue: {
+      card:
+        "border-blue-100 bg-gradient-to-br from-white via-blue-50/40 to-blue-100/60",
+      edge:
+        "bg-blue-500",
+      icon:
+        "bg-blue-600 text-white shadow-blue-200",
+      dot:
+        "bg-blue-500",
+      label:
+        "text-blue-400",
+      number:
+        "text-blue-200/60",
+      ghost:
+        "text-blue-200/40",
+    },
+
+    green: {
+      card:
+        "border-emerald-100 bg-gradient-to-br from-white via-emerald-50/40 to-emerald-100/55",
+      edge:
+        "bg-emerald-500",
+      icon:
+        "bg-emerald-500 text-white shadow-emerald-200",
+      dot:
+        "bg-emerald-500",
+      label:
+        "text-emerald-500",
+      number:
+        "text-emerald-200/70",
+      ghost:
+        "text-emerald-200/40",
+    },
+
+    violet: {
+      card:
+        "border-violet-100 bg-gradient-to-br from-white via-violet-50/40 to-violet-100/55",
+      edge:
+        "bg-violet-500",
+      icon:
+        "bg-violet-500 text-white shadow-violet-200",
+      dot:
+        "bg-violet-500",
+      label:
+        "text-violet-400",
+      number:
+        "text-violet-200/70",
+      ghost:
+        "text-violet-200/40",
+    },
+
+    cyan: {
+      card:
+        "border-cyan-100 bg-gradient-to-br from-white via-cyan-50/40 to-sky-100/55",
+      edge:
+        "bg-cyan-500",
+      icon:
+        "bg-cyan-500 text-white shadow-cyan-200",
+      dot:
+        "bg-cyan-500",
+      label:
+        "text-cyan-500",
+      number:
+        "text-cyan-200/70",
+      ghost:
+        "text-cyan-200/40",
+    },
+  } as const;
+
+  const currentTone =
+    toneStyles[tone];
+
   return (
-    <section className="rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-sm sm:p-7">
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-white">
-          {icon}
+    <section
+      className={`group relative overflow-hidden rounded-[24px] border p-5 shadow-sm transition duration-300 hover:-translate-y-0.5 hover:shadow-md sm:p-7 ${currentTone.card}`}
+    >
+      {/* 왼쪽 컬러 포인트 */}
+      <div
+        className={`absolute bottom-0 left-0 top-0 w-1 ${currentTone.edge}`}
+      />
+
+      {/* 우측 배경 숫자 */}
+      {number ? (
+        <div
+          className={`pointer-events-none absolute bottom-1 right-5 select-none text-[72px] font-black leading-none tracking-[-0.08em] sm:right-7 sm:text-[92px] ${currentTone.number}`}
+        >
+          {number}
         </div>
+      ) : null}
 
-        <h2 className="text-lg font-bold tracking-tight text-slate-950">
-          {title}
-        </h2>
-      </div>
+      {/* 배경 원 */}
+      <div
+        className={`pointer-events-none absolute -bottom-16 -right-12 h-44 w-44 rounded-full ${currentTone.ghost}`}
+      />
 
-      <div className="mt-5 whitespace-pre-line text-[15px] leading-7 text-slate-600">
-        {children}
+      <div className="relative z-10">
+        <div className="flex items-start gap-4">
+          <div
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl shadow-lg ${currentTone.icon}`}
+          >
+            {icon}
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-black tracking-[-0.025em] text-slate-950 sm:text-xl">
+                  {title}
+                </h2>
+
+                {subtitle ? (
+                  <p className="mt-1 text-xs font-medium leading-5 text-slate-500 sm:text-[13px]">
+                    {subtitle}
+                  </p>
+                ) : null}
+              </div>
+
+              {label ? (
+                <div
+                  className={`hidden shrink-0 pt-1 text-[10px] font-black tracking-[0.08em] sm:block ${currentTone.label}`}
+                >
+                  {label}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-4 whitespace-pre-line text-[14px] font-medium leading-7 text-slate-700 sm:text-[15px]">
+              {children}
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -458,22 +590,7 @@ const companyLogoUrl =
                       <MessageCircle className="mr-2 h-4 w-4" />
                       상담 문의하기
                     </Button>
-                  ) : null}
-
-                  {showPhone ? (
-                    <Button
-  type="button"
-  size="lg"
-  variant="outline"
-  onClick={callPhone}
-  className="h-12 rounded-xl border border-white/20 bg-white px-6 font-semibold text-slate-900 shadow-sm hover:bg-slate-100 hover:text-slate-950"
->
-                      <Phone className="mr-2 h-4 w-4" />
-                      {publicPhone}
-                    </Button>
-                  ) : null}
-                </div>
-              ) : null}
+                  ) : null}    
             </div>
 
             {/* 프로필 사진 */}
@@ -515,62 +632,134 @@ const companyLogoUrl =
         <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-5">
             {introduction ? (
-              <section className="rounded-[24px] border border-slate-200/80 bg-white p-6 shadow-sm sm:p-8">
-                <div className="flex items-center gap-2 text-sm font-bold text-slate-950">
-                  <HeartHandshake className="h-5 w-5" />
-                  안녕하세요, {displayName}입니다.
-                </div>
+  <section className="relative overflow-hidden rounded-[28px] border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-blue-100/70 shadow-sm">
+    {/* CSS 장식 */}
+    <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-blue-200/30" />
 
-                <div className="mt-5 whitespace-pre-line text-[15px] leading-8 text-slate-600">
-                  {introduction}
-                </div>
-              </section>
-            ) : null}
+    <div className="pointer-events-none absolute right-20 top-8 h-24 w-24 rotate-45 rounded-[28px] bg-blue-100/40" />
 
-            {careerText ? (
-              <ProfileSection
-                icon={
-                  <BriefcaseBusiness className="h-5 w-5" />
-                }
-                title="주요 경력"
-              >
-                {careerText}
-              </ProfileSection>
-            ) : null}
+    {/* INTRO 상단 */}
+    <div className="relative border-b border-blue-100/80 px-6 pb-6 pt-6 sm:px-8 sm:pb-7 sm:pt-7">
+      <div className="flex items-start gap-4">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-200">
+          <HeartHandshake className="h-6 w-6" />
+        </div>
+
+        <div className="min-w-0">
+          <div className="text-[10px] font-black tracking-[0.12em] text-blue-500">
+            INTRODUCTION
+          </div>
+
+          <h2 className="mt-1.5 text-xl font-black tracking-[-0.035em] text-slate-950 sm:text-2xl">
+            안녕하세요,{" "}
+            <span className="text-blue-600">
+              {displayName}
+            </span>
+            입니다.
+          </h2>
+
+          <p className="mt-2 max-w-lg text-[13px] font-medium leading-6 text-slate-600 sm:text-sm">
+            학생 한 분, 한 분의 목표를 끝까지 함께하는
+            <br className="hidden sm:block" />
+            학습 설계 파트너가 되겠습니다.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5 flex justify-end">
+        <div className="max-w-[230px] text-right">
+          <div className="text-4xl font-black leading-4 text-blue-300/70">
+            “
+          </div>
+
+          <div className="-mt-1 text-sm font-bold leading-6 text-slate-600">
+            당신의 목표에
+            <br />
+            가까워지는 길,
+            <br />
+            함께하겠습니다.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* 실제 소개글 */}
+    <div className="relative m-4 rounded-[20px] border border-white/80 bg-white/80 px-5 py-5 shadow-sm backdrop-blur-sm sm:m-5 sm:px-7 sm:py-6">
+      <div className="whitespace-pre-line text-[14px] font-medium leading-7 text-slate-700 sm:text-[15px] sm:leading-8">
+        {introduction}
+      </div>
+    </div>
+  </section>
+) : null}
+
+           {careerText ? (
+  <ProfileSection
+    icon={
+      <BriefcaseBusiness className="h-5 w-5" />
+    }
+    title="주요 경력"
+    subtitle="다년간의 경험으로 더 정확한 길을 안내합니다."
+    label="EXPERIENCE"
+    number="01"
+    tone="blue"
+  >
+    {careerText}
+  </ProfileSection>
+) : null}
 
             {awardText ? (
-              <ProfileSection
-                icon={
-                  <Award className="h-5 w-5" />
-                }
-                title="수상 이력"
-              >
-                {awardText}
-              </ProfileSection>
-            ) : null}
+  <ProfileSection
+    icon={
+      <Award className="h-5 w-5" />
+    }
+    title="수상 이력"
+    subtitle="신뢰할 수 있는 결과와 경험입니다."
+    label="AWARDS"
+    number="02"
+    tone="green"
+  >
+    {awardText}
+  </ProfileSection>
+) : null}
 
             {qualificationText ? (
-              <ProfileSection
-                icon={
-                  <GraduationCap className="h-5 w-5" />
-                }
-                title="자격 · 교육 이력"
-              >
-                {qualificationText}
-              </ProfileSection>
-            ) : null}
+  <ProfileSection
+    icon={
+      <GraduationCap className="h-5 w-5" />
+    }
+    title="자격 · 교육 이력"
+    subtitle="전문성과 신뢰를 바탕으로 상담합니다."
+    label="CERTIFICATION"
+    number="03"
+    tone="violet"
+  >
+    {qualificationText}
+  </ProfileSection>
+) : null}
 
             {consultationStyle ? (
-              <ProfileSection
-                icon={
-                  <HeartHandshake className="h-5 w-5" />
-                }
-                title="상담 스타일"
-              >
-                {consultationStyle}
-              </ProfileSection>
-            ) : null}
+  <ProfileSection
+    icon={
+      <HeartHandshake className="h-5 w-5" />
+    }
+    title="상담 스타일"
+    subtitle="복잡한 내용도 쉽게, 중요한 내용은 정확하게 안내합니다."
+    label="CONSULTING STYLE"
+    number="04"
+    tone="cyan"
+  >
+    {consultationStyle}
 
+    <div className="mt-5 flex items-start gap-3 rounded-2xl border border-white/70 bg-white/60 px-4 py-3.5 backdrop-blur-sm">
+      <UserRound className="mt-0.5 h-5 w-5 shrink-0 text-cyan-600" />
+
+      <p className="text-[12px] font-bold leading-5 text-slate-700 sm:text-[13px]">
+        등록으로 끝나는 상담이 아닌,
+        학습설계부터 자격증 취득까지 끝까지 관리하는 상담을 지향합니다.
+      </p>
+    </div>
+  </ProfileSection>
+) : null}
             {!hasDetailedProfile ? (
               <section className="rounded-[24px] border border-slate-200/80 bg-white p-8 text-center shadow-sm">
                 <Sparkles className="mx-auto h-6 w-6 text-slate-400" />
@@ -707,6 +896,42 @@ const companyLogoUrl =
             </div>
           </aside>
         </div>
+
+{teamPageUrl ? (
+  <section className="mt-6 overflow-hidden rounded-[24px] border border-blue-200 bg-gradient-to-r from-blue-50 via-white to-blue-100/80 shadow-sm">
+    <div className="flex flex-col gap-5 px-6 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+      <div className="flex items-center gap-4">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-100 text-blue-600">
+          <UserRound className="h-6 w-6" />
+        </div>
+
+        <div>
+          <div className="text-base font-black tracking-tight text-slate-950">
+            더 많은 전문가와 함께하세요
+          </div>
+
+          <div className="mt-1 text-xs leading-5 text-slate-500">
+            {companyName || "교육기관"}의 다른 학습담당자들도 만나보세요.
+          </div>
+        </div>
+      </div>
+
+      <Button
+        type="button"
+        onClick={() => {
+          window.location.href =
+            teamPageUrl;
+        }}
+        className="h-12 shrink-0 rounded-xl bg-blue-600 px-7 font-bold text-white hover:bg-blue-700"
+      >
+        다른 담당자 보기
+        <span className="ml-2">
+          →
+        </span>
+      </Button>
+    </div>
+  </section>
+) : null}
 
         <footer className="py-10 text-center">
           <div className="inline-flex items-center gap-1.5 text-xs text-slate-400">
