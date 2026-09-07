@@ -105,10 +105,10 @@ function StaffCard({ profile, onConsultation }: { profile: any; onConsultation: 
 function FeatureItem({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
   return (
     <div className="flex items-center gap-3">
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] bg-blue-50 text-blue-600">{icon}</div>
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-blue-100 bg-white/85 text-blue-600 shadow-sm">{icon}</div>
       <div>
-        <div className="text-[13px] font-bold tracking-[-0.02em] text-[#0b1b3f]">{title}</div>
-        <div className="mt-0.5 text-[11px] leading-5 text-slate-500">{description}</div>
+        <div className="text-[12px] font-bold tracking-[-0.015em] text-[#10213f]">{title}</div>
+        <div className="mt-0.5 text-[10px] font-medium leading-5 text-slate-500">{description}</div>
       </div>
     </div>
   );
@@ -185,29 +185,76 @@ export default function PublicStaffTeamPage() {
 
         <main>
           <section className="relative overflow-hidden border-b border-blue-100/70 bg-[#f4f9ff]">
-            <div className="absolute inset-0 bg-gradient-to-r from-[#f7fbff] via-[#eef7ff]/95 to-transparent" />
-            <div className="pointer-events-none absolute right-0 top-0 hidden h-full w-[48%] lg:block">
-              <img src="/images/team/team-hero-learning-space.png" alt="" className="h-full w-full object-cover object-center" />
-              <div className="absolute inset-0 bg-gradient-to-r from-[#eef7ff] via-[#eef7ff]/30 to-transparent" />
-              <div className="absolute left-[17%] top-[24%] -rotate-[5deg] text-[#174f9e]">
-                <div className="text-[25px] font-medium leading-[1.55] tracking-[-0.03em]" style={{ fontFamily: '"Nanum Pen Script", cursive' }}>배움이<br />더 나은 내일을 만듭니다.</div>
-                <div className="ml-7 mt-1 h-[2px] w-[180px] -rotate-[4deg] bg-blue-500/80" />
-              </div>
-            </div>
+  {/* HERO PHOTO */}
+  <div className="pointer-events-none absolute right-0 top-0 hidden h-full w-[44%] lg:block">
+    <img
+      src="/images/team/team-hero-learning-space.png"
+      alt=""
+      className="h-full w-full object-cover object-center"
+    />
 
-            <div className="relative mx-auto max-w-[1180px] px-4 py-11 sm:px-6 sm:py-14 lg:py-16">
-              <div className="max-w-[650px]">
-                <div className="mb-3 text-[10px] font-extrabold uppercase tracking-[0.12em] text-blue-600">OUR TEAM</div>
-                <h1 className="whitespace-pre-line text-[34px] font-extrabold leading-[1.18] tracking-[-0.05em] text-[#0b1b3f] sm:text-[44px] lg:text-[48px]">{pageTitle}</h1>
-                <p className="mt-4 whitespace-pre-line text-[13px] leading-7 text-slate-600 sm:text-[14px]">{description}</p>
-                <div className="mt-7 grid gap-4 sm:grid-cols-3 sm:gap-6">
-                  <FeatureItem icon={<UsersRound className="h-5 w-5" />} title="전문 분야별 상담" description="과정별 전문 담당자 배정" />
-                  <FeatureItem icon={<Heart className="h-5 w-5" />} title="1:1 맞춤 설계" description="개인 상황에 맞는 학습 설계" />
-                  <FeatureItem icon={<Target className="h-5 w-5" />} title="취득까지 책임 관리" description="상담부터 학습·행정까지" />
-                </div>
-              </div>
-            </div>
-          </section>
+    <div className="absolute inset-0 bg-gradient-to-r from-[#edf6ff] via-[#edf6ff]/55 to-transparent" />
+
+    <div className="absolute left-[10%] top-[24%] -rotate-[4deg] text-[#174f9e]">
+      <div
+        className="text-[24px] font-medium leading-[1.55]"
+        style={{
+          fontFamily: '"Nanum Pen Script", cursive',
+        }}
+      >
+        배움이
+        <br />
+        더 나은 내일을 만듭니다.
+      </div>
+
+      <div className="ml-6 mt-1 h-[2px] w-[170px] -rotate-[3deg] bg-blue-500/80" />
+    </div>
+  </div>
+
+  {/* LEFT GRADIENT */}
+  <div className="absolute inset-0 bg-gradient-to-r from-[#f8fbff] via-[#eef7ff]/96 to-transparent" />
+
+  <div className="relative mx-auto max-w-[1180px] px-4 py-10 sm:px-6 sm:py-12 lg:py-14">
+    <div className="max-w-[760px]">
+      <div className="mb-3 text-[10px] font-extrabold uppercase tracking-[0.14em] text-blue-600">
+        OUR TEAM
+      </div>
+
+      <h1 className="max-w-[760px] text-[32px] font-extrabold leading-[1.22] tracking-[-0.04em] text-[#10213f] sm:text-[40px] lg:text-[44px]">
+        당신의 배움 여정에 함께하는
+        <br className="hidden sm:block" />
+        <span className="text-blue-600">
+          학습담당자
+        </span>
+        를 만나보세요.
+      </h1>
+
+      <p className="mt-4 max-w-xl whitespace-pre-line text-[13px] font-medium leading-7 tracking-[-0.01em] text-slate-600 sm:text-[14px]">
+        {description}
+      </p>
+
+      <div className="mt-7 grid gap-4 sm:grid-cols-3 sm:gap-5">
+        <FeatureItem
+          icon={<UsersRound className="h-5 w-5" />}
+          title="전문 분야별 상담"
+          description="과정별 전문 담당자 배정"
+        />
+
+        <FeatureItem
+          icon={<Heart className="h-5 w-5" />}
+          title="1:1 맞춤 설계"
+          description="개인 상황에 맞는 학습 설계"
+        />
+
+        <FeatureItem
+          icon={<Target className="h-5 w-5" />}
+          title="취득까지 책임 관리"
+          description="상담부터 학습·행정까지"
+        />
+      </div>
+    </div>
+  </div>
+</section>
 
           <section id="staff-list" className="scroll-mt-24 bg-white">
             <div className="mx-auto max-w-[1180px] px-4 py-7 sm:px-6 sm:py-9">

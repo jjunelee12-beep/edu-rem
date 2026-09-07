@@ -461,108 +461,111 @@ const companyLogoUrl =
       <main className="mx-auto max-w-6xl px-4 py-5 sm:px-7 sm:py-7">
         {/* HERO */}
         <section className="relative overflow-hidden rounded-[24px] bg-[#020817] text-white shadow-[0_18px_42px_rgba(15,23,42,0.12)]">
-          <div className="pointer-events-none absolute -right-24 -top-20 h-80 w-80 rounded-full bg-blue-500/[0.055]" />
-          <div className="pointer-events-none absolute bottom-[-140px] left-[28%] h-72 w-72 rounded-full border border-white/[0.045]" />
+  {/* 배경 장식 */}
+  <div className="pointer-events-none absolute -right-20 -top-24 h-[320px] w-[320px] rounded-full bg-blue-500/[0.055]" />
+  <div className="pointer-events-none absolute -bottom-36 left-[34%] h-[300px] w-[300px] rounded-full border border-white/[0.045]" />
 
-          <div className="relative grid gap-7 px-5 py-6 sm:px-8 sm:py-8 lg:grid-cols-[minmax(0,1fr)_270px] lg:items-center lg:px-10 lg:py-9">
-            <div className="order-2 min-w-0 lg:order-1">
-              <div className="flex flex-wrap items-center gap-2">
-                {acceptingNewConsultations ? (
-                  <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1.5 text-[11px] font-bold text-emerald-300">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-                    현재 신규 상담 가능
-                  </div>
-                ) : (
-                  <div className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-[11px] font-bold text-slate-300">
-                    현재 상담 준비중
-                  </div>
-                )}
+  <div className="relative grid gap-6 px-5 py-6 sm:px-8 sm:py-7 lg:grid-cols-[minmax(0,1fr)_250px] lg:items-center lg:px-9 lg:py-8">
+    {/* LEFT */}
+    <div className="order-2 min-w-0 lg:order-1">
+      <div className="flex flex-wrap items-center gap-2">
+        {acceptingNewConsultations ? (
+  <div className="inline-flex h-8 items-center gap-1.5 rounded-full border border-emerald-200 bg-white px-3.5 text-[11px] font-extrabold tracking-[-0.02em] text-emerald-500 shadow-sm">
+    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+    현재 신규 상담 가능
+  </div>
+) : (
+  <div className="inline-flex h-8 items-center gap-1.5 rounded-full border border-amber-200 bg-white px-3.5 text-[11px] font-extrabold tracking-[-0.02em] text-amber-500 shadow-sm">
+    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+    현재 상담 준비중
+  </div>
+)}
 
-                <div className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-[11px] font-semibold text-slate-300">
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  공식 담당자
-                </div>
-              </div>
+<div className="inline-flex h-8 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 text-[11px] font-bold tracking-[-0.02em] text-slate-500 shadow-sm">
+  <ShieldCheck className="h-3.5 w-3.5 text-slate-400" />
+  공식 담당자
+</div>
+      </div>
 
-              {companyName ? (
-                <div className="mt-6 text-[12px] font-semibold text-blue-200/80">
-                  {companyName}
-                </div>
-              ) : null}
+      {companyName ? (
+        <div className="mt-5 text-[11px] font-semibold tracking-[-0.01em] text-blue-200/80">
+          {companyName}
+        </div>
+      ) : null}
 
-              <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1">
-                <h1 className="text-[34px] font-extrabold leading-none tracking-[-0.045em] text-white sm:text-[42px]">
-                  {displayName}
-                </h1>
+      <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1">
+        <h1 className="text-[34px] font-extrabold leading-none tracking-[-0.035em] text-white sm:text-[38px]">
+          {displayName}
+        </h1>
 
-                {positionName ? (
-                  <span className="pb-1 text-[14px] font-semibold text-slate-300 sm:text-[15px]">
-                    {positionName}
-                  </span>
-                ) : null}
-              </div>
+        {positionName ? (
+          <span className="pb-1 text-[13px] font-semibold tracking-[-0.01em] text-slate-300 sm:text-[14px]">
+            {positionName}
+          </span>
+        ) : null}
+      </div>
 
-              <p className="mt-5 max-w-2xl text-[14px] font-medium leading-7 text-slate-300 sm:text-[16px] sm:leading-8">
-                {headline}
-              </p>
+      <p className="mt-4 max-w-[620px] text-[14px] font-medium leading-[1.75] tracking-[-0.015em] text-slate-300 sm:text-[15px]">
+        {headline}
+      </p>
 
-              {specialties.length ? (
-                <div className="mt-5 flex flex-wrap gap-2">
-                  {specialties.map((specialty: string, index: number) => (
-                    <span
-                      key={`${specialty}-${index}`}
-                      className="rounded-full border border-white/80 bg-white px-3.5 py-1.5 text-[11px] font-bold text-slate-900 shadow-sm"
-                    >
-                      {specialty}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
+      {specialties.length ? (
+        <div className="mt-5 flex flex-wrap gap-2">
+          {specialties.map((specialty: string, index: number) => (
+            <span
+              key={`${specialty}-${index}`}
+              className="rounded-[9px] border border-white/15 bg-white/[0.08] px-3 py-1.5 text-[10px] font-semibold tracking-[-0.01em] text-white"
+            >
+              {specialty}
+            </span>
+          ))}
+        </div>
+      ) : null}
 
-              {showConsultationButton ? (
-                <div className="mt-6">
-                  <Button
-                    type="button"
-                    disabled={!acceptingNewConsultations}
-                    onClick={openConsultation}
-                    className="h-11 rounded-[12px] bg-white px-5 text-[12px] font-bold text-slate-950 hover:bg-slate-100"
-                  >
-                    <MessageCircle className="mr-2 h-4 w-4" />
-                    상담 문의하기
-                  </Button>
-                </div>
-              ) : null}
+      {showConsultationButton ? (
+        <div className="mt-5">
+          <Button
+            type="button"
+            disabled={!acceptingNewConsultations}
+            onClick={openConsultation}
+            className="h-10 rounded-[10px] bg-white px-5 text-[11px] font-bold tracking-[-0.01em] text-slate-950 hover:bg-slate-100"
+          >
+            <MessageCircle className="mr-2 h-4 w-4" />
+            상담 문의하기
+          </Button>
+        </div>
+      ) : null}
+    </div>
+
+    {/* RIGHT PROFILE IMAGE */}
+    <div className="order-1 flex justify-center lg:order-2 lg:justify-end">
+      <div className="relative">
+        <div className="absolute -inset-2 rounded-[26px] border border-white/10" />
+
+        <div className="relative h-[205px] w-[205px] overflow-hidden rounded-[22px] border-[9px] border-white bg-white shadow-[0_18px_45px_rgba(0,0,0,0.28)] sm:h-[220px] sm:w-[220px]">
+          {profileImageUrl ? (
+            <img
+              src={profileImageUrl}
+              alt={`${displayName} 담당자`}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full flex-col items-center justify-center bg-slate-100 text-slate-400">
+              <UserRound className="h-14 w-14" />
+              <span className="mt-2 text-xs">담당자 프로필</span>
             </div>
+          )}
+        </div>
 
-            {/* PROFILE IMAGE */}
-            <div className="order-1 flex justify-center lg:order-2 lg:justify-end">
-              <div className="relative">
-                <div className="absolute -inset-2 rounded-[28px] border border-white/10" />
-
-                <div className="relative h-[210px] w-[210px] overflow-hidden rounded-[24px] border-[10px] border-white bg-white shadow-[0_20px_50px_rgba(0,0,0,0.28)] sm:h-[235px] sm:w-[235px]">
-                  {profileImageUrl ? (
-                    <img
-                      src={profileImageUrl}
-                      alt={`${displayName} 담당자`}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full flex-col items-center justify-center bg-slate-100 text-slate-400">
-                      <UserRound className="h-16 w-16" />
-                      <span className="mt-2 text-xs">담당자 프로필</span>
-                    </div>
-                  )}
-                </div>
-
-                {acceptingNewConsultations ? (
-                  <div className="absolute -bottom-2 -right-2 flex h-11 w-11 items-center justify-center rounded-2xl border-4 border-[#020817] bg-emerald-400 text-[#020817] shadow-lg">
-                    <CheckCircle2 className="h-5 w-5" />
-                  </div>
-                ) : null}
-              </div>
-            </div>
+        {acceptingNewConsultations ? (
+          <div className="absolute -bottom-2 -right-2 flex h-10 w-10 items-center justify-center rounded-[14px] border-4 border-[#020817] bg-emerald-400 text-[#020817] shadow-lg">
+            <CheckCircle2 className="h-5 w-5" />
           </div>
-        </section>
+        ) : null}
+      </div>
+    </div>
+  </div>
+</section>
 
         {/* MAIN CONTENT */}
         <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
