@@ -9,11 +9,11 @@
           "value": ".*(kakaotalk-scrap|facebookexternalhit|Twitterbot|Slackbot).*"
         }
       ],
-      "destination": "/api/staff-page?token=:token"
+      "destination": "https://edu-crm-api-production.up.railway.app/og/staff/:token"
     },
     {
-      "source": "/api/:path((?!staff-page$).*)",
-      "destination": "https://edu-crm-api-production.up.railway.app/api/:path"
+      "source": "/api/:path*",
+      "destination": "https://edu-crm-api-production.up.railway.app/api/:path*"
     },
     {
       "source": "/((?!api/|go/|alpha/|assets/|favicon.ico|robots.txt|manifest.webmanifest).*)",

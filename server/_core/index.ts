@@ -4422,6 +4422,118 @@ app.use(workCommunityUploadRouter);
     }
   );
 
+app.get("/og/staff/:token", async (req, res) => {
+  try {
+    const token = String(req.params.token || "").trim();
+
+    if (!token) {
+      return res.status(400).send("프로필 토큰이 필요합니다.");
+    }
+
+    const [profile, organizationId] = await Promise.all([
+      getStaffPublicProfileByToken(token),
+      getStaffPublicProfileOrganizationIdByToken(token),
+    ]);
+
+    if (!profile || profile.isActive === false) {
+      return res.status(404).send("담당자 프로필을 찾을 수 없습니다.");
+    }
+
+    const branding = organizationId
+      ? await getBrandingSettings({
+          organizationId,
+        })
+      : null;
+
+    const escapeHtml = (value: unknown) =>
+      String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+    const displayName =
+      String(profile.displayName || "담당자").trim();
+
+    const positionName =
+      String(profile.publicPositionName || "").trim();
+
+    const headline =
+      String(profile.headline || "").trim();
+
+    const companyName =
+      String(branding?.companyName || "").trim();
+
+    const title = positionName
+      ? `${displayName} | ${positionName}`
+      : displayName;
+
+    const description =
+      headline || `${displayName} 담당자 소개`;
+
+    const imageUrl =
+      profile.profileImageUrl ||
+      branding?.companyLogoUrl ||
+      "";
+
+    const canonicalUrl =
+      `https://edu-crm-five.vercel.app/staff/${encodeURIComponent(token)}`;
+
+    const html = `<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+
+  <title>${escapeHtml(title)}</title>
+
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="${escapeHtml(title)}" />
+  <meta property="og:description" content="${escapeHtml(description)}" />
+  <meta property="og:url" content="${escapeHtml(canonicalUrl)}" />
+  ${
+    companyName
+      ? `<meta property="og:site_name" content="${escapeHtml(companyName)}" />`
+      : ""
+  }
+  ${
+    imageUrl
+      ? `<meta property="og:image" content="${escapeHtml(imageUrl)}" />`
+      : ""
+  }
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="${escapeHtml(title)}" />
+  <meta name="twitter:description" content="${escapeHtml(description)}" />
+  ${
+    imageUrl
+      ? `<meta name="twitter:image" content="${escapeHtml(imageUrl)}" />`
+      : ""
+  }
+</head>
+<body></body>
+</html>`;
+
+    res.setHeader(
+      "Content-Type",
+      "text/html; charset=utf-8"
+    );
+
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=60"
+    );
+
+    return res.status(200).send(html);
+  } catch (error) {
+    console.error("[STAFF OG ERROR]", error);
+
+    return res
+      .status(500)
+      .send("OG 정보를 불러오지 못했습니다.");
+  }
+});
+
   app.post("/api/upload", upload.single("file"), async (req, res) => {
     try {
       const file = req.file;
