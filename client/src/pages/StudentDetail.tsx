@@ -118,6 +118,62 @@ function formatDate(d: any) {
   return `${y}-${m}-${day}`;
 }
 
+function formatDateTime(d: any) {
+  if (!d) return "";
+
+  const date =
+    typeof d === "string"
+      ? new Date(d)
+      : d;
+
+  if (
+    !date ||
+    isNaN(date.getTime())
+  ) {
+    return "";
+  }
+
+  const y =
+    date.getFullYear();
+
+  const m =
+    String(
+      date.getMonth() + 1
+    ).padStart(2, "0");
+
+  const day =
+    String(
+      date.getDate()
+    ).padStart(2, "0");
+
+  const hour =
+    String(
+      date.getHours()
+    ).padStart(2, "0");
+
+  const minute =
+    String(
+      date.getMinutes()
+    ).padStart(2, "0");
+
+  return `${y}.${m}.${day} ${hour}:${minute}`;
+}
+
+const ADMINISTRATIVE_STATUS_LABELS:
+  Record<string, string> = {
+    not_started:
+      "미진행",
+
+    in_progress:
+      "진행중",
+
+    completed:
+      "완료",
+
+    review_required:
+      "확인필요",
+  };
+
 function toNumber(v: any) {
   return Number(String(v ?? "0").replace(/,/g, "").replace(/[^0-9.-]/g, "").trim()) || 0;
 }
@@ -233,6 +289,46 @@ const canEditStudentDetail =
 
 const isReadOnly = !!student && !canEditStudentDetail;
 
+ const [selectedSemesterOrder, setSelectedSemesterOrder] = useState(1);
+
+const [studentInfoTab, setStudentInfoTab] = useState<
+  "semester" | "administrative"
+>("semester");
+
+const [
+  qualificationOverrideEditing,
+  setQualificationOverrideEditing,
+] = useState(false);
+
+const [
+  qualificationOverrideForm,
+  setQualificationOverrideForm,
+] = useState({
+  requirementProfileKey:
+    "auto",
+
+  requiredMajorRequiredSubjects:
+    "",
+
+  requiredMajorElectiveSubjects:
+    "",
+
+  requiredLiberalSubjects:
+    "",
+
+  requiredGeneralSubjects:
+    "",
+
+  requiredTotalCredits:
+    "",
+
+  degreeApplicationOverride:
+    "auto",
+
+  memo:
+    "",
+});
+
 const { data: semesters } = trpc.semester.list.useQuery({ studentId });
   const { data: plan } = trpc.plan.get.useQuery({ studentId });
   const { data: allUsers } = trpc.users.list.useQuery();
@@ -258,6 +354,91 @@ const { data: privateCertificateRequestList } =
 const { data: practiceSupportList } =
   trpc.practiceSupport.listByStudent.useQuery({ studentId });
 
+const {
+  data: administrativeSummary,
+  isLoading: administrativeSummaryLoading,
+} = trpc.creditSummary.student.getSummary.useQuery(
+  {
+    studentId,
+  },
+  {
+    enabled:
+      studentInfoTab === "administrative" &&
+      !!studentId,
+  }
+);
+
+const {
+  data: qualificationOverrideResult,
+  isLoading: qualificationOverrideLoading,
+} = trpc.qualificationOverrides.get.useQuery(
+  {
+    studentId,
+  },
+  {
+    enabled:
+      studentInfoTab === "administrative" &&
+      !!studentId,
+  }
+);
+
+const upsertAdministrativeProcedureMut =
+  trpc.administrativeProcedures.upsert.useMutation({
+    onSuccess: async () => {
+      await utils.creditSummary.student.getSummary.invalidate({
+        studentId,
+      });
+
+      toast.success("행정절차가 저장되었습니다.");
+    },
+
+    onError: (e) => {
+      toast.error(e.message);
+    },
+  });
+
+const saveQualificationOverrideMut =
+  trpc.qualificationOverrides.save.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.qualificationOverrides.get.invalidate({
+          studentId,
+        }),
+
+        utils.creditSummary.student.getSummary.invalidate({
+          studentId,
+        }),
+      ]);
+
+      toast.success("자격요건 설정이 저장되었습니다.");
+    },
+
+    onError: (e) => {
+      toast.error(e.message);
+    },
+  });
+
+const resetQualificationOverrideMut =
+  trpc.qualificationOverrides.reset.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.qualificationOverrides.get.invalidate({
+          studentId,
+        }),
+
+        utils.creditSummary.student.getSummary.invalidate({
+          studentId,
+        }),
+      ]);
+
+      toast.success("공통엔진 자동계산으로 되돌렸습니다.");
+    },
+
+    onError: (e) => {
+      toast.error(e.message);
+    },
+  });
+
 const { data: studentAuditLogs = [], isLoading: studentAuditLoading } =
   trpc.studentAudit.list.useQuery(
     {
@@ -269,8 +450,6 @@ const { data: studentAuditLogs = [], isLoading: studentAuditLoading } =
     }
   );
 
-
-  const [selectedSemesterOrder, setSelectedSemesterOrder] = useState(1);
   const [uploadingRefund, setUploadingRefund] = useState(false);
   const [uploadingRefundEditId, setUploadingRefundEditId] = useState<number | null>(null);
   const [uploadingTransferCommon, setUploadingTransferCommon] = useState(false);
@@ -867,6 +1046,461 @@ const safeNavigate = (path: string) => {
   });
 
   const userMap = new Map(allUsers?.map((u: any) => [u.id, u.name || "이름없음"]) ?? []);
+
+const administrativeTimeline =
+  administrativeSummary?.administrativeTimeline ?? null;
+
+const administrativeProcedures =
+  administrativeSummary?.administrativeProcedures ?? [];
+
+const administrativeRequirements =
+  administrativeSummary?.requirements ?? null;
+
+const administrativeIssues =
+  administrativeSummary?.issues ?? [];
+
+const administrativeRiskSummary =
+  administrativeSummary?.riskSummary ?? null;
+
+const qualificationOverride =
+  qualificationOverrideResult?.override ?? null;
+
+const usingQualificationEngine =
+  !qualificationOverride;
+
+const getAdministrativeProcedure = (
+  procedureType: string
+) => {
+  return (
+    administrativeProcedures.find(
+      (row: any) =>
+        String(
+          row.procedureType ||
+          ""
+        ) ===
+        procedureType
+    ) || null
+  );
+};
+
+const saveAdministrativeProcedure =
+  async (
+    procedureType:
+      | "learner_registration"
+      | "credit_recognition"
+      | "degree_application"
+      | "qualification_application",
+
+    nextStatus:
+      | "not_started"
+      | "in_progress"
+      | "completed"
+      | "review_required",
+
+    nextMemo?: string
+  ) => {
+    if (isReadOnly) {
+      toast.error(
+        "담당자 또는 호스트만 수정할 수 있습니다."
+      );
+      return;
+    }
+
+    const current =
+      getAdministrativeProcedure(
+        procedureType
+      );
+
+    await upsertAdministrativeProcedureMut.mutateAsync({
+      studentId,
+
+      procedureType,
+
+      status:
+        nextStatus,
+
+      reportedDate:
+        current?.reportedDate ??
+        null,
+
+      evidenceSummary:
+        current?.evidenceSummary ??
+        null,
+
+      referenceType:
+        current?.referenceType ??
+        null,
+
+      referenceId:
+        current?.referenceId ??
+        null,
+
+      memo:
+        nextMemo !==
+        undefined
+          ? nextMemo.trim() ||
+            null
+          : current?.memo ??
+            null,
+    });
+  };
+
+const openQualificationOverrideEditor =
+  () => {
+    setQualificationOverrideForm({
+      requirementProfileKey:
+        qualificationOverride
+          ?.requirementProfileKey ||
+        "auto",
+
+      requiredMajorRequiredSubjects:
+        qualificationOverride
+          ?.requiredMajorRequiredSubjects !==
+          null &&
+        qualificationOverride
+          ?.requiredMajorRequiredSubjects !==
+          undefined
+          ? String(
+              qualificationOverride
+                .requiredMajorRequiredSubjects
+            )
+          : "",
+
+      requiredMajorElectiveSubjects:
+        qualificationOverride
+          ?.requiredMajorElectiveSubjects !==
+          null &&
+        qualificationOverride
+          ?.requiredMajorElectiveSubjects !==
+          undefined
+          ? String(
+              qualificationOverride
+                .requiredMajorElectiveSubjects
+            )
+          : "",
+
+      requiredLiberalSubjects:
+        qualificationOverride
+          ?.requiredLiberalSubjects !==
+          null &&
+        qualificationOverride
+          ?.requiredLiberalSubjects !==
+          undefined
+          ? String(
+              qualificationOverride
+                .requiredLiberalSubjects
+            )
+          : "",
+
+      requiredGeneralSubjects:
+        qualificationOverride
+          ?.requiredGeneralSubjects !==
+          null &&
+        qualificationOverride
+          ?.requiredGeneralSubjects !==
+          undefined
+          ? String(
+              qualificationOverride
+                .requiredGeneralSubjects
+            )
+          : "",
+
+      requiredTotalCredits:
+        qualificationOverride
+          ?.requiredTotalCredits !==
+          null &&
+        qualificationOverride
+          ?.requiredTotalCredits !==
+          undefined
+          ? String(
+              qualificationOverride
+                .requiredTotalCredits
+            )
+          : "",
+
+      degreeApplicationOverride:
+        qualificationOverride
+          ?.degreeApplicationOverride ||
+        "auto",
+
+      memo:
+        String(
+          qualificationOverride
+            ?.memo ||
+          ""
+        ),
+    });
+
+    setQualificationOverrideEditing(
+      true
+    );
+  };
+
+const parseOverrideNumber = (
+  value: string
+) => {
+  const normalized =
+    String(
+      value ||
+      ""
+    ).trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  const numberValue =
+    Number(
+      normalized
+    );
+
+  if (
+    !Number.isFinite(
+      numberValue
+    ) ||
+    numberValue < 0
+  ) {
+    return null;
+  }
+
+  return Math.floor(
+    numberValue
+  );
+};
+
+const saveQualificationOverride =
+  async () => {
+    if (isReadOnly) {
+      toast.error(
+        "담당자 또는 호스트만 수정할 수 있습니다."
+      );
+      return;
+    }
+
+    await saveQualificationOverrideMut.mutateAsync({
+      studentId,
+
+      requirementProfileKey:
+        qualificationOverrideForm
+          .requirementProfileKey ===
+        "auto"
+          ? null
+          : qualificationOverrideForm
+              .requirementProfileKey,
+
+      requiredMajorRequiredSubjects:
+        parseOverrideNumber(
+          qualificationOverrideForm
+            .requiredMajorRequiredSubjects
+        ),
+
+      requiredMajorElectiveSubjects:
+        parseOverrideNumber(
+          qualificationOverrideForm
+            .requiredMajorElectiveSubjects
+        ),
+
+      requiredLiberalSubjects:
+        parseOverrideNumber(
+          qualificationOverrideForm
+            .requiredLiberalSubjects
+        ),
+
+      requiredGeneralSubjects:
+        parseOverrideNumber(
+          qualificationOverrideForm
+            .requiredGeneralSubjects
+        ),
+
+      requiredTotalCredits:
+        parseOverrideNumber(
+          qualificationOverrideForm
+            .requiredTotalCredits
+        ),
+
+      degreeApplicationOverride:
+        qualificationOverrideForm
+          .degreeApplicationOverride ===
+        "auto"
+          ? null
+          : qualificationOverrideForm
+              .degreeApplicationOverride as
+              | "required"
+              | "not_required",
+
+      memo:
+        qualificationOverrideForm
+          .memo.trim() ||
+        null,
+    });
+
+    setQualificationOverrideEditing(
+      false
+    );
+  };
+
+const resetQualificationOverride =
+  async () => {
+    if (isReadOnly) {
+      toast.error(
+        "담당자 또는 호스트만 수정할 수 있습니다."
+      );
+      return;
+    }
+
+    const ok =
+      window.confirm(
+        "담당자 수정값을 모두 삭제하고 공통엔진 자동계산으로 되돌리시겠습니까?"
+      );
+
+    if (!ok) {
+      return;
+    }
+
+    await resetQualificationOverrideMut.mutateAsync({
+      studentId,
+    });
+
+    setQualificationOverrideEditing(
+      false
+    );
+  };
+
+const qualificationDetails =
+  (
+    administrativeRequirements
+      ?.qualification
+      ?.details ||
+    {}
+  ) as Record<
+    string,
+    any
+  >;
+
+const administrativeCourseKey =
+  String(
+    administrativeRequirements
+      ?.courseKey ||
+    ""
+  );
+
+const isSocialWorkerAdministrative =
+  administrativeCourseKey ===
+  "social_worker_2";
+
+const requiredMajorTarget =
+  Number(
+    qualificationDetails
+      .requiredSubjects ??
+    0
+  );
+
+const requiredMajorCompleted =
+  Number(
+    qualificationDetails
+      .completedRequiredSubjects ??
+    0
+  );
+
+const electiveMajorTarget =
+  Number(
+    qualificationDetails
+      .electiveSubjects ??
+    0
+  );
+
+const electiveMajorCompleted =
+  Number(
+    qualificationDetails
+      .completedElectiveSubjects ??
+    0
+  );
+
+const duplicateSubjectCount =
+  Number(
+    administrativeRiskSummary
+      ?.duplicateSubjectCount ??
+    0
+  );
+
+const currentAdministrativeLawVersion =
+  String(
+    administrativeRequirements
+      ?.qualification
+      ?.lawVersion ||
+    qualificationDetails
+      .lawVersion ||
+    ""
+  );
+
+const getAdministrativeTimelineText =
+  (
+    procedureType: string
+  ) => {
+    if (
+      procedureType ===
+      "learner_registration"
+    ) {
+      const label =
+        administrativeTimeline
+          ?.learnerRegistration
+          ?.nextAvailableWindow
+          ?.label;
+
+      return label
+        ? `다음 신청 가능 ${label}`
+        : "신청 가능 시기 계산 중";
+    }
+
+    if (
+      procedureType ===
+      "credit_recognition"
+    ) {
+      const label =
+        administrativeTimeline
+          ?.creditRecognition
+          ?.nextAvailableWindow
+          ?.label;
+
+      return label
+        ? `예상 신청시기 ${label}`
+        : "신청 가능 시기 계산 중";
+    }
+
+    if (
+      procedureType ===
+      "degree_application"
+    ) {
+      const label =
+        administrativeTimeline
+          ?.degree
+          ?.applicationWindow
+          ?.label;
+
+      return label
+        ? `예상 신청기간 ${label}`
+        : "학위신청 일정 계산 중";
+    }
+
+    if (
+      procedureType ===
+      "qualification_application"
+    ) {
+      const date =
+        administrativeTimeline
+          ?.qualification
+          ?.earliestEstimatedDate;
+
+      return date
+        ? `예상 신청 가능 ${date}`
+        : administrativeTimeline
+            ?.qualification
+            ?.message ||
+          "자격증 신청시기 계산 중";
+    }
+
+    return "";
+  };
 
   const sortedSemesters = useMemo(() => {
     return [...(semesters || [])].sort(
@@ -2258,9 +2892,11 @@ const getCountStatusClass = (current: number, target: number) => {
       <Card className="border-0 shadow-sm">
         <CardHeader className="pb-3">
           <CardTitle className="text-base">
-  {selectedSemester?.approvalStatus === "승인"
-  ? `매출 보고 / 등록 정보 - ${selectedSemesterOrder}학기`
-  : `예정 결제 / 승인대기 정보 - ${selectedSemesterOrder}학기`}
+  {studentInfoTab === "administrative"
+    ? "행정절차 / 자격증 신청 관리"
+    : selectedSemester?.approvalStatus === "승인"
+    ? `매출 보고 / 등록 정보 - ${selectedSemesterOrder}학기`
+    : `예정 결제 / 승인대기 정보 - ${selectedSemesterOrder}학기`}
 </CardTitle>
         </CardHeader>
         <CardContent>
@@ -2271,16 +2907,36 @@ const getCountStatusClass = (current: number, target: number) => {
                 type="button"
                 size="sm"
                 variant={
-                  Number(selectedSemesterOrder) === Number(sem.semesterOrder)
-                    ? "default"
-                    : "outline"
-                }
-                onClick={() => setSelectedSemesterOrder(Number(sem.semesterOrder))}
+  studentInfoTab === "semester" &&
+  Number(selectedSemesterOrder) === Number(sem.semesterOrder)
+    ? "default"
+    : "outline"
+}
+                onClick={() => {
+  setSelectedSemesterOrder(Number(sem.semesterOrder));
+  setStudentInfoTab("semester");
+}}
               >
                 {sem.semesterOrder}학기
               </Button>
-            ))}
+                       ))}
+
+            <Button
+              type="button"
+              size="sm"
+              variant={
+                studentInfoTab === "administrative"
+                  ? "default"
+                  : "outline"
+              }
+              onClick={() => setStudentInfoTab("administrative")}
+            >
+              행정절차
+            </Button>
           </div>
+
+{studentInfoTab === "semester" ? (
+  <>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3">
             <div>
@@ -2460,6 +3116,784 @@ const getCountStatusClass = (current: number, target: number) => {
               </p>
             </div>
           </div>
+            </>
+          ) : (
+            <div className="space-y-5">
+  {administrativeSummaryLoading ||
+  qualificationOverrideLoading ? (
+    <div className="flex items-center justify-center py-12">
+      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+    </div>
+  ) : (
+    <>
+      <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-semibold text-slate-900">
+                자격요건 적용 기준
+              </p>
+
+              <Badge
+                className={
+                  usingQualificationEngine
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-blue-100 text-blue-700"
+                }
+              >
+                {usingQualificationEngine
+                  ? "공통엔진 자동 계산"
+                  : "담당자 수정값 적용 중"}
+              </Badge>
+            </div>
+
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+              {currentAdministrativeLawVersion && (
+                <span>
+                  적용 기준:{" "}
+                  <strong className="text-slate-800">
+                    {currentAdministrativeLawVersion === "old"
+                      ? "구법"
+                      : currentAdministrativeLawVersion === "current"
+                      ? "신법"
+                      : currentAdministrativeLawVersion}
+                  </strong>
+                </span>
+              )}
+
+              {isSocialWorkerAdministrative && (
+                <>
+                  <span>
+                    필수과목:{" "}
+                    <strong className="text-slate-800">
+                      {requiredMajorTarget}
+                    </strong>
+                  </span>
+
+                  <span>
+                    선택과목:{" "}
+                    <strong className="text-slate-800">
+                      {electiveMajorTarget}
+                    </strong>
+                  </span>
+                </>
+              )}
+
+              <span>
+                학위신청:{" "}
+                <strong className="text-slate-800">
+                  {administrativeTimeline
+                    ?.degree
+                    ?.required
+                    ? "필요"
+                    : "해당 없음"}
+                </strong>
+              </span>
+            </div>
+          </div>
+
+          {!qualificationOverrideEditing && (
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={isReadOnly}
+                onClick={
+                  openQualificationOverrideEditor
+                }
+              >
+                수정
+              </Button>
+
+              {!usingQualificationEngine && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={
+                    isReadOnly ||
+                    resetQualificationOverrideMut.isPending
+                  }
+                  onClick={
+                    resetQualificationOverride
+                  }
+                >
+                  자동계산으로 되돌리기
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {qualificationOverrideEditing && (
+          <div className="mt-4 border-t border-slate-200 pt-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <Label className="text-xs">
+                  적용 기준
+                </Label>
+
+                <Select
+                  value={
+                    qualificationOverrideForm
+                      .requirementProfileKey
+                  }
+                  onValueChange={(value) =>
+                    setQualificationOverrideForm(
+                      (prev) => ({
+                        ...prev,
+                        requirementProfileKey:
+                          value,
+                      })
+                    )
+                  }
+                >
+                  <SelectTrigger className="mt-1 h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    <SelectItem value="auto">
+                      공통엔진 자동
+                    </SelectItem>
+
+                    <SelectItem value="current">
+                      신법
+                    </SelectItem>
+
+                    <SelectItem value="old">
+                      구법
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs">
+                  전공필수 과목 수
+                </Label>
+
+                <Input
+                  type="number"
+                  min={0}
+                  className="mt-1 h-9"
+                  placeholder="자동계산"
+                  value={
+                    qualificationOverrideForm
+                      .requiredMajorRequiredSubjects
+                  }
+                  onChange={(e) =>
+                    setQualificationOverrideForm(
+                      (prev) => ({
+                        ...prev,
+                        requiredMajorRequiredSubjects:
+                          e.target.value,
+                      })
+                    )
+                  }
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs">
+                  전공선택 과목 수
+                </Label>
+
+                <Input
+                  type="number"
+                  min={0}
+                  className="mt-1 h-9"
+                  placeholder="자동계산"
+                  value={
+                    qualificationOverrideForm
+                      .requiredMajorElectiveSubjects
+                  }
+                  onChange={(e) =>
+                    setQualificationOverrideForm(
+                      (prev) => ({
+                        ...prev,
+                        requiredMajorElectiveSubjects:
+                          e.target.value,
+                      })
+                    )
+                  }
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs">
+                  교양 과목 수
+                </Label>
+
+                <Input
+                  type="number"
+                  min={0}
+                  className="mt-1 h-9"
+                  placeholder="자동계산"
+                  value={
+                    qualificationOverrideForm
+                      .requiredLiberalSubjects
+                  }
+                  onChange={(e) =>
+                    setQualificationOverrideForm(
+                      (prev) => ({
+                        ...prev,
+                        requiredLiberalSubjects:
+                          e.target.value,
+                      })
+                    )
+                  }
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs">
+                  일반 과목 수
+                </Label>
+
+                <Input
+                  type="number"
+                  min={0}
+                  className="mt-1 h-9"
+                  placeholder="자동계산"
+                  value={
+                    qualificationOverrideForm
+                      .requiredGeneralSubjects
+                  }
+                  onChange={(e) =>
+                    setQualificationOverrideForm(
+                      (prev) => ({
+                        ...prev,
+                        requiredGeneralSubjects:
+                          e.target.value,
+                      })
+                    )
+                  }
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs">
+                  총 필요학점
+                </Label>
+
+                <Input
+                  type="number"
+                  min={0}
+                  className="mt-1 h-9"
+                  placeholder="자동계산"
+                  value={
+                    qualificationOverrideForm
+                      .requiredTotalCredits
+                  }
+                  onChange={(e) =>
+                    setQualificationOverrideForm(
+                      (prev) => ({
+                        ...prev,
+                        requiredTotalCredits:
+                          e.target.value,
+                      })
+                    )
+                  }
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs">
+                  학위신청
+                </Label>
+
+                <Select
+                  value={
+                    qualificationOverrideForm
+                      .degreeApplicationOverride
+                  }
+                  onValueChange={(value) =>
+                    setQualificationOverrideForm(
+                      (prev) => ({
+                        ...prev,
+                        degreeApplicationOverride:
+                          value,
+                      })
+                    )
+                  }
+                >
+                  <SelectTrigger className="mt-1 h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    <SelectItem value="auto">
+                      공통엔진 자동
+                    </SelectItem>
+
+                    <SelectItem value="required">
+                      필요
+                    </SelectItem>
+
+                    <SelectItem value="not_required">
+                      해당 없음
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="md:col-span-2">
+                <Label className="text-xs">
+                  수정 사유 / 메모
+                </Label>
+
+                <Input
+                  className="mt-1 h-9"
+                  value={
+                    qualificationOverrideForm
+                      .memo
+                  }
+                  onChange={(e) =>
+                    setQualificationOverrideForm(
+                      (prev) => ({
+                        ...prev,
+                        memo:
+                          e.target.value,
+                      })
+                    )
+                  }
+                  placeholder="예외 적용 사유가 있다면 입력"
+                />
+              </div>
+            </div>
+
+            <p className="mt-3 text-[11px] text-slate-500">
+              비워둔 값은 공통엔진 계산값을 그대로 사용합니다.
+            </p>
+
+            <div className="mt-3 flex justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  setQualificationOverrideEditing(
+                    false
+                  )
+                }
+              >
+                취소
+              </Button>
+
+              <Button
+                type="button"
+                size="sm"
+                disabled={
+                  isReadOnly ||
+                  saveQualificationOverrideMut.isPending
+                }
+                onClick={
+                  saveQualificationOverride
+                }
+              >
+                {saveQualificationOverrideMut.isPending
+                  ? "저장 중..."
+                  : "저장"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        {(
+          [
+            {
+              type:
+                "learner_registration",
+              title:
+                "학습자등록",
+            },
+
+            {
+              type:
+                "credit_recognition",
+              title:
+                "학점인정 신청",
+            },
+
+            ...(
+              administrativeTimeline
+                ?.degree
+                ?.required
+                ? [
+                    {
+                      type:
+                        "degree_application",
+                      title:
+                        "학위신청",
+                    },
+                  ]
+                : []
+            ),
+
+            {
+              type:
+                "qualification_application",
+              title:
+                "자격증 신청",
+            },
+          ] as const
+        ).map((item) => {
+          const procedure =
+            getAdministrativeProcedure(
+              item.type
+            );
+
+          const currentStatus =
+            (
+              procedure?.status ||
+              "not_started"
+            ) as
+              | "not_started"
+              | "in_progress"
+              | "completed"
+              | "review_required";
+
+          return (
+            <div
+              key={item.type}
+              className="rounded-xl border border-slate-200 bg-white p-4"
+            >
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold text-slate-900">
+                      {item.title}
+                    </p>
+
+                    <Badge
+                      className={
+                        currentStatus ===
+                        "completed"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : currentStatus ===
+                            "in_progress"
+                          ? "bg-blue-100 text-blue-700"
+                          : currentStatus ===
+                            "review_required"
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-slate-100 text-slate-600"
+                      }
+                    >
+                      {
+                        ADMINISTRATIVE_STATUS_LABELS[
+                          currentStatus
+                        ]
+                      }
+                    </Badge>
+                  </div>
+
+                  <p className="mt-1 text-xs text-slate-500">
+                    {getAdministrativeTimelineText(
+                      item.type
+                    )}
+                  </p>
+
+                  {procedure
+                    ?.statusChangedAt && (
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      {formatDateTime(
+                        procedure.statusChangedAt
+                      )}
+                      {" · "}
+                      {procedure.statusChangedBy
+                        ? `${
+                            userMap.get(
+                              Number(
+                                procedure.statusChangedBy
+                              )
+                            ) ||
+                            "담당자"
+                          } 상태 변경`
+                        : "상태 변경"}
+                    </p>
+                  )}
+                </div>
+
+                <div className="w-full md:w-[150px]">
+                  <Select
+                    value={
+                      currentStatus
+                    }
+                    disabled={
+                      isReadOnly ||
+                      upsertAdministrativeProcedureMut.isPending
+                    }
+                    onValueChange={(value) =>
+                      saveAdministrativeProcedure(
+                        item.type,
+                        value as
+                          | "not_started"
+                          | "in_progress"
+                          | "completed"
+                          | "review_required"
+                      )
+                    }
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+
+                    <SelectContent>
+                      <SelectItem value="not_started">
+                        미진행
+                      </SelectItem>
+
+                      <SelectItem value="in_progress">
+                        진행중
+                      </SelectItem>
+
+                      <SelectItem value="completed">
+                        완료
+                      </SelectItem>
+
+                      <SelectItem value="review_required">
+                        확인필요
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="mt-3">
+                <Label className="text-[11px] text-slate-500">
+                  담당자 메모
+                </Label>
+
+                <Textarea
+                  key={`${item.type}-${procedure?.updatedAt || "new"}`}
+                  defaultValue={
+                    String(
+                      procedure?.memo ||
+                      ""
+                    )
+                  }
+                  disabled={
+                    isReadOnly ||
+                    upsertAdministrativeProcedureMut.isPending
+                  }
+                  rows={2}
+                  className="mt-1 resize-none text-sm"
+                  placeholder="필요한 내용을 자유롭게 기록하세요."
+                  onBlur={(e) => {
+                    const nextMemo =
+                      e.target.value.trim();
+
+                    const currentMemo =
+                      String(
+                        procedure?.memo ||
+                        ""
+                      ).trim();
+
+                    if (
+                      nextMemo ===
+                      currentMemo
+                    ) {
+                      return;
+                    }
+
+                    saveAdministrativeProcedure(
+                      item.type,
+                      currentStatus,
+                      nextMemo
+                    );
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">
+              위험도 검사
+            </p>
+
+            <p className="mt-1 text-xs text-slate-500">
+              공통엔진과 과목 마스터 기준으로 현재 설계를 확인합니다.
+            </p>
+          </div>
+
+          <Badge
+            className={
+              administrativeRiskSummary
+                ?.riskLevel ===
+              "danger"
+                ? "bg-red-100 text-red-700"
+                : administrativeRiskSummary
+                    ?.riskLevel ===
+                  "warning"
+                ? "bg-amber-100 text-amber-700"
+                : "bg-emerald-100 text-emerald-700"
+            }
+          >
+            {administrativeRiskSummary
+              ?.riskLevel ===
+            "danger"
+              ? "위험"
+              : administrativeRiskSummary
+                  ?.riskLevel ===
+                "warning"
+              ? "주의"
+              : "정상"}
+          </Badge>
+        </div>
+
+        {isSocialWorkerAdministrative ? (
+          <div className="mt-4 grid grid-cols-3 gap-3">
+            <div className="rounded-lg bg-slate-50 p-3">
+              <p className="text-[11px] text-slate-500">
+                필수
+              </p>
+
+              <p className="mt-1 text-base font-bold text-slate-900">
+                {requiredMajorCompleted}
+                <span className="mx-1 text-slate-400">
+                  /
+                </span>
+                {requiredMajorTarget}
+              </p>
+            </div>
+
+            <div className="rounded-lg bg-slate-50 p-3">
+              <p className="text-[11px] text-slate-500">
+                선택
+              </p>
+
+              <p className="mt-1 text-base font-bold text-slate-900">
+                {electiveMajorCompleted}
+                <span className="mx-1 text-slate-400">
+                  /
+                </span>
+                {electiveMajorTarget}
+              </p>
+            </div>
+
+            <div className="rounded-lg bg-slate-50 p-3">
+              <p className="text-[11px] text-slate-500">
+                중복
+              </p>
+
+              <p
+                className={`mt-1 text-base font-bold ${
+                  duplicateSubjectCount >
+                  0
+                    ? "text-red-600"
+                    : "text-slate-900"
+                }`}
+              >
+                {duplicateSubjectCount}
+                건
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="rounded-lg bg-slate-50 p-3">
+              <p className="text-[11px] text-slate-500">
+                자격요건 과목
+              </p>
+
+              <p className="mt-1 text-base font-bold text-slate-900">
+                {Number(
+                  administrativeRequirements
+                    ?.qualification
+                    ?.completedSubjects ??
+                  0
+                )}
+                <span className="mx-1 text-slate-400">
+                  /
+                </span>
+                {Number(
+                  administrativeRequirements
+                    ?.qualification
+                    ?.requiredSubjects ??
+                  0
+                )}
+              </p>
+            </div>
+
+            <div className="rounded-lg bg-slate-50 p-3">
+              <p className="text-[11px] text-slate-500">
+                중복
+              </p>
+
+              <p
+                className={`mt-1 text-base font-bold ${
+                  duplicateSubjectCount >
+                  0
+                    ? "text-red-600"
+                    : "text-slate-900"
+                }`}
+              >
+                {duplicateSubjectCount}
+                건
+              </p>
+            </div>
+          </div>
+        )}
+
+        {administrativeIssues.length >
+        0 ? (
+          <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
+            <p className="text-xs font-semibold text-slate-700">
+              확인사항
+            </p>
+
+            {administrativeIssues.map(
+              (
+                issue: any,
+                index: number
+              ) => (
+                <div
+                  key={`${issue.code || "issue"}-${index}`}
+                  className={`rounded-lg border px-3 py-2 ${
+                    issue.severity ===
+                    "danger"
+                      ? "border-red-200 bg-red-50"
+                      : issue.severity ===
+                        "warning"
+                      ? "border-amber-200 bg-amber-50"
+                      : "border-slate-200 bg-slate-50"
+                  }`}
+                >
+                  <p className="text-xs font-semibold text-slate-800">
+                    {issue.title ||
+                      "확인 필요"}
+                  </p>
+
+                  {issue.message && (
+                    <p className="mt-1 text-[11px] leading-5 text-slate-600">
+                      {issue.message}
+                    </p>
+                  )}
+                </div>
+              )
+            )}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+            <p className="text-xs font-medium text-emerald-700">
+              현재 확인된 위험 요소가 없습니다.
+            </p>
+          </div>
+        )}
+      </div>
+    </>
+  )}
+</div>
+          )}
         </CardContent>
       </Card>
 

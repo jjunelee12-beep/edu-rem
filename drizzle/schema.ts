@@ -2848,6 +2848,139 @@ export type StudentCreditSummaryItem =
 export type InsertStudentCreditSummaryItem =
   typeof studentCreditSummaryItems.$inferInsert;
 
+// ─── Student Qualification Overrides ─────────────────────────────────
+// 공통엔진 계산값을 수정하지 않고,
+// 특정 학생에게만 담당자 예외값을 적용하기 위한 테이블.
+//
+// 행 없음:
+// → 공통엔진 계산값 100% 사용
+//
+// 행 있음:
+// → null이 아닌 override 값만 공통엔진 결과 위에 적용
+//
+// 자동계산으로 되돌리기:
+// → 해당 학생/과정 override 행 삭제
+export const studentQualificationOverrides = mysqlTable(
+  "student_qualification_overrides",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId").notNull(),
+    studentId: int("studentId").notNull(),
+
+    /**
+     * 공통엔진의 과정 식별키.
+     *
+     * 화면 표시명과 분리한다.
+     */
+    courseKey: varchar("courseKey", {
+      length: 100,
+    }).notNull(),
+
+    /**
+     * 공통엔진이 자동 판정한 기준 대신
+     * 특정 기준 프로필을 강제로 적용해야 할 때만 저장.
+     *
+     * null:
+     * → 공통엔진 자동 판정 사용
+     */
+    requirementProfileKey: varchar(
+      "requirementProfileKey",
+      {
+        length: 100,
+      }
+    ),
+
+    /**
+     * 아래 값들은 담당자가 직접 수정한 경우에만 저장.
+     *
+     * null:
+     * → 해당 항목은 공통엔진 계산값 사용
+     */
+    requiredMajorRequiredSubjects: int(
+      "requiredMajorRequiredSubjects"
+    ),
+
+    requiredMajorElectiveSubjects: int(
+      "requiredMajorElectiveSubjects"
+    ),
+
+    requiredLiberalSubjects: int(
+      "requiredLiberalSubjects"
+    ),
+
+    requiredGeneralSubjects: int(
+      "requiredGeneralSubjects"
+    ),
+
+    requiredTotalCredits: int(
+      "requiredTotalCredits"
+    ),
+
+    /**
+     * 학위신청 필요 여부 override.
+     *
+     * null:
+     * → 공통엔진 판단 사용
+     *
+     * required:
+     * → 학위신청 필요로 강제
+     *
+     * not_required:
+     * → 학위신청 불필요로 강제
+     */
+    degreeApplicationOverride: mysqlEnum(
+      "degreeApplicationOverride",
+      [
+        "required",
+        "not_required",
+      ]
+    ),
+
+    /**
+     * 담당자가 예외 적용 사유를 기록.
+     */
+    memo: text("memo"),
+
+    createdBy: int("createdBy"),
+    updatedBy: int("updatedBy"),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    /**
+     * 한 학생의 동일 과정에는 override 행 1개만 허용.
+     */
+    orgStudentCourseUniqueIdx: uniqueIndex(
+      "uq_student_qualification_overrides_org_student_course"
+    ).on(
+      table.organizationId,
+      table.studentId,
+      table.courseKey
+    ),
+
+    orgStudentIdx: index(
+      "idx_student_qualification_overrides_org_student"
+    ).on(
+      table.organizationId,
+      table.studentId
+    ),
+  })
+);
+
+export type StudentQualificationOverride =
+  typeof studentQualificationOverrides.$inferSelect;
+
+export type InsertStudentQualificationOverride =
+  typeof studentQualificationOverrides.$inferInsert;
+
 // ─── Student Administrative Procedures ───────────────────────────────
 // AI 학점요약에서 사용하는 학생별 실제 행정절차 상태.
 //
@@ -2896,6 +3029,8 @@ export const studentAdministrativeProcedures = mysqlTable(
       .default("STAFF"),
 
     completedAt: datetime("completedAt"),
+statusChangedAt: datetime("statusChangedAt"),
+statusChangedBy: int("statusChangedBy"),
 
     /**
      * 사용자가 직접 말한 날짜 등

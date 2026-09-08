@@ -514,7 +514,7 @@ const companyLogoUrl =
           {specialties.map((specialty: string, index: number) => (
             <span
               key={`${specialty}-${index}`}
-              className="rounded-[9px] border border-white/15 bg-white/[0.08] px-3 py-1.5 text-[10px] font-semibold tracking-[-0.01em] text-white"
+              className="rounded-[9px] border border-white/80 bg-white px-3 py-1.5 text-[10px] font-bold tracking-[-0.01em] text-slate-900 shadow-sm"
             >
               {specialty}
             </span>

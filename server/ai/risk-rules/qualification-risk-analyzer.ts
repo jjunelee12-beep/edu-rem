@@ -483,6 +483,12 @@ function analyzeSocialWorker(
 
     socialWorkerLawVersion:
       unknown;
+
+    requiredSubjectsOverride?:
+      number | null;
+
+    electiveSubjectsOverride?:
+      number | null;
   }
 ): QualificationRuleAnalysis {
   const issues:
@@ -528,6 +534,32 @@ function analyzeSocialWorker(
     };
   }
 
+  /**
+   * ─────────────────────────────
+   * 사회복지 최종 적용 과목 수
+   * ─────────────────────────────
+   *
+   * 기본값:
+   * → resolveSocialWorkerRule()의 공통엔진 법규값
+   *
+   * 학생별 override가 존재하는 경우:
+   * → 해당 필드만 담당자 수정값 적용
+   *
+   * override가 없는 필드는
+   * 반드시 공통엔진 값을 그대로 사용한다.
+   */
+  const requiredSubjects =
+    params.requiredSubjectsOverride ??
+    resolution.rule.requiredSubjects;
+
+  const electiveSubjects =
+    params.electiveSubjectsOverride ??
+    resolution.rule.electiveSubjects;
+
+  const totalSubjects =
+    requiredSubjects +
+    electiveSubjects;
+
   const completedMasterItems =
     getCompletedMasterItems({
       masterItems:
@@ -555,18 +587,16 @@ function analyzeSocialWorker(
         "전공선택"
     );
 
-  const missingRequired =
+    const missingRequired =
     Math.max(
-      resolution.rule
-        .requiredSubjects -
+      requiredSubjects -
         requiredCompleted.length,
       0
     );
 
   const missingElective =
     Math.max(
-      resolution.rule
-        .electiveSubjects -
+      electiveSubjects -
         electiveCompleted.length,
       0
     );
@@ -598,12 +628,11 @@ function analyzeSocialWorker(
         "사회복지 필수과목 부족",
 
       message:
-        `사회복지사 2급 ${resolution.lawVersion === "old" ? "구법" : "신법"} 기준 필수 ${resolution.rule.requiredSubjects}과목 중 ${requiredCompleted.length}과목이 확인되어 ${missingRequired}과목 부족합니다.`,
+        `사회복지사 2급 ${resolution.lawVersion === "old" ? "구법" : "신법"} 기준 필수 ${requiredSubjects}과목 중 ${requiredCompleted.length}과목이 확인되어 ${missingRequired}과목 부족합니다.`,
 
       details: {
         required:
-          resolution.rule
-            .requiredSubjects,
+  requiredSubjects,
 
         completed:
           requiredCompleted.length,
@@ -649,12 +678,11 @@ function analyzeSocialWorker(
         "사회복지 선택과목 부족",
 
       message:
-        `사회복지사 2급 ${resolution.lawVersion === "old" ? "구법" : "신법"} 기준 선택 ${resolution.rule.electiveSubjects}과목 중 ${electiveCompleted.length}과목이 확인되어 ${missingElective}과목 부족합니다.`,
+        `사회복지사 2급 ${resolution.lawVersion === "old" ? "구법" : "신법"} 기준 선택 ${electiveSubjects}과목 중 ${electiveCompleted.length}과목이 확인되어 ${missingElective}과목 부족합니다.`,
 
       details: {
         required:
-          resolution.rule
-            .electiveSubjects,
+  electiveSubjects,
 
         completed:
           electiveCompleted.length,
@@ -686,17 +714,11 @@ function analyzeSocialWorker(
       lawVersion:
         resolution.lawVersion,
 
-      requiredSubjects:
-        resolution.rule
-          .requiredSubjects,
+      requiredSubjects,
 
-      electiveSubjects:
-        resolution.rule
-          .electiveSubjects,
+electiveSubjects,
 
-      totalSubjects:
-        resolution.rule
-          .totalSubjects,
+totalSubjects,
 
       practiceHours:
         resolution.rule
@@ -3143,6 +3165,12 @@ export function analyzeQualificationRisk(
      */
     socialWorkerLawVersion?:
       unknown;
+
+    socialWorkerRequiredSubjectsOverride?:
+      number | null;
+
+    socialWorkerElectiveSubjectsOverride?:
+      number | null;
   }
 ): QualificationRuleAnalysis {
   const courseKey =
@@ -3161,14 +3189,20 @@ export function analyzeQualificationRisk(
     "social_worker_2"
   ) {
     return analyzeSocialWorker({
-      masterItems,
+  masterItems,
 
-      recognizedSubjects:
-        params.recognizedSubjects,
+  recognizedSubjects:
+    params.recognizedSubjects,
 
-      socialWorkerLawVersion:
-        params.socialWorkerLawVersion,
-    });
+  socialWorkerLawVersion:
+    params.socialWorkerLawVersion,
+
+  requiredSubjectsOverride:
+    params.socialWorkerRequiredSubjectsOverride,
+
+  electiveSubjectsOverride:
+    params.socialWorkerElectiveSubjectsOverride,
+});
   }
 
   if (

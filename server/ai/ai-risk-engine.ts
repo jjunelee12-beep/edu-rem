@@ -2280,6 +2280,29 @@ const qualificationAnalysisCourseKey =
     riskCourseName
   );
 
+/**
+ * 학생별 자격요건 override.
+ *
+ * null:
+ * 담당자가 별도 수정하지 않았으므로
+ * 공통엔진 계산값을 그대로 사용한다.
+ *
+ * 중요:
+ * override는 공통 규칙 자체를 변경하지 않는다.
+ * 현재 학생에게만 적용되는 예외값이다.
+ */
+const qualificationOverride =
+  qualificationAnalysisCourseKey !== "unknown"
+    ? await db.getStudentQualificationOverride({
+        organizationId,
+
+        studentId,
+
+        courseKey:
+          qualificationAnalysisCourseKey,
+      })
+    : null;
+
 let riskMasterItems:
   any[] = [];
 
@@ -3083,9 +3106,15 @@ const socialWorkerLawResolution =
           [],
 
         manualLawVersion:
-          (student as any)
+  qualificationOverride
+    ?.requirementProfileKey === "old"
+    ? "old"
+    : qualificationOverride
+          ?.requirementProfileKey === "current"
+      ? "current"
+      : (student as any)
             .socialWorkerLawVersion ??
-          undefined,
+        undefined,
       })
     : null;
 
@@ -3131,10 +3160,26 @@ const qualificationAnalysis =
      *    자격요건을 임의 확정하지 않는다.
      */
     socialWorkerLawVersion:
-      socialWorkerLawResolution
-        ?.effectiveLawVersion ??
-      undefined,
-  });
+  socialWorkerLawResolution
+    ?.effectiveLawVersion ??
+  undefined,
+
+socialWorkerRequiredSubjectsOverride:
+  qualificationAnalysisCourseKey ===
+    "social_worker_2"
+    ? qualificationOverride
+        ?.requiredMajorRequiredSubjects ??
+      null
+    : null,
+
+socialWorkerElectiveSubjectsOverride:
+  qualificationAnalysisCourseKey ===
+    "social_worker_2"
+    ? qualificationOverride
+        ?.requiredMajorElectiveSubjects ??
+      null
+    : null,
+});
 
 /**
  * 현재 우리플랜의 시작전/진행중 과목까지
@@ -3177,10 +3222,26 @@ const projectedQualificationAnalysis =
       ),
 
     socialWorkerLawVersion:
-      socialWorkerLawResolution
-        ?.effectiveLawVersion ??
-      undefined,
-  });
+  socialWorkerLawResolution
+    ?.effectiveLawVersion ??
+  undefined,
+
+socialWorkerRequiredSubjectsOverride:
+  qualificationAnalysisCourseKey ===
+    "social_worker_2"
+    ? qualificationOverride
+        ?.requiredMajorRequiredSubjects ??
+      null
+    : null,
+
+socialWorkerElectiveSubjectsOverride:
+  qualificationAnalysisCourseKey ===
+    "social_worker_2"
+    ? qualificationOverride
+        ?.requiredMajorElectiveSubjects ??
+      null
+    : null,
+});
 
 /**
  * 사회복지 법규 자동판정 근거를
@@ -3316,6 +3377,114 @@ const projectedRequirements =
 
 /**
  * ─────────────────────────────
+ * Merger 이후 학생별 Override
+ * ─────────────────────────────
+ *
+ * 사회복지 필수/선택 과목 수는
+ * analyzeQualificationRisk 단계에서 이미 적용한다.
+ *
+ * 여기서는 학위 requirements처럼
+ * Qualification Analyzer 바깥의 값만 처리한다.
+ */
+const applyQualificationOverride = (
+  requirements: typeof unifiedRequirements
+) => {
+  if (!qualificationOverride) {
+    return requirements;
+  }
+
+  const next =
+    structuredClone(
+      requirements
+    );
+
+  /**
+   * 전체 필요학점 override.
+   *
+   * 새 학위과정을 실제 진행하는 학생에게만
+   * 총 필요학점을 예외 적용한다.
+   */
+  if (
+    next.degree
+      .requiresNewDegreeTrack &&
+    qualificationOverride
+      .requiredTotalCredits !==
+      null &&
+    qualificationOverride
+      .requiredTotalCredits !==
+      undefined
+  ) {
+    const requiredTotalCredits =
+      Number(
+        qualificationOverride
+          .requiredTotalCredits
+      );
+
+    next.degree.requiredTotalCredits =
+      requiredTotalCredits;
+
+    next.degree.remainingTotalCredits =
+      Math.max(
+        requiredTotalCredits -
+          Number(
+            next.degree
+              .currentTotalCredits ??
+            0
+          ),
+        0
+      );
+
+    next.combined
+      .hasRemainingDegreeRequirement =
+      next.degree
+        .remainingTotalCredits >
+        0 ||
+      (
+        next.degree
+          .remainingMajorCredits !==
+          null &&
+        next.degree
+          .remainingMajorCredits >
+          0
+      ) ||
+      (
+        next.degree
+          .remainingLiberalCredits !==
+          null &&
+        next.degree
+          .remainingLiberalCredits >
+          0
+      );
+
+    next.combined
+      .requiresSubjectOptimization =
+      next.combined
+        .hasRemainingDegreeRequirement ||
+      next.combined
+        .hasRemainingQualificationRequirement;
+  }
+
+  /**
+   * degreeApplicationOverride는 여기서 처리하지 않는다.
+   *
+   * 학위과정 자체를 바꾸는 값이 아니라
+   * 행정절차의 학위신청 표시/적용용 값이다.
+   */
+  return next;
+};
+
+const effectiveRequirements =
+  applyQualificationOverride(
+    unifiedRequirements
+  );
+
+const effectiveProjectedRequirements =
+  applyQualificationOverride(
+    projectedRequirements
+  );
+
+/**
+ * ─────────────────────────────
  * 자격/학위 공통 Requirements 기반
  * 실제 필수과목 선택
  * ─────────────────────────────
@@ -3330,7 +3499,7 @@ const projectedRequirements =
 const qualificationSubjectPlan =
   planQualificationSubjects({
     requirements:
-      projectedRequirements,
+      effectiveProjectedRequirements,
 
     masterItems:
       riskMasterItems,
@@ -4046,10 +4215,15 @@ const qualificationSemesterPlan:
 const administrativeTimeline =
   planAdministrativeTimeline({
     requirements:
-      unifiedRequirements,
+      effectiveRequirements,
 
     semesterPlan:
       qualificationSemesterPlan,
+
+    degreeApplicationOverride:
+      qualificationOverride
+        ?.degreeApplicationOverride ??
+      null,
 
     existingSemesters:
       (
@@ -4172,10 +4346,10 @@ const academicSummarySubjectPlan = {
 const academicSummary =
   resolveStudentAcademicSummary({
     requirements:
-      unifiedRequirements,
+      effectiveRequirements,
 
     subjectPlan:
-  academicSummarySubjectPlan,
+      academicSummarySubjectPlan,
 
     semesterPlan:
       qualificationSemesterPlan,
@@ -5051,7 +5225,7 @@ payment: {
         categories,
 
 requirements:
-  unifiedRequirements,
+  effectiveRequirements,
 
 subjectPlan:
   academicSummarySubjectPlan,

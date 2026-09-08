@@ -149,6 +149,9 @@ type InsertCreditSummaryRule,
 studentCreditSummaryItems,
 type InsertStudentCreditSummaryItem,
 
+studentQualificationOverrides,
+type InsertStudentQualificationOverride,
+
 studentAdministrativeProcedures,
 type InsertStudentAdministrativeProcedure,
 
@@ -29125,6 +29128,367 @@ export async function deleteStudentCreditSummaryItem(params: {
   return { ok: true };
 }
 
+// ─── Student Qualification Overrides ─────────────────────────────────
+//
+// 공통엔진 결과 자체를 수정하지 않고,
+// 특정 학생 / 특정 과정에만 담당자 예외값을 적용한다.
+//
+// override 행 없음:
+// → 공통엔진 결과 그대로 사용
+//
+// override 행 있음:
+// → null이 아닌 값만 공통엔진 결과 위에 덮어쓴다.
+//
+// 자동계산으로 되돌리기:
+// → override 행 삭제
+//
+
+export async function getStudentQualificationOverride(params: {
+  organizationId?: number | null;
+  studentId: number;
+  courseKey: string;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    Number(
+      params.studentId || 0
+    );
+
+  if (
+    !Number.isFinite(studentId) ||
+    studentId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "studentId가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const courseKey =
+    String(
+      params.courseKey || ""
+    ).trim();
+
+  if (!courseKey) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "courseKey가 필요합니다.",
+      400
+    );
+  }
+
+  const rows =
+    await db
+      .select()
+      .from(
+        studentQualificationOverrides
+      )
+      .where(
+        and(
+          eq(
+            studentQualificationOverrides.organizationId,
+            organizationId
+          ),
+          eq(
+            studentQualificationOverrides.studentId,
+            studentId
+          ),
+          eq(
+            studentQualificationOverrides.courseKey,
+            courseKey
+          )
+        )
+      )
+      .limit(1);
+
+  return rows[0] || null;
+}
+
+export async function upsertStudentQualificationOverride(
+  data: InsertStudentQualificationOverride
+) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      (data as any).organizationId
+    );
+
+  const studentId =
+    Number(
+      (data as any).studentId || 0
+    );
+
+  if (
+    !Number.isFinite(studentId) ||
+    studentId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "studentId가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const courseKey =
+    String(
+      (data as any).courseKey || ""
+    ).trim();
+
+  if (!courseKey) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "courseKey가 필요합니다.",
+      400
+    );
+  }
+
+  const existing =
+    await getStudentQualificationOverride({
+      organizationId,
+      studentId,
+      courseKey,
+    });
+
+  /**
+   * 새 override 생성.
+   */
+  if (!existing) {
+    const result: any =
+      await db
+        .insert(
+          studentQualificationOverrides
+        )
+        .values({
+          ...data,
+
+          organizationId,
+          studentId,
+          courseKey,
+
+          createdBy:
+            (data as any).createdBy ??
+            (data as any).updatedBy ??
+            null,
+
+          updatedBy:
+            (data as any).updatedBy ??
+            (data as any).createdBy ??
+            null,
+        } as any);
+
+    const insertId =
+      getInsertId(result);
+
+    if (!insertId) {
+      throwAppError(
+        ERROR_CODES.INTERNAL_SERVER_ERROR,
+        "학생별 자격요건 수정값 저장에 실패했습니다.",
+        500
+      );
+    }
+
+    const rows =
+      await db
+        .select()
+        .from(
+          studentQualificationOverrides
+        )
+        .where(
+          and(
+            eq(
+              studentQualificationOverrides.id,
+              Number(insertId)
+            ),
+            eq(
+              studentQualificationOverrides.organizationId,
+              organizationId
+            )
+          )
+        )
+        .limit(1);
+
+    return rows[0] || null;
+  }
+
+  /**
+   * 기존 override 갱신.
+   *
+   * null도 의미가 있다.
+   * 예:
+   * requirementProfileKey를 null로 바꾸면
+   * 해당 항목은 다시 공통엔진 자동판정 사용.
+   *
+   * 따라서 ?? 로 기존값을 유지하지 않고
+   * 호출자가 전달한 값을 그대로 저장한다.
+   */
+  await db
+    .update(
+      studentQualificationOverrides
+    )
+    .set({
+      requirementProfileKey:
+        (data as any).requirementProfileKey ??
+        null,
+
+      requiredMajorRequiredSubjects:
+        (data as any).requiredMajorRequiredSubjects ??
+        null,
+
+      requiredMajorElectiveSubjects:
+        (data as any).requiredMajorElectiveSubjects ??
+        null,
+
+      requiredLiberalSubjects:
+        (data as any).requiredLiberalSubjects ??
+        null,
+
+      requiredGeneralSubjects:
+        (data as any).requiredGeneralSubjects ??
+        null,
+
+      requiredTotalCredits:
+        (data as any).requiredTotalCredits ??
+        null,
+
+      degreeApplicationOverride:
+        (data as any).degreeApplicationOverride ??
+        null,
+
+      memo:
+        (data as any).memo ??
+        null,
+
+      updatedBy:
+        (data as any).updatedBy ??
+        null,
+    } as any)
+    .where(
+      and(
+        eq(
+          studentQualificationOverrides.id,
+          Number(existing.id)
+        ),
+        eq(
+          studentQualificationOverrides.organizationId,
+          organizationId
+        ),
+        eq(
+          studentQualificationOverrides.studentId,
+          studentId
+        ),
+        eq(
+          studentQualificationOverrides.courseKey,
+          courseKey
+        )
+      )
+    );
+
+  return getStudentQualificationOverride({
+    organizationId,
+    studentId,
+    courseKey,
+  });
+}
+
+export async function deleteStudentQualificationOverride(params: {
+  organizationId?: number | null;
+  studentId: number;
+  courseKey: string;
+}) {
+  const db = await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    Number(
+      params.studentId || 0
+    );
+
+  if (
+    !Number.isFinite(studentId) ||
+    studentId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "studentId가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const courseKey =
+    String(
+      params.courseKey || ""
+    ).trim();
+
+  if (!courseKey) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "courseKey가 필요합니다.",
+      400
+    );
+  }
+
+  await db
+    .delete(
+      studentQualificationOverrides
+    )
+    .where(
+      and(
+        eq(
+          studentQualificationOverrides.organizationId,
+          organizationId
+        ),
+        eq(
+          studentQualificationOverrides.studentId,
+          studentId
+        ),
+        eq(
+          studentQualificationOverrides.courseKey,
+          courseKey
+        )
+      )
+    );
+
+  return {
+    ok: true,
+  };
+}
+
 // ─── AI 학점요약 실제 행정절차 상태 ──────────────────────────────────
 
 export type StudentAdministrativeProcedureType =
@@ -29419,21 +29783,62 @@ export async function upsertStudentAdministrativeProcedure(
     );
   }
 
+   /**
+   * 기존 행을 먼저 확인한다.
+   *
+   * statusChangedAt / statusChangedBy는
+   * 메모 수정 등이 아니라 실제 status가 변경된 경우에만 갱신한다.
+   */
+  const existingProcedure =
+    await getStudentAdministrativeProcedure({
+      organizationId,
+      studentId,
+      procedureType,
+    });
+
+  const statusChanged =
+    !existingProcedure ||
+    existingProcedure.status !== status;
+
+  const statusChangedAt =
+    statusChanged
+      ? new Date()
+      : existingProcedure?.statusChangedAt ??
+        null;
+
+  const statusChangedBy =
+    statusChanged
+      ? (
+          (data as any).updatedBy ??
+          (data as any).createdBy ??
+          null
+        )
+      : existingProcedure?.statusChangedBy ??
+        null;
+
   /**
    * completed가 아니면 completedAt을
    * 과거 값 그대로 남기지 않는다.
    *
-   * completed인데 호출자가 완료시간을 주지 않았다면
+   * completed 상태로 처음 변경되는 경우:
    * 서버 현재시간을 기록한다.
+   *
+   * 이미 completed 상태인데 메모 등만 수정하는 경우:
+   * 기존 completedAt을 유지한다.
    */
   const completedAt =
     status === "completed"
       ? (
-          (data as any).completedAt
-            ? new Date(
+          existingProcedure?.status === "completed" &&
+          existingProcedure?.completedAt
+            ? existingProcedure.completedAt
+            : (
                 (data as any).completedAt
+                  ? new Date(
+                      (data as any).completedAt
+                    )
+                  : new Date()
               )
-            : new Date()
         )
       : null;
 
@@ -29446,6 +29851,8 @@ export async function upsertStudentAdministrativeProcedure(
     status,
     sourceType,
     completedAt,
+    statusChangedAt,
+    statusChangedBy,
   } as InsertStudentAdministrativeProcedure;
 
   await db
@@ -29462,6 +29869,10 @@ export async function upsertStudentAdministrativeProcedure(
         sourceType,
 
         completedAt,
+
+        statusChangedAt,
+
+        statusChangedBy,
 
         reportedDate:
           (data as any).reportedDate ??

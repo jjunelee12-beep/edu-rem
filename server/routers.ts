@@ -5153,6 +5153,576 @@ if (input.courseName !== undefined)
       }),
   }),
 
+qualificationOverrides: router({
+  /**
+   * 학생별 자격요건 override 조회.
+   *
+   * override가 없으면 null.
+   * 즉 공통엔진 계산값을 그대로 사용한다.
+   *
+   * courseKey는 클라이언트가 보내지 않는다.
+   * 학생의 실제 등록과정을 서버에서 읽고
+   * 공통엔진 courseKey로 변환한다.
+   */
+  get: protectedProcedure
+    .input(
+      z.object({
+        studentId: z.number(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const organizationId =
+        getCtxOrganizationId(ctx);
+
+      const student =
+        await db.getStudent(
+          input.studentId,
+          {
+            organizationId,
+          }
+        );
+
+      if (!student) {
+        throwAppError(
+          ERROR_CODES.DATA_NOT_FOUND,
+          "학생을 찾을 수 없습니다.",
+          404
+        );
+      }
+
+      /**
+       * 조회 권한:
+       * Host / Admin 또는 해당 학생 담당자.
+       *
+       * 기존 행정절차 조회 권한과 동일하게 맞춘다.
+       */
+      if (
+        !isAdminOrHost(ctx.user) &&
+        Number(student.assigneeId) !==
+          Number(ctx.user.id)
+      ) {
+        throwAppError(
+          ERROR_CODES.PERMISSION_DENIED,
+          "권한이 없습니다.",
+          403
+        );
+      }
+
+      const courseKey =
+        resolveQualificationRiskCourseKey(
+          String(
+            student.course ||
+            ""
+          ).trim()
+        );
+
+      /**
+       * 아직 공통엔진과 연결되지 않은 과정이라면
+       * 조회 자체를 에러로 막지 않는다.
+       *
+       * 프론트에서
+       * "현재 과정은 자동계산 지원 준비 중"
+       * 같은 상태를 표시할 수 있도록 반환한다.
+       */
+      if (
+        courseKey === "unknown"
+      ) {
+        return {
+          supported: false as const,
+
+          courseKey: null,
+
+          override: null,
+        };
+      }
+
+      const override =
+        await db.getStudentQualificationOverride({
+          organizationId,
+
+          studentId:
+            input.studentId,
+
+          courseKey,
+        });
+
+      return {
+        supported: true as const,
+
+        courseKey,
+
+        /**
+         * null:
+         * 공통엔진 계산값 그대로 사용.
+         */
+        override:
+          override ?? null,
+      };
+    }),
+
+  /**
+   * 학생별 override 저장.
+   *
+   * 중요:
+   * PATCH가 아니라 현재 override 전체 상태를
+   * 한 번에 저장하는 방식이다.
+   *
+   * 전달되지 않은 값 / null 값:
+   * 해당 항목은 공통엔진 계산값으로 복귀한다.
+   */
+  save: protectedProcedure
+    .input(
+      z.object({
+        studentId:
+          z.number(),
+
+        requirementProfileKey:
+          z.string()
+            .max(100)
+            .optional()
+            .nullable(),
+
+        requiredMajorRequiredSubjects:
+          z.number()
+            .int()
+            .min(0)
+            .optional()
+            .nullable(),
+
+        requiredMajorElectiveSubjects:
+          z.number()
+            .int()
+            .min(0)
+            .optional()
+            .nullable(),
+
+        requiredLiberalSubjects:
+          z.number()
+            .int()
+            .min(0)
+            .optional()
+            .nullable(),
+
+        requiredGeneralSubjects:
+          z.number()
+            .int()
+            .min(0)
+            .optional()
+            .nullable(),
+
+        requiredTotalCredits:
+          z.number()
+            .int()
+            .min(0)
+            .optional()
+            .nullable(),
+
+        degreeApplicationOverride:
+          z.enum([
+            "required",
+            "not_required",
+          ])
+            .optional()
+            .nullable(),
+
+        memo:
+          z.string()
+            .max(10000)
+            .optional()
+            .nullable(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const organizationId =
+        getCtxOrganizationId(ctx);
+
+      const student =
+        await db.getStudent(
+          input.studentId,
+          {
+            organizationId,
+          }
+        );
+
+      if (!student) {
+        throwAppError(
+          ERROR_CODES.DATA_NOT_FOUND,
+          "학생을 찾을 수 없습니다.",
+          404
+        );
+      }
+
+      /**
+       * 수정은 기존 학생 수정 권한 규칙 사용.
+       *
+       * 현재 구조:
+       * 담당자 또는 Host만 수정 가능.
+       */
+      assertStudentEditable({
+        currentUser:
+          ctx.user,
+
+        student,
+      });
+
+      /**
+       * client가 courseKey를 지정하지 못하게 한다.
+       *
+       * 학생의 실제 과정명을 기준으로
+       * 서버에서 공통엔진 key를 결정한다.
+       */
+      const courseKey =
+        resolveQualificationRiskCourseKey(
+          String(
+            student.course ||
+            ""
+          ).trim()
+        );
+
+      if (
+        courseKey === "unknown"
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          "현재 학생의 등록과정을 공통엔진 자격요건과 연결할 수 없습니다.",
+          409
+        );
+      }
+
+      const before =
+        await db.getStudentQualificationOverride({
+          organizationId,
+
+          studentId:
+            input.studentId,
+
+          courseKey,
+        });
+
+      const requirementProfileKey =
+        input.requirementProfileKey
+          ?.trim() ||
+        null;
+
+      const memo =
+        input.memo
+          ?.trim() ||
+        null;
+
+      /**
+       * 실제 override가 하나라도 있는지 확인한다.
+       *
+       * memo는 override 값이 아니다.
+       * 사유만 적고 계산값을 수정하지 않은 경우에는
+       * 빈 override 행을 만들지 않는다.
+       */
+      const hasActualOverride =
+        requirementProfileKey !== null ||
+        input.requiredMajorRequiredSubjects !==
+          null &&
+        input.requiredMajorRequiredSubjects !==
+          undefined ||
+        input.requiredMajorElectiveSubjects !==
+          null &&
+        input.requiredMajorElectiveSubjects !==
+          undefined ||
+        input.requiredLiberalSubjects !==
+          null &&
+        input.requiredLiberalSubjects !==
+          undefined ||
+        input.requiredGeneralSubjects !==
+          null &&
+        input.requiredGeneralSubjects !==
+          undefined ||
+        input.requiredTotalCredits !==
+          null &&
+        input.requiredTotalCredits !==
+          undefined ||
+        input.degreeApplicationOverride !==
+          null &&
+        input.degreeApplicationOverride !==
+          undefined;
+
+      /**
+       * 모든 override가 해제됐다면
+       * 빈 행을 남기지 않고 삭제한다.
+       *
+       * 행 없음 = 공통엔진 100%
+       */
+      if (
+        !hasActualOverride
+      ) {
+        await db.deleteStudentQualificationOverride({
+          organizationId,
+
+          studentId:
+            input.studentId,
+
+          courseKey,
+        });
+
+        if (before) {
+          await writeStudentAuditLog({
+            ctx,
+
+            studentId:
+              input.studentId,
+
+            entityType:
+              "qualification_override",
+
+            entityId:
+              Number(
+                (before as any)?.id ||
+                0
+              ) || null,
+
+            action:
+              "delete",
+
+            title:
+              "자격요건 자동계산 복원",
+
+            beforeJson:
+              before,
+
+            afterJson:
+              null,
+          });
+        }
+
+        return {
+          success:
+            true,
+
+          courseKey,
+
+          override:
+            null,
+
+          usingEngine:
+            true,
+        };
+      }
+
+      const updated =
+        await db.upsertStudentQualificationOverride({
+          organizationId,
+
+          studentId:
+            input.studentId,
+
+          courseKey,
+
+          requirementProfileKey,
+
+          requiredMajorRequiredSubjects:
+            input.requiredMajorRequiredSubjects ??
+            null,
+
+          requiredMajorElectiveSubjects:
+            input.requiredMajorElectiveSubjects ??
+            null,
+
+          requiredLiberalSubjects:
+            input.requiredLiberalSubjects ??
+            null,
+
+          requiredGeneralSubjects:
+            input.requiredGeneralSubjects ??
+            null,
+
+          requiredTotalCredits:
+            input.requiredTotalCredits ??
+            null,
+
+          degreeApplicationOverride:
+            input.degreeApplicationOverride ??
+            null,
+
+          memo,
+
+          createdBy:
+            Number(
+              ctx.user.id
+            ),
+
+          updatedBy:
+            Number(
+              ctx.user.id
+            ),
+        } as any);
+
+      await writeStudentAuditLog({
+        ctx,
+
+        studentId:
+          input.studentId,
+
+        entityType:
+          "qualification_override",
+
+        entityId:
+          Number(
+            (updated as any)?.id ||
+            (before as any)?.id ||
+            0
+          ) || null,
+
+        action:
+          before
+            ? "update"
+            : "create",
+
+        title:
+          "학생별 자격요건 예외값 변경",
+
+        beforeJson:
+          before,
+
+        afterJson:
+          updated,
+      });
+
+      return {
+        success:
+          true,
+
+        courseKey,
+
+        override:
+          updated,
+
+        usingEngine:
+          false,
+      };
+    }),
+
+  /**
+   * 담당자가 누른
+   * "자동계산으로 되돌리기".
+   *
+   * 해당 학생/과정 override 행 자체를 삭제한다.
+   */
+  reset: protectedProcedure
+    .input(
+      z.object({
+        studentId:
+          z.number(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const organizationId =
+        getCtxOrganizationId(ctx);
+
+      const student =
+        await db.getStudent(
+          input.studentId,
+          {
+            organizationId,
+          }
+        );
+
+      if (!student) {
+        throwAppError(
+          ERROR_CODES.DATA_NOT_FOUND,
+          "학생을 찾을 수 없습니다.",
+          404
+        );
+      }
+
+      assertStudentEditable({
+        currentUser:
+          ctx.user,
+
+        student,
+      });
+
+      const courseKey =
+        resolveQualificationRiskCourseKey(
+          String(
+            student.course ||
+            ""
+          ).trim()
+        );
+
+      if (
+        courseKey === "unknown"
+      ) {
+        throwAppError(
+          ERROR_CODES.INVALID_REQUEST,
+          "현재 학생의 등록과정을 공통엔진 자격요건과 연결할 수 없습니다.",
+          409
+        );
+      }
+
+      const before =
+        await db.getStudentQualificationOverride({
+          organizationId,
+
+          studentId:
+            input.studentId,
+
+          courseKey,
+        });
+
+      await db.deleteStudentQualificationOverride({
+        organizationId,
+
+        studentId:
+          input.studentId,
+
+        courseKey,
+      });
+
+      /**
+       * 실제 override가 존재했던 경우만 감사로그 기록.
+       */
+      if (before) {
+        await writeStudentAuditLog({
+          ctx,
+
+          studentId:
+            input.studentId,
+
+          entityType:
+            "qualification_override",
+
+          entityId:
+            Number(
+              (before as any)?.id ||
+              0
+            ) || null,
+
+          action:
+            "delete",
+
+          title:
+            "자격요건 자동계산 복원",
+
+          beforeJson:
+            before,
+
+          afterJson:
+            null,
+        });
+      }
+
+      return {
+        success:
+          true,
+
+        courseKey,
+
+        override:
+          null,
+
+        usingEngine:
+          true,
+      };
+    }),
+}),
+
 administrativeProcedures: router({
   list: protectedProcedure
     .input(

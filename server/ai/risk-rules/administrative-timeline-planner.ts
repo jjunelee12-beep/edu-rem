@@ -793,6 +793,27 @@ export function planAdministrativeTimeline(
      */
     referenceDate?:
       string | null;
+
+    /**
+     * 학생별 행정절차 학위신청 override.
+     *
+     * null / undefined:
+     * → 공통엔진의 requiresNewDegreeTrack 기준
+     *
+     * required:
+     * → 해당 학생의 행정절차에는 학위신청 적용
+     *
+     * not_required:
+     * → 해당 학생의 행정절차에는 학위신청 미적용
+     *
+     * 중요:
+     * 이 값은 requirements.degree.requiresNewDegreeTrack 자체를
+     * 수정하지 않는다.
+     */
+    degreeApplicationOverride?:
+      | "required"
+      | "not_required"
+      | null;
   }
 ): AdministrativeTimelinePlannerResult {
   const referenceDate =
@@ -928,12 +949,33 @@ export function planAdministrativeTimeline(
     );
   }
 
+    /**
+   * 공통엔진의 실제 학업경로.
+   *
+   * 이 값은 학생 override 때문에 변경하지 않는다.
+   */
   const requiresNewDegreeTrack =
     Boolean(
       params.requirements
         .degree
         .requiresNewDegreeTrack
     );
+
+  /**
+   * 실제 행정절차에서 학위신청을
+   * 표시 / 계산할지 결정하는 최종값.
+   *
+   * 담당자 override가 없으면
+   * 공통엔진의 학업경로 판단을 그대로 따른다.
+   */
+  const requiresDegreeApplication =
+    params.degreeApplicationOverride ===
+      "required"
+      ? true
+      : params.degreeApplicationOverride ===
+          "not_required"
+        ? false
+        : requiresNewDegreeTrack;
 
   let degreeTimeline:
     ReturnType<
@@ -942,16 +984,16 @@ export function planAdministrativeTimeline(
     null;
 
 if (
-  requiresNewDegreeTrack &&
+  requiresDegreeApplication &&
   !academicCompletionDate
 ) {
   unresolvedReasons.push(
-    "새 학위 취득이 필요하지만 최종 학습 종료일을 확인할 수 없어 학위신청 일정을 계산할 수 없습니다."
+    "학위신청이 필요한 과정이지만 최종 학습 종료일을 확인할 수 없어 학위신청 일정을 계산할 수 없습니다."
   );
 }
 
   if (
-  requiresNewDegreeTrack &&
+  requiresDegreeApplication &&
   academicCompletionDate
 ) {
   degreeTimeline =
@@ -991,7 +1033,7 @@ if (
     qualificationMessage =
       "아동학사 과정은 학위과정이므로 별도 자격증 신청일을 계산하지 않습니다.";
   } else if (
-    requiresNewDegreeTrack
+    requiresDegreeApplication
   ) {
     if (
       degreeTimeline
@@ -1004,13 +1046,21 @@ if (
           .estimatedAwardDate;
 
       qualificationMessage =
-        `새 학위 취득이 필요한 과정이므로 ${degreeTimeline.estimatedAwardLabel} 학위수여 확인 후 자격증 신청 단계로 진행합니다.`;
+  params.degreeApplicationOverride ===
+      "required" &&
+    !requiresNewDegreeTrack
+    ? `담당자 설정에 따라 학위신청 절차를 적용하며, ${degreeTimeline.estimatedAwardLabel} 학위수여 확인 후 자격증 신청 단계로 진행합니다.`
+    : `새 학위 취득이 필요한 과정이므로 ${degreeTimeline.estimatedAwardLabel} 학위수여 확인 후 자격증 신청 단계로 진행합니다.`;
     } else {
       qualificationApplicationBasis =
         "review_required";
 
       qualificationMessage =
-        "새 학위가 필요한 과정이지만 학위수여 예상시점을 확정하지 못했습니다.";
+  params.degreeApplicationOverride ===
+      "required" &&
+    !requiresNewDegreeTrack
+    ? "담당자 설정에 따라 학위신청 절차를 적용했지만 학위수여 예상시점을 확정하지 못했습니다."
+    : "새 학위가 필요한 과정이지만 학위수여 예상시점을 확정하지 못했습니다.";
     }
    } else if (
     academicCompletionSemesterLabel
@@ -1028,8 +1078,8 @@ if (
 
     qualificationMessage =
   academicCompletionDate
-    ? `${academicCompletionSemesterLabel} 필수 수업 및 실습 완료 예상일은 ${academicCompletionDate}이며, 이후 가장 빠른 학점인정신청 예상시점은 ${creditRecognitionWindow.label}입니다. 따라서 현재 기준 최단 자격증 신청 예상시점은 ${creditRecognitionWindow.label}입니다.`
-    : `${academicCompletionSemesterLabel} 필수 수업 및 실습 완료 후 자격증 신청 단계로 진행합니다. 정확한 신청일은 실제 종강일과 실습 완료일을 확인해야 합니다.`;
+    ? `${academicCompletionSemesterLabel} 필수 과목 학습 완료 예상일은 ${academicCompletionDate}이며, 이후 가장 빠른 학점인정신청 예상시점은 ${creditRecognitionWindow.label}입니다. 따라서 현재 기준 최단 자격증 신청 예상시점은 ${creditRecognitionWindow.label}입니다.`
+    : `${academicCompletionSemesterLabel} 필수 과목 학습 완료 후 자격증 신청 단계로 진행합니다. 정확한 신청일은 실제 최종 학습 종료일을 확인해야 합니다.`;
 
     if (
       !academicCompletionDate
@@ -1096,9 +1146,9 @@ if (
   });
 
   if (
-    requiresNewDegreeTrack &&
-    degreeTimeline
-  ) {
+  requiresDegreeApplication &&
+  degreeTimeline
+) {
     milestones.push({
       order:
         3,
@@ -1156,8 +1206,8 @@ if (
     earliestQualificationDate
   ) {
     milestones.push({
-      order:
-        requiresNewDegreeTrack
+            order:
+        requiresDegreeApplication
           ? 5
           : 3,
 
@@ -1165,9 +1215,9 @@ if (
         "qualification_application",
 
       label:
-  requiresNewDegreeTrack
-    ? "학위수여 확인 후 자격증 신청"
-    : "학점인정신청 후 자격증 신청",
+        requiresDegreeApplication
+          ? "학위수여 확인 후 자격증 신청"
+          : "학점인정신청 후 자격증 신청",
 
       date:
         earliestQualificationDate,
@@ -1189,12 +1239,12 @@ if (
 
   return {
     status:
-      canCalculate
-        ? qualificationApplicable ||
-          requiresNewDegreeTrack
-          ? "ready"
-          : "not_applicable"
-        : "review_required",
+  canCalculate
+    ? qualificationApplicable ||
+      requiresDegreeApplication
+      ? "ready"
+      : "not_applicable"
+    : "review_required",
 
     canCalculate,
 
@@ -1252,10 +1302,10 @@ message:
   `학점인정신청은 1월·4월·7월·10월 신청 가능 기준으로 관리합니다. 최종 학습 종료 예상일 기준 다음 신청 가능월은 ${creditRecognitionWindow.label}입니다.`,
 },
     degree: {
-      required:
-        requiresNewDegreeTrack,
+  required:
+    requiresDegreeApplication,
 
-      applicationWindow:
+  applicationWindow:
         degreeTimeline
           ?.applicationWindow ??
         null,
@@ -1270,12 +1320,19 @@ message:
           ?.estimatedAwardLabel ??
         null,
 
-      message:
-        !requiresNewDegreeTrack
-          ? "현재 학력 기준으로 새 학위 취득과정이 필요하지 않습니다."
+            message:
+        !requiresDegreeApplication
+          ? params.degreeApplicationOverride ===
+              "not_required"
+            ? "담당자 설정에 따라 현재 학생의 행정절차에서는 학위신청을 적용하지 않습니다."
+            : "현재 학력 및 과정 기준으로 학위신청 절차가 필요하지 않습니다."
           : degreeTimeline
-            ? `최종 학습 종료 예상일 ${academicCompletionDate} 기준 학위신청은 ${degreeTimeline.applicationWindow.label}, 학위수여는 ${degreeTimeline.estimatedAwardLabel}로 예상됩니다. 실제 접수기간은 해당 연도 국가평생교육진흥원 공지를 기준으로 최종 확인해야 합니다.`
-            : "새 학위 취득이 필요하지만 학위신청 일정을 계산하지 못했습니다.",
+            ? params.degreeApplicationOverride ===
+                "required" &&
+              !requiresNewDegreeTrack
+              ? `담당자 설정에 따라 학위신청 절차를 적용합니다. 최종 학습 종료 예상일 ${academicCompletionDate} 기준 학위신청은 ${degreeTimeline.applicationWindow.label}, 학위수여는 ${degreeTimeline.estimatedAwardLabel}로 예상됩니다. 실제 접수기간은 해당 연도 국가평생교육진흥원 공지를 기준으로 최종 확인해야 합니다.`
+              : `최종 학습 종료 예상일 ${academicCompletionDate} 기준 학위신청은 ${degreeTimeline.applicationWindow.label}, 학위수여는 ${degreeTimeline.estimatedAwardLabel}로 예상됩니다. 실제 접수기간은 해당 연도 국가평생교육진흥원 공지를 기준으로 최종 확인해야 합니다.`
+            : "학위신청 절차가 필요하지만 학위신청 일정을 계산하지 못했습니다.",
     },
 
     qualification: {
