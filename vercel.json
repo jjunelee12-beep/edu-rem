@@ -1,6 +1,17 @@
 {
   "rewrites": [
     {
+      "source": "/staff/:token",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(kakaotalk-scrap|facebookexternalhit|Twitterbot|Slackbot).*"
+        }
+      ],
+      "destination": "/api/staff-page?token=:token"
+    },
+    {
       "source": "/api/:path*",
       "destination": "https://edu-crm-api-production.up.railway.app/api/:path*"
     },
