@@ -12,8 +12,8 @@
       "destination": "/api/staff-page?token=:token"
     },
     {
-      "source": "/api/:path*",
-      "destination": "https://edu-crm-api-production.up.railway.app/api/:path*"
+      "source": "/api/:path((?!staff-page$).*)",
+      "destination": "https://edu-crm-api-production.up.railway.app/api/:path"
     },
     {
       "source": "/((?!api/|go/|alpha/|assets/|favicon.ico|robots.txt|manifest.webmanifest).*)",
