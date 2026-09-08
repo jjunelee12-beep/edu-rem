@@ -371,7 +371,7 @@ const {
 const {
   data: qualificationOverrideResult,
   isLoading: qualificationOverrideLoading,
-} = trpc.qualificationOverrides.get.useQuery(
+} = trpc.creditSummary.qualificationOverrides.get.useQuery(
   {
     studentId,
   },
@@ -383,7 +383,7 @@ const {
 );
 
 const upsertAdministrativeProcedureMut =
-  trpc.administrativeProcedures.upsert.useMutation({
+  trpc.creditSummary.administrativeProcedures.upsert.useMutation({
     onSuccess: async () => {
       await utils.creditSummary.student.getSummary.invalidate({
         studentId,
@@ -398,10 +398,10 @@ const upsertAdministrativeProcedureMut =
   });
 
 const saveQualificationOverrideMut =
-  trpc.qualificationOverrides.save.useMutation({
+  trpc.creditSummary.qualificationOverrides.save.useMutation({
     onSuccess: async () => {
       await Promise.all([
-        utils.qualificationOverrides.get.invalidate({
+        utils.creditSummary.qualificationOverrides.get.invalidate({
           studentId,
         }),
 
@@ -419,10 +419,10 @@ const saveQualificationOverrideMut =
   });
 
 const resetQualificationOverrideMut =
-  trpc.qualificationOverrides.reset.useMutation({
+  trpc.creditSummary.qualificationOverrides.reset.useMutation({
     onSuccess: async () => {
       await Promise.all([
-        utils.qualificationOverrides.get.invalidate({
+        utils.creditSummary.qualificationOverrides.get.invalidate({
           studentId,
         }),
 
