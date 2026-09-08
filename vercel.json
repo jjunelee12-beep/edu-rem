@@ -1,10 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/staff/:token",
-      "destination": "/api/staff-page?token=:token"
-    },
-    {
       "source": "/api/:path*",
       "destination": "https://edu-crm-api-production.up.railway.app/api/:path*"
     },
