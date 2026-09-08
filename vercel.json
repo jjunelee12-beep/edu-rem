@@ -1,15 +1,15 @@
 {
   "rewrites": [
     {
+      "source": "/staff/:token",
+      "destination": "/api/staff-page?token=:token"
+    },
+    {
       "source": "/api/:path*",
       "destination": "https://edu-crm-api-production.up.railway.app/api/:path*"
     },
     {
-      "source": "/staff/:path*",
-      "destination": "https://edu-crm-api-production.up.railway.app/staff/:path*"
-    },
-    {
-      "source": "/((?!api/|staff/|go/|alpha/|assets/|favicon.ico|robots.txt|manifest.webmanifest).*)",
+      "source": "/((?!api/|go/|alpha/|assets/|favicon.ico|robots.txt|manifest.webmanifest).*)",
       "destination": "/index.html"
     }
   ]

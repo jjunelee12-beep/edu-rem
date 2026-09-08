@@ -45,6 +45,10 @@ import {
 
   getKakaoAiStaffAuthSessionByToken,
   authenticateKakaoAiStaffAuthSession,
+
+  getStaffPublicProfileByToken,
+  getStaffPublicProfileOrganizationIdByToken,
+  getBrandingSettings,
 } from "../db";
 import {
   orchestrateKakaoAiIncomingMessage,
@@ -4293,6 +4297,130 @@ return res
   app.use(noticeUploadRouter);
 app.use(workCommunityUploadRouter);
   registerSaasInquiryRoutes(app);
+
+  /**
+   * ============================================================
+   * Public Staff Profile Metadata API
+   * ============================================================
+   *
+   * Vercel OG / SNS 미리보기 생성용 공개 API.
+   *
+   * publicToken
+   * → staff public profile
+   * → organizationId
+   * → branding
+   *
+   * 내부 userId, 전화번호, 민감정보는 반환하지 않는다.
+   */
+  app.get(
+    "/api/public/staff-profile/:token",
+    async (req, res) => {
+      try {
+        const token = String(
+          req.params.token || ""
+        ).trim();
+
+        if (!token) {
+          return res.status(400).json({
+            success: false,
+            code: "INVALID_TOKEN",
+            message: "프로필 토큰이 필요합니다.",
+          });
+        }
+
+        const [
+          profile,
+          organizationId,
+        ] = await Promise.all([
+          getStaffPublicProfileByToken(token),
+
+          getStaffPublicProfileOrganizationIdByToken(
+            token
+          ),
+        ]);
+
+        if (
+          !profile ||
+          !organizationId
+        ) {
+          return res.status(404).json({
+            success: false,
+            code: "PROFILE_NOT_FOUND",
+            message: "담당자 프로필을 찾을 수 없습니다.",
+          });
+        }
+
+        const branding =
+          await getBrandingSettings({
+            organizationId,
+          });
+
+        const profileAny =
+          profile as any;
+
+        const brandingAny =
+          branding as any;
+
+        if (
+          profileAny?.isActive === false
+        ) {
+          return res.status(404).json({
+            success: false,
+            code: "PROFILE_NOT_FOUND",
+            message: "담당자 프로필을 찾을 수 없습니다.",
+          });
+        }
+
+        return res.status(200).json({
+          success: true,
+
+          profile: {
+            displayName:
+              profileAny?.displayName ??
+              null,
+
+            publicPositionName:
+              profileAny?.publicPositionName ??
+              null,
+
+            headline:
+              profileAny?.headline ??
+              null,
+
+            profileImageUrl:
+              profileAny?.profileImageUrl ??
+              null,
+
+            companyName:
+              brandingAny?.companyName ??
+              null,
+
+            companyLogoUrl:
+              brandingAny?.companyLogoUrl ??
+              null,
+          },
+        });
+      } catch (error: any) {
+        console.error(
+          "[PUBLIC STAFF PROFILE API ERROR]",
+          {
+            token:
+              req.params.token,
+            message:
+              error?.message ||
+              String(error),
+          }
+        );
+
+        return res.status(500).json({
+          success: false,
+          code: "INTERNAL_ERROR",
+          message:
+            "담당자 프로필 조회 중 오류가 발생했습니다.",
+        });
+      }
+    }
+  );
 
   app.post("/api/upload", upload.single("file"), async (req, res) => {
     try {
