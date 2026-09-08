@@ -3843,52 +3843,6 @@ const getCountStatusClass = (current: number, target: number) => {
             </div>
           </div>
         )}
-
-        {administrativeIssues.length >
-        0 ? (
-          <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
-            <p className="text-xs font-semibold text-slate-700">
-              확인사항
-            </p>
-
-            {administrativeIssues.map(
-              (
-                issue: any,
-                index: number
-              ) => (
-                <div
-                  key={`${issue.code || "issue"}-${index}`}
-                  className={`rounded-lg border px-3 py-2 ${
-                    issue.severity ===
-                    "danger"
-                      ? "border-red-200 bg-red-50"
-                      : issue.severity ===
-                        "warning"
-                      ? "border-amber-200 bg-amber-50"
-                      : "border-slate-200 bg-slate-50"
-                  }`}
-                >
-                  <p className="text-xs font-semibold text-slate-800">
-                    {issue.title ||
-                      "확인 필요"}
-                  </p>
-
-                  {issue.message && (
-                    <p className="mt-1 text-[11px] leading-5 text-slate-600">
-                      {issue.message}
-                    </p>
-                  )}
-                </div>
-              )
-            )}
-          </div>
-        ) : (
-          <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
-            <p className="text-xs font-medium text-emerald-700">
-              현재 확인된 위험 요소가 없습니다.
-            </p>
-          </div>
-        )}
       </div>
     </>
   )}
