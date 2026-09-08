@@ -1,5 +1,3 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 
 type StaffProfileResponse = {
   success: boolean;
@@ -98,24 +96,36 @@ function getRequestOrigin(req: any): string {
   return `${forwardedProto}://${forwardedHost}`;
 }
 
-async function loadIndexHtml(): Promise<string> {
-  const candidates = [
-    path.join(process.cwd(), "dist", "public", "index.html"),
-    path.join(process.cwd(), "client", "dist", "index.html"),
-    path.join(process.cwd(), "index.html"),
-  ];
+async function loadIndexHtml(
+  req: any
+): Promise<string> {
+  const origin = getRequestOrigin(req);
 
-  for (const candidate of candidates) {
-    try {
-      return await fs.readFile(candidate, "utf-8");
-    } catch {
-      // 다음 후보 확인
-    }
+  if (!origin) {
+    throw new Error(
+      "Vercel origin을 확인할 수 없습니다."
+    );
   }
 
-  throw new Error(
-    "Vercel Function에서 index.html을 찾을 수 없습니다."
+  const response = await fetch(
+    `${origin}/index.html`,
+    {
+      method: "GET",
+      headers: {
+        Accept: "text/html",
+        "User-Agent":
+          "EduCanvas-Staff-OG/1.0",
+      },
+    }
   );
+
+  if (!response.ok) {
+    throw new Error(
+      `index.html fetch failed: ${response.status}`
+    );
+  }
+
+  return await response.text();
 }
 
 export default async function handler(
@@ -241,7 +251,7 @@ export default async function handler(
         : "";
 
     let html =
-      await loadIndexHtml();
+  await loadIndexHtml(req);
 
     html =
       removeExistingMetadata(html);
