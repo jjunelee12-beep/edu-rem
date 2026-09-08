@@ -4,6 +4,15 @@ import { trpc } from "@/lib/trpc";
 
 const PORTAL_TOKEN_KEY_PREFIX = "student_portal_token:";
 
+const PORTAL_IMAGES = {
+  login: "/images/portal/portal-login.png",
+  home: "/images/portal/portal-home.png",
+  myWork: "/images/portal/portal-mywork.png",
+  practice: "/images/portal/portal-practice.png",
+  administration: "/images/portal/portal-admin.png",
+  community: "/images/portal/portal-community.png",
+} as const;
+
 function normalizePhone(value: string) {
   return value
     .replace(/\D/g, "")
@@ -1099,180 +1108,215 @@ onQualificationApplication={() =>
    */
   return (
     <PortalScreen>
-      <PortalHeader
-        portalName={
-          portal.portalName
-        }
-        companyLogoUrl={
-          portal.companyLogoUrl
-        }
-      />
+      <main className="relative min-h-screen overflow-hidden bg-white">
+        <img
+          src={PORTAL_IMAGES.login}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+        />
 
-      <main className="px-5 pb-10 pt-8">
-        <section className="text-center">
-          {portal.companyLogoUrl ? (
-            <img
-              src={
-                portal.companyLogoUrl
-              }
-              alt={
-                portal.companyName ||
-                portal.portalName
-              }
-              className="mx-auto h-16 w-16 rounded-2xl object-contain"
-            />
-          ) : null}
+        <div className="absolute inset-0 bg-white/30" />
+        <div className="absolute inset-x-0 bottom-0 h-[68%] bg-gradient-to-t from-white via-white/95 to-transparent" />
 
-          <h1 className="mt-5 text-2xl font-bold tracking-tight text-slate-900">
-            {portal.portalName}
-          </h1>
+        <div className="relative z-10 flex min-h-screen flex-col px-5 pb-8 pt-12">
+          <section className="mx-auto w-full max-w-[390px] text-center">
+            {portal.companyLogoUrl ? (
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[24px] bg-white/95 p-3 shadow-sm ring-1 ring-black/5 backdrop-blur-sm">
+                <img
+                  src={portal.companyLogoUrl}
+                  alt={
+                    portal.companyName ||
+                    portal.portalName
+                  }
+                  className="h-full w-full object-contain"
+                />
+              </div>
+            ) : (
+              <div
+                className="mx-auto flex h-20 w-20 items-center justify-center rounded-[24px] text-2xl font-extrabold text-white shadow-sm"
+                style={{
+                  backgroundColor:
+                    primaryColor,
+                }}
+              >
+                {(portal.companyName ||
+                  portal.portalName ||
+                  "P")
+                  .trim()
+                  .slice(0, 1)}
+              </div>
+            )}
 
-          <p className="mx-auto mt-2 max-w-[320px] text-sm leading-6 text-slate-500">
-            {portal.welcomeMessage ||
-              "등록하신 이름과 휴대전화번호를 입력해주세요."}
-          </p>
-        </section>
-
-        <form
-          className="mt-8 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100"
-          onSubmit={event => {
-            event.preventDefault();
-
-            setLoginError(
-              null
-            );
-
-            const normalizedName =
-              clientName.trim();
-
-            const normalizedPhone =
-              normalizePhone(
-                phone
-              );
-
-            if (!normalizedName) {
-              setLoginError(
-                "이름을 입력해주세요."
-              );
-              return;
-            }
-
-            if (
-              normalizedPhone.length <
-                10 ||
-              normalizedPhone.length >
-                11
-            ) {
-              setLoginError(
-                "휴대전화번호를 확인해주세요."
-              );
-              return;
-            }
-
-            loginMutation.mutate({
-              slug,
-
-              clientName:
-                normalizedName,
-
-              phone:
-                normalizedPhone,
-            });
-          }}
-        >
-          <label className="block">
-            <span className="text-sm font-semibold text-slate-700">
-              이름
-            </span>
-
-            <input
-              type="text"
-              value={
-                clientName
-              }
-              onChange={event =>
-                setClientName(
-                  event.target.value
-                )
-              }
-              autoComplete="name"
-              placeholder="등록자 이름"
-              className="mt-2 h-[52px] w-full rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-            />
-          </label>
-
-          <label className="mt-5 block">
-            <span className="text-sm font-semibold text-slate-700">
-              휴대전화번호
-            </span>
-
-            <input
-              type="tel"
-              inputMode="numeric"
-              value={
-                formatPhone(
-                  phone
-                )
-              }
-              onChange={event =>
-                setPhone(
-                  normalizePhone(
-                    event.target.value
-                  )
-                )
-              }
-              autoComplete="tel"
-              placeholder="010-0000-0000"
-              className="mt-2 h-[52px] w-full rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-            />
-          </label>
-
-          {loginError ? (
-            <div className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm leading-5 text-red-600">
-              {loginError}
+            <div className="mt-5 text-sm font-bold text-slate-600">
+              {portal.companyName ||
+                "등록 교육기관"}
             </div>
-          ) : null}
 
-          <button
-            type="submit"
-            disabled={
-              loginMutation.isPending
-            }
-            className="mt-6 h-[52px] w-full rounded-xl px-4 text-base font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-            style={{
-              backgroundColor:
-                primaryColor,
+            <h1 className="mt-1 text-[28px] font-extrabold tracking-[-0.03em] text-slate-950">
+              {portal.portalName}
+            </h1>
+
+            <p className="mx-auto mt-3 max-w-[330px] text-[15px] font-medium leading-6 text-slate-600">
+              {portal.welcomeMessage ||
+                "등록하신 이름과 휴대전화번호로 간편하게 접속해주세요."}
+            </p>
+          </section>
+
+          <div className="flex-1" />
+
+          <form
+            className="mx-auto w-full max-w-[390px] rounded-[28px] bg-white/95 p-5 shadow-[0_18px_55px_rgba(15,23,42,0.14)] ring-1 ring-black/5 backdrop-blur-md"
+            onSubmit={event => {
+              event.preventDefault();
+
+              setLoginError(
+                null
+              );
+
+              const normalizedName =
+                clientName.trim();
+
+              const normalizedPhone =
+                normalizePhone(
+                  phone
+                );
+
+              if (!normalizedName) {
+                setLoginError(
+                  "이름을 입력해주세요."
+                );
+                return;
+              }
+
+              if (
+                normalizedPhone.length <
+                  10 ||
+                normalizedPhone.length >
+                  11
+              ) {
+                setLoginError(
+                  "휴대전화번호를 확인해주세요."
+                );
+                return;
+              }
+
+              loginMutation.mutate({
+                slug,
+
+                clientName:
+                  normalizedName,
+
+                phone:
+                  normalizedPhone,
+              });
             }}
           >
-            {loginMutation.isPending
-              ? "확인 중..."
-              : "업무포털 접속"}
-          </button>
+            <div className="mb-5 text-center">
+              <div className="text-xl font-extrabold text-slate-950">
+                등록회원 로그인
+              </div>
+              <div className="mt-1 text-sm leading-5 text-slate-500">
+                회원 등록정보와 일치하는 경우에만 접속할 수 있습니다.
+              </div>
+            </div>
 
-          <div className="mt-4 text-center text-xs leading-5 text-slate-400">
-            등록된 회원 정보와 일치하는 경우에만
-            접속할 수 있습니다.
-          </div>
-        </form>
+            <label className="block">
+              <span className="text-[15px] font-bold text-slate-800">
+                이름
+              </span>
 
-        {portal.supportText ? (
-          <div className="mt-5 text-center text-sm text-slate-500">
-            {portal.supportUrl ? (
-              <a
-                href={
-                  portal.supportUrl
+              <input
+                type="text"
+                value={
+                  clientName
                 }
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium text-slate-600 underline underline-offset-4"
-              >
-                {portal.supportText}
-              </a>
-            ) : (
-              portal.supportText
-            )}
-          </div>
-        ) : null}
+                onChange={event =>
+                  setClientName(
+                    event.target.value
+                  )
+                }
+                autoComplete="name"
+                placeholder="등록자 이름"
+                className="mt-2 h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-[17px] font-medium text-slate-950 outline-none transition placeholder:text-slate-400 focus:bg-white"
+                style={{
+                  caretColor:
+                    primaryColor,
+                }}
+              />
+            </label>
+
+            <label className="mt-5 block">
+              <span className="text-[15px] font-bold text-slate-800">
+                휴대전화번호
+              </span>
+
+              <input
+                type="tel"
+                inputMode="numeric"
+                value={
+                  formatPhone(
+                    phone
+                  )
+                }
+                onChange={event =>
+                  setPhone(
+                    normalizePhone(
+                      event.target.value
+                    )
+                  )
+                }
+                autoComplete="tel"
+                placeholder="010-0000-0000"
+                className="mt-2 h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-[17px] font-medium text-slate-950 outline-none transition placeholder:text-slate-400 focus:bg-white"
+                style={{
+                  caretColor:
+                    primaryColor,
+                }}
+              />
+            </label>
+
+            {loginError ? (
+              <div className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium leading-5 text-red-600">
+                {loginError}
+              </div>
+            ) : null}
+
+            <button
+              type="submit"
+              disabled={
+                loginMutation.isPending
+              }
+              className="mt-6 h-14 w-full rounded-2xl px-4 text-[17px] font-extrabold text-white shadow-sm transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+              style={{
+                backgroundColor:
+                  primaryColor,
+              }}
+            >
+              {loginMutation.isPending
+                ? "확인 중..."
+                : "업무포털 접속"}
+            </button>
+          </form>
+
+          {portal.supportText ? (
+            <div className="mx-auto mt-5 w-full max-w-[390px] text-center text-sm font-medium text-slate-600">
+              {portal.supportUrl ? (
+                <a
+                  href={
+                    portal.supportUrl
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline decoration-slate-300 underline-offset-4"
+                >
+                  {portal.supportText}
+                </a>
+              ) : (
+                portal.supportText
+              )}
+            </div>
+          ) : null}
+        </div>
       </main>
     </PortalScreen>
   );
@@ -1333,220 +1377,254 @@ function PortalHomeView({
       : null;
 
   return (
-    <main className="px-4 pb-28 pt-4">
-      {/* 회원 인사 */}
-      <section className="overflow-hidden rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-5 shadow-sm">
-        <div className="text-sm font-medium text-blue-700">
-          등록회원 전용 업무포털
-        </div>
+    <main className="pb-28">
+      <section className="relative h-[285px] overflow-hidden">
+        <img
+          src={PORTAL_IMAGES.home}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-black/5 to-black/45" />
 
-        <div className="mt-2 text-[26px] font-extrabold tracking-tight text-slate-950">
-          {student.clientName ||
-            "회원"}{" "}
-          회원님
-        </div>
-
-        <div className="mt-2 text-sm text-slate-500">
-          {student.course ||
-            "등록 과정"}
+        <div className="absolute inset-x-0 bottom-0 px-5 pb-6 text-white">
+          <div className="text-[15px] font-bold drop-shadow-sm">
+            안녕하세요,
+          </div>
+          <div className="mt-1 text-[30px] font-extrabold tracking-[-0.035em] drop-shadow-sm">
+            {student.clientName ||
+              "회원"}
+            님 👋
+          </div>
+          <div className="mt-2 text-[15px] font-medium text-white/90 drop-shadow-sm">
+            {student.course ||
+              "등록 과정"}
+          </div>
         </div>
       </section>
 
-      {/* 예상 자격증 신청일 */}
-      <button
-        type="button"
-        onClick={
-          onMyWork
-        }
-        className="mt-4 w-full rounded-3xl border border-blue-100 bg-white p-5 text-left shadow-sm transition active:scale-[0.99]"
-      >
-        <div className="flex items-center gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-xl">
-            📅
-          </div>
+      <div className="px-5 pt-6">
+        <button
+          type="button"
+          onClick={
+            onMyWork
+          }
+          className="w-full border-b border-slate-200 pb-6 text-left"
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-[15px] font-bold text-slate-500">
+                예상 자격증 신청일
+              </div>
+              <div
+                className="mt-1 text-[28px] font-extrabold tracking-[-0.03em]"
+                style={{
+                  color:
+                    primaryColor,
+                }}
+              >
+                {expectedLabel}
+              </div>
+              <div className="mt-1 text-sm font-medium text-slate-400">
+                현재 등록된 일정 기준입니다.
+              </div>
+            </div>
 
-          <div className="min-w-0 flex-1">
-            <div className="text-xs font-bold text-slate-500">
-              예상 자격증 신청일
+            <div className="text-3xl font-light text-slate-300">
+              ›
+            </div>
+          </div>
+        </button>
+
+        <section className="border-b border-slate-200 py-6">
+          <div className="flex items-end justify-between gap-4">
+            <div className="text-[18px] font-extrabold text-slate-950">
+              전체 진행률
             </div>
 
             <div
-              className="mt-1 text-2xl font-extrabold tracking-tight"
+              className="text-[26px] font-extrabold"
               style={{
                 color:
                   primaryColor,
               }}
             >
-              {expectedLabel}
+              {overallProgress !==
+              null
+                ? `${overallProgress}%`
+                : "확인 중"}
             </div>
-
-            <div className="mt-1 text-xs text-slate-400">
-              현재 등록된 일정 기준입니다.
-            </div>
           </div>
 
-          <div className="text-xl text-slate-400">
-            ›
+          <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200">
+            {overallProgress !==
+            null ? (
+              <div
+                className="h-full rounded-full transition-all"
+                style={{
+                  width:
+                    `${Math.min(
+                      100,
+                      Math.max(
+                        0,
+                        overallProgress
+                      )
+                    )}%`,
+                  backgroundColor:
+                    primaryColor,
+                }}
+              />
+            ) : null}
           </div>
-        </div>
-      </button>
 
-      {/* 전체 진행률 */}
-      <section className="mt-4 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
-        <div className="flex items-end justify-between">
-          <div className="text-base font-extrabold text-slate-900">
-            전체 진행률
-          </div>
-
-          <div
-            className="text-2xl font-extrabold"
-            style={{
-              color:
-                primaryColor,
-            }}
-          >
+          <div className="mt-2 text-[13px] font-medium leading-5 text-slate-400">
             {overallProgress !==
             null
-              ? `${overallProgress}%`
-              : "확인 중"}
-          </div>
-        </div>
-
-        <div className="mt-3 h-3 overflow-hidden rounded-full bg-slate-100">
-          {overallProgress !==
-          null ? (
-            <div
-              className="h-full rounded-full transition-all"
-              style={{
-                width:
-                  `${Math.min(
-                    100,
-                    Math.max(
-                      0,
-                      overallProgress
-                    )
-                  )}%`,
-
-                backgroundColor:
-                  primaryColor,
-              }}
-            />
-          ) : null}
-        </div>
-
-        <div className="mt-2 text-xs leading-5 text-slate-400">
-          {overallProgress !==
-          null
-            ? "최초 실제 개강일부터 예상 자격증 신청시점까지의 진행률입니다."
-            : "실제 개강일과 예상 신청일을 확인하면 자동으로 표시됩니다."}
-        </div>
-      </section>
-
-      {/* 바로가기 */}
-      <section className="mt-5">
-        <div className="mb-3 text-base font-extrabold text-slate-900">
-          내 업무 바로가기
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <PortalMenuCard
-            icon="▣"
-            title="마이 업무"
-            description="학기현황 및 취득요건 확인"
-            tone="orange"
-            onClick={
-              onMyWork
-            }
-          />
-
-          <PortalMenuCard
-            icon="✓"
-            title="행정절차"
-            description="신청현황 및 절차 가이드"
-            tone="blue"
-            onClick={
-              onAdministration
-            }
-          />
-
-          <PortalMenuCard
-            icon="↗"
-            title="실습"
-            description="실습 진행상황 및 안내"
-            tone="green"
-            onClick={
-              onPractice
-            }
-          />
-
-          <PortalMenuCard
-            icon="◎"
-            title="커뮤니티"
-            description="공지사항·자료실"
-            tone="purple"
-            onClick={
-              onCommunity
-            }
-          />
-        </div>
-      </section>
-
-      {/* 설계 상태 */}
-      {myWork
-        ?.safetyCheck ? (
-        <section className="mt-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">
-          <div className="flex items-start gap-3">
-            <div
-              className={
-                myWork
-                  .safetyCheck
-                  .safe
-                  ? "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 font-bold text-emerald-600"
-                  : "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 font-bold text-amber-600"
-              }
-            >
-              {myWork
-                .safetyCheck
-                .safe
-                ? "✓"
-                : "!"}
-            </div>
-
-            <div>
-              <div className="text-sm font-extrabold text-slate-900">
-                설계 안전검사
-              </div>
-
-              <div className="mt-1 text-sm leading-5 text-slate-500">
-                {
-                  myWork
-                    .safetyCheck
-                    .title
-                }
-              </div>
-            </div>
+              ? "최초 실제 개강일부터 예상 자격증 신청시점까지의 진행률입니다."
+              : "실제 개강일과 예상 신청일을 확인하면 자동으로 표시됩니다."}
           </div>
         </section>
-      ) : null}
 
-      <button
-        type="button"
-        disabled={
-          logoutPending
-        }
-        onClick={
-          onLogout
-        }
-        className="mt-6 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-400 disabled:opacity-50"
-      >
-        {logoutPending
-          ? "로그아웃 중..."
-          : "로그아웃"}
-      </button>
+        <section className="py-6">
+          <div className="text-[19px] font-extrabold text-slate-950">
+            내 업무
+          </div>
+
+          <div className="mt-2 divide-y divide-slate-200 border-y border-slate-200">
+            <PortalMenuRow
+              icon="▣"
+              title="마이 업무"
+              description="학기현황 및 취득요건 확인"
+              onClick={
+                onMyWork
+              }
+            />
+
+            <PortalMenuRow
+              icon="↗"
+              title="실습"
+              description="실습 진행상황 및 안내"
+              onClick={
+                onPractice
+              }
+            />
+
+            <PortalMenuRow
+              icon="✓"
+              title="행정절차"
+              description="신청현황 및 절차 가이드"
+              onClick={
+                onAdministration
+              }
+            />
+
+            <PortalMenuRow
+              icon="◎"
+              title="커뮤니티"
+              description="공지사항 및 자료 확인"
+              onClick={
+                onCommunity
+              }
+            />
+          </div>
+        </section>
+
+        {myWork
+          ?.safetyCheck ? (
+          <section className="border-t border-slate-200 py-6">
+            <div className="flex items-start gap-4">
+              <div
+                className={
+                  myWork
+                    .safetyCheck
+                    .safe
+                    ? "flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-lg font-extrabold text-emerald-700"
+                    : "flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-100 text-lg font-extrabold text-amber-700"
+                }
+              >
+                {myWork
+                  .safetyCheck
+                  .safe
+                  ? "✓"
+                  : "!"}
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="text-[17px] font-extrabold text-slate-950">
+                  설계 안전검사
+                </div>
+                <div className="mt-1 text-[14px] font-medium leading-6 text-slate-500">
+                  {
+                    myWork
+                      .safetyCheck
+                      .title
+                  }
+                </div>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        <button
+          type="button"
+          disabled={
+            logoutPending
+          }
+          onClick={
+            onLogout
+          }
+          className="mt-2 w-full py-4 text-sm font-bold text-slate-400 disabled:opacity-50"
+        >
+          {logoutPending
+            ? "로그아웃 중..."
+            : "로그아웃"}
+        </button>
+      </div>
     </main>
   );
 }
 
+function PortalMenuRow({
+  icon,
+  title,
+  description,
+  onClick,
+}: {
+  icon:
+    string;
+  title:
+    string;
+  description:
+    string;
+  onClick:
+    () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={
+        onClick
+      }
+      className="flex min-h-[82px] w-full items-center gap-4 py-4 text-left active:bg-slate-50"
+    >
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-lg font-extrabold text-slate-700">
+        {icon}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="text-[17px] font-extrabold text-slate-950">
+          {title}
+        </div>
+        <div className="mt-1 text-[13px] font-medium text-slate-500">
+          {description}
+        </div>
+      </div>
+
+      <div className="text-2xl font-light text-slate-300">
+        ›
+      </div>
+    </button>
+  );
+}
 
 function PortalMyWorkView({
   myWork,
@@ -1578,8 +1656,8 @@ function PortalMyWorkView({
 }) {
   if (!myWork) {
     return (
-      <main className="px-4 pb-28 pt-4">
-        <div className="rounded-2xl bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
+      <main className="px-5 pb-28 pt-6">
+        <div className="py-14 text-center text-[15px] font-medium text-slate-500">
           등록된 학습관리 정보를 확인하고 있습니다.
         </div>
       </main>
@@ -1587,95 +1665,112 @@ function PortalMyWorkView({
   }
 
   return (
-    <main className="px-4 pb-28 pt-3">
-      {/* 상단 3탭 */}
-      <div className="grid grid-cols-3 gap-2 rounded-2xl bg-slate-100 p-1">
-        <PortalSegmentButton
-          active={
-            section ===
-            "learning"
-          }
-          primaryColor={
-            primaryColor
-          }
-          onClick={() =>
-            onSectionChange(
+    <main className="pb-28">
+      <section className="relative h-[190px] overflow-hidden">
+        <img
+          src={PORTAL_IMAGES.myWork}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 px-5 pb-5 text-white">
+          <div className="text-[25px] font-extrabold tracking-[-0.03em]">
+            마이 업무
+          </div>
+          <div className="mt-1 text-sm font-medium text-white/90">
+            학기 진행현황과 취득요건을 한눈에 확인하세요.
+          </div>
+        </div>
+      </section>
+
+      <div className="px-5 pt-5">
+        <div className="grid grid-cols-3 border-b border-slate-200">
+          <PortalSegmentButton
+            active={
+              section ===
               "learning"
-            )
-          }
-        >
-          학습현황
-        </PortalSegmentButton>
+            }
+            primaryColor={
+              primaryColor
+            }
+            onClick={() =>
+              onSectionChange(
+                "learning"
+              )
+            }
+          >
+            학습현황
+          </PortalSegmentButton>
 
-        <PortalSegmentButton
-          active={
-            section ===
-            "requirements"
-          }
-          primaryColor={
-            primaryColor
-          }
-          onClick={() =>
-            onSectionChange(
+          <PortalSegmentButton
+            active={
+              section ===
               "requirements"
-            )
-          }
-        >
-          취득요건
-        </PortalSegmentButton>
+            }
+            primaryColor={
+              primaryColor
+            }
+            onClick={() =>
+              onSectionChange(
+                "requirements"
+              )
+            }
+          >
+            취득요건
+          </PortalSegmentButton>
 
-        <PortalSegmentButton
-          active={
-            section ===
-            "safety"
-          }
-          primaryColor={
-            primaryColor
-          }
-          onClick={() =>
-            onSectionChange(
+          <PortalSegmentButton
+            active={
+              section ===
               "safety"
-            )
-          }
-        >
-          설계검사
-        </PortalSegmentButton>
-      </div>
+            }
+            primaryColor={
+              primaryColor
+            }
+            onClick={() =>
+              onSectionChange(
+                "safety"
+              )
+            }
+          >
+            설계검사
+          </PortalSegmentButton>
+        </div>
 
-      {section ===
-      "learning" ? (
-        <PortalLearningOverview
-          myWork={
-            myWork
-          }
-          primaryColor={
-            primaryColor
-          }
-          onSemesterSelect={
-            onSemesterSelect
-          }
-        />
-      ) : section ===
-        "requirements" ? (
-        <PortalRequirementsView
-          myWork={
-            myWork
-          }
-          primaryColor={
-            primaryColor
-          }
-        />
-      ) : (
-        <PortalSafetyView
-          safetyCheck={
-            myWork.safetyCheck
-          }
-        />
-      )}
+        {section ===
+        "learning" ? (
+          <PortalLearningOverview
+            myWork={
+              myWork
+            }
+            primaryColor={
+              primaryColor
+            }
+            onSemesterSelect={
+              onSemesterSelect
+            }
+          />
+        ) : section ===
+          "requirements" ? (
+          <PortalRequirementsView
+            myWork={
+              myWork
+            }
+            primaryColor={
+              primaryColor
+            }
+          />
+        ) : (
+          <PortalSafetyView
+            safetyCheck={
+              myWork.safetyCheck
+            }
+          />
+        )}
+      </div>
     </main>
   );
 }
-
 
 function PortalLearningOverview({
   myWork,
@@ -2346,100 +2441,574 @@ function PortalRequirementSummary({
   compact?:
     boolean;
 }) {
-  const categories =
+  const requirementSummary =
     myWork
-      ?.qualificationProgress
-      ?.categories;
+      ?.requirementSummary ??
+    null;
 
-  const rows = [
-    {
-      key:
-        "majorRequired",
+  const courseKey =
+    String(
+      requirementSummary
+        ?.courseKey ||
+      ""
+    ).trim();
 
-      label:
-        "전공필수",
+  const qualification =
+    requirementSummary
+      ?.qualification ??
+    null;
 
-      data:
-        categories
-          ?.majorRequired,
-    },
+  const socialWorker =
+    qualification
+      ?.socialWorker ??
+    null;
 
-    {
-      key:
-        "majorElective",
+  const degree =
+    requirementSummary
+      ?.degree ??
+    null;
 
-      label:
-        "전공선택",
-
-      data:
-        categories
-          ?.majorElective,
-    },
-
-    {
-      key:
-        "liberal",
-
-      label:
-        "교양",
-
-      data:
-        categories
-          ?.liberal,
-    },
-
-    {
-      key:
-        "general",
-
-      label:
-        "일반",
-
-      data:
-        categories
-          ?.general,
-    },
-  ].filter(
-    row => {
-      const data =
-        row.data;
-
-      if (!data) {
-        return false;
+  /**
+   * null과 실제 0을 구분한다.
+   *
+   * null:
+   * 엔진에서 아직 기준을 확정하지 못함.
+   *
+   * 0:
+   * 기준은 확정되었고 현재 인정값이 0.
+   */
+  const toNumberOrNull =
+    (
+      value:
+        any
+    ): number | null => {
+      if (
+        value ===
+          null ||
+        value ===
+          undefined ||
+        value ===
+          ""
+      ) {
+        return null;
       }
 
-      return (
+      const numberValue =
         Number(
-          data.requiredSubjects ||
+          value
+        );
+
+      return Number.isFinite(
+        numberValue
+      )
+        ? numberValue
+        : null;
+    };
+
+  const buildPercent =
+    (
+      current:
+        number,
+      required:
+        number | null
+    ) => {
+      if (
+        required ===
+          null ||
+        required <=
           0
-        ) >
-          0 ||
-        Number(
-          data.requiredCredits ||
-          0
-        ) >
-          0 ||
-        Number(
-          data.currentSubjects ||
-          0
-        ) >
-          0 ||
-        Number(
-          data.currentCredits ||
-          0
-        ) >
-          0
+      ) {
+        return null;
+      }
+
+      return Math.min(
+        100,
+        Math.max(
+          0,
+          Math.round(
+            (
+              current /
+              required
+            ) *
+              100
+          )
+        )
       );
-    }
-  );
+    };
+
+  const renderRequirementRow =
+    ({
+      key,
+      label,
+      current,
+      required,
+      unit,
+    }: {
+      key:
+        string;
+
+      label:
+        string;
+
+      current:
+        number;
+
+      required:
+        number | null;
+
+      unit:
+        "과목" |
+        "학점";
+    }) => {
+      const percent =
+        buildPercent(
+          current,
+          required
+        );
+
+      const complete =
+        required !==
+          null &&
+        required >
+          0 &&
+        current >=
+          required;
+
+      const partiallySatisfied =
+        !complete &&
+        current >
+          0;
+
+      return (
+        <div
+          key={
+            key
+          }
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-extrabold text-slate-800">
+              {
+                label
+              }
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-500">
+                {required !==
+                null
+                  ? `${current} / ${required}${unit}`
+                  : `${current}${unit}`}
+              </span>
+
+              <span
+                className={
+                  complete
+                    ? "rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-600"
+                    : partiallySatisfied
+                      ? "rounded-lg bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-600"
+                      : "rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-500"
+                }
+              >
+                {complete
+                  ? "충족"
+                  : partiallySatisfied
+                    ? "일부 충족"
+                    : "미충족"}
+              </span>
+            </div>
+          </div>
+
+          {percent !==
+          null ? (
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width:
+                    `${percent}%`,
+
+                  backgroundColor:
+                    complete
+                      ? "#10b981"
+                      : primaryColor,
+                }}
+              />
+            </div>
+          ) : null}
+        </div>
+      );
+    };
+
+  /**
+   * -------------------------------------------------
+   * 자격요건 Row
+   * -------------------------------------------------
+   *
+   * 사회복지사 2급:
+   * 필수 / 선택 / 전체를 각각 표시한다.
+   *
+   * 그 외 과정:
+   * 공통 qualification 값으로 한 줄 표시한다.
+   */
+  const qualificationRows:
+    Array<{
+      key:
+        string;
+
+      label:
+        string;
+
+      current:
+        number;
+
+      required:
+        number | null;
+
+      unit:
+        "과목" |
+        "학점";
+    }> =
+    [];
 
   if (
-    rows.length ===
-    0
+    courseKey ===
+      "social_worker_2" &&
+    socialWorker
+  ) {
+    const requiredSubjects =
+      toNumberOrNull(
+        socialWorker
+          .requiredSubjects
+      );
+
+    const completedRequiredSubjects =
+      Number(
+        socialWorker
+          .completedRequiredSubjects ??
+        0
+      );
+
+    const electiveSubjects =
+      toNumberOrNull(
+        socialWorker
+          .electiveSubjects
+      );
+
+    const completedElectiveSubjects =
+      Number(
+        socialWorker
+          .completedElectiveSubjects ??
+        0
+      );
+
+    const totalSubjects =
+      toNumberOrNull(
+        socialWorker
+          .totalSubjects
+      );
+
+    const completedTotalSubjects =
+      Number(
+        socialWorker
+          .completedTotalSubjects ??
+        qualification
+          ?.completedSubjects ??
+        0
+      );
+
+    if (
+      requiredSubjects !==
+      null
+    ) {
+      qualificationRows.push({
+        key:
+          "social-worker-required",
+
+        label:
+          "필수과목",
+
+        current:
+          completedRequiredSubjects,
+
+        required:
+          requiredSubjects,
+
+        unit:
+          "과목",
+      });
+    }
+
+    if (
+      electiveSubjects !==
+      null
+    ) {
+      qualificationRows.push({
+        key:
+          "social-worker-elective",
+
+        label:
+          "선택과목",
+
+        current:
+          completedElectiveSubjects,
+
+        required:
+          electiveSubjects,
+
+        unit:
+          "과목",
+      });
+    }
+
+    if (
+      totalSubjects !==
+      null
+    ) {
+      qualificationRows.push({
+        key:
+          "social-worker-total",
+
+        label:
+          "총 자격과목",
+
+        current:
+          completedTotalSubjects,
+
+        required:
+          totalSubjects,
+
+        unit:
+          "과목",
+      });
+    }
+  } else {
+    const requiredSubjects =
+      toNumberOrNull(
+        qualification
+          ?.requiredSubjects
+      );
+
+    const completedSubjects =
+      Number(
+        qualification
+          ?.completedSubjects ??
+        0
+      );
+
+    const requiredCredits =
+      toNumberOrNull(
+        qualification
+          ?.requiredCredits
+      );
+
+    const completedCredits =
+      Number(
+        qualification
+          ?.completedCredits ??
+        0
+      );
+
+    if (
+      requiredSubjects !==
+      null
+    ) {
+      qualificationRows.push({
+        key:
+          "qualification-subjects",
+
+        label:
+          "자격요건 과목",
+
+        current:
+          completedSubjects,
+
+        required:
+          requiredSubjects,
+
+        unit:
+          "과목",
+      });
+    } else if (
+      requiredCredits !==
+      null
+    ) {
+      qualificationRows.push({
+        key:
+          "qualification-credits",
+
+        label:
+          "자격요건 학점",
+
+        current:
+          completedCredits,
+
+        required:
+          requiredCredits,
+
+        unit:
+          "학점",
+      });
+    }
+  }
+
+  /**
+   * -------------------------------------------------
+   * 학위요건 Row
+   * -------------------------------------------------
+   *
+   * 새 학위과정이 실제 필요한 회원에게만 표시한다.
+   *
+   * 전문대졸/대졸 등 기존 학위로
+   * 자격요건을 충족하는 회원에게는
+   * 불필요한 학위요건을 보여주지 않는다.
+   */
+  const degreeRows:
+    Array<{
+      key:
+        string;
+
+      label:
+        string;
+
+      current:
+        number;
+
+      required:
+        number | null;
+
+      unit:
+        "학점";
+    }> =
+    [];
+
+  if (
+    degree
+      ?.requiresNewDegreeTrack ===
+    true
+  ) {
+    const requiredTotalCredits =
+      toNumberOrNull(
+        degree
+          ?.requiredTotalCredits
+      );
+
+    const requiredMajorCredits =
+      toNumberOrNull(
+        degree
+          ?.requiredMajorCredits
+      );
+
+    const requiredLiberalCredits =
+      toNumberOrNull(
+        degree
+          ?.requiredLiberalCredits
+      );
+
+    if (
+      requiredTotalCredits !==
+      null
+    ) {
+      degreeRows.push({
+        key:
+          "degree-total",
+
+        label:
+          "총 학점",
+
+        current:
+          Number(
+            degree
+              ?.currentTotalCredits ??
+            0
+          ),
+
+        required:
+          requiredTotalCredits,
+
+        unit:
+          "학점",
+      });
+    }
+
+    if (
+      requiredMajorCredits !==
+      null
+    ) {
+      degreeRows.push({
+        key:
+          "degree-major",
+
+        label:
+          "전공 학점",
+
+        current:
+          Number(
+            degree
+              ?.currentMajorCredits ??
+            0
+          ),
+
+        required:
+          requiredMajorCredits,
+
+        unit:
+          "학점",
+      });
+    }
+
+    if (
+      requiredLiberalCredits !==
+      null
+    ) {
+      degreeRows.push({
+        key:
+          "degree-liberal",
+
+        label:
+          "교양 학점",
+
+        current:
+          Number(
+            degree
+              ?.currentLiberalCredits ??
+            0
+          ),
+
+        required:
+          requiredLiberalCredits,
+
+        unit:
+          "학점",
+      });
+    }
+  }
+
+  const hasQualificationData =
+    qualificationRows.length >
+    0;
+
+  const hasDegreeData =
+    degreeRows.length >
+    0;
+
+  /**
+   * 실제 취득요건 데이터가 없을 때만
+   * 확인 안내를 보여준다.
+   */
+  if (
+    !hasQualificationData &&
+    !hasDegreeData
   ) {
     return (
-      <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
-        취득요건을 확인하고 있습니다.
+      <div className="mt-4 rounded-2xl bg-slate-50 p-4">
+        <div className="text-sm font-bold text-slate-700">
+          취득요건 적용기준을 확인하고 있습니다.
+        </div>
+
+        <div className="mt-1 text-xs leading-5 text-slate-500">
+          현재 과정 또는 적용기준을 확정하면
+          필요한 과목과 학점이 자동으로 표시됩니다.
+        </div>
       </div>
     );
   }
@@ -2448,155 +3017,87 @@ function PortalRequirementSummary({
     <div
       className={
         compact
-          ? "mt-4 space-y-4"
-          : "mt-5 space-y-5"
+          ? "mt-4 space-y-5"
+          : "mt-5 space-y-6"
       }
     >
-      {rows.map(
-        row => {
-          const data =
-            row.data;
-
-          const currentSubjects =
-            Number(
-              data.currentSubjects ||
-              0
-            );
-
-          const requiredSubjects =
-            data.requiredSubjects ===
-              null ||
-            data.requiredSubjects ===
-              undefined
-              ? null
-              : Number(
-                  data.requiredSubjects
-                );
-
-          const currentCredits =
-            Number(
-              data.currentCredits ||
-              0
-            );
-
-          const requiredCredits =
-            data.requiredCredits ===
-              null ||
-            data.requiredCredits ===
-              undefined
-              ? null
-              : Number(
-                  data.requiredCredits
-                );
-
-          const hasSubjectTarget =
-            requiredSubjects !==
-              null &&
-            requiredSubjects >
-              0;
-
-          const hasCreditTarget =
-            requiredCredits !==
-              null &&
-            requiredCredits >
-              0;
-
-          const percent =
-            hasSubjectTarget
-              ? Math.min(
-                  100,
-                  Math.round(
-                    (
-                      currentSubjects /
-                      requiredSubjects
-                    ) *
-                      100
-                  )
-                )
-              : hasCreditTarget
-                ? Math.min(
-                    100,
-                    Math.round(
-                      (
-                        currentCredits /
-                        requiredCredits
-                      ) *
-                        100
-                    )
-                  )
-                : null;
-
-          const complete =
-            percent ===
-            100;
-
-          return (
-            <div
-              key={
-                row.key
-              }
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-extrabold text-slate-800">
-                  {
-                    row.label
-                  }
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-500">
-                    {hasSubjectTarget
-                      ? `${currentSubjects} / ${requiredSubjects}과목`
-                      : hasCreditTarget
-                        ? `${currentCredits} / ${requiredCredits}학점`
-                        : `${currentSubjects}과목`}
-                  </span>
-
-                  <span
-                    className={
-                      complete
-                        ? "rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-600"
-                        : currentSubjects >
-                              0 ||
-                            currentCredits >
-                              0
-                          ? "rounded-lg bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-600"
-                          : "rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-500"
-                    }
-                  >
-                    {complete
-                      ? "이수완료"
-                      : currentSubjects >
-                            0 ||
-                          currentCredits >
-                            0
-                        ? "진행중"
-                        : "예정"}
-                  </span>
-                </div>
+      {hasQualificationData ? (
+        <section>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-extrabold text-slate-900">
+                {courseKey ===
+                "social_worker_2"
+                  ? "사회복지사 2급 자격요건"
+                  : "자격 취득요건"}
               </div>
 
-              {percent !==
-              null ? (
-                <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    className="h-full rounded-full"
-                    style={{
-                      width:
-                        `${percent}%`,
-
-                      backgroundColor:
-                        complete
-                          ? "#10b981"
-                          : primaryColor,
-                    }}
-                  />
-                </div>
-              ) : null}
+              <div className="mt-1 text-xs leading-5 text-slate-400">
+                현재 실제 이수·인정된 과목 기준입니다.
+              </div>
             </div>
-          );
-        }
-      )}
+
+            {qualification
+              ?.canAnalyze ===
+            true ? (
+              <span className="shrink-0 rounded-lg bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-600">
+                자동 계산
+              </span>
+            ) : (
+              <span className="shrink-0 rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-600">
+                확인 필요
+              </span>
+            )}
+          </div>
+
+          <div className="mt-4 space-y-4">
+            {qualificationRows.map(
+              row =>
+                renderRequirementRow(
+                  row
+                )
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      {hasDegreeData ? (
+        <section className="border-t border-slate-100 pt-5">
+          <div>
+            <div className="text-sm font-extrabold text-slate-900">
+              학위 취득요건
+            </div>
+
+            <div className="mt-1 text-xs leading-5 text-slate-400">
+              현재 과정은 새 학점은행제 학위 취득이 필요한 과정입니다.
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-4">
+            {degreeRows.map(
+              row =>
+                renderRequirementRow(
+                  row
+                )
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      {requirementSummary
+        ?.requiresReview ===
+      true ? (
+        <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3">
+          <div className="text-xs font-extrabold text-amber-700">
+            일부 취득요건 확인이 필요합니다.
+          </div>
+
+          <div className="mt-1 text-xs leading-5 text-amber-600">
+            담당자가 확인 중인 기준이 있으면
+            최종 확인 후 자동으로 업데이트됩니다.
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -2748,13 +3249,15 @@ function PortalSegmentButton({
       }
       className={
         active
-          ? "h-11 rounded-xl bg-white text-sm font-extrabold shadow-sm"
-          : "h-11 rounded-xl text-sm font-bold text-slate-400"
+          ? "h-12 border-b-2 text-[15px] font-extrabold"
+          : "h-12 border-b-2 border-transparent text-[15px] font-bold text-slate-400"
       }
       style={
         active
           ? {
               color:
+                primaryColor,
+              borderColor:
                 primaryColor,
             }
           : undefined
@@ -3397,19 +3900,20 @@ const qualificationApplicationAvailable =
 
   return (
     <main className="px-4 pb-28 pt-4">
-      <section className="rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-5">
-        <div className="text-sm font-bold text-blue-700">
-          행정절차 안내
-        </div>
-
-        <div className="mt-2 text-xl font-extrabold tracking-tight text-slate-950">
-          필요한 행정절차를
-          순서대로 확인해주세요.
-        </div>
-
-        <div className="mt-2 text-sm leading-6 text-slate-500">
-          신청방법과 준비사항을 사진과 영상으로
-          확인할 수 있습니다.
+      <section className="relative h-[210px] overflow-hidden rounded-[28px]">
+        <img
+          src={PORTAL_IMAGES.administration}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/15 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 p-5 text-white">
+          <div className="text-[24px] font-extrabold tracking-[-0.03em]">
+            행정절차 안내
+          </div>
+          <div className="mt-2 text-sm font-medium leading-6 text-white/90">
+            필요한 신청 절차와 준비사항을 순서대로 확인해주세요.
+          </div>
         </div>
       </section>
 
@@ -5636,7 +6140,7 @@ function PortalSocialWorkerQualificationGuide({
 
         {/* 자격관리센터 바로가기 */}
         <a
-          href="https://lic.welfare.net/"
+          href="https://www.welfare.net/lic/"
           target="_blank"
           rel="noreferrer"
           className="mt-3 flex h-14 w-full items-center justify-center rounded-2xl text-sm font-extrabold text-white shadow-sm"
@@ -6197,21 +6701,52 @@ function PortalComingSoon({
   title:
     string;
 }) {
-  return (
-    <main className="px-4 pb-28 pt-5">
-      <section className="rounded-3xl bg-white p-8 text-center shadow-sm ring-1 ring-slate-100">
-        <div className="text-lg font-extrabold text-slate-900">
-          {title}
-        </div>
+  const image =
+    title === "실습"
+      ? PORTAL_IMAGES.practice
+      : title === "커뮤니티"
+        ? PORTAL_IMAGES.community
+        : PORTAL_IMAGES.home;
 
-        <div className="mt-2 text-sm leading-6 text-slate-500">
-          해당 메뉴는 다음 단계에서 등록회원 관리정보와 연결됩니다.
+  const description =
+    title === "실습"
+      ? "실습 진행상황과 배정 안내를 확인할 수 있도록 준비하고 있습니다."
+      : title === "커뮤니티"
+        ? "공지사항과 등록회원 자료를 확인할 수 있도록 준비하고 있습니다."
+        : "해당 메뉴는 다음 단계에서 등록회원 관리정보와 연결됩니다.";
+
+  return (
+    <main className="pb-28">
+      <section className="relative h-[235px] overflow-hidden">
+        <img
+          src={image}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 px-5 pb-6 text-white">
+          <div className="text-[27px] font-extrabold tracking-[-0.03em]">
+            {title}
+          </div>
+          <div className="mt-2 max-w-[350px] text-[15px] font-medium leading-6 text-white/90">
+            {description}
+          </div>
+        </div>
+      </section>
+
+      <section className="px-5 py-8">
+        <div className="border-y border-slate-200 py-8 text-center">
+          <div className="text-lg font-extrabold text-slate-900">
+            준비 중입니다.
+          </div>
+          <div className="mx-auto mt-2 max-w-[320px] text-sm font-medium leading-6 text-slate-500">
+            등록회원 관리정보와 안전하게 연결한 뒤 이용할 수 있도록 제공할 예정입니다.
+          </div>
         </div>
       </section>
     </main>
   );
 }
-
 
 function resolvePortalSubjectStatus(
   subject:
@@ -6369,8 +6904,8 @@ function PortalScreen({
     React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-slate-100">
-      <div className="mx-auto min-h-screen w-full max-w-[480px] bg-slate-50 shadow-sm">
+    <div className="min-h-screen bg-[#f3f4f6]">
+      <div className="mx-auto min-h-screen w-full max-w-[480px] bg-white shadow-sm">
         {children}
       </div>
     </div>
@@ -6389,27 +6924,24 @@ function PortalHeader({
     string | null;
 }) {
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-100 bg-white/95 px-4 backdrop-blur">
-      <div className="flex h-16 items-center gap-3">
+    <header className="sticky top-0 z-30 border-b border-slate-100 bg-white/95 px-5 backdrop-blur">
+      <div className="flex h-[68px] items-center gap-3">
         {companyLogoUrl ? (
           <img
-            src={
-              companyLogoUrl
-            }
+            src={companyLogoUrl}
             alt=""
-            className="h-9 w-9 rounded-xl object-contain"
+            className="h-10 w-10 rounded-xl object-contain"
           />
         ) : (
-          <div className="h-9 w-9 rounded-xl bg-slate-100" />
+          <div className="h-10 w-10 rounded-xl bg-slate-100" />
         )}
 
-        <div className="min-w-0">
-          <div className="truncate text-sm font-bold text-slate-900">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[15px] font-extrabold tracking-[-0.01em] text-slate-950">
             {portalName ||
               "업무포털"}
           </div>
-
-          <div className="text-xs text-slate-400">
+          <div className="mt-0.5 text-[12px] font-medium text-slate-400">
             등록회원 전용
           </div>
         </div>

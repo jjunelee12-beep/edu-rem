@@ -4015,27 +4015,38 @@ export const appRouter = router({
                   })
                 );
 
-            /**
+                        /**
              * -------------------------------------------------
              * 등록자용 학기 진행상태
              * -------------------------------------------------
              *
              * 담당자 원본값은 그대로 유지하고
-             * 화면 표시용 상태만 계산한다.
+             * 업무포털 화면 표시용 상태만 계산한다.
              *
              * 우선순위:
              *
-             * isCompleted=true
-             * → 완료
+             * 1. 실제 개강일 존재
+             *    → 날짜 기준으로 예정 / 진행중 / 완료
              *
-             * 실제 개강일 존재
-             * → 날짜 기준 예정 / 진행중 / 완료
+             * 2. 실제 개강일 없음 + isCompleted=true
+             *    → 완료
              *
-             * 실제 개강일 없음 + 예정월 존재
-             * → 예정
+             * 3. 실제 개강일 없음 + 예정월 존재
+             *    → 예정
              *
-             * 둘 다 없음
-             * → 확인필요
+             * 4. 모두 없음
+             *    → 확인필요
+             *
+             * 중요:
+             * 실제 개강일이 존재하는 경우에는
+             * CRM의 isCompleted 플래그보다 날짜를 우선한다.
+             *
+             * 예:
+             * 실제 개강일 2026-08-28
+             * 예상 종료일 2026-12-28
+             *
+             * 오늘이 해당 기간 안에 있다면
+             * isCompleted=true여도 업무포털에서는 진행중으로 표시한다.
              */
             const semesterProgressRows =
               semesterRows.map(
@@ -4053,37 +4064,11 @@ export const appRouter = router({
                       actualStartDate
                     );
 
-                  if (
-                    semester.isCompleted ===
-                    true
-                  ) {
-                    return {
-                      ...semester,
-
-                      progressStatus:
-                        "completed" as const,
-
-                      progressLabel:
-                        "완료",
-
-                      progressPercent:
-                        null,
-
-                      progressStartDate:
-                        actualStartDate,
-
-                      progressEndDate:
-                        startDate
-                          ? portalDateToString(
-                              addPortalAcademicMonths(
-                                startDate,
-                                4
-                              )
-                            )
-                          : null,
-                    };
-                  }
-
+                  /**
+                   * -------------------------------------------------
+                   * 1. 실제 개강일이 있으면 날짜 기준이 최우선
+                   * -------------------------------------------------
+                   */
                   if (
                     startDate
                   ) {
@@ -4093,6 +4078,9 @@ export const appRouter = router({
                         4
                       );
 
+                    /**
+                     * 아직 개강 전
+                     */
                     if (
                       portalToday.getTime() <
                       startDate.getTime()
@@ -4119,6 +4107,9 @@ export const appRouter = router({
                       };
                     }
 
+                    /**
+                     * 개강 후 ~ 종료 전
+                     */
                     if (
                       portalToday.getTime() <
                       endDate.getTime()
@@ -4184,6 +4175,9 @@ export const appRouter = router({
                       };
                     }
 
+                    /**
+                     * 예상 종료일 도달 또는 경과
+                     */
                     return {
                       ...semester,
 
@@ -4194,7 +4188,7 @@ export const appRouter = router({
                         "완료",
 
                       progressPercent:
-                        null,
+                        100,
 
                       progressStartDate:
                         actualStartDate,
@@ -4206,6 +4200,41 @@ export const appRouter = router({
                     };
                   }
 
+                  /**
+                   * -------------------------------------------------
+                   * 2. 실제 개강일이 없을 때만
+                   *    CRM 완료 플래그를 보조값으로 사용
+                   * -------------------------------------------------
+                   */
+                  if (
+                    semester.isCompleted ===
+                    true
+                  ) {
+                    return {
+                      ...semester,
+
+                      progressStatus:
+                        "completed" as const,
+
+                      progressLabel:
+                        "완료",
+
+                      progressPercent:
+                        100,
+
+                      progressStartDate:
+                        null,
+
+                      progressEndDate:
+                        null,
+                    };
+                  }
+
+                  /**
+                   * -------------------------------------------------
+                   * 3. 실제 개강일은 없지만 예정월이 있는 경우
+                   * -------------------------------------------------
+                   */
                   if (
                     String(
                       semester.plannedMonth ||
@@ -4232,6 +4261,11 @@ export const appRouter = router({
                     };
                   }
 
+                  /**
+                   * -------------------------------------------------
+                   * 4. 판단 근거가 없는 경우
+                   * -------------------------------------------------
+                   */
                   return {
                     ...semester,
 
@@ -5149,6 +5183,369 @@ export const appRouter = router({
 
             /**
              * -------------------------------------------------
+             * 등록자용 실제 취득요건 요약
+             * -------------------------------------------------
+             *
+             * 중요:
+             *
+             * portalEngine.categories는
+             * 학점요약용 전공필수 / 전공선택 / 교양 / 일반
+             * 분류값이므로 등록자의 실제 자격 취득요건
+             * 표시 기준으로 사용하지 않는다.
+             *
+             * 취득요건 화면은 공통 자격/학위 엔진의
+             * 최종 결과인 portalEngine.requirements를
+             * 기준으로 한다.
+             *
+             * qualification:
+             * - 사회복지사 / 보육교사 / 한국어교원 등
+             *   자격과정 자체의 취득요건
+             *
+             * degree:
+             * - 현재 자격과정을 위해 새 학위과정이
+             *   필요한 회원의 학위 취득요건
+             */
+            const portalRequirements =
+              portalEngine
+                .requirements ??
+              null;
+
+            const portalQualificationRequirement =
+              portalRequirements
+                ?.qualification ??
+              null;
+
+            const portalQualificationDetails =
+              (
+                portalQualificationRequirement
+                  ?.details &&
+                typeof portalQualificationRequirement
+                  .details ===
+                  "object" &&
+                !Array.isArray(
+                  portalQualificationRequirement
+                    .details
+                )
+              )
+                ? portalQualificationRequirement
+                    .details as Record<
+                      string,
+                      any
+                    >
+                : {};
+
+            const portalDegreeRequirement =
+              portalRequirements
+                ?.degree ??
+              null;
+
+            const requirementSummary = {
+              courseKey:
+                portalRequirements
+                  ?.courseKey ??
+                "unknown",
+
+              status:
+                portalRequirements
+                  ?.status ??
+                "review_required",
+
+              canPlan:
+                portalRequirements
+                  ?.canPlan ===
+                true,
+
+              requiresReview:
+                portalRequirements
+                  ?.requiresReview ===
+                true,
+
+              /**
+               * 자격증 자체의 취득요건.
+               */
+              qualification: {
+                canAnalyze:
+                  portalQualificationRequirement
+                    ?.canAnalyze ===
+                  true,
+
+                requiredSubjects:
+                  portalQualificationRequirement
+                    ?.requiredSubjects ??
+                  null,
+
+                completedSubjects:
+                  portalQualificationRequirement
+                    ?.completedSubjects ??
+                  null,
+
+                remainingSubjects:
+                  portalQualificationRequirement
+                    ?.remainingSubjects ??
+                  null,
+
+                requiredCredits:
+                  portalQualificationRequirement
+                    ?.requiredCredits ??
+                  null,
+
+                completedCredits:
+                  portalQualificationRequirement
+                    ?.completedCredits ??
+                  null,
+
+                remainingCredits:
+                  portalQualificationRequirement
+                    ?.remainingCredits ??
+                  null,
+
+                practiceHours:
+                  portalQualificationRequirement
+                    ?.practiceHours ??
+                  null,
+
+                lawVersion:
+                  portalQualificationRequirement
+                    ?.lawVersion ??
+                  null,
+
+                /**
+                 * 사회복지사 2급은
+                 * 필수 / 선택 과목을 따로 보여준다.
+                 *
+                 * 구법/신법 및 담당자 Override까지
+                 * 공통 Qualification Engine에서
+                 * 이미 반영된 최종값만 사용한다.
+                 */
+                socialWorker:
+                  portalRequirements
+                    ?.courseKey ===
+                  "social_worker_2"
+                    ? {
+                        requiredSubjects:
+                          portalQualificationDetails
+                            .requiredSubjects ===
+                            null ||
+                          portalQualificationDetails
+                            .requiredSubjects ===
+                            undefined
+                            ? null
+                            : Number(
+                                portalQualificationDetails
+                                  .requiredSubjects
+                              ),
+
+                        completedRequiredSubjects:
+                          Number(
+                            portalQualificationDetails
+                              .completedRequiredSubjects ??
+                            0
+                          ),
+
+                        remainingRequiredSubjects:
+                          portalQualificationDetails
+                            .remainingRequiredSubjects ===
+                            null ||
+                          portalQualificationDetails
+                            .remainingRequiredSubjects ===
+                            undefined
+                            ? null
+                            : Number(
+                                portalQualificationDetails
+                                  .remainingRequiredSubjects
+                              ),
+
+                        electiveSubjects:
+                          portalQualificationDetails
+                            .electiveSubjects ===
+                            null ||
+                          portalQualificationDetails
+                            .electiveSubjects ===
+                            undefined
+                            ? null
+                            : Number(
+                                portalQualificationDetails
+                                  .electiveSubjects
+                              ),
+
+                        completedElectiveSubjects:
+                          Number(
+                            portalQualificationDetails
+                              .completedElectiveSubjects ??
+                            0
+                          ),
+
+                        remainingElectiveSubjects:
+                          portalQualificationDetails
+                            .remainingElectiveSubjects ===
+                            null ||
+                          portalQualificationDetails
+                            .remainingElectiveSubjects ===
+                            undefined
+                            ? null
+                            : Number(
+                                portalQualificationDetails
+                                  .remainingElectiveSubjects
+                              ),
+
+                        totalSubjects:
+                          portalQualificationDetails
+                            .totalSubjects ===
+                            null ||
+                          portalQualificationDetails
+                            .totalSubjects ===
+                            undefined
+                            ? portalQualificationRequirement
+                                ?.requiredSubjects ??
+                              null
+                            : Number(
+                                portalQualificationDetails
+                                  .totalSubjects
+                              ),
+
+                        completedTotalSubjects:
+                          portalQualificationDetails
+                            .completedTotalSubjects ===
+                            null ||
+                          portalQualificationDetails
+                            .completedTotalSubjects ===
+                            undefined
+                            ? portalQualificationRequirement
+                                ?.completedSubjects ??
+                              null
+                            : Number(
+                                portalQualificationDetails
+                                  .completedTotalSubjects
+                              ),
+
+                        remainingTotalSubjects:
+                          portalQualificationDetails
+                            .remainingTotalSubjects ===
+                            null ||
+                          portalQualificationDetails
+                            .remainingTotalSubjects ===
+                            undefined
+                            ? portalQualificationRequirement
+                                ?.remainingSubjects ??
+                              null
+                            : Number(
+                                portalQualificationDetails
+                                  .remainingTotalSubjects
+                              ),
+
+                        hasPractice:
+                          portalQualificationDetails
+                            .hasPractice ===
+                          true,
+                      }
+                    : null,
+              },
+
+              /**
+               * 새 학위과정이 필요한 회원의
+               * 학위 취득요건.
+               *
+               * 예:
+               * 사회복지사 2급 + 고졸
+               * → 전문학사 학위과정 필요
+               *
+               * 기존 전문대졸/대졸 등으로
+               * 새 학위가 필요하지 않으면
+               * requiresNewDegreeTrack=false.
+               */
+              degree: {
+                requiresDegree:
+                  portalDegreeRequirement
+                    ?.requiresDegree ===
+                  true,
+
+                requiresNewDegreeTrack:
+                  portalDegreeRequirement
+                    ?.requiresNewDegreeTrack ===
+                  true,
+
+                existingDegreeSatisfiesRequirement:
+                  portalDegreeRequirement
+                    ?.existingDegreeSatisfiesRequirement ===
+                  true,
+
+                minimumDegreeLevel:
+                  portalDegreeRequirement
+                    ?.minimumDegreeLevel ??
+                  "none",
+
+                degreeType:
+                  portalDegreeRequirement
+                    ?.degreeType ??
+                  null,
+
+                requiredTotalCredits:
+                  portalDegreeRequirement
+                    ?.requiredTotalCredits ??
+                  null,
+
+                currentTotalCredits:
+                  Number(
+                    portalDegreeRequirement
+                      ?.currentTotalCredits ??
+                    0
+                  ),
+
+                remainingTotalCredits:
+                  portalDegreeRequirement
+                    ?.remainingTotalCredits ??
+                  null,
+
+                requiredMajorCredits:
+                  portalDegreeRequirement
+                    ?.requiredMajorCredits ??
+                  null,
+
+                currentMajorCredits:
+                  Number(
+                    portalDegreeRequirement
+                      ?.currentMajorCredits ??
+                    0
+                  ),
+
+                remainingMajorCredits:
+                  portalDegreeRequirement
+                    ?.remainingMajorCredits ??
+                  null,
+
+                requiredLiberalCredits:
+                  portalDegreeRequirement
+                    ?.requiredLiberalCredits ??
+                  null,
+
+                currentLiberalCredits:
+                  Number(
+                    portalDegreeRequirement
+                      ?.currentLiberalCredits ??
+                    0
+                  ),
+
+                remainingLiberalCredits:
+                  portalDegreeRequirement
+                    ?.remainingLiberalCredits ??
+                  null,
+
+                currentGeneralCredits:
+                  Number(
+                    portalDegreeRequirement
+                      ?.currentGeneralCredits ??
+                    0
+                  ),
+
+                reason:
+                  portalDegreeRequirement
+                    ?.reason ??
+                  null,
+              },
+            };
+
+            /**
+             * -------------------------------------------------
              * 등록자용 전체 과목 진행현황
              * -------------------------------------------------
              */
@@ -5491,10 +5888,12 @@ export const appRouter = router({
                   null,
               },
 
-                              plan:
+                                            plan:
                 planSummary,
 
-                            qualificationProgress,
+              qualificationProgress,
+
+              requirementSummary,
 
               learningProgress,
 
