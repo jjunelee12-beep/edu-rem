@@ -69,6 +69,7 @@ User,
 FileCheck2,
 CreditCard,
 Database,
+PanelsTopLeft,
 } from "lucide-react";
 
 type UserRole = "staff" | "admin" | "host" | "superhost";
@@ -106,6 +107,7 @@ const adminMenuItems: MenuItem[] = [
 ];
 
 const hostMenuItems: MenuItem[] = [
+ { icon: PanelsTopLeft, label: "업무포털", path: "/portal-management" },
  { icon: Settings, label: "시스템 관리", path: "/system" },
  { icon: Calculator, label: "정산 리포트", path: "/settlement" },
  { icon: GraduationCap, label: "교육원 관리", path: "/education-institutions" },

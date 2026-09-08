@@ -3604,16 +3604,34 @@ const getCountStatusClass = (current: number, target: number) => {
                         procedure.statusChangedAt
                       )}
                       {" · "}
-                      {procedure.statusChangedBy
+                                            {procedure.referenceType ===
+                      "student_portal"
                         ? `${
-                            userMap.get(
-                              Number(
-                                procedure.statusChangedBy
-                              )
-                            ) ||
-                            "담당자"
-                          } 상태 변경`
-                        : "상태 변경"}
+                            String(
+                              student?.clientName ||
+                              "등록회원"
+                            ).trim() ||
+                            "등록회원"
+                          } 회원 · 업무포털 완료`
+                        : procedure.sourceType ===
+                            "KAKAO_AI"
+                          ? "카카오 AI 상태 변경"
+                          : procedure.sourceType ===
+                              "SYSTEM_AI"
+                            ? "시스템 AI 상태 변경"
+                            : procedure.statusChangedBy
+                              ? `${
+                                  userMap.get(
+                                    Number(
+                                      procedure.statusChangedBy
+                                    )
+                                  ) ||
+                                  "담당자"
+                                } 상태 변경`
+                              : procedure.sourceType ===
+                                  "SYSTEM"
+                                ? "시스템 상태 변경"
+                                : "상태 변경"}
                     </p>
                   )}
                 </div>

@@ -106,6 +106,7 @@ import {
 
 import {
   analyzeStudentDetailRisk,
+  analyzeVerifiedStudentDetailRisk,
 } from "./ai/ai-risk-engine";
 
 import {
@@ -2753,13 +2754,3392 @@ async function confirmAiPendingActionForCurrentUser(
   });
 }
 
+type StudentPortalAdministrativeProcedureType =
+  | "learner_registration"
+  | "credit_recognition"
+  | "degree_application"
+  | "qualification_application";
+
+const STUDENT_PORTAL_ADMINISTRATIVE_COMPLETION_META:
+  Record<
+    StudentPortalAdministrativeProcedureType,
+    {
+      auditTitle: string;
+      evidenceSummary: string;
+    }
+  > = {
+    learner_registration: {
+      auditTitle:
+        "학습자등록 업무포털 완료",
+
+      evidenceSummary:
+        "등록회원 본인이 업무포털에서 학습자등록 완료를 직접 확인하여 완료처리했습니다.",
+    },
+
+    credit_recognition: {
+      auditTitle:
+        "학점인정신청 업무포털 완료",
+
+      evidenceSummary:
+        "등록회원 본인이 업무포털에서 학점인정신청 및 결제 완료를 직접 확인하여 완료처리했습니다.",
+    },
+
+    degree_application: {
+      auditTitle:
+        "학위신청 업무포털 완료",
+
+      evidenceSummary:
+        "등록회원 본인이 업무포털에서 학위신청 완료를 직접 확인하여 완료처리했습니다.",
+    },
+
+    qualification_application: {
+      auditTitle:
+        "자격증 신청 업무포털 완료",
+
+      evidenceSummary:
+        "등록회원 본인이 업무포털에서 자격증 신청 완료를 직접 확인하여 완료처리했습니다.",
+    },
+  };
+
+/**
+ * ---------------------------------------------------------
+ * 업무포털 행정절차 완료 공통 처리
+ * ---------------------------------------------------------
+ *
+ * 등록회원 업무포털에서 처리하는
+ *
+ * - 학습자등록
+ * - 학점인정신청
+ * - 학위신청
+ * - 자격증 신청
+ *
+ * 완료처리를 하나의 공통 로직으로 관리한다.
+ *
+ * 보안 원칙:
+ *
+ * 브라우저에서는 Portal Token만 전달한다.
+ *
+ * organizationId / studentId /
+ * procedureType / status /
+ * 이름 / 전화번호를 브라우저 입력값으로 신뢰하지 않는다.
+ *
+ * 실제 대상 학생은 Portal Session에서만 확정한다.
+ */
+async function completeStudentPortalAdministrativeProcedure(
+  params: {
+    token: string;
+
+    procedureType:
+      StudentPortalAdministrativeProcedureType;
+  }
+) {
+  const {
+    token,
+    procedureType,
+  } = params;
+
+  /**
+   * -------------------------------------------------------
+   * 1. Portal Session 검증
+   * -------------------------------------------------------
+   */
+  const session =
+    await db.getStudentPortalSessionByToken({
+      token,
+    });
+
+  if (
+    !session ||
+    session.usable !== true
+  ) {
+    throwAppError(
+      ERROR_CODES.AUTH_REQUIRED,
+      "업무포털 인증이 만료되었거나 유효하지 않습니다.",
+      401
+    );
+  }
+
+  /**
+   * -------------------------------------------------------
+   * 2. CRM 행정절차 원본 조회
+   * -------------------------------------------------------
+   *
+   * 별도 Portal 상태를 만들지 않는다.
+   *
+   * CRM 학생 상세페이지가 사용하는
+   * student_administrative_procedures의
+   * 동일 레코드를 조회한다.
+   */
+  const currentProcedure =
+    await db.getStudentAdministrativeProcedure({
+      organizationId:
+        session.organizationId,
+
+      studentId:
+        session.studentId,
+
+      procedureType,
+    });
+
+  /**
+   * -------------------------------------------------------
+   * 3. 이미 완료된 경우 원본 보존
+   * -------------------------------------------------------
+   *
+   * 담당자 또는 다른 시스템이 먼저 완료한 경우
+   * 업무포털 출처로 덮어쓰면 안 된다.
+   */
+  if (
+    currentProcedure?.status ===
+    "completed"
+  ) {
+    await db.touchStudentPortalSession({
+      sessionId:
+        session.id,
+
+      organizationId:
+        session.organizationId,
+    });
+
+    return {
+      success:
+        true as const,
+
+      alreadyCompleted:
+        true as const,
+
+      procedure: {
+        procedureType:
+          currentProcedure.procedureType,
+
+        status:
+          currentProcedure.status,
+
+        sourceType:
+          currentProcedure.sourceType,
+
+        completedAt:
+          currentProcedure.completedAt
+            ? new Date(
+                currentProcedure.completedAt
+              ).toISOString()
+            : null,
+
+        statusChangedAt:
+          currentProcedure.statusChangedAt
+            ? new Date(
+                currentProcedure.statusChangedAt
+              ).toISOString()
+            : null,
+
+        referenceType:
+          currentProcedure.referenceType ??
+          null,
+      },
+    };
+  }
+
+  /**
+   * -------------------------------------------------------
+   * 4. 기존 reportedDate 보존
+   * -------------------------------------------------------
+   *
+   * 담당자가 이미 날짜를 입력해둔 경우
+   * Portal 완료처리 때문에 지우지 않는다.
+   */
+  const currentReportedDate =
+    currentProcedure?.reportedDate
+      ? (
+          currentProcedure.reportedDate instanceof
+          Date
+            ? currentProcedure.reportedDate
+                .toISOString()
+                .slice(
+                  0,
+                  10
+                )
+            : (
+                String(
+                  currentProcedure.reportedDate
+                ).match(
+                  /^(\d{4}-\d{2}-\d{2})/
+                )?.[1] ??
+                null
+              )
+        )
+      : null;
+
+  const completionMeta =
+    STUDENT_PORTAL_ADMINISTRATIVE_COMPLETION_META[
+      procedureType
+    ];
+
+  /**
+   * -------------------------------------------------------
+   * 5. 공통 행정절차 Service 완료처리
+   * -------------------------------------------------------
+   *
+   * CRM 직원 수정과 동일한 원본 레코드를 사용한다.
+   *
+   * 현재 DB sourceType enum은 SYSTEM을 사용하고
+   * 실제 업무포털 출처는
+   *
+   * referenceType = student_portal
+   *
+   * 로 기록한다.
+   */
+  const result =
+    await updateAdministrativeProcedure({
+      organizationId:
+        session.organizationId,
+
+      studentId:
+        session.studentId,
+
+      procedureType,
+
+      status:
+        "completed",
+
+      sourceType:
+        "SYSTEM",
+
+      actorUserId:
+        null,
+
+      reportedDate:
+        currentReportedDate,
+
+      evidenceSummary:
+        completionMeta.evidenceSummary,
+
+      referenceType:
+        "student_portal",
+
+      referenceId:
+        String(
+          session.id
+        ),
+
+      /**
+       * 기존 담당자 메모 보존.
+       */
+      memo:
+        currentProcedure?.memo ??
+        null,
+    });
+
+  const before =
+    result.before;
+
+  const updated =
+    result.data;
+
+  /**
+   * -------------------------------------------------------
+   * 6. 학생 변경이력 기록
+   * -------------------------------------------------------
+   *
+   * Portal Session에서 인증된 등록회원 이름을
+   * 실제 작업자로 기록한다.
+   *
+   * CRM 직원 계정이 아니므로
+   * actorUserId는 null이다.
+   */
+  if (
+    result.changed
+  ) {
+    const actorName =
+      String(
+        session.student
+          ?.clientName ||
+        "등록회원"
+      ).trim() ||
+      "등록회원";
+
+    await db.createStudentAuditLog({
+      organizationId:
+        session.organizationId,
+
+      studentId:
+        session.studentId,
+
+      entityType:
+        "administrative_procedure",
+
+      entityId:
+        Number(
+          (updated as any)
+            ?.id ||
+          (before as any)
+            ?.id ||
+          0
+        ) ||
+        null,
+
+      action:
+        before
+          ? "update"
+          : "create",
+
+      title:
+        completionMeta.auditTitle,
+
+      beforeJson:
+        normalizeAuditJson(
+          before
+        ),
+
+      afterJson:
+        normalizeAuditJson(
+          updated
+        ),
+
+      diffJson:
+        buildAuditDiff(
+          before,
+          updated
+        ),
+
+      actorUserId:
+        null,
+
+      actorName,
+
+      actorRole:
+        "student_portal",
+
+      ipAddress:
+        null,
+
+      userAgent:
+        null,
+    });
+  }
+
+  /**
+   * -------------------------------------------------------
+   * 7. Portal Session 사용시간 갱신
+   * -------------------------------------------------------
+   */
+  await db.touchStudentPortalSession({
+    sessionId:
+      session.id,
+
+    organizationId:
+      session.organizationId,
+  });
+
+  /**
+   * -------------------------------------------------------
+   * 8. Portal에 필요한 최소 응답만 반환
+   * -------------------------------------------------------
+   */
+  return {
+    success:
+      true as const,
+
+    alreadyCompleted:
+      false as const,
+
+    procedure: {
+      procedureType:
+        updated.procedureType,
+
+      status:
+        updated.status,
+
+      sourceType:
+        updated.sourceType,
+
+      completedAt:
+        updated.completedAt
+          ? new Date(
+              updated.completedAt
+            ).toISOString()
+          : null,
+
+      statusChangedAt:
+        updated.statusChangedAt
+          ? new Date(
+              updated.statusChangedAt
+            ).toISOString()
+          : null,
+
+      referenceType:
+        updated.referenceType ??
+        null,
+    },
+  };
+}
+
 export const appRouter = router({
   system: systemRouter,
   leadForm: publicLeadRouter,
   sms: smsRouter,
-saas: saasRouter,
+  saas: saasRouter,
 
-withOneLanding: router({
+  // ─── Student Portal (등록자 업무포털) ───────────────────────────────
+  studentPortal: router({
+    /**
+     * ---------------------------------------------------------
+     * 공개 포털 기본정보
+     * ---------------------------------------------------------
+     *
+     * /portal/:slug 최초 진입 시 사용.
+     *
+     * 브라우저가 organizationId를 전달하지 않는다.
+     * slug를 기준으로 서버가 회사를 확정한다.
+     */
+    publicInfo:
+      publicProcedure
+        .input(
+          z.object({
+            slug:
+              z
+                .string()
+                .trim()
+                .min(
+                  1,
+                  "업무포털 주소가 필요합니다."
+                )
+                .max(100),
+          })
+        )
+        .query(
+          async ({
+            input,
+          }) => {
+            const portal =
+              await db.getPublicStudentPortalBySlug(
+                input.slug
+              );
+
+            if (!portal) {
+              throwAppError(
+                ERROR_CODES.DATA_NOT_FOUND,
+                "현재 사용할 수 없는 업무포털입니다.",
+                404
+              );
+            }
+
+            /**
+             * organizationId는 내부 처리용이므로
+             * 공개 bootstrap 응답에서는 제외한다.
+             */
+            return {
+              slug:
+                portal.slug,
+
+              portalName:
+                portal.portalName,
+
+              welcomeMessage:
+                portal.welcomeMessage,
+
+              portalImageUrl:
+                portal.portalImageUrl,
+
+              companyName:
+                portal.companyName,
+
+              companyLogoUrl:
+                portal.companyLogoUrl,
+
+              primaryColor:
+                portal.primaryColor,
+
+              supportText:
+                portal.supportText,
+
+              supportUrl:
+                portal.supportUrl,
+            };
+          }
+        ),
+
+
+    /**
+     * ---------------------------------------------------------
+     * 등록회원 인증 + Portal Session 발급
+     * ---------------------------------------------------------
+     *
+     * 인증 순서:
+     *
+     * slug
+     * → organizationId 서버 확정
+     * → 동일 회사 내부에서
+     *   이름 + 전화번호 Hash 일치 학생 확인
+     * → Portal Session 생성
+     *
+     * 클라이언트가 studentId / organizationId를
+     * 직접 지정할 수 없다.
+     */
+    login:
+      publicProcedure
+        .input(
+          z.object({
+            slug:
+              z
+                .string()
+                .trim()
+                .min(
+                  1,
+                  "업무포털 주소가 필요합니다."
+                )
+                .max(100),
+
+            clientName:
+              z
+                .string()
+                .trim()
+                .min(
+                  1,
+                  "이름을 입력해주세요."
+                )
+                .max(
+                  100,
+                  "이름이 너무 깁니다."
+                ),
+
+            phone:
+              z
+                .string()
+                .trim()
+                .min(
+                  10,
+                  "연락처를 입력해주세요."
+                )
+                .max(
+                  30,
+                  "연락처 형식이 올바르지 않습니다."
+                ),
+          })
+        )
+        .mutation(
+          async ({
+            input,
+          }) => {
+            const result =
+              await db.authenticateStudentPortalMember({
+                slug:
+                  input.slug,
+
+                clientName:
+                  input.clientName,
+
+                phone:
+                  input.phone,
+              });
+
+            if (
+              !result.authenticated ||
+              !result.student ||
+              !result.portal
+            ) {
+              /**
+               * duplicate도 외부에 자세히 노출하지 않는다.
+               *
+               * 등록자 입장에서는 동일한 실패문구를 사용하고
+               * DB 구조/중복 여부를 추측하지 못하게 한다.
+               */
+              throwAppError(
+                ERROR_CODES.INVALID_LOGIN,
+                "등록회원 정보를 확인할 수 없습니다. 이름과 휴대전화번호를 다시 확인해주세요.",
+                401
+              );
+            }
+
+            const session =
+              await db.createStudentPortalSession({
+                organizationId:
+                  result.portal
+                    .organizationId,
+
+                studentId:
+                  Number(
+                    result.student.id
+                  ),
+
+                expiresInDays:
+                  7,
+              });
+
+            return {
+              success:
+                true as const,
+
+              /**
+               * 다음 요청부터 사용할 Portal Token.
+               *
+               * DB에는 원본이 아니라 Hash만 저장됨.
+               */
+              token:
+                session.token,
+
+              expiresAt:
+                session.expiresAt,
+
+              student: {
+                clientName:
+                  result.student
+                    .clientName ??
+                  null,
+
+                course:
+                  result.student
+                    .course ??
+                  null,
+
+                finalEducation:
+                  result.student
+                    .finalEducation ??
+                  null,
+              },
+
+              portal: {
+                slug:
+                  result.portal.slug,
+
+                portalName:
+                  result.portal
+                    .portalName,
+
+                companyName:
+                  result.portal
+                    .companyName,
+
+                companyLogoUrl:
+                  result.portal
+                    .companyLogoUrl,
+
+                primaryColor:
+                  result.portal
+                    .primaryColor,
+              },
+            };
+          }
+        ),
+
+
+    /**
+     * ---------------------------------------------------------
+     * 현재 로그인 학생 정보
+     * ---------------------------------------------------------
+     *
+     * studentId / organizationId를 입력으로 받지 않는다.
+     *
+     * Portal Token
+     * → session
+     * → organizationId + studentId
+     * → 학생 조회
+     */
+    me:
+      publicProcedure
+        .input(
+          z.object({
+            token:
+              z
+                .string()
+                .trim()
+                .min(
+                  1,
+                  "업무포털 인증정보가 필요합니다."
+                )
+                .max(255),
+          })
+        )
+        .query(
+          async ({
+            input,
+          }) => {
+            const session =
+              await db.getStudentPortalSessionByToken({
+                token:
+                  input.token,
+              });
+
+            if (
+              !session ||
+              session.usable !==
+                true
+            ) {
+              throwAppError(
+                ERROR_CODES.AUTH_REQUIRED,
+                "업무포털 인증이 만료되었거나 유효하지 않습니다.",
+                401
+              );
+            }
+
+            await db.touchStudentPortalSession({
+              sessionId:
+                session.id,
+
+              organizationId:
+                session.organizationId,
+            });
+
+            /**
+             * session.student는
+             * DB 내부에서 organizationId + studentId로
+             * 다시 조회된 데이터다.
+             *
+             * 개인정보 전체를 반환하지 않고
+             * 포털 1차 화면에 필요한 항목만 반환한다.
+             */
+            return {
+              authenticated:
+                true as const,
+
+              student: {
+                clientName:
+                  session.student
+                    ?.clientName ??
+                  null,
+
+                course:
+                  session.student
+                    ?.course ??
+                  null,
+
+                finalEducation:
+                  session.student
+                    ?.finalEducation ??
+                  null,
+
+                status:
+                  session.student
+                    ?.status ??
+                  null,
+
+                startDate:
+                  session.student
+                    ?.startDate ??
+                  null,
+              },
+
+              session: {
+                expiresAt:
+                  session.expiresAt,
+              },
+            };
+          }
+        ),
+
+    /**
+     * ---------------------------------------------------------
+     * 등록자 마이 업무
+     * ---------------------------------------------------------
+     *
+     * 등록자가 담당자가 CRM에서 입력한 관리값을
+     * 읽기 전용으로 조회한다.
+     *
+     * 브라우저에서는 token만 전달한다.
+     *
+     * token
+     * → Portal Session
+     * → organizationId + studentId 서버 확정
+     * → CRM 관리 원본 조회
+     * → 등록자용 안전 DTO 반환
+     */
+    myWork:
+      publicProcedure
+        .input(
+          z.object({
+            token:
+              z
+                .string()
+                .trim()
+                .min(
+                  1,
+                  "업무포털 인증정보가 필요합니다."
+                )
+                .max(255),
+          })
+        )
+        .query(
+          async ({
+            input,
+          }) => {
+            const session =
+              await db.getStudentPortalSessionByToken({
+                token:
+                  input.token,
+              });
+
+            if (
+              !session ||
+              session.usable !==
+                true
+            ) {
+              throwAppError(
+                ERROR_CODES.AUTH_REQUIRED,
+                "업무포털 인증이 만료되었거나 유효하지 않습니다.",
+                401
+              );
+            }
+
+            const source =
+              await db.getStudentPortalMyWorkSource({
+                organizationId:
+                  session.organizationId,
+
+                studentId:
+                  session.studentId,
+              });
+
+            if (!source) {
+              throwAppError(
+                ERROR_CODES.AUTH_REQUIRED,
+                "등록회원 정보를 확인할 수 없습니다.",
+                401
+              );
+            }
+
+            await db.touchStudentPortalSession({
+              sessionId:
+                session.id,
+
+              organizationId:
+                session.organizationId,
+            });
+
+            const student =
+              source.student;
+
+            const plan =
+              source.plan;
+
+            /**
+             * -------------------------------------------------
+             * 등록자 공통 학점 / 자격 / 행정 엔진
+             * -------------------------------------------------
+             *
+             * CRM 직원용 AI Context를 만들지 않는다.
+             *
+             * Portal Session에서 서버가 확정한
+             * organizationId + studentId만 사용하여
+             * verified_student 권한으로 동일 공통엔진을 실행한다.
+             */
+            const portalEngine =
+              await analyzeVerifiedStudentDetailRisk({
+                organizationId:
+                  session.organizationId,
+
+                verifiedStudentId:
+                  session.studentId,
+              });
+
+            /**
+             * -------------------------------------------------
+             * 등록회원 실제 행정절차 상태
+             * -------------------------------------------------
+             *
+             * CRM 상세페이지와 동일한
+             * student_administrative_procedures를 조회한다.
+             *
+             * 별도의 Portal 상태 테이블을 만들지 않는다.
+             */
+            const portalAdministrativeProcedures =
+              await db.getStudentAdministrativeProcedures({
+                organizationId:
+                  session.organizationId,
+
+                studentId:
+                  session.studentId,
+              });
+
+            /**
+             * YYYY-MM-DD 형태로 사용할 수 있는
+             * 실제 날짜만 정규화한다.
+             *
+             * plannedMonth는 여기서 날짜로 변환하지 않는다.
+             * 예정월이 YYYY-MM뿐인데 임의로 1일을 만들지 않기 위함이다.
+             */
+            const normalizePortalDate =
+              (
+                value:
+                  unknown
+              ): string | null => {
+                if (
+                  value ===
+                    null ||
+                  value ===
+                    undefined ||
+                  value ===
+                    ""
+                ) {
+                  return null;
+                }
+
+                if (
+                  value instanceof
+                    Date &&
+                  !Number.isNaN(
+                    value.getTime()
+                  )
+                ) {
+                  return [
+                    String(
+                      value.getUTCFullYear()
+                    ).padStart(
+                      4,
+                      "0"
+                    ),
+
+                    String(
+                      value.getUTCMonth() +
+                      1
+                    ).padStart(
+                      2,
+                      "0"
+                    ),
+
+                    String(
+                      value.getUTCDate()
+                    ).padStart(
+                      2,
+                      "0"
+                    ),
+                  ].join("-");
+                }
+
+                const normalized =
+                  String(
+                    value
+                  ).trim();
+
+                const matched =
+                  normalized.match(
+                    /^(\d{4})-(\d{2})-(\d{2})/
+                  );
+
+                if (
+                  !matched
+                ) {
+                  return null;
+                }
+
+                const year =
+                  Number(
+                    matched[1]
+                  );
+
+                const month =
+                  Number(
+                    matched[2]
+                  );
+
+                const day =
+                  Number(
+                    matched[3]
+                  );
+
+                const date =
+                  new Date(
+                    Date.UTC(
+                      year,
+                      month - 1,
+                      day
+                    )
+                  );
+
+                if (
+                  date.getUTCFullYear() !==
+                    year ||
+                  date.getUTCMonth() !==
+                    month - 1 ||
+                  date.getUTCDate() !==
+                    day
+                ) {
+                  return null;
+                }
+
+                return [
+                  String(
+                    year
+                  ).padStart(
+                    4,
+                    "0"
+                  ),
+
+                  String(
+                    month
+                  ).padStart(
+                    2,
+                    "0"
+                  ),
+
+                  String(
+                    day
+                  ).padStart(
+                    2,
+                    "0"
+                  ),
+                ].join("-");
+              };
+
+            /**
+             * 날짜 문자열을 UTC 자정 Date로 변환.
+             */
+            const portalDateToUtc =
+              (
+                value:
+                  string | null
+              ): Date | null => {
+                if (!value) {
+                  return null;
+                }
+
+                const matched =
+                  value.match(
+                    /^(\d{4})-(\d{2})-(\d{2})$/
+                  );
+
+                if (!matched) {
+                  return null;
+                }
+
+                return new Date(
+                  Date.UTC(
+                    Number(
+                      matched[1]
+                    ),
+
+                    Number(
+                      matched[2]
+                    ) - 1,
+
+                    Number(
+                      matched[3]
+                    )
+                  )
+                );
+              };
+
+            /**
+             * 실제 개강일부터 4개월.
+             *
+             * 기존 공통 Risk Engine의
+             * 학업 진행 판정과 동일한 규칙을 사용한다.
+             */
+            const addPortalAcademicMonths =
+              (
+                date:
+                  Date,
+
+                months:
+                  number
+              ): Date => {
+                const targetMonthStart =
+                  new Date(
+                    Date.UTC(
+                      date.getUTCFullYear(),
+                      date.getUTCMonth() +
+                        months,
+                      1
+                    )
+                  );
+
+                const targetYear =
+                  targetMonthStart.getUTCFullYear();
+
+                const targetMonth =
+                  targetMonthStart.getUTCMonth();
+
+                const lastDay =
+                  new Date(
+                    Date.UTC(
+                      targetYear,
+                      targetMonth +
+                        1,
+                      0
+                    )
+                  ).getUTCDate();
+
+                return new Date(
+                  Date.UTC(
+                    targetYear,
+                    targetMonth,
+                    Math.min(
+                      date.getUTCDate(),
+                      lastDay
+                    )
+                  )
+                );
+              };
+
+            const portalDateToString =
+              (
+                date:
+                  Date
+              ): string =>
+                [
+                  String(
+                    date.getUTCFullYear()
+                  ).padStart(
+                    4,
+                    "0"
+                  ),
+
+                  String(
+                    date.getUTCMonth() +
+                    1
+                  ).padStart(
+                    2,
+                    "0"
+                  ),
+
+                  String(
+                    date.getUTCDate()
+                  ).padStart(
+                    2,
+                    "0"
+                  ),
+                ].join("-");
+
+            /**
+             * 한국시간 오늘.
+             */
+            const portalKstNow =
+              new Date(
+                Date.now() +
+                  9 *
+                    60 *
+                    60 *
+                    1000
+              );
+
+            const portalToday =
+              new Date(
+                Date.UTC(
+                  portalKstNow.getUTCFullYear(),
+                  portalKstNow.getUTCMonth(),
+                  portalKstNow.getUTCDate()
+                )
+              );
+
+            /**
+             * -------------------------------------------------
+             * 학기 원본
+             * -------------------------------------------------
+             *
+             * 담당자가 학생 상세페이지에서 입력한
+             * semesters Row 기준.
+             *
+             * 날짜를 새로 만들거나
+             * 담당자 값을 변경하지 않는다.
+             */
+            const semesterRows =
+              [...source.semesters]
+                .sort(
+                  (
+                    a: any,
+                    b: any
+                  ) =>
+                    Number(
+                      a.semesterOrder ||
+                      0
+                    ) -
+                    Number(
+                      b.semesterOrder ||
+                      0
+                    )
+                )
+                .map(
+                  (
+                    row: any
+                  ) => ({
+                    id:
+                      Number(
+                        row.id
+                      ),
+
+                    semesterOrder:
+                      Number(
+                        row.semesterOrder ||
+                        0
+                      ),
+
+                    semesterLabel:
+                      row.semesterLabel ??
+                      null,
+
+                    /**
+                     * 담당자가 등록 전 예정표에 입력한 값.
+                     */
+                    plannedMonth:
+                      row.plannedMonth ??
+                      null,
+
+                    /**
+                     * 실제 등록 후 담당자가 확정한 개강일.
+                     *
+                     * 실제값이 있으면 프론트에서
+                     * 예정월보다 우선 표시한다.
+                     */
+                    actualStartDate:
+                      row.actualStartDate ??
+                      null,
+
+                    status:
+                      row.status ??
+                      null,
+
+                    approvalStatus:
+                      row.approvalStatus ??
+                      null,
+
+                    isCompleted:
+                      row.isCompleted ===
+                      true,
+
+                    primaryCourse:
+                      row.primaryCourse ??
+                      null,
+
+                    registeredCourses:
+                      Array.isArray(
+                        row.registeredCourses
+                      )
+                        ? row.registeredCourses
+                        : [],
+
+                    plannedSubjectCount:
+                      row.plannedSubjectCount ??
+                      null,
+
+                    actualSubjectCount:
+                      row.actualSubjectCount ??
+                      null,
+                  })
+                );
+
+            /**
+             * -------------------------------------------------
+             * 등록자용 학기 진행상태
+             * -------------------------------------------------
+             *
+             * 담당자 원본값은 그대로 유지하고
+             * 화면 표시용 상태만 계산한다.
+             *
+             * 우선순위:
+             *
+             * isCompleted=true
+             * → 완료
+             *
+             * 실제 개강일 존재
+             * → 날짜 기준 예정 / 진행중 / 완료
+             *
+             * 실제 개강일 없음 + 예정월 존재
+             * → 예정
+             *
+             * 둘 다 없음
+             * → 확인필요
+             */
+            const semesterProgressRows =
+              semesterRows.map(
+                (
+                  semester:
+                    any
+                ) => {
+                  const actualStartDate =
+                    normalizePortalDate(
+                      semester.actualStartDate
+                    );
+
+                  const startDate =
+                    portalDateToUtc(
+                      actualStartDate
+                    );
+
+                  if (
+                    semester.isCompleted ===
+                    true
+                  ) {
+                    return {
+                      ...semester,
+
+                      progressStatus:
+                        "completed" as const,
+
+                      progressLabel:
+                        "완료",
+
+                      progressPercent:
+                        null,
+
+                      progressStartDate:
+                        actualStartDate,
+
+                      progressEndDate:
+                        startDate
+                          ? portalDateToString(
+                              addPortalAcademicMonths(
+                                startDate,
+                                4
+                              )
+                            )
+                          : null,
+                    };
+                  }
+
+                  if (
+                    startDate
+                  ) {
+                    const endDate =
+                      addPortalAcademicMonths(
+                        startDate,
+                        4
+                      );
+
+                    if (
+                      portalToday.getTime() <
+                      startDate.getTime()
+                    ) {
+                      return {
+                        ...semester,
+
+                        progressStatus:
+                          "scheduled" as const,
+
+                        progressLabel:
+                          "예정",
+
+                        progressPercent:
+                          null,
+
+                        progressStartDate:
+                          actualStartDate,
+
+                        progressEndDate:
+                          portalDateToString(
+                            endDate
+                          ),
+                      };
+                    }
+
+                    if (
+                      portalToday.getTime() <
+                      endDate.getTime()
+                    ) {
+                      const totalDays =
+                        Math.max(
+                          1,
+                          Math.ceil(
+                            (
+                              endDate.getTime() -
+                              startDate.getTime()
+                            ) /
+                              86_400_000
+                          )
+                        );
+
+                      const elapsedDays =
+                        Math.max(
+                          0,
+                          Math.floor(
+                            (
+                              portalToday.getTime() -
+                              startDate.getTime()
+                            ) /
+                              86_400_000
+                          )
+                        );
+
+                      const percent =
+                        Math.min(
+                          99,
+                          Math.max(
+                            1,
+                            Math.round(
+                              (
+                                elapsedDays /
+                                totalDays
+                              ) *
+                                100
+                            )
+                          )
+                        );
+
+                      return {
+                        ...semester,
+
+                        progressStatus:
+                          "in_progress" as const,
+
+                        progressLabel:
+                          "진행중",
+
+                        progressPercent:
+                          percent,
+
+                        progressStartDate:
+                          actualStartDate,
+
+                        progressEndDate:
+                          portalDateToString(
+                            endDate
+                          ),
+                      };
+                    }
+
+                    return {
+                      ...semester,
+
+                      progressStatus:
+                        "completed" as const,
+
+                      progressLabel:
+                        "완료",
+
+                      progressPercent:
+                        null,
+
+                      progressStartDate:
+                        actualStartDate,
+
+                      progressEndDate:
+                        portalDateToString(
+                          endDate
+                        ),
+                    };
+                  }
+
+                  if (
+                    String(
+                      semester.plannedMonth ||
+                      ""
+                    ).trim()
+                  ) {
+                    return {
+                      ...semester,
+
+                      progressStatus:
+                        "scheduled" as const,
+
+                      progressLabel:
+                        "예정",
+
+                      progressPercent:
+                        null,
+
+                      progressStartDate:
+                        null,
+
+                      progressEndDate:
+                        null,
+                    };
+                  }
+
+                  return {
+                    ...semester,
+
+                    progressStatus:
+                      "review_required" as const,
+
+                    progressLabel:
+                      "확인필요",
+
+                    progressPercent:
+                      null,
+
+                    progressStartDate:
+                      null,
+
+                    progressEndDate:
+                      null,
+                  };
+                }
+              );
+
+            /**
+             * -------------------------------------------------
+             * 예상 자격증 신청일
+             * -------------------------------------------------
+             *
+             * Portal이 새로 계산하지 않는다.
+             *
+             * 공통 Risk Engine
+             * → Semester Planner
+             * → Administrative Timeline
+             *
+             * 의 최종 결과를 그대로 사용한다.
+             */
+            const expectedQualificationDate =
+              normalizePortalDate(
+                portalEngine
+                  .administrativeTimeline
+                  ?.qualification
+                  ?.earliestEstimatedDate ??
+                  null
+              );
+
+            const expectedQualificationDateObject =
+              portalDateToUtc(
+                expectedQualificationDate
+              );
+
+            const expectedQualificationLabel =
+              expectedQualificationDateObject
+                ? `${expectedQualificationDateObject.getUTCFullYear()}년 ${
+                    expectedQualificationDateObject.getUTCMonth() +
+                    1
+                  }월`
+                : null;
+
+            /**
+             * 전체 진행률의 시작점:
+             * 실제 등록된 학기 중 가장 빠른 실제 개강일.
+             *
+             * actualStartDate가 하나도 없으면
+             * 시작일을 임의 추정하지 않는다.
+             */
+            const firstActualStartDate =
+              semesterProgressRows
+                .map(
+                  (
+                    semester:
+                      any
+                  ) =>
+                    portalDateToUtc(
+                      semester.progressStartDate
+                    )
+                )
+                .filter(
+                  (
+                    date
+                  ): date is Date =>
+                    Boolean(
+                      date
+                    )
+                )
+                .sort(
+                  (
+                    left,
+                    right
+                  ) =>
+                    left.getTime() -
+                    right.getTime()
+                )[0] ??
+              null;
+
+            /**
+             * 전체 진행률:
+             *
+             * 최초 실제 개강일
+             * → 공통엔진의 예상 자격증 신청일
+             *
+             * 사이에서 오늘의 위치를 계산한다.
+             *
+             * 시작일이나 최종일이 없으면
+             * 숫자를 지어내지 않고 null.
+             */
+            let overallProgressPercent:
+              number | null =
+              null;
+
+            if (
+              firstActualStartDate &&
+              expectedQualificationDateObject &&
+              expectedQualificationDateObject.getTime() >
+                firstActualStartDate.getTime()
+            ) {
+              const totalDuration =
+                expectedQualificationDateObject.getTime() -
+                firstActualStartDate.getTime();
+
+              const elapsedDuration =
+                portalToday.getTime() -
+                firstActualStartDate.getTime();
+
+              if (
+                elapsedDuration <=
+                0
+              ) {
+                overallProgressPercent =
+                  0;
+              } else if (
+                portalToday.getTime() >=
+                expectedQualificationDateObject.getTime()
+              ) {
+                overallProgressPercent =
+                  100;
+              } else {
+                overallProgressPercent =
+                  Math.min(
+                    99,
+                    Math.max(
+                      1,
+                      Math.round(
+                        (
+                          elapsedDuration /
+                          totalDuration
+                        ) *
+                          100
+                      )
+                    )
+                  );
+              }
+            }
+
+            /**
+             * -------------------------------------------------
+             * 우리플랜 과목
+             * -------------------------------------------------
+             *
+             * 담당자가 입력한:
+             *
+             * - 학기
+             * - 과목명
+             * - 영역
+             * - 취득요건
+             * - 학점
+             * - 재수강
+             *
+             * 을 그대로 공개용 DTO로 변환한다.
+             */
+            const subjectRows =
+              [...source.planSemesters]
+                .sort(
+                  (
+                    a: any,
+                    b: any
+                  ) => {
+                    const semesterDiff =
+                      Number(
+                        a.semesterNo ||
+                        0
+                      ) -
+                      Number(
+                        b.semesterNo ||
+                        0
+                      );
+
+                    if (
+                      semesterDiff !==
+                      0
+                    ) {
+                      return semesterDiff;
+                    }
+
+                    const sortDiff =
+                      Number(
+                        a.sortOrder ||
+                        0
+                      ) -
+                      Number(
+                        b.sortOrder ||
+                        0
+                      );
+
+                    if (
+                      sortDiff !==
+                      0
+                    ) {
+                      return sortDiff;
+                    }
+
+                    return (
+                      Number(
+                        a.id ||
+                        0
+                      ) -
+                      Number(
+                        b.id ||
+                        0
+                      )
+                    );
+                  }
+                )
+                .map(
+                  (
+                    row: any
+                  ) => ({
+                    id:
+                      Number(
+                        row.id
+                      ),
+
+                    semesterNo:
+                      Number(
+                        row.semesterNo ||
+                        0
+                      ),
+
+                    subjectName:
+                      row.subjectName ??
+                      null,
+
+                    category:
+                      row.planCategory ??
+                      null,
+
+                    requirementType:
+                      row.planRequirementType ??
+                      null,
+
+                    credits:
+                      Number(
+                        row.credits ||
+                        0
+                      ),
+
+                    retakeRequired:
+                      row.retakeRequired ===
+                      true,
+
+                    sortOrder:
+                      Number(
+                        row.sortOrder ||
+                        0
+                      ),
+                  })
+                );
+
+            /**
+             * -------------------------------------------------
+             * 전적대 원본
+             * -------------------------------------------------
+             *
+             * 데이터가 없으면 프론트에서 영역 자체를 숨긴다.
+             */
+            const transferRows =
+              source.transferSubjects.map(
+                (
+                  row: any
+                ) => ({
+                  id:
+                    Number(
+                      row.id
+                    ),
+
+                  schoolName:
+                    row.schoolName ??
+                    null,
+
+                  subjectName:
+                    row.subjectName ??
+                    null,
+
+                  category:
+                    row.transferCategory ??
+                    null,
+
+                  requirementType:
+                    row.transferRequirementType ??
+                    null,
+
+                  credits:
+                    Number(
+                      row.credits ||
+                      0
+                    ),
+
+                  sortOrder:
+                    Number(
+                      row.sortOrder ||
+                      0
+                    ),
+                })
+              );
+
+            /**
+             * 전적대 총 인정학점.
+             *
+             * 담당자가 입력한 과목별 학점의 합만 계산한다.
+             * 새로운 인정 여부를 판단하지 않는다.
+             */
+            const transferTotalCredits =
+              transferRows.reduce(
+                (
+                  sum:
+                    number,
+
+                  row:
+                    any
+                ) =>
+                  sum +
+                  Number(
+                    row.credits ||
+                    0
+                  ),
+
+                0
+              );
+
+            /**
+             * -------------------------------------------------
+             * 담당자 플랜 요약 원본
+             * -------------------------------------------------
+             */
+            const planSummary =
+              plan
+                ? {
+                    desiredCourse:
+                      (plan as any)
+                        .desiredCourse ??
+                      null,
+
+                    finalEducation:
+                      (plan as any)
+                        .finalEducation ??
+                      student.finalEducation ??
+                      null,
+
+                    totalTheorySubjects:
+                      Number(
+                        (plan as any)
+                          .totalTheorySubjects ||
+                        0
+                      ),
+
+                    requiredMajorCount:
+                      Number(
+                        (plan as any)
+                          .requiredMajorCount ||
+                        0
+                      ),
+
+                    electiveMajorCount:
+                      Number(
+                        (plan as any)
+                          .electiveMajorCount ||
+                        0
+                      ),
+
+                    liberalCount:
+                      Number(
+                        (plan as any)
+                          .liberalCount ||
+                        0
+                      ),
+
+                    generalCount:
+                      Number(
+                        (plan as any)
+                          .generalCount ||
+                        0
+                      ),
+
+                    hasPractice:
+                      (plan as any)
+                        .hasPractice ??
+                      null,
+
+                    practiceHours:
+                      (plan as any)
+                        .practiceHours ??
+                      null,
+
+                    practiceSemesterLabel:
+                      (plan as any)
+                        .practiceSemesterLabel ??
+                      null,
+
+                    practiceDate:
+                      (plan as any)
+                        .practiceDate ??
+                      null,
+
+                    practiceArranged:
+                      (plan as any)
+                        .practiceArranged ===
+                      true,
+
+                    practiceStatus:
+                      (plan as any)
+                        .practiceStatus ??
+                      null,
+                  }
+                : null;
+
+            /**
+             * -------------------------------------------------
+             * 담당자가 직접 수정한 자격요건 override
+             * -------------------------------------------------
+             *
+             * 값이 없으면 배열이 비어있다.
+             *
+             * Router는 판단하지 않고
+             * 담당자가 저장한 관리값을 그대로 전달한다.
+             */
+            const qualificationOverrides =
+              source.qualificationOverrides.map(
+                (
+                  row: any
+                ) => ({
+                  courseKey:
+                    row.courseKey ??
+                    null,
+
+                  requirementProfileKey:
+                    row.requirementProfileKey ??
+                    null,
+
+                  requiredMajorRequiredSubjects:
+                    row.requiredMajorRequiredSubjects ??
+                    null,
+
+                  requiredMajorElectiveSubjects:
+                    row.requiredMajorElectiveSubjects ??
+                    null,
+
+                  requiredLiberalSubjects:
+                    row.requiredLiberalSubjects ??
+                    null,
+
+                  requiredGeneralSubjects:
+                    row.requiredGeneralSubjects ??
+                    null,
+
+                  requiredTotalCredits:
+                    row.requiredTotalCredits ??
+                    null,
+
+                  degreeApplicationOverride:
+                    row.degreeApplicationOverride ??
+                    null,
+
+                  memo:
+                    row.memo ??
+                    null,
+                })
+              );
+
+            /**
+             * -------------------------------------------------
+             * 현재 확정 데이터 기준 안전검사
+             * -------------------------------------------------
+             *
+             * 중요:
+             *
+             * 미래 계획이 비어있다는 이유로
+             * 부족 경고를 만들지 않는다.
+             *
+             * 현재 실제 입력되어 있는 데이터의
+             * 명백한 모순만 검사한다.
+             */
+
+            const safetyIssues:
+              Array<{
+                code: string;
+                message: string;
+              }> =
+              [];
+
+            /**
+             * 학기별 최대 8과목 검사.
+             */
+            const semesterSubjectCountMap =
+              new Map<
+                number,
+                number
+              >();
+
+            for (
+              const subject of
+              subjectRows
+            ) {
+              const semesterNo =
+                Number(
+                  subject.semesterNo ||
+                  0
+                );
+
+              if (
+                semesterNo <=
+                0
+              ) {
+                continue;
+              }
+
+              semesterSubjectCountMap.set(
+                semesterNo,
+                (
+                  semesterSubjectCountMap.get(
+                    semesterNo
+                  ) ||
+                  0
+                ) +
+                  1
+              );
+            }
+
+            for (
+              const [
+                semesterNo,
+                count,
+              ] of
+              semesterSubjectCountMap
+            ) {
+              if (
+                count >
+                8
+              ) {
+                safetyIssues.push({
+                  code:
+                    "SEMESTER_SUBJECT_LIMIT",
+
+                  message:
+                    `${semesterNo}학기에 8과목을 초과한 과목이 확인되었습니다.`,
+                });
+              }
+            }
+
+            /**
+             * 연간 최대 14과목 검사.
+             *
+             * 실제 학기의 semesterLabel에
+             * 연도가 입력된 경우에만 검사한다.
+             *
+             * 연도를 추측하지 않는다.
+             */
+            const semesterYearMap =
+              new Map<
+                number,
+                string
+              >();
+
+            for (
+              const semester of
+              semesterRows
+            ) {
+              const label =
+                String(
+                  semester.semesterLabel ||
+                  ""
+                ).trim();
+
+              const yearMatch =
+                label.match(
+                  /^(20\d{2})년/
+                );
+
+              if (
+                !yearMatch
+              ) {
+                continue;
+              }
+
+              semesterYearMap.set(
+                Number(
+                  semester.semesterOrder
+                ),
+                yearMatch[1]
+              );
+            }
+
+            const annualSubjectMap =
+              new Map<
+                string,
+                number
+              >();
+
+            for (
+              const subject of
+              subjectRows
+            ) {
+              const year =
+                semesterYearMap.get(
+                  Number(
+                    subject.semesterNo
+                  )
+                );
+
+              if (!year) {
+                continue;
+              }
+
+              annualSubjectMap.set(
+                year,
+                (
+                  annualSubjectMap.get(
+                    year
+                  ) ||
+                  0
+                ) +
+                  1
+              );
+            }
+
+            for (
+              const [
+                year,
+                count,
+              ] of
+              annualSubjectMap
+            ) {
+              if (
+                count >
+                14
+              ) {
+                safetyIssues.push({
+                  code:
+                    "ANNUAL_SUBJECT_LIMIT",
+
+                  message:
+                    `${year}년 연간 14과목을 초과한 과목이 확인되었습니다.`,
+                });
+              }
+            }
+
+            /**
+             * 우리플랜 내부 중복과목 검사.
+             *
+             * 공백과 대소문자 차이만 정규화한다.
+             * 과목명을 임의로 유사판정하지 않는다.
+             */
+            const planSubjectNameMap =
+              new Map<
+                string,
+                {
+                  name: string;
+                  count: number;
+                }
+              >();
+
+                       for (
+              const subject of
+              subjectRows
+            ) {
+              /**
+               * 담당자가 명시적으로 재수강 처리한 과목은
+               * 의도된 중복이므로 설계오류 중복검사에서 제외한다.
+               *
+               * 단, 학기/연간 이수과목 수 계산에는 포함된다.
+               */
+              if (
+                subject.retakeRequired ===
+                true
+              ) {
+                continue;
+              }
+
+              const name =
+                String(
+                  subject.subjectName ||
+                  ""
+                ).trim();
+
+              if (!name) {
+                continue;
+              }
+
+              const key =
+                name.toLowerCase();
+
+              const current =
+                planSubjectNameMap.get(
+                  key
+                );
+
+              if (current) {
+                current.count +=
+                  1;
+              } else {
+                planSubjectNameMap.set(
+                  key,
+                  {
+                    name,
+                    count:
+                      1,
+                  }
+                );
+              }
+            }
+
+            for (
+              const item of
+              planSubjectNameMap.values()
+            ) {
+              if (
+                item.count >
+                1
+              ) {
+                safetyIssues.push({
+                  code:
+                    "DUPLICATE_PLAN_SUBJECT",
+
+                  message:
+                    `동일 과목이 중복으로 확인되었습니다: ${item.name}`,
+                });
+              }
+            }
+
+            /**
+             * 전적대와 우리플랜 중복 검사.
+             *
+             * 실제 입력된 과목명끼리만 정확히 비교한다.
+             */
+            const transferSubjectNameSet =
+              new Set(
+                transferRows
+                  .map(
+                    (
+                      row: any
+                    ) =>
+                      String(
+                        row.subjectName ||
+                        ""
+                      )
+                        .trim()
+                        .toLowerCase()
+                  )
+                  .filter(
+                    Boolean
+                  )
+              );
+
+                        for (
+              const subject of
+              subjectRows
+            ) {
+              /**
+               * 담당자가 재수강으로 확정한 과목은
+               * 전적대와 동일한 과목명이 있어도
+               * 단순 중복오류로 처리하지 않는다.
+               */
+              if (
+                subject.retakeRequired ===
+                true
+              ) {
+                continue;
+              }
+
+              const name =
+                String(
+                  subject.subjectName ||
+                  ""
+                ).trim();
+
+              if (!name) {
+                continue;
+              }
+
+              if (
+                transferSubjectNameSet.has(
+                  name.toLowerCase()
+                )
+              ) {
+                safetyIssues.push({
+                  code:
+                    "DUPLICATE_TRANSFER_SUBJECT",
+
+                  message:
+                    `전적대 이수과목과 중복된 과목이 확인되었습니다: ${name}`,
+                });
+              }
+            }
+
+            /**
+             * 같은 경고 중복 제거.
+             */
+            const uniqueSafetyIssues =
+              Array.from(
+                new Map(
+                  safetyIssues.map(
+                    (
+                      issue
+                    ) => [
+                      `${issue.code}:${issue.message}`,
+                      issue,
+                    ]
+                  )
+                ).values()
+              );
+
+            /**
+             * -------------------------------------------------
+             * 등록자용 취득요건 진행값
+             * -------------------------------------------------
+             *
+             * 공통 Risk Engine의 categories를 그대로
+             * 등록자 공개 DTO로 제한해서 전달한다.
+             */
+            const buildPortalRequirementCategory =
+              (
+                category:
+                  any
+              ) => ({
+                currentSubjects:
+                  Number(
+                    category?.currentSubjects ||
+                    0
+                  ),
+
+                currentCredits:
+                  Number(
+                    category?.currentCredits ||
+                    0
+                  ),
+
+                requiredSubjects:
+                  category?.requiredSubjects ===
+                    null ||
+                  category?.requiredSubjects ===
+                    undefined
+                    ? null
+                    : Number(
+                        category.requiredSubjects
+                      ),
+
+                requiredCredits:
+                  category?.requiredCredits ===
+                    null ||
+                  category?.requiredCredits ===
+                    undefined
+                    ? null
+                    : Number(
+                        category.requiredCredits
+                      ),
+
+                remainingSubjects:
+                  category?.remainingSubjects ===
+                    null ||
+                  category?.remainingSubjects ===
+                    undefined
+                    ? null
+                    : Number(
+                        category.remainingSubjects
+                      ),
+
+                remainingCredits:
+                  category?.remainingCredits ===
+                    null ||
+                  category?.remainingCredits ===
+                    undefined
+                    ? null
+                    : Number(
+                        category.remainingCredits
+                      ),
+              });
+
+            const qualificationProgress = {
+              categories: {
+                majorRequired:
+                  buildPortalRequirementCategory(
+                    portalEngine
+                      .categories
+                      ?.majorRequired
+                  ),
+
+                majorElective:
+                  buildPortalRequirementCategory(
+                    portalEngine
+                      .categories
+                      ?.majorElective
+                  ),
+
+                liberal:
+                  buildPortalRequirementCategory(
+                    portalEngine
+                      .categories
+                      ?.liberal
+                  ),
+
+                general:
+                  buildPortalRequirementCategory(
+                    portalEngine
+                      .categories
+                      ?.general
+                  ),
+              },
+            };
+
+            /**
+             * -------------------------------------------------
+             * 등록자용 전체 과목 진행현황
+             * -------------------------------------------------
+             */
+            const learningProgress = {
+              registeredSubjectCount:
+                Number(
+                  portalEngine
+                    .summary
+                    ?.registeredSubjectCount ||
+                  0
+                ),
+
+              completedSubjectCount:
+                Number(
+                  portalEngine
+                    .summary
+                    ?.completedSubjectCount ||
+                  0
+                ),
+
+              inProgressSubjectCount:
+                Number(
+                  portalEngine
+                    .summary
+                    ?.inProgressSubjectCount ||
+                  0
+                ),
+
+              scheduledSubjectCount:
+                Number(
+                  portalEngine
+                    .summary
+                    ?.scheduledSubjectCount ||
+                  0
+                ),
+
+              retakeRequiredSubjectCount:
+                Number(
+                  portalEngine
+                    .summary
+                    ?.retakeRequiredSubjectCount ||
+                  0
+                ),
+
+              reviewRequiredSubjectCount:
+                Number(
+                  portalEngine
+                    .summary
+                    ?.reviewRequiredSubjectCount ||
+                  0
+                ),
+
+              completionProgressPercent:
+                Number(
+                  portalEngine
+                    .summary
+                    ?.completionProgressPercent ||
+                  0
+                ),
+
+              plannedProgressPercent:
+                Number(
+                  portalEngine
+                    .summary
+                    ?.plannedProgressPercent ||
+                  0
+                ),
+            };
+
+            /**
+             * -------------------------------------------------
+             * 등록자용 학위신청 대상 여부
+             * -------------------------------------------------
+             *
+             * 프론트에서 "고졸이면 학위신청"처럼
+             * 최종학력 문자열만 보고 임의판정하지 않는다.
+             *
+             * 기존 공통 Risk Engine이 사용하는:
+             *
+             * resolveQualificationRiskCourseKey
+             * resolveDegreeRequirement
+             *
+             * 를 그대로 사용한다.
+             *
+             * requiresNewDegreeTrack === true
+             * → 현재 자격과정을 위해 새 학위과정이 필요함
+             * → 학위신청 대상
+             *
+             * requiresNewDegreeTrack === false
+             * → 현재 자격과정 기준 별도 새 학위과정 불필요
+             * → 학위신청 해당 없음
+             *
+             * 과정/최종학력을 확정할 수 없으면
+             * false로 단정하지 않고 review_required 처리한다.
+             */
+                        /**
+             * -------------------------------------------------
+             * 등록자용 학위신청 대상 여부
+             * -------------------------------------------------
+             *
+             * 실제 행정절차 적용 여부는 Portal에서
+             * 새로 계산하지 않는다.
+             *
+             * 공통 Administrative Timeline의
+             * degree.required 최종값을 사용한다.
+             *
+             * 이 값에는:
+             *
+             * - 자격과정
+             * - 최종학력
+             * - 새 학위과정 필요 여부
+             * - 담당자 degreeApplicationOverride
+             *
+             * 가 최종 반영되어 있다.
+             *
+             * 과정 또는 최종학력을 판정할 수 없을 때만
+             * review_required로 처리한다.
+             */
+            const degreeApplicationCourseName =
+              String(
+                planSummary?.desiredCourse ??
+                student.course ??
+                ""
+              ).trim();
+
+            const degreeApplicationFinalEducation =
+              String(
+                planSummary?.finalEducation ??
+                student.finalEducation ??
+                ""
+              ).trim();
+
+            const degreeApplicationCourseKey =
+              resolveQualificationRiskCourseKey(
+                degreeApplicationCourseName
+              );
+
+            const degreeApplicationRequirement =
+              resolveDegreeRequirement({
+                courseKey:
+                  degreeApplicationCourseKey,
+
+                finalEducation:
+                  degreeApplicationFinalEducation,
+              });
+
+            const timelineDegree =
+              portalEngine
+                .administrativeTimeline
+                ?.degree ??
+              null;
+
+            const timelineDegreeRequired =
+              timelineDegree?.required;
+
+            const degreeApplicationRequired =
+              degreeApplicationCourseKey ===
+                "unknown" ||
+              degreeApplicationRequirement
+                .finalEducationGroup ===
+                "unknown"
+                ? null
+                : typeof timelineDegreeRequired ===
+                    "boolean"
+                  ? timelineDegreeRequired
+                  : null;
+
+            const degreeApplication = {
+              required:
+                degreeApplicationRequired,
+
+              status:
+                degreeApplicationRequired ===
+                true
+                  ? "required" as const
+                  : degreeApplicationRequired ===
+                      false
+                    ? "not_required" as const
+                    : "review_required" as const,
+
+              /**
+               * Administrative Timeline 메시지를 우선 사용한다.
+               *
+               * 담당자 override가 적용된 경우에도
+               * 실제 적용 사유와 Portal 안내가 일치한다.
+               */
+              reason:
+                timelineDegree?.message ??
+                degreeApplicationRequirement
+                  .reason ??
+                null,
+
+              courseKey:
+                degreeApplicationCourseKey,
+
+              finalEducationGroup:
+                degreeApplicationRequirement
+                  .finalEducationGroup ??
+                null,
+
+              minimumDegreeLevel:
+                degreeApplicationRequirement
+                  .minimumDegreeLevel ??
+                null,
+
+              degreeType:
+                degreeApplicationRequirement
+                  .defaultDegreeRule
+                  ?.degreeType ??
+                null,
+
+              applicationWindow:
+                timelineDegree
+                  ?.applicationWindow ??
+                null,
+
+              estimatedAwardDate:
+                timelineDegree
+                  ?.estimatedAwardDate ??
+                null,
+
+              estimatedAwardLabel:
+                timelineDegree
+                  ?.estimatedAwardLabel ??
+                null,
+            };
+
+            /**
+             * -------------------------------------------------
+             * 등록자용 자격증 신청 가이드
+             * -------------------------------------------------
+             *
+             * 현재 1차 지원:
+             * - 사회복지사 2급
+             *
+             * 추후:
+             * - 보육교사 2급
+             * - 기타 자격과정
+             *
+             * 자격과정 판정은 프론트에서 문자열 비교하지 않고
+             * 기존 공통 qualification courseKey를 사용한다.
+             */
+            const qualificationTimeline =
+              portalEngine
+                .administrativeTimeline
+                ?.qualification ??
+              null;
+
+            const qualificationApplicationCourseKey =
+              resolveQualificationRiskCourseKey(
+                String(
+                  planSummary?.desiredCourse ??
+                  student.course ??
+                  ""
+                ).trim()
+              );
+
+            const qualificationApplicationGuideType =
+              qualificationApplicationCourseKey ===
+              "social_worker_2"
+                ? "social_worker_2" as const
+                : null;
+
+            const qualificationApplicationSupported =
+              qualificationApplicationGuideType !==
+              null;
+
+            const qualificationApplication = {
+              supported:
+                qualificationApplicationSupported,
+
+              guideType:
+                qualificationApplicationGuideType,
+
+              courseKey:
+                qualificationApplicationCourseKey,
+
+              status:
+                qualificationApplicationCourseKey ===
+                "unknown"
+                  ? "review_required" as const
+                  : qualificationApplicationSupported
+                    ? "available" as const
+                    : "not_supported" as const,
+
+              applicationBasis:
+                qualificationTimeline
+                  ?.applicationBasis ??
+                "review_required",
+
+              message:
+                qualificationTimeline
+                  ?.message ??
+                null,
+
+              expectedDate:
+                expectedQualificationDate,
+
+              expectedLabel:
+                expectedQualificationLabel,
+
+              fee: {
+                amount:
+                  qualificationApplicationGuideType ===
+                  "social_worker_2"
+                    ? 10000
+                    : null,
+
+                label:
+                  qualificationApplicationGuideType ===
+                  "social_worker_2"
+                    ? "자격증 발급 수수료 10,000원"
+                    : null,
+              },
+            };
+
+            return {
+              authenticated:
+                true as const,
+
+              student: {
+                clientName:
+                  student.clientName ??
+                  null,
+
+                course:
+                  student.course ??
+                  null,
+
+                finalEducation:
+                  student.finalEducation ??
+                  null,
+
+                status:
+                  student.status ??
+                  null,
+
+                startDate:
+                  student.startDate ??
+                  null,
+              },
+
+                              plan:
+                planSummary,
+
+                            qualificationProgress,
+
+              learningProgress,
+
+              /**
+               * 학위신청 대상 여부.
+               *
+               * required:
+               * true  = 학위신청 대상
+               * false = 별도 학위신청 불필요
+               * null  = 과정/최종학력 확인 필요
+               */
+                            degreeApplication,
+
+              /**
+               * 등록자의 자격증 신청 가이드 정보.
+               */
+              qualificationApplication,
+
+              expectedQualification: {
+                date:
+                  expectedQualificationDate,
+
+                label:
+                  expectedQualificationLabel,
+
+                status:
+                  portalEngine
+                    .administrativeTimeline
+                    ?.status ??
+                  "review_required",
+
+                canCalculate:
+                  portalEngine
+                    .administrativeTimeline
+                    ?.canCalculate ===
+                  true,
+
+                applicationBasis:
+                  portalEngine
+                    .administrativeTimeline
+                    ?.qualification
+                    ?.applicationBasis ??
+                  "review_required",
+
+                message:
+                  portalEngine
+                    .administrativeTimeline
+                    ?.qualification
+                    ?.message ??
+                  null,
+
+                academicCompletionDate:
+                  portalEngine
+                    .administrativeTimeline
+                    ?.academicCompletionDate ??
+                  null,
+
+                academicCompletionSemesterLabel:
+                  portalEngine
+                    .administrativeTimeline
+                    ?.academicCompletionSemesterLabel ??
+                  null,
+              },
+
+              overallProgress: {
+                percent:
+                  overallProgressPercent,
+
+                startDate:
+                  firstActualStartDate
+                    ? portalDateToString(
+                        firstActualStartDate
+                      )
+                    : null,
+
+                expectedEndDate:
+                  expectedQualificationDate,
+
+                available:
+                  overallProgressPercent !==
+                  null,
+              },
+
+                            semesters:
+                semesterProgressRows,
+
+              subjects:
+                subjectRows,
+
+              transfer: {
+                hasData:
+                  transferRows.length >
+                  0,
+
+                totalCredits:
+                  transferTotalCredits,
+
+                subjects:
+                  transferRows,
+              },
+
+              qualificationOverrides,
+
+              /**
+               * 담당자가 별도로 학점요약에 입력한 항목.
+               *
+               * 현재는 전체 Row를 그대로 노출하지 않고
+               * 등록자에게 필요한 관리 필드만 제한한다.
+               */
+              creditSummaryItems:
+                source.creditSummaryItems.map(
+                  (
+                    row: any
+                  ) => ({
+                    sourceType:
+                      row.sourceType ??
+                      null,
+
+                    subjectName:
+                      row.subjectName ??
+                      null,
+
+                    institutionName:
+                      row.institutionName ??
+                      null,
+
+                    semesterLabel:
+                      row.semesterLabel ??
+                      null,
+
+                    category:
+                      row.category ??
+                      null,
+
+                    requirementType:
+                      row.requirementType ??
+                      null,
+
+                    credits:
+                      Number(
+                        row.credits ||
+                        0
+                      ),
+
+                    isCompleted:
+                      row.isCompleted ===
+                      true,
+
+                    isExcluded:
+                      row.isExcluded ===
+                      true,
+                  })
+                ),
+
+
+              /**
+               * -------------------------------------------------
+               * 실제 행정절차
+               * -------------------------------------------------
+               *
+               * 내부 메모나 증빙 상세내용은 등록회원에게
+               * 그대로 공개하지 않는다.
+               */
+              administrativeProcedures:
+                portalAdministrativeProcedures.map(
+                  (
+                    row: any
+                  ) => ({
+                    procedureType:
+                      row.procedureType,
+
+                    status:
+                      row.status,
+
+                    sourceType:
+                      row.sourceType,
+
+                    completedAt:
+                      row.completedAt
+                        ? new Date(
+                            row.completedAt
+                          ).toISOString()
+                        : null,
+
+                    statusChangedAt:
+                      row.statusChangedAt
+                        ? new Date(
+                            row.statusChangedAt
+                          ).toISOString()
+                        : null,
+
+                    referenceType:
+                      row.referenceType ??
+                      null,
+                  })
+                ),
+
+              safetyCheck: {
+                safe:
+                  uniqueSafetyIssues.length ===
+                  0,
+
+                title:
+                  uniqueSafetyIssues.length ===
+                  0
+                    ? "현재 확인된 설계 이상 없음"
+                    : "확인이 필요한 항목이 있습니다.",
+
+                issues:
+                  uniqueSafetyIssues,
+              },
+
+              session: {
+                expiresAt:
+                  session.expiresAt,
+              },
+            };
+          }
+        ),
+
+    /**
+     * ---------------------------------------------------------
+     * 등록회원 학습자등록 완료
+     * ---------------------------------------------------------
+     */
+    completeLearnerRegistration:
+      publicProcedure
+        .input(
+          z.object({
+            token:
+              z
+                .string()
+                .trim()
+                .min(
+                  1,
+                  "업무포털 인증정보가 필요합니다."
+                )
+                .max(255),
+          })
+        )
+        .mutation(
+          async ({
+            input,
+          }) =>
+            completeStudentPortalAdministrativeProcedure({
+              token:
+                input.token,
+
+              procedureType:
+                "learner_registration",
+            })
+        ),
+
+    /**
+     * ---------------------------------------------------------
+     * 등록회원 학점인정신청 완료
+     * ---------------------------------------------------------
+     */
+    completeCreditRecognition:
+      publicProcedure
+        .input(
+          z.object({
+            token:
+              z
+                .string()
+                .trim()
+                .min(
+                  1,
+                  "업무포털 인증정보가 필요합니다."
+                )
+                .max(255),
+          })
+        )
+        .mutation(
+          async ({
+            input,
+          }) =>
+            completeStudentPortalAdministrativeProcedure({
+              token:
+                input.token,
+
+              procedureType:
+                "credit_recognition",
+            })
+        ),
+
+    /**
+     * ---------------------------------------------------------
+     * 등록회원 학위신청 완료
+     * ---------------------------------------------------------
+     */
+    completeDegreeApplication:
+      publicProcedure
+        .input(
+          z.object({
+            token:
+              z
+                .string()
+                .trim()
+                .min(
+                  1,
+                  "업무포털 인증정보가 필요합니다."
+                )
+                .max(255),
+          })
+        )
+        .mutation(
+          async ({
+            input,
+          }) =>
+            completeStudentPortalAdministrativeProcedure({
+              token:
+                input.token,
+
+              procedureType:
+                "degree_application",
+            })
+        ),
+
+    /**
+     * ---------------------------------------------------------
+     * 등록회원 자격증 신청 완료
+     * ---------------------------------------------------------
+     */
+        completeQualificationApplication:
+      publicProcedure
+        .input(
+          z.object({
+            token:
+              z
+                .string()
+                .trim()
+                .min(
+                  1,
+                  "업무포털 인증정보가 필요합니다."
+                )
+                .max(255),
+          })
+        )
+        .mutation(
+          async ({
+            input,
+          }) => {
+            /**
+             * -------------------------------------------------
+             * 사회복지사 2급 자격증 신청 완료 방어
+             * -------------------------------------------------
+             *
+             * 프론트 메뉴 노출 여부를 신뢰하지 않는다.
+             *
+             * Portal Session에서 실제 학생을 다시 확정한 뒤
+             * 공통 qualification courseKey가
+             * social_worker_2인 경우에만
+             * 현재 자격증 신청 완료처리를 허용한다.
+             *
+             * 추후 보육교사 2급 가이드가 추가되면
+             * 여기서 지원 courseKey를 확장한다.
+             */
+            const session =
+              await db.getStudentPortalSessionByToken({
+                token:
+                  input.token,
+              });
+
+            if (
+              !session ||
+              session.usable !==
+                true
+            ) {
+              throwAppError(
+                ERROR_CODES.AUTH_REQUIRED,
+                "업무포털 인증이 만료되었거나 유효하지 않습니다.",
+                401
+              );
+            }
+
+            const courseName =
+              String(
+                session.student
+                  ?.course ||
+                ""
+              ).trim();
+
+            const courseKey =
+              resolveQualificationRiskCourseKey(
+                courseName
+              );
+
+            if (
+              courseKey !==
+              "social_worker_2"
+            ) {
+              throwAppError(
+                ERROR_CODES.PERMISSION_DENIED,
+                "현재 업무포털에서는 사회복지사 2급 자격증 신청 완료만 지원합니다.",
+                403
+              );
+            }
+
+            return completeStudentPortalAdministrativeProcedure({
+              token:
+                input.token,
+
+              procedureType:
+                "qualification_application",
+            });
+          }
+        ),
+
+
+    /**
+     * ---------------------------------------------------------
+     * 로그아웃
+     * ---------------------------------------------------------
+     */
+    logout:
+      publicProcedure
+        .input(
+          z.object({
+            token:
+              z
+                .string()
+                .trim()
+                .min(1)
+                .max(255),
+          })
+        )
+        .mutation(
+          async ({
+            input,
+          }) => {
+            const session =
+              await db.getStudentPortalSessionByToken({
+                token:
+                  input.token,
+              });
+
+            /**
+             * 이미 만료/삭제된 세션이어도
+             * 로그아웃 요청 자체는 성공 처리한다.
+             */
+            if (
+              !session
+            ) {
+              return {
+                success:
+                  true as const,
+              };
+            }
+
+            await db.revokeStudentPortalSession({
+              sessionId:
+                session.id,
+
+              organizationId:
+                session.organizationId,
+            });
+
+            return {
+              success:
+                true as const,
+            };
+          }
+        ),
+
+
+    /**
+     * ---------------------------------------------------------
+     * Host 업무포털 설정 조회
+     * ---------------------------------------------------------
+     *
+     * 시스템 설정 → 업무포털 설정 화면에서 사용.
+     */
+    settings:
+      router({
+        get:
+          hostProcedure.query(
+            async ({
+              ctx,
+            }) => {
+              const organizationId =
+                getCtxOrganizationId(
+                  ctx
+                );
+
+              const [
+                settings,
+                organization,
+              ] =
+                await Promise.all([
+                  db.getStudentPortalSettings({
+                    organizationId,
+                  }),
+
+                  getOrganizationById(
+                    organizationId
+                  ),
+                ]);
+
+              return {
+                settings,
+
+                organizationId,
+
+                organizationSlug:
+                  String(
+                    organization
+                      ?.slug ||
+                    ""
+                  )
+                    .trim()
+                    .toLowerCase() ||
+                  null,
+
+                portalUrl:
+                  organization?.slug
+                    ? `/portal/${String(
+                        organization.slug
+                      )
+                        .trim()
+                        .toLowerCase()}`
+                    : null,
+              };
+            }
+          ),
+
+
+        /**
+         * Host만 수정 가능.
+         */
+        update:
+          hostProcedure
+            .input(
+              z.object({
+                enabled:
+                  z
+                    .boolean()
+                    .optional(),
+
+                portalName:
+                  z
+                    .string()
+                    .trim()
+                    .max(150)
+                    .nullable()
+                    .optional(),
+
+                welcomeMessage:
+                  z
+                    .string()
+                    .trim()
+                    .max(5000)
+                    .nullable()
+                    .optional(),
+
+                portalImageUrl:
+                  z
+                    .string()
+                    .trim()
+                    .max(1000)
+                    .nullable()
+                    .optional(),
+
+                supportText:
+                  z
+                    .string()
+                    .trim()
+                    .max(255)
+                    .nullable()
+                    .optional(),
+
+                supportUrl:
+                  z
+                    .string()
+                    .trim()
+                    .max(1000)
+                    .nullable()
+                    .optional(),
+              })
+            )
+            .mutation(
+              async ({
+                ctx,
+                input,
+              }) => {
+                const organizationId =
+                  getCtxOrganizationId(
+                    ctx
+                  );
+
+                const userId =
+                  Number(
+                    (
+                      ctx.user as any
+                    )?.id ||
+                    0
+                  );
+
+                if (
+                  !Number.isFinite(
+                    userId
+                  ) ||
+                  userId <=
+                    0
+                ) {
+                  throwAppError(
+                    ERROR_CODES.AUTH_REQUIRED,
+                    "로그인이 필요합니다.",
+                    401
+                  );
+                }
+
+                return db.upsertStudentPortalSettings({
+                  organizationId,
+
+                  enabled:
+                    input.enabled,
+
+                  portalName:
+                    input.portalName,
+
+                  welcomeMessage:
+                    input.welcomeMessage,
+
+                  portalImageUrl:
+                    input.portalImageUrl,
+
+                  supportText:
+                    input.supportText,
+
+                  supportUrl:
+                    input.supportUrl,
+
+                  createdBy:
+                    userId,
+
+                  updatedBy:
+                    userId,
+                });
+              }
+            ),
+      }),
+  }),
+
+  withOneLanding: router({
   submit: publicProcedure
     .input(
       z.object({

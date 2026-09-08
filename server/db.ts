@@ -161,8 +161,14 @@ type InsertStudentAiNote,
 studentAiEvents,
 type InsertStudentAiEvent,
 
+studentPortalSettings,
+type InsertStudentPortalSetting,
+
+studentPortalSessions,
+type InsertStudentPortalSession,
+
 staffPublicProfiles,
-  type InsertStaffPublicProfile,
+type InsertStaffPublicProfile,
 
   staffTeamPageSettings,
   type InsertStaffTeamPageSetting,
@@ -797,6 +803,1235 @@ export async function findStudentForKakaoVerification(
           student.organizationId
         ),
     },
+  };
+}
+
+/**
+ * =========================================================
+ * Student Portal
+ * =========================================================
+ *
+ * 등록회원 전용 회사별 업무포탈.
+ *
+ * 핵심 멀티테넌트 규칙:
+ *
+ * portal slug
+ * → organizations
+ * → organizationId
+ * → student_portal_settings
+ * → 동일 organizationId 내부 학생 인증
+ *
+ * 브라우저가 전달한 organizationId를 신뢰하지 않는다.
+ */
+
+
+/**
+ * 학생 포탈 세션 Token Hash 생성.
+ *
+ * 원본 Token은 DB에 저장하지 않고
+ * SHA-256 Hash만 저장한다.
+ */
+function createStudentPortalTokenHash(
+  value: unknown
+): string {
+  const normalized =
+    String(
+      value ?? ""
+    ).trim();
+
+  if (!normalized) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "포탈 인증 토큰이 필요합니다.",
+      400
+    );
+  }
+
+  return createHash("sha256")
+    .update(
+      normalized,
+      "utf8"
+    )
+    .digest("hex");
+}
+
+
+/**
+ * 학생 포탈용 랜덤 원본 Token 생성.
+ */
+function createStudentPortalRawToken(): string {
+  return [
+    randomUUID()
+      .replace(/-/g, ""),
+
+    randomUUID()
+      .replace(/-/g, ""),
+  ].join("");
+}
+
+
+/**
+ * 회사별 학생 포탈 설정 조회.
+ *
+ * 내부 Host 설정 화면 등에서 사용한다.
+ */
+export async function getStudentPortalSettings(
+  params: {
+    organizationId?: number | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const rows =
+    await db
+      .select()
+      .from(
+        studentPortalSettings
+      )
+      .where(
+        eq(
+          studentPortalSettings.organizationId,
+          organizationId
+        )
+      )
+      .limit(1);
+
+  return rows[0] ?? null;
+}
+
+
+/**
+ * 회사별 학생 포탈 설정 저장.
+ *
+ * organizationId UNIQUE 기준으로
+ * 없으면 INSERT,
+ * 있으면 UPDATE 한다.
+ */
+export async function upsertStudentPortalSettings(
+  params: {
+    organizationId?: number | null;
+
+    enabled?: boolean;
+
+    portalName?: string | null;
+
+    welcomeMessage?: string | null;
+
+    portalImageUrl?: string | null;
+
+    supportText?: string | null;
+
+    supportUrl?: string | null;
+
+    createdBy?: number | null;
+
+    updatedBy?: number | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const existing =
+    await getStudentPortalSettings({
+      organizationId,
+    });
+
+  const values = {
+    enabled:
+      params.enabled ??
+      existing?.enabled ??
+      false,
+
+    portalName:
+      params.portalName !== undefined
+        ? params.portalName
+        : existing?.portalName ?? null,
+
+    welcomeMessage:
+      params.welcomeMessage !== undefined
+        ? params.welcomeMessage
+        : existing?.welcomeMessage ?? null,
+
+    portalImageUrl:
+      params.portalImageUrl !== undefined
+        ? params.portalImageUrl
+        : existing?.portalImageUrl ?? null,
+
+    supportText:
+      params.supportText !== undefined
+        ? params.supportText
+        : existing?.supportText ?? null,
+
+    supportUrl:
+      params.supportUrl !== undefined
+        ? params.supportUrl
+        : existing?.supportUrl ?? null,
+
+    updatedBy:
+      params.updatedBy ?? null,
+  };
+
+  if (existing) {
+    await db
+      .update(
+        studentPortalSettings
+      )
+      .set({
+        ...values,
+
+        updatedAt:
+          new Date(),
+      } as any)
+      .where(
+        and(
+          eq(
+            studentPortalSettings.id,
+            Number(
+              existing.id
+            )
+          ),
+
+          eq(
+            studentPortalSettings.organizationId,
+            organizationId
+          )
+        )
+      );
+
+    return getStudentPortalSettings({
+      organizationId,
+    });
+  }
+
+  await db
+    .insert(
+      studentPortalSettings
+    )
+    .values({
+      organizationId,
+
+      ...values,
+
+      createdBy:
+        params.createdBy ?? null,
+    } as any);
+
+  return getStudentPortalSettings({
+    organizationId,
+  });
+}
+
+
+/**
+ * 공개 포탈 진입용 회사/브랜딩 조회.
+ *
+ * 중요:
+ * 브라우저에서 organizationId를 받지 않는다.
+ *
+ * slug
+ * → organizations
+ * → organizationId
+ * → portal settings
+ * → branding settings
+ */
+export async function getPublicStudentPortalBySlug(
+  slugValue: string
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    return null;
+  }
+
+  const slug =
+    String(
+      slugValue || ""
+    )
+      .trim()
+      .toLowerCase();
+
+  if (!slug) {
+    return null;
+  }
+
+  const organizationRows =
+    await db
+      .select({
+        id:
+          organizations.id,
+
+        name:
+          organizations.name,
+
+        slug:
+          organizations.slug,
+
+        status:
+          organizations.status,
+
+        subscriptionStatus:
+          organizations.subscriptionStatus,
+      })
+      .from(
+        organizations
+      )
+      .where(
+        eq(
+          organizations.slug,
+          slug
+        )
+      )
+      .limit(1);
+
+  const organization =
+    organizationRows[0];
+
+  if (!organization) {
+    return null;
+  }
+
+  /**
+   * 정지된 회사 포탈 접근 차단.
+   */
+  if (
+    organization.status !==
+    "active"
+  ) {
+    return null;
+  }
+
+  const organizationId =
+    Number(
+      organization.id
+    );
+
+  const portal =
+    await getStudentPortalSettings({
+      organizationId,
+    });
+
+  /**
+   * 포탈 설정이 없거나
+   * Host가 비활성화한 경우 공개하지 않는다.
+   */
+  if (
+    !portal ||
+    portal.enabled !== true
+  ) {
+    return null;
+  }
+
+  const branding =
+    await getBrandingSettings({
+      organizationId,
+    });
+
+  return {
+    organizationId,
+
+    slug:
+      String(
+        organization.slug
+      ),
+
+    portalName:
+      String(
+        portal.portalName ||
+        `${organization.name} 업무포털`
+      ).trim(),
+
+    welcomeMessage:
+      portal.welcomeMessage ??
+      null,
+
+    portalImageUrl:
+      portal.portalImageUrl ??
+      null,
+
+    supportText:
+      portal.supportText ??
+      branding?.supportText ??
+      null,
+
+    supportUrl:
+      portal.supportUrl ??
+      branding?.supportUrl ??
+      null,
+
+    companyName:
+      String(
+        branding?.companyName ||
+        organization.name ||
+        ""
+      ).trim() ||
+      null,
+
+    companyLogoUrl:
+      branding?.companyLogoUrl ??
+      null,
+
+    primaryColor:
+      branding?.primaryColor ??
+      null,
+  };
+}
+
+
+/**
+ * 학생 이름 + 전화번호 인증.
+ *
+ * 반드시 slug로 organizationId를 먼저 확정한 뒤
+ * 그 organizationId 내부에서만 학생을 찾는다.
+ */
+export async function authenticateStudentPortalMember(
+  params: {
+    slug: string;
+
+    clientName: string;
+
+    phone: string;
+  }
+) {
+  const portal =
+    await getPublicStudentPortalBySlug(
+      params.slug
+    );
+
+  if (!portal) {
+    return {
+      authenticated:
+        false as const,
+
+      reason:
+        "portal_not_found" as const,
+
+      student:
+        null,
+
+      portal:
+        null,
+    };
+  }
+
+  const verification =
+    await findStudentForKakaoVerification({
+      organizationId:
+        portal.organizationId,
+
+      clientName:
+        params.clientName,
+
+      phone:
+        params.phone,
+    });
+
+  if (!verification.matched) {
+    return {
+      authenticated:
+        false as const,
+
+      reason:
+        verification.reason,
+
+      student:
+        null,
+
+      portal,
+    };
+  }
+
+  return {
+    authenticated:
+      true as const,
+
+    reason:
+      "matched" as const,
+
+    student:
+      verification.student,
+
+    portal,
+  };
+}
+
+
+/**
+ * 인증 성공 후 학생 포탈 세션 생성.
+ *
+ * 세션 기본 유효기간:
+ * 7일
+ *
+ * DB에는 원본 Token이 아닌
+ * SHA-256 tokenHash만 저장한다.
+ */
+export async function createStudentPortalSession(
+  params: {
+    organizationId?: number | null;
+
+    studentId: number;
+
+    expiresInDays?: number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    Math.floor(
+      Number(
+        params.studentId
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      studentId
+    ) ||
+    studentId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학생 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  /**
+   * 세션 생성 전에도
+   * studentId + organizationId를 다시 검증한다.
+   */
+  const student =
+    await getStudentById(
+      studentId,
+      {
+        organizationId,
+      }
+    );
+
+  if (!student) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "등록회원 정보를 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  const token =
+    createStudentPortalRawToken();
+
+  const tokenHash =
+    createStudentPortalTokenHash(
+      token
+    );
+
+  const expiresInDays =
+    Math.min(
+      Math.max(
+        Math.floor(
+          Number(
+            params.expiresInDays ??
+            7
+          )
+        ),
+        1
+      ),
+      30
+    );
+
+  const now =
+    new Date();
+
+  const expiresAt =
+    new Date(
+      now.getTime() +
+      expiresInDays *
+        24 *
+        60 *
+        60 *
+        1000
+    );
+
+  const result: any =
+    await db
+      .insert(
+        studentPortalSessions
+      )
+      .values({
+        organizationId,
+
+        studentId,
+
+        tokenHash,
+
+        expiresAt,
+
+        lastAccessedAt:
+          now,
+
+        revokedAt:
+          null,
+      } as any);
+
+  const sessionId =
+    Number(
+      getInsertId(
+        result
+      ) ||
+      0
+    );
+
+  if (!sessionId) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "학생 포탈 세션을 생성하지 못했습니다.",
+      500
+    );
+  }
+
+  return {
+    sessionId,
+
+    organizationId,
+
+    studentId,
+
+    /**
+     * 원본 Token은 여기서만 반환.
+     */
+    token,
+
+    expiresAt,
+  };
+}
+
+
+/**
+ * 원본 Token으로 학생 포탈 세션 조회.
+ *
+ * organizationId를 브라우저에서 받지 않는다.
+ * Token DB Row가 회사와 학생을 결정한다.
+ */
+export async function getStudentPortalSessionByToken(
+  params: {
+    token: string;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const tokenHash =
+    createStudentPortalTokenHash(
+      params.token
+    );
+
+  const rows =
+    await db
+      .select()
+      .from(
+        studentPortalSessions
+      )
+      .where(
+        eq(
+          studentPortalSessions.tokenHash,
+          tokenHash
+        )
+      )
+      .limit(1);
+
+  const session =
+    rows[0];
+
+  if (!session) {
+    return null;
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      session.organizationId
+    );
+
+  const studentId =
+    Number(
+      session.studentId
+    );
+
+  const now =
+    new Date();
+
+  if (
+    session.revokedAt
+  ) {
+    return {
+      id:
+        Number(
+          session.id
+        ),
+
+      organizationId,
+
+      studentId,
+
+      usable:
+        false as const,
+
+      reason:
+        "revoked" as const,
+    };
+  }
+
+  const expiresAt =
+    new Date(
+      session.expiresAt
+    );
+
+  if (
+    expiresAt.getTime() <=
+    now.getTime()
+  ) {
+    return {
+      id:
+        Number(
+          session.id
+        ),
+
+      organizationId,
+
+      studentId,
+
+      usable:
+        false as const,
+
+      reason:
+        "expired" as const,
+    };
+  }
+
+  /**
+   * 세션 발급 이후라도
+   * 회사가 정지되었거나 Host가 업무포털을 비활성화하면
+   * 기존 세션으로 더 이상 접근할 수 없다.
+   */
+  const organizationRows =
+    await db
+      .select({
+        id:
+          organizations.id,
+
+        status:
+          organizations.status,
+      })
+      .from(
+        organizations
+      )
+      .where(
+        eq(
+          organizations.id,
+          organizationId
+        )
+      )
+      .limit(1);
+
+  const organization =
+    organizationRows[0];
+
+  if (
+    !organization ||
+    organization.status !==
+      "active"
+  ) {
+    return {
+      id:
+        Number(
+          session.id
+        ),
+
+      organizationId,
+
+      studentId,
+
+      usable:
+        false as const,
+
+      reason:
+        "organization_inactive" as const,
+    };
+  }
+
+  const portalSettings =
+    await getStudentPortalSettings({
+      organizationId,
+    });
+
+  if (
+    !portalSettings ||
+    portalSettings.enabled !==
+      true
+  ) {
+    return {
+      id:
+        Number(
+          session.id
+        ),
+
+      organizationId,
+
+      studentId,
+
+      usable:
+        false as const,
+
+      reason:
+        "portal_disabled" as const,
+    };
+  }
+
+  /**
+   * 세션이 살아있더라도
+   * 학생이 삭제되었거나 다른 회사 데이터면 사용 불가.
+   */
+  const student =
+    await getStudentById(
+      studentId,
+      {
+        organizationId,
+      }
+    );
+
+   if (!student) {
+    return {
+      id:
+        Number(
+          session.id
+        ),
+
+      organizationId,
+
+      studentId,
+
+      usable:
+        false as const,
+
+      reason:
+        "student_not_found" as const,
+    };
+  }
+
+  /**
+   * 최초 인증 이후라도
+   * 등록 승인 상태가 해제되면
+   * 기존 포탈 세션을 더 이상 사용할 수 없다.
+   */
+  if (
+    student.approvalStatus !==
+      "승인"
+  ) {
+    return {
+      id:
+        Number(
+          session.id
+        ),
+
+      organizationId,
+
+      studentId,
+
+      usable:
+        false as const,
+
+      reason:
+        "student_not_approved" as const,
+    };
+  }
+
+  return {
+    id:
+      Number(
+        session.id
+      ),
+
+    organizationId,
+
+    studentId,
+
+    usable:
+      true as const,
+
+    reason:
+      "valid" as const,
+
+    expiresAt,
+
+    lastAccessedAt:
+      session.lastAccessedAt ??
+      null,
+
+    student,
+  };
+}
+
+
+/**
+ * 정상 포탈 요청 시
+ * 마지막 접속시간 갱신.
+ */
+export async function touchStudentPortalSession(
+  params: {
+    sessionId: number;
+
+    organizationId?: number | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  await db
+    .update(
+      studentPortalSessions
+    )
+    .set({
+      lastAccessedAt:
+        new Date(),
+
+      updatedAt:
+        new Date(),
+    } as any)
+    .where(
+      and(
+        eq(
+          studentPortalSessions.id,
+          Number(
+            params.sessionId
+          )
+        ),
+
+        eq(
+          studentPortalSessions.organizationId,
+          organizationId
+        ),
+
+        sql`${studentPortalSessions.revokedAt} IS NULL`
+      )
+    );
+
+  return {
+    success:
+      true as const,
+  };
+}
+
+
+/**
+ * 로그아웃 / 강제 로그아웃.
+ */
+export async function revokeStudentPortalSession(
+  params: {
+    sessionId: number;
+
+    organizationId?: number | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const now =
+    new Date();
+
+  await db
+    .update(
+      studentPortalSessions
+    )
+    .set({
+      revokedAt:
+        now,
+
+      updatedAt:
+        now,
+    } as any)
+    .where(
+      and(
+        eq(
+          studentPortalSessions.id,
+          Number(
+            params.sessionId
+          )
+        ),
+
+        eq(
+          studentPortalSessions.organizationId,
+          organizationId
+        )
+      )
+    );
+
+  return {
+    success:
+      true as const,
+  };
+}
+
+/**
+ * =========================================================
+ * Student Portal - My Work Source
+ * =========================================================
+ *
+ * 등록자 업무포털의 "마이 업무" 원본 데이터 조회.
+ *
+ * 중요 원칙:
+ *
+ * - 등록자가 값을 수정하지 않는다.
+ * - 담당자가 CRM에서 입력한 원본 데이터를 그대로 읽는다.
+ * - organizationId + studentId를 반드시 함께 검증한다.
+ * - 브라우저가 전달한 studentId / organizationId를 신뢰하지 않는다.
+ * - 실제 공개 응답 형태는 Router에서 별도로 제한한다.
+ *
+ * 포함 원본:
+ *
+ * students
+ * plans
+ * semesters
+ * plan_semesters
+ * transfer_subjects
+ * student_credit_summary_items
+ * student_qualification_overrides
+ */
+export async function getStudentPortalMyWorkSource(
+  params: {
+    organizationId?: number | null;
+    studentId: number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    Math.floor(
+      Number(
+        params.studentId
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      studentId
+    ) ||
+    studentId <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "학생 정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  /**
+   * 학생 자체도 반드시
+   * organizationId + studentId로 다시 조회한다.
+   */
+  const student =
+    await getStudentById(
+      studentId,
+      {
+        organizationId,
+      }
+    );
+
+  if (
+    !student ||
+    student.approvalStatus !==
+      "승인"
+  ) {
+    return null;
+  }
+
+  /**
+   * 담당자가 CRM에서 관리한 원본을
+   * 수정 없이 병렬 조회한다.
+   */
+  const [
+    plan,
+    semesterRows,
+    planSemesterRows,
+    transferSubjectRows,
+    creditSummaryItemRows,
+    qualificationOverrideRows,
+  ] =
+    await Promise.all([
+      getPlan(
+        studentId,
+        {
+          organizationId,
+        }
+      ),
+
+      listSemesters(
+        studentId,
+        {
+          organizationId,
+        }
+      ),
+
+      listPlanSemesters(
+        studentId,
+        {
+          organizationId,
+        }
+      ),
+
+      listTransferSubjects(
+        studentId,
+        {
+          organizationId,
+        }
+      ),
+
+      listStudentCreditSummaryItems({
+        organizationId,
+        studentId,
+      }),
+
+      db
+        .select()
+        .from(
+          studentQualificationOverrides
+        )
+        .where(
+          and(
+            eq(
+              studentQualificationOverrides.organizationId,
+              organizationId
+            ),
+
+            eq(
+              studentQualificationOverrides.studentId,
+              studentId
+            )
+          )
+        )
+        .orderBy(
+          studentQualificationOverrides.id
+        ),
+    ]);
+
+  /**
+   * 여기서는 원본을 묶기만 한다.
+   *
+   * 진행률 / 상태표시 / 안전검사 /
+   * 예상 자격증 신청일 등의 가공은
+   * Portal Router에서 수행한다.
+   *
+   * 원본 DB Row 전체를 브라우저에
+   * 그대로 반환하지 않는다.
+   */
+  return {
+    organizationId,
+    studentId,
+
+    student,
+
+    plan,
+
+    semesters:
+      semesterRows,
+
+    planSemesters:
+      planSemesterRows,
+
+    transferSubjects:
+      transferSubjectRows,
+
+    creditSummaryItems:
+      creditSummaryItemRows,
+
+    qualificationOverrides:
+      qualificationOverrideRows,
   };
 }
 

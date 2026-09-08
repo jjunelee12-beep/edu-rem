@@ -46,6 +46,7 @@ import MyPage from "@/pages/MyPage";
 import StaffProfileSettings from "@/pages/StaffProfileSettings";
 import PublicStaffProfilePage from "@/pages/PublicStaffProfilePage";
 import PublicStaffTeamPage from "@/pages/PublicStaffTeamPage";
+import StudentPortalPage from "@/pages/StudentPortalPage";
 
 import NoticesPage from "@/pages/NoticesPage";
 import NoticeDetailPage from "@/pages/NoticeDetailPage";
@@ -215,6 +216,12 @@ function PublicRouter() {
   path="/staff/:token"
   component={PublicStaffProfilePage}
 />
+
+<Route
+  path="/portal/:slug"
+  component={StudentPortalPage}
+/>
+
 <Route
   path="/team/:organizationId"
   component={PublicStaffTeamPage}
@@ -510,6 +517,7 @@ function AppContent() {
   location.startsWith("/ad-form/") ||
 location.startsWith("/kakao-ai/staff-auth/") ||
   location.startsWith("/staff/") ||
+location.startsWith("/portal/") ||
 location.startsWith("/team/") ||
   location.startsWith("/billing/register/");
 

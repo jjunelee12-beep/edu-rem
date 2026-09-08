@@ -1538,6 +1538,206 @@ export const brandingSettings = mysqlTable(
 export type BrandingSetting = typeof brandingSettings.$inferSelect;
 export type InsertBrandingSetting = typeof brandingSettings.$inferInsert;
 
+// ─── Student Portal Settings (등록자 업무포털 회사별 설정) ─────────────
+export const studentPortalSettings = mysqlTable(
+  "student_portal_settings",
+  {
+    id: int("id")
+      .autoincrement()
+      .primaryKey(),
+
+    /**
+     * SaaS 회사 경계.
+     * 회사당 업무포털 설정은 1개만 존재한다.
+     */
+    organizationId: int("organizationId")
+      .notNull(),
+
+    /**
+     * Host가 업무포털 운영 여부를 켜고 끈다.
+     */
+    enabled: boolean("enabled")
+      .notNull()
+      .default(false),
+
+    /**
+     * 등록자 화면에 표시되는 업무포털 이름.
+     *
+     * 예:
+     * - 위드원교육 업무포털
+     * - OO평생교육원 학습관리포털
+     *
+     * null이면 서버에서
+     * "{회사명} 업무포털" 형태로 fallback 가능.
+     */
+    portalName: varchar("portalName", {
+      length: 150,
+    }),
+
+    /**
+     * 최초 인증 화면에 표시할 안내문.
+     */
+    welcomeMessage: text("welcomeMessage"),
+
+    /**
+     * 업무포털 전용 대표 이미지.
+     *
+     * 카카오 OG 이미지 및
+     * 포털 인증화면 등에 사용할 수 있다.
+     *
+     * null이면 회사 로고 등으로 fallback.
+     */
+    portalImageUrl: varchar("portalImageUrl", {
+      length: 1000,
+    }),
+
+    /**
+     * 업무포털 고객센터 안내문.
+     *
+     * null이면 branding_settings.supportText 사용 가능.
+     */
+    supportText: varchar("supportText", {
+      length: 255,
+    }),
+
+    /**
+     * 업무포털 고객센터 링크.
+     *
+     * null이면 branding_settings.supportUrl 사용 가능.
+     */
+    supportUrl: varchar("supportUrl", {
+      length: 1000,
+    }),
+
+    createdBy: int("createdBy"),
+    updatedBy: int("updatedBy"),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    organizationUniqueIdx: uniqueIndex(
+      "uq_student_portal_settings_organization"
+    ).on(
+      table.organizationId
+    ),
+  })
+);
+
+export type StudentPortalSetting =
+  typeof studentPortalSettings.$inferSelect;
+
+export type InsertStudentPortalSetting =
+  typeof studentPortalSettings.$inferInsert;
+
+
+// ─── Student Portal Sessions (등록자 업무포털 인증 세션) ───────────────
+export const studentPortalSessions = mysqlTable(
+  "student_portal_sessions",
+  {
+    id: int("id")
+      .autoincrement()
+      .primaryKey(),
+
+    /**
+     * 절대 분리해야 하는 SaaS 회사 경계.
+     */
+    organizationId: int("organizationId")
+      .notNull(),
+
+    /**
+     * 인증 완료된 CRM 학생.
+     *
+     * 브라우저에서 studentId를 직접 받아 신뢰하지 않고,
+     * tokenHash를 조회한 뒤 서버가 이 값을 결정한다.
+     */
+    studentId: int("studentId")
+      .notNull(),
+
+    /**
+     * 브라우저에 전달되는 랜덤 토큰의 SHA-256 Hash.
+     *
+     * 원본 토큰은 DB에 저장하지 않는다.
+     */
+    tokenHash: varchar("tokenHash", {
+      length: 64,
+    })
+      .notNull(),
+
+    /**
+     * 세션 만료시각.
+     */
+    expiresAt: datetime("expiresAt")
+      .notNull(),
+
+    /**
+     * 마지막 정상 접근시각.
+     *
+     * 추후 장기간 미사용 세션 정리에 활용한다.
+     */
+    lastAccessedAt: datetime("lastAccessedAt"),
+
+    /**
+     * 로그아웃 / 강제만료 여부.
+     *
+     * DB row를 바로 삭제하지 않고
+     * 서버에서 세션을 폐기할 수 있게 한다.
+     */
+    revokedAt: datetime("revokedAt"),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    /**
+     * 동일 토큰 Hash는 절대로 중복되면 안 된다.
+     */
+    tokenHashUniqueIdx: uniqueIndex(
+      "uq_student_portal_sessions_token_hash"
+    ).on(
+      table.tokenHash
+    ),
+
+    /**
+     * 세션 인증 후
+     * organizationId + studentId 범위 조회/정리용.
+     */
+    orgStudentIdx: index(
+      "idx_student_portal_sessions_org_student"
+    ).on(
+      table.organizationId,
+      table.studentId
+    ),
+
+    /**
+     * 만료 세션 정리용.
+     */
+    expiresAtIdx: index(
+      "idx_student_portal_sessions_expires_at"
+    ).on(
+      table.expiresAt
+    ),
+  })
+);
+
+export type StudentPortalSession =
+  typeof studentPortalSessions.$inferSelect;
+
+export type InsertStudentPortalSession =
+  typeof studentPortalSessions.$inferInsert;
+
 // ─── Staff Public Profiles (담당자 공개 프로필) ──────────────────────
 export const staffPublicProfiles = mysqlTable(
   "staff_public_profiles",
