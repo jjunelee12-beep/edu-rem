@@ -46,9 +46,14 @@ import {
   getKakaoAiStaffAuthSessionByToken,
   authenticateKakaoAiStaffAuthSession,
 
-  getStaffPublicProfileByToken,
-  getStaffPublicProfileOrganizationIdByToken,
-  getBrandingSettings,
+    getStaffPublicProfileByToken,
+getStaffPublicProfileOrganizationIdByToken,
+getBrandingSettings,
+
+getStudentPortalSessionByToken,
+touchStudentPortalSession,
+getCommunitySettings,
+getCommunityProfile,
 } from "../db";
 import {
   orchestrateKakaoAiIncomingMessage,
@@ -1960,8 +1965,592 @@ async function getR2PrefixUsageBytes(prefix: string) {
       }
 
       cb(null, true);
-    },
+        },
   });
+
+  /**
+   * ============================================================
+   * Student Portal Community Image Upload
+   * ============================================================
+   *
+   * 등록회원 커뮤니티 전용 이미지 업로드.
+   *
+   * - 이미지 전용
+   * - 최대 5MB
+   * - 동영상 / 문서 업로드 불가
+   * - Portal Token 인증
+   */
+  const studentPortalCommunityImageUpload =
+    multer({
+      storage:
+        multer.memoryStorage(),
+
+      limits: {
+        fileSize:
+          5 *
+          1024 *
+          1024,
+      },
+
+      fileFilter:
+        (
+          _req,
+          file,
+          cb
+        ) => {
+          const allowedMimeTypes =
+            new Set([
+              "image/jpeg",
+              "image/png",
+              "image/webp",
+              "image/gif",
+            ]);
+
+          const allowedExtensions =
+            new Set([
+              ".jpg",
+              ".jpeg",
+              ".png",
+              ".webp",
+              ".gif",
+            ]);
+
+          const extension =
+            path
+              .extname(
+                file.originalname
+              )
+              .toLowerCase();
+
+          if (
+            !allowedMimeTypes.has(
+              file.mimetype
+            ) ||
+            !allowedExtensions.has(
+              extension
+            )
+          ) {
+            return cb(
+              new Error(
+                "JPG, PNG, WEBP, GIF 이미지만 업로드할 수 있습니다."
+              )
+            );
+          }
+
+          cb(
+            null,
+            true
+          );
+        },
+    });
+
+/**
+   * ============================================================
+   * Host Portal Community Image Upload
+   * ============================================================
+   *
+   * CRM Host 전용 커뮤니티 이미지 업로드.
+   *
+   * CRM Session Cookie
+   * → 현재 로그인 User
+   * → role === host 확인
+   * → organizationId 확정
+   * → R2 회사별 / Host별 경로
+   *
+   * 브라우저에서
+   * organizationId / userId를 절대 받지 않는다.
+   */
+  app.post(
+    "/api/student-portal/host-community/image",
+
+    studentPortalCommunityImageUpload.single(
+      "file"
+    ),
+
+    async (
+      req,
+      res
+    ) => {
+      try {
+        /**
+         * --------------------------------------------------------
+         * CRM Session 인증
+         * --------------------------------------------------------
+         */
+        const cookieHeader =
+          req.headers.cookie ||
+          "";
+
+        const parsedCookies =
+          cookie.parse(
+            cookieHeader
+          );
+
+        const rawSession =
+          parsedCookies[
+            SESSION_COOKIE
+          ];
+
+        const secret =
+          process.env
+            .SESSION_SECRET;
+
+        if (
+          !rawSession ||
+          !secret
+        ) {
+          return res
+            .status(401)
+            .json({
+              message:
+                "로그인이 필요합니다.",
+            });
+        }
+
+        const userId =
+          readUserIdFromSessionCookieValue(
+            rawSession,
+            secret
+          );
+
+        if (
+          !userId
+        ) {
+          return res
+            .status(401)
+            .json({
+              message:
+                "로그인 정보가 유효하지 않습니다.",
+            });
+        }
+
+        /**
+         * --------------------------------------------------------
+         * 현재 로그인 User 조회
+         * --------------------------------------------------------
+         */
+        const uploadUser =
+          await getUserById(
+            userId
+          );
+
+        if (
+          !uploadUser
+        ) {
+          return res
+            .status(401)
+            .json({
+              message:
+                "로그인 사용자를 찾을 수 없습니다.",
+            });
+        }
+
+        /**
+         * --------------------------------------------------------
+         * Host 전용
+         * --------------------------------------------------------
+         *
+         * 이 endpoint는 Host PC 커뮤니티 전용이다.
+         *
+         * Admin / Staff / Superhost 포함
+         * 다른 Role은 현재 허용하지 않는다.
+         */
+        if (
+          String(
+            (
+              uploadUser as any
+            )?.role ||
+            ""
+          ) !==
+          "host"
+        ) {
+          return res
+            .status(403)
+            .json({
+              message:
+                "Host만 사용할 수 있는 기능입니다.",
+            });
+        }
+
+        /**
+         * --------------------------------------------------------
+         * organizationId
+         * --------------------------------------------------------
+         *
+         * 절대 req.body.organizationId 등을 사용하지 않는다.
+         *
+         * 현재 로그인 User에서만 확정.
+         */
+        const organizationId =
+          Number(
+            (
+              uploadUser as any
+            )
+              ?.organizationId ||
+            0
+          );
+
+        if (
+          !Number.isFinite(
+            organizationId
+          ) ||
+          organizationId <=
+            0
+        ) {
+          return res
+            .status(403)
+            .json({
+              message:
+                "organizationId is required",
+            });
+        }
+
+        /**
+         * --------------------------------------------------------
+         * 이미지 파일 확인
+         * --------------------------------------------------------
+         */
+        const file =
+          req.file;
+
+        if (
+          !file
+        ) {
+          return res
+            .status(400)
+            .json({
+              message:
+                "업로드할 이미지가 없습니다.",
+            });
+        }
+
+        const allowedMimeTypes =
+          new Set([
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif",
+          ]);
+
+        if (
+          !allowedMimeTypes.has(
+            file.mimetype
+          )
+        ) {
+          return res
+            .status(400)
+            .json({
+              message:
+                "지원하지 않는 이미지 형식입니다.",
+            });
+        }
+
+        if (
+          Number(
+            file.size ||
+            0
+          ) >
+          5 *
+            1024 *
+            1024
+        ) {
+          return res
+            .status(400)
+            .json({
+              message:
+                "이미지는 최대 5MB까지 업로드할 수 있습니다.",
+            });
+        }
+
+        /**
+         * --------------------------------------------------------
+         * R2 환경변수 확인
+         * --------------------------------------------------------
+         */
+        const publicBaseUrl =
+          String(
+            process.env
+              .R2_PUBLIC_BASE_URL ||
+            ""
+          )
+            .trim()
+            .replace(
+              /\/+$/,
+              ""
+            );
+
+        const bucketName =
+          String(
+            process.env
+              .R2_BUCKET_NAME ||
+            ""
+          ).trim();
+
+        if (
+          !publicBaseUrl
+        ) {
+          return res
+            .status(500)
+            .json({
+              message:
+                "R2_PUBLIC_BASE_URL 환경변수가 설정되지 않았습니다.",
+            });
+        }
+
+        if (
+          !bucketName
+        ) {
+          return res
+            .status(500)
+            .json({
+              message:
+                "R2_BUCKET_NAME 환경변수가 설정되지 않았습니다.",
+            });
+        }
+
+        /**
+         * --------------------------------------------------------
+         * 회사 활성화 / 저장공간 제한 확인
+         * --------------------------------------------------------
+         */
+        const limitStatus =
+          await getOrganizationLimitStatus(
+            organizationId
+          );
+
+        const organization =
+          limitStatus
+            .organization as any;
+
+        if (
+          !organization ||
+          organization.status !==
+            "active"
+        ) {
+          return res
+            .status(403)
+            .json({
+              message:
+                "현재 이용이 제한된 회사 계정입니다.",
+            });
+        }
+
+        const maxStorageMb =
+          Number(
+            limitStatus
+              .limits
+              .maxStorageMb ||
+            0
+          );
+
+        if (
+          maxStorageMb >
+          0
+        ) {
+          const currentBytes =
+            Number(
+              (
+                limitStatus
+                  .usage as any
+              )
+                ?.storageUsedBytes ||
+              0
+            );
+
+          const nextBytes =
+            currentBytes +
+            Number(
+              file.size ||
+              0
+            );
+
+          const maxBytes =
+            maxStorageMb *
+            1024 *
+            1024;
+
+          if (
+            nextBytes >
+            maxBytes
+          ) {
+            return res
+              .status(403)
+              .json({
+                message:
+                  `저장공간 제한(${maxStorageMb}MB)을 초과했습니다.`,
+              });
+          }
+        }
+
+        /**
+         * --------------------------------------------------------
+         * 파일명 정리
+         * --------------------------------------------------------
+         */
+        const decodedOriginalName =
+          decodeKoreanFilename(
+            file.originalname
+          );
+
+        const safeOriginalName =
+          sanitizeFilename(
+            decodedOriginalName
+          );
+
+        const extension =
+          path
+            .extname(
+              safeOriginalName
+            )
+            .toLowerCase();
+
+        const baseName =
+          path.basename(
+            safeOriginalName,
+            extension
+          );
+
+        const safeBaseName =
+          baseName ||
+          "community-image";
+
+        /**
+         * --------------------------------------------------------
+         * R2 Key
+         * --------------------------------------------------------
+         *
+         * 회사 + Host 사용자별 물리 분리.
+         */
+        const randomSuffix =
+          crypto
+            .randomBytes(6)
+            .toString(
+              "hex"
+            );
+
+        const key =
+          `org-${organizationId}/student-portal/community/staff-${userId}/` +
+          `${Date.now()}_${randomSuffix}_${safeBaseName}${extension}`;
+
+        /**
+         * --------------------------------------------------------
+         * R2 Upload
+         * --------------------------------------------------------
+         */
+        await s3.send(
+          new PutObjectCommand({
+            Bucket:
+              bucketName,
+
+            Key:
+              key,
+
+            Body:
+              file.buffer,
+
+            ContentType:
+              file.mimetype,
+          })
+        );
+
+        const publicFileUrl =
+          `${publicBaseUrl}/${key
+            .split("/")
+            .map(
+              part =>
+                encodeURIComponent(
+                  part
+                )
+            )
+            .join("/")}`;
+
+        /**
+         * 업로드 감사로그.
+         */
+        await createAuditLog({
+          organizationId,
+
+          actorUserId:
+            Number(
+              userId
+            ),
+
+          actorRole:
+            "host",
+
+          action:
+            "upload.community-image",
+
+          targetType:
+            "community",
+
+          targetId:
+            null,
+
+          beforeJson:
+            null,
+
+          afterJson:
+            JSON.stringify({
+              key,
+
+              url:
+                publicFileUrl,
+
+              originalName:
+                safeOriginalName,
+
+              size:
+                file.size,
+
+              mimeType:
+                file.mimetype,
+            }),
+
+          memo:
+            "Host community image upload",
+        } as any);
+
+        return res.json({
+          success:
+            true,
+
+          fileName:
+            safeOriginalName,
+
+          storedName:
+            key,
+
+          fileUrl:
+            publicFileUrl,
+
+          mimeType:
+            file.mimetype,
+
+          sizeBytes:
+            Number(
+              file.size ||
+              0
+            ),
+        });
+      } catch (
+        error: any
+      ) {
+        console.error(
+          "[HOST COMMUNITY IMAGE UPLOAD ERROR]",
+          error
+        );
+
+        return res
+          .status(500)
+          .json({
+            message:
+              error?.message ||
+              "커뮤니티 이미지 업로드 중 오류가 발생했습니다.",
+          });
+      }
+    }
+  );
 
   app.set("trust proxy", 1);
 
@@ -4668,6 +5257,489 @@ return res.json({
     }
   });
 
+  /**
+   * ============================================================
+   * Student Portal Community Image Upload
+   * ============================================================
+   *
+   * Portal Token
+   * → student_portal_sessions
+   * → organizationId + studentId
+   * → R2 회사별 경로
+   *
+   * 브라우저에서 organizationId / studentId를 받지 않는다.
+   */
+  app.post(
+    "/api/student-portal/community/image",
+    studentPortalCommunityImageUpload.single(
+      "file"
+    ),
+    async (
+      req,
+      res
+    ) => {
+      try {
+        /**
+         * --------------------------------------------------------
+         * Portal Token
+         * --------------------------------------------------------
+         *
+         * Authorization: Bearer {token}
+         *
+         * 또는
+         *
+         * X-Portal-Token: {token}
+         *
+         * 두 방식 모두 허용한다.
+         */
+        const authorization =
+          String(
+            req.headers.authorization ||
+            ""
+          ).trim();
+
+        const bearerToken =
+          authorization
+            .toLowerCase()
+            .startsWith(
+              "bearer "
+            )
+            ? authorization
+                .slice(7)
+                .trim()
+            : "";
+
+        const headerToken =
+          String(
+            req.headers[
+              "x-portal-token"
+            ] ||
+            ""
+          ).trim();
+
+        const portalToken =
+          bearerToken ||
+          headerToken;
+
+        if (!portalToken) {
+          return res
+            .status(401)
+            .json({
+              message:
+                "업무포털 인증정보가 필요합니다.",
+            });
+        }
+
+        /**
+         * --------------------------------------------------------
+         * Portal Session 검증
+         * --------------------------------------------------------
+         *
+         * 여기서 서버가
+         *
+         * organizationId
+         * studentId
+         *
+         * 를 확정한다.
+         */
+        const session =
+          await getStudentPortalSessionByToken({
+            token:
+              portalToken,
+          });
+
+        if (
+  !session ||
+  session.usable !==
+    true
+) {
+  return res
+    .status(401)
+    .json({
+      message:
+        "업무포털 인증이 만료되었거나 유효하지 않습니다.",
+    });
+}
+
+/**
+ * Portal Token에서 검증된 Session 기준으로만
+ * 회사 / 학생을 확정한다.
+ *
+ * 브라우저 요청값에서는 절대 받지 않는다.
+ */
+const organizationId =
+  Number(
+    session.organizationId ||
+    0
+  );
+
+const studentId =
+  Number(
+    session.studentId ||
+    0
+  );
+
+if (
+  !organizationId ||
+  !studentId
+) {
+  return res
+    .status(401)
+    .json({
+      message:
+        "업무포털 인증정보가 올바르지 않습니다.",
+    });
+}
+
+const communitySettings =
+  await getCommunitySettings({
+    organizationId,
+  });
+
+if (
+  !communitySettings ||
+  communitySettings.enabled !==
+    true
+) {
+  return res
+    .status(403)
+    .json({
+      message:
+        "현재 커뮤니티를 이용할 수 없습니다.",
+    });
+}
+
+const communityProfile =
+  await getCommunityProfile({
+    organizationId,
+    studentId,
+  });
+
+if (
+  communityProfile &&
+  communityProfile.communityStatus !==
+    "active"
+) {
+  return res
+    .status(403)
+    .json({
+      message:
+        "현재 커뮤니티 이용이 제한되어 있습니다.",
+    });
+}
+
+        /**
+         * --------------------------------------------------------
+         * 이미지 확인
+         * --------------------------------------------------------
+         */
+        const file =
+          req.file;
+
+        if (!file) {
+          return res
+            .status(400)
+            .json({
+              message:
+                "업로드할 이미지가 없습니다.",
+            });
+        }
+
+        const allowedMimeTypes =
+          new Set([
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif",
+          ]);
+
+        if (
+          !allowedMimeTypes.has(
+            file.mimetype
+          )
+        ) {
+          return res
+            .status(400)
+            .json({
+              message:
+                "지원하지 않는 이미지 형식입니다.",
+            });
+        }
+
+        if (
+          Number(
+            file.size ||
+            0
+          ) >
+          5 *
+            1024 *
+            1024
+        ) {
+          return res
+            .status(400)
+            .json({
+              message:
+                "이미지는 최대 5MB까지 업로드할 수 있습니다.",
+            });
+        }
+
+        /**
+         * --------------------------------------------------------
+         * R2 환경 확인
+         * --------------------------------------------------------
+         */
+        const publicBaseUrl =
+          String(
+            process.env
+              .R2_PUBLIC_BASE_URL ||
+            ""
+          )
+            .trim()
+            .replace(
+              /\/+$/,
+              ""
+            );
+
+        const bucketName =
+          String(
+            process.env
+              .R2_BUCKET_NAME ||
+            ""
+          ).trim();
+
+        if (
+          !publicBaseUrl
+        ) {
+          return res
+            .status(500)
+            .json({
+              message:
+                "R2_PUBLIC_BASE_URL 환경변수가 설정되지 않았습니다.",
+            });
+        }
+
+        if (
+          !bucketName
+        ) {
+          return res
+            .status(500)
+            .json({
+              message:
+                "R2_BUCKET_NAME 환경변수가 설정되지 않았습니다.",
+            });
+        }
+
+        /**
+         * --------------------------------------------------------
+         * SaaS 저장공간 제한
+         * --------------------------------------------------------
+         *
+         * 학생이 올린 커뮤니티 이미지도
+         * 해당 회사 저장공간 사용량에 포함한다.
+         */
+        const limitStatus =
+          await getOrganizationLimitStatus(
+            organizationId
+          );
+
+        const organization =
+          limitStatus.organization as any;
+
+        if (
+          !organization ||
+          organization.status !==
+            "active"
+        ) {
+          return res
+            .status(403)
+            .json({
+              message:
+                "현재 이용이 제한된 회사 계정입니다.",
+            });
+        }
+
+        const maxStorageMb =
+          Number(
+            limitStatus
+              .limits
+              .maxStorageMb ||
+            0
+          );
+
+        if (
+          maxStorageMb >
+          0
+        ) {
+          const currentBytes =
+            Number(
+              (
+                limitStatus
+                  .usage as any
+              )
+                ?.storageUsedBytes ||
+              0
+            );
+
+          const nextBytes =
+            currentBytes +
+            Number(
+              file.size ||
+              0
+            );
+
+          const maxBytes =
+            maxStorageMb *
+            1024 *
+            1024;
+
+          if (
+            nextBytes >
+            maxBytes
+          ) {
+            return res
+              .status(403)
+              .json({
+                message:
+                  `저장공간 제한(${maxStorageMb}MB)을 초과했습니다.`,
+              });
+          }
+        }
+
+        /**
+         * --------------------------------------------------------
+         * 파일명 정리
+         * --------------------------------------------------------
+         */
+        const decodedOriginalName =
+          decodeKoreanFilename(
+            file.originalname
+          );
+
+        const safeOriginalName =
+          sanitizeFilename(
+            decodedOriginalName
+          );
+
+        const extension =
+          path
+            .extname(
+              safeOriginalName
+            )
+            .toLowerCase();
+
+        const baseName =
+          path.basename(
+            safeOriginalName,
+            extension
+          );
+
+        /**
+         * 파일명이 전부 제거되는 경우에도
+         * 정상적인 key를 만든다.
+         */
+        const safeBaseName =
+          baseName ||
+          "community-image";
+
+        /**
+         * --------------------------------------------------------
+         * R2 Key
+         * --------------------------------------------------------
+         *
+         * 회사별 + 학생별로 물리적으로도 분리.
+         */
+        const randomSuffix =
+          crypto
+            .randomBytes(6)
+            .toString(
+              "hex"
+            );
+
+        const key =
+          `org-${organizationId}/student-portal/community/student-${studentId}/` +
+          `${Date.now()}_${randomSuffix}_${safeBaseName}${extension}`;
+
+        /**
+         * --------------------------------------------------------
+         * R2 Upload
+         * --------------------------------------------------------
+         */
+        await s3.send(
+          new PutObjectCommand({
+            Bucket:
+              bucketName,
+
+            Key:
+              key,
+
+            Body:
+              file.buffer,
+
+            ContentType:
+              file.mimetype,
+          })
+        );
+
+        const publicFileUrl =
+          `${publicBaseUrl}/${key
+            .split("/")
+            .map(
+              part =>
+                encodeURIComponent(
+                  part
+                )
+            )
+            .join("/")}`;
+
+        /**
+         * 정상 요청이므로
+         * Portal Session 마지막 접근시간 갱신.
+         */
+        await touchStudentPortalSession({
+          sessionId:
+            session.id,
+
+          organizationId,
+        });
+
+        return res.json({
+          success:
+            true,
+
+          fileName:
+            safeOriginalName,
+
+          fileUrl:
+            publicFileUrl,
+
+          mimeType:
+            file.mimetype,
+
+          sizeBytes:
+            Number(
+              file.size ||
+              0
+            ),
+        });
+      } catch (
+        error: any
+      ) {
+        console.error(
+          "[STUDENT PORTAL COMMUNITY IMAGE UPLOAD ERROR]",
+          error
+        );
+
+        return res
+          .status(500)
+          .json({
+            message:
+              error?.message ||
+              "커뮤니티 이미지 업로드 중 오류가 발생했습니다.",
+          });
+      }
+    }
+  );
+
   registerOAuthRoutes(app);
 
   app.use(
@@ -4683,10 +5755,20 @@ return res.json({
         });
       }
 
-      if (err?.message?.includes("지원하지 않는 파일 형식")) {
-        return res.status(400).json({
-          message: err.message,
-        });
+            if (
+        err?.message?.includes(
+          "지원하지 않는 파일 형식"
+        ) ||
+        err?.message?.includes(
+          "JPG, PNG, WEBP, GIF 이미지만 업로드할 수 있습니다."
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            message:
+              err.message,
+          });
       }
 
       next(err);

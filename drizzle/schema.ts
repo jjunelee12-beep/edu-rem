@@ -1474,10 +1474,15 @@ export const brandingSettings = mysqlTable(
       .default("위드원 교육"),
 
     companyLogoUrl: varchar("companyLogoUrl", {
-      length: 1000,
-    }),
+  length: 1000,
+}),
 
-    messengerSubtitle: varchar("messengerSubtitle", {
+// 카카오톡·문자·SNS 링크 공유 시 표시할 회사 대표 이미지
+shareImageUrl: varchar("shareImageUrl", {
+  length: 1000,
+}),
+
+messengerSubtitle: varchar("messengerSubtitle", {
       length: 150,
     })
       .notNull()
@@ -1737,6 +1742,902 @@ export type StudentPortalSession =
 
 export type InsertStudentPortalSession =
   typeof studentPortalSessions.$inferInsert;
+
+// ─── Student Portal Community Settings (등록자 커뮤니티 회사별 설정) ────
+export const communitySettings = mysqlTable(
+  "community_settings",
+  {
+    id: int("id").autoincrement().primaryKey(),
+
+    organizationId: int("organizationId")
+      .notNull(),
+
+    enabled: boolean("enabled")
+      .notNull()
+      .default(true),
+
+    communityName: varchar("communityName", {
+      length: 150,
+    }),
+
+    description: text("description"),
+
+    backgroundImageUrl: varchar("backgroundImageUrl", {
+      length: 1000,
+    }),
+
+    coverImageUrl: varchar("coverImageUrl", {
+      length: 1000,
+    }),
+
+    allowStudentPosts: boolean("allowStudentPosts")
+      .notNull()
+      .default(true),
+
+    allowStudentComments: boolean("allowStudentComments")
+      .notNull()
+      .default(true),
+
+    allowStudentProfileDirectory: boolean(
+      "allowStudentProfileDirectory"
+    )
+      .notNull()
+      .default(true),
+
+    createdBy: int("createdBy"),
+    updatedBy: int("updatedBy"),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    organizationUniqueIdx: uniqueIndex(
+      "uq_community_settings_organization"
+    ).on(
+      table.organizationId
+    ),
+  })
+);
+
+export type CommunitySetting =
+  typeof communitySettings.$inferSelect;
+
+export type InsertCommunitySetting =
+  typeof communitySettings.$inferInsert;
+
+
+// ─── Student Portal Community Boards (등록자 커뮤니티 게시판) ──────────
+export const communityBoards = mysqlTable(
+  "community_boards",
+  {
+    id: int("id")
+      .autoincrement()
+      .primaryKey(),
+
+    organizationId: int("organizationId")
+      .notNull(),
+
+    boardKey: varchar("boardKey", {
+      length: 80,
+    })
+      .notNull(),
+
+    name: varchar("name", {
+      length: 100,
+    })
+      .notNull(),
+
+    description: text("description"),
+
+    boardType: mysqlEnum("boardType", [
+      "normal",
+      "notice",
+      "resource",
+    ])
+      .notNull()
+      .default("normal"),
+
+    writePermission: mysqlEnum("writePermission", [
+      "all",
+      "host_only",
+    ])
+      .notNull()
+      .default("all"),
+
+    sortOrder: int("sortOrder")
+      .notNull()
+      .default(0),
+
+    isActive: boolean("isActive")
+      .notNull()
+      .default(true),
+
+    createdBy: int("createdBy"),
+    updatedBy: int("updatedBy"),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    organizationBoardKeyUniqueIdx: uniqueIndex(
+      "uq_community_boards_org_key"
+    ).on(
+      table.organizationId,
+      table.boardKey
+    ),
+
+    organizationActiveOrderIdx: index(
+      "idx_community_boards_org_active_order"
+    ).on(
+      table.organizationId,
+      table.isActive,
+      table.sortOrder
+    ),
+  })
+);
+
+export type CommunityBoard =
+  typeof communityBoards.$inferSelect;
+
+export type InsertCommunityBoard =
+  typeof communityBoards.$inferInsert;
+
+
+// ─── Student Portal Community Profiles (등록자 공개 커뮤니티 프로필) ──
+export const communityProfiles = mysqlTable(
+  "community_profiles",
+  {
+    id: int("id")
+      .autoincrement()
+      .primaryKey(),
+
+    organizationId: int("organizationId")
+      .notNull(),
+
+    /**
+     * 실제 CRM 등록자.
+     *
+     * 학생끼리는 이 값을 절대 노출하지 않고
+     * Host만 내부적으로 실제 등록자 식별에 사용한다.
+     */
+    studentId: int("studentId")
+      .notNull(),
+
+    nickname: varchar("nickname", {
+      length: 40,
+    })
+      .notNull(),
+
+    profileImageUrl: varchar("profileImageUrl", {
+      length: 1000,
+    }),
+
+    region: varchar("region", {
+      length: 100,
+    }),
+
+    bio: varchar("bio", {
+      length: 500,
+    }),
+
+    profilePublic: boolean("profilePublic")
+      .notNull()
+      .default(true),
+
+    /**
+     * 커뮤니티 이용 상태.
+     *
+     * CRM 학생 상태와는 완전히 별개다.
+     * banned여도 마이업무 / 실습 / 행정절차는 이용 가능.
+     */
+    communityStatus: mysqlEnum("communityStatus", [
+      "active",
+      "suspended",
+      "banned",
+    ])
+      .notNull()
+      .default("active"),
+
+    suspendedUntil: datetime("suspendedUntil"),
+
+    moderationReason: text(
+      "moderationReason"
+    ),
+
+    moderatedBy: int("moderatedBy"),
+
+    moderatedAt: datetime(
+      "moderatedAt"
+    ),
+
+    nicknameChangedAt: datetime(
+      "nicknameChangedAt"
+    ),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    organizationStudentUniqueIdx: uniqueIndex(
+      "uq_community_profiles_org_student"
+    ).on(
+      table.organizationId,
+      table.studentId
+    ),
+
+    organizationNicknameUniqueIdx: uniqueIndex(
+      "uq_community_profiles_org_nickname"
+    ).on(
+      table.organizationId,
+      table.nickname
+    ),
+
+    organizationStatusIdx: index(
+      "idx_community_profiles_org_status"
+    ).on(
+      table.organizationId,
+      table.communityStatus
+    ),
+  })
+);
+
+export type CommunityProfile =
+  typeof communityProfiles.$inferSelect;
+
+export type InsertCommunityProfile =
+  typeof communityProfiles.$inferInsert;
+
+
+// ─── Student Portal Community Posts (등록자 커뮤니티 게시글) ──────────
+export const communityPosts = mysqlTable(
+  "community_posts",
+  {
+    id: int("id")
+      .autoincrement()
+      .primaryKey(),
+
+    organizationId: int("organizationId")
+      .notNull(),
+
+    boardId: int("boardId")
+      .notNull(),
+
+    /**
+     * 학생도 글을 쓸 수 있고
+     * Host/직원도 일반 글 또는 공지를 작성할 수 있다.
+     */
+    authorType: mysqlEnum("authorType", [
+      "student",
+      "staff",
+    ]).notNull(),
+
+    authorStudentId: int(
+      "authorStudentId"
+    ),
+
+    authorUserId: int(
+      "authorUserId"
+    ),
+
+    title: varchar("title", {
+      length: 255,
+    })
+      .notNull(),
+
+    content: mediumtext("content")
+  .notNull(),
+
+contentFormat: mysqlEnum("contentFormat", [
+  "plain",
+  "blocks",
+])
+  .notNull()
+  .default("blocks"),
+
+contentData: json("contentData"),
+
+isPinned: boolean("isPinned")
+      .notNull()
+      .default(false),
+
+    /**
+     * 실제 DELETE보다 soft 상태관리 우선.
+     *
+     * published: 정상 노출
+     * hidden: Host 숨김
+     * deleted: 작성자 삭제 또는 운영 삭제
+     */
+    status: mysqlEnum("status", [
+      "published",
+      "hidden",
+      "deleted",
+    ])
+      .notNull()
+      .default("published"),
+
+    viewCount: int("viewCount")
+      .notNull()
+      .default(0),
+
+    commentCount: int("commentCount")
+      .notNull()
+      .default(0),
+
+    likeCount: int("likeCount")
+      .notNull()
+      .default(0),
+
+    helpfulCount: int("helpfulCount")
+      .notNull()
+      .default(0),
+
+    bookmarkCount: int("bookmarkCount")
+      .notNull()
+      .default(0),
+
+    editedAt: datetime("editedAt"),
+
+    hiddenAt: datetime("hiddenAt"),
+
+    hiddenBy: int("hiddenBy"),
+
+    deletedAt: datetime("deletedAt"),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    organizationBoardCreatedIdx: index(
+      "idx_community_posts_org_board_created"
+    ).on(
+      table.organizationId,
+      table.boardId,
+      table.createdAt
+    ),
+
+    organizationStatusCreatedIdx: index(
+      "idx_community_posts_org_status_created"
+    ).on(
+      table.organizationId,
+      table.status,
+      table.createdAt
+    ),
+
+    organizationStudentAuthorIdx: index(
+      "idx_community_posts_org_student_author"
+    ).on(
+      table.organizationId,
+      table.authorStudentId
+    ),
+
+    organizationUserAuthorIdx: index(
+      "idx_community_posts_org_user_author"
+    ).on(
+      table.organizationId,
+      table.authorUserId
+    ),
+  })
+);
+
+export type CommunityPost =
+  typeof communityPosts.$inferSelect;
+
+export type InsertCommunityPost =
+  typeof communityPosts.$inferInsert;
+
+
+// ─── Student Portal Community Comments (등록자 커뮤니티 댓글/대댓글) ──
+export const communityComments = mysqlTable(
+  "community_comments",
+  {
+    id: int("id")
+      .autoincrement()
+      .primaryKey(),
+
+    organizationId: int("organizationId")
+      .notNull(),
+
+    postId: int("postId")
+      .notNull(),
+
+    /**
+     * null이면 일반 댓글.
+     * 값이 있으면 해당 댓글의 대댓글.
+     */
+    parentCommentId: int(
+      "parentCommentId"
+    ),
+
+    authorType: mysqlEnum("authorType", [
+      "student",
+      "staff",
+    ]).notNull(),
+
+    authorStudentId: int(
+      "authorStudentId"
+    ),
+
+    authorUserId: int(
+      "authorUserId"
+    ),
+
+    content: text("content")
+      .notNull(),
+
+    status: mysqlEnum("status", [
+      "published",
+      "hidden",
+      "deleted",
+    ])
+      .notNull()
+      .default("published"),
+
+    editedAt: datetime("editedAt"),
+
+    hiddenAt: datetime("hiddenAt"),
+
+    hiddenBy: int("hiddenBy"),
+
+    deletedAt: datetime("deletedAt"),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    organizationPostCreatedIdx: index(
+      "idx_community_comments_org_post_created"
+    ).on(
+      table.organizationId,
+      table.postId,
+      table.createdAt
+    ),
+
+    organizationParentIdx: index(
+      "idx_community_comments_org_parent"
+    ).on(
+      table.organizationId,
+      table.parentCommentId
+    ),
+
+    organizationStudentAuthorIdx: index(
+      "idx_community_comments_org_student_author"
+    ).on(
+      table.organizationId,
+      table.authorStudentId
+    ),
+  })
+);
+
+export type CommunityComment =
+  typeof communityComments.$inferSelect;
+
+export type InsertCommunityComment =
+  typeof communityComments.$inferInsert;
+
+
+// ─── Student Portal Community Reactions (좋아요 / 도움됐어요) ─────────
+export const communityReactions = mysqlTable(
+  "community_reactions",
+  {
+    id: int("id")
+      .autoincrement()
+      .primaryKey(),
+
+    organizationId: int("organizationId")
+      .notNull(),
+
+    targetType: mysqlEnum("targetType", [
+      "post",
+      "comment",
+    ]).notNull(),
+
+    targetId: int("targetId")
+      .notNull(),
+
+    actorType: mysqlEnum("actorType", [
+      "student",
+      "staff",
+    ]).notNull(),
+
+    actorStudentId: int(
+      "actorStudentId"
+    ),
+
+    actorUserId: int(
+      "actorUserId"
+    ),
+
+    /**
+     * 중복 반응 방지용 내부 키.
+     *
+     * student:123
+     * staff:7
+     *
+     * 형태로 서버에서 생성한다.
+     */
+    actorKey: varchar("actorKey", {
+      length: 80,
+    })
+      .notNull(),
+
+    reactionType: mysqlEnum("reactionType", [
+      "like",
+      "helpful",
+    ]).notNull(),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    targetActorReactionUniqueIdx: uniqueIndex(
+      "uq_community_reactions_target_actor_type"
+    ).on(
+      table.organizationId,
+      table.targetType,
+      table.targetId,
+      table.actorKey,
+      table.reactionType
+    ),
+
+    organizationTargetIdx: index(
+      "idx_community_reactions_org_target"
+    ).on(
+      table.organizationId,
+      table.targetType,
+      table.targetId
+    ),
+  })
+);
+
+export type CommunityReaction =
+  typeof communityReactions.$inferSelect;
+
+export type InsertCommunityReaction =
+  typeof communityReactions.$inferInsert;
+
+
+// ─── Student Portal Community Bookmarks (등록자 게시글 저장) ──────────
+export const communityBookmarks = mysqlTable(
+  "community_bookmarks",
+  {
+    id: int("id")
+      .autoincrement()
+      .primaryKey(),
+
+    organizationId: int("organizationId")
+      .notNull(),
+
+    postId: int("postId")
+      .notNull(),
+
+    studentId: int("studentId")
+      .notNull(),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    organizationPostStudentUniqueIdx: uniqueIndex(
+      "uq_community_bookmarks_org_post_student"
+    ).on(
+      table.organizationId,
+      table.postId,
+      table.studentId
+    ),
+
+    organizationStudentCreatedIdx: index(
+      "idx_community_bookmarks_org_student_created"
+    ).on(
+      table.organizationId,
+      table.studentId,
+      table.createdAt
+    ),
+  })
+);
+
+export type CommunityBookmark =
+  typeof communityBookmarks.$inferSelect;
+
+export type InsertCommunityBookmark =
+  typeof communityBookmarks.$inferInsert;
+
+
+// ─── Student Portal Community Attachments (게시글/댓글 첨부) ──────────
+export const communityAttachments = mysqlTable(
+  "community_attachments",
+  {
+    id: int("id")
+      .autoincrement()
+      .primaryKey(),
+
+    organizationId: int("organizationId")
+      .notNull(),
+
+    targetType: mysqlEnum("targetType", [
+      "post",
+      "comment",
+    ]).notNull(),
+
+    targetId: int("targetId")
+      .notNull(),
+
+    originalName: varchar("originalName", {
+      length: 255,
+    })
+      .notNull(),
+
+    storedName: varchar("storedName", {
+      length: 255,
+    }),
+
+    url: varchar("url", {
+      length: 1000,
+    })
+      .notNull(),
+
+    mimeType: varchar("mimeType", {
+      length: 150,
+    }),
+
+    sizeBytes: int("sizeBytes")
+      .notNull()
+      .default(0),
+
+    uploaderType: mysqlEnum("uploaderType", [
+      "student",
+      "staff",
+    ]).notNull(),
+
+    uploaderStudentId: int(
+      "uploaderStudentId"
+    ),
+
+    uploaderUserId: int(
+      "uploaderUserId"
+    ),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    organizationTargetIdx: index(
+      "idx_community_attachments_org_target"
+    ).on(
+      table.organizationId,
+      table.targetType,
+      table.targetId
+    ),
+  })
+);
+
+export type CommunityAttachment =
+  typeof communityAttachments.$inferSelect;
+
+export type InsertCommunityAttachment =
+  typeof communityAttachments.$inferInsert;
+
+
+// ─── Student Portal Community Reports (등록자 신고) ─────────────────
+export const communityReports = mysqlTable(
+  "community_reports",
+  {
+    id: int("id")
+      .autoincrement()
+      .primaryKey(),
+
+    organizationId: int("organizationId")
+      .notNull(),
+
+    reporterStudentId: int(
+      "reporterStudentId"
+    )
+      .notNull(),
+
+    targetType: mysqlEnum("targetType", [
+      "post",
+      "comment",
+      "profile",
+    ]).notNull(),
+
+    targetId: int("targetId")
+      .notNull(),
+
+    reasonType: mysqlEnum("reasonType", [
+      "spam",
+      "abuse",
+      "privacy",
+      "advertising",
+      "misinformation",
+      "other",
+    ]).notNull(),
+
+    reasonText: text("reasonText"),
+
+    status: mysqlEnum("status", [
+      "pending",
+      "reviewed",
+      "dismissed",
+      "actioned",
+    ])
+      .notNull()
+      .default("pending"),
+
+    handledBy: int("handledBy"),
+
+    handledAt: datetime(
+      "handledAt"
+    ),
+
+    resolutionMemo: text(
+      "resolutionMemo"
+    ),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (table) => ({
+    organizationStatusCreatedIdx: index(
+      "idx_community_reports_org_status_created"
+    ).on(
+      table.organizationId,
+      table.status,
+      table.createdAt
+    ),
+
+    organizationTargetIdx: index(
+      "idx_community_reports_org_target"
+    ).on(
+      table.organizationId,
+      table.targetType,
+      table.targetId
+    ),
+
+    organizationReporterIdx: index(
+      "idx_community_reports_org_reporter"
+    ).on(
+      table.organizationId,
+      table.reporterStudentId
+    ),
+  })
+);
+
+export type CommunityReport =
+  typeof communityReports.$inferSelect;
+
+export type InsertCommunityReport =
+  typeof communityReports.$inferInsert;
+
+
+// ─── Student Portal Community Moderation Logs (Host 제재 이력) ───────
+export const communityModerationLogs = mysqlTable(
+  "community_moderation_logs",
+  {
+    id: int("id")
+      .autoincrement()
+      .primaryKey(),
+
+    organizationId: int("organizationId")
+      .notNull(),
+
+    targetType: mysqlEnum("targetType", [
+      "profile",
+      "post",
+      "comment",
+      "report",
+    ]).notNull(),
+
+    targetId: int("targetId")
+      .notNull(),
+
+    actionType: mysqlEnum("actionType", [
+      "hide",
+      "restore",
+      "delete",
+      "suspend",
+      "unsuspend",
+      "ban",
+      "unban",
+      "report_reviewed",
+      "report_dismissed",
+    ]).notNull(),
+
+    /**
+     * 제재를 실행한 CRM Host/User.
+     */
+    actorUserId: int(
+      "actorUserId"
+    )
+      .notNull(),
+
+    /**
+     * 게시글/댓글을 통해 제재된 실제 등록자 추적용.
+     */
+    targetStudentId: int(
+      "targetStudentId"
+    ),
+
+    reason: text("reason"),
+
+    metadataJson: json(
+      "metadataJson"
+    ),
+
+    createdAt: timestamp("createdAt")
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    organizationTargetCreatedIdx: index(
+      "idx_community_moderation_org_target_created"
+    ).on(
+      table.organizationId,
+      table.targetType,
+      table.targetId,
+      table.createdAt
+    ),
+
+    organizationStudentCreatedIdx: index(
+      "idx_community_moderation_org_student_created"
+    ).on(
+      table.organizationId,
+      table.targetStudentId,
+      table.createdAt
+    ),
+
+    organizationActorCreatedIdx: index(
+      "idx_community_moderation_org_actor_created"
+    ).on(
+      table.organizationId,
+      table.actorUserId,
+      table.createdAt
+    ),
+  })
+);
+
+export type CommunityModerationLog =
+  typeof communityModerationLogs.$inferSelect;
+
+export type InsertCommunityModerationLog =
+  typeof communityModerationLogs.$inferInsert;
 
 // ─── Staff Public Profiles (담당자 공개 프로필) ──────────────────────
 export const staffPublicProfiles = mysqlTable(

@@ -9,8 +9,9 @@ import {
   getBrandingSettings,
   getStaffPublicProfileByToken,
   getStaffPublicProfileOrganizationIdByToken,
+  getPublicStudentPortalBySlug,
+  getPublicBrandingBySlug,
 } from "../db";
-
 
 function escapeHtml(value: unknown): string {
   return String(value ?? "")
@@ -294,6 +295,307 @@ async function injectStaffProfileMetadata(
   }
 }
 
+async function injectPortalMetadata(
+  req: express.Request,
+  html: string
+): Promise<string> {
+  const pathname =
+    String(
+      req.path || ""
+    ).trim();
+
+  const studentPortalMatch =
+    pathname.match(
+      /^\/portal\/([^/]+)\/?$/
+    );
+
+  const hostPortalMatch =
+    pathname.match(
+      /^\/([^/]+)\/portal-management\/community\/?$/
+    );
+
+  if (
+    !studentPortalMatch &&
+    !hostPortalMatch
+  ) {
+    return html;
+  }
+
+  try {
+    let slug = "";
+
+    if (studentPortalMatch) {
+      try {
+        slug =
+          decodeURIComponent(
+            String(
+              studentPortalMatch[1] ||
+              ""
+            )
+          )
+            .trim()
+            .toLowerCase();
+      } catch {
+        slug =
+          String(
+            studentPortalMatch[1] ||
+            ""
+          )
+            .trim()
+            .toLowerCase();
+      }
+    } else if (hostPortalMatch) {
+      try {
+        slug =
+          decodeURIComponent(
+            String(
+              hostPortalMatch[1] ||
+              ""
+            )
+          )
+            .trim()
+            .toLowerCase();
+      } catch {
+        slug =
+          String(
+            hostPortalMatch[1] ||
+            ""
+          )
+            .trim()
+            .toLowerCase();
+      }
+    }
+
+    if (!slug) {
+      return html;
+    }
+
+    let title = "";
+    let description = "";
+    let siteName = "";
+    let shareImageUrl = "";
+    let companyLogoUrl = "";
+
+    if (studentPortalMatch) {
+      const portal =
+        await getPublicStudentPortalBySlug(
+          slug
+        );
+
+      if (!portal) {
+        return html;
+      }
+
+      title =
+        String(
+          portal.portalName ||
+          portal.companyName ||
+          "업무포탈"
+        ).trim();
+
+      description =
+        "등록회원 전용 업무포탈입니다.";
+
+      siteName =
+        String(
+          portal.companyName ||
+          portal.portalName ||
+          "EduCanvas"
+        ).trim();
+
+      shareImageUrl =
+        String(
+          portal.shareImageUrl ||
+          ""
+        ).trim();
+
+      companyLogoUrl =
+        String(
+          portal.companyLogoUrl ||
+          ""
+        ).trim();
+    } else {
+      const [
+        branding,
+        portal,
+      ] =
+        await Promise.all([
+          getPublicBrandingBySlug(
+            slug
+          ),
+
+          getPublicStudentPortalBySlug(
+            slug
+          ),
+        ]);
+
+      if (!branding) {
+        return html;
+      }
+
+      const companyName =
+        String(
+          branding.companyName ||
+          "EduCanvas"
+        ).trim();
+
+      const portalName =
+        String(
+          portal?.portalName ||
+          companyName
+        ).trim();
+
+      title =
+        `${portalName} Host 공용포탈`;
+
+      description =
+        "담당자 전용 업무포탈입니다.";
+
+      siteName =
+        companyName;
+
+      shareImageUrl =
+        String(
+          branding.shareImageUrl ||
+          ""
+        ).trim();
+
+      companyLogoUrl =
+        String(
+          branding.companyLogoUrl ||
+          ""
+        ).trim();
+    }
+
+    const imageUrl =
+      toAbsoluteUrl(
+        req,
+        shareImageUrl
+      ) ||
+      toAbsoluteUrl(
+        req,
+        companyLogoUrl
+      ) ||
+      toAbsoluteUrl(
+        req,
+        process.env.OG_DEFAULT_IMAGE_URL
+      ) ||
+      toAbsoluteUrl(
+        req,
+        "/favicon.ico"
+      );
+
+    const origin =
+      getRequestOrigin(req);
+
+    const canonicalUrl =
+      origin
+        ? `${origin}${pathname}`
+        : "";
+
+    const tags = [
+      `<meta property="og:locale" content="ko_KR" />`,
+
+      `<meta property="og:type" content="website" />`,
+
+      `<meta property="og:title" content="${escapeHtml(
+        title
+      )}" />`,
+
+      `<meta property="og:description" content="${escapeHtml(
+        description
+      )}" />`,
+
+      siteName
+        ? `<meta property="og:site_name" content="${escapeHtml(
+            siteName
+          )}" />`
+        : "",
+
+      imageUrl
+        ? `<meta property="og:image" content="${escapeHtml(
+            imageUrl
+          )}" />`
+        : "",
+
+      imageUrl
+        ? `<meta property="og:image:width" content="1200" />`
+        : "",
+
+      imageUrl
+        ? `<meta property="og:image:height" content="630" />`
+        : "",
+
+      canonicalUrl
+        ? `<meta property="og:url" content="${escapeHtml(
+            canonicalUrl
+          )}" />`
+        : "",
+
+      `<meta name="twitter:card" content="summary_large_image" />`,
+
+      `<meta name="twitter:title" content="${escapeHtml(
+        title
+      )}" />`,
+
+      `<meta name="twitter:description" content="${escapeHtml(
+        description
+      )}" />`,
+
+      imageUrl
+        ? `<meta name="twitter:image" content="${escapeHtml(
+            imageUrl
+          )}" />`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n    ");
+
+    let next =
+      removeExistingSocialMeta(
+        html
+      );
+
+    if (
+      /<title>[\s\S]*?<\/title>/i.test(
+        next
+      )
+    ) {
+      next =
+        next.replace(
+          /<title>[\s\S]*?<\/title>/i,
+          `<title>${escapeHtml(
+            title
+          )}</title>`
+        );
+    }
+
+    if (
+      next.includes(
+        "</head>"
+      )
+    ) {
+      next =
+        next.replace(
+          "</head>",
+          `    ${tags}\n  </head>`
+        );
+    }
+
+    return next;
+  } catch (error) {
+    console.error(
+      "[PORTAL OG METADATA ERROR]",
+      {
+        path: pathname,
+        error,
+      }
+    );
+
+    return html;
+  }
+}
+
 export async function setupVite(app: Express, server: Server) {
   const serverOptions = {
     middlewareMode: true,
@@ -334,6 +636,12 @@ export async function setupVite(app: Express, server: Server) {
 
 page =
   await injectStaffProfileMetadata(
+    req,
+    page
+  );
+
+page =
+  await injectPortalMetadata(
     req,
     page
   );
@@ -379,14 +687,20 @@ app.use("*", async (req, res, next) => {
         "utf-8"
       );
 
-    html =
-      await injectStaffProfileMetadata(
-        req,
-        html
-      );
+   html =
+  await injectStaffProfileMetadata(
+    req,
+    html
+  );
 
-    res
-      .status(200)
+html =
+  await injectPortalMetadata(
+    req,
+    html
+  );
+
+res
+  .status(200)
       .set({
         "Content-Type":
           "text/html",

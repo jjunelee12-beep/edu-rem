@@ -167,6 +167,17 @@ type InsertStudentPortalSetting,
 studentPortalSessions,
 type InsertStudentPortalSession,
 
+communitySettings,
+communityBoards,
+communityProfiles,
+communityPosts,
+communityComments,
+communityReactions,
+communityBookmarks,
+communityAttachments,
+communityReports,
+communityModerationLogs,
+
 staffPublicProfiles,
 type InsertStaffPublicProfile,
 
@@ -1195,12 +1206,16 @@ export async function getPublicStudentPortalBySlug(
       null,
 
     companyLogoUrl:
-      branding?.companyLogoUrl ??
-      null,
+  branding?.companyLogoUrl ??
+  null,
 
-    primaryColor:
-      branding?.primaryColor ??
-      null,
+shareImageUrl:
+  branding?.shareImageUrl ??
+  null,
+
+primaryColor:
+  branding?.primaryColor ??
+  null,
   };
 }
 
@@ -1841,6 +1856,6625 @@ export async function revokeStudentPortalSession(
   return {
     success:
       true as const,
+  };
+}
+
+/**
+ * =========================================================
+ * Student Portal - Community
+ * =========================================================
+ *
+ * Router가 Portal Token 검증 후 확정한
+ * organizationId + studentId만 전달한다.
+ */
+const COMMUNITY_IMAGE_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+]);
+
+const COMMUNITY_IMAGE_MAX_BYTES =
+  5 * 1024 * 1024;
+
+function requireCommunityId(
+  value: unknown,
+  label: string
+): number {
+  const id =
+    Math.floor(
+      Number(
+        value || 0
+      )
+    );
+
+  if (
+    !Number.isFinite(id) ||
+    id <= 0
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      `${label} 정보가 올바르지 않습니다.`,
+      400
+    );
+  }
+
+  return id;
+}
+
+function normalizeCommunityNickname(
+  value: unknown
+): string {
+  const nickname =
+    String(
+      value ?? ""
+    )
+      .replace(/\s+/g, " ")
+      .trim();
+
+  if (
+    nickname.length < 2 ||
+    nickname.length > 12
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "닉네임은 2자 이상 12자 이하로 입력해주세요.",
+      400
+    );
+  }
+
+  if (
+    /@/.test(nickname) ||
+    /\b\d{2,4}-?\d{3,4}-?\d{4}\b/.test(
+      nickname
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "닉네임에는 이메일 주소나 전화번호를 사용할 수 없습니다.",
+      400
+    );
+  }
+
+  return nickname;
+}
+
+function normalizeCommunityText(
+  value: unknown,
+  maxLength: number
+): string | null {
+  const normalized =
+    String(
+      value ?? ""
+    ).trim();
+
+  return normalized
+    ? normalized.slice(
+        0,
+        maxLength
+      )
+    : null;
+}
+
+
+/**
+ * 회사별 커뮤니티 설정 조회.
+ */
+export async function getCommunitySettings(
+  params: {
+    organizationId?: number | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const rows =
+    await db
+      .select()
+      .from(
+        communitySettings
+      )
+      .where(
+        eq(
+          communitySettings.organizationId,
+          organizationId
+        )
+      )
+      .limit(1);
+
+  return rows[0] ??
+    null;
+}
+
+
+/**
+ * 신규 회사 커뮤니티 기본 게시판.
+ */
+const DEFAULT_COMMUNITY_BOARDS = [
+  [
+    "notice",
+    "공지사항",
+    "notice",
+    "host_only",
+    10,
+  ],
+  [
+    "free",
+    "자유게시판",
+    "normal",
+    "all",
+    20,
+  ],
+  [
+    "information",
+    "정보공유방",
+    "normal",
+    "all",
+    30,
+  ],
+  [
+    "practice",
+    "실습 이야기",
+    "normal",
+    "all",
+    40,
+  ],
+  [
+    "welfare_jobs",
+    "취업·복지정보",
+    "normal",
+    "all",
+    50,
+  ],
+  [
+    "life_travel",
+    "여행·생활정보",
+    "normal",
+    "all",
+    60,
+  ],
+  [
+    "resources",
+    "자료실",
+    "resource",
+    "host_only",
+    70,
+  ],
+] as const;
+
+
+/**
+ * 회사 최초 커뮤니티 진입 시
+ * 설정 + 기본 게시판 생성.
+ *
+ * 이미 존재하면 중복 생성하지 않는다.
+ */
+export async function ensureCommunityDefaults(
+  params: {
+    organizationId?: number | null;
+
+    actorUserId?:
+      number | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const settings =
+    await getCommunitySettings({
+      organizationId,
+    });
+
+  if (!settings) {
+    await db
+      .insert(
+        communitySettings
+      )
+      .values({
+        organizationId,
+
+        enabled:
+          true,
+
+        allowStudentPosts:
+          true,
+
+        allowStudentComments:
+          true,
+
+        allowStudentProfileDirectory:
+          true,
+
+        createdBy:
+          params.actorUserId ??
+          null,
+
+        updatedBy:
+          params.actorUserId ??
+          null,
+      } as any);
+  }
+
+  const existingBoards =
+    await db
+      .select({
+        boardKey:
+          communityBoards.boardKey,
+      })
+      .from(
+        communityBoards
+      )
+      .where(
+        eq(
+          communityBoards.organizationId,
+          organizationId
+        )
+      );
+
+  const existingKeys =
+    new Set(
+      existingBoards.map(
+        row =>
+          String(
+            row.boardKey
+          )
+      )
+    );
+
+  const missing =
+    DEFAULT_COMMUNITY_BOARDS.filter(
+      ([key]) =>
+        !existingKeys.has(
+          key
+        )
+    );
+
+  if (
+    missing.length >
+    0
+  ) {
+    await db
+      .insert(
+        communityBoards
+      )
+      .values(
+        missing.map(
+          ([
+            boardKey,
+            name,
+            boardType,
+            writePermission,
+            sortOrder,
+          ]) => ({
+            organizationId,
+
+            boardKey,
+
+            name,
+
+            boardType,
+
+            writePermission,
+
+            sortOrder,
+
+            isActive:
+              true,
+
+            createdBy:
+              params.actorUserId ??
+              null,
+
+            updatedBy:
+              params.actorUserId ??
+              null,
+          })
+        ) as any
+      );
+  }
+
+  return {
+    settings:
+      await getCommunitySettings({
+        organizationId,
+      }),
+
+    boards:
+      await listCommunityBoards({
+        organizationId,
+      }),
+  };
+}
+
+
+/**
+ * 활성 게시판 목록.
+ */
+export async function listCommunityBoards(
+  params: {
+    organizationId?: number | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  return db
+    .select()
+    .from(
+      communityBoards
+    )
+    .where(
+      and(
+        eq(
+          communityBoards.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityBoards.isActive,
+          true
+        )
+      )
+    )
+    .orderBy(
+      asc(
+        communityBoards.sortOrder
+      ),
+
+      asc(
+        communityBoards.id
+      )
+    );
+}
+
+
+/**
+ * 등록자의 커뮤니티 프로필.
+ */
+export async function getCommunityProfile(
+  params: {
+    organizationId?: number | null;
+
+    studentId:
+      number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireCommunityId(
+      params.studentId,
+      "학생"
+    );
+
+  const rows =
+    await db
+      .select()
+      .from(
+        communityProfiles
+      )
+      .where(
+        and(
+          eq(
+            communityProfiles.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityProfiles.studentId,
+            studentId
+          )
+        )
+      )
+      .limit(1);
+
+  const profile =
+    rows[0] ??
+    null;
+
+  /**
+   * 기간 정지가 만료된 경우 자동 복구.
+   */
+  if (
+    profile
+      ?.communityStatus ===
+      "suspended" &&
+    profile.suspendedUntil &&
+    new Date(
+      profile.suspendedUntil
+    ).getTime() <=
+      Date.now()
+  ) {
+    await db
+      .update(
+        communityProfiles
+      )
+      .set({
+        communityStatus:
+          "active",
+
+        suspendedUntil:
+          null,
+
+        moderationReason:
+          null,
+
+        updatedAt:
+          new Date(),
+      } as any)
+      .where(
+        and(
+          eq(
+            communityProfiles.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityProfiles.studentId,
+            studentId
+          )
+        )
+      );
+
+    const refreshed =
+      await db
+        .select()
+        .from(
+          communityProfiles
+        )
+        .where(
+          and(
+            eq(
+              communityProfiles.organizationId,
+              organizationId
+            ),
+
+            eq(
+              communityProfiles.studentId,
+              studentId
+            )
+          )
+        )
+        .limit(1);
+
+    return refreshed[0] ??
+      null;
+  }
+
+  return profile;
+}
+
+
+/**
+ * 최초 닉네임 설정 /
+ * 공개 프로필 수정.
+ */
+export async function saveCommunityProfile(
+  params: {
+    organizationId?: number | null;
+
+    studentId:
+      number;
+
+    nickname:
+      string;
+
+    profileImageUrl?:
+      string | null;
+
+    region?:
+      string | null;
+
+    bio?:
+      string | null;
+
+    profilePublic?:
+      boolean;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireCommunityId(
+      params.studentId,
+      "학생"
+    );
+
+  /**
+   * 승인된 실제 CRM 등록자인지 재검증.
+   */
+  const student =
+    await getStudentById(
+      studentId,
+      {
+        organizationId,
+      }
+    );
+
+  if (
+    !student ||
+    student.approvalStatus !==
+      "승인"
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "승인된 등록회원만 커뮤니티를 이용할 수 있습니다.",
+      403
+    );
+  }
+
+  const nickname =
+    normalizeCommunityNickname(
+      params.nickname
+    );
+
+  const existing =
+    await getCommunityProfile({
+      organizationId,
+
+      studentId,
+    });
+
+  /**
+   * 같은 회사 내부에서만
+   * 닉네임 중복 검사.
+   */
+  const duplicate =
+    await db
+      .select({
+        studentId:
+          communityProfiles.studentId,
+      })
+      .from(
+        communityProfiles
+      )
+      .where(
+        and(
+          eq(
+            communityProfiles.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityProfiles.nickname,
+            nickname
+          )
+        )
+      )
+      .limit(1);
+
+  if (
+    duplicate[0] &&
+    Number(
+      duplicate[0].studentId
+    ) !==
+      studentId
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "이미 사용 중인 닉네임입니다.",
+      409
+    );
+  }
+
+  const values = {
+    nickname,
+
+    profileImageUrl:
+      params.profileImageUrl !==
+      undefined
+        ? normalizeCommunityText(
+            params.profileImageUrl,
+            1000
+          )
+        : existing
+            ?.profileImageUrl ??
+          null,
+
+    region:
+      params.region !==
+      undefined
+        ? normalizeCommunityText(
+            params.region,
+            100
+          )
+        : existing?.region ??
+          null,
+
+    bio:
+      params.bio !==
+      undefined
+        ? normalizeCommunityText(
+            params.bio,
+            500
+          )
+        : existing?.bio ??
+          null,
+
+    profilePublic:
+      params.profilePublic ??
+      existing?.profilePublic ??
+      true,
+
+    nicknameChangedAt:
+      existing &&
+      existing.nickname !==
+        nickname
+        ? new Date()
+        : existing
+            ?.nicknameChangedAt ??
+          null,
+
+    updatedAt:
+      new Date(),
+  };
+
+  if (existing) {
+    await db
+      .update(
+        communityProfiles
+      )
+      .set(
+        values as any
+      )
+      .where(
+        and(
+          eq(
+            communityProfiles.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityProfiles.studentId,
+            studentId
+          )
+        )
+      );
+  } else {
+    await db
+      .insert(
+        communityProfiles
+      )
+      .values({
+        organizationId,
+
+        studentId,
+
+        ...values,
+
+        communityStatus:
+          "active",
+      } as any);
+  }
+
+  return getCommunityProfile({
+    organizationId,
+
+    studentId,
+  });
+}
+
+/**
+ * 커뮤니티 닉네임 사용 가능 여부.
+ *
+ * organizationId 내부에서만 중복 검사한다.
+ * 본인이 현재 사용 중인 닉네임은 사용 가능으로 처리한다.
+ */
+export async function checkCommunityNicknameAvailability(
+  params: {
+    organizationId?: number | null;
+    studentId: number;
+    nickname: string;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireCommunityId(
+      params.studentId,
+      "학생"
+    );
+
+  const nickname =
+    normalizeCommunityNickname(
+      params.nickname
+    );
+
+  const rows =
+    await db
+      .select({
+        studentId:
+          communityProfiles.studentId,
+      })
+      .from(
+        communityProfiles
+      )
+      .where(
+        and(
+          eq(
+            communityProfiles.organizationId,
+            organizationId
+          ),
+          eq(
+            communityProfiles.nickname,
+            nickname
+          )
+        )
+      )
+      .limit(1);
+
+  const duplicate =
+    rows[0] ?? null;
+
+  const available =
+    !duplicate ||
+    Number(
+      duplicate.studentId ||
+      0
+    ) ===
+      studentId;
+
+  return {
+    nickname,
+    available,
+  };
+}
+/**
+ * 전체 등록회원 수 /
+ * 커뮤니티 닉네임 생성 회원 수.
+ */
+export async function getCommunityMemberSummary(
+  params: {
+    organizationId?: number | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const [
+    approvedRows,
+    profileRows,
+  ] =
+    await Promise.all([
+      db
+        .select({
+          count:
+            sql<number>`COUNT(*)`,
+        })
+        .from(
+          students
+        )
+        .where(
+          and(
+            eq(
+              students.organizationId,
+              organizationId
+            ),
+
+            eq(
+              students.approvalStatus,
+              "승인"
+            ),
+
+            sql`${students.deletedAt} IS NULL`
+          )
+        ),
+
+      db
+        .select({
+          count:
+            sql<number>`COUNT(*)`,
+        })
+        .from(
+          communityProfiles
+        )
+        .where(
+          eq(
+            communityProfiles.organizationId,
+            organizationId
+          )
+        ),
+    ]);
+
+  return {
+    approvedStudentCount:
+      Number(
+        approvedRows[0]
+          ?.count ||
+        0
+      ),
+
+    communityProfileCount:
+      Number(
+        profileRows[0]
+          ?.count ||
+        0
+      ),
+  };
+}
+
+
+/**
+ * 학생에게 공개 가능한 회원 프로필만 조회.
+ *
+ * 실제 이름/전화번호/studentId는 반환하지 않는다.
+ */
+export async function listCommunityPublicProfiles(
+  params: {
+    organizationId?: number | null;
+
+    limit?:
+      number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const limit =
+    Math.min(
+      Math.max(
+        Math.floor(
+          Number(
+            params.limit ??
+            100
+          )
+        ),
+        1
+      ),
+      200
+    );
+
+  return db
+    .select({
+      profileId:
+        communityProfiles.id,
+
+      nickname:
+        communityProfiles.nickname,
+
+      profileImageUrl:
+        communityProfiles.profileImageUrl,
+
+      region:
+        communityProfiles.region,
+
+      bio:
+        communityProfiles.bio,
+
+      createdAt:
+        communityProfiles.createdAt,
+    })
+    .from(
+      communityProfiles
+    )
+    .where(
+      and(
+        eq(
+          communityProfiles.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityProfiles.profilePublic,
+          true
+        ),
+
+        eq(
+          communityProfiles.communityStatus,
+          "active"
+        )
+      )
+    )
+    .orderBy(
+      desc(
+        communityProfiles.createdAt
+      )
+    )
+    .limit(
+      limit
+    );
+}
+
+
+/**
+ * 글쓰기 가능한 게시판 확인.
+ */
+async function getCommunityBoardForWrite(
+  organizationId:
+    number,
+
+  boardIdValue:
+    unknown
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const boardId =
+    requireCommunityId(
+      boardIdValue,
+      "게시판"
+    );
+
+  const rows =
+    await db
+      .select()
+      .from(
+        communityBoards
+      )
+      .where(
+        and(
+          eq(
+            communityBoards.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityBoards.id,
+            boardId
+          ),
+
+          eq(
+            communityBoards.isActive,
+            true
+          )
+        )
+      )
+      .limit(1);
+
+  return rows[0] ??
+    null;
+}
+
+
+/**
+ * 게시글 목록.
+ */
+export async function listCommunityPosts(
+  params: {
+    organizationId?: number | null;
+
+    boardId?:
+      number | null;
+
+    limit?:
+      number;
+
+    beforeId?:
+      number | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const limit =
+    Math.min(
+      Math.max(
+        Math.floor(
+          Number(
+            params.limit ??
+            20
+          )
+        ),
+        1
+      ),
+      50
+    );
+
+  const conditions:
+    any[] = [
+      eq(
+        communityPosts.organizationId,
+        organizationId
+      ),
+
+      eq(
+        communityPosts.status,
+        "published"
+      ),
+    ];
+
+  if (params.boardId) {
+    conditions.push(
+      eq(
+        communityPosts.boardId,
+        requireCommunityId(
+          params.boardId,
+          "게시판"
+        )
+      )
+    );
+  }
+
+  if (params.beforeId) {
+    conditions.push(
+      sql`${communityPosts.id} < ${
+        requireCommunityId(
+          params.beforeId,
+          "게시글 기준"
+        )
+      }`
+    );
+  }
+
+  const posts =
+    await db
+      .select({
+        id:
+          communityPosts.id,
+
+        boardId:
+          communityPosts.boardId,
+
+        authorType:
+          communityPosts.authorType,
+
+        authorStudentId:
+          communityPosts.authorStudentId,
+
+        authorUserId:
+          communityPosts.authorUserId,
+
+        authorNickname:
+  sql<string | null>`
+    CASE
+      WHEN ${communityPosts.authorType} = 'staff'
+      THEN ${staffPublicProfiles.displayName}
+      ELSE ${communityProfiles.nickname}
+    END
+  `,
+
+authorProfileImageUrl:
+  sql<string | null>`
+    CASE
+      WHEN ${communityPosts.authorType} = 'staff'
+      THEN ${staffPublicProfiles.profileImageUrl}
+      ELSE ${communityProfiles.profileImageUrl}
+    END
+  `,
+
+authorPositionName:
+  sql<string | null>`
+    CASE
+      WHEN ${communityPosts.authorType} = 'staff'
+      THEN ${staffPublicProfiles.publicPositionName}
+      ELSE NULL
+    END
+  `,
+
+title:
+  communityPosts.title,
+
+        content:
+          communityPosts.content,
+
+        contentFormat:
+          communityPosts.contentFormat,
+
+        contentData:
+          communityPosts.contentData,
+
+        isPinned:
+          communityPosts.isPinned,
+
+        viewCount:
+          communityPosts.viewCount,
+
+        commentCount:
+          communityPosts.commentCount,
+
+        likeCount:
+          communityPosts.likeCount,
+
+        helpfulCount:
+          communityPosts.helpfulCount,
+
+        bookmarkCount:
+          communityPosts.bookmarkCount,
+
+        editedAt:
+          communityPosts.editedAt,
+
+        createdAt:
+          communityPosts.createdAt,
+
+        updatedAt:
+          communityPosts.updatedAt,
+      })
+      .from(
+        communityPosts
+      )
+     .leftJoin(
+  communityProfiles,
+  and(
+    eq(
+      communityProfiles.organizationId,
+      communityPosts.organizationId
+    ),
+
+    eq(
+      communityProfiles.studentId,
+      communityPosts.authorStudentId
+    )
+  )
+)
+.leftJoin(
+  staffPublicProfiles,
+  and(
+    eq(
+      staffPublicProfiles.organizationId,
+      communityPosts.organizationId
+    ),
+
+    eq(
+      staffPublicProfiles.userId,
+      communityPosts.authorUserId
+    )
+  )
+)
+.where(
+        and(
+          ...conditions
+        )
+      )
+      .orderBy(
+        desc(
+          communityPosts.isPinned
+        ),
+
+        desc(
+          communityPosts.id
+        )
+      )
+      .limit(
+        limit
+      );
+
+  if (
+    posts.length ===
+    0
+  ) {
+    return [];
+  }
+
+  const postIds =
+    posts
+      .map(
+        post =>
+          Number(
+            post.id
+          )
+      )
+      .filter(
+        id =>
+          Number.isFinite(
+            id
+          ) &&
+          id > 0
+      );
+
+  const attachments =
+    postIds.length >
+    0
+      ? await db
+          .select({
+            id:
+              communityAttachments.id,
+
+            targetId:
+              communityAttachments.targetId,
+
+            url:
+              communityAttachments.url,
+          })
+          .from(
+            communityAttachments
+          )
+          .where(
+            and(
+              eq(
+                communityAttachments.organizationId,
+                organizationId
+              ),
+
+              eq(
+                communityAttachments.targetType,
+                "post"
+              ),
+
+              inArray(
+                communityAttachments.targetId,
+                postIds
+              )
+            )
+          )
+          .orderBy(
+            asc(
+              communityAttachments.id
+            )
+          )
+      : [];
+
+  const thumbnailByPostId =
+    new Map<
+      number,
+      string
+    >();
+
+  for (
+    const attachment
+    of attachments
+  ) {
+    const postId =
+      Number(
+        attachment.targetId ||
+        0
+      );
+
+    const url =
+      String(
+        attachment.url ||
+        ""
+      ).trim();
+
+    if (
+      !postId ||
+      !url ||
+      thumbnailByPostId.has(
+        postId
+      )
+    ) {
+      continue;
+    }
+
+    thumbnailByPostId.set(
+      postId,
+      url
+    );
+  }
+
+  return posts.map(
+    post => ({
+      ...post,
+
+      thumbnailUrl:
+        thumbnailByPostId.get(
+          Number(
+            post.id
+          )
+        ) ??
+        null,
+    })
+  );
+}
+
+
+/**
+ * 게시글 상세.
+ */
+export async function getCommunityPostById(
+  params: {
+    organizationId?: number | null;
+
+    postId:
+      number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const postId =
+    requireCommunityId(
+      params.postId,
+      "게시글"
+    );
+
+  const rows =
+    await db
+      .select({
+        id:
+          communityPosts.id,
+
+        boardId:
+          communityPosts.boardId,
+
+        authorType:
+          communityPosts.authorType,
+
+        authorStudentId:
+          communityPosts.authorStudentId,
+
+        authorUserId:
+          communityPosts.authorUserId,
+
+        authorNickname:
+  sql<string | null>`
+    CASE
+      WHEN ${communityPosts.authorType} = 'staff'
+      THEN ${staffPublicProfiles.displayName}
+      ELSE ${communityProfiles.nickname}
+    END
+  `,
+
+authorProfileImageUrl:
+  sql<string | null>`
+    CASE
+      WHEN ${communityPosts.authorType} = 'staff'
+      THEN ${staffPublicProfiles.profileImageUrl}
+      ELSE ${communityProfiles.profileImageUrl}
+    END
+  `,
+
+authorPositionName:
+  sql<string | null>`
+    CASE
+      WHEN ${communityPosts.authorType} = 'staff'
+      THEN ${staffPublicProfiles.publicPositionName}
+      ELSE NULL
+    END
+  `,
+
+title:
+  communityPosts.title,
+
+        content:
+          communityPosts.content,
+
+        contentFormat:
+          communityPosts.contentFormat,
+
+        contentData:
+          communityPosts.contentData,
+
+        isPinned:
+          communityPosts.isPinned,
+
+        status:
+          communityPosts.status,
+
+        viewCount:
+          communityPosts.viewCount,
+
+        commentCount:
+          communityPosts.commentCount,
+
+        likeCount:
+          communityPosts.likeCount,
+
+        helpfulCount:
+          communityPosts.helpfulCount,
+
+        bookmarkCount:
+          communityPosts.bookmarkCount,
+
+        editedAt:
+          communityPosts.editedAt,
+
+        createdAt:
+          communityPosts.createdAt,
+
+        updatedAt:
+          communityPosts.updatedAt,
+      })
+      .from(
+        communityPosts
+      )
+      .leftJoin(
+  communityProfiles,
+  and(
+    eq(
+      communityProfiles.organizationId,
+      communityPosts.organizationId
+    ),
+
+    eq(
+      communityProfiles.studentId,
+      communityPosts.authorStudentId
+    )
+  )
+)
+.leftJoin(
+  staffPublicProfiles,
+  and(
+    eq(
+      staffPublicProfiles.organizationId,
+      communityPosts.organizationId
+    ),
+
+    eq(
+      staffPublicProfiles.userId,
+      communityPosts.authorUserId
+    )
+  )
+)
+.where(
+        and(
+          eq(
+            communityPosts.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityPosts.id,
+            postId
+          )
+        )
+      )
+      .limit(1);
+
+  return rows[0] ??
+    null;
+}
+
+
+/**
+ * 조회수 증가.
+ */
+export async function incrementCommunityPostView(
+  params: {
+    organizationId?: number | null;
+
+    postId:
+      number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const postId =
+    requireCommunityId(
+      params.postId,
+      "게시글"
+    );
+
+  await db
+    .update(
+      communityPosts
+    )
+    .set({
+      viewCount:
+        sql`${communityPosts.viewCount} + 1`,
+    } as any)
+    .where(
+      and(
+        eq(
+          communityPosts.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityPosts.id,
+          postId
+        ),
+
+        eq(
+          communityPosts.status,
+          "published"
+        )
+      )
+    );
+
+  return {
+    success:
+      true as const,
+  };
+}
+
+
+/**
+ * 학생 게시글 작성.
+ */
+export async function createCommunityStudentPost(
+  params: {
+    organizationId?: number | null;
+
+    studentId:
+      number;
+
+    boardId:
+      number;
+
+    title:
+      string;
+
+    content:
+      string;
+
+    contentFormat?:
+      "plain" | "blocks";
+
+    contentData?:
+      unknown | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireCommunityId(
+      params.studentId,
+      "학생"
+    );
+
+  const profile =
+    await getCommunityProfile({
+      organizationId,
+
+      studentId,
+    });
+
+  if (!profile) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "커뮤니티 닉네임을 먼저 설정해주세요.",
+      409
+    );
+  }
+
+  if (
+    profile.communityStatus !==
+    "active"
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "현재 커뮤니티 글쓰기를 이용할 수 없습니다.",
+      403
+    );
+  }
+
+  const board =
+    await getCommunityBoardForWrite(
+      organizationId,
+      params.boardId
+    );
+
+  if (!board) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "사용할 수 없는 게시판입니다.",
+      404
+    );
+  }
+
+  if (
+    board.writePermission ===
+    "host_only"
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "이 게시판에는 등록회원이 글을 작성할 수 없습니다.",
+      403
+    );
+  }
+
+  const title =
+    String(
+      params.title ??
+      ""
+    ).trim();
+
+  const content =
+    String(
+      params.content ??
+      ""
+    ).trim();
+
+  if (
+    !title ||
+    title.length >
+      255
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "게시글 제목을 입력해주세요.",
+      400
+    );
+  }
+
+  if (!content) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "게시글 본문을 입력해주세요.",
+      400
+    );
+  }
+
+  const result:
+    any =
+    await db
+      .insert(
+        communityPosts
+      )
+      .values({
+        organizationId,
+
+        boardId:
+          Number(
+            board.id
+          ),
+
+        authorType:
+          "student",
+
+        authorStudentId:
+          studentId,
+
+        authorUserId:
+          null,
+
+        title,
+
+        content,
+
+        contentFormat:
+          params.contentFormat ===
+          "plain"
+            ? "plain"
+            : "blocks",
+
+        contentData:
+          params.contentData ??
+          null,
+
+        isPinned:
+          false,
+
+        status:
+          "published",
+      } as any);
+
+  const postId =
+    Number(
+      getInsertId(
+        result
+      ) ||
+      0
+    );
+
+  if (!postId) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "커뮤니티 게시글을 저장하지 못했습니다.",
+      500
+    );
+  }
+
+  return getCommunityPostById({
+    organizationId,
+
+    postId,
+  });
+}
+
+
+/**
+ * 학생 게시글 수정.
+ */
+export async function updateCommunityStudentPost(
+  params: {
+    organizationId?: number | null;
+
+    studentId:
+      number;
+
+    postId:
+      number;
+
+    boardId?:
+      number;
+
+    title?:
+      string;
+
+    content?:
+      string;
+
+    contentFormat?:
+      "plain" | "blocks";
+
+    contentData?:
+      unknown | null;
+
+deletedAttachmentIds?:
+  number[];
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireCommunityId(
+      params.studentId,
+      "학생"
+    );
+
+  const postId =
+    requireCommunityId(
+      params.postId,
+      "게시글"
+    );
+
+const deletedAttachmentIds =
+  Array.from(
+    new Set(
+      (
+        Array.isArray(
+          params.deletedAttachmentIds
+        )
+          ? params.deletedAttachmentIds
+          : []
+      )
+        .map(
+          id =>
+            Math.floor(
+              Number(id)
+            )
+        )
+        .filter(
+          id =>
+            Number.isFinite(id) &&
+            id > 0
+        )
+    )
+  )
+    .slice(
+      0,
+      10
+    );
+
+  const post =
+    await getCommunityPostById({
+      organizationId,
+
+      postId,
+    });
+
+  if (
+    !post ||
+    post.status !==
+      "published"
+  ) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "수정할 게시글을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  if (
+    post.authorType !==
+      "student" ||
+    Number(
+      post.authorStudentId ||
+      0
+    ) !==
+      studentId
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "본인이 작성한 게시글만 수정할 수 있습니다.",
+      403
+    );
+  }
+
+  const updates:
+    Record<string, any> = {
+      editedAt:
+        new Date(),
+
+      updatedAt:
+        new Date(),
+    };
+
+  if (
+    params.boardId !==
+    undefined
+  ) {
+    const board =
+      await getCommunityBoardForWrite(
+        organizationId,
+        params.boardId
+      );
+
+    if (
+      !board ||
+      board.writePermission ===
+        "host_only"
+    ) {
+      throwAppError(
+        ERROR_CODES.PERMISSION_DENIED,
+        "선택한 게시판으로 이동할 수 없습니다.",
+        403
+      );
+    }
+
+    updates.boardId =
+      Number(
+        board.id
+      );
+  }
+
+  if (
+    params.title !==
+    undefined
+  ) {
+    const title =
+      String(
+        params.title
+      ).trim();
+
+    if (
+      !title ||
+      title.length >
+        255
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "게시글 제목을 입력해주세요.",
+        400
+      );
+    }
+
+    updates.title =
+      title;
+  }
+
+  if (
+    params.content !==
+    undefined
+  ) {
+    const content =
+      String(
+        params.content
+      ).trim();
+
+    if (!content) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "게시글 본문을 입력해주세요.",
+        400
+      );
+    }
+
+    updates.content =
+      content;
+  }
+
+  if (
+    params.contentFormat !==
+    undefined
+  ) {
+    updates.contentFormat =
+      params.contentFormat ===
+        "plain"
+        ? "plain"
+        : "blocks";
+  }
+
+  if (
+    params.contentData !==
+    undefined
+  ) {
+    updates.contentData =
+      params.contentData;
+  }
+
+  await db
+    .update(
+      communityPosts
+    )
+    .set(
+      updates as any
+    )
+    .where(
+      and(
+        eq(
+          communityPosts.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityPosts.id,
+          postId
+        ),
+
+        eq(
+          communityPosts.authorStudentId,
+          studentId
+        ),
+
+        eq(
+          communityPosts.status,
+          "published"
+        )
+      )
+    );
+
+if (
+  deletedAttachmentIds.length >
+  0
+) {
+  await db
+    .delete(
+      communityAttachments
+    )
+    .where(
+      and(
+        eq(
+          communityAttachments.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityAttachments.targetType,
+          "post"
+        ),
+
+        eq(
+          communityAttachments.targetId,
+          postId
+        ),
+
+        inArray(
+          communityAttachments.id,
+          deletedAttachmentIds
+        )
+      )
+    );
+}
+
+  return getCommunityPostById({
+    organizationId,
+
+    postId,
+  });
+}
+
+
+/**
+ * 학생 본인 게시글 삭제.
+ *
+ * 실제 row는 삭제하지 않고 soft delete.
+ */
+export async function deleteCommunityStudentPost(
+  params: {
+    organizationId?: number | null;
+
+    studentId:
+      number;
+
+    postId:
+      number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireCommunityId(
+      params.studentId,
+      "학생"
+    );
+
+  const postId =
+    requireCommunityId(
+      params.postId,
+      "게시글"
+    );
+
+  const post =
+    await getCommunityPostById({
+      organizationId,
+
+      postId,
+    });
+
+  if (!post) {
+    return {
+      success:
+        true as const,
+    };
+  }
+
+  if (
+    post.authorType !==
+      "student" ||
+    Number(
+      post.authorStudentId ||
+      0
+    ) !==
+      studentId
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "본인이 작성한 게시글만 삭제할 수 있습니다.",
+      403
+    );
+  }
+
+  const now =
+    new Date();
+
+  await db
+    .update(
+      communityPosts
+    )
+    .set({
+      status:
+        "deleted",
+
+      deletedAt:
+        now,
+
+      updatedAt:
+        now,
+    } as any)
+    .where(
+      and(
+        eq(
+          communityPosts.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityPosts.id,
+          postId
+        ),
+
+        eq(
+          communityPosts.authorStudentId,
+          studentId
+        )
+      )
+    );
+
+  return {
+    success:
+      true as const,
+  };
+}
+
+/**
+ * =========================================================
+ * Host 커뮤니티 관리
+ * =========================================================
+ *
+ * 중요:
+ * - organizationId는 Router의 로그인 세션에서만 전달한다.
+ * - 클라이언트가 organizationId를 직접 지정하지 않는다.
+ */
+
+/**
+ * Host 일반 커뮤니티 게시글 작성.
+ *
+ * - organizationId는 Router 세션에서만 전달
+ * - boardId도 반드시 같은 organization 내부인지 검증
+ * - notice 게시판은 이 함수로 작성 불가
+ * - 공지는 createCommunityStaffNotice 사용
+ */
+export async function createCommunityStaffPost(
+  params: {
+    organizationId?: number | null;
+    userId: number;
+    boardId: number;
+    title: string;
+    content: string;
+    contentFormat?: "plain" | "blocks";
+    contentData?: unknown | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userId =
+    requireCommunityId(
+      params.userId,
+      "담당자"
+    );
+
+  const boardId =
+    requireCommunityId(
+      params.boardId,
+      "게시판"
+    );
+
+  await ensureCommunityDefaults({
+    organizationId,
+    actorUserId: userId,
+  });
+
+  /**
+   * 핵심:
+   * boardId 하나만 조회하면 안 된다.
+   *
+   * 반드시
+   * organizationId + boardId
+   * 둘 다 일치해야 한다.
+   */
+  const boardRows =
+    await db
+      .select()
+      .from(
+        communityBoards
+      )
+      .where(
+        and(
+          eq(
+            communityBoards.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityBoards.id,
+            boardId
+          ),
+
+          eq(
+            communityBoards.isActive,
+            true
+          )
+        )
+      )
+      .limit(1);
+
+  const board =
+    boardRows[0] ??
+    null;
+
+  if (!board) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "게시판을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  /**
+   * 공식 공지는 별도 API로만 작성.
+   */
+  if (
+    board.boardType ===
+      "notice" ||
+    board.boardKey ===
+      "notice"
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "공지사항은 공지 작성 기능을 이용해주세요.",
+      403
+    );
+  }
+
+  const title =
+    String(
+      params.title ??
+      ""
+    ).trim();
+
+  const content =
+    String(
+      params.content ??
+      ""
+    ).trim();
+
+  if (
+    !title ||
+    title.length > 255
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "게시글 제목을 입력해주세요.",
+      400
+    );
+  }
+
+  if (!content) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "게시글 본문을 입력해주세요.",
+      400
+    );
+  }
+
+  const result:
+    any =
+    await db
+      .insert(
+        communityPosts
+      )
+      .values({
+        organizationId,
+
+        boardId,
+
+        authorType:
+          "staff",
+
+        authorStudentId:
+          null,
+
+        authorUserId:
+          userId,
+
+        title,
+
+        content,
+
+        contentFormat:
+          params.contentFormat ===
+          "plain"
+            ? "plain"
+            : "blocks",
+
+        contentData:
+          params.contentData ??
+          null,
+
+        isPinned:
+          false,
+
+        status:
+          "published",
+      } as any);
+
+  const postId =
+    Number(
+      getInsertId(
+        result
+      ) ||
+      0
+    );
+
+  if (!postId) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "게시글을 저장하지 못했습니다.",
+      500
+    );
+  }
+
+  return getCommunityPostById({
+    organizationId,
+    postId,
+  });
+}
+
+/**
+ * =========================================================
+ * Host / 담당자 일반 게시글 수정
+ * =========================================================
+ *
+ * 수정 가능:
+ * - 본인이 작성한 일반 staff 게시글
+ * - 제목
+ * - 내용
+ * - 일반 게시판 이동
+ * - contentData
+ * - 기존 이미지 attachment 제거
+ *
+ * 수정 불가:
+ * - 학생 게시글
+ * - 다른 담당자의 게시글
+ * - 공지사항
+ *
+ * 공지는 updateCommunityStaffNotice를 사용한다.
+ */
+export async function updateCommunityStaffPost(
+  params: {
+    organizationId?: number | null;
+
+    userId:
+      number;
+
+    postId:
+      number;
+
+    boardId?:
+      number;
+
+    title?:
+      string;
+
+    content?:
+      string;
+
+    contentFormat?:
+      "plain" | "blocks";
+
+    contentData?:
+      unknown | null;
+
+    deletedAttachmentIds?:
+      number[];
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userId =
+    requireCommunityId(
+      params.userId,
+      "담당자"
+    );
+
+  const postId =
+    requireCommunityId(
+      params.postId,
+      "게시글"
+    );
+
+  /**
+   * 삭제 요청 attachment ID 정리.
+   *
+   * 중복 제거 + 양수 정수만 허용 + 최대 10개.
+   */
+  const deletedAttachmentIds =
+    Array.from(
+      new Set(
+        (
+          Array.isArray(
+            params.deletedAttachmentIds
+          )
+            ? params.deletedAttachmentIds
+            : []
+        )
+          .map(
+            id =>
+              Math.floor(
+                Number(id)
+              )
+          )
+          .filter(
+            id =>
+              Number.isFinite(id) &&
+              id > 0
+          )
+      )
+    )
+      .slice(
+        0,
+        10
+      );
+
+  /**
+   * ---------------------------------------------------------
+   * 게시글 조회
+   * ---------------------------------------------------------
+   *
+   * organizationId + postId 기준.
+   *
+   * 다른 회사 게시글 ID를 알아도
+   * 여기서는 조회되지 않는다.
+   */
+  const post =
+    await getCommunityPostById({
+      organizationId,
+
+      postId,
+    });
+
+  if (
+    !post ||
+    post.status !==
+      "published"
+  ) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "수정할 게시글을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  /**
+   * staff 글인지 + 본인 글인지 확인.
+   */
+  if (
+    post.authorType !==
+      "staff" ||
+    Number(
+      post.authorUserId ||
+      0
+    ) !==
+      userId
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "본인이 작성한 게시글만 수정할 수 있습니다.",
+      403
+    );
+  }
+
+  /**
+   * ---------------------------------------------------------
+   * 공지사항은 일반글 수정 API 사용 금지
+   * ---------------------------------------------------------
+   *
+   * notice 여부를 boardId만 보고 판단하면
+   * 다른 회사 board와 섞일 위험이 있으므로
+   * 현재 게시글 board를 organization 내부에서 확인한다.
+   */
+  const currentBoardRows =
+    await db
+      .select()
+      .from(
+        communityBoards
+      )
+      .where(
+        and(
+          eq(
+            communityBoards.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityBoards.id,
+            Number(
+              post.boardId
+            )
+          )
+        )
+      )
+      .limit(1);
+
+  const currentBoard =
+  currentBoardRows[0] ??
+  null;
+
+if (!currentBoard) {
+  throwAppError(
+    ERROR_CODES.DATA_NOT_FOUND,
+    "게시글의 게시판을 찾을 수 없습니다.",
+    404
+  );
+}
+
+if (
+  currentBoard.boardType ===
+    "notice" ||
+  currentBoard.boardKey ===
+    "notice"
+) {
+  throwAppError(
+    ERROR_CODES.PERMISSION_DENIED,
+    "공지사항은 공지 수정 기능을 이용해주세요.",
+    403
+  );
+}
+
+  const updates:
+    Record<string, any> = {
+      editedAt:
+        new Date(),
+
+      updatedAt:
+        new Date(),
+    };
+
+  /**
+   * ---------------------------------------------------------
+   * 게시판 이동
+   * ---------------------------------------------------------
+   */
+  if (
+    params.boardId !==
+    undefined
+  ) {
+    const boardId =
+      requireCommunityId(
+        params.boardId,
+        "게시판"
+      );
+
+    /**
+     * 반드시
+     * organizationId + boardId + isActive
+     * 로 검증.
+     */
+    const boardRows =
+      await db
+        .select()
+        .from(
+          communityBoards
+        )
+        .where(
+          and(
+            eq(
+              communityBoards.organizationId,
+              organizationId
+            ),
+
+            eq(
+              communityBoards.id,
+              boardId
+            ),
+
+            eq(
+              communityBoards.isActive,
+              true
+            )
+          )
+        )
+        .limit(1);
+
+    const board =
+      boardRows[0] ??
+      null;
+
+    if (!board) {
+      throwAppError(
+        ERROR_CODES.DATA_NOT_FOUND,
+        "게시판을 찾을 수 없습니다.",
+        404
+      );
+    }
+
+    /**
+     * 일반 게시글을 공지 게시판으로
+     * 이동시키는 것도 금지.
+     */
+    if (
+      board.boardType ===
+        "notice" ||
+      board.boardKey ===
+        "notice"
+    ) {
+      throwAppError(
+        ERROR_CODES.PERMISSION_DENIED,
+        "공지사항 게시판으로 이동할 수 없습니다.",
+        403
+      );
+    }
+
+    updates.boardId =
+      Number(
+        board.id
+      );
+  }
+
+  /**
+   * 제목 수정.
+   */
+  if (
+    params.title !==
+    undefined
+  ) {
+    const title =
+      String(
+        params.title
+      ).trim();
+
+    if (
+      !title ||
+      title.length >
+        255
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "게시글 제목을 입력해주세요.",
+        400
+      );
+    }
+
+    updates.title =
+      title;
+  }
+
+  /**
+   * 본문 수정.
+   */
+  if (
+    params.content !==
+    undefined
+  ) {
+    const content =
+      String(
+        params.content
+      ).trim();
+
+    if (!content) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "게시글 본문을 입력해주세요.",
+        400
+      );
+    }
+
+    updates.content =
+      content;
+  }
+
+  /**
+   * 콘텐츠 형식.
+   */
+  if (
+    params.contentFormat !==
+    undefined
+  ) {
+    updates.contentFormat =
+      params.contentFormat ===
+        "plain"
+        ? "plain"
+        : "blocks";
+  }
+
+  /**
+   * Block 데이터.
+   */
+  if (
+    params.contentData !==
+    undefined
+  ) {
+    updates.contentData =
+      params.contentData;
+  }
+
+  /**
+   * ---------------------------------------------------------
+   * 게시글 UPDATE
+   * ---------------------------------------------------------
+   *
+   * 최초 검증을 했더라도 실제 UPDATE WHERE에서도
+   * organizationId + postId + authorUserId를 다시 건다.
+   */
+  await db
+    .update(
+      communityPosts
+    )
+    .set(
+      updates as any
+    )
+    .where(
+      and(
+        eq(
+          communityPosts.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityPosts.id,
+          postId
+        ),
+
+        eq(
+          communityPosts.authorType,
+          "staff"
+        ),
+
+        eq(
+          communityPosts.authorUserId,
+          userId
+        ),
+
+        eq(
+          communityPosts.status,
+          "published"
+        )
+      )
+    );
+
+  /**
+   * ---------------------------------------------------------
+   * 기존 이미지 attachment 삭제
+   * ---------------------------------------------------------
+   *
+   * organizationId
+   * + targetType
+   * + postId
+   * + attachmentIds
+   *
+   * 모두 일치해야 삭제된다.
+   */
+  if (
+    deletedAttachmentIds.length >
+    0
+  ) {
+    await db
+      .delete(
+        communityAttachments
+      )
+      .where(
+        and(
+          eq(
+            communityAttachments.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityAttachments.targetType,
+            "post"
+          ),
+
+          eq(
+            communityAttachments.targetId,
+            postId
+          ),
+
+          inArray(
+            communityAttachments.id,
+            deletedAttachmentIds
+          )
+        )
+      );
+  }
+
+  return getCommunityPostById({
+    organizationId,
+
+    postId,
+  });
+}
+
+/**
+ * Host / 담당자 공지 작성.
+ *
+ * 공지 게시판은 클라이언트 boardId를 신뢰하지 않고
+ * 현재 organizationId 내부의 notice 게시판을
+ * 서버에서 직접 찾는다.
+ */
+export async function createCommunityStaffNotice(
+  params: {
+    organizationId?: number | null;
+
+    userId:
+      number;
+
+    title:
+      string;
+
+    content:
+      string;
+
+    contentFormat?:
+      "plain" | "blocks";
+
+    contentData?:
+      unknown | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userId =
+    requireCommunityId(
+      params.userId,
+      "담당자"
+    );
+
+  /**
+   * 회사별 기본 커뮤니티 설정 / 게시판 보장.
+   */
+  await ensureCommunityDefaults({
+    organizationId,
+
+    actorUserId:
+      userId,
+  });
+
+  /**
+   * 공지게시판을 서버에서 직접 조회한다.
+   *
+   * 클라이언트가 다른 회사의 boardId를
+   * 임의로 넘기는 구조 자체를 만들지 않는다.
+   */
+  const boardRows =
+    await db
+      .select()
+      .from(
+        communityBoards
+      )
+      .where(
+        and(
+          eq(
+            communityBoards.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityBoards.boardKey,
+            "notice"
+          ),
+
+          eq(
+            communityBoards.boardType,
+            "notice"
+          ),
+
+          eq(
+            communityBoards.isActive,
+            true
+          )
+        )
+      )
+      .limit(1);
+
+  const board =
+    boardRows[0] ??
+    null;
+
+  if (!board) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "공지사항 게시판을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  const title =
+    String(
+      params.title ??
+      ""
+    ).trim();
+
+  const content =
+    String(
+      params.content ??
+      ""
+    ).trim();
+
+  if (
+    !title ||
+    title.length > 255
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "공지 제목을 입력해주세요.",
+      400
+    );
+  }
+
+  if (!content) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "공지 내용을 입력해주세요.",
+      400
+    );
+  }
+
+  const result:
+    any =
+    await db
+      .insert(
+        communityPosts
+      )
+      .values({
+        organizationId,
+
+        boardId:
+          Number(
+            board.id
+          ),
+
+        authorType:
+          "staff",
+
+        authorStudentId:
+          null,
+
+        authorUserId:
+          userId,
+
+        title,
+
+        content,
+
+        contentFormat:
+          params.contentFormat ===
+          "plain"
+            ? "plain"
+            : "blocks",
+
+        contentData:
+          params.contentData ??
+          null,
+
+        /**
+         * 공식 공지는 항상 상단 고정 대상으로 처리.
+         */
+        isPinned:
+          true,
+
+        status:
+          "published",
+      } as any);
+
+  const postId =
+    Number(
+      getInsertId(
+        result
+      ) ||
+      0
+    );
+
+  if (!postId) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "공지사항을 저장하지 못했습니다.",
+      500
+    );
+  }
+
+  return getCommunityPostById({
+    organizationId,
+
+    postId,
+  });
+}
+
+
+/**
+ * 담당자 본인이 작성한 공지 수정.
+ *
+ * 다른 담당자가 작성한 공지는 수정하지 못한다.
+ * Host의 전체 게시글 삭제는 별도 함수에서 처리한다.
+ */
+export async function updateCommunityStaffNotice(
+  params: {
+    organizationId?: number | null;
+
+    userId:
+      number;
+
+    postId:
+      number;
+
+    title?:
+      string;
+
+    content?:
+      string;
+
+    contentFormat?:
+      "plain" | "blocks";
+
+    contentData?:
+  unknown | null;
+
+deletedAttachmentIds?:
+  number[];
+}
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userId =
+    requireCommunityId(
+      params.userId,
+      "담당자"
+    );
+
+  const postId =
+    requireCommunityId(
+      params.postId,
+      "게시글"
+    );
+
+  const deletedAttachmentIds =
+    Array.from(
+      new Set(
+        (
+          Array.isArray(
+            params.deletedAttachmentIds
+          )
+            ? params.deletedAttachmentIds
+            : []
+        )
+          .map(
+            id =>
+              Math.floor(
+                Number(id)
+              )
+          )
+          .filter(
+            id =>
+              Number.isFinite(id) &&
+              id > 0
+          )
+      )
+    )
+      .slice(
+        0,
+        10
+      );
+
+  const post =
+    await getCommunityPostById({
+      organizationId,
+
+      postId,
+    });
+
+  if (
+    !post ||
+    post.status !==
+      "published"
+  ) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "수정할 공지사항을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  /**
+   * 같은 회사 글이어도
+   * 본인이 작성한 staff 공지만 수정 가능.
+   */
+  if (
+    post.authorType !==
+      "staff" ||
+    Number(
+      post.authorUserId ||
+      0
+    ) !==
+      userId
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "본인이 작성한 공지사항만 수정할 수 있습니다.",
+      403
+    );
+  }
+
+  /**
+   * 해당 게시글이 현재 회사의
+   * 공지게시판 글인지 다시 확인한다.
+   */
+  const noticeBoards =
+    await db
+      .select({
+        id:
+          communityBoards.id,
+      })
+      .from(
+        communityBoards
+      )
+      .where(
+        and(
+          eq(
+            communityBoards.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityBoards.id,
+            Number(
+              post.boardId
+            )
+          ),
+
+          eq(
+            communityBoards.boardKey,
+            "notice"
+          ),
+
+          eq(
+            communityBoards.boardType,
+            "notice"
+          )
+        )
+      )
+      .limit(1);
+
+  if (
+    noticeBoards.length ===
+    0
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "공지사항 게시글만 수정할 수 있습니다.",
+      403
+    );
+  }
+
+  const updates:
+    Record<string, any> = {
+      editedAt:
+        new Date(),
+
+      updatedAt:
+        new Date(),
+
+      isPinned:
+        true,
+  };
+
+  if (
+    params.title !==
+    undefined
+  ) {
+    const title =
+      String(
+        params.title
+      ).trim();
+
+    if (
+      !title ||
+      title.length >
+        255
+    ) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "공지 제목을 입력해주세요.",
+        400
+      );
+    }
+
+    updates.title =
+      title;
+  }
+
+  if (
+    params.content !==
+    undefined
+  ) {
+    const content =
+      String(
+        params.content
+      ).trim();
+
+    if (!content) {
+      throwAppError(
+        ERROR_CODES.INVALID_REQUEST,
+        "공지 내용을 입력해주세요.",
+        400
+      );
+    }
+
+    updates.content =
+      content;
+  }
+
+  if (
+    params.contentFormat !==
+    undefined
+  ) {
+    updates.contentFormat =
+      params.contentFormat ===
+        "plain"
+        ? "plain"
+        : "blocks";
+  }
+
+  if (
+    params.contentData !==
+    undefined
+  ) {
+    updates.contentData =
+      params.contentData;
+  }
+
+  await db
+    .update(
+      communityPosts
+    )
+    .set(
+      updates as any
+    )
+    .where(
+      and(
+        /**
+         * 핵심 tenant isolation.
+         */
+        eq(
+          communityPosts.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityPosts.id,
+          postId
+        ),
+
+        eq(
+          communityPosts.authorType,
+          "staff"
+        ),
+
+        eq(
+          communityPosts.authorUserId,
+          userId
+        ),
+
+        eq(
+          communityPosts.status,
+          "published"
+        )
+      )
+    );
+
+  /**
+   * ---------------------------------------------------------
+   * 공지 기존 이미지 attachment 삭제
+   * ---------------------------------------------------------
+   *
+   * organizationId
+   * + targetType
+   * + postId
+   * + attachmentId
+   *
+   * 전부 일치하는 경우만 삭제.
+   */
+  if (
+    deletedAttachmentIds.length >
+    0
+  ) {
+    await db
+      .delete(
+        communityAttachments
+      )
+      .where(
+        and(
+          eq(
+            communityAttachments.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityAttachments.targetType,
+            "post"
+          ),
+
+          eq(
+            communityAttachments.targetId,
+            postId
+          ),
+
+          inArray(
+            communityAttachments.id,
+            deletedAttachmentIds
+          )
+        )
+      );
+  }
+
+  return getCommunityPostById({
+    organizationId,
+
+    postId,
+  });
+}
+
+
+/**
+ * Host 게시글 강제 삭제.
+ *
+ * 학생글 / 담당자글 / 공지 모두 삭제 가능.
+ * 실제 Row는 삭제하지 않고 soft delete한다.
+ */
+export async function deleteCommunityPostByHost(
+  params: {
+    organizationId?: number | null;
+
+    postId:
+      number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const postId =
+    requireCommunityId(
+      params.postId,
+      "게시글"
+    );
+
+  /**
+   * organizationId + postId로만 조회.
+   *
+   * 다른 회사의 postId를 넘겨도
+   * 이 함수에서는 해당 Row를 찾을 수 없다.
+   */
+  const post =
+    await getCommunityPostById({
+      organizationId,
+
+      postId,
+    });
+
+  if (
+    !post ||
+    post.status ===
+      "deleted"
+  ) {
+    return {
+      success:
+        true as const,
+    };
+  }
+
+  const now =
+    new Date();
+
+  await db
+    .update(
+      communityPosts
+    )
+    .set({
+      status:
+        "deleted",
+
+      deletedAt:
+        now,
+
+      updatedAt:
+        now,
+    } as any)
+    .where(
+      and(
+        /**
+         * 절대 제거하면 안 됨.
+         */
+        eq(
+          communityPosts.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityPosts.id,
+          postId
+        ),
+
+        eq(
+          communityPosts.status,
+          "published"
+        )
+      )
+    );
+
+  return {
+    success:
+      true as const,
+  };
+}
+
+
+/**
+ * 게시글 댓글 목록.
+ */
+export async function listCommunityComments(
+  params: {
+    organizationId?: number | null;
+
+    postId:
+      number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const postId =
+    requireCommunityId(
+      params.postId,
+      "게시글"
+    );
+
+  return db
+    .select({
+      id:
+        communityComments.id,
+
+      parentCommentId:
+        communityComments.parentCommentId,
+
+      authorType:
+        communityComments.authorType,
+
+      authorStudentId:
+        communityComments.authorStudentId,
+
+      authorUserId:
+        communityComments.authorUserId,
+
+      authorNickname:
+  sql<string | null>`
+    CASE
+      WHEN ${communityComments.authorType} = 'staff'
+      THEN ${staffPublicProfiles.displayName}
+      ELSE ${communityProfiles.nickname}
+    END
+  `,
+
+authorProfileImageUrl:
+  sql<string | null>`
+    CASE
+      WHEN ${communityComments.authorType} = 'staff'
+      THEN ${staffPublicProfiles.profileImageUrl}
+      ELSE ${communityProfiles.profileImageUrl}
+    END
+  `,
+
+authorPositionName:
+  sql<string | null>`
+    CASE
+      WHEN ${communityComments.authorType} = 'staff'
+      THEN ${staffPublicProfiles.publicPositionName}
+      ELSE NULL
+    END
+  `,
+
+content:
+  sql<string | null>`
+    CASE
+      WHEN ${communityComments.status} = 'deleted'
+      THEN NULL
+      ELSE ${communityComments.content}
+    END
+  `,
+
+status:
+  communityComments.status,
+
+      editedAt:
+        communityComments.editedAt,
+
+      createdAt:
+        communityComments.createdAt,
+    })
+    .from(
+      communityComments
+    )
+    .leftJoin(
+  communityProfiles,
+  and(
+    eq(
+      communityProfiles.organizationId,
+      communityComments.organizationId
+    ),
+
+    eq(
+      communityProfiles.studentId,
+      communityComments.authorStudentId
+    )
+  )
+)
+.leftJoin(
+  staffPublicProfiles,
+  and(
+    eq(
+      staffPublicProfiles.organizationId,
+      communityComments.organizationId
+    ),
+
+    eq(
+      staffPublicProfiles.userId,
+      communityComments.authorUserId
+    )
+  )
+)
+.where(
+      and(
+        eq(
+          communityComments.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityComments.postId,
+          postId
+        )
+      )
+    )
+    .orderBy(
+      asc(
+        communityComments.id
+      )
+    );
+}
+
+
+/**
+ * 학생 댓글 / 대댓글 작성.
+ */
+export async function createCommunityStudentComment(
+  params: {
+    organizationId?: number | null;
+
+    studentId:
+      number;
+
+    postId:
+      number;
+
+    parentCommentId?:
+      number | null;
+
+    content:
+      string;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireCommunityId(
+      params.studentId,
+      "학생"
+    );
+
+  const postId =
+    requireCommunityId(
+      params.postId,
+      "게시글"
+    );
+
+  const profile =
+    await getCommunityProfile({
+      organizationId,
+
+      studentId,
+    });
+
+  if (!profile) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "커뮤니티 닉네임을 먼저 설정해주세요.",
+      409
+    );
+  }
+
+  if (
+    profile.communityStatus !==
+    "active"
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "현재 커뮤니티 댓글 작성을 이용할 수 없습니다.",
+      403
+    );
+  }
+
+  const post =
+    await getCommunityPostById({
+      organizationId,
+
+      postId,
+    });
+
+  if (
+    !post ||
+    post.status !==
+      "published"
+  ) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "댓글을 작성할 게시글을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  let parentCommentId:
+    number | null =
+    null;
+
+  if (
+    params.parentCommentId
+  ) {
+    parentCommentId =
+      requireCommunityId(
+        params.parentCommentId,
+        "상위 댓글"
+      );
+
+    const parent =
+      await db
+        .select({
+          id:
+            communityComments.id,
+        })
+        .from(
+          communityComments
+        )
+        .where(
+          and(
+            eq(
+              communityComments.organizationId,
+              organizationId
+            ),
+
+            eq(
+              communityComments.postId,
+              postId
+            ),
+
+            eq(
+              communityComments.id,
+              parentCommentId
+            ),
+
+            eq(
+              communityComments.status,
+              "published"
+            )
+          )
+        )
+        .limit(1);
+
+    if (!parent[0]) {
+      throwAppError(
+        ERROR_CODES.DATA_NOT_FOUND,
+        "답글을 작성할 댓글을 찾을 수 없습니다.",
+        404
+      );
+    }
+  }
+
+  const content =
+    String(
+      params.content ??
+      ""
+    ).trim();
+
+  if (
+    !content ||
+    content.length >
+      5000
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "댓글은 1자 이상 5000자 이하로 입력해주세요.",
+      400
+    );
+  }
+
+  const result:
+    any =
+    await db
+      .insert(
+        communityComments
+      )
+      .values({
+        organizationId,
+
+        postId,
+
+        parentCommentId,
+
+        authorType:
+          "student",
+
+        authorStudentId:
+          studentId,
+
+        authorUserId:
+          null,
+
+        content,
+
+        status:
+          "published",
+      } as any);
+
+  const commentId =
+    Number(
+      getInsertId(
+        result
+      ) ||
+      0
+    );
+
+  if (!commentId) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "댓글을 저장하지 못했습니다.",
+      500
+    );
+  }
+
+  await db
+    .update(
+      communityPosts
+    )
+    .set({
+      commentCount:
+        sql`${communityPosts.commentCount} + 1`,
+    } as any)
+    .where(
+      and(
+        eq(
+          communityPosts.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityPosts.id,
+          postId
+        )
+      )
+    );
+
+  return {
+    commentId,
+  };
+}
+
+/**
+ * Host / 담당자 댓글 및 대댓글 작성.
+ */
+export async function createCommunityStaffComment(
+  params: {
+    organizationId?: number | null;
+    userId: number;
+    postId: number;
+    parentCommentId?: number | null;
+    content: string;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userId =
+    requireCommunityId(
+      params.userId,
+      "담당자"
+    );
+
+  const postId =
+    requireCommunityId(
+      params.postId,
+      "게시글"
+    );
+
+  /**
+   * 대상 게시글도 반드시 현재 회사에서 찾는다.
+   */
+  const post =
+    await getCommunityPostById({
+      organizationId,
+      postId,
+    });
+
+  if (
+    !post ||
+    post.status !==
+      "published"
+  ) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "게시글을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  const content =
+    String(
+      params.content ??
+      ""
+    ).trim();
+
+  if (!content) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "댓글 내용을 입력해주세요.",
+      400
+    );
+  }
+
+  let parentCommentId:
+    number | null =
+    null;
+
+  if (
+    params.parentCommentId
+  ) {
+    parentCommentId =
+      requireCommunityId(
+        params.parentCommentId,
+        "상위 댓글"
+      );
+
+    /**
+     * 대댓글의 부모 댓글 역시
+     * organizationId + postId + commentId
+     * 모두 일치해야 한다.
+     */
+    const parentRows =
+      await db
+        .select({
+          id:
+            communityComments.id,
+        })
+        .from(
+          communityComments
+        )
+        .where(
+          and(
+            eq(
+              communityComments.organizationId,
+              organizationId
+            ),
+
+            eq(
+              communityComments.postId,
+              postId
+            ),
+
+            eq(
+              communityComments.id,
+              parentCommentId
+            ),
+
+            eq(
+              communityComments.status,
+              "published"
+            )
+          )
+        )
+        .limit(1);
+
+    if (
+      parentRows.length ===
+      0
+    ) {
+      throwAppError(
+        ERROR_CODES.DATA_NOT_FOUND,
+        "상위 댓글을 찾을 수 없습니다.",
+        404
+      );
+    }
+  }
+
+  const result:
+    any =
+    await db
+      .insert(
+        communityComments
+      )
+      .values({
+        organizationId,
+
+        postId,
+
+        parentCommentId,
+
+        authorType:
+          "staff",
+
+        authorStudentId:
+          null,
+
+        authorUserId:
+          userId,
+
+        content,
+
+        status:
+          "published",
+      } as any);
+
+  const commentId =
+    Number(
+      getInsertId(
+        result
+      ) ||
+      0
+    );
+
+  if (!commentId) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "댓글을 저장하지 못했습니다.",
+      500
+    );
+  }
+
+  /**
+   * 게시글 댓글 수 증가.
+   *
+   * 이것도 현재 organization 안의
+   * 해당 게시글만 변경한다.
+   */
+  await db
+    .update(
+      communityPosts
+    )
+    .set({
+      commentCount:
+        sql`${communityPosts.commentCount} + 1`,
+
+      updatedAt:
+        new Date(),
+    } as any)
+    .where(
+      and(
+        eq(
+          communityPosts.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityPosts.id,
+          postId
+        ),
+
+        eq(
+          communityPosts.status,
+          "published"
+        )
+      )
+    );
+
+  return {
+    id:
+      commentId,
+
+    success:
+      true as const,
+  };
+}
+
+/**
+ * =========================================================
+ * Host / 담당자 본인 댓글 수정
+ * =========================================================
+ *
+ * 같은 organization 내부에서
+ * 현재 로그인 담당자가 직접 작성한
+ * staff 댓글만 수정할 수 있다.
+ */
+export async function updateCommunityStaffComment(
+  params: {
+    organizationId?: number | null;
+
+    userId:
+      number;
+
+    commentId:
+      number;
+
+    content:
+      string;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userId =
+    requireCommunityId(
+      params.userId,
+      "담당자"
+    );
+
+  const commentId =
+    requireCommunityId(
+      params.commentId,
+      "댓글"
+    );
+
+  const content =
+    String(
+      params.content ??
+      ""
+    ).trim();
+
+  if (
+    !content ||
+    content.length >
+      5000
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "댓글은 1자 이상 5000자 이하로 입력해주세요.",
+      400
+    );
+  }
+
+  /**
+   * organizationId + commentId로 조회.
+   *
+   * 다른 회사 commentId는
+   * 여기서 조회되지 않는다.
+   */
+  const rows =
+    await db
+      .select({
+        id:
+          communityComments.id,
+
+        authorType:
+          communityComments.authorType,
+
+        authorUserId:
+          communityComments.authorUserId,
+
+        status:
+          communityComments.status,
+      })
+      .from(
+        communityComments
+      )
+      .where(
+        and(
+          eq(
+            communityComments.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityComments.id,
+            commentId
+          )
+        )
+      )
+      .limit(1);
+
+  const comment =
+    rows[0];
+
+  if (
+    !comment ||
+    comment.status !==
+      "published"
+  ) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "댓글을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  /**
+   * staff 댓글 + 본인 댓글만 수정.
+   */
+  if (
+    comment.authorType !==
+      "staff" ||
+    Number(
+      comment.authorUserId ||
+      0
+    ) !==
+      userId
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "본인이 작성한 댓글만 수정할 수 있습니다.",
+      403
+    );
+  }
+
+  const now =
+    new Date();
+
+  /**
+   * 실제 UPDATE에서도
+   * tenant + 작성자 조건을 다시 건다.
+   */
+  await db
+    .update(
+      communityComments
+    )
+    .set({
+      content,
+
+      editedAt:
+        now,
+
+      updatedAt:
+        now,
+    } as any)
+    .where(
+      and(
+        eq(
+          communityComments.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityComments.id,
+          commentId
+        ),
+
+        eq(
+          communityComments.authorType,
+          "staff"
+        ),
+
+        eq(
+          communityComments.authorUserId,
+          userId
+        ),
+
+        eq(
+          communityComments.status,
+          "published"
+        )
+      )
+    );
+
+  return {
+    success:
+      true as const,
+
+    commentId,
+  };
+}
+
+/**
+ * =========================================================
+ * Host / 담당자 본인 댓글 삭제
+ * =========================================================
+ *
+ * 실제 Row는 삭제하지 않고 soft delete.
+ *
+ * 본인이 작성한 staff 댓글만 삭제 가능.
+ */
+export async function deleteCommunityStaffComment(
+  params: {
+    organizationId?: number | null;
+
+    userId:
+      number;
+
+    commentId:
+      number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userId =
+    requireCommunityId(
+      params.userId,
+      "담당자"
+    );
+
+  const commentId =
+    requireCommunityId(
+      params.commentId,
+      "댓글"
+    );
+
+  /**
+   * organizationId + commentId.
+   */
+  const rows =
+    await db
+      .select()
+      .from(
+        communityComments
+      )
+      .where(
+        and(
+          eq(
+            communityComments.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityComments.id,
+            commentId
+          )
+        )
+      )
+      .limit(1);
+
+  const comment =
+    rows[0];
+
+  /**
+   * 이미 삭제됐으면 성공으로 처리.
+   *
+   * delete를 여러 번 눌러도 안전하게
+   * idempotent 처리한다.
+   */
+  if (
+    !comment ||
+    comment.status ===
+      "deleted"
+  ) {
+    return {
+      success:
+        true as const,
+    };
+  }
+
+  /**
+   * 자기 staff 댓글만 삭제 가능.
+   */
+  if (
+    comment.authorType !==
+      "staff" ||
+    Number(
+      comment.authorUserId ||
+      0
+    ) !==
+      userId
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "본인이 작성한 댓글만 삭제할 수 있습니다.",
+      403
+    );
+  }
+
+  const now =
+    new Date();
+
+  await db
+    .update(
+      communityComments
+    )
+    .set({
+      status:
+        "deleted",
+
+      deletedAt:
+        now,
+
+      updatedAt:
+        now,
+    } as any)
+    .where(
+      and(
+        eq(
+          communityComments.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityComments.id,
+          commentId
+        ),
+
+        eq(
+          communityComments.authorType,
+          "staff"
+        ),
+
+        eq(
+          communityComments.authorUserId,
+          userId
+        ),
+
+        eq(
+          communityComments.status,
+          "published"
+        )
+      )
+    );
+
+  /**
+   * 게시글 commentCount 감소.
+   *
+   * 삭제한 댓글이 속한 게시글도
+   * 반드시 같은 organization 내부에서만 변경.
+   */
+  await db
+    .update(
+      communityPosts
+    )
+    .set({
+      commentCount:
+        sql`GREATEST(${communityPosts.commentCount} - 1, 0)`,
+
+      updatedAt:
+        now,
+    } as any)
+    .where(
+      and(
+        eq(
+          communityPosts.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityPosts.id,
+          Number(
+            comment.postId
+          )
+        )
+      )
+    );
+
+  return {
+    success:
+      true as const,
+  };
+}
+
+/**
+ * 학생 본인 댓글 수정.
+ */
+export async function updateCommunityStudentComment(
+  params: {
+    organizationId?: number | null;
+    studentId: number;
+    commentId: number;
+    content: string;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireCommunityId(
+      params.studentId,
+      "학생"
+    );
+
+  const commentId =
+    requireCommunityId(
+      params.commentId,
+      "댓글"
+    );
+
+  const content =
+    String(
+      params.content ??
+      ""
+    ).trim();
+
+  if (
+    !content ||
+    content.length > 5000
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "댓글은 1자 이상 5000자 이하로 입력해주세요.",
+      400
+    );
+  }
+
+  const rows =
+    await db
+      .select({
+        id:
+          communityComments.id,
+        authorType:
+          communityComments.authorType,
+        authorStudentId:
+          communityComments.authorStudentId,
+        status:
+          communityComments.status,
+      })
+      .from(
+        communityComments
+      )
+      .where(
+        and(
+          eq(
+            communityComments.organizationId,
+            organizationId
+          ),
+          eq(
+            communityComments.id,
+            commentId
+          )
+        )
+      )
+      .limit(1);
+
+  const comment =
+    rows[0];
+
+  if (
+    !comment ||
+    comment.status !==
+      "published"
+  ) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "댓글을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  if (
+    comment.authorType !==
+      "student" ||
+    Number(
+      comment.authorStudentId ||
+      0
+    ) !==
+      studentId
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "본인이 작성한 댓글만 수정할 수 있습니다.",
+      403
+    );
+  }
+
+  const now =
+    new Date();
+
+  await db
+    .update(
+      communityComments
+    )
+    .set({
+      content,
+      editedAt:
+        now,
+      updatedAt:
+        now,
+    } as any)
+    .where(
+      and(
+        eq(
+          communityComments.organizationId,
+          organizationId
+        ),
+        eq(
+          communityComments.id,
+          commentId
+        ),
+        eq(
+          communityComments.authorStudentId,
+          studentId
+        ),
+        eq(
+          communityComments.status,
+          "published"
+        )
+      )
+    );
+
+  return {
+    success:
+      true as const,
+    commentId,
+  };
+}
+
+/**
+ * 학생 본인 댓글 삭제.
+ */
+export async function deleteCommunityStudentComment(
+  params: {
+    organizationId?: number | null;
+
+    studentId:
+      number;
+
+    commentId:
+      number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireCommunityId(
+      params.studentId,
+      "학생"
+    );
+
+  const commentId =
+    requireCommunityId(
+      params.commentId,
+      "댓글"
+    );
+
+  const rows =
+    await db
+      .select()
+      .from(
+        communityComments
+      )
+      .where(
+        and(
+          eq(
+            communityComments.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityComments.id,
+            commentId
+          )
+        )
+      )
+      .limit(1);
+
+  const comment =
+    rows[0];
+
+  if (
+    !comment ||
+    comment.status ===
+      "deleted"
+  ) {
+    return {
+      success:
+        true as const,
+    };
+  }
+
+  if (
+    comment.authorType !==
+      "student" ||
+    Number(
+      comment.authorStudentId ||
+      0
+    ) !==
+      studentId
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "본인이 작성한 댓글만 삭제할 수 있습니다.",
+      403
+    );
+  }
+
+  const now =
+    new Date();
+
+  await db
+    .update(
+      communityComments
+    )
+    .set({
+      status:
+        "deleted",
+
+      deletedAt:
+        now,
+
+      updatedAt:
+        now,
+    } as any)
+    .where(
+      and(
+        eq(
+          communityComments.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityComments.id,
+          commentId
+        ),
+
+        eq(
+          communityComments.authorStudentId,
+          studentId
+        )
+      )
+    );
+
+  await db
+    .update(
+      communityPosts
+    )
+    .set({
+      commentCount:
+        sql`GREATEST(${communityPosts.commentCount} - 1, 0)`,
+    } as any)
+    .where(
+      and(
+        eq(
+          communityPosts.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityPosts.id,
+          Number(
+            comment.postId
+          )
+        )
+      )
+    );
+
+  return {
+    success:
+      true as const,
+  };
+}
+
+
+/**
+ * 좋아요 / 도움됐어요 토글.
+ */
+export async function toggleCommunityReaction(
+  params: {
+    organizationId?: number | null;
+
+    studentId:
+      number;
+
+    postId:
+      number;
+
+    reactionType:
+      "like" | "helpful";
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireCommunityId(
+      params.studentId,
+      "학생"
+    );
+
+  const postId =
+    requireCommunityId(
+      params.postId,
+      "게시글"
+    );
+
+  const profile =
+    await getCommunityProfile({
+      organizationId,
+
+      studentId,
+    });
+
+  if (
+    !profile ||
+    profile.communityStatus !==
+      "active"
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "현재 커뮤니티 반응 기능을 이용할 수 없습니다.",
+      403
+    );
+  }
+
+  const post =
+    await getCommunityPostById({
+      organizationId,
+
+      postId,
+    });
+
+  if (
+    !post ||
+    post.status !==
+      "published"
+  ) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "게시글을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  const actorKey =
+    `student:${studentId}`;
+
+  const existing =
+    await db
+      .select({
+        id:
+          communityReactions.id,
+      })
+      .from(
+        communityReactions
+      )
+      .where(
+        and(
+          eq(
+            communityReactions.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityReactions.targetType,
+            "post"
+          ),
+
+          eq(
+            communityReactions.targetId,
+            postId
+          ),
+
+          eq(
+            communityReactions.actorKey,
+            actorKey
+          ),
+
+          eq(
+            communityReactions.reactionType,
+            params.reactionType
+          )
+        )
+      )
+      .limit(1);
+
+  if (existing[0]) {
+    await db
+      .delete(
+        communityReactions
+      )
+      .where(
+        and(
+          eq(
+            communityReactions.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityReactions.id,
+            Number(
+              existing[0].id
+            )
+          )
+        )
+      );
+
+    await db
+      .update(
+        communityPosts
+      )
+      .set(
+        params.reactionType ===
+        "like"
+          ? {
+              likeCount:
+                sql`GREATEST(${communityPosts.likeCount} - 1, 0)`,
+            }
+          : {
+              helpfulCount:
+                sql`GREATEST(${communityPosts.helpfulCount} - 1, 0)`,
+            } as any
+      )
+      .where(
+        and(
+          eq(
+            communityPosts.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityPosts.id,
+            postId
+          )
+        )
+      );
+
+    return {
+      active:
+        false as const,
+    };
+  }
+
+  await db
+    .insert(
+      communityReactions
+    )
+    .values({
+      organizationId,
+
+      targetType:
+        "post",
+
+      targetId:
+        postId,
+
+      actorType:
+        "student",
+
+      actorStudentId:
+        studentId,
+
+      actorUserId:
+        null,
+
+      actorKey,
+
+      reactionType:
+        params.reactionType,
+    } as any);
+
+  await db
+    .update(
+      communityPosts
+    )
+    .set(
+      params.reactionType ===
+      "like"
+        ? {
+            likeCount:
+              sql`${communityPosts.likeCount} + 1`,
+          }
+        : {
+            helpfulCount:
+              sql`${communityPosts.helpfulCount} + 1`,
+          } as any
+    )
+    .where(
+      and(
+        eq(
+          communityPosts.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityPosts.id,
+          postId
+        )
+      )
+    );
+
+  return {
+    active:
+      true as const,
+  };
+}
+
+
+/**
+ * 학생이 작성한 게시글 목록.
+ */
+export async function listCommunityStudentPosts(
+  params: {
+    organizationId?: number | null;
+    studentId: number;
+    limit?: number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireCommunityId(
+      params.studentId,
+      "학생"
+    );
+
+  const limit =
+    Math.min(
+      Math.max(
+        Math.floor(
+          Number(
+            params.limit ??
+            50
+          )
+        ),
+        1
+      ),
+      100
+    );
+
+  return db
+    .select({
+      id:
+        communityPosts.id,
+
+      boardId:
+        communityPosts.boardId,
+
+      title:
+        communityPosts.title,
+
+      content:
+        communityPosts.content,
+
+      status:
+        communityPosts.status,
+
+      isPinned:
+        communityPosts.isPinned,
+
+      viewCount:
+        communityPosts.viewCount,
+
+      commentCount:
+        communityPosts.commentCount,
+
+      likeCount:
+        communityPosts.likeCount,
+
+      helpfulCount:
+        communityPosts.helpfulCount,
+
+      bookmarkCount:
+        communityPosts.bookmarkCount,
+
+      editedAt:
+        communityPosts.editedAt,
+
+      createdAt:
+        communityPosts.createdAt,
+    })
+    .from(
+      communityPosts
+    )
+    .where(
+      and(
+        eq(
+          communityPosts.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityPosts.authorType,
+          "student"
+        ),
+
+        eq(
+          communityPosts.authorStudentId,
+          studentId
+        ),
+
+        sql`${communityPosts.status} <> 'deleted'`
+      )
+    )
+    .orderBy(
+      desc(
+        communityPosts.id
+      )
+    )
+    .limit(
+      limit
+    );
+}
+
+
+/**
+ * 학생이 작성한 댓글 목록.
+ */
+export async function listCommunityStudentComments(
+  params: {
+    organizationId?: number | null;
+    studentId: number;
+    limit?: number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireCommunityId(
+      params.studentId,
+      "학생"
+    );
+
+  const limit =
+    Math.min(
+      Math.max(
+        Math.floor(
+          Number(
+            params.limit ??
+            50
+          )
+        ),
+        1
+      ),
+      100
+    );
+
+  return db
+    .select({
+      id:
+        communityComments.id,
+
+      postId:
+        communityComments.postId,
+
+      parentCommentId:
+        communityComments.parentCommentId,
+
+      content:
+        communityComments.content,
+
+      status:
+        communityComments.status,
+
+      editedAt:
+        communityComments.editedAt,
+
+      createdAt:
+        communityComments.createdAt,
+
+      postTitle:
+        communityPosts.title,
+    })
+    .from(
+      communityComments
+    )
+    .innerJoin(
+      communityPosts,
+      and(
+        eq(
+          communityPosts.organizationId,
+          communityComments.organizationId
+        ),
+
+        eq(
+          communityPosts.id,
+          communityComments.postId
+        )
+      )
+    )
+    .where(
+      and(
+        eq(
+          communityComments.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityComments.authorType,
+          "student"
+        ),
+
+        eq(
+          communityComments.authorStudentId,
+          studentId
+        ),
+
+        sql`${communityComments.status} <> 'deleted'`,
+
+        eq(
+          communityPosts.status,
+          "published"
+        )
+      )
+    )
+    .orderBy(
+      desc(
+        communityComments.id
+      )
+    )
+    .limit(
+      limit
+    );
+}
+
+
+/**
+ * 학생이 저장한 게시글 목록.
+ */
+export async function listCommunityStudentBookmarks(
+  params: {
+    organizationId?: number | null;
+    studentId: number;
+    limit?: number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireCommunityId(
+      params.studentId,
+      "학생"
+    );
+
+  const limit =
+    Math.min(
+      Math.max(
+        Math.floor(
+          Number(
+            params.limit ??
+            50
+          )
+        ),
+        1
+      ),
+      100
+    );
+
+  return db
+    .select({
+      bookmarkId:
+        communityBookmarks.id,
+
+      postId:
+        communityPosts.id,
+
+      boardId:
+        communityPosts.boardId,
+
+      title:
+        communityPosts.title,
+
+      content:
+        communityPosts.content,
+
+      authorType:
+        communityPosts.authorType,
+
+      authorNickname:
+        communityProfiles.nickname,
+
+      viewCount:
+        communityPosts.viewCount,
+
+      commentCount:
+        communityPosts.commentCount,
+
+      likeCount:
+        communityPosts.likeCount,
+
+      helpfulCount:
+        communityPosts.helpfulCount,
+
+      postCreatedAt:
+        communityPosts.createdAt,
+
+      bookmarkedAt:
+        communityBookmarks.createdAt,
+    })
+    .from(
+      communityBookmarks
+    )
+    .innerJoin(
+      communityPosts,
+      and(
+        eq(
+          communityPosts.organizationId,
+          communityBookmarks.organizationId
+        ),
+
+        eq(
+          communityPosts.id,
+          communityBookmarks.postId
+        )
+      )
+    )
+    .leftJoin(
+      communityProfiles,
+      and(
+        eq(
+          communityProfiles.organizationId,
+          communityPosts.organizationId
+        ),
+
+        eq(
+          communityProfiles.studentId,
+          communityPosts.authorStudentId
+        )
+      )
+    )
+    .where(
+      and(
+        eq(
+          communityBookmarks.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityBookmarks.studentId,
+          studentId
+        ),
+
+        eq(
+          communityPosts.status,
+          "published"
+        )
+      )
+    )
+    .orderBy(
+      desc(
+        communityBookmarks.id
+      )
+    )
+    .limit(
+      limit
+    );
+}
+
+/**
+ * 게시글 저장 / 저장 해제.
+ */
+export async function toggleCommunityBookmark(
+  params: {
+    organizationId?: number | null;
+
+    studentId:
+      number;
+
+    postId:
+      number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireCommunityId(
+      params.studentId,
+      "학생"
+    );
+
+  const postId =
+    requireCommunityId(
+      params.postId,
+      "게시글"
+    );
+
+/**
+ * 저장 기능을 사용하는 학생의
+ * 커뮤니티 이용 상태 확인.
+ */
+const profile =
+  await getCommunityProfile({
+    organizationId,
+    studentId,
+  });
+
+if (
+  !profile ||
+  profile.communityStatus !==
+    "active"
+) {
+  throwAppError(
+    ERROR_CODES.PERMISSION_DENIED,
+    "현재 게시글 저장 기능을 이용할 수 없습니다.",
+    403
+  );
+}
+
+/**
+ * 실제 같은 회사의 공개 게시글인지 확인.
+ *
+ * 삭제 / 숨김 / 다른 회사 게시글을
+ * 임의의 postId로 저장하는 것을 막는다.
+ */
+const post =
+  await getCommunityPostById({
+    organizationId,
+    postId,
+  });
+
+if (
+  !post ||
+  post.status !==
+    "published"
+) {
+  throwAppError(
+    ERROR_CODES.DATA_NOT_FOUND,
+    "게시글을 찾을 수 없습니다.",
+    404
+  );
+}
+
+  const existing =
+    await db
+      .select({
+        id:
+          communityBookmarks.id,
+      })
+      .from(
+        communityBookmarks
+      )
+      .where(
+        and(
+          eq(
+            communityBookmarks.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityBookmarks.postId,
+            postId
+          ),
+
+          eq(
+            communityBookmarks.studentId,
+            studentId
+          )
+        )
+      )
+      .limit(1);
+
+  if (existing[0]) {
+    await db
+      .delete(
+        communityBookmarks
+      )
+      .where(
+        and(
+          eq(
+            communityBookmarks.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityBookmarks.id,
+            Number(
+              existing[0].id
+            )
+          )
+        )
+      );
+
+    await db
+      .update(
+        communityPosts
+      )
+      .set({
+        bookmarkCount:
+          sql`GREATEST(${communityPosts.bookmarkCount} - 1, 0)`,
+      } as any)
+      .where(
+        and(
+          eq(
+            communityPosts.organizationId,
+            organizationId
+          ),
+
+          eq(
+            communityPosts.id,
+            postId
+          )
+        )
+      );
+
+    return {
+      active:
+        false as const,
+    };
+  }
+
+  await db
+    .insert(
+      communityBookmarks
+    )
+    .values({
+      organizationId,
+
+      postId,
+
+      studentId,
+    } as any);
+
+  await db
+    .update(
+      communityPosts
+    )
+    .set({
+      bookmarkCount:
+        sql`${communityPosts.bookmarkCount} + 1`,
+    } as any)
+    .where(
+      and(
+        eq(
+          communityPosts.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityPosts.id,
+          postId
+        )
+      )
+    );
+
+  return {
+    active:
+      true as const,
+  };
+}
+
+
+/**
+ * 이미지 첨부정보 저장.
+ *
+ * 실제 이미지 파일 업로드는 Router/Object Storage에서 처리하고
+ * 여기서는 저장된 URL만 기록한다.
+ *
+ * 동영상은 허용하지 않는다.
+ */
+export async function createCommunityImageAttachment(
+  params: {
+    organizationId?: number | null;
+
+    studentId:
+      number;
+
+    postId:
+      number;
+
+    originalName:
+      string;
+
+    storedName?:
+      string | null;
+
+    url:
+      string;
+
+    mimeType:
+      string;
+
+    sizeBytes:
+      number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireCommunityId(
+      params.studentId,
+      "학생"
+    );
+
+  const postId =
+    requireCommunityId(
+      params.postId,
+      "게시글"
+    );
+
+  const post =
+    await getCommunityPostById({
+      organizationId,
+
+      postId,
+    });
+
+  if (
+    !post ||
+    post.authorType !==
+      "student" ||
+    Number(
+      post.authorStudentId ||
+      0
+    ) !==
+      studentId ||
+    post.status !==
+      "published"
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "본인이 작성한 게시글에만 이미지를 첨부할 수 있습니다.",
+      403
+    );
+  }
+
+  const mimeType =
+    String(
+      params.mimeType ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  const sizeBytes =
+    Math.floor(
+      Number(
+        params.sizeBytes ||
+        0
+      )
+    );
+
+  if (
+    !COMMUNITY_IMAGE_MIME_TYPES.has(
+      mimeType
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "커뮤니티에는 JPG, PNG, WEBP, GIF 이미지만 첨부할 수 있습니다.",
+      400
+    );
+  }
+
+  if (
+    !Number.isFinite(
+      sizeBytes
+    ) ||
+    sizeBytes <= 0 ||
+    sizeBytes >
+      COMMUNITY_IMAGE_MAX_BYTES
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "이미지는 한 장당 최대 5MB까지 첨부할 수 있습니다.",
+      400
+    );
+  }
+
+  const originalName =
+    String(
+      params.originalName ||
+      ""
+    )
+      .trim()
+      .slice(
+        0,
+        255
+      );
+
+  const url =
+    String(
+      params.url ||
+      ""
+    )
+      .trim()
+      .slice(
+        0,
+        1000
+      );
+
+  if (
+    !originalName ||
+    !url
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "이미지 첨부정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  const result:
+    any =
+    await db
+      .insert(
+        communityAttachments
+      )
+      .values({
+        organizationId,
+
+        targetType:
+          "post",
+
+        targetId:
+          postId,
+
+        originalName,
+
+        storedName:
+          normalizeCommunityText(
+            params.storedName,
+            255
+          ),
+
+        url,
+
+        mimeType,
+
+        sizeBytes,
+
+        uploaderType:
+          "student",
+
+        uploaderStudentId:
+          studentId,
+
+        uploaderUserId:
+          null,
+      } as any);
+
+  const attachmentId =
+    Number(
+      getInsertId(
+        result
+      ) ||
+      0
+    );
+
+  if (!attachmentId) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "이미지 첨부정보를 저장하지 못했습니다.",
+      500
+    );
+  }
+
+  return {
+    attachmentId,
+  };
+}
+
+/**
+ * =========================================================
+ * Host / 담당자 게시글 이미지 첨부정보 저장
+ * =========================================================
+ *
+ * 실제 파일은 Express Host 이미지 업로드 endpoint에서
+ * R2에 먼저 저장된 뒤 이 함수에는 메타데이터만 전달된다.
+ *
+ * 보안 규칙:
+ *
+ * 1. organizationId는 Router의 Host 세션에서만 전달
+ * 2. postId도 같은 organization 안에서 다시 조회
+ * 3. staff 게시글만 허용
+ * 4. 현재 로그인 userId가 실제 작성자인 경우만 허용
+ * 5. 이미지 MIME / 크기를 서버에서 다시 검증
+ */
+export async function createCommunityStaffImageAttachment(
+  params: {
+    organizationId?: number | null;
+
+    userId:
+      number;
+
+    postId:
+      number;
+
+    originalName:
+      string;
+
+    storedName?:
+      string | null;
+
+    url:
+      string;
+
+    mimeType:
+      string;
+
+    sizeBytes:
+      number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const userId =
+    requireCommunityId(
+      params.userId,
+      "담당자"
+    );
+
+  const postId =
+    requireCommunityId(
+      params.postId,
+      "게시글"
+    );
+
+  /**
+   * ---------------------------------------------------------
+   * 대상 게시글 검증
+   * ---------------------------------------------------------
+   *
+   * getCommunityPostById 자체가
+   * organizationId + postId로 조회한다.
+   *
+   * 따라서 다른 회사 postId는 여기서 찾을 수 없다.
+   */
+  const post =
+    await getCommunityPostById({
+      organizationId,
+
+      postId,
+    });
+
+  if (
+    !post ||
+    post.status !==
+      "published"
+  ) {
+    throwAppError(
+      ERROR_CODES.DATA_NOT_FOUND,
+      "게시글을 찾을 수 없습니다.",
+      404
+    );
+  }
+
+  /**
+   * 학생글에는 담당자가 이미지를 추가할 수 없다.
+   *
+   * 담당자 본인이 작성한 staff 게시글만 허용.
+   */
+  if (
+    post.authorType !==
+      "staff" ||
+    Number(
+      post.authorUserId ||
+      0
+    ) !==
+      userId
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "본인이 작성한 게시글에만 이미지를 첨부할 수 있습니다.",
+      403
+    );
+  }
+
+  /**
+   * ---------------------------------------------------------
+   * 이미지 형식 검증
+   * ---------------------------------------------------------
+   *
+   * Express에서 이미 검사했더라도
+   * DB 함수에서도 다시 검사한다.
+   */
+  const mimeType =
+    String(
+      params.mimeType ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  const sizeBytes =
+    Math.floor(
+      Number(
+        params.sizeBytes ||
+        0
+      )
+    );
+
+  if (
+    !COMMUNITY_IMAGE_MIME_TYPES.has(
+      mimeType
+    )
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "커뮤니티에는 JPG, PNG, WEBP, GIF 이미지만 첨부할 수 있습니다.",
+      400
+    );
+  }
+
+  if (
+    !Number.isFinite(
+      sizeBytes
+    ) ||
+    sizeBytes <=
+      0 ||
+    sizeBytes >
+      COMMUNITY_IMAGE_MAX_BYTES
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "이미지는 한 장당 최대 5MB까지 첨부할 수 있습니다.",
+      400
+    );
+  }
+
+  const originalName =
+    String(
+      params.originalName ||
+      ""
+    )
+      .trim()
+      .slice(
+        0,
+        255
+      );
+
+  const url =
+    String(
+      params.url ||
+      ""
+    )
+      .trim()
+      .slice(
+        0,
+        1000
+      );
+
+  if (
+    !originalName ||
+    !url
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "이미지 첨부정보가 올바르지 않습니다.",
+      400
+    );
+  }
+
+  /**
+   * ---------------------------------------------------------
+   * 한 게시글 최대 이미지 수
+   * ---------------------------------------------------------
+   *
+   * 현재 UI 기준 최대 10장.
+   *
+   * organizationId + postId로 세므로
+   * 다른 회사 attachment는 포함되지 않는다.
+   */
+  const existingAttachments =
+    await listCommunityPostAttachments({
+      organizationId,
+
+      postId,
+    });
+
+  if (
+    existingAttachments.length >=
+    10
+  ) {
+    throwAppError(
+      ERROR_CODES.INVALID_REQUEST,
+      "게시글에는 이미지를 최대 10장까지 첨부할 수 있습니다.",
+      400
+    );
+  }
+
+  /**
+   * ---------------------------------------------------------
+   * Attachment 저장
+   * ---------------------------------------------------------
+   */
+  const result:
+    any =
+    await db
+      .insert(
+        communityAttachments
+      )
+      .values({
+        organizationId,
+
+        targetType:
+          "post",
+
+        targetId:
+          postId,
+
+        originalName,
+
+        storedName:
+          normalizeCommunityText(
+            params.storedName,
+            255
+          ),
+
+        url,
+
+        mimeType,
+
+        sizeBytes,
+
+        uploaderType:
+          "staff",
+
+        uploaderStudentId:
+          null,
+
+        uploaderUserId:
+          userId,
+      } as any);
+
+  const attachmentId =
+    Number(
+      getInsertId(
+        result
+      ) ||
+      0
+    );
+
+  if (
+    !attachmentId
+  ) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "이미지 첨부정보를 저장하지 못했습니다.",
+      500
+    );
+  }
+
+  return {
+    attachmentId,
+  };
+}
+
+
+/**
+ * 게시글 이미지 목록.
+ */
+export async function listCommunityPostAttachments(
+  params: {
+    organizationId?: number | null;
+
+    postId:
+      number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const postId =
+    requireCommunityId(
+      params.postId,
+      "게시글"
+    );
+
+  return db
+    .select()
+    .from(
+      communityAttachments
+    )
+    .where(
+      and(
+        eq(
+          communityAttachments.organizationId,
+          organizationId
+        ),
+
+        eq(
+          communityAttachments.targetType,
+          "post"
+        ),
+
+        eq(
+          communityAttachments.targetId,
+          postId
+        )
+      )
+    )
+    .orderBy(
+      asc(
+        communityAttachments.id
+      )
+    );
+}
+
+
+/**
+ * 게시글 / 댓글 / 프로필 신고.
+ */
+export async function createCommunityReport(
+  params: {
+    organizationId?: number | null;
+
+    studentId:
+      number;
+
+    targetType:
+      "post" |
+      "comment" |
+      "profile";
+
+    targetId:
+      number;
+
+    reasonType:
+      | "spam"
+      | "abuse"
+      | "privacy"
+      | "advertising"
+      | "misinformation"
+      | "other";
+
+    reasonText?:
+      string | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireCommunityId(
+      params.studentId,
+      "학생"
+    );
+
+  const targetId =
+    requireCommunityId(
+      params.targetId,
+      "신고 대상"
+    );
+
+  const result:
+    any =
+    await db
+      .insert(
+        communityReports
+      )
+      .values({
+        organizationId,
+
+        reporterStudentId:
+          studentId,
+
+        targetType:
+          params.targetType,
+
+        targetId,
+
+        reasonType:
+          params.reasonType,
+
+        reasonText:
+          normalizeCommunityText(
+            params.reasonText,
+            2000
+          ),
+
+        status:
+          "pending",
+      } as any);
+
+  return {
+    reportId:
+      Number(
+        getInsertId(
+          result
+        ) ||
+        0
+      ),
+  };
+}
+
+/**
+ * 현재 등록자의 게시글 반응 / 저장 상태 조회.
+ */
+export async function getCommunityStudentPostState(
+  params: {
+    organizationId?: number | null;
+
+    studentId:
+      number;
+
+    postId:
+      number;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  const studentId =
+    requireCommunityId(
+      params.studentId,
+      "학생"
+    );
+
+  const postId =
+    requireCommunityId(
+      params.postId,
+      "게시글"
+    );
+
+  const actorKey =
+    `student:${studentId}`;
+
+  const [
+    reactionRows,
+    bookmarkRows,
+  ] =
+    await Promise.all([
+      db
+        .select({
+          reactionType:
+            communityReactions.reactionType,
+        })
+        .from(
+          communityReactions
+        )
+        .where(
+          and(
+            eq(
+              communityReactions.organizationId,
+              organizationId
+            ),
+
+            eq(
+              communityReactions.targetType,
+              "post"
+            ),
+
+            eq(
+              communityReactions.targetId,
+              postId
+            ),
+
+            eq(
+              communityReactions.actorKey,
+              actorKey
+            )
+          )
+        ),
+
+      db
+        .select({
+          id:
+            communityBookmarks.id,
+        })
+        .from(
+          communityBookmarks
+        )
+        .where(
+          and(
+            eq(
+              communityBookmarks.organizationId,
+              organizationId
+            ),
+
+            eq(
+              communityBookmarks.postId,
+              postId
+            ),
+
+            eq(
+              communityBookmarks.studentId,
+              studentId
+            )
+          )
+        )
+        .limit(1),
+    ]);
+
+  return {
+    liked:
+      reactionRows.some(
+        row =>
+          row.reactionType ===
+          "like"
+      ),
+
+    helpful:
+      reactionRows.some(
+        row =>
+          row.reactionType ===
+          "helpful"
+      ),
+
+    bookmarked:
+      Boolean(
+        bookmarkRows[0]
+      ),
   };
 }
 
@@ -2752,6 +9386,321 @@ function prepareStudentPersonalData<
   }
 
   return nextData as T & Record<string, any>;
+}
+
+/**
+ * =========================================================
+ * 기존 학생 개인정보 조회용 Hash Backfill
+ * =========================================================
+ *
+ * 암호화 / Hash 보조컬럼 도입 이전에 생성된 학생 중
+ *
+ * - clientNameHash
+ * - phoneHash
+ * - phoneLast4
+ *
+ * 값이 비어있는 학생을 현재 암호화 원본에서 복호화한 뒤
+ * 조회용 보조컬럼만 복구한다.
+ *
+ * 중요:
+ *
+ * - clientName 원본은 수정하지 않는다.
+ * - phone 원본은 수정하지 않는다.
+ * - 이미 존재하는 Hash / Last4는 덮어쓰지 않는다.
+ * - organizationId 내부 학생만 처리한다.
+ * - 삭제된 학생은 처리하지 않는다.
+ * - 여러 번 실행해도 이미 복구된 학생은 다시 처리하지 않는다.
+ */
+export async function backfillStudentIdentityLookupFields(
+  params: {
+    organizationId?: number | null;
+  }
+) {
+  const db =
+    await getDb();
+
+  if (!db) {
+    throwAppError(
+      ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "DB not available",
+      500
+    );
+  }
+
+  const organizationId =
+    requireOrganizationId(
+      params.organizationId
+    );
+
+  /**
+   * 세 보조컬럼 중 하나라도 비어있는 학생만 조회한다.
+   *
+   * 학생의 암호화된 clientName / phone 원본은
+   * SELECT만 하고 UPDATE하지 않는다.
+   */
+  const rows =
+    await db
+      .select({
+        id:
+          students.id,
+
+        organizationId:
+          students.organizationId,
+
+        clientName:
+          students.clientName,
+
+        phone:
+          students.phone,
+
+        clientNameHash:
+          students.clientNameHash,
+
+        phoneHash:
+          students.phoneHash,
+
+        phoneLast4:
+          students.phoneLast4,
+      })
+      .from(
+        students
+      )
+      .where(
+        and(
+          eq(
+            students.organizationId,
+            organizationId
+          ),
+
+          sql`${students.deletedAt} IS NULL`,
+
+          or(
+            sql`(${students.clientNameHash} IS NULL OR ${students.clientNameHash} = '')`,
+
+            sql`(${students.phoneHash} IS NULL OR ${students.phoneHash} = '')`,
+
+            sql`(${students.phoneLast4} IS NULL OR ${students.phoneLast4} = '')`
+          )
+        )
+      )
+      .orderBy(
+        students.id
+      );
+
+  const updatedStudentIds:
+    number[] = [];
+
+  const failures:
+    Array<{
+      studentId: number;
+      reason: string;
+    }> = [];
+
+  for (
+    const row of
+    rows
+  ) {
+    const studentId =
+      Number(
+        row.id
+      );
+
+    /**
+     * CRM에서 사용하는 동일한 개인정보 복호화 함수를 사용한다.
+     *
+     * 복호화 실패 학생은 절대 UPDATE하지 않는다.
+     */
+    let decryptedStudent:
+      any;
+
+    try {
+      decryptedStudent =
+        decryptStudentPersonalData(
+          row as any
+        );
+    } catch (
+      error
+    ) {
+      failures.push({
+        studentId,
+
+        reason:
+          error instanceof Error
+            ? `개인정보 복호화 실패: ${error.message}`
+            : "개인정보 복호화 실패",
+      });
+
+      continue;
+    }
+
+    const plainClientName =
+      String(
+        decryptedStudent
+          ?.clientName ||
+        ""
+      ).trim();
+
+    const plainPhone =
+      String(
+        decryptedStudent
+          ?.phone ||
+        ""
+      )
+        .replace(
+          /\D/g,
+          ""
+        )
+        .trim();
+
+    /**
+     * 이름 또는 전화번호 자체가 없으면
+     * Hash를 임의 생성하지 않는다.
+     */
+    if (
+      !plainClientName
+    ) {
+      failures.push({
+        studentId,
+        reason:
+          "복호화된 학생 이름이 없습니다.",
+      });
+
+      continue;
+    }
+
+    if (
+      plainPhone.length <
+        10 ||
+      plainPhone.length >
+        11
+    ) {
+      failures.push({
+        studentId,
+        reason:
+          "복호화된 전화번호가 올바르지 않습니다.",
+      });
+
+      continue;
+    }
+
+    /**
+     * 기존 값은 절대 덮어쓰지 않는다.
+     *
+     * 비어있는 컬럼만 채운다.
+     */
+    const updates:
+      Record<
+        string,
+        any
+      > = {};
+
+    if (
+      !String(
+        row.clientNameHash ||
+        ""
+      ).trim()
+    ) {
+      updates.clientNameHash =
+        createNameHash(
+          plainClientName
+        );
+    }
+
+    if (
+      !String(
+        row.phoneHash ||
+        ""
+      ).trim()
+    ) {
+      updates.phoneHash =
+        createPhoneHash(
+          plainPhone
+        );
+    }
+
+    if (
+      !String(
+        row.phoneLast4 ||
+        ""
+      ).trim()
+    ) {
+      updates.phoneLast4 =
+        getPhoneLast4(
+          plainPhone
+        );
+    }
+
+    /**
+     * 방어코드.
+     *
+     * 실제로 변경할 컬럼이 없으면 UPDATE하지 않는다.
+     */
+    if (
+      Object.keys(
+        updates
+      ).length ===
+      0
+    ) {
+      continue;
+    }
+
+    try {
+      await db
+        .update(
+          students
+        )
+        .set(
+          updates as any
+        )
+        .where(
+          and(
+            eq(
+              students.id,
+              studentId
+            ),
+
+            eq(
+              students.organizationId,
+              organizationId
+            ),
+
+            sql`${students.deletedAt} IS NULL`
+          )
+        );
+
+      updatedStudentIds.push(
+        studentId
+      );
+    } catch (
+      error
+    ) {
+      failures.push({
+        studentId,
+
+        reason:
+          error instanceof Error
+            ? `보조컬럼 UPDATE 실패: ${error.message}`
+            : "보조컬럼 UPDATE 실패",
+      });
+    }
+  }
+
+  return {
+    organizationId,
+
+    candidateCount:
+      rows.length,
+
+    updatedCount:
+      updatedStudentIds.length,
+
+    failedCount:
+      failures.length,
+
+    updatedStudentIds,
+
+    failures,
+  };
 }
 
 function decryptStudentJoinedRow<T extends Record<string, any>>(
@@ -18050,10 +24999,13 @@ export async function getBrandingSettings(params?: {
         null,
 
       companyLogoUrl:
-        null,
+  null,
 
-      messengerSubtitle:
-        "사내 메신저",
+shareImageUrl:
+  null,
+
+messengerSubtitle:
+  "사내 메신저",
 
       loginHeroImageUrl:
         null,
@@ -18195,10 +25147,14 @@ export async function getPublicBrandingBySlug(
       null,
 
     companyLogoUrl:
-      branding?.companyLogoUrl ??
-      null,
+  branding?.companyLogoUrl ??
+  null,
 
-    loginHeroImageUrl:
+shareImageUrl:
+  branding?.shareImageUrl ??
+  null,
+
+loginHeroImageUrl:
       branding?.loginHeroImageUrl ??
       null,
 
@@ -18289,6 +25245,10 @@ export async function saveBrandingSettings(
           data.companyLogoUrl ??
           null,
 
+shareImageUrl:
+  data.shareImageUrl ??
+  null,
+
         messengerSubtitle:
           data.messengerSubtitle,
 
@@ -18354,11 +25314,15 @@ export async function saveBrandingSettings(
           data.companyName,
 
         companyLogoUrl:
-          data.companyLogoUrl ??
-          null,
+  data.companyLogoUrl ??
+  null,
 
-        messengerSubtitle:
-          data.messengerSubtitle,
+shareImageUrl:
+  data.shareImageUrl ??
+  null,
+
+messengerSubtitle:
+  data.messengerSubtitle,
 
         loginHeroImageUrl:
           data.loginHeroImageUrl ??

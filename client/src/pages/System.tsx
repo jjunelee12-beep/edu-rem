@@ -4107,8 +4107,9 @@ await utils.branding.get.invalidate();
 });
 
   const [companyName, setCompanyName] = useState("");
-  const [companyLogoUrl, setCompanyLogoUrl] = useState("");
-  const [messengerSubtitle, setMessengerSubtitle] = useState("");
+const [companyLogoUrl, setCompanyLogoUrl] = useState("");
+const [shareImageUrl, setShareImageUrl] = useState("");
+const [messengerSubtitle, setMessengerSubtitle] = useState("");
 const [loginHeroImageUrl, setLoginHeroImageUrl] = useState("");
 const [loginTitle, setLoginTitle] = useState("");
 const [loginDescription, setLoginDescription] = useState("");
@@ -4124,6 +4125,8 @@ const loginHeroInputRef =
 const [isUploadingLoginHero, setIsUploadingLoginHero] =
   useState(false);
 const fileInputRef = useRef<HTMLInputElement | null>(null);
+const shareImageInputRef = useRef<HTMLInputElement | null>(null);
+const [isUploadingShareImage, setIsUploadingShareImage] = useState(false);
 const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 const previewLogoUrl = normalizeAssetUrl(companyLogoUrl || "");
 const [notificationSettings, setNotificationSettings] =
@@ -4199,10 +4202,11 @@ const updateNotificationSetting = (
   if (!data) return;
 
   setCompanyName(data.companyName || "");
-  setCompanyLogoUrl(data.companyLogoUrl || "");
-  setMessengerSubtitle(
-    data.messengerSubtitle || "사내 메신저"
-  );
+setCompanyLogoUrl(data.companyLogoUrl || "");
+setShareImageUrl(data.shareImageUrl || "");
+setMessengerSubtitle(
+  data.messengerSubtitle || "사내 메신저"
+);
 
   setLoginHeroImageUrl(
     data.loginHeroImageUrl || ""
@@ -4286,6 +4290,69 @@ toast.success("로고 업로드 완료");
   } finally {
     setIsUploadingLogo(false);
     if (e.target) e.target.value = "";
+  }
+};
+
+const handleUploadShareImage = async (
+  e: ChangeEvent<HTMLInputElement>
+) => {
+  const file = e.target.files?.[0];
+
+  if (!file) return;
+
+  try {
+    setIsUploadingShareImage(true);
+
+    if (file.size > 5 * 1024 * 1024) {
+      throw new Error(
+        "공유 이미지는 5MB 이하로 업로드해주세요."
+      );
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const uploadRes = await fetch("/api/upload", {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+    });
+
+    if (!uploadRes.ok) {
+      throw new Error(
+        "공유 이미지 업로드에 실패했습니다."
+      );
+    }
+
+    const uploaded = await uploadRes.json();
+
+    const uploadedUrl =
+      uploaded?.fileUrl ||
+      uploaded?.url ||
+      "";
+
+    if (!uploadedUrl) {
+      throw new Error(
+        "업로드 URL을 찾을 수 없습니다."
+      );
+    }
+
+    setShareImageUrl(uploadedUrl);
+
+    toast.success(
+      "공유 이미지 업로드 완료"
+    );
+  } catch (err: any) {
+    toast.error(
+      err?.message ||
+        "공유 이미지 업로드 중 오류가 발생했습니다."
+    );
+  } finally {
+    setIsUploadingShareImage(false);
+
+    if (e.target) {
+      e.target.value = "";
+    }
   }
 };
 
@@ -4428,11 +4495,15 @@ const handleUploadLoginHero = async (
       companyName.trim(),
 
     companyLogoUrl:
-      companyLogoUrl.trim() ||
-      null,
+  companyLogoUrl.trim() ||
+  null,
 
-    messengerSubtitle:
-      messengerSubtitle.trim(),
+shareImageUrl:
+  shareImageUrl.trim() ||
+  null,
+
+messengerSubtitle:
+  messengerSubtitle.trim(),
 
     loginHeroImageUrl:
       loginHeroImageUrl.trim() ||
@@ -4650,33 +4721,96 @@ const getAuditMemoLabel = (memo: string | null | undefined) => {
 </div>
 
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="mb-3 text-sm font-semibold text-slate-900">
-                  미리보기
-                </p>
+  <p className="mb-3 text-sm font-semibold text-slate-900">
+    미리보기
+  </p>
 
-                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                  <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-yellow-300 text-slate-900">
-                   {previewLogoUrl ? (
-  <img
-    src={previewLogoUrl}
-    alt={companyName || "company-logo"}
-    className="h-full w-full object-cover"
-  />
-) : (
-  <Building2 className="h-5 w-5" />
-)}
-                  </div>
+  <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+    <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-yellow-300 text-slate-900">
+      {previewLogoUrl ? (
+        <img
+          src={previewLogoUrl}
+          alt={companyName || "company-logo"}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <Building2 className="h-5 w-5" />
+      )}
+    </div>
 
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-900">
-                      {companyName || "회사명"}
-                    </p>
-                    <p className="truncate text-xs text-slate-500">
-                      {messengerSubtitle || "사내 메신저"}
-                    </p>
-                  </div>
-                </div>
-              </div>
+    <div className="min-w-0">
+      <p className="truncate text-sm font-semibold text-slate-900">
+        {companyName || "회사명"}
+      </p>
+      <p className="truncate text-xs text-slate-500">
+        {messengerSubtitle || "사내 메신저"}
+      </p>
+    </div>
+  </div>
+</div>
+
+<div className="space-y-3">
+  <p className="text-sm font-medium">
+    링크 공유 이미지
+  </p>
+
+  <div className="flex flex-wrap items-center gap-2">
+    <Input
+      value={shareImageUrl}
+      onChange={(e) =>
+        setShareImageUrl(e.target.value)
+      }
+      placeholder="공유 이미지 URL"
+      className="max-w-[420px]"
+    />
+
+    <input
+      ref={shareImageInputRef}
+      type="file"
+      accept="image/png,image/jpeg,image/webp"
+      className="hidden"
+      onChange={handleUploadShareImage}
+    />
+
+    <Button
+      type="button"
+      variant="outline"
+      onClick={() =>
+        shareImageInputRef.current?.click()
+      }
+      disabled={isUploadingShareImage}
+    >
+      {isUploadingShareImage
+        ? "업로드 중..."
+        : "공유 이미지 업로드"}
+    </Button>
+
+    {shareImageUrl ? (
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => setShareImageUrl("")}
+      >
+        이미지 제거
+      </Button>
+    ) : null}
+  </div>
+
+  <p className="text-xs text-muted-foreground">
+    등록자 업무포탈 링크를 카카오톡·문자 등에 공유할 때 사용할 대표 이미지입니다.
+    권장 1200×630px · PNG/JPG/WebP · 5MB 이하
+  </p>
+
+  {shareImageUrl ? (
+    <div className="max-w-[520px] overflow-hidden rounded-xl border bg-slate-50">
+      <img
+        src={normalizeAssetUrl(shareImageUrl)}
+        alt="링크 공유 이미지 미리보기"
+        className="aspect-[1200/630] w-full object-cover"
+      />
+    </div>
+  ) : null}
+</div>
 
 <div className="border-t pt-6">
   <div className="mb-4">

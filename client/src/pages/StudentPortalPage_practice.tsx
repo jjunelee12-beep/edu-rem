@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRoute } from "wouter";
+import { UsersRound, ChevronRight } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import StudentPortalCommunity from "./StudentPortalCommunity";
 
 const PORTAL_TOKEN_KEY_PREFIX = "student_portal_token:";
 
@@ -46,6 +48,10 @@ type MyWorkSection =
   | "requirements"
   | "safety";
 
+type PracticeSection =
+  | "status"
+  | "guide";
+
 type AdministrationView =
   | "list"
   | "learnerRegistration"
@@ -60,13 +66,22 @@ export default function StudentPortalPage() {
     );
 
   const slug =
-    String(
-      params?.slug || ""
-    )
-      .trim()
-      .toLowerCase();
+  String(
+    params?.slug || ""
+  )
+    .trim()
+    .toLowerCase();
 
-  const tokenStorageKey =
+const openTeamPage = () => {
+  if (!slug) {
+    return;
+  }
+
+  window.location.href =
+    `/team/${encodeURIComponent(slug)}`;
+};
+
+const tokenStorageKey =
     useMemo(
       () =>
         `${PORTAL_TOKEN_KEY_PREFIX}${slug}`,
@@ -125,6 +140,23 @@ export default function StudentPortalPage() {
       null
     );
 
+
+  /**
+   * 실습 내부 화면.
+   *
+   * status:
+   * MY 실습현황
+   *
+   * guide:
+   * 실습 안내가이드
+   */
+  const [
+    practiceSection,
+    setPracticeSection,
+  ] =
+    useState<PracticeSection>(
+      "status"
+    );
   /**
    * 행정절차 내부 화면.
    *
@@ -242,6 +274,29 @@ export default function StudentPortalPage() {
     );
 
   /**
+   * 등록자 MY 실습현황.
+   *
+   * 브라우저에서는 Portal Token만 전달한다.
+   */
+  const practiceQuery =
+    trpc.studentPortal.practice.useQuery(
+      {
+        token:
+          portalToken || "",
+      },
+      {
+        enabled:
+          tokenReady &&
+          Boolean(
+            portalToken
+          ),
+
+        retry:
+          false,
+      }
+    );
+
+  /**
    * 학습자등록 완료.
    *
    * 브라우저에서는 Portal Token만 전달한다.
@@ -329,6 +384,10 @@ const completeQualificationApplicationMutation =
 
           setMyWorkSection(
             "learning"
+          );
+
+          setPracticeSection(
+            "status"
           );
 
           setSelectedSemesterOrder(
@@ -565,6 +624,299 @@ const qualificationApplicationInfo =
   myWork?.qualificationApplication ??
   null;
 
+const practicePrerequisite =
+  (() => {
+    const semesters =
+      Array.isArray(
+        myWork?.semesters
+      )
+        ? myWork.semesters
+        : [];
+
+    const subjects =
+      Array.isArray(
+        myWork?.subjects
+      )
+        ? myWork.subjects
+        : [];
+
+    /**
+     * MY 학적부에서 사용하는 학기 원본을
+     * 학기번호 기준으로 연결한다.
+     */
+    const semesterByOrder =
+      new Map<
+        number,
+        any
+      >();
+
+    semesters.forEach(
+      (
+        semester:
+          any
+      ) => {
+        const semesterOrder =
+          Number(
+            semester
+              ?.semesterOrder ||
+            0
+          );
+
+        if (
+          !Number.isFinite(
+            semesterOrder
+          ) ||
+          semesterOrder <=
+            0
+        ) {
+          return;
+        }
+
+        semesterByOrder.set(
+          semesterOrder,
+          semester
+        );
+      }
+    );
+
+    /**
+     * 실습 선이수 화면에는
+     * 현재 실제 수강 중이거나
+     * 이미 이수한 과목만 표시한다.
+     *
+     * 예정 / 확인필요 / 재수강은
+     * 목록과 계산에서 완전히 제외한다.
+     */
+    const prerequisiteSubjectMap =
+      new Map<
+        string,
+        {
+          subjectName:
+            string;
+
+          requirementType:
+            "전공필수" |
+            "전공선택";
+
+          statusKey:
+            "completed" |
+            "in_progress";
+
+          statusLabel:
+            "이수완료" |
+            "진행중";
+
+          semesterNo:
+            number;
+        }
+      >();
+
+    subjects.forEach(
+      (
+        subject:
+          any
+      ) => {
+        const subjectName =
+          String(
+            subject
+              ?.subjectName ||
+            ""
+          )
+            .trim()
+            .replace(
+              /\s+/g,
+              " "
+            );
+
+        if (
+          !subjectName
+        ) {
+          return;
+        }
+
+        const requirementType =
+          String(
+            subject
+              ?.requirementType ||
+            ""
+          ).trim();
+
+        if (
+          requirementType !==
+            "전공필수" &&
+          requirementType !==
+            "전공선택"
+        ) {
+          return;
+        }
+
+        const semesterNo =
+          Number(
+            subject
+              ?.semesterNo ||
+            0
+          );
+
+        const semester =
+          semesterByOrder.get(
+            semesterNo
+          );
+
+        if (
+          !semester
+        ) {
+          return;
+        }
+
+        /**
+         * MY 학적부 화면과
+         * 완전히 동일한 과목 상태 판정.
+         */
+        const status =
+          resolvePortalSubjectStatus(
+            subject,
+            semester
+          );
+
+        /**
+         * 예정 과목은 절대 넣지 않는다.
+         *
+         * scheduled = 예정
+         * retake = 재수강
+         * review_required = 확인필요
+         *
+         * 실습 화면에서는
+         * completed / in_progress만 허용.
+         */
+        if (
+          status.key !==
+            "completed" &&
+          status.key !==
+            "in_progress"
+        ) {
+          return;
+        }
+
+        const normalizedSubjectKey =
+          subjectName
+            .replace(
+              /\s+/g,
+              ""
+            )
+            .toLowerCase();
+
+        const mapKey =
+          `${requirementType}:${normalizedSubjectKey}`;
+
+        const nextRow = {
+          subjectName,
+
+          requirementType:
+            requirementType as
+              | "전공필수"
+              | "전공선택",
+
+          statusKey:
+            status.key as
+              | "completed"
+              | "in_progress",
+
+          statusLabel:
+            status.label as
+              | "이수완료"
+              | "진행중",
+
+          semesterNo,
+        };
+
+        const existing =
+          prerequisiteSubjectMap.get(
+            mapKey
+          );
+
+        /**
+         * 같은 과목이 여러 Row에 존재하면
+         * 이수완료를 진행중보다 우선한다.
+         */
+        if (
+          !existing ||
+          (
+            existing.statusKey ===
+              "in_progress" &&
+            nextRow.statusKey ===
+              "completed"
+          )
+        ) {
+          prerequisiteSubjectMap.set(
+            mapKey,
+            nextRow
+          );
+        }
+      }
+    );
+
+    const visibleSubjects =
+      Array.from(
+        prerequisiteSubjectMap.values()
+      );
+
+    const requiredSubjects =
+      visibleSubjects.filter(
+        subject =>
+          subject.requirementType ===
+          "전공필수"
+      );
+
+    const electiveSubjects =
+      visibleSubjects.filter(
+        subject =>
+          subject.requirementType ===
+          "전공선택"
+      );
+
+    /**
+     * 분자는 반드시 "이수완료"만 계산한다.
+     *
+     * 진행중 과목은 목록에는 보이지만
+     * 4 / 2 충족 숫자에는 포함하지 않는다.
+     */
+    const requiredCompleted =
+      requiredSubjects.filter(
+        subject =>
+          subject.statusKey ===
+          "completed"
+      ).length;
+
+    const electiveCompleted =
+      electiveSubjects.filter(
+        subject =>
+          subject.statusKey ===
+          "completed"
+      ).length;
+
+    return {
+      requiredCompleted,
+
+      electiveCompleted,
+
+      requiredTarget:
+        4,
+
+      electiveTarget:
+        2,
+
+      eligible:
+        requiredCompleted >=
+          4 &&
+        electiveCompleted >=
+          2,
+
+      requiredSubjects,
+
+      electiveSubjects,
+    };
+  })();
+
     const selectedSemester =
       selectedSemesterOrder !==
         null &&
@@ -646,6 +998,15 @@ const qualificationApplicationInfo =
             "learning"
           );
         }
+
+        if (
+          tab ===
+          "practice"
+        ) {
+          setPracticeSection(
+            "status"
+          );
+        }
       };
 
         const pageTitle =
@@ -679,7 +1040,7 @@ const qualificationApplicationInfo =
 
     return (
       <PortalScreen>
-        {activeTab ===
+                {activeTab ===
         "home" ? (
           <PortalHeader
             portalName={
@@ -689,13 +1050,14 @@ const qualificationApplicationInfo =
               portal.companyLogoUrl
             }
           />
-        ) : (
+        ) : activeTab ===
+          "community" ? null : (
           <PortalSubHeader
             title={
               pageTitle ||
               "업무포털"
             }
-                        onBack={() => {
+            onBack={() => {
               if (
                 selectedSemesterOrder !==
                 null
@@ -708,30 +1070,34 @@ const qualificationApplicationInfo =
               }
 
               if (
-  activeTab ===
-    "administration" &&
-  administrationView !==
-    "list"
-) {
-  setAdministrationView(
-    "list"
-  );
+                activeTab ===
+                  "administration" &&
+                administrationView !==
+                  "list"
+              ) {
+                setAdministrationView(
+                  "list"
+                );
 
-  return;
-}
+                return;
+              }
 
               goHome();
             }}
           />
         )}
 
-        {myWorkQuery.isLoading ? (
+        {activeTab !==
+  "community" &&
+myWorkQuery.isLoading ? (
           <div className="flex min-h-[60vh] items-center justify-center px-6">
             <div className="text-sm text-slate-500">
               학습관리 정보를 확인하고 있습니다.
             </div>
           </div>
-        ) : myWorkQuery.isError ? (
+        ) : activeTab !==
+    "community" &&
+  myWorkQuery.isError ? (
           <div className="px-5 py-8">
             <div className="rounded-2xl border border-red-100 bg-red-50 p-5 text-center">
               <div className="font-bold text-red-700">
@@ -1079,6 +1445,49 @@ onQualificationApplication={() =>
   )
 }
 />
+
+        ) : activeTab ===
+            "practice" ? (
+          <PortalPracticeView
+            practice={
+              practiceQuery.data ??
+              null
+            }
+            prerequisite={
+              practicePrerequisite
+            }
+            section={
+              practiceSection
+            }
+            primaryColor={
+              primaryColor
+            }
+            isLoading={
+              practiceQuery.isLoading
+            }
+            isError={
+              practiceQuery.isError
+            }
+            onSectionChange={
+              setPracticeSection
+            }
+          />
+               ) : activeTab ===
+            "community" ? (
+          <StudentPortalCommunity
+            token={
+              portalToken
+            }
+            portal={
+              portal
+            }
+            primaryColor={
+              primaryColor
+            }
+            onNavigateTab={
+              handleBottomTab
+            }
+          />
         ) : (
           <PortalComingSoon
             title={
@@ -1088,17 +1497,20 @@ onQualificationApplication={() =>
           />
         )}
 
-        <PortalBottomNav
-          primaryColor={
-            primaryColor
-          }
-          activeTab={
-            activeTab
-          }
-          onChange={
-            handleBottomTab
-          }
-        />
+                {activeTab !==
+        "community" ? (
+          <PortalBottomNav
+            primaryColor={
+              primaryColor
+            }
+            activeTab={
+              activeTab
+            }
+            onChange={
+              handleBottomTab
+            }
+          />
+        ) : null}
       </PortalScreen>
     );
   }
@@ -1109,16 +1521,33 @@ onQualificationApplication={() =>
   return (
     <PortalScreen>
       <main className="relative min-h-screen overflow-hidden bg-white">
-        <img
-          src={PORTAL_IMAGES.login}
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover"
-        />
+  <img
+    src={PORTAL_IMAGES.login}
+    alt=""
+    className="absolute inset-0 h-full w-full object-cover"
+  />
 
-        <div className="absolute inset-0 bg-white/30" />
-        <div className="absolute inset-x-0 bottom-0 h-[68%] bg-gradient-to-t from-white via-white/95 to-transparent" />
+  <div className="absolute inset-0 bg-white/30" />
+  <div className="absolute inset-x-0 bottom-0 h-[68%] bg-gradient-to-t from-white via-white/95 to-transparent" />
 
-        <div className="relative z-10 flex min-h-screen flex-col px-5 pb-8 pt-12">
+  <div className="absolute left-4 top-4 z-20 sm:left-5 sm:top-5">
+    <button
+      type="button"
+      onClick={openTeamPage}
+      className="group flex h-10 items-center gap-1.5 rounded-xl border border-white/80 bg-white/90 px-3.5 text-[11px] font-extrabold text-slate-700 shadow-sm backdrop-blur-md transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 sm:h-11 sm:px-4 sm:text-[12px]"
+      aria-label="담당자 소개 페이지로 이동"
+    >
+      <UsersRound className="h-4 w-4 text-blue-600" />
+
+      <span>
+        담당자 소개
+      </span>
+
+      <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+    </button>
+  </div>
+
+  <div className="relative z-10 flex min-h-screen flex-col px-5 pb-8 pt-12">
           <section className="mx-auto w-full max-w-[390px] text-center">
             {portal.companyLogoUrl ? (
               <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[24px] bg-white/95 p-3 shadow-sm ring-1 ring-black/5 backdrop-blur-sm">
@@ -6691,6 +7120,1435 @@ function PortalSocialWorkerQualificationGuide({
         </div>
       ) : null}
     </>
+  );
+}
+
+function PortalPracticeView({
+  practice,
+  prerequisite,
+  section,
+  primaryColor,
+  isLoading,
+  isError,
+  onSectionChange,
+}: {
+  practice:
+    any;
+
+    prerequisite: {
+    requiredCompleted:
+      number;
+
+    electiveCompleted:
+      number;
+
+    requiredTarget:
+      number;
+
+    electiveTarget:
+      number;
+
+    eligible:
+      boolean;
+
+    requiredSubjects:
+      Array<{
+        subjectName:
+          string;
+
+        requirementType:
+          "전공필수";
+
+        statusKey:
+          "completed" |
+          "in_progress";
+
+        statusLabel:
+          "이수완료" |
+          "진행중";
+
+        semesterNo:
+          number;
+      }>;
+
+    electiveSubjects:
+      Array<{
+        subjectName:
+          string;
+
+        requirementType:
+          "전공선택";
+
+        statusKey:
+          "completed" |
+          "in_progress";
+
+        statusLabel:
+          "이수완료" |
+          "진행중";
+
+        semesterNo:
+          number;
+      }>;
+  };
+
+  section:
+    PracticeSection;
+
+  primaryColor:
+    string;
+
+  isLoading:
+    boolean;
+
+  isError:
+    boolean;
+
+  onSectionChange:
+    (
+      section:
+        PracticeSection
+    ) => void;
+}) {
+  const progressSteps = [
+    {
+      key:
+        "not_requested",
+      label:
+        "신청 전",
+    },
+    {
+      key:
+        "received",
+      label:
+        "접수",
+    },
+    {
+      key:
+        "arranging",
+      label:
+        "배정 중",
+    },
+    {
+      key:
+        "completed",
+      label:
+        "배정 완료",
+    },
+  ] as const;
+
+  const progressOrder: Record<
+    string,
+    number
+  > = {
+    not_requested:
+      0,
+    received:
+      1,
+    arranging:
+      2,
+    completed:
+      3,
+  };
+
+  const currentProgressIndex =
+    progressOrder[
+      String(
+        practice
+          ?.progress
+          ?.status ||
+        "not_requested"
+      )
+    ] ??
+    0;
+
+  const practiceMonth =
+    String(
+      practice
+        ?.practiceSemesterLabel ||
+      ""
+    ).trim() ||
+    "미정";
+
+  const practiceHours =
+    Number(
+      practice
+        ?.practiceHours ||
+      0
+    );
+
+  const assigneeName =
+    String(
+      practice
+        ?.assigneeName ||
+      ""
+    ).trim() ||
+    "담당자 확인 중";
+
+  const studentName =
+    String(
+      practice
+        ?.student
+        ?.clientName ||
+      ""
+    ).trim() ||
+    "회원";
+
+    if (
+    isError
+  ) {
+    return (
+      <main className="px-5 pb-28 pt-6">
+        <div className="border-y border-red-100 bg-red-50 px-5 py-8 text-center">
+          <div className="text-[17px] font-extrabold text-red-700">
+            실습 정보를 불러오지 못했습니다.
+          </div>
+
+          <div className="mt-2 text-[14px] font-medium leading-6 text-red-500">
+            잠시 후 다시 확인해 주세요.
+          </div>
+        </div>
+      </main>
+    );
+  }
+ return (
+    <main className="pb-28">
+      {section ===
+      "guide" ? (
+        <div className="px-5 pt-5">
+          <div className="grid grid-cols-2 border-b border-slate-200">
+            <button
+              type="button"
+              onClick={() =>
+                onSectionChange(
+                  "status"
+                )
+              }
+              className="relative py-4 text-[16px] font-bold text-slate-500"
+            >
+              MY 실습현황
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                onSectionChange(
+                  "guide"
+                )
+              }
+              className="relative py-4 text-[16px] font-extrabold"
+              style={{
+                color:
+                  primaryColor,
+              }}
+            >
+              실습 안내가이드
+
+              <span
+                className="absolute inset-x-7 bottom-0 h-[2px]"
+                style={{
+                  backgroundColor:
+                    primaryColor,
+                }}
+              />
+            </button>
+          </div>
+
+          <PracticeGuideHub
+            primaryColor={
+              primaryColor
+            }
+          />
+        </div>
+      ) : (
+        <>
+          {/* 실습 상단 이미지 */}
+          <section className="relative h-[190px] overflow-hidden">
+            <img
+              src={
+                PORTAL_IMAGES.practice
+              }
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+
+            <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+
+            <div className="absolute inset-x-0 bottom-0 px-5 pb-5 text-white">
+              <div className="text-[27px] font-extrabold tracking-[-0.03em]">
+                실습
+              </div>
+
+              <div className="mt-1 max-w-[320px] text-[14px] font-medium leading-6 text-white/90">
+                실습 진행현황과 배정 상태를 확인할 수 있습니다.
+              </div>
+            </div>
+          </section>
+
+          {/* 실습 내부 탭 */}
+          <div className="px-5">
+            <div className="grid grid-cols-2 border-b border-slate-200">
+              <button
+                type="button"
+                onClick={() =>
+                  onSectionChange(
+                    "status"
+                  )
+                }
+                className="relative py-4 text-[16px] font-extrabold"
+                style={{
+                  color:
+                    primaryColor,
+                }}
+              >
+                MY 실습현황
+
+                <span
+                  className="absolute inset-x-7 bottom-0 h-[2px]"
+                  style={{
+                    backgroundColor:
+                      primaryColor,
+                  }}
+                />
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  onSectionChange(
+                    "guide"
+                  )
+                }
+                className="py-4 text-[16px] font-bold text-slate-500"
+              >
+                실습 안내가이드
+              </button>
+            </div>
+          </div>
+
+          <section className="px-5 pt-7">
+            {/* 기본 정보 */}
+            <div>
+              <div className="mb-2 text-[19px] font-extrabold tracking-[-0.02em] text-slate-950">
+                기본 정보
+              </div>
+
+              <div className="border-y border-slate-200">
+                {/* 회원 */}
+                <div className="flex min-h-[78px] items-center gap-4 border-b border-slate-100 py-4">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[17px] font-extrabold text-slate-500">
+                    {studentName
+                      .slice(
+                        0,
+                        1
+                      )}
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[17px] font-extrabold text-slate-950">
+                      {studentName} 회원님
+                    </div>
+
+                    {practice
+                      ?.student
+                      ?.course ? (
+                      <div className="mt-1 text-[14px] font-medium text-slate-500">
+                        {
+                          practice
+                            .student
+                            .course
+                        }
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* 담당자 */}
+                <div className="flex min-h-[72px] items-center justify-between gap-5 border-b border-slate-100 py-4">
+                  <div>
+                    <div className="text-[13px] font-semibold text-slate-400">
+                      담당자
+                    </div>
+
+                    <div className="mt-1 text-[16px] font-extrabold text-slate-900">
+                      {assigneeName}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 예정월 */}
+                <div className="flex min-h-[88px] items-center justify-between gap-5 py-4">
+                  <div>
+                    <div className="text-[14px] font-bold text-slate-500">
+                      내 실습 예정월
+                    </div>
+
+                    <div
+                      className="mt-1 text-[26px] font-extrabold tracking-[-0.03em]"
+                      style={{
+                        color:
+                          primaryColor,
+                      }}
+                    >
+                      {practiceMonth}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 배정 진행상태 */}
+            <section className="border-b border-slate-200 py-7">
+              <div className="flex items-center justify-between gap-4">
+                <div className="text-[18px] font-extrabold text-slate-950">
+                  배정 진행상태
+                </div>
+
+                <div
+                  className="text-[15px] font-extrabold"
+                  style={{
+                    color:
+                      primaryColor,
+                  }}
+                >
+                  {practice
+                    ?.progress
+                    ?.label ||
+                    "신청 전"}
+                </div>
+              </div>
+
+              <div className="mt-6 flex items-start">
+                {progressSteps.map(
+                  (
+                    step,
+                    index
+                  ) => {
+                    const reached =
+                      index <=
+                      currentProgressIndex;
+
+                    const current =
+                      index ===
+                      currentProgressIndex;
+
+                    return (
+                      <div
+                        key={
+                          step.key
+                        }
+                        className="relative flex flex-1 flex-col items-center"
+                      >
+                        {index >
+                        0 ? (
+                          <div
+                            className="absolute right-1/2 top-[9px] h-[2px] w-full"
+                            style={{
+                              backgroundColor:
+                                index <=
+                                currentProgressIndex
+                                  ? primaryColor
+                                  : "#e5e7eb",
+                            }}
+                          />
+                        ) : null}
+
+                        <div
+                          className="relative z-10 flex h-[20px] w-[20px] items-center justify-center rounded-full border-2"
+                          style={{
+                            borderColor:
+                              reached
+                                ? primaryColor
+                                : "#d1d5db",
+
+                            backgroundColor:
+                              reached
+                                ? primaryColor
+                                : "#ffffff",
+                          }}
+                        >
+                          {reached ? (
+                            <span className="text-[10px] font-black leading-none text-white">
+                              ✓
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div
+                          className={`mt-3 text-center text-[13px] font-bold ${
+                            current
+                              ? "text-slate-950"
+                              : reached
+                                ? "text-slate-700"
+                                : "text-slate-400"
+                          }`}
+                        >
+                          {
+                            step.label
+                          }
+                        </div>
+                      </div>
+                    );
+                  }
+                )}
+              </div>
+            </section>
+
+            {/* 배정 정보 */}
+            <section className="border-b border-slate-200 py-2">
+              <PracticeInfoRow
+                label="실습교육원"
+                value={
+                  practice
+                    ?.educationCenter
+                    ?.name ||
+                  "배정 전"
+                }
+              />
+
+              <PracticeInfoRow
+                label="실습기관"
+                value={
+                  practice
+                    ?.practiceInstitution
+                    ?.name ||
+                  "배정 전"
+                }
+              />
+
+              <PracticeInfoRow
+                label="필요 실습시간"
+                value={
+                  practiceHours >
+                  0
+                    ? `${practiceHours}시간`
+                    : "확인 중"
+                }
+              />
+            </section>
+
+                  <section className="mt-8 border-t border-slate-200 pt-7">
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <div className="text-[19px] font-extrabold text-slate-950">
+                  선이수 조건
+                </div>
+
+                <div className="mt-1 text-[13px] font-medium leading-5 text-slate-400">
+                  현재 수강 중이거나 이수한 과목만 표시됩니다.
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 space-y-6">
+              <PracticePrerequisiteRow
+                label="전공필수"
+                current={
+                  prerequisite.requiredCompleted
+                }
+                target={
+                  prerequisite.requiredTarget
+                }
+                primaryColor={
+                  primaryColor
+                }
+              />
+
+              <PracticePrerequisiteSubjectList
+                subjects={
+                  prerequisite.requiredSubjects
+                }
+              />
+
+              <div className="border-t border-slate-100 pt-6">
+                <PracticePrerequisiteRow
+                  label="전공선택"
+                  current={
+                    prerequisite.electiveCompleted
+                  }
+                  target={
+                    prerequisite.electiveTarget
+                  }
+                  primaryColor={
+                    primaryColor
+                  }
+                />
+              </div>
+
+              <PracticePrerequisiteSubjectList
+                subjects={
+                  prerequisite.electiveSubjects
+                }
+              />
+            </div>
+
+            <div className="mt-7 border-t border-slate-200 pt-6">
+              <div className="text-[13px] font-bold text-slate-400">
+                현재 상태
+              </div>
+
+              <div
+                className={
+                  prerequisite.eligible
+                    ? "mt-2 text-[18px] font-extrabold text-emerald-700"
+                    : "mt-2 text-[18px] font-extrabold text-amber-700"
+                }
+              >
+                {prerequisite.eligible
+                  ? "실습 진행이 가능합니다."
+                  : "선이수 조건 충족 전입니다."}
+              </div>
+
+              {!prerequisite.eligible ? (
+                <div className="mt-2 text-[14px] font-medium leading-6 text-slate-500">
+                  {Math.max(
+                    prerequisite.requiredTarget -
+                      prerequisite.requiredCompleted,
+                    0
+                  ) >
+                  0
+                    ? `전공필수 ${Math.max(
+                        prerequisite.requiredTarget -
+                          prerequisite.requiredCompleted,
+                        0
+                      )}과목`
+                    : ""}
+
+                  {Math.max(
+                    prerequisite.requiredTarget -
+                      prerequisite.requiredCompleted,
+                    0
+                  ) >
+                    0 &&
+                  Math.max(
+                    prerequisite.electiveTarget -
+                      prerequisite.electiveCompleted,
+                    0
+                  ) >
+                    0
+                    ? ", "
+                    : ""}
+
+                  {Math.max(
+                    prerequisite.electiveTarget -
+                      prerequisite.electiveCompleted,
+                    0
+                  ) >
+                  0
+                    ? `전공선택 ${Math.max(
+                        prerequisite.electiveTarget -
+                          prerequisite.electiveCompleted,
+                        0
+                      )}과목`
+                    : ""}
+
+                  의 이수완료가 추가로 필요합니다.
+                </div>
+              ) : (
+                <div className="mt-2 text-[14px] font-medium leading-6 text-slate-500">
+                  전공필수 4과목과 전공선택 2과목의 이수완료가 확인되었습니다.
+                </div>
+              )}
+            </div>
+          </section>
+
+                    <div className="mt-8 rounded-xl bg-slate-50 px-5 py-5 text-[15px] font-medium leading-7 text-slate-600">
+            실습 일정 변경을 원하시거나 실습 관련 문의사항이 있으신 경우, 담당자에게 카카오톡으로 문의해 주세요.
+          </div>
+        </section>
+        </>
+      )}
+    </main>
+  );
+}
+
+
+type PracticeGuideCategoryKey =
+  | "process"
+  | "support"
+  | "documents";
+
+type PracticeGuideStep = {
+  step:
+    string;
+  title:
+    string;
+  description:
+    string;
+  image:
+    string;
+  exampleImage?:
+    string;
+  exampleTitle?:
+    string;
+};
+
+const PRACTICE_GUIDE_CATEGORIES: Array<{
+  key:
+    PracticeGuideCategoryKey;
+  number:
+    string;
+  title:
+    string;
+  description:
+    string;
+  stepRange:
+    string;
+  accent:
+    "blue" |
+    "green" |
+    "orange";
+  steps:
+    PracticeGuideStep[];
+}> = [
+  {
+    key:
+      "process",
+    number:
+      "01",
+    title:
+      "실습 진행방법",
+    description:
+      "실습교육원·실습기관·일정 조율 방법을 단계별로 확인합니다.",
+    stepRange:
+      "STEP 01 ~ 03",
+    accent:
+      "blue",
+    steps: [
+      {
+        step:
+          "01",
+        title:
+          "세 가지 일정이 모두 맞아야 합니다",
+        description:
+          "회원님 일정, 실습교육원 일정, 실습기관 일정이 모두 일치해야 실습이 가능합니다.",
+        image:
+          "/images/practice/step-01.png",
+      },
+      {
+        step:
+          "02",
+        title:
+          "실습교육원과 실습기관은 다릅니다",
+        description:
+          "실습교육원은 실습과목을 수강하는 곳, 실습기관은 실제 현장실습을 진행하는 곳입니다.",
+        image:
+          "/images/practice/step-02.png",
+      },
+      {
+        step:
+          "03",
+        title:
+          "실습 인정기간 안에 필요 시간을 이수해야 합니다",
+        description:
+          "실습교육원의 학사일정에 정해진 실습 인정기간 안에 회원님의 필요 실습시간을 이수해야 합니다.",
+        image:
+          "/images/practice/step-03.png",
+      },
+    ],
+  },
+  {
+    key:
+      "support",
+    number:
+      "02",
+    title:
+      "실습배정지원센터",
+    description:
+      "배정 신청부터 교육원·기관 확인과 배정 지원까지 안내합니다.",
+    stepRange:
+      "STEP 04 ~ 06",
+    accent:
+      "green",
+    steps: [
+      {
+        step:
+          "04",
+        title:
+          "실습 희망 정보를 제출해 주세요",
+        description:
+          "회원님의 일정과 조건을 확인하기 위해 배정에 필요한 정보를 제출합니다.",
+        image:
+          "/images/practice/step-04.png",
+      },
+      {
+        step:
+          "05",
+        title:
+          "지원센터가 교육원과 기관을 확인합니다",
+        description:
+          "제출한 정보를 바탕으로 실습교육원 일정 확인, 실습기관 섭외 및 배정을 진행합니다.",
+        image:
+          "/images/practice/step-05.png",
+        exampleImage:
+          "/images/practice/step-05-01.png",
+        exampleTitle:
+          "실제 배정 사례",
+      },
+      {
+        step:
+          "06",
+        title:
+          "가능한 곳 중 가까운 곳을 우선으로 배정해 드립니다",
+        description:
+          "기관별 실습 가능 인원과 일정을 확인한 뒤 가능한 기관 중 거주지와 가까운 곳부터 우선 확인합니다.",
+        image:
+          "/images/practice/step-06.png",
+      },
+    ],
+  },
+  {
+    key:
+      "documents",
+    number:
+      "03",
+    title:
+      "실습서류 안내",
+    description:
+      "1차·2차 서류와 실습 중 작성하는 서류를 안내합니다.",
+    stepRange:
+      "STEP 07 ~ 09",
+    accent:
+      "orange",
+    steps: [
+      {
+        step:
+          "07",
+        title:
+          "1차 서류 선이수조건을 확인합니다",
+        description:
+          "실습과목 신청 전 성적증명서를 발급하여 선이수조건 충족 여부를 확인합니다.",
+        image:
+          "/images/practice/step-07.png",
+      },
+      {
+        step:
+          "08",
+        title:
+          "2차 서류 실습기관을 확정하고 신청합니다",
+        description:
+          "실습기관과 면접 및 일정 조율 후 기관 관련 서류를 준비하여 실습교육원에 신청합니다.",
+        image:
+          "/images/practice/step-08.png",
+      },
+      {
+        step:
+          "09",
+        title:
+          "실습 중 작성하는 서류",
+        description:
+          "실습일지, 출석 관련 기록, 평가 서류 등을 실습교육원의 안내에 따라 작성합니다.",
+        image:
+          "/images/practice/step-09.png",
+      },
+    ],
+  },
+];
+
+function PracticeGuideHub({
+  primaryColor,
+}: {
+  primaryColor:
+    string;
+}) {
+  const [
+    selectedCategory,
+    setSelectedCategory,
+  ] =
+    useState<PracticeGuideCategoryKey | null>(
+      null
+    );
+
+  const [
+    selectedStep,
+    setSelectedStep,
+  ] =
+    useState<PracticeGuideStep | null>(
+      null
+    );
+
+  const category =
+    selectedCategory
+      ? PRACTICE_GUIDE_CATEGORIES.find(
+          item =>
+            item.key ===
+            selectedCategory
+        ) ??
+        null
+      : null;
+
+  if (
+    selectedStep
+  ) {
+    return (
+      <section className="pb-8 pt-6">
+        <button
+          type="button"
+          onClick={() =>
+            setSelectedStep(
+              null
+            )
+          }
+          className="flex items-center gap-2 py-2 text-[14px] font-bold text-slate-500"
+        >
+          <span className="text-xl leading-none">
+            ‹
+          </span>
+          가이드 목록
+        </button>
+
+        <div className="mt-4">
+          <div
+            className="text-[13px] font-extrabold"
+            style={{
+              color:
+                primaryColor,
+            }}
+          >
+            STEP {selectedStep.step}
+          </div>
+
+          <h2 className="mt-2 text-[25px] font-extrabold leading-[1.35] tracking-[-0.03em] text-slate-950">
+            {
+              selectedStep.title
+            }
+          </h2>
+
+          <p className="mt-3 text-[15px] font-medium leading-7 text-slate-500">
+            {
+              selectedStep.description
+            }
+          </p>
+        </div>
+
+        <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <img
+            src={
+              selectedStep.image
+            }
+            alt={`STEP ${selectedStep.step} ${selectedStep.title}`}
+            className="block h-auto w-full"
+          />
+        </div>
+
+        {selectedStep.exampleImage ? (
+          <div className="mt-7 border-t border-slate-200 pt-7">
+            <div className="mb-3 text-[17px] font-extrabold text-slate-950">
+              {
+                selectedStep.exampleTitle ||
+                "추가 안내"
+              }
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <img
+                src={
+                  selectedStep.exampleImage
+                }
+                alt={
+                  selectedStep.exampleTitle ||
+                  "추가 안내"
+                }
+                className="block h-auto w-full"
+              />
+            </div>
+          </div>
+        ) : null}
+
+        {selectedStep.step ===
+        "03" ? (
+          <div className="mt-6 border-y border-blue-100 bg-blue-50 px-4 py-4 text-[14px] font-medium leading-6 text-blue-700">
+            회원님마다 필요한 실습시간은 다를 수 있으므로 MY 실습현황의 필요 실습시간을 확인해 주세요.
+          </div>
+        ) : null}
+
+        {selectedStep.step ===
+        "06" ? (
+          <div className="mt-6 border-y border-emerald-100 bg-emerald-50 px-4 py-4 text-[14px] font-medium leading-6 text-emerald-700">
+            특정 기관을 지정하는 방식이 아니라 실제 진행 가능한 기관의 일정과 TO를 확인한 뒤, 가능한 범위에서 가까운 곳을 우선으로 배정 지원합니다.
+          </div>
+        ) : null}
+
+        {selectedStep.step ===
+        "09" ? (
+          <div className="mt-6 border-y border-amber-100 bg-amber-50 px-4 py-4 text-[14px] font-medium leading-6 text-amber-700">
+            서류의 양식, 작성방법, 제출방법은 배정된 실습교육원의 안내를 우선하여 진행해 주세요.
+          </div>
+        ) : null}
+      </section>
+    );
+  }
+
+  if (
+    category
+  ) {
+    const accentClasses =
+      category.accent ===
+      "green"
+        ? {
+            badge:
+              "bg-emerald-50 text-emerald-700",
+            dot:
+              "border-emerald-500 bg-emerald-500",
+            line:
+              "bg-emerald-100",
+            notice:
+              "border-emerald-100 bg-emerald-50 text-emerald-700",
+          }
+        : category.accent ===
+            "orange"
+          ? {
+              badge:
+                "bg-orange-50 text-orange-700",
+              dot:
+                "border-orange-500 bg-orange-500",
+              line:
+                "bg-orange-100",
+              notice:
+                "border-orange-100 bg-orange-50 text-orange-700",
+            }
+          : {
+              badge:
+                "bg-blue-50 text-blue-700",
+              dot:
+                "border-blue-500 bg-blue-500",
+              line:
+                "bg-blue-100",
+              notice:
+                "border-blue-100 bg-blue-50 text-blue-700",
+            };
+
+    return (
+      <section className="pb-8 pt-6">
+        <button
+          type="button"
+          onClick={() =>
+            setSelectedCategory(
+              null
+            )
+          }
+          className="flex items-center gap-2 py-2 text-[14px] font-bold text-slate-500"
+        >
+          <span className="text-xl leading-none">
+            ‹
+          </span>
+          실습 안내가이드
+        </button>
+
+        <div className="mt-4 border-b border-slate-200 pb-6">
+          <div className="flex items-start gap-4">
+            <div
+              className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-[18px] font-extrabold ${accentClasses.badge}`}
+            >
+              {
+                category.number
+              }
+            </div>
+
+            <div className="min-w-0">
+              <h2 className="text-[23px] font-extrabold tracking-[-0.03em] text-slate-950">
+                {
+                  category.title
+                }
+              </h2>
+
+              <p className="mt-2 text-[14px] font-medium leading-6 text-slate-500">
+                {
+                  category.description
+                }
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="relative mt-2">
+          <div
+            className={`absolute bottom-10 left-[11px] top-10 w-[2px] ${accentClasses.line}`}
+          />
+
+          {category.steps.map(
+            (
+              step,
+              index
+            ) => (
+              <button
+                key={
+                  step.step
+                }
+                type="button"
+                onClick={() =>
+                  setSelectedStep(
+                    step
+                  )
+                }
+                className="relative flex w-full gap-4 border-b border-slate-100 py-6 text-left active:bg-slate-50"
+              >
+                <div
+                  className={`relative z-10 mt-1 h-6 w-6 shrink-0 rounded-full border-[5px] border-white ${accentClasses.dot}`}
+                />
+
+                <div className="min-w-0 flex-1">
+                  <div
+                    className={`text-[12px] font-extrabold ${
+                      category.accent ===
+                      "green"
+                        ? "text-emerald-600"
+                        : category.accent ===
+                            "orange"
+                          ? "text-orange-600"
+                          : "text-blue-600"
+                    }`}
+                  >
+                    STEP {
+                      step.step
+                    }
+                  </div>
+
+                  <div className="mt-1 text-[17px] font-extrabold leading-6 text-slate-950">
+                    {
+                      step.title
+                    }
+                  </div>
+
+                  <div className="mt-2 text-[13px] font-medium leading-5 text-slate-500">
+                    {
+                      step.description
+                    }
+                  </div>
+
+                  {category.key ===
+                    "support" &&
+                  index ===
+                    1 ? (
+                    <div className="mt-4 flex items-center justify-between rounded-xl bg-emerald-50 px-4 py-3">
+                      <div>
+                        <div className="text-[12px] font-extrabold text-emerald-700">
+                          STEP 05-01
+                        </div>
+                        <div className="mt-0.5 text-[14px] font-bold text-slate-800">
+                          실제 배정 사례 포함
+                        </div>
+                      </div>
+
+                      <span className="text-xl text-emerald-500">
+                        ›
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="flex shrink-0 items-center text-2xl font-light text-slate-300">
+                  ›
+                </div>
+              </button>
+            )
+          )}
+        </div>
+
+        <div
+          className={`mt-6 border-y px-4 py-4 text-[14px] font-medium leading-6 ${accentClasses.notice}`}
+        >
+          {category.key ===
+          "process"
+            ? "세 가지 일정이 모두 맞아야 실습 진행이 가능하므로, 실습 준비 전 회원님의 가능한 일정을 먼저 확인해 주세요."
+            : category.key ===
+                "support"
+              ? "기관별 실습 가능 인원과 일정에 따라 배정 결과는 달라질 수 있습니다."
+              : "서류의 양식과 작성방법은 실습교육원마다 다를 수 있으므로 배정된 교육원의 안내를 우선해 주세요."}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="pb-8 pt-7">
+      <div>
+        <div className="text-[22px] font-extrabold tracking-[-0.03em] text-slate-950">
+          실습 안내가이드
+        </div>
+
+        <div className="mt-2 text-[14px] font-medium leading-6 text-slate-500">
+          실습 준비와 진행에 필요한 내용을 항목별로 확인해 주세요.
+        </div>
+      </div>
+
+      <div className="mt-6 space-y-3">
+        {PRACTICE_GUIDE_CATEGORIES.map(
+          categoryItem => {
+            const categoryStyle =
+              categoryItem.accent ===
+              "green"
+                ? {
+                    container:
+                      "border-emerald-100 bg-emerald-50/70",
+                    number:
+                      "bg-white text-emerald-700",
+                    range:
+                      "bg-white text-emerald-700",
+                  }
+                : categoryItem.accent ===
+                    "orange"
+                  ? {
+                      container:
+                        "border-orange-100 bg-orange-50/70",
+                      number:
+                        "bg-white text-orange-700",
+                      range:
+                        "bg-white text-orange-700",
+                    }
+                  : {
+                      container:
+                        "border-blue-100 bg-blue-50/70",
+                      number:
+                        "bg-white text-blue-700",
+                      range:
+                        "bg-white text-blue-700",
+                    };
+
+            return (
+              <button
+                key={
+                  categoryItem.key
+                }
+                type="button"
+                onClick={() => {
+                  setSelectedCategory(
+                    categoryItem.key
+                  );
+
+                  setSelectedStep(
+                    null
+                  );
+                }}
+                className={`flex min-h-[142px] w-full items-center gap-4 rounded-2xl border px-4 py-5 text-left active:scale-[0.99] ${categoryStyle.container}`}
+              >
+                <div
+                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-[19px] font-extrabold shadow-sm ${categoryStyle.number}`}
+                >
+                  {
+                    categoryItem.number
+                  }
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="text-[18px] font-extrabold text-slate-950">
+                    {
+                      categoryItem.title
+                    }
+                  </div>
+
+                  <div className="mt-2 text-[13px] font-medium leading-5 text-slate-500">
+                    {
+                      categoryItem.description
+                    }
+                  </div>
+
+                  <div
+                    className={`mt-3 inline-flex rounded-full px-3 py-1 text-[11px] font-extrabold ${categoryStyle.range}`}
+                  >
+                    {
+                      categoryItem.stepRange
+                    }
+                  </div>
+                </div>
+
+                <div className="shrink-0 text-3xl font-light text-slate-300">
+                  ›
+                </div>
+              </button>
+            );
+          }
+        )}
+      </div>
+
+      <div className="mt-5 border-y border-blue-100 bg-blue-50 px-4 py-4 text-[13px] font-medium leading-6 text-blue-700">
+        실습은 기관과 일정에 따라 진행 방식이 다를 수 있습니다. 각 가이드를 확인하여 차근차근 준비해 주세요.
+      </div>
+    </section>
+  );
+}
+
+function PracticeInfoRow({
+  label,
+  value,
+}: {
+  label:
+    string;
+
+  value:
+    string;
+}) {
+  return (
+    <div className="flex min-h-[72px] items-center justify-between gap-5 border-b border-slate-100 py-4 last:border-b-0">
+      <div className="shrink-0 text-[15px] font-bold text-slate-600">
+        {label}
+      </div>
+
+      <div className="min-w-0 text-right text-[16px] font-extrabold leading-6 text-slate-950">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function PracticePrerequisiteRow({
+  label,
+  current,
+  target,
+  primaryColor,
+}: {
+  label:
+    string;
+
+  current:
+    number;
+
+  target:
+    number;
+
+  primaryColor:
+    string;
+}) {
+  const safeCurrent =
+    Math.min(
+      Math.max(
+        current,
+        0
+      ),
+      target
+    );
+
+  const percent =
+    target >
+    0
+      ? Math.min(
+          100,
+          Math.max(
+            0,
+            Math.round(
+              (
+                safeCurrent /
+                target
+              ) *
+                100
+            )
+          )
+        )
+      : 0;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-5">
+        <div className="text-[16px] font-extrabold text-slate-800">
+          {label}
+        </div>
+
+        <div className="text-[16px] font-extrabold text-slate-900">
+          {safeCurrent} / {target}
+        </div>
+      </div>
+
+      <div className="mt-3 h-[7px] overflow-hidden rounded-full bg-slate-100">
+        <div
+          className="h-full rounded-full transition-all"
+          style={{
+            width:
+              `${percent}%`,
+
+            backgroundColor:
+              primaryColor,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function PracticePrerequisiteSubjectList({
+  subjects,
+}: {
+  subjects:
+    Array<{
+      subjectName:
+        string;
+
+      statusKey:
+        "completed" |
+        "in_progress";
+
+      statusLabel:
+        "이수완료" |
+        "진행중";
+
+      semesterNo:
+        number;
+    }>;
+}) {
+  if (
+    subjects.length ===
+    0
+  ) {
+    return (
+      <div className="border-y border-slate-100 py-5 text-[14px] font-medium text-slate-400">
+        현재 표시할 과목이 없습니다.
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-y border-slate-100">
+      {subjects.map(
+        (
+          subject,
+          index
+        ) => (
+          <div
+            key={`${subject.subjectName}-${subject.semesterNo}-${index}`}
+            className={`flex min-h-[62px] items-center gap-3 py-3.5 ${
+              index >
+              0
+                ? "border-t border-slate-100"
+                : ""
+            }`}
+          >
+            <div
+              className={
+                subject.statusKey ===
+                "completed"
+                  ? "flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[11px] font-black text-white"
+                  : "h-2.5 w-2.5 shrink-0 rounded-full bg-slate-300"
+              }
+            >
+              {subject.statusKey ===
+              "completed"
+                ? "✓"
+                : null}
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[15px] font-extrabold text-slate-900">
+                {
+                  subject.subjectName
+                }
+              </div>
+            </div>
+
+            <div
+              className={
+                subject.statusKey ===
+                  "completed"
+                  ? "shrink-0 rounded-lg bg-emerald-50 px-2.5 py-1 text-[12px] font-extrabold text-emerald-700"
+                  : "shrink-0 rounded-lg bg-slate-100 px-2.5 py-1 text-[12px] font-bold text-slate-500"
+              }
+            >
+              {
+                subject.statusLabel
+              }
+            </div>
+          </div>
+        )
+      )}
+    </div>
   );
 }
 

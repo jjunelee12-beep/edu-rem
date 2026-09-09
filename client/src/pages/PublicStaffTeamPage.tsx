@@ -3,6 +3,7 @@ import {
   ChevronRight,
   Heart,
   Loader2,
+  LogIn,
   Search,
   Send,
   ShieldCheck,
@@ -168,15 +169,51 @@ export default function PublicStaffTeamPage() {
 
   const scrollToStaff = () => document.getElementById("staff-list")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
+const openStudentPortal = () => {
+  if (!slug) return;
+
+  window.location.href =
+    `/portal/${encodeURIComponent(slug)}`;
+};
+
   return (
     <>
       <div className="min-h-screen bg-white text-slate-950" style={{ fontFamily: 'Pretendard, "Noto Sans KR", sans-serif' }}>
         <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/95 backdrop-blur">
           <div className="mx-auto flex h-[72px] max-w-[1180px] items-center justify-between px-4 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
-              {companyLogoUrl ? <img src={companyLogoUrl} alt={companyName || "회사 로고"} className="h-10 w-10 rounded-full border border-slate-200 object-contain" /> : <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-600"><UsersRound className="h-5 w-5" /></div>}
-              <div><div className="text-[15px] font-extrabold tracking-[-0.03em] text-[#0b1b3f]">{companyName || "담당자 소개"}</div><div className="mt-0.5 text-[10px] text-slate-400">함께 만드는 더 나은 내일</div></div>
-            </div>
+  <button
+    type="button"
+    onClick={openStudentPortal}
+    className="group flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-blue-100 bg-blue-50 px-3 text-[11px] font-extrabold text-blue-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-100 sm:h-11 sm:px-4 sm:text-[12px]"
+    aria-label="업무포탈로 이동"
+  >
+    <LogIn className="h-4 w-4" />
+    <span>업무포탈</span>
+  </button>
+
+  {companyLogoUrl ? (
+    <img
+      src={companyLogoUrl}
+      alt={companyName || "회사 로고"}
+      className="h-10 w-10 rounded-full border border-slate-200 object-contain"
+    />
+  ) : (
+    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+      <UsersRound className="h-5 w-5" />
+    </div>
+  )}
+
+  <div className="min-w-0">
+    <div className="truncate text-[15px] font-extrabold tracking-[-0.03em] text-[#0b1b3f]">
+      {companyName || "담당자 소개"}
+    </div>
+
+    <div className="mt-0.5 hidden text-[10px] text-slate-400 sm:block">
+      함께 만드는 더 나은 내일
+    </div>
+  </div>
+</div>
             <button type="button" onClick={scrollToStaff} className="relative hidden h-[72px] items-center text-[13px] font-bold text-blue-600 md:flex">담당자 소개<span className="absolute inset-x-0 bottom-0 h-[2px] bg-blue-600" /></button>
             <Button type="button" onClick={scrollToStaff} className="hidden h-11 rounded-[10px] bg-blue-600 px-5 text-[12px] font-bold text-white hover:bg-blue-700 sm:inline-flex"><Send className="mr-2 h-4 w-4" />담당자 선택하기</Button>
             <button type="button" onClick={scrollToStaff} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 sm:hidden" aria-label="담당자 목록 보기"><UsersRound className="h-5 w-5" /></button>

@@ -47,6 +47,8 @@ import StaffProfileSettings from "@/pages/StaffProfileSettings";
 import PublicStaffProfilePage from "@/pages/PublicStaffProfilePage";
 import PublicStaffTeamPage from "@/pages/PublicStaffTeamPage";
 import StudentPortalPage from "@/pages/StudentPortalPage";
+import PortalManagementPage from "@/pages/PortalManagementPage";
+import HostPortalCommunityPage from "@/pages/HostPortalCommunityPage";
 
 import NoticesPage from "@/pages/NoticesPage";
 import NoticeDetailPage from "@/pages/NoticeDetailPage";
@@ -223,7 +225,7 @@ function PublicRouter() {
 />
 
 <Route
-  path="/team/:organizationId"
+  path="/team/:slug"
   component={PublicStaffTeamPage}
 />
 <Route path="/withone" component={WithOneLanding} />
@@ -238,6 +240,7 @@ function PublicRouter() {
 
 function PrivateRouter() {
   const { user, loading } = useAuth();
+  const [location] = useLocation();
 
   if (loading) return null;
 
@@ -245,13 +248,28 @@ function PrivateRouter() {
     return <Login />;
   }
 
+  /**
+   * Host 공용포탈은 CRM 인증을 그대로 사용하지만
+   * DashboardLayout 밖에서 독립적인 PC 화면으로 렌더링한다.
+   */
+  const isHostPortalCommunityPage =
+    /^\/[^/]+\/portal-management\/community\/?$/.test(
+      location
+    );
+
   return (
-    <>
-      <MessengerRealtimeBridge />
-      <AppRealtimeBridge />
-      <TenantPathGuard>
-  <DashboardLayout>
-    <Switch>
+  <>
+    <MessengerRealtimeBridge />
+    <AppRealtimeBridge />
+
+    <TenantPathGuard>
+      {isHostPortalCommunityPage ? (
+        <HostOnly>
+          <HostPortalCommunityPage />
+        </HostOnly>
+      ) : (
+        <DashboardLayout>
+          <Switch>
       {/* slug 없는 기존 경로 → 자기 organization 으로 강제 이동 */}
       <Route path="/" component={() => <RedirectToMyOrg path="" />} />
       <Route path="/overview" component={() => <RedirectToMyOrg path="/overview" />} />
@@ -269,7 +287,13 @@ function PrivateRouter() {
       <Route path="/private-certificate-center" component={() => <RedirectToMyOrg path="/private-certificate-center" />} />
       <Route path="/practice-support-center" component={() => <RedirectToMyOrg path="/practice-support-center" />} />
       <Route path="/job-support-center" component={() => <RedirectToMyOrg path="/job-support-center" />} />
-      <Route path="/system" component={() => <RedirectToMyOrg path="/system" />} />
+<Route
+  path="/portal-management"
+  component={() => (
+    <RedirectToMyOrg path="/portal-management" />
+  )}
+/>      
+<Route path="/system" component={() => <RedirectToMyOrg path="/system" />} />
 <Route
   path="/kakao-ai"
   component={() => (
@@ -424,6 +448,14 @@ function PrivateRouter() {
     </FeatureGate>
   )}
 />
+<Route
+  path="/:organizationSlug/portal-management"
+  component={() => (
+    <HostOnly>
+      <PortalManagementPage />
+    </HostOnly>
+  )}
+/>
       <Route path="/:organizationSlug/job-support-center" component={JobSupportCenterPage} />
       <Route path="/:organizationSlug/system" component={System} />
 <Route
@@ -499,12 +531,13 @@ function PrivateRouter() {
 
       <Route path="/:organizationSlug" component={Home} />
 
-      <Route component={NotFound} />
-    </Switch>
-  </DashboardLayout>
-</TenantPathGuard>
-    </>
-  );
+                  <Route component={NotFound} />
+          </Switch>
+        </DashboardLayout>
+      )}
+    </TenantPathGuard>
+  </>
+);
 }
 
 function AppContent() {

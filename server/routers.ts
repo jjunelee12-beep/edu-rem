@@ -2802,6 +2802,131 @@ const STUDENT_PORTAL_ADMINISTRATIVE_COMPLETION_META:
   };
 
 /**
+ * =========================================================
+ * Student Portal Community Context
+ * =========================================================
+ *
+ * 등록회원 커뮤니티 API 공통 인증/권한 Context.
+ *
+ * 보안 원칙:
+ * - 브라우저에서는 Portal Token만 전달한다.
+ * - organizationId / studentId는 Portal Session에서만 확정한다.
+ * - 회사별 커뮤니티 사용 여부를 서버에서 확인한다.
+ * - 정지/차단 회원은 커뮤니티 기능을 사용할 수 없다.
+ */
+async function requireStudentPortalCommunityContext(
+  token: string
+) {
+  /**
+   * 1. Portal Session 검증
+   */
+  const session =
+    await db.getStudentPortalSessionByToken({
+      token,
+    });
+
+  if (
+    !session ||
+    session.usable !== true
+  ) {
+    throwAppError(
+      ERROR_CODES.AUTH_REQUIRED,
+      "업무포털 인증이 만료되었거나 유효하지 않습니다.",
+      401
+    );
+  }
+
+  /**
+   * 2. Portal Session에서만
+   * organizationId / studentId 확정
+   */
+  const organizationId =
+    Number(
+      session.organizationId ||
+      0
+    );
+
+  const studentId =
+    Number(
+      session.studentId ||
+      0
+    );
+
+  if (
+    !organizationId ||
+    !studentId
+  ) {
+    throwAppError(
+      ERROR_CODES.AUTH_REQUIRED,
+      "업무포털 인증정보가 올바르지 않습니다.",
+      401
+    );
+  }
+
+  /**
+   * 3. 회사별 커뮤니티 설정
+   */
+  const settings =
+    await db.getCommunitySettings({
+      organizationId,
+    });
+
+  if (
+    !settings ||
+    settings.enabled !== true
+  ) {
+    throwAppError(
+      ERROR_CODES.PERMISSION_DENIED,
+      "현재 커뮤니티를 이용할 수 없습니다.",
+      403
+    );
+  }
+
+  /**
+   * 4. 현재 학생 커뮤니티 프로필 확인
+   *
+   * 프로필이 없는 신규 이용자는
+   * 온보딩을 해야 하므로 허용한다.
+   *
+   * 프로필이 존재하는데 active가 아니면
+   * 커뮤니티 이용 제한.
+   */
+  const profile =
+    await db.getCommunityProfile({
+      organizationId,
+      studentId,
+    });
+
+  /**
+   * 5. 활성 게시판 조회
+   */
+  const boards =
+    await db.listCommunityBoards({
+      organizationId,
+    });
+
+  /**
+   * 6. 정상 요청이므로
+   * Portal Session 마지막 사용시간 갱신
+   */
+  await db.touchStudentPortalSession({
+    sessionId:
+      Number(session.id),
+
+    organizationId,
+  });
+
+  return {
+    session,
+    organizationId,
+    studentId,
+    settings,
+    profile,
+    boards,
+  };
+}
+
+/**
  * ---------------------------------------------------------
  * 업무포털 행정절차 완료 공통 처리
  * ---------------------------------------------------------
@@ -3181,6 +3306,59 @@ export const appRouter = router({
 
   // ─── Student Portal (등록자 업무포털) ───────────────────────────────
   studentPortal: router({
+
+    /**
+     * ---------------------------------------------------------
+     * 기존 학생 개인정보 조회용 Hash Backfill
+     * ---------------------------------------------------------
+     *
+     * 과거 학생 중
+     *
+     * - clientNameHash
+     * - phoneHash
+     * - phoneLast4
+     *
+     * 가 비어있는 데이터를 복구한다.
+     *
+     * Host 전용.
+     *
+     * 현재 로그인 Host의 organizationId 내부에서만 처리한다.
+     * 브라우저에서 organizationId를 받지 않는다.
+     */
+    backfillIdentityLookupFields:
+      hostProcedure
+        .input(
+          z.object({
+            confirm:
+              z.literal(
+                "BACKFILL_STUDENT_IDENTITY_LOOKUP_FIELDS"
+              ),
+          })
+        )
+        .mutation(
+          async ({
+            ctx,
+          }) => {
+            const organizationId =
+              getCtxOrganizationId(
+                ctx
+              );
+
+            const result =
+              await db.backfillStudentIdentityLookupFields({
+                organizationId,
+              });
+
+            return {
+              success:
+                true as const,
+
+              ...result,
+            };
+          }
+        ),
+
+
     /**
      * ---------------------------------------------------------
      * 공개 포털 기본정보
@@ -3525,6 +3703,266 @@ export const appRouter = router({
             };
           }
         ),
+
+    /**
+     * ---------------------------------------------------------
+     * 등록자 MY 실습현황
+     * ---------------------------------------------------------
+     *
+     * 브라우저에서는 Portal Token만 전달한다.
+     *
+     * token
+     * → Portal Session 검증
+     * → organizationId + studentId 서버 확정
+     * → 기존 실습배정지원센터 데이터 조회
+     *
+     * 학생이 수정하는 데이터는 없다.
+     */
+    practice:
+      publicProcedure
+        .input(
+          z.object({
+            token:
+              z
+                .string()
+                .trim()
+                .min(
+                  1,
+                  "업무포털 인증정보가 필요합니다."
+                )
+                .max(255),
+          })
+        )
+        .query(
+          async ({
+            input,
+          }) => {
+            const session =
+              await db.getStudentPortalSessionByToken({
+                token:
+                  input.token,
+              });
+
+            if (
+              !session ||
+              session.usable !==
+                true
+            ) {
+              throwAppError(
+                ERROR_CODES.AUTH_REQUIRED,
+                "업무포털 인증이 만료되었거나 유효하지 않습니다.",
+                401
+              );
+            }
+
+            /**
+             * 기존 실습배정지원센터의
+             * 학생별 요청 데이터를 그대로 사용한다.
+             *
+             * browser가 studentId / organizationId를
+             * 전달하지 않는다.
+             */
+            const practiceRequests =
+              await db.listPracticeSupportRequestsByStudent(
+                session.studentId,
+                {
+                  organizationId:
+                    session.organizationId,
+                }
+              );
+
+            /**
+             * 한 학생에게 실습 요청이 여러 건 존재할 수 있으므로
+             * 가장 최근 요청을 현재 실습현황으로 사용한다.
+             *
+             * listPracticeSupportRequestsByStudent는
+             * createdAt ASC / id ASC 순서이므로
+             * 배열 마지막 Row가 가장 최근 요청이다.
+             */
+            const currentRequest =
+              practiceRequests.length >
+              0
+                ? practiceRequests[
+                    practiceRequests.length -
+                    1
+                  ]
+                : null;
+
+            /**
+             * 내부 CRM 상태를
+             * 등록회원에게 보여줄 4단계 상태로 변환한다.
+             *
+             * 요청 없음 → 신청 전
+             * 미섭외    → 접수
+             * 섭외중    → 배정 중
+             * 섭외완료  → 배정 완료
+             */
+            const coordinationStatus =
+              String(
+                currentRequest
+                  ?.coordinationStatus ||
+                ""
+              ).trim();
+
+            const progressStatus =
+              !currentRequest
+                ? "not_requested"
+                : coordinationStatus ===
+                    "섭외완료"
+                  ? "completed"
+                  : coordinationStatus ===
+                      "섭외중"
+                    ? "arranging"
+                    : "received";
+
+            const progressLabel =
+              progressStatus ===
+              "completed"
+                ? "배정 완료"
+                : progressStatus ===
+                    "arranging"
+                  ? "배정 중"
+                  : progressStatus ===
+                      "received"
+                    ? "접수"
+                    : "신청 전";
+
+            /**
+             * 실습지원 요청이 아직 없는 신청 전 상태에서도
+             * 기존 CRM 담당자를 표시한다.
+             *
+             * 실습지원 요청에 담당자명이 있으면 그 값을 우선하고,
+             * 없으면 학생에게 지정된 CRM 담당자를 조회한다.
+             */
+            const studentAssigneeId =
+              Number(
+                session.student
+                  ?.assigneeId ||
+                0
+              );
+
+            const portalAssignee =
+              studentAssigneeId >
+              0
+                ? await db.getAssignableUserById({
+                    organizationId:
+                      session.organizationId,
+
+                    userId:
+                      studentAssigneeId,
+                  })
+                : null;
+
+            const assigneeName =
+              String(
+                currentRequest
+                  ?.assigneeName ||
+                portalAssignee
+                  ?.name ||
+                ""
+              ).trim() ||
+              null;
+
+            await db.touchStudentPortalSession({
+              sessionId:
+                session.id,
+
+              organizationId:
+                session.organizationId,
+            });
+
+            /**
+             * 개인정보 / 내부 메모 / 비용 등의
+             * 불필요한 CRM Row는 브라우저에 노출하지 않는다.
+             */
+            return {
+              student: {
+                clientName:
+                  session.student
+                    ?.clientName ??
+                  null,
+
+                course:
+                  session.student
+                    ?.course ??
+                  null,
+              },
+
+              hasPracticeSupportRequest:
+                Boolean(
+                  currentRequest
+                ),
+
+                            assigneeName,
+
+              practiceSemesterLabel:
+                currentRequest
+                  ?.practiceSemesterLabel ??
+                null,
+
+              practiceDate:
+                currentRequest
+                  ?.practiceDate ??
+                null,
+
+              practiceHours:
+                currentRequest
+                  ?.practiceHours ??
+                null,
+
+              progress: {
+                status:
+                  progressStatus,
+
+                label:
+                  progressLabel,
+
+                coordinationStatus:
+                  currentRequest
+                    ?.coordinationStatus ??
+                  null,
+              },
+
+              educationCenter: {
+                assigned:
+                  Boolean(
+                    String(
+                      currentRequest
+                        ?.selectedEducationCenterName ||
+                      ""
+                    ).trim()
+                  ),
+
+                name:
+                  currentRequest
+                    ?.selectedEducationCenterName ||
+                  null,
+              },
+
+              practiceInstitution: {
+                assigned:
+                  Boolean(
+                    String(
+                      currentRequest
+                        ?.selectedPracticeInstitutionName ||
+                      ""
+                    ).trim()
+                  ),
+
+                name:
+                  currentRequest
+                    ?.selectedPracticeInstitutionName ||
+                  null,
+              },
+
+              session: {
+                expiresAt:
+                  session.expiresAt,
+              },
+            };
+          }
+        ),
+
 
     /**
      * ---------------------------------------------------------
@@ -6302,6 +6740,3203 @@ export const appRouter = router({
             });
           }
         ),
+
+
+    /**
+     * =========================================================
+     * 등록자 커뮤니티
+     * =========================================================
+     */
+    community:
+      router({
+        /**
+         * -----------------------------------------------------
+         * 커뮤니티 최초 진입
+         * -----------------------------------------------------
+         *
+         * 설정
+         * 게시판
+         * 내 프로필
+         * 등록회원 수
+         *
+         * 를 한 번에 내려준다.
+         */
+        bootstrap:
+          publicProcedure
+            .input(
+              z.object({
+                token:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+              })
+            )
+            .query(
+              async ({
+                input,
+              }) => {
+                const context =
+                  await requireStudentPortalCommunityContext(
+                    input.token
+                  );
+
+                const [
+                  profile,
+                  memberSummary,
+                ] =
+                  await Promise.all([
+                    db.getCommunityProfile({
+                      organizationId:
+                        context.organizationId,
+
+                      studentId:
+                        context.studentId,
+                    }),
+
+                    db.getCommunityMemberSummary({
+                      organizationId:
+                        context.organizationId,
+                    }),
+                  ]);
+
+                return {
+                  settings: {
+                    enabled:
+                      context.settings.enabled,
+
+                    communityName:
+                      context.settings.communityName ??
+                      null,
+
+                    description:
+                      context.settings.description ??
+                      null,
+
+                    backgroundImageUrl:
+                      context.settings.backgroundImageUrl ??
+                      null,
+
+                    coverImageUrl:
+                      context.settings.coverImageUrl ??
+                      null,
+
+                    allowStudentPosts:
+                      context.settings.allowStudentPosts,
+
+                    allowStudentComments:
+                      context.settings.allowStudentComments,
+
+                    allowStudentProfileDirectory:
+                      context.settings.allowStudentProfileDirectory,
+                  },
+
+                  boards:
+                    context.boards.map(
+                      board => ({
+                        id:
+                          Number(
+                            board.id
+                          ),
+
+                        boardKey:
+                          board.boardKey,
+
+                        name:
+                          board.name,
+
+                        description:
+                          board.description ??
+                          null,
+
+                        boardType:
+                          board.boardType,
+
+                        writePermission:
+                          board.writePermission,
+
+                        sortOrder:
+                          Number(
+                            board.sortOrder ||
+                            0
+                          ),
+                      })
+                    ),
+
+                  profile:
+                    profile
+                      ? {
+                          id:
+                            Number(
+                              profile.id
+                            ),
+
+                          nickname:
+                            profile.nickname,
+
+                          profileImageUrl:
+                            profile.profileImageUrl ??
+                            null,
+
+                          region:
+                            profile.region ??
+                            null,
+
+                          bio:
+                            profile.bio ??
+                            null,
+
+                          profilePublic:
+                            profile.profilePublic,
+
+                          communityStatus:
+                            profile.communityStatus,
+
+                          suspendedUntil:
+                            profile.suspendedUntil
+                              ? new Date(
+                                  profile.suspendedUntil
+                                ).toISOString()
+                              : null,
+
+                          moderationReason:
+                            profile.moderationReason ??
+                            null,
+                        }
+                      : null,
+
+                  memberSummary,
+                };
+              }
+            ),
+
+/**
+ * -----------------------------------------------------
+ * 닉네임 사용 가능 여부
+ * -----------------------------------------------------
+ */
+checkNickname:
+  publicProcedure
+    .input(
+      z.object({
+        token:
+          z
+            .string()
+            .trim()
+            .min(1)
+            .max(255),
+
+        nickname:
+          z
+            .string()
+            .trim()
+            .min(2)
+            .max(12),
+      })
+    )
+    .query(
+      async ({
+        input,
+      }) => {
+        const context =
+          await requireStudentPortalCommunityContext(
+            input.token
+          );
+
+        return db.checkCommunityNicknameAvailability({
+          organizationId:
+            context.organizationId,
+
+          studentId:
+            context.studentId,
+
+          nickname:
+            input.nickname,
+        });
+      }
+    ),
+
+
+        /**
+         * -----------------------------------------------------
+         * 닉네임 / 내 커뮤니티 프로필 저장
+         * -----------------------------------------------------
+         */
+        saveProfile:
+          publicProcedure
+            .input(
+              z.object({
+                token:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+
+                nickname:
+                  z
+                    .string()
+                    .trim()
+                    .min(2)
+                    .max(12),
+
+                profileImageUrl:
+                  z
+                    .string()
+                    .trim()
+                    .max(1000)
+                    .nullable()
+                    .optional(),
+
+                region:
+                  z
+                    .string()
+                    .trim()
+                    .max(100)
+                    .nullable()
+                    .optional(),
+
+                bio:
+                  z
+                    .string()
+                    .trim()
+                    .max(500)
+                    .nullable()
+                    .optional(),
+
+                profilePublic:
+                  z
+                    .boolean()
+                    .optional(),
+              })
+            )
+            .mutation(
+              async ({
+                input,
+              }) => {
+                const context =
+                  await requireStudentPortalCommunityContext(
+                    input.token
+                  );
+
+                const profile =
+                  await db.saveCommunityProfile({
+                    organizationId:
+                      context.organizationId,
+
+                    studentId:
+                      context.studentId,
+
+                    nickname:
+                      input.nickname,
+
+                    profileImageUrl:
+                      input.profileImageUrl,
+
+                    region:
+                      input.region,
+
+                    bio:
+                      input.bio,
+
+                    profilePublic:
+                      input.profilePublic,
+                  });
+
+                if (!profile) {
+                  throwAppError(
+                    ERROR_CODES.INTERNAL_SERVER_ERROR,
+                    "커뮤니티 프로필을 저장하지 못했습니다.",
+                    500
+                  );
+                }
+
+                return {
+                  success:
+                    true as const,
+
+                  profile: {
+                    id:
+                      Number(
+                        profile.id
+                      ),
+
+                    nickname:
+                      profile.nickname,
+
+                    profileImageUrl:
+                      profile.profileImageUrl ??
+                      null,
+
+                    region:
+                      profile.region ??
+                      null,
+
+                    bio:
+                      profile.bio ??
+                      null,
+
+                    profilePublic:
+                      profile.profilePublic,
+
+                    communityStatus:
+                      profile.communityStatus,
+                  },
+                };
+              }
+            ),
+
+
+        /**
+         * -----------------------------------------------------
+         * 등록회원 공개 프로필 목록
+         * -----------------------------------------------------
+         */
+        members:
+          publicProcedure
+            .input(
+              z.object({
+                token:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+
+                limit:
+                  z
+                    .number()
+                    .int()
+                    .min(1)
+                    .max(200)
+                    .optional(),
+              })
+            )
+            .query(
+              async ({
+                input,
+              }) => {
+                const context =
+                  await requireStudentPortalCommunityContext(
+                    input.token
+                  );
+
+                if (
+                  context.settings.allowStudentProfileDirectory !==
+                  true
+                ) {
+                  return {
+                    enabled:
+                      false as const,
+
+                    members:
+                      [],
+                  };
+                }
+
+                const members =
+                  await db.listCommunityPublicProfiles({
+                    organizationId:
+                      context.organizationId,
+
+                    limit:
+                      input.limit ??
+                      100,
+                  });
+
+                return {
+                  enabled:
+                    true as const,
+
+                  members:
+                    members.map(
+                      member => ({
+                        profileId:
+                          Number(
+                            member.profileId
+                          ),
+
+                        nickname:
+                          member.nickname,
+
+                        profileImageUrl:
+                          member.profileImageUrl ??
+                          null,
+
+                        region:
+                          member.region ??
+                          null,
+
+                        bio:
+                          member.bio ??
+                          null,
+
+                        createdAt:
+                          member.createdAt
+                            ? new Date(
+                                member.createdAt
+                              ).toISOString()
+                            : null,
+                      })
+                    ),
+                };
+              }
+            ),
+
+
+        /**
+         * -----------------------------------------------------
+         * 게시글 목록
+         * -----------------------------------------------------
+         */
+        posts:
+          publicProcedure
+            .input(
+              z.object({
+                token:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+
+                boardId:
+                  z
+                    .number()
+                    .int()
+                    .positive()
+                    .nullable()
+                    .optional(),
+
+                limit:
+                  z
+                    .number()
+                    .int()
+                    .min(1)
+                    .max(50)
+                    .optional(),
+
+                beforeId:
+                  z
+                    .number()
+                    .int()
+                    .positive()
+                    .nullable()
+                    .optional(),
+              })
+            )
+            .query(
+              async ({
+                input,
+              }) => {
+                const context =
+                  await requireStudentPortalCommunityContext(
+                    input.token
+                  );
+
+                const posts =
+                  await db.listCommunityPosts({
+                    organizationId:
+                      context.organizationId,
+
+                    boardId:
+                      input.boardId ??
+                      null,
+
+                    limit:
+                      input.limit ??
+                      20,
+
+                    beforeId:
+                      input.beforeId ??
+                      null,
+                  });
+
+                return {
+                  posts:
+                    posts.map(
+                      post => ({
+                        id:
+                          Number(
+                            post.id
+                          ),
+
+                        boardId:
+                          Number(
+                            post.boardId
+                          ),
+
+                        authorType:
+                          post.authorType,
+
+                        authorNickname:
+  post.authorNickname ??
+  (
+    post.authorType ===
+    "staff"
+      ? "담당자"
+      : "등록회원"
+  ),
+
+authorProfileImageUrl:
+  post.authorProfileImageUrl ??
+  null,
+
+authorPositionName:
+  post.authorPositionName ??
+  null,
+
+                        isMine:
+                          post.authorType ===
+                            "student" &&
+                          Number(
+                            post.authorStudentId ||
+                            0
+                          ) ===
+                            context.studentId,
+
+                        title:
+                          post.title,
+
+                        /**
+                         * 목록에서는
+                         * 검색/미리보기용 평문 content만 반환.
+                         */
+                        content:
+  post.content,
+
+thumbnailUrl:
+  post.thumbnailUrl ??
+  null,
+
+isPinned:
+  post.isPinned,
+
+                        viewCount:
+                          Number(
+                            post.viewCount ||
+                            0
+                          ),
+
+                        commentCount:
+                          Number(
+                            post.commentCount ||
+                            0
+                          ),
+
+                        likeCount:
+                          Number(
+                            post.likeCount ||
+                            0
+                          ),
+
+                        helpfulCount:
+                          Number(
+                            post.helpfulCount ||
+                            0
+                          ),
+
+                        bookmarkCount:
+                          Number(
+                            post.bookmarkCount ||
+                            0
+                          ),
+
+                        editedAt:
+                          post.editedAt
+                            ? new Date(
+                                post.editedAt
+                              ).toISOString()
+                            : null,
+
+                        createdAt:
+                          post.createdAt
+                            ? new Date(
+                                post.createdAt
+                              ).toISOString()
+                            : null,
+                      })
+                    ),
+                };
+              }
+            ),
+
+
+        /**
+         * -----------------------------------------------------
+         * 게시글 상세
+         * -----------------------------------------------------
+         */
+        post:
+          publicProcedure
+            .input(
+              z.object({
+                token:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+
+                postId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+              })
+            )
+            .query(
+              async ({
+                input,
+              }) => {
+                const context =
+                  await requireStudentPortalCommunityContext(
+                    input.token
+                  );
+
+                const existing =
+                  await db.getCommunityPostById({
+                    organizationId:
+                      context.organizationId,
+
+                    postId:
+                      input.postId,
+                  });
+
+                if (
+                  !existing ||
+                  existing.status !==
+                    "published"
+                ) {
+                  throwAppError(
+                    ERROR_CODES.DATA_NOT_FOUND,
+                    "게시글을 찾을 수 없습니다.",
+                    404
+                  );
+                }
+
+                await db.incrementCommunityPostView({
+                  organizationId:
+                    context.organizationId,
+
+                  postId:
+                    input.postId,
+                });
+
+                const [
+                  post,
+                  comments,
+                  attachments,
+                  myState,
+                ] =
+                  await Promise.all([
+                    db.getCommunityPostById({
+                      organizationId:
+                        context.organizationId,
+
+                      postId:
+                        input.postId,
+                    }),
+
+                    db.listCommunityComments({
+                      organizationId:
+                        context.organizationId,
+
+                      postId:
+                        input.postId,
+                    }),
+
+                    db.listCommunityPostAttachments({
+                      organizationId:
+                        context.organizationId,
+
+                      postId:
+                        input.postId,
+                    }),
+
+                    db.getCommunityStudentPostState({
+                      organizationId:
+                        context.organizationId,
+
+                      studentId:
+                        context.studentId,
+
+                      postId:
+                        input.postId,
+                    }),
+                  ]);
+
+                if (
+                  !post ||
+                  post.status !==
+                    "published"
+                ) {
+                  throwAppError(
+                    ERROR_CODES.DATA_NOT_FOUND,
+                    "게시글을 찾을 수 없습니다.",
+                    404
+                  );
+                }
+
+                return {
+                  post: {
+                    id:
+                      Number(
+                        post.id
+                      ),
+
+                    boardId:
+                      Number(
+                        post.boardId
+                      ),
+
+                    authorType:
+                      post.authorType,
+
+                    authorNickname:
+  post.authorNickname ??
+  (
+    post.authorType ===
+    "staff"
+      ? "담당자"
+      : "등록회원"
+  ),
+
+authorProfileImageUrl:
+  post.authorProfileImageUrl ??
+  null,
+
+authorPositionName:
+  post.authorPositionName ??
+  null,
+
+                    isMine:
+                      post.authorType ===
+                        "student" &&
+                      Number(
+                        post.authorStudentId ||
+                        0
+                      ) ===
+                        context.studentId,
+
+                    title:
+                      post.title,
+
+                    content:
+                      post.content,
+
+                    contentFormat:
+                      post.contentFormat,
+
+                    contentData:
+                      post.contentData ??
+                      null,
+
+                    isPinned:
+                      post.isPinned,
+
+                    viewCount:
+                      Number(
+                        post.viewCount ||
+                        0
+                      ),
+
+                    commentCount:
+                      Number(
+                        post.commentCount ||
+                        0
+                      ),
+
+                    likeCount:
+                      Number(
+                        post.likeCount ||
+                        0
+                      ),
+
+                    helpfulCount:
+                      Number(
+                        post.helpfulCount ||
+                        0
+                      ),
+
+                    bookmarkCount:
+                      Number(
+                        post.bookmarkCount ||
+                        0
+                      ),
+
+                    editedAt:
+                      post.editedAt
+                        ? new Date(
+                            post.editedAt
+                          ).toISOString()
+                        : null,
+
+                    createdAt:
+                      post.createdAt
+                        ? new Date(
+                            post.createdAt
+                          ).toISOString()
+                        : null,
+                  },
+
+                  comments:
+                    comments
+                      .filter(
+                        comment =>
+                          comment.status ===
+                          "published"
+                      )
+                      .map(
+                        comment => ({
+                          id:
+                            Number(
+                              comment.id
+                            ),
+
+                          parentCommentId:
+                            comment.parentCommentId
+                              ? Number(
+                                  comment.parentCommentId
+                                )
+                              : null,
+
+                          authorType:
+                            comment.authorType,
+
+                          authorNickname:
+  comment.authorNickname ??
+  (
+    comment.authorType ===
+    "staff"
+      ? "담당자"
+      : "등록회원"
+  ),
+
+authorProfileImageUrl:
+  comment.authorProfileImageUrl ??
+  null,
+
+authorPositionName:
+  comment.authorPositionName ??
+  null,
+
+                          isMine:
+                            comment.authorType ===
+                              "student" &&
+                            Number(
+                              comment.authorStudentId ||
+                              0
+                            ) ===
+                              context.studentId,
+
+                          content:
+                            comment.content,
+
+                          editedAt:
+                            comment.editedAt
+                              ? new Date(
+                                  comment.editedAt
+                                ).toISOString()
+                              : null,
+
+                          createdAt:
+                            comment.createdAt
+                              ? new Date(
+                                  comment.createdAt
+                                ).toISOString()
+                              : null,
+                        })
+                      ),
+
+                  attachments:
+                    attachments.map(
+                      attachment => ({
+                        id:
+                          Number(
+                            attachment.id
+                          ),
+
+                        url:
+                          attachment.url,
+
+                        originalName:
+                          attachment.originalName,
+
+                        mimeType:
+                          attachment.mimeType ??
+                          null,
+
+                        sizeBytes:
+                          Number(
+                            attachment.sizeBytes ||
+                            0
+                          ),
+                      })
+                    ),
+
+                  myState,
+                };
+              }
+            ),
+
+
+        /**
+         * -----------------------------------------------------
+         * 학생 게시글 작성
+         * -----------------------------------------------------
+         */
+        createPost:
+          publicProcedure
+            .input(
+              z.object({
+                token:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+
+                boardId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+
+                title:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+
+                content:
+                  z
+                    .string()
+                    .trim()
+                    .min(1),
+
+                contentFormat:
+                  z
+                    .enum([
+                      "plain",
+                      "blocks",
+                    ])
+                    .optional(),
+
+                contentData:
+                  z
+                    .unknown()
+                    .nullable()
+                    .optional(),
+              })
+            )
+            .mutation(
+              async ({
+                input,
+              }) => {
+                const context =
+                  await requireStudentPortalCommunityContext(
+                    input.token
+                  );
+
+                if (
+                  context.settings.allowStudentPosts !==
+                  true
+                ) {
+                  throwAppError(
+                    ERROR_CODES.PERMISSION_DENIED,
+                    "현재 등록회원 글쓰기가 비활성화되어 있습니다.",
+                    403
+                  );
+                }
+
+                const post =
+                  await db.createCommunityStudentPost({
+                    organizationId:
+                      context.organizationId,
+
+                    studentId:
+                      context.studentId,
+
+                    boardId:
+                      input.boardId,
+
+                    title:
+                      input.title,
+
+                    content:
+                      input.content,
+
+                    contentFormat:
+                      input.contentFormat ??
+                      "blocks",
+
+                    contentData:
+                      input.contentData ??
+                      null,
+                  });
+
+                if (!post) {
+                  throwAppError(
+                    ERROR_CODES.INTERNAL_SERVER_ERROR,
+                    "게시글을 저장하지 못했습니다.",
+                    500
+                  );
+                }
+
+                return {
+                  success:
+                    true as const,
+
+                  postId:
+                    Number(
+                      post.id
+                    ),
+                };
+              }
+            ),
+
+
+        /**
+         * -----------------------------------------------------
+         * 학생 게시글 수정
+         * -----------------------------------------------------
+         */
+        updatePost:
+          publicProcedure
+            .input(
+              z.object({
+                token:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+
+                postId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+
+                boardId:
+                  z
+                    .number()
+                    .int()
+                    .positive()
+                    .optional(),
+
+                title:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255)
+                    .optional(),
+
+                content:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .optional(),
+
+                contentFormat:
+                  z
+                    .enum([
+                      "plain",
+                      "blocks",
+                    ])
+                    .optional(),
+
+                contentData:
+                  z
+                    .unknown()
+                    .nullable()
+                    .optional(),
+
+deletedAttachmentIds:
+  z
+    .array(
+      z
+        .number()
+        .int()
+        .positive()
+    )
+    .max(10)
+    .optional(),
+              })
+            )
+            .mutation(
+              async ({
+                input,
+              }) => {
+                const context =
+                  await requireStudentPortalCommunityContext(
+                    input.token
+                  );
+
+                if (
+                  context.settings.allowStudentPosts !==
+                  true
+                ) {
+                  throwAppError(
+                    ERROR_CODES.PERMISSION_DENIED,
+                    "현재 등록회원 글쓰기가 비활성화되어 있습니다.",
+                    403
+                  );
+                }
+
+                const post =
+                  await db.updateCommunityStudentPost({
+                    organizationId:
+                      context.organizationId,
+
+                    studentId:
+                      context.studentId,
+
+                    postId:
+                      input.postId,
+
+                    boardId:
+                      input.boardId,
+
+                    title:
+                      input.title,
+
+                    content:
+                      input.content,
+
+                    contentFormat:
+                      input.contentFormat,
+
+                    contentData:
+                      input.contentData,
+
+deletedAttachmentIds:
+  input.deletedAttachmentIds,
+                  });
+
+                return {
+                  success:
+                    true as const,
+
+                  postId:
+                    post
+                      ? Number(
+                          post.id
+                        )
+                      : input.postId,
+                };
+              }
+            ),
+
+
+        /**
+         * -----------------------------------------------------
+         * 학생 본인 게시글 삭제
+         * -----------------------------------------------------
+         */
+        deletePost:
+          publicProcedure
+            .input(
+              z.object({
+                token:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+
+                postId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+              })
+            )
+            .mutation(
+              async ({
+                input,
+              }) => {
+                const context =
+                  await requireStudentPortalCommunityContext(
+                    input.token
+                  );
+
+                return db.deleteCommunityStudentPost({
+                  organizationId:
+                    context.organizationId,
+
+                  studentId:
+                    context.studentId,
+
+                  postId:
+                    input.postId,
+                });
+              }
+            ),
+
+
+        /**
+         * -----------------------------------------------------
+         * 댓글 / 대댓글 작성
+         * -----------------------------------------------------
+         */
+        createComment:
+          publicProcedure
+            .input(
+              z.object({
+                token:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+
+                postId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+
+                parentCommentId:
+                  z
+                    .number()
+                    .int()
+                    .positive()
+                    .nullable()
+                    .optional(),
+
+                content:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(5000),
+              })
+            )
+            .mutation(
+              async ({
+                input,
+              }) => {
+                const context =
+                  await requireStudentPortalCommunityContext(
+                    input.token
+                  );
+
+                if (
+                  context.settings.allowStudentComments !==
+                  true
+                ) {
+                  throwAppError(
+                    ERROR_CODES.PERMISSION_DENIED,
+                    "현재 등록회원 댓글 작성이 비활성화되어 있습니다.",
+                    403
+                  );
+                }
+
+                return db.createCommunityStudentComment({
+                  organizationId:
+                    context.organizationId,
+
+                  studentId:
+                    context.studentId,
+
+                  postId:
+                    input.postId,
+
+                  parentCommentId:
+                    input.parentCommentId ??
+                    null,
+
+                  content:
+                    input.content,
+                });
+              }
+            ),
+
+/**
+ * -----------------------------------------------------
+ * 본인 댓글 수정
+ * -----------------------------------------------------
+ */
+updateComment:
+  publicProcedure
+    .input(
+      z.object({
+        token:
+          z
+            .string()
+            .trim()
+            .min(1)
+            .max(255),
+
+        commentId:
+          z
+            .number()
+            .int()
+            .positive(),
+
+        content:
+          z
+            .string()
+            .trim()
+            .min(1)
+            .max(5000),
+      })
+    )
+    .mutation(
+      async ({
+        input,
+      }) => {
+        const context =
+          await requireStudentPortalCommunityContext(
+            input.token
+          );
+
+        return db.updateCommunityStudentComment({
+          organizationId:
+            context.organizationId,
+
+          studentId:
+            context.studentId,
+
+          commentId:
+            input.commentId,
+
+          content:
+            input.content,
+        });
+      }
+    ),
+
+
+        /**
+         * -----------------------------------------------------
+         * 본인 댓글 삭제
+         * -----------------------------------------------------
+         */
+        deleteComment:
+          publicProcedure
+            .input(
+              z.object({
+                token:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+
+                commentId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+              })
+            )
+            .mutation(
+              async ({
+                input,
+              }) => {
+                const context =
+                  await requireStudentPortalCommunityContext(
+                    input.token
+                  );
+
+                return db.deleteCommunityStudentComment({
+                  organizationId:
+                    context.organizationId,
+
+                  studentId:
+                    context.studentId,
+
+                  commentId:
+                    input.commentId,
+                });
+              }
+            ),
+
+
+        /**
+         * -----------------------------------------------------
+         * 좋아요 / 도움됐어요
+         * -----------------------------------------------------
+         */
+        toggleReaction:
+          publicProcedure
+            .input(
+              z.object({
+                token:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+
+                postId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+
+                reactionType:
+                  z.enum([
+                    "like",
+                    "helpful",
+                  ]),
+              })
+            )
+            .mutation(
+              async ({
+                input,
+              }) => {
+                const context =
+                  await requireStudentPortalCommunityContext(
+                    input.token
+                  );
+
+                return db.toggleCommunityReaction({
+                  organizationId:
+                    context.organizationId,
+
+                  studentId:
+                    context.studentId,
+
+                  postId:
+                    input.postId,
+
+                  reactionType:
+                    input.reactionType,
+                });
+              }
+            ),
+
+
+        /**
+         * -----------------------------------------------------
+         * 게시글 저장
+         * -----------------------------------------------------
+         */
+        toggleBookmark:
+          publicProcedure
+            .input(
+              z.object({
+                token:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+
+                postId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+              })
+            )
+            .mutation(
+              async ({
+                input,
+              }) => {
+                const context =
+                  await requireStudentPortalCommunityContext(
+                    input.token
+                  );
+
+                return db.toggleCommunityBookmark({
+                  organizationId:
+                    context.organizationId,
+
+                  studentId:
+                    context.studentId,
+
+                  postId:
+                    input.postId,
+                });
+              }
+            ),
+
+
+/**
+ * -----------------------------------------------------
+ * 내 커뮤니티 활동
+ * -----------------------------------------------------
+ *
+ * 내가 쓴 글
+ * 내가 쓴 댓글
+ * 저장한 글
+ */
+myActivity:
+  publicProcedure
+    .input(
+      z.object({
+        token:
+          z
+            .string()
+            .trim()
+            .min(1)
+            .max(255),
+
+        limit:
+          z
+            .number()
+            .int()
+            .min(1)
+            .max(100)
+            .optional(),
+      })
+    )
+    .query(
+      async ({
+        input,
+      }) => {
+        const context =
+          await requireStudentPortalCommunityContext(
+            input.token
+          );
+
+        const [
+          posts,
+          comments,
+          bookmarks,
+        ] =
+          await Promise.all([
+            db.listCommunityStudentPosts({
+              organizationId:
+                context.organizationId,
+
+              studentId:
+                context.studentId,
+
+              limit:
+                input.limit ??
+                50,
+            }),
+
+            db.listCommunityStudentComments({
+              organizationId:
+                context.organizationId,
+
+              studentId:
+                context.studentId,
+
+              limit:
+                input.limit ??
+                50,
+            }),
+
+            db.listCommunityStudentBookmarks({
+              organizationId:
+                context.organizationId,
+
+              studentId:
+                context.studentId,
+
+              limit:
+                input.limit ??
+                50,
+            }),
+          ]);
+
+        return {
+          posts:
+            posts.map(
+              post => ({
+                id:
+                  Number(
+                    post.id
+                  ),
+
+                boardId:
+                  Number(
+                    post.boardId
+                  ),
+
+                title:
+                  post.title,
+
+                content:
+                  post.content,
+
+                status:
+                  post.status,
+
+                isPinned:
+                  post.isPinned,
+
+                viewCount:
+                  Number(
+                    post.viewCount ||
+                    0
+                  ),
+
+                commentCount:
+                  Number(
+                    post.commentCount ||
+                    0
+                  ),
+
+                likeCount:
+                  Number(
+                    post.likeCount ||
+                    0
+                  ),
+
+                helpfulCount:
+                  Number(
+                    post.helpfulCount ||
+                    0
+                  ),
+
+                bookmarkCount:
+                  Number(
+                    post.bookmarkCount ||
+                    0
+                  ),
+
+                editedAt:
+                  post.editedAt
+                    ? new Date(
+                        post.editedAt
+                      ).toISOString()
+                    : null,
+
+                createdAt:
+                  post.createdAt
+                    ? new Date(
+                        post.createdAt
+                      ).toISOString()
+                    : null,
+              })
+            ),
+
+          comments:
+            comments.map(
+              comment => ({
+                id:
+                  Number(
+                    comment.id
+                  ),
+
+                postId:
+                  Number(
+                    comment.postId
+                  ),
+
+                parentCommentId:
+                  comment.parentCommentId
+                    ? Number(
+                        comment.parentCommentId
+                      )
+                    : null,
+
+                content:
+                  comment.content,
+
+                status:
+                  comment.status,
+
+                postTitle:
+                  comment.postTitle,
+
+                editedAt:
+                  comment.editedAt
+                    ? new Date(
+                        comment.editedAt
+                      ).toISOString()
+                    : null,
+
+                createdAt:
+                  comment.createdAt
+                    ? new Date(
+                        comment.createdAt
+                      ).toISOString()
+                    : null,
+              })
+            ),
+
+          bookmarks:
+            bookmarks.map(
+              bookmark => ({
+                bookmarkId:
+                  Number(
+                    bookmark.bookmarkId
+                  ),
+
+                postId:
+                  Number(
+                    bookmark.postId
+                  ),
+
+                boardId:
+                  Number(
+                    bookmark.boardId
+                  ),
+
+                title:
+                  bookmark.title,
+
+                content:
+                  bookmark.content,
+
+                authorType:
+                  bookmark.authorType,
+
+                authorNickname:
+                  bookmark.authorType ===
+                  "staff"
+                    ? "관리자"
+                    : bookmark.authorNickname ??
+                      "등록회원",
+
+                viewCount:
+                  Number(
+                    bookmark.viewCount ||
+                    0
+                  ),
+
+                commentCount:
+                  Number(
+                    bookmark.commentCount ||
+                    0
+                  ),
+
+                likeCount:
+                  Number(
+                    bookmark.likeCount ||
+                    0
+                  ),
+
+                helpfulCount:
+                  Number(
+                    bookmark.helpfulCount ||
+                    0
+                  ),
+
+                postCreatedAt:
+                  bookmark.postCreatedAt
+                    ? new Date(
+                        bookmark.postCreatedAt
+                      ).toISOString()
+                    : null,
+
+                bookmarkedAt:
+                  bookmark.bookmarkedAt
+                    ? new Date(
+                        bookmark.bookmarkedAt
+                      ).toISOString()
+                    : null,
+              })
+            ),
+        };
+      }
+    ),
+
+        /**
+         * -----------------------------------------------------
+         * 업로드 완료된 이미지 메타데이터 등록
+         * -----------------------------------------------------
+         *
+         * 실제 이미지 파일 업로드 endpoint는
+         * Express/index.ts에서 Portal Token 기반으로 따로 만든다.
+         */
+        registerImage:
+          publicProcedure
+            .input(
+              z.object({
+                token:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+
+                postId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+
+                originalName:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+
+                storedName:
+                  z
+                    .string()
+                    .trim()
+                    .max(255)
+                    .nullable()
+                    .optional(),
+
+                url:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(1000),
+
+                mimeType:
+                  z.enum([
+                    "image/jpeg",
+                    "image/png",
+                    "image/webp",
+                    "image/gif",
+                  ]),
+
+                sizeBytes:
+                  z
+                    .number()
+                    .int()
+                    .positive()
+                    .max(
+                      5 *
+                      1024 *
+                      1024
+                    ),
+              })
+            )
+            .mutation(
+              async ({
+                input,
+              }) => {
+                const context =
+                  await requireStudentPortalCommunityContext(
+                    input.token
+                  );
+
+                return db.createCommunityImageAttachment({
+                  organizationId:
+                    context.organizationId,
+
+                  studentId:
+                    context.studentId,
+
+                  postId:
+                    input.postId,
+
+                  originalName:
+                    input.originalName,
+
+                  storedName:
+                    input.storedName,
+
+                  url:
+                    input.url,
+
+                  mimeType:
+                    input.mimeType,
+
+                  sizeBytes:
+                    input.sizeBytes,
+                });
+              }
+            ),
+
+
+        /**
+         * -----------------------------------------------------
+         * 신고
+         * -----------------------------------------------------
+         */
+        report:
+          publicProcedure
+            .input(
+              z.object({
+                token:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+
+                targetType:
+                  z.enum([
+                    "post",
+                    "comment",
+                    "profile",
+                  ]),
+
+                targetId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+
+                reasonType:
+                  z.enum([
+                    "spam",
+                    "abuse",
+                    "privacy",
+                    "advertising",
+                    "misinformation",
+                    "other",
+                  ]),
+
+                reasonText:
+                  z
+                    .string()
+                    .trim()
+                    .max(2000)
+                    .nullable()
+                    .optional(),
+              })
+            )
+            .mutation(
+              async ({
+                input,
+              }) => {
+                const context =
+                  await requireStudentPortalCommunityContext(
+                    input.token
+                  );
+
+                return db.createCommunityReport({
+                  organizationId:
+                    context.organizationId,
+
+                  studentId:
+                    context.studentId,
+
+                  targetType:
+                    input.targetType,
+
+                  targetId:
+                    input.targetId,
+
+                  reasonType:
+                    input.reasonType,
+
+                  reasonText:
+                    input.reasonText,
+                });
+              }
+            ),
+            }),
+
+
+    /**
+     * =========================================================
+     * Host 커뮤니티 관리
+     * =========================================================
+     *
+     * 중요:
+     * organizationId는 클라이언트 input으로 받지 않는다.
+     *
+     * 현재 CRM 로그인 세션
+     * → getCtxOrganizationId(ctx)
+     * → 현재 회사 데이터만 접근
+     */
+    hostCommunity:
+      router({
+        /**
+         * PC 관리포탈 최초 진입.
+         */
+        bootstrap:
+          hostProcedure.query(
+            async ({
+              ctx,
+            }) => {
+              const organizationId =
+                getCtxOrganizationId(
+                  ctx
+                );
+
+              const userId =
+                Number(
+                  ctx.user?.id ||
+                  0
+                );
+
+              /**
+               * 회사별 기본 커뮤니티 설정을 보장한다.
+               */
+              await db.ensureCommunityDefaults({
+                organizationId,
+
+                actorUserId:
+                  userId ||
+                  null,
+              });
+
+              const [
+                settings,
+                boards,
+                staffProfile,
+                organization,
+              ] =
+                await Promise.all([
+                  db.getCommunitySettings({
+                    organizationId,
+                  }),
+
+                  db.listCommunityBoards({
+                    organizationId,
+                  }),
+
+                  userId > 0
+                    ? db.getStaffPublicProfile({
+                        organizationId,
+
+                        userId,
+                      })
+                    : Promise.resolve(
+                        null
+                      ),
+
+                  getOrganizationById(
+                    organizationId
+                  ),
+                ]);
+
+              return {
+                settings,
+
+                boards:
+                  boards.map(
+                    board => ({
+                      id:
+                        Number(
+                          board.id
+                        ),
+
+                      boardKey:
+                        board.boardKey,
+
+                      name:
+                        board.name,
+
+                      description:
+                        board.description ??
+                        null,
+
+                      boardType:
+                        board.boardType,
+
+                      writePermission:
+                        board.writePermission,
+
+                      sortOrder:
+                        board.sortOrder,
+                    })
+                  ),
+
+                staffProfile:
+                  staffProfile ??
+                  null,
+
+                organizationSlug:
+                  String(
+                    organization?.slug ||
+                    ""
+                  )
+                    .trim()
+                    .toLowerCase() ||
+                  null,
+
+                portalUrl:
+                  organization?.slug
+                    ? `/portal/${String(
+                        organization.slug
+                      )
+                        .trim()
+                        .toLowerCase()}`
+                    : null,
+              };
+            }
+          ),
+
+
+        /**
+         * 현재 회사 게시글 목록.
+         *
+         * organizationId input 없음.
+         */
+        posts:
+          hostProcedure
+            .input(
+              z.object({
+                boardId:
+                  z
+                    .number()
+                    .int()
+                    .positive()
+                    .nullable()
+                    .optional(),
+
+                limit:
+                  z
+                    .number()
+                    .int()
+                    .min(1)
+                    .max(50)
+                    .optional(),
+
+                beforeId:
+                  z
+                    .number()
+                    .int()
+                    .positive()
+                    .nullable()
+                    .optional(),
+              })
+            )
+            .query(
+              async ({
+                ctx,
+                input,
+              }) => {
+                const organizationId =
+                  getCtxOrganizationId(
+                    ctx
+                  );
+
+                const posts =
+                  await db.listCommunityPosts({
+                    organizationId,
+
+                    boardId:
+                      input.boardId ??
+                      null,
+
+                    limit:
+                      input.limit ??
+                      50,
+
+                    beforeId:
+                      input.beforeId ??
+                      null,
+                  });
+
+                return {
+                  posts,
+                };
+              }
+            ),
+
+
+        /**
+         * 현재 회사 게시글 상세.
+         */
+        post:
+          hostProcedure
+            .input(
+              z.object({
+                postId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+              })
+            )
+            .query(
+              async ({
+                ctx,
+                input,
+              }) => {
+                const organizationId =
+                  getCtxOrganizationId(
+                    ctx
+                  );
+
+                const post =
+                  await db.getCommunityPostById({
+                    organizationId,
+
+                    postId:
+                      input.postId,
+                  });
+
+                if (
+                  !post ||
+                  post.status !==
+                    "published"
+                ) {
+                  throwAppError(
+                    ERROR_CODES.DATA_NOT_FOUND,
+                    "게시글을 찾을 수 없습니다.",
+                    404
+                  );
+                }
+
+                const [
+  comments,
+  attachments,
+] =
+  await Promise.all([
+    db.listCommunityComments({
+      organizationId,
+
+      postId:
+        input.postId,
+    }),
+
+    db.listCommunityPostAttachments({
+      organizationId,
+
+      postId:
+        input.postId,
+    }),
+  ]);
+
+return {
+  post: {
+    ...post,
+
+    /**
+     * 현재 로그인 Host 본인이 작성한
+     * staff 게시글인지 프론트에서 바로 판단한다.
+     */
+    isMine:
+      post.authorType ===
+        "staff" &&
+      Number(
+        post.authorUserId ||
+        0
+      ) ===
+        Number(
+          ctx.user?.id ||
+          0
+        ),
+  },
+
+  comments:
+    comments
+      .filter(
+        comment =>
+          comment.status ===
+          "published"
+      )
+      .map(
+        comment => ({
+          id:
+            Number(
+              comment.id
+            ),
+
+          parentCommentId:
+            comment.parentCommentId
+              ? Number(
+                  comment.parentCommentId
+                )
+              : null,
+
+          authorType:
+            comment.authorType,
+
+          authorUserId:
+            comment.authorUserId
+              ? Number(
+                  comment.authorUserId
+                )
+              : null,
+
+          authorStudentId:
+            comment.authorStudentId
+              ? Number(
+                  comment.authorStudentId
+                )
+              : null,
+
+          authorNickname:
+            comment.authorNickname ??
+            (
+              comment.authorType ===
+              "staff"
+                ? "담당자"
+                : "등록회원"
+            ),
+
+          authorProfileImageUrl:
+            comment.authorProfileImageUrl ??
+            null,
+
+          authorPositionName:
+            comment.authorPositionName ??
+            null,
+
+          /**
+           * 현재 Host 본인의 댓글인지 판단.
+           */
+          isMine:
+            comment.authorType ===
+              "staff" &&
+            Number(
+              comment.authorUserId ||
+              0
+            ) ===
+              Number(
+                ctx.user?.id ||
+                0
+              ),
+
+          content:
+            comment.content,
+
+          editedAt:
+            comment.editedAt
+              ? new Date(
+                  comment.editedAt
+                ).toISOString()
+              : null,
+
+          createdAt:
+            comment.createdAt
+              ? new Date(
+                  comment.createdAt
+                ).toISOString()
+              : null,
+        })
+      ),
+
+  attachments:
+    attachments.map(
+      attachment => ({
+        id:
+          Number(
+            attachment.id
+          ),
+
+        url:
+          attachment.url,
+
+        originalName:
+          attachment.originalName,
+
+        mimeType:
+          attachment.mimeType ??
+          null,
+
+        sizeBytes:
+          Number(
+            attachment.sizeBytes ||
+            0
+          ),
+      })
+    ),
+};
+              }
+            ),
+
+
+        /**
+         * -----------------------------------------------------
+         * Host 일반 게시글 작성
+         * -----------------------------------------------------
+         *
+         * 공지사항이 아닌 일반 게시판 글 작성.
+         *
+         * organizationId는 input으로 받지 않고
+         * 현재 CRM 로그인 세션에서만 확정한다.
+         */
+        createPost:
+          hostProcedure
+            .input(
+              z.object({
+                boardId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+
+                title:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+
+                content:
+                  z
+                    .string()
+                    .trim()
+                    .min(1),
+
+                contentFormat:
+                  z
+                    .enum([
+                      "plain",
+                      "blocks",
+                    ])
+                    .optional(),
+
+                contentData:
+                  z
+                    .unknown()
+                    .nullable()
+                    .optional(),
+              })
+            )
+            .mutation(
+              async ({
+                ctx,
+                input,
+              }) => {
+                const organizationId =
+                  getCtxOrganizationId(
+                    ctx
+                  );
+
+                const userId =
+                  Number(
+                    ctx.user?.id ||
+                    0
+                  );
+
+                if (
+                  !Number.isFinite(
+                    userId
+                  ) ||
+                  userId <=
+                    0
+                ) {
+                  throwAppError(
+                    ERROR_CODES.AUTH_REQUIRED,
+                    "로그인이 필요합니다.",
+                    401
+                  );
+                }
+
+                const post =
+                  await db.createCommunityStaffPost({
+                    organizationId,
+
+                    userId,
+
+                    boardId:
+                      input.boardId,
+
+                    title:
+                      input.title,
+
+                    content:
+                      input.content,
+
+                    contentFormat:
+                      input.contentFormat ??
+                      "blocks",
+
+                    contentData:
+                      input.contentData ??
+                      null,
+                  });
+
+                if (!post) {
+                  throwAppError(
+                    ERROR_CODES.INTERNAL_SERVER_ERROR,
+                    "게시글을 저장하지 못했습니다.",
+                    500
+                  );
+                }
+
+                return {
+                  success:
+                    true as const,
+
+                  postId:
+                    Number(
+                      post.id
+                    ),
+                };
+              }
+            ),
+
+
+        /**
+         * -----------------------------------------------------
+         * Host 일반 게시글 수정
+         * -----------------------------------------------------
+         *
+         * 본인이 작성한 일반 staff 게시글만 수정 가능.
+         *
+         * 공지사항 수정은 updateNotice 사용.
+         *
+         * organizationId / userId는
+         * 클라이언트 input으로 받지 않는다.
+         */
+        updatePost:
+          hostProcedure
+            .input(
+              z.object({
+                postId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+
+                boardId:
+                  z
+                    .number()
+                    .int()
+                    .positive()
+                    .optional(),
+
+                title:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255)
+                    .optional(),
+
+                content:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .optional(),
+
+                contentFormat:
+                  z
+                    .enum([
+                      "plain",
+                      "blocks",
+                    ])
+                    .optional(),
+
+                contentData:
+                  z
+                    .unknown()
+                    .nullable()
+                    .optional(),
+
+                /**
+                 * 수정 화면에서 제거한
+                 * 기존 attachment ID.
+                 *
+                 * 한 게시글 최대 이미지 10장 기준.
+                 */
+                deletedAttachmentIds:
+                  z
+                    .array(
+                      z
+                        .number()
+                        .int()
+                        .positive()
+                    )
+                    .max(10)
+                    .optional(),
+              })
+            )
+            .mutation(
+              async ({
+                ctx,
+                input,
+              }) => {
+                const organizationId =
+                  getCtxOrganizationId(
+                    ctx
+                  );
+
+                const userId =
+                  Number(
+                    ctx.user?.id ||
+                    0
+                  );
+
+                if (
+                  !Number.isFinite(
+                    userId
+                  ) ||
+                  userId <=
+                    0
+                ) {
+                  throwAppError(
+                    ERROR_CODES.AUTH_REQUIRED,
+                    "로그인이 필요합니다.",
+                    401
+                  );
+                }
+
+                return db.updateCommunityStaffPost({
+                  organizationId,
+
+                  userId,
+
+                  postId:
+                    input.postId,
+
+                  boardId:
+                    input.boardId,
+
+                  title:
+                    input.title,
+
+                  content:
+                    input.content,
+
+                  contentFormat:
+                    input.contentFormat,
+
+                  contentData:
+                    input.contentData,
+
+                  deletedAttachmentIds:
+                    input.deletedAttachmentIds ??
+                    [],
+                });
+              }
+            ),
+
+
+        /**
+         * 공식 공지 작성.
+         *
+         * boardId / organizationId를
+         * 클라이언트에서 받지 않는다.
+         */
+        createNotice:
+          hostProcedure
+            .input(
+              z.object({
+                title:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+
+                content:
+                  z
+                    .string()
+                    .trim()
+                    .min(1),
+
+                contentFormat:
+                  z
+                    .enum([
+                      "plain",
+                      "blocks",
+                    ])
+                    .optional(),
+
+                contentData:
+                  z
+                    .unknown()
+                    .nullable()
+                    .optional(),
+              })
+            )
+            .mutation(
+              async ({
+                ctx,
+                input,
+              }) => {
+                const organizationId =
+                  getCtxOrganizationId(
+                    ctx
+                  );
+
+                const userId =
+                  Number(
+                    ctx.user?.id ||
+                    0
+                  );
+
+                return db.createCommunityStaffNotice({
+                  organizationId,
+
+                  userId,
+
+                  title:
+                    input.title,
+
+                  content:
+                    input.content,
+
+                  contentFormat:
+                    input.contentFormat,
+
+                  contentData:
+                    input.contentData,
+                });
+              }
+            ),
+
+
+        /**
+         * 본인이 작성한 공지 수정.
+         */
+        updateNotice:
+          hostProcedure
+            .input(
+              z.object({
+                postId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+
+                title:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255)
+                    .optional(),
+
+                content:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .optional(),
+
+                contentFormat:
+                  z
+                    .enum([
+                      "plain",
+                      "blocks",
+                    ])
+                    .optional(),
+
+                contentData:
+                  z
+                    .unknown()
+                    .nullable()
+                    .optional(),
+
+                deletedAttachmentIds:
+                  z
+                    .array(
+                      z
+                        .number()
+                        .int()
+                        .positive()
+                    )
+                    .max(10)
+                    .optional(),
+              })
+            )
+            .mutation(
+              async ({
+                ctx,
+                input,
+              }) => {
+                const organizationId =
+                  getCtxOrganizationId(
+                    ctx
+                  );
+
+                const userId =
+                  Number(
+                    ctx.user?.id ||
+                    0
+                  );
+
+                return db.updateCommunityStaffNotice({
+                  organizationId,
+
+                  userId,
+
+                  postId:
+                    input.postId,
+
+                  title:
+                    input.title,
+
+                  content:
+                    input.content,
+
+                  contentFormat:
+                    input.contentFormat,
+
+                  contentData:
+                    input.contentData,
+
+                  deletedAttachmentIds:
+                    input.deletedAttachmentIds ??
+                    [],
+                });
+              }
+            ),
+
+
+
+        /**
+         * -----------------------------------------------------
+         * Host 댓글 / 대댓글 작성
+         * -----------------------------------------------------
+         *
+         * 학생 게시글 / 담당자 게시글 / 공지사항
+         * 모두 댓글 작성 가능.
+         */
+        createComment:
+          hostProcedure
+            .input(
+              z.object({
+                postId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+
+                parentCommentId:
+                  z
+                    .number()
+                    .int()
+                    .positive()
+                    .nullable()
+                    .optional(),
+
+                content:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(5000),
+              })
+            )
+            .mutation(
+              async ({
+                ctx,
+                input,
+              }) => {
+                const organizationId =
+                  getCtxOrganizationId(
+                    ctx
+                  );
+
+                const userId =
+                  Number(
+                    ctx.user?.id ||
+                    0
+                  );
+
+                if (
+                  !Number.isFinite(
+                    userId
+                  ) ||
+                  userId <=
+                    0
+                ) {
+                  throwAppError(
+                    ERROR_CODES.AUTH_REQUIRED,
+                    "로그인이 필요합니다.",
+                    401
+                  );
+                }
+
+                return db.createCommunityStaffComment({
+                  organizationId,
+
+                  userId,
+
+                  postId:
+                    input.postId,
+
+                  parentCommentId:
+                    input.parentCommentId ??
+                    null,
+
+                  content:
+                    input.content,
+                });
+              }
+            ),
+
+               /**
+         * -----------------------------------------------------
+         * Host 본인 댓글 삭제
+         * -----------------------------------------------------
+         *
+         * 현재는 본인이 작성한 staff 댓글만 삭제.
+         *
+         * 다른 학생/담당자 댓글 강제삭제는
+         * 별도 moderation 기능으로 분리한다.
+         */
+        deleteComment:
+          hostProcedure
+            .input(
+              z.object({
+                commentId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+              })
+            )
+            .mutation(
+              async ({
+                ctx,
+                input,
+              }) => {
+                const organizationId =
+                  getCtxOrganizationId(
+                    ctx
+                  );
+
+                const userId =
+                  Number(
+                    ctx.user?.id ||
+                    0
+                  );
+
+                if (
+                  !Number.isFinite(
+                    userId
+                  ) ||
+                  userId <=
+                    0
+                ) {
+                  throwAppError(
+                    ERROR_CODES.AUTH_REQUIRED,
+                    "로그인이 필요합니다.",
+                    401
+                  );
+                }
+
+                return db.deleteCommunityStaffComment({
+                  organizationId,
+
+                  userId,
+
+                  commentId:
+                    input.commentId,
+                });
+              }
+            ),
+
+        /**
+         * -----------------------------------------------------
+         * Host 본인 댓글 수정
+         * -----------------------------------------------------
+         */
+        updateComment:
+          hostProcedure
+            .input(
+              z.object({
+                commentId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+
+                content:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(5000),
+              })
+            )
+            .mutation(
+              async ({
+                ctx,
+                input,
+              }) => {
+                const organizationId =
+                  getCtxOrganizationId(
+                    ctx
+                  );
+
+                const userId =
+                  Number(
+                    ctx.user?.id ||
+                    0
+                  );
+
+                if (
+                  !Number.isFinite(
+                    userId
+                  ) ||
+                  userId <=
+                    0
+                ) {
+                  throwAppError(
+                    ERROR_CODES.AUTH_REQUIRED,
+                    "로그인이 필요합니다.",
+                    401
+                  );
+                }
+
+                return db.updateCommunityStaffComment({
+                  organizationId,
+
+                  userId,
+
+                  commentId:
+                    input.commentId,
+
+                  content:
+                    input.content,
+                });
+              }
+            ),
+
+        /**
+         * -----------------------------------------------------
+         * Host 게시글 이미지 메타데이터 등록
+         * -----------------------------------------------------
+         *
+         * 실제 파일:
+         * POST /api/student-portal/host-community/image
+         *
+         * 에서 R2 업로드 완료 후
+         * 반환된 메타데이터를 게시글에 연결한다.
+         *
+         * organizationId / userId는
+         * 클라이언트에서 받지 않는다.
+         */
+        registerImage:
+          hostProcedure
+            .input(
+              z.object({
+                postId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+
+                originalName:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(255),
+
+                storedName:
+  z
+    .string()
+    .trim()
+    .max(1000)
+    .nullable()
+    .optional(),
+
+                url:
+                  z
+                    .string()
+                    .trim()
+                    .min(1)
+                    .max(1000),
+
+                mimeType:
+                  z.enum([
+                    "image/jpeg",
+                    "image/png",
+                    "image/webp",
+                    "image/gif",
+                  ]),
+
+                sizeBytes:
+                  z
+                    .number()
+                    .int()
+                    .positive()
+                    .max(
+                      5 *
+                      1024 *
+                      1024
+                    ),
+              })
+            )
+            .mutation(
+              async ({
+                ctx,
+                input,
+              }) => {
+                /**
+                 * 로그인 Host 세션에서만
+                 * 회사 ID를 확정한다.
+                 */
+                const organizationId =
+                  getCtxOrganizationId(
+                    ctx
+                  );
+
+                const userId =
+                  Number(
+                    ctx.user?.id ||
+                    0
+                  );
+
+                if (
+                  !Number.isFinite(
+                    userId
+                  ) ||
+                  userId <=
+                    0
+                ) {
+                  throwAppError(
+                    ERROR_CODES.AUTH_REQUIRED,
+                    "로그인이 필요합니다.",
+                    401
+                  );
+                }
+
+                return db.createCommunityStaffImageAttachment({
+                  organizationId,
+
+                  userId,
+
+                  postId:
+                    input.postId,
+
+                  originalName:
+                    input.originalName,
+
+                  storedName:
+                    input.storedName ??
+                    null,
+
+                  url:
+                    input.url,
+
+                  mimeType:
+                    input.mimeType,
+
+                  sizeBytes:
+                    input.sizeBytes,
+                });
+              }
+            ),
+
+
+
+
+        /**
+         * Host 게시글 강제 삭제.
+         *
+         * 학생글 / 담당자글 / 공지 모두 가능.
+         */
+        deletePost:
+          hostProcedure
+            .input(
+              z.object({
+                postId:
+                  z
+                    .number()
+                    .int()
+                    .positive(),
+              })
+            )
+            .mutation(
+              async ({
+                ctx,
+                input,
+              }) => {
+                const organizationId =
+                  getCtxOrganizationId(
+                    ctx
+                  );
+
+                return db.deleteCommunityPostByHost({
+                  organizationId,
+
+                  postId:
+                    input.postId,
+                });
+              }
+            ),
+      }),
+
 
 
     /**
@@ -14604,6 +18239,13 @@ branding: router({
             .optional()
             .nullable(),
 
+shareImageUrl:
+  z.string()
+    .trim()
+    .max(1000)
+    .optional()
+    .nullable(),
+
         messengerSubtitle:
           z.string()
             .trim()
@@ -14669,6 +18311,10 @@ branding: router({
           companyLogoUrl:
             input.companyLogoUrl?.trim() ||
             null,
+
+shareImageUrl:
+  input.shareImageUrl?.trim() ||
+  null,
 
           messengerSubtitle:
             input.messengerSubtitle.trim(),
