@@ -109,7 +109,14 @@ async function injectStaffProfileMetadata(
   req: express.Request,
   html: string
 ): Promise<string> {
-  const pathname = String(req.path || "").trim();
+  const pathname = String(
+    req.originalUrl ||
+    req.url ||
+    req.path ||
+    ""
+  )
+    .split("?")[0]
+    .trim();
 
   const match = pathname.match(
     /^\/staff\/([^/]+)\/?$/
@@ -301,8 +308,13 @@ async function injectPortalMetadata(
 ): Promise<string> {
   const pathname =
     String(
-      req.path || ""
-    ).trim();
+      req.originalUrl ||
+      req.url ||
+      req.path ||
+      ""
+    )
+      .split("?")[0]
+      .trim();
 
   const studentPortalMatch =
     pathname.match(
