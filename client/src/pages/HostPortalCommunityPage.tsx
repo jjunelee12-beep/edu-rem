@@ -1128,7 +1128,11 @@ setWriteImages([]);
     bootstrapQuery.data as any;
 
   const rawPosts =
-    ((postsQuery.data as any[]) || []);
+  Array.isArray(
+    (postsQuery.data as any)?.posts
+  )
+    ? (postsQuery.data as any).posts
+    : [];
 
 const postDetail =
   (postQuery.data as any)?.post ||
