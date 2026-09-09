@@ -325,10 +325,6 @@ async function injectPortalMetadata(
     let slug = "";
 
     if (studentPortalMatch) {
-console.log("[PORTAL OG HIT]", {
-  pathname,
-  slug,
-});
       try {
         slug =
           decodeURIComponent(
@@ -348,6 +344,11 @@ console.log("[PORTAL OG HIT]", {
             .trim()
             .toLowerCase();
       }
+
+      console.log("[PORTAL OG HIT]", {
+        pathname,
+        slug,
+      });
     } else if (hostPortalMatch) {
       try {
         slug =
