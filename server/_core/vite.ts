@@ -325,6 +325,10 @@ async function injectPortalMetadata(
     let slug = "";
 
     if (studentPortalMatch) {
+console.log("[PORTAL OG HIT]", {
+  pathname,
+  slug,
+});
       try {
         slug =
           decodeURIComponent(
@@ -378,13 +382,21 @@ async function injectPortalMetadata(
 
     if (studentPortalMatch) {
       const portal =
-        await getPublicStudentPortalBySlug(
-          slug
-        );
+  await getPublicStudentPortalBySlug(
+    slug
+  );
 
-      if (!portal) {
-        return html;
-      }
+console.log("[PORTAL OG LOOKUP]", {
+  slug,
+  found: Boolean(portal),
+  portalName: portal?.portalName ?? null,
+  companyName: portal?.companyName ?? null,
+  shareImageUrl: portal?.shareImageUrl ?? null,
+});
+
+if (!portal) {
+  return html;
+}
 
       title =
         String(
