@@ -5701,6 +5701,7 @@ const isRecommended = Number(finderRecommendedInstitutionCategoryId) === Number(
                   </div>
                 )}
               </div>
+ </div>
 
             <div className="relative flex-1 overflow-hidden bg-slate-100">
               <div className="h-full w-full">
